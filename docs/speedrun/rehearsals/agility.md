@@ -664,6 +664,24 @@ The gate tab was the twin's gate account, `cairn_twin`, never the run host's.
 | `(players) end` | 1,364 | 1,342 (highest read 1,419) |
 | TICKMON | 0 glued ticks in every minute, period 399-401 ms | the same, 33 minutes |
 
+**The direct probes** (the harness log's summary lines; the lite client on `cairn_twin`, no tab;
+both `probe (direct) from rs-ashburn-run`). For both probes, the only page was `cairn_jumps`'s
+logged-out tab in headless Chrome: 7 s after Chrome's start in D, and 2 minutes after the
+Wilderness logout in E. There was no recording in either, and the load average was 0.00 at
+21:45:42Z:
+
+| | D, 21:50:56-21:52:23Z | E, 21:57:46-21:59:18Z |
+|---|---|---|
+| Latency in ticks | 1:60 | 1:56, 2:4 |
+| Consecutive trials agree | 100% | 86% |
+| Tick intervals, p10 / p50 / p90 / max ms | 317.8 / 405 / 482.8 / 652.4 | 298.3 / 392.9 / 497.4 / 811.3 |
+| 50 ms histogram | 200:2 250:10 300:22 350:40 400:40 450:26 500:10 650:1 | 150:1 200:4 250:12 300:20 350:45 400:33 450:21 500:4 550:5 600:3 650:1 800:1 |
+| Catch-ups | 0 | 0 |
+
+The raw files with the per-trial rows (landed tick, send offset) and the tick arrivals, which rs/83
+needs to explain E's 56/60, are lost: the harness wrote them to `/tmp/speedrun` on the run host,
+and the teardown removed them. The harness now keeps that file beside the tick log (HARNESS.md).
+
 **rs/485's wait held.** All three walk legs of session D that went out while the client was
 loading an area logged `sent while the region loaded (scene_loading); sceneReady after 1 ticks,
 already moving: not re-sent`, and the leg that failed in session C (to the lever house) went
@@ -723,10 +741,14 @@ would have been about 7,111 - 23 - 160 - 117 = 6,811, still about 40 over stunag
 band would have had to run about 136 ticks under the model's mean (this one ran 96 under), most of
 one sd, to take #1.
 
-**Artifacts.** The tick logs are committed as `agility-evidence.jsonl`. The recordings of sessions
-A-C (`rs295-agility-20261022T060833Z.mkv`, `rs310-agility-20261022T204646Z.mkv`), the harness logs
-and the live-frame screenshots were in the twin's `~/rs-310/artifacts`, with sessions D-E's harness,
-gateway, page and Chrome logs under `runhost/`. Sessions D-E have no recording.
+**Artifacts.** The tick logs are committed as `agility-evidence.jsonl`. Host archived the
+recordings of sessions A-C on the Mac in `~/rs-archive/agility-recordings/`:
+`rs295-agility-20261022T060833Z.mkv` (sha256 c11a0729ecd4...) and
+`rs310-agility-20261022T204646Z.mkv` (683ca5efb4bb...). The sha256s match the twin's copies.
+Sessions D-E have no recording. The harness logs, live-frame screenshots and the gateway, page and
+Chrome logs were in the twin's `~/rs-310/artifacts`, removed with it (22:44:49-22:44:50Z, under a
+no-login claim, together with `~/rs-sdk/bots/cairn_jumps`). Their figures are quoted in this
+section.
 
 **Teardown of the run host** (22:35-22:38Z, before the release at 22:37:44Z): both accounts
 confirmed out (`cairn_jumps` by its final logout, the page out of game; `cairn_twin` after the
