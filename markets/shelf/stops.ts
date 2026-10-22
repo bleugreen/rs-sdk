@@ -271,6 +271,12 @@ export interface ItemRecord {
 /** What the content says about the open shop, for one read; null when the checkout has no content. */
 export interface ShelfContent {
     inv: string;
+    /**
+     * The shop's haggle (shop_delta). The SDK's shopConfig.haggle is always its
+     * fallback, 10: varp shop_haggle is not transmitted to the client (shop.varp),
+     * unlike shop_buy and shop_sell.
+     */
+    haggle: number | undefined;
     objName(id: number): string | undefined;
     /** Configured stock of an object; undefined when it is not in the base config. */
     stockBase(obj: string): number | undefined;
@@ -284,7 +290,10 @@ export interface ShopRecord {
     read: number;
     shopTitle: string;
     inv: string;
+    /** As the SDK reports it: the multipliers are the server's, the haggle is always 10 (see `haggle`). */
     shopConfig: ShopConfig | null;
+    /** The shop's real haggle from the content (shop_delta), which the computed prices use; null without content. */
+    haggle: number | null;
     items: number;
     at: Tile;
     tick: number;
@@ -356,8 +365,10 @@ export interface ShelfRead {
 export function shelfRecords(r: ShelfRead): [ShopRecord, ...ItemRecord[]] {
     const inv = r.content?.inv ?? r.inv;
     const base = { utc: r.utc, stop: r.stop, read: r.read, shopTitle: r.shop.title, tick: r.tick };
-    const cfg = r.shop.shopConfig;
-    const shop: ShopRecord = { kind: 'shop', ...base, inv, shopConfig: cfg ?? null, items: r.shop.shopItems.length, at: r.at, legMs: r.legMs, legTicks: r.legTicks };
+    const haggle = r.content?.haggle ?? null;
+    const reported = r.shop.shopConfig;
+    const cfg = reported && haggle !== null ? { ...reported, haggle } : reported;
+    const shop: ShopRecord = { kind: 'shop', ...base, inv, shopConfig: reported ?? null, haggle, items: r.shop.shopItems.length, at: r.at, legMs: r.legMs, legTicks: r.legTicks };
     const items = r.shop.shopItems.map((i): ItemRecord => {
         const obj = r.content?.objName(i.id) ?? null;
         const stockBase = r.content && obj !== null ? (r.content.stockBase(obj) ?? null) : null;
