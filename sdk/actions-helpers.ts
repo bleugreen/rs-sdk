@@ -49,7 +49,20 @@ export const NO_RUNES_REFUSALS = [
     "don't have enough"
 ] as const;
 
+/**
+ * Observed ticks walkStepToward waits for the region build (state.sceneReady) after a walk the SDK
+ * reported as scene_loading. A cold browser client at Varrock west took about 75 ticks before its
+ * locs appeared; the lite client builds within the tick and never waits.
+ */
+export const SCENE_READY_TICKS = 200;
+
 export class ActionHelpers {
+    /**
+     * Set when a scene wait ran out its bound, cleared by the next walk dispatched with the region
+     * built. A client that stays wedged on "Loading" costs one bounded wait, not one per walk step.
+     */
+    private sceneWaitTimedOut = false;
+
     constructor(private sdk: BotSDK) {}
 
     /**
@@ -385,8 +398,15 @@ export class ActionHelpers {
         tolerance: number,
         lastPos: { x: number; z: number }
     ): Promise<{ status: 'arrived' | 'progress' | 'stuck'; pos: { x: number; z: number } }> {
+        const from = this.sdk.getState()?.player;
         const dispatch = await this.sdk.sendWalk(targetX, targetZ, true);
-        if (!dispatch.success) return { status: 'stuck', pos: lastPos };
+        if (dispatch.reason === 'scene_loading') {
+            const startPos = from ? { x: from.worldX, z: from.worldZ } : lastPos;
+            if (!await this.walkOnceSceneReady(targetX, targetZ, startPos)) return { status: 'stuck', pos: lastPos };
+        } else {
+            this.sceneWaitTimedOut = false;
+            if (!dispatch.success) return { status: 'stuck', pos: lastPos };
+        }
         const moveResult = await this.waitForMovementComplete(targetX, targetZ, tolerance);
 
         const pos = this.sdk.getState()?.player;
@@ -411,6 +431,58 @@ export class ActionHelpers {
         }
 
         return { status: 'progress', pos: currentPos };
+    }
+
+    /**
+     * A walk sent while the client was still building the region went out but may not have been
+     * routed (stale collision maps). Wait for the build, bounded in observed ticks, then re-send
+     * the walk once unless the player has already moved off `startPos`. False when the region did
+     * not finish building within the bound, or the re-send failed.
+     */
+    private async walkOnceSceneReady(targetX: number, targetZ: number, startPos: { x: number; z: number }): Promise<boolean> {
+        const what = `walk to (${targetX}, ${targetZ}) sent while the region loaded (scene_loading)`;
+        if (this.sceneWaitTimedOut) {
+            console.warn(`[walkTo] ${what}; sceneReady already timed out after ${SCENE_READY_TICKS} ticks and is still false: not waiting again`);
+            return false;
+        }
+        const wait = await this.waitForSceneReady(SCENE_READY_TICKS);
+        if (!wait.ready) {
+            this.sceneWaitTimedOut = true;
+            console.warn(`[walkTo] ${what}; sceneReady still false after ${wait.ticks} observed ticks (bound ${SCENE_READY_TICKS}): giving up this step`);
+            return false;
+        }
+        const now = this.sdk.getState()?.player;
+        const moved = !!now && (now.worldX !== startPos.x || now.worldZ !== startPos.z);
+        console.log(`[walkTo] ${what}; sceneReady after ${wait.ticks} ticks, ${moved ? 'already moving: not re-sent' : 're-sending once'}`);
+        if (moved) return true;
+        return (await this.sdk.sendWalk(targetX, targetZ, true)).success;
+    }
+
+    /**
+     * Wait until state.sceneReady is no longer false, bounded by `maxTicks` observed server ticks.
+     * The wall-clock timer only catches a state stream that stopped altogether: it restarts on
+     * every new tick, so it never stands in for a tick length.
+     */
+    private waitForSceneReady(maxTicks: number): Promise<{ ready: boolean; ticks: number }> {
+        const STALL_MS = 15_000;
+        const start = this.sdk.getState();
+        if (!start || start.sceneReady !== false) return Promise.resolve({ ready: true, ticks: 0 });
+        const startTick = start.tick;
+        return executionWait((resolve) => {
+            let lastTick = startTick;
+            let stall: ReturnType<typeof setTimeout> | undefined;
+            const arm = () => {
+                clearTimeout(stall);
+                stall = setTimeout(() => resolve({ ready: false, ticks: lastTick - startTick }), STALL_MS);
+            };
+            arm();
+            const unsub = this.sdk.onStateUpdate((s) => {
+                if (s.sceneReady !== false) return resolve({ ready: true, ticks: s.tick - startTick });
+                if (s.tick !== lastTick) { lastTick = s.tick; arm(); }
+                if (s.tick - startTick >= maxTicks) resolve({ ready: false, ticks: s.tick - startTick });
+            });
+            return () => { clearTimeout(stall); unsub(); };
+        });
     }
 
     /**
