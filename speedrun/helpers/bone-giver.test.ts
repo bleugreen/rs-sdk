@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, GameMessage } from '../../sdk/types';
 import type { BotSDK } from '../../sdk/index';
-import { baseState, FakeSdk, type SentAction } from '../lib/fake-sdk';
+import { baseState, FakeSdk, flush, type SentAction } from '../lib/fake-sdk';
+import { give } from '../lib/trade';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { nameHash, newRequestFrom } from './altar-cue';
-import { boneGiverOptions, npcTiles, onSide, partnerIs, readBoneAsk, requestUntilOpen, S07_SITES, sideTiles, usableAsk, writeBoneAsk } from './bone-giver';
+import { ASK_SLACK_MS, nameHash, newRequestFrom, readTopUpAsk, usableAsk, writeTopUpAsk } from './altar-cue';
+import { askOffer, boneGiverOptions, carryDue, isFinalLoad, loadOffer, npcTiles, onSide, partnerIs, requestUntilOpen, S07_SITES, sideTiles } from './bone-giver';
 
 const o = { noReplyTicks: 3, resendTicks: 100 };
 const msg = (tick: number, text: string): GameMessage => ({ type: 0, text, sender: '', tick, fromSelf: false });
@@ -43,6 +44,60 @@ describe('bone giver options', () => {
     });
 });
 
+describe('finalExtras: the last S07 load also carries T07-08\'s Camelot runes', () => {
+    const RUNES = [{ item: 'Law rune', count: 1, obj: 'lawrune' }, { item: 'Air rune', count: 5, obj: 'airrune' }];
+    const o = boneGiverOptions({ trades: 3, finalExtras: RUNES }, {});
+    const names = (load: number) => loadOffer(o, load).map(s => [String(s.item), s.n]);
+
+    test('the last load offers bones and runes; earlier loads bones only', () => {
+        expect(names(0)).toEqual([['/^Dragon bones$/i', 23]]);
+        expect(names(1)).toEqual([['/^Dragon bones$/i', 23]]);
+        expect(isFinalLoad(o, 2)).toBe(true);
+        // The last load fits the same 23 free slots: 21 bones and the two rune stacks.
+        expect(names(2)).toEqual([['/^Dragon bones$/i', 21], ['/^Law rune$/i', 1], ['/^Air rune$/i', 5]]);
+        expect(names(2)).toEqual(loadOffer({ ...o, finalN: 21 }, 2).map(s => [String(s.item), s.n]));
+        expect(loadOffer(boneGiverOptions({ trades: 3, finalN: 23, finalExtras: RUNES }, {}), 2)[0]!.n).toBe(23);
+        // Without finalExtras no load is special.
+        const plain = boneGiverOptions({ trades: 3 }, {});
+        expect(isFinalLoad(plain, 2)).toBe(false);
+        expect(loadOffer(plain, 2)).toHaveLength(1);
+    });
+
+    test('options: needs a finite trades count, the standing mode, 28 slots, and obj for the lab cheat', () => {
+        expect(() => boneGiverOptions({ finalExtras: RUNES }, {})).toThrow(/needs trades/);
+        expect(() => boneGiverOptions({ trades: 3, finalN: 27, finalExtras: RUNES }, {})).toThrow(/28 slots/);
+        expect(() => boneGiverOptions({ trades: 3, finalN: 0, finalExtras: RUNES }, {})).toThrow(/finalN/);
+        expect(boneGiverOptions({ trades: 3, n: 28, finalExtras: RUNES }, {})).toMatchObject({ finalN: 26 });
+        expect(boneGiverOptions({ trades: 3 }, {}).finalN).toBe(23);
+        expect(() => boneGiverOptions({ trades: 3, finalExtras: [{ item: 'Law rune', count: 0 }] }, {})).toThrow(/whole count/);
+        expect(() => boneGiverOptions({ trades: 3, restock: { kind: 'cheat' }, finalExtras: [{ item: 'Law rune', count: 1 }] }, {})).toThrow(/obj/);
+        const site = [{ giver: { x: 1, z: 2 }, receiver: { x: 1, z: 3 } }];
+        expect(() => boneGiverOptions({ mode: 'on-request', sites: site, trades: 3, finalExtras: RUNES }, {})).toThrow(/standing/);
+    });
+
+    test('the last load is one burst of three All presses, and the scored account\'s offer is never accepted (no expectTheirs)', async () => {
+        const bones = Array.from({ length: 21 }, (_, slot) => ({ slot, id: 536, name: 'Dragon bones', count: 1, optionsWithIndex: [] }));
+        const inventory = [...bones, { slot: 21, id: 563, name: 'Law rune', count: 1, optionsWithIndex: [] }, { slot: 22, id: 556, name: 'Air rune', count: 5, optionsWithIndex: [] }];
+        const trade = { isOpen: true, screen: 'offer' as const, partner: 'Scored Player', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false };
+        const sdk = new FakeSdk(baseState({ tick: 10, inventory, trade } as Partial<BotWorldState>));
+        const r = give(sdk, 'Scored Player', loadOffer(o, 2), { openTimeoutMs: 5_000, maxTicks: 6 });
+        await flush();
+        expect(sdk.sent.splice(0).map(a => [a.method, ...a.args])).toEqual([['sendOfferItem', 0, -1], ['sendOfferItem', 21, -1], ['sendOfferItem', 22, -1], ['sendAcceptTrade']]);
+        const mine = [{ slot: 0, id: 536, name: 'Dragon bones', count: 21 }, { slot: 1, id: 563, name: 'Law rune', count: 1 }, { slot: 2, id: 556, name: 'Air rune', count: 5 }];
+        const theirs = [{ slot: 0, id: 1351, name: 'Bronze axe', count: 1 }];
+        // The scored account puts something up: both accepts reset, and the giver does not re-accept.
+        for (let i = 0; i < 3; i++) {
+            sdk.tick({ trade: { ...trade, myOffer: mine, theirOffer: theirs } });
+            await flush();
+        }
+        expect(sdk.sent.filter(a => a.method === 'sendAcceptTrade')).toHaveLength(0);
+        // On the confirm screen it declines.
+        sdk.tick({ trade: { ...trade, screen: 'confirm', myOffer: mine, theirOffer: theirs, partnerAccepted: true } });
+        expect(await r).toMatchObject({ ok: false, reason: 'partner confirm offer is not acceptable' });
+        expect(sdk.sent.map(a => a.method)).toEqual(['sendDeclineTrade']);
+    });
+});
+
 describe('on-request mode (S18 top-ups)', () => {
     const scored = 'Cairn H75';
     const hash = nameHash('cairn_h75');
@@ -55,24 +110,50 @@ describe('on-request mode (S18 top-ups)', () => {
         expect(newRequestFrom(s, nameHash('someone_else'), 0)).toBe(19);
     });
 
-    test('the ask: written by the scored side, used once, and only while fresh', () => {
+    test('the ask: written by the scored side at the open, used for the trade opened since, once', () => {
         const dir = mkdtempSync(join(tmpdir(), 'bone-ask-'));
-        expect(readBoneAsk(dir)).toBeNull();
-        const a = writeBoneAsk(dir, 17, 1);
-        expect(readBoneAsk(dir)).toEqual(a);
-        expect(usableAsk(a, 0, a.ms + 1000)).toEqual(a);
-        expect(usableAsk(a, 1, a.ms + 1000)).toBeNull(); // already served
-        expect(usableAsk(a, 0, a.ms + 61_000)).toBeNull(); // stale
-        expect(() => writeBoneAsk(dir, 0, 2)).toThrow();
-        expect(() => writeBoneAsk(dir, 29, 2)).toThrow();
+        expect(readTopUpAsk(dir)).toBeNull();
+        const a = writeTopUpAsk(dir, [{ item: 'bones$', count: 17 }, { item: '^shark$', count: 2 }], 10_000);
+        expect(readTopUpAsk(dir)).toEqual(a);
+        // the courier saw the trade open a little after the scored side wrote: within the slack
+        expect(usableAsk(a, 10_000 + ASK_SLACK_MS, 0)).toEqual(a);
+        // written before this trade opened: an earlier trade's ask, never sized onto this one
+        expect(usableAsk(a, 10_000 + ASK_SLACK_MS + 1, 0)).toBeNull();
+        expect(usableAsk(a, 10_000, 10_000)).toBeNull(); // already served
+        expect(() => writeTopUpAsk(dir, [])).toThrow(/at least one/);
+        expect(() => writeTopUpAsk(dir, [{ item: 'bones$', count: 0 }])).toThrow(/count/);
+        expect(() => writeTopUpAsk(dir, [{ item: '(', count: 1 }])).toThrow(/compile/);
     });
 
-    test('options: on-request needs a waiting site; hold and refill bounds', () => {
+    test('askOffer: each asked item it holds, at most the count, one spec per item; short items reported', () => {
+        const inv = [
+            ...Array.from({ length: 20 }, () => ({ name: 'Babydragon bones', count: 1 })),
+            { name: 'Shark', count: 1 },
+            { name: 'Adamant arrowtips', count: 2070 }
+        ];
+        const r = askOffer({ items: [{ item: 'bones$', count: 18 }, { item: '^shark$', count: 2 }, { item: '^adamant arrow(head|tip)s$', count: 'all' }, { item: '^rune arrow(head|tip)s$', count: 'all' }] }, inv);
+        expect(r.specs.map(s => [String(s.item), s.n])).toEqual([['/bones$/i', 18], ['/^shark$/i', 1], ['/^adamant arrow(head|tip)s$/i', 'all']]);
+        expect(r.short).toEqual([{ item: '^shark$', asked: 2, held: 1 }, { item: '^rune arrow(head|tip)s$', asked: 'all', held: 0 }]);
+    });
+
+    test('carryDue: a once stack drops out after it is delivered; the rest stay', () => {
+        const carry = [{ item: 'Shark', count: 2 }, { item: 'Adamant arrowtips', count: 2070, once: true }, { item: 'Rune arrowtips', count: 570, once: true }];
+        expect(carryDue(carry, new Set())).toHaveLength(3);
+        expect(carryDue(carry, new Set(['adamant arrowtips'])).map(c => c.item)).toEqual(['Shark', 'Rune arrowtips']);
+    });
+
+    test('options: on-request needs a waiting site; hold and refill bounds; carry, standing and askWaitTicks', () => {
         expect(() => boneGiverOptions({ mode: 'on-request' })).toThrow(/needs sites/);
         const site = [{ giver: { x: 2655, z: 3306 }, receiver: { x: 2655, z: 3305 } }];
-        expect(boneGiverOptions({ mode: 'on-request', sites: site })).toMatchObject({ mode: 'on-request', hold: 28, refillBelow: 21 });
+        expect(boneGiverOptions({ mode: 'on-request', sites: site })).toMatchObject({ mode: 'on-request', hold: 28, refillBelow: 21, carry: [], standing: false, askWaitTicks: 2 });
         expect(() => boneGiverOptions({ mode: 'on-request', sites: site, hold: 20, refillBelow: 21 })).toThrow(/refillBelow/);
         expect(() => boneGiverOptions({ mode: 'sometimes' })).toThrow(/mode/);
+        const courier = boneGiverOptions({ mode: 'on-request', sites: site, item: 'Babydragon bones', hold: 22, refillBelow: 15, standing: true, carry: [{ item: 'Shark', count: 2 }, { item: 'Rune arrowtips', count: 570, once: true }] });
+        expect(courier).toMatchObject({ obj: 'babydragon_bones', standing: true, carry: [{ item: 'Shark', count: 2 }, { item: 'Rune arrowtips', count: 570, once: true }] });
+        expect(() => boneGiverOptions({ carry: [{ item: 'Shark', count: 2 }] })).toThrow(/on-request mode/);
+        expect(() => boneGiverOptions({ standing: true })).toThrow(/on-request mode/);
+        expect(() => boneGiverOptions({ mode: 'on-request', sites: site, standing: 'yes' })).toThrow(/standing/);
+        expect(() => boneGiverOptions({ mode: 'on-request', sites: site, restock: { kind: 'cheat' }, carry: [{ item: 'Shark', count: 2 }] })).toThrow(/obj/);
     });
 });
 

@@ -14,6 +14,7 @@ import {
     FrameLog,
     giverSteps,
     judgeTick,
+    MissBench,
     nameHash,
     STOCK_MIN_TICKS,
     STOCK_WINDOW,
@@ -171,6 +172,34 @@ describe('turns', () => {
     test('a new session makes old turn keys irrelevant', () => {
         const done = new Set([turnKey('s1', 221)]);
         expect(chooseTurn(cue({ turns, session: 's2' }), 'cairn_h70', 0, 0, done).kind).toBe('arm');
+    });
+});
+
+describe('MissBench', () => {
+    test('a failed turn skips its giver until it reports ready after the turn was named', () => {
+        const b = new MissBench();
+        b.miss('Cairn H71', 5_000);
+        // its status from before the turn (a dead client: the file stops changing)
+        expect(b.skips({ account: 'cairn_h71', readyAt: 4_000 })).toBe(true);
+        expect(b.skips({ account: 'cairn_h71', readyAt: null })).toBe(true);
+        expect(b.skips({ account: 'cairn_h71', readyAt: 5_000 })).toBe(true);
+        expect(b.skips({ account: 'cairn_h70', readyAt: 1 })).toBe(false);
+        expect(b.benched).toEqual(['cairn_h71']);
+        // ready again after the turn (a live giver's result, or a relaunched process): lifted for good
+        expect(b.skips({ account: 'cairn_h71', readyAt: 5_001 })).toBe(false);
+        expect(b.skips({ account: 'cairn_h71', readyAt: 4_000 })).toBe(false);
+        expect(b.benched).toEqual([]);
+    });
+
+    test('a later miss moves the bar; a turn no cue carried benches nobody', () => {
+        const b = new MissBench();
+        b.miss('g1', 5_000);
+        b.miss('g1', 7_000);
+        b.miss('g1', 6_000);
+        expect(b.skips({ account: 'g1', readyAt: 6_500 })).toBe(true);
+        expect(b.skips({ account: 'g1', readyAt: 7_001 })).toBe(false);
+        b.miss('g2', undefined);
+        expect(b.skips({ account: 'g2', readyAt: 1 })).toBe(false);
     });
 });
 

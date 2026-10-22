@@ -185,6 +185,13 @@ export interface RunesOptions {
     maxPrice: Record<string, number>;
     /** Ticks the buyer may wait at a shop for restocks. 0: never stand idle in a shop. */
     shopWaitTicks: number;
+    /**
+     * Ticks a guild trip may stand in the Magic Guild store while a shelf is empty, buying
+     * each unit as it restocks (blood: 1 per 300 ticks while below 1,000). Other players
+     * drain the blood shelf, so without a wait a trip finds it empty. The wait carries the
+     * trip's coins, so pair it with a small `maxCarry`. 0: leave at once.
+     */
+    guildWaitTicks: number;
     /** Ticks to wait in Lundail's cellar for cosmic restocks (1 per 100 ticks); only at `minHitpointsWest`. */
     lundailWaitTicks: number;
     /** NPC names to train Magic on near PLACES.cows. */
@@ -239,6 +246,7 @@ export function runesOptions(raw: Record<string, unknown>): RunesOptions {
         xpRate: num('xpRate', 25),
         maxPrice: { ...DEFAULT_MAX_PRICE, ...((raw.maxPrice as Record<string, number>) ?? {}) },
         shopWaitTicks: num('shopWaitTicks', 0),
+        guildWaitTicks: num('guildWaitTicks', 0),
         lundailWaitTicks: num('lundailWaitTicks', 4500),
         trainOn: toRegExps(raw.trainOn ?? ['^cow$', '^cow calf$', '^chicken$', '^goblin$']),
         maxCarry: num('maxCarry', 30_000),
@@ -655,7 +663,7 @@ export class Runes {
     async guild(): Promise<Status> {
         const { bot, log } = this.ctx;
         if (this.magic().level < 66) return 'blocked';
-        const short = () => manifestLines(this.o, 'magicGuild', GUILD_ITEMS, 0).filter(l => this.held(String(l.item)) < l.quantity);
+        const short = () => manifestLines(this.o, 'magicGuild', GUILD_ITEMS, this.o.guildWaitTicks).filter(l => this.held(String(l.item)) < l.quantity);
         if (short().length === 0) return 'skip';
         if (!this.sturdy('guild')) return 'blocked';
         for (let trip = 1; trip <= 12 && !this.ctx.signal.aborted && short().length > 0; trip++) {
@@ -678,7 +686,11 @@ export class Runes {
                 if (!opened.success) throw new Error(`guild shop: ${opened.message}`);
                 this.logShelf('magic guild');
                 await bot.closeShop();
-                for (const line of lines) log('guild: line', { ...(await this.buyer.buyAtShop(line, 0)) });
+                for (const line of lines) {
+                    const started = Date.now();
+                    const report = await this.buyer.buyAtShop(line, line.maxWaitTicks ?? 0);
+                    log('guild: line', { ...report, minutes: +((Date.now() - started) / 60_000).toFixed(1) });
+                }
                 await this.climb(/^staircase$/i, /climb-down/i, s => s.player!.level === 0, 'climb down from the guild store');
             });
             await this.atBank(PLACES.yanilleBank, () => this.buyer.depositAllBut([]));

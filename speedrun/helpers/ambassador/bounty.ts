@@ -56,10 +56,13 @@ export interface BountyConfig {
     flavour: string;
     /** Other ways chat names the item (lower case), for spotting mentions. */
     aliases: string[];
+    /** The bidder whose offer backs this bounty, and its offers file: the board's, unless the entry names its own. */
+    bidder: string;
+    offersFile: string;
 }
 
 export interface BoardConfig {
-    /** The bidder account whose offers back the board (never said in chat). */
+    /** The bidder account whose offers back the board (never said in chat); an entry may name another. */
     bidder: string;
     offersFile: string;
     /** A board-of-the-week theme ("wilderness week"), or null. */
@@ -73,16 +76,21 @@ export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const posInt = (v: unknown, max: number): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= max ? v : null);
 
+const isAccount = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9_ ]{1,12}$/i.test(v);
+
 /**
  * The board from role options: `{bidder, offersFile?, theme?, since?, list: [{item,
- * quantity, maxPrice, tier?, flavour?, aliases?}]}`. Any invalid entry, or a total over
- * BOUNTY.maxTotalGp, rejects the whole board, so a typo cannot announce half of one.
+ * quantity, maxPrice, tier?, flavour?, aliases?, bidder?, offersFile?}]}`. An entry's own
+ * `bidder` and `offersFile` let a second bidder account back it; both default to the
+ * board's. Any invalid entry, or a total over BOUNTY.maxTotalGp, rejects the whole board,
+ * so a typo cannot announce half of one.
  */
 export function boardConfig(raw: unknown): Result<BoardConfig> {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, error: 'bounties must be an object' };
     const r = raw as Record<string, unknown>;
-    if (typeof r.bidder !== 'string' || !/^[a-z0-9_ ]{1,12}$/i.test(r.bidder)) return { ok: false, error: 'bounties.bidder must be an account name' };
+    if (!isAccount(r.bidder)) return { ok: false, error: 'bounties.bidder must be an account name' };
     if (!Array.isArray(r.list) || !r.list.length) return { ok: false, error: 'bounties.list must be a non-empty list' };
+    const boardFile = typeof r.offersFile === 'string' && r.offersFile ? r.offersFile : DEFAULT_OFFERS_FILE;
     const bounties: BountyConfig[] = [];
     for (const [i, e] of (r.list as unknown[]).entries()) {
         const b = (e ?? {}) as Record<string, unknown>;
@@ -95,6 +103,9 @@ export function boardConfig(raw: unknown): Result<BoardConfig> {
         const tier = b.tier === undefined ? 'common' : b.tier;
         if (!TIERS.includes(tier as Tier)) return { ok: false, error: `${where}.tier must be one of ${TIERS.join(', ')}` };
         if (bounties.some(x => x.item.toLowerCase() === (b.item as string).toLowerCase())) return { ok: false, error: `${where}.item appears twice` };
+        if (b.bidder !== undefined && !isAccount(b.bidder)) return { ok: false, error: `${where}.bidder must be an account name` };
+        if (b.offersFile !== undefined && (typeof b.offersFile !== 'string' || !b.offersFile)) return { ok: false, error: `${where}.offersFile must be a path` };
+        if ((b.bidder === undefined) !== (b.offersFile === undefined)) return { ok: false, error: `${where} names a bidder without its offers file, or the reverse` };
         const aliases = Array.isArray(b.aliases) ? b.aliases.filter((a): a is string => typeof a === 'string' && a.trim().length >= 3).map(a => a.trim().toLowerCase()) : [];
         bounties.push({
             item: b.item,
@@ -102,7 +113,9 @@ export function boardConfig(raw: unknown): Result<BoardConfig> {
             maxPrice,
             tier: tier as Tier,
             flavour: typeof b.flavour === 'string' ? b.flavour.slice(0, 200) : '',
-            aliases: [...new Set([b.item.toLowerCase(), ...aliases])]
+            aliases: [...new Set([b.item.toLowerCase(), ...aliases])],
+            bidder: (b.bidder as string | undefined) ?? r.bidder,
+            offersFile: (b.offersFile as string | undefined) ?? boardFile
         });
     }
     const total = bounties.reduce((s, b) => s + b.quantity * b.maxPrice, 0);
@@ -112,7 +125,7 @@ export function boardConfig(raw: unknown): Result<BoardConfig> {
         ok: true,
         value: {
             bidder: r.bidder,
-            offersFile: typeof r.offersFile === 'string' && r.offersFile ? r.offersFile : DEFAULT_OFFERS_FILE,
+            offersFile: boardFile,
             theme: typeof r.theme === 'string' && r.theme.trim() ? r.theme.trim().slice(0, 40) : null,
             since,
             bounties
@@ -144,13 +157,23 @@ export interface LiveBounty {
     aliases: string[];
 }
 
-/** Bounties with a fresh, matching open buy offer from the configured bidder. Anything else is silence. */
-export function liveBounties(cfg: BoardConfig, snap: OffersSnapshot | null, now: number): LiveBounty[] {
-    if (!snap || canon(snap.account) !== canon(cfg.bidder)) return [];
+/** Reads the offers file at a path (each bounty names its own; most share the board's). */
+export type SnapshotFor = (offersFile: string) => OffersSnapshot | null;
+
+/** The bounty's own bidder's snapshot, if it is that bidder's and fresh; otherwise null (silence for this bounty only). */
+function backing(b: BountyConfig, snapFor: SnapshotFor, now: number): OffersSnapshot | null {
+    const snap = snapFor(b.offersFile);
+    if (!snap || canon(snap.account) !== canon(b.bidder)) return null;
     const age = now - Date.parse(snap.writtenAt);
-    if (!(age >= -60_000 && age <= BOUNTY.offersMaxAgeMs)) return [];
+    return age >= -60_000 && age <= BOUNTY.offersMaxAgeMs ? snap : null;
+}
+
+/** Bounties with a fresh, matching open buy offer from their configured bidder. Anything else is silence. */
+export function liveBounties(cfg: BoardConfig, snapFor: SnapshotFor, now: number): LiveBounty[] {
     const out: LiveBounty[] = [];
     for (const b of cfg.bounties) {
+        const snap = backing(b, snapFor, now);
+        if (!snap) continue;
         const bids = snap.offers.filter(
             o => o.item.toLowerCase() === b.item.toLowerCase() && o.side === 'buy' && o.state === 'open' && o.remaining > 0 && o.price > 0 && o.price <= b.maxPrice
         );
@@ -284,8 +307,8 @@ export type OpenerPlan =
     | { kind: 'poster'; bounty: LiveBounty; postersUsed: string[]; tally: BoardView['tally']; theme: string | null };
 
 export class BountyBoard {
-    private snap: OffersSnapshot | null = null;
-    private readAt = -Infinity;
+    /** Each offers file's last read, by path. */
+    private readonly snaps = new Map<string, { snap: OffersSnapshot | null; at: number }>();
     /** canon(player) -> { name, item, at } for players who said they are going for a bounty. */
     private readonly hunters = new Map<string, { name: string; item: string; at: number }>();
 
@@ -299,26 +322,35 @@ export class BountyBoard {
         this.state.fillCursor = Math.max(this.state.fillCursor, startedAt - BOUNTY.cheerWithinMs);
     }
 
-    private snapshot(now: number): OffersSnapshot | null {
-        if (now - this.readAt >= BOUNTY.rereadMs || now < this.readAt) {
-            this.readAt = now;
-            this.snap = this.read(this.cfg.offersFile);
-        }
-        return this.snap;
+    private snapshotFor(now: number): SnapshotFor {
+        return path => {
+            const last = this.snaps.get(path);
+            if (last && now - last.at < BOUNTY.rereadMs && now >= last.at) return last.snap;
+            const snap = this.read(path);
+            this.snaps.set(path, { snap, at: now });
+            return snap;
+        };
     }
 
     live(now: number): LiveBounty[] {
-        return liveBounties(this.cfg, this.snapshot(now), now);
+        return liveBounties(this.cfg, this.snapshotFor(now), now);
     }
 
-    /** Errands done for the board's items since the theme started (or over the file's week). */
+    /** Each bounty's fills from its own bidder's fresh file (items are unique on a board, so nothing counts twice). */
+    private fillsOf(now: number): { bounty: BountyConfig; fill: OffersSnapshot['fills'][number] }[] {
+        const snapFor = this.snapshotFor(now);
+        return this.cfg.bounties.flatMap(bounty => {
+            const snap = backing(bounty, snapFor, now);
+            return snap ? snap.fills.filter(f => f.item.toLowerCase() === bounty.item.toLowerCase()).map(fill => ({ bounty, fill })) : [];
+        });
+    }
+
+    /** Errands done for the board's items since the theme started (or over the files' week). */
     tally(now: number): BoardView['tally'] {
-        const snap = this.snapshot(now);
-        if (!snap || !liveBounties(this.cfg, snap, now).length) return null;
-        const items = new Set(this.cfg.bounties.map(b => b.item.toLowerCase()));
-        const filled = snap.fills
-            .filter(f => items.has(f.item.toLowerCase()) && Date.parse(f.at) >= (this.cfg.since ?? 0) && Date.parse(f.at) <= now)
-            .reduce((s, f) => s + f.n, 0);
+        if (!this.live(now).length) return null;
+        const filled = this.fillsOf(now)
+            .filter(({ fill: f }) => Date.parse(f.at) >= (this.cfg.since ?? 0) && Date.parse(f.at) <= now)
+            .reduce((s, { fill: f }) => s + f.n, 0);
         return { filled, asked: this.cfg.bounties.reduce((s, b) => s + b.quantity, 0) };
     }
 
@@ -430,15 +462,12 @@ export class BountyBoard {
 
     /** New fills of board items since the last cheer, summed per item. */
     newFills(now: number): { item: string; n: number; upTo: number }[] {
-        const snap = this.snapshot(now);
-        if (!snap || canon(snap.account) !== canon(this.cfg.bidder)) return [];
-        const items = new Map(this.cfg.bounties.map(b => [b.item.toLowerCase(), b.item] as const));
         const by = new Map<string, { item: string; n: number; upTo: number }>();
-        for (const f of snap.fills) {
+        for (const { bounty, fill: f } of this.fillsOf(now)) {
             const at = Date.parse(f.at);
-            const item = items.get(f.item.toLowerCase());
+            const item = bounty.item;
             // A fill "from the future" is a clock skew or a bad file: not cheered until its time comes.
-            if (!item || at <= this.state.fillCursor || at > now || now - at > BOUNTY.cheerWithinMs) continue;
+            if (at <= this.state.fillCursor || at > now || now - at > BOUNTY.cheerWithinMs) continue;
             const e = by.get(item) ?? { item, n: 0, upTo: 0 };
             e.n += f.n;
             e.upTo = Math.max(e.upTo, at);

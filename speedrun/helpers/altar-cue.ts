@@ -104,7 +104,10 @@ export interface GiverStatus {
     essence: number;
     tile: { x: number; z: number; level: number } | null;
     inRoom: boolean;
-    /** Ready since (Date.now()); the scored side can queue givers in this order. */
+    /**
+     * Ready since (Date.now()); the scored side can queue givers in this order. Renewed with every
+     * turn result short of a trade, so a giver that missed reports ready again (MissBench).
+     */
     readyAt: number | null;
     armed?: { session: string; seq: number; T: number; myT: number; schedule: TurnSchedule };
     last?: TurnResult;
@@ -316,6 +319,109 @@ export function chooseTurn(cue: Cue, account: string, offset: number, myNow: num
         return { kind: 'none' };
     }
     return { kind: 'none' };
+}
+
+// ------------------------------------------------------------------ the skip rule after a failed turn
+
+/**
+ * The scored side's rule for a giver whose turn did not give: skip it until it reports ready
+ * after that turn was named, i.e. until its status's `readyAt` is later than the first cue write
+ * that carried the turn. A live giver reports a fresh `readyAt` with every turn result it gives
+ * short of a trade (altar-giver.ts `result`), so it is back within one status write. A giver whose
+ * client died can't report anything, whatever its heartbeat says meanwhile (on the relay path the
+ * role outlives its client until the relogin), and a relaunched one reports ready from its new
+ * process. So a relaunch costs the one turn the giver was named for when it died. A turn no cue
+ * write carried benches nobody: the giver never saw it, so it would never report on it.
+ * Both clocks are Date.now() on one machine (the givers run beside the scored client).
+ */
+export class MissBench {
+    private readonly since = new Map<string, number>();
+
+    /** A turn naming `giver` failed; `namedAt` is Date.now() of the first cue write carrying it (undefined: none did). */
+    miss(giver: string, namedAt: number | undefined): void {
+        if (namedAt === undefined) return;
+        const k = canonName(giver);
+        this.since.set(k, Math.max(this.since.get(k) ?? 0, namedAt));
+    }
+
+    /** True while the giver has not reported ready since its failed turn was named; a report lifts the bench. */
+    skips(s: Pick<GiverStatus, 'account' | 'readyAt'>): boolean {
+        const k = canonName(s.account);
+        const since = this.since.get(k);
+        if (since === undefined) return false;
+        if (s.readyAt !== null && s.readyAt > since) {
+            this.since.delete(k);
+            return false;
+        }
+        return true;
+    }
+
+    /** The benched givers, by canonical name. */
+    get benched(): string[] {
+        return [...this.since.keys()];
+    }
+}
+
+// ------------------------------------------------------------------ the top-up ask (S18)
+
+/**
+ * S18's top-up courier (bone-giver.ts, mode on-request) can't see the scored account's
+ * inventory, and the trade screen doesn't show its free slots, so the scored side sizes each
+ * load (SUPPLIES.md H14.x) and writes it here. It writes on the frame that shows the trade
+ * open: from then until the trade ends it sends nothing else, so its free slots can't change
+ * under the ask. The courier offers what the ask names, each item with one press, and takes
+ * only an ask written after it saw the trade open (less `ASK_SLACK_MS` for the two clients'
+ * frame arrivals) and newer than the last one it served, so an ask left over from an earlier
+ * trade is never sized onto this one.
+ */
+export const ASK_FILE = 'topup-ask.json';
+
+/** The two clients see a frame within a few ms of each other on one machine; this covers a slow one. */
+export const ASK_SLACK_MS = 300;
+
+/** One item the scored side wants: a case-insensitive name pattern, and a count or every one the courier holds. */
+export interface AskItem {
+    item: string;
+    count: number | 'all';
+}
+
+export interface TopUpAsk {
+    v: 2;
+    items: AskItem[];
+    /** Date.now() at the write. */
+    ms: number;
+}
+
+function askError(items: unknown): string | null {
+    if (!Array.isArray(items) || items.length === 0) return 'an ask needs at least one item';
+    for (const a of items as AskItem[]) {
+        if (typeof a?.item !== 'string' || !a.item) return 'an ask item needs a name pattern';
+        try {
+            new RegExp(a.item, 'i');
+        } catch {
+            return `an ask item's pattern does not compile: ${a.item}`;
+        }
+        if (a.count !== 'all' && !(Number.isInteger(a.count) && a.count >= 1)) return `an ask item's count must be a whole number of at least 1 or 'all' (got ${JSON.stringify(a.count)})`;
+    }
+    return null;
+}
+
+export function writeTopUpAsk(dir: string, items: AskItem[], ms = Date.now()): TopUpAsk {
+    const err = askError(items);
+    if (err) throw new Error(err);
+    const ask: TopUpAsk = { v: 2, items: items.map(a => ({ item: a.item, count: a.count })), ms };
+    writeJsonAtomicSync(join(dir, ASK_FILE), ask);
+    return ask;
+}
+
+export function readTopUpAsk(dir: string): TopUpAsk | null {
+    const a = readJson<TopUpAsk>(join(dir, ASK_FILE));
+    return a && a.v === 2 && Number.isFinite(a.ms) && askError(a.items) === null ? a : null;
+}
+
+/** The ask for the trade the courier saw open at `openMs`: written since then (less the slack) and after the last one served. */
+export function usableAsk(ask: TopUpAsk | null, openMs: number, lastServedMs: number): TopUpAsk | null {
+    return ask && ask.ms >= openMs - ASK_SLACK_MS && ask.ms > lastServedMs ? ask : null;
 }
 
 // ------------------------------------------------------------------ files

@@ -23,7 +23,7 @@ The talisman is the 28th slot, so a giver gives 27 essence. The scored account d
 |---|---|---|
 | `altar` | `air` | `air` (levels 1-44), `nature` (44-99) or `body` (20-99, the S21 fallback while nature talismans are at 0; banks at Edgeville) |
 | `slot` | 0 | 0 east, 1 west, 2 south of the scored tile |
-| `essence` | 27 | essence per trade |
+| `essence` | 27 | essence per trade, **exactly by count**: holding at least `essence` counts as loaded, and the offer is one All press only when exactly `essence` is held, else 10/5/1 presses on the highest essence slot in the same tick as the accept (the engine takes from the lowest slot first, and decodes 5 user events a tick), else one Offer-X (a tick late; the stock turn's `give()` uses it). S06 runs 26 (rs/158) |
 | `schedule` | follow the cue | `robust` forces the 8-tick schedule for every turn |
 | `restock` | `{ kind: 'bank' }` | `{ kind, bank?, acceptFrom?, restockAt?, labStock? }` as above |
 | `gapMs` | 0 | wait after a frame arrives before sending (0: send on arrival) |
@@ -59,6 +59,8 @@ One directory (`RC_CUE_DIR`, default `<checkout>/run-machine/rc-cue/`, gitignore
 Pick givers that are `ready` or `armed`, `inRoom`, with a heartbeat under 5 s, standing orthogonally next to the scored tile; oldest `readyAt` first. A client can't see its own player index, so it isn't in the file; giver names are not secret, so look the giver up by name among nearby players. Outcomes: `gave`, `missed` (the schedule ran and the essence is still held), `late` (the turn arrived after its first packet's frame), `clock` (no offset could be resolved), `not-ready` (named while restocking), `no-receiver` (nobody in sight matches the hash), `cancelled` (stop or a new session before the first packet).
 
 **Tuned or robust.** Tuned needs every giver handled before the scored account in each tick, which means logged in before the scored account's current login. `launcher.json` (`helpersReady`, each account's `loggedInAt`) and each giver's own `loggedInAt` (updated when it relogs) tell the scored side. Robust is the safe default; use tuned only for a giver that logged in before the scored login. The stand-in does this per giver with `autoRobust`.
+
+**Relaunch mid-cycle (the skip rule).** After a turn that did not give, the scored side skips that giver until it reports ready *after the turn was named*: its status `readyAt` must be later than the first cue write that carried the turn (`MissBench` in `altar-cue.ts`; the stand-in `altar-receiver.ts` uses the same rule). A live giver renews `readyAt` with every turn result short of a trade, so a slip costs it nothing beyond the failed turn. The renewal happens only while its client delivers ticks (a new tick within the last 5): on the relay path the role outlives a dead client, arms the turns it is named for and fails them on its wall-clock fallback, and renewing then would lift the skip turn after turn. A relaunched giver reports ready from its new process, and a new login makes the scored side forget the tick order it observed in the previous session. A turn that no cue write carried before its first packet's frame benches nobody, since the giver never saw it. So a giver killed mid-cycle costs the schedule the one turn it was named for when it died. Lab (300 ms ticks, nature altar, three givers, one SIGKILLed three times when the cue named it): one missed turn per kill on both the relay and direct paths, none missed by the others; the time away is the launcher's growing restart backoff (about 15, 35 and 70 s).
 
 ## Rosters and batches
 

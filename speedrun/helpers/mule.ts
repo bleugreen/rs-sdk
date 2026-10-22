@@ -24,6 +24,8 @@ import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BankItem, BotWorldState, GameMessage, InventoryItem, TradeItem, TradeItemSpec } from '../../sdk/types';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
+import { itemRef, namesNote, refLabel, refMatches, type ItemRef, type NamedRef } from '../lib/items';
+import type { ObjPack } from '../lib/obj-pack';
 import { travelTo } from '../lib/toll-gate';
 import { ANY_OFFER, clickBack, decideTradeClick, DROPPED_TICKS, give, newClickCtx, offerSatisfies, openTrade, sameName, sendTradeClick, type ClickCtx } from '../lib/trade';
 import { tickMs } from '../lib/wait';
@@ -73,14 +75,20 @@ export function toRegExps(value: unknown): RegExp[] {
     return list.map(v => (v instanceof RegExp ? v : new RegExp(String(v), 'i')));
 }
 
-export interface PackageItem {
-    /** Exact item name, case-insensitive ("Unfermented wine"). */
-    item: string;
+export interface PackageCount {
     /** How many; -1 = everything the bank has. */
     amount: number;
-    /** Withdraw as banknotes (one slot per item type). Default false. */
+    /** Withdraw as banknotes (one slot per item type). Default false, or true for a note's id. */
     noted?: boolean;
 }
+
+/**
+ * A package line: `item`, the exact name, case-insensitive ("Unfermented wine"), or `id`,
+ * the obj id where names collide (every unfinished potion is "Unfinished potion"). An id
+ * may be the item's or its note's (lib/obj-pack.ts); a note's id is withdrawn noted.
+ */
+export type PackageItem = ItemRef & PackageCount;
+export type NamedPackageItem = NamedRef & PackageCount;
 
 export interface Package {
     name: string;
@@ -96,6 +104,8 @@ export interface Withdrawal {
 export interface PackagePlan {
     withdrawals: Withdrawal[];
     missing: { item: string; wanted: number; have: number }[];
+    /** Names that match more than one bank item (by id); the package names them by `id` instead. */
+    ambiguous: { item: string; ids: number[] }[];
     /** Inventory slots the package occupies once withdrawn. */
     slots: number;
 }
@@ -103,26 +113,33 @@ export interface PackagePlan {
 /**
  * Map a package onto the bank. Unnoted unstackable items take one slot each; a
  * package that does not fit in 28 slots is reported as `slots > 28` for the caller
- * to refuse.
+ * to refuse. A name that matches two different bank items is reported in
+ * `ambiguous`, never resolved to whichever comes first.
  */
-export function planPackage(pkg: Package, bank: BankItem[], stackable: (name: string) => boolean = isStackableName): PackagePlan {
+export function planPackage(pkg: Package, bank: BankItem[], stackable: (name: string) => boolean = isStackableName, pack?: ObjPack): PackagePlan {
     const withdrawals: Withdrawal[] = [];
     const missing: PackagePlan['missing'] = [];
+    const ambiguous: PackagePlan['ambiguous'] = [];
     let slots = 0;
     for (const spec of pkg.items) {
-        const want = spec.item.trim().toLowerCase();
-        const bankItem = bank.find(b => b.name.toLowerCase() === want);
+        const matches = bank.filter(b => refMatches(spec, b, pack));
+        const ids = [...new Set(matches.map(b => b.id))];
+        if (ids.length > 1) {
+            ambiguous.push({ item: refLabel(spec), ids });
+            continue;
+        }
+        const bankItem = matches[0];
         const have = bankItem?.count ?? 0;
         const amount = spec.amount === -1 ? have : spec.amount;
         if (!bankItem || amount <= 0 || have < amount) {
-            missing.push({ item: spec.item, wanted: spec.amount, have });
+            missing.push({ item: refLabel(spec), wanted: spec.amount, have });
             continue;
         }
-        const noted = spec.noted ?? false;
+        const noted = spec.noted ?? namesNote(spec, pack);
         withdrawals.push({ bankItem, amount, noted });
         slots += noted || stackable(bankItem.name) ? 1 : amount;
     }
-    return { withdrawals, missing, slots };
+    return { withdrawals, missing, ambiguous, slots };
 }
 
 /**
@@ -538,15 +555,23 @@ export interface MuleOptions {
     ge?: { orders?: GeOrder[]; collectEveryMin?: number };
 }
 
+/** A package's lines from options: `{ item | id, amount, noted? }`. */
+export function packageItems(name: string, items: unknown, pack?: ObjPack): PackageItem[] {
+    if (!Array.isArray(items)) throw new Error(`Package ${name}: items must be a list`);
+    return (items as Record<string, unknown>[]).map((raw, j) => {
+        const where = `Package ${name} item ${j}`;
+        const ref = itemRef(raw ?? {}, where, pack);
+        const amount = Number(raw.amount);
+        if (!Number.isInteger(amount) || (amount < 1 && amount !== -1)) throw new Error(`Package ${name}: bad amount for ${refLabel(ref)}`);
+        if (raw.noted !== undefined && typeof raw.noted !== 'boolean') throw new Error(`${where}: noted must be true or false`);
+        if (raw.noted === false && namesNote(ref, pack)) throw new Error(`${where}: obj ${ref.id} is a note, so it cannot be noted: false`);
+        return { ...ref, amount, ...(typeof raw.noted === 'boolean' ? { noted: raw.noted } : {}) };
+    });
+}
+
 function muleOptions(raw: Record<string, unknown>): Required<Omit<MuleOptions, 'serve' | 'ge'>> & Pick<MuleOptions, 'serve' | 'ge'> {
     const o = raw as MuleOptions;
-    const packages = (o.packages ?? []).map(p => ({
-        name: String(p.name),
-        items: p.items.map(i => ({ item: String(i.item), amount: Number(i.amount), noted: Boolean(i.noted) }))
-    }));
-    for (const p of packages) {
-        for (const i of p.items) if (!Number.isInteger(i.amount) || (i.amount < 1 && i.amount !== -1)) throw new Error(`Package ${p.name}: bad amount for ${i.item}`);
-    }
+    const packages = (o.packages ?? []).map(p => ({ name: String(p.name), items: packageItems(String(p.name), p.items) }));
     return {
         serve: o.serve,
         couriers: o.couriers ?? DEFAULT_COURIERS,
@@ -720,8 +745,8 @@ class Mule {
         // A package is staged only into an otherwise empty inventory, so `held` is the package alone.
         if (this.pending && !this.held && deposited) {
             const plan = planPackage(this.pending, sdk.getBankItems());
-            if (plan.missing.length || plan.slots > 28) {
-                if (this.shortSince === 0) ctx.log('package short', { package: this.pending.name, missing: plan.missing, slots: plan.slots });
+            if (plan.missing.length || plan.ambiguous.length || plan.slots > 28) {
+                if (this.shortSince === 0) ctx.log('package short', { package: this.pending.name, missing: plan.missing, ambiguous: plan.ambiguous, slots: plan.slots });
                 this.shortSince = Date.now();
             } else {
                 let ok = true;

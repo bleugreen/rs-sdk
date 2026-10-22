@@ -69,7 +69,13 @@ describe('options and the purchase lists', () => {
         expect(o.funders.map(String)).toEqual(['/^cairn_h47$/i']);
         // Never stand idle in a shop by default (random events find a still account twice as often).
         expect(o.shopWaitTicks).toBe(0);
+        expect(o.guildWaitTicks).toBe(0);
         expect(o.maxCarry).toBe(30_000);
+    });
+    test('guildWaitTicks reaches the guild lines, and targets can narrow the guild to blood', () => {
+        const o = runesOptions({ guildWaitTicks: 3000, targets: Object.fromEntries(GUILD_ITEMS.map(i => [i, i === 'Blood rune' ? 570 : 0])) });
+        const lines = manifestLines(o, 'magicGuild', GUILD_ITEMS, o.guildWaitTicks);
+        expect(lines.map(l => [l.item, l.quantity, l.maxWaitTicks])).toEqual([['Blood rune', 570, 3000]]);
     });
     test('unknown phases are refused', () => {
         expect(() => runesOptions({ phases: ['shops', 'fish'] })).toThrow(/unknown phase fish/);

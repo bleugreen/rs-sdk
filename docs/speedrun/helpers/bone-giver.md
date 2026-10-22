@@ -10,12 +10,37 @@ the scored account its dragon bones in two places (SUPPLIES.md, H4.1-H4.16 and H
   2920,3406) holding exactly one load (23), and keeps a trade request standing. The scored
   step's own trade click (`lib/trade.ts receiveFrom`) opens both screens at once, and the giver
   offers the load in one press (`lib/trade.ts give`). 16 loads, 355 bones.
-- **S18, mode `on-request`.** The scored account requests at a stun offset of its choosing and
-  sizes the load then (15-21). It writes the size to `bones-ask.json` in the cue directory
-  (`writeBoneAsk`) and clicks trade on the giver. The giver holds a side tile of the scored
-  account, re-stepping whenever it moves, answers the request on the frame that carries it, offers
-  exactly the asked count in one press, and refills to `hold` (28) when it holds fewer than
-  `refillBelow` (21).
+- **S18, mode `on-request`: the stun-pack courier (HS2).** The scored account's Thieving module
+  requests at stun +2 (the in-page program's `player` stun action in idle mode, the module's
+  `receiveFrom` in restart mode). The courier holds a side tile of the scored account, re-stepping
+  whenever it moves, and answers the request on the frame that carries it. Once the trade is open
+  it offers what the scored side's **top-up ask** names, each item with one press (`askOffer`), and
+  refills to `hold` bones and its `carry` list when it holds fewer than `refillBelow` bones or less
+  than a carried count. S18's bones are babydragon bones (the dragon-first rule: `item:
+  'Babydragon bones'`).
+- **Why the scored side sizes the load (the top-up ask).** The courier can't see the scored
+  account's inventory, and the trade screen doesn't show its free slots. So the Thieving module
+  (`thieving.ts` `TopUpAsker`, sized by `topUpAsk`) writes the ask to `topup-ask.json` in the cue
+  directory (`altar-cue.ts` `writeTopUpAsk`) on the frame that shows the trade open. From then
+  until the trade ends it sends nothing else, so its free slots can't change under the ask. The
+  sizing is stun-pack.md section 5: bones in every free slot but one (kept for a new arrow product
+  stack, and one more for the knights' coins until some are held), food back to 2, and the adamant
+  and then the rune arrowtips once each when the account is down to one tier. Each ask item is a
+  name pattern and a count or `all`. The courier takes only an ask written after it saw the trade
+  open (less 300 ms for the two clients' frame arrivals) and newer than the last one it served, so
+  an earlier trade's ask is never sized onto this one. It waits up to `askWaitTicks` (2) observed
+  ticks for it; in the lab it was always there on the open frame (`openToAsk` 0).
+- **Keeping up.** The courier steps toward a side tile in bounded steps (`stepToSide`): it sends
+  the walk without awaiting the walk's action result, then re-reads after at most 4 observed ticks
+  or as soon as the account moves. Awaiting the result (`standOn`) stalled it for 180-350 ticks at
+  a time among the wandering knights, and about half the due top-ups found it 5-15 tiles off.
+- **`standing` (default off; rs/158's option).** The courier keeps its own trade request standing
+  from its side tile (`requestUntilOpen`, the one click rule), so the scored account's top-up click
+  opens both screens at once: open at stun +3 instead of +4, closed at +6-7 instead of +7-8. That
+  frees the stun's last bury (Measured below). The request is dropped and re-sent whenever the
+  account moves off the courier's side. A refused re-send (the account delayed by its stun) returns
+  in `trade.rs2 [opplayer4]` before it touches the trade variables, so the standing request
+  survives it, and the account's knight clicks don't touch them either.
 - **Why a side tile (S18).** An op on a player reaches it only from a side: the engine uses
   rsmod's rectangle reach (`GameMap.reachedEntity`), which a diagonal corner does not satisfy, and
   a stunned account cannot step round to it. So a request between the stunned scored account and a
@@ -58,7 +83,12 @@ the send while the relay still held the click. Rs/105's three 30-tick trades cam
 | `trades` | no limit | stop after this many trades (else when the cue says stop) |
 | `restock` | `{ kind: 'bank', bank: Falador west }` | `cheat` makes the bones with a staff command (lab only) |
 | `noReplyTicks`, `resendTicks` | 2, 100 | re-send with no answer (frames after the click's action result); refresh a standing request |
-| `hold`, `refillBelow` | 28, 21 | `on-request` only |
+| `hold`, `refillBelow` | 28, 21 | `on-request` only; `hold` plus the carry's slots must fit 28 (the lab courier: 22, 2 sharks, 2 tiers) |
+| `item`, `obj` | `Dragon bones`, the name in snake case | S18 uses `Babydragon bones`; `obj` is the staff-give name for `restock.kind: 'cheat'` |
+| `carry` | none | `on-request` only: `[{ item, count, obj?, once? }]`, the other stacks kept for the ask. The courier: `[{"item":"Shark","count":2},{"item":"Adamant arrowtips","count":2070,"once":true},{"item":"Rune arrowtips","count":570,"once":true}]`. A `once` stack is delivered in one top-up and then not restocked |
+| `standing` | false | `on-request` only: keep our own trade request standing (above) |
+| `askWaitTicks` | 2 | `on-request` only: observed ticks after the open to wait for the ask, then decline |
+| `finalExtras` | none | `[{ item, count, obj? }]` carried and offered beside the bones on the **last** standing load only (the `trades`-th, so `trades` is required), in the same one-way trade: S07's last load also hands over T07-08's Camelot runes, `[{"item":"Law rune","count":1},{"item":"Air rune","count":5}]`; the scored account offers nothing back. `obj` is the staff-give name for `restock.kind: 'cheat'`. That load carries `finalN` bones, default `n` minus the extras (21 with the runes), so it fits the same free slots as every load |
 
 ## Measured (local engine, `NODE_TICKRATE=300`, bgsrv-ub, 2026-10-21 12:55-13:10 PDT)
 
@@ -89,10 +119,31 @@ more reason the helpers log in first.
 | Scored side: its click to the bones in its pack | **6 ticks** (7 of 8; the first 32, the giver still arriving) |
 | Giver: request seen to screens open | 1 tick |
 
-The two extra ticks against S07 are the scored request's round trip. A standing request from
-the giver would open the screens on the scored click there too (the size is read once the
-screens are open), which would make a top-up 4 ticks; SUPPLIES.md has SCORED request, so that
-is proposed rather than built.
+The two extra ticks against S07 are the scored request's round trip; the `standing` option
+removes one of them in S18 (below).
+
+### S18 with the real courier (rs/330, 2026-10-22, bgsrv-mac, 300 ms, browser client)
+
+`speedrun/lab/measure-thieving.ts pack --mode=idle --courier=role [--standing]` runs this role
+in-process on the helper's session against a lab cue, the Thieving module writing the asks, from
+Thieving 57 to 99 with Load 0 (H14) staged. One run each, both on the bounded side step:
+
+| | Due top-ups, courier on a side tile | Completed | Open / close (stun offset) | Top-up stuns that buried after the trade | Bones per top-up stun | Band ticks | Normalised | Bones in the band |
+|---|---|---|---|---|---|---|---|---|
+| `standing` off | 27 of 27 | 27 | +4 / +7-8 | 8 of 27 | 0.30 | 2,157 | 1,944 | 233 |
+| `standing` on | 21 of 21 | 21 | +3 / +6-7 | 21 of 21 | 1.00 | 2,084 | 2,046 | 219 |
+
+The courier's ask was on file at the open in every trade; no trade was short, declined or
+faulted. Before the bounded side step, the same pair of runs had the courier 5-15 tiles off for
+16 of 36 and 36 of 51 due stuns.
+
+rs/158's acceptance for `standing`: (a) at least one bone buried after the trade in most top-up
+stuns: 21 of 21, against 8 of 27 without. (b) Thieving ticks no worse: the top-up stuns
+themselves were not slower (their mean gap 0.7 under the other stuns', against +0.22 without).
+The band totals point both ways: 73 fewer band ticks, but normalised 102 higher, from slower
+non-top-up stuns (knight wander). At one run each that is noise, so (b) is not shown either way.
+(c) No trade opened without a due request (21 opened, 21 fired), and none was cancelled. It
+stays off by default until rs/158 rules.
 
 **The restock round trip** (`speedrun/lab/measure-bone-trip.ts`, the SDK's pathfinding walk,
 as the role walks; 2 trials each):
@@ -107,4 +158,5 @@ did not drain it; on the demo a giver walking trip after trip will drain and par
 these are lower bounds. With a load due every ~70 ticks (rs/158: ~39 loads of 23), two
 alternating givers allow 140 ticks per round trip and **three** allow 210: S07 needs three.
 
-Not measured: the willow site's trades, and anything on the demo.
+Not measured: the willow site's trades, and anything on the demo; the S18 courier's bank restock
+(the lab restocks by staff command).

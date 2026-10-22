@@ -6,7 +6,7 @@ import type { BotWorldState } from '../../sdk/types';
 import { baseState, FakeSdk, flush } from '../lib/fake-sdk';
 import { fakeClock, microtasks, useFakeTicks } from '../lib/fake-ticks';
 import { nameHash } from './altar-cue';
-import { AltarGiver } from './altar-giver';
+import { AltarGiver, essencePresses } from './altar-giver';
 import type { RoleContext } from './role';
 
 const RECEIVER = 'cairn_scored';
@@ -24,13 +24,13 @@ afterAll(() => {
     else process.env.SPEEDRUN_TICK_MS = tickEnv;
 });
 
-function giverWith(sdk: FakeSdk): AltarGiver {
-    const ctx = { sdk, bot: {}, account: 'cairn_rcg1', options: { altar: 'nature', cueDir: dir }, log: () => {}, reportBank: () => {}, signal: new AbortController().signal } as unknown as RoleContext;
+function giverWith(sdk: FakeSdk, options: Record<string, unknown> = {}): AltarGiver {
+    const ctx = { sdk, bot: {}, account: 'cairn_rcg1', options: { altar: 'nature', cueDir: dir, ...options }, log: () => {}, reportBank: () => {}, signal: new AbortController().signal } as unknown as RoleContext;
     return new AltarGiver(ctx);
 }
 
 /** Arm a turn by hand and run it, as serve() does. */
-function runTurn(g: AltarGiver, turn: { T: number; myT: number; armedTick: number }): Promise<string> {
+function runTurn(g: AltarGiver, turn: { T: number; myT: number; armedTick: number; schedule?: string }): Promise<string> {
     const a = { key: `s1:${turn.T}`, session: 's1', seq: 1, open: 5, schedule: 'stock', receiverHash: nameHash(RECEIVER), ...turn };
     const inner = g as unknown as { armed: unknown; execute(a: unknown): Promise<string> };
     inner.armed = a;
@@ -53,6 +53,52 @@ describe('altar-giver cue', () => {
     });
 });
 
+/** `n` essence, one per slot from slot 0, and the talisman behind them. */
+const essenceInv = (n: number) => [...Array.from({ length: n }, (_, slot) => ({ ...ESSENCE, slot, count: 1 })), { slot: n, id: 1438, name: 'Air talisman', count: 1, optionsWithIndex: [] }];
+
+describe('altar-giver offers exactly `essence` by count (S06 at 26 a load, rs/158)', () => {
+    const near = { nearbyPlayers: [{ index: 9, name: RECEIVER, combatLevel: 3, x: 0, z: 0, distance: 1 }] } as unknown as Partial<BotWorldState>;
+    const offers = (sdk: FakeSdk) => sdk.sent.filter(a => a.method === 'sendOfferItem').map(a => a.args);
+
+    test('27 held, 26 wanted: 10, 10, 5, 1 on the highest essence slot (the engine takes from the lowest first); exactly 26 held: one All', () => {
+        expect(essencePresses(baseState({ inventory: essenceInv(27) }), 26)).toEqual([10, 10, 5, 1].map(amount => ({ slot: 26, amount })));
+        expect(essencePresses(baseState({ inventory: essenceInv(26) }), 26)).toEqual([{ slot: 25, amount: -1 }]);
+        expect(essencePresses(baseState({ inventory: essenceInv(27) }), 27)).toEqual([{ slot: 26, amount: -1 }]);
+        // Five or more presses would push the accept past the tick's 5 user events: one Offer-X instead.
+        expect(essencePresses(baseState({ inventory: essenceInv(27) }), 24)).toEqual([{ slot: 26, amount: 24 }]);
+        expect(essencePresses(baseState({ inventory: essenceInv(25) }), 26)).toBeNull();
+    });
+
+    test('a blind tuned turn with 27 held and essence 26 offers 26 by count, never All, with the accept behind on the same frame', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 100, inventory: essenceInv(27), ...near }));
+        const turn = runTurn(giverWith(sdk, { essence: 26 }), { T: 103, myT: 103, armedTick: 100, schedule: 'tuned' });
+        await flush();
+        // request lands on T+5 (sent 107), offer and accept on T+6 (sent 108)
+        for (let t = 101; t <= 108; t++) {
+            sdk.tick({ tick: t });
+            await flush();
+        }
+        expect(offers(sdk)).toEqual([[26, 10], [26, 10], [26, 5], [26, 1]]);
+        const methods = sdk.sent.map(a => a.method);
+        expect(methods.slice(methods.indexOf('sendOfferItem'))).toEqual(['sendOfferItem', 'sendOfferItem', 'sendOfferItem', 'sendOfferItem', 'sendClickComponent']);
+        for (let t = 109; t <= 113; t++) sdk.tick({ tick: t });
+        expect(await turn).toBe('missed'); // nobody traded
+    });
+
+    test('a stock turn with 27 held and essence 26 offers one exact-count press of 26', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 100, inventory: essenceInv(27), ...near }));
+        const turn = runTurn(giverWith(sdk, { essence: 26 }), { T: 103, myT: 103, armedTick: 100 });
+        await flush();
+        sdk.tick({ trade: { isOpen: true, screen: 'offer', partner: RECEIVER, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false } });
+        await flush();
+        await flush();
+        expect(offers(sdk)).toEqual([[0, 26]]);
+        expect(sdk.sent.at(-1)?.method).toBe('sendAcceptTrade');
+        for (let i = 0; i < 40; i++) sdk.tick();
+        expect(await turn).toBe('missed');
+    });
+});
+
 describe('altar-giver stock turn', () => {
     const near = { nearbyPlayers: [{ index: 9, name: RECEIVER, combatLevel: 3, x: 0, z: 0, distance: 1 }] } as unknown as Partial<BotWorldState>;
 
@@ -68,6 +114,29 @@ describe('altar-giver stock turn', () => {
         expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(2);
         // nobody answers: the turn ends missed at the judge tick, and says why
         expect(await turn).toBe('missed');
+    });
+
+    test('a turn that did not give reports ready afresh, which lifts the scored side\'s skip (MissBench)', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 100, inventory: [ESSENCE] }));
+        const g = giverWith(sdk);
+        const inner = g as unknown as { phase: string; readyAt: number | null; frames: { add(t: number, ms: number): unknown } };
+        inner.phase = 'armed';
+        inner.readyAt = 1;
+        inner.frames.add(100, Date.now());
+        const before = Date.now();
+        expect(await runTurn(g, { T: 103, myT: 103, armedTick: 100 })).toBe('no-receiver');
+        expect(inner.readyAt).toBeGreaterThanOrEqual(before);
+    });
+
+    test('a role whose client stopped delivering ticks (the relay after a client death) keeps its old readyAt, so the skip holds', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 100, inventory: [ESSENCE] }));
+        const g = giverWith(sdk);
+        const inner = g as unknown as { phase: string; readyAt: number | null; frames: { add(t: number, ms: number): unknown } };
+        inner.phase = 'armed';
+        inner.readyAt = 1;
+        inner.frames.add(100, Date.now() - 60_000);
+        expect(await runTurn(g, { T: 103, myT: 103, armedTick: 100 })).toBe('no-receiver');
+        expect(inner.readyAt).toBe(1);
     });
 
     test('a receiver out of sight is reported, with nothing sent', async () => {

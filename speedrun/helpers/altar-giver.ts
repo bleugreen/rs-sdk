@@ -17,14 +17,15 @@
 // Role options (ROLE_OPTIONS):
 //   altar      'air' (default), 'body' or 'nature'
 //   slot       0 east (default), 1 west, 2 south of the receiver's tile
-//   essence    essence per trade (default 27; the talisman takes the 28th slot)
+//   essence    essence per trade, offered exactly by count (default 27; the talisman takes the 28th slot).
+//              A giver holding more counts itself loaded and offers `essence` of them (essencePresses)
 //   schedule   'robust' forces the 8-tick schedule for every blind turn; default follows the cue
 //   restock    { kind: 'bank'|'trade'|'cheat', bank?, acceptFrom?, restockAt?, labStock? } (altar-room.ts)
 //   gapMs      wait after a frame before sending its packets (default 0: send on arrival)
 //   cueDir     default RC_CUE_DIR, else run-machine/rc-cue in the checkout
 import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { DROPPED_TICKS, give } from '../lib/trade';
-import { tickClock } from '../lib/wait';
+import { tickClock, tickMs } from '../lib/wait';
 import {
     assertUntracked,
     chooseTurn,
@@ -46,7 +47,8 @@ import {
     type TurnResult,
     type TurnSchedule
 } from './altar-cue';
-import { altarData, count, ESSENCE, enterRoom, findAltar, findItem, inRoom, pos, restock, roomTiles, standOn, until, type Altar, type RestockOptions, type Tile } from './altar-room';
+import { isXAmount } from '../lib/items';
+import { altarData, carriedSlots, count, ESSENCE, enterRoom, findAltar, findItem, inRoom, pos, restock, roomTiles, standOn, until, type Altar, type RestockOptions, type Tile } from './altar-room';
 import { ensureOutOfTutorial } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
@@ -80,6 +82,34 @@ export function giverOptions(raw: Record<string, unknown>, env: Record<string, s
     };
 }
 
+/** Client packets of the user-event kind (trade buttons included) the engine decodes per player per tick (ClientGameProtCategory.USER_EVENT); the rest wait a tick. */
+export const USER_EVENTS_PER_TICK = 5;
+
+/**
+ * The trade-offer presses that put exactly `n` essence in the offer on the frame they are
+ * sent, with the accept behind them on the same tick, or null when fewer than `n` are carried.
+ *
+ * - Holding exactly `n`: one All press, which moves inv_total, that is exactly `n`.
+ * - Holding more: 10/5/1 presses, all on the highest essence slot. trade.rs2 movetotrade moves
+ *   that many of the slot's object, and the engine takes them from the lowest slots first
+ *   (Inventory.remove), so that slot keeps its essence until the last press.
+ * - When those presses and the accept would not fit one tick's USER_EVENTS_PER_TICK, one
+ *   Offer-X press of `n`. It costs the count dialog's round trip, a tick or more, so a blind turn
+ *   misses; the stock turn absorbs it.
+ *
+ * Never an Offer-All with more than `n` held: the server would move every essence, and the
+ * scored account refuses an offer bigger than its free slots (S06 runs 26 a load, rs/158).
+ */
+export function essencePresses(s: BotWorldState | null | undefined, n: number): Array<{ slot: number; amount: number }> | null {
+    const slots = carriedSlots(s, ESSENCE);
+    const held = slots.reduce((a, i) => a + i.count, 0);
+    if (held < n || slots.length === 0) return null;
+    const top = slots[slots.length - 1]!.slot;
+    if (held === n) return [{ slot: top, amount: -1 }];
+    const amounts = [...Array(Math.floor(n / 10)).fill(10), ...Array(Math.floor((n % 10) / 5)).fill(5), ...Array(n % 5).fill(1)];
+    return amounts.length < USER_EVENTS_PER_TICK ? amounts.map(amount => ({ slot: top, amount })) : [{ slot: top, amount: n }];
+}
+
 interface Armed {
     key: string;
     session: string;
@@ -94,6 +124,9 @@ interface Armed {
 }
 
 class Stop extends Error {}
+
+/** A client whose newest tick arrived within this many ticks is alive (a catch-up burst stays inside it). */
+const LIVE_FRAME_TICKS = 5;
 
 export class AltarGiver {
     private readonly o: GiverOptions;
@@ -151,6 +184,15 @@ export class AltarGiver {
 
     private result(outcome: Outcome, session: string, T: number, extra: { myT?: number; detail?: string } = {}): void {
         this.last = { session, T, outcome, ...extra, ms: Date.now() };
+        // Still loaded after the turn: ready again from now, which is what lifts the scored side's
+        // skip after a failed turn (altar-cue.ts MissBench), and puts us behind the givers that
+        // have waited longer. Only while our client delivers ticks: on the relay a role outlives
+        // its dead client, arms the turns it is named for and fails them on the wall-clock
+        // fallback, and renewing then lifted the skip turn after turn (lab: 3, 4 and 8 misses a
+        // kill, against 1 on the direct path).
+        const lastFrame = this.frames.recent(1)[0]?.ms;
+        const live = lastFrame !== undefined && Date.now() - lastFrame <= LIVE_FRAME_TICKS * tickMs();
+        if (outcome !== 'gave' && live && (this.phase === 'ready' || this.phase === 'armed')) this.readyAt = Date.now();
         this.ctx.log('turn', { outcome, T, ...extra });
         this.publish();
     }
@@ -320,9 +362,14 @@ export class AltarGiver {
                         void sdk.sendDeclineTrade();
                         continue;
                     }
-                    const slot = findItem(this.s, ESSENCE)?.slot;
-                    if (slot !== undefined) void sdk.sendOfferItem(slot, -1);
-                    void sdk.sendClickComponent(TRADE_ACCEPT);
+                    const presses = essencePresses(this.s, this.o.essence) ?? [];
+                    const x = presses.find(p => isXAmount(p.amount));
+                    // An Offer-X resolves after its count dialog: the accept goes behind the count.
+                    if (x) void sdk.sendOfferItem(x.slot, x.amount).then(() => sdk.sendClickComponent(TRADE_ACCEPT));
+                    else {
+                        for (const p of presses) void sdk.sendOfferItem(p.slot, p.amount);
+                        void sdk.sendClickComponent(TRADE_ACCEPT);
+                    }
                 } else void sdk.sendClickComponent(TRADE_CONFIRM);
             }
         };
@@ -404,8 +451,10 @@ export class AltarGiver {
             const left = Math.max(1, judge - (this.s?.tick ?? judge));
             // By id: a noted stack shares the essence's name (NOTE_IDS) and must not be the offer.
             const essence = findItem(this.s, ESSENCE)?.id ?? ESSENCE;
+            // Exactly `essence` by count: one All press when that is all we hold, else one Offer-X (items.ts amountButtons),
+            // with give()'s accept behind the count.
             // Beside the receiver in the altar room: a silent click was dropped (lib/trade.ts DROPPED_TICKS).
-            const r = await give(sdk, receiver.name, [{ item: essence, n: 'all' }], { maxTicks: left, openMaxTicks: left, noReplyTicks: DROPPED_TICKS });
+            const r = await give(sdk, receiver.name, [{ item: essence, n: this.o.essence }], { maxTicks: left, openMaxTicks: left, noReplyTicks: DROPPED_TICKS });
             outcome = r.ok ? 'gave' : 'missed';
             if (r.reason) detail = r.reason;
         }
