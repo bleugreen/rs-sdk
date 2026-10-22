@@ -296,7 +296,9 @@ Mule options: `serve` (the scored account), `couriers` (default `^cairn_h\d+$`),
 `packages`, `serveMode` (`order` | `request`), `giver` (`burst` | `stock`), `preRequest`
 (default true), `stand` (default 3185,3436), `ge`, `cueDir` (where package cues and top-up asks
 are read; default `RC_CUE_DIR`, else `run-machine/rc-cue`, the directory the givers' cues use),
-and for top-up lines `askWaitTicks` (default 3).
+for top-up lines `askWaitTicks` (default 3), and for packages carried from login `carried`
+(default false; a package's `at` tile only with it), `wildlife` and `clearTiles`, and
+`keepAliveMinutes` (both guards off unless `carried`, so a banked mule behaves as before).
 
 **Carried packages** (`carried: true`). Where there is no bank (Ape Atoll), the mule logs in
 already holding every package. Each package's lines are found in the inventory (`carriedNeeds`; a
