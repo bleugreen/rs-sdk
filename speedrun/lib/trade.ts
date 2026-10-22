@@ -418,16 +418,35 @@ export interface OpenResult {
 
 /** trade.rs2 [opplayer4]: the engine's refusal of a request while the target is busy (a delay, a level-up page). */
 export const TRADE_BUSY_RE = /is busy at the moment/i;
+/** trade.rs2 [opplayer4]: printed for every request the engine processes, an accepting one included. */
+export const TRADE_SENT_RE = /^sending trade offer/i;
+
+export interface OpenTradeOptions {
+    /** Wall-clock bound on the whole open (default 60 s). */
+    timeoutMs?: number;
+    /** Give up once the published tick passes this one. */
+    byTick?: number;
+    /**
+     * Re-send a request that drew neither "Sending trade offer..." nor a busy refusal within
+     * this many ticks. The engine drops a player op sent while we are delayed (a stun's
+     * p_delay, OpPlayerHandler) with no message at all. Off by default: a request that is
+     * still walking to a distant partner draws no message either.
+     */
+    noReplyTicks?: number;
+}
 
 /**
  * Open a trade with `partner` by name. A trade request to a player who has
  * already requested us is the acceptance and opens both screens at once. A
  * request refused because the partner is busy is re-sent on the frame that
- * shows the refusal; one that stands unanswered is re-sent every 8 s.
+ * shows the refusal; one that stands unanswered is re-sent every 8 s, or after
+ * `noReplyTicks` when the engine never acknowledged it.
  */
-export async function openTrade(sdk: TradeSdk, partner: string, opts: { timeoutMs?: number } = {}): Promise<OpenResult> {
+export async function openTrade(sdk: TradeSdk, partner: string, opts: OpenTradeOptions = {}): Promise<OpenResult> {
     const timeoutMs = opts.timeoutMs ?? 60_000;
     const deadline = Date.now() + timeoutMs;
+    const byTick = opts.byTick ?? Infinity;
+    const live = () => Date.now() < deadline && (sdk.getState()?.tick ?? -Infinity) <= byTick;
     const now = sdk.getState();
     const open = now ? tradeOf(now) : CLOSED;
     if (open.isOpen && sameName(open.partner, partner)) return { ok: true, firstClickTick: now!.tick };
@@ -435,7 +454,7 @@ export async function openTrade(sdk: TradeSdk, partner: string, opts: { timeoutM
 
     let firstClickTick = -1;
     let lastRefusal = -1;
-    while (Date.now() < deadline) {
+    while (live()) {
         const s = sdk.getState();
         const player = s?.nearbyPlayers.find(p => sameName(p.name, partner));
         if (!player) {
@@ -448,7 +467,9 @@ export async function openTrade(sdk: TradeSdk, partner: string, opts: { timeoutM
         const clickTick = s!.tick;
         void sdk.sendTradeRequest(player.index);
         const refusal = (st: BotWorldState) => st.gameMessages.find(m => m.tick >= clickTick && m.tick > lastRefusal && TRADE_BUSY_RE.test(m.text));
-        await waitState(sdk, st => tradeOf(st).isOpen || refusal(st) !== undefined, Math.min(8_000, deadline - Date.now()));
+        const nr = opts.noReplyTicks;
+        const unanswered = (st: BotWorldState) => nr !== undefined && st.tick - clickTick >= nr && !st.gameMessages.some(m => m.tick >= clickTick && TRADE_SENT_RE.test(m.text));
+        await waitState(sdk, st => tradeOf(st).isOpen || refusal(st) !== undefined || unanswered(st) || st.tick > byTick, Math.min(8_000, deadline - Date.now()));
         const after = sdk.getState();
         if (after && tradeOf(after).isOpen) return { ok: true, firstClickTick };
         const refused = after ? refusal(after) : undefined;
@@ -490,14 +511,31 @@ export interface ReceiveResult {
  * the partner (accepting a pending request, or requesting), then accepts as
  * soon as the offer is good and re-verifies on the confirm screen.
  */
-export async function receiveFrom(sdk: TradeSdk, partner: string, opts: { want?: WantSpec[]; maxTicks?: number; openTimeoutMs?: number } = {}): Promise<ReceiveResult> {
+export async function receiveFrom(
+    sdk: TradeSdk,
+    partner: string,
+    opts: {
+        want?: WantSpec[];
+        maxTicks?: number;
+        openTimeoutMs?: number;
+        /** The open and the trade both end by this published tick (it caps `maxTicks`). */
+        byTick?: number;
+        /** openTrade's `noReplyTicks`. */
+        noReplyTicks?: number;
+    } = {}
+): Promise<ReceiveResult> {
     const s0 = sdk.getState();
     if (!s0) throw new Error('receiveFrom: no state');
     let ctx = newReceiverCtx(partner, s0.inventory, opts.want);
-    const open = await openTrade(sdk, partner, { timeoutMs: opts.openTimeoutMs ?? 60_000 });
+    const open = await openTrade(sdk, partner, {
+        timeoutMs: opts.openTimeoutMs ?? 60_000,
+        ...(opts.byTick !== undefined ? { byTick: opts.byTick } : {}),
+        ...(opts.noReplyTicks !== undefined ? { noReplyTicks: opts.noReplyTicks } : {})
+    });
     if (!open.ok) return { ok: false, ticks: 0, received: [], reason: open.reason };
     const start = open.firstClickTick;
-    const r = await onStates(sdk, opts.maxTicks ?? 100, s => {
+    const left = opts.byTick === undefined ? Infinity : opts.byTick - (sdk.getState()?.tick ?? start);
+    const r = await onStates(sdk, Math.max(0, Math.min(opts.maxTicks ?? 100, left)), s => {
         const d = decideReceiver(s, ctx);
         ctx = d.next;
         switch (d.action) {
