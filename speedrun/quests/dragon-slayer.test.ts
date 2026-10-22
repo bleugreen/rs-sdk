@@ -5,10 +5,10 @@ import { baseState } from '../lib/fake-sdk';
 import { configId } from '../lib/world';
 import { Observation, resolveResume } from '../runner/resume';
 import {
-    ARMOURLESS_COST, atLeast, ELVARG_PRAYERS, entryCheck, keyDropped, kitItems, mazeMove, onCrandor, PROBES, quest, restockWait, SCAVVO_RESTOCK,
+    ARMOURLESS_COST, atLeast, ELVARG_PRAYERS, entryCheck, keyDropped, kitItems, LETTERS, mazeMove, questItems, onCrandor, PROBES, quest, restockWait, SCAVVO_RESTOCK,
     stepId, steps, stockZeroChoice, TILES, usablePrayers, wornKitCheck,
 } from './dragon-slayer';
-import { kitWant } from './segments';
+import { kitWant, slotNeed } from './segments';
 
 let slot = 0;
 const item = (name: string, count = 1, id = 10_000 + slot) => ({ slot: slot++, id, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
@@ -112,6 +112,34 @@ describe('entry and kit', () => {
         expect(keyDropped(done)).toBe(true);
         expect(last.postconditions(keyed, {})).toMatch(/maze key is still held/);
         expect(await resumeAt(keyed)).toBe('S26:L-elvarg');
+    });
+});
+
+describe('free slots (addendum 8)', () => {
+    // The inventory ledger's S26 start: H22 (the kit, plus the legs' fire rune) and the m'speak amulet, 2 free.
+    const ledger = () => [...KIT(), item('Fire rune'), item("M'speak amulet")];
+
+    test('the letters are the segments', () => {
+        expect(steps().map(s => s.name.slice(4, 5))).toEqual([...LETTERS]);
+    });
+
+    test("the ledger's start covers the step: the peak is Scavvo's two pieces at C", () => {
+        expect(28 - ledger().length).toBe(2);
+        expect(slotNeed(world({ inv: ledger() }), questItems(), LETTERS, 'A')).toEqual({ slots: 2, peak: 'C', items: ['1 Rune chainbody', '1 Rune platelegs'] });
+        expect(steps()[0]!.preconditions(world({ inv: ledger() }), {})).toBe(true);
+        expect(steps()[0]!.preconditions(world({ inv: [...ledger(), item('Bucket')] }), {})).toBe('inventory: segment C needs 2 free slots (1 Rune chainbody, 1 Rune platelegs), 1 free: 1 short');
+    });
+
+    test('the four items the magic door takes make room for the maze; without the armour the need is the key', () => {
+        // From G with the magic-door items still held (they are gone by then): no need.
+        const atMaze = world({ status: 'started', inv: [...ledger(), item('Maze key'), part(3)].slice(2) });
+        expect(slotNeed(atMaze, questItems(), LETTERS, 'G').slots).toBeLessThanOrEqual(0);
+        expect(slotNeed(world({ inv: ledger() }), questItems({ buyArmour: false }), LETTERS, 'A')).toMatchObject({ slots: 1, peak: 'D' });
+    });
+
+    test('every kit line has a hand-in segment', () => {
+        expect(() => questItems()).not.toThrow();
+        expect(questItems().filter(q => q.from === 'A').length).toBe(kitItems().length);
     });
 });
 

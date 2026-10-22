@@ -42,13 +42,14 @@ import { fight, PRAYER_LEVELS, prayerActive, setPrayer, type FightResult } from 
 import { converse, levelUpInterrupt, type ConverseResult } from '../lib/converse';
 import type { OptionPattern } from '../lib/dialogue';
 import type { ItemPattern } from '../lib/items';
+
 import { journalProbeName, questPoints, questStatus, requireQuestStage, type QuestView } from '../lib/quests';
 import { receiveFrom, type WantSpec } from '../lib/trade';
 import { runTo, teleport, type Area, type TravelResult } from '../lib/travel';
 import { waitTicks, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, configId, findLoc, invCount, invItem, opIndex, pos, waitForNpc, worn, type LocQuery } from '../lib/world';
 import type { Step, StepContext } from '../runner/step';
-import { allOf, baseLevels, kitSegment, kitWant, questSteps, talkShape, type KitItem, type QuestOptions, type Segment } from './segments';
+import { allOf, baseLevels, kitSegment, kitWant, questSteps, slotsCover, talkShape, type KitItem, type QuestItem, type QuestOptions, type Segment } from './segments';
 
 export const quest = 'dragon' as const;
 export const stepId = 'S26';
@@ -98,7 +99,11 @@ export const ITEM = {
     platelegs: /^Rune platelegs$/i,
     shield: /^Dragonfire shield$/i,
     key: /^Maze key$/i,
+    /** The six coloured maze keys, one held at a time: each disintegrates in its door (melzars_maze.rs2). */
+    doorKey: /^Key$/i,
     crandorMap: /^Crandor map$/i,
+    /** Monkey Madness's amulet, swapped off at H22 for the amulet of strength: dead, dropped in S26 (the inventory ledger). */
+    mspeak: /^M'speak amulet$/i,
 } as const;
 
 /** The three map parts (all named "Map part") by config id: part 1 Melzar's chest, 2 Wormbrain, 3 the Dwarven Mine chest. */
@@ -156,6 +161,49 @@ export const KIT_WORN: ReadonlyArray<[string, RegExp]> = [['a rune (or mithril) 
 
 /** The death re-supply: a weapon, food, and a second hull patch. The Duke gives the shield again. */
 export const DEATH_KIT: KitItem[] = [{ item: ITEM.weapon }, { item: ITEM.shark, n: 8 }, { item: ITEM.plank, n: 3 }, { item: ITEM.nails, n: 12 }, { item: ITEM.hammer }];
+
+/** The step's segment letters, in order. */
+export const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'] as const;
+
+/**
+ * How long each kit line stays in the pack. Stacks take one slot; a line without `until` is kept past
+ * the step (the hammer goes on T26-27; H22's law, air and water also carry the legs' casts).
+ */
+const KIT_HELD = new Map<ItemPattern, Pick<QuestItem, 'until' | 'stackable'>>([
+    [ITEM.coins, { stackable: true, until: 'I' }], // Scavvo (C), Wormbrain (H), Klarense (I)
+    [ITEM.mindBomb, { until: 'E' }], [ITEM.silk, { until: 'E' }], [ITEM.lobsterPot, { until: 'E' }], [ITEM.unfiredBowl, { until: 'E' }], // magic_door.rs2
+    [ITEM.plank, { until: 'I' }], [ITEM.nails, { stackable: true, until: 'I' }], // lady_lumbridge.rs2
+    [ITEM.hammer, {}], [ITEM.shark, {}],
+    [ITEM.law, { stackable: true }], [ITEM.air, { stackable: true }], [ITEM.water, { stackable: true }],
+    [ITEM.earth, { stackable: true, until: 'F' }], // the one Lumbridge cast
+]);
+
+const label = (p: ItemPattern) => (p instanceof RegExp ? p.source.replace(/^\^|\$$/g, '') : String(p));
+
+/**
+ * Everything the step holds, for the free-slot checks (brief addendum 8): H22's kit as segment A
+ * receives it, each line until it is handed in, then what the content gives. The need peaks at C
+ * (Scavvo's two pieces, bought before they are worn): 2, which is what SCORED arrives with free.
+ */
+export function questItems(opts: Options = {}): QuestItem[] {
+    const kit = kitItems(opts).map(k => {
+        const held = KIT_HELD.get(k.item);
+        if (!held) throw new Error(`questItems: no hand-in segment for kit line ${String(k.item)}`);
+        return { item: k.item, name: label(k.item), ...(k.n ? { n: k.n } : {}), from: 'A', ...held };
+    });
+    return [
+        ...kit,
+        ...((opts.buyArmour ?? true) ? [{ item: ITEM.chainbody, name: 'Rune chainbody', from: 'C', until: 'C' }, { item: ITEM.platelegs, name: 'Rune platelegs', from: 'C', until: 'C' }] : []),
+        { item: ITEM.key, name: 'Maze key', from: 'D', until: 'L' }, // oziach.rs2; dropped at L's exit
+        { item: mapPartId(3), name: 'Map part 3', from: 'E', until: 'H' },
+        { item: ITEM.shield, name: 'Dragonfire shield', from: 'F', until: 'F' }, // worn as given
+        { item: ITEM.doorKey, name: 'Maze door key', from: 'G', until: 'G' },
+        { item: mapPartId(1), name: 'Map part 1', from: 'G', until: 'H' },
+        { item: mapPartId(2), name: 'Map part 2', from: 'H', until: 'H' },
+        // crandor_map.rs2 joins the three parts into the map in place, so H's peak is the parts and the map counts from I.
+        { item: ITEM.crandorMap, name: 'Crandor map', from: 'I', until: 'J' },
+    ];
+}
 
 // ------------------------------------------------------------------ places
 
@@ -847,12 +895,16 @@ export const keyDropped = (s: BotWorldState): true | string => ok(invItem(s, ITE
 // ------------------------------------------------------------------ segments
 
 export function steps(opts: Options = {}): Step<any>[] {
+    const items = questItems(opts);
+    const slots = (at: (typeof LETTERS)[number]) => slotsCover(items, LETTERS, at);
     const segs: Segment[] = [
-        kitSegment(opts, kitItems(opts), { preconditions: allOf(entryCheck, wornKitCheck) }),
+        kitSegment(opts, kitItems(opts), { preconditions: allOf(entryCheck, wornKitCheck, slots('A')) }),
         {
             letter: 'B', label: 'guildmaster', logoutSafe: true,
             preconditions: s => ok(questStatus(s, quest) !== null && (questPoints(s) ?? 0) >= 32, 'needs 32 quest points and the quest tab'),
             async run(ctx) {
+                const dropped = await dropItems(ctx.sdk, i => ITEM.mspeak.test(i.name));
+                if (!dropped.ok) fail('B', "the m'speak amulet did not drop");
                 if (atLeast(ctx.sdk.getState()!, 'spoken_to_guildmaster')) return;
                 await enterGuild('B', ctx, opts);
                 await talk('B', ctx, opts, /^Guild master$/i, [/Rune Plate mail body/i], '1c, opt, 2c, state', { until: s => questStatus(s, quest) === 'started' });
@@ -861,6 +913,7 @@ export function steps(opts: Options = {}): Step<any>[] {
         },
         {
             letter: 'C', label: 'scavvo', logoutSafe: true,
+            preconditions: slots('C'),
             async run(ctx) {
                 const sdk = ctx.sdk;
                 if (!armourHeld(sdk.getState()!) && (opts.buyArmour ?? true)) {
@@ -879,7 +932,7 @@ export function steps(opts: Options = {}): Step<any>[] {
         },
         {
             letter: 'D', label: 'oziach', logoutSafe: true,
-            preconditions: s => ok(atLeast(s, 'spoken_to_guildmaster'), 'the Guildmaster has not been spoken to'),
+            preconditions: allOf(s => ok(atLeast(s, 'spoken_to_guildmaster'), 'the Guildmaster has not been spoken to'), slots('D')),
             async run(ctx) {
                 if (atLeast(ctx.sdk.getState()!, 'spoken_to_oziach') && invItem(ctx.sdk, ITEM.key)) return;
                 await measure(ctx.log, ctx.session, `${stepId}:D/walk`, async () => {
@@ -908,6 +961,7 @@ export function steps(opts: Options = {}): Step<any>[] {
             preconditions: allOf(
                 s => ok(atLeast(s, 'spoken_to_oziach'), 'Oziach has not briefed the quest'),
                 s => ok(hasMapPart(s, 3) || has(s, ITEM.crandorMap) || [ITEM.mindBomb, ITEM.silk, ITEM.lobsterPot, ITEM.unfiredBowl].every(re => invItem(s, re) !== null) || inBox(s, AREAS.oracleRoom), 'the magic door needs a wizard\'s mind bomb, silk, a lobster pot and an unfired bowl (magic_door.rs2)'),
+                slots('E'),
             ),
             run: ctx => oracleAndChest('E', ctx, opts),
             done: o => hasMapPart(stateOf(o), 3) || has(stateOf(o), ITEM.crandorMap) || atLeast(o, 'ned_given_map'),
@@ -915,7 +969,7 @@ export function steps(opts: Options = {}): Step<any>[] {
         },
         {
             letter: 'F', label: 'duke', logoutSafe: true,
-            preconditions: allOf(s => ok(atLeast(s, 'spoken_to_oziach'), 'Oziach has not mentioned the shield'), s => ok(has(s, ITEM.shield) || inBox(s, AREAS.lumbridgeCastle) || invCount(s, ITEM.earth) >= 1, 'no Lumbridge teleport runes')),
+            preconditions: allOf(s => ok(atLeast(s, 'spoken_to_oziach'), 'Oziach has not mentioned the shield'), s => ok(has(s, ITEM.shield) || inBox(s, AREAS.lumbridgeCastle) || invCount(s, ITEM.earth) >= 1, 'no Lumbridge teleport runes'), slots('F')),
             run: ctx => duke('F', ctx, opts),
             postconditions: s => ok(worn(s, ITEM.shield) !== null, 'the Dragonfire shield is not worn'),
             // A death on Crandor loses the shield; segment L fetches a new one, so the walk must not stop here.
@@ -924,7 +978,7 @@ export function steps(opts: Options = {}): Step<any>[] {
         },
         {
             letter: 'G', label: 'maze', logoutSafe: true,
-            preconditions: s => ok(hasMapPart(s, 1) || has(s, ITEM.crandorMap) || invItem(s, ITEM.key) !== null, 'no maze key'),
+            preconditions: allOf(s => ok(hasMapPart(s, 1) || has(s, ITEM.crandorMap) || invItem(s, ITEM.key) !== null, 'no maze key'), slots('G')),
             run: ctx => maze('G', ctx, opts),
             postconditions: s => ok(!inBox(s, AREAS.maze) && !inBox(s, AREAS.mazeCellar), 'still inside the maze'),
             done: o => hasMapPart(stateOf(o), 1) || has(stateOf(o), ITEM.crandorMap) || atLeast(o, 'ned_given_map'),
@@ -932,7 +986,7 @@ export function steps(opts: Options = {}): Step<any>[] {
         },
         {
             letter: 'H', label: 'wormbrain', logoutSafe: true,
-            preconditions: s => ok(has(s, ITEM.crandorMap) || hasMapPart(s, 2) || invCount(s, ITEM.coins) >= 10_000, 'Wormbrain wants 10,000 coins'),
+            preconditions: allOf(s => ok(has(s, ITEM.crandorMap) || hasMapPart(s, 2) || invCount(s, ITEM.coins) >= 10_000, 'Wormbrain wants 10,000 coins'), slots('H')),
             run: ctx => wormbrain('H', ctx, opts),
             postconditions: s => ok(has(s, ITEM.crandorMap), 'no Crandor map'),
             done: o => has(stateOf(o), ITEM.crandorMap) || atLeast(o, 'ned_given_map'),

@@ -18,7 +18,7 @@
 import type { BotWorldState } from '../../sdk/types';
 import type { QuestKey, StageName } from '../data/quest-stages';
 import type { ConverseOptions } from '../lib/converse';
-import { matchesItem } from '../lib/items';
+import { matchesItem, type ItemPattern } from '../lib/items';
 import { requireQuestStage, type QuestView } from '../lib/quests';
 import { receiveFrom, type WantSpec } from '../lib/trade';
 import type { Check, ObservedCheck, Step, StepContext } from '../runner/step';

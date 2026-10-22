@@ -49,6 +49,10 @@ const MAGIC_DOOR_ITEMS = { wizards_mind_bomb: 1, silk: 1, lobster_pot: 1, bowl_u
 const HULL = { woodplank: 3, nails: 12, hammer: 1 } as const;
 const RUNES_LUMBRIDGE = { lawrune: 1, airrune: 3, earthrune: 1 } as const;
 const RUNES_FALADOR = { lawrune: 1, airrune: 3, waterrune: 1 } as const;
+/** H22 also carries T25-26's Varrock and T26-27's Ardougne casts (the inventory ledger's H22 row). */
+const RUNES_LEGS = { lawrune: 3, airrune: 3, firerune: 1, waterrune: 2 } as const;
+/** Swapped off at H22 and dropped in S26's B; given after the wear, since the fixture's 28 slots are full until then. */
+const MSPEAK = 'mm_amulet_of_monkey_speak';
 const add = (...parts: Array<Record<string, number>>): Record<string, number> => {
     const out: Record<string, number> = {};
     for (const p of parts) for (const [k, v] of Object.entries(p)) out[k] = (out[k] ?? 0) + v;
@@ -59,7 +63,7 @@ const wear = (list: readonly string[]) => Object.fromEntries(list.map(k => [k, 1
 const QUEST_COINS = ds.QUEST_COINS + ds.SCAVVO.chainbody + ds.SCAVVO.platelegs;
 
 /** H22 as the step receives it (the quest items first: a full inventory drops a give silently). */
-const H22 = add(MAGIC_DOOR_ITEMS, HULL, RUNES_LUMBRIDGE, RUNES_FALADOR, { coins: QUEST_COINS, shark: 10 }, wear(WORN_KIT));
+const H22 = add(MAGIC_DOOR_ITEMS, HULL, RUNES_LUMBRIDGE, RUNES_FALADOR, RUNES_LEGS, { coins: QUEST_COINS, shark: 10 }, wear(WORN_KIT));
 
 const fixture = (letter: string, f: Omit<QuestFixture, 'letter' | 'levels'>): QuestFixture => ({ letter, levels: LEVELS, ...f });
 
@@ -115,6 +119,12 @@ await labMain<ds.Options>({
     async applyFixture(session, f) {
         await setStats(session.sdk, { ...LEVELS });
         await applyFixture(session, f);
+        // The ledger's S26 start: H22 and the m'speak amulet, 2 free.
+        if (['A', 'B'].includes(f.letter)) {
+            await give(session.sdk, MSPEAK, 1);
+            const free = 28 - session.sdk.getState()!.inventory.length;
+            console.log(`fixture ${f.letter}: ${free} free slots`);
+        }
     },
     async prepare(session, f) {
         const sdk = session.sdk;
