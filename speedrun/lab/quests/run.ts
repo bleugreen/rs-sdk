@@ -97,7 +97,7 @@ export async function applyFixture(session: Session, f: QuestFixture, staging: {
         await waitTicks(sdk, Math.ceil(vars.length / 5) + 2);
     }
     if (f.relog ?? vars.length > 0) {
-        if (!session.child) throw new Error(`fixture ${f.letter}: the quest tab only shows the vars after a relog, which needs this script to own the client (LAB_RUNNERS=0 and --launch), or relog: false`);
+        if (!session.child && session.client !== 'browser') throw new Error(`fixture ${f.letter}: the quest tab only shows the vars after a relog, which needs this script to own the client (LAB_RUNNERS=0 and --launch), or relog: false`);
         await relog(session);
         await waitTicks(sdk, 2);
     }
@@ -307,7 +307,7 @@ export function trace(sdk: Pick<BotSDK, 'onStateUpdate'>, every: number): () => 
 }
 
 /** The command line for a quest's lab file: `<bot> --from --until --runs --dialogue --trace`. */
-export function labArgs(): Omit<LabRunOptions, 'dialogue'> & { dialogue: DialogueMode | 'both'; launch: boolean } {
+export function labArgs(): Omit<LabRunOptions, 'dialogue'> & { dialogue: DialogueMode | 'both'; launch: boolean; client: 'lite' | 'browser' } {
     const dialogue = arg('dialogue', 'fixed');
     if (dialogue !== 'fixed' && dialogue !== 'burst' && dialogue !== 'both') throw new Error(`--dialogue=${dialogue}: want fixed, burst or both`);
     const from = arg('from', '');
