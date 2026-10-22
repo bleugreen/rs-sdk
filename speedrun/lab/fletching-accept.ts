@@ -22,7 +22,8 @@
 //             (default 100: 20 ticks), no keep, no staff commands. The tab is the host's own Chrome
 //             (SPEEDRUN_CDP_URL), the gateway a loopback one. Before any click it waits up to
 //             SCENE_TICKS for sceneReady and stops if it never shows; the loc count is only recorded.
-//             Pass: 5 actions on >= 90% of work ticks.
+//             It reads the bronze arrows on every observed tick. Pass: --actions a multiple of 5,
+//             every work tick sends 5, 5 land on each of as many consecutive ticks, overBudget 0.
 // options: --log=<path>, --actions=N (demo)
 // Prints one RESULT line: program ticks (first tick to done, the page's count, on observed ticks),
 // the step's ticks (with the level-up clear), actions, the sends-per-tick histogram over ticks with
@@ -83,6 +84,9 @@ await (async () => {
     const held = (id: number) => state().inventory.filter(i => i.id === id).reduce((n, i) => n + i.count, 0);
     let result: Record<string, unknown> = { case: which, bot, client: 'browser', ...where() };
     const runs: Array<{ run: FletchRun; result: ItemCycleResult }> = [];
+    /** The demo's own reading of every observed tick while the step runs: what landed, seen from outside the page. */
+    const observed: Array<{ tick: number; xp: number; arrows: number; tips: number; headless: number }> = [];
+    let demoActions = 0;
 
     const stage = async (level: number, give: ReadonlyArray<readonly [string, number]>) => {
         for (let attempt = 1; ; attempt++) {
@@ -130,9 +134,18 @@ await (async () => {
         const overBudget = programs.reduce((n, r) => n + ((r.meta as { overBudget?: number }).overBudget ?? 0), 0);
         const s = state();
         const stepOk = stepRows.length > 0 && stepRows.every(r => r.ok);
+        // demo: each observed tick on which bronze arrows grew, and by how many actions
+        const landings = observed.slice(1).flatMap((o, i) => (o.arrows > observed[i]!.arrows ? [{ tick: o.tick, actions: (o.arrows - observed[i]!.arrows) / 15, xp: o.xp - observed[i]!.xp }] : []));
+        const k = demoActions / 5;
         const verdict =
             which === 'demo'
-                ? { pass: stepOk && pendingTicks > 0 && at5 / pendingTicks >= DEMO_SHARE, bar: `5 a tick on >= ${DEMO_SHARE * 100}% of work ticks` }
+                ? {
+                      pass: stepOk && Number.isInteger(k) && k > 0 && overBudget === 0 && JSON.stringify(sends) === JSON.stringify({ 5: k }) && landings.length === k && landings.every((l, i) => l.actions === 5 && (i === 0 || l.tick === landings[i - 1]!.tick + 1)),
+                      bar: 'every work tick sends 5, and 5 land on each of as many consecutive observed ticks; overBudget 0',
+                      shareBar: `5 a tick on >= ${DEMO_SHARE * 100}% of work ticks: ${pendingTicks > 0 && at5 / pendingTicks >= DEMO_SHARE}`,
+                      landings,
+                      observedTicks: observed
+                  }
                 : which === 'today' || which === 'fold19'
                   ? { pass: stepOk && fletchingLevel(s) >= 99 && runeArrowsOf(stockOf(s)) >= 570 && programTicks <= BAR, bar: `program ticks <= ${BAR.toFixed(2)} (59 + 5%)`, vs59: Math.round((programTicks / TARGET - 1) * 1000) / 10 }
                   : { pass: stepOk, bar: 'step ok (a reference case)' };
@@ -179,7 +192,20 @@ await (async () => {
             const actions = Math.min(Number(flag('actions', '100')), Math.floor(n / 15));
             if (actions <= 0) throw new Error(`the account holds ${held(HEADLESS_ARROW)} headless arrows and ${held(T.bronze!.tips)} bronze tips: nothing to fletch`);
             result.account = { fletching: fletchingLevel(s), xp: fletchingXp(s), at: [s.player?.worldX, s.player?.worldZ], inventory: s.inventory.map(i => ({ slot: i.slot, id: i.id, name: i.name, count: i.count })) };
-            await runStep({ tiers: ['bronze'], maxActions: actions, keepRune: 0 });
+            demoActions = actions;
+            const bronze = T.bronze!;
+            const count = (st: BotWorldState, id: number) => st.inventory.filter(i => i.id === id).reduce((n, i) => n + i.count, 0);
+            const look = (st: BotWorldState) => {
+                if (observed.length && observed[observed.length - 1]!.tick === st.tick) return;
+                observed.push({ tick: st.tick, xp: fletchingXp(st), arrows: count(st, bronze.arrow), tips: count(st, bronze.tips), headless: count(st, HEADLESS_ARROW) });
+            };
+            look(s);
+            const off = sdk.onStateUpdate(look);
+            try {
+                await runStep({ tiers: ['bronze'], maxActions: actions, keepRune: 0 });
+            } finally {
+                off();
+            }
         } else {
             const st = STOCKS[which as keyof typeof STOCKS];
             await stage(st.level, st.give);
