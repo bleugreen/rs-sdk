@@ -7,6 +7,7 @@ import { nameHash, readCue, writeStatus } from '../helpers/altar-cue';
 import { baseState, FakeSdk, type SentAction } from '../lib/fake-sdk';
 import { ProgramError, rcCueFields, type ProgramStatus } from '../lib/programs';
 import { TickLog } from '../lib/ticks';
+import { DROPPED_TICKS } from '../lib/trade';
 import { levelForXp } from '../lib/xp';
 import { Observation, resolveResume } from '../runner/resume';
 import { runSteps, type RunnerSession, type StepContext } from '../runner/step';
