@@ -22,8 +22,11 @@
 // givers read. Started by the run-machine launcher (standalone.ts) like them.
 //
 // Role options (ROLE_OPTIONS):
-//   item         item to give (default 'Dragon bones'; S18 'Babydragon bones', the dragon-first rule)
-//   obj          its staff-give name for restock cheat (default the item name in snake case)
+//   item         item to give (default 'Dragon bones'; S18 'Babydragon bones', the dragon-first rule). In the
+//                standing mode a priority list (S07: ["Dragon bones", "Babydragon bones"]): each restock fills the
+//                load from the first the bank still holds, then the next (boneWithdrawals), and the load offers what
+//                is carried in the same order, so every giver buries its own dragon bones first
+//   obj          the (first) item's staff-give name for restock cheat (default the item name in snake case)
 //   n            per trade (default 23: the knife loop's free slots)
 //   group        standing mode only: the accounts taking turns at the site, this one included
 //                (S07's b01-b04). Only the group's server keeps a request standing (boneServer,
@@ -33,7 +36,9 @@
 //   sites        [{ giver: {x,z}, receiver: {x,z} }] in run order (default: the oak tile, then the Taverley willow)
 //   siteWaitTicks  how long to wait at a site for the receiver before trying the next (default 30)
 //   trades       stop after this many trades, the group's with a group (default: until the cue says stop)
-//   restock      { kind: 'bank'|'cheat', bank?: {x,z} } (cheat: local lab only; bank default Falador west)
+//   restock      { kind: 'bank'|'cheat', bank?: {x,z}, labSeed? } (cheat: local lab only; bank default Falador west).
+//                labSeed [{ obj, n }] (bank, local lab only): staff-give these into the pack before the first bank
+//                visit, which banks them, so the lab's withdrawals are real ones
 //   noReplyTicks re-send when neither answer came back (default lib/trade.ts DROPPED_TICKS, 2 frames after the click's result: the giver stands beside the receiver)
 //   resendTicks  re-send a standing request after this long without a trade (default 100)
 //   finalExtras  [{ item, count, obj? }] offered beside the bones on the LAST load only (needs `trades`;
@@ -108,7 +113,10 @@ export interface Carried extends Extra {
 
 export interface BoneGiverOptions {
     mode: BoneMode;
+    /** The first of `items`. */
     item: string;
+    /** The bones in priority order: one, or (standing mode) a list filled first to last. */
+    items: string[];
     /** The item's staff-give name (restock kind cheat). */
     obj: string;
     n: number;
@@ -125,7 +133,7 @@ export interface BoneGiverOptions {
     /** standing: the accounts taking turns (canonical names, this one included); empty: no group. */
     group: string[];
     trades: number;
-    restock: { kind: 'bank' | 'cheat'; bank: Tile };
+    restock: { kind: 'bank' | 'cheat'; bank: Tile; labSeed?: { obj: string; n: number }[] };
     noReplyTicks: number;
     resendTicks: number;
     finalExtras: Extra[];
@@ -182,7 +190,18 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
     if (finalExtras.length && (!Number.isInteger(finalN) || finalN < 1 || finalN + finalExtras.length > 28)) {
         throw new Error(`finalN must be at least 1 and finalN + finalExtras must fit 28 slots (got ${raw.finalN ?? finalN} + ${finalExtras.length})`);
     }
-    const item = String(raw.item ?? 'Dragon bones');
+    const items = Array.isArray(raw.item) ? raw.item : [raw.item ?? 'Dragon bones'];
+    if (!items.length || items.some(i => typeof i !== 'string' || !i.trim())) throw new Error('item must be a name or a non-empty list of names');
+    if (new Set(items.map(i => (i as string).toLowerCase())).size !== items.length) throw new Error('item names a bone twice');
+    if (items.length > 1 && mode !== 'standing') throw new Error('an item list is for the standing mode (S07) only');
+    const item = items[0] as string;
+    let labSeed: { obj: string; n: number }[] | undefined;
+    if (r.labSeed !== undefined) {
+        if (kind !== 'bank' || !Array.isArray(r.labSeed) || r.labSeed.some(s => typeof (s as { obj?: unknown })?.obj !== 'string' || !(Number((s as { n?: unknown }).n) >= 1))) {
+            throw new Error('restock.labSeed is a list of { obj, n } for restock kind bank');
+        }
+        labSeed = (r.labSeed as { obj: string; n: number }[]).map(s => ({ obj: s.obj, n: Number(s.n) }));
+    }
     if (raw.group !== undefined && (!Array.isArray(raw.group) || raw.group.length < 2 || raw.group.some(g => typeof g !== 'string' || !g.trim()))) throw new Error('group must list at least two account names, this one included');
     const group = ((raw.group ?? []) as string[]).map(canonName);
     if (group.length && mode !== 'standing') throw new Error('group is for the standing mode (S07) only');
@@ -194,6 +213,7 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
     return {
         mode,
         item,
+        items: items as string[],
         obj: typeof raw.obj === 'string' ? raw.obj : item.toLowerCase().replace(/\s+/g, '_'),
         n,
         hold,
@@ -205,7 +225,7 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
         siteWaitTicks: Number(raw.siteWaitTicks ?? 30),
         group,
         trades,
-        restock: { kind, bank: r.bank ? tile(r.bank, 'restock.bank') : DEFAULT_BONE_BANK },
+        restock: { kind, bank: r.bank ? tile(r.bank, 'restock.bank') : DEFAULT_BONE_BANK, ...(labSeed ? { labSeed } : {}) },
         noReplyTicks: Number(raw.noReplyTicks ?? DROPPED_TICKS),
         resendTicks: Number(raw.resendTicks ?? 100),
         finalExtras,
@@ -215,7 +235,27 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
     };
 }
 
-const exact = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+const escape = (name: string) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const exact = (name: string) => new RegExp(`^${escape(name)}$`, 'i');
+/** Any of the names, exactly. */
+const exactAny = (names: readonly string[]) => new RegExp(`^(?:${names.map(escape).join('|')})$`, 'i');
+
+/**
+ * The bank withdrawals for a load of `n` bones: from the first of `items` the bank holds, then the
+ * next, so a giver's own dragon bones go before its babydragon. `short`: bones the bank lacks.
+ */
+export function boneWithdrawals(bank: readonly { name: string; count: number }[], items: readonly string[], n: number): { specs: { item: RegExp; n: number }[]; short: number } {
+    let need = n;
+    const specs: { item: RegExp; n: number }[] = [];
+    for (const name of items) {
+        if (need <= 0) break;
+        const re = exact(name);
+        const take = Math.min(need, bank.filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0));
+        if (take > 0) specs.push({ item: re, n: take });
+        need -= take;
+    }
+    return { specs, short: need };
+}
 
 /** True when the load after `tradesDone` completed trades (the group's, with a group) is the last one, the one that carries `finalExtras`. */
 export function isFinalLoad(o: Pick<BoneGiverOptions, 'trades' | 'finalExtras'>, tradesDone: number): boolean {
@@ -227,10 +267,27 @@ export function loadBones(o: Pick<BoneGiverOptions, 'n' | 'finalN' | 'trades' | 
     return isFinalLoad(o, tradesDone) ? o.finalN : o.n;
 }
 
-/** The standing mode's offer for the load after `tradesDone` trades: `n` bones, or `finalN` bones and `finalExtras` on the last load. */
-export function loadOffer(o: Pick<BoneGiverOptions, 'item' | 'n' | 'finalN' | 'trades' | 'finalExtras'>, tradesDone: number): GiveSpec[] {
+/**
+ * The standing mode's offer for the load after `tradesDone` trades: `n` bones, or `finalN` bones and
+ * `finalExtras` on the last load. With an item list the bones are split by what is carried
+ * (`carried`, by name), first item first.
+ */
+export function loadOffer(
+    o: Pick<BoneGiverOptions, 'items' | 'n' | 'finalN' | 'trades' | 'finalExtras'>,
+    tradesDone: number,
+    carried: (item: string) => number = () => Number.POSITIVE_INFINITY
+): GiveSpec[] {
     const extras = isFinalLoad(o, tradesDone) ? o.finalExtras : [];
-    return [{ item: exact(o.item), n: loadBones(o, tradesDone) }, ...extras.map(e => ({ item: exact(e.item), n: e.count }))];
+    let need = loadBones(o, tradesDone);
+    const bones: GiveSpec[] = [];
+    for (const [i, name] of o.items.entries()) {
+        // The last type takes whatever is still to give, so a short pack fails in give(), not silently here.
+        const take = i === o.items.length - 1 ? need : Math.min(need, carried(name));
+        if (take > 0) bones.push({ item: exact(name), n: take });
+        need -= take;
+        if (need <= 0) break;
+    }
+    return [...bones, ...extras.map(e => ({ item: exact(e.item), n: e.count }))];
 }
 
 // ------------------------------------------------------------------ the standing request
@@ -471,10 +528,12 @@ export class BoneGiver {
     /** The status a previous process of this account left, read before our first write: a relaunch resumes its trades (onCue). */
     private readonly prior: BoneStatus | null;
     private resumeChecked = false;
+    /** restock.labSeed given (once a process). */
+    private seeded = false;
 
     constructor(private readonly ctx: RoleContext) {
         this.o = boneGiverOptions(ctx.options);
-        this.re = exact(this.o.item);
+        this.re = exactAny(this.o.items);
         if (this.o.group.length && !this.o.group.includes(canonName(ctx.account))) throw new Error(`group must include this account (${ctx.account})`);
         this.prior = readJson<BoneStatus>(this.statusPath());
     }
@@ -658,7 +717,7 @@ export class BoneGiver {
         // No expectTheirs: the scored account offers nothing, and anything it does offer is declined.
         // The load's index now, the group's with a group: the last one offers finalN bones and the extras.
         const load = this.loadsDone();
-        const r = await give(ctx.sdk, t.partner, loadOffer(o, load), { openTimeoutMs: 5_000 });
+        const r = await give(ctx.sdk, t.partner, loadOffer(o, load, name => count(this.s, exact(name))), { openTimeoutMs: 5_000 });
         if (r.ok) {
             this.trades++;
             this.trip = { tick: this.s?.tick ?? 0, energy: this.energy(), at: pos(this.s) };
@@ -848,13 +907,23 @@ export class BoneGiver {
         this.setPhase('restock', `to the bank at ${bank.x},${bank.z}`);
         await walkNear(ctx, bank.x, bank.z, 3);
         if (this.trip && !this.trip.bank) this.trip.bank = { tick: this.s?.tick ?? 0, energy: this.energy(), at: pos(this.s) };
+        if (o.restock.labSeed && isLocalServer() && !this.seeded) {
+            this.seeded = true;
+            const before = this.s?.inventory.length ?? 0;
+            for (const g of o.restock.labSeed) await cheat(ctx, `give ${g.obj} ${g.n}`);
+            await until(ctx, st => st.inventory.length >= before + o.restock.labSeed!.length, 10);
+            ctx.log('lab: seeded the bank', { seed: o.restock.labSeed });
+        }
         if (!(await openBank(ctx))) throw new Error('could not open the bank');
         await depositAllExcept(ctx.sdk);
-        const w = await withdrawMany(ctx.sdk, [{ item: this.re, n }, ...extraRes.map(e => ({ item: e.re, n: e.count }))]);
+        const bones = boneWithdrawals(ctx.sdk.getBankItems(), o.items, n);
+        if (bones.short > 0) throw new Error(`the bank is ${bones.short} short of a load of ${n} ${o.items.join(' or ')}`);
+        const w = await withdrawMany(ctx.sdk, [...bones.specs, ...extraRes.map(e => ({ item: e.re, n: e.count }))]);
         await closeBank(ctx);
         if (!w.ok || this.held() !== n || !extrasHeld()) {
             throw new Error(`bank withdraw left ${this.held()} of ${n}${extraRes.map(e => `, ${count(this.s, e.re)} of ${e.count} ${e.item}`).join('')} (${w.reason ?? 'short'})`);
         }
+        if (o.items.length > 1) ctx.log('restock', { bones: o.items.map(i => `${count(this.s, exact(i))} ${i}`) });
     }
 }
 
