@@ -1273,7 +1273,7 @@ export async function bracketAttempt<T>(
 }
 
 /** The host's TabIO: lib/session.ts, lib/tab.ts over each env's CDP_URL, lib/display.ts on $DISPLAY. */
-function hostTabIO(frames: { dir: string; prefix: string }): TabIO {
+export function hostTabIO(frames: { dir: string; prefix: string }): TabIO {
     const display = process.env.DISPLAY || null;
     return {
         open: (bot, client) => openSession(bot, { client, launch: true }),
