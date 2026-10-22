@@ -25,10 +25,17 @@ import { labMain, type LabQuest } from './run';
 /** Every conversation's result, by dialogue mode. */
 const talks: Array<{ mode: string; r: ConverseResult }> = [];
 
+/** A conversation's `DIALOGUE` line and its `TRANSCRIPT` lines, as the lab drivers print them. */
+export function dialogueLines(mode: string | undefined, r: ConverseResult): string[] {
+    return [
+        `DIALOGUE ${mode} ticks=${r.ticks} (start ${r.startTick}, first page ${r.firstTick}, closed ${r.endTick}) pages=${r.pages} options=${r.options} levelUps=${r.levelUps} shape=${JSON.stringify(r.shape)}`,
+        ...r.transcript.map(line => `  TRANSCRIPT ${line}`),
+    ];
+}
+
 function record(opts: QuestOptions, r: ConverseResult): void {
     talks.push({ mode: opts.dialogue ?? 'burst', r });
-    console.log(`DIALOGUE ${opts.dialogue} ticks=${r.ticks} (start ${r.startTick}, first page ${r.firstTick}, closed ${r.endTick}) pages=${r.pages} options=${r.options} levelUps=${r.levelUps} shape=${JSON.stringify(r.shape)}`);
-    for (const line of r.transcript) console.log(`  TRANSCRIPT ${line}`);
+    for (const line of dialogueLines(opts.dialogue, r)) console.log(line);
     if (!r.ok) throw new Error(`conversation failed: ${r.reason}`);
 }
 
