@@ -52,6 +52,19 @@ the scored account its dragon bones in two places (SUPPLIES.md, H4.1-H4.16 and H
   lost 6 of 17 due top-ups that way while it held Chebyshev distance 1 (`lab/measure-thieving.ts`).
   The giver picks the nearest of the four orthogonal tiles that no NPC stands on, so never the
   knight's (`sideTiles`); a side the walk cannot reach falls through to the next.
+- **Never across a wall edge (S18).** A side tile counts only if no wall lies on the edge between
+  it and the scored account (`wallBetween`, `onOpenSide`). The stunned account cannot step, so a
+  request across a wall draws 'I can't reach that!' and dies on its own tick (rs/454's engine
+  probe; this was the ~1 in 40 unanswered top-ups, 6 of 191 in the lab). The Ardougne knights'
+  area has walled columns: x=2672 carries an east-edge wall at z 3299-3303 and 3306-3310. The wall
+  is read from either tile's directional wall flag in the SDK pathfinder's collision map
+  (`sdk/pathfinding.ts` `isFlagged`, rsmod's `CollisionFlag.WALL_*`), the map every helper launch
+  already loads, so the helper keeps no map of its own. A blocking loc such as a stall is no wall:
+  a stall tile with an open shared edge stays a side. The same rule decides whether the courier is
+  already on a side, so one standing across a wall re-steps rather than waiting there. With every
+  side walled or taken by an NPC, `stepToSide` faults with 'no free side tile' as before. One gap:
+  the SDK map clears the wall at door positions so routes pass through them, so a closed door on
+  the shared edge is not seen.
 
 The receiver is never named: it is whoever in sight matches the receiver hash in the cue
 directory's `cue.json` (`altar-cue.ts`), which the scored side writes at login. The giver reads
