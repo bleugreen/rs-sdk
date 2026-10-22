@@ -47,6 +47,22 @@
 // player) as a 0-tick `woodcutting:hit` row. With `hpStop`, a hit that leaves the player at or
 // below it stops the walk or the band and fails the step, so the harness logs out cleanly: no
 // NPC on either route hits a combat-3 account for more than 1, so this is a guard, not a plan.
+//
+// Slots (STEP-MANIFEST.md's inventory ledger, rows H4k to T07-08). The normal band keeps
+// `keepProducts` normal logs (default 1, knife-cycle's own default is 3), counting the kit's,
+// and drops every other log it chops, except the last: the program ends on the label that shows
+// it (rs/196's lab, rs/158's ruling). So each oak and willow band starts by dropping every
+// normal log past `keepProducts`, sent without waiting before the walk to the stand (0 ticks;
+// the starter takes the first log), and the oaks start with the axe, the knife and one log,
+// which leaves a 23-bone load and the chopped log their 24 slots with one to spare.
+//
+// S07's end, two opt-in steps after the last band (rehearsals keep their axe and carry no bones).
+// The scored run's path: T07-08's Camelot runes ride the last bone load (receiveFrom takes an
+// offer holding more than the bones), and `dropAxe` adds `woodcutting:drop-axe`, which drops the
+// axe at `to` without waiting, as nothing after S07 chops. The fallback until a bone giver can
+// add the runes to a load: `handBack` adds `woodcutting:hand-back`, one `swap()` at `to` that
+// gives the axe and every bone held and takes the runes (1 law, 5 air), a trade of its own,
+// since the axe chops to the last level, after the last load.
 
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { GATED_PROGRAMS, type GatedSegment, type GatedTechnique, inPageGate, type InPageGateOptions, runGatedProgram, type SegmentTechnique } from '../lib/gated-program';
@@ -54,7 +70,7 @@ import type { HostGate } from '../lib/hostgate';
 import { withLevelUpDismissal } from '../lib/levelup';
 import type { ProgramStatus } from '../lib/programs';
 import type { TickLog } from '../lib/ticks';
-import { receiveFrom } from '../lib/trade';
+import { type GiveSpec, receiveFrom, swap, type WantSpec } from '../lib/trade';
 import { tickMs } from '../lib/wait';
 import type { RunnerSession, Step, StepContext } from '../runner/step';
 
@@ -219,6 +235,10 @@ export const PRAYER_TO = 94;
 export const MEASURE_DROPS = 120;
 /** NPCs within this many tiles of the player are named in a hit row. */
 export const HIT_REACH = 2;
+/** Normal logs the normal band keeps (knife-cycle `keepProducts`): the oak knife's one log (ledger H4k, H4.x). */
+export const NORMAL_KEEP = 1;
+/** T07-08's Camelot teleport, received in the hand-back (the ledger's teleport runes: 1 law, 5 air). */
+export const CAMELOT_RUNES: readonly WantSpec[] = [{ item: /^law rune$/i, amount: 1 }, { item: /^air rune$/i, amount: 5 }];
 
 // ------------------------------------------------------------------ state
 
@@ -226,6 +246,8 @@ const AXE = /^(bronze|iron|steel|black|mithril|adamant|rune) axe$/i;
 const RUNE_AXE = /^rune axe$/i;
 const KNIFE = /^knife$/i;
 const LOGS = /^logs$/i;
+const LAW = /^law rune$/i;
+const AIR = /^air rune$/i;
 const DEFAULT_BONES = 'bones$';
 
 function levelOf(s: BotWorldState | null, name: string): number {
@@ -244,6 +266,11 @@ function count(items: readonly InventoryItem[], re: RegExp): number {
 function axeOf(s: BotWorldState): string | null {
     const all = [...s.equipment, ...s.inventory];
     return (all.find(i => RUNE_AXE.test(i.name)) ?? all.find(i => AXE.test(i.name)))?.name ?? null;
+}
+
+/** Normal logs past the first `keep`: the starter's log is the first in the pack (knife-cycle `invItem`). */
+export function extraLogs(s: BotWorldState, keep: number): InventoryItem[] {
+    return s.inventory.filter(i => LOGS.test(i.name)).slice(keep);
 }
 
 function near(s: BotWorldState, t: Tile, r: number): boolean {
@@ -300,10 +327,20 @@ export interface WoodcuttingOptions {
     waitRespawn?: boolean | string;
     /** Probe only the stand's free neighbours (default true; 'false' probes E, W, N, S as the page does). */
     probeDirs?: boolean | string;
+    /** knife-cycle `keepProducts` on the normal band: normal logs kept, the kit's included (default 1). */
+    keepProducts?: number | string;
+    /**
+     * The hand-back at `to` (default off): true swaps with the bone giver, a string names the
+     * partner. Gives the axe and any bones held, takes CAMELOT_RUNES.
+     */
+    handBack?: boolean | string;
+    /** Drop the axe at `to` without waiting (default false: a rehearsal keeps it). */
+    dropAxe?: boolean | string;
     /** Test seams. */
     runGated?: typeof runGatedProgram;
     makeGate?: typeof inPageGate;
     receive?: typeof receiveFrom;
+    swap?: typeof swap;
     log?: (line: string) => void;
     [k: string]: unknown;
 }
@@ -323,9 +360,14 @@ interface Resolved {
     params: Record<string, unknown>;
     waitRespawn: boolean;
     probeDirs: boolean;
+    keepProducts: number;
+    /** The hand-back's partner, or null for none. */
+    handBack: string | null;
+    dropAxe: boolean;
     runGated: typeof runGatedProgram;
     makeGate: typeof inPageGate;
     receive: typeof receiveFrom;
+    swap: typeof swap;
     log: (line: string) => void;
 }
 
@@ -358,6 +400,15 @@ function resolve(opts: WoodcuttingOptions): Resolved {
     if (!Object.hasOwn(ROUTES, route)) throw new Error(`woodcutting: route must be ${Object.keys(ROUTES).join(' or ')}, got ${JSON.stringify(route)}`);
     const sitesIn = typeof opts.sites === 'string' ? (JSON.parse(opts.sites) as Partial<Sites>) : (opts.sites ?? {});
     const hold = opts.hold === undefined ? {} : { hold: numberOpt('hold', opts.hold, n => n >= 0 && n <= 1, 0) };
+    const hb = opts.handBack;
+    let handBack: string | null = null;
+    if (hb === true || hb === 'true') {
+        if (!giver) throw new Error('woodcutting: handBack true swaps with the bone giver, and there is none (name the partner instead)');
+        handBack = String(giver);
+    } else if (hb !== undefined && hb !== false && hb !== 'false') {
+        if (typeof hb !== 'string' || !hb.trim()) throw new Error(`woodcutting: handBack must be true, false or a partner name, got ${JSON.stringify(hb)}`);
+        handBack = hb;
+    }
     return {
         to,
         technique,
@@ -373,9 +424,13 @@ function resolve(opts: WoodcuttingOptions): Resolved {
         params: { ...opts.params, ...hold },
         waitRespawn: flag('waitRespawn', opts.waitRespawn, true),
         probeDirs: flag('probeDirs', opts.probeDirs, true),
+        keepProducts: numberOpt('keepProducts (an integer from 0 to 27)', opts.keepProducts, n => Number.isInteger(n) && n >= 0 && n <= 27, NORMAL_KEEP),
+        handBack,
+        dropAxe: flag('dropAxe', opts.dropAxe, false),
         runGated: opts.runGated ?? runGatedProgram,
         makeGate: opts.makeGate ?? inPageGate,
         receive: opts.receive ?? receiveFrom,
+        swap: opts.swap ?? swap,
         log: opts.log ?? (() => {})
     };
 }
@@ -397,7 +452,8 @@ export function bandTechnique(tree: Tree, technique: GatedTechnique): GatedTechn
 /**
  * knife-cycle's parameters for a band and technique. `bury` and `waitRespawn` go on knife segments
  * only (normal trees fall on every log, so they never wait for a respawn), and `dropEach` (rs/152:
- * drop on the label that shows the log, re-click on the same pass) on plain ones only.
+ * drop on the label that shows the log, re-click on the same pass) on plain ones only. The normal
+ * band passes `keepProducts` on both: its product is the knife's own log.
  */
 export function bandParams(opts: WoodcuttingOptions, tree: Tree, untilLevel: number): (technique: SegmentTechnique) => Record<string, unknown> {
     return paramsOf(resolve(opts), tree, untilLevel);
@@ -413,6 +469,7 @@ function paramsOf(o: Resolved, tree: Tree, untilLevel: number): (technique: Segm
         reanchor: 'xp',
         dismiss: 'now',
         ...(technique === 'knife' ? { ...(bury !== null ? { bury } : {}), ...(o.waitRespawn && tree !== 'normal' ? { waitRespawn: true } : {}) } : { dropEach: true }),
+        ...(tree === 'normal' ? { keepProducts: o.keepProducts } : {}),
         ...o.params
     });
 }
@@ -786,7 +843,8 @@ function bandStep(o: Resolved, b: Band, last: boolean): Step {
         if (l < TREE_LEVEL[b.tree]) return `Woodcutting ${l}, ${b.tree} trees need ${TREE_LEVEL[b.tree]}`;
         if (knifeCapable && (!count(s.inventory, KNIFE) || !count(s.inventory, LOGS))) return `technique ${technique} needs a knife and a normal log`;
         if (knifeCapable && !s.skills.some(k => k.name.toLowerCase() === 'fletching' && k.baseLevel >= 1)) return 'technique needs Fletching 1';
-        const free = 28 - s.inventory.length;
+        // the logs this band drops at its start count as free
+        const free = 28 - s.inventory.length + (b.tree === 'normal' ? 0 : extraLogs(s, o.keepProducts).length);
         if (free < 2) return `${free} free inventory slots, 2 needed`;
         if (!near(s, site.stand, NEAR)) return `not within ${NEAR} tiles of ${site.stand[0]},${site.stand[1]}`;
         if (burying) {
@@ -801,6 +859,12 @@ function bandStep(o: Resolved, b: Band, last: boolean): Step {
         const { sdk, bot, session, log } = ctx;
         const s0 = sdk.getState();
         if (!s0 || passed(s0)) return;
+        if (b.tree !== 'normal') {
+            // a drop keeps the walk queue, and it lands before the first load's trade completes
+            const extra = extraLogs(s0, o.keepProducts);
+            for (const i of extra.slice(0, 5)) void sdk.sendDropItem(i.slot);
+            if (extra.length) o.log(`${b.name}: dropped ${Math.min(5, extra.length)} normal log(s) past ${o.keepProducts} at the band's start`);
+        }
         if (site.trees && !(s0.player?.worldX === site.stand[0] && s0.player?.worldZ === site.stand[1])) {
             // `trees` are the tiles reachable from the stand itself (knife-cycle header)
             const r = await bot.walkTo(site.stand[0], site.stand[1], 0, { timeout: 30_000 });
@@ -913,6 +977,68 @@ function bandStep(o: Resolved, b: Band, last: boolean): Step {
     };
 }
 
+/** What the hand-back gives: the axe in the pack and every bone held, one spec per item id (a spec offers one id). */
+export function handBackSpecs(s: BotWorldState, bonesRe: RegExp): GiveSpec[] {
+    return [...new Set(s.inventory.filter(i => AXE.test(i.name) || bonesRe.test(i.name)).map(i => i.id))].map(id => ({ item: id }));
+}
+
+function handBackStep(o: Resolved, partner: string): Step {
+    const out = (s: BotWorldState) => s.inventory.filter(i => AXE.test(i.name) || o.bonesRe.test(i.name));
+    const handedBack = (s: BotWorldState) => out(s).length === 0 && count(s.inventory, LAW) >= 1 && count(s.inventory, AIR) >= 5;
+    return {
+        name: 'woodcutting:hand-back',
+        preconditions: s => {
+            if (handedBack(s)) return true;
+            if (wcLevel(s) < o.to) return `Woodcutting ${wcLevel(s)}: the hand-back waits for ${o.to}`;
+            if (!s.inventory.some(i => AXE.test(i.name))) return 'no axe in the pack to hand back (a worn axe cannot be traded)';
+            // swap() offers first, and the server counts offered items as freed (trade.rs2:161-190)
+            const frees = out(s).length;
+            const adds = [LAW, AIR].filter(re => !s.inventory.some(i => re.test(i.name))).length;
+            const free = 28 - s.inventory.length;
+            return free + frees >= adds ? true : `${free} free slots and ${frees} handed back: the Camelot runes need ${adds}`;
+        },
+        async run(ctx) {
+            const { sdk, session, log } = ctx;
+            const s0 = sdk.getState();
+            if (!s0 || handedBack(s0)) return;
+            const r = await o.swap(sdk, partner, handBackSpecs(s0, o.bonesRe), CAMELOT_RUNES, { closeModals: true, maxTicks: 60 });
+            const t1 = sdk.getState()?.tick ?? s0.tick;
+            const items = (xs: ReadonlyArray<{ name: string; count: number }>) => xs.map(i => `${i.name} x${i.count}`);
+            annotation(log, session, 'woodcutting:hand-back', s0.tick, t1, r.ok, {
+                kind: 'wc-hand-back', ticks: r.ticks, openTicks: r.openTicks, gave: items(r.gave), received: items(r.received), ...(r.reason ? { reason: r.reason } : {})
+            });
+            if (!r.ok) throw new Error(`woodcutting:hand-back: the swap failed: ${r.reason}`);
+        },
+        postconditions: s => (handedBack(s) ? true : `after the hand-back: ${out(s).length} axe or bone slots still held, law ${count(s.inventory, LAW)} and air ${count(s.inventory, AIR)} (1 and 5 wanted)`),
+        logoutSafe: true,
+        done: ({ state }) => handedBack(state)
+    };
+}
+
+/** At `to`: drop every axe in the pack, without waiting (as mining.exit): the leg after keeps its queue. */
+function dropAxeStep(o: Resolved): Step {
+    const axes = (s: BotWorldState) => s.inventory.filter(i => AXE.test(i.name));
+    const sent = new Set<number>();
+    return {
+        name: 'woodcutting:drop-axe',
+        preconditions: s => (wcLevel(s) >= o.to ? true : `Woodcutting ${wcLevel(s)}: the axe drop waits for ${o.to}`),
+        async run({ sdk }) {
+            sent.clear();
+            for (const i of axes(sdk.getState()!).slice(0, 5)) {
+                sent.add(i.slot);
+                void sdk.sendDropItem(i.slot);
+            }
+        },
+        // a drop sent and not yet published passes: waiting on it would cost the leg a tick
+        postconditions: s => {
+            const left = axes(s).filter(i => !sent.has(i.slot));
+            return left.length ? `still held at S07's end: ${left.map(i => i.name).join(', ')}` : true;
+        },
+        logoutSafe: true,
+        done: ({ state }) => wcLevel(state) >= o.to && axes(state).length === 0
+    };
+}
+
 /** The woodcutting steps from the current state to `to` (see the file comment). */
 export function steps(opts: WoodcuttingOptions = {}): Step[] {
     const o = resolve(opts);
@@ -925,6 +1051,8 @@ export function steps(opts: WoodcuttingOptions = {}): Step[] {
         bandStep(o, normal, false),
         bandStep(o, oak, !willowLast),
         walkStep(o, 'woodcutting:walk-willows', o.sites.willow.stand, s => wcLevel(s) >= oakEnd && wcLevel(s) < o.to, []),
-        bandStep(o, willow, willowLast)
+        bandStep(o, willow, willowLast),
+        ...(o.handBack !== null ? [handBackStep(o, o.handBack)] : []),
+        ...(o.dropAxe ? [dropAxeStep(o)] : [])
     ];
 }

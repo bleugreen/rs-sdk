@@ -10,9 +10,18 @@
 //   mining.travel: ...     Port Sarim, the ship to Karamja, Brimhaven, the customs ship to
 //                          Ardougne, the zoo; each leg a no-op once past (`travel: 'none'`
 //                          keeps only the zoo walk)
+//   mining.kit: H4p        with `kitGiver`: the rune pickaxe and a normal log by trade at the
+//                          zoo (STEP-MANIFEST.md's ledger, H4p; S07's kept log is the second);
+//                          rehearsals bring their kit
 //   mining.iron-15         15-63: iron, knife-mine with `success: 'iron'` (failed rolls) and
 //                          the held pickaxes' rates
 //   mining.iron-63         63-to: iron, knife-mine as measured (every roll succeeds)
+//   mining.exit            with `dropAtExit`: drops the pickaxes, the logs and the band's
+//                          leftovers at their last use, without waiting (the leg after keeps
+//                          its queue); the knife stays
+//
+// Slots: each iron band refuses to start without FREE_SLOTS free (ores count as free: the band
+// drops them first), and the kit trade without FREE_SLOTS plus the slots H4p adds.
 //
 // Respawn. Iron respawns in floor(20 x (4000 - min(players, 2000)) / 4000) ticks
 // (player_count.rs2). `respawn: 'auto'` reads /playercount at each band start and every 100
@@ -34,13 +43,14 @@ import { withLevelUpDismissal } from '../lib/levelup';
 import { ProgramError } from '../lib/programs';
 import { loadBotEnv } from '../lib/session';
 import type { TickRow } from '../lib/ticks';
+import { receiveFrom, type WantSpec } from '../lib/trade';
 import { currentTick, nextTick, tickMs, waitUntil } from '../lib/wait';
 import type { Step, StepContext } from '../runner/step';
 
 export const skill = 'mining';
 
-/** The in-page loop the iron bands drive; a test replaces it (the page is not there). */
-export const deps = { runGatedProgram, inPageGate };
+/** The in-page loop the iron bands drive and the kit trade; a test replaces them (the page is not there). */
+export const deps = { runGatedProgram, inPageGate, receiveFrom };
 
 export type Technique = 'auto' | 'knife' | 'plain';
 
@@ -59,6 +69,10 @@ export interface MiningOpts {
     origin?: string;
     /** rs/111's S07 fallback (bones on the stay2 lap): a seam, not built. */
     bury?: unknown;
+    /** The trade giver at the zoo that hands over H4p (H4P_KIT) before the iron bands; none by default. */
+    kitGiver?: string;
+    /** Drop EXIT_DROPS at `to` (default false: a rehearsal keeps its kit). */
+    dropAtExit?: boolean | string;
     [k: string]: unknown;
 }
 
@@ -247,6 +261,15 @@ export const STARTER_JUNK = [
 ];
 /** Free slots the bands want: ore, a gem, a stray fletch. */
 export const FREE_SLOTS = 4;
+/**
+ * H4p (STEP-MANIFEST.md's ledger): the iron kit by trade at the zoo. One log, since S07's kept log
+ * arrives too (rs/158's ruling); knife-mine loses none of them (rs/226, 1,050 ores).
+ */
+export const H4P_KIT: readonly WantSpec[] = [{ item: /^rune pickaxe$/i, amount: 1 }, { item: /^logs$/i, amount: 1 }];
+/** Slots H4p adds: the pickaxe and an unstackable log. */
+export const KIT_SLOTS = 2;
+/** Dead at S09's end: the pickaxes and the logs (the knife stays), and what an interrupted lap leaves. */
+export const EXIT_DROPS: readonly RegExp[] = [...PICKAXES.map(p => p.name), /^logs$/i, /ore$|^uncut /i, /^arrow shaft$/i];
 
 // ------------------------------------------------------------------ state readers
 
@@ -284,6 +307,8 @@ export async function dropOres(sdk: StepContext<any>['sdk']): Promise<number> {
     return n;
 }
 const freeSlots = (s: BotWorldState) => 28 - s.inventory.length;
+/** Free slots once the band's ore drop has run. */
+const freeOfOre = (s: BotWorldState) => freeSlots(s) + s.inventory.filter(i => ORE.test(i.name)).length;
 
 function toNumber(v: unknown, name: string): number {
     const n = Number(v);
@@ -322,6 +347,10 @@ export function steps(raw: MiningOpts = {}): Step<any>[] {
     if (!site) throw new Error(`mining: no copper site '${raw.copperSite}' (${Object.keys(COPPER_SITES).join(', ')})`);
     const travel = raw.travel ?? 'auto';
     if (travel !== 'auto' && travel !== 'none') throw new Error(`mining: travel must be auto or none, not ${travel}`);
+    if (raw.kitGiver !== undefined && (typeof raw.kitGiver !== 'string' || !raw.kitGiver.trim())) throw new Error(`mining: kitGiver must be a name, not ${JSON.stringify(raw.kitGiver)}`);
+    const d = raw.dropAtExit;
+    if (d !== undefined && d !== true && d !== false && d !== 'true' && d !== 'false') throw new Error(`mining: dropAtExit must be true or false, not ${JSON.stringify(d)}`);
+    const dropAtExit = d === true || d === 'true';
     const shared: Shared = { gate: null };
     const o = { to, technique, respawn, rotation: raw.rotation, origin: raw.origin, site };
 
@@ -329,9 +358,67 @@ export function steps(raw: MiningOpts = {}): Step<any>[] {
     if (to > 1) out.push(copperStep(Math.min(15, to), site));
     if (travel === 'auto') out.push(...travelSteps(to));
     out.push(zooStep(to, o));
+    if (raw.kitGiver !== undefined && to > 15) out.push(kitStep(to, raw.kitGiver));
     if (to > 15) out.push(ironStep('mining.iron-15', 15, Math.min(63, to), true, o, shared));
     if (to > 63) out.push(ironStep('mining.iron-63', 63, to, false, o, shared));
+    if (dropAtExit) out.push(exitStep(to));
     return out;
+}
+
+const kitHeld = (s: BotWorldState) => H4P_KIT.every(w => s.inventory.filter(i => (w.item as RegExp).test(i.name)).reduce((n, i) => n + i.count, 0) >= (w.amount ?? 1));
+
+/** H4p at the zoo: one receive from the trade giver, with the slots for it and the band. */
+function kitStep(to: number, giver: string): Step<any> {
+    const skip = (s: BotWorldState) => miningLevel(s) >= to || kitHeld(s);
+    return {
+        name: 'mining.kit: H4p',
+        preconditions: s => {
+            if (skip(s)) return true;
+            const need = KIT_SLOTS + FREE_SLOTS;
+            return freeOfOre(s) >= need ? true : `${28 - freeOfOre(s)} other items: H4p's rune pickaxe and log and the band need ${need} free slots`;
+        },
+        run: async ctx => {
+            const { sdk } = ctx;
+            if (skip(sdk.getState()!)) return;
+            await dropOres(sdk);
+            const t0 = currentTick(sdk);
+            const r = await deps.receiveFrom(sdk, giver, { want: [...H4P_KIT], maxTicks: 60, openTimeoutMs: 20_000 });
+            ctx.log.append({ ...row(ctx, 'mining.kit: H4p', { kind: 'mining-kit', ok: r.ok, ticks: r.ticks, received: r.received.map(i => `${i.name} x${i.count}`), ...(r.reason ? { reason: r.reason } : {}) }, t0), ticks: 0, ok: r.ok });
+            if (!r.ok) throw new Error(`H4p from the trade giver failed: ${r.reason}`);
+        },
+        postconditions: s => (skip(s) ? true : 'H4p did not arrive: no rune pickaxe or no log'),
+        logoutSafe: true,
+        done: ob => skip(ob.state),
+    };
+}
+
+/** At `to`: drop EXIT_DROPS, 5 a tick, the last batch sent without waiting (as magic.ts's S02 exit). */
+function exitStep(to: number): Step<any> {
+    const dead = (s: BotWorldState) => s.inventory.filter(i => EXIT_DROPS.some(re => re.test(i.name)));
+    const sent = new Set<number>();
+    return {
+        name: 'mining.exit',
+        preconditions: s => (miningLevel(s) >= to ? true : `Mining ${miningLevel(s)} < ${to}: the exit drops wait for the band`),
+        run: async ({ sdk }) => {
+            sent.clear();
+            for (let guard = 0; guard < 6; guard++) {
+                const left = dead(sdk.getState()!).filter(i => !sent.has(i.slot));
+                for (const i of left.slice(0, 5)) {
+                    sent.add(i.slot);
+                    void sdk.sendDropItem(i.slot);
+                }
+                if (left.length <= 5) return;
+                await nextTick(sdk);
+            }
+        },
+        // a drop sent and not yet published passes: waiting on it would cost the leg a tick
+        postconditions: s => {
+            const left = dead(s).filter(i => !sent.has(i.slot));
+            return left.length ? `still held at the exit: ${left.map(i => i.name).join(', ')}` : true;
+        },
+        logoutSafe: true,
+        done: ob => miningLevel(ob.state) >= to && dead(ob.state).length === 0,
+    };
 }
 
 /** Only a fresh account (below 15) is prepared: the scored run's inventory is never touched. */
@@ -551,6 +638,7 @@ function ironStep(name: string, start: number, end: number, failures: boolean, o
             if (miningLevel(s) >= end) return true;
             if (miningLevel(s) < start) return `Mining ${miningLevel(s)} < ${start}`;
             if (pickaxeRate(s.inventory, miningLevel(s)) === null) return 'no usable pickaxe';
+            if (freeOfOre(s) < FREE_SLOTS) return `${28 - freeOfOre(s)} other items: need ${FREE_SLOTS} free slots (ore, a gem, a stray fletch)`;
             return cheb(here(s), ZOO) <= 10 ? true : `not at the zoo cluster (${key(here(s))})`;
         },
         run: async ctx => {
