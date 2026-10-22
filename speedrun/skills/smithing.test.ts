@@ -8,7 +8,7 @@ import { levelForXp, xpForLevel } from '../lib/xp';
 import { Observation, resolveResume } from '../runner/resume';
 import { runSteps, type RunnerSession } from '../runner/step';
 import {
-    ANVIL, ANVIL_LOC, barRoom, barTotals, BARS, bestProduct, chooseMake, countsOf, firstAnnouncement, handBack, heldSegments, itemXp, milestones,
+    ANVIL, ANVIL_LOC, barRoom, barsIn, barTotals, BARS, bestProduct, otherItems, chooseMake, countsOf, firstAnnouncement, handBack, heldSegments, itemXp, milestones,
     PLAN_DEFAULTS, PRODUCTS, resolveOptions, routePlan, SCORED_TILE, SMITHING_IF, stepPlan, steps, type AnvilPlanMsg, type Bar, type InventoryReport,
 } from './smithing';
 
@@ -238,6 +238,31 @@ describe('steps', () => {
         expect(fresh).toMatchObject({ index: 0, mode: 'run' });
         const finished = await resolveResume(list, new Observation(atAnvil(xpForLevel(99))), {});
         expect(finished.mode).toBe('finished');
+    });
+
+    test('the free-slot precondition: the hammer and the inventory\'s bars beside everything else held', () => {
+        const it = (slot: number, name: string, count = 1, id = 500 + slot): InventoryItem => ({ slot, id, name, count, optionsWithIndex: [] });
+        // Inventory 1 is 24 bars: with the hammer, 25 slots, so 3 other items fit and a 4th does not.
+        const three = [it(0, 'Law rune', 4), it(1, 'Air rune', 12), it(2, 'Gold bar')];
+        expect(list[0]!.preconditions(atAnvil(0, three), {})).toBe(true);
+        expect(list[0]!.preconditions(atAnvil(0, [...three, it(3, 'Hammer')]), {})).toBe(true);
+        expect(list[0]!.preconditions(atAnvil(0, [...three, it(4, 'Tinderbox')]), {})).toBe('4 other items (Law rune, Air rune, Gold bar, Tinderbox): need 25 free slots (the hammer and 24 bars)');
+        // Later inventories are 25 bars: 2 other items at most. Held bars are the module's own.
+        const k = 5;
+        const at = atAnvil(marks[k - 1]!, [it(0, 'Law rune', 4), it(1, 'Air rune', 12), it(2, 'Iron bar', 1, 2351)]);
+        expect(list[k]!.preconditions(at, {})).toBe(true);
+        expect(list[k]!.preconditions(atAnvil(marks[k - 1]!, [...at.inventory, it(3, 'Coins', 50)]), {})).toBe('3 other items (Law rune, Air rune, Coins): need 26 free slots (the hammer and 25 bars)');
+        // A passed inventory is a no-op whatever is held.
+        expect(list[0]!.preconditions(atAnvil(marks[0]!, Array.from({ length: 28 }, (_, i) => it(i, 'Bones'))), {})).toBe(true);
+    });
+
+    test('otherItems: products made since the baseline leave in the next trade; one SCORED arrived with stays', () => {
+        const plate = (slot: number): InventoryItem => ({ slot, id: 1115, name: 'Iron platebody', count: 1, optionsWithIndex: [] });
+        const s = atAnvil(0, [{ slot: 0, id: 2347, name: 'Hammer', count: 1, optionsWithIndex: [] }, plate(1), plate(2), { slot: 3, id: 563, name: 'Law rune', count: 4, optionsWithIndex: [] }]);
+        expect(otherItems(s, new Map())).toEqual(['Law rune']);
+        expect(otherItems(s, new Map([[1115, 1]]))).toEqual(['Iron platebody', 'Law rune']);
+        expect(otherItems(s, countsOf(s.inventory))).toEqual(['Iron platebody', 'Iron platebody', 'Law rune']);
+        expect(barsIn(stepPlan().plan[0]!)).toBe(24);
     });
 
     test('a supply helper with no giver is refused at the precondition, not thrown', () => {
