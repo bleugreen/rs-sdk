@@ -391,6 +391,11 @@ export function carriedNeeds(pkg: Pick<Package, 'items'>, inventory: readonly In
     return { held, missing, ambiguous };
 }
 
+/** CarriedNeeds as a log line's fields. */
+export function carriedNeedsLog(n: CarriedNeeds): Record<string, unknown> {
+    return { held: Object.fromEntries(n.held), ...(n.missing.length ? { missing: n.missing } : {}), ...(n.ambiguous.length ? { ambiguous: n.ambiguous } : {}) };
+}
+
 /** A carried package can be served: every fixed line held, no ambiguous line, and something to offer. */
 export function carriedReady(n: CarriedNeeds): boolean {
     return n.missing.length === 0 && n.ambiguous.length === 0 && n.held.size > 0;
@@ -1276,6 +1281,7 @@ class Mule {
     }
 
     private packageReady(): boolean {
+        if (this.o.carried) return !!this.pending && carriedReady(carriedNeeds(this.pending, this.ctx.sdk.getInventory()));
         return !!this.pending && !!this.held && holds(countById(this.ctx.sdk.getInventory()), this.held);
     }
 
@@ -1283,10 +1289,13 @@ class Mule {
         const { sdk } = this.ctx;
         const s = sdk.getState();
         if (!s || !this.o.preRequest || !this.o.serve) return;
-        const d = decidePreRequest(s, this.click, this.o.serve, this.packageReady() && stagedExactly(sdk.getInventory(), this.held).exact);
+        // A carried package shares the inventory with the others, so only a banked one must be staged exactly.
+        const ready = this.packageReady() && (this.o.carried || stagedExactly(sdk.getInventory(), this.held).exact);
+        const d = decidePreRequest(s, this.click, this.o.serve, ready);
         this.click = d.next;
         if (d.send === undefined) return;
         this.lastPreRequest = Date.now();
+        this.touch();
         // The scored account sees "wishes to trade", and its own click then opens the trade on the tick it lands.
         sendTradeClick(sdk, d.send, this.click.sentTick, (sent, tick) => (this.click = clickBack(this.click, sent, tick)));
         this.ctx.log('pre-requested', { serve: this.o.serve, package: this.pending?.name, sends: this.click.sends });
@@ -1356,16 +1365,24 @@ class Mule {
             await this.receiveFrom(name);
             return;
         }
-        const staged = stagedExactly(sdk.getInventory(), this.held);
-        if (!staged.exact) {
-            ctx.log('serve refused: the inventory is not exactly the package; re-staging', { package: this.pending?.name, extra: staged.extra, short: staged.short });
-            if (sdk.getTradeState().isOpen) await bot.declineTrade();
-            this.held = null;
-            this.needsBank = true;
-            return;
+        this.touch();
+        if (this.o.carried) {
+            // Its own counts from the inventory; and no wildlife beside it when the trade opens.
+            if (this.wildlife.length && !sdk.getTradeState().isOpen) await this.clearWildlife();
+            this.held = carriedNeeds(this.pending!, sdk.getInventory()).held;
+        } else {
+            const staged = stagedExactly(sdk.getInventory(), this.held);
+            if (!staged.exact) {
+                ctx.log('serve refused: the inventory is not exactly the package; re-staging', { package: this.pending?.name, extra: staged.extra, short: staged.short });
+                if (sdk.getTradeState().isOpen) await bot.declineTrade();
+                this.held = null;
+                this.needsBank = true;
+                return;
+            }
         }
         if (!(await this.openTradeWith(name))) return;
         const pkg = this.pending!;
+        const session = this.pendingSession;
         // 30 s, not 60: a pre-request can open a trade the scored account did not ask for
         // yet (it accepts a stale request of theirs), and that screen must not linger.
         const r = await serveStaged(sdk, bot, {
@@ -1375,8 +1392,10 @@ class Mule {
             mode: this.o.giver,
             timeoutMs: 30_000,
             ask: { dir: this.o.cueDir, openMs: this.openSeenMs || Date.now(), lastServedMs: this.lastAskMs, maxTicks: this.o.askWaitTicks, signal: ctx.signal },
-            log: ctx.log
+            log: ctx.log,
+            exact: this.o.carried
         });
+        this.touch();
         if (r.ask) this.lastAskMs = r.ask.ms;
         ctx.log('hand-off', {
             to: name,
@@ -1391,13 +1410,20 @@ class Mule {
         });
         if (r.success) {
             this.held = null;
+            if (this.o.carried) {
+                // On disk before anything else: a restart must find it served (role.ts RoleState).
+                await this.ctx.state.set(CARRIED_SERVED_KEY, [...this.servedEntries(), { pkg: pkg.name, session, ms: Date.now() } satisfies CarriedServed]);
+                this.done.add(pkg.name);
+            }
             if (this.o.serveMode === 'order') {
                 ({ nextIndex: this.nextIndex, pending: this.pending } = afterServe(this.ordered, this.nextIndex, pkg));
             } else {
                 this.pending = null;
             }
+            this.pendingSession = 'order';
+            if (this.o.carried) ctx.log('carried: left', { inventory: sdk.getInventory().length, short: carriedShort(this.o.packages.filter(p => !this.done.has(p.name)), sdk.getInventory()) });
         }
-        this.needsBank = true;
+        this.needsBank = !this.o.carried;
     }
 
     private async courierTrade(name: string): Promise<void> {
