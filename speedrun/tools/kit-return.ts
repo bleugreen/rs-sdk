@@ -214,13 +214,14 @@ export async function kitReturn(session: Session, o: KitReturnOptions): Promise<
             tradeHit ??= watch(s);
             return tradeHit ? `took damage from ${tradeHit.by} (hp ${tradeHit.hp})` : null;
         };
-        for (let attempt = 1; attempt <= 2 && !gave && !tradeHit; attempt++) {
+        for (let attempt = 1; attempt <= 2 && !gave && !(tradeHit as Damage | null); attempt++) {
             const r = await give(sdk, o.giver, o.items.map(k => ({ item: re(k.name), n: k.amount })), { maxTicks: 60, openTimeoutMs: 45_000, stopIf });
             say(`trade ${attempt}: ${r.ok ? 'ok' : `failed (${r.reason})`}, ${r.ticks} ticks, gave ${JSON.stringify(r.gave)}`);
             gave = r.ok;
-            if (!gave && !tradeHit) await sdk.waitForTicks(3);
+            if (!gave && !(tradeHit as Damage | null)) await sdk.waitForTicks(3);
         }
-        if (tradeHit && !gave) throw await retreat(tradeHit, 'waiting on the trade', ap.runFrom);
+        const hitWaiting = tradeHit as Damage | null; // assigned in stopIf, which TS does not follow
+        if (hitWaiting && !gave) throw await retreat(hitWaiting, 'waiting on the trade', ap.runFrom);
         const after = Object.fromEntries(o.items.map(k => [k.name, held(sdk.getState()!.inventory, k.name)]));
         say(`holds after: ${JSON.stringify(after)}`);
         gave = gave && o.items.every(k => after[k.name] === before[k.name]! - k.amount);
