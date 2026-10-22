@@ -211,7 +211,7 @@ describe('wrappers', () => {
 
     test('--dry-run lists every refusing step on the path; --until=S04 has none', () => {
         expect(missingOnPath(chain).map(m => `${m.id} ${m.owner}`)).toEqual([
-            'S15 rs/185', 'S19 rs/185 (rs/414)', ...Array(6).fill('S24 rs/416'),
+            'S15 rs/185', 'S19 rs/185 (rs/414)',
         ]);
         expect(missingOnPath(sliceUntil(chain, 'S04'))).toEqual([]);
     });

@@ -32,6 +32,9 @@ import { skillLevel } from '../lib/world';
 import * as cooksAssistant from '../quests/cooks-assistant';
 import * as doricsQuest from '../quests/dorics-quest';
 import * as dragonSlayer from '../quests/dragon-slayer';
+import * as druidicRitual from '../quests/druidic-ritual';
+import * as goblinDiplomacy from '../quests/goblin-diplomacy';
+import * as romeoJuliet from '../quests/romeo-juliet';
 import * as dwarfCannon from '../quests/dwarf-cannon';
 import * as fightArena from '../quests/fight-arena';
 import * as fishingContest from '../quests/fishing-contest';
@@ -465,16 +468,15 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...steps('S23', cooksAssistant.steps()),
         L('T23-24'),
         ...before('S24'),
-        // rs/416's segment names at the legs' boundaries (plan v37), until its modules land.
-        missingStep('S24', 'S24:G2-dye-mail', 'rs/416'),
+        // rs/416's three quests, Goblin Diplomacy in two parts around Druidic Ritual; the legs between
+        // them are keyed to the segments' names (plan v37).
+        ...steps('S24', goblinDiplomacy.steps({ part: 'anchor' })),
         L('L24a'),
-        missingStep('S24', 'S24:D1-kaqemeex-start', 'rs/416'),
-        missingStep('S24', 'S24:D9-kaqemeex-reward', 'rs/416', 'druid'),
+        ...steps('S24', druidicRitual.steps()),
         L('L24b'),
-        missingStep('S24', 'S24:G3-orange-request', 'rs/416'),
-        missingStep('S24', 'S24:G6-plain-mail', 'rs/416', 'gobdip'),
+        ...steps('S24', goblinDiplomacy.steps({ part: 'village' })),
         L('L24c'),
-        missingStep('S24', 'S24:R1-juliet', 'rs/416', 'romeojuliet'),
+        ...steps('S24', romeoJuliet.steps()),
         L('T24-25'),
         ...cued(
             { step: 'S25a', family: 'anvil' },

@@ -101,27 +101,6 @@ export const STAND_INS: readonly StandIn[] = [
         ],
         end: { x: 2716, z: 3302, source: `${LEGS}.caroline (T19-20's start)` },
     },
-    {
-        stepId: 'S24', name: 'Goblin Diplomacy, Druidic Ritual, Romeo and Juliet (with L24a-c)', owner: 'rs/416', quest: 'romeojuliet',
-        varps: [
-            { name: 'goblinquest', value: 6, source: `${QS} gobdip: varp 62, complete = 6` },
-            { name: 'druidquest', value: 4, source: `${QS} druid: varp 80, complete = 4` },
-            { name: 'rjquest', value: 100, source: `${QS} romeojuliet: varp 144, complete = 100` },
-        ],
-        xp: [
-            { skill: 'crafting', base: 200, source: `${MAN} S24 Goblin Diplomacy postconditions; quest_gobdip.rs2` },
-            { skill: 'herblore', base: 250, source: `${MAN} S24 Druidic Ritual postconditions; quest_druid.rs2 (Herblore 1-28, ${RO} S24)` },
-        ],
-        qp: { add: 14, source: `${QS}: gobdip 5 + druid 4 + romeojuliet 5 (${RO} S24 says 11: sent to rs/158)` },
-        give: [{ obj: 'gold_bar', n: 1, source: `${MAN} ledger S24 in: Goblin Diplomacy's reward` }],
-        take: [
-            { item: /^goblin mail$/i, source: `${MAN} ledger S24 out` },
-            { item: /^(orange|blue) dye$/i, source: `${MAN} ledger S24 out` },
-            { item: /^raw (rat meat|bear meat|beef|chicken)$/i, source: `${MAN} ledger S24 out (Druidic Ritual)` },
-            { item: /^cadava berries$/i, source: `${MAN} ledger S24 out (Romeo and Juliet)` },
-        ],
-        end: { x: 3211, z: 3425, source: `${LEGS}.romeo (T24-25's start)` },
-    },
 ];
 
 export function standInFor(stepId: string): StandIn | undefined {

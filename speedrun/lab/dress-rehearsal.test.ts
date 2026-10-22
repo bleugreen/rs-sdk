@@ -13,11 +13,11 @@ const cfg = (name: string) => ({ partners: partners(name), firemakingTiles: '324
 const cues = { open: async () => {}, stop: () => {} };
 
 describe('labChain', () => {
-    test('each missing group becomes one STAND-IN step (S24 with its legs inside), and nothing refuses', () => {
+    test('each missing group becomes one STAND-IN step, and nothing refuses', () => {
         const lab = labChain(buildChain(cfg('lab_stub'), { cues }), { manifest, stub: 'lab_stub', world });
-        expect(lab.standIns).toEqual(['S15', 'S19', 'S24']);
-        expect(lab.chain.filter(s => s.name.startsWith(STAND_IN_STEP)).map(s => s.id)).toEqual(['S15', 'S19', 'S24']);
-        expect(lab.chain.some(s => /^L24/.test(s.id))).toBe(false);
+        expect(lab.standIns).toEqual(['S15', 'S19']);
+        expect(lab.chain.filter(s => s.name.startsWith(STAND_IN_STEP)).map(s => s.id)).toEqual(['S15', 'S19']);
+        expect(lab.chain.filter(s => /^L24/.test(s.id)).map(s => s.id)).toEqual(['L24a', 'L24b', 'L24c']);
         expect(lab.chain.some(s => s.kind === 'missing')).toBe(false);
         expect(lab.chain.filter(s => s.preconditions.toString().includes('not built')).length).toBe(0);
     });
