@@ -27,13 +27,22 @@
 //
 // Role options (ROLE_OPTIONS):
 //   row          { x, z, len, rows }: the snake (firemaking-line.ts --row/--rows), default LAB_ROW
+//   tiles        [[x, z], ...] in place of row: the tiles in lighting order, cycled (row and tiles together are an error)
 //   part, parts  this dropper's share of the inventories (default 0 of 1)
+//   skipOccupied a planned tile with a fire or a ground item (not ashes) on it takes no log; the log
+//                  goes on the next free tile of its inventory's block (default false)
+//   spareTiles   empty tiles after each inventory's 28 for those skips (skipOccupied only;
+//                  default 2 when parts > 1, else 0)
 //   start        'now' | 'sighted' | 'cue' (default 'sighted'): when log 0's 100 ticks start
 //                  now: at once; sighted: when SCORED (scoredSha256, else the cue's receiver
 //                  hash) is within sightRange; cue: when <cueDir>/fm-row-go.json is written
+//   cueAt        'seen' | 'written' (start cue only; default 'seen'): count from the tick the go
+//                  file is seen, or from its ms (tickMs per tick) for a dropper that logs in late
+//   tickMs       ms per server tick for cueAt 'written' (default wait.ts tickMs())
 //   scoredSha256 sha-256 of SCORED's canonical name (altar-cue.ts nameHash); never its name
 //   sightRange   default 15
-//   restock      { kind: 'bank' | 'cheat', bank?: {x,z} } (cheat: local lab only; bank default Falador east)
+//   restock      { kind: 'bank' | 'cheat' | 'held', bank?: {x,z} } (cheat: local lab only; bank default
+//                  Falador east; held: logs in carrying its one inventory and never restocks)
 //   lead         ticks between a log turning public and SCORED's earliest want of it,
 //                  beyond the drop's own 1-tick latency (default 4)
 //   restockTicks a restock's round trip, row to row (default 6 cheat; bank: distance + 20)
@@ -44,7 +53,7 @@
 import { join } from 'node:path';
 import type { BotWorldState, GroundItem, NearbyLoc } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
-import { waitUntil } from '../lib/wait';
+import { tickMs as defaultTickMs, waitUntil } from '../lib/wait';
 import { cueDir, nameHash, readJson, type Cue } from './altar-cue';
 import { chebyshev, cheat, isLocalServer, labTele, pos, type Tile } from './altar-room';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank, walkNear } from './mule';
@@ -75,6 +84,7 @@ export const S03_LOGS: readonly Tier[] = [
     { obj: 'yew_logs', name: 'Yew logs', n: 24 },
     { obj: 'magic_logs', name: 'Magic logs', n: 107 }
 ];
+export const S03_TOTAL = S03_LOGS.reduce((n, t) => n + t.n, 0);
 
 /** A snake: row 0 runs west from (x, z) over `len` tiles, row 1 (z - 1) back east, and so on, repeating after `rows`. */
 export interface Row {
@@ -99,20 +109,93 @@ export function snakeTile(row: Row, i: number): Tile {
     return { x: r % 2 === 0 ? row.x - k : row.x - row.len + 1 + k, z: row.z - r };
 }
 
+/** Where the logs go: a snake (`row`), or an explicit list of tiles (`tiles`) walked in order and cycled. */
+export type Path = Row | readonly Tile[];
+
+const isList = (p: Path): p is readonly Tile[] => Array.isArray(p);
+
+/** The tile at `slot` along the path. */
+export function pathTile(path: Path, slot: number): Tile {
+    return isList(path) ? path[slot % path.length]! : snakeTile(path, slot);
+}
+
 export interface PlannedLog {
     i: number;
+    /** Its planned tile's index along the path. */
+    slot: number;
     tile: Tile;
     tier: Tier;
 }
 
-export function rowPlan(row: Row, tiers: readonly Tier[] = S03_LOGS): PlannedLog[] {
+/** Inventory k carries logs 28k .. 28k + 27. */
+export const inventoryOf = (i: number): number => Math.floor(i / INVENTORY);
+
+/** Log i's planned slot: inventory k's 28 logs take slots k(28 + spareTiles) on, and its spares follow them. */
+export const primarySlot = (i: number, spareTiles = 0): number => inventoryOf(i) * (INVENTORY + spareTiles) + (i % INVENTORY);
+
+export function rowPlan(path: Path, tiers: readonly Tier[] = S03_LOGS, spareTiles = 0): PlannedLog[] {
     const plan: PlannedLog[] = [];
-    for (const tier of tiers) for (let n = 0; n < tier.n; n++) plan.push({ i: plan.length, tile: snakeTile(row, plan.length), tier });
+    for (const tier of tiers)
+        for (let n = 0; n < tier.n; n++) {
+            const i = plan.length;
+            const slot = primarySlot(i, spareTiles);
+            plan.push({ i, slot, tile: pathTile(path, slot), tier });
+        }
     return plan;
 }
 
-/** Inventory k carries logs 28k .. 28k + 27. */
-export const inventoryOf = (i: number): number => Math.floor(i / INVENTORY);
+export interface PlannedTile {
+    slot: number;
+    tile: Tile;
+    inventory: number;
+    /** The dropper that carries this block. */
+    part: number;
+    /** The log planned here; null on a spare. */
+    log: number | null;
+}
+
+/** The planned layout, tile by tile: each inventory's block is its logs, then `spareTiles` spares. */
+export function plannedTiles(path: Path, parts: number, spareTiles: number, logs = S03_TOTAL): PlannedTile[] {
+    const out: PlannedTile[] = [];
+    for (let k = 0; k * INVENTORY < logs; k++) {
+        const n = Math.min(INVENTORY, logs - k * INVENTORY);
+        const first = k * (INVENTORY + spareTiles);
+        for (let m = 0; m < n + spareTiles; m++)
+            out.push({ slot: first + m, tile: pathTile(path, first + m), inventory: k, part: k % parts, log: m < n ? k * INVENTORY + m : null });
+    }
+    return out;
+}
+
+/**
+ * The last slot a skip may push log i to: its block's last spare. A skip never crosses
+ * into the next block when parts > 1, because the next block's dropper cannot see our
+ * private log there. One dropper sees all its own logs, so with parts = 1 there is no limit
+ * and a skip shifts the later logs on.
+ */
+export function blockLast(i: number, planLength: number, spareTiles: number, parts: number): number {
+    if (parts === 1) return Number.POSITIVE_INFINITY;
+    const k = inventoryOf(i);
+    return k * (INVENTORY + spareTiles) + Math.min(INVENTORY, planLength - k * INVENTORY) + spareTiles - 1;
+}
+
+/** The first free slot from `from` to `last`. With none free the log goes on `last` anyway (`full`). */
+export function placeSlot(from: number, last: number, occupied: (slot: number) => boolean): { slot: number; full: boolean } {
+    const end = Math.min(last, from + 2 * INVENTORY);
+    for (let s = from; s <= end; s++) if (!occupied(s)) return { slot: s, full: false };
+    return { slot: end, full: true };
+}
+
+const ASHES = /^ashes$/i;
+const FIRE = /^fire$/i;
+
+/**
+ * A tile a skip-occupied drop avoids: a fire on it, or any ground item except ashes. A
+ * burnt-out fire leaves ashes for 100 ticks (firemaking.rs2), so on a 50-tile lap our own
+ * ashes often lie on the next lap's tiles, and they do not stop a light.
+ */
+export function occupied(t: Tile, locs: readonly Pick<NearbyLoc, 'name' | 'x' | 'z'>[], ground: readonly Pick<GroundItem, 'name' | 'x' | 'z'>[]): boolean {
+    return locs.some(l => l.x === t.x && l.z === t.z && FIRE.test(l.name)) || ground.some(g => g.x === t.x && g.z === t.z && !ASHES.test(g.name));
+}
 
 /** The row indexes this dropper drops: every log of the inventories k with k % parts === part, in order. */
 export function ownLogs(planLength: number, part: number, parts: number): number[] {
@@ -154,6 +237,81 @@ export function advance(p: Progress, plan: readonly PlannedLog[], burning: (t: T
     let lit = p.lit;
     while (lit < plan.length && mayCount(lit) && burning(plan[lit]!.tile)) lit++;
     return lit === p.lit ? p : { lit, litTick: tick };
+}
+
+const tileKey = (t: Tile) => `${t.x},${t.z}`;
+
+/**
+ * Fires by tile, for skip-occupied progress. A fire is fresh if its tile was watched with
+ * no fire on it before the fire appeared, so a fire already burning when first seen (a
+ * foreign one, or one from before arming) never counts. A tile watched clear forgets its
+ * fire, so a tile relit on the next lap counts again.
+ */
+export class FireLedger {
+    private readonly tiles = new Map<string, 'clear' | 'stale' | { since: number }>();
+
+    watch(t: Tile, burning: boolean, tick: number): void {
+        const k = tileKey(t);
+        const r = this.tiles.get(k);
+        if (!burning) this.tiles.set(k, 'clear');
+        else if (r === 'clear') this.tiles.set(k, { since: tick });
+        else if (r === undefined) this.tiles.set(k, 'stale');
+    }
+
+    /** The tick a fresh fire on t was first seen; null if t has no fresh fire. */
+    freshSince(t: Tile): number | null {
+        const r = this.tiles.get(tileKey(t));
+        return typeof r === 'object' ? r.since : null;
+    }
+}
+
+/**
+ * Skip-occupied progress: move past every consecutive log whose fire `fireAt` finds,
+ * searching from the slot after the last one's fire.
+ *
+ * @param litSlot  slot of log lit - 1's fire (-1 before the first)
+ * @param fireAt   (i, from) => slot of the fire that lit log i, or null
+ */
+export function advanceFresh(
+    p: Progress,
+    litSlot: number,
+    n: number,
+    fireAt: (i: number, from: number) => number | null,
+    tick: number
+): { progress: Progress; litSlot: number } {
+    let lit = p.lit;
+    let slot = litSlot;
+    for (let s = lit < n ? fireAt(lit, slot + 1) : null; s !== null; s = lit < n ? fireAt(lit, slot + 1) : null) {
+        slot = s;
+        lit++;
+    }
+    return { progress: lit === p.lit ? p : { lit, litTick: tick }, litSlot: slot };
+}
+
+/**
+ * Progress for a dropper that arms after SCORED has started. The fires of the first logs
+ * are burnt out by then, so `advance` from log 0 would never move. The frontier is past the
+ * highest log that burns now together with the log before it (one fire alone may be
+ * anyone's), if SCORED can have got that far: log i is lit no sooner than start + a roll per
+ * log. That fire was seen by now, so the next log is wanted from the next tick on.
+ *
+ * @param fireSlot  slot of a fire on log i's tile(s), or null
+ */
+export function catchUp(n: number, fireSlot: (i: number) => number | null, start: number, now: number): { progress: Progress; litSlot: number } | null {
+    for (let i = n - 1; i >= 0; i--) {
+        if (start + ROLL_TICKS * (i + 1) > now) continue;
+        const s = fireSlot(i);
+        if (s !== null && (i === 0 || fireSlot(i - 1) !== null)) return { progress: { lit: i + 1, litTick: now - ROLL_TICKS }, litSlot: s };
+    }
+    return null;
+}
+
+/**
+ * The tick (this client's clock) a go file written at `cueMs` stands for, seen at `tick`
+ * and `nowMs`: one tick per `tickMs` back from now, and never later than now.
+ */
+export function cueTick(tick: number, nowMs: number, cueMs: number, tickMs: number): number {
+    return tick - Math.max(0, Math.round((nowMs - cueMs) / tickMs));
 }
 
 /**
@@ -228,16 +386,24 @@ export function resumeCursor(plan: readonly PlannedLog[], own: readonly number[]
 // ------------------------------------------------------------------ options
 
 export type StartMode = 'now' | 'sighted' | 'cue';
+export type CueAt = 'seen' | 'written';
+export type RestockKind = 'bank' | 'cheat' | 'held';
 export const GO_FILE = 'fm-row-go.json';
 
 export interface FmRowOptions extends Pace {
     row: Row;
+    /** In place of `row` when given. */
+    tiles: Tile[] | null;
     part: number;
     parts: number;
+    skipOccupied: boolean;
+    spareTiles: number;
     start: StartMode;
+    cueAt: CueAt;
+    tickMs: number;
     scoredSha256: string | null;
     sightRange: number;
-    restock: { kind: 'bank' | 'cheat'; bank: Tile };
+    restock: { kind: RestockKind; bank: Tile };
     scanRadius: number;
     lingerTicks: number;
     cueDir: string;
@@ -249,26 +415,55 @@ const int = (v: unknown, def: number, what: string, min = 0): number => {
     return n;
 };
 
+function tileList(v: unknown): Tile[] {
+    if (!Array.isArray(v) || v.length === 0) throw new Error('tiles must be a non-empty list of [x, z]');
+    return v.map((t: unknown, n) => {
+        if (!Array.isArray(t) || t.length !== 2) throw new Error(`tiles[${n}] must be [x, z] (got ${JSON.stringify(t)})`);
+        return { x: int(t[0], NaN, `tiles[${n}].x`), z: int(t[1], NaN, `tiles[${n}].z`) };
+    });
+}
+
 export function fmRowOptions(raw: Record<string, unknown>, env: Record<string, string | undefined> = process.env): FmRowOptions {
+    if (raw.row !== undefined && raw.tiles !== undefined) throw new Error('give row or tiles, not both');
     const r = (raw.row ?? LAB_ROW) as Record<string, unknown>;
     const row: Row = { x: int(r.x, NaN, 'row.x'), z: int(r.z, NaN, 'row.z'), len: int(r.len, NaN, 'row.len', 1), rows: int(r.rows, 2, 'row.rows', 1) };
+    const tiles = raw.tiles === undefined ? null : tileList(raw.tiles);
     const parts = int(raw.parts, 1, 'parts', 1);
     const part = int(raw.part, 0, 'part');
     if (part >= parts) throw new Error(`part must be below parts (got ${part} of ${parts})`);
+    const skip = raw.skipOccupied ?? false;
+    if (typeof skip !== 'boolean') throw new Error(`skipOccupied must be true or false (got ${raw.skipOccupied})`);
+    if (raw.spareTiles !== undefined && !skip) throw new Error('spareTiles is for skipOccupied only');
+    const spareTiles = int(raw.spareTiles, skip && parts > 1 ? 2 : 0, 'spareTiles');
     const start = (raw.start ?? 'sighted') as StartMode;
     if (!['now', 'sighted', 'cue'].includes(start)) throw new Error(`start must be now, sighted or cue (got ${raw.start})`);
+    const cueAt = (raw.cueAt ?? 'seen') as CueAt;
+    if (cueAt !== 'seen' && cueAt !== 'written') throw new Error(`cueAt must be seen or written (got ${raw.cueAt})`);
+    if (cueAt === 'written' && start !== 'cue') throw new Error("cueAt 'written' needs start 'cue'");
+    const tickMs = raw.tickMs === undefined ? defaultTickMs(env) : Number(raw.tickMs);
+    if (!Number.isFinite(tickMs) || tickMs <= 0) throw new Error(`tickMs must be a positive number (got ${raw.tickMs})`);
     const sha = raw.scoredSha256 === undefined ? null : String(raw.scoredSha256);
     if (sha !== null && !/^[0-9a-f]{64}$/.test(sha)) throw new Error('scoredSha256 must be a sha-256 hex digest (altar-cue.ts nameHash), never the name');
     const rs = (raw.restock ?? {}) as Record<string, unknown>;
-    const kind = rs.kind ?? 'bank';
-    if (kind !== 'bank' && kind !== 'cheat') throw new Error(`restock.kind must be bank or cheat (got ${kind})`);
+    const kind = (rs.kind ?? 'bank') as RestockKind;
+    if (kind !== 'bank' && kind !== 'cheat' && kind !== 'held') throw new Error(`restock.kind must be bank, cheat or held (got ${kind})`);
+    if (kind === 'held') {
+        const inventories = new Set(ownLogs(S03_TOTAL, part, parts).map(inventoryOf)).size;
+        if (inventories !== 1)
+            throw new Error(`restock held carries one inventory, but part ${part} of ${parts} owns ${inventories} (parts must be ${Math.ceil(S03_TOTAL / INVENTORY)})`);
+    }
     const bank = rs.bank ? { x: int((rs.bank as Tile).x, NaN, 'restock.bank.x'), z: int((rs.bank as Tile).z, NaN, 'restock.bank.z') } : FALADOR_EAST_BANK;
-    const restockDefault = kind === 'cheat' ? 6 : chebyshev(bank, row) + 20;
+    const restockDefault = kind === 'cheat' ? 6 : kind === 'held' ? 0 : chebyshev(bank, tiles?.[0] ?? row) + 20;
     return {
         row,
+        tiles,
         part,
         parts,
+        skipOccupied: skip,
+        spareTiles,
         start,
+        cueAt,
+        tickMs,
         scoredSha256: sha,
         sightRange: int(raw.sightRange, 15, 'sightRange'),
         restock: { kind, bank },
@@ -284,7 +479,6 @@ export function fmRowOptions(raw: Record<string, unknown>, env: Record<string, s
 
 // ------------------------------------------------------------------ role
 
-const FIRE = /^fire$/i;
 const at = (s: BotWorldState | null, t: Tile) => !!s?.player && s.player.worldX === t.x && s.player.worldZ === t.z;
 
 export class FmRow {
