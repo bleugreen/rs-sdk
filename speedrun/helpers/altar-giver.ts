@@ -385,7 +385,9 @@ export class AltarGiver {
         }
         // A hand-back turn needs its items carried; an essence turn needs the essence (a hand-back giver has none).
         const items = choice.turn.items?.length ? choice.turn.items : undefined;
-        const short = items ? (holdsItems(this.s, items) ? null : 'named for a hand-back without its items') : count(this.s, ESSENCE) < this.o.essence ? 'named for essence while holding the hand-back' : null;
+        const short = items
+            ? holdsItems(this.s, items) ? null : 'named for a hand-back without its items'
+            : count(this.s, ESSENCE) >= this.o.essence ? null : this.holdsHandBack() ? 'named for essence while holding the hand-back' : 'named for essence without a load';
         if (short) {
             this.done.add(choice.key);
             this.result('not-ready', cue.session, choice.turn.T, { detail: short });
