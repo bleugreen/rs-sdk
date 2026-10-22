@@ -340,10 +340,15 @@ async function garlic(ctx: Ctx, opts: Options | undefined): Promise<void> {
     const gone = (s: BotWorldState) => invCount(s, ITEM.garlic) === 0;
     const u = await useOn(sdk, ITEM.garlic, { loc: { ...PIPE } }, gone, { maxTicks: 30 });
     if (!u.ok) fail('J', `the garlic did not go into the pipe (${u.reason})`, sdk);
-    // The stranger's and Bonzo's pages follow at once when the stranger is within 8 tiles.
-    const r = await converse(sdk, [], { openTicks: 3, interrupts: interrupts(), maxTicks: 30, ...talkShape(opts, SHAPES.pipe) });
-    if (!r.ok) fail('J', `the pipe dialogue: ${r.reason}`, sdk);
-    noteShape(ctx, 'J', 'the stranger moves', r, { clickToStash: u.ticks, ticks: currentTick(sdk) - t0 });
+    // The stranger's and Bonzo's pages follow in the same script, with no delay, only when the stranger
+    // is within 8 tiles of the player (quest_fishingcompo.rs2:97); from this pipe he usually is not (he
+    // stands 9 off, m), so look for one tick rather than wait out converse's default.
+    await waitUntil(sdk, s => s.dialog.isOpen, { maxTicks: 1 });
+    if (sdk.getState()!.dialog.isOpen) {
+        const r = await converse(sdk, [], { openTicks: 1, interrupts: interrupts(), maxTicks: 30, ...talkShape(opts, SHAPES.pipe) });
+        if (!r.ok) fail('J', `the pipe dialogue: ${r.reason}`, sdk);
+        noteShape(ctx, 'J', 'the stranger moves', r, { clickToStash: u.ticks, ticks: currentTick(sdk) - t0 });
+    } else note(ctx, 'J', { stranger: 'out of range, no pages', clickToStash: u.ticks, ticks: currentTick(sdk) - t0 });
 }
 
 /** Segment K: one catch at the pipe spot with the worm: the carp. */
