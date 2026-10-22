@@ -6,13 +6,17 @@ import { analyzeAccount, diffPlayers, parseBank, parseBoard, parseOutfit, parseP
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, 'fixtures', name), 'utf8');
 
+// Fixtures named *-2026-10-22.html were fetched live from the demo on 2026-10-22, after it switched the
+// Time title from `N ticks` to `S seconds of game time` (first seen about 19:34 UTC by rs/455; a deploy
+// marker for engine code not on GitHub). S = 0.3 x ticks; the tick rate itself is unchanged. The older
+// fixtures keep the `N ticks` form, which the engine's own page (lab worlds) still renders.
 describe('titleTicks', () => {
     test('old form: N ticks', () => {
         expect(titleTicks('12,006', 'ticks')).toBe(12_006);
         expect(titleTicks('764', 'ticks')).toBe(764);
     });
 
-    test('new form: S seconds of game time, 0.3 s per tick, exact', () => {
+    test('new form: S seconds of game time, S = 0.3 x ticks, exact', () => {
         expect(titleTicks('998.7', 'seconds of game time')).toBe(3_329);
         expect(titleTicks('207', 'seconds of game time')).toBe(690);
         expect(titleTicks('2,247', 'seconds of game time')).toBe(7_490);
@@ -26,8 +30,8 @@ describe('titleTicks', () => {
     });
 
     test('a value off the 0.3 s grid or a fractional tick count is rejected, not rounded', () => {
-        expect(() => titleTicks('998.8', 'seconds of game time')).toThrow(/not a whole number of 0.3 s ticks/);
-        expect(() => titleTicks('998.75', 'seconds of game time')).toThrow(/not a whole number of 0.3 s ticks/);
+        expect(() => titleTicks('998.8', 'seconds of game time')).toThrow(/not a multiple of 0.3/);
+        expect(() => titleTicks('998.75', 'seconds of game time')).toThrow(/not a multiple of 0.3/);
         expect(() => titleTicks('1.5', 'ticks')).toThrow(/not a whole tick count/);
     });
 });
@@ -87,7 +91,7 @@ describe('parsePlayer', () => {
 
     test('a seconds title off the 0.3 s grid fails the page instead of mis-reporting a stamp', () => {
         const html = fixture('hiscore/player-cairn_burns-2026-10-22.html').replaceAll('title="207 seconds', 'title="207.1 seconds');
-        expect(() => parsePlayer(html)).toThrow(/not a whole number of 0.3 s ticks/);
+        expect(() => parsePlayer(html)).toThrow(/not a multiple of 0.3/);
     });
 
     test('a missing player is null', () => {

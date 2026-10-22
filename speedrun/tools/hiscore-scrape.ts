@@ -68,6 +68,9 @@ const num = (s: string): number => Number(s.replaceAll(',', '').trim());
  *   `N ticks`                 the engine's own page (lab worlds), and the demo until about 19:34 UTC 2026-10-22;
  *   `S seconds of game time`  the demo since then: S = 0.3 x ticks, with thousands separators and at
  *                             most one decimal, a trailing `.0` dropped (`2,247`, `998.7`).
+ * The new form is a deploy marker (the demo runs engine code not yet on GitHub), first seen by rs/455;
+ * the tick rate is unchanged, only the title's unit is. Live values matched the old form exactly
+ * (cairn_chops Woodcutting 998.7 s = 3,329 ticks, cairn_burns Firemaking 207 s = 690 ticks).
  * The decimal is matched loosely on purpose so an unexpected value reaches titleTicks and fails loudly
  * instead of silently not matching.
  */
@@ -75,8 +78,8 @@ const TIME_TITLE = /title="([\d,]+(?:\.\d+)?) (ticks|seconds of game time)"/g;
 
 /**
  * Ticks from one Time title. 0.3 x ticks always has exactly one decimal, so a seconds value that is not
- * a whole number of 0.3 s ticks means the demo changed its tick length or format again: that throws
- * rather than rounds, because a rounded stamp would pass rehearse.ts's 2-tick log check while wrong.
+ * a multiple of 0.3 means the demo changed the conversion or format again: that throws rather than
+ * rounds, because a rounded stamp would pass rehearse.ts's 2-tick log check while wrong.
  */
 export function titleTicks(value: string, unit: string): number {
     const n = num(value);
@@ -86,7 +89,7 @@ export function titleTicks(value: string, unit: string): number {
     }
     const tenths = Math.round(n * 10);
     if (Math.abs(n * 10 - tenths) > 1e-6 || tenths % 3 !== 0) {
-        throw new Error(`time title "${value} ${unit}" is not a whole number of 0.3 s ticks; the hiscore time format has changed`);
+        throw new Error(`time title "${value} ${unit}" is not a multiple of 0.3 (S = 0.3 x ticks); the hiscore time format has changed`);
     }
     return tenths / 3;
 }
