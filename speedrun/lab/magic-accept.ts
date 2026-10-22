@@ -220,11 +220,11 @@ if (mode === 'diamond25') {
             });
         }
     }
-    await waitTicks(scored.sdk, 3);
-    // Every giver must be in SCORED's view before the step: its trade finds the partner there.
-    const seen = await waitUntil(scored.sdk, st => givers.every((_, i) => st.nearbyPlayers.some(p => sameName(p.name, giverNames[i]!))), { maxTicks: 10 });
+    // The cold arrival (main's standard): SCORED lands at the row's end and the step starts at
+    // once, so its first trade and cast go out while the region is still loading.
+    await mustTele(scored.sdk, ROW_END.x, ROW_END.z);
     const where = givers.map((g, i) => `${giverNames[i]}@${g.sdk.getState()?.player?.worldX},${g.sdk.getState()?.player?.worldZ}`);
-    console.log(`GIVERS ${where.join(' ')} scored-sees=${JSON.stringify(scored.sdk.getState()?.nearbyPlayers.map(p => p.name))}${seen.ok ? '' : ' (NOT ALL IN VIEW)'}`);
+    console.log(`GIVERS ${where.join(' ')} scored-sees-on-landing=${JSON.stringify(scored.sdk.getState()?.nearbyPlayers.map(p => p.name))} client=${browserMode ? 'browser' : 'lite'}`);
 
     const reports: MagicReport[] = [];
     const [, s04] = steps({ loads: loads.map((rings, i) => ({ rings, giver: giverNames[i]! })), untilLevel, clicksPerTick: clicks, onReport: r => reports.push(r) });
@@ -325,5 +325,6 @@ if (mode === 'h4') {
 }
 
 console.log(formatReport(report(log.rows)));
+await browser?.close();
 await closeSession(scored);
 process.exit(pass ? 0 : 1);
