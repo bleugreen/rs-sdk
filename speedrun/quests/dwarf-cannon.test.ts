@@ -6,7 +6,7 @@ import { TickLog } from '../lib/ticks';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import { DEFAULT_DIALOGUE } from './segments';
-import { ARRIVAL, defaultEatAt, eatForCrossing, LETTERS, MIN_FOOD, newTally, observed, QUEST_ITEMS, quest, railingDamage, stepId, steps } from './dwarf-cannon';
+import { ARRIVAL, DEAD_AT_EXIT, defaultEatAt, eatForCrossing, LETTERS, MIN_FOOD, newTally, observed, QUEST_ITEMS, quest, railingDamage, stepId, steps } from './dwarf-cannon';
 
 let nextSlot = 0;
 const item = (name: string, count = 1): InventoryItem => ({ slot: nextSlot++, id: 1000 + nextSlot, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
@@ -78,9 +78,10 @@ function startOf(letter: string): Observed {
     return observed(s, st.journal ? journal(st.journal) : undefined);
 }
 
-const complete = (): Observed => {
+/** The exit state: quest complete, the tool kit dropped (DEAD_AT_EXIT), or still held with `toolkit`. */
+const complete = (toolkit = false): Observed => {
     const s = arrival({ quests: { elena: 'complete', [quest]: 'complete' } as BotWorldState['quests'] });
-    s.inventory.push(item('Tool kit'));
+    if (toolkit) s.inventory.push(item('Tool kit'));
     return observed(s);
 };
 
@@ -265,11 +266,18 @@ describe('resume from each segment', () => {
         });
     }
 
-    test('the quest complete is finished', async () => {
+    test('the quest complete with the tool kit dropped is finished', async () => {
         const obs = new Observation(complete().state);
         obs.probed[journalProbeName(quest)] = null;
         const point = await resolveResume(list, obs, {});
         expect(point.mode).toBe('finished');
+    });
+    test('the quest complete still holding the tool kit resumes L, to drop it', async () => {
+        const obs = new Observation(complete(true).state);
+        obs.probed[journalProbeName(quest)] = null;
+        const point = await resolveResume(list, obs, {});
+        expect(point.step).toBe('S13:L-lawgof-complete');
+        expect(point.mode).toBe('run');
     });
 });
 
@@ -305,5 +313,35 @@ describe('L: the exit state', () => {
     });
     test('outside the camp fails', () => {
         expect(post(done({ player: player(3016, 3453) }))).toMatch(/Black Guard camp/);
+    });
+    test('still holding the tool kit fails: it is the one dead item at the exit', () => {
+        expect(DEAD_AT_EXIT.map(String)).toEqual([String(/^tool kit$/i)]);
+        const s = done();
+        s.inventory.push(item('Tool kit'));
+        expect(post(s)).toBe('exit: still holding Tool kit');
+    });
+    test('a resumed L with the quest already complete only drops the tool kit (no talk, no teleport)', async () => {
+        const s = done();
+        s.inventory.push(item('Tool kit'));
+        const kit = s.inventory.at(-1)!;
+        const sdk = new FakeSdk(s);
+        let drop = false;
+        sdk.onSend = a => { if (a.method === 'sendDropItem') drop = true; };
+        const session = { sdk, bot: {}, name: 'lab', sessionId: 0 } as unknown as RunnerSession;
+        const ctx = { session, sdk, bot: session.bot, c: {}, log: TickLog.memory('t') } as unknown as StepContext<unknown>;
+        await drive(sdk, byLetter('L').run(ctx) as Promise<unknown>, 20, st => (drop ? { inventory: st.inventory.filter(i => i.slot !== kit.slot) } : {}));
+        expect(sdk.sent.map(a => a.method)).toEqual(['sendDropItem']);
+        expect(sdk.sent[0]!.args).toEqual([kit.slot]);
+        expect(post(sdk.getState()!)).toBe(true);
+    });
+});
+
+describe('A: the food precondition reads the total held (H10 tops up to 8)', () => {
+    test('3 sharks carried in plus 5 from H10 pass; 7 in all fail', () => {
+        const s = arrival();
+        s.inventory = [...runes(), ...sharks(3), item('Bucket'), ...sharks(5)];
+        expect(byLetter('A').preconditions(s, {})).toBe(true);
+        s.inventory.pop();
+        expect(byLetter('A').preconditions(s, {})).toBe(`food: 7 held, the railings want ${MIN_FOOD}`);
     });
 });

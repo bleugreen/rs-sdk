@@ -27,7 +27,7 @@
 //   `journal:mcannon` probe.
 
 import type { BotWorldState, QuestJournalState } from '../../sdk/types';
-import { invOp, opLoc, openDoor, pickup, talkTo, type ActSdk } from '../lib/act';
+import { dropItems, invOp, opLoc, openDoor, pickup, talkTo, type ActSdk } from '../lib/act';
 import { converse, levelUpInterrupt, type ConverseResult, type ConverseSdk } from '../lib/converse';
 import { pageText, type OptionPattern } from '../lib/dialogue';
 import type { ItemPattern } from '../lib/items';
@@ -131,6 +131,15 @@ export const QUEST_ITEMS: readonly QuestItem[] = [
     { item: MOULD, name: 'Ammo mould', from: 'K', until: 'L' },
 ];
 const slots = (at: (typeof LETTERS)[number]) => slotsCover(QUEST_ITEMS, LETTERS, at);
+
+/**
+ * What S13 leaves that nothing later uses, dropped at its exit (rs/158's slot ledger). Of the
+ * quest's items only the tool kit outlives it: Lawgof takes the notes and the mould
+ * (lawgof2.rs2:201-202) and the completion gives nothing. The spare law and water runes are
+ * T13-14's Ardougne teleport, and H10 tops the sharks up from what is held.
+ */
+export const DEAD_AT_EXIT: readonly RegExp[] = [TOOLKIT];
+const dead = (i: { name: string }) => DEAD_AT_EXIT.some(p => p.test(i.name));
 
 /** Runes the module casts from the arrival tile: Falador to Nulodion, Ardougne back to Lawgof. T12-13's Ardougne cast is the leg's. */
 export const RUNES = addRunes(SPELLS.falador.runes, SPELLS.ardougne.runes);
@@ -517,23 +526,31 @@ async function nulodion(ctx: Ctx, opts: Options | undefined, tally: Tally): Prom
     if (!r.opened || !r.ok) throw new Error(`Nulodion: ${r.reason ?? 'no dialogue opened'}`);
 }
 
-/** Segment L: Ardougne teleport (or the walk), Lawgof takes the notes and mould, the quest completes; its scroll and level-up pages are closed. */
+/**
+ * Segment L: Ardougne teleport (or the walk), Lawgof takes the notes and mould, the quest completes;
+ * its scroll and level-up pages are closed and the dead items dropped. Resumed after the quest
+ * completed, it only drops.
+ */
 async function complete(ctx: Ctx, opts: Options | undefined, tally: Tally): Promise<void> {
     const sdk = sdkOf(ctx);
-    if (!near(sdk.getState(), CAMP)) {
-        if (walking(opts)) {
-            await eatForCrossing(sdk, opts?.food ?? FOOD, tally);
-            await crossToKandarin(traveller(ctx), LAWGOF_STAND, 'Lawgof');
-        } else await cast(ctx, 'ardougne');
+    if (questStatus(sdk.getState()!, quest) !== 'complete') {
+        if (!near(sdk.getState(), CAMP)) {
+            if (walking(opts)) {
+                await eatForCrossing(sdk, opts?.food ?? FOOD, tally);
+                await crossToKandarin(traveller(ctx), LAWGOF_STAND, 'Lawgof');
+            } else await cast(ctx, 'ardougne');
+        }
+        await lawgof(ctx, opts, [], SHAPES.complete);
+        await waitOrThrow(sdk, s => questStatus(s, quest) === 'complete', 10, 'Dwarf Cannon complete');
+        // The reward's level-up pages and the quest scroll (a modal).
+        await converse(sdk, [], { openTicks: 2, idle: 1, closeModals: true, interrupts: interrupts() });
+        if (sdk.getState()?.modalOpen) {
+            await sdk.sendCloseModal();
+            await waitUntil(sdk, s => !s.modalOpen, { maxTicks: 3 });
+        }
     }
-    await lawgof(ctx, opts, [], SHAPES.complete);
-    await waitOrThrow(sdk, s => questStatus(s, quest) === 'complete', 10, 'Dwarf Cannon complete');
-    // The reward's level-up pages and the quest scroll (a modal).
-    await converse(sdk, [], { openTicks: 2, idle: 1, closeModals: true, interrupts: interrupts() });
-    if (sdk.getState()?.modalOpen) {
-        await sdk.sendCloseModal();
-        await waitUntil(sdk, s => !s.modalOpen, { maxTicks: 3 });
-    }
+    const r = await dropItems(sdk, dead);
+    if (!r.ok) throw new Error(`exit: the dead items (${(sdk.getState()?.inventory ?? []).filter(dead).map(i => i.name).join(', ')}) were not dropped`);
 }
 
 // ------------------------------------------------------------------ checks
@@ -550,6 +567,10 @@ const crossingHp: Check<any> = s => (baseHp(s) >= CROSSING_HITPOINTS ? true : `H
 /** The teleports' needs, or the walk's. */
 const travelNeeds = (opts: Options | undefined): Check<any> => (walking(opts) ? crossingHp : allOf(stageAtLeast('elena', 'complete'), magic51, runesHeld));
 const inCamp = within({ ...CAMP }, 'the Black Guard camp');
+const noDeadItems: Check<any> = s => {
+    const held = (s as BotWorldState).inventory.filter(dead);
+    return held.length ? `exit: still holding ${held.map(i => i.name).join(', ')}` : true;
+};
 
 // ------------------------------------------------------------------ the segments
 
@@ -639,8 +660,8 @@ export function steps(opts?: Options) {
         {
             letter: 'L', label: 'lawgof-complete', logoutSafe: true,
             run: ctx => complete(ctx, opts, tally),
-            postconditions: allOf(stageAtLeast(quest, 'complete'), inCamp, s => (s.dialog.isOpen || s.modalOpen ? 'a dialogue or modal is still open' : true)),
-            done: o => questDone(quest)(o),
+            postconditions: allOf(stageAtLeast(quest, 'complete'), inCamp, s => (s.dialog.isOpen || s.modalOpen ? 'a dialogue or modal is still open' : true), noDeadItems),
+            done: o => questDone(quest)(o) && !stateOf(o).inventory.some(dead),
         },
     ];
     return questSteps(stepId, segs);
