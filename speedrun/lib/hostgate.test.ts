@@ -139,7 +139,7 @@ describe('probeOnTime', () => {
         const r = await drive(w, probeOnTime(w.sdk as never, { trials: 10 }));
         expect(r.path).toBe('relay');
         expect(r.tickArrivals.length).toBe(r.ticks);
-        expect(r.steadiness).toMatchObject({ n: r.ticks - 1, p50: 300, max: 480, over350: 1, under150: 1, catchUps: 1 });
+        expect(r.steadiness).toMatchObject({ n: r.ticks - 1, p50: 300, max: 480, overSevenSixthsT: 1, underHalfT: 1, catchUps: 1, T: 300, TSource: 'median' });
         expect(r.steadiness.histogram).toEqual({ 100: 1, 300: r.ticks - 3, 450: 1 });
     });
 
@@ -230,7 +230,7 @@ describe('tickSteadiness', () => {
     test('a catch-up is an interval under 150 ms right after one over 350 ms', () => {
         const s = tickSteadiness(grid([300, 360, 140, 300, 340, 140, 300, 400, 160, 300, 500, 0, 300]));
         // 360 then 140 counts; 340 then 140 does not; 400 then 160 does not; 500 then 0 (two ticks in one read) counts
-        expect(s).toMatchObject({ n: 13, catchUps: 2, over350: 3, under150: 3, max: 500 });
+        expect(s).toMatchObject({ n: 13, catchUps: 2, overSevenSixthsT: 3, underHalfT: 3, max: 500, T: 300, TSource: 'median' });
         expect(steadinessHistogram(s)).toBe('0:1 100:2 150:1 300:6 350:1 400:1 500:1');
     });
     test('quantiles match the probe scripts (sorted[floor(p * n)])', () => {
@@ -246,12 +246,12 @@ describe('tickSteadiness', () => {
         expect(twoMinutes.catchUpsPerMinute).toBeCloseTo(1, 1);
     });
     test('fewer than two arrivals is all zeros', () => {
-        expect(tickSteadiness([5])).toMatchObject({ n: 0, spanMs: 0, p90: 0, catchUps: 0, catchUpsPerMinute: 0, histogram: {} });
+        expect(tickSteadiness([5])).toMatchObject({ n: 0, spanMs: 0, p90: 0, catchUps: 0, catchUpsPerMinute: 0, histogram: {}, T: null, TSource: null });
     });
 });
 
 describe('directDecision', () => {
-    const steady = { p90: 351, catchUpsPerMinute: 0 };
+    const steady = { p90: 351, catchUpsPerMinute: 0, T: 300 };
     const probe = (onTime: number, trials = 60) => ({ onTime, trials, steadiness: steady });
     test('60 of 60 passes, 58 starts but is marginal, 57 is below the floor', () => {
         expect(directDecision(probe(60))).toMatchObject({ on: true, status: 'pass', passAt: 60, floorAt: 58, failures: [], lead: 0 });
@@ -267,33 +267,33 @@ describe('directDecision', () => {
     });
     test('an overrun period reads re-measure, even when it cost trials', () => {
         // rs/83's 04:13 minute: direct 40:16:4, tick p90 486, 22.6 catch-ups per minute
-        const v = directDecision({ onTime: 40, trials: 60, steadiness: { p90: 486, catchUpsPerMinute: 22.6 } });
+        const v = directDecision({ onTime: 40, trials: 60, steadiness: { p90: 486, catchUpsPerMinute: 22.6, T: 300 } });
         expect(v).toMatchObject({ on: false, status: 're-measure' });
         expect(v.failures[0]).toBe('overrun period, re-measure (22.6 catch-ups per minute over 2)');
-        const strict = directDecision({ onTime: 40, trials: 60, steadiness: { p90: 486, catchUpsPerMinute: 22.6 } }, { tickP90PassLine: true });
-        expect(strict.failures[0]).toBe('overrun period, re-measure (22.6 catch-ups per minute over 2, tick p90 486 ms over 400)');
+        const strict = directDecision({ onTime: 40, trials: 60, steadiness: { p90: 486, catchUpsPerMinute: 22.6, T: 300 } }, { tickP90PassLine: true });
+        expect(strict.failures[0]).toBe('overrun period, re-measure (22.6 catch-ups per minute over 2, tick p90 486 ms over 400 (T 300))');
         expect(v.failures[1]).toBe('on time 40/60, under the floor of 58');
         // 60 of 60 re-measures on catch-ups alone (c), and on p90 alone (b) only as a pass line
-        expect(directDecision({ onTime: 60, trials: 60, steadiness: { p90: 350, catchUpsPerMinute: 3.3 } }).status).toBe('re-measure');
-        expect(directDecision({ onTime: 60, trials: 60, steadiness: { p90: 404, catchUpsPerMinute: 0 } }, { tickP90PassLine: true }).status).toBe('re-measure');
+        expect(directDecision({ onTime: 60, trials: 60, steadiness: { p90: 350, catchUpsPerMinute: 3.3, T: 300 } }).status).toBe('re-measure');
+        expect(directDecision({ onTime: 60, trials: 60, steadiness: { p90: 404, catchUpsPerMinute: 0, T: 300 } }, { tickP90PassLine: true }).status).toBe('re-measure');
     });
     test('the catch-up limit is a parameter: default 2 per minute', () => {
         // rs/95's 04:55 minute: 59 of 60 with 1.5 catch-ups per minute
-        const v = { onTime: 59, trials: 60, steadiness: { p90: 346, catchUpsPerMinute: 1.5 } };
+        const v = { onTime: 59, trials: 60, steadiness: { p90: 346, catchUpsPerMinute: 1.5, T: 300 } };
         expect(directDecision(v).on).toBe(true);
-        expect(directDecision({ ...v, steadiness: { p90: 346, catchUpsPerMinute: 2 } }).on).toBe(true);
+        expect(directDecision({ ...v, steadiness: { p90: 346, catchUpsPerMinute: 2, T: 300 } }).on).toBe(true);
         expect(directDecision(v, { maxCatchUpsPerMinute: 1 }).status).toBe('re-measure');
         expect(directDecision(v, { maxTickP90Ms: 340 }).status).toBe('marginal');
         expect(directDecision(v, { maxTickP90Ms: 340, tickP90PassLine: true }).status).toBe('re-measure');
     });
     test('(b) is report-only by default: printed with its value, never in failures or the status', () => {
-        const v = directDecision({ onTime: 60, trials: 60, steadiness: { p90: 513, catchUpsPerMinute: 0 } });
+        const v = directDecision({ onTime: 60, trials: 60, steadiness: { p90: 513, catchUpsPerMinute: 0, T: 300 } });
         expect(v).toMatchObject({ on: true, status: 'pass', failures: [] });
         expect(v.checks.map(k => [k.id, k.role, k.ok])).toEqual([['a', 'pass', true], ['b', 'report', false], ['c', 'pass', true], ['d', 'pass', null]]);
-        expect(verdictText(v)).toBe('(a) on time 60/60, pass 60, floor 58 pass; (b) tick p90 513 ms <= 400 report, over; (c) catch-ups 0/min <= 2 pass; (d) loop p10 >= 50 not measured: pass');
-        const strict = directDecision({ onTime: 60, trials: 60, steadiness: { p90: 513, catchUpsPerMinute: 0 } }, { tickP90PassLine: true });
+        expect(verdictText(v)).toBe('(a) on time 60/60, pass 60, floor 58 pass; (b) tick p90 513 ms (T 300, report <= 400) over; (c) catch-ups 0/min <= 2 (< 150 after > 350 ms) pass; (d) loop p10 >= 50 not measured: pass');
+        const strict = directDecision({ onTime: 60, trials: 60, steadiness: { p90: 513, catchUpsPerMinute: 0, T: 300 } }, { tickP90PassLine: true });
         expect(strict).toMatchObject({ on: false, status: 're-measure' });
-        expect(verdictText(strict)).toContain('(b) tick p90 513 ms <= 400 FAIL;');
+        expect(verdictText(strict)).toContain('(b) tick p90 513 ms (T 300, pass <= 400) FAIL;');
     });
     test('a throttled tab fails (d); an in-process probe has no loop rate and is not held to it', () => {
         expect(directDecision({ ...probe(60), loopRateP10: 74 })).toMatchObject({ status: 'pass' });
