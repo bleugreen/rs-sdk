@@ -206,8 +206,10 @@ describe('the walk to a quest and its legs', () => {
         expect(gt.some(n => n.startsWith(`${LEG_PREFIX}S11b:B-`))).toBe(true);
     });
     test('the approach runs only before a quest is started', () => {
-        const with_ = (tree: number) => state({ varps: [] } as Partial<BotWorldState>);
-        const fresh = with_(0);
-        expect(approachFirst(fresh, 'tree')).toBe(true);
+        const q = (quests: Record<string, string>) => state({ quests: quests as unknown as BotWorldState['quests'] });
+        expect(approachFirst(q({ tree: 'not_started' }), 'tree')).toBe(true);
+        expect(approachFirst(q({ tree: 'started' }), 'tree')).toBe(false);
+        expect(approachFirst(q({ tree: 'complete', grandtree: 'not_started' }), 'grandtree')).toBe(true);
+        expect(approachFirst(q({ tree: 'complete', grandtree: 'complete', mm: 'started' }), 'mm')).toBe(false);
     });
 });
