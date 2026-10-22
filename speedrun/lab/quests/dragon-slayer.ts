@@ -87,7 +87,8 @@ export const FIXTURES: DsFixture[] = [
     fixture('A', { vars: vars(0), items: H22, worn: WORN_KIT, late: MSPEAK_LATE, tile: ds.TILES.arrival, note: 'arrival, H22 held' }),
     fixture('B', { vars: vars(0), items: H22, worn: WORN_KIT, late: MSPEAK_LATE, tile: ds.TILES.arrival }),
     fixture('C', { vars: vars(1), items: H22, worn: WORN_KIT, tile: { x: 3191, z: 3361 } }),
-    fixture('D', { vars: vars(1), items: H22_LESS_ARMOUR, worn: WORN_KIT, late: ARMOUR_LATE, tile: { x: 3189, z: 3356 } }),
+    // Beside the guild stairs (a 2x2 loc at 3188,3355 whose tiles are blocked).
+    fixture('D', { vars: vars(1), items: H22_LESS_ARMOUR, worn: WORN_KIT, late: ARMOUR_LATE, tile: { x: 3190, z: 3356 } }),
     fixture('E', { vars: vars(2, BRIEFED), items: H22_LESS_ARMOUR, worn: WORN_KIT, late: { ...ARMOUR_LATE, items: add(ARMOUR_LATE.items, { melzarkey: 1 }) }, tile: { x: 3068, z: 3516 } }),
     fixture('F', { vars: vars(2, { ...BRIEFED, dragon_oracle: 3 }), items: add(HULL, RUNES_LUMBRIDGE, RUNES_FALADOR, { coins: ds.QUEST_COINS, shark: 10, melzarkey: 1, mappart3: 1 }, wear(WORN_KIT), wear(ARMOUR)), worn: [...WORN_KIT, ...ARMOUR], tile: { x: 3056, z: 9841 } }),
     fixture('G', { vars: vars(2, { ...BRIEFED, dragon_oracle: 3 }), items: add(HULL, RUNES_FALADOR, { coins: ds.QUEST_COINS, shark: 10, melzarkey: 1, mappart3: 1, antidragonbreathshield: 1 }, wear(WORN_KIT), wear(ARMOUR)), worn: [...WORN_KIT, ...ARMOUR, 'antidragonbreathshield'], tile: { x: 3211, z: 3220, level: 1 } }),

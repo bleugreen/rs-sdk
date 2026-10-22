@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 import * as pathfinding from '../../../sdk/pathfinding';
-import { TILES } from '../../quests/dragon-slayer';
+import { LOCS, TILES } from '../../quests/dragon-slayer';
 import { add, FIXTURES, packSlots } from './dragon-slayer';
 
 const CONTENT = join(import.meta.dir, '..', '..', '..', 'server', 'content');
@@ -71,6 +71,16 @@ describe('lab fixtures', () => {
 describe('lab fixture tiles (offline pathfinder)', () => {
     // Loaded at collection: bun holds hooks to the 5 s test timeout, and the load took 4.8 s on a loaded host.
     pathfinding.initPathfinding();
+    test('every fixture tile is walkable', () => {
+        for (const f of FIXTURES) expect([f.letter, pathfinding.isTileWalkable(f.tile.level ?? 0, f.tile.x, f.tile.z)]).toEqual([f.letter, true]);
+    });
+
+    test("D's tile reaches the guild door from inside", () => {
+        const d = FIXTURES.find(f => f.letter === 'D')!;
+        const path = pathfinding.findLongPath(0, d.tile.x, d.tile.z, LOCS.guildDoor.x, LOCS.guildDoor.z - 1);
+        expect(path.at(-1)).toMatchObject({ x: LOCS.guildDoor.x, z: LOCS.guildDoor.z - 1 });
+    }, 10_000);
+
     test("I's tile reaches Klarense at the dock", () => {
         const i = FIXTURES.find(f => f.letter === 'I')!;
         const path = pathfinding.findLongPath(0, i.tile.x, i.tile.z, TILES.dock.x, TILES.dock.z);
