@@ -28,7 +28,7 @@ import { withdrawMany } from '../lib/bank';
 import { matchesItem } from '../lib/items';
 import { startLevelUpWatcher } from '../lib/levelup';
 import { swap, type GiveSpec, type SwapResult, type WantSpec } from '../lib/trade';
-import { waitUntil, type StateSource } from '../lib/wait';
+import { tickMs, waitUntil, type StateSource } from '../lib/wait';
 import { levelForXp, XP_RATE, xpForLevel } from '../lib/xp';
 import type { Step, StepContext } from '../runner/step';
 
@@ -556,7 +556,7 @@ export function smithSegment(sdk: AnvilSdk, seg: Segment, lastOfBar: boolean): P
             useTick = s.tick;
         };
         const unsub = sdk.onStateUpdate(handle);
-        const wall = setTimeout(() => finish(new Error('smithSegment: the client stopped publishing')), (seg.count * 12 + STALL_TICKS + 20) * 1000);
+        const wall = setTimeout(() => finish(new Error('smithSegment: the client stopped publishing')), (seg.count * 12 + STALL_TICKS + 20) * tickMs());
         const cur = sdk.getState();
         if (cur) handle(cur);
     });
@@ -979,7 +979,7 @@ export function openBooth(sdk: StateSource & Pick<BotSDK, 'sendInteractLoc'>, ma
             if (b) void sdk.sendInteractLoc(b.loc.x, b.loc.z, b.loc.id, b.op);
         };
         const unsub = sdk.onStateUpdate(handle);
-        const wall = setTimeout(() => finish(new Error('openBooth: the client stopped publishing')), (maxTicks + 10) * 1000);
+        const wall = setTimeout(() => finish(new Error('openBooth: the client stopped publishing')), (maxTicks + 10) * tickMs());
         const cur = sdk.getState();
         if (cur) handle(cur);
     });

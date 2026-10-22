@@ -4,7 +4,7 @@ import { baseState, FakeSdk, flush } from './fake-sdk';
 import { fakeClock, microtasks, peek, tickEvery, useFakeTicks } from './fake-ticks';
 import { IDLE_TICKS, STALLED } from './wait';
 import { offerSatisfies as sdkOfferSatisfies } from '../../sdk/trade-helpers';
-import { clickBack, decideGiver, decideReceiver, decideTradeClick, give, newClickCtx, newGiverCtx, newReceiverCtx, DROPPED_TICKS, offerSatisfies, openTrade, planOffers, receiveFrom, RESEND_TICKS, sameName, SETTLE_TICKS, type ClickCtx, type GiverCtx, type ReceiverCtx, type TradeSdk, type WantSpec } from './trade';
+import { clickBack, decideGiver, decideReceiver, decideTradeClick, give, newClickCtx, newGiverCtx, newReceiverCtx, DROPPED_TICKS, offerSatisfies, OPEN_MAX_TICKS, openBackstopMs, openTrade, planOffers, receiveFrom, RESEND_TICKS, sameName, SETTLE_TICKS, type ClickCtx, type GiverCtx, type ReceiverCtx, type TradeSdk, type WantSpec } from './trade';
 import type { SentAction } from './fake-sdk';
 
 const inv = (slot: number, id: number, name: string, count = 1): InventoryItem => ({ slot, id, name, count, optionsWithIndex: [] });
@@ -459,6 +459,44 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
             expect(await result).toMatchObject({ ok: false, reason: 'no_response' });
         });
     });
+
+    for (const ms of [300, 400]) {
+        describe(`the default open counts OPEN_MAX_TICKS observed ticks at ${ms} ms a tick`, () => {
+            useFakeTicks(ms);
+
+            test('openTrade with no bounds gives up after OPEN_MAX_TICKS ticks, and not before, at a tick 25% slower than nominal', async () => {
+                const sdk = new FakeSdk(baseState({ tick: 0, ...nearH30 }));
+                const result = openTrade(sdk as unknown as TradeSdk, 'cairn_h30');
+                await microtasks();
+                for (let i = 0; i < OPEN_MAX_TICKS; i++) {
+                    tickEvery(sdk, ms * 1.25, 1);
+                    await microtasks();
+                }
+                expect(await peek(result)).toBeUndefined();
+                tickEvery(sdk, ms * 1.25, 1);
+                expect(await result).toMatchObject({ ok: false, reason: 'no_response' });
+            });
+
+            test('receiveFrom inherits it: open on tick OPEN_MAX_TICKS - 1', async () => {
+                const sdk = new FakeSdk(baseState({ tick: 0, ...nearH30 }));
+                const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30');
+                await microtasks();
+                for (let i = 0; i < OPEN_MAX_TICKS - 2; i++) {
+                    tickEvery(sdk, ms, 1);
+                    await microtasks();
+                }
+                fakeClock.advanceTimersByTime(ms);
+                sdk.tick({ trade: openWithH30 });
+                await microtasks();
+                expect(await peek(result)).toBeUndefined(); // open: now trading, not given up
+            });
+
+            test('the wall backstop is 2 x OPEN_MAX_TICKS ticks of nominal time', () => {
+                expect(openBackstopMs(OPEN_MAX_TICKS)).toBe(2 * OPEN_MAX_TICKS * ms);
+                expect(openBackstopMs(Infinity)).toBe(Infinity);
+            });
+        });
+    }
 
     describe('a request the engine drops while we are delayed (a stun\'s p_delay)', () => {
         const near = { nearbyPlayers: [{ index: 7, name: 'cairn_h30', combatLevel: 3, x: 0, z: 0, distance: 1 }] } as unknown as Partial<BotWorldState>;

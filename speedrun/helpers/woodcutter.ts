@@ -42,6 +42,7 @@ import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
 import { cheb, CROSSING_HITPOINTS, crossingSettings, inKandarin, restForCrossing, TAVERLEY, trainHitpointsOnCows, travel, type Pt, type Traveller } from '../lib/kandarin';
+import { tickMs } from '../lib/wait';
 import type { Role, RoleContext } from './role';
 import { runStandalone } from './role';
 
@@ -700,7 +701,7 @@ class Woodcutter {
         const banked = await this.bank(this.currentSpot().bank);
         const t2 = this.tick();
         this.trips++;
-        const hours = (this.tick() - this.startTick) * 0.3 / 3600;
+        const hours = ((this.tick() - this.startTick) * tickMs()) / 3_600_000;
         for (const [name, count] of Object.entries(banked)) {
             const k = name.toLowerCase();
             this.perTier[k] ??= { logs: 0, ticks: 0 };
@@ -722,7 +723,7 @@ class Woodcutter {
             maxOthersAtTree: stats.maxOthersAtTree,
             respawnWaits: stats.waits,
             bankLogs: this.bankLogs,
-            logsPerHour: Object.fromEntries(Object.entries(this.perTier).filter(([, v]) => v.ticks > 0).map(([k, v]) => [k, Math.round(v.logs / (v.ticks * 0.3 / 3600))])),
+            logsPerHour: Object.fromEntries(Object.entries(this.perTier).filter(([, v]) => v.ticks > 0).map(([k, v]) => [k, Math.round(v.logs / ((v.ticks * tickMs()) / 3_600_000))])),
             hoursThisRun: Math.round(hours * 100) / 100
         });
     }

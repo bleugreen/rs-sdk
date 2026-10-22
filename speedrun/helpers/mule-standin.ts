@@ -111,7 +111,7 @@ async function waitForStaged(ctx: RoleContext, partner: string, cursor: ChatCurs
 async function giveBack(ctx: RoleContext, partner: string, items: readonly { id: number; n: number }[]): Promise<GiveResult> {
     let last: GiveResult | undefined;
     for (let tries = 0; tries < 4 && !ctx.signal.aborted; tries++) {
-        last = await give(ctx.sdk, partner, items.map(i => ({ item: i.id, n: i.n })), { openTimeoutMs: 60_000 });
+        last = await give(ctx.sdk, partner, items.map(i => ({ item: i.id, n: i.n })), { openMaxTicks: 200 });
         ctx.log('give back', { ok: last.ok, reason: last.reason ?? null, gave: label(last.gave), ticks: last.ticks, tries: tries + 1 });
         if (last.ok || last.gave.length) return last;
         await waitTicks(ctx.sdk, 5);

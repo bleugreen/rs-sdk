@@ -2,7 +2,7 @@
 # One-batch interleaving lab (rs/38): starts engine, gateway and a lite runner on the
 # interleave port block (WEB 9280, MGMT 9281, HISCORES 9282, NODE 43980, AGENT 8180),
 # runs the given measurement scripts in order, then stops everything. Copied from
-# agility-lab.sh (docs/speedrun/LAB.md), with NODE_TICKRATE defaulting to 300 because
+# agility-lab.sh (docs/speedrun/LAB.md), with NODE_TICKRATE defaulting to 400 (the demo's tick since 2026-10-22) because
 # every interleaving number depends on where packets land inside a production tick.
 #
 #   docs/speedrun/scripts/interleave-lab.sh <bot> <script.ts>[:arg:arg] ...
@@ -16,7 +16,7 @@ LOG=${LAB_LOG:-${TMPDIR:-/tmp}/interleavelab}
 mkdir -p "$LOG"
 
 export WEB_PORT=9280 WEB_MANAGEMENT_PORT=9281 HISCORES_WEB_PORT=9282 NODE_PORT=43980 AGENT_PORT=8180
-export NODE_TICKRATE=${NODE_TICKRATE:-300}
+export NODE_TICKRATE=${NODE_TICKRATE:-400}
 PIDS=()
 cleanup() { for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null; done; sleep 1; for p in "${PIDS[@]}"; do kill -9 "$p" 2>/dev/null; done; }
 trap cleanup EXIT

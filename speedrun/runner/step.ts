@@ -12,8 +12,9 @@
 // - the next step starts in the same tick when this tick's user-event budget
 //   (budget.ts) still has room for its first packet, otherwise on the next tick,
 //   never later;
-// - a state older than one tick of wall time is waited past, because the
-//   server has already moved on and the next publication is due.
+// - a state older than one tick (the observed tick length, lib/wait.ts periodMs)
+//   is waited past, because the server has already moved on and the next
+//   publication is due.
 // Every boundary is logged as a `(boundary)` row, so the ledger's total is
 // the whole run, idle ticks included.
 //
@@ -25,7 +26,7 @@ import type { Session } from '../lib/session';
 import { startRunTickMonitor, type TickMonitorSetting } from '../lib/tick-monitor';
 import { ensureRun } from '../lib/run-mode';
 import { measure, tickCounter, tickSpan, type TickLog } from '../lib/ticks';
-import { currentTick, nextTick, tickMs, type StateSource } from '../lib/wait';
+import { currentTick, feedTickPeriod, nextTick, periodMs, TickPeriod, tickMs, type StateSource } from '../lib/wait';
 import { meterDispatch, TickWindow, type WindowSnapshot } from './budget';
 
 export type Check<C> = (s: BotWorldState, c: C) => true | string;
@@ -208,6 +209,10 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
     const sdk = session.sdk;
     const window = new TickWindow(currentTick(sdk), sdk.getStateReceivedAt?.() || Date.now());
     const unsubscribe = sdk.onStateUpdate(s => window.observe(s.tick, Date.now()));
+    // A state older than one tick of the observed period is stale (a nominal tick shorter than
+    // the real one would call a current state stale and spend a tick waiting for the next).
+    const period = new TickPeriod();
+    const unperiod = feedTickPeriod(sdk, period);
     const unmeter = meterDispatch(sdk, window);
     const monitor = startRunTickMonitor(session, opts.log, opts.tickMonitor);
     // The run mode this call set: undefined until a step opts out (login left run on).
@@ -229,7 +234,7 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
                     waited = true;
                 }
             }
-            if (!waited && (!sdk.getState() || window.ageMs(Date.now()) >= tickMs())) {
+            if (!waited && (!sdk.getState() || window.ageMs(Date.now()) >= periodMs(period))) {
                 boundary.waits.push('stale');
                 await nextTick(sdk);
             }
@@ -279,6 +284,7 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
     } finally {
         monitor?.stop();
         unmeter();
+        unperiod();
         unsubscribe();
         if (installed) process.off('SIGINT', onSigint);
     }

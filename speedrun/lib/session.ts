@@ -26,7 +26,7 @@ import type { BotActions } from '../../sdk/actions';
 import type { BotStatus, BotWorldState } from '../../sdk/types';
 import { ensureRunOn, RUN_CONFIRM_TICKS, RUN_PRESSES, type EnsureRunResult, type RunSdk } from './run-mode';
 import { pageInGame, pageLogin, pageLoginState, type PageLoginStart } from './tab';
-import { awaitScene, SCENE_READY_MAX_TICKS, type SceneWait, sleep, STALLED, tickMs, waitUntil } from './wait';
+import { awaitScene, idleBoundMs, SCENE_READY_MAX_TICKS, type SceneWait, sleep, STALLED, TickPeriod, tickMs, waitUntil } from './wait';
 import { onTutorialIsland } from './world';
 
 export const ROOT = join(import.meta.dir, '..', '..');
@@ -239,10 +239,12 @@ export interface Session {
     /** Last tick seen while inGame, and when it last advanced (wall ms). */
     lastInWorldTick: number;
     lastAdvanceAt: number;
+    /** The tick period this client observes, fed by every advancing in-world tick: what silence bounds are sized from (wait.ts idleBoundMs). */
+    period: TickPeriod;
     /** Wall ms of the last client launch. */
     launchedAt: number;
-    /** Wall ms of the bot's last markProgress (read by the watchdog's progressStaleTicks). */
-    lastProgressAt: number;
+    /** Observed in-world ticks since the bot's last markProgress (read by the watchdog's progressStaleTicks); counts on across a relaunch. */
+    ticksSinceProgress: number;
     watchdog: Watchdog | null;
     logPath: string;
     /** The last launch's wait for the client's scene (settleScene); absent when none was waited for. */
@@ -313,8 +315,9 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         childExit: null,
         lastInWorldTick: -1,
         lastAdvanceAt: Date.now(),
+        period: new TickPeriod(),
         launchedAt: 0,
-        lastProgressAt: Date.now(),
+        ticksSinceProgress: 0,
         watchdog: null,
         logPath: join(logDir, `${env.BOT_USERNAME}-${client}.log`),
     };
@@ -357,20 +360,24 @@ export async function settleScene(session: Pick<Session, 'sdk' | 'name'> & { sce
 }
 
 /** Tell the watchdog the bot is still making progress (see progressStaleTicks). */
-export function markProgress(session: Session): void {
-    session.lastProgressAt = Date.now();
+export function markProgress(session: Pick<Session, 'ticksSinceProgress'>): void {
+    session.ticksSinceProgress = 0;
 }
 
-function track(session: Session, s: BotWorldState): void {
+/** Every published state: the advancing in-world tick, the observed period, and the ticks since the bot's last progress. */
+export function track(session: Pick<Session, 'sdk' | 'lastInWorldTick' | 'lastAdvanceAt' | 'period' | 'ticksSinceProgress'>, s: BotWorldState): void {
     if (!s.inGame) return;
-    if (s.tick !== session.lastInWorldTick) {
-        session.lastInWorldTick = s.tick;
-        session.lastAdvanceAt = Date.now();
-    }
+    const prev = session.lastInWorldTick;
+    if (s.tick === prev) return;
+    // A label that went back is a relaunch's restarted count: one new tick, not a negative step.
+    session.ticksSinceProgress += prev >= 0 && s.tick > prev ? s.tick - prev : 1;
+    session.lastInWorldTick = s.tick;
+    session.lastAdvanceAt = Date.now();
+    session.period.see(s.tick, session.sdk.getStateReceivedAt?.() || session.lastAdvanceAt);
 }
 
 /** Wait until the client publishes in-game state with a tick that advances. */
-export async function waitAdvancingTick(session: Session, timeoutMs: number, advanceMs: number = Math.max(5_000, 20 * tickMs())): Promise<BotWorldState> {
+export async function waitAdvancingTick(session: Session, timeoutMs: number, advanceMs: number = Math.max(5_000, idleBoundMs({ ticks: 20, period: session.period }))): Promise<BotWorldState> {
     const first = await waitFor(session.sdk, s => s.inGame, timeoutMs);
     if (!first) throw new Error(`${session.name}: no in-game state within ${timeoutMs} ms`);
     const t = first.tick;
@@ -832,8 +839,14 @@ export async function relog(session: Session, opts: { offlineMs?: number; loginT
 }
 
 /**
+ * How often waitInWorldOrExit asks `ended` (a page read through the browser tab). A wall cadence
+ * bounding that read's cost, not a tick: before the login lands there are no ticks to count.
+ */
+const ENDED_POLL_MS = 300;
+
+/**
  * Resolve once the tick advances past what was seen before the launch, or the login ends without
- * getting in: the lite child exits, or `ended` (polled about every 300 ms) says so.
+ * getting in: the lite child exits, or `ended` (polled every ENDED_POLL_MS) says so.
  */
 async function waitInWorldOrExit(
     session: Session,
@@ -844,11 +857,11 @@ async function waitInWorldOrExit(
 ): Promise<'in-world' | 'exited' | 'timeout'> {
     const deadline = Date.now() + ms;
     let firstTick: number | null = null;
-    let nextEndedCheck = Date.now() + 300;
+    let nextEndedCheck = Date.now() + ENDED_POLL_MS;
     while (Date.now() < deadline) {
         if (session.client === 'lite' && session.childExit !== null) return 'exited';
         if (ended && Date.now() >= nextEndedCheck) {
-            nextEndedCheck = Date.now() + 300;
+            nextEndedCheck = Date.now() + ENDED_POLL_MS;
             if (await ended()) return 'exited';
         }
         const s = session.sdk.getState();
@@ -881,9 +894,9 @@ export interface WatchdogInputs {
     nextAttemptAt: number;
     /** A clean logout was already tried during the current wedge and not confirmed. */
     logoutFailed: boolean;
-    /** Wall ms since the bot's last markProgress, and the limit; null when progress is not tracked. */
-    msSinceProgress: number | null;
-    progressStaleMs: number | null;
+    /** Observed ticks since the bot's last markProgress, and the limit; null when progress is not tracked. */
+    ticksSinceProgress: number | null;
+    progressStaleTicks: number | null;
     /** The world itself is gone (demo restart, or our network): lib/reconnect.ts. Probed only when unhealthy. */
     serverDown: boolean;
 }
@@ -918,7 +931,7 @@ export function watchdogDecision(i: WatchdogInputs): WatchdogVerdict {
     if (!i.tickedSinceLaunch && i.msSinceLaunch < i.launchGraceMs) return 'ok';
     const wedged = i.msSinceAdvance > i.staleMs || i.gateway === 'dead' || i.gateway === 'stale';
     if (wedged) return i.serverDown ? 'outage' : i.logoutFailed ? relaunch : 'logout';
-    if (i.progressStaleMs !== null && i.msSinceProgress !== null && i.msSinceProgress > i.progressStaleMs) return 'stop';
+    if (i.progressStaleTicks !== null && i.ticksSinceProgress !== null && i.ticksSinceProgress > i.progressStaleTicks) return 'stop';
     return 'ok';
 }
 
@@ -999,10 +1012,12 @@ export interface WatchdogOptions {
  * relaunch.
  */
 export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Watchdog {
-    const staleMs = (opts.staleTicks ?? 17) * tickMs();
+    // Silence has no ticks to count: the stale bound is that many ticks of the longer of the
+    // nominal and the observed period (wait.ts idleBoundMs), re-read on every check.
+    const staleMs = () => idleBoundMs({ ticks: opts.staleTicks ?? 17, period: session.period });
     const launchGraceMs = opts.launchGraceMs ?? 30_000;
     const logoutTimeoutMs = opts.logoutTimeoutMs ?? Math.max(2_000, 8 * tickMs());
-    const progressStaleMs = opts.progressStaleTicks === undefined ? null : opts.progressStaleTicks * tickMs();
+    const progressStaleTicks = opts.progressStaleTicks ?? null;
     const actions: WatchdogActions = { ...liveActions, ...opts.actions };
     let paused = false;
     let stopped = false;
@@ -1033,18 +1048,19 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
                 gateway = (await gatewayStatus(session))?.status ?? null;
             }
             const msSinceAdvance = Date.now() - session.lastAdvanceAt;
+            const stale = staleMs();
             const decide = (serverDown: boolean) => watchdogDecision({
-                expectInWorld: session.expectInWorld, paused, now: Date.now(), msSinceAdvance, staleMs,
+                expectInWorld: session.expectInWorld, paused, now: Date.now(), msSinceAdvance, staleMs: stale,
                 msSinceLaunch: Date.now() - session.launchedAt, tickedSinceLaunch: session.lastAdvanceAt > session.launchedAt, launchGraceMs,
                 gateway, childExit: session.child ? session.childExit : null, nextAttemptAt, logoutFailed,
-                msSinceProgress: progressStaleMs === null ? null : Date.now() - session.lastProgressAt, progressStaleMs, serverDown,
+                ticksSinceProgress: progressStaleTicks === null ? null : session.ticksSinceProgress, progressStaleTicks, serverDown,
             });
             let verdict = decide(false);
             if ((verdict === 'logout' || verdict === 'relaunch' || verdict === 'wait') && opts.serverDown) {
                 if (await opts.serverDown().catch(() => false)) verdict = decide(true);
             }
             if (verdict === 'ok') {
-                if (msSinceAdvance < staleMs) {
+                if (msSinceAdvance < stale) {
                     attempt = 0;
                     logoutFailed = false;
                 }
@@ -1124,7 +1140,7 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
         resume: () => {
             paused = false;
             session.lastAdvanceAt = Date.now();
-            session.lastProgressAt = Date.now();
+            session.ticksSinceProgress = 0;
         },
         check,
         get relaunches() {

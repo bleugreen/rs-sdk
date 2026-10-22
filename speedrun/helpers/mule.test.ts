@@ -8,6 +8,7 @@ import type { BotSDK } from '../../sdk/index';
 import type { BankItem, BotWorldState, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
 import type { CombatEvent, NearbyNpc, PlayerState } from '../../sdk/types';
 import { baseState, drive, FakeSdk, flush, simulateWalking } from '../lib/fake-sdk';
+import { fakeClock, microtasks, tickEvery, useFakeTicks } from '../lib/fake-ticks';
 import { clickBack, newClickCtx, RESEND_TICKS, type ClickCtx } from '../lib/trade';
 import {
     accountMatches,
@@ -29,6 +30,7 @@ import {
     courierPicks,
     cueEpoch,
     decidePreRequest,
+    depositAllExcept,
     firstSlotPerId,
     giveOpenTrade,
     holds,
@@ -510,6 +512,33 @@ describe('top-up lines (H12 `shark to 15`): the count comes from the scored acco
         expect(planPackage(pkg, bank([[SHARK, 'Shark', 10], [554, 'Fire rune', 1000]])).topUpShort).toEqual([]);
     });
 });
+
+
+for (const ms of [300, 400]) {
+    describe(`depositAllExcept at ${ms} ms a tick: the drain counts observed ticks`, () => {
+        useFakeTicks(ms);
+        const inv = (slot: number, id: number, name: string) => ({ slot, id, name, count: 1, optionsWithIndex: [] }) as unknown as InventoryItem;
+
+        test('two stacks drained on tick 20 of a server 50% slower than nominal count as done (17 + 2n ticks; past the old 5.8 s wall)', async () => {
+            const sdk = new FakeSdk(baseState({ tick: 0, inventory: [inv(0, 995, 'Coins'), inv(1, 1511, 'Logs')] }));
+            const p = depositAllExcept(sdk as unknown as BotSDK);
+            await microtasks();
+            tickEvery(sdk, ms * 1.5, 19);
+            await microtasks();
+            fakeClock.advanceTimersByTime(ms * 1.5);
+            sdk.tick({ inventory: [] });
+            expect(await p).toBe(true);
+        });
+
+        test('and gives up after 17 + 2n observed ticks, however slow', async () => {
+            const sdk = new FakeSdk(baseState({ tick: 0, inventory: [inv(0, 995, 'Coins')] }));
+            const p = depositAllExcept(sdk as unknown as BotSDK);
+            await microtasks();
+            tickEvery(sdk, ms * 2, 20);
+            expect(await p).toBe(false);
+        });
+    });
+}
 
 describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wildlife, keep-alive', () => {
     const SHARK = 385;

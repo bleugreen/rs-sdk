@@ -14,24 +14,32 @@ import type { BotWorldState } from '../../sdk/types';
 export type StateSource = Pick<BotSDK, 'getState' | 'onStateUpdate'>;
 export type Pred = (s: BotWorldState) => boolean;
 
-/** Milliseconds per server tick: SPEEDRUN_TICK_MS, else NODE_TICKRATE, else 300 (production). */
+/**
+ * The demo server's tick length since its 2026-10-22 19:56Z restart: the spectator feed's hello
+ * (wss://rs-sdk-demo.fly.dev/worldfeed) reports `tickMs: 400` (rs/83, measured p50 402 ms).
+ * Nominal only: it sizes wall-clock backstops. Anything that turns wall time into ticks reads the
+ * observed period (`TickPeriod`, `periodMs`), and every wait that stands for ticks counts them.
+ */
+export const DEMO_TICK_MS = 400;
+
+/** Milliseconds per server tick: SPEEDRUN_TICK_MS, else NODE_TICKRATE (a lab engine's own), else DEMO_TICK_MS. */
 export function tickMs(env: Record<string, string | undefined> = process.env): number {
     for (const raw of [env.SPEEDRUN_TICK_MS, env.NODE_TICKRATE]) {
         const n = Number(raw);
         if (raw && Number.isFinite(n) && n > 0) return n;
     }
-    return 300;
+    return DEMO_TICK_MS;
 }
 
 /**
  * The server tick at a wall time, as the client will count it, from a tick the client was current
  * on (`tick0`, received at `wall0`). A starved browser tab decodes ticks behind the server, so the
  * tick it reads when it executes a click can be many ticks short of the tick the click reached;
- * take the larger of the two. Wall time here only ever lengthens a tick bound: on a current tab the
- * two agree, and a slower real tick (the demo's 340-370 ms) only overestimates.
+ * take the larger of the two. Wall time is turned into ticks at `period`'s observed length when it
+ * has one (`periodMs`), else the nominal `tickMs()`.
  */
-export function serverClock(tick0: number, wall0: number): (wallMs: number) => number {
-    return wallMs => tick0 + Math.max(0, Math.floor((wallMs - wall0) / tickMs()));
+export function serverClock(tick0: number, wall0: number, period?: TickPeriod): (wallMs: number) => number {
+    return wallMs => tick0 + Math.max(0, Math.floor((wallMs - wall0) / periodMs(period)));
 }
 
 export function currentTick(sdk: StateSource): number {
@@ -73,10 +81,22 @@ export interface IdleBound {
 /** The shortest span of ticks an IdleBound's `period` is trusted over. */
 export const IDLE_PERIOD_MIN_SPAN_MS = 2_000;
 
-/** Wall milliseconds an idle bound stands for: IDLE_TICKS x tickMs() without one. */
+/**
+ * Wall milliseconds an idle bound stands for: IDLE_TICKS x tickMs() without one. This is the one
+ * form of a "no new tick for N ticks" detector: silence has no ticks to count, so it is N ticks of
+ * the longer of the nominal and the observed period, never shorter than N real ticks.
+ */
 export function idleBoundMs(bound?: IdleBound): number {
     if (!bound) return IDLE_TICKS * tickMs();
     return bound.ticks * Math.max(tickMs(), bound.period?.msPerTick(IDLE_PERIOD_MIN_SPAN_MS) ?? 0);
+}
+
+/**
+ * Milliseconds per tick for turning a wall interval into ticks: `period`'s observed length once it
+ * has watched `minSpanMs` of ticks, else the nominal `tickMs()`.
+ */
+export function periodMs(period?: TickPeriod, minSpanMs: number = IDLE_PERIOD_MIN_SPAN_MS): number {
+    return period?.msPerTick(minSpanMs) ?? tickMs();
 }
 
 export interface WaitOptions {
@@ -148,48 +168,99 @@ export function tickClock(from: number | undefined, onIdle: () => void, lastTick
     };
 }
 
-/** A client's tick period as it observes it, for turning wall time into ticks (`tickPeriod`). */
-export interface TickPeriod {
-    /** Feed every published state. */
-    see(s: BotWorldState): void;
+/** Ticks one period sample spans (`TickPeriod`). */
+export const PERIOD_SPAN_TICKS = 8;
+/** Period samples the rolling median is taken over: about 16 s of ticks at 400 ms. */
+export const PERIOD_WINDOW = 40;
+/** Samples before the median replaces the nominal tick length: from the 13th tick. */
+export const PERIOD_MIN_SAMPLES = 5;
+/** A label jump larger than this restarts the span instead of counting the ticks between (the watchdog's stale bound). */
+export const PERIOD_GAP_TICKS = 17;
+
+/**
+ * The server's tick period as this side observes it, the one estimator for turning wall time into
+ * ticks: the rolling median of the last `PERIOD_WINDOW` per-tick intervals, each measured across
+ * `PERIOD_SPAN_TICKS` ticks, and the nominal length until `PERIOD_MIN_SAMPLES` of them exist.
+ *
+ * Why a span and not single intervals: a held tick and the one glued behind it give single
+ * intervals of +hold and ~0, and a path that pairs ticks (every other one held) alternates them,
+ * where a median of single intervals flips between ~0 and twice the period. Across 8 ticks a hold
+ * moves only the samples starting or ending on it, by hold / 8, and a lasting shift (a stall)
+ * raises 8 samples of 40 by shift / 8, which the median ignores. The window follows the demo's
+ * period as it moves between minutes (161-177 ticks a minute on 2026-10-21) while a minute of
+ * holds cannot drag it. A relaunch (the label going back) restarts the span, so time spent away
+ * is never read as ticks; the samples so far stand, since a relaunch does not change the server's tick.
+ */
+export class TickPeriod {
+    private last: number | null = null;
+    /** Arrival times of the last `PERIOD_SPAN_TICKS + 1` consecutive labels, ending at `last`. */
+    private times: number[] = [];
+    private samples: number[] = [];
+    private median: number | null = null;
+    private firstAt: number | null = null;
+    private lastAt: number | null = null;
+
+    constructor(readonly nominalMs: number = tickMs(), readonly gapTicks: number = PERIOD_GAP_TICKS) {}
+
+    /** Milliseconds per tick: the rolling median once measured, else the nominal length. */
+    get ms(): number {
+        return this.median ?? this.nominalMs;
+    }
+
+    get measured(): boolean {
+        return this.median !== null;
+    }
+
     /**
-     * Milliseconds per tick over the window: the wall-clock span from the first new tick in it
-     * to the newest, over the ticks `tickClock` counted between them. Null while that span is
-     * under `minSpanMs`, where a few ticks' arrival jitter would weigh too much.
+     * The measured period, or null until it is measured and the arrivals it has watched span at
+     * least `minSpanMs` (a caller that wants a longer look than the warm-up asks for one).
      */
-    msPerTick(minSpanMs: number): number | null;
+    msPerTick(minSpanMs: number): number | null {
+        if (this.median === null || this.firstAt === null || this.lastAt === null || this.lastAt - this.firstAt < minSpanMs) return null;
+        return this.median;
+    }
+
+    /**
+     * Tick `label` arrived at `at` (ms). A repeat is ignored; a publication that moves the label
+     * by k is k arrivals at one time; a label that goes back or jumps past `gapTicks` restarts
+     * the span.
+     */
+    see(label: number, at: number): void {
+        const last = this.last;
+        if (last === label) return;
+        this.last = label;
+        this.firstAt ??= at;
+        this.lastAt = at;
+        if (last === null || label < last || label - last > this.gapTicks) {
+            this.times = [at];
+            return;
+        }
+        for (let l = last + 1; l <= label; l++) {
+            this.times.push(at);
+            if (this.times.length > PERIOD_SPAN_TICKS + 1) this.times.shift();
+            if (this.times.length === PERIOD_SPAN_TICKS + 1) this.sample((at - this.times[0]!) / PERIOD_SPAN_TICKS);
+        }
+    }
+
+    private sample(ms: number): void {
+        this.samples.push(ms);
+        if (this.samples.length > PERIOD_WINDOW) this.samples.shift();
+        if (this.samples.length < PERIOD_MIN_SAMPLES) return;
+        const s = [...this.samples].sort((a, b) => a - b);
+        const mid = s.length >> 1;
+        this.median = s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
+    }
 }
 
 /**
- * The tick period this client observes over its last `windowMs`, for anything that has to turn
- * a wall-clock interval into ticks: the demo has run at 340-370 ms a tick, so the nominal
- * `tickMs()` overcounts. Each new tick is timed on arrival; republishes within a tick are not.
- * A relaunch (the tick going back) restarts the measurement, since the time spent away is not
- * ticks this client saw.
+ * Feed `period` the source's current state and every one after it, each timed on receipt (the
+ * gateway's receipt time when the SDK has it, else now). Returns the unsubscribe.
  */
-export function tickPeriod(windowMs: number, now: () => number = () => Date.now()): TickPeriod {
-    const clock = tickClock(undefined, () => {});
-    clock.stop();
-    let marks: Array<{ ms: number; n: number }> = [];
-    let last: number | undefined;
-    return {
-        see(s) {
-            if (last !== undefined && s.tick < last) marks = [];
-            last = s.tick;
-            clock.see(s);
-            if (marks.at(-1)?.n === clock.elapsed) return;
-            const ms = now();
-            marks.push({ ms, n: clock.elapsed });
-            const keep = marks.findIndex(m => m.ms >= ms - windowMs);
-            if (keep > 0) marks.splice(0, keep);
-        },
-        msPerTick(minSpanMs) {
-            const a = marks[0];
-            const b = marks.at(-1);
-            if (!a || !b || b.n === a.n || b.ms - a.ms < minSpanMs) return null;
-            return (b.ms - a.ms) / (b.n - a.n);
-        }
-    };
+export function feedTickPeriod(sdk: StateSource & { getStateReceivedAt?(): number }, period: TickPeriod): () => void {
+    const at = () => sdk.getStateReceivedAt?.() || Date.now();
+    const cur = sdk.getState();
+    if (cur) period.see(cur.tick, at());
+    return sdk.onStateUpdate(s => period.see(s.tick, at()));
 }
 
 /**

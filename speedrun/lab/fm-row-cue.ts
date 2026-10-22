@@ -20,7 +20,7 @@ import { join, resolve } from 'node:path';
 import { writeJsonAtomicSync } from '../helpers/altar-cue';
 import { GO_FILE } from '../helpers/fm-row';
 import { closeSession, openSession } from '../lib/session';
-import { tickMs, tickPeriod } from '../lib/wait';
+import { tickMs, TickPeriod } from '../lib/wait';
 import { arg, botArg, result } from './common';
 
 const ROOT = resolve(import.meta.dir, '..', '..');
@@ -34,10 +34,10 @@ const writerPeriod = process.argv.includes('--writer-period');
 
 const session = await openSession(writer, { pathfinding: false });
 const frames: Array<{ tick: number; ms: number }> = [];
-const period = tickPeriod(60_000);
+const period = new TickPeriod();
 session.sdk.onStateUpdate(s => {
     if (frames.at(-1)?.tick !== s.tick) frames.push({ tick: s.tick, ms: Date.now() });
-    period.see(s);
+    period.see(s.tick, Date.now());
 });
 await Bun.sleep(warm * 1000);
 const writerTickAt = (ms: number) => frames.findLast(f => f.ms <= ms)!.tick;

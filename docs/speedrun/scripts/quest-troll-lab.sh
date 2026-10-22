@@ -9,7 +9,7 @@
 #
 # "docs/speedrun/scripts/quest-troll-fights.ts:dad:70:10" runs
 # `bun docs/speedrun/scripts/quest-troll-fights.ts <bot> dad 70 10`.
-# Environment: LAB_TICKRATE (ms, default 300 = production, so bot reaction
+# Environment: NODE_TICKRATE (ms, default 400 = the demo since 2026-10-22, so bot reaction
 # time is realistic), LAB_SCRIPT_TIMEOUT (seconds per script, default 900),
 # LAB_LOG (log directory, default /tmp/trolllab; build-slot TMPDIRs differ
 # between batches, so a fixed path keeps logs readable afterwards).
@@ -17,7 +17,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 BOT=$1; shift
 LOG=${LAB_LOG:-/tmp/trolllab}
-TICKRATE=${LAB_TICKRATE:-300}
+TICKRATE=${NODE_TICKRATE:-400}
 SCRIPT_TIMEOUT=${LAB_SCRIPT_TIMEOUT:-900}
 mkdir -p "$LOG"
 

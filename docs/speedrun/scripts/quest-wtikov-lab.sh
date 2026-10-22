@@ -9,7 +9,7 @@
 # lite runner, runs the script against it and stops the runner. Script output
 # is also saved to $TMPDIR/wtikov-lab/<bot>.out.
 #
-# NODE_TICKRATE=300 is the production tick (fly.toml), as in primitives.md:
+# NODE_TICKRATE defaults to 400, the demo's tick since 2026-10-22 (the worldfeed hello), as in primitives.md:
 # dialogue timing depends on whether the reply lands before the next tick.
 # BUILD_LIVE_RELOAD=false is required: the dev reload thread fs.watch()es every
 # content directory and exhausts file descriptors (EMFILE) on default limits.
@@ -27,7 +27,7 @@ up() { curl -s -o /dev/null --max-time 2 "http://localhost:$1/"; }
 
 if ! up 9080; then
     (cd server/engine && WEB_PORT=9080 WEB_MANAGEMENT_PORT=9081 HISCORES_WEB_PORT=9082 NODE_PORT=43780 \
-        BUILD_VERIFY=false BUILD_LIVE_RELOAD=false NODE_TICKRATE=${NODE_TICKRATE:-300} LOCAL_STAFF_LEVEL=4 \
+        BUILD_VERIFY=false BUILD_LIVE_RELOAD=false NODE_TICKRATE=${NODE_TICKRATE:-400} LOCAL_STAFF_LEVEL=4 \
         nohup bun run src/app.ts > "$LOG/engine.log" 2>&1 &)
     for _ in $(seq 1 240); do grep -q 'World ready' "$LOG/engine.log" 2>/dev/null && break; sleep 1; done
     grep -q 'World ready' "$LOG/engine.log" || { echo '[lab] engine did not start'; tail -20 "$LOG/engine.log"; exit 1; }

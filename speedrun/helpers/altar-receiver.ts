@@ -30,7 +30,7 @@
 //   scope        required: { step, family: 'altar' }, written on every cue; its givers must carry the same
 import type { BotWorldState, NearbyLoc, NearbyPlayer } from '../../sdk/types';
 import { DROPPED_TICKS, receiveFrom } from '../lib/trade';
-import { tickClock, tickMs } from '../lib/wait';
+import { feedTickPeriod, periodMs, tickClock, TickPeriod, tickMs } from '../lib/wait';
 import {
     canonName,
     cycleTicks,
@@ -132,6 +132,8 @@ class Receiver {
     private readonly bench = new MissBench();
     /** giver:T -> Date.now() of the cue write that named it. */
     private readonly namedAt = new Map<string, number>();
+    /** The observed tick period, for reporting wall waits in ticks. */
+    private readonly period = new TickPeriod();
     private altarLoc!: NearbyLoc;
     private me!: Tile;
     private writer!: CueWriter;
@@ -140,6 +142,7 @@ class Receiver {
 
     constructor(private readonly ctx: RoleContext) {
         this.altar = altarData(String(ctx.options.altar ?? 'air'));
+        feedTickPeriod(ctx.sdk, this.period);
     }
 
     private get o() {
@@ -195,8 +198,8 @@ class Receiver {
             missed: this.turns.length - ok,
             gapHist: histogram(this.gaps),
             schedules: histogram(this.turns.map(t => t.schedule)),
-            restockTicks: stats(this.restockMs.map(ms => Math.round(ms / tickMs()))),
-            batchWaitTicks: stats(this.waits.map(ms => Math.round(ms / tickMs()))),
+            restockTicks: stats(this.restockMs.map(ms => Math.round(ms / periodMs(this.period)))),
+            batchWaitTicks: stats(this.waits.map(ms => Math.round(ms / periodMs(this.period)))),
             loginOrder: this.loginOrder(),
             perTurn: this.turns.map(t => `${t.giver}:${t.schedule[0]}:${t.ok ? 'ok' : 'miss'}`)
         };
@@ -265,8 +268,8 @@ class Receiver {
                 }
             }
             batch = chooseBatch(statuses, this.s?.nearbyPlayers ?? [], this.me, { ...o, schedule: blindSchedule(o.schedule), myLoggedInAt: this.loggedInAt, now: Date.now(), bench: this.bench });
-            // Everyone we wait for, or after two minutes whoever is there.
-            if (batch.length >= wantN || (batch.length > 0 && Date.now() - waitStart > 120_000)) break;
+            // Everyone we wait for, or after 400 ticks of nominal time (two minutes at 300 ms) whoever is there.
+            if (batch.length >= wantN || (batch.length > 0 && Date.now() - waitStart > 400 * tickMs())) break;
             await Bun.sleep(250);
         }
         this.waits.push(Date.now() - waitStart);
@@ -430,7 +433,7 @@ export const role: Role = {
     name: 'altar-receiver',
     produces: [],
     async run(ctx) {
-        if (pos(ctx.sdk.getState()).x < 0) await ctx.sdk.waitForReady(30_000);
+        if (pos(ctx.sdk.getState()).x < 0) await ctx.sdk.waitForReady(100 * tickMs());
         await new Receiver(ctx).run();
     }
 };

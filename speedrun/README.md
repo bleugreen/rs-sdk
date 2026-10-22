@@ -2,7 +2,9 @@
 
 The speedrun package: TypeScript run with bun, importing the SDK from `sdk/`.
 The run is ranked by the scored account's ticks in the world, so everything
-here is measured in server ticks at the production tick rate (300 ms).
+here is measured in server ticks. The demo server has run 400 ms ticks since its
+2026-10-22 19:56Z restart (the spectator feed's hello reports `tickMs: 400`, rs/83); the
+measurements below that say 300 ms were taken before it.
 
 The stock `bot.*` helpers are the project's general API and stay as they are.
 This package is a separate fast layer built on the raw `sdk.send*` calls.
@@ -125,17 +127,28 @@ speedrun/
   on `state.tick` or on the specific field. `maxTicks` is the only limit on
   a ticking wait, however slow the ticks; a wait fails as `idle` only when no
   new tick arrives for `IDLE_TICKS` (20) ticks of wall time, scaled by
-  `tickMs()` (`SPEEDRUN_TICK_MS`, else `NODE_TICKRATE`, else 300). A wait
+  `tickMs()` (`SPEEDRUN_TICK_MS`, else `NODE_TICKRATE`, else `DEMO_TICK_MS`, 400). A wait
   that spans a known silent window passes `idle: {ticks, period}` (an
-  `IdleBound`): the bound is `ticks` of the observed tick period (`tickPeriod`),
+  `IdleBound`): the bound is `ticks` of the observed tick period (`TickPeriod`),
   never shorter than `ticks * tickMs()`. A failed wait reports `silentMs`.
+- **One rule for every deadline that stands for ticks.** A deadline that is a number of ticks
+  counts observed ticks (`maxTicks`, `tickClock`). A detector for silence (no new tick for N
+  ticks) cannot count ticks, since none arrive: it is `idleBoundMs({ticks: N, period})`, N ticks
+  at the longer of the nominal and the observed length (the session watchdog, `awaitProgram`'s
+  stale bound, the fleet's state silence). A wall-clock give-up that is only a backstop is
+  `N * tickMs()`, never a millisecond literal sized from one tick length. lib/trade.ts's default
+  trade open is `OPEN_MAX_TICKS` (200) observed ticks, with a backstop of twice that in `tickMs()`.
   `onStates` (feed every state to a step until it returns), `converse` and
   the helpers' own state listeners take the same two limits from the same
   `tickClock`; none has a total wall-clock budget.
-- **Turn wall time into ticks at the observed period, never at `tickMs()`.** The demo has run
-  at 340-370 ms a tick, so a nominal 300 overcounts. Something that has to count a wall-clock
-  interval in ticks (fm-row's `cueAt: 'written'`) measures its own client's period with
-  `wait.ts` `tickPeriod` and keeps `tickMs()` as the fallback before it has 20 s of ticks.
+- **Turn wall time into ticks at the observed period, never at `tickMs()`.** A nominal length
+  shorter than the real one overcounts (the demo ran 340-370 ms against a nominal 300, and now
+  runs 400). Something that has to count a wall-clock interval in ticks (fm-row's
+  `cueAt: 'written'`, a step boundary's stale check, `serverClock`) reads `wait.ts` `periodMs`
+  of a `TickPeriod`, the one estimator (tick-monitor.ts re-exports it): the rolling median of
+  per-tick intervals measured across 8-tick spans, with `tickMs()` as the fallback until it has
+  `PERIOD_MIN_SAMPLES` of them. `feedTickPeriod` feeds one from an SDK, and a `Session` carries
+  its own as `session.period`.
 - Tick logs go to `speedrun/runs/<runId>.jsonl`, or to `$SPEEDRUN_LOG`.
 
 ## Measurements: provenance
@@ -959,8 +972,8 @@ traffic: actions acknowledged in the current tick window, actions dispatched
 and not yet acknowledged, and any earlier burst the server is still decoding at
 5 per tick. It hooks the SDK's single dispatch method for the length of the
 run, so `bot.*` porcelain is counted along with raw sends. A state older than
-one tick of wall time (`tickMs()`) is waited past before a check, since the
-server has already moved on and its publication is due.
+one tick at the observed tick length (`periodMs`) is waited past before a check,
+since the server has already moved on and its publication is due.
 
 A step with `running: false` has the run toggle turned off at its boundary and
 back on at the boundary of the next step that does not opt out. The flag cannot
@@ -1120,7 +1133,7 @@ landing (`LANDING_TICKS`, 8) count from the server tick the click *reached*, not
 the page. A starved browser tab decodes a backlog of ticks: it runs a queued click only when it
 gets to it (the SDK's action result marks that), and it decodes the server's reply only after the
 rest of the backlog. The reached tick is the later of the tick the click executed and S00's first
-tick plus the wall time since then over `tickMs()` (`lib/wait.ts` `serverClock`). Wall time only
+tick plus the wall time since then over the observed tick length (`lib/wait.ts` `serverClock`). Wall time only
 ever lengthens a tick bound, and on a current tab the two agree. Failures name the click's sent,
 executed and reached ticks, the guard's re-sends, and the last state.
 

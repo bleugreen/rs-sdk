@@ -36,7 +36,7 @@ import { classifyPage } from '../lib/dialogue';
 import { ensureRunOn } from '../lib/run-mode';
 import { setAutoRetaliate } from '../lib/session';
 import { logNote } from '../lib/ticks';
-import { idleBoundMs, serverClock, tickPeriod, waitUntil, type IdleBound } from '../lib/wait';
+import { feedTickPeriod, idleBoundMs, serverClock, TickPeriod, waitUntil, type IdleBound } from '../lib/wait';
 import { onTutorialIsland } from '../lib/world';
 import type { Step, StepContext } from '../runner/step';
 
@@ -50,7 +50,7 @@ export const PLAYER_KIT = 3559;
  * Ticks of the observed tick length the tab may stay silent between "Yes please." and the landing.
  * Measured on the browser client (300 ms ticks): 0.6 s on a quiet machine, growing about linearly
  * with a starved tab (9.3 s at 20x CPU throttle, 21 s at 40x); at load ~165 it outlasted 6 s.
- * 100 ticks (30 s) covers a tab about 50x starved; a dead client still fails here, and the
+ * 100 ticks covers a tab about 50x starved (measured at 300 ms ticks); a dead client still fails here, and the
  * resumable runner recovers it. The measured table is in speedrun/README.md, section skills/start.ts.
  */
 export const LANDING_IDLE_TICKS = 100;
@@ -90,10 +90,8 @@ function pageBody(s: BotWorldState): string {
 
 async function skip(ctx: StepContext<unknown>): Promise<void> {
     // The landing wait's idle bound scales with the tick length this client observes.
-    const period = tickPeriod(60_000);
-    const cur = ctx.sdk.getState();
-    if (cur) period.see(cur);
-    const unsubscribe = ctx.sdk.onStateUpdate(st => period.see(st));
+    const period = new TickPeriod();
+    const unsubscribe = feedTickPeriod(ctx.sdk, period);
     try {
         await skipObserved(ctx, { ticks: LANDING_IDLE_TICKS, period });
     } finally {
@@ -125,7 +123,7 @@ const clickTicks = (c: ClickTicks) => `sent ${c.sent}, executed ${c.executed}, r
 
 async function skipObserved({ sdk, session, log }: StepContext<unknown>, landingIdle: IdleBound): Promise<void> {
     let s = sdk.getState()!;
-    const clock = serverClock(s.tick, sdk.getStateReceivedAt?.() || Date.now());
+    const clock = serverClock(s.tick, sdk.getStateReceivedAt?.() || Date.now(), landingIdle.period);
     /** Send a click and wait for its action result: the tab has executed it. */
     const click = async <T>(send: () => Promise<T>): Promise<ClickTicks & { result: T }> => {
         const sent = sdk.getState()?.tick ?? -1;

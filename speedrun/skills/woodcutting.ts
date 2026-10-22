@@ -867,7 +867,7 @@ function walkStep(o: Resolved, name: string, goal: Tile, needed: (s: BotWorldSta
                 // attacker) would otherwise hold the walk.
                 await withLevelUpDismissal(sdk, async () => {
                     for (const [x, z] of [...routeFrom(from, goal, waypoints), goal]) {
-                        const r = await Promise.race([bot.walkTo(x, z, x === goal[0] && z === goal[1] ? 0 : 2, { timeout: 180_000 }), guard.tripped.then(() => null)]);
+                        const r = await Promise.race([bot.walkTo(x, z, x === goal[0] && z === goal[1] ? 0 : 2, { timeout: 600 * tickMs() }), guard.tripped.then(() => null)]);
                         if (r === null) return;
                         if (!r.success) throw new Error(`walkTo ${x},${z}: ${r.message}`);
                         o.log(`${name}: at ${sdk.getState()?.player?.worldX},${sdk.getState()?.player?.worldZ} (T${sdk.getState()?.tick})`);
@@ -959,7 +959,7 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
         }
         if (site.trees && !(s0.player?.worldX === site.stand[0] && s0.player?.worldZ === site.stand[1])) {
             // `trees` are the tiles reachable from the stand itself (knife-cycle header)
-            const r = await bot.walkTo(site.stand[0], site.stand[1], 0, { timeout: 30_000 });
+            const r = await bot.walkTo(site.stand[0], site.stand[1], 0, { timeout: 100 * tickMs() });
             const s = sdk.getState();
             if (!r.success || s?.player?.worldX !== site.stand[0] || s?.player?.worldZ !== site.stand[1]) throw new Error(`${b.name}: not on the stand ${site.stand.join(',')}: ${r.message}`);
         }
@@ -984,7 +984,7 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
                 wait = await awaitBoneServer(sdk, group.cueDir, group.group, group.serverWait);
                 partner = wait.server ?? null;
             }
-            const want = { want: [{ item: o.bonesRe, amount: giver!.lastLoad ?? giver!.load }], maxTicks: 60, openTimeoutMs: 20_000 };
+            const want = { want: [{ item: o.bonesRe, amount: giver!.lastLoad ?? giver!.load }], maxTicks: 60, openMaxTicks: 67 };
             const r: ReceiveResult = partner !== null ? await o.receive(sdk, partner, want) : { ok: false, ticks: 0, received: [], reason: `no giver of the group served within ${group!.serverWait} observed ticks` };
             const t1 = sdk.getState()?.tick ?? t0;
             const got = bonesHeld(sdk.getState()!) - before;

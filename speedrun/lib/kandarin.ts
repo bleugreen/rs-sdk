@@ -18,6 +18,7 @@ import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
 import { ensureRunOn } from './run-mode';
+import { tickMs, waitUntil } from './wait';
 
 export interface Pt {
     x: number;
@@ -104,19 +105,19 @@ function pos(sdk: BotSDK) {
 export async function crossingSettings(sdk: BotSDK, log: Log): Promise<void> {
     for (let attempt = 1; attempt <= 3 && sdk.getState()?.autoRetaliateEnabled !== false; attempt++) {
         await sdk.sendClickComponent(IF_AUTO_RETALIATE_OFF);
-        try {
-            await sdk.waitForCondition(s => s.autoRetaliateEnabled === false, 3000);
-        } catch {
-            log('auto-retaliate still on', { attempt, reported: sdk.getState()?.autoRetaliateEnabled });
-        }
+        const r = await waitUntil(sdk, s => s.autoRetaliateEnabled === false, { maxTicks: 10 });
+        if (!r.ok) log('auto-retaliate still on', { attempt, reported: sdk.getState()?.autoRetaliateEnabled });
     }
     // Run energy is infinite on the demo (NODE_INFINITE_RUN); the toggle makes
     // every step a run step instead of relying on per-click run. Best effort (warned).
     await ensureRunOn(sdk);
 }
 
-/** Walk with the SDK pathfinder, retrying from wherever the last attempt stopped. Throws on death or after 6 tries. */
-export async function travel(t: Traveller, dest: Pt, tolerance = 2, what = '', timeout = 180_000): Promise<void> {
+/**
+ * Walk with the SDK pathfinder, retrying from wherever the last attempt stopped. Throws on death or
+ * after 6 tries. `timeout` is each walk attempt's wall backstop (default 600 ticks of nominal time).
+ */
+export async function travel(t: Traveller, dest: Pt, tolerance = 2, what = '', timeout = 600 * tickMs()): Promise<void> {
     for (let attempt = 1; attempt <= 6; attempt++) {
         t.checkSignal();
         await t.bot.dismissBlockingUI();
@@ -142,8 +143,8 @@ export async function crossToKandarin(t: Traveller, dest: Pt, what: string): Pro
     await restForCrossing(t);
     t.log('crossing to Kandarin', { from: pos(t.sdk), to: what, hitpoints: t.sdk.getSkill('Hitpoints')?.level });
     const t0 = t.sdk.getState()?.tick ?? 0;
-    await travel(t, TAVERLEY, 4, 'Taverley', 300_000);
-    await travel(t, dest, 3, what, 300_000);
+    await travel(t, TAVERLEY, 4, 'Taverley', 1000 * tickMs());
+    await travel(t, dest, 3, what, 1000 * tickMs());
     t.log('arrived in Kandarin', { at: what, ticks: (t.sdk.getState()?.tick ?? 0) - t0, hitpoints: t.sdk.getSkill('Hitpoints')?.level });
 }
 
@@ -153,8 +154,8 @@ export async function crossFromKandarin(t: Traveller, dest: Pt, what: string): P
     await restForCrossing(t);
     t.log('crossing back from Kandarin', { from: pos(t.sdk), to: what, hitpoints: t.sdk.getSkill('Hitpoints')?.level });
     const t0 = t.sdk.getState()?.tick ?? 0;
-    await travel(t, TAVERLEY, 4, 'Taverley', 300_000);
-    await travel(t, dest, 3, what, 300_000);
+    await travel(t, TAVERLEY, 4, 'Taverley', 1000 * tickMs());
+    await travel(t, dest, 3, what, 1000 * tickMs());
     t.log('back from Kandarin', { at: what, ticks: (t.sdk.getState()?.tick ?? 0) - t0, hitpoints: t.sdk.getSkill('Hitpoints')?.level });
 }
 

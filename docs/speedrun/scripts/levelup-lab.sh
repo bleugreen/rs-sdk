@@ -4,17 +4,17 @@
 # scripts, then stops everything. Same shape as lab.sh; the port block is fixed:
 #   WEB 9640, management 9641, hiscores 9642, node 44640, agent 8640.
 #
-#   NODE_TICKRATE=300 bash docs/speedrun/scripts/levelup-lab.sh <bot>[,<bot>...] <script.ts>[:arg:arg] ...
+#   NODE_TICKRATE=400 bash docs/speedrun/scripts/levelup-lab.sh <bot>[,<bot>...] <script.ts>[:arg:arg] ...
 #
 # Each script runs as `bun <script> <first bot> <args...>`; prefix the spec with + to pass the whole
 # comma-separated bot list instead (runecraft-cycle.ts takes scored,helper). Arguments are joined
-# to the path with colons. NODE_TICKRATE defaults to 300 here (headline rate).
+# to the path with colons. NODE_TICKRATE defaults to 400 here (the demo's tick since 2026-10-22).
 set -u
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 BOTS=$1; shift
 IFS=',' read -r -a BOTLIST <<< "$BOTS"
 export WEB_PORT=9640 WEB_MANAGEMENT_PORT=9641 HISCORES_WEB_PORT=9642 NODE_PORT=44640 AGENT_PORT=8640
-export NODE_TICKRATE=${NODE_TICKRATE:-300}
+export NODE_TICKRATE=${NODE_TICKRATE:-400}
 LOG=${LAB_LOG:-${TMPDIR:-/tmp}/lab-levelup}
 mkdir -p "$LOG"
 echo "levelup lab: web $WEB_PORT, agent $AGENT_PORT, NODE_TICKRATE=$NODE_TICKRATE, host $(hostname), load $(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || uptime), logs $LOG"

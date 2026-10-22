@@ -121,8 +121,8 @@ describe('measure', () => {
     });
 });
 
-test('tickMs reads SPEEDRUN_TICK_MS, then NODE_TICKRATE, else 300', () => {
+test('tickMs reads SPEEDRUN_TICK_MS, then NODE_TICKRATE, else DEMO_TICK_MS (400)', () => {
     expect(tickMs({ SPEEDRUN_TICK_MS: '100', NODE_TICKRATE: '600' })).toBe(100);
     expect(tickMs({ NODE_TICKRATE: '600' })).toBe(600);
-    expect(tickMs({})).toBe(300);
+    expect(tickMs({})).toBe(400);
 });

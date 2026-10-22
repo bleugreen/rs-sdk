@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { fakeCdp } from './fake-cdp';
 import { FakeSdk, flush, runToggleServer } from './fake-sdk';
 import { IF_RUN_ON, runIsOn } from './run-mode';
+import { TickPeriod } from './wait';
 import { loginTokenProof } from '../../server/webclient/login-token';
 import {
     IF_RETALIATE_OFF,
@@ -22,6 +23,7 @@ import {
     sessionGateway,
     settleScene,
     startWatchdog,
+    track,
     watchdogDecision,
     type LogoutResult,
     type Session,
@@ -42,8 +44,8 @@ const healthy: WatchdogInputs = {
     tickedSinceLaunch: true,
     launchGraceMs: 30_000,
     logoutFailed: false,
-    msSinceProgress: null,
-    progressStaleMs: null,
+    ticksSinceProgress: null,
+    progressStaleTicks: null,
     serverDown: false,
 };
 
@@ -99,11 +101,11 @@ describe('watchdogDecision', () => {
     });
 
     test('a stalled bot on a healthy client is stopped (opt-in), a wedged client takes precedence', () => {
-        const tracked = { ...healthy, progressStaleMs: 30_000 };
-        expect(watchdogDecision({ ...tracked, msSinceProgress: 10_000 })).toBe('ok');
-        expect(watchdogDecision({ ...tracked, msSinceProgress: 30_001 })).toBe('stop');
-        expect(watchdogDecision({ ...tracked, msSinceProgress: 30_001, msSinceAdvance: 5_000 })).toBe('logout');
-        expect(watchdogDecision({ ...healthy, msSinceProgress: 999_999 })).toBe('ok');
+        const tracked = { ...healthy, progressStaleTicks: 100 };
+        expect(watchdogDecision({ ...tracked, ticksSinceProgress: 100 })).toBe('ok');
+        expect(watchdogDecision({ ...tracked, ticksSinceProgress: 101 })).toBe('stop');
+        expect(watchdogDecision({ ...tracked, ticksSinceProgress: 101, msSinceAdvance: 5_000 })).toBe('logout');
+        expect(watchdogDecision({ ...healthy, ticksSinceProgress: 999_999 })).toBe('ok');
     });
 });
 
@@ -149,8 +151,9 @@ function fakeSession(over: Partial<Session> = {}): { session: Session; sdk: Fake
         childExit: null,
         lastInWorldTick: 100,
         lastAdvanceAt: now,
+        period: new TickPeriod(),
         launchedAt: now - 60_000,
-        lastProgressAt: now,
+        ticksSinceProgress: 0,
         watchdog: null,
         logPath: '/dev/null',
         ...over,
@@ -260,7 +263,7 @@ describe('startWatchdog response', () => {
     });
 
     test('a stalled bot is logged out and left out', async () => {
-        const { session } = fakeSession({ lastProgressAt: Date.now() - 600_000 });
+        const { session } = fakeSession({ ticksSinceProgress: 101 });
         const rec = recorder(true);
         const events: WatchdogEvent[] = [];
         const wd = startWatchdog(session, { timer: false, progressStaleTicks: 100, actions: rec.actions, onEvent: e => events.push(e) });
@@ -270,6 +273,66 @@ describe('startWatchdog response', () => {
         expect(events.map(e => e.verdict)).toEqual(['stop', 'stop']);
         await wd.check();
         expect(rec.calls).toEqual(['logout']);
+    });
+});
+
+// ------------------------------------------------------------------ the watchdog's bounds at 300 and 400 ms ticks
+
+describe('the watchdog counts in ticks at either tick length', () => {
+    const saved = process.env.SPEEDRUN_TICK_MS;
+    afterEach(() => {
+        if (saved === undefined) delete process.env.SPEEDRUN_TICK_MS;
+        else process.env.SPEEDRUN_TICK_MS = saved;
+    });
+
+    for (const ms of [300, 400]) {
+        test(`at ${ms} ms a tick: silence is stale after 17 ticks of it, not before`, async () => {
+            process.env.SPEEDRUN_TICK_MS = String(ms);
+            const quiet = fakeSession({ lastAdvanceAt: Date.now() - (17 * ms - 100) });
+            const rec = recorder(true);
+            await startWatchdog(quiet.session, { timer: false, actions: rec.actions }).check();
+            expect(rec.calls).toEqual([]);
+            const wedged = fakeSession({ lastAdvanceAt: Date.now() - (17 * ms + 100) });
+            await startWatchdog(wedged.session, { timer: false, actions: rec.actions }).check();
+            expect(rec.calls).toEqual(['logout', 'login']);
+        });
+
+        test(`at ${ms} ms a tick: progressStaleTicks 100 stops the bot after 101 observed ticks without progress`, async () => {
+            process.env.SPEEDRUN_TICK_MS = String(ms);
+            const { session, sdk } = fakeSession();
+            const rec = recorder(true);
+            const wd = startWatchdog(session, { timer: false, progressStaleTicks: 100, actions: rec.actions });
+            for (let t = 101; t <= 200; t++) track(session, { ...sdk.getState()!, tick: t, inGame: true });
+            session.lastAdvanceAt = Date.now();
+            await wd.check();
+            expect(rec.calls).toEqual([]);
+            track(session, { ...sdk.getState()!, tick: 201, inGame: true });
+            await wd.check();
+            expect(rec.calls).toEqual(['logout']);
+        });
+    }
+
+    test('a server slower than nominal (450 ms observed, 400 nominal) lengthens the stale bound to 17 of its ticks', async () => {
+        process.env.SPEEDRUN_TICK_MS = '400';
+        const { session } = fakeSession({ lastAdvanceAt: Date.now() - (17 * 400 + 500) });
+        for (let k = 0; k <= 40; k++) session.period.see(100 + k, k * 450);
+        const rec = recorder(true);
+        await startWatchdog(session, { timer: false, actions: rec.actions }).check();
+        expect(rec.calls).toEqual([]);
+        session.lastAdvanceAt = Date.now() - (17 * 450 + 100);
+        await startWatchdog(session, { timer: false, actions: rec.actions }).check();
+        expect(rec.calls).toEqual(['logout', 'login']);
+    });
+
+    test('track counts ticks since progress across a relaunch, and markProgress-style reset clears it', () => {
+        const { session, sdk } = fakeSession();
+        track(session, { ...sdk.getState()!, tick: 105, inGame: true });
+        expect(session.ticksSinceProgress).toBe(5);
+        track(session, { ...sdk.getState()!, tick: 2, inGame: true }); // relaunch: the count restarted
+        track(session, { ...sdk.getState()!, tick: 4, inGame: true });
+        expect(session.ticksSinceProgress).toBe(8);
+        track(session, { ...sdk.getState()!, tick: 4, inGame: true }); // republish within the tick
+        expect(session.ticksSinceProgress).toBe(8);
     });
 });
 

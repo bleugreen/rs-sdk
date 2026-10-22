@@ -15,7 +15,7 @@ import type { BotSDK } from '../../sdk/index';
 import type { ActionResult, BotWorldState } from '../../sdk/types';
 import type { FrameSummary } from '../../server/webclient/src/bot/programs/frames';
 import { type ProbeResult, summarizeProbe, type TickLength, tickSteadiness } from './hostgate';
-import { tickMs } from './wait';
+import { idleBoundMs, type TickPeriod } from './wait';
 
 /** The page's published program status (server/webclient/src/bot/programs/types.ts). */
 export interface ProgramStatus {
@@ -133,9 +133,12 @@ export interface AwaitOptions {
     maxTicks?: number;
     /**
      * Reject when no state arrives for this long: the tab is wedged or gone, and the
-     * session watchdog will relaunch it (default 20 ticks).
+     * session watchdog will relaunch it (default 20 ticks of the longer of the nominal and
+     * `period`'s observed length: wait.ts idleBoundMs).
      */
     staleMs?: number;
+    /** The observed tick period the default `staleMs` is sized from. */
+    period?: TickPeriod;
     /** Every published status of this run while it is running. */
     onProgress?: (status: ProgramStatus) => void;
 }
@@ -146,7 +149,7 @@ export interface AwaitOptions {
  * disappears (the page reloaded, so its runtime and run ids restarted).
  */
 export function awaitProgram(sdk: ProgramSdk, runId: number, opts: AwaitOptions = {}): Promise<ProgramStatus> {
-    const staleMs = opts.staleMs ?? 20 * tickMs();
+    const staleMs = opts.staleMs ?? idleBoundMs({ ticks: 20, period: opts.period });
     return new Promise<ProgramStatus>((resolve, reject) => {
         let settled = false;
         let lastTick = sdk.getState()?.tick ?? -1;
