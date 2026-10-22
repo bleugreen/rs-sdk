@@ -55,9 +55,9 @@
 // --rehearse=kept-chrome also skips the kill (the old `logout && kill` behaviour on an unconfirmed
 // logout), to show the closed-window checks stop the gate. Both only with --rehearsal.
 
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, appendFileSync, readdirSync } from 'fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
-import { dirname, join, resolve } from 'path';
+import { join, resolve } from 'path';
 import { DIRECT_RULE, directDecision, type DirectVerdict, verdictText } from '../lib/hostgate-verdict';
 
 // ------------------------------------------------------------------ fixed names (RUN-HOST.md "Names and ports")
@@ -188,17 +188,17 @@ export const startable = (s: GateStatus | undefined) => s === 'pass' || s === 'm
  * but whose median is not as marginal, to re-measure; a median under 50 fails. (d) not measured
  * is never a pass.
  */
-export function machineVerdict(direct: DirectRead, loops: LoopsSummary | null): { status: GateStatus; verdict: DirectVerdict; failures: string[] } {
+export function machineVerdict(direct: DirectRead, loops: LoopsSummary | null, opts: { requireLoops?: boolean } = {}): { status: GateStatus; verdict: DirectVerdict; failures: string[] } {
     const verdict = directDecision({ onTime: direct.onTime, trials: direct.trials, steadiness: direct.steadiness, loopRateP10: loops?.lowest ?? null });
-    const failures = [...verdict.failures];
+    let failures = [...verdict.failures];
     let status: GateStatus;
     if (verdict.status === 're-measure') status = 're-measure';
     else if (verdict.status === 'throttled' && loops && loops.median >= DIRECT_RULE.minLoopRateP10) {
         status = 're-measure';
-        failures.splice(0, failures.length, `(d) marginal: lowest sample ${loops.lowest}/s under ${DIRECT_RULE.minLoopRateP10}, median ${loops.median}/s; re-measure`, ...failures.filter(f => !f.startsWith('tab throttled')));
+        failures = [`(d) marginal: lowest sample ${loops.lowest}/s under ${DIRECT_RULE.minLoopRateP10}, median ${loops.median}/s, re-measure`, ...failures.filter(f => !f.startsWith('tab throttled'))];
     } else if (verdict.status === 'throttled' || verdict.status === 'investigate') status = 'fail';
     else status = verdict.status;
-    if (!loops && startable(status)) {
+    if (!loops && (opts.requireLoops ?? true) && startable(status)) {
         status = 'fail';
         failures.push('(d) not measured');
     }
@@ -373,10 +373,21 @@ async function tmuxHas(session: string): Promise<boolean> {
     return (await capture(['tmux', '-L', 'run', 'has-session', '-t', session])).code === 0;
 }
 
+/**
+ * `pgrep -f rs-run/chrome-profile`, less a tmux server: tmux names its server process after the
+ * command of the first session it was started with, so a server first started for `chrome` keeps
+ * the profile in its command line after Chrome is gone.
+ */
 async function profilePids(): Promise<number[]> {
-    // pgrep never lists itself; this process's own command line does not name the profile.
     const r = await capture(['pgrep', '-f', 'rs-run/chrome-profile']);
-    return r.out.split('\n').map(Number).filter(n => n > 0 && n !== process.pid);
+    const pids = r.out.split('\n').map(Number).filter(n => n > 0 && n !== process.pid);
+    return pids.filter(p => {
+        try {
+            return !readFileSync(`/proc/${p}/comm`, 'utf8').startsWith('tmux');
+        } catch {
+            return false; // exited meanwhile
+        }
+    });
 }
 
 async function windowsOn(display: string): Promise<XwinWindow[]> {
@@ -559,6 +570,7 @@ async function onUp(ctx: Ctx, argv: readonly string[]) {
     if (up.length) throw new Stop(`the run stack is already up (tmux -L run: ${up.join(', ')}); tear it down first (RUN-HOST.md step 9)`);
     const ports = await bash(`ss -Hltn | grep -E ':(7780|8899|8090) ' || true`);
     if (ports.out.trim()) throw new Stop(`a port the stack needs is taken: ${ports.out.trim().replace(/\s+/g, ' ')}`);
+    if (!existsSync(join(ROOT, 'server/webclient/out/bot/client.js'))) throw new Stop("the checkout has no built client (server/webclient/out/bot/client.js): RUN-HOST.md step 0's build");
     const T = ctx.bound;
     const start = async (name: string, cwd: string | null, line: string) => {
         const r = await capture(['tmux', '-L', 'run', 'new-session', '-d', '-s', name, ...(cwd ? ['-c', cwd] : []), line]);
@@ -628,7 +640,7 @@ async function onGate(ctx: Ctx, argv: readonly string[]): Promise<number> {
         if (!existsSync(json)) throw new Stop(`(a)-(c): the direct CLI exited ${dcode} without a result`);
         const direct = parseDirectJson(readFileSync(json, 'utf8'));
         g.players = direct.players;
-        const pre = machineVerdict(direct, { lowest: 1e9, median: 1e9, highest: 1e9, samples: 1 });
+        const pre = machineVerdict(direct, null, { requireLoops: false });
         g.a = { onTime: direct.onTime, trials: direct.trials, passAt: pre.verdict.passAt, floorAt: pre.verdict.floorAt };
         g.b = direct.steadiness ? { p90: direct.steadiness.p90 } : null;
         g.c = direct.steadiness ? { perMinute: direct.steadiness.catchUpsPerMinute } : null;
@@ -643,8 +655,8 @@ async function onGate(ctx: Ctx, argv: readonly string[]): Promise<number> {
         // (d): the gate tab, logged in, sampled; then logged out and, whatever the logout said, killed.
         let loops: LoopsSummary | null = null;
         let sampleError: string | null = null;
-        await launchTab(ctx, gate, GATE_TAB_BOUND);
         try {
+            await launchTab(ctx, gate, GATE_TAB_BOUND);
             await chromeFlagsCheck(ctx);
             await tabLogin(ctx, gate);
             await secretsCheck(ctx, env.password);
@@ -748,6 +760,7 @@ async function onHandoff(ctx: Ctx, argv: readonly string[]): Promise<number> {
         if (claim.ours + 1 > cap) throw new Stop(`login count ${claim.ours} of ours online + SCORED's 1 is over ${cap} (tenet 16; log the unneeded fleet out first)`);
         step(ctx, 'login count', `${claim.ours} of ours online + 1 = ${claim.ours + 1}, at most ${cap}`);
 
+        // From here a failure leaves SCORED's bare page up, not logged in, for the operator to read.
         await launchTab(ctx, env.name, ctx.bound);
         await chromeFlagsCheck(ctx);
         // Ruling 3: exactly one Bot Client window, 1920 wide, before the login.
@@ -937,6 +950,3 @@ if (import.meta.main) {
         }
     );
 }
-
-// Keep these names in the module's public face for the tests and for readers of the log format.
-export { readdirSync as _readdir, dirname as _dirname };
