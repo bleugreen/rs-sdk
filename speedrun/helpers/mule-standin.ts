@@ -15,16 +15,17 @@
 //   5. Everything the trade brought is handed straight back to the mule in one trade (lib/trade.ts
 //      give, by obj id and count); with no package pending the mule takes any offer and banks it. A
 //      give-back that does not land stops the session: nothing more is taken from the mule.
-// A `seed` package first brings the surplus the rows' give lines need (H12's staff of fire, knife,
-// coins ...); it goes back to the mule in those swaps, and whatever is left at the end goes back in
-// a last trade. The stand-in finishes holding exactly what it started with, by id, or says what
+// A row's seed package, asked for just before the row, brings the mule surplus its give lines need
+// (H12's staff of fire, knife, coins ...): just before, because an earlier row's package may need the
+// same stock (H7's antipoison(3)). It goes back to the mule in the row's swap; whatever is left at
+// the end goes back in a last trade. The stand-in finishes holding exactly what it started with, by id, or says what
 // differs.
 //
 // Prints `RESULT mule-standin {...}` and writes it to `resultFile` when set.
 //
 // Role options: partner (the mule's account), cueDir (the mule's), rows (ledger row ids, in order),
-//   manifest (default STEP-MANIFEST.md), seed { step, items: [{ item | id, amount }] } (the seed
-//   package's scope step in the mule's config), stageWaitMs (default 180000: the mule banks and
+//   manifest (default STEP-MANIFEST.md), seeds { <row>: { step, items: [{ item | id, amount }] } }
+//   (each seed package's scope step in the mule's config), stageWaitMs (default 180000: the mule banks and
 //   withdraws between packages), resultFile.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -80,8 +81,10 @@ export interface RowResult {
     ticks?: number;
     /** swap() only: its first trade click to the screens opening. */
     openTicks?: number;
-    /** Ticks from the request-file line to the mule's standing request (the mule's bank and withdraw). */
+    /** Ticks from the cue to the mule's standing request (the mule's bank and withdraw). */
     stageTicks?: number;
+    /** The row's seed: mule surplus for its give lines, received just before. */
+    seed?: { ok: boolean; ticks: number | null; received: string[]; reason: string | null };
     received?: string[];
     gave?: string[];
     notExercised: string[];
@@ -129,13 +132,13 @@ async function session(ctx: RoleContext): Promise<void> {
     const manifestPath = typeof o.manifest === 'string' ? (isAbsolute(o.manifest) ? o.manifest : join(ROOT, o.manifest)) : MANIFEST;
     const manifest = readFileSync(manifestPath, 'utf8');
     const stageWaitMs = Number(o.stageWaitMs ?? 180_000);
-    const seed = o.seed as { step: string; items: { item?: string; id?: number; amount: number }[] } | undefined;
+    const seeds = (o.seeds ?? {}) as Record<string, { step: string; items: { item?: string; id?: number; amount: number }[] }>;
     const plans = rows.map(id => handOffFrom(manifest, id));
 
     const cursor = new ChatCursor(sdk, [TRADE_REQUEST_CHAT_TYPE]);
     const inv = () => sdk.getInventory();
     const own = countById(inv());
-    const out: { account: string; partner: string; start: { tick: number | null; inventory: string[]; equipment: string[] }; seed?: unknown; rows: RowResult[]; end?: unknown } = {
+    const out: { account: string; partner: string; start: { tick: number | null; inventory: string[]; equipment: string[] }; rows: RowResult[]; end?: unknown } = {
         account: ctx.account,
         partner,
         start: { tick: sdk.getState()?.tick ?? null, inventory: label(inv()), equipment: label(sdk.getState()?.equipment ?? []) },
@@ -148,21 +151,21 @@ async function session(ctx: RoleContext): Promise<void> {
     };
 
     let stopped = false;
-    if (seed) {
-        ask(seed.step);
-        const staged = await waitForStaged(ctx, partner, cursor, stageWaitMs);
-        const r = staged === null ? null : await receiveFrom(sdk, partner, { want: wantOf(seed.items), openMaxTicks: 30, maxTicks: 40 });
-        out.seed = { step: seed.step, staged: staged !== null, ok: r?.ok ?? false, ticks: r?.ticks ?? null, received: r ? label(r.received) : [], reason: r?.reason ?? (staged === null ? 'not staged' : null) };
-        ctx.log('seed', out.seed as Record<string, unknown>);
-        if (!r?.ok) stopped = true;
-    }
-
     for (const [k, plan0] of plans.entries()) {
         if (stopped || ctx.signal.aborted) break;
         const id = rows[k]!;
+        const seed = seeds[id];
+        let seeded: RowResult['seed'];
+        if (seed) {
+            ask(seed.step);
+            const staged = await waitForStaged(ctx, partner, cursor, stageWaitMs);
+            const r = staged === null ? null : await receiveFrom(sdk, partner, { want: wantOf(seed.items), openMaxTicks: 30, maxTicks: 40 });
+            seeded = { ok: r?.ok ?? false, ticks: r?.ticks ?? null, received: r ? label(r.received) : [], reason: r?.reason ?? (staged === null ? 'not staged' : null) };
+            ctx.log('seed', { row: id, ...seeded });
+        }
         const s0 = sdk.getState()!;
         const { plan, notExercised } = standInPlan(plan0, s0, own);
-        const res: RowResult = { row: id, outcome: 'pass', notExercised, freeBefore: free(s0.inventory) };
+        const res: RowResult = { row: id, outcome: 'pass', notExercised, freeBefore: free(s0.inventory), ...(seeded ? { seed: seeded } : {}) };
         out.rows.push(res);
         const pre = handOffPre(s0, plan, partner);
         if (pre !== true) {
