@@ -28,6 +28,7 @@
 import type { BotWorldState } from '../../sdk/types';
 import { ARROW_TIERS, ARROWS_PER_ACTION, HEADLESS_ARROW, type ArrowTier, type ArrowTierRow } from '../lib/arrows';
 import { runItemCycle, type ItemCycleResult, type ItemRecipe } from '../lib/item-cycle';
+import { waitUntil } from '../lib/wait';
 import { levelForXp, XP_RATE, xpForLevel } from '../lib/xp';
 import type { Observed, Step, StepContext } from '../runner/step';
 
@@ -377,7 +378,12 @@ export function fletchingStep(opts: FletchingOptions = {}): Step<any> {
                 }
             );
             opts.onRun?.(run, result);
-            if (result.actions === 0) throw new Error(`fletching run ${run.kind} ended ${result.ended} with no arrows made`);
+            if (result.actions === 0) {
+                // The program credits an action by the xp it sees before it ends, so a batch that lands a
+                // tick late (seen on the live world) is made but never credited: the state decides.
+                const made = await waitUntil(ctx.sdk, st => stockOf(st).headless < stockOf(s).headless, { maxTicks: 3 });
+                if (!made.ok) throw new Error(`fletching run ${run.kind} ended ${result.ended} with no arrows made`);
+            }
             if (opts.maxActions !== undefined) return;
         }
         const s = ctx.sdk.getState();

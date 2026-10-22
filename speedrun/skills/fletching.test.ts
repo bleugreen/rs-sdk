@@ -65,6 +65,10 @@ class StackPage extends FakeSdk {
     readonly starts: StackParams[] = [];
     dropped = 0;
     sentActions = 0;
+    /** The live slip: every batch lands after the program has ended, so its result credits none. */
+    creditNone = false;
+    /** The server refuses every use: nothing is made. */
+    refuse = false;
     private runId = 0;
     private run: { params: StackParams; sent: number; landed: number; start: number; byRecipe: Record<string, number>; sends: Record<number, number>; ended?: string; status: ProgramStatus } | null = null;
     private history: BotWorldState[] = [];
@@ -121,7 +125,7 @@ class StackPage extends FakeSdk {
             }
             const t = s.tick + 1;
             r.status = r.ended
-                ? status({ runId: r.status.runId, phase: 'done', startedTick: r.start, tick: t, endedTick: t, result: { ended: r.ended, actions: r.landed, sent: r.sent, visits: 0, resets: 0, drift: 0, levelups: 0, byRecipe: r.byRecipe, ticks: t - r.start, cycleGaps: [], sendsPerTick: r.sends, xpDropsPerTick: {} } })
+                ? status({ runId: r.status.runId, phase: 'done', startedTick: r.start, tick: t, endedTick: t, result: { ended: r.ended, actions: this.creditNone ? 0 : r.landed, sent: r.sent, visits: 0, resets: 0, drift: 0, levelups: 0, byRecipe: r.byRecipe, ticks: t - r.start, cycleGaps: [], sendsPerTick: r.sends, xpDropsPerTick: {} } })
                 : status({ runId: r.status.runId, startedTick: r.start, tick: t });
         }
         const level = levelForXp(xp);
@@ -129,7 +133,7 @@ class StackPage extends FakeSdk {
     }
 
     private makeArrows(inv: InventoryItem[], xp: number, r: StackParams['recipes'][number]): { inv: InventoryItem[]; xp: number } {
-        if (levelForXp(xp) < r.level) return { inv, xp };
+        if (this.refuse || levelForXp(xp) < r.level) return { inv, xp };
         const tips = inv.find(i => i.id === r.b && i.count > 0);
         const headless = inv.find(i => i.id === r.a && i.count > 0);
         if (!tips || !headless) return { inv, xp };
@@ -386,6 +390,23 @@ describe('the step on the page (item-cycle stack mode)', () => {
         expect(outcome).toEqual({ ok: true, value: { completed: 1 } });
         expect(page.starts[0]).toMatchObject({ maxActions: 100, untilLevel: 99, recipes: [{ name: 'bronzearrow' }] });
         expect(held(state, T.bronze.arrow)).toBe(1500);
+    });
+
+    test('a short run the program credits none of (its batch landed after it ended): the arrows made decide, no fault', async () => {
+        const page = new StackPage(world({ level: 1, stacks: [[HEADLESS_ARROW, 1500], [T.bronze.tips, 1500]] }));
+        page.creditNone = true;
+        const { outcome, state } = await drive(page, { tiers: ['bronze'], maxActions: 5, keepRune: 0 });
+        expect(outcome).toEqual({ ok: true, value: { completed: 1 } });
+        expect(held(state, T.bronze.arrow)).toBe(75);
+    });
+
+    test('a run that made nothing still faults', async () => {
+        const page = new StackPage(world({ level: 1, stacks: [[HEADLESS_ARROW, 1500], [T.bronze.tips, 1500]] }));
+        page.refuse = true;
+        const { outcome } = await drive(page, { tiers: ['bronze'], maxActions: 5, keepRune: 0 });
+        expect(outcome.ok).toBe(false);
+        expect(String((outcome as { error: unknown }).error)).toContain('with no arrows made');
+        expect(page.sentActions).toBe(5);
     });
 
     test('a refused start sends nothing', async () => {
