@@ -291,7 +291,7 @@ describe("the gate tab's scene, locs and tile (report only)", () => {
         expect(tileRead({ x: 3227, z: 3214, level: 0 })).toMatchObject({ fromSpawn: 5, atSpawn: true });
         expect(tileRead({ x: 3228, z: 3218, level: 0 })).toMatchObject({ fromSpawn: 6, atSpawn: false });
         expect(tileRead({ x: 3222, z: 3218, level: 1 })).toMatchObject({ fromSpawn: null, atSpawn: false });
-        expect(tileLine(tileRead({ x: 3221, z: 3219, level: 0 }))).toBe('tile (report only): (3221, 3219, level 0): at Lumbridge spawn (3222, 3218, level 0), 1 tiles from it');
+        expect(tileLine(tileRead({ x: 3221, z: 3219, level: 0 }))).toBe('tile (report only): (3221, 3219, level 0): at Lumbridge spawn (3222, 3218, level 0), 1 tile from it');
         expect(tileLine(tileRead({ x: 3185, z: 3436, level: 0 }))).toBe('tile (report only): (3185, 3436, level 0): 218 tiles from Lumbridge spawn (3222, 3218, level 0)');
         expect(tileLine(tileRead({ x: 3205, z: 3209, level: 2 }))).toBe("tile (report only): (3205, 3209, level 2): on level 2, not Lumbridge spawn (3222, 3218, level 0)'s level");
         expect(tileLine(null, 'the scene was not built')).toBe('tile (report only): not read: the scene was not built');

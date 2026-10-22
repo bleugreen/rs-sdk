@@ -513,7 +513,8 @@ export function tileLine(t: TileRead | null, why?: string): string {
     const head = 'tile (report only):';
     if (!t) return `${head} not read${why ? `: ${why}` : ''}`;
     const spawn = `Lumbridge spawn (${LUMBRIDGE_SPAWN.x}, ${LUMBRIDGE_SPAWN.z}, level ${LUMBRIDGE_SPAWN.level})`;
-    const where = t.atSpawn ? `at ${spawn}, ${t.fromSpawn} tiles from it` : t.fromSpawn === null ? `on level ${t.level}, not ${spawn}'s level` : `${t.fromSpawn} tiles from ${spawn}`;
+    const n = (k: number | null) => `${k} tile${k === 1 ? '' : 's'}`;
+    const where = t.atSpawn ? `at ${spawn}, ${n(t.fromSpawn)} from it` : t.fromSpawn === null ? `on level ${t.level}, not ${spawn}'s level` : `${n(t.fromSpawn)} from ${spawn}`;
     return `${head} (${t.x}, ${t.z}, level ${t.level}): ${where}`;
 }
 
