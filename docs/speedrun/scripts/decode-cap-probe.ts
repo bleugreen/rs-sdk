@@ -46,7 +46,7 @@ import { dirname, join } from 'node:path';
 export const INVENTORY_COM = 3214;
 export const INV_SLOTS = 28;
 
-export type ProbeClass = 'user' | 'client' | 'failed';
+export type ProbeClass = 'user' | 'client' | 'failed' | 'ifbutton';
 
 /** Ticks after the send tick, the drags applied by then, and whether that drain held more than one tick. */
 export interface TickSample {
@@ -128,6 +128,8 @@ async function main() {
     const USER = list('user', '5,6,8');
     const CLIENT = list('client', '5,6,8,19,20,21');
     const FAILED = list('failed', '5,8');
+    const IFBUTTON = list('ifbutton', '');
+    const BUTTON = Number(args.get('button') ?? 1193);
 
     const botEnv = (): Record<string, string> => {
         const path = botName ? join(REPO, 'bots', botName, 'bot.env') : '';
@@ -198,6 +200,7 @@ async function main() {
         n: number;
         arrival: number;
         inv: number[];
+        cnt: number[];
     }
     const ticks: Tick[] = [];
     const listeners: ((t: Tick) => void)[] = [];
@@ -227,7 +230,7 @@ async function main() {
     };
     client.setOnGameTickCallback(n => {
         label += n;
-        const t: Tick = { label, n, arrival: lastArrival, inv: readInv() };
+        const t: Tick = { label, n, arrival: lastArrival, inv: readInv(), cnt: Array.from(client.ifType(INVENTORY_COM)?.linkObjNumber ?? new Int32Array(INV_SLOTS)).slice(0, INV_SLOTS) };
         ticks.push(t);
         for (const l of [...listeners]) l(t);
     });
@@ -253,7 +256,31 @@ async function main() {
         for (let i = 0; i < n; i++) await nextTick();
     };
 
+    const cheat = (cmd: string) => {
+        client.writeOpcode(ClientProt.CLIENT_CHEAT);
+        client.out.p1(cmd.length + 1);
+        client.out.pjstr(cmd);
+        client.flush();
+    };
+
     await waitTicks(8);
+    // ifbutton (lab only): Charge (magic:charge, com 1193; charge.rs2 casts at once: settimer, runes,
+    // no queue). Casts are counted by the blood-rune stack, given as 301 so its slot is recognisable.
+    let counterObj = 0;
+    if (IFBUTTON.length && args.has('charge-setup')) {
+        for (const c of ['setstat magic 80', 'setvar magearena 8', 'give blood_rune 301', 'give fire_rune 302', 'give air_rune 303']) {
+            cheat(c);
+            await waitTicks(3);
+        }
+        await waitTicks(3);
+    }
+    if (IFBUTTON.length) {
+        const t = ticks.at(-1)!;
+        const i = t.cnt.findIndex((c, j) => c === 301 && t.inv[j]! > 0);
+        if (i < 0) throw new Error('ifbutton: no stack of 301 (the counter) in the inventory; run with --charge-setup on the lab');
+        counterObj = t.inv[i]!;
+    }
+    const counter = (t: Tick) => t.inv.reduce((s, o, j) => (o === counterObj ? s + t.cnt[j]! : s), 0);
     const inv0 = ticks.at(-1)!.inv;
     const tracer = pickTracer(inv0);
     if (tracer === null) throw new Error(`no item held exactly once in the inventory (${JSON.stringify(inv0)})`);
@@ -286,6 +313,7 @@ async function main() {
         summary: RepeatSummary;
     }
 
+    let perCast = 3;
     const run = async (cls: ProbeClass | 'preflight', n: number): Promise<Repeat> => {
         // Settle: two ticks with the tracer unmoved.
         for (;;) {
@@ -293,7 +321,8 @@ async function main() {
             const b = await nextTick();
             if (slotOf(a.inv, tracer) === slotOf(b.inv, tracer) && slotOf(b.inv, tracer) >= 0) break;
         }
-        const drags = cls === 'user' ? n : cls === 'preflight' ? 1 : 2;
+        const drags = cls === 'user' || cls === 'ifbutton' ? n : cls === 'preflight' ? 1 : 2;
+        let counter0 = 0;
         return await new Promise<Repeat>(resolve => {
             let rep: Repeat | null = null;
             let sendArrival = 0;
@@ -306,7 +335,13 @@ async function main() {
                     const [lo, hi] = [Math.min(at(0), at(drags)), Math.max(at(0), at(drags))];
                     const empty = t.inv.findIndex((o, i) => o === 0 && (i < lo || i > hi));
                     const before = client.out.pos;
-                    drag(at(0), at(1));
+                    counter0 = counterObj ? counter(t) : 0;
+                    if (cls === 'ifbutton') {
+                        for (let i = 0; i < n; i++) {
+                            client.writeOpcode(ClientProt.IF_BUTTON);
+                            client.out.p2(BUTTON);
+                        }
+                    } else drag(at(0), at(1));
                     if (cls === 'user') for (let i = 1; i < n; i++) drag(at(i), at(i + 1));
                     if (cls === 'client') for (let i = 0; i < n; i++) camera(i);
                     if (cls === 'failed') {
@@ -320,7 +355,7 @@ async function main() {
                     rep = { cls: cls as ProbeClass, n, drags, start, dir, sendLabel: t.label, sendAfterFrameMs: Math.round((now() - t.arrival) * 10) / 10, bytes, samples: [], tickArrivalsMs: [], summary: null as any };
                     return;
                 }
-                const k = dragsApplied(slotOf(t.inv, tracer), rep.start, rep.dir, rep.drags);
+                const k = cls === 'ifbutton' ? (counter0 - counter(t)) / perCast : dragsApplied(slotOf(t.inv, tracer), rep.start, rep.dir, rep.drags);
                 rep.samples.push({ rel: t.label - rep.sendLabel, k, glued: t.n > 1 });
                 rep.tickArrivalsMs.push(Math.round((t.arrival - sendArrival) * 10) / 10);
                 if (k === rep.drags && doneAt < 0) doneAt = t.label;
@@ -366,7 +401,17 @@ async function main() {
     }
     console.log(`preflight: drag landed ${pre.summary.firstRel} tick(s) after the send tick, sent ${pre.sendAfterFrameMs} ms after the frame`);
 
-    const plan: [ProbeClass, number][] = [...USER.map(n => ['user', n] as [ProbeClass, number]), ...CLIENT.map(n => ['client', n] as [ProbeClass, number]), ...FAILED.map(n => ['failed', n] as [ProbeClass, number])];
+    const plan: [ProbeClass, number][] = [...USER.map(n => ['user', n] as [ProbeClass, number]), ...CLIENT.map(n => ['client', n] as [ProbeClass, number]), ...FAILED.map(n => ['failed', n] as [ProbeClass, number]), ...IFBUTTON.map(n => ['ifbutton', n] as [ProbeClass, number])];
+    if (IFBUTTON.length) {
+        const one = await run('ifbutton', 1);
+        const t = ticks.at(-1)!;
+        report.ifbuttonCalibration = { counterBefore: null, samples: one.samples };
+        const drop = 301 - counter(t);
+        if (drop <= 0) throw new Error(`ifbutton: one click of ${BUTTON} used no counter runes (${JSON.stringify(one.samples)})`);
+        perCast = drop;
+        report.ifbutton = { button: BUTTON, counterObj, perCast, packet: 'IF_BUTTON opcode 86 (USER_EVENT), magic:charge' };
+        console.log(`ifbutton: one click of ${BUTTON} used ${perCast} counter runes`);
+    }
     for (const [cls, n] of plan) {
         let clean = 0;
         for (let attempt = 0; clean < REPEATS && attempt < REPEATS * 2; attempt++) {
