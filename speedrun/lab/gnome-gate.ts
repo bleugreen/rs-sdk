@@ -10,8 +10,11 @@
 // TRACE of every published dialogue and scene change and every click with its result.
 //
 // Phases:
-//   load      a long ::tele to the gate's south side, then the gate click at once, under
+//   load      a long ::tele to the gate's south side, then a raw SDK gate click at once, under
 //             'Loading - please wait' when the browser is still building the region
+//   load-gate the same landing, then lib/travel.ts passGate at once
+//   gate      a fresh first pass through passGate (Femi's scene cleared, ends north)
+//   relog-gate  passGate straight after a relog
 //   module    speedrun/skills/agility.ts's agility:walk-gnome from the gate's south side
 //   module-east  the same from (2489,3389), the route point before the gate (the demo's approach)
 //   converse  the gate clicked through act.ts actConverse (converse.ts's continue path)
@@ -22,8 +25,10 @@ import { join } from 'node:path';
 import puppeteer from 'puppeteer';
 import type { BotWorldState } from '../../sdk/types';
 import { actConverse } from '../lib/act';
+import { converse } from '../lib/converse';
 import { advance } from '../lib/dialogue';
-import { closeSession, openSession, type Session } from '../lib/session';
+import { closeSession, openSession, relog, type Session } from '../lib/session';
+import { GNOME_STRONGHOLD_GATE, passGate } from '../lib/travel';
 import { TickLog } from '../lib/ticks';
 import { waitUntil } from '../lib/wait';
 import { pos } from '../lib/world';
@@ -110,10 +115,8 @@ function instrument(session: Session): void {
 /** Femi's first visit again, and the player standing south of the gate with the region built. */
 async function stage(session: Session): Promise<void> {
     const sdk = session.sdk;
-    while (sdk.getState()?.dialog.isOpen) {
-        await sdk.sendClickDialog(0);
-        await sdk.waitForTicks(1);
-    }
+    // a page left open by an earlier phase (a choice page refuses a plain continue)
+    if (sdk.getState()?.dialog.isOpen) await converse(sdk, [], { idle: 1, openTicks: 1, maxTicks: 60, unmatched: 'first' });
     await setvar(sdk, 'femi_help', 0);
     await mustTele(sdk, SOUTH[0], SOUTH[1]);
     const r = await waitUntil(sdk, s => s.sceneReady !== false && s.nearbyLocs.some(l => l.id === GATE.id) && s.nearbyNpcs.some(n => /femi/i.test(n.name)), { maxTicks: 120 });
@@ -131,22 +134,40 @@ try {
         say(`=== phase ${phase} at tick ${t0}`);
         let out: Record<string, unknown> = {};
         try {
-            if (phase === 'load') {
-                await setvar(sdk, 'femi_help', 0);
+            if (phase === 'load' || phase === 'load-gate') {
+                // A long ::tele, then the gate click on the landing tick, under 'Loading - please wait'.
+                // load: a raw SDK click (refused with scene_loading while the region loads, never ok).
+                // load-gate: the shared helper at once (it waits for the region, clears Femi, ends north).
+                await stage(session);
                 await mustTele(sdk, 3222, 3218);
                 await waitUntil(sdk, s => s.sceneReady !== false, { maxTicks: 120 });
                 await cheat(sdk, `tele 0,${SOUTH[0] >> 6},${SOUTH[1] >> 6},${SOUTH[0] & 63},${SOUTH[1] & 63}`);
                 const landed = await waitUntil(sdk, s => s.player?.worldX === SOUTH[0] && s.player?.worldZ === SOUTH[1], { maxTicks: 20 });
                 const scene = sdk.getState()?.sceneReady;
                 const clickTick = sdk.getState()?.tick ?? 0;
-                const click = await sdk.sendInteractLoc(GATE.x, GATE.z, GATE.id, 1);
                 let readyTick: number | null = null;
                 const stop = sdk.onStateUpdate(s => {
                     if (readyTick === null && s.sceneReady !== false) readyTick = s.tick;
                 });
-                const outcome = await waitUntil(sdk, s => s.dialog.isOpen || north(s), { maxTicks: 40 });
+                if (phase === 'load') {
+                    const click = await sdk.sendInteractLoc(GATE.x, GATE.z, GATE.id, 1);
+                    const outcome = await waitUntil(sdk, s => s.dialog.isOpen || north(s), { maxTicks: 40 });
+                    out = { landed: landed.ok, sceneAtClick: scene, clickTick, click, readyTick, dialogOrThrough: outcome.ok, at: pos(sdk) };
+                } else {
+                    const g = await passGate(sdk, GNOME_STRONGHOLD_GATE, GNOME_STRONGHOLD_GATE.sides.north, { log: true });
+                    out = { landed: landed.ok, sceneAtClick: scene, clickTick, readyTick, gate: g, north: north(sdk.getState()) };
+                }
                 stop();
-                out = { landed: landed.ok, sceneAtClick: scene, clickTick, click, readyTick, dialogOrThrough: outcome.ok, dialog: sdk.getState()?.dialog.isOpen ?? false, at: pos(sdk) };
+            } else if (phase === 'gate' || phase === 'relog-gate') {
+                // gate: a fresh first pass through the shared helper; relog-gate: the same straight after a relog
+                await stage(session);
+                let relogged: unknown = null;
+                if (phase === 'relog-gate') {
+                    const r = await relog(session, { offlineMs: 2_000 });
+                    relogged = { loginTick: r.loginTick, via: r.via, sceneReady: sdk.getState()?.sceneReady, teleportTick: sdk.getState()?.player?.teleportTick, tick: sdk.getState()?.tick };
+                }
+                const g = await passGate(sdk, GNOME_STRONGHOLD_GATE, GNOME_STRONGHOLD_GATE.sides.north, { log: true });
+                out = { relogged, gate: g, north: north(sdk.getState()) };
             } else if (phase === 'module' || phase === 'module-east') {
                 await stage(session);
                 // module-east: the demo's approach, the route point before the gate's south entrance
