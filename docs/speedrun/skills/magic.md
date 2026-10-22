@@ -658,6 +658,22 @@ back).
 | `h4`, Doric's arrival tile, body runes dropped | swap with the 20 rings **6, 6, 6**; plain receive **6, 6, 6**: the rings cost 0, 0 slots spare | the 4-8 of a 4th trade |
 | `h4`, body and mind runes dropped (rs/158's ruling) | swap **6, 6**; receive **6, 6**; **1 slot spare** after H4 | |
 
+**Browser client** (main's standard for clicks right after a landing; `magic-accept.ts
+--client=browser`, lab.sh with `LAB_RUNNERS=0`, the webclient bundle built first). SCORED is
+staged at S01's tile (3222,3222), outside the area loaded around the coop and the row, then
+teleported, and the step starts on the landing:
+
+| Segment | Run 1 | Run 2 | Run 3 | Against |
+|---|---|---|---|---|
+| S02's first strikes after arriving at the coop | pass, **24** (first strike landed 6 ticks after the first click; one 6-tick gap) | pass, **20** (one 6-tick gap) | pass, **17** | 18 |
+| S04's first ring trade and cast after arriving at the row's end, then the full step | pass, **192** (56 gaps of 3, one of 4) | pass, **195** (53 of 3, four of 4) | pass, **191** (57 of 3) | 204 |
+
+Each of the 3 givers was in view on the landing tick, every ring trade took 3 ticks on the
+giver's side, and SCORED never moved. In the browser, S02 costs up to 6 more ticks than on lite:
+the first strike can land late after a cold arrival, and the page now and then misses one click
+label (a 6-tick gap instead of 5). S04's 4-tick gaps are the same single-label slip. Neither is a
+fault: the casts are blind, so a missed label costs one tick and nothing else.
+
 **H4 does not fit SCORED as the run leaves it.** The tutorial kit is 18 items
 (`tutorial.rs2`): 12 junk dropped on T01-02, the tinderbox and 5 rune stacks (air, mind, water,
 earth, body). S04 spends H1's cosmic, fire, earth and 81 air exactly, so SCORED reaches Doric's
