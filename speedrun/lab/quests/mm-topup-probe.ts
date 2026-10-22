@@ -1,18 +1,21 @@
-// H12o feasibility probe (rs/463): a helper at Monkey Madness's end-of-G stage tops SCORED up on Ape Atoll at the
-// start of segment P, on the bridge jump's landing (2803,2724) (quest_mm.rs2 mm_jumping_square), outside the town.
+// H12o feasibility probe (rs/463, rs/473): a helper at Monkey Madness's end-of-G stage tops SCORED up on Ape Atoll,
+// outside the town, at the start of segment --at:
+//   P (default): the bridge jump's landing (2803,2724) (quest_mm.rs2 mm_jumping_square);
+//   M: the dungeon exit ladder's top (2763,2704), where the climb out from Zooknock lands (ape_atoll_dungeon.rs2:8-13).
 //
-//   LAB_BOTS=<helper> speedrun/lab/lab.sh <bot> 'speedrun/lab/quests/mm-topup-probe.ts:--helper=<helper>:--rounds=3'
+//   LAB_BOTS=<helper> speedrun/lab/lab.sh <bot> 'speedrun/lab/quests/mm-topup-probe.ts:--helper=<helper>:--rounds=3[:--at=M][:--offer=9]'
 //
 // The helper's client is launched by this script (so it can relog); SCORED's is the lab runner's. In order:
 //  1. the helper's trip at the end-of-G stage: Daero (Grand Tree), the hangar, Waydar, Crash Island, Lumdo, the landing,
 //     and the walk to the tile beside SCORED's (each leg timed; a leg that fails is reported and staged past);
 //  2. the helper parked on its tile for --park ticks: HP, hits, and the NPCs that come within 15 tiles;
-//  3. --rounds trades of 10 sharks + 1 super antipoison(4) with lib/trade.ts (the helper's give(), SCORED's receiveFrom()),
-//     SCORED staged as P starts (route levels, bow worn, --sharks held); round 2 with Protect from Melee on, round 3
-//     also poisoned;
+//  3. --rounds trades of up to --offer sharks + 1 super antipoison(4) with lib/trade.ts (the helper's give(), SCORED's
+//     receiveFrom()), the sharks sized to SCORED's free slots (the server refuses an oversized offer whole), SCORED staged
+//     as --at starts (route levels, bow worn, --sharks held); round 2 with Protect from Melee on; round 3 also poisoned
+//     at P, or at M with the pack filled to --tight free slots (the sizing rule under a short pack);
 //  4. the helper's relog on the tile (does it come back there?);
-//  5. SCORED drinks one super antipoison dose (immunity for the pass) and runs the module's segments P..--until from
-//     the tile with the sharks it took (default P only).
+//  5. SCORED runs the module's segments --at..--until from the tile with the sharks it took (default --at only); at P it
+//     first drinks one super antipoison dose (immunity for the dungeon pass).
 // Lab only: staff commands throughout.
 
 import type { BotWorldState } from '../../../sdk/types';
@@ -29,10 +32,18 @@ import { arg, botArg, result } from '../common';
 import { cheat, clearInventory, give, leaveTutorial, mustTele, setStats, setVars, tele } from '../setup';
 import { dungeonTraps, fixture, fixtureItems, MM_VARS, PREREQ_VARS, ROUTE_LEVELS, ROUTE_WORN, SegmentUse } from './monkey-madness';
 
-/** SCORED's tile: where the bridge jump always lands (quest_mm.rs2:1043, 0_43_42_51_36). */
-const TILE = { x: 2803, z: 2724 };
-/** The helper's tile: wherever its walk from the landing stops within 1 of SCORED's ((2803,2723) is blocked). */
-let HELPER_TILE = { x: 2803, z: 2722 };
+const at = arg('at', 'P').toUpperCase();
+if (at !== 'P' && at !== 'M') throw new Error(`--at must be P or M, not ${at}`);
+/**
+ * SCORED's tile. P: where the bridge jump always lands (quest_mm.rs2:1043, 0_43_42_51_36). M: the exit ladder's top;
+ * the climb keeps the player's own x/z (2762-2764, 2703-2705, as M's walk to the ladder ends within 1 of (2763,9104)).
+ */
+const TILE = at === 'M' ? { x: 2763, z: 2704 } : { x: 2803, z: 2724 };
+/**
+ * The helper's tile: wherever its walk from the landing stops within 1 of SCORED's. P: (2803,2723) is blocked. M: the
+ * ladder's own tile (2763,2703) and x 2762 are blocked; (2764,2705) is open.
+ */
+let HELPER_TILE = at === 'M' ? { x: 2764, z: 2705 } : { x: 2803, z: 2722 };
 /** Lumdo's drop on the atoll (mm_lumdo.rs2: 0_43_42_50_19). */
 const LANDING = { x: 2802, z: 2707 };
 const DAERO = { x: 2484, z: 3487, level: 1 };
@@ -42,12 +53,14 @@ const END_OF_G = {
     mm_main: 3, mm_narnode: 7, mm_caranock: 3, mm_daero: 7, mm_waydar: 1, mm_lumdo: 3,
     mm_daero_option_bit_one: 1, mm_daero_option_bit_two: 1, mm_daero_option_bit_three: 1, mm_hangar_puzzle_complete: 1,
 } as const;
-const SHARKS = 10;
-
 const rounds = Number(arg('rounds', '3'));
 const park = Number(arg('park', '100'));
 const held = Number(arg('sharks', '3'));
-const until = arg('until', 'P').toUpperCase();
+/** The most sharks offered; each round offers min(this, SCORED's free slots - 1), the 1 for the super antipoison. */
+const offer = Number(arg('offer', '10'));
+/** At M, round 3's free slots: the pack filled with sharks down to this many free. */
+const tight = Number(arg('tight', '6'));
+const until = arg('until', at).toUpperCase();
 
 const scored = await openSession(botArg());
 const helper = await openSession(arg('helper', 'mmtop2'), { launch: true });
@@ -72,10 +85,10 @@ async function homeTele(s: Session): Promise<void> {
     for (let k = 0; k < 6 && chebyshev(pos(s.sdk), STAGING) > 5; k++) if (!(await tele(s.sdk, STAGING.x, STAGING.z))) await waitTicks(s.sdk, 5);
 }
 
-/** The helper's pack: 10 sharks and one super antipoison(4), nothing else. */
-async function stageHelperPack(): Promise<void> {
+/** The helper's pack: `n` sharks and one super antipoison(4), nothing else. */
+async function stageHelperPack(n: number): Promise<void> {
     await cheat(helper.sdk, '~clearinv inv', 2);
-    await give(helper.sdk, 'shark', SHARKS);
+    if (n > 0) await give(helper.sdk, 'shark', n);
     await give(helper.sdk, '4dose2antipoison', 1);
 }
 
@@ -83,7 +96,7 @@ async function stageHelperPack(): Promise<void> {
 await homeTele(helper);
 await clearInventory(helper.sdk);
 await setVars(helper.sdk, { treequest: PREREQ_VARS.treequest, grandtree: PREREQ_VARS.grandtree, ...Object.fromEntries(MM_VARS.map(v => [v, (END_OF_G as Record<string, number>)[v] ?? 0])) });
-await stageHelperPack();
+await stageHelperPack(offer);
 const helperStats = Object.fromEntries(helper.sdk.getState()!.skills.filter(k => ['Hitpoints', 'Defence', 'Prayer'].includes(k.name)).map(k => [k.name, k.baseLevel]));
 const legs: Record<string, number | string> = {};
 async function leg(name: string, fn: () => Promise<boolean>): Promise<boolean> {
@@ -118,7 +131,7 @@ const landedAt = pos(helper.sdk);
 await leg('landing_to_tile', async () => (await walkTo(helper.bot, helper.sdk, TILE.x, TILE.z, 1)).ok);
 if (chebyshev(pos(helper.sdk), TILE) > 1) await mustTele(helper.sdk, HELPER_TILE.x, HELPER_TILE.z);
 HELPER_TILE = { x: pos(helper.sdk).x, z: pos(helper.sdk).z };
-result('mm_topup_trip', { helperStats, legs, tripOk, tripTicks, landedAt, at: pos(helper.sdk) });
+result('mm_topup_trip', { segment: at, tile: TILE, helperStats, legs, tripOk, tripTicks, landedAt, at: pos(helper.sdk) });
 
 // ------------------------------------------------------------------ 2. parked: what reaches the helper
 const AGGRESSIVE = /^(Jungle spider|Jungle snake|Jungle scorpion|Dugopul|Monkey Archer|Monkey Guard|Padulah)$/i;
@@ -137,15 +150,17 @@ const unpark = helper.sdk.onStateUpdate(s => {
 });
 
 // SCORED's staging runs while the helper is parked.
-const pFix = fixture('P');
-const items = fixtureItems('P', { sharks: 0 });
-async function stageScoredPack(): Promise<void> {
+const pFix = fixture(at);
+const items = fixtureItems(at, { sharks: 0 });
+/** SCORED's pack as `at` starts, with `held` sharks; or, given `freeLeft`, with sharks added until that many slots are free. */
+async function stageScoredPack(freeLeft?: number): Promise<void> {
     await cheat(scored.sdk, '~clearinv inv', 2);
     const worn = new Set(scored.sdk.getState()!.equipment.map(i => i.id));
     for (const [k, n] of items) if (!worn.has(configId('obj', k))) await give(scored.sdk, k, n);
     // The bow and arrows are worn from the Grand Tree swap to R (rs/158 01:38): out of the pack.
     for (const id of ['magic_shortbow', 'rune_arrow']) if (!scored.sdk.getState()!.equipment.some(i => i.id === configId('obj', id))) await wield(scored.sdk as never, configId('obj', id));
-    await give(scored.sdk, 'shark', held);
+    const n = freeLeft === undefined ? held : Math.max(0, free(scored.sdk.getState()!) - freeLeft);
+    if (n > 0) await give(scored.sdk, 'shark', n);
 }
 await homeTele(scored);
 await clearInventory(scored.sdk);
@@ -167,15 +182,21 @@ result('mm_topup_park', { ticks: Math.max(park, tick(helper) - trip0 - tripTicks
 // ------------------------------------------------------------------ 3. the trades
 const trades: unknown[] = [];
 for (let r = 1; r <= rounds; r++) {
-    if (r > 1) {
-        await stageHelperPack();
-        await stageScoredPack();
-    }
+    const isTight = at === 'M' && r >= 3;
+    if (r > 1) await stageScoredPack(isTight ? tight : undefined);
     if (chebyshev(pos(scored.sdk), TILE) > 0) await mustTele(scored.sdk, TILE.x, TILE.z);
     if (chebyshev(pos(helper.sdk), HELPER_TILE) > 0) await mustTele(helper.sdk, HELPER_TILE.x, HELPER_TILE.z);
-    const variant = r === 1 ? 'plain' : r === 2 ? 'protect_from_melee' : 'protect_from_melee+poisoned';
+    // Sized to the room on arrival: the super antipoison takes one slot, the sharks the rest up to --offer.
+    const n = Math.min(offer, free(scored.sdk.getState()!) - 1);
+    if (n < 0) {
+        trades.push({ round: r, ok: false, reason: 'no free slot for the super antipoison', free: free(scored.sdk.getState()!) });
+        result('mm_topup_trade', trades[trades.length - 1]);
+        continue;
+    }
+    await stageHelperPack(n);
+    const variant = r === 1 ? 'plain' : r === 2 ? 'protect_from_melee' : isTight ? `protect_from_melee+tight${tight}` : 'protect_from_melee+poisoned';
     if (r >= 2) await setPrayer(scored.sdk as never, 'protect_from_melee', true);
-    if (r >= 3) {
+    if (r >= 3 && !isTight) {
         await cheat(scored.sdk, '~poison 6', 1);
         await waitUntil(scored.sdk, s => s.gameMessages.some(m => /poisoned/i.test(m.text)), { maxTicks: 6 });
     }
@@ -190,21 +211,23 @@ for (let r = 1; r <= rounds; r++) {
             lastTick = s.tick;
             lastAt = Date.now();
         }
-        if (arrived < 0 && sharks(s) >= before.sharks + SHARKS && superDoses(s) > before.supers) arrived = s.tick;
+        if (arrived < 0 && sharks(s) >= before.sharks + n && superDoses(s) > before.supers) arrived = s.tick;
     });
     // The helper keeps a request standing as soon as SCORED is in view (run night: it is parked first); SCORED's
     // receiveFrom clicks the helper on landing, which accepts it.
     const h0 = tick(helper);
-    const giving = giveTo(helper.sdk, scoredName, [{ item: /^Shark$/i, n: 'all' }, { item: /^Superantipoison\(4\)$/i }], { maxTicks: 60 });
+    const offered = [...(n > 0 ? [{ item: /^Shark$/i, n: 'all' as const }] : []), { item: /^Superantipoison\(4\)$/i }];
+    const giving = giveTo(helper.sdk, scoredName, offered, { maxTicks: 60 });
     await waitTicks(scored.sdk, 1);
     const t0 = tick(scored);
-    const got = await receiveFrom(scored.sdk, helperName, { want: [{ item: /^Shark$/i, amount: SHARKS }, { item: /^Superantipoison\(4\)$/i, amount: 1 }], maxTicks: 60 });
+    const want = [...(n > 0 ? [{ item: /^Shark$/i, amount: n }] : []), { item: /^Superantipoison\(4\)$/i, amount: 1 }];
+    const got = await receiveFrom(scored.sdk, helperName, { want, maxTicks: 60 });
     const gave = await giving;
     await waitUntil(scored.sdk, () => arrived >= 0, { maxTicks: 5 });
     unmon();
     const s1 = scored.sdk.getState()!;
     const row = {
-        round: r, variant, ok: got.ok && gave.ok && arrived >= 0,
+        round: r, variant, offeredSharks: n, ok: got.ok && gave.ok && arrived >= 0,
         scoredStopTicks: arrived >= 0 ? arrived - t0 : null,
         receiveFromTicks: got.ticks, giverTicks: gave.ticks, helperStartTick: h0,
         before, after: { sharks: sharks(s1), free: free(s1), supers: superDoses(s1), hp: s1.player?.hp, prayers: s1.prayers?.activePrayers.some(Boolean) },
@@ -229,15 +252,15 @@ try {
 }
 result('mm_topup_relog', relogRow);
 
-// ------------------------------------------------------------------ 5. SCORED on through P with what it took
-const i0 = SEGMENTS.findIndex(d => d.letter === 'P');
+// ------------------------------------------------------------------ 5. SCORED on from --at with what it took
+const i0 = SEGMENTS.findIndex(d => d.letter === at);
 const i1 = SEGMENTS.findIndex(d => d.letter === until);
 const chain = steps({ note: line => console.log(line) }).slice(i0, i1 + 1);
 // The pre-dungeon dose (rs/201's `immune` on newer module revisions): drunk here so P's pass runs immune whichever
-// module revision this tree carries.
-const dose = scored.sdk.getState()!.inventory.find(i => /^Superantipoison\(\d\)$/i.test(i.name));
+// module revision this tree carries. M starts above ground with the town ahead, so it drinks nothing here.
+const dose = at === 'P' ? scored.sdk.getState()!.inventory.find(i => /^Superantipoison\(\d\)$/i.test(i.name)) : undefined;
 if (dose) await invOp(scored.sdk as never, dose.id, /^drink$/i, s => !s.inventory.some(i => i.slot === dose.slot && i.id === dose.id), { maxTicks: 6 });
-const use = new SegmentUse(`P..${until}`, dungeonTraps());
+const use = new SegmentUse(`${at}..${until}`, dungeonTraps());
 const unuse = scored.sdk.onStateUpdate(s => use.see(s));
 const log = TickLog.memory();
 const sStart = scored.sdk.getState()!;
