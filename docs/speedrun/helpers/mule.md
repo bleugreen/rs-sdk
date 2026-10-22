@@ -130,6 +130,44 @@ answered, the mule's pre-request accepts it and opens a trade the run did not as
 for yet. The giver declines after 30 s. The run should decline any trade screen it
 did not open itself, and request trades only through `receivePackage`.
 
+**Top-up lines.** The ledger's `ITEM to N` (H12's `shark to 15`) asks for N less what the
+scored account already holds. That depends on what the run ate on the way (S13 eats 0-6 of 8),
+and the mule can't see the scored account's pack, so no fixed count is safe. A count that
+differs from the scored account's `want` makes it decline. Such a line is written
+`{ item | id, topUp: { max }, noted? }` (no `amount`), and its package carries
+`scope: { step, family: 'mule' }`, for example:
+
+```json
+{ "name": "h12", "scope": { "step": "S15", "family": "mule" },
+  "items": [{ "item": "Gold bar", "amount": 1 }, { "item": "Shark", "topUp": { "max": 15 } }] }
+```
+
+The count comes from the scored account's **top-up ask**: the same ask, file and functions
+the S18 courier reads ([bone-giver.md](bone-giver.md), `altar-cue.ts` `writeTopUpAsk`,
+`usableAsk`, `awaitAsk`), with the package's scope on it.
+
+- **The scored side's half** is `runner/handoff.ts`, agreed with rs/393. On the first frame
+  that shows the trade with the mule open, before it accepts, it writes
+  `writeTopUpAsk(cueDir(), [{ item: '^shark…$', count: 15 - held }], Date.now(), { step: 'S15', family: 'mule' })`.
+  A top-up already met is left out of the ask, and with every top-up met no ask is written at
+  all. Its `want` is the fixed lines plus exactly the asked counts.
+- **Staging.** The mule stages a top-up line after the fixed lines, up to `max`, as far as its
+  bank and the 28 slots allow. A line staged below its max is logged, never reported missing:
+  the scored account may ask for none.
+- **Serving.** Once the trade is open, the mule waits up to `askWaitTicks` (default 3) observed
+  ticks for an ask addressed to the package's scope. It takes only one written since it saw the
+  trade open (less 300 ms) and newer than the last one it served. It offers the fixed lines as
+  ever, and of each top-up line the asked count clamped to [0, max] and to what it holds
+  (`'all'` means up to max). Each line takes the first ask item whose name pattern matches what
+  the mule holds for it. With no usable ask, it offers none of the line and logs
+  `top-up: no usable ask`; it never guesses.
+- **The scope gate.** An ask for another step or family, or an unscoped ask (the courier's),
+  is ignored. The courier, for its part, ignores every scoped ask. The `hand-off` log line
+  carries the ask and each line's count.
+
+A package with no top-up line takes no `scope`, never waits for an ask, and offers all of each
+staged id, exactly as before.
+
 **Order mode and giving back.** In `order` mode every trade from the scored account
 takes the next package. A trade from the scored account while no package is pending
 is receive-only: the mule accepts any non-empty offer and banks it. A session that
@@ -190,7 +228,9 @@ ROLE_OPTIONS='{"mule":"cairn_mule1","items":["^logs$"]}' bun speedrun/helpers/mu
 
 Mule options: `serve` (the scored account), `couriers` (default `^cairn_h\d+$`),
 `packages`, `serveMode` (`order` | `request`), `requestFile`, `giver` (`burst` |
-`stock`), `preRequest` (default true), `stand` (default 3185,3436), `ge`.
+`stock`), `preRequest` (default true), `stand` (default 3185,3436), `ge`, and for top-up
+lines `askWaitTicks` (default 3) and `cueDir` (default `RC_CUE_DIR`, else `run-machine/rc-cue`,
+the directory the givers' cues use).
 
 In the fleet: one mule account is enough; a second (`cairn_mule2`) helps only for
 back-to-back hand-offs or while the first is at the GE. The module exports `role`
@@ -211,7 +251,9 @@ coin earners' warriors) gets stuck at the toll gate: its walk does not pay the g
 every bank visit. Its role has `produces: []`: it holds stock rather than producing
 it, so the ledger should attribute the mule's bank by account, not by role.
 
-The giver sits behind one function, `giveOpenTrade(sdk, bot, partner, items, mode)`.
+The giver sits behind one function, `giveOpenTrade(sdk, bot, partner, items, mode)` (its
+optional `amounts` offers an exact count of an id: a top-up line), reached through
+`serveStaged`, which waits for the ask first when the package has a top-up line.
 Its burst mode is `speedrun/lib/trade.ts` `give()`, the one giver implementation. It uses
 `expectTheirs: ANY_OFFER`, so the scored account may hand items back in the same trade
 (the two-way swap): whatever it offers is accepted, re-accepted after any reset, and the

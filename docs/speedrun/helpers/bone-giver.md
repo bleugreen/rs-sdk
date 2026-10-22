@@ -29,7 +29,11 @@ the scored account its dragon bones in two places (SUPPLIES.md, H4.1-H4.16 and H
   name pattern and a count or `all`. The courier takes only an ask written after it saw the trade
   open (less 300 ms for the two clients' frame arrivals) and newer than the last one it served, so
   an earlier trade's ask is never sized onto this one. It waits up to `askWaitTicks` (2) observed
-  ticks for it; in the lab it was always there on the open frame (`openToAsk` 0).
+  ticks for it; in the lab it was always there on the open frame (`openToAsk` 0). The wait is
+  `altar-cue.ts` `awaitAsk`, which the trade giver's top-up packages share ([mule.md](mule.md)).
+  An ask may carry a `scope`. The courier's carry none, and the courier takes only an unscoped
+  ask, so an ask scoped to the trade giver (family `mule`) can never be served by the courier,
+  and the other way round.
 - **Keeping up.** The courier steps toward a side tile in bounded steps (`stepToSide`): it sends
   the walk without awaiting the walk's action result, then re-reads after at most 4 observed ticks
   or as soon as the account moves. Awaiting the result (`standOn`) stalled it for 180-350 ticks at
