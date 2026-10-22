@@ -9,7 +9,11 @@
 // Options: --asks=15,21,... (S18 on-request top-ups of those sizes), --loads=N (default 10), --pages=2,5 (loads followed by a held level-up page), --hold=6,
 //   --order=giver-first (default, the run's order) | receiver-first,
 //   --givers=N: N givers (cairn_h70, h71, ...) taking turns as one group (bone-giver.ts group, S07's b01-b04),
-//   the stand-in taking each load from the group's server (boneServer)
+//   the stand-in taking each load from the group's server (boneServer),
+//   --final=N (with --givers): giver N (0-based) carries S07's last-load runes (finalExtras: law 1, air 5) and must
+//   be the one that serves the group's last load, which the stand-in takes with the runes,
+//   --mix=D,B: every giver serves S07's priority list (Dragon bones, then Babydragon bones) from its own Falador
+//   west bank, seeded once with D dragon and B babydragon (restock.labSeed), every withdrawal a real one
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -52,11 +56,38 @@ const config = {
         const sites = [{ giver: { x: 2913, z: 3494 }, receiver: { x: 2914, z: 3494 } }];
         const scope = asks.length ? { step: 'S18', family: 'courier' } : { step: 'S07', family: 'bone' };
         if (asks.length && nGivers > 1) throw new Error('--givers is for the standing mode (S07)');
-        // A group runs until the stand-in has its loads (the launcher stops everyone when the final role ends).
-        const limit = nGivers > 1 ? { group: givers } : { trades: loads };
-        const g = givers.map(account => ({ account, role: 'bone-giver', options: asks.length ? { mode: 'on-request', restock: { kind: 'cheat' }, sites, scope } : { restock: { kind: 'cheat' }, sites, scope, ...limit } }));
+        // With a group, trades counts the group's loads.
+        const limit = nGivers > 1 ? { group: givers, trades: loads } : { trades: loads };
+        const finalAt = arg('final', '') === '' ? -1 : Number(arg('final', ''));
+        if (finalAt >= 0 && !(nGivers > 1 && finalAt < nGivers)) throw new Error('--final=N needs --givers and 0 <= N < givers');
+        const RUNES = [
+            { item: 'Law rune', count: 1, obj: 'lawrune' },
+            { item: 'Air rune', count: 5, obj: 'airrune' }
+        ];
+        const mix = arg('mix', '').split(',').filter(Boolean).map(Number);
+        if (mix.length && (mix.length !== 2 || asks.length || mix.some(x => !Number.isInteger(x) || x < 0))) throw new Error('--mix=D,B: two whole counts, standing mode only');
+        const MIX = ['Dragon bones', 'Babydragon bones'];
+        const stock = mix.length
+            ? { item: MIX, restock: { kind: 'bank', labSeed: [{ obj: 'cert_dragon_bones', n: mix[0]! }, { obj: 'cert_babydragon_bones', n: mix[1]! }].filter(s => s.n > 0) } }
+            : { restock: { kind: 'cheat' } };
+        const g = givers.map((account, i) => ({
+            account,
+            role: 'bone-giver',
+            options: asks.length
+                ? { mode: 'on-request', restock: { kind: 'cheat' }, sites, scope }
+                : {
+                      ...stock,
+                      // The final giver's bank also gets the runes: with --mix every extra is a real withdrawal too.
+                      ...(mix.length && i === finalAt ? { restock: { ...stock.restock, labSeed: [...(stock.restock as { labSeed: unknown[] }).labSeed, ...RUNES.map(r => ({ obj: r.obj, n: r.count }))] } } : {}),
+                      sites,
+                      scope,
+                      ...limit,
+                      ...(i === finalAt ? { finalExtras: mix.length ? RUNES.map(({ item, count }) => ({ item, count })) : RUNES } : {})
+                  }
+        }));
         const who = nGivers > 1 ? { givers } : { giver };
-        const r = { account: receiver, role: 'bone-receiver', receiver: true, final: true, options: asks.length ? { giver, asks, pageLoads: [], scope } : { ...who, loads, pageLoads: pages, holdTicks: hold, scope } };
+        const extras = finalAt >= 0 ? { finalExtras: RUNES.map(({ item, count }) => ({ item, count })) } : {};
+        const r = { account: receiver, role: 'bone-receiver', receiver: true, final: true, options: asks.length ? { giver, asks, pageLoads: [], scope } : { ...who, loads, pageLoads: pages, holdTicks: hold, scope, ...extras, ...(mix.length ? { item: MIX } : {}) } };
         return arg('order', 'giver-first') === 'receiver-first' ? [r, ...g] : [...g, r];
     })()
 };
