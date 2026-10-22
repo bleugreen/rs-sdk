@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,6 +13,7 @@ import {
     accountMatches,
     afterServe,
     canonName,
+    CARRIED_SERVED_KEY,
     carriedDoneSince,
     carriedNeeds,
     carriedReady,
@@ -42,6 +43,7 @@ import {
     requestPackage,
     planPackage,
     playerPattern,
+    role,
     sameItems,
     serveStaged,
     stagedExactly,
@@ -49,7 +51,8 @@ import {
     topUpCounts,
     type Package
 } from './mule';
-import { ASK_SLACK_MS, readTopUpAsk, usableAsk, writeTopUpAsk, type CueScope } from './altar-cue';
+import { ASK_SLACK_MS, CueWriter, readTopUpAsk, usableAsk, writeTopUpAsk, type AskItem, type CueScope } from './altar-cue';
+import { memoryRoleState, type RoleContext } from './role';
 
 const bank = (items: [number, string, number][]): BankItem[] => items.map(([id, name, count], slot) => ({ slot, id, name, count }));
 const inv = (items: [number, number, string, number][]): InventoryItem[] =>
@@ -518,16 +521,20 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
     const P: CueScope = { step: 'H12oP', family: 'mule' };
     const M_TILE = { x: 2763, z: 2704 };
     const P_TILE = { x: 2803, z: 2724 };
+    /** h45's run-day packages (mule.md, "H12o, the atoll helper"): M and P both sized by SCORED's ask (rs/158). */
     const raw = [
         { name: 'H12oM', scope: M, at: M_TILE, items: [{ item: 'Shark', topUp: { max: 13 } }] },
-        { name: 'H12oP', scope: P, at: P_TILE, items: [{ item: 'Shark', amount: 9 }, { item: 'Superantipoison(4)', amount: 1 }] }
+        { name: 'H12oP', scope: P, at: P_TILE, items: [{ item: 'Superantipoison(4)', topUp: { max: 1 } }, { item: 'Shark', topUp: { max: 9 } }] }
     ];
     const opts = muleOptions({ serve: 'cairn_scored', serveMode: 'request', carried: true, packages: raw }, { RC_CUE_DIR: '/tmp/cue-h45' });
     const [hm, hp] = opts.packages as [Package, Package];
     const sharks = (n: number, from = 0): InventoryItem[] => Array.from({ length: n }, (_, i) => ({ slot: from + i, id: SHARK, name: 'Shark', count: 1, optionsWithIndex: [] }));
     const sapp = (slot: number): InventoryItem => ({ slot, id: SAPP, name: 'Superantipoison(4)', count: 1, optionsWithIndex: [] });
-    /** h45 at login: 13 + 9 sharks and the antipoison, 23 slots. */
-    const loaded = () => [...sharks(22), sapp(22)];
+    /** h45 at login, staged potion first: the Superantipoison(4) in slot 0, then 13 + 9 sharks; 23 slots. */
+    const loaded = () => [sapp(0), ...sharks(22, 1)];
+    /** At P after M gave 5: the potion and 17 sharks (slots 6-22). */
+    const afterM = () => [sapp(0), ...sharks(17, 6)];
+    const POTION = '^superantipoison\\(4\\)$';
     const trade = (t: Partial<TradeState>): TradeState => ({ isOpen: true, screen: 'offer', partner: 'Cairn Scored', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false, ...t });
     const closed: TradeState = { isOpen: false, screen: null, partner: null, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false };
     const sends = (sdk: FakeSdk) => sdk.sent.splice(0).map(a => [a.method, ...a.args]);
@@ -538,7 +545,7 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
     test('options: carried turns on the package tiles, wildlife and the 5-minute keep-alive; an existing (banked) config gets none of them', () => {
         expect(opts).toMatchObject({ carried: true, wildlife: DEFAULT_WILDLIFE, clearTiles: 1, keepAliveMinutes: 5, serveMode: 'request', cueDir: '/tmp/cue-h45' });
         expect(hm).toEqual({ name: 'H12oM', scope: M, at: M_TILE, items: [{ item: 'Shark', topUp: { max: 13 } }] });
-        expect(hp.at).toEqual(P_TILE);
+        expect(hp).toEqual({ name: 'H12oP', scope: P, at: P_TILE, items: [{ item: 'Superantipoison(4)', topUp: { max: 1 } }, { item: 'Shark', topUp: { max: 9 } }] });
         const banked = muleOptions({ packages: [{ name: 'wine', items: [{ item: 'Jug of wine', amount: 28 }] }] }, { RC_CUE_DIR: '/tmp/cue-x' });
         expect(banked).toMatchObject({ carried: false, wildlife: [], keepAliveMinutes: 0, stand: { x: 3185, z: 3436 } });
         expect(banked.packages).toEqual([{ name: 'wine', items: [{ item: 'Jug of wine', amount: 28 }] }]); // no `at` key
@@ -550,21 +557,36 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
         expect(muleOptions({ carried: true, wildlife: [], keepAliveMinutes: 0 })).toMatchObject({ wildlife: [], keepAliveMinutes: 0 });
     });
 
+    test('the run-day entry documented in mule.md ("H12o, the atoll helper") serves exactly these packages', () => {
+        const md = readFileSync(join(import.meta.dir, '../../docs/speedrun/helpers/mule.md'), 'utf8');
+        const block = [...md.matchAll(/```json\n([\s\S]*?)```/g)].map(m => m[1]!).find(b => b.includes('"cairn_h45"'));
+        const entry = JSON.parse(block!) as { options: Record<string, unknown> } & Record<string, unknown>;
+        expect(entry).toMatchObject({ account: 'cairn_h45', role: 'mule', cueDir: 'run-machine/h45-cue', loginOn: M, stopOn: P });
+        expect(entry.options).toMatchObject({ serveMode: 'request', carried: true });
+        expect(muleOptions(entry.options, { RC_CUE_DIR: '/tmp/cue-h45' }).packages).toEqual(opts.packages);
+    });
+
     test('carriedNeeds: each package found in the one inventory; the start-of-login check sums them', () => {
         const inv = loaded();
         const m = carriedNeeds(hm, inv);
         expect([...m.held]).toEqual([[SHARK, 22]]); // the top-up line's whole holding; the trade clamps it to the ask and 13
         expect(carriedReady(m)).toBe(true);
         const p = carriedNeeds(hp, inv);
-        expect([...p.held]).toEqual([[SHARK, 9], [SAPP, 1]]);
+        expect([...p.held]).toEqual([[SAPP, 1], [SHARK, 22]]); // P's two top-up lines, each its whole holding; the trade clamps
         expect(carriedReady(p)).toBe(true);
+        // The login check sums the maxes: 13 + 9 sharks and the potion, whatever M will take.
         expect(carriedShort([hm, hp], inv)).toEqual([]);
-        expect(carriedShort([hm, hp], [...sharks(21), sapp(21)])).toEqual([{ item: 'Shark', wanted: 22, have: 21 }]);
-        const noPotion = carriedNeeds(hp, sharks(22));
-        expect(noPotion.missing).toEqual([{ item: 'Superantipoison(4)', wanted: 1, have: 0 }]);
-        expect(carriedReady(noPotion)).toBe(false);
+        expect(carriedShort([hm, hp], [sapp(0), ...sharks(21, 1)])).toEqual([{ item: 'Shark', wanted: 22, have: 21 }]);
+        expect(carriedShort([hm, hp], sharks(22))).toEqual([{ item: 'Superantipoison(4)', wanted: 1, have: 0 }]);
+        // After M took its 13 or fewer, P finds its lines among M's leftovers.
+        expect([...carriedNeeds(hp, [sapp(0), ...sharks(9, 14)]).held]).toEqual([[SAPP, 1], [SHARK, 9]]);
+        expect([...carriedNeeds(hp, afterM()).held]).toEqual([[SAPP, 1], [SHARK, 17]]);
+        // A top-up line is never missing: P without its potion still serves sharks (the login check names the gap).
+        const noPotion = carriedNeeds(hp, sharks(9));
+        expect(noPotion.missing).toEqual([]);
+        expect([...noPotion.held]).toEqual([[SHARK, 9]]);
+        expect(carriedReady(noPotion)).toBe(true);
         expect(carriedReady(carriedNeeds(hm, [sapp(0)]))).toBe(false); // nothing of the top-up to offer
-        expect(carriedNeeds(hp, [...sharks(8), sapp(8)]).missing).toEqual([{ item: 'Shark', wanted: 9, have: 8 }]);
     });
 
     test('M: offers exactly the asked count of its 22 sharks (never all of them), clamped to the max 13', async () => {
@@ -576,9 +598,9 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
             const sdk = new FakeSdk(baseState({ tick: 1, inventory: inv, trade: trade({}) }));
             const result = serveStaged(sdk as unknown as BotSDK, {} as BotActions, { partner: 'cairn_scored', pkg: hm, held: carriedNeeds(hm, inv).held, exact: true, ask: { dir, openMs, lastServedMs: 0, maxTicks: 3 } });
             await settle();
-            expect(sends(sdk)).toEqual([['sendOfferItem', 0, n], ['sendAcceptTrade']]);
+            expect(sends(sdk)).toEqual([['sendOfferItem', 1, n], ['sendAcceptTrade']]);
             const mine: TradeItem[] = [{ slot: 0, id: SHARK, name: 'Shark', count: n }];
-            sdk.tick({ inventory: [...sharks(22 - n), sapp(22 - n)], trade: trade({ myOffer: mine, myAccepted: true }) });
+            sdk.tick({ inventory: [sapp(0), ...sharks(22 - n, 1 + n)], trade: trade({ myOffer: mine, myAccepted: true }) });
             sdk.tick({ trade: trade({ screen: 'confirm', myOffer: mine, partnerAccepted: true }) });
             await flush();
             expect(sends(sdk)).toEqual([['sendAcceptTrade']]);
@@ -590,10 +612,139 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
         }
     });
 
-    test('P: offers exactly 9 sharks and the antipoison from 17 left after M, waiting for no ask', async () => {
+    /** P's trade from `inv`, with SCORED's scoped ask written on the open frame (none for null). */
+    async function serveP(inv: InventoryItem[], ask: AskItem[] | null) {
+        const dir = mkdtempSync(join(tmpdir(), 'h12o-p-'));
+        const openMs = Date.now();
+        if (ask) writeTopUpAsk(dir, ask, openMs + 5, P);
+        const sdk = new FakeSdk(baseState({ tick: 1, inventory: inv, trade: trade({}) }));
+        const result = serveStaged(sdk as unknown as BotSDK, {} as BotActions, { partner: 'cairn_scored', pkg: hp, held: carriedNeeds(hp, inv).held, exact: true, ask: { dir, openMs, lastServedMs: 0, maxTicks: 3 } });
+        await settle();
+        return { sdk, result };
+    }
+
+    /** SCORED's side of the rest of the trade: our offer up, both confirm, closed. */
+    async function finish(sdk: FakeSdk, mine: TradeItem[], left: InventoryItem[]) {
+        sdk.tick({ inventory: left, trade: trade({ myOffer: mine, myAccepted: true }) });
+        sdk.tick({ trade: trade({ screen: 'confirm', myOffer: mine, partnerAccepted: true }) });
+        await flush();
+        expect(sends(sdk)).toEqual([['sendAcceptTrade']]);
+        sdk.tick({ trade: closed });
+    }
+
+    test('P asked 1 + 5: offers exactly Superantipoison(4) x1 and Shark x5 of its 17, the potion first', async () => {
+        const { sdk, result } = await serveP(afterM(), [{ item: POTION, count: 1 }, { item: '^shark$', count: 5 }]);
+        expect(sends(sdk)).toEqual([['sendOfferItem', 0, -1], ['sendOfferItem', 6, 5], ['sendAcceptTrade']]);
+        await finish(sdk, [{ slot: 0, id: SAPP, name: 'Superantipoison(4)', count: 1 }, { slot: 1, id: SHARK, name: 'Shark', count: 5 }], sharks(12, 11));
+        const r = await result;
+        expect(r.success).toBe(true);
+        expect(r.topUps).toEqual([
+            { item: 'Superantipoison(4)', id: SAPP, max: 1, held: 1, asked: 1, n: 1 },
+            { item: 'Shark', id: SHARK, max: 9, held: 17, asked: 5, n: 5 }
+        ]);
+        expect(r.gave.map(i => [i.id, i.count]).sort()).toEqual([[SAPP, 1], [SHARK, 5]].sort());
+    });
+
+    test('P asked 1 + 0: offers exactly the Superantipoison(4) and no shark (a met top-up is left out of the ask)', async () => {
+        const { sdk, result } = await serveP(afterM(), [{ item: POTION, count: 1 }]);
+        expect(sends(sdk)).toEqual([['sendOfferItem', 0, -1], ['sendAcceptTrade']]);
+        await finish(sdk, [{ slot: 0, id: SAPP, name: 'Superantipoison(4)', count: 1 }], sharks(17, 6));
+        const r = await result;
+        expect(r.success).toBe(true);
+        expect(r.topUps).toEqual([
+            { item: 'Superantipoison(4)', id: SAPP, max: 1, held: 1, asked: 1, n: 1 },
+            { item: 'Shark', id: SHARK, max: 9, held: 17, asked: null, n: 0 }
+        ]);
+        expect(r.gave.map(i => [i.id, i.count])).toEqual([[SAPP, 1]]);
+    });
+
+    test('P\'s clamp: each line takes the ask within [0, max] and what h45 holds', () => {
+        const n = (inv: InventoryItem[], ask: AskItem[]) => topUpCounts(hp, inv, { items: ask }).map(t => [t.asked, t.n]);
+        expect(n(afterM(), [{ item: POTION, count: 3 }, { item: '^shark$', count: 20 }])).toEqual([[3, 1], [20, 9]]);
+        expect(n(afterM(), [{ item: POTION, count: 'all' }, { item: '^shark$', count: 'all' }])).toEqual([['all', 1], ['all', 9]]);
+        expect(n([sapp(0), ...sharks(4, 1)], [{ item: POTION, count: 1 }, { item: '^shark$', count: 7 }])).toEqual([[1, 1], [7, 4]]); // M took more than 13
+        expect(n(sharks(9), [{ item: POTION, count: 1 }, { item: '^shark$', count: 9 }])).toEqual([[1, 0], [9, 9]]); // no potion held
+    });
+
+    test('offer order is inventory slot order with X counts last, never the package\'s line order', async () => {
+        // Sharks staged before the potion: Offer-5 (a button) on slot 0 goes before the potion; 7 is an X count, so it goes last.
+        for (const [count, expected] of [
+            [5, [['sendOfferItem', 0, 5], ['sendOfferItem', 22, -1], ['sendAcceptTrade']]],
+            [7, [['sendOfferItem', 22, -1], ['sendOfferItem', 0, 7], ['sendAcceptTrade']]]
+        ] as const) {
+            const { sdk, result } = await serveP([...sharks(17), sapp(22)], [{ item: POTION, count: 1 }, { item: '^shark$', count }]);
+            expect(sends(sdk)).toEqual(expected as unknown as unknown[][]);
+            for (let i = 0; i < 4; i++) sdk.tick({ trade: closed });
+            expect((await result).success).toBe(false);
+        }
+    });
+
+    test('P asked for nothing: SCORED makes no trade and stops P\'s cue; h45 opens and holds none, logs it, and records the session as served', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'h12o-p0-'));
+        const scored = { index: 9, name: 'Cairn Scored', combatLevel: 3, x: P_TILE.x + 2, z: P_TILE.z, distance: 2 };
+        // M was served earlier in this login, so h45 stands on P's tile.
+        const state = memoryRoleState({ [CARRIED_SERVED_KEY]: [{ pkg: 'H12oM', session: 'm', ms: Date.now() }] });
+        const at = { worldX: P_TILE.x, worldZ: P_TILE.z, x: P_TILE.x, z: P_TILE.z, level: 0, hp: 99, maxHp: 99 } as unknown as PlayerState;
+        const sdk = new FakeSdk(baseState({ tick: 1, player: at, inventory: afterM() }));
+        Object.assign(sdk, { waitForReady: async () => {}, waitForTicks: async () => {}, isBankOpen: () => false, getChat: () => [] });
+        const logs: { m: string; d?: Record<string, unknown> }[] = [];
+        const abort = new AbortController();
+        const ctx = {
+            sdk,
+            bot: { dismissBlockingUI: async () => {}, declineTrade: async () => {} },
+            account: 'cairn_h45',
+            options: { serve: 'cairn_scored', serveMode: 'request', carried: true, cueDir: dir, wildlife: [], keepAliveMinutes: 0, packages: raw },
+            log: (m: string, d?: Record<string, unknown>) => logs.push({ m, d }),
+            reportBank: () => {},
+            signal: abort.signal,
+            state
+        } as unknown as RoleContext;
+        const until = async (label: string, done: () => boolean) => {
+            for (let i = 0; i < 1000 && !done(); i++) await Bun.sleep(2);
+            if (!done()) throw new Error(`timed out: ${label}`);
+        };
+        const trading = (from = 0) => sdk.sent.slice(from).filter(a => /Trade|Offer/.test(a.method)).map(a => a.method);
+        const ticker = setInterval(() => sdk.tick(), 2);
+        try {
+            const running = role.run(ctx);
+            await until('mule ready', () => logs.some(l => l.m === 'mule ready'));
+            const cue = new CueWriter(dir, 'cairn_scored', P);
+            const beacons = () => [{ tick: sdk.state!.tick, ms: Date.now() }];
+            cue.write({ beacons: beacons(), turns: [] });
+            await until('P requested', () => logs.some(l => l.m === 'package request' && l.d?.found === 'H12oP'));
+            // SCORED arrives on P's tile: P is ready, so h45 pre-requests it; SCORED, asking for nothing, never answers.
+            sdk.push({ nearbyPlayers: [scored] } as Partial<BotWorldState>);
+            await until('the pre-request', () => trading().includes('sendTradeRequest'));
+            cue.stop(beacons());
+            await until('P passed', () => logs.some(l => l.m === 'carried: asked for nothing; passed without a trade'));
+            const after = sdk.sent.length;
+            const t0 = sdk.state!.tick;
+            await until('two resend windows', () => sdk.state!.tick > t0 + 2 * RESEND_TICKS);
+            cue.stop(beacons()); // a rewrite of the stop records nothing twice
+            const t1 = sdk.state!.tick;
+            await until('a few more ticks', () => sdk.state!.tick > t1 + 10);
+            abort.abort();
+            await running;
+            // Never a trade: no offer, accept or decline at any point, and no request once P was passed.
+            expect(trading()).toEqual(trading().filter(m => m === 'sendTradeRequest'));
+            expect(trading(after)).toEqual([]);
+            expect(logs.find(l => l.m === 'carried: asked for nothing; passed without a trade')!.d).toEqual({ package: 'H12oP', session: cue.session });
+            expect(logs.filter(l => l.m === 'carried: asked for nothing; passed without a trade')).toHaveLength(1);
+            expect(logs.some(l => l.m === 'hand-off')).toBe(false);
+            const served = carriedServedEntries(state.data[CARRIED_SERVED_KEY]);
+            expect(served.map(e => [e.pkg, e.session])).toEqual([['H12oM', 'm'], ['H12oP', cue.session]]);
+            expect([...carriedDoneSince(served, Date.now())].sort()).toEqual(['H12oM', 'H12oP']);
+        } finally {
+            clearInterval(ticker);
+            abort.abort();
+        }
+    });
+
+    test('a fixed carried package (P before rs/158\'s ruling) is still offered by exact count, waiting for no ask', async () => {
+        const fixed = packageOf({ name: 'H12oP', scope: P, at: P_TILE, items: [{ item: 'Shark', amount: 9 }, { item: 'Superantipoison(4)', amount: 1 }] });
         const inv = [...sharks(17), sapp(17)];
         const sdk = new FakeSdk(baseState({ tick: 1, inventory: inv, trade: trade({}) }));
-        const result = serveStaged(sdk as unknown as BotSDK, {} as BotActions, { partner: 'cairn_scored', pkg: hp, held: carriedNeeds(hp, inv).held, exact: true });
+        const result = serveStaged(sdk as unknown as BotSDK, {} as BotActions, { partner: 'cairn_scored', pkg: fixed, held: carriedNeeds(fixed, inv).held, exact: true });
         await flush();
         expect(sends(sdk)).toEqual([['sendOfferItem', 17, -1], ['sendOfferItem', 0, 9], ['sendAcceptTrade']]);
         const mine: TradeItem[] = [{ slot: 0, id: SHARK, name: 'Shark', count: 9 }, { slot: 1, id: SAPP, name: 'Superantipoison(4)', count: 1 }];
