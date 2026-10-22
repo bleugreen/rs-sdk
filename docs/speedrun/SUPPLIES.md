@@ -43,6 +43,11 @@ says which count this page took.
   offset +2 (stun-pack.md section 5), and the S07 bone loads, which the giver requests while SCORED
   holds 2 bones. A return of items (H11r, products in S25) is a separate trade with SCORED as the giver
   (6 to 10 ticks on the giver's side).
+- **A busy partner's retry.** A trade request that meets a busy partner (a level-up dialog, say)
+  goes unanswered and is re-sent: after 8 s, **~27 ticks a retry, on today's run commit**, and on the
+  second frame, **~2 ticks a retry, once rs/267's PR is on main** (`lib/trade.ts` `openTrade`; m,
+  lab; a demo figure follows with rs/196's demo or rs/267's next slot). No hand-off row here prices a
+  retry at ~27; the S07 and S18 givers re-request on their own schedules (H4.1-H4.n, H14.x).
 - **One press per offered item.** A helper offers each item with a single All or Offer-X; two presses
   on the same slot of an unstackable item land only the first (stun-pack.md section 5; `trade.ts`
   `amountButtons`, cairn://p/rs/136).

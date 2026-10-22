@@ -288,7 +288,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 | Direct gate clean logout | the gate probe | on main, 9d26aa87 (#142), d83f2e86 (#152) | |
 | `relog(session)` (in page by default, `RelogResult.tickBase`/`via`) and the navigated relog's socket-close fix | 0 (restarts), 29 (the wine relogs, R17) | **on main, efdbe2e2 (#164; rs/174)**, inside the run-commit floor; lab-accepted on the twin and after a lab engine kill | first SDK state at login + 1 in page or navigated, the bank at + 3 to + 6 (m); an in-page attempt that does not get in is retried by navigating, at the same ticks; the client's second-login hang (rs/183) is on main, #155 |
 | **Pickpocket stun-window actions** | 6 (S18's stun pack), 32 | **on main, 6e86a656 (#163; rs/132); lab-accepted (bury, charge, arrows; a3646a67)** | 300 rolls each at 300 ms on bgsrv-mac: no Thieving cost in the page (RUN-ORDER.md O8). The stun pack failing (plain pickpocket, Charge and Fletching standalone, ~200 more bones in S07, **+~120**, RUN-ORDER.md sensitivity table) is now a demo risk only. The opt-in 'idle while an interface is open' mode is on main, `idleOnInterface: true` (declared in b6950915), with top-ups in the program as a `player` stun action (entry 6) |
-| **In-page Runecraft cycle** (`rc-cycle`) | 9 (S06, S21) | **on main, 23ea9f77 (#178; rs/131); lab-measured**, inside the run-commit floor (entry 0) | 7.00 ticks per craft with the givers handled first and 8.00 on the robust fallback, 30 crafts each, no lost trades (m, lab, rs/131); its protocol shared with rs/163's givers. Without the tuned cycle: the robust 8-tick cycle **+168**, or the stock reacting cycle, measured at **31 ticks a craft** (rs/196), **+~4,030** on the nature altar's crafts (+~4,820 at the body altar's), if the giver is relayed or the program faults (RUN-ORDER.md R12) |
+| **In-page Runecraft cycle** (`rc-cycle`) | 9 (S06, S21) | **on main, 23ea9f77 (#178; rs/131); lab-measured**, inside the run-commit floor (entry 0) | 7.00 ticks per craft with the givers handled first and 8.00 on the robust fallback, 30 crafts each, no lost trades (m, lab, rs/131); its protocol shared with rs/163's givers. Without the tuned cycle: the robust 8-tick cycle **+168**, or the stock reacting cycle, measured at **31 ticks a craft** on the run commit today (rs/196), **+~4,030** on the nature altar's crafts (+~4,820 at the body altar's), if the giver is relayed or the program faults (RUN-ORDER.md R12); **9 a cycle** once rs/267's PR (`lib/trade.ts` `openTrade` with the altar giver; not on main) is on main (m, lab, rs/267), +~320 on the nature plan and +~400 on the body plan (i) |
 | Direct-path altar giver | 9 (S06, S21) | building (rs/163) | PR #144, open; on rs/117's launcher and rs/141's givers |
 
 ## 2. The run chain
@@ -352,7 +352,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     it does not declare, so each entry's program keys are the program's declared names) and
     834f376b (#176, rs/210's tick-cadence monitor). Pending, each moving the floor when it lands: rs/147's Agility
     snapshot (agility's `untilLevel`, entry 1, RUN-ORDER.md O40), PR #218 (rs/241's `eatAt: 'land'`,
-    entry 1), rs/276 (the
+    entry 1), rs/267's PR (`lib/trade.ts` `openTrade`
+    with the altar giver: the Runecraft stock rung at 9 a cycle and a busy partner's retry at ~2,
+    entry 9), rs/276 (the
     tick monitor's late count against observed intervals and gated-program's pause in observed
     ticks, R23; it changes a run-night pass line), rs/243's Thieving snapshot
     (pickpocket's `stopWhenFoodBelow` and `retargetTicks`, entry 6) and PR #198 (rs/198's
@@ -1179,12 +1181,16 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   altar in force adds 33 crafts at the same 7 and its own shorter legs (+142, RUN-ORDER.md section 7),
   which these per-step parts do not change. Travel is in entry 11 (T05-06 61 m; T20-21 158 m to the nature altar, 69.3 m to the body altar in force, rs/198).
   Robust schedule +1 a craft, +168 (66 for S06 with SCORED first, m). A clean logout between cycles
-  plus the resume walk costs ~2 in-world ticks (m). Fallback **~5,220**, the stock reacting cycle at its measured **31 ticks a craft** (m, lab,
+  plus the resume walk costs ~2 in-world ticks (m). Fallback **~5,220 on the run commit today**, the stock reacting cycle at its measured **31 ticks a craft** (m, lab,
   rs/196: 4 runs of 9 crafts each after two forced program faults; every reacting receive took
   exactly 30 except the first, which looks like the giver's stock window, rs/163 looking at it): S06
   ~220 and S21 ~5,000 at the nature altar's 161 crafts, ~6,000 at the body altar's 194, the plan in
-  force (i; a sensitivity, not a section 7 line). The rungs: tuned 7 (in force), robust 8 (+1 a
-  craft), stock 31.
+  force (i; a sensitivity, not a section 7 line). **Once rs/267's PR (`lib/trade.ts` `openTrade` with the altar giver; not on main) is on main the stock rung is 9 a
+  cycle** (m, lab, 300 ms, nature 44, rs/267: 8 of 8 gaps at 9; each stock trade 8 ticks from SCORED's
+  first click, the rung's first 5), so the whole step on stock is ~1,512 for S06 + S21 on the nature
+  plan (161 x 9 + 7 x 9) and ~1,809 on the body plan in force (194 x 9 + 7 x 9) (i); the 31-a-cycle
+  figures apply until the PR merges (pending for the floor, entry 0). The rungs: tuned 7 (in force),
+  robust 8 (+1 a craft), stock 31 today and 9 with rs/267.
 - **Lab (rs/196, RUN-ORDER.md RCM; relay path (lab), every run below):** auto with givers first chose tuned (29 x 7, step 217 on nature
   and 215 on body); robust ran 29 x 8 in either login order (step 247); auto with SCORED first chose
   robust, 29 x 8. **Resume:** a page reload after 8 crafts was resumed by `runResumable`, and the
@@ -1218,7 +1224,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   confirm and click the altar on T+7, re-anchoring on the observed craft; run.ts's Runecraft step owns
   `cue.json`, the page supplies the beacon.
 - **Mode:** in-page.
-- **Fallback:** robust 8-tick if the processing order is wrong; the stock reacting cycle (31 a craft, measured) if the program faults; SCORED logging out while givers restock only when it pays (~3.6 + 5 per batch, a tab relog with rs/174's fix).
+- **Fallback:** robust 8-tick if the processing order is wrong; the stock reacting cycle if the program faults (31 a craft on the run commit today, 9 once rs/267's PR is on main; both measured); SCORED logging out while givers restock only when it pays (~3.6 + 5 per batch, a tab relog with rs/174's fix).
 - **Acceptance, local:** a browser tab for SCORED and a direct-path giver on the lab engine at 300 ms,
   nature altar at 44, 30 cycles. Pass: at least 28 of 30 at **7**, and robust at 8 in either login
   order.
