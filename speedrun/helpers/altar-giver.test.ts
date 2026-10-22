@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import type { BotWorldState } from '../../sdk/types';
 import { baseState, FakeSdk, flush } from '../lib/fake-sdk';
 import { fakeClock, microtasks, useFakeTicks } from '../lib/fake-ticks';
-import { nameHash } from './altar-cue';
-import { AltarGiver, essencePresses } from './altar-giver';
+import { nameHash, readStatuses } from './altar-cue';
+import { AltarGiver, essencePresses, giverOptions } from './altar-giver';
 import type { RoleContext } from './role';
 
 const RECEIVER = 'cairn_scored';
@@ -145,6 +145,95 @@ describe('altar-giver stock turn', () => {
         const sdk = new FakeSdk(baseState({ tick: 100, inventory: [ESSENCE] }));
         expect(await runTurn(giverWith(sdk), { T: 103, myT: 103, armedTick: 100 })).toBe('no-receiver');
         expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(0);
+    });
+});
+
+describe('the hand-back giver (S21: T21-22 Lumbridge runes, runecraft.ts HandBack)', () => {
+    const RUNES = [
+        { item: 'Law rune', n: 1 },
+        { item: 'Air rune', n: 3 },
+        { item: 'Earth rune', n: 1 }
+    ];
+    const talisman = { slot: 0, id: 1446, name: 'Body talisman', count: 1, optionsWithIndex: [] };
+    const runeInv = [talisman, { slot: 1, id: 563, name: 'Law rune', count: 1, optionsWithIndex: [] }, { slot: 2, id: 556, name: 'Air rune', count: 3, optionsWithIndex: [] }, { slot: 3, id: 557, name: 'Earth rune', count: 1, optionsWithIndex: [] }];
+    const near = { nearbyPlayers: [{ index: 9, name: RECEIVER, combatLevel: 3, x: 0, z: 0, distance: 1 }] } as unknown as Partial<BotWorldState>;
+    const hbGiver = (sdk: FakeSdk) => giverWith(sdk, { altar: 'body', handBack: RUNES });
+
+    test('options: a list of distinct items with whole counts, on the bank restock only', () => {
+        expect(giverOptions({ scope: SCOPE, handBack: RUNES }).handBack).toEqual(RUNES);
+        expect(giverOptions({ scope: SCOPE }).handBack).toBeUndefined();
+        expect(() => giverOptions({ scope: SCOPE, handBack: [] })).toThrow(/non-empty/);
+        expect(() => giverOptions({ scope: SCOPE, handBack: [{ item: 'Law rune', n: 0 }] })).toThrow(/whole n/);
+        expect(() => giverOptions({ scope: SCOPE, handBack: [{ item: 'Law rune', n: 1 }, { item: 'law rune', n: 1 }] })).toThrow(/twice/);
+        expect(() => giverOptions({ scope: SCOPE, handBack: RUNES, restock: { kind: 'cheat' } })).toThrow(/restock kind bank/);
+    });
+
+    test('carrying the runes and no essence, its status lists them under handBack with essence 0 (out of the essence feed)', () => {
+        const sdk = new FakeSdk(baseState({ tick: 100, inventory: runeInv }));
+        const g = hbGiver(sdk);
+        (g as unknown as { publish(): void }).publish();
+        const st = readStatuses(dir).find(s => s.account === 'cairn_rcg1')!;
+        expect(st.handBack).toEqual(RUNES);
+        expect(st.essence).toBe(0);
+        // An essence giver, or the hand-back giver while still loaded with essence, lists nothing.
+        const loaded = new FakeSdk(baseState({ tick: 100, inventory: [ESSENCE, ...runeInv.slice(1).map(i => ({ ...i, slot: i.slot + 1 }))] }));
+        (hbGiver(loaded) as unknown as { publish(): void }).publish();
+        expect(readStatuses(dir).find(s => s.account === 'cairn_rcg1')!.handBack).toBeUndefined();
+    });
+
+    test('a stock turn carrying the items offers exactly the three runes, never the talisman, and the giver is then done', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 100, inventory: runeInv, ...near }));
+        const g = hbGiver(sdk);
+        const turn = runTurn(g, { T: 103, myT: 103, armedTick: 100, items: RUNES } as never);
+        await flush();
+        expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(1);
+        const open = { isOpen: true, screen: 'offer' as const, partner: RECEIVER, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false };
+        sdk.tick({ trade: open });
+        await flush();
+        await flush();
+        const offered = sdk.sent.filter(a => a.method === 'sendOfferItem').map(a => a.args[0]);
+        expect(offered.sort()).toEqual([1, 2, 3]);
+        const offer = [
+            { slot: 0, id: 563, name: 'Law rune', count: 1 },
+            { slot: 1, id: 556, name: 'Air rune', count: 3 },
+            { slot: 2, id: 557, name: 'Earth rune', count: 1 }
+        ];
+        sdk.tick({ trade: { ...open, myOffer: offer, myAccepted: true }, inventory: [talisman] });
+        await flush();
+        sdk.tick({ trade: { ...open, screen: 'confirm', myOffer: offer }, inventory: [talisman] });
+        await flush();
+        sdk.tick({ trade: undefined, inventory: [talisman] });
+        await flush();
+        expect(await turn).toBe('gave');
+        const inner = g as unknown as { last: { detail?: string }; gave: number };
+        expect(inner.last.detail).toBe('hand-back: 1 Law rune, 3 Air rune, 1 Earth rune');
+        expect(inner.gave).toBe(0); // essence trades only
+    });
+
+    test('named for the wrong kind of turn, a giver reports not-ready and sends nothing', () => {
+        const ms = Date.now();
+        const cueFor = (turn: Record<string, unknown>) => ({ v: 1, scope: SCOPE, session: 's9', seq: 1, receiver: { sha256: nameHash(RECEIVER) }, beacons: [{ tick: 100, ms }], schedule: 'robust', open: 5, turns: [{ giver: 'cairn_rcg1', T: 103, schedule: 'stock', ...turn }], ms });
+        type Inner = { phase: string; armed: unknown; last?: { outcome: string; detail?: string }; frames: { add(t: number, ms: number): unknown }; onCue(c: unknown): void };
+        const ready = (g: AltarGiver) => {
+            const inner = g as unknown as Inner;
+            inner.frames.add(100, ms);
+            inner.phase = 'ready';
+            return inner;
+        };
+        // the hand-back giver named for essence
+        const hb = ready(hbGiver(new FakeSdk(baseState({ tick: 100, inventory: runeInv, ...near }))));
+        hb.onCue(cueFor({}));
+        expect(hb.armed).toBeNull();
+        expect(hb.last).toMatchObject({ outcome: 'not-ready', detail: 'named for essence while holding the hand-back' });
+        // an essence giver named for the hand-back
+        const eg = ready(giverWith(new FakeSdk(baseState({ tick: 100, inventory: [ESSENCE], ...near }))));
+        eg.onCue(cueFor({ items: RUNES }));
+        expect(eg.armed).toBeNull();
+        expect(eg.last).toMatchObject({ outcome: 'not-ready', detail: 'named for a hand-back without its items' });
+        // the hand-back giver named for the hand-back arms it, items and all
+        const ok = ready(hbGiver(new FakeSdk(baseState({ tick: 100, inventory: runeInv, ...near }))));
+        ok.onCue(cueFor({ items: RUNES }));
+        expect(ok.armed).toMatchObject({ key: 's9:103', items: RUNES });
     });
 });
 

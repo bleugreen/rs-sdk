@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { allocate, batches, essencePerGiver, giverEntries, launchConfig, provisionPlan, roster, type Stockpile } from './roster';
+import { giverOptions } from './altar-giver';
+import { allocate, batches, essencePerGiver, giverEntries, handBackSlot, launchConfig, provisionPlan, roster, type Stockpile } from './roster';
 import { parseLaunchConfig } from './standalone';
 
 describe('roster', () => {
@@ -58,6 +59,24 @@ describe('launcher entries', () => {
     });
 });
 
+describe('the hand-back giver (H17e)', () => {
+    test("S21's 194 deliveries on 22 givers: the turn after the last is slot 18's ninth, so cairn_t19 hands back after 8 trades", () => {
+        expect(handBackSlot()).toEqual({ index: 18, trades: 8, essence: 216 });
+        expect(roster().accounts[handBackSlot().index]).toBe('cairn_t19');
+        // A refused t19 keeps its place: its spare is the hand-back giver.
+        expect(roster(22, ['cairn_t19']).accounts[18]).toBe('cairn_t23');
+        expect(handBackSlot(270, 3)).toEqual({ index: 1, trades: 3, essence: 81 });
+    });
+
+    test("only the hand-back slot's launcher entry carries the runes, which pass the real launcher's parser", () => {
+        const e = giverEntries(roster().accounts, { role: 'altar-giver' });
+        const with_ = e.filter(x => 'handBack' in (x.options as object));
+        expect(with_.map(x => x.account)).toEqual(['cairn_t19']);
+        expect((with_[0]!.options as { handBack: unknown }).handBack).toEqual([{ item: 'Law rune', n: 1 }, { item: 'Air rune', n: 3 }, { item: 'Earth rune', n: 1 }]);
+        expect(giverOptions((with_[0]!.options as Record<string, unknown>)).handBack).toHaveLength(3);
+    });
+});
+
 describe('provisioning', () => {
     test('batches of at most five', () => {
         expect(batches(roster().accounts).map(b => b.length)).toEqual([5, 5, 5, 5, 2]);
@@ -98,8 +117,10 @@ describe('provisioning', () => {
         const p = provisionPlan(stock, roster(3), 270);
         expect(p.batches).toEqual([['cairn_t01', 'cairn_t02', 'cairn_t03']]);
         expect(p.essence).toEqual({ perGiver: 108, trips: 4 });
+        expect(p.handBack).toEqual({ account: 'cairn_t02', essence: 81, trades: 3, items: [{ item: 'Law rune', n: 1 }, { item: 'Air rune', n: 3 }, { item: 'Earth rune', n: 1 }] });
         expect(p.talismans.length).toBe(3);
-        expect(p.essenceTransfers.reduce((n, x) => n + x.count, 0)).toBe(324);
+        expect(p.essenceTransfers.filter(x => x.to === 'cairn_t02').reduce((n, x) => n + x.count, 0)).toBe(81);
+        expect(p.essenceTransfers.reduce((n, x) => n + x.count, 0)).toBe(297);
     });
 });
 
@@ -140,6 +161,8 @@ describe('roster input boundaries', () => {
         const p = provisionPlan(stock, roster());
         expect(p.batches.map(b => b.length)).toEqual([3, 3, 3, 3, 3, 3, 3, 1]);
         expect(p.batches.flat()).toEqual(p.roster.accounts);
-        expect(p.essenceTransfers.reduce((n, t) => n + t.count, 0)).toBe(5346);
+        // 21 givers at 243 and cairn_t19 at 216: 5,319, against S21's 5,238.
+        expect(p.essenceTransfers.reduce((n, t) => n + t.count, 0)).toBe(5319);
+        expect(p.handBack.account).toBe('cairn_t19');
     });
 });
