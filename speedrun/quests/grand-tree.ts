@@ -381,7 +381,8 @@ async function leaveTree(sdk: Sdk, ctx: Pick<Ctx, 'bot'>): Promise<void> {
     // The door's forcemove (gnome_gate.rs2 open_tree_door, agility_walk) ends on p_delay(0): the
     // tick z first reads 3491 still holds the player, so a walk click then is dropped. travel's
     // stall handler then opens the nearest closed door, this one, and forcemoves SCORED back in;
-    // measured, that ping-pong cost ~50 ticks on every exit before bot.walkTo took over.
+    // measured, that ping-pong cost ~50 ticks on every exit before bot.walkTo took over. Remove this
+    // wait once travel.ts waits out a forcemove and never reopens a door just passed (rs/198's fix).
     await waitTicks(sdk, 1);
 }
 
