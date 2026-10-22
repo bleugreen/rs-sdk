@@ -154,6 +154,81 @@ export function within(b: Box, what = 'the area'): Check<any> {
     return s => (inBox(s, b) ? true : `not in ${what} (${b.x0},${b.z0})-(${b.x1},${b.z1}) L${b.level ?? 0}: at ${s.player ? `${s.player.worldX},${s.player.worldZ} L${s.player.level}` : 'unknown'}`);
 }
 
+// ---------------------------------------------------------------- inventory need
+
+export const INVENTORY_SLOTS = 28;
+
+export function freeSlots(s: BotWorldState): number {
+    return INVENTORY_SLOTS - s.inventory.length;
+}
+
+/** An item the content hands the step inside it, held from the segment that receives it through `until`. */
+export interface QuestItem {
+    /** As the inventory names it. */
+    item: string | RegExp;
+    /** For refusals; default the pattern. */
+    name?: string;
+    /** How many the content gives (default 1). */
+    n?: number;
+    /** The whole stack takes one slot (default false: one slot each). */
+    stackable?: boolean;
+    /** Letter of the segment that receives it. */
+    from: string;
+    /** Letter of the last segment it is held through (taken or used up in it). Absent: kept past the step. */
+    until?: string;
+}
+
+export interface SlotNeed {
+    /** The most free slots any segment from `at` on needs. */
+    slots: number;
+    /** The segment where that peak falls (null when nothing is needed). */
+    peak: string | null;
+    /** What makes up the peak, as `n name`. */
+    items: string[];
+}
+
+/**
+ * Free slots the step needs from segment `at` on: at each segment, every item
+ * held there (received at or after `at`, not yet taken), less what the
+ * inventory already holds of it; the peak over the segments. An item received
+ * before `at` is already in the pack or spent, so it needs nothing.
+ */
+export function slotNeed(s: BotWorldState, items: readonly QuestItem[], letters: readonly string[], at: string): SlotNeed {
+    const idx = (l: string) => {
+        const i = letters.indexOf(l);
+        if (i < 0) throw new Error(`slotNeed: segment ${l} is not one of ${letters.join(',')}`);
+        return i;
+    };
+    const start = idx(at);
+    let best: SlotNeed = { slots: 0, peak: null, items: [] };
+    for (let x = start; x < letters.length; x++) {
+        let slots = 0;
+        const parts: string[] = [];
+        for (const q of items) {
+            const from = idx(q.from);
+            const until = q.until === undefined ? letters.length - 1 : idx(q.until);
+            if (from < start || x < from || x > until) continue;
+            const have = s.inventory.filter(i => matchesItem(i, q.item)).length;
+            const n = q.n ?? 1;
+            const add = q.stackable ? (have ? 0 : 1) : Math.max(0, n - have);
+            if (!add) continue;
+            slots += add;
+            parts.push(`${n} ${q.name ?? String(q.item)}`);
+        }
+        if (slots > best.slots) best = { slots, peak: letters[x]!, items: parts };
+    }
+    return best;
+}
+
+/** A precondition: the free slots cover `slotNeed` from `at` on; the refusal names the peak segment, its items and the shortfall. */
+export function slotsCover(items: readonly QuestItem[], letters: readonly string[], at: string): Check<any> {
+    return s => {
+        const need = slotNeed(s, items, letters, at);
+        const free = freeSlots(s);
+        return free >= need.slots ? true : `inventory: segment ${need.peak} needs ${need.slots} free slots (${need.items.join(', ')}), ${free} free: ${need.slots - free} short`;
+    };
+}
+
 // ---------------------------------------------------------------- kit
 
 /** One kit line: at least `n` (default 1) of items whose name matches. */
