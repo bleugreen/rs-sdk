@@ -90,8 +90,8 @@ describe('provisioning', () => {
 
     const stock: Stockpile = {
         accounts: {
-            cairn_h51: { bank: [{ name: 'Body talisman', count: 2 }, { name: 'Law rune', count: 1 }, { name: 'Air rune', count: 3 }] },
-            cairn_h52: { bank: [{ name: 'Body talisman', count: 3 }] },
+            cairn_h51: { bank: [{ name: 'Body talisman', count: 2 }] },
+            cairn_h52: { bank: [{ name: 'Body talisman', count: 3 }, { name: 'Law rune', count: 1 }, { name: 'Air rune', count: 3 }, { name: 'Earth rune', count: 1 }] },
             cairn_h40: { bank: [{ name: 'Law rune', count: 50 }, { name: 'Air rune', count: 900 }, { name: 'Earth rune', count: 40 }] },
             cairn_h30: { bank: [{ name: 'Rune essence', count: 1000 }] },
             cairn_dot_md: { bank: [{ name: 'Body talisman', count: 99 }] },
@@ -124,15 +124,26 @@ describe('provisioning', () => {
         expect(p.essenceTransfers.reduce((n, x) => n + x.count, 0)).toBe(297);
     });
 
-    test("the hand-back runes come from a donor already in the plan when it holds them, else the biggest holder", () => {
+    test("the hand-back runes ride the hand-back giver's own talisman or essence trade when that donor holds them all", () => {
+        // h52 gives t02 its talisman and holds all three, so h40's bigger stacks are not used and no donor is added.
         const p = provisionPlan(stock, roster(3), 270);
-        // h51 gives talismans and holds law 1 and air 3: those come from it, though h40 holds more; earth only h40 has.
         expect(p.handBackTransfers).toEqual([
-            { from: 'cairn_h51', to: 'cairn_t02', item: 'Law rune', count: 1 },
-            { from: 'cairn_h51', to: 'cairn_t02', item: 'Air rune', count: 3 },
-            { from: 'cairn_h40', to: 'cairn_t02', item: 'Earth rune', count: 1 }
+            { from: 'cairn_h52', to: 'cairn_t02', item: 'Law rune', count: 1 },
+            { from: 'cairn_h52', to: 'cairn_t02', item: 'Air rune', count: 3 },
+            { from: 'cairn_h52', to: 'cairn_t02', item: 'Earth rune', count: 1 }
         ]);
-        expect(() => provisionPlan({ accounts: { ...stock.accounts, cairn_h40: { bank: [] } } }, roster(3), 270)).toThrow(/Earth rune: need 1, the stockpile holds 0/);
+        expect(p.batches).toEqual([['cairn_t01', 'cairn_t02', 'cairn_t03']]);
+    });
+
+    test('else item by item, donors already in the plan first, then the biggest holder; none held is an error', () => {
+        const accounts = { ...stock.accounts, cairn_h52: { bank: [{ name: 'Body talisman', count: 3 }, { name: 'Law rune', count: 1 }] } };
+        const p = provisionPlan({ accounts }, roster(3), 270);
+        expect(p.handBackTransfers.map(t => [t.from, t.item])).toEqual([
+            ['cairn_h52', 'Law rune'],
+            ['cairn_h40', 'Air rune'],
+            ['cairn_h40', 'Earth rune']
+        ]);
+        expect(() => provisionPlan({ accounts: { ...accounts, cairn_h40: { bank: [] } } }, roster(3), 270)).toThrow(/Air rune: need 3, the stockpile holds 0/);
     });
 });
 
