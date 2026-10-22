@@ -1,7 +1,8 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import type { BotWorldState } from '../../sdk/types';
 import { baseState, FakeSdk, flush, runToggleServer } from '../lib/fake-sdk';
 import { IF_RUN_ON, runIsOn } from '../lib/run-mode';
+import { TickLog } from '../lib/ticks';
 import { onTutorialIsland } from '../lib/world';
 import type { StepContext } from '../runner/step';
 import { LUMBRIDGE_SPAWN, PLAYER_KIT, tutorialSkip } from './start';
@@ -30,7 +31,7 @@ class TutorialSdk extends FakeSdk {
     override clickDialogByText(p: string | RegExp) { return this.sendAction({ method: 'clickDialogByText', args: [p] }); }
 }
 
-const ctx = (sdk: FakeSdk) => ({ sdk, bot: {}, session: { sdk }, c: {}, log: null }) as unknown as StepContext<unknown>;
+const ctx = (sdk: FakeSdk, log = TickLog.memory('t')) => ({ sdk, bot: {}, session: { sdk }, c: {}, log }) as unknown as StepContext<unknown>;
 
 describe('S00 tutorial skip', () => {
     test('accepts the design, talks, continues once and takes "Yes please.": three server round trips', async () => {
@@ -49,10 +50,34 @@ describe('S00 tutorial skip', () => {
         const content = sdk.onSend;
         const serve = runToggleServer(sdk);
         sdk.onSend = (a, s) => { content(a, s); serve(a); };
-        await tutorialSkip.run(ctx(sdk));
+        const log = TickLog.memory('t');
+        await tutorialSkip.run(ctx(sdk, log));
         expect(sdk.sent.map(s => s.method)).toEqual(['sendAcceptCharacterDesign', 'sendInteractNpc', 'sendClickDialog', 'clickDialogByText', 'sendClickComponent']);
         expect(sdk.sent.at(-1)!.args).toEqual([IF_RUN_ON]);
         expect(runIsOn(sdk.getState())).toBe(true);
+        expect(tutorialSkip.postconditions(sdk.getState()!, {})).toBe(true);
+        expect(log.rows.filter(r => r.step === 'S00:run').map(r => r.meta)).toEqual([{ on: true, presses: 1 }]);
+    });
+
+    test('a run toggle that will not take is logged and warned, and the skip still succeeds', async () => {
+        const sdk = new TutorialSdk('Yes please.');
+        sdk.push({ varps: { option_run: 0 } });
+        const content = sdk.onSend;
+        const serve = runToggleServer(sdk, { ignore: Infinity });
+        sdk.onSend = (a, s) => { content(a, s); serve(a); };
+        const ticker = setInterval(() => sdk.tick(), 2);
+        const warn = spyOn(console, 'warn').mockImplementation(() => {});
+        const log = TickLog.memory('t');
+        try {
+            await tutorialSkip.run(ctx(sdk, log));
+        } finally {
+            clearInterval(ticker);
+            warn.mockRestore();
+        }
+        const [note] = log.rows.filter(r => r.step === 'S00:run');
+        expect(note.meta).toMatchObject({ on: false, presses: 2 });
+        expect(String(note.meta!.reason)).toContain('run did not turn on');
+        expect(warn).toHaveBeenCalledTimes(1);
         expect(tutorialSkip.postconditions(sdk.getState()!, {})).toBe(true);
     });
 
