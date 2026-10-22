@@ -57,7 +57,7 @@ timed on **observed game ticks** (the tick stream or `TICKMON`), never on wall-c
 droppers (S03, HS6), the bone givers' load timing (H4.1-H4.n) and any `T0 + n ms` launch in run.ts. A
 deadline that stands for a tick count keys off observed ticks; wall clock appears only as an idle
 bound, no new tick for N ticks' worth of time scaled by the configured tick length (on the floor
-since #209's `tickClock`, 4fe2d0a8). The demo has
+since #209's `tickClock`, 4fe2d0a8, inside the floor 31bdff73). The demo has
 been seen at 0.34-0.37 s a tick, where a wall-clock cue lands early by about (1 - 0.30/actual) of
 its delay and a deadline fires early (RUN-ORDER.md R23).
 
@@ -178,11 +178,11 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 8 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,972 | 1,946 | 1,997 (the bow from 70); 2,023-2,211 without the kit | ~265 | overlay | `cannon-kit.ts` (rs/59, on main) | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible); run mode ~0, at most ~9 on S27's melee phase (m/i, rs/196) |
 | 9 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,493 | 1,403 | 1,763 | ~360 | overlay | `quest-grandtree-full.ts` | building (rs/202 under rs/185); **lab: 3 of 3 full A-to-P runs at SCORED's levels** (1,403 / 1,504 / 1,422) |
 | 10 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,192 | 1,192 | ~5,220 | ~4,030 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **on main, 1514f47a (#222; rs/268's snapshot of rs/196's module, rs/186's branch at 0c349da6)**, the run-commit floor; **lab-accepted, with a partial demo confirmation** (9/9 tuned on the real server, n small; the 20-cycle demo acceptance pending); **lab-accepted (rs/196, module 3f02f336, relay path (lab): nature at 44 tuned 30/30 at 29 x 7, robust 30/30 at 29 x 8; S06 7/7 at 6 x 7, 58)**; the tuned nature run confirmed on the direct path, 30/30 at 29 x 7 (rs/196, 3b161c12); pending: the auto rule's 'handled before SCORED' field (entry 9); cycle: on main, 23ea9f77 (#178) |
-| 11 | 10 | Smithing | `speedrun/skills/smithing.ts` | S25a | 1,065 | 1,028 | 1,330 | ~302 | overlay | `smithing-trade.ts` | building (rs/186, held: tenet 15) |
+| 11 | 10 | Smithing | `speedrun/skills/smithing.ts` | S25a | 1,065 | 1,028 | 1,330 | ~302 | overlay | `smithing-trade.ts` | **on main (#230)**, with `lib/trade.ts` `swap()` and `anvil.ts`'s restock and off-tile fixes; the demo attempt inconclusive (rs/197, entry 10) |
 | 12 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 969 | 908 | 1,079 | ~171 | overlay | `quest-dragon-*.ts` | building (rs/258 under rs/185); run mode: no `p_walk`, re-paths at ten moving NPCs and the six maze monsters, lever ~0 (r, rs/258) |
 | 13 | 12 | Dwarf Cannon | `speedrun/quests/dwarf-cannon.ts` | S13 | 855 | 799 | 957 | ~158 | overlay | `quest-mcannon-*.ts` | building (rs/257 under rs/185); run mode: no `p_walk`, re-paths at Lawgof (A, C, E, H, J, L) and Nulodion (K), lever ~0 (r, rs/257) |
 | 14 | 14 | Tree Gnome Village | `speedrun/quests/tree-gnome-village.ts` | S10b | 793 | 739 | 902 | ~163 | overlay | `quest-tree-full.ts`, `quest-premm-fight.ts` | building (rs/185, held: tenet 15) |
-| 15 | 16 | Firemaking | `speedrun/skills/firemaking.ts` | S03 | 681 | 650 | 735 | ~85 | overlay | `firemaking-line.ts` | on main, 4cc468e0 (#205; rs/244); **demo-measured**, 681 m (rs/269, cairn_burns) |
+| 15 | 16 | Firemaking | `speedrun/skills/firemaking.ts` | S03 | 681 | 650 | 735 | ~85 | overlay | `firemaking-line.ts` | on main, 4cc468e0 (#205; rs/244), with the inferred-fire counter (#229); **demo-measured**, 681 m (rs/269, cairn_burns) |
 | 16 | 17 | Fight Arena | `speedrun/quests/fight-arena.ts` | S12 | 571 | 524 | 646 | ~122 | overlay | `quest-arena-run.ts` | building (rs/185, held: tenet 15) |
 | 17 | 18 | Plague City | `speedrun/quests/plague-city.ts` | S08 | 491 | 435 | 608 | ~173 | overlay | `quest-plague-city-*.ts` | building (rs/185, held: tenet 15) |
 | 18 | 19 | Mage Arena | `speedrun/quests/mage-arena.ts` | S16 | 425 | 418 | 448 | ~30 | overlay | `quest-magearena-*.ts` | building (rs/185, held: tenet 15) |
@@ -278,7 +278,7 @@ are filed under main and held until tenet 15 is answered.
   the direct path (entry 9).
 - **16.** On main, 4cc468e0 (#205): rs/244's snapshot of rs/228's lab-gated module, with its test.
   **Demo-measured**: rs/269's cairn_burns ran S03 at 681 on the demo, the first whole step measured
-  end to end there (entry 16).
+  end to end there (entry 16). The inferred-fire counter is on main too (#229, inside the floor).
 - **15.** The primary path is the bury option inside entry 3 (knife-cycle `bury` on main; the
   gate-off plain + bury is rs/162's, lab-measured and on main as 3dfc217f, #165); the booth fallback `skills/prayer.ts` is rs/186's.
 
@@ -364,10 +364,17 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     RUN-ORDER.md R1's bound); that case is historical on any `RUN_COMMIT` at or after c2d9eada.
     The final logout is still checked on the host (`RUN-HOST.md` step 8). A precondition, not a
     line in the totals;
-  - **`RUN_COMMIT` at or after the run-commit floor, `4fe2d0a8`** (#209, rs/246: one idle timeout,
-    `tickClock`, for every tick-keyed wait, `maxTicks` on observed ticks and only `IDLE_TICKS`, 20
-    ticks of silence, in wall clock; RUN-ORDER.md R23; one check, `git merge-base --is-ancestor
-    4fe2d0a8 "$RUN_COMMIT"`, `RUN-HOST.md` "Credentials"). Its history holds 1514f47a (#222, rs/268's
+  - **`RUN_COMMIT` at or after the run-commit floor, `31bdff73`** (main, 22:24 PDT; one check,
+    `git merge-base --is-ancestor 31bdff73 "$RUN_COMMIT"`, `RUN-HOST.md` "Credentials"). Its newest
+    entries: #232 (the quest shared layer: `converse`'s burst mode and interrupts, `useOn`,
+    `setPrayer`, `segments.ts`, `lab/quests/run.ts` and `ticks.ts`'s note rows; every quest entry),
+    #229 (the Firemaking inferred-fire counter, entry 16), #230 (Smithing S25a, `lib/trade.ts`
+    `swap()`, and `anvil.ts`'s restock and off-tile fixes; entry 10), #226 (the tick monitor measured
+    on the observed period, `TICKMON` gaining `periodMs=`, and gated-program's pause at
+    ceil(60000 / period); RUN-ORDER.md R23) and #233 (the lab staging guard: `tele()` and
+    `mustTele()` refuse on Tutorial Island; "How to read an entry"). Its history holds 4fe2d0a8
+    (#209, rs/246: one idle timeout, `tickClock`, for every tick-keyed wait, `maxTicks` on observed
+    ticks and only `IDLE_TICKS`, 20 ticks of silence, in wall clock; R23) and 1514f47a (#222, rs/268's
     snapshot of rs/196's Runecraft step module, entry 9), 148788c5 (#221, rs/262: `HostGate`'s
     `measureDrops` default 120, fishing's explicit 120; RUN-ORDER.md R21), 4235a9e7 (#220, rs/260's
     snapshot of rs/230's Mining module: `mining.ts`, knife-mine's `selfStarter`, gated-program's
@@ -381,15 +388,18 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     stun actions, after #159's `stay2` bury, entry 4), 3dfc217f (#165, rs/162's plain + bury, the
     knife-off line in force, entry 3), b6950915 (#177: a program faults at start on a parameter key
     it does not declare, so each entry's program keys are the program's declared names) and
-    834f376b (#176, rs/210's tick-cadence monitor). Pending, each moving the floor when it lands: rs/147's Agility
-    snapshot (agility's `untilLevel`, entry 1, RUN-ORDER.md O40), PR #218 (rs/241's `eatAt: 'land'`,
-    entry 1), rs/267's PR (`lib/trade.ts` `openTrade`
-    with the altar giver: the Runecraft stock rung at 9 a cycle and a busy partner's retry at ~2,
-    entry 9), rs/276 (the
-    tick monitor's late count against observed intervals and gated-program's pause in observed
-    ticks, R23; it changes a run-night pass line), rs/243's Thieving snapshot
-    (pickpocket's `stopWhenFoodBelow` and `retargetTicks`, entry 6) and PR #198 (rs/198's
-    `runner/legs.ts`, entry 11); #198 and #218 have PR numbers so far. Gate tooling on main, not floor
+    834f376b (#176, rs/210's tick-cadence monitor). Pending, each moving the floor when it lands (none has a PR number yet):
+    **rs/280** (run on after every login and relog, `ensureRunOn`; RUN-ORDER.md O45); **rs/267's
+    changes via rs/41's branch**: the trade giver's re-send moved onto `decideRequest` in game ticks
+    (commit pending; R25) and the S18 courier holding a side tile (R24), both on the helpers'
+    deployed commit before they serve SCORED, and `lib/trade.ts` `openTrade` with the altar giver
+    (3042ae95: the Runecraft stock rung at 9 a cycle and a busy partner's retry at ~2, entry 9);
+    **rs/243** (the second Thieving part: pickpocket's `stopWhenFoodBelow` and `retargetTicks`,
+    entry 6); **rs/147's Agility snapshot**, to be filed (agility's `untilLevel`, closing
+    RUN-ORDER.md O40, the program's `eatAt` opt-in, f95f9558, rs/241's work, and the module default
+    `eatAt: 'land'`, a9298868, rs/270; entry 1); and **rs/291** (rs/198's `runner/legs.ts` and
+    run-transitions.md section 10, 8 files from 2dc2dbe8 on rs/186's branch, PR not open yet; entry
+    11). Gate tooling on main, not floor
     items: 5d22252d (#208, `lib/display.ts`) and c4b79f17 (#213, `lib/tab.ts` window helpers);
   - **the login cap**: our simultaneous demo logins, summed across every host, at most 100 with a
     working cap of 80, counted before SCORED logs in (main, 15:35 PDT; `RUN-HOST.md` step 7;
@@ -597,7 +607,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   ~30 slots with the bow and arrows worn, before the rune stacks, the items already held and the
   untradeable quest items. H12 can be split or
   moved only at the Grand Tree in segment C or D (no helper reaches the hangar or the atoll), in
-  rs/158's order: fewer sharks and doses, a two-way trade at C or D, a Grand Tree bank deposit. The
+  rs/158's order: fewer sharks and doses, a two-way trade at C or D (`lib/trade.ts` `swap()`, on main,
+  #230), a Grand Tree bank deposit. The
   gold bar is not made yet (cairn_h20 mines and smelts it); the wool and monkey bones come from
   rs/173's far set (rs/41). The puzzle needs the OPHELD send that rs/23 fixed in the lite client; rs/116 verified the
   run client's `sdk.sendUseItem` sends it (local engine; not demo-confirmed, RUN-ORDER.md R5). Arrival levels are Defence 1, ~42 HP, Strength 1 and Magic ~76 (inferred, rs/56
@@ -1292,8 +1303,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   37, 40 and 43, floor(level / 11) + 1 a essence, r, `runecraft.rs2`) on T06-07, ~1-2 ticks (i;
   rs/158's decision). S21 refuses to start while they are held, because a 27-essence trade plus the
   talisman fills every slot, and keeping them would cost a slot in every S07 bone load (23 to 22, ~2
-  more loads). If a two-way trade primitive lands (rs/201's H12 needs one too), handing the stack to a
-  helper at an existing hand-off replaces the drop (`SUPPLIES.md`, the air rune line).
+  more loads). The two-way trade primitive is now on main (`lib/trade.ts` `swap()`, #230), but the drop stays
+  (above).
 - **Primitives:** the in-page `rc-cycle` program (cairn://p/rs/131; on main, 23ea9f77, #178): request on T+5, accept on T+6,
   confirm and click the altar on T+7, re-anchoring on the observed craft; run.ts's Runecraft step owns
   `cue.json`, the page supplies the beacon.
@@ -1331,9 +1342,19 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Primitives:** `lib/trade.ts` (`receiveFrom` with `want`; SCORED also offers its 5 products, which
   `receiveFrom` does not do: it declines when its own offer is non-empty); the two-way swap
   (`swap(sdk, partner, give, want)`) in `lib/trade.ts` and the smithing interface make-5 click as a
-  library call: building (rs/197).
+  library call: **on main (#230)**, inside the run-commit floor, with `anvil.ts`'s restock and
+  off-tile fixes.
 - **Mode:** overlay-driven. An in-page trade-and-make program would recover the ~60 relay ticks,
   which is optional.
+- **Demo attempt (rs/197, bbs, ~04:16Z), inconclusive; S25a stays 1,065 m (lab).** Through the home
+  relay (`GATEWAY_DIRECT=false`) SCORED's SDK actions were held and batched (p50 11 / p90 15 ticks
+  of action lag, 37 of 57 frames glued), so nothing could be measured; the run machine uses the
+  loopback gateway, so this does not touch SCORED (raised with main by rs/186). On the loopback
+  gateway against rs/188's HS5 (`anvil.ts` with `restockAtBank`), five bronze 2h-sword trades turned
+  around in 50 / 14 / 69 / 23 (mean 39), dominated by HS5's 15-18-tick bank restock against a
+  ~5-tick 3-bar make, with one restock timeout and one trade that closed twice: **not comparable**
+  with the lab's 25-bar inventories (8.9); a comparable demo needs inventories of ~20 bars or more.
+  The make-5 platebody click stays lab-verified only.
 - **Fallback:** the bank cycle.
 - **Acceptance, local:** with the real HS5, 1 to 99. Pass: within 5% of **1,028**, and at most 10
   ticks per inventory without a level-up backlog (9 normally; 11-15 when several items cross a
