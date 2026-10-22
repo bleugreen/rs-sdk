@@ -302,8 +302,6 @@ async function treeLadder(ctx: StepContext<any>, to: number): Promise<void> {
     }
 }
 
-/** The stronghold's own spirit tree (spirit_tree.constant: its p_telejump lands here). */
-const STRONGHOLD_TREE = { x: 2461, z: 3444, tol: 3 } as const;
 const BATTLEFIELD_TREE = { x: GT.battlefieldTree.x, z: GT.battlefieldTree.z, tol: 2 } as const;
 /** Brimhaven's customs ship lands here (lib/ships.ts VOYAGES). */
 const ARDOUGNE_DOCK = { x: 2681, z: 3270 } as const;
