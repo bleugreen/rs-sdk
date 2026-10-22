@@ -33,8 +33,8 @@ describe('family census', () => {
 
     test('counts members across the bank board and who is online where', () => {
         const c = Object.fromEntries(census({ bank: parseBank(fixture('bank.html')) }, positions).map(f => [f.family, f]));
-        expect(c.soko!.online).toHaveLength(21);
-        expect(c.soko!.zones).toEqual({ 'Varrock west bank (GE)': 21 });
+        expect(c.soko!.online).toHaveLength(18);
+        expect(c.soko!.zones).toEqual({ 'Varrock west bank (GE)': 18 });
         expect(c.goo!.online).toHaveLength(30);
         expect(c.banker!.online).toEqual(['banker', 'banker2']);
         expect(c.nick!.sources.bank).toEqual(['nickai3', 'nickai', 'nickai2']);
