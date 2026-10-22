@@ -21,7 +21,7 @@
 //   demo      a borrowed account's own headless arrows and bronze tips, bronze only, `--actions=N`
 //             (default 100: 20 ticks), no keep, no staff commands. The tab is the host's own Chrome
 //             (SPEEDRUN_CDP_URL), the gateway a loopback one. Before any click it waits up to
-//             SCENE_TICKS for sceneReady and then for locs, and stops if either never shows.
+//             SCENE_TICKS for sceneReady and stops if it never shows; the loc count is only recorded.
 //             Pass: 5 actions on >= 90% of work ticks.
 // options: --log=<path>, --actions=N (demo)
 // Prints one RESULT line: program ticks (first tick to done, the page's count, on observed ticks),
@@ -55,8 +55,8 @@ export const BAR = TARGET * 1.05;
 /** The demo's pass: 5 actions on at least 90% of the ticks with work pending. */
 export const DEMO_SHARE = 0.9;
 /**
- * The demo's bound on the region load before its first click: sceneReady, then the bank's locs. A cold
- * Chrome profile at Varrock west took about 75 ticks before locs appeared.
+ * The demo's bound on the region load (sceneReady) before its first click. A cold Chrome profile at
+ * Varrock west took about 75 ticks before locs appeared.
  */
 export const SCENE_TICKS = 200;
 
@@ -166,15 +166,15 @@ await (async () => {
         if (which === 'demo') {
             // the account's own stacks; nothing staged
             await waitUntil(sdk, st => !!st.player && st.skills.length > 0, { maxTicks: 30 });
-            // openSession does not wait for the region: a click before sceneReady may go unrouted, and a
-            // bank with no locs has not loaded. Nothing is sent until both show; past the bound, stop.
+            // openSession does not wait for the region, and a click before sceneReady may go unrouted:
+            // nothing is sent until it shows, and past the bound the demo stops. Stack mode clicks no loc,
+            // so the loc count is recorded, not waited for (some places legitimately have none).
             const t0 = state().tick;
             const ready = await waitUntil(sdk, st => st.sceneReady === true, { maxTicks: SCENE_TICKS });
-            const locs = ready.ok ? await waitUntil(sdk, st => st.nearbyLocs.length > 0, { maxTicks: SCENE_TICKS - (ready.tick - t0) }) : null;
-            result.scene = { sceneReadyTicks: ready.ok ? ready.tick - t0 : null, locsTicks: locs?.ok ? locs.tick - t0 : null, locs: state().nearbyLocs.length, at: [state().player?.worldX, state().player?.worldZ] };
+            result.scene = { firstTick: t0, sceneReadyTick: ready.ok ? ready.tick : null, sceneReadyTicks: ready.ok ? ready.tick - t0 : null };
             if (!ready.ok) throw new Error(`sceneReady not true within ${SCENE_TICKS} ticks (${ready.reason}): stopped before any click`);
-            if (!locs!.ok) throw new Error(`0 locs within ${SCENE_TICKS} ticks of the first state (${locs!.reason}): stopped before any click`);
             const s = state();
+            result.scene = { ...(result.scene as object), locsAtFirstAction: s.nearbyLocs.length, at: [s.player?.worldX, s.player?.worldZ] };
             const n = Math.min(held(HEADLESS_ARROW), held(T.bronze!.tips));
             const actions = Math.min(Number(flag('actions', '100')), Math.floor(n / 15));
             if (actions <= 0) throw new Error(`the account holds ${held(HEADLESS_ARROW)} headless arrows and ${held(T.bronze!.tips)} bronze tips: nothing to fletch`);
