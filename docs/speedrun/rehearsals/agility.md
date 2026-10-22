@@ -218,7 +218,7 @@ figure to about 7,050, which still doesn't clear.
 **What stunagile must be doing differently** (inferred). Its only stamps are Prayer
 43 (20 s) and Agility 99 (33:51), so it trained at 10 HP. With our measured
 pre-52 (about 1,925 plus its about 67 for Prayer), its 52 -> 99 would be about
-4,780 ticks, which is about 64.7 ticks a lap with falls. Our clean lap is 66. So
+4,780 ticks, which is about 64.3 ticks a lap with falls (4,780 / 4,908 x 66). Our clean lap is 66. So
 the gap is in the lap's reaction ticks or in a faster 1 -> 52, not in Prayer.
 
 Checked and rejected:
