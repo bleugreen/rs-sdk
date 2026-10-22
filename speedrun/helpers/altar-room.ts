@@ -10,16 +10,18 @@ import { closeBank, depositAllExcept, openBank, walkNear } from './mule';
 import type { RoleContext } from './role';
 import { acceptSupplies } from './wine';
 
-export type AltarName = 'air' | 'nature';
+export type AltarName = 'air' | 'body' | 'nature';
 export interface Tile {
     x: number;
     z: number;
 }
 
-/** The two altars on the route: air 1-44, nature 44-99 (both talismans are tradeable). */
+/** The altars on the route: air 1-44, then nature 44-99 or body 20-99 (every talisman is tradeable). */
 export const ROUTE_ALTARS: Record<AltarName, { talisman: RegExp; talismanObj: string; bank: Tile | null }> = {
     // Falador east bank: the nearest bank to the air ruins (2984,3291), ~70 tiles.
     air: { talisman: /^air talisman$/i, talismanObj: 'air_talisman', bank: { x: 3013, z: 3357 } },
+    // Edgeville bank: the nearest bank to the body ruins (3053,3445), ~50 tiles.
+    body: { talisman: /^body talisman$/i, talismanObj: 'body_talisman', bank: { x: 3094, z: 3491 } },
     // No usable bank near the Karamja ruins without Shilo Village: restock by trade.
     nature: { talisman: /^nature talisman$/i, talismanObj: 'nature_talisman', bank: null }
 };
@@ -68,12 +70,12 @@ export function isLocalServer(server = process.env.SERVER ?? ''): boolean {
 }
 
 /**
- * Notes of rune essence and the two talismans (server/content/pack/obj.pack: each
+ * Notes of rune essence and the route's talismans (server/content/pack/obj.pack: each
  * cert id is the item's id + 1). A note has the item's name, so a name match alone
  * takes a stack of 200 noted essence from a supply trade for a full load, and the
  * giver walks into the room with nothing it can hand over.
  */
-export const NOTE_IDS: ReadonlySet<number> = new Set([1437 /* cert_blankrune */, 1439 /* cert_air_talisman */, 1463 /* cert_nature_talisman */]);
+export const NOTE_IDS: ReadonlySet<number> = new Set([1437 /* cert_blankrune */, 1439 /* cert_air_talisman */, 1447 /* cert_body_talisman */, 1463 /* cert_nature_talisman */]);
 
 const real = (i: InventoryItem, re: RegExp) => re.test(i.name) && !NOTE_IDS.has(i.id);
 

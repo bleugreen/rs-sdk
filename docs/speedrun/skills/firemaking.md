@@ -2,8 +2,8 @@
 
 Scripts: [`firemaking-line.ts`](../scripts/firemaking-line.ts) (line cadence,
 end-to-end runs, helper-dropped rows), [`firemaking-supply.ts`](../scripts/firemaking-supply.ts)
-(trade and bank refills), [`firemaking-drop.ts`](../scripts/firemaking-drop.ts)
-(helper drops a row), [`firemaking-pyre.ts`](../scripts/firemaking-pyre.ts)
+(trade and bank refills), the H6 role [`fm-row.ts`](../../../speedrun/helpers/fm-row.ts)
+([helpers/fm-row.md](../helpers/fm-row.md); helpers drop a paced row), [`firemaking-pyre.ts`](../scripts/firemaking-pyre.ts)
 (pyre logs), [`firemaking-rows.ts`](../scripts/firemaking-rows.ts) (static
 scan for lines near banks), [`firemaking-model.ts`](../scripts/firemaking-model.ts)
 (route model), [`firemaking-lab.sh`](../scripts/firemaking-lab.sh) (lab on the
@@ -53,7 +53,10 @@ cost anything:
 
 The dropped row is about 45 ticks faster than trades. It needs helpers to
 pace their drops around the 100-tick private window of a dropped item
-(section 6). Use trades if that pacing isn't built.
+(section 6). That pacing is the H6 role `speedrun/helpers/fm-row.ts`
+([helpers/fm-row.md](../helpers/fm-row.md)): in two lab runs of all 157 logs
+it lit 1 -> 99 in 658 ticks first to last fire, with no gap waiting on a log.
+Use trades if the row can't be staffed.
 
 **Ordering constraint, if Sea Slug is on the route: it needs Firemaking 30**
 (`quest_seaslug.rs2:43`, `stat()`, boostable, but no Firemaking boost exists in this content).
@@ -304,12 +307,17 @@ interleaving.md section 9. Column 5 of the summary row is therefore n/a.
   need no walk clicks at all, because the ground op walks.
 - **Helper-dropped logs are private for 100 ticks and gone at 300**
   (`drop.rs2:22` gives 200 x 3/2, `World.ts` addObj with
-  `NODE_OBJ_REVEAL_TICKS` 100, not set in `fly.toml`). Measured: the first
-  dropped log was visible to the scored account 106 ticks after the helper
-  started. The helper should drop each log 100-300 ticks before the account
-  reaches it, about one log every 4 ticks with a ~100-tick lead, so that
-  the first logs don't despawn. The scored account can stay logged out for
-  the first 100 ticks (`primitives.md` §8).
+  `NODE_OBJ_REVEAL_TICKS` 100, not set in `fly.toml`). Measured: a dropped
+  log is in the scored account's view 99 ticks after the drop is confirmed
+  (`speedrun/lab/fm-row.ts`, two runs). The fm-row role drops each log about
+  105 ticks before the account can want it, one per 4-tick roll, so it is
+  public about 5 ticks early (up to 48 for the logs dropped during the
+  early failed rolls) and never near its 300-tick despawn. The scored
+  account can stay logged out for the first 100 ticks (`primitives.md` §8).
+- **The 2-row snake's lap turn costs 5 ticks.** After the last tile of the
+  eastward row (3019,3361) the ground op walks round to (3019,3362) and the
+  light starts fresh: a 9-tick gap at logs 54 and 108 in both fm-row lab
+  runs, with the log already in view.
 - **Interactable decorations refuse a fire** and collision data can't show
   them. Confirm any new row in the lab, or let the bot skip a refused tile
   (`firemaking-line.ts` skips a tile it can't reach in 4 ticks).
@@ -351,9 +359,9 @@ snake, one per tile.
   success message lands within 3 ticks of the roll. A short public-server
   run of `firemaking-line.ts` (logging gaps and `rejectedSendsPerFire`)
   would settle it.
-- **Dropped rows for the whole route.** One 54-log magic row was measured.
-  The paced drop of 157 logs (one helper, ~100-tick lead) has not been run
-  end to end.
+- **Dropped rows on the demo.** The paced drop of all 157 logs has run end
+  to end in the lab only (`helpers/fm-row.md`); the run's row beside the
+  coop is unconfirmed, and the helper's bank restocks are unmeasured.
 - **Shades of Mort'ton's cost.** If someone costs the quest to stage 65
   (temple fully rebuilt by the account) and it comes out under about 250
   ticks net of its Crafting and Herblore rewards, pyre logs win (section 5).

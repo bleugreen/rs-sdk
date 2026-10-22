@@ -416,10 +416,14 @@ export interface OpenResult {
     reason?: 'player_not_found' | 'no_response';
 }
 
+/** trade.rs2 [opplayer4]: the engine's refusal of a request while the target is busy (a delay, a level-up page). */
+export const TRADE_BUSY_RE = /is busy at the moment/i;
+
 /**
  * Open a trade with `partner` by name. A trade request to a player who has
- * already requested us is the acceptance and opens both screens at once; a
- * fresh request is re-sent every 8 s until the partner answers.
+ * already requested us is the acceptance and opens both screens at once. A
+ * request refused because the partner is busy is re-sent on the frame that
+ * shows the refusal; one that stands unanswered is re-sent every 8 s.
  */
 export async function openTrade(sdk: TradeSdk, partner: string, opts: { timeoutMs?: number } = {}): Promise<OpenResult> {
     const timeoutMs = opts.timeoutMs ?? 60_000;
@@ -430,6 +434,7 @@ export async function openTrade(sdk: TradeSdk, partner: string, opts: { timeoutM
     if (open.isOpen) await sdk.sendDeclineTrade();
 
     let firstClickTick = -1;
+    let lastRefusal = -1;
     while (Date.now() < deadline) {
         const s = sdk.getState();
         const player = s?.nearbyPlayers.find(p => sameName(p.name, partner));
@@ -440,9 +445,14 @@ export async function openTrade(sdk: TradeSdk, partner: string, opts: { timeoutM
             continue;
         }
         if (firstClickTick < 0) firstClickTick = s!.tick;
+        const clickTick = s!.tick;
         void sdk.sendTradeRequest(player.index);
-        const opened = await waitState(sdk, st => tradeOf(st).isOpen, Math.min(8_000, deadline - Date.now()));
-        if (opened) return { ok: true, firstClickTick };
+        const refusal = (st: BotWorldState) => st.gameMessages.find(m => m.tick >= clickTick && m.tick > lastRefusal && TRADE_BUSY_RE.test(m.text));
+        await waitState(sdk, st => tradeOf(st).isOpen || refusal(st) !== undefined, Math.min(8_000, deadline - Date.now()));
+        const after = sdk.getState();
+        if (after && tradeOf(after).isOpen) return { ok: true, firstClickTick };
+        const refused = after ? refusal(after) : undefined;
+        if (refused) lastRefusal = refused.tick;
     }
     return { ok: false, firstClickTick, reason: 'no_response' };
 }
@@ -549,8 +559,11 @@ export function give(sdk: TradeSdk, partner: string, specs: readonly GiveSpec[],
     return giveImpl(sdk, partner, specs, opts);
 }
 
+/** expectTheirs for a giver that takes back whatever the partner hands over in the same trade, including nothing. */
+export const ANY_OFFER: WantSpec[] = [{ item: /./, amount: 0 }];
+
 export interface GiveOptions {
-    /** What the partner may put up (default: nothing). */
+    /** What the partner may put up (default: nothing; ANY_OFFER for anything). */
     expectTheirs?: WantSpec[];
     maxTicks?: number;
     openTimeoutMs?: number;

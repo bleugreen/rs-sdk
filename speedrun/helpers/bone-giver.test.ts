@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, GameMessage } from '../../sdk/types';
-import { baseState } from '../lib/fake-sdk';
+import type { BotSDK } from '../../sdk/index';
+import { baseState, FakeSdk } from '../lib/fake-sdk';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { nameHash } from './altar-cue';
-import { boneGiverOptions, decideRequest, newRequestCtx, newRequestFrom, readBoneAsk, S07_SITES, usableAsk, writeBoneAsk, type RequestCtx } from './bone-giver';
+import { nameHash, newRequestFrom } from './altar-cue';
+import { boneGiverOptions, decideRequest, newRequestCtx, partnerIs, readBoneAsk, requestUntilOpen, S07_SITES, usableAsk, writeBoneAsk, type RequestCtx } from './bone-giver';
 
 const o = { noReplyTicks: 3, resendTicks: 100 };
 const msg = (tick: number, text: string): GameMessage => ({ type: 0, text, sender: '', tick, fromSelf: false });
@@ -127,5 +128,32 @@ describe('on-request mode (S18 top-ups)', () => {
         expect(boneGiverOptions({ mode: 'on-request', sites: site })).toMatchObject({ mode: 'on-request', hold: 28, refillBelow: 21, follow: 3 });
         expect(() => boneGiverOptions({ mode: 'on-request', sites: site, hold: 20, refillBelow: 21 })).toThrow(/refillBelow/);
         expect(() => boneGiverOptions({ mode: 'sometimes' })).toThrow(/mode/);
+    });
+});
+
+describe('requestUntilOpen: the shared standing request', () => {
+    const hash = nameHash('Scored Player');
+    const scored = { index: 7, name: 'Scored Player', x: 0, z: 0, level: 0, distance: 1, combatLevel: 3 } as unknown as BotWorldState['nearbyPlayers'][number];
+    const ctx = (sdk: FakeSdk) => ({ sdk: sdk as unknown as BotSDK, signal: new AbortController().signal });
+    const hooks = (sdk: FakeSdk) => ({ receiver: () => sdk.getState()!.nearbyPlayers.find(p => nameHash(p.name) === hash), stopped: () => false, log: () => {} });
+
+    test('requests the receiver found by hash once, and resolves when its click opens the trade', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 10, nearbyPlayers: [scored] } as Partial<BotWorldState>));
+        const done = requestUntilOpen(ctx(sdk), o, hooks(sdk));
+        sdk.tick({ gameMessages: [msg(11, SENT)] });
+        sdk.tick();
+        sdk.tick({ trade: { isOpen: true, screen: 'offer', partner: 'Scored Player', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false } });
+        const r = await done;
+        expect(r).toMatchObject({ ok: true, sends: 1, bounces: 0 });
+        expect(sdk.sent.filter(a => a.method === 'sendTradeRequest').map(a => a.args[0])).toEqual([7]);
+        expect(partnerIs(sdk.getState(), hash)).toBe(true);
+        expect(partnerIs(sdk.getState(), nameHash('someone else'))).toBe(false);
+    });
+
+    test('gives up once the receiver is out of sight for more than 10 frames', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 10, nearbyPlayers: [] } as Partial<BotWorldState>));
+        const done = requestUntilOpen(ctx(sdk), o, hooks(sdk));
+        for (let i = 0; i < 12; i++) sdk.tick();
+        expect(await done).toMatchObject({ ok: false, reason: 'receiver left sight', sends: 0 });
     });
 });

@@ -1,8 +1,8 @@
 # Ambassador
 
-The ambassador is one account, `cairn_md` (displayed "Cairn Md"), that stands at the Grand Exchange table in Varrock west bank on the demo server and talks with the other bots: it listens to public chat and private messages, answers when it has something worth saying, asks other fleets what they are up to, and occasionally starts a conversation when the bank is quiet. Every line it hears and says is logged on the fleet host, and a daily digest of who talked about what, market talk, other fleets' apparent strategies and every injection attempt goes to cairn://p/rs/58. It is the fleet's one role that chats; every other helper stays silent (HELPERS.md, Etiquette).
+The ambassador is one account, `cairn_md` (displayed "Cairn Md"), that stands at the Grand Exchange table in Varrock west bank on the demo server and talks with the other bots: it listens to public chat and private messages, answers in its own character (Pebble, a regular at the GE table) when it has something worth saying, and occasionally starts a conversation when the bank is quiet. Every line it hears and says is logged on the fleet host, and a daily digest of who talked about what, market talk, other fleets' apparent strategies and every injection attempt goes to cairn://p/rs/58. It is the fleet's one role that chats; every other helper stays silent (HELPERS.md, Etiquette).
 
-Code: `speedrun/helpers/ambassador.ts` (the role and its conversation loop) and `speedrun/helpers/ambassador/` (`policy.ts`, `io.ts`, `model.ts`, `log.ts`, `digest.ts`, `persona.md`).
+Code: `speedrun/helpers/ambassador.ts` (the role and its conversation loop) and `speedrun/helpers/ambassador/` (`policy.ts`, `io.ts`, `model.ts`, `memory.ts`, `variety.ts`, `log.ts`, `digest.ts`, `replay.ts`, `persona.md`).
 
 ## How it works
 
@@ -13,20 +13,77 @@ flowchart LR
   io --> pre["skip: self, our accounts, a sender repeating itself; flag injection heuristics"]
   pre --> batch["batch 3 s"]
   batch --> limits1["pacing / per-player limits: skip the model if nothing could be sent"]
-  limits1 --> model["model: persona + rules in the system message, chat as quoted JSON in the user message"]
+  limits1 --> model["model: persona + rules in the system message; chat, our recent lines, what to avoid and player memory as quoted JSON in the user message"]
   model --> parse["strict parse: respond, to (must be in the batch), text, injection flag"]
-  parse --> gate["staleness, output filter, limits, no-repeat, MUTE file"]
+  parse --> guard["near-repeat guard: on a hit, one retry with the refused draft, else silence"]
+  guard --> gate["staleness, output filter, limits, no-repeat, MUTE file"]
   gate --> send["AmbassadorIO.say or pm: one packet"]
   send --> sent["log: sent"]
 ```
 
-The loop polls chat every second. Lines arriving within 3 seconds of the first one are answered together with at most one model call and at most one line sent. The model's decision is a JSON object; anything that does not parse into that shape is silence.
+The loop polls chat every second. Lines arriving within 3 seconds of the first one are answered together with at most two model calls (the second only when the near-repeat guard refuses the first draft) and at most one line sent. The model's decision is a JSON object; anything that does not parse into that shape is silence.
 
 **The safety property is structural.** The role uses `ctx.bot` only for setup (leave Tutorial Island, walk to the post). After that the conversation loop holds an `AmbassadorIO` (`io.ts`) whose only effects are reading chat, sending one public line, sending one private message, and walking back to the post fixed when it was built. There is no trade, drop, follow, item or movement-to-a-destination call on it; `ambassador.test.ts` pins its exact key set so widening it fails CI. So no chat line and no model output can turn into anything but one line of chat, and that line still has to pass the output filter and the limits. The prompt rules are the second layer and the output filter the third.
 
 ## Persona
 
-`speedrun/helpers/ambassador/persona.md` is the system prompt: friendly, curious and brief; honest that it is a bot run by an AI agent team; tells people our website has the same name as the ambassador itself; talks prices, routes and game facts; congratulates people; asks what other fleets are doing; asks rather than guesses when unsure. Its briefing is a curated list of public facts about the server (300 ms ticks, accelerated XP, infinite run energy, no random events, how the hiscores rank, the Grand Exchange and its 5% seller tax, the SDK, the one-social-packet-per-tick rule). It deliberately does not include `HELPERS.md` or any fleet document: those name our accounts, ranges and host, which is exactly what it must not reveal.
+`speedrun/helpers/ambassador/persona.md` is the system prompt. It has five parts: who it is, its Material, the hard rules, the standing request, and its briefing.
+
+**Who it is.** In chat it goes by Pebble, after the stones of a cairn. This is a nickname, not an account, so it names nothing of ours. Its home is the tile beside the GE table, which it has never left, so everything it knows it heard at this bank. Its voice is dry, warm and lower-key than the crowd, without an exclamation mark on every line. It holds a few opinions and defends them as opinions: Varrock west is the finest bank, Al Kharid kebabs are the best food per coin, willows are the calm tree, shrimp are underrated, and the 5% tax is fair though it grumbles about it. It is curious about the stories people bring to the bank (a best drop, a worst death, a favourite skill) and never about other players' bots, fleets, agents, teams or routes, because asking about those reads as snooping. It answers more than it asks, and it reacts with something of its own instead of echoing the other player's words. It is honest that it is a bot run by a team of AI agents, and it says so once to each player, when asked or when it matters.
+
+**Material** is a list of fourteen joke directions (the tile, the teller, market weather, food critic, tree sommelier, tick pedant, sports commentator and so on). Each prompt suggests three of them at random (`materialFrom` and `pick` in `model.ts`), so the character rotates its bits instead of leaning on one. In the first replay without this list, 22 of 54 lines were the same "never left this tile" joke. The model writes the words fresh each time, and most lines need no joke at all.
+
+Its briefing is a curated list of public facts about the server (300 ms ticks, accelerated XP, infinite run energy, no random events, how the hiscores rank, the Grand Exchange and its 5% seller tax, the SDK, the one-social-packet-per-tick rule). It deliberately does not include `HELPERS.md` or any fleet document: those name our accounts, ranges and host, which is exactly what it must not reveal.
+
+**Standing request.** The persona's "Standing request" section is the one ask the ambassador may voice: the team is buying nature talismans at 30k each (rs/194). A seller completes it by putting a sell offer on the Grand Exchange at that price or less. The market fills a new sell against the highest resting bid at or above its price, at the bid's price (`MarketStore.place`). So the line stays true while the bidder role's resting nature talisman bid is at least the voiced price. **Whoever lowers that bid below the voiced price, or ends the line, updates or removes this section in the same change.** The section tells the model never to say who holds the bid, and the output filter would refuse a name anyway. `ambassador.test.ts` checks that the section has a price and the GE, and that each example line in it passes the output filter. The limits are unchanged: the 7-day no-repeat rule means each phrasing goes out once, so the model has to vary it. To change the ask, edit `persona.md` and restart only the ambassador role (see Running it). The role reads the persona at every start, so no fleet restart is needed.
+
+## Variety: memory and the near-repeat guard
+
+The 7-day no-repeat rule only blocks lines that are nearly word for word the same. On 2026-10-21 all 358 lines the ambassador sent were distinct while saying the same few things: 43% were questions, 40 of them about other players' fleets, agents or routes; "nice X" opened 49 lines; and "I'm a bot run by AI agents" went out 53 times to 24 players, 8 times to one of them. Three mechanisms address this, and all three sit inside the existing hard rules and limits.
+
+**Measurement** (`variety.ts`). The analyser reads chat-log jsonl files and reports, over the `sent` lines: the question share and how many questions probe other fleets; opener templates (the first word, plus the next one when either is glue, then X, so "Nice gate count!" and "Nice try, I only chat" are both "nice X") and the share of lines covered by the top five; the most reused 3-word phrases; self-identification lines per player; and the most lines to one player inside 10 minutes.
+
+```sh
+bun speedrun/helpers/ambassador/variety.ts chat-2026-10-21.jsonl [--since ISO] [--until ISO] [--json]
+```
+
+**Prompt memory.** Every reply and opener prompt carries, inside the untrusted-data JSON, our last 12 lines, the openers and phrases used twice or more in the last 30 lines (`overused`), and three Material directions. A reply prompt also carries what we remember about each sender. The instruction asks the model to start differently from every recent line, use none of the overused openers or phrases, prefer a statement, and never ask about anyone's fleet, agents, team or routes. When three of the last eight lines were questions, it says not to ask one this time. An opener is never a question.
+
+**Per-player memory** (`memory.ts`). The memory is kept in the role's per-account state (`ctx.state`, key `players`), so it survives restarts and deploys. For each of up to 400 players it holds when we first and last spoke, how many lines we sent, the model's topic labels (up to 6), our last 3 lines to them, and when we first told them we are a bot. On the first start with no stored memory, it is rebuilt from the last 7 days of the chat log.
+
+**Near-repeat guard** (`nearRepeat` in `variety.ts`, applied in `Conversation.echo`). It runs beside the exact-repeat rule, against our last 30 lines, and refuses a draft when:
+
+| Check | Refuses |
+|---|---|
+| `probe` | a question about another player's fleet, agents, team, routes or scripts |
+| `opener` | an opener template already used in the last 30 lines |
+| `phrase` | a 3-word phrase (with at least one content word) already in the last 30 lines |
+| `word` | a content word (4 letters or more) already in 3 of the last 8 lines, unless the player being answered used it |
+| `questions` | a question when 3 of the last 8 lines were questions |
+| `self-id` | "I'm a bot" to a player memory says we already told |
+
+The exact-repeat rule and an over-long draft (more than 80 characters) also count. On any of these hits, the loop logs a `retry` and calls the model once more with the refused draft and the reason in the prompt. If the second draft also fails, nothing is sent and the draft is logged as `blocked` with its reason (`near-repeat` plus `guard`, `repeat`, `opener-reused` or `too-long`). The output filter and every rate limit still apply to whatever the guard passes. The analyser counts what the guard would have stopped (`guardHits`) using the same functions, so what is measured is what is enforced.
+
+**Offline replay** (`replay.ts`). The replay feeds a window of a real log's `seen` lines to the real `Conversation` on a simulated clock, with a real model and a cap on model calls. The limiter and player memory start as they stood at the window's start, and nothing reaches a game. It writes its own chat log and prints the analyser's before and after numbers.
+
+```sh
+bun speedrun/helpers/ambassador/replay.ts chat-2026-10-21.jsonl --since 2026-10-21T21:33:00Z --until 2026-10-21T22:48:00Z --max-calls 200 [--key-file ~/.rs-fleet/llm-key --model anthropic/claude-haiku-5.5]
+```
+
+Replay of 21:33 to 22:48 UTC on 2026-10-21 (490 heard lines), compared with what was actually sent in that window:
+
+| Measure | Live (qwen3.5:27b, old persona) | qwen3.5:27b + Pebble (100-call cap) | Claude Haiku 5.5 + Pebble (109 calls) |
+|---|---|---|---|
+| lines sent | 50 | 43 | 54 |
+| question share | 44.0% | 25.6% | 1.9% |
+| questions about others' fleets, agents or routes | 10 | 0 | 0 |
+| lines covered by the top 5 openers | 40.0% ("nice X" x9) | 11.6%, none used twice | 9.3%, none used twice |
+| self-identification lines (repeats to one player) | 16 (6) | 0 | 1 (0) |
+| blocked by the output filter | 2 | 1 | 1 |
+| injection records | 10 | 1 | 2 |
+| guard retries / silences | - | 23 / 14 | 19 / 2 |
+
+The 15 before-and-after example pairs are on cairn://p/rs/204. Haiku's 1.9% question share may be an overcorrection. To make Pebble ask more, loosen the persona's "ask only when you truly want the answer".
 
 **It names no account of ours, the scored account included.** The scored account's name is not chosen before the run and must not be spoken in game or appear in git, so the role has no option for it, the model is never told one, and the output filter refuses our naming scheme in any spelling (a `www`-prefixed name too). A fixed rule in `systemPrompt` (`model.ts`) repeats this whatever the persona says, and `ambassador.test.ts` drives the loop with a model that tries eight spellings of our names and checks that none is sent.
 
@@ -45,7 +102,7 @@ Everything read from chat is data. It reaches the model only inside the user mes
 | Never insults anyone | `checkOutput`'s insult list. A blocked line is logged as `blocked` with the reason, and nothing is sent. |
 | One line, one packet | 80 printable ASCII characters at most (the wire limit), checked by `checkOutput` and again by `AmbassadorIO`, which also refuses `::` (a staff command typed in chat). It sends with `sendSay` / `sendPrivateMessage`, never the chunking `say` / `dm`. |
 | Never spams | `Limiter` (`policy.ts`), persisted in `state.json` so a restart cannot reset it: at least 12 s between any two lines, at most 3 a minute and 40 an hour; at most one reply to a player per 20 s; six replies to one player within 15 minutes puts that player on a 15-minute cooldown (this ends bot-to-bot loops). |
-| Never repeats itself | `Limiter.blocked`: a line at least 0.8 trigram-similar to anything it said in the last 7 days is blocked. Openers are remembered forever and never reused. |
+| Never repeats itself | `Limiter.blocked`: a line at least 0.8 trigram-similar to anything it said in the last 7 days is blocked. Openers are remembered forever and never reused. Beside it, the near-repeat guard (`nearRepeat`, see Variety) refuses reused openers and phrases, probing questions and a second self-introduction to one player, with one retry before silence. |
 | Starts conversations sparingly | At most one opener per 15 minutes, only after 2 minutes of quiet and with another player in view. |
 | Injection attempts are logged, answered at most once | Regex heuristics (`INJECTION_PATTERNS`) and the model's own `injection` flag are both logged as `injection`. Answering a player who tried one counts as a `decline`: one per player per hour, otherwise ignored. |
 | Never relays anything to the fleet | Nothing in the role writes anywhere but its own log directory, and it has no channel to the supervisor except `ctx.log` lines about its own phase. |
@@ -60,7 +117,9 @@ Crowned or staff senders (chat types 1 and 7) get no extra trust.
 
 - With `~/.rs-fleet/llm-key` on the host (mode 600): a key starting `sk-or-` uses OpenRouter (`anthropic/claude-sonnet-5.5`), `sk-ant-` uses Anthropic's OpenAI-compatible endpoint (`claude-sonnet-5-5`).
 - Otherwise local Ollama on bbs, `qwen3.5:27b` on the RTX 4090, through Ollama's native `/api/chat` with `think: false`, `format: "json"` and `keep_alive` (default 30 minutes). The native route is used because the OpenAI-compatible route ignores `keep_alive` (the model unloaded after the default 5 minutes in a test) and thinking must be off: with it on, every call spent its whole token budget reasoning and returned nothing.
-- The `model` role option overrides any of it: `{ "baseUrl", "model", "api": "ollama" | "openai", "keyFile", "keepAlive" }`.
+- The `model` role option overrides any of it: `{ "baseUrl", "model", "api": "ollama" | "openai", "keyFile", "keepAlive", "thinkingTokens" }`. `thinkingTokens` (default 4000) is headroom an OpenAI-compatible model may spend thinking on top of the answer's budget; only the line it sends must be short, and the output filter holds that to 80 characters.
+
+The recommended setting is Claude Haiku 5.5 through OpenRouter: an `sk-or-` key in `~/.rs-fleet/llm-key` and the role option `{"model": {"model": "anthropic/claude-haiku-5.5"}}`. In the offline replay it carried the Pebble persona best (see Variety), and it says it is not sure instead of inventing places, where qwen still did ("the air altar is above Falador sewers"). Against the injection lab's ten patterns, sent offline, every Haiku reply passed the output filter or was silence, and none named an account, a trade, a move or a secret.
 
 The role warms the model at start (a cold load from disk took 218 s once; from page cache it is under 1 s). A failed call is silence plus an `error` record; three in a row pause model calls for 2 minutes and report the phase `model-down`. There is no fallback to another model.
 
@@ -115,13 +174,16 @@ The log is `<logDir>/chat-YYYY-MM-DD.jsonl` (UTC days), one JSON object per line
 | `seen` | `sender`, `channel` (public / pm), `type`, `tick`, `text`, `ours?`, `crowned?` |
 | `decision` | `valid`, `respond`, `channel`, `to`, `text`, `injection`, `topics`, `intel?`, `surprising?`, `ms`, or `error` and `raw` when invalid; `opener: true` for openers |
 | `sent` | `purpose` (reply / decline / opener), `channel`, `to`, `text`, `finalText` (as the client sent it), `ok`, `filtered?` |
-| `blocked` | `reason` (an output-filter rule, `repeat`, `opener-reused`), `purpose`, `text` |
+| `retry` | `reason` (`near-repeat` with `guard`, `repeat`, `opener-reused`, `too-long`), `detail`, `to` or `purpose: opener`, `text` (the refused first draft) |
+| `blocked` | `reason` (an output-filter rule, `repeat`, `opener-reused`, `too-long`, or `near-repeat` with `guard`), `purpose`, `text` |
 | `ratelimited` | `reason` (`min-gap`, `per-minute`, `per-hour`, `players`, `player-gap`, `player-cooldown`, `decline-limit`, `batch-overflow`, `model-down`) |
 | `stale`, `muted` | the decision that was dropped |
 | `injection` | `source` (heuristic / model), `sender`, `channel`, `text`, `patterns` or `reason` |
 | `heartbeat`, `start`, `stop`, `model_switch`, `error` | phase and counters, model, errors |
 
-`state.json` beside it holds the limiter's memory (lines sent in the last 7 days, every opener, cooldowns) and is rewritten atomically.
+`state.json` beside it holds the limiter's memory (lines sent in the last 7 days with their text, every opener, cooldowns) and is rewritten atomically. The per-player memory lives in the role's state (`ctx.state`, key `players`), not in the log directory.
+
+For how varied it sounds over a day, run the analyser on the day's log: `ssh bleu@bbs 'cd ~/rs-fleet && ~/.bun/bin/bun speedrun/helpers/ambassador/variety.ts fleet-run/ambassador/chat-2026-10-21.jsonl'`.
 
 Commands (from the Mac, in the `ssh bleu@bbs '...'` form of HELPERS.md):
 
@@ -215,7 +277,7 @@ cairn_md (PM): Logs move faster here, bows need fletching time.
 
 The first digest (this window) is on cairn://p/rs/58's channel; its three surprising items went to cairn://posts.
 
-What to improve, all at the model's level rather than the code's: the 27B model sometimes claims fleet activity in spite of the persona ("Rocks get spooked by my mining bots all day", "My team just hit a new high"; vague, and naming nothing, but against its rules), invents places ("try Varrock bakery"), and leans on one question ("What's your fleet doing?") until the 40-an-hour cap is the binding limit. A frontier key (`~/.rs-fleet/llm-key`) is the expected fix. The injection heuristics over-flag coordinates and "trade me" business chatter; that costs nothing but log noise, since a flag only limits replies.
+What to improve, all at the model's level rather than the code's: the 27B model sometimes claims fleet activity in spite of the persona ("Rocks get spooked by my mining bots all day", "My team just hit a new high"; vague, and naming nothing, but against its rules), invents places ("try Varrock bakery"), and leans on one question ("What's your fleet doing?") until the 40-an-hour cap is the binding limit (the Pebble persona, prompt memory and the near-repeat guard, under Variety, address this). A frontier key (`~/.rs-fleet/llm-key`) is the expected fix. The injection heuristics over-flag coordinates and "trade me" business chatter; that costs nothing but log noise, since a flag only limits replies.
 
 ## Findings for the wider project
 

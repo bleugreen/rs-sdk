@@ -18,16 +18,21 @@ import { join } from 'node:path';
 import { runStandalone, type Role, type RoleContext } from './role';
 import { createIO, type AmbassadorIO, type Post } from './ambassador/io';
 import { ChatLog, DEFAULT_LOG_DIR, ROOT, readRecords } from './ambassador/log';
+import { PlayerMemory, PLAYERS_KEY } from './ambassador/memory';
 import {
+    materialFrom,
     ModelClient,
     openerPrompt,
+    pick,
     parseDecision,
     parseOpener,
     replyPrompt,
     systemPrompt,
     type ChatModel,
     type ContextLine,
-    type ModelOptions
+    type Decision,
+    type ModelOptions,
+    type VarietyHints
 } from './ambassador/model';
 import {
     buildDenyList,
@@ -44,6 +49,7 @@ import {
     type DenyList,
     type SendKind
 } from './ambassador/policy';
+import { GUARD, isQuestion, isSelfId, nearRepeat, overused, sentLines } from './ambassador/variety';
 
 /** The ground tile beside the Grand Exchange table (sdk/ge-actions.ts GE_STAND). */
 export const GE_POST: Post = { x: 3181, z: 3443, tolerance: 3 };
@@ -106,7 +112,9 @@ export const LOOP = {
     modelTimeoutMs: 30_000,
     /** After this many model failures in a row, wait modelPauseMs before calling again. */
     modelDownAfter: 3,
-    modelPauseMs: 2 * 60_000
+    modelPauseMs: 2 * 60_000,
+    /** Directions from the persona's Material suggested with each prompt. */
+    materialPicks: 3
 } as const;
 
 export interface Clock {
@@ -143,6 +151,22 @@ export interface ConversationDeps {
     report(message: string, data?: Record<string, unknown>): void;
     /** Recent conversation to start from (rebuilt from today's log after a restart). */
     context?: ContextLine[];
+    /** Who we have talked to (from the role's state); updated on every send. */
+    memory?: PlayerMemory;
+    /** Persist the memory after a send (ctx.state). */
+    saveMemory?(memory: PlayerMemory): Promise<void> | void;
+    /** The persona's Material (materialFrom); a few directions are suggested with each prompt. */
+    material?: readonly string[];
+    /** For the Material picks (default Math.random). */
+    random?: () => number;
+}
+
+/** Why a drafted line would sound like one already said; the draft is retried once, then dropped. */
+interface Echo {
+    reason: 'repeat' | 'opener-reused' | 'near-repeat' | 'too-long';
+    /** For near-repeats: which check ('opener', 'phrase', 'probe', 'questions', 'self-id'). */
+    guard?: string;
+    detail: string;
 }
 
 interface Pending extends ChatLine {
@@ -151,7 +175,7 @@ interface Pending extends ChatLine {
 }
 
 export class Conversation {
-    readonly counts = { seen: 0, answered: 0, sent: 0, blocked: 0, ratelimited: 0, injections: 0, modelErrors: 0 };
+    readonly counts = { seen: 0, answered: 0, sent: 0, blocked: 0, ratelimited: 0, injections: 0, modelErrors: 0, retries: 0 };
     private pending: Pending[] = [];
     private context: ContextLine[];
     private lastHeardAt: number;
@@ -245,8 +269,85 @@ export class Conversation {
         if (this.failuresInRow >= LOOP.modelDownAfter) this.modelPausedUntil = this.d.clock.now() + LOOP.modelPauseMs;
     }
 
+    /** How we have been sounding, for the prompt: our latest lines, what we overuse, what we remember about `players`. */
+    private hints(players: readonly string[] | null): VarietyHints {
+        const recent = this.d.limiter.recentTexts(GUARD.window);
+        return {
+            yourLastLines: recent,
+            avoid: overused(recent),
+            noQuestion: recent.slice(-GUARD.questionWindow).filter(isQuestion).length >= GUARD.questionMax,
+            ...(players && this.d.memory ? { players: this.d.memory.recall(players, this.d.clock.now()) } : {}),
+            ...(this.d.material?.length ? { material: pick(this.d.material, LOOP.materialPicks, this.d.random) } : {})
+        };
+    }
+
+    /**
+     * Whether a drafted line would sound like one already said: an exact repeat (the
+     * limiter's 7-day rule), a near-repeat of our latest lines (variety.ts), or a second
+     * "I'm a bot" to a player we have already told.
+     */
+    private echo(kind: SendKind, to: string | null, text: string, heard: readonly string[] = []): Echo | null {
+        const { limiter, memory, clock } = this.d;
+        // Over-long is the one output-filter failure worth a second try; checkOutput still decides.
+        const length = text.replace(/\s+/g, ' ').trim().length;
+        if (length > LIMITS.maxLen) return { reason: 'too-long', detail: `${length} characters; the limit is ${LIMITS.maxLen}` };
+        const exact = limiter.repeatOf(clock.now(), kind, text);
+        if (exact) return { reason: exact, detail: 'you said nearly this before' };
+        const near = nearRepeat(text, limiter.recentTexts(GUARD.window), GUARD, heard);
+        if (near) return { reason: 'near-repeat', guard: near.reason, detail: `${near.reason}: ${near.detail}` };
+        if (to && memory?.introduced(to) && isSelfId(text)) return { reason: 'near-repeat', guard: 'self-id', detail: 'you already told them you are a bot' };
+        return null;
+    }
+
+    /** One model call for a reply; logs the decision and a model-flagged injection (unless already flagged). */
+    private async decide(user: string, open: Pending[], retry: boolean, flagged: boolean): Promise<Decision | null> {
+        const { log, clock, model } = this.d;
+        const start = clock.now();
+        let raw: string;
+        try {
+            raw = await model.complete(this.d.system, user, { timeoutMs: LOOP.modelTimeoutMs });
+        } catch (e) {
+            this.modelFailed(e, retry ? 'retry' : 'reply');
+            return null;
+        }
+        this.failuresInRow = 0;
+        const ms = clock.now() - start;
+        const parsed = parseDecision(raw, open);
+        if (!parsed.ok) {
+            log.write('decision', { valid: false, error: parsed.error, raw: raw.slice(0, 300), ms, ...(retry ? { retry } : {}) });
+            return null;
+        }
+        const d = parsed.value;
+        log.write('decision', {
+            valid: true,
+            respond: d.respond,
+            channel: d.channel,
+            to: d.to,
+            text: d.text,
+            injection: d.injection,
+            ...(d.injection ? { injectionFrom: d.injectionFrom, injectionReason: d.injectionReason } : {}),
+            topics: d.topics,
+            ...(d.intel ? { intel: d.intel } : {}),
+            ...(d.surprising ? { surprising: d.surprising } : {}),
+            ms,
+            ...(retry ? { retry } : {})
+        });
+        if (d.injection && !flagged) {
+            this.counts.injections++;
+            const from = d.injectionFrom ?? d.to;
+            const line = open.find(l => l.sender === from);
+            log.write('injection', { source: 'model', sender: from, channel: line?.channel, reason: d.injectionReason, text: line?.text ?? '' });
+        }
+        return d;
+    }
+
+    private refuse(echo: Echo, kind: SendKind, channel: Channel, to: string | null, text: string): void {
+        this.counts.blocked++;
+        this.d.log.write('blocked', { reason: echo.reason, ...(echo.guard ? { guard: echo.guard } : {}), purpose: kind, channel, to, text });
+    }
+
     private async answer(batch: Pending[]): Promise<void> {
-        const { io, log, limiter, clock, model } = this.d;
+        const { io, log, limiter, clock } = this.d;
         const now = clock.now();
         const earlier = this.context.slice(0, Math.max(0, this.context.length - batch.length));
         const global = limiter.globalBlocked(now);
@@ -265,42 +366,28 @@ export class Conversation {
             log.write('ratelimited', { reason: 'model-down', lines: batch.length });
             return;
         }
-        let raw: string;
-        try {
-            raw = await model.complete(this.d.system, replyPrompt(earlier, open, io.nearbyPlayers()), { timeoutMs: LOOP.modelTimeoutMs });
-        } catch (e) {
-            this.modelFailed(e, 'reply');
-            return;
+        const nearby = io.nearbyPlayers();
+        const hints = this.hints(open.map(l => l.sender));
+        const first = await this.decide(replyPrompt(earlier, open, nearby, hints), open, false, false);
+        if (!first?.respond || !first.to) return;
+        let d: Decision = first;
+        const kindOf = (x: Decision) =>
+            (x.injection && (x.injectionFrom === null || x.injectionFrom === x.to)) || open.some(l => l.sender === x.to && l.strong) ? 'decline' : 'reply';
+        const heard = (x: Decision) => open.filter(l => l.sender === x.to).map(l => l.text);
+        const echo = this.echo(kindOf(d), d.to, d.text, heard(d));
+        if (echo) {
+            // One more try with the refused draft in front of the model, then silence.
+            this.counts.retries++;
+            log.write('retry', { reason: echo.reason, ...(echo.guard ? { guard: echo.guard } : {}), detail: echo.detail, to: d.to, text: d.text });
+            if (!this.modelAvailable(clock.now())) return;
+            const again = await this.decide(replyPrompt(earlier, open, nearby, { ...hints, rejected: { text: d.text, why: echo.detail } }), open, true, first.injection);
+            if (!again?.respond || !again.to) return;
+            // An injection flag on either draft stands.
+            d = first.injection && !again.injection ? { ...again, injection: true, injectionFrom: first.injectionFrom } : again;
+            const still = this.echo(kindOf(d), d.to, d.text, heard(d));
+            if (still) return this.refuse(still, kindOf(d), d.channel, d.to, d.text);
         }
-        this.failuresInRow = 0;
-        const ms = clock.now() - now;
-        const parsed = parseDecision(raw, open);
-        if (!parsed.ok) {
-            log.write('decision', { valid: false, error: parsed.error, raw: raw.slice(0, 300), ms });
-            return;
-        }
-        const d = parsed.value;
-        log.write('decision', {
-            valid: true,
-            respond: d.respond,
-            channel: d.channel,
-            to: d.to,
-            text: d.text,
-            injection: d.injection,
-            ...(d.injection ? { injectionFrom: d.injectionFrom, injectionReason: d.injectionReason } : {}),
-            topics: d.topics,
-            ...(d.intel ? { intel: d.intel } : {}),
-            ...(d.surprising ? { surprising: d.surprising } : {}),
-            ms
-        });
-        if (d.injection) {
-            this.counts.injections++;
-            const from = d.injectionFrom ?? d.to;
-            const line = open.find(l => l.sender === from);
-            log.write('injection', { source: 'model', sender: from, channel: line?.channel, reason: d.injectionReason, text: line?.text ?? '' });
-        }
-        if (!d.respond || !d.to) return;
-        const to = d.to;
+        const to = d.to!;
         const theirs = open.filter(l => l.sender === to);
         const age = clock.now() - Math.min(...theirs.map(l => l.at));
         if (age > LIMITS.staleMs) {
@@ -309,13 +396,33 @@ export class Conversation {
         }
         // Answering someone who tried an injection is a decline, whatever the text says:
         // one per player per hour, then they are ignored.
-        const suspect = (d.injection && (d.injectionFrom === null || d.injectionFrom === to)) || theirs.some(l => l.strong);
         this.counts.answered++;
-        await this.send(suspect ? 'decline' : 'reply', d.channel, to, d.text);
+        await this.send(kindOf(d), d.channel, to, d.text, d.topics);
+    }
+
+    private async opener(user: string, start: number, retry: boolean): Promise<string | null> {
+        const { log, clock, model } = this.d;
+        let raw: string;
+        try {
+            raw = await model.complete(this.d.system, user, { timeoutMs: LOOP.modelTimeoutMs });
+        } catch (e) {
+            this.modelFailed(e, 'opener');
+            return null;
+        }
+        this.failuresInRow = 0;
+        const parsed = parseOpener(raw);
+        const r = retry ? { retry } : {};
+        log.write(
+            'decision',
+            parsed.ok
+                ? { valid: true, opener: true, respond: parsed.value.respond, text: parsed.value.text, ms: clock.now() - start, ...r }
+                : { valid: false, opener: true, error: parsed.error, raw: raw.slice(0, 300), ...r }
+        );
+        return parsed.ok && parsed.value.respond ? parsed.value.text : null;
     }
 
     private async maybeOpen(now: number): Promise<void> {
-        const { io, log, limiter, model } = this.d;
+        const { io, log, limiter } = this.d;
         if (!this.d.initiate) return;
         if (now - this.lastHeardAt < LIMITS.openerQuietMs) return;
         if (now - this.lastOpenerTryAt < LOOP.openerRetryMs) return;
@@ -324,20 +431,23 @@ export class Conversation {
         const nearby = io.nearbyPlayers().filter(n => !isOurs(n) && canon(n) !== canon(this.d.selfName));
         if (!nearby.length) return;
         this.lastOpenerTryAt = now;
-        let raw: string;
-        try {
-            raw = await model.complete(this.d.system, openerPrompt(this.context, nearby, limiter.state.openers), { timeoutMs: LOOP.modelTimeoutMs });
-        } catch (e) {
-            this.modelFailed(e, 'opener');
-            return;
+        const hints = this.hints(null);
+        let text = await this.opener(openerPrompt(this.context, nearby, limiter.state.openers, hints), now, false);
+        if (text === null) return;
+        const echo = this.echo('opener', null, text);
+        if (echo) {
+            this.counts.retries++;
+            log.write('retry', { reason: echo.reason, ...(echo.guard ? { guard: echo.guard } : {}), detail: echo.detail, purpose: 'opener', text });
+            if (!this.modelAvailable(this.d.clock.now())) return;
+            text = await this.opener(openerPrompt(this.context, nearby, limiter.state.openers, { ...hints, rejected: { text, why: echo.detail } }), now, true);
+            if (text === null) return;
+            const still = this.echo('opener', null, text);
+            if (still) return this.refuse(still, 'opener', 'public', null, text);
         }
-        this.failuresInRow = 0;
-        const parsed = parseOpener(raw);
-        log.write('decision', parsed.ok ? { valid: true, opener: true, respond: parsed.value.respond, text: parsed.value.text, ms: this.d.clock.now() - now } : { valid: false, opener: true, error: parsed.error, raw: raw.slice(0, 300) });
-        if (parsed.ok && parsed.value.respond) await this.send('opener', 'public', null, parsed.value.text);
+        await this.send('opener', 'public', null, text);
     }
 
-    private async send(kind: SendKind, channel: Channel, to: string | null, text: string): Promise<boolean> {
+    private async send(kind: SendKind, channel: Channel, to: string | null, text: string, topics: readonly string[] = []): Promise<boolean> {
         const { io, log, limiter, clock } = this.d;
         const check = checkOutput(text, this.d.deny);
         if (!check.ok) {
@@ -377,6 +487,15 @@ export class Conversation {
             log.saveState(limiter.state);
         } catch (e) {
             log.write('error', { where: 'state', message: e instanceof Error ? e.message : String(e) });
+        }
+        if (to && this.d.memory) {
+            this.d.memory.recordSent(now, to, check.text, topics);
+            const failed = (e: unknown) => log.write('error', { where: 'memory', message: e instanceof Error ? e.message : String(e) });
+            try {
+                void Promise.resolve(this.d.saveMemory?.(this.d.memory)).catch(failed);
+            } catch (e) {
+                failed(e);
+            }
         }
         this.remember({ sender: this.d.selfName, channel, text: out.finalText || check.text, self: true });
         return true;
@@ -487,6 +606,11 @@ export const role: Role = {
             .then(() => log.write('heartbeat', { warmupMs: Date.now() - warmStart, model: model.label() }))
             .catch(e => log.write('error', { where: 'warmup', message: e instanceof Error ? e.message : String(e) }));
 
+        // Who we have talked to. The first start after this memory existed rebuilds it
+        // from the log, so nobody we already introduced ourselves to hears it again.
+        const memory = PlayerMemory.parse(ctx.state.get(PLAYERS_KEY));
+        if (memory.size === 0) memory.seed(sentLines(readRecords(o.logDir, Date.now() - LIMITS.repeatWindowMs)));
+
         const conversation = new Conversation({
             io,
             model,
@@ -499,7 +623,10 @@ export const role: Role = {
             initiate: o.initiate,
             clock: realClock,
             report: (message, data) => ctx.log(message, data),
-            context
+            context,
+            memory,
+            saveMemory: m => ctx.state.set(PLAYERS_KEY, m.toJSON()),
+            material: materialFrom(persona)
         });
         try {
             await conversation.run(ctx.signal);

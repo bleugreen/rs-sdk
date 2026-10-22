@@ -1,6 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkBotEnv, helpersReady, parseLaunchConfig, RoleLoop, type RoleProcess, roleEnv } from './standalone';
+import { DIRECT_IN_WORLD, DIRECT_IN_WORLD_RE, DIRECT_LOGOUT_RE, DIRECT_REFUSED_RE } from './role';
+import {
+    checkBotEnv,
+    directLogoutBudgetMs,
+    helpersReady,
+    parseLaunchConfig,
+    RoleLoop,
+    type RoleProcess,
+    roleEnv,
+    type Stoppable,
+    StopRequest,
+    stopAllWithin,
+    stopSummary,
+    waitWhileListed
+} from './standalone';
 
 const gw = 'ws://127.0.0.1:7795';
 
@@ -14,9 +28,21 @@ describe('launcher config', () => {
         });
         expect(c.gatewayPort).toBe(7795);
         expect(c.loginSpacingMs).toBe(5000);
+        expect(c.stopDeadlineMs).toBe(25_000);
         expect(c.accounts.map(a => a.account)).toEqual(['cairn_h70', 'cairn_h75']);
-        expect(c.accounts[1]).toMatchObject({ receiver: true, final: true, after: 'ready', args: [] });
+        expect(c.accounts[1]).toMatchObject({ receiver: true, final: true, after: 'ready', args: [], path: 'relay' });
         expect(c.runDir.endsWith('run-machine')).toBe(true);
+    });
+
+    test('path: relay by default, direct per account, nothing else', () => {
+        const c = parseLaunchConfig({
+            accounts: [
+                { account: 'cairn_h70', role: 'altar-giver', path: 'direct' },
+                { account: 'cairn_h71', role: 'altar-giver' }
+            ]
+        });
+        expect(c.accounts.map(a => a.path)).toEqual(['direct', 'relay']);
+        expect(() => parseLaunchConfig({ accounts: [{ account: 'cairn_h70', role: 'idle', path: 'gateway' }] })).toThrow(/path must be relay or direct/);
     });
 
     test('roles that already run standalone are accepted, with extra args', () => {
@@ -39,6 +65,94 @@ describe('launcher config', () => {
         expect(() => parseLaunchConfig({ accounts: [] })).toThrow();
         expect(() => parseLaunchConfig({ gatewayPort: 80, accounts: [{ account: 'cairn_h70', role: 'idle' }] })).toThrow(/gatewayPort/);
     });
+
+    test('stopDeadlineMs: settable, never below 5 s', () => {
+        expect(parseLaunchConfig({ stopDeadlineMs: 12_000, accounts: [{ account: 'cairn_h70', role: 'idle' }] }).stopDeadlineMs).toBe(12_000);
+        expect(() => parseLaunchConfig({ stopDeadlineMs: 1000, accounts: [{ account: 'cairn_h70', role: 'idle' }] })).toThrow(/stopDeadlineMs/);
+        expect(() => parseLaunchConfig({ stopDeadlineMs: 'soon', accounts: [{ account: 'cairn_h70', role: 'idle' }] })).toThrow(/stopDeadlineMs/);
+    });
+});
+
+describe('stopAllWithin: one deadline for the whole stop', () => {
+    const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+    function account(stopMs: number | 'hang' | 'throw') {
+        const a = { deadlines: [] as number[], kills: 0 } as Stoppable & { deadlines: number[]; kills: number };
+        a.stop = async deadline => {
+            a.deadlines.push(deadline);
+            if (stopMs === 'hang') return new Promise<void>(() => undefined);
+            if (stopMs === 'throw') throw new Error('logout failed');
+            await sleep(stopMs);
+        };
+        a.kill = () => void a.kills++;
+        return a;
+    }
+
+    test('accounts stop in parallel, not one after another, and none is killed', async () => {
+        const accounts = [account(80), account(80), account(80), account(80)];
+        const t0 = Date.now();
+        const deadline = t0 + 2000;
+        expect(await stopAllWithin(accounts, deadline)).toBe(0);
+        expect(Date.now() - t0).toBeLessThan(250); // serial would be >= 320
+        expect(accounts.every(a => a.kills === 0)).toBe(true);
+        expect(accounts.every(a => a.deadlines.length === 1 && a.deadlines[0] === deadline)).toBe(true);
+    });
+
+    test('at the deadline an account still stopping is killed; the others are not, and the call returns by then', async () => {
+        const quick = account(20);
+        const stuck = account('hang');
+        const t0 = Date.now();
+        expect(await stopAllWithin([quick, stuck], t0 + 150)).toBe(1);
+        const took = Date.now() - t0;
+        expect(took).toBeGreaterThanOrEqual(140);
+        expect(took).toBeLessThan(400);
+        expect(stuck.kills).toBe(1);
+        expect(quick.kills).toBe(0);
+    });
+
+    test('a stop that fails counts as finished (it has its own fallbacks), not as late', async () => {
+        const failing = account('throw');
+        expect(await stopAllWithin([failing], Date.now() + 500)).toBe(0);
+        expect(failing.kills).toBe(0);
+    });
+
+    test('StopRequest: the deadline runs from the first request; later ones change nothing', async () => {
+        const req = new StopRequest(5000, () => undefined);
+        expect(req.deadline).toBe(Infinity);
+        const t0 = Date.now();
+        req.request('SIGTERM');
+        await req.requested;
+        expect(req.deadline - t0).toBeGreaterThanOrEqual(5000);
+        expect(req.deadline - t0).toBeLessThan(5050);
+        const first = req.deadline;
+        await sleep(20);
+        req.request('final role exited', 3);
+        expect(req).toMatchObject({ why: 'SIGTERM', code: 0, deadline: first });
+        req.finished();
+    });
+
+    test('StopRequest: the watchdog fires at the deadline if the stop is still pending, never after finished()', async () => {
+        let overdue = 0;
+        const pending = new StopRequest(60, () => void overdue++, 10);
+        pending.request('SIGTERM');
+        await sleep(40);
+        expect(overdue).toBe(0);
+        await sleep(80);
+        expect(overdue).toBe(1);
+
+        let late = 0;
+        const done = new StopRequest(60, () => void late++, 10);
+        done.request('SIGINT');
+        done.finished();
+        await sleep(120);
+        expect(late).toBe(0);
+    });
+
+    test('a deadline already past kills every account at once', async () => {
+        const a = account('hang');
+        const b = account('hang');
+        expect(await stopAllWithin([a, b], Date.now() - 1)).toBe(2);
+        expect(a.kills + b.kills).toBe(2);
+    });
 });
 
 describe('credentials and role environment', () => {
@@ -57,11 +171,86 @@ describe('credentials and role environment', () => {
         const r = roleEnv({ PATH: '/bin', GATEWAY_URL: 'wss://public' }, { ...env, GATEWAY_URL: 'wss://x' }, e, gw, '/tmp/run', 123);
         expect(r).toMatchObject({ PATH: '/bin', BOT_USERNAME: 'cairn_h70', PASSWORD: 'pw', SERVER: 'rs-sdk-demo.fly.dev', GATEWAY_URL: gw, LOGGED_IN_AT: '123', RC_CUE_DIR: '/tmp/run/rc-cue', SHOW_CHAT: 'false' });
         expect(JSON.parse(r.ROLE_OPTIONS!)).toEqual({ slot: 1 });
+        expect(r.HELPER_PATH).toBe('relay');
+    });
+
+    test('a direct-path role is told so, and gets its credentials by environment only', () => {
+        const e = parseLaunchConfig({ accounts: [{ account: 'cairn_h70', role: 'altar-giver', path: 'direct' }] }).accounts[0]!;
+        const r = roleEnv({ PATH: '/bin' }, env, e, gw, '/tmp/run', 123);
+        expect(r).toMatchObject({ HELPER_PATH: 'direct', BOT_USERNAME: 'cairn_h70', PASSWORD: 'pw', SERVER: 'rs-sdk-demo.fly.dev' });
+        expect(e.args).toEqual([]);
+    });
+
+    test("the direct role's in-world and refusal lines are the ones the launcher matches", () => {
+        expect(DIRECT_IN_WORLD_RE.test(DIRECT_IN_WORLD('cairn_h70', 'localhost:9470'))).toBe(true);
+        expect(DIRECT_REFUSED_RE.exec('[direct] login refused (code 5): Your account is already logged in.')?.[1]).toBe('5');
+    });
+
+    test("a direct role's logout budget ends before the launcher's per-account kill; a relay role gets none", () => {
+        const direct = parseLaunchConfig({ accounts: [{ account: 'cairn_h70', role: 'altar-giver', path: 'direct' }] }).accounts[0]!;
+        const relay = parseLaunchConfig({ accounts: [{ account: 'cairn_h70', role: 'altar-giver' }] }).accounts[0]!;
+        expect(roleEnv({}, env, direct, gw, '/tmp/run', 123).DIRECT_LOGOUT_MS).toBe('20000');
+        expect(roleEnv({}, env, direct, gw, '/tmp/run', 123, 60_000).DIRECT_LOGOUT_MS).toBe('55000');
+        expect(roleEnv({}, env, relay, gw, '/tmp/run', 123).DIRECT_LOGOUT_MS).toBeUndefined();
+        // The kill comes at the deadline less the gateway's 2 s; the budget ends at least 1 s before it, even at the minimum deadline.
+        for (const d of [5000, 25_000, 60_000, 300_000]) expect(directLogoutBudgetMs(d)).toBeLessThanOrEqual(d - 2000 - 1000);
+    });
+
+    test("the launcher reads the logout outcome from the direct role's last line", () => {
+        // role.ts runDirect's line(): JSON with the outcome in `logout`.
+        const roleLine = JSON.stringify({ t: 'x', account: 'cairn_t06', role: 'idle', path: 'direct', message: 'logout: QUEUED (...)', logout: 'queued' });
+        expect(DIRECT_LOGOUT_RE.exec(roleLine)?.[1]).toBe('queued');
+        expect(DIRECT_LOGOUT_RE.exec(JSON.stringify({ message: 'logout: clicking', budgetMs: 20_000 }))).toBeNull();
+    });
+});
+
+describe('stopSummary', () => {
+    test("rs/214's 22-account stop: 13 out, 9 queued behind the server's removal queue, named", () => {
+        const n = (i: number) => `cairn_t${String(i).padStart(2, '0')}`;
+        const queued = [6, 7, 8, 9, 15, 16, 17, 20, 22];
+        const accounts = Array.from({ length: 22 }, (_, i) => ({ account: n(i + 1), logout: queued.includes(i + 1) ? ('queued' as const) : ('out' as const) }));
+        const s = stopSummary(accounts);
+        expect(s).toStartWith('13 logged out; 9 logout queued at the server');
+        expect(s).toContain(queued.map(n).join(', '));
+        expect(s).toContain('waits until the server no longer lists it');
+        expect(s).not.toContain('killed');
+    });
+    test('a clean stop names nobody; never-started accounts are not counted', () => {
+        expect(stopSummary([{ account: 'cairn_h70', logout: 'out' }, { account: 'cairn_h71', logout: null }])).toBe('1 logged out');
+        expect(stopSummary([{ account: 'cairn_h70', logout: 'killed' }, { account: 'cairn_h71', logout: 'not-in-world' }])).toMatch(
+            /^1 killed at the deadline before reporting: cairn_h70; 1 not in the world\. The next launch/
+        );
+    });
+});
+
+describe('waitWhileListed', () => {
+    const clock = () => {
+        let t = 0;
+        return { now: () => t, pause: async (ms: number) => void (t += ms) };
+    };
+    test('waits while the server lists the account, then goes on as soon as it is gone', async () => {
+        const c = clock();
+        const answers = [true, true, true, false];
+        let waits = 0;
+        const r = await waitWhileListed(async () => answers.shift()!, { maxMs: 60_000, everyMs: 5000, stopped: () => false, onWait: () => waits++, ...c });
+        expect(r).toEqual({ result: 'absent', waitedMs: 15_000 });
+        expect(waits).toBe(1);
+    });
+    test('not listed, or no answer: no wait at all', async () => {
+        expect(await waitWhileListed(async () => false, { maxMs: 60_000, everyMs: 5000, stopped: () => false, ...clock() })).toEqual({ result: 'absent', waitedMs: 0 });
+        expect(await waitWhileListed(async () => null, { maxMs: 60_000, everyMs: 5000, stopped: () => false, ...clock() })).toEqual({ result: 'unknown', waitedMs: 0 });
+    });
+    test('bounded: still listed at maxMs gives up; a stop ends the wait', async () => {
+        expect(await waitWhileListed(async () => true, { maxMs: 12_000, everyMs: 5000, stopped: () => false, ...clock() })).toEqual({ result: 'still-listed', waitedMs: 12_000 });
+        let checks = 0;
+        const r = await waitWhileListed(async () => (checks++, true), { maxMs: 60_000, everyMs: 5000, stopped: () => checks >= 2, ...clock() });
+        expect(r.result).toBe('stopped');
+        expect(checks).toBe(2);
     });
 });
 
 describe('helpersReady', () => {
-    const a = (account: string, state: 'online' | 'logging-in', receiver = false) => ({ account, role: 'r', receiver, state, loggedInAt: null, logins: 1 });
+    const a = (account: string, state: 'online' | 'logging-in', receiver = false) => ({ account, role: 'r', receiver, path: 'relay' as const, state, loggedInAt: null, logins: 1 });
     test('every helper online; receivers do not count', () => {
         expect(helpersReady([a('cairn_h70', 'online'), a('cairn_h75', 'logging-in', true)])).toBe(true);
         expect(helpersReady([a('cairn_h70', 'online'), a('cairn_h71', 'logging-in')])).toBe(false);
@@ -92,7 +281,7 @@ class FakeRole implements RoleProcess {
     }
 }
 
-function harness(entry: { final?: boolean; ignoreTerm?: boolean } = {}) {
+function harness(entry: { final?: boolean; ignoreTerm?: boolean; beforeSpawn?: () => Promise<void> } = {}) {
     const procs: FakeRole[] = [];
     const lines: string[] = [];
     const finals: string[] = [];
@@ -100,6 +289,7 @@ function harness(entry: { final?: boolean; ignoreTerm?: boolean } = {}) {
     const loop = new RoleLoop(
         { account: 'cairn_h70', role: 'altar-giver', final: entry.final ?? false },
         {
+            ...(entry.beforeSpawn ? { beforeSpawn: entry.beforeSpawn } : {}),
             spawn: () => {
                 const p = new FakeRole(100 + procs.length, entry.ignoreTerm);
                 procs.push(p);
@@ -187,5 +377,43 @@ describe('RoleLoop: restart on client relaunch', () => {
         h.procs[0]!.exit(143);
         await h.loop.done;
         expect(h.procs.length).toBe(1);
+    });
+});
+
+describe('RoleLoop: a start that is a login (direct path)', () => {
+    test('every start waits for beforeSpawn first', async () => {
+        let open: () => void = () => {};
+        let calls = 0;
+        const h = harness({
+            beforeSpawn: () => {
+                calls++;
+                return new Promise<void>(r => (open = r));
+            }
+        });
+        void h.loop.start();
+        await h.tick();
+        expect(calls).toBe(1);
+        expect(h.procs.length).toBe(0); // waiting for its login slot
+        open();
+        await h.tick();
+        expect(h.procs.length).toBe(1);
+        await h.loop.relaunched();
+        await h.tick();
+        expect(calls).toBe(2);
+        expect(h.procs.length).toBe(1);
+        open();
+        await h.tick();
+        expect(h.procs.length).toBe(2);
+    });
+
+    test('a stop while waiting for a login slot starts nothing', async () => {
+        let open: () => void = () => {};
+        const h = harness({ beforeSpawn: () => new Promise<void>(r => (open = r)) });
+        const done = h.loop.start();
+        await h.tick();
+        h.stop();
+        open();
+        await done;
+        expect(h.procs.length).toBe(0);
     });
 });

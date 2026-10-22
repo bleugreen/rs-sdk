@@ -212,7 +212,7 @@ are filed under main and held until tenet 15 is answered.
 |---|---|---|---|
 | H1 mule, hand-off and quest-item giver | S01, every helper trade | on rs/41's branch (rs/49, #34) | the step packages and per-tile positioning (section 4) are rs/41's, no issue yet; quest items rs/126, rs/173 |
 | H2 stun-pack courier | S18 | on rs/41's branch (rs/141): `bone-giver.ts`'s S18 on-request mode; the Charge and Fletching stacks building (rs/163, held: not before 15:25 PDT) | rs/163's execution 2 extends `bone-giver.ts`; there is no `stun-courier.ts` |
-| H3 cannon holder | S14, S27 | on rs/41's branch (rs/125): `cannon.ts`; the hand-off to SCORED building (rs/189) | cairn_h92 holds two sets and 1,416 balls (rs/41, 15:00 PDT); rs/189 adds the one-trade hand-off and checks what `nulodion.rs2` restricts |
+| H3 cannon holder | S14, S27 | on rs/41's branch (rs/125): `cannon.ts`; the hand-off verified in the lab and on the demo (rs/189) | cairn_h92 holds two sets and 1,416 balls (rs/41, 15:00 PDT); `cannon.ts` serve mode hands over a set and balls in one trade: 4 ticks on the receiver's clock in the lab, 6 on the demo with h92 as the quest-complete receiver; the quest gates buying and Set-up, not trading |
 | H4 in-room essence giver | S06, S21 | on rs/41's branch (rs/117, rs/141): `altar-giver.ts`; the direct path building (rs/163) | `altar-giver.ts`, `altar-cue.ts`, `altar-room.ts`; rs/163's direct-path transport (PR #144; lab 21 of 21, host slot 22:05Z); there is no `rc-giver.ts`. rs/163 sized the body-altar roster at 22 givers on 23 body talismans, no keeper, on a measured 139-142-tick restock round trip (m, lab, 16:17 PDT), with 0 nature talismans held; the earlier 14 givers rested on a ~90-tick estimate (RUN-ORDER.md section 7) |
 | H5 anvil helper | S25a | building (rs/188) | `anvil.ts`, new |
 | H6 log-row dropper | S03 | building (rs/187) | `fm-row.ts`, new, first in rs/187's queue |
@@ -1197,8 +1197,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   `WorldConfig.ts:38,115` via the same doc, row 5).
 - **Postconditions:** Firemaking 99. It must pass 30 before S19 Sea Slug (read,
   `quest_seaslug.rs2:43`). Items out: none.
-- **Ticks:** expected **695** with trade refills (inferred: the model's 658 + 6 trades; the dropped
-  row's pacing around the 100-tick reveal is not built yet). Best **650** on the dropped row
+- **Ticks:** expected **695** with trade refills (inferred: the model's 658 + 6 trades). The dropped
+  row's pacing is built (H6, `helpers/fm-row.md`: two lab runs of 157 logs, 658 ticks first to last
+  fire, no gap waiting on a log). Best **650** on the dropped row
   (measured end to end 634 and 666 with the lab's restock gaps removed). Fallback **735** banking at
   Falador east (inferred) (all `skills/firemaking.md` §1).
 - **Primitives:** `act` (use tinderbox on the next log), `levelup`; `trade.receiveFrom` for the trade
@@ -1210,7 +1211,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   99 within 5% of 650 on the row (695 by trades).
 - **Acceptance, demo (throwaway):** a throwaway and a log-row helper throwaway, a 20-log normal-log
   row. Pass: 4 ticks per fire on at least 18 of 19 gaps, and nobody else's pickup broke the row.
-- **Start from:** `firemaking-line.ts`, `firemaking-drop.ts`, `firemaking-supply.ts`, `firemaking-model.ts`.
+- **Start from:** `firemaking-line.ts`, `firemaking-supply.ts`, `firemaking-model.ts`; the row from H6
+  `speedrun/helpers/fm-row.ts` (its lab driver `speedrun/lab/fm-row.ts` runs `firemaking-line.ts
+  --mode=ground` as the stand-in). The 2-row snake's lap turn costs 5 ticks per lap (`helpers/fm-row.md`).
 - **logoutSafe:** yes.
 
 ### 17. Fight Arena: `speedrun/quests/fight-arena.ts` (S12)
@@ -1599,17 +1602,29 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
 - **Acceptance:** local, a top-up inside a success window at most 5 ticks (the trade floor) without
   breaking the next 2-tick success gap.
 
-### H3. Cannon holder: `speedrun/helpers/cannon.ts` (on rs/41's branch, rs/125; the hand-off to SCORED building, rs/189)
+### H3. Cannon holder: `speedrun/helpers/cannon.ts` (on rs/41's branch, rs/125; serve mode, rs/189)
 
 - **Gates:** S14 and S27 (exposure 1,857 + ~140). Only an account that has done Dwarf Cannon can buy
-  the cannon from Nulodion (read, `nulodion.rs2:2`, via the rs/41 supply list), and the ammo mould
-  is untradeable (`quests/README.md` §4 step 7). So a helper runs `speedrun/quests/dwarf-cannon.ts`
-  first, buys the set, makes or holds the cannonballs (about 1,000-1,300), and trades the set to
-  SCORED.
+  the cannon from Nulodion (read, `nulodion.rs2:1-5`), and the ammo mould is untradeable
+  (`quests/README.md` §4 step 7). The parts and the balls trade to anyone; only Set-up on the base
+  needs the quest (`cannon_setup.rs2`; `helpers/cannon.md`). So a helper does the quest, buys the
+  sets and makes the balls, and trades the set to SCORED.
 - **Status:** `cannon.ts` is on rs/41's branch (rs/125); cairn_h92 holds two sets and 1,416
-  cannonballs (rs/41, 15:00 PDT). **rs/189** adds the one-trade hand-off to SCORED and checks what
-  `nulodion.rs2` restricts.
-- **Acceptance:** demo, a throwaway completes Dwarf Cannon, buys a set and hands it over in one trade.
+  cannonballs (rs/41, 15:00 PDT).
+- **Built (rs/189):** `cannon.ts` with `serve`: the set plus N balls from the bank, stand on the
+  step's tile, find SCORED by name hash (the cue or `serve.receiver`), keep a request standing
+  (`bone-giver.ts requestUntilOpen`), one trade (`lib/trade.ts give`); `returnTile` takes it back
+  for H11r. Each hand-off is recorded in `ctx.state`, so a restart never gives it twice.
+- **Acceptance:** demo, a throwaway that has completed Dwarf Cannon receives a set and balls in one
+  trade. **Lab, met** (`speedrun/lab/cannon-handoff.ts`, receiver quest state set by staff command):
+  one trade, 4 ticks on the receiver's clock, Set-up works for the quest-complete receiver only.
+  **Demo, met** (2026-10-22 01:00 UTC, the spare set and 100 balls, a round trip with a fresh
+  cairn_h93): one trade each way. Leg 2 is the acceptance: cairn_h93 served the load back and
+  cairn_h92, quest complete, received it in **6 ticks on its own clock**. Leg 1 (h92 to h93) took
+  8 ticks on h93's clock, which is likely inflated by the stand-in receiver's measurement: it
+  counts the holder's request only once it is on its own tile, so it missed the request sent
+  while it walked in, clicked after its 30-tick wait, and the 8 likely include walking to the
+  holder. h92's bank was unchanged across the leg (`helpers/cannon.md`, Demo leg).
 
 ### H4. In-room essence giver: `speedrun/helpers/altar-giver.ts` (on rs/41's branch, rs/117 and rs/141; the direct path building, rs/163)
 
@@ -1629,21 +1644,29 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
   `essence.ts`.
 - **Acceptance:** as entry 9.
 
-### H5. Anvil helper: `speedrun/helpers/anvil.ts` (new; building, rs/188)
+### H5. Anvil helper: `speedrun/helpers/anvil.ts` (exists, rs/188)
 
 - **Gates:** S25a (exposure 1,147). It stands on (3187,3427), offers the next 25 bars and accepts
   SCORED's 5 products in the same trade, about 31 times (`skills/smithing.md` §1).
-- **Builds on:** `smithing-trade.ts`'s helper side; bars from [rs/41] `smelter.ts`.
+- **Builds on:** `smithing-trade.ts`'s helper side (now this role); bars from [rs/41] `smelter.ts`.
 - **Acceptance:** local, a turnaround of at most 10 ticks with the helper's side scripted from this
   module (the 40-tick first-trade wait in the measured run was the lab helper's own setup).
+- **Measured (rs/188, `helpers/anvil.md`):** two full routes, 1 to 99 in 1,024 ticks, 31 trades,
+  none failed, restocking at the booth. Screens to bars 3 ticks on every trade. Turnaround 8-10
+  on 26 of 30 trades (mean 8.9); trades 1-4 ran 11-12, with the helper's request already standing:
+  queued level-up pages open one per tick after the make chain and ahead of SCORED's trade
+  interaction, about a tick per item that crossed a level (an engine floor, traced by rs/197).
 
-### H6. Log-row dropper: `speedrun/helpers/fm-row.ts` (new; building, rs/187, first in its queue)
+### H6. Log-row dropper: `speedrun/helpers/fm-row.ts` (exists, rs/187, lab-accepted)
 
 - **Gates:** S03 (exposure 650). It drops the 157 logs in row order ahead of SCORED, paced around the
   100-tick private window so each log is revealed when SCORED reaches it and not long before
   (anyone can take a revealed log; `skills/firemaking.md` §6).
-- **Builds on:** `firemaking-drop.ts`; logs from [rs/41] `woodcutter.ts`.
-- **Acceptance:** as entry 16; no gap over 4 ticks caused by a missing log.
+- **Builds on:** `firemaking-drop.ts` (now the role and `speedrun/lab/fm-row.ts`); logs from [rs/41]
+  `woodcutter.ts`.
+- **Acceptance:** as entry 16; no gap over 4 ticks caused by a missing log. Met in the lab, two runs:
+  0 such gaps, no log public more than 48 ticks before SCORED wanted it (`helpers/fm-row.md`). Not
+  tick-exact; the run machine only for its `cue` start. Open: the coop row, bank restocks, demo.
 
 ### H7. Carp catcher: `speedrun/helpers/carp.ts` (building, rs/173)
 

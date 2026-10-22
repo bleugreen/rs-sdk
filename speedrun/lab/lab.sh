@@ -18,6 +18,9 @@
 #
 # LAB_FRIEND=1 also starts the friend server (FRIEND_SERVER=true, port
 # LAB_FRIEND_PORT, default 45099), which relays private messages.
+#
+# LAB_EXTERNAL=1 attaches to an engine and gateway already running on these
+# ports (long-lived lab terminals); only the lite runners and scripts start here.
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 BOT=$1; shift
@@ -37,23 +40,25 @@ wait_for() { # file phrase seconds
     echo "timeout waiting for '$2' in $1"; tail -20 "$1"; return 1
 }
 
-if [ "${LAB_FRIEND:-0}" = "1" ]; then
-    export FRIEND_SERVER=true FRIEND_PORT=${LAB_FRIEND_PORT:-45099}
-    (cd "$ROOT/server/engine" && exec bun run src/friend.ts) > "$LOG/friend.log" 2>&1 &
+if [ "${LAB_EXTERNAL:-0}" != "1" ]; then
+    if [ "${LAB_FRIEND:-0}" = "1" ]; then
+        export FRIEND_SERVER=true FRIEND_PORT=${LAB_FRIEND_PORT:-45099}
+        (cd "$ROOT/server/engine" && exec bun run src/friend.ts) > "$LOG/friend.log" 2>&1 &
+        PIDS+=($!)
+        sleep 2
+    fi
+
+    (cd "$ROOT/server/engine" && BUILD_VERIFY=false BUILD_LIVE_RELOAD=false LOCAL_STAFF_LEVEL=4 exec bun run src/app.ts) > "$LOG/engine.log" 2>&1 &
+    PIDS+=($!)
+    # measure-restart.ts SIGKILLs the engine by this pid and starts its own replacement.
+    echo $! > "$LOG/engine.pid"
+    export LAB_LOG=$LOG
+    wait_for "$LOG/engine.log" 'World ready' 900 || exit 1
+
+    (cd "$ROOT/server/gateway" && exec bun run gateway.ts) > "$LOG/gateway.log" 2>&1 &
     PIDS+=($!)
     sleep 2
 fi
-
-(cd "$ROOT/server/engine" && BUILD_VERIFY=false BUILD_LIVE_RELOAD=false LOCAL_STAFF_LEVEL=4 exec bun run src/app.ts) > "$LOG/engine.log" 2>&1 &
-PIDS+=($!)
-# measure-restart.ts SIGKILLs the engine by this pid and starts its own replacement.
-echo $! > "$LOG/engine.pid"
-export LAB_LOG=$LOG
-wait_for "$LOG/engine.log" 'World ready' 900 || exit 1
-
-(cd "$ROOT/server/gateway" && exec bun run gateway.ts) > "$LOG/gateway.log" 2>&1 &
-PIDS+=($!)
-sleep 2
 
 RUNNERS="${LAB_HELPERS:-}"
 [ "${LAB_RUNNERS:-1}" != "0" ] && RUNNERS="$BOT $RUNNERS"

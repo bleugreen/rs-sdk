@@ -15,6 +15,30 @@
 //   steelMaxPrice: n        with no steel bars left, buy up to 27 at the exchange at no more than
 //                           this (default 0: never; wait for steel by trade instead)
 //   stopAfter: 'quest'      stop once the quest is complete (development)
+//   serve: {...}            hand the set and balls to the scored account instead (below)
+//
+// Serve mode (H11, H23 in docs/speedrun/SUPPLIES.md): with `serve` set, the role
+// does no quest or production. It carries one set (the four parts) and `balls`
+// cannonballs from the bank, stands on `tile`, keeps a trade request standing with
+// the scored account (bone-giver.ts requestUntilOpen), and gives the whole load in
+// one trade (lib/trade.ts give) when the scored account's own click opens it. With
+// `returnTile`, it then waits there for the set and the leftover balls to come back
+// (H11r) and banks them. The scored account is never named: it is whoever in sight
+// matches `receiver` (the sha256 of its canonical name, altar-cue.ts nameHash) or,
+// without it, the receiver hash in the cue directory's cue.json.
+//   serve.tile {x,z}        where the holder stands (required)
+//   serve.balls n           cannonballs in the load (required)
+//   serve.receiver hex      sha256 of the scored account's canonical name (default: the cue)
+//   serve.bank {x,z}        where to load from (default Falador west; every bank is one bank)
+//   serve.returnTile {x,z}  after the give, take the set back here
+//   serve.labStock          local lab only: make the load with staff commands
+//   serve.id                names the hand-off in ctx.state (default tile and balls); a restart
+//                           resumes it, so a hand-off that completed is never given twice
+//   serve.noReplyTicks, serve.resendTicks, serve.cueDir   as bone-giver.ts
+//
+// Only Nulodion's sale and the base's Set-up check the quest (nulodion.rs2:1-5,
+// cannon_setup.rs2 [opheld1,twpart1]); the parts and the balls trade to anyone
+// (no tradeable=no in quest_mcannon.obj; trade.rs2 movetotrade checks nothing else).
 //
 // Only a player who has completed Dwarf Cannon can buy the cannon or make
 // cannonballs (nulodion.rs2:1-6, cannonballs.rs2:14-17; the ammo mould is
@@ -39,11 +63,14 @@ import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import { advance } from '../lib/dialogue';
-import { receiveFrom } from '../lib/trade';
+import { give, receiveFrom, tradeOf, type GiveSpec, type WantSpec } from '../lib/trade';
+import { assertUntracked, cueDir, CueWatcher, nameHash, type Cue } from './altar-cue';
+import { cheat, isLocalServer, standOn } from './altar-room';
+import { partnerIs, requestUntilOpen } from './bone-giver';
 import { Buyer } from './buyer';
 import { CROSSING_HITPOINTS, crossingSettings, TAVERLEY, trainHitpointsOnCows, type Pt } from '../lib/kandarin';
 import { accountMatches, ChatCursor, DEFAULT_COURIERS, MULE_STAND, toRegExps } from './mule';
-import type { Role, RoleContext } from './role';
+import type { Role, RoleContext, RoleFinish } from './role';
 import { runStandalone } from './role';
 import { inTutorial } from './wine-common';
 
@@ -145,7 +172,111 @@ export function railingDamage(baseHitpoints: number): number {
 
 // ------------------------------------------------------------------ options
 
+// ------------------------------------------------------------------ serve mode (pure)
+
+export interface ServeOptions {
+    /** Names this hand-off in ctx.state, so a restart never gives it twice (default from tile and balls). */
+    id: string;
+    tile: Pt;
+    balls: number;
+    /** sha256 of the scored account's canonical name; null: read it from the cue. */
+    receiver: string | null;
+    bank: Pt;
+    returnTile: Pt | null;
+    labStock: boolean;
+    noReplyTicks: number;
+    resendTicks: number;
+    cueDir: string;
+}
+
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+function tileOption(t: unknown, what: string): Pt {
+    const r = (t ?? {}) as Record<string, unknown>;
+    const x = Number(r.x);
+    const z = Number(r.z);
+    if (!Number.isInteger(x) || !Number.isInteger(z)) throw new Error(`${what} needs integer x and z`);
+    return { x, z };
+}
+
+export function serveOptions(raw: unknown, env: Record<string, string | undefined> = process.env): ServeOptions {
+    const r = (raw ?? {}) as Record<string, unknown>;
+    const balls = Number(r.balls);
+    if (!Number.isInteger(balls) || balls < 1) throw new Error(`serve.balls must be a whole number of cannonballs (got ${r.balls})`);
+    let receiver: string | null = null;
+    if (r.receiver !== undefined) {
+        receiver = String(r.receiver).toLowerCase();
+        // A hash, never a name: the scored account's name must not sit in helper config.
+        if (!SHA256_HEX.test(receiver)) throw new Error('serve.receiver must be the sha256 hex of the scored account\'s canonical name (altar-cue.ts nameHash), not a name');
+    }
+    const tile = tileOption(r.tile, 'serve.tile');
+    return {
+        id: typeof r.id === 'string' && r.id ? r.id : `${tile.x},${tile.z}x${balls}`,
+        tile,
+        balls,
+        receiver,
+        bank: r.bank === undefined ? FALADOR_BANK : tileOption(r.bank, 'serve.bank'),
+        returnTile: r.returnTile === undefined ? null : tileOption(r.returnTile, 'serve.returnTile'),
+        labStock: r.labStock === true,
+        noReplyTicks: Number(r.noReplyTicks ?? 3),
+        resendTicks: Number(r.resendTicks ?? 100),
+        cueDir: typeof r.cueDir === 'string' ? r.cueDir : cueDir(env)
+    };
+}
+
+const exactName = (name: string) => new RegExp(`^${name}$`, 'i');
+const BALL = /^cannonball$/i;
+
+/**
+ * The hand-off as give() specs: each part once and `balls` cannonballs. The
+ * parts are unstackable and the balls one stack, so with exactly the load carried
+ * every entry is a single All press (items.ts amountButtons): 5 offers, one trade.
+ */
+export function loadSpecs(balls: number): GiveSpec[] {
+    return [...CANNON_PARTS.map(p => ({ item: exactName(p), n: 1 })), { item: BALL, n: balls }];
+}
+
+/** What the receiver must see offered before it accepts: the set, and the balls when there are any. */
+export function loadWant(balls: number): WantSpec[] {
+    return [...CANNON_PARTS.map(p => ({ item: exactName(p), amount: 1 })), ...(balls > 0 ? [{ item: BALL, amount: balls }] : [])];
+}
+
+/** True when `inventory` carries a whole set and at least `balls` cannonballs. */
+export function holdsLoad(inventory: ReadonlyArray<{ name: string; count: number }>, balls: number): boolean {
+    const n = (re: RegExp) => inventory.filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0);
+    return CANNON_PARTS.every(p => n(exactName(p)) >= 1) && n(BALL) >= balls;
+}
+
+/** A hand-off's progress in ctx.state: `giving` is written just before the trade, so a crash mid-trade is seen. */
+export interface ServeRecord {
+    phase: 'giving' | 'gave' | 'returned';
+    at: string;
+}
+
+export const serveKey = (id: string) => `cannon-serve:${id}`;
+
+/**
+ * Where a (re)started serve picks up, from its record and whether the load is still
+ * carried. After `giving` the load still carried means the trade never completed
+ * (a closed trade puts offered items back); the load gone means it probably did,
+ * which is `uncertain`: carried on as given, and flagged for a person.
+ */
+export function serveResume(rec: ServeRecord | undefined, carriesLoad: boolean, takesBack: boolean): 'give' | 'take-back' | 'done' | 'uncertain' {
+    const afterGive = takesBack ? 'take-back' : 'done';
+    switch (rec?.phase) {
+        case undefined:
+            return 'give';
+        case 'giving':
+            return carriesLoad ? 'give' : 'uncertain';
+        case 'gave':
+            return afterGive;
+        case 'returned':
+            return 'done';
+    }
+}
+
 export interface CannonOptions {
+    serve: ServeOptions | null;
     sets: number;
     balls: number;
     funders: RegExp[];
@@ -159,6 +290,7 @@ export interface CannonOptions {
 export function parseOptions(raw: Record<string, unknown>): CannonOptions {
     const num = (k: string, d: number) => (typeof raw[k] === 'number' && Number.isFinite(raw[k]) ? (raw[k] as number) : d);
     return {
+        serve: raw.serve === undefined ? null : serveOptions(raw.serve),
         sets: num('sets', 2),
         balls: num('balls', 1160),
         funders: toRegExps(raw.funders ?? DEFAULT_COURIERS),
@@ -1046,9 +1178,199 @@ class Cannon {
         }
     }
 
+    // -------------------------------------------------------------- serve mode
+
+    private cue: Cue | null = null;
+
+    private receiverHash(): string | null {
+        return this.o.serve?.receiver ?? this.cue?.receiver.sha256 ?? null;
+    }
+    private receiverInSight() {
+        const hash = this.receiverHash();
+        return hash ? this.state().nearbyPlayers.find(p => nameHash(p.name) === hash) : undefined;
+    }
+
+    private attention: string | null = null;
+
+    private async record(phase: ServeRecord['phase'] | undefined): Promise<void> {
+        await this.ctx.state.set(serveKey(this.o.serve!.id), phase ? { phase, at: new Date().toISOString() } : undefined);
+    }
+
+    /** Hand the load over (and take the set back with returnTile), picking up from ctx.state after any restart. */
+    private async serveRun(): Promise<void> {
+        const so = this.o.serve!;
+        let watcher: CueWatcher | null = null;
+        if (!so.receiver) {
+            assertUntracked(so.cueDir);
+            watcher = new CueWatcher(so.cueDir, cue => (this.cue = cue));
+        }
+        try {
+            const rec = this.ctx.state.get(serveKey(so.id)) as ServeRecord | undefined;
+            let next = serveResume(rec, holdsLoad(this.sdk.getInventory(), so.balls), !!so.returnTile);
+            if (rec) this.log('serve: resuming', { id: so.id, record: rec, next });
+            if (next === 'uncertain') {
+                this.attention = `cannon hand-off ${so.id}: restarted mid-trade and the load is gone; taken as given, check the receiver holds the set`;
+                await this.record('gave');
+                next = so.returnTile ? 'take-back' : 'done';
+            }
+            if (next === 'give') {
+                await this.retryUntil(() => this.serveOnce());
+                next = so.returnTile ? 'take-back' : 'done';
+            }
+            if (next === 'take-back') {
+                await this.retryUntil(() => this.takeBack());
+                await this.record('returned');
+            }
+        } finally {
+            watcher?.close();
+        }
+    }
+
+    /** Run `step` until it returns true; an error is logged and waited out with backoff (Stop propagates). */
+    private async retryUntil(step: () => Promise<boolean>): Promise<void> {
+        let failures = 0;
+        for (;;) {
+            this.checkSignal();
+            try {
+                if (await step()) return;
+            } catch (e) {
+                if (e instanceof Stop) throw e;
+                failures++;
+                this.log('serve error', { error: String(e), failures, at: this.sdk.getState()?.player ? this.pos() : null });
+                await this.sdk.waitForTicks(Math.min(100, 5 * failures));
+            }
+        }
+    }
+
+    /** Carry exactly the load: the set and `balls` cannonballs, from the bank (or staff commands in the lab). */
+    private async serveLoad(): Promise<void> {
+        const so = this.o.serve!;
+        if (holdsLoad(this.sdk.getInventory(), so.balls)) return;
+        this.setPhase('serve-load');
+        if (so.labStock) {
+            if (!isLocalServer()) throw new Error('serve.labStock is for the local lab only');
+            await cheat(this.ctx, '~clearinv inv');
+            await this.waitFor(s => s.inventory.length === 0, 10);
+            for (const part of ['twpart1', 'twpart2', 'twpart3', 'twpart4']) await cheat(this.ctx, `give ${part} 1`);
+            await cheat(this.ctx, `give mcannonball ${so.balls}`);
+            if (!(await this.waitFor(s => holdsLoad(s.inventory, so.balls), 15))) throw new Error('the staff give did not arrive');
+            return;
+        }
+        await this.openBankAt(so.bank);
+        await this.depositAllBut(null);
+        const need: [string, number][] = [...CANNON_PARTS.map(p => [p, 1] as [string, number]), ['Cannonball', so.balls]];
+        const short = need.filter(([name, n]) => this.banked(name) < n);
+        if (short.length) {
+            await this.bot.closeBank();
+            throw new Error(`the bank is short of the load: ${short.map(([name, n]) => `${name} ${this.banked(name)}/${n}`).join(', ')}`);
+        }
+        for (const [name, n] of need) await this.bot.withdrawItem(exactName(name), n);
+        this.readBank();
+        await this.bot.closeBank();
+        if (!holdsLoad(this.sdk.getInventory(), so.balls)) throw new Error(`the withdrawals left the load short: ${this.sdk.getInventory().map(i => `${i.name} x${i.count}`).join(', ')}`);
+        this.log('load', { balls: this.held(BALL), setsLeftInBank: Math.min(...CANNON_PARTS.map(p => this.banked(p))), ballsLeftInBank: this.banked('Cannonball') });
+    }
+
+    /** Stand on the tile with the load, keep a request standing, and give everything in one trade once the receiver's click opens it. */
+    private async serveOnce(): Promise<boolean> {
+        const so = this.o.serve!;
+        await this.serveLoad();
+        this.setPhase('serve-travel');
+        await this.goTo(so.tile, 2, 'the hand-off tile');
+        await standOn(this.ctx, so.tile);
+        this.setPhase('serve-waiting');
+        const t0 = this.tick();
+        let lastLog = -Infinity;
+        while (!this.receiverInSight() && !tradeOf(this.state()).isOpen) {
+            this.checkSignal();
+            if (this.tick() - lastLog >= 400) {
+                lastLog = this.tick();
+                this.log('waiting for the receiver', { receiverKnown: this.receiverHash() !== null, waitedTicks: this.tick() - t0, at: this.pos() });
+            }
+            await this.sdk.waitForTicks(1);
+        }
+        this.setPhase('serve-requested');
+        // The cue's stop ends a scored batch, not the holder's one hand-off: only the role's signal stops it.
+        const req = await requestUntilOpen(this.ctx, so, { receiver: () => this.receiverInSight(), stopped: () => false, log: (m, d) => this.log(m, d) });
+        if (!req.ok) {
+            this.log('request', { ...req });
+            return false;
+        }
+        const partner = tradeOf(this.state()).partner;
+        if (!partner || !partnerIs(this.state(), this.receiverHash())) {
+            this.log('someone else opened a trade; declining');
+            await this.sdk.sendDeclineTrade();
+            return false;
+        }
+        this.setPhase('serve-trading');
+        await this.record('giving');
+        const r = await give(this.sdk, partner, loadSpecs(so.balls), { openTimeoutMs: 5_000 });
+        this.log('hand-off', {
+            ok: r.ok,
+            giverTicks: r.ticks,
+            gave: r.gave.map(i => `${i.name} x${i.count}`),
+            waitedTicks: this.tick() - t0,
+            requestToOpen: req.waited,
+            sends: req.sends,
+            bounces: req.bounces,
+            ...(r.reason ? { reason: r.reason } : {})
+        });
+        if (r.ok) {
+            await this.record('gave');
+            return true;
+        }
+        // A failed trade puts the offered items back; if they are gone anyway, it is a person's call.
+        if (await this.waitFor(s => holdsLoad(s.inventory, so.balls), 5)) {
+            await this.record(undefined);
+            return false;
+        }
+        this.attention = `cannon hand-off ${so.id}: the trade reported ${r.reason ?? 'failure'} but the load is gone; taken as given, check the receiver holds the set`;
+        await this.record('gave');
+        return true;
+    }
+
+    /**
+     * H11r: at `returnTile`, take back the set and whatever balls are left from the
+     * receiver's own trade (SCORED gives; lib/trade.ts receiveFrom). Its request is
+     * found by name hash in the chat; anyone else's trade is declined.
+     */
+    private async takeBack(): Promise<boolean> {
+        const so = this.o.serve!;
+        this.setPhase('serve-return');
+        await this.goTo(so.returnTile!, 2, 'the return tile');
+        await standOn(this.ctx, so.returnTile!);
+        const t0 = this.tick();
+        let since = t0 - 1;
+        let lastLog = -Infinity;
+        for (;;) {
+            this.checkSignal();
+            const s = this.state();
+            const hash = this.receiverHash();
+            const open = tradeOf(s);
+            if (open.isOpen && !partnerIs(s, hash)) {
+                this.log('someone else opened a trade; declining', {});
+                await this.sdk.sendDeclineTrade();
+            }
+            const ask = hash ? s.gameMessages.find(m => m.type === TRADE_REQUEST_CHAT_TYPE && m.tick > since && /wishes to trade/i.test(m.text) && nameHash(m.sender) === hash) : undefined;
+            const from = open.isOpen && partnerIs(s, hash) ? open.partner! : ask?.sender;
+            if (from) {
+                if (ask) since = Math.max(since, ask.tick);
+                const r = await receiveFrom(this.sdk, from, { want: loadWant(0), openTimeoutMs: 20_000 });
+                this.log('returned', { ok: r.ok, receiverTicks: r.ticks, received: r.received.map(i => `${i.name} x${i.count}`), waitedTicks: this.tick() - t0, ...(r.reason ? { reason: r.reason } : {}) });
+                if (r.ok) return true;
+                continue;
+            }
+            if (this.tick() - lastLog >= 400) {
+                lastLog = this.tick();
+                this.log('waiting for the set to come back', { waitedTicks: this.tick() - t0, at: this.pos() });
+            }
+            await this.sdk.waitForTicks(1);
+        }
+    }
+
     // -------------------------------------------------------------- main loop
 
-    async run(): Promise<void> {
+    async run(): Promise<void | RoleFinish> {
         await this.sdk.waitForReady(30_000);
         if (inTutorial(this.sdk)) {
             this.setPhase('tutorial');
@@ -1060,6 +1382,16 @@ class Cannon {
         }
         await crossingSettings(this.sdk, (m, d) => this.log(m, d));
         this.log('start', { at: this.pos(), options: { ...this.o, funders: this.o.funders.map(String) } });
+        if (this.o.serve) {
+            try {
+                await this.serveRun();
+            } catch (e) {
+                if (e instanceof Stop) return; // aborted: restarted later, resumed from ctx.state
+                throw e;
+            }
+            this.log('serve: finished', { carried: this.sdk.getInventory().map(i => `${i.name} x${i.count}`) });
+            return this.attention ? { attention: this.attention } : undefined;
+        }
         let failures = 0;
         for (;;) {
             try {
@@ -1094,7 +1426,7 @@ export const role: Role = {
     name: 'cannon',
     produces: [/^cannonball$/i, /^cannon (base|stand|barrels|furnace)$/i, /^ammo mould$/i, /^steel bar$/i],
     async run(ctx) {
-        await new Cannon(ctx).run();
+        return new Cannon(ctx).run();
     }
 };
 

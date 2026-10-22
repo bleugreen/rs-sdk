@@ -21,6 +21,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import type { BotWorldState } from '../../sdk/types';
 
 export const CUE_VERSION = 1;
 export const CUE_FILE = 'cue.json';
@@ -31,6 +32,12 @@ export const TRADE_CONFIRM = 3546;
 export const DEFAULT_OPEN = 5;
 
 export type Schedule = 'tuned' | 'robust';
+/**
+ * What a single turn asks of its giver: one of the blind schedules, or 'stock', the scored
+ * side's last fallback (the reacting cycle, about 15 ticks): the giver requests on T+K and
+ * then reacts to what it sees (offer everything, accept, confirm) until the judge tick.
+ */
+export type TurnSchedule = Schedule | 'stock';
 
 /** One frame of a client: its tick count and Date.now() when the frame was seen decoded. */
 export interface Beacon {
@@ -43,8 +50,8 @@ export interface Turn {
     giver: string;
     /** Tick the scored account's craft lands on, in the scored account's numbering. The trade opens on T + open. */
     T: number;
-    /** Overrides the cue's schedule for this turn, e.g. robust for a giver that logged in after the scored account. */
-    schedule?: Schedule;
+    /** Overrides the cue's schedule for this turn, e.g. robust for a giver that logged in after the scored account, or a reacting stock turn. */
+    schedule?: TurnSchedule;
 }
 
 export interface Cue {
@@ -98,7 +105,7 @@ export interface GiverStatus {
     inRoom: boolean;
     /** Ready since (Date.now()); the scored side can queue givers in this order. */
     readyAt: number | null;
-    armed?: { session: string; seq: number; T: number; myT: number; schedule: Schedule };
+    armed?: { session: string; seq: number; T: number; myT: number; schedule: TurnSchedule };
     last?: TurnResult;
     /** Trades given since the role started. */
     gave: number;
@@ -116,6 +123,15 @@ export function canonName(name: string): string {
 
 export function nameHash(name: string): string {
     return createHash('sha256').update(canonName(name)).digest('hex');
+}
+
+/** The tick of the newest trade request (chat type 4, "wishes to trade with you.") from the receiver, by name hash, after `after`; or null. */
+export function newRequestFrom(s: BotWorldState, receiverHash: string, after: number): number | null {
+    let tick: number | null = null;
+    for (const m of s.gameMessages) {
+        if (m.type === 4 && m.tick > after && /wishes to trade/i.test(m.text) && nameHash(m.sender) === receiverHash) tick = Math.max(tick ?? m.tick, m.tick);
+    }
+    return tick;
 }
 
 // ------------------------------------------------------------------ schedule
@@ -171,8 +187,23 @@ export function cycleTicks(open: number, schedule: Schedule): number {
     return open + (schedule === 'tuned' ? 2 : 3);
 }
 
-/** The giver's last scheduled landing tick plus one: by this frame a completed trade has left its inventory. */
-export function judgeTick(T: number, open: number, schedule: Schedule): number {
+/**
+ * How long a stock turn reacts after its request tick (T+K). The scored side's stock rung
+ * (speedrun/skills/runecraft.ts) writes the turn with T three ticks ahead and gives its
+ * reacting receive 30 ticks from its own first click, which is about T-3. At K = 5 the giver
+ * gives up on T+27, with it.
+ */
+export const STOCK_WINDOW = 22;
+
+/** Fewest ticks a reacting trade needs (a plain trade is 9, measured): a stock turn seen later than this is late. */
+export const STOCK_MIN_TICKS = 10;
+
+/**
+ * The giver's last scheduled landing tick plus one: by this frame a completed trade has left
+ * its inventory. A stock turn ends after STOCK_WINDOW ticks of reacting instead.
+ */
+export function judgeTick(T: number, open: number, schedule: TurnSchedule): number {
+    if (schedule === 'stock') return T + open + STOCK_WINDOW;
     return T + open + (schedule === 'tuned' ? 4 : 5);
 }
 
@@ -250,7 +281,7 @@ export class FrameLog {
 // ------------------------------------------------------------------ turns
 
 export type TurnChoice =
-    | { kind: 'arm'; turn: Turn; myT: number; schedule: Schedule; key: string }
+    | { kind: 'arm'; turn: Turn; myT: number; schedule: TurnSchedule; key: string }
     | { kind: 'late'; turn: Turn; myT: number; key: string }
     | { kind: 'none' };
 
@@ -263,7 +294,8 @@ export function turnKey(session: string, T: number): string {
  * not done: armed if its first packet (the request, sent on the frame for
  * T+K-1 in the giver's numbering) is still at least one frame ahead, late if
  * that frame has already arrived (a late turn is reported, never half-fired),
- * and ignored once it is long past.
+ * and ignored once it is long past. A stock turn reacts rather than fires blind,
+ * so it is still armed after its request frame while STOCK_MIN_TICKS remain.
  */
 export function chooseTurn(cue: Cue, account: string, offset: number, myNow: number, done: ReadonlySet<string>): TurnChoice {
     if (cue.stop) return { kind: 'none' };
@@ -277,7 +309,9 @@ export function chooseTurn(cue: Cue, account: string, offset: number, myNow: num
         const schedule = turn.schedule ?? cue.schedule;
         const firstSend = myT + cue.open - 1;
         if (myNow < firstSend) return { kind: 'arm', turn, myT, schedule, key };
-        if (myNow < judgeTick(myT, cue.open, schedule)) return { kind: 'late', turn, myT, key };
+        const judge = judgeTick(myT, cue.open, schedule);
+        if (schedule === 'stock' && myNow + STOCK_MIN_TICKS <= judge) return { kind: 'arm', turn, myT, schedule, key };
+        if (myNow < judge) return { kind: 'late', turn, myT, key };
         return { kind: 'none' };
     }
     return { kind: 'none' };

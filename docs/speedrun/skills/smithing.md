@@ -219,7 +219,9 @@ go to Prayer (inferred). Column 5 of the summary row is therefore n/a.
 - **Requests while delayed are refused.** The helper's trade request during the last item's
   `p_delay(2)` gets "is busy". Both sides re-send every tick, so the trade opens on the first
   free tick.
-- **The helper must be staged in time.** It has the 25 smithing ticks of each inventory to get the
+- **The helper must be staged in time (measured: it is).** The anvil role (`helpers/anvil.md`)
+  is back on its tile and requesting 14 ticks after each trade, banking at the Varrock west
+  booth, with about 15 ticks to spare. Before it was measured: it has the 25 smithing ticks of each inventory to get the
   next 25 bars into its own inventory (un-noted). A helper banking at the Varrock west booth (10
   tiles away) has roughly the scored account's own bank leg (about 19 ticks, measured) to do it,
   which fits (inferred). If it does not, alternate two helpers. The lab helper used `::give`.
@@ -253,7 +255,8 @@ helpers can alch or sell to recover costs; it has no effect on the scored ticks.
 - **Production turnaround.** The 9-10-tick trade turnaround and the 42-tick bank cycle were
   measured on a loaded host. On bbs or production the turnaround may be 1-2 ticks shorter (each
   tick saved per inventory is about 31 ticks over the route).
-- **A real helper's restock loop** (bank trips between trades, or two alternating helpers) was not
+- **A real helper's restock loop: answered.** The anvil role banks between trades and keeps up
+  with one helper; a full route measured 1,024 ticks (`helpers/anvil.md`). The original note: a real helper's restock loop (bank trips between trades, or two alternating helpers) was not
   run; the lab helper spawned bars with `::give`.
 - **The first inventory** (make-1 items, 7-9 ticks each) could be tightened, for example by
   planning it around make-5 runs. Worth at most about 20 ticks.

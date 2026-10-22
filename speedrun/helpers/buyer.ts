@@ -62,7 +62,8 @@ export const BANKS = {
     faladorEast: { x: 3013, z: 3357 },
     edgeville: { x: 3093, z: 3491 },
     catherby: { x: 2809, z: 3439 },
-    seers: { x: 2725, z: 3491 }
+    seers: { x: 2725, z: 3491 },
+    yanille: { x: 2613, z: 3092 }
 } satisfies Record<string, Tile>;
 
 /**
@@ -92,6 +93,14 @@ export const SHOPS: Record<string, ShopSpec> = {
     // through: fletcher.ts enters and leaves it before using this entry.
     hickton: { npc: /^hickton$/i, stand: { x: 2821, z: 3442 }, bank: BANKS.catherby },
     dargaud: { npc: /^bow and arrow salesman$/i, stand: { x: 2672, z: 3434 }, bank: BANKS.seers },
+    /** Zaff's Superior Staffs, Varrock (staffshop: 2 staffs of fire and of air). */
+    zaff: { npc: /^zaff$/i, stand: { x: 3203, z: 3432 }, bank: BANKS.varrockWest },
+    /**
+     * Magic Guild store, Yanille (magicguildshop: every elemental, mind, chaos, death and law rune,
+     * staffs of fire). Upstairs (level 1) behind a Magic-66 door, so the caller climbs to it first
+     * (dragons.ts enterGuild); `stand` is on level 1.
+     */
+    magicGuild: { npc: /^magic store owner$/i, stand: { x: 2594, z: 3087 }, bank: BANKS.yanille },
     // Port Sarim food store: pot of flour 3, raw beef 1, raw chicken 1, banana 3, redberries 1 (port_sarim.inv wydinstore).
     wydin: { npc: /^wydin$/i, stand: { x: 3015, z: 3205 }, bank: BANKS.draynor },
     // Varrock clothes shop: silk 5 (varrock.inv clotheshop).

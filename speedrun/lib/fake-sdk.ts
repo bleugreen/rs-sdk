@@ -1,7 +1,7 @@
 // A scriptable stand-in for BotSDK in unit tests: push states, record sends.
 // Only the members the speedrun modules touch are implemented.
 
-import type { ActionResult, BotWorldState, DialogState, GameMessage, InventoryItem, SkillState } from '../../sdk/types';
+import type { ActionResult, BotWorldState, DialogState, GameMessage, InventoryItem, SkillState, TradeState } from '../../sdk/types';
 import { PLAYER_CHAT_TYPES } from '../../sdk/types';
 
 export interface SentAction {
@@ -62,6 +62,10 @@ export class FakeSdk {
 
     getEquipment(): InventoryItem[] {
         return this.state?.equipment ?? [];
+    }
+
+    getTradeState(): TradeState {
+        return this.state?.trade ?? { isOpen: false, screen: null, partner: null, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false };
     }
 
     onStateUpdate(listener: (s: BotWorldState) => void): () => void {

@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { type DirectClient, type DirectLogoutResult, type DirectLogoutTarget, type DirectSessionEnd, directLogoutText, directProbeSdk, logoutDirect } from './direct';
+import { DirectBridge, type DirectBotClient, type DirectClient, type DirectLogoutResult, type DirectLogoutTarget, type DirectSessionEnd, directLogoutText, directProbeSdk, loadActionQueue, logoutDirect, logoutOutcome, QUEUED_AFTER_TICKS } from './direct';
+import type { ActionResult, BotAction, BotWorldState } from '../../sdk/types';
+import { BotSDK } from '../../sdk/index';
+import { waitForFreshState } from './fresh-state';
 import { LOGOUT_BUTTON } from './session';
 
 /**
@@ -168,7 +171,192 @@ describe('directLogoutText', () => {
             'out of the world: server sent LOGOUT 1 tick(s) after the first click (1 click, 312 ms)'
         );
         expect(directLogoutText({ ok: false, via: null, clicks: 2, clickTick: 10, endTick: 40, wallMs: 10000, reason: 'still in the world after 10000 ms' })).toMatch(
-            /^NOT CONFIRMED \(still in the world after 10000 ms; 2 clicks, 10000 ms\)/
+            /^QUEUED \(still in the world after 10000 ms; 2 clicks, 10000 ms; 30 tick\(s\) arrived after the first click\)/
         );
+        expect(directLogoutText({ ok: false, via: null, clicks: 1, clickTick: 10, endTick: 10, wallMs: 10000, reason: 'still in the world after 10000 ms' })).toMatch(
+            /^NOT CONFIRMED \(still in the world after 10000 ms; 1 click, 10000 ms; 0 tick\(s\) arrived after the first click\)/
+        );
+    });
+});
+
+describe('logoutOutcome', () => {
+    const r = (over: Partial<DirectLogoutResult>): DirectLogoutResult => ({ ok: false, via: null, clicks: 1, clickTick: 10, endTick: 10, wallMs: 20_000, reason: 'still in the world', ...over });
+    test('out once the server removed the player', () => {
+        expect(logoutOutcome(r({ ok: true, via: 'logout', endTick: 11 }))).toBe('out');
+        expect(logoutOutcome(r({ ok: true, via: 'server-close', endTick: 11 }))).toBe('out');
+    });
+    test("queued: the click went out and the server kept serving ticks (rs/214's 9 accounts behind the demo's removal queue)", () => {
+        expect(logoutOutcome(r({ endTick: 10 + QUEUED_AFTER_TICKS }))).toBe('queued');
+        expect(logoutOutcome(r({ clicks: 2, endTick: 60 }))).toBe('queued');
+    });
+    test('unconfirmed: a stalled client (no ticks after the click), a combat refusal, or no click at all', () => {
+        expect(logoutOutcome(r({ endTick: 11 }))).toBe('unconfirmed');
+        expect(logoutOutcome(r({ endTick: 60, refused: true }))).toBe('unconfirmed');
+        expect(logoutOutcome(r({ clicks: 0, endTick: 60, reason: 'not in game' }))).toBe('unconfirmed');
+    });
+});
+
+/** A lite client stand-in: states carry the tick, actions are recorded beside each flush. */
+function fakeClient(over: Partial<DirectBotClient> = {}) {
+    const calls: string[] = [];
+    let collected = 0;
+    const client: DirectBotClient = {
+        collectBotState: tick => {
+            collected++;
+            return { tick, inGame: true, player: { name: 'me', worldX: 3200, worldZ: 3200 }, inventory: [], gameMessages: [], nearbyPlayers: [], skills: [] } as unknown as BotWorldState;
+        },
+        executeBotAction: (a: BotAction) => {
+            calls.push(`exec ${a.type}`);
+            return { success: true, message: 'ok' } as ActionResult;
+        },
+        flush: () => calls.push('flush'),
+        getMaxMessageLength: () => 80,
+        ...over,
+    };
+    return { client, calls, collected: () => collected };
+}
+
+async function connected(client: DirectBotClient) {
+    const bridge = new DirectBridge(client, await loadActionQueue(), 5);
+    const sdk = new BotSDK({ botUsername: 'cairn_h70', gatewayUrl: 'direct://cairn_h70', autoReconnect: false, autoLaunchBrowser: false, readyTimeout: 0, openSocket: bridge.openSocket });
+    await sdk.connect();
+    return { bridge, sdk };
+}
+
+const nextTurn = () => new Promise(r => setTimeout(r, 0));
+
+describe('DirectBridge', () => {
+    test('no SDK attached: a tick collects nothing', async () => {
+        const f = fakeClient();
+        const bridge = new DirectBridge(f.client, await loadActionQueue());
+        bridge.onTick(1);
+        expect(f.collected()).toBe(0);
+    });
+
+    test('a state listener sees the tick inside onTick, and its action is executed and flushed before onTick returns', async () => {
+        const f = fakeClient();
+        const { bridge, sdk } = await connected(f.client);
+        const seen: number[] = [];
+        sdk.onStateUpdate(s => {
+            seen.push(s.tick);
+            if (s.tick === 3) void sdk.sendTradeRequest(7);
+        });
+        bridge.onTick(1);
+        bridge.onTick(2); // a drain that held two ticks moves the label by two
+        expect(seen).toEqual([1, 3]);
+        expect(f.calls).toEqual(['exec interactPlayer', 'flush']);
+        await sdk.disconnect();
+    });
+
+    test('the giver step pattern: offer and accept sent together run back to back on the same tick', async () => {
+        const f = fakeClient();
+        const { bridge, sdk } = await connected(f.client);
+        const results: Promise<ActionResult>[] = [];
+        sdk.onStateUpdate(s => {
+            if (s.tick !== 1) return;
+            results.push(sdk.sendOfferItem(0, -1), sdk.sendClickComponent(3420));
+        });
+        bridge.onTick(1);
+        expect(f.calls).toEqual(['exec clickComponentWithOption', 'flush', 'exec clickComponent', 'flush']);
+        expect((await Promise.all(results)).map(r => r.success)).toEqual([true, true]);
+        await sdk.disconnect();
+    });
+
+    test('the state after an action is published later, never re-entering a running listener', async () => {
+        const f = fakeClient();
+        const { bridge, sdk } = await connected(f.client);
+        let depth = 0;
+        let maxDepth = 0;
+        const seen: number[] = [];
+        sdk.onStateUpdate(s => {
+            depth++;
+            maxDepth = Math.max(maxDepth, depth);
+            seen.push(s.tick);
+            if (seen.length === 1) void sdk.sendClickComponent(1);
+            depth--;
+        });
+        bridge.onTick(1);
+        expect(seen).toEqual([1]);
+        await nextTurn();
+        expect(seen).toEqual([1, 1]); // the post-action republication of tick 1
+        expect(maxDepth).toBe(1);
+        await sdk.disconnect();
+    });
+
+    test('a late SDK gets the last state on connect, and passes the fresh-state gate on the next two ticks', async () => {
+        const f = fakeClient();
+        const bridge = new DirectBridge(f.client, await loadActionQueue(), 5);
+        const first = new BotSDK({ botUsername: 'x', gatewayUrl: 'direct://x', autoReconnect: false, autoLaunchBrowser: false, readyTimeout: 0, openSocket: bridge.openSocket });
+        await first.connect();
+        bridge.onTick(4);
+        const sdk = new BotSDK({ botUsername: 'x', gatewayUrl: 'direct://x', autoReconnect: false, autoLaunchBrowser: false, readyTimeout: 0, openSocket: bridge.openSocket });
+        await sdk.connect();
+        await nextTurn();
+        expect(sdk.getState()?.tick).toBe(4);
+        const fresh = waitForFreshState(sdk, { timeoutMs: 1000 });
+        bridge.onTick(1);
+        bridge.onTick(1);
+        expect((await fresh).state.tick).toBe(6);
+        await first.disconnect();
+        await sdk.disconnect();
+    });
+
+    test('an async action holds the queue; the next one runs when it settles', async () => {
+        let release: (r: ActionResult) => void = () => {};
+        const f = fakeClient();
+        const exec = f.client.executeBotAction;
+        f.client.executeBotAction = a => (a.type === 'submitCountDialog' ? new Promise<ActionResult>(r => (release = r)) : exec(a));
+        const { sdk } = await connected(f.client);
+        f.calls.push('-');
+        const a = sdk.sendCountDialog(23);
+        const b = sdk.sendClickComponent(5);
+        expect(f.calls).toEqual(['-', 'flush']);
+        release({ success: true, message: 'submitted' } as ActionResult);
+        expect((await a).message).toBe('submitted');
+        await b;
+        expect(f.calls).toEqual(['-', 'flush', 'flush', 'exec clickComponent', 'flush']);
+        await sdk.disconnect();
+    });
+
+    test('a wait holds the queue for its frames', async () => {
+        const f = fakeClient();
+        const { sdk } = await connected(f.client);
+        const t0 = Date.now();
+        const w = sdk.sendWait(4);
+        const next = sdk.sendClickComponent(9);
+        expect(f.calls).toEqual(['exec wait', 'flush']);
+        expect((await w).message).toBe('Wait complete');
+        await next;
+        expect(f.calls.slice(2)).toEqual(['exec clickComponent', 'flush']);
+        expect(Date.now() - t0).toBeGreaterThanOrEqual(15); // 4 frames of 5 ms, less timer slack
+        await sdk.disconnect();
+    });
+
+    test('an action that throws reports an execution error and frees the queue', async () => {
+        const f = fakeClient({
+            executeBotAction: a => {
+                if (a.type === 'clickComponent') throw new Error('boom');
+                return { success: true, message: 'ok' } as ActionResult;
+            },
+        });
+        const { sdk } = await connected(f.client);
+        const r = await sdk.sendClickComponent(1);
+        expect(r).toMatchObject({ success: false, reason: 'execution_error' });
+        expect((await sdk.sendWalk(1, 2)).success).toBe(true);
+        await sdk.disconnect();
+    });
+
+    test('close: the SDK sees a disconnect and stops receiving states', async () => {
+        const f = fakeClient();
+        const { bridge, sdk } = await connected(f.client);
+        const states: string[] = [];
+        sdk.onConnectionStateChange(s => states.push(s));
+        bridge.close();
+        await nextTurn();
+        expect(sdk.isConnected()).toBe(false);
+        expect(states).toContain('disconnected');
+        const n = f.collected();
+        bridge.onTick(1);
+        expect(f.collected()).toBe(n);
     });
 });
