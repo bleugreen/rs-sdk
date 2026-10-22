@@ -79,7 +79,7 @@ const config = {
     botsDir,
     runDir,
     loginSpacingMs: 3000,
-    accounts: givers.map((account, i) => ({ account, role: 'altar-giver', ...(path ? { path } : {}), options: { altar: 'air', slot: i % 3, essence: 27, restock: { kind: 'bank', ...(labStage ? { labStock: true } : {}) } } }))
+    accounts: givers.map((account, i) => ({ account, role: 'altar-giver', ...(path ? { path } : {}), options: { altar: 'air', slot: i % 3, essence: 27, restock: { kind: 'bank', ...(labStage ? { labStock: true } : {}) }, scope: { step: 'DEMO', family: 'altar' } } })) // the band id below
 };
 writeFileSync(join(base, 'launch.json'), JSON.stringify(config, null, 2));
 console.log(`runecraft-demo: ${givers.length} givers (${path ?? 'relay'}), ${cycles} cycles at air, schedule ${schedule}${labStage ? ', lab-staged' : ''}; run files in ${base}`);

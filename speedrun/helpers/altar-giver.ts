@@ -23,6 +23,7 @@
 //   restock    { kind: 'bank'|'trade'|'cheat', bank?, acceptFrom?, restockAt?, labStock? } (altar-room.ts)
 //   gapMs      wait after a frame before sending its packets (default 0: send on arrival)
 //   cueDir     default RC_CUE_DIR, else run-machine/rc-cue in the checkout
+//   scope      required: { step, family: 'altar' }, the cue this giver serves (altar-cue.ts CueScope; S06 or S21)
 import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { DROPPED_TICKS, give } from '../lib/trade';
 import { tickClock, tickMs } from '../lib/wait';
@@ -36,10 +37,12 @@ import {
     judgeTick,
     nameHash,
     resolveOffset,
+    scopeOption,
     TRADE_ACCEPT,
     TRADE_CONFIRM,
     writeStatus,
     type Cue,
+    type CueScope,
     type GiverAction,
     type GiverPhase,
     type Outcome,
@@ -60,6 +63,7 @@ export interface GiverOptions {
     restock: RestockOptions;
     gapMs: number;
     cueDir: string;
+    scope: CueScope;
 }
 
 export function giverOptions(raw: Record<string, unknown>, env: Record<string, string | undefined> = process.env): GiverOptions {
@@ -78,7 +82,8 @@ export function giverOptions(raw: Record<string, unknown>, env: Record<string, s
         ...(raw.schedule ? { schedule: raw.schedule as Schedule } : {}),
         restock: { ...r, kind, essence },
         gapMs: Number(raw.gapMs ?? 0),
-        cueDir: typeof raw.cueDir === 'string' ? raw.cueDir : cueDir(env)
+        cueDir: typeof raw.cueDir === 'string' ? raw.cueDir : cueDir(env),
+        scope: scopeOption(raw.scope, ['altar'])
     };
 }
 
@@ -207,7 +212,7 @@ export class AltarGiver {
                 this.offset = null;
             }
         });
-        const watcher = new CueWatcher(this.o.cueDir, cue => this.onCue(cue));
+        const watcher = new CueWatcher(this.o.cueDir, this.o.scope, cue => this.onCue(cue), { log: (m, d) => ctx.log(m, d) });
         const heartbeat = setInterval(() => this.publish(), 1000);
         try {
             await ensureOutOfTutorial(ctx);

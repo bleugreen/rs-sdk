@@ -53,6 +53,8 @@ const altar = flag('altar', 'nature') as AltarName;
 const level = Number(flag('level', String(altar === 'air' ? 1 : 44)));
 const cycles = flag('cycles');
 const untilLevel = flag('until-level');
+/** The band's id is the cue's step: the givers read only the cue scoped to it. */
+const bandId = altar === 'air' && level === 1 && untilLevel === '44' ? 'S06' : 'LAB';
 const nGivers = Number(flag('givers', '3'));
 const path = flag('path');
 const headless = process.argv.includes('--headless');
@@ -80,7 +82,7 @@ const config = {
     botsDir,
     runDir,
     loginSpacingMs: 2000,
-    accounts: givers.map((account, i) => ({ account, role: 'altar-giver', ...(path ? { path } : {}), options: { altar, slot: i % 3, essence: 27, restock: { kind: 'cheat' } } }))
+    accounts: givers.map((account, i) => ({ account, role: 'altar-giver', ...(path ? { path } : {}), options: { altar, slot: i % 3, essence: 27, restock: { kind: 'cheat' }, scope: { step: bandId, family: 'altar' } } }))
 };
 writeFileSync(join(base, 'launch.json'), JSON.stringify(config, null, 2));
 console.log(`runecraft-accept: ${altar} from ${level}, ${cycles ? `${cycles} cycles` : `until ${untilLevel ?? 99}`}, schedule ${schedule}, ${order}, ${givers.length} givers${path ? ` (${path})` : ''}; run files in ${base}`);
@@ -157,7 +159,7 @@ try {
 
     const xp0 = rcXp(sdk.getState()!);
     const band: Band = {
-        id: altar === 'air' && level === 1 && untilLevel === '44' ? 'S06' : 'LAB',
+        id: bandId,
         altar,
         from: level,
         untilLevel: Number(untilLevel ?? 99),

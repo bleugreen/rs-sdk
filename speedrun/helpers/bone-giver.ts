@@ -35,6 +35,8 @@
 //                S07's T07-08 Camelot runes, law 1 and air 5); `obj` names the staff give for restock cheat
 //   finalN       bones on that last load (default n - finalExtras.length: the same free slots as every load)
 //   cueDir       default RC_CUE_DIR, else run-machine/rc-cue in the checkout
+//   scope        required: { step, family }, the cue this giver serves (altar-cue.ts CueScope):
+//                family 'bone' in the standing mode (S07), 'courier' in on-request (S18)
 //
 // mode 'on-request' (S18's stun-pack courier, SUPPLIES.md H14.1-H14.13): the scored
 // account requests at a stun offset of its choosing (the Thieving module's top-up),
@@ -62,7 +64,7 @@ import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
 import { give, DROPPED_TICKS, openTrade, tradeOf, type GiveSpec } from '../lib/trade';
 import { waitUntil } from '../lib/wait';
-import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, newRequestFrom, readTopUpAsk, usableAsk, writeJsonAtomicSync, type Cue, type TopUpAsk } from './altar-cue';
+import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, newRequestFrom, readTopUpAsk, scopeOption, usableAsk, writeJsonAtomicSync, type Cue, type CueScope, type TopUpAsk } from './altar-cue';
 import { chebyshev, cheat, count, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
@@ -119,6 +121,7 @@ export interface BoneGiverOptions {
     /** Bones on the last load, the one that carries finalExtras. */
     finalN: number;
     cueDir: string;
+    scope: CueScope;
 }
 
 const tile = (t: unknown, what: string): Tile => {
@@ -187,7 +190,8 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
         resendTicks: Number(raw.resendTicks ?? 100),
         finalExtras,
         finalN: finalExtras.length ? finalN : n,
-        cueDir: typeof raw.cueDir === 'string' ? raw.cueDir : cueDir(env)
+        cueDir: typeof raw.cueDir === 'string' ? raw.cueDir : cueDir(env),
+        scope: scopeOption(raw.scope, [mode === 'standing' ? 'bone' : 'courier'])
     };
 }
 
@@ -406,7 +410,7 @@ export class BoneGiver {
     async run(): Promise<void> {
         const { ctx } = this;
         assertUntracked(this.o.cueDir);
-        const watcher = new CueWatcher(this.o.cueDir, cue => (this.cue = cue));
+        const watcher = new CueWatcher(this.o.cueDir, this.o.scope, cue => (this.cue = cue), { log: (m, d) => ctx.log(m, d) });
         const heartbeat = setInterval(() => this.publish(), 2000);
         let wasOpen = false;
         const unsubOpen = ctx.sdk.onStateUpdate(st => {

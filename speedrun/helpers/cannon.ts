@@ -40,6 +40,8 @@
 //   serve.id                names the hand-off in ctx.state (default tile and balls); a restart
 //                           resumes it, so a hand-off that completed is never given twice
 //   serve.noReplyTicks, serve.resendTicks, serve.cueDir   as bone-giver.ts
+//   serve.scope             { step, family: 'cannon' }: the cue to read the receiver from
+//                           (altar-cue.ts CueScope; S14 or S27); required without serve.receiver
 //
 // Only Nulodion's sale and the base's Set-up check the quest (nulodion.rs2:1-5,
 // cannon_setup.rs2 [opheld1,twpart1]); the parts and the balls trade to anyone
@@ -69,7 +71,7 @@ import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import { advance } from '../lib/dialogue';
 import { ANY_OFFER, give, DROPPED_TICKS, receiveFrom, tradeOf, type GiveResult, type GiveSpec, type TradeSdk, type WantSpec } from '../lib/trade';
-import { assertUntracked, cueDir, CueWatcher, nameHash, type Cue } from './altar-cue';
+import { assertUntracked, cueDir, CueWatcher, nameHash, scopeOption, type Cue, type CueScope } from './altar-cue';
 import { cheat, isLocalServer, standOn } from './altar-room';
 import { partnerIs, requestUntilOpen } from './bone-giver';
 import { Buyer } from './buyer';
@@ -203,6 +205,8 @@ export interface ServeOptions {
     noReplyTicks: number;
     resendTicks: number;
     cueDir: string;
+    /** The cue the receiver hash comes from; null with `receiver` set. */
+    scope: CueScope | null;
 }
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
@@ -241,7 +245,8 @@ export function serveOptions(raw: unknown, env: Record<string, string | undefine
         labStock,
         noReplyTicks: Number(r.noReplyTicks ?? DROPPED_TICKS),
         resendTicks: Number(r.resendTicks ?? 100),
-        cueDir: typeof r.cueDir === 'string' ? r.cueDir : cueDir(env)
+        cueDir: typeof r.cueDir === 'string' ? r.cueDir : cueDir(env),
+        scope: receiver && r.scope === undefined ? null : scopeOption(r.scope, ['cannon'], 'serve.scope')
     };
 }
 
@@ -1263,7 +1268,7 @@ class Cannon {
         let watcher: CueWatcher | null = null;
         if (!so.receiver) {
             assertUntracked(so.cueDir);
-            watcher = new CueWatcher(so.cueDir, cue => (this.cue = cue));
+            watcher = new CueWatcher(so.cueDir, so.scope!, cue => (this.cue = cue), { log: (m, d) => this.log(m, d) });
         }
         try {
             const rec = this.ctx.state.get(serveKey(so.id)) as ServeRecord | undefined;

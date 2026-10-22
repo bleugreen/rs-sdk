@@ -20,7 +20,7 @@
 //   (altar-cue.ts writeTopUpAsk), as the Thieving module does; loads = asks.length
 import type { BotWorldState } from '../../sdk/types';
 import { receiveFrom, tradeOf } from '../lib/trade';
-import { CueWriter, cueDir, FrameLog, writeTopUpAsk } from './altar-cue';
+import { CueWriter, cueDir, FrameLog, scopeOption, writeTopUpAsk } from './altar-cue';
 import { cheat, count, isLocalServer, labTele, pos, until, type Tile } from './altar-room';
 import { S07_SITES } from './bone-giver';
 import { runStandalone, type Role, type RoleContext } from './role';
@@ -51,6 +51,8 @@ export const role: Role = {
         if (!giver) throw new Error('bone-receiver: options.giver is required');
         const asks = Array.isArray(o.asks) ? (o.asks as number[]).map(Number) : null;
         const loads = asks ? asks.length : Number(o.loads ?? 8);
+        // The giver it stands in for reads only its own step's cue: 'courier' for the asks (S18), else 'bone' (S07).
+        const scope = scopeOption(o.scope, [asks ? 'courier' : 'bone']);
         const sizeOf = (load: number) => (asks ? asks[load]! : Number(o.n ?? 23));
         const buryEvery = Number(o.buryEvery ?? 3);
         const site: Tile = (o.site as Tile) ?? S07_SITES[0]!.receiver;
@@ -69,7 +71,7 @@ export const role: Role = {
                 pendingAsk = null;
             }
         });
-        const writer = new CueWriter(cueDir(), ctx.account);
+        const writer = new CueWriter(cueDir(), ctx.account, scope);
         const results: LoadResult[] = [];
         try {
             await cheat(ctx, '~clearinv inv');

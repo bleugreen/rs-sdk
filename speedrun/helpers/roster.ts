@@ -81,7 +81,7 @@ export function giverEntries(accounts: string[], o: EntryOptions): Record<string
         if (o.role === 'idle') return { account, role: 'idle', path: 'direct', options: { heartbeatMinutes: 1 } };
         const restock: Record<string, unknown> = { kind: 'bank' };
         if (o.acceptFrom) restock.acceptFrom = o.acceptFrom;
-        return { account, role: 'altar-giver', path: 'direct', options: { altar: 'body', slot: i % GIVER_SLOTS, essence: ESSENCE_PER_TRIP, restock } };
+        return { account, role: 'altar-giver', path: 'direct', options: { altar: 'body', slot: i % GIVER_SLOTS, essence: ESSENCE_PER_TRIP, restock, scope: { step: 'S21', family: 'altar' } } };
     });
 }
 
