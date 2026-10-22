@@ -510,6 +510,16 @@ bgsrv-mac at load 4-9):
   given, all tuned**; 13 in-batch gaps at 7, and 6 batch gaps of 86-87 ticks, which are the
   givers' bank round trip; 628 step ticks; every logout confirmed. A 20-turn demo takes
   7 + 7 + 6 loads from three givers.
+- **First demo attempt** (rs-sdk-demo.fly.dev from the twin, 3b161c12, 2026-10-22 04:26Z; air,
+  auto, 3 givers on the direct path co-located with the stand-in, givers logged in first; the
+  launcher resolved `direct` for all 3). **9/9 given, all giver-first and tuned; in-batch gaps 7, 7;
+  first craft 7 ticks after program start; talisman dropped on the first try.** It stopped after
+  9 cycles (step 1,004 ticks) on the giver-wait bound (`no loaded giver for 401 ticks`), because
+  the givers' banks held ~180 essence against the 540 that 20 cycles need (h70 13, h71 19,
+  h72 146). The other gaps (85-100) are one giver's bank round trips. Not an acceptance pass: the
+  retry needs at least 189 essence banked per giver. The twin's tick delivery (TICKMON on the
+  stand-in's tab) was 172-188 ticks a minute, p90 184-249 ms late, max 985 ms, none glued, and
+  every blind turn landed. Every logout was confirmed. (rs/196)
 - **The "unexplained run" below was the talisman.** The first run on a freshly booted engine
   gave its first turn and then failed every turn, including the stock rung's. It ended holding
   the nature talisman. A later fresh-boot run stopped on the talisman check instead (3 drops
