@@ -45,6 +45,12 @@ export interface LineOptions {
     step: number | null;
     /** Step mode: raise one step after this many minutes without a fill. */
     stepAfterIdleMinutes: number | null;
+    /**
+     * Take a resting ask above our bid and at or below maxPrice: re-place at the ask, which
+     * fills against it at its own price, and rest the remainder there. For a seller who lists
+     * above the best bid instead of selling into it.
+     */
+    liftAsks: boolean;
 }
 
 export interface BidderOptions {
@@ -86,6 +92,7 @@ export function lineOptions(raw: Record<string, unknown>, where = ''): LineOptio
     const step = raw.step === undefined ? null : Math.floor(num('step', undefined, 1));
     const idle = raw.stepAfterIdleMinutes === undefined ? null : num('stepAfterIdleMinutes', undefined, 1);
     if (idle !== null && step === null) throw new Error(`bidder: ${where}stepAfterIdleMinutes needs step`);
+    if (raw.liftAsks !== undefined && typeof raw.liftAsks !== 'boolean') throw new Error(`bidder: ${where}liftAsks must be true or false`);
     return {
         item,
         target: Math.floor(num('target', undefined, 1)),
@@ -94,7 +101,8 @@ export function lineOptions(raw: Record<string, unknown>, where = ''): LineOptio
         minPrice: Math.floor(num('minPrice', 0, 0)),
         outbidBy: Math.floor(num('outbidBy', 25, 1)),
         step,
-        stepAfterIdleMinutes: idle
+        stepAfterIdleMinutes: idle,
+        liftAsks: raw.liftAsks === true
     };
 }
 
@@ -243,6 +251,7 @@ export function decideBid(input: BidInput): BidDecision {
         }
         // Resting below our own floor (minPrice raised, or an offer from before a restart): re-price up.
         if (ourPrice < floorPrice) return replace(floorPrice, false, `ours ${ourPrice} is below our floor ${floorPrice}`);
+        if (o.liftAsks && quote.ask !== null && quote.ask > ourPrice && quote.ask <= o.maxPrice) return replace(quote.ask, false, `lifting the ask at ${quote.ask}; ours ${ourPrice}`);
         // Step mode: no fills for a while means sellers want more; one step, never a jump.
         if (o.step !== null && o.stepAfterIdleMinutes !== null && (input.idleMinutes ?? 0) >= o.stepAfterIdleMinutes) {
             if (ourPrice >= o.maxPrice) return out({ action: 'hold', price: ourPrice, capped: true, reason: `no fills for ${Math.round(input.idleMinutes ?? 0)} min, already at maxPrice ${o.maxPrice}` });
@@ -262,7 +271,9 @@ export function decideBid(input: BidInput): BidDecision {
 
     // No offer: start from our floor, or from the last trade when we have none.
     const base = floorPrice > 0 ? floorPrice : competition.competing === null ? Math.max(quote.lastPrice ?? 1, 1) : 0;
-    const { price, capped } = priceAbove(competition.competing, base, o);
+    const above = priceAbove(competition.competing, base, o);
+    const lift = o.liftAsks && quote.ask !== null && quote.ask > above.price && quote.ask <= o.maxPrice;
+    const { price, capped } = lift ? { price: quote.ask!, capped: false } : above;
     const quantity = Math.min(wanted, Math.floor(coins / price));
     const coinsShort = Math.max(0, wanted * price - coins);
     if (quantity <= 0) return out({ action: 'short', price, capped, coinsShort, reserve: wanted * price, reason: `${coins} gp buys none at ${price}` });

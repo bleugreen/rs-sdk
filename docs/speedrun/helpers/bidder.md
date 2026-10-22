@@ -87,6 +87,7 @@ Without `lines`, the options themselves are a single line.
 | `outbidBy` | 25 | How far above a competing bid to place, outside step mode |
 | `step` | none | Step mode: prices move in whole steps from our own price |
 | `stepAfterIdleMinutes` | none | Step mode: one step up after this long without a fill |
+| `liftAsks` | false | Take a resting ask above our bid and at or below `maxPrice`: re-place at the ask, which fills against it at its own price, and rest the remainder there. For a seller who lists just above the best bid instead of selling into it, as the demo's blood-rune seller does (each lot about 5% above the last trade, every 20-25 minutes; rs/347). A resting bid at the cap would also take those asks, but at our price, since the exchange fills at the resting order's price. |
 
 | Role option | Default | Meaning |
 |---|---|---|
