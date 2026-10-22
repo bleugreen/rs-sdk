@@ -28,17 +28,21 @@
 // Role options (ROLE_OPTIONS):
 //   row          { x, z, len, rows }: the snake (firemaking-line.ts --row/--rows), default LAB_ROW
 //   tiles        [[x, z], ...] in place of row: the tiles in lighting order, cycled (row and tiles together are an error)
+//   logs         [{obj, n}, ...] in lighting order, in place of the route's 157 (S03_LOGS): each obj one of its
+//                  tiers, n >= 1; e.g. [{obj: 'logs', n: 20}] for a demo row of normal logs
 //   part, parts  this dropper's share of the inventories (default 0 of 1)
 //   skipOccupied a planned tile with a fire or a ground item (not ashes) on it takes no log; the log
-//                  goes on the next free tile of its inventory's block (default false)
+//                  goes on the next free tile of its inventory's block (default false). A fire seen
+//                  lit at F does not count for a log needed at F + FIRE_OUT_TICKS or later
 //   spareTiles   empty tiles after each inventory's 28 for those skips (skipOccupied only;
 //                  default 2 when parts > 1, else 0)
 //   start        'now' | 'sighted' | 'cue' (default 'sighted'): when log 0's 100 ticks start
 //                  now: at once; sighted: when SCORED (scoredSha256, else the cue's receiver
 //                  hash) is within sightRange; cue: when <cueDir>/fm-row-go.json is written
 //   cueAt        'seen' | 'written' (start cue only; default 'seen'): count from the tick the go
-//                  file is seen, or from its ms (tickMs per tick) for a dropper that logs in late
-//   tickMs       ms per server tick for cueAt 'written' (default wait.ts tickMs())
+//                  file is seen, or from its ms for a dropper that logs in late, at the tick period
+//                  it observed (cuePeriod)
+//   tickMs       nominal ms per server tick, cueAt 'written''s last fallback (default wait.ts tickMs())
 //   scoredSha256 sha-256 of SCORED's canonical name (altar-cue.ts nameHash); never its name
 //   sightRange   default 15
 //   restock      { kind: 'bank' | 'cheat' | 'held', bank?: {x,z} } (cheat: local lab only; bank default
@@ -53,7 +57,7 @@
 import { join } from 'node:path';
 import type { BotWorldState, GroundItem, NearbyLoc } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
-import { tickMs as defaultTickMs, waitUntil } from '../lib/wait';
+import { tickMs as defaultTickMs, tickPeriod, waitUntil } from '../lib/wait';
 import { cueDir, nameHash, readJson, type Cue } from './altar-cue';
 import { chebyshev, cheat, isLocalServer, labTele, pos, type Tile } from './altar-room';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank, walkNear } from './mule';
@@ -66,6 +70,8 @@ export const DROP_LIFETIME = 300;
 /** One lighting roll, chained (firemaking.rs2: success and failure both set map_clock + 4). */
 export const ROLL_TICKS = 4;
 export const INVENTORY = 28;
+/** A fire is gone this long after it is lit (firemaking.rs2: loc_add for 100 + random(100) ticks, so 100-199). */
+export const FIRE_OUT_TICKS = 200;
 
 export interface Tier {
     /** Debug name for ::give. */
@@ -167,6 +173,24 @@ export function plannedTiles(path: Path, parts: number, spareTiles: number, logs
 }
 
 /**
+ * The fewest logs between two logs on one tile: on a cycled path, the next log on a tile is
+ * lit that many rolls after the last one. Below FIRE_OUT_TICKS / ROLL_TICKS (50) the lighter
+ * can reach a tile while its last fire still burns. Spares shorten it: a 51-tile lap with
+ * spareTiles 2 comes round in 47 logs on some tiles. Null when no tile comes round.
+ */
+export function shortestRevisit(layout: readonly PlannedTile[]): number | null {
+    const last = new Map<string, number>();
+    let min: number | null = null;
+    for (const t of layout) {
+        if (t.log === null) continue;
+        const prev = last.get(tileKey(t.tile));
+        if (prev !== undefined) min = Math.min(min ?? Number.POSITIVE_INFINITY, t.log - prev);
+        last.set(tileKey(t.tile), t.log);
+    }
+    return min;
+}
+
+/**
  * The last slot a skip may push log i to: its block's last spare. A skip never crosses
  * into the next block when parts > 1, because the next block's dropper cannot see our
  * private log there. One dropper sees all its own logs, so with parts = 1 there is no limit
@@ -191,10 +215,26 @@ const FIRE = /^fire$/i;
 /**
  * A tile a skip-occupied drop avoids: a fire on it, or any ground item except ashes. A
  * burnt-out fire leaves ashes for 100 ticks (firemaking.rs2), so on a 50-tile lap our own
- * ashes often lie on the next lap's tiles, and they do not stop a light.
+ * ashes often lie on the next lap's tiles, and they do not stop a light. `fireOut`: the fire
+ * on t is sure to be out before the log is lit (`fireOutBy`), so it does not count.
  */
-export function occupied(t: Tile, locs: readonly Pick<NearbyLoc, 'name' | 'x' | 'z'>[], ground: readonly Pick<GroundItem, 'name' | 'x' | 'z'>[]): boolean {
-    return locs.some(l => l.x === t.x && l.z === t.z && FIRE.test(l.name)) || ground.some(g => g.x === t.x && g.z === t.z && !ASHES.test(g.name));
+export function occupied(
+    t: Tile,
+    locs: readonly Pick<NearbyLoc, 'name' | 'x' | 'z'>[],
+    ground: readonly Pick<GroundItem, 'name' | 'x' | 'z'>[],
+    fireOut = false
+): boolean {
+    return (!fireOut && locs.some(l => l.x === t.x && l.z === t.z && FIRE.test(l.name))) || ground.some(g => g.x === t.x && g.z === t.z && !ASHES.test(g.name));
+}
+
+/**
+ * Whether a fire first seen lighting at `seen` (FireLedger.freshSince) is out by `need`, the
+ * earliest tick its tile's next log can be lit. On a lapped row a log goes down about 105 ticks
+ * before it is lit, while the last lap's fire on its tile is only about 100 ticks old and burns
+ * up to 199. A fire whose start was not seen (null) may be any age, so it is never known out.
+ */
+export function fireOutBy(seen: number | null, need: number): boolean {
+    return seen !== null && need >= seen + FIRE_OUT_TICKS;
 }
 
 /** The row indexes this dropper drops: every log of the inventories k with k % parts === part, in order. */
@@ -314,6 +354,32 @@ export function cueTick(tick: number, nowMs: number, cueMs: number, tickMs: numb
     return tick - Math.max(0, Math.round((nowMs - cueMs) / tickMs));
 }
 
+/** A period measured over fewer ms than this is left to the fallbacks (wait.ts tickPeriod). */
+export const PERIOD_MIN_SPAN_MS = 20_000;
+/** Only the newest ticks count: the demo's tick period drifts from minute to minute. */
+export const PERIOD_WINDOW_MS = 60_000;
+/**
+ * A measured period is held within these. The engine's fixed grid catches up at most two
+ * ticks (World.ts), so over 20 s it never runs much faster than 300 ms; a reading slower than
+ * twice that is a client that missed frames, not a slow server.
+ */
+export const TICK_MS_FLOOR = 250;
+export const TICK_MS_CEILING = 600;
+
+export type PeriodFrom = 'observed' | 'cue' | 'nominal';
+
+/**
+ * The ms per tick a written cue is counted back with: the period this client observed, else
+ * the one the go file's writer observed (its `tickMs`), else the nominal `tickMs` option. The
+ * nominal one is only right on a server that keeps time; the demo has run at 340-370 ms.
+ */
+export function cuePeriod(observed: number | null, written: unknown, nominal: number): { tickMs: number; from: PeriodFrom } {
+    const held = (ms: number) => Math.min(TICK_MS_CEILING, Math.max(TICK_MS_FLOOR, ms));
+    if (observed !== null) return { tickMs: held(observed), from: 'observed' };
+    if (typeof written === 'number' && Number.isFinite(written) && written > 0) return { tickMs: held(written), from: 'cue' };
+    return { tickMs: nominal, from: 'nominal' };
+}
+
 /**
  * The earliest tick on which SCORED can want log i in view (the tick it sees the
  * success of log i - 1 and sends the next light). `start` is the tick log 0 is due:
@@ -376,8 +442,19 @@ export function maxRestockTicks(parts: number, o: Pick<Pace, 'reveal' | 'lead' |
     return Math.min(parts * perInventory - INVENTORY * o.dropTicks, o.reveal + (parts - 1) * perInventory + ROLL_TICKS - o.lead);
 }
 
-/** The first own log to drop on a (re)start: after the last own log already lying on its tile. */
-export function resumeCursor(plan: readonly PlannedLog[], own: readonly number[], ground: readonly Pick<GroundItem, 'name' | 'x' | 'z'>[]): number {
+/**
+ * The first own log to drop on a (re)start: after the last own log already lying on its tile.
+ * `carried` (a held dropper: how many of a tier it holds) comes first: a dropper still holding
+ * its whole own load has dropped nothing, so it starts at 0. On a lapped row its tiles are
+ * shared with other inventories, and the logs lying on them are other droppers' drops.
+ */
+export function resumeCursor(
+    plan: readonly PlannedLog[],
+    own: readonly number[],
+    ground: readonly Pick<GroundItem, 'name' | 'x' | 'z'>[],
+    carried?: (tier: Tier) => number
+): number {
+    if (carried && loadFor(plan, own, 0).every(l => carried(l.tier) >= l.n)) return 0;
     const lying = (l: PlannedLog) => ground.some(g => g.x === l.tile.x && g.z === l.tile.z && g.name.toLowerCase() === l.tier.name.toLowerCase());
     for (let c = own.length - 1; c >= 0; c--) if (lying(plan[own[c]!]!)) return c + 1;
     return 0;
@@ -390,10 +467,19 @@ export type CueAt = 'seen' | 'written';
 export type RestockKind = 'bank' | 'cheat' | 'held';
 export const GO_FILE = 'fm-row-go.json';
 
+/** The go file. `tickMs`: the writer's observed ms per tick (wait.ts tickPeriod), if it measured one. */
+export interface GoCue {
+    v: 1;
+    ms: number;
+    tickMs?: number;
+}
+
 export interface FmRowOptions extends Pace {
     row: Row;
     /** In place of `row` when given. */
     tiles: Tile[] | null;
+    /** The logs in lighting order (default S03_LOGS, the route). */
+    logs: readonly Tier[];
     part: number;
     parts: number;
     skipOccupied: boolean;
@@ -423,11 +509,24 @@ function tileList(v: unknown): Tile[] {
     });
 }
 
+/** The `logs` option: tiers of S03_LOGS by debug name, each with a count, in lighting order. */
+function logList(v: unknown): Tier[] {
+    if (!Array.isArray(v) || v.length === 0) throw new Error('logs must be a non-empty list of {obj, n}');
+    return v.map((e: unknown, k) => {
+        const o = (e ?? {}) as Record<string, unknown>;
+        const tier = S03_LOGS.find(t => t.obj === o.obj);
+        if (!tier) throw new Error(`logs[${k}].obj must be one of ${S03_LOGS.map(t => t.obj).join(', ')} (got ${JSON.stringify(o.obj)})`);
+        return { obj: tier.obj, name: tier.name, n: int(o.n, NaN, `logs[${k}].n`, 1) };
+    });
+}
+
 export function fmRowOptions(raw: Record<string, unknown>, env: Record<string, string | undefined> = process.env): FmRowOptions {
     if (raw.row !== undefined && raw.tiles !== undefined) throw new Error('give row or tiles, not both');
     const r = (raw.row ?? LAB_ROW) as Record<string, unknown>;
     const row: Row = { x: int(r.x, NaN, 'row.x'), z: int(r.z, NaN, 'row.z'), len: int(r.len, NaN, 'row.len', 1), rows: int(r.rows, 2, 'row.rows', 1) };
     const tiles = raw.tiles === undefined ? null : tileList(raw.tiles);
+    const logs: readonly Tier[] = raw.logs === undefined ? S03_LOGS : logList(raw.logs);
+    const total = logs.reduce((n, t) => n + t.n, 0);
     const parts = int(raw.parts, 1, 'parts', 1);
     const part = int(raw.part, 0, 'part');
     if (part >= parts) throw new Error(`part must be below parts (got ${part} of ${parts})`);
@@ -448,15 +547,18 @@ export function fmRowOptions(raw: Record<string, unknown>, env: Record<string, s
     const kind = (rs.kind ?? 'bank') as RestockKind;
     if (kind !== 'bank' && kind !== 'cheat' && kind !== 'held') throw new Error(`restock.kind must be bank, cheat or held (got ${kind})`);
     if (kind === 'held') {
-        const inventories = new Set(ownLogs(S03_TOTAL, part, parts).map(inventoryOf)).size;
+        const inventories = new Set(ownLogs(total, part, parts).map(inventoryOf)).size;
         if (inventories !== 1)
-            throw new Error(`restock held carries one inventory, but part ${part} of ${parts} owns ${inventories} (parts must be ${Math.ceil(S03_TOTAL / INVENTORY)})`);
+            throw new Error(`restock held carries one inventory, but part ${part} of ${parts} owns ${inventories} (parts must be ${Math.ceil(total / INVENTORY)})`);
     }
+    if (ownLogs(total, part, parts).length === 0)
+        throw new Error(`part ${part} of ${parts} owns no logs: ${total} logs are ${Math.ceil(total / INVENTORY)} inventories of ${INVENTORY}`);
     const bank = rs.bank ? { x: int((rs.bank as Tile).x, NaN, 'restock.bank.x'), z: int((rs.bank as Tile).z, NaN, 'restock.bank.z') } : FALADOR_EAST_BANK;
     const restockDefault = kind === 'cheat' ? 6 : kind === 'held' ? 0 : chebyshev(bank, tiles?.[0] ?? row) + 20;
     return {
         row,
         tiles,
+        logs,
         part,
         parts,
         skipOccupied: skip,
@@ -499,11 +601,21 @@ export class FmRow {
     private litSlot = -1;
     private readonly ledger = new FireLedger();
     private readonly watchTiles: Tile[] = [];
+    // cueAt 'written' only: this client's tick period, watched from construction until the cue is
+    // placed on an observed one; and the moment the go file was seen, to place it again from.
+    private readonly period = tickPeriod(PERIOD_WINDOW_MS);
+    private stopPeriod = () => {};
+    private cue: { seenTick: number; seenMs: number; writtenMs: number; writerTickMs?: number; from: PeriodFrom } | null = null;
 
     constructor(private readonly ctx: RoleContext) {
         this.o = fmRowOptions(ctx.options);
+        if (this.o.cueAt === 'written') {
+            const now = ctx.sdk.getState();
+            if (now) this.period.see(now);
+            this.stopPeriod = ctx.sdk.onStateUpdate(s => this.period.see(s));
+        }
         this.path = this.o.tiles ?? this.o.row;
-        this.plan = rowPlan(this.path, S03_LOGS, this.o.spareTiles);
+        this.plan = rowPlan(this.path, this.o.logs, this.o.spareTiles);
         this.own = ownLogs(this.plan.length, this.o.part, this.o.parts);
         if (this.o.skipOccupied) {
             // Every tile a log may land on, with room for one-dropper skips past the layout's end.
@@ -553,24 +665,16 @@ export class FmRow {
 
         const room = maxRestockTicks(o.parts, o);
         if (o.restockTicks > room) ctx.log('warning: restocks too slow for this many droppers', { restockTicks: o.restockTicks, max: room, parts: o.parts });
-        const ground = await ctx.sdk.scanGroundItems(o.scanRadius).catch(() => [] as GroundItem[]);
-        this.cursor = resumeCursor(this.plan, this.own, ground);
-        if (this.cursor > 0) {
-            // A restart mid-row: SCORED's progress is relearned from the fires; until then, pace as if it starts now.
-            for (let c = 0; c < this.cursor; c++) {
-                this.dropped.set(this.own[c]!, -1);
-                if (o.skipOccupied) this.placed.set(this.own[c]!, { slot: this.plan[this.own[c]!]!.slot, tick: -1 });
-            }
-            this.start = this.s!.tick;
-            ctx.log('resume', { cursor: this.cursor, next: this.own[this.cursor] });
-        } else {
+        const revisit = shortestRevisit(plannedTiles(this.path, o.parts, o.spareTiles, this.plan.length));
+        if (revisit !== null && ROLL_TICKS * revisit < FIRE_OUT_TICKS)
+            ctx.log('warning: a tile comes round before its last fire is surely out', { logs: revisit, ticks: ROLL_TICKS * revisit, fireOut: FIRE_OUT_TICKS, spareTiles: o.spareTiles });
+        if (!(await this.resume())) {
             await this.restock();
             await this.goTo(this.plan[this.own[0]!]!.tile);
             this.phase('armed', { start: o.start, part: o.part, parts: o.parts, logs: this.own.length });
             const t = await this.trigger();
             if (t === null) return;
-            // Log 0 leaves the dropper's hands on the tick after the trigger and turns public REVEAL_TICKS later.
-            this.start = t + 1 + o.reveal + o.lead;
+            this.start = this.startOf(t);
             ctx.log('start', { tick: t, logZeroDue: this.start });
         }
         this.phase('dropping');
@@ -580,6 +684,7 @@ export class FmRow {
             const r = await waitUntil(ctx.sdk, st => st.tick > state.tick, { maxTicks: 50 });
             if (!r.ok || !r.state) throw new Error('no state from the client for 50 ticks');
             state = r.state;
+            this.refineCue();
             await this.observe(state);
             if (this.cursor >= this.own.length) {
                 if (this.progress.lit > this.own.at(-1)! || state.tick - lastDropTick > o.lingerTicks) break;
@@ -587,7 +692,68 @@ export class FmRow {
             }
             if (await this.step(state)) lastDropTick = state.tick;
         }
+        this.stopPeriod();
         ctx.log('fm-row: finished', { dropped: this.dropped.size, lit: this.progress.lit, lost: [...this.lost], early: this.early });
+    }
+
+    /** Log 0 leaves the dropper's hands on the tick after the trigger and turns public REVEAL_TICKS later. */
+    private startOf(trigger: number): number {
+        return trigger + 1 + this.o.reveal + this.o.lead;
+    }
+
+    /** cueAt 'written': the go file's tick at the best period known now (`cuePeriod`), logged as `m`. Once observed, the watch ends. */
+    private placeCue(m: 'cue' | 'cue: refined'): number {
+        const c = this.cue!;
+        const observed = this.period.msPerTick(PERIOD_MIN_SPAN_MS);
+        const p = cuePeriod(observed, c.writerTickMs, this.o.tickMs);
+        const t = cueTick(c.seenTick, c.seenMs, c.writtenMs, p.tickMs);
+        c.from = p.from;
+        if (p.from === 'observed') this.stopPeriod();
+        this.ctx.log(m, {
+            seenTick: c.seenTick,
+            seenMs: c.seenMs,
+            writtenMs: c.writtenMs,
+            tickMs: p.tickMs,
+            tickMsFrom: p.from,
+            observedTickMs: observed === null ? null : Math.round(observed * 10) / 10,
+            writerTickMs: c.writerTickMs ?? null,
+            nominalTickMs: this.o.tickMs,
+            cueTick: t
+        });
+        return t;
+    }
+
+    /**
+     * A dropper that reaches its trigger within PERIOD_MIN_SPAN_MS of starting (a held one
+     * logs in at the row) places the cue on a fallback period. Once it has watched the ticks long
+     * enough it places it again on the observed one, from the same moment it saw the go file.
+     * A nominal period that runs fast places the cue early, so until then it paces early, not late.
+     */
+    private refineCue(): void {
+        if (!this.cue || this.cue.from === 'observed' || this.period.msPerTick(PERIOD_MIN_SPAN_MS) === null) return;
+        const was = this.start;
+        this.start = this.startOf(this.placeCue('cue: refined'));
+        this.ctx.log('start', { logZeroDue: this.start, was });
+    }
+
+    /**
+     * A restart mid-row (`resumeCursor`): the own logs already down are taken as dropped, and
+     * SCORED's progress is relearned from the fires; until then it paces as if SCORED starts now.
+     * False on a fresh start, which arms, waits for its trigger and (held) checks its load.
+     */
+    private async resume(): Promise<boolean> {
+        const { ctx, o } = this;
+        const ground = await ctx.sdk.scanGroundItems(o.scanRadius).catch(() => [] as GroundItem[]);
+        const carried = o.restock.kind === 'held' ? (t: Tier) => this.heldCount(t) : undefined;
+        this.cursor = resumeCursor(this.plan, this.own, ground, carried);
+        if (this.cursor === 0) return false;
+        for (let c = 0; c < this.cursor; c++) {
+            this.dropped.set(this.own[c]!, -1);
+            if (o.skipOccupied) this.placed.set(this.own[c]!, { slot: this.plan[this.own[c]!]!.slot, tick: -1 });
+        }
+        this.start = this.s!.tick;
+        ctx.log('resume', { cursor: this.cursor, next: this.own[this.cursor] });
+        return true;
     }
 
     private async trigger(): Promise<number | null> {
@@ -607,11 +773,11 @@ export class FmRow {
         while (!ctx.signal.aborted) {
             const r = await waitUntil(ctx.sdk, fired, { maxTicks: 100 });
             if (r.ok && o.start === 'cue' && o.cueAt === 'written') {
-                // A dropper that logs in after the cue counts from when it was written, not from now.
-                const ms = readJson<{ ms: number }>(join(o.cueDir, GO_FILE))!.ms;
-                const t = cueTick(r.tick, Date.now(), ms, o.tickMs);
-                ctx.log('cue', { seenTick: r.tick, writtenMs: ms, tickMs: o.tickMs, cueTick: t });
-                return t;
+                // A dropper that logs in after the cue counts from when it was written, not from now,
+                // in ticks as long as this client has seen them take (rs/158: timed on observed ticks).
+                const g = readJson<GoCue>(join(o.cueDir, GO_FILE))!;
+                this.cue = { seenTick: r.tick, seenMs: Date.now(), writtenMs: g.ms, writerTickMs: g.tickMs, from: 'nominal' };
+                return this.placeCue('cue');
             }
             if (r.ok) return r.tick;
             if (Date.now() - heartbeat > 60_000) {
@@ -698,14 +864,16 @@ export class FmRow {
     /**
      * skipOccupied: the tile own log j goes on. It starts at its planned slot, or the slot
      * after the previous log where a skip pushed that one on, and moves on past any
-     * occupied tile in view, never beyond its block (`blockLast`).
+     * occupied tile in view, never beyond its block (`blockLast`). A fire it saw lit long
+     * enough before log j's need (`fireOutBy`) will be out when j is lit, so it is no skip.
      */
     private chooseTile(j: number, st: BotWorldState): Tile {
         let c = this.candidate;
         if (c?.i !== j) c = this.candidate = { i: j, slot: Math.max(this.plan[j]!.slot, (this.placed.get(j - 1)?.slot ?? -1) + 1), full: false };
+        const need = needTick(this.progress, j, st.tick, this.start);
         const inView = (s: number) => {
             const t = pathTile(this.path, s);
-            return chebyshev(pos(st), t) <= 14 && occupied(t, st.nearbyLocs, st.groundItems);
+            return chebyshev(pos(st), t) <= 14 && occupied(t, st.nearbyLocs, st.groundItems, fireOutBy(this.ledger.freshSince(t), need));
         };
         if (!c.full && inView(c.slot)) {
             const r = placeSlot(c.slot, blockLast(j, this.plan.length, this.o.spareTiles, this.o.parts), inView);

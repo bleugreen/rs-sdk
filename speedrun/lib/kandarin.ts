@@ -12,7 +12,8 @@
 // 10-17 damage per attempt); 30 Hitpoints running with it off arrived 12 times
 // in 14. A death keeps one unit of each of the three priciest items
 // (death.rs2), so a carried coin stack is lost: carry coins only with Hitpoints
-// well above 30.
+// well above 30. A crossing starts only on rested Hitpoints (restForCrossing):
+// a round trip otherwise starts its second crossing on what the first left.
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
@@ -40,6 +41,36 @@ export const IF_AUTO_RETALIATE_OFF = 151; // controls:com_3
 /** Hitpoints level to have before the first crossing (see the header). */
 export const CROSSING_HITPOINTS = 30;
 
+/** Current Hitpoints to start a crossing on: CROSSING_HITPOINTS, or full when the level is lower. */
+export const crossingRestTarget = (baseLevel: number): number => Math.min(baseLevel, CROSSING_HITPOINTS);
+
+/** Hitpoints regenerate one per 100 ticks. */
+const REGEN_TICKS = 100;
+
+/**
+ * Stand still until current Hitpoints reach crossingRestTarget (about a minute a
+ * point). Gives up after the regeneration time plus two minutes and carries on,
+ * so a Hitpoints reading that never moves cannot hold a role forever.
+ */
+export async function restForCrossing(t: Traveller): Promise<void> {
+    const hp = () => t.sdk.getSkill('Hitpoints');
+    const target = crossingRestTarget(hp()?.baseLevel ?? 10);
+    const from = hp()?.level ?? 0;
+    if (from >= target) return;
+    const t0 = t.sdk.getState()?.tick ?? 0;
+    const limit = (target - from + 2) * REGEN_TICKS;
+    t.log('resting before the crossing', { hitpoints: from, target, at: pos(t.sdk) });
+    while ((hp()?.level ?? 0) < target) {
+        t.checkSignal();
+        if ((t.sdk.getState()?.tick ?? t0) - t0 > limit) {
+            t.log('rest cut short', { hitpoints: hp()?.level, target, ticks: limit });
+            return;
+        }
+        await t.sdk.waitForTicks(10);
+    }
+    t.log('rested', { hitpoints: hp()?.level, ticks: (t.sdk.getState()?.tick ?? t0) - t0 });
+}
+
 /** East of the mountain, past Falador's walls: the leg every crossing walks through (walkTo plans each leg). */
 export const TAVERLEY: Pt = { x: 2880, z: 3410 };
 /** West of Taverley, on the mountain or past it, above ground: the walk to Seers' is one leg from here. */
@@ -49,9 +80,12 @@ export const westOfTaverley = (p: Pt): boolean => p.x < 2870 && p.z < 6400;
 export const COW_PEN: Pt = { x: 3253, z: 3285 };
 export const inCowPen = (p: Pt): boolean => p.x >= 3242 && p.x <= 3265 && p.z >= 3255 && p.z <= 3298;
 
-/** Seers' Village, Catherby and the Ranging Guild, on the ground floor. */
+/** Seers' Village, Catherby and the Ranging Guild (ground-floor coordinates). */
+export const kandarinTile = (p: Pt): boolean => p.x >= 2650 && p.x <= 2830 && p.z >= 3370 && p.z <= 3530;
+
+/** The player stands in Kandarin (kandarinTile), on the ground floor. */
 export const inKandarin = (s: BotWorldState | null): boolean =>
-    !!s?.player && s.player.level === 0 && s.player.worldX >= 2650 && s.player.worldX <= 2830 && s.player.worldZ >= 3370 && s.player.worldZ <= 3530;
+    !!s?.player && s.player.level === 0 && kandarinTile({ x: s.player.worldX, z: s.player.worldZ });
 
 /** Chebyshev distance in tiles. */
 export const cheb = (a: Pt, b: Pt): number => Math.max(Math.abs(a.x - b.x), Math.abs(a.z - b.z));
@@ -105,6 +139,7 @@ export async function travel(t: Traveller, dest: Pt, tolerance = 2, what = '', t
 /** From the Lumbridge side to `dest` in Kandarin, over White Wolf Mountain. */
 export async function crossToKandarin(t: Traveller, dest: Pt, what: string): Promise<void> {
     await crossingSettings(t.sdk, t.log);
+    await restForCrossing(t);
     t.log('crossing to Kandarin', { from: pos(t.sdk), to: what, hitpoints: t.sdk.getSkill('Hitpoints')?.level });
     const t0 = t.sdk.getState()?.tick ?? 0;
     await travel(t, TAVERLEY, 4, 'Taverley', 300_000);
@@ -115,6 +150,7 @@ export async function crossToKandarin(t: Traveller, dest: Pt, what: string): Pro
 /** From Kandarin back to `dest` on the Lumbridge side (Varrock, Falador), over White Wolf Mountain. */
 export async function crossFromKandarin(t: Traveller, dest: Pt, what: string): Promise<void> {
     await crossingSettings(t.sdk, t.log);
+    await restForCrossing(t);
     t.log('crossing back from Kandarin', { from: pos(t.sdk), to: what, hitpoints: t.sdk.getSkill('Hitpoints')?.level });
     const t0 = t.sdk.getState()?.tick ?? 0;
     await travel(t, TAVERLEY, 4, 'Taverley', 300_000);

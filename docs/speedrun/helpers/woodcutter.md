@@ -94,6 +94,13 @@ A death costs about 2 minutes and keeps the axe (the starter kit is banked
 first). Training 10 -> 30 HP on cows took 661-1,488 ticks (19-31 kills). More
 hitpoints would not pay back at this death rate.
 
+Every crossing starts rested. `restForCrossing` (`speedrun/lib/kandarin.ts`) stands
+still until current Hitpoints reach 30 (or full, below 30), about a minute a point,
+before the trek, the axe-upgrade walk out and `crossToKandarin`/`crossFromKandarin`.
+The 30 HP row above is for rested crossings. A round trip that skips the rest starts
+its second crossing on what the first left: on 2026-10-21 a woodcutter borrowed for
+a handover reached Draynor on 14/30, and its trek back to Seers' killed it.
+
 ## Measured on the demo (2026-10-21, from bbs, 300 ms ticks)
 
 ### Fresh account to level

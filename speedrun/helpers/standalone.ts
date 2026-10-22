@@ -210,23 +210,25 @@ const LINGER_POLL_MS = 5000;
 
 /**
  * Wait while `listed()` says the account is still in the world, polling every `everyMs`, for at
- * most `maxMs`. An unanswered check (null) doesn't hold anything up.
+ * most `maxMs`. An unanswered check (null) doesn't hold anything up. `waited` says whether the
+ * account was ever listed (onWait fired): `waitedMs` includes the checks' own time, so it is above
+ * zero even for an account that was never there.
  */
 export async function waitWhileListed(
     listed: () => Promise<boolean | null>,
     o: { maxMs: number; everyMs: number; stopped: () => boolean; onWait?: () => void; pause?: (ms: number) => Promise<void>; now?: () => number }
-): Promise<{ result: 'absent' | 'unknown' | 'still-listed' | 'stopped'; waitedMs: number }> {
+): Promise<{ result: 'absent' | 'unknown' | 'still-listed' | 'stopped'; waitedMs: number; waited: boolean }> {
     const now = o.now ?? Date.now;
     const pause = o.pause ?? sleep;
     const t0 = now();
     let waiting = false;
     for (;;) {
-        if (o.stopped()) return { result: 'stopped', waitedMs: now() - t0 };
+        if (o.stopped()) return { result: 'stopped', waitedMs: now() - t0, waited: waiting };
         const l = await listed();
-        if (l !== true) return { result: l === null ? 'unknown' : 'absent', waitedMs: now() - t0 };
+        if (l !== true) return { result: l === null ? 'unknown' : 'absent', waitedMs: now() - t0, waited: waiting };
         if (!waiting) o.onWait?.();
         waiting = true;
-        if (now() - t0 >= o.maxMs) return { result: 'still-listed', waitedMs: now() - t0 };
+        if (now() - t0 >= o.maxMs) return { result: 'still-listed', waitedMs: now() - t0, waited: true };
         await pause(Math.min(o.everyMs, Math.max(0, o.maxMs - (now() - t0))));
     }
 }
@@ -689,14 +691,14 @@ class AccountRun implements Stoppable {
         if (this.logins > 0) return;
         const origin = demoOrigin(this.botEnv.SERVER);
         const name = this.entry.account;
-        const { result, waitedMs } = await waitWhileListed(() => listedInWorld(origin, name), {
+        const { result, waitedMs, waited } = await waitWhileListed(() => listedInWorld(origin, name), {
             maxMs: LINGER_WAIT_MS,
             everyMs: LINGER_POLL_MS,
             stopped: () => this.L.isStopping,
             onWait: () => this.L.log(`[launcher] ${name}: still in the world from an earlier session; its login waits until ${origin}/playerpositions drops it (at most ${LINGER_WAIT_MS / 60_000} min)`)
         });
         if (result === 'still-listed') this.L.log(`[launcher] ${name}: still listed after ${Math.round(waitedMs / 1000)}s; logging in anyway`);
-        else if (waitedMs > 0 && result === 'absent') this.L.log(`[launcher] ${name}: left the world after ${Math.round(waitedMs / 1000)}s`);
+        else if (waited && result === 'absent') this.L.log(`[launcher] ${name}: left the world after ${Math.round(waitedMs / 1000)}s`);
     }
 
     private note(stream: 'lite' | 'role', line: string): void {

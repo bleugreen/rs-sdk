@@ -31,10 +31,10 @@
 // "Accepted trade." message it sends both players as the items swap.
 
 import type { BotSDK } from '../../sdk/index';
-import type { ActionResult, BotWorldState, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
+import type { ActionResult, BotWorldState, GameMessage, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
 import { countInventoryById, diffInventories, offerSatisfies, shortfall } from '../../sdk/trade-helpers';
 import { amountButtons, isXAmount, matchesItem, type ItemPattern } from './items';
-import { failureReason, onStates, tickMs, type StateSource } from './wait';
+import { failureReason, onStates, tickClock, tickMs, type StateSource } from './wait';
 
 export type TradeSdk = StateSource &
     Pick<BotSDK, 'sendTradeRequest' | 'sendOfferItem' | 'sendAcceptTrade' | 'sendDeclineTrade'>;
@@ -422,6 +422,8 @@ export const TRADE_BUSY_RE = /is busy at the moment/i;
 export const TRADE_SENT_RE = /^sending trade offer/i;
 
 export interface OpenTradeOptions {
+    /** Bound on the open in observed ticks, however slowly they come. */
+    maxTicks?: number;
     /** Wall-clock bound on the whole open (default 60 s). */
     timeoutMs?: number;
     /** Give up once the published tick passes this one. */
@@ -435,64 +437,109 @@ export interface OpenTradeOptions {
     noReplyTicks?: number;
 }
 
+/** trade.rs2 [opplayer4]'s `<name>:tradereq:`, as both clients show it: chat type 4 from the requester. */
+export const TRADE_REQUEST_RE = /wishes to trade/i;
+
+export function isTradeRequest(m: GameMessage): boolean {
+    return m.type === 4 && TRADE_REQUEST_RE.test(m.text);
+}
+
 /**
  * Open a trade with `partner` by name. A trade request to a player who has
  * already requested us is the acceptance and opens both screens at once. A
  * request refused because the partner is busy is re-sent on the frame that
- * shows the refusal; one that stands unanswered is re-sent every 8 s, or after
- * `noReplyTicks` when the engine never acknowledged it.
+ * shows the refusal; one that stands unanswered is re-sent after RESEND_TICKS.
+ * `maxTicks` bounds the open in observed ticks; `timeoutMs` (default 60 s) is a
+ * wall-clock give-up only.
+ *
+ * A request the engine never processed is re-sent on the second frame after
+ * it: every processed request is answered the tick it lands (the trade opens,
+ * "Sending trade offer...", or a refusal), but a click from a delayed player is
+ * dropped without a word (OpPlayerHandler). A request sent on the frame a craft
+ * lands is lost that way, and the level-up dialog that opens as the delay ends
+ * then makes the partner's requests "busy" until our next click closes it
+ * (clearPendingAction). Waiting a second frame keeps a slow click from being
+ * doubled: a second click on a trade the first one opened would close it.
+ *
+ * `noReplyTicks` (default DROPPED_TICKS) is that dropped-click threshold: a request with
+ * neither "Sending trade offer..." nor a refusal that many ticks after it is re-sent.
+ * `noReplyTicks: Infinity` turns it off (only the RESEND_TICKS re-send remains), for a
+ * request that may still be walking to a distant partner. `byTick` ends the open once the
+ * published tick passes it.
  */
+/** Observed ticks an unanswered request stands before it is re-sent (about 8 s at 300 ms). */
+export const RESEND_TICKS = 27;
+/** Default ticks without any reply before a request is taken as dropped and re-sent. */
+export const DROPPED_TICKS = 2;
+
 export async function openTrade(sdk: TradeSdk, partner: string, opts: OpenTradeOptions = {}): Promise<OpenResult> {
-    const timeoutMs = opts.timeoutMs ?? 60_000;
-    const deadline = Date.now() + timeoutMs;
+    const deadline = Date.now() + (opts.timeoutMs ?? 60_000);
+    const maxTicks = opts.maxTicks ?? Infinity;
     const byTick = opts.byTick ?? Infinity;
-    const live = () => Date.now() < deadline && (sdk.getState()?.tick ?? -Infinity) <= byTick;
+    const droppedTicks = opts.noReplyTicks ?? DROPPED_TICKS;
     const now = sdk.getState();
     const open = now ? tradeOf(now) : CLOSED;
     if (open.isOpen && sameName(open.partner, partner)) return { ok: true, firstClickTick: now!.tick };
     if (open.isOpen) await sdk.sendDeclineTrade();
 
+    // maxTicks counts observed ticks however slowly they come; the wall-clock timeout and the
+    // idle detector (a client that stopped publishing) only give up.
+    let stalled = false;
+    let wake: (() => void) | null = null;
+    const clock = tickClock(now?.tick, () => {
+        stalled = true;
+        wake?.();
+    }, now?.tick);
+    const unsubscribe = sdk.onStateUpdate(s => {
+        clock.see(s);
+        wake?.();
+    });
+    const over = () => stalled || clock.elapsed > maxTicks || Date.now() >= deadline || (sdk.getState()?.tick ?? -Infinity) > byTick;
+    /** Resolves on the first state satisfying pred, or once the bounds run out. */
+    const until = (pred: (s: BotWorldState) => boolean) =>
+        new Promise<void>(resolve => {
+            const timer = setTimeout(() => check(), Math.max(0, deadline - Date.now()));
+            function check() {
+                const s = sdk.getState();
+                if (!over() && !(s && pred(s))) return;
+                wake = null;
+                clearTimeout(timer);
+                resolve();
+            }
+            wake = check;
+            check();
+        });
+    const visible = (st: BotWorldState | null) => !!st?.nearbyPlayers.some(p => sameName(p.name, partner));
+
     let firstClickTick = -1;
     let lastRefusal = -1;
-    while (live()) {
-        const s = sdk.getState();
-        const player = s?.nearbyPlayers.find(p => sameName(p.name, partner));
-        if (!player) {
-            if (firstClickTick < 0 && Date.now() + tickMs() * 5 > deadline) return { ok: false, firstClickTick, reason: 'player_not_found' };
-            await waitState(sdk, st => st.nearbyPlayers.some(p => sameName(p.name, partner)), Math.min(5 * tickMs(), deadline - Date.now()));
-            if (!sdk.getState()?.nearbyPlayers.some(p => sameName(p.name, partner))) return { ok: false, firstClickTick, reason: 'player_not_found' };
-            continue;
+    try {
+        while (!over()) {
+            const s = sdk.getState();
+            const player = s?.nearbyPlayers.find(p => sameName(p.name, partner));
+            if (!player) {
+                if (firstClickTick < 0 && (maxTicks - clock.elapsed < 5 || Date.now() + tickMs() * 5 > deadline)) return { ok: false, firstClickTick, reason: 'player_not_found' };
+                const from = s?.tick ?? 0;
+                await until(st => visible(st) || st.tick >= from + 5);
+                if (!visible(sdk.getState())) return { ok: false, firstClickTick, reason: 'player_not_found' };
+                continue;
+            }
+            if (firstClickTick < 0) firstClickTick = s!.tick;
+            const clickTick = s!.tick;
+            void sdk.sendTradeRequest(player.index);
+            const refusal = (st: BotWorldState) => st.gameMessages.find(m => m.tick >= clickTick && m.tick > lastRefusal && TRADE_BUSY_RE.test(m.text));
+            const dropped = (st: BotWorldState) => st.tick >= clickTick + droppedTicks && !st.gameMessages.some(m => m.tick > clickTick && (TRADE_SENT_RE.test(m.text) || TRADE_BUSY_RE.test(m.text)));
+            await until(st => tradeOf(st).isOpen || refusal(st) !== undefined || dropped(st) || st.tick >= clickTick + RESEND_TICKS);
+            const after = sdk.getState();
+            if (after && tradeOf(after).isOpen) return { ok: true, firstClickTick };
+            const refused = after ? refusal(after) : undefined;
+            if (refused) lastRefusal = refused.tick;
         }
-        if (firstClickTick < 0) firstClickTick = s!.tick;
-        const clickTick = s!.tick;
-        void sdk.sendTradeRequest(player.index);
-        const refusal = (st: BotWorldState) => st.gameMessages.find(m => m.tick >= clickTick && m.tick > lastRefusal && TRADE_BUSY_RE.test(m.text));
-        const nr = opts.noReplyTicks;
-        const unanswered = (st: BotWorldState) => nr !== undefined && st.tick - clickTick >= nr && !st.gameMessages.some(m => m.tick >= clickTick && TRADE_SENT_RE.test(m.text));
-        await waitState(sdk, st => tradeOf(st).isOpen || refusal(st) !== undefined || unanswered(st) || st.tick > byTick, Math.min(8_000, deadline - Date.now()));
-        const after = sdk.getState();
-        if (after && tradeOf(after).isOpen) return { ok: true, firstClickTick };
-        const refused = after ? refusal(after) : undefined;
-        if (refused) lastRefusal = refused.tick;
+        return { ok: false, firstClickTick, reason: 'no_response' };
+    } finally {
+        unsubscribe();
+        clock.stop();
     }
-    return { ok: false, firstClickTick, reason: 'no_response' };
-}
-
-/** Wall-clock bounded wait used where the bound is "seconds", not ticks. */
-function waitState(sdk: StateSource, pred: (s: BotWorldState) => boolean, ms: number): Promise<boolean> {
-    return new Promise(resolve => {
-        const cur = sdk.getState();
-        if (cur && pred(cur)) return resolve(true);
-        const unsub = sdk.onStateUpdate(s => {
-            if (pred(s)) finish(true);
-        });
-        const timer = setTimeout(() => finish(false), Math.max(0, ms));
-        function finish(v: boolean) {
-            unsub();
-            clearTimeout(timer);
-            resolve(v);
-        }
-    });
 }
 
 // ---------------------------------------------------------------- drivers
@@ -517,6 +564,8 @@ export async function receiveFrom(
     opts: {
         want?: WantSpec[];
         maxTicks?: number;
+        /** openTrade's `maxTicks`: the open bounded in observed ticks. */
+        openMaxTicks?: number;
         openTimeoutMs?: number;
         /** The open and the trade both end by this published tick (it caps `maxTicks`). */
         byTick?: number;
@@ -529,6 +578,7 @@ export async function receiveFrom(
     let ctx = newReceiverCtx(partner, s0.inventory, opts.want);
     const open = await openTrade(sdk, partner, {
         timeoutMs: opts.openTimeoutMs ?? 60_000,
+        ...(opts.openMaxTicks !== undefined ? { maxTicks: opts.openMaxTicks } : {}),
         ...(opts.byTick !== undefined ? { byTick: opts.byTick } : {}),
         ...(opts.noReplyTicks !== undefined ? { noReplyTicks: opts.noReplyTicks } : {})
     });
@@ -580,11 +630,14 @@ export interface GiveOptions {
     /** What the partner may put up (default: nothing; ANY_OFFER for anything). */
     expectTheirs?: WantSpec[];
     maxTicks?: number;
+    /** Observed ticks to get the trade open (default: no tick limit). */
+    openMaxTicks?: number;
+    /** Wall-clock give-up for opening (default 60 s). */
     openTimeoutMs?: number;
 }
 
 async function giveImpl(sdk: TradeSdk, partner: string, specs: readonly GiveSpec[] | 'all', opts: GiveOptions): Promise<GiveResult> {
-    const open = await openTrade(sdk, partner, { timeoutMs: opts.openTimeoutMs ?? 60_000 });
+    const open = await openTrade(sdk, partner, { maxTicks: opts.openMaxTicks, timeoutMs: opts.openTimeoutMs ?? 60_000 });
     if (!open.ok) return { ok: false, ticks: 0, gave: [], sent: 0, reason: open.reason };
     const start = open.firstClickTick;
     const s0 = sdk.getState()!;

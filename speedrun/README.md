@@ -105,6 +105,10 @@ speedrun/
   `onStates` (feed every state to a step until it returns), `converse` and
   the helpers' own state listeners take the same two limits from the same
   `tickClock`; none has a total wall-clock budget.
+- **Turn wall time into ticks at the observed period, never at `tickMs()`.** The demo has run
+  at 340-370 ms a tick, so a nominal 300 overcounts. Something that has to count a wall-clock
+  interval in ticks (fm-row's `cueAt: 'written'`) measures its own client's period with
+  `wait.ts` `tickPeriod` and keeps `tickMs()` as the fallback before it has 20 s of ticks.
 - Tick logs go to `speedrun/runs/<runId>.jsonl`, or to `$SPEEDRUN_LOG`.
 
 ## Measurements: provenance

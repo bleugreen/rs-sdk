@@ -104,6 +104,50 @@ export function tickClock(from: number | undefined, onIdle: () => void, lastTick
     };
 }
 
+/** A client's tick period as it observes it, for turning wall time into ticks (`tickPeriod`). */
+export interface TickPeriod {
+    /** Feed every published state. */
+    see(s: BotWorldState): void;
+    /**
+     * Milliseconds per tick over the window: the wall-clock span from the first new tick in it
+     * to the newest, over the ticks `tickClock` counted between them. Null while that span is
+     * under `minSpanMs`, where a few ticks' arrival jitter would weigh too much.
+     */
+    msPerTick(minSpanMs: number): number | null;
+}
+
+/**
+ * The tick period this client observes over its last `windowMs`, for anything that has to turn
+ * a wall-clock interval into ticks: the demo has run at 340-370 ms a tick, so the nominal
+ * `tickMs()` overcounts. Each new tick is timed on arrival; republishes within a tick are not.
+ * A relaunch (the tick going back) restarts the measurement, since the time spent away is not
+ * ticks this client saw.
+ */
+export function tickPeriod(windowMs: number, now: () => number = () => Date.now()): TickPeriod {
+    const clock = tickClock(undefined, () => {});
+    clock.stop();
+    let marks: Array<{ ms: number; n: number }> = [];
+    let last: number | undefined;
+    return {
+        see(s) {
+            if (last !== undefined && s.tick < last) marks = [];
+            last = s.tick;
+            clock.see(s);
+            if (marks.at(-1)?.n === clock.elapsed) return;
+            const ms = now();
+            marks.push({ ms, n: clock.elapsed });
+            const keep = marks.findIndex(m => m.ms >= ms - windowMs);
+            if (keep > 0) marks.splice(0, keep);
+        },
+        msPerTick(minSpanMs) {
+            const a = marks[0];
+            const b = marks.at(-1);
+            if (!a || !b || b.n === a.n || b.ms - a.ms < minSpanMs) return null;
+            return (b.ms - a.ms) / (b.n - a.n);
+        }
+    };
+}
+
 /**
  * Resolve on the first published state satisfying `pred`, or `{ok:false}`:
  * `reason: 'maxTicks'` once `maxTicks` ticks pass, the only bound on how long

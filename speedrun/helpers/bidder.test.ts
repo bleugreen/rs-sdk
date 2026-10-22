@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { DEFAULT_OFFERS_FILE } from './ge-offers';
 import { bidderOptions, competingBid, decideBid, fundPlan, lineOptions, MAX_OFFERS_PER_LINE, openOwn, type MarketView, type OwnOffer } from './bidder';
 
 const GRAPES = 1987;
@@ -267,6 +268,13 @@ describe('options', () => {
         expect(bidderOptions({ item: 'Grapes', target: 520, maxPrice: 3000 }).lines).toHaveLength(1);
         expect(() => bidderOptions({ lines: [{ item: 'Grapes', target: 1, maxPrice: 1 }, { item: 'grapes', target: 2, maxPrice: 1 }] })).toThrow(/two lines/);
         expect(() => bidderOptions({ lines: [{ item: 'Grapes', target: 1 }] })).toThrow(/lines\[0\]\.maxPrice/);
+    });
+
+    test('the offers file for the bounty board is off unless asked for', () => {
+        expect(bidderOptions({ item: 'Grapes', target: 520, maxPrice: 3000 }).offersFile).toBeNull();
+        expect(bidderOptions({ item: 'Grapes', target: 520, maxPrice: 3000, offersFile: true }).offersFile).toBe(DEFAULT_OFFERS_FILE);
+        expect(bidderOptions({ item: 'Grapes', target: 520, maxPrice: 3000, offersFile: '/tmp/x.json' }).offersFile).toBe('/tmp/x.json');
+        expect(DEFAULT_OFFERS_FILE).toMatch(/fleet-run\/ge-offers\.json$/);
     });
 });
 
