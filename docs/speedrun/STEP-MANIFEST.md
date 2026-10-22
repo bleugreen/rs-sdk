@@ -32,7 +32,12 @@ Gnome Village. IDs never move: a step that changes place keeps its ID.
   gate holds; the plain loop is the step's fallback, and RUN-ORDER.md shows the knife-off total
   beside it.
 - **Best** is the fast path as measured on the direct path: the knife column, the burst-dialogue
-  column, the rs/91 kit, and so on.
+  column, the rs/91 kit, and so on. A quest's burst column is slightly conservative: rs/200 measured
+  its burst mode 1-2 ticks under the corrected `1 + ceil((k-1)/5)` rule (Cook's Assistant's start
+  6-7 against 8, the Grand Tree's Narnode start net ~11 against 13; `speedrun/lab/quests/dialogue-burst.ts`,
+  n = 3 each), because a run of k pages after an option or state page costs ceil(k/5) and a run
+  followed by a state page +1, so each quest child's `dialogue: 'both'` measurement supersedes the
+  column for its entry, with no re-price until then (the rule is in `quests/*.md`, rs/185's).
 - **Fallback** is what the step costs when its fast path fails: for a knife skill the plain loop
   (the knife-off column). For a quest it is the stock column,
   because read-then-act through the SDK relay costs about the stock client's 2 ticks per page (a

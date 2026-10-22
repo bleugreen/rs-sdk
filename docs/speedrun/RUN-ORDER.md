@@ -737,10 +737,11 @@ in force; 38,309 / 35,884 without rs/162, history).** Fold-in 13 (rs/265), one c
 | **2. The gate's measured switch-off false-fires on luck** (R21): `measureDrops` 30 to 120 by default and explicit per module (rs/262, #221, on main as 148788c5; main, 20:08 PDT); text and the module-status values only | - | 0 | 0 | rs/236; rs/262; rs/147 |
 | **3. S17's eat cost:** 0 (m) with `eatAt: 'land'` (rs/241's PR #218, the module's default, pending for the floor; rs/270's 15 laps at S17's arrival stats); 0-40 per eat, 0-120 over 2-3 eats, only without the option (a sensitivity row); falls are the open variance (+16 stones, ~+75 rope swing; rs/270's 6 in 15 against rs/241's 1 in 12), not re-priced | - | 0 | 0 | rs/241 (§6.1); rs/270 (§6.5); main, 20:37 PDT |
 | **4. H12, Monkey Madness's kit, superseded and provisional:** 2 prayer potions, 1 antipoison, the freed slots in sharks (9 at the floor; the 6-potion kit died in 3 of 3 lab chains of H-M); main's kit rule (margin over 3 of 3 clean chains); 2 free slots at segment J; O43 opened | - | 0 | 0 | rs/201; main, 20:33 PDT |
+| **5. Two stale texts:** RT§2's S23-to-S24 row's "+45 for a glory" superseded by fold-in 11's Goblin Diplomacy travel (~61 from the Rusty Anchor); the manifest notes the burst columns as slightly conservative (rs/200's burst mode 1-2 under the corrected rule), superseded per entry by each quest child's `dialogue: 'both'` measurement, no re-price | - | 0 | 0 | rs/185 via rs/158; rs/200 |
 | **Net, knife on** | | **0** | **0** | |
 
 The totals after each item (knife on; knife off in force, with rs/162's plain + bury; without it,
-history): item 1, 34,456 / 31,567, **37,178 / 34,713**, 37,914 / 35,479; items 2 to 4, the same.
+history): item 1, 34,456 / 31,567, **37,178 / 34,713**, 37,914 / 35,479; items 2 to 5, the same.
 
 **Changes since 71baa3a9 (fold-in 10, rs/209, which moved no total; 34,575 / 31,663 knife on;
 37,692 / 35,214 knife off in force; 38,428 / 35,980 without rs/162, history).** Fold-in 11 (rs/218):
