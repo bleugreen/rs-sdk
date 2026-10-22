@@ -53,6 +53,7 @@ import { crossingSettings } from '../lib/kandarin';
 import { journalProbe, questStatus } from '../lib/quests';
 import { closeSession, loadBotEnv, openSession, type Session } from '../lib/session';
 import { regionOf, sailTo, type Sailor } from '../lib/ships';
+import { crossTollGate, inAlKharid } from '../lib/toll-gate';
 import { logNote, TickLog, type TickRow } from '../lib/ticks';
 import { GNOME_STRONGHOLD_GATE, gateSide, inArea, passGate, runTo, spiritTree, travel, type Area, type SpiritTree, type TravelSdk } from '../lib/travel';
 import { waitUntil, type Pred } from '../lib/wait';
@@ -481,9 +482,17 @@ const TREES = { x: 3098, z: 3262, tol: 4 } as const;
 const TREE = /^Tree$/i;
 const CHOP = /^chop down$/i;
 
+/** Out of Al Kharid by the toll gate (the buyer can end at its bank; runTo cannot pay the toll). */
+async function westOfToll(ctx: StepContext<any>): Promise<void> {
+    if (!inAlKharid(st(ctx))) return;
+    const r = await crossTollGate(ctx.bot, ctx.sdk, false);
+    if (!r.ok) throw new Error(`the Al Kharid toll gate: ${r.reason}`);
+}
+
 /** Chop Montai's 6 logs from normal trees (Woodcutting 1, the bronze axe). */
 async function chopLogs(ctx: StepContext<any>): Promise<void> {
     const sdk = sdkOf(ctx);
+    if (invCount(st(ctx), TGV_ITEM.logs) < TGV_KIT.logs) await westOfToll(ctx);
     for (let tries = 0; invCount(st(ctx), TGV_ITEM.logs) < TGV_KIT.logs; tries++) {
         if (tries >= 60) throw new Error(`only ${invCount(st(ctx), TGV_ITEM.logs)} logs after 60 chops`);
         const tree = await findLoc(sdk, { name: TREE, op: CHOP, radius: 15 });
@@ -520,6 +529,7 @@ async function toGnomeCourse(ctx: StepContext<any>): Promise<void> {
     const s = st(ctx);
     if (nearGnome(s)) return;
     if (pos(s).z >= 6400) throw new Error(`underground at ${JSON.stringify(pos(s))}: climb out first`);
+    await westOfToll(ctx);
     if (!inGnomeStronghold(s)) {
         const route = ROUTES.spawnToGnome.slice(0, GATE_SOUTH_INDEX + 1);
         for (const [x, z] of route.slice(nearestWaypoint(route, pos(s)))) await go(ctx, { x, z, tol: 3 }, 'the agility route');
