@@ -77,6 +77,33 @@ export function serveFromLedger(row: string, manifest: string = readFileSync(MAN
     };
 }
 
+/**
+ * How a holder's serve (cannon.ts serve options: balls, extras) differs from the ledger row SCORED
+ * will want; empty when they agree. A top-up is served at most at its `to` count and at least at
+ * what SCORED will lack, which the holder cannot see, so a fixed serve count for it is reported for
+ * the staging to size against the ledger walk. Any drift makes SCORED's trade decline.
+ */
+export function serveDrift(serve: { balls: number; extras?: readonly { item: string; count: number }[] }, ledger: LedgerServe): string[] {
+    const out: string[] = [];
+    const norm = (s: string) => s.toLowerCase();
+    if (serve.balls !== ledger.balls) out.push(`${ledger.row}: serve.balls ${serve.balls}, the ledger ${ledger.balls}`);
+    const given = new Map((serve.extras ?? []).map(e => [norm(e.item), e.count]));
+    for (const e of ledger.extras) {
+        const n = given.get(norm(e.item));
+        if (n !== e.count) out.push(`${ledger.row}: ${e.item} served ${n ?? 'not at all'}, the ledger ${e.count}`);
+        given.delete(norm(e.item));
+    }
+    for (const t of ledger.topUps) {
+        const n = given.get(norm(t.item));
+        given.delete(norm(t.item));
+        if (n === undefined) out.push(`${ledger.row}: ${t.item} (to ${t.to}, counting what SCORED holds) not served`);
+        else if (n > t.to) out.push(`${ledger.row}: ${t.item} served ${n}, above the row's to ${t.to}`);
+        else out.push(`${ledger.row}: ${t.item} served a fixed ${n} against a top-up to ${t.to}: SCORED declines unless it holds at least ${t.to - n} (size it from the ledger walk)`);
+    }
+    for (const [item, n] of given) out.push(`${ledger.row}: ${item} x${n} served but not in the row`);
+    return out;
+}
+
 /** cannon.ts serve.returnExtras for the take-back: what the H11r row gives SCORED (none while it is give-only). */
 export function returnExtrasFromLedger(manifest: string = readFileSync(MANIFEST, 'utf8')): Required<ServeExtra>[] {
     return handOffFrom(manifest, 'H11r').receive.map(r => extraOf('H11r', r.name, r.count, r.ids?.[0]));
