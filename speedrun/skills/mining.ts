@@ -398,13 +398,12 @@ function exitStep(to: number): Step<any> {
         run: async ({ sdk }) => {
             sent.clear();
             for (let guard = 0; guard < 6; guard++) {
-                const batch = dead(sdk.getState()!).filter(i => !sent.has(i.slot)).slice(0, 5);
-                if (!batch.length) return;
-                for (const i of batch) {
+                const left = dead(sdk.getState()!).filter(i => !sent.has(i.slot));
+                for (const i of left.slice(0, 5)) {
                     sent.add(i.slot);
                     void sdk.sendDropItem(i.slot);
                 }
-                if (batch.length < 5) return;
+                if (left.length <= 5) return;
                 await nextTick(sdk);
             }
         },
