@@ -46,6 +46,9 @@
 //                In a group, on one giver only: it carries them on every trip and offers them on the
 //                group's last load, which boneServer keeps for it
 //   finalN       bones on that last load (default n - finalExtras.length: the same free slots as every load)
+//   acceptReturn standing mode, rehearsals only (default false): after each trade take the load straight
+//                back from the scored-side account (bone-receiver.ts returnLoads), and when the group is
+//                done bank everything held, so the bank ends as it was staged. Never set on the run
 //   cueDir       default RC_CUE_DIR, else run-machine/rc-cue in the checkout
 //   scope        required: { step, family }, the cue this giver serves (altar-cue.ts CueScope):
 //                family 'bone' in the standing mode (S07), 'courier' in on-request (S18)
@@ -139,6 +142,8 @@ export interface BoneGiverOptions {
     finalExtras: Extra[];
     /** Bones on the last load, the one that carries finalExtras. */
     finalN: number;
+    /** Rehearsal only: take each load back from the scored-side account, and bank everything at the end. */
+    acceptReturn: boolean;
     cueDir: string;
     scope: CueScope;
 }
@@ -230,9 +235,24 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
         resendTicks: Number(raw.resendTicks ?? 100),
         finalExtras,
         finalN: finalExtras.length ? finalN : n,
+        acceptReturn: acceptReturnOption(raw.acceptReturn, mode, kind),
         cueDir: typeof raw.cueDir === 'string' ? raw.cueDir : cueDir(env),
         scope: scopeOption(raw.scope, [mode === 'standing' ? 'bone' : 'courier'])
     };
+}
+
+function acceptReturnOption(raw: unknown, mode: BoneMode, kind: string): boolean {
+    if (raw === undefined || raw === false) return false;
+    if (raw !== true) throw new Error('acceptReturn must be true or false');
+    if (mode !== 'standing' || kind !== 'bank') throw new Error('acceptReturn is for the standing mode with restock kind bank (a trade-and-return rehearsal)');
+    return true;
+}
+
+/** The same items merged by name: what to want back from a give()'s `gave`. */
+export function returnWants(gave: readonly { name: string; count: number }[]): { name: string; count: number }[] {
+    const by = new Map<string, number>();
+    for (const g of gave) by.set(g.name, (by.get(g.name) ?? 0) + g.count);
+    return [...by].map(([name, count]) => ({ name, count }));
 }
 
 /** The bank can't make the next load (bones or extras): in a group the giver leaves rather than retrying. */
@@ -664,6 +684,7 @@ export class BoneGiver {
                     await ctx.sdk.waitForTicks(10).catch(() => {});
                 }
             }
+            if (this.o.acceptReturn && !ctx.signal.aborted) await this.bankAll().catch(e => ctx.log('final bank failed', { error: String(e).slice(0, 200) }));
         } finally {
             unsubOpen();
             watcher.close();
@@ -733,6 +754,7 @@ export class BoneGiver {
             this.trades++;
             this.trip = { tick: this.s?.tick ?? 0, energy: this.energy(), at: pos(this.s) };
         }
+        if (r.ok && o.acceptReturn) await this.takeReturn(t.partner, r.gave);
         ctx.log('trade', { ok: r.ok, ticks: r.ticks, load, gave: r.gave.map(i => `${i.name} x${i.count}`), final: isFinalLoad(o, load), waited: req.waited, sends: req.sends, bounces: req.bounces, ...(r.reason ? { reason: r.reason } : {}) });
     }
 
@@ -898,6 +920,29 @@ export class BoneGiver {
             ranBack: bank ? legRan(bank.at, now.at, now.tick - bank.tick) : null,
             runToggle: runIsOn(this.s)
         });
+    }
+
+    /** Rehearsal: the load just given comes straight back (bone-receiver.ts returnLoads); the next restock banks it. */
+    private async takeReturn(partner: string, gave: readonly { name: string; count: number }[]): Promise<void> {
+        const want = returnWants(gave);
+        // Not 'trading': a giver taking its load back must not look like the group's server.
+        this.setPhase('restock', 'taking the load back');
+        const r = await receiveFrom(this.ctx.sdk, partner, { want: want.map(w => ({ item: exact(w.name), amount: w.count })), openTimeoutMs: 60_000 });
+        this.ctx.log('return', { ok: r.ok, ticks: r.ticks, received: r.received.map(i => `${i.name} x${i.count}`), ...(r.reason ? { reason: r.reason } : {}) });
+    }
+
+    /** Rehearsal end: bank everything held, so the bank is back to its staged count; log what it holds. */
+    private async bankAll(): Promise<void> {
+        const { ctx, o } = this;
+        const bank = o.restock.bank;
+        this.setPhase('restock', 'banking everything at the end');
+        await walkNear(ctx, bank.x, bank.z, 3);
+        if (!(await openBank(ctx))) throw new Error('could not open the bank');
+        await depositAllExcept(ctx.sdk);
+        const items = ctx.sdk.getBankItems();
+        const keep = [...o.items, ...o.finalExtras.map(e => e.item)];
+        ctx.log('final bank', { bank: keep.map(name => `${items.filter(i => exact(name).test(i.name)).reduce((a, i) => a + i.count, 0)} ${name}`), carried: this.s?.inventory.length ?? 0 });
+        await closeBank(ctx);
     }
 
     /** Carry exactly `n` of the item and `extras`, and nothing else. */
