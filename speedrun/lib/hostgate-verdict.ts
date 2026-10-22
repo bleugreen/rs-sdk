@@ -256,7 +256,10 @@ export interface DirectRule {
     trials?: number;
     pass?: number;
     floor?: number;
-    /** (b) Tick arrival interval p90 over the probe window. */
+    /**
+     * (b) Tick arrival interval p90 over the probe window, ms. Default 4/3 of the probe's T
+     * (`TICK_FRACTIONS.tickP90Report`); with neither, (b) is not measured.
+     */
     maxTickP90Ms?: number;
     /** Make (b) a pass line (failing it reads re-measure). Default false: (b) is reported only. */
     tickP90PassLine?: boolean;
@@ -266,7 +269,7 @@ export interface DirectRule {
     minLoopRateP10?: number;
 }
 
-export const DIRECT_RULE = { trials: 60, pass: 60, floor: 58, maxTickP90Ms: 400, tickP90PassLine: false, maxCatchUpsPerMinute: 2, minLoopRateP10: 50 } as const;
+export const DIRECT_RULE = { trials: 60, pass: 60, floor: 58, tickP90PassLine: false, maxCatchUpsPerMinute: 2, minLoopRateP10: 50 } as const;
 
 /**
  * What the direct rule reads. A `ProbeResult` from `probeOnTime` is one (it carries its own
@@ -276,8 +279,12 @@ export const DIRECT_RULE = { trials: 60, pass: 60, floor: 58, maxTickP90Ms: 400,
 export interface DirectEvidence {
     onTime: number;
     trials: number;
-    /** Tick arrivals over the probe window; absent or null reads (b) and (c) as not measured. */
-    steadiness?: Pick<TickSteadiness, 'p90' | 'catchUpsPerMinute'> | null;
+    /**
+     * Tick arrivals over the probe window; absent or null reads (b) and (c) as not measured.
+     * `T` (the tick length the catch-ups were counted at) sets (b)'s limit; without it (b) is
+     * not measured unless the rule fixes `maxTickP90Ms`.
+     */
+    steadiness?: (Pick<TickSteadiness, 'p90' | 'catchUpsPerMinute'> & Partial<Pick<TickSteadiness, 'T' | 'TSource'>>) | null;
     /** The page's game-loop rate p10, loops/s; absent for an in-process probe, which has no page loop. */
     loopRateP10?: number | null;
 }
@@ -290,7 +297,8 @@ export interface GateCheck {
     /** Within the limit. null: not measured on this probe (it neither passes nor fails the gate). */
     ok: boolean | null;
     value: number | null;
-    limit: number;
+    /** null: (b) with no T to set its limit. */
+    limit: number | null;
 }
 
 /**
@@ -317,6 +325,9 @@ export interface DirectVerdict {
     failures: string[];
     /** A direct path that passes reacts on the next tick, so no schedule sends early. */
     lead: 0;
+    /** The tick length (b) and (c) were read at, ms, and its source; null when the probe had none. */
+    T: number | null;
+    TSource: TickSource | null;
 }
 
 /**
@@ -331,27 +342,39 @@ export function directDecision(r: DirectEvidence, rule: DirectRule = {}): Direct
     const scale = (k: number) => Math.ceil((r.trials * k) / of - 1e-9);
     const passAt = scale(rule.pass ?? of);
     const floorAt = scale(rule.floor ?? DIRECT_RULE.floor);
-    const maxP90 = rule.maxTickP90Ms ?? DIRECT_RULE.maxTickP90Ms;
+    const s = r.steadiness ?? null;
+    const T = s?.T ?? null;
+    // exact for the comparison; p90 is already rounded to 0.1 ms, so the rounded limit agrees
+    const maxP90 = rule.maxTickP90Ms ?? (T !== null ? tickLimits(T).tickP90Ms : null);
     const maxCatchUps = rule.maxCatchUpsPerMinute ?? DIRECT_RULE.maxCatchUpsPerMinute;
     const minLoop = rule.minLoopRateP10 ?? DIRECT_RULE.minLoopRateP10;
-    const s = r.steadiness ?? null;
     const loop = r.loopRateP10 ?? null;
     const a: GateCheck = { id: 'a', name: 'on-time trials', role: 'pass', ok: r.trials > 0 && r.onTime >= floorAt, value: r.onTime, limit: floorAt };
-    const b: GateCheck = { id: 'b', name: 'tick p90', role: (rule.tickP90PassLine ?? DIRECT_RULE.tickP90PassLine) ? 'pass' : 'report', ok: s ? s.p90 <= maxP90 : null, value: s?.p90 ?? null, limit: maxP90 };
+    const b: GateCheck = {
+        id: 'b',
+        name: 'tick p90',
+        role: (rule.tickP90PassLine ?? DIRECT_RULE.tickP90PassLine) ? 'pass' : 'report',
+        ok: s && maxP90 !== null ? s.p90 <= maxP90 : null,
+        value: s?.p90 ?? null,
+        limit: maxP90 === null ? null : round1(maxP90),
+    };
     const c: GateCheck = { id: 'c', name: 'catch-ups per minute', role: 'pass', ok: s ? s.catchUpsPerMinute <= maxCatchUps : null, value: s?.catchUpsPerMinute ?? null, limit: maxCatchUps };
     const d: GateCheck = { id: 'd', name: 'loop rate p10', role: 'pass', ok: loop === null ? null : loop >= minLoop, value: loop, limit: minLoop };
     const failed = (k: GateCheck) => k.role === 'pass' && k.ok === false;
     const overrun = failed(b) || failed(c);
     const failures: string[] = [];
     if (overrun) {
-        const why = [failed(c) ? `${c.value} catch-ups per minute over ${maxCatchUps}` : '', failed(b) ? `tick p90 ${b.value} ms over ${maxP90}` : ''].filter(Boolean).join(', ');
+        const why = [failed(c) ? `${c.value} catch-ups per minute over ${maxCatchUps}` : '', failed(b) ? `tick p90 ${b.value} ms over ${msText(b.limit!)}${T !== null ? ` (T ${T})` : ''}` : ''].filter(Boolean).join(', ');
         failures.push(`overrun period, re-measure (${why})`);
     }
     if (failed(d)) failures.push(`tab throttled: loop rate p10 ${loop}/s under ${minLoop} (check the run-machine setup)`);
     if (!a.ok) failures.push(r.trials === 0 ? 'no probe trials' : `on time ${r.onTime}/${r.trials}, under the floor of ${floorAt}`);
     const status: DirectStatus = overrun ? 're-measure' : failed(d) ? 'throttled' : !a.ok ? 'investigate' : r.onTime >= passAt ? 'pass' : 'marginal';
-    return { path: 'direct', on: status === 'pass' || status === 'marginal', status, onTime: r.onTime, trials: r.trials, passAt, floorAt, checks: [a, b, c, d], failures, lead: 0 };
+    return { path: 'direct', on: status === 'pass' || status === 'marginal', status, onTime: r.onTime, trials: r.trials, passAt, floorAt, checks: [a, b, c, d], failures, lead: 0, T, TSource: T !== null ? (s?.TSource ?? null) : null };
 }
+
+/** A limit in whole ms for logs: 533.3 prints as 533. */
+const msText = (v: number) => String(Math.round(v));
 
 export type HostVerdict = GateVerdict | DirectVerdict;
 
@@ -360,19 +383,29 @@ export function hostVerdict(r: ProbeSummary & DirectEvidence & { path?: ProbePat
     return r.path === 'direct' ? directDecision(r, direct) : gateDecision(r, model);
 }
 
+/** (b) for logs: `p90 447 ms (T 400, report <= 533)`; the limit's role is `report` or `pass`. */
+export function tickP90Text(p90: number | null, T: number | null, limit: number | null, role: GateCheck['role'] = 'report'): string {
+    const head = p90 === null ? 'p90 -' : `p90 ${p90} ms`;
+    if (limit === null) return `${head} (T unknown, no ${role} line)`;
+    return `${head} (${T !== null ? `T ${T}, ` : ''}${role} <= ${msText(limit)})`;
+}
+
 /**
  * The verdict's numbers, for logs: (a) to (d) in order, each marked pass or FAIL (a pass line),
- * report (a report-only check, with `over` when it is past its limit), or not measured.
+ * within or over (a report-only check), or not measured. (b) and (c) carry T and their limits in
+ * ms at that T: `(b) tick p90 447 ms (T 400, report <= 533) within; (c) catch-ups 0/min <= 2
+ * (< 200 after > 467 ms) pass`.
  */
 export function verdictText(v: HostVerdict): string {
     if (v.path === 'relay') return `p ${v.p.toFixed(2)}, predicted knife ${v.knife.toFixed(2)} vs plain ${v.plain.toFixed(2)}, lead ${v.lead}`;
     const [a, b, c, d] = v.checks as [GateCheck, GateCheck, GateCheck, GateCheck];
-    const mark = (k: GateCheck) => (k.ok === null ? 'not measured' : k.role === 'report' ? (k.ok ? 'report' : 'report, over') : k.ok ? 'pass' : 'FAIL');
+    const mark = (k: GateCheck) => (k.ok === null ? 'not measured' : k.role === 'report' ? (k.ok ? 'within' : 'over') : k.ok ? 'pass' : 'FAIL');
     const val = (k: GateCheck, unit: string) => (k.value === null ? '' : `${k.value}${unit} `);
+    const T = v.T ?? null;
     return (
         `(a) on time ${v.onTime}/${v.trials}, pass ${v.passAt}, floor ${v.floorAt} ${mark(a)};` +
-        ` (b) tick p90 ${val(b, ' ms')}<= ${b.limit} ${mark(b)};` +
-        ` (c) catch-ups ${val(c, '/min')}<= ${c.limit} ${mark(c)};` +
+        ` (b) tick ${tickP90Text(b.value, T, b.limit, b.role)} ${mark(b)};` +
+        ` (c) catch-ups ${val(c, '/min')}<= ${c.limit}${T !== null ? ` (${catchUpText(T)})` : ''} ${mark(c)};` +
         ` (d) loop p10 ${val(d, '/s')}>= ${d.limit} ${mark(d)}: ${v.status}`
     );
 }
