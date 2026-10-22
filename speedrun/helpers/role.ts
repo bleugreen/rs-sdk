@@ -209,7 +209,13 @@ async function runDirect(role: Role): Promise<never> {
     }
     const controller = new AbortController();
     let stopping = false;
+    let inWorld = false;
     const stop = () => {
+        // Still logging in: nothing to log out of, and the login may hang for as long as the server lets it.
+        if (!inWorld) {
+            console.log('[direct] stopped before the login finished');
+            process.exit(0);
+        }
         stopping = true;
         controller.abort(new Error('stopped'));
     };
@@ -232,6 +238,7 @@ async function runDirect(role: Role): Promise<never> {
         else console.error('[direct] login failed', e);
         process.exit(1);
     }
+    inWorld = true;
     process.env.LOGGED_IN_AT = String(Date.now());
     console.log(DIRECT_IN_WORLD(account, host));
     let end: { reason: string } | null = null;

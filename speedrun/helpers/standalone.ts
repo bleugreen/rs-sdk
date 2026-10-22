@@ -773,6 +773,8 @@ class AccountRun implements Stoppable {
             this.state = 'stopped';
             return;
         }
+        // A relay client that never got into the world has nothing to log out of: close it at once.
+        const inWorld = this.state === 'online';
         this.state = 'stopping';
         const role = this.roles.running;
         if (role && role.exitCode === null) {
@@ -782,12 +784,12 @@ class AccountRun implements Stoppable {
         await this.roles.done.catch(() => undefined);
         const lite = this.lite;
         if (lite && lite.exitCode === null) {
-            const out = await this.logout(lite, deadline).catch(e => {
+            const out = !inWorld ? false : await this.logout(lite, deadline).catch(e => {
                 this.L.log(`[launcher] ${this.entry.account}: logout failed: ${e}`);
                 return false;
             });
             if (!out) {
-                this.L.log(`[launcher] ${this.entry.account}: no clean logout; closing the client`);
+                this.L.log(`[launcher] ${this.entry.account}: ${inWorld ? 'no clean logout' : 'not in the world'}; closing the client`);
                 lite.kill('SIGINT');
                 if (!(await exitedWithin(lite, remaining(deadline, 5000)))) lite.kill('SIGKILL');
             }
