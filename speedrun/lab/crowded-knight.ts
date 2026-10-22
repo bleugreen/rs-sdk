@@ -272,17 +272,23 @@ async function phase(name: string): Promise<void> {
         await loginBots();
         prep.loginWallMs = Date.now() - t0;
     }
-    if (!(await tele(sdk, ANCHOR.x, ANCHOR.z))) throw new Error(`${name}: tele to the anchor failed`);
-    for (const [k, v] of [['hitpoints', HP], ['thieving', THIEVING]] as const) await say(`setstat ${k} ${v}`);
-    while (state().dialog?.isOpen) {
+    // a level-up page left open by the last program swallows the ::tele typed into chat
+    for (let i = 0; i < 10 && state().dialog?.isOpen; i++) {
         await sdk.sendClickDialog(0);
         await waitTicks(sdk, 1);
     }
+    let landed = false;
+    for (let i = 0; i < 3 && !landed; i++) landed = await tele(sdk, ANCHOR.x, ANCHOR.z);
+    if (!landed) throw new Error(`${name}: tele to the anchor failed (dialog open: ${!!state().dialog?.isOpen})`);
+    for (const [k, v] of [['hitpoints', HP], ['thieving', THIEVING]] as const) await say(`setstat ${k} ${v}`);
     if (kind === 'crowd' || kind === 'prefer') {
         const k = knightNear(state());
         if (!k) throw new Error(`${name}: no knight in view of the anchor`);
         knightIndex = k.index;
-        for (const b of bots) await cheat(b.session.sdk, 'setstat hitpoints 99');
+        for (const b of bots) {
+            b.knight = null;
+            await cheat(b.session.sdk, 'setstat hitpoints 99');
+        }
         prep.knight = { index: k.index, x: k.tileX ?? k.x, z: k.tileZ ?? k.z };
         prep.teleported = await teleBots(k.tileX ?? k.x, k.tileZ ?? k.z, true);
         for (const b of bots) b.knight = k.index;
