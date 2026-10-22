@@ -24,7 +24,8 @@
 //   ROLE_OPTIONS='{"source":"guild"}' bun speedrun/helpers/grapes.ts <account>
 //
 // Every start reads where the account is and what it has and resumes from there
-// (situation / choosePhase): a camper restarted at its spawn camps again, and a
+// (situation / choosePhase): a camper restarted at its spawn camps again, an account
+// that starts in Al Kharid (a coin earner) pays the toll out first, and a
 // phase that works on the surface first climbs out of the hideout or the guild.
 // A cycle that fails backs off (5, 10, 20 ... 200 ticks); five failures in a row
 // log the phase 'stuck' until a cycle succeeds again.
@@ -35,6 +36,7 @@
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, GroundItem, NearbyLoc, NearbyNpc } from '../../sdk/types';
 import { advance } from '../lib/dialogue';
+import { isEastOfTollGate, travelTo, WEST_OF_GATE } from '../lib/toll-gate';
 import { waitUntil } from '../lib/wait';
 import type { Role, RoleContext } from './role';
 import { runStandalone } from './role';
@@ -182,7 +184,7 @@ const MIN_FOOD = 6;
 const WEAPON_SLOT = 3;
 
 export type Source = 'guild' | 'phoenix' | 'goblins';
-export type Phase = 'camp-guild' | 'camp-phoenix' | 'fetch-kit' | 'chickens' | 'goblin-village' | 'phoenix-quest' | 'hat-hunt';
+export type Phase = 'leave-alkharid' | 'camp-guild' | 'camp-phoenix' | 'fetch-kit' | 'chickens' | 'goblin-village' | 'phoenix-quest' | 'hat-hunt';
 
 /** What the start of a cycle knows about the account: where it is and what it has. */
 export interface Situation {
@@ -235,6 +237,8 @@ export function situation(sdk: BotSDK, source: Source, opts: { cooking: number; 
  * gang's door decides (a refusal records it as not a member).
  */
 export function choosePhase(s: Situation, kitTried: boolean): Phase {
+    // Nothing this role does is east of the toll-gate fence, and walkTo never crosses it.
+    if (s.at.level === 0 && isEastOfTollGate(s.at)) return 'leave-alkharid';
     if (s.source === 'guild' && s.hat && s.cooking >= s.cookTo) return 'camp-guild';
     if (s.source === 'phoenix') {
         if (s.phoenixMember === true || (s.phoenixMember === null && s.combatOk)) return 'camp-phoenix';
@@ -940,8 +944,16 @@ class Gatherer {
         if (r === 'killed' && this.s.kills % 25 === 0) this.ctx.log('goblins', summary(this.s));
     }
 
+    /** Through the toll gate to its west side, paying the toll (an account reassigned from coin earning stands in Al Kharid). */
+    async leaveAlKharid(): Promise<void> {
+        const r = await travelTo(this.bot, this.sdk, WEST_OF_GATE, { tolerance: 3, log: this.ctx.log, signal: this.ctx.signal });
+        if (!r.ok) throw new Error(`leaving Al Kharid: ${r.reason}`);
+    }
+
     async runPhase(phase: Phase, bankAt: number): Promise<void> {
         switch (phase) {
+            case 'leave-alkharid':
+                return this.leaveAlKharid();
             case 'camp-guild':
                 return this.camp(bankAt, this.guild);
             case 'camp-phoenix':
