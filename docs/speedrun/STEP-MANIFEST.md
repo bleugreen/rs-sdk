@@ -156,9 +156,9 @@ of Goblin Diplomacy's standalone travel that the legs already carried off its ro
 cannon session, Prayer, Crafting and Cooking pass it. Fold-in 13 adds S15's measured H to M (+352),
 so Monkey Madness (4,429) passes Agility (4,327) for rank 1.
 
-The expected column sums to **31,688** (the steps) plus the legs' **2,215.7**; RUN-ORDER.md section 6
+The expected column sums to **31,688** (the steps) plus the legs' **2,209.5**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **35,188.7** knife-on expected (32,342.7 best), against the record of 35,916.
+retries, restarts) for its **35,182.5** knife-on expected (32,341.7 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -172,7 +172,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 2 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,228 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; rs/155); S17 4,114 on the engine's fall roll, 66 the clean-lap floor (rs/270; cairn_jumps' demo run continues as rs/295); run mode 0 on both courses (m, rs/270) |
 | 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,157 | 3,148 | 3,775 | ~627 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | **on main, 4235a9e7 (#220; rs/260's snapshot of rs/230's lab-accepted module, rs/147's branch at 59ec3933)**, with `selfStarter` (plain 3.62) and `beforeRestart`; `stay2` bury (#159, rs/182) and restart fix (e5d8a058, #170; rs/207) on main; gate `measureDrops` 120 explicit (rs/259, 314989e9); **demo-measured** (rs/259's cairn_rocks: 3.019 per xp ore uncontested); **rs/298**, the Mining S09 snapshot (3fa6fbe4's ore drop and 314989e9), pending |
 | 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,053 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; on rs/147's branch, changing with rs/236; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165); gate `measureDrops` 120 explicit (rs/261, building); run mode 0 (m, rs/261); **the knife demo-measured** (rs/261's cairn_chops, hiscore 3,329; S07 at its luck-free 3,053); **rs/297**, the Woodcutting S07 snapshot, pending |
-| 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,215.7 | 2,196.7 | ~2,340 i | ~143 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | **on main, PR #238** (rs/291's snapshot of rs/198's module for rs/186, merge 5a70e4e6): `legs.ts` and its test, `tools/demo-legs.ts`, `measure-legs.ts`, `measure-ardougne-handoff.ts`, `ticks.ts`'s `travel` rows, run-transitions.md section 10; lab-measured and demo-checked (h55); its walker, `lib/travel.ts`, on main, 0658e896 (#200); rs/294's forcemove door fix on main (#240); both inside the floor e392933e |
+| 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,209.5 | 2,195.7 | ~2,340 i | ~144 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | **on main, PR #238** (rs/291's snapshot of rs/198's module for rs/186, merge 5a70e4e6): `legs.ts` and its test, `tools/demo-legs.ts`, `measure-legs.ts`, `measure-ardougne-handoff.ts`, `ticks.ts`'s `travel` rows, run-transitions.md section 10; lab-measured and demo-checked (h55); its walker, `lib/travel.ts`, on main, 0658e896 (#200); rs/294's forcemove door fix on main (#240); both inside the floor e392933e |
 | 6 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~120 elsewhere | ~190 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` | building (rs/154, parked under the 2-4 child limit); stun pack: lab-accepted (bury, charge, arrows; rs/132); top-ups ~0 with the courier on a side tile (rs/279, lab); rs/290's opt-in idle re-send building |
 | 7 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | on main, 22552bf4 (#197; rs/231); lab-accepted (1,998 on 78-99; rs/152); gate `measureDrops` 120 explicit (#221) |
 | 8 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,972 | 1,946 | 1,997 (the bow from 70); 2,023-2,211 without the kit | ~265 | overlay | `cannon-kit.ts` (rs/59, on main) | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible); run mode ~0, at most ~9 on S27's melee phase (m/i, rs/196) |
@@ -1446,10 +1446,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   because other players toggle doors) and the open-door figure for the best: L24b 60 / 54 (the door at
   (2958,3506) and the large doors at (2958,3509), ~3 ticks each), T22-23 21 / 15; the teleport legs,
   L24c and T21-22, at the mean over the landing square (a random walkable tile within Chebyshev 2,
-  `teleport.rs2`) for the expected, the demo reading until rs/198's per-landing-tile table (~40 casts
-  over the 5x5 square, now that rs/294's `travel.ts` forcemove fix is on main, #240) gives the true mean, and the lab for
-  the best: L24c 8 / 4.5, T21-22 36 / 32.5. Net +17.2 expected and -1.8 best.
-- **Ticks:** **2,215.7** expected and **2,196.7** best for the order, the twelve way-in legs at their whole ticks (1,382 until
+  `teleport.rs2`) for the expected and the fastest tile for the best, from rs/198's lab landing-square table (m, lab, through `runLeg`, 300 ms; the cast 4 ticks every time; per-tile table in rs/186's messages):
+  L24c 4.8 / 4 (80 casts over 22 of 25 tiles, range 4-7), T21-22 33.0 / 32 (40 casts over 14 tiles,
+  range 32-34). The demo readings, 8 and 36, sit above every lab tile, so they are a demo-side cost
+  (a 5-tick cast and a slower run), carried inside RUN-ORDER.md's demo-latency line (~+20 i over the
+  run's ~33 teleport casts), not here. Net +11 expected and -2.8 best.
+- **Ticks:** **2,209.5** expected and **2,195.7** best for the order, the twelve way-in legs at their whole ticks (1,382 until
   fold-in 11 netted them against the arrival rows the quests counted; the 840.5 moved here, O6).
   Every leg is measured end to end: `research/run-transitions.md` §2, §4, §6, and rs/198's lab
   legs through this module (m (lab), on main with rs/291's snapshot, PR #238, and run-transitions.md section 10 on main; RUN-ORDER.md LG), which RUN-ORDER.md
