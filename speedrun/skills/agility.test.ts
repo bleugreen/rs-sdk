@@ -261,6 +261,77 @@ describe('agility Wilderness decisions', () => {
         expect(order.slice(1).every(x => x === 'walk')).toBe(true);
     });
 
+    describe('walk-gnome and the Gnome Stronghold gate (lib/travel.ts passGate)', () => {
+        const gate = { id: 190, name: 'Gate', x: 2459, z: 3383, distance: 1, optionsWithIndex: [{ text: 'Open', opIndex: 1 }], options: ['Open'] };
+        /** The gate's script: Femi's scene on a first visit from the south, else 3 p_teleport steps through. */
+        function gateServer(sdk: FakeSdk, femi: boolean) {
+            let page = -1;
+            const cont = (id: string) => ({ isOpen: true, isWaiting: false, pageId: id, options: [{ index: 1, text: 'Click here to continue', componentId: 4886, buttonType: 6 }] });
+            const pages = [cont('p1'), cont('p2'), cont('p3'), { isOpen: true, isWaiting: false, pageId: 'p4', options: [{ index: 1, text: "Sorry, I'm a bit busy.", componentId: 2461, buttonType: 1 }, { index: 2, text: 'OK then.', componentId: 2462, buttonType: 1 }] }, cont('p5'), cont('p6')];
+            const closed = { isOpen: false, options: [], isWaiting: false };
+            sdk.onSend = a => {
+                if (a.method === 'sendInteractLoc' && a.args[2] === 190) {
+                    if (femi) {
+                        page = 0;
+                        setTimeout(() => sdk.tick({ dialog: pages[0]! }), 1);
+                        return;
+                    }
+                    const z0 = sdk.state!.player!.worldZ;
+                    for (let k = 1; k <= 3; k++) setTimeout(() => sdk.tick(s => ({ player: { ...s.player!, worldZ: z0 + k, teleportTick: s.tick + 1 } })), k);
+                }
+                if (a.method === 'clickDialogByText' && page >= 0) {
+                    if (/busy/.test(String(a.args[0]))) femi = false;
+                    page++;
+                    const next = page < pages.length ? pages[page]! : closed;
+                    if (page >= pages.length) page = -1;
+                    setTimeout(() => sdk.tick({ dialog: next }), 1);
+                }
+            };
+        }
+        const walker = (ctx: StepContext<unknown>, stuckOnce: (x: number, z: number) => boolean) => {
+            const walks: string[] = [];
+            (ctx.bot as unknown as { walkTo: (x: number, z: number) => Promise<unknown> }).walkTo = async (x, z) => {
+                walks.push(`${x},${z}`);
+                return stuckOnce(x, z) && walks.filter(w => w === `${x},${z}`).length === 1 ? { success: false, message: `Stuck at (2461, 3382)` } : { success: true, message: 'Arrived' };
+            };
+            return walks;
+        };
+
+        test('goes through the gate whatever the failed walk said ("Stuck at" on the demo; e67edee1, rs/295)', async () => {
+            const sdk = new FakeSdk(world({ agility: 1, x: 2461, z: 3382, extra: { nearbyLocs: [gate] as unknown as BotWorldState['nearbyLocs'] } }));
+            gateServer(sdk, false);
+            const ctx = ctxFor(sdk);
+            const walks = walker(ctx, (x, z) => x === 2461 && z === 3386);
+            await step(steps(), 'agility:walk-gnome').run(ctx as never);
+            expect(sdk.sent.filter(a => a.method === 'sendInteractLoc')).toEqual([{ method: 'sendInteractLoc', args: [2459, 3383, 190, 1] }]);
+            expect(walks.filter(w => w === '2461,3386')).toHaveLength(2);
+        });
+
+        test("a fresh account's first pass: Femi's scene is declined and the player ends north of the gate", async () => {
+            const sdk = new FakeSdk(world({ agility: 1, x: 2461, z: 3382, extra: { nearbyLocs: [gate] as unknown as BotWorldState['nearbyLocs'] } }));
+            gateServer(sdk, true);
+            const log = TickLog.memory();
+            const ctx = ctxFor(sdk, log);
+            walker(ctx, (x, z) => x === 2461 && z === 3386);
+            await step(steps(), 'agility:walk-gnome').run(ctx as never);
+            expect(sdk.sent.filter(a => a.method === 'sendInteractLoc')).toHaveLength(2);
+            expect(sdk.sent.some(a => a.method === 'clickDialogByText' && /busy/.test(String(a.args[0])))).toBe(true);
+            expect(sdk.getState()!.player!.worldZ).toBe(3385);
+            expect(log.rows.find(r => r.step === 'agility:gate')?.meta).toMatchObject({ to: 'north', ok: true, clicks: 2, dialogues: 1 });
+        });
+
+        test('a failed leg inside the Stronghold never goes back through the gate: the walk is retried once', async () => {
+            // (2461,3390): north of the gate and 46 tiles from the course start, so walk-gnome runs its route
+            const sdk = new FakeSdk(world({ agility: 1, x: 2461, z: 3390, extra: { nearbyLocs: [gate] as unknown as BotWorldState['nearbyLocs'] } }));
+            gateServer(sdk, false);
+            const ctx = ctxFor(sdk);
+            const walks = walker(ctx, (x, z) => x === 2461 && z === 3386);
+            await step(steps(), 'agility:walk-gnome').run(ctx as never);
+            expect(sdk.sent.filter(a => a.method === 'sendInteractLoc')).toEqual([]);
+            expect(walks.filter(w => w === '2461,3386')).toHaveLength(2);
+        });
+    });
+
     test('parseWant takes the kit syntax', () => {
         expect(parseWant('shark:20')).toEqual([{ item: /^shark$/i, amount: 20 }]);
         expect(parseOptions({ restockGiver: 'c', restockBelow: '3' }).restock).toEqual({ giver: 'c', want: [{ item: /^shark$/i, amount: 20 }], below: 3 });
