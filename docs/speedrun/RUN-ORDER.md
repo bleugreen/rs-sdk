@@ -124,9 +124,15 @@ Knife on:
 | **Today's stock (conservative)**: the bones at 21:20 UTC (49 dragon and 1,214 of the 1,411 babydragon, no big bones), the ~85 past S07 on the Mining `stay2` lap by `knife-mine`'s bury (on main, #159; a run-commit requirement, so O35 is closed), at ~0.21 a bone in trades, at most +0.02 a Mining ore and ~2 lap switches that each wait out the respawn (~+30, rs/207) (+220 / +156); 0 nature talismans, the body altar (+142); the 09:35 plan's adamantite 0 (+119), gems (+88) and herbs (+85); the rune axe held | +654 / +590 | **36,408.5** | **33,373.7** | **+492.5** |
 | Today's stock with the ~85 at the booth instead: the Mining bury cannot fire (iron respawning slower than 13 ticks, or a run commit without #159) (+339 / +284) | +773 / +718 | 36,527.5 | 33,501.7 | +611.5 |
 
-(i: section 7, "Supply fallbacks"; every delta is SF's line re-priced on this order.) **In force**,
-on rs/41's forecast for 2026-10-23, the expected path clears the record by about **2.1% (750.5)**,
-best by 3,689.5; with every line held, by about 3.1% (1,117.5). The forecast's bones are an assumption
+(i: section 7, "Supply fallbacks"; every delta is SF's line re-priced on this order.) **In force,
+on rs/41's forecast for 2026-10-23, the knife-on expected is over the record: 36,121.5, 205.5 over
+(0.6%)**; best clears it by 2,782.3, and with every line held the expected is 161.5 under (0.4%).
+Fold-in 15 moved it over: Dragon Slayer measured in a single pass per segment (+411), Dwarf Cannon
+at SCORED's levels (+275) and Monkey Madness's N to P with the rope pin (+310), against S17 on the
+engine's fall roll (-99) and smaller moves (section 7, "Changes since d9b3fa9b"). **Conditionally**,
+fold-in 14's fast-dialogue move (rs/288, roughly -880, pending rs/287's validation) would put the row
+in force about 674.5 under; the go/no-go rests jointly on that validation and S26's levers (section
+7, "The statement and the go/no-go figure"). The forecast's bones are an assumption
 until rs/112's firm forecast (due 16:00 PDT): ~14 dragon bones an hour from 22:00 UTC on the 21st
 to a run starting at 00:00 UTC on the 23rd, 49 + 364 = **~413**, with 341 babydragon to reach
 Prayer 99. All 554 non-stun bones then fit S07 (+52), and the ~110 dragon bones forecast for
@@ -144,33 +150,32 @@ UTC on the 22nd), the arrowtips, the cannonballs and the essence are forecast co
 (+88) and herbs (+85) stay deltas.
 
 **Today's stock (conservative)** keeps the 21:20 UTC bones and, line by line, the worse of rs/41's
-09:35 plan and today's count: **463.5 under the record (1.3%)**. On that stock 49 dragon and 1,214
+09:35 plan and today's count: **492.5 over the record (1.4%)**. On that stock 49 dragon and 1,214
 babydragon reach Prayer 99 with ~197 babydragon to spare, so another babydragon bone is worth ~0.
 S07 holds 978 of the 1,063 non-stun bones; the other ~85 ride the Mining `stay2` lap on
 `knife-mine`'s bury, on main since #159 (15:52 PDT; O35 closed by its option (a), and a run-commit
 requirement). If the bury cannot fire, because iron respawns slower than 13 ticks or the run commit
-lacks #159, they go to the booth: +119, 344.5 under, and another dragon bone is then worth ~2.9 until
+lacks #159, they go to the booth: +119, 611.5 over, and another dragon bone is then worth ~2.9 until
 ~61 more are held (section 7, "Today's stock").
 
-The knife gate failing all night erases the margin on its own (+2,722 with rs/162's plain + bury, in
-force; +3,458 without it, R2; S09's plain fallback is the in-page plain loop with `selfStarter`, 3.62 ticks per ore
-measured at D = 13, MR, and S07's the in-page plain rates, PB). **Monkey Madness's bad-but-plausible case (+~860 beyond its expected, R5) puts the run over
-the record**: about **110 over** on the row in force (36,025.5), ~397 over on today's stock (~516
-over with its bones at the booth), against 750.5 under on the row in force's expected. S15's
-segments H to M are now measured end to end, 1,466 against the fixed column's 1,114 (+352, m, lab,
-3 of 3, rs/201), and R5 stays whole on N to Z, which has never run as one route: ~1,211 of
-S15's 4,429 is still never measured (e), and **S15 is the critical path for the run date** (O36;
-section 7, "Monkey Madness after H to M").
+The knife gate failing all night adds +2,655 with rs/162's plain + bury, in force (+3,391 without
+it, R2; S09's plain fallback is the in-page plain loop with `selfStarter`, 3.62 ticks per ore
+measured at D = 13, MR, and S07's the in-page plain rates, PB). **Monkey Madness's bad case (~+370
+beyond its expected, R5: the demon's 120 and ~250 for a rope pin) puts the row in force at 36,491.5,
+about 576 over**, ~863 over on today's stock (~982 with its bones at the booth); S13's railings at
+p90 (+~275) alone would put it ~481 over. S15's segments H to P are measured end to end (2,425 m,
+rs/201), Q to Z has never run as one route, ~882 of S15's 4,739 is still never measured (e), and
+**S15 is the critical path for the run date** (O36; section 7, "Monkey Madness after H to P").
 A relog from SCORED's tab is back to about **2 ticks** (m, R174): the ~20 that TWIN measured was the
 old page's gateway socket outliving the navigation, which rs/174 now closes first. The two planned
 relogs and the expected restarts give back the +63 / +36 fold-in 3 added and 2 more (section 7), a
 demo restart costs about 5 (R7), and the wine's login + 19 deadline is met at login + 3 to + 6 (R17, now
-low-likelihood). If the wine failed outright, the fish route (+~927) would leave the run ~177 over the record
-on the row in force (~464 over on today's stock, ~583 with its bones at the booth). The in-page willow
+low-likelihood). If the wine failed outright, the fish route (+~927) would leave the run ~1,133 over the record
+on the row in force (~1,420 over on today's stock, ~1,539 with its bones at the booth). The in-page willow
 question is settled (O19, section 9): rs/97's 4.83 ticks per log was the server's chop RNG at level
-99, not the client, so S07's willow knife takes the lite ratio, and its oak band is now measured from WC 15 (PB): 3,027
-against #129's 3,390. The biggest
-open swings are the knife gate itself (R2, O11) and S15's unrun atoll half (O36).
+99, not the client, so S07's willow knife takes the lite ratio, and its knife is now measured on the demo (rs/261's cairn_chops): the luck-free 3,053
+against #129's 3,390. The biggest open swings are the knife gate itself (R2, O11), S15's unrun atoll
+half (O36), S26's walked legs and S13's railings (section 7).
 
 ## 1. Run-machine setup and the run gate
 
@@ -311,8 +316,9 @@ ruling of 14:55 PDT prices them at the earliest plausible run date, 2026-10-23 (
   at the run login, not in S21 (R12; O38, settled). The gate minute holds 16 on the two machines
   (7 givers and a gate account each).
 - **Budget:** start only when the expected total plus the fallback deltas in force is under 35,916
-  (the scenario table above: 35,165.5 on the forecast row in force, 35,452.5 on today's stock);
-  otherwise wait, and main decides the bet.
+  (the scenario table above: 36,121.5 on the forecast row in force, 36,408.5 on today's stock, **both
+  over it on fold-in 15's figures**, so the condition fails until a lever in section 7's go/no-go
+  lands, fold-in 14's fast-dialogue move first); otherwise wait, and main decides the bet.
 
 ## 2. Step table (a)
 
@@ -709,27 +715,28 @@ under the total give the line without it, now history.
 
 **Like for like.** Both comparisons put the twelve quests' 840.5 of way-in travel back on the quest
 line, where the tally counted it; since fold-in 11 it sits in the overhead line's legs (O6), which
-moves it between the two lines and changes no total. The tally's expected column took the plain loops for the three knife skills, so
-its 38,742 compares with the knife-off expected in force, 37,520.5 (with rs/162's plain + bury):
-1,221.5 lower, mostly Prayer (-605: the bones ride the plain loop's willow band), contention (-600),
-the quests (-271.5, with S15's H to M and S11b measured and S26's Elvarg in mithril) and Mining (-259: from 64, -269, and the in-page plain loop with `selfStarter` at
-3.62 against the lite 3.61, +10), against Agility (+181: S17 at rs/155's lab pace), combat (+233,
-the cannon session and S27 on rs/199's module rates), +150 of overrun, Runecraft (+92) and
-Woodcutting (+67: the in-page plain loop, PB), with Smithing -82. Without rs/162 (history, 38,256.5)
-it is 485.5 lower, with Prayer at the booth (+35) and Woodcutting +163. The
-tally's best took the knife, so its 31,324 compares with the knife-on best 31,876.5: 552.5 higher,
-mostly the measured legs inside the overhead line (+538), the quests (+358.5, with S15's H to M and S11b at their
-fastest measured runs), combat (+300) and Runecraft (+292),
-against contention (-300) and Mining (-244). Woodcutting's best is now 59 under the tally's, which
-already took the lite willow ratio: the difference is the level-up release.
+moves it between the two lines and changes no total. The tally's expected column took the plain loops
+for the three knife skills, so its 38,742 compares with the knife-off expected in force, 38,409.5
+(with rs/162's plain + bury): 332.5 lower, mostly Prayer (-605: the bones ride the plain loop's
+willow band), contention (-600) and Mining (-259: from 64, -269, and the in-page plain loop with
+`selfStarter` at 3.62 against the lite 3.61, +10), against the quests (+724.5: Dragon Slayer, Dwarf
+Cannon and Monkey Madness's H to P and the Grand Tree measured), combat (+233, the cannon session and
+S27 on rs/199's module rates), +150 of overrun, Runecraft (+92), Agility (+82: S17 on the engine's
+fall roll) and Woodcutting (+67: the in-page plain loop, PB), with Smithing -82 and Magic -42. Without
+rs/162 (history, 39,145.5) it is 403.5 higher, with Prayer at the booth (+35) and Woodcutting +163.
+The tally's best took the knife, so its 31,324 compares with the knife-on best 32,783.7: 1,459.7
+higher, mostly the quests (+1,255.5, at their measured best), the measured legs inside the overhead
+line (+535.2), combat (+300) and Runecraft (+292), against contention (-300) and Mining (-212).
+Woodcutting's best is 59 under the tally's, which already took the lite willow ratio: the difference
+is the level-up release.
 
 **The three largest changes against the 04:20 tally** (knife on, expected, like for like: the
-quests' line reads -1,112 only because its way-in travel now sits in the overhead line, O6, and is
--271.5 with it): Fishing -1,415 (the knife
-column); Woodcutting -931 (the knife at the lite ratios, O19, the level-up release, and the oak band
-measured from WC 15, PB); Mining -918
-(from 64, the knife, the level-up release). Contention and retries (-600, a re-estimate, e) is
-fourth. The largest measured change is Prayer, -605 (BP; rs/141).
+quests' line reads -116 only because its way-in travel now sits in the overhead line, O6, and is
++724.5 with it): Fishing -1,415 (the knife column); Woodcutting -905 (the knife at the demo's luck-free
+figure, O19, and the level-up release); Mining -877 (from 64, the knife on the demo's 3.019, the
+level-up release). The quests, +724.5, are the largest increase (Dragon Slayer, Dwarf Cannon and
+Monkey Madness measured). Contention and retries (-600, a re-estimate, e) is next. The largest
+measured change is Prayer, -605 (BP; rs/141).
 
 **Changes since d9b3fa9b (fold-in 13, rs/265; 34,798.5 / 31,876.5 knife on; 37,520.5 / 35,022.5 knife off in force; 38,256.5 / 35,788.5 without rs/162, history).** Fold-in 15 (rs/292), one commit per item; every knife-off line moves with the knife-on line except where a row says otherwise:
 
@@ -748,6 +755,10 @@ fourth. The largest measured change is Prayer, -605 (BP; rs/141).
 | **3 (cont.). The rope pin at ~375 a pin** (rs/185's ruling, 23:15 PDT; rs/201, m on real pins: 9 in 55 climbs, 2 in 6 chains; a Varrock teleport freed 3 of 3 in 4 ticks, waiting 1 of 3, a relog 0 of 3): the module waits 50 ticks and then teleports, 50 + 4 + ~320 back (i); carried at 1 in 3 chains, +~125 (i) in place of +90, best likewise; the death after a pin (~340) retired; R5 beyond the expected = the demon's piece + ~250, read as ~+300 and ~+550 (the demon's piece pending); H12 gains a Varrock teleport's runes | Quests (42): S15 4,704 / 4,246 to 4,739 / 4,281 | **+35** | **+35** | rs/185 and rs/201 via rs/158 (23:2x PDT) |
 | **3 (final). MM's bad case beyond the expected ~+370** (rs/185, 23:20 PDT): the demon's 120 (the quest document's, until rs/201's 300 ms chains with the real kit) plus ~250 for a pin; the ~+300 / ~+550 readings withdrawn; H12's two Varrock teleport sets carry their own fire runes (the staff of fire is handed back at the Grand Tree) | - | 0 | 0 | rs/185 via rs/158 (23:2x PDT) |
 | **7 (cont.). S04 measured, 191 m** (rs/285's module, lab, 2 of 2: 57 of 57 in-load gaps at 3, ring trades 4 each, turnarounds 7) against 204 i; Kind I to M (M +191, I -204); the ring givers on SCORED's side of any wall (`RING_CONTRACT.where`); H4's swap costs 0; H4's slot rule (drop the 2 body runes on T01-02 and the 11 mind runes on T02-03, 1 spare); O48, S06's free slots along the real route | Magic (49): 216 to 203 | **-13** | **-13** | rs/285 via rs/158 (23:3x PDT) |
+| **17. The statement:** section 7's go/no-go now prints the row in force's knife-on expected against the record plainly (over, 205.5), the conditional line with fold-in 14's fast-dialogue move (rs/288, ~-880), the go/no-go at MM's ~+370 bad case and at +710 if the death after a pin returned, and S13's railing p90 beside it; the headline, like-for-like and scenario prose re-stated; the knife-off-night sensitivity +2,655 (+3,391 history) | - | 0 | 0 | rs/158; main, 22:23 PDT |
+| **Net, knife on** | | **+956** | **+907.2** | knife off in force and history +889 / +875.2 |
+
+The totals after each item (knife on; knife off in force, with rs/162's plain + bury; without it, history; the row in force): items 16, 5, 8-13, 15 and 19 moved none; item 4, 34,699.5 / 31,876.5, 37,421.5 / 35,022.5, 38,157.5 / 35,788.5, 35,066.5 (849.5 under); item 6, 34,725.5 / 31,876.5, the knife-off lines unchanged, 35,092.5 (823.5 under); item 7, 34,719.5 / 31,870.5, 37,415.5 / 35,016.5, 38,151.5 / 35,782.5, 35,086.5 (829.5 under); item 14, 34,736.7 / 31,868.7, 37,432.7 / 35,014.7, 38,168.7 / 35,780.7, 35,103.7 (812.3 under); item 18, 34,777.7 / 31,900.7, the knife-off lines unchanged, 35,144.7 (771.3 under); S11b's best, 34,777.7 / 31,886.7, 37,432.7 / 35,000.7, 38,168.7 / 35,766.7; item 1, 35,188.7 / 32,342.7, 37,843.7 / 35,456.7, 38,579.7 / 36,222.7, 35,555.7 (360.3 under); item 14 (cont.), 35,182.5 / 32,341.7, 37,837.5 / 35,455.7, 38,573.5 / 36,221.7, 35,549.5 (366.5 under); item 2, 35,457.5 / 32,541.7, 38,112.5 / 35,655.7, 38,848.5 / 36,421.7, 35,824.5 (91.5 under); item 3, 35,732.5 / 32,761.7, 38,387.5 / 35,875.7, 39,123.5 / 36,641.7, **36,099.5 (183.5 over)**; item 3 (cont.), 35,767.5 / 32,796.7, 38,422.5 / 35,910.7, 39,158.5 / 36,676.7, 36,134.5 (218.5 over); item 7 (cont.), **35,754.5 / 32,783.7**, **38,409.5 / 35,897.7**, 39,145.5 / 36,663.7, and the row in force **36,121.5 / 33,133.7, 205.5 over**.
 
 **Changes since a4a5bf87 (fold-in 11, rs/218; 34,456 / 31,567 knife on; 37,573 / 35,118 knife off
 in force; 38,309 / 35,884 without rs/162, history).** Fold-in 13 (rs/265), one commit per item:
@@ -994,6 +1005,8 @@ legs measured 23 more than the quest documents count).
 | E: estimated allowances (contention, overrun, relay, retries) and S15's never-measured Ape Atoll rows (~882) | 2,082 | 5.8% |
 | **Total** | **35,754.5** | |
 
+Fold-in 15 against fold-in 13's split (13,711.5 / 18,676 / 2,411): M +2,207, I -922, E -329: S17 on the engine's fall roll (item 4: M -858, I +759); S07 on the demo's luck-free figure, its oak band from WC 15 no longer an M figure (item 6: M -600, I +626); S02 (M -6) and S04 measured (item 7: M +191, I -204); the legs (item 14: M +11); S09 on the demo's rate (item 18: I +41); S26 measured (item 1: M +1,380, I -969); S13 measured (item 2: M +1,130, I -855); and S15's N to P (item 3: M +959 for the measured 117, 388 and 454, I -320 for the probe-measured 325 out, the aunt's -120 and the rope pin's +125 in, E -329 for the never-measured rows out). **On the row in force the plan is now 44.5% measured end to end.**
+
 Fold-in 13 against fold-in 11's split (10,175.5 / 21,605.5 / 2,675): M +3,536, I -2,929.5, E -264:
 S15's H to M (item 7), its 1,466 measured end to end where the fixed column had 850 in probe rows
 (I) and 264 in never-measured rows (E), S26's Elvarg in mithril, I +40 (item 12), and S03 measured end to end on the demo, 681, where 695
@@ -1127,11 +1140,11 @@ and not counted); big ~2,458 + ~673, none needed; the rune axe held. The fewest 
 takes 978 (623 past the baseline's 355, at 6/23 = 0.26, best 4/23 = 0.17: +163 / +108). While
 `knife-mine`'s bury cannot fire (iron respawning slower than 13 ticks, or a run commit without
 #159), the other 85 go to the booth at 2.07: +176, so **+339 / +284** (i), and +773 / +718 with
-the conservative row's other lines (35,571.5 / 32,594.5, 344.5 under the record expected). **With it**
+the conservative row's other lines (36,527.5 / 33,501.7, 611.5 over the record expected). **With it**
 (O35 closed: #159 on main since 15:52 PDT) they ride the Mining `stay2` lap instead, at ~0.21 a bone in trades (+18) and at most +0.02 a Mining ore over
 their ~425 ores (+9; 0 best) (m, lab, rs/182), and two lap switches that each wait out the
 13-tick respawn plus a start (~+30, i, rs/207): **+220 / +156**, and +654 / +590 with the other
-lines (35,452.5 / 32,466.5, 463.5 under). The rule is the one the knife-off column follows for rs/162: a
+lines (36,408.5 / 33,373.7, 492.5 over). The rule is the one the knife-off column follows for rs/162: a
 row does not price a program that is not on the run commit, and #159 is on main and a run-commit
 requirement (RUN-HOST.md "Credentials"), so the conservative row prices it. The forecast row closes
 O35 with dragon bones as well. With the 49 dragon and then babydragon buried in S07, Prayer is
@@ -1218,28 +1231,43 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
 
 **Monkey Madness after H to P** (fold-in 15; i on m inputs). S15's segments H to P are measured end to end in the lab (rs/201, 3 of 3 at route levels and the kit floor): H to M 1,466 (+352, fold-in 13), N 117 (+34), O 388 (+191, the six-run mean) and P 454 (+80); the aunt is retired (-120 off the failure allowance), and the rope pin is carried at 1 in 3 chains at ~375 a pin, the module waiting 50 ticks and then teleporting (+~125, i; rs/185, 23:15 PDT), so S15's expected is 4,739 (+310) and best 4,281 (+255). **R5 beyond the expected is ~+370** (rs/185, 23:20 PDT): the demon's piece, 120 (the quest document's, until rs/201's demon chains at 300 ms replace it), plus ~250 for a pin; the death after a rope pin (~340) is retired by rs/185, and main may overrule it (R5). Section 7's go/no-go below prints the row in force at it. O's fast-dialogue window (the four talks in one loop of the aunt's patrol, ~236-300 in burst, i, to be measured) is a best-case lever, not in either column. rs/185's Q-to-Z chains report each remaining component segment by segment (section 9).
 
-**The quest block's go/no-go figure** (main, 20:39 PDT): until R5's components are retired, the
-working figure for the quest block is **the row in force in Monkey Madness's bad case, R5 whole on
-N to Z, with S13 at entry 12's 855: 36,025.5, about 110 over the record** (i). The advance-notice
-case adds S13 at ~1,080-1,100 (i, rs/257: at Crafting and Smithing 1 the railings succeed 24% of
-the time against the 45% priced and the shed rolls 53% against 99%, `railings.rs2:78`,
-`mcannon_broken_cannon.rs2:90-97`; +230-245, **not in the expected**): **about 340-355 over** (i).
-The levers that close it, none priced until its lab rows land:
+**The statement and the go/no-go figure** (fold-in 15; main's rulings of 20:39 and 22:23 PDT; i on the
+cited inputs, `run-order-sums.ts`'s figures):
 
-1. which of R5's components rs/185's N-to-Z chains retire: the aunt twice (240), the demon twice
-   (120), a dungeon death (340), a failed ladder approach (~340) (quests/README.md:575; H to M's two
-   dungeon passes already ran 6 of 6 without a death);
-2. S13's measured figure from rs/257's lab rows;
-3. any level reachable earlier at less cost than the failures it saves: Crafting or Smithing before
-   S13, Hitpoints or Defence before Monkey Madness (O43), unpriced until lab rows land.
+- **The row in force's knife-on expected is over the record: 36,121.5, 205.5 over** (best 33,133.7,
+  2,782.3 under). With every line held it is 35,754.5, 161.5 under; on today's stock 36,408.5, 492.5
+  over (36,527.5, 611.5 over, with its ~85 bones at the booth). The start condition's budget fails on
+  these figures (section 1).
+- **Conditional on fold-in 14's fast-dialogue move** (rs/288, roughly -880, i; pending rs/287's
+  validation; not in the expected): the row in force about **35,241.5, ~674.5 under**.
+- **Go/no-go at Monkey Madness's bad case** (R5, ~+370 beyond the expected: the demon's 120 and ~250
+  for a rope pin; rs/185, 23:20 PDT, main concurring): **36,491.5, ~575.5 over**; with fold-in 14's
+  move about 35,611.5, ~304.5 under. If main overruled rs/185 and the death after a rope pin (~340)
+  came back, ~+710: 36,831.5, ~915.5 over (with fold-in 14's move ~35,951.5, ~35.5 over). The
+  checklist's +300 and +640 lines are superseded by rs/185's single ~+370 and this +710.
+- **Beside it, not folded into R5: S13's railings at p90, +~275** (the measured 19.1%; p99 +~500;
+  rs/257): 36,396.5, ~480.5 over.
 
-Nothing reorders until those lab rows land (section 9, "Quest-block rules").
+The levers that close it, none in the expected until measured:
+
+1. fold-in 14's fast-dialogue move (rs/288, ~-880 i; rs/287 validates it);
+2. S26's walked legs by a helper-supplied teleport (the guild to Oziach 163 and the dock to Ned 106, m;
+   priced on what SCORED can carry there, rs/258 and rs/185), and the rune scimitar, an upside only
+   while it is not held;
+3. Monkey Madness: a route that avoids the rope pin, rs/201's measured way back after a pin (~320 i
+   now) and its demon chains at 300 ms replacing the 120;
+4. Dwarf Cannon: rs/257's try-count check (the read 23.8% would give ~1,052, -78) and a Crafting or
+   Smithing level before S13 (O47, worth ~95 and ~70-100 on its parts);
+5. a Hitpoints or Defence level before Monkey Madness (O43), unpriced.
+
+Run mode is not one (~0, O45). Nothing reorders until the lab rows land (section 9, "Quest-block
+rules").
 
 **Sensitivity of the knife-on expected 35,754.5** (each alone; i from the cited inputs):
 
 | Change | Ticks | Basis |
 |---|---|---|
-| Knife gate off all night | +2,722 with rs/162's plain + bury, in force (+3,458 without it, history) | the knife-off columns (S09's plain + `selfStarter` at 3.62, MR; S07's at the in-page plain rates, PB); by scenario row, section 7 ("Knife off, by scenario row") |
+| Knife gate off all night | +2,655 with rs/162's plain + bury, in force (+3,391 without it, history) | the knife-off columns (S09's plain + `selfStarter` at 3.62, MR; S07's at the in-page plain rates, PB); by scenario row, section 7 ("Knife off, by scenario row") |
 | S07's gate off alone (Mining's holds), on today's stock (conservative, O35 closed) | +873 with rs/162, in force (+2,519 without it, history) | with rs/162 on rs/158's rule S07 buries ~774 (~686 willow, ~88 oak from WC 60) at ~0.26 a bone in trades and runs 3,876 at the in-page rates (+848 against the knife, PB); its overrun share -140; the bones, against that row: the Mining lap takes 200 at rs/182's ~0.32 and the booth 89 (+165). Without rs/162 (history): S07 plain +1,094 (4,121), the Mining lap 200 and the booth 863 (+1,565). With the Mining bury off as well: +1,074 (+2,721 without rs/162), 289 at the booth (+366) or all 1,063 (+1,767) |
 | S25c's wine fails outright, fish on a range (R17) | +~927 | SK:cooking route 2b: ~980 i from Cooking 1, against S25c's 80; +30 for the window gems cut standalone (WW§5 B); -3 for the two relog tails not taken |
 | MM's bad case beyond the expected (R5): the demon's piece, 120, + the rope pin's ~250 beyond its expected | +~370 (i) | rs/185 (23:20 PDT): the demon's 120 is the quest document's (rs/201 measures it at 300 ms with the real kit); a pin ~375 i (wait 50, then teleport), 125 of it in the expected; the death after a pin (~340) retired, unless main overrules; section 7's go/no-go |
@@ -1285,7 +1313,7 @@ Nothing reorders until those lab rows land (section 9, "Quest-block rules").
 | # | Risk | Where | Cost | The run's response |
 |---|---|---|---|---|
 | R1 | **Relog cost and tail**: a relog from SCORED's tab passes ~2 ticks before the bot layer sees state with rs/174's fix (first SDK state at login + 1, m, R174; ~20 before it, from the old page's gateway socket outliving the navigation, m, TWIN and R174), and about 1 in 29 logouts stays tens of ticks in the world, on the clock (46 seen) | S25c's two relogs; any shortfall pause; a restart's relog | ~3.6 expected per relog (2 + 46/29); 46 worst seen on top | two planned relogs only; clear pages and leave combat 16 ticks before each click; booth work in the windows leaves nothing pending at the click (0 ticks in 42 of 42 lab relogs, WW§3); **`RUN_COMMIT` at or after c2d9eada** (main's rs/164 commit, #146): a tab logout confirms in 222-324 ms, 0 ticks of latency (m, TWIN; 3ed0cd49c, the same code as rs/147's 4e0e8ae4 and main's c2d9eada), so `logoutClean`'s ~60-tick wait on an unconfirmed logout (WINE "Relog risk"; before rs/164 the gateway's `inGame: true`, `stale`, left it unconfirmed, m, rs/149) is historical, gone on any such `RUN_COMMIT` (section 4). **and at or after efdbe2e2** (rs/174's fix, #164, inside the run-commit floor de3a4944, which contains c2d9eada too; RUN-HOST.md "Credentials"); the relogs go in page, `login(s, {inPage: true})` (the client's second-login hang is fixed on main, #155), with navigation as the fallback (R174) |
-| R2 | **Demo tick-overrun bursts**: after an overrun the next tick comes early and a reaction aimed at it misses. rs/102's per-reaction miss rate by the next tick interval (1,284 trials, m, demo-latency.md section 9 on rs/83's branch): under 150 ms 86%; 150-200 ms 18% (8 of 14 after a tick over 400 ms); 200-225 ms 2/30; 225-250 ms 5/92; 250 ms or more 3.5%. Every probe minute on the run host from 16:28 to 17:02 UTC was a burst (ARC). On rs/102's 24 samples, (c) at most 2 agreed with (a) on 22, and its two false passes (10:43 and 11:18) were caught by (a), so (a) stays a pass line; the gate's (b), publication p90, agreed with (a) on 17. Soft pairs are an in-run warning only (main's ruling, 11:05 PDT) | every reactive loop: S07, S09, S17, S18, S22; the tuned Runecraft cycle | ~600 expected (ARC, e; on rs/176's run-host data a whole-run knife penalty of ~+8% +/- 7% against the lab, with no per-catch-up cost visible up to ~5 a minute, section 6, DH); a whole night of failed gates +2,722 with rs/162's plain + bury, in force (+3,458 without it, history; S09's plain + `selfStarter` at 3.62, MR; S07's at the in-page plain rates, PB). An input, not a re-price: Mining's late starters in the lab, 0.38 per 100 ores at 0 catch-ups a minute (m, MR §6; ~+12 over S09, i, section 6); the demo bins are still to come | tenet 12's gate (section 1); knife only while it holds, plain otherwise with periodic re-probes; the pause rule (more than ~5 catch-ups a minute pauses, under 1 resumes); predicted loops resync on observed slips (rs/96, rs/97, `hostgate.ts`); the start chosen by a 3-5 minute gate read |
+| R2 | **Demo tick-overrun bursts**: after an overrun the next tick comes early and a reaction aimed at it misses. rs/102's per-reaction miss rate by the next tick interval (1,284 trials, m, demo-latency.md section 9 on rs/83's branch): under 150 ms 86%; 150-200 ms 18% (8 of 14 after a tick over 400 ms); 200-225 ms 2/30; 225-250 ms 5/92; 250 ms or more 3.5%. Every probe minute on the run host from 16:28 to 17:02 UTC was a burst (ARC). On rs/102's 24 samples, (c) at most 2 agreed with (a) on 22, and its two false passes (10:43 and 11:18) were caught by (a), so (a) stays a pass line; the gate's (b), publication p90, agreed with (a) on 17. Soft pairs are an in-run warning only (main's ruling, 11:05 PDT) | every reactive loop: S07, S09, S17, S18, S22; the tuned Runecraft cycle | ~600 expected (ARC, e; on rs/176's run-host data a whole-run knife penalty of ~+8% +/- 7% against the lab, with no per-catch-up cost visible up to ~5 a minute, section 6, DH); a whole night of failed gates +2,655 with rs/162's plain + bury, in force (+3,391 without it, history; S09's plain + `selfStarter` at 3.62, MR; S07's at the in-page plain rates, PB). An input, not a re-price: Mining's late starters in the lab, 0.38 per 100 ores at 0 catch-ups a minute (m, MR §6; ~+12 over S09, i, section 6); the demo bins are still to come | tenet 12's gate (section 1); knife only while it holds, plain otherwise with periodic re-probes; the pause rule (more than ~5 catch-ups a minute pauses, under 1 resumes); predicted loops resync on observed slips (rs/96, rs/97, `hostgate.ts`); the start chosen by a 3-5 minute gate read |
 | R3 | **Browser background throttling**: a hidden or occluded tab slows timers and rAF, so every in-page and overlay reaction (M0550) | the whole run | unbounded: a throttled tab fails the knife and slows every step | section 1 setup (flags, a maximised unobscured tab on :10, power saving off); gate (d) measured ~72 loops per second p10 on the run host with RDP connected or disconnected and the capture on or off (RUN-HOST.md, "Measured"), checked continuously by the in-run monitor |
 | R4 | **Our client or network drops while the server stays up**: the player stays in the world 500 ticks (socket closed) or 1,000 (open and silent) unless something takes it over (rs/101; RES§2) | anywhere | 3-12 ticks in the world + 2 to the resumed step with the watchdog (m, RES§6, lite client); in the tab the takeover is a re-navigated login, ~2 more with rs/174's fix (m, R174), carried in the retries' 100 e | run under the watchdog; it takes the in-world player over at once (`session.ts`, `reconnect.ts`); never leave a dead client to the timeout; in the Wilderness a dropped player stays attackable |
 | R5 | **Monkey Madness's failures beyond the expected: the demon and the rope pin, on Q to Z still unrun** | S15 | the expected carries the demon (60) and the rope pin (~125). **The bad case beyond the expected is ~+370 (i)** (rs/185, 23:20 PDT): **the demon's piece, 120** (R5's original component, a death in the Jungle Demon fight twice, from the quest document; rs/201 is measuring the demon at 300 ms with the real kit, and its figure replaces the 120), **plus ~250 for a pin** (a pin's ~375 less the 125 already in the expected); the ~+300 / ~+550 readings of 23:15 PDT are withdrawn. **The rope pin** (m, rs/201, on real pins under Protect from Melee): 9 pins in 55 climbs, 2 in 6 chains; waiting it out freed 1 of 3 (at 49 ticks), and 2 were still pinned at 416 with prayer down to ~9; a relog worked 0 of 3 (logout is refused in combat, ~67 lost); a Varrock teleport worked 3 of 3 in 4 ticks. **The module's rule: wait 50 ticks, then teleport**: ~375 a pin (i: 50 + 4 + ~320 for the way back by Varrock, the spirit trees, Daero, the glider, Lumdo, the knockout and the jail, i until rs/201 has the gnome-side legs), and H12 carries one Varrock teleport's runes for it. **Retired (m):** the temple ladder drop (4 of 4 to the trapdoor, 0 HP lost); the aunt (6 of 6 clean, timed to her 76-tick patrol; a catch would cost ~165, a residual note, not in R5); a dungeon death as an independent component (0 deaths in 9 dungeon passes at the floor kit under Protect from Melee, 4 of them as a human with real carried state; main's rule); **the death after a rope pin (~340)**, retired by rs/185 (23:15 PDT; P from a pinned start passed 2 of 2, 441 and 460 ticks, no deaths, ending on prayer 44-47, 3-4 of 8 doses and 8 of 9 sharks); main may overrule, which would add ~340 back to the bad case. Also: the summoned-guard knockout in J, ~+110 a recurrence (H to M; rs/201 logs guard positions). ~882 of S15 is still e (O36). Section 7's go/no-go prints the row in force at it. MM stays ahead of no-MM until ~5,460 over (Q§6) | the module's pin rule (wait 50, then a Varrock teleport); rs/201's measurement of the way back (the gnome-side legs) and a route that avoids the pin; rs/185's figure for the demon's piece; the demon's chains (its dose use at 300 ms decides the kit's prayer potions, which stay at the floor until then; 3-4 doses were left after P); rs/185's Q-to-Z chains report each remaining component as retired or measured; H12's inventory (O37); ladder drop (33-36 m); Protect from Melee beside the guards (Prayer ~94 from S07 lasts far longer than v1's 43); antipoison for the jungle spiders; prayer re-toggle every 4 ticks; walk the monkey back; open item (a): the route arrives at Defence 1 and ~42 HP, re-check at these levels (O14). The puzzle sends OPHELD5 through `sdk.sendUseItem` (rs/116, run client, local engine) |
@@ -1302,7 +1330,7 @@ Nothing reorders until those lab rows land (section 9, "Quest-block rules").
 | R17 | **The wine's login + 19 deadline after a tab relog: now low-likelihood.** After planned relog 1 the sequence needs the wine giver's trade and the 29 deposit with the bank open by login + 19, because the fermentation timer fires at login + 20 (WW§3: the lab opened it at login + 7). A navigated relog on a run commit without rs/174's socket-close fix pays the twin's ~19-tick gateway takeover (first state at + 19 to + 20); with the fix, a navigated relog reaches first state at + 1 and the bank at + 3 to + 6 (m, twin), so the in-page path falling back costs about 5 s of wall time, not ticks (R174) | S25c | no scenario cost. If the deadline is missed anyway (a slow login, a restart in the window), the deadline relog (WINE) recovers it: it banks the wine first, and the new login's timer ferments the batch at its login + 20 with no action (r, WINE "The login-timer deadline fallback"; 5 of 5 demo arming relogs, m, WINE), for one more relog (~3.6). SCORED is at Cooking 30 there and cannot re-arm by making a wine (Cooking 35, SK:cooking). If the wine failed outright: kebabs +~78, with supplies nobody holds yet (SUPPLIES.md H21c): rs/184 measured camel meat at ~125 raw an account-hour bank to bank (m, cairn_h51; the desert caps at ~385 an hour), pitta needs no Cooking training, and 340 noted mixtures and 340 noted pitta (which also supply the mixtures' 340 bowls) project to ~4-5 hours on two accounts once rs/41 funds them (i, 16:40 PDT). They stay in no scenario row, and with R17 at low likelihood since rs/174's relog fix, whether to build the stock is main's and rs/41's call; fish on a range +~927 (SK:cooking route table; section 7) | both planned relogs by `login(s, {inPage: true})` with navigation as the fallback (MAN entry 29; R174; the client's second-login fix is on main, #155); `RUN_COMMIT` at or after rs/174's fix, efdbe2e2 (#164, inside the run-commit floor; RUN-HOST.md "Credentials"). Depositing the 29 before relog 1 is no longer needed and is dropped from the plan. Owner: rs/174 |
 | R16 | **The stun-pack helper on the demo**: the lab teleported the helper beside SCORED (57 times in one run); a helper 28 tiles behind cost 18 dry stuns (SP§5, §12). An offer of an unstackable item in more than one press lands only the first (rs/136) | S18 | dry stuns lose their bones (to S07 at ~0.26 each) and slow nothing else; a late top-up at k = 4 costs ~1 | the courier holds an orthogonally adjacent tile of SCORED at each due stun + 2 (rs/279; R24); SCORED tops up early (6 bones left) when the helper is far; one press per item; rs/136 fixes `trade.ts`. Each top-up stops the in-page program before SCORED's request and restarts it once the trade is done, by stun + 9 at the latest (that click lands on T + 11, the attempt), because the program clicks the knight on every tick, stun ticks included; a top-up stun buries nothing (rs/132, `pickpocket.ts` doc comment at e5f83a36). The in-program top-up (a `player` stun action with `idleOnInterface: true`, on main since #163) is preferred over the stop and restart (MAN entry 6) |
 | R18 | **`knife-mine` (re)starts in S09.** A depleted iron rock (`rocks.loc` 450-453, still op1 Mine) passed the program's start check, so a (re)start during depletion slipped forever (rs/153's lab via rs/147, 19620b53). **rs/207** (on main as e5d8a058, #170) makes it fault: 3 of 3 depletion restarts fault at +1 tick (the control mined 0 ores in 47 ticks), and post-respawn laps run at 3.00 ticks per ore, 200 of 200 (m, lab; main, 16:12 PDT). On a running lap 4 of 5 rotation rocks are depleted at any moment, so **any knife (re)start in S09 waits out the respawn (13 ticks at respawn 13) or faults**: a relog, a lock loss, rs/156's switch from measuring back to the knife, and each switch between the `stay2` and five-rock laps | S09 | with rs/207: **+D plus the start after a switch that follows mining**: the restart after a knife-to-plain switch at D = 13 found 1 of 5 rocks live and waited 13 ticks (m, lab, MR §3); **the start alone after a re-probe of 20 ticks or more**, when the lap is live again (0 wait, 7 of 7, m); the ~85-bone `stay2` case adds ~2 lap switches, ~+30, inside today's stock row. Without rs/207 the knife cadence is lost for the rest of the step, down to the in-page plain 4.00 (a commit before e5d8a058 also predates `selfStarter`): up to **+~1,054** at S09's start (4,170 against 3,116, i, MP) | **`RUN_COMMIT` at or after e5d8a058** (#170; the run-commit floor covers it, RUN-HOST.md "Credentials"; MAN entry 4); the module waits for every lap rock before a start (`ironBand`, and gated-program's `beforeRestart` before every start after the first, on main, #220), so the step's resume waits for a live lap rather than retrying |
-| R19 | **The two machines disagree at the gate.** The Fly delivery path differs by address: on 2026-10-21 rs-ashburn-run's earlier address held 5-13% of tick messages 135-218 ms in Fly's path and failed 5 of 5 same-second pairs while its twin passed every one; the machine, its TCP stack and the account were ruled out, and after the 23:11Z address change its first pairs matched the twin tick for tick (m, the host thread, 15:47-17:03 PDT; rs/83's demo-latency.md sections 9-10, 01e2ec00 on rs/83's branch). A held route can strike either machine, before or (unobserved so far) during a run | the start; every reactive step | a held route fails (a) and (c), so the knife stays off: up to the whole knife-off night, +2,722 (R2), on a machine the gate would have refused | **choose the machine** (RUN-HOST.md step 5a, tenet 17): both machines gated in the same minute, the start on one that passes, only reads after a machine's last address change counting; the gate history on both from two hours before; no stop-and-measure mid-run, the in-run `TICKMON` rows (#176) show a route going bad. Owner: the host thread |
+| R19 | **The two machines disagree at the gate.** The Fly delivery path differs by address: on 2026-10-21 rs-ashburn-run's earlier address held 5-13% of tick messages 135-218 ms in Fly's path and failed 5 of 5 same-second pairs while its twin passed every one; the machine, its TCP stack and the account were ruled out, and after the 23:11Z address change its first pairs matched the twin tick for tick (m, the host thread, 15:47-17:03 PDT; rs/83's demo-latency.md sections 9-10, 01e2ec00 on rs/83's branch). A held route can strike either machine, before or (unobserved so far) during a run | the start; every reactive step | a held route fails (a) and (c), so the knife stays off: up to the whole knife-off night, +2,655 (R2), on a machine the gate would have refused | **choose the machine** (RUN-HOST.md step 5a, tenet 17): both machines gated in the same minute, the start on one that passes, only reads after a machine's last address change counting; the gate history on both from two hours before; no stop-and-measure mid-run, the in-run `TICKMON` rows (#176) show a route going bad. Owner: the host thread |
 | R20 | **The recording captured the wrong window**: in cairn_casts' rehearsal the first-person recording showed the gate account's tab, which stayed on top of the recorded display, instead of the attempt (rs/147; main, 18:16 PDT) | the whole run | **evidence lost, not ticks** | the gate-to-run hand-over (RUN-HOST.md step 5a, line 6): the gate tab logged out and closed before the run tab opens, the run tab alone on the recorded display, the recording started before the run tab's login, **a live frame of the capture showing the run tab as a pass line of the gate**, and any later probe on the other machine. Owners: the host thread (cairn://p/rs/host) for the gate script, rs/232 for `rehearse.ts` |
 | R21 | **The measured switch-off false-fires on luck.** While the knife runs, `HostGate` (`speedrun/lib/hostgate.ts`) compares the knife's ticks per drop over its last `measureDrops` drops with plain's, and if plain looks as fast it switches to plain and holds it for `measuredOffTicks`, 3,000 ticks, before re-probing (r). The library defaulted `measureDrops` to 30; at a roll success of p ~0.5-0.65 a 30-drop mean is about ±13%, wider than the knife-against-plain margin, so a run of honest misses reads as a slow knife (i; #221's seeded simulation switches an honest knife off at 30 drops and holds it at 120). In rs/236's lab Woodcutting chains, 1 of 5 switched off twice on luck and lost ~850 ticks; with 120 there were 0 false fires in 4 chains (m, lab) | every gated knife step: S07, S09, S22 | per false fire up to the 3,000-tick plain hold at plain's extra ticks per drop: ~850 for two in one Woodcutting chain (m, lab); ~0 expected at 120 drops (i). Not a section 7 line | **main's ruling (20:08 PDT): every run-day module passes an explicit `measureDrops` sized to its success chance, and the library default moves to 120** (rs/262, PR #221, on main as 148788c5, with the seeded-simulation test). Per module (MAN "Module status"): Woodcutting 120 explicit (rs/261, building); Fishing 120 explicit on each fly band (on main, #221); **Mining 120 explicit** (rs/259, 314989e9: an exported `GATE_MEASURE_DROPS` in `mining.ts`'s inPageGate options, tested; **on main with rs/298, #242, inside the run-commit floor 811e9eb2**). **All three knife modules are explicit at 120**: Fishing's, Mining's and Woodcutting's are all on the floor (Woodcutting's with rs/297, #243, inside de3a4944), so the mitigation is complete. rs/259's simulation over Mining 15-63: roll luck false-fires in 2.6% of bands at 30 drops, 0.4% at 45, 0.1% at 60 and 0% at 90 or more, and from 63 every roll succeeds; a false fire's 3,000-tick plain hold would cost ~+550 on 63-99, while 120 against 60 costs only ~+15 of slower genuine detection (i). Thieving, Agility and Firemaking do not use the gate. **Fishing's demo carries no false fire:** cairn_casts had 0 measured switch-offs, and its one knife-to-plain change, at tick 3,060, was log exhaustion (rs/147's read of `docs/speedrun/rehearsals/fishing-evidence.json`), so S22's figures stand. **Taverley confirmation at 120:** rs/261's chain at S07's own stands, `measureDrops` 120, had no switch-off in either band, 0 slips and 0 resyncs (m, lab; MAN entry 3) |
 | R22 | **Scavvo's shared rune stock**: the runiteshop is `scope=shared` with **one** rune chainbody and **one** pair of rune platelegs (`champions_guild.inv`; restock fields 15000 and 11500; r, rs/258), so another player's purchase before SCORED arrives blocks segment B | S26 | the armourless Elvarg delta, pending rs/258's measurement | **the module buys them at Scavvo on arrival and, at stock 0, goes on without them**: restock adds one unit per `tick % stockrate == 0` while under stock (`server/engine/src/engine/World.ts:1377`) at chainbody 15,000 and platelegs 11,500 (`champions_guild.inv`, runiteshop stock4 and stock2), an expected wait of ~7,500 (i), and the module waits only if `restockWait < armourlessCost` (unit-tested), so in practice it always goes on (rs/258); the wait branch is dropped as a sensitivity. The pieces are needed only to equip for the fight (Defence bonus); no quest check uses them, and both are tradeable. Standing GE bids for both are noted and unlikely to fill (no sellers). **No 32-QP helper** (ruled out: none exists, and making one costs ~16 quests, 1-2 builder-days plus 4-8 helper-hours; rs/41). Owner: rs/258 |
@@ -1511,7 +1539,9 @@ Nothing reorders until those lab rows land (section 9, "Quest-block rules").
 - **Food.** S13's sharks come through H10 from helper stock, sized at the measured damage x1.5.
 - **No reorder yet.** Nothing in the order moves until the quests' lab rows land (rs/185's N-to-Z
   chains, rs/257's Dwarf Cannon rows). R5 is being retired component by component (O36); the
-  working go/no-go figure meanwhile is section 7's bad case, about 110 over the record.
+  working go/no-go figure meanwhile is section 7's: the row in force 205.5 over on its expected and
+  ~575.5 over in Monkey Madness's bad case (~+370), with fold-in 14's fast-dialogue move (rs/288) the
+  conditional that would bring both under.
 
 **Open** (the measurement that settles each, and its owner):
 
@@ -1593,4 +1623,4 @@ and rs/41's scimitar and Scavvo report (03:50Z); rs/269's S03 demo run (`rehears
 rs/147's line) and rs/147's breakdown; rs/210's tick monitor on the demo; rs/41's helper timing audit; main's timing
 rulings (20:59 PDT) with #209 (rs/246; the run-commit floor 4fe2d0a8) and rs/276; rs/267's stock-rung and
 trade-retry lab; rs/202's three full Grand Tree runs (A to P, 1,403 / 1,504 / 1,422);
-relayed by rs/158 on cairn://p/rs/265.
+relayed by rs/158 on cairn://p/rs/265. Fold-in 15: rs/258's single-pass Dragon Slayer table and its read-only run-mode list; rs/257's Dwarf Cannon runs at SCORED's levels, its railing and slot reads; rs/201's N, O and P chains and rope pins, with rs/185's fixed column and rulings (22:33 and 23:15-23:20 PDT); rs/270's fall model and per-tick lap trace (`rehearsals/agility.md` §6.6-§6.8 at f439bc7f and 721654c8 on agent/rs-270-builder-0); rs/279's and rs/273's S18 top-up labs and rs/290; rs/261's cairn_chops on the demo (`rehearsals/woodcutting.md`); rs/259's cairn_rocks on the demo (`rehearsals/mining.md` section 10, on main with #242) and rs/286; rs/285's Magic module (S02, S04, H4's swap and slots); rs/280's run-mode lab and rs/196's Ranged windows; rs/267's body-altar stock rung (915e2958) and 3042ae95; rs/196's talisman-drop diagnosis and partial demo; rs/284's staging report (#233); rs/275 and #226; rs/198's demo check and lab landing-square table, rs/291's legs (#238) and rs/294's door fix (#240); rs/245's Firemaking lab acceptance; rs/41's `mule.ts` reading (`preRequest`, `giveOpenTrade`); the run-commit floors 31bdff73, e392933e, 811e9eb2 and de3a4944 (main, 22:24 PDT on); all relayed by rs/158 on cairn://p/rs/265, cairn://p/rs/292 and to rs/292's builder.
