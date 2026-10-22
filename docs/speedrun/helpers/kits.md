@@ -217,3 +217,18 @@ axe bid) survive a stop. Cancel one only from a `bidder` run, by setting the lin
   one noted stack given to cairn_mule2 at Lumbridge (9 ticks giver side, 7
   receiver side). It was out of the fleet for 33 minutes and earning again at
   once.
+
+- 2026-10-22 00:06:04 UTC: Fishing kit delivered to cairn_casts at Lumbridge:
+  fly fishing rod 1, feathers 800, knife 1, normal logs 5. Giver settled at
+  00:06:04.061Z in 8 ticks. Receiver log (rs/195,
+  `rehearse-fishing-20261022-000351`, session 1): S01 ticks 6–14,
+  **8 ticks**, wallMs 1929, ok true, ending 00:06:04.004Z. S00 was separate,
+  ticks 2–6. This used the original live deployment; the durable delivery guard
+  was added afterwards to the recovered branch, not hot-deployed during the slot.
+- 00:06:41: leftovers banked. Bank stock: rune axe 1 (the GE-bought second axe),
+  steel/mithril/adamant/rune pickaxe 1 each, knives 3, cakes 55, sharks 92,
+  coins 96,303. Later kits still need their normal logs chopped while staging.
+- 00:07:08.146: clean logout after SIGINT to the verified launcher PID 2749943.
+  The saved config's `serve` was removed before stopping. The giver is offline;
+  future slots require an explicit staging start. Woodcutting's next kit is
+  rune axe 1, knife 1, logs 5; its slot and later food counts come from rs/147.
