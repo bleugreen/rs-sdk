@@ -5,7 +5,7 @@ import { type GatedSegment, IN_PAGE_RULE, inPageGate, runGatedProgram } from './
 import { type GateOptions, HostGate, type ProbeResult, summarizeProbe, tickSteadiness } from './hostgate';
 import { ProgramError, type ProgramStatus } from './programs';
 
-const frames = (catchUpsLastMinute = 0) => ({ n: 0, p50: 0, p90: 0, max: 0, under150: 0, over350: 0, catchUps: 0, catchUpsLastMinute, catchUpsPerMinute: 0 });
+const frames = (catchUpsLastMinute = 0) => ({ n: 0, p50: 0, p90: 0, max: 0, underHalfT: 0, overSevenSixthsT: 0, catchUps: 0, catchUpsLastMinute, catchUpsPerMinute: 0, T: 300, TSource: 'driver' as const });
 
 /**
  * The page's program runtime, scripted: `behave` runs on each tick of a running program and

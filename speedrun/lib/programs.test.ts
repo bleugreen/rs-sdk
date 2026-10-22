@@ -28,7 +28,7 @@ function status(p: Partial<ProgramStatus>): ProgramStatus {
 }
 
 function frames() {
-    return { n: 0, p50: 0, p90: 0, max: 0, under150: 0, over350: 0, catchUps: 0, catchUpsLastMinute: 0, catchUpsPerMinute: 0 };
+    return { n: 0, p50: 0, p90: 0, max: 0, underHalfT: 0, overSevenSixthsT: 0, catchUps: 0, catchUpsLastMinute: 0, catchUpsPerMinute: 0, T: 300, TSource: 'driver' as const };
 }
 
 describe('speedrun programs', () => {
