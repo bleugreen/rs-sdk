@@ -168,7 +168,10 @@ export interface RoutePlan {
     xpShort: number;
     /** The level the supplies reach. */
     level: number;
-    /** Ticks per inventory x loads + ticks per level-up drop x drops; the lab calibrates both. */
+    /**
+     * Ticks per inventory x loads, plus each load's level-up pages beyond `freePagesPerLoad`: a page
+     * still queued at the booth click holds it a tick (herblore.md section 9, fitted on the lab).
+     */
     expectedTicks: number;
     /** What is left of each input. */
     left: Record<number, number>;
@@ -180,8 +183,12 @@ export interface PlanOptions {
     load?: number;
     /** Measured steady cycle: 4 ticks per 14-potion inventory (herblore.md section 2). */
     ticksPerInventory?: number;
-    /** Booth delay per level-up page left at the visit (levelup-cost.md section 1, about 0.3, inferred). */
-    ticksPerLevelupDrop?: number;
+    /**
+     * Level-up pages a load's work ticks clear before its booth click (default 1). Each further page
+     * in the load delays the bank a tick: herblore-accept L1 measured 164 program ticks against
+     * 4 x 30 loads + 44 such pages (m, bgsrv-mac, 3 of 3); L2 and L3 sit within 6%.
+     */
+    freePagesPerLoad?: number;
 }
 
 export function planRoute(fromXp: number, toLevel: number, recipes: readonly ItemRecipe[], stock: Stock, opts: PlanOptions = {}): RoutePlan {
@@ -195,7 +202,8 @@ export function planRoute(fromXp: number, toLevel: number, recipes: readonly Ite
     const byRecipe: Record<string, number> = {};
     let xp = fromXp;
     let actions = 0;
-    let drops = 0;
+    let queued = 0;
+    const freePages = opts.freePagesPerLoad ?? 1;
     while (xp < target) {
         const level = levelForXp(xp);
         const r = byXp.find(x => x.level <= level && has(x.a) && has(x.b) && has(x.tool));
@@ -213,10 +221,9 @@ export function planRoute(fromXp: number, toLevel: number, recipes: readonly Ite
         loads.push({ recipe: r.name, n: done, levelups: ups, xpAfter: xp });
         byRecipe[r.name] = (byRecipe[r.name] ?? 0) + done;
         actions += done;
-        drops += ups;
+        queued += Math.max(0, ups - freePages);
     }
     const perInv = opts.ticksPerInventory ?? 4;
-    const perDrop = opts.ticksPerLevelupDrop ?? 0.3;
     return {
         loads,
         actions,
@@ -224,7 +231,7 @@ export function planRoute(fromXp: number, toLevel: number, recipes: readonly Ite
         reaches: xp >= target,
         xpShort: Math.max(0, target - xp),
         level: levelForXp(xp),
-        expectedTicks: Math.round((loads.length * perInv + drops * perDrop) * 10) / 10,
+        expectedTicks: Math.round((loads.length * perInv + queued) * 10) / 10,
         left: Object.fromEntries(recipes.flatMap(r => [r.a, ...(r.b === undefined ? [] : [r.b])]).map(id => [id, left.get(id) ?? 0]))
     };
 }
