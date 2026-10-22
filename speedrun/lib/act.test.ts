@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'bun:test';
-import type { BotWorldState, DialogState, NearbyLoc, NearbyNpc, PlayerState } from '../../sdk/types';
-import { act, actConverse, castTeleport, openDoor, opLoc, pickup, talkTo, useOn, wield } from './act';
+import { describe, expect, setSystemTime, test } from 'bun:test';
+import type { BotWorldState, DialogState, InventoryItem, NearbyLoc, NearbyNpc, PlayerState } from '../../sdk/types';
+import { act, actConverse, castTeleport, ClickGuard, openDoor, opLoc, pickup, talkTo, useOn, wield } from './act';
 import { baseState, FakeSdk, flush } from './fake-sdk';
 
 const player = (worldX: number, worldZ: number, level = 0) => ({ worldX, worldZ, level, hp: 10, maxHp: 10 }) as PlayerState;
@@ -10,6 +10,23 @@ const npc = (index: number, name: string): NearbyNpc =>
     ({ kind: 'npc', id: 5, index, name, x: 1, z: 1, distance: 1, hp: null, maxHp: null, optionsWithIndex: [{ text: 'Talk-to', opIndex: 1 }, { text: 'Pickpocket', opIndex: 3 }], options: ['Talk-to', 'Pickpocket'] }) as NearbyNpc;
 const cont = (pageId: string): DialogState => ({ isOpen: true, isWaiting: false, pageId, options: [{ index: 1, text: 'Click here to continue', buttonType: 6, componentId: 10 }] });
 const closed: DialogState = { isOpen: false, options: [], isWaiting: false };
+
+/** talkTo's use of ClickGuard, bare: the guard listens while the caller waits for `answered`. */
+async function talkFake(sdk: FakeSdk, click: () => Promise<unknown>, answered: () => boolean): Promise<{ unansweredResends?: number }> {
+    const guard = new ClickGuard(sdk as never, click, () => answered());
+    const stop = sdk.onStateUpdate(s => void guard.step(s));
+    const sent = guard.send();
+    await new Promise<void>(r => {
+        const off = sdk.onStateUpdate(() => {
+            if (!answered()) return;
+            off();
+            r();
+        });
+    });
+    stop();
+    await sent;
+    return guard.report();
+}
 
 async function ticks(sdk: FakeSdk, n: number, patch: (i: number) => Partial<BotWorldState> = () => ({})) {
     for (let i = 0; i < n; i++) {
@@ -112,6 +129,71 @@ describe('the jump guard', () => {
         done = true;
         await ticks(sdk, 1);
         expect(await p).toMatchObject({ ok: true, unansweredResends: 1 });
+    });
+
+    /**
+     * A tab behind the server: the click sent at tab tick 20 executes when the tab is at 21, while
+     * 10 ticks of wall time have passed, so the server had it at tick 30 (wait.ts serverClock).
+     */
+    async function lagging(run: (sdk: FakeSdk, click: () => Promise<unknown>, release: () => void, count: () => number) => Promise<void>) {
+        const prev = process.env.SPEEDRUN_TICK_MS;
+        process.env.SPEEDRUN_TICK_MS = '300';
+        const wall0 = Date.now();
+        setSystemTime(wall0);
+        try {
+            const sdk = new FakeSdk(baseState({ tick: 20, player: jumped(2465, 3493, 20) }));
+            let n = 0;
+            let release: (() => void) | null = null;
+            const click = () => {
+                n++;
+                sdk.sent.push({ method: 'sendInteractNpc', args: [7, 1] });
+                return n === 1 ? new Promise<unknown>(r => { release = () => r({ success: true, message: 'ok' }); }) : Promise.resolve({ success: true, message: 'ok' });
+            };
+            const go = () => {
+                setSystemTime(wall0 + 10 * 300);
+                release!();
+            };
+            await run(sdk, click, go, () => n);
+        } finally {
+            setSystemTime();
+            if (prev === undefined) delete process.env.SPEEDRUN_TICK_MS;
+            else process.env.SPEEDRUN_TICK_MS = prev;
+        }
+    }
+
+    test('on a tab behind the server, the reply watch counts from the server tick the click reached', async () => {
+        await lagging(async (sdk, click, release, count) => {
+            let done = false;
+            const p = talkFake(sdk, click, () => done);
+            await ticks(sdk, 1); // tab tick 21; the click has not executed
+            release(); // executes at 21; the server is at 30
+            await ticks(sdk, 11); // tab tick 32: 2 ticks past the server's 30, the reply can still come
+            expect(count()).toBe(1);
+            await ticks(sdk, 1); // 33: REPLY_TICKS from the server tick
+            expect(count()).toBe(2);
+            done = true;
+            await ticks(sdk, 1);
+            expect(await p).toMatchObject({ unansweredResends: 1 });
+        });
+    });
+
+    test("on a tab behind the server, act's idle re-send counts from the server tick the click reached", async () => {
+        await lagging(async (sdk, click, release, count) => {
+            // Not just after a jump: only the idle re-send can fire.
+            sdk.state = { ...sdk.state!, player: { ...sdk.state!.player!, teleportTick: 1 } };
+            let done = false;
+            const p = act(sdk as never, click, () => done, { resendEvery: 6 });
+            await ticks(sdk, 1);
+            release();
+            await flush();
+            await ticks(sdk, 14); // tab tick 35: 5 ticks past the server's 30
+            expect(count()).toBe(1);
+            await ticks(sdk, 1); // 36
+            expect(count()).toBe(2);
+            done = true;
+            await ticks(sdk, 1);
+            expect(await p).toMatchObject({ ok: true, resends: 1 });
+        });
     });
 
     test('act re-sends once a post-jump click that draws no reply in REPLY_TICKS', async () => {
@@ -399,6 +481,27 @@ describe('loc, npc and item helpers', () => {
         const p = castTeleport(sdk as never, 'lumbridge', 25, landing);
         await ticks(sdk, 4, i => (i === 3 ? { player: player(3222, 3219) } : {}));
         expect(await p).toMatchObject({ ok: true, ticks: 4, at: { x: 3222, z: 3219 } });
+    });
+
+    test('castTeleport re-casts a cast that drew nothing at the 6-tick bound of any world click', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(3000, 3000) }));
+        const p = castTeleport(sdk as never, 'ardougne');
+        await ticks(sdk, 5); // tick 6: no animation, no runes taken, no message
+        expect(sdk.sent.length).toBe(1);
+        await ticks(sdk, 1); // tick 7: +6
+        expect(sdk.sent).toEqual([{ method: 'sendClickComponent', args: [1540] }, { method: 'sendClickComponent', args: [1540] }]);
+        await ticks(sdk, 3, i => (i === 2 ? { player: player(2661, 3302) } : {}));
+        expect(await p).toMatchObject({ ok: true, resends: 1, ticks: 9 });
+    });
+
+    test('castTeleport never re-casts a cast that answered, however slow the landing', async () => {
+        const runes: InventoryItem[] = [{ slot: 0, id: 563, name: 'Law rune', count: 2, optionsWithIndex: [] }];
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(3000, 3000), inventory: runes }));
+        const p = castTeleport(sdk as never, 'ardougne');
+        // The cast animation and the runes taken on its first tick; the landing published 11 ticks later.
+        await ticks(sdk, 12, i => (i === 0 ? { player: { ...player(3000, 3000), animId: 714 }, inventory: [{ ...runes[0], count: 1 }] } : i === 11 ? { player: player(2661, 3302) } : {}));
+        expect(await p).toMatchObject({ ok: true, resends: 0, ticks: 12 });
+        expect(sdk.sent.length).toBe(1);
     });
 
     test('castTeleport ignores a refusal message older than the cast', async () => {
