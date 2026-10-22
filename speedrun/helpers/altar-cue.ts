@@ -58,11 +58,14 @@ export interface Turn {
 }
 
 /**
- * The helper families that read a cue. bone-giver is two: 'bone' in S07's standing mode, 'courier' in
- * S18's on-request mode. 'mule' is the trade giver's top-up packages (mule.ts), which read only a scoped
- * top-up ask. The list is a shared contract (run.ts's cue writes, the cue snapshot): only ever append.
+ * The helper families a cue addresses. bone-giver is two: 'bone' in S07's standing mode, 'courier' in
+ * S18's on-request mode. 'mule' is the trade giver's packages (mule.ts), asked for by a cue scoped to
+ * the hand-off, and its top-up asks. 'fmrow' (S03's log droppers) and 'ring' (S04's ring givers) have
+ * no reader in their roles: only the run-machine launcher reads them, for the stop that logs the family
+ * out (standalone.ts stopOn). The list is a shared contract (run.ts's cue writes, the cue snapshot):
+ * only ever append.
  */
-export const CUE_FAMILIES = ['altar', 'bone', 'courier', 'anvil', 'cannon', 'mule'] as const;
+export const CUE_FAMILIES = ['altar', 'bone', 'courier', 'anvil', 'cannon', 'mule', 'fmrow', 'ring'] as const;
 export type CueFamily = (typeof CUE_FAMILIES)[number];
 
 /**
