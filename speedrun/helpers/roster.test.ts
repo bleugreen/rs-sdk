@@ -45,7 +45,7 @@ describe('launcher entries', () => {
     test('run-day givers: body altar, direct path, slots round-robin', () => {
         const e = giverEntries(roster(4).accounts, { role: 'altar-giver', acceptFrom: '^cairn_h31$' });
         expect(e.map(x => (x.options as { slot: number }).slot)).toEqual([0, 1, 2, 0]);
-        expect(e[0]).toEqual({ account: 'cairn_t01', role: 'altar-giver', path: 'direct', options: { altar: 'body', slot: 0, essence: 27, restock: { kind: 'bank', acceptFrom: '^cairn_h31$' } } });
+        expect(e[0]).toEqual({ account: 'cairn_t01', role: 'altar-giver', path: 'direct', options: { altar: 'body', slot: 0, essence: 27, restock: { kind: 'bank', acceptFrom: '^cairn_h31$' }, scope: { step: 'S21', family: 'altar' } } });
         expect(giverEntries(['cairn_t01'], { role: 'altar-giver' })[0]!.options).toMatchObject({ restock: { kind: 'bank' } });
         expect(e.every(x => !('receiver' in x) && !('final' in x))).toBe(true);
     });

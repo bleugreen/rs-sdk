@@ -28,6 +28,9 @@ const FROM_SCRIPT: Record<string, string> = {
 
 const debugLines = (lines: string[]) => ['#8134 type=0 btn=0 text=""', '  #8136 type=4 btn=3 text="Close Window"', ...lines.map((t, i) => `    #${8145 + i} type=4 btn=0 text="${t}"`)];
 
+const SERVE_SCOPE = { step: 'S14', family: 'cannon' } as const;
+const so = (raw: Record<string, unknown>, env?: Record<string, string | undefined>) => serveOptions(raw.receiver === undefined ? { scope: SERVE_SCOPE, ...raw } : raw, env);
+
 describe('stageFromJournal', () => {
     for (const [stage, lines] of Object.entries(JOURNAL)) {
         test(`lab page for stage ${stage}`, () => {
@@ -121,17 +124,17 @@ describe('serve mode', () => {
     const LOAD: [string, number][] = [['Cannon base', 1], ['Cannon stand', 1], ['Cannon barrels', 1], ['Cannon furnace', 1], ['Cannonball', 100]];
 
     test('options: tile and balls are required; the receiver is a hash, never a name', () => {
-        expect(() => serveOptions({ balls: 100 })).toThrow(/serve.tile/);
-        expect(() => serveOptions({ tile: { x: 1, z: 2 } })).toThrow(/serve.balls/);
-        expect(() => serveOptions({ tile: { x: 1, z: 2 }, balls: 100, receiver: 'Some Player' })).toThrow(/not a name/);
+        expect(() => so({ balls: 100 })).toThrow(/serve.tile/);
+        expect(() => so({ tile: { x: 1, z: 2 } })).toThrow(/serve.balls/);
+        expect(() => so({ tile: { x: 1, z: 2 }, balls: 100, receiver: 'Some Player' })).toThrow(/not a name/);
         const hash = nameHash('Some Player');
-        const o = serveOptions({ tile: { x: 2570, z: 3463 }, balls: 100, receiver: hash.toUpperCase() }, {});
+        const o = so({ tile: { x: 2570, z: 3463 }, balls: 100, receiver: hash.toUpperCase() }, {});
         expect(o).toMatchObject({ tile: { x: 2570, z: 3463 }, balls: 100, receiver: hash, returnTile: null, labStock: false, noReplyTicks: 2, resendTicks: 100 });
         expect(o.bank).toEqual({ x: 2946, z: 3369 }); // Falador west, where h92 banks
     });
 
     test('options: without a receiver hash it is read from the cue directory', () => {
-        const o = serveOptions({ tile: { x: 1, z: 2 }, balls: 1, returnTile: { x: 2661, z: 3301 } }, { RC_CUE_DIR: '/tmp/cue-x' });
+        const o = so({ tile: { x: 1, z: 2 }, balls: 1, returnTile: { x: 2661, z: 3301 } }, { RC_CUE_DIR: '/tmp/cue-x' });
         expect(o.receiver).toBeNull();
         expect(o.cueDir).toBe('/tmp/cue-x');
         expect(o.returnTile).toEqual({ x: 2661, z: 3301 });
@@ -145,13 +148,13 @@ describe('serve mode', () => {
         expect(serveResume({ phase: 'gave', at }, false, true)).toBe('take-back');
         expect(serveResume({ phase: 'gave', at }, true, false)).toBe('done');
         expect(serveResume({ phase: 'returned', at }, true, true)).toBe('done');
-        expect(serveOptions({ tile: { x: 1, z: 2 }, balls: 100 }, {}).id).toBe('1,2x100');
-        expect(serveOptions({ id: 'H11', tile: { x: 1, z: 2 }, balls: 100 }, {}).id).toBe('H11');
+        expect(so({ tile: { x: 1, z: 2 }, balls: 100 }, {}).id).toBe('1,2x100');
+        expect(so({ id: 'H11', tile: { x: 1, z: 2 }, balls: 100 }, {}).id).toBe('H11');
     });
 
     test('parseOptions: serve is off unless given', () => {
         expect(parseOptions({}).serve).toBeNull();
-        expect(parseOptions({ serve: { tile: { x: 1, z: 2 }, balls: 5 } }).serve?.balls).toBe(5);
+        expect(parseOptions({ serve: { tile: { x: 1, z: 2 }, balls: 5, scope: SERVE_SCOPE } }).serve?.balls).toBe(5);
     });
 
     test('the exact load is five offers of one All press each: one trade, nothing left behind', () => {
@@ -203,19 +206,19 @@ describe('serve mode', () => {
         };
 
         test('options: extras are distinct items outside the load, and the load fits 28 slots', () => {
-            const o = serveOptions({ id: 'H11', tile: { x: 1, z: 2 }, balls: 100, extras: H11_EXTRAS }, {});
+            const o = so({ id: 'H11', tile: { x: 1, z: 2 }, balls: 100, extras: H11_EXTRAS }, {});
             expect(o.extras).toEqual(H11_EXTRAS);
             // 4 parts + balls + scimitar + law + water + 2 sharks.
             expect(loadStacks(o.extras)).toBe(10);
-            expect(serveOptions({ tile: { x: 1, z: 2 }, balls: 1 }, {}).extras).toEqual([]);
+            expect(so({ tile: { x: 1, z: 2 }, balls: 1 }, {}).extras).toEqual([]);
             // 23 sharks fill the last slots exactly; one more is 29.
-            expect(serveOptions({ tile: { x: 1, z: 2 }, balls: 1, extras: [{ item: 'Shark', count: 23 }] }, {}).extras).toHaveLength(1);
-            expect(() => serveOptions({ tile: { x: 1, z: 2 }, balls: 1, extras: [{ item: 'Shark', count: 24 }] }, {})).toThrow(/29 slots/);
-            expect(() => serveOptions({ tile: { x: 1, z: 2 }, balls: 1, extras: [{ item: 'Shark', count: 1 }, { item: 'shark', count: 1 }] }, {})).toThrow(/twice/);
-            expect(() => serveOptions({ tile: { x: 1, z: 2 }, balls: 1, extras: [{ item: 'Cannonball', count: 10 }] }, {})).toThrow(/already in the load/);
-            expect(() => serveOptions({ tile: { x: 1, z: 2 }, balls: 1, extras: [{ item: 'Shark', count: 0 }] }, {})).toThrow(/whole count/);
-            expect(() => serveOptions({ tile: { x: 1, z: 2 }, balls: 1, labStock: true, extras: [{ item: 'Shark', count: 2 }] }, {})).toThrow(/needs obj/);
-            expect(serveOptions({ tile: { x: 1, z: 2 }, balls: 1, labStock: true, extras: [{ item: 'Shark', count: 2, obj: 'shark' }] }, {}).extras[0]!.obj).toBe('shark');
+            expect(so({ tile: { x: 1, z: 2 }, balls: 1, extras: [{ item: 'Shark', count: 23 }] }, {}).extras).toHaveLength(1);
+            expect(() => so({ tile: { x: 1, z: 2 }, balls: 1, extras: [{ item: 'Shark', count: 24 }] }, {})).toThrow(/29 slots/);
+            expect(() => so({ tile: { x: 1, z: 2 }, balls: 1, extras: [{ item: 'Shark', count: 1 }, { item: 'shark', count: 1 }] }, {})).toThrow(/twice/);
+            expect(() => so({ tile: { x: 1, z: 2 }, balls: 1, extras: [{ item: 'Cannonball', count: 10 }] }, {})).toThrow(/already in the load/);
+            expect(() => so({ tile: { x: 1, z: 2 }, balls: 1, extras: [{ item: 'Shark', count: 0 }] }, {})).toThrow(/whole count/);
+            expect(() => so({ tile: { x: 1, z: 2 }, balls: 1, labStock: true, extras: [{ item: 'Shark', count: 2 }] }, {})).toThrow(/needs obj/);
+            expect(so({ tile: { x: 1, z: 2 }, balls: 1, labStock: true, extras: [{ item: 'Shark', count: 2, obj: 'shark' }] }, {}).extras[0]!.obj).toBe('shark');
         });
 
         test('the extras are one more All press each, in the same offer as the set and balls', () => {

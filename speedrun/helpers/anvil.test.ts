@@ -35,6 +35,8 @@ const plan = (give: Record<string, number>, seq = 3, extra: Partial<AnvilPlan> =
 const booth = (x: number, z: number, ops: string[]): NearbyLoc =>
     ({ id: BOOTH_ID, name: 'Bank booth', x, z, level: 0, distance: 0, options: ops, optionsWithIndex: ops.map((text, i) => ({ text, opIndex: i + 1 })) }) as NearbyLoc;
 
+const ao = (raw: Record<string, unknown>, env?: Record<string, string | undefined>) => anvilOptions({ scope: { step: 'S25a', family: 'anvil' }, ...raw }, env);
+
 describe('the plan file', () => {
     test('a plan of up to 28 positive counts is valid; a stop plan may be empty', () => {
         expect(validPlan(plan({ adamantite_bar: 25 }))).not.toBeNull();
@@ -202,15 +204,15 @@ describe('the trade: bars out, products back in the same trade', () => {
 
 describe('anvilOptions and the booth', () => {
     test('defaults: bank restock on the tile beside the anvil, no trade limit', () => {
-        const o = anvilOptions({}, { RC_CUE_DIR: '/tmp/cue' });
+        const o = ao({}, { RC_CUE_DIR: '/tmp/cue' });
         expect(o).toMatchObject({ restock: { kind: 'bank', labStock: false }, tile: HELPER_TILE, noReplyTicks: 2, resendTicks: 100, cueDir: '/tmp/cue' });
         expect(o.trades).toBe(Number.POSITIVE_INFINITY);
     });
 
     test('rejects what it cannot do', () => {
-        expect(() => anvilOptions({ restock: { kind: 'trade' } })).toThrow();
-        expect(() => anvilOptions({ trades: 0 })).toThrow();
-        expect(() => anvilOptions({ tile: { x: 'a', z: 1 } })).toThrow();
+        expect(() => ao({ restock: { kind: 'trade' } })).toThrow();
+        expect(() => ao({ trades: 0 })).toThrow();
+        expect(() => ao({ tile: { x: 'a', z: 1 } })).toThrow();
     });
 
     test('boothOf: the booth nearest the anvil, by its quick-use op', () => {

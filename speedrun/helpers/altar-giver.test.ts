@@ -24,8 +24,10 @@ afterAll(() => {
     else process.env.SPEEDRUN_TICK_MS = tickEnv;
 });
 
+const SCOPE = { step: 'S21', family: 'altar' } as const;
+
 function giverWith(sdk: FakeSdk, options: Record<string, unknown> = {}): AltarGiver {
-    const ctx = { sdk, bot: {}, account: 'cairn_rcg1', options: { altar: 'nature', cueDir: dir, ...options }, log: () => {}, reportBank: () => {}, signal: new AbortController().signal } as unknown as RoleContext;
+    const ctx = { sdk, bot: {}, account: 'cairn_rcg1', options: { altar: 'nature', cueDir: dir, scope: SCOPE, ...options }, log: () => {}, reportBank: () => {}, signal: new AbortController().signal } as unknown as RoleContext;
     return new AltarGiver(ctx);
 }
 
@@ -47,7 +49,7 @@ describe('altar-giver cue', () => {
         // armed (not started) for the robust restart's turn when the stock rung opens its own session
         inner.phase = 'armed';
         inner.armed = { key: 's1:120', session: 's1', seq: 4, T: 120, myT: 120, open: 5, schedule: 'robust', receiverHash: nameHash(RECEIVER), armedTick: 99 } as unknown as { key: string };
-        inner.onCue({ v: 1, session: 's2', seq: 1, receiver: { sha256: nameHash(RECEIVER) }, beacons: [{ tick: 100, ms }], schedule: 'robust', open: 5, turns: [{ giver: 'cairn_rcg1', T: 103, schedule: 'stock' }], ms });
+        inner.onCue({ v: 1, scope: SCOPE, session: 's2', seq: 1, receiver: { sha256: nameHash(RECEIVER) }, beacons: [{ tick: 100, ms }], schedule: 'robust', open: 5, turns: [{ giver: 'cairn_rcg1', T: 103, schedule: 'stock' }], ms });
         expect(inner.armed?.key).toBe('s2:103');
         expect(inner.phase).toBe('armed');
     });
