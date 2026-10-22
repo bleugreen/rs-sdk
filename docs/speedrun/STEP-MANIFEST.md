@@ -164,9 +164,9 @@ cannon session, Prayer, Crafting and Cooking pass it. Fold-in 13 adds S15's meas
 so Monkey Madness (4,429) passed Agility (4,327) for rank 1; fold-in 15's N to P, the rope pin and segment X (+335) put it at 4,764. Fold-in 15 also measures Dragon Slayer (1,380), which passes
 Runecraft and Smithing for rank 10, and Dwarf Cannon (1,130), which passes Smithing for rank 12. Fold-in 17's railing recount (~968 in burst) drops Dwarf Cannon back below Smithing, to rank 13.
 
-The expected column sums to **31,312.8** (the steps; 31,250.8 at fold-in 18, 31,408 before fold-in 17, 32,287 before fold-in 14 moved every quest's expected to its burst figure) plus the legs' **2,209.5**; RUN-ORDER.md section 6
+The expected column sums to **31,312.8** (the steps; 31,250.8 at fold-in 18, 31,408 before fold-in 17, 32,287 before fold-in 14 moved every quest's expected to its burst figure) plus the legs' **2,224.2** (2,209.5 before fold-in 20's T05-06 on its browser figure); RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **34,827.3** knife-on expected (32,506.7 best), against the record of 35,916.
+retries, restarts) for its **34,842.0** knife-on expected (32,520.7 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -180,7 +180,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 2 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,228 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | **on main, cae93456 (#245; rs/300's snapshot)**; lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; rs/155); S17 4,114 on the engine's fall roll, 66 the clean-lap floor (rs/270; cairn_jumps' demo run continues as rs/295); run mode 0 on both courses (m, rs/270) |
 | 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,157 | 3,148 | 3,775 | ~627 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | **on main, 4235a9e7 (#220; rs/260's snapshot of rs/230's lab-accepted module, rs/147's branch at 59ec3933)**, with `selfStarter` (plain 3.62) and `beforeRestart`; `stay2` bury (#159, rs/182) and restart fix (e5d8a058, #170; rs/207) on main; gate `measureDrops` 120 explicit (rs/259, 314989e9); **demo-measured** (rs/259's cairn_rocks: 3.019 per xp ore uncontested); on main with rs/298 (#242, inside the floor 811e9eb2: 3fa6fbe4's ore drop and 314989e9) |
 | 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,053 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | **on main** (#243, de3a4944: rs/297's snapshot of cairn_chops' raced module, the run-commit floor; rs/211 and rs/236 before it; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165); gate `measureDrops` 120 explicit (rs/261, on main with #243); run mode 0 (m, rs/261); **the knife demo-measured** (rs/261's cairn_chops, hiscore 3,329; S07 at its luck-free 3,053); **on main, de3a4944 (#243; rs/297's snapshot as cairn_chops raced it, knife-cycle's `waitRespawn` declared)** |
-| 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,209.5 | 2,195.7 | ~2,340 i | ~144 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | **on main, PR #238** (rs/291's snapshot of rs/198's module for rs/186, merge 5a70e4e6): `legs.ts` and its test, `tools/demo-legs.ts`, `measure-legs.ts`, `measure-ardougne-handoff.ts`, `ticks.ts`'s `travel` rows, run-transitions.md section 10; lab-measured and demo-checked (h55); its walker, `lib/travel.ts`, on main, 0658e896 (#200); rs/294's forcemove door fix on main (#240); both inside the floor cae93456 |
+| 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,224.2 | 2,209.7 | ~2,340 i | ~144 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | **on main, PR #238** (rs/291's snapshot of rs/198's module for rs/186, merge 5a70e4e6): `legs.ts` and its test, `tools/demo-legs.ts`, `measure-legs.ts`, `measure-ardougne-handoff.ts`, `ticks.ts`'s `travel` rows, run-transitions.md section 10; lab-measured and demo-checked (h55); its walker, `lib/travel.ts`, on main, 0658e896 (#200); rs/294's forcemove door fix on main (#240); both inside the floor cae93456 |
 | 6 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~120 elsewhere | ~190 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` | **on main** (#244, 6804061a: rs/301's Thieving S18 module options, with rs/243's `stopWhenFoodBelow`, `retargetTicks` and the top-up contract; rs/154 before it); top-up on main (`openMaxTicks` / `maxTicks`, the same deadline); **stun pack built (0efc315c, rs/324), lab acceptance pending rs/335** (browser, 57-99, against rs/317's 2,056): on main, `thieving.ts:639` still throws 'stun pack not implemented' (RUN-ORDER.md R31); rs/132's program side lab-accepted (bury, charge, arrows); **demo-confirmed program behaviour** (rs/315, cairn_steals; no re-price); browser: no change for the client (rs/317, phase 1); top-ups ~0 with the courier on a side tile (rs/279, lab); rs/290's opt-in idle re-send building |
 | 7 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | on main, 22552bf4 (#197; rs/231); lab-accepted (1,998 on 78-99; rs/152); gate `measureDrops` 120 explicit (#221) |
 | 8 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,972 | 1,946 | 1,997 (the bow from 70); 2,023-2,211 without the kit | ~265 | overlay | `cannon-kit.ts` (rs/59, on main) | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible); run mode ~0, at most ~9 on S27's melee phase (m/i, rs/196) |
@@ -1441,7 +1441,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **S21's altar in force (main, 15:17 PDT): the body altar.** With 0 nature talismans held, S21 runs
   at the body altar, ruins (3052,3444) south of Edgeville, with 22 givers on 23 body talismans and no
   keeper (m, lab, rs/163, 16:17 PDT: a 139-142-tick restock round trip from Edgeville bank, N =
-  ceil(142 / 7) + 1, 12 of 12 turns at 7 ticks, so S21's ticks do not change; supply-fallbacks.md §7: 194 crafts, 5,238 essence; +142 in every RUN-ORDER.md
+  ceil(142 / 7) + 1, 12 of 12 turns at 7 ticks, so S21's ticks do not change; supply-fallbacks.md §7: 194 crafts, 5,238 essence; +143.7 in every RUN-ORDER.md
   scenario row, SF's +231 of crafts with the body route's shorter legs measured by rs/198). The nature altar below is the every-line-held baseline and a sensitivity row; the
   module takes `altar: 'body'` as well. **T21-22's runes (H17e)** come back after the last craft from
   **a runes-only hand-back trip**: the giver's body talisman and 1 law, 3 air and 1 earth, no essence,
@@ -1460,8 +1460,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   nature with givers first, 29 gaps of 7, 210 ticks). The step adds ~5-9 outside the program, the
   walk from where the ruins drop SCORED (3-4 tiles) to the stand tile, with the last craft's
   level-up dialog inside the craft's delay: 217 against 210, and 58 against 49 for S06. The body
-  altar in force adds 33 crafts at the same 7 and its own shorter legs (+142, RUN-ORDER.md section 7),
-  which these per-step parts do not change. Travel is in entry 11 (T05-06 61 m; T20-21 158 m to the nature altar, 69.3 m to the body altar in force, rs/198).
+  altar in force adds 33 crafts at the same 7 and its own shorter legs (+143.7, RUN-ORDER.md section 7),
+  which these per-step parts do not change. Travel is in entry 11 (T05-06 75.7 m on the browser, 61 lite; T20-21 158 m to the nature altar, 71.0 m to the body altar in force on the browser, 69.3 lite; rs/196 and rs/198; fold-in 20).
   Robust schedule +1 a craft, +168 (66 for S06 with SCORED first, m). A clean logout between cycles
   plus the resume walk costs ~2 in-world ticks (m). Fallback **~5,220 on the run commit today**, the stock reacting cycle at its measured **31 ticks a craft** (m, lab,
   rs/196: 4 runs of 9 crafts each after two forced program faults; every reacting receive took
@@ -1615,14 +1615,14 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   range 32-34). The demo readings, 8 and 36, sit above every lab tile, so they are a demo-side cost
   (a 5-tick cast and a slower run), carried inside RUN-ORDER.md's demo-latency line (~+20 i over the
   run's ~33 teleport casts), not here. Net +11 expected and -2.8 best.
-- **Ticks:** **2,209.5** expected and **2,195.7** best for the order, the twelve way-in legs at their whole ticks (1,382 until
+- **Ticks:** **2,224.2** expected and **2,209.7** best for the order (fold-in 20: T05-06 at its browser figure, 75.7 / 75 against lite's 61, rs/196; 2,209.5 / 2,195.7 before), the twelve way-in legs at their whole ticks (1,382 until
   fold-in 11 netted them against the arrival rows the quests counted; the 840.5 moved here, O6).
   Every leg is measured end to end: `research/run-transitions.md` §2, §4, §6, and rs/198's lab
   legs through this module (m (lab), on main with rs/291's snapshot, PR #238, and run-transitions.md section 10 on main; RUN-ORDER.md LG), which RUN-ORDER.md
   takes where RT had none (T02-03 4, T07a 58, T14-15 174), where the quest documents' read figures
   stood (T12-13 101.5, T15-16 143.5, T19-20 39.5) and where it differs from RT by 2 or more (T06-07
   79, T20-21 158, T25-26 41.5); RUN-ORDER.md section 2 has every leg. The body plan in force (S21)
-  runs T20-21 by Falador teleport to the body ruins, 69.3 m, and T21-22 from the body room, 32.7 m
+  runs T20-21 by Falador teleport to the body ruins, 71.0 m on the browser (best 70; rs/196, fold-in 20; 69.3 m lite), and T21-22 from the body room, 32.7 m
   (rs/198). Fallback about **2,340** (inferred: the 1,520 for the legs as
   netted before, `bot.walkTo` at 0.57 per tile against the walker's 0.51, `quests/primitives.md` §2,
   plus the twelve arrival rows at their quest documents' stock figures, 846.5, most of them timed
