@@ -167,6 +167,19 @@ What the rows show:
 - Skeleton damage with protect off was 0.7 HP per lap here against 2.8 in
   section 1's chain: the rate varies a lot between runs.
 
+**The cost of an eat inside a lap** (rs/158's question; S17 stats, eat line 98 so that
+every hit eats, 14 laps): inconclusive.
+- Every lap without an eat was exactly 66.
+- All 5 eats fell in the two laps that also had a fall: 113 ticks (2 eats) and 160
+  ticks (3 eats). The 160-tick lap includes one 40-tick obstacle timeout (`stuck`).
+- An eat is an inventory click, and `OpHeldHandler.ts:55` runs `clearPendingAction`
+  on it, the same path that lets the prayer button cancel the walk to an obstacle.
+- So an eat sent during an obstacle approach very likely costs the 40-tick
+  `stepTimeout` (inferred, one occurrence). Section 1's 80-tick "dropped click" at
+  the rocks fits the same cause.
+- An eat in the ticks an obstacle's own script holds the player should cost nothing
+  (not separated here).
+
 **Ruling for the module:** `protect` stays off (the default). The program's protect
 keys remain declared and opt-in, but no plan should use them until a toggle that
 never lands during an obstacle approach is built and measured.
