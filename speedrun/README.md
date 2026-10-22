@@ -46,6 +46,7 @@ speedrun/
   skills/         the run's step modules: `skill` and `steps({to, ...})` returning runner Steps
     start.ts      S00, the tutorial skip on a brand-new account's first login
     fishing.ts    S22 fly fishing under the gated knife loop, and the from-1 net and walk bands
+    woodcutting.ts  S07: normal trees, oaks and willows at Taverley under the in-page gate
   quests/         the quest step modules: `quest`, `stepId`, `steps(opts)`, one Step per segment
     segments.ts   the shared scaffold: questSteps, QuestOptions, talkShape, kitSegment, checks
   lab/            local lab: never imported by lib/
@@ -751,6 +752,58 @@ margin: 783 for 20-99, 595 for 78-99). Each gated segment and a band summary
 share, spot-move costs, resyncs and slips) go to the tick log as 0-tick rows tagged
 `fishing:<band>:segment` and `:summary`. Running out of feathers stops the band with an error
 that names the level reached.
+
+## skills/woodcutting.ts (S07)
+
+STEP-MANIFEST.md entry 3 as five level-driven steps that run from any start level:
+`woodcutting:walk-oaks` (Lumbridge to the oak tile by `SITES.approach`, waypoints that keep a
+level-3 account clear of every dark wizard spawn), `woodcutting:normal-1-15` (knife-cycle `tree`,
+plain), `woodcutting:oak-15-73`, `woodcutting:walk-willows` and `woodcutting:willow-73-99`. A rune
+axe in the pack is enough from level 1 (`woodcut.rs2`'s axe checker has no level gate and takes a
+carried axe). Each band reads the Woodcutting level, so one already passed is a no-op; the bands
+are the resume walk's milestones and each one's preconditions include its stand.
+
+```ts
+import { steps } from '../skills/woodcutting';
+await runSteps(session, steps({ to: 99, technique: 'auto' }), { log, c: {} });
+```
+
+The oak and willow bands run `knife-cycle` through `lib/gated-program.ts` with a fresh
+`inPageGate` each, judged in ticks per expected roll (plain reference 4, the plain loop's cycle;
+each log weighted by 1 / the rune axe's success chance at the current level). Knife segments
+carry `bury` when it is set and plain ones `dropEach`; both carry `trees`, the three trees
+reachable from the stand, and each band first walks onto the stand exactly. The normal band runs
+plain without a probe: it is about 3 logs, less than one 20-trial probe costs. With `bury` and a
+`bones.giver`, the band stops the run on the roll label after the last bury (the program's
+`bonesLeft` gauge at 0 for 2 ticks), takes a load with `receiveFrom`, and starts again with the
+same gate (`woodcutting:bones-load` rows); there is no plain loop with a bury, so bones wait
+while the gate holds plain. Each band's gate judges its measured switch-off over
+`MEASURE_DROPS` (120) logs, passed explicitly: over 30, chop luck alone false-fires it.
+
+`route` picks the stands as data from `ROUTES`: `taverley` (`SITES`, the scored run's and the
+default) or `rimmington` (the Rimmington oaks and the Draynor-west willows, about 130 ticks less
+walking from Lumbridge, which a fresh rehearsal account takes); `sites` lays over the route. Each
+band's summary row records the resolved `route` and `stand`. Every hitpoint lost in a walk or a
+band is a 0-tick `woodcutting:hit` row (tick, tile, the NPCs within 2 tiles). With `hpStop=N` a hit
+to N or below aborts the walk or the band's program run and fails the step, so the harness logs
+out cleanly. Options from the CLI come as strings (`--skill-opt=route=rimmington`, `hpStop=4`,
+`bury=true`, `boneGiver=`, `plainTicksPerRoll=`, `sites=<json>`, `hold=` for the lab's forced slip).
+
+`BandLedger` files every tick of a band by level and technique from the program statuses, and
+`summarizeBand` turns it into rs/158's table: per sub-band (oak 15-60 and 60-73, willow 73-85 and
+85-99) and per technique, ticks per expected roll, ticks per log, the fitted success per roll
+(logs over cycles on whole-cycle gaps, the chop RNG) against the formula's, the lattice's ticks
+per log (cycle / p), and the knife's share of the ticks, with the probe and bone-load ticks
+between runs apart. Segments and the band summary go to the tick log as 0-tick rows tagged
+`meta.kind` `wc-segment` and `wc-band`. `modelTicksPerLog(tree, level, technique, D)` prices
+felled trees: the share of time all three trees are down is Erlang B at load
+(p / cycle / 8) x (D + 4), since the downtime's distribution does not matter to it.
+
+Lab driver: `lab/measure-woodcutting.ts` (`survey` of the stands, `walk` legs, single `band`s with
+`--bury --helper=<bot>` for real 23-bone trades, `chain` from level 1), run as a
+`tickprog-lab.sh` spec with `LAB_BLOCK=woodcutting` (`--route=rimmington`, `--hp-stop=N`; `walk`
+and `chain` set Woodcutting to `--level` first). The lab gate, the attempt and their findings are
+in `docs/speedrun/rehearsals/woodcutting.md`.
 
 ## runner/step.ts
 
