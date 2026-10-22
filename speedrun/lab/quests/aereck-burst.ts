@@ -203,10 +203,13 @@ export async function confirmedLogout(session: Session, opts: { timeoutMs?: numb
 const isLocal = (server: string | undefined) => /^(localhost|127\.)/.test(server ?? '');
 
 /** The demo's account rules, checked before any login: the world matches the mode, and no branded name off the lab. */
-export function checkTarget(env: { BOT_USERNAME: string; SERVER?: string }, lab: boolean): void {
+export function checkTarget(env: { BOT_USERNAME: string; SERVER?: string; GATEWAY_URL?: string }, lab: boolean): void {
     if (lab && !isLocal(env.SERVER)) throw new Error('--lab drives the local lab engine only');
     if (!lab && isLocal(env.SERVER)) throw new Error('without --lab this is the demo run: the account must point at the demo world');
-    if (!lab && /^cairn_/i.test(env.BOT_USERNAME)) throw new Error(`${env.BOT_USERNAME}: the demo run takes an unbranded throwaway, not a cairn_* account`);
+    if (!lab && /^cairn_/i.test(env.BOT_USERNAME)) throw new Error('the demo run takes an unbranded throwaway, not a cairn_* account');
+    // Through the demo's public gateway every click makes a round trip to Fly and back before it
+    // reaches the client, which is not how the run drives its client and would inflate every gap.
+    if (!lab && !/^wss?:\/\/(127\.|localhost)/.test(env.GATEWAY_URL ?? '')) throw new Error('the demo run needs GATEWAY_URL on a loopback gateway (ws://127.0.0.1:PORT), as the run uses');
 }
 
 async function main(): Promise<void> {
