@@ -12,6 +12,7 @@
 // The runner's table carries the module's note rows (casts, climb refusals, free slots, toggles,
 // the root drawn); a full A-P run also checks the quest's reward xp.
 
+import type { ConverseResult } from '../../lib/converse';
 import type { TickRow } from '../../lib/ticks';
 import { skillXp } from '../../lib/world';
 import { steps, stepId, type Options } from '../../quests/grand-tree';
@@ -32,7 +33,8 @@ const SCROLL = 'grandtree_scroll';
 const STARTS: Record<Letter, { stage: number; at: [number, number, number]; items: string[] }> = {
     A: { stage: 0, at: [2465, 3489, 0], items: [] },
     B: { stage: 10, at: [2464, 3497, 0], items: ['grandtree_barksample', BOOK] },
-    C: { stage: 20, at: [2677, 3087, 1], items: [BOOK, SCROLL] },
+    // Where B's climb leaves SCORED: the ladder lifts the player's own tile (ladders.rs2), and the ladder's tile is blocked.
+    C: { stage: 20, at: [2677, 3088, 1], items: [BOOK, SCROLL] },
     D: { stage: 30, at: [2464, 3497, 0], items: [BOOK, SCROLL] },
     E: { stage: 40, at: [2477, 3463, 1], items: [BOOK, SCROLL] },
     F: { stage: 50, at: [2464, 3497, 0], items: [BOOK, SCROLL] },
@@ -79,6 +81,14 @@ const XP_RATE = Number(process.env.NODE_XPRATE ?? 25);
 const SKILLS = ['attack', 'magic', 'agility'] as const;
 let xp0: Record<string, number> = {};
 
+/** talkTo's click counts when the result carries them (loc-opened talks and scenes have none). */
+function clickCounts(r: ConverseResult): string {
+    const c = r as ConverseResult & { clicks?: number; settleTicks?: number; refusedResends?: number; unansweredResends?: number };
+    const first = r.firstTick >= 0 ? `first=+${r.firstTick - r.startTick}` : 'first=none';
+    if (c.clicks === undefined) return first;
+    return `${first} clicks=${c.clicks} settle=${c.settleTicks ?? 0} refused=${c.refusedResends ?? 0} unanswered=${c.unansweredResends ?? 0}`;
+}
+
 const root = Number(arg('root', '0')) || undefined;
 const elena = Number(arg('elena', '30'));
 
@@ -89,8 +99,10 @@ export const grandTree: LabQuest<Options> = {
     fixtures: LETTERS.map(fixture),
     options: {
         demonSpell: arg('spell', 'fire_bolt') as Options['demonSpell'],
-        // One line per conversation: whether the pages followed its shape, and what burst.
-        onTalk: (who, r) => console.log(`TALK ${who}: ${r.ticks} ticks, ${r.pages} pages; shape ${r.shape ? `matches=${r.shape.matches} burst=${r.shape.burst} burstPages=${r.shape.burstPages} stepPages=${r.shape.stepPages} failedBursts=${r.shape.failedBursts} expected="${r.shape.expected}" seen="${r.shape.seen}"${r.shape.stopped ? ` stopped=${r.shape.stopped}` : ''}` : 'none'}`),
+        // One line per conversation: the click layer's counts (a talk's clicks and the jump guard's
+        // re-sends; a first click the engine dropped shows as clicks > 1 or a re-send), the first
+        // page's tick from the call, whether the pages followed its shape, and what burst.
+        onTalk: (who, r) => console.log(`TALK ${who}: ${r.ticks} ticks, ${r.pages} pages; ${clickCounts(r)}; shape ${r.shape ? `matches=${r.shape.matches} burst=${r.shape.burst} burstPages=${r.shape.burstPages} stepPages=${r.shape.stepPages} failedBursts=${r.shape.failedBursts} expected="${r.shape.expected}" seen="${r.shape.seen}"${r.shape.stopped ? ` stopped=${r.shape.stopped}` : ''}` : 'none'}`),
     },
     // The plan's per-segment targets (inferred, rs/202's plan v4); the acceptance figure is the 1,576 total.
     reference: { A: 78, B: 184, C: 141, D: 48, E: 38, F: 22, G: 42, H: 46, I: 150, J: 170, K: 164, L: 41, M: 55, N1: 29, N2: 153, O: 95, P: 104 },
