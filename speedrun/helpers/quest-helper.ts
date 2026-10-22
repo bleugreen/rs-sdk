@@ -771,6 +771,18 @@ export type QuestPhase = Extract<Phase, 'tree' | 'grandtree' | 'mm'>;
  */
 export const approachFirst = (s: BotWorldState, quest: QuestPhase): boolean => questStatus(s, quest) === 'not_started';
 
+/**
+ * A step failure that another player causes and a short wait clears: the Grand Tree's doors stand open
+ * (no Open option) for 6 ticks after anyone goes through (gnome_gate.rs2 @open_tree_door, loc_change 6),
+ * and grand-tree.ts's door clicks do not wait for that. rs/185 owns the module fix.
+ */
+export function transientFault(error: string | undefined): boolean {
+    return !!error && /tree door (in|out): no loc with \/\^open\$\/i/.test(error);
+}
+/** Tries per phase after a transient fault, each after a wait longer than the door's open form. */
+export const TRANSIENT_RETRIES = 3;
+const TRANSIENT_WAIT_TICKS = 8;
+
 async function runQuest(session: Session, phase: QuestPhase, module: QuestModule, plan: QuestPlan, approach: Leg, log: TickLog, until?: string): Promise<PhaseResult> {
     const n0 = log.rows.length;
     const s = session.sdk.getState();
@@ -778,7 +790,15 @@ async function runQuest(session: Session, phase: QuestPhase, module: QuestModule
         const a = await runPlain(session, phase, [legStep(`${phase}:approach`, approach)], log);
         if (!a.ok) return a;
     }
-    const r = await runDemoQuest(session, { module, opts: {}, substitute: plan.substitute, legs: plan.legs, log, ...(until ? { until } : {}) });
+    const once = () => runDemoQuest(session, { module, opts: {}, substitute: plan.substitute, legs: plan.legs, log, ...(until ? { until } : {}) });
+    let r = await once();
+    // The resume walk re-enters the failed step exactly as a relog would, without spending a login.
+    for (let retry = 1; retry <= TRANSIENT_RETRIES && transientFault(r.error); retry++) {
+        logNote(log, session, `retry:${phase}`, { retry, after: r.error, waitTicks: TRANSIENT_WAIT_TICKS });
+        console.log(`quest-helper: retry ${retry} of ${phase} after ${r.error}`);
+        await waitUntil(session.sdk, () => false, { maxTicks: TRANSIENT_WAIT_TICKS });
+        r = await once();
+    }
     // runDemoQuest returns the whole shared log; the phase's rows start where it began.
     return { phase, ok: r.finished && !r.error, rows: log.rows.slice(n0), start: r.start, ...(r.error ? { error: r.error } : {}) };
 }

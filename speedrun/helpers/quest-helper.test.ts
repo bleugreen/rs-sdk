@@ -6,7 +6,7 @@ import * as tgv from '../quests/tree-gnome-village';
 import { ROUTES } from '../skills/agility';
 import { BANKS } from './buyer';
 import { AGILITY_COURSES } from '../../server/webclient/src/bot/programs/agility-courses';
-import { AGILITY_TO, ARMOUR, freeSlots, gtPlan, kitBank, lapsDone, stepLoc, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, approachFirst, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
+import { AGILITY_TO, ARMOUR, freeSlots, gtPlan, kitBank, lapsDone, stepLoc, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, approachFirst, transientFault, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
 import { applySubstitutes, LEG_PREFIX, withLegs } from '../lab/quests/demo-quest';
 import type { NearbyLoc } from '../../sdk/types';
 
@@ -211,5 +211,15 @@ describe('the walk to a quest and its legs', () => {
         expect(approachFirst(q({ tree: 'started' }), 'tree')).toBe(false);
         expect(approachFirst(q({ tree: 'complete', grandtree: 'not_started' }), 'grandtree')).toBe(true);
         expect(approachFirst(q({ tree: 'complete', grandtree: 'complete', mm: 'started' }), 'mm')).toBe(false);
+    });
+});
+
+describe('transientFault', () => {
+    test('only the Grand Tree door caught in its open form is retried', () => {
+        expect(transientFault('tree door out: no loc with /^open$/i at (2464,3492) near {"x":2465,"z":3494,"level":0}')).toBe(true);
+        expect(transientFault('step "S11b:E-narnode" run failed: tree door in: no loc with /^open$/i at (2464,3492)')).toBe(true);
+        expect(transientFault("Glough's ladder up: no loc with /^climb-up$/i at (2476,3462)")).toBe(false);
+        expect(transientFault('spirit tree to khazard: no arrival at 2555,3259: timeout')).toBe(false);
+        expect(transientFault(undefined)).toBe(false);
     });
 });
