@@ -230,6 +230,43 @@ export async function stopAllWithin(items: Stoppable[], deadline: number): Promi
     return killed;
 }
 
+/**
+ * A stop request. The first one wins and its arrival fixes the deadline, so the
+ * bound runs from the signal, not from whenever the launcher gets round to
+ * stopping. If the stop has not `finished()` by the deadline (plus `slackMs`),
+ * `onOverdue` runs: the launcher's last resort, which kills its children and exits.
+ */
+export class StopRequest {
+    why: string | null = null;
+    code = 0;
+    deadline = Infinity;
+    /** Resolves when a stop is requested; the start loop races its waits against it. */
+    readonly requested: Promise<void>;
+    private resolve: () => void = () => undefined;
+    private watchdog: ReturnType<typeof setTimeout> | undefined;
+
+    constructor(
+        private readonly budgetMs: number,
+        private readonly onOverdue: () => void,
+        private readonly slackMs = 500
+    ) {
+        this.requested = new Promise<void>(r => (this.resolve = r));
+    }
+
+    request(why: string, code = 0): void {
+        if (this.why !== null) return;
+        this.why = why;
+        this.code = code;
+        this.deadline = Date.now() + this.budgetMs;
+        this.watchdog = setTimeout(this.onOverdue, this.budgetMs + this.slackMs);
+        this.resolve();
+    }
+
+    finished(): void {
+        clearTimeout(this.watchdog);
+    }
+}
+
 /** `ms`, cut to what is left before `deadline`. */
 const remaining = (deadline: number, ms: number) => Math.max(0, Math.min(ms, deadline - Date.now()));
 
@@ -358,7 +395,7 @@ export class RoleLoop {
 class Launcher {
     private gateway: Subprocess<'ignore', 'pipe', 'pipe'> | null = null;
     private readonly accounts: AccountRun[];
-    private stopping: string | null = null;
+    private readonly stopReq: StopRequest;
     private readonly logins = new LoginLimiter({ perMinute: 6, burst: 3, minSpacingMs: 4000 });
     readonly startedAt = Date.now();
     readonly logDir: string;
@@ -366,6 +403,15 @@ class Launcher {
     constructor(readonly cfg: LaunchConfig) {
         this.logDir = join(cfg.runDir, 'logs');
         this.accounts = cfg.accounts.map(e => new AccountRun(this, e));
+        this.stopReq = new StopRequest(cfg.stopDeadlineMs, () => this.overdue());
+    }
+
+    /** The stop's deadline passed with something still pending: kill every child we hold and exit. */
+    private overdue(): void {
+        this.log(`[launcher] stop not finished ${this.cfg.stopDeadlineMs} ms after ${this.stopReq.why}; killing every child process and exiting`);
+        for (const a of this.accounts) a.kill();
+        if (this.gateway && this.gateway.exitCode === null) this.gateway.kill('SIGKILL');
+        process.exit(this.stopReq.code || 1);
     }
 
     get gatewayUrl(): string {
@@ -373,7 +419,13 @@ class Launcher {
     }
 
     get isStopping(): boolean {
-        return this.stopping !== null;
+        return this.stopReq.why !== null;
+    }
+
+    /** Wait `ms`, or less if a stop is requested meanwhile. */
+    private pauseUnlessStopped(ms: number): Promise<void> {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        return Promise.race([new Promise<void>(r => (timer = setTimeout(r, ms))), this.stopReq.requested]).finally(() => clearTimeout(timer));
     }
 
     log(line: string): void {
@@ -403,38 +455,38 @@ class Launcher {
         assertUntracked(cfg.runDir);
         for (const a of this.accounts) a.preflight();
         mkdirSync(this.logDir, { recursive: true, mode: 0o700 });
-        await this.startGateway();
-        const timer = setInterval(() => this.writeStatus(), 2000);
-        let code = 0;
-        const stop = (why: string, c = 0) => {
-            if (this.stopping) return;
-            this.stopping = why;
-            code = c;
-        };
+        // Before anything is started: a signal from here on stops what exists, within the deadline from its arrival.
+        const stop = (why: string, c = 0) => this.stopReq.request(why, c);
         process.on('SIGINT', () => stop('SIGINT'));
         process.on('SIGTERM', () => stop('SIGTERM'));
         this.onStop = stop;
+        const timer = setInterval(() => this.writeStatus(), 2000);
         try {
+            await this.startGateway();
             // Sequential, in config order: the next account logs in only after the previous one is in the world.
+            // Each wait is raced against a stop: a login still pending is the account's stop's to end.
             for (const a of this.accounts) {
-                if (this.stopping) break;
+                if (this.isStopping) break;
                 if (a.entry.after === 'ready') await this.waitForGiversReady(a);
-                await a.start();
+                if (this.isStopping) break;
+                await Promise.race([a.start(), this.stopReq.requested]);
                 this.writeStatus();
-                if (cfg.loginSpacingMs > 0) await sleep(cfg.loginSpacingMs);
+                if (cfg.loginSpacingMs > 0) await this.pauseUnlessStopped(cfg.loginSpacingMs);
             }
-            this.log(`[launcher] all accounts started; helpersReady=${this.status().helpersReady}`);
-            while (!this.stopping) await sleep(500);
+            if (!this.isStopping) this.log(`[launcher] all accounts started; helpersReady=${this.status().helpersReady}`);
+            await this.stopReq.requested;
         } finally {
-            this.log(`[launcher] stopping: ${this.stopping}`);
-            const deadline = Date.now() + cfg.stopDeadlineMs;
+            if (!this.isStopping) this.stopReq.request('startup failed', 1);
+            this.log(`[launcher] stopping: ${this.stopReq.why}`);
+            const deadline = this.stopReq.deadline;
             const killed = await stopAllWithin(this.accounts, deadline - GATEWAY_STOP_RESERVE_MS);
-            if (killed) this.log(`[launcher] ${killed} account(s) not stopped within ${cfg.stopDeadlineMs - GATEWAY_STOP_RESERVE_MS} ms; their processes were killed, and they stay in the world until the server times them out`);
+            if (killed) this.log(`[launcher] ${killed} account(s) not stopped by the deadline; their processes were killed, and they stay in the world until the server times them out`);
             await this.stopGateway(deadline);
+            this.stopReq.finished();
             clearInterval(timer);
             this.writeStatus();
         }
-        return code;
+        return this.stopReq.code;
     }
 
     onStop: (why: string, code?: number) => void = () => undefined;
@@ -443,10 +495,10 @@ class Launcher {
         const earlier = this.accounts.slice(0, this.accounts.indexOf(a)).filter(x => x.entry.role === 'altar-giver').map(x => x.entry.account);
         const dir = String(process.env.RC_CUE_DIR ?? join(this.cfg.runDir, 'rc-cue'));
         this.log(`[launcher] ${a.entry.account} waits for ${earlier.join(', ')} to be ready`);
-        while (!this.stopping) {
+        while (!this.isStopping) {
             const ready = new Set(readStatuses(dir).filter(s => s.phase === 'ready' && Date.now() - s.ms < 5000).map(s => s.account));
             if (earlier.every(n => ready.has(n))) return;
-            await sleep(1000);
+            await this.pauseUnlessStopped(1000);
         }
     }
 
@@ -482,13 +534,15 @@ class Launcher {
         const onLine = (l: string) => appendFileSync(logPath, `${iso()} ${l}\n`);
         void pipeLines(child.stdout, onLine);
         void pipeLines(child.stderr, onLine);
+        this.log(`[launcher] gateway started (pid ${child.pid})`);
         const deadline = Date.now() + 20_000;
         while (!(await this.probe())) {
+            if (this.isStopping) return;
             if (child.exitCode !== null || Date.now() > deadline) throw new Error(`gateway did not come up on 127.0.0.1:${this.cfg.gatewayPort}; see ${logPath}`);
             await sleep(250);
         }
         void child.exited.then(c => {
-            if (!this.stopping) this.onStop(`gateway exited with code ${c}`, 1);
+            if (!this.isStopping) this.onStop(`gateway exited with code ${c}`, 1);
         });
         this.log(`[launcher] gateway on 127.0.0.1:${this.cfg.gatewayPort}`);
     }
@@ -597,6 +651,7 @@ class AccountRun implements Stoppable {
         for (;;) {
             if (this.L.isStopping) return { ended: Promise.resolve({ code: null }) };
             await this.L.takeLogin();
+            if (this.L.isStopping) return { ended: Promise.resolve({ code: null }) };
             this.state = 'logging-in';
             this.logins++;
             this.L.log(`[launcher] ${this.entry.account}: logging in to ${this.botEnv.SERVER}`);
@@ -609,6 +664,7 @@ class AccountRun implements Stoppable {
                 stderr: 'pipe'
             });
             this.lite = child;
+            this.L.log(`[launcher] ${this.entry.account}: client started (pid ${child.pid})`);
             let markIn: () => void = () => undefined;
             const inWorld = new Promise<'in'>(r => (markIn = () => r('in')));
             let refusal: { code: number } | undefined;
