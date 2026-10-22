@@ -22,7 +22,7 @@
 // published; a bot's ticks are moved onto the stand-in's clock by the median offset between the two
 // clients' publications of the same server tick (wall clock, one process).
 //
-// --prefix=ck479 names the bots <prefix>b01...; a bot whose bot.env is missing is created
+// --prefix=ck479 names the bots <prefix>r<round>b01..., fresh names for each login round; a bot whose bot.env is missing is created
 // (bots/create-bot.ts --local) and every bot.env is pointed at this lab's ports.
 // Output: RESULT lines per phase and $LAB_LOG/crowded-knight-<time>.json with every series.
 
