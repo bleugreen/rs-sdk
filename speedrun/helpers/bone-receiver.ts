@@ -19,16 +19,23 @@
 //   and on the frame that shows it open write that many bones as the top-up ask
 //   (altar-cue.ts writeTopUpAsk), as the Thieving module does; loads = asks.length;
 //   item (default 'Dragon bones'): the bones it takes and buries.
+//   returnLoads (S07's trade-and-return rehearsal, with `givers`): bury nothing. Each load goes straight
+//   back to the giver that served it (the giver's `acceptReturn`), then the stand-in waits out
+//   `paceTicks` (default n x buryEvery, a load's bury time) from the receive before the next, so
+//   the rotation runs at the run's pace. At the end it waits for every giver to go off (each banks
+//   what it holds first), so every giver's bank ends as it was staged. It banks, eats and equips
+//   nothing, and needs the free slots for the biggest load (n, or finalN plus the extras).
 //
 // On the local lab it clears its pack and teleports with staff commands. Anywhere else (the
 // demo) it uses none: it banks what it carries at Falador west, walks to the site, and raises
 // no level-up pages. There it runs only as a run-machine test account (STAND_IN_ACCOUNTS), never
-// a fleet or scored account, because it buries what it is given.
+// a fleet or scored account, because it buries what it is given; with returnLoads it buries and
+// banks nothing, so any helper outside the forbidden list and the group will do.
 import type { BotWorldState } from '../../sdk/types';
-import { receiveFrom, tradeOf } from '../lib/trade';
+import { give, receiveFrom, tradeOf } from '../lib/trade';
 import { canonName, CueWriter, cueDir, FrameLog, scopeOption, writeTopUpAsk } from './altar-cue';
 import { altarData, altarRoomOf, cheat, count, exactItem, isLocalServer, labTele, leaveRoom, pos, standOn, until, type Tile } from './altar-room';
-import { awaitBoneServer, DEFAULT_BONE_BANK, S07_SITES } from './bone-giver';
+import { awaitBoneServer, DEFAULT_BONE_BANK, readBoneStatuses, S07_SITES } from './bone-giver';
 import { FORBIDDEN_ACCOUNTS } from './fleet-config';
 import { closeBank, depositAllExcept, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
@@ -36,9 +43,18 @@ import { runStandalone, type Role, type RoleContext } from './role';
 /** The run machine's test accounts (bbs ~/rs-run-machine/bots), the only ones the stand-in runs as off the lab. */
 export const STAND_IN_ACCOUNTS: ReadonlySet<string> = new Set(['cairn_h70', 'cairn_h71', 'cairn_h72', 'cairn_h75']);
 
-/** Off the lab: refuse any account but a run-machine test account. */
-export function assertDemoStandIn(account: string): void {
+/**
+ * Off the lab: refuse any account but a run-machine test account, or with `returnLoads` (it keeps
+ * nothing) any helper that is neither forbidden nor one of the givers.
+ */
+export function assertDemoStandIn(account: string, o: { returnLoads?: boolean; givers?: readonly string[] } = {}): void {
     const a = canonName(account);
+    if (o.returnLoads) {
+        if (FORBIDDEN_ACCOUNTS.has(a) || !/^cairn_[a-z0-9_]+$/.test(a) || (o.givers ?? []).map(canonName).includes(a)) {
+            throw new Error(`bone-receiver with returnLoads runs as a cairn_ helper that is neither forbidden nor a giver (got ${account})`);
+        }
+        return;
+    }
     if (FORBIDDEN_ACCOUNTS.has(a) || !STAND_IN_ACCOUNTS.has(a)) {
         throw new Error(`bone-receiver buries what it is given: off the local lab it runs only as a run-machine test account (${[...STAND_IN_ACCOUNTS].join(', ')}), never a fleet or scored account (got ${account})`);
     }
@@ -60,6 +76,12 @@ interface LoadResult {
     standingAtClick: boolean;
     /** Ticks from the last bury of the previous load to the first bury of this one (3 when the trade cost nothing). */
     buryGap?: number;
+    /** returnLoads: ticks from wanting the load (pace over) to the trade click: a stall when the group had nobody ready. */
+    waitForGiver?: number;
+    /** returnLoads: the hand-back to the giver. */
+    returned?: { ok: boolean; ticks: number; reason?: string };
+    /** returnLoads: ticks from the previous load's receive to this one's. */
+    loadGap?: number;
     page?: { held: number; requestAfterClose: number | null };
     reason?: string;
 }
@@ -69,8 +91,10 @@ export const role: Role = {
     produces: [],
     async run(ctx: RoleContext) {
         const lab = isLocalServer();
-        if (!lab) assertDemoStandIn(ctx.account);
         const o = ctx.options;
+        const returnLoads = o.returnLoads === true;
+        if (returnLoads && !Array.isArray(o.givers)) throw new Error('bone-receiver: returnLoads needs givers (the group whose loads go back)');
+        if (!lab) assertDemoStandIn(ctx.account, { returnLoads, givers: Array.isArray(o.givers) ? (o.givers as string[]) : [] });
         // item: one bone, or the givers' priority list (bone-giver.ts item), every one of which it takes and buries.
         const boneNames = (Array.isArray(o.item) ? o.item : [o.item ?? 'Dragon bones']).map(String);
         const BONES = new RegExp(`^(?:${boneNames.map(n => exactItem(n).source.slice(1, -1)).join('|')})$`, 'i');
@@ -96,6 +120,9 @@ export const role: Role = {
         const pageLoads = new Set((o.pageLoads as number[]) ?? (lab ? [2, 5] : []));
         if (!lab && pageLoads.size) throw new Error('bone-receiver: pageLoads need staff commands (local lab only)');
         const holdTicks = Number(o.holdTicks ?? 6);
+        if (returnLoads && pageLoads.size && o.pageLoads !== undefined) throw new Error('bone-receiver: returnLoads raises no pages');
+        if (returnLoads) pageLoads.clear();
+        const paceTicks = Number(o.paceTicks ?? Number(o.n ?? 23) * buryEvery);
         const { sdk } = ctx;
         const s = () => sdk.getState() as BotWorldState;
 
@@ -112,10 +139,20 @@ export const role: Role = {
         const writer = new CueWriter(cueDir(), ctx.account, scope);
         const results: LoadResult[] = [];
         try {
-            if (lab) {
+            const biggest = Math.max(Number(o.n ?? 23), finalN + finalExtras.length);
+            if (lab && !returnLoads) {
                 await cheat(ctx, '~clearinv inv');
                 await until(ctx, st => st.inventory.length === 0, 10);
                 if (pos(s()).x !== site.x || pos(s()).z !== site.z) await labTele(ctx, site);
+            } else if (returnLoads) {
+                // It keeps nothing, so it banks nothing: its pack must already have a load's free slots.
+                const free = 28 - s().inventory.length;
+                if (free < biggest) throw new Error(`returnLoads: the pack has ${free} free slots, the biggest load needs ${biggest}; free them before the run (it banks nothing)`);
+                const room = altarRoomOf(s());
+                if (room) await leaveRoom(ctx, altarData(room));
+                if (lab && (pos(s()).x !== site.x || pos(s()).z !== site.z)) await labTele(ctx, site);
+                if (!lab && !(await walkNear(ctx, site.x, site.z, 2))) throw new Error(`could not reach the site ${site.x},${site.z}`);
+                await standOn(ctx, site);
             } else {
                 // Left in an altar room (the Runecraft stand-in uses these accounts too): out by its portal first.
                 const room = altarRoomOf(s());
@@ -140,7 +177,9 @@ export const role: Role = {
 
             let lastBury = -1;
             let requestSince = s().tick;
+            let lastReceive = -1;
             for (let load = 0; load < loads && !ctx.signal.aborted; load++) {
+                const wantedAt = s().tick;
                 // The trade, once the pack is empty (the first load starts empty) and the giver is beside us.
                 if (givers) {
                     const { server } = await awaitBoneServer(sdk, cueDir(), givers);
@@ -156,6 +195,7 @@ export const role: Role = {
                     break;
                 }
                 const standingAtClick = s().gameMessages.some(m => m.tick >= requestSince && isRequestFrom(giver)(m));
+                const waitForGiver = s().tick - wantedAt;
                 const n = sizeOf(load);
                 if (asks) pendingAsk = n;
                 const extras = isLast(load) ? finalExtras : [];
@@ -169,11 +209,30 @@ export const role: Role = {
                     standingAtClick,
                     ...(extras.length ? { extras: extras.map(e => `${count(s(), e.item)} of ${e.count} ${e.name}`) } : {}),
                     ...(boneNames.length > 1 ? { bones: boneNames.map(b => `${count(s(), exactItem(b))} ${b}`) } : {}),
+                    ...(returnLoads ? { waitForGiver, ...(lastReceive >= 0 ? { loadGap: s().tick - lastReceive } : {}) } : {}),
                     ...(r.reason ? { reason: r.reason } : {})
                 };
                 results.push(res);
+                if (!res.ok) {
+                    ctx.log('load', { ...res });
+                    break;
+                }
+                if (returnLoads) {
+                    // Straight back to the giver that served it: exactly what the trade brought, by exact name
+                    // (anything the pack already held stays).
+                    const received = s().tick;
+                    lastReceive = received;
+                    const back = new Map<string, number>();
+                    for (const i of r.received) back.set(i.name, (back.get(i.name) ?? 0) + i.count);
+                    const g = await give(sdk, giver, [...back].map(([name, c]) => ({ item: exactItem(name), n: c })), { openTimeoutMs: 60_000 });
+                    res.returned = { ok: g.ok, ticks: g.ticks, ...(g.reason ? { reason: g.reason } : {}) };
+                    ctx.log('load', { ...res });
+                    if (!g.ok) break;
+                    // The bury time the run would spend on this load, so the rotation keeps the run's pace.
+                    await until(ctx, st => st.tick >= received + paceTicks, paceTicks + 20);
+                    continue;
+                }
                 ctx.log('load', { ...res });
-                if (!res.ok) break;
 
                 if (pageLoads.has(load)) {
                     // A level-up page right after the trade, while the giver restocks and requests again.
@@ -210,6 +269,15 @@ export const role: Role = {
                 }
                 requestSince = Math.min(requestSince, s().tick);
             }
+            if (returnLoads && givers) {
+                // Each giver banks what it holds and goes off once the group has given its loads: wait for all of them.
+                const off = () => {
+                    const st = readBoneStatuses(cueDir()).filter(b => givers.map(canonName).includes(canonName(b.account)));
+                    return st.length === givers.length && st.every(b => b.phase === 'off');
+                };
+                const allOff = await until(ctx, off, 900);
+                ctx.log('givers', { allOff, statuses: readBoneStatuses(cueDir()).filter(b => givers.map(canonName).includes(canonName(b.account))).map(b => ({ account: b.account, phase: b.phase, trades: b.trades, detail: b.detail ?? null })) });
+            }
         } finally {
             unsub();
             const last = frames.recent(1);
@@ -224,6 +292,14 @@ export const role: Role = {
                 clickToBones: { mean: mean(done.map(r => r.clickToBones)), all: done.map(r => r.clickToBones) },
                 standingAtClick: done.filter(r => r.standingAtClick).length,
                 givers: done.map(r => r.giver ?? null),
+                ...(returnLoads
+                    ? {
+                          returned: done.filter(r => r.returned?.ok).length,
+                          returnTicks: { mean: mean(done.flatMap(r => (r.returned ? [r.returned.ticks] : []))), all: done.map(r => r.returned?.ticks ?? null) },
+                          waitForGiver: { max: Math.max(0, ...done.map(r => r.waitForGiver ?? 0)), all: done.map(r => r.waitForGiver ?? null) },
+                          loadGap: { mean: mean(done.flatMap(r => (r.loadGap === undefined ? [] : [r.loadGap]))), max: Math.max(0, ...done.map(r => r.loadGap ?? 0)) }
+                      }
+                    : {}),
                 buryGap: { mean: mean(done.flatMap(r => (r.buryGap === undefined ? [] : [r.buryGap]))), all: done.map(r => r.buryGap ?? null) },
                 pages: results.flatMap(r => (r.page ? [{ load: r.load, ...r.page }] : []))
             })}`

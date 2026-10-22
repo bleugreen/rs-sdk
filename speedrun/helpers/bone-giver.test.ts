@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { ASK_SLACK_MS, nameHash, newRequestFrom, readTopUpAsk, usableAsk, writeTopUpAsk } from './altar-cue';
 import type { Cue } from './altar-cue';
 import type { RoleContext } from './role';
-import { askOffer, BoneGiver, boneGiverOptions, boneServer, boneWithdrawals, carryDue, groupLoadsDone, isFinalLoad, legRan, loadOffer, npcTiles, onOpenSide, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, wallBetween, type BoneStatus, type FlagReader } from './bone-giver';
+import { askOffer, BoneGiver, boneGiverOptions, boneServer, boneWithdrawals, returnWants, carryDue, groupLoadsDone, isFinalLoad, legRan, loadOffer, npcTiles, onOpenSide, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, wallBetween, type BoneStatus, type FlagReader } from './bone-giver';
 import { assertDemoStandIn } from './bone-receiver';
 
 const o = { noReplyTicks: 3, resendTicks: 100 };
@@ -180,6 +180,33 @@ describe('the item priority list (S07: dragon bones first, then babydragon, from
         expect(() => bgo({ mode: 'on-request', sites: site, item: MIX })).toThrow(/standing mode/);
         expect(bgo({ restock: { kind: 'bank', labSeed: [{ obj: 'cert_dragon_bones', n: 30 }] } }).restock.labSeed).toEqual([{ obj: 'cert_dragon_bones', n: 30 }]);
         expect(() => bgo({ restock: { kind: 'cheat', labSeed: [{ obj: 'x', n: 1 }] } })).toThrow(/labSeed/);
+    });
+});
+
+describe('trade-and-return (rehearsal only)', () => {
+    test('acceptReturn is off by default and only for the standing mode with a bank restock', () => {
+        expect(bgo({}).acceptReturn).toBe(false);
+        expect(bgo({ acceptReturn: true }).acceptReturn).toBe(true);
+        expect(() => bgo({ acceptReturn: true, restock: { kind: 'cheat' } })).toThrow(/restock kind bank/);
+        const site = [{ giver: { x: 1, z: 2 }, receiver: { x: 1, z: 3 } }];
+        expect(() => bgo({ mode: 'on-request', sites: site, acceptReturn: true })).toThrow(/standing mode/);
+        expect(() => bgo({ acceptReturn: 'yes' })).toThrow(/true or false/);
+    });
+
+    test('what it wants back is what it gave, merged by name', () => {
+        expect(returnWants([{ name: 'Dragon bones', count: 7 }, { name: 'Babydragon bones', count: 16 }, { name: 'Dragon bones', count: 0 }, { name: 'Law rune', count: 1 }])).toEqual([
+            { name: 'Dragon bones', count: 7 },
+            { name: 'Babydragon bones', count: 16 },
+            { name: 'Law rune', count: 1 }
+        ]);
+    });
+
+    test("the demo stand-in that returns every load may be any helper but a forbidden name or one of the givers", () => {
+        expect(() => assertDemoStandIn('cairn_h94', { returnLoads: true, givers: ['cairn_b01', 'cairn_b02'] })).not.toThrow();
+        expect(() => assertDemoStandIn('cairn_b01', { returnLoads: true, givers: ['cairn_b01', 'cairn_b02'] })).toThrow(/neither forbidden nor a giver/);
+        expect(() => assertDemoStandIn('cairn', { returnLoads: true, givers: [] })).toThrow(/neither forbidden/);
+        // Burying, it is still a run-machine test account only.
+        expect(() => assertDemoStandIn('cairn_h94')).toThrow(/run-machine test account/);
     });
 });
 
