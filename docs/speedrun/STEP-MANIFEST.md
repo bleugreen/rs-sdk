@@ -235,10 +235,11 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 | knife-cycle axe-aware p (rs/175) | 3 | on main, 6c58db8e (#151) | |
 | knife-cycle plain + bury | 3, 15 | **on main, 3dfc217f (#165; rs/162)**; lab-measured | S07's gate-off fallback: `technique: 'plain'` with `bury` and `trees`, no new key; willow 0.226 bones a tick with trades at 3.89 per expected roll, oak 60-75 0.195 at 4.29 (m, lab; entry 3). The knife-off line in force; inside the run-commit floor (`RUN-HOST.md` "Credentials"); before it, knife-cycle refused `bury` with the plain technique |
 | knife-mine `bury` on `stay2` | 4 | on main, #159 (rs/182; merged 15:52 PDT) | O35, closed: the ~85 bones placed in S09 on today's stock (the conservative row), at most +0.02 a Mining ore and ~0.21 ticks a bone in trades (m, lab). Where it cannot fire they go to the booth, **+119** against the lap (RUN-ORDER.md section 7); ~61 more dragon bones also close it, as the row in force assumes |
+| knife-mine `selfStarter` (plain trick takes the next rock as timer starter) | 4 | building (rs/230) | sim 3.60 ticks per ore plain at D = 13 and 15, lab six-rock 3.83 at D = 19; would take S09's plain from 4.00 to ~3.60, about -400 on a knife-off night; not re-priced (entry 4) |
 | knife-mine depleted-rock restart fix | 4 | on main, e5d8a058 (#170; rs/207) | 3 of 3 depletion restarts fault at +1 tick; post-respawn laps 3.00 per ore, 200 of 200 (m, lab). Any S09 knife (re)start then waits out the respawn, +13 plus the start; a `RUN_COMMIT` requirement (RUN-ORDER.md R18) |
 | `logoutClean` tab confirmation | 0, 1 (final logout), every relog | on main, c2d9eada (#146) | |
 | Direct gate clean logout | the gate probe | on main, 9d26aa87 (#142), d83f2e86 (#152) | |
-| In-page relog `login({inPage:true})` and the navigated relog's socket-close fix | 0 (restarts), 29 (the wine relogs, R17) | **on main, efdbe2e2 (#164; rs/174)**, inside the run-commit floor; lab-accepted on the twin and after a lab engine kill | first SDK state at login + 1 in page or navigated, the bank at + 3 to + 6 (m); an in-page attempt that does not get in is retried by navigating, at the same ticks; the client's second-login hang (rs/183) is on main, #155 |
+| `relog(session)` (in page by default, `RelogResult.tickBase`/`via`) and the navigated relog's socket-close fix | 0 (restarts), 29 (the wine relogs, R17) | **on main, efdbe2e2 (#164; rs/174)**, inside the run-commit floor; lab-accepted on the twin and after a lab engine kill | first SDK state at login + 1 in page or navigated, the bank at + 3 to + 6 (m); an in-page attempt that does not get in is retried by navigating, at the same ticks; the client's second-login hang (rs/183) is on main, #155 |
 | **Pickpocket stun-window actions** | 6 (S18's stun pack), 32 | **on main, 6e86a656 (#163; rs/132); lab-accepted (bury, charge, arrows; a3646a67)** | 300 rolls each at 300 ms on bgsrv-mac: no Thieving cost in the page (RUN-ORDER.md O8). The stun pack failing (plain pickpocket, Charge and Fletching standalone, ~200 more bones in S07, **+~120**, RUN-ORDER.md sensitivity table) is now a demo risk only. The opt-in 'idle while an interface is open' mode is on main, `idleOnInterface: true` (declared in b6950915), with top-ups in the program as a `player` stun action (entry 6) |
 | **In-page Runecraft cycle** (`rc-cycle`) | 9 (S06, S21) | **on main, 23ea9f77 (#178; rs/131); lab-measured**, the run-commit floor | 7.00 ticks per craft with the givers handled first and 8.00 on the robust fallback, 30 crafts each, no lost trades (m, lab, rs/131); its protocol shared with rs/163's givers. Without the tuned cycle: the robust 8-tick cycle **+168**, or the stock 15-tick cycle **+1,344** if the giver is relayed (RUN-ORDER.md sensitivity table and R12) |
 | Direct-path altar giver | 9 (S06, S21) | building (rs/163) | PR #144, open; on rs/117's launcher and rs/141's givers |
@@ -324,7 +325,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   - **A demo restart**: ~2 ticks of relog + 3 to the resumed step (measured on the local
     engine, `RESILIENCE.md` section 6) + the step's resume overhead; 1-2 per run expected;
     progress and playtime roll back together, so the redone work is score-neutral. The relog is a
-    tab relog, `login(session, {inPage: true})` with navigation as the fallback: with rs/174's fix
+    tab relog, `relog(session)` with no options (in page by default, `inPage: opts.inPage ?? true`, falling back to the navigating relog when the page cannot log itself in; `inPage: false` forces navigation; #164, efdbe2e2; each relog logs `RelogResult`'s `tickBase` and `via`, so `loginTick - tickBase` is its cost and `via` the path that ran): with rs/174's fix
     (`tab.ts` `reloadOrOpenTab` closes the old page's gateway socket before navigating) the first SDK
     state is at login + 1 on either path (m, rs/174 on the twin against the demo; ~20 before the fix,
     m, rs/164), and the relog after a real restart is measured too: with the engine SIGKILLed
@@ -336,7 +337,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     watchdog (measured on the lite client, same section); in the tab the takeover is a
     re-navigated login, ~2 more with rs/174's fix (m, twin); without the watchdog 500-1,000 (rs/101).
   - **Relogs:** exactly **two planned relogs**, both in S25c, ~2 ticks each from SCORED's tab by
-    `login(session, {inPage: true})`, navigation the fallback (m, rs/174 on the twin: first SDK state
+    `relog(session)`, in page by default with navigation the fallback (m, rs/174 on the twin: first SDK state
     at login + 1, the bank open at + 3 in page and + 3 to + 6 navigated; the client's second-login
     fix is on main, #155), with a tail of tens about 1 time in 29 (measured, [rs/41]
     `helpers/wine.md`, "Relog risk"). **No milestone saves**
@@ -679,14 +680,21 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
   | Observed D | Online (r, the formula) | Lap | Knife ticks per ore |
   |---|---|---|---|
-  | 13 or less | more than 1,200 | the five-rock demo lap (15 ticks) | 3.00 (m at D = 13, mining.md §4) |
-  | 14-16 | 601-1,200 | the six-rock lap (mining.md §4's quiet-server steps, 18 ticks with the knife) | 3.00 (i); the five-rock lap here would give (D + 2) / 5 = 3.20-3.60 (i) |
-  | 17-19 | 600 or fewer | neither holds: the six-rock lap waits one move a lap, (D + 2) / 6 = 3.17-3.50 | 3.50 m at D = 19 (mining.md:184); a seven-rock lap would hold 3.00 (i, not run, mining.md §4) |
+  | Observed D, by knife-mine's rule 3n >= D (n rocks) | Online (r, the formula) | Lap | Knife ticks per ore |
+  |---|---|---|---|
+  | 15 or less | more than 800 | the five-rock demo lap (15 ticks) | 3.00 (m at D = 13, mining.md §4); **3.02 at D = 15** (150 ores, 0 slips, one 6-tick gap; m, lab, rs/230) |
+  | 16-18 | 201-800 | the six-rock lap (18 ticks with the knife) | 3.00 (m at D = 15, 150 ores, rs/230; holds to D = 18 by the rule, i) |
+  | 19 or more | 200 or fewer | neither holds | six-rock **3.53** at D = 19 (120 ores, 0 slips; m, lab, rs/230; mining.md's 3.50); five-rock **4.16** at D = 19 (a 9-tick wait once a lap, m, rs/230) |
 
-  The ticks below are unchanged: 3,116 knife at the demo's count (D = 13). **The table is the
-  conservative bound** (rs/153 via rs/147, 15:46 PDT): `knife-mine`'s own rule holds 3.00 per ore
-  while 3 x rocks is at least D, which would hold the five-rock lap to D = 15 and the six-rock lap to
-  D = 18. The table stands until a D = 15 lab run in rs/212's module (RUN-ORDER.md O39).
+  **The rule is measured** (rs/230, Mining part 3; lab, bgsrv-mac, 300 ms, player count pinned in
+  content, page built from rs/147's branch after 23ea9f77), replacing rs/153's conservative table
+  (D at most 13 for five rocks, 14-16 for six). The engine sets D from the online count
+  (`player_count.rs2`); the usual ~1,600 online is D = 12, so the 3,116 knife ticks and nothing in
+  force move (RUN-ORDER.md O39, settled). **Plain at 4.00 is the in-force figure**; rs/230's
+  `selfStarter`, a declared opt-in that lets knife-mine's plain trick take the next rock as the timer
+  starter (golden default unchanged), would bring it to ~3.60 (sim 3.60 at D = 13 and 15; lab
+  six-rock plain + `selfStarter` 3.83 at D = 19 against lite's 3.84; the D = 13 lab run is to
+  follow), about -400 on a knife-off night. Building (rs/230); not re-priced.
 - **Bones on the `stay2` lap** (today's 21:20 UTC stock, RUN-ORDER.md's conservative row; none on the
   forecast at 2026-10-23, whose 554 non-stun bones all fit S07; RUN-ORDER.md section 7): the ~85
   babydragon bones past S07's ~978 ride the lap `2603,3233>2602,3233 2605,3234>2605,3235
@@ -720,8 +728,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   entry 0).
 - **Preconditions:** rune pickaxe, knife and about 5 normal logs, Fletching 1; Mining 64; position on
   the rotation's first standing tile. The same host-gate rule as Woodcutting.
-- **Postconditions:** Mining 99; pickaxe, knife and logs kept (no log used over 200 ores, measured,
-  `skills/mining.md` §1). Items out: none.
+- **Postconditions:** Mining 99; pickaxe, knife and logs kept: **no log used over 1,050 ores in the page**
+  (10 logs at the start and 10 at the end over 3,184 knife ticks on `stay2` with `bury`, no Fletching
+  xp, 3.033 ticks per ore; one-sided 95% upper bound 0.94 logs per 1,000 knife ticks; m, lab, rs/226;
+  `skills/mining.md` section 7 "Logs over a long lap" and `speedrun/lab/measure-mine-logs.ts`, PR
+  pending). knife-mine's ore drop on the same label clears the weak fletch queue the tick it would
+  fire, so about 5 logs is enough and no log margin applies. Items out: none.
 - **Ticks:** expected and best **3,116** (knife: 3.00 ticks per ore measured with
   `tickmanip-mine.ts`, 2 × 200 ores, total 3,134 inferred, `skills/mining.md` §2; less the model's
   18 ticks of level-ups, measured 0 in the rotation, `research/levelup-cost.md` §2, §6).
@@ -762,13 +774,16 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Serves:** S22, fly fishing at the Lumbridge river from 78 to 99, dropping each catch on the
   tick after it (`skills/fishing.md` §1).
 - **Parameters:** `method: 'fly'`, `technique` (by the gate), `reanchor: 'xp'`, `dismiss: 'now'`,
-  `untilLevel: 99`, standing tile (3241,3248). The net band (rs/211's `fishing.ts`) also passes
+  `untilLevel: 99`, start tile (3241,3248): `followSpot` walks among the north and south tiles, so
+  the tile is where it starts, not a fixed tile (rs/195's write-up, 7c841f92). The net band (rs/211's `fishing.ts`) also passes
   `followSpot`, `dropEach` and `untilXp`: these keys are declared at `b2e02cbe` (rs/147) and reach
   main with rs/147's Fishing snapshot PR (number pending); the run
   commit must include it. Until then a page built from main faults on the net band.
 - **Preconditions:** Fishing 78 (Sea Slug 7,175 + Fishing Contest 2,437 = 9,612 base; read via
-  `skills/fishing.md` §1-3), fly fishing rod, about 520 feathers, knife and 1 normal log, Fletching
-  1; the host-gate rule as for Woodcutting.
+  `skills/fishing.md` §1-3), fly fishing rod, about 520 feathers, knife and **10 normal logs**,
+  Fletching 1 (the log margin, SUPPLIES.md "Log margin for knife loops": the loop leaves the fletch
+  queue standing, and rs/195's attempt fletched its 5 starter logs into arrow shafts by level 97, 1
+  log per 513 active knife ticks; m, demo, one attempt; the module carries 10 and H18 delivers them); the host-gate rule as for Woodcutting.
 - **Postconditions:** Fishing 99. Items out: none (catches dropped).
 - **Ticks:** expected **1,995**, best **1,969** (knife: two measured runs of 2,032 and 1,978
   from 9,612 and 9,620 base, `tickmanip-cycle.ts --mode=flylumb-knife`, `skills/fishing.md` §2,
@@ -779,6 +794,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   measured segment from 9,612 base, `fishing-rate.ts`, 673 catches at 300 ms; same section). In a visible tab, rs/82 measured 4.16 ticks per catch from 26 to 99,
   with 516 of 665 gaps at 3 (`LAB.md`). Compare the gap histogram, since ticks per catch depend on
   level.
+- **Hazard: the spider guard.** The module carries a guard for an aggressive spider that attacks
+  while fishing (10 ticks for one escape, measured; fights of 45-99 ticks in the lab before combat
+  passed 5; rs/195). The spider (combat 2) is cowardly by content rule and hunts no player above
+  combat 4, so at SCORED's combat in S22 the expected attacks, and the cost, are **0**: rs/195 saw
+  no guard engagement in 78-99 on the demo or in either lab band. The guard is off by default; rs/220
+  tracks the bot layer attributing the spider's hit to the fishing spot.
 - **Primitives:** `runProgram(sdk, 'knife-cycle', {method:'fly', ...})` [rs/97], `probeInPage`,
   `HostGate`. **Missing:** the forced-slip hook.
 - **Mode:** in-page. This is the largest knife gain (`skills/tick-manipulation.md` §1).
@@ -1424,7 +1445,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   and two blind continues per tick; deposit the rest of the wine and the cut gems; relog 2; **W2**
   the normal gem cycle with booth visits; second firing; **P2** keep cutting, which clears the
   Cooking pages. No bury anywhere in the window.
-- **The tab relog** is `login(session, {inPage: true})` with navigation as the fallback: with rs/174's
+- **The tab relog** is `relog(session)` with no options (in page by default, `inPage: opts.inPage ?? true`, falling back to the navigating relog when the page cannot log itself in; `inPage: false` forces navigation; #164, efdbe2e2; each relog logs `RelogResult`'s `tickBase` and `via`, so `loginTick - tickBase` is its cost and `via` the path that ran): with rs/174's
   fix the first SDK state is at login + 1 and the bank opens at login + 3 in page, + 3 to + 6
   navigated (m, rs/174 on the twin against the demo; RUN-ORDER.md section 4), inside login + 19. A
   navigated relog on a run commit without rs/174's socket-close fix pays the twin's ~19-tick gateway
@@ -1432,7 +1453,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   is missed anyway, `receiveWine`'s deadline relog recovers it: it banks the wine first, so the new
   login ferments it with no action (RUN-ORDER.md R17, low-likelihood). Depositing the 29 before
   relog 1 is not needed.
-- **Parameters:** `giver`, `split: [29, 'rest']`, `relog` (the session's `login(session, {inPage: true})`, navigation as the fallback), `windowWork: 'gems'`.
+- **Parameters:** `giver`, `split: [29, 'rest']`, `relog` (`relog(session)` with no options: in page, navigation as the fallback), `windowWork: 'gems'`.
 - **Preconditions:** SCORED at Varrock west bank at a planned relog, never in a first login; the wine
   giver beside the bank requesting; 520 noted unfermented wines (held, rs/118); the chisel and the
   gems for the windows banked from H21d; S25a, S25d and S25e done; level-up pages cleared and 16
