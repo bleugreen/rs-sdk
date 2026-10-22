@@ -40,7 +40,7 @@ import { fight, prayerActive, prayerDoses, setPrayer } from '../lib/combat';
 import { converse, levelUpInterrupt } from '../lib/converse';
 import { pageText } from '../lib/dialogue';
 import type { ItemPattern } from '../lib/items';
-import { runTo } from '../lib/travel';
+import { runTo, sumUse, type RuneName, type RuneUse, type RuneUseTable } from '../lib/travel';
 import { currentTick, waitTicks, waitUntil } from '../lib/wait';
 import { findLoc, findNpc, invCount, invItem, messagesSince, npcByIndex, opIndex, pos, skillLevel, skillXp, worn } from '../lib/world';
 import type { Check, Observed } from '../runner/step';
@@ -69,7 +69,6 @@ export const SPELLS: Readonly<Record<KolodionSpell, { component: number; level: 
  * fights, so 78 + 12.
  */
 export const SPELL_RUNES: Readonly<Record<KolodionSpell, number>> = { fire_wave: 90, fire_blast: 90 };
-export const AIR_RUNES = 400;
 
 /**
  * The guard behind a spell: when its runes run out mid-fight the fight finishes on this one, since
@@ -78,6 +77,11 @@ export const AIR_RUNES = 400;
  */
 export const FALLBACK: Readonly<Record<KolodionSpell, KolodionSpell | null>> = { fire_wave: 'fire_blast', fire_blast: null };
 export const FALLBACK_RUNES = 25;
+/**
+ * Air for the guarded path (rs/158's ruling, 10-22): every Fire Wave's 5 and then every fallback
+ * Fire Blast's 4, 550, as H13 stages it. Fire Blast's own 90 casts take 360 of it.
+ */
+export const AIR_RUNES = SPELL_RUNES.fire_wave * SPELLS.fire_wave.air + FALLBACK_RUNES * SPELLS.fire_blast.air;
 
 export type God = 'saradomin' | 'guthix' | 'zamorak';
 /** The statues (chamber.rs2; mage_arena.md step 10). Praying puts the cape on the tile south of it. */
@@ -271,6 +275,39 @@ export interface Options extends QuestOptions {
 
 export const DEFAULT_SPELL: KolodionSpell = 'fire_wave';
 export const DEFAULT_GOD: God = 'saradomin';
+
+/**
+ * Fire Wave's measured maximum from the route's arrival: 42-59 casts over rs/371's 25 counted fights
+ * (m, lab, 300 ms). One more fight outlasted 70 casts uncounted, so RUNE_USE declares the guarded
+ * worst case instead (rs/158's ruling): SPELL_RUNES' Waves, then the fallback's Blasts.
+ */
+export const FIRE_WAVE_MAX_CASTS = 59;
+
+/** The rune each spell uses up, by debug name (SPELLS' `rune`). */
+const SPELL_RUNE: Readonly<Record<KolodionSpell, RuneName>> = { fire_wave: 'bloodrune', fire_blast: 'deathrune' };
+/** `casts` casts of `spell`, its fire the staff's. */
+const castUse = (spell: KolodionSpell, casts: number): RuneUse => ({ [SPELL_RUNE[spell]]: casts, airrune: SPELLS[spell].air * casts });
+
+/** The worn staff whose element RUNE_USE leaves out (fightReady wants it worn). */
+export const RUNE_STAFF = 'staff of fire';
+
+/**
+ * The step's runes on the route (lib/travel.ts RuneUseTable): the fight (C) at its guarded worst case,
+ * the spell's kit all spent and then the fallback's, since the measured maximum is open past 70.
+ * Leftover blood merges into S18's stack, so the ledger never counts on it.
+ */
+export const RUNE_USE: RuneUseTable = {
+    C: sumUse(castUse(DEFAULT_SPELL, SPELL_RUNES[DEFAULT_SPELL]), FALLBACK[DEFAULT_SPELL] ? castUse(FALLBACK[DEFAULT_SPELL]!, FALLBACK_RUNES) : {}),
+};
+
+/** What fightReady wants held from B on (A receives it): the default spell's kit, its fallback's included. */
+export const RUNE_NEED: RuneUseTable = {
+    B: sumUse(
+        { [SPELL_RUNE[DEFAULT_SPELL]]: SPELL_RUNES[DEFAULT_SPELL], airrune: AIR_RUNES },
+        FALLBACK[DEFAULT_SPELL] ? { [SPELL_RUNE[FALLBACK[DEFAULT_SPELL]!]]: FALLBACK_RUNES } : {},
+    ),
+};
+
 
 /** What one fight did, for the lab and the run's record. */
 export interface FightTally {

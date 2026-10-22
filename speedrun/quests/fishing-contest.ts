@@ -46,7 +46,7 @@ import type { OptionPattern } from '../lib/dialogue';
 import type { ItemPattern } from '../lib/items';
 import { journalProbeName, questDone, questStatus, requireQuestStage, type QuestView, type StageName } from '../lib/quests';
 import { logNote } from '../lib/ticks';
-import { inArea, missingRunes, runTo, SPELLS, teleport, type Area, type TravelSdk } from '../lib/travel';
+import { inArea, missingRunes, runTo, runeUseOf, spellUse, SPELLS, teleport, type Area, type RuneUseTable, type TravelSdk } from '../lib/travel';
 import { currentTick, waitOrThrow, waitUntil } from '../lib/wait';
 import { invCount, invItem, opIndex, pos, skillLevel, waitForNpc } from '../lib/world';
 import type { Check, Observed, StepContext } from '../runner/step';
@@ -135,6 +135,12 @@ export const KIT: readonly KitItem[] = [{ item: ITEM.rod }, { item: ITEM.spade }
 
 /** The two Camelot casts the module makes (to McGrubor's Wood, and back to the dwarf). T19-20's is the leg's. */
 export const RUNES = { air: 2 * SPELLS.camelot.runes.air!, law: 2 * SPELLS.camelot.runes.law! };
+
+/** RUNES by segment (lib/travel.ts RuneUseTable): Camelot at C and at M. C and M each want their own cast held (oneCast). */
+export const RUNE_USE: RuneUseTable = { C: spellUse('camelot'), M: spellUse('camelot') };
+
+/** What A wants held: both casts' runes (runesHeld). */
+export const RUNE_NEED: RuneUseTable = { A: runeUseOf(RUNES) };
 
 /**
  * Everything the step holds, for the free-slot checks (brief addendum 8): the kit as segment A

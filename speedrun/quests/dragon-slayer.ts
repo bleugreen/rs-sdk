@@ -45,7 +45,7 @@ import type { ItemPattern } from '../lib/items';
 
 import { journalProbeName, questPoints, questStatus, requireQuestStage, type QuestView } from '../lib/quests';
 import { receiveFrom, type WantSpec } from '../lib/trade';
-import { runTo, teleport, type Area, type TravelResult } from '../lib/travel';
+import { runTo, spellUse, sumUse, teleport, type Area, type RuneUseTable, type TravelResult } from '../lib/travel';
 import { waitTicks, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, configId, findLoc, invCount, invItem, opIndex, pos, waitForNpc, worn, type LocQuery } from '../lib/world';
 import type { Step, StepContext } from '../runner/step';
@@ -143,8 +143,8 @@ export const QUEST_COINS = 12_000;
 /**
  * H22 as this step uses it (SUPPLIES.md): the quest items, the planks, nails and hammer, 10 sharks,
  * one Lumbridge and one Falador cast, and the coins. The scimitar (H22's rune one; H11's mithril one
- * as the fallback), adamant helm and amulet are worn or held; KIT_WORN checks them. H22's Varrock and Ardougne runes are T25-26's and
- * T26-27's.
+ * as the fallback), adamant helm and amulet are worn or held; KIT_WORN checks them. H22's Ardougne runes are T26-27's;
+ * it carries no Varrock set, since nothing from T25-26 to T26-27 casts one (rs/158's ruling).
  */
 export function kitItems(opts: Options = {}): KitItem[] {
     const buy = opts.buyArmour ?? true;
@@ -156,6 +156,15 @@ export function kitItems(opts: Options = {}): KitItem[] {
         { item: ITEM.law, n: 2 }, { item: ITEM.air, n: 6 }, { item: ITEM.earth, n: 1 }, { item: ITEM.water, n: 1 },
     ];
 }
+
+/**
+ * The step's runes on the route (lib/travel.ts RuneUseTable): Lumbridge at F (to the Duke), Falador at
+ * G (to the maze). No staff is worn: H22 takes the staff of fire back.
+ */
+export const RUNE_USE: RuneUseTable = { F: spellUse('lumbridge'), G: spellUse('falador') };
+
+/** What A's kit (kitItems) wants held: both casts' runes. */
+export const RUNE_NEED: RuneUseTable = { A: sumUse(RUNE_USE.F!, RUNE_USE.G!) };
 
 export const KIT_WORN: ReadonlyArray<[string, RegExp]> = [['a rune (or mithril) scimitar', ITEM.scimitar], ['adamant full helm', ITEM.helm], ['amulet of strength', ITEM.amulet]];
 

@@ -34,7 +34,7 @@ import type { ItemPattern } from '../lib/items';
 import { JOURNAL_FRESH_TICKS, journalProbeName, questDone, questStatus, requireQuestStage, type QuestView, type StageName } from '../lib/quests';
 import { CROSSING_HITPOINTS, crossFromKandarin, crossingRestTarget, crossToKandarin, type Traveller } from '../lib/kandarin';
 import { logNote } from '../lib/ticks';
-import { addRunes, FOOD, inArea, missingRunes, runTo, SPELLS, teleport, type Area, type Spell, type TravelSdk } from '../lib/travel';
+import { addRunes, FOOD, inArea, missingRunes, runTo, runeUseOf, spellUse, SPELLS, teleport, type Area, type RuneUseTable, type Spell, type TravelSdk } from '../lib/travel';
 import { currentTick, waitOrThrow, waitTicks, waitUntil, type StateSource } from '../lib/wait';
 import { chebyshev, findNpc, invCount, invItem, pos, replyAfter, skillLevel, type LocQuery } from '../lib/world';
 import type { Check, Observed, StepContext } from '../runner/step';
@@ -143,6 +143,12 @@ const dead = (i: { name: string }) => DEAD_AT_EXIT.some(p => p.test(i.name));
 
 /** Runes the module casts from the arrival tile: Falador to Nulodion, Ardougne back to Lawgof. T12-13's Ardougne cast is the leg's. */
 export const RUNES = addRunes(SPELLS.falador.runes, SPELLS.ardougne.runes);
+
+/** RUNES by segment (lib/travel.ts RuneUseTable): Falador at K, Ardougne at L. No worn staff supplies any of them. */
+export const RUNE_USE: RuneUseTable = { K: spellUse('falador'), L: spellUse('ardougne') };
+
+/** What A's travelNeeds wants held: both casts' runes. */
+export const RUNE_NEED: RuneUseTable = { A: runeUseOf(RUNES) };
 
 // ------------------------------------------------------------------ conversations (CONVENTIONS.md shapes, read from the scripts)
 

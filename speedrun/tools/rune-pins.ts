@@ -150,22 +150,8 @@ export interface StandIn {
     source: string;
 }
 
-/**
- * The Grand Tree's casts as rs/185 confirmed them (2026-10-22, relayed by rs/186): two Ardougne
- * teleports (B, C; grand-tree.ts:618, :636), one Varrock with fire from the staff of fire (J, :777),
- * the black demon at N2 at rs/202's measured maximum of 24 Fire Bolts (3 air, 1 chaos; the fire the
- * staff's), and kitCheck at A (:241-251, :590) wanting 5 law, 4 water and 35 casts' runes held.
- */
-export const STAND_INS: readonly StandIn[] = [
-    {
-        file: 'quests/grand-tree.ts',
-        stepId: 'S11b',
-        RUNE_USE: { B: { lawrune: 2, waterrune: 2 }, C: { lawrune: 2, waterrune: 2 }, J: { lawrune: 1, airrune: 3 }, N2: { airrune: 72, chaosrune: 24 } },
-        RUNE_NEED: { A: { lawrune: 5, waterrune: 4, airrune: 108, chaosrune: 35 } },
-        RUNE_STAFF: 'staff of fire',
-        source: 'rs/185 via rs/186, 2026-10-22: grand-tree.ts B/C Ardougne, J Varrock, N2 24 Fire Bolts (rs/202, m), kitCheck at A',
-    },
-];
+/** Modules' figures held here until they export them. None now: the Grand Tree's exports its own. */
+export const STAND_INS: readonly StandIn[] = [];
 
 export type FindingKind = 'mismatch' | 'short' | 'staff' | 'no-row' | 'bad-export' | 'unknown';
 export const FAILING_KINDS: readonly FindingKind[] = ['mismatch', 'short', 'staff', 'no-row', 'bad-export'];

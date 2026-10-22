@@ -25,13 +25,13 @@
 
 import type { BotWorldState, PrayerName } from '../../sdk/types';
 import { act, actConverse, talkTo, useOn, type ActOptions } from '../lib/act';
-import { COMBAT_SPELLS, fight, prayerActive, setPrayer, type FightResult } from '../lib/combat';
+import { COMBAT_SPELLS, combatSpellUse, fight, prayerActive, setPrayer, type FightResult } from '../lib/combat';
 import { converse, type ConverseResult } from '../lib/converse';
 import { pageText, type OptionPattern } from '../lib/dialogue';
 import { INVENTORY_SIZE, type ItemPattern } from '../lib/items';
 import { questStage, questStatus, journalProbeName, type QuestView } from '../lib/quests';
 import { logNote } from '../lib/ticks';
-import { runTo, spiritTree, teleport } from '../lib/travel';
+import { runTo, spellUse, spiritTree, sumUse, teleport, type RuneUseTable } from '../lib/travel';
 import { receiveFrom, type WantSpec } from '../lib/trade';
 import { waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, configId, findLoc, findNpc, invCount, invItem, opIndex, pos, replyAfter, skillLevel, worn, type LocQuery, type Tile } from '../lib/world';
@@ -61,6 +61,27 @@ const SPELLS = COMBAT_SPELLS;
 
 /** Casts the kit must cover: rs/56's 153-tick kill at the 5-tick cast delay is ~31. */
 export const DEMON_CASTS = 35;
+/** The demon's Fire Bolts at their measured maximum: rs/202's lab kills at N2 took 20-24 casts (m, 300 ms). */
+export const DEMON_MAX_CASTS = 24;
+
+/** The worn staff whose element RUNE_USE leaves out (entryCheck wants it worn). */
+export const RUNE_STAFF = 'staff of fire';
+
+/**
+ * The step's runes on the route (lib/travel.ts RuneUseTable): the Ardougne teleport at B and at C,
+ * Varrock at J, and the demon's Fire Bolts at N2 at their measured maximum.
+ */
+export const RUNE_USE: RuneUseTable = {
+    B: spellUse('ardougne'),
+    C: spellUse('ardougne'),
+    J: spellUse('varrock', 1, RUNE_STAFF),
+    N2: combatSpellUse(resolveOptions().demonSpell, DEMON_MAX_CASTS, RUNE_STAFF),
+};
+
+/** What kitCheck wants held at A: the three teleports' runes and DEMON_CASTS casts'. */
+export const RUNE_NEED: RuneUseTable = {
+    A: sumUse(RUNE_USE.B!, RUNE_USE.C!, RUNE_USE.J!, combatSpellUse(resolveOptions().demonSpell, DEMON_CASTS, RUNE_STAFF)),
+};
 /** The Ardougne teleport's Magic level. */
 export const TELEPORT_MAGIC = 51;
 /** Free slots SCORED needs after H8 for the quest items (rs/158, entry 8). */
