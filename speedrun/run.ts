@@ -6,14 +6,25 @@
 //   bun speedrun/run.ts --bot=<env name> --config=<run config json> [--client=browser|lite]
 //       [--from=<id|step name|index>] [--until=<id|step name>] [--dry-run] [--log=<file>]
 //       [--run-commit=<rev>] [--run-dir=<dir>] [--host-reservation=<file>] [--claim-owner=<rs/NNN>]
+//       [--cannon-serve=<file>]
 //
+// Before the gates, the run config must build the chain (every placed and kit row's partner named,
+// the ledger covered) and its cue directory must be the helpers' writers' one: else exit 3.
 // Start gates, each checked once before anything logs in (any refusal: exit 3, nothing logged in):
 // 1. the run commit includes the run-commit floor, read at run time from STEP-MANIFEST.md entry 0
 //    on main (lib/run-floor.ts; no floor lives in code);
 // 2. the host reservation is live and the run's own claim (--claim-owner / $SPEEDRUN_CLAIM_OWNER);
 // 3. the slot ledger (speedrun/tools/slot-ledger.ts) exits 0;
-// 4. no refusing step (a module not on main, the pending cannon receiver) on the path to --until;
-// 5. the helpers are in: <run dir>/launcher.json says helpersReady.
+// 4. no refusing step (a module not on main) on the path to --until;
+// 5. the helpers are in: <run dir>/launcher.json says helpersReady;
+// 6. when the path reaches H11 or H23: the cannon holder's run-day serve options (--cannon-serve,
+//    default <run dir>/cannon-serve.json: `{ "H11": <serve>, "H23": <serve> }`, cannon.ts serve
+//    options as h92 runs them, written from fleet.json by rs/41) agree with the ledger rows SCORED
+//    will want (helpers/cannon-receiver.ts serveDrift; H11's returnExtras against H11r's row).
+//
+// The tick log defaults to <run dir>/run.jsonl, so running the same command again resumes into the
+// same log: the walk starts from game state, the run's cue files are kept, and the report covers
+// every session. A new run takes a new --log (or a cleared run dir).
 // --dry-run evaluates every gate (the floor included) and lists the chain and every refusing step,
 // and logs nothing in. No option skips or replaces a gate: --run-commit names the commit the floor
 // check judges (default HEAD), never the floor.
@@ -25,8 +36,8 @@
 // sets RC_CUE_DIR so every writer (runecraft's cues, thieving's asks, the anvil plan) shares it.
 //
 // Log identity: every row carries the account `SCORED`; the login name is used only inside the cue
-// writers (as its sha256). A re-run with the same --log walks from game state (resume); a fresh
-// start (a new log) clears the run's own stale cue files first.
+// writers (as its sha256). A fresh start (an empty log, no --from) clears the run's own stale cue
+// files first.
 //
 // The end: S17's final logout (agility's `finish: 'final-logout'`), confirmed; the total level read
 // from the last state against 1,881; the run's claim released (rs-claim release).
@@ -42,7 +53,8 @@ import { annotation, ProgramTracker, programRow, ReachTracker, runAttempt, Sessi
 import { claimBin, claimOwner, EXIT_HOST_RESERVED, readReservation, ReservationWatch, reservationPath, claimToucher, type ReservationWatch as Watch } from './lib/host-reservation';
 import { programStatus } from './lib/programs';
 import { checkRunFloor, gitIn, type FloorCheck } from './lib/run-floor';
-import { type ClientKind, closeSession, logoutClean, type LogoutResult, openSession, ROOT, type Session, startWatchdog } from './lib/session';
+import { type ClientKind, closeSession, loadBotEnv, logoutClean, type LogoutResult, openSession, ROOT, type Session, startWatchdog } from './lib/session';
+import { returnExtrasFromLedger, serveDrift, serveFromLedger } from './helpers/cannon-receiver';
 import { newRunId, parseLog, TickLog, type TickRow } from './lib/ticks';
 import { formatRunReport, runReport } from './runner/run-report';
 import { patchMethod } from './runner/fence';
@@ -73,14 +85,17 @@ export interface RunArgs {
     from?: string;
     until?: string;
     dryRun: boolean;
-    log?: string;
+    /** The tick log (default <run dir>/run.jsonl: a re-run of the same command resumes into it). */
+    log: string;
     runCommit?: string;
     runDir: string;
     hostReservation?: string;
     claimOwner?: string;
+    /** The cannon holder's run-day serve options (default <run dir>/cannon-serve.json). */
+    cannonServe: string;
 }
 
-const VALUE_FLAGS = new Set(['bot', 'config', 'client', 'from', 'until', 'log', 'run-commit', 'run-dir', 'host-reservation', 'claim-owner']);
+const VALUE_FLAGS = new Set(['bot', 'config', 'client', 'from', 'until', 'log', 'run-commit', 'run-dir', 'host-reservation', 'claim-owner', 'cannon-serve']);
 const SWITCHES = new Set(['dry-run']);
 
 export function parseArgs(argv: readonly string[]): RunArgs {
@@ -102,9 +117,11 @@ export function parseArgs(argv: readonly string[]): RunArgs {
     if (!v.config) throw new UsageError('--config is required (the run config: helpers and partners)');
     const client = (v.client ?? 'browser') as ClientKind;
     if (client !== 'browser' && client !== 'lite') throw new UsageError(`--client must be browser or lite, not ${v.client}`);
+    const runDir = resolve(v['run-dir'] ?? RUN_DIR);
     return {
-        bot: v.bot, config: v.config, client, dryRun: on.has('dry-run'), runDir: resolve(v['run-dir'] ?? RUN_DIR),
-        ...(v.from ? { from: v.from } : {}), ...(v.until ? { until: v.until } : {}), ...(v.log ? { log: v.log } : {}),
+        bot: v.bot, config: v.config, client, dryRun: on.has('dry-run'), runDir,
+        log: resolve(v.log ?? join(runDir, 'run.jsonl')), cannonServe: resolve(v['cannon-serve'] ?? join(runDir, 'cannon-serve.json')),
+        ...(v.from ? { from: v.from } : {}), ...(v.until ? { until: v.until } : {}),
         ...(v['run-commit'] ? { runCommit: v['run-commit'] } : {}), ...(v['host-reservation'] ? { hostReservation: v['host-reservation'] } : {}),
         ...(v['claim-owner'] ? { claimOwner: v['claim-owner'] } : {}),
     };
@@ -155,9 +172,33 @@ export interface GateIO {
     slotLedger(): Promise<{ code: number; out: string }>;
     /** <run dir>/launcher.json's helpersReady (null: no file or unreadable). */
     helpersReady(): boolean | null;
+    /** The cannon holder's run-day serve options by ledger row, or why they cannot be read. */
+    cannonServe(): { path: string; serve: CannonServeFile | null; error?: string };
 }
 
-/** The five start gates, each checked once, in order; every one is evaluated (a dry run lists them all). */
+/** cannon.ts serve options, per cannon row, as h92 runs them on the day. */
+export type CannonServeFile = Partial<Record<'H11' | 'H23', { balls: number; extras?: { item: string; count: number }[]; returnExtras?: { item: string; count: number }[] }>>;
+
+/** Where the holder's serve differs from the ledger rows SCORED will want ([] when they agree). */
+export function cannonServeDrift(serve: CannonServeFile, rows: readonly ('H11' | 'H23')[], manifest?: string): string[] {
+    const out: string[] = [];
+    for (const row of rows) {
+        const s = serve[row];
+        if (!s) {
+            out.push(`${row}: no serve options for the row`);
+            continue;
+        }
+        out.push(...serveDrift(s, serveFromLedger(row, manifest)));
+        if (row === 'H11') {
+            const want = returnExtrasFromLedger(manifest).map(e => `${e.item.toLowerCase()} x${e.count}`).sort();
+            const back = (s.returnExtras ?? []).map(e => `${e.item.toLowerCase()} x${e.count}`).sort();
+            if (want.join() !== back.join()) out.push(`H11r: serve.returnExtras [${back.join(', ')}], the H11r row [${want.join(', ')}]`);
+        }
+    }
+    return out;
+}
+
+/** The start gates, each checked once, in order; every one is evaluated (a dry run lists them all). */
 export async function startGates(chain: readonly ChainStep[], io: GateIO): Promise<Gate[]> {
     const out: Gate[] = [];
     const f = await io.floor();
@@ -181,6 +222,16 @@ export async function startGates(chain: readonly ChainStep[], io: GateIO): Promi
     out.push({ gate: 'no refusing step on the path', ok: missing.length === 0, detail: missing.length ? missing.map(m => `#${m.index} ${m.name} (${m.owner})`).join('; ') : `${chain.length} steps, none refusing` });
     const ready = io.helpersReady();
     out.push({ gate: 'helpers ready', ok: ready === true, detail: ready === null ? 'no launcher.json in the run dir: start the helpers first' : ready ? 'launcher.json: helpersReady' : 'launcher.json: helpers not ready yet' });
+    const cannonRows = (['H11', 'H23'] as const).filter(r => chain.some(s => s.id === r));
+    if (cannonRows.length) {
+        const c = io.cannonServe();
+        const drift = c.serve ? cannonServeDrift(c.serve, cannonRows) : [];
+        out.push({
+            gate: 'cannon serve',
+            ok: !!c.serve && drift.length === 0,
+            detail: !c.serve ? `${c.path}: ${c.error ?? 'missing'} (rs/41 writes h92's run-day serve options there)` : drift.length ? drift.join('; ') : `${cannonRows.join(', ')} served as the ledger rows want (${c.path})`,
+        });
+    }
     return out;
 }
 
@@ -200,6 +251,13 @@ export function hostGateIO(a: RunArgs, owner: string | undefined): GateIO {
                 return (JSON.parse(readFileSync(join(a.runDir, 'launcher.json'), 'utf8')) as { helpersReady?: boolean }).helpersReady === true;
             } catch {
                 return null;
+            }
+        },
+        cannonServe: () => {
+            try {
+                return { path: a.cannonServe, serve: JSON.parse(readFileSync(a.cannonServe, 'utf8')) as CannonServeFile };
+            } catch (e) {
+                return { path: a.cannonServe, serve: null, error: e instanceof Error ? e.message : String(e) };
             }
         },
     };
@@ -327,7 +385,12 @@ async function main(argv: string[]): Promise<number> {
     const a = parseArgs(argv);
     const cfg = loadRunConfig(a.config, a.runDir);
     const owner = claimOwner(a.claimOwner);
-    const keeper = new CueKeeper(cfg.cueDir, a.bot);
+    if (cfg.cueDir !== defaultCueDir()) {
+        console.error(`[gate] REFUSED cue directory: ${cfg.cueDir} is not the one the helpers' writers use (${defaultCueDir()})`);
+        return EXIT_REFUSED;
+    }
+    // The cues name the login (hashed), never the bot's env directory.
+    const keeper = new CueKeeper(cfg.cueDir, loadBotEnv(a.bot).BOT_USERNAME);
     const built = chainOrRefusal(cfg, keeper);
     if ('refusal' in built) {
         console.error(`[gate] REFUSED run config: ${built.refusal}`);
@@ -337,7 +400,6 @@ async function main(argv: string[]): Promise<number> {
     const full = built.chain;
     const chain = sliceUntil(full, a.until);
     const from = resolveFrom(chain, a.from);
-    if (cfg.cueDir !== defaultCueDir()) throw new Error(`the cue directory ${cfg.cueDir} is not the one the helpers' writers use (${defaultCueDir()})`);
 
     const gates = await startGates(chain, hostGateIO(a, owner));
     for (const g of gates) console.log(`[gate] ${g.ok ? 'ok     ' : 'REFUSED'} ${g.gate}: ${g.detail}`);
@@ -351,7 +413,7 @@ async function main(argv: string[]): Promise<number> {
         return EXIT_REFUSED;
     }
 
-    const earlier = a.log && existsSync(a.log) ? parseLog(readFileSync(a.log, 'utf8')) : [];
+    const earlier = existsSync(a.log) ? parseLog(readFileSync(a.log, 'utf8')) : [];
     const fresh = earlier.length === 0 && from === undefined;
     const removed = prepareCueDir(cfg.cueDir, { fresh });
     const log = TickLog.open(`run-${newRunId()}`, a.log);
