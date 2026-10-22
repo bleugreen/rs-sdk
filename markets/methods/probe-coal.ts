@@ -285,10 +285,12 @@ export class CoalProbe {
         }
         // exactly N unnoted coal in the pack: everything mined into the bank, N back out
         await this.depositOres();
-        const inBank = ctx.sdk.getBankItems().find(i => COAL.test(i.name))?.count ?? 0;
-        const take = Math.min(o.sell, inBank);
-        if (take > 0) {
-            await ctx.bot.withdrawItem(COAL_ID, take);
+        // by the bank item itself: withdrawItem reads a bare number as a bank slot, not an obj id
+        const stack = ctx.sdk.getBankItems().find(i => i.id === COAL_ID);
+        const take = Math.min(o.sell, stack?.count ?? 0);
+        if (stack && take > 0) {
+            const w = await ctx.bot.withdrawItem(stack, take);
+            if (!w.success) sale.withdraw = w.message;
             await waitUntil(ctx.sdk, s => count(s, COAL) >= take, { maxTicks: 5 });
         }
         await ctx.bot.closeBank();
