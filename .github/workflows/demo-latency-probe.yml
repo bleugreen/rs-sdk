@@ -5,10 +5,10 @@ name: Demo latency probe
 # It logs one throwaway account (repo variable DEMO_PROBE_USERNAME, secret
 # DEMO_PROBE_PASSWORD) into the demo for a few minutes, so it is dispatch-only:
 # never add push, pull_request or schedule triggers.
-# That login counts against our per-address demo login limit (tenet 25: at most 45 per public
-# IP, counted per address). Before every dispatch, tell rs/41 (which keeps the login count)
-# that one login is coming, and never dispatch during the scored run's gate series or the run
-# itself (main, 2026-10-22).
+# That login is one of our demo logins: tell rs/41 (which keeps the count under tenet 25) before
+# every dispatch that one login is coming. It runs from a GitHub runner's own address, so it
+# touches none of our per-address limits, which are operator-set and separate. Never dispatch
+# during the scored run's gate series or the run itself (main, 2026-10-22).
 #
 #   Direct/gateway pair from Ashburn (the run-night re-measure at the live player count):
 #   gh workflow run demo-latency-probe.yml -R bleugreen/rs-sdk --ref <branch>
