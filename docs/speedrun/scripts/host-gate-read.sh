@@ -22,8 +22,10 @@
 #    throwaway account). The account name is redacted from everything this script keeps.
 #    Just before it, a no-login check of the bot.env server's public /playercount, with Fly's
 #    machine (sid) and worker (bn) from the flyio-debug header, recorded under `preLogin`, with
-#    the game process's start and uptime from the public page's client.js?v= token (null when
-#    the page or token is unreadable; report-only, never a skip).
+#    the game process's start and uptime from the public page's client.js?v= token, and an engine
+#    fingerprint: the hiscores Time hover's template, a hash of the hiscores page's static chrome,
+#    a hash of /playercount's shape and the md5 of the served bot client. Each of these is null
+#    when its fetch or parse fails; report-only, never a skip. All fetches run side by side.
 #    Under $GATE_MIN_PLAYERS (default 300) online, or no answer, means
 #    `skip: restart suspected (players N)`: a server refilling after a restart is not a reading
 #    of the run's conditions, and a login would only add to its rush.
@@ -49,6 +51,7 @@ utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 commit=
 pre_players= pre_sid= pre_bn=
 pre_start_token= pre_start_utc= pre_uptime_min=
+pre_hover= pre_chrome= pre_pc_shape= pre_bundle_md5=
 mkdir -p "$history"
 record="$history/$(date -u -d "$utc" +%Y-%m-%dT%H%M%SZ).json"
 n=1
@@ -67,7 +70,8 @@ write_record() {
     jq -n "${gatearg[@]}" --arg utc "$utc" --arg end "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg host "$(hostname)" --arg commit "$commit" \
         --arg status "$status" --argjson exit "$code" --arg note "$note" --arg edge "$edge" --arg players "$players" \
         --arg tail "$tail" --arg pp "$pre_players" --arg psid "$pre_sid" --arg pbn "$pre_bn" \
-        --arg pst "$pre_start_token" --arg psu "$pre_start_utc" --arg pup "$pre_uptime_min" '
+        --arg pst "$pre_start_token" --arg psu "$pre_start_utc" --arg pup "$pre_uptime_min" \
+        --arg phh "$pre_hover" --arg phc "$pre_chrome" --arg pps "$pre_pc_shape" --arg pbm "$pre_bundle_md5" '
         $g[0] as $j |
         def orNull: if . == "" then null else . end;
         {utc: $utc, endUtc: $end, host: $host, commit: (if $commit == "" then null else $commit end), status: $status, exit: $exit,
@@ -77,11 +81,13 @@ write_record() {
          players: ($j.vantage.players // (if $players == "" then null else ($players | tonumber) end)),
          edge: ($j.vantage.edge // (if $edge == "" then null else $edge end)),
          connectP50Ms: $j.vantage.connectP50, failures: $j.verdict.failures,
-         preLogin: (if ($pp + $psid + $pbn + $pst) == "" then null
+         preLogin: (if ($pp + $psid + $pbn + $pst + $phh + $phc + $pps + $pbm) == "" then null
                     else {players: ($pp | orNull | if . == null then null else tonumber end),
                           flyMachine: ($psid | orNull), flyWorker: ($pbn | orNull),
                           serverStartUtc: ($psu | orNull), serverStartToken: ($pst | orNull),
-                          serverUptimeMin: ($pup | orNull | if . == null then null else tonumber end)} end),
+                          serverUptimeMin: ($pup | orNull | if . == null then null else tonumber end),
+                          hiscoreHover: ($phh | orNull), hiscoreChromeSha: ($phc | orNull),
+                          playercountShape: ($pps | orNull), botBundleMd5: ($pbm | orNull)} end),
          gate: $j}
         + (if $tail == "" then {} else {outputTail: ($tail | split("\n"))} end)' > "$record.tmp" && mv "$record.tmp" "$record"
 }
@@ -102,6 +108,36 @@ server_start() {
     pre_start_token=$tok
     pre_start_utc=$(printf '%s.%03dZ' "$s" $((ms % 1000)))
     pre_uptime_min="$sign$((t / 10)).$((t % 10))"
+}
+# Engine fingerprint. A digit run, with its thousands and decimal separators, becomes N, so
+# "201,117 seconds" and "10,774.8 seconds" read alike; sha16 is the first 16 hex of a sha256.
+digits_to_n() { perl -0777 -pe 's/[0-9]+(?:[,.][0-9]+)*/N/g'; }
+sha16() { sha256sum | cut -c1-16; }
+# hiscore_marks PAGE (/hiscores, server-rendered by the engine): sets pre_hover, the first
+# title="..." holding a digit (the Time hover) as a template, and pre_chrome, a hash of the page
+# with the text of every innermost table cell and every player link's href emptied. Tags and
+# attributes stay, so the hover's wording counts while names, ranks, levels and times do not.
+hiscore_marks() {
+    local h
+    grep -qai '</html>' "$1" 2>/dev/null || return 0
+    h=$(grep -aoE 'title="[^"]*[0-9][^"]*"' "$1" | head -1 | sed -E 's/^title="(.*)"$/\1/' | digits_to_n)
+    [[ $h =~ ^[[:print:]]{1,80}$ ]] && pre_hover=$h
+    pre_chrome=$(perl -0777 -pe '
+        s{(href="/hi(?:gh)?scores/player/)[^"]*"}{$1"}gi;
+        s{(<td\b[^>]*>)((?:(?!<td\b|</td>).)*)(</td>)}{my ($o, $b, $c) = ($1, $2, $3); $b =~ s/(^|>)[^<]+/$1/g; "$o$b$c"}gsie;
+        s/[0-9]+(?:[,.][0-9]+)*/N/g;
+        s/\s+/ /g;' "$1" | sha16)
+}
+# playercount_shape BODY: the /playercount body's shape, each scalar's path and type for JSON,
+# else the body with its digits as N.
+playercount_shape() {
+    [ -s "$1" ] || return 0
+    if jq empty "$1" >/dev/null 2>&1; then
+        pre_pc_shape=$(jq -c '[path(..) as $p | (getpath($p) | type) as $t
+            | select($t != "object" and $t != "array") | [$p, $t]] | sort' "$1" | sha16)
+    else
+        pre_pc_shape=$(digits_to_n < "$1" | sha16)
+    fi
 }
 skip() {
     echo "skip: $1"
@@ -187,13 +223,25 @@ trap 'rm -rf "$tmp"' EXIT
 case "$server" in
     ""|localhost*|127.*) ;;
     *)
-        curl -s --max-time 8 -H 'flyio-debug: doit' -D "$tmp/pc.h" -o "$tmp/pc.json" "https://$server/playercount" || true
+        # side by side, so the check waits no longer than the page and bundle fetched in turn
+        curl -s --max-time 8 -H 'flyio-debug: doit' -D "$tmp/pc.h" -o "$tmp/pc.json" "https://$server/playercount" &
+        pc_pid=$!
+        curl -s -f --max-time 8 -o "$tmp/hiscores.html" "https://$server/hiscores" &
+        hs_pid=$!
+        curl -s --max-time 8 -o "$tmp/page.html" "https://$server/" || true
+        server_start "$tmp/page.html"
+        if [ -n "$pre_start_token" ] &&
+            curl -s -f --max-time 8 -o "$tmp/bot.js" "https://$server/bot/client.js?v=$pre_start_token"; then
+            pre_bundle_md5=$(md5sum < "$tmp/bot.js" | cut -c1-32)
+            [[ $pre_bundle_md5 =~ ^[0-9a-f]{32}$ ]] && [ -s "$tmp/bot.js" ] || pre_bundle_md5=
+        fi
+        wait "$pc_pid" "$hs_pid"
+        playercount_shape "$tmp/pc.json"
+        hiscore_marks "$tmp/hiscores.html"
         pre_players=$(jq -r '.count // empty' "$tmp/pc.json" 2>/dev/null | grep -E '^[0-9]+$' || true)
         fly=$(sed -n 's/^flyio-debug:[[:space:]]*//Ip' "$tmp/pc.h" 2>/dev/null | tr -d '\r' | head -1)
         pre_sid=$(jq -r '.sid // empty' <<<"$fly" 2>/dev/null || true)
         pre_bn=$(jq -r '.bn // empty' <<<"$fly" 2>/dev/null || true)
-        curl -s --max-time 8 -o "$tmp/page.html" "https://$server/" || true
-        server_start "$tmp/page.html"
         echo "pre-login: ${pre_players:-?} online, fly machine ${pre_sid:-?}"
         if [ -z "$pre_players" ]; then
             skip "restart suspected (playercount unavailable)"
