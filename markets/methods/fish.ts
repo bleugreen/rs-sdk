@@ -11,7 +11,11 @@
 //   shark      net/harpoon spot, op 3 Harpoon   Fishing 76  (3, 40): 16% a roll at 99
 //   swordfish  cage/harpoon spot, op 3 Harpoon  tuna from 35, swordfish from 50
 //   lobster    cage/harpoon spot, op 1 Cage     Fishing 40
-//   bass       net/harpoon spot, op 1 Net (big net): mackerel, cod, bass and junk
+//   bass       net/harpoon spot, op 1 Net (big net): every roll checks boots, seaweed, gloves,
+//              mackerel (twice), oyster, casket, cod (23+) and bass (46+) independently
+//              (memberfish.rs2 fish_roll_big_net), so one roll can land several items.
+// Option `keep` (inventory names, e.g. ["Raw bass","Oyster"]) drops everything else when the
+// pack fills and banks only once the pack is full of kept items.
 // Spots (server/content/maps m44_53): net/harpoon (2846,3429), (2855,3423), (2859,3426);
 // cage/harpoon (2844,3429), (2853,3423).
 
@@ -39,13 +43,21 @@ export const CATCHES: Record<'shark' | 'swordfish' | 'lobster' | 'bass', Catch> 
 };
 
 /**
- * Whether to click the spot again: nothing clicked yet, the player idle for `idleTicks` (the
- * spot moved or the op ended), or no catch for `staleTicks` while the spot is still listed.
+ * Whether to click the spot again: nothing clicked yet, the clicked spot gone from its tile (it
+ * moved), or no catch for `staleTicks`. Never on animation: the harpoon and net animations end
+ * between rolls, and a click while the op is still looping restarts its 5-tick clock (a first lab
+ * run that re-clicked on 3 idle ticks caught half the sharks).
  */
-export function shouldReclick(i: { clicked: boolean; idleFor: number; sinceCatch: number; idleTicks?: number; staleTicks?: number }): boolean {
-    if (!i.clicked) return true;
-    if (i.idleFor >= (i.idleTicks ?? 3)) return true;
-    return i.sinceCatch >= (i.staleTicks ?? 120);
+export function shouldReclick(i: { clicked: boolean; spotThere: boolean; sinceCatch: number; staleTicks?: number }): boolean {
+    if (!i.clicked || !i.spotThere) return true;
+    return i.sinceCatch >= (i.staleTicks ?? 150);
+}
+
+/** What to drop when the pack is full: every item that is neither the tool nor on the keep list. */
+export function junk(inventory: readonly { slot: number; name: string }[], tool: RegExp, keep: readonly string[] | null): number[] {
+    if (!keep) return [];
+    const k = new Set(keep.map(n => n.toLowerCase()));
+    return inventory.filter(i => !tool.test(i.name) && !k.has(i.name.toLowerCase())).map(i => i.slot);
 }
 
 const free = (s: BotWorldState) => 28 - s.inventory.length;
@@ -53,15 +65,20 @@ const xpOf = (s: BotWorldState) => s.skills.find(k => k.name === 'Fishing')?.exp
 
 class Fisher {
     private readonly c: Catch;
+    /** Inventory names kept when the pack fills; the rest is dropped. Null banks everything. */
+    private readonly keep: string[] | null;
     catches = 0;
     banks = 0;
     clicks = 0;
+    drops = 0;
+    fishTicks = 0;
     private startTick = 0;
 
     constructor(private readonly ctx: RoleContext) {
         const name = String(ctx.options.catch ?? 'shark') as keyof typeof CATCHES;
         if (!(name in CATCHES)) throw new Error(`fish: unknown catch ${name}`);
         this.c = CATCHES[name];
+        this.keep = Array.isArray(ctx.options.keep) ? (ctx.options.keep as unknown[]).map(String) : null;
     }
 
     private get s(): BotWorldState {
@@ -76,7 +93,7 @@ class Fisher {
         while (!this.ctx.signal.aborted) {
             try {
                 if (!this.s.inventory.some(i => this.c.tool.test(i.name))) throw new Error('no tool');
-                if (free(this.s) === 0) await this.bank();
+                if (free(this.s) === 0 && !(await this.dropJunk())) await this.bank();
                 else if (Math.max(Math.abs(this.s.player!.worldX - CATHERBY_SPOTS.x), Math.abs(this.s.player!.worldZ - CATHERBY_SPOTS.z)) > 14) await walkTo(this.ctx.bot, this.ctx.sdk, CATHERBY_SPOTS.x, CATHERBY_SPOTS.z, 3);
                 else await this.fish();
             } catch (e) {
@@ -94,25 +111,40 @@ class Fisher {
             .sort((a, b) => a.distance - b.distance)[0];
     }
 
+    /** Drop the junk when the pack is full and a keep list is set; false when nothing could be dropped. */
+    private async dropJunk(): Promise<boolean> {
+        const slots = junk(this.s.inventory, this.c.tool, this.keep);
+        if (!slots.length) return false;
+        await Promise.all(slots.map(slot => this.ctx.sdk.sendDropItem(slot)));
+        await waitTicks(this.ctx.sdk, 2);
+        this.drops += slots.length;
+        return true;
+    }
+
     private async fish(): Promise<void> {
         const sdk = this.ctx.sdk;
-        let s = this.s, lastXp = xpOf(s), clicked = false, idleFor = 0, lastCatch = s.tick;
+        let s = this.s, lastXp = xpOf(s), lastCatch = s.tick;
+        let clicked: { index: number; x: number; z: number } | null = null;
         while (!this.ctx.signal.aborted && free(s) > 0) {
+            this.fishTicks++;
             if (xpOf(s) > lastXp) {
                 this.catches++;
                 lastCatch = s.tick;
             }
             lastXp = xpOf(s);
-            idleFor = s.player!.animId === -1 ? idleFor + 1 : 0;
-            if (s.dialog.isOpen) await sdk.sendClickDialog(0); // level-up pages stop the op
-            if (shouldReclick({ clicked, idleFor, sinceCatch: s.tick - lastCatch })) {
+            if (s.dialog.isOpen) {
+                // a level-up page stops the op: dismiss it and click again
+                await sdk.sendClickDialog(0);
+                clicked = null;
+            }
+            const there = !!clicked && s.nearbyNpcs.some(n => n.index === clicked!.index && n.x === clicked!.x && n.z === clicked!.z);
+            if (shouldReclick({ clicked: !!clicked, spotThere: there, sinceCatch: s.tick - lastCatch })) {
                 const spot = this.spot(s);
                 const op = spot?.optionsWithIndex.find(o => this.c.op.test(o.text));
                 if (spot && op) {
                     await sdk.sendInteractNpc(spot.index, op.opIndex);
                     this.clicks++;
-                    clicked = true;
-                    idleFor = -3; // the walk to the spot shows no animation
+                    clicked = { index: spot.index, x: spot.x, z: spot.z };
                     lastCatch = s.tick;
                 }
             }
@@ -135,7 +167,7 @@ class Fisher {
     }
 
     private report(message: string): void {
-        this.ctx.log(message, { ticks: this.s.tick - this.startTick, catches: this.catches, banks: this.banks, clicks: this.clicks });
+        this.ctx.log(message, { ticks: this.s.tick - this.startTick, fishTicks: this.fishTicks, catches: this.catches, banks: this.banks, clicks: this.clicks, drops: this.drops });
     }
 }
 
