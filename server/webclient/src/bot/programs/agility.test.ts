@@ -265,6 +265,24 @@ describe('agility course', () => {
         expect(h.status.endedTick).toBe(202);
     });
 
+    test('a plain lap with none of the opt-in keys sends what it sent before them, in both techniques', () => {
+        // Two clean laps off the Wilderness, only `laps` and `technique` given. The expected clicks and
+        // the end tick are main's program (before untilLevel, eatGap, eatAt, restockBelow, protect* and
+        // the Wilderness watch) on this same script.
+        const expected = {
+            react: { clicks: [[51, 1], [57, 2], [65, 3], [72, 1], [78, 2], [86, 3]], end: 93 },
+            plain: { clicks: [[51, 1], [58, 2], [67, 3], [75, 1], [82, 2], [91, 3]], end: 98 }
+        };
+        for (const technique of ['react', 'plain'] as const) {
+            const { h } = run({ ticks: 200, params: { laps: 2, technique } });
+            expect(h.sent.map(s => s.action.type)).toEqual(Array(6).fill('interactLoc'));
+            expect(h.sent.map(s => [s.tick, (s.action as { locId: number }).locId])).toEqual(expected[technique].clicks);
+            expect(h.status.phase).toBe('done');
+            expect(h.status.endedTick).toBe(expected[technique].end);
+            expect(h.status.result).toMatchObject({ ended: 'laps', laps: 2, technique });
+        }
+    });
+
     test('in the pit with no ladder listed yet, it clicks the known pit ladder', () => {
         const h = new Harness('agl', createAgility);
         h.start('agl', { course: 'wilderness', laps: 1 }, makeState({ tick: 1, x: 3001, z: 10357 }));
