@@ -239,7 +239,7 @@ if (import.meta.main) {
         before: { source: label, ...counts(before), ...measure(before, seen, board) },
         after: { ...counts(r.records), ...measure(r.records, seen, board) },
         pairs: pairs(before, r.records, seen),
-        ...(board ? { bountyLines: sentLines(r.records).filter(s => mentionsIn(s.text, board).items.length || /bount|board/i.test(s.text)) } : {})
+        ...(board ? { bountyLines: sentLines(r.records).filter(s => mentionsIn(s.text, board).items.length || /\bbount(y|ies)\b|\bboard\b/i.test(s.text)) } : {})
     };
     writeFileSync(join(outDir, 'summary.json'), JSON.stringify(summary, null, 2));
     console.log(`replay log and summary.json in ${outDir}`);

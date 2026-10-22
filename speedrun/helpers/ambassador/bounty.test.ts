@@ -252,7 +252,9 @@ describe('openers: posters and cheers', () => {
         const fills = [
             { item: 'Nature talisman', n: 2, at: new Date(T0 - 2 * 86400_000).toISOString() },
             { item: 'Limpwurt root', n: 3, at: new Date(T0 - 3600_000).toISOString() },
-            { item: 'Dragon bones', n: 9, at: new Date(T0 - 3600_000).toISOString() }
+            { item: 'Dragon bones', n: 9, at: new Date(T0 - 3600_000).toISOString() },
+            // Not yet: a fill dated after now is never counted.
+            { item: 'Limpwurt root', n: 4, at: new Date(T0 + 3600_000).toISOString() }
         ];
         expect(board(snap({ fills })).b.tally(T0)).toEqual({ filled: 5, asked: 56 });
         expect(board(snap({ fills }), { since: new Date(T0 - 86400_000).toISOString() }).b.tally(T0)).toEqual({ filled: 3, asked: 56 });

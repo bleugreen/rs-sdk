@@ -316,7 +316,9 @@ export class BountyBoard {
         const snap = this.snapshot(now);
         if (!snap || !liveBounties(this.cfg, snap, now).length) return null;
         const items = new Set(this.cfg.bounties.map(b => b.item.toLowerCase()));
-        const filled = snap.fills.filter(f => items.has(f.item.toLowerCase()) && Date.parse(f.at) >= (this.cfg.since ?? 0)).reduce((s, f) => s + f.n, 0);
+        const filled = snap.fills
+            .filter(f => items.has(f.item.toLowerCase()) && Date.parse(f.at) >= (this.cfg.since ?? 0) && Date.parse(f.at) <= now)
+            .reduce((s, f) => s + f.n, 0);
         return { filled, asked: this.cfg.bounties.reduce((s, b) => s + b.quantity, 0) };
     }
 
