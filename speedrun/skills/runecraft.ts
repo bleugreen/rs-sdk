@@ -29,6 +29,7 @@ import { levelUpStep, newWatcherMemory, type WatcherMemory } from '../lib/levelu
 import { ALTARS } from '../lib/runecraft';
 import {
     awaitProgram,
+    overBudgetMeta,
     ProgramError,
     rcCueFields,
     sendProgramInput,
@@ -817,6 +818,7 @@ class Driver {
                 mode: this.mode,
                 ...(summary ? { summary } : {}),
                 counters: st?.counters ?? {},
+                ...overBudgetMeta(st),
                 // the session's first trade: ticks from the program's start to its first craft
                 ...(st?.marks?.crafts && st.marks.crafts.count === st.marks.crafts.ticks.length && st.marks.crafts.ticks.length ? { firstCraftAfter: st.marks.crafts.ticks[0]! - startTick } : {}),
                 schedules: Object.fromEntries([...this.assigned].map(([g, a]) => [g, a.schedule])),

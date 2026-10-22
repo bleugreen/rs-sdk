@@ -5,11 +5,17 @@
 // interaction and the tick's packet budget; two would fight over both. Starting
 // a program replaces the running one in the same call.
 //
-// The budget: the engine reads at most 5 user events (OPLOC, OPHELD, IF_BUTTON,
-// MOVE_CLICK, ...) per player per tick and leaves the rest in the socket for the
-// next tick (NetworkPlayer.decodeIn, ClientGameProtCategory.USER_EVENT). A sixth
-// packet would silently land a tick late, so the runtime refuses it instead and
-// counts it as `deferred`; programs order their sends by priority.
+// The budget: the engine decodes at most 5 user events (OPLOC, OPHELD, IF_BUTTON,
+// MOVE_OPCLICK, ...) per player per tick and leaves the rest in the socket, so a sixth
+// is not refused but deferred: it is decoded on the next tick (NetworkPlayer.decodeIn,
+// ClientGameProtCategory.USER_EVENT). The runtime refuses a sixth send in a tick
+// instead and counts it as `deferred`; programs order their sends by priority.
+//
+// That gate counts sends, but a routed op is two user events (MOVE_OPCLICK, then the op),
+// so a tick of 5 sends can be 6 events. The runtime counts the events the client reports
+// (`packets`) and, in `counters.overBudget`, the ticks whose sixth and later events the
+// engine deferred. A program that relies on the exact count budgets events itself
+// (item-cycle, with userEventsOf).
 
 import type { ActionResult } from '../ActionExecutor.js';
 import type { BotAction, BotWorldState } from '../types.js';
@@ -17,6 +23,22 @@ import { FrameStats, LoopRate, MsHistogram } from './frames.js';
 import type { ProgramAction, ProgramCommand, ProgramContext, ProgramEnd, ProgramFactory, ProgramParams, ProgramStatus, TickProgram } from './types.js';
 
 export const USER_EVENTS_PER_TICK = 5;
+
+/**
+ * Actions whose browser-client method routes first: on finding a route (including the
+ * zero-step route from a tile already in reach) it writes MOVE_OPCLICK, a user event, ahead
+ * of the op (Client.tryMove), so one send is two of the tick's five.
+ */
+export const ROUTING_ACTIONS: ReadonlySet<string> = new Set(['interactLoc', 'useItemOnLoc', 'interactNpc', 'talkToNpc', 'interactPlayer', 'useItemOnNpc', 'spellOnNpc', 'spellOnPlayer', 'spellOnGroundItem', 'pickupItem', 'interactGroundItem']);
+
+/** Actions that take `route: false`: the op alone, refused by the client unless already in reach. */
+export const UNROUTABLE_ACTIONS: ReadonlySet<string> = new Set(['interactLoc', 'interactNpc', 'interactGroundItem', 'pickupItem']);
+
+/** User events a send writes at most: 2 for an action that may route, 1 otherwise (an unrouted op is 1). */
+export function userEventsOf(action: { type: string; route?: boolean }): number {
+    if (action.route === false && UNROUTABLE_ACTIONS.has(action.type)) return 1;
+    return ROUTING_ACTIONS.has(action.type) ? 2 : 1;
+}
 
 /** Start parameters the runtime itself reads, accepted for every program. */
 export const RUNTIME_PARAMS: readonly string[] = ['stallTicks', 'hold'];
@@ -229,6 +251,7 @@ export class ProgramRuntime {
         }
         const budget = this.packetsPerTick;
         let sent = 0;
+        let events = 0;
         const t0 = this.now();
         const wall = this.wallNow();
         // One PLAYER_INFO, so one arrival, per decoded tick: the last arrival is this tick's frame.
@@ -270,6 +293,7 @@ export class ProgramRuntime {
                     // Only synchronous actions belong in a tick program: an async one
                     // (count dialogs) would finish in some later pass.
                     sent++;
+                    events++;
                     st.packets++;
                     void result.catch(() => {});
                     return true;
@@ -279,8 +303,11 @@ export class ProgramRuntime {
                     this.log(st, `T${state.tick} rejected ${what ?? action.type}: ${result.message}`, run.tail);
                     return false;
                 }
+                // the user events the client wrote: 2 for a routed op
+                const used = typeof result.userEvents === 'number' ? result.userEvents : 1;
                 sent++;
-                st.packets++;
+                events += used;
+                st.packets += used;
                 return true;
             },
             count: (name, by = 1) => {
@@ -329,6 +356,10 @@ export class ProgramRuntime {
                 st.faultDetail = e instanceof Error ? e.stack : undefined;
                 this.end(run, 'fault');
             }
+        }
+        if (events > budget) {
+            st.counters.overBudget = (st.counters.overBudget ?? 0) + 1;
+            this.log(st, `T${state.tick} ${events} user events sent: the last ${events - budget} land a tick late`, run.tail);
         }
         const ms = this.now() - t0;
         if (ms > st.maxTickMs) st.maxTickMs = Math.round(ms * 10) / 10;

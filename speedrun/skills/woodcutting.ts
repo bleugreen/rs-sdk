@@ -569,7 +569,7 @@ export interface BandSummary extends SubBandRow {
 
 const r3 = (n: number) => (Number.isFinite(n) ? Math.round(n * 1000) / 1000 : Number.NaN);
 
-const COUNTERS = ['phaseResyncs', 'resyncs', 'slips', 'switches', 'noTarget', 'levelUps', 'held', 'starters', 'fellBack', 'buried', 'burySent', 'noBoneCycles', 'lateClicks', 'prayerLevelUps'] as const;
+const COUNTERS = ['phaseResyncs', 'resyncs', 'slips', 'switches', 'noTarget', 'levelUps', 'held', 'starters', 'fellBack', 'buried', 'burySent', 'noBoneCycles', 'lateClicks', 'prayerLevelUps', 'overBudget'] as const;
 
 function addCell(a: Cell, b: Cell): void {
     a.ticks += b.ticks;

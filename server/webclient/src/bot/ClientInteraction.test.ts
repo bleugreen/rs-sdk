@@ -1130,6 +1130,108 @@ describe('loc routing', () => {
     });
 });
 
+describe('unrouted ops (route: false): the op alone, only from a tile already in reach', () => {
+    // A real CollisionMap and the real tryMove/reachedFrom: a 1x1 bank booth on scene
+    // (20,20), an NPC on (20,20) too (only one op type is exercised per test), and a
+    // ground item on (25,20). Scene (0,0) is world (3136,3392).
+    const BOOTH = 2213;
+    const BASE = { x: 3136, z: 3392 };
+    const p2 = (v: number) => [v >> 8, v & 255];
+
+    function scene(player: [number, number]) {
+        const loc = Object.assign(Object.create(LocType.prototype), { id: BOOTH, width: 1, length: 1, forceapproach: 0 });
+        LocType.recent = [loc];
+        LocType.idx = new Int32Array(BOOTH + 1) as never;
+        LocType.dat = {} as never;
+        const collision = new CollisionMap();
+        collision.addLoc(20, 20, 1, 1, LocAngle.WEST, false);
+        const out = new Packet(new Uint8Array(64));
+        const size = BuildArea.SIZE * BuildArea.SIZE;
+        const client = Object.assign(Object.create(Client.prototype), {
+            ingame: true,
+            out,
+            localPlayer: { routeX: [player[0]], routeZ: [player[1]] },
+            minusedlevel: 0,
+            collision: [collision],
+            mapBuildBaseX: BASE.x,
+            mapBuildBaseZ: BASE.z,
+            dirMap: new Int32Array(size),
+            distMap: new Int32Array(size),
+            routeX: new Int32Array(4000),
+            routeZ: new Int32Array(4000),
+            npc: { 7: { routeX: [20], routeZ: [20], type: { size: 1 } } },
+            // the booth is a centrepiece (shape 10, angle 0) on its tile
+            world: { wallType: () => 0, decorType: () => 0, sceneType: () => BOOTH << 14, gdType: () => 0, typeCode2: () => 10 }
+        });
+        return { client, bytes: () => Array.from(out.data.subarray(0, out.pos)) };
+    }
+
+    const oploc = [ClientProt.OPLOC2, ...p2(BASE.x + 20), ...p2(BASE.z + 20), ...p2(BOOTH)];
+
+    test('interactLoc, default: MOVE_OPCLICK then OPLOC, even from the adjacent tile', () => {
+        const { client, bytes } = scene([19, 20]);
+        expect(client.interactLoc(BASE.x + 20, BASE.z + 20, BOOTH, 2)).toEqual({ success: true, routed: true });
+        const b = bytes();
+        // a zero-step route: opcode, size, run, the start tile
+        expect(b.slice(0, 7)).toEqual([ClientProt.MOVE_OPCLICK, 5, 1, ...p2(BASE.x + 19), ...p2(BASE.z + 20)]);
+        expect(b.slice(7)).toEqual(oploc);
+    });
+
+    test('interactLoc, route false from the adjacent tile: OPLOC alone', () => {
+        const { client, bytes } = scene([19, 20]);
+        expect(client.interactLoc(BASE.x + 20, BASE.z + 20, BOOTH, 2, false)).toEqual({ success: true });
+        expect(bytes()).toEqual(oploc);
+    });
+
+    test('interactLoc, route false out of reach: refused, nothing written; the default still routes', () => {
+        const { client, bytes } = scene([17, 20]);
+        expect(client.interactLoc(BASE.x + 20, BASE.z + 20, BOOTH, 2, false)).toEqual({ success: false, reason: 'not_in_reach' });
+        expect(bytes()).toEqual([]);
+        // diagonal is not in a centrepiece's reach either
+        const diag = scene([19, 19]);
+        expect(diag.client.interactLoc(BASE.x + 20, BASE.z + 20, BOOTH, 2, false)).toEqual({ success: false, reason: 'not_in_reach' });
+        expect(client.interactLoc(BASE.x + 20, BASE.z + 20, BOOTH, 2)).toEqual({ success: true, routed: true });
+        expect(bytes()[0]).toBe(ClientProt.MOVE_OPCLICK);
+    });
+
+    test('interactNpc: routed by default; route false adjacent to the footprint sends OPNPC alone; refused out of reach', () => {
+        const routed = scene([19, 20]);
+        expect(routed.client.interactNpc(7, 1)).toEqual({ success: true, routed: true });
+        expect(routed.bytes()[0]).toBe(ClientProt.MOVE_OPCLICK);
+        expect(routed.bytes().slice(-3)).toEqual([ClientProt.OPNPC1, ...p2(7)]);
+
+        const direct = scene([19, 20]);
+        expect(direct.client.interactNpc(7, 1, false)).toEqual({ success: true });
+        expect(direct.bytes()).toEqual([ClientProt.OPNPC1, ...p2(7)]);
+
+        const far = scene([16, 20]);
+        expect(far.client.interactNpc(7, 1, false)).toEqual({ success: false, reason: 'not_in_reach' });
+        expect(far.bytes()).toEqual([]);
+    });
+
+    test('ground items: routed by default; route false on or beside the tile sends the OPOBJ alone; refused out of reach', () => {
+        const take = [ClientProt.OPOBJ3, ...p2(BASE.x + 25), ...p2(BASE.z + 20), ...p2(995)];
+        const routed = scene([24, 20]);
+        expect(routed.client.pickupGroundItem(BASE.x + 25, BASE.z + 20, 995)).toEqual({ success: true, routed: true });
+        expect(routed.bytes()[0]).toBe(ClientProt.MOVE_OPCLICK);
+        expect(routed.bytes().slice(-7)).toEqual(take);
+
+        for (const at of [[25, 20], [24, 20]] as const) {
+            const direct = scene([at[0], at[1]]);
+            expect(direct.client.pickupGroundItem(BASE.x + 25, BASE.z + 20, 995, false)).toEqual({ success: true });
+            expect(direct.bytes()).toEqual(take);
+        }
+        const op4 = scene([24, 20]);
+        expect(op4.client.interactGroundItem(BASE.x + 25, BASE.z + 20, 995, 4, false)).toEqual({ success: true });
+        expect(op4.bytes()).toEqual([ClientProt.OPOBJ4, ...p2(BASE.x + 25), ...p2(BASE.z + 20), ...p2(995)]);
+
+        const far = scene([22, 20]);
+        expect(far.client.pickupGroundItem(BASE.x + 25, BASE.z + 20, 995, false)).toEqual({ success: false, reason: 'not_in_reach' });
+        expect(far.client.interactGroundItem(BASE.x + 25, BASE.z + 20, 995, 4, false)).toEqual({ success: false, reason: 'not_in_reach' });
+        expect(far.bytes()).toEqual([]);
+    });
+});
+
 describe('held-object ops on modal inventories', () => {
     // The Monkey Madness hangar puzzle (reinitialisation_puzzle:com_3) moves a
     // tile in [opheld5,_mm_reinit]; INV_BUTTON5 there finds no trigger. The
