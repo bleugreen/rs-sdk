@@ -13,7 +13,7 @@ import { sleep, waitUntil } from './lib/wait';
 import type { Link } from './runner/resume';
 import { BOUNDARY_STEP, type Step } from './runner/step';
 import {
-    annotation, compareHiscore, DEFAULT_GATE_BOT, type DirectRead, EXIT_HOST_RESERVED, formatPlayers, formatSummary, GATE_PLAYERS_STEP, gateRefusal, type InPageRead, kitMissing, kitWant,
+    annotation, compareHiscore, DEFAULT_ATTEMPT_KIND, DEFAULT_GATE_BOT, kindGate, kindText, RECORD_LINE, recordLineAt, type DirectRead, EXIT_HOST_RESERVED, formatPlayers, formatSummary, GATE_PLAYERS_STEP, gateRefusal, type InPageRead, kitMissing, kitWant,
     parseArgs, parseDirectJson, parseKit, PAUSE_STEP, playerReads, playerSwing, ProgramTracker, ReachTracker, readReservation, reservationPath, reservationRefusal, ReservationWatch,
     runAttempt, SessionClock, summarize, UsageError, claimBin, claimOwner, claimToucher, type ClaimTouch, judgeReservation,
     attemptFront, bracketAttempt, type FrontIO, frontLine, type FrontReport, gateTabProblems, gateTabRead, recordingProblems, type TabIO,
@@ -23,17 +23,17 @@ import type { PlayerRow } from './tools/hiscore-scrape';
 describe('parseArgs', () => {
     test('defaults: browser, to 99, no probes on the rehearsal clock', () => {
         expect(parseArgs(['--skill=woodcutting', '--bot=cairn_wc'])).toEqual({
-            skill: 'woodcutting', claim: false, bot: 'cairn_wc', client: 'browser', to: 99, lab: false, skillOpts: {}, gateProbeTrials: 0, probeTrials: 0, forceGate: false,
+            skill: 'woodcutting', claim: false, bot: 'cairn_wc', client: 'browser', to: 99, lab: false, skillOpts: {}, gateProbeTrials: 0, probeTrials: 0, forceGate: false, kind: 'measurement',
         });
     });
 
     test('--claim: S00 and logout only, one login: no skill, no gate account even off a local world, no probes', () => {
         const demo = { defaultGateBot: DEFAULT_GATE_BOT };
         const a = parseArgs(['--claim', '--bot=cairn_swings', '--log=/tmp/c.jsonl'], demo);
-        expect(a).toEqual({ claim: true, bot: 'cairn_swings', client: 'browser', to: 99, lab: false, skillOpts: {}, gateProbeTrials: 0, probeTrials: 0, forceGate: false, log: '/tmp/c.jsonl' });
+        expect(a).toEqual({ claim: true, bot: 'cairn_swings', client: 'browser', to: 99, lab: false, skillOpts: {}, gateProbeTrials: 0, probeTrials: 0, forceGate: false, kind: 'measurement', log: '/tmp/c.jsonl' });
         expect(a.gateBot).toBeUndefined();
         expect(parseArgs(['cairn_x', '--claim', '--client=lite', '--lab']).claim).toBe(true);
-        for (const extra of ['--skill=x', '--to=15', '--gate-bot=cairn_twin', '--gate-json=/tmp/g.json', '--gate-probe-trials=60', '--probe-trials=20', '--force-gate', '--from=2', '--technique=plain', '--skill-opt=idle=1', '--kit-from=m']) {
+        for (const extra of ['--skill=x', '--to=15', '--gate-bot=cairn_twin', '--gate-json=/tmp/g.json', '--gate-probe-trials=60', '--probe-trials=20', '--force-gate', '--from=2', '--technique=plain', '--skill-opt=idle=1', '--kit-from=m', '--kind=record', '--kind=measurement']) {
             expect(() => parseArgs(['--claim', '--bot=b', extra], demo)).toThrow('--claim runs S00 and logs out, nothing else');
         }
         expect(() => parseArgs(['--claim=yes', '--bot=b'])).toThrow('takes no value');
@@ -131,6 +131,14 @@ const verdict = (c: GateCheck): DirectVerdict => ({
 const now = Date.parse('2026-10-21T20:00:00Z');
 const read = (c: GateCheck, over: Partial<DirectRead> = {}): DirectRead => ({ source: 'gate-bot', takenAt: '2026-10-21T19:58:00Z', verdict: verdict(c), vantage: null, ...over });
 const page = (c: GateCheck, label = 'gate tab before'): InPageRead => ({ label, account: 'cairn_twin', verdict: verdict(c), loopRateP10: 72, at: '' });
+/** A direct read with `onTime` of `trials` next-tick reactions, and (c) passing or failing. */
+const onTimeRead = (onTime: number, cOk: boolean, trials = 60): DirectRead => {
+    const v = verdict(checkC(cOk));
+    v.onTime = onTime;
+    v.trials = trials;
+    v.checks[0] = { ...v.checks[0]!, value: onTime, ok: onTime >= 58 };
+    return read(checkC(cOk), { verdict: v });
+};
 
 describe('gateRefusal', () => {
     test('a clean read on a live world goes', () => {
@@ -167,10 +175,101 @@ describe('gateRefusal', () => {
         expect(gateRefusal({ direct: null, inPage: [], players: null, local: true, now })).toEqual([]);
     });
 
+    test('the kind defaults to measurement, which refuses exactly as before', () => {
+        const cases: Parameters<typeof gateRefusal>[0][] = [
+            { direct: read(checkC(true)), inPage: [page(checkC(true))], players: 41, local: false, now },
+            { direct: read(checkC(false)), inPage: [], players: 41, local: false, now },
+            { direct: read(checkC(true)), inPage: [page(checkC(false, 3))], players: 41, local: false, now },
+            { direct: onTimeRead(57, true), inPage: [], players: 41, local: false, now },
+            { direct: onTimeRead(20, true, 20), inPage: [], players: 41, local: false, now },
+            { direct: null, inPage: [], players: 41, local: false, now },
+            { direct: null, inPage: [], players: null, local: true, now },
+            { direct: read(checkC(true), { verdict: null, error: 'boom' }), inPage: [], players: 41, local: false, now },
+            { direct: read(checkC(true), { source: 'gate-json', takenAt: null }), inPage: [], players: null, local: false, now },
+        ];
+        for (const c of cases) expect(gateRefusal({ ...c, kind: 'measurement' })).toEqual(gateRefusal(c));
+    });
+
     test('parseDirectJson takes what tickmanip-latency --json writes', () => {
         const v = verdict(checkC(true));
         expect(parseDirectJson({ path: 'direct', startedUtc: '2026-10-21T19:58:00Z', verdict: v, result: {} }, 'gate-json')).toEqual({ source: 'gate-json', takenAt: '2026-10-21T19:58:00Z', vantage: null, verdict: v });
         expect(parseDirectJson({ path: 'relay' }, 'gate-json').error).toContain('not a tickmanip-latency');
+    });
+});
+
+describe('record attempt kind', () => {
+    const live = { inPage: [], players: 1540, local: false, now } as const;
+
+    test('the default kind is measurement; --kind=record selects the record rule', () => {
+        expect(DEFAULT_ATTEMPT_KIND).toBe('measurement');
+        expect(parseArgs(['--skill=x', '--bot=b']).kind).toBe('measurement');
+        expect(parseArgs(['--skill=x', '--bot=b', '--kind=measurement']).kind).toBe('measurement');
+        expect(parseArgs(['--skill=x', '--bot=b', '--kind=record'], { defaultGateBot: DEFAULT_GATE_BOT }).kind).toBe('record');
+        expect(() => parseArgs(['--skill=x', '--bot=b', '--kind=race'])).toThrow('--kind must be measurement or record, not "race"');
+        expect(() => parseArgs(['--skill=x', '--bot=b', '--kind'])).toThrow('--kind needs a value');
+    });
+
+    test('--force-gate cannot start a record attempt; a measurement keeps it', () => {
+        expect(() => parseArgs(['--skill=x', '--bot=b', '--kind=record', '--force-gate'])).toThrow(UsageError);
+        expect(() => parseArgs(['--skill=x', '--bot=b', '--force-gate', '--kind=record'])).toThrow('--force-gate cannot start a record attempt');
+        expect(parseArgs(['--skill=x', '--bot=b', '--force-gate']).forceGate).toBe(true);
+    });
+
+    test('record + 57/60 with (c) ok refuses, naming (a)', () => {
+        expect(gateRefusal({ ...live, direct: onTimeRead(57, true), kind: 'record' })).toEqual([
+            'record attempt: (a) 57/60 next-tick reactions on the direct read, under the record line of 58/60: wait and re-read (or run it as --kind=measurement)',
+        ]);
+    });
+
+    test('record + 58/60 with (c) ok proceeds; 60/60 is not the line', () => {
+        expect(gateRefusal({ ...live, direct: onTimeRead(58, true), kind: 'record' })).toEqual([]);
+        expect(gateRefusal({ ...live, direct: onTimeRead(59, true), kind: 'record' })).toEqual([]);
+        expect(gateRefusal({ ...live, direct: onTimeRead(60, true), kind: 'record' })).toEqual([]);
+    });
+
+    test('record + 60/60 with (c) failing refuses, naming (c)', () => {
+        expect(gateRefusal({ ...live, direct: onTimeRead(60, false), kind: 'record' })).toEqual([
+            '(c) 4 catch-ups per minute over 2 on the direct read: an overrun period; wait and re-read',
+        ]);
+        // Both short: both criteria are named.
+        expect(gateRefusal({ ...live, direct: onTimeRead(50, false), kind: 'record' })).toHaveLength(2);
+    });
+
+    test('measurement + 57/60 with (c) ok proceeds (unchanged)', () => {
+        expect(gateRefusal({ ...live, direct: onTimeRead(57, true), kind: 'measurement' })).toEqual([]);
+        expect(gateRefusal({ ...live, direct: onTimeRead(57, true) })).toEqual([]);
+    });
+
+    test('a record attempt needs a full direct read, on the lab too', () => {
+        expect(gateRefusal({ ...live, direct: null, local: true, players: null, kind: 'record' })[0]).toContain('record attempt: no direct gate read');
+        expect(gateRefusal({ ...live, direct: null, kind: 'record' })).toHaveLength(1);
+        expect(gateRefusal({ ...live, direct: onTimeRead(20, true, 20), kind: 'record' })[0]).toContain('ran 20 trials, under the 60');
+        expect(gateRefusal({ ...live, direct: read(checkC(true), { verdict: null, error: 'boom' }), kind: 'record' })).toEqual(['direct gate read failed: boom']);
+    });
+
+    test('the record line scales to a longer read, rounded up', () => {
+        expect(RECORD_LINE).toEqual({ onTime: 58, trials: 60 });
+        expect(recordLineAt(60)).toBe(58);
+        expect(recordLineAt(120)).toBe(116);
+        expect(recordLineAt(100)).toBe(97);
+        expect(gateRefusal({ ...live, direct: onTimeRead(115, true, 120), kind: 'record' })[0]).toContain('115/120');
+        expect(gateRefusal({ ...live, direct: onTimeRead(116, true, 120), kind: 'record' })).toEqual([]);
+    });
+
+    test('the (gate) kind row and the summary line carry the kind, its rule and the gate numbers', () => {
+        const rec = kindGate('record', onTimeRead(57, true));
+        expect(rec).toMatchObject({ kind: 'record', onTime: 57, trials: 60, recordLine: 58, recordHeld: false, catchUpsPerMinute: 0.5, catchUpLimit: 2 });
+        expect(rec.recordShort).toContain('57/60');
+        expect(kindText(rec)).toBe('kind: record (refuses below 58/60 next-tick reactions on the direct read, and on (c); no --force-gate); direct (a) 57/60, line 58 SHORT; (c) 0.5/min, limit 2');
+        expect(kindGate('record', onTimeRead(58, true))).toMatchObject({ recordHeld: true });
+        expect(kindGate('record', onTimeRead(58, true)).recordShort).toBeUndefined();
+        const meas = kindGate('measurement', onTimeRead(57, true));
+        expect(meas).toMatchObject({ kind: 'measurement', onTime: 57, recordLine: null, recordHeld: null });
+        expect(kindText(meas)).toBe('kind: measurement (refuses on (c) only); direct (a) 57/60; (c) 0.5/min, limit 2');
+        expect(kindText(kindGate('measurement', null))).toBe('kind: measurement (refuses on (c) only); no direct read');
+        expect(kindGate('record', null)).toMatchObject({ recordHeld: false, recordShort: 'record attempt: no direct gate read' });
+        const s = formatSummary(summarize([]), { account: 'a', skill: 'x', outcome: 'refused', gate: [kindText(rec)], hiscore: null });
+        expect(s).toContain('gate: kind: record');
     });
 });
 
