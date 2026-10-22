@@ -533,6 +533,11 @@ export function keepOnBank(name: string, lv: { fishing: number; cooking: number 
 
 const COINS = /^coins$/i;
 
+/** Whether the carried product (`product`, a spot's `bones`) has reached `maxCarry`: the bank trigger short of a full pack. */
+export function carryReached(inventory: readonly { name: string; count: number }[], product: RegExp, maxCarry: number): boolean {
+    return inventory.filter(i => product.test(i.name)).reduce((a, i) => a + i.count, 0) >= maxCarry;
+}
+
 /** Edible food past the first `cap` units carried, by id, in inventory order: what a bank visit deposits under `keepFood`. */
 export function foodOverCap(inventory: readonly InventoryItem[], cap: number): { id: number; n: number }[] {
     let kept = 0;
@@ -644,6 +649,12 @@ interface Options {
      * account that needs no food (99 Defence at chaos druids) otherwise spends its bag on it.
      */
     keepFood: number;
+    /**
+     * Bank once this many of the spot's product (its `bones`: bones, or herbs at the druids) are
+     * carried, before the pack is full (default: only when full). Caps what a death in the
+     * Wilderness can cost.
+     */
+    maxCarry: number;
     /** Log every fight at the spot (outcome, game ticks, position, live targets in view): for measuring kill rates. */
     trace: boolean;
 }
@@ -676,6 +687,7 @@ export function parseOptions(o: Record<string, unknown>): Options {
         maxPlayersNearTarget: num('maxPlayersNearTarget', 0),
         styleCap: num('styleCap', 99),
         keepFood: num('keepFood', Infinity),
+        maxCarry: num('maxCarry', Infinity),
         trace: o.trace === true
     };
 }
@@ -1663,6 +1675,10 @@ export class Run {
         await this.dropSpareKeys();
         if (this.freeSlots() === 0) {
             await this.bank('full', spot, this.tripKit());
+            return;
+        }
+        if (carryReached(this.state().inventory, spot.bones, this.opt.maxCarry)) {
+            await this.bank('carry', spot, this.tripKit());
             return;
         }
         const p = this.pos();

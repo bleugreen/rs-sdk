@@ -56,6 +56,15 @@ export const TAVERLEY_DUNGEON: readonly Box[] = [
 ];
 export const TAVERLEY_LADDER: Ladder = { id: 1755, at: { x: 2884, z: 9797 }, stand: { x: 2884, z: 9798 }, label: 'Taverley Dungeon ladder' };
 
+/**
+ * Edgeville dungeon, the chaos druids (Wilderness 1-3) included: the bounding box of every tile
+ * from which the SDK pathfinder reaches the ladder up to the trapdoor beside Edgeville bank,
+ * measured tile by tile over x 3070-3165, z 9815-9985. The box also holds walkable pockets the
+ * ladder cannot be reached from; a climb from one of those fails at the walk with its reason.
+ */
+export const EDGEVILLE_DUNGEON: Box = { x0: 3079, x1: 3151, z0: 9824, z1: 9973 };
+export const EDGEVILLE_LADDER: Ladder = { id: 1755, at: { x: 3096, z: 9867 }, stand: { x: 3096, z: 9868 }, label: 'Edgeville dungeon ladder' };
+
 /** The guild's south door, the only way between the mine and the cellar. */
 export const GUILD_DOOR = { id: 2112, at: { x: 3046, z: 9756 }, mineSide: { x: 3046, z: 9757 }, mining: 60 } as const;
 
@@ -85,13 +94,15 @@ export function stepLabel(s: SurfaceStep): string {
  * The way up from `from`, for an account whose current Mining level is `mining`: [] on the
  * surface, null underground somewhere this module does not know. From the cellar, its
  * ladder. From the south of the mine with Mining 60, the guild door and the cellar ladder;
- * anywhere else in the mine, the Ice Mountain ladder. From Taverley Dungeon, its ladder.
+ * anywhere else in the mine, the Ice Mountain ladder. From Taverley Dungeon and the Edgeville
+ * dungeon, their ladders.
  */
 export function surfacePlan(from: Tile, mining: number): SurfaceStep[] | null {
     if (!isUnderground(from)) return [];
     const up = (l: Ladder): SurfaceStep[] => [{ kind: 'walk', to: l.stand, tol: 2 }, { kind: 'climb', ladder: l }];
     if (inBox(GUILD_CELLAR, from)) return up(GUILD_LADDER);
     if (TAVERLEY_DUNGEON.some(b => inBox(b, from))) return up(TAVERLEY_LADDER);
+    if (inBox(EDGEVILLE_DUNGEON, from)) return up(EDGEVILLE_LADDER);
     if (!inBox(DWARVEN_MINE, from)) return null;
     if (mining >= GUILD_DOOR.mining && from.z < DOOR_SIDE_Z) return [{ kind: 'walk', to: GUILD_DOOR.mineSide, tol: 1 }, { kind: 'door' }, ...up(GUILD_LADDER)];
     return up(ICE_LADDER);

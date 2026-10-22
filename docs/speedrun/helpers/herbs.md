@@ -74,7 +74,8 @@ already carried stays carried on every bank visit unless `keepFood` caps it (the
 option: most food left carried, the rest banked). A coin earner borrowed with 24 kebabs has
 3 free slots and banks every 3 drops (measured, cairn_h51: ~31 herbs an hour against ~100-120
 for the others), so give it `keepFood` around 10: about 17 free slots, still a small herb load
-for the Wilderness. The grimy herbs are identified and mixed later by an account with the ritual.
+for the Wilderness. `maxCarry` (the bone engine's: bank once that many herbs are carried) caps
+the load directly whatever the food; rs/41's Wilderness rule is about 10. The grimy herbs are identified and mixed later by an account with the ritual.
 
 ## Measured rates
 
@@ -127,16 +128,18 @@ seven-herb mix.
 | harralander | energy (67.5) | chocolate dust | ~97 | gnome shops (5 stock each), or chocolate bars ground with a pestle and mortar |
 | tarromin, kwuarm | strength (50), super strength (125) | limpwurt root | ~160 | no shop: hill giants 11/128 per kill, Taverley druids 3/128; chaos druids never drop it |
 
-Two more secondaries make the limpwurt-free mix that attempts 2 and 3 use (rs/387; rs/158
-accepted it at 189 and 198 S25e ticks, under attempt 1's 210):
+Attempts 2 and 3 use a limpwurt-free mix (rs/387): eye of newt, snape grass and **chocolate
+dust** for harralander's energy potion (67.5 base; the Gnome Stronghold grocers on the first
+floor, buyer.md, and bars ground with `brew`'s `grind`). Tarromin, kwuarm, cadantine,
+lantadyme and dwarf weed stay unmixed. rs/158 accepted it at 214 S25e ticks for attempt 2
+(1,010 new herbs plus banked harralander and marrentill) and 223 for attempt 3 (1,320 new
+herbs), against attempt 1's 210.
 
-| Herb | Potion (base xp) | Secondary | Source |
-|---|---|---|---|
-| harralander | energy (67.5) | chocolate dust | the Gnome Stronghold grocers on the first floor (buyer.md), and bars ground with `brew`'s `grind` |
-| kwuarm, lantadyme | weapon poison (137.5, level 60), antifire (157.5, level 69) | dragon scale dust | the blue dragon room's five scale spawns, telegrabbed by `dragons` with `scales:true` (dragons.md), ground with `grind` |
-
-Tarromin, cadantine and dwarf weed stay unmixed in that mix. Limpwurt is a natural by-product
-of the hill-giant bone collectors.
+Dragon scale dust would add kwuarm's weapon poison (137.5) and lantadyme's antifire (157.5)
+and bring the two routes to 189 and 198 ticks, but it has no source the helpers can reach: the
+blue dragon room's five scale spawns are out of line of sight from the dragons role's safe tile
+(dragons.md, measured), and neither scales nor dust trade on the GE. Limpwurt is a natural
+by-product of the hill-giant bone collectors.
 
 ## Other sources considered (read)
 
