@@ -5,7 +5,9 @@ chain for provisional order v1 (cairn://p/rs/103): the scored account's step scr
 transition legs, the helper-side scripts those steps wait on, and `run.ts` itself. The main thread
 files one builder per entry. The order is **build priority**: the entry with the most ticks at
 stake comes first (section 1 says how that was computed). The last section lists the shared
-primitives the builders need first.
+primitives the builders need first. Every program parameter named here is checked against the
+program's `createX.params` declaration on the run-commit floor (entry 0), and a module's lab
+acceptance counts only on a page built from that floor.
 
 The scored account is called **SCORED** everywhere. Its real name lives only in its gitignored
 `bots/<name>/bot.env`; no script, log line, commit or document names it. The sibling
@@ -291,7 +293,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     stun actions, after #159's `stay2` bury, entry 4), 3dfc217f (#165, rs/162's plain + bury, the
     knife-off line in force, entry 3), b6950915 (#177: a program faults at start on a parameter key
     it does not declare, so each entry's program keys are the program's declared names) and
-    834f376b (#176, rs/210's tick-cadence monitor);
+    834f376b (#176, rs/210's tick-cadence monitor). Pending: rs/147's Fishing snapshot PR (number pending; `b2e02cbe` on rs/147's branch, directly on 23ea9f77),
+    which declares knife-cycle's `followSpot`, `dropEach` and `untilXp` for entry 5's net band;
   - **the login cap**: our simultaneous demo logins, summed across every host, at most 100 with a
     working cap of 80, counted before SCORED logs in (main, 15:35 PDT; `RUN-HOST.md` step 7;
     `SUPPLIES.md`, "Peak concurrent logins");
@@ -409,7 +412,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   Fallback **4,512** at the 74-tick lap a relay-driven loop would pay (inferred, same section). The
   entry total is 4,327 expected, ~3,934 best and 4,626 fallback.
 - **Primitives:** `lib/programs.ts` `runProgram(sdk, 'agility', {course, untilLevel, food,
-  eatBelow})` [rs/97]; the in-page probe before S17; `levelup` (dismissal is inside the program;
+  eatBelow})` [rs/97] (**faults at start on any page from b6950915 (#177) unless the module passes
+  `laps` / `maxTicks`, or agility declares `untilLevel`: owner rs/155 via rs/147**; RUN-ORDER.md O40); the in-page probe before S17; `levelup` (dismissal is inside the program;
   verify); `session.logoutClean` for the post-combat 16-tick rule if attacked. **Missing:** an
   escape for a hostile player in the Wilderness (stop the program, walk south out of level 20,
   then teleport). Nothing in the program reads `nearbyPlayers`.
@@ -511,7 +515,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Parameters:** to knife-cycle, per band of the module's band table (the standing tile is the
   module's): `method` (the preset `tree` / `oak` / `willow`), `trees` (the band's reachable tiles, on
   oak and willow), `untilLevel` (the band end), `technique: 'knife' | 'plain'` (chosen by the host gate, not by hand), `bury: boolean` (the bury
-  variant), `reanchor: 'xp'`, `dismiss: 'now' | 'blind' | 'none'` (knife-cycle's values, default `'now'`, r), `respawnD` (felled-tree wait, from the
+  variant), `reanchor: 'xp'`, `dismiss: 'now' | 'blind' | 'none'` (knife-cycle's values, default `'now'`, r), `respawnD` (module-side only, not a knife-cycle key: felled-tree wait, from the
   observed player count), `bones` (the giver; loads of 23; the step's trades, not a program key).
 - **Preconditions:** rune axe (H4, held at 13:10; the adamant axe is the priced fallback, +394), knife and at least
   1 normal log, Fletching 1, members world. Free inventory except the kit. Position on the band's tile.
@@ -757,7 +761,10 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Serves:** S22, fly fishing at the Lumbridge river from 78 to 99, dropping each catch on the
   tick after it (`skills/fishing.md` §1).
 - **Parameters:** `method: 'fly'`, `technique` (by the gate), `reanchor: 'xp'`, `dismiss: 'now'`,
-  `untilLevel: 99`, standing tile (3241,3248).
+  `untilLevel: 99`, standing tile (3241,3248). The net band (rs/211's `fishing.ts`) also passes
+  `followSpot`, `dropEach` and `untilXp`: these keys are declared at `b2e02cbe` (rs/147) and reach
+  main with rs/147's Fishing snapshot PR (number pending); the run
+  commit must include it. Until then a page built from main faults on the net band.
 - **Preconditions:** Fishing 78 (Sea Slug 7,175 + Fishing Contest 2,437 = 9,612 base; read via
   `skills/fishing.md` §1-3), fly fishing rod, about 520 feathers, knife and 1 normal log, Fletching
   1; the host-gate rule as for Woodcutting.
