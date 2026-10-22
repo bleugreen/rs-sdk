@@ -349,6 +349,76 @@ describe('B: an Inspect whose choice opens after act.ts\'s re-send line is click
     }
 });
 
+describe('I: the shed reads its replies by publication, on either client\'s stamping', () => {
+    // The browser stamps a click's reply on the click's own tick, lite on the next (lib/world.ts
+    // messageCursor); both publish it under a new observation id. A roll that opens no dialogue
+    // ("can't quite find") is known only by its message.
+    const LOC = { x: 2577, z: 3462, id: 5, level: 0, name: 'Broken multicannon', distance: 1, optionsWithIndex: [{ text: 'Inspect', opIndex: 1 }] };
+    const PARTS_MENU = { isOpen: true, isWaiting: false, pageId: 'parts', options: ['Pipe', 'Barrel', 'Axle', 'Shaft', 'Nothing'].map((text, i) => ({ index: i + 1, text, buttonType: 1, componentId: 20 + i })) };
+    const WORKING = { isOpen: true, isWaiting: true, pageId: 'working', options: [{ index: 1, text: 'Click here to continue', buttonType: 6, componentId: 10 }], allComponents: [{ text: 'The Cannon seems to be in working order, The Commander will be pleased.' }] };
+    const CLOSED = { isOpen: false, options: [], isWaiting: false };
+    const ROLLS = ['find', 'menu', 'find', 'find', 'menu', 'menu', 'menu', 'working'] as const;
+
+    for (const client of ['browser', 'lite'] as const) {
+        test(`${client}: one Inspect click per roll, no door toggled, every miss seen at once`, async () => {
+            const s = startOf('I').state;
+            s.player = player(2576, 3461, 42);
+            s.nearbyLocs = [LOC] as unknown as BotWorldState['nearbyLocs'];
+            s.gameMessages = [{ type: 0, tick: 90, text: 'Welcome to RuneScape.', observationId: 1 }] as BotWorldState['gameMessages'];
+            const sdk = new FakeSdk(s);
+            let publication = 1;
+            const events = new Map<number, (st: BotWorldState) => Partial<BotWorldState>>();
+            /** Messages published at the next tick, stamped `clickTick` (browser) or the tick they show on (lite). */
+            const msg = (clickTick: number, ...text: string[]) => (st: BotWorldState): Partial<BotWorldState> => {
+                publication++;
+                const tick = client === 'browser' ? clickTick : st.tick + 1;
+                return { gameMessages: [...st.gameMessages, ...text.map(t => ({ type: 0, tick, text: t, observationId: publication }))] } as Partial<BotWorldState>;
+            };
+            const at = (tick: number, e: (st: BotWorldState) => Partial<BotWorldState>) => {
+                const prev = events.get(tick);
+                events.set(tick, prev ? st => ({ ...prev(st), ...e({ ...st, ...prev(st) }) }) : e);
+            };
+            let roll = 0;
+            sdk.onSend = (a, f) => {
+                const t = f.state!.tick;
+                if (a.method === 'sendInteractLoc') {
+                    const r = ROLLS[roll++];
+                    if (r === 'find') at(t + 1, msg(t, 'You inspect the multi cannon.', "You try, but can't quite find the problem.", 'Maybe you should inspect it again.'));
+                    else if (r === 'menu') {
+                        at(t + 1, msg(t, 'You inspect the multi cannon.', 'You see that there are some damaged components.'));
+                        at(t + 4, () => ({ dialog: PARTS_MENU }) as Partial<BotWorldState>);
+                    } else {
+                        at(t + 1, msg(t, 'You inspect the multi cannon.'));
+                        at(t + 4, () => ({ dialog: WORKING }) as Partial<BotWorldState>);
+                    }
+                } else if (/ClickDialog|clickDialogByText/.test(a.method) && f.state!.dialog.isOpen) {
+                    const menu = f.state!.dialog.pageId === 'parts';
+                    f.push({ dialog: CLOSED });
+                    if (menu) {
+                        at(t + 1, msg(t, 'You use your tool kit and attempt to fix the part...'));
+                        at(t + 4, msg(t + 3, 'After some tinkering you manage to fix it.'));
+                    }
+                }
+            };
+            const each = (st: BotWorldState): Partial<BotWorldState> => {
+                const e = events.get(st.tick + 1);
+                if (!e) return {};
+                events.delete(st.tick + 1);
+                return e(st);
+            };
+            const session = { sdk, bot: {}, name: 'lab', sessionId: 0 } as unknown as RunnerSession;
+            const ctx = { session, sdk, bot: session.bot, c: {}, log: TickLog.memory('t') } as unknown as StepContext<unknown>;
+            const tally = newTally();
+            const t0 = sdk.state!.tick;
+            await drive(sdk, byLetter('I').run(ctx) as Promise<unknown>, 300, each);
+            expect(sdk.sent.filter(a => a.method === 'sendInteractLoc').length).toBe(ROLLS.length);
+            expect(tally.shedFindFails === 0 && tally.shedInspects === 0).toBe(true); // the default table's tally, not this one
+            // Each roll is a click, a reply on the next tick and at most the menu's p_delay and a fix: well under one 40-tick wait per miss.
+            expect(sdk.state!.tick - t0).toBeLessThan(90);
+        });
+    }
+});
+
 describe('L: the exit state', () => {
     const post = (s: BotWorldState) => byLetter('L').postconditions(s, {});
     const done = (over: Partial<BotWorldState> = {}) => arrival({ quests: { elena: 'complete', mcannon: 'complete' } as BotWorldState['quests'], player: player(2571, 3461), ...over });
