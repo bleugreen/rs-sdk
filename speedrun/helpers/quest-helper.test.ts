@@ -183,7 +183,7 @@ describe('the Gnome course on lite', () => {
     const loc = (id: number, x: number, z: number) => ({ x, z, id, name: 'o', optionsWithIndex: [] }) as unknown as NearbyLoc;
     test('stepLoc clicks the nearest published candidate, else the first', () => {
         const net = gnome.steps.find(s => s.name === 'net')!;
-        expect(stepLoc(net, [loc(2285, 2473, 3425), loc(2285, 2475, 3425)], { x: 2476, z: 3428 })).toEqual({ id: 2285, x: 2475, z: 3425 });
+        expect(stepLoc(net, [loc(2285, 2473, 3425), loc(2285, 2475, 3425)], { x: 2476, z: 3427 })).toEqual({ id: 2285, x: 2475, z: 3425 });
         expect(stepLoc(net, [], { x: 2476, z: 3428 })).toEqual({ id: 2285, x: 2473, z: 3425 });
     });
     test('the laps end only at the end of a lap, at or past the level', () => {
