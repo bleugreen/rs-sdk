@@ -8,8 +8,9 @@
 //      or banks) and each give line kept only when the stand-in holds it from mule surplus: a line it
 //      does not hold, or holds as its own, is recorded as not exercised.
 //   2. handOffPre (the step's precondition: partner in view, gives held, free slots) must pass.
-//   3. The package name goes into the mule's request file, and the stand-in waits for the mule's
-//      standing trade request: the package is staged, as on run day when SCORED arrives.
+//   3. The stand-in asks for the package by a cue scoped to the row's hand-off id (mule.ts
+//      requestPackage, the run's channel), and waits for the mule's standing trade request: the
+//      package is staged, as on run day when SCORED arrives.
 //   4. runHandOff, its report kept (ticks on this account's clock from its first trade click).
 //   5. Everything the trade brought is handed straight back to the mule in one trade (lib/trade.ts
 //      give, by obj id and count); with no package pending the mule takes any offer and banks it. A
@@ -21,10 +22,11 @@
 //
 // Prints `RESULT mule-standin {...}` and writes it to `resultFile` when set.
 //
-// Role options: partner (the mule's account), requestFile (the mule's), rows (ledger row ids, in
-//   order), manifest (default STEP-MANIFEST.md), seed { package, items: [{ item | id, amount }] },
-//   stageWaitMs (default 180000: the mule banks and withdraws between packages), resultFile.
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+// Role options: partner (the mule's account), cueDir (the mule's), rows (ledger row ids, in order),
+//   manifest (default STEP-MANIFEST.md), seed { step, items: [{ item | id, amount }] } (the seed
+//   package's scope step in the mule's config), stageWaitMs (default 180000: the mule banks and
+//   withdraws between packages), resultFile.
+import { readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
@@ -34,7 +36,7 @@ import { give, receiveFrom, sameName, type GiveResult, type WantSpec } from '../
 import { nextTick, waitTicks } from '../lib/wait';
 import { handOffFrom, handOffPre, matches, runHandOff, type HandOffPlan, type HandOffReport } from '../runner/handoff';
 import { MANIFEST } from '../tools/slot-ledger';
-import { ChatCursor, countById } from './mule';
+import { ChatCursor, countById, requestPackage } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
 const ROOT = resolve(import.meta.dir, '..', '..');
@@ -121,13 +123,13 @@ async function session(ctx: RoleContext): Promise<void> {
     const { sdk } = ctx;
     const o = ctx.options;
     const partner = String(o.partner ?? '');
-    const requestFile = String(o.requestFile ?? '');
+    const cueDir = String(o.cueDir ?? '');
     const rows = (o.rows ?? []) as string[];
-    if (!partner || !requestFile || !rows.length) throw new Error('mule-standin: options.partner, options.requestFile and options.rows are required');
+    if (!partner || !cueDir || !rows.length) throw new Error('mule-standin: options.partner, options.cueDir and options.rows are required');
     const manifestPath = typeof o.manifest === 'string' ? (isAbsolute(o.manifest) ? o.manifest : join(ROOT, o.manifest)) : MANIFEST;
     const manifest = readFileSync(manifestPath, 'utf8');
     const stageWaitMs = Number(o.stageWaitMs ?? 180_000);
-    const seed = o.seed as { package: string; items: { item?: string; id?: number; amount: number }[] } | undefined;
+    const seed = o.seed as { step: string; items: { item?: string; id?: number; amount: number }[] } | undefined;
     const plans = rows.map(id => handOffFrom(manifest, id));
 
     const cursor = new ChatCursor(sdk, [TRADE_REQUEST_CHAT_TYPE]);
@@ -140,17 +142,17 @@ async function session(ctx: RoleContext): Promise<void> {
         rows: [],
     };
     ctx.log('stand-in start', out.start);
-    const ask = (name: string) => {
+    const ask = (handOff: string) => {
         cursor.next();
-        appendFileSync(requestFile, `${name}\n`);
+        requestPackage(cueDir, ctx.account, handOff, { tick: sdk.getState()?.tick ?? 0, ms: Date.now() });
     };
 
     let stopped = false;
     if (seed) {
-        ask(seed.package);
+        ask(seed.step);
         const staged = await waitForStaged(ctx, partner, cursor, stageWaitMs);
         const r = staged === null ? null : await receiveFrom(sdk, partner, { want: wantOf(seed.items), openMaxTicks: 30, maxTicks: 40 });
-        out.seed = { package: seed.package, staged: staged !== null, ok: r?.ok ?? false, ticks: r?.ticks ?? null, received: r ? label(r.received) : [], reason: r?.reason ?? (staged === null ? 'not staged' : null) };
+        out.seed = { step: seed.step, staged: staged !== null, ok: r?.ok ?? false, ticks: r?.ticks ?? null, received: r ? label(r.received) : [], reason: r?.reason ?? (staged === null ? 'not staged' : null) };
         ctx.log('seed', out.seed as Record<string, unknown>);
         if (!r?.ok) stopped = true;
     }
@@ -169,7 +171,7 @@ async function session(ctx: RoleContext): Promise<void> {
             continue;
         }
         const before = countById(inv());
-        ask(id.toLowerCase());
+        ask(id);
         const staged = await waitForStaged(ctx, partner, cursor, stageWaitMs);
         if (staged === null) {
             Object.assign(res, { outcome: 'not staged', reason: `no standing request from ${partner} within ${stageWaitMs / 1000} s (package short?)` });
