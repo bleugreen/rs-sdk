@@ -86,6 +86,19 @@ skeleton damage, not the falls or the lap.
   bot.walkTo's own door opener had clicked the gate and opened the scene). The
   scored run's S11a arrives by spirit tree; S15's walked zoo return meets this
   gate once.
+- **The ridge gate is the ridge.** Loc 2309's only op, Open, runs the ridge
+  crossing (`wilderness_course.rs2`): the player is forcemoved north up the
+  one-tile corridor (x 2998, z 3917-3930) into the course, or dropped into the
+  wolf pit east of it. bot.walkTo counts a door beside its path's last tile as
+  one to open, so any walk ending on the gate's south tile (2998,3916) clicks
+  the ridge mid-walk, then walks on from inside the course and comes back down
+  through the course gate (lab, 400 ms: 100 ticks for a 9-tile walk, two fall
+  rolls). rs/310's session D stopped in the corridor at (2998,3918) this way.
+  So walks end on `RIDGE_GATE.stage` (2998,3914), and `crossRidge` clicks the
+  gate from there or from the corridor (a click from inside the corridor
+  crosses too: 16 ticks in the lab), and walks back to the stage from the pit
+  (`speedrun/lab/ridge-gate.ts`, rs/494). The scored run reaches the course
+  from the south by T27-17 and never takes this route.
 - **Monkey bars** rejected as planned (level-6 Wilderness spiders and earth
   warriors against a 10 HP account).
 
