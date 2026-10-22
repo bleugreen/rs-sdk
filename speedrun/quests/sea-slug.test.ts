@@ -8,7 +8,7 @@ import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import { DEFAULT_DIALOGUE, slotNeed } from './segments';
 import {
-    afterMessage, ARRIVAL, LANDED, DEAD_AT_EXIT, DOOR_SCENE_TICKS, DOORS, doorState, inWitchaven, ITEM, LETTERS, observed, offshore, onIsland, onPlatformGround, onPlatformUp,
+    afterMessage, ARRIVAL, CAROLINE_AT, LANDED, LEVEL_UP_TICKS, DEAD_AT_EXIT, DOOR_SCENE_TICKS, DOORS, doorState, inWitchaven, ITEM, LETTERS, observed, offshore, onIsland, onPlatformGround, onPlatformUp,
     openBridgedDoor, QUEST_ITEMS, quest, stageCeiling, stageFloor, stepId, steps, type BridgedDoor, type DoorOutcome,
 } from './sea-slug';
 
@@ -376,5 +376,92 @@ describe('Q: the exit drops (the slot ledger T19-20 drops, moved into the step)'
         expect(sdk.sent.map(a => a.method)).not.toContain('sendInteractNpc');
         expect(byLetter('Q').postconditions(sdk.getState()!, {})).toBe(true);
         expect(sdk.getState()!.inventory.map(i => i.name).sort()).toEqual(['Air rune', 'Law rune', 'Water rune']);
+    });
+});
+
+describe("Q: the reward's level-up page ends the wait (converse expect 'interrupt')", () => {
+    const caroline = { kind: 'npc', id: 4877, index: 12, name: 'Caroline', combatLevel: 0, x: CAROLINE_AT.x, z: CAROLINE_AT.z, distance: 1, hp: null, optionsWithIndex: [{ text: 'Talk-to', opIndex: 1 }] } as unknown as NonNullable<BotWorldState['nearbyNpcs']>[number];
+    const page = (id: string, text: string, isWaiting = false): BotWorldState['dialog'] => ({
+        isOpen: true, isWaiting, pageId: id, options: [{ index: 1, text: 'Click here to continue', buttonType: 6, componentId: 10 }],
+        allComponents: [{ id: 0, type: 4, buttonType: 0, option: '', text }],
+    }) as unknown as BotWorldState['dialog'];
+    const closed = { isOpen: false, isWaiting: false, options: [] } as unknown as BotWorldState['dialog'];
+    const levelUp = page('lu', 'Congratulations, you just advanced a Fishing level.');
+
+    /**
+     * caroline.rs2's caroline_savedkennith: nine pages one per click, the reward granted on the
+     * seventh (complete, the pearls), then the level-up page `after` ticks past her chat closing;
+     * drops land a tick after they are sent. Returns the ticks the level-up page closed and the
+     * first drop went out.
+     */
+    async function rewardRun(after: number) {
+        const s = stateAt(STARTS.Q!);
+        s.nearbyNpcs = [caroline];
+        const sdk = new FakeSdk(s);
+        let shown = -1;
+        let advance = false;
+        let closedAt = -1;
+        let lvl: 'due' | 'shown' | 'clicked' | 'done' = 'due';
+        let lvlClosedAt = -1;
+        let dropAt = -1;
+        const drops: number[] = [];
+        sdk.onSend = (a, f) => {
+            if (a.method === 'sendInteractNpc' && shown < 0) advance = true;
+            if (/ClickDialog|clickDialogByText/.test(a.method)) {
+                const cur = f.state!.dialog;
+                queueMicrotask(() => f.push({ dialog: { ...cur, isWaiting: true } }));
+                if (lvl === 'shown') lvl = 'clicked';
+                else advance = true;
+            }
+            if (a.method === 'sendDropItem') {
+                drops.push(a.args[0] as number);
+                if (dropAt < 0) dropAt = f.state!.tick;
+            }
+        };
+        const each = (st: BotWorldState): Partial<BotWorldState> => {
+            const tick = st.tick + 1;
+            const out: Partial<BotWorldState> = {};
+            if (drops.length) {
+                out.inventory = st.inventory.filter(i => !drops.includes(i.slot));
+                drops.length = 0;
+            }
+            if (advance) {
+                advance = false;
+                shown++;
+                if (shown === 7) {
+                    out.quests = { [quest]: 'complete' } as BotWorldState['quests'];
+                    out.inventory = [...(out.inventory ?? st.inventory), item(ITEM.pearls)];
+                }
+                if (shown < 9) out.dialog = page(`p${shown}`, `Caroline page ${shown + 1}`);
+                else { out.dialog = closed; closedAt = tick; }
+            } else if (lvl === 'due' && closedAt >= 0 && tick === closedAt + after) {
+                out.dialog = levelUp;
+                lvl = 'shown';
+            } else if (lvl === 'clicked') {
+                out.dialog = closed;
+                lvl = 'done';
+                lvlClosedAt = tick;
+            }
+            return out;
+        };
+        const { ctx, log } = ctxFor(sdk);
+        await drive(sdk, byLetter('Q').run({ ...ctx, c: { dialogue: 'fixed' } } as never) as Promise<unknown>, 120, each);
+        return { sdk, log, closedAt, lvlClosedAt, dropAt };
+    }
+
+    test('the page 3 ticks after her chat closes (the lab trace): the drops go out the tick it is seen closed, no openTicks wait', async () => {
+        const { sdk, closedAt, lvlClosedAt, dropAt } = await rewardRun(3);
+        expect(closedAt).toBeGreaterThan(0);
+        expect(lvlClosedAt).toBe(closedAt + 4);
+        expect(dropAt).toBe(lvlClosedAt);
+        expect(byLetter('Q').postconditions(sdk.getState()!, {})).toBe(true);
+    });
+
+    test("the page inside her talk's idle wait: answered there, and no second wait", async () => {
+        const { sdk, log, closedAt, lvlClosedAt, dropAt } = await rewardRun(1);
+        expect(lvlClosedAt).toBe(closedAt + 2);
+        expect(dropAt).toBeLessThan(lvlClosedAt + LEVEL_UP_TICKS);
+        expect(JSON.stringify(log.rows())).toContain('"levelUpInTalk":1');
+        expect(byLetter('Q').postconditions(sdk.getState()!, {})).toBe(true);
     });
 });

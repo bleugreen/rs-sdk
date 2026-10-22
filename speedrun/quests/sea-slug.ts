@@ -574,22 +574,33 @@ async function holgartShore(ctx: Ctx, opts: Options | undefined): Promise<void> 
 }
 
 /**
- * Q: Caroline's reward (11 -> 12): her pages, the level-up page (an interrupt) and the queued
- * quest-complete scroll, which is closed; then the exit drops.
+ * How long after Caroline's chat closes the reward's Fishing level-up page may take to show (lab,
+ * lite: 3 ticks, her talk's idle wait covering 2 of them). The page is the wait's target, so the
+ * window costs nothing when the page comes; only a resumed Q with the page already answered pays it.
+ */
+export const LEVEL_UP_TICKS = 4;
+
+/**
+ * Q: Caroline's reward (11 -> 12): her pages, the Fishing level-up page (1 -> 74, an interrupt)
+ * and the queued quest-complete scroll, which is closed; then the exit drops. The level-up page
+ * shows a few ticks after her chat closes, so her conversation usually ends before it; it is then
+ * the target of a wait that ends as soon as it is answered (converse `expect: 'interrupt'`).
  */
 async function reward(ctx: Ctx, opts: Options | undefined): Promise<void> {
     const sdk = sdkOf(ctx);
+    let inTalk = 0;
     if (!complete(sdk.getState()!)) {
-        await talk(ctx, 'Q', opts, { who: 'Caroline (the reward)', npc: /^caroline$/i, near: CAROLINE_AT, shape: SHAPES.reward, idle: 2 });
+        const t = await talk(ctx, 'Q', opts, { who: 'Caroline (the reward)', npc: /^caroline$/i, near: CAROLINE_AT, shape: SHAPES.reward, idle: 2 });
+        inTalk = (t.interrupts ?? 0) + t.levelUps;
         const done = await waitUntil(sdk, complete, { maxTicks: 10 });
         if (!done.ok) fail('Q', 'Sea Slug not complete after Caroline', sdk);
     }
-    const r = await converse(sdk, [], { openTicks: 2, idle: 0, closeModals: true, interrupts: interrupts() });
+    const r = inTalk ? null : await converse(sdk, [], { openTicks: LEVEL_UP_TICKS, idle: 0, closeModals: true, interrupts: interrupts(), expect: 'interrupt' });
     if (sdk.getState()?.modalOpen) {
         await sdk.sendCloseModal();
         await waitUntil(sdk, s => !s.modalOpen, { maxTicks: 3 });
     }
-    note(ctx, 'Q', { afterReward: r.transcript.length, levelUps: r.levelUps, interrupts: r.interrupts ?? 0 });
+    note(ctx, 'Q', r ? { afterReward: r.transcript.length, levelUps: r.levelUps, interrupts: r.interrupts ?? 0 } : { levelUpInTalk: inTalk });
     await exitDrops(ctx);
 }
 
