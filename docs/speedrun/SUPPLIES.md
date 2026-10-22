@@ -327,12 +327,12 @@ section 1).
 3. **Budget item: the rune axe** in H4: held at 13:10 (rs/41). Without it Woodcutting would cost
    +388 (adamant) or +836 (mithril) with the knife.
 4. **Budget:** the expected total plus the fallback deltas in force is under 35,916 (RUN-ORDER.md's
-   headline scenario table: in force, the forecast at 2026-10-23, +440.0 and **35,228.5** expected;
-   today's stock, the conservative row, +611.8 and 35,391.7 on rs/383's staging on 251 dragon (the 21:20 UTC count's
-   booth case, history: +840.7 and 35,622.5). **On fold-in 28's figures, every quest at its burst figure and S18 on Charge + Superheat in every stocked stun, the budget
-   condition holds** (blood runes complete for attempt 1; Superheat off, +58, 35,286.5; for attempts 2-3 it holds down to ~259 held and fails at 100, RUN-ORDER.md
-   section 7); if burst dialogue fails on the night the quests not yet browser-confirmed revert to fixed (+425.3: S19 and S26 off since fold-in 24, S05, S23, S24, S10b and S13 since fold-in 25, S12 and S11b since fold-in 28) and it
-   still holds (35,653.8, 262.2 under), so each quest's browser-client burst acceptance (RUN-ORDER.md O51) is part
+   headline scenario table: in force, the forecast at 2026-10-23, +440.0 and **35,233.5** expected;
+   today's stock, the conservative row, +603.2 and 35,396.7 on rs/383's staging on 251 dragon (the 21:20 UTC count's
+   booth case, history: +834.0 and 35,627.5). **On fold-in 30's figures, every quest at its burst figure and S18 on Charge + Superheat in every stocked stun, the budget
+   condition holds** (blood runes complete for attempt 1; Superheat off, +58, 35,291.5; for attempts 2-3 it holds down to ~259 held and fails at 100, RUN-ORDER.md
+   section 7); if burst dialogue fails on the night the quests not yet browser-confirmed revert to fixed (+412.0: S19 and S26 off since fold-in 24, S05, S23, S24, S10b and S13 since fold-in 25, S12 and S11b since fold-in 28, S20 since fold-in 30) and it
+   still holds (35,645.5, 270.5 under), so each quest's browser-client burst acceptance (RUN-ORDER.md O51) is part
    of it.
 5. **Held already:** 520 noted unfermented wines with the wine giver (rs/118); 70 sharks (rs/41, 10:10).
 6. **Fletching:** 570 rune arrowheads held; 1,485 mithril and 2,220 adamant arrowheads (2,070 forecast
