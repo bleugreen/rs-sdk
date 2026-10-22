@@ -13,7 +13,7 @@ import { TickLog } from '../lib/ticks';
 import { sleep, waitUntil } from '../lib/wait';
 import { MANIFEST } from '../tools/slot-ledger';
 import {
-    ALTERNATIVES, anvilAnnounce, KIT_PARTNER_ROWS, buildChain, CENSUS_STEP, chainIds, CANNON_PENDING, ledgerCoverage, ledgerRows, missingOnPath, missingStep, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
+    ALTERNATIVES, anvilAnnounce, KIT_PARTNER_ROWS, buildChain, CENSUS_STEP, chainIds, ledgerCoverage, ledgerRows, missingOnPath, missingStep, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
     whenNeeded, withCue, type ChainStep, type CueSink, type RunConfig,
 } from './chain';
 import { CueKeeper, prepareCueDir } from './cue-keeper';
@@ -106,12 +106,20 @@ describe('the chain', () => {
         expect(chain.slice(at('H11r'), at('T14-15b') + 1).map(s => s.id)).toEqual(['H11r', 'S14 cue stop', 'T14-15b']);
     });
 
-    test('the cannon rows refuse until the one cannon receiver lands', () => {
-        for (const id of ['H11', 'H23']) {
-            const s = chain.find(x => x.id === id)!;
-            expect(s.kind).toBe('handoff');
-            expect(s.preconditions(baseState(), {})).toBe(`${id} not built (${CANNON_PENDING})`);
+    test('the cannon rows are served on their cue: the scope opened through the run\'s CueSink before anything else, no partner needed in view', async () => {
+        const r = recorder();
+        const c = buildChain(CONFIG, { cues: r.cues });
+        for (const [id, step] of [['H11', 'S14'], ['H23', 'S27']] as const) {
+            const s = c.find(x => x.id === id)!;
+            expect([s.kind, s.cue]).toEqual(['handoff', { step, family: 'cannon' }]);
+            expect(s.preconditions(baseState({ inGame: true, nearbyPlayers: [] }), {})).toBe(true);
         }
+        // A holder that never comes: the cue was opened (kept, not fresh), then the step gives up with a reason.
+        const sdk = new FakeSdk(baseState({ tick: 1, inGame: true, nearbyPlayers: [] }));
+        const h11 = c.find(x => x.id === 'H11')!;
+        await expect(h11.run(ctxFor(sdk))).rejects.toThrow('did not come into sight');
+        expect(r.opened).toEqual([{ scope: { step: 'S14', family: 'cannon' }, fresh: false }]);
+        expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toEqual([]);
     });
 
     test('the steps keep their modules: S09 drops the travel steps, S07 the module walk, S17 the walk to the pipe', () => {
@@ -202,7 +210,7 @@ describe('wrappers', () => {
 
     test('--dry-run lists every refusing step on the path; --until=S04 has none', () => {
         expect(missingOnPath(chain).map(m => `${m.id} ${m.owner}`)).toEqual([
-            `H11 ${CANNON_PENDING}`, 'S15 rs/185', 'S19 rs/185 (rs/414)', 'S24 rs/416', 'S24 rs/416', 'S24 rs/416', 'S24 rs/416', `H23 ${CANNON_PENDING}`,
+            'S15 rs/185', 'S19 rs/185 (rs/414)', 'S24 rs/416', 'S24 rs/416', 'S24 rs/416', 'S24 rs/416',
         ]);
         expect(missingOnPath(sliceUntil(chain, 'S04'))).toEqual([]);
     });
@@ -318,7 +326,7 @@ describe('cues', () => {
     test('withCue opens {step, family} before S07, S14, S18, S25a and S27; S06 and S21 write their own', () => {
         const scopes = new Map<string, string>();
         for (const s of chain) if (s.cue) scopes.set(s.id, `${s.cue.step}/${s.cue.family}`);
-        expect(Object.fromEntries(scopes)).toEqual({ S07: 'S07/bone', S14: 'S14/cannon', S18: 'S18/courier', S25a: 'S25a/anvil', S27: 'S27/cannon' });
+        expect(Object.fromEntries(scopes)).toEqual({ S07: 'S07/bone', H11: 'S14/cannon', S14: 'S14/cannon', S18: 'S18/courier', S25a: 'S25a/anvil', H23: 'S27/cannon', S27: 'S27/cannon' });
         expect(chain.filter(s => s.id === 'S07' && s.kind === 'step').every(s => s.cue?.family === 'bone')).toBe(true);
         expect(chain.filter(s => s.id === 'S06' || s.id === 'S21').some(s => s.cue)).toBe(false);
         expect(chain.filter(s => s.kind === 'cue').map(s => s.id)).toEqual(['S14 cue stop', 'S27 cue stop']);

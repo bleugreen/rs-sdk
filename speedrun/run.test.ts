@@ -71,7 +71,7 @@ describe('startGates', () => {
         }));
         expect(g.every(x => !x.ok)).toBe(true);
         expect(g.map(x => x.detail).join('\n')).toContain("live, but host's, not ours");
-        expect(g[3]!.detail).toContain('H11 hand-off (cannon)');
+        expect(g[3]!.detail).toContain('S15 Monkey Madness');
         expect(g[4]!.detail).toContain('no launcher.json');
     });
 
