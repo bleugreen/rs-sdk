@@ -3,11 +3,12 @@ import type { BotWorldState, GameMessage } from '../../sdk/types';
 import type { BotSDK } from '../../sdk/index';
 import { baseState, FakeSdk, flush, type SentAction } from '../lib/fake-sdk';
 import { give } from '../lib/trade';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ASK_SLACK_MS, nameHash, newRequestFrom, readTopUpAsk, usableAsk, writeTopUpAsk } from './altar-cue';
-import { askOffer, boneGiverOptions, carryDue, isFinalLoad, loadOffer, npcTiles, onSide, partnerIs, requestUntilOpen, S07_SITES, sideTiles } from './bone-giver';
+import { askOffer, boneGiverOptions, boneServer, carryDue, isFinalLoad, loadOffer, npcTiles, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, type BoneStatus } from './bone-giver';
+import { assertDemoStandIn } from './bone-receiver';
 
 const o = { noReplyTicks: 3, resendTicks: 100 };
 const msg = (tick: number, text: string): GameMessage => ({ type: 0, text, sender: '', tick, fromSelf: false });
