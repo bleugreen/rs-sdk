@@ -166,16 +166,18 @@ export const DEATH_KIT: KitItem[] = [{ item: ITEM.weapon }, { item: ITEM.shark, 
 export const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'] as const;
 
 /**
- * How long each kit line stays in the pack. Stacks take one slot; a line without `until` is kept past
- * the step (the hammer goes on T26-27; H22's law, air and water also carry the legs' casts).
+ * How long each kit line stays in the pack. `until` is where the line certainly leaves it (slotNeed
+ * credits its slots after that), so it is set only on unstackables the content takes one for one. A
+ * stack keeps its slot past the step: the kit check is 'at least', so coins (Scavvo's stock-0 'go on'
+ * keeps 114,000), nails and earth runes can outlive their last use. The hammer goes on T26-27.
  */
 const KIT_HELD = new Map<ItemPattern, Pick<QuestItem, 'until' | 'stackable'>>([
-    [ITEM.coins, { stackable: true, until: 'I' }], // Scavvo (C), Wormbrain (H), Klarense (I)
-    [ITEM.mindBomb, { until: 'E' }], [ITEM.silk, { until: 'E' }], [ITEM.lobsterPot, { until: 'E' }], [ITEM.unfiredBowl, { until: 'E' }], // magic_door.rs2
-    [ITEM.plank, { until: 'I' }], [ITEM.nails, { stackable: true, until: 'I' }], // lady_lumbridge.rs2
+    [ITEM.coins, { stackable: true }],
+    [ITEM.mindBomb, { until: 'E' }], [ITEM.silk, { until: 'E' }], [ITEM.lobsterPot, { until: 'E' }], [ITEM.unfiredBowl, { until: 'E' }], // magic_door.rs2 inv_del
+    [ITEM.plank, { until: 'I' }], // lady_lumbridge.rs2: one per patch, three patches
+    [ITEM.nails, { stackable: true }],
     [ITEM.hammer, {}], [ITEM.shark, {}],
-    [ITEM.law, { stackable: true }], [ITEM.air, { stackable: true }], [ITEM.water, { stackable: true }],
-    [ITEM.earth, { stackable: true, until: 'F' }], // the one Lumbridge cast
+    [ITEM.law, { stackable: true }], [ITEM.air, { stackable: true }], [ITEM.water, { stackable: true }], [ITEM.earth, { stackable: true }],
 ]);
 
 const label = (p: ItemPattern) => (p instanceof RegExp ? p.source.replace(/^\^|\$$/g, '') : String(p));

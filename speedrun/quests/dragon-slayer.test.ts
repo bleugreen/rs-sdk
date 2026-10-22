@@ -131,8 +131,9 @@ describe('free slots (addendum 8)', () => {
     });
 
     test('the four items the magic door takes make room for the maze; without the armour the peak moves to E', () => {
-        // A full pack at G that still holds the magic-door items and the earth rune: they are gone by G
-        // and H, so the coloured key and parts 1 and 2 fit.
+        // A full pack at G that still holds the magic-door items: they are gone by G, so the coloured key
+        // and parts 1 and 2 fit. Stacks are never credited (a remainder may survive).
+        expect(questItems().filter(q => q.stackable && q.until !== undefined)).toEqual([]);
         const full = world({ status: 'started', inv: [...ledger(), item('Maze key'), part(3)] });
         expect(28 - full.inventory.length).toBe(0);
         expect(slotNeed(full, questItems(), LETTERS, 'G').slots).toBe(0);
