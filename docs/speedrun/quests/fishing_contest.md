@@ -97,19 +97,60 @@ second cast all three for real: 4 ticks each.
 | Trade | 9 | 5 | 5 | measured, `primitives.md` |
 | **Total** | **~276** | **223** | **~200** | |
 
-## The self route (for comparison)
+## The self route (the route in force)
 
-Instead of the trade carp: Camelot teleport (4), run to the **west** side of McGrubor's
-loose railing (2661,3500) (112 tiles, 58 measured), squeeze through (2), run to the vines
-(2631,3497) (61 tiles, 38), dig a worm (`p_delay(0)`, about 3, inferred), back to the
-railing (62 tiles, 40), squeeze out (2), run to the gate (113 tiles, 62); inside, stash
-garlic in the pipe (2637,3446) before paying (`p_delay(2)`, about 4, inferred), and Bonzo's
-set-places then moves the stranger at once (`bonzo.rs2:40-42`, two extra pages); fish the
-pipe spot (2637,3444) with the worm. That replaces steps 4-5 (69 ticks) with about 211, so
-the self route is about **367 ticks fixed**, a net loss of about 40 against 325. The
-walks were measured; the dig, the stash and the carp catch failed in the one self run
-and are inferred from their scripts. Note that the SDK pathfinder treats McGrubor's locked
-gate as a door: aim walks at the railing's outside tile (2661,3500), not the inside one.
+Measured through `speedrun/quests/fishing-contest.ts` (rs/388): lab, lite client, bgsrv-mac,
+300 ms, SCORED's levels (Fishing 74, Magic 99, Agility 75), SCORED's pack after H16 (8
+slots), from the arrival tile (2820,3486); 3 chains each mode, every one complete with the
+reward's xp. Ticks are the module's segments; T19-20 (the first Camelot cast and the run
+east) is the leg's.
+
+| Seg | Action | Fixed (m, 3 runs) | Burst (m, 3 runs) |
+|---|---|---|---|
+| A | the kit held (H16) | 0 | 0 |
+| B | click the stairs: the dwarf stops you (dialogue 1 tick after the click), 15 pages + 5 options, the pass | 24 | 16 |
+| C | Camelot teleport, run round the wood to the railing's outside tile (2661,3500) | 62.3 | 62.3 |
+| D | squeeze through into the wood (2662,3500) | 2 | 2 |
+| E | run to the vine (2631,3499), Check with the spade: the worm 2 ticks after the click | 39 | 39 |
+| F | run back to (2662,3500), squeeze out | 36 | 36 |
+| G | run to the gate (2643,3441) | 63 | 63 |
+| H | Morris checks the pass (dialogue 1 tick after the click), through | 7 | 7 |
+| I | Bonzo: pay 5 coins, the willow spot | 14 | 12 |
+| J | garlic in the pipe (2638,3446): the pipe spot is ours | 11.7 (9-13) | 11 |
+| K | one catch at the pipe spot (2637,3444) with the worm: the carp | 6 | 6 |
+| L | Bonzo takes the carp: the trophy | 10 | 9 |
+| M | Camelot teleport, run to the stairs | 38.3 | 38.7 |
+| N | the trophy to the dwarf, complete, the level-up page, drop the pass and spade | 14 | 12 |
+| | **Total** | **327.3** (324, 329, 329) | **314** (315, 314, 313) |
+
+Against the helper-carp route's 181 fixed from the same tile, the self route's +146 is
+almost all walking: C to G (202.3, of which the dig is 2 and the two squeezes 4) replace the
+helper route's teleport and run to the gate (69), +133; the garlic adds J (11.7); the catch is
+4 faster (the pipe spot is beside Bonzo). Burst saves 13.3, all in dialogue (B 8, I 2, L 1, N
+2, J 0.7); the walks do not move.
+
+What the content and the map fix, all found on the lab:
+
+- **McGrubor's Wood is east of the loose railing** (2662,3500). Its wall runs between x
+  2661 and 2662; the squeeze (`mcgrubors_wood.rs2:12-23`, `p_delay(0)` and a 1-tile
+  exactmove) goes from (2661,3500) into the wood and back. Inside, the way to the vines winds
+  round an inner fence (south to z 3484, then west and north). Aimed at the vines from
+  outside, the SDK pathfinder routes through McGrubor's locked gate (2649,3469) and stalls
+  there; aim every walk at a tile on the right side of the railing.
+- **Only the wall pipe at (2638,3446) can be reached**: the client finds no route to the
+  pipes at 2636 and 2637 ("I can't reach that!"). The garlic is used from that pipe's tile.
+- **Pay Bonzo before the garlic**: stashing while the fee is paid sets the pipe stage
+  unconditionally (`quest_fishingcompo.rs2:90-93`). Stashing first, as this document had
+  it, leaves that to `~move_hemenster_pipe`, which needs the Sinister Stranger (spawn
+  (2635,3437); he wanders) within 8 tiles of the player when Bonzo seats him
+  (`bonzo.rs2:40-42`, `quest_fishingcompo.rs2:97-105`). His three pages after the stash come
+  only when he is in range (2 of 3 fixed runs: J 13, against 9 without).
+- The stairs start the dwarf's dialogue only while a tunnel dwarf is within 5 tiles
+  (`quest_fishingcompo.rs2:15`); otherwise the click does nothing and says nothing, and the
+  module talks to him (one more option).
+- Something in McGrubor's Wood hits for a point or two (about 6 HP over C to F in one run at
+  70 HP); harmless at the scored account's HP, not identified.
+- A second entry after a gate reset costs 5 more coins (`bonzo.rs2:24-30`); H16 carries 5.
 
 ## Risks and gotchas
 
