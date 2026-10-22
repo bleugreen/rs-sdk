@@ -24,9 +24,10 @@ import type { Subprocess } from 'bun';
 import { BotSDK, deriveGatewayUrl } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
 import type { BotStatus, BotWorldState } from '../../sdk/types';
-import { ensureRunOn, type EnsureRunResult } from './run-mode';
+import { ensureRunOn, RUN_CONFIRM_TICKS, RUN_PRESSES, type EnsureRunResult, type RunSdk } from './run-mode';
 import { pageInGame, pageLogin, pageLoginState, type PageLoginStart } from './tab';
-import { sleep, tickMs, waitUntil } from './wait';
+import { sleep, STALLED, tickMs, waitUntil } from './wait';
+import { onTutorialIsland } from './world';
 
 export const ROOT = join(import.meta.dir, '..', '..');
 export const LOGOUT_BUTTON = 2458; // logout:try_logout
@@ -317,6 +318,7 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         // A client we attach to may have logged in on its own (lab runners, a
         // relaunch by another process); every login leaves run off.
         await ensureRunOn(sdk);
+        await setAutoRetaliate(sdk, false);
     } catch (err) {
         // The client we launched may be in the world even though this process never
         // saw it advance; left running it would hold the player there indefinitely.
@@ -608,6 +610,58 @@ export interface LoginResult {
     tickBase: number;
     /** The run toggle after login turned it on, with `reason` when it would not (lib/run-mode.ts); not counted in wallMs. */
     run: EnsureRunResult;
+    /** Auto-retaliate after login turned it off (setAutoRetaliate), with `reason` when it would not; not counted in wallMs. */
+    retaliate: RetaliateResult;
+}
+
+/** controls:com_2 / com_3 (player_controls.rs2): auto-retaliate on / off, varp option_nodef, published as autoRetaliateEnabled. */
+export const IF_RETALIATE_ON = 150;
+export const IF_RETALIATE_OFF = 151;
+
+export interface RetaliateResult {
+    /** Auto-retaliate as published when setAutoRetaliate returned (null: not published). */
+    on: boolean | null;
+    /** Button presses sent (0 when it already read as asked, or was unavailable). */
+    presses: number;
+    /** Set when nothing was tried because the button cannot work here. */
+    unavailable?: 'tutorial-island';
+    /** Set when it is not confirmed as asked: it would not take, the client does not publish it, or the player is out of the world. */
+    reason?: string;
+}
+
+/**
+ * Set auto-retaliate and confirm it from published state, on the run toggle's rules (run-mode.ts):
+ * nothing is sent when it already reads so, since the button runs if_close and p_stopaction; a
+ * press the server ignores (a busy player only resyncs the varp) is sent once more; on Tutorial
+ * Island the controls tab is hidden, so nothing is tried. Never throws: a setting that will not
+ * take comes back with `reason` and is passed to `warn`.
+ *
+ * Every login turns it off (openSession, login): the run's fights are all module-initiated, and
+ * with it on a hit during a walk or a loc click turns the player to fight back, which drops the
+ * click (rs/391: TGV segment H). A phase that wants it on (ranged.ts) sets it itself.
+ */
+export async function setAutoRetaliate(sdk: RunSdk, on: boolean, warn: (msg: string) => void = m => console.warn(m)): Promise<RetaliateResult> {
+    const fail = (r: RetaliateResult): RetaliateResult => {
+        warn(`[speedrun] auto-retaliate not confirmed ${on ? 'on' : 'off'}, continuing: ${r.reason}`);
+        return r;
+    };
+    const s = sdk.getState();
+    if (!s?.inGame) return fail({ on: s?.autoRetaliateEnabled ?? null, presses: 0, reason: 'not in the world' });
+    if (onTutorialIsland(s.player)) return { on: s.autoRetaliateEnabled ?? null, presses: 0, unavailable: 'tutorial-island' };
+    if (s.autoRetaliateEnabled === undefined) return fail({ on: null, presses: 0, reason: 'this client does not publish autoRetaliateEnabled (update the client)' });
+    if (s.autoRetaliateEnabled === on) return { on, presses: 0 };
+    let why = '';
+    for (let press = 1; press <= RUN_PRESSES; press++) {
+        await sdk.sendClickComponent(on ? IF_RETALIATE_ON : IF_RETALIATE_OFF);
+        const r = await waitUntil(sdk, st => st.autoRetaliateEnabled === on, { maxTicks: RUN_CONFIRM_TICKS });
+        if (r.ok) return { on, presses: press };
+        why = r.reason === 'idle' ? STALLED : `still ${on ? 'off' : 'on'} ${RUN_CONFIRM_TICKS} ticks later`;
+    }
+    return fail({
+        on: sdk.getState()?.autoRetaliateEnabled ?? null,
+        presses: RUN_PRESSES,
+        reason: `auto-retaliate did not turn ${on ? 'on' : 'off'} after ${RUN_PRESSES} presses (${why}): the server ignores the button while the player is busy (p_finduid)`,
+    });
 }
 
 /**
@@ -622,8 +676,8 @@ export interface LoginResult {
  * `attempts` times; after an in-page attempt the retries navigate.
  *
  * Once in, it turns run on (lib/run-mode.ts ensureRunOn: the toggle is not
- * saved, so every login starts walking); a toggle that will not take is
- * recorded in `run` and warned, not thrown. Relog, the watchdog's login and the
+ * saved, so every login starts walking) and auto-retaliate off (setAutoRetaliate);
+ * a setting that will not take is recorded in `run` / `retaliate` and warned, not thrown. Relog, the watchdog's login and the
  * outage reconnect all come through here.
  */
 export async function login(session: Session, opts: LoginOptions = {}): Promise<LoginResult> {
@@ -653,7 +707,8 @@ export async function login(session: Session, opts: LoginOptions = {}): Promise<
             session.watchdog?.resume();
             const wallMs = Date.now() - t0;
             const run = await ensureRunOn(session.sdk);
-            return { wallMs, attempts: attempt, via, tickBase: session.tickBase, run };
+            const retaliate = await setAutoRetaliate(session.sdk, false);
+            return { wallMs, attempts: attempt, via, tickBase: session.tickBase, run, retaliate };
         }
         if (outcome === 'timeout' || attempt >= maxAttempts || session.childExit === 3) {
             throw new Error(`${session.name}: login failed after ${attempt} attempt(s) (${outcome}, ${via === 'page' ? 'in page' : `exit ${session.childExit}`})`);
