@@ -160,8 +160,10 @@ two that remain. The content audit is rs/499 (Q1b).
   `fly.toml` changed on 2026-10-09 as well (`a6d124cec2`, which also hid local
   test presets from the boards). That fits a 289 deploy that day but does not
   prove one. The only dated public signal is each bank snapshot's date on the
-  board, which belongs to the board-timeline child. A jump in the leaders' coins
-  between 10-09 and 10-11 would place the dupe on the demo.
+  board.
+- **Open question (for rs/500's board timeline):** did the leaders' coins jump
+  between 2026-10-09 and 2026-10-11? A jump in that window would place the dupe
+  on the demo; no jump would rule it out as the source of their coins.
 - **Yield (arithmetic, not measured in the lab).** At most 5,000,000 coins per
   deposit-and-withdraw cycle, for 1 coin. Each handler waits on a message box, a
   count dialog and two `p_delay(0)` ticks, so about 5 ticks each and about 10
