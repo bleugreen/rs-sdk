@@ -3,7 +3,7 @@ import type { InventoryItem, TradeItem, TradeState } from '../../sdk/types';
 import { baseState, FakeSdk, flush } from '../lib/fake-sdk';
 import { offerSatisfies, planOffers } from '../lib/trade';
 import { nameHash } from './altar-cue';
-import { holdsLoad, interfaceText, ironOreToBuy, isWest, loadSpecs, loadStacks, loadWant, nextWork, parseOptions, railingDamage, serveOptions, serveResume, serveTrade, stageFromJournal, type Holdings } from './cannon';
+import { extraSpecs, holdsExtras, holdsLoad, interfaceText, ironOreToBuy, isWest, loadSpecs, loadStacks, loadWant, nextWork, parseOptions, railingDamage, serveOptions, serveResume, serveTrade, stageFromJournal, takeBackDelivered, takeBackFits, takeBackTrade, type Holdings } from './cannon';
 
 // Journal pages as the lite client published them in the lab (interface 8134, `::setvar mcannon N`).
 const JOURNAL: Record<number, string[]> = {
@@ -264,6 +264,141 @@ describe('serve mode', () => {
             const out = await r;
             expect(out.ok).toBe(true);
             expect(new Set(out.gave.map(i => i.name))).toEqual(new Set([...LOAD.map(([n]) => n), ...H11_EXTRAS.map(e => e.item)]));
+        });
+    });
+
+    describe('return extras (H11r: Monkey Madness\'s magic shortbow and 200 rune arrows go out as the set comes back)', () => {
+        const MM = [{ item: 'Magic shortbow', count: 1 }, { item: 'Rune arrow', count: 200 }];
+        const H11_EXTRAS = [{ item: 'Mithril scimitar', count: 1 }, { item: 'Law rune', count: 4 }, { item: 'Water rune', count: 4 }, { item: 'Shark', count: 2 }];
+        const base = { id: 'H11', tile: { x: 1, z: 2 }, balls: 100, returnTile: { x: 2661, z: 3301 } };
+        const item = (slot: number, id: number, name: string, count: number) => ({ slot, id, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
+        /** What the holder carries after the H11 give: the bow and the arrows, nothing else. */
+        const held = (): InventoryItem[] => [item(0, 861, 'Magic shortbow', 1), item(1, 892, 'Rune arrow', 200)];
+        const SET_BACK: [string, number][] = [['Cannon base', 1], ['Cannon stand', 1], ['Cannon barrels', 1], ['Cannon furnace', 1], ['Cannonball', 30]];
+        const setBack = (from: number) => SET_BACK.map(([name, count], i) => item(from + i, 6 + i, name, count));
+        const trade = (t: Partial<TradeState>): TradeState => ({ isOpen: true, screen: 'offer', partner: 'Scored Player', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false, ...t });
+        const offered = (items: InventoryItem[]): TradeItem[] => items.map((i, slot) => ({ slot, id: i.id, name: i.name, count: i.count }));
+
+        test('options: parsed like extras, need returnTile, and stay apart from the load and the extras', () => {
+            const o = so({ ...base, extras: H11_EXTRAS, returnExtras: MM }, {});
+            expect(o.returnExtras).toEqual(MM);
+            expect(so(base, {}).returnExtras).toEqual([]);
+            expect(() => so({ ...base, returnTile: undefined, returnExtras: MM }, {})).toThrow(/needs serve.returnTile/);
+            expect(() => so({ ...base, returnExtras: { item: 'Rune arrow', count: 200 } }, {})).toThrow(/^serve.returnExtras must be a list/);
+            expect(() => so({ ...base, returnExtras: [{ item: 'Rune arrow', count: 0 }] }, {})).toThrow(/^serve.returnExtras\[0\] needs an item name and a whole count/);
+            expect(() => so({ ...base, returnExtras: [{ item: 'Rune arrow', count: 2.5 }] }, {})).toThrow(/whole count/);
+            expect(() => so({ ...base, returnExtras: [...MM, { item: 'rune arrow', count: 1 }] }, {})).toThrow(/serve.returnExtras lists rune arrow twice/);
+            expect(() => so({ ...base, returnExtras: [{ item: 'Cannon base', count: 1 }] }, {})).toThrow(/serve.returnExtras: Cannon base is already in the load/);
+            expect(() => so({ ...base, returnExtras: [{ item: 'Cannonball', count: 1 }] }, {})).toThrow(/already in the load/);
+            expect(() => so({ ...base, extras: [{ item: 'Magic shortbow', count: 1 }], returnExtras: MM }, {})).toThrow(/Magic shortbow is in serve.extras too/);
+            expect(() => so({ ...base, labStock: true, returnExtras: MM }, {})).toThrow(/serve.returnExtras\[0\] needs obj/);
+            expect(so({ ...base, labStock: true, returnExtras: [{ item: 'Rune arrow', count: 200, obj: 'rune_arrow' }] }, {}).returnExtras[0]!.obj).toBe('rune_arrow');
+            // Carried from the start: the load (5), H11's extras (5) and these (2) share 28 slots.
+            expect(() => so({ ...base, extras: [{ item: 'Shark', count: 22 }], returnExtras: MM }, {})).toThrow(/29 slots/);
+            expect(so({ ...base, extras: [{ item: 'Shark', count: 21 }], returnExtras: MM }, {}).returnExtras).toHaveLength(2);
+            expect(parseOptions({ serve: { ...base, scope: SERVE_SCOPE, returnExtras: MM } }).serve?.returnExtras).toEqual(MM);
+        });
+
+        test('carried exactly, the bow and the arrows are one All press each: no X offer', () => {
+            const plan = planOffers(held(), extraSpecs(MM));
+            expect(plan.map(e => [e.name, e.amounts, e.expected])).toEqual([['Magic shortbow', [-1], 1], ['Rune arrow', [-1], 200]]);
+            expect(holdsExtras(held(), MM)).toBe(true);
+            expect(holdsExtras(held().slice(0, 1), MM)).toBe(false);
+            expect(holdsExtras([], [])).toBe(true);
+        });
+
+        test('room to take back: the offered extras free their slots (trade.rs2 enough_trade_space)', () => {
+            expect(takeBackFits(held(), MM)).toBe(true);
+            const junk = (n: number) => Array.from({ length: n }, (_, i) => item(2 + i, 1000 + i, `Junk ${i}`, 1));
+            // 23 other slots and 5 coming in is 28; 24 is one too many.
+            expect(takeBackFits([...held(), ...junk(23)], MM)).toBe(true);
+            expect(takeBackFits([...held(), ...junk(24)], MM)).toBe(false);
+            expect(takeBackFits(junk(24), [])).toBe(false);
+        });
+
+        test('H11r swap: the bow and 200 arrows out, the set and leftover balls in, one trade, delivered both ways', async () => {
+            const mine = offered(held());
+            const theirs = offered(setBack(0));
+            const sdk = new FakeSdk(baseState({ tick: 1, inventory: held(), trade: trade({}) }));
+            const sent = () => sdk.sent.splice(0).map(a => [a.method, ...a.args]);
+            const r = takeBackTrade(sdk, 'Scored Player', MM);
+            await flush();
+            // Two All presses (slot, -1) and the accept behind them.
+            expect(sent()).toEqual([['sendOfferItem', 0, -1], ['sendOfferItem', 1, -1], ['sendAcceptTrade']]);
+            // The scored account's offer lands after our accept and resets both: we accept again.
+            sdk.tick({ inventory: [], trade: trade({ myOffer: mine, theirOffer: theirs, partnerAccepted: true }) });
+            await flush();
+            expect(sent()).toEqual([['sendAcceptTrade']]);
+            sdk.tick({ trade: trade({ screen: 'confirm', myOffer: mine, theirOffer: theirs, partnerAccepted: true }) });
+            await flush();
+            expect(sent()).toEqual([['sendAcceptTrade']]);
+            sdk.tick({ inventory: setBack(0), trade: undefined });
+            await flush();
+            const out = await r;
+            expect(out.ok).toBe(true);
+            expect(out.gave.map(i => [i.name, i.count]).sort()).toEqual([['Magic shortbow', 1], ['Rune arrow', 200]]);
+            expect(out.received.map(i => [i.name, i.count]).sort()).toEqual([...SET_BACK].sort());
+            expect(takeBackDelivered(out, MM)).toBe(true);
+        });
+
+        test('H11r swap: no accept while the scored account\'s offer lacks a part, and a confirm offer without the set is declined', async () => {
+            const mine = offered(held());
+            const short = offered(setBack(0).filter(i => i.name !== 'Cannon furnace'));
+            const sdk = new FakeSdk(baseState({ tick: 1, inventory: held(), trade: trade({}) }));
+            const methods = () => sdk.sent.splice(0).map(a => a.method);
+            const r = takeBackTrade(sdk, 'Scored Player', MM);
+            await flush();
+            methods();
+            sdk.tick({ inventory: [], trade: trade({ myOffer: mine, theirOffer: short, partnerAccepted: true }) });
+            await flush();
+            expect(methods()).toEqual([]);
+            sdk.tick({ trade: trade({ screen: 'confirm', myOffer: mine, theirOffer: short, partnerAccepted: true }) });
+            await flush();
+            expect(methods()).toEqual(['sendDeclineTrade']);
+            const out = await r;
+            expect(out.ok).toBe(false);
+            expect(takeBackDelivered(out, MM)).toBe(false);
+        });
+
+        test('without return extras the take-back is receive-only, as before: nothing offered, the set in', async () => {
+            const theirs = offered(setBack(0));
+            const sdk = new FakeSdk(baseState({ tick: 1, inventory: [], trade: trade({ theirOffer: theirs, partnerAccepted: true }) }));
+            const methods = () => sdk.sent.splice(0).map(a => a.method);
+            const r = takeBackTrade(sdk, 'Scored Player', []);
+            await flush();
+            expect(methods()).toEqual(['sendAcceptTrade']);
+            sdk.tick({ trade: trade({ screen: 'confirm', theirOffer: theirs, partnerAccepted: true }) });
+            await flush();
+            expect(methods()).toEqual(['sendAcceptTrade']);
+            sdk.tick({ inventory: setBack(0), trade: undefined });
+            await flush();
+            const out = await r;
+            expect(out.ok).toBe(true);
+            expect(out.gave).toEqual([]);
+            expect(takeBackDelivered(out, [])).toBe(true);
+        });
+
+        test('delivered both ways means the set in and every return extra out', () => {
+            const traded = (items: InventoryItem[]) => offered(items);
+            expect(takeBackDelivered({ ok: true, received: traded(setBack(0)), gave: traded(held()) }, MM)).toBe(true);
+            expect(takeBackDelivered({ ok: true, received: traded(setBack(0)), gave: traded(held().slice(0, 1)) }, MM)).toBe(false);
+            expect(takeBackDelivered({ ok: true, received: traded(setBack(0).slice(1)), gave: traded(held()) }, MM)).toBe(false);
+            expect(takeBackDelivered({ ok: false, received: traded(setBack(0)), gave: traded(held()) }, MM)).toBe(false);
+        });
+
+        test('restart between the give and the take-back: the extras still held, the take-back is still to do', () => {
+            const at = '2026-10-22T00:00:00Z';
+            // After the give, before the take-back trade: the extras are held.
+            expect(serveResume({ phase: 'gave', at }, false, true, true)).toBe('take-back');
+            // Restarted mid-give with the load gone: taken as given, then the take-back.
+            expect(serveResume({ phase: 'giving', at }, false, true, true)).toBe('uncertain');
+            // Restarted mid-take-back: the extras back in the pack mean the trade never completed.
+            expect(serveResume({ phase: 'returning', at }, false, true, true)).toBe('take-back');
+            expect(serveResume({ phase: 'returning', at }, false, true, false)).toBe('uncertain-return');
+            expect(serveResume({ phase: 'returned', at }, false, true, false)).toBe('done');
+            // What serveRun reads after the H11 give: the H11 extras gone, the bow and arrows held.
+            expect(holdsLoad(held(), 100, H11_EXTRAS)).toBe(false);
+            expect(holdsExtras(held(), MM)).toBe(true);
         });
     });
 
