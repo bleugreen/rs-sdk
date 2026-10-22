@@ -83,22 +83,72 @@ export interface Damage {
     tick: number;
     hp: number;
     by: string;
+    /** The attacker's tile when it is in view, else null. */
+    at: { x: number; z: number } | null;
 }
 
-/** Who hit the player: the damage event's source in view, else the nearest NPC in combat. */
-export function attackerOf(s: BotWorldState, sinceTick: number): string {
-    const ev = [...s.combatEvents].reverse().find(e => e.type === 'damage_taken' && e.tick > sinceTick);
+/** A hit on the player itself (the client also publishes others' hits on NPCs as damage_taken). */
+const hitOnMe = (e: BotWorldState['combatEvents'][number], sinceTick: number) => e.type === 'damage_taken' && e.targetType === 'player' && e.tick > sinceTick;
+
+/**
+ * Who hit the player. A hitsplat carries no attacker, so the client credits whoever the player
+ * faces (StateCollector collectCombatEvents): the giver, while a trade is being opened. A player
+ * source is believed only when that player is fighting; otherwise the nearest NPC in combat.
+ */
+export function attackerOf(s: BotWorldState, sinceTick: number): { by: string; at: { x: number; z: number } | null } {
+    const ev = [...s.combatEvents].reverse().find(e => hitOnMe(e, sinceTick));
+    const npcBy = (n: BotWorldState['nearbyNpcs'][number]) => ({ by: `${n.name} (level ${n.combatLevel}) at ${n.x},${n.z}`, at: { x: n.x, z: n.z } });
     if (ev?.sourceType === 'npc') {
         const n = s.nearbyNpcs.find(x => x.index === ev.sourceIndex);
-        if (n) return `${n.name} (level ${n.combatLevel}) at ${n.x},${n.z}`;
+        if (n) return npcBy(n);
     }
-    if (ev?.sourceType === 'other_player') {
-        const pl = s.nearbyPlayers.find(x => x.index === ev.sourceIndex);
-        if (pl) return `player ${pl.name} (level ${pl.combatLevel})`;
-    }
+    const pl = ev?.sourceType === 'other_player' ? s.nearbyPlayers.find(x => x.index === ev.sourceIndex) : undefined;
+    if (pl?.inCombat) return { by: `player ${pl.name} (level ${pl.combatLevel})`, at: { x: pl.x, z: pl.z } };
     const n = s.nearbyNpcs.filter(x => x.inCombat).sort((a, b) => a.distance - b.distance)[0];
-    if (n) return `${n.name} (level ${n.combatLevel}) at ${n.x},${n.z}`;
-    return ev ? `${ev.sourceType} #${ev.sourceIndex} (not in view)` : 'an unseen source (no attacker in view)';
+    if (n) return npcBy(n);
+    if (pl) return { by: `unknown (the client credits ${pl.name}, the player faced, who is not fighting)`, at: null };
+    return { by: ev ? `${ev.sourceType} #${ev.sourceIndex} (not in view)` : 'an unseen source (no attacker in view)', at: null };
+}
+
+/**
+ * How far to get from an attacker before logging out. An NPC chases while its target is within
+ * maxrange (+ attackrange for a ranged or magic attacker) of its spawn, and attacks from within
+ * maxrange of it; maxrange defaults to wanderrange + 2 (NpcType). So 2 x maxrange + attackrange
+ * from where it stood is out of reach: 15 for a young dark wizard (wanderrange 3, attackrange 5),
+ * 16 for a melee NPC with wanderrange 5. Measured (rs/314 lab): a retreat to a start 8 tiles from
+ * the wizard's spawn was chased down and killed during the 16-tick logout wait.
+ */
+export const ESCAPE_TILES = 20;
+
+/**
+ * Where to back off to after a hit: `runFrom` (the tiles just crossed unhurt) when it is
+ * ESCAPE_TILES from the attacker, else the first reachable tile ESCAPE_TILES from it, straight
+ * away first and then turning by 45 degrees, never toward it. Null when nothing is reachable.
+ */
+export function retreatTile(
+    me: { x: number; z: number },
+    attacker: { x: number; z: number } | null,
+    runFrom: { x: number; z: number },
+    reachable: (x: number, z: number) => boolean
+): { x: number; z: number } | null {
+    const from = attacker ?? me;
+    if (chebyshev(runFrom, from) >= ESCAPE_TILES) return runFrom;
+    // Away from the attacker; with no attacker in view (or on its tile), away along the run back.
+    let dx = me.x - from.x;
+    let dz = me.z - from.z;
+    if (dx === 0 && dz === 0) {
+        dx = runFrom.x - me.x;
+        dz = runFrom.z - me.z;
+    }
+    if (dx === 0 && dz === 0) dx = 1;
+    const base = Math.atan2(dz, dx);
+    for (const turn of [0, 1, -1, 2, -2, 3, -3]) {
+        const a = base + (turn * Math.PI) / 4;
+        const unit = Math.max(Math.abs(Math.cos(a)), Math.abs(Math.sin(a)));
+        const t = { x: Math.round(from.x + (Math.cos(a) / unit) * ESCAPE_TILES), z: Math.round(from.z + (Math.sin(a) / unit) * ESCAPE_TILES) };
+        if (reachable(t.x, t.z)) return t;
+    }
+    return null;
 }
 
 /**
@@ -111,8 +161,8 @@ export function damageWatch(start: BotWorldState): (s: BotWorldState) => Damage 
     return s => {
         const now = s.player?.hp;
         if (now === undefined) return null;
-        const hit = s.combatEvents.some(e => e.type === 'damage_taken' && e.tick > since);
-        if (now < hp || hit || s.player?.isDead) return { tick: s.tick, hp: now, by: attackerOf(s, since) };
+        const hit = s.combatEvents.some(e => hitOnMe(e, since));
+        if (now < hp || hit || s.player?.isDead) return { tick: s.tick, hp: now, ...attackerOf(s, since) };
         hp = Math.max(hp, now);
         return null;
     };
