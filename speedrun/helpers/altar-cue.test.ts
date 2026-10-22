@@ -316,6 +316,26 @@ describe('cue scopes', () => {
         expect(logs).toEqual(['cue refused: cue.json has no scope { step, family }']);
     });
 
+    test('onOther: every new cue for another scope, once per write; its own scope never goes there', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'rc-cue-'));
+        const mine: Cue[] = [];
+        const others: Cue[] = [];
+        const watcher = new CueWatcher(dir, S06_ALTAR, c => mine.push(c), { pollMs: 5, log: () => {}, onOther: c => others.push(c) });
+        const bone = new CueWriter(dir, 'scored', { step: 'S07', family: 'bone' });
+        bone.write({ beacons: [{ tick: 1, ms: 1 }], turns: [] });
+        await Bun.sleep(30);
+        bone.stop([{ tick: 2, ms: 2 }]);
+        await Bun.sleep(30);
+        new CueWriter(dir, 'scored', S06_ALTAR).write({ beacons: [{ tick: 3, ms: 3 }], turns: [] });
+        await Bun.sleep(30);
+        watcher.close();
+        expect(others.map(c => [c.scope.step, c.seq, !!c.stop])).toEqual([
+            ['S07', 1, false],
+            ['S07', 2, true]
+        ]);
+        expect(mine.map(c => c.scope.step)).toEqual(['S06']);
+    });
+
     test('the watcher refuses to start without a scope', () => {
         const dir = mkdtempSync(join(tmpdir(), 'rc-cue-'));
         expect(() => new CueWatcher(dir, undefined as unknown as CueScope, () => {})).toThrow(/CueWatcher: a cue scope/);
@@ -341,6 +361,11 @@ describe('files', () => {
         expect(seen.at(-1)!.seq).toBe(2);
         w.stop([{ tick: 5, ms: 3 }]);
         expect(readCue(dir)!.stop).toBe(true);
+        expect(readCue(dir)!.final).toBeUndefined();
+        // The scope's last stop says so; final without stop is refused.
+        w.stop([{ tick: 6, ms: 4 }], { final: true });
+        expect(readCue(dir)).toMatchObject({ stop: true, final: true, seq: 4 });
+        expect(() => w.write({ beacons: [{ tick: 7, ms: 5 }], turns: [], final: true })).toThrow(/final needs stop/);
 
         writeStatus(dir, { v: 1, account: 'cairn_h70', phase: 'ready', loggedInAt: 1, essence: 27, tile: null, inRoom: true, readyAt: 2, gave: 0, ms: 3 });
         expect(readStatuses(dir).map(s => s.account)).toEqual(['cairn_h70']);

@@ -120,6 +120,12 @@ export interface Cue {
     turns: Turn[];
     /** The batch is over: armed givers stand down. */
     stop?: boolean;
+    /**
+     * Only with `stop`: the scope is done, no further session for it follows. A stop without it ends
+     * one session (a program segment, a resumed step's reopen), and the step may open another; the
+     * run-machine launcher keeps a stopOn account in the world until this, or the next scope's cue.
+     */
+    final?: boolean;
     /** Date.now() of the write. */
     ms: number;
 }
@@ -643,8 +649,9 @@ export class CueWriter {
     }
 
     /** Write the cue with `turns` replaced (pass the full list) and fresh beacons. */
-    write(fields: { beacons: Beacon[]; turns: Turn[]; schedule?: Schedule; open?: number; stop?: boolean }): Cue {
+    write(fields: { beacons: Beacon[]; turns: Turn[]; schedule?: Schedule; open?: number; stop?: boolean; final?: boolean }): Cue {
         if (fields.beacons.length === 0) throw new Error('a cue needs at least one beacon');
+        if (fields.final && !fields.stop) throw new Error('a final cue is a stop: final needs stop');
         this.cue = {
             v: CUE_VERSION,
             scope: this.scope,
@@ -656,6 +663,7 @@ export class CueWriter {
             open: fields.open ?? this.cue?.open ?? DEFAULT_OPEN,
             turns: fields.turns,
             ...(fields.stop ? { stop: true } : {}),
+            ...(fields.final ? { final: true } : {}),
             ms: Date.now()
         };
         writeJsonAtomicSync(join(this.dir, CUE_FILE), this.cue);
@@ -667,8 +675,9 @@ export class CueWriter {
         return this.write({ beacons, turns: [...(this.cue?.turns ?? []), turn] });
     }
 
-    stop(beacons: Beacon[]): Cue {
-        return this.write({ beacons, turns: this.cue?.turns ?? [], stop: true });
+    /** End the session; `final`: the scope's last session (Cue.final). */
+    stop(beacons: Beacon[], o: { final?: boolean } = {}): Cue {
+        return this.write({ beacons, turns: this.cue?.turns ?? [], stop: true, ...(o.final ? { final: true } : {}) });
     }
 
     get current(): Cue | null {
@@ -681,16 +690,20 @@ export interface CueWatcherOptions {
     pollMs?: number;
     /** Where the once-per-scope notes on ignored cues go (a role's ctx.log); default stderr. */
     log?: (message: string, data?: Record<string, unknown>) => void;
+    /** Every new cue addressed to another scope (new session or higher seq), for a reader that needs to see the next scope open. */
+    onOther?: (cue: Cue) => void;
 }
 
 /**
  * Calls `onCue` with every new cue addressed to `scope` (new session or higher seq). A cue
  * for another step or family, or one without a scope, never reaches `onCue`, its stop included;
- * each such scope is logged once. Watches the directory and polls as well: fs.watch can coalesce
+ * each such scope is logged once, and a scoped one goes to `onOther`. Watches the directory and polls as well: fs.watch can coalesce
  * or miss renames on some platforms, and a poll every `pollMs` bounds the delay either way.
  */
 export class CueWatcher {
     private last: { session: string; seq: number } | null = null;
+    private lastOther: { session: string; seq: number } | null = null;
+    private readonly onOther: CueWatcherOptions['onOther'];
     private timer: ReturnType<typeof setInterval> | null = null;
     private watcher: FSWatcher | null = null;
     private readonly ignored = new Set<string>();
@@ -707,6 +720,7 @@ export class CueWatcher {
         if (err) throw new Error(`CueWatcher: ${err}`);
         this.scope = { step: scope.step, family: scope.family };
         this.log = opts.log ?? ((message, data) => console.error(`[cue] ${message}`, JSON.stringify(data ?? {})));
+        this.onOther = opts.onOther;
         const pollMs = opts.pollMs ?? 20;
         mkdirSync(dir, { recursive: true, mode: 0o700 });
         try {
@@ -728,6 +742,10 @@ export class CueWatcher {
                 this.ignored.add(key);
                 if (theirs) this.log('cue ignored: addressed to another step or family', { cue: cue.scope, ours: this.scope });
                 else this.log('cue refused: cue.json has no scope { step, family }', { ours: this.scope });
+            }
+            if (theirs && this.onOther && !(this.lastOther && this.lastOther.session === cue.session && this.lastOther.seq >= cue.seq)) {
+                this.lastOther = { session: cue.session, seq: cue.seq };
+                this.onOther(cue);
             }
             return;
         }
