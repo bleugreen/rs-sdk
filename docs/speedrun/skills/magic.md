@@ -571,3 +571,128 @@ with 4 rune slots), 5 from 57 (26 per inventory).
 - **Which on-route quests are done before Magic training.** Settled by Package B: all the
   enchanting (to 59) comes before Plague City's teleport legs and Tree Gnome Village, and
   Charge after the Mage Arena (section 1).
+
+## 9. The step module: `speedrun/skills/magic.ts` (STEP-MANIFEST.md entry 24)
+
+Two steps, `S02 magic` and `S04 magic`, from `steps(opts)`. Both are logout-safe milestones on
+the Magic level, and both read the live state, so a restart resumes where the game stands. The
+lab acceptance is `speedrun/lab/magic-accept.ts` (modes `diamond25`, `s02`, `s04`, and `h4` for
+the S05 hand-off that takes S04's last rings).
+
+**S02, Wind Strike 1 -> 7.** The step casts Wind Strike on the nearest live chicken every tick
+(free chickens first) and retargets the tick a kill shows. Wind Strike does not close level-up
+pages, so each level is answered blind (`pageStep`). The label that shows the new level is R;
+the page opens on R+1, and the step sends `pagesAt(level)` continues on R+1: two at a level with
+an unlock page (3, 5, 7, ... from `levelup_unlocks_magic.rs2`), one otherwise. The answer lands on
+R+2. A page still open two labels after the last continue gets one more. The step ends on the
+label after the goal level shows, with that level's burst sent. Level 7 starts at 23.3 base (582
+game xp; the engine's curve and its 25x rate, `lib/xp.ts`, not RuneScape's table). Each strike is
+5.5 base plus 2 per damage, so **three strikes reach 7 when they average about 7.8 base** (3 of 4
+lab runs: 612, 612 and 662 game xp, 12 ticks), **and four are needed otherwise** (1 of 4: 600
+game xp, 17 ticks). The step stops at the label the goal shows, so it ends at 7, and at 8 only if
+a fourth strike overshoots 28.2 base (705 game xp). S04's plan is the same 60 casts from either.
+
+Preconditions: within 12 tiles of the coop (3233,3295), judged by coordinates, not by the
+chickens in view (a just-resumed state has no NPCs yet). Air and mind runes for the worst case of
+every cast missing (5.5 base each), which is 5 of each from level 1. The starter kit has 25 and 15.
+
+**S04, enchanting 7 -> 59.** One spell-on-item is sent on every label, on the first ring the
+current level can enchant: lowest tier first, then lowest slot. The server's 3-tick floor
+(section 4) sets the cadence, and a click inside the delay is dropped at no cost. The cast closes
+any level-up page. The staff of water is wielded on the first label if it is held rather than
+worn; a Lvl-1 cast landing first would only spend a water rune.
+
+Rings come in loads of 20 from the ring giver: SUPPLIES.md's H3 row, the trade giver. This is not
+STEP-MANIFEST.md section 4's H3, which is the cannon holder. The contract is `RING_CONTRACT` in
+the module:
+
+- The loads are 12 sapphire + 8 emerald; 19 emerald + 1 ruby; 15 ruby + 5 diamond. From the
+  bottom of 7 they are castable in order. The 12th sapphire reaches 27 with 3 base to spare, and
+  the plan ends at 2,511 base, level 59. `simulatePlan` checks this from the live xp and refuses
+  the step with the failing ring named. It gives exactly the manifest's runes: cosmic 60, air 81,
+  fire 80, earth 50.
+- Every trade goes through `lib/trade.ts` `swap()`. Load 1 is a pure receive (`give: []`, which
+  runs `receiveFrom`'s receiver rule). Loads 2 and 3 hand the previous load's 20 enchanted rings
+  to that load's giver in the same trade. **The last 20 stay with SCORED** (rs/158's ruling):
+  S05's trade at Doric's, SUPPLIES.md hand-off H4, takes them as a swap, offering
+  `enchantedRingSpecs(state)` (15 Ring of forging and 5 Ring of life, two offer-all entries). The
+  rings cost no slot: offered items leave the inventory before `enough_trade_space` counts. A
+  give-only fourth trade at the row's end would have cost about 4-8 ticks, which S04's 204 never
+  priced. So S04's done/post condition is Magic 59 alone. **H4 itself is one slot too big**,
+  rings or not (lab results below).
+- **The first trade click goes out on the label two after the load's last cast**, so it lands on
+  the tick the cast's `p_delay(1)` clears. A trade click inside the delay is dropped, and
+  `swap()` would re-send it only after `SWAP_RECLICK_TICKS` of silence.
+- The giver holds the load unnoted and at most 8 other items, since it takes 20 rings back. Its
+  half of the trade is `give()` with `expectTheirs: ANY_OFFER`, or `mule.ts` `giveOpenTrade`.
+  Space works for SCORED too: offered items leave the inventory for the trade's offer inventory,
+  and `trade.rs2`'s `enough_trade_space` counts the free slots after that.
+- SCORED casts a load in 60 ticks, so the next load must be in a giver's inventory by then, and
+  each giver takes 20 rings back with no bank near the row. So it is **one giver per load**
+  (rs/41: cairn_h81, h82, h83, staged during S03 from cairn_h80's stock), passed as
+  `loads: [{rings, giver}]`. Each giver ends holding the previous load's 20 enchanted rings.
+- **The giver stands on SCORED's side of any wall or fence**, within a step or two. A trade
+  request paths to the partner, so a giver behind an obstacle makes both players walk around it
+  to meet. In the lab that cost about 20 ticks on load 1 and left the next load's giver out of
+  view (`player_not_found`). No module fixes the row's end tile yet; check it on the collision
+  map (`lib/paths.ts` `pathTiles`). The lab picks its giver tiles that way.
+- The giver keeps a request standing by bone-giver.ts `decideRequest`: re-sent only after a
+  "busy" bounce or an unanswered request, never once one landed. A request that lands while the
+  giver's own trade is open closes that trade, so a giver re-requesting on a timer fails trades
+  (seen in the lab; mule.ts's `preRequest` has this bug, which rs/267 is fixing).
+
+On a resume, `loadsDelivered` reads how many loads arrived from the Magic xp since `startXp` (the
+bottom of 7 by default) plus the rings held, because the module trades only once a load is cast
+out. Each load is worth over 500 base and the slack is 100, so S02's overshoot (under 13 base)
+never confuses it. Preconditions name every missing input: the staff, runes short for the plan,
+a load without a giver, and room for the next load (free slots plus the enchanted rings going
+back).
+
+**Lab results** (local engine, 300 ms, `magic-accept.ts`, 2026-10-21):
+
+| Mode | Result | Against |
+|---|---|---|
+| `diamond25` | 25 of 25 casts, 24 of 24 gaps at 3 | pass at 3 |
+| `s02`, fresh accounts | **12, 12, 12, 17** ticks: 3 strikes (612-662 game xp) or 4 (600), 5-tick gaps; ends at 7; the last run's exit drop of the mind runes confirmed | 18 (manifest) |
+| `s04`, three loads, one giver each | **191, 191** ticks; 60 casts, 57 of 57 in-load gaps at 3; each ring trade 4 ticks (open 1 tick after the click); 2 turnarounds of 7; ends at 59 holding load 3's 20 enchanted rings; SCORED never moves | 204 (manifest, -6.4%) |
+| `h4`, Doric's arrival tile, body runes dropped | swap with the 20 rings **6, 6, 6**; plain receive **6, 6, 6**: the rings cost 0, 0 slots spare | the 4-8 of a 4th trade |
+| `h4`, body and mind runes dropped (rs/158's ruling) | swap **6, 6**; receive **6, 6**; **1 slot spare** after H4 | |
+
+**Browser client** (main's standard for clicks right after a landing; `magic-accept.ts
+--client=browser`, lab.sh with `LAB_RUNNERS=0`, the webclient bundle built first). SCORED is
+staged at S01's tile (3222,3222), outside the area loaded around the coop and the row, then
+teleported, and the step starts on the landing:
+
+| Segment | Run 1 | Run 2 | Run 3 | Against |
+|---|---|---|---|---|
+| S02's first strikes after arriving at the coop | pass, **24** (first strike landed 6 ticks after the first click; one 6-tick gap) | pass, **20** (one 6-tick gap) | pass, **17** | 18 |
+| S04's first ring trade and cast after arriving at the row's end, then the full step | pass, **192** (56 gaps of 3, one of 4) | pass, **195** (53 of 3, four of 4) | pass, **191** (57 of 3) | 204 |
+
+Each of the 3 givers was in view on the landing tick, every ring trade took 3 ticks on the
+giver's side, and SCORED never moved. In the browser, S02 costs up to 6 more ticks than on lite:
+the first strike can land late after a cold arrival, and the page now and then misses one click
+label (a 6-tick gap instead of 5). S04's 4-tick gaps are the same single-label slip. Neither is a
+fault: the casts are blind, so a missed label costs one tick and nothing else.
+
+**H4 does not fit SCORED as the run leaves it.** The tutorial kit is 18 items
+(`tutorial.rs2`): 12 junk dropped on T01-02, the tinderbox and 5 rune stacks (air, mind, water,
+earth, body). S04 spends H1's cosmic, fire, earth and 81 air exactly, so SCORED reaches Doric's
+with 6 slots used plus the 20 rings. H4 adds 22 unstackables and one new stack (law; air and
+water merge): 23 slots against 22 free, whether or not the rings are offered. Both variants were
+refused 4 of 4 ("You don't have enough inventory space for this trade."). With the body runes
+dropped (`--drop=bodyrune`) the trade fits with 0 slots spare. **rs/158's ruling:** the body
+runes go with the T01-02 junk, and the mind runes are dropped by S02 itself on its exit
+(`dropAtStrikeExit`, default the mind runes; one drop sent without waiting, so the walk that
+follows keeps its queue). H4 then fits with 1 slot spare (lab, 2 of 2 each way).
+
+**Divergences from the manifest found while building.**
+
+- **The last 20 enchanted rings.** The manifest's 204 (180 casting + 3 trades at 8) has SCORED
+  give 60 enchanted rings back, but only two of the three ring trades can carry them. rs/158
+  ruled that SCORED keeps the last 20 for S05's H4 swap rather than paying a fourth trade.
+- **S02 takes 3 strikes or 4** (above): 12 or 17 ticks against 18, measured 12, 12, 12, 17.
+  S04's plan is the same 60 casts from any S02 end.
+- **S04 at 191 against 204** (-6.4%): ring trades take 4 ticks against the 8 priced.
+- **No walk in the module.** Wind Strike's approach, when a chicken is out of line of sight, is
+  the server's own pathing. So the run-mode rule (measure walks with run on and off) has nothing
+  of this module's to measure.
