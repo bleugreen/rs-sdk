@@ -175,7 +175,16 @@ export interface RestockOptions {
      * (bankWithdrawals).
      */
     handBack?: readonly HandBackItem[];
+    /**
+     * Local lab only: on this process's first bank visit, staff-give this much noted essence and
+     * these items (by staff-give name) into the pack, so the visit banks them and every withdrawal
+     * from then on is a real one (labStock instead conjures each load at the bank).
+     */
+    labSeed?: { essence: number; items?: { obj: string; n: number }[] };
 }
+
+/** Accounts this process has seeded (RestockOptions.labSeed): once each. */
+const seeded = new Set<string>();
 
 /** The item by its exact name (any case): a rune name must not match another rune. */
 export function exactItem(name: string): RegExp {
@@ -271,6 +280,19 @@ export async function restock(ctx: RoleContext, altar: Altar, o: RestockOptions,
     while (!loaded() && !ctx.signal.aborted) {
         phase(`banking at ${bank.x},${bank.z}`);
         if (!(await walkNear(ctx, bank.x, bank.z, 3))) throw new Error('could not reach the bank');
+        if (o.labSeed && isLocalServer() && !seeded.has(ctx.account)) {
+            seeded.add(ctx.account);
+            const before = s()?.inventory.length ?? 0;
+            // A fresh lab account carries no talisman: seed one (the run's givers are staged with theirs).
+            const gives = [
+                ...(count(s(), altar.talisman) < 1 ? [{ obj: altar.talismanObj, n: 1 }] : []),
+                ...(o.labSeed.essence > 0 ? [{ obj: 'cert_blankrune', n: o.labSeed.essence }] : []),
+                ...(o.labSeed.items ?? [])
+            ];
+            for (const g of gives) await cheat(ctx, `give ${g.obj} ${g.n}`);
+            await until(ctx, st => st.inventory.length >= before + gives.length, 10);
+            phase(`lab: seeded the bank with ${gives.map(g => `${g.n} ${g.obj}`).join(', ')}`);
+        }
         if (!(await openBank(ctx))) throw new Error('could not open the bank');
         // Keep one talisman; everything else (runes, notes, spare talismans) goes in. Notes come back out unnoted.
         const talisman = findItem(s(), altar.talisman);

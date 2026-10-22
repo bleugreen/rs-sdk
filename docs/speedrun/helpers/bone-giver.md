@@ -56,6 +56,34 @@ only a cue scoped to its own step and family (`scope`, altar-giver.md "The cue c
 for on-request. Runecraft's S06 cue, which ends with a stop, is invisible to both. The giver
 publishes `bones-<account>.json` there (phase, bones held, trades, refusals).
 
+## Taking turns (S07's group, b01-b04)
+
+S07 has four givers, cairn_b01-b04, because one restock round trip is longer than three loads' worth of burying. Each carries `group: ["cairn_b01", "cairn_b02", "cairn_b03", "cairn_b04"]`, and the group takes turns by one rule, `boneServer`. It is the same `altar-cue.ts turnOrder` the altar side's batch uses:
+
+- **The server** is the group giver already requesting or trading. Otherwise it is the loaded giver that has stood at the site longest (`readyAt` in its `bones-<account>.json`), with ties broken by name. Statuses older than 5 s don't count.
+- **Only the server keeps a request standing.** The others wait loaded on the same tile (players stack) with phase `waiting` and detail `queued behind <server>`. They re-read the order every tick or two.
+- **Overlap:** two givers that start requesting on one frame resolve by the same order. The one that has waited less stands down.
+- **After its trade** the server restocks, and its `readyAt` clears, so the next in line takes over within a tick. A request that came to nothing, or a turn waited out, keeps a giver on its tile and its place in the order.
+- **The scored side** names its trade partner by the same rule: `boneServer(readBoneStatuses(cueDir), group, Date.now())` before each load's `receiveFrom`. The stand-in does this with `givers: [...]`. woodcutting.ts still takes a single `bones.giver` name, and making it take the group is the step's half (rs/147).
+
+Lab, local engine at 300 ms (`speedrun/lab/bone-giver.ts --givers=3 --loads=6 --pages=`, staff-made bones, 2026-10-22):
+
+| | |
+|---|---|
+| Loads taken | 6 of 6, in turn h70, h71, h72, h70, h71, h72 |
+| Requests out of turn | none: each non-server logged `queued behind` its server and never requested |
+| Scored side: click to the bones in its pack | **4 ticks** (5 of 6; the first load 5) |
+| Last bury to the next bury across a trade | **7** (5 of 5): 4 ticks per load, as with one giver |
+| Request standing at the click | 4 of 6 |
+
+One turn (h71's first) bounced 52 times before its request stood, against 1-5 in the others. It cost no ticks.
+
+**Each restock round trip is logged** as a `trip` line: ticks to the bank and back, run energy at the trade, at the bank and back on the tile, and whether each leg ran. A walk click carries the run flag, so a leg runs while energy lasts, and energy that fell on a leg means it ran.
+
+## The stand-in on the demo
+
+`bone-receiver` on a non-local server uses no staff commands. It banks what it carries at Falador west, walks to the site, and raises no level-up pages. Its `item` option sets the bones it takes and buries; the demo uses `Big bones`, which are unstackable like dragon bones but not scarce. It buries what it's given, so off the lab it runs only as a run-machine test account (`STAND_IN_ACCOUNTS`: h70-h72 and h75) and refuses any other name.
+
 ## Why a standing request, re-sent on the next tick
 
 `trade.rs2 [opplayer4]` refuses a request while the target is busy, meaning delayed (a bury
@@ -83,6 +111,7 @@ the send while the relay still held the click. Rs/105's three 30-tick trades cam
 | `mode` | `standing` | `standing` (S07) or `on-request` (S18) |
 | `scope` | required | `{ step, family }` of the cue it serves: family `bone` in the standing mode, `courier` in on-request (`altar-cue.ts` CueScope) |
 | `item`, `n` | `Dragon bones`, 23 | what and how many per S07 load (unnoted, one press) |
+| `group` | none | standing mode only: the accounts taking turns at the site, this one included (S07: b01-b04; "Taking turns") |
 | `sites` | S07's oak then willow | `[{ giver, receiver }]` tiles in run order; the giver moves on when the receiver is not in sight within `siteWaitTicks` (30). Required for `on-request` (where to wait) |
 | `trades` | no limit | stop after this many trades (else when the cue says stop) |
 | `restock` | `{ kind: 'bank', bank: Falador west }` | `cheat` makes the bones with a staff command (lab only) |

@@ -12,6 +12,10 @@
 //   robust-receiver-first the same login order on the robust schedule
 //   stock                 the stand-in runs the stock fallback (reacting trades); givers serve stock turns
 //   bank                  givers restock at the altar's bank (staff-made stock), so batches measure the round trip
+//   realbank              as bank, but each giver's bank is seeded once with --seed-loads loads (default 6) of real
+//                         essence, and every load is a real withdrawal
+//   --handback            (realbank) adds cairn_h73 as the hand-back giver (altar-giver.ts handBack): seeded with one
+//                         load and the Lumbridge runes, so after its one trade it makes the runes-only trip
 // Options: --altar=air|body|nature (default air; air banks at Falador east, body at Edgeville),
 //          --cycles=N (default 21), --givers=N (1-3, default 3), --essence=N (default 27),
 //          --path=relay|direct|mixed (default relay): how the givers reach their clients; mixed
@@ -37,7 +41,15 @@ const webPort = process.env.WEB_PORT ?? '9300';
 const base = mkdtempSync(join(tmpdir(), 'altar-lab-'));
 const botsDir = join(base, 'bots');
 const runDir = join(base, 'run');
-const givers = ['cairn_h70', 'cairn_h71', 'cairn_h72'].slice(0, n);
+const handBack = process.argv.includes('--handback');
+if (handBack && variant !== 'realbank') throw new Error('--handback needs --variant=realbank');
+const seedLoads = Number(arg('seed-loads', '6'));
+const RUNES = [
+    { item: 'Law rune', n: 1, obj: 'lawrune' },
+    { item: 'Air rune', n: 3, obj: 'airrune' },
+    { item: 'Earth rune', n: 1, obj: 'earthrune' }
+];
+const givers = [...['cairn_h70', 'cairn_h71', 'cairn_h72'].slice(0, n), ...(handBack ? ['cairn_h73'] : [])];
 const receiver = 'cairn_h75';
 for (const account of [...givers, receiver]) {
     mkdirSync(join(botsDir, account), { recursive: true, mode: 0o700 });
@@ -55,7 +67,10 @@ const giverEntries = givers.map((account, slot) => ({
     account,
     role: 'altar-giver',
     path: giverPath(slot),
-    options: { altar, slot, essence, restock: variant === 'bank' ? { kind: 'bank', labStock: true } : { kind: 'cheat' }, scope: LAB_SCOPE }
+    options:
+        account === 'cairn_h73'
+            ? { altar, slot: slot % 3, essence, restock: { kind: 'bank', labSeed: { essence, items: RUNES.map(r => ({ obj: r.obj, n: r.n })) } }, handBack: RUNES.map(r => ({ item: r.item, n: r.n })), scope: LAB_SCOPE }
+            : { altar, slot: slot % 3, essence, restock: variant === 'bank' ? { kind: 'bank', labStock: true } : variant === 'realbank' ? { kind: 'bank', labSeed: { essence: essence * seedLoads } } : { kind: 'cheat' }, scope: LAB_SCOPE }
 }));
 const receiverEntry = {
     account: receiver,

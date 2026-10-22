@@ -3,11 +3,12 @@ import type { BotWorldState, GameMessage } from '../../sdk/types';
 import type { BotSDK } from '../../sdk/index';
 import { baseState, FakeSdk, flush, type SentAction } from '../lib/fake-sdk';
 import { give } from '../lib/trade';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ASK_SLACK_MS, nameHash, newRequestFrom, readTopUpAsk, usableAsk, writeTopUpAsk } from './altar-cue';
-import { askOffer, boneGiverOptions, carryDue, isFinalLoad, loadOffer, npcTiles, onSide, partnerIs, requestUntilOpen, S07_SITES, sideTiles } from './bone-giver';
+import { askOffer, boneGiverOptions, boneServer, carryDue, isFinalLoad, loadOffer, npcTiles, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, type BoneStatus } from './bone-giver';
+import { assertDemoStandIn } from './bone-receiver';
 
 const o = { noReplyTicks: 3, resendTicks: 100 };
 const msg = (tick: number, text: string): GameMessage => ({ type: 0, text, sender: '', tick, fromSelf: false });
@@ -26,6 +27,54 @@ function frame(tick: number, messages: GameMessage[] = [], open = false): BotWor
 /** boneGiverOptions with the mode's scope (S07 bone, S18 courier) unless the test gives one. */
 const bgo = (raw: Record<string, unknown>, env?: Record<string, string | undefined>) =>
     boneGiverOptions({ scope: raw.mode === 'on-request' ? { step: 'S18', family: 'courier' } : { step: 'S07', family: 'bone' }, ...raw }, env);
+
+describe('a group of bone givers takes turns (S07 b01-b04)', () => {
+    const now = 50_000;
+    const st = (account: string, phase: BoneStatus['phase'], readyAt: number | null, extra: Partial<BoneStatus> = {}): BoneStatus => ({ v: 1, account, phase, held: 23, n: 23, trades: 0, bounces: 0, tile: null, readyAt, ms: now - 500, ...extra });
+    const GROUP = ['cairn_b01', 'cairn_b02', 'cairn_b03', 'cairn_b04'];
+
+    test('the server is the giver already requesting or trading; else the loaded giver waiting longest', () => {
+        expect(boneServer([st('cairn_b01', 'waiting', 100), st('cairn_b02', 'requested', 900), st('cairn_b03', 'waiting', 50)], GROUP, now)).toBe('cairn_b02');
+        expect(boneServer([st('cairn_b01', 'waiting', 100), st('cairn_b03', 'waiting', 50)], GROUP, now)).toBe('cairn_b03');
+        expect(boneServer([st('Cairn B04', 'trading', 10)], GROUP, now)).toBe('Cairn B04');
+    });
+
+    test('restocking, empty-handed, stale and outside-the-group givers are never the server', () => {
+        const statuses = [
+            st('cairn_b01', 'restock', null),
+            st('cairn_b02', 'waiting', 10, { held: 0 }),
+            st('cairn_b03', 'waiting', 20, { ms: now - 6_000 }),
+            st('cairn_h70', 'requested', 5)
+        ];
+        expect(boneServer(statuses, GROUP, now)).toBeUndefined();
+        expect(boneServer([...statuses, st('cairn_b04', 'waiting', 999)], GROUP, now)).toBe('cairn_b04');
+    });
+
+    test('status files round-trip from the cue directory', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'bone-status-'));
+        writeFileSync(join(dir, 'bones-cairn_b01.json'), JSON.stringify(st('cairn_b01', 'waiting', 7)));
+        writeFileSync(join(dir, 'giver-cairn_t01.json'), JSON.stringify({ v: 1, account: 'cairn_t01' }));
+        expect(readBoneStatuses(dir).map(s => [s.account, s.readyAt])).toEqual([['cairn_b01', 7]]);
+        expect(readBoneStatuses(join(dir, 'missing'))).toEqual([]);
+    });
+
+    test('options: a group of two or more distinct names, standing mode only', () => {
+        expect(bgo({ group: ['cairn_b01', 'Cairn B02'] }).group).toEqual(['cairn_b01', 'cairn_b02']);
+        expect(bgo({}).group).toEqual([]);
+        expect(() => bgo({ group: ['cairn_b01'] })).toThrow(/at least two/);
+        expect(() => bgo({ group: ['cairn_b01', 'cairn_b01'] })).toThrow(/twice/);
+        const site = [{ giver: { x: 1, z: 2 }, receiver: { x: 1, z: 3 } }];
+        expect(() => bgo({ mode: 'on-request', sites: site, group: ['cairn_b01', 'cairn_b02'] })).toThrow(/standing mode/);
+    });
+});
+
+describe('the demo stand-in (bone-receiver off the lab)', () => {
+    test('runs only as a run-machine test account, never a fleet, giver or forbidden name', () => {
+        expect(() => assertDemoStandIn('cairn_h75')).not.toThrow();
+        expect(() => assertDemoStandIn('Cairn H75')).not.toThrow();
+        for (const name of ['cairn_h51', 'cairn_b01', 'cairn_mule1', 'cairn_dot_md']) expect(() => assertDemoStandIn(name)).toThrow(/run-machine test account/);
+    });
+});
 
 describe('bone giver options', () => {
     test('the cue scope is required: bone for the standing mode (S07), courier for on-request (S18)', () => {

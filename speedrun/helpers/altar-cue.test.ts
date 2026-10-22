@@ -17,8 +17,10 @@ import {
     judgeTick,
     MissBench,
     nameHash,
+    STATUS_FRESH_MS,
     STOCK_MIN_TICKS,
     STOCK_WINDOW,
+    turnOrder,
     readCue,
     readStatuses,
     resolveOffset,
@@ -205,6 +207,30 @@ describe('MissBench', () => {
         expect(b.skips({ account: 'g1', readyAt: 7_001 })).toBe(false);
         b.miss('g2', undefined);
         expect(b.skips({ account: 'g2', readyAt: 1 })).toBe(false);
+    });
+});
+
+describe('turnOrder: the one turn-taking rule of both giver families', () => {
+    const now = 100_000;
+    const c = (account: string, readyAt: number | null, extra: { ms?: number; holding?: boolean; ok?: boolean } = {}) => ({ account, readyAt, ms: extra.ms ?? now - 1_000, holding: !!extra.holding, ok: extra.ok ?? true });
+    const names = (xs: { account: string }[]) => xs.map(x => x.account);
+    const rule = { eligible: (x: { ok: boolean }) => x.ok, holding: (x: { holding: boolean }) => x.holding };
+
+    test('current, eligible candidates: those holding the turn first, then oldest ready, then by name', () => {
+        const order = turnOrder([c('b03', 500), c('b02', 300), c('b04', 300), c('b01', 900, { holding: true })], now, rule);
+        expect(names(order)).toEqual(['b01', 'b02', 'b04', 'b03']);
+    });
+
+    test('a stale heartbeat or an ineligible candidate is out; an unknown readyAt goes last', () => {
+        const order = turnOrder([c('b01', 100, { ms: now - STATUS_FRESH_MS - 1 }), c('b02', 200, { ok: false }), c('b03', null), c('b04', 400)], now, rule);
+        expect(names(order)).toEqual(['b04', 'b03']);
+    });
+
+    test('a giver benched after a failed turn (MissBench) is skipped until it reports ready again', () => {
+        const bench = new MissBench();
+        bench.miss('b01', 1_000);
+        expect(names(turnOrder([c('b01', 900), c('b02', 950)], now, { ...rule, bench }))).toEqual(['b02']);
+        expect(names(turnOrder([c('b01', 1_001), c('b02', 950)], now, { ...rule, bench }))).toEqual(['b02', 'b01']);
     });
 });
 

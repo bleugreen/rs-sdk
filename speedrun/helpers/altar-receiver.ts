@@ -37,6 +37,7 @@ import {
     CueWriter,
     MissBench,
     scopeOption,
+    turnOrder,
     cueDir,
     DEFAULT_OPEN,
     FrameLog,
@@ -73,11 +74,10 @@ export function chooseBatch(
     o: { names?: string[]; batch?: number; schedule: Schedule; autoRobust: boolean; myLoggedInAt: number | null; now: number; bench?: MissBench }
 ): Candidate[] {
     const wanted = o.names?.map(canonName);
-    return statuses
-        .filter(s => (s.phase === 'ready' || s.phase === 'armed') && s.inRoom && s.essence > 0 && o.now - s.ms < 5_000)
-        .filter(s => !o.bench?.skips(s))
-        .filter(s => !wanted || wanted.includes(canonName(s.account)))
-        .sort((a, b) => (a.readyAt ?? 0) - (b.readyAt ?? 0))
+    return turnOrder(statuses, o.now, {
+        eligible: s => (s.phase === 'ready' || s.phase === 'armed') && s.inRoom && s.essence > 0 && (!wanted || wanted.includes(canonName(s.account))),
+        ...(o.bench ? { bench: o.bench } : {})
+    })
         .flatMap(s => {
             const p = nearby.find(n => canonName(n.name) === canonName(s.account));
             if (!p || Math.abs(p.x - me.x) + Math.abs(p.z - me.z) !== 1) return [];
