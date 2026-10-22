@@ -158,6 +158,21 @@ describe("A: H4's free slots, refused up front, agreeing with the slot ledger", 
         await expect(drive(sdk, list[0]!.run(ctx) as Promise<unknown>, 5)).rejects.toThrow(/S05:A: H4 not delivered .* and no kitFrom/);
         expect(sdk.sent).toEqual([]);
     });
+
+    test("H4 placed as run.ts's own hand-off step: the kit held and the rings gone, A sends no trade, even with a giver in view, and only checks", async () => {
+        const giver = 'h4giver';
+        const s = arrival(afterH4(), undefined, { nearbyPlayers: [{ name: giver, x: ARRIVAL.x + 1, z: ARRIVAL.z } as never] });
+        expect(s.inventory.some(i => /^Ring of/.test(i.name))).toBe(false);
+        expect(h4Landed(s)).toBe(true);
+        const a = steps({ kitFrom: giver })[0]!;
+        expect(a.preconditions!(s, undefined as never)).toBe(true);
+        const sdk = new FakeSdk(s);
+        const ctx = { session: { sdk, bot: {}, name: 'lab', sessionId: 0 }, sdk, bot: {}, c: {}, log: TickLog.memory('t') } as unknown as StepContext<unknown>;
+        await drive(sdk, a.run(ctx) as Promise<unknown>, 5);
+        expect(sdk.sent).toEqual([]);
+        expect(a.postconditions!(sdk.getState()!, undefined as never)).toBe(true);
+        expect(a.done!(sdk.getState()!)).toBe(true);
+    });
 });
 
 describe('B and C: the stage and the hand-in items', () => {
