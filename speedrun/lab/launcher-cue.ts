@@ -141,7 +141,9 @@ try {
     h12o.write({ beacons: beacon(), turns: [] });
     const inMs = await until('lc04 in the world', () => acct('cairn_lc04')?.state === 'online', 120_000);
     const roleMs = await until('lc04 role started', () => !!lineAt(/cairn_lc04: role idle started/), 60_000).then(() => Date.now() - openAt);
-    check(acct('cairn_lc04')?.logins === 1 && (await listed('cairn_lc04')) === true, `lc04 logged in on H12o/mule's open: in the world ${inMs} ms after the write, role started ${roleMs} ms after it`);
+    // /playerpositions trails the launcher's in-world line by a moment: poll it, as for the logouts below.
+    const listedMs = await until('lc04 listed', async () => (await listed('cairn_lc04')) === true, 10_000).then(() => Date.now() - openAt);
+    check(acct('cairn_lc04')?.logins === 1, `lc04 logged in on H12o/mule's open: in the world ${inMs} ms after the write, role started ${roleMs} ms, listed ${listedMs} ms after it (logins ${acct('cairn_lc04')?.logins})`);
 
     // S06 stops: lc02 (relay) and lc03 (direct) log out at once; lc01 and lc04 stay.
     const s06 = new CueWriter(cueDir, 'scored', S06);
@@ -162,7 +164,8 @@ try {
     const h12oStop = Date.now();
     h12o.stop(beacon());
     const outMs = await until('lc04 out', () => !!lineAt(/cairn_lc04: out of the run on its stop cue/), 60_000);
-    check(acct('cairn_lc04')?.logout === 'out' && !(await listed('cairn_lc04')), `lc04 logged out on H12o's stop ${outMs} ms after the write (${Date.now() - h12oStop} ms to unlisted check)`);
+    const goneMs = await until('lc04 unlisted', async () => (await listed('cairn_lc04')) === false, 30_000).then(() => Date.now() - h12oStop);
+    check(acct('cairn_lc04')?.logout === 'out' && acct('cairn_lc04')?.cue?.state === 'stopped', `lc04 logged out on H12o's stop: reported ${outMs} ms after the write, unlisted ${goneMs} ms after it (logout: ${acct('cairn_lc04')?.logout}, gate ${acct('cairn_lc04')?.cue?.state})`);
 
     // No account restarts or logs back in after leaving.
     await sleep(5000);
