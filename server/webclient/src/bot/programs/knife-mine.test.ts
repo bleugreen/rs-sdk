@@ -60,11 +60,11 @@ function mine(opts: {
     const buries: number[] = [];
     const rejected: Array<{ at: number; type: string }> = [];
     const fails: Array<{ tick: number; rock: string }> = [];
-    const messages: Array<{ text: string; tick: number; id: number }> = [];
+    const messages: Array<{ text: string; tick: number }> = [];
     let swingDue: { at: number; rock: string } | null = null;
     let attempts = 0;
     const swing = () => {
-        if (opts.swings !== false) messages.push({ text: 'You swing your pick at the rock.', tick, id: messages.length + 1 });
+        if (opts.swings !== false) messages.push({ text: 'You swing your pick at the rock.', tick });
     };
     const state = () => makeState({
         tick, x: pos[0], z: pos[1],

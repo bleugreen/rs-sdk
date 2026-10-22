@@ -75,12 +75,11 @@ function thieve(opts: ThieveOpts) {
     let hp = opts.hp ?? maxHp;
     let freeAt = 0;
     let n = 0;
-    let msgId = 0;
     let prayerXp = 0;
     let magicXp = 0;
     let fletchXp = 0;
     const delayed = new Set<number>();
-    const msgs: Array<{ text: string; tick: number; id: number }> = [];
+    const msgs: Array<{ text: string; tick: number }> = [];
     const rolls: Array<{ tick: number; ok: boolean }> = [];
     const failedAttempts: number[] = [];
     const landings: Landing[] = [];
@@ -125,11 +124,11 @@ function thieve(opts: ThieveOpts) {
             const ok = opts.outcome(n++);
             rolls.push({ tick, ok });
             if (ok) {
-                msgs.push({ text: "You pick the knight's pocket.", tick, id: msgId++ });
+                msgs.push({ text: "You pick the knight's pocket.", tick });
                 freeAt = a + 2;
             } else {
-                msgs.push({ text: "You fail to pick the knight's pocket.", tick, id: msgId++ });
-                msgs.push({ text: "You've been stunned!", tick, id: msgId++ });
+                msgs.push({ text: "You fail to pick the knight's pocket.", tick });
+                msgs.push({ text: "You've been stunned!", tick });
                 hp -= damage;
                 delayed.add(a + 2);
                 delayed.add(a + 3);

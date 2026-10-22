@@ -23,6 +23,11 @@ export interface StateSpec {
     locs?: Array<Partial<NearbyLoc> & { id: number; x: number; z: number; name: string; options?: string[] }>;
     /** Players in sight; a missing x/z stands one tile east of the player. */
     players?: Array<Partial<NearbyPlayer> & { index: number; name: string }>;
+    /**
+     * Game messages, oldest first. A message's observation id is the publication it first showed
+     * in, as the collector stamps it: the harness publishes once a tick, so every message of one
+     * tick shares one id (its `tick`, by default the state's). `id` overrides it.
+     */
     messages?: Array<{ text: string; tick?: number; id?: number; type?: number; sender?: string }>;
     /** Open trade fields; omitted (and no tradeOpen) means no trade open. */
     trade?: Partial<TradeState>;
@@ -74,7 +79,7 @@ export function makeState(spec: StateSpec): BotWorldState {
         const pz = p.z ?? z;
         return { kind: 'player', combatLevel: 3, combatTargetType: 'none', combatTargetIndex: -1, inCombat: false, ...p, x: px, z: pz, distance: Math.max(Math.abs(px - x), Math.abs(pz - z)) };
     });
-    const messages: GameMessage[] = (spec.messages ?? []).map(m => ({ type: m.type ?? 0, text: m.text, sender: m.sender ?? '', tick: m.tick ?? spec.tick, observationId: m.id, fromSelf: false }));
+    const messages: GameMessage[] = (spec.messages ?? []).map(m => ({ type: m.type ?? 0, text: m.text, sender: m.sender ?? '', tick: m.tick ?? spec.tick, observationId: m.id ?? m.tick ?? spec.tick, fromSelf: false }));
     const trade: TradeState = { isOpen: false, screen: null, partner: null, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false, ...(spec.trade || spec.tradeOpen ? { isOpen: true, screen: 'offer', ...spec.trade } : {}) };
     const skills = Object.entries(spec.skills ?? {}).map(([name, v]) => ({ name, level: v.level ?? 99, baseLevel: v.level ?? 99, experience: v.xp }));
     if (!skills.some(s => s.name.toLowerCase() === 'hitpoints')) skills.push({ name: 'Hitpoints', level: spec.hp ?? 99, baseLevel: spec.maxHp ?? 99, experience: 0 });
