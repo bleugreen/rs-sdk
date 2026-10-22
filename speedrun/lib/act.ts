@@ -127,7 +127,7 @@ export class ClickGuard {
     private refusedAt = -1;
     private sentAt = -1;
     private watching = false;
-    private base: { x: number; z: number; level: number; anim: number; inv: string; messages: number } | null = null;
+    private base: ReturnType<typeof snapshot> | null = null;
 
     constructor(
         private readonly sdk: StateSource,
