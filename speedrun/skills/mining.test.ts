@@ -630,7 +630,10 @@ describe('contested iron bands', () => {
         const at42 = SCORED.map(([n, l]) => [n, n === 'Prayer' ? 93 : l] as [string, number]);
         for (const fallback of ['auto', ['ardougneNorth', 'rellekka']]) {
             const refused = new MiningSdk(atSite('zoo', 70, at42));
-            gatedImpl = async s => (passerBy(s, 'zoo'), { segments: [], ended: 'aborted' });
+            gatedImpl = async s => {
+                if (s.state!.player!.worldX >= 2650) throw new Error('switched away from the zoo at combat 42');
+                return (passerBy(s, 'zoo'), { segments: [], ended: 'aborted' });
+            };
             const none: string[] = [];
             await expect(band({ fallback }).run(ctxWithWalk(refused, none))).rejects.toThrow(/contested at zoo .* no site left for combat 42/);
             expect(none).toEqual([]);
