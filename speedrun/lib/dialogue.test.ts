@@ -150,6 +150,15 @@ describe('levelup', () => {
         expect(isLevelUp(baseState({ tick: 90, dialog: cont('npc'), recentDialogs: [entry] }))).toBe(false);
     });
 
+    test('a level-up entry ARM_TICKS old matches on both clients, though the browser stamps it a tick lower', () => {
+        const text = ['Congratulations, you just advanced a mining level.'];
+        const lite = { text, tick: 50, interfaceId: 1 };
+        const browser = { text, tick: 49, interfaceId: 1 };
+        expect(isLevelUp(baseState({ tick: 54, dialog: cont('l'), recentDialogs: [lite] }))).toBe(true);
+        expect(isLevelUp(baseState({ tick: 54, dialog: cont('l'), recentDialogs: [browser] }))).toBe(true);
+        expect(isLevelUp(baseState({ tick: 56, dialog: cont('npc'), recentDialogs: [browser] }))).toBe(false);
+    });
+
     const page = (pageId: string, ...words: string[]): DialogState => ({
         ...cont(pageId),
         allComponents: [...words, 'Click here to continue'].map((text, id) => ({ id, type: 4, buttonType: 0, option: '', text })),

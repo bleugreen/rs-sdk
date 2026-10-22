@@ -27,6 +27,12 @@ export const LEVEL_UP_TEXT = /just advanced|level is now|hitpoints are now|you (
 export const UNLOCK_TEXT = /\byou can now\b/i;
 export const ARM_TICKS = 4;
 export const CHAIN_TICKS = 3;
+/**
+ * The browser stamps a published entry one tick lower than lite does (the same page, the same
+ * publication). An age bound read from an entry's tick allows this much more, so it is the same
+ * window on both clients.
+ */
+const BROWSER_STAMP_LAG = 1;
 
 /**
  * True when a continue page is showing and the latest dialog-history entry is
@@ -38,7 +44,7 @@ export const CHAIN_TICKS = 3;
 export function isLevelUp(state: BotWorldState): boolean {
     if (classifyPage(state.dialog) !== 'continue') return false;
     const latest = state.recentDialogs?.[0];
-    return !!latest && latest.tick >= state.tick - ARM_TICKS && LEVEL_UP_TEXT.test(latest.text.join(' '));
+    return !!latest && latest.tick >= state.tick - ARM_TICKS - BROWSER_STAMP_LAG && LEVEL_UP_TEXT.test(latest.text.join(' '));
 }
 
 /**
