@@ -371,7 +371,7 @@ describe('thieving helper top-ups', () => {
         expect(meta.topUp.mode).toBe('idle');
         expect(meta.topUp.trades.map(t => [t.ok, t.received])).toEqual([[true, 10]]);
         // the courier's ask, written on the open frame: 2 slots of cake held, one kept for coins, cake in the other 25
-        const ask = [{ item: '^(Cake|2/3 cake|Slice of cake)$', count: 25 }];
+        const ask = [{ item: '^(Cake|2\\/3 cake|Slice of cake)$', count: 25 }];
         expect(meta.topUp.asks.map(a => a.items)).toEqual([ask]);
         expect(readTopUpAsk(CUE)!.items).toEqual(ask);
     });
@@ -406,7 +406,7 @@ describe('thieving helper top-ups', () => {
         expect(asker.step(at({ trade: screen('offer', 'stranger') as never }))).toBeNull();
         expect(readTopUpAsk(dir)).toBeNull();
         expect(asker.step(at({ trade: CLOSED as never }))).toBeNull();
-        expect(asker.step(at({ trade: screen('offer') as never }))).toEqual([{ item: '^(Cake|2/3 cake|Slice of cake)$', count: 25 }]);
+        expect(asker.step(at({ trade: screen('offer') as never }))).toEqual([{ item: '^(Cake|2\\/3 cake|Slice of cake)$', count: 25 }]);
         expect(asker.step(at({ trade: screen('confirm') as never }))).toBeNull();
         expect(readTopUpAsk(dir)!.items[0]!.count).toBe(25);
         expect(asker.asks.map(a => a.tick)).toEqual([s.tick - 1]);
