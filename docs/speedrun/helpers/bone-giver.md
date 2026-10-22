@@ -78,7 +78,22 @@ Lab, local engine at 300 ms (`speedrun/lab/bone-giver.ts --givers=3 --loads=6 --
 
 One turn (h71's first) bounced 52 times before its request stood, against 1-5 in the others. It cost no ticks.
 
-**Each restock round trip is logged** as a `trip` line: ticks to the bank and back, run energy at the trade, at the bank and back on the tile, and whether each leg ran. A walk click carries the run flag, so a leg runs while energy lasts, and energy that fell on a leg means it ran.
+**Each restock round trip is logged** as a `trip` line: ticks to the bank and back, run energy at the trade, at the bank and back on the tile, and whether each leg ran (`legRan`). A walk click carries the run flag, so a leg runs while energy lasts. Ran or walked is judged by pace: a walk covers at most one tile a tick, so a leg faster than its tile distance ran. Energy is no evidence, because the demo keeps it full.
+
+### On the demo (rs/383, 2026-10-22 14:11-14:20Z)
+
+The launcher ran on bbs through its own relay (not the run machine). cairn_b01-b04 were the group, each holding 92 Big bones (4 loads of 23, from cairn_h51), restocking at Falador west and serving the oak tile. cairn_h75 was the demo stand-in, taking 16 loads from the group's server.
+
+| | |
+|---|---|
+| Loads | **16 of 16**, in strict rotation (b02, b03, b01, b04, four times round), none out of turn |
+| Request standing at the stand-in's click | 12 of 16 |
+| Stand-in: click to the bones in its pack | **7.25 ticks** mean (5-8) |
+| Last bury to the next bury across a trade | **10.2 ticks** mean (8-11): about 7 ticks a load, against 4 in the lab |
+| Restock round trip, Falador west and the oak tile with the bank visit | **205-215 ticks** (mean 211, n = 12): to the bank 98-106, back with the bank 103-111 |
+| Ran or walked | **ran**: ~100 ticks a leg over at least 126 tiles; run energy read 100 at every trade, bank and arrival |
+
+A load is due every ~70 ticks of burying, so four givers leave each ~280 ticks per round trip against the 211 measured: **four are enough, three (210) would not be**. The extra ~3 ticks a load against the lab come from both sides' clicks crossing bbs's relay. The run machine is 1.8 ms from the demo (altar-giver.md), so expect nearer the lab's 4 there, but that is not measured. The first attempt ended at once: cairn_h75 had been left in the air altar room by the Runecraft demo. The stand-in now leaves any altar room by its portal first (`altarRoomOf`).
 
 ## The stand-in on the demo
 
