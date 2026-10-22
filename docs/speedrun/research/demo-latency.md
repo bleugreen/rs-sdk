@@ -418,6 +418,57 @@ Ashburn. The dominant offset is +1 tick at 78-79% from both places. Section 8 us
 **An in-page tick program should send on the frame's arrival, not on its own clock**: from Ashburn
 that lands 15 of 15 (sweep at +0) where the free-running clock lands 23%.
 
+### Decode cap: how many actions one tick applies (22 October)
+
+The engine reads a player's buffered input once per tick and stops at the first category to
+reach its limit: `userLimit < 5`, `clientLimit < 20`, `restrictedLimit < 2`
+(server/engine/src/engine/entity/NetworkPlayer.ts:69, limits in
+server/engine/src/network/game/client/ClientGameProtCategory.ts:5-8). Whatever is left stays in
+the socket buffer and is read at the start of the next tick. Only a USER_EVENT whose handler
+returns true counts as one; a failed one counts toward the client limit (NetworkPlayer.ts:141-147).
+A packet with no decoder, such as NO_TIMEOUT, counts toward nothing (NetworkPlayer.ts:136).
+
+`docs/speedrun/scripts/decode-cap-probe.ts` measures the cap instead of reading it. It logs in on
+the lite client's direct game socket (no gateway relay). On the frame of a settled tick it writes
+a whole burst as one websocket message, so the server reads every packet of it at the same input
+read. Then it reads the inventory frames tick by tick:
+
+- **user N**: N chained INV_BUTTOND drags (opcode 253, USER_EVENT, IfButton-style category in
+  server/engine/src/network/game/client/model/InvButtonD.ts:5) of one tracer item, an item held
+  once, slot p to p+1 to p+2 and so on. `[inv_buttond,inventory]` runs inline
+  (InvButtonDHandler.ts:49-52, then `inv_movetoslot` in player/scripts/inventory.rs2), so the
+  tracer's slot in a tick's frame is the number of drags applied by then.
+- **client K**: a drag, K EVENT_CAMERA_POSITION (opcode 193, CLIENT_EVENT, only recorded by
+  InputTracking), then a second drag. The second drag shares the first one's tick only if the
+  client limit was not reached first.
+- **failed K**: a drag, K drags out of an empty slot (InvButtonDHandler.ts:35-38 returns false),
+  then a second drag.
+- **ifbutton N** (lab only): N clicks of Charge, IF_BUTTON 1193 (opcode 86, USER_EVENT,
+  model/IfButton.ts:5), the click rs/466 sent. Casts are counted from the drop in the blood-rune
+  stack. `[if_button,magic:charge]` casts inline: `settimer`, runes and xp in one script, with
+  no queue (skill_magic/scripts/spells/charge.rs2:1-26).
+
+There were three repeats of each, and every one is in
+`docs/speedrun/research/data/decode-cap-20261022/` with the account name redacted. A cell gives
+the actions applied in the landing tick / the next tick / later.
+
+| Class | N (or K) | Lab (fedora, T = 300, 3 of 3 alike) | Demo (T = 400) |
+| --- | --- | --- | --- |
+| user (drag) | 5 | 5 / 0 / 0 | pending |
+| user (drag) | 6 | 5 / 1 / 0 | pending |
+| user (drag) | 8 | 5 / 3 / 0 | pending |
+| ifbutton (Charge) | 5 | 5 / 0 / 0 | lab only |
+| ifbutton (Charge) | 6 | 5 / 1 / 0 | lab only |
+| ifbutton (Charge) | 8 | 5 / 3 / 0 | lab only |
+| client: drag + K camera + drag | 5, 6, 8, 19 | 2 / 0 / 0 | pending |
+| client: drag + K camera + drag | 20, 21 | 1 / 1 / 0 | pending |
+| failed: drag + K failed drags + drag | 5, 8 | 2 / 0 / 0 | pending |
+
+In the lab every burst went out 0.1-0.9 ms after the frame and landed on the next tick. The lab
+reproduces the fork's rule exactly, which validates the method. **Five user actions per tick, and a
+20-event client budget that failed user actions draw on instead of the user cap.** Charge behaves
+like the drag, so on our engine nothing in its script holds it to one cast per tick.
+
 ## 7. The browser tab's sockets, and the route the run's input must take
 
 On the demo, the browser webclient opens two sockets:
