@@ -51,9 +51,9 @@ yield needs a loop. No player-reachable path found here has either shape.
 | Executor | `fedora` (linux x86_64) |
 | Port block | M2: `WEB_PORT=9910 WEB_MANAGEMENT_PORT=9911 HISCORES_WEB_PORT=9912 NODE_PORT=44910 AGENT_PORT=7702 LAB_FRIEND_PORT=45910`, checked free with `ss -ltn` before each run |
 | Tick rate | `NODE_TICKRATE=400` |
-| Bound | `LAB_TIMEOUT=1500` |
-| Bots | `mkt499a`, `mkt499b` (fresh accounts) |
-| Script | `markets/research/content-edges.ts` |
+| Bound | `LAB_TIMEOUT=1500` (count-edge runs), `1200` (hand-off runs) |
+| Bots | `mkt499a`, `mkt499b`, `mkt499c` (count edges); `mkt499r`, `mkt499g` (staff hand-off); all fresh accounts |
+| Scripts | `markets/research/content-edges.ts`, `markets/research/trade-staff-handoff.ts`, shared `markets/research/content-board-value.ts` |
 
 ```sh
 NODE_TICKRATE=400 WEB_PORT=9910 WEB_MANAGEMENT_PORT=9911 HISCORES_WEB_PORT=9912 NODE_PORT=44910 \
@@ -188,7 +188,7 @@ accumulation that hit the cap equally well.
 Offer and remove clamp to `inv_total`. Any offer change resets both players' accept status, and
 the confirm screen re-checks inventory space. Completion is two `both_moveinv` calls, each moving a
 whole container. Declining or closing returns the offer with `moveallinv`. **Ruled out** by code. The
-mid-trade save snapshot is Q1a's escrow question.
+mid-trade save snapshot belongs to the escrow, which rs/498 rules out.
 
 ### 5. Duel arena and party room
 
