@@ -148,7 +148,6 @@ async function ready(name: string, prep: (s: Session) => Promise<void>): Promise
     const s = await openSession(name, { launch: true, pathfinding: false });
     await leaveTutorial(s);
     await tele(s.sdk, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z);
-    await cheat(s.sdk, 'clearinv', 2).catch(() => {});
     await prep(s);
     await logoutClean(s);
     await login(s);
@@ -191,6 +190,9 @@ async function main(): Promise<void> {
         result('ge', row);
         return { logs, coins };
     };
+    // Next to the exchange table (GrandExchange.ts EXCHANGE_TABLE): ge.open() otherwise walks, which needs the pathfinding service.
+    await tele(seller.sdk, 3181, 3443);
+    await tele(buyer.sdk, 3181, 3444);
     const t = { s: seller.bot.ge, b: buyer.bot.ge };
     const start = snapshot('start');
     must('seller open', await t.s.open(60_000));
