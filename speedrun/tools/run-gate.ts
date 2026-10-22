@@ -706,7 +706,8 @@ async function onGate(ctx: Ctx, argv: readonly string[]): Promise<number> {
     } catch (e) {
         if (!(e instanceof Stop)) throw e;
         g.failures.push(e.message);
-        if (g.status === 'pass' || g.status === 'marginal') g.status = 'fail';
+        // A stop after (a)-(c) were read is a failed gate; before them, nothing was probed.
+        if (g.status !== 're-measure') g.status = g.a ? 'fail' : 'not-probed';
         console.log(`STOP: ${e.message}`);
         return finish(e.code);
     }
