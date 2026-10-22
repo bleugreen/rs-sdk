@@ -26,7 +26,7 @@ import type { BotActions } from '../../sdk/actions';
 import type { BotStatus, BotWorldState } from '../../sdk/types';
 import { ensureRunOn, type EnsureRunResult } from './run-mode';
 import { pageInGame, pageLogin, pageLoginState, type PageLoginStart } from './tab';
-import { sleep, tickMs, waitUntil } from './wait';
+import { awaitScene, SCENE_READY_MAX_TICKS, type SceneWait, sleep, tickMs, waitUntil } from './wait';
 
 export const ROOT = join(import.meta.dir, '..', '..');
 export const LOGOUT_BUTTON = 2458; // logout:try_logout
@@ -239,6 +239,8 @@ export interface Session {
     lastProgressAt: number;
     watchdog: Watchdog | null;
     logPath: string;
+    /** The last launch's wait for the client's scene (settleScene); absent when none was waited for. */
+    scene?: SceneWait;
 }
 
 export interface OpenOptions {
@@ -317,6 +319,9 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         // A client we attach to may have logged in on its own (lab runners, a
         // relaunch by another process); every login leaves run off.
         await ensureRunOn(sdk);
+        // A launched browser tab returns here seconds before its scene is built (rs/41's probe:
+        // first locs ~7 s later), so a step acting at once could see an empty scene.
+        if (client === 'browser' && opts.launch) await settleScene(session);
     } catch (err) {
         // The client we launched may be in the world even though this process never
         // saw it advance; left running it would hold the player there indefinitely.
@@ -325,6 +330,17 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         throw err;
     }
     return session;
+}
+
+/**
+ * Wait for the session's scene (lib/wait.ts awaitScene, the wait the resume walk uses too), record it
+ * as `session.scene`, and warn on a timeout. Never throws: past the bound the caller goes on.
+ */
+export async function settleScene(session: Pick<Session, 'sdk' | 'name'> & { scene?: SceneWait }, maxTicks = SCENE_READY_MAX_TICKS): Promise<SceneWait> {
+    const r = await awaitScene(session.sdk, maxTicks);
+    session.scene = r;
+    if (!r.ready) console.warn(`[session] ${session.name}: the scene was not ready after ${r.ticks} ticks; going on`);
+    return r;
 }
 
 /** Tell the watchdog the bot is still making progress (see progressStaleTicks). */
