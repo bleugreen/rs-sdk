@@ -108,7 +108,7 @@ describe('approach', () => {
             if (a.method === 'sendClickComponent') queueMicrotask(() => f.tick({ player: player(3221, 3218) }));
         };
         const r = await drive(sdk, approach(sdk as never, DEFAULT_GIVER_TILE));
-        expect(r).toMatchObject({ ok: true, plan: { kind: 'teleport', spell: 'lumbridge' } });
+        expect(r).toMatchObject({ ok: true, plan: { kind: 'teleport', spell: 'lumbridge' }, runFrom: { x: 3221, z: 3218 } });
         expect(sends(sdk, 'sendClickComponent')).toEqual([[1167]]);
     });
 
@@ -121,6 +121,7 @@ describe('approach', () => {
         expect(r.ok).toBe(false);
         expect(r.damage).toMatchObject({ tick: 105, hp: 9, by: expect.stringMatching(/^Dark wizard \(level 7\)/) });
         expect(r.reason).toMatch(/stopped: took damage from Dark wizard/);
+        expect(r.runFrom).toEqual({ x: 3250, z: 3222 });
         // The last click is a walk to the tile the player stood on when the hit showed: the halt.
         const stopAt = sim.clicks.at(-1)!;
         expect(stopAt).toMatchObject({ x: stopAt.from.x, z: stopAt.from.z, tick: 105 });
