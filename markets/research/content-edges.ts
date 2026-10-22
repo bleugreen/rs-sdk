@@ -153,7 +153,7 @@ for (const noted of [false, true]) {
 
 // ---- C: shop round trips (shop.rs2 sell_item / buy_item with ~calc_shop_value)
 {
-    await bot.closeBank?.();
+    await bot.closeBank();
     await mustTele(sdk, VARROCK_GENERAL_STORE.x, VARROCK_GENERAL_STORE.z);
     const opened = await bot.openShop(/shop keeper/i);
     if (!opened.success) throw new Error(`openShop: ${opened.message}`);
