@@ -244,7 +244,7 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             if (!session.sdk.getState()) await nextTick(session.sdk);
             // Whatever brought the session back (the watchdog's login or relaunch, a
             // reloaded page) left a fresh login, and a fresh login walks.
-            const run = await ensureRunOn(session.sdk);
+            const runMode = await ensureRunOn(session.sdk);
             const state = session.sdk.getState()!;
             const obs = new Observation(state, opts.probes, session);
             let point: ResumePoint;
@@ -256,7 +256,7 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             }
             const { observed: _o, ...summary } = point;
             points.push(summary);
-            row(opts.log, session, RESUME_STEP, startTick, startSession, t0, { attempt, ...summary, probes: Object.keys(obs.probed), run });
+            row(opts.log, session, RESUME_STEP, startTick, startSession, t0, { attempt, ...summary, probes: Object.keys(obs.probed), run: runMode });
             opts.onEvent?.({ kind: 'resume', attempt, point: summary });
             if (point.mode === 'finished') return { completed: 0, drops, points };
 
