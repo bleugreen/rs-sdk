@@ -659,7 +659,9 @@ describe('the step driving rc-cycle', () => {
         const h = new Harness(world({ xp: 44_000 }));
         h.statuses = [h.giver('lab_g1')];
         h.scripts.push(async run => turnsFailed(run, 'robust'));
-        h.receive = async () => {
+        const receiveOpts: unknown[] = [];
+        h.receive = async (_sdk, _partner, opts) => {
+            receiveOpts.push(opts);
             h.sdk.tick({ inventory: essence(27) });
             return { ok: true };
         };
@@ -678,6 +680,9 @@ describe('the step driving rc-cycle', () => {
         const rows = h.programRows();
         expect(rows.map(r => r.meta!.program)).toEqual(['rc-cycle', 'stock']);
         expect(rows[1]).toMatchObject({ ok: true, meta: { crafts: 1, trades: 1, rungs: ['program', 'stock'] } });
+        // SCORED stands beside the giver, so a dropped request is re-sent after DROPPED_TICKS (rs/267: 9 a cycle, not ~31),
+        // and the open is bounded in observed ticks rather than wall-clock.
+        expect(receiveOpts).toEqual([{ want: [{ item: expect.anything(), amount: 27 }], maxTicks: 30, openMaxTicks: 30, noReplyTicks: DROPPED_TICKS }]);
     });
 
     test("without the stock fallback a robust fault throws the program's fault", async () => {

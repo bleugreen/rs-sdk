@@ -43,7 +43,7 @@ import {
 } from '../lib/programs';
 import type { Session } from '../lib/session';
 import type { TickLog } from '../lib/ticks';
-import { receiveFrom } from '../lib/trade';
+import { DROPPED_TICKS, receiveFrom } from '../lib/trade';
 import { tickMs, waitUntil } from '../lib/wait';
 import type { Observed, RunnerSession, Step, StepContext } from '../runner/step';
 
@@ -188,7 +188,7 @@ export interface RunecraftDeps {
     readLauncher(runDir: string): LauncherView | null;
     /** RC_CUE_DIR, else run-machine/rc-cue. */
     cueDir(): string;
-    receiveFrom(sdk: Sdk, partner: string, opts: { want?: { item: string | RegExp; amount?: number }[]; maxTicks?: number; openTimeoutMs?: number }): Promise<{ ok: boolean; ticks?: number; reason?: string }>;
+    receiveFrom(sdk: Sdk, partner: string, opts: { want?: { item: string | RegExp; amount?: number }[]; maxTicks?: number; openMaxTicks?: number; openTimeoutMs?: number; noReplyTicks?: number }): Promise<{ ok: boolean; ticks?: number; reason?: string }>;
     now(): number;
 }
 
@@ -876,7 +876,7 @@ class Driver {
                     const turn = this.state().tick;
                     turns.push({ giver: giver.name, T: turn + lead, schedule: 'stock' });
                     sink.write({ beacons: [...beacons], turns: [...turns], schedule: 'robust', open });
-                    const r = await deps.receiveFrom(sdk, giver.name, { want: [{ item: ESSENCE, amount: this.band.load ?? LOAD }], maxTicks: 30, openTimeoutMs: 30 * tickMs() });
+                    const r = await deps.receiveFrom(sdk, giver.name, { want: [{ item: ESSENCE, amount: this.band.load ?? LOAD }], maxTicks: 30, openMaxTicks: 30, noReplyTicks: DROPPED_TICKS });
                     trades++;
                     timeline.push({ turn, receive: r.ticks ?? -1, received: this.state().tick, ...(r.ok ? {} : { reason: r.reason }) });
                     if (!r.ok) {
