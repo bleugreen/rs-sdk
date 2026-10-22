@@ -432,6 +432,18 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   against the model's 9, so the model reads about 5% pessimistic; `skills/agility.md` §2).
   Fallback **4,512** at the 74-tick lap a relay-driven loop would pay (inferred, same section). The
   entry total is 4,327 expected, ~3,934 best and 4,626 fallback.
+- **S17 at SCORED's stats** (rs/241, m, lab, bgsrv-ub, 300 ms, the in-page `agility` program, one
+  sample; `docs/speedrun/rehearsals/agility.md` section 6 on rs/241's branch at 2cf6fc15): Agility
+  75, HP 99, Defence 98, Prayer 99, protect off, 12 laps at 70.3 a lap (66 clean and one log-fall
+  lap of ~109); skeletons took 6 HP and falls 15 over the 12, no eats, 99 to 84. One sample, so S17
+  is not re-priced from it; the row keeps rs/155's lab pace. **No Protect from Melee** (RUN-ORDER.md
+  O34, settled): at 10 HP, 67.8 a lap off, 337 flicked (all 43 points drained anyway), 117 on near
+  the skeletons, 253 held, because the prayer button cancels the walk to the next obstacle.
+- **Food in S17:** HP drifts about -1.25 a lap with no eats, and S17 is roughly 60 laps, so SCORED
+  would fall under the 60-HP player-killer line around lap 30. The module eats a shark when HP is
+  below 60 (`eatBelow: 60`; about 2-3 sharks over the step, 20 HP each), not to a fixed eat line;
+  the 12 sharks in H23 stay as the margin against player killers. The cost of an eat inside a lap
+  is not measured yet.
 - **Primitives:** `lib/programs.ts` `runProgram(sdk, 'agility', {course, untilLevel, food,
   eatBelow})` [rs/97] (`untilLevel` is **declared in the program at 2f1b15de (rs/147's branch), pending main** with
   rs/147's Agility snapshot, which waits on main's sign-off of four default-changing program fixes
