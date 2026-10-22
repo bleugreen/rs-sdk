@@ -63,8 +63,15 @@ The bone collector's options (`train`, `food`, `eatAt`, `styleCap`, `trace`, ...
 | `eyes` | one per guam and irit | Fixed eye of newt target instead |
 | `reportMinutes` | 10 | Interval of the `herbs` rate report |
 
-Use the Taverley spot. Shop trips start only at the Falador west bank, so an Edgeville account
-banks its herbs and looted vials unmixed until it is switched to the Taverley spot.
+Use the Taverley spot for the account that processes (Druidic Ritual, Jatix, mixing). Shop
+trips start only at the Falador west bank, so an Edgeville account banks its herbs and looted
+vials unmixed until it is switched to the Taverley spot.
+
+**Gather-only** (a borrowed combat account with no Druidic Ritual): `{"spot":"chaos_druids",
+"fish":false,"food":"none","ritual":false,"process":false,"supply":false}`. `food:"none"` is
+needed: without it the role fetches a fishing net (phase `kit:net`) before it farms. Food
+already carried stays carried on every bank visit, which keeps the herb load small in the
+Wilderness. The grimy herbs are identified and mixed later by an account with the ritual.
 
 ## Measured rates
 
@@ -81,6 +88,19 @@ Lab, 50-67 melee with an adamant longsword, per-fight trace (`trace:true`):
 - Herbs per kill measured 0.48 (read: 0.445, with 11/128 kills dropping two). Vials of water drop
   0.08 per kill, so ~85% of the vials are bought.
 - **The whole mix (~891 herb drops) is ~5.7 Taverley account-hours** (inferred from the rates).
+
+### On the demo (2026-10-22, measured)
+
+- **Taverley is shared, and a shared druid drops for someone else.** A drop goes to the player
+  who did the most damage (`npc_findhero`). Over 13.6-18.9 hours cairn_h84 and cairn_h85 made
+  282-345 kills an hour but looted only 0.127 herbs a kill (35-47 herbs an account-hour); law
+  and nature runes came in at the same ~30%. With four of our 99-melee accounts there after
+  13:18Z it collapsed: two of them looted nothing at all in 25 kills each ('Someone else is
+  fighting that'), and h84 fell to 95 kills and 8 herbs an hour. Keep at most one account on
+  Taverley's six spawns.
+- **Edgeville dungeon, gather-only, 99 melee: the table rate.** The first banks of cairn_h41
+  and cairn_h45 were 0.43-0.64 herbs a kill (16 herbs in 32 kills), against the table's 0.445.
+  The room is in Wilderness levels 1-3.
 
 Shop trips (lab):
 
@@ -104,8 +124,16 @@ seven-herb mix.
 | harralander | energy (67.5) | chocolate dust | ~97 | gnome shops (5 stock each), or chocolate bars ground with a pestle and mortar |
 | tarromin, kwuarm | strength (50), super strength (125) | limpwurt root | ~160 | no shop: hill giants 11/128 per kill, Taverley druids 3/128; chaos druids never drop it |
 
-Only eyes of newt are covered so far. Limpwurt is a natural by-product of the hill-giant bone
-collectors.
+Two more secondaries make the limpwurt-free mix that attempts 2 and 3 use (rs/387; rs/158
+accepted it at 189 and 198 S25e ticks, under attempt 1's 210):
+
+| Herb | Potion (base xp) | Secondary | Source |
+|---|---|---|---|
+| harralander | energy (67.5) | chocolate dust | the Gnome Stronghold grocers on the first floor (buyer.md), and bars ground with `brew`'s `grind` |
+| kwuarm, lantadyme | weapon poison (137.5, level 60), antifire (157.5, level 69) | dragon scale dust | the blue dragon room's five scale spawns, telegrabbed by `dragons` with `scales:true` (dragons.md), ground with `grind` |
+
+Tarromin, cadantine and dwarf weed stay unmixed in that mix. Limpwurt is a natural by-product
+of the hill-giant bone collectors.
 
 ## Other sources considered (read)
 

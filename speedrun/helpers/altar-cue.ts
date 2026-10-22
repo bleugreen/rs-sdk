@@ -415,6 +415,38 @@ export class MissBench {
     }
 }
 
+// ------------------------------------------------------------------ turn order (both giver families)
+
+/** A helper's status is current while its heartbeat is this recent (every status writer rewrites at least every 2 s). */
+export const STATUS_FRESH_MS = 5_000;
+
+/** What the turn order reads from a helper's status file. */
+export interface TurnCandidate {
+    account: string;
+    /** Ready (loaded and in place) since, Date.now(); null when not ready. */
+    readyAt: number | null;
+    /** The status's heartbeat. */
+    ms: number;
+}
+
+/**
+ * The giver families' one turn-taking rule. Of the candidates whose status is current, that
+ * qualify (`eligible`) and are not benched after a failed turn (MissBench): those already holding
+ * the turn (`holding`: a bone giver's request standing or its trade open) first, then oldest ready
+ * first, ties by name. The altar side's batch picks from it (altar-receiver.ts chooseBatch), and the
+ * bone givers take turns by its first entry (bone-giver.ts boneServer).
+ */
+export function turnOrder<T extends TurnCandidate>(
+    candidates: readonly T[],
+    now: number,
+    o: { eligible: (c: T) => boolean; holding?: (c: T) => boolean; bench?: Pick<MissBench, 'skips'> }
+): T[] {
+    const rank = (c: T) => (o.holding?.(c) ? 0 : 1);
+    return candidates
+        .filter(c => now - c.ms <= STATUS_FRESH_MS && o.eligible(c) && !o.bench?.skips(c))
+        .sort((a, b) => rank(a) - rank(b) || (a.readyAt ?? Infinity) - (b.readyAt ?? Infinity) || canonName(a.account).localeCompare(canonName(b.account)));
+}
+
 // ------------------------------------------------------------------ the top-up ask (S18)
 
 /**

@@ -172,10 +172,10 @@ const CAULDRON_DOOR_X = 2889;
 const CAULDRON_OUTSIDE: Tile = { x: 2888, z: 9831 };
 const SUITS_AREA: Box = { x1: 2880, z1: 9822, x2: 2895, z2: 9840 };
 /** Jatix's herblore shop, Taverley: 800 empty vials, 800 eyes of newt, 3 pestles and mortars (taverly.inv). */
-const JATIX: Tile = { x: 2899, z: 3427 };
+export const JATIX: Tile = { x: 2899, z: 3427 };
 /** Two fountains just north of Jatix; a vial fills in one zero-delay packet (water_sources.rs2). */
 const TAVERLEY_FOUNTAIN: Tile = { x: 2891, z: 3439 };
-const FALADOR_WEST_BANK: Tile = { x: 2946, z: 3368 };
+export const FALADOR_WEST_BANK: Tile = { x: 2946, z: 3368 };
 
 interface Meat { raw: RegExp; enchanted: RegExp; npc: RegExp; area: Box; centre: Tile }
 /** The four meats, each from the nearest monster to the Lumbridge cow field where training ends. */

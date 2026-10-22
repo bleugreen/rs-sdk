@@ -249,6 +249,11 @@ export interface DragonOptions {
     blast: boolean;
     /** Telegrab dragonhide as well as bones (no GE market for it on 2026-10-21). */
     hides: boolean;
+    /**
+     * Telegrab the room's blue dragon scale ground spawns too (Herblore's dragon scale dust:
+     * weapon poison from kwuarm, antifire from lantadyme). Bones are grabbed first.
+     */
+    scales: boolean;
     /** Price caps: also the budget estimate per trip. */
     prices: { staff: number; mind: number; chaos: number; death: number; law: number; food: number };
     /** Accounts whose trade requests are accepted as funding. */
@@ -269,6 +274,16 @@ export interface DragonOptions {
     shopPrices: { staff: number; mind: number; chaos: number; death: number };
 }
 
+/** What the role telegrabs, by item name. */
+export function lootPattern(o: Pick<DragonOptions, 'hides' | 'scales'>): RegExp {
+    return new RegExp(`^(${['dragon bones', ...(o.hides ? ['dragonhide'] : []), ...(o.scales ? ['blue dragon scale'] : [])].join('|')})$`, 'i');
+}
+
+/** Bones before anything else: a drop despawns, a scale spawn waits. */
+export function grabOrder(name: string): number {
+    return /bones/i.test(name) ? 0 : 1;
+}
+
 export function dragonOptions(o: Record<string, unknown>): DragonOptions {
     const num = (k: string, d: number) => (typeof o[k] === 'number' ? (o[k] as number) : d);
     const p = (o.prices ?? {}) as Record<string, number>;
@@ -284,6 +299,7 @@ export function dragonOptions(o: Record<string, unknown>): DragonOptions {
         buyTrips: num('buyTrips', 1),
         blast: o.blast !== false,
         hides: o.hides === true,
+        scales: o.scales === true,
         prices: {
             staff: p.staff ?? 3000, mind: p.mind ?? 10, chaos: p.chaos ?? 60, death: p.death ?? 90, law: num('lawMax', p.law ?? 3500), food: p.food ?? 900
         },
@@ -533,7 +549,7 @@ class Dragons {
     private readonly badSw = new Set<string>();
     private lastWaitLog = 0;
     private readonly loot: RegExp;
-    readonly stats = { kills: 0, casts: 0, grabs: 0, grabFails: 0, bones: 0, hides: 0, trips: 0, banked: 0, deaths: 0, damage: 0, damageOnTile: 0, offTileTicks: 0, startedAt: Date.now() };
+    readonly stats = { kills: 0, casts: 0, grabs: 0, grabFails: 0, bones: 0, hides: 0, scales: 0, trips: 0, banked: 0, deaths: 0, damage: 0, damageOnTile: 0, offTileTicks: 0, startedAt: Date.now() };
     private readonly killedAt = new Map<number, number>();
     private readonly mine = new Set<number>();
 
@@ -542,7 +558,7 @@ class Dragons {
         this.bot = ctx.bot;
         this.run = new Run(ctx, parseOptions({ spot: 'baby_blue', fish: false, train: o.train, eatAt: 0.5, fleeAt: 0.3 }));
         this.requests = new ChatCursor(ctx.sdk, [TRADE_REQUEST_CHAT_TYPE]);
-        this.loot = o.hides ? /^(dragon bones|dragonhide)$/i : /^dragon bones$/i;
+        this.loot = lootPattern(o);
     }
 
     traveller(): Traveller {
@@ -1001,12 +1017,19 @@ class Dragons {
         const s = this.state();
         const los = this.los;
         if (this.magic() >= TELEGRAB.level && this.freeSlots() > 0) {
-            const g = (s.groundItems ?? []).find((i: GroundItem) => this.loot.test(i.name) && footprintDistance(SAFE_TILE, i, 1) >= 1 && dropGrabbable(SAFE_TILE, i, los));
+            const g = (s.groundItems ?? [])
+                .filter((i: GroundItem) => this.loot.test(i.name) && footprintDistance(SAFE_TILE, i, 1) >= 1 && dropGrabbable(SAFE_TILE, i, los))
+                .sort((a: GroundItem, b: GroundItem) => grabOrder(a.name) - grabOrder(b.name))[0];
             if (g) {
                 const before = s.inventory.filter(i => this.loot.test(i.name)).length;
                 await this.sdk.sendSpellOnGroundItem(g.x, g.z, g.id, TELEGRAB.id);
                 const ok = await this.run.waitFor(st => st.inventory.filter(i => this.loot.test(i.name)).length > before, 8);
-                if (ok) { this.stats.grabs++; if (/bones/i.test(g.name)) this.stats.bones++; else this.stats.hides++; } else this.stats.grabFails++;
+                if (ok) {
+                    this.stats.grabs++;
+                    if (/bones/i.test(g.name)) this.stats.bones++;
+                    else if (/scale/i.test(g.name)) this.stats.scales++;
+                    else this.stats.hides++;
+                } else this.stats.grabFails++;
                 // Kills are counted only when a dragon's hitpoints show 0, which the published state
                 // often misses; a telegrabbed drop is the rate that matters.
                 if (ok) this.ctx.log('progress', this.summary());

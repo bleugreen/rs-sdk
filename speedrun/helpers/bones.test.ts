@@ -6,7 +6,7 @@ import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
 import { Run } from './bones';
 import { memoryRoleState } from './role';
 import { summarizeWindow } from '../../docs/speedrun/scripts/bones-dev/stats';
-import { fishingHaul, gearRank, healOf, inBabyBlueRoom, inDesert, isClutter, keepOnBank, parseOptions, patrolTour, SPOTS, UGTHANKI_SPAWNS } from './bones';
+import { fishingHaul, gearRank, healOf, inBabyBlueRoom, inDesert, isClutter, keepOnBank, parseOptions, patrolTour, SPOTS, tollWithdraw, UGTHANKI_SPAWNS } from './bones';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -50,6 +50,19 @@ test('inBabyBlueRoom: west of the dusty-key gate only; the gate tile is outside'
     expect(inBabyBlueRoom({ x: 2924, z: 9803 })).toBe(false); // cairn_h51 stopped here, 09:26 UTC
     expect(inBabyBlueRoom({ x: 2925, z: 9803 })).toBe(false);
     expect(inBabyBlueRoom({ x: 2884, z: 9798 })).toBe(false); // the ladder bottom is walled off from the room
+});
+
+describe('tollWithdraw', () => {
+    test('a bank east of the toll gate keeps the 10 gp toll (Al Kharid bank, where the coins role banks)', () => {
+        const t = tollWithdraw({ x: 3270, z: 3167 });
+        expect(t).toHaveLength(1);
+        expect(t[0]!.re.test('Coins')).toBe(true);
+        expect(t[0]!.n).toBe(10);
+    });
+    test('banks west of the gate take nothing out', () => {
+        expect(tollWithdraw({ x: 2946, z: 3368 })).toEqual([]); // Falador west
+        expect(tollWithdraw({ x: 3185, z: 3436 })).toEqual([]); // Varrock west
+    });
 });
 
 describe('keepOnBank', () => {

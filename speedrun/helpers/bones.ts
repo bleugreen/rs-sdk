@@ -32,7 +32,7 @@ import { Buyer } from './buyer';
 import { EatGuard } from './eat-guard';
 import { waitForFreshState } from '../lib/fresh-state';
 import { accountMatches, playerPattern } from './mule';
-import { isEastOfTollGate, travelTo } from '../lib/toll-gate';
+import { isEastOfTollGate, TOLL_GP, travelTo } from '../lib/toll-gate';
 
 interface Box { x1: number; z1: number; x2: number; z2: number }
 interface Tile { x: number; z: number }
@@ -531,6 +531,13 @@ export function keepOnBank(name: string, lv: { fishing: number; cooking: number 
         (NET_FISH.test(name) && lv.cooking < 15);
 }
 
+const COINS = /^coins$/i;
+
+/** What a bank visit at `at` takes out so the walk away can pay the Al Kharid toll: 10 gp when east of the gate. */
+export function tollWithdraw(at: { x: number; z: number }): { re: RegExp; n: number }[] {
+    return isEastOfTollGate(at) ? [{ re: COINS, n: TOLL_GP }] : [];
+}
+
 /**
  * Carried items that send the fishing fallback to the bank first: the spot's product, and coins
  * unless the spot keeps them carried. Kept coins survive every bank visit, so counting them
@@ -990,7 +997,11 @@ export class Run {
         // un-noted, and without fishing the fishing kit and raw fish only cost slots.
         const fishingKit = (n: string) => ROD.test(n) || FEATHER.test(n) || RAW_FISH.test(n) || NET.test(n) || NET_FISH.test(n);
         const fishing = this.fishing();
-        const keep = (i: InventoryItem) => (this.opt.spot.keep?.test(i.name) ?? false) ||
+        // Al Kharid's only way out to the west is the toll gate, which walkOnce pays from carried
+        // coins: a bank visit east of it keeps (or takes out) the toll.
+        const toll = tollWithdraw(this.pos());
+        withdraw = [...withdraw, ...toll];
+        const keep = (i: InventoryItem) => (this.opt.spot.keep?.test(i.name) ?? false) || (toll.length > 0 && COINS.test(i.name)) ||
             (keepOnBank(i.name, lv, this.opt.spot.requires) && !(FOOD.test(i.name) && !edible(i)) && (fishing || !fishingKit(i.name)));
         const seen = new Set<number>();
         for (const item of this.state().inventory) {
