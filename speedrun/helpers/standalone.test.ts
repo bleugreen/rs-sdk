@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { DIRECT_IN_WORLD, DIRECT_IN_WORLD_RE, DIRECT_REFUSED_RE } from './role';
-import { checkBotEnv, helpersReady, parseLaunchConfig, RoleLoop, type RoleProcess, roleEnv, type Stoppable, stopAllWithin } from './standalone';
+import { checkBotEnv, helpersReady, parseLaunchConfig, RoleLoop, type RoleProcess, roleEnv, type Stoppable, StopRequest, stopAllWithin } from './standalone';
 
 const gw = 'ws://127.0.0.1:7795';
 
@@ -100,6 +100,38 @@ describe('stopAllWithin: one deadline for the whole stop', () => {
         const failing = account('throw');
         expect(await stopAllWithin([failing], Date.now() + 500)).toBe(0);
         expect(failing.kills).toBe(0);
+    });
+
+    test('StopRequest: the deadline runs from the first request; later ones change nothing', async () => {
+        const req = new StopRequest(5000, () => undefined);
+        expect(req.deadline).toBe(Infinity);
+        const t0 = Date.now();
+        req.request('SIGTERM');
+        await req.requested;
+        expect(req.deadline - t0).toBeGreaterThanOrEqual(5000);
+        expect(req.deadline - t0).toBeLessThan(5050);
+        const first = req.deadline;
+        await sleep(20);
+        req.request('final role exited', 3);
+        expect(req).toMatchObject({ why: 'SIGTERM', code: 0, deadline: first });
+        req.finished();
+    });
+
+    test('StopRequest: the watchdog fires at the deadline if the stop is still pending, never after finished()', async () => {
+        let overdue = 0;
+        const pending = new StopRequest(60, () => void overdue++, 10);
+        pending.request('SIGTERM');
+        await sleep(40);
+        expect(overdue).toBe(0);
+        await sleep(80);
+        expect(overdue).toBe(1);
+
+        let late = 0;
+        const done = new StopRequest(60, () => void late++, 10);
+        done.request('SIGINT');
+        done.finished();
+        await sleep(120);
+        expect(late).toBe(0);
     });
 
     test('a deadline already past kills every account at once', async () => {
