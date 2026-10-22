@@ -183,7 +183,29 @@ click sent within 2 ticks of a jump that draws no reply in 3 ticks, counted from
 client executed it. Results carry `settleTicks`, `refusedResends` and `unansweredResends`.
 Measured on the Grand Tree (lite, bgsrv-ub, cairn://p/rs/309): every tree entry's Narnode
 talk now leaves the landing tile in 2 ticks (25 of 25), against 17-19 on 11 of 13 before
-(rs/299), and Charlie's "no route" first click after the ladder is re-sent the next tick.
+(rs/299). Charlie is talked to through his cell bars, so the lite client never finds a route
+to him: it still sends the op (`routed: false`, logged as `cant_reach`) and the server's
+approach range answers it.
+
+The same rule reaches the paths that do not click through `act`. `travel.ts` settles before
+every hop, so the first walk click after a teleport landing is routed on a built region
+(T05-06 on the browser was sent 14 tiles south before) and a hop's loc lookup sees the new
+region's locs (the village spirit tree straight after a young-tree landing).
+`world.ts` `findLoc` waits for a built region too. S00's first Talk-to after login goes
+through `ClickGuard` with `alwaysWatch`, so it is re-sent once if it draws no reply.
+
+A click whose script has answered (a game message, a new animation, an interface) has
+landed, and `act` never re-sends it on idle ticks, because that would restart a script that
+p_delays before its page (Dwarf Cannon's railing, the Wilderness lever, the spirit trees).
+That holds only for a click sent from an idle player. A click sent while an earlier script
+is still answering (an animation playing, or a game message in the last 2 ticks) keeps the
+idle re-send, because that script's later messages are not its answer and the click may
+have been dropped while the script held the player. Glough's tree climb, sent as an Agility
+potion's boost shows, is the measured case.
+
+The browser client publishes each dialogue component's whole text, as the lite client does.
+It used to cut each line at 50 characters, so `pageText` lost the end of every long line
+(Narnode's "glider pilot fly you away" in S11b H).
 
 **Against the demo.** `server/webclient/proxy.ts` serves this build's bot bundle in front
 of a remote world, and the page takes `?server=` (game socket) and `?gateway=` (overlay
