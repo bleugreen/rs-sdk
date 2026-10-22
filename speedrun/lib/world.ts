@@ -153,6 +153,24 @@ export function messagesSince(src: StateLike, tick: number, re?: RegExp): string
     return (stateOf(src)?.gameMessages ?? []).filter(m => m.type === 0 && m.tick >= tick && (!re || re.test(m.text))).map(m => m.text);
 }
 
+/**
+ * The game-message cursor (the SDK's ActionHelpers.getMessageTick rule): the newest message's
+ * observation id, the publication it first showed in, or its tick where it has none. Take it
+ * before a click; messagesAfter then yields only the replies since. The clients stamp a click's
+ * reply on different ticks (the browser on the click's own tick, lite on the next), so no tick
+ * offset tells a new reply from the last one's on both; the publication cursor does.
+ */
+export function messageCursor(src: StateLike): number {
+    let c = 0;
+    for (const m of stateOf(src)?.gameMessages ?? []) c = Math.max(c, m.observationId ?? m.tick);
+    return c;
+}
+
+/** Game messages (chat type 0) newer than `cursor` (messageCursor), optionally matching `re`. */
+export function messagesAfter(src: StateLike, cursor: number, re?: RegExp): string[] {
+    return (stateOf(src)?.gameMessages ?? []).filter(m => m.type === 0 && (m.observationId ?? m.tick) > cursor && (!re || re.test(m.text))).map(m => m.text);
+}
+
 export interface TileCounter {
     /** Tiles stepped since the counter started. */
     readonly tiles: number;

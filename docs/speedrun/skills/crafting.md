@@ -200,8 +200,13 @@ Fallback lists (from 42):
   30 elemental runes each, so **828 cosmic runes** (GE: 370 ever traded, no sellers now) and
   276 unpowered orbs (molten glass + glassblowing pipe, Crafting 46).
 - **Diamonds only**: 364 uncut diamonds, chisel.
-- **Hard leather bodies**: about 1,120 hard leather (cowhides tanned by a helper; cows are
-  everywhere; GE cowhides last traded at 100 gp), 1 needle, about 225 thread. Supply-safe.
+- **Hard leather bodies**: 954 hard leather per attempt (928 bodies to the hand-off plus a spare
+  inventory; 1,142 for the standalone 45 to 99), 1 needle, and floor((n-1+4)/5)+1 thread for n
+  bodies (section 9: 187 to the hand-off, 224 to 99). There is no GE market for hard leather and
+  only a handful of cowhides (2026-10-22), so the `hides` helper role takes cowhides in the
+  Lumbridge fields and has the Al Kharid tanner tan them at 3 gp each: about 250-585 leather per
+  account-hour, measured ([helpers/hides.md](../helpers/hides.md)). Staged for attempt 1 on
+  cairn_mule1: 1,169 leather, 250 thread, 2 needles. Supply-safe.
 
 **Hand-off.** One trade of noted gems (1-3 stacks) plus the chisel, deposited at the training
 booth. The scored account must stand at a bank for the cycle.
