@@ -127,9 +127,9 @@ of Goblin Diplomacy's standalone travel that the legs already carried off its ro
 cannon session, Prayer, Crafting and Cooking pass it. Fold-in 13 adds S15's measured H to M (+352),
 so Monkey Madness (4,429) passes Agility (4,327) for rank 1.
 
-The expected column sums to **31,350.5** (the steps) plus the legs' **2,198.5**; RUN-ORDER.md section 6
+The expected column sums to **31,315** (the steps) plus the legs' **2,198.5**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **34,834** knife-on expected (31,867 best), against the record of 35,916.
+retries, restarts) for its **34,798.5** knife-on expected (31,876.5 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -147,7 +147,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 6 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~120 elsewhere | ~190 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` | building (rs/154, parked under the 2-4 child limit); stun pack: lab-accepted (bury, charge, arrows; rs/132) |
 | 7 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | on main, 22552bf4 (#197; rs/231); lab-accepted (1,998 on 78-99; rs/152); gate `measureDrops` 120 explicit (#221) |
 | 8 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,972 | 1,946 | 1,997 (the bow from 70); 2,023-2,211 without the kit | ~265 | overlay | `cannon-kit.ts` (rs/59, on main) | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible) |
-| 9 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,528.5 | 1,393.5 | 1,798.5 | ~405 | overlay | `quest-grandtree-full.ts` | building (rs/185, held: tenet 15) |
+| 9 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,493 | 1,403 | 1,763 | ~360 | overlay | `quest-grandtree-full.ts` | building (rs/202 under rs/185); **lab: 3 of 3 full A-to-P runs at SCORED's levels** (1,403 / 1,504 / 1,422) |
 | 10 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,192 | 1,192 | ~5,220 | ~4,030 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **on main, 1514f47a (#222; rs/268's snapshot of rs/196's module, rs/186's branch at 0c349da6)**, the run-commit floor; twin demo pending; **lab-accepted (rs/196, module 3f02f336, relay path (lab): nature at 44 tuned 30/30 at 29 x 7, robust 30/30 at 29 x 8; S06 7/7 at 6 x 7, 58)**; the tuned nature run confirmed on the direct path, 30/30 at 29 x 7 (rs/196, 3b161c12); pending: the auto rule's 'handled before SCORED' field (entry 9); cycle: on main, 23ea9f77 (#178) |
 | 11 | 10 | Smithing | `speedrun/skills/smithing.ts` | S25a | 1,065 | 1,028 | 1,330 | ~302 | overlay | `smithing-trade.ts` | building (rs/186, held: tenet 15) |
 | 12 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 969 | 908 | 1,079 | ~171 | overlay | `quest-dragon-*.ts` | building (rs/185, held: tenet 15) |
@@ -1110,9 +1110,25 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   scroll if it is held and cast again, a hard error only if it is not held; Prayer 43 (~94 from S07, so no prayer potions, `SUPPLIES.md` H7-H8); Varrock and Ardougne runes.
 - **Postconditions:** `%grandtree` 160 (ledger); Agility 75; Attack +18,400, Magic +2,150 (read,
   `quest_grandtree.rs2:199-201`); 5 QP; Gnome Air (glider) available.
-- **Ticks:** expected **1,528.5** (fixed, inferred, `quests/README.md` §3 row's 1,576 less segment
-  A's ~47.5 of travel to the door, which is T10-11's; black demon 153 measured, rs/56, n=5). Best
-  **1,393.5** (burst, r21; 1,441 less 47.5). Fallback **1,798.5** (stock, inferred; 1,846 less 47.5).
+- **Ticks:** expected **1,493** (measured and inferred): rs/202's **3 of 3 full A-to-P runs** (lab,
+  300 ms, fixed dialogue, SCORED's S11b levels, the real `travel.ts`): **1,403 / 1,504 / 1,422, mean
+  1,443** (m), with segment P at its expected **104** (inferred) in place of the runs' 54: P is the
+  Daconia root search, 33 ticks in two runs (root 10, first in the search order) and 96 in one (root
+  5), and the model's 104 is its expected cost over a random root. Measured from the arrival tile:
+  segment A has no travel (the fixture starts on the door tile; A's 73 is the door, Narnode's talk
+  with his trapdoor walk and two objboxes), as RUN-ORDER.md O6 has it. Per segment (means): A 73, B
+  178, C 158.7, D 41.7, E 51.7, F 21.3, G 38.7, H 47.7, I 141, J 157, K 130, L 62.3, M 52, N1 31, N2
+  121.3, O 83.7, P 54 (the draw). B and C on the real `travel.ts`: 178 against 184 inferred, 158-159
+  against 141 (+13%). Best **1,403** (m, the fastest run). Fallback **~1,763** (stock, inferred: the
+  stock column's 270 of extra dialogue over the fixed on the measured figure). No burst figure yet
+  (the conversations carry no shapes), so the burst column is unchanged; 1,528.5 / 1,393.5 i before.
+- **The fight and the kit** (rs/202, m): the demon (N2) 113-127 ticks, 20-24 casts, 0 damage, prayer
+  21-24, staff of fire worn; across 13 lab Fire Bolt kills 113-163 ticks and 20-30 casts, so 35 chaos
+  runes cover it (5 spare at the worst seen). The climb: 1 dose, 0 refusals in every run. Free slots:
+  18 at S11b's start with H8 held and 14 at L (the 9-slot precondition is met). **The scroll read**
+  (S08's acceptance, the `%elenaquest` 29 variant): the first Ardougne teleport is refused with 'You
+  haven't learnt how to cast this spell yet.'; reading the scroll shows two pages and removes it; the
+  second cast lands. Segment B ran 187 with the read against 178 without (entry 18).
 - **Primitives:** rs/94 `converse`, `act`, `combat` (spell fight with Protect from Melee, re-engage
   fix); `continueBurst`; `travel.ts`; `trade.receiveFrom`.
 - **Mode:** overlay-driven.
@@ -1127,7 +1143,11 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   levels checked** (rs/202's audit, main's 20:39 PDT rule): Attack 80, Strength 1, Defence 1, HP 28,
   Magic 64, Prayer 94, Agility 22, with **no level gap**. The final A-to-P runs re-price S11b in a
   later fold-in. The prayer button cancels a walk in progress (`clearPendingAction`; rs/241's Agility
-  finding), so the module toggles at a stand or on a click tick.
+  finding), so the module toggles at a stand or on a click tick. **Measured** (rs/202, the A-to-P
+  runs): every toggle is sent standing still; on takes 1 tick (before the glider at I, before the
+  trapdoor at N1); off at the shipyard gate takes 4, because the first click is dropped while the
+  gate's scene holds the player and `setPrayer` re-sends after 3; no walk was cancelled. The
+  Karamja crash cost 0 HP and 4 prayer points in every run, segment I 141 each time.
 - **Fallback:** Fire Blast if Fire Bolt's casts run short (Magic ~64 after the warlord, unmeasured
   for the demon; ~31 Fire Bolt casts, 31 chaos and 93 air with the staff of fire wielded, fit inside
   H7, and rs/202's lab records the casts); `advance` page by page if the burst fails; no Agility
@@ -1574,7 +1594,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Acceptance, local:** `quest-plague-city-lab.ts` through the module, 3 runs. Pass: within 10% of 491,
   counted from Edmond's tile, and **the scroll read observed** by the magic scroll leaving the inventory and its message, not by
   the quest tab, which shows the quest complete at `%elenaquest` 29 while the teleport needs 30
-  (read, `quest.constant:23`, `teleport.rs2:35`).
+  (read, `quest.constant:23`, `teleport.rs2:35`). The observable in the 29 variant (rs/202, m, the
+  Grand Tree's segment B): the first Ardougne teleport is refused with 'You haven't learnt how to
+  cast this spell yet.'; reading the scroll shows two pages and removes it; the second cast lands.
 - **Acceptance, demo (throwaway):** feasible end to end (no level gate besides the teleport, which
   can be walked). Pass: within 10% of the local figure, and the Ardougne teleport casts afterwards.
 - **Start from:** `quest-plague-city-lab.ts`, `quest-plague-city-segments.ts`, `quest-plague-city-routes.ts`.
