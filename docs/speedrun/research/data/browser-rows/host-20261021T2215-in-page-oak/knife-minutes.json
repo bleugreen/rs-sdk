@@ -1,0 +1,1653 @@
+{
+ "chance": [
+  32,
+  100
+ ],
+ "limit": 2,
+ "soft": [
+  400,
+  225
+ ],
+ "pageTicks": 1122,
+ "catchUps": 21,
+ "softs": 22,
+ "knife": {
+  "levels": "77-79",
+  "startLevel": 77,
+  "p": "0.332-0.336",
+  "missed": 0,
+  "catchUpSource": "page frames",
+  "programFrames": {
+   "wall": 1792621175725,
+   "t": 410,
+   "n": 29,
+   "pr": 0,
+   "sl": 3,
+   "rs": 3,
+   "lu": 2,
+   "sw": 3,
+   "fc": 4,
+   "fu": 6,
+   "fo": 57,
+   "fn": 306
+  },
+  "pageCatchUpsInRun": 8,
+  "bins": [
+   {
+    "bin": "0-2",
+    "minutesObserved": 0.53,
+    "logs": 12,
+    "ticks": 108,
+    "perLog": 9,
+    "expRolls": 36.11,
+    "perExpectedRoll": 2.99
+   },
+   {
+    "bin": "2-5",
+    "minutesObserved": 0,
+    "logs": 0,
+    "ticks": 0,
+    "perLog": null,
+    "expRolls": 0,
+    "perExpectedRoll": null
+   },
+   {
+    "bin": "5-10",
+    "minutesObserved": 0.86,
+    "logs": 16,
+    "ticks": 161,
+    "perLog": 10.06,
+    "expRolls": 48.19,
+    "perExpectedRoll": 3.34
+   },
+   {
+    "bin": "over 10",
+    "minutesObserved": 0,
+    "logs": 0,
+    "ticks": 0,
+    "perLog": null,
+    "expRolls": 0,
+    "perExpectedRoll": null
+   }
+  ],
+  "all": {
+   "logs": 28,
+   "ticks": 269,
+   "perLog": 9.61,
+   "expRolls": 84.29,
+   "perExpectedRoll": 3.19
+  },
+  "minuteCalm": {
+   "logs": 12,
+   "ticks": 108,
+   "perLog": 9,
+   "expRolls": 36.11,
+   "perExpectedRoll": 2.99
+  },
+  "minuteBusy": {
+   "logs": 16,
+   "ticks": 161,
+   "perLog": 10.06,
+   "expRolls": 48.19,
+   "perExpectedRoll": 3.34
+  },
+  "trailingCalm": {
+   "logs": 7,
+   "ticks": 40,
+   "perLog": 5.71,
+   "expRolls": 21.05,
+   "perExpectedRoll": 1.9
+  },
+  "trailingBusy": {
+   "logs": 21,
+   "ticks": 229,
+   "perLog": 10.9,
+   "expRolls": 63.25,
+   "perExpectedRoll": 3.62
+  },
+  "softCalm": {
+   "logs": 5,
+   "ticks": 30,
+   "perLog": 6,
+   "expRolls": 15.02,
+   "perExpectedRoll": 2
+  },
+  "softBusy": {
+   "logs": 23,
+   "ticks": 239,
+   "perLog": 10.39,
+   "expRolls": 69.27,
+   "perExpectedRoll": 3.45
+  },
+  "kinds": {
+   "honest": 4,
+   "timing": 3,
+   "timingFourTick": 3,
+   "timingPhaseResync": 0
+  },
+  "counters": {
+   "successes": 29,
+   "starters": 84,
+   "switches": 3,
+   "slips": 3,
+   "resyncs": 3,
+   "levelUps": 2
+  },
+  "histogram": {
+   "3": 8,
+   "4": 3,
+   "6": 4,
+   "9": 4,
+   "12": 2,
+   "15": 2,
+   "18": 1,
+   "21": 1,
+   "22": 1,
+   "25": 1,
+   "33": 1
+  },
+  "minutes": {
+   "2026-10-21T22:18:00.000Z": {
+    "catchUps": 8,
+    "softs": 6,
+    "spanMs": 51554.699951171875,
+    "rate": 9.31,
+    "softRate": 6.98,
+    "calm": false
+   },
+   "2026-10-21T22:19:00.000Z": {
+    "catchUps": 0,
+    "softs": 0,
+    "spanMs": 31710,
+    "rate": 0,
+    "softRate": 0,
+    "calm": true
+   }
+  },
+  "logs": [
+   {
+    "n": 1,
+    "tick": 126,
+    "level": 77,
+    "wall": 1792621088445.3,
+    "phaseResync": false
+   },
+   {
+    "n": 2,
+    "tick": 130,
+    "level": 77,
+    "wall": 1792621089682,
+    "phaseResync": false
+   },
+   {
+    "n": 3,
+    "tick": 133,
+    "level": 77,
+    "wall": 1792621090684,
+    "phaseResync": false
+   },
+   {
+    "n": 4,
+    "tick": 139,
+    "level": 77,
+    "wall": 1792621092688,
+    "phaseResync": false
+   },
+   {
+    "n": 5,
+    "tick": 148,
+    "level": 77,
+    "wall": 1792621095248.6667,
+    "phaseResync": false
+   },
+   {
+    "n": 6,
+    "tick": 160,
+    "level": 77,
+    "wall": 1792621098469.7,
+    "phaseResync": false
+   },
+   {
+    "n": 7,
+    "tick": 193,
+    "level": 77,
+    "wall": 1792621110403,
+    "phaseResync": false
+   },
+   {
+    "n": 8,
+    "tick": 215,
+    "level": 77,
+    "wall": 1792621117019,
+    "phaseResync": false
+   },
+   {
+    "n": 9,
+    "tick": 240,
+    "level": 77,
+    "wall": 1792621124776.6667,
+    "phaseResync": false
+   },
+   {
+    "n": 10,
+    "tick": 244,
+    "level": 77,
+    "wall": 1792621126115.3333,
+    "phaseResync": false
+   },
+   {
+    "n": 11,
+    "tick": 247,
+    "level": 78,
+    "wall": 1792621126951,
+    "phaseResync": false
+   },
+   {
+    "n": 12,
+    "tick": 250,
+    "level": 78,
+    "wall": 1792621127702.5,
+    "phaseResync": false
+   },
+   {
+    "n": 13,
+    "tick": 253,
+    "level": 78,
+    "wall": 1792621128454,
+    "phaseResync": false
+   },
+   {
+    "n": 14,
+    "tick": 259,
+    "level": 78,
+    "wall": 1792621130029.7144,
+    "phaseResync": false
+   },
+   {
+    "n": 15,
+    "tick": 280,
+    "level": 78,
+    "wall": 1792621136481,
+    "phaseResync": false
+   },
+   {
+    "n": 16,
+    "tick": 284,
+    "level": 78,
+    "wall": 1792621137587.182,
+    "phaseResync": false
+   },
+   {
+    "n": 17,
+    "tick": 287,
+    "level": 78,
+    "wall": 1792621138416.818,
+    "phaseResync": false
+   },
+   {
+    "n": 18,
+    "tick": 302,
+    "level": 78,
+    "wall": 1792621142898.7273,
+    "phaseResync": false
+   },
+   {
+    "n": 19,
+    "tick": 311,
+    "level": 78,
+    "wall": 1792621145561.5,
+    "phaseResync": false
+   },
+   {
+    "n": 20,
+    "tick": 317,
+    "level": 78,
+    "wall": 1792621147486.3,
+    "phaseResync": false
+   },
+   {
+    "n": 21,
+    "tick": 332,
+    "level": 78,
+    "wall": 1792621151908.9,
+    "phaseResync": false
+   },
+   {
+    "n": 22,
+    "tick": 341,
+    "level": 78,
+    "wall": 1792621154644,
+    "phaseResync": false
+   },
+   {
+    "n": 23,
+    "tick": 359,
+    "level": 78,
+    "wall": 1792621159946.1428,
+    "phaseResync": false
+   },
+   {
+    "n": 24,
+    "tick": 365,
+    "level": 78,
+    "wall": 1792621161663,
+    "phaseResync": false
+   },
+   {
+    "n": 25,
+    "tick": 377,
+    "level": 78,
+    "wall": 1792621165358,
+    "phaseResync": false
+   },
+   {
+    "n": 26,
+    "tick": 380,
+    "level": 78,
+    "wall": 1792621166360,
+    "phaseResync": false
+   },
+   {
+    "n": 27,
+    "tick": 389,
+    "level": 78,
+    "wall": 1792621169367.7778,
+    "phaseResync": false
+   },
+   {
+    "n": 28,
+    "tick": 392,
+    "level": 78,
+    "wall": 1792621170505.2,
+    "phaseResync": false
+   },
+   {
+    "n": 29,
+    "tick": 395,
+    "level": 79,
+    "wall": 1792621171710,
+    "phaseResync": false
+   }
+  ],
+  "gaps": [
+   {
+    "ticks": 4,
+    "level": 77,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "timing"
+   },
+   {
+    "ticks": 3,
+    "level": 77,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 6,
+    "level": 77,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 9,
+    "level": 77,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 12,
+    "level": 77,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 33,
+    "level": 77,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 8,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 6,
+    "softsInGap": 6,
+    "kind": "honest"
+   },
+   {
+    "ticks": 22,
+    "level": 77,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 8,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "honest"
+   },
+   {
+    "ticks": 25,
+    "level": 77,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 8,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "honest"
+   },
+   {
+    "ticks": 4,
+    "level": 77,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 8,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "timing"
+   },
+   {
+    "ticks": 3,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 8,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 8,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 8,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 6,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 8,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 21,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 9,
+    "trailingSoft60": 9,
+    "catchUpsInGap": 2,
+    "softsInGap": 0,
+    "kind": "honest"
+   },
+   {
+    "ticks": 4,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 9,
+    "trailingSoft60": 8,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "timing"
+   },
+   {
+    "ticks": 3,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 9,
+    "trailingSoft60": 7,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 15,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 8,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 9,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 8,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 6,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 8,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 15,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 8,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 9,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 8,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 18,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 8,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 6,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 6,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 12,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 4,
+    "trailingSoft60": 2,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 4,
+    "trailingSoft60": 2,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 9,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 1,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 78,
+    "p": 0.332,
+    "expRolls": 3.011764705882353,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 0,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 0,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   }
+  ]
+ },
+ "plain": {
+  "levels": "79-80",
+  "startLevel": 79,
+  "p": "0.336-0.34",
+  "missed": 0,
+  "catchUpSource": "page frames",
+  "programFrames": {
+   "wall": 1792621308211,
+   "t": 825,
+   "n": 35,
+   "pr": 0,
+   "sl": 0,
+   "rs": 0,
+   "lu": 1,
+   "sw": 0,
+   "fc": 1,
+   "fu": 3,
+   "fo": 114,
+   "fn": 414
+  },
+  "pageCatchUpsInRun": 10,
+  "bins": [
+   {
+    "bin": "0-2",
+    "minutesObserved": 0,
+    "logs": 0,
+    "ticks": 0,
+    "perLog": null,
+    "expRolls": 0,
+    "perExpectedRoll": null
+   },
+   {
+    "bin": "2-5",
+    "minutesObserved": 1.32,
+    "logs": 25,
+    "ticks": 258,
+    "perLog": 10.32,
+    "expRolls": 74.14,
+    "perExpectedRoll": 3.48
+   },
+   {
+    "bin": "5-10",
+    "minutesObserved": 0.7,
+    "logs": 9,
+    "ticks": 125,
+    "perLog": 13.89,
+    "expRolls": 26.48,
+    "perExpectedRoll": 4.72
+   },
+   {
+    "bin": "over 10",
+    "minutesObserved": 0,
+    "logs": 0,
+    "ticks": 0,
+    "perLog": null,
+    "expRolls": 0,
+    "perExpectedRoll": null
+   }
+  ],
+  "all": {
+   "logs": 34,
+   "ticks": 383,
+   "perLog": 11.26,
+   "expRolls": 100.63,
+   "perExpectedRoll": 3.81
+  },
+  "minuteCalm": {
+   "logs": 0,
+   "ticks": 0,
+   "perLog": null,
+   "expRolls": 0,
+   "perExpectedRoll": null
+  },
+  "minuteBusy": {
+   "logs": 34,
+   "ticks": 383,
+   "perLog": 11.26,
+   "expRolls": 100.63,
+   "perExpectedRoll": 3.81
+  },
+  "trailingCalm": {
+   "logs": 20,
+   "ticks": 213,
+   "perLog": 10.65,
+   "expRolls": 59.43,
+   "perExpectedRoll": 3.58
+  },
+  "trailingBusy": {
+   "logs": 14,
+   "ticks": 170,
+   "perLog": 12.14,
+   "expRolls": 41.2,
+   "perExpectedRoll": 4.13
+  },
+  "softCalm": {
+   "logs": 5,
+   "ticks": 85,
+   "perLog": 17,
+   "expRolls": 14.78,
+   "perExpectedRoll": 5.75
+  },
+  "softBusy": {
+   "logs": 29,
+   "ticks": 298,
+   "perLog": 10.28,
+   "expRolls": 85.85,
+   "perExpectedRoll": 3.47
+  },
+  "kinds": {
+   "honest": 4,
+   "timing": 0,
+   "timingFourTick": 0,
+   "timingPhaseResync": 0
+  },
+  "counters": {
+   "successes": 35,
+   "levelUps": 1
+  },
+  "histogram": {
+   "4": 6,
+   "5": 3,
+   "6": 1,
+   "7": 1,
+   "8": 5,
+   "9": 3,
+   "12": 4,
+   "13": 2,
+   "16": 2,
+   "17": 1,
+   "20": 2,
+   "21": 1,
+   "24": 2,
+   "32": 1
+  },
+  "minutes": {
+   "2026-10-21T22:19:00.000Z": {
+    "catchUps": 1,
+    "softs": 1,
+    "spanMs": 19498.833251953125,
+    "rate": 3.08,
+    "softRate": 3.08,
+    "calm": false
+   },
+   "2026-10-21T22:20:00.000Z": {
+    "catchUps": 3,
+    "softs": 3,
+    "spanMs": 60000,
+    "rate": 3,
+    "softRate": 3,
+    "calm": false
+   },
+   "2026-10-21T22:21:00.000Z": {
+    "catchUps": 6,
+    "softs": 4,
+    "spanMs": 41943.5,
+    "rate": 8.58,
+    "softRate": 5.72,
+    "calm": false
+   }
+  },
+  "logs": [
+   {
+    "n": 1,
+    "tick": 426,
+    "level": 79,
+    "wall": 1792621180501.1667,
+    "phaseResync": false
+   },
+   {
+    "n": 2,
+    "tick": 430,
+    "level": 79,
+    "wall": 1792621181837.3333,
+    "phaseResync": false
+   },
+   {
+    "n": 3,
+    "tick": 462,
+    "level": 79,
+    "wall": 1792621191679.5454,
+    "phaseResync": false
+   },
+   {
+    "n": 4,
+    "tick": 471,
+    "level": 79,
+    "wall": 1792621194116.375,
+    "phaseResync": false
+   },
+   {
+    "n": 5,
+    "tick": 479,
+    "level": 79,
+    "wall": 1792621196176.6,
+    "phaseResync": false
+   },
+   {
+    "n": 6,
+    "tick": 495,
+    "level": 79,
+    "wall": 1792621201188.1,
+    "phaseResync": false
+   },
+   {
+    "n": 7,
+    "tick": 500,
+    "level": 79,
+    "wall": 1792621202693.6,
+    "phaseResync": false
+   },
+   {
+    "n": 8,
+    "tick": 516,
+    "level": 79,
+    "wall": 1792621207545.7273,
+    "phaseResync": false
+   },
+   {
+    "n": 9,
+    "tick": 524,
+    "level": 79,
+    "wall": 1792621209919,
+    "phaseResync": false
+   },
+   {
+    "n": 10,
+    "tick": 529,
+    "level": 79,
+    "wall": 1792621211527.2,
+    "phaseResync": false
+   },
+   {
+    "n": 11,
+    "tick": 533,
+    "level": 79,
+    "wall": 1792621212731.6,
+    "phaseResync": false
+   },
+   {
+    "n": 12,
+    "tick": 541,
+    "level": 79,
+    "wall": 1792621215084.5715,
+    "phaseResync": false
+   },
+   {
+    "n": 13,
+    "tick": 550,
+    "level": 79,
+    "wall": 1792621217750.2,
+    "phaseResync": false
+   },
+   {
+    "n": 14,
+    "tick": 558,
+    "level": 79,
+    "wall": 1792621220097.5715,
+    "phaseResync": false
+   },
+   {
+    "n": 15,
+    "tick": 562,
+    "level": 79,
+    "wall": 1792621221256.9,
+    "phaseResync": false
+   },
+   {
+    "n": 16,
+    "tick": 575,
+    "level": 79,
+    "wall": 1792621225112.4285,
+    "phaseResync": false
+   },
+   {
+    "n": 17,
+    "tick": 583,
+    "level": 79,
+    "wall": 1792621227644.111,
+    "phaseResync": false
+   },
+   {
+    "n": 18,
+    "tick": 595,
+    "level": 79,
+    "wall": 1792621231287.1,
+    "phaseResync": false
+   },
+   {
+    "n": 19,
+    "tick": 602,
+    "level": 80,
+    "wall": 1792621233394.8,
+    "phaseResync": false
+   },
+   {
+    "n": 20,
+    "tick": 622,
+    "level": 80,
+    "wall": 1792621239307.2856,
+    "phaseResync": false
+   },
+   {
+    "n": 21,
+    "tick": 634,
+    "level": 80,
+    "wall": 1792621242830.4,
+    "phaseResync": false
+   },
+   {
+    "n": 22,
+    "tick": 647,
+    "level": 80,
+    "wall": 1792621246941.9,
+    "phaseResync": false
+   },
+   {
+    "n": 23,
+    "tick": 651,
+    "level": 80,
+    "wall": 1792621248147.1,
+    "phaseResync": false
+   },
+   {
+    "n": 24,
+    "tick": 655,
+    "level": 80,
+    "wall": 1792621249337.2856,
+    "phaseResync": false
+   },
+   {
+    "n": 25,
+    "tick": 672,
+    "level": 80,
+    "wall": 1792621254464.8,
+    "phaseResync": false
+   },
+   {
+    "n": 26,
+    "tick": 684,
+    "level": 80,
+    "wall": 1792621259075,
+    "phaseResync": false
+   },
+   {
+    "n": 27,
+    "tick": 690,
+    "level": 80,
+    "wall": 1792621261413.2222,
+    "phaseResync": false
+   },
+   {
+    "n": 28,
+    "tick": 699,
+    "level": 80,
+    "wall": 1792621264309.7778,
+    "phaseResync": false
+   },
+   {
+    "n": 29,
+    "tick": 711,
+    "level": 80,
+    "wall": 1792621267296,
+    "phaseResync": false
+   },
+   {
+    "n": 30,
+    "tick": 731,
+    "level": 80,
+    "wall": 1792621273302,
+    "phaseResync": false
+   },
+   {
+    "n": 31,
+    "tick": 752,
+    "level": 80,
+    "wall": 1792621280285.8572,
+    "phaseResync": false
+   },
+   {
+    "n": 32,
+    "tick": 776,
+    "level": 80,
+    "wall": 1792621288785.375,
+    "phaseResync": false
+   },
+   {
+    "n": 33,
+    "tick": 800,
+    "level": 80,
+    "wall": 1792621298434.25,
+    "phaseResync": false
+   },
+   {
+    "n": 34,
+    "tick": 805,
+    "level": 80,
+    "wall": 1792621300389.6,
+    "phaseResync": false
+   },
+   {
+    "n": 35,
+    "tick": 809,
+    "level": 80,
+    "wall": 1792621301943.5,
+    "phaseResync": false
+   }
+  ],
+  "gaps": [
+   {
+    "ticks": 4,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 2,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 32,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 2,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "honest"
+   },
+   {
+    "ticks": 9,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 1,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 16,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 5,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 16,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 5,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 4,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 1,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 9,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 4,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 13,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 12,
+    "level": 79,
+    "p": 0.336,
+    "expRolls": 2.9767441860465116,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 7,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 20,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 2,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 12,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 2,
+    "catchUpsInGap": 1,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 13,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 4,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 4,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 17,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 2,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 12,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 1,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 6,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 4,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 1,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 9,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 5,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 1,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 12,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 5,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 20,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 5,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 21,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 4,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "honest"
+   },
+   {
+    "ticks": 24,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 4,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "honest"
+   },
+   {
+    "ticks": 24,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 5,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 1,
+    "softsInGap": 2,
+    "kind": "honest"
+   },
+   {
+    "ticks": 5,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 7,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 2,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 4,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 8,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 1,
+    "softsInGap": 0,
+    "kind": "other"
+   }
+  ]
+ }
+}

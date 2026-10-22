@@ -1,6 +1,6 @@
 === run 1 2026-10-21T16:31:02Z
 vantage: edge iad, app iad, mesh hop none, TCP connect p50 2.1 ms (20 samples), 1694 online
-probe (direct) from ip-172-31-31-189 at 2026-10-21T16:32:38.105Z, server rs-sdk-demo.fly.dev
+probe (direct) from rs-ashburn-run at 2026-10-21T16:32:38.105Z, server rs-sdk-demo.fly.dev
 latency in ticks (label of the step - label sent): 1:49 2:10 3:1  (60 trials, 0 lost, 191 ticks)
 on time 49/60; dominant 1 ticks (82%, lead 0); consecutive trials agree 83%
 sequence: 211111111111111111111121222221211111111111111111111111112231
@@ -12,7 +12,7 @@ wrote /home/ubuntu/rs96-out/ashburn-1.json
 === exit 1
 === run 2 2026-10-21T16:34:08Z
 vantage: edge iad, app iad, mesh hop none, TCP connect p50 2.3 ms (20 samples), 1697 online
-probe (direct) from ip-172-31-31-189 at 2026-10-21T16:35:34.626Z, server rs-sdk-demo.fly.dev
+probe (direct) from rs-ashburn-run at 2026-10-21T16:35:34.626Z, server rs-sdk-demo.fly.dev
 latency in ticks (label of the step - label sent): 1:54 2:5 3:1  (60 trials, 0 lost, 174 ticks)
 on time 54/60; dominant 1 ticks (90%, lead 0); consecutive trials agree 85%
 sequence: 111111111212111111111111111111111111111111111111121223111111
@@ -24,7 +24,7 @@ wrote /home/ubuntu/rs96-out/ashburn-2.json
 === exit 1
 === run 3 2026-10-21T16:37:04Z
 vantage: edge iad, app iad, mesh hop none, TCP connect p50 2.1 ms (20 samples), 1685 online
-probe (direct) from ip-172-31-31-189 at 2026-10-21T16:38:47.065Z, server rs-sdk-demo.fly.dev
+probe (direct) from rs-ashburn-run at 2026-10-21T16:38:47.065Z, server rs-sdk-demo.fly.dev
 latency in ticks (label of the step - label sent): 1:46 2:14  (60 trials, 0 lost, 182 ticks)
 on time 46/60; dominant 1 ticks (77%, lead 0); consecutive trials agree 69%
 sequence: 111111111111111112211222111211112111111211111112211221211211

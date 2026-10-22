@@ -1,0 +1,1 @@
+[proxy] http://localhost:8909/bot -> https://rs-sdk-demo.fly.dev (bundle from /home/ubuntu/rs130/browser/server/webclient/out/bot, overlay gateway ws://127.0.0.1:7861; login tokens for /home/ubuntu/rs130/browser/bots/<account>/bot.env)

@@ -1,0 +1,22 @@
+probe start 2026-10-21 09:17:46 PDT: bun docs/speedrun/scripts/tickmanip-cycle.ts "$BOT" --mode=tree-base --demo --rolls="$CYCLES" --log="$OUT/knife/r1-plain.log" && bun docs/speedrun/scripts/tickmanip-demo-report.ts "$OUT/knife"
+segment: from start T960 to last xp T1518: 558 ticks, 60 catches, 9.30 ticks per catch, base 1500.0, 2.69 base per tick
+level-ups 2: gap from the level's drop to the next 9:1 10:1; re-anchored after 2
+  L81@T1059:9R L82@T1347:10R
+spot moves 0: spanning gaps 
+  
+logs given during the run 0
+starters held a label (--inject-late=0): 0
+gate: off
+levels reached: 81@T1059 82@T1347
+mode=tree-base level=99 phase=0 xpEvents=60 gapsCounted=0 breaks=66 resyncs=0 finalPhase=0 dialogs=2
+gap histogram (ticks:count) 
+min gap 0, gcd of gaps 0, span 550 ticks, ticks per xp event 9.32
+rolls in span at cycle ?: ?; success fraction ?
+game xp 37500 (base 1500), base xp per tick over span 2.73
+end inventory: logs 17, arrow shafts 0, shrimps 0, packets sent 110
+log /home/runner/work/rs-sdk/rs-sdk/probe-out/knife/r1-plain.log
+r1 knife      803 ticks, 59 logs, level 78-80: 13.61 per log, 9.20 per expected roll
+r1 plain      550 ticks, 59 logs, level 80-82: 9.32 per log, 6.39 per expected roll
+ALL knife      59 logs: 13.61 per log, 9.20 per expected roll
+ALL plain      59 logs: 9.32 per log, 6.39 per expected roll
+probe end 2026-10-21 09:20:57 PDT, exit 0

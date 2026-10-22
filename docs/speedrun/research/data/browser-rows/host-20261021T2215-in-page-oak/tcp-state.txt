@@ -1,0 +1,11 @@
+2026-10-21T22:15:17Z
+demo 66.241.125.86
+66.241.125.86 via <vpc-gateway> dev enp39s0 src <run-host-private> uid 1000 
+    cache 
+default via <vpc-gateway> dev enp39s0 proto dhcp src <run-host-private> metric 100 
+<vpc-dns> via <vpc-gateway> dev enp39s0 proto dhcp src <run-host-private> metric 100 
+<vpc-subnet> dev enp39s0 proto kernel scope link src <run-host-private> metric 100 
+<vpc-gateway> dev enp39s0 proto dhcp scope link src <run-host-private> metric 100 
+net.ipv4.tcp_autocorking = 1
+net.ipv4.tcp_low_latency = 0
+net.ipv4.tcp_congestion_control = cubic

@@ -1,0 +1,24 @@
+Pathfinding initialized in 196ms (136704 zones + 297 mainland fill, 1268350 tiles, 2691 doors masked, 5 one-way doors blocked)
+[Runner] Connecting to bot "cairn_r130"...
+[BotSDK] Waiting for game state to be ready...
+[BotSDK] Game state ready!
+[BotSDK] Connected and game state ready
+[Runner] Connected to bot "cairn_r130"
+segment: from start T765 to last xp T999: 234 ticks, 20 catches, 11.70 ticks per catch, base 500.0, 2.14 base per tick
+level-ups 4: gap from the level's drop to the next 7:2 11:1 13:1; re-anchored after 4
+  L53@T803:7R L54@T872:7R L55@T914:13R L56@T964:11R
+spot moves 0: spanning gaps 
+  
+logs given during the run 0
+starters held a label (--inject-late=0): 0
+gate: off
+levels reached: 53@T803 54@T872 55@T914 56@T964
+mode=tree-base level=99 phase=0 xpEvents=20 gapsCounted=0 breaks=26 resyncs=0 finalPhase=0 dialogs=4
+gap histogram (ticks:count) 
+min gap 0, gcd of gaps 0, span 227 ticks, ticks per xp event 11.95
+rolls in span at cycle ?: ?; success fraction ?
+game xp 12500 (base 500), base xp per tick over span 2.20
+end inventory: logs 23, arrow shafts 15, shrimps 0, packets sent 26
+log /home/ubuntu/rs130/out/20261021T1945-in-page/knife/r1-plain.log
+[Runner] Disconnecting bot "cairn_r130"...
+[LOGOUT DEBUG] SDK WebSocket closed - autoReconnect=true, intentionalDisconnect=true

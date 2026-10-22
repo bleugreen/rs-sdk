@@ -1,0 +1,21 @@
+probe start 2026-10-21 09:13:10 PDT: bun docs/speedrun/scripts/tickmanip-demo-setup.ts "$BOT" && bun docs/speedrun/scripts/tickmanip-cycle.ts "$BOT" --mode=tree-knife --gate=off --demo --rolls="$CYCLES" --log="$OUT/knife/r1-knife.log"
+start at 3162,3228, inventory: Bronze axe, Arrow shaft, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Knife, Logs, Logs, Logs
+walk to the trees: Arrived (at 3192,3228)
+ready at 3192,3228: knife true, logs 19, woodcutting 78, 12 trees within 10 tiles
+segment: from start T130 to last xp T940: 810 ticks, 60 catches, 13.50 ticks per catch, base 1500.0, 1.85 base per tick
+level-ups 2: gap from the level's drop to the next 12:1 16:1; re-anchored after 2
+  L79@T244:16R L80@T648:12R
+spot moves 0: spanning gaps 
+  
+logs given during the run 0
+starters held a label (--inject-late=0): 0
+gate: off
+levels reached: 79@T244 80@T648
+mode=tree-knife level=99 phase=0 xpEvents=60 gapsCounted=0 breaks=61 resyncs=60 finalPhase=0 dialogs=2
+gap histogram (ticks:count) 
+min gap 0, gcd of gaps 0, span 803 ticks, ticks per xp event 13.61
+rolls in span at cycle ?: ?; success fraction ?
+game xp 37500 (base 1500), base xp per tick over span 1.87
+end inventory: logs 4, arrow shafts 0, shrimps 0, packets sent 464
+log /home/runner/work/rs-sdk/rs-sdk/probe-out/knife/r1-knife.log
+probe end 2026-10-21 09:17:46 PDT, exit 0

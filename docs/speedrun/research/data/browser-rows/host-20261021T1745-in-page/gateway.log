@@ -1,0 +1,6 @@
+[Gateway] Starting Gateway Service on port 7861...
+[Gateway] Gateway running at http://localhost:7861
+[Gateway] Bot/SDK: ws://localhost:7861
+[Gateway] Authentication DISABLED (set LOGIN_SERVER=true to enable)
+[Gateway] Bot connected: cairn_r130-1792604825026 (cairn_r130)
+[Gateway] Bot disconnected: cairn_r130-1792604825026 (cairn_r130)

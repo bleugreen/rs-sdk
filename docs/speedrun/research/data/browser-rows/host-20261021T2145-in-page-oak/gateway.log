@@ -1,0 +1,26 @@
+[Gateway] Starting Gateway Service on port 7861...
+[Gateway] Gateway running at http://localhost:7861
+[Gateway] Bot/SDK: ws://localhost:7861
+[Gateway] Authentication DISABLED (set LOGIN_SERVER=true to enable)
+[Gateway] Bot connected: cairn_r130-1792619229863 (cairn_r130)
+[Gateway] SDK connected: sdk-1792619252955-7j0xwh -> cairn_r130 (mode: control)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792619254012-awnfrf)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 2
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792619254401-sq501q)
+[Gateway] [cairn_r130] Action result: success - Walking to (3202, 3243)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792619254774-fi9bi5)
+[Gateway] [cairn_r130] Action result: success - Walking to (3202, 3242)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792619255042-lrwivc)
+[Gateway] [cairn_r130] Action result: success - Walking to (3199, 3242)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792619255487-32jpee)
+[Gateway] [cairn_r130] Action result: success - Walking to (3199, 3240)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792619255811-k5zv8x)
+[Gateway] [cairn_r130] Action result: success - Walking to (3197, 3238)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792619256189-jvcf9r)
+[Gateway] [cairn_r130] Action result: success - Walking to (3197, 3235)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792619256449-oswcss)
+[Gateway] [cairn_r130] Action result: success - Walking to (3194, 3232)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792619257062-hlr5lm)
+[Gateway] [cairn_r130] Action result: success - Walking to (3194, 3230)
+[Gateway] SDK disconnected: sdks-1-7g14xz (sdk-1792619252955-7j0xwh)
+[Gateway] Bot disconnected: cairn_r130-1792619229863 (cairn_r130)

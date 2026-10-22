@@ -1,0 +1,121 @@
+# tickmanip-cycle tree-base level=99 phase=0 rolls=20 until=0 dismiss=now reanchor=click xplag=0 gate=off lead=auto demo=true inject-late=0 host=rs-ashburn-run at=2026-10-21T19:51:12.561Z
+setup tick=765 pos=3149,3216 xp=38750 level=52
+T766 send click loc 1278@3152,3214 op1
+T770 MSG You swing your axe at the tree.
+T772 XP +625 (total 39375)
+T772 MSG You get some logs.
+T773 send click loc 1286@3148,3212 op1
+T783 MSG You swing your axe at the tree.
+T785 XP +625 (total 40000)
+T785 MSG You get some logs.
+T786 send click loc 1278@3146,3209 op1
+T789 MSG You swing your axe at the tree.
+T803 XP +625 (total 40625)
+T803 LEVEL 53
+T803 MSG You get some logs.
+T804 MSG Congratulations, you just advanced a woodcutting level.
+T804 DIALOG open at 3147,3211: 
+T804 send dismiss dialog
+T805 DIALOG closed (open 1 ticks)
+T805 send click loc 1278@3146,3212 op1
+T808 MSG You swing your axe at the tree.
+T810 XP +625 (total 41250)
+T810 MSG You get some logs.
+T811 send click loc 1278@3145,3214 op1
+T815 MSG You swing your axe at the tree.
+T821 XP +625 (total 41875)
+T821 MSG You get some logs.
+T822 send click loc 1278@3140,3217 op1
+T823 send click loc 1278@3143,3214 op1
+T824 MSG I can't reach that!
+T824 send click loc 1278@3140,3217 op1
+T827 MSG You swing your axe at the tree.
+T841 XP +625 (total 42500)
+T841 MSG You get some logs.
+T842 send click loc 1278@3139,3219 op1
+T847 MSG You swing your axe at the tree.
+T865 XP +625 (total 43125)
+T865 MSG You get some logs.
+T866 send click loc 1286@3145,3220 op1
+T870 MSG You swing your axe at the tree.
+T872 XP +625 (total 43750)
+T872 LEVEL 54
+T872 MSG You get some logs.
+T873 MSG Congratulations, you just advanced a woodcutting level.
+T873 DIALOG open at 3144,3220: 
+T873 send dismiss dialog
+T874 DIALOG closed (open 1 ticks)
+T874 send click loc 1276@3145,3222 op1
+T877 MSG You swing your axe at the tree.
+T879 XP +625 (total 44375)
+T879 MSG You get some logs.
+T880 send click loc 1276@3146,3226 op1
+T885 MSG You swing your axe at the tree.
+T887 XP +625 (total 45000)
+T887 MSG You get some logs.
+T888 send click loc 1278@3153,3220 op1
+T893 MSG You swing your axe at the tree.
+T895 XP +625 (total 45625)
+T895 MSG You get some logs.
+T896 send click loc 1276@3154,3224 op1
+T900 MSG You swing your axe at the tree.
+T902 XP +625 (total 46250)
+T902 MSG You get some logs.
+T903 send click loc 1278@3155,3227 op1
+T908 MSG You swing your axe at the tree.
+T914 XP +625 (total 46875)
+T914 LEVEL 55
+T914 MSG You get some logs.
+T915 MSG Congratulations, you just advanced a woodcutting level.
+T915 DIALOG open at 3154,3227: 
+T915 send dismiss dialog
+T916 DIALOG closed (open 1 ticks)
+T916 send click loc 1278@3156,3231 op1
+T921 MSG You swing your axe at the tree.
+T927 XP +625 (total 47500)
+T927 MSG You get some logs.
+T928 send click loc 1278@3159,3226 op1
+T932 MSG You swing your axe at the tree.
+T938 XP +625 (total 48125)
+T938 MSG You get some logs.
+T939 send click loc 1278@3162,3229 op1
+T944 MSG You swing your axe at the tree.
+T950 XP +625 (total 48750)
+T950 MSG You get some logs.
+T951 send click loc 1278@3166,3223 op1
+T955 MSG You swing your axe at the tree.
+T957 XP +625 (total 49375)
+T957 MSG You get some logs.
+T958 send click loc 1278@3169,3229 op1
+T962 MSG You swing your axe at the tree.
+T964 XP +625 (total 50000)
+T964 LEVEL 56
+T964 MSG You get some logs.
+T965 MSG Congratulations, you just advanced a woodcutting level.
+T965 DIALOG open at 3169,3228: 
+T965 send dismiss dialog
+T966 DIALOG closed (open 1 ticks)
+T966 send click loc 1278@3172,3227 op1
+T969 MSG You swing your axe at the tree.
+T975 XP +625 (total 50625)
+T975 MSG You get some logs.
+T976 send click loc 1282@3172,3234 op1
+T981 MSG You swing your axe at the tree.
+T999 XP +625 (total 51250)
+T999 MSG You get some logs.
+segment: from start T765 to last xp T999: 234 ticks, 20 catches, 11.70 ticks per catch, base 500.0, 2.14 base per tick
+level-ups 4: gap from the level's drop to the next 7:2 11:1 13:1; re-anchored after 4
+  L53@T803:7R L54@T872:7R L55@T914:13R L56@T964:11R
+spot moves 0: spanning gaps 
+  
+logs given during the run 0
+starters held a label (--inject-late=0): 0
+gate: off
+levels reached: 53@T803 54@T872 55@T914 56@T964
+mode=tree-base level=99 phase=0 xpEvents=20 gapsCounted=0 breaks=26 resyncs=0 finalPhase=0 dialogs=4
+gap histogram (ticks:count) 
+min gap 0, gcd of gaps 0, span 227 ticks, ticks per xp event 11.95
+rolls in span at cycle ?: ?; success fraction ?
+game xp 12500 (base 500), base xp per tick over span 2.20
+end inventory: logs 23, arrow shafts 15, shrimps 0, packets sent 26
+log /home/ubuntu/rs130/out/20261021T1945-in-page/knife/r1-plain.log

@@ -1,6 +1,6 @@
 {
   "bot": "cairn_g96",
-  "machine": "ip-172-31-31-189",
+  "machine": "rs-ashburn-run",
   "host": "rs-sdk-demo.fly.dev",
   "path": "direct",
   "startedUtc": "2026-10-21T16:31:02.604Z",
