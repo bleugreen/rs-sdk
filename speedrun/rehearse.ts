@@ -6,9 +6,9 @@
 //       [--gate-bot=<gate account env, default cairn_twin off a local world>] [--gate-json=<file>]
 //       [--gate-probe-trials=60] [--probe-trials=0]
 //       [--force-gate] [--from=<step name or index>] [--log=<file>] [--lab] [--insecure-query-login]
-//       [--host-reservation=<file>]
+//       [--host-reservation=<file>] [--claim-owner=<rs/NNN>]
 //   bun speedrun/rehearse.ts --claim --bot=<env name> [--client=browser|lite] [--log=<file>] [--lab]
-//       [--host-reservation=<file>]
+//       [--host-reservation=<file>] [--claim-owner=<rs/NNN>]
 //
 // --claim parks a fresh name: S00 (the tutorial skip that creates the account), then logoutClean,
 // nothing else. It takes no gate account, no direct read and no probes, so it is one login, and
@@ -21,6 +21,12 @@
 //    $SPEEDRUN_HOST_RESERVATION, or --host-reservation). While it is live, nothing logs in: exit 5.
 //    It is read again before each login below, and at every logout-safe step boundary of the
 //    attempt: a live one there logs out, writes a `(gate) paused for the gate/run` row, and exits 5.
+//    The file is host's claim lock (`rs-claim take` writes it with the taker as owner), so
+//    --claim-owner (or $SPEEDRUN_CLAIM_OWNER) names the claim the attempt runs under: that owner's
+//    live claim is ours and blocks nothing, and ours gone stale is a warning. Any other live owner,
+//    including host's preempt of ours (`displaced`), refuses at pre-flight and pauses at a boundary.
+//    At each boundary the claim is also renewed with `rs-claim touch` in the background when
+//    rs-claim is installed; its exit 3 (preempted) pauses at the next boundary.
 // 1. Off the clock, before the rehearsal account logs in: /playercount; the direct gate read
 //    ((a)-(c), rs/96's CLI docs/speedrun/scripts/tickmanip-latency.ts run on the gate account with
 //    --gate-bot, or the --json file it wrote with --gate-json); the in-page probe on the gate
@@ -114,9 +120,11 @@ export interface RehearseArgs {
     from?: number | string;
     /** The host reservation file (default reservationPath()). */
     hostReservation?: string;
+    /** The rs-claim owner the attempt runs under (resolved with claimOwner()). */
+    claimOwner?: string;
 }
 
-const VALUE_FLAGS = new Set(['skill', 'bot', 'client', 'to', 'log', 'kit-from', 'kit', 'technique', 'skill-opt', 'gate-bot', 'gate-json', 'gate-probe-trials', 'probe-trials', 'from', 'host-reservation']);
+const VALUE_FLAGS = new Set(['skill', 'bot', 'client', 'to', 'log', 'kit-from', 'kit', 'technique', 'skill-opt', 'gate-bot', 'gate-json', 'gate-probe-trials', 'probe-trials', 'from', 'host-reservation', 'claim-owner']);
 // --insecure-query-login is read by lib/session.ts from process.argv (lab-only browser login).
 const SWITCHES = new Set(['lab', 'force-gate', 'insecure-query-login', 'claim']);
 /** What --claim refuses: everything that would add a login, a probe or a step after S00. */
@@ -132,9 +140,9 @@ export const USAGE = `usage: bun speedrun/rehearse.ts --skill=<name|module.ts> -
     [--gate-bot=<gate account env, default ${DEFAULT_GATE_BOT} off a local world>] [--gate-json=<file>]
     [--gate-probe-trials=60] [--probe-trials=0]
     [--force-gate] [--from=<step name or index>] [--log=<file>] [--lab] [--insecure-query-login]
-    [--host-reservation=<file>]
+    [--host-reservation=<file>] [--claim-owner=<rs/NNN>]
        bun speedrun/rehearse.ts --claim --bot=<env name> [--client=browser|lite] [--log=<file>] [--lab]
-    [--host-reservation=<file>]`;
+    [--host-reservation=<file>] [--claim-owner=<rs/NNN>]`;
 
 function wholeNumber(key: string, raw: string, min: number, max = Number.MAX_SAFE_INTEGER): number {
     const n = Number(raw);
@@ -226,6 +234,7 @@ export function parseArgs(argv: readonly string[], opts: { defaultGateBot?: stri
         ...(v.has('gate-json') ? { gateJson: v.get('gate-json')! } : {}),
         ...(from !== undefined ? { from: /^\d+$/.test(from) ? Number(from) : from } : {}),
         ...(v.has('host-reservation') ? { hostReservation: v.get('host-reservation')! } : {}),
+        ...(v.has('claim-owner') ? { claimOwner: v.get('claim-owner')! } : {}),
     };
 }
 
@@ -355,10 +364,12 @@ export function gateRefusal(i: { direct: DirectRead | null; inPage: readonly InP
 // ------------------------------------------------------------------ host reservation
 
 /**
- * The host reservation (docs/speedrun/rehearsals/HOST.md, 'Run-capable twin'): one JSON object
- * `{"owner", "until", "reason"}`, written by the scored run's step 0 and by rs/host for installs and
- * hand reads. It is live while `until` is in the future. While it is live no attempt or claim
- * starts, and an attempt in flight logs out at its next logout-safe boundary and does not restart.
+ * The host reservation (docs/speedrun/rehearsals/HOST.md, 'Run-capable twin' and 'Claims'): one
+ * JSON object `{"owner", "until", "reason"}`, which host's claim lock `rs-claim` writes for every
+ * holder (it adds logins, what, taken, touched; a preempt makes host the owner and records the
+ * holder it displaced under `displaced.owner`). It is live while `until` is in the future. While a
+ * live one is not the attempt's own claim (claimOwner()), no attempt or claim starts, and an attempt
+ * in flight logs out at its next logout-safe boundary and does not restart.
  */
 export const RESERVATION_FILE = 'host-reserved.json';
 /** Overrides the default path ($HOME/host-reserved.json); --host-reservation overrides both. */
@@ -368,10 +379,15 @@ export const EXIT_HOST_RESERVED = 5;
 /** The `gate` annotation row an attempt paused by a live reservation writes. */
 export const PAUSE_STEP = '(gate) paused for the gate/run';
 
+/** The rs-claim owner the attempt runs under when --claim-owner is not given. */
+export const CLAIM_OWNER_ENV = 'SPEEDRUN_CLAIM_OWNER';
+
 export interface HostReservation {
     owner: string;
     until: string;
     reason: string;
+    /** A preempt: the holder whose claim host's replaced (rs-claim's `displaced.owner`). */
+    displaced?: string;
 }
 
 export type ReservationState =
@@ -382,6 +398,12 @@ export type ReservationState =
 
 export function reservationPath(flag?: string, env: Readonly<Record<string, string | undefined>> = process.env): string {
     return flag ?? env[RESERVATION_ENV] ?? join(env.HOME ?? homedir(), RESERVATION_FILE);
+}
+
+/** --claim-owner, else $SPEEDRUN_CLAIM_OWNER; undefined: the attempt runs under no claim of its own. */
+export function claimOwner(flag?: string, env: Readonly<Record<string, string | undefined>> = process.env): string | undefined {
+    const v = (flag ?? env[CLAIM_OWNER_ENV] ?? '').trim();
+    return v || undefined;
 }
 
 /** The file's text (null: no file) at `now`. Malformed: not a JSON object, or an `until` that is not a time. */
@@ -397,7 +419,9 @@ export function judgeReservation(text: string | null, now: number): ReservationS
     const r = o as Record<string, unknown>;
     const until = typeof r.until === 'string' ? Date.parse(r.until) : Number.NaN;
     if (!Number.isFinite(until)) return { state: 'malformed', error: `"until" is not a time (${JSON.stringify(r.until ?? null)})` };
-    const reservation = { owner: String(r.owner ?? '?'), until: r.until as string, reason: String(r.reason ?? '') };
+    const d = r.displaced as Record<string, unknown> | null | undefined;
+    const displaced = d && typeof d === 'object' && typeof d.owner === 'string' ? d.owner : undefined;
+    const reservation: HostReservation = { owner: String(r.owner ?? '?'), until: r.until as string, reason: String(r.reason ?? ''), ...(displaced ? { displaced } : {}) };
     return until > now ? { state: 'live', reservation } : { state: 'expired', reservation };
 }
 
@@ -413,32 +437,151 @@ export function readReservation(path: string, now: number = Date.now()): Reserva
 }
 
 export function reservationText(r: HostReservation): string {
-    return `${r.owner} until ${r.until}${r.reason ? ` (${r.reason})` : ''}`;
+    return `${r.owner} until ${r.until}${r.reason ? ` (${r.reason})` : ''}${r.displaced ? `, preempting ${r.displaced}` : ''}`;
 }
 
-/** Reads the file afresh on every check; a malformed file is warned about once per distinct problem. */
+/** One `rs-claim touch OWNER`: its exit code (null: it did not finish in time, or could not start) and output. */
+export interface ClaimTouch {
+    code: number | null;
+    out: string;
+}
+export type ClaimToucher = (owner: string) => Promise<ClaimTouch>;
+/** rs-claim's exit code for a touch by a holder host has preempted. */
+export const TOUCH_PREEMPTED = 3;
+export const TOUCH_TIMEOUT_MS = 10_000;
+/** At most one touch per this, however close the boundaries fall. */
+export const TOUCH_EVERY_MS = 60_000;
+
+/** rs-claim on PATH, else $HOME/.local/bin/rs-claim, else null (not installed: nothing is touched). */
+export function claimBin(env: Readonly<Record<string, string | undefined>> = process.env): string | null {
+    const onPath = env.PATH ? Bun.which('rs-claim', { PATH: env.PATH }) : null;
+    if (onPath) return onPath;
+    const home = join(env.HOME ?? homedir(), '.local', 'bin', 'rs-claim');
+    return existsSync(home) ? home : null;
+}
+
+/** Runs `<bin> touch OWNER`, killed after `timeoutMs`. Never throws. */
+export function claimToucher(bin: string, timeoutMs = TOUCH_TIMEOUT_MS): ClaimToucher {
+    return async owner => {
+        try {
+            const p = Bun.spawn([bin, 'touch', owner], { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
+            const kill = setTimeout(() => p.kill('SIGKILL'), timeoutMs);
+            try {
+                const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+                const text = `${out}${err}`.trim();
+                return p.signalCode ? { code: null, out: text || `no answer in ${timeoutMs / 1000} s` } : { code: p.exitCode, out: text };
+            } finally {
+                clearTimeout(kill);
+            }
+        } catch (e) {
+            return { code: null, out: `could not run ${bin}: ${e instanceof Error ? e.message : e}` };
+        }
+    };
+}
+
+/**
+ * Reads the file afresh on every check; each distinct warning prints once. With `owner`, that
+ * owner's claim is the attempt's own: live, it blocks nothing; stale, it warns and blocks nothing
+ * (nobody else holds the machine). Any other live owner blocks, and a preempt of ours is host's.
+ */
 export class ReservationWatch {
-    private warned: string | null = null;
+    private readonly warned = new Set<string>();
+    private touching: Promise<void> | null = null;
+    private lastTouchAt = Number.NEGATIVE_INFINITY;
+    private preempted: string | null = null;
     constructor(
         readonly path: string,
-        private readonly opts: { now?: () => number; warn?: (msg: string) => void } = {}
+        private readonly opts: {
+            now?: () => number;
+            warn?: (msg: string) => void;
+            /** The rs-claim owner the attempt runs under. */
+            owner?: string;
+            /** Renews the claim at boundaries (with `owner`); exit 3 is host's preempt. */
+            touch?: ClaimToucher | null;
+            touchEveryMs?: number;
+        } = {}
     ) {}
 
-    /** The live reservation, or null (no file, expired, or malformed). */
+    get owner(): string | undefined {
+        return this.opts.owner;
+    }
+
+    private now(): number {
+        return this.opts.now ? this.opts.now() : Date.now();
+    }
+
+    private warnOnce(key: string, msg: string): void {
+        if (this.warned.has(key)) return;
+        this.warned.add(key);
+        (this.opts.warn ?? console.warn)(`[rehearse] WARNING: ${msg}`);
+    }
+
+    /** What keeps a login from starting now: a live reservation that is not our claim, or null. */
     check(): HostReservation | null {
-        const s = readReservation(this.path, this.opts.now ? this.opts.now() : Date.now());
-        if (s.state === 'malformed' && this.warned !== s.error) {
-            this.warned = s.error;
-            (this.opts.warn ?? console.warn)(`[rehearse] WARNING: ${this.path} is malformed, so it is not a live reservation: ${s.error}`);
+        const s = readReservation(this.path, this.now());
+        const owner = this.opts.owner;
+        if (s.state === 'malformed') {
+            this.warnOnce(`malformed:${s.error}`, `${this.path} is malformed, so it is not a live reservation: ${s.error}`);
+            return null;
         }
-        return s.state === 'live' ? s.reservation : null;
+        if (s.state === 'none') {
+            if (owner) this.warnOnce('none', `no claim in ${this.path}, though the attempt runs under ${owner}'s: take it (rs-claim take ${owner} ...) before an attempt`);
+            return null;
+        }
+        const r = s.reservation;
+        const ours = owner !== undefined && r.owner === owner;
+        if (s.state === 'expired') {
+            if (ours) this.warnOnce(`stale:${r.until}`, `our claim went stale (${reservationText(r)}); nobody else holds the machine, so the attempt goes on: renew it (rs-claim touch ${owner}) or take it again`);
+            return null;
+        }
+        return ours ? null : r;
+    }
+
+    /**
+     * At a logout-safe step boundary: a preempt the last touch reported, else check(). While the
+     * claim is ours it starts the next touch in the background (the runner's stop hook is
+     * synchronous, and a touch can wait on rs-claim's lock), so its answer counts at a later boundary.
+     */
+    boundary(): HostReservation | null {
+        if (this.preempted !== null) {
+            const s = readReservation(this.path, this.now());
+            if (s.state === 'live' && s.reservation.owner !== this.opts.owner) return s.reservation;
+            return { owner: 'host', until: new Date(this.now()).toISOString(), reason: `rs-claim touch exited ${TOUCH_PREEMPTED}: ${this.preempted}`, ...(this.opts.owner ? { displaced: this.opts.owner } : {}) };
+        }
+        const r = this.check();
+        if (!r) this.startTouch();
+        return r;
+    }
+
+    /** Resolves once the touch in flight (if any) has been accounted for. */
+    settled(): Promise<void> {
+        return this.touching ?? Promise.resolve();
+    }
+
+    private startTouch(): void {
+        const { owner, touch } = this.opts;
+        if (!owner || !touch || this.touching) return;
+        const t = this.now();
+        if (t - this.lastTouchAt < (this.opts.touchEveryMs ?? TOUCH_EVERY_MS)) return;
+        this.lastTouchAt = t;
+        this.touching = touch(owner)
+            .then(r => {
+                if (r.code === TOUCH_PREEMPTED) this.preempted = r.out || 'PREEMPTED';
+                else if (r.code !== 0) this.warnOnce(`touch:${r.code}:${r.out}`, `rs-claim touch ${owner} ${r.code === null ? 'did not answer' : `exited ${r.code}`}${r.out ? `: ${r.out}` : ''}; the claim file is still read at every boundary`);
+            })
+            .catch(e => this.warnOnce(`touch:${e}`, `rs-claim touch ${owner} failed: ${e instanceof Error ? e.message : e}`))
+            .finally(() => {
+                this.touching = null;
+            });
     }
 }
 
 /** Pre-flight, and before each login: why nothing may log in, or null to go. */
 export function reservationRefusal(watch: ReservationWatch): string | null {
     const r = watch.check();
-    return r ? `the host is reserved by ${reservationText(r)} (${watch.path}): no attempt or claim starts while it is live; run again once it is gone or expired` : null;
+    if (!r) return null;
+    const whose = watch.owner ? (r.displaced === watch.owner ? `, which preempts our claim (${watch.owner})` : `, not our claim (${watch.owner})`) : '';
+    return `the host is reserved by ${reservationText(r)} (${watch.path})${whose}: no attempt or claim starts while it is live; run again once it is gone or expired`;
 }
 
 // ------------------------------------------------------------------ player count through the attempt
@@ -770,7 +913,7 @@ export interface AttemptOptions {
     account: string;
     link: Link;
     from?: number | string;
-    /** Read at every logout-safe boundary, before the other stops. */
+    /** Read at every logout-safe boundary (ReservationWatch.boundary), before the other stops. */
     reservation: ReservationWatch;
     /** Ctrl-C asked for a stop. */
     stopAsked: () => boolean;
@@ -803,7 +946,7 @@ export async function runAttempt(session: Session, chain: ReadonlyArray<Step<any
             link: o.link,
             // The reservation is read first, at every boundary, so a pause is recorded as one even beside a Ctrl-C.
             shouldStop: () => {
-                held.reservation ??= o.reservation.check();
+                held.reservation ??= o.reservation.boundary();
                 return held.reservation !== null || o.stopAsked() || o.gateStop() !== null;
             },
             logout: async () => {
@@ -1260,7 +1403,10 @@ async function main(argv: string[]): Promise<number> {
     if (a.lab && !local) throw new UsageError(`--lab accepts staff fixtures, and ${env.SERVER} is not a local lab`);
 
     // 0. Pre-flight: no login of any kind while the host is reserved for the gate or the run.
-    const reservation = new ReservationWatch(reservationPath(a.hostReservation));
+    const owner = claimOwner(a.claimOwner);
+    const bin = owner ? claimBin() : null;
+    const reservation = new ReservationWatch(reservationPath(a.hostReservation), owner ? { owner, touch: bin ? claimToucher(bin) : null } : {});
+    if (owner) console.log(`[rehearse] under ${owner}'s claim (${reservation.path}); ${bin ? `renewed with ${bin} touch at step boundaries` : 'rs-claim not found, so it is not renewed: touch it by hand in a long hold'}`);
     const reserved = (): string | null => reservationRefusal(reservation);
     const refuseIfReserved = (): boolean => {
         const why = reserved();
@@ -1284,7 +1430,7 @@ async function main(argv: string[]): Promise<number> {
 
     // 1. The gate, off the clock.
     const players = (await samplePlayerCount(origin)).players;
-    log.append(annotation(log, account, 'gate', GATE_PLAYERS_STEP, { meta: { players, origin } }));
+    log.append(annotation(log, account, 'gate', GATE_PLAYERS_STEP, { meta: { players, origin, ...(owner ? { claimOwner: owner } : {}) } }));
     if (a.claim) log.append(annotation(log, account, 'gate', '(gate) claim', { meta: { claim: true, note: 'S00 then logout only: no gate read, no probes, no skill steps' } }));
     let direct: DirectRead | null = null;
     if (a.gateJson) direct = parseDirectJson(JSON.parse(readFileSync(a.gateJson, 'utf-8')), 'gate-json');
@@ -1479,7 +1625,11 @@ async function main(argv: string[]): Promise<number> {
     console.log('\n' + formatSummary(summary, { account, skill: skillName, ...(a.claim ? {} : { to: a.to }), outcome, gate, hiscore: checks, ...(hiscoreOrigin ? { hiscoreUrl: `${hiscoreOrigin}${playerPath(account)}` } : {}) }));
     console.log(`log: ${log.path}`);
     if (code === 4) console.log('resume: run the same command again (the walk starts from game state); --from=<step> overrides it');
-    if (code === EXIT_HOST_RESERVED) console.log(`resume: once ${reservation.path} is gone or expired, run the same command again (nothing restarts on its own)`);
+    if (code === EXIT_HOST_RESERVED) {
+        const paused = run.value!.paused;
+        if (owner && paused?.displaced === owner) console.log(`host preempted our claim: once teardown is confirmed, release it now (rs-claim release ${owner}); take nothing again until rs-claim status shows the machine free`);
+        console.log(`resume: once ${reservation.path} is gone or expired, run the same command again (nothing restarts on its own)`);
+    }
     await closeSession(session);
     return code;
 }
