@@ -203,6 +203,23 @@ click saved).
 - **The shed door.** In two of the runs the door was shut when the bot arrived
   from Lawgof and the inspect failed with "can't reach"; the script reopens it
   (cost about 10 ticks). Open it first.
+- **Click replies on the browser client.** The browser stamps every game message
+  one tick lower than lite, so a loc op's immediate reply carries the click's own
+  tick. A tick filter taken before the click (`messagesSince(s, tick + 1)`)
+  missed every "can't quite find" roll on the browser. Each miss waited out the
+  40-tick op timeout, then toggled the door, which shut it: about 86 ticks a
+  miss (rs/370, measured on bgsrv-mac). The module reads every click reply
+  through `lib/world`'s `replyAfter`, which uses observation ids and is exact on
+  both clients.
+- **The dwarf remains respawn in 100 ticks** (a static ground spawn at the
+  engine's default rate, `ObjType.ts`). Back-to-back lab runs of segment D find
+  the floor empty, so space them by more than 30 s at 300 ms. The route takes
+  them once.
+- **The browser's first visit costs a few ticks.** A freshly launched tab waits
+  about 3 ticks for scenery after the first position jump, and again on first
+  entering a new map square: E +6 and K +7 on a tab's first run, none on later
+  runs (rs/370, traced). SCORED's run uses one tab, so its single-tab chain
+  figures include this cost.
 - **Lawgof's "repaired" dialogue closes and reopens** (`if_close`, `p_delay(1)`
   twice) while he inspects the shed; wait for the next page instead of treating
   the closed dialogue as the end.
