@@ -1017,11 +1017,14 @@ class AccountRun implements Stoppable {
             login: loginOn,
             stop: stopOn,
             since: this.L.startedAt,
-            onStop: cue => this.onStopCue(cue),
+            onStop: closed => this.onScopeClosed(closed),
+            onSession: (event, cue) => this.onStopScopeSession(event, cue),
             // Every account sees every other family's cues go by: those notes go to its own log.
             log: line => this.note('cue', line)
         });
-        this.L.log(`[launcher] ${account}: reading ${this.cueDir}${loginOn ? `; logs in when a cue for ${scopeText(loginOn)} opens` : ''}${stopOn ? `; logs out when one for ${scopeText(stopOn)} says stop` : ''}`);
+        this.L.log(
+            `[launcher] ${account}: reading ${this.cueDir}${loginOn ? `; logs in when a cue for ${scopeText(loginOn)} opens` : ''}${stopOn ? `; logs out when ${scopeText(stopOn)} closes (its final stop, or the next scope's cue after its stop)` : ''}`
+        );
     }
 
     disarm(): void {
@@ -1039,12 +1042,40 @@ class AccountRun implements Stoppable {
         this.L.writeStatus();
     }
 
-    /** A stop addressed to stopOn's scope: the account leaves the run now, without waiting for the launcher's stop. */
-    private onStopCue(cue: Cue): void {
+    /** Logged in (or logging in), as opposed to waiting its turn or its login cue. */
+    private get inRun(): boolean {
+        return this.state !== 'queued' && this.state !== 'awaiting-cue';
+    }
+
+    /**
+     * stopOn's scope stopped a session without closing (a program segment: the step opens another), or
+     * opened one: the account stays in the world either way; its role stands down on the stop itself.
+     */
+    private onStopScopeSession(event: 'open' | 'stood-down', cue: Cue): void {
+        if (this.retired !== null || this.L.isStopping || !this.cue) return;
+        const { account } = this.entry;
+        const at = `${scopeText(cue.scope)} (session ${cue.session}, seq ${cue.seq})`;
+        if (event === 'stood-down') {
+            if (!this.inRun) {
+                this.L.log(`[launcher] ${account}: stop for ${at} does not close it: ${this.state === 'awaiting-cue' ? 'still waits for its open' : 'logs in on its turn'}`);
+                return;
+            }
+            this.setGate('stood-down');
+            this.L.log(`[launcher] ${account}: stop for ${at} does not close it: stood down, stays in the world until its final stop or the next scope's cue`);
+        } else {
+            if (this.cue.state !== 'stood-down') return;
+            this.setGate(this.entry.loginOn ? 'opened' : 'watching');
+            this.L.log(`[launcher] ${account}: new session for ${at}: watching it`);
+        }
+        this.L.writeStatus();
+    }
+
+    /** stopOn's scope closed: the account leaves the run now, without waiting for the launcher's stop. */
+    private onScopeClosed(closed: ScopeClosed): void {
         if (this.retired !== null || this.L.isStopping) return;
         const { account } = this.entry;
-        const why = `stop cue for ${scopeText(cue.scope)} (session ${cue.session}, seq ${cue.seq})`;
-        if (this.state === 'queued' || this.state === 'awaiting-cue') {
+        const why = closedText(closed);
+        if (!this.inRun) {
             this.L.log(`[launcher] ${account}: ${why} before its login: it never logs in`);
             this.neverLogsIn(why, 'stopped');
             return;
@@ -1073,9 +1104,9 @@ class AccountRun implements Stoppable {
         const w = await this.gate.waitForLogin(on.waitMs, this.L.stopRequested);
         if (w.result === 'stopped' || this.L.isStopping) return;
         if (w.result === 'stop') {
-            // onStopCue has handled a stop on stopOn's scope; this is the login scope's, when stopOn names another.
+            // onScopeClosed has handled stopOn's scope closing; this is the login scope's, when stopOn names another.
             if (this.retired === null) {
-                const why = `stop cue for ${scopeText(w.cue.scope)} (session ${w.cue.session}, seq ${w.cue.seq})`;
+                const why = closedText(w.closed);
                 this.L.log(`[launcher] ${account}: ${why} before its login: it never logs in`);
                 this.neverLogsIn(why, 'stopped');
             }
