@@ -103,10 +103,11 @@ const keep3 = (units: Unit[]) => {
 
 // A lost item's fate in the rows after the stretch: the first row that consumes or hands it in, or
 // that wears it through a step, makes it needed; a swap, trade, deposit or drop first returns it unused.
-// A death inside a step needs that step's worn kit for the rest of it.
+// A stretch names the kit the step it is in or heading to still uses (`uses`).
 const isStep = (r: LedgerRow) => /^S\d/.test(r.row);
-const fate = (u: Unit, from: string) => {
-    if (u.worn && isStep(rows[at(from)]!)) return `needed: worn for the rest of ${from}`;
+const fate = (u: Unit, from: string, uses?: [RegExp, string]) => {
+    if (uses && uses[0].test(u.name)) return `needed: ${uses[1]}`;
+    if (/^S1[7]$/.test(from)) return 'not needed: the run ends on the course';
     const k = u.name.toLowerCase();
     const fam = k.replace(/\(\d\)$/, '');
     const mine = (n: string) => n.toLowerCase() === k || n.toLowerCase().replace(/\(\d\)$/, '') === fam;
@@ -125,17 +126,20 @@ const TRADE = 5; // e: one trade at the spawn: the teleport runes, the food and 
 const SET_UP = 23; // m: the cannon's set-up (fold-in 28's S27 price)
 const heal = (hp: number) => Math.ceil((hp - 1) / 20); // sharks from 1 HP back to full, 3 ticks each
 
-type Stretch = { name: string; row: string; deployed?: boolean; hp: number; replay: [number, number]; how: string };
+// H11 and H13 are trades at the Ardougne landing, inside T13-14 and T15-16 before the lever, so the
+// kit those legs carry into the Wilderness is the state after H11 and after H13; the ledger lists each
+// trade after its leg, whose row then holds only the teleport cast (the T13-14 and T15-16 lines below).
+type Stretch = { name: string; row: string; deployed?: boolean; hp: number; replay: [number, number]; how: string; uses?: [RegExp, string] };
 const cannon = /^(cannon (base|stand|barrels|furnace)|cannonball)$/;
 const stretches: Stretch[] = [
-    { name: 'T13-14 (Lawgof to the spiders, the lever)', row: 'T13-14', hp: 42, replay: [0, fig('T13-14')], how: 'T13-14 again from the spawn, the part already walked' },
-    { name: 'S14 packed (the cannon in the pack: H11 to set-up, pick-up to T14-15)', row: 'S14', hp: 42, replay: [fig('T13-14'), fig('T13-14') + SET_UP], how: 'T13-14 again, then the set-up if the death came after it' },
-    { name: 'S14 deployed (the cannon on the ground)', row: 'S14', deployed: true, hp: 42, replay: [fig('T13-14'), fig('T13-14')], how: 'T13-14 again; the cannon waits, no second set-up' },
-    { name: 'T14-15 (the spiders to the Ardougne cast, the Wilderness part)', row: 'T14-15', hp: 42, replay: [0, 66], how: 'the Wilderness part already walked (~66 to level 20, R8)' },
+    { name: 'T13-14 as the ledger walks it (before H11)', row: 'T13-14', hp: 42, replay: [0, fig('T13-14')], how: 'T13-14 again, the part already walked' },
+    { name: 'T13-14 with H11 at the landing (the Wilderness carry to the spiders)', row: 'H11', hp: 42, replay: [0, fig('T13-14')], how: 'T13-14 again, the part already walked', uses: [/^(cannon (base|stand|barrels|furnace)|cannonball|mithril scimitar)$/, 'S14 ahead'] },
+    { name: 'S14 deployed (the cannon on the ground)', row: 'S14', deployed: true, hp: 42, replay: [fig('T13-14'), fig('T13-14')], how: 'T13-14 again; the cannon waits, no second set-up', uses: [/^mithril scimitar$/, 'wielded for the rest of S14'] },
+    { name: 'T14-15 (the spiders to the Ardougne cast, the cannon packed)', row: 'T14-15', hp: 42, replay: [0, 66], how: 'the Wilderness part already walked (~66 to level 20, R8)' },
     { name: 'T15-16 as the ledger walks it (before H13)', row: 'T15-16', hp: 42, replay: [0, fig('T15-16')], how: 'T15-16 again, the part already walked' },
-    { name: 'T15-16 with H13 at the landing (the Wilderness carry)', row: 'H13', hp: 42, replay: [0, fig('T15-16')], how: 'T15-16 again, the part already walked, and H13 again from a spare kit' },
-    { name: 'S27 deployed', row: 'S27', deployed: true, hp: 97, replay: [fig('T26-27'), fig('T26-27')], how: 'T26-27 again; the cannon waits, no second set-up' },
-    { name: 'S27 packed (the bow phase, or the cannon picked up)', row: 'S27', hp: 97, replay: [fig('T26-27'), fig('T26-27') + SET_UP], how: 'T26-27 again, and the set-up if the cannon was still in use' },
+    { name: 'T15-16 with H13 at the landing (the Wilderness carry to the arena)', row: 'H13', hp: 42, replay: [0, fig('T15-16')], how: 'T15-16 again, the part already walked; a second H13 kit in the trade' },
+    { name: 'S27 deployed (the cannon on the ground)', row: 'S27', deployed: true, hp: 97, replay: [fig('T26-27'), fig('T26-27')], how: 'T26-27 again; the cannon waits, no second set-up', uses: [/^(magic shortbow|rune arrow)$/, 'the rest of S27'] },
+    { name: 'S27 packed (the cannon picked up, the bow phase)', row: 'S27', hp: 97, replay: [fig('T26-27'), fig('T26-27') + SET_UP], how: 'T26-27 again, and the set-up if the cannon was still to fire', uses: [/^(magic shortbow|rune arrow|cannonball)$/, 'the rest of S27'] },
     { name: 'S17 mid-course', row: 'S17', hp: 97, replay: [fig('T13-14') + fig('T27-17') + 66, fig('T13-14') + fig('T27-17') + 157], how: "T13-14's lever leg and T27-17 again, plus the lap in progress (66-157)" },
 ];
 
@@ -150,7 +154,7 @@ for (const s of stretches) {
     console.log(`  carried: ${units.map(u => `${u.name} x${u.count}${u.worn ? ' (worn)' : ''}`).join(', ')}`);
     if (unknown.length) console.log(`  no obj cost found (priced 0): ${unknown.join(', ')}`);
     console.log(`  kept (keep 3, by obj cost): ${kept.join(', ')}`);
-    const fates = lost.map(u => [u, fate(u, s.row)] as const);
+    const fates = lost.map(u => [u, fate(u, s.row, s.uses)] as const);
     for (const [u, f] of fates) console.log(`  lost ${u.name} x${u.count}: ${f}`);
     const needed = fates.filter(([, f]) => f.startsWith('needed')).map(([u]) => `${u.name} x${u.count}`);
     console.log(`  the recovery trade carries: ${needed.join(', ') || 'nothing the run needs'}; and ${sharks} sharks to eat back from 1 HP`);
