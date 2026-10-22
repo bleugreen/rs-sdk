@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Gentle } from './demo.ts';
-import { bookDepth, DemoMarket, historyMoves, historyTotals, realisable, stackOverVolume, type Bucket } from './market.ts';
+import { bidPool, bookDepth, DemoMarket, historyMoves, historyTotals, realisable, stackOverVolume, type Bucket } from './market.ts';
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, 'fixtures', name), 'utf8');
 const realFetch = globalThis.fetch;
@@ -51,6 +51,14 @@ describe('DemoMarket (recorded replies)', () => {
         expect((await new DemoMarket(gate()).find('uncut dragonstone'))?.id).toBe(1631);
         expect(await new DemoMarket(gate()).find('uncut')).toBeNull();
     });
+});
+
+test('bidPool totals the open bid side of a book page', () => {
+    const book = JSON.parse(fixture('market-items.json'));
+    const pool = bidPool(book);
+    expect(pool.items).toBe(93);
+    expect(pool.value).toBe(book.items.reduce((s: number, i: { buyValue: number }) => s + i.buyValue, 0));
+    expect(Math.round(pool.value / 1e6)).toBe(1109);
 });
 
 describe('book depth', () => {
