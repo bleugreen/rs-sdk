@@ -205,3 +205,76 @@ account can fletch wherever it stands, for example while waiting at a quest loca
 - **Rune arrowhead supply.** Whether helpers can get about 2,600 rune arrowheads (smithing
   helpers at 90 with about 175-260 rune bars, or the GE) decides between the rune and adamant
   routes (+9 ticks). Belongs to the helper-supply issues under rs/41.
+
+## 9. Standalone fallback module (S18d-fallback)
+
+Fletching's own path is inside S18's stuns (the stun pack's `arrows` preset). When S18 ends below
+99, `speedrun/skills/fletching.ts` (STEP-MANIFEST.md entry 32, step `S18d-fallback fletching`, after
+S18 and before T18-19) finishes it off-stun from what SCORED holds: in place, no bank, no helper.
+
+**How it runs.** The page's item-cycle program in stack mode (`server/webclient/src/bot/programs/
+item-cycle.ts`, driven by `speedrun/lib/item-cycle.ts`) sends ceil(stack / 15) uses of the best
+tier the observed level allows, at most 5 a tick, blind (stackable inputs never move slots). The
+tier table is `speedrun/lib/arrows.ts`, the one table the stun pack's start check also reads. The
+module turns on stack mode's `fill`: when the best tier runs out inside a tick, the rest of the
+tick goes to the next tier the level already allows (rune into adamant, adamant into mithril).
+Without it the page sends one tier a tick and each switch leaves a short tick. Switches whose next
+tier needs the level the burst itself gives (bronze to iron, iron to steel, steel to mithril) stay
+short, since the server would refuse the new tier on that tick.
+
+**The rune keep.** S27 fires the 570 rune arrows fletched from the 570 rune tips. Two things could
+lose them, and the module's plan (`planFletch`, a walk of the page's pick rule action by action)
+guards both. First, below 75 lower tiers share the headless arrows the rune tips need. When
+best-first to 75 would leave less than the rune share plus a margin for the page's level lag (750:
+two ticks of 5 at each of the five band edges), the run to 75 is capped with `maxActions`. The cap
+holds whatever the lag, since an action takes at most 15. Second, when Fletching reaches the target
+with rune tips still held (the courier brings them late, at about 96), a rune-only run makes the
+rest. The step refuses up front when the stock can't end with the keep (`keepRune`, default 570).
+Its `done` is Fletching at the target with the keep held or no rune tips left to fletch, so a
+resume never passes it with tips unfletched, and it stays done after S27 spends the arrows.
+
+**Free slots.** `make_arrows` never checks space, and the engine's INV_ADD drops what doesn't fit at
+the player's feet, so the plan walks the slots too. A new arrow stack needs a free slot on its
+tier's first action unless that action empties an input stack first (inv_del runs before inv_add).
+From Fletching 1 on today's stock that is **3 free slots**: mithril arrows open at 45, adamant at
+60 while mithril tips are still held, and rune at 75 while adamant tips are still held. The step
+refuses with the tier and level where a stack would not fit.
+
+**Measured** (`speedrun/lab/fletching-accept.ts`, bgsrv-mac, browser client, 300 ms, fresh bundle,
+2026-10-22, with `fill`):
+
+| Case | Stock | Program ticks | Work ticks | Actions | Ticks at 5 | overBudget |
+|---|---|---|---|---|---|---|
+| today, 1 to 99 (2 runs) | headless 4,560; bronze 60, iron 90, steel 135, mithril 1,485, adamant 2,220, rune 570 | 61, 61 | 60 | 294 | 57 of 60 | 0 |
+| fold-in 19, 1 to 99 | adamant 2,070, headless 4,410 | 61 | 60 | 294 | 57 of 60 | 0 |
+| late: 97 with 570 rune tips | headless 1,200, adamant 630, rune 570 | 7 + 3 (route, then rune-only) | 8 | 38 | 7 of 8 | 0 |
+
+Each ended at 99 with 570 rune arrows and nothing dropped. Entry 32's bar is 59 + 5% = 61.95: 59
+is ceil(294 / 5), and the 2 ticks above it are the three level-gated short ticks and the end tick.
+Before `fill` the same cases took 62 (one tier a tick). On the rune-list route of section 2 the
+module took 51 program ticks on the browser (before `fill`; that route has no fillable switch), against `delayfree-cycle.ts`'s 50-tick span on lite on
+the same host (the script's figure, not the module's; lite hosts no programs).
+
+**Demo (entry 32), reduced, bbs, cairn_h97, 30 actions** (2026-10-22, 18:25:52-18:27:10Z;
+`fletching-accept.ts demo --actions=30`, the account's own 500 bronze tips and 1,650 headless arrows,
+no staff commands, no keep; this branch's bundle served by proxy.ts, headless Chrome for Testing, a
+loopback gateway, the live world). **6/6 work ticks sent 5, overBudget 0, all 30 landed, nothing
+lost. The strict landing bar was MISSED by one tick: batches landed on ticks 80, 81, -, 83-86, with
+one one-tick slip at the third batch.** Accepted on what the module controls (rs/186), the same
+standard as entries 9, 10 and 16. Reduced because the GE had no bronze tips at any price: 30
+actions against the manifest's 100 (20 ticks). One tier, so `fill` was not exercised. sceneReady
+came 74 ticks after the first state (tick 78) on a fresh Chrome profile, with 89 locs at the first
+action; logout clicked at tick 88 and confirmed by the page. The program spanned 7 ticks in 2,257 ms.
+
+*Inferred:* one batch reached the server after its tick had closed, and the server's 5 user events a
+tick carried that one-tick lag through every later batch. That matches two batches on time, then a
+tick with nothing, then every batch exactly one tick late with none lost. *Open:* whether the page
+sent that batch late or its packets arrived late across bbs to the demo server. The tick log has no
+per-tick page timeline to tell the two apart.
+
+*The program's own count read 25, not 30*, because it credits an action by the xp it sees before it
+ends, and the sixth batch landed on tick 86, a tick after the program ended. The step's `done` and
+postconditions read the state (Fletching level and rune arrows held), never that count. The one
+place the step did read it was the guard that faults a run which made nothing. A short capped run
+whose only batch slipped like this would have read 0 and faulted with its arrows made, so that
+guard now checks the state (headless arrows consumed within 3 ticks) before faulting.
