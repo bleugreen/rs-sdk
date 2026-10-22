@@ -18,7 +18,7 @@
 import type { BotSDK } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
-import { act, actConverse, castTeleport, clickWalk, slotOf, walkTo, TELEPORTS, type ActSdk, type JumpCounts } from './act';
+import { act, actConverse, castTeleport, clickWalk, settle, slotOf, walkTo, TELEPORTS, type ActSdk, type JumpCounts } from './act';
 import { converse, type ConverseSdk } from './converse';
 import type { OptionPattern } from './dialogue';
 import type { ItemPattern } from './items';
@@ -474,6 +474,11 @@ export function lumdoBoat(sdk: TravelSdk, to: LumdoStop, opts: TravelOptions = {
 }
 
 async function runHop(sdk: TravelSdk, trip: Trip, h: Hop, opts: TravelOptions): Promise<HopOutcome> {
+    // Every hop starts from a settled position (act.ts `settle`): straight after a landing the
+    // browser client is still rebuilding the region, its loc lists are empty and its collision maps
+    // stale, so a lookup there finds nothing (the village spirit tree) and a walk click is misrouted.
+    const settled = await settle(sdk, 60);
+    if (!settled.ok) return { ok: false, reason: 'the region never finished loading' };
     switch (h.kind) {
         case 'teleport': return hopTeleport(sdk, trip, h.spell);
         case 'run': return hopRun(sdk, trip, h.to, opts, h.via ?? [], h.wildernessAtMost);
