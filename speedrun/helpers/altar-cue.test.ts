@@ -261,6 +261,14 @@ describe('cue scopes', () => {
         expect(() => new CueWriter(dir, 'x', { step: 'S07', family: 'bones' as CueFamily })).toThrow(/family must be one of/);
     });
 
+    test('the launcher-only families (fmrow, ring) are cue families: a writer and a watcher take them', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'rc-cue-'));
+        for (const s of [{ step: 'S03', family: 'fmrow' }, { step: 'S04', family: 'ring' }] as CueScope[]) {
+            expect(new CueWriter(dir, 'scored', s).stop([{ tick: 1, ms: 1 }]).scope).toEqual(s);
+            new CueWatcher(dir, s, () => {}).close();
+        }
+    });
+
     test("a role's scope option must name a family the role serves", () => {
         expect(scopeOption({ step: 'S07', family: 'bone' }, ['bone'])).toEqual({ step: 'S07', family: 'bone' });
         expect(() => scopeOption({ step: 'S07', family: 'courier' }, ['bone'])).toThrow(/scope.family must be bone/);

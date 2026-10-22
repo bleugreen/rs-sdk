@@ -1,10 +1,19 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
+import { type Cue, type CueScope, CueWriter } from './altar-cue';
 import { DIRECT_IN_WORLD, DIRECT_IN_WORLD_RE, DIRECT_LOGOUT_RE, DIRECT_REFUSED_RE } from './role';
 import {
+    accountCueDir,
     checkBotEnv,
+    CueGate,
+    DEFAULT_LOGIN_WAIT_MINUTES,
     directLogoutBudgetMs,
+    gateEvent,
     helpersReady,
+    type LoginWait,
     parseLaunchConfig,
     RoleLoop,
     type RoleProcess,
@@ -64,6 +73,52 @@ describe('launcher config', () => {
         expect(() => parseLaunchConfig({ accounts: [{ account: 'cairn_h70', role: 'no-such-role' }] })).toThrow(/no speedrun/);
         expect(() => parseLaunchConfig({ accounts: [] })).toThrow();
         expect(() => parseLaunchConfig({ gatewayPort: 80, accounts: [{ account: 'cairn_h70', role: 'idle' }] })).toThrow(/gatewayPort/);
+    });
+
+    test('existing configs read as before: no cue gate, the shared cue directory', () => {
+        const c = parseLaunchConfig({ accounts: [{ account: 'cairn_h70', role: 'altar-giver', options: { slot: 0, scope: { step: 'S06', family: 'altar' } } }] });
+        expect(c.accounts[0]).toMatchObject({ stopOn: null, loginOn: null, cueDir: null });
+        expect(accountCueDir(c.accounts[0]!, '/tmp/run', {})).toBe('/tmp/run/rc-cue');
+        expect(accountCueDir(c.accounts[0]!, '/tmp/run', { RC_CUE_DIR: '/tmp/cues' })).toBe('/tmp/cues');
+    });
+
+    test('stopOn: a scope; loginOn: a scope and a bounded wait, its scope the stop scope unless stopOn names another', () => {
+        const c = parseLaunchConfig({
+            accounts: [
+                { account: 'cairn_h70', role: 'altar-giver', path: 'direct', stopOn: { step: 'S06', family: 'altar' } },
+                { account: 'cairn_h45', role: 'mule', loginOn: { step: 'H12o', family: 'mule' } },
+                { account: 'cairn_h71', role: 'altar-giver', loginOn: { step: 'S21', family: 'altar', waitMinutes: 90 }, stopOn: { step: 'S21x', family: 'altar' } },
+                { account: 'cairn_f01', role: 'fm-row', stopOn: { step: 'S03', family: 'fmrow' } },
+                { account: 'cairn_h80', role: 'mule', stopOn: { step: 'S04', family: 'ring' } }
+            ]
+        });
+        const [s06, h12o, s21, s03, s04] = c.accounts;
+        expect(s06).toMatchObject({ stopOn: { step: 'S06', family: 'altar' }, loginOn: null });
+        expect(h12o).toMatchObject({ loginOn: { step: 'H12o', family: 'mule', waitMs: DEFAULT_LOGIN_WAIT_MINUTES * 60_000 }, stopOn: { step: 'H12o', family: 'mule' } });
+        expect(s21).toMatchObject({ loginOn: { step: 'S21', family: 'altar', waitMs: 90 * 60_000 }, stopOn: { step: 'S21x', family: 'altar' } });
+        expect(s03!.stopOn).toEqual({ step: 'S03', family: 'fmrow' });
+        expect(s04!.stopOn).toEqual({ step: 'S04', family: 'ring' });
+        expect(DEFAULT_LOGIN_WAIT_MINUTES * 60_000).toBeGreaterThan(9 * 3600_000); // longer than the run
+    });
+
+    test('cue gate settings are checked', () => {
+        const one = (extra: Record<string, unknown>) => () => parseLaunchConfig({ accounts: [{ account: 'cairn_h70', role: 'idle', ...extra }] });
+        expect(one({ stopOn: { step: 'S06', family: 'bones' } })).toThrow(/accounts\[0\]\.stopOn: .*family must be one of/);
+        expect(one({ stopOn: { family: 'altar' } })).toThrow(/needs a step/);
+        expect(one({ loginOn: { step: 'S21' } })).toThrow(/accounts\[0\]\.loginOn: .*family/);
+        expect(one({ loginOn: { step: 'S21', family: 'altar', waitMinutes: 0 } })).toThrow(/waitMinutes/);
+        expect(one({ loginOn: { step: 'S21', family: 'altar' }, after: 'ready' })).toThrow(/alternatives/);
+    });
+
+    test("cueDir: per account, and the same directory as the role's options.cueDir", () => {
+        const root = resolve(import.meta.dir, '..', '..');
+        const own = parseLaunchConfig({ accounts: [{ account: 'cairn_h45', role: 'idle', cueDir: 'run-machine/h12o-cue' }] }, root).accounts[0]!;
+        expect(own.cueDir).toBe(join(root, 'run-machine', 'h12o-cue'));
+        expect(accountCueDir(own, '/tmp/run', { RC_CUE_DIR: '/tmp/cues' })).toBe(join(root, 'run-machine', 'h12o-cue'));
+        const fromOptions = parseLaunchConfig({ accounts: [{ account: 'cairn_h45', role: 'idle', options: { cueDir: '/var/cue' } }] }, root).accounts[0]!;
+        expect(fromOptions.cueDir).toBe('/var/cue');
+        expect(() => parseLaunchConfig({ accounts: [{ account: 'cairn_h45', role: 'idle', cueDir: '/a', options: { cueDir: '/b' } }] }, root)).toThrow(/differ/);
+        expect(parseLaunchConfig({ accounts: [{ account: 'cairn_h45', role: 'idle', cueDir: '/a', options: { cueDir: '/a' } }] }, root).accounts[0]!.cueDir).toBe('/a');
     });
 
     test('stopDeadlineMs: settable, never below 5 s', () => {
@@ -174,6 +229,15 @@ describe('credentials and role environment', () => {
         expect(r.HELPER_PATH).toBe('relay');
     });
 
+    test("an account's own cue directory reaches its role; a role logged in on a cue learns that cue's time", () => {
+        const e = parseLaunchConfig({ accounts: [{ account: 'cairn_h45', role: 'mule', cueDir: '/tmp/h12o-cue', loginOn: { step: 'H12o', family: 'mule' } }] }).accounts[0]!;
+        const r = roleEnv({ RC_CUE_DIR: '/tmp/shared' }, env, e, gw, '/tmp/run', 123, 25_000, 4567);
+        expect(r).toMatchObject({ RC_CUE_DIR: '/tmp/h12o-cue', LOGIN_CUE_MS: '4567' });
+        const plain = parseLaunchConfig({ accounts: [{ account: 'cairn_h70', role: 'altar-giver' }] }).accounts[0]!;
+        expect(roleEnv({ RC_CUE_DIR: '/tmp/shared' }, env, plain, gw, '/tmp/run', 123).LOGIN_CUE_MS).toBeUndefined();
+        expect(roleEnv({ RC_CUE_DIR: '/tmp/shared' }, env, plain, gw, '/tmp/run', 123).RC_CUE_DIR).toBe('/tmp/shared');
+    });
+
     test('a direct-path role is told so, and gets its credentials by environment only', () => {
         const e = parseLaunchConfig({ accounts: [{ account: 'cairn_h70', role: 'altar-giver', path: 'direct' }] }).accounts[0]!;
         const r = roleEnv({ PATH: '/bin' }, env, e, gw, '/tmp/run', 123);
@@ -262,11 +326,145 @@ describe('waitWhileListed', () => {
 });
 
 describe('helpersReady', () => {
-    const a = (account: string, state: 'online' | 'logging-in', receiver = false) => ({ account, role: 'r', receiver, path: 'relay' as const, state, loggedInAt: null, logins: 1 });
+    const a = (account: string, state: 'online' | 'logging-in' | 'awaiting-cue' | 'stopped', receiver = false) => ({ account, role: 'r', receiver, path: 'relay' as const, state, loggedInAt: null, logins: 1 });
     test('every helper online; receivers do not count', () => {
         expect(helpersReady([a('cairn_h70', 'online'), a('cairn_h75', 'logging-in', true)])).toBe(true);
         expect(helpersReady([a('cairn_h70', 'online'), a('cairn_h71', 'logging-in')])).toBe(false);
         expect(helpersReady([a('cairn_h75', 'online', true)])).toBe(false);
+    });
+    test('an account that logs in on a cue is not waited for; one that left on its stop cue stays counted ready', () => {
+        const cued = { ...a('cairn_h45', 'awaiting-cue'), cue: { login: 'H12o/mule', stop: 'H12o/mule', state: 'waiting' as const, ms: 1 } };
+        expect(helpersReady([a('cairn_h70', 'online'), cued])).toBe(true);
+        const left = { ...a('cairn_h71', 'stopped'), cue: { login: null, stop: 'S06/altar', state: 'stopped' as const, ms: 1 } };
+        expect(helpersReady([a('cairn_h70', 'online'), left])).toBe(true);
+        const watching = { ...a('cairn_h72', 'logging-in'), cue: { login: null, stop: 'S06/altar', state: 'watching' as const, ms: 1 } };
+        expect(helpersReady([a('cairn_h70', 'online'), watching])).toBe(false);
+        expect(helpersReady([a('cairn_h70', 'online'), a('cairn_h73', 'stopped')])).toBe(false); // stopped for another reason
+    });
+});
+
+describe('the cue gate', () => {
+    const H12O: CueScope = { step: 'H12o', family: 'mule' };
+    const beacon = [{ tick: 1, ms: 1 }];
+    const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+    const never = new Promise<void>(() => undefined);
+
+    function gate(o: { login?: CueScope | null; stop?: CueScope | null; since?: number } = {}) {
+        const dir = mkdtempSync(join(tmpdir(), 'cue-gate-'));
+        const stops: Cue[] = [];
+        const logs: string[] = [];
+        const g = new CueGate({ dir, login: o.login === undefined ? H12O : o.login, stop: o.stop === undefined ? (o.login ?? H12O) : o.stop, since: o.since ?? Date.now() - 1, onStop: c => stops.push(c), log: l => logs.push(l), pollMs: 5 });
+        const writer = (scope: CueScope) => new CueWriter(dir, 'scored', scope);
+        return { g, dir, stops, logs, writer };
+    }
+
+    test('gateEvent: a cue from before the launch is nothing; then stop or open', () => {
+        expect(gateEvent({ ms: 99 }, 100)).toBeNull();
+        expect(gateEvent({ ms: 99, stop: true }, 100)).toBeNull();
+        expect(gateEvent({ ms: 100 }, 100)).toBe('open');
+        expect(gateEvent({ ms: 150, stop: true }, 100)).toBe('stop');
+    });
+
+    test("logs in on the open of a cue addressed to its scope only: another step's or another family's cue does nothing", async () => {
+        const t = gate();
+        let settled: LoginWait | null = null;
+        void t.g.waitForLogin(5000, never).then(w => (settled = w));
+        t.writer({ step: 'H12', family: 'mule' }).write({ beacons: beacon, turns: [] }); // another step, same family
+        await sleep(30);
+        t.writer({ step: 'H12o', family: 'ring' }).write({ beacons: beacon, turns: [] }); // same step, another family
+        await sleep(30);
+        t.writer({ step: 'S06', family: 'altar' }).stop(beacon); // another scope's stop
+        await sleep(30);
+        expect(settled).toBeNull();
+        expect(t.stops).toEqual([]);
+        const open = t.writer(H12O).write({ beacons: beacon, turns: [] });
+        await sleep(30);
+        expect(settled).toMatchObject({ result: 'open', cue: { session: open.session, seq: 1, scope: H12O } });
+        // Its later stop is the stop scope's (the same scope by default): once, however often it is rewritten.
+        t.g.close();
+    });
+
+    test("after the login, the scope's stop is reported once; a rewrite of the stop is not a second one", async () => {
+        const t = gate();
+        const w = t.writer(H12O);
+        w.write({ beacons: beacon, turns: [] });
+        expect((await t.g.waitForLogin(5000, never)).result).toBe('open');
+        w.stop(beacon);
+        await sleep(30);
+        w.stop(beacon);
+        await sleep(30);
+        expect(t.stops.map(c => [c.scope.step, c.seq, c.stop])).toEqual([['H12o', 2, true]]);
+        t.g.close();
+    });
+
+    test('a stop before the login trigger is honoured: the wait ends in stop, never open, even if the scope opens again', async () => {
+        const t = gate();
+        t.writer(H12O).stop(beacon);
+        const w = await t.g.waitForLogin(5000, never);
+        expect(w.result).toBe('stop');
+        await sleep(1);
+        expect(t.stops.length).toBe(1);
+        t.writer(H12O).write({ beacons: beacon, turns: [] }); // a new session opening later
+        await sleep(30);
+        expect((await t.g.waitForLogin(5000, never)).result).toBe('stop');
+        t.g.close();
+    });
+
+    test("loginOn with another stopOn: the login scope's stop keeps it out, and so does the stop scope's", async () => {
+        const S21: CueScope = { step: 'S21', family: 'altar' };
+        const other: CueScope = { step: 'S21b', family: 'altar' };
+        const a = gate({ login: S21, stop: other });
+        a.writer(S21).stop(beacon);
+        expect((await a.g.waitForLogin(5000, never)).result).toBe('stop');
+        expect(a.stops).toEqual([]); // not the stop scope: the launcher keeps it out itself
+        a.g.close();
+        const b = gate({ login: S21, stop: other });
+        b.writer(other).stop(beacon);
+        expect((await b.g.waitForLogin(5000, never)).result).toBe('stop');
+        await sleep(1);
+        expect(b.stops.length).toBe(1);
+        b.g.close();
+    });
+
+    test('the wait is bounded: no cue in time is expired; a launcher stop ends it as stopped', async () => {
+        const t = gate();
+        const t0 = Date.now();
+        expect(await t.g.waitForLogin(80, never)).toEqual({ result: 'expired' });
+        expect(Date.now() - t0).toBeGreaterThanOrEqual(70);
+        expect(await t.g.waitForLogin(5000, sleep(20))).toEqual({ result: 'stopped' });
+        t.g.close();
+    });
+
+    test("cue.json from before the launch opens nothing and stops nothing (an earlier attempt's)", async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'cue-gate-'));
+        new CueWriter(dir, 'scored', H12O).write({ beacons: beacon, turns: [] });
+        const s06 = new CueWriter(dir, 'scored', { step: 'S06', family: 'altar' });
+        s06.stop(beacon);
+        const stops: Cue[] = [];
+        const logs: string[] = [];
+        const since = Date.now() + 1;
+        await sleep(5);
+        const g = new CueGate({ dir, login: null, stop: { step: 'S06', family: 'altar' }, since, onStop: c => stops.push(c), log: l => logs.push(l), pollMs: 5 });
+        await sleep(30);
+        expect(stops).toEqual([]);
+        expect(logs.some(l => /written before this launch ignored/.test(l))).toBe(true);
+        s06.stop(beacon); // this launch's stop
+        await sleep(30);
+        expect(stops.length).toBe(1);
+        g.close();
+    });
+
+    test('a stop-only gate (stopOn) reports its stop and nothing else', async () => {
+        const S06: CueScope = { step: 'S06', family: 'altar' };
+        const t = gate({ login: null, stop: S06 });
+        const w = t.writer(S06);
+        w.write({ beacons: beacon, turns: [] });
+        await sleep(30);
+        expect(t.stops).toEqual([]);
+        w.stop(beacon);
+        await sleep(30);
+        expect(t.stops.map(c => c.stop)).toEqual([true]);
+        t.g.close();
     });
 });
 

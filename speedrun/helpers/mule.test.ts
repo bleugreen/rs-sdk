@@ -14,6 +14,7 @@ import {
     canonName,
     countById,
     courierPicks,
+    cueEpoch,
     decidePreRequest,
     firstSlotPerId,
     giveOpenTrade,
@@ -96,6 +97,18 @@ describe('packages', () => {
         expect(muleCueAction({ ...c, session: 'b' }, { session: 'a', seq: 3 }, start)).toBe('ask');
         expect(muleCueAction({ ...c, session: 'b', stop: true }, { session: 'a', seq: 3 }, start)).toBe('stop');
         expect(muleCueAction({ ...c, ms: start - 120_000 }, null, start)).toBe('none');
+    });
+
+    test('a mule the launcher logged in on a cue serves that cue, however long the login took', () => {
+        const now = 2_000_000;
+        expect(cueEpoch({}, now)).toBe(now);
+        expect(cueEpoch({ LOGIN_CUE_MS: 'soon' }, now)).toBe(now);
+        const opened = now - 5 * 60_000; // H12o's cue opened, then a slow login
+        const epoch = cueEpoch({ LOGIN_CUE_MS: String(opened) }, now);
+        expect(epoch).toBe(opened);
+        expect(muleCueAction({ session: 'h12o', seq: 1, ms: opened }, null, epoch)).toBe('ask');
+        expect(muleCueAction({ session: 'h12o', seq: 1, ms: opened }, null, now)).toBe('none'); // without it: stale
+        expect(cueEpoch({ LOGIN_CUE_MS: String(now + 1000) }, now)).toBe(now); // never later than the start
     });
 
     test('a cue is acted on once: a new session or a later write; never one from before the mule started', () => {
