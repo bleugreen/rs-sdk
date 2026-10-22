@@ -1011,7 +1011,7 @@ describe('item-cycle stack mode (arrows)', () => {
 
     const adamantArrow: CycleRecipe = { name: 'adamantarrow', level: 60, xp: 150, a: HEADLESS, b: ADAMANT_HEADS, products: [ADAMANT_ARROW] };
     /** 45 rune tips (3 actions) beside a long adamant stack. */
-    const switchWorld = (xp: number, params: Record<string, unknown> = {}, heads: Obj[] = [{ id: RUNE_HEADS, count: 45 }, { id: ADAMANT_HEADS, count: 300 }]) =>
+    const switchWorld = (xp: number, params: Record<string, unknown> = {}, heads: Obj[] = [{ id: RUNE_HEADS, count: 45 }, { id: ADAMANT_HEADS, count: 900 }]) =>
         new World({ mode: 'stack', recipes: [adamantArrow, runeArrow], xp, inventory: [{ id: HEADLESS, count: 1000 }, ...heads], params: { untilLevel: undefined, maxActions: 60, ...params } });
     const sources = (w: World, t: number) => w.h.sent.filter(s => s.tick === t).map(s => (s.action as { sourceSlot?: number }).sourceSlot);
 
@@ -1058,7 +1058,7 @@ describe('item-cycle stack mode (arrows)', () => {
     });
 
     test('fill applies to stack mode only', () => {
-        const h = new Harness();
+        const h = new Harness('item-cycle', createItemCycle);
         expect(h.start('item-cycle', { mode: 'pair', skill: 'herblore', booth: BOOTH, maxActions: 10, recipes: [attack], fill: true }).fault).toContain('fill applies to stack mode only');
         expect(h.start('item-cycle', { mode: 'stack', skill: 'fletching', maxActions: 10, recipes: [runeArrow], fill: 'yes' }).fault).toContain('fill must be a boolean');
         expect(createItemCycle.params).toContain('fill');

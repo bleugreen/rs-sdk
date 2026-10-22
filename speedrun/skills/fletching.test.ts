@@ -202,12 +202,13 @@ describe('planFletch: tier order', () => {
         expect(first(44, all)).toEqual([]);
     });
 
-    test("today's 304-action stock from 1: one route run, 291 actions, 61 work ticks (59 if tiers packed), every rune tip used, 13 mithril actions left", () => {
+    test("today's 304-action stock from 1: one route run, 291 actions, 60 work ticks with fill, every rune tip used, 13 mithril actions left", () => {
         const plan = planFletch(stockOf(world({ level: 1 })));
         expect(plan.runs.map(r => r.kind)).toEqual(['route']);
         expect(plan.runs[0]!.byTier).toEqual({ bronze: 4, iron: 6, steel: 9, mithril: 86, adamant: 148, rune: 38 });
-        // one tier a tick: the bronze 4, iron 6, steel 9, rune 38 and the 115 adamant after rune each end on a short tick
-        expect([plan.actions, Math.ceil(plan.actions / 5), plan.ticks, plan.level, plan.runeArrows, plan.keeps]).toEqual([291, 59, 61, 99, 570, true]);
+        // bronze 4, iron 6 and steel 9 end on short ticks (the next tier needs the level that burst gives);
+        // with fill, rune running out into adamant and adamant into mithril share their ticks
+        expect([plan.actions, Math.ceil(plan.actions / 5), plan.ticks, plan.level, plan.runeArrows, plan.keeps]).toEqual([291, 59, 60, 99, 570, true]);
         expect([plan.left.tips.mithril, plan.left.headless]).toEqual([195, 195]);
     });
 
