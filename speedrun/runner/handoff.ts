@@ -45,9 +45,12 @@ const GAME_NAMES: Readonly<Record<string, string>> = { 'normal logs': 'logs' };
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** The game's name for a ledger NAME, lower-cased (the mule's package lines name items this way). */
+export const gameName = (name: string): string => GAME_NAMES[name] ?? name;
+
 /** The game items a ledger NAME stands for. */
 export function itemPattern(name: string): RegExp {
-    return new RegExp(`^${escape(GAME_NAMES[name] ?? name)}(?:\\(\\d\\))?$`, 'i');
+    return new RegExp(`^${escape(gameName(name))}(?:\\(\\d\\))?$`, 'i');
 }
 
 /** What a ledger entry matches in the game. */

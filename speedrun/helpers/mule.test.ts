@@ -10,6 +10,7 @@ import { baseState, FakeSdk, flush } from '../lib/fake-sdk';
 import { clickBack, newClickCtx, RESEND_TICKS, type ClickCtx } from '../lib/trade';
 import {
     accountMatches,
+    afterServe,
     canonName,
     countById,
     courierPicks,
@@ -21,7 +22,10 @@ import {
     muleOptions,
     packageItems,
     packageOf,
-    parsePackageRequest,
+    muleCueAction,
+    newCue,
+    packageForCue,
+    requestPackage,
     planPackage,
     playerPattern,
     sameItems,
@@ -67,10 +71,42 @@ describe('packages', () => {
         { name: 'bars', items: [{ item: 'Adamantite bar', amount: 100, noted: true }, { item: 'Coins', amount: 5000 }] }
     ];
 
-    test('PM text selects a package by name, with or without the pkg prefix', () => {
-        expect(parsePackageRequest('bars', pkgs)?.name).toBe('bars');
-        expect(parsePackageRequest('pkg WINE ', pkgs)?.name).toBe('wine');
-        expect(parsePackageRequest('hello', pkgs)).toBeNull();
+    test('a cue scoped to a hand-off asks for the package keyed to it, for the account the mule serves only', () => {
+        const keyed: Package[] = [
+            { name: 'h4k', scope: { step: 'H4k', family: 'mule' }, items: [{ item: 'Rune axe', amount: 1 }] },
+            { name: 'h4e', scope: { step: 'H4e', family: 'mule' }, items: [{ item: 'Law rune', amount: 1 }], onRequest: true },
+        ];
+        const dir = mkdtempSync(join(tmpdir(), 'mule-cue-'));
+        const cue = requestPackage(dir, 'cairn_h94', 'H4e', { tick: 10, ms: 1_000 });
+        expect(cue.scope).toEqual({ step: 'H4e', family: 'mule' });
+        expect(packageForCue(cue, keyed, 'Cairn H94')?.name).toBe('h4e');
+        expect(packageForCue(cue, keyed, 'cairn_h95')).toBeNull();
+        expect(packageForCue({ ...cue, scope: { step: 'S07', family: 'mule' } }, keyed, 'cairn_h94')).toBeNull();
+        expect(packageForCue({ ...cue, scope: { step: 'H4e', family: 'bone' } }, keyed, 'cairn_h94')).toBeNull();
+        expect(packageForCue(cue, pkgs, 'cairn_h94')).toBeNull(); // unkeyed packages answer no cue
+    });
+
+    test('a cue session asks once; a rewrite of it asks nothing; a stop withdraws the request', () => {
+        const start = 1_000_000;
+        const c = { session: 'a', seq: 1, ms: start };
+        expect(muleCueAction(c, null, start)).toBe('ask');
+        expect(muleCueAction({ ...c, seq: 2 }, { session: 'a', seq: 1 }, start)).toBe('none'); // fresh beacons: the served package is not re-staged
+        expect(muleCueAction({ ...c, seq: 3, stop: true }, { session: 'a', seq: 2 }, start)).toBe('stop');
+        expect(muleCueAction({ ...c, seq: 3, stop: true }, { session: 'a', seq: 3 }, start)).toBe('none'); // seen already
+        expect(muleCueAction({ ...c, session: 'b' }, { session: 'a', seq: 3 }, start)).toBe('ask');
+        expect(muleCueAction({ ...c, session: 'b', stop: true }, { session: 'a', seq: 3 }, start)).toBe('stop');
+        expect(muleCueAction({ ...c, ms: start - 120_000 }, null, start)).toBe('none');
+    });
+
+    test('a cue is acted on once: a new session or a later write; never one from before the mule started', () => {
+        const start = 1_000_000;
+        const c = { session: 'a', seq: 1, ms: start };
+        expect(newCue(c, null, start)).toBe(true);
+        expect(newCue(c, { session: 'a', seq: 1 }, start)).toBe(false);
+        expect(newCue({ ...c, seq: 2 }, { session: 'a', seq: 1 }, start)).toBe(true);
+        expect(newCue({ ...c, session: 'b' }, { session: 'a', seq: 5 }, start)).toBe(true);
+        expect(newCue({ ...c, ms: start - 120_000 }, null, start)).toBe(false);
+        expect(newCue(null, null, start)).toBe(false);
     });
 
     test('plan maps package items onto bank items and counts slots', () => {
@@ -144,9 +180,29 @@ describe('packages', () => {
     });
 
     test('stackable guess covers coins, runes and ammunition but not plain items', () => {
-        for (const n of ['Coins', 'Law rune', 'Rune arrows', 'Mithril dart tips', 'Feather', 'Rune arrowtips']) expect(isStackableName(n)).toBe(true);
+        for (const n of ['Coins', 'Law rune', 'Rune arrows', 'Mithril dart tips', 'Feather', 'Rune arrowtips', 'Thread', 'Nails']) expect(isStackableName(n)).toBe(true);
         for (const n of ['Rune essence', 'Logs', 'Shark', 'Rune platebody', 'Knife']) expect(isStackableName(n)).toBe(false);
         expect(isStackableName('Rune knife')).toBe(true);
+    });
+});
+
+describe('order mode with packages served on request', () => {
+    const p = (name: string, onRequest = false): Package => ({ name, items: [{ item: 'Logs', amount: 1 }], ...(onRequest ? { onRequest: true as const } : {}) });
+    const ordered = [p('h4k'), p('h6'), p('h4p')];
+
+    test('the due package served: the order advances', () => {
+        expect(afterServe(ordered, 1, ordered[1]!)).toEqual({ nextIndex: 2, pending: ordered[2]! });
+        expect(afterServe(ordered, 2, ordered[2]!)).toEqual({ nextIndex: 3, pending: null });
+    });
+
+    test('a fallback asked for by name in between (H4e): the due package comes up again, none skipped', () => {
+        expect(afterServe(ordered, 1, p('h4e', true))).toEqual({ nextIndex: 1, pending: ordered[1]! });
+    });
+
+    test('packageOf reads onRequest, and only as a boolean', () => {
+        expect(packageOf({ name: 'h4e', items: [{ item: 'Law rune', amount: 1 }], onRequest: true })).toEqual({ name: 'h4e', items: [{ item: 'Law rune', amount: 1 }], onRequest: true });
+        expect(packageOf({ name: 'h6', items: [{ item: 'Law rune', amount: 1 }], onRequest: false })).toEqual({ name: 'h6', items: [{ item: 'Law rune', amount: 1 }] });
+        expect(() => packageOf({ name: 'x', items: [], onRequest: 'yes' })).toThrow('onRequest must be true or false');
     });
 });
 
@@ -293,7 +349,10 @@ describe('top-up lines (H12 `shark to 15`): the count comes from the scored acco
         expect(() => packageItems('p', [{ item: 'Shark', topUp: {} }])).toThrow(/topUp.max/);
         expect(() => packageOf({ name: 'p', items: [{ item: 'Shark', topUp: { max: 15 } }] })).toThrow(/scope/);
         expect(() => packageOf({ name: 'p', scope: { step: 'S18', family: 'courier' }, items: [{ item: 'Shark', topUp: { max: 15 } }] })).toThrow(/family must be mule/);
-        expect(() => packageOf({ name: 'p', scope: SCOPE, items: [{ item: 'Shark', amount: 2 }] })).toThrow(/scope is for a package with a top-up/);
+        // A fixed package may carry its scope: the key a cue asks for it by.
+        expect(packageOf({ name: 'p', scope: SCOPE, items: [{ item: 'Shark', amount: 2 }] })).toEqual({ name: 'p', scope: SCOPE, items: [{ item: 'Shark', amount: 2 }] });
+        expect(() => packageOf({ name: 'p', scope: { step: 'H4', family: 'bone' }, items: [{ item: 'Shark', amount: 2 }] })).toThrow(/family must be mule/);
+        expect(() => muleOptions({ requestFile: '/tmp/x' })).toThrow(/requestFile is gone/);
         expect(() => packageOf({ name: 'p', scope: SCOPE, items: [{ item: 'Shark', amount: 2 }, { item: 'shark', topUp: { max: 15 } }] })).toThrow(/another line/);
         const o = muleOptions({ packages: [{ name: 'wine', items: [{ item: 'Jug of wine', amount: 28 }] }] }, { RC_CUE_DIR: '/tmp/cue-x' });
         expect(o).toMatchObject({ askWaitTicks: 3, cueDir: '/tmp/cue-x', packages: [{ name: 'wine', items: [{ item: 'Jug of wine', amount: 28 }] }] });

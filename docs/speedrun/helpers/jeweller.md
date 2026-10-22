@@ -5,7 +5,8 @@ Crafting, Mining and Smithing levels it needs, makes its own gold bars, cuts the
 gems it holds or receives, and banks the scored run's enchanting loads: by default
 **unnoted rings sapphire 12, emerald 27, ruby 16, diamond 5**, plus one strung sapphire
 and one strung ruby amulet. It keeps the chisel, so the bank also holds the chisel the
-Crafting step needs.
+Crafting step needs. The [enchant](enchant.md) role turns the two strung amulets into the
+amulet of magic (H7) and amulet of strength (H22).
 
 ```
 ROLE_OPTIONS='{"rings":{"emerald":27},"geBuy":{"emerald":15000}}' bun speedrun/helpers/jeweller.ts cairn_h80

@@ -8,8 +8,8 @@ gatherers:
   scored account, and lists items on the Grand Exchange.
 - **courier** (role `courier`): one trip that any helper account can be switched to.
   It carries that account's produce, as banknotes, to the mule.
-- **the scored account's side**: `receivePackage` (and `requestPackage`), the calls the
-  speedrun makes to take a package from the mule.
+- **the scored account's side**: `requestPackage` (a cue asking for the hand-off's package) and
+  `receivePackage`, the calls the speedrun makes to take a package from the mule.
 
 Accounts: `cairn_mule1` is the mule. `cairn_mule2` runs the rehearsal kit giver
 ([kits.md](kits.md)) outside the fleet.
@@ -112,18 +112,23 @@ The mule needs time between hand-offs to bank and withdraw the next package, on 
 own clock: about 12 s for a 23-type noted package in the lab. Back-to-back hand-offs
 closer than that should alternate between two mules.
 
-**Choosing a package by request.** `serveMode: 'request'` serves only a package that
-was asked for, through `requestFile`: a file on the mule's host where each line is a
-package name (`echo wine1 >> <file>` over ssh, from whatever drives the run). The
-mule pops one line per request, withdraws that package, and pre-requests the scored
-account when it is near. `requestPackage(sdk, mule, name)` sends the same name by
-private message. Private messages do arrive, through a lite client and the fleet's
-loopback gateway too (measured by cairn://p/rs/58, see `docs/speedrun/AMBASSADOR.md`),
-but only to an SDK that shows player chat: the fleet builds every SDK with
-`showChat: false` unless the role sets `readsChat`, and helper `bot.env` files carry
-`SHOW_CHAT=false`. The mule role does not set it, so today it never sees a PM
-request and `requestFile` is the request channel; setting `readsChat: true` on the
-mule role would bring the PM path to life.
+**Choosing a package by cue.** Every mule package is keyed by a scope
+`{ step: <hand-off id>, family: 'mule' }` (`H12`, `H4e`): the hand-off id, not the step id,
+because one step can be fed by two mule trades (S07's end can need H4e beside the bone loads).
+The scored side asks for a package with `requestPackage(cueDir, receiver, 'H12', beacon)`, which
+writes `cue.json` in the cue directory through altar-cue.ts's `CueWriter` with that scope: the
+run machine's one channel to the givers, the same directory the top-up asks use. Each cycle the
+mule reads the cue (`readCue`); a new one (a new session or a later write, and none older than
+the mule's start less a minute) that names the account it serves (by name hash) and addresses
+one of its packages (`cueAddresses`, `packageForCue`) makes that package the next one: the mule
+withdraws it and pre-requests the scored account when it is near. A cue session asks once
+(`muleCueAction`): a later write of the same session (fresh beacons) asks nothing again, so a
+served package is never re-staged by its own cue, and a write with `stop` withdraws the request
+(a still-pending package is banked). So one writer per hand-off, the run's cue keeper or
+`requestPackage`, may rewrite and stop its cue freely. `serveMode: 'request'` serves
+only packages asked for this way; in `'order'` mode a cue still asks for any package (a
+fallback marked `onRequest`). There is no request file and no private-message request: a config
+with `requestFile` is refused.
 
 **Hazard: a stale request.** If the scored account requested a trade the mule never
 answered, the mule's pre-request accepts it and opens a trade the run did not ask
@@ -138,7 +143,7 @@ differs from the scored account's `want` makes it decline. Such a line is writte
 `scope: { step, family: 'mule' }`, for example:
 
 ```json
-{ "name": "h12", "scope": { "step": "S15", "family": "mule" },
+{ "name": "h12", "scope": { "step": "H12", "family": "mule" },
   "items": [{ "item": "Gold bar", "amount": 1 }, { "item": "Shark", "topUp": { "max": 15 } }] }
 ```
 
@@ -148,7 +153,7 @@ the S18 courier reads ([bone-giver.md](bone-giver.md), `altar-cue.ts` `writeTopU
 
 - **The scored side's half** is `runner/handoff.ts`, agreed with rs/393. On the first frame
   that shows the trade with the mule open, before it accepts, it writes
-  `writeTopUpAsk(cueDir(), [{ item: '^shark…$', count: 15 - held }], Date.now(), { step: 'S15', family: 'mule' })`.
+  `writeTopUpAsk(cueDir(), [{ item: '^shark…$', count: 15 - held }], Date.now(), { step: 'H12', family: 'mule' })`.
   A top-up already met is left out of the ask, and with every top-up met no ask is written at
   all. Its `want` is the fixed lines plus exactly the asked counts.
 - **Staging.** The mule stages a top-up line after the fixed lines, up to `max`, as far as its
@@ -165,8 +170,69 @@ the S18 courier reads ([bone-giver.md](bone-giver.md), `altar-cue.ts` `writeTopU
   is ignored. The courier, for its part, ignores every scoped ask. The `hand-off` log line
   carries the ask and each line's count.
 
-A package with no top-up line takes no `scope`, never waits for an ask, and offers all of each
-staged id, exactly as before.
+A package with no top-up line may carry its scope (the key a cue asks for it by) but never waits
+for an ask, and offers all of each staged id, exactly as before.
+
+**Packages from the ledger.** A run-day mule's packages are not written by hand. They are built
+from the same inventory-ledger rows (STEP-MANIFEST.md) the scored side's hand-off steps read, by
+`speedrun/helpers/mule-ledger.ts`:
+
+- Each `in` entry of a row is a package line: `NAME @ID` by `id`, any other NAME by the game's name
+  (`runner/handoff.ts` `gameName`), `[n]` noted. A `NAME to N` top-up is `topUp: { max: N }` in the
+  **ask** form, or a fixed N in the **fixed** form. The fixed form is the fallback while the
+  scored side writes no ask: the scored account drops what it holds of the item standing at the
+  tile first (rs/158: H10, H12, H22), or its `want` differs and it declines. Every package, in
+  either form, is scoped `{ step: <hand-off id>, family: 'mule' }`, and records the step it feeds
+  (the first S row after it).
+- The row's `out` entries are what the scored account gives back in the same trade. The mule
+  accepts any offer from it, so they are reported, not configured. `<NAME>` entries are the step
+  module's own.
+- Every row goes through `planHandOff` first, so a row the scored side refuses is refused here. A
+  row whose `[s]`/`[u]` kind disagrees with `isStackableName` is refused too: the mule sizes a
+  package with that guess, and a stackable it misreads (thread, nails, before they were added)
+  makes it count one slot per item and refuse the package.
+- The packages come in ledger order, which is the order the run pulls them (`serveMode: 'order'`);
+  a list out of ledger order is refused. cairn_mule1's trades are `MULE1_ORDER`, rs/158's list of
+  19: H1, H4, H4k, H6, H4p, H7-H10, H12, H13, H14 (S18's load 0), H15, H16, H18-H20, H21d (with
+  H21e's list, one trade) and H22. H3's ring loads are the three ring givers' (cairn_h81-h83,
+  `skills/magic.ts` `RING_CONTRACT`), not the mule's. A unit test checks the list against
+  SUPPLIES.md's trade-giver rows; `MULE1_NO_PACKAGE` names the trade-giver rows with no package of
+  their own, and why.
+- **On-request packages** (`MULE1_ON_REQUEST`: H4e, the bone runes' fallback, and H4m, the bones
+  past S07's capacity on an overflowing stock) come from the ledger's **fallback hand-offs** table
+  (the ledger's columns, after a `Fallback hand-offs` heading; the walk never reads it, so a
+  fallback changes no later slot count). They carry `onRequest: true`: order mode never serves them
+  in turn; a request by name (the request file or a PM) serves one, and the order then resumes at
+  the package that was due (`afterServe`), so a fallback can't shift every later package. One with
+  no row in that table has no package, and the CLI names it.
+- **Request mode is the run-day default** (rs/158, rs/186): run.ts asks for each hand-off's
+  package by cue before the trade, so a missed or repeated trade cannot shift the packages; order
+  mode is the fallback.
+
+```sh
+bun speedrun/helpers/mule-ledger.ts [--form ask|fixed] [--rows H12]       # { packages } for ROLE_OPTIONS
+bun speedrun/helpers/mule-ledger.ts --check fleet.json [--form fixed]     # drift; exit 1 on any
+bun speedrun/helpers/mule-ledger.ts --bank stockpile.json                 # stock, served back to back
+```
+
+`--check` (`muleDrift`) compares a config's packages with the ledger's: a missing, extra or
+reordered package, a line missing or extra, a count, a top-up against a fixed count, noted, and the
+scope. It reads mule options, a packages list, or fleet.json's entry for `--account` (default
+cairn_mule1). Zero drift is the run-day gate. `--bank` (`stockWalk`) stages the packages one after
+another against the account's bank in stockpile.json, crediting what each row's give-back returns
+(H12's scimitar serves H22), and lists what runs out.
+
+**Proving the packages on the demo** (`speedrun/helpers/mule-standin.ts`). A throwaway stand-in
+runs the scored side's own `runHandOff` against the mule in `request` mode, row by row in run
+order, under the standalone launcher (the stand-in `final`). Each row: ask by cue, wait for the
+mule's standing request (the package is staged, as when SCORED arrives), run the hand-off, then
+hand everything received straight back (the mule, with no package pending, takes any offer and
+banks it). The stand-in never equips (the row's wield lines are emptied), eats or banks; a give line
+runs only on mule surplus it was seeded with just before the row (a seed package, `onRequest`),
+and every line left out is reported as not exercised. A give-back that fails stops the session.
+It reports, per row, the ticks on its clock, the staging ticks, the free slots before and after,
+and what moved, and ends holding exactly what it started with, by id. The mule's first and last
+bank reports in the dev log are the before and after for the reconciliation.
 
 **Order mode and giving back.** In `order` mode every trade from the scored account
 takes the next package. A trade from the scored account while no package is pending
@@ -227,10 +293,10 @@ ROLE_OPTIONS='{"mule":"cairn_mule1","items":["^logs$"]}' bun speedrun/helpers/mu
 ```
 
 Mule options: `serve` (the scored account), `couriers` (default `^cairn_h\d+$`),
-`packages`, `serveMode` (`order` | `request`), `requestFile`, `giver` (`burst` |
-`stock`), `preRequest` (default true), `stand` (default 3185,3436), `ge`, and for top-up
-lines `askWaitTicks` (default 3) and `cueDir` (default `RC_CUE_DIR`, else `run-machine/rc-cue`,
-the directory the givers' cues use).
+`packages`, `serveMode` (`order` | `request`), `giver` (`burst` | `stock`), `preRequest`
+(default true), `stand` (default 3185,3436), `ge`, `cueDir` (where package cues and top-up asks
+are read; default `RC_CUE_DIR`, else `run-machine/rc-cue`, the directory the givers' cues use),
+and for top-up lines `askWaitTicks` (default 3).
 
 In the fleet: one mule account is enough; a second (`cairn_mule2`) helps only for
 back-to-back hand-offs or while the first is at the GE. The module exports `role`
