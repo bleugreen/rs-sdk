@@ -2697,7 +2697,7 @@ the next leg or trade.
   An entry finds what is held by its id, else by name; a NAME that would match two id stacks is
   refused unless it takes `all`. Some names the game also gives to other objs stay by name, as
   rs/365's conversion of fold-in 18 left them: coins, logs, bones, the m'speak amulet, the magic
-  shortbow, and the starter kit's shortbow, raw shrimps, pot of flour and broken glass. A hand-off
+  shortbow, the starter kit's shortbow, raw shrimps, pot of flour and broken glass. A hand-off
   that trades one of them accepts any obj of that name.
 - `equip`: entries `+NAME` (inventory to worn: the item must be held, and its slot frees) and
   `-NAME` (worn to inventory: it takes a slot), by game name only (`+monkey greegree` wears the
