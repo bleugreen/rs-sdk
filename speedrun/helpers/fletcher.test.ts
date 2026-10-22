@@ -1,7 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 import {
+    BOWS,
+    bowSpec,
+    bowsStep,
+    type BowHoldings,
+    type BowsPlan,
     CAMP_LINES,
     campBudget,
+    logsToLevel,
+    MAKE_PER_TRIP,
+    makeButton,
+    trainingBow,
+    xpForLevel,
     DRAYNOR_APPROACH,
     headlessStep,
     jailBypass,
@@ -88,5 +98,92 @@ describe('jailBypass', () => {
         expect(jailBypass(LUMBRIDGE_WOODS, { x: 3224, z: 3202 })).toEqual([]);
         expect(jailBypass(BANKS.varrockWest, BANKS.draynor)).toEqual([]);
         expect(jailBypass(BANKS.draynor, { x: 3014, z: 3224 })).toEqual([]);
+    });
+});
+
+describe('bows: tables', () => {
+    test('xpForLevel is the standard table', () => {
+        expect(xpForLevel(1)).toBe(0);
+        expect(xpForLevel(2)).toBe(83);
+        expect(xpForLevel(73)).toBe(992_895);
+        expect(xpForLevel(80)).toBe(1_986_068);
+        expect(xpForLevel(99)).toBe(13_034_431);
+    });
+    test('cut_logs.dbrow levels and xp, obj.pack ids', () => {
+        expect(bowSpec('Magic shortbow')).toEqual({ name: 'Magic shortbow', log: 'Magic logs', level: 80, xp: 83.3, unstrung: 72, strung: 861 });
+        expect(BOWS['yew shortbow']).toMatchObject({ level: 65, xp: 67.5, unstrung: 68, strung: 857 });
+        expect(BOWS['yew longbow']).toMatchObject({ level: 70, xp: 75, unstrung: 66, strung: 855 });
+        expect(() => bowSpec('dragon shortbow')).toThrow(/unknown bow/);
+    });
+    test('trainingBow picks the best xp the level allows from the log', () => {
+        expect(trainingBow(73, 'Yew logs')?.name).toBe('Yew longbow');
+        expect(trainingBow(67, 'Yew logs')?.name).toBe('Yew shortbow');
+        expect(trainingBow(64, 'Yew logs')).toBeNull();
+        expect(trainingBow(84, 'Magic logs')?.name).toBe('Magic shortbow');
+    });
+    test('logsToLevel: 73 -> 80 on yew longbows at 25x is 530 logs', () => {
+        expect(logsToLevel(xpForLevel(73), 80, BOWS['yew longbow']!, 25)).toBe(530);
+        expect(logsToLevel(xpForLevel(80), 80, BOWS['yew longbow']!, 25)).toBe(0);
+    });
+});
+
+describe('bowsStep', () => {
+    const plan: BowsPlan = {
+        lines: [
+            { bow: 'yew shortbow', count: 2 },
+            { bow: 'magic shortbow', count: 6 }
+        ],
+        level: 80,
+        trainLog: 'Yew logs',
+        xpRate: 25
+    };
+    const held = (h: { strung?: Record<number, number>; unstrung?: Record<number, number>; items?: Record<string, number> }): BowHoldings => ({
+        strung: b => h.strung?.[b.strung] ?? 0,
+        unstrung: b => h.unstrung?.[b.unstrung] ?? 0,
+        item: n => h.items?.[n] ?? 0
+    });
+    test('at 73 the yew shortbows come first, buying logs and strings', () => {
+        expect(bowsStep(73, xpForLevel(73), held({}), plan)).toMatchObject({ kind: 'make', bow: { name: 'Yew shortbow' }, make: 2, cut: 2, buyLogs: 2, buyStrings: 2 });
+    });
+    test('held unstrung bows are strung before any log is cut', () => {
+        const s = bowsStep(73, xpForLevel(73), held({ unstrung: { 68: 1 }, items: { 'Yew logs': 5, 'Bow string': 9 } }), plan);
+        expect(s).toMatchObject({ kind: 'make', make: 2, cut: 1, buyLogs: 0, buyStrings: 0 });
+    });
+    test('hedge done below 80: train on yew longbows, buying what the bank lacks', () => {
+        const s = bowsStep(73, xpForLevel(73), held({ strung: { 857: 2 }, items: { 'Yew logs': 30 } }), plan);
+        expect(s).toMatchObject({ kind: 'train', bow: { name: 'Yew longbow' }, target: 80, logs: 530, buyLogs: 500 });
+    });
+    test('at 80 the magic shortbows, at most a trip at a time', () => {
+        expect(bowsStep(80, xpForLevel(80), held({ strung: { 857: 2 } }), plan)).toMatchObject({ kind: 'make', bow: { name: 'Magic shortbow' }, make: 6, buyLogs: 6, buyStrings: 6 });
+        const big = { ...plan, lines: [{ bow: 'magic shortbow', count: 40 }] };
+        expect(bowsStep(80, xpForLevel(80), held({}), big)).toMatchObject({ kind: 'make', make: MAKE_PER_TRIP });
+    });
+    test('done when every line is held and the level reached', () => {
+        expect(bowsStep(80, xpForLevel(80), held({ strung: { 857: 2, 861: 6 } }), plan)).toEqual({ kind: 'done' });
+    });
+    test('a line above the plan level raises the training target', () => {
+        const s = bowsStep(80, xpForLevel(80), held({}), { ...plan, lines: [{ bow: 'magic longbow', count: 1 }] });
+        expect(s).toMatchObject({ kind: 'train', target: 85 });
+    });
+    test('a level no training bow allows is stuck, not a loop', () => {
+        expect(bowsStep(60, xpForLevel(60), held({}), { ...plan, lines: [] })).toMatchObject({ kind: 'stuck' });
+    });
+});
+
+describe('makeButton', () => {
+    const b = (index: number, text: string) => ({ index, text });
+    test('name button closing its group (Make X, Make 10, Make 5, name): the Make-X of the chosen product', () => {
+        const opts = [b(1, 'Make X'), b(2, 'Make 10'), b(3, 'Make 5'), b(4, '\n\n\n\nYew Short Bow'), b(5, 'Make X'), b(6, 'Make 10'), b(7, 'Make 5'), b(8, '\n\n\n\nYew Long Bow')];
+        expect(makeButton(opts, opts[7]!)).toEqual({ button: opts[4]!, kind: 'x' });
+        expect(makeButton(opts, opts[3]!)).toEqual({ button: opts[0]!, kind: 'x' });
+    });
+    test('name button opening its group', () => {
+        const opts = [b(1, 'Yew Short Bow'), b(2, 'Make X'), b(3, 'Make 10'), b(4, 'Make 5'), b(5, 'Yew Long Bow'), b(6, 'Make X'), b(7, 'Make 10'), b(8, 'Make 5')];
+        expect(makeButton(opts, opts[4]!)).toEqual({ button: opts[5]!, kind: 'x' });
+    });
+    test('no Make X: Make 10, else the name button itself', () => {
+        const opts = [b(1, 'Make 10'), b(2, 'Make 5'), b(3, 'Yew Long Bow')];
+        expect(makeButton(opts, opts[2]!)).toEqual({ button: opts[0]!, kind: '10' });
+        expect(makeButton([b(1, 'Yew Long Bow')], b(1, 'Yew Long Bow'))).toEqual({ button: b(1, 'Yew Long Bow'), kind: '1' });
     });
 });
