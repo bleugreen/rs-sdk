@@ -2,7 +2,11 @@
 //
 //   cd server/webclient && bun install && cd ../..        # once per checkout (lite client deps)
 //   bun docs/speedrun/scripts/decode-cap-probe.ts <bot> [--host=H] [--insecure] [--label=L] [--out=PATH]
-//       [--user=5,6,8] [--client=5,6,8,19,20,21] [--failed=5,8] [--repeats=3]
+//       [--user=5,6,8] [--client=5,6,8,19,20,21] [--failed=5,8] [--repeats=3] [--bank]
+//       [--ifbutton=5,6,8 --charge-setup]   (lab only: Charge clicks, counted by the blood-rune stack)
+//
+// --bank: an account with an empty inventory, standing by a bank booth, borrows one item from its
+// own bank, and deposits everything back before the (confirmed) logout.
 //   NODE_TICKRATE=300 LAB_RUNNERS=0 speedrun/lab/lab.sh <bot> docs/speedrun/scripts/decode-cap-probe.ts:--stage \
 //       docs/speedrun/scripts/decode-cap-probe.ts:--label=lab
 //
