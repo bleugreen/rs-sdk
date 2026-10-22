@@ -41,8 +41,11 @@ Every foreground measurement runs as `timeout --kill-after=30s <bound> <command>
 then SIGKILL 30 s later. **Teardown (step 9) still stops everything explicitly; the timeout is the
 backstop** for the teardown that never happens.
 
-**The run bound is 9 h.** A full run is about 36,000 ticks at 0.6 s, about 6 h, and steps 3 to 7
-take under an hour, so 9 h leaves about two hours of margin (i). The same 9 h bounds the run's claim
+**The run bound is 9 h.** A full run is our row, about 35,300 ticks (RUN-ORDER.md): about 2.9 h of
+wall clock at the 300 ms tick the demo ran until 19:56Z on 2026-10-22, and about **3.9 h at the
+400 ms it has run since** ("Measured: the demo's tick period"); at 600 ms, which remains possible,
+about 5.9 h. Steps 3 to 7 take under an hour, so 9 h leaves about four hours of margin at 400 ms
+and about two at 600 ms (i). The same 9 h bounds the run's claim
 (below). Each hand-run launch below begins `T=9h;`, the only place the figure appears in a
 command, and a rehearsal replaces it with `T=30m`; `speedrun/tools/run-gate.ts` (steps 3-7) carries
 the same 9 h for the run and 30 min with `--rehearsal`. The gate account's tab and the measurements
@@ -945,7 +948,8 @@ three choices made here (and the bound, above):
   advancing-frame check and by the check below. No audio is recorded.
 
 Size: 7.2 Mbit/s at 30 fps in game, about 3.3 GB an hour (m: 288 MB in 318 s, 16:41-16:47 UTC; i: per
-hour), against 51 GB free (m, 16:15 UTC); the disk holds well over ten hours.
+hour), against 51 GB free (m, 16:15 UTC); the disk holds well over ten hours. A run of about 3.9 h
+at 400 ms is about 13 GB (i).
 
 **The live-frame pass line** (step 5a, hand-over line 4). The fps and drop counters say the capture
 is running, not what it shows. Before SCORED's login a frame of the capture must show the run tab,
@@ -1037,7 +1041,9 @@ bun -e 'const ws = new WebSocket("wss://rs-sdk-demo.fly.dev/worldfeed"); const t
 ```
 
 It printed `demo tickMs 400` at 20:10Z on 2026-10-22 (m, rs/469, from fedora; "Measured: the
-demo's tick period").
+demo's tick period"). The demo has run 400 ms ticks since its 19:56:29Z restart that day (300 ms
+before it). Tenet 12's (a) is counted in ticks and is unaffected; (b) and (c) are pending #370
+(step 6, line 2).
 
 1. **Gate both in the same minute: `gate`.** It runs step 6 on both machines in parallel, each on
    its own gate account, and refuses the same account twice (one account is in the world only once).
@@ -1180,6 +1186,12 @@ hard check, and the first that fails stops that machine:
    above 2 a minute reads re-measure, exit 3, even when (a) is short too. Either way that machine
    can't be chosen: the run never starts on a machine whose read is under the floor, which rs/315's
    Thieving rehearsal harness let through at 57 of 60.
+   **(b) and (c) at the demo's 400 ms tick** (since 19:56Z on 2026-10-22). (a) is counted in ticks
+   and stands as written. (b)'s publication p90 and (c)'s catch-up, an interval under 150 ms right
+   after one over 350 ms (`CATCH_UP` in `speedrun/lib/hostgate-verdict.ts`; RUN-ORDER.md section
+   1), are fixed millisecond values set at 300 ms. Main re-expresses them in tick periods through
+   rs/449 (#370): **pending #370**, with no new numbers here. Until then the tool applies them as
+   coded.
 3. **(d)**, the tab's loop rate: it opens the gate account's tab (step 3's line, bound 15 min),
    checks the six flags, logs it in with tab-login, prints the three report-only lines (below) and runs the secrets
    check (`0 0 0`). Then it
@@ -1439,8 +1451,9 @@ TICKMON minute=12 at=2026-10-22T01:12:00Z secs=60 ticks=176 glued=0 late=0 p50=0
 Read it on the chosen machine with `grep -o 'TICKMON[^"]*' ~/rs-sdk/speedrun/runs/<runId>.jsonl | tail -5`
 (or follow the run's stdout).
 
-- `ticks`: tick arrivals in the minute: 200 at 300 ms (`fly.toml:26`, `NODE_TICKRATE=300`), 161-177
-  at the demo's observed 340-370 ms (2026-10-21). Fewer than 60000 / periodMs means the tab stopped
+- `ticks`: tick arrivals in the minute: **150 at the 400 ms the demo has run since 19:56Z on
+  2026-10-22**; until then 200 at 300 ms (`fly.toml:26`, `NODE_TICKRATE=300`), and 161-177 at the
+  demo's observed 340-370 ms (2026-10-21). Fewer than 60000 / periodMs means the tab stopped
   publishing for part of the minute: a relog, or a stall the watchdog will see.
 - `glued`: arrivals under 5 ms after the previous one. These are ticks held on the path and
   released together.
@@ -1466,8 +1479,8 @@ What to expect (m, bgsrv-mac, local engine at `NODE_TICKRATE=300`, rs/210): a cl
 `glued=0 late=0` with p90 at most 3 ms and max at most 21 ms in every minute (5 minutes, 1,000
 ticks). With a proxy holding 8% of server-to-client chunks for 150-350 ms, it read late 16-22 and
 glued 2-12 per minute (86 late and 26 glued over 1,000 ticks). On 2026-10-21 the run host's old
-address took 5-13% of ticks late (rs/83), which is 10-26 late per minute at the run's 200 ticks a
-minute (i).
+address took 5-13% of ticks late (rs/83), which is 10-26 late per minute at 200 ticks a minute
+(300 ms, the demo's tick until 19:56Z on 2026-10-22), or 8-20 at the 150 a minute since (i).
 
 It is a reading, not a gate: nothing stops on it. A run of minutes with double-digit `late` on
 SCORED means the path went bad mid-run; tell main (and rs/158 for the record). `SPEEDRUN_TICKMON=off`
@@ -1760,6 +1773,15 @@ S03 launch at T0 + 75 x 300 ms cost ~18 ticks). When this was read, `tick-monito
 expected tick times on the nominal 300 ms, so on a slow demo it counted every tick as late. Since
 rs/276's #226 (de66634b, inside the floor) its cadence steps by the observed period (`periodMs`), so a
 slow but steady demo reads `late=0` (step 7).
+
+**Since its 19:56:29Z restart on 2026-10-22 the demo has run 400 ms ticks** (a dated observation of
+the demo). Its spectator feed's `hello` reads `tickMs` 400, and the gate probe's publication p50
+went from 300 to 396 ms between the 19:30Z and 20:00Z pairs (m, the host thread, relayed by rs/158
+at 13:0x PDT); rs/83 measured p50 402 (relayed by rs/158 at 13:1x PDT). The feed still read 400 at
+20:10Z (m, rs/469, step 5a's command, from fedora). Rows and the score are in ticks, so nothing is
+re-priced here; wall clock is x4/3, about 3.9 h for our row ("Rules for every launch"). Tenet 12's
+(a) is in ticks and unaffected; (b) and (c) are fixed millisecond values set at 300 ms, pending #370
+(step 6).
 
 ## Measured: the demo relay holding SDK actions, 2026-10-22
 
