@@ -50,6 +50,9 @@ const clientUrl = `CLIENT_URL=http://localhost:${webPort}/bot?gateway=${encodeUR
 writeFileSync(envPath, envText.replace(/^CLIENT_URL=.*\n?/m, '').trimEnd() + `\n${clientUrl}\n`, { mode: 0o600 });
 
 const cdpPort = Number(webPort) + 5;
+// A Chrome left behind by an earlier probe on this port would take the session's tab: refuse to start.
+const held = await fetch(`http://127.0.0.1:${cdpPort}/json/version`).then(() => true, () => false);
+if (held) throw new Error(`port ${cdpPort} already serves a DevTools endpoint (a Chrome left running?); stop it first`);
 // A profile and config home of its own: executors that sandbox $HOME refuse Chrome's ~/.config.
 const chromeHome = mkdtempSync(join(tmpdir(), 'gnome-gate-chrome-'));
 // Headless runs use chrome-headless-shell: bgsrv-ub's full Chrome traps on start under the executor.
@@ -61,6 +64,16 @@ const browser = await puppeteer.launch({
     args: ['--no-sandbox', '--disable-crash-reporter', '--disable-breakpad', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`]
 });
 process.env.SPEEDRUN_CDP_URL = `http://127.0.0.1:${cdpPort}`;
+/** Chrome never outlives the probe: close it, and kill it outright if the close hangs. */
+const killBrowser = async () => {
+    await Promise.race([browser.close().catch(() => {}), Bun.sleep(5_000)]);
+    browser.process()?.kill('SIGKILL');
+};
+// The whole probe's budget (--budget-s, default 900): past it Chrome is killed and the probe fails.
+const budget = setTimeout(() => {
+    console.log(`RESULT budget {"error":"over ${arg('budget-s', '900')} s"}`);
+    void killBrowser().then(() => process.exit(2));
+}, Number(arg('budget-s', '900')) * 1000);
 
 const trace: string[] = [];
 const say = (line: string) => {
@@ -171,7 +184,8 @@ try {
         result(phase, { ticks: (sdk.getState()?.tick ?? t0) - t0, ...out });
     }
 } finally {
+    clearTimeout(budget);
     await closeSession(session).catch(() => {});
-    await browser.close().catch(() => {});
+    await killBrowser();
 }
 process.exit(exit);
