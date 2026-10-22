@@ -31,6 +31,11 @@ export function tickEvery(sdk: FakeSdk, ms: number, n: number, patch: Partial<Bo
     }
 }
 
+/** Let queued promise callbacks run without any fake time passing (`flush` is a timer, so it would not). */
+export async function microtasks(n = 20): Promise<void> {
+    for (let i = 0; i < n; i++) await Promise.resolve();
+}
+
 /** The settled value of `p` so far, or undefined while it is pending. */
 export async function peek<T>(p: Promise<T>): Promise<T | undefined> {
     const pending = Symbol();

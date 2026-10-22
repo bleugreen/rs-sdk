@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { LOST_AFTER_TICKS } from '../runner/resume';
 import { FakeSdk } from './fake-sdk';
 import { fakeClock as jest, peek, tickEvery, useFakeTicks } from './fake-ticks';
-import { IDLE_TICKS, nextTick, waitOrThrow, waitTicks, waitUntil, type WaitResult } from './wait';
+import { failureReason, IDLE_TICKS, nextTick, onStates, STALLED, waitOrThrow, waitTicks, waitUntil, type WaitResult } from './wait';
 
 useFakeTicks();
 
@@ -108,5 +108,34 @@ describe('maxTicks', () => {
         sdk.push({ tick: 0 });
         tickEvery(sdk, 300, 10);
         await expect(p).rejects.toThrow(/waitTicks\(10\): tick 110 not reached in 13 ticks/);
+    });
+});
+
+describe('onStates', () => {
+    test('feeds the current state first, then every state, until step returns a value', async () => {
+        const sdk = new FakeSdk();
+        const seen: number[] = [];
+        const p = onStates(sdk, 10, s => (seen.push(s.tick), s.tick === 102 ? 'two' : undefined));
+        tickEvery(sdk, 300, 2);
+        expect(await p).toEqual({ ok: true, value: 'two' });
+        expect(seen).toEqual([100, 101, 102]);
+    });
+
+    test('300 ticks at 340 ms a tick reach the step (102 s; no total-time budget)', async () => {
+        const sdk = new FakeSdk();
+        const p = onStates(sdk, 300, s => (s.tick === 400 ? s.tick : undefined));
+        tickEvery(sdk, 340, 300);
+        expect(await p).toEqual({ ok: true, value: 400 });
+    });
+
+    test('maxTicks and idle failures, and the reason text each reports', async () => {
+        const sdk = new FakeSdk();
+        const ticks = onStates(sdk, 3, () => undefined);
+        tickEvery(sdk, 300, 4);
+        expect(await ticks).toEqual({ ok: false, reason: 'maxTicks' });
+        const idle = onStates(sdk, 10_000, () => undefined);
+        jest.advanceTimersByTime(IDLE_TICKS * 300);
+        expect(await idle).toEqual({ ok: false, reason: 'idle' });
+        expect([failureReason('maxTicks'), failureReason('idle')]).toEqual(['timeout', STALLED]);
     });
 });

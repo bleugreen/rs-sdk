@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { BotWorldState, InventoryItem, NearbyLoc, TradeItem } from '../../sdk/types';
 import { baseState, FakeSdk, flush } from '../lib/fake-sdk';
+import { fakeClock, peek, tickEvery, useFakeTicks } from '../lib/fake-ticks';
+import { IDLE_TICKS } from '../lib/wait';
 import { ANY_OFFER, decideGiver, newGiverCtx, planOffers } from '../lib/trade';
 import {
     anvilOptions,
@@ -258,5 +260,27 @@ describe('openBooth', () => {
         for (let i = 0; i < 4; i++) sdk.tick();
         expect(await settled(p)).toEqual({ ok: false, clicks: 4, ticks: 4, empty: false, reason: 'ticks' });
         expect(sdk.sent).toEqual([]);
+    });
+
+    describe('on a slow minute (fake timers)', () => {
+        useFakeTicks();
+
+        test('a bank opening on tick 99 at 340 ms a tick is open (33.7 s, past the old 33 s budget)', async () => {
+            const sdk = atBooth();
+            const p = openBooth(sdk as never, { maxClicks: 100, maxTicks: 100 });
+            tickEvery(sdk, 340, 98);
+            tickEvery(sdk, 340, 1, openBank([{ slot: 0, id: 2361, name: 'Adamantite bar', count: 500 }]));
+            expect(await p).toEqual({ ok: true, clicks: 99, ticks: 99, empty: false });
+        });
+
+        test('a client that stops publishing ends it as stalled', async () => {
+            const sdk = atBooth();
+            const p = openBooth(sdk as never);
+            tickEvery(sdk, 300, 3);
+            fakeClock.advanceTimersByTime(IDLE_TICKS * 300 - 1);
+            expect(await peek(p)).toBeUndefined();
+            fakeClock.advanceTimersByTime(1);
+            expect(await p).toMatchObject({ ok: false, clicks: 4, reason: 'stalled' });
+        });
     });
 });
