@@ -7,7 +7,12 @@ about 340 with bursts (inferred)**, trade included, and its 7,175 base Fishing r
 `docs/speedrun/skills/fishing.md` section 3 subset table, normal cycle). Net about +460 /
 +560 / +615 against the 955. It is the most valuable of the six quests here.
 
-**Blocker found in the lab (read and measured).** The quest needs the broken glass, which
+**Module (S19, rs/414).** `speedrun/quests/sea-slug.ts`, lab-accepted on the lite client from
+Caroline's tile (2716,3302): **fixed 346.3 m** (346, 347, 346) and **burst 310.7 m** (306, 318, 308),
+against the entry's 361 fixed and 307 burst; see 'The step module' below. The client fix
+(rs/54) is on main, so the lab patch below is history.
+
+**Blocker found in the lab (read and measured; fixed by rs/54).** The quest needs the broken glass, which
 lies only inside two rooms on the fishing platform, and Kennith's wall, which is behind a
 door on the platform's upper floor. Those doors sit on **bridged** tiles. The server opens
 them, but the headless lite client stores the change at the wrong level and its router
@@ -137,9 +142,62 @@ their combined saving (1,710 normal cycle).
 - **Logout-safe:** `%seaslugquest` is `scope=perm` (`quest_seaslug.varp`). A torch lit on
   the platform goes out on any crossing, so relight after a re-crossing.
 
+## The step module (rs/414)
+
+`speedrun/quests/sea-slug.ts` (S19), lab runner `speedrun/lab/quests/sea-slug.ts`. Seventeen
+segments, A to Q, from Caroline's tile, where T18-19 leaves SCORED. H15 is traded during S18, so A
+only checks the paste and the torch. Measured on the lite client, bgsrv-mac, 300 ms, at SCORED's
+arrival levels (Firemaking 99, Fishing 1) and pack (the slot ledger after H15), module at baaff1ac,
+3 runs each:
+
+| Segment | Step rows | Row (fixed) | Fixed m | Burst m |
+|---|---|---|---|---|
+| A kit | 0 | 0 (trade during S18) | 0 | 0 |
+| B Caroline | 3 | 15 | 15 | 9.7 |
+| C Holgart, the boat | 4 | 13 | 16 | 7 |
+| D Holgart, paste and sail | 5 | 18 | 16 | 14 |
+| E glass room door, glass | 6-7 | 20 | 12 | 12 |
+| F damp sticks, dry them | 8-9 | 24 | 24 | 24 |
+| G ladder, door, Kennith | 10-12 | 36 | 26 | 22 |
+| H down, Holgart to the island | 13-15 | 54 | 50 | 49 |
+| I Kent | 16 | 16 | 26 | 24 (19-33) |
+| J Holgart back | 17 | 13 | 12.3 | 12.3 |
+| K rub, torch lit | 18 | 0 | 1 | 1 |
+| L ladder, Kennith | 19-21 | 49 | 50 | 45 |
+| M panel | 22 | 10 | 10 | 10 |
+| N Kennith | 23 | 10 | 11 | 7 |
+| O crane | 24 | 13 | 13 | 13 |
+| P down, Holgart ashore | 25-27 | 50 | 46 | 47.3 |
+| Q Caroline, reward, exit drops | 28 | 15 | 18 | 13.3 |
+| **Total** | | **356** (+5 trade = 361) | **346.3** | **310.7** |
+
+Every run opened both bridged doors (the glass room door at E, the door by Kennith's wall at G,
+closed before and open after in the trace) and gained 179,375 Fishing xp, to **level 74** (m).
+What the module found, and what it corrects above:
+
+- **The doors (m, lab).** Opening `loc_1533` at (2765,3277) puts `loc_1534` one tile east at
+  (2766,3277); `loc_1530` at (2764,3285) becomes `loc_1531` at (2765,3285). Both clients list them
+  now, so LAB.md's 'no locs on bridge-flagged levels' does not hold here. But `nearbyLocs` reaches
+  only a few tiles: from the boat landing the glass door shows only in a 25-tile scan. A click on
+  the closed id at the closed tile cannot shut an open door: the closed loc is gone from its tile
+  and the server drops the op (`OpLocHandler`: no such loc). The module reads the door's state,
+  opens it only when it is closed, and waits for the door loc after a crossing (RUN-ORDER R10).
+- **Kent's 16 (step 16) was an undercount (i).** His script has 12 pages, and if_close with
+  p_delay(2) and three p_delay(1) between them (`kent.rs2:7-29`). A conversation that ends on
+  the first quiet spell stops before his last two pages, which the next talk then trips over.
+  The module ends his talk on the sea slug message and a page after it: 26 m fixed.
+- **The ladder foot (2784,3285) cannot be stood on**; clicking the ladder climbs from wherever
+  SCORED is. An NPC click on Holgart from the ladder foot opened nothing in 15 ticks, as the proven
+  script found, so the module runs beside him first.
+- **The journal** cannot tell 1 from 2 or 2 from 6 (no markers), 4 from 5, or 8 from 9
+  (`seaslug_journal.rs2`). The module narrows these by position (offshore means at least 3, Kent's
+  island at least 5); a resume at 9 kicks the panel again, which only says 'nothing interesting
+  happens'.
+- **Exit drops:** the torch, the dry sticks, the glass and the pearls, in Q (1 tick), so T19-20
+  starts with H15's runes only.
+
 ## Open questions
 
-- Re-measure after cairn://p/rs/54 lands on main, on the real client rather than the lab
-  patch. The patch is exactly the proposed fix, so no change is expected.
-- The stock and burst columns are inferred from the fixed run and the recorded dialogue
-  runs; only the Witchaven talks were measured on the stock client.
+- The browser-client acceptance (the entry's) and a demo run on a throwaway at Firemaking 30.
+- The stock column is inferred from the fixed run; only the Witchaven talks were measured on the
+  stock client.
