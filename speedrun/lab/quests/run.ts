@@ -36,7 +36,7 @@ import type { DialogueMode, QuestOptions } from '../../quests/segments';
 import { BOUNDARY_STEP, runSteps, type RunnerSession, type Step } from '../../runner/step';
 import { arg, botArg, result } from '../common';
 import { stats, type Stats } from '../record';
-import { cheat, clearInventory, give, mustTele, setStats, tele } from '../setup';
+import { cheat, clearInventory, give, leaveTutorial, mustTele, setStats, tele } from '../setup';
 
 /** A segment's start state on the lab account. */
 export interface QuestFixture {
@@ -318,6 +318,8 @@ export async function labMain<O extends QuestOptions>(quest: LabQuest<O>): Promi
     const a = labArgs();
     const session = await openSession(botArg(), { launch: a.launch });
     try {
+        // A bot's first login on this engine's saves is on Tutorial Island, where every fixture's tele() refuses.
+        await leaveTutorial(session);
         const modes: DialogueMode[] = a.dialogue === 'both' ? ['fixed', 'burst'] : [a.dialogue];
         const reports: LabReport[] = [];
         for (const dialogue of modes) {
