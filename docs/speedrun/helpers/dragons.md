@@ -124,21 +124,24 @@ Gates that came from demo failures:
 
 Options (`ROLE_OPTIONS`): `train` (20), `keyMagic` (41), `tripCasts` (500), `tripLaws` (25),
 `tripFood` (4), `minFood` (2), `food` ("Shark"), `minCasts` (60), `buyTrips` (1), `blast`
-(true: wind blast from 41; false keeps to wind bolt), `hides` (false), `scales` (false: true
-also telegrabs the room's blue dragon scale ground spawns, after any bones; see below), `guild`
-(66; 100 is off), `lawMax` (3,500), `prices` (caps: chaos 60, death 90), `shopPrices` (estimates),
+(true: wind blast from 41; false keeps to wind bolt), `hides` (false), `guild` (66; 100 is
+off), `lawMax` (3,500), `prices` (caps: chaos 60, death 90), `shopPrices` (estimates),
 `funders`.
 
-### Blue dragon scales (`scales: true`)
+### Blue dragon scales: not collectable from the safe tile
 
 The room has five blue dragon scale ground spawns (read, `m45_153.jm2`): (2902,9806),
-(2905,9801), (2906,9796), (2908,9805) and (2910,9809). Four are within telegrab range of the
-safe tile, (2906,9796) is 14 tiles off. A static obj respawns `respawnrate` ticks after it is
-taken (100 by default, `ObjType`), scaled by `World.scaleByPlayerCount` to (4000 - players) /
-4000 of that, so about 62 ticks at 1,500 players: a ceiling near 290 scales an hour (inferred).
-Each grab costs a law rune like a bone. Ground with a pestle and mortar (brew.md, `grind`),
-a scale makes the dragon scale dust of S25e's weapon poison (kwuarm) and antifire (lantadyme).
-Bones are grabbed first: a drop despawns, a spawn waits.
+(2905,9801), (2906,9796), (2908,9805) and (2910,9809), the source of the dragon scale dust in
+S25e's weapon poison (kwuarm) and antifire (lantadyme). Four are within 10 tiles of the safe
+tile, but **none is in line of sight from it**: `collisionLineOfSight` (the engine's
+hasLineOfSight on the room's projectile blockers) is false for all five, even (2902,9806) at 4
+tiles while (2902,9805) is visible (dragons.test.ts pins it). Measured on the demo,
+2026-10-22 15:36-15:46Z: cairn_h56 stood on the tile for 10 minutes with 25 laws and a
+telegrab-for-scales build, all five scales lying unclaimed in view, no other player in the
+room, and grabbed none. So the role does not telegrab scales; a scale has to be walked to,
+inside the adults' leashes (an anti-dragonfire shield's job, not this role's). They respawn
+`respawnrate` ticks after being taken (100 by default, `ObjType`), scaled by
+`World.scaleByPlayerCount` to (4000 - players) / 4000, about 62 ticks at 1,500 players.
 
 ## Measured
 

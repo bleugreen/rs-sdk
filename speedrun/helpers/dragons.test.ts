@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
     castable, castDecision, castsAvailable, castsCarried, decideStep, DOOR_INSIDE, dragonOptions, EMPTY_KIT, footprintDistance, kitIn, leashHolds, outsideEveryLeash,
-    affordableLaws, atGuild, foodOnly, foodPlan, grabOrder, lootPattern, minTripLaws, purchasePlan, SAFE_ROUTE, SAFE_TILE, spellFor, TAVERLEY_ADULTS, tripCost, tripKit, type Kit, type View
+    affordableLaws, atGuild, collisionLineOfSight, dropGrabbable, foodOnly, foodPlan, lootPattern, minTripLaws, purchasePlan, SAFE_ROUTE, SAFE_TILE, spellFor, TAVERLEY_ADULTS, tripCost, tripKit, type Kit, type View
 } from './dragons';
 
 const o = dragonOptions({});
@@ -234,21 +234,18 @@ describe('purchasePlan', () => {
     });
 });
 
-describe('scales option', () => {
-    test('off by default; on, the role grabs blue dragon scales as well as bones', () => {
-        expect(o.scales).toBe(false);
-        expect(lootPattern(o).test('Blue dragon scale')).toBe(false);
-        const s = lootPattern(dragonOptions({ scales: true }));
-        for (const n of ['Dragon bones', 'Blue dragon scale']) expect(s.test(n)).toBe(true);
-        expect(s.test('Dragonhide')).toBe(false);
-        expect(lootPattern(dragonOptions({ scales: true, hides: true })).test('Dragonhide')).toBe(true);
+describe('loot', () => {
+    test('bones, and dragonhide with `hides`; never blue dragon scales', () => {
+        expect(lootPattern(o).test('Dragon bones')).toBe(true);
+        expect(lootPattern(o).test('Dragonhide')).toBe(false);
+        expect(lootPattern(dragonOptions({ hides: true })).test('Dragonhide')).toBe(true);
+        expect(lootPattern(dragonOptions({ hides: true })).test('Blue dragon scale')).toBe(false);
     });
-    test('bones are grabbed before scales', () => {
-        const ground = ['Blue dragon scale', 'Dragon bones', 'Dragonhide'].sort((a, b) => grabOrder(a) - grabOrder(b));
-        expect(ground[0]).toBe('Dragon bones');
-    });
-    test('four of the five scale spawns (m45_153.jm2) are within telegrab range of the safe tile', () => {
+    test('no blue dragon scale spawn (m45_153.jm2) can be telegrabbed from the safe tile: none is in line of sight', async () => {
+        // Measured on the demo 2026-10-22: 10 min on the tile, all five lying unclaimed in view, none grabbed.
+        const los = await collisionLineOfSight();
         const spawns = [{ x: 2902, z: 9806 }, { x: 2905, z: 9801 }, { x: 2906, z: 9796 }, { x: 2908, z: 9805 }, { x: 2910, z: 9809 }];
         expect(spawns.filter(p => footprintDistance(SAFE_TILE, p, 1) <= 10)).toHaveLength(4);
+        expect(spawns.filter(p => dropGrabbable(SAFE_TILE, p, los))).toEqual([]);
     });
 });
