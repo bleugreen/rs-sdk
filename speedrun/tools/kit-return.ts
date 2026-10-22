@@ -28,6 +28,7 @@
 // is out of game; 1 any other failure.
 
 import type { BotWorldState } from '../../sdk/types';
+import type { BotSDK } from '../../sdk/index';
 import { parseKit } from '../rehearse';
 import { closeSession, loadBotEnv, logoutClean, openSession, type ClientKind, type Session } from '../lib/session';
 import { tabInGame } from '../lib/tab';
@@ -238,12 +239,19 @@ export async function kitReturn(session: Session, o: KitReturnOptions): Promise<
     let ap: ApproachResult | undefined;
     let hurt: Damage | undefined;
     // Logout is refused for COMBAT_LOGOUT_TICKS after a hit, and an aggressive NPC keeps hitting
-    // an account that stands still: back off once over the tiles the run just crossed unhurt.
-    const retreat = async (d: Damage, phase: string, to: { x: number; z: number }) => {
+    // an account that stands still: back off once, out of the attacker's reach (retreatTile).
+    const retreat = async (d: Damage, phase: string, runFrom: { x: number; z: number }) => {
         code = EXIT.damaged;
         hurt = d;
         say(`STOPPED ${phase} at ${here()} (T${d.tick}): took damage from ${d.by}, hp ${d.hp}. No trade.`);
-        const back = await runTo(sdk as unknown as TravelSdk, { ...to, tol: 1 }, { maxTicks: 60 });
+        const reachable = (x: number, z: number) => {
+            const p = sdk.findPath(x, z, 500);
+            return p.success && p.reachedDestination !== false;
+        };
+        const to = retreatTile(pos(sdk), d.at, runFrom, reachable);
+        if (!to) return new Error(`no reachable tile ${ESCAPE_TILES} tiles from the attacker: staying at ${here()}; logging out`);
+        say(`retreating to ${fmtTile(to)}, ${ESCAPE_TILES}+ tiles from ${d.at ? fmtTile(d.at) : 'where the hit landed'}`);
+        const back = await runTo(sdk as unknown as TravelSdk, { ...to, tol: 2 }, { maxTicks: 60 });
         return new Error(`retreated to ${here()} (T${tick()}, hp ${sdk.getState()?.player?.hp})${back.ok ? '' : ` short of ${fmtTile(to)}: ${back.reason}`}; logging out`);
     };
     try {
