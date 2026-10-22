@@ -171,6 +171,16 @@ export function messagesAfter(src: StateLike, cursor: number, re?: RegExp): stri
     return (stateOf(src)?.gameMessages ?? []).filter(m => m.type === 0 && (m.observationId ?? m.tick) > cursor && (!re || re.test(m.text))).map(m => m.text);
 }
 
+/**
+ * A click's game-message reply matching `re`: call it just before sending the click. It takes the
+ * messageCursor then, so `seen` (a predicate for the state it is given) and `first` (the live
+ * state) see only replies published since, on both clients.
+ */
+export function replyAfter(src: Pick<StateSource, 'getState'>, re: RegExp): { seen: (s: BotWorldState) => boolean; first: () => string | undefined } {
+    const cursor = messageCursor(src);
+    return { seen: s => messagesAfter(s, cursor, re).length > 0, first: () => messagesAfter(src, cursor, re)[0] };
+}
+
 export interface TileCounter {
     /** Tiles stepped since the counter started. */
     readonly tiles: number;
