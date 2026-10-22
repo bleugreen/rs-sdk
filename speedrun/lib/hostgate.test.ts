@@ -499,4 +499,56 @@ describe('HostGate', () => {
         expect(gate.drop(t2 + 6)).toBe(false); // 3 per drop beats 4
         expect(gate.on).toBe(true);
     });
+
+    describe('measureDrops sampling', () => {
+        const idleSdk = { getState: () => null, onStateUpdate: () => () => {}, sendWalk: async () => {} } as never;
+        /** mulberry32: a seeded uniform [0, 1). */
+        const seeded = (seed: number) => {
+            let a = seed >>> 0;
+            return () => {
+                a = (a + 0x6d2b79f5) >>> 0;
+                let t = a;
+                t = Math.imul(t ^ (t >>> 15), t | 1);
+                t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+        };
+        // An honest knife: a roll every 3 ticks, success 0.55, against plain at 3.5 ticks per
+        // roll (the knife is about 14% faster). Returns the drop the gate switched off on, or 0
+        // if it held the knife for the whole stretch.
+        const P = 0.55;
+        const falseFire = (seed: number, measureDrops: number, stretch = 400) => {
+            const gate = new HostGate(idleSdk, { model: { plainCycle: 3.5 }, plainTicksPerDrop: 3.5, measureDrops });
+            gate.on = true;
+            const roll = seeded(seed);
+            for (let tick = 0, n = 0; n < stretch; ) {
+                tick += 3;
+                if (roll() >= P) continue;
+                n++;
+                if (gate.drop(tick, 1 / P)) return n;
+            }
+            return 0;
+        };
+
+        test('the default is 120 drops', () => {
+            const lines: string[] = [];
+            const gate = new HostGate(idleSdk, { model: { plainCycle: 4 }, plainTicksPerDrop: 4, log: l => lines.push(l) });
+            gate.on = true;
+            // a knife slower than plain (5 ticks per drop) is not judged before drop 120
+            for (let i = 0; i < 119; i++) expect(gate.drop(i * 5)).toBe(false);
+            expect(gate.drop(119 * 5)).toBe(true);
+            expect(lines.at(-1)).toMatch(/over 120 drops/);
+        });
+
+        test('at p=0.55 a 30-drop mean switches an honest knife off on luck; a 120-drop mean holds it', () => {
+            // the same rolls: 30 crosses the line, 120 never does over the stretch
+            expect(falseFire(3, 30)).toBeGreaterThanOrEqual(30);
+            expect(falseFire(3, 120)).toBe(0);
+            const seeds = Array.from({ length: 200 }, (_, i) => i + 1);
+            const at30 = seeds.filter(s => falseFire(s, 30)).length;
+            const at120 = seeds.filter(s => falseFire(s, 120)).length;
+            expect(at30).toBeGreaterThan(30); // about one stretch in five
+            expect(at120).toBeLessThan(8); // under one in twenty-five
+        });
+    });
 });

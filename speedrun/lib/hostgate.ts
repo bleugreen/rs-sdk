@@ -253,7 +253,13 @@ export interface GateOptions {
     /**
      * Measured override: after this many xp drops in one manipulating stretch, compare its
      * ticks per drop with the plain loop's (`plainTicksPerDrop`, else the last measured plain
-     * stretch) and switch off if the knife is not faster. Default 30.
+     * stretch) and switch off if the knife is not faster. Default 120.
+     *
+     * The comparison is a sample mean. At a success chance of 0.5 to 0.65 per roll, a 30-drop
+     * mean is good to about ±13%, wider than the knife's margin over plain, so an honest knife
+     * gets switched off by bad luck alone, and each false switch-off holds plain for
+     * `measuredOffTicks` (measured in the lab at about 850 ticks lost). A 120-drop mean is good
+     * to about ±6%. A loop with a lower success chance is noisier and wants more drops.
      */
     measureDrops?: number;
     plainTicksPerDrop?: number;
@@ -309,7 +315,7 @@ export class HostGate {
     constructor(private readonly sdk: ProbeSdk, private readonly opts: GateOptions) {
         this.offReprobeTicks = opts.offReprobeTicks ?? 500;
         this.minProbeGapTicks = opts.minProbeGapTicks ?? 100;
-        this.measureDrops = opts.measureDrops ?? 30;
+        this.measureDrops = opts.measureDrops ?? 120;
         this.measuredOffTicks = opts.measuredOffTicks ?? 3000;
     }
 

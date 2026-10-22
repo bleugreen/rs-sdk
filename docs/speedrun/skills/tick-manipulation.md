@@ -500,10 +500,15 @@ first rule of "95% of trials at 1 tick" (from rs/53's quiet 110 of 110 against l
 of 60) once the demo showed that even a good host reads 2.
 
 **Measured override.** The loops report every xp drop to the gate (`gate.drop`). After
-30 drops in one manipulating stretch, the gate compares that stretch's ticks per drop with
-plain's (`--plain-rate`, or the last plain stretch it measured). If the knife is not
-faster, it switches off and stays off for 3,000 ticks. A per-roll model cannot see
-per-target costs such as walking to the next tree, and the measurement can.
+120 drops in one manipulating stretch (`measureDrops`), the gate compares that stretch's
+ticks per drop with plain's (`--plain-rate`, or the last plain stretch it measured). If the
+knife is not faster, it switches off and stays off for 3,000 ticks. A per-roll model cannot
+see per-target costs such as walking to the next tree, and the measurement can. The
+measurement is a sample mean, so its size matters: at a success chance of 0.5 to 0.65 a
+30-drop mean is good to about ±13%, wider than the knife's margin over plain, and the lab
+saw an honest woodcutting knife switched off by luck twice in five chains (about 850 ticks
+lost). At 120 drops the error is about ±6%, and the same chains saw no false switch-off. A
+loop with a lower success chance needs more drops.
 
 **Re-probe.** At the start; after every lost lock the loops already detect
 (`tickmanip-cycle.ts`'s no-xp resync, `tickmanip-mine.ts`'s SLIP), at most once per 100
