@@ -31,7 +31,7 @@ part (L24b lands beside the generals, 2957,3511).
 
 | # | Where | Action | Varp | Raw counts | Fixed | Burst | Label |
 |---|---|---|---|---|---|---|---|
-| G1 | the bartender | "Not very busy in here today, is it?" (`bartender.rs2:18`, `quest_gobdip.rs2:13-19`) | 0 → 1 | `opt, 4c` | 7, 10, 9 | 6, 4, 3 | m |
+| G1 | the bartender | "Not very busy in here today, is it?" (`bartender.rs2:18`, `quest_gobdip.rs2:13-19`) | 0 → 1 | `opt, 4c` | 6, 9, 8 | 6, 4, 3 | m |
 | G2 | the bartender | both dyes on two mails, sent in one tick (each on its own slots) | | 2 item-on-item | 1, 1, 1 | 1, 1, 1 | m |
 | G3 | General Wartface | the greeting (3 pages), "Do you want me to pick an armour colour for you?", 5 pages | 1 → 2 | `3c, opt, 5c` | 10, 10, 10 | 4, 4, 4 | m |
 | G4 | Wartface | the greeting, "Oh it you.", the orange mail handed over, 3 replies | 2 → 3 | `9c` | 10, 10, 10 | 3, 3, 3 | m |

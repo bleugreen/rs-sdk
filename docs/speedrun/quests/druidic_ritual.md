@@ -28,10 +28,10 @@ enchanted, then none). L24a lands beside Kaqemeex (2924,3486); L24b starts there
 | # | Where | Action | Varp | Raw counts | Fixed | Burst | Label |
 |---|---|---|---|---|---|---|---|
 | D1 | Kaqemeex | hello, his question, "I'm in search of a quest.", two pages on the circle, "Ok, I will try and help." (`kaqemeex.rs2`) | 0 → 1 | `2c, opt, 4c, opt, 3c` | 12 | 6 | m |
-| D2 | to Sanfew | run down Taverley's west side (the SDK route swings east round the circle: 55 m against 41), his spiral stairs up (2898,3428) | | ~70 tiles, 1 climb | 41 | 41 | m |
+| D2 | to Sanfew | run down Taverley's west side (the SDK route swings east round the circle: 55 m against 41), his spiral stairs up (2898,3428) | | ~70 tiles, 1 climb | 41 | 41.3 | m |
 | D3 | Sanfew (2897,3426, level 1) | his question, "I've been sent to help purify...", his two pages, "Ok, I'll do that then." (`sanfew.rs2:24-51`) | 1 → 2 | `1c, opt, 3c, opt, 2c` | 9 | 6 | m |
 | D4 | to the dungeon | his stairs down, the run to Taverley Dungeon's ladder (2884,3397), down | | ~35 tiles, 2 climbs | 23 | 23 | m |
-| D5 | the cauldron (2893,9831) | the run to the prison door (2889,9831), three opens from the west (the first two each wake a suit of armour, `prison_doors.rs2`; the third lets the player through), the four meats used on the cauldron (one a tick) | | ~33 tiles, 3 opens, 4 uses | 26 | 25 | m |
+| D5 | the cauldron (2893,9831) | the run to the prison door (2889,9831), three opens from the west (the first two each wake a suit of armour, `prison_doors.rs2`; the third lets the player through), the four meats used on the cauldron (one a tick) | | ~33 tiles, 3 opens, 4 uses | 26 (27, 24, 27) | 25 (24, 27, 24) | m |
 | D6 | back to Sanfew | the door from inside (one open), the run to the ladder, up, the run and his stairs up | | ~70 tiles, 1 open, 2 climbs | 43 | 43 | m |
 | D7 | Sanfew | the meats handed over (`sanfew.rs2:53-66`) | 2 → 3 | `5c` | 6 | 2 | m |
 | D8 | to Kaqemeex | his stairs down, the run north | | ~70 tiles, 1 climb | 41 | 41 | m |
@@ -42,6 +42,12 @@ Measured with `speedrun/lab/quests/druidic-ritual.ts` on bgsrv-mac, lab at 300 m
 post-Monkey-Madness levels (Attack 99, Defence 89, Hitpoints 97) and the ledger's pack after H20:
 lite client 3 of 3 in each mode (fixed 209, 206, 209; burst 192, 195, 193); browser client (bundle
 md5 64caf234) burst 196. The manifest's 239 fixed / 220 burst were inferred.
+
+D5's spread is the door, not the dialogue. The suits turn back into locs 500 ticks after they wake
+(`prison_doors.rs2`), so back-to-back lab runs alternate: three of the six runs opened it three
+times and woke both suits, and three met it open to one click (the module's note row). The 27s
+line up with the three-open runs, so **27 is the route's D5** (a fresh door), and the route's
+Druidic Ritual is 209 fixed / 195.3 burst.
 
 ## Tick total
 
