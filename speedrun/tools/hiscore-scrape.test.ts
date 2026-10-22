@@ -2,9 +2,39 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { analyzeAccount, diffPlayers, parseBank, parseBoard, parseOutfit, parsePlayer, type PlayerRow } from './hiscore-scrape.ts';
+import { analyzeAccount, diffPlayers, parseBank, parseBoard, parseOutfit, parsePlayer, type PlayerRow, titleTicks } from './hiscore-scrape.ts';
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, 'fixtures', name), 'utf8');
+
+// Fixtures named *-2026-10-22.html were fetched live from the demo on 2026-10-22, after it switched the
+// Time title from `N ticks` to `S seconds of game time` (first seen about 19:34 UTC by rs/455; a deploy
+// marker for engine code not on GitHub). S = 0.3 x ticks; the tick rate itself is unchanged. The older
+// fixtures keep the `N ticks` form, which the engine's own page (lab worlds) still renders.
+describe('titleTicks', () => {
+    test('old form: N ticks', () => {
+        expect(titleTicks('12,006', 'ticks')).toBe(12_006);
+        expect(titleTicks('764', 'ticks')).toBe(764);
+    });
+
+    test('new form: S seconds of game time, S = 0.3 x ticks, exact', () => {
+        expect(titleTicks('998.7', 'seconds of game time')).toBe(3_329);
+        expect(titleTicks('207', 'seconds of game time')).toBe(690);
+        expect(titleTicks('2,247', 'seconds of game time')).toBe(7_490);
+        expect(titleTicks('3,601.8', 'seconds of game time')).toBe(12_006);
+        expect(titleTicks('0.3', 'seconds of game time')).toBe(1);
+        // Every tick count up to 100k survives the round trip through the demo's one-decimal rendering.
+        for (let t = 0; t <= 100_000; t += 7) {
+            const s = (t * 0.3).toLocaleString('en-US', { maximumFractionDigits: 1 });
+            expect(titleTicks(s, 'seconds of game time')).toBe(t);
+        }
+    });
+
+    test('a value off the 0.3 s grid or a fractional tick count is rejected, not rounded', () => {
+        expect(() => titleTicks('998.8', 'seconds of game time')).toThrow(/not a multiple of 0.3/);
+        expect(() => titleTicks('998.75', 'seconds of game time')).toThrow(/not a multiple of 0.3/);
+        expect(() => titleTicks('1.5', 'ticks')).toThrow(/not a whole tick count/);
+    });
+});
 
 describe('parseBoard', () => {
     test('overall board: 21 rows of rank, name, level, ticks', () => {
@@ -18,6 +48,14 @@ describe('parseBoard', () => {
         const rows = parseBoard(fixture('hiscore/board-quest-points.html'));
         expect(rows.length).toBeGreaterThan(0);
         expect(rows[0]!.level).toBeGreaterThan(100);
+    });
+
+    test('new-form board (demo, 2026-10-22): seconds titles convert to the same ticks', () => {
+        const rows = parseBoard(fixture('hiscore/board-woodcutting-2026-10-22.html'));
+        expect(rows).toHaveLength(21);
+        expect(rows[0]).toEqual({ rank: 1, name: 'cairn_chops', level: 99, ticks: 3_329 });
+        expect(rows[1]!.ticks).toBe(3_403); // 1,020.9 s
+        expect(rows.every(r => Number.isInteger(r.ticks))).toBe(true);
     });
 });
 
@@ -39,6 +77,21 @@ describe('parsePlayer', () => {
     test('row links of any profile parse the same', () => {
         const html = fixture('hiscore/player-stunbaron.html');
         expect(parsePlayer(html.replaceAll('profile=main', 'profile=lab'))).toEqual(parsePlayer(html));
+    });
+
+    test('new-form player pages (demo, 2026-10-22) carry the same ticks the old form did', () => {
+        const chops = parsePlayer(fixture('hiscore/player-cairn_chops-2026-10-22.html'))!;
+        expect(chops).toHaveLength(21);
+        expect(chops.find(r => r.skill === 'Woodcutting')).toMatchObject({ category: 9, rank: 1, level: 99, ticks: 3_329 });
+        expect(chops.find(r => r.skill === 'Overall')).toMatchObject({ level: 126, ticks: 3_329 });
+        expect(chops.find(r => r.skill === 'Attack')).toMatchObject({ level: null, ticks: null });
+        const burns = parsePlayer(fixture('hiscore/player-cairn_burns-2026-10-22.html'))!;
+        expect(burns.find(r => r.skill === 'Firemaking')).toMatchObject({ category: 12, level: 99, ticks: 690 });
+    });
+
+    test('a seconds title off the 0.3 s grid fails the page instead of mis-reporting a stamp', () => {
+        const html = fixture('hiscore/player-cairn_burns-2026-10-22.html').replaceAll('title="207 seconds', 'title="207.1 seconds');
+        expect(() => parsePlayer(html)).toThrow(/not a multiple of 0.3/);
     });
 
     test('a missing player is null', () => {
