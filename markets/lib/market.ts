@@ -118,6 +118,23 @@ export function realisable(q: MarketQuote, quantity: number): Realisable {
     return { units, low: units * mean, high: units * (q.bid ?? mean), unsold: quantity - units };
 }
 
+export interface BidPool {
+    /** Items with at least one open bid. */
+    items: number;
+    quantity: number;
+    /** Coins committed to open bids across the book. */
+    value: number;
+}
+
+/** Totals of the open bid side over a buyValue-sorted book page (the whole book while it has at most `limit` bid items). */
+export function bidPool(book: Pick<MarketItems, 'items'>): BidPool {
+    const bids = book.items.filter(i => i.buyQuantity > 0);
+    return { items: bids.length, quantity: bids.reduce((s, i) => s + i.buyQuantity, 0), value: bids.reduce((s, i) => s + i.buyValue, 0) };
+}
+
+/** The book with every open bid: one request, ranked by coins committed. */
+export const readBids = (m: DemoMarket, days: MarketItemsOptions['days'] = 90): Promise<MarketItems> => m.items('', { sort: 'buyValue', limit: 100, days });
+
 export interface HistoryTotals {
     buckets: number;
     volume: number;
