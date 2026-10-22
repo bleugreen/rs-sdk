@@ -133,8 +133,8 @@ export interface FletchRun {
     actions: number;
     byTier: Partial<Record<ArrowTier, number>>;
     /**
-     * The program's work ticks: it sends one tier a tick, so each run of same-tier actions takes
-     * ceil(run / 5) (a tier switch mid-burst leaves the tick short).
+     * The program's work ticks: 5 actions a tick; with `fill` a tier switch shares its tick when the
+     * tick's starting level already allows the new tier, else it leaves the tick short.
      */
     ticks: number;
     levelFrom: number;
@@ -177,14 +177,12 @@ function simulate(st: FletchStock, rows: readonly ArrowTierRow[], kind: FletchRu
     const byTier: FletchRun['byTier'] = {};
     let n = 0;
     let slotFault: string | undefined;
-    // the page sends one tier a tick: each run of same-tier actions takes ceil(run / 5) ticks
+    // The page's ticks: 5 actions a tick, and with `fill` a tier switch stays in its tick only when
+    // the level the tick started from already allows the new tier.
     let ticks = 0;
-    let segTier: ArrowTier | null = null;
-    let seg = 0;
-    const closeSeg = () => {
-        ticks += Math.ceil(seg / PER_TICK);
-        seg = 0;
-    };
+    let inTick = 0;
+    let tickLevel = levelFrom;
+    let tickTier: ArrowTier | null = null;
     for (;;) {
         const level = levelForXp(st.xp);
         if (stop.untilLevel !== undefined && level >= stop.untilLevel) break;
@@ -193,6 +191,13 @@ function simulate(st: FletchStock, rows: readonly ArrowTierRow[], kind: FletchRu
         if (!r) break;
         const tips = st.tips[r.tier]!;
         const k = Math.min(ARROWS_PER_ACTION, tips, st.headless);
+        if (inTick === 0 || inTick >= PER_TICK || (r.tier !== tickTier && r.level > tickLevel)) {
+            ticks++;
+            inTick = 0;
+            tickLevel = level;
+        }
+        inTick++;
+        tickTier = r.tier;
         // inv_del runs before inv_add: an input stack this action empties frees its slot first
         const freed = (k === tips ? 1 : 0) + (k === st.headless ? 1 : 0);
         if ((st.arrows[r.tier] ?? 0) === 0) {
@@ -208,14 +213,8 @@ function simulate(st: FletchStock, rows: readonly ArrowTierRow[], kind: FletchRu
         st.arrows[r.tier] = (st.arrows[r.tier] ?? 0) + k;
         st.xp += k * r.xpPerArrow * XP_RATE;
         byTier[r.tier] = (byTier[r.tier] ?? 0) + 1;
-        if (r.tier !== segTier) {
-            closeSeg();
-            segTier = r.tier;
-        }
-        seg++;
         n++;
     }
-    closeSeg();
     const run: FletchRun = {
         kind,
         tiers: rows.map(r => r.tier),
@@ -365,6 +364,8 @@ export function fletchingStep(opts: FletchingOptions = {}): Step<any> {
                 {
                     mode: 'stack',
                     skill: 'fletching',
+                    // a tick whose tier runs out finishes on the next tier the level allows (rune into adamant, adamant into mithril)
+                    fill: true,
                     recipes: tierRows(run.tiers).map(recipeFor),
                     ...(run.untilLevel !== undefined ? { untilLevel: run.untilLevel } : {}),
                     ...(run.maxActions !== undefined ? { maxActions: run.maxActions } : {}),

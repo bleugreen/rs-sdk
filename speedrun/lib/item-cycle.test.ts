@@ -148,6 +148,10 @@ describe('runItemCycle', () => {
         for (const k of ['held', 'bank', 'mixed']) expect(programParams(tool)).not.toHaveProperty(k);
         // clearTicks is the driver's, never the program's
         expect(programParams({ ...tool, clearTicks: 0 })).not.toHaveProperty('clearTicks');
+        // fill (stack mode) only when given
+        const stack = { mode: 'stack' as const, skill: 'fletching', recipes: [{ name: 'runearrow', level: 75, xp: 187.5, a: 53, b: 44, products: [892], per: 15 }], untilLevel: 99, step: 'S18d-fallback fletching' };
+        expect(programParams({ ...stack, fill: true })).toMatchObject({ mode: 'stack', fill: true });
+        expect(programParams(stack)).not.toHaveProperty('fill');
     });
 
     test('done: resolves with the result; one program row and one note; the watcher runs out its ticks', async () => {

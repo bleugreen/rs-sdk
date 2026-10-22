@@ -18,6 +18,8 @@ const CRUSHED = 1633;
 const HEADLESS = 53;
 const RUNE_HEADS = 44;
 const RUNE_ARROW = 892;
+const ADAMANT_HEADS = 43;
+const ADAMANT_ARROW = 890;
 const NEEDLE = 1733;
 const THREAD = 1734;
 const HARD_LEATHER = 1743;
@@ -50,7 +52,7 @@ const GEMS: CycleRecipe[] = [
 const byXpDesc = [...GEMS].sort((x, y) => y.xp - x.xp);
 
 const BOOTH = { x: 3186, z: 3436, id: 2213, option: 2 };
-const STACKABLE = new Set([HEADLESS, RUNE_HEADS, RUNE_ARROW, GUAM_UNF + 1, IRIT_UNF + 1, EYE + 1, NEEDLE, THREAD, WINE_NOTE]);
+const STACKABLE = new Set([HEADLESS, RUNE_HEADS, RUNE_ARROW, ADAMANT_HEADS, ADAMANT_ARROW, GUAM_UNF + 1, IRIT_UNF + 1, EYE + 1, NEEDLE, THREAD, WINE_NOTE]);
 const NOTES = new Map([[GUAM_UNF + 1, GUAM_UNF], [IRIT_UNF + 1, IRIT_UNF], [EYE + 1, EYE]]);
 
 /** speedrun/lib/xp.ts: LEVEL_XP[level] in game xp. */
@@ -1005,5 +1007,60 @@ describe('item-cycle stack mode (arrows)', () => {
         expect(w.inv.find(o => o?.id === RUNE_ARROW)!.count).toBe(100);
         expect(w.result.actions).toBe(7);
         expect(w.shared.sendsPerTick).toEqual({ 5: 1, 2: 1 });
+    });
+
+    const adamantArrow: CycleRecipe = { name: 'adamantarrow', level: 60, xp: 150, a: HEADLESS, b: ADAMANT_HEADS, products: [ADAMANT_ARROW] };
+    /** 45 rune tips (3 actions) beside a long adamant stack. */
+    const switchWorld = (xp: number, params: Record<string, unknown> = {}, heads: Obj[] = [{ id: RUNE_HEADS, count: 45 }, { id: ADAMANT_HEADS, count: 300 }]) =>
+        new World({ mode: 'stack', recipes: [adamantArrow, runeArrow], xp, inventory: [{ id: HEADLESS, count: 1000 }, ...heads], params: { untilLevel: undefined, maxActions: 60, ...params } });
+    const sources = (w: World, t: number) => w.h.sent.filter(s => s.tick === t).map(s => (s.action as { sourceSlot?: number }).sourceSlot);
+
+    test('one tier a tick by default: the rune stack runs out after 3, the tick ends short', () => {
+        const w = switchWorld(LEVEL_XP[80]!);
+        w.start();
+        w.run(2);
+        expect(sources(w, 101)).toEqual([1, 1, 1]);
+        expect(sources(w, 102)).toEqual([2, 2, 2, 2, 2]);
+    });
+
+    test('fill: the switch tick carries both tiers, the rest of it on adamant; each tier credited', () => {
+        const w = switchWorld(LEVEL_XP[80]!, { fill: true });
+        w.start();
+        w.run(2);
+        expect(sources(w, 101)).toEqual([1, 1, 1, 2, 2]);
+        expect(w.inv.find(o => o?.id === RUNE_ARROW)!.count).toBe(45);
+        expect(w.inv.find(o => o?.id === ADAMANT_ARROW)!.count).toBe(30);
+        w.run(30);
+        expect(w.result.ended).toBe('maxActions');
+        expect(w.result.byRecipe).toEqual({ runearrow: 3, adamantarrow: 57 });
+        expect(w.result.actions).toBe(60);
+        expect(w.shared.sendsPerTick).toEqual({ 5: 12 });
+    });
+
+    test('fill never sends a tier the seen level does not allow, even if this tick reaches it', () => {
+        // Fletching 74 with 3 adamant actions and a rune stack: rune waits for a tick that sees 75
+        const w = switchWorld(LEVEL_XP[75]! - 1, { fill: true }, [{ id: ADAMANT_HEADS, count: 45 }, { id: RUNE_HEADS, count: 300 }]);
+        expect(levelOf(w.xp)).toBe(74);
+        w.start();
+        w.run(1);
+        expect(sources(w, 101)).toEqual([1, 1, 1]);
+        w.run(1);
+        expect(sources(w, 102)).toEqual([2, 2, 2, 2, 2]);
+        expect(w.ignored).toEqual([]);
+    });
+
+    test('fill: maxActions still caps, across the switch', () => {
+        const w = switchWorld(LEVEL_XP[80]!, { fill: true, maxActions: 4 });
+        w.start();
+        w.run(5);
+        expect(sources(w, 101)).toEqual([1, 1, 1, 2]);
+        expect(w.result).toMatchObject({ ended: 'maxActions', sent: 4, actions: 4 });
+    });
+
+    test('fill applies to stack mode only', () => {
+        const h = new Harness();
+        expect(h.start('item-cycle', { mode: 'pair', skill: 'herblore', booth: BOOTH, maxActions: 10, recipes: [attack], fill: true }).fault).toContain('fill applies to stack mode only');
+        expect(h.start('item-cycle', { mode: 'stack', skill: 'fletching', maxActions: 10, recipes: [runeArrow], fill: 'yes' }).fault).toContain('fill must be a boolean');
+        expect(createItemCycle.params).toContain('fill');
     });
 });
