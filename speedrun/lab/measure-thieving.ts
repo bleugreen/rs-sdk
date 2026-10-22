@@ -37,6 +37,7 @@
 
 import { hostname, loadavg } from 'os';
 import { ChatHistory } from '../../sdk/chat-history';
+import { FreshMessages } from '../../server/webclient/src/bot/programs/util';
 import type { BotWorldState } from '../../sdk/types';
 import type { ProgramStatus } from '../lib/programs';
 import { programStatus } from '../lib/programs';
@@ -333,12 +334,15 @@ function trackTopUps(giver: string, below: number, giverEventsNow: () => GiverEv
      * the line's place among them (`at`, from 0): a reader that keys on observationId alone keeps
      * only the first message of each publication.
      */
-    const tradeLines: Array<{ tick: number; text: string; id: number | null; of: number; at: number }> = [];
+    const tradeLines: Array<{ tick: number; text: string; id: number | null; of: number; at: number; program: boolean; before: string[] }> = [];
     const dueFails: number[] = [], adjacentAt2: Record<number, boolean> = {};
     /** The giver's tile less the account's on each failure's +2: an op on a player reaches it only from a side, not a corner. */
     const offsetAt2: Record<number, [number, number]> = {};
     const chat = new ChatHistory();
     chat.record(sdk.getState()?.gameMessages ?? []);
+    // The program's own reader beside the trace's, on the same states: `program` on a trade line
+    // says whether the pickpocket program's FreshMessages surfaced it too.
+    const programReader = new FreshMessages(sdk.getState() as never);
     let last = -1, wasOpen = false, food = Infinity;
     const bonesOf = (s: BotWorldState) => s.inventory.filter(i => /bones$/i.test(i.name)).reduce((a, i) => a + i.count, 0);
     const supplies = (s: BotWorldState) => bonesOf(s) + s.inventory.filter(i => /^shark$/i.test(i.name)).length;
@@ -358,12 +362,14 @@ function trackTopUps(giver: string, below: number, giverEventsNow: () => GiverEv
             for (; reqSeen < n; reqSeen++) requests.push(s.tick);
         }
         const fresh = chat.record(s.gameMessages ?? []);
+        const programFresh = programReader.take(s as never);
         for (const m of fresh) {
             if (/You fail to pick/i.test(m.text)) { fails.push(s.tick); rolls.push(s.tick); if (food < below) dueFails.push(s.tick); }
             else if (/^You pick the/i.test(m.text)) rolls.push(s.tick);
             else if (/trade|busy/i.test(m.text)) {
                 const pub = fresh.filter(o => o.observationId === m.observationId);
-                tradeLines.push({ tick: s.tick, text: m.text.slice(0, 60), id: m.observationId ?? null, of: pub.length, at: pub.indexOf(m) });
+                const program = programFresh.some(o => o.observationId === m.observationId && o.text === m.text);
+                tradeLines.push({ tick: s.tick, text: m.text.slice(0, 60), id: m.observationId ?? null, of: pub.length, at: pub.indexOf(m), program, before: pub.slice(0, pub.indexOf(m)).map(o => o.text.slice(0, 40)) });
             }
         }
         food = s.inventory.filter(i => /^shark$/i.test(i.name)).length;
@@ -433,6 +439,8 @@ function trackTopUps(giver: string, below: number, giverEventsNow: () => GiverEv
             requestMarks: requestMarks.size, resendMarks: resendMarks.size, giverWishes: wishes.length, accountSent: sentLines.length,
             // the account's "Sending trade offer..." lines that a reader keying on observationId alone would drop
             accountSentShared: tradeLines.filter(l => /^sending trade offer/i.test(l.text) && l.at > 0).length,
+            // the same lines as the pickpocket program's FreshMessages surfaced them, on the same states
+            programSent: tradeLines.filter(l => /^sending trade offer/i.test(l.text) && l.program).length,
             dueRequested: due.filter(d => d.requested).length,
             dueLanded: due.filter(d => d.opened).length,
             dueResent: resentDue.length,
@@ -454,7 +462,7 @@ function trackTopUps(giver: string, below: number, giverEventsNow: () => GiverEv
                 gap: rows.find(r => r.f === f)?.gap ?? null,
                 clicks: clicks.filter(t => t >= f && t <= f + 12).map(t => `+${t - f}`),
                 rejected: rejects.filter(t => t >= f && t <= f + 12).map(t => `+${t - f}`),
-                account: tradeLines.filter(l => inStun(l.tick, f)).map(l => `+${l.tick - f} ${l.text} [o${l.id ?? '-'} ${l.at + 1}/${l.of}]`),
+                account: tradeLines.filter(l => inStun(l.tick, f)).map(l => `+${l.tick - f} ${l.text} [o${l.id ?? '-'} ${l.at + 1}/${l.of}${l.program ? '' : ' unseen by program'}${l.before.length ? ` after: ${l.before.join(' | ')}` : ''}]`),
                 giver: giverEvents.filter(e => inStun(e.tick, f)).map(e => `+${e.tick - f} ${e.ev}`),
                 opened: opens.find(o => o >= f && o <= f + 12) ?? null
             }))
