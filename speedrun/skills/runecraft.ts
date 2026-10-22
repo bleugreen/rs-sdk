@@ -668,7 +668,7 @@ class Driver {
         const s = this.state();
         const dialog = s.dialog?.isOpen ? `dialog open (${(s.dialog.text ?? '').slice(0, 60)})` : 'no dialog';
         const modal = s.interface?.isOpen ? `interface ${s.interface.interfaceId} open` : 'no interface';
-        throw new Error(`the ${this.band.altar} talisman is still held after ${TALISMAN_DROPS} drops (${replies.join('; ')}; ${dialog}; ${modal}); a trade of ${LOAD} essence needs its slot`);
+        throw new Error(`the ${this.band.altar} talisman is still held after ${TALISMAN_DROPS} drops (${replies.join('; ')}; ${dialog}; ${modal}); a trade of ${LOAD} essence needs its slot. The server ignores inventory ops while the inventory tab is hidden, as on a new account that never left the tutorial state (S00's skip opens the tabs)`);
     }
 
     /**

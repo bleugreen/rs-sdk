@@ -38,6 +38,7 @@ import { readCue } from '../helpers/altar-cue';
 import { programStatus } from '../lib/programs';
 import { Observation, resolveResume, runResumable, sessionLink } from '../runner/resume';
 import { runSteps } from '../runner/step';
+import { onTutorialIsland, tutorialSkip } from '../skills/start';
 import { ALTAR_ROOMS, altarStep, craftXp, findAltar, rcLevel, rcXp, readLauncherFile, xpAfterCrafts, type AltarName, type Band, type ScheduleMode } from '../skills/runecraft';
 
 const scored = process.argv[2];
@@ -136,6 +137,10 @@ try {
         await sdk.sendSay(cmd);
         await sdk.waitForTicks(2);
     };
+    // A new lab account logs in on Tutorial Island, where the login script clears every side tab
+    // (tutorial.rs2 start_tutorial) and the server then ignores inventory ops, the talisman drop
+    // included. A ::tele off the island doesn't restore them; S00's skip does, as in the run.
+    if (onTutorialIsland(sdk.getState()?.player)) await runSteps(session, [tutorialSkip], { log, c: {}, shouldStop: () => false, logout: async () => {} });
     // The stand-in: nothing in the inventory but the altar's talisman, the band's level, in the room.
     while (sdk.getState()?.dialog.isOpen) {
         await sdk.sendClickDialog(0);
