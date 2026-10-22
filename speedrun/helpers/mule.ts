@@ -29,8 +29,6 @@
 // Run standalone (lite client already running for the account):
 //   ROLE_OPTIONS='{...}' bun speedrun/helpers/mule.ts <account>            # mule
 //   ROLE_OPTIONS='{...}' bun speedrun/helpers/mule.ts <account> courier    # courier
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BankItem, BotWorldState, GameMessage, InventoryItem, TradeItem, TradeItemSpec } from '../../sdk/types';
