@@ -173,7 +173,7 @@ Runecraft and Smithing for rank 10, and Dwarf Cannon (1,130), which passes Smith
 
 The expected column sums to **31,283.8** (the steps; 31,258.1 at fold-in 24, 31,212.5 at fold-in 23's final statement, 31,351.8 at its first statement, 31,391.8 at fold-in 22, 31,312.8 at fold-in 20, 31,250.8 at fold-in 18, 31,408 before fold-in 17, 32,287 before fold-in 14 moved every quest's expected to its burst figure) plus the legs' **2,266.3** (2,214.0 at fold-in 23's first statement, 2,223.6 at fold-in 22, 2,224.2 at fold-in 20, 2,209.5 before its T05-06 on its browser figure); RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **34,849.1** knife-on expected (32,474.9 best), against the record of 35,916.
+retries, restarts) for its **34,788.5** knife-on expected (32,349.9 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
