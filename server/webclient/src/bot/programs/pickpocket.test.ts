@@ -39,10 +39,13 @@ interface Landing {
  * next one (p_delay(0)); eating while not free adds 3 to the action delay; Charge and arrows
  * have no delay.
  *
- * With a `helper` standing next to the account: a trade request landing on L opens the trade
+ * With a `helper` standing next to the account: a trade request landing on L draws "Sending trade
+ * offer..." on L (in L's publication, beside any other message of that tick) and opens the trade
  * from L+2 (the helper answers on L+1) for `openTicks` states, then delivers `bones`. A click
  * landing after the request in the same tick replaces it; any packet landing while the trade
- * is open closes it with nothing delivered.
+ * is open closes it with nothing delivered. `drop` makes the engine lose the nth request that
+ * reaches it (no message, nothing opens), and `late` holds the nth back that many ticks (a
+ * packet that missed its tick).
  */
 interface ThieveOpts {
     ticks: number;
@@ -60,7 +63,7 @@ interface ThieveOpts {
     params?: Record<string, unknown>;
     kit?: Kit;
     dialogAt?: (tick: number) => boolean;
-    helper?: { openTicks?: number; bones: number };
+    helper?: { openTicks?: number; bones: number; drop?: (nth: number) => boolean; late?: (nth: number) => number };
 }
 
 function thieve(opts: ThieveOpts) {
@@ -84,7 +87,7 @@ function thieve(opts: ThieveOpts) {
     const failedAttempts: number[] = [];
     const landings: Landing[] = [];
     let attemptAt: number | null = null;
-    const trade = { requests: 0, replaced: 0, opened: 0, done: 0, broken: 0, openFrom: -1, closeAt: -1, requestedOn: [] as number[], doneOn: [] as number[] };
+    const trade = { requests: 0, replaced: 0, opened: 0, done: 0, broken: 0, openFrom: -1, closeAt: -1, requestedOn: [] as number[], doneOn: [] as number[], arrived: 0, droppedOn: [] as number[] };
     const tradeOpen = (t: number) => t >= trade.openFrom && t < trade.closeAt;
     const inventory = () => [
         ...Array.from({ length: kit.food }, () => ({ name: foodName, options: ['Eat', 'Drop'] })),
@@ -114,7 +117,7 @@ function thieve(opts: ThieveOpts) {
         });
     };
     h.start('pp', { maxTicks: opts.ticks, ...opts.params }, state());
-    const pending: Array<{ at: number; sent: Sent; name?: string }> = [];
+    const pending: Array<{ at: number; sent: Sent; name?: string; nth?: number }> = [];
     for (let i = 0; i < opts.ticks + 5 && h.status.phase === 'running'; i++) {
         tick++;
         // processPlayers of the last tick's attempt: the roll
@@ -157,6 +160,17 @@ function thieve(opts: ThieveOpts) {
                 trade.openFrom = -1;
             }
             if (a.type === 'interactPlayer' && opts.helper) {
+                const nth = p.nth ?? trade.arrived++;
+                const late = p.nth === undefined ? (opts.helper.late?.(nth) ?? 0) : 0;
+                if (late > 0) {
+                    pending.push({ ...p, at: tick + late, nth });
+                    continue;
+                }
+                if (opts.helper.drop?.(nth)) {
+                    trade.droppedOn.push(tick);
+                    continue;
+                }
+                msgs.push({ text: 'Sending trade offer...', tick });
                 trade.requests++;
                 trade.requestedOn.push(tick);
                 requestedNow = true;
@@ -548,7 +562,9 @@ describe('pickpocket stun actions', () => {
             forced: { ticks: 200, hp: 7, outcome: () => false, params: { eatBelow: 0 } },
             stunPack: { ticks: 300, outcome: everyFifthFails, ...PACK },
             dialog: { ticks: 60, outcome: n => n !== 1, ...PACK, dialogAt: t => t % 17 === 0 },
-            topupIdle: { ticks: 260, outcome: everyFifthFails, kit: { bones: 4, blood: 6000, air: 6000, food: 4 }, helper: { bones: 12 }, params: { stunActions: [TOPUP, 'bury', 'charge'], idleOnInterface: true } }
+            topupIdle: { ticks: 260, outcome: everyFifthFails, kit: { bones: 4, blood: 6000, air: 6000, food: 4 }, helper: { bones: 12 }, params: { stunActions: [TOPUP, 'bury', 'charge'], idleOnInterface: true } },
+            // the engine loses every other request: without requestResend nothing more goes out
+            topupIdleDropped: { ticks: 400, outcome: everyFifthFails, kit: { bones: 4, blood: 6000, air: 6000, food: 4 }, helper: { bones: 12, drop: n => n % 2 === 0 }, params: { stunActions: [TOPUP, 'bury', 'charge'], idleOnInterface: true } }
         };
         // from the program at 75ce523c (rs/132's stun pack and #177's declarations, before these options)
         const GOLDEN: Record<string, { packets: number; sha256: string }> = {
