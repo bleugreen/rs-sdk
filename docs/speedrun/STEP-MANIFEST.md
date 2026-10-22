@@ -419,7 +419,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     rs/267's single trade-request rule (`openTrade` governs `swap()`) is reconciled with #230's
     `trade.ts`: `openTrade` with the altar giver (3042ae95: the Runecraft stock rung at 9 a cycle and a
     busy partner's retry at ~2, entry 9) and the S18 courier holding a side tile (R24); the helpers'
-    pieces must be on the helpers' deployed commit before they serve SCORED; and **rs/281** (the Grand Tree snapshot, with rs/202's door-exit workaround,
+    pieces must be on the helpers' deployed commit before they serve SCORED; **the shared dialogue and click fixes** (rs/147's child, issue to come: `advance()` on a dialogue a loc op opened, and a click on an unloaded region that returns true without moving; RUN-ORDER.md R29, a run blocker for the quest block); and **rs/281** (the Grand Tree snapshot, with rs/202's door-exit workaround,
     marked removable; the floor already carries #240's fix; entry 8). Gate tooling on main, not floor
     items: 5d22252d (#208, `lib/display.ts`) and c4b79f17 (#213, `lib/tab.ts` window helpers);
   - **the login cap**: our simultaneous demo logins, summed across every host, at most 100 with a
@@ -712,6 +712,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   `varp_369`, `varp_370`, `mm_guards_cooldown`, read via `quests/primitives.md` §8): the hangar
   puzzle's last tile to the powered hangar; the three chapter cutscenes; the sigil to the Jungle
   Demon kill. Each is one segment with `logoutSafe: false`.
+- **The zoo return and the browser client** (RUN-ORDER.md R29): with `returnMonkey: 'walk'`, the default,
+  the monkey is walked in from the Ardougne zoo through the Gnome Stronghold south gate (spirit trees and
+  teleports destroy it), where Femi's first-visit dialogue fires, and on the browser client `advance()`
+  does not continue a dialogue a loc op opened (rs/147's cairn_jumps), until rs/147's shared-layer fix
+  lands. `returnMonkey: 'glider'` (Barnaby to Brimhaven, Gandius's glider; +30 coins in H12) avoids the
+  gate; rs/201's execution 2 measures both. The module's acceptance on the browser client is O51.
 - **Fallback:** temple ladder drop fails, then wait for the access tile on the guards' 1-tile
   wander cycle (about +600 expected for the scrum; inferred, `quests/monkey_madness.md`, "Random
   steps"). On a death, the respawn route back (about 340, inferred, same table) and a regear trade.
