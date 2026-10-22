@@ -4,7 +4,7 @@ import { baseState } from '../lib/fake-sdk';
 import * as grandTree from '../quests/grand-tree';
 import * as tgv from '../quests/tree-gnome-village';
 import { ROUTES } from '../skills/agility';
-import { gtPlan, KIT_COINS, KIT_SHARKS, kitCheck, kitWithdraws, mmPlan, nearestWaypoint, parsePhases, PHASES, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
+import { ARMOUR, gtPlan, KIT_COINS, KIT_SHARKS, kitCheck, kitWithdraws, mmPlan, nearestWaypoint, parsePhases, PHASES, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
 
 let slot = 0;
 const item = (name: string, count = 1, id = 9000 + slot): InventoryItem => ({ slot: slot++, id, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
@@ -60,10 +60,10 @@ describe('kitCheck', () => {
 describe('kitWithdraws', () => {
     const names = (s: BotWorldState) => kitWithdraws(s).map(w => [String(w.item), w.n]);
     test('an empty pack takes the sharks, the weapon, the axe and the fares', () => {
-        expect(names(state({ inventory: [], equipment: [] }))).toEqual([[String(/^Shark$/i), KIT_SHARKS], [String(/^(Rune scimitar|Adamant longsword)$/i), 1], [String(/^Bronze axe$/i), 1], [String(/^Coins$/i), KIT_COINS]]);
+        expect(names(state({ inventory: [], equipment: [] }))).toEqual([[String(/^Shark$/i), KIT_SHARKS], [String(/^(Rune scimitar|Adamant longsword)$/i), 1], ...ARMOUR.map(a => [String(a), 1]), [String(/^Bronze axe$/i), 1], [String(/^Coins$/i), KIT_COINS]]);
     });
     test('only the shortfall, no axe once the logs are held, nothing for a worn weapon', () => {
-        const s = state({ inventory: [item('Shark', 1), ...Array.from({ length: 6 }, () => item('Logs')), item('Coins', 1000)], equipment: [item('Adamant longsword')] });
+        const s = state({ inventory: [item('Shark', 1), ...Array.from({ length: 6 }, () => item('Logs')), item('Coins', 1000)], equipment: [item('Adamant longsword'), item('Adamant chainbody'), item('Adamant platelegs'), item('Adamant full helm')] });
         expect(names(s)).toEqual([[String(/^Shark$/i), KIT_SHARKS - 1]]);
     });
 });

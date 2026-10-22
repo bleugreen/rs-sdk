@@ -27,7 +27,7 @@
 //   bun speedrun/helpers/quest-helper.ts <account> --fleet-account --mm-module=<pinned monkey-madness.ts>
 //       [--phases=kit,logs,agility,tree,grandtree,mm,mm-return] [--mm-until=G]
 //
-//   kit        at the nearest bank (the buyer banked its purchases): sharks, the weapon (worn), a bronze
+//   kit        at the nearest bank (the buyer banked its purchases): sharks, the weapon and armour (worn), a bronze
 //              axe while the logs are short, coins for the fares
 //   logs       Montai's 6 logs from the normal trees west of Draynor
 //   agility    a leg onto the Gnome course (the route's nearest waypoint on, the stronghold gate), then
@@ -105,7 +105,13 @@ const COINS = /^Coins$/i;
 /** Fares on the way (Brimhaven to Ardougne 30) with room to spare. */
 export const KIT_COINS = 300;
 /** Sharks taken from the bank: TGV's warlord and GT's demon, with a margin over TGV_KIT's floor. */
-export const KIT_SHARKS = 18;
+export const KIT_SHARKS = 22;
+/**
+ * Armour, worn: the best melee body, legs and helm buyable before Dragon Slayer and 32 quest points
+ * (docs/speedrun/helpers/market.md; Wayne's, Louie's and Peksa's shops). The atoll's jungle spiders hit
+ * an unarmoured 99-Defence account at the M trade tile (rs/473).
+ */
+export const ARMOUR: readonly RegExp[] = [/^Adamant chainbody$/i, /^Adamant platelegs$/i, /^Adamant full helm$/i];
 
 /** At TGV's start: Montai's 6 logs, food for the warlord, the stronghold and the demon after it, the weapon worn. */
 export const TGV_KIT: HelperKit = { logs: 6, sharks: 15, weapon: WEAPON };
@@ -437,6 +443,7 @@ export function kitWithdraws(s: BotWorldState): WithdrawSpec[] {
     const sharks = invCount(s, SHARK);
     if (sharks < KIT_SHARKS) want.push({ item: SHARK, n: KIT_SHARKS - sharks });
     if (invCount(s, WEAPON) === 0 && !worn(s, WEAPON)) want.push({ item: WEAPON, n: 1 });
+    for (const a of ARMOUR) if (invCount(s, a) === 0 && !worn(s, a)) want.push({ item: a, n: 1 });
     if (invCount(s, TGV_ITEM.logs) < TGV_KIT.logs && invCount(s, AXE) === 0 && !worn(s, AXE)) want.push({ item: AXE, n: 1 });
     const coins = invCount(s, COINS);
     if (coins < KIT_COINS) want.push({ item: COINS, n: KIT_COINS - coins });
@@ -461,10 +468,12 @@ async function kitUp(ctx: StepContext<any>): Promise<void> {
         await waitUntil(sdk, s => !s.bank?.isOpen, { maxTicks: 5 });
         if (!r.ok || r.missing.length) throw new Error(`kit: withdraw ${r.reason ?? 'short'}; missing ${r.missing.map(m => String(m.item)).join(', ') || 'none'}`);
     }
-    if (!worn(st(ctx), WEAPON)) {
-        const w = await wield(sdk, WEAPON);
-        if (!w.ok) throw new Error('kit: could not wield the weapon');
+    for (const item of [WEAPON, ...ARMOUR]) {
+        if (worn(st(ctx), item) || invCount(st(ctx), item) === 0) continue;
+        const w = await wield(sdk, item);
+        if (!w.ok) throw new Error(`kit: could not wear ${item.source}`);
     }
+    if (!worn(st(ctx), WEAPON)) throw new Error('kit: no weapon worn');
 }
 
 /** Normal trees west of Draynor's bank, on the agility route's first stretch. */
