@@ -188,10 +188,14 @@ export function bowSpec(bow: string): BowSpec {
     return spec;
 }
 
-/** Experience at the start of `level` (the standard table, which the engine's xp multiplier leaves alone). */
+/**
+ * Experience at the start of `level` as the SDK reports it. This engine's curve
+ * is 2^(l/10), not the standard 2^(l/7) (Player.ts levelExperience, which keeps
+ * tenths): level 80 is 267,169, not 1,986,068.
+ */
 export function xpForLevel(level: number): number {
     let points = 0;
-    for (let l = 1; l < level; l++) points += Math.floor(l + 300 * 2 ** (l / 7));
+    for (let l = 1; l < level; l++) points += Math.floor(l + 300 * 2 ** (l / 10));
     return Math.floor(points / 4);
 }
 

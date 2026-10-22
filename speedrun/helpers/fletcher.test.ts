@@ -102,12 +102,12 @@ describe('jailBypass', () => {
 });
 
 describe('bows: tables', () => {
-    test('xpForLevel is the standard table', () => {
+    test("xpForLevel is the engine's 2^(l/10) table (Player.ts levelExperience / 10), not the standard one", () => {
         expect(xpForLevel(1)).toBe(0);
-        expect(xpForLevel(2)).toBe(83);
-        expect(xpForLevel(73)).toBe(992_895);
-        expect(xpForLevel(80)).toBe(1_986_068);
-        expect(xpForLevel(99)).toBe(13_034_431);
+        expect(xpForLevel(2)).toBe(80);
+        expect(xpForLevel(73)).toBe(164_200);
+        expect(xpForLevel(80)).toBe(267_169);
+        expect(xpForLevel(99)).toBe(998_458);
     });
     test('cut_logs.dbrow levels and xp, obj.pack ids', () => {
         expect(bowSpec('Magic shortbow')).toEqual({ name: 'Magic shortbow', log: 'Magic logs', level: 80, xp: 83.3, unstrung: 72, strung: 861 });
@@ -121,8 +121,8 @@ describe('bows: tables', () => {
         expect(trainingBow(64, 'Yew logs')).toBeNull();
         expect(trainingBow(84, 'Magic logs')?.name).toBe('Magic shortbow');
     });
-    test('logsToLevel: 73 -> 80 on yew longbows at 25x is 530 logs', () => {
-        expect(logsToLevel(xpForLevel(73), 80, BOWS['yew longbow']!, 25)).toBe(530);
+    test('logsToLevel: 73 -> 80 on yew longbows at 25x is 55 logs', () => {
+        expect(logsToLevel(xpForLevel(73), 80, BOWS['yew longbow']!, 25)).toBe(55);
         expect(logsToLevel(xpForLevel(80), 80, BOWS['yew longbow']!, 25)).toBe(0);
     });
 });
@@ -151,7 +151,7 @@ describe('bowsStep', () => {
     });
     test('hedge done below 80: train on yew longbows, buying what the bank lacks', () => {
         const s = bowsStep(73, xpForLevel(73), held({ strung: { 857: 2 }, items: { 'Yew logs': 30 } }), plan);
-        expect(s).toMatchObject({ kind: 'train', bow: { name: 'Yew longbow' }, target: 80, logs: 530, buyLogs: 500 });
+        expect(s).toMatchObject({ kind: 'train', bow: { name: 'Yew longbow' }, target: 80, logs: 55, buyLogs: 25 });
     });
     test('at 80 the magic shortbows, at most a trip at a time', () => {
         expect(bowsStep(80, xpForLevel(80), held({ strung: { 857: 2 } }), plan)).toMatchObject({ kind: 'make', bow: { name: 'Magic shortbow' }, make: 6, buyLogs: 6, buyStrings: 6 });
