@@ -132,6 +132,22 @@ describe('goblins restarted mid-fight', () => {
     });
 });
 
+describe('coin earner start-up', () => {
+    // cairn_h46 on 2026-10-22 16:26 UTC, reassigned from coins: in Al Kharid, no hat, no food.
+    const H46_IN_AL_KHARID: Account = { at: [3268, 3209], combat: 66, cooking: 44, equipment: [SWORD] };
+
+    test('an account in Al Kharid leaves through the toll gate first, whatever its source', () => {
+        for (const source of ['guild', 'phoenix', 'goblins'] as Source[]) expect(phaseOf(source, H46_IN_AL_KHARID)).toBe('leave-alkharid');
+        expect(phaseOf('guild', { ...H46_IN_AL_KHARID, at: [3268, 3227] })).toBe('leave-alkharid');
+    });
+
+    test('west of the gate it plans as usual', () => {
+        expect(phaseOf('guild', { ...H46_IN_AL_KHARID, at: [3267, 3227] })).toBe('chickens');
+        // Just west of the fence the plan is whatever it would be anywhere else on the mainland.
+        expect(phaseOf('guild', { ...H46_IN_AL_KHARID, at: [3255, 3228], inventory: food(5) })).toBe(phaseOf('guild', { ...H46_IN_AL_KHARID, at: [3222, 3218], inventory: food(5) }));
+    });
+});
+
 describe('retries', () => {
     test('a failed cycle waits longer each time, capped at two minutes', () => {
         expect([1, 2, 3, 4, 5, 6, 7, 8].map(retryDelayTicks)).toEqual([5, 10, 20, 40, 80, 160, 200, 200]);
