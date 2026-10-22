@@ -50,7 +50,7 @@ import { inArea, missingRunes, runTo, SPELLS, teleport, type Area, type TravelSd
 import { currentTick, waitOrThrow, waitUntil } from '../lib/wait';
 import { invCount, invItem, opIndex, pos, skillLevel, waitForNpc } from '../lib/world';
 import type { Check, Observed, StepContext } from '../runner/step';
-import { allOf, baseLevels, inBox, kitSegment, questSteps, slotsCover, talkShape, within, type Box, type KitItem, type QuestItem, type QuestOptions, type Segment } from './segments';
+import { allOf, baseLevels, inBox, kitSegment, kitWant, questSteps, slotsCover, talkShape, within, type Box, type KitItem, type QuestItem, type QuestOptions, type Segment } from './segments';
 
 export const quest = 'fishingcompo' as const;
 export const stepId = 'S20';
@@ -412,6 +412,10 @@ const notStarted: Check<any> = s => requireQuestStage(s, quest, 'not_started');
 const atArrival = within({ x0: ARRIVAL.x - 1, z0: ARRIVAL.z - 1, x1: ARRIVAL.x + 1, z1: ARRIVAL.z + 1 }, 'the arrival tile beside the tunnel stairs');
 const hasItem = (item: ItemPattern, what: string): Check<any> => s => need(what, invCount(s, item) > 0, 'not held');
 const nearTunnel = within(TUNNEL, 'the tunnel stairs');
+const kitHeld: Check<any> = s => {
+    const want = kitWant(s, KIT);
+    return want.length ? `kit missing: ${want.map(w => `${w.amount} x ${String(w.item)}`).join(', ')}` : true;
+};
 const outsideWood: Check<any> = s => need('position', !inWood(s), 'inside McGrubor\'s Wood');
 const insideWood: Check<any> = s => need('position', inWood(s), `not inside McGrubor's Wood (at ${pos(s).x},${pos(s).z})`);
 const outsideFence: Check<any> = s => need('position', !inFence(s), 'inside the contest fence');
@@ -433,7 +437,9 @@ export function steps(opts?: Options) {
         }),
         {
             letter: 'B', label: 'dwarf-pass', logoutSafe: true,
-            preconditions: allOf(nearTunnel, slots('B')),
+            // At stage 0 B needs A's kit: the resume walk takes the latest segment that can start, and
+            // must not skip A's check by starting B on a fresh arrival without the kit.
+            preconditions: allOf(nearTunnel, s => (questStatus(s, quest) === 'started' ? true : kitHeld(s)), slots('B')),
             run: ctx => dwarfPass(ctx, opts),
             postconditions: hasItem(ITEM.pass, 'the fishing pass'),
             done: o => (atLeast(o, 'started') && holds(o, ITEM.pass)) || won(o),

@@ -152,7 +152,7 @@ describe('A: the entry preconditions', () => {
         expect(pre(s)).toMatch(/air/i);
     });
     test('refuse below Magic 45', () => {
-        expect(pre(arrival({ skills: [skill('Fishing', 74), skill('Magic', 40)] }))).toMatch(/Magic 40/);
+        expect(pre(arrival({ skills: [skill('Fishing', 74), skill('Magic', 40)] }))).toBe('Magic: 40 is below 45 for the Camelot teleport');
     });
     test("the kit itself is the segment's postcondition (no bait: the worm is the bait)", () => {
         expect(byLetter('A').postconditions(arrival(), {})).toBe(true);
@@ -170,7 +170,12 @@ describe('free slots (brief addendum 8)', () => {
         expect(need.items).toEqual(['1 Fishing pass', '1 Red vine worm']);
     });
     test('the carp at K takes the garlic slot freed at J, not a third', () => {
-        expect(slotNeed(startOf('K').state as BotWorldState, QUEST_ITEMS, LETTERS, 'K').slots).toBe(0);
+        // Counted from A nothing is held yet, so the garlic credit is not taken and the carp counts
+        // with the pass: the peak stays 2.
+        expect(slotNeed(arrival(), QUEST_ITEMS, LETTERS, 'A').slots).toBe(2);
+    });
+    test('a resume into K asks 1 slot for the carp: conservative, since the catch swaps the worm for it in one script step', () => {
+        expect(slotNeed(startOf('K').state as BotWorldState, QUEST_ITEMS, LETTERS, 'K')).toEqual({ slots: 1, peak: 'K', items: ['1 Raw giant carp'] });
     });
     test('without the kit, segment A also needs its four lines', () => {
         expect(slotNeed(arrival({ inventory: h16(false) }), QUEST_ITEMS, LETTERS, 'A').slots).toBe(6);
@@ -213,8 +218,14 @@ describe('done, from the tab, the journal and the inventory', () => {
 });
 
 describe('resume from each segment start', () => {
-    // B starts at the same tile and stage as A, so a fresh start is A; A is a no-op once the kit is held.
-    for (const l of LETTERS.filter(x => x !== 'B')) {
+    // A and B start on the same tile at the same stage; the walk takes B (the latest that can start)
+    // only when the kit is held, and A otherwise.
+    test('a fresh arrival with the kit resumes B (A is a no-op then); without the kit, A', async () => {
+        const walk = async (s: BotWorldState) => (await resolveResume(list, new Observation(s), {})).step;
+        expect(await walk(arrival())).toBe('S20:B-dwarf-pass');
+        expect(await walk(arrival({ inventory: h16(false) }))).toBe('S20:A-kit');
+    });
+    for (const l of LETTERS.filter(x => x !== 'A' && x !== 'B')) {
         test(`the resume walk starts ${l} from its start state`, async () => {
             const o = startOf(l);
             const obs = new Observation(o.state);
