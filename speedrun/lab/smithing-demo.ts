@@ -29,7 +29,7 @@ import { receiveFrom } from '../lib/trade';
 import { waitTicks, waitUntil } from '../lib/wait';
 import { levelForXp } from '../lib/xp';
 import { runSteps } from '../runner/step';
-import { onTutorialIsland } from '../skills/start';
+import { onTutorialIsland } from '../lib/world';
 import { firstAnnouncement, inventoryTable, routePlan, PLAN_DEFAULTS, SCORED_TILE, smithingXp, steps, type AnvilPlanMsg, type InventoryReport } from '../skills/smithing';
 import { arg, labLog, result } from './common';
 

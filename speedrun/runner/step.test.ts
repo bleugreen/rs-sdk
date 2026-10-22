@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { baseState, FakeSdk } from '../lib/fake-sdk';
+import { baseState, FakeSdk, runToggleServer } from '../lib/fake-sdk';
+import { IF_RUN_OFF, IF_RUN_ON, runIsOn } from '../lib/run-mode';
 import { report, TickLog, type TickRow } from '../lib/ticks';
 import { sleep } from '../lib/wait';
 import { BOUNDARY_STEP, resolveStart, runSteps, StepError, type RunnerSession, type Step } from './step';
@@ -219,6 +220,43 @@ describe('runSteps boundaries', () => {
         const ab = boundaries(log.rows).find(r => r.meta?.from === 'a')!;
         expect([ab.ticks, ab.meta?.waits]).toEqual([0, []]);
         expect(ab.meta?.budget).toMatchObject({ sent: 4, free: 1 });
+    });
+});
+
+describe('runSteps and the run toggle', () => {
+    const presses = (sdk: FakeSdk) => sdk.sent.filter(a => a.method === 'sendClickComponent').map(a => a.args[0]);
+
+    test('without an opt-out nothing is pressed: login already turned run on', async () => {
+        const { session, sdk, stop } = fakeSession();
+        sdk.onSend = runToggleServer(sdk);
+        await runSteps(session, [step('a'), step('b')], { log: TickLog.memory('t'), c: { trace: [] }, shouldStop: () => false });
+        stop();
+        expect(presses(sdk)).toEqual([]);
+    });
+
+    test('running: false walks that step: run off before it, on again before the next step', async () => {
+        const { session, sdk, stop } = fakeSession();
+        sdk.onSend = runToggleServer(sdk);
+        const saw: Record<string, boolean | null> = {};
+        const record = (name: string): Partial<Step<C>> => ({ run: async ({ sdk: s }) => { saw[name] = runIsOn(s.getState()); } });
+        const steps = [step('a', record('a')), step('lap', { ...record('lap'), running: false }), step('c', record('c'))];
+        await runSteps(session, steps, { log: TickLog.memory('t'), c: { trace: [] }, shouldStop: () => false });
+        stop();
+        expect(saw).toEqual({ a: true, lap: false, c: true });
+        expect(presses(sdk)).toEqual([IF_RUN_OFF, IF_RUN_ON]);
+    });
+
+    test('an opt-out the server will not take fails that step\'s precondition, before it runs', async () => {
+        const { session, sdk, stop } = fakeSession();
+        sdk.onSend = runToggleServer(sdk, { ignore: Infinity });
+        const log = TickLog.memory('t');
+        const c = { trace: [] as string[] };
+        const err = await runSteps(session, [step('lap', { running: false })], { log, c, shouldStop: () => false }).catch(e => e);
+        stop();
+        expect(err).toBeInstanceOf(StepError);
+        expect((err as StepError).phase).toBe('precondition');
+        expect(c.trace).toEqual([]);
+        expect(log.rows.some(r => r.step === 'lap:precondition' && !r.ok)).toBe(true);
     });
 });
 

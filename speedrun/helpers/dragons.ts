@@ -29,7 +29,8 @@ import { receiveFrom } from '../lib/trade';
 import { COW_FIELD, DUSTY_KEY, DUSTY_KEY_DOOR, fetchDustyKey, parseOptions, Run, sameSideOf, TAVERLEY_DUNGEON_BOTTOM, TAVERLEY_DUNGEON_LADDER } from './bones';
 import { BANKS, Buyer, type ListLine } from './buyer';
 import { accountMatches, ChatCursor, DEFAULT_COURIERS, toRegExps } from './mule';
-import { crossFromKandarin, crossToKandarin, IF_RUN_ON, type Traveller, westOfTaverley } from '../lib/kandarin';
+import { crossFromKandarin, crossToKandarin, type Traveller, westOfTaverley } from '../lib/kandarin';
+import { IF_RUN_ON } from '../lib/run-mode';
 import type { Role, RoleContext } from './role';
 import { runStandalone } from './role';
 

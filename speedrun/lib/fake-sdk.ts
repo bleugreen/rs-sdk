@@ -32,6 +32,8 @@ export function baseState(overrides: Partial<BotWorldState> = {}): BotWorldState
         modalInterface: -1,
         combatEvents: [],
         prayers: { activePrayers: [], prayerPoints: 0, prayerLevel: 1 },
+        // Run on, as every login leaves the scored account (lib/run-mode.ts).
+        varps: { option_run: 1 },
         ...overrides,
     } as BotWorldState;
 }
@@ -157,6 +159,22 @@ export class FakeSdk {
 
     sendSay(message: string) { return this.chatResult(this.record('sendSay', message), message); }
     sendPrivateMessage(targetName: string, message: string) { return this.chatResult(this.record('sendPrivateMessage', targetName, message), message); }
+}
+
+/**
+ * The server's side of the run toggle (player_controls.rs2): a press of run off
+ * (152) or run on (153) publishes `varps.option_run` on the next tick. The
+ * first `ignore` presses are dropped, as for a busy player (p_finduid fails).
+ * Call the returned handler from `onSend`.
+ */
+export function runToggleServer(sdk: FakeSdk, opts: { ignore?: number } = {}): (a: SentAction) => void {
+    let ignore = opts.ignore ?? 0;
+    return a => {
+        if (a.method !== 'sendClickComponent' || (a.args[0] !== 152 && a.args[0] !== 153)) return;
+        if (ignore-- > 0) return;
+        const on = a.args[0] === 153 ? 1 : 0;
+        setTimeout(() => sdk.tick(s => ({ varps: { ...s.varps, option_run: on } })), 1);
+    };
 }
 
 /** Let queued promise callbacks run. */

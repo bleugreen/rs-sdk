@@ -31,7 +31,8 @@ import { nextTick, waitTicks, waitUntil } from '../lib/wait';
 import { wield } from '../lib/act';
 import { runSteps } from '../runner/step';
 import { ENCHANTS, enchantedRingSpecs, enchantHeld, magicLevel, magicXp, ROUTE_LOADS, steps, type MagicReport } from '../skills/magic';
-import { onTutorialIsland, tutorialSkip } from '../skills/start';
+import { onTutorialIsland } from '../lib/world';
+import { tutorialSkip } from '../skills/start';
 import { arg, botArg, labLog, result } from './common';
 import { cheat, mustTele } from './setup';
 

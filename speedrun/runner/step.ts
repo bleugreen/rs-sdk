@@ -16,10 +16,14 @@
 //   server has already moved on and the next publication is due.
 // Every boundary is logged as a `(boundary)` row, so the ledger's total is
 // the whole run, idle ticks included.
+//
+// Run is on from login (lib/session.ts); a step with `running: false` (lab A/B
+// only) has it turned off at its boundary and back on at the next one's.
 
 import type { BotWorldState } from '../../sdk/types';
 import type { Session } from '../lib/session';
 import { startRunTickMonitor, type TickMonitorSetting } from '../lib/tick-monitor';
+import { ensureRun } from '../lib/run-mode';
 import { measure, tickSpan, type TickLog } from '../lib/ticks';
 import { currentTick, nextTick, tickMs, type StateSource } from '../lib/wait';
 import { meterDispatch, TickWindow, type WindowSnapshot } from './budget';
@@ -57,6 +61,13 @@ export interface Step<C = Record<string, never>> {
     postconditions: Check<C>;
     /** True when the account can log out right after this step and resume at the next. */
     logoutSafe: boolean;
+    /**
+     * false: runSteps turns the run toggle off before this step and back on
+     * before the next step that does not opt out (lib/run-mode.ts). For lab A/B
+     * measurement of a loop walking versus running only; the scored run always
+     * runs, and a step does not set this on run day. Default (absent): on.
+     */
+    running?: boolean;
 
     // Resume protocol (runner/resume.ts). All optional: a step without `done` is
     // transient (travel, banking) and is never a checkpoint.
@@ -193,6 +204,8 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
     const unsubscribe = sdk.onStateUpdate(s => window.observe(s.tick, Date.now()));
     const unmeter = meterDispatch(sdk, window);
     const monitor = startRunTickMonitor(session, opts.log, opts.tickMonitor);
+    // The run mode this call set: undefined until a step opts out (login left run on).
+    let runSet: boolean | undefined;
     try {
         let boundary = openBoundary(session, '(start)');
         for (let i = start; i < steps.length; i++) {
@@ -213,6 +226,17 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
             if (!waited && (!sdk.getState() || window.ageMs(Date.now()) >= tickMs())) {
                 boundary.waits.push('stale');
                 await nextTick(sdk);
+            }
+            const wantRun = step.running !== false;
+            if (!wantRun || runSet === false) {
+                try {
+                    await ensureRun(sdk, wantRun);
+                } catch (e) {
+                    const detail = e instanceof Error ? e.message : String(e);
+                    failRow(opts.log, session, step.name, 'precondition', detail);
+                    throw new StepError(step.name, 'precondition', detail);
+                }
+                runSet = wantRun;
             }
             if (!resuming) {
                 const pre = await check(sdk, step.preconditions, opts.c, boundary, 'pre-recheck');

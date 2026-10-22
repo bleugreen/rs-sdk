@@ -24,7 +24,7 @@ import { reconnectAfterOutage } from '../lib/reconnect';
 import { closeSession, login, type LoginResult, logoutClean, openSession, ROOT } from '../lib/session';
 import { pageInGame } from '../lib/tab';
 import { tele, VARROCK_WEST_BANK } from './setup';
-import { onTutorialIsland } from '../skills/start';
+import { onTutorialIsland } from '../lib/world';
 import { waitTicks } from '../lib/wait';
 
 const botArg = process.argv[2];

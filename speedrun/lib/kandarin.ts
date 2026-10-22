@@ -16,6 +16,7 @@
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
+import { ensureRunOn } from './run-mode';
 
 export interface Pt {
     x: number;
@@ -35,7 +36,6 @@ export interface Traveller {
 
 /** Player controls tab buttons (server/content/pack/interface.pack, player_controls.rs2). */
 export const IF_AUTO_RETALIATE_OFF = 151; // controls:com_3
-export const IF_RUN_ON = 153; // controls:com_5
 
 /** Hitpoints level to have before the first crossing (see the header). */
 export const CROSSING_HITPOINTS = 30;
@@ -77,8 +77,8 @@ export async function crossingSettings(sdk: BotSDK, log: Log): Promise<void> {
         }
     }
     // Run energy is infinite on the demo (NODE_INFINITE_RUN); the toggle makes
-    // every step a run step instead of relying on per-click run.
-    await sdk.sendClickComponent(IF_RUN_ON);
+    // every step a run step instead of relying on per-click run. Best effort (warned).
+    await ensureRunOn(sdk);
 }
 
 /** Walk with the SDK pathfinder, retrying from wherever the last attempt stopped. Throws on death or after 6 tries. */

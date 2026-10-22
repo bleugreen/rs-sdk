@@ -457,6 +457,54 @@ research-script boundary and retained quest-specific code.
   re-navigates the one scored tab over CDP (`CDP_URL`, `tab.ts`) to a one-time
   login token URL; see "Logging the browser tab in" below.
 
+### The run toggle (`lib/run-mode.ts`)
+
+The account's run toggle (`option_run`, varp 173, published as
+`state.varps.option_run`) is not saved (`player_controls.varp` has no
+`scope=perm`), so every login starts with it off. `ensureRun(sdk, on)` /
+`ensureRunOn(sdk)` is the one way to set it. It reads the published varp and
+presses the controls button (152 off, 153 on) only when the varp disagrees,
+because both buttons run `if_close` and `p_clearpendingaction`. It confirms the
+change within 4 ticks and presses once more if needed. The server ignores the
+button while the player is busy (`p_finduid`) and turns run off below 1% energy.
+On Tutorial Island the controls tab is hidden and the server drops the click, so
+there it returns `unavailable: 'tutorial-island'` without pressing.
+
+When the toggle still disagrees after both presses, or the client does not
+publish the varp, the two differ. `ensureRunOn` is best effort: it returns
+`{on, presses, reason}`, warns, and lets the caller continue, because the
+measurement below shows a client-routed approach runs either way, so stopping
+the scored run over the toggle would cost far more than it saves. `ensureRun`
+throws a `RunToggleError` with the same reason, for callers whose result depends
+on the toggle: the lab opt-out below and A/B scripts. Both throw when the player
+is not in the world, which is a caller bug.
+
+It is called wherever the account comes back into the world: at the end of
+`login` (so `relog`, the lab quest fixtures' relog, the watchdog's
+logout-then-login and `reconnectAfterOutage` all turn run on, and
+`LoginResult.run` reports it), at the end of `openSession`, at the start of
+every `runResumable` walk (which also covers a watchdog relaunch or a reloaded
+page, neither of which goes through `login`), by S00 once it lands in
+Lumbridge, and by `kandarin.crossingSettings`.
+
+What the toggle changes is narrower than it looks. Both clients send the
+op-click route (`MOVE_OPCLICK`) with the ctrl-run flag (lite
+`movement.ts` `tryMoveTo`, browser `Client.ts` tryMove), and the engine runs
+while that `tempRun` is set. So a client-routed approach to a loc, ground item
+or obstacle runs with the toggle off too:
+
+| Measurement (`lab/measure-run-approach.ts`, lite client, bgsrv-ub, 300 ms, 3 reps each) | Ticks | Tiles |
+|---|---|---|
+| Op-click on a dead tree 15 tiles away (Chebyshev), toggle **off** | 7 | 14 |
+| Same, toggle **on** | 7 | 14 |
+
+From the engine source (not measured), the toggle decides the pace only where
+the engine moves the player without a fresh ctrl-run route. One case is its own
+re-path to an NPC or player target (`Player.ts` `pathToPathingTarget`) after
+`tempRun` has cleared, which happens on any tick without a step. The other is
+content `p_walk`. With `clientRoutefinder` on, the engine never paths to a loc
+by itself.
+
 ### Logging the browser tab in
 
 The account's password never appears in a URL or a process argument. A
@@ -845,6 +893,12 @@ run, so `bot.*` porcelain is counted along with raw sends. A state older than
 one tick of wall time (`tickMs()`) is waited past before a check, since the
 server has already moved on and its publication is due.
 
+A step with `running: false` has the run toggle turned off at its boundary and
+back on at the boundary of the next step that does not opt out. The flag cannot
+be called `run`, which is the step's entry point. It exists for lab A/B
+measurement of a loop walking versus running only, and no run-day step sets it.
+Steps without it cost nothing: login already left run on.
+
 Every boundary is a ledger row named `(boundary)`, with `meta: {from, to,
 index, waits, budget}`; `waits` names why it took a tick (`post-recheck`,
 `budget`, `stale`, `pre-recheck`). The first runs from the `runSteps` call to
@@ -880,6 +934,8 @@ from the game state on every start, never from its own memory:
 - `runSteps` gained `startMode: 'resume'` (enter the first step by `resume`,
   skipping its start preconditions) and `signal` (checked at every boundary).
   Ledger rows: `(resume)` and `(drop)`.
+- Every walk starts with `ensureRunOn` (see "The run toggle"), and the
+  `(resume)` row's `meta.run` records the presses it took.
 
 Measured on the local engine (`lab/measure-restart.ts`, RESILIENCE.md section
 6): after an engine SIGKILL the walk resumed at the first rolled-back step in
@@ -907,6 +963,8 @@ must offer "Yes please.", and the question page's text must ask about skipping w
 client published it. If the skip is not offered, the step fails rather than starting the
 tutorial. Precondition: on Tutorial Island. Postcondition: on (3222,3222) with the starter kit
 (side tabs are not in `BotWorldState`; the same script opens them). `done`: off the island.
+Once landed it turns run on (`ensureRunOn`). No login can do that on the island, where the
+controls tab is hidden.
 
 | Measurement (`rehearse.ts` on the lab, fresh bots, lite client, bgsrv-mac, 300 ms) | Ticks |
 |---|---|
