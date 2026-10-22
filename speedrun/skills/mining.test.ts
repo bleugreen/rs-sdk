@@ -434,25 +434,35 @@ describe('sites', () => {
         expect(at([])).toBe(3);
     });
     test('fallback: none, auto, or named sites', () => {
-        expect(m.parseFallback(undefined)).toEqual({ sites: [], safeOnly: true });
+        expect(m.parseFallback(undefined)).toEqual({ sites: [], acceptHazards: false });
         expect(m.parseFallback('none').sites).toEqual([]);
-        expect(m.parseFallback('auto')).toEqual({ sites: ['ardougneNorth', 'rellekka', 'wilderness31'], safeOnly: true });
-        expect(m.parseFallback('ardougneNorth,rellekka')).toEqual({ sites: ['ardougneNorth', 'rellekka'], safeOnly: false });
+        expect(m.parseFallback('auto')).toEqual({ sites: ['ardougneNorth', 'rellekka', 'wilderness31'], acceptHazards: false });
+        expect(m.parseFallback('ardougneNorth,rellekka')).toEqual({ sites: ['ardougneNorth', 'rellekka'], acceptHazards: false });
+        expect(m.parseFallback(['rellekka'], true)).toEqual({ sites: ['rellekka'], acceptHazards: true });
+        expect(m.steps({ fallback: 'rellekka', acceptHazards: 'true' })).toBeDefined();
         expect(() => m.parseFallback('zoo')).toThrow();
         expect(() => m.parseFallback('varrock')).toThrow();
         expect(() => m.steps({ fallback: 'nowhere' })).toThrow();
     });
-    test('next site: allowed by combat under auto, not recently contested first, then the nearest', () => {
+    test('next site: allowed by combat unless acceptHazards, not recently contested first, then the nearest', () => {
         const auto = m.parseFallback('auto');
         const none = new Map<string, number>();
         expect(m.nextSite('zoo', [2604, 3235], 43, auto, none, 1000)).toBe('ardougneNorth');
         expect(m.nextSite('zoo', [2604, 3235], 42, auto, none, 1000)).toBeUndefined();
         expect(m.nextSite('zoo', [2604, 3235], 126, auto, none, 1000)).toBe('ardougneNorth');
         expect(m.nextSite('ardougneNorth', [2713, 3330], 43, auto, new Map([['zoo', 900]]), 1000)).toBe('zoo');
+        // a named list is held to safeFrom too (rs/158): rellekka (129) is skipped at 43, all of it at 3
         const named = m.parseFallback('ardougneNorth,rellekka');
-        expect(m.nextSite('zoo', [2604, 3235], 3, named, none, 1000)).toBe('ardougneNorth');
-        expect(m.nextSite('ardougneNorth', [2713, 3330], 3, named, new Map([['zoo', 900]]), 1000)).toBe('rellekka');
-        expect(m.nextSite('ardougneNorth', [2713, 3330], 3, named, new Map([['zoo', 900]]), 900 + m.CONTEST_WINDOW)).toBe('zoo');
+        expect(m.nextSite('zoo', [2604, 3235], 43, named, none, 1000)).toBe('ardougneNorth');
+        expect(m.nextSite('ardougneNorth', [2713, 3330], 43, named, new Map([['zoo', 900]]), 1000)).toBe('zoo');
+        expect(m.nextSite('zoo', [2604, 3235], 3, named, none, 1000)).toBeUndefined();
+        expect(m.nextSite('zoo', [2604, 3235], 42, m.parseFallback('rellekka'), none, 1000)).toBeUndefined();
+        // acceptHazards: every listed site, hazards and all
+        const hazards = m.parseFallback('ardougneNorth,rellekka', true);
+        expect(m.nextSite('zoo', [2604, 3235], 3, hazards, none, 1000)).toBe('ardougneNorth');
+        expect(m.nextSite('ardougneNorth', [2713, 3330], 3, hazards, new Map([['zoo', 900]]), 1000)).toBe('rellekka');
+        expect(m.nextSite('ardougneNorth', [2713, 3330], 3, hazards, new Map([['zoo', 900]]), 900 + m.CONTEST_WINDOW)).toBe('zoo');
+        expect(m.nextSite('zoo', [2604, 3235], 42, m.parseFallback('auto', true), none, 1000)).toBe('ardougneNorth');
     });
 });
 
@@ -524,7 +534,7 @@ describe('contested iron bands', () => {
 
     test('two retries in place, then the third contest event leaves for the nearest allowed site', async () => {
         gatedCalls.length = 0;
-        const sdk = new MiningSdk(atSite('zoo', 70));
+        const sdk = new MiningSdk(atSite('zoo', 70, SCORED));
         gatedImpl = async (s, params, opts) => {
             if (Math.abs(s.state!.player!.worldX - 2604) <= m.SITE_RADIUS) {
                 passerBy(s, 'zoo');
@@ -550,7 +560,7 @@ describe('contested iron bands', () => {
 
     test('after a switch the ores the contested lap left are dropped before the new circuit starts', async () => {
         gatedCalls.length = 0;
-        const sdk = new DropTickSdk(atSite('zoo', 70));
+        const sdk = new DropTickSdk(atSite('zoo', 70, SCORED));
         let zooRuns = 0;
         let packAtStart: string[] = [];
         gatedImpl = async (s, params) => {
@@ -598,9 +608,48 @@ describe('contested iron bands', () => {
         expect(walks).toEqual(['ardougneNorth']);
     });
 
+    test("rs/158's ruling mid-band: at 43 a named list's unsafe site is never entered, unless acceptHazards", async () => {
+        // contested at the zoo, then at ardougneNorth: the second switch may go to rellekka (129) or the zoo
+        const run = async (o: Record<string, unknown>) => {
+            const sdk = new MiningSdk(atSite('zoo', 70, SCORED));
+            const walks: string[] = [];
+            gatedImpl = async (s, params) => {
+                if (walks.length < 2) return (passerBy(s, walks.length ? 'ardougneNorth' : 'zoo'), { segments: [], ended: 'aborted' });
+                s.tick({ skills: xpSkills(params.untilLevel as number, 9e6, SCORED) });
+                return { segments: [], ended: 'done' };
+            };
+            const ctx = ctxWithWalk(sdk, walks);
+            await band({ fallback: ['ardougneNorth', 'rellekka'], ...o }).run(ctx);
+            return { walks, switches: (bandRow(ctx).meta as Record<string, any>).contest.switches.map((w: { to: string }) => w.to) };
+        };
+        expect(await run({})).toEqual({ walks: ['ardougneNorth', 'zoo'], switches: ['ardougneNorth', 'zoo'] });
+        expect(await run({ acceptHazards: true })).toEqual({ walks: ['ardougneNorth', 'rellekka'], switches: ['ardougneNorth', 'rellekka'] });
+    });
+
+    test('at combat 42 with no safe site, a contest makes no switch and the band fails cleanly; acceptHazards switches', async () => {
+        const at42 = SCORED.map(([n, l]) => [n, n === 'Prayer' ? 93 : l] as [string, number]);
+        for (const fallback of ['auto', ['ardougneNorth', 'rellekka']]) {
+            const refused = new MiningSdk(atSite('zoo', 70, at42));
+            gatedImpl = async s => (passerBy(s, 'zoo'), { segments: [], ended: 'aborted' });
+            const none: string[] = [];
+            await expect(band({ fallback }).run(ctxWithWalk(refused, none))).rejects.toThrow(/contested at zoo .* no site left for combat 42/);
+            expect(none).toEqual([]);
+
+            const sdk = new MiningSdk(atSite('zoo', 70, at42));
+            gatedImpl = async (s, params) => {
+                if (s.state!.player!.worldX < 2650) return (passerBy(s, 'zoo'), { segments: [], ended: 'aborted' });
+                s.tick({ skills: xpSkills(params.untilLevel as number, 9e6, at42) });
+                return { segments: [], ended: 'done' };
+            };
+            const walks: string[] = [];
+            await band({ fallback, acceptHazards: true }).run(ctxWithWalk(sdk, walks));
+            expect(walks).toEqual(['ardougneNorth']);
+        }
+    });
+
     test('a lap that is never whole: each wait of D+10 is an event, the third leaves', async () => {
         gatedCalls.length = 0;
-        const zoo = atSite('zoo', 70);
+        const zoo = atSite('zoo', 70, SCORED);
         const first = lapOf('zoo')[0]!.rock;
         const sdk = new MiningSdk({ ...zoo, nearbyLocs: zoo.nearbyLocs.map(l => (l.x === first[0] && l.z === first[1] ? rock(first[0], first[1], false) : l)) as never });
         gatedImpl = async (s, params) => (s.tick({ skills: xpSkills(params.untilLevel as number, 9e6) }), { segments: [], ended: 'done' });
