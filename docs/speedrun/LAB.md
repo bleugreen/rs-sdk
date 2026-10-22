@@ -70,7 +70,7 @@ account leaves the island the way the run does, through S00's `tutorialSkip`
 (`speedrun/skills/start.ts`, which opens every tab), before anything stages it:
 `speedrun/lab/setup.ts` `leaveTutorial(session)` runs it when the player is still on the island,
 and `tele()`/`mustTele()` refuse to teleport off the island at all. A raw `::tele` bypasses that
-guard, so stage through `setup.ts`. STEP-MANIFEST.md's general rules carry the same staging rule (rs/284).
+guard, so stage through `setup.ts`.
 
 ### Which client a number was taken on
 
