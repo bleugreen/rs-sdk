@@ -101,16 +101,10 @@ describe('travelTo from underground', () => {
 
     test('from the north mine to Falador east bank: the Ice Mountain ladder, then the walk', async () => {
         const w = world(NURMOF, 99);
-        (w.fake.onSend as unknown) = ((prev => (a, sdk) => {
-            prev(a, sdk);
-            // The Ice Mountain ladder climbs like the cellar's (coord - 6400).
-            if (a.method === 'sendInteractLoc' && a.args[0] === ICE_LADDER.at.x && a.args[1] === ICE_LADDER.at.z) {
-                sdk.push(s => ({ player: { ...s.player!, worldZ: s.player!.worldZ - 6400 } }));
-            }
-        }) as (p: typeof w.fake.onSend) => typeof w.fake.onSend)(w.fake.onSend);
         const r = await travelTo(w.bot, w.sdk, FALADOR_EAST_BANK);
         expect(r).toEqual({ ok: true, paid: 0 });
         expect(w.calls.map(c => c.to)).toEqual([[ICE_LADDER.stand.x, ICE_LADDER.stand.z], [FALADOR_EAST_BANK.x, FALADOR_EAST_BANK.z]]);
+        expect(w.climbs).toEqual([ICE_LADDER.at]);
     });
 
     test('an unknown dungeon fails with the reason, before any walk', async () => {
