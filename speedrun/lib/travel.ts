@@ -782,7 +782,6 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
     for (;;) {
         const s = sdk.getState();
         if (!s) return { ok: false, reason: 'no state' };
-        if (sceneBuilt(s)) lastBuilt = s;
         const halt = opts.stopIf?.(s);
         if (halt) {
             const here = pos(s);
