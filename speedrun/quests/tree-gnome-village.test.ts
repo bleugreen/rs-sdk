@@ -270,8 +270,9 @@ describe('slot ledger (rs/158): the staff of water and the gnome amulet leave at
         const s = kitted({}, false);
         s.inventory.push(item('Orb of protection', 1, ORBS));
         expect(slotNeed(s, QUEST_ITEMS, LETTERS, 'H')).toMatchObject({ slots: 1, peak: 'H' });
-        // From K on the orbs are already held: only the gnome amulet at N needs a slot.
-        expect(slotNeed(s, QUEST_ITEMS, LETTERS, 'K')).toMatchObject({ slots: 1, peak: 'N' });
+        // From K on the orbs are already held, and the slot Bolren frees by taking them at M is the
+        // gnome amulet's at N: nothing more is needed.
+        expect(slotNeed(s, QUEST_ITEMS, LETTERS, 'K')).toMatchObject({ slots: 0 });
     });
 });
 
