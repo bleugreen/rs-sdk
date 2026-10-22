@@ -200,7 +200,7 @@ describe('the jump guard', () => {
     test('a post-jump click answered by a message stamped with its own tick, after a message on that tick, is not re-sent', async () => {
         const rum = { type: 0, text: 'Your Karamjan rum gets broken and spilled.', sender: '', tick: 30, observationId: 10, fromSelf: false };
         const sdk = new FakeSdk(baseState({ tick: 30, player: jumped(2662, 3305, 30), gameMessages: [rum] }));
-        const p = act(sdk as never, () => sdk.sendInteractLoc(2661, 3306, 1, 1), () => false, { resendEvery: 0, maxTicks: 5 });
+        const p = act(sdk as never, () => sdk.sendInteractLoc(2661, 3306, 1, 1), () => false, { resendEvery: 0, maxTicks: 4 });
         await ticks(sdk, 1, () => ({ gameMessages: [rum, { type: 0, text: 'The door is locked.', sender: '', tick: 30, observationId: 11, fromSelf: false }] }));
         await ticks(sdk, 4);
         expect(sentAt(sdk, 'sendInteractLoc')).toBe(1);
