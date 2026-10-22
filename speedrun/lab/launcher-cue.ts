@@ -9,8 +9,8 @@
 //   lc05 relay   loginOn S21/altar                S21's final stop comes first: it never logs in
 //   lc06 direct  loginOn S99/ring, 0.25 min      no cue: its wait expires, it never logs in
 // helpersReady holds while lc04-lc06 wait logged out (ready-or-waiting). Before the launch an S06/altar
-// final stop is left in cue.json, as an earlier attempt would: it must not keep lc02/lc03 out. Prints RESULT lines (and FAIL lines for any check that does not hold). Through
-// lab.sh, which starts the engine (its own lite runner and gateway are not used):
+// final stop is left in cue.json, as an earlier attempt would: it must not keep lc02/lc03 out.
+// Prints RESULT lines (and FAIL lines for any check that does not hold). Through lab.sh, which starts the engine (its own lite runner and gateway are not used):
 //
 //   LAB_RUNNERS=0 WEB_PORT=9496 WEB_MANAGEMENT_PORT=9497 HISCORES_WEB_PORT=9498 NODE_PORT=44196 AGENT_PORT=8496 \
 //     speedrun/lab/lab.sh cuelab speedrun/lab/launcher-cue.ts
