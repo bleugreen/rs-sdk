@@ -55,6 +55,20 @@ export interface ConverseOptions {
      */
     interrupts?: readonly Interrupt[];
     /**
+     * What the call waits for. 'dialogue' (the default): a conversation. Pages
+     * answered through `interrupts` never count as it opening, so without one
+     * the call waits out the whole `openTicks`. 'interrupt': an `interrupts`
+     * page is the target, as when a quest completion's reward raises a level.
+     * Once one has been answered and the chat has stayed closed for `idle`
+     * ticks (and `until` holds), the call is over with `opened` false and
+     * `interrupts` above 0, with no `openTicks` wait. A conversation that opens
+     * before then is still answered to its end. Keep the default where a real
+     * conversation is due after the page (a talk click whose NPC dialogue opens
+     * behind a queued level-up): with 'interrupt' the call can end between them.
+     * Requires `interrupts`.
+     */
+    expect?: 'dialogue' | 'interrupt';
+    /**
      * The conversation's known shape in CONVENTIONS.md notation, as recorded in
      * the quest docs: `Nc` a run of N pure continue pages, `opt` (or `N opt`) an
      * option click, `state` a continue page after which the server changes
@@ -136,11 +150,11 @@ export interface ConverseResult {
     levelUps: number;
     /** Tick of the call. */
     startTick: number;
-    /** Tick the first page was seen, -1 if none. */
+    /** Tick the first page was seen (with `expect: 'interrupt'`, an interrupt page counts), -1 if none. */
     firstTick: number;
-    /** First tick the dialogue was seen closed for good (or `until` first held after that), -1 if it never opened. */
+    /** First tick the dialogue was seen closed for good (or `until` first held after that), -1 if it never opened (and, with `expect: 'interrupt'`, no interrupt page was answered). */
     endTick: number;
-    /** endTick - startTick, or 0 when nothing opened. */
+    /** endTick - startTick, or 0 when endTick is -1. */
     ticks: number;
     /** `[tick] page: ...`, `[tick] > option`, `[tick] level-up`, `[tick] modal N closed`. */
     transcript: string[];
@@ -215,6 +229,8 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
         if (opts.log) console.log(`  [dlg ${tick}] ${line}`);
     };
     if (opts.burst && opts.shape === undefined) return Promise.reject(new Error('converse: burst needs the conversation\'s shape'));
+    const interruptTarget = opts.expect === 'interrupt';
+    if (interruptTarget && !opts.interrupts?.length) return Promise.reject(new Error('converse: expect \'interrupt\' needs interrupts'));
     let plan: ShapePart[] | null;
     try {
         plan = opts.shape !== undefined ? parseShape(opts.shape) : null;
@@ -244,7 +260,7 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
         following = false;
     };
     /** Before answering a page: does the shape expect it? */
-    const expect = (tick: number, kind: 'continue' | 'opt') => {
+    const checkShape = (tick: number, kind: 'continue' | 'opt') => {
         const p = expected();
         if (!following) return;
         if (kind === 'opt' ? p?.kind !== 'opt' : p?.kind !== 'continue' && p?.kind !== 'state') diverge(tick, `${kind === 'opt' ? 'a choice' : 'a continue page'} came`);
@@ -289,7 +305,7 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
                 shape.seen = dialogueRuns(res.transcript);
                 shape.matches = shape.seen === shape.expected;
             }
-            if (res.opened) {
+            if (res.opened || (interruptTarget && res.interrupts)) {
                 res.endTick = closedSince >= 0 ? Math.max(closedSince, untilAt) : (sdk.getState()?.tick ?? t0);
                 res.ticks = res.endTick - t0;
             }
@@ -322,7 +338,7 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
                     return;
                 }
                 if (classifyPage(d) === 'continue') {
-                    expect(s.tick, 'continue');
+                    checkShape(s.tick, 'continue');
                     const p = expected();
                     const k = p?.kind === 'continue' ? p.n - cursor.used : 0;
                     if (bursting && k >= 2 && shape) {
@@ -371,7 +387,7 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
                     } else last = null;
                     return;
                 }
-                expect(s.tick, 'opt');
+                checkShape(s.tick, 'opt');
                 const idx = queue.findIndex(p => findOption(d, p) !== undefined);
                 let pattern: OptionPattern | undefined = idx >= 0 ? queue[idx] : undefined;
                 if (pattern === undefined) {
@@ -417,8 +433,13 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
                 if (key !== interruptKey) {
                     if (!res.opened) {
                         res.opened = true;
-                        res.firstTick = s.tick;
+                        if (res.firstTick < 0) res.firstTick = s.tick;
                     }
+                    closedSince = -1;
+                    untilAt = -1;
+                } else if (interruptTarget) {
+                    // A target page is showing: the idle wait starts again once it closes.
+                    if (res.firstTick < 0) res.firstTick = s.tick;
                     closedSince = -1;
                     untilAt = -1;
                 }
@@ -433,8 +454,9 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
                 void sdk.sendCloseModal();
             }
             if (!s.modalOpen) lastModal = -1;
-            if (!res.opened) {
-                if (clock.elapsed > openTicks) finish(true, 'no dialogue opened');
+            if (!res.opened && !(interruptTarget && res.interrupts)) {
+                // With an interrupt as the target, not while a dismissal is in flight: it may be the target's.
+                if (clock.elapsed > openTicks && !(interruptTarget && busy)) finish(true, 'no dialogue opened');
                 return;
             }
             if (closedSince < 0) closedSince = s.tick;
