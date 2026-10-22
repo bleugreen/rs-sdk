@@ -301,9 +301,12 @@ async function main() {
         for (let attempt = 0; attempt < 3; attempt++) {
             const idx = client.findNpcIndexByExactName('Banker');
             if (idx === undefined) throw new Error('no Banker in view');
-            client.interactNpc(idx, 3);
+            const r = client.interactNpc(idx, 3);
             client.flush();
+            const p = client.getPlayerPosition();
+            console.log(`bank: Banker #${idx}, op 3 -> ${JSON.stringify(r)}, player at ${p?.worldX},${p?.worldZ}, modal ${client.mainModalId}`);
             if (await waitUntil(() => client.isBankOpen(), 15)) return true;
+            console.log(`bank: not open after 15 ticks, modal ${client.mainModalId}`);
         }
         return false;
     };
