@@ -153,7 +153,10 @@ two that remain. The content audit is rs/499 (Q1b).
   later in `fb26497163` with a regression test
   (`server/engine/test/miscellania-coffers.test.ts`). The bug was in the code for
   about two days.
-- **What the demo ran.** No public signal shows it. `/api/version` returns only
+- **What the demo ran.** Since answered in `demo-revision.md` (rs/515): post-fix
+  builds have been live since at least 2026-10-21 03:30Z, and the date of the
+  first post-fix deploy is still open. The rest of this bullet is the state
+  before that work. No public signal shows it. `/api/version` returns only
   the game revision (`web/pages/api.ts`, `handleVersionApi`), and no workflow
   deploys to Fly (`.github/workflows` holds ci, demo-latency-probe and
   upstream-watch), so deploys are manual and the deployed commit is not recorded.
