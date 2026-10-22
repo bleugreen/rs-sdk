@@ -1,0 +1,11 @@
+vantage: edge iad, app iad, mesh hop none, TCP connect p50 2.3 ms (20 samples), 1597 online
+probe (direct) from rs-ashburn-rehearsal at 2026-10-21T23:01:27.310Z, server rs-sdk-demo.fly.dev
+latency in ticks (label of the step - label sent): 1:60  (60 trials, 0 lost, 186 ticks)
+on time 60/60; dominant 1 ticks (100%, lead 0); consecutive trials agree 100%
+sequence: 111111111111111111111111111111111111111111111111111111111111
+tick arrival interval ms over 60.3 s: p10 192.5 p50 327.7 p90 436.1 max 593.4; 67 over 350, 1 under 150, 0 catch-ups (0/min)
+tick interval histogram (50 ms buckets): 100:1 150:21 200:10 250:33 300:53 350:35 400:16 450:12 500:2 550:2
+send resolve ms: p50 0 p90 10 max 12
+gate (direct): (a) on time 60/60, pass 60, floor 58 pass; (b) tick p90 436.1 ms <= 400 report, over; (c) catch-ups 0/min <= 2 pass; (d) loop p10 >= 50 not measured: pass -> start the in-page loops
+logout (direct): out of the world: server sent LOGOUT 0 tick(s) after the first click (1 click, 263 ms)
+wrote /home/ubuntu/rs-run/pair-20261021T230000Z.json

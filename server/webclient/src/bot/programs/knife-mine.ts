@@ -33,11 +33,23 @@
 // plain. On the `stay2` lap that is one bone per 15 ticks. A move takes no bone (a
 // delayed player's walk is dropped: +2 ticks, the booth's price), and the plain fallback
 // has no stay with an idle tick, so `bury` is inert under `starter: 'none'`.
+//
+// Below 63 an iron roll can fail (opt-in `success`, closed loop only). A failed roll
+// leaves the rock live and the interaction running, and the knife's clock write
+// (cut_logs.rs2: only when the clock has expired, which it has on the roll's next
+// tick) still lands the next rock's roll 3 ticks later; so a miss on the predicted
+// label, with the click's "You swing your pick" message seen on the label the swing
+// was due, is planned from exactly like a success: one roll lost, the rock not
+// depleted. A miss without that message (a lost or late click, a lost starter,
+// which swings a tick later) stays a slip, and so does a run of misses the success
+// chance makes unlikely (under 1%). `rate` is the pickaxe's mining_rate
+// (pickaxes.obj), which sets every roll that does not come from a knife starter:
+// a click on an expired clock rolls `rate` ticks after it lands.
 
 import type { BotWorldState } from '../types.js';
 import { SHAFTS_BUTTON } from './knife-cycle.js';
 import type { ProgramContext, ProgramParams, TickProgram } from './types.js';
-import { baseLevel, bonesParam, buryable, buryBone, GapCounter, invItem, num, oneOf, skillXp, tile } from './util.js';
+import { baseLevel, bonesParam, buryable, buryBone, FreshMessages, GapCounter, invItem, num, oneOf, skillXp, statRandom, tile } from './util.js';
 
 type P = [number, number];
 export interface MineStep {
@@ -77,9 +89,42 @@ export function parseMineSteps(value: unknown): MineStep[] {
     });
 }
 
+/** Iron's stat_random range (mine.dbrow rock_successchance). */
+export const IRON_SUCCESS: [number, number] = [96, 350];
+const SWING = /you swing your pick/i;
+
+/** `success`: 'iron' or a [lo, hi] stat_random range; absent means every roll succeeds. */
+export function parseSuccess(value: unknown): [number, number] | null {
+    if (value === undefined || value === null) return null;
+    if (value === 'iron') return IRON_SUCCESS;
+    if (Array.isArray(value) && value.length === 2 && value.every(v => Number.isInteger(v) && v >= 0)) return [value[0], value[1]];
+    throw new Error("success must be 'iron' or [lo, hi]");
+}
+
+/**
+ * `rate`: the pickaxe's mining_rate, a number or [minLevel, rate] pairs (the best
+ * pickaxe held at each Mining level); default 2 (rune).
+ */
+export function parseRate(value: unknown): (level: number) => number {
+    if (value === undefined || value === null) return () => 2;
+    if (typeof value === 'number' && Number.isInteger(value) && value >= 1) return () => value;
+    if (Array.isArray(value) && value.length && value.every(p => Array.isArray(p) && p.length === 2 && p.every(n => Number.isInteger(n) && n >= 0) && p[1] >= 1)) {
+        const pairs = [...(value as [number, number][])].sort((a, b) => b[0] - a[0]);
+        return level => (pairs.find(([min]) => level >= min) ?? pairs[pairs.length - 1]!)[1];
+    }
+    throw new Error('rate must be a mining_rate or [minLevel, rate] pairs');
+}
+
+/** Consecutive misses that `p` explains more than 1% of the time (at least 1). */
+export function failRunLimit(p: number): number {
+    if (p >= 1) return 0;
+    if (p <= 0) return Infinity;
+    return Math.max(1, Math.ceil(Math.log(0.01) / Math.log(1 - p)) - 1);
+}
+
 type Act = [string, (ctx: ProgramContext) => void];
 
-createKnifeMine.params = ['steps', 'respawn', 'starter', 'ores', 'maxTicks', 'untilLevel', 'xpLag', 'lead', 'bury'] as const;
+createKnifeMine.params = ['steps', 'respawn', 'starter', 'ores', 'maxTicks', 'untilLevel', 'xpLag', 'lead', 'bury', 'success', 'rate'] as const;
 export function createKnifeMine(params: ProgramParams): TickProgram {
     const STEPS = parseMineSteps(params.steps);
     const D = num(params.respawn, 13, 'respawn');
@@ -90,9 +135,12 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
     if (ORES === Infinity && maxTicks === Infinity && !untilLevel) throw new Error('give ores, untilLevel or maxTicks');
     const XP_LAG = num(params.xpLag, 0, 'xpLag');
     const LEAD = num(params.lead, 0, 'lead');
+    const SUCCESS = parseSuccess(params.success);
+    const rateAt = parseRate(params.rate);
     const manip = starter === 'knife';
     // A lead needs the open loop (it sends before the roll is visible).
     const closedLoop = !manip || LEAD === 0;
+    let N = 2; // the pickaxe's rate at the current level
     const bonesRe = bonesParam(params.bury);
     if (bonesRe && !closedLoop) throw new Error('bury needs lead 0: a bury that lands before the roll stops the swing');
 
@@ -128,6 +176,7 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
             ctx.log('no knife or logs for the starter');
             return;
         }
+        ctx.starter();
         ctx.send({ type: 'useItemOnItem', sourceSlot: knife.slot, targetSlot: logs.slot }, 'knife on logs');
         ctx.send({ type: 'clickComponent', componentId: SHAFTS_BUTTON }, `button ${SHAFTS_BUTTON}`);
     };
@@ -179,8 +228,19 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
     let lastXp = 0;
     let onTime = 0;
     let startersSent = 0;
+    // failed rolls (`success`)
+    const fresh = new FreshMessages();
+    let swungAt = -1; // the last label that showed a fresh swing message
+    let failed = 0;
+    let failedLate = 0;
+    let failRun = 0;
+    let failedRoll = false;
+    let pending: { roll: number; rock: P; prev: number | undefined; swing: number } | null = null;
+    let lastFail: { roll: number; rock: P } | null = null;
 
-    const predict = (roll: number, rock: P) => {
+    /** `swing`: the label the click's swing message is due on (the roll's own label when they coincide). */
+    const predict = (roll: number, rock: P, swing: number) => {
+        pending = { roll, rock, prev: lastRoll.get(key(rock)), swing };
         lastRoll.set(key(rock), roll);
         predicted.push(roll);
         predictedSet.add(roll);
@@ -197,35 +257,46 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
         const clickLand = Math.max(move ? R + 2 : R + 1, avail);
         let roll: number;
         let kind: string;
+        // A click landing on an expired clock swings on the next tick and rolls N after landing.
+        let swing: number;
         if (k === 1) {
-            roll = t + 3 + LEAD;
+            roll = t + 1 + N + LEAD;
+            swing = t + 2 + LEAD;
             kind = 'stay';
             add(t + LEAD, `click ${key(rock)}`, click(rock));
         } else {
             let trick: { st: P; u: number } | null = null;
+            const landed = Math.max(clickLand, R + 1);
             if (bonesRe && manip && !move && clickLand <= R + 3 && boneFits(ctx)) {
+                // the click lands on R+3 on the knife's due clock and swings as it lands
                 roll = R + 3;
+                swing = R + 3;
                 kind = 'stay+bury';
-            } else if (!move && clickLand === R + 1) {
-                roll = R + 3;
+            } else if (!move && clickLand === R + 1 && (!manip || N <= 2)) {
+                roll = R + 1 + N;
+                swing = R + 2;
                 kind = 'stay';
             } else if (manip && clickLand <= R + 3) {
+                // the starter has set the clock to R+3, so the click swings as it lands
                 roll = R + 3;
+                swing = landed;
                 kind = 'starter';
             } else {
-                const plainRoll = clickLand + 2;
+                const plainRoll = clickLand + N;
                 if (!manip && move && tiles <= 2) {
                     for (const st of rocks) {
                         if (same(st, rock) || !beside(pos, st)) continue;
                         const u = Math.max(R + 1, (lastRoll.get(key(st)) ?? -1e9) + D);
-                        if (avail <= u + 2 && u + 2 < plainRoll && (!trick || u < trick.u)) trick = { st, u };
+                        if (avail <= u + 2 && u + N < plainRoll && (!trick || u < trick.u)) trick = { st, u };
                     }
                 }
                 if (trick) {
-                    roll = trick.u + 2;
+                    roll = trick.u + N;
+                    swing = trick.u + 2;
                     kind = 'trick';
                 } else {
                     roll = plainRoll;
+                    swing = landed + 1;
                     kind = clickLand > (move ? R + 2 : R + 1) ? 'waited' : 'plain';
                 }
             }
@@ -255,7 +326,7 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
         ctx.log(`plan #${k} ${kind} ${key(pos)}->${key(stand)} rock ${key(rock)} roll@${roll}`);
         if (move) entryTiles = tiles;
         pos = stand;
-        predict(roll, rock);
+        predict(roll, rock, swing);
     };
 
     const restart = (ctx: ProgramContext, s: BotWorldState) => {
@@ -269,12 +340,38 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
         const clickLand = Math.max(t + 3 + LEAD, avail);
         add(t + LEAD, `walk ${key(stand)}`, walk(stand));
         add(clickLand - 1, `click ${key(rock)}`, click(rock));
-        const roll = clickLand + 2;
+        const roll = clickLand + N;
         ctx.log(`restart #${k} ${key(pos)}->${key(stand)} rock ${key(rock)} roll@${roll}`);
         kinds.plain!++;
         entryTiles = 0;
         pos = stand;
-        predict(roll, rock);
+        predict(roll, rock, clickLand + 1);
+    };
+
+    /**
+     * On the predicted roll's label with no xp: a failed roll when the click's swing
+     * was seen when due, the success chance is under 1 and the run of misses is still
+     * likely. Then the next transition is planned from it as from a success.
+     */
+    const checkFail = (ctx: ProgramContext, s: BotWorldState, xpNow: boolean) => {
+        const p = pending;
+        if (!SUCCESS || !closedLoop || xpNow || !p || rolled !== null || restartAt !== null) return;
+        if (t < p.roll + XP_LAG || t > p.roll + XP_LAG + 1 || checked.has(p.roll)) return;
+        const swingTo = p.swing >= p.roll ? p.roll : p.roll - 1;
+        if (swungAt < p.swing || swungAt > swingTo) return;
+        const chance = statRandom(baseLevel(s, 'mining'), SUCCESS[0], SUCCESS[1]);
+        if (failRun >= failRunLimit(chance)) return;
+        failed++;
+        failRun++;
+        ctx.count('failed');
+        ctx.log(`failed roll@${p.roll} on ${key(p.rock)} (chance ${chance.toFixed(3)})`);
+        checked.add(p.roll);
+        if (p.prev === undefined) lastRoll.delete(key(p.rock));
+        else lastRoll.set(key(p.rock), p.prev);
+        lastFail = { roll: p.roll, rock: p.rock };
+        rolled = p.roll;
+        failedRoll = true;
+        ctx.progress();
     };
 
     // Every roll at 63+ succeeds, so no xp for a predicted roll within the slack is a slip.
@@ -312,6 +409,7 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
             starters: startersSent,
             onPredictedTick: onTime,
             slips,
+            ...(SUCCESS ? { failed, failedLate } : {}),
             ...(bonesRe
                 ? { buried, burySent, bonesPerTick: t > startTick ? Math.round((buried / (t - startTick)) * 1000) / 1000 : 0, noBoneStays, longEntryStays }
                 : {})
@@ -339,6 +437,8 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
                 if (manip && (!invItem(s, KNIFE) || !invItem(s, LOGS))) return ctx.fault('the knife starter needs a knife and normal logs');
                 lastXp = skillXp(s, 'mining');
                 lastPrayerXp = skillXp(s, 'prayer');
+                N = rateAt(baseLevel(s, 'mining'));
+                if (SUCCESS) fresh.take(s);
                 if (bonesRe && !manip) ctx.log('bury is inert on the plain lap: no stay there has an idle tick');
                 R = t - 2;
                 ctx.progress();
@@ -347,11 +447,30 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
                 else restart(ctx, s);
             } else {
                 const xp = skillXp(s, 'mining');
-                if (xp > lastXp) {
+                N = rateAt(baseLevel(s, 'mining'));
+                if (SUCCESS && fresh.take(s).some(m => SWING.test(m.text))) swungAt = t;
+                // A roll taken for failed whose xp shows within two labels, before the next
+                // roll is due, succeeded late: its rock is depleted and nothing is replanned.
+                const rose = xp > lastXp;
+                const late = SUCCESS && rose && lastFail !== null && t - XP_LAG - lastFail.roll <= 2 && t - XP_LAG < R;
+                if (late) {
+                    failed--;
+                    failedLate++;
+                    ctx.count('failed', -1);
+                    ctx.count('failedLate');
+                    lastRoll.set(key(lastFail!.rock), lastFail!.roll);
+                    ctx.log(`roll@${lastFail!.roll} was late, not failed`);
+                    lastFail = null;
+                }
+                if (rose) {
                     xpLabels.push(t);
                     xpSeen.add(t);
                     if (xpLabels.length > 5) steady.event(t);
-                    rolled = t - XP_LAG;
+                    if (!late) {
+                        rolled = t - XP_LAG;
+                        failRun = 0;
+                        lastFail = null;
+                    }
                     if (predictedSet.has(t - XP_LAG)) {
                         onTime++;
                         ctx.count('onTime');
@@ -372,6 +491,7 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
                     ctx.gauge('bonesLeft', buryable(s, bonesRe).length);
                 }
                 if (s.dialog?.isOpen) ctx.send({ type: 'clickDialogOption', optionIndex: 0 }, 'dismiss dialog');
+                if (SUCCESS) checkFail(ctx, s, rose);
                 if (restartAt === null) checkSlip(ctx);
                 if (xpLabels.length >= ORES || t - startTick > maxTicks || (untilLevel && baseLevel(s, 'mining') >= untilLevel)) return ctx.done(summary());
             }
@@ -389,9 +509,10 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
                 if (restartAt === null && (closedLoop ? rolled !== null : t >= R - LEAD)) {
                     if (closedLoop) {
                         R = rolled!;
-                        if (pendingRock) lastRoll.set(key(pendingRock), R);
+                        if (pendingRock && !failedRoll) lastRoll.set(key(pendingRock), R);
                     }
                     rolled = null;
+                    failedRoll = false;
                     plan(ctx);
                     continue;
                 }

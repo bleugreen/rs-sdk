@@ -1,0 +1,763 @@
+// Woodcutting: STEP-MANIFEST.md entry 3 (S07, and S25b's bones in the lab).
+//
+// Normal trees beside the Taverley oak tile to 15, oaks 15-73 from (2914,3494), willows 73-99
+// from (2920,3406) (docs/speedrun/skills/woodcutting.md sections 1-2), with a rune axe carried
+// in the pack: woodcut.rs2's axe checker has its level gates commented out and takes a rune axe
+// worn or carried, so a fresh account chops with it from level 1 without the Attack 41 wield.
+// Five level-driven steps; each reads the level from the state, so a band already passed is a
+// no-op and the module runs from any start:
+//
+//   woodcutting:walk-oaks        to the oak tile, by the `approach` waypoints, which keep a
+//                                level-3 account away from the dark wizards (woodcutting.md s6)
+//   woodcutting:normal-1-15      knife-cycle `tree`, plain: the band is about 3 logs, so a
+//                                20-trial probe would cost more than the band, and the in-page
+//                                knife on normal trees (7.24 per log) is slower than plain
+//   woodcutting:oak-15-73        knife-cycle `oak` under rs/156's gated loop, own gate
+//   woodcutting:walk-willows     the oak-to-willow leg, kept out of the band rows
+//   woodcutting:willow-73-99     knife-cycle `willow`, gated, to `to`
+//
+// The gate's reference is plain ticks per expected roll (4: the plain loop's 4-tick cycle), and
+// each log is weighted by the rolls it stands for at the current level (1 / success chance), so
+// the measured switch-off stays fair while the success chance climbs through a band.
+//
+// Bones (S25b; lab only until the run): with `bury`, knife segments carry knife-cycle's `bury`
+// and `trees`. The giver asks to trade while the account holds 2 bones; the account takes the
+// trade on the roll label after its last bury (2 ticks after the pack shows none: the bury
+// lands on R+1, the cycle's click rolls on R+3), by stopping the gated run, `receiveFrom`, and
+// starting it again with the same gate. Plain segments never carry `bury`: knife-cycle has no
+// plain loop with a bury, so while the gate holds plain the bones wait in the pack.
+
+import type { BotWorldState, InventoryItem } from '../../sdk/types';
+import { GATED_PROGRAMS, type GatedSegment, type GatedTechnique, inPageGate, type InPageGateOptions, runGatedProgram, type SegmentTechnique } from '../lib/gated-program';
+import type { HostGate } from '../lib/hostgate';
+import { withLevelUpDismissal } from '../lib/levelup';
+import type { ProgramStatus } from '../lib/programs';
+import type { TickLog } from '../lib/ticks';
+import { receiveFrom } from '../lib/trade';
+import { tickMs } from '../lib/wait';
+import type { RunnerSession, Step, StepContext } from '../runner/step';
+
+export const skill = 'woodcutting';
+
+export type Tree = 'normal' | 'oak' | 'willow';
+export type Tile = readonly [number, number];
+
+// ------------------------------------------------------------------ the tree model (read)
+
+/** The rune axe's stat_random bounds per tree (trees.dbrow `successchance,rune_axe`). */
+export const RUNE_BOUNDS: Record<Tree, readonly [number, number]> = { normal: [224, 700], oak: [112, 350], willow: [56, 175] };
+/** trees.dbrow `levelrequired`. */
+export const TREE_LEVEL: Record<Tree, number> = { normal: 1, oak: 15, willow: 30 };
+/** knife-cycle presets. */
+export const PRESET: Record<Tree, string> = { normal: 'tree', oak: 'oak', willow: 'willow' };
+/**
+ * Ticks per roll: the knife's 3-tick lattice, and the plain loop's 4 (woodcut.rs2: a click on
+ * an expired clock sets it to map_clock + 3, and each roll re-queues the op).
+ */
+export const CYCLE: Record<SegmentTechnique, number> = { knife: 3, plain: 4 };
+/** Ticks a felled tree is unavailable beyond its respawn: the click and the first swing (woodcutting-model.ts). */
+export const RESPAWN_REACT = 4;
+
+/** The engine's stat_random (PlayerOps STAT_RANDOM): the chance one roll with a rune axe gives a log. */
+export function successChance(tree: Tree, level: number): number {
+    const [lo, hi] = RUNE_BOUNDS[tree];
+    const l = Math.min(Math.max(Math.floor(level), 1), 99);
+    return Math.min(1, (Math.floor((lo * (99 - l)) / 98) + Math.floor((hi * (l - 1)) / 98) + 1) / 256);
+}
+
+/** Respawn ticks D of an oak or willow for the online player count (scale_by_playercount, read; woodcutting.md s6). */
+export function respawnTicks(players: number, base = 30): number {
+    return Math.floor((base * (4000 - Math.min(Math.max(players, 0), 2000))) / 4000);
+}
+
+/** Erlang's loss formula: the share of time all `servers` are busy at offered load `load`. */
+export function erlangB(load: number, servers: number): number {
+    let b = 1;
+    for (let k = 1; k <= servers; k++) b = (load * b) / (k + load * b);
+    return b;
+}
+
+/**
+ * Expected ticks per log (inferred). Rolls every `CYCLE[technique]` ticks with success p; at a
+ * three-tree tile each log fells its tree 1 time in 8 for D + RESPAWN_REACT ticks, and the
+ * player loses time only while all three are down. That is a loss system with three servers,
+ * whose all-down share is Erlang B at load (p / cycle / 8) x (D + 4), whatever the downtime's
+ * distribution. Without D the figure is the bare lattice, cycle / p: rs/158's acceptance for the
+ * in-page knife. Normal trees fall on every log and respawn in 120-199 ticks, so the player
+ * walks to the next one: one tick per log (woodcutting.md s2, inferred).
+ */
+export function modelTicksPerLog(tree: Tree, level: number, technique: SegmentTechnique = 'plain', D?: number): number {
+    const p = successChance(tree, level);
+    const cycle = CYCLE[technique];
+    if (tree === 'normal') return cycle / p + 1;
+    if (D === undefined) return cycle / p;
+    return cycle / p / (1 - erlangB((p / cycle / 8) * (D + RESPAWN_REACT), 3));
+}
+
+/** Expected rolls behind a count of logs by the level each was cut at: the sum of logs / p(level). */
+export function expectedRolls(tree: Tree, logsAtLevel: ReadonlyMap<number, number> | Record<number, number>): number {
+    const entries = logsAtLevel instanceof Map ? [...logsAtLevel.entries()] : Object.entries(logsAtLevel).map(([l, n]) => [Number(l), n] as const);
+    return entries.reduce((sum, [level, n]) => sum + n / successChance(tree, level), 0);
+}
+
+// ------------------------------------------------------------------ sites and bands
+
+export interface Site {
+    /** The standing tile; a band starts within NEAR of it, and oak and willow chop from it exactly. */
+    stand: Tile;
+    /** The tree tiles reachable from `stand`, passed to knife-cycle as `trees`; none for normal trees. */
+    trees?: readonly Tile[];
+}
+
+export interface Sites {
+    normal: Site;
+    oak: Site;
+    willow: Site;
+    /**
+     * Waypoints from Lumbridge to the oak tile (inferred, unmeasured): north of Draynor's dark
+     * wizards (3085,3237), west of the Varrock stone circle's (3226,3369), through Falador,
+     * and north to Taverley clear of the Dark Wizards' Tower (2908,3334); every one of them is
+     * 50 tiles or more from a wizard spawn (the map spawns, read). The lab measures the leg.
+     */
+    approach: readonly Tile[];
+}
+
+/** woodcutting.md sections 1, 2 and 6; bones-wc.ts SITES. */
+export const SITES: Sites = {
+    // The normal trees beside the oak tile, e.g. (2912,3495), (2910,3492), (2918,3493): no
+    // `trees` list, because every log fells the tree and the plain loop walks to the next.
+    normal: { stand: [2914, 3494] },
+    oak: { stand: [2914, 3494], trees: [[2912, 3491], [2914, 3495], [2915, 3492]] },
+    willow: { stand: [2920, 3406], trees: [[2918, 3405], [2919, 3407], [2921, 3405]] },
+    approach: [[3170, 3285], [3007, 3360], [2965, 3395], [2935, 3450]]
+};
+
+export interface Band {
+    name: 'woodcutting:normal-1-15' | 'woodcutting:oak-15-73' | 'woodcutting:willow-73-99';
+    tree: Tree;
+    /** The level the band ends at before clipping to `to`. */
+    end: number;
+}
+
+export const BANDS: readonly Band[] = [
+    { name: 'woodcutting:normal-1-15', tree: 'normal', end: 15 },
+    { name: 'woodcutting:oak-15-73', tree: 'oak', end: 73 },
+    { name: 'woodcutting:willow-73-99', tree: 'willow', end: 99 }
+];
+
+/** rs/158's reporting splits (rs/147, 13:19): each band's rows, so chop RNG and the client separate. */
+export const SUB_BANDS: Record<Tree, ReadonlyArray<readonly [number, number]>> = {
+    normal: [[1, 15]],
+    oak: [[15, 60], [60, 73]],
+    willow: [[73, 85], [85, 99]]
+};
+
+/** A walk is skipped, and a band may start, within this many tiles of its standing tile. */
+export const NEAR = 8;
+/** Ticks after the pack shows no bones before the top-up: the last bury cycle's roll label (header). */
+export const BONES_SETTLE = 2;
+/** The run's bone loads (Ashburn helpers, rs/117). */
+export const BONE_LOAD = 23;
+/** S25b's Prayer target. */
+export const PRAYER_TO = 94;
+
+// ------------------------------------------------------------------ state
+
+const AXE = /^(bronze|iron|steel|black|mithril|adamant|rune) axe$/i;
+const RUNE_AXE = /^rune axe$/i;
+const KNIFE = /^knife$/i;
+const LOGS = /^logs$/i;
+const DEFAULT_BONES = 'bones$';
+
+function levelOf(s: BotWorldState | null, name: string): number {
+    const k = s?.skills.find(x => x.name.toLowerCase() === name);
+    return k?.baseLevel ?? 1;
+}
+
+export function wcLevel(s: BotWorldState | null): number {
+    return levelOf(s, 'woodcutting');
+}
+
+function count(items: readonly InventoryItem[], re: RegExp): number {
+    return items.filter(i => re.test(i.name)).reduce((n, i) => n + Math.max(1, i.count), 0);
+}
+
+function axeOf(s: BotWorldState): string | null {
+    const all = [...s.equipment, ...s.inventory];
+    return (all.find(i => RUNE_AXE.test(i.name)) ?? all.find(i => AXE.test(i.name)))?.name ?? null;
+}
+
+function near(s: BotWorldState, t: Tile, r: number): boolean {
+    const p = s.player;
+    return !!p && Math.max(Math.abs(p.worldX - t[0]), Math.abs(p.worldZ - t[1])) <= r;
+}
+
+const chebyshev = (a: Tile, b: Tile) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]));
+
+/** The approach waypoints still ahead of a player at `from`: those nearer the goal than it is. */
+export function routeFrom(from: Tile, goal: Tile, waypoints: readonly Tile[]): Tile[] {
+    const left = chebyshev(from, goal);
+    const i = waypoints.findIndex(w => chebyshev(w, goal) < left);
+    return i < 0 ? [] : waypoints.slice(i);
+}
+
+// ------------------------------------------------------------------ options
+
+export interface BonesOptions {
+    /** The giver's display name (the lab's second bot, Ashburn's H-helpers on the run). */
+    giver: string;
+    /** Bones per load (default 23). */
+    load?: number;
+}
+
+export interface WoodcuttingOptions {
+    /** Target level (default 99); bands are clipped to it. */
+    to?: number | string;
+    /** 'auto' (default): each oak and willow band gets its own in-page gate. 'knife' / 'plain' force it (lab). */
+    technique?: GatedTechnique;
+    /** Bury bones inside the knife cycle on oak and willow: true, or a bones regex. */
+    bury?: boolean | string;
+    /** The bone giver; `boneGiver` / `boneLoad` are the CLI's flat form (--skill-opt). */
+    bones?: BonesOptions;
+    boneGiver?: string;
+    boneLoad?: number | string;
+    /** The last band's Prayer postcondition with `bury` (default 94; 0 checks nothing). */
+    prayerTo?: number | string;
+    /** The gate's plain reference in ticks per expected roll (default 4). */
+    plainTicksPerRoll?: number | string;
+    /** Sites as data: a second-choice tile goes here, not into code. A JSON string from the CLI. */
+    sites?: Partial<Sites> | string;
+    /** inPageGate options over the module's own. */
+    gate?: Partial<InPageGateOptions>;
+    /** Extra knife-cycle parameters, lab only (rs/156's forced-slip `hold`); never set on an attempt. */
+    params?: Record<string, unknown>;
+    /** `params.hold`, flat for the CLI. */
+    hold?: number | string;
+    /** Test seams. */
+    runGated?: typeof runGatedProgram;
+    makeGate?: typeof inPageGate;
+    receive?: typeof receiveFrom;
+    log?: (line: string) => void;
+    [k: string]: unknown;
+}
+
+interface Resolved {
+    to: number;
+    technique: GatedTechnique;
+    bury: string | true | null;
+    bonesRe: RegExp;
+    bones: Required<BonesOptions> | null;
+    prayerTo: number;
+    plainTicksPerRoll: number;
+    sites: Sites;
+    gate: Partial<InPageGateOptions>;
+    params: Record<string, unknown>;
+    runGated: typeof runGatedProgram;
+    makeGate: typeof inPageGate;
+    receive: typeof receiveFrom;
+    log: (line: string) => void;
+}
+
+function numberOpt(name: string, raw: unknown, ok: (n: number) => boolean, def: number): number {
+    if (raw === undefined) return def;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || !ok(n)) throw new Error(`woodcutting: bad ${name} ${JSON.stringify(raw)}`);
+    return n;
+}
+
+function resolve(opts: WoodcuttingOptions): Resolved {
+    const to = numberOpt('to (an integer from 2 to 99)', opts.to, n => Number.isInteger(n) && n >= 2 && n <= 99, 99);
+    const technique = opts.technique ?? 'auto';
+    if (!['auto', 'knife', 'plain'].includes(technique)) throw new Error(`woodcutting: technique must be auto, knife or plain, got ${technique}`);
+    const b = opts.bury;
+    const bury = b === undefined || b === false || b === 'false' ? null : b === true || b === 'true' ? true : String(b);
+    if (bury !== null && to <= BANDS[0]!.end) throw new Error(`woodcutting: bury needs an oak or willow band, and to=${to} ends on normal trees`);
+    if (bury !== null && technique === 'plain') throw new Error('woodcutting: bury needs the knife (knife-cycle has no plain loop with a bury)');
+    const giver = opts.bones?.giver ?? opts.boneGiver;
+    const load = numberOpt('bone load', opts.bones?.load ?? opts.boneLoad, n => Number.isInteger(n) && n >= 1 && n <= 27, BONE_LOAD);
+    if (giver !== undefined && bury === null) throw new Error('woodcutting: a bone giver without bury');
+    const sitesIn = typeof opts.sites === 'string' ? (JSON.parse(opts.sites) as Partial<Sites>) : (opts.sites ?? {});
+    const hold = opts.hold === undefined ? {} : { hold: numberOpt('hold', opts.hold, n => n >= 0 && n <= 1, 0) };
+    return {
+        to,
+        technique,
+        bury,
+        bonesRe: new RegExp(bury === null || bury === true ? DEFAULT_BONES : bury, 'i'),
+        bones: giver ? { giver: String(giver), load } : null,
+        prayerTo: bury === null ? 0 : numberOpt('prayerTo', opts.prayerTo, n => Number.isInteger(n) && n >= 0 && n <= 99, PRAYER_TO),
+        plainTicksPerRoll: numberOpt('plainTicksPerRoll', opts.plainTicksPerRoll, n => n > 0, CYCLE.plain),
+        sites: { ...SITES, ...sitesIn },
+        gate: opts.gate ?? {},
+        params: { ...opts.params, ...hold },
+        runGated: opts.runGated ?? runGatedProgram,
+        makeGate: opts.makeGate ?? inPageGate,
+        receive: opts.receive ?? receiveFrom,
+        log: opts.log ?? (() => {})
+    };
+}
+
+const bandEnd = (o: Resolved, b: Band) => Math.min(b.end, o.to);
+
+/** The band the state is in, or null once the target level is reached. */
+export function bandFor(s: BotWorldState, opts: WoodcuttingOptions = {}): Band['name'] | null {
+    const o = resolve(opts);
+    const l = wcLevel(s);
+    return BANDS.find(b => l < bandEnd(o, b))?.name ?? null;
+}
+
+/** The technique a band runs: normal trees take plain unless the knife is forced. */
+export function bandTechnique(tree: Tree, technique: GatedTechnique): GatedTechnique {
+    return tree === 'normal' && technique === 'auto' ? 'plain' : technique;
+}
+
+/**
+ * knife-cycle's parameters for a band and technique. `bury` goes on knife segments only and
+ * `dropEach` (rs/152: drop on the label that shows the log, re-click on the same pass) on plain
+ * ones only.
+ */
+export function bandParams(opts: WoodcuttingOptions, tree: Tree, untilLevel: number): (technique: SegmentTechnique) => Record<string, unknown> {
+    return paramsOf(resolve(opts), tree, untilLevel);
+}
+
+function paramsOf(o: Resolved, tree: Tree, untilLevel: number): (technique: SegmentTechnique) => Record<string, unknown> {
+    const trees = o.sites[tree].trees;
+    const bury = tree !== 'normal' && o.bury !== null ? o.bury : null;
+    return technique => ({
+        method: PRESET[tree],
+        ...(trees ? { trees: trees.map(t => [t[0], t[1]]) } : {}),
+        untilLevel,
+        reanchor: 'xp',
+        dismiss: 'now',
+        ...(technique === 'knife' ? (bury !== null ? { bury } : {}) : { dropEach: true }),
+        ...o.params
+    });
+}
+
+// ------------------------------------------------------------------ the band ledger
+
+/** Ticks and logs of one technique at one level. */
+export interface Cell {
+    ticks: number;
+    logs: number;
+    expectedRolls: number;
+    /** Logs whose gap from the previous log is a whole number of cycles, and those cycles (the rolls behind them). */
+    latticeLogs: number;
+    latticeRolls: number;
+}
+
+export interface LevelRow {
+    knife: Cell;
+    plain: Cell;
+    /** Ticks between runs: the gate's probes and the restarts after them. */
+    probeTicks: number;
+    /** Ticks between runs around a bone load (stop, trade, restart). */
+    bonesTicks: number;
+}
+
+const emptyCell = (): Cell => ({ ticks: 0, logs: 0, expectedRolls: 0, latticeLogs: 0, latticeRolls: 0 });
+
+/** knife-cycle's log counter: its gated drop counter (`successes`, one log each). */
+export function logsOf(status: ProgramStatus): number {
+    return status.counters[GATED_PROGRAMS['knife-cycle']!.drop] ?? 0;
+}
+
+/**
+ * Every tick of a band filed by Woodcutting level and technique, from the program statuses
+ * (`observe`, every published one, and each segment's last). Each log is filed under the level
+ * it was cut at (the level before its xp), with the rolls it stands for, 1 / p(level); a log
+ * whose gap from the previous one is a whole number of cycles (3 knife, 4 plain) also counts
+ * toward the fitted success per roll, logs over the cycles they took. Off-lattice gaps
+ * (re-bootstraps, resyncs, all-down waits) are left out of the fit, so it measures the chop RNG
+ * and not the client.
+ */
+export class BandLedger {
+    readonly levels = new Map<number, LevelRow>();
+    private runId = Number.NaN;
+    private lastTick: number;
+    private lastRollTick: number | null = null;
+    private lastLogs = 0;
+    private nextGap: 'probe' | 'bones' = 'probe';
+
+    constructor(readonly tree: Tree, startTick: number, private level: number) {
+        this.lastTick = startTick;
+    }
+
+    row(level: number): LevelRow {
+        let r = this.levels.get(level);
+        if (!r) this.levels.set(level, (r = { knife: emptyCell(), plain: emptyCell(), probeTicks: 0, bonesTicks: 0 }));
+        return r;
+    }
+
+    /** The gap before the next run is a bone load. */
+    bonesLoad(): void {
+        this.nextGap = 'bones';
+    }
+
+    private between(until: number): void {
+        const gap = Math.max(0, until - this.lastTick);
+        const r = this.row(this.level);
+        if (this.nextGap === 'bones') r.bonesTicks += gap;
+        else r.probeTicks += gap;
+        this.nextGap = 'probe';
+        this.lastTick = Math.max(this.lastTick, until);
+    }
+
+    observe(st: ProgramStatus, technique: SegmentTechnique, level: number): void {
+        if (st.runId !== this.runId) {
+            this.between(st.startedTick);
+            this.runId = st.runId;
+            this.lastRollTick = null;
+            this.lastLogs = 0;
+        }
+        const tick = st.endedTick ?? st.tick;
+        const cell = this.row(this.level)[technique];
+        if (tick > this.lastTick) {
+            cell.ticks += tick - this.lastTick;
+            this.lastTick = tick;
+        }
+        const logs = logsOf(st);
+        if (logs > this.lastLogs) {
+            const n = logs - this.lastLogs;
+            cell.logs += n;
+            cell.expectedRolls += n / successChance(this.tree, this.level);
+            const cycle = CYCLE[technique];
+            if (n === 1 && this.lastRollTick !== null) {
+                const gap = tick - this.lastRollTick;
+                if (gap > 0 && gap % cycle === 0) {
+                    cell.latticeLogs++;
+                    cell.latticeRolls += gap / cycle;
+                }
+            }
+            this.lastRollTick = tick;
+            this.lastLogs = logs;
+        }
+        this.level = level;
+    }
+
+    /** Close the band at `tick`: the time after the last run is probe time. */
+    finish(tick: number): void {
+        this.between(tick);
+    }
+}
+
+// ------------------------------------------------------------------ band summaries
+
+export interface TechniqueFigures {
+    ticks: number;
+    logs: number;
+    expectedRolls: number;
+    /** The primary figure: knife about 3, plain about 4, whatever the level. */
+    ticksPerExpectedRoll: number;
+    ticksPerLog: number;
+    /** Logs over rolls on the lattice gaps (the chop RNG, measured). */
+    fittedSuccess: number;
+    /** Logs over expected rolls: the formula's success over the same levels (read). */
+    formulaSuccess: number;
+    /** cycle / formula success: the lattice's ticks per log at these levels (rs/158's acceptance for the knife). */
+    latticeTicksPerLog: number;
+}
+
+export interface SubBandRow {
+    from: number;
+    to: number;
+    ticks: number;
+    knife?: TechniqueFigures;
+    plain?: TechniqueFigures;
+    probeTicks: number;
+    bonesTicks: number;
+    /** Knife ticks over knife and plain ticks: how much of the stretch the gate held the knife. */
+    knifeShare: number;
+}
+
+export interface BandSummary extends SubBandRow {
+    tree: Tree;
+    subBands: SubBandRow[];
+    /** Roll-gap histograms by technique (the programs' own). */
+    histogram: Partial<Record<SegmentTechnique, Record<number, number>>>;
+    /** Program counters summed over the band's segments. */
+    counters: Record<string, number>;
+    deferred: number;
+    skippedTicks: number;
+    segments: Array<{ technique: SegmentTechnique; reason: string; runId: number; ticks: number; logs: number }>;
+    /** `knife->plain (measured)` style list of the segment ends that switched technique. */
+    switches: string[];
+}
+
+const r3 = (n: number) => (Number.isFinite(n) ? Math.round(n * 1000) / 1000 : Number.NaN);
+
+const COUNTERS = ['phaseResyncs', 'resyncs', 'slips', 'switches', 'noTarget', 'levelUps', 'held', 'starters', 'fellBack', 'buried', 'burySent', 'noBoneCycles', 'lateClicks', 'prayerLevelUps'] as const;
+
+function addCell(a: Cell, b: Cell): void {
+    a.ticks += b.ticks;
+    a.logs += b.logs;
+    a.expectedRolls += b.expectedRolls;
+    a.latticeLogs += b.latticeLogs;
+    a.latticeRolls += b.latticeRolls;
+}
+
+function figures(c: Cell, technique: SegmentTechnique): TechniqueFigures | undefined {
+    if (!c.ticks && !c.logs) return undefined;
+    return {
+        ticks: c.ticks,
+        logs: c.logs,
+        expectedRolls: r3(c.expectedRolls),
+        ticksPerExpectedRoll: r3(c.ticks / c.expectedRolls),
+        ticksPerLog: r3(c.ticks / c.logs),
+        fittedSuccess: r3(c.latticeLogs / c.latticeRolls),
+        formulaSuccess: r3(c.logs / c.expectedRolls),
+        latticeTicksPerLog: r3((CYCLE[technique] * c.expectedRolls) / c.logs)
+    };
+}
+
+function rowOver(from: number, to: number, rows: LevelRow[]): SubBandRow {
+    const knife = emptyCell();
+    const plain = emptyCell();
+    let probeTicks = 0;
+    let bonesTicks = 0;
+    for (const r of rows) {
+        addCell(knife, r.knife);
+        addCell(plain, r.plain);
+        probeTicks += r.probeTicks;
+        bonesTicks += r.bonesTicks;
+    }
+    const k = figures(knife, 'knife');
+    const p = figures(plain, 'plain');
+    return {
+        from,
+        to,
+        ticks: knife.ticks + plain.ticks + probeTicks + bonesTicks,
+        ...(k ? { knife: k } : {}),
+        ...(p ? { plain: p } : {}),
+        probeTicks,
+        bonesTicks,
+        knifeShare: r3(knife.ticks / (knife.ticks + plain.ticks))
+    };
+}
+
+/**
+ * A band's figures for the findings doc and rs/158: per sub-band (oak 15-60 and 60-73, willow
+ * 73-85 and 85-99) and for the band, by technique, ticks per expected roll first, then ticks per
+ * log, the fitted success per roll against the formula's, and the knife's share of the ticks.
+ */
+export function summarizeBand(ledger: BandLedger, segments: readonly GatedSegment[] = []): BandSummary {
+    const tree = ledger.tree;
+    const splits = SUB_BANDS[tree];
+    const last = splits.length - 1;
+    const levels = [...ledger.levels.entries()];
+    const subBands = splits.map(([from, to], i) =>
+        rowOver(from, to, levels.filter(([l]) => (i === 0 || l >= from) && (i === last || l < to)).map(([, r]) => r))
+    );
+    const histogram: BandSummary['histogram'] = {};
+    const counters: Record<string, number> = {};
+    let deferred = 0;
+    let skippedTicks = 0;
+    for (const seg of segments) {
+        const st = seg.status;
+        const h = ((st.result as { histogram?: Record<string, number> } | undefined)?.histogram ?? {}) as Record<string, number>;
+        const into = (histogram[seg.technique] ??= {});
+        for (const [gap, n] of Object.entries(h)) into[Number(gap)] = (into[Number(gap)] ?? 0) + n;
+        for (const c of COUNTERS) if (st.counters[c]) counters[c] = (counters[c] ?? 0) + st.counters[c]!;
+        deferred += st.deferred ?? 0;
+        skippedTicks += st.skippedTicks ?? 0;
+    }
+    const segs = segments.map(s => ({ technique: s.technique, reason: s.reason, runId: s.status.runId, ticks: Math.max(0, (s.status.endedTick ?? s.status.tick) - s.status.startedTick), logs: logsOf(s.status) }));
+    return {
+        tree,
+        ...rowOver(splits[0]![0], splits[last]![1], levels.map(([, r]) => r)),
+        subBands,
+        histogram,
+        counters,
+        deferred,
+        skippedTicks,
+        segments: segs,
+        switches: segs.slice(0, -1).flatMap((s, i) => (segs[i + 1]!.technique !== s.technique ? [`${s.technique}->${segs[i + 1]!.technique} (${s.reason})`] : []))
+    };
+}
+
+// ------------------------------------------------------------------ steps
+
+function annotation(log: TickLog, session: RunnerSession, step: string, startTick: number, endTick: number, ok: boolean, meta: Record<string, unknown>): void {
+    // A 0-tick row: the step's own measure row carries its ticks, so report() never counts these.
+    log.append({ v: 1, runId: log.runId, account: session.name, sessionId: session.sessionId, step, startTick, endTick, ticks: 0, wallMs: 0, ok, meta, tickMs: tickMs(), at: new Date().toISOString() });
+}
+
+function gateMeta(gate: HostGate) {
+    return {
+        history: gate.history.map(h => ({ tick: h.tick, why: h.why, on: h.on, switched: h.switched, ...(h.measured ? { measured: h.measured } : {}), ...(h.result ? { probe: { ticks: h.result.ticks, lost: h.result.lost } } : {}) })),
+        switches: gate.switches()
+    };
+}
+
+function walkStep(o: Resolved, name: string, goal: Tile, needed: (s: BotWorldState) => boolean, waypoints: readonly Tile[]): Step {
+    return {
+        name,
+        preconditions: () => true,
+        async run({ sdk, bot }) {
+            const s = sdk.getState();
+            if (!s?.player || !needed(s) || near(s, goal, NEAR)) return;
+            const from: Tile = [s.player.worldX, s.player.worldZ];
+            // The SDK walks run whenever the player has energy; level-ups (Hitpoints from an
+            // attacker) would otherwise hold the walk.
+            await withLevelUpDismissal(sdk, async () => {
+                for (const [x, z] of [...routeFrom(from, goal, waypoints), goal]) {
+                    const r = await bot.walkTo(x, z, x === goal[0] && z === goal[1] ? 0 : 2, { timeout: 180_000 });
+                    if (!r.success) throw new Error(`walkTo ${x},${z}: ${r.message}`);
+                    o.log(`${name}: at ${sdk.getState()?.player?.worldX},${sdk.getState()?.player?.worldZ} (T${sdk.getState()?.tick})`);
+                }
+            });
+        },
+        postconditions: s => (!needed(s) || near(s, goal, NEAR) ? true : `not within ${NEAR} tiles of ${goal[0]},${goal[1]}`),
+        logoutSafe: true
+    };
+}
+
+function bandStep(o: Resolved, b: Band, last: boolean): Step {
+    const end = bandEnd(o, b);
+    const site = o.sites[b.tree];
+    const technique = bandTechnique(b.tree, o.technique);
+    const knifeCapable = technique !== 'plain';
+    const burying = o.bury !== null && b.tree !== 'normal';
+    const giver = burying ? o.bones : null;
+    const passed = (s: BotWorldState) => wcLevel(s) >= end;
+    const bonesHeld = (s: BotWorldState) => s.inventory.filter(i => o.bonesRe.test(i.name)).length;
+    const params = paramsOf(o, b.tree, end);
+
+    const pre = (s: BotWorldState): true | string => {
+        if (passed(s)) return true;
+        const l = wcLevel(s);
+        const axe = axeOf(s);
+        if (!axe) return 'no axe worn or carried';
+        if (!RUNE_AXE.test(axe)) o.log(`${b.name}: chopping with ${axe}, not a rune axe (the adamant fallback is priced at +441)`);
+        if (l < TREE_LEVEL[b.tree]) return `Woodcutting ${l}, ${b.tree} trees need ${TREE_LEVEL[b.tree]}`;
+        if (knifeCapable && (!count(s.inventory, KNIFE) || !count(s.inventory, LOGS))) return `technique ${technique} needs a knife and a normal log`;
+        if (knifeCapable && !s.skills.some(k => k.name.toLowerCase() === 'fletching' && k.baseLevel >= 1)) return 'technique needs Fletching 1';
+        const free = 28 - s.inventory.length;
+        if (free < 2) return `${free} free inventory slots, 2 needed`;
+        if (!near(s, site.stand, NEAR)) return `not within ${NEAR} tiles of ${site.stand[0]},${site.stand[1]}`;
+        if (burying) {
+            const held = bonesHeld(s);
+            if (!held && !giver) return 'bury needs bones in the pack or a bone giver';
+            if (giver && free + held < giver.load + 1) return `${free} free slots and ${held} bones: no room for a ${giver.load}-bone load and the log`;
+        }
+        return true;
+    };
+
+    const run = async (ctx: StepContext<Record<string, never>>) => {
+        const { sdk, bot, session, log } = ctx;
+        const s0 = sdk.getState();
+        if (!s0 || passed(s0)) return;
+        if (site.trees && !(s0.player?.worldX === site.stand[0] && s0.player?.worldZ === site.stand[1])) {
+            // `trees` are the tiles reachable from the stand itself (knife-cycle header)
+            const r = await bot.walkTo(site.stand[0], site.stand[1], 0, { timeout: 30_000 });
+            const s = sdk.getState();
+            if (!r.success || s?.player?.worldX !== site.stand[0] || s?.player?.worldZ !== site.stand[1]) throw new Error(`${b.name}: not on the stand ${site.stand.join(',')}: ${r.message}`);
+        }
+        const startTick = sdk.getState()?.tick ?? s0.tick;
+        const startLevel = wcLevel(s0);
+        // A fresh gate per band: its first probe and its measured stretch are the band's own.
+        const gate = technique === 'auto' ? o.makeGate(sdk, { plainTicksPerRoll: o.plainTicksPerRoll, log: o.log, ...o.gate }) : undefined;
+        const ledger = new BandLedger(b.tree, startTick, startLevel);
+        const segments: GatedSegment[] = [];
+        let loads = 0;
+
+        const topUp = async () => {
+            const t0 = sdk.getState()?.tick ?? 0;
+            const before = bonesHeld(sdk.getState()!);
+            const r = await o.receive(sdk, giver!.giver, { want: [{ item: o.bonesRe, amount: giver!.load }], maxTicks: 60, openTimeoutMs: 20_000 });
+            const t1 = sdk.getState()?.tick ?? t0;
+            const got = bonesHeld(sdk.getState()!) - before;
+            loads++;
+            annotation(log, session, 'woodcutting:bones-load', t0, t1, r.ok, { kind: 'wc-bones-load', band: b.name, load: loads, ticks: r.ticks, stepTicks: t1 - t0, received: got, ...(r.reason ? { reason: r.reason } : {}) });
+            if (!r.ok) throw new Error(`${b.name}: bone load ${loads} from ${giver!.giver} failed: ${r.reason}`);
+            ledger.bonesLoad();
+        };
+
+        let ended: string;
+        // a load before the first start when the pack is empty, and after each stop for one
+        let needLoad = !!giver && knifeCapable && bonesHeld(s0) === 0;
+        for (;;) {
+            if (needLoad) await topUp();
+            needLoad = false;
+            const stop = new AbortController();
+            let wantBones = false;
+            let noneSince: number | null = null;
+            const result = await o.runGated(sdk, 'knife-cycle', params, {
+                technique,
+                ...(gate ? { gate } : {}),
+                rollsPerDrop: s => 1 / successChance(b.tree, wcLevel(s)),
+                signal: stop.signal,
+                log: o.log,
+                onProgress: (st, tech) => {
+                    ledger.observe(st, tech, wcLevel(sdk.getState()));
+                    if (!giver || tech !== 'knife' || stop.signal.aborted) return;
+                    if (st.gauges.bonesLeft !== 0) {
+                        noneSince = null;
+                        return;
+                    }
+                    noneSince ??= st.tick;
+                    if (st.tick - noneSince >= BONES_SETTLE) {
+                        wantBones = true;
+                        stop.abort();
+                    }
+                },
+                onSegment: seg => {
+                    ledger.observe(seg.status, seg.technique, wcLevel(sdk.getState()));
+                    segments.push(seg);
+                    const st = seg.status;
+                    annotation(log, session, `${b.name}:segment`, st.startedTick, st.endedTick ?? st.tick, seg.reason !== 'fault', {
+                        kind: 'wc-segment', technique: seg.technique, reason: seg.reason, runId: st.runId, level: wcLevel(sdk.getState()), counters: st.counters,
+                        result: st.result, frames: st.frames, skippedTicks: st.skippedTicks, deferred: st.deferred
+                    });
+                }
+            });
+            ended = result.ended;
+            if (result.ended === 'aborted' && wantBones) {
+                needLoad = true;
+                continue;
+            }
+            break;
+        }
+        const endState = sdk.getState();
+        const endTick = endState?.tick ?? startTick;
+        ledger.finish(endTick);
+        annotation(log, session, `${b.name}:summary`, startTick, endTick, ended === 'done', {
+            kind: 'wc-band', ended, technique, startLevel, endLevel: wcLevel(endState), bonesLoads: loads,
+            ...summarizeBand(ledger, segments),
+            ...(gate ? { gate: gateMeta(gate) } : {})
+        });
+        if (ended !== 'done') throw new Error(`knife-cycle ended ${ended} at Woodcutting ${wcLevel(endState)}`);
+    };
+
+    return {
+        name: b.name,
+        preconditions: pre,
+        run,
+        resume: run,
+        postconditions: s => {
+            if (!passed(s)) return `Woodcutting ${wcLevel(s)}: the band did not reach ${end}`;
+            if (!axeOf(s)) return 'the axe is gone';
+            if (knifeCapable && (!count(s.inventory, KNIFE) || !count(s.inventory, LOGS))) return 'the knife or the last normal log is gone';
+            if (last && burying && o.prayerTo && levelOf(s, 'prayer') < o.prayerTo) return `Prayer ${levelOf(s, 'prayer')}, below ${o.prayerTo}`;
+            return true;
+        },
+        logoutSafe: true,
+        done: ({ state }) => passed(state),
+        inProgress: ({ state }) => !passed(state) && wcLevel(state) >= TREE_LEVEL[b.tree] && near(state, site.stand, NEAR)
+    };
+}
+
+/** The woodcutting steps from the current state to `to` (see the file comment). */
+export function steps(opts: WoodcuttingOptions = {}): Step[] {
+    const o = resolve(opts);
+    const [normal, oak, willow] = BANDS as [Band, Band, Band];
+    const oakEnd = bandEnd(o, oak);
+    // the band the Prayer postcondition goes on (bury needs to > 15, so oak or willow)
+    const willowLast = o.to > oak.end;
+    return [
+        walkStep(o, 'woodcutting:walk-oaks', o.sites.oak.stand, s => wcLevel(s) < oakEnd, o.sites.approach),
+        bandStep(o, normal, false),
+        bandStep(o, oak, !willowLast),
+        walkStep(o, 'woodcutting:walk-willows', o.sites.willow.stand, s => wcLevel(s) >= oakEnd && wcLevel(s) < o.to, []),
+        bandStep(o, willow, willowLast)
+    ];
+}

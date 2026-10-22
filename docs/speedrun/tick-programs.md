@@ -37,7 +37,7 @@ the time, and the reactive steps are worth roughly 3,000 ticks over the route.
   no progress for its stall window faults instead of escaping into the game loop.
   The test-only start parameter `hold` (a share in [0, 1]) holds that share of
   starter bundles to the next tick: a program marks a bundle with `ctx.starter()`
-  (knife-cycle, before knife on logs), its sends queue, and they go
+  (knife-cycle and knife-mine, before knife on logs), its sends queue, and they go
   out first on the next tick, counted in `held`. It reproduces the lab scripts'
   `--inject-late`; unset, `ctx.starter()` does nothing.
 - **Status** (`state.program`, `window.rsPrograms.status()`). It carries the run id,
@@ -96,10 +96,10 @@ the host gate can select with the same parameters.
 | Name | Port of | Parameters (main) | Plain fallback |
 |---|---|---|---|
 | `probe` | `speedrun/lib/hostgate.ts` `probeOnTime` | `trials`, `maxWait` | n/a |
-| `knife-mine` | `tickmanip-mine.ts` | `steps` (stand>rock pairs), `respawn`, `ores`, `starter: 'knife' \| 'none'` | `starter: 'none'` (plain and adjacent-rock transitions) |
+| `knife-mine` | `tickmanip-mine.ts` | `steps` (stand>rock pairs), `respawn`, `ores`, `starter: 'knife' \| 'none'`; opt-in `bury`, `success` (failed iron rolls below 63) and `rate` (the pickaxe's mining_rate by level) | `starter: 'none'` (plain and adjacent-rock transitions) |
 | `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `successes` / `untilLevel` / `untilXp` (game xp) / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'`; with `bury`, plain + bury; opt-in `followSpot` (re-click a moved spot on the label that shows its new tile) and `dropEach` (drop the product on the label that shows it, with the re-click, both landing on R+1) |
 | `pickpocket` | `thieving-pickpocket.ts` (`--eat=auto`); `stunActions` from `stun-pack-thieve.ts` (rs/106) | `npc`, `rolls`, `food`, `eatBelow`, `forcedBelow`, `stunActions` (`bury`, `charge`, `arrows`, or action objects), `stunWindow`, `stunPerTick` | n/a: it clicks every tick |
-| `agility` | `agility-course.ts` | `course` (`gnome`, `barbarian`, `wilderness`, or an object; `agility-courses.ts`), `laps` | `technique: 'plain'` waits `settleTicks` after each obstacle |
+| `agility` | `agility-course.ts` | `course` (`gnome`, `barbarian`, `wilderness`, or an object; `agility-courses.ts`), `laps` / `maxTicks` / `untilLevel`, `startStep` (a name, or `auto`: from the tile), `food`, `eatBelow`; opt-in: `eatGap` (eats in any phase, at most once per `eatGap` ticks, and ends `no-food`), `restockBelow` (ends `low-food`), `protect` (`hold`, `near`, `flick`, with `protectRange`, `protectNpc`, `flickGap`), Wilderness watch: `pauseFor` (`none`, `threat`, `any`), `playerRadius`, `threatTargetRange`, `threatCloseTiles`, `threatCloseTicks` | `technique: 'plain'` waits `settleTicks` after each obstacle |
 | `rc-cycle` | `runecraft-cycle.ts --mode=tuned/robust` (the scored half) | `untilLevel` / `untilXp`, `schedule` (default `robust`), `givers`, `open` (5), `lead` (3) | the stock 15-tick reacting cycle (SDK side) |
 
 ### The Runecraft hand-off (`rc-cycle`)
@@ -190,6 +190,20 @@ same run is 3.94 ticks per expected roll, a win (corrected by rs/83).
 
 Notes that differ from the lite scripts:
 
+- `agility` ends with `result.ended` set to `laps`, `maxTicks`, `level`, `player`
+  (the pause rule fired), `attacked` (a player's hit, with `pauseFor` given), `no-food` (with `eatGap`: HP at or below
+  `eatBelow` with nothing to eat) or `low-food` (`restockBelow`), and faults `died` on a death or a `lifeId`
+  change. In the Wilderness it logs every player it sees (`sightings`, with
+  whether the attack rule of `pvp_combat.rs2` lets them attack us, and
+  `wouldPause` counts for both rules), and splits the damage it takes into
+  `fallDamage` (a fail message that tick), `playerDamage` and `npcDamage`. A
+  threat is a player who can attack us at this Wilderness level and is either
+  targeting a player within `threatTargetRange` tiles of us or, from off the lap
+  path, has walked `threatCloseTiles` closer within `threatCloseTicks` ticks. The
+  approach is judged by the player's own movement against our current tile, so our
+  walking along the lap does not count. `levelTicks` records the tick each level was
+  reached, so any band is priced from one run.
+
 - The knife cycle anchors its first lock on observed xp, so it needs no warm-up walk.
   An xp drop seen **off the predicted phase** (a late starter, or two ticks decoded in
   one pass during a server overrun) re-anchors the schedule on that roll at once
@@ -240,6 +254,15 @@ Notes that differ from the lite scripts:
   15 ticks. Moves never take a bone (+2 ticks each), the stay after a 3-tile move stays
   plain, and under `starter: 'none'` the option is inert. Schedule and reasons:
   `research/bones-placement.md` section 4 and the knife-mine.ts header.
+- **Below 63 on a Mining rock** (`success: 'iron'` or a `[lo, hi]` stat_random range, closed
+  loop only): a roll that gives no xp although the click's "You swing your pick" message
+  came on the label it was due is a failed roll. The rock stays live and the next transition
+  is planned from it like a success, so the knife lap keeps 3 ticks per roll. A miss without
+  that message, or a run of misses the success chance makes under 1% likely, keeps the
+  default slip handling. `rate` (a number, or `[minLevel, rate]` pairs for the held
+  pickaxes) sets every roll a knife starter does not set: a click on an expired clock rolls
+  `rate` ticks after it lands. Without either parameter the packets are byte-identical to
+  the program before them (knife-mine.test.ts's golden timelines).
 - Pickpocket eats only in a success window (with the click that follows a success, at
   least 4 ticks after the stun ended), and at once only when HP is at or below
   `forcedBelow`. A bite during a stun costs 3 ticks (`thieving.md`).
@@ -268,8 +291,10 @@ Notes that differ from the lite scripts:
 
 `docs/speedrun/scripts/tickprog-lab.sh` runs one batch: the engine and gateway on a
 port block, this checkout's bundle, the bot's page in Chrome (`tickprog-tab.ts`,
-headful unless `HEADLESS=1`), then each `tickprog-measure.ts` mode (`probe`, `mine`,
-`fly`, `willow`, `tree`, `pickpocket`, `agility`), or a step-module driver given by its
+headful unless `HEADLESS=1`; `HEADLESS=shell` uses chrome-headless-shell where a batch
+sandbox kills full Chrome), then each `tickprog-measure.ts` mode (`probe`, `mine`,
+`fly`, `willow`, `tree`, `pickpocket`, `agility`; `fly`, `willow` and `tree` take
+`--gated [--hold=0.15]` to run through `speedrun/lib/gated-program.ts`), or a step-module driver given by its
 `.ts` path (`speedrun/lab/measure-fishing.ts:fly:--level=78`), plus `wedge` (the watchdog check,
 `tickprog-wedge.ts`) and `throttle` (Chrome background throttling,
 `tickprog-throttle.ts`). The tab driver prints one `[program] end {json}` line per
