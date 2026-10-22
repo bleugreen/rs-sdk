@@ -95,7 +95,7 @@ fleet's hands as of the date given.
 | H15 | S19 | Witchaven / Ardougne landing | during S18 | trade giver, Ashburn (rs/117) | swamp paste 1, unlit torch 1; Ardougne runes 1 cast |
 | H16 | S20 | Hemenster, before the contest | during S19 | carp helper, bbs fleet, handing to the trade giver, Ashburn (rs/117) | raw giant carp 1 (the carp helper leaves the contest before its third catch); fishing rod 1; fishing bait 1; coins 5; Camelot runes 3 casts (3 law, 15 air); **for T20-21: Ardougne runes 1 cast and 30 coins for Captain Barnaby; for T21-22: Lumbridge runes 1 cast** |
 | H17 | S21 | **in force: the body altar room**, ruins (3052,3444) south of Edgeville (main, 15:17 PDT); the nature altar room beside (2400,4839) only if main switches | **a continuous roster**, staged during S18-S20 and running through S21; SCORED stays logged in | **22 body-altar givers, Ashburn (rs/117), no keeper**: N = ceil(142 / 7) + 1 on rs/163's measured restock round trip of **139-142 ticks** (mean 140.8, n = 9: trade given, exit portal, Edgeville bank (3094,3491), 27 essence, the body ruins, back on its tile; 12 of 12 tuned turns, every measurable gap 7 ticks; m, lab, 16:17 PDT). The lab gave the essence by a staff give, so a real withdraw is a few ticks either way; 142 has 6 ticks of headroom before N = 23 (at 148); essence mined on bbs and couriered | **Body plan:** each delivery rune essence 27, unnoted; each giver keeps its own body talisman (not consumed); 194 deliveries, **5,238 essence** (189 more in H5); **23 of the fleet's 57 body talismans**, SCORED's 1 and the 22 givers' (57 cover a round trip up to ~385 ticks); +205 on the score against the nature plan (supply-fallbacks.md section 7; RUN-ORDER.md section 7). rs/41 holds **0 nature talismans** (15:00 PDT; a GE bid of 6 at 30,025, none ever sold). **Essence: 63,674 in the fleet ledger, complete.** **The nature altar** is a sensitivity in RUN-ORDER.md, not a plan (main, 15:17 PDT; decided after rs/194's 17:00 PDT report and rs/163's 22:05Z run-host slot): 161 deliveries, 4,347 essence, SCORED's nature talisman and a talisman keeper at the ruins (2868,3018), and **~52 tick-exact givers** on rs/163's measured no-glory round trip of ~355 ticks a restock (Captain Barnaby out 167-169, the customs officer back 169-176; m, lab), reaching the ruins by the Ardougne-Brimhaven ship; it would save 171 with 2 nature talismans, 205 with 4 or more |
-| H18 | S22 | Lumbridge river (3241,3248) | during S21 | trade giver, Ashburn (rs/117) | fly fishing rod 1; feather 580 (SCORED already holds the knife and a log); Lumbridge runes 1 cast (T22-23) |
+| H18 | S22 | Lumbridge river (3241,3248) | during S21 | trade giver, Ashburn (rs/117) | fly fishing rod 1; feather 580; **normal logs 10** (the log margin, below; SCORED already holds the knife); Lumbridge runes 1 cast (T22-23) |
 | H19 | S23 | Lumbridge castle kitchen (3209,3215) | during S22 | trade giver, Ashburn (rs/117) | egg 1, bucket of milk 1, pot of flour 1; Falador runes 1 cast (T23-24) |
 | H20 | S24 | **the Rusty Anchor, Port Sarim (3045,3257)** | during S23 | trade giver, Ashburn (rs/117); stocked by the quest-item gatherer | goblin mail 3, orange dye 1, blue dye 1 (Goblin Diplomacy); raw rat meat, raw bear meat, raw beef, raw chicken, 1 each (Druidic Ritual; the enchanted meats are **[untradeable]**, SCORED dips them); **cadava berries 1** (Romeo and Juliet's only item: the apothecary makes the potion from them, r `apothecary.rs2:61-65`; rs/126 owns the full list); Falador runes 1 cast (to Kaqemeex) and Varrock runes 1 cast (to Romeo) |
 | H21a | S25a | Varrock west anvil (3188,3426) | staged before S25 | trade giver, Ashburn (rs/117), at the anvil; bars from the bars role, bbs fleet | hammer 1; then 31 trades of 24-25 unnoted bars, each taking the 5 platebodies back: bronze bar 15, iron 39, steel 120, mithril 305, adamantite 365 (including one spare inventory of the top three tiers) **[scarce: GE not viable]**. Fallback with no adamantite: mithril platebodies above 88, about +425 mithril bars (supply-fallbacks.md section 2) |
@@ -108,6 +108,22 @@ fleet's hands as of the date given.
 
 Lookouts (bbs fleet, no items): one helper at each Wilderness stretch (S14, S16, S27, S17) and at the
 zoo iron and the Taverley oaks before S09 and S07, reporting players in view (RUN-ORDER.md R8, R9).
+
+**Log margin for knife loops** (main's ruling, 17:3x PDT 2026-10-21, relayed by rs/158). A knife
+loop can complete an arrow-shaft fletch, which deletes a log (`cut_logs.rs2`). Two measured rates:
+
+- **knife-cycle fly fishing: 1 log per 513 active knife ticks** (5 starter logs fletched by level 97
+  in 2,566 knife ticks; m, demo, rs/195's cairn_casts attempt, `docs/speedrun/rehearsals/fishing.md`
+  and `fishing-evidence.json` at 7c841f92). One attempt, so an estimate, not a bound.
+- **knife-mine: 0 in 3,184 knife ticks** (1,050 ores, 10 logs at the start and the end; one-sided
+  95% upper bound 0.94 per 1,000 knife ticks; m, lab, rs/226; `skills/mining.md` section 7, PR
+  pending): the ore drop clears the fletch queue the tick it would fire.
+
+For a loop that leaves the fletch queue standing, carry **logs = max(ceil(2 x K / 513), 2 x K /
+600)**, K the step's active knife ticks. **S22** (K about 2,000): 8 by the rule, **10 carried**, as
+rs/195's module does, delivered in H18. **S09**: about 5 (H4), no margin. **S07**: none, the loop
+chops its own logs. H4 keeps its 6 normal logs for both kits. Normal logs don't stack: one slot
+each.
 
 **The nature altar roster (H17's alternative; the body altar is the plan in force).** A roster needs no SCORED relog: a giver that has traded leaves,
 banks, takes 27 essence and comes back in. Without a glory the round trip is the Brimhaven ship,
@@ -125,18 +141,28 @@ logs in after SCORED drops to the robust 8-tick schedule for its own trades.
 
 ### Peak concurrent logins (the swarm bound)
 
-Main's rule (15:35 PDT; a tenet is proposed): **our simultaneous demo logins, summed across every
-host, stay at or under 100, with a working cap of 80.** The server's operator bans at 100
+Tenet 16 (cairn://p/rs/tenets/16, approved 17:43 PDT) and main's working cap: **our simultaneous
+demo logins, summed across every host, both Ashburn machines included, stay at or under 100, with a
+working cap of 80.** The server's operator bans at 100
 simultaneous connections per IP, and deliberately spreading across IPs to evade it is what gets
 accounts banned. The count is taken across every host before SCORED's login (RUN-HOST.md step 7),
-and fleet accounts not needed during the run are logged out.
+and fleet accounts not needed during the run are logged out. Rehearsals pause on both Ashburn machines from
+the start of the run day's gate series until the run's teardown, the only logins on the machine not
+chosen being gate probes, and anything of ours still logged in there counts (RUN-ORDER.md, rehearsals
+on the machine not chosen, settled).
 
-The rosters are this page's givers. Every rs/117 giver logs in **before SCORED's run login** ("How
-hand-offs work"; RUN-ORDER.md R12): login order decides the tuned Runecraft cycle and the bone
-givers' roll-label requests, and SCORED does not relog until S25c. So **S21's givers are online from
+The rosters are this page's givers. Every rs/117 giver runs on SCORED's machine and logs in **before
+SCORED's run login** ("How hand-offs work"; RUN-ORDER.md R12, measured): on one machine login order
+decides the tuned Runecraft cycle and the bone givers' roll-label requests, and SCORED does not relog
+until S25c. So **S21's givers are online from
 the run login, not only in S21**, and the peak is at the start. An account no longer needed can log
 out (the 7 air givers after S06, b01-b04 after S07's last load, the S21 givers after S21) without
 disturbing the others' order (i).
+
+**At the start gate**, before the machine is chosen (RUN-HOST.md step 5a): S06's 7 air-altar givers
+and a gate account on **each** Ashburn machine, 16 in all, plus the ambassador and the bbs roles the
+run uses; the rest of the roster logs in on the chosen machine after the choice, and the other
+machine's 7 log out.
 
 | Phase | SCORED and the ambassador | Trade-giver pool (the hand-offs, H4m, S18's top-ups, the wine) | Air altar givers (S06) | Bone givers b01-b04 (S07) | Body-altar givers (S21) | Run accounts | With the gathering fleet (~53) | Nature altar instead (~52 givers): run accounts; with the fleet |
 |---|---|---|---|---|---|---|---|---|
@@ -157,24 +183,21 @@ when the rest of the fleet is out.)
   (gathering is finished by run day; RUN-HOST.md step 7), not one of two fixes. Drawing the 7 air
   and 4 bone givers from the 22 body-altar givers also helps: 26 run accounts, ~79 with the fleet.
   rs/117 sets the roster.
-- **Per machine.** In S21 one machine holds ~25 of these (22 givers, the 2 trade givers and
-  SCORED; the ambassador is elsewhere), above main's ~20-per-machine note. Flagged to rs/host and
-  main; fold-in 10 places the accounts across machines (RUN-ORDER.md O38).
-- **Open: when S21's givers log in** (RUN-ORDER.md O38). This table follows this page's reading of
-  R12, every rs/117 giver in before SCORED. The host thread's plan (16:15 PDT, going into fold-in
-  10) logs S21's roster in later, on the running machine only, with only S06's 7 givers at the
-  start; if processing order follows login order, rs/131's `rc-cycle` then finishes each SCORED-first
-  turn on the robust 8-tick schedule, ~+161 on S21. Under that plan the start falls to ~68 with the
-  fleet in (15 run accounts) and S21 stays ~79. rs/host and main decide, with rs/131 and rs/117 on
-  processing order.
+- **Per machine.** From the run login through S06 the chosen machine holds SCORED and ~35 givers
+  (7 air, 22 body, 4 bone, 2 trade; the ambassador is elsewhere), ~25 by S21. That is fine on the
+  swarm side: the demo's bound is per IP and the cap a total, and main's "~20 a machine" was an
+  observation, not a cap (main, 16:24 PDT). The CPU side is the giver-load check, pending
+  (RUN-ORDER.md O41).
+- **Settled: S21's givers log in before SCORED** (RUN-ORDER.md O38, settled; main, 16:35-16:36
+  PDT), on SCORED's machine, so this table stands. The host plan of a later S21 login (16:15 PDT) is
+  withdrawn.
 - **The nature altar** (RUN-ORDER.md's sensitivity row) takes ~52 givers: ~107-109 through S21 with
   the fleet in, ~30 more givers than the body plan's 22, so it requires **logging out at least 30
-  fleet accounts**, which is plausible because gathering is finished by run day. If the givers log in
-  before SCORED (the open question above), that holds
-  **from before SCORED's run login through the end of S21**, not for S21 alone, and it is at least 40
-  unless the 7 air and 4 bone givers are drawn from the 52 (~120 at the start otherwise). A SCORED
-  relog before S21 (~3.6 ticks, RUN-ORDER.md section 4) would let the givers log in late instead; no
-  step plans one (RUN-ORDER.md O38).
+  fleet accounts**, which is plausible because gathering is finished by run day. With the givers in
+  before SCORED (settled), that holds **from before SCORED's run login through the end of S21**,
+  not for S21 alone, and it is at least 40 unless the 7 air and 4 bone givers are drawn from the 52
+  (~120 at the start otherwise). It stays eligible only if rs/194 holds 4 or more talismans before
+  the run's eve and the ~65-client load check passes (main, 17:07 PDT; RUN-ORDER.md O41).
 
 ### Status by hand-off: rs/41's forecast to 2026-10-23
 
@@ -302,7 +325,7 @@ section 1).
    section 1, "Status by hand-off"), ~126,000 coins in H22.
 8. rs/117's helpers on the run machine (the trade-giver pool, the four S07 bone givers, the 7 air altar
    givers, the N altar givers for S21, at the body altar while no nature talismans are held (22
-   givers on 23 body talismans, m, lab, rs/163; when S21's givers log in is open, RUN-ORDER.md O38), and the talisman keeper if they arrive) are logged in, before SCORED.
+   givers on 23 body talismans, m, lab, rs/163; they log in before SCORED, RUN-ORDER.md O38, settled), and the talisman keeper if they arrive) are logged in, before SCORED. "The run machine" is the Ashburn machine chosen at the gate (RUN-HOST.md step 5a).
 9. H1-H5 and H4.1 are staged (H1 at the landing tile, H2's row dropped and past its reveal, H4 at
    Doric's, H4.1 at the oak tile, H5's seven givers in the air altar room or ready to enter).
 10. The H17 roster is staffed and rehearsed, or the logout fallback is agreed.
