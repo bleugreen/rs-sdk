@@ -254,6 +254,9 @@ to fill this optional telemetry gap.
 
 Recording: `rs195-casts-20261022T000329Z.mkv`, 1920×1080 yuv420p, 1,311.3 seconds,
 39,339 frames, 30 fps, **zero dropped frames**, 174,763,855 bytes (m).
+
+**The recording does not show the attempt.** The operator found that it shows the gate account cairn_twin's tab for the whole run: rehearse.ts kept the gate tab logged in and on top of the same X display for the after-probe. The timing evidence (tick log, hiscore row) is unaffected. Fix: rs/232.
+
 It remains on the twin under `~/recordings/` and was copied to the Mac's
 `~/Movies/rs-run/`. Recording CPU was **not sampled**; do not borrow a previous
 host run's CPU figure. Operator viewing through live.soko.tools was not verified.
