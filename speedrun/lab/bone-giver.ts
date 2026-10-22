@@ -9,7 +9,9 @@
 // Options: --asks=15,21,... (S18 on-request top-ups of those sizes), --loads=N (default 10), --pages=2,5 (loads followed by a held level-up page), --hold=6,
 //   --order=giver-first (default, the run's order) | receiver-first,
 //   --givers=N: N givers (cairn_h70, h71, ...) taking turns as one group (bone-giver.ts group, S07's b01-b04),
-//   the stand-in taking each load from the group's server (boneServer)
+//   the stand-in taking each load from the group's server (boneServer),
+//   --final=N (with --givers): giver N (0-based) carries S07's last-load runes (finalExtras: law 1, air 5) and must
+//   be the one that serves the group's last load, which the stand-in takes with the runes
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -52,11 +54,22 @@ const config = {
         const sites = [{ giver: { x: 2913, z: 3494 }, receiver: { x: 2914, z: 3494 } }];
         const scope = asks.length ? { step: 'S18', family: 'courier' } : { step: 'S07', family: 'bone' };
         if (asks.length && nGivers > 1) throw new Error('--givers is for the standing mode (S07)');
-        // A group runs until the stand-in has its loads (the launcher stops everyone when the final role ends).
-        const limit = nGivers > 1 ? { group: givers } : { trades: loads };
-        const g = givers.map(account => ({ account, role: 'bone-giver', options: asks.length ? { mode: 'on-request', restock: { kind: 'cheat' }, sites, scope } : { restock: { kind: 'cheat' }, sites, scope, ...limit } }));
+        // With a group, trades counts the group's loads.
+        const limit = nGivers > 1 ? { group: givers, trades: loads } : { trades: loads };
+        const finalAt = arg('final', '') === '' ? -1 : Number(arg('final', ''));
+        if (finalAt >= 0 && !(nGivers > 1 && finalAt < nGivers)) throw new Error('--final=N needs --givers and 0 <= N < givers');
+        const RUNES = [
+            { item: 'Law rune', count: 1, obj: 'lawrune' },
+            { item: 'Air rune', count: 5, obj: 'airrune' }
+        ];
+        const g = givers.map((account, i) => ({
+            account,
+            role: 'bone-giver',
+            options: asks.length ? { mode: 'on-request', restock: { kind: 'cheat' }, sites, scope } : { restock: { kind: 'cheat' }, sites, scope, ...limit, ...(i === finalAt ? { finalExtras: RUNES } : {}) }
+        }));
         const who = nGivers > 1 ? { givers } : { giver };
-        const r = { account: receiver, role: 'bone-receiver', receiver: true, final: true, options: asks.length ? { giver, asks, pageLoads: [], scope } : { ...who, loads, pageLoads: pages, holdTicks: hold, scope } };
+        const extras = finalAt >= 0 ? { finalExtras: RUNES.map(({ item, count }) => ({ item, count })) } : {};
+        const r = { account: receiver, role: 'bone-receiver', receiver: true, final: true, options: asks.length ? { giver, asks, pageLoads: [], scope } : { ...who, loads, pageLoads: pages, holdTicks: hold, scope, ...extras } };
         return arg('order', 'giver-first') === 'receiver-first' ? [r, ...g] : [...g, r];
     })()
 };
