@@ -40,6 +40,26 @@ try {
     await cheat(sdk, '~energy', 1);
 
 
+    if (process.argv.includes('--pipe')) {
+        // The garlic pipe: each Wall Pipe tile's reachable flag, and a garlic use on it from inside the fence.
+        for (const px of [2637, 2636, 2638]) {
+            await clearInventory(sdk);
+            await give(sdk, ['garlic']);
+            await mustTele(sdk, 2637, 3444 + 1);
+            await waitUntil(sdk, s => s.nearbyLocs.length > 0, { maxTicks: 10 });
+            await waitTicks(sdk, 2);
+            const pipes = (await sdk.scanNearbyLocs(6)).filter(l => /pipe/i.test(l.name));
+            console.log(`pipes: ${pipes.map(l => `${l.name}#${l.id}@${l.x},${l.z} reachable=${(l as { reachable?: boolean }).reachable}`).join('  ')}`);
+            const t0 = sdk.getState()!.tick;
+            const slot = sdk.getState()!.inventory.find(i => /garlic/i.test(i.name))!.slot;
+            const sent = await sdk.sendUseItemOnLoc(slot, px, 3446, 41);
+            await waitTicks(sdk, 8);
+            const s = sdk.getState()!;
+            console.log(`garlic on pipe ${px},3446: sent ${JSON.stringify(sent).slice(0, 160)}; at ${pos(s).x},${pos(s).z}; garlic ${s.inventory.some(i => /garlic/i.test(i.name)) ? 'held' : 'gone'}; msgs ${JSON.stringify(s.gameMessages.filter(m => m.tick >= t0).map(m => m.text))}`);
+        }
+        process.exit(0);
+    }
+
     // McGrubor's railing: the squeeze from each side (the tile it ends on, not the approach step), then a
     // real run to the nearest vine from there, its trail, and a dig with the spade.
     for (const side of ['W', 'E'] as const) {
