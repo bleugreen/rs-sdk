@@ -156,9 +156,9 @@ of Goblin Diplomacy's standalone travel that the legs already carried off its ro
 cannon session, Prayer, Crafting and Cooking pass it. Fold-in 13 adds S15's measured H to M (+352),
 so Monkey Madness (4,429) passed Agility (4,327) for rank 1; fold-in 15's N to P and the rope pin (+310) put it at 4,739.
 
-The expected column sums to **32,273** (the steps) plus the legs' **2,209.5**; RUN-ORDER.md section 6
+The expected column sums to **32,260** (the steps) plus the legs' **2,209.5**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **35,767.5** knife-on expected (32,796.7 best), against the record of 35,916.
+retries, restarts) for its **35,754.5** knife-on expected (32,783.7 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -189,7 +189,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 19 | 20 | Sea Slug | `speedrun/quests/sea-slug.ts` | S19 | 361 | 307 | 462 | ~155 | overlay | `quest-smallskill-seaslug.ts` | building (rs/185, held: tenet 15) |
 | 20 | 21 | Romeo & Juliet | `speedrun/quests/romeo-juliet.ts` | S24 | 241 | 211 | 301 | ~90 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
 | 21 | 22 | Druidic Ritual | `speedrun/quests/druidic-ritual.ts` | S24 | 239 | 220 | 284 | ~64 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
-| 22 | 24 | Magic (strike, enchant) | `speedrun/skills/magic.ts` | S02, S04 | 216 | 216 | ~244 | ~28 | overlay | `magic-strike.ts`, `magic-cadence.ts` | building (rs/285); S02 12 m (lab, 3 of 3; the demo on cairn_m01); S04 `handBack: 'keep'`, the last 20 rings to H4's swap |
+| 22 | 24 | Magic (strike, enchant) | `speedrun/skills/magic.ts` | S02, S04 | 203 | 203 | ~231 | ~28 | overlay | `magic-strike.ts`, `magic-cadence.ts` | building (rs/285); S02 12 m (lab, 3 of 3; the demo on cairn_m01); S04 191 m (lab, 2 of 2) with `handBack: 'keep'`, the last 20 rings to H4's swap |
 | 23 | 23 | Fishing Contest | `speedrun/quests/fishing-contest.ts` | S20 | 181 | 158 | 234 | ~76 | overlay | `quest-smallskill-fishingcompo.ts` | building (rs/185, held: tenet 15) |
 | 24 | 27 | Herblore | `speedrun/skills/herblore.ts` | S25e | 170 | 117 | ~200 e | ~83 | overlay | `delayfree-cycle.ts` | building (rs/186, held: tenet 15) |
 | 25 | 26 | Pre-MM cannon session | `speedrun/skills/ranged.ts` (`cannonSession`) | S14 | 118 | 104 | ~162 | ~58 | overlay | `quest-premm-cannon.ts`, `ranged-cannon.ts` | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible) |
@@ -1906,11 +1906,14 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   on the cast and 2 base a damage, `player_magic.rs2:170`, at `NODE_XPRATE` 25, `speedrun/lib/xp.ts`),
   past level 8's 705 on the engine's curve (`Player.ts` `levelExperience`, 2^(level/10)); +5 for a
   fifth cast if the hits miss. Starting S04 at Magic 8 changes nothing: `simulatePlan` gives the same
-  60 casts ending at 59 from 7 or 8. S04 **204** (inferred: 180 cast
-  ticks measured at 3 per cast, every gap 3 with level-ups closed by the cast itself,
-  `research/levelup-cost.md` §2; plus 3 ring trades at 8 measured, `research/run-transitions.md` §3).
-  Expected and best **216**. S04 stays 204 until rs/285's re-run without the 4th trade reports: its three
-  ring trades ran at 3 ticks each against the 8 priced, so a downward move is likely. **Not on the walk**: the walk to Doric's with the casts riding measured
+  60 casts ending at 59 from 7 or 8. S04 **191** (measured, rs/285's module, lab, 300 ms, 2 of
+  2: 57 of 57 in-load gaps at 3, each ring trade 4 ticks on SCORED's clock, load turnarounds 7; 204
+  inferred before, from 180 cast ticks and 3 ring trades at 8). **The ring givers stand on SCORED's side
+  of any wall or fence at the row's end** (`RING_CONTRACT.where`: a wall cost ~20 in an earlier lab run).
+  Expected and best **203**. **H4's slots** (rs/158's rule on rs/285's lab): SCORED drops the 2 body runes with
+  the starter junk on T01-02 and the 11 mind runes on T02-03 after S02 (nothing on the route casts with
+  either), because H4 needs 23 free slots and SCORED would arrive at Doric's with 22; that leaves 1
+  spare. **Not on the walk**: the walk to Doric's with the casts riding measured
   252-258 against ~240 for casting standalone and teleporting, and 2 of 4 riding runs went wrong
   (`research/run-transitions.md` §5). Wind Strike leaves its 5 level-up pages open: answer them
   with a blind burst on the next label (0-7 ticks, `research/levelup-cost.md` §4).
@@ -2065,7 +2068,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Serves:** S05, **from Doric (2952,3451)**, its arrival tile: the Falador teleport and the run north
   are T04-05 (entry 11; RUN-ORDER.md O6).
 - **Preconditions:** 6 clay, 4 copper ore, 2 iron ore (`quests/README.md` §4 step 1). **S04's last 20 enchanted
-  rings go back in H4's trade** as a `swap()` in the same trade (`lib/trade.ts`, on main, #230; `trade.rs2:161-190` counts offered items as freed, so no extra slots): SCORED's half is rs/185's S05 module, `dorics-quest.ts`, using magic.ts's `enchantedRingSpecs(state)`; the trade giver's half already exists, HS1's `giveOpenTrade` (`speedrun/helpers/mule.ts:345-376`), which calls `lib/trade.ts` `give()` with `expectTheirs: ANY_OFFER` and re-accepts after SCORED's offer resets both accepts (`mule.test.ts:128` tests the two-way swap; rs/41). Fallback: a give-only trade at Doric's with the same giver, +4-8 (RUN-ORDER.md sensitivity); rs/285 measures the swap against a give-only H4.
+  rings go back in H4's trade** as a `swap()` in the same trade (`lib/trade.ts`, on main, #230; `trade.rs2:161-190` counts offered items as freed, so no extra slots): SCORED's half is rs/185's S05 module, `dorics-quest.ts`, using magic.ts's `enchantedRingSpecs(state)`; the trade giver's half already exists, HS1's `giveOpenTrade` (`speedrun/helpers/mule.ts:345-376`), which calls `lib/trade.ts` `give()` with `expectTheirs: ANY_OFFER` and re-accepts after SCORED's offer resets both accepts (`mule.test.ts:128` tests the two-way swap; rs/41). Fallback: a give-only trade at Doric's with the same giver, +4-8 (RUN-ORDER.md sensitivity); the swap costs 0 (6 ticks with the 20 rings and 6 without, m, rs/285). **Slots:** H4 needs 23 free (22
+  unstackables and the new law stack); SCORED has them only after dropping the 2 body runes on T01-02 and
+  the 11 mind runes on T02-03 (entry 24), with 1 to spare.
 - **Postconditions:** 1,300 Mining (49); 1 QP.
 - **Ticks:** expected **22** (fixed, measured), best **17** (burst, inferred), fallback **43** (stock,
   measured): `quests/README.md` §3 row's 65 / 60 / 90 less its travel, 43 fixed and burst and 47 stock
