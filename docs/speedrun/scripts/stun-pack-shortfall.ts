@@ -106,13 +106,15 @@ interface Plan {
     s27balls: number;
 }
 
-function plan(n: number): Plan {
+// `fill`: Superheat in every stocked stun even once Magic no longer needs it (the casts past 99 are
+// paid for by their Smithing alone). `chargeCap`: cast fewer Charges than the runes allow.
+function plan(n: number, opts: { fill?: boolean; chargeCap?: number } = {}): Plan {
     const runes = Math.max(0, n - KOLODION_RESERVE);
-    const charge = Math.min(Math.floor(runes / BLOOD_PER_CHARGE), Math.ceil((GOAL - START) / CHARGE_XP));
+    const charge = Math.min(Math.floor(runes / BLOOD_PER_CHARGE), Math.ceil((GOAL - START) / CHARGE_XP), opts.chargeCap ?? Infinity);
     const chargeBase = START + charge * CHARGE_XP;
     const remain = Math.max(0, GOAL - chargeBase);
     const stocked = STOCKED_STUNS_LIVE.value;
-    const stunCasts = Math.min(Math.ceil(remain / SUPERHEAT_XP), stocked * CASTS_PER_STUN);
+    const stunCasts = opts.fill ? stocked * CASTS_PER_STUN : Math.min(Math.ceil(remain / SUPERHEAT_XP), stocked * CASTS_PER_STUN);
     const stuns = Math.ceil(stunCasts / CASTS_PER_STUN);
     const after = Math.max(0, remain - stunCasts * SUPERHEAT_XP);
     const standalone = Math.ceil(after / SUPERHEAT_XP);
@@ -197,3 +199,21 @@ for (const n of [436, 559]) {
 }
 curve.sort((a, b) => Number(a[0]) - Number(b[0]));
 table(['N', 'Charge casts', 'Magic by Charge', 'Superheat stuns / after', 'Gross', 'Net of Smithing'], curve);
+
+// Fill policy: every stocked stun superheats, so the casts past Magic 99 earn Smithing only.
+const fillNs = [300, 400, 456, 500, 559];
+table(['N', 'Charge casts', 'Net, Superheat only as Magic needs', 'Net, Superheat in every stocked stun'],
+    fillNs.map(n => {
+        const a = plan(n), b = plan(n, { fill: true });
+        return [n, a.charge, sgn(a.gross - a.credit), sgn(b.gross - b.credit)];
+    }));
+
+// Charge-count sweep at one N: fewer Charges never pay, since Charge itself costs 0 ticks
+const sweepN = 500;
+const sweep: (string | number)[][] = [];
+for (const c of [0, 40, 80, 100, 120, 122, 130, 143]) {
+    const a = plan(sweepN, { chargeCap: c }), b = plan(sweepN, { chargeCap: c, fill: true });
+    sweep.push([c, sgn(a.gross - a.credit), sgn(b.gross - b.credit)]);
+}
+console.log(`Charge-count sweep at N = ${sweepN}:\n`);
+table(['Charge casts', 'Net, as Magic needs', 'Net, every stocked stun'], sweep);
