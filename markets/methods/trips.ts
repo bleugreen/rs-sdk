@@ -41,11 +41,18 @@ export function boardOf(delta: ReadonlyMap<string, number>, costs: ReadonlyMap<s
     return v;
 }
 
-/** One trip per pair of consecutive snapshots; snapshots taken on the same tick collapse to the last. */
-export function trips(snaps: readonly BankSnap[], nameOf: NameOf = debugNameOf, costs: ReadonlyMap<string, number> = objCosts()): Trip[] {
+/**
+ * One trip per pair of consecutive bank visits. Snapshots within `mergeTicks` of the one before
+ * belong to the same visit (a role may report after each deposit and withdrawal) and collapse to
+ * the last.
+ */
+export function trips(snaps: readonly BankSnap[], nameOf: NameOf = debugNameOf, costs: ReadonlyMap<string, number> = objCosts(), mergeTicks = 20): Trip[] {
     const kept: BankSnap[] = [];
+    let last = -Infinity;
     for (const s of snaps) {
-        if (kept.length && kept[kept.length - 1]!.tick === s.tick) kept[kept.length - 1] = s;
+        const same = kept.length > 0 && s.tick - last <= mergeTicks;
+        last = s.tick;
+        if (same) kept[kept.length - 1] = s;
         else kept.push(s);
     }
     const out: Trip[] = [];

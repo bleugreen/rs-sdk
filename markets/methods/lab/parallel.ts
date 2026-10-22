@@ -15,8 +15,10 @@ const env = { ...process.env };
 delete env.BOT_USERNAME;
 delete env.PASSWORD;
 const jobs = specs.map(spec => {
-    const [bot, rest] = spec.split('=', 2) as [string, string];
-    const [method, ...args] = (rest ?? '').split(',');
+    // split at the first '=' only: the args after it carry their own (`--ticks=6000`)
+    const eq = spec.indexOf('=');
+    const bot = spec.slice(0, eq);
+    const [method, ...args] = spec.slice(eq + 1).split(',');
     const child = Bun.spawn(['bun', 'markets/methods/lab/rate.ts', bot, `--method=${method}`, ...args], { env, stdout: 'inherit', stderr: 'inherit' });
     return child.exited.then(code => console.log(`JOB ${bot} ${method} exited ${code}`));
 });
