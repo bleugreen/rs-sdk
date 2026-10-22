@@ -2353,8 +2353,6 @@ export default class Player extends PathingEntity {
     }
 
     messageGame(msg: string) {
-        // TEMP rs/317 decode trace
-        if (process.env.DECODE_TRACE && this.username.toLowerCase().replace(/[^a-z0-9]/g, '') === process.env.DECODE_TRACE.toLowerCase().replace(/[^a-z0-9]/g, '') && /You attempt to pick|You fail to pick|You pick the|Congratulations/.test(msg)) console.log(`DTRACE ${World.currentTick} msg=${msg.slice(0, 48)}`);
         this.write(new MessageGame(msg));
     }
 
