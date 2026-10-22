@@ -71,9 +71,8 @@ unclaimed, never with a variant.
 
 ## How a claim runs
 
-On rs-ashburn-rehearsal (HOST.md), one account at a time, under rs/147's slot. The slot file
-carries `"logins":1` as its own top-level field next to `owner`, `until` and `reason`: inside the
-reason string the quotes would break the JSON. The page server, gateway and Chrome run from
+On rs-ashburn-rehearsal (HOST.md), one account at a time, under an `rs-claim` that declares one
+login (HOST.md, "Claims"). The slot files the first claims ran under are retired. The page server, gateway and Chrome run from
 `~/rs-sdk` as RUN-HOST.md step 3 does. Chrome starts on a blank page; the harness opens each
 account's tab over the DevTools port (`lib/tab.ts` `reloadOrOpenTab`). The harness runs from the
 per-attempt worktree `~/rs-167`, whose `bots/` is a symlink to `~/rs-sdk/bots` (HOST.md). Per

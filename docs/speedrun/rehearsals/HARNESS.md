@@ -128,7 +128,9 @@ without a tab strip or address bar. The account's
 and the gate account `cairn_twin`'s needs the same. Off a local world the harness uses
 `cairn_twin` when no `--gate-bot` is given; the command below names it anyway.
 `cairn_gate` is rs/149's personal gate account, and the harness never uses it. Before
-launching: the slot (`~/rehearsal-slots/`) and the leftover check. When the host checkout
+launching: your `rs-claim` (HOST.md, "Claims"; `~/rehearsal-slots/` is retired) and the
+leftover check. Read HOST.md's "Open gap" first: the harness's pre-flight does not yet tell its
+own claim from a host reservation. When the host checkout
 is not at the attempt's commit, run from a worktree of it, as the demo acceptance did (HOST.md).
 Then replace `cd ~/rs-sdk` with `cd` to that worktree.
 

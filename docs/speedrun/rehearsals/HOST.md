@@ -2,7 +2,7 @@
 
 rs/147's fastest-99 rehearsals (cairn://p/rs/tenets/13) run from a twin of the scored run's host,
 never from the run host itself. This page covers only what is particular to the twin: how to reach
-it, how it differs from the run host, the slot convention behind the two-login cap, attempt
+it, how it differs from the run host, the claim lock (`rs-claim`) that books it, attempt
 worktrees, teardown, how it was built, what it costs, every gate read taken on it, and how to stop
 or remove it. **The procedure is [RUN-HOST.md](../RUN-HOST.md)**: bring-up, recording, gate,
 teardown. Run its commands here with this page's ssh line and the deltas below. Figures carry
@@ -13,7 +13,7 @@ RUN-HOST.md's labels: **m** measured (with the time), **r** read, **i** inferred
 | | |
 |---|---|
 | Instance | `i-0f690e919614af7b2`, tag `Name=rs-ashburn-rehearsal`, launched 2026-10-21 12:57 PDT by rs/149 |
-| Address | an Elastic IP (`$RS_TWIN_HOST`, below), so it survives a stop. SSH and RDP admit only the operator's address (security group `sg-0f1bb560e649e85c5`, a copy of the run host's ingress). Not on the tailnet |
+| Address | an Elastic IP (`$RS_TWIN_HOST`, below), so it survives a stop. rs/host rotated it on 2026-10-22 at 02:20Z; the instance and its host keys did not change. SSH and RDP admit only the operator's address (security group `sg-0f1bb560e649e85c5`, a copy of the run host's ingress). Not on the tailnet |
 | Machine | c7i.2xlarge in us-east-1c on the run host's subnet: 8 vCPU (Xeon Platinum 8488C), 15 GB, 60 GB gp3 (3000 IOPS, 125 MB/s), no GPU (m) |
 | OS | the run host's AMI `ami-02a9cdd4e98bc3c78`, Ubuntu 24.04.5 (m) |
 | Desktop | XFCE served by xrdp, user `ubuntu`, `max_bpp=24`, sesman `KillDisconnected=false`, `DisconnectedTimeLimit=0`, `IdleTimeLimit=0`; no screensaver or locker installed; `xset` no-blank autostart; logind `IdleAction=ignore` (m, read back by the setup script). The operator's first connect made the desktop on display **:10**, 1920x1080, 24 planes (m, session started 20:17:57 UTC) |
@@ -21,12 +21,12 @@ RUN-HOST.md's labels: **m** measured (with the time), **r** read, **i** inferred
 | Checkout | `/home/ubuntu/rs-sdk`, a clone of bleugreen/rs-sdk on a main commit, built as RUN-HOST.md step 0. The page server, the gateway and Chrome always run from here. Only rs/149 moves it, or rs/147's coordinator through rs/149 |
 | Gate accounts | `cairn_twin`, the default for the skill children and the harness (`--gate-bot`); `cairn_gate`, rs/149's own reads. Both are throwaways created on this host, with env files in `~/rs-sdk/bots/<name>/bot.env`, mode 600 |
 | Keys | `~/.rs-fleet/id_ed25519_rehearsal` on `bgsrv-ub` and on the Mac (`local`). These are **two different keys with the same file name**, one generated on each machine, so no private key has moved. Both are in ubuntu's `authorized_keys` |
-| known_hosts | `~/.rs-fleet/known_hosts_rehearsal` on both machines: the three host keys cloud-init printed to the EC2 console, pinned before the first connection |
+| known_hosts | `~/.rs-fleet/known_hosts_rehearsal` on `local` and `bgsrv-ub` only, re-pinned under the new address at the rotation (bgsrv-mac has no rehearsal key and no pin). These are the three host keys cloud-init printed to the EC2 console. To pin on any other machine, check the key against the ED25519 fingerprint `SHA256:9P9aIrnyHo/6G0Fmn//VkLLB9+RVVwlGe57uyhhdB1I` first; never trust on first use |
 | RDP password | `~/.rs-fleet/rehearsal-rdp-password` on the Mac, mode 600. Copy it with `pbcopy < ~/.rs-fleet/rehearsal-rdp-password`; never print it |
 
-**Addresses.** The twin's and the run host's addresses are not in this repository; they live in
-cairn://p/rs/host. Before using this page, export them in the shell or Cairn batch that runs its
-commands: `export RS_TWIN_HOST=<the twin's public address> RS_RUN_HOST=<rs-ashburn-run's public
+**Addresses.** The twin's and the run host's addresses are not in this repository, and never go in
+any committed file (tenet 20). They are recorded only in cairn://p/rs/host/arc. Before using this
+page, export them locally, in the shell or Cairn batch that runs its commands: `export RS_TWIN_HOST=<the twin's public address> RS_RUN_HOST=<rs-ashburn-run's public
 address> RS_RUN_TAILNET=<rs-ashburn-run's tailnet address>`. Never commit their values.
 
 **Reaching it.** Paste on the Mac, or run from a Cairn batch on executor `bgsrv-ub` (host batches)
@@ -53,10 +53,10 @@ run RUN-HOST.md's commands unchanged: they reach the run host.
   client window by hand. The harness closes the gate's window before the attempt logs in, checks
   a live frame of the display, and opens no gate window again until the recording has stopped
   (HARNESS.md, "What the recording shows"). Pass the display to the harness as `DISPLAY`.
-- **No host reservation, no gate timer.** This host has no `~/host-reserved.json`, no
-  `~/run-commit` and no rs/83 timer. The probe-slot minutes in RUN-HOST.md (:00-:03 and so on)
-  protect measurements on the run host and don't apply here. The slot files below take the
-  reservation's place.
+- **The claim is the booking.** Time on this host is taken with `rs-claim` (below), which keeps its
+  lock in `~/host-reserved.json`, the file the gate timer skips on. The gate timer and
+  `~/run-commit` are described under "Run-capable twin". The probe-slot minutes in RUN-HOST.md
+  (:00-:03 and so on) protect measurements on the run host and don't apply here.
 - **RDP** goes to the public address, `$RS_TWIN_HOST` port 3389, not to a tailnet name. Client settings are
   RUN-HOST.md step 2's (1920x1080 fixed, Retina off, 24-bit). One desktop per user applies here too,
   and a stop of the instance ends it.
@@ -87,37 +87,57 @@ A new account's env file is written on the host with a fresh random password tha
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST 'N=NAME; D=$HOME/rs-sdk/bots/$N; [ -e $D/bot.env ] && { echo "$D/bot.env exists, stop"; exit 1; }; umask 077; mkdir -p $D && { echo BOT_USERNAME=$N; echo PASSWORD=$(openssl rand -hex 8); echo SERVER=rs-sdk-demo.fly.dev; echo GATEWAY_URL=ws://127.0.0.1:7780; echo "CLIENT_URL=http://127.0.0.1:8899/bot?server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:7780"; echo CDP_URL=http://127.0.0.1:9222; echo TELEMETRY=false; } >$D/bot.env && chmod 600 $D/bot.env && ls -l $D/bot.env'
 ```
 
-## Slots: at most two rehearsal logins at once
+## Claims: `rs-claim` books the machine
 
-rs/147 allows at most two rehearsal accounts logged in at once, and its coordinator grants each
-slot (cairn://p/rs/147/1/coordinator/messages). The holder writes `~/rehearsal-slots/<owner>.json`
-(`{"owner", "until", "reason"}`, `until` in UTC) **before its first login** and removes it after its
-last clean logout. The take command refuses while two unexpired slots belong to other owners. It
-holds a lock while it counts, so two children can't both take the last slot. An expired slot
-counts for nothing, so a forgotten one blocks nobody once its time is up. `O` is the owner
-(`rs-NNN`, the issue number with a hyphen), `M` is the bound in whole minutes (the attempt's `T`
-plus margin), and `R` is the reason. Re-running it with the same `O` renews that slot. Each path
-(take, third take refused, renew, release, expired slots ignored, placeholders refused) was checked
-on the host (m, 20:07-20:09 UTC).
+Since 2026-10-22 02:28Z, time on the twin (and, until run eve, on the run host) is first come,
+first served through host's claim lock (tenet 21). It replaced rs/147's slot calendar and the slot
+files: **`~/rehearsal-slots` is retired**. Nothing reads it, so a file left there books nothing.
+The lock is `~/.local/bin/rs-claim` on both Ashburn machines. Run it on the machine you will use,
+over this page's ssh line:
 
-Take a slot:
+- `rs-claim status` shows who holds the machine, until when, and for what.
+- `rs-claim take OWNER LOGINS MINUTES WHAT` takes it. Take it **only when you are staged and
+  ready** (worktree made, served page checked, env files in place), never to hold a place in line.
+  `OWNER` is your issue as `rs/NNN`. `LOGINS` is every login you will make on this machine under
+  the claim: the gate account counts, so an attempt with its gate read declares 2. `MINUTES` is
+  your bound, the attempt's `T` plus margin. `WHAT` is a short reason. The take is granted only if
+  the claim is free, stale or already yours, and only if our accounts online now plus `LOGINS`
+  stay within 100. If the online count can't be read, it refuses. A refusal prints why.
+- `rs-claim touch OWNER` renews your claim. A claim goes stale at take + `MINUTES` + 10 minutes
+  unless it is touched, and a stale claim blocks nobody. Touch it now and then in a long hold:
+  that is also how a preempt reaches you.
+- `rs-claim release OWNER` gives it back, after the last clean logout, the teardown and the
+  leftover check.
+
+Host can preempt any claim (`rs-claim preempt MINUTES DRAIN REASON`, host only), for the gate
+series, an address rotation or the scored run. After a preempt, the holder's `touch` exits 3.
+The holder must then log every account out cleanly and release within `DRAIN` minutes, and takes
+nothing again until `status` shows the machine free. Every take, touch, release and preempt is
+logged to `~/claims/log.jsonl` on that machine. The claim enforces one holder per machine and the
+100-per-address line; keeping to tenet 13's two rehearsal accounts logged in at once is still the
+holder's job.
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST 'O=rs-NNN; M=MINUTES; R="woodcutting attempt"; case "$O" in rs-[0-9]*) ;; *) echo "set O to rs-NNN"; exit 1;; esac; case "$M" in ""|*[!0-9]*) echo "set M to whole minutes"; exit 1;; esac; D=$HOME/rehearsal-slots; mkdir -p $D; exec 9>$D/.lock; flock -w 10 9 || { echo "slot lock busy"; exit 1; }; n=0; for f in $D/*.json; do [ -f "$f" ] && [ "$f" != "$D/$O.json" ] || continue; U=$(sed -n "s/.*\"until\": *\"\([^\"]*\)\".*/\1/p" "$f"); [ -n "$U" ] && [ $(date -d "$U" +%s) -gt $(date +%s) ] && n=$((n+1)); done; if [ $n -ge 2 ]; then echo "two slots held, stop:"; cat $D/*.json; exit 1; fi; printf "{\"owner\":\"%s\",\"until\":\"%s\",\"reason\":\"%s\"}\n" "$O" "$(date -u -d "now + $M minutes" +%Y-%m-%dT%H:%M:%SZ)" "$R" >$D/$O.json.tmp && mv $D/$O.json.tmp $D/$O.json && cat $D/*.json'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST '~/.local/bin/rs-claim status'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST '~/.local/bin/rs-claim take rs/NNN 2 MINUTES "woodcutting attempt"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST '~/.local/bin/rs-claim touch rs/NNN; echo "touch exit $?"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST '~/.local/bin/rs-claim release rs/NNN; ~/.local/bin/rs-claim status'
 ```
 
-Release it (only your own), after the last clean logout and teardown:
-
-```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST 'O=rs-NNN; D=$HOME/rehearsal-slots; rm -f $D/$O.json; cat $D/*.json 2>/dev/null || echo "no slots held"'
-```
+**Open gap: `rehearse.ts` reads the claim's file.** `speedrun/rehearse.ts`'s pre-flight (rs/213,
+"Run-capable twin" below) treats any live `~/host-reserved.json` as a reservation, whoever owns
+it. It has no way to recognise the claim it runs under, the way the gate timer's `RS_GATE_OWNER`
+does. Under your own claim, then, it would refuse at pre-flight with exit 5. That is inferred from
+the lock's file and the harness's check; nobody has run it yet. Don't hide the file from the
+harness with `--host-reservation`, because that also hides a preempt. Until the harness learns its
+own claim, ask rs/147 before launching `rehearse.ts` under a claim.
 
 **Leftover check**, before any launch and after any teardown or bound. It is RUN-HOST.md's check with
-Xvfb added and the slot files in place of the reservation. After teardown, expect no tmux server, no
-process and none of your slots:
+Xvfb added and the claim's status in place of the reservation. After teardown, expect no tmux
+server, no process, and the claim still yours until you release it:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST 'for s in /tmp/tmux-$(id -u)/*; do [ -S "$s" ] && echo "tmux -L $(basename $s): $(tmux -S $s ls 2>&1 | tr "\n" " ")"; done; ps -o pid,etime,comm -p "$(pgrep -d, "^(chrome.*|ffmpeg|bun|timeout|Xvfb)$")" 2>/dev/null || echo "no chrome, ffmpeg, bun, timeout or Xvfb process"; cat ~/rehearsal-slots/*.json 2>/dev/null || echo "no slots held"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST 'for s in /tmp/tmux-$(id -u)/*; do [ -S "$s" ] && echo "tmux -L $(basename $s): $(tmux -S $s ls 2>&1 | tr "\n" " ")"; done; ps -o pid,etime,comm -p "$(pgrep -d, "^(chrome.*|ffmpeg|bun|timeout|Xvfb)$")" 2>/dev/null || echo "no chrome, ffmpeg, bun, timeout or Xvfb process"; ~/.local/bin/rs-claim status'
 ```
 
 ## Attempt worktrees
@@ -191,7 +211,8 @@ world for up to 500 ticks, and on a rehearsal account that is playtime. In order
    carries `pkill -TERM -x Xvfb` in its command line, so a `-f` pattern on `[X]vfb` matched the
    shell itself and the check never printed "tab stack stopped" (m, rs/167, 21:16 UTC).
 
-4. The leftover check, then release your slot and remove your worktree.
+4. The leftover check, then release your claim (`rs-claim release rs/NNN`) and remove your
+   worktree.
 
 rs/96's direct gate CLI (`tickmanip-latency.ts --path=direct`) logs out at the end (rs/168) and
 prints a `logout (direct):` line once the server confirms. A read whose last line says anything
@@ -275,7 +296,9 @@ Each read ran through
 [`twin-gate-pair.sh`](../scripts/twin-gate-pair.sh), fed over the ssh line above. The script runs
 the leftover check, skips when other owners' slots already hold two logins, takes its own
 `logins:1` slot, starts rs/96's direct CLI on the second under `timeout --kill-after=30s 5m`, and
-holds the slot until `/playerpositions` no longer lists the account. The CLI was rs/168's
+holds the slot until `/playerpositions` no longer lists the account. Those reads predate the claim
+lock: the script still takes a file in the retired `~/rehearsal-slots`, so it books nothing and
+is not to be run until it takes an `rs-claim` instead. The CLI was rs/168's
 logout fix (`a369af7f0`); the probe itself is unchanged from rs/96. Every read logged out on the
 first click and left the world within 0-5 s. The account stood on the Lumbridge spawn
 (3223,3222, region 50_50) each time, with 38 to 65 other players within 15 tiles. The twin
@@ -349,9 +372,11 @@ helpers count against the same 100-per-IP ban line and 80 working cap as the run
   `{"owner": "<rs/NNN or run>", "until": "<UTC ISO, e.g. 2026-10-22T03:00:00Z>", "reason": "<text>"}`.
   It is live while `until` is in the future; a file whose `until` has passed is ignored. While it
   is live, the gate timer skips, and rehearsal attempts and claims do not start (pre-flight).
-  - It is written by the scored run's step 0 (covering the gate and, on the chosen machine, the
-    run) and by rs/host for installs and hand reads.
-  - Rehearsal attempts keep using their slot files, not this file.
+  - Since 2026-10-22 02:28Z it is `rs-claim`'s lock ("Claims", above), which extends this object.
+    Every holder writes it through `rs-claim take`: the scored run's step 0 (covering the gate
+    and, on the chosen machine, the run), rs/host for installs and hand reads, and every
+    rehearsal. The slot files are retired. See "Open gap" above for what that means for
+    `rehearse.ts`.
   - Check: `cat ~/host-reserved.json 2>/dev/null || echo none`.
 
   `speedrun/rehearse.ts` enforces this (rs/213). While the sentinel is live it refuses at
@@ -359,8 +384,8 @@ helpers count against the same 100-per-IP ban line and 80 working cap as the run
   re-reads the file at each step boundary and, if a reservation has appeared, logs out cleanly and
   stops. It checks only at boundaries, so a long band (for example willows 73-99, about 12 minutes)
   finishes first.
-- **Run night, for an attempt in flight.** main announces the run night's window, and rs/147
-  grants no attempt that would still be running when it opens. If an attempt is in flight when a
+- **Run night, for an attempt in flight.** main announces the run night's window. Take no claim
+  whose `MINUTES` would run into it; host preempts any claim still held when it opens. If an attempt is in flight when a
   live reservation appears:
   1. It logs out at its next step boundary, once the current step has finished.
   2. It records the stop as 'paused for the gate/run'.
