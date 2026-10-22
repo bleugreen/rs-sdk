@@ -138,7 +138,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 7 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | on main, 22552bf4 (#197; rs/231); lab-accepted (1,998 on 78-99; rs/152); gate `measureDrops` 120 explicit (#221) |
 | 8 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,972 | 1,946 | 1,997 (the bow from 70); 2,023-2,211 without the kit | ~265 | overlay | `cannon-kit.ts` (rs/59, on main) | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible) |
 | 9 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,528.5 | 1,393.5 | 1,798.5 | ~405 | overlay | `quest-grandtree-full.ts` | building (rs/185, held: tenet 15) |
-| 10 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,192 | 1,192 | ~5,220 | ~4,030 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **on main, 1514f47a (#222; rs/268's snapshot of rs/196's module, rs/186's branch at 0c349da6)**, the run-commit floor; twin demo pending; **lab-accepted (rs/196, module 3f02f336: nature at 44 tuned 30/30 at 29 x 7, robust 30/30 at 29 x 8; S06 7/7 at 6 x 7, 58)**; pending: the auto rule's 'handled before SCORED' field (entry 9); cycle: on main, 23ea9f77 (#178) |
+| 10 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,192 | 1,192 | ~5,220 | ~4,030 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **on main, 1514f47a (#222; rs/268's snapshot of rs/196's module, rs/186's branch at 0c349da6)**, the run-commit floor; twin demo pending; **lab-accepted (rs/196, module 3f02f336, relay path (lab): nature at 44 tuned 30/30 at 29 x 7, robust 30/30 at 29 x 8; S06 7/7 at 6 x 7, 58)**; the tuned nature run confirmed on the direct path, 30/30 at 29 x 7 (rs/196, 3b161c12); pending: the auto rule's 'handled before SCORED' field (entry 9); cycle: on main, 23ea9f77 (#178) |
 | 11 | 10 | Smithing | `speedrun/skills/smithing.ts` | S25a | 1,065 | 1,028 | 1,330 | ~302 | overlay | `smithing-trade.ts` | building (rs/186, held: tenet 15) |
 | 12 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 929 | 908 | 1,039 | ~131 | overlay | `quest-dragon-*.ts` | building (rs/185, held: tenet 15) |
 | 13 | 12 | Dwarf Cannon | `speedrun/quests/dwarf-cannon.ts` | S13 | 855 | 799 | 957 | ~158 | overlay | `quest-mcannon-*.ts` | building (rs/185, held: tenet 15) |
@@ -224,7 +224,9 @@ are filed under main and held until tenet 15 is answered.
   the auto rule's switch to a 'handled before SCORED' field (entry 9). Its first lab runs used rs/131's
   `rc-cycle` at 06c68a90, which differs from 23ea9f77 only by #177's `params` declaration line;
   rs/196 re-confirmed it on a page built from the base carrying 23ea9f77 (module 3f02f336, rs/163's
-  givers e4f60121 on the direct path, lab 300 ms), so it is **lab-accepted on the floor** (entry 9).
+  givers e4f60121, lab 300 ms; on the **relay path**, since the launcher read no `path` from the role
+  options, entry 9), so it is **lab-accepted on the floor**, and its tuned nature run is confirmed on
+  the direct path (entry 9).
 - **16.** On main, 4cc468e0 (#205): rs/244's snapshot of rs/228's lab-gated module, with its test.
 - **15.** The primary path is the bury option inside entry 3 (knife-cycle `bury` on main; the
   gate-off plain + bury is rs/162's, lab-measured and on main as 3dfc217f, #165); the booth fallback `skills/prayer.ts` is rs/186's.
@@ -1135,7 +1137,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   are dropped on T06-07 (below). The drop stays: a hand-back would cost ~5 ticks on SCORED's clock to
   save a purchase made off the clock (rs/196), and `swap()` was considered for it and rejected.
 - **Ticks:** expected and best **1,192**: S06 **58**, measured in the lab (rs/196: 7 of 7 given, 6
-  gaps of 7, 58 in two runs; RUN-ORDER.md RCM), and S21 **1,134** (161 x 7 + ~7, inferred from
+  gaps of 7, 58 in two runs; relay path (lab), RUN-ORDER.md RCM), and S21 **1,134** (161 x 7 + ~7, inferred from
   measured parts). Under the program a session of N crafts takes 7N ticks: the first trade's 7 (8
   robust; the old 5 was the lite trade) and N - 1 gaps of 7 (30-cycle runs, 30 of 30 given: body and
   nature with givers first, 29 gaps of 7, 210 ticks). The step adds ~5-9 outside the program, the
@@ -1150,14 +1152,23 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   ~220 and S21 ~5,000 at the nature altar's 161 crafts, ~6,000 at the body altar's 194, the plan in
   force (i; a sensitivity, not a section 7 line). The rungs: tuned 7 (in force), robust 8 (+1 a
   craft), stock 31.
-- **Lab (rs/196, RUN-ORDER.md RCM):** auto with givers first chose tuned (29 x 7, step 217 on nature
+- **Lab (rs/196, RUN-ORDER.md RCM; relay path (lab), every run below):** auto with givers first chose tuned (29 x 7, step 217 on nature
   and 215 on body); robust ran 29 x 8 in either login order (step 247); auto with SCORED first chose
   robust, 29 x 8. **Resume:** a page reload after 8 crafts was resumed by `runResumable`, and the
   remaining 12 ran at 7, the resumed first trade again at 7 (m). **Fault:** with 6 trades forced to fail, the program restarted robust and recovered at 8 a craft (m).
   **On the floor** (rs/196: a page built from the base carrying `rc-cycle` at 23ea9f77, module
-  3f02f336, rs/163's givers e4f60121 on the direct path, lab 300 ms): nature at 44, tuned auto, 30/30
+  3f02f336, rs/163's givers e4f60121, lab 300 ms): nature at 44, tuned auto, 30/30
   at 29 x 7 (218 step ticks); nature at 44, robust with SCORED handled first, 30/30 at 29 x 8 (248);
   S06 air 1 to 44, 7/7 at 6 x 7, 58 ticks.
+- **Path: relay in the lab, confirmed direct for the tuned nature run.** Every module figure above,
+  and the stock rung's, ran on the **relay path**: the lab script set the givers' `path` in role
+  options, but the launcher reads it only from the account entry, so it defaulted to relay (rs/196;
+  the fix is with rs/186). On the loopback lab engine the relay and direct tables are identical, so
+  the numbers stand. The first direct-path figure (m, lab, bgsrv-mac, 300 ms, rs/196's mission
+  branch at 3b161c12, the launcher logging `direct` for all 3 givers): nature 44, auto with givers
+  first chose tuned, **30/30 crafts at 29 x 7, step 218, first craft 7**, identical to the relay
+  figure. The twin demo on the real server is still to come. rs/131's processing-order runs
+  (RUN-ORDER.md R12) are a separate measurement and keep their labels.
 - **The auto rule and placement:** the module's auto rule picks tuned for givers that logged in
   before SCORED, which is right for the plan of record: every giver on SCORED's machine, one address
   group, logged in first (main, 16:35 PDT; RUN-ORDER.md R12, measured by rs/131). Only the
