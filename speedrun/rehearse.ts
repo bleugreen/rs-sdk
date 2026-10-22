@@ -137,13 +137,21 @@ export interface RehearseArgs {
     hostReservation?: string;
     /** The rs-claim owner the attempt runs under (resolved with claimOwner()). */
     claimOwner?: string;
+    /**
+     * A measurement that spends no login on a gate: no gate account, no direct read, and the
+     * missing read refuses nothing (every other gate check still applies). For a step whose result
+     * does not depend on next-tick reactions, run where a gate account would cost a login.
+     */
+    noGateRead?: true;
+    /** Print the parsed command and the plan (steps, logins), then exit before any network or login. */
+    dryRun?: true;
 }
 
 const VALUE_FLAGS = new Set(['skill', 'bot', 'client', 'to', 'log', 'kit-from', 'kit', 'technique', 'skill-opt', 'gate-bot', 'gate-json', 'gate-probe-trials', 'probe-trials', 'from', 'host-reservation', 'claim-owner', 'kind']);
 // --insecure-query-login is read by lib/session.ts from process.argv (lab-only browser login).
-const SWITCHES = new Set(['lab', 'force-gate', 'insecure-query-login', 'claim']);
+const SWITCHES = new Set(['lab', 'force-gate', 'insecure-query-login', 'claim', 'no-gate-read', 'dry-run']);
 /** What --claim refuses: everything that would add a login, a probe or a step after S00. */
-const NOT_WITH_CLAIM = ['skill', 'to', 'kit-from', 'kit', 'technique', 'skill-opt', 'gate-bot', 'gate-json', 'gate-probe-trials', 'probe-trials', 'force-gate', 'from', 'kind'];
+const NOT_WITH_CLAIM = ['skill', 'to', 'kit-from', 'kit', 'technique', 'skill-opt', 'gate-bot', 'gate-json', 'gate-probe-trials', 'probe-trials', 'force-gate', 'from', 'kind', 'no-gate-read'];
 /** The skill label a claim's log, summary and hiscore check carry. */
 export const CLAIM_SKILL = 'claim';
 
@@ -222,7 +230,13 @@ export function parseArgs(argv: readonly string[], opts: { defaultGateBot?: stri
     if (kitFrom && !kitSpec) throw new UsageError('--kit-from needs --kit=<item:n,...> (the trade\'s want)');
     if (kitSpec && !kitFrom && !lab) throw new UsageError('--kit without --kit-from gives the kit with ::give, which only the lab allows (--lab)');
 
-    const gateBot = claim ? undefined : (v.get('gate-bot') ?? (v.has('gate-json') ? undefined : opts.defaultGateBot));
+    const noGateRead = v.has('no-gate-read');
+    if (noGateRead) {
+        const clash = ['gate-bot', 'gate-json', 'gate-probe-trials'].filter(k => v.has(k));
+        if (clash.length) throw new UsageError(`--no-gate-read spends no login on a gate: drop --${clash.join(', --')}`);
+        if (v.get('kind') === 'record') throw new UsageError('--no-gate-read cannot start a record attempt: a record is held to a direct read (run --kind=measurement)');
+    }
+    const gateBot = claim || noGateRead ? undefined : (v.get('gate-bot') ?? (v.has('gate-json') ? undefined : opts.defaultGateBot));
     if (gateBot === bot) throw new UsageError(`the gate account (${v.has('gate-bot') ? '--gate-bot' : 'the default'}, ${gateBot}) must be separate, never the rehearsal account (RUN-HOST.md step 6)`);
     const gateProbeTrials = v.has('gate-probe-trials') ? wholeNumber('gate-probe-trials', v.get('gate-probe-trials')!, 0) : gateBot && client === 'browser' ? 60 : 0;
     if (gateProbeTrials > 0 && !gateBot) throw new UsageError('--gate-probe-trials runs on the gate account\'s tab: it needs --gate-bot');
@@ -256,6 +270,8 @@ export function parseArgs(argv: readonly string[], opts: { defaultGateBot?: stri
         ...(from !== undefined ? { from: /^\d+$/.test(from) ? Number(from) : from } : {}),
         ...(v.has('host-reservation') ? { hostReservation: v.get('host-reservation')! } : {}),
         ...(v.has('claim-owner') ? { claimOwner: v.get('claim-owner')! } : {}),
+        ...(noGateRead ? { noGateRead: true as const } : {}),
+        ...(v.has('dry-run') ? { dryRun: true as const } : {}),
     };
 }
 
@@ -384,14 +400,14 @@ function recordLineRefusal(v: DirectVerdict | null): string | null {
  * record attempt (`kind: 'record'`) also refuses without a direct read, lab or not, and below
  * RECORD_LINE on it.
  */
-export function gateRefusal(i: { direct: DirectRead | null; inPage: readonly InPageRead[]; players: number | null; local: boolean; now: number; claim?: boolean; kind?: AttemptKind }): string[] {
+export function gateRefusal(i: { direct: DirectRead | null; inPage: readonly InPageRead[]; players: number | null; local: boolean; now: number; claim?: boolean; kind?: AttemptKind; noGateRead?: boolean }): string[] {
     const out: string[] = [];
     const record = i.kind === 'record';
     if (!i.local && i.players === null) out.push('the world does not answer /playercount (down or restarting): wait for it');
     if (!i.direct) {
         // A claim measures nothing, so it needs no gate read; a silent world still refuses it.
         if (record) out.push(`record attempt: no direct gate read to hold to the (a) record line (${RECORD_LINE.onTime}/${RECORD_LINE.trials}): pass --gate-bot=<gate account> or --gate-json=<file>`);
-        else if (!i.local && !i.claim) out.push('no direct gate read: pass --gate-bot=<gate account> or --gate-json=<file> (RUN-HOST.md step 6)');
+        else if (!i.local && !i.claim && !i.noGateRead) out.push('no direct gate read: pass --gate-bot=<gate account> or --gate-json=<file>, or --no-gate-read for a measurement (RUN-HOST.md step 6)');
     } else if (i.direct.error) {
         out.push(`direct gate read failed: ${i.direct.error}`);
     } else {
@@ -1433,6 +1449,55 @@ export interface SkillModule {
     steps(opts?: { to?: number; toLevel?: number; technique?: Technique; [k: string]: unknown }): Step<any>[];
 }
 
+/**
+ * `--dry-run`'s report: the argv as the shell delivered it (its quoting resolved), the parsed
+ * arguments, and the plan: the world, the steps, and every login the command would make. Never
+ * the bot.env's secrets.
+ */
+export function dryRunText(
+    argv: readonly string[],
+    a: RehearseArgs,
+    p: { account: string | undefined; server: string | undefined; local: boolean; reservation: string | null; owner: string | undefined; steps: readonly string[] }
+): string {
+    const logins = [
+        ...(a.gateBot ? [`${a.gateBot} (gate account: direct read${a.gateProbeTrials > 0 ? `, then its tab for ${a.gateProbeTrials}-trial in-page probes before and after` : ''})`] : []),
+        `${p.account ?? a.bot} (the attempt, ${a.client} client)`
+    ];
+    const gate = a.claim
+        ? 'none (claim)'
+        : a.noGateRead
+          ? 'none (--no-gate-read: no gate account, no direct read)'
+          : a.gateJson
+            ? `direct read from ${a.gateJson} (at most ${GATE_MAX_AGE_MS / 60_000} min old)`
+            : a.gateBot
+              ? `direct read on ${a.gateBot}`
+              : p.local
+                ? 'none (local world)'
+                : 'NONE: refused at the gate unless --force-gate';
+    const plan = {
+        argv: [...argv],
+        parsed: a,
+        account: p.account ?? null,
+        world: p.server ?? 'localhost',
+        local: p.local,
+        kind: a.claim ? 'claim' : a.kind,
+        gate,
+        logins,
+        steps: ['S00 tutorial skip (skills/start.ts)', ...(a.kitFrom || a.kit ? [`kit ${a.kitFrom ? `from ${a.kitFrom}` : 'by ::give'}`] : []), ...p.steps, 'logoutClean'],
+        tickMs: tickMs(),
+        log: a.log ?? null,
+        claimOwner: p.owner ?? null,
+        hostReservation: p.reservation
+    };
+    return [
+        `[rehearse] DRY RUN: nothing logged in, no network`,
+        `[rehearse] logins it would make, in order: ${logins.join('; ')}`,
+        `[rehearse] gate: ${gate}`,
+        `[rehearse] steps: ${plan.steps.join(' -> ')}`,
+        `DRYRUN ${JSON.stringify(plan)}`
+    ].join('\n');
+}
+
 async function loadSkillModule(spec: string): Promise<SkillModule> {
     const path = spec.includes('/') || spec.endsWith('.ts') ? (isAbsolute(spec) ? spec : join(ROOT, spec)) : join(import.meta.dir, 'skills', `${spec}.ts`);
     if (!existsSync(path)) throw new UsageError(`no skill module at ${path}`);
@@ -1499,6 +1564,9 @@ async function readHiscore(account: string, origin: string, runId: string): Prom
 
 async function main(argv: string[]): Promise<number> {
     const env = loadBotEnv(parseArgs(argv).bot);
+    // The attempt's world for helper code that reads it from the process (altar-room.ts
+    // isLocalServer gates staff fixtures such as restock's labSeed on it), as a role process has it.
+    if (!process.env.SERVER && env.SERVER) process.env.SERVER = env.SERVER;
     const local = isLocalWorld(env.SERVER);
     const a = local ? parseArgs(argv) : parseArgs(argv, { defaultGateBot: DEFAULT_GATE_BOT });
     if (a.lab && !local) throw new UsageError(`--lab accepts staff fixtures, and ${env.SERVER} is not a local lab`);
@@ -1520,6 +1588,10 @@ async function main(argv: string[]): Promise<number> {
 
     const mod = a.claim ? null : await loadSkillModule(a.skill!);
     const skillName = mod?.skill ?? CLAIM_SKILL;
+    if (a.dryRun) {
+        console.log(dryRunText(argv, a, { account: env.BOT_USERNAME, server: env.SERVER, local, reservation: reserved(), owner, steps: mod ? mod.steps({ to: a.to, toLevel: a.to, ...(a.technique ? { technique: a.technique } : {}), ...a.skillOpts }).map(s => s.name) : [] }));
+        return 0;
+    }
     const start = await import('./skills/start');
     const runId = newRunId();
     // A resumed attempt appends to the same log; its earlier sessions count toward the summary and the hiscore check.
@@ -1533,6 +1605,7 @@ async function main(argv: string[]): Promise<number> {
     const players = (await samplePlayerCount(origin)).players;
     log.append(annotation(log, account, 'gate', GATE_PLAYERS_STEP, { meta: { players, origin, ...(owner ? { claimOwner: owner } : {}) } }));
     if (a.claim) log.append(annotation(log, account, 'gate', '(gate) claim', { meta: { claim: true, note: 'S00 then logout only: no gate read, no probes, no skill steps' } }));
+    if (a.noGateRead) log.append(annotation(log, account, 'gate', '(gate) no read', { meta: { noGateRead: true, note: '--no-gate-read: a measurement that spends no login on a gate; no direct read, no gate tab' } }));
     // The gate's raw evidence (the direct probe's per-trial rows and tick arrivals, the live
     // frames) is kept beside the log, so whatever keeps the log keeps it: a scratch directory is
     // cleared at teardown, and only the per-trial rows can explain a short on-time count.
@@ -1580,7 +1653,7 @@ async function main(argv: string[]): Promise<number> {
             // The gate took minutes; a reservation may have appeared meanwhile. --force-gate does not override it.
             const res = reserved();
             if (res) return { code: EXIT_HOST_RESERVED, reasons: [res] };
-            const reasons = [...gateRefusal({ direct, inPage, players, local, now: Date.now(), claim: a.claim, kind: a.kind }), ...(before ? gateTabProblems(before) : []), ...recProblems];
+            const reasons = [...gateRefusal({ direct, inPage, players, local, now: Date.now(), claim: a.claim, kind: a.kind, noGateRead: a.noGateRead === true }), ...(before ? gateTabProblems(before) : []), ...recProblems];
             if (!reasons.length) return null;
             // parseArgs refuses --force-gate with --kind=record, so a record attempt never gets past here.
             if (!a.forceGate) return { code: 3, reasons };

@@ -85,6 +85,9 @@ speedrun/
                          tickprog-lab.sh's tab (docs/speedrun/skills/mining.md section 7)
   tools/          tab-login.ts (log an account's browser tab in with a one-time token over
                   CDP; see "Logging the browser tab in");
+                  rc-solo.ts (a rehearse.ts skill module, rehearsal-only: one account crafting
+                  air runes alone, Duke Horacio's talisman, then trips on altar-room.ts's Falador
+                  east restock and ruins entry; docs/speedrun/rehearsals/runecraft.md);
                   relog-probe.ts (relog timing through session.ts login/logoutClean, navigating
                   the tab or in the page: click to confirmed out and its signal, out to in
                   world, the new session's first tick and, with --bank, its first action; see
@@ -1164,7 +1167,16 @@ bun speedrun/rehearse.ts --skill=<name|module.ts> --bot=<env name> [--to=99] [--
     [--gate-probe-trials=60] [--probe-trials=0]
     [--force-gate] [--from=<step name or index>] [--log=<file>] [--lab] [--insecure-query-login]
     [--host-reservation=<file>] [--claim-owner=<rs/NNN>] [--kind=measurement|record]
+    [--no-gate-read] [--dry-run]
 ```
+
+`--no-gate-read` (measurement only) runs with no gate account and no direct read. The missing
+read refuses nothing, while `/playercount` and every other check still apply, and a
+`(gate) no read` row records it. It is for a step with no next-tick reaction, run where a gate
+account would spend a login (the solo Runecraft row from bbs). `--dry-run` prints the argv as
+the shell delivered it, the parsed arguments, every login in order, the gate and the steps, then
+exits 0 before any network or login. Main's rule is to dry-run a demo launch line on its host
+first.
 
 1. **Gate, off the clock.** `/playercount`; the direct read on a separate gate account
    (off a local world, `cairn_twin`, the twin's gate account, unless `--gate-bot` names another or

@@ -14,7 +14,7 @@ import type { Link } from './runner/resume';
 import { BOUNDARY_STEP, type Step } from './runner/step';
 import {
     annotation, compareHiscore, DEFAULT_ATTEMPT_KIND, DEFAULT_GATE_BOT, kindGate, kindText, RECORD_LINE, recordLineAt, type DirectRead, EXIT_HOST_RESERVED, formatPlayers, formatSummary, GATE_PLAYERS_STEP, gateRefusal, type InPageRead, kitMissing, kitWant,
-    parseArgs, parseDirectJson, parseKit, PAUSE_STEP, playerReads, playerSwing, ProgramTracker, ReachTracker, readReservation, reservationPath, reservationRefusal, ReservationWatch,
+    dryRunText, parseArgs, parseDirectJson, parseKit, PAUSE_STEP, playerReads, playerSwing, ProgramTracker, ReachTracker, readReservation, reservationPath, reservationRefusal, ReservationWatch,
     runAttempt, SessionClock, summarize, UsageError, claimBin, claimOwner, claimToucher, type ClaimTouch, judgeReservation,
     attemptFront, bracketAttempt, type FrontIO, frontLine, type FrontReport, gateTabProblems, gateTabRead, recordingProblems, type TabIO,
 } from './rehearse';
@@ -139,6 +139,41 @@ const onTimeRead = (onTime: number, cOk: boolean, trials = 60): DirectRead => {
     v.checks[0] = { ...v.checks[0]!, value: onTime, ok: onTime >= 58 };
     return read(checkC(cOk), { verdict: v });
 };
+
+describe('--no-gate-read and --dry-run', () => {
+    const demo = { defaultGateBot: DEFAULT_GATE_BOT };
+    test('--no-gate-read: no gate account off a local world, measurement only, no gate flags beside it', () => {
+        const a = parseArgs(['--skill=x', '--bot=b', '--client=lite', '--no-gate-read'], demo);
+        expect(a.gateBot).toBeUndefined();
+        expect(a.noGateRead).toBe(true);
+        expect(a.gateProbeTrials).toBe(0);
+        expect(parseArgs(['--skill=x', '--bot=b'], demo).noGateRead).toBeUndefined();
+        expect(() => parseArgs(['--skill=x', '--bot=b', '--no-gate-read', '--gate-bot=g'], demo)).toThrow('drop --gate-bot');
+        expect(() => parseArgs(['--skill=x', '--bot=b', '--no-gate-read', '--gate-json=/tmp/g.json'], demo)).toThrow('drop --gate-json');
+        expect(() => parseArgs(['--skill=x', '--bot=b', '--no-gate-read', '--kind=record'], demo)).toThrow('cannot start a record attempt');
+        expect(() => parseArgs(['--claim', '--bot=b', '--no-gate-read'], demo)).toThrow('--claim runs S00');
+    });
+    test('the missing read refuses nothing under --no-gate-read; a silent world still refuses', () => {
+        const now = Date.now();
+        expect(gateRefusal({ direct: null, inPage: [], players: 41, local: false, now, noGateRead: true })).toEqual([]);
+        expect(gateRefusal({ direct: null, inPage: [], players: null, local: false, now, noGateRead: true })[0]).toContain('/playercount');
+    });
+    test('--dry-run: the plan names every login and the steps, and no secrets', () => {
+        const argv = ['--skill=speedrun/tools/rc-solo.ts', '--bot=cairn_x', '--client=lite', '--no-gate-read', '--skill-opt=courier=^cairn_h30$', '--dry-run'];
+        const a = parseArgs(argv, demo);
+        expect(a.dryRun).toBe(true);
+        const text = dryRunText(argv, a, { account: 'cairn_x', server: 'rs-sdk-demo.fly.dev', local: false, reservation: null, owner: undefined, steps: ['rc-solo:talisman', 'rc-solo:air-1-50'] });
+        expect(text).toContain('logins it would make, in order: cairn_x (the attempt, lite client)');
+        expect(text).toContain('gate: none (--no-gate-read');
+        const plan = JSON.parse(text.split('\n').find(l => l.startsWith('DRYRUN '))!.slice(7));
+        expect(plan.parsed.skillOpts).toEqual({ courier: '^cairn_h30$' });
+        expect(plan.steps).toEqual(['S00 tutorial skip (skills/start.ts)', 'rc-solo:talisman', 'rc-solo:air-1-50', 'logoutClean']);
+        expect(text).not.toMatch(/PASSWORD/i);
+        // the default gate on the demo is a second login, named first
+        const d = parseArgs(['--skill=x', '--bot=cairn_x', '--client=lite', '--dry-run'], demo);
+        expect(dryRunText([], d, { account: 'cairn_x', server: 'rs-sdk-demo.fly.dev', local: false, reservation: null, owner: undefined, steps: [] })).toContain(`in order: ${DEFAULT_GATE_BOT} (gate account: direct read); cairn_x`);
+    });
+});
 
 describe('gateRefusal', () => {
     test('a clean read on a live world goes', () => {
