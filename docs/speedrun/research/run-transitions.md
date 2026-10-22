@@ -301,8 +301,12 @@ which is outside this page.
 The legs of section 2 are built as runner Steps in `speedrun/runner/legs.ts` (STEP-MANIFEST.md
 entry 11), each a hop list for `speedrun/lib/travel.ts`, the one route walker and transport
 layer. The walker is a chained run: it clicks the furthest route tile within 20 and re-clicks 3
-tiles before that click would end, opening any closed door or gate on the route ahead and, after
-a stall, the nearest door or web. It arrives only when the published position is inside the
+tiles before that click would end. On every tick, not only when a click falls due, it opens a
+closed door or gate it sees on the route within that reach, so a door is opened on the first tick
+the 15-tile loc scan lists it. After a stall it opens the nearest door or web. It decides nothing
+from a browser frame published while the map region rebuilds (`sceneReady` false): that frame lists
+no doors, and the browser drops a loc click sent during one (rs/484, Fight Arena S12 B: 44 ticks on
+the browser against 35 on lite before, 37 after). It arrives only when the published position is inside the
 destination's tolerance. It follows this document's rules: no glory, and no casting while
 walking (section 5). Where a quest counts its own arrival (RUN-ORDER O6), the leg ends exactly at
 the quest's first tile and carries the full figure below. The quest module does not travel there
