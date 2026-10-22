@@ -19,11 +19,12 @@ import { tickMs } from './wait';
  * observed), `hiscore` (the public row read after logout, against the log), `players` (a
  * /playercount read during the attempt), `tickmon` (one minute of the in-run tick-cadence monitor,
  * tick-monitor.ts; its `ticks` are the tick arrivals it read), `note` (figures a step records about
- * its own run, such as a fight's cast count, written with `logNote`). `report` lists them
+ * its own run, such as a fight's cast count, written with `logNote`), `travel` (a transition leg's per-hop breakdown, runner/legs.ts,
+ * overlapping that leg's step row). `report` lists them
  * apart and never sums them into the total. A row without a kind is a step, boundary or runner
  * row, and the step and boundary rows together cover the run.
  */
-export type RowKind = 'session' | 'program' | 'gate' | 'reach' | 'hiscore' | 'players' | 'tickmon' | 'note';
+export type RowKind = 'session' | 'program' | 'gate' | 'reach' | 'hiscore' | 'players' | 'tickmon' | 'note' | 'travel';
 
 export interface TickRow {
     v: 1;
