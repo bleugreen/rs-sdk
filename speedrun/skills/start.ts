@@ -12,12 +12,17 @@
 // about skipping, and the choice must offer "Yes please.". When the skip is not offered
 // (map_live) the step fails: the full tutorial costs far more than any fallback would save.
 // On landing it turns run on (lib/run-mode.ts), which no login can do on the island.
+//
+// The landing wait spans a silent window: after the telejump the browser client rebuilds the
+// Lumbridge region and publishes nothing until it is built, then publishes the landing as the
+// next tick (the rebuild costs no observed ticks). The window is ~0.6 s on a quiet machine and
+// grows with a starved tab, so the wait's idle bound is LANDING_IDLE_TICKS, not wait.ts's IDLE_TICKS.
 
 import type { BotWorldState, NearbyNpc } from '../../sdk/types';
 import { classifyPage } from '../lib/dialogue';
 import { ensureRunOn } from '../lib/run-mode';
 import { logNote } from '../lib/ticks';
-import { waitUntil } from '../lib/wait';
+import { idleBoundMs, tickPeriod, waitUntil, type IdleBound } from '../lib/wait';
 import { onTutorialIsland } from '../lib/world';
 import type { Step, StepContext } from '../runner/step';
 
@@ -27,6 +32,14 @@ export const skill = 'start';
 export const LUMBRIDGE_SPAWN = { x: 3222, z: 3222 } as const;
 /** The character-design screen (player_kit). */
 export const PLAYER_KIT = 3559;
+/**
+ * Ticks of the observed tick length the tab may stay silent between "Yes please." and the landing.
+ * Measured on the browser client (300 ms ticks): 0.6 s on a quiet machine, growing about linearly
+ * with a starved tab (9.3 s at 20x CPU throttle, 21 s at 40x); at load ~165 it outlasted 6 s.
+ * 100 ticks (30 s) covers a tab about 50x starved; a dead client still fails here, and the
+ * resumable runner recovers it. The measured table is in speedrun/README.md, section skills/start.ts.
+ */
+export const LANDING_IDLE_TICKS = 100;
 /** Items of the starter kit the postcondition checks (tutorial.rs2 inv_add list). */
 export const STARTER_KIT = [/^bronze axe$/i, /^tinderbox$/i, /^small fishing net$/i, /^bronze pickaxe$/i] as const;
 
@@ -55,7 +68,24 @@ function pageBody(s: BotWorldState): string {
     return entry.text.join(' ').trim();
 }
 
-async function skip({ sdk, session, log }: StepContext<unknown>): Promise<void> {
+async function skip(ctx: StepContext<unknown>): Promise<void> {
+    // The landing wait's idle bound scales with the tick length this client observes.
+    const period = tickPeriod(60_000);
+    const cur = ctx.sdk.getState();
+    if (cur) period.see(cur);
+    const unsubscribe = ctx.sdk.onStateUpdate(st => period.see(st));
+    try {
+        await skipObserved(ctx, { ticks: LANDING_IDLE_TICKS, period });
+    } finally {
+        unsubscribe();
+    }
+}
+
+function where(s: BotWorldState | null): string {
+    return s?.player ? `${s.player.worldX},${s.player.worldZ}` : 'unknown';
+}
+
+async function skipObserved({ sdk, session, log }: StepContext<unknown>, landingIdle: IdleBound): Promise<void> {
     let s = sdk.getState()!;
     // The design screen arrives with the first in-world frames; give it one tick if it is not up yet.
     if (!designOpen(s) && !s.dialog.isOpen) {
@@ -94,8 +124,15 @@ async function skip({ sdk, session, log }: StepContext<unknown>): Promise<void> 
     const clicked = await sdk.clickDialogByText(YES);
     if (!clicked.success) throw new Error(`clicking "Yes please.": ${clicked.message}`);
 
-    const landed = await waitUntil(sdk, st => atSpawn(st) && hasStarterKit(st), { maxTicks: 8, after: page.tick });
-    if (!landed.ok) throw new Error('not at Lumbridge with the starter kit 8 ticks after the skip');
+    const boundMs = idleBoundMs(landingIdle);
+    const landed = await waitUntil(sdk, st => atSpawn(st) && hasStarterKit(st), { maxTicks: 8, after: page.tick, idle: landingIdle });
+    if (!landed.ok) {
+        const why = landed.reason === 'idle'
+            ? `the tab stayed silent past ${LANDING_IDLE_TICKS} ticks, ${(boundMs / 1000).toFixed(1)} s`
+            : '8 ticks passed';
+        const kit = landed.state && hasStarterKit(landed.state) ? 'with' : 'without';
+        throw new Error(`not at Lumbridge with the starter kit after the skip (${why}): last state tick ${landed.tick} (choice page at ${page.tick}), at ${where(landed.state)} ${kit} the kit, silent ${(landed.silentMs / 1000).toFixed(1)} s`);
+    }
     // The login could not turn run on (the controls tab is hidden on the island); tutorial_complete opened it.
     // Recorded, never fatal: see lib/run-mode.ts.
     logNote(log, session, 'S00:run', { ...(await ensureRunOn(sdk)) });

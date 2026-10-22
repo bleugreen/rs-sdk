@@ -36,12 +36,37 @@ export function currentTick(sdk: StateSource): number {
  */
 export const IDLE_TICKS = 20;
 
-/** `maxTicks`: that many ticks passed without `pred` holding. `idle`: no new tick for IDLE_TICKS ticks of wall time. */
+/** `maxTicks`: that many ticks passed without `pred` holding. `idle`: no new tick for the idle bound's wall time (IDLE_TICKS ticks unless the wait set `idle`). */
 export type WaitFailure = 'maxTicks' | 'idle';
 
 export type WaitResult =
     | { ok: true; state: BotWorldState; tick: number }
-    | { ok: false; reason: WaitFailure; state: BotWorldState | null; tick: number };
+    /** `silentMs`: wall time from the last new tick (or the wait's start) to the failure. */
+    | { ok: false; reason: WaitFailure; state: BotWorldState | null; tick: number; silentMs: number };
+
+/**
+ * An idle bound longer than IDLE_TICKS, for a wait that spans a window where a live client
+ * publishes nothing: the browser client decodes no tick while it rebuilds a region after a
+ * teleport, so a starved tab is silent for seconds and then publishes the landing as the next tick.
+ */
+export interface IdleBound {
+    /** Ticks of wall time without a new tick before the wait fails with `idle`. */
+    ticks: number;
+    /**
+     * The client's observed tick period. The bound is `ticks` of it, never shorter than
+     * `ticks * tickMs()`: right after a login ticks arrive in bursts and read short.
+     */
+    period?: TickPeriod;
+}
+
+/** The shortest span of ticks an IdleBound's `period` is trusted over. */
+export const IDLE_PERIOD_MIN_SPAN_MS = 2_000;
+
+/** Wall milliseconds an idle bound stands for: IDLE_TICKS x tickMs() without one. */
+export function idleBoundMs(bound?: IdleBound): number {
+    if (!bound) return IDLE_TICKS * tickMs();
+    return bound.ticks * Math.max(tickMs(), bound.period?.msPerTick(IDLE_PERIOD_MIN_SPAN_MS) ?? 0);
+}
 
 export interface WaitOptions {
     /**
@@ -52,6 +77,8 @@ export interface WaitOptions {
     maxTicks: number;
     /** Only states with `tick > after` count (default: the current state counts too). */
     after?: number;
+    /** The idle bound (default: IDLE_TICKS x tickMs()). Never a time budget: only silence trips it. */
+    idle?: IdleBound;
 }
 
 /** Why a wait failed with reason `idle`, for messages. */
@@ -62,6 +89,8 @@ export interface TickClock {
     readonly elapsed: number;
     /** Feed every published state. Only a new tick re-arms the idle timer: republishes within one tick never bring a tick limit closer. */
     see(s: BotWorldState): void;
+    /** Wall milliseconds since the last new tick, or since the clock was created. */
+    readonly silentMs: number;
     /** Disarm for good; later `see` calls only count. */
     stop(): void;
 }
@@ -69,26 +98,30 @@ export interface TickClock {
 /**
  * The tick count and dead-client detector for anything that listens to
  * published states with a tick limit: `onIdle` fires once no new tick has
- * arrived for `IDLE_TICKS * tickMs()`. Armed on creation; `lastTick` is the
+ * arrived for `idleMs` (default `IDLE_TICKS * tickMs()`). Armed on creation; `lastTick` is the
  * tick already seen (it does not count as new). Counting starts at `from`, or
  * at the first state seen when `from` is undefined. There is deliberately no
  * total-time budget: ticks are the limit, however slowly they come.
  */
-export function tickClock(from: number | undefined, onIdle: () => void, lastTick?: number): TickClock {
-    const idleMs = IDLE_TICKS * tickMs();
+export function tickClock(from: number | undefined, onIdle: () => void, lastTick?: number, idleMs: number = idleBoundMs()): TickClock {
     let prev = from;
     let last = lastTick;
     let elapsed = 0;
     let stopped = false;
+    let armedAt = Date.now();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const arm = () => {
         clearTimeout(timer);
+        armedAt = Date.now();
         timer = setTimeout(onIdle, idleMs);
     };
     arm();
     return {
         get elapsed() {
             return elapsed;
+        },
+        get silentMs() {
+            return Date.now() - armedAt;
         },
         see(s) {
             if (prev !== undefined) elapsed += Math.max(0, s.tick - prev);
@@ -152,11 +185,12 @@ export function tickPeriod(windowMs: number, now: () => number = () => Date.now(
  * Resolve on the first published state satisfying `pred`, or `{ok:false}`:
  * `reason: 'maxTicks'` once `maxTicks` ticks pass, the only bound on how long
  * a ticking wait runs, however slow the ticks; `reason: 'idle'` once no new
- * tick arrives for `IDLE_TICKS * tickMs()`. Republishes within one tick do not
- * hold the idle timer off, since they can never bring `maxTicks` closer.
+ * tick arrives for the idle bound (`opts.idle`, default `IDLE_TICKS * tickMs()`).
+ * Republishes within one tick do not hold the idle timer off, since they can
+ * never bring `maxTicks` closer.
  */
 export function waitUntil(sdk: StateSource, pred: Pred, opts: WaitOptions): Promise<WaitResult> {
-    const { maxTicks, after } = opts;
+    const { maxTicks, after, idle } = opts;
     return new Promise(resolve => {
         const cur = sdk.getState();
         const counts = (s: BotWorldState) => after === undefined || s.tick > after;
@@ -173,12 +207,13 @@ export function waitUntil(sdk: StateSource, pred: Pred, opts: WaitOptions): Prom
             clock.stop();
             resolve(r);
         };
-        const clock = tickClock(after ?? cur?.tick ?? 0, () => finish({ ok: false, reason: 'idle', state: last, tick: last?.tick ?? -1 }), cur?.tick);
+        const fail = (reason: WaitFailure): WaitResult => ({ ok: false, reason, state: last, tick: last?.tick ?? -1, silentMs: clock.silentMs });
+        const clock = tickClock(after ?? cur?.tick ?? 0, () => finish(fail('idle')), cur?.tick, idleBoundMs(idle));
         const unsubscribe = sdk.onStateUpdate(s => {
             last = s;
             clock.see(s);
             if (counts(s) && pred(s)) finish({ ok: true, state: s, tick: s.tick });
-            else if (clock.elapsed > maxTicks) finish({ ok: false, reason: 'maxTicks', state: s, tick: s.tick });
+            else if (clock.elapsed > maxTicks) finish(fail('maxTicks'));
         });
     });
 }

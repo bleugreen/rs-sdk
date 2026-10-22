@@ -101,7 +101,10 @@ speedrun/
   on `state.tick` or on the specific field. `maxTicks` is the only limit on
   a ticking wait, however slow the ticks; a wait fails as `idle` only when no
   new tick arrives for `IDLE_TICKS` (20) ticks of wall time, scaled by
-  `tickMs()` (`SPEEDRUN_TICK_MS`, else `NODE_TICKRATE`, else 300).
+  `tickMs()` (`SPEEDRUN_TICK_MS`, else `NODE_TICKRATE`, else 300). A wait
+  that spans a known silent window passes `idle: {ticks, period}` (an
+  `IdleBound`): the bound is `ticks` of the observed tick period (`tickPeriod`),
+  never shorter than `ticks * tickMs()`. A failed wait reports `silentMs`.
   `onStates` (feed every state to a step until it returns), `converse` and
   the helpers' own state listeners take the same two limits from the same
   `tickClock`; none has a total wall-clock budget.
@@ -998,6 +1001,18 @@ tutorial. Precondition: on Tutorial Island. Postcondition: on (3222,3222) with t
 (side tabs are not in `BotWorldState`; the same script opens them). `done`: off the island.
 Once landed it turns run on (`ensureRunOn`). No login can do that on the island, where the
 controls tab is hidden.
+
+The landing wait spans the Lumbridge region rebuild. The browser client publishes nothing while
+it builds the region and then publishes the landing as the next tick, so the rebuild costs no
+observed ticks, only wall time, and a starved tab stretches it past `IDLE_TICKS`. The wait keeps
+`maxTicks: 8` and takes `LANDING_IDLE_TICKS` (100) ticks of the observed period as its idle bound.
+On failure it names the last tick, the position, the kit and the silence.
+
+| Rebuild silence, "Yes please." to the landing state (browser client, bgsrv-mac, 300 ms, fresh bots, rs/337) | Silence | Ticks across it |
+|---|---|---|
+| Quiet machine (load ~3) | **0.58-0.59 s** (5 of 5) | 1 |
+| Tab CPU throttled from the click (CDP), 4x / 10x / 20x / 30x / 40x / 60x | 1.6 / 4.5 / 9.3 / 14.6 / 21.1 / 34.2 s | 1 |
+| Executor at load ~165 (rs/320) | over 6 s (failed `IDLE_TICKS`) | - |
 
 | Measurement (`rehearse.ts` on the lab, fresh bots, lite client, bgsrv-mac, 300 ms) | Ticks |
 |---|---|
