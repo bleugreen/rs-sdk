@@ -91,8 +91,10 @@ export const role: Role = {
     produces: [],
     async run(ctx: RoleContext) {
         const lab = isLocalServer();
-        if (!lab) assertDemoStandIn(ctx.account);
         const o = ctx.options;
+        const returnLoads = o.returnLoads === true;
+        if (returnLoads && !Array.isArray(o.givers)) throw new Error('bone-receiver: returnLoads needs givers (the group whose loads go back)');
+        if (!lab) assertDemoStandIn(ctx.account, { returnLoads, givers: Array.isArray(o.givers) ? (o.givers as string[]) : [] });
         // item: one bone, or the givers' priority list (bone-giver.ts item), every one of which it takes and buries.
         const boneNames = (Array.isArray(o.item) ? o.item : [o.item ?? 'Dragon bones']).map(String);
         const BONES = new RegExp(`^(?:${boneNames.map(n => exactItem(n).source.slice(1, -1)).join('|')})$`, 'i');
@@ -118,6 +120,9 @@ export const role: Role = {
         const pageLoads = new Set((o.pageLoads as number[]) ?? (lab ? [2, 5] : []));
         if (!lab && pageLoads.size) throw new Error('bone-receiver: pageLoads need staff commands (local lab only)');
         const holdTicks = Number(o.holdTicks ?? 6);
+        if (returnLoads && pageLoads.size && o.pageLoads !== undefined) throw new Error('bone-receiver: returnLoads raises no pages');
+        if (returnLoads) pageLoads.clear();
+        const paceTicks = Number(o.paceTicks ?? Number(o.n ?? 23) * buryEvery);
         const { sdk } = ctx;
         const s = () => sdk.getState() as BotWorldState;
 
@@ -134,10 +139,20 @@ export const role: Role = {
         const writer = new CueWriter(cueDir(), ctx.account, scope);
         const results: LoadResult[] = [];
         try {
-            if (lab) {
+            const biggest = Math.max(Number(o.n ?? 23), finalN + finalExtras.length);
+            if (lab && !returnLoads) {
                 await cheat(ctx, '~clearinv inv');
                 await until(ctx, st => st.inventory.length === 0, 10);
                 if (pos(s()).x !== site.x || pos(s()).z !== site.z) await labTele(ctx, site);
+            } else if (returnLoads) {
+                // It keeps nothing, so it banks nothing: its pack must already have a load's free slots.
+                const free = 28 - s().inventory.length;
+                if (free < biggest) throw new Error(`returnLoads: the pack has ${free} free slots, the biggest load needs ${biggest}; free them before the run (it banks nothing)`);
+                const room = altarRoomOf(s());
+                if (room) await leaveRoom(ctx, altarData(room));
+                if (lab && (pos(s()).x !== site.x || pos(s()).z !== site.z)) await labTele(ctx, site);
+                if (!lab && !(await walkNear(ctx, site.x, site.z, 2))) throw new Error(`could not reach the site ${site.x},${site.z}`);
+                await standOn(ctx, site);
             } else {
                 // Left in an altar room (the Runecraft stand-in uses these accounts too): out by its portal first.
                 const room = altarRoomOf(s());
@@ -162,7 +177,9 @@ export const role: Role = {
 
             let lastBury = -1;
             let requestSince = s().tick;
+            let lastReceive = -1;
             for (let load = 0; load < loads && !ctx.signal.aborted; load++) {
+                const wantedAt = s().tick;
                 // The trade, once the pack is empty (the first load starts empty) and the giver is beside us.
                 if (givers) {
                     let server: string | undefined;
@@ -179,6 +196,7 @@ export const role: Role = {
                     break;
                 }
                 const standingAtClick = s().gameMessages.some(m => m.tick >= requestSince && isRequestFrom(giver)(m));
+                const waitForGiver = s().tick - wantedAt;
                 const n = sizeOf(load);
                 if (asks) pendingAsk = n;
                 const extras = isLast(load) ? finalExtras : [];
@@ -192,11 +210,29 @@ export const role: Role = {
                     standingAtClick,
                     ...(extras.length ? { extras: extras.map(e => `${count(s(), e.item)} of ${e.count} ${e.name}`) } : {}),
                     ...(boneNames.length > 1 ? { bones: boneNames.map(b => `${count(s(), exactItem(b))} ${b}`) } : {}),
+                    ...(returnLoads ? { waitForGiver, ...(lastReceive >= 0 ? { loadGap: s().tick - lastReceive } : {}) } : {}),
                     ...(r.reason ? { reason: r.reason } : {})
                 };
                 results.push(res);
+                if (!res.ok) {
+                    ctx.log('load', { ...res });
+                    break;
+                }
+                if (returnLoads) {
+                    // Straight back to the giver that served it: every bone and extra it brought, by exact name.
+                    const received = s().tick;
+                    lastReceive = received;
+                    const back = new Map<string, number>();
+                    for (const i of s().inventory) if (BONES.test(i.name) || extras.some(e => e.item.test(i.name))) back.set(i.name, (back.get(i.name) ?? 0) + i.count);
+                    const g = await give(sdk, giver, [...back].map(([name, c]) => ({ item: exactItem(name), n: c })), { openTimeoutMs: 60_000 });
+                    res.returned = { ok: g.ok, ticks: g.ticks, ...(g.reason ? { reason: g.reason } : {}) };
+                    ctx.log('load', { ...res });
+                    if (!g.ok) break;
+                    // The bury time the run would spend on this load, so the rotation keeps the run's pace.
+                    await until(ctx, st => st.tick >= received + paceTicks, paceTicks + 20);
+                    continue;
+                }
                 ctx.log('load', { ...res });
-                if (!res.ok) break;
 
                 if (pageLoads.has(load)) {
                     // A level-up page right after the trade, while the giver restocks and requests again.
@@ -233,6 +269,15 @@ export const role: Role = {
                 }
                 requestSince = Math.min(requestSince, s().tick);
             }
+            if (returnLoads && givers) {
+                // Each giver banks what it holds and goes off once the group has given its loads: wait for all of them.
+                const off = () => {
+                    const st = readBoneStatuses(cueDir()).filter(b => givers.map(canonName).includes(canonName(b.account)));
+                    return st.length === givers.length && st.every(b => b.phase === 'off');
+                };
+                const allOff = await until(ctx, off, 900);
+                ctx.log('givers', { allOff, statuses: readBoneStatuses(cueDir()).filter(b => givers.map(canonName).includes(canonName(b.account))).map(b => ({ account: b.account, phase: b.phase, trades: b.trades, detail: b.detail ?? null })) });
+            }
         } finally {
             unsub();
             const last = frames.recent(1);
@@ -247,6 +292,14 @@ export const role: Role = {
                 clickToBones: { mean: mean(done.map(r => r.clickToBones)), all: done.map(r => r.clickToBones) },
                 standingAtClick: done.filter(r => r.standingAtClick).length,
                 givers: done.map(r => r.giver ?? null),
+                ...(returnLoads
+                    ? {
+                          returned: done.filter(r => r.returned?.ok).length,
+                          returnTicks: { mean: mean(done.flatMap(r => (r.returned ? [r.returned.ticks] : []))), all: done.map(r => r.returned?.ticks ?? null) },
+                          waitForGiver: { max: Math.max(0, ...done.map(r => r.waitForGiver ?? 0)), all: done.map(r => r.waitForGiver ?? null) },
+                          loadGap: { mean: mean(done.flatMap(r => (r.loadGap === undefined ? [] : [r.loadGap]))), max: Math.max(0, ...done.map(r => r.loadGap ?? 0)) }
+                      }
+                    : {}),
                 buryGap: { mean: mean(done.flatMap(r => (r.buryGap === undefined ? [] : [r.buryGap]))), all: done.map(r => r.buryGap ?? null) },
                 pages: results.flatMap(r => (r.page ? [{ load: r.load, ...r.page }] : []))
             })}`
