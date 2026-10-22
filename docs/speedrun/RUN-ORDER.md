@@ -791,6 +791,10 @@ measured change is Prayer, -605 (BP; rs/141).
 | **17. Entry 29 (S25c) demo-accepted** (rs/339, the rehearsal twin, browser, 13:20-13:28Z 2026-10-22, `cooking.md` section 9: both relogs in page at 1 tick each with 0 logout latency, the trade 7 ticks, the bank open at login + 11 against the + 19 deadline, both firings at login + 20, P1 16 pages in 17 ticks): no re-price: the demo ran 52 wines (29 + 23) against the route's 520 (29 + 491), so it ended at Cooking 66 with fewer level-up pages; the 52-wine demo checks the mechanics only; ticks stay on the lab's 520-wine figure; the row stays 81 / 77, the lab's figure at Cooking 30, Crafting 96 and the 107 gems. R17: confirmed on the live server with 8 ticks to spare; R1: the in-page relog measured 1 tick on the twin | - | 0 | 0 | rs/339 via rs/158 |
 | **18. S20's self route corrected from rs/388's first full run**: the first measurement, **327 m** (rs/388, lab, lite, fixed dialogue, n = 1, from the arrival tile), against the row's 323 fixed / 300 burst; no re-price on one run (3 burst and 2 more fixed runs follow). Word for word from rs/388: **H16** gives the rod, a spade, garlic, 5 coins, law 4 (3 Camelot incl. T19-20's, 1 Falador), air 18, water 1 and the body talisman, **no fishing bait** (the worm is the bait, `hemenster_fishing.rs2:20-24`) and no carp, need 5; **S20** receives the pass, the worm, the carp and the trophy and consumes the garlic, the coins, law 2 and air 10, need 2, with an **'S20 exit'** sub-row giving up the worm, the carp (to Bonzo), the trophy (to the dwarf), the pass and the spade (the module drops both), the S10b N pattern (rs/158 approved the split: as one row the walk errors, out before in); **T20-21** drops only the rod (no pass or raw shrimps on this route). Entry 23's precondition and route notes: pay Bonzo before the garlic (`quest_fishingcompo.rs2:90-93`); only the wall pipe at (2638,3446) is reachable; the wood is east of McGrubor's railing; no loc-script re-send exposure in the lab (the stairs and the gate open their page in 1 tick); owner rs/388; the 'carp from a second throwaway' demo line dropped. The ledger walks 91 rows, 0 fail | - | 0 | 0 | rs/388 via rs/158 |
 | **19. S16's Fire Wave measured from the route's arrival** (rs/371, lab, bgsrv-ub, 300 ms, burst, 5 of 5 clean, Magic 77): fight mean 315.2 (292-340) against the manifest's 315, so S16's row stands with the fight measured; blood max 59 / mean 54.2 against H13's 70 (11 margin), air max 295 of 400, exit Magic 81-82 every run (S18's boosted 80 with no sip; a base-75 arrival with no potion exits at 79, m, 1 run); the earlier 277 a short roll, dropped; the fedora stall a host artifact (0 gaps over ~1,900 fight ticks on bgsrv-ub). **Item 14's Fire Blast sensitivity is ~+76 ticks a fight** (391 against 315.2, both at Magic 77), replacing +60 to +110 | sensitivity only | 0 | 0 | rs/371 via rs/158 |
+| **The statement:** section 7's go/no-go on fold-in 22's figures: the row in force 35,358.8, 557.2 under (+15.1); with Charge + Superheat in every stocked stun (~-58 i) 35,300.8, 615.2 under; for attempts 2-3 the budget holding down to ~241 held; with burst failing +851.2, 36,210.0, 294.0 over; at Monkey Madness's ~+250 35,608.8, ~307.2 under; S13's railings at p90 35,508.8; the headline, scenario rows, section 1's budget, the step-figure sentence, like for like, the M / I / E split, the supply-fallback paragraph's body altar (+147.4 / +139.7) and nature sensitivity (-113.4 / -147.4), section 9's note, the manifest's section 1 sum and SUPPLIES' budget item and H17 re-stated; the script's EXPECT and FROM | - | 0 | 0 | rs/158 |
+| **Net, knife on** | | **+72.4** | **+104** | knife off in force and history the same |
+
+The totals after each item (knife on; knife off in force; without rs/162, history): items 1 and 2, none; item 3, 34,839.0 / 32,570.7, 37,494.0 / 35,684.7, 38,230.0 / 36,450.7; item 4, 34,778.0 / 32,496.7, 37,433.0 / 35,610.7, 38,169.0 / 36,376.7; items 5 and 6, none; item 7, 34,777.0 / 32,495.7, 37,432.0 / 35,609.7, 38,168.0 / 36,375.7; item 8, 34,778.0 / 32,497.7, 37,433.0 / 35,611.7, 38,169.0 / 36,377.7; item 9, 34,773.0 / 32,492.7, 37,428.0 / 35,606.7, 38,164.0 / 36,372.7; item 10, 34,915.0 / 32,634.7, 37,570.0 / 35,748.7, 38,306.0 / 36,514.7; items 11 and 12, none; item 13, **34,914.4 / 32,624.7**, **37,569.4 / 35,738.7**, 38,305.4 / 36,504.7; items 14 to 19, none. The scenario rows: the row in force **35,358.8 / 33,044.4, 557.2 under the record** (+15.1 / +40.0: the base +72.4 / +104, the herbs -61 / -61 and the body altar +3.7 / -3; 35,300.8, 615.2 under, with Charge + Superheat in every stocked stun; for attempts 2-3 the budget holding down to ~241 held, i); today's stock (conservative) 35,553.8 / 33,239.4; every line held 34,955.4 / 32,665.7; rs/41's 09:35 plan (history) 35,179.4 / 32,889.7.
 
 **Changes since 86e2a96c (fold-in 19, rs/369; on main as 6e01dd72; 34,827.3 / 32,506.7 knife on; 37,482.3 / 35,620.7 knife off in force; 38,218.3 / 36,386.7 without rs/162, history).** Fold-in 20 (rs/376): the inputs that reached rs/158 after fold-in 19, one commit each; every knife-off line moves with the knife-on line:
 
@@ -1346,20 +1350,20 @@ at 0; forecast complete at 365 by ~12:00 UTC on the 22nd, so 0 in the row in for
 the windows' held gems and S25d's hard leather +172 (diamonds unobtainable); the herb-table mix +24 (m, fold-in 22); cannonballs +2.18 per ball short in S27 and +9.2
 in S14, and no cannon at all ~+1,900-2,100 (SF§9). **Nature talismans: 0 held** (F23; a GE bid of 6
 at 30,025 has never filled), and the keeper needs at least one, so S21 changes altar: the **body
-altar, +143.7** (+142.7 best), on the fleet's 57 body talismans (fleet ledger, 22:05 UTC; kept intact as the fallback
+altar, +147.4** (+139.7 best), on the fleet's 57 body talismans (fleet ledger, 22:05 UTC; kept intact as the fallback
 at main's instruction): 194 crafts and 5,238 essence against the nature plan's 161 and 4,347, with
-T20-21 becoming a Falador teleport and a walk (SF§7): 71.0 m on the browser (rs/196, n = 3, best 70; fold-in 20; 69.3 m lite), and T21-22 from the body room 32.7 m
+T20-21 becoming a Falador teleport and a walk (SF§7): 74.7 m on the browser (rs/308, n = 6, best 67; fold-in 22; 71.0 / 70, rs/196, before; 69.3 m lite), and T21-22 from the body room 32.7 m
 (LG). SF§7's +205 set those 33 extra crafts (+231) against the glory route's T20-21 of 90 (-26);
-against this order's no-glory ship leg (158 m) the body route saves 87.0 of travel (88.0 best) and 0.3 on
-T21-22, so the line is +143.7 (+142.7 best). Without body talismans it would be the air
+against this order's no-glory ship leg (158 m) the body route saves 83.3 of travel (91.0 best; T20-21 on rs/308's browser figure, fold-in 22) and 0.3 on
+T21-22, so the line is +147.4 (+139.7 best). Without body talismans it would be the air
 altar, +868. The body plan uses 23 body talismans, SCORED's 1 and 22 givers', with no keeper, since a
 talisman is not consumed: N = ceil(round trip / 7) + 1 = ceil(142 / 7) + 1 = 22 on rs/163's
 measured 139-142-tick restock from Edgeville bank (m, lab, BA; the earlier ~90 was an estimate by
 analogy with the air altar); 142 has 6 ticks of headroom before N = 23, and the 57 held would cover
 a round trip up to ~385 (rs/163, 15:15 PDT). The 7-tick cycle held 12 of 12, so S21's ticks do not
 change. **Main made the body altar the S21 plan (15:17 PDT)** and prices the nature altar only as a
-sensitivity: with the keeper, 2 or 4 or more nature talismans would save 109.7 or 143.7 against the
-body plan (SF§7's +34 and 0; one talisman, +52, would save 91.7), but it needs ~52 tick-exact givers
+sensitivity: with the keeper, 2 or 4 or more nature talismans would save 113.4 or 147.4 against the
+body plan (SF§7's +34 and 0; one talisman, +52, would save 95.4), but it needs ~52 tick-exact givers
 on the run machine, against the body plan's 22: rs/163 measured the no-glory nature round trip at ~355
 ticks a restock (Captain Barnaby out 167-169, the customs officer back 169-176, plus the trade; m,
 lab). rs/194's report (16:35 PDT): 0 held; the gem table is the only source (overground; underground the
@@ -1413,23 +1417,23 @@ budget at full Charge (163 casts with Superheat in every stocked stun) at 467 ag
 
 **Monkey Madness A to Z, not yet chained clean** (R37; rs/201 via rs/158, 04:56 PDT; main's ruling, 04:5x PDT; fold-in 20). rs/201's first A-Z chains (lab, route levels, Defence 1 / 42 HP, fixed dialogue, H12's floor of 9 sharks and 2 prayer potions) went **0 of 3 clean**: two atoll deaths out of food by N or O, after H to M had spent the floor, and one lab client stall in G. The H to M 3 of 3 that set H12's floor started at H. **S15's row keeps its figures**: G's +336 in the chains is a module bug (Waydar's intro), not a row change. The chain figures, as notes and not prices (as sent): A 28, B 114, C 99, D 61, E 84, F 30; H 142 / 128, I 60 / 60, J 625 / 396, K 466 / 440, L 97 / 97, M 475 / 373. **S15's expected and R5 assume survival, and a death on the atoll is unpriced**, not covered by the row in force's 572.3 margin. The fix is a kit re-sized for 3 of 3 clean A-Z chains with margin, delivered by a **mid-quest helper trade on the gnome half**, slots permitting: H12 is resizing, with a placeholder hand-off, **H12m** (a mid-quest top-up on the gnome half, size pending execution 4), carrying no ticks yet (SUPPLIES.md); O43 (a Hitpoints or Defence level before Monkey Madness) is the fallback only if the inventory ledger cannot carry the kit. The start condition (below): 3 of 3 clean A-Z with the chosen kit on the lab at route levels, then once on the browser client. Owner rs/185, via rs/201's execution 4.
 
-**The statement and the go/no-go figure** (fold-in 20, on fold-in 19's form; main's rulings of 20:39 and 22:23 PDT, of
+**The statement and the go/no-go figure** (fold-in 22, on fold-in 19's form; main's rulings of 20:39 and 22:23 PDT, of
 23:52 PDT on burst dialogue and of 07:5x PDT on blood runes; rs/185, 00:38 PDT, on Monkey Madness's bad case; i on the cited inputs,
 `run-order-sums.ts`'s figures):
 
-- **The row in force's knife-on expected is under the record: 35,343.7, 572.3 under** (best 33,004.4,
-  2,911.6 under), every quest at its burst figure (fold-in 14's move in force), the diamonds as the
-  windows' held gems and S25d's hard leather (+172, 263 m), the bones on rs/41's 380 dragon (+12) and the agility potion's fallback (+37, rs/348). With every line held it is
-  34,883.0, 1,033.0 under (with S07's 157 more bones; 34,842.0 at section 7's figures); on today's
-  stock 35,538.7, 377.3 under (rs/331's bank reads). The start condition's budget holds on these figures (section 1).
+- **The row in force's knife-on expected is under the record: 35,358.8, 557.2 under** (best 33,044.4,
+  2,871.6 under), every quest at its burst figure (fold-in 14's move in force), the diamonds as the
+  windows' held gems and S25d's hard leather (+172, 263 m), the bones on rs/41's 380 dragon (+12), the herb-table mix measured (+24 m, rs/302), the body altar on rs/308's browser T20-21 (+147.4) and the agility potion's fallback (+37, rs/348). With every line held it is
+  34,955.4, 960.6 under (with S07's 157 more bones; 34,914.4 at section 7's figures); on today's
+  stock 35,553.8, 362.2 under (rs/331's bank reads). The start condition's budget holds on these figures (section 1).
 - **Blood runes: complete for attempt 1** (R35; rs/41, 12:15Z: rs/372's chest delivered 184 to cairn_mule1, handover rs372-mule1-blood-1, so mule1 holds **640: S16 70, S18 570**, attempt 1's full 570 plus 70 toward attempt 2). S18 has full Charge on attempt 1, so the
   blood-rune shortfall sensitivity is **closed for attempt 1** and the row in force stands at full Charge.
   **Charge + Superheat in every stocked stun** (~-58 i, measured by rs/375, fold-in 22; the expected column
-  staying on full Charge until rs/375's PR is on main and rs/41 confirms H14's ore load staged): **35,268.7, 647.3 under**. For attempts 2-3 the 22:00 PDT count rule applies:
-  the budget holds down to ~237 held (i, rs/367's curve) and fails at 100 (+1,027 i: 36,370.7, 454.7
+  staying on full Charge until rs/375's PR is on main and rs/41 confirms H14's ore load staged): **35,300.8, 615.2 under**. For attempts 2-3 the 22:00 PDT count rule applies:
+  the budget holds down to ~241 held (i, rs/367's curve) and fails at 100 (+1,027 i: 36,385.8, 469.8
   over); the chest measured 166 an hour uncontested, its next batch of ~600 about 09:30 PDT.
 - **Without fold-in 14's move**, if burst dialogue fails on the night and every quest reverts to its
-  fixed figure, +864.2: the row in force **36,207.9, 291.9 over** (today's stock 36,402.9, 486.9 over).
+  fixed figure, +851.2: the row in force **36,210.0, 294.0 over** (today's stock 36,405.0, 489.0 over).
   rs/287 validated burst on the lite client; each quest's browser-client acceptance (O51) runs burst,
   and a quest whose burst does not hold there reverts to fixed in its row (the per-quest figures are in
   the sensitivity row below).
@@ -1441,15 +1445,15 @@ budget at full Charge (163 casts with Superheat in every stocked stun) at 467 ag
   today). The start conditions together: tenet 12's gate (section 1), each quest's burst acceptance
   on the browser client (O51), Monkey Madness A-Z 3 of 3 clean (R37) and this one.
 - **Go/no-go at Monkey Madness's bad case**, ~+250 beyond the expected (one rope pin, i; rs/185,
-  00:38 PDT; the demon's 120 retired on 3 of 3 clean kills on 200 arrows, R5): **35,593.7, ~322.3
-  under**; without fold-in 14's move 36,457.9, ~541.9 over. If main overruled rs/185 and the death
-  after a rope pin (~340) came back, ~+590: 35,933.7, ~17.7 over.
+  00:38 PDT; the demon's 120 retired on 3 of 3 clean kills on 200 arrows, R5): **35,608.8, ~307.2
+  under**; without fold-in 14's move 36,460.0, ~544.0 over. If main overruled rs/185 and the death
+  after a rope pin (~340) came back, ~+590: 35,948.8, ~32.8 over.
 - **A-Z not yet chained clean: a death on the atoll is UNPRICED and is not covered by the row in
-  force's 572.3 margin** (R37; main, 04:5x PDT; fold-in 20). S15's expected and R5 assume survival.
+  force's 557.2 margin** (R37; main, 04:5x PDT; fold-in 20; the margin restated in fold-in 22). S15's expected and R5 assume survival.
 - **Beside it, not folded into R5: S13's railings at p90, +~150** (the formula rate, 37 tries; p99
-  +~340; rs/257's recount): 35,493.7, ~422.3 under; with Monkey Madness's ~+250 as well, 35,743.7,
-  ~172.3 under. Until they are re-measured on rs/343's fix (#289), the walk-only legs that may start beside a door
-  add up to ~+50 i more (T02-03 and T25-26, R32).
+  +~340; rs/257's recount): 35,508.8, ~407.2 under; with Monkey Madness's ~+250 as well, 35,758.8,
+  ~157.2 under. The walk-only legs that may start beside a door (T02-03 and T25-26) are re-measured on
+  rs/343's fix with no stall (R32, closed, fold-in 22).
 
 The levers that widen the margin, none in the expected until measured (fold-in 14's burst move, the
 first lever until now, is in it):
@@ -1796,9 +1800,9 @@ The model's sensitivities (i): 55 or 80 stocked stuns in place of 70, +87 / -58 
 - **Food.** S13's sharks come through H10 from helper stock, sized at the measured damage x1.5.
 - **No reorder yet.** Nothing in the order moves until the quests' lab rows land (rs/185's N-to-Z
   chains, rs/257's Dwarf Cannon rows). R5 is being retired component by component (O36); the
-  working go/no-go figure meanwhile is section 7's: the row in force 572.3 under on its burst
-  expected and ~322.3 under in Monkey Madness's ~+250 bad case (fold-in 20), and 291.9 over if burst
-  fails on the night; with Charge + Superheat in every stocked stun (blood runes complete for attempt 1), 647.3 under.
+  working go/no-go figure meanwhile is section 7's: the row in force 557.2 under on its burst
+  expected and ~307.2 under in Monkey Madness's ~+250 bad case (fold-in 22), and 294.0 over if burst
+  fails on the night; with Charge + Superheat in every stocked stun (blood runes complete for attempt 1), 615.2 under.
 
 **Open** (the measurement that settles each, and its owner):
 
