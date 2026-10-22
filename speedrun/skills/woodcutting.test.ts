@@ -9,7 +9,7 @@ import type { ReceiveResult } from '../lib/trade';
 import { Observation, resolveResume } from '../runner/resume';
 import type { StepContext } from '../runner/step';
 import {
-    BandLedger, bandFor, bandParams, BANDS, erlangB, expectedRolls, FOOTPRINT, freeDirs, modelTicksPerLog, PROBE_DIRS, respawnTicks, routeFrom, SITES, skill, STARTER_ITEMS, steps,
+    BandLedger, bandFor, bandParams, BANDS, erlangB, expectedRolls, FOOTPRINT, freeDirs, hitBetween, MEASURE_DROPS, modelTicksPerLog, PROBE_DIRS, respawnTicks, routeFrom, ROUTES, SITES, skill, steps,
     successChance, summarizeBand, type WoodcuttingOptions
 } from './woodcutting';
 import { createKnifeCycle } from '../../server/webclient/src/bot/programs/knife-cycle';
@@ -289,6 +289,7 @@ describe('woodcutting: program parameters per band and technique', () => {
         await h.byName('woodcutting:willow-73-99').run(h.ctx);
         expect(h.gates).toHaveLength(2);
         expect(h.gates.map(g => g.opts.plainTicksPerRoll)).toEqual([4, 4]);
+        expect(h.gates.map(g => g.opts.measureDrops)).toEqual([120, 120]);
         expect(h.calls[1]!.opts.gate).toBe(h.gates[0]!.gate);
         expect(h.calls[2]!.opts.gate).toBe(h.gates[1]!.gate);
         expect(h.calls.map(c => c.opts.technique)).toEqual(['plain', 'auto', 'auto']);
@@ -343,22 +344,41 @@ describe('woodcutting: program parameters per band and technique', () => {
             }
     });
 
-    test('lighten drops the starter items, and only them, before the walk to the oaks; off by default', async () => {
-        const starter = ['Bronze axe', 'Tinderbox', 'Small fishing net', 'Shrimps', 'Bucket', 'Pot', 'Bread', 'Bronze pickaxe', 'Bronze sword'];
-        const s = state({ level: 1, at: LUMBRIDGE, items: [...starter, ...KIT, 'Logs'] });
-        const on = harness(s, { lighten: 'true' });
-        await on.byName('woodcutting:walk-oaks').run(on.ctx);
-        const drops = drops_(on.sdk).map(slot => s.inventory[slot]!.name);
-        expect(drops.sort()).toEqual([...starter].sort());
-        expect(drops.every(n => STARTER_ITEMS.test(n))).toBe(true);
-        expect(on.walks.length).toBeGreaterThan(0);
-        const off = harness(s);
-        await off.byName('woodcutting:walk-oaks').run(off.ctx);
-        expect(drops_(off.sdk)).toHaveLength(0);
-        // the willow leg never drops anything
-        const w = harness(state({ level: 73, at: OAK, items: [...starter, ...KIT] }), { lighten: true });
-        await w.byName('woodcutting:walk-willows').run(w.ctx);
-        expect(drops_(w.sdk)).toHaveLength(0);
+    test("the gate judges its switch-off over 120 logs; the module's gate options still override it", async () => {
+        expect(MEASURE_DROPS).toBe(120);
+        const h = harness(state({ level: 15 }), { gate: { measureDrops: 60 } });
+        await h.byName('woodcutting:oak-15-73').run(h.ctx);
+        expect(h.gates[0]!.opts.measureDrops).toBe(60);
+    });
+
+    test('route: taverley is SITES and the default; rimmington passes its own trees and free sides; anything else is refused', async () => {
+        expect(ROUTES.taverley).toBe(SITES);
+        const R = ROUTES.rimmington;
+        expect(bandParams({ route: 'rimmington' }, 'oak', 73)('knife').trees).toEqual([[2981, 3205], [2984, 3206], [2985, 3203]]);
+        expect(bandParams({ route: 'rimmington' }, 'willow', 99)('knife').trees).toEqual([[3057, 3251], [3057, 3254], [3059, 3252]]);
+        // oak (3x3): W, N and E are trees, S is free; willow (2x2): S, N and E are trees, W is free
+        expect(freeDirs(R.oak.stand, R.oak.trees!, FOOTPRINT.oak)).toEqual([[0, -1]]);
+        expect(freeDirs(R.willow.stand, R.willow.trees!, FOOTPRINT.willow)).toEqual([[-1, 0]]);
+        const h = harness(state({ level: 1, at: LUMBRIDGE }), { route: 'rimmington' });
+        await h.byName('woodcutting:walk-oaks').run(h.ctx);
+        // no waypoints: straight to the stand
+        expect(h.walks).toEqual([[2984, 3205, 0]]);
+        await h.byName('woodcutting:normal-1-15').run(h.ctx);
+        await h.byName('woodcutting:oak-15-73').run(h.ctx);
+        await h.byName('woodcutting:walk-willows').run(h.ctx);
+        expect(h.walks.at(-1)).toEqual([3058, 3253, 0]);
+        await h.byName('woodcutting:willow-73-99').run(h.ctx);
+        expect(h.gates.map(g => g.opts.dirs)).toEqual([[[0, -1]], [[-1, 0]]]);
+        // the resolved route is on every band row and the walk's first line, so a fallback to taverley shows
+        const bands = h.log.rows.filter(r => (r.meta as { kind?: string } | undefined)?.kind === 'wc-band');
+        expect(bands.map(r => [(r.meta as { route: string }).route, (r.meta as { stand: number[] }).stand])).toEqual([
+            ['rimmington', [2984, 3205]], ['rimmington', [2984, 3205]], ['rimmington', [3058, 3253]]
+        ]);
+        expect(h.lines[0]).toMatch(/^woodcutting:walk-oaks: route rimmington, from 3222,3222 to 2984,3205/);
+        // sites still lay over the route
+        expect(bandParams({ route: 'rimmington', sites: JSON.stringify({ willow: { stand: [1, 2], trees: [[3, 4]] } }) }, 'willow', 99)('knife').trees).toEqual([[3, 4]]);
+        expect(() => steps({ route: 'lumbridge' })).toThrow(/route must be taverley or rimmington/);
+        expect(() => steps({ lighten: true } as WoodcuttingOptions)).not.toThrow();
     });
 
     test("freeDirs: the stands' neighbours that no tree footprint covers, in the probe's order", () => {
@@ -422,6 +442,68 @@ describe('woodcutting: walks', () => {
         await w.byName('woodcutting:walk-oaks').run(w.ctx);
         await w.byName('woodcutting:walk-willows').run(w.ctx);
         expect(w.walks).toEqual([[WILLOW[0], WILLOW[1], 0]]);
+    });
+});
+
+describe('woodcutting: hits and the hpStop guard', () => {
+    const player = (s: BotWorldState, hp: number) => ({ ...s.player!, hp });
+    const spider = { index: 7, name: 'Giant spider', combatLevel: 2, x: 2985, z: 3206, hp: 5 } as unknown as BotWorldState['nearbyNpcs'][number];
+    const far = { index: 8, name: 'Dark wizard', combatLevel: 7, x: 3040, z: 3240, hp: 12 } as unknown as BotWorldState['nearbyNpcs'][number];
+
+    test('hitBetween: only a fall in hitpoints, naming the NPCs within 2 tiles', () => {
+        const s0 = state({ level: 15, at: [2984, 3205] });
+        const a = { ...s0, player: player(s0, 10) };
+        const b = { ...a, tick: a.tick + 1, player: player(a, 9), nearbyNpcs: [spider, far] };
+        expect(hitBetween(a, b)).toEqual({ tick: b.tick, at: [2984, 3205], hpFrom: 10, hpTo: 9, near: ['Giant spider (combat 2) at 2985,3206'] });
+        expect(hitBetween(b, { ...b, player: player(b, 10) })).toBeNull();
+        expect(hitBetween(null, b)).toBeNull();
+    });
+
+    test('every hit in a band is a 0-tick row; without hpStop the band runs on', async () => {
+        const s0 = state({ level: 15 });
+        const h = harness({ ...s0, player: player(s0, 10) }, {}, (sdk, call) => {
+            sdk.push(s => ({ tick: s.tick + 1, player: player(s, 3), nearbyNpcs: [spider] }));
+            expect(call.signal?.aborted).toBe(false);
+            return undefined;
+        });
+        await h.byName('woodcutting:oak-15-73').run(h.ctx);
+        const hits = h.log.rows.filter(r => r.step === 'woodcutting:hit');
+        expect(hits).toHaveLength(1);
+        expect(hits[0]!.ticks).toBe(0);
+        expect(hits[0]!.meta).toMatchObject({ kind: 'wc-hit', step: 'woodcutting:oak-15-73', hpFrom: 10, hpTo: 3 });
+        expect(h.lines.some(l => /hit 10 -> 3 at 2914,3494; beside: no NPC/.test(l))).toBe(true);
+    });
+
+    test('hpStop: a hit to the stop aborts the program run, writes the summary, and fails the band', async () => {
+        const s0 = state({ level: 15 });
+        let aborted = false;
+        const h = harness({ ...s0, player: player(s0, 5) }, { hpStop: '4' }, (sdk, call) => {
+            sdk.push(s => ({ tick: s.tick + 1, player: player(s, 4), nearbyNpcs: [spider] }));
+            aborted = call.signal!.aborted;
+            const st = sdk.getState()!;
+            const seg: GatedSegment = { technique: 'knife', reason: 'aborted', status: status({ phase: 'stopped', startedTick: st.tick - 1, tick: st.tick, endedTick: st.tick }) };
+            call.opts.onSegment?.(seg);
+            return { segments: [seg], ended: 'aborted' };
+        });
+        await expect(h.byName('woodcutting:oak-15-73').run(h.ctx)).rejects.toThrow(/hpStop: hitpoints 4, at or below 4/);
+        expect(aborted).toBe(true);
+        expect(h.calls).toHaveLength(1);
+        const summary = h.log.rows.find(r => r.step === 'woodcutting:oak-15-73:summary')!;
+        expect(summary.meta).toMatchObject({ ended: 'aborted', route: 'taverley', hpStop: 4, stoppedBy: { hpTo: 4 } });
+        expect(() => steps({ hpStop: '-1' })).toThrow(/hpStop/);
+    });
+
+    test('hpStop in a walk: the walk stops and the step fails; later states no longer reach the guard', async () => {
+        const s0 = state({ level: 1, at: LUMBRIDGE });
+        const h = harness({ ...s0, player: player(s0, 6) }, { hpStop: 4, route: 'rimmington' });
+        (h.ctx.bot as unknown as { walkTo: unknown }).walkTo = () => {
+            h.sdk.push(s => ({ tick: s.tick + 1, player: player(s, 5) }));
+            h.sdk.push(s => ({ tick: s.tick + 1, player: player(s, 4) }));
+            return new Promise(() => {});
+        };
+        await expect(h.byName('woodcutting:walk-oaks').run(h.ctx)).rejects.toThrow(/hpStop: hitpoints 4/);
+        h.sdk.push(s => ({ tick: s.tick + 1, player: player(s, 3) }));
+        expect(h.log.rows.filter(r => r.step === 'woodcutting:hit').map(r => (r.meta as { hpTo: number }).hpTo)).toEqual([5, 4]);
     });
 });
 

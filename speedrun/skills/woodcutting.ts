@@ -20,6 +20,12 @@
 // each log is weighted by the rolls it stands for at the current level (1 / success chance), so
 // the measured switch-off stays fair while the success chance climbs through a band.
 //
+// The gate judges its measured switch-off over `MEASURE_DROPS` logs, not the library's 30: over
+// 30 logs chop luck alone moves the knife's mean about 13%, enough to read a sound knife as
+// slower than plain (rs/236's Taverley chain c1 went plain at oak 15 and willow 85 and finished
+// at 4,189). Over 120 the knife's ~3.15 sits more than 4 standard errors below plain's 4, and a
+// knife that is really slow is still caught within ~500 ticks.
+//
 // Two things keep the gate from paying for the stand itself. Knife segments on oak and willow
 // carry knife-cycle's `waitRespawn`: with every listed tree down the program waits for the
 // respawn instead of calling it a lost lock, which the gate would read as a slip and answer with
@@ -32,6 +38,15 @@
 // lands on R+1, the cycle's click rolls on R+3), by stopping the gated run, `receiveFrom`, and
 // starting it again with the same gate. Plain segments never carry `bury`: knife-cycle has no
 // plain loop with a bury, so while the gate holds plain the bones wait in the pack.
+//
+// Routes: `route` picks the stands as data (ROUTES). `taverley` (SITES) is the scored run's;
+// `rimmington` (the Rimmington oaks and the Draynor-west willows) walks about 130 ticks less
+// from Lumbridge and is what a fresh rehearsal account takes.
+//
+// Hits: every hitpoint lost in a walk or a band is logged (tick, tile, the NPCs beside the
+// player) as a 0-tick `woodcutting:hit` row. With `hpStop`, a hit that leaves the player at or
+// below it stops the walk or the band and fails the step, so the harness logs out cleanly: no
+// NPC on either route hits a combat-3 account for more than 1, so this is a guard, not a plan.
 
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { GATED_PROGRAMS, type GatedSegment, type GatedTechnique, inPageGate, type InPageGateOptions, runGatedProgram, type SegmentTechnique } from '../lib/gated-program';
@@ -143,7 +158,7 @@ export interface Sites {
     approach: readonly Tile[];
 }
 
-/** woodcutting.md sections 1, 2 and 6; bones-wc.ts SITES. */
+/** woodcutting.md sections 1, 2 and 6; bones-wc.ts SITES. The scored run's stands. */
 export const SITES: Sites = {
     // The normal trees beside the oak tile, e.g. (2912,3495), (2910,3492), (2918,3493): no
     // `trees` list, because every log fells the tree and the plain loop walks to the next.
@@ -151,6 +166,25 @@ export const SITES: Sites = {
     oak: { stand: [2914, 3494], trees: [[2912, 3491], [2914, 3495], [2915, 3492]] },
     willow: { stand: [2920, 3406], trees: [[2918, 3405], [2919, 3407], [2921, 3405]] },
     approach: [[3170, 3285], [3007, 3360], [2965, 3395], [2935, 3450]]
+};
+
+export type RouteName = 'taverley' | 'rimmington';
+
+/**
+ * Stands by route. `rimmington`: the oak stand (2984,3205) and the Draynor-west willow stand
+ * (3058,3253), all six trees surveyed in the lab (rs/236); the normal trees are beside the oaks.
+ * The walk from Lumbridge needs no waypoints: the nearest dark wizard is 26 tiles from the
+ * willow stand, and the giant spiders and the highwayman the Lumbridge-Draynor road shares with
+ * the Taverley path hit for at most 1 (rs/236, read).
+ */
+export const ROUTES: Record<RouteName, Sites> = {
+    taverley: SITES,
+    rimmington: {
+        normal: { stand: [2984, 3205] },
+        oak: { stand: [2984, 3205], trees: [[2981, 3205], [2984, 3206], [2985, 3203]] },
+        willow: { stand: [3058, 3253], trees: [[3057, 3251], [3057, 3254], [3059, 3252]] },
+        approach: []
+    }
 };
 
 export interface Band {
@@ -181,14 +215,12 @@ export const BONES_SETTLE = 2;
 export const BONE_LOAD = 23;
 /** S25b's Prayer target. */
 export const PRAYER_TO = 94;
+/** Logs over which the gate judges its measured switch-off (see the file comment). */
+export const MEASURE_DROPS = 120;
+/** NPCs within this many tiles of the player are named in a hit row. */
+export const HIT_REACH = 2;
 
 // ------------------------------------------------------------------ state
-
-/**
- * The items the tutorial leaves in the pack (tutorial.rs2 `tutorial_complete`), by display name.
- * The bronze axe is among them: the rune axe is the one that swings.
- */
-export const STARTER_ITEMS = /^(bronze axe|tinderbox|small fishing net|shrimps|bucket|pot|bread|bronze pickaxe|bronze dagger|bronze sword|wooden shield|shortbow|bronze arrow|air rune|mind rune|water rune|earth rune|body rune)$/i;
 
 const AXE = /^(bronze|iron|steel|black|mithril|adamant|rune) axe$/i;
 const RUNE_AXE = /^rune axe$/i;
@@ -252,8 +284,12 @@ export interface WoodcuttingOptions {
     prayerTo?: number | string;
     /** The gate's plain reference in ticks per expected roll (default 4). */
     plainTicksPerRoll?: number | string;
-    /** Sites as data: a second-choice tile goes here, not into code. A JSON string from the CLI. */
+    /** The stands (ROUTES; default 'taverley'). */
+    route?: RouteName | string;
+    /** Sites as data over the route's: a second-choice tile goes here, not into code. A JSON string from the CLI. */
     sites?: Partial<Sites> | string;
+    /** Stop the walk or band (and fail the step) on a hit that leaves hitpoints at or below this (default 0: never). */
+    hpStop?: number | string;
     /** inPageGate options over the module's own. */
     gate?: Partial<InPageGateOptions>;
     /** Extra knife-cycle parameters, lab only (rs/156's forced-slip `hold`); never set on an attempt. */
@@ -264,12 +300,6 @@ export interface WoodcuttingOptions {
     waitRespawn?: boolean | string;
     /** Probe only the stand's free neighbours (default true; 'false' probes E, W, N, S as the page does). */
     probeDirs?: boolean | string;
-    /**
-     * Drop the tutorial's starter items (`STARTER_ITEMS`) before the walk to the oaks: a fresh
-     * account's 16.6 kg, which drains run energy on the energy-bound leg. Off by default: only a
-     * rehearsal account fresh from S00 carries them.
-     */
-    lighten?: boolean | string;
     /** Test seams. */
     runGated?: typeof runGatedProgram;
     makeGate?: typeof inPageGate;
@@ -286,12 +316,13 @@ interface Resolved {
     bones: Required<BonesOptions> | null;
     prayerTo: number;
     plainTicksPerRoll: number;
+    route: RouteName;
     sites: Sites;
+    hpStop: number;
     gate: Partial<InPageGateOptions>;
     params: Record<string, unknown>;
     waitRespawn: boolean;
     probeDirs: boolean;
-    lighten: boolean;
     runGated: typeof runGatedProgram;
     makeGate: typeof inPageGate;
     receive: typeof receiveFrom;
@@ -323,6 +354,8 @@ function resolve(opts: WoodcuttingOptions): Resolved {
     const giver = opts.bones?.giver ?? opts.boneGiver;
     const load = numberOpt('bone load', opts.bones?.load ?? opts.boneLoad, n => Number.isInteger(n) && n >= 1 && n <= 27, BONE_LOAD);
     if (giver !== undefined && bury === null) throw new Error('woodcutting: a bone giver without bury');
+    const route = opts.route ?? 'taverley';
+    if (!Object.hasOwn(ROUTES, route)) throw new Error(`woodcutting: route must be ${Object.keys(ROUTES).join(' or ')}, got ${JSON.stringify(route)}`);
     const sitesIn = typeof opts.sites === 'string' ? (JSON.parse(opts.sites) as Partial<Sites>) : (opts.sites ?? {});
     const hold = opts.hold === undefined ? {} : { hold: numberOpt('hold', opts.hold, n => n >= 0 && n <= 1, 0) };
     return {
@@ -333,12 +366,13 @@ function resolve(opts: WoodcuttingOptions): Resolved {
         bones: giver ? { giver: String(giver), load } : null,
         prayerTo: bury === null ? 0 : numberOpt('prayerTo', opts.prayerTo, n => Number.isInteger(n) && n >= 0 && n <= 99, PRAYER_TO),
         plainTicksPerRoll: numberOpt('plainTicksPerRoll', opts.plainTicksPerRoll, n => n > 0, CYCLE.plain),
-        sites: { ...SITES, ...sitesIn },
+        route: route as RouteName,
+        sites: { ...ROUTES[route as RouteName], ...sitesIn },
+        hpStop: numberOpt('hpStop (an integer from 0 to 98)', opts.hpStop, n => Number.isInteger(n) && n >= 0 && n <= 98, 0),
         gate: opts.gate ?? {},
         params: { ...opts.params, ...hold },
         waitRespawn: flag('waitRespawn', opts.waitRespawn, true),
         probeDirs: flag('probeDirs', opts.probeDirs, true),
-        lighten: flag('lighten', opts.lighten, false),
         runGated: opts.runGated ?? runGatedProgram,
         makeGate: opts.makeGate ?? inPageGate,
         receive: opts.receive ?? receiveFrom,
@@ -638,29 +672,94 @@ function gateMeta(gate: HostGate) {
     };
 }
 
-function walkStep(o: Resolved, name: string, goal: Tile, needed: (s: BotWorldState) => boolean, waypoints: readonly Tile[], lighten = false): Step {
+export interface Hit {
+    tick: number;
+    at: Tile;
+    hpFrom: number;
+    hpTo: number;
+    /** The NPCs within HIT_REACH, as `name (combat N) at x,z`: the published hit's source index is unreliable while the player interacts (rs/195). */
+    near: string[];
+}
+
+/** The hit between two states, if hitpoints fell. */
+export function hitBetween(prev: BotWorldState | null, s: BotWorldState): Hit | null {
+    const a = prev?.player;
+    const p = s.player;
+    if (!a || !p || !(p.hp < a.hp)) return null;
+    const near = s.nearbyNpcs
+        .filter(n => Math.max(Math.abs((n.tileX ?? n.x) - p.worldX), Math.abs((n.tileZ ?? n.z) - p.worldZ)) <= HIT_REACH)
+        .map(n => `${n.name} (combat ${n.combatLevel}) at ${n.tileX ?? n.x},${n.tileZ ?? n.z}`);
+    return { tick: s.tick, at: [p.worldX, p.worldZ], hpFrom: a.hp, hpTo: p.hp, near };
+}
+
+/**
+ * Watches a step's states for hits: logs each one and writes its row, and trips once a hit leaves
+ * hitpoints at or below `hpStop` (never with 0). `tripped` resolves on the trip, for a race.
+ */
+class HitGuard {
+    hit: Hit | null = null;
+    readonly tripped: Promise<Hit>;
+    private trip!: (h: Hit) => void;
+    private readonly off: () => void;
+    private readonly stopAt: number;
+
+    constructor(o: Resolved, ctx: StepContext<Record<string, never>>, step: string, onTrip: (h: Hit) => void = () => {}) {
+        this.tripped = new Promise(r => (this.trip = r));
+        this.stopAt = o.hpStop;
+        let prev = ctx.sdk.getState();
+        this.off = ctx.sdk.onStateUpdate(s => {
+            const h = hitBetween(prev, s);
+            prev = s;
+            if (!h) return;
+            o.log(`${step}: T${h.tick} hit ${h.hpFrom} -> ${h.hpTo} at ${h.at.join(',')}; beside: ${h.near.join(', ') || 'no NPC'}`);
+            annotation(ctx.log, ctx.session, 'woodcutting:hit', h.tick, h.tick, true, { kind: 'wc-hit', step, ...h });
+            if (!this.hit && o.hpStop > 0 && h.hpTo <= o.hpStop) {
+                this.hit = h;
+                o.log(`${step}: hitpoints ${h.hpTo}, at or below hpStop ${o.hpStop}: stopping for a clean logout`);
+                onTrip(h);
+                this.trip(h);
+            }
+        });
+    }
+
+    /** Unsubscribe (idempotent). */
+    stop(): void {
+        this.off();
+    }
+
+    /** Unsubscribe; throws the stop if the guard tripped. */
+    close(): void {
+        this.off();
+        const h = this.hit;
+        if (h) throw new Error(`hpStop: hitpoints ${h.hpTo}, at or below ${this.stopAt}, after a hit on T${h.tick} at ${h.at.join(',')} (beside: ${h.near.join(', ') || 'no NPC'})`);
+    }
+}
+
+function walkStep(o: Resolved, name: string, goal: Tile, needed: (s: BotWorldState) => boolean, waypoints: readonly Tile[]): Step {
     return {
         name,
         preconditions: () => true,
-        async run({ sdk, bot }) {
+        async run(ctx) {
+            const { sdk, bot } = ctx;
             const s = sdk.getState();
             if (!s?.player || !needed(s) || near(s, goal, NEAR)) return;
             const from: Tile = [s.player.worldX, s.player.worldZ];
-            if (lighten) {
-                // every drop goes out at once, ahead of the first walk packet
-                const junk = s.inventory.filter(i => STARTER_ITEMS.test(i.name));
-                await Promise.all(junk.map(i => sdk.sendDropItem(i.slot)));
-                if (junk.length) o.log(`${name}: dropped ${junk.length} starter items (${s.player.runWeight} kg before) at T${sdk.getState()?.tick}`);
+            o.log(`${name}: route ${o.route}, from ${from.join(',')} to ${goal.join(',')} (T${s.tick})`);
+            const guard = new HitGuard(o, ctx, name);
+            try {
+                // The SDK walks run whenever the player has energy; level-ups (Hitpoints from an
+                // attacker) would otherwise hold the walk.
+                await withLevelUpDismissal(sdk, async () => {
+                    for (const [x, z] of [...routeFrom(from, goal, waypoints), goal]) {
+                        const r = await Promise.race([bot.walkTo(x, z, x === goal[0] && z === goal[1] ? 0 : 2, { timeout: 180_000 }), guard.tripped.then(() => null)]);
+                        if (r === null) return;
+                        if (!r.success) throw new Error(`walkTo ${x},${z}: ${r.message}`);
+                        o.log(`${name}: at ${sdk.getState()?.player?.worldX},${sdk.getState()?.player?.worldZ} (T${sdk.getState()?.tick})`);
+                    }
+                });
+            } finally {
+                guard.close();
             }
-            // The SDK walks run whenever the player has energy; level-ups (Hitpoints from an
-            // attacker) would otherwise hold the walk.
-            await withLevelUpDismissal(sdk, async () => {
-                for (const [x, z] of [...routeFrom(from, goal, waypoints), goal]) {
-                    const r = await bot.walkTo(x, z, x === goal[0] && z === goal[1] ? 0 : 2, { timeout: 180_000 });
-                    if (!r.success) throw new Error(`walkTo ${x},${z}: ${r.message}`);
-                    o.log(`${name}: at ${sdk.getState()?.player?.worldX},${sdk.getState()?.player?.worldZ} (T${sdk.getState()?.tick})`);
-                }
-            });
         },
         postconditions: s => (!needed(s) || near(s, goal, NEAR) ? true : `not within ${NEAR} tiles of ${goal[0]},${goal[1]}`),
         logoutSafe: true
@@ -712,10 +811,12 @@ function bandStep(o: Resolved, b: Band, last: boolean): Step {
         const startLevel = wcLevel(s0);
         // A fresh gate per band: its first probe and its measured stretch are the band's own.
         const dirs = o.probeDirs && site.trees && b.tree !== 'normal' ? freeDirs(site.stand, site.trees, FOOTPRINT[b.tree]) : [];
-        const gate = technique === 'auto' ? o.makeGate(sdk, { plainTicksPerRoll: o.plainTicksPerRoll, log: o.log, ...(dirs.length ? { dirs } : {}), ...o.gate }) : undefined;
+        const gate = technique === 'auto' ? o.makeGate(sdk, { plainTicksPerRoll: o.plainTicksPerRoll, measureDrops: MEASURE_DROPS, log: o.log, ...(dirs.length ? { dirs } : {}), ...o.gate }) : undefined;
         const ledger = new BandLedger(b.tree, startTick, startLevel);
         const segments: GatedSegment[] = [];
         let loads = 0;
+        let current: AbortController | null = null;
+        const guard = new HitGuard(o, ctx, b.name, () => current?.abort());
 
         const topUp = async () => {
             const t0 = sdk.getState()?.tick ?? 0;
@@ -729,59 +830,68 @@ function bandStep(o: Resolved, b: Band, last: boolean): Step {
             ledger.bonesLoad();
         };
 
-        let ended: string;
+        let ended = 'stopped';
         // a load before the first start when the pack is empty, and after each stop for one
         let needLoad = !!giver && knifeCapable && bonesHeld(s0) === 0;
-        for (;;) {
-            if (needLoad) await topUp();
-            needLoad = false;
-            const stop = new AbortController();
-            let wantBones = false;
-            let noneSince: number | null = null;
-            const result = await o.runGated(sdk, 'knife-cycle', params, {
-                technique,
-                ...(gate ? { gate } : {}),
-                rollsPerDrop: s => 1 / successChance(b.tree, wcLevel(s)),
-                signal: stop.signal,
-                log: o.log,
-                onProgress: (st, tech) => {
-                    ledger.observe(st, tech, wcLevel(sdk.getState()));
-                    if (!giver || tech !== 'knife' || stop.signal.aborted) return;
-                    if (st.gauges.bonesLeft !== 0) {
-                        noneSince = null;
-                        return;
+        try {
+            for (;;) {
+                if (guard.hit) break;
+                if (needLoad) await topUp();
+                needLoad = false;
+                const stop = new AbortController();
+                current = stop;
+                let wantBones = false;
+                let noneSince: number | null = null;
+                const result = await o.runGated(sdk, 'knife-cycle', params, {
+                    technique,
+                    ...(gate ? { gate } : {}),
+                    rollsPerDrop: s => 1 / successChance(b.tree, wcLevel(s)),
+                    signal: stop.signal,
+                    log: o.log,
+                    onProgress: (st, tech) => {
+                        ledger.observe(st, tech, wcLevel(sdk.getState()));
+                        if (!giver || tech !== 'knife' || stop.signal.aborted) return;
+                        if (st.gauges.bonesLeft !== 0) {
+                            noneSince = null;
+                            return;
+                        }
+                        noneSince ??= st.tick;
+                        if (st.tick - noneSince >= BONES_SETTLE) {
+                            wantBones = true;
+                            stop.abort();
+                        }
+                    },
+                    onSegment: seg => {
+                        ledger.observe(seg.status, seg.technique, wcLevel(sdk.getState()));
+                        segments.push(seg);
+                        const st = seg.status;
+                        annotation(log, session, `${b.name}:segment`, st.startedTick, st.endedTick ?? st.tick, seg.reason !== 'fault', {
+                            kind: 'wc-segment', technique: seg.technique, reason: seg.reason, runId: st.runId, level: wcLevel(sdk.getState()), counters: st.counters,
+                            result: st.result, frames: st.frames, skippedTicks: st.skippedTicks, deferred: st.deferred
+                        });
                     }
-                    noneSince ??= st.tick;
-                    if (st.tick - noneSince >= BONES_SETTLE) {
-                        wantBones = true;
-                        stop.abort();
-                    }
-                },
-                onSegment: seg => {
-                    ledger.observe(seg.status, seg.technique, wcLevel(sdk.getState()));
-                    segments.push(seg);
-                    const st = seg.status;
-                    annotation(log, session, `${b.name}:segment`, st.startedTick, st.endedTick ?? st.tick, seg.reason !== 'fault', {
-                        kind: 'wc-segment', technique: seg.technique, reason: seg.reason, runId: st.runId, level: wcLevel(sdk.getState()), counters: st.counters,
-                        result: st.result, frames: st.frames, skippedTicks: st.skippedTicks, deferred: st.deferred
-                    });
+                });
+                ended = result.ended;
+                if (result.ended === 'aborted' && wantBones && !guard.hit) {
+                    needLoad = true;
+                    continue;
                 }
-            });
-            ended = result.ended;
-            if (result.ended === 'aborted' && wantBones) {
-                needLoad = true;
-                continue;
+                break;
             }
-            break;
+        } finally {
+            current = null;
+            guard.stop();
         }
         const endState = sdk.getState();
         const endTick = endState?.tick ?? startTick;
         ledger.finish(endTick);
         annotation(log, session, `${b.name}:summary`, startTick, endTick, ended === 'done', {
-            kind: 'wc-band', ended, technique, startLevel, endLevel: wcLevel(endState), bonesLoads: loads,
+            kind: 'wc-band', ended, technique, route: o.route, stand: [site.stand[0], site.stand[1]], hpStop: o.hpStop, startLevel, endLevel: wcLevel(endState), bonesLoads: loads,
             ...summarizeBand(ledger, segments),
-            ...(gate ? { gate: gateMeta(gate) } : {})
+            ...(gate ? { gate: gateMeta(gate) } : {}),
+            ...(guard.hit ? { stoppedBy: guard.hit } : {})
         });
+        guard.close();
         if (ended !== 'done') throw new Error(`knife-cycle ended ${ended} at Woodcutting ${wcLevel(endState)}`);
     };
 
@@ -811,7 +921,7 @@ export function steps(opts: WoodcuttingOptions = {}): Step[] {
     // the band the Prayer postcondition goes on (bury needs to > 15, so oak or willow)
     const willowLast = o.to > oak.end;
     return [
-        walkStep(o, 'woodcutting:walk-oaks', o.sites.oak.stand, s => wcLevel(s) < oakEnd, o.sites.approach, o.lighten),
+        walkStep(o, 'woodcutting:walk-oaks', o.sites.oak.stand, s => wcLevel(s) < oakEnd, o.sites.approach),
         bandStep(o, normal, false),
         bandStep(o, oak, !willowLast),
         walkStep(o, 'woodcutting:walk-willows', o.sites.willow.stand, s => wcLevel(s) >= oakEnd && wcLevel(s) < o.to, []),

@@ -742,8 +742,17 @@ plain without a probe: it is about 3 logs, less than one 20-trial probe costs. W
 `bones.giver`, the band stops the run on the roll label after the last bury (the program's
 `bonesLeft` gauge at 0 for 2 ticks), takes a load with `receiveFrom`, and starts again with the
 same gate (`woodcutting:bones-load` rows); there is no plain loop with a bury, so bones wait
-while the gate holds plain. Options from the CLI come as strings (`--skill-opt=bury=true`,
-`boneGiver=`, `plainTicksPerRoll=`, `sites=<json>`, `hold=` for the lab's forced slip).
+while the gate holds plain. Each band's gate judges its measured switch-off over
+`MEASURE_DROPS` (120) logs, passed explicitly: over 30, chop luck alone false-fires it.
+
+`route` picks the stands as data from `ROUTES`: `taverley` (`SITES`, the scored run's and the
+default) or `rimmington` (the Rimmington oaks and the Draynor-west willows, about 130 ticks less
+walking from Lumbridge, which a fresh rehearsal account takes); `sites` lays over the route. Each
+band's summary row records the resolved `route` and `stand`. Every hitpoint lost in a walk or a
+band is a 0-tick `woodcutting:hit` row (tick, tile, the NPCs within 2 tiles). With `hpStop=N` a hit
+to N or below aborts the walk or the band's program run and fails the step, so the harness logs
+out cleanly. Options from the CLI come as strings (`--skill-opt=route=rimmington`, `hpStop=4`,
+`bury=true`, `boneGiver=`, `plainTicksPerRoll=`, `sites=<json>`, `hold=` for the lab's forced slip).
 
 `BandLedger` files every tick of a band by level and technique from the program statuses, and
 `summarizeBand` turns it into rs/158's table: per sub-band (oak 15-60 and 60-73, willow 73-85 and
@@ -757,9 +766,9 @@ felled trees: the share of time all three trees are down is Erlang B at load
 
 Lab driver: `lab/measure-woodcutting.ts` (`survey` of the stands, `walk` legs, single `band`s with
 `--bury --helper=<bot>` for real 23-bone trades, `chain` from level 1), run as a
-`tickprog-lab.sh` spec with `LAB_BLOCK=woodcutting`. Rehearsal findings are written to
-`docs/speedrun/rehearsals/woodcutting.md` after the attempt (rs/236); until then, see
-`docs/speedrun/skills/woodcutting.md`.
+`tickprog-lab.sh` spec with `LAB_BLOCK=woodcutting` (`--route=rimmington`, `--hp-stop=N`; `walk`
+and `chain` set Woodcutting to `--level` first). The lab gate, the attempt and their findings are
+in `docs/speedrun/rehearsals/woodcutting.md`.
 
 ## runner/step.ts
 

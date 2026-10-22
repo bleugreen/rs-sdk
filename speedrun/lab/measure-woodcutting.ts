@@ -8,25 +8,27 @@
 //
 // cases:
 //   survey  ::tele to the oak and willow stands; list the trees in view and check SITES' `trees`
-//   walk    a default-stats bot from Lumbridge: walk-oaks (the approach waypoints), then at
-//           level 73 walk-willows; ticks per leg and every hitpoint change
+//   walk    a default-stats bot from Lumbridge at Woodcutting 1: walk-oaks (the approach
+//           waypoints), then at level 73 walk-willows; ticks per leg and every hitpoint change
 //   band    ::setstat woodcutting --level, the kit, ::tele to the band's stand, then the steps to
 //           --to (default: the band's end)
-//   chain   default stats at Lumbridge, the kit by ::give, every step from level 1 to --to
+//   chain   default stats at Lumbridge, Woodcutting set to --level (default 1), the kit by
+//           ::give, every step to --to
+// walk and chain set Woodcutting first, so a later case in the same tab starts where it says.
 // options: --technique=auto|knife|plain, --plain-per-roll=4, --hold=0.15 (rs/156's forced slip),
 //          --bad-probe (a gate rule no probe passes: plain, re-probed every 500 ticks),
 //          --bury [--prayer=43] [--bones=N] [--helper=<bot> --load=23] (a second lab bot gives
 //          loads by trade, asking while the account holds 2 or fewer, as Ashburn's helpers will;
 //          without --helper the account starts with --bones and buries until they run out),
 //          --prayer-to=0, --logs=5 (normal logs in the kit, as cairn_mule2 stages it), --log=<path>,
-//          --starter (keep the tutorial's starter items, as a demo account carries them; walk and
-//          chain), --lighten (the module drops them before the oak walk), --potions=N (N energy
-//          potions, 4 doses, drunk while walking whenever run energy is at or under --drink-at=60%),
-//          --no-wait-respawn / --no-probe-dirs (the module's two fixes off, for an A/B)
-// --route=rimmington runs every case on the closer stands (ROUTES below: Rimmington oaks and the
-// Draynor-west willows, rs/236's survey), passed to the module as `sites` data.
+//          --starter (the tutorial's starter items, as a demo account carries them; walk and
+//          chain), --hp-stop=N (the module's hpStop), --no-wait-respawn / --no-probe-dirs (the
+//          module's two fixes off, for an A/B)
+// --route=rimmington runs every case on the module's `rimmington` stands (the Rimmington oaks and
+// the Draynor-west willows); the default is the scored run's `taverley`.
 // Every walk step gets a telemetry line: tiles per tick (run 2, walk 1, still 0), run energy and
-// weight at its start and end. `walk` refills run energy to 100% first (super energy, off the clock).
+// weight at its start and end. The lab's run energy never drains (NODE_INFINITE_RUN defaults on,
+// as on the demo), so neither energy nor weight is managed here.
 
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { hostname, loadavg } from 'os';
@@ -37,7 +39,7 @@ import { closeSession, openSession, type Session } from '../lib/session';
 import { formatReport, report, TickLog } from '../lib/ticks';
 import { give as giveTrade } from '../lib/trade';
 import { runSteps, type Step } from '../runner/step';
-import { BANDS, SITES, steps, type SubBandRow, type TechniqueFigures, type Tree, wcLevel, type WoodcuttingOptions } from '../skills/woodcutting';
+import { BANDS, ROUTES, type RouteName, steps, type SubBandRow, type TechniqueFigures, type Tree, wcLevel, type WoodcuttingOptions } from '../skills/woodcutting';
 import { give, setstat, tele } from './setup';
 
 const ROOT = join(import.meta.dir, '../..');
@@ -50,18 +52,9 @@ if (!bot || !CASES.includes(which ?? '')) {
     console.error(`usage: bun speedrun/lab/measure-woodcutting.ts <bot> ${CASES.join('|')} [--level=15] [--to=N] [--technique=auto] [--bury [--helper=<bot>]] ...`);
     process.exit(2);
 }
-/** Alternative stands, as the module's `sites` data (rs/236: tree tiles from the map, unverified until surveyed). */
-const ROUTES: Record<string, Partial<typeof SITES>> = {
-    rimmington: {
-        normal: { stand: [2984, 3205] },
-        oak: { stand: [2984, 3205], trees: [[2981, 3205], [2984, 3206], [2985, 3203]] },
-        willow: { stand: [3058, 3253], trees: [[3057, 3251], [3057, 3254], [3059, 3252]] },
-        approach: []
-    }
-};
-const route = flag('route');
-if (route && !ROUTES[route]) throw new Error(`unknown --route ${route} (${Object.keys(ROUTES).join(', ')})`);
-const sites: typeof SITES = { ...SITES, ...(route ? ROUTES[route] : {}) };
+const route = flag('route', 'taverley')!;
+if (!Object.hasOwn(ROUTES, route)) throw new Error(`unknown --route ${route} (${Object.keys(ROUTES).join(', ')})`);
+const sites = ROUTES[route as RouteName];
 const where = () => `host ${hostname()} load ${loadavg().map(l => l.toFixed(1)).join(' ')} at ${new Date().toISOString()}`;
 const LUMBRIDGE = [3222, 3222] as const;
 const BONES = /^dragon bones$/i;
@@ -121,26 +114,6 @@ await runScript(async ({ bot: actions, sdk }) => {
         await give(sdk, ['rune_axe', 'knife', ...Array(Number(flag('logs', '5'))).fill('logs')]);
         await sdk.waitForTicks(2);
     };
-    const POTION = /^(super )?energy potion\(\d\)$/i;
-    const drink = async (re: RegExp) => {
-        const p = sdk.getState()?.inventory.find(i => re.test(i.name));
-        const op = p?.optionsWithIndex.find(o => /^drink$/i.test(o.text));
-        if (!p || !op) return false;
-        await sdk.sendUseItem(p.slot, op.opIndex);
-        return true;
-    };
-    /** Run energy back to 100% between measurements: super energies, drunk off the clock, then the vials dropped. */
-    const refill = async () => {
-        if ((sdk.getState()?.player?.runEnergy ?? 100) >= 100) return;
-        await give(sdk, ['4dose2energy', '4dose2energy']);
-        for (let i = 0; i < 12 && (sdk.getState()?.player?.runEnergy ?? 100) < 100; i++) {
-            if (!(await drink(/^super energy\(\d\)$/i))) break;
-            await sdk.waitForTicks(3);
-        }
-        for (const it of [...(sdk.getState()?.inventory ?? [])].filter(i => /^(super energy\(\d\)|vial)$/i.test(i.name))) await sdk.sendDropItem(it.slot);
-        await sdk.waitForTicks(2);
-        console.log(`  refilled: run energy ${sdk.getState()?.player?.runEnergy}%`);
-    };
 
     if (which === 'survey') {
         for (const tree of ['oak', 'willow'] as const) {
@@ -199,41 +172,26 @@ await runScript(async ({ bot: actions, sdk }) => {
         if (!(await tele(sdk, stand[0], stand[1]))) throw new Error(`tele to ${stand.join(',')} failed`);
     } else {
         // walk and chain: a fresh account's stats, from Lumbridge, carrying the kit (and with
-        // --starter the tutorial's items, as on the demo)
+        // --starter the tutorial's items, as on the demo). Woodcutting is set first: an earlier
+        // case in this tab may have left it at 73, and walk-oaks is a no-op from oak 73 on.
         await clear();
+        await setstat(sdk, 'woodcutting', level);
         if (has('starter')) {
             // tutorial.rs2 tutorial_complete's inv_add list, so a later case in the same tab carries the same
             await give(sdk, ['bronze_axe', 'tinderbox', 'net', 'shrimp', 'bucket_empty', 'pot_empty', 'bread', 'bronze_pickaxe', 'bronze_dagger', 'bronze_sword', 'wooden_shield', 'shortbow']);
             for (const [name, n] of [['bronze_arrow', 25], ['airrune', 25], ['mindrune', 15], ['waterrune', 6], ['earthrune', 4], ['bodyrune', 2]] as const) await give(sdk, name, n);
         }
         await kit();
-        if (flag('potions')) await give(sdk, Array(Number(flag('potions'))).fill('4dose1energy'));
         if (!(await tele(sdk, LUMBRIDGE[0], LUMBRIDGE[1]))) throw new Error('tele to Lumbridge failed');
-        if (which === 'walk') await refill();
     }
     await sdk.waitForTicks(2);
 
-    // Walk telemetry: the last state seen on each tick, and the potions drunk.
+    // Walk telemetry: the last state seen on each tick.
     const samples = new Map<number, { x: number; z: number; e: number; w: number }>();
-    const drinkAt = Number(flag('drink-at', '60'));
-    let drinks = 0;
-    let lastDrink = -10;
-    let drinking = false;
     sdk.onStateUpdate(s => {
         const p = s.player;
         if (!p) return;
         samples.set(s.tick, { x: p.worldX, z: p.worldZ, e: p.runEnergy, w: p.runWeight });
-        const prev = samples.get(s.tick - 1);
-        const moving = !!prev && (prev.x !== p.worldX || prev.z !== p.worldZ);
-        if (flag('potions') && moving && p.runEnergy <= drinkAt && s.tick - lastDrink >= 3 && !drinking) {
-            drinking = true;
-            lastDrink = s.tick;
-            drink(POTION)
-                .then(ok => {
-                    if (ok) console.log(`  T${s.tick} drink ${++drinks} at ${p.runEnergy}%`);
-                })
-                .finally(() => (drinking = false));
-        }
     });
     const walkLine = (step: string, from: number, to: number): string => {
         const n = { run: 0, walk: 0, still: 0, gaps: 0 };
@@ -301,8 +259,8 @@ await runScript(async ({ bot: actions, sdk }) => {
         ...(has('bad-probe') ? { gate: { direct: { trials: 20, pass: 21, floor: 21 } } } : {}),
         ...(bury ? { bury: true, prayerTo: flag('prayer-to', '0') } : {}),
         ...(bury && helperName ? { bones: { giver: helper!.name, load } } : {}),
-        ...(has('lighten') ? { lighten: true } : {}),
-        ...(route ? { sites: ROUTES[route] } : {}),
+        route,
+        ...(flag('hp-stop') ? { hpStop: flag('hp-stop') } : {}),
         ...(has('no-wait-respawn') ? { waitRespawn: false } : {}),
         ...(has('no-probe-dirs') ? { probeDirs: false } : {}),
         log: line => console.log(`  ${line}`)
@@ -315,7 +273,6 @@ await runScript(async ({ bot: actions, sdk }) => {
             await run(all.filter(s => s.name === 'woodcutting:walk-oaks'));
             await setstat(sdk, 'woodcutting', 73);
             await sdk.waitForTicks(2);
-            if (has('refill-between')) await refill();
             await run(all.filter(s => s.name === 'woodcutting:walk-willows'));
         } else await run(all);
     } finally {
@@ -323,7 +280,6 @@ await runScript(async ({ bot: actions, sdk }) => {
         console.log(`measure-woodcutting ${which} end: Woodcutting ${wcLevel(end)}, Prayer ${end?.skills.find(k => k.name === 'Prayer')?.baseLevel}; min hitpoints ${minHp}; ${where()}`);
         console.log(formatReport(report(log.rows)));
         for (const r of log.rows.filter(r => r.step.startsWith('woodcutting:walk-') && r.ticks > 0)) console.log(walkLine(r.step, r.startTick, r.endTick));
-        if (flag('potions')) console.log(`potions: ${drinks} doses drunk`);
         for (const r of log.rows.filter(r => (r.meta as { kind?: string } | undefined)?.kind === 'wc-segment')) {
             const waits = ((r.meta as { result?: { respawnWaits?: number[] } }).result?.respawnWaits ?? []);
             if (waits.length) console.log(`respawn waits ${r.step} run ${(r.meta as { runId: number }).runId}: ${JSON.stringify(waits)}`);
