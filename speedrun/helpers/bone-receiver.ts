@@ -1,4 +1,4 @@
-// bone-receiver (role, local lab only): a stand-in for the scored account's S07
+// bone-receiver (role, a stand-in, never the scored account): a stand-in for the scored account's S07
 // step, to measure the bone giver (bone-giver.ts) from the scored side. It stands
 // on the chopping tile, writes the cue (its name hash) for the giver, buries one
 // bone every `buryEvery` ticks as the knife cycle does (so it is busy two ticks in
@@ -17,15 +17,32 @@
 //   site {x,z} (default the oak tile 2914,3494), pageLoads (default [2, 5]), holdTicks (6),
 //   asks [15, 21, ...]: S18's top-ups instead (the giver in mode on-request): click trade,
 //   and on the frame that shows it open write that many bones as the top-up ask
-//   (altar-cue.ts writeTopUpAsk), as the Thieving module does; loads = asks.length
+//   (altar-cue.ts writeTopUpAsk), as the Thieving module does; loads = asks.length;
+//   item (default 'Dragon bones'): the bones it takes and buries.
+//
+// On the local lab it clears its pack and teleports with staff commands. Anywhere else (the
+// demo) it uses none: it banks what it carries at Falador west, walks to the site, and raises
+// no level-up pages. There it runs only as a run-machine test account (STAND_IN_ACCOUNTS), never
+// a fleet or scored account, because it buries what it is given.
 import type { BotWorldState } from '../../sdk/types';
 import { receiveFrom, tradeOf } from '../lib/trade';
-import { CueWriter, cueDir, FrameLog, scopeOption, writeTopUpAsk } from './altar-cue';
-import { cheat, count, isLocalServer, labTele, pos, until, type Tile } from './altar-room';
-import { S07_SITES } from './bone-giver';
+import { canonName, CueWriter, cueDir, FrameLog, scopeOption, writeTopUpAsk } from './altar-cue';
+import { cheat, count, exactItem, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
+import { DEFAULT_BONE_BANK, S07_SITES } from './bone-giver';
+import { FORBIDDEN_ACCOUNTS } from './fleet-config';
+import { closeBank, depositAllExcept, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
-const BONES = /^dragon bones$/i;
+/** The run machine's test accounts (bbs ~/rs-run-machine/bots), the only ones the stand-in runs as off the lab. */
+export const STAND_IN_ACCOUNTS: ReadonlySet<string> = new Set(['cairn_h70', 'cairn_h71', 'cairn_h72', 'cairn_h75']);
+
+/** Off the lab: refuse any account but a run-machine test account. */
+export function assertDemoStandIn(account: string): void {
+    const a = canonName(account);
+    if (FORBIDDEN_ACCOUNTS.has(a) || !STAND_IN_ACCOUNTS.has(a)) {
+        throw new Error(`bone-receiver buries what it is given: off the local lab it runs only as a run-machine test account (${[...STAND_IN_ACCOUNTS].join(', ')}), never a fleet or scored account (got ${account})`);
+    }
+}
 /** How a trade request shows in the receiver's chat (lite/protocol/incoming.ts: type 4, "wishes to trade with you."). */
 const isRequestFrom = (giver: string) => (m: { type: number; text: string; sender: string }) =>
     m.type === 4 && /wishes to trade/i.test(m.text) && m.sender.toLowerCase().replace(/\s+/g, '_') === giver.toLowerCase();
@@ -45,8 +62,10 @@ export const role: Role = {
     name: 'bone-receiver',
     produces: [],
     async run(ctx: RoleContext) {
-        if (!isLocalServer()) throw new Error('bone-receiver is a lab stand-in; it uses staff commands');
+        const lab = isLocalServer();
+        if (!lab) assertDemoStandIn(ctx.account);
         const o = ctx.options;
+        const BONES = exactItem(String(o.item ?? 'Dragon bones'));
         const giver = String(o.giver ?? '');
         if (!giver) throw new Error('bone-receiver: options.giver is required');
         const asks = Array.isArray(o.asks) ? (o.asks as number[]).map(Number) : null;
@@ -56,7 +75,9 @@ export const role: Role = {
         const sizeOf = (load: number) => (asks ? asks[load]! : Number(o.n ?? 23));
         const buryEvery = Number(o.buryEvery ?? 3);
         const site: Tile = (o.site as Tile) ?? S07_SITES[0]!.receiver;
-        const pageLoads = new Set((o.pageLoads as number[]) ?? [2, 5]);
+        // A level-up page needs a staff command, so the demo raises none.
+        const pageLoads = new Set((o.pageLoads as number[]) ?? (lab ? [2, 5] : []));
+        if (!lab && pageLoads.size) throw new Error('bone-receiver: pageLoads need staff commands (local lab only)');
         const holdTicks = Number(o.holdTicks ?? 6);
         const { sdk } = ctx;
         const s = () => sdk.getState() as BotWorldState;
@@ -74,9 +95,23 @@ export const role: Role = {
         const writer = new CueWriter(cueDir(), ctx.account, scope);
         const results: LoadResult[] = [];
         try {
-            await cheat(ctx, '~clearinv inv');
-            await until(ctx, st => st.inventory.length === 0, 10);
-            if (pos(s()).x !== site.x || pos(s()).z !== site.z) await labTele(ctx, site);
+            if (lab) {
+                await cheat(ctx, '~clearinv inv');
+                await until(ctx, st => st.inventory.length === 0, 10);
+                if (pos(s()).x !== site.x || pos(s()).z !== site.z) await labTele(ctx, site);
+            } else {
+                // An empty pack has a load's free slots: bank what we carry at the givers' bank, then walk over.
+                if (s().inventory.length) {
+                    const bank = DEFAULT_BONE_BANK;
+                    if (!(await walkNear(ctx, bank.x, bank.z, 3))) throw new Error('could not reach Falador west bank');
+                    if (!(await openBank(ctx))) throw new Error('could not open the bank');
+                    await depositAllExcept(sdk);
+                    await closeBank(ctx);
+                    if (s().inventory.length) throw new Error(`the pack still holds ${s().inventory.length} items after the deposit`);
+                }
+                if (!(await walkNear(ctx, site.x, site.z, 2))) throw new Error(`could not reach the site ${site.x},${site.z}`);
+                await standOn(ctx, site);
+            }
             await until(ctx, () => frames.recent().length >= 4, 10);
             writer.write({ beacons: frames.recent(), turns: [] });
 
