@@ -1172,12 +1172,12 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         return { fn, receives, publish: (a: string, r: number | null) => publish(dir, a, r) };
     };
 
-    /** Runs 1..`loads` bury the pack and ask for a load; later runs take the band to its end, publishing no bones left on the way. */
-    const buryRuns = (loads: number): Script => async (sdk, call, n) => {
+    /** Runs 1..`loads` bury the pack and ask for a load; later runs take the band to its end, with `emptyAfter` publishing no bones left on the way. */
+    const buryRuns = (loads: number, emptyAfter = false): Script => async (sdk, call, n) => {
         const s0 = sdk.getState()!;
         let t = s0.tick;
         sdk.push(s => ({ tick: ++t, inventory: s.inventory.filter(i => !/bones$/i.test(i.name)) }));
-        for (let k = 0; k < 4 && !call.signal?.aborted; k++) {
+        for (let k = 0; k < 4 && !call.signal?.aborted && (n <= loads || emptyAfter); k++) {
             sdk.push({ tick: ++t });
             call.opts.onProgress?.(status({ runId: n, startedTick: s0.tick, tick: t, gauges: { bonesLeft: 0 } }), 'knife');
         }
@@ -1282,8 +1282,6 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
 
     test('one giver is unchanged: the same partner every load, no cue written, the same load row', async () => {
         const dir = newDir();
-        const h = harness(state({ level: 60, bones: 3 }), { bury: true, bones: { giver: 'cairn_giver' }, cueDir: dir });
-        await h.byName(OAKS).run(h.ctx);
         const empty = harness(state({ level: 60 }), { bury: true, bones: { giver: 'cairn_giver' }, cueDir: dir });
         await empty.byName(OAKS).run(empty.ctx);
         expect(empty.receives.map(r => r.partner)).toEqual(['cairn_giver']);
@@ -1295,7 +1293,7 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         test(`the last load's 21 bones and runes from whichever giver serves it (${from}, load ${lastAt}): the same want every load, then no load after the runes`, async () => {
             const dir = newDir();
             const g = group(dir, { lastAt });
-            const h = harness(state({ level: 97, prayer: 94 }), { bury: true, bones: { group: GROUP, lastLoad: 21 }, cueDir: dir, receive: g.fn }, buryRuns(lastAt - 1));
+            const h = harness(state({ level: 97, prayer: 94 }), { bury: true, bones: { group: GROUP, lastLoad: 21 }, cueDir: dir, receive: g.fn }, buryRuns(lastAt - 1, true));
             const band = h.byName(WILLOWS);
             expect(band.preconditions(h.sdk.getState()!, {})).toBe(true);
             await band.run(h.ctx);
