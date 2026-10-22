@@ -457,6 +457,12 @@ log, not one roll: ticks per success is the cadence over the catch chance (see
 script's (stop, `trade.ts` `receiveFrom`, start again). Measured 0.329 bones per tick at oak
 WC 60 with the knife cadence unchanged (`docs/speedrun/skills/woodcutting.md` section 9).
 
+The same parameters with `technique: 'plain'` run **plain + bury**, the fallback when the host
+gate turns the knife off: a bone in the idle ticks of the 4-tick plain clock, about 0.20 bones
+per tick at oak and 0.24 at willow with Woodcutting no slower than the plain loop
+(`docs/speedrun/tick-programs.md`). `runGatedProgram` flips only `technique`, so pass `bury` and
+`trees` in the params of both techniques.
+
 ## gated-program.ts
 
 The one loop that runs an in-page knife program (`knife-cycle`, `knife-mine`) under the

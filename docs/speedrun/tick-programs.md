@@ -77,8 +77,8 @@ the host gate can select with the same parameters.
 |---|---|---|---|
 | `probe` | `speedrun/lib/hostgate.ts` `probeOnTime` | `trials`, `maxWait` | n/a |
 | `knife-mine` | `tickmanip-mine.ts` | `steps` (stand>rock pairs), `respawn`, `ores`, `starter: 'knife' \| 'none'` | `starter: 'none'` (plain and adjacent-rock transitions) |
-| `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `successes` / `untilLevel` / `untilXp` (game xp) / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'` (no bury); opt-in `followSpot` (re-click a moved spot on the label that shows its new tile) and `dropEach` (drop the product on the label that shows it, with the re-click, both landing on R+1) |
-| `pickpocket` | `thieving-pickpocket.ts` (`--eat=auto`) | `npc`, `rolls`, `food`, `eatBelow`, `forcedBelow` | n/a: it clicks every tick |
+| `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `successes` / `untilLevel` / `untilXp` (game xp) / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'`; with `bury`, plain + bury; opt-in `followSpot` (re-click a moved spot on the label that shows its new tile) and `dropEach` (drop the product on the label that shows it, with the re-click, both landing on R+1) |
+| `pickpocket` | `thieving-pickpocket.ts` (`--eat=auto`); `stunActions` from `stun-pack-thieve.ts` (rs/106) | `npc`, `rolls`, `food`, `eatBelow`, `forcedBelow`, `stunActions` (`bury`, `charge`, `arrows`, or action objects), `stunWindow`, `stunPerTick` | n/a: it clicks every tick |
 | `agility` | `agility-course.ts` | `course` (`gnome`, `barbarian`, `wilderness`, or an object; `agility-courses.ts`), `laps` | `technique: 'plain'` waits `settleTicks` after each obstacle |
 
 ### What the knife cycle reports
@@ -127,6 +127,28 @@ Notes that differ from the lite scripts:
   roll tick itself. A bone with no tree list loses the lock whenever the nearest live tree
   needs a walk, so the variant goes with `trees`. Schedule, rules and measurements are in
   `skills/woodcutting.md` section 9.
+- **Plain + bury** (`technique: 'plain'` with `bury`, the S07 fallback when the host gate turns
+  the knife off; the gate flips `technique` only, so a step passes `bury` and `trees` to both
+  techniques). It is `bones-wc.ts --mode=plainbury`'s placement on the 4-tick clock: on the roll
+  label R, a drop and a click; on R+1, a bury (lands R+2, delays the player through R+3); on R+3,
+  the click alone, which lands on the roll tick and rolls at once. Two in-page differences from
+  the lite script:
+  - **Falls.** Nothing here writes the clock, and a roll that fells the tree leaves it on the
+    roll tick (`woodcut.rs2` `get_logs` returns without `p_oploc`). The page still lists the fallen
+    tree on R, so a click there to the same tree hits the stump, and the next live click rolls
+    3 ticks after it lands, off the lattice (measured: 16 lost bone cycles in 600 ticks at oak).
+    R's click therefore goes to another standing tree in `trees`, which re-arms the clock whether
+    or not the rolled one fell (measured: 2-3 fall restarts in 600 ticks, from moments with a single
+    tree standing). A fall seen after R sends no bone that cycle and re-anchors on the next xp.
+  - **Woodcutting level-ups.** The page shows the level-up page on R+1. The cycle answers it
+    with a dismiss and a click and carries no bone (one tick and one bone per level-up). Sending
+    the dismiss and then the bury on R+1 instead was tried and is wrong in the page: the bury
+    lands, but the chop never resumes until the no-xp restart (11 resyncs, one per level-up,
+    Woodcutting 87 logs against plain's 136 at oak in 600 ticks). The cause is not established.
+  - **Low levels.** From WC 15, where a level-up comes nearly every log, the loop also loses the
+    chop to 6-8 restarts per 600 ticks (cause not established), so it buries 0.14 bones per tick
+    at 6.3 ticks per expected roll against plain's 4.8. That is still about 1.7 Woodcutting ticks
+    per bone, under the booth's 2.07, but far from the 0.1-0.3 it costs at WC 60 and up.
 - A non-depleting tree that falls is a switch inside the lock (`switches`), not a resync.
   With every listed tree down, no starter goes out, because its fletch would use the knife's log.
 - Mining plans each transition on the label that shows the previous roll's xp (closed
@@ -145,6 +167,26 @@ Notes that differ from the lite scripts:
 - Pickpocket eats only in a success window (with the click that follows a success, at
   least 4 ticks after the stun ended), and at once only when HP is at or below
   `forcedBelow`. A bite during a stun costs 3 ticks (`thieving.md`).
+- **Stun actions** (`stunActions`, off by default, so the program is unchanged without
+  them): rs/106's stun pack (`research/stun-pack.md`). On each failure the program sends,
+  ahead of its knight click, actions resolved from that tick's inventory and skills, on the
+  window `stunWindow` = [from, to] of offsets k from the tick whose state shows the failure
+  (default [2, 7]; k 0 and 1 land while delayed, and xp from k 8 opens a level-up page on the
+  attempt tick). The list is a priority order filling up to `stunPerTick` slots (default 4,
+  one packet of the 5 stays for the click). Each template is an item option (`item`,
+  `option`), item on item (`item`, `on`), spell on item (`spell`, `on`) or a button
+  (`component`), with optional `needs` (other items, e.g. runes), `uses` (per fire), a skill
+  gate (`skill`, `from`, `below`) and `delay`: `none`, `tick` (p_delay(0), as Bury: sent
+  last in its tick, and the next tick sends none) or `action` (writes the action delay, as
+  eating: it fires and counts as costly). Presets: `bury`, `charge` (Charge while Magic is
+  below 99 and runes last) and `arrows` (the best arrowhead tier the Fletching level allows,
+  on headless arrows). `['bury', 'charge']` reproduces rs/106's measured plan: three Charges
+  and a bury on k 2, 4 and 6, nothing on 3, 5 and 7; with no bones, four Charges on every
+  window tick. An open page is resumed first and takes one slot; an open interface (a trade)
+  skips the tick's actions. Nothing is remembered between stuns but the failure's tick, so a
+  restarted program picks the pack up from game state. The status counts `stunFired`,
+  `stunRejected`, `stunCostly` and `stun:<name>`, and the result carries a `stun` summary
+  (stuns, dry stuns, fired per stun, by action). Template code: `programs/stun-actions.ts`.
 
 ## Lab
 
@@ -162,6 +204,10 @@ finished run, read from `rsPrograms.history`, and samples rendering once a secon
 LAB_BLOCK=tickmanip NODE_TICKRATE=300 bash docs/speedrun/scripts/tickprog-lab.sh tp97 \
   probe:--trials=60 mine:--ores=200 fly:--level=20:--until=99 pickpocket:--level=55:--rolls=300 agility:--laps=10
 ```
+
+`pickpocket:...:--pack=bury,charge[,arrows]` runs the stun pack with a `::give` kit (dragon
+bones, runes, staff of fire, Magic 80 held, Mage Arena set; rune arrowheads at Fletching 75
+held for `arrows`) and tops bones and sharks up by `::give`, off the scored clock.
 
 Respawn 13 (the demo at about 1,262 online) needs `player_count.rs2` pinned locally,
 which is lab-only and never committed (`mining.md` section 4).
@@ -192,12 +238,28 @@ rs/82's figure (LAB.md); the lite column is from the skills docs.
 | Knife willow, 500 logs | 4.68 over the span (4.59 mean gap), 59 depletions | | | 2.3-3.0 |
 | Knife oak, WC 60, the three oaks from 2914,3494, 200 rolls x 2 (2026-10-21 10:52 PDT) | **3.201, 3.402** over the span, 20-31 tree falls switched in the lock | | rs/105: 3.18 (from 11.78 base xp per tick) | 2.5-3.3 |
 | Knife oak + bury (dragon bones), same, 200 rolls x 4 | **3.16-3.26** over the span, **0.329 bones per tick**, every bury sent landed | | rs/105: 0.298 including trades | 2.0-3.3 |
+| One session, 600 ticks per run, oak WC 60 (to 75; p(L) 0.996-1.000, so Σ1/p = logs), 2026-10-21 14:06-14:20 PDT (rs/162): knife / knife + bury / plain / **plain + bury x 2** | logs per tick 0.314 / 0.304 / 0.203 / **0.235, 0.231**; ticks per expected roll 3.18 / 3.28 / 4.93 / **4.26, 4.32**; bones per tick - / 0.329 / - / **0.205, 0.201** (0.197, 0.194 with 5 ticks of trade per 25 bones, i); plain + bury gaps 4:123 5:15 and 4:121 5:14, 0 resyncs | | rs/105 plain + bury: 0.230 bones per tick including trades | 4.4-7.2 |
+| Oak from WC 15, 600 ticks per run, 2026-10-21 15:55-16:05 PDT (rs/162; p(L) 0.574 at L15 to 1.000 by L60-72): knife / knife + bury / plain / **plain + bury** | logs per tick 0.261 / 0.276 / 0.191 / **0.140**; Σ1/p 168.4 / 177.4 / 126.4 / **95.4** expected rolls, so 3.57 / 3.39 / 4.76 / **6.30** ticks per expected roll; bones per tick - / 0.329 / - / **0.143** (0.139 i). Knife + bury held through 47 Woodcutting level-ups (gaps 3 or misses, no bone lost). Plain + bury: gaps 4:44 5:28 8:1 and **8 resyncs**, with a level-up nearly every cycle; a 300-tick repeat to WC 50 had 6 resyncs. Cause not established | | | 5.1-9.1 |
+| Same session, willow WC 88 (to 92-93; p(L) 0.633-0.656, rune axe), Taverley tile 2920,3406: knife / knife + bury / plain / **plain + bury x 2** | logs per tick 0.200 / 0.213 / 0.155 / **0.161, 0.168**; Σ1/p 186.8 / 199.0 / 145.4 / **151.5, 157.7** expected rolls, so 3.22 / 3.02 / 4.13 / **3.97, 3.81** ticks per expected roll (under 4 is roll luck); bones per tick - / 0.329 / - / **0.240, 0.235** (0.229, 0.224 with trades, i) | | rs/105 plain + bury: 0.238 | 3.3-6.6 |
 | Knife normal trees, bronze axe, from Woodcutting 1, 150 logs | **7.24 ticks per log** over the span (6.80 mean gap) | | | 2.2-2.9 |
 | Normal trees, plain fallback, from level 1, 100 logs | 11.60 | | | 2.6 |
 | Knife normal trees, bronze axe, Woodcutting 64, 150 logs (the demo account's level) | **6.91** over the span (5.50 mean gap) | | | 1.6-2.8 |
 | Normal trees, plain, Woodcutting 64, 100 logs | 9.92 | | | 1.7-2.4 |
 | Pickpocket, Knight of Ardougne, level 55 held, 300 rolls | **0.173 rolls per tick**; after a success 2 ticks on 171 of 188; after a fail 11 on 79 of 111; 15 eats, 2 forced | 0.170 | 0.167 | 4.8-7.5 |
+| Pickpocket, level 55 held, 300 rolls, plain then `stunActions: ['bury', 'charge']`, one session, 2026-10-21 15:14-15:32 PDT (rs/132) | plain **0.1785** rolls per tick (success 0.640; mean success gap 2.15, failure to next roll 11.80, 11 on 79 of 107); pack **0.1656** (success 0.600; 2.16 and **11.83**, 11 on 84 of 120). At the predicted 0.607 success both are 0.168. Pack: **3.00 bones and 8.04 Charges per stun** (360 and 965, all landed by xp), 0 refused, 0 costly, 0 dry stuns | | | 5.2-7.3 |
+| Same, plain then `stunActions: ['bury', 'arrows']` (rune arrowheads on headless arrows, Fletching 75 held), 2026-10-21 15:35-15:54 PDT | plain **0.1613** (success 0.573; success gap 2.18, failure to next roll 11.65, 11 on 97 of 127); pack **0.1657** (success 0.580; 2.09 and **11.53**, 11 on 101 of 125). Pack: **7.97 arrow actions** (about 120 arrows) **and 2.98 bones per stun** over 126 stuns (1,004 and 375, all landed by xp), 0 refused, 0 costly, 0 dry | | | 4.4-5.2 |
 | Agility, Wilderness course, level 99, 10 laps | **66 ticks per lap** on all 9 measured laps | | 66 | 3.8-6.1 |
+
+Reading the stun-pack rows: rolls per tick differ by the success-rate draw (0.64 against
+0.60 over 300 rolls), not the pack; the per-roll costs, 2.15 against 2.16 after a success
+and 11.80 against 11.83 after a failure, are the same. The pack run's 14-tick failures (10
+against 2) include its 5 forced eats inside a stun (+3 each): the lab kit carried 6 sharks at
+40 HP with a `::give` top-up that lagged, a lab setting rather than the program. Magic held at
+80 by `::setstat` (reset at each 99) and Prayer from 43 put many level-up pages into the run;
+they did not move the failure-to-next figure. The `arrows` preset does not fire beside
+`charge` while Magic is held below 99 (Charge fills every delay-free slot first), so it has its
+own row: the Fletching half of the pack, as it runs once Charge reaches 99. Its headless
+arrows are given, as in rs/106's plan; making them is not part of the stun pack.
 
 Reading the willow row: both runs hold the 3-tick lock, and nearly every gap is a
 multiple of 3. The difference is how many 3-tick rolls yield a log. Fitting a
