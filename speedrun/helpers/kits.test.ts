@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { InventoryItem } from '../../sdk/types';
-import { planOffers } from '../lib/trade';
-import { decideStall, displayName, giveSpecs, kitHeld, kitOptions, kitSlots, lastContact, LUMBRIDGE_SPAWN, parseKit, splitLogs, STALL_BACKOFF_TICKS, stallOptions, type StallView } from './kits';
+import { planOffers, type GiveResult } from '../lib/trade';
+import { memoryRoleState } from './role';
+import { decideStall, displayName, giveKitOnce, kitDeliveryKey, giveSpecs, kitHeld, kitOptions, kitSlots, lastContact, LUMBRIDGE_SPAWN, parseKit, splitLogs, STALL_BACKOFF_TICKS, stallOptions, type StallView } from './kits';
 
 const inv = (items: [number, number, string, number][]): InventoryItem[] =>
     items.map(([slot, id, name, count]) => ({ slot, id, name, count, optionsWithIndex: [] }));
@@ -183,5 +184,52 @@ describe('stall trip', () => {
         expect(stallOptions({ deliverTo: 'cairn_mule2' })).toEqual({ target: 55, deliverTo: 'cairn_mule2', deliverAt: LUMBRIDGE_SPAWN, food: ['Kebab'] });
         expect(() => stallOptions({})).toThrow(/deliverTo/);
         expect(() => stallOptions({ deliverTo: 'x', target: 0 })).toThrow(/target/);
+    });
+});
+
+describe('durable hand-off', () => {
+    const kit = parseKit('knife:1');
+    const result = (over: Partial<GiveResult> = {}): GiveResult => ({ ok: true, ticks: 7, gave: [], sent: 1, ...over });
+
+    test('persists intent before sending and never repeats a delivered kit', async () => {
+        const state = memoryRoleState();
+        let sends = 0;
+        const send = async () => {
+            sends++;
+            expect(state.get(kitDeliveryKey('cairn_casts'))).toMatchObject({ outcome: 'giving' });
+            return result();
+        };
+        await giveKitOnce(state, 'cairn_casts', kit, send, () => false);
+        const restarted = memoryRoleState(JSON.parse(JSON.stringify(state.data)));
+        expect(await giveKitOnce(restarted, 'cairn_casts', kit, send, () => true)).toBeNull();
+        expect(sends).toBe(1);
+        expect(restarted.get(kitDeliveryKey('cairn_casts'))).toMatchObject({ outcome: 'delivered' });
+    });
+
+    test('a crash during give and an unreadable prior record fail closed', async () => {
+        const state = memoryRoleState();
+        await expect(giveKitOnce(state, 'cairn_casts', kit, async () => { throw new Error('disconnected'); }, () => true)).rejects.toThrow('disconnected');
+        expect(await giveKitOnce(state, 'cairn_casts', kit, async () => { throw new Error('must not send'); }, () => true)).toBeNull();
+        await state.set(kitDeliveryKey('cairn_casts'), null);
+        expect(await giveKitOnce(state, 'cairn_casts', kit, async () => result(), () => true)).toBeNull();
+    });
+
+    test('only an unopened trade with all items still held can retry', async () => {
+        for (const [reason, held, retry] of [
+            ['no_response', true, true], ['player_not_found', true, true],
+            ['no_response', false, false], ['timeout', true, false],
+            ['closed before completing', true, false]
+        ] as const) {
+            const state = memoryRoleState();
+            await giveKitOnce(state, 'cairn_casts', kit, async () => result({ ok: false, reason }), () => held);
+            expect(state.get(kitDeliveryKey('cairn_casts')) === undefined).toBe(retry);
+        }
+    });
+
+    test('a state write failure prevents the trade', async () => {
+        let sent = false;
+        const state = { get: () => undefined, set: async () => { throw new Error('disk full'); } };
+        await expect(giveKitOnce(state, 'cairn_casts', kit, async () => { sent = true; return result(); }, () => true)).rejects.toThrow('disk full');
+        expect(sent).toBe(false);
     });
 });

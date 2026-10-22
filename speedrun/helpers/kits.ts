@@ -25,10 +25,10 @@
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { crossFromKandarin, crossToKandarin, type Traveller } from '../lib/kandarin';
-import { give, receiveFrom, sameName, type GiveSpec } from '../lib/trade';
+import { give, receiveFrom, sameName, type GiveResult, type GiveSpec } from '../lib/trade';
 import { BANKS, Buyer, type Tile } from './buyer';
 import { ChatCursor, isStackableName, planPackage, type PackageItem } from './mule';
-import { runStandalone, type Role, type RoleContext } from './role';
+import { runStandalone, type Role, type RoleContext, type RoleState } from './role';
 
 /** Where the tutorial's last label drops a new account (tutorial.rs2 tutorial_complete, p_telejump 0_50_50_22_22). */
 export const LUMBRIDGE_SPAWN: Tile = { x: 3222, z: 3222 };
@@ -171,6 +171,34 @@ export function kitOptions(raw: Record<string, unknown>): KitOptions {
     return { kits, serve, stand: tileOption(raw.stand, LUMBRIDGE_SPAWN, 'stand'), bank: tileOption(raw.bank, BANKS.draynor, 'bank'), returns, freeSlots };
 }
 
+/** Each receiver gets one starter kit, even across role or launcher restarts. */
+export function kitDeliveryKey(receiver: string): string {
+    return `kits.delivery:${receiver.trim().toLowerCase()}`;
+}
+
+/**
+ * Persist intent before calling the shared giver. Only an unopened trade with
+ * the complete kit still held is safe to retry automatically; any other failure
+ * needs the receiver's log before another kit can be sent.
+ */
+export async function giveKitOnce(
+    state: RoleState,
+    receiver: string,
+    kit: readonly PackageItem[],
+    send: () => Promise<GiveResult>,
+    held: () => boolean
+): Promise<GiveResult | null> {
+    const key = kitDeliveryKey(receiver);
+    if (state.get(key) !== undefined) return null;
+    const record = (outcome: string) => ({ outcome, receiver, kit, at: new Date().toISOString() });
+    await state.set(key, record('giving'));
+    const result = await send();
+    const unopened = result.reason === 'no_response' || result.reason === 'player_not_found';
+    await state.set(key, result.ok ? record('delivered') :
+        unopened && held() ? undefined : record('uncertain'));
+    return result;
+}
+
 // ============ The role ============
 
 const HEARTBEAT_MS = 5 * 60_000;
@@ -233,6 +261,11 @@ class KitGiver {
 
     private async cycle(): Promise<void> {
         const { sdk } = this.ctx;
+        if (this.pending && this.ctx.state.get(kitDeliveryKey(this.pending)) !== undefined) {
+            this.log('prior hand-off recorded; not serving another kit', { to: this.pending, record: this.ctx.state.get(kitDeliveryKey(this.pending)) });
+            this.pending = null;
+            this.staged = false;
+        }
         if (this.pending && !this.staged) {
             if (this.shortSince && Date.now() - this.shortSince < SHORT_RETRY_MS) {
                 await this.takeReturns();
@@ -321,8 +354,10 @@ class KitGiver {
             this.staged = false;
             return;
         }
-        const r = await give(sdk, to, giveSpecs(this.kit), { openTimeoutMs: 30_000 });
-        const held = kitHeld(sdk.getInventory(), this.kit);
+        const r = await giveKitOnce(this.ctx.state, to, this.kit,
+            () => give(sdk, to, giveSpecs(this.kit), { openTimeoutMs: 30_000 }),
+            () => kitHeld(sdk.getInventory(), this.kit));
+        if (!r) return;
         this.log('hand-off', {
             to,
             ok: r.ok,
@@ -339,9 +374,8 @@ class KitGiver {
             this.pending = null;
             this.staged = false;
             this.needsBank = true;
-        } else if (!held) {
-            // The kit left the pack without give() seeing it land. Never stage a second one blind.
-            this.log('hand-off unsettled: kit not in the pack after a failed give; stopping service', { to, inventory: describe(sdk.getInventory()) });
+        } else if (this.ctx.state.get(kitDeliveryKey(to)) !== undefined) {
+            this.log('hand-off unsettled; check receiver before serving again', { to, inventory: describe(sdk.getInventory()) });
             this.pending = null;
             this.staged = false;
         }
