@@ -533,6 +533,19 @@ export function keepOnBank(name: string, lv: { fishing: number; cooking: number 
 
 const COINS = /^coins$/i;
 
+/** Edible food past the first `cap` units carried, by id, in inventory order: what a bank visit deposits under `keepFood`. */
+export function foodOverCap(inventory: readonly InventoryItem[], cap: number): { id: number; n: number }[] {
+    let kept = 0;
+    const over = new Map<number, number>();
+    for (const i of inventory) {
+        if (!edible(i)) continue;
+        const stay = Math.max(0, Math.min(i.count, cap - kept));
+        kept += stay;
+        if (i.count > stay) over.set(i.id, (over.get(i.id) ?? 0) + i.count - stay);
+    }
+    return [...over].map(([id, n]) => ({ id, n }));
+}
+
 /** What a bank visit at `at` takes out so the walk away can pay the Al Kharid toll: 10 gp when east of the gate. */
 export function tollWithdraw(at: { x: number; z: number }): { re: RegExp; n: number }[] {
     return isEastOfTollGate(at) ? [{ re: COINS, n: TOLL_GP }] : [];
@@ -626,6 +639,11 @@ interface Options {
     maxPlayersNearTarget: number;
     /** Stop training a combat skill at this level (the style picker skips it). */
     styleCap: number;
+    /**
+     * Most food a bank visit leaves carried; the rest is banked (default: all of it). A borrowed
+     * account that needs no food (99 Defence at chaos druids) otherwise spends its bag on it.
+     */
+    keepFood: number;
     /** Log every fight at the spot (outcome, game ticks, position, live targets in view): for measuring kill rates. */
     trace: boolean;
 }
@@ -657,6 +675,7 @@ export function parseOptions(o: Record<string, unknown>): Options {
         loot: typeof o.loot === 'string' ? new RegExp(o.loot, 'i') : DEFAULT_LOOT,
         maxPlayersNearTarget: num('maxPlayersNearTarget', 0),
         styleCap: num('styleCap', 99),
+        keepFood: num('keepFood', Infinity),
         trace: o.trace === true
     };
 }
@@ -1008,6 +1027,10 @@ export class Run {
             if (seen.has(item.id) || keep(item)) continue;
             seen.add(item.id);
             await this.bot.depositItem(item, -1);
+        }
+        for (const { id, n } of foodOverCap(this.state().inventory, this.opt.keepFood)) {
+            const item = this.state().inventory.find(i => i.id === id);
+            if (item) await this.bot.depositItem(item, n);
         }
         for (const w of withdraw) {
             const have = this.state().inventory.filter(i => w.re.test(i.name) && (!FOOD.test(i.name) || edible(i))).reduce((a, i) => a + i.count, 0);
