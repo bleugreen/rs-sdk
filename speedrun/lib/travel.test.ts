@@ -296,51 +296,59 @@ describe('runTo: the chained run', () => {
     /**
      * S12 B on the browser (rs/484): the run's click tick fell on a frame the browser published while
      * it rebuilt the map region (sceneReady false), whose loc list lacked the house door. The click
-     * went past the door, and only a stall found it again: +9 ticks against lite. `listDoor` decides,
-     * from the tick's state, whether the closed door is listed; the door opens on the interact.
+     * went past the door, and only a stall found it again: +9 ticks against lite. `frame` says, for
+     * the state of each new tick, whether it is a rebuild frame (an old region's loc, no door), lists
+     * the closed door, or lists nothing; the door opens on the interact. A hop's first click already
+     * waits for a built scene (rs/309), so the rebuild frame that matters falls on a later click.
      */
-    function doorRun(listDoor: (s: BotWorldState) => boolean, first: Partial<BotWorldState> = {}) {
-        const shut = loc(1530, 'Door', 3216, 3200, ['Open']);
-        const sdk = world(3200, 3200, first);
+    function doorRun(doorX: number, goalX: number, frame: (s: BotWorldState) => 'rebuild' | 'door' | 'none') {
+        const shut = loc(1530, 'Door', doorX, 3200, ['Open']);
+        const sdk = world(3200, 3200);
         let open = false;
         const from: Array<{ tick: number; x: number }> = [];
-        const sim = simulateWalking(sdk, { blocked: x => !open && x === 3216 });
+        const sim = simulateWalking(sdk, { blocked: x => !open && x === doorX });
         const prev = sdk.onSend;
         sdk.onSend = (a, f) => {
             prev(a, f);
             if (a.method === 'sendInteractLoc') {
                 from.push({ tick: f.state!.tick, x: f.state!.player!.worldX });
                 open = true;
-                queueMicrotask(() => f.tick({ nearbyLocs: [loc(1531, 'Door', 3216, 3200, ['Close'])] }));
+                queueMicrotask(() => f.tick({ sceneReady: true, nearbyLocs: [loc(1531, 'Door', doorX, 3200, ['Close'])] }));
             }
         };
-        const each = (s: BotWorldState): Partial<BotWorldState> => (open ? {} : { sceneReady: true, nearbyLocs: listDoor(s) ? [shut] : [] });
-        return { sdk, sim, from, run: () => drive(sdk, runTo(sdk as never, { x: 3240, z: 3200 }), 600, each) };
+        const each = (s: BotWorldState): Partial<BotWorldState> => {
+            if (open) return {};
+            const f = frame({ ...s, tick: s.tick + 1 });
+            if (f === 'rebuild') return { sceneReady: false, nearbyLocs: [loc(1530, 'Door', 3120, 3120, ['Open'])] };
+            return { sceneReady: true, nearbyLocs: f === 'door' ? [shut] : [] };
+        };
+        if (frame(sdk.state!) === 'door') sdk.state = { ...sdk.state!, nearbyLocs: [shut] };
+        return { sdk, sim, from, run: () => drive(sdk, runTo(sdk as never, { x: goalX, z: 3200 }), 600, each) };
     }
 
     test('a door missing from a mid-rebuild frame on the click tick is opened at the next built tick, with no stall', async () => {
-        // Tick 100 is the rebuild frame: it lists a loc of the old region and not the door.
-        const t = doorRun(() => true, { sceneReady: false, nearbyLocs: [loc(1530, 'Door', 3120, 3120, ['Open'])] });
+        // The second click (tick 109, from 3218 to 3238) falls on the rebuild frame, and the door at 3230 is in its stretch.
+        const t = doorRun(3230, 3260, s => (s.tick === 109 ? 'rebuild' : 'door'));
         const r = await t.run();
         expect(r.ok).toBe(true);
-        expect(t.sim.clicks[0]).toMatchObject({ x: 3220, tick: 100 });
-        expect(t.from).toEqual([{ tick: 101, x: 3202 }]);
-        expect(sends(t.sdk, 'sendInteractLoc')).toEqual([[3216, 3200, 1530, 1]]);
-        expect(r.doors).toEqual([expect.objectContaining({ x: 3216, z: 3200, state: 'closed' })]);
-        expect(at(t.sdk)).toEqual({ x: 3240, z: 3200 });
+        expect(t.sim.clicks.slice(0, 2)).toMatchObject([{ x: 3220, tick: 100 }, { x: 3238, tick: 109, from: { x: 3218 } }]);
+        expect(t.from).toEqual([{ tick: 110, x: 3220 }]);
+        expect(sends(t.sdk, 'sendInteractLoc')).toEqual([[3230, 3200, 1530, 1]]);
+        expect(r.doors).toEqual([expect.objectContaining({ x: 3230, z: 3200, state: 'closed' })]);
+        expect(at(t.sdk)).toEqual({ x: 3260, z: 3200 });
     });
 
     test('lite: the same door listed on the click tick is opened instead of that click', async () => {
-        const t = doorRun(() => true, { nearbyLocs: [loc(1530, 'Door', 3216, 3200, ['Open'])] });
+        const t = doorRun(3230, 3260, () => 'door');
         const r = await t.run();
         expect(r.ok).toBe(true);
-        expect(t.sdk.sent[0]).toEqual({ method: 'sendInteractLoc', args: [3216, 3200, 1530, 1] });
-        expect(t.from).toEqual([{ tick: 100, x: 3200 }]);
-        expect(at(t.sdk)).toEqual({ x: 3240, z: 3200 });
+        expect(t.sim.clicks[0]).toMatchObject({ x: 3220, tick: 100 });
+        expect(t.from).toEqual([{ tick: 109, x: 3218 }]);
+        expect(at(t.sdk)).toEqual({ x: 3260, z: 3200 });
     });
 
     test('a door past the 15-tile loc scan at the click is opened as soon as it is listed, before the player reaches it', async () => {
-        const t = doorRun(s => s.player!.worldX >= 3216 - 15);
+        const t = doorRun(3216, 3240, s => (s.player!.worldX >= 3216 - 15 ? 'door' : 'none'));
         const r = await t.run();
         expect(r.ok).toBe(true);
         expect(t.sim.clicks[0]).toMatchObject({ x: 3220, tick: 100 });
