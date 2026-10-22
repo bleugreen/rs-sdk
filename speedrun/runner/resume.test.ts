@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { BotWorldState, PlayerState } from '../../sdk/types';
-import { baseState, FakeSdk } from '../lib/fake-sdk';
+import { baseState, FakeSdk, runToggleServer } from '../lib/fake-sdk';
+import { IF_RUN_ON, runIsOn } from '../lib/run-mode';
 import type { Session } from '../lib/session';
 import { TickLog } from '../lib/ticks';
 import { sleep, waitUntil } from '../lib/wait';
@@ -216,6 +217,39 @@ describe('runResumable', () => {
         const p = runResumable(client.session, steps, { log: TickLog.memory(), c: { trace: [], fenced: 0 }, link: client.link, shouldStop: () => false });
         await expect(p).rejects.toThrow('postcondition failed: wrong');
         client.stop();
+    });
+
+    test('a session that comes back walking (relaunch, reloaded page) has run turned on before the walk', async () => {
+        const journal = { stage: 'not started' };
+        const client = droppingClient(world(1, 0, 0));
+        const dropping = client.sdk.onSend;
+        const serve = runToggleServer(client.sdk);
+        client.sdk.onSend = (a, s) => { dropping(a, s); serve(a); };
+        const c: C = { trace: [], fenced: 0 };
+        const log = TickLog.memory('t');
+        let dropped = false;
+        let runAtResume: boolean | null = null;
+        client.sdk.onStateUpdate(s => {
+            if (!dropped && s.inGame && mining(s) >= 3) {
+                dropped = true;
+                queueMicrotask(() => client.drop());
+                // The new login left the toggle off, and nothing called login() to fix it.
+                setTimeout(() => { client.restore(2); client.sdk.push({ varps: { option_run: 0 } }); }, 100);
+            }
+        });
+        const steps = manifest(journal).map(s => s.name !== 'mine-to-5' ? s : {
+            ...s,
+            resume: async (ctx: Parameters<Step<C>['run']>[0]) => { runAtResume = runIsOn(ctx.sdk.getState()); return s.resume!(ctx); },
+        });
+        const r = await runResumable(client.session, steps, { log, c, link: client.link, shouldStop: () => false, probes: { journal: async () => journal.stage } });
+        await sleep(120);
+        client.stop();
+        expect(r.drops).toBe(1);
+        expect(runAtResume).toBe(true);
+        expect(client.sdk.sent.filter(a => a.method === 'sendClickComponent' && a.args[0] === IF_RUN_ON)).toHaveLength(1);
+        const walks = log.rows.filter(row => row.step === RESUME_STEP).map(row => row.meta?.run);
+        expect(walks).toEqual([{ on: true, presses: 0 }, { on: true, presses: 1 }]);
+        expect(client.offlineSends).toBe(0);
     });
 
     test('the operator --from overrides only the first walk', async () => {

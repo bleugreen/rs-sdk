@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { BotWorldState } from '../../sdk/types';
-import { baseState, FakeSdk, flush } from '../lib/fake-sdk';
-import type { StepContext } from '../runner/step';
-import { IF_RUN_ON } from '../lib/run-mode';
+import { baseState, FakeSdk, flush, runToggleServer } from '../lib/fake-sdk';
+import { IF_RUN_ON, runIsOn } from '../lib/run-mode';
 import { onTutorialIsland } from '../lib/world';
+import type { StepContext } from '../runner/step';
 import { LUMBRIDGE_SPAWN, PLAYER_KIT, tutorialSkip } from './start';
 
 const prevTick = process.env.SPEEDRUN_TICK_MS;
@@ -41,6 +41,19 @@ describe('S00 tutorial skip', () => {
         expect(sdk.getState()!.tick).toBe(6);
         expect(tutorialSkip.postconditions(sdk.getState()!, {})).toBe(true);
         expect(tutorialSkip.done!({ state: sdk.getState()!, probed: {} }, {})).toBe(true);
+    });
+
+    test('turns run on once it lands: no login could, the controls tab is hidden on the island', async () => {
+        const sdk = new TutorialSdk('Yes please.');
+        sdk.push({ varps: { option_run: 0 } });
+        const content = sdk.onSend;
+        const serve = runToggleServer(sdk);
+        sdk.onSend = (a, s) => { content(a, s); serve(a); };
+        await tutorialSkip.run(ctx(sdk));
+        expect(sdk.sent.map(s => s.method)).toEqual(['sendAcceptCharacterDesign', 'sendInteractNpc', 'sendClickDialog', 'clickDialogByText', 'sendClickComponent']);
+        expect(sdk.sent.at(-1)!.args).toEqual([IF_RUN_ON]);
+        expect(runIsOn(sdk.getState())).toBe(true);
+        expect(tutorialSkip.postconditions(sdk.getState()!, {})).toBe(true);
     });
 
     test('stops when the skip is not offered', async () => {

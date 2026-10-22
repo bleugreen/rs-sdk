@@ -161,6 +161,22 @@ export class FakeSdk {
     sendPrivateMessage(targetName: string, message: string) { return this.chatResult(this.record('sendPrivateMessage', targetName, message), message); }
 }
 
+/**
+ * The server's side of the run toggle (player_controls.rs2): a press of run off
+ * (152) or run on (153) publishes `varps.option_run` on the next tick. The
+ * first `ignore` presses are dropped, as for a busy player (p_finduid fails).
+ * Call the returned handler from `onSend`.
+ */
+export function runToggleServer(sdk: FakeSdk, opts: { ignore?: number } = {}): (a: SentAction) => void {
+    let ignore = opts.ignore ?? 0;
+    return a => {
+        if (a.method !== 'sendClickComponent' || (a.args[0] !== 152 && a.args[0] !== 153)) return;
+        if (ignore-- > 0) return;
+        const on = a.args[0] === 153 ? 1 : 0;
+        setTimeout(() => sdk.tick(s => ({ varps: { ...s.varps, option_run: on } })), 1);
+    };
+}
+
 /** Let queued promise callbacks run. */
 export function flush(): Promise<void> {
     return new Promise(r => setTimeout(r, 0));

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { fakeCdp } from './fake-cdp';
-import { FakeSdk, flush } from './fake-sdk';
+import { FakeSdk, flush, runToggleServer } from './fake-sdk';
+import { IF_RUN_ON, RunToggleError, runIsOn } from './run-mode';
 import { loginTokenProof } from '../../server/webclient/login-token';
 import {
     LOGOUT_BUTTON,
@@ -645,6 +646,59 @@ describe('login with inPage: the tab logs back in where it is', () => {
             expect(r.loginTick - r.tickBase).toBe(1);
             expect(cdp.page.navigations).toEqual([]);
         } finally {
+            cdp.stop();
+        }
+    });
+
+    const runPresses = (sdk: FakeSdk) => sdk.sent.filter(a => a.method === 'sendClickComponent' && a.args[0] === IF_RUN_ON).length;
+
+    test('login turns run on for the new session, which the server starts walking', async () => {
+        const cdp = fakeCdp('srtest', PASSWORD);
+        try {
+            const { session, sdk } = pageSession(cdp);
+            sdk.state = { ...sdk.state!, varps: { option_run: 0 } };
+            sdk.onSend = runToggleServer(sdk);
+            cdp.hooks.onAutoLogin = () => getsIn(cdp, sdk);
+            const r = await login(session, { inPage: true, timeoutMs: 3_000 });
+            expect(r.run).toEqual({ on: true, presses: 1 });
+            expect(runPresses(sdk)).toBe(1);
+            expect(runIsOn(sdk.getState())).toBe(true);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('relog, the path the lab quest fixtures take after ::setvar, comes back running', async () => {
+        const cdp = fakeCdp('srtest', PASSWORD);
+        try {
+            const { session, sdk } = inWorldPageSession(cdp);
+            const logout = sdk.onSend;
+            const serve = runToggleServer(sdk);
+            sdk.onSend = (a, s) => { logout(a, s); serve(a); };
+            expect(runIsOn(sdk.getState())).toBe(true);
+            // option_run is not saved: the new login publishes it off.
+            cdp.hooks.onAutoLogin = () => { sdk.push({ varps: { option_run: 0 } }); getsIn(cdp, sdk); };
+            await relog(session, { offlineMs: 0, loginTimeoutMs: 3_000 });
+            expect(runPresses(sdk)).toBe(1);
+            expect(runIsOn(sdk.getState())).toBe(true);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('a login whose run toggle will not take fails with a RunToggleError', async () => {
+        const cdp = fakeCdp('srtest', PASSWORD);
+        let ticker: ReturnType<typeof setInterval> | undefined;
+        try {
+            const { session, sdk } = pageSession(cdp);
+            sdk.state = { ...sdk.state!, varps: { option_run: 0 } };
+            sdk.onSend = runToggleServer(sdk, { ignore: Infinity });
+            cdp.hooks.onAutoLogin = () => { getsIn(cdp, sdk); setTimeout(() => { ticker = setInterval(() => sdk.tick(), 5); }, 80); };
+            const err = await login(session, { inPage: true, timeoutMs: 3_000 }).catch(e => e);
+            expect(err).toBeInstanceOf(RunToggleError);
+            expect(runPresses(sdk)).toBe(2);
+        } finally {
+            clearInterval(ticker);
             cdp.stop();
         }
     });
