@@ -244,6 +244,7 @@ Gateway: `AGENT_PORT`, plus `WEB_MANAGEMENT_PORT` so it finds its engine
 | tickmanip | 8960 | 8961 | 8962 | 43660 | 7860 |
 | runecraft (step module; givers' gateway 8175, Chrome DevTools 9275) | 9270 | 9271 | 9272 | 43970 | 8170 |
 | 12: herblore (step module, `lab/herblore-accept.ts`; Chrome DevTools 9027) | 9020 | 9021 | 9022 | 43720 | 7920 |
+| fletching (S18d-fallback, `lab/fletching-accept.ts`; Chrome DevTools 9415) | 9410 | 9411 | 9412 | 44410 | 8410 |
 
 The default block belongs to whoever is not on this list (the fletch-menu client
 hang fix, the quest-route issues). Quest-route children should take blocks from
@@ -305,6 +306,12 @@ starts the engine and gateway on that row of the port table, waits for
 `World ready`, creates or repoints the bot, runs the scripts in order, then
 stops everything. `LAB_BLOCK` defaults to `agility` and `NODE_TICKRATE` to 100.
 Give the batch a long timeout, because the first boot packs the content.
+Don't detach a lab from a short batch with `nohup ... &`: the executor reaps the whole
+process tree when the batch ends (bgsrv-mac, 2026-10-22), and an engine killed while packing
+leaves a half-written `server/engine/data/pack` that the next boot trusts and then fails on
+(a content parse error such as `shamus.npc ... ^crush_style`). Run the lab as the batch item
+itself, and after a killed boot delete `server/engine/data/pack` (a clean `bun run build` in
+`server/engine` packs in seconds).
 
 On a loaded executor the bot itself can stall: at 300 ms on a machine at load
 29 of 32 cores, single click round trips through the gateway and runner took up
