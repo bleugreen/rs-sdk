@@ -8,9 +8,11 @@
 // at Lumbridge on 1 HP, not full, and a death mark keeps any further death at 1 HP for a while; an
 // unskulled player keeps the three priciest single units carried, worn or held, by obj cost (one unit
 // of a stack: one arrow, one coin), and everything else drops for the killer. A shark heals 20 behind a
-// 3-tick eat delay (consume_normal.dbrow, consume.rs2). xp is kept, so a step's progress is never lost;
-// what a death costs is the time back to where it happened, plus whatever the run still needs that
-// the killer took.
+// 3-tick eat delay (consume_normal.dbrow, consume.rs2). A deployed cannon is a loc only its owner can
+// pick up, decaying 2,500 ticks after its set-up (quest_mcannon cannon_setup.rs2, cannon.constant), so
+// a death beside it loses neither the cannon nor its set-up if SCORED is back inside the decay. xp is
+// kept, so a step's progress is never lost; what a death costs is the time back to where it happened,
+// plus whatever the run still needs that the killer took.
 //
 // For each stretch this prints the kit SCORED carries (the ledger's state after the named row), the
 // three units the engine keeps, and every lost item classed by the ledger's later rows: 'returned
@@ -58,14 +60,17 @@ for (const f of walkDir(join(root, 'server/content/scripts'))) {
     }
 }
 const packIds = new Map(readFileSync(join(root, 'server/content/pack/obj.pack'), 'utf8').split('\n').map(l => l.split('=') as [string, string]).map(([i, d]) => [Number(i), d] as const));
+const { rows, errors } = parseLedger(readFileSync(MANIFEST, 'utf8'));
+if (errors.length) throw new Error(errors.join('\n'));
+// A name several objs share (the greegrees) takes the id some row gives it (`NAME @ID`).
+const rowIds = new Map<string, number>();
+for (const r of rows) for (const e of [...r.in, ...r.out]) if (e.id !== undefined) rowIds.set(e.name.toLowerCase(), e.id);
 const obj = (it: Held) => {
-    if (it.id !== undefined) return byDebug.get(packIds.get(it.id) ?? '');
+    const id = it.id ?? rowIds.get(it.name.toLowerCase());
+    if (id !== undefined) return byDebug.get(packIds.get(id) ?? '');
     const all = objs.get(it.name.toLowerCase()) ?? [];
     return all.find(o => o.debug === it.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')) ?? all[0];
 };
-
-const { rows, errors } = parseLedger(readFileSync(MANIFEST, 'utf8'));
-if (errors.length) throw new Error(errors.join('\n'));
 const entries = walk(rows);
 const at = (row: string) => {
     const i = rows.findIndex(r => r.row === row);
@@ -98,8 +103,10 @@ const keep3 = (units: Unit[]) => {
 
 // A lost item's fate in the rows after the stretch: the first row that consumes or hands it in, or
 // that wears it through a step, makes it needed; a swap, trade, deposit or drop first returns it unused.
+// A death inside a step needs that step's worn kit for the rest of it.
 const isStep = (r: LedgerRow) => /^S\d/.test(r.row);
 const fate = (u: Unit, from: string) => {
+    if (u.worn && isStep(rows[at(from)]!)) return `needed: worn for the rest of ${from}`;
     const k = u.name.toLowerCase();
     const fam = k.replace(/\(\d\)$/, '');
     const mine = (n: string) => n.toLowerCase() === k || n.toLowerCase().replace(/\(\d\)$/, '') === fam;
@@ -110,7 +117,7 @@ const fate = (u: Unit, from: string) => {
         if (o) return wornThrough ? `needed: worn through ${wornThrough}, back at ${r.row}` : `returned unused (${o.reason} at ${r.row})`;
         if (u.worn && isStep(r) && !wornThrough) wornThrough = r.row;
     }
-    return wornThrough ? `needed: worn through ${wornThrough}` : 'kept to the end';
+    return wornThrough ? `needed: worn through ${wornThrough}` : `not used after ${from}`;
 };
 
 const HELPER = 10; // e: the recovery helper cued at the death reaching the Lumbridge spawn (fold-in 28's 'respawn ~10')
@@ -123,11 +130,12 @@ const cannon = /^(cannon (base|stand|barrels|furnace)|cannonball)$/;
 const stretches: Stretch[] = [
     { name: 'T13-14 (Lawgof to the spiders, the lever)', row: 'T13-14', hp: 42, replay: [0, fig('T13-14')], how: 'T13-14 again from the spawn, the part already walked' },
     { name: 'S14 packed (the cannon in the pack: H11 to set-up, pick-up to T14-15)', row: 'S14', hp: 42, replay: [fig('T13-14'), fig('T13-14') + SET_UP], how: 'T13-14 again, then the set-up if the death came after it' },
-    { name: 'S14 deployed (the cannon on the ground)', row: 'S14', deployed: true, hp: 42, replay: [fig('T13-14') + SET_UP, fig('T13-14') + SET_UP], how: 'T13-14 again and the set-up again' },
+    { name: 'S14 deployed (the cannon on the ground)', row: 'S14', deployed: true, hp: 42, replay: [fig('T13-14'), fig('T13-14')], how: 'T13-14 again; the cannon waits, no second set-up' },
     { name: 'T14-15 (the spiders to the Ardougne cast, the Wilderness part)', row: 'T14-15', hp: 42, replay: [0, 66], how: 'the Wilderness part already walked (~66 to level 20, R8)' },
     { name: 'T15-16 as the ledger walks it (before H13)', row: 'T15-16', hp: 42, replay: [0, fig('T15-16')], how: 'T15-16 again, the part already walked' },
     { name: 'T15-16 with H13 at the landing (the Wilderness carry)', row: 'H13', hp: 42, replay: [0, fig('T15-16')], how: 'T15-16 again, the part already walked, and H13 again from a spare kit' },
-    { name: 'S27 deployed', row: 'S27', deployed: true, hp: 97, replay: [fig('T26-27') + SET_UP, fig('T26-27') + SET_UP], how: 'T26-27 again and the set-up again' },
+    { name: 'S27 deployed', row: 'S27', deployed: true, hp: 97, replay: [fig('T26-27'), fig('T26-27')], how: 'T26-27 again; the cannon waits, no second set-up' },
+    { name: 'S27 packed (the bow phase, or the cannon picked up)', row: 'S27', hp: 97, replay: [fig('T26-27'), fig('T26-27') + SET_UP], how: 'T26-27 again, and the set-up if the cannon was still in use' },
     { name: 'S17 mid-course', row: 'S17', hp: 97, replay: [fig('T13-14') + fig('T27-17') + 66, fig('T13-14') + fig('T27-17') + 157], how: "T13-14's lever leg and T27-17 again, plus the lap in progress (66-157)" },
 ];
 
@@ -142,7 +150,10 @@ for (const s of stretches) {
     console.log(`  carried: ${units.map(u => `${u.name} x${u.count}${u.worn ? ' (worn)' : ''}`).join(', ')}`);
     if (unknown.length) console.log(`  no obj cost found (priced 0): ${unknown.join(', ')}`);
     console.log(`  kept (keep 3, by obj cost): ${kept.join(', ')}`);
-    for (const u of lost) console.log(`  lost ${u.name} x${u.count}: ${fate(u, s.row)}`);
+    const fates = lost.map(u => [u, fate(u, s.row)] as const);
+    for (const [u, f] of fates) console.log(`  lost ${u.name} x${u.count}: ${f}`);
+    const needed = fates.filter(([, f]) => f.startsWith('needed')).map(([u]) => `${u.name} x${u.count}`);
+    console.log(`  the recovery trade carries: ${needed.join(', ') || 'nothing the run needs'}; and ${sharks} sharks to eat back from 1 HP`);
     console.log(`  price: helper ${HELPER} e + trade ${TRADE} e + ${sharks} sharks from 1 HP to ${s.hp} at 3 = ${3 * sharks} i, ${fixed}; + ${s.how}, ${s.replay[0]}-${s.replay[1]}: ${Math.round(fixed + s.replay[0])}-${Math.round(fixed + s.replay[1])}`);
 }
 if (!spareArrows) console.log("\nSPARE_ARROWS=0: S27's lost 570 rune arrows have no spare on h92, so S27's finish after a death is priced on what h91's top-up holds, its shortfall stated.");
