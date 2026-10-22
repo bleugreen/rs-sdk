@@ -13,6 +13,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { readBank } from '../lib/boards.ts';
+import { writerExclusion } from '../lib/accounts.ts';
 import { Gentle } from '../lib/demo.ts';
 import { DAY_MS, DemoMarket, historyMoves, historyTotals, HOUR_MS, type MarketHistory, type MarketQuote } from '../lib/market.ts';
 
@@ -28,14 +29,15 @@ const stamp = (d: Date) => d.toISOString().replace(/[:]/g, '').replace(/\.\d+Z$/
 const n = (x: number) => x.toLocaleString('en-US', { maximumFractionDigits: 1 });
 
 async function main(): Promise<void> {
-    const { values } = parseArgs({ args: Bun.argv.slice(2), options: { out: { type: 'string' }, top: { type: 'string' } } });
+    const { values } = parseArgs({ args: Bun.argv.slice(2), options: { out: { type: 'string' }, top: { type: 'string' }, 'placeholder-data': { type: 'boolean' } } });
+    const ex = writerExclusion();
     const out = values.out ? resolve(values.out) : resolve(import.meta.dir, '../../docs/markets/data');
     const g = new Gentle();
     const m = new DemoMarket(g);
     const takenAt = new Date();
     const now = takenAt.getTime();
 
-    const leaders = (await readBank(g)).slice(0, Number(values.top ?? 10));
+    const leaders = ex.keep(await readBank(g)).slice(0, Number(values.top ?? 10));
     const ids = new Map<number, string>();
     for (const r of leaders) for (const i of r.items) if (i.id !== COINS) ids.set(i.id, i.name);
     for (const name of WATCH_ITEMS) {
