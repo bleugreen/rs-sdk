@@ -80,10 +80,18 @@ const scoredAcct = loadBotEnv(scoredBot).BOT_USERNAME!;
     await fresh(h45);
     await clearInventory(h45.sdk);
     await setStats(h45.sdk, { attack: 99, strength: 99, defence: 99, hitpoints: 99 });
-    for (const obj of ['rune_full_helm', 'rune_platebody', 'rune_platelegs', 'rune_kiteshield', 'rune_scimitar']) await cheat(h45.sdk, `give ${obj} 1`);
+    // The best melee armour h45 can buy with no Dragon Slayer (the rune platebody needs it).
+    for (const obj of ['rune_full_helm', 'rune_chainbody', 'rune_platelegs', 'rune_kiteshield', 'rune_scimitar']) await cheat(h45.sdk, `give ${obj} 1`);
     await waitUntil(h45.sdk, s => s.inventory.length >= 5, { maxTicks: 15 });
-    for (const i of h45.sdk.getState()!.inventory) void h45.sdk.sendUseItem(i.slot, opIndex(i, /^(wear|wield)$/i) ?? 2);
-    if (!(await waitUntil(h45.sdk, s => s.inventory.length === 0 && s.equipment.length >= 5, { maxTicks: 15 })).ok) throw new Error('h45: the rune set did not go on');
+    for (let pass = 0; pass < 3 && h45.sdk.getState()!.inventory.length; pass++) {
+        for (const i of h45.sdk.getState()!.inventory) {
+            void h45.sdk.sendUseItem(i.slot, opIndex(i, /^(wear|wield)$/i) ?? 2);
+            await waitTicks(h45.sdk, 1);
+        }
+        await waitTicks(h45.sdk, 2);
+    }
+    const dressed = h45.sdk.getState()!;
+    if (dressed.inventory.length) throw new Error(`h45: not worn: ${dressed.inventory.map(i => `${i.name} [${i.optionsWithIndex.map(o => o.text).join('/')}]`).join(', ')}; worn: ${dressed.equipment.map(e => e.name).join(', ')}`);
     await giveN(h45, 'shark', M_MAX + P_SHARKS, /^shark$/i);
     await giveN(h45, '4dose2antipoison', 1, /^superantipoison\(4\)$/i);
     await mustTele(h45.sdk, P_TILE.x, P_TILE.z);
