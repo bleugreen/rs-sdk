@@ -54,6 +54,9 @@ const mode = process.argv[3] ?? '';
 if (!bot || !mode) throw new Error('usage: measure-thieving.ts <bot> setup|fresh|at|steps|leg [--k=v ...]');
 const where = () => ({ host: hostname(), load: loadavg().map(l => +l.toFixed(1)), at: new Date().toISOString(), tickrate: process.env.NODE_TICKRATE ?? '' });
 
+// the Thieving module writes the courier's ask to the cue directory: a scratch one, never the checkout's
+process.env.RC_CUE_DIR ??= mkdtempSync(join(tmpdir(), 'thieving-cue-'));
+
 const session = await openSession(bot, { client: 'browser', insecureQueryLogin: true });
 const { sdk } = session;
 const say = async (cmd: string) => {
@@ -452,8 +455,7 @@ const COURIER_SITE = { giver: { x: 2671, z: 3305 }, receiver: { x: 2670, z: 3305
  * by ::give (restock kind cheat). Its log lines and trade messages are `events`, for the trace.
  */
 function courierRole(h: Session, helperBot: string, scored: string, standing: boolean) {
-    const dir = mkdtempSync(join(tmpdir(), 'thieving-courier-'));
-    process.env.RC_CUE_DIR = dir;
+    const dir = process.env.RC_CUE_DIR!;
     process.env.HELPER_LAB_TELE = '1';
     const s0 = sdk.getState()!;
     new CueWriter(dir, scored).write({ beacons: [{ tick: s0.tick, ms: Date.now() }], turns: [] });
