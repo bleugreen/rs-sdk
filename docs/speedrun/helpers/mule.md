@@ -364,7 +364,8 @@ mule1's H12 cue apart; there H12oP's cue replaces H12oM's in the one `cue.json`.
    **stop**, and the mule moves on to P (it does the same straight after M's trade).
 3. **H12oP opens** any time after M (a new cue session). h45 waits logged in on P's tile (2803,2724),
    ~850 ticks; SCORED's trade there wants 9 Shark + 1 Superantipoison(4), with no ask.
-4. **H12oP stops** after P's trade: the launcher logs h45 out at once.
+4. **H12oP's final stop** after P's trade (`final: true`, or the next scope's cue after a plain stop): the
+   launcher logs h45 out at once. H12oM's stop and H12oP's open between the two trades leave it in.
 
 Measured end to end (`speedrun/lab/atoll-mule.ts`, rs/483, fedora lab, T=400, the launcher's relay
 path, a stand-in SCORED appearing on each tile as a ladder climb would put it):

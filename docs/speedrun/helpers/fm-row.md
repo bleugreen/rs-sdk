@@ -87,7 +87,7 @@ The one thing that ties it to the run machine is the `cue` start, because the cu
 directory. With `start: 'sighted'` (and `scoredSha256` in its fleet options) it runs from bbs.
 With `start: 'cue'` it runs beside the scored client through `standalone.ts`
 (`{ account, role: 'fm-row', options: { start: 'cue', row, restock } }`). On run day the
-droppers also carry `stopOn: { step: 'S03', family: 'fmrow' }`: `run.ts` writes that cue's stop
+droppers also carry `stopOn: { step: 'S03', family: 'fmrow' }`: `run.ts` writes that cue's final stop
 after S03, and the launcher logs them out at once (HELPERS.md, "The cue gate"). The role itself
 never reads the `fmrow` cue; its start stays `fm-row-go.json`.
 
