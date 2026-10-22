@@ -74,7 +74,7 @@ describe('board config', () => {
 
 describe('liveness', () => {
     test('a bounty is live only with a fresh, matching open buy offer from the configured bidder', () => {
-        const live = liveBounties(cfg(), snap(), T0 + 5 * MIN);
+        const live = liveBounties(cfg(), () => snap(), T0 + 5 * MIN);
         // Eye of newt has no offer: not live. The talisman asks for what the bid has left.
         expect(live.map(b => [b.item, b.price, b.quantity])).toEqual([
             ['Nature talisman', 30_000, 4],
@@ -83,10 +83,10 @@ describe('liveness', () => {
     });
 
     test('a stale, future, missing or foreign file means an empty board', () => {
-        expect(liveBounties(cfg(), snap(), T0 + 31 * MIN)).toEqual([]);
-        expect(liveBounties(cfg(), snap(), T0 - 5 * MIN)).toEqual([]);
-        expect(liveBounties(cfg(), null, T0)).toEqual([]);
-        expect(liveBounties(cfg(), snap({ account: 'someone_else' }), T0)).toEqual([]);
+        expect(liveBounties(cfg(), () => snap(), T0 + 31 * MIN)).toEqual([]);
+        expect(liveBounties(cfg(), () => snap(), T0 - 5 * MIN)).toEqual([]);
+        expect(liveBounties(cfg(), () => null, T0)).toEqual([]);
+        expect(liveBounties(cfg(), () => snap({ account: 'someone_else' }), T0)).toEqual([]);
     });
 
     test('a bid above the configured price, a sell, a closed or empty offer is not a bounty', () => {
@@ -97,12 +97,48 @@ describe('liveness', () => {
             { ...offers[0]!, state: 'completed' },
             { ...offers[0]!, remaining: 0 }
         ];
-        for (const o of bad) expect(liveBounties(cfg(), snap({ offers: [o] }), T0)).toEqual([]);
+        for (const o of bad) expect(liveBounties(cfg(), () => snap({ offers: [o] }), T0)).toEqual([]);
+    });
+
+    test('an entry may be backed by a second bidder, and only its own file decides it', () => {
+        const blood = { item: 'Blood rune', quantity: 50, maxPrice: 1500, tier: 'legendary', bidder: 'cairn_h90', offersFile: '/nowhere/h90.json' };
+        const c = cfg({ list: [...RAW.list, blood] });
+        expect(c.bounties[0]).toMatchObject({ bidder: 'cairn_h61', offersFile: '/nowhere/ge-offers.json' });
+        expect(c.bounties[3]).toMatchObject({ bidder: 'cairn_h90', offersFile: '/nowhere/h90.json' });
+        const h90 = (over: Partial<OffersSnapshot> = {}, at = T0) =>
+            snap({ account: 'cairn_h90', offers: [{ id: 7, item: 'Blood rune', itemId: 565, side: 'buy', state: 'open', price: 1500, quantity: 350, remaining: 262, filled: 88 }], ...over }, at);
+        const files = (second: OffersSnapshot | null) => (path: string) => (path === '/nowhere/h90.json' ? second : snap());
+        const items = (s: OffersSnapshot | null, now = T0 + 5 * MIN) => liveBounties(c, files(s), now).map(b => [b.item, b.price, b.quantity]);
+        // Announced from the second file, at most the entry's 50 though 262 rest.
+        expect(items(h90())).toEqual([
+            ['Nature talisman', 30_000, 4],
+            ['Limpwurt root', 450, 10],
+            ['Blood rune', 1500, 50]
+        ]);
+        // A stale, missing or foreign second file silences that entry only.
+        const firstOnly = [
+            ['Nature talisman', 30_000, 4],
+            ['Limpwurt root', 450, 10]
+        ];
+        expect(items(h90({}, T0 - 40 * MIN))).toEqual(firstOnly);
+        expect(items(null)).toEqual(firstOnly);
+        expect(items(h90({ account: 'cairn_h61' }))).toEqual(firstOnly);
+        // The board's own file never backs the second bidder's entry, even when it holds the item.
+        const both = snap({ offers: [...snap().offers, { id: 8, item: 'Blood rune', itemId: 565, side: 'buy', state: 'open', price: 1200, quantity: 5, remaining: 5, filled: 0 }] });
+        expect(liveBounties(c, path => (path === '/nowhere/h90.json' ? null : both), T0).map(b => b.item)).not.toContain('Blood rune');
+    });
+
+    test('an entry names its bidder and offers file together, and a valid account', () => {
+        const entry = { item: 'Blood rune', quantity: 50, maxPrice: 1500 };
+        expect(boardConfig({ ...RAW, list: [{ ...entry, bidder: 'cairn_h90' }] }).ok).toBe(false);
+        expect(boardConfig({ ...RAW, list: [{ ...entry, offersFile: '/x.json' }] }).ok).toBe(false);
+        expect(boardConfig({ ...RAW, list: [{ ...entry, bidder: 'not an account!', offersFile: '/x.json' }] }).ok).toBe(false);
+        expect(boardConfig({ ...RAW, list: [{ ...entry, bidder: 'cairn_h90', offersFile: '/x.json' }] }).ok).toBe(true);
     });
 
     test('an item on the offers file but not in the config is never a bounty', () => {
         const offers = [{ id: 9, item: 'Dragon bones', itemId: 536, side: 'buy' as const, state: 'open', price: 1000, quantity: 5, remaining: 5, filled: 0 }];
-        expect(liveBounties(cfg(), snap({ offers }), T0)).toEqual([]);
+        expect(liveBounties(cfg(), () => snap({ offers }), T0)).toEqual([]);
     });
 });
 

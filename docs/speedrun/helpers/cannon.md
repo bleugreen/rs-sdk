@@ -133,10 +133,13 @@ ROLE_OPTIONS='{"serve":{"id":"H11","tile":{"x":2570,"z":3463},"balls":100,"retur
   bun speedrun/helpers/cannon.ts cairn_h92
 ```
 
-1. **Load.** Unless it already carries a set and `balls` cannonballs, it banks everything at
-   `serve.bank` (default Falador west; every bank is one bank) and withdraws one of each part
-   and exactly `balls` balls. Exactly the load is carried, so each of the five items is one
-   All press in the trade (`items.ts amountButtons`).
+1. **Load.** Unless it already carries a set, `balls` cannonballs and every `serve.extras` item,
+   it banks everything at `serve.bank` (default Falador west; every bank is one bank) and
+   withdraws one of each part, exactly `balls` balls and each extra's `count`. Exactly the load
+   is carried, so each item is one All press in the trade (`items.ts amountButtons`): five for
+   the set and balls, one more per extra. The load must fit 28 slots, in the holder's inventory
+   and in the offer alike (`cannon.ts loadStacks`: one per part, one for the balls, one per
+   stackable extra, `count` per unstackable one); options that do not fit are refused at start.
 2. **Stand** on `serve.tile` (walking over White Wolf Mountain if the tile is west of it).
 3. **Find the receiver by name hash, never by name**: `serve.receiver` (the sha256 of the scored
    account's canonical name, `altar-cue.ts nameHash`; a plain name is refused), or else the
@@ -145,7 +148,12 @@ ROLE_OPTIONS='{"serve":{"id":"H11","tile":{"x":2570,"z":3463},"balls":100,"retur
    sent when the receiver comes into sight, re-sent on the next tick after a "busy" refusal,
    refreshed every 100 ticks. The scored step's own trade click (`lib/trade.ts receiveFrom`)
    then opens both screens at once.
-5. **Give everything in one trade** (`lib/trade.ts give`). A trade opened by anyone else is declined.
+5. **Give everything in one trade** (`cannon.ts serveTrade`, `lib/trade.ts give`): the set, the
+   balls and the extras (H11: mithril scimitar 1, law 4, water 4, shark 2; H23: the magic
+   shortbow, which SCORED fires at S27; H13 is where it last came back). The give runs with
+   `expectTheirs: ANY_OFFER`, so anything the scored account offers in that trade is taken back.
+   No hand-off plans to hand anything back here, and taking it is harmless: an offer from SCORED
+   resets both accepts and the holder re-accepts. A trade opened by anyone else is declined.
 6. With `serve.returnTile`: **take the set back** (H11r). It stands there, waits for the
    receiver's own trade request (matched by hash in the chat), and receives with
    `receiveFrom`, wanting the four parts; leftover balls are optional.
@@ -159,6 +167,7 @@ flagged for a person (`attention`). Give each hand-off its own `serve.id` (H11, 
 |---|---|---|
 | `tile` | required | Where the holder stands (beside the scored account's tile) |
 | `balls` | required | Cannonballs in the load (H11: 100; H23: ~1,100) |
+| `extras` | none | `[{ item, count, obj? }]`: more items in the same trade, by exact name (H11: `Mithril scimitar` 1, `Law rune` 4, `Water rune` 4, `Shark` 2; H23: `Magic shortbow` 1). Each a distinct item outside the set and balls; `obj` is the staff-give name, required with `labStock` |
 | `id` | `x,zxballs` | Names the hand-off in `ctx.state` |
 | `receiver` | the cue | sha256 hex of the scored account's canonical name |
 | `bank` | Falador west | Where to load |
@@ -167,8 +176,9 @@ flagged for a person (`attention`). Give each hand-off its own `serve.id` (H11, 
 | `noReplyTicks`, `resendTicks`, `cueDir` | 2, 100, `RC_CUE_DIR` | As the bone giver |
 
 **The scored side's contract**: stand beside the holder and call
-`receiveFrom(holder, { want: loadWant(balls) })` (`loadWant` is exported from `cannon.ts`). For
-H11r, `give(holder, loadSpecs(leftover))`.
+`receiveFrom(holder, { want: loadWant(balls) })` (`loadWant` is exported from `cannon.ts`). A want
+is a minimum, so the extras need not be listed; add them to `want` to refuse a trade without
+them. For H11r, `give(holder, loadSpecs(leftover))`.
 
 **Stand-in receiver**: `speedrun/helpers/cannon-receiver.ts` writes the cue, waits for the
 holder's request, receives as the scored step does and reports the trade's ticks on its own

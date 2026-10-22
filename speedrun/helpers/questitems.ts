@@ -18,6 +18,9 @@
 //   skip   task ids to leave out
 //   coins  float carried for shops and NPC fees (default 400); below 100 the account
 //          pickpockets Lumbridge men back up to it
+//   counts held targets by item name that replace the tasks' own, for a bulk run of an
+//          errand, e.g. {"only":["snapegrass"],"counts":{"Snape grass":102}}; a name no
+//          selected task gathers is refused at start
 import { resolveSkillDialogProduct } from '../../sdk/action-quantity';
 import { advance, classifyPage, resetDialogueMemory } from '../lib/dialogue';
 import { waitUntil } from '../lib/wait';
@@ -86,6 +89,17 @@ export class Gatherer {
     /** `base`, plus `extra` when gathering spares. */
     n(base: number, extra = 1): number {
         return this.spare ? base + extra : base;
+    }
+    /** The task the loop is running, with `counts` applied: the one source of its targets. */
+    current: Task | null = null;
+    /** The running task's held targets, read live (some depend on what is already held). */
+    wants(): Want[] {
+        if (!this.current) throw new Error('questitems: no task is running');
+        return this.current.makes(this);
+    }
+    /** The running task's held target for `item`; 0 when it wants none. */
+    target(item: string): number {
+        return this.wants().find(w => norm(w.item) === norm(item))?.count ?? 0;
     }
     inv(name: string): number {
         return this.sdk.getInventory().reduce((a, i) => (norm(i.name) === norm(name) ? a + i.count : a), 0);
@@ -359,16 +373,7 @@ export class Gatherer {
                 await this.until(() => this.inv(drop) > before, 6);
                 continue;
             }
-            const hp = this.sdk.getSkill('Hitpoints');
-            if (hp && hp.level * 2 < hp.baseLevel) {
-                // Rest back to 80% rather than re-engaging just above half.
-                this.log('resting', { hp: hp.level, of: hp.baseLevel });
-                await this.until(() => {
-                    const h = this.sdk.getSkill('Hitpoints');
-                    return !h || h.level * 5 >= h.baseLevel * 4;
-                }, 1500);
-                continue;
-            }
+            if (await this.rest()) continue;
             const target = this.sdk
                 .getNearbyNpcs()
                 .filter(n => npc.test(n.name) && !n.inCombat && n.reachable !== false)
@@ -397,6 +402,21 @@ export class Gatherer {
             }
         }
         return kills;
+    }
+
+    /**
+     * Under half Hitpoints, wait where the account stands until 80% (helpers carry no food):
+     * resting to 80% rather than going on just above half. True when it rested.
+     */
+    async rest(): Promise<boolean> {
+        const hp = this.sdk.getSkill('Hitpoints');
+        if (!hp || hp.level * 2 >= hp.baseLevel) return false;
+        this.log('resting', { hp: hp.level, of: hp.baseLevel });
+        await this.until(() => {
+            const h = this.sdk.getSkill('Hitpoints');
+            return !h || h.level * 5 >= h.baseLevel * 4;
+        }, 1500);
+        return true;
     }
 
     /** Train whichever of Attack, Strength and Defence is lowest: an even account kills faster and is hit less. */
@@ -528,6 +548,24 @@ async function trainOnGoblins(g: Gatherer): Promise<void> {
 /** The wants still short. */
 const short = (g: Gatherer, ws: Want[]) => ws.filter(w => g.held(w.item) < w.count);
 
+/** The `counts` option by lower-cased item name; throws on anything but non-negative integers. */
+export function parseCounts(raw: unknown): Map<string, number> {
+    if (raw === undefined) return new Map();
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('questitems: counts must be an object of item name to held target');
+    return new Map(
+        Object.entries(raw).map(([item, n]) => {
+            if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) throw new Error(`questitems: counts[${JSON.stringify(item)}] must be a non-negative integer, got ${JSON.stringify(n)}`);
+            return [norm(item), n];
+        })
+    );
+}
+
+/** `t` with its held targets replaced where `counts` names the item. */
+export function withCounts(t: Task, counts: ReadonlyMap<string, number>): Task {
+    if (counts.size === 0) return t;
+    return { ...t, makes: g => t.makes(g).map(w => (counts.has(norm(w.item)) ? want(w.item, counts.get(norm(w.item))!) : w)) };
+}
+
 export const TASKS: Record<string, Task> = {
     goblinmail: {
         id: 'goblinmail',
@@ -536,7 +574,7 @@ export const TASKS: Record<string, Task> = {
         run: async g => {
             // Chickens (max hit 1) first: Lumbridge goblins out-damage a 10-Hitpoint account.
             if (g.level('Attack') < 10) await g.kill(/^chicken$/i, T.lumbridgeChickens, 'Feather', () => g.level('Attack') >= 10);
-            const kills = await g.kill(/^goblin$/i, T.lumbridgeGoblins, 'Goblin mail', () => g.held('Goblin mail') >= g.n(3));
+            const kills = await g.kill(/^goblin$/i, T.lumbridgeGoblins, 'Goblin mail', () => g.held('Goblin mail') >= g.target('Goblin mail'));
             g.log('kills', { npc: 'goblin', kills, held: g.held('Goblin mail') });
         }
     },
@@ -544,7 +582,7 @@ export const TASKS: Record<string, Task> = {
         id: 'ratmeat',
         // Druidic Ritual: every giant rat drops raw rat meat (giant_rat.rs2).
         makes: g => [want('Raw rat meat', g.n(1))],
-        run: async g => void (await g.kill(/^giant rat$/i, T.swampRats, 'Raw rat meat', () => g.held('Raw rat meat') >= g.n(1)))
+        run: async g => void (await g.kill(/^giant rat$/i, T.swampRats, 'Raw rat meat', () => g.held('Raw rat meat') >= g.target('Raw rat meat')))
     },
     bearmeat: {
         id: 'bearmeat',
@@ -552,7 +590,7 @@ export const TASKS: Record<string, Task> = {
         makes: g => [want('Raw bear meat', g.n(1))],
         run: async g => {
             await trainOnGoblins(g);
-            await g.kill(/^(grizzly |brown )?bear$/i, T.brownBears, 'Raw bear meat', () => g.held('Raw bear meat') >= g.n(1));
+            await g.kill(/^(grizzly |brown )?bear$/i, T.brownBears, 'Raw bear meat', () => g.held('Raw bear meat') >= g.target('Raw bear meat'));
         }
     },
     snapegrass: {
@@ -561,7 +599,10 @@ export const TASKS: Record<string, Task> = {
         makes: g => [want('Snape grass', g.n(1))],
         run: async g => {
             await trainOnGoblins(g);
-            await g.pickup('Snape grass', [...T.snapeGrass], () => g.held('Snape grass') >= g.n(1));
+            // The hobgoblins there cost a ~50-Hitpoint account about 10 a pack of grass,
+            // so a bulk run rests at the bank between trips.
+            await g.rest();
+            await g.pickup('Snape grass', [...T.snapeGrass], () => g.held('Snape grass') >= g.target('Snape grass'));
         }
     },
     coins: {
@@ -572,7 +613,7 @@ export const TASKS: Record<string, Task> = {
     knife: {
         id: 'knife',
         makes: g => [want('Knife', g.n(1))],
-        run: g => g.pickup('Knife', [T.lumbridgeKnife], () => g.held('Knife') >= g.n(1))
+        run: g => g.pickup('Knife', [T.lumbridgeKnife], () => g.held('Knife') >= g.target('Knife'))
     },
     buckets: {
         id: 'buckets',
@@ -580,8 +621,8 @@ export const TASKS: Record<string, Task> = {
         makes: g => [want('Bucket of water', g.n(4)), want('Bucket of milk', g.n(2))],
         carry: () => [want('Coins', 80)],
         async run(g) {
-            const water = Math.max(0, g.n(4) - g.held('Bucket of water'));
-            const milk = Math.max(0, g.n(2) - g.held('Bucket of milk'));
+            const water = Math.max(0, g.target('Bucket of water') - g.held('Bucket of water'));
+            const milk = Math.max(0, g.target('Bucket of milk') - g.held('Bucket of milk'));
             // Lumbridge general store holds 2 buckets and restocks one per 100 ticks.
             await g.buy('lumbridgeGeneral', 'Bucket', water + milk, 1200);
             if (milk > 0) {
@@ -594,24 +635,24 @@ export const TASKS: Record<string, Task> = {
                     else g.log('milking missed', { detail: r.message });
                 }
             }
-            if (g.inv('Bucket') > 0 && g.held('Bucket of water') < g.n(4)) await g.fillBuckets(T.lumbridgeFountain, g.n(4) - g.held('Bucket of water'));
+            if (g.inv('Bucket') > 0 && g.held('Bucket of water') < g.target('Bucket of water')) await g.fillBuckets(T.lumbridgeFountain, g.target('Bucket of water') - g.held('Bucket of water'));
         }
     },
     egg: {
         id: 'egg',
         makes: g => [want('Egg', g.n(1))],
-        run: g => g.pickup('Egg', [...T.lumbridgeEggs], () => g.held('Egg') >= g.n(1))
+        run: g => g.pickup('Egg', [...T.lumbridgeEggs], () => g.held('Egg') >= g.target('Egg'))
     },
     onions: {
         id: 'onions',
         // Two per yellow dye; the orange dye is red + yellow.
         makes: g => (g.held('Orange dye') >= g.n(1) ? [] : [want('Onion', 2 * (g.n(1) - g.held('Orange dye') - g.held('Yellow dye')))]),
-        run: g => g.pickLoc(/^onion$/i, 'Onion', T.fredOnions, () => g.held('Onion') >= 2 * (g.n(1) - g.held('Orange dye') - g.held('Yellow dye')))
+        run: g => g.pickLoc(/^onion$/i, 'Onion', T.fredOnions, () => g.held('Onion') >= g.target('Onion'))
     },
     logs: {
         id: 'logs',
         makes: g => [want('Logs', g.n(6))],
-        run: g => g.chop(T.lumbridgeTrees, () => g.held('Logs') >= g.n(6))
+        run: g => g.chop(T.lumbridgeTrees, () => g.held('Logs') >= g.target('Logs'))
     },
     wydin: {
         id: 'wydin',
@@ -619,7 +660,7 @@ export const TASKS: Record<string, Task> = {
         makes: g => [want('Pot of flour', g.n(1)), want('Banana', g.n(5)), want('Raw beef', g.n(1)), want('Raw chicken', g.n(1))],
         carry: () => [want('Coins', 120)],
         async run(g) {
-            for (const w of short(g, TASKS.wydin!.makes(g))) await g.buy('wydin', w.item, w.count, 600);
+            for (const w of short(g, g.wants())) await g.buy('wydin', w.item, w.count, 600);
         }
     },
     gerrant: {
@@ -628,7 +669,7 @@ export const TASKS: Record<string, Task> = {
         makes: g => [want('Fishing rod', g.n(1)), want('Fishing bait', g.n(1, 4)), want('Lobster pot', g.n(1))],
         carry: () => [want('Coins', 120)],
         async run(g) {
-            for (const w of short(g, TASKS.gerrant!.makes(g))) await g.buy('gerrant', w.item, w.count);
+            for (const w of short(g, g.wants())) await g.buy('gerrant', w.item, w.count);
         }
     },
     mine: {
@@ -637,11 +678,12 @@ export const TASKS: Record<string, Task> = {
         // and the clay the bowl task turns into pots for Crafting 8.
         makes: g => [want('Copper ore', g.n(4)), want('Iron ore', g.n(2)), want('Clay', clayReserve(g) + clayForBowls(g))],
         async run(g) {
-            const m = TASKS.mine!.makes(g);
-            const copper = m[0]!.count;
+            const copper = g.target('Copper ore');
+            const iron = g.target('Iron ore');
+            const clay = g.target('Clay');
             await g.mine(/copper/i, T.rimmingtonMine, () => g.held('Copper ore') >= copper && g.level('Mining') >= 15);
-            await g.mine(/iron/i, T.rimmingtonMine, () => g.held('Iron ore') >= m[1]!.count);
-            await g.mine(/clay/i, T.rimmingtonMine, () => g.held('Clay') >= m[2]!.count);
+            await g.mine(/iron/i, T.rimmingtonMine, () => g.held('Iron ore') >= iron);
+            await g.mine(/clay/i, T.rimmingtonMine, () => g.held('Clay') >= clay);
         }
     },
     softclay: {
@@ -667,7 +709,7 @@ export const TASKS: Record<string, Task> = {
         makes: g => (g.held('Blue dye') >= g.n(1) ? [] : [want('Woad leaf', 2 * (g.n(1) - g.held('Blue dye')))]),
         carry: () => [want('Coins', 60)],
         async run(g) {
-            const target = TASKS.woad!.makes(g)[0]?.count ?? 0;
+            const target = g.target('Woad leaf');
             for (let i = 0; i < 4 && g.held('Woad leaf') < target; i++) await g.talk(/^wyson/i, T.wyson, /woad leaves|20 coins/i);
         }
     },
@@ -676,7 +718,7 @@ export const TASKS: Record<string, Task> = {
         makes: g => [want("Wizard's mind bomb", g.n(1))],
         carry: () => [want('Coins', 10)],
         async run(g) {
-            for (let i = 0; i < 4 && g.held("Wizard's mind bomb") < g.n(1); i++) await g.talk(/^barmaid$/i, T.risingSun, /mind bomb/i);
+            for (let i = 0; i < 4 && g.held("Wizard's mind bomb") < g.target("Wizard's mind bomb"); i++) await g.talk(/^barmaid$/i, T.risingSun, /mind bomb/i);
         }
     },
     bowl: {
@@ -689,7 +731,7 @@ export const TASKS: Record<string, Task> = {
             await g.walk(T.barbarianWheel, 3);
             const wheel = await g.sdk.scanFindNearbyLoc(/potter'?s wheel/i, 8);
             if (!wheel) throw new Error('no potter\'s wheel at Barbarian Village');
-            while (g.inv('Soft clay') > 0 && g.held('Unfired bowl') < g.n(1)) {
+            while (g.inv('Soft clay') > 0 && g.held('Unfired bowl') < g.target('Unfired bowl')) {
                 checkAbort(g.ctx);
                 const product = g.level('Crafting') >= 8 ? 'Bowl' : 'Pot';
                 const before = g.inv('Soft clay');
@@ -710,16 +752,17 @@ export const TASKS: Record<string, Task> = {
         id: 'silk',
         makes: g => [want('Silk', g.n(1))],
         carry: () => [want('Coins', 100)],
-        run: g => g.buy('thessalia', 'Silk', g.n(1))
+        run: g => g.buy('thessalia', 'Silk', g.target('Silk'))
     },
     berries: {
         id: 'berries',
         // Romeo & Juliet's Cadava berries; redberries for Aggie's red dye (three per dye).
         makes: g => [want('Cadava berries', g.n(1)), ...(g.held('Orange dye') >= g.n(1) ? [] : [want('Redberries', 3 * (g.n(1) - g.held('Orange dye') - g.held('Red dye')))])],
         async run(g) {
-            const [cadava, red] = TASKS.berries!.makes(g);
-            await g.pickup('Cadava berries', [...T.varrockCadava], () => g.held('Cadava berries') >= cadava!.count);
-            if (red) await g.pickup('Redberries', [...T.varrockRedberries], () => g.held('Redberries') >= red.count);
+            const cadava = g.target('Cadava berries');
+            const red = g.target('Redberries');
+            await g.pickup('Cadava berries', [...T.varrockCadava], () => g.held('Cadava berries') >= cadava);
+            if (red > 0) await g.pickup('Redberries', [...T.varrockRedberries], () => g.held('Redberries') >= red);
         }
     },
     dyes: {
@@ -742,14 +785,14 @@ export const TASKS: Record<string, Task> = {
                 await g.useOnNpc(input, /^aggie$/i, T.aggie);
                 if (!(await g.until(() => g.inv(out) > before, 6))) throw new Error(`Aggie made no ${out.toLowerCase()} from ${input.toLowerCase()}`);
             };
-            while (g.held('Orange dye') < g.n(1)) {
+            while (g.held('Orange dye') < g.target('Orange dye')) {
                 checkAbort(g.ctx);
                 if (g.inv('Yellow dye') === 0 && g.inv('Onion') >= 2) await dye('Onion', 'Yellow dye');
                 if (g.inv('Red dye') === 0 && g.inv('Redberries') >= 3) await dye('Redberries', 'Red dye');
                 if (g.inv('Red dye') === 0 || g.inv('Yellow dye') === 0) break;
                 if (!(await g.useOnItem('Red dye', 'Yellow dye'))) throw new Error('mixing orange dye failed');
             }
-            while (g.held('Blue dye') < g.n(1) && g.inv('Woad leaf') >= 2) {
+            while (g.held('Blue dye') < g.target('Blue dye') && g.inv('Woad leaf') >= 2) {
                 checkAbort(g.ctx);
                 await dye('Woad leaf', 'Blue dye');
             }
@@ -790,10 +833,14 @@ export async function runGatherer(ctx: RoleContext): Promise<void> {
     if (!ids) throw new Error(`questitems: unknown set ${setName} (sets: ${Object.keys(SETS).join(', ')})`);
     const only = Array.isArray(o.only) ? (o.only as string[]) : null;
     const skip = Array.isArray(o.skip) ? (o.skip as string[]) : [];
-    const tasks = ids.filter(id => (!only || only.includes(id)) && !skip.includes(id)).map(id => TASKS[id]!);
+    const counts = parseCounts(o.counts);
+    const tasks = ids.filter(id => (!only || only.includes(id)) && !skip.includes(id)).map(id => withCounts(TASKS[id]!, counts));
     const g = new Gatherer(ctx, o.spare !== false, typeof o.float === 'number' ? o.float : 400);
 
     await prepare(ctx);
+    const gathered = new Set(tasks.flatMap(t => t.makes(g).map(w => norm(w.item))));
+    const unmatched = [...counts.keys()].filter(item => !gathered.has(item));
+    if (unmatched.length > 0) throw new Error(`questitems: counts names items no selected task gathers: ${unmatched.join(', ')}`);
     await g.buyer.prepare();
     await g.atBank();
     ctx.log('phase', { phase: setName, tasks: tasks.map(t => t.id) });
@@ -819,6 +866,7 @@ export async function runGatherer(ctx: RoleContext): Promise<void> {
         try {
             await dismissDialogs(g.bot, g.sdk);
             if (g.sdk.getState()?.shop?.isOpen) await g.bot.closeShop();
+            g.current = next;
             await carryFor(g, next);
             await next.run(g);
         } catch (e) {

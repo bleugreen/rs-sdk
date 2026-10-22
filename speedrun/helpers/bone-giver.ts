@@ -30,6 +30,9 @@
 //   restock      { kind: 'bank'|'cheat', bank?: {x,z} } (cheat: local lab only; bank default Falador west)
 //   noReplyTicks re-send when neither answer came back (default lib/trade.ts DROPPED_TICKS, 2 frames after the click's result: the giver stands beside the receiver)
 //   resendTicks  re-send a standing request after this long without a trade (default 100)
+//   finalExtras  [{ item, count, obj? }] offered beside the bones on the LAST load only (needs `trades`;
+//                S07's T07-08 Camelot runes, law 1 and air 5); `obj` names the staff give for restock cheat
+//   finalN       bones on that last load (default n - finalExtras.length: the same free slots as every load)
 //   cueDir       default RC_CUE_DIR, else run-machine/rc-cue in the checkout
 //
 // mode 'on-request' (S18's stun-pack top-ups, SUPPLIES.md H14.1-H14.13): the scored
@@ -48,7 +51,7 @@
 import { join } from 'node:path';
 import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
-import { give, DROPPED_TICKS, openTrade, tradeOf } from '../lib/trade';
+import { give, DROPPED_TICKS, openTrade, tradeOf, type GiveSpec } from '../lib/trade';
 import { waitUntil } from '../lib/wait';
 import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, newRequestFrom, readJson, writeJsonAtomicSync, type Cue } from './altar-cue';
 import { chebyshev, cheat, count, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
@@ -71,6 +74,13 @@ export const DEFAULT_BONE_BANK: Tile = { x: 2946, z: 3368 };
 
 export type BoneMode = 'standing' | 'on-request';
 
+/** An item the last load carries beside the bones; `obj` is its staff-give name (restock kind cheat). */
+export interface Extra {
+    item: string;
+    count: number;
+    obj?: string;
+}
+
 export interface BoneGiverOptions {
     mode: BoneMode;
     item: string;
@@ -83,6 +93,9 @@ export interface BoneGiverOptions {
     restock: { kind: 'bank' | 'cheat'; bank: Tile };
     noReplyTicks: number;
     resendTicks: number;
+    finalExtras: Extra[];
+    /** Bones on the last load, the one that carries finalExtras. */
+    finalN: number;
     cueDir: string;
 }
 
@@ -110,6 +123,23 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
     if (kind !== 'bank' && kind !== 'cheat') throw new Error(`restock.kind must be bank or cheat (got ${kind})`);
     const trades = raw.trades === undefined ? Number.POSITIVE_INFINITY : Number(raw.trades);
     if (!(trades >= 1)) throw new Error(`trades must be at least 1 (got ${raw.trades})`);
+    const finalExtras = ((raw.finalExtras ?? []) as unknown[]).map((e, i) => {
+        const r = (e ?? {}) as Record<string, unknown>;
+        const count = Number(r.count);
+        if (typeof r.item !== 'string' || !r.item || !Number.isInteger(count) || count < 1) throw new Error(`finalExtras[${i}] needs an item name and a whole count`);
+        if (kind === 'cheat' && typeof r.obj !== 'string') throw new Error(`finalExtras[${i}] needs obj (the staff-give name) with restock kind cheat`);
+        return { item: r.item, count, ...(typeof r.obj === 'string' ? { obj: r.obj } : {}) };
+    });
+    if (finalExtras.length) {
+        if (mode !== 'standing') throw new Error('finalExtras is for the standing mode (S07) only');
+        if (!Number.isFinite(trades)) throw new Error('finalExtras needs trades: the last load is the trades-th');
+        // Bones are unstackable, each extra is one stack: the last load is n + extras slots.
+    }
+    // The receiver frees `n` slots a load; by default the last load fits the same slots, extras included.
+    const finalN = raw.finalN === undefined ? n - finalExtras.length : Number(raw.finalN);
+    if (finalExtras.length && (!Number.isInteger(finalN) || finalN < 1 || finalN + finalExtras.length > 28)) {
+        throw new Error(`finalN must be at least 1 and finalN + finalExtras must fit 28 slots (got ${raw.finalN ?? finalN} + ${finalExtras.length})`);
+    }
     return {
         mode,
         item: String(raw.item ?? 'Dragon bones'),
@@ -122,8 +152,28 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
         restock: { kind, bank: r.bank ? tile(r.bank, 'restock.bank') : DEFAULT_BONE_BANK },
         noReplyTicks: Number(raw.noReplyTicks ?? DROPPED_TICKS),
         resendTicks: Number(raw.resendTicks ?? 100),
+        finalExtras,
+        finalN: finalExtras.length ? finalN : n,
         cueDir: typeof raw.cueDir === 'string' ? raw.cueDir : cueDir(env)
     };
+}
+
+const exact = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+
+/** True when the load after `tradesDone` completed trades is the last one, the one that carries `finalExtras`. */
+export function isFinalLoad(o: Pick<BoneGiverOptions, 'trades' | 'finalExtras'>, tradesDone: number): boolean {
+    return o.finalExtras.length > 0 && tradesDone === o.trades - 1;
+}
+
+/** Bones on the load after `tradesDone` trades: `finalN` on the last load, else `n`. */
+export function loadBones(o: Pick<BoneGiverOptions, 'n' | 'finalN' | 'trades' | 'finalExtras'>, tradesDone: number): number {
+    return isFinalLoad(o, tradesDone) ? o.finalN : o.n;
+}
+
+/** The standing mode's offer for the load after `tradesDone` trades: `n` bones, or `finalN` bones and `finalExtras` on the last load. */
+export function loadOffer(o: Pick<BoneGiverOptions, 'item' | 'n' | 'finalN' | 'trades' | 'finalExtras'>, tradesDone: number): GiveSpec[] {
+    const extras = isFinalLoad(o, tradesDone) ? o.finalExtras : [];
+    return [{ item: exact(o.item), n: loadBones(o, tradesDone) }, ...extras.map(e => ({ item: exact(e.item), n: e.count }))];
 }
 
 // ------------------------------------------------------------------ the standing request
@@ -249,8 +299,6 @@ export function sideTiles(receiver: Tile, me: Tile, npcs: readonly Tile[]): Tile
 
 // ------------------------------------------------------------------ role
 
-const exact = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
-
 export type BonePhase = 'start' | 'restock' | 'travel' | 'waiting' | 'requested' | 'trading' | 'fault' | 'off';
 
 export class BoneGiver {
@@ -336,9 +384,11 @@ export class BoneGiver {
     private async cycle(): Promise<void> {
         if (this.o.mode === 'on-request') return this.onRequestCycle();
         const { ctx, o } = this;
-        if (this.held() !== o.n) {
-            this.setPhase('restock');
-            await this.restock(o.n);
+        const extras = isFinalLoad(o, this.trades) ? o.finalExtras : [];
+        const bones = loadBones(o, this.trades);
+        if (this.held() !== bones || extras.some(e => count(this.s, exact(e.item)) < e.count)) {
+            this.setPhase('restock', extras.length ? 'the last load' : '');
+            await this.restock(bones, extras);
         }
         const site = o.sites[this.site]!;
         this.setPhase('travel', `site ${this.site}`);
@@ -365,9 +415,10 @@ export class BoneGiver {
             return;
         }
         this.setPhase('trading');
-        const r = await give(ctx.sdk, t.partner, [{ item: this.re, n: o.n }], { openTimeoutMs: 5_000 });
+        // No expectTheirs: the scored account offers nothing, and anything it does offer is declined.
+        const r = await give(ctx.sdk, t.partner, loadOffer(o, this.trades), { openTimeoutMs: 5_000 });
         if (r.ok) this.trades++;
-        ctx.log('trade', { ok: r.ok, ticks: r.ticks, gave: r.gave.reduce((a, i) => a + i.count, 0), waited: req.waited, sends: req.sends, bounces: req.bounces, ...(r.reason ? { reason: r.reason } : {}) });
+        ctx.log('trade', { ok: r.ok, ticks: r.ticks, gave: r.gave.map(i => `${i.name} x${i.count}`), final: extras.length > 0, waited: req.waited, sends: req.sends, bounces: req.bounces, ...(r.reason ? { reason: r.reason } : {}) });
     }
 
     /** S18: stay near the scored account, answer its request at once, give exactly what it asked for. */
@@ -459,19 +510,25 @@ export class BoneGiver {
         });
     }
 
-    /** Carry exactly `n` of the item and nothing else. */
-    private async restock(n: number): Promise<void> {
+    /** Carry exactly `n` of the item and `extras`, and nothing else. */
+    private async restock(n: number, extras: readonly Extra[] = []): Promise<void> {
         const { ctx, o } = this;
+        const extraRes = extras.map(e => ({ ...e, re: exact(e.item) }));
+        const extrasHeld = () => extraRes.every(e => count(this.s, e.re) >= e.count);
         if (o.restock.kind === 'cheat') {
             if (!isLocalServer()) throw new Error('restock kind cheat is for the local lab only');
             // Carry nothing else: a fresh lab account's starter kit leaves fewer free slots than a load needs.
-            if ((this.s?.inventory ?? []).some(i => !this.re.test(i.name))) {
+            if ((this.s?.inventory ?? []).some(i => !this.re.test(i.name) && !extraRes.some(e => e.re.test(i.name)))) {
                 await cheat(ctx, '~clearinv inv');
                 await until(ctx, st => st.inventory.length === 0, 10);
             }
             const missing = n - this.held();
             if (missing > 0) await cheat(ctx, `give dragon_bones ${missing}`);
-            if (!(await until(ctx, () => this.held() >= n, 10))) throw new Error('staff give did not arrive');
+            for (const e of extraRes) {
+                const short = e.count - count(this.s, e.re);
+                if (short > 0) await cheat(ctx, `give ${e.obj} ${short}`);
+            }
+            if (!(await until(ctx, () => this.held() >= n && extrasHeld(), 10))) throw new Error('staff give did not arrive');
             return;
         }
         const bank = o.restock.bank;
@@ -479,9 +536,11 @@ export class BoneGiver {
         await walkNear(ctx, bank.x, bank.z, 3);
         if (!(await openBank(ctx))) throw new Error('could not open the bank');
         await depositAllExcept(ctx.sdk);
-        const w = await withdrawMany(ctx.sdk, [{ item: this.re, n }]);
+        const w = await withdrawMany(ctx.sdk, [{ item: this.re, n }, ...extraRes.map(e => ({ item: e.re, n: e.count }))]);
         await closeBank(ctx);
-        if (!w.ok || this.held() !== n) throw new Error(`bank withdraw left ${this.held()} of ${n} (${w.reason ?? 'short'})`);
+        if (!w.ok || this.held() !== n || !extrasHeld()) {
+            throw new Error(`bank withdraw left ${this.held()} of ${n}${extraRes.map(e => `, ${count(this.s, e.re)} of ${e.count} ${e.item}`).join('')} (${w.reason ?? 'short'})`);
+        }
     }
 }
 

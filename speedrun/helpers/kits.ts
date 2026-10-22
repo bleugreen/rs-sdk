@@ -32,7 +32,7 @@ import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { crossFromKandarin, crossToKandarin, type Traveller } from '../lib/kandarin';
 import { give, receiveFrom, sameName, type GiveResult, type GiveSpec, type WantSpec } from '../lib/trade';
 import { BANKS, Buyer, type Tile } from './buyer';
-import { ChatCursor, isStackableName, planPackage, type PackageItem } from './mule';
+import { ChatCursor, isStackableName, planPackage, type NamedPackageItem } from './mule';
 import { runStandalone, type Role, type RoleContext, type RoleFinish, type RoleState } from './role';
 import { waitForPlayer } from './wine';
 
@@ -61,8 +61,8 @@ export function displayName(name: string): string {
  * A kit as rs/150's harness writes it, `rune_axe:1,knife:1,logs:1` (append `:noted`
  * for banknotes, `cake:38:noted`), or as a list of `{ item, amount, noted? }`.
  */
-export function parseKit(spec: unknown, where = 'kit'): PackageItem[] {
-    const items: PackageItem[] = [];
+export function parseKit(spec: unknown, where = 'kit'): NamedPackageItem[] {
+    const items: NamedPackageItem[] = [];
     if (typeof spec === 'string') {
         for (const part of spec.split(',').map(p => p.trim()).filter(Boolean)) {
             const [name, count, flag, ...rest] = part.split(':').map(p => p.trim());
@@ -89,7 +89,7 @@ export function parseKit(spec: unknown, where = 'kit'): PackageItem[] {
 }
 
 /** Inventory slots the kit takes in the receiver's pack: one per unstackable item, one per stack or banknote. */
-export function kitSlots(kit: readonly PackageItem[]): number {
+export function kitSlots(kit: readonly NamedPackageItem[]): number {
     return kit.reduce((n, i) => n + (i.noted || isStackableName(i.item) ? 1 : i.amount), 0);
 }
 
@@ -102,12 +102,12 @@ function escapeRegExp(value: string): string {
  * a string as a substring (`Shark` would also take `Raw shark`, `Logs` `Oak logs`),
  * so every name is anchored.
  */
-export function giveSpecs(kit: readonly PackageItem[]): GiveSpec[] {
+export function giveSpecs(kit: readonly NamedPackageItem[]): GiveSpec[] {
     return kit.map(i => ({ item: new RegExp(`^${escapeRegExp(i.item)}$`, 'i'), n: i.amount }));
 }
 
 /** True when the inventory holds at least the whole kit (by exact name, notes counted with their item). */
-export function kitHeld(inventory: ReadonlyArray<Pick<InventoryItem, 'name' | 'count'>>, kit: readonly PackageItem[]): boolean {
+export function kitHeld(inventory: ReadonlyArray<Pick<InventoryItem, 'name' | 'count'>>, kit: readonly NamedPackageItem[]): boolean {
     const have = new Map<string, number>();
     for (const i of inventory) have.set(i.name.toLowerCase(), (have.get(i.name.toLowerCase()) ?? 0) + i.count);
     const want = new Map<string, number>();
@@ -120,8 +120,8 @@ export function kitHeld(inventory: ReadonlyArray<Pick<InventoryItem, 'name' | 'c
  * Split a kit into what the bank supplies and how many normal logs must be
  * chopped first: logs are cut by the giver itself rather than bought.
  */
-export function splitLogs(kit: readonly PackageItem[], bankLogs: number): { fromBank: PackageItem[]; chop: number } {
-    const fromBank: PackageItem[] = [];
+export function splitLogs(kit: readonly NamedPackageItem[], bankLogs: number): { fromBank: NamedPackageItem[]; chop: number } {
+    const fromBank: NamedPackageItem[] = [];
     let chop = 0;
     for (const i of kit) {
         if (i.item.toLowerCase() !== LOGS.toLowerCase() || i.noted) {
@@ -137,7 +137,7 @@ export function splitLogs(kit: readonly PackageItem[], bankLogs: number): { from
 
 export interface KitOptions {
     /** Kit id -> kit. A kit id is the receiver's login name, or `name+label` for a further kit to the same receiver. */
-    kits: Record<string, PackageItem[]>;
+    kits: Record<string, NamedPackageItem[]>;
     /** Kit ids to stage and serve, in order (keys of `kits`); one with a delivery record is passed over. Empty = returns only. */
     serve: string[];
     /** Where to stand (default the tutorial's exit tile). */
@@ -164,7 +164,7 @@ export function kitOptions(raw: Record<string, unknown>): KitOptions {
     if (!rawKits || typeof rawKits !== 'object' || Array.isArray(rawKits)) throw new Error('kits: options.kits must map receiver names to kits');
     const freeSlots = raw.freeSlots === undefined ? RECEIVER_FREE_SLOTS : Number(raw.freeSlots);
     if (!Number.isInteger(freeSlots) || freeSlots < 1 || freeSlots > 28) throw new Error('kits: freeSlots must be 1-28');
-    const kits: Record<string, PackageItem[]> = {};
+    const kits: Record<string, NamedPackageItem[]> = {};
     for (const [to, spec] of Object.entries(rawKits as Record<string, unknown>)) {
         const name = to.trim().toLowerCase();
         if (!KIT_ID.test(name)) throw new Error(`kits: "${to}" is not a login name or name+label`);
@@ -207,8 +207,8 @@ export function kitDeliveryKey(kitId: string): string {
 }
 
 /** Several kits as one list, the same item (and noted flag) summed: what one staging carries. */
-export function mergeKits(kits: ReadonlyArray<readonly PackageItem[]>): PackageItem[] {
-    const out: PackageItem[] = [];
+export function mergeKits(kits: ReadonlyArray<readonly NamedPackageItem[]>): NamedPackageItem[] {
+    const out: NamedPackageItem[] = [];
     for (const kit of kits) {
         for (const i of kit) {
             const same = out.find(o => o.item.toLowerCase() === i.item.toLowerCase() && !!o.noted === !!i.noted);
@@ -219,7 +219,7 @@ export function mergeKits(kits: ReadonlyArray<readonly PackageItem[]>): PackageI
     return out;
 }
 
-const choppedLogs = (kit: readonly PackageItem[]) => kit.some(i => i.item.toLowerCase() === LOGS.toLowerCase() && !i.noted);
+const choppedLogs = (kit: readonly NamedPackageItem[]) => kit.some(i => i.item.toLowerCase() === LOGS.toLowerCase() && !i.noted);
 
 /**
  * The kits one staging carries: `pending`, then the undelivered kits right after it in
@@ -227,7 +227,7 @@ const choppedLogs = (kit: readonly PackageItem[]) => kit.some(i => i.item.toLowe
  * kept for the axe when there are logs to chop). The next kit is then already in the
  * pack when the first has gone.
  */
-export function carryGroup(serve: readonly string[], pending: string, kits: Readonly<Record<string, readonly PackageItem[]>>, state: Pick<RoleState, 'get'>): string[] {
+export function carryGroup(serve: readonly string[], pending: string, kits: Readonly<Record<string, readonly NamedPackageItem[]>>, state: Pick<RoleState, 'get'>): string[] {
     const group = [pending];
     for (const id of serve.slice(serve.indexOf(pending) + 1)) {
         if (receiverOf(id) !== receiverOf(pending)) break;
@@ -247,7 +247,7 @@ export function carryGroup(serve: readonly string[], pending: string, kits: Read
 export async function giveKitOnce(
     state: RoleState,
     kitId: string,
-    kit: readonly PackageItem[],
+    kit: readonly NamedPackageItem[],
     send: () => Promise<GiveResult>,
     held: () => boolean
 ): Promise<GiveResult | null> {
@@ -312,7 +312,7 @@ class KitGiver {
         this.ctx.log(message, data);
     }
 
-    private get kit(): PackageItem[] {
+    private get kit(): NamedPackageItem[] {
         return this.pending ? this.o.kits[this.pending]! : [];
     }
 
@@ -382,8 +382,8 @@ class KitGiver {
             const bank = sdk.getBankItems();
             const split = splitLogs(load, Math.max(0, (bank.find(b => sameName(b.name, LOGS))?.count ?? 0) - this.o.keepLogs));
             const plan = planPackage({ name: receiverOf(to), items: split.fromBank }, bank);
-            if (plan.missing.length) {
-                short = plan.missing;
+            if (plan.missing.length || plan.ambiguous.length) {
+                short = plan.ambiguous.length ? { missing: plan.missing, ambiguous: plan.ambiguous } : plan.missing;
                 return;
             }
             for (const w of plan.withdrawals) {
@@ -718,7 +718,7 @@ export interface LoadOptions {
     /** The kit giver's login name (cairn_mule2). */
     from: string;
     /** Exactly what the pack holds when the role ends. */
-    kit: PackageItem[];
+    kit: NamedPackageItem[];
     /** Where the starter items are banked and the kit is taken (default Draynor, where the giver stands). */
     bank: Tile;
     /** The exact tile to end on, which is where the account logs in next time; null stays at the bank. */
@@ -738,7 +738,7 @@ export function loadOptions(raw: unknown): LoadOptions {
 }
 
 /** The pack holds the kit at its exact counts and nothing else (a held fm-row dropper drops every item it carries). */
-export function loadedExactly(inventory: ReadonlyArray<Pick<InventoryItem, 'name' | 'count'>>, kit: readonly PackageItem[]): boolean {
+export function loadedExactly(inventory: ReadonlyArray<Pick<InventoryItem, 'name' | 'count'>>, kit: readonly NamedPackageItem[]): boolean {
     const total = (rows: Array<[string, number]>) => {
         const m = new Map<string, number>();
         for (const [name, n] of rows) m.set(name, (m.get(name) ?? 0) + n);
@@ -750,7 +750,7 @@ export function loadedExactly(inventory: ReadonlyArray<Pick<InventoryItem, 'name
 }
 
 /** What receiveFrom waits for: each kit item by its exact name and count (`Logs` must not match `Oak logs`). */
-export function wantSpecs(kit: readonly PackageItem[]): WantSpec[] {
+export function wantSpecs(kit: readonly NamedPackageItem[]): WantSpec[] {
     return kit.map(i => ({ item: new RegExp(`^${escapeRegExp(i.item)}$`, 'i'), amount: i.amount }));
 }
 

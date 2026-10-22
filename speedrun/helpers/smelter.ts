@@ -36,6 +36,7 @@
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
+import { climbToSurface, GUILD_CELLAR, GUILD_DOOR } from '../lib/underground';
 import { COW_CENTRE, COW_FIELD, Run as CombatRun, parseOptions as combatOptions } from './bones';
 import { Buyer } from './buyer';
 import { pointMarketAtServer } from './mule';
@@ -97,7 +98,6 @@ const NURMOF: Point = { x: 2998, z: 9846 }; // pickaxe shop, north Dwarven Mine
 // non-aggressive dwarves beside Nurmof. Its south entrance (stairs east of Falador) lands
 // among 12 scorpions and 2 king scorpions, aggressive below combat 29: never use it.
 const ICE_TRAPDOOR: Point = { x: 3019, z: 3450 };
-const LADDERS_UP = new Set([1755]); // ladder_from_cellar (guild cellar, Nurmof)
 
 interface Site {
     name: 'guild' | 'west' | 'rimmington' | 'barbarian' | 'dwarven' | 'alkharid';
@@ -128,7 +128,7 @@ const APPROACH_RANGE = 40;
 const SITES: Record<Site['name'], Site> = {
     // miningguildladder (Mining 60) -> ladder_from_cellar. 5 mithril, ~37 coal, only dwarves.
     // z1 is the guild door's own row: see the dwarven door below.
-    guild: { name: 'guild', down: { id: 2113, x: 3019, z: 3339 }, box: { x0: 3014, x1: 3058, z0: 9728, z1: 9756 }, centre: { x: 3042, z: 9740 }, bank: BANK_EAST }, // the ladder lands at 3017,9739
+    guild: { name: 'guild', down: { id: 2113, x: 3019, z: 3339 }, box: GUILD_CELLAR, centre: { x: 3042, z: 9740 }, bank: BANK_EAST }, // the ladder lands at 3017,9739
     // North Dwarven Mine, through the guild's south door (miningguilddoor, Mining 60, walks the
     // player through and shuts). 3 adamantite, 2 mithril, 5 iron, 10 coal. 10 scorpions (level
     // 14, hunt range 2, wander 12) ignore combat 29+; the 2 king scorpions (32, spawns 3040,9775
@@ -138,7 +138,7 @@ const SITES: Record<Site['name'], Site> = {
         // The door is a wall on its own tile, and that tile is the guild side: clicking from it
         // walks the player to 9757, clicking from 9757 walks them back onto it (open_and_close_door
         // with check_axis). Exiting therefore ends on 3046,9756, which must count as the guild.
-        door: { from: 'guild', id: 2112, at: { x: 3046, z: 9756 }, outside: { x: 3046, z: 9756 }, inside: { x: 3046, z: 9757 } },
+        door: { from: 'guild', id: GUILD_DOOR.id, at: GUILD_DOOR.at, outside: GUILD_DOOR.at, inside: GUILD_DOOR.mineSide },
         box: { x0: 3030, x1: 3056, z0: 9757, z1: 9779 },
         centre: { x: 3039, z: 9766 },
         bank: BANK_EAST,
@@ -647,30 +647,13 @@ class Smelter {
         return done();
     }
 
-    /** Leave a door site the way it was entered (a door site's own box has no ladder). */
-    private async leaveDoorSite() {
-        const here = this.siteAt();
-        return here?.door ? this.throughDoor(here, false) : true;
-    }
-
-    /** Climb out of the guild cellar or the north Dwarven Mine by the nearest ladder. */
+    /** Climb out of the guild cellar or the Dwarven Mine (lib/underground.ts, shared with travelTo). */
     private async toSurface() {
         if (!underground(this.pos().z)) return true;
-        if (!(await this.leaveDoorSite())) return false;
-        let up = this.s().nearbyLocs.filter(l => LADDERS_UP.has(l.id)).sort((a, b) => a.distance - b.distance)[0];
-        if (!up) {
-            // Ladder out of sight: walk to the known one for this part of the mine.
-            const { z } = this.pos();
-            const target = z < 9800 ? { x: 3020, z: 9740 } : { x: 3019, z: 9849 };
-            await this.walk(target.x, target.z, 2);
-            up = this.s().nearbyLocs.filter(l => LADDERS_UP.has(l.id)).sort((a, b) => a.distance - b.distance)[0];
-        }
-        if (!up) {
-            this.ctx.log('no ladder up in view', { at: this.pos() });
-            return false;
-        }
-        if (up.distance > 3) await this.walk(up.x, up.z, 2);
-        return this.climb(up.id, /climb-up/i, false);
+        this.check();
+        const r = await climbToSurface(this.bot, this.sdk, { log: (m, d) => this.ctx.log(m, d), signal: this.ctx.signal });
+        if (!r.ok) this.ctx.log('surface failed', { reason: r.reason, at: this.pos() });
+        return r.ok;
     }
 
     private async toSite(site: Site): Promise<boolean> {

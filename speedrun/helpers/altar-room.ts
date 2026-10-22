@@ -89,6 +89,11 @@ export function findItem(s: BotWorldState | null | undefined, re: RegExp): Inven
     return s?.inventory.find(i => real(i, re));
 }
 
+/** Every carried slot holding the item itself (never a note), in slot order. */
+export function carriedSlots(s: BotWorldState | null | undefined, re: RegExp): InventoryItem[] {
+    return (s?.inventory ?? []).filter(i => real(i, re)).sort((a, b) => a.slot - b.slot);
+}
+
 /**
  * Resolve true on the first state for which `pred` holds, or false once
  * 2 x (`ticks` + 5) ticks pass (the budget this wait had at a 300 ms tick when

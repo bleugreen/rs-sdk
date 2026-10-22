@@ -100,8 +100,9 @@ coin funding, the delivery is one trip outside the fleet: take the account out (
 back. The fleet itself cannot run either trip: it loads only the `role` export of
 `<name>.ts`. Two traps:
 
-- **Underground accounts.** A smelter miner may be in the Mining Guild cellar, a separate
-  map the pathfinder cannot route out of. Climb its ladder (loc 1755 near 3020,9740) first.
+- **Underground accounts.** A smelter miner may be in the Mining Guild cellar or the Dwarven
+  Mine, separate maps the pathfinder cannot route out of. Climb out first with
+  `climbToSurface` (`speedrun/lib/underground.ts`; `travelTo` does it on its own).
 - **Stale state on return.** When the account rejoins the fleet, the fleet gateway first
   hands its role the state published before the trip. The `coins` role started on that
   (coins and kebabs it no longer carried) and idled. Restarting the role (any options
