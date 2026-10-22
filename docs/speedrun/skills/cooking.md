@@ -360,9 +360,11 @@ uncut gems still banked resumes as the gem cycle alone. `RunnerSession` carries 
 ### Preconditions (in code)
 
 - Beside the booth, with the booth in view.
+- The staged gems (option `stagedGems`, default H21d's row) are all gems the windows cut. Else the
+  precondition refuses with the reason. The windows cut their total (`windowPlan`), and S25d's
+  hand-off plus the windows' xp is 99 exactly (`craftingAfterWindows`).
 - S25a done (Smithing 99), S25e done (Herblore 99), and S25d done: Crafting xp at or above
-  `CRAFTING_HANDOFF_XP`, which crafting.ts defines and this module imports. The `lab` option
-  skips these three.
+  crafting.ts's `craftingHandoffXp` of the same staged gems. The `lab` option skips these three.
 - At most 27 slots used unless the notes are already held, else
   `N other items (...): need 1 free slots`.
 - Not in combat, and not hit within 16 ticks.
