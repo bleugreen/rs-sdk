@@ -1,24 +1,27 @@
 # Fishing Contest
 
-**Verdict: do it, with a helper-caught giant carp, and only while fly fishing stays on
-the normal cycle.** The helper-carp route costs **about 276 ticks on the stock client
-(inferred), 223 on the fixed client (measured) and about 200 with bursts (inferred)**.
-Its 2,437 base Fishing replaces **325 ticks** given Sea Slug (rs/2
-`docs/speedrun/skills/fishing.md` section 3 subset table: SS 3,735 → SS+Contest 3,410,
-normal cycle). Net about +50 / +100 / +125. If fly fishing moves to the 3-tick cycle
-(`tick-manipulation.md`), the same xp replaces only **186 ticks** (2,226 → 2,040) and
-the quest becomes a small loss (about -40 fixed, -15 burst).
+**Verdict: on the route as a precondition, done by the scored account itself (the self
+route).** It costs **327.3 ticks fixed and 314 burst from the arrival tile beside the
+tunnel stairs (2820,3486)** (measured: `speedrun/quests/fishing-contest.ts`, rs/388, lab,
+lite client, 3 + 3 chains, section "The self route"). Its 2,437 base Fishing replaces
+**325 ticks** given Sea Slug (rs/2 `docs/speedrun/skills/fishing.md` section 3 subset
+table: SS 3,735 → SS+Contest 3,410, normal cycle): break-even fixed (-2), +11 burst.
+The quest stays whatever its net, because its quest point is needed (main, 2026-10-22: the
+route has none to spare for the Fishing Guild's 32). If fly fishing moves to the 3-tick
+cycle (`tick-manipulation.md`), the same xp replaces only **186 ticks** (2,226 → 2,040).
 
-The raw giant carp is **tradeable** (`skill_fishing/configs/fishing.obj:362`, no
-`tradeable=no`), and Bonzo's hand-in only checks that one is in the inventory
-(`bonzo.rs2:58`). So the scored account skips McGrubor's Wood, the red vine worm, the
-garlic and the Sinister Stranger: it needs the pass, any one fish inside the contest,
-and Bonzo. Doing it all on the scored account (the "self" route) costs about 145 ticks
-more and loses.
+The raw giant carp is **untradeable** (`skill_fishing/configs/fishing.obj:378`,
+`tradeable=no`; this document said tradeable, citing the obj's header at line 362, and
+rs/173's demo confirmed it: two carp handovers failed with an empty offer). The red vine
+worm and the pass are untradeable too (`quest_fishingcompo.obj`). So the helper-carp route
+below is not feasible: the scored account digs its own worm in McGrubor's Wood, catches
+the carp at the pipe spot, and gets the pass from the dwarf; a helper stages only the
+rod, a spade, garlic, the fee and the runes (main's ruling, 2026-10-22).
 
-Measured with `docs/speedrun/scripts/quest-smallskill-fishingcompo.ts` (helper-carp
-route: two full runs, 224 and 218 ticks of steps; `VARIANT=self` measured up to the
-pipe) at `NODE_TICKRATE=300` on the fixed lite client.
+The helper-carp figures below were measured with
+`docs/speedrun/scripts/quest-smallskill-fishingcompo.ts` (two full runs, 224 and 218 ticks
+of steps) at `NODE_TICKRATE=300` on the fixed lite client; they are kept for the shared
+steps' history.
 
 ## Reward
 
@@ -34,7 +37,7 @@ pipe) at `NODE_TICKRATE=300` on the fixed lite client.
 | Fishing 10 to fish in the contest | `hemenster_fishing.rs2:70` | `stat()` (boostable) |
 | Competition pass in the inventory at Morris's gate | `quest_fishingcompo.rs2:37` | item, `tradeable=no` (`quest_fishingcompo.obj:30-41`) |
 | 5 coins for Bonzo | `bonzo.rs2:24-29` | item |
-| A raw giant carp in the inventory when Bonzo collects the catch | `bonzo.rs2:58` | item, tradeable |
+| A raw giant carp in the inventory when Bonzo collects the catch | `bonzo.rs2:58` | item, `tradeable=no` (`fishing.obj:378`) |
 
 The wiki's start requirement of Fishing 10 at the dwarf is not enforced here: the comment
 at `mountain_dwarf.rs2:54-56` notes it was added in the 2006 rework. On the planned route
@@ -42,10 +45,13 @@ Sea Slug comes first, so Fishing is far above 10 anyway.
 
 ## Helper-supplied items
 
-One trade: a raw giant carp, a fishing rod, fishing bait (1 is enough), 5 coins, and
-Camelot teleport runes for three casts (3 law, 15 air; Magic 45, `magic_spells.dbrow:89-94`).
+One trade (H16, the self route): a fishing rod, a spade, a garlic, 5 coins, and Camelot
+teleport runes for three casts (3 law, 15 air; Magic 45, `magic_spells.dbrow:89-94`), the
+first of them T19-20's. No fishing bait: the red vine worm is the bait
+(`hemenster_fishing.rs2:20-24` prefers it), and with it the pipe spot gives the carp, never
+shrimps (`:29-32`).
 
-**Getting the carp (helper side, zero scored-account ticks).** A helper starts the quest
+**Getting the carp from a helper (not feasible: the carp cannot be traded).** A helper starts the quest
 at the dwarf, digs a red vine worm in McGrubor's Wood (`mcgrubors_wood.rs2:26-48`, a
 spade), stashes garlic in the pipe (`quest_fishingcompo.rs2:85-94`), pays Bonzo, catches a
 giant carp with the worm at the pipe spot (`hemenster_fishing.rs2:29-32`) and **leaves
@@ -54,7 +60,7 @@ through the gate before catching three fish**: the third catch hands the carp in
 (`bonzo.rs2:72-81`) while the carp stays in its inventory. The helper can repeat this for
 every future carp.
 
-## Step list (helper-carp route)
+## Step list (helper-carp route, not feasible; kept for the shared steps)
 
 Quest varp `%fishingcompo` (perm): 0, 1 started, 2 in the contest, 4 won, 5 complete
 (`quest_fishingcompo.constant`, `quest.constant:24`); `%hemenster_comp_stage` (perm) counts
