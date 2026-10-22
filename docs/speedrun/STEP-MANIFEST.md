@@ -189,7 +189,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 11 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,194 | 1,194 | ~5,220 | ~4,030 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **on main, 1514f47a (#222; rs/268's snapshot of rs/196's module, rs/186's branch at 0c349da6)**, the run-commit floor; **lab-accepted, with a partial demo confirmation** (9/9 tuned on the real server, n small; the 20-cycle demo acceptance pending); **lab-accepted (rs/196, module 3f02f336, relay path (lab): nature at 44 tuned 30/30 at 29 x 7, robust 30/30 at 29 x 8; S06 7/7 at 6 x 7, 58)**; the tuned nature run confirmed on the direct path, 30/30 at 29 x 7 (rs/196, 3b161c12); **browser-confirmed for arrival** (rs/196, 6 of 6 by the real leg, `--arrive=leg`, e2d47293: S06 60 / 60 / 60, body 10 cycles 82 / 83 / 82; fold-in 20); 30 of 30 at 29 x 7 under #287's reader fix; pending: the auto rule's 'handled before SCORED' field (entry 9); main's `runecraft-accept.ts` carries rs/330's `--path=direct` fix (812c766f) since #288 (rs/362, 4bdebcd5, inside the floor), with `runecraft.md` section 9 labelling each run relay or direct; rs/267's body stock-rung lab ran on the pre-fix copy, so it stays relay (lab), direct re-measure pending; the per-band load and the stock rung's opt-in on main with #288; cycle: on main, 23ea9f77 (#178) |
 | 12 | 10 | Smithing | `speedrun/skills/smithing.ts` | S25a | 1,065 | 1,028 | 1,330 | ~302 | overlay | `smithing-trade.ts` | **on main (#230)**, with `lib/trade.ts` `swap()` and `anvil.ts`'s restock and off-tile fixes; the demo attempt inconclusive (rs/197, entry 10) |
 | 13 | 12 | Dwarf Cannon | `speedrun/quests/dwarf-cannon.ts` | S13 | 933.0 | 807 | ~1,128 | ~167 | overlay | `quest-mcannon-*.ts` | **on main, 425c7047 (#299; rs/373's snapshot of rs/185 at 3502672e), the run-commit floor**: lab 6 of 6 at SCORED's real levels (rs/257), the demo complete on cairn_dc01; **the browser pass waits on rs/309, then rs/370**; built by rs/257 under rs/185; **lab: 3 runs a mode at SCORED's levels, 1,137 fixed / 999 burst** (rs/257); **execution 2's railing recount**: the formula rate, B at 25.2 tries (rs/257, fold-in 17); run mode: no `p_walk`, re-paths at Lawgof (A, C, E, H, J, L) and Nulodion (K), lever ~0 (r, rs/257) |
-| 14 | 14 | Tree Gnome Village | `speedrun/quests/tree-gnome-village.ts` | S10b | 739 | 739 | 902 | ~163 | overlay | `quest-tree-full.ts`, `quest-premm-fight.ts` | building (rs/185, held: tenet 15) |
+| 14 | 14 | Tree Gnome Village | `speedrun/quests/tree-gnome-village.ts` | S10b | 678 | 665 | 902 | ~237 | overlay | `quest-tree-full.ts`, `quest-premm-fight.ts` | **on main, fe1fd23e (#312; rs/390's snapshot of rs/342's module, #311 on rs/185's branch)**: lab-accepted on lite (rs/342, 3 runs a mode from Elkoy at SCORED's arrival levels: burst 678, fixed 719, the warlord 113.7 by Fire Blast; fold-in 22); the browser pass **rs/391**, behind rs/309 |
 | 15 | 16 | Firemaking | `speedrun/skills/firemaking.ts` | S03 | 681 | 650 | 735 | ~85 | overlay | `firemaking-line.ts` | on main, 4cc468e0 (#205; rs/244), with the inferred-fire counter (#229); **demo-measured**, 681 m (rs/269, cairn_burns); **demo-accepted (module), on main as #263** (200909b4, rs/326, inside the floor): rs/186 under rs/158's pass rule, rs/245's PR #241 merged into rs/186 as 1cb8ef67, 20 of 20 lit, every one of the 19 gaps exactly 4 ticks a roll (9 failed rolls), no slip, resend, refusal or skip (firemaking.md section 9) |
 | 16 | 17 | Fight Arena | `speedrun/quests/fight-arena.ts` | S12 | 524 | 524 | 646 | ~122 | overlay | `quest-arena-run.ts` | building: **rs/379** (under rs/185, started), its spec carrying the cell-key exit drop on T12-13 and a measured exit-inventory census, which confirms S13's 14-17 free slots after H10 (RUN-ORDER.md O46) |
 | 17 | 18 | Plague City | `speedrun/quests/plague-city.ts` | S08 | 435 | 435 | 608 | ~173 | overlay | `quest-plague-city-*.ts` | building (rs/185, held: tenet 15) |
@@ -1798,28 +1798,41 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   at S10b's start, met** (an ordering check, main 20:52 PDT: Prayer is priced inside S07, whose bury,
   S25b, ends at ~94 before S10b, which is why S10a is retired; RUN-ORDER.md rows S25b and S10a); the
   pre-MM trade (`SUPPLIES.md` H7, `quests/README.md` §4 step 3): 6 logs, staff of fire, amulet of
-  magic, 1 Antipoison(4), 2 sharks (no prayer potions now), and Fire Blast runes for about T/5 casts per fight (the
+  magic, 1 Antipoison(3) (the module takes any dose), 2 sharks (no prayer potions now), and Fire Blast runes for about T/5 casts per fight (the
   rune counts in `pre_mm_fights.md` look too high, flagged by rs/81).
 - **Postconditions:** `%treequest` 9 (ledger); 11,450 Attack; Magic about 64; 2 QP; village spirit
   tree.
-- **Ticks:** expected **739** (burst, fold-in 14), best **739** (the expected), fixed fallback **793**
-  (r21, including the trade; warlord 133 measured by Fire Blast, rs/56, n=2), fallback **902** (stock): `quests/README.md` §3 row's 896 / 842 /
-  1,005 less its ~103 inferred to reach the maze from the Ardougne teleport, which T09-10 replaces.
+- **Ticks:** expected **678** (burst, m, lab), best **665**, fixed fallback **719** (m, lab; fold-in 22:
+  rs/342, lab, 300 ms, from the arrival tile, Elkoy (2504,3191), at SCORED's arrival levels (Attack, Strength and Defence 1, 10 HP, Magic 59, Prayer 94), on rs/185's branch with #289, 3 runs a mode: burst 689 / 665 / 681, fixed 738 / 717 / 702; on main as #312, fe1fd23e; the browser
+  pass rs/391, behind rs/309). **Segments A-N** (fixed / burst means): A 2 / 2, B 105 / 105, C 39.7 / 28.7, D 26 / 21.7, E 7 / 4, F 16 / 8, G 17.3 / 17.7, H 74 / 74, I 56.3 / 53.3, J 39.3 / 31.3, K 193.7 / 202, L 85.7 / 81.7, M 31 / 28, N 26 / 21. The warlord by Fire Blast **113.7** (n = 7) against 133, 20-26 casts, 0
+  damage, 19-25 prayer points. Before: 739 expected and best (burst, fold-in 14) and 793 fixed (r21,
+  including the trade; warlord 133 by Fire Blast, rs/56, n=2). Fallback **902** (stock):
+  `quests/README.md` §3 row's 896 / 842 / 1,005 less its ~103 inferred to reach the maze from the
+  Ardougne teleport, which T09-10 replaces.
 - **Primitives:** rs/94 `converse`, `act`, `combat` (spell fight); `continueBurst`; `travel.ts`;
   `trade.receiveFrom`.
-- **Protect from Melee from the crumbled wall to the ladder down** (approved, main 20:52 PDT): two
-  Khazard commanders stand on that stretch (r, `quest_tree.rs2:56-65, 71-75`); ~9 prayer points, ~0
-  ticks (i). The prayer button cancels a walk in progress (`clearPendingAction`; rs/241's Agility
+- **Protect from Melee on three stretches** (rs/342, m, lab; fold-in 22): **from the crumbled wall
+  to the ladder down** (approved, main 20:52 PDT: two Khazard commanders stand on that stretch, r,
+  `quest_tree.rs2:56-65, 71-75`); **the maze (B)**, on at the arrival tile and off at the railing, 1
+  + 1 tick, about 20 points (unprotected, a level-28 giant hit SCORED in 5 of 5 passes, lowest HP
+  6); and **K's walk and fight**, on at K's start while standing. Prayer runs 94 to 74 to 68, about
+  25 spent in K, which is ample. HP never fell below 10 in 7 chains; the catapult and the ogre 0
+  hits; the insurance eat at HP 4 never used. The prayer button cancels a walk in progress (`clearPendingAction`; rs/241's Agility
   finding), so the module toggles at a stand or on a click tick; the toggle's tick cost is pending
   the lab runs. The rule is also in `quests/README.md` §4 step 3 (rs/185, bfb9ca72).
-- **Mode:** overlay-driven. **Logout-unsafe:** Bolren's closing ceremony until the quest scroll shows
-  (`quests/README.md` §4).
+- **Inventory:** the staff of water drops at A and the gnome amulet at N, so S11a has nothing left to
+  drop (rs/342; the ledger's S10b and S11a rows).
+- **Doors and delayed loc scripts:** not exposed. The closest run start is 4 tiles from a door, and
+  the wall, chest and ballista open their dialogue at 0 ticks (rs/342).
+- **Mode:** overlay-driven. **Logout-unsafe:** only segment M, Bolren's closing ceremony until the
+  quest scroll shows (`quests/README.md` §4); a logout in N resumes at K (rs/342).
 - **Fallback:** Fire Bolt at Magic 51 (warlord 165 measured, n=6: +32).
 - **Acceptance, local:** `quest-tree-full.ts` at route levels, **Attack, Strength and Defence 1 and 10
   HP** (SCORED's arrival; not `quest-gnome-setup.ts`'s 70/70/70), 3 runs. Pass: within 10% of 793,
-  counted from the maze entrance, and the warlord within 10% of 133. The first run also settles the
-  wolves, giant and ogre that spawn 8-16 tiles from the maze route and would hunt combat 43 (rs/185,
-  open), reported as m.
+  counted from the maze entrance, and the warlord within 10% of 133. **Lab-accepted on lite**
+  (rs/342, main; fold-in 22): fixed 719 and burst 678 from the maze entrance, the warlord 113.7, both
+  under their bars; the wolves, giant and ogre settled (the giant is why the maze runs under
+  Protect from Melee). The browser pass is rs/391, behind rs/309.
 - **Acceptance, demo (throwaway):** the maze and the first dialogues on a throwaway (no level gate).
   Pass: within 10% of the local segment.
 - **Start from:** `quest-tree-full.ts`, `quest-gnome-fights.ts`, `quest-premm-fight.ts warlord`,
@@ -2773,8 +2786,8 @@ S10b) or fire (S10b to S14) supplies its element.
 | S09 | - | rune pickaxe x1 (drop: `mining.exit` at 99); logs all (drop: `mining.exit`) | - | 4 | MAN entry 4 (r); `mining.ts` FREE_SLOTS 4: ore, a gem, a stray fletch (r); `mining.exit` drops every pickaxe, log and leftover ore, gem or arrow shaft at 99, never the knife, 0 ticks (rs/319, d60cee33, m, lab) |
 | S10a | - | - | - | 0 | retired: Prayer comes from S07, RUN-ORDER S10a (r) |
 | H7 | logs x6 [u]; staff of fire x1 [u]; amulet of magic x1 [u]; antipoison(3) @175 x1 [u] (obj `3doseantipoison`); shark x2 [u]; death rune x110 [s]; chaos rune x40 [s]; air rune x550 [s] | - | +staff of fire; -staff of water; +amulet of magic | 14 | SUPPLIES H7 (r); 14, the staff of water back into the pack (rs/158 01:12 PDT, r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
-| S10b | gnome amulet x1 [u] (the reward, `quest_tree.rs2:97`) | logs x6 (hand-in: Montai, `commander_montai.rs2:32`); death rune x26 (consume: ~26 Fire Blasts); air rune x104 (consume) | - | 1 | `quest_tree` (r): Bolren takes both orbs of protection back (`king_bolren.rs2:73,98`), so the amulet alone stays; the need, one orb held at a time (r); MAN entry 14 (r); the cast count ~26 (i) |
-| S11a | - | gnome amulet x1 (drop: TGV's exit); staff of water x1 (drop: dead since H7) | - | 0 | MAN entry 1 (r); TGV's exit drops, rs/185, issue pending, clearing S11b's segment L (rs/158 00:40 PDT, r); P1 (r) |
+| S10b | gnome amulet x1 [u] (the reward, `quest_tree.rs2:97`) | logs x6 (hand-in: Montai, `commander_montai.rs2:32`); death rune x26 (consume: ~26 Fire Blasts); air rune x104 (consume); staff of water x1 (drop: segment A, dead since H7); gnome amulet x1 (drop: segment N) | - | 1 | `quest_tree` (r): Bolren takes both orbs of protection back (`king_bolren.rs2:73,98`), so the amulet alone stays; the need, one orb held at a time (r); MAN entry 14 (r); the cast count ~26 (i); the drops at A and N (rs/342, m; fold-in 22) |
+| S11a | - | - | - | 0 | MAN entry 1 (r); nothing left to drop: S10b drops the staff of water at A and the gnome amulet at N (rs/342, fold-in 22), clearing S11b's segment L (r); P1 (r) |
 | H8 | agility potion(3) x1 [u]; law rune x5 [s] (1 Varrock, 4 Ardougne); air rune x3 [s]; fire rune x1 [s]; water rune x4 [s] | - | - | 3 | SUPPLIES H8 (r); 3: the potion and the new law and fire stacks (r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
 | S11b | translation book x1 [u]; hazelmere's scroll x1 [u]; glough's journal x1 [u]; lumber order x1 [u]; glough's key x1 [u] (kept after the reward, all untradeable) | chaos rune x31 (consume: ~31 Fire Bolts); air rune x93 (consume); law rune x3 (consume: one Varrock and one Ardougne teleport inside the quest); air rune x3 (consume); water rune x2 (consume) | - | 9 | MAN entry 8: 9 free at segment L, the quest's items (r); rs/202's lab, 14 free at L (m); the five kept items (`king_narnode.rs2:306`, `hazelmere.rs2:36`, `quest_grandtree.rs2:104`, `foreman.rs2:114`, `anita.rs2:18`; only the Daconia rock is deleted, `quest_grandtree.rs2:195-197`), the peak 9 with the four twigs (r); the teleports inside the quest (i); the potion keeps its slot at 3 doses (r) |
 | T11-12 | - | law rune x2 (consume: Ardougne teleport); water rune x2 (consume); agility potion(*) x1 (drop: drunk at M, so at 2 doses; dead); translation book x1 (drop: the Grand Tree's leftovers); hazelmere's scroll x1 (drop); glough's journal x1 (drop); lumber order x1 (drop); glough's key x1 (drop) | - | 0 | RUN-ORDER T11-12 (r); P1 (r); the Grand Tree's exit drops, rs/185's follow-up after rs/299, number pending (r) |
