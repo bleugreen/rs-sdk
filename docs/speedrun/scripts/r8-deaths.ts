@@ -125,7 +125,6 @@ const fate = (u: Unit, from: string, uses?: [RegExp, string]) => {
 
 const HELPER = 10; // e: the recovery helper cued at the death reaching the Lumbridge spawn (fold-in 28's 'respawn ~10')
 const TRADE = 5; // e: one trade at the spawn: the teleport runes, the food and the spare kit
-const SET_UP = 23; // m: the cannon's set-up (fold-in 28's S27 price)
 const heal = (hp: number) => Math.ceil((hp - 1) / 20); // sharks from 1 HP back to full, 3 ticks each
 
 // H11 and H13 are trades at the Ardougne landing, inside T13-14 and T15-16 before the lever, so the
@@ -141,7 +140,7 @@ const stretches: Stretch[] = [
     { name: 'T15-16 as the ledger walks it (before H13)', row: 'T15-16', hp: 42, replay: [0, fig('T15-16')], how: 'T15-16 again, the part already walked' },
     { name: 'T15-16 with H13 at the landing (the Wilderness carry to the arena)', row: 'H13', hp: 42, replay: [0, fig('T15-16')], how: 'T15-16 again, the part already walked; a second H13 kit in the trade' },
     { name: 'S27 deployed (the cannon on the ground)', row: 'S27', deployed: true, hp: 97, replay: [fig('T26-27'), fig('T26-27')], how: 'T26-27 again; the cannon waits, no second set-up', uses: [/^(magic shortbow|rune arrow)$/, 'the rest of S27'] },
-    { name: 'S27 packed (the cannon picked up, the bow phase)', row: 'S27', hp: 97, replay: [fig('T26-27'), fig('T26-27') + SET_UP], how: 'T26-27 again, and the set-up if the cannon was still to fire', uses: [/^(magic shortbow|rune arrow|cannonball)$/, 'the rest of S27'] },
+    { name: 'S27 bow phase (the cannon fired out and packed)', row: 'S27', hp: 97, replay: [fig('T26-27'), fig('T26-27')], how: 'T26-27 again; the cannon done, no set-up', uses: [/^(magic shortbow|rune arrow)$/, 'the rest of S27'] },
     { name: 'S17 mid-course', row: 'S17', hp: 97, replay: [fig('T13-14') + fig('T27-17') + 66, fig('T13-14') + fig('T27-17') + 157], how: "T13-14's lever leg and T27-17 again, plus the lap in progress (66-157)" },
 ];
 
