@@ -1688,7 +1688,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   rs/258's addendum 8, 5ade29d3), so SCORED leaves S26 holding neither, and the hammer on T26-27 (the
   inventory ledger). **Slots:** the module works its free-slot need out from the step's item list: 2, the peak
   at C (Scavvo's chainbody and platelegs bought before they are worn; 2 at E without the armour), against
-  exactly 2 free after H22.
+  exactly 2 free after H22: **fits with 0 spare** (rs/258, m; fold-in 19's figures, fold-in 20).
   rs/258's execution 3 (interim, lab, lite, 300 ms): no re-price; the clean fixed run, 1,320, matches
   execution 1's 1,324, and the other two runs' spikes are inferred host and client stalls; D's walk
   measured 122 in every run against the probe's 101, +21 (m); on #289's travel.ts the pinned rerun read D
