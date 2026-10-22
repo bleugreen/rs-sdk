@@ -199,7 +199,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 16 | 17 | Fight Arena | `speedrun/quests/fight-arena.ts` | S12 | 532 | 521 | 646 | ~114 | overlay | `quest-arena-run.ts` | **on main, f659c074 (#324; rs/406)**, inside the run-commit floor; **lab-accepted on lite** (rs/379, under rs/185; fedora, 6 of 6 from the arrival tile: burst 532, fixed 557.3, 0 damage, m; fold-in 23); the cell keys dropped at K's exit; the exit census measured, 14 used, S13 starting with 11 free after H10 (RUN-ORDER.md O46, closed); the browser re-run pending |
 | 17 | 18 | Plague City | `speedrun/quests/plague-city.ts` | S08 | 386 | 381 | 608 | ~222 | overlay | `quest-plague-city-*.ts` | **on main, bf3e7ce3 (#329; rs/412's snapshot of rs/185 at 00575670)**, inside the run-commit floor; lab-accepted on lite (rs/400, 6 of 6; fold-in 23); the browser re-run and the demo pending |
 | 18 | 19 | Mage Arena | `speedrun/quests/mage-arena.ts` | S16 | 382 | 336 | 448 | ~66 | overlay | `quest-magearena-*.ts` | **on main, 23f93a66 (#332; rs/417's snapshot of rs/185 at 8ee81569)**: the run-commit floor; A-F lab-accepted (rs/371, bgsrv-ub; fold-in 23); the browser re-run pending |
-| 19 | 20 | Sea Slug | `speedrun/quests/sea-slug.ts` | S19 | 310.7 | 306 | 462 | ~151 | overlay | `quest-smallskill-seaslug.ts` | building: **rs/414** (lab-measured on lite, 6 of 6, fold-in 23; the browser acceptance pending a store repair) |
+| 19 | 20 | Sea Slug | `speedrun/quests/sea-slug.ts` | S19 | 311.0 | 304 | 462 | ~151 | overlay | `quest-smallskill-seaslug.ts` | **browser-accepted** (rs/414 execution 2, bgsrv-ub, local lab engine, 3 of 3 from Caroline's tile, tree 289d61b7; fold-in 24: 311.0 m (browser) against a same-engine lite control of 304); lab-measured on lite before, 6 of 6 (fold-in 23); building: **rs/414** |
 | 20 | 21 | Romeo & Juliet | `speedrun/quests/romeo-juliet.ts` | S24 | 211 | 211 | 301 | ~90 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
 | 21 | 22 | Druidic Ritual | `speedrun/quests/druidic-ritual.ts` | S24 | 220 | 220 | 284 | ~64 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
 | 22 | 24 | Magic (strike, enchant) | `speedrun/skills/magic.ts` | S02, S04 | 213 | 208 | ~231 | ~23 | overlay | `magic-strike.ts`, `magic-cadence.ts` | **on main as #255** (acec0aec, rs/316, inside the floor); **browser client, lab: S02 20.3 m (best 17), S04 192.7 m (best 191)** (rs/285, fold-in 17); on lite before: S02 14 m (12 / 12 / 12 / 17 in the lab, 17 on the demo; best 12); **demo-confirmed for the enchant cadence** (cairn_m01: 20 sapphire enchants in 60 ticks, 19 of 19 gaps at 3); S04 191 m (lab, 2 of 2) with `handBack: 'keep'`, the last 20 rings to H4's swap |
@@ -2150,7 +2150,19 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   bridge-flagged levels does not hold there (LAB.md is not these documents' to edit).
 - **Postconditions:** 7,175 Fishing (74; measured, 179,375 game xp, 6 of 6, rs/414); 1 QP. S20's Fishing
   Contest takes it to 78 (entry 5's 9,612 base), where S22's band starts.
-- **Ticks:** expected **310.7 m** (burst), best **306 m** (the fastest burst run), fixed **346.3 m** (fold-in 23: rs/414, lab, lite, bgsrv-mac, 300 ms, from Caroline's tile, 6 of 6; the browser acceptance pending, rs/414's branch awaiting a store repair; rs/414's per-segment table to be carried here when it is sent). Before it: expected **307** (burst, fold-in 14, inferred), best **307** (the expected), fixed fallback **361** (measured), fallback **462**
+- **Ticks:** expected **311.0 m (browser, lab)** (burst), best **304 m** (the fastest browser run), fixed **346.3 m (lab, lite)** (fold-in 24: **browser-accepted**, rs/414 execution 2, bgsrv-ub, local lab engine, 300 ms, burst, 3 of 3 from Caroline's tile, the webclient built from tree 289d61b7 (rs/185's tip 825d7368), module 7d19e1a3: 307 / 304 / 322 against a same-engine lite control of 304 m; a browser figure outranks lite, main's rule). On lite (fold-in 23): 310.7 m burst, best 306, fixed 346.3 (rs/414, lab, lite, bgsrv-mac, 300 ms, from Caroline's tile, 3 runs a mode).
+
+  **Per segment** (rs/414; the means of 3 runs a mode, m):
+
+  | | A | B | C | D | E | F | G | H | I | J | K | L | M | N | O | P | Q | Total (runs) |
+  |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+  | Fixed, lite | 0 | 15 | 16 | 16 | 12 | 24 | 26 | 50 | 26 | 12.3 | 1 | 50 | 10 | 11 | 13 | 46 | 18 | **346.3** (346 / 347 / 346) |
+  | Burst, lite | 0 | 9.7 | 7 | 14 | 12 | 24 | 22 | 49 | 24 (19 / 33 / 20) | 12.3 | 1 | 45 | 10 | 7 | 13 | 47.3 | 13.3 | **310.7** (306 / 318 / 308) |
+  | Burst, browser | - | 14.3 (9 / 9 / 25) | 7 | 14 | 13 | 24 | 23 | 49.3 | 20 | 12.3 | 1 | 45 | 10 | 7 | 13 | 46 | 12 | **311.0** (307 / 304 / 322) |
+
+  The segment means sum to 346.3, 310.6 and 310.9 against the run means 346.3, 310.7 and 311.0 (rounding; the browser A was not sent, 0 on lite). B on the browser: 9, 9 and 25, and a B-only recheck 9, 9, 9, so the 25 is unexplained and has not recurred; every browser segment is within a tick of the same-engine lite control apart from B's one run. The burst sits ~4 over the old 307 i, mostly in I (Kent's script: `if_close` and `p_delay`s). **Q** 17 fixed / 13 burst (m, rs/414's note): the reward's level-up page appears 3 ticks after Caroline's chat closes and is content time (the module now uses converse `expect: 'interrupt'`).
+
+  Before it: expected **307** (burst, fold-in 14, inferred), best **307** (the expected), fixed fallback **361** (measured), fallback **462**
   (stock, inferred): `quests/README.md` §3 row's 394 / 340 / 495 less its 33 of travel, the Ardougne
   teleport and the 29-tick run (`sea_slug.md` steps 1-2), which T18-19 replaces.
 - **Primitives:** rs/94 `converse`, `act` (loc by tile and id on bridged levels); `continueBurst`.
@@ -2160,7 +2172,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   oyster pearls in segment Q (1 tick, m, inside the figure); T19-20 keeps only its Camelot runes.
 - **Mode:** overlay-driven. **Logout-unsafe:** none.
 - **Acceptance, local:** `quest-smallskill-seaslug.ts` through the module in the **browser** client.
-  Pass: within 10% of 361, counted from Caroline's tile, with every bridged door opened.
+  Pass: within 10% of 361, counted from Caroline's tile, with every bridged door opened. **Passed** (fold-in 24: rs/414 execution 2, bgsrv-ub, 3 of 3, 311.0 m).
 - **Acceptance, demo (throwaway):** a throwaway at Firemaking 30 (about 30 logs). Pass: completes
   within 10% of the local figure.
 - **Start from:** `quest-smallskill-seaslug.ts`, `quest-smallskill-lib.ts`, `quest-smallskill-bridge-patch.sh`.
