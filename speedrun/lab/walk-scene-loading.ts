@@ -1,7 +1,7 @@
 // Lab check for sdk walkStepToward's scene_loading wait: a bot.walkTo that starts while the browser
 // client rebuilds the region (state.sceneReady false) must wait for the build and re-send its walk,
 // not end in "Stuck at". The case is S06's entry: the real T05-06 leg (Falador teleport, run, air
-// talisman on the ruins, runner/legs.ts runLeg) lands in the air altar room, and the step's own
+// talisman on the ruins: runner/legs.ts's hops through lib/travel.ts, as runLeg runs them) lands in the air altar room, and the step's own
 // entry walk (skills/runecraft.ts enter: bot.walkTo to the stand tile, tolerance 0) starts on the
 // landing's first published state, before the room's region is built.
 //
@@ -20,7 +20,8 @@
 import type { ActionResult } from '../../sdk/types';
 import { closeSession, logoutClean, openSession } from '../lib/session';
 import { waitUntil } from '../lib/wait';
-import { legById, runLeg } from '../runner/legs';
+import { travel, type TravelSdk } from '../lib/travel';
+import { legById } from '../runner/legs';
 import { ALTAR_ROOMS } from '../skills/runecraft';
 import { launchLabBrowser } from './browser';
 import { clearInventory, give, leaveTutorial, mustTele, setStats } from './setup';
@@ -84,9 +85,12 @@ try {
 
         // Throttled for the leg's last hop only (the ruins click) and the walk after it.
         const hops = leg.def.hops;
-        const before = await runLeg({ ...leg.def, hops: hops.slice(0, -1), dest: { x: 2984, z: 3293, tol: 2 } }, { sdk, bot });
+        const tsdk = sdk as unknown as TravelSdk;
+        const before = await travel(tsdk, hops.slice(0, -1), { bot });
+        if (!before.ok) throw new Error(`T05-06 to the ruins: ${before.reason ?? 'travel failed'}`);
         if (throttle !== null) await page!.emulateCPUThrottling(throttle);
-        const legRun = await runLeg(leg.def, { sdk, bot });
+        const legRun = await travel(tsdk, hops, { bot, from: hops.length - 1 });
+        if (!legRun.ok) throw new Error(`T05-06 ruins: ${legRun.reason ?? 'travel failed'}`);
         const s0 = sdk.getState()!;
         sends.length = 0;
         walkLines.length = 0;
@@ -101,7 +105,7 @@ try {
         result('walk', {
             run,
             cpuThrottle: throttle,
-            legTicks: (before?.ticks ?? 0) + (legRun?.ticks ?? 0),
+            legTicks: legRun.endTick - before.startTick,
             from: { x: s0.player?.worldX, z: s0.player?.worldZ },
             to: stand,
             sceneReadyAtStart: s0.sceneReady,
