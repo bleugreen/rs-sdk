@@ -131,9 +131,12 @@ describe('free slots (addendum 8)', () => {
     });
 
     test('the four items the magic door takes make room for the maze; without the armour the need is the key', () => {
-        // From G with the magic-door items still held (they are gone by then): no need.
-        const atMaze = world({ status: 'started', inv: [...ledger(), item('Maze key'), part(3)].slice(2) });
-        expect(slotNeed(atMaze, questItems(), LETTERS, 'G').slots).toBeLessThanOrEqual(0);
+        // A full pack at G that still holds the magic-door items and the earth rune: they are gone by G
+        // and H, so the coloured key and parts 1 and 2 fit.
+        const full = world({ status: 'started', inv: [...ledger(), item('Maze key'), part(3)] });
+        expect(28 - full.inventory.length).toBe(0);
+        expect(slotNeed(full, questItems(), LETTERS, 'G').slots).toBe(0);
+        expect(steps()[6]!.preconditions(full, {})).toBe(true);
         expect(slotNeed(world({ inv: ledger() }), questItems({ buyArmour: false }), LETTERS, 'A')).toMatchObject({ slots: 1, peak: 'D' });
     });
 
