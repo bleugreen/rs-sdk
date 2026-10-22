@@ -524,6 +524,18 @@ describe('S25c through runSteps (scripted world)', () => {
         expect(notes.find(n => n.what === 'burst 1')).toMatchObject({ load: 26, slotsUsedBefore: 1, chiselWithdrawn: 1 });
     });
 
+    test("the short mix (93 staged and banked): from its own hand-off, W1's 26 then W2's 67, Crafting 99 exactly", async () => {
+        const bank = [{ id: CHISEL, count: 1 }, { id: 1617, count: 2 }, { id: 1619, count: 17 }, { id: 1621, count: 18 }, { id: 1623, count: 56 }];
+        const e = new Engine({ bank, crafting: craftingHandoffXp(SHORT) });
+        const { result } = await runModule(e, { stagedGems: SHORT });
+        expect(result).toEqual({ completed: 1 });
+        expect(e.starts()[0]).toMatchObject({ held: true, maxActions: 26 });
+        expect(e.starts()[1]).toMatchObject({ mixed: true, stow: true, maxActions: 67 });
+        expect(CUT_IDS.map(id => e.bank.find(b => b.id === id)?.count ?? 0)).toEqual([2, 17, 18, 56]);
+        expect(e.crafting).toBe(xpForLevel(99));
+        expect(levelForXp(e.cooking)).toBe(99);
+    });
+
     test('W1 leaving level-up pages queued (Crafting 55): continues through due - 1, the firing still at login + 20, no deadline relog, P1 within 4 events', async () => {
         const e = new Engine();
         e.w1Pages = 12;
