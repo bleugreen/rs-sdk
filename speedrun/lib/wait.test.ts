@@ -3,7 +3,7 @@ import { LOST_AFTER_TICKS } from '../runner/resume';
 import { FakeSdk } from './fake-sdk';
 import { fakeClock as jest, peek, tickEvery, useFakeTicks } from './fake-ticks';
 import type { BotWorldState } from '../../sdk/types';
-import { failureReason, IDLE_TICKS, nextTick, onStates, STALLED, tickPeriod, waitOrThrow, waitTicks, waitUntil, type WaitResult } from './wait';
+import { failureReason, IDLE_PERIOD_MIN_SPAN_MS, IDLE_TICKS, idleBoundMs, nextTick, onStates, STALLED, tickPeriod, waitOrThrow, waitTicks, waitUntil, type WaitResult } from './wait';
 
 useFakeTicks();
 
@@ -73,13 +73,49 @@ describe('a client that stops publishing', () => {
     });
 });
 
+describe('an idle bound for a known silent window', () => {
+    test('silence past IDLE_TICKS is not yet; the wait fails only after its own bound, reporting the silence', async () => {
+        const sdk = new FakeSdk();
+        const p = waitUntil(sdk, s => s.tick === 102, { maxTicks: 8, idle: { ticks: 100 } });
+        tickEvery(sdk, 300, 1);
+        jest.advanceTimersByTime(100 * 300 - 1);
+        expect(await peek(p)).toBeUndefined();
+        jest.advanceTimersByTime(1);
+        expect(await p).toMatchObject({ ok: false, reason: 'idle', tick: 101, silentMs: 100 * 300 });
+    });
+
+    test('a silent gap shorter than the bound ends in the landing tick', async () => {
+        const sdk = new FakeSdk();
+        const p = waitUntil(sdk, s => s.tick === 102, { maxTicks: 8, idle: { ticks: 100 } });
+        tickEvery(sdk, 300, 1);
+        tickEvery(sdk, 20_000, 1);
+        expect(await p).toMatchObject({ ok: true, tick: 102 });
+    });
+
+    test('scales with the observed tick period, never below tickMs', () => {
+        let ms = 0;
+        const at = (period: ReturnType<typeof tickPeriod>, tick: number, t: number) => { ms = t; period.see({ tick } as BotWorldState); };
+        const slow = tickPeriod(60_000, () => ms);
+        for (let k = 0; k <= 10; k++) at(slow, 100 + k, 400 * k);
+        expect(idleBoundMs({ ticks: 100, period: slow })).toBe(100 * 400);
+        const burst = tickPeriod(60_000, () => ms);
+        for (let k = 0; k <= 20; k++) at(burst, 100 + k, 150 * k);
+        expect(idleBoundMs({ ticks: 100, period: burst })).toBe(100 * 300);
+        const short = tickPeriod(60_000, () => ms);
+        at(short, 1, 0);
+        at(short, 2, IDLE_PERIOD_MIN_SPAN_MS - 1);
+        expect(idleBoundMs({ ticks: 100, period: short })).toBe(100 * 300);
+        expect(idleBoundMs()).toBe(IDLE_TICKS * 300);
+    });
+});
+
 describe('maxTicks', () => {
     test('reached with steady ticks: fails with reason maxTicks', async () => {
         const sdk = new FakeSdk();
         const p = waitUntil(sdk, () => false, { maxTicks: 5 });
         tickEvery(sdk, 300, 6);
         const r: WaitResult = await p;
-        expect(r).toMatchObject({ ok: false, reason: 'maxTicks', tick: 106 });
+        expect(r).toMatchObject({ ok: false, reason: 'maxTicks', tick: 106, silentMs: 0 });
     });
 
     test('waitOrThrow reports the ticks that passed', async () => {
