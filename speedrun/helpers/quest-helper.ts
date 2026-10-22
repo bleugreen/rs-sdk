@@ -54,7 +54,7 @@ import { crossingSettings } from '../lib/kandarin';
 import { journalProbe, questStatus } from '../lib/quests';
 import { closeSession, loadBotEnv, openSession, type Session } from '../lib/session';
 import { regionOf, sailTo, type Sailor } from '../lib/ships';
-import { crossTollGate, inAlKharid } from '../lib/toll-gate';
+import { crossTollGate, inAlKharid, isEastOfTollGate } from '../lib/toll-gate';
 import { logNote, TickLog, type TickRow } from '../lib/ticks';
 import { GNOME_STRONGHOLD_GATE, gateSide, inArea, passGate, runTo, spiritTree, travel, type Area, type SpiritTree, type TravelSdk } from '../lib/travel';
 import { waitUntil, type Pred } from '../lib/wait';
@@ -481,13 +481,18 @@ export function kitWithdraws(s: BotWorldState): WithdrawSpec[] {
 
 const SURFACE_BANKS = Object.values(BANKS).filter(b => !('level' in b) || !b.level);
 
+/** The nearest surface bank on the player's side of the Al Kharid toll gate (the walk cannot pay the toll). */
+export function kitBank(here: { x: number; z: number }): { x: number; z: number } {
+    const side = isEastOfTollGate(here);
+    return SURFACE_BANKS.filter(b => isEastOfTollGate(b) === side).sort((a, b) => chebyshev(a, here) - chebyshev(b, here))[0]!;
+}
+
 /** Withdraw the kit at the nearest bank (banks are shared) and wield the weapon. */
 async function kitUp(ctx: StepContext<any>): Promise<void> {
     const sdk = sdkOf(ctx);
     const deposits = kitDeposits(st(ctx));
     if (deposits.length || kitWithdraws(st(ctx)).length) {
-        const here = pos(st(ctx));
-        const bank = [...SURFACE_BANKS].sort((a, b) => chebyshev(a, here) - chebyshev(b, here))[0]!;
+        const bank = kitBank(pos(st(ctx)));
         await go(ctx, { ...bank, tol: 2 }, 'to the bank');
         const opened = await ctx.bot.openBank();
         if (!opened.success) throw new Error(`bank: ${opened.message}`);

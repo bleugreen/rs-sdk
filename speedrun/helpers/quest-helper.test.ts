@@ -4,7 +4,8 @@ import { baseState } from '../lib/fake-sdk';
 import * as grandTree from '../quests/grand-tree';
 import * as tgv from '../quests/tree-gnome-village';
 import { ROUTES } from '../skills/agility';
-import { ARMOUR, freeSlots, gtPlan, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
+import { BANKS } from './buyer';
+import { ARMOUR, freeSlots, gtPlan, kitBank, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
 import type { NearbyLoc } from '../../sdk/types';
 
 let slot = 0;
@@ -163,5 +164,15 @@ describe('pickTree', () => {
     });
     test('none in range is null', () => {
         expect(pickTree([loc(3300, 3243)], here, new Set())).toBeNull();
+    });
+});
+
+describe('kitBank', () => {
+    test('west of the toll gate it never picks Al Kharid, even when nearer', () => {
+        // Where login 3 stalled: Al Kharid's bank is 77 tiles off but behind the toll.
+        expect(kitBank({ x: 3256, z: 3243 })).toEqual(BANKS.draynor);
+    });
+    test('inside Al Kharid it banks there', () => {
+        expect(kitBank({ x: 3269, z: 3164 })).toEqual(BANKS.alKharid);
     });
 });
