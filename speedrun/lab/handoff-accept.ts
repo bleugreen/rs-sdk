@@ -16,7 +16,7 @@
 //   arrives by ::tele beside the partner, already on its tile (--tile, default the Ardougne teleport
 //   landing), and the step runs at once; `--n` runs.
 // The partner is rs/41's HS1 giver code (helpers/mule.ts giveOpenTrade, burst, ANY_OFFER), with
-// bone-giver.ts's standing-request rule. --client=browser puts <scored> in a Chrome tab on the lab's
+// lib/trade.ts's one trade-click rule (decideTradeClick) for its standing request. --client=browser puts <scored> in a Chrome tab on the lab's
 // /bot page (lab.sh with LAB_RUNNERS=0, so only the partner gets a lite runner).
 //
 // Pass: every run's step row is ok (its postcondition is the post-hand-off state) and the partner's
@@ -26,20 +26,19 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import puppeteer from 'puppeteer';
-import { decideRequest, newRequestCtx } from '../helpers/bone-giver';
 import { giveOpenTrade } from '../helpers/mule';
 import { wield } from '../lib/act';
 import { closeSession, openSession, type Session } from '../lib/session';
 import { formatReport, report } from '../lib/ticks';
-import { sameName, tradeOf } from '../lib/trade';
+import { clickBack, decideTradeClick, newClickCtx, sameName, sendTradeClick, tradeOf } from '../lib/trade';
 import { nextTick, waitTicks, waitUntil } from '../lib/wait';
 import { configIds, onTutorialIsland, pos } from '../lib/world';
 import { handOffFrom, handOffStep, type HandOffPlan, type HandOffReport } from '../runner/handoff';
 import { runSteps } from '../runner/step';
-import { LUMBRIDGE_SPAWN, tutorialSkip } from '../skills/start';
+import { LUMBRIDGE_SPAWN } from '../skills/start';
 import { MANIFEST } from '../tools/slot-ledger';
 import { arg, botArg, labLog, result } from './common';
-import { cheat, mustTele, setStats } from './setup';
+import { cheat, leaveTutorial, mustTele, setStats } from './setup';
 
 const row = arg('row', 'H1');
 const partnerName = arg('partner', '');
@@ -89,7 +88,7 @@ const scored = await openSession(botArg(), browserMode ? { client: 'browser', la
 const partner = await openSession(partnerName, { pathfinding: false });
 const log = labLog(`handoff-${row}`);
 const noStop = { shouldStop: () => false, logout: async () => {} };
-const leave = (s: Session) => runSteps(s, [tutorialSkip], { log, c: {}, ...noStop, tickMonitor: false });
+const leave = (s: Session) => leaveTutorial(s, log);
 
 async function wipe(s: Session): Promise<void> {
     await cheat(s.sdk, '~clearinv inv');
@@ -106,21 +105,26 @@ async function stage(s: Session, items: ReadonlyArray<{ name: string; count: num
     await waitTicks(s.sdk, 2);
 }
 
-/** The partner's side: a request standing once SCORED is in view, then HS1's giver on the open trade. */
+/**
+ * The partner's side: a request standing once SCORED is in view, then HS1's giver on the open trade.
+ * The request re-sends only after a busy bounce or no reply, never once it has landed: a request
+ * landing on an open trade closes it (decideTradeClick, as the fleet givers use it).
+ */
 function serve(scoredName: string, stop: () => boolean) {
     return (async () => {
-        let req = newRequestCtx();
+        let req = newClickCtx();
         while (!stop()) {
             const st = await nextTick(partner.sdk);
             const t = tradeOf(st);
             if (!t.isOpen) {
                 const p = st.nearbyPlayers.find(x => sameName(x.name, scoredName));
                 if (!p) continue;
-                const d = decideRequest(st, req, { noReplyTicks: 3, resendTicks: 100 });
+                const d = decideTradeClick(st, req, { noReplyTicks: 3, resendTicks: 100 });
                 req = d.next;
-                if (d.action === 'send') void partner.sdk.sendTradeRequest(p.index);
+                if (d.action === 'send') sendTradeClick(partner.sdk, p.index, req.sentTick, (sent, tick) => (req = clickBack(req, sent, tick)));
                 continue;
             }
+            req = newClickCtx();
             if (!sameName(t.partner, scoredName)) {
                 await partner.sdk.sendDeclineTrade();
                 continue;
