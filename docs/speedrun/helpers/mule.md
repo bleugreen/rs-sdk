@@ -314,8 +314,8 @@ out until its hand-off is asked for: `{ account: 'cairn_h45', role: 'mule', logi
 'H12o', family: 'mule' }, options: { serve, serveMode: 'request', packages: [<H12o's package from
 mule-ledger.ts, scope { step: 'H12o', family: 'mule' }>] } }`. `run.ts` opens the cue at least 52
 ticks before Monkey Madness segment P, which logs the account in. The mule then reads the same cue
-as its request, and the cue's stop after the trade logs the account out (HELPERS.md, "The cue
-gate"). The launcher passes the opening cue's time as `LOGIN_CUE_MS`, and the mule counts its cues
+as its request, and the cue's final stop after the trade (or the next scope's cue) logs the account out (HELPERS.md,
+"The cue gate"). The launcher passes the opening cue's time as `LOGIN_CUE_MS`, and the mule counts its cues
 from then (`cueEpoch`), so a login slower than `STALE_CUE_MS` still serves the request. One
 `cue.json` per directory: no other mule-family cue may be open while H12o's is. If one ever has to
 be, give cairn_h45 its own `cueDir`.
