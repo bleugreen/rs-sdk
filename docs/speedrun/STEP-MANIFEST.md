@@ -374,7 +374,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     ceil(60000 / period); RUN-ORDER.md R23) and #233 (the lab staging guard: `tele()` and
     `mustTele()` refuse on Tutorial Island; "How to read an entry"). Its history holds 4fe2d0a8
     (#209, rs/246: one idle timeout, `tickClock`, for every tick-keyed wait, `maxTicks` on observed
-    ticks and only `IDLE_TICKS`, 20 ticks of silence, in wall clock; R23) and 1514f47a (#222, rs/268's
+    ticks and only `IDLE_TICKS`, 20 ticks of silence, in wall clock; R23), 1514f47a (#222, rs/268's
     snapshot of rs/196's Runecraft step module, entry 9), 148788c5 (#221, rs/262: `HostGate`'s
     `measureDrops` default 120, fishing's explicit 120; RUN-ORDER.md R21), 4235a9e7 (#220, rs/260's
     snapshot of rs/230's Mining module: `mining.ts`, knife-mine's `selfStarter`, gated-program's
