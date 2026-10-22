@@ -67,7 +67,8 @@ const fx = (letter: string, mcannon: number, multi: number, tile: QuestFixture['
     return {
         letter,
         levels,
-        vars: { mcannon, mcannonmulti: multi, elenaquest: WALK ? 0 : 30 },
+        // option_nodef 1: auto-retaliate off (player_controls.constant), as the run plays (main's run-wide rule).
+        vars: { mcannon, mcannonmulti: multi, elenaquest: WALK ? 0 : 30, option_nodef: 1 },
         items: n > 0 ? { ...items, [FILLER]: n } : items,
         tile,
         ...(note ? { note } : {}),
@@ -125,7 +126,7 @@ const lab: LabQuest<Options> = {
         const lv = (k: string) => session.sdk.getState()?.skills.find(x => x.name.toLowerCase() === k);
         const c = lv('crafting');
         const m = lv('smithing');
-        console.log(`LEVELS crafting ${c?.level}/${c?.baseLevel} smithing ${m?.level}/${m?.baseLevel} hitpoints ${lv('hitpoints')?.level}`);
+        console.log(`LEVELS crafting ${c?.level}/${c?.baseLevel} smithing ${m?.level}/${m?.baseLevel} hitpoints ${lv('hitpoints')?.level} autoRetaliate ${session.sdk.getState()?.autoRetaliateEnabled ? 'on' : 'off'}`);
     },
 };
 
