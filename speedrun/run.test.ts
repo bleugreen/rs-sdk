@@ -3,7 +3,9 @@ import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { TickLog } from './lib/ticks';
-import { aliasAccount, chainOrRefusal, type GateIO, LOG_ACCOUNT, loadRunConfig, parseArgs, startGates, TARGET_TOTAL, totalLevel, UsageError } from './run';
+import { MANIFEST } from './tools/slot-ledger';
+import { readFileSync } from 'fs';
+import { aliasAccount, cannonServeDrift, chainOrRefusal, type GateIO, LOG_ACCOUNT, loadRunConfig, parseArgs, startGates, TARGET_TOTAL, totalLevel, UsageError } from './run';
 import { buildChain, KIT_PARTNER_ROWS, PLACEMENT, sliceUntil } from './runner/chain';
 
 const cues = { open: async () => {}, stop: () => {} };
@@ -12,14 +14,15 @@ const cfg = { partners, firemakingTiles: '3240,3296', rings: { giver: 'r' }, bon
 const full = buildChain(cfg, { cues });
 
 describe('parseArgs', () => {
-    test('defaults: browser, the run dir, no slice', () => {
-        const a = parseArgs(['--bot=scored', '--config=run.json']);
-        expect(a).toMatchObject({ bot: 'scored', config: 'run.json', client: 'browser', dryRun: false });
+    test('defaults: browser, the run dir, no slice; the log is stable in the run dir, so the same command again resumes into it', () => {
+        const a = parseArgs(['--bot=scored', '--config=run.json', '--run-dir=/runs/m']);
+        expect(a).toMatchObject({ bot: 'scored', config: 'run.json', client: 'browser', dryRun: false, log: '/runs/m/run.jsonl', cannonServe: '/runs/m/cannon-serve.json' });
         expect(a.until).toBeUndefined();
+        expect(parseArgs(['--bot=scored', '--config=run.json', '--run-dir=/runs/m']).log).toBe(a.log);
     });
     test('every flag', () => {
-        expect(parseArgs(['--bot=s', '--config=c', '--client=lite', '--from=S07', '--until=S14', '--dry-run', '--log=l', '--run-commit=abc', '--run-dir=/r', '--host-reservation=/h', '--claim-owner=rs/393']))
-            .toEqual({ bot: 's', config: 'c', client: 'lite', from: 'S07', until: 'S14', dryRun: true, log: 'l', runCommit: 'abc', runDir: '/r', hostReservation: '/h', claimOwner: 'rs/393' });
+        expect(parseArgs(['--bot=s', '--config=c', '--client=lite', '--from=S07', '--until=S14', '--dry-run', '--log=/l.jsonl', '--run-commit=abc', '--run-dir=/r', '--host-reservation=/h', '--claim-owner=rs/393', '--cannon-serve=/c.json']))
+            .toEqual({ bot: 's', config: 'c', client: 'lite', from: 'S07', until: 'S14', dryRun: true, log: '/l.jsonl', runCommit: 'abc', runDir: '/r', hostReservation: '/h', claimOwner: 'rs/393', cannonServe: '/c.json' });
     });
     test('refusals', () => {
         expect(() => parseArgs(['--config=c'])).toThrow(UsageError);
@@ -53,6 +56,7 @@ describe('startGates', () => {
         reservation: () => ({ owner: 'rs/393', state: live('rs/393'), path: '/h' }),
         slotLedger: async () => ({ code: 0, out: '' }),
         helpersReady: () => true,
+        cannonServe: () => ({ path: '/c.json', serve: null, error: 'ENOENT' }),
         ...o,
     });
     const s04 = sliceUntil(full, 'S04');
@@ -78,6 +82,30 @@ describe('startGates', () => {
     test('the scored run needs its own claim: none named, or none live, refuses', async () => {
         expect((await startGates(s04, io({ reservation: () => ({ owner: undefined, state: live('rs/393'), path: '/h' }) })))[1]!.ok).toBe(false);
         expect((await startGates(s04, io({ reservation: () => ({ owner: 'rs/393', state: { state: 'none' }, path: '/h' }) })))[1]!.detail).toContain('no live claim');
+    });
+});
+
+describe('gate 6: the cannon holder\'s serve against the ledger rows', () => {
+    const manifest = readFileSync(MANIFEST, 'utf8');
+    const h11Row = manifest.split('\n').find(l => l.startsWith('| H11 |'))!;
+    // Fold-in 24's shape (rs/158): H11 the set and 100 balls, the scimitar and runes, no sharks.
+    const foldIn24 = manifest.replace(h11Row, h11Row.replace(/; shark to 9 \[u\][^|]*/, ' '));
+    const h11 = { balls: 100, extras: [{ item: 'Mithril scimitar', count: 1 }, { item: 'Law rune', count: 4 }, { item: 'Water rune', count: 4 }], returnExtras: [] };
+
+    test('only on a path that reaches a cannon row; a missing serve file refuses with where it should be', async () => {
+        const io = { floor: async () => ({ ok: true as const, floor: 'f', runCommit: 'a'.repeat(40), line: 1 }), reservation: () => ({ owner: 'o', state: { state: 'live' as const, reservation: { owner: 'o', until: '2099-01-01T00:00:00Z', reason: '' } }, path: '/h' }), slotLedger: async () => ({ code: 0, out: '' }), helpersReady: () => true, cannonServe: () => ({ path: '/run/cannon-serve.json', serve: null, error: 'ENOENT' }) };
+        expect((await startGates(sliceUntil(full, 'S13'), io)).map(g => g.gate)).not.toContain('cannon serve');
+        const g = (await startGates(sliceUntil(full, 'S14'), io)).find(x => x.gate === 'cannon serve')!;
+        expect([g.ok, g.detail]).toEqual([false, "/run/cannon-serve.json: ENOENT (rs/41 writes h92's run-day serve options there)"]);
+    });
+
+    test('a serve equal to the row passes; a short one, a top-up row, or a wrong return refuses', () => {
+        expect(cannonServeDrift({ H11: h11 }, ['H11'], foldIn24)).toEqual([]);
+        expect(cannonServeDrift({ H11: { ...h11, extras: h11.extras.slice(1) } }, ['H11'], foldIn24).join()).toContain('mithril scimitar served not at all');
+        // Today's ledger still has `shark to 9`: no fixed serve count is safe against a top-up.
+        expect(cannonServeDrift({ H11: { ...h11, extras: [...h11.extras, { item: 'Shark', count: 2 }] } }, ['H11'], manifest).join()).toContain('top-up to 9');
+        expect(cannonServeDrift({ H11: { ...h11, returnExtras: [{ item: 'Magic shortbow', count: 1 }] } }, ['H11'], foldIn24).join()).toContain('H11r: serve.returnExtras');
+        expect(cannonServeDrift({}, ['H23'], foldIn24)).toEqual(['H23: no serve options for the row']);
     });
 });
 
