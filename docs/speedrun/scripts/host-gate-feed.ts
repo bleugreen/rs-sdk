@@ -73,7 +73,7 @@ export interface PathCheck {
     anomalies: PathAnomaly[];
 }
 
-const round1 = (v: number) => Math.round(v * 10) / 10;
+const round1 = (v: number) => Math.round(v * 10) / 10 || 0;
 
 function median(values: readonly number[]): number {
     const s = [...values].sort((a, b) => a - b);
@@ -104,10 +104,10 @@ export function parseFeedLog(text: string): FeedTick[] {
  *
  * `arrivalsMs` is the gate's `result.tickArrivalsMs`: one entry per consecutive tick label,
  * relative to the first, so frame i is server tick k0 + i. `endEpochMs` places the last entry on
- * the epoch clock. The feed frame nearest it fixes k0 to within a few ticks; of the shifts within
- * 3 ticks, the one whose median arrival difference (probe minus feed) is smallest in size is taken,
- * so a held last frame cannot move the match. That median is the offset; a match that leaves it
- * over T/3 is not a match, and the check is null.
+ * the epoch clock. Each probe frame within T/2 of a feed frame votes for k0, and of the shifts
+ * within 3 ticks of the most voted, the one whose median arrival difference (probe minus feed) is
+ * smallest in size is taken, so held frames cannot move the match. That median is the offset; a
+ * match that leaves it over T/3, or covers under half the probe, is not a match: the check is null.
  *
  * Then, with the probe interval d into tick k and the engine's own s(k):
  * - late, d > 7/6 T: `server slow` when s(k) > 7/6 T, else `path-held`;
@@ -123,11 +123,25 @@ export function pathCheck(feed: readonly FeedTick[], arrivalsMs: readonly number
     const byK = new Map(feed.map(f => [f.k, f]));
     const base = endEpochMs - arrivalsMs[n - 1]!;
     const abs = arrivalsMs.map(a => base + a);
-    let nearest = feed[0]!;
-    for (const f of feed) if (Math.abs(f.at - abs[n - 1]!) < Math.abs(nearest.at - abs[n - 1]!)) nearest = f;
+    // each probe frame within half a tick of a feed frame votes for k0
+    const byAt = [...feed].sort((a, b) => a.at - b.at);
+    const votes = new Map<number, number>();
+    abs.forEach((a, i) => {
+        let lo = 0;
+        let hi = byAt.length - 1;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (byAt[mid]!.at < a) lo = mid + 1;
+            else hi = mid;
+        }
+        const f = [byAt[lo - 1], byAt[lo]].filter(x => x !== undefined).sort((x, y) => Math.abs(x.at - a) - Math.abs(y.at - a))[0]!;
+        if (Math.abs(f.at - a) < T / 2) votes.set(f.k - i, (votes.get(f.k - i) ?? 0) + 1);
+    });
+    if (votes.size === 0) return null;
+    const voted = [...votes].reduce((x, y) => (y[1] > x[1] ? y : x))[0];
     let best: { k0: number; offset: number; res: (number | null)[] } | null = null;
     for (const d of [0, -1, 1, -2, 2, -3, 3]) {
-        const k0 = nearest.k - (n - 1) + d;
+        const k0 = voted + d;
         const res = abs.map((a, i) => {
             const f = byK.get(k0 + i);
             return f ? a - f.at : null;

@@ -39,10 +39,16 @@ function check(feed: FeedTick[], probe: ReturnType<typeof probeOf>) {
 }
 
 describe('pathCheck', () => {
-    test('a server overrun and its catch-up read as the server', () => {
+    // an overrun tick and, on the engine's fixed grid, the next one run at once
+    const overrun = () => {
         const ms = steady(200);
-        ms[60] = 560;
-        ms[61] = 240;
+        ms[60] = 610;
+        ms[61] = 190;
+        return ms;
+    };
+
+    test('a server overrun and its catch-up read as the server', () => {
+        const ms = overrun();
         const feed = feedOf(ms);
         const r = check(feed, probeOf(feed, K0 + 20, 151));
         expect(r).not.toBeNull();
@@ -52,8 +58,8 @@ describe('pathCheck', () => {
         expect(r!.ticksMatched).toBe(151);
         expect([r!.serverSlow, r!.serverCatchUp, r!.pathHeld, r!.unmatched]).toEqual([1, 1, 0, 0]);
         expect(r!.anomalies).toEqual([
-            { k: K0 + 60, probeMs: 560, serverMs: 560, heldMs: 0, label: 'server slow' },
-            { k: K0 + 61, probeMs: 240, serverMs: 240, heldMs: 0, label: 'server catch-up' },
+            { k: K0 + 60, probeMs: 610, serverMs: 610, heldMs: 0, label: 'server slow' },
+            { k: K0 + 61, probeMs: 190, serverMs: 190, heldMs: 0, label: 'server catch-up' },
         ]);
     });
 
@@ -63,27 +69,21 @@ describe('pathCheck', () => {
         expect([r!.serverSlow, r!.serverCatchUp, r!.pathHeld, r!.unmatched]).toEqual([0, 0, 3, 0]);
         expect(r!.anomalies.map(a => [a.k - K0, a.probeMs, a.serverMs, a.heldMs, a.label])).toEqual([
             [80, 800.2, 400, 400.2, 'path-held'],
-            [81, 0, 400, 0, 'path-held'],
+            [81, 0, 400, 0.2, 'path-held'],
             [100, 580, 400, 180, 'path-held'],
         ]);
         expect(r!.offsetMs).toBeCloseTo(3.2, 1);
     });
 
     test('both in one minute', () => {
-        const ms = steady(200);
-        ms[60] = 560;
-        ms[61] = 240;
-        const feed = feedOf(ms);
+        const feed = feedOf(overrun());
         const r = check(feed, probeOf(feed, K0 + 20, 151, { hold: glue(K0 + 120) }));
         expect([r!.serverSlow, r!.serverCatchUp, r!.pathHeld, r!.unmatched]).toEqual([1, 1, 2, 0]);
         expect(r!.anomalies.map(a => `${a.k - K0} ${a.label}`)).toEqual(['60 server slow', '61 server catch-up', '120 path-held', '121 path-held']);
     });
 
-    test('a held overrun stays the server, a held catch-up tick does not make one', () => {
-        const ms = steady(200);
-        ms[60] = 560;
-        ms[61] = 240;
-        const feed = feedOf(ms);
+    test('an overrun the path held as well stays the server', () => {
+        const feed = feedOf(overrun());
         // the overrun tick held 100 ms more: still the server's late tick, then its catch-up
         const r = check(feed, probeOf(feed, K0 + 20, 151, { hold: { [K0 + 60]: 100 } }));
         expect(r!.anomalies.map(a => `${a.k - K0} ${a.label} ${a.heldMs}`)).toEqual(['60 server slow 100', '61 server catch-up 0']);
@@ -95,6 +95,14 @@ describe('pathCheck', () => {
         expect(r!.probeFirstTick).toBe(K0 + 20);
         expect(r!.offsetMs).toBeCloseTo(3.2, 1);
         expect(r!.anomalies.map(a => `${a.k - K0} ${a.label} ${a.heldMs}`)).toEqual(['170 path-held 260']);
+    });
+
+    test('a 300-500 ms tick after an overrun is not a catch-up (under T/2 only)', () => {
+        const ms = steady(200);
+        ms[60] = 560;
+        ms[61] = 240;
+        const feed = feedOf(ms);
+        expect(check(feed, probeOf(feed, K0 + 20, 151))!.anomalies.map(a => `${a.k - K0} ${a.label}`)).toEqual(['60 server slow']);
     });
 
     test('ticks past the end of the feed are unmatched', () => {
