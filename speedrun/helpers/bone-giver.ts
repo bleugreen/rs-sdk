@@ -555,6 +555,8 @@ export class BoneGiver {
     private seeded = false;
     /** Why the giver went off early (BankShortError in a group). */
     private offDetail = '';
+    /** acceptReturn: a returned load waits in the pack; bank it on the next cycle even though it is a full load. */
+    private mustBank = false;
 
     constructor(private readonly ctx: RoleContext) {
         this.o = boneGiverOptions(ctx.options);
@@ -703,7 +705,8 @@ export class BoneGiver {
         const k = this.loadsDone();
         const extras = carriesFinal || isFinalLoad(o, k) ? o.finalExtras : [];
         const bones = o.group.length ? o.n : loadBones(o, k);
-        if (this.held() !== bones || extras.some(e => count(this.s, exact(e.item)) < e.count)) {
+        if (this.mustBank || this.held() !== bones || extras.some(e => count(this.s, exact(e.item)) < e.count)) {
+            this.mustBank = false;
             this.setPhase('restock', carriesFinal ? 'with the last load\'s extras' : extras.length ? 'the last load' : '');
             await this.restock(bones, extras);
         }
@@ -925,10 +928,14 @@ export class BoneGiver {
     /** Rehearsal: the load just given comes straight back (bone-receiver.ts returnLoads); the next restock banks it. */
     private async takeReturn(partner: string, gave: readonly { name: string; count: number }[]): Promise<void> {
         const want = returnWants(gave);
-        // Not 'trading': a giver taking its load back must not look like the group's server.
-        this.setPhase('restock', 'taking the load back');
+        // Still 'trading', so it keeps the turn: the next giver must not request while the stand-in is in
+        // this trade. Such a request got no busy refusal in the lab, so that giver took it as standing and
+        // waited out resendTicks (35 ticks per load) before the stand-in's click could open.
+        this.setPhase('trading', 'taking the load back');
         const r = await receiveFrom(this.ctx.sdk, partner, { want: want.map(w => ({ item: exact(w.name), amount: w.count })), openTimeoutMs: 60_000 });
         this.ctx.log('return', { ok: r.ok, ticks: r.ticks, received: r.received.map(i => `${i.name} x${i.count}`), ...(r.reason ? { reason: r.reason } : {}) });
+        // The returned load is banked at the next restock and the next one withdrawn: the run's round trip, dragon first.
+        this.mustBank = true;
     }
 
     /** Rehearsal end: bank everything held, so the bank is back to its staged count; log what it holds. */

@@ -219,11 +219,12 @@ export const role: Role = {
                     break;
                 }
                 if (returnLoads) {
-                    // Straight back to the giver that served it: every bone and extra it brought, by exact name.
+                    // Straight back to the giver that served it: exactly what the trade brought, by exact name
+                    // (anything the pack already held stays).
                     const received = s().tick;
                     lastReceive = received;
                     const back = new Map<string, number>();
-                    for (const i of s().inventory) if (BONES.test(i.name) || extras.some(e => e.item.test(i.name))) back.set(i.name, (back.get(i.name) ?? 0) + i.count);
+                    for (const i of r.received) back.set(i.name, (back.get(i.name) ?? 0) + i.count);
                     const g = await give(sdk, giver, [...back].map(([name, c]) => ({ item: exactItem(name), n: c })), { openTimeoutMs: 60_000 });
                     res.returned = { ok: g.ok, ticks: g.ticks, ...(g.reason ? { reason: g.reason } : {}) };
                     ctx.log('load', { ...res });
