@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Pre-Monkey-Madness fights lab (docs/speedrun/quests/pre_mm_fights.md): start a
-# local engine at the production 300 ms tick, a gateway and a headless bot on
+# local engine at the demo's 400 ms tick (NODE_TICKRATE), a gateway and a headless bot on
 # the pre-MM port block, run the given scripts in order, then tear down.
 # Run from the repo root:
 #   bash docs/speedrun/scripts/quest-premm-lab.sh <script> [args] [-- <script> [args]]...
 #   e.g. bash docs/speedrun/scripts/quest-premm-lab.sh quest-premm-fight.ts warlord 3 mode=fire_bolt
 # Each script is called as `bun docs/speedrun/scripts/<script> <bot> [args]`.
-# TICKRATE=100 overrides the tick (only for non-reactive segments).
+# NODE_TICKRATE=100 overrides the tick (only for non-reactive segments).
 #
 # Same shape as quest-dragon-lab.sh (this block's previous owner). Engine flags
 # beyond docs/speedrun/LAB.md: BUILD_LIVE_RELOAD=false (the dev content watcher
@@ -16,7 +16,7 @@
 # the SDK's 5 s state waits then time out mid-fight.
 set -u
 ROOT=$(git rev-parse --show-toplevel); cd "$ROOT"
-W=9020; MGMT=9021; HS=9022; NODE=43720; AGENT=7920; BOT=${BOT:-premm56}; TICK=${TICKRATE:-300}
+W=9020; MGMT=9021; HS=9022; NODE=43720; AGENT=7920; BOT=${BOT:-premm56}; TICK=${NODE_TICKRATE:-400}
 LOG=${TMPDIR:-/tmp}/premmlab; rm -rf "$LOG"; mkdir -p "$LOG"
 killports() { for p in $W $MGMT $HS $NODE $AGENT; do pids=$(lsof -ti tcp:$p 2>/dev/null); [ -n "$pids" ] && kill -9 $pids 2>/dev/null; done; }
 TO=$(command -v timeout || command -v gtimeout || true)

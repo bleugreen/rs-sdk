@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import type { ActionResult } from '../../sdk/types';
 import { baseState, FakeSdk, flush, type SentAction } from './fake-sdk';
 import { awaitProgram, marksSince, overBudgetMeta, probeInPage, ProgramError, programCounters, type ProgramStatus, runProgram, startProgram } from './programs';
+import { peek } from './fake-ticks';
+import { sleep, TickPeriod } from './wait';
 
 /** A FakeSdk with the relay the page answers: records program actions, replies like ProgramRuntime.command. */
 class PageSdk extends FakeSdk {
@@ -101,6 +103,26 @@ describe('speedrun programs', () => {
         sdk.runId = 1;
         sdk.publish({});
         await expect(awaitProgram(sdk, 1, { staleMs: 20 })).rejects.toThrow(/wedged/);
+    });
+
+    test('the default stale bound is 20 ticks of the observed period when it is longer than nominal', async () => {
+        const saved = process.env.SPEEDRUN_TICK_MS;
+        process.env.SPEEDRUN_TICK_MS = '2';
+        try {
+            const sdk = new PageSdk(baseState());
+            sdk.runId = 1;
+            const period = new TickPeriod();
+            for (let k = 0; k <= 40; k++) period.see(k, k * 100);
+            const p = awaitProgram(sdk, 1, { period });
+            sdk.publish({});
+            await sleep(20 * 2 + 20); // past 20 nominal ticks: still waiting
+            expect(await peek(p)).toBeUndefined();
+            sdk.publish({ phase: 'done' });
+            expect((await p).phase).toBe('done');
+        } finally {
+            if (saved === undefined) delete process.env.SPEEDRUN_TICK_MS;
+            else process.env.SPEEDRUN_TICK_MS = saved;
+        }
     });
 
     test('maxTicks gives up on a run still going after that many ticks, but not on one that ends on the last', async () => {

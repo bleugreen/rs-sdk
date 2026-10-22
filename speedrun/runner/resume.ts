@@ -30,7 +30,7 @@ import { ensureRunOn } from '../lib/run-mode';
 import type { Session } from '../lib/session';
 import { startRunTickMonitor } from '../lib/tick-monitor';
 import { tickSpan, type TickLog } from '../lib/ticks';
-import { currentTick, nextTick, sleep, tickMs } from '../lib/wait';
+import { currentTick, idleBoundMs, nextTick, periodMs, sleep, tickMs } from '../lib/wait';
 import { Fence } from './fence';
 import { resolveStart, runSteps, type Observed, type RunnerSession, type RunStepsOptions, type RunStepsResult, type Step } from './step';
 
@@ -137,7 +137,8 @@ export interface SessionLinkOptions {
  * brought back.
  */
 export function sessionLink(session: Session, opts: SessionLinkOptions = {}): Link {
-    const staleMs = () => (opts.staleTicks ?? LOST_AFTER_TICKS) * tickMs();
+    // Silence has no ticks to count: N ticks at the longer of the nominal and observed period.
+    const staleMs = () => idleBoundMs({ ticks: opts.staleTicks ?? LOST_AFTER_TICKS, period: session.period });
     const pollMs = opts.pollMs ?? 100;
     let lostAt = 0;
     const why = (): string | null => {
@@ -145,7 +146,7 @@ export function sessionLink(session: Session, opts: SessionLinkOptions = {}): Li
         const s = session.sdk.getState();
         if (s && !s.inGame && session.expectInWorld) return 'client out of game';
         const since = Date.now() - session.lastAdvanceAt;
-        if (since > staleMs() && session.expectInWorld) return `no tick for ${since} ms`;
+        if (since > staleMs() && session.expectInWorld) return `no tick for ~${Math.round(since / periodMs(session.period))} ticks (${since} ms)`;
         return null;
     };
     return {

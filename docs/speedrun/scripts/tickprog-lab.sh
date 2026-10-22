@@ -3,7 +3,7 @@
 # (docs/speedrun/LAB.md), this checkout's browser bundle, the bot's page in Chrome
 # (tickprog-tab.ts), then each tickprog-measure.ts mode in order, then stop everything.
 #
-#   LAB_BLOCK=tickmanip NODE_TICKRATE=300 bash docs/speedrun/scripts/tickprog-lab.sh <bot> <mode>[:--k=v:...] ...
+#   LAB_BLOCK=tickmanip NODE_TICKRATE=400 bash docs/speedrun/scripts/tickprog-lab.sh <bot> <mode>[:--k=v:...] ...
 #   e.g. ... tickprog-lab.sh cairntp1 probe:--trials=60 mine:--ores=200 fly:--until=99 wedge
 #
 # Bot names are letters and digits only, at most 12 (bots/create-bot.ts refuses anything else).
@@ -36,7 +36,7 @@ case "$BLOCK" in
 esac
 export WEB_PORT=$((8900 + 10 * N)) WEB_MANAGEMENT_PORT=$((8901 + 10 * N)) HISCORES_WEB_PORT=$((8902 + 10 * N))
 export NODE_PORT=$((43600 + 10 * N)) AGENT_PORT=$((7800 + 10 * N))
-export NODE_TICKRATE=${NODE_TICKRATE:-300}
+export NODE_TICKRATE=${NODE_TICKRATE:-400}
 LOG=${LAB_LOG:-${TMPDIR:-/tmp}/tickprog-$BLOCK}
 mkdir -p "$LOG"
 # A block another lab holds would take this lab's page and bots into that lab's engine.

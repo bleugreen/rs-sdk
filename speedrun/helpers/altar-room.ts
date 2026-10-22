@@ -6,7 +6,7 @@ import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
 import { ALTARS } from '../lib/runecraft';
 import type { HandBackItem } from './altar-cue';
 import { withdrawMany } from '../lib/bank';
-import { waitUntil } from '../lib/wait';
+import { tickMs, waitUntil } from '../lib/wait';
 import { closeBank, depositAllExcept, openBank, walkNear } from './mule';
 import type { RoleContext } from './role';
 import { acceptSupplies } from './wine';
@@ -276,7 +276,7 @@ export async function restock(ctx: RoleContext, altar: Altar, o: RestockOptions,
         await walkNear(ctx, at.x, at.z, 3);
         while (!loaded() && !ctx.signal.aborted) {
             phase(`waiting at ${at.x},${at.z} for a supply trade`);
-            await acceptSupplies(ctx, new RegExp(o.acceptFrom, 'i'), 60_000);
+            await acceptSupplies(ctx, new RegExp(o.acceptFrom, 'i'), 200 * tickMs());
         }
         return;
     }
@@ -320,9 +320,9 @@ export async function restock(ctx: RoleContext, altar: Altar, o: RestockOptions,
             await until(ctx, loaded, 10);
         } else if (o.acceptFrom) {
             phase(`bank short (${JSON.stringify(short)}); waiting for a supply trade`);
-            await acceptSupplies(ctx, new RegExp(o.acceptFrom, 'i'), 60_000);
+            await acceptSupplies(ctx, new RegExp(o.acceptFrom, 'i'), 200 * tickMs());
         } else {
-            phase(`bank short (${JSON.stringify(short)}); nothing to wait for, retrying in a minute`);
+            phase(`bank short (${JSON.stringify(short)}); nothing to wait for, retrying in 200 ticks`);
             await ctx.sdk.waitForTicks(200).catch(() => {});
         }
     }

@@ -360,7 +360,10 @@ export async function depositForTimer(ctx: ReceiverCtx, amount: number | 'all', 
 
 // ---------------------------------------------------------------- the trade
 
-async function takeTrade(ctx: ReceiverCtx, giver: string, wantNotes: number, kit: boolean, openTimeoutMs: number): Promise<{ received: number; tradeTicks: number; skipped: boolean }> {
+/** Observed ticks the wine trade gets to open by default (the 120 s wall default it replaces, at 300 ms). */
+export const WINE_OPEN_TICKS = 400;
+
+async function takeTrade(ctx: ReceiverCtx, giver: string, wantNotes: number, kit: boolean, openTimeoutMs: number | undefined): Promise<{ received: number; tradeTicks: number; skipped: boolean }> {
     const { sdk } = ctx;
     const s = sdk.getState();
     const hasKit = count(s, ITEM.grapes) >= 1 && count(s, ITEM.jugWater) >= 1;
@@ -369,7 +372,7 @@ async function takeTrade(ctx: ReceiverCtx, giver: string, wantNotes: number, kit
     const before = count(s, ITEM.wineNote);
     const want = [{ item: /^unfermented wine$/i, amount: wantNotes - before }];
     if (kit) want.push({ item: /^grapes$/i, amount: 1 }, { item: /^jug of water$/i, amount: 1 });
-    const r = await receiveFrom(sdk, giver, { want, openTimeoutMs });
+    const r = await receiveFrom(sdk, giver, { want, ...(openTimeoutMs === undefined ? { openMaxTicks: WINE_OPEN_TICKS } : { openTimeoutMs }) });
     // The inventory is the truth: on the demo a receiver reported a declined trade
     // whose items had arrived (its decline landed after the trade completed).
     const received = count(sdk.getState(), ITEM.wineNote) - before;
@@ -408,7 +411,7 @@ export interface ReceiveResult {
  */
 export async function receiveWine(ctx: ReceiverCtx, giver: string, opts: LoginWindow & { depositAmount?: number; minWines?: number; openTimeoutMs?: number }): Promise<ReceiveResult> {
     const firstClickTick = ctx.sdk.getState()?.tick ?? 0;
-    const t = await takeTrade(ctx, giver, opts.minWines ?? 1, false, opts.openTimeoutMs ?? 120_000);
+    const t = await takeTrade(ctx, giver, opts.minWines ?? 1, false, opts.openTimeoutMs);
     const dep = await depositForTimer(ctx, opts.depositAmount ?? 'all', opts.loginTick + FERMENT_TIMER_TICKS);
     let loginTick = opts.loginTick;
     let relogs = 0;
@@ -582,7 +585,7 @@ export async function splitDelivery(ctx: ReceiverCtx, giver: string, opts: Split
     const from = opts.from ?? 'trade';
     const reaches = (stage: SplitStage) => STAGES.indexOf(from) <= STAGES.indexOf(stage);
     let arming: SecondArming = opts.arming ?? 'relog';
-    const t = reaches('trade') ? await takeTrade(ctx, giver, first + 1, arming === 'make', opts.openTimeoutMs ?? 120_000) : { received: 0, tradeTicks: 0, skipped: true };
+    const t = reaches('trade') ? await takeTrade(ctx, giver, first + 1, arming === 'make', opts.openTimeoutMs) : { received: 0, tradeTicks: 0, skipped: true };
     const received = t.skipped ? 0 : t.received;
 
     // First firing: the login timer.

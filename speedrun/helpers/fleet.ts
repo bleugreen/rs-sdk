@@ -56,6 +56,7 @@ import {
 } from './fleet-config';
 import { LedgerWriter, readLedger, writeJsonAtomic, type Ledger } from './ledger';
 import { describeFreshState, waitForFreshState } from '../lib/fresh-state';
+import { idleBoundMs } from '../lib/wait';
 import { openRoleState, type BankSnapshot, type Role, type RoleContext, type RoleFinish } from './role';
 
 const ROOT = resolve(fileURLToPath(new URL('../../', import.meta.url)));
@@ -102,8 +103,8 @@ function describeCode(v: CodeVersion | undefined): string {
 const LOGIN_TIMEOUT_MS = 120_000; // first run downloads the cache and builds the world index
 const SDK_HANDSHAKE_MS = 30_000;
 const LIVE_STATE_TIMEOUT_MS = 45_000;
-/** The engine sends PLAYER_INFO every tick, so this much silence on a live session means the client is wedged. */
-const STATE_SILENCE_MS = 90_000;
+/** The engine sends PLAYER_INFO every tick, so this many ticks of silence on a live session means the client is wedged. */
+const STATE_SILENCE_TICKS = 300;
 const STOP_GRACE_MS = 15_000;
 const WATCH_EVERY_MS = 15_000;
 const STATUS_EVERY_MS = 10_000;
@@ -782,7 +783,7 @@ class AccountRunner {
     private watch(): void {
         if (this.state !== 'online' || !this.sdk) return;
         const age = this.sdk.getStateAge();
-        if (age > STATE_SILENCE_MS) {
+        if (age > idleBoundMs({ ticks: STATE_SILENCE_TICKS })) {
             this.note(`[fleet] no game state for ${Math.round(age / 1000)}s; restarting the client`);
             this.event('client_silent', { silentSec: Math.round(age / 1000) });
             void this.killChild('state went silent');

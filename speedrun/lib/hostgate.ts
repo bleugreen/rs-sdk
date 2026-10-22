@@ -31,7 +31,7 @@
 // The tick length T that (b) and (c) are read at comes from `resolveTickLength`: an explicit
 // value (the CLI's --tick-ms), else the engine's spectator feed hello (`feedTickMs`, no login),
 // else the probe's own median interval rounded to 50 ms (tickSteadiness). Never wait.ts
-// `tickMs()`, whose 300 is a default, not a reading.
+// `tickMs()`, whose fallback (DEMO_TICK_MS) is a default, not a reading.
 //
 // A constant latency costs nothing: a loop anchored on its own bootstrap send shifts every
 // roll by the same amount, and a loop anchored on an observed roll sends `mode - 1` ticks
@@ -44,7 +44,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { type CycleModel, type DirectRule, type HostVerdict, hostVerdict, latencyHistogram, type ProbePath, type ProbeSummary, steadinessHistogram, summarizeProbe, type TickLength, type TickSteadiness, tickSteadiness, validTickMs, type VantageReading, verdictText } from './hostgate-verdict';
-import { tickMs } from './wait';
+import { idleBoundMs } from './wait';
 
 export * from './hostgate-verdict';
 
@@ -70,7 +70,7 @@ export interface ProbeSdk {
 }
 
 export interface ProbeOptions {
-    /** Counted trials (default 20: about 20 ticks, 6 s at 300 ms, on a quiet host). */
+    /** Counted trials (default 20: about 20 ticks on a quiet host). */
     trials?: number;
     /** A trial with no step after this many ticks is lost (counted, not on time). Default 8. */
     maxWait?: number;
@@ -141,7 +141,7 @@ export function probeOnTime(sdk: ProbeSdk, opts: ProbeOptions = {}): Promise<Pro
         let wall: ReturnType<typeof setTimeout> | undefined;
         const armWall = () => {
             clearTimeout(wall);
-            wall = setTimeout(() => fail(new Error(`probeOnTime: no tick after ${lastTick} (client stopped publishing?)`)), (maxWait + 10) * tickMs());
+            wall = setTimeout(() => fail(new Error(`probeOnTime: no tick after ${lastTick} (client stopped publishing?)`)), idleBoundMs({ ticks: maxWait + 10 }));
         };
         const stop = () => {
             done = true;
@@ -332,7 +332,7 @@ export interface GateOptions {
     measuredMargin?: number;
     /** After a measured switch-off, stay off this long before probing again (default 3000). */
     measuredOffTicks?: number;
-    /** While off, re-probe this many ticks after the last probe (default 500, 2.5 min at 300 ms). */
+    /** While off, re-probe this many ticks after the last probe (default 500). */
     offReprobeTicks?: number;
     /** Never probe again sooner than this after the last probe ended (default 100). */
     minProbeGapTicks?: number;

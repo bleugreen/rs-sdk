@@ -20,7 +20,7 @@ import { appendFileSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { nameHash } from '../helpers/altar-cue';
-import { tickMs } from '../lib/wait';
+import { TickPeriod, tickMs } from '../lib/wait';
 import { arg, botArg, result } from './common';
 
 const ROOT = resolve(import.meta.dir, '..', '..');
@@ -111,6 +111,10 @@ interface Tick {
     seen?: number[];
 }
 const ticks = readFileSync(scoredLog, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l) as Tick);
+// Wall gaps become ticks at the period SCORED observed over its own log, not the nominal one.
+const observed = new TickPeriod(ms);
+for (const tk of ticks) observed.see(tk.t, tk.ms);
+const periodMsObserved = observed.ms;
 const needAt = new Map<number, Tick>();
 const lightAt = new Map<number, Tick>();
 const seenAt = new Map<number, Tick>();
@@ -128,7 +132,7 @@ for (const l of roleLines) if (l.message === 'drop' && typeof l.i === 'number') 
 // Reveal latency: SCORED stands on log 0's tile from the start and lights it the tick it turns public.
 const d0 = drops.get(0);
 const l0 = lightAt.get(0);
-const revealTicks = d0?.ms && l0 ? Math.round((l0.ms - d0.ms) / ms) : null;
+const revealTicks = d0?.ms && l0 ? Math.round((l0.ms - d0.ms) / periodMsObserved) : null;
 
 const gaps: Record<number, number> = {};
 const missingGaps: Array<{ i: number; gap: number; waited: number }> = [];
@@ -149,7 +153,7 @@ const aheadSeen: number[] = [];
 for (const [i, need] of needAt) {
     if (i === 0) continue;
     const d = drops.get(i);
-    if (d?.ms && revealTicks !== null) ahead.push(Math.round((need.ms - d.ms) / ms) - revealTicks);
+    if (d?.ms && revealTicks !== null) ahead.push(Math.round((need.ms - d.ms) / periodMsObserved) - revealTicks);
     const s = seenAt.get(i);
     if (s) aheadSeen.push(need.t - s.t);
 }

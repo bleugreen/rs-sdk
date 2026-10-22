@@ -817,7 +817,7 @@ export class BoneGiver {
         // No expectTheirs: the scored account offers nothing, and anything it does offer is declined.
         // The load's index now, the group's with a group: the last one offers finalN bones and the extras.
         const load = this.loadsDone();
-        const r = await give(ctx.sdk, t.partner, loadOffer(o, load, name => count(this.s, exact(name))), { openTimeoutMs: 5_000 });
+        const r = await give(ctx.sdk, t.partner, loadOffer(o, load, name => count(this.s, exact(name))), { openMaxTicks: 17 });
         if (r.ok) {
             this.trades++;
             this.trip = { tick: this.s?.tick ?? 0, energy: this.energy(), at: pos(this.s) };
@@ -896,7 +896,7 @@ export class BoneGiver {
         if (offer!.short.length) ctx.log('ask: short', { short: offer!.short });
         this.setPhase('trading', ask.items.map(a => `${a.item} ${a.count}`).join(', '));
         const askTick = this.s!.tick;
-        const r = await give(ctx.sdk, t.partner, offer!.specs, { openTimeoutMs: 5_000 });
+        const r = await give(ctx.sdk, t.partner, offer!.specs, { openMaxTicks: 17 });
         if (r.ok) {
             this.trades++;
             for (const c of o.carry) if (c.once && r.gave.some(g => exact(c.item).test(g.name))) this.delivered.add(c.item.toLowerCase());

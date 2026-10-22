@@ -78,6 +78,7 @@ import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import { advance } from '../lib/dialogue';
 import { ANY_OFFER, give, DROPPED_TICKS, offerSatisfies, receiveFrom, swap, tradeOf, type GiveResult, type GiveSpec, type SwapSdk, type TradeSdk, type WantSpec } from '../lib/trade';
 import { INVENTORY_SIZE } from '../lib/items';
+import { tickMs } from '../lib/wait';
 import { assertUntracked, cueDir, CueWatcher, nameHash, scopeOption, type Cue, type CueScope } from './altar-cue';
 import { cheat, isLocalServer, labTele, standOn } from './altar-room';
 import { partnerIs, requestUntilOpen } from './bone-giver';
@@ -328,7 +329,7 @@ export function extraWants(extras: readonly ServeExtra[]): WantSpec[] {
  * once per tick while our offer is the whole load, and checks both offers again on the confirm screen.
  */
 export function serveTrade(sdk: TradeSdk, partner: string, balls: number, extras: readonly ServeExtra[] = []): Promise<GiveResult> {
-    return give(sdk, partner, loadSpecs(balls, extras), { expectTheirs: ANY_OFFER, openTimeoutMs: 5_000 });
+    return give(sdk, partner, loadSpecs(balls, extras), { expectTheirs: ANY_OFFER, openMaxTicks: 17 });
 }
 
 /** What the receiver must see offered before it accepts: the set, and the balls when there are any. */
@@ -366,9 +367,9 @@ export interface TakeBackResult {
  * count in the same trade; without, the receive-only receiveFrom it has always been.
  */
 export async function takeBackTrade(sdk: SwapSdk, partner: string, returnExtras: readonly ServeExtra[]): Promise<TakeBackResult> {
-    if (returnExtras.length === 0) return { ...(await receiveFrom(sdk, partner, { want: loadWant(0), openTimeoutMs: 20_000 })), gave: [] };
-    // openTicks: about receiveFrom's 20 s at 600 ms; maxTicks: receiveFrom's default, the scored side offers five stacks.
-    return swap(sdk, partner, extraSpecs(returnExtras), loadWant(0), { openTicks: 34, maxTicks: 100 });
+    if (returnExtras.length === 0) return { ...(await receiveFrom(sdk, partner, { want: loadWant(0), openMaxTicks: 67 })), gave: [] };
+    // openTicks: the receive-only branch's 67; maxTicks: receiveFrom's default, the scored side offers five stacks.
+    return swap(sdk, partner, extraSpecs(returnExtras), loadWant(0), { openTicks: 67, maxTicks: 100 });
 }
 
 /** Delivered both ways: the set came in, and every return extra went out. */
@@ -570,7 +571,7 @@ class Cannon {
     // -------------------------------------------------------------- walking
 
     /** Walk with the SDK pathfinder, retrying from wherever the last attempt stopped. */
-    private async travel(dest: Pt, tolerance = 2, what = '', timeout = 300_000): Promise<void> {
+    private async travel(dest: Pt, tolerance = 2, what = '', timeout = 1000 * tickMs()): Promise<void> {
         for (let attempt = 1; attempt <= 6; attempt++) {
             this.checkSignal();
             await this.bot.dismissBlockingUI();
@@ -764,7 +765,7 @@ class Cannon {
         }
         if (this.banked('Coins') > 0) await this.bot.withdrawItem('Coins', this.banked('Coins'));
         await this.bot.closeBank();
-        if (this.coins() < cost && !(await this.awaitFunding(cost, 'food', this.o.foodWaitMinutes * 200))) {
+        if (this.coins() < cost && !(await this.awaitFunding(cost, 'food', Math.round((this.o.foodWaitMinutes * 60_000) / tickMs())))) {
             this.log('no food money; resting through the railings instead', { coins: this.coins(), cost });
             return;
         }
@@ -1019,7 +1020,7 @@ class Cannon {
                 continue;
             }
             const before = this.coins();
-            const r = await receiveFrom(this.sdk, from, { openTimeoutMs: 20_000 });
+            const r = await receiveFrom(this.sdk, from, { openMaxTicks: 67 });
             this.log('funded', { from, ok: r.ok, reason: r.reason, received: r.received.map(i => `${i.name} x${i.count}`), carried: this.coins(), gained: this.coins() - before });
         }
         this.log(`${message}: done`, { ...status(), waitedTicks: this.tick() - t0 });

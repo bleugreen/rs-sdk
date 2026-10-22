@@ -37,7 +37,7 @@ import type { BotWorldState } from '../../sdk/types';
 import { GO_FILE, LAB_ROW, snakeTile } from '../helpers/fm-row';
 import { TickLog, newRunId } from '../lib/ticks';
 import { give as tradeGive } from '../lib/trade';
-import { tickMs, waitUntil } from '../lib/wait';
+import { feedTickPeriod, periodMs, TickPeriod, waitUntil } from '../lib/wait';
 import { runSteps } from '../runner/step';
 import { defaultCapacity, DEFAULT_ID, steps, tradePlan, type Tile } from '../skills/firemaking';
 import { launchLabBrowser } from './browser';
@@ -68,7 +68,6 @@ const tiles: Tile[] = Array.from({ length: LAP }, (_, i) => {
     const t = snakeTile(row, i);
     return [t.x, t.z] as const;
 });
-const ms = tickMs();
 
 /** H1's runes and the starter rune types: SCORED's rune stacks at S03 (counts are immaterial here). */
 const S03_RUNES = ['airrune', 'mindrune', 'waterrune', 'earthrune', 'bodyrune', 'cosmicrune', 'firerune'];
@@ -167,6 +166,9 @@ function spawnHelper(argv: string[], env: Record<string, string> = {}) {
 // ------------------------------------------------------------------ SCORED
 
 async function scoredRun(actions: Session['bot'], sdk: Session['sdk']): Promise<void> {
+    // The server's observed tick, for turning the dropper's tick deficit into a wall-clock wait.
+    const period = new TickPeriod();
+    feedTickPeriod(sdk, period);
     await outOfTutorial(actions, sdk);
     await clearInventory(sdk);
     await give(sdk, 'tinderbox');
@@ -215,7 +217,7 @@ async function scoredRun(actions: Session['bot'], sdk: Session['sdk']): Promise<
         const d0 = await nextLine(l => l.message === 'drop' && l.i === 0, 300_000);
         if (!d0 || typeof d0.ms !== 'number' || typeof d0.tick !== 'number' || typeof d0.need !== 'number') throw new Error('no drop of log 0');
         // SCORED reaches the row when log 0 is due: the dropper's need for it, on the wall clock.
-        const dueMs = d0.ms + (d0.need - d0.tick) * ms;
+        const dueMs = d0.ms + (d0.need - d0.tick) * periodMs(period);
         Object.assign(setup, { cueMs, drop0: { tick: d0.tick, need: d0.need, ms: d0.ms }, startDelayMs: dueMs - cueMs });
         await Bun.sleep(Math.max(0, dueMs - Date.now()));
     } else {

@@ -3,12 +3,13 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
 import { baseState, FakeSdk, flush, type SentAction } from '../lib/fake-sdk';
+import { fakeClock, microtasks, peek, useFakeTicks } from '../lib/fake-ticks';
 import { TickLog } from '../lib/ticks';
 import { levelForXp, xpForLevel } from '../lib/xp';
 import { Observation, resolveResume } from '../runner/resume';
 import { runSteps, type RunnerSession } from '../runner/step';
 import {
-    ANVIL, ANVIL_LOC, barRoom, barsIn, barTotals, BARS, bestProduct, otherItems, chooseMake, countsOf, firstAnnouncement, giveBackItems, handBack, heldSegments, itemXp, milestones,
+    ANVIL, ANVIL_LOC, barRoom, barsIn, barTotals, BARS, bestProduct, otherItems, chooseMake, countsOf, firstAnnouncement, giveBackItems, handBack, heldSegments, itemXp, milestones, openBooth,
     PLAN_DEFAULTS, PRODUCTS, resolveOptions, routePlan, SCORED_TILE, SMITHING_IF, stepPlan, steps, type AnvilPlanMsg, type Bar, type InventoryReport,
 } from './smithing';
 
@@ -533,3 +534,21 @@ describe('giveBack: the dead items leave in the first trade, and the slots are c
         expect(sdk.state!.inventory.some(i => i.name === 'Spade' || i.name === 'Gas mask')).toBe(false);
     });
 });
+
+
+for (const ms of [300, 400]) {
+    describe(`openBooth at ${ms} ms a tick: the client-stopped backstop is maxTicks + 10 ticks of it`, () => {
+        useFakeTicks(ms);
+
+        test('a client that never publishes again rejects after 50 ticks of wall time, not before', async () => {
+            const sdk = new FakeSdk(baseState({ tick: 5 }));
+            const p = openBooth(sdk as never, 40);
+            p.catch(() => {});
+            await microtasks();
+            fakeClock.advanceTimersByTime(50 * ms - 1);
+            expect(await peek(p.catch(e => e))).toBeUndefined();
+            fakeClock.advanceTimersByTime(1);
+            await expect(p).rejects.toThrow(/stopped publishing/);
+        });
+    });
+}

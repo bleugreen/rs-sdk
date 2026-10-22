@@ -57,7 +57,7 @@
 import { join } from 'node:path';
 import type { BotWorldState, GroundItem, NearbyLoc } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
-import { tickMs as defaultTickMs, tickPeriod, waitUntil } from '../lib/wait';
+import { feedTickPeriod, tickMs as defaultTickMs, TickPeriod, waitUntil } from '../lib/wait';
 import { cueDir, nameHash, readJson, type Cue } from './altar-cue';
 import { chebyshev, cheat, isLocalServer, labTele, pos, type Tile } from './altar-room';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank, walkNear } from './mule';
@@ -354,10 +354,8 @@ export function cueTick(tick: number, nowMs: number, cueMs: number, tickMs: numb
     return tick - Math.max(0, Math.round((nowMs - cueMs) / tickMs));
 }
 
-/** A period measured over fewer ms than this is left to the fallbacks (wait.ts tickPeriod). */
+/** A period watched over fewer ms than this is left to the fallbacks (wait.ts TickPeriod.msPerTick). */
 export const PERIOD_MIN_SPAN_MS = 20_000;
-/** Only the newest ticks count: the demo's tick period drifts from minute to minute. */
-export const PERIOD_WINDOW_MS = 60_000;
 /**
  * A measured period is held within these. The engine's fixed grid catches up at most two
  * ticks (World.ts), so over 20 s it never runs much faster than 300 ms; a reading slower than
@@ -603,16 +601,14 @@ export class FmRow {
     private readonly watchTiles: Tile[] = [];
     // cueAt 'written' only: this client's tick period, watched from construction until the cue is
     // placed on an observed one; and the moment the go file was seen, to place it again from.
-    private readonly period = tickPeriod(PERIOD_WINDOW_MS);
+    private readonly period = new TickPeriod();
     private stopPeriod = () => {};
     private cue: { seenTick: number; seenMs: number; writtenMs: number; writerTickMs?: number; from: PeriodFrom } | null = null;
 
     constructor(private readonly ctx: RoleContext) {
         this.o = fmRowOptions(ctx.options);
         if (this.o.cueAt === 'written') {
-            const now = ctx.sdk.getState();
-            if (now) this.period.see(now);
-            this.stopPeriod = ctx.sdk.onStateUpdate(s => this.period.see(s));
+            this.stopPeriod = feedTickPeriod(ctx.sdk, this.period);
         }
         this.path = this.o.tiles ?? this.o.row;
         this.plan = rowPlan(this.path, this.o.logs, this.o.spareTiles);
