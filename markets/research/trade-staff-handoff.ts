@@ -21,7 +21,7 @@
 import type { BotWorldState } from '../../sdk/types';
 import { depositAll } from '../../speedrun/lib/bank';
 import { closeSession, logoutClean, openSession } from '../../speedrun/lib/session';
-import { giveAll, receiveFrom } from '../../speedrun/lib/trade';
+import { give, receiveFrom } from '../../speedrun/lib/trade';
 import { waitTicks, waitUntil } from '../../speedrun/lib/wait';
 import { arg, botArg, result } from '../../speedrun/lab/common';
 import { cheat, leaveTutorial, mustTele, VARROCK_WEST_BANK } from '../../speedrun/lab/setup';
@@ -78,11 +78,16 @@ function expect(probe: string, ok: boolean, detail: object) {
     expect('H2 giver ::give airrune to itself (staff 4)', a >= AIR, { giverAirRunes: a });
 }
 
-// 3. Trade everything the giver holds to the receiver.
+// 3. Trade the air-rune stack to the receiver. The receiver banks its starter kit first, and only the
+// stack is offered, so trade.rs2's inventory-space check cannot close the trade.
 {
+    const opened = await recv.bot.openBank();
+    if (!opened.success) throw new Error(`openBank: ${opened.message}`);
+    await depositAll(recv.sdk);
+    await recv.bot.closeBank();
     const before = count(recv.sdk.getState(), 'Air rune');
     const req = recv.sdk.waitForTradeRequest({ from: giver.name, timeout: 20_000 });
-    const g = giveAll(giver.sdk, recv.name);
+    const g = give(giver.sdk, recv.name, [{ item: /^Air rune$/, n: 'all' }]);
     if (!(await req)) throw new Error('no trade request reached the receiver');
     const r = await receiveFrom(recv.sdk, giver.name);
     const gr = await g;
@@ -103,6 +108,7 @@ function expect(probe: string, ok: boolean, detail: object) {
     const after = snap(recv.sdk.getState());
     const airCost = costs.get(recv.sdk.getState()!.bank.items.find(i => i.name === 'Air rune')?.id ?? -1) ?? 0;
     expect('H4 receiver banks the stack', (after.bank['Air rune'] ?? 0) >= AIR, {
+        airRuneBoardValue: (after.bank['Air rune'] ?? 0) * airCost,
         bankAirRunes: after.bank['Air rune'] ?? 0, airRuneCost: airCost, boardBefore: before.boardValue, boardAfter: after.boardValue,
     });
     await recv.bot.closeBank();
