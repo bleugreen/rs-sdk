@@ -17,6 +17,7 @@
 //   max    { sapphire?: n, ruby?: n } most of each amulet to enchant (default: every one banked)
 import { withdrawMany, type WithdrawSpec } from '../lib/bank';
 import { travelTo, type Tile } from '../lib/toll-gate';
+import { CAST_DELAY_TICKS } from '../skills/magic';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank } from './mule';
 import { runStandalone, type Role, type RoleContext, type RoleFinish } from './role';
 
@@ -143,6 +144,9 @@ async function round(ctx: RoleContext, o: EnchantOptions, made: Map<Amulet, numb
         if (ctx.signal.aborted) break;
         const item = sdk.getInventory().find(i => i.id === e.from);
         if (!item) break;
+        // enchantItem returns on the cast's xp, while the cast's delay still holds the player; a
+        // spell click inside that delay is dropped by the server and the next cast times out.
+        if (n > 0) await sdk.waitForTicks(CAST_DELAY_TICKS + 1);
         const r = await bot.enchantItem(item, e.spell, { timeout: 10_000 });
         const ok = r.success && r.product?.id === e.product;
         ctx.log('enchant: cast', { amulet: e.amulet, spell: `Lvl-${e.spell} Enchant`, ok, product: r.product?.name ?? null, xp: r.xpGained ?? 0, result: r.message });
