@@ -63,7 +63,7 @@ plus the number of 99s faster than it.
 | Fletching (post-run) | see above | | | | ~60 (new name) | 2 | yes | (NO today) |
 | Magic | enchant 7-80 by rings, Mage Arena at 80, Charge to 99 ([magic.md](../skills/magic.md) §7) | surplus: none: diamond 37 and dragonstone 78 rings are unobtainable on the demo; the run's 60 rings and 570 blood runes are attempt stock | the jeweller (rings) and blood-rune line | **never before the run** (Charge without cooldown is withheld) | ~1,300-1,700 (i, low) | 2-3 | yes for casting | **NO** (tenet 18) |
 | Herblore | Druidic Ritual (250 base, to 28), then finished potions at a bank booth, 5 a tick: 112 from 28 ([herblore.md](../skills/herblore.md) §1) | surplus: none: H21e is attempt 1's and untouchable; attempts 2-3's herbs are rs/387's / stock: H21e | rs/387's gatherers | 5 mixes a tick is public (#1, #2); Druidic Ritual read page by page, never burst | ~800-1,100 (i, low: the quest unwalked here) | **3-4** | yes | NO: herbs |
-| Cooking | wine bank fermentation, one login (rs/47; [cooking.md](../skills/cooking.md) §1); kebabs as the no-wine route | surplus: none: H21c's 520 wines are attempt 1's; grapes for 2-3 / stock: H21c | the wine maker (h40) | **never before the run** (wine fermentation is withheld) | ~70 wine; ~150 kebabs | **4** (wine), 5 (kebabs) | yes | **NO** (tenet 18) |
+| Cooking | wine bank fermentation, one login (rs/47; [cooking.md](../skills/cooking.md) §1); kebabs as the no-wine route | surplus: none: H21c's 520 wines are attempt 1's; grapes for 2-3 / stock: H21c | the wine maker (h40) | **never before the run** (wine fermentation is withheld) | ~85 wine; ~150 kebabs | **4** (wine), 5 (kebabs) | yes | **NO** (tenet 18) |
 | Prayer | bury bones at a bank booth, ~2.07 ticks a bone ([prayer.md](../skills/prayer.md) §1: 555 dragon bones, 1,151) | surplus: none: S07 takes every dragon bone and ~719 babydragon; the ~594 babydragon and 2,526 big bones left are attempts 2-3's fallback (staging.md) / stock: H4.x, H14 | a bones courier (h51-h56: rs/387 owns h51/h52) | none | ~2,800 babydragon; ~5,500 big bones; ~1,200 dragon | **6** (1 only on 555 dragon bones) | yes | NO: bones |
 
 ## Fletching
@@ -288,7 +288,7 @@ their secondaries. Attempt 1's (H21e) are untouchable, and attempts 2-3's herb s
 
 **Never before the run** (tenet 18: wine fermentation is withheld). rs/47's wine route is 45-51
 active ticks, 73-77 from login (m, [cooking.md](../skills/cooking.md) §1), so from `cairn_cooks`
-**~80, rank 4** (stuncookv2 53; jackalopeck2 142). The kebab route (131 m) gives ~150, **rank 5**
+(8 parked) **~85, rank 4** (stuncookv2 53; jackalopeck2 142). The kebab route (131 m) gives ~150, **rank 5**
 (jackalopeck1 155). jackalopeck3's 38 is below anything here. Supplies: 450 unfermented wines (H21c's
 520 are attempt 1's; h40's grapes make attempts 2-3's), or ~340 kebab mixtures and pittas.
 
@@ -319,7 +319,7 @@ Every row is a measurement row under addendum 18 unless its own P(#1) gate passe
 | 9 | Crafting | hard leather bodies | ~420 | 2 (twin) | ~1,130 hard leather beyond the attempts |
 | 10 | Magic | rings, Mage Arena, Charge | ~1,300-1,700 | 2-3 | a ring ladder without diamonds and dragonstones (none exists today) |
 | 11 | Herblore | Druidic Ritual + mixing | ~800-1,100 | 3-4 | 245 herbs and secondaries beyond attempts 2-3 |
-| 12 | Cooking | wine fermentation | ~80 | 4 | 450 unfermented wines |
+| 12 | Cooking | wine fermentation | ~85 | 4 | 450 unfermented wines |
 | 13 | Prayer | babydragon or big bones | ~2,800-5,500 | 6 | bones beyond attempts 2-3 |
 | 14 | Runecraft (solo) | the air loop, if it does not run today (rs/461), on a new name | ~30,100 | 6 | essence only |
 | 15 | Fletching (logs) | normal-log shafts and feathers to 80, magic logs to 99 | ~2,050 | 9 | ~475 normal logs, ~7,100 feathers, 325 magic logs |
