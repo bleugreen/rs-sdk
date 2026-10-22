@@ -66,8 +66,16 @@ export class NetworkPlayer extends Player {
         this.restrictedLimit = 0;
 
         const bytesStart = this.client.in.pos;
+        const tracing = NetworkPlayer.traceName !== '' && this.username.toLowerCase().replace(/[^a-z0-9]/g, '') === NetworkPlayer.traceName;
+        this.traceOps = tracing ? [] : null;
         while (this.userLimit < ClientGameProtCategory.USER_EVENT.limit && this.clientLimit < ClientGameProtCategory.CLIENT_EVENT.limit && this.restrictedLimit < ClientGameProtCategory.RESTRICTED_EVENT.limit && this.read()) {
             // empty
+        }
+        if (tracing) {
+            // TEMP rs/317: the user limit stopped decoding with bytes still waiting
+            const deferred = this.userLimit >= ClientGameProtCategory.USER_EVENT.limit && this.client.available > 0;
+            if (deferred) NetworkPlayer.deferrals++;
+            if (this.traceOps!.length || deferred) console.log(`DTRACE ${World.currentTick} ops=${this.traceOps!.join(',')} user=${this.userLimit} left=${this.client.available}${deferred ? ` DEFER#${NetworkPlayer.deferrals}` : ''}`);
         }
         const bytesRead = bytesStart - this.client.in.pos;
 
@@ -80,6 +88,11 @@ export class NetworkPlayer extends Player {
     }
 
     static inBuf = Packet.alloc(1);
+
+    // TEMP rs/317 decode trace: DECODE_TRACE=<username> logs every decoded user/client op of that player per tick
+    static readonly traceName = (process.env.DECODE_TRACE ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    static deferrals = 0;
+    traceOps: string[] | null = null;
 
     read(): boolean {
         if (this.client.available < 1) {
@@ -136,6 +149,7 @@ export class NetworkPlayer extends Player {
             if (decoder) {
                 const message = decoder.decode(NetworkPlayer.inBuf, this.client.waiting);
                 const success: boolean = ClientGameProtRepository.getHandler(packetType)?.handle(message, this) ?? false;
+                if (this.traceOps && message.category !== ClientGameProtCategory.CLIENT_EVENT) this.traceOps.push(`${message.constructor.name}${success ? '+' : '-'}`);
 
                 // todo: move out of model
                 if (success && message.category === ClientGameProtCategory.USER_EVENT) {
