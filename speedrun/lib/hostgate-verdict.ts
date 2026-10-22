@@ -1,20 +1,27 @@
 // The run-time host gate's decision rules (docs/speedrun/skills/tick-manipulation.md,
-// "Run-time host gate"). This module imports nothing and touches no Node, Bun, DOM or SDK
-// global, so the in-page tick programs in the browser webclient can call the same functions
-// as the SDK-side gate. `hostgate.ts` holds the probe, the vantage measurement and the
-// HostGate state machine, and re-exports everything here.
+// "Run-time host gate"). This module touches no Node, Bun, DOM or SDK global and imports only
+// the tick-length rule (server/webclient/src/bot/programs/tick-rule.ts), which the page's frame
+// counter uses too, so a catch-up means the same thing on both sides. `hostgate.ts` holds the
+// probe, the vantage measurement, the tick-length read and the HostGate state machine, and
+// re-exports everything here.
 //
 // The probe's path picks the rule:
 // - direct: the reaction is issued in-page by the browser webclient, or in-process on the
 //   engine websocket, with no relay hop. The go/no-go measured on the run machine, with
-//   main's 2026-10-21 defaults: pass lines (a) on-time trials at least 58 of 60, (c) at most 2
-//   catch-up ticks per minute, (d) the page's game-loop rate p10 at least 50 per second; and
-//   (b) tick arrival p90 at most 400 ms, reported but not a pass line unless the rule says so
-//   (it agreed with (a) less often than (c) did). Failing (c) is an overrun period on the
-//   demo: wait and re-measure. Failing (d) is a throttled tab. Failing (a) alone is a broken
-//   host or client to investigate, not a cost to model.
+//   main's defaults: pass lines (a) on-time trials at least 58 of 60, (c) at most 2 catch-up
+//   ticks per minute, (d) the page's game-loop rate p10 at least 50 per second; and (b) tick
+//   arrival p90 at most 4/3 T, reported but not a pass line unless the rule says so (it agreed
+//   with (a) less often than (c) did). T is the server's tick length, and a catch-up is an
+//   interval under 1/2 T after one over 7/6 T (main's 2026-10-22 ruling; 400, 150 and 350 ms
+//   at T = 300). Failing (c) is an overrun period on the demo: wait and re-measure. Failing (d)
+//   is a throttled tab. Failing (a) alone is a broken host or client to investigate, not a
+//   cost to model.
 // - relay (runner, gateway, lite client): the dominant-offset cost model, `gateDecision`.
 // Before either, `vantageDecision` checks that the machine sits beside the app.
+
+import { catchUpText, isCatchUp, type TickLength, tickFromMedian, tickLimits, type TickSource } from '../../server/webclient/src/bot/programs/tick-rule';
+
+export { catchUpText, isCatchUp, TICK_FRACTIONS, TICK_ROUND_MS, type TickLength, type TickLimits, tickFromMedian, tickLimits, type TickSource, validTickMs } from '../../server/webclient/src/bot/programs/tick-rule';
 
 export type ProbePath = 'direct' | 'relay';
 
@@ -66,13 +73,6 @@ export function latencyHistogram(latencies: number[]): string {
 
 // ------------------------------------------------------------------ tick steadiness
 
-/**
- * A catch-up is an interval under `underMs` immediately after one over `afterOverMs`: the
- * server overran a tick and, on its fixed 300 ms grid, ran the next one at once. A reaction
- * to the long tick then misses about half the time (demo-latency.md, rs/102).
- */
-export const CATCH_UP = { underMs: 150, afterOverMs: 350 } as const;
-
 /** Width of the interval histogram's buckets. */
 export const STEADINESS_BUCKET_MS = 50;
 
@@ -85,8 +85,9 @@ export interface TickSteadiness {
     p50: number;
     p90: number;
     max: number;
-    over350: number;
-    under150: number;
+    /** Intervals over 7/6 T, and under 1/2 T. */
+    overSevenSixthsT: number;
+    underHalfT: number;
     catchUps: number;
     /**
      * Catch-ups per minute of arrivals. A window shorter than a minute counts as one minute,
@@ -95,6 +96,9 @@ export interface TickSteadiness {
     catchUpsPerMinute: number;
     /** Intervals per 50 ms bucket, keyed by the bucket's lower edge: {250: 31, 300: 24}. */
     histogram: Record<number, number>;
+    /** The tick length the intervals were judged by, ms, and where it came from; null with no intervals and no T given. */
+    T: number | null;
+    TSource: TickSource | null;
 }
 
 /**
@@ -102,8 +106,11 @@ export interface TickSteadiness {
  * order). Two ticks decoded from one socket read carry the same time, so their interval is
  * 0. Feed it raw per-tick arrivals: grouping frames into windows (frameStats' 60 ms, or the
  * under-200 count) merges a catch-up tick into the tick before it and hides exactly these.
+ *
+ * `tick` is the server's tick length and its source (`resolveTickLength` in hostgate.ts). Without
+ * it, T is the median interval rounded to the nearest 50 ms (source `median`).
  */
-export function tickSteadiness(arrivals: readonly number[]): TickSteadiness {
+export function tickSteadiness(arrivals: readonly number[], tick?: TickLength | null): TickSteadiness {
     const iv: number[] = [];
     for (let i = 1; i < arrivals.length; i++) iv.push(arrivals[i]! - arrivals[i - 1]!);
     const sorted = [...iv].sort((a, b) => a - b);
@@ -113,7 +120,11 @@ export function tickSteadiness(arrivals: readonly number[]): TickSteadiness {
         const b = Math.floor(v / STEADINESS_BUCKET_MS) * STEADINESS_BUCKET_MS;
         histogram[b] = (histogram[b] ?? 0) + 1;
     }
-    const catchUps = iv.filter((v, i) => i > 0 && v < CATCH_UP.underMs && iv[i - 1]! > CATCH_UP.afterOverMs).length;
+    const median = sorted.length ? tickFromMedian(q(0.5)) : null;
+    const T = tick?.T ?? median;
+    const TSource: TickSource | null = tick ? tick.source : median !== null ? 'median' : null;
+    const l = T !== null ? tickLimits(T) : null;
+    const catchUps = T !== null ? iv.filter((v, i) => i > 0 && isCatchUp(v, iv[i - 1]!, T)).length : 0;
     const spanMs = arrivals.length > 1 ? arrivals[arrivals.length - 1]! - arrivals[0]! : 0;
     return {
         n: iv.length,
@@ -122,11 +133,13 @@ export function tickSteadiness(arrivals: readonly number[]): TickSteadiness {
         p50: q(0.5),
         p90: q(0.9),
         max: sorted.length ? round1(sorted[sorted.length - 1]!) : 0,
-        over350: iv.filter(v => v > CATCH_UP.afterOverMs).length,
-        under150: iv.filter(v => v < CATCH_UP.underMs).length,
+        overSevenSixthsT: l ? iv.filter(v => v > l.catchUpAfterOverMs).length : 0,
+        underHalfT: l ? iv.filter(v => v < l.catchUpUnderMs).length : 0,
         catchUps,
         catchUpsPerMinute: Math.round(((catchUps * 60_000) / Math.max(spanMs, 60_000)) * 100) / 100,
         histogram,
+        T,
+        TSource,
     };
 }
 
