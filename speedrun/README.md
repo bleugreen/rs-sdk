@@ -702,7 +702,7 @@ pause rule is not holding, and with its plain ones otherwise (`technique: 'plain
 `resume`, `aborted`, `stopped`, `fault`).
 
 The switch-offs:
-- **Measured.** Over `measureDrops` (30) drops, if the knife is not strictly faster than
+- **Measured.** Over `measureDrops` (120) drops, if the knife is not strictly faster than
   `plainTicksPerRoll * (1 - measuredMargin)`, it goes plain for `measuredOffTicks` (3000).
   The unit is ticks per expected roll for knife-cycle (each log weighted by `rollsPerDrop`,
   1 / the success chance at the level) and ticks per ore for knife-mine.
