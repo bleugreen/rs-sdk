@@ -252,6 +252,33 @@ try {
 }
 result('mm_topup_relog', relogRow);
 
+// ------------------------------------------------------------------ 4b. at M: one helper on to P's tile
+// Can the helper that served M walk on and serve P too? Outside the town both ways (r: outsideTown), timed once, with
+// what reaches it on the way (--walkToP=0 skips it).
+if (at === 'M' && arg('walkToP', '1') !== '0') {
+    const P_TILE = { x: 2803, z: 2724 };
+    const seen = new Map<string, number>();
+    let hits = 0, minHp = Infinity;
+    const unwatch = helper.sdk.onStateUpdate(s => {
+        minHp = Math.min(minHp, s.player?.hp ?? Infinity);
+        hits += s.combatEvents.filter(e => e.type === 'damage_taken' && e.tick === s.tick).length;
+        for (const n of s.nearbyNpcs) {
+            const d = chebyshev({ x: n.tileX ?? n.x, z: n.tileZ ?? n.z }, pos(s));
+            if (d <= 15) seen.set(n.name, Math.min(seen.get(n.name) ?? 99, d));
+        }
+    });
+    const from = pos(helper.sdk);
+    const w0 = tick(helper);
+    const w = await walkTo(helper.bot, helper.sdk, P_TILE.x, P_TILE.z, 1);
+    const ticks = tick(helper) - w0;
+    unwatch();
+    result('mm_topup_walk_to_p', {
+        ok: w.ok && chebyshev(pos(helper.sdk), P_TILE) <= 1, ticks, from, to: pos(helper.sdk), hits, minHp,
+        npcsWithin15: Object.fromEntries(seen), aggressiveWithin15: [...seen.keys()].filter(n => AGGRESSIVE.test(n)),
+        ...(w.ok ? {} : { reason: w.message }),
+    });
+}
+
 // ------------------------------------------------------------------ 5. SCORED on from --at with what it took
 const i0 = SEGMENTS.findIndex(d => d.letter === at);
 const i1 = SEGMENTS.findIndex(d => d.letter === until);
