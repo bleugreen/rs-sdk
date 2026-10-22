@@ -743,7 +743,7 @@ export async function useOn(sdk: ActSdk, item: ItemPattern, target: UseTarget, d
 /** Wear or wield the first matching item, confirmed by the equipment list. */
 export async function wield(sdk: ActSdk, item: ItemPattern, opts: ActOptions = {}): Promise<ActResult> {
     if (worn(sdk, item)) return { ok: true, ticks: 0, resends: 0 };
-    return invOp(sdk, item, /^(wear|wield)$/i, s => worn(s, item) !== null, opts);
+    return invOp(sdk, item, /^(wear|wield|hold)$/i, s => worn(s, item) !== null, opts); // a gree-gree is held
 }
 
 /** Pick up the nearest ground item matching `item` and wait until the inventory holds more of it. */

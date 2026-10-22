@@ -10,18 +10,35 @@
 // by ::give in fixture A, so A here is the wear-and-drop only; the trade itself (4 ticks, rs/285's
 // RT section 3) is outside these figures. Ticks are from the arrival tile, Elkoy (2504,3191).
 //
+// --montai-fight stages D's Montai talk straight after a kill: SCORED is moved beside Montai, a Giant
+// (the maze's, level 28) is spawned and killed by Fire Blast under Protect from Melee, and segment D
+// then talks at once (its walk to Montai is already inside tolerance). rs/342 saw two Montai talks
+// stall 42 and 108 ticks right after a maze-giant fight; this checks whether a post-kill talk click
+// still drops. D's ticks in this mode are from beside Montai, not from the arrival tile.
+//
+// --no-retaliate turns auto-retaliate off in every fixture (main's run-wide setting for SCORED, until
+// the shared login helper sets it): with it on, the stronghold commander's attack turns SCORED on him
+// and segment H's door and ladder clicks are swallowed.
+//
 // --warlord=fire_bolt runs the fallback spell. Besides the runner's table this prints the aggro
 // census: every NPC seen within 16 tiles of SCORED (name, combat level, nearest approach), each one
 // seen in combat or targeting while near, and every hit SCORED took with its source.
 
 import type { BotWorldState } from '../../../sdk/types';
 import { arg, result } from '../common';
+import { COMBAT_SPELLS, fight, setPrayer } from '../../lib/combat';
+import { waitUntil } from '../../lib/wait';
 import { chebyshev } from '../../lib/world';
 import { BOLREN, JUMP_IN, MONTAI, quest, stepId, steps, WARLORD, type Options } from '../../quests/tree-gnome-village';
+import { cheat, mustTele } from '../setup';
 import { labMain, type LabQuest, type QuestFixture } from './run';
 
 const WARLORD_SPELL = arg('warlord', 'fire_blast');
 if (WARLORD_SPELL !== 'fire_blast' && WARLORD_SPELL !== 'fire_bolt') throw new Error(`--warlord=${WARLORD_SPELL}: want fire_blast or fire_bolt`);
+const MONTAI_FIGHT = process.argv.includes('--montai-fight');
+const NO_RETALIATE = process.argv.includes('--no-retaliate');
+/** The controls tab's auto-retaliate off button (interface.pack controls:com_3, player_controls.rs2). */
+const IF_AUTO_RETALIATE_OFF = 151;
 
 /** SCORED arriving at S10b. */
 const LEVELS = { attack: 1, strength: 1, defence: 1, hitpoints: 10, magic: 59, prayer: 94 } as const;
@@ -134,13 +151,36 @@ const lab: LabQuest<Options> = {
         warlordSpell: WARLORD_SPELL,
         onTalk: (who, r) => console.log(`TALK ${who}: open ${r.firstTick >= 0 ? r.firstTick - r.startTick : 'never'} ticks, ${r.ticks} in all, ${r.pages} pages ${r.options} options${'clicks' in r ? `, ${(r as { clicks: number }).clicks} click(s)` : ''}; shape ${r.shape ? `${r.shape.seen} vs ${r.shape.expected}${r.shape.stopped ? ` (${r.shape.stopped})` : ''}` : '-'}; first ${r.transcript.slice(0, 3).join(' | ')}`),
     },
-    async prepare(session) {
+    async prepare(session, fixture) {
         censusWatch.stop?.();
         censusWatch.stop = session.sdk.onStateUpdate(watch);
         const lv = (k: string) => session.sdk.getState()?.skills.find(x => x.name.toLowerCase() === k);
         console.log(`LEVELS hp ${lv('hitpoints')?.level} prayer ${lv('prayer')?.level} magic ${lv('magic')?.level} attack ${lv('attack')?.level}`);
+        if (NO_RETALIATE) {
+            const sdk = session.sdk;
+            for (let i = 0; i < 8 && sdk.getState()?.autoRetaliateEnabled !== false; i++) {
+                await sdk.sendClickComponent(IF_AUTO_RETALIATE_OFF);
+                await waitUntil(sdk, s => s.autoRetaliateEnabled === false, { maxTicks: 4 });
+            }
+            if (sdk.getState()?.autoRetaliateEnabled !== false) throw new Error('--no-retaliate: auto-retaliate stayed on after 8 clicks');
+            console.log('AUTO-RETALIATE off');
+        }
+        if (MONTAI_FIGHT && fixture.letter === 'D') await killGiantBesideMontai(session.sdk);
     },
 };
+
+/** --montai-fight: a Giant killed beside Montai, ending as close to D's talk click as the runner allows. */
+async function killGiantBesideMontai(sdk: Parameters<NonNullable<LabQuest['prepare']>>[0]['sdk']): Promise<void> {
+    await mustTele(sdk, MONTAI.x - 1, MONTAI.z - 2);
+    await cheat(sdk, 'npcadd giant', 2);
+    const on = await setPrayer(sdk, 'protect_from_melee', true);
+    if (!on.ok) throw new Error(`montai-fight: Protect from Melee did not turn on: ${on.reason}`);
+    const f = await fight(sdk, /^Giant$/i, { spell: COMBAT_SPELLS.fire_blast.component, prayer: 'protect_from_melee', eatBelow: 6, food: /^Shark$/i, maxTicks: 300, findTicks: 10 });
+    const off = await setPrayer(sdk, 'protect_from_melee', false);
+    const s = sdk.getState();
+    console.log(`MONTAI-FIGHT giant ${f.end} in ${f.ticks} ticks (engaged ${f.engaged}, dealt ${f.dealt}, taken ${f.taken}, hits ${f.hits}), prayer off ${off.ok ? 'ok' : off.reason}; at ${s?.player?.worldX},${s?.player?.worldZ} hp ${s?.player?.hp}, tick ${s?.tick}`);
+    if (!f.ok) throw new Error(`montai-fight: the giant fight ended ${f.end}`);
+}
 
 if (import.meta.main) {
     await labMain(lab);

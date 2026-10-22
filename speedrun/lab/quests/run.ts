@@ -33,13 +33,14 @@ import { pageText, resetDialogueMemory } from '../../lib/dialogue';
 import { closeSession, openSession, relog, type Session } from '../../lib/session';
 import { TickLog, type TickRow } from '../../lib/ticks';
 import { waitTicks } from '../../lib/wait';
+import { XP_RATE } from '../../lib/xp';
 import { configId } from '../../lib/world';
 import type { DialogueMode, QuestOptions } from '../../quests/segments';
 import { BOUNDARY_STEP, runSteps, type RunnerSession, type Step } from '../../runner/step';
 import { launchLabBrowser } from '../browser';
 import { arg, botArg, result } from '../common';
 import { stats, type Stats } from '../record';
-import { cheat, clearInventory, give, leaveTutorial, mustTele, setStats, tele } from '../setup';
+import { clearInventory, give, leaveTutorial, mustTele, setStats, setVars, tele } from '../setup';
 
 /** A segment's start state on the lab account. */
 export interface QuestFixture {
@@ -92,10 +93,7 @@ export async function applyFixture(session: Session, f: QuestFixture, staging: {
     await tele(sdk, staging.x, staging.z);
     await clearInventory(sdk);
     const vars = Object.entries(f.vars ?? {});
-    if (vars.length) {
-        await Promise.all(vars.map(([k, v]) => cheat(sdk, `setvar ${k} ${v}`)));
-        await waitTicks(sdk, Math.ceil(vars.length / 5) + 2);
-    }
+    if (vars.length) await setVars(sdk, Object.fromEntries(vars));
     if (f.relog ?? vars.length > 0) {
         if (!session.child && session.client !== 'browser') throw new Error(`fixture ${f.letter}: the quest tab only shows the vars after a relog, which needs this script to own the client (LAB_RUNNERS=0 and --launch), or relog: false`);
         await relog(session);
@@ -250,6 +248,19 @@ export interface LabRunOptions {
     trace?: number;
 }
 
+/** Skills whose base xp gained each run's RESULT line carries. */
+export const XP_SKILLS = ['magic', 'defence', 'hitpoints'] as const;
+
+/** Game xp per skill in `XP_SKILLS`. */
+export function skillXps(s: BotWorldState | null): Record<string, number> {
+    return Object.fromEntries(XP_SKILLS.map(k => [k, s?.skills.find(x => x.name.toLowerCase() === k)?.experience ?? 0]));
+}
+
+/** Base xp gained per skill of `before` between two `skillXps` snapshots (game xp / XP_RATE, to 0.1); a skill `after` lacks gained nothing. */
+export function baseXpGained(before: Readonly<Record<string, number>>, after: Readonly<Record<string, number>>): Record<string, number> {
+    return Object.fromEntries(Object.keys(before).map(k => [k, Math.round((((after[k] ?? before[k]!) - before[k]!) / XP_RATE) * 10) / 10]));
+}
+
 /** Apply the fixture of `from`, run the chosen segments, `runs` times; a failed run is recorded and the next one starts afresh. */
 export async function runLabQuest<O extends QuestOptions>(session: Session | RunnerSession, quest: LabQuest<O>, o: LabRunOptions): Promise<LabReport> {
     const dialogue = o.dialogue ?? 'fixed';
@@ -271,6 +282,7 @@ export async function runLabQuest<O extends QuestOptions>(session: Session | Run
         if (quest.applyFixture) await quest.applyFixture(s, fixture);
         else await applyFixture(s, fixture, quest.staging);
         if (quest.prepare) await quest.prepare(s, fixture);
+        const xp0 = skillXps(session.sdk.getState());
         const log = TickLog.memory();
         const untrace = o.trace ? trace(session.sdk, o.trace) : () => undefined;
         let error: string | undefined;
@@ -287,6 +299,7 @@ export async function runLabQuest<O extends QuestOptions>(session: Session | Run
             run, dialogue, ok: !error, ...(error ? { error } : {}),
             ticks: Object.fromEntries(log.rows.filter(isStepRow).map(r => [r.step, r.ok ? r.ticks : `fail@${r.ticks}`])),
             boundary: log.rows.filter(r => !r.kind && r.step === BOUNDARY_STEP).reduce((a, r) => a + r.ticks, 0),
+            xpBase: baseXpGained(xp0, skillXps(session.sdk.getState())),
         });
     }
     return summarize(quest.title, dialogue, names, records, quest.reference, quest.stepId);
