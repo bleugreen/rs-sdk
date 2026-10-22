@@ -12,8 +12,10 @@
 // --fm-tree is a checkout holding speedrun/helpers/fm-row.ts with the opt-ins (rs/41's mission
 // branch from 47342ae6), whose bots/ and node_modules point at this checkout's. Options:
 //   --droppers=fmd1,...,fmd6  --tiles=<parseTiles list> (default LUMBRIDGE_LAP)
-//   --login-at=95  ticks after T0 at which the account's harness is launched (its login lands a
-//                  few ticks later; log 0 turns public at T0 + 101)
+//   --login-at=95  observed ticks after T0 at which the account's harness is launched (its login
+//                  lands a few ticks later; log 0 turns public at T0 + 101). Ticks are read from
+//                  dropper 0's published state (tools/tick-wait.ts), not counted as tickMs() of
+//                  wall time: the demo's tick ran 0.34-0.37 s in rs/269, so wall ticks launch early.
 //   --skip=1       fm-row skipOccupied (off by default: see rs/228 on lapped rows)
 //   --stagger=0    all six droppers log in and arm before T0 (default 1: dropper k about 165 ticks
 //                  before its first log is due)
@@ -29,6 +31,8 @@ import { tickMs, waitUntil } from '../lib/wait';
 import { parseTiles, routeLogs } from '../skills/firemaking';
 import { arg, botArg, result } from './common';
 import { cheat, clearInventory } from './setup';
+import { loadBotEnv } from '../lib/session';
+import { observeTicks } from '../tools/tick-wait';
 
 /** The lab-confirmed lap beside the Lumbridge spawn (rs/228 row check, 4-tick chains throughout). */
 export const LUMBRIDGE_LAP = '3222-3218@3219;3218-3243@3218;3242-3223@3219';
@@ -139,11 +143,16 @@ const early = [0, 1, 2, 3, 4, 5].filter(k => loginTick(k) === 0);
 await Promise.all(early.map(startDropper));
 for (const k of early) if (!(await waitLog(`fm-row-${droppers[k]}`, /"phase":"armed"/, 180))) throw new Error(`dropper ${k} never armed`);
 
-// 3. T0: the go file.
+// 3. T0: the go file. Later launches are placed on dropper 0's observed ticks.
+const env0 = loadBotEnv(droppers[0]!);
+const ticks = await observeTicks(droppers[0]!, env0.GATEWAY_URL ?? 'ws://127.0.0.1:7780', env0.PASSWORD ?? '');
+process.on('exit', () => void ticks.close());
 const t0 = Date.now();
 writeFileSync(join(cueDirPath, 'fm-row-go.json'), JSON.stringify({ v: 1, ms: t0 }));
-say(`T0 cue written (${ms} ms ticks); later droppers at ${[0, 1, 2, 3, 4, 5].filter(k => loginTick(k) > 0).map(k => `${k}@+${loginTick(k)}`).join(' ')}`);
-const at = (tick: number) => Bun.sleep(Math.max(0, t0 + tick * ms - Date.now()));
+const cueTick = ticks.clock.now();
+if (cueTick === null) throw new Error(`no published tick from ${droppers[0]}`);
+say(`T0 cue written at tick ${cueTick}; later droppers at ${[0, 1, 2, 3, 4, 5].filter(k => loginTick(k) > 0).map(k => `${k}@+${loginTick(k)}`).join(' ')}`);
+const at = (tick: number) => ticks.clock.at(cueTick + tick);
 const late = [0, 1, 2, 3, 4, 5].filter(k => loginTick(k) > 0).map(async k => {
     await at(loginTick(k));
     await startDropper(k);
@@ -151,7 +160,7 @@ const late = [0, 1, 2, 3, 4, 5].filter(k => loginTick(k) > 0).map(async k => {
 
 // 4. The account, about when log 0 turns public.
 await at(loginAt);
-say(`launching the account's harness at T0+${loginAt}`);
+say(`launching the account's harness at T0+${loginAt} (tick ${ticks.clock.now()}, ${Date.now() - t0} ms after the cue)`);
 const acctLog = join(out, 'account.jsonl');
 const harness = spawn('account', [process.execPath, 'speedrun/rehearse.ts', '--skill=firemaking', `--bot=${me}`, '--client=lite', '--lab', '--to=99', `--skill-opt=tiles=${tiles}`, `--log=${acctLog}`], ROOT);
 const code = await harness.exited;
