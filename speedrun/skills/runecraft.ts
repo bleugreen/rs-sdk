@@ -22,7 +22,7 @@
 
 import { join } from 'node:path';
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
-import { canonName, cueDir, CueWriter, readJson, readStatuses, RUN_DIR, type GiverStatus, type Schedule, type Turn } from '../helpers/altar-cue';
+import { canonName, cueDir, CueWriter, readJson, readStatuses, RUN_DIR, type CueScope, type GiverStatus, type Schedule, type Turn } from '../helpers/altar-cue';
 import type { LauncherStatus } from '../helpers/standalone';
 import { classifyPage } from '../lib/dialogue';
 import { levelUpStep, newWatcherMemory, type WatcherMemory } from '../lib/levelup';
@@ -183,7 +183,7 @@ export interface RunecraftDeps {
     /** The cue's fields from a status, and a key that changes when they do. */
     rcCueFields(status: ProgramStatus | null | undefined): (CueFields & { key: string }) | null;
     /** A new cue session. */
-    openCue(dir: string, receiverName: string): CueSink;
+    openCue(dir: string, receiverName: string, scope: CueScope): CueSink;
     readStatuses(dir: string): GiverStatusView[];
     readLauncher(runDir: string): LauncherView | null;
     /** RC_CUE_DIR, else run-machine/rc-cue. */
@@ -204,7 +204,7 @@ export const defaultDeps: RunecraftDeps = {
     stopProgram,
     sendProgramInput,
     rcCueFields,
-    openCue: (dir, receiverName) => new CueWriter(dir, receiverName),
+    openCue: (dir, receiverName, scope) => new CueWriter(dir, receiverName, scope),
     readStatuses,
     readLauncher: readLauncherFile,
     cueDir: () => cueDir(),
@@ -611,7 +611,7 @@ class Driver {
     }
 
     private openCue(): CueSink {
-        return this.deps.openCue(this.cueDir, this.ctx.session.name);
+        return this.deps.openCue(this.cueDir, this.ctx.session.name, { step: this.band.id, family: 'altar' });
     }
 
     private scoredLoggedInAt(): number | null {
