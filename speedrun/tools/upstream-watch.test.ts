@@ -13,6 +13,7 @@ import {
     Matcher,
     compareHiscore,
     diffStat,
+    fetchHiscoreTop,
     loadWatchlist,
     matchCommit,
     parseHiscoreTop,
@@ -104,8 +105,26 @@ describe('diff parsing', () => {
 });
 
 describe('hiscores', () => {
-    test('parses row 1 of the saved demo page', () => {
+    const WOODCUTTING = readFileSync(join(import.meta.dir, 'fixtures/hiscore/board-woodcutting-2026-10-22.html'), 'utf8');
+
+    test('parses row 1 of the saved demo page (old form, N ticks)', () => {
         expect(parseHiscoreTop(FIXTURE)).toEqual(FIXTURE_TOP);
+    });
+
+    test('parses row 1 of a new-form board (demo, 2026-10-22: S seconds of game time)', () => {
+        expect(parseHiscoreTop(WOODCUTTING)).toEqual({ name: 'cairn_chops', level: 99, ticks: 3_329, time: '16m 38s' });
+    });
+
+    test('a seconds title off the 0.3 s grid is unparsed, not a wrong stamp', async () => {
+        const html = WOODCUTTING.replace('title="998.7 seconds', 'title="998.8 seconds');
+        expect(() => parseHiscoreTop(html)).toThrow(/not a multiple of 0.3/);
+        const server = Bun.serve({ port: 0, fetch: () => new Response(html) });
+        try {
+            const fetched = await fetchHiscoreTop(`http://127.0.0.1:${server.port}/hiscores`);
+            expect(fetched).toMatchObject({ status: 'unparsed', error: expect.stringMatching(/not a multiple of 0.3/) });
+        } finally {
+            server.stop(true);
+        }
     });
 
     test('an unchanged #1 is not a finding', () => {

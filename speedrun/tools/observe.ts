@@ -39,6 +39,7 @@ import { BotSDK } from '../../sdk/index';
 import { BotActions } from '../../sdk/actions';
 import { initPathfinding } from '../../sdk/pathfinding';
 import type { BotAction, BotWorldState } from '../../sdk/types';
+import { isStamped, parsePlayer } from './hiscore-scrape';
 
 const ROOT = join(import.meta.dir, '..', '..');
 
@@ -251,16 +252,18 @@ export function activityOf(anim: string | null): string | null {
 
 // ------------------------------------------------------------------ hiscores
 
-export interface HiscoreSkill { skill: string; rank: string; level: string; ticks: number }
+/** One stamped row of a player page; skills under level 15 have no row and are left out. */
+export interface HiscoreSkill { skill: string; rank: number | null; level: number; ticks: number }
 export interface HiscoreEntry { name: string; fetchedAt: string; found: boolean; skills: HiscoreSkill[] }
 
+/**
+ * Read through hiscore-scrape's parsePlayer, so either Time title form parses. A page with no skill rows
+ * (an error page) or a stamp titleTicks rejects throws: the lookup is retried, not cached as unranked.
+ */
 export function parseHiscorePage(name: string, html: string): HiscoreEntry {
-    const skills: HiscoreSkill[] = [];
-    const re = />([A-Za-z ]+)<\/a><\/td>\s*<td align="right">([^<]*)<\/td>\s*<td align="right">([^<]*)<\/td>\s*<td align="right"><span title="([\d,]+) ticks"/g;
-    for (const m of html.matchAll(re)) {
-        skills.push({ skill: m[1]!.trim(), rank: m[2]!.trim(), level: m[3]!.trim(), ticks: Number(m[4]!.replace(/,/g, '')) });
-    }
-    return { name, fetchedAt: new Date().toISOString(), found: skills.length > 0, skills };
+    const rows = parsePlayer(html);
+    const skills = (rows ?? []).filter(isStamped).map(r => ({ skill: r.skill, rank: r.rank, level: r.level!, ticks: r.ticks! }));
+    return { name, fetchedAt: new Date().toISOString(), found: rows !== null, skills };
 }
 
 class Hiscores {
@@ -309,8 +312,8 @@ export function hiscoreBrief(h: HiscoreEntry | undefined): string {
     if (!h.found) return 'unranked';
     const overall = h.skills.find(s => s.skill === 'Overall');
     const top = h.skills
-        .filter(s => s.skill !== 'Overall' && s.skill !== 'Quest Points' && Number(s.level) >= 60)
-        .sort((a, b) => Number(b.level) - Number(a.level))
+        .filter(s => s.skill !== 'Overall' && s.skill !== 'Quest Points' && s.level >= 60)
+        .sort((a, b) => b.level - a.level)
         .slice(0, 6)
         .map(s => `${s.skill} ${s.level}@${s.ticks}t`);
     return `total ${overall?.level ?? '?'} (${overall?.ticks ?? '?'}t)${top.length ? '; ' + top.join(', ') : ''}`;
