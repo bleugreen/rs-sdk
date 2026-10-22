@@ -169,11 +169,14 @@ export function asDelivered(v: unknown): Delivered | null {
 export type AnvilStep = 'stop' | 'wait-plan' | 'stage' | 'go-to-tile' | 'wait-receiver' | 'request';
 
 /** The next thing to do, from what is known now. */
-export function nextStep(o: { plan: AnvilPlan | null; delivered: Delivered | null; exact: boolean; onTile: boolean; receiverInSight: boolean; cueStop: boolean }): AnvilStep {
+export function nextStep(o: { plan: AnvilPlan | null; delivered: Delivered | null; exact: boolean; onTile: boolean; receiverInSight: boolean; cueStop: boolean; tradeOpen: boolean }): AnvilStep {
     if (o.cueStop || o.plan?.stop) return 'stop';
     if (!o.plan) return 'wait-plan';
     if (o.delivered && o.delivered.session === o.plan.session && o.delivered.seq >= o.plan.seq) return 'wait-plan';
     if (!o.exact) return 'stage';
+    // Staged with a trade already open (the scored account's click took our standing request while we
+    // were off the tile): trade now. A walk or a new request click would close it.
+    if (o.tradeOpen) return 'request';
     if (!o.onTile) return 'go-to-tile';
     if (!o.receiverInSight) return 'wait-receiver';
     return 'request';
@@ -265,10 +268,37 @@ export async function restockAtBank(sdk: BankSdk, give: Record<string, number>):
         if (!d.ok) d = await depositMatching(sdk, deposit);
         if (!d.ok) return { ok: false, reason: `the deposit did not land (${d.reason}): ${d.remaining.map(i => i.name).join(', ')}` };
     }
-    const w = await withdrawMany(sdk, staging(inv(), give).withdraw.map(x => ({ item: itemRe(x.name), n: x.n })));
-    const exact = await waitUntil(sdk, s => staging(s.inventory, give).exact, { maxTicks: 5 });
+    const withdraw = () => withdrawMany(sdk, staging(inv(), give).withdraw.map(x => ({ item: itemRe(x.name), n: x.n })));
+    let w = await withdraw();
+    let exact = await waitUntil(sdk, s => staging(s.inventory, give).exact, { maxTicks: 5 });
+    // A withdrawal that did not land (the live server dropped one) goes again for what is still short;
+    // an over-count (a late landing after all) is not topped up but fails below.
+    if (!exact.ok && staging(inv(), give).deposit.length === 0) {
+        w = await withdraw();
+        exact = await waitUntil(sdk, s => staging(s.inventory, give).exact, { maxTicks: 5 });
+    }
     if (!exact.ok) return { ok: false, reason: `bank left the inventory off the plan (${w.reason ?? 'no reason'}): ${JSON.stringify(staging(inv(), give))}` };
     return { ok: true };
+}
+
+/**
+ * Walk onto `tile`, giving way to a trade: one the scored account opens while we walk is ours to
+ * take, and a further walk would close it, so the walk stops the moment a trade opens.
+ */
+export async function walkToTile(ctx: Pick<RoleContext, 'sdk' | 'signal'>, tile: Tile): Promise<'on-tile' | 'trade'> {
+    const at = (s: BotWorldState | null | undefined) => pos(s).x === tile.x && pos(s).z === tile.z;
+    const trading = (s: BotWorldState | null | undefined) => !!s && tradeOf(s).isOpen;
+    for (let attempt = 0; attempt < 5 && !ctx.signal.aborted; attempt++) {
+        const s = ctx.sdk.getState();
+        if (trading(s)) return 'trade';
+        if (at(s)) return 'on-tile';
+        await ctx.sdk.sendWalk(tile.x, tile.z);
+        await waitUntil(ctx.sdk, st => at(st) || trading(st), { maxTicks: 34 });
+    }
+    const s = ctx.sdk.getState();
+    if (trading(s)) return 'trade';
+    if (!at(s)) throw new Error(`could not stand on ${tile.x},${tile.z}`);
+    return 'on-tile';
 }
 
 // ------------------------------------------------------------------ options
@@ -384,7 +414,8 @@ export class AnvilHelper {
             exact: !!this.plan && !!s && staging(s.inventory, this.plan.give).exact,
             onTile: !!s && pos(s).x === this.o.tile.x && pos(s).z === this.o.tile.z,
             receiverInSight: !!this.receiverInSight(),
-            cueStop: !!this.cue?.stop
+            cueStop: !!this.cue?.stop,
+            tradeOpen: !!s && tradeOf(s).isOpen
         });
     }
 
@@ -431,7 +462,7 @@ export class AnvilHelper {
                 return;
             case 'go-to-tile':
                 this.setPhase('travel', 'to the anvil');
-                await standOn(ctx, o.tile);
+                await walkToTile(ctx, o.tile);
                 return;
             case 'wait-receiver':
                 this.setPhase('waiting', 'for the scored account');

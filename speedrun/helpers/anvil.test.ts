@@ -21,6 +21,7 @@ import {
     readAnvilPlan,
     restockAtBank,
     staging,
+    walkToTile,
     validPlan,
     writeAnvilPlan,
     type AnvilPlan
@@ -138,7 +139,12 @@ describe('staging: carry exactly the plan', () => {
 });
 
 describe('nextStep', () => {
-    const base = { plan: plan({ adamantite_bar: 25 }, 3), delivered: { session: 's1', seq: 2 }, exact: true, onTile: true, receiverInSight: true, cueStop: false };
+    const base = { plan: plan({ adamantite_bar: 25 }, 3), delivered: { session: 's1', seq: 2 }, exact: true, onTile: true, receiverInSight: true, cueStop: false, tradeOpen: false };
+
+    test('staged with a trade already open: trade now, wherever we stand; unstaged still stages', () => {
+        expect(nextStep({ ...base, onTile: false, receiverInSight: false, tradeOpen: true })).toBe('request');
+        expect(nextStep({ ...base, exact: false, tradeOpen: true })).toBe('stage');
+    });
 
     test('staged, on the tile, the scored account in sight: request', () => {
         expect(nextStep(base)).toBe('request');
@@ -217,11 +223,12 @@ describe('anvilOptions and the booth', () => {
 describe('restockAtBank', () => {
     const DAGGER = 1205;
     /** An open bank whose packets land on the next tick; `dropDeposits` deposits are lost first. */
-    function bankServer(inventory: InventoryItem[], bankItems: { slot: number; id: number; name: string; count: number }[], dropDeposits = 0) {
+    function bankServer(inventory: InventoryItem[], bankItems: { slot: number; id: number; name: string; count: number }[], dropDeposits = 0, dropWithdraws = 0) {
         const sdk = new FakeSdk(baseState({ tick: 10, inventory, bank: { isOpen: true, items: bankItems } as unknown as BotWorldState['bank'] }));
         const queue: Array<(s: BotWorldState) => Partial<BotWorldState>> = [];
         const sendTick = new Map<string, number[]>();
         let dropped = 0;
+        let droppedW = 0;
         sdk.onSend = a => {
             sendTick.set(a.method, [...(sendTick.get(a.method) ?? []), sdk.state!.tick]);
             if (a.method === 'sendBankDeposit') {
@@ -240,6 +247,7 @@ describe('restockAtBank', () => {
                 });
             }
             if (a.method === 'sendBankWithdraw') {
+                if (droppedW++ < dropWithdraws) return;
                 const [slot, amount] = a.args as [number, number];
                 queue.push(cur => {
                     const items = [...(cur.bank.items as typeof bankItems)];
@@ -282,6 +290,27 @@ describe('restockAtBank', () => {
         const r = await drain(restockAtBank(sdk, { bronze_bar: 5 }), step);
         expect(r).toEqual({ ok: true });
         expect(sendTick.get('sendBankDeposit')).toHaveLength(2);
+    });
+
+    test('a withdrawal that did not land is sent again for what is still short', async () => {
+        const { sdk, step, sendTick } = bankServer(daggers, bank(), 0, 1);
+        const r = await drain(restockAtBank(sdk, { bronze_bar: 5 }), step);
+        expect(r).toEqual({ ok: true });
+        expect(sdk.state!.inventory.map(i => i.name)).toEqual(Array(5).fill('Bronze bar'));
+        expect(sendTick.get('sendBankWithdraw')!.length).toBeGreaterThanOrEqual(2);
+    });
+
+    test('walkToTile stops walking the moment a trade opens', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 10, player: { worldX: 3185, worldZ: 3436, level: 0 } as unknown as BotWorldState['player'] }));
+        let walks = 0;
+        sdk.onSend = a => { if (a.method === 'sendWalk') walks++; };
+        const ac = new AbortController();
+        const p = walkToTile({ sdk: sdk as never, signal: ac.signal }, HELPER_TILE);
+        await flush();
+        sdk.tick();
+        sdk.tick({ trade: { isOpen: true, screen: 'offer', partner: 'scored', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false } });
+        expect(await drain(p, () => sdk.tick())).toBe('trade');
+        expect(walks).toBe(1);
     });
 
     test('a deposit that never lands fails with what is still held, before any withdrawal', async () => {
