@@ -33,7 +33,7 @@
 
 import type { BotWorldState, PrayerName, QuestJournalState } from '../../sdk/types';
 import { actConverse, dropItems, opLoc, talkTo, wield, type ActSdk } from '../lib/act';
-import { fight, prayerActive, setPrayer, type CombatSdk, type FightOptions, type FightResult } from '../lib/combat';
+import { COMBAT_SPELLS, fight, prayerActive, setPrayer, type CombatSdk, type FightOptions, type FightResult } from '../lib/combat';
 import { converse, levelUpInterrupt, type ConverseResult, type ConverseSdk } from '../lib/converse';
 import { pageText, type OptionPattern } from '../lib/dialogue';
 import type { ItemPattern } from '../lib/items';
@@ -43,7 +43,6 @@ import { FOOD, inArea, missingRunes, runTo, SPELLS as TELEPORTS, type Area, type
 import { currentTick, waitUntil, type Pred, type StateSource } from '../lib/wait';
 import { configId, findLoc, findNpc, invCount, opIndex, pos, worn, type NamePattern } from '../lib/world';
 import type { Check, Observed, StepContext } from '../runner/step';
-import { SPELLS as COMBAT_SPELLS } from './grand-tree';
 import { allOf, baseLevels, inBox, questSteps, slotsCover, talkShape, within, type Box, type QuestItem, type QuestOptions, type Segment } from './segments';
 
 export const quest = 'arena' as const;
