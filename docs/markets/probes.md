@@ -218,7 +218,8 @@ to 10.
 
 Two fixes came out of these runs. `withdrawItem` reads a bare number as a bank slot, not an obj
 id, so the coal is withdrawn by its bank item. The deposit of everything but the pickaxe came
-from the first fresh-account run, which made 8 Edgeville trips' worth of short loads.
+from the first fresh-account run, whose pack was full after 8 coal because the starter kit
+still held most of its slots.
 
 ### Samples
 
