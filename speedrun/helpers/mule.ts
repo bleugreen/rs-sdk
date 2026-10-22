@@ -685,14 +685,26 @@ export interface MuleOptions {
     preRequest?: boolean;
     stand?: { x: number; z: number };
     ge?: { orders?: GeOrder[]; collectEveryMin?: number };
+    /** Observed ticks a top-up package waits after the open for the scored account's ask. Default 3. */
+    askWaitTicks?: number;
+    /** Where the ask is read (altar-cue.ts cueDir: RC_CUE_DIR, else run-machine/rc-cue). */
+    cueDir?: string;
 }
 
-/** A package's lines from options: `{ item | id, amount, noted? }`. */
+/** A package's lines from options: `{ item | id, amount, noted? }`, or `{ item | id, topUp: { max }, noted? }`. */
 export function packageItems(name: string, items: unknown, pack?: ObjPack): PackageItem[] {
     if (!Array.isArray(items)) throw new Error(`Package ${name}: items must be a list`);
     return (items as Record<string, unknown>[]).map((raw, j) => {
         const where = `Package ${name} item ${j}`;
         const ref = itemRef(raw ?? {}, where, pack);
+        if (raw.topUp !== undefined) {
+            if (raw.amount !== undefined) throw new Error(`${where}: a top-up takes its count from the ask, so it has no amount`);
+            const max = Number((raw.topUp as { max?: unknown } | null)?.max);
+            if (!Number.isInteger(max) || max < 1) throw new Error(`${where}: topUp.max must be a whole number of at least 1`);
+            if (raw.noted !== undefined && typeof raw.noted !== 'boolean') throw new Error(`${where}: noted must be true or false`);
+            if (raw.noted === false && namesNote(ref, pack)) throw new Error(`${where}: obj ${ref.id} is a note, so it cannot be noted: false`);
+            return { ...ref, topUp: { max }, ...(typeof raw.noted === 'boolean' ? { noted: raw.noted } : {}) };
+        }
         const amount = Number(raw.amount);
         if (!Number.isInteger(amount) || (amount < 1 && amount !== -1)) throw new Error(`Package ${name}: bad amount for ${refLabel(ref)}`);
         if (raw.noted !== undefined && typeof raw.noted !== 'boolean') throw new Error(`${where}: noted must be true or false`);
@@ -701,10 +713,34 @@ export function packageItems(name: string, items: unknown, pack?: ObjPack): Pack
     });
 }
 
-function muleOptions(raw: Record<string, unknown>): Required<Omit<MuleOptions, 'serve' | 'ge'>> & Pick<MuleOptions, 'serve' | 'ge'> {
+/**
+ * A package from options. One with a top-up line needs `scope: { step, family: 'mule' }`, the ask
+ * it reads; a fixed package takes no scope, and comes back exactly as before (name and items).
+ */
+export function packageOf(raw: unknown, pack?: ObjPack): Package {
+    const p = (raw ?? {}) as Record<string, unknown>;
+    const name = String(p.name);
+    const items = packageItems(name, p.items, pack);
+    if (!items.some(isTopUp)) {
+        if (p.scope !== undefined) throw new Error(`Package ${name}: scope is for a package with a top-up line`);
+        return { name, items };
+    }
+    const labels = items.map(i => refLabel(i).toLowerCase());
+    for (const t of items.filter(isTopUp)) {
+        const l = refLabel(t).toLowerCase();
+        if (labels.filter(x => x === l).length > 1) throw new Error(`Package ${name}: ${refLabel(t)} is a top-up line and another line too`);
+    }
+    return { name, items, scope: scopeOption(p.scope, ['mule'], `Package ${name} scope`) };
+}
+
+export function muleOptions(raw: Record<string, unknown>, env: Record<string, string | undefined> = process.env): Required<Omit<MuleOptions, 'serve' | 'ge'>> & Pick<MuleOptions, 'serve' | 'ge'> {
     const o = raw as MuleOptions;
-    const packages = (o.packages ?? []).map(p => ({ name: String(p.name), items: packageItems(String(p.name), p.items) }));
+    const packages = (o.packages ?? []).map(p => packageOf(p));
+    const askWaitTicks = Number(o.askWaitTicks ?? 3);
+    if (!Number.isInteger(askWaitTicks) || askWaitTicks < 0) throw new Error(`askWaitTicks must be a whole number (got ${o.askWaitTicks})`);
     return {
+        askWaitTicks,
+        cueDir: typeof o.cueDir === 'string' ? o.cueDir : cueDir(env),
         serve: o.serve,
         couriers: o.couriers ?? DEFAULT_COURIERS,
         packages,
@@ -735,6 +771,10 @@ class Mule {
     private lastGeCollect = 0;
     private readonly geDone = new Set<string>();
     private current = 'start';
+    /** Date.now() at the first frame showing the current trade open (altar-cue.ts usableAsk). */
+    private openSeenMs = 0;
+    /** Date.now() of the last top-up ask served. */
+    private lastAskMs = 0;
 
     /** What the mule is doing: idle, consolidate (taking courier stock in), serve (preparing or giving a package), ge. */
     private phase(to: 'idle' | 'consolidate' | 'serve' | 'ge'): void {
@@ -768,13 +808,23 @@ class Mule {
         await walkNear(ctx, this.o.stand.x, this.o.stand.z, 3);
         ctx.log('mule ready', { serve: this.o.serve, packages: this.o.packages.map(p => p.name), giver: this.o.giver, serveMode: this.o.serveMode });
 
-        while (!ctx.signal.aborted) {
-            try {
-                await this.cycle();
-            } catch (e) {
-                ctx.log('cycle error', { error: String(e) });
-                await ctx.sdk.waitForTicks(5).catch(() => {});
+        let wasOpen = false;
+        const unsubOpen = ctx.sdk.onStateUpdate(st => {
+            const open = !!st.trade?.isOpen;
+            if (open && !wasOpen) this.openSeenMs = Date.now();
+            wasOpen = open;
+        });
+        try {
+            while (!ctx.signal.aborted) {
+                try {
+                    await this.cycle();
+                } catch (e) {
+                    ctx.log('cycle error', { error: String(e) });
+                    await ctx.sdk.waitForTicks(5).catch(() => {});
+                }
             }
+        } finally {
+            unsubOpen();
         }
         if (ctx.sdk.getTradeState().isOpen) await ctx.bot.declineTrade();
         await closeBank(ctx);
@@ -877,10 +927,11 @@ class Mule {
         // A package is staged only into an otherwise empty inventory, so `held` is the package alone.
         if (this.pending && !this.held && deposited) {
             const plan = planPackage(this.pending, sdk.getBankItems());
-            if (plan.missing.length || plan.ambiguous.length || plan.slots > 28) {
-                if (this.shortSince === 0) ctx.log('package short', { package: this.pending.name, missing: plan.missing, ambiguous: plan.ambiguous, slots: plan.slots });
+            if (plan.missing.length || plan.ambiguous.length || plan.slots > 28 || plan.withdrawals.length === 0) {
+                if (this.shortSince === 0) ctx.log('package short', { package: this.pending.name, missing: plan.missing, ambiguous: plan.ambiguous, slots: plan.slots, topUpShort: plan.topUpShort });
                 this.shortSince = Date.now();
             } else {
+                if (plan.topUpShort.length) ctx.log('package: top-up staged below its max', { package: this.pending.name, topUpShort: plan.topUpShort });
                 let ok = true;
                 for (const w of plan.withdrawals) {
                     const r = await bot.withdrawItem(w.bankItem, w.amount, { asNote: w.noted });
@@ -935,10 +986,18 @@ class Mule {
         }
         if (!(await this.openTradeWith(name))) return;
         const pkg = this.pending!;
-        const items = sdk.getInventory().filter(i => this.held!.has(i.id));
         // 30 s, not 60: a pre-request can open a trade the scored account did not ask for
         // yet (it accepts a stale request of theirs), and that screen must not linger.
-        const r = await giveOpenTrade(sdk, bot, this.o.serve!, items, this.o.giver, 30_000);
+        const r = await serveStaged(sdk, bot, {
+            partner: this.o.serve!,
+            pkg,
+            held: this.held!,
+            mode: this.o.giver,
+            timeoutMs: 30_000,
+            ask: { dir: this.o.cueDir, openMs: this.openSeenMs || Date.now(), lastServedMs: this.lastAskMs, maxTicks: this.o.askWaitTicks, signal: ctx.signal },
+            log: ctx.log
+        });
+        if (r.ask) this.lastAskMs = r.ask.ms;
         ctx.log('hand-off', {
             to: name,
             package: pkg.name,
@@ -947,7 +1006,8 @@ class Mule {
             stacks: this.held!.size,
             mode: this.o.giver,
             result: r.message,
-            received: r.received.map(i => `${i.name} x${i.count}`)
+            received: r.received.map(i => `${i.name} x${i.count}`),
+            ...(r.topUps.length ? { asked: r.ask?.items ?? null, topUps: r.topUps.map(t => ({ item: t.item, asked: t.asked, n: t.n })) } : {})
         });
         if (r.success) {
             this.held = null;
