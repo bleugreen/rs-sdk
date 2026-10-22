@@ -8,7 +8,8 @@
 //
 //   bun speedrun/tools/run-gate.ts up      [--machines=run,twin] [--rehearsal] [--claim=OWNER]
 //   bun speedrun/tools/run-gate.ts gate    --gate-run=ACCOUNT --gate-twin=ACCOUNT [--machines=run,twin]
-//                                          [--minutes=5] [--rehearsal] [--claim=OWNER] [--rehearse=CASE]
+//                                          [--prefer=run|twin] [--minutes=5] [--rehearsal] [--claim=OWNER]
+//                                          [--rehearse=CASE]
 //   bun speedrun/tools/run-gate.ts handoff --machine=run|twin --scored-env=PATH [--max-gate-age=20]
 //                                          [--cap=80] [--rehearsal] [--claim=OWNER]
 //
@@ -19,10 +20,17 @@
 // stops a step halfway: the on-machine run finishes into ~/rs-run/gate-<UTC>/steps.log on the
 // machine, and the Mac prints the same lines prefixed [run] or [twin] and keeps a copy in
 // --log-dir (default ~/rs-run-gate). `gate` runs both machines in parallel, prints (a)-(d) per
-// machine, chooses (RUN-HOST.md step 5a.2: the run host when both pass, the twin only on the
-// tiebreak) and writes choice.json; `handoff` refuses a machine the latest choice did not name, or
-// a choice older than --max-gate-age minutes. Between the two, step 5a.4-5a.5's roster moves and
-// step 7's login count happen through rs/117's launcher, as before.
+// machine, chooses (RUN-HOST.md step 5a.2: the preferred machine when both pass, DEFAULT_PREFER
+// unless --prefer says otherwise, and the other only on the tiebreak) and writes choice.json;
+// `handoff` refuses a machine the latest choice did not name, or a choice older than
+// --max-gate-age minutes. Between the two, step 5a.4-5a.5's roster moves and step 7's login count
+// happen through rs/117's launcher, as before.
+//
+// Beside (a)-(d), `gate` prints three report-only lines from the gate tab, never pass or fail:
+// `scene`, the page ticks from the gate tab's login to the client's sceneState 2 (the gate tab and
+// SCORED's share the run profile and its origin, so this reads how warm the profile is); `locs`, the
+// SDK's nearby locs once the scene is built; and `tile`, where the gate account stands against
+// Lumbridge spawn, where it is parked as the profile's warm-up probe.
 //
 // Main's recording rulings (cairn://p/rs/main/messages, 18:16 and 19:08 PDT 2026-10-21) are hard
 // checks here:
@@ -46,8 +54,10 @@
 // Exit codes: 0 pass, 1 a pass line failed (or no machine passes), 2 a precondition or a tool
 // failed (STOP), 3 re-measure ((c) failed, or (d) marginal).
 //
-// SCORED's name is never printed: `handoff` reads it from --scored-env and relabels every line it
-// prints, its frames and its logs as SCORED.
+// No account's name is printed: `handoff` reads SCORED's from --scored-env and relabels every line
+// it prints, its frames and its logs as SCORED; `gate` relabels each gate account as GATE-run or
+// GATE-twin in its lines, its STOP lines, its JSON and the files it leaves in ~/rs-run/gate-*, and
+// the Mac relabels both again in what it prints, its log and choice.json.
 //
 // --rehearsal: 30-minute bounds instead of the run's 9 h, `rehearsal-` recordings, and it requires
 // --claim with an owner other than host or run. --rehearse=unconfirmed-logout skips the gate tab's
@@ -59,6 +69,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFil
 import { homedir } from 'os';
 import { join, resolve } from 'path';
 import { DIRECT_RULE, directDecision, type DirectVerdict, verdictText } from '../lib/hostgate-verdict';
+import { evaluateInTab } from '../lib/tab';
 
 // ------------------------------------------------------------------ fixed names (RUN-HOST.md "Names and ports")
 
@@ -86,6 +97,15 @@ export const CHROME_FLAGS = [
 
 export type Machine = 'run' | 'twin';
 export const MACHINES: readonly Machine[] = ['run', 'twin'];
+export const otherMachine = (m: Machine): Machine => (m === 'run' ? 'twin' : 'run');
+const machineName = (m: Machine) => (m === 'run' ? 'the run host' : 'the twin');
+
+/**
+ * Where the run starts when both machines pass: the twin is the expected start machine and the
+ * run host the fallback (main, 10:4x PDT 2026-10-22, from rs/83's same-minute pair series: the twin
+ * passed 17 of 17, the run host 4 of 17; tenet 17). `gate --prefer=run|twin` overrides it.
+ */
+export const DEFAULT_PREFER: Machine = 'twin';
 
 export class Stop extends Error {
     constructor(
@@ -178,6 +198,10 @@ export interface MachineGate {
     /** confirmed: logoutClean saw the page out of game. The window is killed either way. */
     gateLogout: 'confirmed' | 'unconfirmed' | 'not-run';
     failures: string[];
+    /** Report only, never part of the status: the gate tab's scene, locs and tile. Null when not read. */
+    scene: SceneRead | null;
+    locs: LocsRead | null;
+    tile: TileRead | null;
 }
 
 export const startable = (s: GateStatus | undefined) => s === 'pass' || s === 'marginal';
@@ -205,29 +229,56 @@ export function machineVerdict(direct: DirectRead, loops: LoopsSummary | null, o
     return { status, verdict, failures };
 }
 
+/** Where a passing gate sits at the margin: (a) under 60 of 60, (c) above 1 a minute (the line is 2), a (d) sample under 60. */
+export function marginOf(g: MachineGate): string[] {
+    return [
+        g.a && g.a.onTime < g.a.passAt ? `(a) ${g.a.onTime}/${g.a.trials}` : '',
+        g.c && g.c.perMinute > 1 ? `(c) ${g.c.perMinute}/min` : '',
+        g.d && g.d.lowest < 60 ? `(d) lowest ${g.d.lowest}/s` : '',
+    ].filter(Boolean);
+}
+
+/** A read clearly better than a marginal one: (a) 60 of 60 and (c) at most 1 a minute. */
+const cleanRead = (g: MachineGate) => !!g.a && g.a.onTime >= g.a.passAt && !!g.c && g.c.perMinute <= 1;
+
+export interface Choice {
+    machine: Machine | null;
+    /** The preference in force (DEFAULT_PREFER or --prefer). */
+    prefer: Machine;
+    /** True when the tiebreak moved the start off the preferred machine. */
+    tiebreak: boolean;
+    reason: string;
+}
+
 /**
- * RUN-HOST.md step 5a.2. One passes: start on it. Both pass: the run host, unless it passed only
- * at the margin ((a) under 60 of 60, (c) above 1 a minute, i.e. at the line of 2, or a (d) sample
- * under 60) while the twin read (a) 60 of 60 and (c) at most 1. Neither: no start.
+ * RUN-HOST.md step 5a.2. One passes: start on it. Both pass: the preferred machine, unless it
+ * passed only at the margin (marginOf) while the other read clean ((a) 60 of 60, (c) at most 1):
+ * then the other, by the tiebreak. Neither: no start.
  */
-export function choose(gates: Partial<Record<Machine, MachineGate | null>>): { machine: Machine | null; reason: string } {
-    const run = gates.run ?? null;
-    const twin = gates.twin ?? null;
+export function choose(gates: Partial<Record<Machine, MachineGate | null>>, prefer: Machine = DEFAULT_PREFER): Choice {
+    const other = otherMachine(prefer);
+    const pg = gates[prefer] ?? null;
+    const og = gates[other] ?? null;
     const ok = (g: MachineGate | null): g is MachineGate => !!g && startable(g.status);
     const why = (m: Machine, g: MachineGate | null) => `${m} ${g ? `${g.status}${g.failures.length ? ` (${g.failures.join('; ')})` : ''}` : 'not gated'}`;
-    if (ok(run) && ok(twin)) {
-        const runMargin = [
-            run.a && run.a.onTime < run.a.passAt ? `(a) ${run.a.onTime}/${run.a.trials}` : '',
-            run.c && run.c.perMinute > 1 ? `(c) ${run.c.perMinute}/min` : '',
-            run.d && run.d.lowest < 60 ? `(d) lowest ${run.d.lowest}/s` : '',
-        ].filter(Boolean);
-        const twinClean = !!twin.a && twin.a.onTime >= twin.a.passAt && !!twin.c && twin.c.perMinute <= 1;
-        if (runMargin.length && twinClean) return { machine: 'twin', reason: `both pass; the run host only at the margin (${runMargin.join(', ')}) and the twin clean: the tiebreak picks the twin` };
-        return { machine: 'run', reason: runMargin.length ? `both pass; the run host at the margin (${runMargin.join(', ')}) but the twin not clearly better: the run host, the default` : 'both pass: the run host, the default' };
+    const pick = (machine: Machine | null, reason: string, tiebreak = false): Choice => ({ machine, prefer, tiebreak, reason });
+    if (ok(pg) && ok(og)) {
+        const margin = marginOf(pg);
+        if (margin.length && cleanRead(og)) return pick(other, `tiebreak: preferred ${prefer} passed only at the margin: ${margin.join(', ')}; ${other} read clean`, true);
+        return pick(prefer, margin.length ? `both pass; preferred ${prefer} at the margin (${margin.join(', ')}) but ${other} not clearly better: the preferred machine` : `both pass: the preferred machine, ${prefer}`);
     }
-    if (ok(run)) return { machine: 'run', reason: `only the run host passes; ${why('twin', twin)}` };
-    if (ok(twin)) return { machine: 'twin', reason: `only the twin passes; ${why('run', run)}` };
-    return { machine: null, reason: `no machine passes: ${why('run', run)}; ${why('twin', twin)}` };
+    if (ok(pg)) return pick(prefer, `only ${machineName(prefer)} passes; ${why(other, og)}`);
+    if (ok(og)) return pick(other, `only ${machineName(other)} passes; ${why(prefer, pg)}`);
+    return pick(null, `no machine passes: ${why('run', gates.run ?? null)}; ${why('twin', gates.twin ?? null)}`);
+}
+
+/** The step log's choice line; a tiebreak reads `chosen: run (tiebreak: preferred twin ...)`. */
+export const choiceLine = (c: Choice) => `chosen: ${c.machine ?? 'NONE'} (${c.reason})`;
+
+export function parsePrefer(v: string | undefined): Machine {
+    if (v === undefined) return DEFAULT_PREFER;
+    if (v === 'run' || v === 'twin') return v;
+    throw new Stop(`--prefer takes run or twin, not ${v}`);
 }
 
 export interface ClaimStatus {
@@ -255,13 +306,24 @@ export function parseClaimStatus(text: string): ClaimStatus {
     };
 }
 
-/** Replace an account's name (and the in-game form, underscores as spaces) with `label`. */
-export function relabel(text: string, name: string | null, label: string): string {
-    if (!name) return text;
+/**
+ * Replace each account's name (and its in-game form, underscores as spaces, in any case) with its
+ * label. Longer names go first, so a name that contains another is never half-replaced.
+ */
+export function relabelAll(text: string, pairs: ReadonlyArray<readonly [string | null | undefined, string]>): string {
+    const label = new Map<string, string>();
+    for (const [name, l] of pairs) if (name) for (const form of [name, name.replace(/_/g, ' ')]) label.set(form.toLowerCase(), l);
+    if (!label.size) return text;
     const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const forms = [...new Set([name, name.replace(/_/g, ' ')])].map(esc).join('|');
-    return text.replace(new RegExp(forms, 'gi'), label);
+    const forms = [...label.keys()].sort((x, y) => y.length - x.length).map(esc).join('|');
+    return text.replace(new RegExp(forms, 'gi'), m => label.get(m.toLowerCase())!);
 }
+
+/** Replace one account's name (and the in-game form) with `label`. */
+export const relabel = (text: string, name: string | null, label: string) => relabelAll(text, [[name, label]]);
+
+/** What a gate account is called in everything run-gate prints or writes. */
+export const gateLabel = (m: Machine | null) => (m ? `GATE-${m}` : 'GATE');
 
 export function gateRow(m: string, g: MachineGate | null): string {
     if (!g) return `${m.padEnd(5)} not gated`;
@@ -270,7 +332,187 @@ export function gateRow(m: string, g: MachineGate | null): string {
     const b = g.b ? `${g.b.p90} ms` : '-';
     const c = g.c ? `${g.c.perMinute}/min` : '-';
     const d = g.d ? `${g.d.lowest} / ${g.d.median} / ${g.d.highest}` : '-';
-    return `${m.padEnd(5)} ${minute}Z  (a) ${a.padEnd(6)} (b) p90 ${b.padEnd(7)} (c) ${c.padEnd(9)} (d) p10 ${d.padEnd(20)} ${g.status.padEnd(10)} online ${g.players ?? '?'}  gate logout ${g.gateLogout}${g.failures.length ? `  [${g.failures.join('; ')}]` : ''}`;
+    const scene = g.scene?.built ? `${g.scene.built.firstLook ? '<=' : ''}t${g.scene.built.tick ?? '?'}` : g.scene ? 'not built' : '-';
+    const locs = g.locs?.look ? String(g.locs.look.locs) : '-';
+    const tile = g.tile ? (g.tile.atSpawn ? 'at spawn' : `${g.tile.fromSpawn} from spawn`) : '-';
+    return (
+        `${m.padEnd(5)} ${minute}Z  (a) ${a.padEnd(6)} (b) p90 ${b.padEnd(7)} (c) ${c.padEnd(9)} (d) p10 ${d.padEnd(20)} ${g.status.padEnd(10)} online ${g.players ?? '?'}  gate logout ${g.gateLogout}` +
+        `  | report only: scene ${scene}, locs ${locs}, tile ${tile}${g.failures.length ? `  [${g.failures.join('; ')}]` : ''}`
+    );
+}
+
+// ------------------------------------------------------------------ the gate tab's scene, locs and tile (report only)
+
+/** Lumbridge spawn: each machine's gate account is parked there as the run profile's warm-up probe. */
+export const LUMBRIDGE_SPAWN = { x: 3222, z: 3218, level: 0 } as const;
+/** Within this many tiles (Chebyshev, on the spawn's level) reads as at Lumbridge spawn. */
+export const SPAWN_RADIUS = 5;
+/** rs/41's bbs reading (cairn://p/rs/41, bbs-warm): the scene built at page tick 73-83 on a cold profile at a busy site, 3-4 warm. */
+const SCENE_REFERENCE = 'bbs reference: warm 3-4 ticks, cold 73-83 at a busy site';
+
+/** One light look at the page: in game, the client's sceneState (2: built), and the overlay's tick count. */
+export interface ScenePoll {
+    inGame: boolean;
+    sceneState: number | null;
+    /** BotOverlay.serverTick: the page's ticks in game, 0 when it enters the world on a fresh load. */
+    tick: number | null;
+}
+
+export const SCENE_EXPRESSION = `(() => {
+    const c = window.gameClient;
+    if (!c) return null;
+    const o = c.botOverlay;
+    return { inGame: !!c.ingame, sceneState: typeof c.sceneState === 'number' ? c.sceneState : null, tick: o && typeof o.serverTick === 'number' ? o.serverTick : null };
+})()`;
+
+export interface Tile {
+    x: number;
+    z: number;
+    level: number;
+}
+
+/** The SDK state's view, from the page's own BotOverlay.getState(): counts and the tile only, never a name. */
+export interface StateLook {
+    tick: number;
+    sceneReady: boolean;
+    locs: number;
+    npcs: number;
+    players: number;
+    tile: Tile | null;
+}
+
+export const STATE_EXPRESSION = `(() => {
+    const o = window.gameClient && window.gameClient.botOverlay;
+    if (!o || typeof o.getState !== 'function') return null;
+    const s = o.getState();
+    const p = s.player;
+    const n = a => (Array.isArray(a) ? a.length : 0);
+    return { tick: s.tick, sceneReady: !!s.sceneReady, locs: n(s.nearbyLocs), npcs: n(s.nearbyNpcs), players: n(s.nearbyPlayers), tile: p ? { x: p.worldX, z: p.worldZ, level: p.level } : null };
+})()`;
+
+export interface SceneRead {
+    /** The first look that saw the page in game: its page tick and seconds after tab-login started. */
+    inGame: { tick: number | null; s: number } | null;
+    /**
+     * The first look that saw sceneState 2. `firstLook` when that was also the first in-game look:
+     * the scene was built by then, so its tick is an upper bound.
+     */
+    built: { tick: number | null; s: number; firstLook: boolean } | null;
+    /** The last look in game, for a scene not built. */
+    last: { sceneState: number | null; tick: number | null } | null;
+    looks: number;
+    waitedS: number;
+}
+
+export interface LocsRead {
+    /** The first look with locs, or the last look when none had any. */
+    look: StateLook | null;
+    waitedS: number;
+    error?: string;
+}
+
+export interface TileRead extends Tile {
+    /** Chebyshev distance to Lumbridge spawn on the same level; null on another level. */
+    fromSpawn: number | null;
+    atSpawn: boolean;
+}
+
+export interface Clock {
+    now(): number;
+    sleep(ms: number): Promise<void>;
+}
+const realClock: Clock = { now: () => Date.now(), sleep: ms => Bun.sleep(ms) };
+const secs = (ms: number) => Math.round(ms / 100) / 10;
+
+/**
+ * Watch the gate tab from before its login until the scene is built. It looks every `everyMs`
+ * (a look that fails, as during the login's navigation, counts as no look), and gives up when
+ * `stopped()` says the login failed, `afterInGameMs` after the page entered the world, or at
+ * `limitMs` in all.
+ */
+export async function watchScene(
+    look: () => Promise<ScenePoll | null>,
+    opts: { stopped: () => boolean; clock?: Clock; everyMs?: number; limitMs?: number; afterInGameMs?: number }
+): Promise<SceneRead> {
+    const clock = opts.clock ?? realClock;
+    const t0 = clock.now();
+    const r: SceneRead = { inGame: null, built: null, last: null, looks: 0, waitedS: 0 };
+    let inGameAt: number | null = null;
+    for (;;) {
+        const p = await look().catch(() => null);
+        const t = clock.now();
+        r.looks++;
+        if (p?.inGame) {
+            const first = inGameAt === null;
+            if (first) {
+                inGameAt = t;
+                r.inGame = { tick: p.tick, s: secs(t - t0) };
+            }
+            r.last = { sceneState: p.sceneState, tick: p.tick };
+            if (p.sceneState === 2) {
+                r.built = { tick: p.tick, s: secs(t - t0), firstLook: first };
+                break;
+            }
+        }
+        if (opts.stopped() || t - t0 >= (opts.limitMs ?? 240_000) || (inGameAt !== null && t - inGameAt >= (opts.afterInGameMs ?? 120_000))) break;
+        await clock.sleep(opts.everyMs ?? 250);
+    }
+    r.waitedS = secs(clock.now() - t0);
+    return r;
+}
+
+/** The SDK's nearby locs once the scene is built: the first look with any, for up to `waitMs` (locs follow the scene by about a tick). */
+export async function readLocs(look: () => Promise<StateLook | null>, opts: { clock?: Clock; everyMs?: number; waitMs?: number } = {}): Promise<LocsRead> {
+    const clock = opts.clock ?? realClock;
+    const t0 = clock.now();
+    let last: StateLook | null = null;
+    let error: string | undefined;
+    for (;;) {
+        try {
+            const l = await look();
+            if (l) last = l;
+        } catch (e) {
+            error = e instanceof Error ? e.message : String(e);
+        }
+        if ((last && last.locs > 0) || clock.now() - t0 >= (opts.waitMs ?? 10_000)) break;
+        await clock.sleep(opts.everyMs ?? 500);
+    }
+    return { look: last, waitedS: secs(clock.now() - t0), ...(last ? {} : { error: error ?? 'no SDK state on the page' }) };
+}
+
+export function tileRead(t: Tile): TileRead {
+    const fromSpawn = t.level === LUMBRIDGE_SPAWN.level ? Math.max(Math.abs(t.x - LUMBRIDGE_SPAWN.x), Math.abs(t.z - LUMBRIDGE_SPAWN.z)) : null;
+    return { ...t, fromSpawn, atSpawn: fromSpawn !== null && fromSpawn <= SPAWN_RADIUS };
+}
+
+export function sceneLine(r: SceneRead | null, why?: string): string {
+    const head = 'scene (report only):';
+    if (!r) return `${head} not read${why ? `: ${why}` : ''}`;
+    if (!r.inGame) return `${head} not read: the page never reported in game (${r.looks} looks over ${r.waitedS} s)`;
+    if (r.built) {
+        const at = r.built.firstLook ? `by page tick ${r.built.tick ?? '?'} (already built at the first in-game look)` : `at page tick ${r.built.tick ?? '?'}`;
+        const after = r.built.firstLook ? '' : `, ${secs((r.built.s - r.inGame.s) * 1000)} s after in game (tick ${r.inGame.tick ?? '?'})`;
+        return `${head} sceneState 2 ${at}, ${r.built.s} s after tab-login started${after}; ${SCENE_REFERENCE}`;
+    }
+    return `${head} NOT built ${secs((r.waitedS - r.inGame.s) * 1000)} s after in game (tick ${r.inGame.tick ?? '?'}): sceneState ${r.last?.sceneState ?? '?'} at page tick ${r.last?.tick ?? '?'}; ${SCENE_REFERENCE}`;
+}
+
+export function locsLine(r: LocsRead | null, why?: string): string {
+    const head = 'locs (report only):';
+    if (!r) return `${head} not read${why ? `: ${why}` : ''}`;
+    if (!r.look) return `${head} not read: ${r.error ?? 'no SDK state'}`;
+    const l = r.look;
+    const around = `(${l.npcs} NPCs, ${l.players} players nearby)`;
+    if (l.locs > 0) return `${head} ${l.locs} locs at page tick ${l.tick} ${around}; > 0 expected`;
+    return `${head} 0 locs for ${r.waitedS} s after the scene was built, last at page tick ${l.tick} ${around}; > 0 expected: the tab sees no scenery`;
+}
+
+export function tileLine(t: TileRead | null, why?: string): string {
+    const head = 'tile (report only):';
+    if (!t) return `${head} not read${why ? `: ${why}` : ''}`;
+    const spawn = `Lumbridge spawn (${LUMBRIDGE_SPAWN.x}, ${LUMBRIDGE_SPAWN.z}, level ${LUMBRIDGE_SPAWN.level})`;
+    const where = t.atSpawn ? `at ${spawn}, ${t.fromSpawn} tiles from it` : t.fromSpawn === null ? `on level ${t.level}, not ${spawn}'s level` : `${t.fromSpawn} tiles from ${spawn}`;
+    return `${head} (${t.x}, ${t.z}, level ${t.level}): ${where}`;
 }
 
 /** Single-quote for a POSIX shell. */
