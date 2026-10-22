@@ -140,6 +140,9 @@ await new Promise<void>(resolve => {
             const n = pick(s);
             if (n && t - lastClick >= 1) { target = n.index; targetSince = t; attack(n, t); }
         } else if (cur && !s.player?.combat?.inCombat && t - lastClick >= 6) attack(cur, t);
+        if (tFirst >= 0 && (t - tFirst) % 500 === 0 && t > tFirst) {
+            console.log(`progress ${PHASE}: tick ${t - tFirst}, ${P.trained} ${lvl(s, P.trained)}, hitpoints ${lvl(s, 'hitpoints')}, kills ${kills}, prayer used ${prayerPointsUsed}`);
+        }
         const done = P.until ? lvl(s, P.trained) >= P.until : tFirst >= 0 && t - tFirst >= TICKS;
         if ((TICKS && tFirst >= 0 && t - tFirst >= TICKS) || done || s.player?.isDead || (tFirst < 0 && t - s0.tick > 150)) {
             tLast = t; finished = true; unsub(); resolve();
