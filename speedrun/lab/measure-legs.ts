@@ -9,6 +9,9 @@
 // is TravelResult.ticks: from the first hop's send to the first published state inside the
 // destination. One `RESULT leg {...}` line per run (segments, doors and their state, clicks, tiles,
 // web tries, lowest hp), then `RESULT table` with each leg's mean against its expected figure.
+//
+// --client=browser runs the legs in this checkout's page in a headless lab tab (lab/browser.ts;
+// `bun run build` in server/webclient first), launched and owned here: run lab.sh with LAB_RUNNERS=0.
 
 import { runScript } from '../../sdk/runner';
 import type { BotSDK } from '../../sdk/index';
@@ -16,7 +19,9 @@ import type { BotActions } from '../../sdk/actions';
 import { legById, legsFor, runLeg, TILES, type LegStep, type S21Altar } from '../runner/legs';
 import { APE_ATOLL_ROOFS, glide, hopNeeds, lumdoBoat, pullLever, sail, travel, type TravelResult, type TravelSdk } from '../lib/travel';
 import { waitTicks, waitUntil } from '../lib/wait';
-import { cheat, clearInventory, give, mustTele, setStats, setvar } from './setup';
+import { closeSession, openSession } from '../lib/session';
+import { launchLabBrowser } from './browser';
+import { cheat, clearInventory, give, leaveTutorial, mustTele, setStats, setvar } from './setup';
 
 const TELE_RUNES: [string, number][] = [['airrune', 100], ['waterrune', 100], ['earthrune', 100], ['firerune', 100], ['lawrune', 50]];
 const result = (name: string, v: unknown) => console.log(`RESULT ${name} ${JSON.stringify(v)}`);
@@ -114,13 +119,13 @@ async function transports(sdk: BotSDK, bot: BotActions): Promise<void> {
 }
 
 // `<ids|all|transports>[:runs[:nature|body]]`: the S21 altar picks T20-21 and T21-22 (default nature, section 2).
-const [, , , which = 'all', runsArg, altarArg] = process.argv;
+const browser = process.argv.includes('--client=browser');
+const [, , , which = 'all', runsArg, altarArg] = process.argv.filter(a => !a.startsWith('--'));
 const catalogue = legsFor({ s21Altar: altarArg === 'body' ? 'body' : 'nature' });
 const legs = which === 'all' ? catalogue : which === 'transports' ? [] : which.split(',').map(id => legById(id, catalogue));
 const runs = Number(runsArg ?? 2);
 
-await runScript(async ({ bot, sdk }) => {
-    await ensureOffIsland(sdk, bot);
+async function measure({ bot, sdk }: { bot: BotActions; sdk: BotSDK }): Promise<void> {
     await setup(sdk, { at: [3222, 3218, 0], stats: {}, vars: {}, items: [] }); // warm-up: the first counted leg does not start on a just-loaded login
     await waitTicks(sdk, 5);
     if (which === 'transports') return transports(sdk, bot);
@@ -155,4 +160,22 @@ await runScript(async ({ bot, sdk }) => {
         console.log(`LEG ${d.id.padEnd(7)} ${String(row.mean ?? '-').padStart(6)} vs ${String(row.expected).padStart(6)} (${d.expected.label}) ${row.deltaPct === null ? 'FAILED' : `${row.deltaPct > 0 ? '+' : ''}${row.deltaPct}%`} runs ${row.runs.join(',')}${row.failures.length ? ` failures: ${row.failures.join(' | ')}` : ''}`);
     }
     result('table', table);
-}, { timeout: 4 * 3600_000, printState: false });
+}
+
+if (browser) {
+    const bot = process.argv[2]!;
+    const chrome = await launchLabBrowser(bot);
+    const session = await openSession(bot, { client: 'browser', launch: true, insecureQueryLogin: true });
+    try {
+        await leaveTutorial(session);
+        await measure(session);
+    } finally {
+        await closeSession(session);
+        await chrome.kill();
+    }
+} else {
+    await runScript(async ({ bot, sdk }) => {
+        await ensureOffIsland(sdk, bot);
+        await measure({ bot, sdk });
+    }, { timeout: 4 * 3600_000, printState: false });
+}
