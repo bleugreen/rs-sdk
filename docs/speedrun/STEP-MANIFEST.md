@@ -1537,7 +1537,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **S21's altar in force (main, 15:17 PDT): the body altar.** With 0 nature talismans held, S21 runs
   at the body altar, ruins (3052,3444) south of Edgeville, with 22 givers on 23 body talismans and no
   keeper (m, lab, rs/163, 16:17 PDT: a 139-142-tick restock round trip from Edgeville bank, N =
-  ceil(142 / 7) + 1, 12 of 12 turns at 7 ticks, so S21's ticks do not change; supply-fallbacks.md §7: 194 crafts, 5,238 essence; +142.0 in every RUN-ORDER.md
+  ceil(142 / 7) + 1, 12 of 12 turns at 7 ticks, so S21's ticks do not change; supply-fallbacks.md §7: 194 crafts, 5,238 essence; +143.0 in every RUN-ORDER.md
   scenario row, SF's +231 of crafts with the body route's shorter legs measured by rs/198). The nature altar below is the every-line-held baseline and a sensitivity row; the
   module takes `altar: 'body'` as well. **T21-22's runes (H17e)** come back after the last craft from
   **a runes-only hand-back trip**: the giver's body talisman and 1 law, 3 air and 1 earth, no essence,
@@ -1561,7 +1561,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   nature with givers first, 29 gaps of 7, 210 ticks). The step adds ~5-9 outside the program, the
   walk from where the ruins drop SCORED (3-4 tiles) to the stand tile, with the last craft's
   level-up dialog inside the craft's delay: 217 against 210, and 58 against 49 for S06. The body
-  altar in force adds 33 crafts at the same 7 and its own shorter legs (+142.0, RUN-ORDER.md section 7),
+  altar in force adds 33 crafts at the same 7 and its own shorter legs (+143.0, RUN-ORDER.md section 7),
   which these per-step parts do not change. Travel is in entry 11 (T05-06 64.5 m on the browser on #321 (74.1 before, rs/308), 61 lite; T20-21 158 m to the nature altar, 69.3 m to the body altar in force on the browser on c4e2a681 (rs/308's phase 2, fold-in 23; 74.7 before, fold-in 22), 69.3 lite; rs/308 and rs/198).
   Robust schedule +1 a craft, +168 (66 for S06 with SCORED first, m). A clean logout between cycles
   plus the resume walk costs ~2 in-world ticks (m). Fallback **~5,220 on the run commit today**, the stock reacting cycle at its measured **31 ticks a craft** (m, lab,
