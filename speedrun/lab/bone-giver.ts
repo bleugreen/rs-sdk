@@ -51,9 +51,13 @@ const config = {
     accounts: (() => {
         const sites = [{ giver: { x: 2913, z: 3494 }, receiver: { x: 2914, z: 3494 } }];
         const scope = asks.length ? { step: 'S18', family: 'courier' } : { step: 'S07', family: 'bone' };
-        const g = { account: giver, role: 'bone-giver', options: asks.length ? { mode: 'on-request', restock: { kind: 'cheat' }, sites, scope } : { restock: { kind: 'cheat' }, sites, trades: loads, scope } };
-        const r = { account: receiver, role: 'bone-receiver', receiver: true, final: true, options: asks.length ? { giver, asks, pageLoads: [], scope } : { giver, loads, pageLoads: pages, holdTicks: hold, scope } };
-        return arg('order', 'giver-first') === 'receiver-first' ? [r, g] : [g, r];
+        if (asks.length && nGivers > 1) throw new Error('--givers is for the standing mode (S07)');
+        // A group runs until the stand-in has its loads (the launcher stops everyone when the final role ends).
+        const limit = nGivers > 1 ? { group: givers } : { trades: loads };
+        const g = givers.map(account => ({ account, role: 'bone-giver', options: asks.length ? { mode: 'on-request', restock: { kind: 'cheat' }, sites, scope } : { restock: { kind: 'cheat' }, sites, scope, ...limit } }));
+        const who = nGivers > 1 ? { givers } : { giver };
+        const r = { account: receiver, role: 'bone-receiver', receiver: true, final: true, options: asks.length ? { giver, asks, pageLoads: [], scope } : { ...who, loads, pageLoads: pages, holdTicks: hold, scope } };
+        return arg('order', 'giver-first') === 'receiver-first' ? [r, ...g] : [...g, r];
     })()
 };
 const configPath = join(base, 'launch.json');
