@@ -1043,6 +1043,16 @@ class Mule {
     private openSeenMs = 0;
     /** Date.now() of the last top-up ask served. */
     private lastAskMs = 0;
+    /** The cue session that asked for the pending package ('order' when order mode made it pending). */
+    private pendingSession = 'order';
+    /** Carried mode: packages served or withdrawn this login, whose tiles the mule has moved past (carriedStand). */
+    private readonly done = new Set<string>();
+    private readonly wildlife: RegExp[];
+    /** The tile the mule last walked to; a different standTile() walks it there at once. */
+    private lastStand: Tile | null = null;
+    /** Date.now() of the mule's last input (a walk, a click, a fight): the keep-alive's clock. */
+    private lastInputMs = Date.now();
+    private keepAlives = 0;
 
     /** What the mule is doing: idle, consolidate (taking courier stock in), serve (preparing or giving a package), ge. */
     private phase(to: 'idle' | 'consolidate' | 'serve' | 'ge'): void {
@@ -1057,6 +1067,37 @@ class Mule {
         this.requests = new ChatCursor(ctx.sdk, [TRADE_REQUEST_CHAT_TYPE]);
         this.ordered = this.o.packages.filter(p => !p.onRequest);
         if (this.o.serveMode === 'order') this.pending = this.ordered[0] ?? null;
+        this.wildlife = toRegExps(this.o.wildlife);
+        if (this.o.carried) {
+            // No bank to visit; and what this login already served (a restarted role) stays served.
+            this.needsBank = false;
+            for (const name of carriedDoneSince(this.servedEntries(), this.startMs)) this.done.add(name);
+            if (this.pending && this.done.has(this.pending.name)) ({ nextIndex: this.nextIndex, pending: this.pending } = this.afterCarried(this.pending));
+        }
+    }
+
+    private servedEntries(): CarriedServed[] {
+        return carriedServedEntries(this.ctx.state.get(CARRIED_SERVED_KEY));
+    }
+
+    /** Order mode past a carried package served before a restart: the next one not done. */
+    private afterCarried(served: Package): { nextIndex: number; pending: Package | null } {
+        let r = afterServe(this.ordered, this.nextIndex, served);
+        while (r.pending && this.done.has(r.pending.name)) r = afterServe(this.ordered, r.nextIndex, r.pending);
+        return r;
+    }
+
+    /** Where the mule stands: `stand`, or in carried mode the tile of the package it serves next. */
+    private standTile(): Tile {
+        return this.o.carried ? carriedStand(this.o.packages, this.pending, this.done, this.o.stand) : this.o.stand;
+    }
+
+    private standTolerance(): number {
+        return this.o.carried ? 1 : 3;
+    }
+
+    private touch(): void {
+        this.lastInputMs = Date.now();
     }
 
     private isServe(name: string | null | undefined): boolean {
@@ -1073,8 +1114,21 @@ class Mule {
         await ensureOutOfTutorial(ctx);
         await ctx.bot.dismissBlockingUI();
         if (ctx.sdk.getTradeState().isOpen) await ctx.bot.declineTrade();
-        await walkNear(ctx, this.o.stand.x, this.o.stand.z, 3);
-        ctx.log('mule ready', { serve: this.o.serve, packages: this.o.packages.map(p => p.name), giver: this.o.giver, serveMode: this.o.serveMode });
+        const stand = this.standTile();
+        await walkNear(ctx, stand.x, stand.z, this.standTolerance());
+        this.lastStand = stand;
+        this.touch();
+        if (this.o.carried) {
+            const inv = ctx.sdk.getInventory();
+            const short = carriedShort(this.o.packages, inv);
+            ctx.log(short.length ? 'carried: SHORT of the packages it carries' : 'carried: loaded', {
+                short,
+                done: [...this.done],
+                packages: this.o.packages.map(p => ({ name: p.name, at: p.at ?? null, ...carriedNeedsLog(carriedNeeds(p, inv)) })),
+                at: stand
+            });
+        }
+        ctx.log('mule ready', { serve: this.o.serve, packages: this.o.packages.map(p => p.name), giver: this.o.giver, serveMode: this.o.serveMode, ...(this.o.carried ? { carried: true } : {}) });
 
         let wasOpen = false;
         const unsubOpen = ctx.sdk.onStateUpdate(st => {
@@ -1110,16 +1164,23 @@ class Mule {
             this.lastCue = { session: cue.session, seq: cue.seq };
             const pkg = packageForCue(cue, this.o.packages, this.o.serve);
             ctx.log(action === 'ask' ? 'package request' : 'package request stopped', { step: cue.scope.step, session: cue.session, seq: cue.seq, found: pkg?.name ?? null, after: last });
-            if (action === 'ask' && pkg && pkg !== this.pending) {
+            if (action === 'ask' && pkg && this.o.carried && this.servedEntries().some(e => e.pkg === pkg.name && e.session === cue.session)) {
+                // A restarted role re-reads the cue it already served.
+                ctx.log('carried: already served for this cue session', { package: pkg.name, session: cue.session });
+                this.done.add(pkg.name);
+            } else if (action === 'ask' && pkg && pkg !== this.pending) {
                 this.pending = pkg;
+                this.pendingSession = cue.session;
                 this.held = null;
                 this.shortSince = 0;
             } else if (action === 'stop' && pkg && pkg === this.pending && (this.o.serveMode === 'request' || pkg.onRequest)) {
                 // Withdrawn: bank the staged package; order mode returns to the package due.
                 this.pending = this.o.serveMode === 'order' ? (this.ordered[this.nextIndex] ?? null) : null;
                 this.held = null;
-                this.needsBank = true;
+                this.needsBank = !this.o.carried;
             }
+            // A carried package withdrawn (its hand-off skipped) is passed: the mule moves on to the next tile.
+            if (action === 'stop' && pkg && this.o.carried) this.done.add(pkg.name);
         }
 
         // 2. Trade requests: the scored account first, then couriers; anyone else is ignored.
@@ -1127,26 +1188,85 @@ class Mule {
         requesters.sort((a, b) => Number(this.isServe(b)) - Number(this.isServe(a)));
         for (const name of requesters) {
             if (this.isServe(name)) await this.serveTrade(name);
-            else if (this.isCourier(name)) await this.courierTrade(name);
+            else if (this.isCourier(name) && !this.o.carried) await this.courierTrade(name);
             else ctx.log('ignored trade request', { from: name });
         }
         // A request that raced the cursor can leave a screen open.
         const open = sdk.getTradeState();
         if (open.isOpen) {
             if (this.isServe(open.partner)) await this.serveTrade(open.partner!);
-            else if (this.isCourier(open.partner)) await this.courierTrade(open.partner!);
+            else if (this.isCourier(open.partner) && !this.o.carried) await this.courierTrade(open.partner!);
             else await ctx.bot.declineTrade();
         }
 
         // 3. Housekeeping between trades.
-        if (this.needsBank || this.wantsPackage()) await this.bankCycle();
+        if (!this.o.carried && (this.needsBank || this.wantsPackage())) await this.bankCycle();
         if (this.o.ge && Date.now() - this.lastGeCollect > (this.o.ge.collectEveryMin ?? 10) * 60_000) await this.geCycle();
+        // Wildlife first: a hit on either trader closes the trade the pre-request would open.
+        if (this.wildlife.length) await this.clearWildlife();
         this.preRequest();
-        if (Date.now() - this.lastPreRequest > 20_000 && distanceTo(sdk, this.o.stand.x, this.o.stand.z) > 3 && !sdk.getTradeState().isOpen) {
-            await walkNear(ctx, this.o.stand.x, this.o.stand.z, 3);
-        }
+        await this.keepStand();
+        await this.keepAlive();
         this.phase('idle');
         await nextTick(sdk);
+    }
+
+    /**
+     * Back to the stand tile. A changed tile (carried mode: the next package's) is walked to at once;
+     * otherwise only once the last pre-request is 20 s old, so the mule doesn't undo the pre-request's
+     * walk to the scored account.
+     */
+    private async keepStand(): Promise<void> {
+        const { ctx } = this;
+        const { sdk } = ctx;
+        if (sdk.getTradeState().isOpen) return;
+        const stand = this.standTile();
+        const tolerance = this.standTolerance();
+        if (this.lastStand && (stand.x !== this.lastStand.x || stand.z !== this.lastStand.z)) {
+            const from = sdk.getState()?.player;
+            const t0 = tick(sdk);
+            const ok = await walkNear(ctx, stand.x, stand.z, tolerance);
+            this.lastStand = stand;
+            this.touch();
+            ctx.log('carried: moved to the next package tile', { to: stand, from: from ? { x: from.worldX, z: from.worldZ } : null, ok, ticks: tick(sdk) - t0, next: this.pending?.name ?? this.o.packages.find(p => !this.done.has(p.name))?.name ?? null });
+            return;
+        }
+        if (Date.now() - this.lastPreRequest > 20_000 && distanceTo(sdk, stand.x, stand.z) > tolerance) {
+            await walkNear(ctx, stand.x, stand.z, tolerance);
+            this.touch();
+        }
+    }
+
+    /** Kill the NPCs wildlifeThreat names, one at a time, while no trade is open (at most 5 a cycle). */
+    private async clearWildlife(): Promise<void> {
+        const { ctx } = this;
+        const { sdk } = ctx;
+        for (let i = 0; i < 5 && !ctx.signal.aborted; i++) {
+            const s = sdk.getState();
+            if (!s || s.trade?.isOpen) return;
+            const npc = wildlifeThreat(s, this.wildlife, this.o.clearTiles);
+            if (!npc) return;
+            this.touch();
+            const hp0 = s.player?.hp ?? null;
+            const r = await fight(sdk, npc, { maxTicks: 60, findTicks: 1 });
+            this.touch();
+            ctx.log('wildlife', { npc: npc.name, index: npc.index, at: { x: npc.tileX ?? npc.x, z: npc.tileZ ?? npc.z }, end: r.end, ticks: r.ticks, dealt: r.dealt, taken: r.taken, hp: [hp0, sdk.getState()?.player?.hp ?? null] });
+        }
+    }
+
+    /** A keep-alive step when the mule has sent nothing for keepAliveMinutes, never during a trade or with the served account near. */
+    private async keepAlive(): Promise<void> {
+        const { ctx } = this;
+        const { sdk } = ctx;
+        const idleMs = Date.now() - this.lastInputMs;
+        if (!keepAliveDue(Date.now(), this.lastInputMs, this.o.keepAliveMinutes * 60_000)) return;
+        const s = sdk.getState();
+        if (!s?.player || s.trade?.isOpen || sdk.isBankOpen()) return;
+        if (this.o.serve && s.nearbyPlayers.some(p => sameName(p.name, this.o.serve) && p.distance <= PRE_REQUEST_TILES)) return;
+        const at = { x: s.player.worldX, z: s.player.worldZ };
+        const r = await keepAliveStep(sdk, at, this.keepAlives++);
+        this.touch();
+        ctx.log('keep-alive', { at, ...r, idleMs, tick: s.tick });
     }
 
     private wantsPackage(): boolean {
