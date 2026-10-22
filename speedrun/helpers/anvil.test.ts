@@ -19,6 +19,7 @@ import {
     openBooth,
     plannedGone,
     readAnvilPlan,
+    restockAtBank,
     staging,
     validPlan,
     writeAnvilPlan,
@@ -210,6 +211,85 @@ describe('anvilOptions and the booth', () => {
         const s = baseState({ nearbyLocs: [booth(3180, 3440, ['Use', 'Use-quickly']), booth(3187, 3436, ['Use', 'Use-quickly'])] } as Partial<BotWorldState>);
         expect(boothOf(s)).toMatchObject({ loc: { x: 3187, z: 3436 }, op: 2 });
         expect(boothOf(baseState())).toBeNull();
+    });
+});
+
+describe('restockAtBank', () => {
+    const DAGGER = 1205;
+    /** An open bank whose packets land on the next tick; `dropDeposits` deposits are lost first. */
+    function bankServer(inventory: InventoryItem[], bankItems: { slot: number; id: number; name: string; count: number }[], dropDeposits = 0) {
+        const sdk = new FakeSdk(baseState({ tick: 10, inventory, bank: { isOpen: true, items: bankItems } as unknown as BotWorldState['bank'] }));
+        const queue: Array<(s: BotWorldState) => Partial<BotWorldState>> = [];
+        const sendTick = new Map<string, number[]>();
+        let dropped = 0;
+        sdk.onSend = a => {
+            sendTick.set(a.method, [...(sendTick.get(a.method) ?? []), sdk.state!.tick]);
+            if (a.method === 'sendBankDeposit') {
+                if (dropped++ < dropDeposits) return;
+                const slot = a.args[0] as number;
+                queue.push(cur => {
+                    const it = cur.inventory.find(i => i.slot === slot);
+                    if (!it) return {};
+                    const moved = cur.inventory.filter(i => i.id === it.id);
+                    const items = [...(cur.bank.items as typeof bankItems)];
+                    const at = items.findIndex(b => b.id === it.id);
+                    const n = moved.reduce((s, i) => s + i.count, 0);
+                    if (at >= 0) items[at] = { ...items[at]!, count: items[at]!.count + n };
+                    else items.push({ slot: items.length, id: it.id, name: it.name, count: n });
+                    return { inventory: cur.inventory.filter(i => i.id !== it.id), bank: { ...cur.bank, items } as BotWorldState['bank'] };
+                });
+            }
+            if (a.method === 'sendBankWithdraw') {
+                const [slot, amount] = a.args as [number, number];
+                queue.push(cur => {
+                    const items = [...(cur.bank.items as typeof bankItems)];
+                    const b = items.find(x => x.slot === slot);
+                    if (!b) return {};
+                    const n = Math.min(amount === -1 ? b.count : amount, b.count);
+                    const used = new Set(cur.inventory.map(i => i.slot));
+                    const free = Array.from({ length: 28 }, (_, i) => i).filter(i => !used.has(i)).slice(0, n);
+                    b.count -= n;
+                    return { inventory: [...cur.inventory, ...free.map(s => ({ slot: s, id: b.id, name: b.name, count: 1, optionsWithIndex: [] }))], bank: { ...cur.bank, items } as BotWorldState['bank'] };
+                });
+            }
+        };
+        const step = () => sdk.tick(cur => queue.splice(0).reduce((acc, fx) => ({ ...acc, ...fx({ ...cur, ...acc }) }), {} as Partial<BotWorldState>));
+        return { sdk, step, sendTick };
+    }
+    async function drain<T>(p: Promise<T>, step: () => unknown): Promise<T> {
+        let settled = false;
+        void p.finally(() => (settled = true));
+        for (let i = 0; i < 60 && !settled; i++) {
+            await flush();
+            if (!settled) step();
+        }
+        return p;
+    }
+    const daggers = Array.from({ length: 4 }, (_, i) => ({ slot: i, id: DAGGER, name: 'Bronze dagger', count: 1, optionsWithIndex: [] }));
+    const bank = () => [{ slot: 0, id: DAGGER, name: 'Bronze dagger', count: 1 }, { slot: 1, id: IDS['Bronze bar']!, name: 'Bronze bar', count: 17 }];
+
+    test('4 handed-back daggers go in, and only then do the 5 bars come out: exact', async () => {
+        const { sdk, step, sendTick } = bankServer(daggers, bank());
+        const r = await drain(restockAtBank(sdk, { bronze_bar: 5 }), step);
+        expect(r).toEqual({ ok: true });
+        expect(sdk.state!.inventory.map(i => i.name)).toEqual(Array(5).fill('Bronze bar'));
+        expect(sendTick.get('sendBankDeposit')).toHaveLength(1); // one Deposit-All for the id
+        expect(Math.min(...sendTick.get('sendBankWithdraw')!)).toBeGreaterThan(sendTick.get('sendBankDeposit')![0]!);
+    });
+
+    test('a deposit that did not land is sent once more', async () => {
+        const { sdk, step, sendTick } = bankServer(daggers, bank(), 1);
+        const r = await drain(restockAtBank(sdk, { bronze_bar: 5 }), step);
+        expect(r).toEqual({ ok: true });
+        expect(sendTick.get('sendBankDeposit')).toHaveLength(2);
+    });
+
+    test('a deposit that never lands fails with what is still held, before any withdrawal', async () => {
+        const { sdk, step, sendTick } = bankServer(daggers, bank(), 99);
+        const r = await drain(restockAtBank(sdk, { bronze_bar: 5 }), step);
+        expect(r.ok).toBe(false);
+        expect(r.reason).toMatch(/deposit did not land.*Bronze dagger/);
+        expect(sendTick.get('sendBankWithdraw')).toBeUndefined();
     });
 });
 

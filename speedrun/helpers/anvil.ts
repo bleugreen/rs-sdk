@@ -36,8 +36,8 @@
 import { join } from 'node:path';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
-import { withdrawMany } from '../lib/bank';
-import { tickClock, type StateSource } from '../lib/wait';
+import { depositMatching, withdrawMany, type BankSdk } from '../lib/bank';
+import { tickClock, waitUntil, type StateSource } from '../lib/wait';
 import { ANY_OFFER, give, receiveFrom, tradeOf, type GiveSpec, type WantSpec } from '../lib/trade';
 import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, readJson, writeJsonAtomicSync, type Cue } from './altar-cue';
 import { chebyshev, cheat, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
@@ -248,6 +248,27 @@ export function openBooth(sdk: BoothSdk, opts: { maxClicks?: number; maxTicks?: 
         const guard = setInterval(() => opts.signal?.aborted && finish(false, sdk.getState(), 'aborted'), 500);
         if (cur) onFrame(cur);
     });
+}
+
+/**
+ * At an open bank, make the inventory exactly `give`: everything outside it goes in, and only once
+ * it has left the inventory do the withdrawals go out (lib/bank.ts depositMatching, bounded by
+ * observed ticks). Fired in the same tick as the withdrawals, a Deposit-All of 4 handed-back
+ * daggers left one behind on the demo server, and the next trade offered the wrong slot. A deposit
+ * that did not land is sent once more before giving up.
+ */
+export async function restockAtBank(sdk: BankSdk, give: Record<string, number>): Promise<{ ok: boolean; reason?: string }> {
+    const inv = () => sdk.getState()?.inventory ?? [];
+    const deposit = staging(inv(), give).deposit.map(d => d.id);
+    if (deposit.length) {
+        let d = await depositMatching(sdk, deposit);
+        if (!d.ok) d = await depositMatching(sdk, deposit);
+        if (!d.ok) return { ok: false, reason: `the deposit did not land (${d.reason}): ${d.remaining.map(i => i.name).join(', ')}` };
+    }
+    const w = await withdrawMany(sdk, staging(inv(), give).withdraw.map(x => ({ item: itemRe(x.name), n: x.n })));
+    const exact = await waitUntil(sdk, s => staging(s.inventory, give).exact, { maxTicks: 5 });
+    if (!exact.ok) return { ok: false, reason: `bank left the inventory off the plan (${w.reason ?? 'no reason'}): ${JSON.stringify(staging(inv(), give))}` };
+    return { ok: true };
 }
 
 // ------------------------------------------------------------------ options
@@ -536,14 +557,9 @@ export class AnvilHelper {
         const st = staging(this.s!.inventory, plan.give);
         const short = st.withdraw.filter(w => (this.s!.bank.items.filter(i => itemRe(w.name).test(i.name)).reduce((a, i) => a + i.count, 0)) < w.n);
         if (short.length) throw new Error(`the bank ${this.s!.bank.items.length ? 'is' : 'is empty, so'} short of ${short.map(w => `${w.n} ${w.name}`).join(', ')}`);
-        // Deposits first in the same tick: the server handles our packets in order, so the withdrawals find the room.
-        for (const d of st.deposit) void ctx.sdk.sendBankDeposit(d.slot, -1);
-        const w = await withdrawMany(ctx.sdk, st.withdraw.map(x => ({ item: itemRe(x.name), n: x.n })));
-        const exact = await until(ctx, s => staging(s.inventory, plan.give).exact, 5);
+        const r = await restockAtBank(ctx.sdk, plan.give);
         ctx.reportBank({ items: this.s!.bank.items.map(i => ({ id: i.id, name: i.name, count: i.count })) });
-        if (!exact) {
-            throw new Error(`bank left the inventory off the plan (${w.reason ?? 'no reason'}): ${JSON.stringify(staging(this.s!.inventory, plan.give))}`);
-        }
+        if (!r.ok) throw new Error(r.reason);
     }
 
     /** Lab only: top the bank up with staff-made notes (deposited, so the bank holds them unnoted). */

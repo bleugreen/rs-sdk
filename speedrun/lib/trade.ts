@@ -603,4 +603,179 @@ function burst(sdk: TradeSdk, plan: readonly OfferEntry[]): number {
     return events + 1;
 }
 
+// ---------------------------------------------------------------- swap (two-way)
+//
+// One trade that hands items over and takes items back: the anvil helper offers
+// the next inventory's bars while the scored account offers the products it just
+// made (docs/speedrun/skills/smithing.md section 4); a quest kit comes in while
+// the previous step's gear goes out. receiveFrom() cannot do it (the receiver
+// declines a non-empty offer of its own), but the giver can: decideGiver with
+// `expectTheirs` offers, checks both offers on both screens and judges the
+// outcome. swap() is a driver around it, or around decideReceiver when there is
+// nothing to give, so every trade rule has one home above.
+//
+// What swap() adds is the opening: it trade-ops the partner and re-sends soon when
+// the click was dropped (a click while we are delayed is: smithing's last item
+// holds us 2 ticks), where openTrade() re-sends every 8 s. It never re-sends a
+// click that may have landed: a trade click reaching an open trade closes it
+// (OpPlayerHandler -> clearPendingAction -> closeModal), and over the relay our
+// frames run a tick or more behind the server, so "no screen yet" does not mean
+// "no trade yet". A landed click always gets a reply (tradeClickReply), so
+// silence for SWAP_RECLICK_TICKS frames after the client has sent it means
+// dropped. Silence while the action is still pending means nothing: the demo
+// relay holds actions for tens of ticks and then delivers them in a batch, so
+// a re-click sent into that silence lands right behind the first, on the open
+// trade. There is no second click until the first one's action result is back. An id may
+// not be both given and wanted: the outcome is read as an inventory delta by id,
+// so such a call is refused rather than a refund misjudged as a delivery.
+//
+// The partner's half, which a helper role implements (give() with
+// `expectTheirs`, or helpers/mule.ts giveOpenTrade, does all of it):
+// - Opening: either side may request. A partner whose request stands opens the
+//   trade on our first click that lands; a partner that requests us instead
+//   opens it on our next click.
+// - Offer screen: the partner offers its items and accepts. Our offer landing
+//   after its accept resets both accepts (trade.rs2), so it re-accepts once our
+//   offer is up.
+// - Confirm screen: both accept; neither side changes anything there.
+// - Done: for us, the giver's rule (our items gone after our confirm accept), or
+//   with nothing given the receiver's (the wanted items arrived); for the
+//   partner, its own items gone.
+
+export type SwapSdk = TradeSdk & Pick<BotSDK, 'sendCloseModal'>;
+
+/** Frames with no reply to our trade click before swap() takes it as dropped and clicks again. */
+export const SWAP_RECLICK_TICKS = 3;
+/** Ticks swap() waits for the partner to open the trade once our click landed without opening it (our request now stands). */
+export const SWAP_AWAIT_PARTNER_TICKS = 8;
+
+/**
+ * The server's reply to a trade click of ours that landed after `sinceTick` (trade.rs2
+ * [opplayer4]): 'sent' ("Sending trade offer...", which it sends even when the click opens
+ * the trade), 'busy' (the partner is busy; nothing opened), or null for no reply yet.
+ */
+export function tradeClickReply(s: BotWorldState, sinceTick: number): 'sent' | 'busy' | null {
+    let reply: 'sent' | 'busy' | null = null;
+    for (const m of s.gameMessages) {
+        if (m.tick <= sinceTick) continue;
+        if (/^sending trade offer/i.test(m.text)) reply = 'sent';
+        else if (reply === null && TRADE_BUSY_RE.test(m.text)) reply = 'busy';
+    }
+    return reply;
+}
+
+export interface SwapOptions {
+    /** Ticks to get the screens open from our first click (default 30). */
+    openTicks?: number;
+    /** Ticks from the screens opening to the outcome (default 40). */
+    maxTicks?: number;
+    /**
+     * Send CLOSE_MODAL with each trade click while a chat or main modal is open:
+     * an open modal makes us busy() (Player.ts), and the partner's request bounces.
+     */
+    closeModals?: boolean;
+}
+
+export interface SwapResult {
+    ok: boolean;
+    /** Our clock: ticks from our first trade click (or the screens opening, if they opened first) to the outcome. */
+    ticks: number;
+    /** Ticks from our first trade click to the screens opening; -1 when they never opened. */
+    openTicks: number;
+    received: TradeItem[];
+    gave: TradeItem[];
+    /** Why it failed; on success, set only when the trade completed although we declined it. */
+    reason?: string;
+}
+
+/**
+ * Trade `give` to `partner` and take `want` back in the same trade.
+ *
+ * `give` is planned from the inventory as it is now (planOffers: one Offer-All
+ * per item id unless a count is asked for); `want` is what the partner's offer
+ * must cover on both screens. `received` and `gave` are the inventory delta at
+ * the outcome.
+ */
+export async function swap(sdk: SwapSdk, partner: string, give: readonly GiveSpec[], want: readonly WantSpec[], opts: SwapOptions = {}): Promise<SwapResult> {
+    const s0 = sdk.getState();
+    if (!s0) throw new Error('swap: no state');
+    const openTicks = opts.openTicks ?? 30;
+    const plan = give.length ? planOffers(s0.inventory, give) : [];
+    const overlap = plan.filter(e => want.some(w => matchesItem(e, w.item)));
+    if (overlap.length) throw new Error(`swap: ${overlap.map(e => e.name).join(', ')} both given and wanted; the outcome is judged by the inventory delta, so give and want must not share an item`);
+    if (plan.length === 0 && want.length === 0) throw new Error('swap: nothing to give and nothing wanted');
+
+    let giver = plan.length > 0 ? newGiverCtx(partner, s0.inventory, plan, want.length ? [...want] : undefined) : null;
+    let receiver = giver ? null : newReceiverCtx(partner, s0.inventory, [...want]);
+    const decide = (s: BotWorldState): GiverAction | ReceiverAction => {
+        if (giver) {
+            const d = decideGiver(s, giver);
+            giver = d.next;
+            return d;
+        }
+        const d = decideReceiver(s, receiver!);
+        receiver = d.next;
+        return d;
+    };
+    const declined = () => (giver ?? receiver!).declined;
+    const invBefore = countInventoryById([...s0.inventory]);
+
+    let sawOpen = false;
+    let firstClick = -1;
+    let lastClick = -1;
+    /** The latest click's action result is not back yet; and the tick it came back. */
+    let clickPending = false;
+    let clickSentTick = -1;
+    let openTick = -1;
+    const start = s0.tick;
+    type Outcome = { ok: boolean; tick: number; received: TradeItem[]; gave: TradeItem[]; reason?: string };
+    const fail = (tick: number, reason: string): Outcome => ({ ok: false, tick, received: [], gave: [], reason });
+    const outcome = await drive<Outcome>(sdk, openTicks + (opts.maxTicks ?? 40), s => {
+        const t = tradeOf(s);
+        if (!sawOpen && !t.isOpen) {
+            if (s.tick - (firstClick >= 0 ? firstClick : start) > openTicks) return fail(s.tick, firstClick >= 0 ? 'no_response' : 'player_not_found');
+            if (s.tick === lastClick) return undefined;
+            const p = s.nearbyPlayers.find(n => sameName(n.name, partner));
+            if (!p) return undefined;
+            if (clickPending) return undefined;
+            if (lastClick >= 0) {
+                const reply = tradeClickReply(s, lastClick);
+                if (reply === 'sent' && s.tick - clickSentTick < SWAP_AWAIT_PARTNER_TICKS) return undefined;
+                if (reply === null && s.tick - clickSentTick < SWAP_RECLICK_TICKS) return undefined;
+            }
+            if (opts.closeModals && (s.dialog.isOpen || s.modalOpen)) void sdk.sendCloseModal();
+            clickPending = true;
+            void sdk.sendTradeRequest(p.index).finally(() => {
+                clickPending = false;
+                clickSentTick = sdk.getState()?.tick ?? s.tick;
+            });
+            lastClick = s.tick;
+            if (firstClick < 0) firstClick = s.tick;
+            return undefined;
+        }
+        if (t.isOpen && !sawOpen) {
+            sawOpen = true;
+            openTick = s.tick;
+        }
+        const d = decide(s);
+        switch (d.action) {
+            case 'burst': burst(sdk, plan); return undefined;
+            case 'accept': void sdk.sendAcceptTrade(); return undefined;
+            case 'decline':
+                void sdk.sendDeclineTrade();
+                return d.settle ? undefined : fail(s.tick, d.reason);
+            case 'done': {
+                const moved = diffInventories(invBefore, countInventoryById(s.inventory));
+                return { ok: true, tick: s.tick, received: moved.gained, gave: moved.lost, ...completedDespite(declined()) };
+            }
+            case 'closed': return fail(s.tick, d.reason ?? (giver ? 'closed before completing' : 'closed without the items arriving'));
+            default: return undefined;
+        }
+    });
+    const from = firstClick >= 0 ? firstClick : openTick >= 0 ? openTick : start;
+    const opened = openTick >= 0 ? openTick - (firstClick >= 0 ? firstClick : openTick) : -1;
+    if (outcome === 'timeout') return { ok: false, ticks: (sdk.getState()?.tick ?? from) - from, openTicks: opened, received: [], gave: [], reason: 'timeout' };
+    return { ok: outcome.ok, ticks: outcome.tick - from, openTicks: opened, received: outcome.received, gave: outcome.gave, ...(outcome.reason ? { reason: outcome.reason } : {}) };
+}
+
 export type { ActionResult };
