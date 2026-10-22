@@ -483,25 +483,11 @@ export async function loadModules(dirs: readonly string[] = ['quests', 'skills']
 /** The legs the ledger walks: the body-altar plan in force (its T20-21 row is the Falador teleport). */
 export const ledgerLegs = (): LegLike[] => legsFor({ s21Altar: 'body' }).map(l => l.def);
 
-export const FOLD_IN_25 = 'rs/158 fold-in 25: H8 law x7 / water x6, S11b out law 5 / water 4';
-const REPORTED = 'reported to rs/158 and rs/186 by rs/451, 2026-10-22, for a fold-in';
-
 /**
- * Known findings on main's ledger, each awaiting the change named. T11-12's water is not short
- * today: H6's 2 water runes ride unspent (the staff of water covers T08-09's) and fill the gap.
+ * Known findings on main's ledger, each awaiting the change named. Empty since rs/158's fold-in 28:
+ * fold-in 25's H8 / S11b / T11-12 runes and rs/451's S11b, S24 legs and S18 findings are in the rows.
  */
-export const PENDING: readonly Pending[] = [
-    { kind: 'mismatch', row: 'S11b', rune: 'lawrune', declared: 5, ledger: 3, why: FOLD_IN_25 },
-    { kind: 'mismatch', row: 'S11b', rune: 'waterrune', declared: 4, ledger: 2, why: FOLD_IN_25 },
-    { kind: 'short', row: 'T11-12', rune: 'lawrune', declared: 2, ledger: 0, why: FOLD_IN_25 },
-    // The demon's Fire Bolts at the measured maximum, 24, against the ledger's inferred ~31.
-    { kind: 'mismatch', row: 'S11b', rune: 'chaosrune', declared: 24, ledger: 31, why: REPORTED },
-    { kind: 'mismatch', row: 'S11b', rune: 'airrune', declared: 75, ledger: 96, why: REPORTED },
-    // L24c's Varrock fire comes from the staff of fire, worn from H13 to H22.
-    { kind: 'mismatch', row: 'S24 legs', rune: 'firerune', declared: 0, ledger: 1, why: REPORTED },
-    // Superheat's measured maximum, 162 (stun-pack.md section 16), against the ledger's 160.
-    { kind: 'mismatch', row: 'S18', rune: 'naturerune', declared: 162, ledger: 160, why: REPORTED },
-];
+export const PENDING: readonly Pending[] = [];
 
 export async function main(argv: string[]): Promise<number> {
     const file = argv.find(a => !a.startsWith('--')) ?? MANIFEST;
