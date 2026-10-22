@@ -13,11 +13,9 @@
 // `pause.below`, the loop re-probes and resumes on the verdict. A minute's ticks is the page's
 // catch-up window (frames.ts keeps the last 60 s of a run's frames, wall-clock) in ticks at the
 // observed period (`TickPeriod`, fed from the states' receipt times), so plain runs until that
-// window has filled with plain frames and no longer: at the demo's 340 ms that is 177 ticks,
-// where 60 s at the nominal 300 ms (200 ticks) ran 68 s. `pause.minTicks` fixes the count.
-// Paused
-// drops are not fed to the gate, so a plain stretch never counts as a knife one, and the
-// resume probe starts the gate's next stretch clean.
+// window has filled with plain frames and no longer: 177 ticks at the demo's 340 ms, 200 at
+// 300 ms. `pause.minTicks` fixes the count. Paused drops are not fed to the gate, so a plain
+// stretch never counts as a knife one, and the resume probe starts the gate's next stretch clean.
 //
 // The measured switch-off is in ticks per expected roll: each drop is weighted by the rolls it
 // stands for (`rollsPerDrop`, 1 / success chance at the current level, as
