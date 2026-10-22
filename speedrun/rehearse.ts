@@ -65,11 +65,12 @@
 // 1 error.
 
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'fs';
-import { homedir } from 'os';
 import { basename, dirname, isAbsolute, join } from 'path';
 import type { BotWorldState } from '../sdk/types';
 import { clock, DemoMonitor, demoOrigin, samplePlayerCount } from './lib/demo-status';
 import { directDecision, type DirectVerdict, verdictText } from './lib/hostgate';
+import { PAUSE_STEP, annotation, ProgramTracker, programRow, ReachTracker, reachRow, runAttempt, SessionClock } from './lib/attempt';
+import { EXIT_HOST_RESERVED, reservationPath, claimOwner, reservationText, claimBin, claimToucher, ReservationWatch, reservationRefusal } from './lib/host-reservation';
 import { probeInPage, programStatus, type ProgramStatus } from './lib/programs';
 import { reconnectAfterOutage, serverDownProbe } from './lib/reconnect';
 import {
@@ -80,7 +81,7 @@ import { cdpUrl, type ClientKind, closeSession, loadBotEnv, logoutClean, type Lo
 import { formatReport, newRunId, parseLog, report, type RowKind, type StepReport, TickLog, type TickRow } from './lib/ticks';
 import { receiveFrom, type WantSpec } from './lib/trade';
 import { tickMs, waitUntil } from './lib/wait';
-import { DROP_STEP, type Link, RESUME_STEP, type ResumeEvent, runResumable, sessionLink } from './runner/resume';
+import { DROP_STEP, type Link, type Probe, RESUME_STEP, type ResumeEvent, runResumable, sessionLink, stepProbes } from './runner/resume';
 import { BOUNDARY_STEP, type Step } from './runner/step';
 import { parsePlayer, type PlayerRow, playerPath, PoliteFetcher, withServerRate } from './tools/hiscore-scrape';
 
@@ -458,229 +459,6 @@ export function kindText(g: KindGate): string {
     return `kind: ${g.kind} (${g.rule}); ${read}`;
 }
 
-// ------------------------------------------------------------------ host reservation
-
-/**
- * The host reservation (docs/speedrun/rehearsals/HOST.md, 'Run-capable twin' and 'Claims'): one
- * JSON object `{"owner", "until", "reason"}`, which host's claim lock `rs-claim` writes for every
- * holder (it adds logins, what, taken, touched; a preempt makes host the owner and records the
- * holder it displaced under `displaced.owner`). It is live while `until` is in the future. While a
- * live one is not the attempt's own claim (claimOwner()), no attempt or claim starts, and an attempt
- * in flight logs out at its next logout-safe boundary and does not restart.
- */
-export const RESERVATION_FILE = 'host-reserved.json';
-/** Overrides the default path ($HOME/host-reserved.json); --host-reservation overrides both. */
-export const RESERVATION_ENV = 'SPEEDRUN_HOST_RESERVATION';
-/** Exit code: refused at pre-flight, or paused mid-attempt, because the host is reserved. */
-export const EXIT_HOST_RESERVED = 5;
-/** The `gate` annotation row an attempt paused by a live reservation writes. */
-export const PAUSE_STEP = '(gate) paused for the gate/run';
-
-/** The rs-claim owner the attempt runs under when --claim-owner is not given. */
-export const CLAIM_OWNER_ENV = 'SPEEDRUN_CLAIM_OWNER';
-
-export interface HostReservation {
-    owner: string;
-    until: string;
-    reason: string;
-    /** A preempt: the holder whose claim host's replaced (rs-claim's `displaced.owner`). */
-    displaced?: string;
-}
-
-export type ReservationState =
-    | { state: 'none' }
-    | { state: 'expired'; reservation: HostReservation }
-    | { state: 'live'; reservation: HostReservation }
-    | { state: 'malformed'; error: string };
-
-export function reservationPath(flag?: string, env: Readonly<Record<string, string | undefined>> = process.env): string {
-    return flag ?? env[RESERVATION_ENV] ?? join(env.HOME ?? homedir(), RESERVATION_FILE);
-}
-
-/** --claim-owner, else $SPEEDRUN_CLAIM_OWNER; undefined: the attempt runs under no claim of its own. */
-export function claimOwner(flag?: string, env: Readonly<Record<string, string | undefined>> = process.env): string | undefined {
-    const v = (flag ?? env[CLAIM_OWNER_ENV] ?? '').trim();
-    return v || undefined;
-}
-
-/** The file's text (null: no file) at `now`. Malformed: not a JSON object, or an `until` that is not a time. */
-export function judgeReservation(text: string | null, now: number): ReservationState {
-    if (text === null) return { state: 'none' };
-    let o: unknown;
-    try {
-        o = JSON.parse(text);
-    } catch (e) {
-        return { state: 'malformed', error: `not JSON (${e instanceof Error ? e.message : e})` };
-    }
-    if (!o || typeof o !== 'object' || Array.isArray(o)) return { state: 'malformed', error: 'not a JSON object' };
-    const r = o as Record<string, unknown>;
-    const until = typeof r.until === 'string' ? Date.parse(r.until) : Number.NaN;
-    if (!Number.isFinite(until)) return { state: 'malformed', error: `"until" is not a time (${JSON.stringify(r.until ?? null)})` };
-    const d = r.displaced as Record<string, unknown> | null | undefined;
-    const displaced = d && typeof d === 'object' && typeof d.owner === 'string' ? d.owner : undefined;
-    const reservation: HostReservation = { owner: String(r.owner ?? '?'), until: r.until as string, reason: String(r.reason ?? ''), ...(displaced ? { displaced } : {}) };
-    return until > now ? { state: 'live', reservation } : { state: 'expired', reservation };
-}
-
-export function readReservation(path: string, now: number = Date.now()): ReservationState {
-    let text: string | null;
-    try {
-        text = readFileSync(path, 'utf-8');
-    } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') return { state: 'malformed', error: `unreadable (${e instanceof Error ? e.message : e})` };
-        text = null;
-    }
-    return judgeReservation(text, now);
-}
-
-export function reservationText(r: HostReservation): string {
-    return `${r.owner} until ${r.until}${r.reason ? ` (${r.reason})` : ''}${r.displaced ? `, preempting ${r.displaced}` : ''}`;
-}
-
-/** One `rs-claim touch OWNER`: its exit code (null: it did not finish in time, or could not start) and output. */
-export interface ClaimTouch {
-    code: number | null;
-    out: string;
-}
-export type ClaimToucher = (owner: string) => Promise<ClaimTouch>;
-/** rs-claim's exit code for a touch by a holder host has preempted. */
-export const TOUCH_PREEMPTED = 3;
-export const TOUCH_TIMEOUT_MS = 10_000;
-/** At most one touch per this, however close the boundaries fall. */
-export const TOUCH_EVERY_MS = 60_000;
-
-/** rs-claim on PATH, else $HOME/.local/bin/rs-claim, else null (not installed: nothing is touched). */
-export function claimBin(env: Readonly<Record<string, string | undefined>> = process.env): string | null {
-    const onPath = env.PATH ? Bun.which('rs-claim', { PATH: env.PATH }) : null;
-    if (onPath) return onPath;
-    const home = join(env.HOME ?? homedir(), '.local', 'bin', 'rs-claim');
-    return existsSync(home) ? home : null;
-}
-
-/** Runs `<bin> touch OWNER`, killed after `timeoutMs`. Never throws. */
-export function claimToucher(bin: string, timeoutMs = TOUCH_TIMEOUT_MS): ClaimToucher {
-    return async owner => {
-        try {
-            const p = Bun.spawn([bin, 'touch', owner], { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
-            const kill = setTimeout(() => p.kill('SIGKILL'), timeoutMs);
-            try {
-                const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
-                const text = `${out}${err}`.trim();
-                return p.signalCode ? { code: null, out: text || `no answer in ${timeoutMs / 1000} s` } : { code: p.exitCode, out: text };
-            } finally {
-                clearTimeout(kill);
-            }
-        } catch (e) {
-            return { code: null, out: `could not run ${bin}: ${e instanceof Error ? e.message : e}` };
-        }
-    };
-}
-
-/**
- * Reads the file afresh on every check; each distinct warning prints once. With `owner`, that
- * owner's claim is the attempt's own: live, it blocks nothing; stale, it warns and blocks nothing
- * (nobody else holds the machine). Any other live owner blocks, and a preempt of ours is host's.
- */
-export class ReservationWatch {
-    private readonly warned = new Set<string>();
-    private touching: Promise<void> | null = null;
-    private lastTouchAt = Number.NEGATIVE_INFINITY;
-    private preempted: string | null = null;
-    constructor(
-        readonly path: string,
-        private readonly opts: {
-            now?: () => number;
-            warn?: (msg: string) => void;
-            /** The rs-claim owner the attempt runs under. */
-            owner?: string;
-            /** Renews the claim at boundaries (with `owner`); exit 3 is host's preempt. */
-            touch?: ClaimToucher | null;
-            touchEveryMs?: number;
-        } = {}
-    ) {}
-
-    get owner(): string | undefined {
-        return this.opts.owner;
-    }
-
-    private now(): number {
-        return this.opts.now ? this.opts.now() : Date.now();
-    }
-
-    private warnOnce(key: string, msg: string): void {
-        if (this.warned.has(key)) return;
-        this.warned.add(key);
-        (this.opts.warn ?? console.warn)(`[rehearse] WARNING: ${msg}`);
-    }
-
-    /** What keeps a login from starting now: a live reservation that is not our claim, or null. */
-    check(): HostReservation | null {
-        const s = readReservation(this.path, this.now());
-        const owner = this.opts.owner;
-        if (s.state === 'malformed') {
-            this.warnOnce(`malformed:${s.error}`, `${this.path} is malformed, so it is not a live reservation: ${s.error}`);
-            return null;
-        }
-        if (s.state === 'none') {
-            if (owner) this.warnOnce('none', `no claim in ${this.path}, though the attempt runs under ${owner}'s: take it (rs-claim take ${owner} ...) before an attempt`);
-            return null;
-        }
-        const r = s.reservation;
-        const ours = owner !== undefined && r.owner === owner;
-        if (s.state === 'expired') {
-            if (ours) this.warnOnce(`stale:${r.until}`, `our claim went stale (${reservationText(r)}); nobody else holds the machine, so the attempt goes on: renew it (rs-claim touch ${owner}) or take it again`);
-            return null;
-        }
-        return ours ? null : r;
-    }
-
-    /**
-     * At a logout-safe step boundary: a preempt the last touch reported, else check(). While the
-     * claim is ours it starts the next touch in the background (the runner's stop hook is
-     * synchronous, and a touch can wait on rs-claim's lock), so its answer counts at a later boundary.
-     */
-    boundary(): HostReservation | null {
-        if (this.preempted !== null) {
-            const s = readReservation(this.path, this.now());
-            if (s.state === 'live' && s.reservation.owner !== this.opts.owner) return s.reservation;
-            return { owner: 'host', until: new Date(this.now()).toISOString(), reason: `rs-claim touch exited ${TOUCH_PREEMPTED}: ${this.preempted}`, ...(this.opts.owner ? { displaced: this.opts.owner } : {}) };
-        }
-        const r = this.check();
-        if (!r) this.startTouch();
-        return r;
-    }
-
-    /** Resolves once the touch in flight (if any) has been accounted for. */
-    settled(): Promise<void> {
-        return this.touching ?? Promise.resolve();
-    }
-
-    private startTouch(): void {
-        const { owner, touch } = this.opts;
-        if (!owner || !touch || this.touching) return;
-        const t = this.now();
-        if (t - this.lastTouchAt < (this.opts.touchEveryMs ?? TOUCH_EVERY_MS)) return;
-        this.lastTouchAt = t;
-        this.touching = touch(owner)
-            .then(r => {
-                if (r.code === TOUCH_PREEMPTED) this.preempted = r.out || 'PREEMPTED';
-                else if (r.code !== 0) this.warnOnce(`touch:${r.code}:${r.out}`, `rs-claim touch ${owner} ${r.code === null ? 'did not answer' : `exited ${r.code}`}${r.out ? `: ${r.out}` : ''}; the claim file is still read at every boundary`);
-            })
-            .catch(e => this.warnOnce(`touch:${e}`, `rs-claim touch ${owner} failed: ${e instanceof Error ? e.message : e}`))
-            .finally(() => {
-                this.touching = null;
-            });
-    }
-}
-
-/** Pre-flight, and before each login: why nothing may log in, or null to go. */
-export function reservationRefusal(watch: ReservationWatch): string | null {
-    const r = watch.check();
-    if (!r) return null;
-    const whose = watch.owner ? (r.displaced === watch.owner ? `, which preempts our claim (${watch.owner})` : `, not our claim (${watch.owner})`) : '';
-    return `the host is reserved by ${reservationText(r)} (${watch.path})${whose}: no attempt or claim starts while it is live; run again once it is gone or expired`;
-}
-
 // ------------------------------------------------------------------ player count through the attempt
 
 /** /playercount is read this often during an attempt (rs/158). */
@@ -749,103 +527,6 @@ export function formatPlayers(p: PlayerSwing): string[] {
     return lines;
 }
 
-// ------------------------------------------------------------------ trackers (fed every published state)
-
-/** Per client session (lib/session.ts sessionId): first and last in-world tick seen. */
-export class SessionClock {
-    readonly sessions = new Map<number, { first: number; last: number }>();
-    observe(sessionId: number, s: Pick<BotWorldState, 'tick' | 'inGame'>): void {
-        if (!s.inGame) return;
-        const e = this.sessions.get(sessionId);
-        if (!e) this.sessions.set(sessionId, { first: s.tick, last: s.tick });
-        else e.last = Math.max(e.last, s.tick);
-    }
-}
-
-export interface ReachEvent {
-    skill: string;
-    level: number;
-    tick: number;
-}
-
-/** Base-level gains in any skill, one event per level (a multi-level jump gives one per level). */
-export class ReachTracker {
-    private base: Map<string, number> | null = null;
-    observe(s: Pick<BotWorldState, 'skills' | 'tick' | 'inGame'>): ReachEvent[] {
-        if (!s.inGame || !s.skills?.length) return [];
-        const now = new Map(s.skills.map(k => [k.name.toLowerCase(), k.baseLevel] as const));
-        const prev = this.base;
-        this.base = now;
-        if (!prev) return [];
-        const out: ReachEvent[] = [];
-        for (const [skill, level] of now) {
-            const p = prev.get(skill);
-            if (p !== undefined) for (let l = p + 1; l <= level; l++) out.push({ skill, level: l, tick: s.tick });
-        }
-        return out;
-    }
-}
-
-/** In-page program runs to log: each run once, at its end (done, fault, stopped, or replaced by the next). */
-export class ProgramTracker {
-    private last: ProgramStatus | null = null;
-    private readonly logged = new Set<string>();
-    private static key(st: ProgramStatus): string {
-        return `${st.runId}@${st.startedTick}`;
-    }
-    observe(st: ProgramStatus | null): ProgramStatus[] {
-        const out: ProgramStatus[] = [];
-        const prev = this.last;
-        if (prev && (!st || ProgramTracker.key(st) !== ProgramTracker.key(prev)) && !this.logged.has(ProgramTracker.key(prev))) {
-            this.logged.add(ProgramTracker.key(prev));
-            out.push(st && prev.phase === 'running' ? { ...prev, phase: 'replaced' } : prev);
-        }
-        if (st && st.phase !== 'running' && !this.logged.has(ProgramTracker.key(st))) {
-            this.logged.add(ProgramTracker.key(st));
-            out.push(st);
-        }
-        if (st) this.last = st;
-        return out;
-    }
-    /** A run still going when the attempt ended. */
-    flush(): ProgramStatus[] {
-        const prev = this.last;
-        if (!prev || this.logged.has(ProgramTracker.key(prev))) return [];
-        this.logged.add(ProgramTracker.key(prev));
-        return [prev];
-    }
-}
-
-// ------------------------------------------------------------------ rows
-
-export function annotation(
-    log: Pick<TickLog, 'runId'>,
-    account: string,
-    kind: RowKind,
-    step: string,
-    f: { sessionId?: number; startTick?: number; endTick?: number; ok?: boolean; error?: string; meta?: Record<string, unknown>; crossedSession?: boolean }
-): TickRow {
-    const startTick = f.startTick ?? -1;
-    const endTick = f.endTick ?? startTick;
-    return {
-        v: 1, kind, runId: log.runId, account, sessionId: f.sessionId ?? 0, step, startTick, endTick,
-        ticks: startTick < 0 ? 0 : Math.max(0, endTick - startTick), wallMs: 0, ok: f.ok ?? true,
-        ...(f.error ? { error: f.error } : {}), ...(f.meta ? { meta: f.meta } : {}), ...(f.crossedSession ? { crossedSession: true } : {}),
-        tickMs: tickMs(), at: new Date().toISOString(),
-    };
-}
-
-export function programRow(log: Pick<TickLog, 'runId'>, account: string, sessionId: number, st: ProgramStatus): TickRow {
-    return annotation(log, account, 'program', `(program) ${st.name}`, {
-        sessionId, startTick: st.startedTick, endTick: st.endedTick ?? st.tick, ok: st.phase !== 'fault', ...(st.fault ? { error: st.fault } : {}),
-        meta: {
-            runId: st.runId, phase: st.phase, params: st.params, counters: st.counters, gauges: st.gauges, packets: st.packets, deferred: st.deferred,
-            skippedTicks: st.skippedTicks, maxTickMs: st.maxTickMs, frames: st.frames, publish: st.publish, react: st.react, loops: st.loops,
-            ...(st.last ? { last: st.last } : {}), ...(st.result !== undefined ? { result: st.result } : {}),
-        },
-    });
-}
-
 // ------------------------------------------------------------------ summary
 
 export interface Summary {
@@ -884,11 +565,12 @@ export function summarize(rows: readonly TickRow[]): Summary {
     let prior = 0;
     for (const r of rows) {
         if (r.kind === 'session') {
-            const playtime = r.endTick + 1;
+            // From the session's own tick base: an in-page login's row starts at the page's earlier count.
+            const playtime = r.endTick - Math.max(0, r.startTick) + 1;
             sessions.push({ sessionId: r.sessionId, ticks: r.ticks, playtime, lowerBound: r.crossedSession === true || r.meta?.ended === 'relaunch' });
             prior += playtime;
         } else if (r.kind === 'reach') {
-            reach.push({ skill: String(r.meta?.skill), level: Number(r.meta?.level), playtime: prior + r.endTick });
+            reach.push({ skill: String(r.meta?.skill), level: Number(r.meta?.level), playtime: prior + r.endTick - Number(r.meta?.tickBase ?? 0) });
         } else if (r.kind === 'gate' && r.step === PAUSE_STEP) {
             const m = r.meta ?? {};
             pauses.push({
@@ -1004,86 +686,6 @@ export function formatSummary(
         if (o.hiscoreUrl) lines.push(`  ${o.hiscoreUrl}`);
     }
     return lines.join('\n');
-}
-
-// ------------------------------------------------------------------ the chain under its stops
-
-export interface AttemptOptions {
-    log: TickLog;
-    account: string;
-    link: Link;
-    from?: number | string;
-    /** Read at every logout-safe boundary (ReservationWatch.boundary), before the other stops. */
-    reservation: ReservationWatch;
-    /** Ctrl-C asked for a stop. */
-    stopAsked: () => boolean;
-    /** Why the rehearsal tab's in-page probe refuses ((c) failed), or null. */
-    gateStop: () => string | null;
-    /** Leave the world: logoutClean, page-confirmed. Clearing `expectInWorld` keeps the watchdog from relaunching. */
-    logout: () => Promise<LogoutResult>;
-    onEvent?: (e: ResumeEvent) => void;
-}
-
-export interface AttemptResult {
-    outcome: string;
-    code: number;
-    /** Set when a live host reservation stopped the attempt. */
-    paused: HostReservation | null;
-}
-
-/**
- * The chain through runResumable with the attempt's stops, polled after each logoutSafe step:
- * the runner has no safe point inside a step, so a long step runs to its end first. A live host
- * reservation logs out there, writes a PAUSE_STEP row and returns EXIT_HOST_RESERVED; nothing here
- * restarts the attempt. Ctrl-C returns 4 and a failed rehearsal-tab gate 3, as before.
- */
-export async function runAttempt(session: Session, chain: ReadonlyArray<Step<any>>, o: AttemptOptions): Promise<AttemptResult> {
-    const held: { reservation: HostReservation | null; logout: LogoutResult | null } = { reservation: null, logout: null };
-    try {
-        const r = await runResumable(session, chain, {
-            log: o.log,
-            c: {},
-            link: o.link,
-            // The reservation is read first, at every boundary, so a pause is recorded as one even beside a Ctrl-C.
-            shouldStop: () => {
-                held.reservation ??= o.reservation.boundary();
-                return held.reservation !== null || o.stopAsked() || o.gateStop() !== null;
-            },
-            logout: async () => {
-                held.logout = await o.logout();
-            },
-            ...(o.from !== undefined ? { from: o.from } : {}),
-            ...(o.onEvent ? { onEvent: o.onEvent } : {}),
-        });
-        if (r.resumeAt === undefined) return { outcome: r.drops ? `chain done after ${r.drops} drop(s)` : 'chain done', code: 0, paused: null };
-        const before = chain[r.resumeAt]?.name ?? null;
-        const res = held.reservation;
-        if (res) {
-            const out = held.logout;
-            o.log.append(annotation(o.log, o.account, 'gate', PAUSE_STEP, {
-                sessionId: session.sessionId,
-                startTick: out ? out.clickTick : (session.sdk.getState()?.tick ?? -1),
-                ok: out?.ok === true,
-                ...(out && !out.ok ? { error: `logout not confirmed: ${out.reason}` } : {}),
-                meta: { ...res, path: o.reservation.path, before, ...(out ? { logout: out } : {}) },
-            }));
-            const left = out?.ok ? 'logged out' : `logout NOT confirmed (${out?.reason ?? 'no logout'})`;
-            return {
-                outcome: `PAUSED for the gate/run: the host is reserved by ${reservationText(res)}; ${left} before "${before}"; run again once the reservation is gone`,
-                code: EXIT_HOST_RESERVED,
-                paused: res,
-            };
-        }
-        const gate = o.gateStop();
-        if (gate) return { outcome: `REFUSED after the in-page probe (${gate}); logged out`, code: 3, paused: null };
-        return { outcome: `stopped before "${before}"; logged out`, code: 4, paused: null };
-    } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        // A step that logged out on purpose (a PausedForPlayer pause) left the world itself.
-        const r = !session.expectInWorld ? { outcome: `paused by the step, already logged out: ${msg}`, code: 4 } : { outcome: `FAILED: ${msg}`, code: 1 };
-        console.error(`[rehearse] ${r.outcome}`);
-        return { ...r, paused: null };
-    }
 }
 
 // ------------------------------------------------------------------ the gate tab and the attempt's window
@@ -1431,6 +1033,17 @@ export interface SkillModule {
     skill: string;
     /** `to` and `toLevel` both carry --to: fishing and mining read `to`, firemaking (and the scored S03) `toLevel`. */
     steps(opts?: { to?: number; toLevel?: number; technique?: Technique; [k: string]: unknown }): Step<any>[];
+    /** The probes its steps read on a resume walk, name to probe (skills/cooking.ts); runner/resume.ts stepProbes. */
+    PROBES?: unknown;
+}
+
+/** runAttempt's probes for the attempt's steps, from the skill module's PROBES; a UsageError names any probe it lacks. */
+export function attemptProbes(steps: readonly Step<any>[], mod: Pick<SkillModule, 'PROBES'> | null): Record<string, Probe> {
+    try {
+        return stepProbes(steps, mod ? [mod] : []);
+    } catch (e) {
+        throw new UsageError(message(e));
+    }
 }
 
 async function loadSkillModule(spec: string): Promise<SkillModule> {
@@ -1522,6 +1135,9 @@ async function main(argv: string[]): Promise<number> {
     const mod = a.claim ? null : await loadSkillModule(a.skill!);
     const skillName = mod?.skill ?? CLAIM_SKILL;
     const start = await import('./skills/start');
+    // Built before any login, so a step reading a probe that no module exports refuses with nothing logged in.
+    const modSteps = mod ? mod.steps({ to: a.to, toLevel: a.to, ...(a.technique ? { technique: a.technique } : {}), ...a.skillOpts }) : [];
+    const probes = attemptProbes([...start.steps(), ...modSteps], mod);
     const runId = newRunId();
     // A resumed attempt appends to the same log; its earlier sessions count toward the summary and the hiscore check.
     const earlier = a.log && existsSync(a.log) ? parseLog(readFileSync(a.log, 'utf-8')) : [];
@@ -1595,21 +1211,9 @@ async function main(argv: string[]): Promise<number> {
             const clock = new SessionClock();
             const reach = new ReachTracker();
             const programs = new ProgramTracker();
-            let seenSession = session.sessionId;
-            const closeSessionRow = (id: number, ended: 'logout' | 'relaunch', endTick?: number, logout?: LogoutResult) => {
-                const e = clock.sessions.get(id);
-                if (!e) return;
-                const end = endTick ?? e.last;
-                log.append(annotation(log, account, 'session', '(session)', { sessionId: id, startTick: 0, endTick: end, meta: { firstObservedTick: e.first, ended, ...(logout ? { logout } : {}) } }));
-                clock.sessions.delete(id);
-            };
             const unsubscribe = session.sdk.onStateUpdate(s => {
-                if (session.sessionId !== seenSession) {
-                    closeSessionRow(seenSession, 'relaunch');
-                    seenSession = session.sessionId;
-                }
-                clock.observe(session.sessionId, s);
-                for (const r of reach.observe(s)) log.append(annotation(log, account, 'reach', `(reach) ${r.skill} ${r.level}`, { sessionId: session.sessionId, startTick: r.tick, meta: { skill: r.skill, level: r.level } }));
+                clock.track(log, account, session, s);
+                for (const r of reach.observe(s)) log.append(reachRow(log, account, session, r));
                 for (const st of programs.observe(programStatus(s))) log.append(programRow(log, account, session.sessionId, st));
             });
             // /playercount through the attempt (rs/158): an HTTP GET beside the game socket, no game packets.
@@ -1674,7 +1278,7 @@ async function main(argv: string[]): Promise<number> {
                 });
             }
             if (a.kit) chain.push(kitStep(a.kit, a.kitFrom));
-            if (mod) chain.push(...mod.steps({ to: a.to, toLevel: a.to, ...(a.technique ? { technique: a.technique } : {}), ...a.skillOpts }));
+            chain.push(...modSteps);
 
             const result = await runAttempt(session, chain, {
                 log,
@@ -1700,7 +1304,7 @@ async function main(argv: string[]): Promise<number> {
             unsubscribe();
             const out = lastLogout as LogoutResult | null;
             // A step that logged out itself: its click was on the last in-world tick (logout latency 0).
-            closeSessionRow(session.sessionId, 'logout', out?.ok ? out.lastInWorldTick : session.lastInWorldTick, out ?? undefined);
+            clock.close(log, account, session.sessionId, 'logout', out?.ok ? out.lastInWorldTick : session.lastInWorldTick, out ?? undefined);
             await readPlayers('end');
             return {
                 value: result,

@@ -42,6 +42,7 @@ import { runSteps } from '../runner/step';
 import { defaultCapacity, DEFAULT_ID, steps, tradePlan, type Tile } from '../skills/firemaking';
 import { launchLabBrowser } from './browser';
 import { arg, botArg, result } from './common';
+import { labCueDropperOptions } from './fm-row-launch';
 import { cheat, clearInventory, give, leaveTutorial, mustTele, setstat } from './setup';
 
 const ROOT = resolve(import.meta.dir, '..', '..');
@@ -206,7 +207,7 @@ async function scoredRun(actions: Session['bot'], sdk: Session['sdk']): Promise<
     const setup: Record<string, unknown> = { client, arrive, inventory, capacity: supply === 'trade' ? capacity : undefined };
     if (supply === 'row') {
         helperProc = spawnHelper(['speedrun/helpers/fm-row.ts', helper], {
-            ROLE_OPTIONS: JSON.stringify({ start: 'cue', cueDir: base, restock: { kind: 'cheat' }, row, lead }),
+            ROLE_OPTIONS: JSON.stringify(labCueDropperOptions({ row }, { cueDir: base, lead })),
             HELPER_LAB_TELE: '1'
         });
         if (!(await nextLine(l => l.message === 'phase' && l.phase === 'armed', 240_000))) throw new Error('dropper never armed');

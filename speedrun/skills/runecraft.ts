@@ -25,6 +25,8 @@
 import { join } from 'node:path';
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import { canonName, cueDir, CueWriter, readJson, readStatuses, RUN_DIR, type CueScope, type GiverStatus, type HandBackItem, type Schedule, type Turn } from '../helpers/altar-cue';
+import { LoginLimiter, type LoginLimitPolicy } from '../helpers/backoff';
+import { BODY_ROSTER_SIZE } from '../helpers/roster';
 import type { LauncherStatus } from '../helpers/standalone';
 import { classifyPage } from '../lib/dialogue';
 import { levelUpStep, newWatcherMemory, type WatcherMemory } from '../lib/levelup';
@@ -579,6 +581,10 @@ export interface RunecraftOptions {
     s21HandBack?: HandBack | false;
     /** Hand-back trades tried before the step fails (default HAND_BACK_TRIES). */
     handBackTries?: number;
+    /** S21's pre-login (preLoginStep): the giver roster's login names, or how many (default helpers/roster.ts BODY_ROSTER_SIZE). */
+    s21Givers?: number | readonly string[];
+    /** S21's pre-login wait in observed ticks (default preLoginWaitMs for the roster at the run's tick length). */
+    preLoginTicks?: number;
     deps?: Partial<RunecraftDeps>;
 }
 
@@ -640,6 +646,110 @@ export function altarStep(band: Band, opts: RunecraftOptions = {}): Step<any> {
 /** The step-module convention (`skill`, `steps()`): S06 air 1-44, S21 nature (or body) 44-99. */
 export function steps(opts: RunecraftOptions = {}): Step<any>[] {
     return bands(opts).map(b => altarStep(b, opts));
+}
+
+// ------------------------------------------------------------------ S21's pre-login
+
+/**
+ * The helper launcher's login limiter (helpers/standalone.ts, its LoginLimiter): 3 logins back to
+ * back, then 6 a minute, never two within 4 s. Every helper login from the run's address queues on it.
+ */
+export const LAUNCHER_LOGIN_POLICY: Readonly<LoginLimitPolicy> = { perMinute: 6, burst: 3, minSpacingMs: 4_000 };
+
+/** Wall ms from the first of `n` logins queued together to the last one's slot (helpers/backoff.ts LoginLimiter on a still clock). */
+export function loginSpanMs(n: number, policy: Readonly<LoginLimitPolicy> = LAUNCHER_LOGIN_POLICY): number {
+    const limiter = new LoginLimiter({ ...policy }, () => 0);
+    let last = 0;
+    for (let i = 0; i < n; i++) last = limiter.reserve();
+    return last;
+}
+
+/** The last giver's login to its ready report, at most: the launcher's login timeout (standalone.ts LOGIN_TIMEOUT_MS). */
+export const GIVER_LOGIN_MS = 90_000;
+/** Beyond the queue and the last login: one fleet-wide refusal pause (helpers/backoff.ts loginFailurePolicy: 60 s for codes 7, 8, 13 and 14). */
+export const PRE_LOGIN_MARGIN_MS = 60_000;
+
+/** The pre-login's wall bound for `n` givers: for S21's 22, 190 s of login queue + 90 s + 60 s = 340 s. */
+export function preLoginWaitMs(n: number): number {
+    return loginSpanMs(n) + GIVER_LOGIN_MS + PRE_LOGIN_MARGIN_MS;
+}
+
+/** Frames the pre-login's cue carries (runner/cue-keeper.ts CUE_BEACONS waits for as many). */
+const PRE_LOGIN_BEACONS = 4;
+
+/**
+ * S21's pre-login (rs/186's ruling), placed by the chain before SCORED's relog: open the band's
+ * {S21, altar} cue, on whose open the helper launcher logs the givers in, and wait until every giver
+ * of the roster reports ready (the givers giverFeed would offer the page: loaded, in the room, a
+ * fresh status). The relog after it puts SCORED behind every giver in the address's login order,
+ * so giverSchedule grants each of them tuned. The cue carries no turns and is not stopped here: a
+ * stop is the givers' logout trigger, and the band writes its own sessions under the same scope.
+ * The wait is bounded in observed ticks: preLoginWaitMs for the roster at the run's tick length.
+ */
+export function preLoginStep(opts: RunecraftOptions = {}): Step<any> {
+    const band = bands(opts).find(b => b.id === 'S21');
+    if (!band) throw new Error(`preLoginStep: no S21 band (untilLevel ${opts.untilLevel} ends the run's Runecraft at S06)`);
+    const name = `${stepName(band)}:pre-login`;
+    const run = (ctx: StepContext<any>) => preLogin(ctx, band, name, opts);
+    return { name, preconditions: s => (s.inGame ? true : 'not in game'), postconditions: () => true, run, resume: run, logoutSafe: true };
+}
+
+async function preLogin(ctx: StepContext<any>, band: Band, name: string, opts: RunecraftOptions): Promise<void> {
+    const deps = { ...defaultDeps, ...opts.deps };
+    const dir = opts.cueDir ?? deps.cueDir();
+    const roster = opts.s21Givers ?? BODY_ROSTER_SIZE;
+    const want = typeof roster === 'number' ? roster : roster.length;
+    const bound = opts.preLoginTicks ?? Math.ceil(preLoginWaitMs(want) / tickMs());
+    const beacons: { tick: number; ms: number }[] = [];
+    const see = (s: BotWorldState) => {
+        const last = beacons[beacons.length - 1];
+        if (last && s.tick <= last.tick) return;
+        beacons.push({ tick: s.tick, ms: deps.now() });
+        if (beacons.length > 8) beacons.splice(0, beacons.length - 8);
+    };
+    const first = ctx.sdk.getState();
+    if (first) see(first);
+    const off = ctx.sdk.onStateUpdate(see);
+    const startTick = first?.tick ?? -1;
+    let ready: string[] = [];
+    const isReady = (g: string) => ready.some(r => canonName(r) === canonName(g));
+    const covered = () => {
+        ready = giverFeed(deps.readStatuses(dir), deps.now(), () => 'robust', band.load ?? LOAD).map(e => e.name);
+        return typeof roster === 'number' ? ready.length >= roster : roster.every(isReady);
+    };
+    const missing = () => (typeof roster === 'number' ? [] : roster.filter(g => !isReady(g)));
+    let session: string | null = null;
+    let ok = false;
+    try {
+        await waitUntil(ctx.sdk, () => beacons.length >= PRE_LOGIN_BEACONS, { maxTicks: 10 });
+        const sink = deps.openCue(dir, ctx.session.name, { step: band.id, family: 'altar' });
+        sink.write({ beacons: [...beacons], turns: [] });
+        session = sink.session;
+        ok = covered() || (await waitUntil(ctx.sdk, covered, { maxTicks: bound })).ok;
+    } finally {
+        off();
+        const endTick = ctx.sdk.getState()?.tick ?? startTick;
+        ctx.log.append({
+            v: 1,
+            kind: 'note',
+            runId: ctx.log.runId,
+            account: ctx.session.name,
+            sessionId: ctx.session.sessionId,
+            step: name,
+            startTick,
+            endTick,
+            ticks: 0,
+            wallMs: 0,
+            ok,
+            meta: { kind: 'rc-pre-login', band: band.id, want, ready: ready.length, missing: missing(), boundTicks: bound, waitedTicks: endTick - startTick, cueSession: session },
+            tickMs: tickMs(),
+            at: new Date().toISOString()
+        });
+    }
+    if (!ok) {
+        const absent = missing();
+        throw new Error(`${name}: ${ready.length} of ${want} givers ready after ${bound} ticks${absent.length ? ` (not ready: ${absent.join(', ')})` : ''}; the launcher logs them in on the {${band.id}, altar} cue's open (launcher.json, the status files in ${dir})`);
+    }
 }
 
 // ------------------------------------------------------------------ driver

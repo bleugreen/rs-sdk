@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { BotWorldState, InventoryItem, NearbyLoc, PlayerState } from '../../sdk/types';
 import { cueAddresses, nameHash, readCue, writeStatus, type CueScope } from '../helpers/altar-cue';
-import { baseState, FakeSdk, type SentAction } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk, type SentAction } from '../lib/fake-sdk';
+import type { RelogResult, Session } from '../lib/session';
+import { scoredRelogStep } from '../runner/scored-relog';
 import { ProgramError, rcCueFields, type ProgramStatus } from '../lib/programs';
 import { TickLog } from '../lib/ticks';
 import { DROPPED_TICKS } from '../lib/trade';
@@ -27,7 +29,10 @@ import {
     handBackGiver,
     handBackPending,
     holdsHandBack,
+    loginSpanMs,
     preconditions,
+    preLoginStep,
+    preLoginWaitMs,
     S21_HAND_BACK,
     rcShared,
     ScheduleAdapter,
@@ -972,6 +977,107 @@ describe('S21 hand-back (SUPPLIES.md H17e)', () => {
 });
 
 // ------------------------------------------------------------------ xp targets
+
+describe("S21's pre-login, SCORED's relog, then the first trade (rs/186)", () => {
+    const opts = (h: Harness, o: RunecraftOptions = {}) => h.opts({ untilLevel: 45, s21Altar: 'nature', s21Givers: ['lab_g1', 'lab_g2'], preLoginTicks: 40, ...o });
+
+    test("the bound: the launcher limiter's queue for the roster, one login and a refusal pause; 340 s for 22 givers", () => {
+        // 3 back to back 4 s apart, then one every 10 s: the 22nd login's slot is 190 s after the first.
+        expect([loginSpanMs(1), loginSpanMs(3), loginSpanMs(5), loginSpanMs(22)]).toEqual([0, 8_000, 20_000, 190_000]);
+        expect(preLoginWaitMs(22)).toBe(340_000);
+        expect(Math.ceil(preLoginWaitMs(22) / 400)).toBe(850); // observed ticks at the demo's 400 ms
+    });
+
+    test('opens {S21, altar} with no turns and no stop, and resolves once every roster giver reports ready, not before', async () => {
+        const h = new Harness(world({ inventory: [item(0, 'Nature talisman')] }));
+        const pre = preLoginStep(opts(h));
+        expect([pre.name, pre.logoutSafe]).toEqual(['S21 runecraft:pre-login', true]);
+        const t0 = h.sdk.state!.tick;
+        await drive(h.sdk, pre.run(h.ctx()), 200, s => {
+            if (s.tick === t0 + 10) h.statuses = [h.giver('lab_g1')];
+            // logged in but still restocking: not ready
+            if (s.tick === t0 + 20) h.statuses = [h.giver('lab_g1'), h.giver('lab_g2', { phase: 'restock', essence: 0 })];
+            if (s.tick === t0 + 30) h.statuses = [h.giver('lab_g1'), h.giver('lab_g2')];
+            return {};
+        });
+        expect(h.cues.map(c => [c.session, c.scope, c.fields.turns, c.fields.stop ?? false])).toEqual([['s1', { step: 'S21', family: 'altar' }, [], false]]);
+        expect(h.cues[0]!.fields.beacons.length).toBeGreaterThanOrEqual(4);
+        expect(h.cues[0]!.receiver).toBe(SCORED);
+        const row = h.log.rows.find(r => r.step === 'S21 runecraft:pre-login')!;
+        expect(row).toMatchObject({ kind: 'note', ok: true, meta: { kind: 'rc-pre-login', band: 'S21', want: 2, ready: 2, missing: [], boundTicks: 40, cueSession: 's1' } });
+        expect(row.meta!.waitedTicks as number).toBeGreaterThanOrEqual(29);
+    });
+
+    test('a giver not ready within the bound fails the step, naming it; a counted roster counts the ready givers', async () => {
+        const h = new Harness(world({ inventory: [item(0, 'Nature talisman')] }));
+        h.statuses = [h.giver('lab_g1'), h.giver('lab_g2', { ms: h.now - 6_000 })];
+        const err = await drive(h.sdk, preLoginStep(opts(h)).run(h.ctx()).catch((e: Error) => e), 200);
+        expect(String(err)).toContain('S21 runecraft:pre-login: 1 of 2 givers ready after 40 ticks (not ready: lab_g2)');
+        expect(h.log.rows.find(r => r.step === 'S21 runecraft:pre-login')).toMatchObject({ ok: false, meta: { ready: 1, missing: ['lab_g2'] } });
+        await drive(h.sdk, preLoginStep(opts(h, { s21Givers: 1 })).run(h.ctx()), 200);
+        await expect(drive(h.sdk, preLoginStep(opts(h, { s21Givers: 2, preLoginTicks: 5 })).run(h.ctx()), 200)).rejects.toThrow('1 of 2 givers ready after 5 ticks;');
+    });
+
+    test('every giver ready, then the relog, then the first trade: the givers in before the relog are fed tuned, one after it robust', async () => {
+        const h = new Harness(world({ inventory: [item(0, 'Nature talisman')] }));
+        const events: string[] = [];
+        // The launcher logged lab_g1 and lab_g2 in on the cue's open; lab_g3 (relaunched) comes in after SCORED's relog.
+        h.launcher = h.launcherWith([{ account: 'lab_g1', loggedInAt: 2_000 }, { account: 'lab_g2', loggedInAt: 2_500 }, { account: 'lab_g3', loggedInAt: 4_000 }]);
+        h.statuses = [h.giver('lab_g1', { readyAt: 800, loggedInAt: 2_000 }), h.giver('lab_g2', { readyAt: 900, loggedInAt: 2_500 })];
+        const base = h.deps();
+        const o = opts(h, {
+            deps: {
+                startProgram: async (sdk, name, params) => {
+                    events.push('first trade');
+                    return base.startProgram!(sdk, name, params);
+                },
+            },
+        });
+        const ready = () => giverFeed(h.statuses, h.now, () => 'robust').map(g => g.name).join(',');
+        const relog = scoredRelogStep({
+            deps: {
+                relog: async (s: Session) => {
+                    events.push(`relog (ready: ${ready()})`);
+                    s.launchedAt = 3_000;
+                    h.statuses = [...h.statuses, h.giver('lab_g3', { readyAt: 3_500, loggedInAt: 4_000 })];
+                    return { logout: { ok: true }, loginTick: 120, tickBase: 0, via: 'page', loginWallMs: 1_000, attempts: 1 } as RelogResult;
+                },
+                replyCode: async () => null,
+            },
+        });
+        h.scripts.push(async run => {
+            run.step({ turns: [{ giver: 'lab_g1', T: 110, schedule: 'tuned' }] });
+            return run.end('done', { turns: [{ giver: 'lab_g1', T: 110, schedule: 'tuned' }] }, { result: summary(1) });
+        });
+        const ctx = h.ctx();
+        expect((ctx.session as Partial<Session>).launchedAt).toBe(1_000); // SCORED's first login, before every giver's
+        await drive(h.sdk, preLoginStep(o).run(ctx));
+        events.push(`pre-login done (ready: ${ready()})`);
+        await relog.run(ctx);
+        await altarStep(nature44, o).run(ctx);
+        expect(events).toEqual(['pre-login done (ready: lab_g1,lab_g2)', 'relog (ready: lab_g1,lab_g2)', 'first trade']);
+        expect(h.starts[0]!.givers).toEqual([
+            { name: 'lab_g1', schedule: 'tuned', readyAt: 800 },
+            { name: 'lab_g2', schedule: 'tuned', readyAt: 900 },
+            { name: 'lab_g3', schedule: 'robust', readyAt: 3_500 },
+        ]);
+        expect(h.programRows()[0]!.meta).toMatchObject({ why: { lab_g1: 'giver logged in first', lab_g2: 'giver logged in first', lab_g3: 'giver logged in after SCORED' } });
+        // The pre-login's session is never stopped; the band's program writes its own.
+        expect(h.cues.filter(c => c.session === 's1').every(c => !c.fields.stop)).toBe(true);
+        expect(new Set(h.cues.map(c => `${c.scope.step}/${c.scope.family}`))).toEqual(new Set(['S21/altar']));
+    });
+
+    test('without the relog, SCORED logged in before every giver: all of them are fed robust', async () => {
+        const h = new Harness(world({ inventory: [item(0, 'Nature talisman')] }));
+        h.launcher = h.launcherWith([{ account: 'lab_g1', loggedInAt: 2_000 }, { account: 'lab_g2', loggedInAt: 2_500 }]);
+        h.statuses = [h.giver('lab_g1', { readyAt: 800, loggedInAt: 2_000 }), h.giver('lab_g2', { readyAt: 900, loggedInAt: 2_500 })];
+        h.scripts.push(async run => run.end('done', {}, { result: summary(1) }));
+        const ctx = h.ctx();
+        await drive(h.sdk, preLoginStep(opts(h)).run(ctx));
+        await altarStep(nature44, opts(h)).run(ctx);
+        expect((h.starts[0]!.givers as GiverEntry[]).map(g => g.schedule)).toEqual(['robust', 'robust']);
+    });
+});
 
 describe('xpAfterCrafts', () => {
     test('a full load is 27 essence at the altar base xp, times the server xp rate', () => {

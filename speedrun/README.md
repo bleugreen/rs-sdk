@@ -40,12 +40,20 @@ speedrun/
     programs.ts   startProgram, awaitProgram, runProgram, probeInPage: the page's in-page tick programs
     gated-program.ts  runGatedProgram, inPageGate: an in-page knife program under the host gate
     xp.ts         the engine's level curve in state (game xp) units: xpForLevel, levelForXp, baseToXp
+    attempt.ts    runAttempt: a chain under runResumable with the attempt's stops (rehearse.ts, run.ts)
+    host-reservation.ts  the host reservation and the claim an attempt runs under (ReservationWatch)
+    run-floor.ts  the run-commit floor, read at run time from STEP-MANIFEST.md entry 0 on main
     fake-sdk.ts   scriptable BotSDK stand-in for the unit tests
   runner/
     step.ts       Step type and runSteps
     budget.ts     TickWindow: the per-tick user-event budget a step boundary hands off against
     resume.ts     resolveResume (walk the manifest from game state), sessionLink, runResumable
     fence.ts      Fence: an abandoned step attempt cannot send or hear state; patchMethod
+    legs.ts       the transition legs as Steps, legsFor (the S21 altar), splitLeg
+    handoff.ts    one Step per inventory-ledger hand-off row
+    chain.ts      the scored run's chain S00-S17 (see "run.ts: the scored run")
+    cue-keeper.ts the scored side's helper cues and the run's cue directory
+    run-report.ts the run's report against RUN-ORDER.md section 2
     example-bank.ts  'bank everything at Varrock west', end to end
     stub.ts       a stand-in skill module (chop to a level, or idle N ticks) for exercising rehearse.ts
   skills/         the run's step modules: `skill` and `steps({to, ...})` returning runner Steps
@@ -56,7 +64,11 @@ speedrun/
   quests/         the quest step modules: `quest`, `stepId`, `steps(opts)`, one Step per segment
     segments.ts   the shared scaffold: questSteps, QuestOptions, talkShape, kitSegment, checks
   rehearse.ts     one single-skill rehearsal attempt end to end (gate, S00, kit, steps, logout, hiscore)
+  run.ts          the scored run, S00 to S17 (see "run.ts: the scored run")
   lab/            local lab: never imported by lib/
+    stand-ins.ts  lab end states of the steps whose modules are not on main (STAND-IN rows)
+    stub-giver.ts one generic lab giver for the placed hand-off rows
+    dress-rehearsal.ts  run.ts's chain on a fresh lab account, with stand-ins and the stub giver
     lab.sh        engine + gateway + lite runners on port block 9300
     setup.ts      staff fixtures: tele/mustTele, give/ensureItem, setStats, setvar/getvar, clearInventory
     record.ts     Recorder segments, stats, trace and RESULT output for quest measurements
@@ -709,7 +721,12 @@ timeout.
 `{v:1, runId, account, sessionId, step, startTick, endTick, ticks, wallMs, ok, error?, meta?, crossedSession?, tickMs, at}`.
 A step that spans a client relaunch is flagged `crossedSession` and its ticks
 are a lower bound: the counter restarts, and the dropped player's in-world
-ticks were never observed. `report(rows)` totals per step;
+ticks were never observed. A step that spans an in-page relog (skills/cooking.ts's
+two wine relogs) is not: the page goes on counting, so its ticks are its own
+end minus start. `session.launchId`, bumped by a client launch only, names the
+count (`tickCounter`), and `sessionId` still bumps on every game session. The
+harnesses' `(session)` rows (lib/attempt.ts `SessionClock`) likewise start at
+each session's `tickBase` and end as `relog` or `relaunch`. `report(rows)` totals per step;
 `bun speedrun/lib/ticks.ts report speedrun/runs/<runId>.jsonl` prints the table
 (lower bounds marked `>=`).
 
@@ -974,7 +991,12 @@ from the game state on every start, never from its own memory:
 - Steps may declare `done(observed)` (a milestone: true once its effect is in
   the game and from then on), `inProgress(observed)` with a `resume` entry, and
   `probes` (named in `probes`, e.g. a bank-open probe; run only when the walk
-  needs them). `resolveResume` finds the first milestone not done, then the
+  needs them). A module whose steps read a probe of its own exports it as
+  `PROBES` (skills/cooking.ts's `wineBank`); `stepProbes(steps, modules)` gathers
+  every name the steps declare from those records and the quest journals, and
+  refuses on one nothing provides. rehearse.ts and run.ts (runner/chain.ts
+  `chainProbes`) hand the result to `runAttempt`'s `probes`, so that refusal
+  comes before any login. `resolveResume` finds the first milestone not done, then the
   latest step back to the last done milestone that can start now: in progress
   (enter by `resume`) or preconditions true (enter by `run`).
 - On a lost link (`sessionLink`: the lite runner exited, `inGame` false, or no
@@ -988,6 +1010,13 @@ from the game state on every start, never from its own memory:
   Ledger rows: `(resume)` and `(drop)`.
 - Every walk starts with `ensureRunOn` (see "The run toggle"), and the
   `(resume)` row's `meta.run` records the presses it took.
+- Then it waits for the client's own scene-ready signal (`lib/wait.ts`
+  `awaitScene`, bounded at `SCENE_READY_MAX_TICKS`) before it observes: a
+  fresh browser login shows "Loading - please wait." for tens of ticks, and an
+  empty `nearbyLocs` then looks exactly like a normal empty scene. The
+  `(resume)` row's `meta.scene` records `{ready, ticks}`; a scene that never
+  loads is walked anyway, never thrown. `openSession`'s browser-launch path
+  runs the same wait (`session.ts` `settleScene`, recorded on `session.scene`).
 
 Measured on the local engine (`lab/measure-restart.ts`, RESILIENCE.md section
 6): after an engine SIGKILL the walk resumed at the first rolled-back step in
@@ -1001,6 +1030,60 @@ distinct items) took **6 ticks** and wrote its tick log:
 speedrun/lab/lab.sh srlab1 'speedrun/runner/example-bank.ts:--lab'
 bun speedrun/lib/ticks.ts report speedrun/runs/<runId>.jsonl
 ```
+
+## run.ts: the scored run
+
+`runner/chain.ts` is the run: one table, in RUN-ORDER.md section 2's order
+(a test parses the doc and compares), of the step modules' own `steps()`
+selected by the names they emit, the body-altar legs, and the hand-offs no
+module performs. Every chain step carries its RUN-ORDER id, so `--until` and
+`--from` take an id (`S14`) or a step name.
+
+- **Hand-offs are placed by the ledger.** `PLACEMENT` maps each ledger row
+  run.ts trades to its place (`before` a step, or between the two parts of a
+  leg split at the Ardougne landing by `legs.ts` `splitLeg`); `INTERNAL` lists
+  the rows a module trades itself and `NOT_TRADES` the rows with no in or
+  out. `ledgerCoverage` refuses any H row in none of them, and `ALTERNATIVES`
+  lets a fold-in split a row (H12 or H12a + H12b) with no code change: the
+  ledger is the switch. Each hand-off's `supersededBy` is the next
+  milestone's `done`, computed, so the resume walk keeps every done milestone
+  done.
+- **Wrappers.** `missingStep` (a module not on main: refuses with its owner,
+  `done` is the quest's completion), `whenNeeded` (a fallback that is a 0-tick
+  note when its milestone already holds: S25b's booth, S18d's Fletching),
+  `withCue` (the helper's cue opened before the module, afresh on every
+  `resume`), and `censused` (a 0-tick `(census)` note of the pack before every
+  step). The cannon rows H11/H23 are cue-served: `handoff.ts`'s `cue` option
+  opens the `{S14|S27, cannon}` cue, waits for the holder and its request, then
+  trades the whole ledger row. It is the one cannon receiver;
+  `helpers/cannon-receiver.ts` is a thin lab and demo role that calls it.
+- **Cues.** `runner/cue-keeper.ts` writes the scored side's cues (S07 bone,
+  S14/S27 cannon, S18 courier, S25a anvil) into the run's cue directory, the
+  same one runecraft's altar cues, thieving's asks and the anvil plan use
+  (run.ts sets `RC_CUE_DIR`). A new scope is a new session, so a helper
+  watching another scope never reads a stale stop as its own.
+
+`speedrun/run.ts` checks five start gates once before anything logs in: the
+run-commit floor (`lib/run-floor.ts`: STEP-MANIFEST.md entry 0's line on
+`origin/main`, `merge-base --is-ancestor`; no floor in code and no option that
+skips it), the host reservation live and the run's own claim, the slot ledger
+exiting 0, no refusing step on the path, and `launcher.json` helpersReady.
+`--dry-run` evaluates them all and lists the chain. Rows carry the account
+`SCORED`; the login name reaches only the cue writers, as a hash. The run ends
+on S17's final logout, the total from the last state against 1,881 (the 19
+real skills), and the claim released.
+
+**The lab dress rehearsal.** `lab/dress-rehearsal.ts` runs the same chain on a
+fresh lab account: each missing step group becomes its `lab/stand-ins.ts`
+end state (staff commands; the guard refuses anything but a staff-enabled
+loopback lab), the placed hand-offs trade with `lab/stub-giver.ts` (a lab
+account on the real protocol, staging each row's `in` from the ledger), and
+what no helper serves is supplied by staff and logged `supply: staff`. Both
+mark the report partial: a partial run is never the 1,881 acceptance.
+`runner/run-report.ts` reports per RUN-ORDER id against section 2's figures
+(read from the doc, not copied), flags anything over 10% for rs/158, and lists
+the census, each teleport hop's ticks, overBudget, hand-offs, drops and
+resumes.
 
 ## skills/start.ts (S00)
 

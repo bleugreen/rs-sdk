@@ -20,6 +20,11 @@
 //
 // Each walk starts by turning run on (lib/run-mode.ts), however the session
 // came back: a relaunched client or reloaded page logged in without login().
+// It then waits for the client's own scene-ready signal (lib/wait.ts awaitScene,
+// the one wait the launch path uses too) before it observes: a fresh login shows
+// "Loading - please wait." for tens of ticks on the browser client, and its
+// nearby locs and NPCs are empty then, which is also what a normal empty scene
+// looks like, so only the flag can tell.
 //
 // runResumable runs that walk, then the steps, and on a dropped connection
 // abandons the step attempt (runner/fence.ts), waits for the session to come
@@ -29,9 +34,10 @@ import type { BotWorldState } from '../../sdk/types';
 import { ensureRunOn } from '../lib/run-mode';
 import type { Session } from '../lib/session';
 import { startRunTickMonitor } from '../lib/tick-monitor';
-import { tickSpan, type TickLog } from '../lib/ticks';
-import { currentTick, nextTick, sleep, tickMs } from '../lib/wait';
+import { tickCounter, tickSpan, type TickLog } from '../lib/ticks';
+import { awaitScene, currentTick, nextTick, sleep, tickMs } from '../lib/wait';
 import { Fence } from './fence';
+import { journalProbeNamed } from '../lib/quests';
 import { resolveStart, runSteps, type Observed, type RunnerSession, type RunStepsOptions, type RunStepsResult, type Step } from './step';
 
 export type Probe = (session: RunnerSession) => Promise<unknown>;
@@ -53,6 +59,37 @@ export class ResumeError extends Error {
         super(`no step can start from the observed state (last done milestone #${lastDone}, first undone #${firstUndone}): ${candidates.map(c => `${c.step}: ${c.why}`).join('; ')}`);
         this.name = 'ResumeError';
     }
+}
+
+/**
+ * A step module's exported `PROBES` when it is a record of probes (skills/cooking.ts,
+ * skills/prayer.ts). A list of names (a quest's journal probes) provides none itself.
+ */
+export function moduleProbes(m: object): Record<string, Probe> {
+    const p = (m as { readonly PROBES?: unknown }).PROBES;
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return {};
+    return Object.fromEntries(Object.entries(p).filter((e): e is [string, Probe] => typeof e[1] === 'function'));
+}
+
+/**
+ * runResumable's `probes` for `steps`: every name a step declares (Step.probes), from the modules'
+ * exported PROBES or, for a quest journal, lib/quests.ts. Throws naming each probe nothing provides,
+ * so a chain refuses before it starts instead of at the resume walk that needs it.
+ */
+export function stepProbes(steps: ReadonlyArray<Pick<Step<never>, 'name' | 'probes'>>, modules: ReadonlyArray<object>): Record<string, Probe> {
+    const provided: Record<string, Probe> = Object.assign({}, ...modules.map(moduleProbes));
+    const out: Record<string, Probe> = {};
+    const missing = new Map<string, string>();
+    for (const s of steps) {
+        for (const n of s.probes ?? []) {
+            if (n in out || missing.has(n)) continue;
+            const p = provided[n] ?? journalProbeNamed(n);
+            if (p) out[n] = p;
+            else missing.set(n, s.name);
+        }
+    }
+    if (missing.size) throw new Error(`no probe for ${[...missing].map(([n, step]) => `"${n}" (${step})`).join(', ')}: export it in the step module's PROBES`);
+    return out;
 }
 
 /** Lazily probed view of the game, shared by one walk. */
@@ -207,6 +244,8 @@ export interface ResumableOptions<C> extends Omit<RunStepsOptions<C>, 'from' | '
     /** Longest wait for the session to come back (default 30 min: a restart takes ~2-3). */
     restoreTimeoutMs?: number;
     onEvent?: (e: ResumeEvent) => void;
+    /** Bound on each walk's scene wait (default lib/wait.ts SCENE_READY_MAX_TICKS); past it the walk observes anyway. */
+    sceneMaxTicks?: number;
 }
 
 export interface ResumableResult extends RunStepsResult {
@@ -214,9 +253,9 @@ export interface ResumableResult extends RunStepsResult {
     points: Omit<ResumePoint, 'observed'>[];
 }
 
-function row(log: TickLog, session: RunnerSession, step: string, startTick: number, startSession: number, t0: number, meta: Record<string, unknown>, ok = true): void {
+function row(log: TickLog, session: RunnerSession, step: string, startTick: number, startCounter: number, t0: number, meta: Record<string, unknown>, ok = true): void {
     const endTick = currentTick(session.sdk);
-    const span = tickSpan(startTick, endTick, startSession, session.sessionId);
+    const span = tickSpan(startTick, endTick, startCounter, tickCounter(session));
     log.append({
         v: 1, runId: log.runId, account: session.name, sessionId: session.sessionId, step, startTick, endTick, ticks: span.ticks,
         wallMs: Date.now() - t0, ok, meta, ...(span.crossedSession ? { crossedSession: true } : {}), tickMs: tickMs(), at: new Date().toISOString(),
@@ -240,11 +279,13 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
         for (let attempt = 1; ; attempt++) {
             const t0 = Date.now();
             const startTick = currentTick(session.sdk);
-            const startSession = session.sessionId;
+            const startCounter = tickCounter(session);
             if (!session.sdk.getState()) await nextTick(session.sdk);
             // Whatever brought the session back (the watchdog's login or relaunch, a
             // reloaded page) left a fresh login, and a fresh login walks.
             const runMode = await ensureRunOn(session.sdk);
+            // Never a fault: a scene that does not load in time is observed as it is and the row says so.
+            const scene = await awaitScene(session.sdk, opts.sceneMaxTicks);
             const state = session.sdk.getState()!;
             const obs = new Observation(state, opts.probes, session);
             let point: ResumePoint;
@@ -256,7 +297,7 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             }
             const { observed: _o, ...summary } = point;
             points.push(summary);
-            row(opts.log, session, RESUME_STEP, startTick, startSession, t0, { attempt, ...summary, probes: Object.keys(obs.probed), run: runMode });
+            row(opts.log, session, RESUME_STEP, startTick, startCounter, t0, { attempt, ...summary, probes: Object.keys(obs.probed), run: runMode, scene });
             opts.onEvent?.({ kind: 'resume', attempt, point: summary });
             if (point.mode === 'finished') return { completed: 0, drops, points };
 
@@ -298,9 +339,9 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             opts.onEvent?.({ kind: 'drop', attempt, reason, step: current, tick: dropTick });
             if (drops > (opts.maxDrops ?? 20)) throw new Error(`gave up after ${drops - 1} drops (last: ${reason})`);
             const r0 = Date.now();
-            const dropSession = session.sessionId;
+            const dropCounter = tickCounter(session);
             await (opts.recover ? opts.recover(reason) : opts.link.restored(opts.restoreTimeoutMs ?? 30 * 60_000));
-            row(opts.log, session, DROP_STEP, dropTick, dropSession, r0, { attempt, reason, step: current, recoverMs: Date.now() - r0 }, false);
+            row(opts.log, session, DROP_STEP, dropTick, dropCounter, r0, { attempt, reason, step: current, recoverMs: Date.now() - r0 }, false);
             opts.onEvent?.({ kind: 'restored', attempt, wallMs: Date.now() - r0 });
         }
     } finally {

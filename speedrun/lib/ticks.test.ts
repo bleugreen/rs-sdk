@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { FakeSdk, baseState } from './fake-sdk';
-import { formatReport, measure, parseLog, report, TickLog, tickSpan, type TickRow } from './ticks';
+import { formatReport, measure, parseLog, report, TickLog, tickCounter, tickSpan, type TickRow } from './ticks';
 import { tickMs } from './wait';
 
 const row = (step: string, ticks: number, extra: Partial<TickRow> = {}): TickRow => ({
@@ -55,6 +55,47 @@ describe('tickSpan', () => {
     test('relaunch: the new session counter is the lower bound', () => {
         expect(tickSpan(500, 30, 1, 2)).toEqual({ ticks: 30, crossedSession: true });
         expect(tickSpan(500, 30, 1, 1)).toEqual({ ticks: 30, crossedSession: true });
+    });
+    test('one count across in-page logins (the same launch): the plain difference, not a lower bound', () => {
+        expect(tickSpan(139, 212, 1, 1)).toEqual({ ticks: 73, crossedSession: false });
+    });
+    test('tickCounter is the launch, else the session', () => {
+        expect(tickCounter({ sessionId: 3, launchId: 1 })).toBe(1);
+        expect(tickCounter({ sessionId: 3 })).toBe(3);
+        expect(tickCounter({})).toBe(0);
+    });
+});
+
+describe('measure across a relog', () => {
+    const ticks = (sdk: FakeSdk, n: number) => {
+        for (let i = 0; i < n; i++) sdk.tick();
+    };
+
+    test("a step spanning an in-page relog logs its own span (73), not the page's end tick (212)", async () => {
+        const sdk = new FakeSdk(baseState({ tick: 139 }));
+        const log = TickLog.memory('run');
+        const s = { sdk, name: 'acct', sessionId: 4, launchId: 1 };
+        await measure(log, s, 'S25c', async () => {
+            ticks(sdk, 30);
+            s.sessionId++;
+            ticks(sdk, 43);
+        });
+        expect(log.rows[0]).toMatchObject({ sessionId: 5, startTick: 139, endTick: 212, ticks: 73 });
+        expect(log.rows[0]!.crossedSession).toBeUndefined();
+    });
+
+    test('a relaunch inside a step is still the lower bound: the new count', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 139 }));
+        const log = TickLog.memory('run');
+        const s = { sdk, name: 'acct', sessionId: 4, launchId: 1 };
+        await measure(log, s, 'S25c', async () => {
+            ticks(sdk, 30);
+            s.sessionId++;
+            s.launchId++;
+            sdk.push({ tick: 0 });
+            ticks(sdk, 20);
+        });
+        expect(log.rows[0]).toMatchObject({ startTick: 139, endTick: 20, ticks: 20, crossedSession: true });
     });
 });
 

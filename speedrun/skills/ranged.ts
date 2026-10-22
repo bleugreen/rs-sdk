@@ -23,7 +23,13 @@
 //   behind them (rs/12), and a target that has taken no damage from us for
 //   `stallTicks` is re-attacked: under a protect prayer "in combat" can mean
 //   only that the spiders are attacking us (rs/56's re-engage fix, as in
-//   combat.ts `fight`).
+//   combat.ts `fight`);
+// - auto-retaliate, which every login turns off, is set as the phase wants it
+//   through lib/session.ts `setAutoRetaliate` on a free tick once the gear is
+//   right (the button stops the attack and, beside a Fire or a top-up walk,
+//   cancels it), and put back off when the session ends, by a throw or a stop
+//   too, before the cannon is picked up: with it on, a hit during a click
+//   turns the player to fight back and the click is lost.
 // combat.ts's `fight` follows one NPC to its end and owns the tick its attack
 // goes on; a cannon session fights whatever comes, retargets on every kill, and
 // shares its ticks with the flick and the cannon, so it is its own loop.
@@ -43,7 +49,8 @@ import { classifyPage, clickContinue } from '../lib/dialogue';
 import { FlickScheduler, MAX_PERIOD } from '../lib/flick';
 import { levelUpChain } from '../lib/levelup';
 import { questDone } from '../lib/quests';
-import { waitUntil } from '../lib/wait';
+import { setAutoRetaliate } from '../lib/session';
+import { tickMs, waitUntil } from '../lib/wait';
 import { chebyshev, invCount, invItem, opIndex, pos, worn } from '../lib/world';
 import { XP_RATE } from '../lib/xp';
 import type { Step, StepContext } from '../runner/step';
@@ -74,10 +81,6 @@ const US: PrayerName = 'ultimate_strength';
 const IR: PrayerName = 'incredible_reflexes';
 /** Prayer level each prayer needs (PRAYER_LEVELS). */
 const PRAYER_LEVEL: Partial<Record<PrayerName, number>> = { protect_from_melee: 43, ultimate_strength: 31, incredible_reflexes: 34 };
-
-/** controls:com_2 / com_3 (player_controls.rs2): auto-retaliate on / off. Both stop the current attack. */
-export const RETALIATE_ON = 150;
-export const RETALIATE_OFF = 151;
 
 /**
  * Immunity a dose leaves, less a timer step of margin: %poison is set to -20
@@ -116,6 +119,7 @@ export interface PhaseSpec {
     ammo?: RegExp;
     /** CombatStyleOption.type to keep selected; undefined leaves the style alone. */
     style?: string;
+    /** Auto-retaliate through the phase (runSession sets it with setAutoRetaliate). */
     retaliate: boolean;
     /** Send attacks of our own (melee or the bow). */
     attack: boolean;
@@ -237,12 +241,9 @@ export function noteConsume(mem: ConsumeMemory, kind: ConsumeKind, tick: number)
 
 // ------------------------------------------------------------------ gear
 
-export type GearClick =
-    | { kind: 'wield'; item: InventoryItem; op: number }
-    | { kind: 'style'; index: number }
-    | { kind: 'retaliate'; on: boolean };
+export type GearClick = { kind: 'wield'; item: InventoryItem; op: number } | { kind: 'style'; index: number };
 
-/** The one click that brings the gear and settings toward the phase's, or null when they match. */
+/** The one click that brings the weapon, ammo and style toward the phase's, or null when they match. */
 export function gearClick(s: BotWorldState, spec: PhaseSpec): GearClick | null {
     for (const re of [spec.weapon, spec.ammo]) {
         if (!re || worn(s, re)) continue;
@@ -255,7 +256,6 @@ export function gearClick(s: BotWorldState, spec: PhaseSpec): GearClick | null {
         const want = cs.styles.find(x => x.type.toLowerCase() === spec.style!.toLowerCase());
         if (want && cs.currentStyle !== want.index) return { kind: 'style', index: want.index };
     }
-    if (s.autoRetaliateEnabled !== undefined && s.autoRetaliateEnabled !== spec.retaliate) return { kind: 'retaliate', on: spec.retaliate };
     return null;
 }
 
@@ -354,7 +354,8 @@ const POISONED = /you have been poisoned/i;
  * Run a cannon session at the spiders until `phaseOf` returns null (or `stop`).
  * Sets the cannon up first when none is placed (with the first protect prayer
  * held through the set-up), runs each phase on the flick clock, and at the end
- * switches the prayers off and picks the cannon up.
+ * switches the prayers off and picks the cannon up. Auto-retaliate follows the
+ * phase's spec and is off again when this returns or throws.
  */
 export async function runSession(sdk: RangedSdk, o: SessionOptions): Promise<SessionResult> {
     const s0 = sdk.getState();
@@ -422,139 +423,157 @@ export async function runSession(sdk: RangedSdk, o: SessionOptions): Promise<Ses
     let lastHp = s.player!.hp;
     let pickUpSent = -Infinity;
     const seenHits = new Set<string>();
+    /** The auto-retaliate setting last asked of setAutoRetaliate (null: none yet; login left it off). */
+    let retaliate: boolean | null = null;
+    const setRetaliate = async (on: boolean) => {
+        retaliate = on;
+        const r = await setAutoRetaliate(sdk, on);
+        if (r.presses > 0 || r.reason) log('auto-retaliate', { want: on, ...r });
+        return r;
+    };
 
-    for (;;) {
-        const prev = s.tick;
-        const w = await waitUntil(sdk, st => st.tick > prev, { maxTicks: 50 });
-        if (!w.ok) throw new Error(`cannon session: the client stopped publishing at tick ${prev}`);
-        s = w.state;
-        const t = s.tick;
-        const p = s.player!;
-        if (p.isDead) throw new Error(`died at the spiders at tick ${t} (phase ${phase})`);
-        if (t - t0 > o.maxTicks) throw new Error(`cannon session: over ${o.maxTicks} ticks in phase ${phase}`);
+    try {
+        for (;;) {
+            const prev = s.tick;
+            const w = await waitUntil(sdk, st => st.tick > prev, { maxTicks: 50 });
+            if (!w.ok) throw new Error(`cannon session: the client stopped publishing at tick ${prev}`);
+            s = w.state;
+            const t = s.tick;
+            const p = s.player!;
+            if (p.isDead) throw new Error(`died at the spiders at tick ${t} (phase ${phase})`);
+            if (t - t0 > o.maxTicks) throw new Error(`cannon session: over ${o.maxTicks} ticks in phase ${phase}`);
 
-        const next = o.phaseOf(s);
-        if (next === null || o.stop?.(s, fireTick)) {
-            closeRow(s);
-            res.end = next === null ? 'done' : 'stopped';
-            break;
-        }
-        if (next !== phase) {
-            closeRow(s);
-            log('phase', { from: phase, to: next, tick: t, ranged: baseLevel(s, 'Ranged'), defence: baseLevel(s, 'Defence'), hitpoints: baseLevel(s, 'Hitpoints') });
-            phase = next;
-            spec = specFor(phase, o);
-            flick.setPrayers(spec.prayers);
-            target = null;
-        }
-
-        // ---- observe
-        keeper.observe(s);
-        if (keeper.decayed) throw new Error('the cannon decayed or was destroyed: Nulodion replaces it for its owner');
-        if (chat.next(s).some(m => POISONED.test(m))) mem.poisoned = true;
-        for (const e of s.combatEvents ?? []) {
-            const k = `${e.tick}:${e.observationId ?? ''}:${e.type}:${e.damage}:${e.sourceIndex}:${e.targetIndex}`;
-            if (seenHits.has(k)) continue;
-            seenHits.add(k);
-            if (e.type === 'damage_dealt' && e.targetType === 'npc' && e.targetIndex === target) lastDealt = Math.max(lastDealt, e.tick);
-        }
-        if (seenHits.size > 2000) seenHits.clear();
-        if (p.hp < lastHp) res.damageTaken += lastHp - p.hp;
-        lastHp = p.hp;
-        res.minHp = Math.min(res.minHp, p.hp);
-        const pts = s.prayers?.prayerPoints ?? 0;
-        res.prayer.min = Math.min(res.prayer.min, pts);
-
-        let packets = 0;
-        const cannon = assembledCannon(s);
-        // A top-up walking back to the cannon: every button and attack would cancel it, the flick included.
-        const walking = keeper.holding(s) && !!cannon && !besideCannon(s, cannon);
-        const plan = walking ? null : flick.plan(s);
-        for (const pr of plan?.toggles ?? []) {
-            packets++;
-            void sdk.sendTogglePrayer(pr);
-        }
-
-        // ---- a level-up (or any continue page), dismissed on the tick it shows
-        let continued = false;
-        const d = s.dialog;
-        if (d.isOpen && !d.isWaiting && classifyPage(d) === 'continue' && packets < 5) {
-            const key = d.pageId ?? `t${t}`;
-            if (!lastContinue || lastContinue.key !== key || t - lastContinue.tick >= 3) {
-                if (levelUp(s)) res.levelUps++;
-                lastContinue = { key, tick: t };
-                packets++;
-                continued = true;
-                void clickContinue(sdk);
+            const next = o.phaseOf(s);
+            if (next === null || o.stop?.(s, fireTick)) {
+                closeRow(s);
+                res.end = next === null ? 'done' : 'stopped';
+                break;
             }
-        }
-
-        // ---- a sip or a bite, on the flick's consume tick
-        let consumedNow = false;
-        if (plan?.consume && t - lastConsume >= 3 && packets < 5) {
-            const c = chooseConsume(s, spec, mem, o.consume);
-            if (c) {
-                packets++;
-                void sdk.sendUseItem(c.item.slot, opIndex(c.item, /^(eat|drink)$/i) ?? 1);
-                flick.consumed(t);
-                noteConsume(mem, c.kind, t);
-                lastConsume = t;
-                consumedNow = true;
-                consumes[c.kind] = (consumes[c.kind] ?? 0) + 1;
+            if (next !== phase) {
+                closeRow(s);
+                log('phase', { from: phase, to: next, tick: t, ranged: baseLevel(s, 'Ranged'), defence: baseLevel(s, 'Defence'), hitpoints: baseLevel(s, 'Hitpoints') });
+                phase = next;
+                spec = specFor(phase, o);
+                flick.setPrayers(spec.prayers);
+                target = null;
             }
-        }
 
-        // ---- the tick's one interaction: pick-up, gear, a cannon click, or the attack
-        let interaction = false;
-        const free = !!plan?.free && t > lastConsume + 2 && packets < 5;
-        if (free && !spec.cannon && placedCannon(s) && t - pickUpSent >= 4) {
-            const pl = placedCannon(s)!;
-            void sdk.sendInteractLoc(pl.x, pl.z, pl.id, opIndex(pl, /^pick-up$/i) ?? 2);
-            pickUpSent = t;
-            packets++;
-            interaction = true;
-        }
-        if (free && !interaction && t - lastGear >= 2) {
-            const g = gearClick(s, spec);
-            if (g) {
-                lastGear = t;
-                packets++;
-                if (g.kind === 'wield') void sdk.sendUseItem(g.item.slot, g.op);
-                else if (g.kind === 'style') void sdk.sendSetCombatStyle(g.index);
-                else void sdk.sendClickComponent(g.on ? RETALIATE_ON : RETALIATE_OFF);
-                reattackAt = t + 1; // each of these clears or stops the attack
+            // ---- observe
+            keeper.observe(s);
+            if (keeper.decayed) throw new Error('the cannon decayed or was destroyed: Nulodion replaces it for its owner');
+            if (chat.next(s).some(m => POISONED.test(m))) mem.poisoned = true;
+            for (const e of s.combatEvents ?? []) {
+                const k = `${e.tick}:${e.observationId ?? ''}:${e.type}:${e.damage}:${e.sourceIndex}:${e.targetIndex}`;
+                if (seenHits.has(k)) continue;
+                seenHits.add(k);
+                if (e.type === 'damage_dealt' && e.targetType === 'npc' && e.targetIndex === target) lastDealt = Math.max(lastDealt, e.tick);
             }
-        }
-        if (free && !interaction && spec.cannon && packets < 5) {
-            const click = keeper.want(s, cannon);
-            if (click) {
-                keeper.send(sdk, click, s, cannon);
+            if (seenHits.size > 2000) seenHits.clear();
+            if (p.hp < lastHp) res.damageTaken += lastHp - p.hp;
+            lastHp = p.hp;
+            res.minHp = Math.min(res.minHp, p.hp);
+            const pts = s.prayers?.prayerPoints ?? 0;
+            res.prayer.min = Math.min(res.prayer.min, pts);
+
+            let packets = 0;
+            const cannon = assembledCannon(s);
+            // A top-up walking back to the cannon: every button and attack would cancel it, the flick included.
+            const walking = keeper.holding(s) && !!cannon && !besideCannon(s, cannon);
+            const plan = walking ? null : flick.plan(s);
+            for (const pr of plan?.toggles ?? []) {
+                packets++;
+                void sdk.sendTogglePrayer(pr);
+            }
+
+            // ---- a level-up (or any continue page), dismissed on the tick it shows
+            let continued = false;
+            const d = s.dialog;
+            if (d.isOpen && !d.isWaiting && classifyPage(d) === 'continue' && packets < 5) {
+                const key = d.pageId ?? `t${t}`;
+                if (!lastContinue || lastContinue.key !== key || t - lastContinue.tick >= 3) {
+                    if (levelUp(s)) res.levelUps++;
+                    lastContinue = { key, tick: t };
+                    packets++;
+                    continued = true;
+                    void clickContinue(sdk);
+                }
+            }
+
+            // ---- a sip or a bite, on the flick's consume tick
+            let consumedNow = false;
+            if (plan?.consume && t - lastConsume >= 3 && packets < 5) {
+                const c = chooseConsume(s, spec, mem, o.consume);
+                if (c) {
+                    packets++;
+                    void sdk.sendUseItem(c.item.slot, opIndex(c.item, /^(eat|drink)$/i) ?? 1);
+                    flick.consumed(t);
+                    noteConsume(mem, c.kind, t);
+                    lastConsume = t;
+                    consumedNow = true;
+                    consumes[c.kind] = (consumes[c.kind] ?? 0) + 1;
+                }
+            }
+
+            // ---- the tick's one interaction: pick-up, gear, a cannon click, or the attack
+            let interaction = false;
+            const free = !!plan?.free && t > lastConsume + 2 && packets < 5;
+            if (free && !spec.cannon && placedCannon(s) && t - pickUpSent >= 4) {
+                const pl = placedCannon(s)!;
+                void sdk.sendInteractLoc(pl.x, pl.z, pl.id, opIndex(pl, /^pick-up$/i) ?? 2);
+                pickUpSent = t;
                 packets++;
                 interaction = true;
             }
-        }
-        if (spec.attack && !interaction && !keeper.holding(s) && packets < 5) {
-            const prevTarget: number | null = target;
-            const n = pickTarget(s, anchor(), target);
-            target = n?.index ?? null;
-            const inCombat = p.combat?.inCombat === true;
-            const want =
-                (plan?.attack === true && !consumedNow) ||
-                continued ||
-                (t > lastConsume && t <= lastConsume + REATTACK_AFTER_CONSUME) ||
-                t === reattackAt ||
-                target !== prevTarget ||
-                (!inCombat && t - lastAttack >= 2) ||
-                (t - lastDealt > (o.stallTicks ?? 8) && t - lastAttack > 4);
-            if (n && want) {
-                if (target !== prevTarget) lastDealt = t;
-                packets++;
-                lastAttack = t;
-                res.attacks++;
-                void sdk.sendInteractNpc(n.index, opIndex(n, /^attack$/i) ?? 2);
+            if (free && !interaction && t - lastGear >= 2) {
+                const g = gearClick(s, spec);
+                if (g) {
+                    lastGear = t;
+                    packets++;
+                    if (g.kind === 'wield') void sdk.sendUseItem(g.item.slot, g.op);
+                    else void sdk.sendSetCombatStyle(g.index);
+                    reattackAt = t + 1; // each of these clears the attack
+                } else if (retaliate !== spec.retaliate && (await setRetaliate(spec.retaliate)).presses > 0) {
+                    // Awaited to its confirmation (a tick or two), so the button never shares a tick with a
+                    // cannon click; it stopped the attack, which the next tick sends again.
+                    lastGear = t;
+                    target = null;
+                    continue;
+                }
             }
+            if (free && !interaction && spec.cannon && packets < 5) {
+                const click = keeper.want(s, cannon);
+                if (click) {
+                    keeper.send(sdk, click, s, cannon);
+                    packets++;
+                    interaction = true;
+                }
+            }
+            if (spec.attack && !interaction && !keeper.holding(s) && packets < 5) {
+                const prevTarget: number | null = target;
+                const n = pickTarget(s, anchor(), target);
+                target = n?.index ?? null;
+                const inCombat = p.combat?.inCombat === true;
+                const want =
+                    (plan?.attack === true && !consumedNow) ||
+                    continued ||
+                    (t > lastConsume && t <= lastConsume + REATTACK_AFTER_CONSUME) ||
+                    t === reattackAt ||
+                    target !== prevTarget ||
+                    (!inCombat && t - lastAttack >= 2) ||
+                    (t - lastDealt > (o.stallTicks ?? 8) && t - lastAttack > 4);
+                if (n && want) {
+                    if (target !== prevTarget) lastDealt = t;
+                    packets++;
+                    lastAttack = t;
+                    res.attacks++;
+                    void sdk.sendInteractNpc(n.index, opIndex(n, /^attack$/i) ?? 2);
+                }
+            }
+            if (packets > 5) res.overBudget++;
         }
-        if (packets > 5) res.overBudget++;
+    } finally {
+        // Off before the pick-up and before the next step, however the session ended.
+        if (retaliate === true) await setRetaliate(false);
     }
 
     // ---- wrap-up: prayers off, the cannon picked up
@@ -690,14 +709,28 @@ export function combatFinishOptions(opts: RangedOptions = {}): SessionOptions {
     };
 }
 
+/**
+ * The session's result as a 0-tick note row named `${step} (session)`, so a chain run's tick log
+ * splits the step into set-up, firing and pick-up with its reloads and balls used. A caller without
+ * a tick log (a lab script driving the step by its sdk alone) gets none.
+ */
+export function noteSession(ctx: Partial<Pick<StepContext<unknown>, 'log' | 'session'>>, step: string, r: SessionResult): void {
+    if (!ctx.log || !ctx.session) return;
+    const fired = r.endTick - r.pickUpTicks - r.fireTick;
+    ctx.log.append({
+        v: 1, kind: 'note', runId: ctx.log.runId, account: ctx.session.name, sessionId: ctx.session.sessionId, step: `${step} (session)`,
+        startTick: r.startTick, endTick: r.endTick, ticks: 0, wallMs: 0, ok: r.end === 'done', meta: { ...r, firingTicks: fired }, tickMs: tickMs(), at: new Date().toISOString(),
+    });
+}
+
 export function cannonSessionStep(opts: RangedOptions = {}): Step<any> {
     const to = opts.s14To ?? 50;
     const site = opts.site ?? SPIDERS;
     const minBalls = opts.minBalls?.s14 ?? 100;
     const prayers = specFor('cannon', opts).prayers;
     const done = (s: BotWorldState) => baseLevel(s, 'Ranged') >= to;
-    const run = async ({ sdk }: StepContext<any>) => {
-        await runSession(sdk as RangedSdk, cannonSessionOptions(opts));
+    const run = async (ctx: StepContext<any>) => {
+        noteSession(ctx, 'S14 cannon session', await runSession(ctx.sdk as RangedSdk, cannonSessionOptions(opts)));
     };
     return {
         name: 'S14 cannon session',
@@ -728,8 +761,8 @@ export function combatFinishStep(opts: RangedOptions = {}): Step<any> {
     const minBalls = opts.minBalls?.s27 ?? CANNON_HANDOFF.S27.in.cannonballs;
     const minArrows = opts.minArrows ?? 550;
     const done = (s: BotWorldState) => phaseFor(s, t) === null;
-    const run = async ({ sdk }: StepContext<any>) => {
-        await runSession(sdk as RangedSdk, combatFinishOptions(opts));
+    const run = async (ctx: StepContext<any>) => {
+        noteSession(ctx, 'S27 combat finish', await runSession(ctx.sdk as RangedSdk, combatFinishOptions(opts)));
     };
     return {
         name: 'S27 combat finish',
