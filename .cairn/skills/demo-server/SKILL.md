@@ -13,9 +13,18 @@ facts that change a plan; the deep references are
 
 ## World config
 
-- **300 ms ticks** (`NODE_TICKRATE=300`, 12,000 ticks per hour), a **members**
-  world (`NODE_MEMBERS=true`), random events off, xp rate 25. Take lab
-  measurements at 300 ms so they transfer.
+- **400 ms ticks since 2026-10-22 19:56Z** (9,000 ticks per hour); 300 ms before
+  that, which is what documents written before then assume. `fly.toml` still says
+  `NODE_TICKRATE=300`, and the operator may slow the world further, so read the
+  live value from the worldfeed with `worldfeedTickMs()` in
+  `speedrun/tools/hiscore-scrape.ts`. It is a **members** world
+  (`NODE_MEMBERS=true`), random events off, xp rate 25. Take lab measurements at
+  the live rate (`NODE_TICKRATE=400 lab/lab.sh ...`; the lab defaults to 300) so
+  they transfer.
+- **At most 50 concurrent logins per source IP address** since 2026-10-22 (cut
+  from 100). Our own ceiling is **45 per address**, counting fleet accounts, dev
+  copies and children's demo logins together (tenet 25;
+  `docs/speedrun/HELPERS.md`, "Capacity and the IP cap").
 - **There is one world, so hopping resets nothing.** Shop stock and ground spawns
   are shared by every player on the server, and other bots already draw on them,
   so live stock can sit above or below the base values.
