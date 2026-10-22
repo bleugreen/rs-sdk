@@ -363,6 +363,85 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
         expect(Date.now() - t0).toBeLessThan(2_000);
     });
 
+    describe('a request the engine drops while we are delayed (a stun\'s p_delay)', () => {
+        const near = { nearbyPlayers: [{ index: 7, name: 'cairn_h30', combatLevel: 3, x: 0, z: 0, distance: 1 }] } as unknown as Partial<BotWorldState>;
+        const requests = (sdk: FakeSdk) => sdk.sent.filter(a => a.method === 'sendTradeRequest').length;
+        const sent = (tick: number): Partial<BotWorldState> => ({ tick, gameMessages: [{ type: 0, text: 'Sending trade offer...', sender: '', tick, fromSelf: false }] });
+        const openAt = (tick: number): Partial<BotWorldState> => ({ tick, trade: { isOpen: true, screen: 'offer', partner: 'cairn_h30', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false } });
+
+        test('noReplyTicks re-sends a request that drew no message, and the re-sent one opens the trade', async () => {
+            const sdk = new FakeSdk(baseState({ tick: 10, ...near }));
+            const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { noReplyTicks: 2, byTick: 19 });
+            await flush();
+            expect(requests(sdk)).toBe(1);
+            sdk.push({ tick: 11 });
+            await flush();
+            expect(requests(sdk)).toBe(1);
+            sdk.push({ tick: 12 });
+            await flush();
+            expect(requests(sdk)).toBe(2);
+            sdk.push(sent(13));
+            await flush();
+            sdk.push({ tick: 14 });
+            sdk.push({ tick: 15 });
+            await flush();
+            expect(requests(sdk)).toBe(2);
+            sdk.push(openAt(16));
+            await flush();
+            for (let t = 17; t <= 19; t++) sdk.push({ tick: t, trade: undefined });
+            const t0 = Date.now();
+            const r = await result;
+            expect(r.ok).toBe(false);
+            expect(r.reason).toBe('closed without the items arriving');
+            expect(Date.now() - t0).toBeLessThan(1_000);
+            expect(requests(sdk)).toBe(2);
+        });
+
+        test('a request the engine acknowledged is not re-sent by noReplyTicks', async () => {
+            const sdk = new FakeSdk(baseState({ tick: 10, ...near }));
+            const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { noReplyTicks: 2, byTick: 16 });
+            await flush();
+            sdk.push(sent(11));
+            for (let t = 12; t <= 16; t++) sdk.push({ tick: t });
+            await flush();
+            expect(requests(sdk)).toBe(1);
+            sdk.push({ tick: 17 });
+            const r = await result;
+            expect(r.ok).toBe(false);
+            expect(r.reason).toBe('no_response');
+        });
+
+        test('byTick ends the open on game ticks, not on the wall clock', async () => {
+            const sdk = new FakeSdk(baseState({ tick: 10, ...near }));
+            const t0 = Date.now();
+            const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { noReplyTicks: 2, byTick: 14, openTimeoutMs: 60_000 });
+            for (let t = 11; t <= 15; t++) {
+                await flush();
+                sdk.push({ tick: t });
+            }
+            const r = await result;
+            expect(r).toMatchObject({ ok: false, reason: 'no_response' });
+            expect(requests(sdk)).toBe(3);
+            expect(Date.now() - t0).toBeLessThan(2_000);
+        });
+
+        test('default-identical: without noReplyTicks an unanswered request is not re-sent within 8 s', async () => {
+            const sdk = new FakeSdk(baseState({ tick: 10, ...near }));
+            const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { maxTicks: 5 });
+            for (let t = 11; t <= 20; t++) {
+                await flush();
+                sdk.push({ tick: t });
+            }
+            await flush();
+            expect(requests(sdk)).toBe(1);
+            sdk.push(openAt(21));
+            await flush();
+            sdk.push({ tick: 30, trade: undefined });
+            await result;
+            expect(requests(sdk)).toBe(1);
+        });
+    });
+
     test('receiveFrom() reports a trade that completed as its decline landed as received', async () => {
         const sdk = new FakeSdk(frame(1, fromH30({ theirOffer: offer, partnerAccepted: true })));
         const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30');

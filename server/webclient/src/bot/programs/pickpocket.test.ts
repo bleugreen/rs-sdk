@@ -2,6 +2,9 @@ import { describe, expect, test } from 'bun:test';
 
 import '../../lite/test-support/browser-globals.js';
 
+import { createHash } from 'crypto';
+import { writeFileSync } from 'fs';
+
 import { createPickpocket } from './pickpocket.js';
 import { CHARGE_COMPONENT, type StunSummary } from './stun-actions.js';
 import { Harness, makeState, type Sent } from './testkit.js';
@@ -41,11 +44,35 @@ interface Landing {
  * landing after the request in the same tick replaces it; any packet landing while the trade
  * is open closes it with nothing delivered.
  */
-function thieve(opts: { ticks: number; outcome: (n: number) => boolean; hp?: number; params?: Record<string, unknown>; kit?: Kit; dialogAt?: (tick: number) => boolean; helper?: { openTicks?: number; bones: number } }) {
+interface ThieveOpts {
+    ticks: number;
+    outcome: (n: number) => boolean;
+    hp?: number;
+    /** Hitpoints cap (default 40). */
+    maxHp?: number;
+    /** Food item name and HP healed per bite (default Shark, 20); a bite uses the whole slot. */
+    foodName?: string;
+    heal?: number;
+    /** HP lost per failure (default 3, a knight). */
+    damage?: number;
+    /** Thieving level from the number of successes so far (default 55 throughout). */
+    level?: (successes: number) => number;
+    params?: Record<string, unknown>;
+    kit?: Kit;
+    dialogAt?: (tick: number) => boolean;
+    helper?: { openTicks?: number; bones: number };
+}
+
+function thieve(opts: ThieveOpts) {
     const h = new Harness('pp', createPickpocket);
     const kit = { food: 10, bones: 0, blood: 0, air: 0, headless: 0, magic: 80, fletching: 1, ...opts.kit, heads: { ...opts.kit?.heads } };
+    const maxHp = opts.maxHp ?? 40;
+    const foodName = opts.foodName ?? 'Shark';
+    const heal = opts.heal ?? 20;
+    const damage = opts.damage ?? 3;
+    let bites = 0;
     let tick = 200;
-    let hp = opts.hp ?? 40;
+    let hp = opts.hp ?? maxHp;
     let freeAt = 0;
     let n = 0;
     let msgId = 0;
@@ -61,7 +88,7 @@ function thieve(opts: { ticks: number; outcome: (n: number) => boolean; hp?: num
     const trade = { requests: 0, replaced: 0, opened: 0, done: 0, broken: 0, openFrom: -1, closeAt: -1, requestedOn: [] as number[], doneOn: [] as number[] };
     const tradeOpen = (t: number) => t >= trade.openFrom && t < trade.closeAt;
     const inventory = () => [
-        ...Array.from({ length: kit.food }, () => ({ name: 'Shark', options: ['Eat', 'Drop'] })),
+        ...Array.from({ length: kit.food }, () => ({ name: foodName, options: ['Eat', 'Drop'] })),
         ...Array.from({ length: kit.bones }, () => ({ name: 'Dragon bones', options: ['Bury', 'Drop'] })),
         ...(kit.blood ? [{ name: 'Blood rune', count: kit.blood }] : []),
         ...(kit.air ? [{ name: 'Air rune', count: kit.air }] : []),
@@ -72,9 +99,9 @@ function thieve(opts: { ticks: number; outcome: (n: number) => boolean; hp?: num
     const state = () => {
         inv = inventory();
         return makeState({
-            tick, hp, maxHp: 40,
+            tick, hp, maxHp,
             skills: {
-                Thieving: { xp: rolls.filter(r => r.ok).length * 84 * 25, level: 55 },
+                Thieving: { xp: rolls.filter(r => r.ok).length * 84 * 25, level: opts.level?.(rolls.filter(r => r.ok).length) ?? 55 },
                 Prayer: { xp: prayerXp, level: 43 },
                 Magic: { xp: magicXp, level: kit.magic },
                 Fletching: { xp: fletchXp, level: kit.fletching }
@@ -103,7 +130,7 @@ function thieve(opts: { ticks: number; outcome: (n: number) => boolean; hp?: num
             } else {
                 msgs.push({ text: "You fail to pick the knight's pocket.", tick, id: msgId++ });
                 msgs.push({ text: "You've been stunned!", tick, id: msgId++ });
-                hp -= 3;
+                hp -= damage;
                 delayed.add(a + 2);
                 delayed.add(a + 3);
                 freeAt = a + 11;
@@ -145,9 +172,10 @@ function thieve(opts: { ticks: number; outcome: (n: number) => boolean; hp?: num
                     attemptAt = tick;
                     delayed.add(tick + 1);
                 }
-            } else if (a.type === 'useInventoryItem' && p.name === 'Shark') {
-                hp = Math.min(40, hp + 20);
+            } else if (a.type === 'useInventoryItem' && p.name === foodName) {
+                hp = Math.min(maxHp, hp + heal);
                 kit.food--;
+                bites++;
                 if (tick < freeAt) freeAt += 3;
             } else if (a.type === 'useInventoryItem' && p.name === 'Dragon bones') {
                 kit.bones--;
@@ -177,11 +205,27 @@ function thieve(opts: { ticks: number; outcome: (n: number) => boolean; hp?: num
             pending.push({ at: tick + 1, sent: s, name: slot === undefined ? undefined : inv[slot]?.name });
         }
     }
-    const stunActions = landings.filter(l => l.type !== 'interactNpc' && l.type !== 'clickDialogOption' && !(l.type === 'useInventoryItem' && l.name === 'Shark'));
-    return { h, rolls, landings, stunActions, kit, failedAttempts, trade, xp: () => ({ prayerXp, magicXp, fletchXp }) };
+    const stunActions = landings.filter(l => l.type !== 'interactNpc' && l.type !== 'clickDialogOption' && !(l.type === 'useInventoryItem' && l.name === foodName));
+    return { h, rolls, landings, stunActions, kit, failedAttempts, trade, bites: () => bites, hp: () => hp, xp: () => ({ prayerXp, magicXp, fletchXp }) };
 }
 
-type Result = { gapAfterSuccess: Record<number, number>; gapAfterFail: Record<number, number>; rollsPerTick: number; rolls: number; fails: number; stun?: StunSummary };
+type Result = {
+    reason: string;
+    gapAfterSuccess: Record<number, number>;
+    gapAfterFail: Record<number, number>;
+    gapAfterSuccessEat: Record<number, number>;
+    gapAfterFailEat: Record<number, number>;
+    rollsPerTick: number;
+    rolls: number;
+    fails: number;
+    eats: number;
+    forcedEats: number;
+    eatSends: number;
+    eatTicksLost: number;
+    foodLeft: number;
+    levelTicks: Record<number, number>;
+    stun?: StunSummary;
+};
 
 const everyFifthFails = (n: number) => n % 5 !== 4;
 const PACK = { kit: { bones: 14, blood: 6000, air: 6000, food: 4 }, params: { stunActions: ['bury', 'charge'] } };
@@ -206,7 +250,7 @@ describe('pickpocket', () => {
     });
 
     test('eats in a success window, with the click, once HP is low', () => {
-        const { h } = thieve({ ticks: 400, outcome: n => n % 4 !== 3, params: { eatBelow: 28 } });
+        const { h, bites } = thieve({ ticks: 400, outcome: n => n % 4 !== 3, params: { eatBelow: 28 } });
         const eats = h.sent.filter(s => s.action.type === 'useInventoryItem');
         expect(eats.length).toBeGreaterThan(0);
         for (const e of eats) {
@@ -214,7 +258,12 @@ describe('pickpocket', () => {
             expect(same).toEqual(['useInventoryItem', 'interactNpc']);
         }
         expect(h.status.counters.forcedEats ?? 0).toBe(0);
-        expect(Object.keys((h.status.result as Result).gapAfterFail)).toEqual(['11']);
+        const r = h.status.result as Result;
+        expect(Object.keys(r.gapAfterFail)).toEqual(['11']);
+        // window bites keep the 2-tick gap: nothing lost to eating
+        expect(r.eats).toBe(bites());
+        expect(Object.keys(r.gapAfterSuccessEat)).toEqual(['2']);
+        expect(r.eatTicksLost).toBe(0);
     });
 
     test('forces an eat when the next failure could kill', () => {
@@ -222,10 +271,113 @@ describe('pickpocket', () => {
         expect(h.status.counters.forcedEats).toBeGreaterThan(0);
     });
 
+    test('counts the bites that landed, not the eat packets, and prices a stun eat at 3 ticks', () => {
+        // fail, fail: 7 -> 4 -> 1, forced at 1; the sends landing on the stun's delayed T+2 and T+3 are dropped
+        const { h, bites } = thieve({ ticks: 60, hp: 7, outcome: n => n >= 2, params: { eatBelow: 0 } });
+        const r = h.status.result as Result;
+        expect(bites()).toBe(1);
+        expect(r.eats).toBe(1);
+        expect(r.forcedEats).toBe(1);
+        expect(r.eatSends).toBe(3);
+        expect(r.gapAfterFailEat).toEqual({ 14: 1 });
+        expect(r.eatTicksLost).toBe(3);
+        expect(r.gapAfterFail).toEqual({ 11: 1, 14: 1 });
+    });
+
+    test('at 10 HP the default eatBelow eats in success windows, not only when forced', () => {
+        // the default heal 12 makes maxHp - heal negative; the floor is forcedBelow + 1 = 4
+        const { h } = thieve({ ticks: 600, maxHp: 10, heal: 12, kit: { food: 28 }, outcome: n => n % 4 !== 3 });
+        const r = h.status.result as Result;
+        expect(r.eats).toBeGreaterThan(0);
+        expect(r.forcedEats).toBe(0);
+        expect(h.status.phase).toBe('done');
+    });
+
+    test('stopWhenFoodBelow ends with reason food when the last bite is gone and an eat is due', () => {
+        // cakes at 10 HP: 4 per bite, eat at 6, forced at 1 (a man's 1 damage)
+        const { h, kit, hp } = thieve({
+            ticks: 2000, maxHp: 10, kit: { food: 2 }, foodName: 'Cake', heal: 4, damage: 1,
+            outcome: n => n % 3 !== 2,
+            params: { food: '^(Cake|2/3 cake|Slice of cake)$', eatBelow: 6, forcedBelow: 1, stopWhenFoodBelow: 1 }
+        });
+        const r = h.status.result as Result;
+        expect(h.status.phase).toBe('done');
+        expect(r.reason).toBe('food');
+        expect(kit.food).toBe(0);
+        expect(r.eats).toBe(2);
+        expect(r.foodLeft).toBe(0);
+        expect(hp()).toBeLessThanOrEqual(6);
+        expect(hp()).toBeGreaterThan(1);
+    });
+
+    test('stopWhenFoodBelow waits out the stun before stopping at the forced threshold', () => {
+        const { h, hp } = thieve({ ticks: 400, hp: 4, kit: { food: 0 }, outcome: () => false, params: { eatBelow: 0, stopWhenFoodBelow: 1 } });
+        const r = h.status.result as Result;
+        expect(r.reason).toBe('food');
+        expect(hp()).toBe(1);
+        // stopped at the stun's end: one roll, no attempt after the stop
+        expect(r.rolls).toBe(1);
+    });
+
+    test('levelTicks records the tick each level was first seen; untilLevel ends with reason level', () => {
+        const { h } = thieve({ ticks: 500, outcome: () => true, level: ok => 55 + Math.floor(ok / 10), params: { untilLevel: 58, maxTicks: undefined } });
+        const r = h.status.result as Result;
+        expect(r.reason).toBe('level');
+        expect(Object.keys(r.levelTicks).map(Number)).toEqual([55, 56, 57, 58]);
+        expect(r.levelTicks[55]).toBe(0);
+        // 10 successes per level at 2 ticks each
+        expect(r.levelTicks[57]! - r.levelTicks[56]!).toBe(20);
+    });
+
+    describe('retargetTicks', () => {
+        const npcs = [
+            { index: 12, name: 'Man', options: ['Talk-to', 'Pickpocket'], x: 3201, z: 3200 },
+            { index: 13, name: 'Man', options: ['Talk-to', 'Pickpocket'], x: 3204, z: 3200 }
+        ];
+        // only the farther man (13) is reachable: a click on him rolls a success on the next tick
+        const run = (params: Record<string, unknown>) => {
+            const h = new Harness('pp', createPickpocket);
+            h.start('pp', { rolls: 1, npc: '^Man$', ...params }, makeState({ tick: 1, npcs }));
+            const msgs: Array<{ text: string; id: number }> = [];
+            let pending: number | undefined;
+            for (let t = 2; t < 40 && h.status.phase === 'running'; t++) {
+                if (pending === 13) msgs.push({ text: "You pick the man's pocket.", id: t });
+                const sent = h.step(makeState({ tick: t, npcs, messages: msgs }));
+                pending = (sent.find(s => s.action.type === 'interactNpc')?.action as { npcIndex?: number } | undefined)?.npcIndex;
+            }
+            return { h, clicks: h.sent.filter(s => s.action.type === 'interactNpc').map(s => (s.action as { npcIndex: number }).npcIndex) };
+        };
+
+        test('a target that never rolls is given up for the next nearest', () => {
+            const { h, clicks } = run({ retargetTicks: 12 });
+            expect(h.status.phase).toBe('done');
+            expect(h.status.counters.retargets).toBe(1);
+            expect(clicks.slice(0, 13).every(i => i === 12)).toBe(true);
+            expect(clicks[clicks.length - 1]).toBe(13);
+        });
+
+        test('off by default: the nearest target keeps every click', () => {
+            const { h, clicks } = run({});
+            expect(h.status.counters.retargets).toBeUndefined();
+            expect(clicks.every(i => i === 12)).toBe(true);
+        });
+    });
+
+    test('a banknote of the food is not food', () => {
+        const h = new Harness('pp', createPickpocket);
+        const npcs = [{ index: 12, name: 'Knight of Ardougne', options: ['Talk-to', 'Pickpocket'] }];
+        const inventory = [{ name: 'Cake', options: [] }, { name: 'Cake', options: ['Eat', 'Drop'] }];
+        h.start('pp', { rolls: 5, food: '^Cake$', forcedBelow: 3 }, makeState({ tick: 1, hp: 2, maxHp: 10, npcs, inventory }));
+        const sent = h.step(makeState({ tick: 2, hp: 2, maxHp: 10, npcs, inventory }));
+        expect(sent.find(s => s.action.type === 'useInventoryItem')?.action).toMatchObject({ slot: 1 });
+        expect(h.status.gauges.food).toBe(1);
+    });
+
     test('ends after the requested rolls', () => {
         const { h } = thieve({ ticks: 500, outcome: () => true, params: { rolls: 30, maxTicks: undefined } });
         expect(h.status.phase).toBe('done');
-        expect((h.status.result as { rolls: number }).rolls).toBe(30);
+        expect((h.status.result as Result).rolls).toBe(30);
+        expect((h.status.result as Result).reason).toBe('rolls');
     });
 
     test('faults when no target is in sight for 20 ticks', () => {
@@ -365,12 +517,60 @@ describe('pickpocket stun actions', () => {
             expect(r.trade.done).toBe(0);
         });
 
+        test('ticks idled on an open trade are not a target that never rolls', () => {
+            // open T+6..T+25: without counting the idle ticks, T+26 would be 14 ticks past the stun
+            const r = thieve({ ticks: 260, outcome: everyFifthFails, kit: { bones: 4, blood: 6000, air: 6000, food: 4 }, helper: { bones: 12, openTicks: 20 }, params: { stunActions: [TOPUP, 'bury', 'charge'], idleOnInterface: true, retargetTicks: 12 } });
+            expect(r.trade.broken).toBe(0);
+            expect(r.trade.done).toBeGreaterThan(0);
+            expect(r.h.status.counters.retargets ?? 0).toBe(0);
+        });
+
         test('a trade still open on the attempt tick delays the attempt by its extra ticks', () => {
             const r = run(true, 7);
             const res = r.h.status.result as Result;
             expect(r.trade.broken).toBe(0);
             // open T+6..T+12 (7 states): the first click after it lands on T+14
             expect(res.gapAfterFail[14]).toBe(r.trade.opened);
+        });
+    });
+
+    describe('default-identical (addendum 6)', () => {
+        // Every packet the program sends, by tick, in scenarios that use none of the keys added
+        // after the stun pack (stopWhenFoodBelow, retargetTicks), fingerprinted from the program
+        // as it was before them. The two deliberate default changes are outside these scenarios:
+        // the eatBelow floor binds only when maxHp - heal <= forcedBelow, and a banknote of the
+        // food is skipped only when one is in the inventory.
+        const TOPUP = { name: 'topup', kind: 'player', player: '^helper$', fewer: [{ item: '^dragon bones$', than: 3 }], window: [2, 2] };
+        const SCENARIOS: Record<string, ThieveOpts> = {
+            cadence: { ticks: 300, outcome: everyFifthFails },
+            windowEat: { ticks: 400, outcome: n => n % 4 !== 3, params: { eatBelow: 28 } },
+            defaultEat40: { ticks: 400, outcome: n => n % 3 !== 2 },
+            defaultEat99: { ticks: 600, maxHp: 99, outcome: n => n % 6 !== 5, kit: { food: 20 } },
+            forced: { ticks: 200, hp: 7, outcome: () => false, params: { eatBelow: 0 } },
+            stunPack: { ticks: 300, outcome: everyFifthFails, ...PACK },
+            dialog: { ticks: 60, outcome: n => n !== 1, ...PACK, dialogAt: t => t % 17 === 0 },
+            topupIdle: { ticks: 260, outcome: everyFifthFails, kit: { bones: 4, blood: 6000, air: 6000, food: 4 }, helper: { bones: 12 }, params: { stunActions: [TOPUP, 'bury', 'charge'], idleOnInterface: true } }
+        };
+        // from the program at 75ce523c (rs/132's stun pack and #177's declarations, before these options)
+        const GOLDEN: Record<string, { packets: number; sha256: string }> = {
+            cadence: { packets: 304, sha256: 'cccfaf6cff3d8e5de09516b0f74e49621cbf6e30c5ed64f4ee413094ae34781b' },
+            windowEat: { packets: 406, sha256: '3de0af7652a81dbbf193d6540b1411e47d81f33ba6483127e10affcc75f62d7e' },
+            defaultEat40: { packets: 407, sha256: 'aa4f651a8fbfec653357a3f5a48217cbbc8b0984fc63af015e63a35feafabb9a' },
+            defaultEat99: { packets: 608, sha256: 'd03f899e28929c95facdaf6a8471c00487e1b84007861a400d6148cc4d45d3eb' },
+            forced: { packets: 210, sha256: '1c204154156119560acf57f9f615458e54bdb92a8d7601f7d3f4034a30b8d2ed' },
+            stunPack: { packets: 624, sha256: 'e0d40f331367b92820aacb4123c944df3ca5721a6fcdf5b0319ac23d9fdd9041' },
+            dialog: { packets: 77, sha256: '6916cf3211f73476a94289f932e7bb9c930c0552cf40a017173b8cb99225f210' },
+            topupIdle: { packets: 370, sha256: 'de88150a3da15a304d1843221961b8b3bf4d97fd61abf3dd66f9b1e33a909d54' }
+        };
+        const trace = (o: ThieveOpts) => thieve(o).h.sent.map(s => `${s.tick} ${JSON.stringify(s.action)}`);
+
+        test('sends exactly the pre-option packets', () => {
+            const now = Object.fromEntries(Object.entries(SCENARIOS).map(([k, o]) => {
+                const t = trace(o);
+                return [k, { packets: t.length, sha256: createHash('sha256').update(t.join('\n')).digest('hex') }];
+            }));
+            if (process.env.PICKPOCKET_GOLDEN_WRITE) writeFileSync(process.env.PICKPOCKET_GOLDEN_WRITE, JSON.stringify(now, null, 4));
+            expect(now).toEqual(GOLDEN);
         });
     });
 
