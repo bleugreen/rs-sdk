@@ -100,10 +100,11 @@ then at `85a28dc8d`, whose older `tickmanip-latency.ts` needs an attached tab an
 within 17 s. Only step 0 moves `~/rs-sdk` (r: main via rs/103, 2026-10-21). Afterwards the leftover check showed no tmux server, no process and no reservation.
 
 **The claim lock, `rs-claim`** (tenet 21; the host thread, 02:28-02:30Z 2026-10-22). Machine time on
-either machine is taken through `~/.local/bin/rs-claim`, which the host thread installed on both
-machines; its source is not yet in this repository: rs/440 commits it byte for byte to
-`docs/speedrun/scripts/host-gate/rs-claim`, installed by `docs/speedrun/scripts/host-gate/install.sh`
-(**pending rs/440**), and until then it exists only on the machines. It keeps the sentinel
+either machine is taken through `~/.local/bin/rs-claim`. Its source is
+`docs/speedrun/scripts/host-gate/rs-claim` (rs/440, on main as `d02c094f`, #350): the copy the host
+thread installed, byte for byte, with the same sha256 on both machines.
+`docs/speedrun/scripts/host-gate/install.sh` installs it into `~/.local/bin` only when the installed
+copy differs, and prints both sha256s either way; `uninstall.sh` leaves it in place. It keeps the sentinel
 `/home/ubuntu/host-reserved.json`, the file rs/83's gate history timer skips on, so the timer and the
 claims are one lock. It replaced the slot calendars (the run host's probe slots and rs/147's slot
 files) and the hand-written reservation one-liners this page used to carry: the file is written only
@@ -267,8 +268,8 @@ and main's 2026-10-22 10:4x PDT ruling, the **twin is the expected start machine
 rs-ashburn-run is the fallback. The reason is rs/83's same-minute pair series on the final
 addresses: twin 17 of 17 pass, run host 4 of 17, with held ticks on the run host's path. The run
 host's address was rotated again at 17:39Z 2026-10-22 and is re-judged on 4+ clean same-minute
-pairs. `run-gate gate` gates both machines and picks the twin when both pass (rs/440; until rs/440
-merges, the caveat in step 5a stands). Per-skill rehearsals and lab claims use whichever machine is
+pairs. `run-gate gate` gates both machines and prefers the twin when both pass (rs/440, #350,
+`d02c094f`; step 5a has the tiebreak and when a move to the run host counts). Per-skill rehearsals and lab claims use whichever machine is
 free through rs-claim, and they end on the twin at the floor freeze on run eve.
 
 **Hostnames** (the host thread, 10:4x PDT 2026-10-22, as written). The run host's hostname is
@@ -497,12 +498,13 @@ STEP-MANIFEST.md entry 0). The floor is read from entry 0's line on origin/main,
 or after the run-commit floor, `<hash>`", its single source ("Credentials"). Set `N` to the floor
 main last named (cairn://p/rs/main/messages, or the host thread's messages). The command stops unless
 that line gives exactly one hash, the line and `N` are the same commit, and `RUN_COMMIT` is at or
-after it. It also checks that `RUN_COMMIT` contains run-gate.ts (#216, `b1a2765d`), the gate tooling
-steps 3-7 run from this checkout, which lies outside the floor. **Any mismatch is a stop, not a
+after it. It also checks that `RUN_COMMIT` contains run-gate.ts as rs/440 left it (#350, `d02c094f`, which
+contains #216's `b1a2765d`), the gate tooling steps 3-7 run from this checkout. That check stands on
+its own, not as part of the floor (step 3). **Any mismatch is a stop, not a
 note**: tell main. Expect `floor ok`:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'N=FLOOR_MAIN_NAMED; cd ~/rs-sdk && C=$(cat $HOME/run-commit) || exit 1; git fetch -q origin main && git show origin/main:docs/speedrun/STEP-MANIFEST.md >$HOME/rs-run/manifest-main.md || { echo "STOP: cannot read STEP-MANIFEST.md on origin/main"; exit 1; }; L=$(sed -n -E "s/.*RUN_COMMIT. at or after the run-commit floor, .([0-9a-f]{7,40}).*/\1/p" $HOME/rs-run/manifest-main.md); case "$L" in ""|*[!0-9a-f]*) echo "STOP: entry 0 does not give exactly one floor"; exit 1;; esac; F=$(git rev-parse -q --verify "$L^{commit}") || { echo "STOP: the floor $L is not in this clone"; exit 1; }; [ "$F" = "$(git rev-parse -q --verify "$N^{commit}")" ] || { echo "STOP: entry 0 names $L, main last named $N"; exit 1; }; git merge-base --is-ancestor "$F" "$C" || { echo "STOP: RUN_COMMIT is before the floor $L"; exit 1; }; git merge-base --is-ancestor b1a2765d "$C" || { echo "STOP: RUN_COMMIT lacks run-gate.ts (#216)"; exit 1; }; echo "floor ok: $L, RUN_COMMIT at or after it, run-gate.ts in it"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'N=FLOOR_MAIN_NAMED; cd ~/rs-sdk && C=$(cat $HOME/run-commit) || exit 1; git fetch -q origin main && git show origin/main:docs/speedrun/STEP-MANIFEST.md >$HOME/rs-run/manifest-main.md || { echo "STOP: cannot read STEP-MANIFEST.md on origin/main"; exit 1; }; L=$(sed -n -E "s/.*RUN_COMMIT. at or after the run-commit floor, .([0-9a-f]{7,40}).*/\1/p" $HOME/rs-run/manifest-main.md); case "$L" in ""|*[!0-9a-f]*) echo "STOP: entry 0 does not give exactly one floor"; exit 1;; esac; F=$(git rev-parse -q --verify "$L^{commit}") || { echo "STOP: the floor $L is not in this clone"; exit 1; }; [ "$F" = "$(git rev-parse -q --verify "$N^{commit}")" ] || { echo "STOP: entry 0 names $L, main last named $N"; exit 1; }; git merge-base --is-ancestor "$F" "$C" || { echo "STOP: RUN_COMMIT is before the floor $L"; exit 1; }; git merge-base --is-ancestor d02c094f "$C" || { echo "STOP: RUN_COMMIT lacks run-gate.ts as of #350"; exit 1; }; echo "floor ok: $L, RUN_COMMIT at or after it, run-gate.ts in it"'
 ```
 
 **The run-eve freeze** (main's ruling; STEP-MANIFEST.md entry 0). The last floor is named at least
@@ -514,7 +516,7 @@ before the start), host switches both machines' timers to `install.sh --every 15
 with `rs-claim preempt`. From then until `run-gate gate`, no lab engine, rehearsal or install runs on
 the twin. The run profile on the twin is the persistent `~/rs-run/chrome-profile`, warmed through
 `http://127.0.0.1:8899` (rs/393's dress rehearsal, then the gate tab's own login, whose `scene` line
-reports the warm-up in ticks once rs/440 merges). Never start from a fresh profile. A profile copied
+reports the warm-up in ticks, step 6). Never start from a fresh profile. A profile copied
 between the two Ashburn machines keeps its cache (same origin, same Chrome major 156) after deleting
 `Singleton*` and `Default/Sessions` in the copy.
 
@@ -627,12 +629,13 @@ What does not change: Chrome stays maximised and unobscured on :10 with the thro
 ## 3. Bring up the stack on both machines: `run-gate.ts up`
 
 **Steps 3, 5, 5a, 6 and 7 are one tool**, rs/247's `speedrun/tools/run-gate.ts` (#216, merge commit
-`b1a2765d`). Its three subcommands replace those steps' hand-run commands: `up` (steps 3 and 5, on
+`b1a2765d`), as rs/440 left it (#350, `d02c094f`: the twin preferred, the gate accounts relabelled,
+the report-only lines). Its three subcommands replace those steps' hand-run commands: `up` (steps 3 and 5, on
 both machines), `gate` (steps 6 and 5a, both machines in parallel) and `handoff` (step 7, on the
 chosen machine). This page keeps each step's preconditions and pass lines as text, so it still says
-what must be true; the tool checks them. It is gate tooling, not a run-commit floor item: it descends
-from the floor without being inside it, like #208 and #213, and step 0's floor check verifies that
-`RUN_COMMIT` contains it.
+what must be true; the tool checks them. #216 and #350 are gate tooling, not run-commit floor items,
+like #208 and #213: whether or not a floor's history contains them, step 0's floor check verifies on
+its own that `RUN_COMMIT` contains #350, and so #216.
 
 Run it on the Mac from a checkout at `RUN_COMMIT`, with `RS_RUN_HOST`, `RS_TWIN_HOST` and
 `RS_RUN_TAILNET` set locally ("The host"). It reaches each machine over this page's exact ssh lines
@@ -815,22 +818,34 @@ family, never a global stop). In rs/186's final wording, on main since 2538b7d8 
 reader role takes a required `scope` in its launcher options: {S06|S21, altar}, {S07, bone},
 {S18, courier}, {S25a, anvil}, {S14|S27, cannon}. Before each step whose helpers read a cue, run.ts
 writes a fresh cue with that step's scope (no stop). `session` remains the per-login key. A cue
-without a scope is refused." The readers and runecraft.ts's writer are on the floor; the run.ts
-writer is rs/186's and still pending for it (STEP-MANIFEST.md entry 33). **The fleet restarts once
+without a scope is refused." The readers and runecraft.ts's writer are on the floor.
+
+**One writer per helper step's cue** (main, 11:5x PDT 2026-10-22; rs/186). rs/186's wording has
+run.ts write every step's cue; main's rule names exactly one writer for each helper step:
+
+- S06 and S21 {altar}: `runecraft.ts`;
+- S07 {bone}: `woodcutting.ts` (rs/436, on main since `d35ec6e3`, #357), scoped
+  `{step: 'S07', family: 'bone'}`;
+- S18 {courier}, the mule rows {Hx, mule} and the cannon {S14|S27, cannon}: run.ts, through
+  `handoff.ts`;
+- S25a {anvil}: run.ts, unless smithing.ts writes its own (pending rs/186).
+
+rs/393 adds a test that each helper step has exactly one writer. The run.ts writer is rs/186's and
+still pending (STEP-MANIFEST.md entry 33). **The fleet restarts once
 on 2538b7d8 or later**, so every reader, the fleet's on bbs included, has the scoped launcher
 options; that restart, like every update, keeps step 0's deploy rules. The run machines' launcher
 runs from `~/rs-sdk` at `RUN_COMMIT`, which the floor puts after 2538b7d8.
 
-**A sixth family, `mule`** (rs/429, landed 029c6825 on rs/41's branch; relayed by rs/158 at 10:30
-PDT 2026-10-22). mule.ts serves H12's `Shark topUp {max: 15}` from an ask that SCORED writes on the
+**A sixth family, `mule`** (rs/429; its reader, `speedrun/helpers/mule.ts`, is on main in fleet
+snapshot 8, merge `c9472897`, #353; relayed by rs/158 at 10:30 PDT 2026-10-22). mule.ts serves H12's `Shark topUp {max: 15}` from an ask that SCORED writes on the
 first open-trade frame. **A scope's `step` is the step id for altar, bone, courier, anvil and cannon,
 and the hand-off id for mule**, for example `{step: 'H12', family: 'mule'}` (rs/158's cue scope
 contract, agreed by rs/186 and settled by rs/41 with rs/186, 2026-10-22). run.ts names mule1's
 package in that cue before every mule1 hand-off, with queue order as the fallback. So the families
 are six: altar (S06, S21), bone (S07), courier (S18), anvil (S25a), cannon (S14, S27) and mule (by
-hand-off id, H12 in S15). The contract is **pending**: commit 2c38a339 on rs/41's branch, landing
-in fleet snapshot 9. The mule reader is pending until that fleet code is on main and deployed, and
-rs/393's writer likewise.
+hand-off id, H12 in S15). The scope by hand-off id is **pending fleet snapshot 9** (commit 2c38a339 on
+rs/41's branch): until that is on main and the fleet is deployed on it, the mule cue's hand-off-id
+scope is not in force, and rs/393's writer is pending likewise.
 
 **On run night the opening roster logs in on both machines after `up` and before `gate`** (step
 5a), so each gate is read under the opening load.
@@ -1022,17 +1037,32 @@ stands at the Lumbridge spawn, so its tab's login is also the run profile's warm
    machine, and its choice can only be that one. **Only reads taken after a machine's last address
    change count**, here and in the gate history: a read is a dated read of that machine's route at
    the time ("The host"). The tool doesn't know addresses, so this one is the operator's check.
-2. **Choose.** The tool prints `chosen: run`, `twin` or `NONE` with the reason, and writes
-   `choice.json` on the Mac, which `handoff` reads.
+2. **Choose.** The tool prints the preference before the gates start, then, after the rows, one
+   `chosen:` line: `run`, `twin` or `NONE`, with the reason in brackets. It writes `choice.json` on
+   the Mac: a top-level `prefer`, and `choice` as `{machine, prefer, tiebreak, reason}`; `handoff`
+   reads only `choice.machine`. **The twin is preferred by default** (`DEFAULT_PREFER` in
+   run-gate.ts, main's 10:4x PDT ruling); `gate --prefer=run|twin` overrides it, and only main moves
+   it back to the run host. rs/440's sample output, one `chosen:` line per case:
+
+   ```
+   [run-gate] preference: twin (the default; both pass: twin, unless the tiebreak moves it)
+   [run-gate] chosen: twin (both pass: the preferred machine, twin)
+   [run-gate] chosen: run (tiebreak: preferred twin passed only at the margin: (c) 2/min; run read clean)
+   [run-gate] chosen: run (only the run host passes; twin fail (on time 51/60))
+   ```
+
    - **One passes:** start on it. A pass includes a marginal (a), 58 or 59 of 60.
-   - **Both pass:** start on **the twin**, the expected machine. **Caveat, until rs/440 merges:**
-     run-gate.ts on main still makes the run host the default when both pass, and picks the twin
-     only on its tiebreak: the run host passed at the margin ((a) under 60 of 60, (c) above 1 a
-     minute, or a (d) sample under 60 loops a second) while the twin read (a) 60 of 60 and (c) at
-     most 1. `handoff` refuses a machine the latest gate did not choose. So until then, **a
-     both-pass `gate` that names the run host goes to main before any hand-off.** rs/440 (the host
-     thread, **pending**) makes the twin the both-pass default, with `--prefer=run|twin`, and removes
-     this caveat.
+   - **Both pass:** start on the preferred machine, the twin, unless the tiebreak moves it.
+   - **The tiebreak (main's, reversed onto the preferred machine):** if the preferred machine passed
+     only at the margin ((a) under 60 of 60, (c) above 1 a minute, or a (d) sample under 60 loops a
+     second) while the other read clean ((a) 60 of 60 and (c) at most 1 a minute; its (d) is not
+     compared), the start moves to the other machine, on its own `chosen:` line, and `choice.json`
+     records `tiebreak: true`. A marginal preferred machine stays the choice when the other is not
+     clean either.
+   - **A tiebreak move to the run host counts only if the run host has 4+ clean same-minute pairs on
+     its current address** (rotated 17:39Z 2026-10-22; main, 11:5x PDT, via rs/158). Otherwise a
+     marginal twin means **re-measure**, not the run host: no `handoff`; gate both again. The tool
+     doesn't count pairs, so, like 5a.1's address rule, this is the operator's check.
    - **Neither passes:** no start; `gate` exits 1 (3 when a machine read re-measure and none stopped
      on a precondition). RUN-ORDER.md section 1's rule applies to both: the knife stays off on a
      failed gate, and the start waits for a passing read (re-measure both; the gate history on both
@@ -1042,9 +1072,12 @@ stands at the Lumbridge spawn, so its tab's login is also the run profile's warm
    and whether the gate logout was confirmed; then the choice and its reason. Copy them into the
    run's record and, after the run, into "Measured" below. Each machine keeps its outputs in
    `~/rs-run/gate-<UTC>/` until teardown, and the Mac keeps `~/rs-run-gate/choice-<UTC>.json`.
-   **The tool's step log names the gate account** (its `preconditions` and `(a)-(c)` lines), against
-   step 0's "never print either name": until rs/440 relabels them `GATE-run` and `GATE-twin`, keep
-   that log out of chat and out of any committed file, and copy only the rows.
+   Each row ends with the three report-only readings (step 6), for example
+   `| report only: scene <=t2, locs 89, tile at spawn`. **The gate accounts appear only as
+   `GATE-run` and `GATE-twin`** (step 0's "never print either name"): each machine relabels its own
+   account in every line, `STOP:` line, JSON file and `GATE-RESULT` (from the `--role` the Mac
+   passes), and the Mac relabels both in everything streamed back, its log and `choice.json`. Run on
+   a machine by hand without `--role`, the label is plain `GATE`.
 4. **On the chosen machine:** the rest of the roster logs in through rs/117's launcher before SCORED
    (22 body-altar, 4 bone and 2 trade givers; 22 logins took 190 s through the launcher's limiter, m,
    rs/214 on the run host, 00:35-00:39Z on 2026-10-22), then step 7's login count (`handoff`
@@ -1124,7 +1157,8 @@ hard check, and the first that fails stops that machine:
    can't be chosen: the run never starts on a machine whose read is under the floor, which rs/315's
    Thieving rehearsal harness let through at 57 of 60.
 3. **(d)**, the tab's loop rate: it opens the gate account's tab (step 3's line, bound 15 min),
-   checks the six flags, logs it in with tab-login and runs the secrets check (`0 0 0`). Then it
+   checks the six flags, logs it in with tab-login, prints the three report-only lines (below) and runs the secrets
+   check (`0 0 0`). Then it
    samples for five minutes (`--minutes=5`) with `docs/speedrun/scripts/runhost-loops.ts`, bound
    10 min. The sampler attaches through the loopback gateway and runs the in-page probe (the page
    publishes `loops` only while a program runs). Every 10 s it reads the page's loop rate beside each
@@ -1148,6 +1182,43 @@ hard check, and the first that fails stops that machine:
    **Fail**: the median is below 50. (d) not measured is never a pass. On 2026-10-21 every sample in
    every condition was 70-73 (m, below). During the run, the page keeps publishing `loops` while
    SCORED's programs run, which is what the in-run monitor reads.
+
+**Three report-only lines, beside (a)-(d)** (rs/440, #350, `d02c094f`). The gate tab's login also
+yields `scene`, `locs` and `tile`. None of them is ever a pass or a fail: they are printed in the
+step log, stored in the machine's gate JSON (`scene`, `locs` and `tile` on `MachineGate`) and
+appended to its row after `| report only:` (step 5a.3). They read the page through
+`speedrun/lib/tab.ts`'s `evaluateInTab`, and return counts and the tile only, never a name.
+
+- **`scene`**, the warm-up reading: page ticks from the login to the client's `sceneState` 2. The
+  watch starts before tab-login's navigation and looks every 250 ms; the page's tick count starts at
+  0 as it enters the world on a fresh load. If the first in-game look already shows `sceneState` 2
+  (warm), it reads `by page tick N`, an upper bound (`<=tN` in the row). It gives up 120 s after in
+  game, or when the login fails. It is the reading step 7's verification pass asks for.
+- **`locs`**: the SDK's `nearbyLocs` count, waiting up to 10 s after the scene is built (locs follow
+  the scene by about a tick). **> 0 expected**; 0 reads `the tab sees no scenery`, as browser tabs
+  on bbs do (step 4, rs/359).
+- **`tile`**: the gate account's tile against the Lumbridge spawn (3222, 3218, level 0): at the
+  spawn within 5 tiles (Chebyshev) on level 0, otherwise N tiles off it, or the level it is on.
+  Each gate account is parked there (step 5a).
+
+rs/440's sample lines, from the real functions on sample reads, not a measurement: the twin warm
+and at the spawn; the run host cold, with no locs and off the spawn; a failed login; then the two
+rows.
+
+```
+[twin] [gate] 17:21:04Z scene (report only): sceneState 2 by page tick 2 (already built at the first in-game look), 4.4 s after tab-login started; bbs reference: warm 3-4 ticks, cold 73-83 at a busy site
+[twin] [gate] 17:21:04Z locs (report only): 89 locs at page tick 3 (21 NPCs, 97 players nearby); > 0 expected
+[twin] [gate] 17:21:04Z tile (report only): (3222, 3218, level 0): at Lumbridge spawn (3222, 3218, level 0), 0 tiles from it
+
+[run] [gate] 17:21:04Z scene (report only): sceneState 2 at page tick 83, 68.1 s after tab-login started, 27.8 s after in game (tick 0); bbs reference: warm 3-4 ticks, cold 73-83 at a busy site
+[run] [gate] 17:21:04Z locs (report only): 0 locs for 10 s after the scene was built, last at page tick 99 (21 NPCs, 97 players nearby); > 0 expected: the tab sees no scenery
+[run] [gate] 17:21:04Z tile (report only): (3185, 3436, level 0): 218 tiles from Lumbridge spawn (3222, 3218, level 0)
+[run] [gate] 17:21:04Z scene (report only): not read: the login failed
+[run] [gate] 17:21:04Z locs (report only): not read: the login failed
+
+  run   01:00Z  (a) 60/60  (b) p90 488.5 ms (c) 2/min     (d) p10 71.5 / 72.5 / 73.1   pass       online 1600  gate logout confirmed  | report only: scene t83, locs 0, tile 218 from spawn
+  twin  01:00Z  (a) 60/60  (b) p90 488.5 ms (c) 0/min     (d) p10 71.5 / 72.5 / 73.1   pass       online 1600  gate logout confirmed  | report only: scene <=t2, locs 89, tile at spawn
+```
 
 **Open, for the host thread** (2026-10-22, rs/410): rs/249's gate-wrapper fix (`host-gate-read.sh`'s
 password redaction, "Gate history timer") is not yet installed on either machine.
@@ -1208,8 +1279,9 @@ at that exact origin (rs/41, via rs/158). Two layers, of which run-gate.ts check
   `CLIENT_URL` at the Lumbridge spawn must reach **`sceneState` 2 within a few ticks, with archive-0
   urgent requests about 0**. Each machine's gate account, parked at the Lumbridge spawn, is that
   login (main, 10:5x PDT): one gate-tab login serves as the (d) tab, the warm-up and rs/440's
-  `scene`, `locs` and `tile` lines (**pending rs/440**; the parking is a sibling issue under the host
-  thread, **pending**). It warms the run because the gate tab and the run tab are opened by the same
+  report-only `scene`, `locs` and `tile` lines (step 6). The `scene` line is this pass's reading,
+  for the operator to read, since the tool never gates on it; the parking is a sibling issue under
+  the host thread, **pending**. It warms the run because the gate tab and the run tab are opened by the same
   `launchTab` in `speedrun/tools/run-gate.ts`, on the same `--user-data-dir` (its `PROFILE`,
   `~/rs-run/chrome-profile`) and the same page (its `PAGE`, `http://127.0.0.1:8899`). The cache
   lives on disk in the profile, so it survives `gate`'s unconditional kill. **The rule behind it:**
