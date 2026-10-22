@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { interfaceText, ironOreToBuy, isWest, nextWork, parseOptions, railingDamage, stageFromJournal, type Holdings } from './cannon';
+import type { InventoryItem, TradeItem } from '../../sdk/types';
+import { offerSatisfies } from '../../sdk/trade-helpers';
+import { planOffers } from '../lib/trade';
+import { nameHash } from './altar-cue';
+import { holdsLoad, interfaceText, ironOreToBuy, isWest, loadSpecs, loadWant, nextWork, parseOptions, railingDamage, serveOptions, serveResume, stageFromJournal, type Holdings } from './cannon';
 
 // Journal pages as the lite client published them in the lab (interface 8134, `::setvar mcannon N`).
 const JOURNAL: Record<number, string[]> = {
@@ -109,4 +113,67 @@ test('options default to two sets and 1,160 balls from any helper', () => {
     expect(o.balls).toBe(1160);
     expect(o.stopAfter).toBeNull();
     expect(o.funders.some(r => r.test('cairn_h60'))).toBe(true);
+});
+
+describe('serve mode', () => {
+    const inv = (items: [string, number][]): InventoryItem[] =>
+        items.map(([name, count], slot) => ({ slot, id: 100 + slot, name, count, optionsWithIndex: [] }) as unknown as InventoryItem);
+    const LOAD: [string, number][] = [['Cannon base', 1], ['Cannon stand', 1], ['Cannon barrels', 1], ['Cannon furnace', 1], ['Cannonball', 100]];
+
+    test('options: tile and balls are required; the receiver is a hash, never a name', () => {
+        expect(() => serveOptions({ balls: 100 })).toThrow(/serve.tile/);
+        expect(() => serveOptions({ tile: { x: 1, z: 2 } })).toThrow(/serve.balls/);
+        expect(() => serveOptions({ tile: { x: 1, z: 2 }, balls: 100, receiver: 'Some Player' })).toThrow(/not a name/);
+        const hash = nameHash('Some Player');
+        const o = serveOptions({ tile: { x: 2570, z: 3463 }, balls: 100, receiver: hash.toUpperCase() }, {});
+        expect(o).toMatchObject({ tile: { x: 2570, z: 3463 }, balls: 100, receiver: hash, returnTile: null, labStock: false, noReplyTicks: 3, resendTicks: 100 });
+        expect(o.bank).toEqual({ x: 2946, z: 3369 }); // Falador west, where h92 banks
+    });
+
+    test('options: without a receiver hash it is read from the cue directory', () => {
+        const o = serveOptions({ tile: { x: 1, z: 2 }, balls: 1, returnTile: { x: 2661, z: 3301 } }, { RC_CUE_DIR: '/tmp/cue-x' });
+        expect(o.receiver).toBeNull();
+        expect(o.cueDir).toBe('/tmp/cue-x');
+        expect(o.returnTile).toEqual({ x: 2661, z: 3301 });
+    });
+
+    test('a hand-off is resumed from ctx.state, never given twice', () => {
+        const at = '2026-10-21T00:00:00Z';
+        expect(serveResume(undefined, false, false)).toBe('give');
+        expect(serveResume({ phase: 'giving', at }, true, true)).toBe('give'); // the trade never completed
+        expect(serveResume({ phase: 'giving', at }, false, true)).toBe('uncertain');
+        expect(serveResume({ phase: 'gave', at }, false, true)).toBe('take-back');
+        expect(serveResume({ phase: 'gave', at }, true, false)).toBe('done');
+        expect(serveResume({ phase: 'returned', at }, true, true)).toBe('done');
+        expect(serveOptions({ tile: { x: 1, z: 2 }, balls: 100 }, {}).id).toBe('1,2x100');
+        expect(serveOptions({ id: 'H11', tile: { x: 1, z: 2 }, balls: 100 }, {}).id).toBe('H11');
+    });
+
+    test('parseOptions: serve is off unless given', () => {
+        expect(parseOptions({}).serve).toBeNull();
+        expect(parseOptions({ serve: { tile: { x: 1, z: 2 }, balls: 5 } }).serve?.balls).toBe(5);
+    });
+
+    test('the exact load is five offers of one All press each: one trade, nothing left behind', () => {
+        const plan = planOffers(inv(LOAD), loadSpecs(100));
+        expect(plan.map(e => e.name)).toEqual(LOAD.map(([n]) => n));
+        expect(plan.every(e => e.amounts.length === 1 && e.amounts[0] === -1)).toBe(true);
+        expect(plan.map(e => e.expected)).toEqual([1, 1, 1, 1, 100]);
+    });
+
+    test('holdsLoad needs every part and enough balls', () => {
+        expect(holdsLoad(inv(LOAD), 100)).toBe(true);
+        expect(holdsLoad(inv(LOAD), 101)).toBe(false);
+        expect(holdsLoad(inv(LOAD.filter(([n]) => n !== 'Cannon furnace')), 1)).toBe(false);
+        expect(holdsLoad(inv([]), 1)).toBe(false);
+    });
+
+    test('the receiver wants the whole set and the balls; the take-back wants the set, balls optional', () => {
+        const offer = (items: [string, number][]): TradeItem[] => items.map(([name, count], i) => ({ slot: i, id: 100 + i, name, count }));
+        expect(offerSatisfies(loadWant(100), offer(LOAD))).toBe(true);
+        expect(offerSatisfies(loadWant(100), offer(LOAD.slice(0, 4)))).toBe(false);
+        expect(offerSatisfies(loadWant(100), offer([...LOAD.slice(0, 4), ['Cannonball', 99]]))).toBe(false);
+        expect(offerSatisfies(loadWant(0), offer(LOAD.slice(0, 4)))).toBe(true);
+        expect(offerSatisfies(loadWant(0), offer(LOAD.slice(1)))).toBe(false);
+    });
 });

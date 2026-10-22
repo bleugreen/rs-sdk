@@ -197,7 +197,7 @@ are filed under main and held until tenet 15 is answered.
 |---|---|---|---|
 | H1 mule, hand-off and quest-item giver | S01, every helper trade | on rs/41's branch (rs/49, #34) | the step packages and per-tile positioning (section 4) are rs/41's, no issue yet; quest items rs/126, rs/173 |
 | H2 stun-pack courier | S18 | on rs/41's branch (rs/141): `bone-giver.ts`'s S18 on-request mode; the Charge and Fletching stacks building (rs/163, held: not before 15:25 PDT) | rs/163's execution 2 extends `bone-giver.ts`; there is no `stun-courier.ts` |
-| H3 cannon holder | S14, S27 | on rs/41's branch (rs/125): `cannon.ts`; the hand-off to SCORED building (rs/189) | cairn_h92 holds two sets and 1,416 balls (rs/41, 15:00 PDT); rs/189 adds the one-trade hand-off and checks what `nulodion.rs2` restricts |
+| H3 cannon holder | S14, S27 | on rs/41's branch (rs/125): `cannon.ts`; the hand-off lab-verified (rs/189), demo leg pending | cairn_h92 holds two sets and 1,416 balls (rs/41, 15:00 PDT); `cannon.ts` serve mode hands over a set and balls in one trade, 4 ticks on the receiver's clock in the lab; the quest gates buying and Set-up, not trading |
 | H4 in-room essence giver | S06, S21 | on rs/41's branch (rs/117, rs/141): `altar-giver.ts`; the direct path building (rs/163) | `altar-giver.ts`, `altar-cue.ts`, `altar-room.ts`; rs/163's direct-path transport (PR #144; lab 21 of 21, host slot 22:05Z); there is no `rc-giver.ts`. rs/163 sized the body-altar roster at 14 givers on 15 body talismans, no keeper (0 nature talismans; a ~90-tick round trip, e; RUN-ORDER.md section 7) |
 | H5 anvil helper | S25a | building (rs/188) | `anvil.ts`, new |
 | H6 log-row dropper | S03 | building (rs/187) | `fm-row.ts`, new, first in rs/187's queue |
@@ -1371,17 +1371,23 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
 - **Acceptance:** local, a top-up inside a success window at most 5 ticks (the trade floor) without
   breaking the next 2-tick success gap.
 
-### H3. Cannon holder: `speedrun/helpers/cannon.ts` (on rs/41's branch, rs/125; the hand-off to SCORED building, rs/189)
+### H3. Cannon holder: `speedrun/helpers/cannon.ts` (on rs/41's branch, rs/125; serve mode, rs/189)
 
 - **Gates:** S14 and S27 (exposure 1,857 + ~140). Only an account that has done Dwarf Cannon can buy
-  the cannon from Nulodion (read, `nulodion.rs2:2`, via the rs/41 supply list), and the ammo mould
-  is untradeable (`quests/README.md` §4 step 7). So a helper runs `speedrun/quests/dwarf-cannon.ts`
-  first, buys the set, makes or holds the cannonballs (about 1,000-1,300), and trades the set to
-  SCORED.
+  the cannon from Nulodion (read, `nulodion.rs2:1-5`), and the ammo mould is untradeable
+  (`quests/README.md` §4 step 7). The parts and the balls trade to anyone; only Set-up on the base
+  needs the quest (`cannon_setup.rs2`; `helpers/cannon.md`). So a helper does the quest, buys the
+  sets and makes the balls, and trades the set to SCORED.
 - **Status:** `cannon.ts` is on rs/41's branch (rs/125); cairn_h92 holds two sets and 1,416
-  cannonballs (rs/41, 15:00 PDT). **rs/189** adds the one-trade hand-off to SCORED and checks what
-  `nulodion.rs2` restricts.
-- **Acceptance:** demo, a throwaway completes Dwarf Cannon, buys a set and hands it over in one trade.
+  cannonballs (rs/41, 15:00 PDT).
+- **Built (rs/189):** `cannon.ts` with `serve`: the set plus N balls from the bank, stand on the
+  step's tile, find SCORED by name hash (the cue or `serve.receiver`), keep a request standing
+  (`bone-giver.ts requestUntilOpen`), one trade (`lib/trade.ts give`); `returnTile` takes it back
+  for H11r. Each hand-off is recorded in `ctx.state`, so a restart never gives it twice.
+- **Acceptance:** demo, a throwaway that has completed Dwarf Cannon receives a set and balls in one
+  trade. **Lab, met** (`speedrun/lab/cannon-handoff.ts`, receiver quest state set by staff command):
+  one trade, 4 ticks on the receiver's clock, Set-up works for the quest-complete receiver only.
+  Demo: pending.
 
 ### H4. In-room essence giver: `speedrun/helpers/altar-giver.ts` (on rs/41's branch, rs/117 and rs/141; the direct path building, rs/163)
 
