@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'fs';
 import { hopNeeds, type Hop } from '../lib/travel';
 import {
-    analyze, FOLD_IN_25, ledgerLegs, legRow, loadModules, PENDING, runeOf, STAND_INS,
+    analyze, ledgerLegs, legRow, loadModules, PENDING, runeOf, STAND_INS,
     type Finding, type LegLike, type ModuleDecl, type Pending, type Report,
 } from './rune-pins';
 import { MANIFEST, parseLedger, summary, walk, type LedgerRow } from './slot-ledger';
@@ -218,17 +218,10 @@ describe("main's ledger (docs/speedrun/STEP-MANIFEST.md)", () => {
         expect(declared).toEqual(expect.arrayContaining(['skills/magic.ts', 'skills/thieving.ts']));
     });
 
-    test('fold-in 25 on these rows clears the H8 / S11b / T11-12 case', () => {
-        const folded = MAIN_ROWS.map(r => {
-            if (r.row === 'H8') return { ...r, in: r.in.map(e => (e.name === 'law rune' ? { ...e, count: 7 } : e.name === 'water rune' ? { ...e, count: 6 } : e)) };
-            if (r.row !== 'S11b') return r;
-            const rest = r.out.filter(e => !(e.reason === 'consume' && (e.name === 'law rune' || e.name === 'water rune')));
-            return { ...r, out: [...rest, { name: 'law rune', count: 5, reason: 'consume' as const }, { name: 'water rune', count: 4, reason: 'consume' as const }] };
-        });
-        const r = analyze(folded, { legs: ledgerLegs(), modules: MODULES, standIns: STAND_INS }, PENDING);
+    test("fold-in 25's H8 / S11b / T11-12 runes stay clear on the rows", () => {
         const lawWater = (f: Finding) => (f.rune === 'lawrune' || f.rune === 'waterrune') && (f.row === 'S11b' || f.row === 'T11-12');
-        expect(r.findings.filter(lawWater)).toEqual([]);
-        expect(r.stale.filter(s => s.includes(FOLD_IN_25))).toHaveLength(3);
+        expect(REPORT.findings.filter(lawWater)).toEqual([]);
+        expect(REPORT.stale).toEqual([]);
     });
 
     for (const f of REPORT.findings.filter(f => f.pending)) test.skip(`pending: ${f.text} (${f.pending!.why})`, () => {});

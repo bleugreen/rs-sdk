@@ -49,8 +49,8 @@ const MAGIC_DOOR_ITEMS = { wizards_mind_bomb: 1, silk: 1, lobster_pot: 1, bowl_u
 const HULL = { woodplank: 3, nails: 12, hammer: 1 } as const;
 const RUNES_LUMBRIDGE = { lawrune: 1, airrune: 3, earthrune: 1 } as const;
 const RUNES_FALADOR = { lawrune: 1, airrune: 3, waterrune: 1 } as const;
-/** H22 also carries T25-26's Varrock and T26-27's Ardougne casts (the inventory ledger's H22 row). */
-const RUNES_LEGS = { lawrune: 3, airrune: 3, firerune: 1, waterrune: 2 } as const;
+/** H22 also carries T26-27's Ardougne cast (the inventory ledger's H22 row); T25-26 is a run, so no Varrock set (rs/464). */
+const RUNES_LEGS = { lawrune: 2, waterrune: 2 } as const;
 /** Swapped off at H22 and dropped in S26's B; given after the wear, since the fixture's 28 slots are full until then. */
 const MSPEAK = 'mm_amulet_of_monkey_speak';
 const add = (...parts: Array<Record<string, number>>): Record<string, number> => {
@@ -119,7 +119,7 @@ await labMain<ds.Options>({
     async applyFixture(session, f) {
         await setStats(session.sdk, { ...LEVELS });
         await applyFixture(session, f);
-        // The ledger's S26 start: H22 and the m'speak amulet, 2 free.
+        // The ledger's S26 start: H22 and the m'speak amulet, 3 free.
         if (['A', 'B'].includes(f.letter)) {
             await give(session.sdk, MSPEAK, 1);
             const free = 28 - session.sdk.getState()!.inventory.length;

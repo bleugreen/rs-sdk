@@ -116,30 +116,31 @@ describe('entry and kit', () => {
 });
 
 describe('free slots (addendum 8)', () => {
-    // The inventory ledger's S26 start: H22 (the kit, plus the legs' fire rune) and the m'speak amulet, 2 free.
-    const ledger = () => [...KIT(), item('Fire rune'), item("M'speak amulet")];
+    // The inventory ledger's S26 start: H22 (the kit; no Varrock set, so no fire rune) and the m'speak amulet, 3 free.
+    const ledger = () => [...KIT(), item("M'speak amulet")];
 
     test('the letters are the segments', () => {
         expect(steps().map(s => s.name.slice(4, 5))).toEqual([...LETTERS]);
     });
 
     test("the ledger's start covers the step: the peak is Scavvo's two pieces at C", () => {
-        expect(28 - ledger().length).toBe(2);
+        expect(28 - ledger().length).toBe(3);
         expect(slotNeed(world({ inv: ledger() }), questItems(), LETTERS, 'A')).toEqual({ slots: 2, peak: 'C', items: ['1 Rune chainbody', '1 Rune platelegs'] });
         expect(steps()[0]!.preconditions(world({ inv: ledger() }), {})).toBe(true);
-        expect(steps()[0]!.preconditions(world({ inv: [...ledger(), item('Bucket')] }), {})).toBe('inventory: segment C needs 2 free slots (1 Rune chainbody, 1 Rune platelegs), 1 free: 1 short');
+        expect(steps()[0]!.preconditions(world({ inv: [...ledger(), item('Bucket'), item('Pot')] }), {})).toBe('inventory: segment C needs 2 free slots (1 Rune chainbody, 1 Rune platelegs), 1 free: 1 short');
     });
 
     test('the four items the magic door takes make room for the maze; without the armour the peak moves to E', () => {
         // A full pack at G that still holds the magic-door items: they are gone by G, so the coloured key
         // and parts 1 and 2 fit. Stacks are never credited (a remainder may survive).
         expect(questItems().filter(q => q.stackable && q.until !== undefined)).toEqual([]);
-        const full = world({ status: 'started', inv: [...ledger(), item('Maze key'), part(3)] });
+        // The slot the Varrock set freed is filled with a non-quest item, so the pack is full.
+        const full = world({ status: 'started', inv: [...ledger(), item('Maze key'), part(3), item('Bucket')] });
         expect(28 - full.inventory.length).toBe(0);
         expect(slotNeed(full, questItems(), LETTERS, 'G').slots).toBe(0);
         expect(steps()[6]!.preconditions(full, {})).toBe(true);
         // Without the armour the peak is E: a hand-in is held through the segment that takes it, so E counts
-        // Oziach's key and part 3 before the four door items are credited (conservative, and within 2 free).
+        // Oziach's key and part 3 before the four door items are credited (conservative, and within 3 free).
         expect(slotNeed(world({ inv: ledger() }), questItems({ buyArmour: false }), LETTERS, 'A')).toEqual({ slots: 2, peak: 'E', items: ['1 Maze key', '1 Map part 3'] });
     });
 
