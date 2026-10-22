@@ -176,6 +176,11 @@ Its history contains every earlier requirement (rs/158 in the store; here `git m
 | `b6950915` | #177 | a tick program faults at start on any parameter key it does not declare, so a module built against another commit's programs stops instead of running a different program (`tick-programs.md`; STEP-MANIFEST.md entry 0) |
 | `834f376b` | #176 (rs/210) | the in-run tick-cadence monitor on the scored connection: per-minute `TICKMON` rows in the run log, no behaviour change |
 
+**Pending for the floor:** rs/147's Fishing snapshot PR (number pending; `b2e02cbe` on rs/147's branch, directly on 23ea9f77). It declares knife-cycle's `followSpot`, `dropEach` and
+`untilXp`, which Fishing's net band passes; until it is on main a page built from main faults on that
+band (STEP-MANIFEST.md entry 5). The run commit must include it, and the floor moves to its merge
+commit when it lands.
+
 **Leftover check.** It lists every tmux socket on the host with its sessions, other agents' sockets
 included, plus every `chrome*`, `ffmpeg`, `bun` and `timeout` process with its age, and the host
 reservation. It does not count the gate history timer's processes: they run in
