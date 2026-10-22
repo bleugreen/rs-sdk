@@ -467,7 +467,7 @@ describe('sessionGateway', () => {
 
     test('isLoopbackHost', () => {
         for (const h of ['localhost', 'localhost:8960', '127.0.0.1', '127.1.2.3:80', '::1', '[::1]:7780', 'LOCALHOST']) expect(isLoopbackHost(h)).toBe(true);
-        for (const h of ['demo.example', 'localhost.example', '127.example', '128.0.0.1', '[::2]:80', '']) expect(isLoopbackHost(h)).toBe(false);
+        for (const h of ['demo.example', 'localhost.example', '127.example', '127.0.0', '[::2]:80', '']) expect(isLoopbackHost(h)).toBe(false);
     });
 });
 
