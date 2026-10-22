@@ -301,5 +301,101 @@ top-ups absorbed.
 - **Exact loads with All** (5-tick trades, completing at k = 7) need the helper to hold the exact
   load. That means SCORED announcing it a stun ahead, or a fixed load size. Worth ~0.2 ticks per
   top-up; not tried.
-- **The browser run client and the demo's tick bursts** (RUN-ORDER R2) are not exercised here.
-  The plan sends at most 4 packets per tick, inside interleaving.md section 6's safe budget.
+- **The demo's tick bursts** (RUN-ORDER R2) are not exercised here. The plan sends at most 4
+  stun actions per tick, inside interleaving.md section 6's safe budget. The browser client's
+  routed knight click (2 packets, not 1) is section 13.
+
+## 13. Browser client: the 6-event stun window and route:false (rs/317)
+
+The question (cairn://p/rs/317): the browser client's routed OPNPC sends MOVE_OPCLICK first
+(`server/webclient/src/client/Client.ts`, `tryMove` with an op click), so a window tick that
+carries four delay-free actions and the knight click is 6 user events against the engine's 5.
+What does that cost S18, and what would `route: false` on the re-click save?
+
+Scripts: [`stun-pack-browser.ts`](../scripts/stun-pack-browser.ts) (the in-page `pickpocket`
+program with `stunActions: ['bury', 'charge', 'arrows']` in a browser tab, through
+`tickprog-lab.sh`), [`stun-trace.ts`](../scripts/stun-trace.ts) (the server's view of every
+stun, tick by tick, from an engine log written with a temporary decode trace). Setup as section 3
+except: browser client (headless Chrome, `HEADLESS=1`), bgsrv-mac (12 cores, load ~4), bones and
+sharks refilled by `::give` on success ticks (no helper, so no top-up stuns).
+
+### How the engine counts the 5 (read)
+
+`NetworkPlayer.decodeIn` decodes while fewer than 5 user events have been *accepted* that tick.
+An event whose handler refuses it (a delayed player: `MoveClickHandler` and `OpNpcHandler` both
+return false while `player.delayed`) counts as a client event, not a user event. A 6th accepted
+event is not dropped: decoding stops with its bytes in the socket buffer, and the next tick
+decodes them first. So the browser's extra MOVE_OPCLICK costs a slot only on a tick where the
+click is accepted.
+
+### The stun, tick by tick (measured)
+
+Letters are the decoded user events per server tick, upper case accepted, lower case refused
+(C Charge, A arrows, B bury, R page resume, M MOVE_OPCLICK, N OPNPC); `|` is a tick the 5-event
+limit cut short. T is the attempt tick; T+11 the next attempt.
+
+| Stun | T+4 (k 2) | T+5 | T+6 | T+7 | T+8 | T+9 | T+10 | T+11 |
+|---|---|---|---|---|---|---|---|---|
+| stocked (bones) | CCCBmn | mn | RCCBmn | mn | RCCBmn | mn | RMN | RMN |
+| dry (no bones) | CCCCM\| | NCCCC\| | MNrCCC\| | MNCCC\| | CMNrCC\| | CMNCC\| | CCMNM\| | NMN |
+
+- **Stocked stuns never reach 6.** The bury's `p_delay(0)` makes the click behind it a refused
+  pair, so a bury tick counts 4 (three delay-free actions and the bury) and the rest tick counts
+  0; the click-only ticks at k = 7-8 count 2-3. Deferrals in the stocked 57-99 run: **1 stun of
+  90**, one that had run short of bones (m).
+- **Dry stuns cascade.** With no bury, every window tick sends four delay-free actions and an
+  accepted M + N: 6 events, 5 decoded, one carried. The carry grows by one a tick from k = 2 to
+  k = 7 and drains on T+10-T+11. Deferrals: 50 of 51 dry stuns, on every tick k = 2..8 (m).
+- **Nothing is lost and the attempt is on time.** No delay-free action was refused in any run
+  (T+4..T+10 all accept), and the next attempt came on T+11 as often as in stocked stuns (below).
+  What the carry does move is xp: in a dry stun ~1.8 delay-free actions land on T+10 (94 in 50
+  stuns), the tick the pack's window (k <= 7) keeps clear because a level-up there opens a page on
+  T+11 that blocks the attempt (section 2). Stocked stuns landed 2 actions on T+10 in 90 stuns.
+
+### Phase 1: fixed Thieving 80, 1,000 ticks each (measured, browser)
+
+| Variant | Rolls (S / F) | Mean success gap | Fail to next | Next attempt - F (server; 10 on time) | Delay-free landed per stun | On T+10 | Stuns with a deferral |
+|---|---|---|---|---|---|---|---|
+| stocked (bones) | 229 (173 / 56) | 2.06 | 11.64 | 10.64 (43 of 56 on time) | 8.34 (+2.86 bones) | 2 | 2 / 56 |
+| dry (`--bones=off`) | 247 (196 / 51) | 2.10 | 11.72 | 10.72 (38 of 51 on time) | 21.45 | 94 | 50 / 51 |
+| lite, 3 bones (section 4) | 275 (229 / 46) | 2.05 | 11.52 | | 7.85 casts (+3.00 bones) | | |
+
+Dry against stocked: **+0.08 ticks per stun** (10.72 against 10.64), inside the noise (standard
+error of the difference ~0.3). The late attempts in both are knight walks and page stuns.
+
+### Phase 1: Thieving 57-99 with the pack (measured, browser, one run)
+
+| Run | Client | Span (program ticks) | Successes / failures | Mean success gap | Fail to next | Normalised | Bones / casts / arrows | Stuns with a deferral |
+|---|---|---|---|---|---|---|---|---|
+| pack-1 / pack-a / pack-b | lite (section 3) | 1,908 / 2,098 / 1,997 | 449 / 84-93 | 2.03-2.18 | 11.83-12.15 | 1,906 / 1,976 / 1,992 | 194-213 / 163-165 / 240 | not traced |
+| rs/317 | browser | **2,056** (first to last roll 2,049) | 449 / 90 | 2.15 | 12.08 | **1,981** | 267 / 165 / 240 | 1 / 90 |
+
+The browser run is inside the lite range on every measure, and normalised (section 3's formula)
+it sits between pack-a and pack-b. It had no top-up stuns (worth ~0.1-0.3 each in the lite runs),
+so the like-for-like gap is a few ticks at most. **The 6-event window costs a stocked S18 nothing
+measurable (m).** Magic 80-99 and Fletching 1-99 finished inside the stuns as on lite; Prayer
+reached 89 because `::give` kept every stun stocked (267 bones).
+
+### What the deferral can cost the route (inferred)
+
+Only dry stuns form the 6-event bundle: a stun the helper failed to stock (pack-a had 18) while
+Charge or arrows are still due. Top-up stuns don't (the request owns its tick and the program
+holds every packet while the trade is open), and nor do stuns after Magic and Fletching reach 99.
+A dry stun's cost is the page risk of its ~1.8 actions on T+10: low during Charge (19 levels over
+165 casts), higher during Fletching (98 levels over 240 actions, roughly an even chance that one
+of them levels), each page about +0.5 to +1.5 ticks (section 9). So **0 for a run whose helper
+keeps up (pack-b, rs/317), up to ~10 ticks for a pack-a-like run** (i).
+
+Two levers remove it. `route: false` on the re-click when SCORED is adjacent to the knight (the
+bundle becomes 5) is phase 2 below. The other needs no packet change: count the routed click as
+2 in the stun pack's per-tick budget, so a dry tick carries 3 delay-free actions, not 4. A dry stun
+has 24 slots against the ~4.8 the pack needs per stun (section 2), so the dropped slot is free.
+
+### Phase 2: route:false (pending)
+
+Waiting on the opt-in `route: false` for `interactNpc` (cairn://p/rs/302's builder, for rs/186)
+to reach this branch. The measurement: an opt-in pickpocket param that sends the re-click
+unrouted when SCORED is adjacent to the knight and routed otherwise, the dry variant above rerun
+with it (does the bundle come to 5, does T+10 stay clear), and the stocked 57-99 run. Expected
+from phase 1: no deferrals in dry stuns and no change in a stocked run, so a saving of 0 to ~10
+ticks over 57-99 (i).

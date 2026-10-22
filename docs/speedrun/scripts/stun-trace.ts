@@ -1,5 +1,7 @@
 // The server's view of each pickpocket stun, from an engine log written with DECODE_TRACE=<bot>
-// (rs/317's temporary trace in NetworkPlayer.decodeIn and Player.messageGame).
+// (rs/317's temporary trace in NetworkPlayer.decodeIn and Player.messageGame; it is not in the
+// engine: re-apply it for a lab with `git show cb742c6a9d | git apply`, and take it out again after).
+// Results: stun-pack.md section 13.
 //
 //   bun docs/speedrun/scripts/stun-trace.ts <engine.log> [--show=6]
 //
