@@ -18,7 +18,7 @@
 // (LoginServer.ts updateWealthHiscores: sum of ObjType.cost * count over bank).
 //
 // Run from server/engine after `BUILD_VERIFY=false bun run build`:
-//   cd server/engine && bun ../../markets/research/ge-persistence-probe.ts
+//   cd server/engine && bun ../../markets/research/rs498-ge-persistence-probe.ts
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
