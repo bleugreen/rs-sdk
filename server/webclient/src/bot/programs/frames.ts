@@ -41,7 +41,8 @@ export class MsHistogram {
     }
 
     add(ms: number): void {
-        this.hist[Math.min(this.buckets - 1, Math.max(0, Math.floor(ms / this.bucketMs)))]++;
+        const i = Math.min(this.buckets - 1, Math.max(0, Math.floor(ms / this.bucketMs)));
+        this.hist[i] = (this.hist[i] ?? 0) + 1;
         if (ms > this.max) this.max = ms;
         this.n++;
     }

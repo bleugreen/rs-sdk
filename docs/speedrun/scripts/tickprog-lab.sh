@@ -8,6 +8,14 @@
 #
 # `wedge` runs tickprog-wedge.ts (the watchdog check) instead of a measurement.
 #
+# GIVERS=a,b logs lite runners in for the `rc` mode's essence givers: before the tab with
+# GIVERS_ORDER=first (the default: the server handles them before the scored account, as
+# tuned needs) or after it with GIVERS_ORDER=last (the scored account first).
+#   GIVERS=cairng1,cairng2 ... tickprog-lab.sh cairntp1 rc:--givers=cairng1,cairng2:--schedule=tuned:--crafts=30
+# GIVERS_IP=127.0.0.8,127.0.0.2 (parallel to GIVERS) gives each giver the address the engine
+# buckets it by (the engine then runs with FLY_APP_NAME=lab and trusts fly-client-ip; the tab
+# keeps its socket address, 127.0.0.1 or ::1, both bucket 1).
+#
 # Headful Chrome by default (HEADLESS=1 for a runner without a display). Logs go to
 # $LAB_LOG (default $TMPDIR/tickprog-<block>): engine, gateway, tab (the page's [program]
 # lines) and tab/stats.log (render samples once a second).
@@ -25,6 +33,10 @@ export NODE_PORT=$((43600 + 10 * N)) AGENT_PORT=$((7800 + 10 * N))
 export NODE_TICKRATE=${NODE_TICKRATE:-300}
 LOG=${LAB_LOG:-${TMPDIR:-/tmp}/tickprog-$BLOCK}
 mkdir -p "$LOG"
+# A block another lab holds would take this lab's page and bots into that lab's engine.
+for p in $WEB_PORT $NODE_PORT $AGENT_PORT; do
+    if lsof -nP -iTCP:"$p" -sTCP:LISTEN > /dev/null 2>&1; then echo "port $p of block $BLOCK is in use; pick another LAB_BLOCK"; exit 2; fi
+done
 load() { cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || sysctl -n vm.loadavg; }
 echo "tickprog lab: block $BLOCK (web $WEB_PORT, agent $AGENT_PORT), NODE_TICKRATE=$NODE_TICKRATE, host $(hostname), load $(load), logs $LOG"
 
@@ -41,6 +53,7 @@ wait_for() { # file phrase seconds
     echo "timeout waiting for '$2' in $1"; tail -20 "$1"; return 1
 }
 
+[ -n "${GIVERS_IP:-}" ] && export FLY_APP_NAME=lab
 (cd "$ROOT/server/engine" && BUILD_VERIFY=false BUILD_LIVE_RELOAD=false LOCAL_STAFF_LEVEL=4 exec bun run src/app.ts) > "$LOG/engine.log" 2>&1 &
 PIDS+=($!)
 wait_for "$LOG/engine.log" 'World ready' 900 || exit 1
@@ -54,11 +67,30 @@ for b in "$BOT" ${HELPER:-}; do
     sed -i.bak -e "s#^SERVER=.*#SERVER=localhost:$WEB_PORT#" -e "s#^GATEWAY_URL=.*#GATEWAY_URL=ws://localhost:$AGENT_PORT#" -e 's#^TELEMETRY=.*#TELEMETRY=false#' "$ROOT/bots/$b/bot.env"
 done
 
+givers() { # lite runners for the rc mode, logged in one at a time in list order
+    [ -n "${GIVERS:-}" ] || return 0
+    IFS=',' read -r -a GLIST <<< "$GIVERS"
+    GI=0
+    for G in "${GLIST[@]}"; do
+        if [ ! -f "$ROOT/bots/$G/bot.env" ]; then
+            (cd "$ROOT" && bun bots/create-bot.ts "$G" --local --no-chat > /dev/null)
+        fi
+        sed -i.bak -e "s#^SERVER=.*#SERVER=localhost:$WEB_PORT#" -e "s#^GATEWAY_URL=.*#GATEWAY_URL=ws://localhost:$AGENT_PORT#" -e 's#^TELEMETRY=.*#TELEMETRY=false#' "$ROOT/bots/$G/bot.env"
+        GI=$((GI + 1)); IP=$(echo "${GIVERS_IP:-}" | cut -d, -f$GI)
+        (cd "$ROOT/server/webclient" && LITE_CLIENT_IP=$IP exec bun src/lite/runner.ts "$G") > "$LOG/runner-$G.log" 2>&1 &
+        PIDS+=($!)
+        wait_for "$LOG/runner-$G.log" 'logged into' 120 || exit 1
+        sleep 1
+    done
+}
+[ "${GIVERS_ORDER:-first}" = first ] && givers
+
 # TAB_FLAGS=--stock-chrome keeps Chrome's background throttling (tickprog-tab.ts)
 (cd "$ROOT" && exec bun docs/speedrun/scripts/tickprog-tab.ts "$BOT" --origin="http://localhost:$WEB_PORT" --gateway="ws://localhost:$AGENT_PORT" --out="$LOG/tab" --debug-port=$((9390 + N)) ${TAB_FLAGS:-}) > "$LOG/tab.log" 2>&1 &
 PIDS+=($!)
 wait_for "$LOG/tab.log" 'TAB-READY' 180 || exit 1
 sleep 3
+[ "${GIVERS_ORDER:-first}" = last ] && givers
 
 STATUS=0
 for spec in "$@"; do

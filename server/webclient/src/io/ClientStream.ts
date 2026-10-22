@@ -6,10 +6,12 @@ export default class ClientStream {
     private dummy: boolean = false;
     private remoteClosed: boolean = false;
 
-    static async openSocket(host: string, secured: boolean): Promise<WebSocket> {
+    /** `headers` needs Bun's WebSocket (the lite client); a browser cannot set handshake headers. */
+    static async openSocket(host: string, secured: boolean, headers?: Record<string, string>): Promise<WebSocket> {
         return await new Promise<WebSocket>((resolve, reject): void => {
             const protocol: string = secured ? 'wss' : 'ws';
-            const ws: WebSocket = new WebSocket(`${protocol}://${host}`, 'binary');
+            const url = `${protocol}://${host}`;
+            const ws: WebSocket = headers ? new (WebSocket as unknown as new (u: string, o: { protocols: string[]; headers: Record<string, string> }) => WebSocket)(url, { protocols: ['binary'], headers }) : new WebSocket(url, 'binary');
 
             ws.addEventListener('open', (): void => {
                 resolve(ws);

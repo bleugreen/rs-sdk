@@ -27,6 +27,14 @@ export interface ProgramContext {
     readonly ticksAdvanced: number;
     /** Wall ms (performance.now()) when this tick was handed to the program. */
     readonly nowMs: number;
+    /** Date.now() when this tick was handed to the program: the scale other processes on the machine share. */
+    readonly wallMs: number;
+    /**
+     * The server frames this pass decoded, oldest first: each frame's tick and the
+     * Date.now() instant its websocket message arrived (not when it was decoded).
+     * Empty when the caller passed no arrival times.
+     */
+    readonly frames: readonly FrameStamp[];
     /** Packets this program may still send this tick (the server reads at most 5 user events per tick). */
     readonly budget: number;
     /**
@@ -40,6 +48,12 @@ export interface ProgramContext {
     gauge(name: string, value: number): void;
     /** Stamp this tick under a named mark: an event a poller must be able to time one by one (`ProgramStatus.marks`). */
     mark(name: string): void;
+    /**
+     * Publish structured data with the status (`ProgramStatus.shared`) for the driver
+     * to read while the run goes. The object is published by reference, so later
+     * mutations show too, including ones made in onStop.
+     */
+    share(data: unknown): void;
     /** Mark progress: resets the runtime's stall detector. */
     progress(): void;
     log(line: string): void;
@@ -55,6 +69,12 @@ export interface TickProgram {
     onStop?(reason: ProgramEnd): void;
     /** A snapshot of the program's own result so far, published when it is stopped from outside. */
     snapshot?(): unknown;
+    /**
+     * Data the driver sends a running program (the `input` op), validated by the
+     * program: throw to refuse it. The return value goes back to the sender. The
+     * program applies it on its next tick; this runs between ticks.
+     */
+    onInput?(data: unknown): unknown;
     /**
      * Ticks without progress() before the runtime faults the run (a start
      * parameter `stallTicks` overrides it; default the runtime's 60).
@@ -80,6 +100,12 @@ export interface ProgramFactory {
 }
 
 export type ProgramEnd = 'done' | 'fault' | 'stopped' | 'replaced';
+
+/** One server frame: its tick and the Date.now() instant it arrived. */
+export interface FrameStamp {
+    tick: number;
+    ms: number;
+}
 
 export type ProgramPhase = 'running' | ProgramEnd;
 
@@ -136,6 +162,8 @@ export interface ProgramStatus {
     react: MsSummary;
     /** The page's game-loop rate while this run ran (its reaction granularity; frames.ts). */
     loops: LoopSummary;
+    /** Structured data the program shares while it runs (`ctx.share`). */
+    shared?: unknown;
     /** Last log line. */
     last?: string;
     fault?: string;
@@ -152,4 +180,6 @@ export type ProgramCommand =
     | { op: 'start'; name: string; params?: ProgramParams }
     | { op: 'stop' }
     | { op: 'status' }
-    | { op: 'list' };
+    | { op: 'list' }
+    /** Hand data to the running program (TickProgram.onInput). */
+    | { op: 'input'; data: unknown };

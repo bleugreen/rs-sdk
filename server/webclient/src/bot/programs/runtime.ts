@@ -32,6 +32,8 @@ export interface RuntimeOptions {
      */
     stallTicks?: number;
     now?: () => number;
+    /** Date.now(): frame arrivals are converted to this scale (`ctx.frames`). */
+    wallNow?: () => number;
     /** The client's game-loop pass counter, for the loop rate a run publishes. */
     loopCount?: () => number;
     /** Every log line, prefixed with the program name (console in the page). */
@@ -67,11 +69,13 @@ export class ProgramRuntime {
     private readonly packetsPerTick: number;
     private readonly defaultStallTicks: number;
     private readonly now: () => number;
+    private readonly wallNow: () => number;
 
     constructor(private readonly opts: RuntimeOptions) {
         this.packetsPerTick = opts.packetsPerTick ?? USER_EVENTS_PER_TICK;
         this.defaultStallTicks = opts.stallTicks ?? 60;
         this.now = opts.now ?? (() => performance.now());
+        this.wallNow = opts.wallNow ?? (() => Date.now());
     }
 
     register(name: string, factory: ProgramFactory): this {
@@ -152,6 +156,16 @@ export class ProgramRuntime {
         return this.status();
     }
 
+    /** Hand data to the running program; throws when none runs, it takes no input, or it refuses this data. */
+    input(data: unknown): unknown {
+        const run = this.run;
+        if (!run || run.ended) throw new Error('no program is running');
+        if (!run.program.onInput) throw new Error(`program ${run.status.name} takes no input`);
+        const reply = run.program.onInput(data);
+        this.log(run.status, `input ${JSON.stringify(data)}`, run.tail);
+        return reply;
+    }
+
     /** The overlay action handler: start / stop / status / list. */
     command(cmd: ProgramCommand): ActionResult {
         try {
@@ -170,6 +184,8 @@ export class ProgramRuntime {
                     return { success: true, message: 'program status', data: this.status() };
                 case 'list':
                     return { success: true, message: 'programs', data: this.names() };
+                case 'input':
+                    return { success: true, message: 'program input taken', phase: 'dispatch', data: this.input(cmd.data) };
                 default:
                     return { success: false, message: `unknown program op ${(cmd as { op?: unknown }).op}`, phase: 'validation', reason: 'invalid_argument' };
             }
@@ -198,6 +214,9 @@ export class ProgramRuntime {
         const budget = this.packetsPerTick;
         let sent = 0;
         const t0 = this.now();
+        const wall = this.wallNow();
+        // One PLAYER_INFO, so one arrival, per decoded tick: the last arrival is this tick's frame.
+        const frames = arrivals.map((at, i) => ({ tick: state.tick - (arrivals.length - 1 - i), ms: Math.round((wall - (t0 - at)) * 10) / 10 }));
         for (const at of arrivals) run.frames.add(at);
         run.publish.add(t0);
         if (arrivals.length) run.react.add(t0 - arrivals[arrivals.length - 1]!);
@@ -213,6 +232,8 @@ export class ProgramRuntime {
             tick: state.tick,
             ticksAdvanced,
             nowMs: t0,
+            wallMs: wall,
+            frames,
             get budget() {
                 return Math.max(0, budget - sent);
             },
@@ -252,6 +273,9 @@ export class ProgramRuntime {
                 m.count++;
                 m.ticks.push(state.tick);
                 if (m.ticks.length > MARK_TAIL) m.ticks.shift();
+            },
+            share: data => {
+                st.shared = data;
             },
             progress: () => {
                 st.progressTick = state.tick;
@@ -332,7 +356,10 @@ export function parseProgramCommand(raw: unknown): ProgramCommand | string {
         case 'status':
         case 'list':
             return { op: r.op };
+        case 'input':
+            if (r.data === undefined) return 'program input needs data';
+            return { op: 'input', data: r.data };
         default:
-            return `unknown program op '${String(r.op)}' (start, stop, status, list)`;
+            return `unknown program op '${String(r.op)}' (start, stop, status, list, input)`;
     }
 }

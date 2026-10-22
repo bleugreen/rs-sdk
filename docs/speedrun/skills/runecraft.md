@@ -27,8 +27,10 @@ taken on" and the host-latency table under "Running several labs on one machine"
 7-tick cycle has no reactions**: its four packets (trade on T+5, accept on T+6, confirm and craft
 on T+7, section 4) go out on predicted ticks. So it does not pay the relay's extra ticks per
 reaction, but every packet must land on its tick, and the demo's relay latency of 2-3 ticks
-(LAB.md table) would break it. It belongs in the in-page tick program the scored run uses for
-its other tick-exact loops (cairn://p/rs/97). Reacting to published state instead is the stock
+(LAB.md table) would break it. It runs as the in-page `rc-cycle` program (cairn://p/rs/131,
+`tick-programs.md`), measured in a browser tab at 7 tuned and 8 robust, 30 of 30 each; a
+tuned turn on which the scored account turns out to be handled first finishes at 8 rather
+than losing the trade. Reacting to published state instead is the stock
 SDK's 15-tick cycle (measured). Totals are not re-derived for the webclient.
 
 ## 1. Recommendation

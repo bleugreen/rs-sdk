@@ -45,6 +45,8 @@ export interface ProgramStatus {
     react: { n: number; p50: number; p90: number; max: number };
     /** The page's game-loop rate (its reaction granularity until decoding runs on message arrival). */
     loops: { last: number; p10Last10s: number; min: number };
+    /** Structured data the program shares while it runs (rc-cycle: RcShared). */
+    shared?: unknown;
     last?: string;
     fault?: string;
     faultDetail?: unknown;
@@ -85,7 +87,7 @@ export interface FrameSummary {
     catchUpsPerMinute: number;
 }
 
-export type ProgramName = 'probe' | 'knife-cycle' | 'knife-mine' | 'pickpocket' | 'agility';
+export type ProgramName = 'probe' | 'knife-cycle' | 'knife-mine' | 'pickpocket' | 'agility' | 'rc-cycle';
 
 export type ProgramSdk = Pick<BotSDK, 'getState' | 'onStateUpdate'>;
 
@@ -96,7 +98,7 @@ export class ProgramError extends Error {
     }
 }
 
-type ProgramAction = { op: 'start'; name: string; params?: Record<string, unknown> } | { op: 'stop' } | { op: 'status' } | { op: 'list' };
+type ProgramAction = { op: 'start'; name: string; params?: Record<string, unknown> } | { op: 'stop' } | { op: 'status' } | { op: 'list' } | { op: 'input'; data: unknown };
 
 function relay(sdk: ProgramSdk, action: ProgramAction): Promise<ActionResult> {
     const send = (sdk as unknown as { sendAction?: (a: unknown) => Promise<ActionResult> }).sendAction;
@@ -200,6 +202,53 @@ export async function runProgram(sdk: ProgramSdk, name: ProgramName | string, pa
 /** The running (or last) program's counters, from the latest state. */
 export function programCounters(sdk: ProgramSdk): Record<string, number> {
     return programStatus(sdk.getState())?.counters ?? {};
+}
+
+/** Hand data to the running program (its onInput); resolves with its reply, rejects if it refused. */
+export async function sendProgramInput(sdk: ProgramSdk, data: unknown): Promise<unknown> {
+    const r = await relay(sdk, { op: 'input', data });
+    if (!r.success) throw new ProgramError(`program input refused: ${r.message}`, programStatus(sdk.getState()));
+    return r.data;
+}
+
+// ---------------------------------------------------------------- rc-cycle
+// The page's Runecraft hand-off program (server/webclient/src/bot/programs/rc-cycle.ts)
+// owns the schedule; the step that drives it owns cue.json (speedrun/helpers/altar-cue.ts,
+// rs/117) and relays between the two:
+//   - into the page: `sendProgramInput(sdk, {givers})`, the givers whose status files say
+//     ready or armed, in the room and beside the scored tile, oldest readyAt first, each with
+//     its readyAt and `schedule: 'tuned'` only if it logged in before the scored account;
+//   - out of the page: `rcCueFields(status)` into `CueWriter.write` whenever its `key`
+//     changes. A new program run (runId) is a new cue session (a new CueWriter).
+
+export type RcSchedule = 'tuned' | 'robust';
+
+/** rc-cycle.ts RcShared. */
+export interface RcShared {
+    v: 1;
+    open: number;
+    schedule: RcSchedule;
+    beacons: Array<{ tick: number; ms: number }>;
+    turns: Array<{ giver: string; T: number; schedule: RcSchedule }>;
+    results: Array<{ giver: string; T: number; schedule: RcSchedule; outcome: 'gave' | 'missed' | 'late' | 'no-giver'; tick: number; craft?: number; order?: 'giver-first' | 'scored-first'; salvaged?: boolean; seen: Record<string, number>; detail?: string }>;
+    queue: string[];
+    waiting: 'giver' | null;
+    stop?: true;
+}
+
+/** What cue.json takes from the page (CueWriter.write's fields), plus `key`: rewrite the cue when it changes. */
+export function rcCueFields(status: ProgramStatus | null | undefined): { beacons: RcShared['beacons']; turns: RcShared['turns']; schedule: RcSchedule; open: number; stop?: boolean; key: string } | null {
+    const s = status?.name === 'rc-cycle' ? (status.shared as RcShared | undefined) : undefined;
+    if (!s || s.v !== 1 || s.beacons.length === 0) return null;
+    const stop = s.stop === true;
+    return {
+        beacons: s.beacons,
+        turns: s.turns,
+        schedule: s.schedule,
+        open: s.open,
+        ...(stop ? { stop } : {}),
+        key: JSON.stringify([status!.runId, s.turns, s.schedule, s.open, stop])
+    };
 }
 
 /** What the page's probe program returns (server/webclient/src/bot/programs/probe.ts). */

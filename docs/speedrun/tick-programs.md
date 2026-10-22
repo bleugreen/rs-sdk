@@ -26,7 +26,11 @@ the time, and the reactive steps are worth roughly 3,000 ticks over the route.
 - **Runtime** (`server/webclient/src/bot/programs/runtime.ts`). Programs register by
   name. One runs at a time, because each reactive step owns the player's interaction
   and the tick's packets, and starting a program replaces the running one. A program
-  is a state machine with `onTick(ctx)`. `ctx.send` executes an overlay action now,
+  is a state machine with `onTick(ctx)`. `ctx.frames` lists the server frames the pass
+  decoded, each with its tick and the `Date.now()` instant its websocket message arrived
+  (derived as `Date.now() - (performance.now() - receivedAt)`, so it stays on the wall
+  clock other processes on the machine read, where `performance.timeOrigin` can drift from
+  it over a long session). `ctx.send` executes an overlay action now,
   within a budget of **5 packets per tick**, the engine's `USER_EVENT` limit
   (`NetworkPlayer`, `ClientGameProtCategory`): a sixth would silently land a tick
   late, so it is refused and counted as `deferred`. A program that throws or reports
@@ -43,7 +47,9 @@ the time, and the reactive steps are worth roughly 3,000 ticks over the route.
   reports stamps lost to a poll slower than the window). A stamp is the decoded tick the
   program saw the event on, the last of them when the page decodes several in one pass.
   Counters and gauges stay numbers; marks exist because a count cannot time each event
-  when several land between polls. For the host
+  when several land between polls. `shared` carries structured data a program publishes
+  for its driver while it runs (`ctx.share`, by reference, so what `onStop` adds shows in
+  the final status too); the Runecraft program's turns and beacons ride there. For the host
   gate's in-run rule it adds:
   - `frames`: intervals between server frames, from the raw websocket arrival of each
     PLAYER_INFO message (`ClientStream.receivedAt`), with **catch-ups** (an interval
@@ -54,8 +60,11 @@ the time, and the reactive steps are worth roughly 3,000 ticks over the route.
   - `loops`: the game-loop rate (last, p10 over the last 10 s, run minimum), which is
     the page's reaction granularity whenever decoding waits for a loop pass.
 - **Driving it.** The `program` overlay action (`{type: 'program', op: 'start' | 'stop'
-  | 'status' | 'list', name, params}`) rides the ordinary `sdk_action` relay, so
-  `sdk/` is unchanged. `speedrun/lib/programs.ts` wraps it: `startProgram`,
+  | 'status' | 'list' | 'input', name, params, data}`) rides the ordinary `sdk_action` relay, so
+  `sdk/` is unchanged. `input` hands `data` to the running program's `onInput`, which
+  validates it (a refusal fails the action and leaves the run going) and applies it on its
+  next tick: the channel for what only the driver can see, such as which givers are loaded.
+  `speedrun/lib/programs.ts` wraps it: `startProgram`, `sendProgramInput`,
   `awaitProgram` (resolves on done, stopped or replaced; rejects on a fault, a page
   that stops publishing, or a reloaded page), `runProgram`, `programCounters`, and
   `probeInPage`. With no SDK at all, `window.rsPrograms.run(name, params)` resolves
@@ -86,6 +95,62 @@ the host gate can select with the same parameters.
 | `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `successes` / `untilLevel` / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'`; with `bury`, plain + bury |
 | `pickpocket` | `thieving-pickpocket.ts` (`--eat=auto`); `stunActions` from `stun-pack-thieve.ts` (rs/106) | `npc`, `rolls`, `food`, `eatBelow`, `forcedBelow`, `stunActions` (`bury`, `charge`, `arrows`, or action objects), `stunWindow`, `stunPerTick` | n/a: it clicks every tick |
 | `agility` | `agility-course.ts` | `course` (`gnome`, `barbarian`, `wilderness`, or an object; `agility-courses.ts`), `laps` | `technique: 'plain'` waits `settleTicks` after each obstacle |
+| `rc-cycle` | `runecraft-cycle.ts --mode=tuned/robust` (the scored half) | `untilLevel` / `untilXp`, `schedule` (default `robust`), `givers`, `open` (5), `lead` (3) | the stock 15-tick reacting cycle (SDK side) |
+
+### The Runecraft hand-off (`rc-cycle`)
+
+The scored account stands south of the altar and a giver beside it trades in 27 essence
+per craft (`skills/runecraft.md` section 4). The givers are lite processes on the run
+machine (`speedrun/helpers/altar-giver.ts`, rs/117), and the two sides meet in `cue.json`
+(`altar-cue.ts`). The page can't write files and can't read the givers' status files, so
+the step that drives the program relays both ways, and the program owns the schedule:
+
+- **In:** `sendProgramInput(sdk, {givers})` with the givers that are ready or armed, in the
+  room and beside the scored tile, oldest `readyAt` first, each with its `readyAt` and
+  `schedule: 'tuned'` only if it logged in before the scored account. A giver that has
+  given is skipped until it is offered again with a newer `readyAt`, so a stale status file
+  can't make the program reuse a giver that is still restocking.
+- **Out:** `status.shared` (`RcShared`): the turns (`{giver, T, schedule}`), the last 8
+  frames as beacons, each turn's outcome, and `stop` once the run ends for any reason.
+  `rcCueFields(status)` gives `CueWriter.write`'s fields and a `key`; rewrite the cue when
+  the key changes. A new program run is a new cue session.
+
+T is the scored account's tick for a craft; the turn after it opens the trade on T+5. The
+program plans each turn when it sends the craft before it, which leaves the giver 4
+frames to see it. With nothing in flight it derives the next move from what it observes:
+essence held means craft now, a trade open gets declined, and otherwise it plans a turn whose request
+lands `lead` frames ahead. A page reload therefore starts over from game state, never from
+stored turns. The run stops on `untilLevel` or `untilXp` (rs/127's rule).
+
+Every packet goes out on the frame for the tick before it lands, after a check of the
+decoded trade state: the trade open with the giver (tuned accept), its essence offered
+(robust accept and confirm), the confirm screen up (tuned confirm and craft), the trade done
+or waiting on the giver's last confirm (robust craft). A failed check declines the trade,
+reports the turn `missed`, and moves the giver to the back of the queue.
+
+- **Tuned to robust in the turn.** On a tuned turn, the T+K+1 frame shows the processing
+  order: the confirm screen means the giver was handled first; the offer screen with the
+  giver's offer and accept means the scored account was first, and the giver's offer reset
+  its accept. In that case the program sends accept and confirm for T+K+2 and crafts on T+K+3,
+  which is robust's tail. The giver's single tuned confirm on T+K+2 comes after them in that
+  tick, so the trade completes and the turn costs 8 instead of the declined trade a blind
+  tuned schedule gets (0 of 21 in rs/117's lab). Measured: 30 of 30 such turns finished at 8
+  with no declined trade (the bucket-2 row under Measured). Robust turns record the order too: the trade is
+  done by the T+K+2 frame only when the scored account was first. `results[].order` and
+  `result.orders` carry both.
+- **Re-anchoring.** A craft whose xp shows a tick late moves the planned turn to the real T
+  (the giver acts on the newest turn naming it). A craft with no xp by the tick after it was due
+  binds the held essence at once and moves the turn with it.
+- **Processing order** is the player loop's: buckets by the client IPv4 address's last octet & 7
+  (on the demo, `fly-client-ip`), walked 0 to 7, each in login order, and a relog re-appends at
+  its bucket's tail (`World.ts` processLogins, `datastruct/HashTable.ts`). A giver in a lower
+  bucket than the scored account precedes it whatever the login order; on one machine they share
+  a bucket and login order decides. The driver can grant tuned from the observed `order` of a
+  giver's last turn rather than predict it.
+- **Outcomes.** `gave`, `missed`, `late` (the page decoded a step's frame together with the
+  next one) and `no-giver` (not beside the scored tile when the request was due). The
+  giver's own outcome is in its status file. The run faults after `maxFailures` (6) turns in a row fail;
+  waiting for a giver is not a stall.
 
 ### What the knife cycle reports
 
@@ -264,6 +329,22 @@ they did not move the failure-to-next figure. The `arrows` preset does not fire 
 `charge` while Magic is held below 99 (Charge fills every delay-free slot first), so it has its
 own row: the Fletching half of the pack, as it runs once Charge reaches 99. Its headless
 arrows are given, as in rs/106's plan; making them is not part of the stun pack.
+
+**Runecraft hand-off** (`rc-cycle`), bgsrv-mac, local engine at 300 ms, 2026-10-21 16:05-16:40 PDT,
+load 5-7: body altar room, two lite givers east and west of the scored tile (`tickprog-measure.ts
+rc`, whose `tickprog-rc-givers.ts` plays rs/117's giver half and run.ts's relay in memory), 30
+crafts per run. Each giver's bucket address came from `GIVERS_IP` (the engine trusts
+`fly-client-ip` under `FLY_APP_NAME`); the tab connects from loopback, bucket 1.
+
+| Run | Ticks per craft | Order read | Lost or declined trades |
+|---|---|---|---|
+| robust, givers logged in first, same bucket | **8**, 29 of 29 gaps | giver first 30/30 | 0 |
+| tuned, givers in bucket 0, logged in after the tab | **7**, 29 of 29 gaps | giver first 30/30 | 0 |
+| tuned, givers in bucket 2, logged in after the tab | **8**, 29 of 29 gaps, all 30 salvaged | scored first 30/30 | 0 |
+
+Every run had 0 deferred packets, 0 skipped ticks and at most 0.8 ms per `onTick`. That is
+`skills/runecraft.md`'s 7 tuned and 8 robust exactly. rs/196 measured the same program with rs/163's
+direct-path givers: 30/30 at 7 tuned (nature and body), 30/30 at 8 robust in both login orders.
 
 Reading the willow row: both runs hold the 3-tick lock, and nearly every gap is a
 multiple of 3. The difference is how many 3-tick rolls yield a log. Fitting a

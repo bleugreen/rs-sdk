@@ -2,7 +2,7 @@
 // whose dispatch records every packet with the tick it went out on.
 
 import type { ActionResult } from '../ActionExecutor.js';
-import type { BotAction, BotWorldState, GameMessage, InventoryItem, NearbyLoc, NearbyNpc } from '../types.js';
+import type { BotAction, BotWorldState, GameMessage, InventoryItem, NearbyLoc, NearbyNpc, NearbyPlayer, TradeState } from '../types.js';
 import { ProgramRuntime } from './runtime.js';
 import type { ProgramFactory, ProgramInit, ProgramParams, ProgramStatus, TickProgram } from './types.js';
 
@@ -20,11 +20,14 @@ export interface StateSpec {
     equipment?: string[];
     npcs?: Array<Partial<NearbyNpc> & { index: number; name: string; options?: string[] }>;
     locs?: Array<Partial<NearbyLoc> & { id: number; x: number; z: number; name: string; options?: string[] }>;
-    messages?: Array<{ text: string; tick?: number; id?: number }>;
+    /** Players in sight; a missing x/z stands one tile east of the player. */
+    players?: Array<Partial<NearbyPlayer> & { index: number; name: string }>;
+    messages?: Array<{ text: string; tick?: number; id?: number; type?: number; sender?: string }>;
+    /** Open trade fields; omitted (and no tradeOpen) means no trade open. */
+    trade?: Partial<TradeState>;
     dialogOpen?: boolean;
     /** A main modal (trade screen) is open. */
     tradeOpen?: boolean;
-    players?: Array<{ index: number; name: string; x?: number; z?: number }>;
     inGame?: boolean;
 }
 
@@ -60,7 +63,13 @@ export function makeState(spec: StateSpec): BotWorldState {
             optionsWithIndex: options.map((text, i) => ({ text, opIndex: i + 1 }))
         } as NearbyLoc;
     });
-    const messages: GameMessage[] = (spec.messages ?? []).map(m => ({ type: 0, text: m.text, sender: '', tick: m.tick ?? spec.tick, observationId: m.id, fromSelf: false }));
+    const players: NearbyPlayer[] = (spec.players ?? []).map(p => {
+        const px = p.x ?? x + 1;
+        const pz = p.z ?? z;
+        return { kind: 'player', combatLevel: 3, ...p, x: px, z: pz, distance: Math.max(Math.abs(px - x), Math.abs(pz - z)) };
+    });
+    const messages: GameMessage[] = (spec.messages ?? []).map(m => ({ type: m.type ?? 0, text: m.text, sender: m.sender ?? '', tick: m.tick ?? spec.tick, observationId: m.id, fromSelf: false }));
+    const trade: TradeState = { isOpen: false, screen: null, partner: null, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false, ...(spec.trade || spec.tradeOpen ? { isOpen: true, screen: 'offer', ...spec.trade } : {}) };
     const skills = Object.entries(spec.skills ?? {}).map(([name, v]) => ({ name, level: v.level ?? 99, baseLevel: v.level ?? 99, experience: v.xp }));
     if (!skills.some(s => s.name.toLowerCase() === 'hitpoints')) skills.push({ name: 'Hitpoints', level: spec.hp ?? 99, baseLevel: spec.maxHp ?? 99, experience: 0 });
     return {
@@ -75,15 +84,11 @@ export function makeState(spec: StateSpec): BotWorldState {
         inventory,
         equipment: (spec.equipment ?? []).map((name, slot) => ({ slot, id: 2000 + slot, name, count: 1, optionsWithIndex: [{ text: 'Remove', opIndex: 1 }] })),
         nearbyNpcs: npcs,
-        nearbyPlayers: (spec.players ?? []).map(p => {
-            const px = p.x ?? x + 1;
-            const pz = p.z ?? z;
-            return { kind: 'player', index: p.index, name: p.name, combatLevel: 3, x: px, z: pz, distance: Math.max(Math.abs(px - x), Math.abs(pz - z)) };
-        }),
-        modalOpen: spec.tradeOpen ?? false,
-        modalInterface: spec.tradeOpen ? 3323 : -1,
-        trade: { isOpen: spec.tradeOpen ?? false, screen: spec.tradeOpen ? 'offer' : null, partner: null, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false },
+        nearbyPlayers: players,
+        modalOpen: trade.isOpen,
+        modalInterface: trade.isOpen ? 3323 : -1,
         nearbyLocs: locs,
+        trade,
         groundItems: [],
         gameMessages: messages,
         dialog: { isOpen: spec.dialogOpen ?? false, options: [], isWaiting: false, allComponents: [] },
@@ -111,7 +116,7 @@ export class Harness {
     reject = new Set<string>();
 
     /** A bare function registers as a program that accepts no keys of its own. */
-    constructor(name: string, factory: ProgramFactory | ((params: ProgramParams, init: ProgramInit) => TickProgram), opts: { packetsPerTick?: number; stallTicks?: number } = {}) {
+    constructor(name: string, factory: ProgramFactory | ((params: ProgramParams, init: ProgramInit) => TickProgram), opts: { packetsPerTick?: number; stallTicks?: number; now?: () => number; wallNow?: () => number } = {}) {
         this.runtime = new ProgramRuntime({
             dispatch: (action): ActionResult => {
                 if (this.reject.has(action.type)) return { success: false, message: 'rejected' };
@@ -119,6 +124,8 @@ export class Harness {
                 return { success: true, message: 'ok' };
             },
             now: () => 0,
+            // with now() at 0, a frame's Date.now() stamp equals the arrival passed to step()
+            wallNow: () => 0,
             log: line => this.logs.push(line),
             onEnd: s => (this.ended = s),
             ...opts
@@ -131,10 +138,10 @@ export class Harness {
         return this.runtime.start(name, params);
     }
 
-    step(state: BotWorldState, ticksAdvanced = 1): Sent[] {
+    step(state: BotWorldState, ticksAdvanced = 1, arrivals: readonly number[] = []): Sent[] {
         this.tick = state.tick;
         const before = this.sent.length;
-        this.runtime.onTick(state, ticksAdvanced);
+        this.runtime.onTick(state, ticksAdvanced, arrivals);
         return this.sent.slice(before);
     }
 

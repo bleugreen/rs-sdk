@@ -188,6 +188,45 @@ describe('ProgramRuntime', () => {
         expect(rt.command({ op: 'start', name: 'nope' }).success).toBe(false);
     });
 
+    test('frames carry each decoded tick with its arrival on the Date.now() scale', () => {
+        let now = 1000;
+        const seen: Array<readonly { tick: number; ms: number }[]> = [];
+        const rt = new ProgramRuntime({ dispatch: () => ({ success: true, message: '' }), now: () => now, wallNow: () => 1.8e12 + now });
+        rt.register('a', declared(() => ({ onTick: c => { seen.push(c.frames); c.progress(); } })));
+        rt.start('a');
+        rt.onTick(makeState({ tick: 7 }), 1, [995]);
+        now = 1700;
+        rt.onTick(makeState({ tick: 9 }), 2, [1290, 1600]);
+        rt.onTick(makeState({ tick: 10 }), 1);
+        expect(seen).toEqual([[{ tick: 7, ms: 1.8e12 + 995 }], [{ tick: 8, ms: 1.8e12 + 1290 }, { tick: 9, ms: 1.8e12 + 1600 }], []]);
+    });
+
+    test('shared data is published by reference, including what onStop adds', () => {
+        const data: { n: number; stop?: boolean } = { n: 0 };
+        const h = new Harness('a', () => ({ onTick: c => { data.n++; c.share(data); c.progress(); }, onStop: () => { data.stop = true; } }));
+        h.start('a');
+        h.step(makeState({ tick: 1 }));
+        h.step(makeState({ tick: 2 }));
+        expect(h.status.shared).toEqual({ n: 2 });
+        h.runtime.stop();
+        expect(h.status.shared).toEqual({ n: 2, stop: true });
+    });
+
+    test('input reaches the running program; a refusal or no program fails without ending the run', () => {
+        const got: unknown[] = [];
+        const h = new Harness('a', () => ({ onTick: c => c.progress(), onInput: d => { if (d === 'bad') throw new Error('bad input'); got.push(d); return { ok: true }; } }));
+        h.runtime.register('mute', declared(() => ({ onTick: c => c.progress() })));
+        expect(h.runtime.command({ op: 'input', data: 1 }).success).toBe(false);
+        h.start('a');
+        expect(h.runtime.command({ op: 'input', data: { q: [1] } })).toMatchObject({ success: true, data: { ok: true } });
+        const bad = h.runtime.command({ op: 'input', data: 'bad' });
+        expect(bad).toMatchObject({ success: false, message: 'bad input' });
+        expect(h.status.phase).toBe('running');
+        expect(got).toEqual([{ q: [1] }]);
+        h.runtime.start('mute');
+        expect(h.runtime.command({ op: 'input', data: 1 }).message).toContain('takes no input');
+    });
+
     test('does not run while logged out', () => {
         const h = new Harness('a', () => burst(1));
         h.start('a');
@@ -202,6 +241,8 @@ describe('parseProgramCommand', () => {
         expect(typeof parseProgramCommand({ op: 'start' })).toBe('string');
         expect(typeof parseProgramCommand({ op: 'start', name: 'x', params: [1] })).toBe('string');
         expect(typeof parseProgramCommand({ op: 'jump' })).toBe('string');
+        expect(parseProgramCommand({ op: 'input', data: { givers: ['a'] } })).toEqual({ op: 'input', data: { givers: ['a'] } });
+        expect(typeof parseProgramCommand({ op: 'input' })).toBe('string');
         expect(typeof parseProgramCommand(null)).toBe('string');
     });
 });

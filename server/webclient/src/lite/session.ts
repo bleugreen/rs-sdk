@@ -272,7 +272,10 @@ export async function startSession(opts: SessionOptions): Promise<LiteSession> {
             secured,
             username: opts.username,
             password: opts.password,
-            checksums
+            checksums,
+            // Lab only: an engine started with FLY_APP_NAME trusts fly-client-ip, so this
+            // places the client in another player-loop bucket (World.ts playerLoop).
+            ...(process.env.LITE_CLIENT_IP ? { headers: { 'fly-client-ip': process.env.LITE_CLIENT_IP } } : {})
         });
     };
 
