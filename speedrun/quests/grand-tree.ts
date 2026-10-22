@@ -278,10 +278,15 @@ export function exitCheck(s: BotWorldState): true | string {
 type Ctx = StepContext<unknown>;
 type Sdk = Ctx['sdk'];
 
-/** setPrayer, but a prayer that does not turn as asked stops the step. */
-async function pray(sdk: Sdk, name: PrayerName, on: boolean): Promise<void> {
+/**
+ * setPrayer, but a prayer that does not turn as asked stops the step. Returns the ticks to the
+ * state showing it. Every call here is made standing still: a prayer click clears a pending
+ * action, so one sent mid-walk would cancel the walk (rs/241).
+ */
+async function pray(sdk: Sdk, name: PrayerName, on: boolean): Promise<number> {
     const r = await setPrayer(sdk, name, on);
     if (!r.ok) throw new Error(`${name} did not turn ${on ? 'on' : 'off'}: ${r.reason}`);
+    return r.ticks;
 }
 
 // ------------------------------------------------------------------ moves
@@ -481,11 +486,12 @@ async function villageToStronghold(sdk: Sdk): Promise<void> {
 }
 
 /** Open the trapdoor with Protect from Melee on, and answer Glough's scene until the demon is in sight. */
-async function trapdoorScene(sdk: Sdk): Promise<void> {
-    await pray(sdk, 'protect_from_melee', true);
+async function trapdoorScene(sdk: Sdk): Promise<number> {
+    const prayerTicks = await pray(sdk, 'protect_from_melee', true);
     await loc(sdk, 'trapdoor', TILES.trapdoor, /^open$/i, underground, { maxTicks: 20 });
     await converse(sdk, [], { idle: 2, openTicks: 20, maxTicks: 80, until: demonInSight, closeModals: true, unmatched: 'stop' });
     if (!demonInSight(sdk.getState()!)) throw new Error('no black demon in sight after the trapdoor scene');
+    return prayerTicks;
 }
 
 /** Wait until the scene is populated, so an 'absent' test is not judged on a reconnect's first state. */
@@ -719,7 +725,7 @@ export function steps(input: Options = {}): Step<any>[] {
                 // SCORED walks off at the first page after the landing (walking ends the dialogue),
                 // under Protect from Melee from boarding until through the shipyard gate.
                 const westOfGate = !inKaramja(s0) || pos(s0).x < TILES.shipyardGate.x;
-                if (westOfGate) await pray(sdk, 'protect_from_melee', true);
+                const toggles = { on: westOfGate ? await pray(sdk, 'protect_from_melee', true) : 0, off: 0 };
                 if (!inKaramja(sdk.getState()!)) {
                     await enterTree(sdk, ctx);
                     await treeLadder(sdk, 3);
@@ -741,9 +747,9 @@ export function steps(input: Options = {}): Step<any>[] {
                     await locTalk(sdk, 'shipyard gate', TILES.shipyardGate, /^open$/i, [/Glough sent me/i, /^Ka\.$/, /^Lu\.$/, /^Min\.$/], s => pos(s).x >= TILES.shipyardGate.x, { idle: 2 });
                 }
                 if (westOfGate) {
-                    await pray(sdk, 'protect_from_melee', false);
+                    toggles.off = await pray(sdk, 'protect_from_melee', false);
                     const s1 = sdk.getState()!;
-                    note(ctx, name('I-karamja'), { crash: { hpLost: hp0 - skillLevel(s1, 'hitpoints'), prayerUsed: prayer0 - (s1.prayers?.prayerPoints ?? 0) } });
+                    note(ctx, name('I-karamja'), { crash: { hpLost: hp0 - skillLevel(s1, 'hitpoints'), prayerUsed: prayer0 - (s1.prayers?.prayerPoints ?? 0), toggleTicks: toggles } });
                 }
                 await go(ctx, TILES.foreman, 3);
                 await talk(sdk, opts, /^Foreman$/i, { choices: [/no longer with us/i, /worm holes/i, /^Anita/i], until: s => invCount(s, ITEM.order) > 0 });
@@ -838,11 +844,12 @@ export function steps(input: Options = {}): Step<any>[] {
             // Unsafe from here to the kill: the demon deletes itself on logout.
             name: name('N1-trapdoor'),
             preconditions: s => all(isStarted(s), spellRunes(s, opts)),
-            run: async ({ sdk }) => {
+            run: async ctx => {
+                const { sdk } = ctx;
                 await sceneLoaded(sdk);
                 // A demon already here (re-entry) must not be spawned twice: glough.rs2 adds one without checking.
                 if (demonInSight(sdk.getState()!)) return;
-                await trapdoorScene(sdk);
+                note(ctx, name('N1-trapdoor'), { protectOnTicks: await trapdoorScene(sdk) });
             },
             postconditions: s => (demonInSight(s) ? true : 'no black demon in sight'),
             logoutSafe: false,
