@@ -256,6 +256,22 @@ async function main() {
         for (let i = 0; i < n; i++) await nextTick();
     };
 
+    /** Click logout:try_logout (com 2458, as speedrun/lib/session.ts) until the server sends LOGOUT. */
+    let logoutInfo: { confirmed: boolean; utc: string } | null = null;
+    cleanup = async () => {
+        cleanup = null;
+        for (let i = 0; i < 6 && !client.isLoggedOut(); i++) {
+            client.writeOpcode(ClientProt.IF_BUTTON);
+            client.out.p2(2458);
+            client.flush();
+            for (let j = 0; j < 20 && !client.isLoggedOut(); j++) await sleep(100);
+        }
+        logoutInfo = { confirmed: client.isLoggedOut(), utc: new Date().toISOString() };
+        console.log(`logout: ${client.isLoggedOut() ? 'confirmed by the server' : 'NOT confirmed'}`);
+        clearInterval(keepalive);
+        connection.close();
+    };
+
     const cheat = (cmd: string) => {
         client.writeOpcode(ClientProt.CLIENT_CHEAT);
         client.out.p1(cmd.length + 1);
@@ -264,6 +280,16 @@ async function main() {
     };
 
     await waitTicks(8);
+    // The first inventory frame can trail the first in-world ticks; wait for it.
+    for (let i = 0; i < 40 && ticks.at(-1)!.inv.every(o => o === 0); i++) await nextTick();
+    if (ticks.at(-1)!.inv.every(o => o === 0)) {
+        const holding: string[] = [];
+        for (let id = 0; id < 8000; id++) {
+            const objs = client.ifType(id)?.linkObjType;
+            if (objs && objs.some(o => o > 0)) holding.push(`${id}(${objs.length} slots, ${objs.filter(o => o > 0).length} filled)`);
+        }
+        throw new Error(`component ${INVENTORY_COM} still empty after ${ticks.at(-1)!.label} ticks; components holding objs: ${holding.join(' ') || 'none'}`);
+    }
     // ifbutton (lab only): Charge (magic:charge, com 1193; charge.rs2 casts at once: settimer, runes,
     // no queue). Casts are counted by the blood-rune stack, given as 301 so its slot is recognisable.
     let counterObj = 0;
@@ -393,22 +419,6 @@ async function main() {
         writeFileSync(OUT, JSON.stringify(report, null, 1));
     };
 
-    /** Click logout:try_logout (com 2458, as speedrun/lib/session.ts) until the server sends LOGOUT. */
-    cleanup = async () => {
-        cleanup = null;
-        for (let i = 0; i < 6 && !client.isLoggedOut(); i++) {
-            client.writeOpcode(ClientProt.IF_BUTTON);
-            client.out.p2(2458);
-            client.flush();
-            for (let j = 0; j < 20 && !client.isLoggedOut(); j++) await sleep(100);
-        }
-        report.logout = { confirmed: client.isLoggedOut(), utc: new Date().toISOString() };
-        console.log(`logout: ${client.isLoggedOut() ? 'confirmed by the server' : 'NOT confirmed'}`);
-        save();
-        clearInterval(keepalive);
-        connection.close();
-    };
-
     const pre = await run('preflight', 1);
     report.preflight = pre;
     if (pre.summary.firstRel === null) {
@@ -463,6 +473,8 @@ async function main() {
     console.log(`wrote ${OUT}`);
 
     await cleanup?.();
+    report.logout = logoutInfo;
+    save();
     process.exit(0);
 }
 
