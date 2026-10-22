@@ -1041,6 +1041,28 @@ describe("woodcutting: S07's last bone load carries T07-08's runes, (load - 2) b
         expect(band.postconditions(s, {})).toBe(true);
     });
 
+    test('a full last load (lastLoad = load, rs/329 b5603795 as read): 23 bones and the runes are received and required, and the precondition reserves the rune slots', async () => {
+        const full = { bury: true, bones: { giver: 'cairn_b02', lastLoad: 23 } } satisfies Partial<WoodcuttingOptions>;
+        const g = giver([FULL, [...FULL, ...RUNES]]);
+        const h = harness(pack(97, KIT), { ...full, receive: g.fn }, buryThenLoad);
+        const band = h.byName(WILLOWS);
+        await band.run(h.ctx);
+        expect(g.wants).toEqual([[{ item: /bones$/i, amount: 23 }], [{ item: /bones$/i, amount: 23 }]]);
+        const loads = h.log.rows.filter(r => r.step === 'woodcutting:bones-load');
+        expect(loads.map(r => [r.ok, (r.meta as { received: number }).received])).toEqual([[true, 23], [true, 23]]);
+        const s = h.sdk.getState()!;
+        expect(held(s).filter(n => !/bones/.test(n))).toEqual(['Rune axe x1', 'Knife x1', 'Logs x1', 'Law rune x1', 'Air rune x5']);
+        expect(band.postconditions(s, {})).toBe(true);
+        expect(band.postconditions(pack(99, KIT), {})).toMatch(/Camelot runes \(1 and 5\) are not held/);
+        // but it fills the pack: 25 free at the willows hold 23 bones and the two rune stacks, none left for the chopped log
+        expect(28 - s.inventory.length).toBe(0);
+        expect(band.preconditions(pack(97, KIT), {})).toBe("25 free slots and 0 bones: no room for a 23-bone load, or the last load's 23 bones and 2 rune stacks, and the log");
+        // once the runes are in, that load came: a resume needs no room for another
+        expect(band.preconditions(pack(98, [...KIT, 'Law rune', 'Air rune'], { bones: 10 }), {})).toBe(true);
+        // with a pack one slot lighter (no kit log, under plain) the full last load fits
+        expect(harness(pack(97, ['Rune axe']), { ...full, technique: 'knife' }).byName(WILLOWS).preconditions(pack(97, ['Rune axe']), {})).toMatch(/knife and a normal log/);
+    });
+
     test("the want is at least lastLoad bones: a full load and the runes' load pass both screens, a shorter one never does", () => {
         const g = giver([]);
         harness(pack(97, KIT), { ...scored, receive: g.fn });
@@ -1098,7 +1120,8 @@ describe("woodcutting: S07's last bone load carries T07-08's runes, (load - 2) b
         // what the band runs: bury selects the bones only, and the willow product is the only drop
         const params = bandParams(scored, 'willow', 99)('knife');
         const s = pack(98, [...KIT, 'Law rune', 'Air rune'], { bones: 21 });
-        expect(new Set(buryable(s, bonesParam(params.bury)!).map(i => i.name))).toEqual(new Set(['Dragon bones']));
+        // the page's state type is the SDK's plus page-only fields buryable does not read
+        expect(new Set(buryable(s as unknown as Parameters<typeof buryable>[0], bonesParam(params.bury)!).map(i => i.name))).toEqual(new Set(['Dragon bones']));
         const product = new RegExp(CYCLE_METHODS.willow!.product, 'i');
         expect(s.inventory.filter(i => product.test(i.name))).toEqual([]);
     });
