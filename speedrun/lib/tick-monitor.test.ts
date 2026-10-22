@@ -120,9 +120,9 @@ describe('TickCadence', () => {
 describe('TickPeriod', () => {
     test('the nominal length until PERIOD_MIN_SAMPLES span samples, then their median', () => {
         const p = new TickPeriod(300);
-        const warm = PERIOD_SPAN_TICKS + PERIOD_MIN_SAMPLES; // labels 0..warm-1 give MIN_SAMPLES - 1 samples
+        // SPAN + 1 consecutive labels make the first sample, so labels 0..warm-1 make MIN_SAMPLES - 1
+        const warm = PERIOD_SPAN_TICKS + PERIOD_MIN_SAMPLES - 1;
         for (let l = 0; l < warm; l++) p.see(l, l * 340);
-        // SPAN + 1 labels make the first sample
         expect([p.measured, p.ms]).toEqual([false, 300]);
         p.see(warm, warm * 340);
         expect([p.measured, p.ms]).toEqual([true, 340]);
