@@ -325,6 +325,43 @@ export function barRoom(s: BotWorldState, cap: number, baseline: Counts): number
     return Math.max(0, Math.min(cap, 28 - kept - (hasHammer(s) ? 0 : 1)));
 }
 
+/**
+ * Items outside the module's own list: anything but the hammer, bars, and the products made since
+ * `baseline`, which leave in the next trade. An item SCORED arrived with that looks like a product
+ * stays, so it counts here.
+ */
+export function otherItems(s: BotWorldState, baseline: Counts): string[] {
+    const allowance = new Map(baseline);
+    const out: string[] = [];
+    for (const i of s.inventory) {
+        if (HAMMER.test(i.name) || barOf(i)) continue;
+        if (isProduct(i)) {
+            const left = allowance.get(i.id) ?? 0;
+            allowance.set(i.id, Math.max(0, left - i.count));
+            if (left < i.count) continue;
+        }
+        out.push(i.name);
+    }
+    return out;
+}
+
+/** Bars in a planned inventory. */
+export function barsIn(inv: PlannedInventory): number {
+    return Object.values(inv.bars).reduce((a, n) => a + (n ?? 0), 0);
+}
+
+/**
+ * The step's slot precondition: its inventory's bars and the hammer (held, or in seq 0's give) need
+ * that many slots beside everything else SCORED holds. Without it barRoom would shrink the trade and
+ * the step would need more inventories than its plan.
+ */
+export function slotReason(s: BotWorldState, inv: PlannedInventory, baseline: Counts): string | null {
+    const other = otherItems(s, baseline);
+    const need = barsIn(inv) + 1;
+    if (other.length <= 28 - need) return null;
+    return `${other.length} other items (${[...new Set(other)].join(', ')}): need ${need} free slots (the hammer and ${barsIn(inv)} bars)`;
+}
+
 /** What the held bars make at `level`: the best item per bar type, as many as the bars allow. */
 export function heldSegments(s: BotWorldState, c: PlanConfig): Segment[] {
     const level = smithingLevel(s);
@@ -914,7 +951,7 @@ export function steps(opts: SmithingOptions = {}): Step<any>[] {
                 if (last && passed(s) && (!o.returnLast || handBack(s.inventory, {}, smithy.baselineFor(s)).length === 0)) return true;
                 if (!nearAnvil(s)) return `not within ${NEAR} tiles of the Varrock west anvil (at ${s.player.worldX},${s.player.worldZ},${s.player.level})`;
                 if (o.supply === 'helper' && !o.giver) return 'supply helper needs a giver';
-                return true;
+                return slotReason(s, inv, smithy.baselineFor(s)) ?? true;
             },
             run: ctx => smithy.until(ctx, mark, last),
             resume: ctx => {

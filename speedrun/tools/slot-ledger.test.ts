@@ -47,7 +47,7 @@ describe('parseLedger: the agreed grammar', () => {
         expect(errors[1]).toMatch(/reason "lost"/);
         expect(errors[2]).toMatch(/equip entry "staff"/);
         expect(errors[3]).toMatch(/needAtStart "many"/);
-        expect(errors[4]).toMatch(/4 cells, expected 6/);
+        expect(errors[4]).toMatch(/line 7 \(S04\): 3 cells, expected 6/);
         expect(parseLedger('# nothing here').errors[0]).toMatch(/no table with the header/);
     });
 });
