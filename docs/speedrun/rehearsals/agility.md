@@ -609,5 +609,14 @@ once).
 | Divergence at 52 | **+23** by the log (+20 by the hiscore), all in the walk to the Gnome course: 561 + 9 + 49 = 619 against 595. That is the gate stall: session A's failed tries at the gate, session B's 11 ticks, and the relog and gate pass in session C. Gnome 1 -> 52 itself ran 1,043 against 1,042 |
 | Lost to the walk-wilderness failure | the logout's 3 ticks, plus the next session's relog cost (about 20, HARNESS.md "Relogs"); the 95 ticks walked still count, since the resume starts from (2538,3350) |
 
-The resume from (2538,3350) waits for rs/485's tested commit: main approved overlaying its sdk
-files byte-identical on `~/rs-310` (the sdk runs outside the page, so the bundle is unchanged).
+The resume from (2538,3350) runs on `~/rs-310` at b1436d00 with rs/485's `sdk/actions-helpers.ts`
+overlaid byte-identical (main's approval). The overlay came from rs/485's tested 6ebb7fad,
+blob 41d82e3b. The same blob is in rs/485's rebased 8521efc7 and in main's merge of it,
+c7eae140 (#398), so the resume's SDK is main's. The sdk runs outside the page, so the bundle is
+unchanged. The worktree lacks two other main commits: 4eb6b94b (`speedrun/lib/act.ts`'s
+ClickGuard fight and page rules, and a `world.ts` type widening) and #396 (Grand Tree). Neither
+is on the resume's path. `act.ts` is reached from the agility module only through `passGate`,
+and both Gnome gates are already behind the account. The walk to the lever, the Wilderness course
+and the ridge gate use the SDK's `walkTo`, raw loc clicks and `runProgram`. The no-login dry run
+on the twin passed: rs/485's test and the existing walk tests (5 of 5) against the overlaid file,
+and the launch options build walk-gnome, gnome, walk-wilderness and wilderness.
