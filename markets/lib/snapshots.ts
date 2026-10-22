@@ -39,6 +39,8 @@ export interface PollRecord {
     order: string[] | null;
     rows: CompactRow[];
     families: CompactPosition[];
+    /** Every player standing in each watched zone (positions.ts ZONES); absent in polls before it was recorded. */
+    zones?: Record<string, string[]>;
 }
 
 export interface PollFile {
@@ -52,6 +54,7 @@ export interface Poll {
     online: number | null;
     bank: BankRow[] | null;
     families: Position[];
+    zones: Record<string, string[]> | null;
 }
 
 const compact = (r: BankRow): CompactRow => [r.name, r.gp, r.items.flatMap(i => [i.id, i.count])];
@@ -72,12 +75,19 @@ export function decodePolls(file: PollFile): Poll[] {
             if (!row) throw new Error(`poll ${p.at}: ${name} is ranked but has no row in this file`);
             return expand(row, i + 1);
         });
-        return { at: p.at, online: p.online, bank: bank ?? null, families: p.families.map(([name, x, z, level]) => ({ name, x, z, level })) };
+        return { at: p.at, online: p.online, bank: bank ?? null, families: p.families.map(([name, x, z, level]) => ({ name, x, z, level })), zones: p.zones ?? null };
     });
 }
 
-/** The record to append to `file` for one poll; `isFamily` picks whose positions are kept. */
-export function encodePoll(file: PollFile, at: string, bank: BankRow[] | null, positions: Position[] | null, isFamily: (name: string) => boolean): PollRecord {
+/** The record to append to `file` for one poll; `isFamily` picks whose positions are kept, `roster` names zones. */
+export function encodePoll(
+    file: PollFile,
+    at: string,
+    bank: BankRow[] | null,
+    positions: Position[] | null,
+    isFamily: (name: string) => boolean,
+    roster?: (positions: Position[]) => Record<string, string[]>
+): PollRecord {
     const state = new Map<string, CompactRow>();
     for (const p of file.polls) for (const row of p.rows) state.set(row[0], row);
     const rows = (bank ?? []).map(compact).filter(r => {
@@ -89,7 +99,8 @@ export function encodePoll(file: PollFile, at: string, bank: BankRow[] | null, p
         online: positions?.length ?? null,
         order: bank?.map(r => r.name) ?? null,
         rows,
-        families: (positions ?? []).filter(p => isFamily(p.name)).map(p => [p.name, p.x, p.z, p.level])
+        families: (positions ?? []).filter(p => isFamily(p.name)).map(p => [p.name, p.x, p.z, p.level]),
+        ...(positions && roster ? { zones: roster(positions) } : {})
     };
 }
 
