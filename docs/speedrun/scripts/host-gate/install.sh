@@ -5,7 +5,8 @@
 #   bash docs/speedrun/scripts/host-gate/install.sh [--every 30|15] [--repo PATH] [--no-enable]
 #   bash ~/.local/lib/rs-gate/install.sh --every 15        (later, from the installed copy)
 #
-# Copies the wrapper (host-gate-read.sh), the units and these scripts to ~/.local/lib/rs-gate,
+# Copies the wrapper (host-gate-read.sh) and its world-feed helper (host-gate-feed.ts), the units
+# and these scripts to ~/.local/lib/rs-gate,
 # so the timer never runs code from the checkout the wrapper moves to ~/run-commit.
 # It also installs the claim lock, rs-claim (tenet 21), to ~/.local/bin/rs-claim, mode 755, but
 # only when the installed copy differs from this one; it prints both sha256s either way.
@@ -54,8 +55,9 @@ fi
 if [ "$here" != "$lib" ]; then
     wrapper="$here/../host-gate-read.sh"
     [ -f "$wrapper" ] || { echo "install.sh: no host-gate-read.sh next to $here" >&2; exit 1; }
+    [ -f "$here/../host-gate-feed.ts" ] || { echo "install.sh: no host-gate-feed.ts next to $here" >&2; exit 1; }
     mkdir -p "$lib"
-    cp "$wrapper" "$here/rs-gate-read.service" "$here/rs-gate-read.timer" "$here/install.sh" "$here/uninstall.sh" "$here/rs-claim" "$lib/"
+    cp "$wrapper" "$here/../host-gate-feed.ts" "$here/rs-gate-read.service" "$here/rs-gate-read.timer" "$here/install.sh" "$here/uninstall.sh" "$here/rs-claim" "$lib/"
 fi
 
 # The claim lock writes the ~/host-reserved.json every firing skips on. Replace the installed copy
