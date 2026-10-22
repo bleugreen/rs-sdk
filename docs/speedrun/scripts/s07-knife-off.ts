@@ -88,7 +88,7 @@ const drop = 2;                // S06's air runes dropped on T06-07, i
 const onE = before.onE + (S07knife - 2986) + rc.e + drop, onB = before.onB + rc.b + drop;
 const offE = before.offE + (S07plain - 3881) + rc.e + drop, offB = before.offB + (S07plain - 3881) + rc.b + drop;
 const pbE = before.pbE + (S07pb - 3881) + (95 - 110) + rc.e + drop, pbB = before.pbB + (S07pb - 3881) + (65 - 75) + rc.b + drop;
-console.log(`\ntotals: knife on ${onE} / ${onB}; knife off in force ${offE} / ${offB}; with rs/162 ${pbE} / ${pbB}`);
+console.log(`\ntotals: knife on ${onE} / ${onB}; knife off without rs/162 (history) ${offE} / ${offB}; knife off in force, with rs/162 ${pbE} / ${pbB}`);
 const rec = 35916;
 console.log(`against the record: on ${onE - rec} / ${onB - rec}; off ${offE - rec} / ${offB - rec}; rs/162 ${pbE - rec} / ${pbB - rec}`);
 
@@ -112,7 +112,7 @@ const lines: [string, number, number, number, number, number, number][] = [
     ['Demo latency and overrun (57)', 800, 0, 450, 0, 450, 0],
 ];
 const col = (i: number) => lines.reduce((s, l) => s + (l[i] as number), 0);
-console.log(`section 7 table sums: knife on ${col(1)} / ${col(2)}; knife off ${col(3)} / ${col(4)}; with rs/162 ${col(5)} / ${col(6)}`);
+console.log(`section 7 table sums: knife on ${col(1)} / ${col(2)}; knife off without rs/162 ${col(3)} / ${col(4)}; with rs/162 (in force) ${col(5)} / ${col(6)}`);
 if (col(1) !== onE || col(2) !== onB || col(3) !== offE || col(4) !== offB || col(5) !== pbE || col(6) !== pbB) throw new Error('table does not re-sum to the totals');
 
 // Overhead (55): legs 1,382, claim 8, H1 8, hand-offs 49 (47 + the T06-07 drop), level-ups 25 / 15, relog tail 3 / 0, restarts 8 / 0
