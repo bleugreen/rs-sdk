@@ -261,23 +261,6 @@ export async function clickWalk(sdk: ActSdk, x: number, z: number, opts: ActOpti
     return { ...r, tiles: tiles.tiles, at: pos(sdk) };
 }
 
-/** Walk a list of waypoints with chained run clicks, each sent once the player is within 2 tiles of the previous one. */
-export async function walkPath(sdk: ActSdk, path: ReadonlyArray<{ x: number; z: number }>, maxTicksPerLeg = 300): Promise<WalkResult> {
-    const t0 = sdk.getState()?.tick ?? 0;
-    const tiles = tileCounter(sdk);
-    try {
-        for (const [i, wp] of path.entries()) {
-            await sdk.sendWalk(wp.x, wp.z, true);
-            const exact = i === path.length - 1;
-            const r = await waitUntil(sdk, s => chebyshev(pos(s), wp) <= (exact ? 0 : 2), { maxTicks: exact ? 6 + maxTicksPerLeg : maxTicksPerLeg });
-            if (!r.ok && !exact) return { ok: false, ticks: r.tick - t0, resends: 0, tiles: tiles.tiles, at: pos(sdk), reason: `stuck before ${wp.x},${wp.z}` };
-        }
-        return { ok: true, ticks: (sdk.getState()?.tick ?? t0) - t0, resends: 0, tiles: tiles.tiles, at: pos(sdk) };
-    } finally {
-        tiles.stop();
-    }
-}
-
 /**
  * `bot.walkTo` (the SDK pathfinder, doors opened on the way), retried when it
  * reports failure (it occasionally reports Stuck on open ground), with the
@@ -296,10 +279,31 @@ export async function walkTo(bot: Pick<BotActions, 'walkTo'>, sdk: StateSource, 
 /** Standard-spellbook teleports: the spell's IF_BUTTON component (server/content/pack/interface.pack). */
 export const TELEPORTS = { varrock: 1164, lumbridge: 1167, falador: 1170, camelot: 1174, ardougne: 1540 } as const;
 
-/** Cast a teleport and wait until the player has jumped more than 30 tiles; one re-cast if the first is dropped. */
-export async function castTeleport(sdk: ActSdk, spell: keyof typeof TELEPORTS | number, maxTicks = 25): Promise<ActResult & { at: Tile }> {
+/** What teleport.rs2 and check_spell_requirements say when they refuse a cast. */
+export const TELEPORT_REFUSED = /mysterious force blocks|can't use this teleport|do not have enough|not high enough|must have completed|haven't learnt how to cast|cannot teleport/i;
+
+/**
+ * Cast a teleport and wait until the player has jumped more than 30 tiles, or has left its tile for
+ * one where `landed` holds (a cast from 30 tiles or less of the landing: Lumbridge from the river
+ * fly spots is exactly 30); one re-cast if the first is dropped. A refusal message ends the wait
+ * at once with `ok: false` and a `refused: ...` reason. travel.ts `teleport` adds the precheck,
+ * the landing tile and the walk on refusal.
+ */
+export async function castTeleport(sdk: ActSdk, spell: keyof typeof TELEPORTS | number, maxTicks = 25, landed?: Pred): Promise<ActResult & { at: Tile }> {
     const p0 = pos(sdk);
+    const t0 = sdk.getState()?.tick ?? 0;
     const component = typeof spell === 'number' ? spell : TELEPORTS[spell];
-    const r = await act(sdk, () => sdk.sendClickComponent(component), s => chebyshev(pos(s), p0) > 30 || pos(s).level !== p0.level, { resendEvery: 10, maxResends: 1, maxTicks });
-    return { ...r, at: pos(sdk) };
+    let refusal: string | undefined;
+    const r = await act(
+        sdk,
+        () => sdk.sendClickComponent(component),
+        s => {
+            const d = chebyshev(pos(s), p0);
+            if (d > 30 || pos(s).level !== p0.level || (d > 0 && landed?.(s))) return true;
+            refusal = messagesSince(s, t0 + 1, TELEPORT_REFUSED)[0];
+            return refusal !== undefined;
+        },
+        { resendEvery: 10, maxResends: 1, maxTicks }
+    );
+    return refusal !== undefined ? { ...r, ok: false, reason: `refused: ${refusal}`, at: pos(sdk) } : { ...r, at: pos(sdk) };
 }

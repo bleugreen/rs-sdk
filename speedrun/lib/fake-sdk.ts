@@ -118,6 +118,12 @@ export class FakeSdk {
     sendDropItem(slot: number) { return this.record('sendDropItem', slot); }
     sendTogglePrayer(prayer: string | number) { return this.record('sendTogglePrayer', prayer); }
 
+    /** The SDK route for findPath (default: straight to the destination on the player's level). */
+    pathTo: (x: number, z: number) => { success: boolean; waypoints: Array<{ x: number; z: number; level: number }>; reachedDestination?: boolean } = (x, z) => ({
+        success: true, waypoints: [{ x, z, level: this.state?.player?.level ?? 0 }], reachedDestination: true,
+    });
+    findPath(x: number, z: number, _maxWaypoints = 500) { return this.pathTo(x, z); }
+
     /** Locs an on-demand scan returns (default: the published list). */
     scanLocs: BotWorldState['nearbyLocs'] | null = null;
     async scanNearbyLocs() { return this.scanLocs ?? this.state?.nearbyLocs ?? []; }
@@ -152,4 +158,62 @@ export class FakeSdk {
 /** Let queued promise callbacks run. */
 export function flush(): Promise<void> {
     return new Promise(r => setTimeout(r, 0));
+}
+
+export interface WalkSim {
+    /** The tile the last accepted walk click aims at. */
+    target: { x: number; z: number } | null;
+    /** Every walk click, with the tile the player stood on when it was sent. */
+    clicks: Array<{ x: number; z: number; from: { x: number; z: number }; tick: number }>;
+}
+
+/**
+ * A running player: each tick moves up to `speed` tiles (one step at a time, straight or diagonal)
+ * toward the last walk click, refusing a step onto a tile `blocked` names. `accept` may drop a click.
+ */
+export function simulateWalking(
+    sdk: FakeSdk,
+    opts: { speed?: number; blocked?: (x: number, z: number) => boolean; accept?: (n: number, x: number, z: number) => boolean } = {}
+): WalkSim {
+    const sim: WalkSim = { target: null, clicks: [] };
+    const prev = sdk.onSend;
+    sdk.onSend = (a, f) => {
+        prev(a, f);
+        if (a.method !== 'sendWalk') return;
+        const [x, z] = a.args as [number, number];
+        const p = f.state?.player;
+        sim.clicks.push({ x, z, from: { x: p?.worldX ?? -1, z: p?.worldZ ?? -1 }, tick: f.state?.tick ?? -1 });
+        if (opts.accept?.(sim.clicks.length, x, z) ?? true) sim.target = { x, z };
+    };
+    const tick = sdk.tick.bind(sdk);
+    sdk.tick = patch => {
+        const p = sdk.state?.player;
+        if (p && sim.target) {
+            let { worldX: x, worldZ: z } = p;
+            for (let i = 0; i < (opts.speed ?? 2); i++) {
+                const nx = x + Math.sign(sim.target.x - x);
+                const nz = z + Math.sign(sim.target.z - z);
+                if ((nx === x && nz === z) || opts.blocked?.(nx, nz)) break;
+                x = nx;
+                z = nz;
+            }
+            sdk.state = { ...sdk.state!, player: { ...p, worldX: x, worldZ: z, x, z } };
+        }
+        return tick(patch);
+    };
+    return sim;
+}
+
+/** Tick `sdk` (applying `each` per tick) until `p` settles; throws after `maxTicks`. */
+export async function drive<T>(sdk: FakeSdk, p: Promise<T>, maxTicks = 600, each: (s: BotWorldState) => Partial<BotWorldState> = () => ({})): Promise<T> {
+    let settled = false;
+    p.then(() => { settled = true; }, () => { settled = true; });
+    for (let i = 0; i < maxTicks; i++) {
+        await flush();
+        if (settled) return p;
+        sdk.tick(each);
+    }
+    await flush();
+    if (settled) return p;
+    throw new Error(`drive: still pending after ${maxTicks} ticks`);
 }
