@@ -13,7 +13,7 @@ import {
     SITES, skill, steps, successChance, summarizeBand, type WoodcuttingOptions
 } from './woodcutting';
 import { createKnifeCycle, CYCLE_METHODS } from '../../server/webclient/src/bot/programs/knife-cycle';
-import { Harness, makeState } from '../../server/webclient/src/bot/programs/testkit';
+import type { ProgramAction, ProgramContext } from '../../server/webclient/src/bot/programs/types';
 
 const OAK = SITES.oak.stand;
 const WILLOW = SITES.willow.stand;
@@ -683,7 +683,6 @@ describe('woodcutting: the band ledger and rs/158\'s table', () => {
  */
 function normalBand(params: Record<string, unknown>, kit: string[], rolls: number) {
     const m = CYCLE_METHODS.tree!;
-    const h = new Harness('cycle', createKnifeCycle);
     const inv: Array<string | null> = [...kit];
     let tick = 1000;
     let xp = 0;
@@ -691,8 +690,36 @@ function normalBand(params: Record<string, unknown>, kit: string[], rolls: numbe
     let nextRoll: number | null = null;
     let chopping = false;
     let logs = 0;
-    const spec = () => ({ tick, x: 2914, z: 3494, skills: { Woodcutting: { xp, level: logs >= rolls ? 15 : 1 } }, inventory: inv, animId: chopping ? 1 : -1, locs: [{ id: treeId, x: 2915 + (treeId % 2), z: 3494, name: 'Tree', options: ['Chop down'] }] });
-    h.start('cycle', { ...params, technique: 'plain', maxTicks: rolls * 20 }, makeState(spec()));
+    const level = () => (logs >= rolls ? 15 : 1);
+    const opts = (o: string[]) => o.map((text, i) => ({ text, opIndex: i + 1 }));
+    const snapshot = (): BotWorldState => {
+        const s = baseState({ tick, player: { worldX: 2914, worldZ: 3494, level: 0, animId: chopping ? 1 : -1, hp: 10, maxHp: 10 } as BotWorldState['player'] });
+        return {
+            ...s,
+            skills: [{ name: 'Woodcutting', level: level(), baseLevel: level(), experience: xp }, { name: 'Fletching', level: 1, baseLevel: 1, experience: 0 }],
+            inventory: inv.flatMap((name, slot) => (name === null ? [] : [{ slot, id: 1000 + slot, name, count: 1, optionsWithIndex: opts(['Use', 'Drop']) }])),
+            nearbyLocs: [{ id: treeId, name: 'Tree', x: 2915 + (treeId % 2), z: 3494, level: 0, distance: 1, options: ['Chop down'], optionsWithIndex: opts(['Chop down']) }] as unknown as BotWorldState['nearbyLocs']
+        };
+    };
+    // the page runtime's contract, reduced to what a tick needs: 5 packets a tick, done ends the run
+    let phase: 'running' | 'done' | 'fault' = 'running';
+    const program = createKnifeCycle({ ...params, technique: 'plain' }, { state: snapshot(), log: () => {} });
+    const step = (state: BotWorldState): ProgramAction[] => {
+        const sent: ProgramAction[] = [];
+        const ctx: ProgramContext = {
+            state, tick: state.tick, ticksAdvanced: 1, nowMs: 0, wallMs: 0, frames: [],
+            get budget() { return 5 - sent.length; },
+            send: a => (sent.length < 5 ? (sent.push(a), true) : false),
+            count: () => {}, gauge: () => {}, starter: () => {}, mark: () => {}, share: () => {}, progress: () => {}, log: () => {},
+            done: () => (phase = 'done'),
+            fault: r => {
+                phase = 'fault';
+                throw new Error(`knife-cycle faulted: ${r}`);
+            }
+        };
+        program.onTick(ctx);
+        return sent;
+    };
     const pending: Array<{ at: number; type: string; locId?: number; slot?: number }> = [];
     const land = () => {
         for (const p of pending.filter(p => p.at === tick)) {
@@ -706,7 +733,8 @@ function normalBand(params: Record<string, unknown>, kit: string[], rolls: numbe
             }
         }
     };
-    while (h.status.phase === 'running' && tick < 1000 + rolls * 20) {
+    step(snapshot());
+    while (phase === 'running' && tick < 1000 + rolls * 20) {
         tick++;
         land();
         if (chopping && nextRoll === tick) {
@@ -719,7 +747,7 @@ function normalBand(params: Record<string, unknown>, kit: string[], rolls: numbe
             chopping = false;
             nextRoll = null;
         }
-        for (const s of h.step(makeState(spec()))) pending.push({ at: tick + 1, type: s.action.type, locId: (s.action as { locId?: number }).locId, slot: (s.action as { slot?: number }).slot });
+        for (const a of step(snapshot())) pending.push({ at: tick + 1, type: a.type, locId: (a as { locId?: number }).locId, slot: (a as { slot?: number }).slot });
     }
     // whatever was sent on the last labels lands
     for (let i = 0; i < 2; i++) {
@@ -727,7 +755,7 @@ function normalBand(params: Record<string, unknown>, kit: string[], rolls: numbe
         land();
     }
     const held = inv.filter((i): i is string => i !== null);
-    return { logs, held, used: held.length, phase: h.status.phase };
+    return { logs, held, used: held.length, phase };
 }
 
 describe('woodcutting: the slot ledger, H4k to H4.x (rs/158 spec 1)', () => {
