@@ -208,7 +208,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 25 | 26 | Pre-MM cannon session | `speedrun/skills/ranged.ts` (`cannonSession`) | S14 | 118 | 104 | ~162 | ~58 | overlay | `quest-premm-cannon.ts`, `ranged-cannon.ts` | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible) |
 | 26 | 15 | Prayer (bones inside S07; the booth as fallback) | `speedrun/skills/woodcutting.ts` bury option; `speedrun/skills/prayer.ts` for the booth | S25b (S10a retired) | 145 | 115 | 735 (the booth) | ~670 | in-page with S07 | `bones-wc.ts`, `prayer-bury.ts` | bury in S07: on main (knife-cycle's `bury`, #124, through `woodcutting.ts`, #243 and #293); gate-off plain + bury on main (rs/162, 3dfc217f, #165); booth: **lab-accepted on both clients** (rs/395, 58.0 a 28-bone inventory on lite and the browser, m; fold-in 23), **on main, 7315c6d7 (#326; rs/408)**, inside the run-commit floor |
 | 27 | 28 | Crafting | `speedrun/skills/crafting.ts` | S25d | 91 | 85 | 121 (no gems in the windows) | ~36 | overlay | `delayfree-cycle.ts` | **on main, c8ea24da (#302; rs/380's snapshot of rs/186 at 95f0aeac), inside the run-commit floor**, with the item-cycle program and `stow`; **lab-accepted** (263 m on the leather route, browser, 3 of 3; rs/359) and **demo-accepted** (rs/359, 11:25Z: cairn_h80, browser, 26 bodies, 7 ticks a turnaround against the lab's 7.03 and the bar's 7.7, event peak 5, overBudget 0, a clean page-confirmed logout) |
-| 28 | 29 | Cooking (wine) + gems in the windows | `speedrun/skills/cooking.ts` | S25c | 81 | 77 | ~131 (kebabs, supplies not held) | ~54 | overlay | `wine-receive.ts` [rs/41], `wine-window-lab.ts` | **on main, 881fa6a4 (#315; rs/394's snapshot of rs/186 at 7a0bb76e), inside the run-commit floor**, with item-cycle's opt-in `mixed` loads for W2 and P2 (`stow` on main with #302); **lab-accepted** (rs/339, `cooking-accept.ts`, browser, 77 / 85 / 81, m, at the route's 520 wines, Cooking 30, Crafting 96, 107 gems; slots m; fold-in 22); **demo-accepted on mechanics** (rs/339, the rehearsal twin's browser tab, 13:20-13:28Z: both relogs in page at 1 tick, 0 logout latency, the bank by login + 11 against + 19, both firings at + 20; the 52-wine demo's 73 ticks check mechanics only) |
+| 28 | 29 | Cooking (wine) + gems in the windows | `speedrun/skills/cooking.ts` | S25c | 81 | 77 | ~131 (kebabs, supplies not held) | ~54 | overlay | `wine-receive.ts` [rs/41], `wine-window-lab.ts` | **on main, 881fa6a4 (#315; rs/394's snapshot of rs/186 at 7a0bb76e), inside the run-commit floor**, with item-cycle's opt-in `mixed` loads for W2 and P2 (`stow` on main with #302); **lab-accepted** (rs/339, `cooking-accept.ts`, browser, 77 / 85 / 81, m, at the route's 520 wines, Cooking 30 (the run starts at about 24, no change, rs/186; fold-in 23), Crafting 96, 107 gems; slots m; fold-in 22); **demo-accepted on mechanics** (rs/339, the rehearsal twin's browser tab, 13:20-13:28Z: both relogs in page at 1 tick, 0 logout latency, the bank by login + 11 against + 19, both firings at + 20; the 52-wine demo's 73 ticks check mechanics only) |
 | 29 | 25 | Goblin Diplomacy | `speedrun/quests/goblin-diplomacy.ts` | S24 | 41 | 41 | 102 | ~61 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
 | 30 | 30 | Doric's Quest | `speedrun/quests/dorics-quest.ts` | S05 | 17 | 17 | 43 | ~26 | overlay | `quest-smallskill-doric.ts` | building (rs/185, held: tenet 15) |
 | 31 | 31 | Cook's Assistant | `speedrun/quests/cooks-assistant.ts` | S23 | 12 | 12 | 31 | ~19 | overlay | `quest-primitives-dialogue.ts` | building (rs/185, held: tenet 15) |
@@ -767,7 +767,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   `%treequest` 9 and `%grandtree` 160, ledger). Ranged 50 **base** for the magic shortbow (read,
   `tier50.rs2:6`), from S14. Prayer 43 for both protect prayers (S07 leaves ~94). The helper trade before segment A
   (`quests/README.md` §4 step 8): gold bar, ball of wool, monkey bones, magic shortbow + 200 rune arrows,
-  Varrock and Ardougne runes, a second antipoison(4) (poison on the atoll comes from wildlife hits (severity 4 or 7, applied even when Protect from Melee zeroes the damage) and the dungeon's spikes and spears (severity 3); the archers never start one (r, rs/185, fold-in 23)), and main's kit (fold-in 23): **H12 = 15 sharks + 4 prayer potion(4)** (main, fold-in 23; the 16-shark kit overflows by 1 slot in A-D, rs/201's slot table), the royal seal dropped **right after B** (only Caranock at B and Lumdo at G read it, Lumdo with a no-seal branch: `mm_caranock.rs2:50`, `mm_lumdo.rs2:39`), bananas picked from the atoll trees in O's wait, vials dropped as drunk, an eat-for-room rule before J's crate searches when the pack is full; **H12m dropped** (no trade point reaches A-D's overflow); **the margin is an acceptance check** on rs/201's 3 clean chains (at least 1 shark unused after the last eating segment, HP never below 10), else O43 is priced; the counts pending those chains (a return to 16 sharks if the antipoison(4) comes off, rs/201 checking).
+  Varrock and Ardougne runes, a second antipoison(4) (poison on the atoll comes from wildlife hits (severity 4 or 7, applied even when Protect from Melee zeroes the damage) and the dungeon's spikes and spears (severity 3); the archers never start one (r, rs/185, fold-in 23)), and main's kit (fold-in 23): **H12 = 15 sharks + 4 prayer potion(4)** (main, fold-in 23; the 16-shark kit overflows by 1 slot in A-D, rs/201's slot table), the royal seal dropped **right after B** (only Caranock at B and Lumdo at G read it, Lumdo with a no-seal branch: `mm_caranock.rs2:50`, `mm_lumdo.rs2:39`), bananas picked from the atoll trees in O's wait (rs/201, 3 of 3, bgsrv-mac, at no slot cost: O sets 1-4 sharks down at the aunt's wait tile, picks the 5 bananas and takes every shark back after the hand-in; **precondition** (main's ruling, fold-in 23): the sharks set down are back in the pack within 80 ticks, because the engine reveals dropped items to every player after 100; each lab run records the ground time, and rs/185 prices a no-drop alternative; segment O not re-priced, its 388 standing until the A-Z chains report), vials dropped as drunk, an eat-for-room rule before J's crate searches when the pack is full; **H12m dropped** (no trade point reaches A-D's overflow); **the margin is an acceptance check** on rs/201's 3 clean chains (at least 1 shark unused after the last eating segment, HP never below 10), else O43 is priced; the counts pending those chains (a return to 16 sharks if the antipoison(4) comes off, rs/201 checking).
   Before (fold-in 20-22): 5 bananas, **2 prayer potions** and **sharks in the freed slots (9 at the
   floor)**. **H12 was superseded and provisional** (`SUPPLIES.md` H12;
   RUN-ORDER.md O37): in rs/201's lab chains of segments H to M (played as a human at 42 HP and
@@ -2386,7 +2386,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
 ### 29. Cooking by wine: `speedrun/skills/cooking.ts` (S25c), with gems in the windows
 
-- **Serves:** S25c, Cooking 30-99 by fermenting 520 unfermented wines in the bank across two
+- **Serves:** S25c, Cooking about 24 (after S23's 300 base; the start level changes neither the wine count nor the ticks: rs/186, `cooking.md` and `cooking.ts` corrected on its branch as 4aeef3b1, the plan sized for a start at 1, P(99) 99.1% at 29 + 420, the lab's level-1 fixture reaching 99; ~0-2 ticks of extra level-up page clearing, i, unmeasured; fold-in 23) to 99 by fermenting 520 unfermented wines in the bank across two
   firings, armed by the run's **two planned relogs** at Varrock west bank ([rs/41] `helpers/wine.md`,
   "Default sequence for the scored account"), with **uncut gems cut in the waits**
   (`research/wine-window.md` §5 B; 107 gems, Crafting's share).
@@ -2422,7 +2422,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   the noted wine.
 - **Postconditions:** Cooking 99; 107 more gems cut. Items out: the wine (29 deposited at burst 1,
   the rest at P1) and the chisel (stowed on the last visit), so SCORED leaves with 28 free for H22.
-- **Ticks:** expected **81**, best **77**, measured through the module (m, lab, browser; rs/339, through the module (`cooking-accept.ts`), bgsrv-mac, browser, 300 ms, rs/339's hash 14b1f173, at the run's levels (Cooking 30, Crafting 96, the fleet's 108 gems), 3 reps: 77, 85, 81 scored ticks; `cooking.md` section 9; fold-in 22). Before: expected 80, best 75, WINE's demo run A and projection, 75-85, measured with 2
+- **Ticks:** expected **81**, best **77**, measured through the module (m, lab, browser; rs/339, through the module (`cooking-accept.ts`), bgsrv-mac, browser, 300 ms, rs/339's hash 14b1f173, at the run's levels (Cooking 30 in the lab, the run's start about 24, no change; Crafting 96, the fleet's 108 gems), 3 reps: 77, 85, 81 scored ticks; `cooking.md` section 9; fold-in 22). Before: expected 80, best 75, WINE's demo run A and projection, 75-85, measured with 2
   ticks per relog on the lite client; a tab relog with rs/174's fix measured ~2 on the twin
   (RUN-ORDER.md section 4), so fold-in 3's + 2 x 18 is undone. The
   gems save 15-16 ticks of Crafting at Crafting 55 on WW's earlier setup, not the 30-31 wine-window.md §2
@@ -2495,7 +2495,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   per action, as the `h` actions after Charge is done.
 - **Preconditions:** load 0 (H14): headless arrows 4,560, bronze 60, iron 90, steel 135, mithril 1,485;
   adamant 2,220 and rune 570 on two of the courier's top-ups, each when SCORED is down to one tier
-  (the courier carries bones, plus these two tip stacks; load 0 is the trade giver's swap, cairn_mule1;
+  (the courier carries ore since fold-in 23, plus these two tip stacks; load 0 is the trade giver's swap, cairn_mule1;
   rs/41 and rs/158, fold-in 20). No new code: the courier's on-request mode (`bone-giver.ts`, rs/330's
   courier half, 0afa58d4) takes a `carry` list, the run config `carry: [Shark x2, Adamant arrowtips
   x2,220 once, Rune arrowtips x570 once]`, and delivers a `once` stack in exactly one top-up, the one
@@ -2508,14 +2508,30 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   buys the margin on cairn_h76 at Hickton's (target 2,520, about 2.5 h). Headless arrows: 4,560 an
   attempt, 13,680 for three, 4,410 held and 9,270 being made by cairn_h78 (rs/41, 05:1x PDT).
 - **Postconditions:** Fletching 99; **570 rune arrows kept** for S27.
+- **Slots** (rs/409's finding, verbatim; fold-in 23): 'S18d-fallback from Fletching 1 needs 3 free at its start
+  beyond the held stacks (mithril, adamant and rune arrows each open while the tier below still holds tips;
+  i on the module's walk, r on arrows.rs2 and InvOps INV_ADD); from a later level the module's walk gives
+  the count and refuses where a stack would not fit.' `make_arrows` never checks space and `INV_ADD` drops
+  overflow at the player's feet (`arrows.rs2`, `InvOps.ts`), so a short slot loses arrows. Inside S18 with
+  Superheat on, the in-stun arrow stacks still need ~+2 beside the tier in progress, and the courier sizes
+  each ore load to SCORED's free slots less that reserve (entry 6; the inventory ledger's S18 rows pass).
 - **Ticks:** **0** inside S18 (measured: 240 actions inside the stuns in every pack run,
   `research/stun-pack.md` §3; the 2,220 adamant + 570 rune mix is 304 actions, 294 before fold-in
   20's margin, which fit the ~7.8 delay-free slots per stun beside Charge, inferred, RUN-ORDER.md
   section 7; with Superheat in every stocked stun, the expected since fold-in 23, 148-149 Charges + 240 arrow actions + 157-161 bar drops + 158-162 casts, ~90 of ~640 slots spare, m, rs/375). Standalone
-  fallback about **61** (304 actions at 5 per tick, `skills/fletching.md` §2; 59 on 294).
+  fallback **61** (fold-in 23, rs/409's text, verbatim: 'Standalone fallback **61** (m, lab, bgsrv-mac, browser,
+  300 ms, `fletching-accept.ts`, 3 of 3 runs on the 294-action stocks: 60 work ticks, 57/60 at 5,
+  overBudget 0; item-cycle stack mode with `fill`), against 59 + 5%: pass. Lite has no program host;
+  delayfree-cycle.ts's lite figure on the rune-list route is 50 against the module's 51 on the browser.'
+  The module stops at 99, so ~291-294 actions are fletched and 13 mithril actions' tips are left over; it
+  replaces the old '61 on 304 actions' basis, `skills/fletching.md` §2, 59 on 294). item-cycle's opt-in
+  `fill` (when a tier runs out inside a tick, the rest goes to the next tier the level allows; rs/186
+  approved) is part of rs/409's pending snapshot: on rs/186's branch as 940414c6 (lab 61 against a bar of
+  61.95), its snapshot to main to be filed; the demo pending (bronze, on cairn_h72 once rs/331 stocks it).
+  Off the route, so no total moves.
 - **Primitives:** the stun-pack extension of the pickpocket program (entry 6, rs/132).
 - **Mode:** in-page with Thieving.
-- **Acceptance, local:** with entry 6. Standalone, 1 to 99 within 5% of 59 at 5 actions per tick.
+- **Acceptance, local:** with entry 6. Standalone, 1 to 99 within 5% of 59 at 5 actions per tick: **lab-accepted**, 61 m against 61.95 (rs/409; fold-in 23).
 - **Acceptance, demo (throwaway):** bronze arrows for 20 ticks. Pass: 5 actions per tick on at least
   90% of ticks.
 - **Start from:** `stun-pack-thieve.ts`, `delayfree-cycle.ts`.
@@ -2599,6 +2615,14 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   not answer' that rs/337 saw. It is a re-send of the talk on that one refusal, not the relay retry the
   precondition below rules out. On the floor's pending list as rehearsal and gate protection only
   (main's ruling); SCORED's S00 is done.
+- **On #321's settle and #291 (rs/309, rs/345; fold-in 23; rehearsal and gate accounts only, SCORED's S00
+  done and on its clock at 8):** a clean S00 on the browser is **4 ticks** from first state to Lumbridge,
+  not 3 (the talk goes a tick after the design accept; landing at tick 7, 40 of 40 fresh accounts,
+  rs/345); a guide refusal (~1 in 30) costs ~3 more, with ClickGuard re-sending at tick 7. **rs/345's PR
+  #291 is on main**: S00's page, choice and landing waits count from the server tick the click reached
+  (`lib/wait.ts` `serverClock`, which only ever lengthens a bound); S00's local re-send is dropped and
+  ClickGuard carries it; lab quiet 40 of 40, throttled 14x-40x 8 of 8. 4 ticks for rehearsal accounts;
+  SCORED's 8 unaffected. A clean pass costs nothing from #291.
 - **Precondition: a loopback gateway, enforced on the floor** (rs/287; main, 23:52 PDT; RUN-ORDER.md S00).
   The skip's guide talk has a 12-tick window: rs/287's fresh throwaway ran with an env that had no
   `GATEWAY_URL`, went through the demo's public relay, reached first state at client tick 62 and
