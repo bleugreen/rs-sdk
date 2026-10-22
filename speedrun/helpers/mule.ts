@@ -728,6 +728,11 @@ export interface ServeOptions {
     /** Where and how long to wait for the scored account's ask; required for a package with a top-up (the scope is the package's). */
     ask?: Omit<AwaitAskOptions, 'scope'>;
     log?: (message: string, data?: Record<string, unknown>) => void;
+    /**
+     * Offer each id's count in `held`, not all of it (carried mode: the inventory holds the other
+     * packages too). A top-up line's count still comes from the ask.
+     */
+    exact?: boolean;
 }
 
 export interface ServeResult extends GiveResult {
@@ -746,14 +751,15 @@ export async function serveStaged(sdk: BotSDK, bot: BotActions, o: ServeOptions)
     const items = sdk.getInventory().filter(i => o.held.has(i.id));
     const mode = o.mode ?? 'burst';
     const timeoutMs = o.timeoutMs ?? 60_000;
-    if (!o.pkg.items.some(isTopUp)) return { ...(await giveOpenTrade(sdk, bot, o.partner, items, mode, timeoutMs)), topUps: [], ask: null };
+    const fixed = o.exact ? new Map(o.held) : undefined;
+    if (!o.pkg.items.some(isTopUp)) return { ...(await giveOpenTrade(sdk, bot, o.partner, items, mode, timeoutMs, fixed)), topUps: [], ask: null };
     if (!o.pkg.scope || !o.ask) throw new Error(`Package ${o.pkg.name} has a top-up: it needs a scope and the ask's options`);
     const ask = await awaitAsk(sdk, { ...o.ask, scope: o.pkg.scope });
     const topUps = topUpCounts(o.pkg, items, ask);
     const unserved = topUps.filter(t => t.asked === null || t.n < Math.min(t.asked === 'all' ? t.max : t.asked, t.max));
     if (!ask) o.log?.('top-up: no usable ask; offering none of the top-up lines', { package: o.pkg.name, scope: o.pkg.scope, waitedTicks: o.ask.maxTicks });
     else if (unserved.length) o.log?.('top-up: short of the ask', { package: o.pkg.name, lines: unserved });
-    const amounts = new Map(topUps.flatMap(t => (t.id === null ? [] : [[t.id, t.n] as const])));
+    const amounts = new Map([...(fixed ?? []), ...topUps.flatMap(t => (t.id === null ? [] : [[t.id, t.n] as const]))]);
     return { ...(await giveOpenTrade(sdk, bot, o.partner, items, mode, timeoutMs, amounts)), topUps, ask };
 }
 
@@ -880,6 +886,14 @@ export interface MuleOptions {
     askWaitTicks?: number;
     /** Where package cues and top-up asks are read (altar-cue.ts cueDir: RC_CUE_DIR, else run-machine/rc-cue). */
     cueDir?: string;
+    /** The packages are in the inventory from login, served where each package's `at` says; no bank, no GE. */
+    carried?: boolean;
+    /** NPC name RegExp sources to kill within `clearTiles` before a trade, with any NPC that hits the mule. Default DEFAULT_WILDLIFE when carried, else none ([] turns it off). */
+    wildlife?: string | string[];
+    /** Chebyshev tiles from the mule a named NPC is cleared within. Default 1 (the atoll wildlife's hunt range). */
+    clearTiles?: number;
+    /** Minutes without input before a keep-alive step (keepAliveStep); 0 never. Default 5 when carried, else 0. */
+    keepAliveMinutes?: number;
 }
 
 /** A cue older than this when the mule starts is a past hand-off's, never served. */
@@ -947,17 +961,27 @@ export function packageOf(raw: unknown, pack?: ObjPack): Package {
     const items = packageItems(name, p.items, pack);
     if (p.onRequest !== undefined && typeof p.onRequest !== 'boolean') throw new Error(`Package ${name}: onRequest must be true or false`);
     const onRequest = p.onRequest === true ? { onRequest: true as const } : {};
+    const at = p.at === undefined ? {} : { at: tileOption(p.at, `Package ${name} at`) };
     if (!items.some(isTopUp)) {
         // The scope keys the package for a cue (its hand-off id); a fixed package may go without.
         const scope = p.scope === undefined ? {} : { scope: scopeOption(p.scope, ['mule'], `Package ${name} scope`) };
-        return { name, items, ...scope, ...onRequest };
+        return { name, items, ...scope, ...onRequest, ...at };
     }
     const labels = items.map(i => refLabel(i).toLowerCase());
     for (const t of items.filter(isTopUp)) {
         const l = refLabel(t).toLowerCase();
         if (labels.filter(x => x === l).length > 1) throw new Error(`Package ${name}: ${refLabel(t)} is a top-up line and another line too`);
     }
-    return { name, items, scope: scopeOption(p.scope, ['mule'], `Package ${name} scope`), ...onRequest };
+    return { name, items, scope: scopeOption(p.scope, ['mule'], `Package ${name} scope`), ...onRequest, ...at };
+}
+
+/** A tile from options: `{ x, z }`, whole numbers. */
+export function tileOption(raw: unknown, where: string): Tile {
+    const t = (raw ?? {}) as Record<string, unknown>;
+    const x = Number(t.x);
+    const z = Number(t.z);
+    if (!Number.isInteger(x) || !Number.isInteger(z) || x < 0 || z < 0) throw new Error(`${where} must be { x, z } in whole tiles (got ${JSON.stringify(raw)})`);
+    return { x, z };
 }
 
 export function muleOptions(raw: Record<string, unknown>, env: Record<string, string | undefined> = process.env): Required<Omit<MuleOptions, 'serve' | 'ge'>> & Pick<MuleOptions, 'serve' | 'ge'> {
@@ -966,7 +990,20 @@ export function muleOptions(raw: Record<string, unknown>, env: Record<string, st
     if ('requestFile' in raw) throw new Error('requestFile is gone: a package is asked for by a cue scoped { step: <hand-off id>, family: "mule" } in cueDir (mule.md)');
     const askWaitTicks = Number(o.askWaitTicks ?? 3);
     if (!Number.isInteger(askWaitTicks) || askWaitTicks < 0) throw new Error(`askWaitTicks must be a whole number (got ${o.askWaitTicks})`);
+    if (o.carried !== undefined && typeof o.carried !== 'boolean') throw new Error('carried must be true or false');
+    const carried = o.carried === true;
+    const tiled = packages.filter(p => p.at).map(p => p.name);
+    if (!carried && tiled.length) throw new Error(`Package tiles (at) are for carried packages only (${tiled.join(', ')}): a banked package is served at stand`);
+    if (carried && o.ge) throw new Error('A carried mule has no bank, so no GE orders');
+    const keepAliveMinutes = Number(o.keepAliveMinutes ?? (carried ? 5 : 0));
+    if (!Number.isFinite(keepAliveMinutes) || keepAliveMinutes < 0) throw new Error(`keepAliveMinutes must be 0 or more (got ${o.keepAliveMinutes})`);
+    const clearTiles = Number(o.clearTiles ?? 1);
+    if (!Number.isInteger(clearTiles) || clearTiles < 0) throw new Error(`clearTiles must be a whole number (got ${o.clearTiles})`);
     return {
+        carried,
+        wildlife: o.wildlife ?? (carried ? DEFAULT_WILDLIFE : []),
+        clearTiles,
+        keepAliveMinutes,
         askWaitTicks,
         cueDir: typeof o.cueDir === 'string' ? o.cueDir : cueDir(env),
         serve: o.serve,
