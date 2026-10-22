@@ -186,7 +186,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 8 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,972 | 1,946 | 1,997 (the bow from 70); 2,023-2,211 without the kit | ~265 | overlay | `cannon-kit.ts` (rs/59, on main) | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible); run mode ~0, at most ~9 on S27's melee phase (m/i, rs/196) |
 | 9 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,389 | 1,389 | 1,763 | ~374 | overlay | `quest-grandtree-full.ts` | building (rs/202 under rs/185); **lab: 3 of 3 full A-to-P runs at SCORED's levels** (1,403 / 1,504 / 1,422) |
 | 10 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 1,293 | 1,269 | ~1,490 | ~186 | overlay | `quest-dragon-*.ts` | building (rs/258 under rs/185); **merged into rs/185's branch as #298** with fold-in 19's figures; its snapshot to main **rs/377** (held on rs/373), on the floor's pending list; its browser re-runs **rs/378** (held on rs/309); **lab: rs/258's pinned rerun, 6 of 6 from the arrival tile, burst 1,293 / fixed 1,322 (m), with the amulet drop**; the browser acceptance (O51) to come; run mode: no `p_walk`, re-paths at ten moving NPCs and the six maze monsters, lever ~0 (r, rs/258) |
-| 11 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,194 | 1,194 | ~5,220 | ~4,030 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **on main, 1514f47a (#222; rs/268's snapshot of rs/196's module, rs/186's branch at 0c349da6)**, the run-commit floor; **lab-accepted, with a partial demo confirmation** (9/9 tuned on the real server, n small; the 20-cycle demo acceptance pending); **lab-accepted (rs/196, module 3f02f336, relay path (lab): nature at 44 tuned 30/30 at 29 x 7, robust 30/30 at 29 x 8; S06 7/7 at 6 x 7, 58)**; the tuned nature run confirmed on the direct path, 30/30 at 29 x 7 (rs/196, 3b161c12); **browser-confirmed for arrival** (rs/196, 6 of 6 by the real leg, `--arrive=leg`, e2d47293: S06 60 / 60 / 60, body 10 cycles 82 / 83 / 82; fold-in 20); 30 of 30 at 29 x 7 under #287's reader fix; pending: the auto rule's 'handled before SCORED' field (entry 9); main's `runecraft-accept.ts` carries rs/330's `--path=direct` fix (812c766f) since #288 (rs/362, 4bdebcd5, inside the floor), with `runecraft.md` section 9 labelling each run relay or direct; rs/267's body stock-rung lab ran on the pre-fix copy, so it stays relay (lab), direct re-measure pending; the per-band load and the stock rung's opt-in on main with #288; cycle: on main, 23ea9f77 (#178) |
+| 11 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,194 | 1,194 | ~5,220 | ~4,030 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **on main, 1514f47a (#222; rs/268's snapshot of rs/196's module, rs/186's branch at 0c349da6)**, the run-commit floor; **lab- and demo-accepted** (the 20-cycle demo acceptance: rs/196, 12:26-12:33Z, 20 of 20 given, 13 of 13 in-batch gaps at 7, step 626; fold-in 22; a partial confirmation, 9/9 tuned, before); **lab-accepted (rs/196, module 3f02f336, relay path (lab): nature at 44 tuned 30/30 at 29 x 7, robust 30/30 at 29 x 8; S06 7/7 at 6 x 7, 58)**; the tuned nature run confirmed on the direct path, 30/30 at 29 x 7 (rs/196, 3b161c12); **browser-confirmed for arrival** (rs/196, 6 of 6 by the real leg, `--arrive=leg`, e2d47293: S06 60 / 60 / 60, body 10 cycles 82 / 83 / 82; fold-in 20); 30 of 30 at 29 x 7 under #287's reader fix; pending: the auto rule's 'handled before SCORED' field (entry 9); main's `runecraft-accept.ts` carries rs/330's `--path=direct` fix (812c766f) since #288 (rs/362, 4bdebcd5, inside the floor), with `runecraft.md` section 9 labelling each run relay or direct; rs/267's body stock-rung lab ran on the pre-fix copy, so it stays relay (lab), direct re-measure pending; the per-band load and the stock rung's opt-in on main with #288; cycle: on main, 23ea9f77 (#178) |
 | 12 | 10 | Smithing | `speedrun/skills/smithing.ts` | S25a | 1,065 | 1,028 | 1,330 | ~302 | overlay | `smithing-trade.ts` | **on main (#230)**, with `lib/trade.ts` `swap()` and `anvil.ts`'s restock and off-tile fixes; the demo attempt inconclusive (rs/197, entry 10) |
 | 13 | 12 | Dwarf Cannon | `speedrun/quests/dwarf-cannon.ts` | S13 | 933.0 | 807 | ~1,128 | ~167 | overlay | `quest-mcannon-*.ts` | **on main, 425c7047 (#299; rs/373's snapshot of rs/185 at 3502672e), the run-commit floor**: lab 6 of 6 at SCORED's real levels (rs/257), the demo complete on cairn_dc01; **the browser pass waits on rs/309, then rs/370**; built by rs/257 under rs/185; **lab: 3 runs a mode at SCORED's levels, 1,137 fixed / 999 burst** (rs/257); **execution 2's railing recount**: the formula rate, B at 25.2 tries (rs/257, fold-in 17); run mode: no `p_walk`, re-paths at Lawgof (A, C, E, H, J, L) and Nulodion (K), lever ~0 (r, rs/257) |
 | 14 | 14 | Tree Gnome Village | `speedrun/quests/tree-gnome-village.ts` | S10b | 678 | 665 | 902 | ~237 | overlay | `quest-tree-full.ts`, `quest-premm-fight.ts` | **on main, fe1fd23e (#312; rs/390's snapshot of rs/342's module, #311 on rs/185's branch)**: lab-accepted on lite (rs/342, 3 runs a mode from Elkoy at SCORED's arrival levels: burst 678, fixed 719, the warlord 113.7 by Fire Blast; fold-in 22); the browser pass **rs/391**, behind rs/309 |
@@ -280,9 +280,8 @@ are filed under main and held until tenet 15 is answered.
   (6e86a656, #163). rs/186
   plugs Fletching into rs/154's module, and entry 32's standalone module is rs/186's.
 - **9.** On main, 1514f47a (#222): rs/268's snapshot of rs/196's lab-accepted module (rs/186's
-  branch at 0c349da6); lab-accepted, with a partial demo confirmation (9 of 9 tuned turns on the
-  real server, rs/196; the 20-cycle demo acceptance pending a retry once the givers' banks are
-  topped up). Lab-accepted (rs/196): S06 58 in two runs at 27 a load, 60 twice at 26 (rs/186 and rs/196, fold-in 17); 30-cycle runs at 7 on the body and nature
+  branch at 0c349da6); lab- and demo-accepted (the 20-cycle demo acceptance on the real server from the
+  twin, rs/196, 20 of 20 given, every in-batch gap at 7; fold-in 22; 9 of 9 tuned turns before). Lab-accepted (rs/196): S06 58 in two runs at 27 a load, 60 twice at 26 (rs/186 and rs/196, fold-in 17); 30-cycle runs at 7 on the body and nature
   altars with givers first, robust at 8 in either login order; resume and fault recovery measured
   (entry 9). rs/186 adopts rs/131's in-page cycle; the givers are rs/163's (helper table). Pending:
   the auto rule's switch to a 'handled before SCORED' field (entry 9). Its first lab runs used rs/131's
@@ -1515,8 +1514,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   7** (m, demo). It stopped at 9 cycles on essence supply (the banks held ~180 against 540), so it is
   not the 20-cycle acceptance. No turn missed with the twin's tick monitor showing 24-52 late ticks
   a minute (p90 ~200 ms), counts taken before #226's observed-period fix and likely inflated by a
-  slow tick. The 20-cycle demo acceptance waits for a retry once rs/41 banks at least 189 essence
-  per giver. rs/131's processing-order runs
+  slow tick. The 20-cycle demo acceptance has since passed (fold-in 22; 'Acceptance, demo' below). rs/131's processing-order runs
   (RUN-ORDER.md R12) are a separate measurement and keep their labels.
 - **The auto rule and placement:** the module's auto rule picks tuned for givers that logged in
   before SCORED, which is right for the plan of record: every giver on SCORED's machine, one address
@@ -1538,8 +1536,15 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Acceptance, local:** a browser tab for SCORED and a direct-path giver on the lab engine at 300 ms,
   nature altar at 44, 30 cycles. Pass: at least 28 of 30 at **7**, and robust at 8 in either login
   order.
-- **Acceptance, demo (throwaway):** air altar on two throwaways from Ashburn, 20 cycles. Pass: at least
-  18 of 20 at 7, or at 8 under robust.
+- **Acceptance, demo (throwaway):** air altar on two throwaways from Ashburn, 20 cycles. Pass: **every
+  give on time, every in-batch gap at 7, with gaps between batches attributed to giver count**
+  (rs/186's wording, fold-in 22; it replaces 'at least 18 of 20 at 7, or at 8 under robust').
+  **Demo-accepted** (rs/196, the demo via the twin, 12:26-12:33Z 2026-10-22, the air altar, 3 direct givers logged in first, 20 cycles: 20 of 20 given, all tuned and giver-first, 0 missed or late, the first craft +7, 13 of 13 in-batch gaps at 7, step 626). Its 6 gaps between batches, 87-89 ticks, were the 3 givers' bank round trips,
+  a small test roster's restock, not the cycle. **Giver supply on the night is set by the roster:**
+  S06 has 7 givers for 7 crafts, so no restock gap; S21 has 22, so 154 ticks between one giver's
+  turns against the body altar's measured 139-142-tick round trip (RUN-ORDER.md BA; ~90 at the air
+  altar, as the demo's 87-89 show). The demo's server tick ran about 390 ms (p90 late 187-273 ms), a
+  dated observation for 12:26-12:33Z. No re-price: S06 and S21 stay on their measured figures.
 - **Start from:** `runecraft-cycle.ts`, `runecraft-lib.ts`, `runecraft-model.ts`, `runecraft-probe.ts`.
 - **logoutSafe:** yes between cycles.
 
