@@ -383,6 +383,18 @@ describe('thieving helper top-ups', () => {
         expect(readTopUpAsk(CUE)!.items).toEqual(ask);
     });
 
+    test('idle mode with resend: the program re-sends an unanswered request at TOPUP_RESEND_TICKS', async () => {
+        const sdk = new ManualPageSdk(world({ level: 60, x: 2670, z: 3305, maxHp: 40, inventory: [cake(0), cake(1)] }));
+        const { ctx } = harness(sdk);
+        const topUp = { giver: GIVER, below: 4, resend: true };
+        const done = steps({ food: 'cake', topUp }).find(s => s.name === 'thieving:knights')!.run(ctx);
+        await settle(() => sdk.starts.length === 1);
+        expect(TOPUP_RESEND_TICKS).toBe(3);
+        expect(sdk.starts[0]!.params).toMatchObject({ idleOnInterface: true, stunActions: [topUpAction(topUp, FOODS.cake)], requestResend: TOPUP_RESEND_TICKS });
+        sdk.publish({ phase: 'done', result: { reason: 'level' } }, { skills: [{ name: 'Thieving', level: 99, baseLevel: 99, experience: 0 }] as never });
+        await done;
+    });
+
     test('topUpAsk with the pack: bones to fill, food back to 2, the next courier tier once at one tier held, one slot for arrows', () => {
         const skills = (fletching: number) => [{ name: 'Thieving', level: 60, baseLevel: 60, experience: 0 }, { name: 'Fletching', level: fletching, baseLevel: fletching, experience: 0 }] as never;
         const pack = (tiers: string[], o: { fletching?: number; coins?: boolean; sharks?: number } = {}) => {
