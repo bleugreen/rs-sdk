@@ -211,29 +211,72 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 (m, rs/149; rs/147's HOST.md). Add `pgrep -a -x Xvfb` to the check there, and stop a leftover
 rehearsal Xvfb with `pkill -TERM -x Xvfb` only when no rehearsal holds a slot.
 
-## The host
+## The two machines
 
-| | | |
-|---|---|---|
-| Machine | AWS us-east-1c, c7i.2xlarge: 8 vCPU (Xeon Platinum 8488C), 16 GB, 60 GB gp3, **no GPU**, Ubuntu 24.04 | r: main on cairn://p/rs/103, 08:45 and 08:53 PDT 2026-10-21; CPU model m (`/proc/cpuinfo`) |
-| Address | **3.209.186.185**, an Elastic IP (eipalloc-0af65bca5f7a25606), since 23:11Z on 2026-10-21; 54.242.152.95 is released. SSH and RDP admit only the operator's address; tailnet name `rs-ashburn` (100.66.164.37, unchanged); the host key is unchanged (ssh-ed25519 ...WZ0wE). It moved because in 5 of 5 same-second gate pairs the run host failed and the twin passed, and captures showed tick messages held 135-218 ms in Fly's delivery path to the old address on every connection to that machine, with the machine, its TCP stack and the account ruled out (rs/83's demo-latency.md sections 9 and 10, when written) | r: main; the host thread, cairn://p/rs/host, 16:12 PDT |
-| Desktop | XFCE served by xrdp, user `ubuntu`; `max_bpp=24`; sesman `KillDisconnected=false`, `DisconnectedTimeLimit=0`, `IdleTimeLimit=0`, so a disconnected session lives on | m: read from `/etc/xrdp/xrdp.ini` and `sesman.ini`, 16:23 UTC |
-| One desktop per user | a second session (another resolution, say) starts and dies at once, because `xfce4-session` cannot run twice for one user; the old session holds the only desktop. **Changing resolution means ending the session first** | r: main, 09:26 PDT |
-| Screen | screensaver and locker removed, `xset` no-blank at login, logind `IdleAction=ignore` | r: main |
-| Chrome | 156.0.8078.47 at `/usr/bin/google-chrome`, software rendered (its renderers run with `--disable-gpu-compositing`) | m |
-| Tools | ffmpeg 6.1.1; Bun 1.4.3 at `~/.bun/bin/bun`, **not on PATH** for non-login ssh commands; tmux; sysstat (`pidstat`) | m |
-| Checkout | `/home/ubuntu/rs-sdk`, a long-lived clone of our fork for the page server, the gateway and helper runners | r: main |
-| Cairn | the executor `ashburn` on this machine is permanently drained: never target it | r: main, 08:58 PDT |
+The two are the same instance class, AMI and availability zone (tenet 17), with identical CPU, kernel
+(7.0.0-1014-aws) and TCP settings (m, the host thread, 14:17 PDT 2026-10-21). Twin facts are r from
+rs/147's `docs/speedrun/rehearsals/HOST.md` (rs/147's branch at 715dd4fa; rs/149 built the twin)
+unless marked; **pending (rs/host)** marks a fact the host thread has not yet sent from the twin's
+run-capable install (its window opened at 00:26Z on 2026-10-22).
 
-**Reaching it.** Every command below is pasted on the Mac (zsh or bash) and runs on the host over
-this exact ssh line (or `speedrun/helpers/ashburn.sh` once rs/41 merges it). From Cairn, run it in a
-batch on executor `local`, `bgsrv-mac` or `bgsrv-ub`.
+| | Run host | Twin | Source |
+|---|---|---|---|
+| Name, instance | `rs-ashburn-run`; instance id **pending (rs/host)** | `rs-ashburn-rehearsal`, `i-0f690e919614af7b2`, launched 2026-10-21 12:57 PDT | r: the host thread, 16:12 PDT; HOST.md |
+| Machine | AWS us-east-1c, c7i.2xlarge: 8 vCPU (Xeon Platinum 8488C), 16 GB, 60 GB gp3, **no GPU**, Ubuntu 24.04 | the same class on the run host's subnet: 8 vCPU (Xeon Platinum 8488C), 15 GB as read on the machine, 60 GB gp3, no GPU; the run host's AMI `ami-02a9cdd4e98bc3c78`, Ubuntu 24.04.5 | run host r: main on cairn://p/rs/103, 08:45 and 08:53 PDT, CPU model m (`/proc/cpuinfo`); twin m, HOST.md |
+| Public address | **3.209.186.185**, an Elastic IP (eipalloc-0af65bca5f7a25606), since 23:11Z on 2026-10-21 (below) | **54.167.144.8**, an Elastic IP, so it survives a stop | r: the host thread, 16:12 PDT; HOST.md |
+| The engine's processing bucket (last octet & 7; step 4), dated 2026-10-21 | 185 & 7 = **1** | 8 & 7 = **0** | i, from the address; the demo sees these addresses (flyio-debug `ra`, m, the host thread, 16:33 PDT) |
+| Ingress | SSH and RDP admit only the operator's address | the same: security group `sg-0f1bb560e649e85c5`, a copy of the run host's ingress | r |
+| Tailscale | tailnet name `rs-ashburn`, **100.66.164.37** (unchanged by the move) | **not on the tailnet**: RDP goes to 54.167.144.8:3389 and the live view through an ssh tunnel (step 5) | r: the host thread; HOST.md |
+| SSH key, known_hosts | `~/.rs-fleet/id_ed25519_ashburn`, `known_hosts_ashburn`, on `local`, bgsrv-mac and bgsrv-ub | `~/.rs-fleet/id_ed25519_rehearsal`, `known_hosts_rehearsal`, on `local` and bgsrv-ub only: two different keys with the same file name, one made on each machine | r |
+| Host key | ssh-ed25519 ...WZ0wE, unchanged by the move | the three keys cloud-init printed to the EC2 console, pinned in `known_hosts_rehearsal` before the first connection; the ed25519 key's tail for this table **pending (rs/host)** | r: the host thread, 16:12 PDT; HOST.md |
+| Desktop | XFCE served by xrdp, user `ubuntu`; `max_bpp=24`; sesman `KillDisconnected=false`, `DisconnectedTimeLimit=0`, `IdleTimeLimit=0`, so a disconnected session lives on | the same settings (m, read back by its setup script) | run host m: `/etc/xrdp/xrdp.ini` and `sesman.ini`, 16:23 UTC |
+| Display | `:10` when it is the first session since boot; read it in step 2 | `:10`, 1920x1080, 24 planes, made by the operator's first connect (m, 20:17:57 UTC); a stop of the instance ends it | r, m |
+| One desktop per user | a second session (another resolution, say) starts and dies at once, because `xfce4-session` cannot run twice for one user; the old session holds the only desktop. **Changing resolution means ending the session first** | the same | r: main, 09:26 PDT |
+| Screen | screensaver and locker removed, `xset` no-blank at login, logind `IdleAction=ignore` | none installed, `xset` no-blank autostart, `IdleAction=ignore` | r |
+| Chrome | 156.0.8078.47 at `/usr/bin/google-chrome`, software rendered (its renderers run with `--disable-gpu-compositing`) | 156.0.8078.47, held at that version (`apt-mark hold`) | m |
+| Tools | ffmpeg 6.1.1; Bun 1.4.3 at `~/.bun/bin/bun`, **not on PATH** for non-login ssh commands; tmux; sysstat (`pidstat`) | the same, with tmux 3.4, sysstat 12.6.1 and Xvfb (rehearsals use it, never the run) | m |
+| Checkout | `/home/ubuntu/rs-sdk`, a long-lived clone of our fork for the page server, the gateway and helper runners; only step 0 moves it | `/home/ubuntu/rs-sdk`, kept on main day to day because rehearsal attempts add worktrees from it (at 7c3e8c706 at 16:34 PDT, rs/147); on run night step 0 moves it to RUN_COMMIT under the run's reservation with no attempt worktree in use, and if the twin is not chosen it goes back to main after the run's teardown | r: main; rs/147, 16:18-16:34 PDT |
+| `~/run-commit` and the gate clone `~/gate/rs-sdk` | written by step 0 only; the clone follows it | the install writes the run host's RUN_COMMIT; then only step 0: **pending (rs/host)** | r: rs/83 and the host thread, 16:13-16:36 PDT |
+| Gate history timer (rs/140) | enabled, :00 and :30 | installed, **disabled until run night**; install **pending (rs/host)** | "Gate history timer", below |
+| Host reservation | `/home/ubuntu/host-reserved.json` | the same path and schema; rehearsal attempts and claims stand down while it is live | r: the host thread, 16:18 PDT; HOST.md |
+| Helpers' code and credentials (step 4) | rs/117's launcher from `~/rs-sdk` at RUN_COMMIT; the givers' mode-600 env files on run night only | the same, as part of the run-capable setup: **pending (rs/host)** | r: main, 16:14 PDT; the host thread, 17:03 PDT |
+| Day to day | the gate timer, rs/83's probe slots; the host thread books the slots | rs/147's rehearsals under its slot files (two logins, main's exceptions aside) | r |
+| Cairn | the executor `ashburn` on this machine is permanently drained: never target it | none listed in HOST.md | r: main, 08:58 PDT |
+
+**Why the run host moved address.** Until 23:11Z on 2026-10-21 the run host was 54.242.152.95,
+Amazon's auto-assigned address, released at the move. In 5 of 5 same-second gate pairs the run host
+failed and the twin passed, and captures showed tick messages held 135-218 ms in Fly's delivery path
+to that address on every connection to the machine, with the machine, its TCP stack and the account
+ruled out (m, the host thread, 15:47 PDT; rs/83's `demo-latency.md` sections 9 and 10, 01e2ec00 on
+rs/83's branch). At 3.209.186.185 its first pairs read clean, tick for tick with the twin ("Measured:
+the new address and same-minute pairs", at the end): the hold followed the address. It can strike
+either machine, which is why both are kept run-capable and both are gated (tenet 17, step 5a).
+
+**Reaching them.** Every command below is pasted on the Mac (zsh or bash) and runs on a machine over
+an exact ssh line (or `speedrun/helpers/ashburn.sh` once rs/41 merges it). **Every command on this
+page is written for the run host.** From Cairn, run it in a batch on executor `local`, `bgsrv-mac`
+or `bgsrv-ub`.
 
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'uptime'
 ```
 
-**Names and ports.**
+The twin, from `local` or bgsrv-ub only (bgsrv-mac holds no twin key):
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'uptime'
+```
+
+**The twin's form of any command** changes four strings and nothing else: the key, the known_hosts
+file, the address, and the live view's bind address (step 5). Paste the run host's command through
+this filter on the Mac and run what it prints; never run a run-host command unchanged against the
+twin's address or the other way round:
+
+```sh
+pbpaste | sed -e 's/id_ed25519_ashburn/id_ed25519_rehearsal/g' -e 's/known_hosts_ashburn/known_hosts_rehearsal/g' -e 's/3\.209\.186\.185/54.167.144.8/g' -e 's/100\.66\.164\.37:8090/127.0.0.1:8090/g'
+```
+
+**Names and ports**, the same on both machines except the live view:
 
 | What | Where |
 |---|---|
@@ -247,6 +290,7 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 | Run commit (written only by step 0) | `/home/ubuntu/run-commit` |
 | Gate history timer (rs/83): its copy, its clone, its history | `~/.local/lib/rs-gate`, `~/gate/rs-sdk`, `~/gate-history/` |
 | X display of the operator's session | `:10` when it is the first session since boot; read it in step 2 |
+| The operator's live view (step 5) | run host `http://100.66.164.37:8090/live.mjpg` on the tailnet; twin `127.0.0.1:8090` on the machine, opened through an ssh tunnel |
 
 ### Gate history timer
 
@@ -255,7 +299,26 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 it names, `docs/speedrun/scripts/host-gate/` and `docs/speedrun/scripts/host-gate-read.sh`, are not
 on main yet: they arrive with rs/83.)
 
-The run-night gate's history accumulates on this host until the scored run, without an agent. It's a systemd user timer owned by mission rs/83. `ubuntu` lingers, so the timer runs with no one logged in. The sources are in `docs/speedrun/scripts/host-gate/` and `docs/speedrun/scripts/host-gate-read.sh`. `install.sh` copies them to `~/.local/lib/rs-gate`, and the timer runs that copy.
+**On both machines** (tenet 17). On the run host the timer has read at :00 and :30 since 20:00Z on
+2026-10-21. On the twin the host thread installs the same files, a gate clone at the same
+RUN_COMMIT and a throwaway read account of its own (never one of rs/147's), with the schedule
+**disabled until run night**, so it never runs into a rehearsal (the host thread, 16:18 PDT; rs/147's
+HOST.md, "Run-capable twin"); that install is **pending (rs/host)**. Each machine writes its own
+`~/gate-history/<UTC timestamp>.json` on itself, in the format below; nothing is merged or copied
+between them. Every command in this section runs on either machine in its own ssh form ("Reaching
+them").
+
+**How the start decision reads both.** From two hours before the start both timers run every 15
+minutes: `install.sh --every 15` on each machine, which on the twin is also what enables it. They
+fire in the same minutes, so every firing is a same-minute pair of the two paths. Until step 0's
+reservations stop them, read the latest files on both machines side by side (the history command
+below, once per machine). A path that holds ticks shows as a run of failed reads on one machine while
+the other passes, as the run host's old address did in 5 of 5 pairs (m, the host thread, 15:47 PDT).
+The history picks the start window and warns of a bad path early; the decision itself is step 5a's
+fresh same-minute gate on both. A rehearsal running on the twin makes its firings skip as busy, so
+rs/147 grants no attempt that would overlap that window (HOST.md).
+
+The run-night gate's history accumulates on each machine until the scored run, without an agent. It's a systemd user timer owned by mission rs/83. `ubuntu` lingers, so the timer runs with no one logged in. The sources are in `docs/speedrun/scripts/host-gate/` and `docs/speedrun/scripts/host-gate-read.sh`. `install.sh` copies them to `~/.local/lib/rs-gate`, and the timer runs that copy.
 
 - **What fires when.** `rs-gate-read.timer` starts `rs-gate-read.service` at :00 and :30. The host clock is UTC; the minutes are the same in PDT. Each firing (1) skips while a reservation is live; (2) skips while the host is busy: ffmpeg, bun, a tmux server that still answers, or a Chrome with its own profile, app URL, headless flag or open connection; (2b) skips without logging in, as `restart suspected`, when fewer than 300 are online: the 20:00Z firing crashed with 38 online during the afternoon's probable restart, and this skip replaces that crash (rs/140, 14:05 PDT 2026-10-21); (3) checks out the commit in `~/run-commit` (written only by the runbook's step 0), detached in its own clone `~/gate/rs-sdk`, and skips with `no run-commit` if that file is missing; (4) runs the #101 gate, `tickmanip-latency.ts gate --path=direct --no-tele`, under `timeout 240`. The account is a throwaway whose credentials exist only in `~/gate/rs-sdk/bots/gate/bot.env` (mode 600). It logs in through the direct path, not through a Chrome URL. A read takes about 3 minutes, and systemd kills the unit's whole control group at 270 s. That makes the timer compliant with the reaping rule: nothing it starts outlives its own bound.
 - **History.** One file per firing, `~/gate-history/<UTC timestamp>.json`: `commit`, `status` (`ok`, `not-probed`, `timeout`, `error` or `skip`), `on`, `onTime`, `catchUpsPerMinute`, `tickP90Ms`, `players`, `edge`, `utc` and `endUtc`, and `preLogin` (`players`, `flyMachine`, `flyWorker`; the Fly machine id makes a restart visible as a changed machine; rs/140, 14:05 PDT), with the gate's own JSON under `gate`. Skips record the reason in `note`. There's one journal line per firing: `journalctl --user -u rs-gate-read`. Check the next firing with `systemctl --user list-timers rs-gate-read.timer`.
@@ -266,7 +329,8 @@ The run-night gate's history accumulates on this host until the scored run, with
 
 **For the run script and rehearsals:** in step 0 or setup, write `~/host-reserved.json` covering the whole run with margin before anything else starts, rather than disabling the timer. A forgotten removal then costs nothing. The leftover check should not count the timer: between firings it has no process, and during one its processes belong to `rs-gate-read.service` (`systemctl --user status rs-gate-read.service`).
 
-The same commands in this page's ssh form. The journal, the next firing and the latest history file:
+The same commands in this page's ssh form (the run host's; the twin's through the filter in "Reaching
+them"). The journal, the next firing and the latest history file:
 
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'journalctl --user -u rs-gate-read -n 20 --no-pager; systemctl --user list-timers rs-gate-read.timer --no-pager; ls -t ~/gate-history | head -1 | sed "s|^|$HOME/gate-history/|" | xargs -r cat'
