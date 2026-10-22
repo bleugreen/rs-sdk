@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { PRAYER_INDICES, type BotWorldState, type GroundItem, type InventoryItem, type NearbyNpc, type PlayerState } from '../../sdk/types';
-import { drive, FakeSdk, baseState, runeNeedProblems } from '../lib/fake-sdk';
+import { drive, FakeSdk, FakeTradePartner, baseState, runeNeedProblems } from '../lib/fake-sdk';
 import { TickLog } from '../lib/ticks';
+import { handOffFrom, loadHandOff, matches, type HandOffReport } from '../runner/handoff';
 import type { Observed, StepContext } from '../runner/step';
 import {
-    AIR_RUNES, ARRIVAL, barredReason, entryRefusal, exitClean, exitDropItems, exitMagic, FALLBACK_RUNES, fightKolodion, formPicker, KEEP_SHARKS, kit, LETTERS, newTally, prayerBudget, quest,
-    FIRE_WAVE_MAX_CASTS, RUNE_NEED, RUNE_USE, SPELL_RUNES, SPELLS, spellReady, stepId, steps, type Options,
+    AIR_RUNES, ARENA_WATCH_TILES, ARRIVAL, arenaSightings, barredReason, cellarPlan, DEFAULT_H13_AT, entryBarred, entryRefusal, exitClean, exitDropItems, exitMagic, FALLBACK_RUNES, fightKolodion,
+    formPicker, H13_ROW, KEEP_SHARKS, kit, LETTERS, newTally, prayerBudget, quest, FIRE_WAVE_MAX_CASTS, RUNE_NEED, RUNE_USE, SPELL_RUNES, SPELLS, spellReady, stepId, steps, type Options,
 } from './mage-arena';
 
 // Config ids from server/content/pack/obj.pack: entryRefusal reads the categories by id.
@@ -482,5 +483,198 @@ describe('rune pins: RUNE_USE and RUNE_NEED agree with the kit (tools/rune-pins.
         const air = (n: number) => ({ ...ready, inventory: ready.inventory.map(i => (/^air rune$/i.test(i.name) ? { ...i, count: n } : i)) });
         expect(seg('B').preconditions(air(549), {})).toMatch(/air rune 549 held, want >= 550/);
         expect(seg('B').preconditions(air(550), {})).toBe(true);
+    });
+});
+
+// ------------------------------------------------------------------ H13 in the cellar (h13At)
+
+const HELPER = 'cairn_h41';
+const CELLAR_ID = { magicShortbow: 861, bronzeArrow: 882, amuletOfMagic: 1727, coins: 995, diamond: 1601, superantipoison3: 181, fire: 554 } as const;
+const wornAt = (name: string, id: number, slot: number, count = 1): InventoryItem =>
+    ({ slot, id, name, count, optionsWithIndex: [{ text: 'Remove', opIndex: 1 }] }) as unknown as InventoryItem;
+
+/**
+ * SCORED on the arrival tile at T15-16's end with H13 still to come: the gree-gree wielded, the
+ * Khazard helmet and armour worn, MM's rune arrows quivered, the bow, the coins, the diamonds, the
+ * super antipoison and the fire runes in the pack (the ledger row's `out`), the knife T15-16 cut the
+ * webs with, and a stack of bronze arrows the row does not name. 23 slots used, 5 free.
+ */
+function cellarArrival(...extra: InventoryItem[]): BotWorldState {
+    nextSlot = 0;
+    return baseState({
+        tick: 100,
+        player: player(ARRIVAL.x, ARRIVAL.z),
+        skills: [skill('Magic', 77), skill('Prayer', 94), skill('Hitpoints', 97)],
+        prayers: { activePrayers: [], prayerPoints: 40, prayerLevel: 94 },
+        nearbyPlayers: [{ kind: 'player', index: 9, name: HELPER, combatLevel: 3, x: ARRIVAL.x + 1, z: ARRIVAL.z, distance: 1 }],
+        equipment: [
+            wornAt('Khazard helmet', ID.khazardHelmet, 0), wornAt('Amulet of magic', CELLAR_ID.amuletOfMagic, 2), wornAt('Monkey greegree', ID.greegree, 3),
+            wornAt('Khazard armour', ID.khazardPlatemail, 4), wornAt('Rune arrow', ID.runeArrow, 13, 31),
+        ],
+        inventory: [
+            item('Magic shortbow', CELLAR_ID.magicShortbow, 1, ['Wield']), item('Coins', CELLAR_ID.coins, 512),
+            ...Array.from({ length: 3 }, () => item('Diamond', CELLAR_ID.diamond)), item('Superantipoison(3)', CELLAR_ID.superantipoison3, 1, ['Drink']),
+            item('Fire rune', CELLAR_ID.fire, 2), item('Law rune', ID.law, 4), item('Water rune', ID.water, 6),
+            ...Array.from({ length: 4 }, () => item('Prayer potion(4)', ID.prayerPotion, 1, ['Drink'])),
+            ...sharks(8), item('Knife', ID.knife), item('Bronze arrow', CELLAR_ID.bronzeArrow, 5),
+            ...extra,
+        ],
+    } as Partial<BotWorldState>);
+}
+
+/** The helper's offer: the H13 row's `in`, as rs/41 stages it. */
+const H13_OFFER = [
+    ['Blood rune', ID.blood, 90], ['Death rune', ID.death, 25], ['Air rune', ID.air, 550], ['Magic potion(4)', ID.magicPotion, 1], ['Prayer potion(4)', ID.prayerPotion, 1],
+    ['Law rune', ID.law, 4], ['Water rune', ID.water, 4], ['Staff of fire', ID.staffOfFire, 1], ['Knife', ID.knife, 1],
+].map(([name, id, count]) => ({ slot: 0, id: id as number, name: name as string, count: count as number }));
+
+const CELLAR: Options = { h13At: 'cellar', kitFrom: HELPER };
+
+/** The server and the helper (FakeTradePartner), with drops served from the sends. */
+function cellarSdk(s: BotWorldState) {
+    const sdk = new FakeTradePartner(s, H13_OFFER, { partner: HELPER, stacks: t => /rune$|arrow$|^coins$/i.test(t.name), weapon: name => /staff|bow|greegree/i.test(name) });
+    let handled = 0;
+    const each = (st: BotWorldState): Partial<BotWorldState> => {
+        const drops = sdk.sent.filter(a => a.method === 'sendDropItem').slice(handled).map(a => a.args[0] as number);
+        handled += drops.length;
+        return drops.length ? { inventory: st.inventory.filter(i => !drops.includes(i.slot)) } : {};
+    };
+    const ctx = { sdk, c: {}, log: TickLog.memory('t') } as unknown as StepContext<unknown>;
+    return { sdk, each, ctx };
+}
+
+describe("h13At: the ledger's H13 row and the default", () => {
+    test("the default is 'ardougne': A's preconditions as before, so the cellar arrival pack is refused", () => {
+        expect(DEFAULT_H13_AT).toBe('ardougne');
+        const s = cellarArrival();
+        const pre = seg('A').preconditions(s, {});
+        expect(pre).toMatch(/staff of fire is not wielded/);
+        expect(seg('A', { h13At: 'ardougne', kitFrom: HELPER }).preconditions(s, {})).toBe(pre);
+        // With the staff worn, the entry check is the next refusal, as today.
+        const staffed = { ...s, equipment: [...s.equipment.filter(e => !/greegree/i.test(e.name)), wornAt('Staff of fire', ID.staffOfFire, 3)] };
+        expect(seg('A').preconditions(staffed, {})).toMatch(/Kolodion's entry check.*Khazard helmet worn/);
+    });
+    test('STEP-MANIFEST.md has the H13 row the cellar swap trades: the kit, the staff and the knife in; the bow, arrows and Khazard set out', () => {
+        const row = loadHandOff(H13_ROW);
+        expect(row.receive.map(r => r.name)).toEqual(expect.arrayContaining(['blood rune', 'death rune', 'air rune', 'staff of fire', 'knife']));
+        expect(row.give.map(g => g.name)).toEqual(expect.arrayContaining(['magic shortbow', 'rune arrow', 'khazard helmet', 'khazard armour']));
+        expect(row.wield.map(w => w.name)).toEqual(['staff of fire']);
+    });
+});
+
+describe("cellarPlan: the swap's give list is the row's out plus everything the entry check bars", () => {
+    const row = loadHandOff(H13_ROW);
+
+    test('every item entryRefusal names is given, by obj id; the row does not name the bronze arrows, so they are added by id', () => {
+        const s = cellarArrival();
+        const barred = entryBarred(s);
+        expect(barred.map(b => `${b.item.name} ${b.where}`)).toEqual(['Khazard helmet worn', 'Khazard armour worn', 'Rune arrow worn', 'Magic shortbow carried', 'Bronze arrow carried']);
+        expect(entryRefusal(s)).toBe(`Kolodion's entry check (mage_arena.rs2:100-138) refuses: ${barred.map(b => `${b.item.name} ${b.where} (${b.why})`).join(', ')}`);
+        const plan = cellarPlan(s, row);
+        for (const b of barred) expect(plan.give.some(g => matches(g, b.item))).toBe(true);
+        expect(plan.give.slice(row.give.length).map(g => [g.name, g.ids, g.count])).toEqual([['bronze arrow', [CELLAR_ID.bronzeArrow], 'all']]);
+        expect(plan.receive).toBe(row.receive);
+    });
+    test('nothing barred beyond the row: the row unchanged', () => {
+        const s = cellarArrival();
+        const clean = { ...s, inventory: s.inventory.filter(i => i.id !== CELLAR_ID.bronzeArrow) };
+        expect(cellarPlan(clean, row)).toBe(row);
+    });
+});
+
+describe("A in cellar mode: H13's one swap with kitFrom on the arrival tile", () => {
+    const pre = (s: BotWorldState, o: Options = CELLAR) => seg('A', o).preconditions(s, {});
+    const post = (s: BotWorldState, o: Options = CELLAR) => seg('A', o).postconditions(s, {});
+
+    test('the T15-16 pack (bow, arrows, Khazard armour, no staff of fire) passes the preconditions; the staff and the entry check are postconditions', () => {
+        const s = cellarArrival();
+        expect(pre(s)).toBe(true);
+        expect(post(s)).toMatch(/staff of fire is not wielded/);
+    });
+    test('the place, the levels and the slots stay preconditions', () => {
+        expect(pre(at(cellarArrival(), { x: 2539, z: 4740 }))).toMatch(/Kolodion's cellar/);
+        const low = cellarArrival();
+        low.skills = [skill('Magic', 59), skill('Prayer', 94)];
+        expect(pre(low)).toMatch(/base Magic 60/);
+    });
+    test('no kitFrom: refused before anything is sent, naming the option', () => {
+        expect(pre(cellarArrival(), { h13At: 'cellar' })).toBe("H13 in the cellar: no kitFrom, the helper on the arrival tile to swap with (h13At 'cellar')");
+    });
+    test('the helper not in view is refused', () => {
+        expect(pre({ ...cellarArrival(), nearbyPlayers: [] })).toMatch(/H13 in the cellar: H13: cairn_h41 is not in view/);
+    });
+    test('a pack too full to take off what it gives is refused with the count', () => {
+        expect(pre(cellarArrival(...sharks(4)))).toMatch(/^H13 in the cellar: H13: 1 free slots, and taking off .* needs 4$/);
+    });
+    test('the row handing in an item Kolodion bars is refused (the same item can never be on both sides)', () => {
+        const row = handOffFrom('| row | in | out | equip | needAtStart | source |\n|---|---|---|---|---|---|\n| H13 | khazard helmet x1 [u]; staff of fire x1 [u] | magic shortbow x1 (swap) | +staff of fire | 0 | fixture (r) |', 'H13');
+        expect(pre(cellarArrival(), { ...CELLAR, h13Plan: row })).toMatch(/the row hands in Khazard helmet, which Kolodion's entry check bars/);
+    });
+
+    test('runs the swap, wields the staff, drops the gree-gree: entry-clean, staff worn, fight-ready', async () => {
+        const reports: HandOffReport[] = [];
+        const { sdk, each, ctx } = cellarSdk(cellarArrival());
+        const A = seg('A', { ...CELLAR, onH13: r => reports.push(r) });
+        await drive(sdk, A.run(ctx) as Promise<unknown>, 120, each);
+        const end = sdk.getState()!;
+        expect(reports).toHaveLength(1);
+        expect(reports[0]).toMatchObject({ id: 'H13', partner: HELPER, trade: 'swap', ok: true });
+        expect(reports[0]!.unequipped.sort()).toEqual(['Amulet of magic', 'Khazard armour', 'Khazard helmet', 'Rune arrow']);
+        expect(reports[0]!.gave).toEqual(expect.arrayContaining(['Bronze arrow x5', 'Rune arrow x31', 'Magic shortbow x1', 'Khazard helmet x1', 'Khazard armour x1']));
+        // One trade: a single request, one offer burst.
+        expect(sdk.tradeClicks).toHaveLength(1);
+        expect(entryRefusal(end)).toBeNull();
+        expect(end.equipment.map(e => e.name)).toEqual(['Staff of fire']);
+        expect(end.inventory.some(i => /greegree/i.test(i.name))).toBe(false);
+        expect(seg('A', CELLAR).postconditions(end, {})).toBe(true);
+        expect(seg('B', CELLAR).preconditions(end, {})).toBe(true);
+    });
+    test('a run resumed after the trade landed only wields and drops: no second trade', async () => {
+        const first = cellarSdk(cellarArrival());
+        const A = seg('A', CELLAR);
+        await drive(first.sdk, A.run(first.ctx) as Promise<unknown>, 120, first.each);
+        // The trade landed, the staff never went on: the gree-gree is back on, the staff in the pack.
+        const end = first.sdk.getState()!;
+        const landed: BotWorldState = {
+            ...end,
+            equipment: [wornAt('Monkey greegree', ID.greegree, 3)],
+            inventory: [...end.inventory, { slot: 27, id: ID.staffOfFire, name: 'Staff of fire', count: 1, optionsWithIndex: [{ text: 'Wield', opIndex: 2 }] } as unknown as InventoryItem],
+        };
+        expect(pre(landed)).toBe(true);
+        const again = cellarSdk(landed);
+        await drive(again.sdk, A.run(again.ctx) as Promise<unknown>, 60, again.each);
+        expect(again.sdk.tradeClicks).toHaveLength(0);
+        expect(post(again.sdk.getState()!)).toBe(true);
+    });
+});
+
+// ------------------------------------------------------------------ the arena player log
+
+describe('arenaSightings: players near SCORED in the arena, logged without a name', () => {
+    const pl = (index: number, dx: number, dz: number, combatLevel = 90) =>
+        ({ kind: 'player', index, name: `someone${index}`, combatLevel, x: ARENA_AT.x + dx, z: ARENA_AT.z + dz, distance: Math.max(Math.abs(dx), Math.abs(dz)) });
+    const kolodion = { kind: 'npc', id: 907, index: 3, name: 'Kolodion', combatLevel: 0, x: ARENA_AT.x + 2, z: ARENA_AT.z, distance: 2, hp: 10, optionsWithIndex: [] } as unknown as NearbyNpc;
+    const arena = (players: ReturnType<typeof pl>[]) => at(arrival({ nearbyPlayers: players, nearbyNpcs: [kolodion] } as Partial<BotWorldState>), ARENA_AT);
+
+    test('a player at 14 tiles (Chebyshev) is logged with tick, distance and combat level; at 16 not; an NPC form never', () => {
+        expect(ARENA_WATCH_TILES).toBe(15);
+        const rows = arenaSightings(arena([pl(1, 14, 3, 72), pl(2, -16, 0), pl(4, 3, -15, 110)]), 907, new Set());
+        expect(rows).toEqual([
+            { tick: 100, distance: 14, combatLevel: 72, form: 907 },
+            { tick: 100, distance: 15, combatLevel: 110, form: 907 },
+        ]);
+        expect(rows.every(r => !('name' in r))).toBe(true);
+    });
+    test('deduplicated per player per form: once at a form however long it stays, again at the next form', () => {
+        const seen = new Set<string>();
+        const s = arena([pl(1, 5, 5)]);
+        expect(arenaSightings(s, null, seen)).toHaveLength(1);
+        expect(arenaSightings({ ...s, tick: 101 }, null, seen)).toHaveLength(0);
+        expect(arenaSightings({ ...s, tick: 140 }, 907, seen)).toEqual([{ tick: 140, distance: 5, combatLevel: 90, form: 907 }]);
+        expect(arenaSightings({ ...s, tick: 141 }, 907, seen)).toHaveLength(0);
+        expect(arenaSightings({ ...s, tick: 200 }, 908, seen)).toHaveLength(1);
+    });
+    test('nothing outside the arena (the cellar)', () => {
+        expect(arenaSightings(arrival({ nearbyPlayers: [pl(1, 0, 0)] } as Partial<BotWorldState>), null, new Set())).toEqual([]);
     });
 });
