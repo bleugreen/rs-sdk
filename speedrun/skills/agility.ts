@@ -32,7 +32,7 @@
 import { readFileSync } from 'fs';
 import type { BotWorldState } from '../../sdk/types';
 import { advance } from '../lib/dialogue';
-import { gateSide, GNOME_STRONGHOLD_GATE, passGate } from '../lib/travel';
+import { gateSide, GNOME_STRONGHOLD_GATE, passGate, type Gate } from '../lib/travel';
 import { withLevelUpDismissal } from '../lib/levelup';
 import { ProgramError, runProgram, type ProgramStatus } from '../lib/programs';
 import { logoutClean, type Session } from '../lib/session';
@@ -568,7 +568,8 @@ async function throughGate(ctx: StepContext<unknown>, x: number, z: number, firs
     const here = gateSide(GNOME_STRONGHOLD_GATE, { x: p.worldX, z: p.worldZ, level: p.level });
     const there = gateSide(GNOME_STRONGHOLD_GATE, { x, z });
     if (!here || !there || here === there) return 'no gate between';
-    const g = await passGate(ctx.sdk as never, GNOME_STRONGHOLD_GATE, GNOME_STRONGHOLD_GATE.sides[there]!);
+    const sides: Gate['sides'] = GNOME_STRONGHOLD_GATE.sides;
+    const g = await passGate(ctx.sdk as never, GNOME_STRONGHOLD_GATE, sides[there]!);
     row(ctx, 'agility:gate', ctx.sdk.getState()?.tick ?? -1, { to: there, ok: g.ok, ticks: g.ticks, clicks: g.clicks, dialogues: g.dialogues, ...(g.reason ? { reason: g.reason } : {}) }, g.ok);
     if (!g.ok) throw new Error(`walk to (${x},${z}): ${first}; the ${GNOME_STRONGHOLD_GATE.label}: ${g.reason}`);
     return `went through the gate to its ${there} side`;
