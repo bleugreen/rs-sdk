@@ -22,9 +22,7 @@
 // options: --client=lite|browser (default lite), --bones=N (overrides the case's count), --log=path
 // Prints one RESULT line: the module's BoothReport (on observed ticks), the verdict, host and load.
 
-import { readFileSync, writeFileSync } from 'fs';
 import { hostname, loadavg } from 'os';
-import { join } from 'path';
 import type { BotWorldState } from '../../sdk/types';
 import { depositAll } from '../lib/bank';
 import { closeSession, logoutClean, openSession, type Session } from '../lib/session';
@@ -33,6 +31,7 @@ import { waitTicks, waitUntil } from '../lib/wait';
 import { runSteps, type RunnerSession } from '../runner/step';
 import { boothFor, SCORED_TILE, VARROCK_WEST } from '../skills/herblore';
 import { preconditions, prayerOf, steps, STEP_NAME, type BoothReport } from '../skills/prayer';
+import { launchLabBrowser, type LabBrowser } from './browser';
 import { cheat, leaveTutorial, mustTele, near, setstat } from './setup';
 
 const bot = process.argv[2];
@@ -54,22 +53,7 @@ const bones = Number(flag('bones', which === 'inv5' ? '140' : '56'));
 const wantCycles = Math.floor(bones / 28);
 const where = () => ({ host: hostname(), load: loadavg().map(l => +l.toFixed(1)), at: new Date().toISOString() });
 
-if (client === 'browser') {
-    const webPort = process.env.WEB_PORT ?? '9300';
-    const agentPort = process.env.AGENT_PORT ?? '8300';
-    const envFile = join(process.cwd(), 'bots', bot, 'bot.env');
-    const text = readFileSync(envFile, 'utf8');
-    writeFileSync(envFile, text.replace(/^CLIENT_URL=.*\n?/m, '').trimEnd() + `\nCLIENT_URL=http://localhost:${webPort}/bot?gateway=${encodeURIComponent(`ws://localhost:${agentPort}`)}\n`, { mode: 0o600 });
-    const cdpPort = Number(webPort) + 7;
-    // loaded here, not at the top: puppeteer's module graph does not load under bun on some hosts
-    const puppeteer = (await import('puppeteer')).default;
-    await puppeteer.launch({
-        headless: true,
-        defaultViewport: null,
-        args: ['--no-sandbox', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`]
-    });
-    process.env.SPEEDRUN_CDP_URL = `http://127.0.0.1:${cdpPort}`;
-}
+const chrome: LabBrowser | null = client === 'browser' ? await launchLabBrowser(bot, { cdpPort: Number(process.env.WEB_PORT ?? '9300') + 7 }) : null;
 
 const opened: Session = await openSession(bot, client === 'browser' ? { client: 'browser', launch: true, insecureQueryLogin: true } : {});
 let exitCode = 0;
@@ -170,6 +154,7 @@ await (async () => {
         const out = await logoutClean(opened).catch(e => ({ ok: false, error: e instanceof Error ? e.message : String(e) }));
         console.log(`LOGOUT ${JSON.stringify(out)}`);
         await closeSession(opened).catch(() => {});
+        await chrome?.kill().catch(() => {});
     }
 })();
 process.exit(exitCode);
