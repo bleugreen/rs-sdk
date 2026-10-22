@@ -215,14 +215,21 @@ export async function applyFixture(sdk: FixtureSdk, letter: string, o: KitOption
     // The hangar's board persists per account until it has more than one empty slot (mm_puzzle.rs2 mm_open_puzzle):
     // clear it, so E meets the fresh 255-step scramble a first visit gets.
     if (letter <= 'E') await cheat(sdk, '~clearinv reinitialisation_inv', 1);
+    // The sharks go in last, after the wear: slotsNeeded counts worn items as out of the pack, but they are given into
+    // it first, so sharks given before the wear overflow it (A: 12 kit + bow + arrows + 15 sharks is 29).
     const items = fixtureItems(letter, o);
-    for (const [k, n] of items) await give(sdk, k, n);
-    const held = sdk.getState()!.inventory;
-    for (const [k, n] of items) {
-        const id = configId('obj', k);
-        const have = held.filter(i => i.id === id).reduce((a, i) => a + i.count, 0);
-        if (have < n) throw new Error(`fixture ${letter}: gave ${n} ${k}, holding ${have}`);
-    }
+    const verify = (list: Array<[string, number]>) => {
+        const held = sdk.getState()!.inventory;
+        for (const [k, n] of list) {
+            const id = configId('obj', k);
+            const have = held.filter(i => i.id === id).reduce((a, i) => a + i.count, 0);
+            if (have < n) throw new Error(`fixture ${letter}: gave ${n} ${k}, holding ${have}`);
+        }
+    };
+    const food = items.filter(([k]) => k === 'shark');
+    const rest = items.filter(([k]) => k !== 'shark');
+    for (const [k, n] of rest) await give(sdk, k, n);
+    verify(rest);
     // Levels before the wear, so hitpoints and prayer start full.
     await setStats(sdk, ROUTE_LEVELS);
     await mustTele(sdk, f.tile.x, f.tile.z, f.tile.level);
@@ -231,6 +238,13 @@ export async function applyFixture(sdk: FixtureSdk, letter: string, o: KitOption
         const r = await wield(sdk as never, configId('obj', w));
         if (!r.ok) throw new Error(`fixture ${letter}: could not wear ${w}`);
     }
+    for (const w of ROUTE_WORN) {
+        await give(sdk, w, 1);
+        const r = await wield(sdk as never, configId('obj', w));
+        if (!r.ok) throw new Error(`fixture ${letter}: could not wear ${w}`);
+    }
+    for (const [k, n] of food) await give(sdk, k, n);
+    verify(food);
 }
 
 /** Why the account is not in `letter`'s start state, or null: off the fixture's tile, or a var reading back otherwise. */
@@ -243,6 +257,12 @@ export async function fixtureDrift(sdk: Pick<BotSDK, 'getState' | 'onStateUpdate
     const off = Object.entries(want).filter(([k, v]) => got.get(k.toLowerCase()) !== v);
     return off.length ? `vars read back otherwise: ${off.map(([k, v]) => `${k} ${got.get(k.toLowerCase()) ?? '?'} (want ${v})`).join(', ')}` : null;
 }
+
+/**
+ * Worn through all of S15 on the route, from S12's reward to H13's swap (STEP-MANIFEST.md section 4, S12 and H13):
+ * Fight Arena's Khazard helmet and platemail. Given and worn after the fixture's own wear, before the sharks.
+ */
+export const ROUTE_WORN: readonly string[] = ['khazard_helmet', 'khazard_platemail'];
 
 /** Lumbridge's courtyard: nothing attacks there. */
 const STAGING = { x: 3222, z: 3218 };
@@ -430,7 +450,7 @@ function printCensus(cs: ReadonlyArray<{ boundaries: BoundaryCensus[]; uses: Arr
         const given = bs.map(b => (b.given ? Object.entries(b.given).map(([n, v]) => `${v} ${n}`).join('+') : '')).filter(Boolean);
         console.log(`${k} | ${bs.length} | ${aggMin(bs.map(b => b.hp))} | ${aggMin(bs.map(b => b.sharks))} | ${aggMin(bs.map(b => b.prayer))} | ${aggMin(bs.map(b => b.doses))} | ${agg(bs.map(b => b.slots))} | ${Math.max(...bs.map(b => b.vials))} | ${given.join(', ')}`);
     }
-    console.log('\nsegment | n | eaten mean/max | drunk mean/max | antipoison doses (sum) | peak slots mean/max | min HP mean/min | HP lost mean/max | on traps HP mean/max | deaths | prayer ticks (mean) | unprayed damage by source (sum over runs)');
+    console.log('\nsegment | n | eaten mean/max | drunk mean/max | antipoison doses (sum) | peak slots mean/max | min HP mean/min | HP lost mean/max | on traps HP mean/max | deaths | prayer ticks (mean) | unprayed damage by source (sum over runs) | prayed damage by source (sum over runs; npc#-1 is poison or a trap)');
     const segs = [...new Set(cs.flatMap(c => c.uses.map(u => u.seg)))];
     for (const k of segs) {
         const us = cs.flatMap(c => c.uses.filter(u => u.seg === k));
@@ -438,8 +458,10 @@ function printCensus(cs: ReadonlyArray<{ boundaries: BoundaryCensus[]; uses: Arr
         for (const u of us) for (const [p, t] of Object.entries(u.prayerTicks)) pt[p] = (pt[p] ?? 0) + t / us.length;
         const un: Record<string, number> = {};
         for (const u of us) for (const [p, d] of Object.entries(u.hitsUnprayed)) un[p] = (un[p] ?? 0) + d;
+        const pr: Record<string, number> = {};
+        for (const u of us) for (const [p, d] of Object.entries(u.hitsPrayed)) pr[p] = (pr[p] ?? 0) + d;
         const fmt = (r: Record<string, number>) => Object.entries(r).map(([p, v]) => `${p} ${v.toFixed(0)}`).join(', ') || '-';
-        console.log(`${k} | ${us.length} | ${agg(us.map(u => u.eaten))} | ${agg(us.map(u => u.drunk))} | ${us.reduce((a, u) => a + u.antipoison, 0)} | ${agg(us.map(u => u.peakSlots))} | ${aggMin(us.map(u => u.minHp ?? 0))} | ${agg(us.map(u => u.hpLost))} | ${agg(us.map(u => u.trapHp))} | ${us.reduce((a, u) => a + u.deaths, 0)} | ${fmt(pt)} | ${fmt(un)}`);
+        console.log(`${k} | ${us.length} | ${agg(us.map(u => u.eaten))} | ${agg(us.map(u => u.drunk))} | ${us.reduce((a, u) => a + u.antipoison, 0)} | ${agg(us.map(u => u.peakSlots))} | ${aggMin(us.map(u => u.minHp ?? 0))} | ${agg(us.map(u => u.hpLost))} | ${agg(us.map(u => u.trapHp))} | ${us.reduce((a, u) => a + u.deaths, 0)} | ${fmt(pt)} | ${fmt(un)} | ${fmt(pr)}`);
     }
 }
 

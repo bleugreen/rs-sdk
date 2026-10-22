@@ -22,18 +22,18 @@
 
 import type { BotWorldState, PrayerName } from '../../sdk/types';
 import type { QuestKey } from '../data/quest-stages';
-import { act, actConverse, invOp, opLoc, slotOf, talkTo, useOn, walkTo, wield } from '../lib/act';
+import { act, actConverse, dropItems, invOp, opLoc, pickup, slotOf, talkTo, useOn, walkTo, wield } from '../lib/act';
 import { fight, prayerActive, setPrayer, Upkeep } from '../lib/combat';
 import { converse, type Interrupt } from '../lib/converse';
 import { pageText } from '../lib/dialogue';
 import { compactJournal, journalProbeName, journalText, questStatus, type QuestView } from '../lib/quests';
 import { swap } from '../lib/trade';
-import { glide, runTo, spiritTree, teleport, teleportRefusal } from '../lib/travel';
+import { glide, GNOME_STRONGHOLD_GATE, passGate, runTo, spiritTree, teleport, teleportRefusal } from '../lib/travel';
 import { solveOnPanel } from '../lib/puzzle';
 import { currentTick, waitTicks, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, findLoc, invCount, messagesSince, pos, waitForNpc, type StateLike } from '../lib/world';
 import type { Check, Observed, Step, StepContext } from '../runner/step';
-import { slotsCover, type QuestItem } from './segments';
+import { slotNeed, slotsCover, type QuestItem } from './segments';
 
 export const quest: QuestKey = 'mm';
 export const stepId = 'S15';
@@ -349,11 +349,10 @@ export const MONKEY_CHATTER: Interrupt = {
 };
 
 // The gnome side, for the return with the monkey (U) and the report (Y, Z).
-/** The Gnome Stronghold's south gate (loc 190, gnome_gate.rs2): from its south entrance it force-moves the player 3 north. */
-const GNOME_GATE = { x: 2459, z: 3383 };
+/** The tile south of the Gnome Stronghold's south gate (travel.ts GNOME_STRONGHOLD_GATE) the walk from the zoo aims at. */
 const GNOME_GATE_SOUTH = { x: 2461, z: 3382 };
 /** North of the gate: inside the stronghold's walls. */
-const inStronghold = (src: StateLike) => pos(src).z >= GNOME_GATE.z + 2 && pos(src).x < 2560 && pos(src).z < 3600;
+const inStronghold = (src: StateLike) => pos(src).z >= GNOME_STRONGHOLD_GATE.loc.z + 2 && pos(src).x < 2560 && pos(src).z < 3600;
 /** The Grand Tree's scripted door (forcemoves 2 tiles), its trunk ladder and the two NPCs (speedrun/quests/grand-tree.ts TILES). */
 const TREE_DOOR = { x: 2464, z: 3492 };
 const TREE_DOOR_OUTSIDE = { x: 2465, z: 3490 };
@@ -1110,32 +1109,6 @@ async function glideTo(sdk: Sdk, to: 'gandius' | 'ta_quir_priw'): Promise<void> 
     if (!r.ok) throw new Error(`the glider to ${to}: ${r.reason} (at ${where(sdk)})`);
 }
 
-/**
- * Through the Gnome Stronghold's south gate from the south. On an account's first visit the gate opens Femi's boxes
- * scene instead (gnome_gate.rs2:21, femi.rs2): declining sets %femi_help, and the next click goes through.
- *
- * STAND-IN for rs/309's shared gate helper (travel.ts or act.ts), behind this one function: main's ruling (23:43)
- * is that no module owns Femi's handling. Swap the body for the shared call when rs/309 lands.
- */
-async function passStrongholdGate(ctx: Ctx): Promise<void> {
-    const { sdk } = ctx;
-    if (inStronghold(sdk)) return;
-    await go(ctx, GNOME_GATE_SOUTH, 1);
-    for (let i = 0; i < 3 && !inStronghold(sdk); i++) {
-        // Ends on the way through, or as soon as Femi's declined scene closes, so the next click goes at once
-        // (measured: waiting out the click's budget instead stood 22 ticks at the gate).
-        let talked = false;
-        await actConverse(sdk, await locClick(sdk, GNOME_GATE, /^open$/i), [/^Sorry, I'm a bit busy\.$/], {
-            done: s => {
-                if (s.dialog.isOpen) talked = true;
-                return inStronghold(s) || (talked && !s.dialog.isOpen);
-            },
-            maxTicks: 30, idle: 1, resendEvery: 8, ...CHATTER,
-        });
-    }
-    if (!inStronghold(sdk)) throw new Error(`not through the Gnome Stronghold's gate (at ${where(sdk)})`);
-}
-
 /** Into the Grand Tree by its scripted door, and to `level` by the trunk ladder. */
 async function intoTree(ctx: Ctx, level: number): Promise<void> {
     const { sdk } = ctx;
@@ -1164,7 +1137,10 @@ async function zooToDaero(ctx: Ctx): Promise<void> {
     if (!inStronghold(sdk) && !inGrandTree(sdk)) {
         const r = await runTo(sdk, { ...GNOME_GATE_SOUTH, tol: 2 }, { bot: ctx.bot });
         if (!r.ok) throw new Error(`run to the Gnome Stronghold's gate stopped at ${where(sdk)}: ${r.reason}`);
-        await passStrongholdGate(ctx);
+        // The shared helper answers Femi's first-visit scene (gnome_gate.rs2, femi.rs2) and ends north of the gate.
+        const g = await passGate(sdk, GNOME_STRONGHOLD_GATE, GNOME_STRONGHOLD_GATE.sides.north);
+        if (!g.ok) throw new Error(`the Gnome Stronghold's gate: ${g.reason} (at ${where(sdk)})`);
+        stepNote(`S15:U gate: ${g.ticks} ticks, ${g.clicks} clicks, ${g.dialogues} dialogues, ${g.pages} pages`);
     }
     await intoTree(ctx, 1);
     if (chebyshev(pos(sdk), DAERO) > 3) await go(ctx, DAERO, 2);
@@ -1178,15 +1154,16 @@ const AUNT = /^The Monkey's Aunt$/;
  * windows, and through the toy's 100-tick timer, the player waits outside at
  * AUNT_WAIT.
  */
-async function childTalks(ctx: Ctx, note: (line: string) => void): Promise<void> {
+async function childTalks(ctx: Ctx, note: (line: string) => void, progress: ChildProgress): Promise<void> {
     const { sdk } = ctx;
+    if (holds(sdk.getState()!, MM_OBJ.talisman)) return;
     const child = /^Monkey child$/i;
-    // Each talk: its choices, the house time it needs (fixed dialogue, with the walk in), and when it is done.
-    const talks: Array<{ name: string; choices: RegExp[]; need: number; done: Pred; pick?: true }> = [
-        { name: 'hello', choices: [], need: 12, done: () => false },
-        { name: 'uncle', choices: [/monkey's uncle/i], need: 12, done: () => false },
-        { name: 'bananas wanted', choices: [/How many bananas/i], need: 16, done: () => false },
-        { name: 'bananas', choices: [], need: 16, done: s => invCount(s, MM_OBJ.banana) === 0, pick: true },
+    // Each talk: its choices and the house time it needs (fixed dialogue, with the walk in).
+    const talks: Array<{ name: string; choices: RegExp[]; need: number; pick?: true }> = [
+        { name: 'hello', choices: [], need: 12 },
+        { name: 'uncle', choices: [/monkey's uncle/i], need: 12 },
+        { name: 'bananas wanted', choices: [/How many bananas/i], need: 16 },
+        { name: 'bananas', choices: [], need: 16, pick: true },
     ];
     let leftAt = -Infinity;
     let seenIn = false;
@@ -1228,23 +1205,46 @@ async function childTalks(ctx: Ctx, note: (line: string) => void): Promise<void>
         if (!r.ok) throw new Error(`the aunt's loop gave no ${need}-tick window in 260 ticks (aunt at ${JSON.stringify(auntTile())})`);
     };
     try {
-        for (const t of talks) {
-            if (t.done(sdk.getState()!)) continue;
+        for (const [i, t] of talks.entries()) {
+            if (i < progress.talks) continue;
             // The bananas come from the house's own trees, searched in the same window as the talk that gives them.
+            // A knockout after the set-down: the sharks on the ground come back before any more go down.
+            if (t.pick && progress.setDown) {
+                if (!tileIn(progress.setDown.at, AUNT_HOUSE)) await townGo(ctx, AUNT_WAIT, 0);
+                await retakeSharks(sdk, progress, note);
+            }
             const toPick = t.pick ? Math.max(0, BANANAS - invCount(sdk, MM_OBJ.banana)) : 0;
-            await window(t.need + toPick * BANANA_SEARCH_TICKS);
+            const drop = t.pick ? bananaRoomDrops(sdk.getState()!) : 0;
+            // A drop is one tick; taking the sharks back inside the house costs about SHARK_RETAKE_TICKS each.
+            await window(t.need + toPick * BANANA_SEARCH_TICKS + (drop ? 1 + drop * SHARK_RETAKE_TICKS : 0));
+            if (drop) {
+                let k = drop;
+                const d = await dropItems(sdk, i => i.id === MM_OBJ.shark && k-- > 0);
+                if (!d.ok) throw new Error(`could not set ${drop} sharks down for the bananas' room (at ${where(sdk)})`);
+                progress.setDown = { n: drop, at: pos(sdk), tick: currentTick(sdk) };
+                note(`S15:O set ${drop} sharks down at ${pos(sdk).x},${pos(sdk).z} for the bananas' room`);
+            }
             if (toPick) {
                 const p = await searchBananas(sdk, BANANAS);
                 note(`S15:O bananas: ${p.searches} searches, ${p.ticks} ticks, aunt ${JSON.stringify(auntTile())}, ${JSON.stringify(left())}`);
             }
             note(`S15:O talk '${t.name}' at t=${currentTick(sdk)}: aunt ${JSON.stringify(auntTile())}, ${JSON.stringify(left())}, left seen at ${leftAt}`);
             await talk(sdk, child, t.choices, { near: CHILD });
+            if (t.pick) {
+                if (invCount(sdk, MM_OBJ.banana) > 0) throw new Error('the child did not take the bananas');
+                progress.given = currentTick(sdk);
+                // Back up at once if they lie in the house (in the same window); else at the wait tile, below.
+                if (progress.setDown && tileIn(progress.setDown.at, AUNT_HOUSE)) await retakeSharks(sdk, progress, note);
+            }
+            progress.talks = i + 1;
         }
-        if (invCount(sdk, MM_OBJ.banana) > 0) throw new Error('the child did not take the bananas');
-        const given = currentTick(sdk);
+        const given = progress.given ?? currentTick(sdk);
         // The toy's timer (mm_monkey_child.rs2:142, settimer 100) runs from the bananas; the aunt is back in long before it ends.
         await townGo(ctx, AUNT_WAIT, 0);
-        await praying(sdk, 'protect_from_melee', () => waitUntil(sdk, s => s.tick - given >= 101, { maxTicks: 120 }));
+        await praying(sdk, 'protect_from_melee', async () => {
+            if (progress.setDown) await retakeSharks(sdk, progress, note);
+            return waitUntil(sdk, s => s.tick - given >= 101, { maxTicks: 120 });
+        });
         // Seven pages and the objbox, plus the 6-tile walk in: with 12 left, the aunt came back mid-talk once.
         await window(20);
         note(`S15:O talk 'talisman' at t=${currentTick(sdk)}: aunt ${JSON.stringify(auntTile())}, ${JSON.stringify(left())}, left seen at ${leftAt}`);
@@ -1256,6 +1256,62 @@ async function childTalks(ctx: Ctx, note: (line: string) => void): Promise<void>
     } finally {
         stop();
     }
+}
+
+/**
+ * How far the child's talks got, kept by O across knockout retries: quest varps never reach the client, so a re-run
+ * resumes from here rather than from the child's dialogue. `given` is the tick the bananas were handed in, which
+ * starts the toy's server timer.
+ */
+export interface ChildProgress {
+    talks: number;
+    given?: number;
+    /** Sharks set down for the bananas' room and not yet taken back (a player's drop lies 300 ticks, drop.rs2). */
+    setDown?: { n: number; at: { x: number; z: number; level: number }; tick: number };
+}
+
+/**
+ * The most ticks set-down sharks may lie before they are back in hand: main's bound (rs/185, 10-22), 20 under the
+ * engine's objRevealTicks (100), when a player's drop becomes visible to everyone (WorldConfig.ts).
+ */
+export const SET_DOWN_MAX_TICKS = 80;
+
+/** Ticks to take one set-down shark back, the step onto its tile included (a planning figure for the aunt's window). */
+const SHARK_RETAKE_TICKS = 3;
+
+/**
+ * Sharks to set down so the five bananas fit at once: the child takes them only five or more together
+ * (mm_child_give_bananas), they do not stack, and a search with a full pack picks nothing (banana_tree.rs2).
+ * A chain reaches O with about one free slot, so the sharks go on the ground for the pick and come back after the
+ * hand-in. Throws when even every shark is not enough.
+ */
+export function bananaRoomDrops(s: BotWorldState): number {
+    const short = Math.max(0, BANANAS - invCount(s, MM_OBJ.banana)) - freeSlots(s);
+    if (short <= 0) return 0;
+    const sharks = invCount(s, MM_OBJ.shark);
+    if (sharks < short) throw new Error(`no room for ${BANANAS} bananas: ${freeSlots(s)} free and ${sharks} sharks to set down`);
+    return short;
+}
+
+/**
+ * Take back the sharks O set down, noting the ticks they lay against SET_DOWN_MAX_TICKS. A shark missing at the
+ * pickup fails the step: it is a kit-gate failure (rs/185's ruling), never absorbed as a quiet supply loss.
+ */
+async function retakeSharks(sdk: Sdk, progress: ChildProgress, note: (line: string) => void): Promise<void> {
+    const set = progress.setDown;
+    if (!set) return;
+    let got = 0;
+    for (let i = 0; i < set.n; i++) {
+        const lying = (await sdk.scanGroundItems(15)).some(g => g.id === MM_OBJ.shark);
+        if (!lying) break;
+        const r = await pickup(sdk, MM_OBJ.shark, { maxTicks: 15 });
+        if (!r.ok) break;
+        got++;
+    }
+    progress.setDown = undefined;
+    const lay = currentTick(sdk) - set.tick;
+    note(`S15:O set-down: ${got} of ${set.n} sharks back after ${lay} ticks (bound ${SET_DOWN_MAX_TICKS})${lay > SET_DOWN_MAX_TICKS ? ' SETDOWN_OVER_BOUND' : ''}`);
+    if (got < set.n) throw new Error(`kit gate: ${set.n - got} of ${set.n} set-down sharks missing at the pickup, ${lay} ticks after the drop`);
 }
 
 /** The child wants 5 bananas (mm_monkey_child.rs2). */
@@ -1464,8 +1520,19 @@ export const REWARD_ITEMS: readonly QuestItem[] = [
     { item: /^Coins$/i, name: 'coins', stackable: true, from: 'Y' },
     { item: /^Diamond$/i, name: 'diamond', n: 3, from: 'Y' },
 ];
-/** Y's room for the reward, by segments.ts slotNeed: 4 free with no coin stack held, 3 with one. */
-export const yRoom: Check<MmContext> = slotsCover(REWARD_ITEMS, SEGMENTS.map(d => d.letter), 'Y');
+const yCover = slotsCover(REWARD_ITEMS, SEGMENTS.map(d => d.letter), 'Y');
+/** Slots Narnode's reward needs now, by segments.ts slotNeed: 4 with no coin stack held, 3 with one. */
+const yNeed = (s: BotWorldState) => slotNeed(s, REWARD_ITEMS, SEGMENTS.map(d => d.letter), 'Y').slots;
+/**
+ * Y's room for the reward: free slots, plus the EXIT_DROPS held, which Y drops before the reward when it is short
+ * (Z would drop them at the exit anyway, so dropping them early costs nothing).
+ */
+export const yRoom: Check<MmContext> = (s, c) => {
+    const r = yCover(s, c);
+    if (r === true) return true;
+    const dead = s.inventory.filter(i => EXIT_DROPS.includes(i.id)).length;
+    return freeSlots(s) + dead >= yNeed(s) || r;
+};
 
 /**
  * Quest items dead after S15, dropped by Z (rs/318's inventory ledger, fold-in 18): the royal seal (never taken back,
@@ -1515,10 +1582,14 @@ const skillXp = (s: BotWorldState, name: string) => s.skills.find(k => k.name ==
 
 export const freeSlots = (s: BotWorldState) => 28 - s.inventory.length;
 
-/** Room for each of `ids` not already held: the crates' `inv_add` gives nothing into a full pack (quest_mm.rs2:924-942). */
-const roomFor = (...ids: number[]): Check<MmContext> => s => {
+/**
+ * Room for each of `ids` not already held: the crates' `inv_add` gives nothing into a full pack (quest_mm.rs2:924-942),
+ * and searchCrate eats a shark for room when the pack is full, so a shark held counts as a slot to come.
+ */
+export const roomFor = (...ids: number[]): Check<MmContext> => s => {
     const need = ids.filter(id => !holds(s, id)).length;
-    return freeSlots(s) >= need || `${need} free slots needed, ${freeSlots(s)} free`;
+    const room = freeSlots(s) + invCount(s, MM_OBJ.shark);
+    return room >= need || `${need} slots needed, ${freeSlots(s)} free and ${invCount(s, MM_OBJ.shark)} sharks to eat for room`;
 };
 const all = (...cs: Check<MmContext>[]): Check<MmContext> => (s, c) => {
     for (const f of cs) {
@@ -1795,15 +1866,24 @@ const BODIES: Partial<Record<string, Body>> = {
     },
     O: {
         preconditions: all(onAtoll, human, s => holds(s, MM_OBJ.amulet) || 'no strung amulet',
-            s => holds(s, MM_OBJ.talisman) || freeSlots(s) >= 1 || 'no free slot to search the banana trees'),
+            s => {
+                if (holds(s, MM_OBJ.talisman)) return true;
+                try {
+                    bananaRoomDrops(s);
+                    return true;
+                } catch (e) {
+                    return (e as Error).message;
+                }
+            }),
         async run(ctx, o) {
             const { sdk } = ctx;
+            const progress: ChildProgress = { talks: 0 };
             await upkeep(sdk, () => jailSafe(sdk, async () => {
                 await templeOut(ctx);
                 await toTown(ctx);
                 const w = await wield(sdk, MM_OBJ.amulet);
                 if (!w.ok) throw new Error(`the amulet did not go on: ${w.reason}`);
-                await childTalks(ctx, o.note);
+                await childTalks(ctx, o.note, progress);
             }));
         },
         postconditions: holding(MM_OBJ.talisman),
@@ -2029,6 +2109,7 @@ const BODIES: Partial<Record<string, Body>> = {
                 }
             }
             await intoTree(ctx, 0);
+            if (freeSlots(sdk.getState()!) < yNeed(sdk.getState()!)) await dropDead(sdk);
             // The report (14 pages), the reward and its objbox, the quest-complete scroll, then Narnode's training pages.
             const r = await talkTo(sdk, /^King Narnode( Shareen)?$/i, [], { maxTicks: 200, idle: 3, near: NARNODE, closeModals: true, until: s => questStatus(s, 'mm') === 'complete' });
             if (questStatus(sdk.getState()!, 'mm') !== 'complete') throw new Error(`Narnode did not complete the quest: ${r.reason ?? r.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
