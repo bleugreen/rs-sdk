@@ -603,8 +603,10 @@ export interface BotWorldState {
      * "Loading - please wait." (after a login, a teleport or a walk into a new
      * build area): its collision maps are stale then, so a world click (loc,
      * NPC, ground item, walk) cannot be routed. The browser client can sit here
-     * for tens of ticks; the lite client builds within the tick. `sendAction`
-     * holds world clicks until it is true again. Absent on older clients.
+     * for tens of ticks; the lite client builds within the tick. A world click
+     * sent while it is false still goes out, but `sendAction` reports it as
+     * `success: false, reason: 'scene_loading'`, never as a success. Absent on
+     * older clients.
      */
     sceneReady?: boolean;
     player: PlayerState | null;
