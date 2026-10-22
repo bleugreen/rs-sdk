@@ -188,7 +188,7 @@ describe('ProgramRuntime', () => {
         const second = h.runtime.start('a', { dropEach: true });
         expect(first.phase).toBe('replaced');
         expect(second.phase).toBe('fault');
-        expect(second.fault).toBe('bad parameters: a does not declare dropEach (accepts: stallTicks, hold)');
+        expect(second.fault).toBe('bad parameters: a does not declare dropEach (accepts: stallTicks, hold, tickMs)');
     });
 
     test('registering a factory without a declaration is refused', () => {
