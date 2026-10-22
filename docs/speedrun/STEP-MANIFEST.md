@@ -125,7 +125,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 0 | 0 | Run chain | `speedrun/run.ts`, `runner/resume.ts` | all | boundary idle 0 m (#92); restarts ~5 each (an in-page relog, ~2, rs/174) | 0 | | | overlay | `runner/step.ts`, `runner/resume.ts` (main) | `run.ts`: building (rs/186, held: tenet 15); `runner/step.ts`, `resume.ts` on main (#29, #104, #146) |
 | 1 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,327 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; S17 75-85 858; rs/155) |
 | 2 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,077 | 3,726 | 4,611 | ~885 | overlay | `quest-mm-*.ts` | **doc-priced, unrun** (A-G run; H-Z being written by rs/201) |
-| 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,116 | 3,116 | 4,170 | ~1,054 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | building (rs/212, held until rs/207 merged; rs/153 closed); `stay2` bury on main (#159, rs/182); restart fix on main (e5d8a058, #170; rs/207) |
+| 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,116 | 3,116 | 3,775 | ~659 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | building (rs/212, held until rs/207 merged; rs/153 closed); `stay2` bury on main (#159, rs/182); restart fix on main (e5d8a058, #170; rs/207) |
 | 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,027 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; on rs/147's branch, changing with rs/236; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165) |
 | 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,198.5 | 2,198.5 | ~2,340 i | ~140 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | lab-measured (PR #198, open; rs/198 for rs/186); its walker, `lib/travel.ts`, on main, 0658e896 (#200) |
 | 6 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~120 elsewhere | ~190 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` | building (rs/154, parked under the 2-4 child limit); stun pack: lab-accepted (bury, charge, arrows; rs/132) |
@@ -196,7 +196,8 @@ are filed under main and held until tenet 15 is answered.
   `waitRespawn`, the probe's `dirs`) and their lab before it goes to main.
 - **4.** rs/212 builds the module (rs/153 is closed; rs/212 was held until rs/207 merged, which it
   has: e5d8a058, #170); `knife-mine`'s `stay2` bury is on main (#159, rs/182); the in-page plain
-  loop measured 4.00 ticks per ore (rs/153).
+  loop measured 4.00 ticks per ore (rs/153), and 3.62 with knife-mine's `selfStarter` (rs/230), the
+  fallback in force (entry 4).
 - **5.** rs/152's execution 1 passed the lab on the run's band, 1,998 against 1,995 (3,338 for the
   chain from level 1). That branch was rewritten by a replay; the work is intact at store commit
   `28ad07aa` and is being re-applied, so no branch carries it yet. `fishing.ts` is on main with rs/231's
@@ -248,7 +249,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 | knife-cycle axe-aware p (rs/175) | 3 | on main, 6c58db8e (#151) | |
 | knife-cycle plain + bury | 3, 15 | **on main, 3dfc217f (#165; rs/162)**; lab-measured | S07's gate-off fallback: `technique: 'plain'` with `bury` and `trees`, no new key; willow 0.226 bones a tick with trades at 3.89 per expected roll, oak 60-75 0.195 at 4.29 (m, lab; entry 3). The knife-off line in force; inside the run-commit floor (`RUN-HOST.md` "Credentials"); before it, knife-cycle refused `bury` with the plain technique |
 | knife-mine `bury` on `stay2` | 4 | on main, #159 (rs/182; merged 15:52 PDT) | O35, closed: the ~85 bones placed in S09 on today's stock (the conservative row), at most +0.02 a Mining ore and ~0.21 ticks a bone in trades (m, lab). Where it cannot fire they go to the booth, **+119** against the lap (RUN-ORDER.md section 7); ~61 more dragon bones also close it, as the row in force assumes |
-| knife-mine `selfStarter` (plain trick takes the next rock as timer starter) | 4 | building (rs/230) | sim 3.60 ticks per ore plain at D = 13 and 15, lab six-rock 3.83 at D = 19; would take S09's plain from 4.00 to ~3.60, about -400 on a knife-off night; not re-priced (entry 4) |
+| knife-mine `selfStarter` (plain trick takes the next rock as timer starter) | 4 | **on main, 4235a9e7 (#220; rs/230's module, rs/260's snapshot)** | lab plain + `selfStarter` 3.62 ticks per ore on the five-rock lap at D = 13 (150 ores, 0 slips) and 3.61 at D = 15 (200), six-rock 3.83 at D = 19 (m, lab, rs/230); S09's plain fallback 4,170 to 3,775, -395 on a knife-off night (entry 4). A page must declare it, or knife-mine faults at start |
 | knife-mine depleted-rock restart fix | 4 | on main, e5d8a058 (#170; rs/207) | 3 of 3 depletion restarts fault at +1 tick; post-respawn laps 3.00 per ore, 200 of 200 (m, lab). Any S09 knife (re)start then waits out the respawn, +13 plus the start; a `RUN_COMMIT` requirement (RUN-ORDER.md R18) |
 | `logoutClean` tab confirmation | 0, 1 (final logout), every relog | on main, c2d9eada (#146) | |
 | Direct gate clean logout | the gate probe | on main, 9d26aa87 (#142), d83f2e86 (#152) | |
@@ -711,23 +712,24 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   integer `scale`, iron's base 20; `skills/mining.md` §4). Then take the lap whose period covers the
   D + 2 ticks a rock needs between rolls: `ceil((D + 2) / 3)` rocks at 3 ticks a move (mining.md §4).
 
-  | Observed D | Online (r, the formula) | Lap | Knife ticks per ore |
-  |---|---|---|---|
-  | Observed D, by knife-mine's rule 3n >= D (n rocks) | Online (r, the formula) | Lap | Knife ticks per ore |
-  |---|---|---|---|
-  | 15 or less | more than 800 | the five-rock demo lap (15 ticks) | 3.00 (m at D = 13, mining.md §4); **3.02 at D = 15** (150 ores, 0 slips, one 6-tick gap; m, lab, rs/230) |
-  | 16-18 | 201-800 | the six-rock lap (18 ticks with the knife) | 3.00 (m at D = 15, 150 ores, rs/230; holds to D = 18 by the rule, i) |
-  | 19 or more | 200 or fewer | neither holds | six-rock **3.53** at D = 19 (120 ores, 0 slips; m, lab, rs/230; mining.md's 3.50); five-rock **4.16** at D = 19 (a 9-tick wait once a lap, m, rs/230) |
+  | Observed D, by knife-mine's rule 3n >= D (n rocks) | Online (r, the formula) | Lap | Knife ticks per ore | Plain ticks per ore (with `selfStarter`) |
+  |---|---|---|---|---|
+  | 15 or less | more than 800 | the five-rock demo lap (15 ticks) | 3.00 (m at D = 13, mining.md §4; 3.04 without `selfStarter` and 3.00 with it, 150 ores each, 0 slips, rs/230); **3.02 at D = 15** (150 ores, 0 slips, one 6-tick gap; m, lab, rs/230) | **3.62** at D = 13 (150 ores, 0 slips, 59 tricks) and 3.61 at D = 15 (200); 3.99 without the option (m, lab, rs/230) |
+  | 16-18 | 201-800 | the six-rock lap (18 ticks with the knife) | 3.00 (m at D = 15, 150 ores, rs/230; holds to D = 18 by the rule, i) | not measured; at most D = 19's 3.83 (i: a shorter respawn waits less) |
+  | 19 or more | 200 or fewer | neither holds | six-rock **3.50** at D = 19 (120 ores, 0 slips; m, lab, rs/230); five-rock **4.16** at D = 19 (a 9-tick wait once a lap, m, rs/230) | six-rock **3.83** at D = 19 (100 ores, 0 slips; the lite script's 3.84), 4.17 without the option (m, lab, rs/230) |
 
   **The rule is measured** (rs/230, Mining part 3; lab, bgsrv-mac, 300 ms, player count pinned in
   content, page built from rs/147's branch after 23ea9f77), replacing rs/153's conservative table
   (D at most 13 for five rocks, 14-16 for six). The engine sets D from the online count
   (`player_count.rs2`); the usual ~1,600 online is D = 12, so the 3,116 knife ticks and nothing in
-  force move (RUN-ORDER.md O39, settled). **Plain at 4.00 is the in-force figure**; rs/230's
-  `selfStarter`, a declared opt-in that lets knife-mine's plain trick take the next rock as the timer
-  starter (golden default unchanged), would bring it to ~3.60 (sim 3.60 at D = 13 and 15; lab
-  six-rock plain + `selfStarter` 3.83 at D = 19 against lite's 3.84; the D = 13 lab run is to
-  follow), about -400 on a knife-off night. Building (rs/230); not re-priced.
+  force move (RUN-ORDER.md O39, settled). **Plain with `selfStarter` is the in-force fallback**
+  (on main, 4235a9e7, #220): the declared opt-in lets knife-mine's plain trick take the next rock as
+  the timer starter (golden default unchanged). Without it the trick refused that rock, which on the
+  five-rock lap is the only live one beside two of the five stands, so plain never tricked (4.00, 20
+  ticks a lap); with it, it tricks on those two transitions, 18 ticks a lap, **3.62** at D = 13 (m,
+  lab, rs/230; `rehearsals/mining.md` section 2 on rs/147's branch at 59ec3933). The module passes
+  it on every iron band; it is inert under the knife. S09's knife-off figure is re-priced on it
+  (RUN-ORDER.md fold-in 13): 4,170 to 3,775.
 - **Bones on the `stay2` lap** (today's 21:20 UTC stock, RUN-ORDER.md's conservative row; none on the
   forecast at 2026-10-23, whose 554 non-stun bones all fit S07; RUN-ORDER.md section 7): the ~85
   babydragon bones past S07's ~978 ride the lap `2603,3233>2602,3233 2605,3234>2605,3235
@@ -755,8 +757,14 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   lab; main, 16:12 PDT). On a running lap 4 of 5 rotation rocks are depleted at any moment, so any
   knife (re)start in S09 (a relog, a lock loss, rs/156's switch from measuring back to the knife,
   each `stay2` and five-rock lap switch) waits out the respawn (13 ticks at respawn 13) or faults:
-  **+13 plus the start cost** each (i). The step's resume waits for a live rock rather than
-  retrying. Without rs/207 the knife cadence is lost for the rest of the step, up to ~+1,054
+  **+13 plus the start cost** each (i). Measured since (rs/230, D = 13, a forced measured
+  switch-off): the restart after 30 knife ores found 1 of 5 rocks live and waited **13 ticks (= D)**,
+  then plain ran 120 ores with 0 slips; after a re-probe of 20 ticks or more the lap is already live
+  and the wait is **0** (7 of 7). So a switch that follows mining costs +D, a re-probe's return the
+  start alone. The module waits for every lap rock before each start: `ironBand` before each
+  `runGatedProgram` call (relog, resume, respawn change) and gated-program's opt-in `beforeRestart`
+  before every start after the first (on main, #220). The step's resume waits for a live rock rather
+  than retrying. Without rs/207 the knife cadence is lost for the rest of the step, up to ~+1,054
   (RUN-ORDER.md R18), so `RUN_COMMIT` must be at or after e5d8a058 (the run-commit floor, 8a741554, covers it;
   entry 0).
 - **Preconditions:** rune pickaxe, knife and about 5 normal logs, Fletching 1; Mining 64; position on
@@ -766,16 +774,21 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   xp, 3.033 ticks per ore; one-sided 95% upper bound 0.94 logs per 1,000 knife ticks; m, lab, rs/226;
   `skills/mining.md` section 7 "Logs over a long lap" and `speedrun/lab/measure-mine-logs.ts`, PR
   pending). knife-mine's ore drop on the same label clears the weak fletch queue the tick it would
-  fire, so about 5 logs is enough and no log margin applies. Items out: none.
+  fire, so about 5 logs is enough and no log margin applies. rs/230's chain agrees: 0 logs burned in
+  3,493 knife ticks from creation and in 14 knife runs of ~7,000 knife ticks (m, lab; it reads the
+  kit as needing 1-2), so the ~5 stand. Items out: none.
 - **Ticks:** expected and best **3,116** (knife: 3.00 ticks per ore measured with
   `tickmanip-mine.ts`, 2 × 200 ores, total 3,134 inferred, `skills/mining.md` §2; less the model's
   18 ticks of level-ups, measured 0 in the rotation, `research/levelup-cost.md` §2, §6).
-  Fallback **4,170** plain: the in-page plain loop measured **4.00** ticks per ore at D = 13 and
-  Mining 99 (rs/153's lab via rs/147, 15:46 PDT; success is 100% from 63, so it holds over 64-99),
-  so (3,765 - 17.5) x 4.00 / 3.61 + 17.5 = 4,170 with the model's unmeasured level-up cost kept
-  (inferred). The lite client's 3,765 (adjacent-rock "timer starter", 3.61 ticks per ore measured
-  with `mining-rotation.ts`, 200 ores at emulated respawn 13, `mining-model.ts` §1) needs an in-page
-  adjacent-rock lap, which is not built; on the zoo lap the adjacent-rock transition never triggers. About **4,000** on a quiet server
+  rs/230's chain from creation ran the 63-99 band at 3.012 per ore, 1,048 ores, 0 slips, at D = 15
+  (m, lab; default stats, so it corroborates the 3,116 without relabelling it).
+  Fallback **3,775** plain (best 3,765): the in-page plain loop with `selfStarter` measured **3.62**
+  ticks per ore at D = 13 and 3.61 at D = 15 at Mining 99 (rs/230, above; success is 100% from 63,
+  so it holds over 64-99), so (3,765 - 17.5) x 3.62 / 3.61 + 17.5 = 3,775 with the model's
+  unmeasured level-up cost kept (inferred). The lite client's 3,765 is the adjacent-rock "timer
+  starter" at 3.61 ticks per ore (`mining-rotation.ts`, 200 ores at emulated respawn 13,
+  `mining-model.ts` §1), which the page now matches. Without the option the in-page plain loop
+  measured **4.00** (rs/153's lab via rs/147, 15:46 PDT), 4,170, the fallback before #220. About **4,000** on a quiet server
   without the knife (inferred, same section). From 49, for comparison, 4,034 normal
   and 3,360 knife (inferred, `skills/mining.md` §1-2).
 - **Primitives:** `runProgram(sdk, 'knife-mine', {steps, respawn, starter, untilLevel})` [rs/97];
@@ -783,8 +796,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   (from `mining-rotation-plan.ts`) checked into the module.
 - **Mode:** in-page. The ore drop, starter and run go out on R+1 and the rock click so it lands
   by R+3 (`skills/tick-manipulation.md` §5, "Mining, moving to the next rock").
-- **Fallback:** `starter: 'none'`, the in-page plain loop at 4.00 ("plain only" in rs/97's
-  `knife-mine`; the lite adjacent-rock 3.61 is not built in the page). Slip recovery is in the program: no xp within 6 labels, let the clock expire
+- **Fallback:** `starter: 'none'`, the in-page plain loop with `selfStarter` at 3.62 ("plain only" in
+  rs/97's `knife-mine`, with the option; 4.00 without it). Slip recovery is in the program: no xp within 6 labels, let the clock expire
   5 ticks, restart with one plain transition. Forced-slip reference: iron **3.51** ticks per ore
   with 15% of starters held, against 3.53 (measured; `skills/README.md`, open question 1). For
   contention, the second cluster north of East Ardougne (2710-2715, 3328-3332), 3.74 by the planner
@@ -793,7 +806,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   **3.15** ticks per ore (3.00 +5%). rs/97's program measured 3.00 with 200 of 200 on the predicted
   tick (rs/97 in-page results via main, 05:50), and rs/82's overlay loop measured 3.05 in a tab
   (`LAB.md`).
-  Forced slip at 15%: at most 3.69 (3.51 +5%). Without the starter: within 5% of 4.00 (rs/153's in-page plain).
+  Forced slip at 15%: at most 3.69 (3.51 +5%). Without the starter, with `selfStarter`: within 5% of 3.62 (rs/230); without the option, 4.00
+  (rs/153's in-page plain).
 - **Acceptance, demo (throwaway):** needs Mining 15 for iron, which is cheap on a throwaway (about 61
   ticks of copper, `skills/mining.md` §2). From Ashburn: probe at least 58 of 60, then 100 iron ores
   knife against 100 adjacent-rock at the zoo cluster, at the observed player count. Pass: knife

@@ -4,8 +4,8 @@
 // against the knife-on total, and STEP-MANIFEST.md section 1 against the step table.
 //
 //   bun docs/speedrun/scripts/run-order-sums.ts
-//   EXPECT=34456,31567,37573,35118,38309,35884 bun docs/speedrun/scripts/run-order-sums.ts
-//   FROM=34538,31649,37655,35200,38391,35966 EXPECT=... bun docs/speedrun/scripts/run-order-sums.ts
+//   EXPECT=34456,31567,37178,34713,37914,35479 bun docs/speedrun/scripts/run-order-sums.ts
+//   FROM=34456,31567,37573,35118,38309,35884 EXPECT=... bun docs/speedrun/scripts/run-order-sums.ts
 //
 // EXPECT pins section 7's six totals (knife on expected / best, knife off in force, knife off
 // without rs/162); a bookkeeping change runs it before and after with the same EXPECT. Exits 1 on
