@@ -39,7 +39,8 @@
 // mining xp of ours (`ContestWatch`). The watch always logs them in the band row; with `fallback`
 // set, each one stops the program and the band retries in place once the lap is whole again, up
 // to CONTEST_RETRIES in CONTEST_WINDOW ticks, then walks to the nearest other site in SITES that
-// the fallback allows (`nextSite`). Without `fallback` the band is the zoo-only band it was.
+// the fallback allows and whose hunters leave this combat level alone (`nextSite`; `acceptHazards`
+// lifts that). Without `fallback` the band is the zoo-only band it was.
 
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import { demoOrigin, samplePlayerCount } from '../lib/demo-status';
@@ -75,13 +76,14 @@ export interface MiningOpts {
     origin?: string;
     /**
      * Where a contested band may go (`parseFallback`): 'none' (default) keeps the zoo-only band;
-     * 'auto' allows every other site whose hunters leave this combat level alone; a list of SITES
-     * names allows exactly those, hazards and all.
+     * 'auto' allows every other site, a list of SITES names exactly those; either way only a site
+     * whose hunters leave this combat level alone (`safeFrom`), unless `acceptHazards`.
      */
     fallback?: string | string[];
     /**
-     * Start an iron band even when no fallback site is safe at this combat level (default false):
-     * for rehearsals that mean to walk into a site's hunters (`combatGate`).
+     * Let the fallback use sites whose hunters attack this combat level (default false): an iron
+     * band starts with no safe site (`combatGate`) and switches into unsafe ones (`nextSite`). For
+     * rehearsals that mean to walk into a site's hunters.
      */
     acceptHazards?: boolean | string;
     /** rs/111's S07 fallback (bones on the stay2 lap): a seam, not built. */
@@ -310,17 +312,17 @@ export function combatLevel(s: BotWorldState): number {
 export interface Fallback {
     /** Sites besides the zoo a contested band may go to; none keeps the zoo-only band. */
     sites: string[];
-    /** 'auto': only the sites whose `safeFrom` the account's combat level reaches. */
-    safeOnly: boolean;
+    /** Sites whose `safeFrom` the account's combat level doesn't reach are allowed too (rehearsals). */
+    acceptHazards: boolean;
 }
 
-export function parseFallback(v: unknown): Fallback {
-    if (v === undefined || v === null || v === 'none') return { sites: [], safeOnly: true };
-    if (v === 'auto') return { sites: Object.keys(SITES).filter(n => n !== 'zoo'), safeOnly: true };
+export function parseFallback(v: unknown, acceptHazards = false): Fallback {
+    if (v === undefined || v === null || v === 'none') return { sites: [], acceptHazards };
+    if (v === 'auto') return { sites: Object.keys(SITES).filter(n => n !== 'zoo'), acceptHazards };
     const sites = (Array.isArray(v) ? v : String(v).split(',')).map(x => String(x).trim()).filter(Boolean);
     const others = Object.keys(SITES).filter(n => n !== 'zoo');
     if (!sites.length || sites.some(n => !others.includes(n))) throw new Error(`mining: fallback must be none, auto or a list of ${others.join(', ')}, not ${String(v)}`);
-    return { sites, safeOnly: false };
+    return { sites, acceptHazards };
 }
 
 /**
@@ -338,14 +340,14 @@ export const CONTEST_WINDOW = 600;
 export const MAX_SWITCHES = 2;
 
 /**
- * Where a contested band goes: the zoo and the fallback sites, less the one it leaves and, under
- * 'auto', any whose hunters attack this combat level; a site not contested within CONTEST_WINDOW
- * before one that was, then the nearest.
+ * Where a contested band goes: the zoo and the fallback sites, less the one it leaves and, unless
+ * `acceptHazards`, any whose hunters attack this combat level (rs/158: mid-band as at the start);
+ * a site not contested within CONTEST_WINDOW before one that was, then the nearest.
  */
 export function nextSite(from: string, at: P, combat: number, fb: Fallback, contestedAt: ReadonlyMap<string, number>, now: number): string | undefined {
     const recently = (n: string) => (contestedAt.has(n) && now - contestedAt.get(n)! < CONTEST_WINDOW ? 1 : 0);
     return ['zoo', ...fb.sites]
-        .filter(n => n !== from && (!fb.safeOnly || combat >= SITES[n]!.safeFrom))
+        .filter(n => n !== from && (fb.acceptHazards || combat >= SITES[n]!.safeFrom))
         .sort((a, b) => recently(a) - recently(b) || cheb(at, SITES[a]!.centre) - cheb(at, SITES[b]!.centre))[0];
 }
 
@@ -491,10 +493,9 @@ export function steps(raw: MiningOpts = {}): Step<any>[] {
     if (travel !== 'auto' && travel !== 'none') throw new Error(`mining: travel must be auto or none, not ${travel}`);
     if (raw.kitGiver !== undefined && (typeof raw.kitGiver !== 'string' || !raw.kitGiver.trim())) throw new Error(`mining: kitGiver must be a name, not ${JSON.stringify(raw.kitGiver)}`);
     const dropAtExit = flag(raw.dropAtExit, 'dropAtExit');
-    const acceptHazards = flag(raw.acceptHazards, 'acceptHazards');
-    const fallback = parseFallback(raw.fallback);
+    const fallback = parseFallback(raw.fallback, flag(raw.acceptHazards, 'acceptHazards'));
     const shared: Shared = { gate: null };
-    const o = { to, technique, respawn, rotation: raw.rotation, origin: raw.origin, site, fallback, acceptHazards };
+    const o = { to, technique, respawn, rotation: raw.rotation, origin: raw.origin, site, fallback };
 
     const out: Step<any>[] = [prepStep(to)];
     if (to > 1) out.push(copperStep(Math.min(15, to), site));
@@ -734,9 +735,9 @@ function atIronSite(s: BotWorldState, fb: Fallback): true | string {
  * site to go to and fails on the third contest event, and a named list walks the account to
  * hunters that attack it. `acceptHazards` overrides it; with no fallback it does not apply.
  */
-function combatGate(s: BotWorldState, fb: Fallback, acceptHazards: boolean): true | string {
+function combatGate(s: BotWorldState, fb: Fallback): true | string {
     const combat = combatLevel(s);
-    if (!fb.sites.length || acceptHazards || fb.sites.some(n => combat >= SITES[n]!.safeFrom)) return true;
+    if (!fb.sites.length || fb.acceptHazards || fb.sites.some(n => combat >= SITES[n]!.safeFrom)) return true;
     const needs = fb.sites.map((n, i) => `${n}${i ? '' : ' needs'} ${Number.isFinite(SITES[n]!.safeFrom) ? SITES[n]!.safeFrom : 'never'}`);
     return `combat ${combat}: no site the contested-rock fallback may use is safe (${needs.join(', ')})`;
 }
@@ -765,7 +766,6 @@ interface IronOpts {
     rotation?: string | undefined;
     origin?: string | undefined;
     fallback: Fallback;
-    acceptHazards: boolean;
 }
 
 /** Watches the rotation's rock tiles: each depletion's observed respawn (dead label to live label, plus one). */
@@ -877,7 +877,7 @@ function ironStep(name: string, start: number, end: number, failures: boolean, o
             if (miningLevel(s) < start) return `Mining ${miningLevel(s)} < ${start}`;
             if (pickaxeRate(s.inventory, miningLevel(s)) === null) return 'no usable pickaxe';
             if (freeOfOre(s) < FREE_SLOTS) return `${28 - freeOfOre(s)} other items: need ${FREE_SLOTS} free slots (ore, a gem, a stray fletch)`;
-            const gate = combatGate(s, o.fallback, o.acceptHazards);
+            const gate = combatGate(s, o.fallback);
             if (gate !== true) return gate;
             return atIronSite(s, o.fallback);
         },
