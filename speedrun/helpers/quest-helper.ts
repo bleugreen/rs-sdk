@@ -31,7 +31,8 @@
 //              axe while the logs are short, coins for the fares
 //   logs       Montai's 6 logs from the normal trees west of Draynor
 //   agility    a leg onto the Gnome course (the route's nearest waypoint on, the stronghold gate), then
-//              skills/agility.ts to 25 (The Grand Tree's climb, quest_grandtree.rs2:25)
+//              Gnome course laps to 25 (The Grand Tree's climb, quest_grandtree.rs2:25), clicked from
+//              here: skills/agility.ts runs the in-page program, which the lite client cannot host
 //   tree       a leg to Elkoy, then Tree Gnome Village with the substitutions above
 //   grandtree  a leg to the Grand Tree door (the village spirit tree), then The Grand Tree
 //   mm         out of the roots, then Monkey Madness A to --mm-until (the module is not on main: pass
@@ -58,7 +59,7 @@ import { crossTollGate, inAlKharid, isEastOfTollGate } from '../lib/toll-gate';
 import { logNote, TickLog, type TickRow } from '../lib/ticks';
 import { GNOME_STRONGHOLD_GATE, gateSide, inArea, passGate, runTo, spiritTree, travel, type Area, type SpiritTree, type TravelSdk } from '../lib/travel';
 import { waitUntil, type Pred } from '../lib/wait';
-import { chebyshev, findLoc, invCount, opIndex, pos, worn, type LocQuery } from '../lib/world';
+import { chebyshev, findLoc, invCount, opIndex, pos, skillXp, worn, type LocQuery } from '../lib/world';
 import { arg, botArg, result } from '../lab/common';
 import { startLoopbackGateway } from '../lab/loopback-gateway';
 import { confirmedLogout } from '../lab/quests/aereck-burst';
@@ -68,7 +69,8 @@ import { demonInSight, inTree, ITEM as GT_ITEM, TILES as GT } from '../quests/gr
 import * as tgv from '../quests/tree-gnome-village';
 import { ARRIVAL as ELKOY, atRailOut, inStronghold, inVillage, ITEM as TGV_ITEM, LADDER, RAIL_OUT, STRONGHOLD_DOOR, VILLAGE_TREE, WALL_FOOT, WARLORD } from '../quests/tree-gnome-village';
 import { runSteps, type Step, type StepContext } from '../runner/step';
-import { GNOME_START, ROUTES, steps as agilitySteps } from '../skills/agility';
+import { GNOME_START, ROUTES } from '../skills/agility';
+import { AGILITY_COURSES, type AgilityStep } from '../../server/webclient/src/bot/programs/agility-courses';
 import { BANKS } from './buyer';
 
 export type { Leg, Substitute };
@@ -601,6 +603,48 @@ async function toGnomeCourse(ctx: StepContext<any>): Promise<void> {
     await go(ctx, { x: GNOME_START[0], z: GNOME_START[1], tol: 3 }, 'to the Gnome course');
 }
 
+const GNOME_COURSE = AGILITY_COURSES.gnome!;
+
+/** The loc a course step clicks: the nearest candidate the scene publishes, else the first (the in-page program's rule). */
+export function stepLoc(step: AgilityStep, locs: readonly NearbyLoc[], at: { x: number; z: number }): { id: number; x: number; z: number } {
+    const seen = step.locs.filter(([id, x, z]) => locs.some(l => l.id === id && l.x === x && l.z === z));
+    const pool = seen.length ? seen : step.locs.slice(0, 1);
+    const [id, x, z] = pool.reduce((a, b) => (chebyshev({ x: b[1], z: b[2] }, at) < chebyshev({ x: a[1], z: a[2] }, at) ? b : a));
+    return { id, x, z };
+}
+
+/** Laps go on until the level is reached, and then to the end of the lap in hand (never off a branch or the rope). */
+export const lapsDone = (agility: number, nextStep: number): boolean => agility >= AGILITY_TO && nextStep === 0;
+
+const agilityBase = (s: BotWorldState) => s.skills.find(k => k.name === 'Agility')?.baseLevel ?? 1;
+
+/**
+ * Gnome course laps from the course start to AGILITY_TO, on the lite client. Each obstacle is one `act`
+ * click, done when Agility xp rises (every Gnome obstacle pays xp and none can fail, gnome_course.rs2).
+ */
+async function gnomeLaps(ctx: StepContext<any>): Promise<void> {
+    const sdk = sdkOf(ctx);
+    if (agilityBase(st(ctx)) >= AGILITY_TO) return;
+    if (pos(st(ctx)).level !== 0) throw new Error(`agility: start the laps on the ground, not at ${JSON.stringify(pos(st(ctx)))}`);
+    let i = 0;
+    let misses = 0;
+    let laps = 0;
+    for (let clicks = 0; !lapsDone(agilityBase(st(ctx)), i); clicks++) {
+        if (clicks >= 140) throw new Error(`agility: ${laps} laps in ${clicks} clicks, still ${agilityBase(st(ctx))}`);
+        const step = GNOME_COURSE.steps[i]!;
+        const loc = stepLoc(step, st(ctx).nearbyLocs, pos(st(ctx)));
+        const xp0 = skillXp(st(ctx), 'Agility');
+        const r = await act(sdk, () => sdk.sendInteractLoc(loc.x, loc.z, loc.id, step.op ?? 1), s => skillXp(s, 'Agility') > xp0, { maxTicks: 40, interrupts: interrupts() });
+        if (skillXp(st(ctx), 'Agility') > xp0) {
+            misses = 0;
+            i = (i + 1) % GNOME_COURSE.steps.length;
+            if (i === 0) console.log(`quest-helper: gnome lap ${++laps} done, Agility ${agilityBase(st(ctx))}`);
+            continue;
+        }
+        if (++misses >= 4) throw new Error(`agility: ${step.name} drew no xp 4 times running (${r.reason ?? 'no reason'}) at ${JSON.stringify(pos(st(ctx)))}`);
+    }
+}
+
 /** From the stronghold (the course) out of its south gate to Elkoy, where Tree Gnome Village starts. */
 async function toElkoy(ctx: StepContext<any>): Promise<void> {
     if (chebyshev(pos(st(ctx)), ELKOY) <= 2 || inVillage(st(ctx))) return;
@@ -760,7 +804,7 @@ async function main(): Promise<void> {
                 let r: PhaseResult;
                 if (phase === 'kit') r = await runPlain(session, phase, [legStep('kit', kitUp)], log);
                 else if (phase === 'logs') r = await runPlain(session, phase, [legStep('logs', chopLogs)], log);
-                else if (phase === 'agility') r = await runPlain(session, phase, [legStep('agility', toGnomeCourse), ...agilitySteps({ to: AGILITY_TO })], log);
+                else if (phase === 'agility') r = await runPlain(session, phase, [legStep('agility', toGnomeCourse), legStep('agility:laps', gnomeLaps)], log);
                 else if (phase === 'tree') {
                     await crossingSettings(session.sdk, (m, d) => console.log(`quest-helper: ${m} ${JSON.stringify(d ?? {})}`));
                     r = await runQuest(session, phase, tgv, tgvPlan(), toElkoy, log);

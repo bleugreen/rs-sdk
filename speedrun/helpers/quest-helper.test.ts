@@ -5,7 +5,8 @@ import * as grandTree from '../quests/grand-tree';
 import * as tgv from '../quests/tree-gnome-village';
 import { ROUTES } from '../skills/agility';
 import { BANKS } from './buyer';
-import { ARMOUR, freeSlots, gtPlan, kitBank, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
+import { AGILITY_COURSES } from '../../server/webclient/src/bot/programs/agility-courses';
+import { AGILITY_TO, ARMOUR, freeSlots, gtPlan, kitBank, lapsDone, stepLoc, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
 import type { NearbyLoc } from '../../sdk/types';
 
 let slot = 0;
@@ -174,5 +175,21 @@ describe('kitBank', () => {
     });
     test('inside Al Kharid it banks there', () => {
         expect(kitBank({ x: 3269, z: 3164 })).toEqual(BANKS.alKharid);
+    });
+});
+
+describe('the Gnome course on lite', () => {
+    const gnome = AGILITY_COURSES.gnome!;
+    const loc = (id: number, x: number, z: number) => ({ x, z, id, name: 'o', optionsWithIndex: [] }) as unknown as NearbyLoc;
+    test('stepLoc clicks the nearest published candidate, else the first', () => {
+        const net = gnome.steps.find(s => s.name === 'net')!;
+        expect(stepLoc(net, [loc(2285, 2473, 3425), loc(2285, 2475, 3425)], { x: 2476, z: 3428 })).toEqual({ id: 2285, x: 2475, z: 3425 });
+        expect(stepLoc(net, [], { x: 2476, z: 3428 })).toEqual({ id: 2285, x: 2473, z: 3425 });
+    });
+    test('the laps end only at the end of a lap, at or past the level', () => {
+        expect(lapsDone(AGILITY_TO - 1, 0)).toBe(false);
+        expect(lapsDone(AGILITY_TO, 3)).toBe(false);
+        expect(lapsDone(AGILITY_TO, 0)).toBe(true);
+        expect(gnome.steps.at(-1)!.xp).toBeGreaterThan(gnome.lapBonus);
     });
 });
