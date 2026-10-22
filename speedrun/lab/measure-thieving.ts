@@ -40,7 +40,7 @@ import { clickBack, decideGiver, decideTradeClick, DROPPED_TICKS, newClickCtx, n
 import { waitTicks, waitUntil } from '../lib/wait';
 import { runSteps } from '../runner/step';
 import { FOODS, type FoodName, type LegMark, steps, type ThievingOptions, topUpAsk } from '../skills/thieving';
-import { CueWriter } from '../helpers/altar-cue';
+import { CueWriter, type CueScope } from '../helpers/altar-cue';
 import { askOffer, BoneGiver } from '../helpers/bone-giver';
 import { memoryRoleState, type RoleContext } from '../helpers/role';
 import { mkdtempSync } from 'node:fs';
@@ -460,7 +460,8 @@ function courierRole(h: Session, helperBot: string, scored: string, standing: bo
     // a launched role has its bot.env's SERVER; restock kind cheat checks it is the local lab
     process.env.SERVER ??= `localhost:${process.env.WEB_PORT ?? ''}`;
     const s0 = sdk.getState()!;
-    new CueWriter(dir, scored).write({ beacons: [{ tick: s0.tick, ms: Date.now() }], turns: [] });
+    const scope: CueScope = { step: 'S18', family: 'courier' };
+    new CueWriter(dir, scored, scope).write({ beacons: [{ tick: s0.tick, ms: Date.now() }], turns: [] });
     const events: Array<{ tick: number; ev: string }> = [];
     const tick = () => h.sdk.getState()?.tick ?? -1;
     const seen = new Set<string>();
@@ -474,7 +475,7 @@ function courierRole(h: Session, helperBot: string, scored: string, standing: bo
     });
     const ac = new AbortController();
     const options = {
-        mode: 'on-request', item: 'Babydragon bones', hold: 22, refillBelow: 21, standing,
+        mode: 'on-request', item: 'Babydragon bones', hold: 22, refillBelow: 21, standing, scope,
         restock: { kind: 'cheat' }, sites: [COURIER_SITE],
         carry: [{ item: 'Shark', count: 2, obj: 'shark' }, { item: 'Adamant arrowtips', count: 495, obj: 'adamant_arrowheads', once: true }, { item: 'Rune arrowtips', count: 2595, obj: 'rune_arrowheads', once: true }]
     };
