@@ -238,6 +238,8 @@ export class AltarGiver {
                 return;
             }
             this.setPhase('ready');
+            // A turn for us may have come while this one was in flight.
+            if (this.cue) this.onCue(this.cue);
         }
     }
 
@@ -245,13 +247,13 @@ export class AltarGiver {
     private onCue(cue: Cue): void {
         this.cue = cue;
         if (this.armed && (cue.stop || cue.session !== this.armed.session)) {
-            if (!this.started) {
-                this.result('cancelled', this.armed.session, this.armed.T, { detail: cue.stop ? 'stop' : 'new session' });
-                this.done.add(this.armed.key);
-                this.armed = null;
-                this.setPhase('ready');
-            }
-            return;
+            if (this.started) return; // mid-trade: finish it; serve() re-reads the cue after
+            this.result('cancelled', this.armed.session, this.armed.T, { detail: cue.stop ? 'stop' : 'new session' });
+            this.done.add(this.armed.key);
+            this.armed = null;
+            this.setPhase('ready');
+            // A new session's first cue may already name us (a program restart, the stock rung): read on.
+            if (cue.stop) return;
         }
         const mine = cue.turns.some(t => nameHash(t.giver) === nameHash(this.ctx.account));
         if (!mine) return;

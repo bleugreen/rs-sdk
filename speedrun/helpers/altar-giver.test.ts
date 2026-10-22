@@ -36,6 +36,22 @@ function runTurn(g: AltarGiver, turn: { T: number; myT: number; armedTick: numbe
     return inner.execute(a);
 }
 
+describe('altar-giver cue', () => {
+    test("a new session's first cue cancels the old session's armed turn and arms the new session's turn for us at once", () => {
+        const sdk = new FakeSdk(baseState({ tick: 100, inventory: [ESSENCE] }));
+        const g = giverWith(sdk);
+        const inner = g as unknown as { armed: { key: string } | null; phase: string; frames: { add(t: number, ms: number): unknown }; onCue(c: unknown): void };
+        const ms = Date.now();
+        inner.frames.add(100, ms);
+        // armed (not started) for the robust restart's turn when the stock rung opens its own session
+        inner.phase = 'armed';
+        inner.armed = { key: 's1:120', session: 's1', seq: 4, T: 120, myT: 120, open: 5, schedule: 'robust', receiverHash: nameHash(RECEIVER), armedTick: 99 } as unknown as { key: string };
+        inner.onCue({ v: 1, session: 's2', seq: 1, receiver: { sha256: nameHash(RECEIVER) }, beacons: [{ tick: 100, ms }], schedule: 'robust', open: 5, turns: [{ giver: 'cairn_rcg1', T: 103, schedule: 'stock' }], ms });
+        expect(inner.armed?.key).toBe('s2:103');
+        expect(inner.phase).toBe('armed');
+    });
+});
+
 describe('altar-giver stock turn', () => {
     const near = { nearbyPlayers: [{ index: 9, name: RECEIVER, combatLevel: 3, x: 0, z: 0, distance: 1 }] } as unknown as Partial<BotWorldState>;
 
