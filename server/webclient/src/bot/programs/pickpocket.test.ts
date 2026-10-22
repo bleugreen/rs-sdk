@@ -45,7 +45,8 @@ interface Landing {
  * landing after the request in the same tick replaces it; any packet landing while the trade
  * is open closes it with nothing delivered. `drop` makes the engine lose the nth request that
  * reaches it (no message, nothing opens), and `late` holds the nth back that many ticks (a
- * packet that missed its tick).
+ * packet that missed its tick). `chatter` lines go into the request tick's publication ahead of
+ * the reply, as the browser showed it (behind "You're stunned!" twice, rs/352's probe).
  */
 interface ThieveOpts {
     ticks: number;
@@ -63,7 +64,7 @@ interface ThieveOpts {
     params?: Record<string, unknown>;
     kit?: Kit;
     dialogAt?: (tick: number) => boolean;
-    helper?: { openTicks?: number; bones: number; drop?: (nth: number) => boolean; late?: (nth: number) => number };
+    helper?: { openTicks?: number; bones: number; drop?: (nth: number) => boolean; late?: (nth: number) => number; chatter?: string[] };
 }
 
 function thieve(opts: ThieveOpts) {
@@ -170,6 +171,7 @@ function thieve(opts: ThieveOpts) {
                     trade.droppedOn.push(tick);
                     continue;
                 }
+                for (const text of opts.helper.chatter ?? []) msgs.push({ text, tick });
                 msgs.push({ text: 'Sending trade offer...', tick });
                 trade.requests++;
                 trade.requestedOn.push(tick);
@@ -544,6 +546,89 @@ describe('pickpocket stun actions', () => {
             expect(r.trade.broken).toBe(0);
             // open T+6..T+12 (7 states): the first click after it lands on T+14
             expect(res.gapAfterFail[14]).toBe(r.trade.opened);
+        });
+
+        describe('requestResend', () => {
+            const resend = (helper: ThieveOpts['helper'], requestResend?: number) =>
+                thieve({ ticks: 400, outcome: everyFifthFails, kit: { bones: 4, blood: 6000, air: 6000, food: 4 }, helper, params: { stunActions: [TOPUP, 'bury', 'charge'], idleOnInterface: true, ...(requestResend !== undefined ? { requestResend } : {}) } });
+            /** Per stun: the ticks (from the failed attempt) on which a request landed, and on which the engine ran one. */
+            const perStun = (r: ReturnType<typeof thieve>) => r.failedAttempts.map((f, i) => {
+                const next = r.failedAttempts[i + 1] ?? Infinity;
+                return {
+                    sent: r.landings.filter(l => l.type === 'interactPlayer' && l.tick > f && l.tick < next).map(l => l.tick - f),
+                    ran: r.trade.requestedOn.filter(t => t > f && t < next).map(t => t - f)
+                };
+            });
+            const packets = (r: ReturnType<typeof thieve>) => r.h.sent.map(s => `${s.tick} ${JSON.stringify(s.action)}`);
+
+            test('a dropped request goes out once more 3 ticks after it, and its trade opens without breaking', () => {
+                const r = resend({ bones: 12, drop: n => n % 2 === 0 }, 3);
+                const res = r.h.status.result as Result;
+                expect(r.trade.droppedOn.length).toBeGreaterThan(0);
+                expect(r.trade.broken).toBe(0);
+                expect(r.trade.replaced).toBe(0);
+                for (const s of perStun(r).filter(s => s.sent.length)) {
+                    // the request lands on T+4; a re-send, sent 3 ticks after it, on T+7
+                    expect(s.sent[0]).toBe(4);
+                    expect(s.sent.length).toBeLessThanOrEqual(2);
+                    if (s.sent.length === 2) expect(s.sent[1]).toBe(7);
+                    // never two requests the engine ran in one stun
+                    expect(s.ran.length).toBeLessThanOrEqual(1);
+                }
+                // every dropped request was re-sent, and every re-send was run (only even requests drop)
+                expect(res.stun!.resends).toBe(r.trade.droppedOn.length);
+                expect(r.h.status.counters.requestResends).toBe(r.trade.droppedOn.length);
+                expect(r.trade.requests).toBe(perStun(r).filter(s => s.sent.length).length);
+                expect(r.h.status.marks['topup:resend']!.count).toBe(res.stun!.resends!);
+                expect(r.h.status.marks.topup!.count).toBe(res.stun!.byAction.topup);
+            });
+
+            test('a request the engine ran is not re-sent, so a helper that drops nothing sees the same packets', () => {
+                const on = resend({ bones: 12 }, 3);
+                const off = resend({ bones: 12 });
+                expect(packets(on)).toEqual(packets(off));
+                expect((on.h.status.result as Result).stun!.resends).toBe(0);
+            });
+
+            test('the reply counts behind other lines of its publication (the browser shares one observation id per tick)', () => {
+                const chatter = ["You're stunned!", "You're stunned!"];
+                // a re-send at 1 tick would fire on the reply's own tick if the reply were missed
+                const on = resend({ bones: 12, chatter }, 1);
+                const off = resend({ bones: 12, chatter });
+                expect((on.h.status.result as Result).stun!.resends).toBe(0);
+                expect(on.h.status.counters.requestResends ?? 0).toBe(0);
+                expect(packets(on)).toEqual(packets(off));
+            });
+
+            test('a request that lands up to 2 ticks late draws its reply inside the hold and is not re-sent', () => {
+                // (2 late opens the trade after the hold, so the next click breaks it: with or without the option)
+                for (const late of [1, 2]) {
+                    const r = resend({ bones: 12, late: () => late }, 3);
+                    const off = resend({ bones: 12, late: () => late });
+                    expect((r.h.status.result as Result).stun!.resends).toBe(0);
+                    expect(packets(r)).toEqual(packets(off));
+                    for (const s of perStun(r)) expect(s.ran.length).toBeLessThanOrEqual(1);
+                }
+            });
+
+            test('without it a dropped request is lost for the stun (the golden scenario topupIdleDropped)', () => {
+                const r = resend({ bones: 12, drop: n => n % 2 === 0 });
+                expect(r.trade.droppedOn.length).toBeGreaterThan(0);
+                for (const s of perStun(r)) expect(s.sent.length).toBeLessThanOrEqual(1);
+                expect((r.h.status.result as Result).stun!.resends).toBeUndefined();
+                // the request is still marked, on the tick it went out
+                expect(r.h.status.marks.topup!.count).toBe((r.h.status.result as Result).stun!.byAction.topup);
+            });
+
+            test('rejects a re-send outside the hold or without a player action', () => {
+                const h = new Harness('pp', createPickpocket);
+                for (const params of [{ requestResend: 0 }, { requestResend: 4 }, { requestResend: 1.5 }, { requestResend: 'x' }, { requestResend: 3, stunActions: ['bury'] }, { requestResend: 3, stunActions: undefined }]) {
+                    const s = h.runtime.start('pp', { maxTicks: 10, stunActions: [TOPUP], ...params });
+                    expect(s.phase).toBe('fault');
+                    expect(s.fault).toMatch(/bad parameters/);
+                }
+                expect(h.runtime.start('pp', { maxTicks: 10, stunActions: [TOPUP], requestResend: 3 }).phase).toBe('running');
+            });
         });
     });
 
