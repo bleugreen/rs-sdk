@@ -198,7 +198,8 @@ the manifest against the game on every start, operator restarts included:
 
 Every walk first turns the run toggle on (`lib/run-mode.ts`). The toggle is
 not saved, and a session brought back by a relaunch or a page reload never
-went through `login`, which does the same.
+went through `login`, which does the same. A toggle that will not take is
+recorded in the `(resume)` row's `meta.run` and warned; the walk continues.
 
 Steps that need more than the published state declare **probes** (a bank-open
 probe, a quest-journal read; rs/114's quest status and journal). Probes cost

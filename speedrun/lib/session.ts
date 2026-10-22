@@ -606,7 +606,7 @@ export interface LoginResult {
     via: 'launch' | 'page';
     /** session.tickBase for the new session. */
     tickBase: number;
-    /** The run toggle after login turned it on (lib/run-mode.ts); not counted in wallMs. */
+    /** The run toggle after login turned it on, with `reason` when it would not (lib/run-mode.ts); not counted in wallMs. */
     run: EnsureRunResult;
 }
 
@@ -621,10 +621,10 @@ export interface LoginResult {
  * login that ends before its first in-world tick is retried with backoff, up to
  * `attempts` times; after an in-page attempt the retries navigate.
  *
- * Once in, it turns run on and confirms it (lib/run-mode.ts ensureRunOn: the
- * toggle is not saved, so every login starts walking), throwing a
- * RunToggleError if it will not; relog, the watchdog's login and the outage
- * reconnect all come through here.
+ * Once in, it turns run on (lib/run-mode.ts ensureRunOn: the toggle is not
+ * saved, so every login starts walking); a toggle that will not take is
+ * recorded in `run` and warned, not thrown. Relog, the watchdog's login and the
+ * outage reconnect all come through here.
  */
 export async function login(session: Session, opts: LoginOptions = {}): Promise<LoginResult> {
     const t0 = Date.now();

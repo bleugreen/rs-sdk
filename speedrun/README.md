@@ -465,11 +465,19 @@ The account's run toggle (`option_run`, varp 173, published as
 `ensureRunOn(sdk)` is the one way to set it. It reads the published varp and
 presses the controls button (152 off, 153 on) only when the varp disagrees,
 because both buttons run `if_close` and `p_clearpendingaction`. It confirms the
-change within 4 ticks, presses once more if needed, then throws a
-`RunToggleError` naming the run energy. The server ignores the button while the
-player is busy (`p_finduid`) and turns run off below 1% energy. On Tutorial
-Island the controls tab is hidden and the server drops the click, so there it
-returns `unavailable: 'tutorial-island'` without pressing.
+change within 4 ticks and presses once more if needed. The server ignores the
+button while the player is busy (`p_finduid`) and turns run off below 1% energy.
+On Tutorial Island the controls tab is hidden and the server drops the click, so
+there it returns `unavailable: 'tutorial-island'` without pressing.
+
+When the toggle still disagrees after both presses, or the client does not
+publish the varp, the two differ. `ensureRunOn` is best effort: it returns
+`{on, presses, reason}`, warns, and lets the caller continue, because the
+measurement below shows a client-routed approach runs either way, so stopping
+the scored run over the toggle would cost far more than it saves. `ensureRun`
+throws a `RunToggleError` with the same reason, for callers whose result depends
+on the toggle: the lab opt-out below and A/B scripts. Both throw when the player
+is not in the world, which is a caller bug.
 
 It is called wherever the account comes back into the world: at the end of
 `login` (so `relog`, the lab quest fixtures' relog, the watchdog's

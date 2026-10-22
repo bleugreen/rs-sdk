@@ -11,7 +11,8 @@ import { TickLog } from '../lib/ticks';
 import { waitTicks, waitUntil } from '../lib/wait';
 import { invCount, pos } from '../lib/world';
 import { runSteps, type RunnerSession } from '../runner/step';
-import { onTutorialIsland, tutorialSkip } from '../skills/start';
+import { onTutorialIsland } from '../lib/world';
+import { tutorialSkip } from '../skills/start';
 
 type LabSdk = Pick<BotSDK, 'getState' | 'onStateUpdate' | 'sendSay'>;
 type ClearSdk = LabSdk & Pick<BotSDK, 'sendDropItem' | 'sendUseEquipmentItem'>;

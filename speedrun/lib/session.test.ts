@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { fakeCdp } from './fake-cdp';
 import { FakeSdk, flush, runToggleServer } from './fake-sdk';
-import { IF_RUN_ON, RunToggleError, runIsOn } from './run-mode';
+import { IF_RUN_ON, runIsOn } from './run-mode';
 import { loginTokenProof } from '../../server/webclient/login-token';
 import {
     LOGOUT_BUTTON,
@@ -686,18 +686,22 @@ describe('login with inPage: the tab logs back in where it is', () => {
         }
     });
 
-    test('a login whose run toggle will not take fails with a RunToggleError', async () => {
+    test('a login whose run toggle will not take returns with the failure recorded and a warning', async () => {
         const cdp = fakeCdp('srtest', PASSWORD);
         let ticker: ReturnType<typeof setInterval> | undefined;
+        const warn = spyOn(console, 'warn').mockImplementation(() => {});
         try {
             const { session, sdk } = pageSession(cdp);
             sdk.state = { ...sdk.state!, varps: { option_run: 0 } };
             sdk.onSend = runToggleServer(sdk, { ignore: Infinity });
             cdp.hooks.onAutoLogin = () => { getsIn(cdp, sdk); setTimeout(() => { ticker = setInterval(() => sdk.tick(), 5); }, 80); };
-            const err = await login(session, { inPage: true, timeoutMs: 3_000 }).catch(e => e);
-            expect(err).toBeInstanceOf(RunToggleError);
+            const r = await login(session, { inPage: true, timeoutMs: 3_000 });
+            expect(r.run).toMatchObject({ on: false, presses: 2 });
+            expect(r.run.reason).toContain('run did not turn on after 2 presses');
             expect(runPresses(sdk)).toBe(2);
+            expect(warn.mock.calls.some(c => String(c[0]).includes(r.run.reason!))).toBe(true);
         } finally {
+            warn.mockRestore();
             clearInterval(ticker);
             cdp.stop();
         }

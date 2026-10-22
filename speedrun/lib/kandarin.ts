@@ -77,7 +77,7 @@ export async function crossingSettings(sdk: BotSDK, log: Log): Promise<void> {
         }
     }
     // Run energy is infinite on the demo (NODE_INFINITE_RUN); the toggle makes
-    // every step a run step instead of relying on per-click run.
+    // every step a run step instead of relying on per-click run. Best effort (warned).
     await ensureRunOn(sdk);
 }
 

@@ -16,6 +16,7 @@
 import type { BotWorldState, NearbyNpc } from '../../sdk/types';
 import { classifyPage } from '../lib/dialogue';
 import { ensureRunOn } from '../lib/run-mode';
+import { logNote } from '../lib/ticks';
 import { waitUntil } from '../lib/wait';
 import { onTutorialIsland } from '../lib/world';
 import type { Step, StepContext } from '../runner/step';
@@ -54,7 +55,7 @@ function pageBody(s: BotWorldState): string {
     return entry.text.join(' ').trim();
 }
 
-async function skip({ sdk }: StepContext<unknown>): Promise<void> {
+async function skip({ sdk, session, log }: StepContext<unknown>): Promise<void> {
     let s = sdk.getState()!;
     // The design screen arrives with the first in-world frames; give it one tick if it is not up yet.
     if (!designOpen(s) && !s.dialog.isOpen) {
@@ -96,7 +97,8 @@ async function skip({ sdk }: StepContext<unknown>): Promise<void> {
     const landed = await waitUntil(sdk, st => atSpawn(st) && hasStarterKit(st), { maxTicks: 8, after: page.tick });
     if (!landed.ok) throw new Error('not at Lumbridge with the starter kit 8 ticks after the skip');
     // The login could not turn run on (the controls tab is hidden on the island); tutorial_complete opened it.
-    await ensureRunOn(sdk);
+    // Recorded, never fatal: see lib/run-mode.ts.
+    logNote(log, session, 'S00:run', { ...(await ensureRunOn(sdk)) });
 }
 
 /** S00 as a step: precondition Tutorial Island, postcondition Lumbridge spawn with the starter kit. */
