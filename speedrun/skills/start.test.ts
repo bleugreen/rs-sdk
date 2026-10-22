@@ -68,16 +68,19 @@ describe('S00 tutorial skip', () => {
         const ticker = setInterval(() => sdk.tick(), 2);
         const warn = spyOn(console, 'warn').mockImplementation(() => {});
         const log = TickLog.memory('t');
+        let warnings = 0;
         try {
             await tutorialSkip.run(ctx(sdk, log));
+            warnings = warn.mock.calls.length;
         } finally {
             clearInterval(ticker);
             warn.mockRestore();
         }
-        const [note] = log.rows.filter(r => r.step === 'S00:run');
-        expect(note.meta).toMatchObject({ on: false, presses: 2 });
-        expect(String(note.meta!.reason)).toContain('run did not turn on');
-        expect(warn).toHaveBeenCalledTimes(1);
+        const notes = log.rows.filter(r => r.step === 'S00:run').map(r => r.meta);
+        expect(notes).toHaveLength(1);
+        expect(notes[0]).toMatchObject({ on: false, presses: 2 });
+        expect(String(notes[0]?.reason)).toContain('run did not turn on');
+        expect(warnings).toBe(1);
         expect(tutorialSkip.postconditions(sdk.getState()!, {})).toBe(true);
     });
 
