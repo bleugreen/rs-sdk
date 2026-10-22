@@ -8,7 +8,7 @@ import { levelForXp, xpForLevel } from '../lib/xp';
 import { Observation, resolveResume } from '../runner/resume';
 import { runSteps, type RunnerSession } from '../runner/step';
 import {
-    ANVIL, ANVIL_LOC, barRoom, barsIn, barTotals, BARS, bestProduct, otherItems, chooseMake, countsOf, firstAnnouncement, handBack, heldSegments, itemXp, milestones,
+    ANVIL, ANVIL_LOC, barRoom, barsIn, barTotals, BARS, bestProduct, otherItems, chooseMake, countsOf, firstAnnouncement, giveBackItems, handBack, heldSegments, itemXp, milestones,
     PLAN_DEFAULTS, PRODUCTS, resolveOptions, routePlan, SCORED_TILE, SMITHING_IF, stepPlan, steps, type AnvilPlanMsg, type Bar, type InventoryReport,
 } from './smithing';
 
@@ -458,5 +458,78 @@ describe('the cycle on a simulated anvil', () => {
         expect(sim.announced[0]).toMatchObject({ seq: 0 });
         expect(sim.received[0]).toEqual(['Mithril platebody', 'Mithril platebody']);
         expect(sdk.state!.skills[0]!.experience).toBeGreaterThanOrEqual(stepPlan().marks[point.index]!);
+    });
+});
+
+// ---------------------------------------------------------------- the give-back (H21a's swap outs)
+
+describe('giveBack: the dead items leave in the first trade, and the slots are counted after it', () => {
+    const it = (slot: number, name: string, count = 1): InventoryItem => ({ slot, id: idOf(name), name, count, optionsWithIndex: [] });
+    /**
+     * The items the route still carries into S25a that nothing after it uses (STEP-MANIFEST.md's
+     * inventory ledger at H21a): 26 slots of them beside two rune stacks that stay, a full pack.
+     */
+    const DEAD = ['Rune axe', 'Rune pickaxe', 'Knife', ...Array(16).fill('Logs'), 'Spade', ...Array(4).fill('Bucket'), 'Gas mask', 'Lit torch'] as string[];
+    const full = () => [it(0, 'Law rune', 8), it(1, 'Water rune', 8), ...DEAD.map((n, i) => it(i + 2, n))];
+    const ALL_DEAD = ['Rune axe', 'Rune pickaxe', 'Knife', 'Logs', 'Spade', 'Bucket', 'Gas mask', 'Lit torch'].map(item => ({ item }));
+    const { marks } = stepPlan();
+    // Inventory 6 is 25 bars: with the hammer it needs 26 free slots, H21a's needAtStart.
+    const k = 5;
+
+    test('(b) the precondition and the bar room count the pending give-back as gone: 0 free before, 26 after', () => {
+        const s = atAnvil(marks[k - 1]!, full());
+        expect(s.inventory).toHaveLength(28);
+        expect(barsIn(stepPlan().plan[k]!)).toBe(25);
+        expect(steps({ giver: 'anvilhelper' })[k]!.preconditions(s, {})).toMatch(/^28 other items \(Law rune, Water rune, Rune axe, .*\): need 26 free slots \(the hammer and 25 bars\)$/);
+        expect(steps({ giver: 'anvilhelper', giveBack: ALL_DEAD })[k]!.preconditions(s, {})).toBe(true);
+        const baseline = countsOf(s.inventory);
+        expect(barRoom(s, 27, baseline)).toBe(0);
+        // 28 less the two rune stacks less the hammer's slot.
+        expect(barRoom(s, 27, baseline, ALL_DEAD)).toBe(25);
+        expect(giveBackItems(s.inventory, ALL_DEAD)).toHaveLength(26);
+    });
+
+    test('(c) a give-back that still leaves too few slots is refused with a reason, not thrown', () => {
+        const s = atAnvil(marks[k - 1]!, full());
+        const noLogs = ALL_DEAD.filter(g => g.item !== 'Logs');
+        expect(steps({ giver: 'anvilhelper', giveBack: noLogs })[k]!.preconditions(s, {})).toBe(
+            '18 other items (Law rune, Water rune, Logs) after the give-back (Rune axe, Rune pickaxe, Knife, Spade, Bucket, Gas mask, Lit torch): need 26 free slots (the hammer and 25 bars)',
+        );
+        // A spec matching nothing held gives nothing back and changes no count.
+        expect(steps({ giver: 'anvilhelper', giveBack: [{ item: 'Fishing rod' }] })[k]!.preconditions(s, {})).toMatch(/^28 other items .*: need 26 free slots/);
+        expect(() => steps({ giveBack: [{ item: 'Spade', n: 0 }] })).toThrow(/giveBack Spade: n must be a positive integer/);
+    });
+
+    test('(a) a fresh chain offers the give-back in its first trade, and only there; the first inventory gets the full bar room', async () => {
+        const xp0 = xpForLevel(86);
+        const dead = [it(1, 'Spade'), it(2, 'Bucket'), it(3, 'Bucket'), it(4, 'Lit torch')];
+        const sdk = new AnvilFake(atAnvil(xp0, [it(0, 'Hammer'), ...dead]));
+        sdk.state = { ...sdk.state!, nearbyPlayers: [HELPER], nearbyLocs: [ANVIL_NEARBY] };
+        const sim = simulate(sdk, xp0 * 10);
+        const logged: string[] = [];
+        const list = steps({ giver: 'anvilhelper', untilLevel: 87, announce: sim.announce, giveBack: [{ item: 'Spade' }, { item: 'Bucket' }, { item: 'Lit torch' }], log: msg => logged.push(msg) });
+        await drain(runSteps(session(sdk), list, { log: TickLog.memory(), c: {}, shouldStop: () => false }), sim.step);
+
+        expect(sim.received[0]).toEqual(['Spade', 'Bucket', 'Bucket', 'Lit torch']);
+        expect(sim.received.length).toBeGreaterThan(1);
+        expect(sim.received.slice(1).flat().every(n => /platebody/.test(n))).toBe(true);
+        // Counted after the give-back, the first inventory is the empty-pack plan, not one cut to 24.
+        expect(sim.announced[0]!.give).toEqual({ mithril_bar: 25 });
+        expect(logged.filter(m => m === 'given back')).toHaveLength(1);
+        expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Hammer']);
+    });
+
+    test('(a) a resume holding bars offers the give-back alongside the first products handed back', async () => {
+        const xp0 = xpForLevel(70) + 100;
+        const bars = Array.from({ length: 10 }, (_, i) => it(i + 1, 'Mithril bar'));
+        const sdk = new AnvilFake(atAnvil(xp0, [it(0, 'Hammer'), ...bars, it(11, 'Spade'), it(12, 'Gas mask')]));
+        sdk.state = { ...sdk.state!, nearbyPlayers: [HELPER], nearbyLocs: [ANVIL_NEARBY] };
+        const sim = simulate(sdk, xp0 * 10);
+        const list = steps({ giver: 'anvilhelper', announce: sim.announce, giveBack: [{ item: 'Spade' }, { item: 'Gas mask' }] });
+        const point = await resolveResume(list, new Observation(sdk.state!), {});
+        expect(point.mode).toBe('resume');
+        await drain(runSteps(session(sdk), [list[point.index]!], { log: TickLog.memory(), c: {}, shouldStop: () => false, startMode: 'resume' }), sim.step);
+        expect(sim.received[0]).toEqual(['Mithril platebody', 'Mithril platebody', 'Spade', 'Gas mask']);
+        expect(sdk.state!.inventory.some(i => i.name === 'Spade' || i.name === 'Gas mask')).toBe(false);
     });
 });
