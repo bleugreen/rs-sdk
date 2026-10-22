@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { parseLog, report, TickLog } from './ticks';
-import { startRunTickMonitor, startTickMonitor, TickCadence, type TickCadenceConfig, tickMonitorSetting, tickMonLine, type TickMonMinute, summarizeWindow } from './tick-monitor';
+import { PERIOD_MIN_SAMPLES, PERIOD_SPAN_TICKS, startRunTickMonitor, startTickMonitor, TickCadence, type TickCadenceConfig, tickMonitorSetting, tickMonLine, type TickMonMinute, TickPeriod, summarizeWindow } from './tick-monitor';
 
 const CFG: TickCadenceConfig = { tickMs: 300, lateMs: 120, gluedMs: 5, gapTicks: 17 };
 
@@ -11,8 +11,10 @@ function classify(arrivals: Array<[number, number]>, cfg: TickCadenceConfig = CF
     return c.take();
 }
 
-/** Labels 1..n on a 300 ms cadence with a small deterministic jitter (never over 10 ms). */
-const clean = (n: number): Array<[number, number]> => Array.from({ length: n }, (_, i) => [i + 1, (i + 1) * 300 + ((i * 7) % 11) - 5] as [number, number]);
+/** Labels 1..n on a `ms` cadence with a small deterministic jitter (never over 10 ms). */
+const clean = (n: number, ms = 300): Array<[number, number]> => Array.from({ length: n }, (_, i) => [i + 1, (i + 1) * ms + ((i * 7) % 11) - 5] as [number, number]);
+
+const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[xs.length >> 1]!;
 
 describe('TickCadence', () => {
     test('a clean minute: 200 ticks, nothing glued, nothing late', () => {
@@ -65,6 +67,45 @@ describe('TickCadence', () => {
         expect(c.offsets).toEqual([0, 0, 0]);
     });
 
+    test('a 300 ms stream measures a 300 ms period: the nominal cadence, as before', () => {
+        const c = classify(clean(200));
+        expect(Math.round(median(c.periods))).toBe(300);
+        expect(Math.round(median(c.offsets))).toBe(0);
+    });
+
+    describe('a slow server (the demo ticks at 340-370 ms against the nominal 300)', () => {
+        test('a steady 340 ms stream: nothing late, offsets about 0, period 340', () => {
+            const c = classify(clean(176, 340));
+            expect([c.ticks, c.glued, c.late, c.gaps]).toEqual([176, 0, 0, 0]);
+            // against the nominal 300 every offset read +40
+            expect(Math.abs(median(c.offsets))).toBeLessThan(5);
+            expect(Math.round(median(c.periods))).toBe(340);
+        });
+
+        test('three ticks held 180 ms in a 340 ms stream: exactly three late', () => {
+            const a = clean(176, 340).map(([l, t]) => [l, [40, 90, 140].includes(l) ? t + 180 : t] as [number, number]);
+            const c = classify(a);
+            expect([c.ticks, c.glued, c.late, c.gaps]).toEqual([176, 0, 3, 0]);
+        });
+
+        test('holds under lateMs are not late at 370 ms (against 300 they read 70 ms more, 160)', () => {
+            const a = clean(162, 370).map(([l, t]) => [l, [40, 90, 140].includes(l) ? t + 90 : t] as [number, number]);
+            expect(classify(a).late).toBe(0);
+            expect(classify(a, { ...CFG, tickMs: 370 }).late).toBe(0);
+            // the same holds at 130 ms are late either way
+            const b = clean(162, 370).map(([l, t]) => [l, [40, 90, 140].includes(l) ? t + 130 : t] as [number, number]);
+            expect(classify(b).late).toBe(3);
+        });
+
+        test('held-and-glued pairs leave the period alone, and are counted as before', () => {
+            // every 10th tick held 200 ms with the next glued behind it: 17 pairs
+            const a = clean(176, 340).map(([l, t]) => [l, l % 10 === 0 ? l * 340 + 200 : l % 10 === 1 && l > 1 ? (l - 1) * 340 + 200.2 : t] as [number, number]);
+            const c = classify(a);
+            expect([c.glued, c.late]).toEqual([17, 17]);
+            expect(Math.abs(median(c.periods.slice(20)) - 340)).toBeLessThan(2);
+        });
+    });
+
     test('take resets the counts but not the cadence', () => {
         const c = new TickCadence(CFG);
         c.arrive(1, 300);
@@ -76,15 +117,41 @@ describe('TickCadence', () => {
     });
 });
 
+describe('TickPeriod', () => {
+    test('the nominal length until PERIOD_MIN_SAMPLES span samples, then their median', () => {
+        const p = new TickPeriod(300);
+        const warm = PERIOD_SPAN_TICKS + PERIOD_MIN_SAMPLES; // labels 0..warm-1 give MIN_SAMPLES - 1 samples
+        for (let l = 0; l < warm; l++) p.see(l, l * 340);
+        expect([p.measured, p.ms]).toEqual([false, 300]);
+        p.see(warm, warm * 340);
+        expect([p.measured, p.ms]).toEqual([true, 340]);
+    });
+
+    test('repeats are ignored; a k-label step is k arrivals; a gap restarts the span but keeps the median', () => {
+        const p = new TickPeriod(300);
+        for (let l = 1; l <= 30; l++) {
+            p.see(l, l * 340);
+            p.see(l, l * 340 + 50); // a republish within the tick
+        }
+        expect(p.ms).toBe(340);
+        p.see(32, 32 * 340); // 31 never published: arrives with 32
+        expect(Math.abs(p.ms - 340)).toBeLessThan(1);
+        p.see(5, 99_000); // relaunch: the label went back
+        p.see(6, 99_340);
+        expect(Math.abs(p.ms - 340)).toBeLessThan(1);
+    });
+});
+
 describe('tickMonLine', () => {
-    test('stable grep-able form', () => {
-        const m = summarizeWindow({ ticks: 200, glued: 2, late: 3, gaps: 0, offsets: [0, 1, 2, 150, -150], firstTick: 1, lastTick: 200 }, 4, Date.UTC(2026, 9, 21, 16, 23, 0, 412), 60, 120);
-        expect(tickMonLine(m)).toBe('TICKMON minute=4 at=2026-10-21T16:23:00Z secs=60 ticks=200 glued=2 late=3 p50=1 p90=150 max=150 gaps=0 lateMs=120');
+    test('stable grep-able form, the measured period last', () => {
+        const m = summarizeWindow({ ticks: 200, glued: 2, late: 3, gaps: 0, offsets: [0, 1, 2, 150, -150], periods: [340, 340.4, 341, 341.2, 342], firstTick: 1, lastTick: 200 }, 4, Date.UTC(2026, 9, 21, 16, 23, 0, 412), 60, 120);
+        expect(tickMonLine(m)).toBe('TICKMON minute=4 at=2026-10-21T16:23:00Z secs=60 ticks=200 glued=2 late=3 p50=1 p90=150 max=150 gaps=0 lateMs=120 periodMs=341');
     });
 
     test('a window with no offsets prints dashes', () => {
-        const m = summarizeWindow({ ticks: 0, glued: 0, late: 0, gaps: 0, offsets: [], firstTick: null, lastTick: null }, 0, 0, 60, 120);
+        const m = summarizeWindow({ ticks: 0, glued: 0, late: 0, gaps: 0, offsets: [], periods: [], firstTick: null, lastTick: null }, 0, 0, 60, 120);
         expect(tickMonLine(m)).toContain('ticks=0 glued=0 late=0 p50=- p90=- max=-');
+        expect(tickMonLine(m)).toEndWith('periodMs=-');
     });
 });
 
@@ -171,7 +238,8 @@ describe('the run log', () => {
         expect(log.rows).toHaveLength(1);
         const row = log.rows[0]!;
         expect([row.kind, row.step, row.account, row.sessionId, row.startTick, row.endTick, row.ticks]).toEqual(['tickmon', 'tickmon', 'acct', 2, 1, 5, 5]);
-        expect(String(row.meta!.line)).toMatch(/^TICKMON minute=0 at=\S+ secs=0 ticks=5 glued=0 late=0 p50=0 p90=0 max=0 gaps=0 lateMs=120$/);
+        expect(String(row.meta!.line)).toMatch(/^TICKMON minute=0 at=\S+ secs=0 ticks=5 glued=0 late=0 p50=0 p90=0 max=0 gaps=0 lateMs=120 periodMs=300$/);
+        expect(row.meta!.periodMs).toBe(300);
         expect(printed).toEqual([row.meta!.line as string]);
         const rep = report(parseLog(JSON.stringify(row) + '\n'));
         expect([rep.totalTicks, rep.annotations]).toEqual([0, [{ kind: 'tickmon', step: 'tickmon', count: 1, totalTicks: 5 }]]);
