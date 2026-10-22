@@ -11,6 +11,11 @@
 // ambassador/policy.ts. No code path turns chat into a trade, drop, follow, movement,
 // file write outside the log directory, or a message to the fleet.
 //
+// The Bounty Board (ambassador/bounty.ts) adds one read: the bidder's own offers file.
+// Bounties come from the operator's config, are live only while that file shows a
+// matching open bid, and are paid by the Grand Exchange; every line about them is held
+// to the config and the file in code. Chat cannot change the board.
+//
 // Run standalone (lite client already running for the account):
 //   bun speedrun/helpers/ambassador.ts cairn_md
 import { readdirSync, readFileSync } from 'node:fs';
@@ -18,6 +23,7 @@ import { join } from 'node:path';
 import { runStandalone, type Role, type RoleContext } from './role';
 import { createIO, type AmbassadorIO, type Post } from './ambassador/io';
 import { ChatLog, DEFAULT_LOG_DIR, ROOT, readRecords } from './ambassador/log';
+import { BOUNTY_KEY, BountyBoard, boardFromOptions, parseBountyState, type BountyState } from './ambassador/bounty';
 import { PlayerMemory, PLAYERS_KEY } from './ambassador/memory';
 import {
     materialFrom,
@@ -114,7 +120,11 @@ export const LOOP = {
     modelDownAfter: 3,
     modelPauseMs: 2 * 60_000,
     /** Directions from the persona's Material suggested with each prompt. */
-    materialPicks: 3
+    materialPicks: 3,
+    /** After this many of our lines without a question, a question is welcome if Pebble is curious. */
+    curiousAfter: 5,
+    /** Pebble's Collection had this many exhibits before it was counted in the log. */
+    exhibitsBefore: 40
 } as const;
 
 export interface Clock {
@@ -159,12 +169,16 @@ export interface ConversationDeps {
     material?: readonly string[];
     /** For the Material picks (default Math.random). */
     random?: () => number;
+    /** The Bounty Board, when one is configured. */
+    bounty?: BountyBoard;
+    /** Persist the board's pitch limits and posters after a change (ctx.state). */
+    saveBounty?(state: BountyState): Promise<void> | void;
 }
 
 /** Why a drafted line would sound like one already said; the draft is retried once, then dropped. */
 interface Echo {
-    reason: 'repeat' | 'opener-reused' | 'near-repeat' | 'too-long';
-    /** For near-repeats: which check ('opener', 'phrase', 'probe', 'questions', 'self-id'). */
+    reason: 'repeat' | 'opener-reused' | 'near-repeat' | 'too-long' | 'bounty';
+    /** For near-repeats: which check ('opener', 'phrase', 'probe', 'questions', 'self-id', 'bounty-poster'); for bounty, the board's refusal. */
     guard?: string;
     detail: string;
 }
@@ -237,6 +251,7 @@ export class Conversation {
                 ...(line.type === 1 || line.type === 7 ? { crowned: true } : {})
             });
             if (me || ours) continue;
+            this.d.bounty?.noteHeard(now, line.sender, line.text);
             const who = canon(line.sender);
             const prev = this.lastLine.get(who);
             this.lastLine.set(who, { text: line.text, at: now });
@@ -271,14 +286,32 @@ export class Conversation {
 
     /** How we have been sounding, for the prompt: our latest lines, what we overuse, what we remember about `players`. */
     private hints(players: readonly string[] | null): VarietyHints {
-        const recent = this.d.limiter.recentTexts(GUARD.window);
+        const { limiter, clock, bounty } = this.d;
+        const recent = limiter.recentTexts(GUARD.window);
+        const now = clock.now();
+        const exhibits = limiter.state.sent.filter(s => /\bexhibit\b/i.test(s.text ?? s.norm)).length;
+        const single = players && new Set(players.map(canon)).size === 1 ? players[0]! : null;
         return {
             yourLastLines: recent,
             avoid: overused(recent),
             noQuestion: recent.slice(-GUARD.questionWindow).filter(isQuestion).length >= GUARD.questionMax,
-            ...(players && this.d.memory ? { players: this.d.memory.recall(players, this.d.clock.now()) } : {}),
+            curious: recent.length >= LOOP.curiousAfter && !recent.slice(-LOOP.curiousAfter).some(isQuestion),
+            nextExhibit: LOOP.exhibitsBefore + exhibits + 1,
+            ...(players && this.d.memory ? { players: this.d.memory.recall(players, now) } : {}),
+            ...(bounty ? { bounty: bounty.view(now, single) } : {}),
             ...(this.d.material?.length ? { material: pick(this.d.material, LOOP.materialPicks, this.d.random) } : {})
         };
+    }
+
+    private saveBounty(): void {
+        const { bounty, log } = this.d;
+        if (!bounty || !this.d.saveBounty) return;
+        const failed = (e: unknown) => log.write('error', { where: 'bounty-state', message: e instanceof Error ? e.message : String(e) });
+        try {
+            void Promise.resolve(this.d.saveBounty(bounty.state)).catch(failed);
+        } catch (e) {
+            failed(e);
+        }
     }
 
     /**
@@ -296,6 +329,13 @@ export class Conversation {
         const near = nearRepeat(text, limiter.recentTexts(GUARD.window), GUARD, heard);
         if (near) return { reason: 'near-repeat', guard: near.reason, detail: `${near.reason}: ${near.detail}` };
         if (to && memory?.introduced(to) && isSelfId(text)) return { reason: 'near-repeat', guard: 'self-id', detail: 'you already told them you are a bot' };
+        const board = this.d.bounty;
+        if (board) {
+            const refusal = board.checkLine(clock.now(), kind, to, text, heard);
+            if (refusal) return { reason: 'bounty', guard: refusal.reason, detail: `${refusal.detail}; say only what bounty_board shows` };
+            const poster = board.posterEcho(text);
+            if (poster) return { reason: 'near-repeat', guard: 'bounty-poster', detail: poster };
+        }
         return null;
     }
 
@@ -397,7 +437,7 @@ export class Conversation {
         // Answering someone who tried an injection is a decline, whatever the text says:
         // one per player per hour, then they are ignored.
         this.counts.answered++;
-        await this.send(kindOf(d), d.channel, to, d.text, d.topics);
+        await this.send(kindOf(d), d.channel, to, d.text, d.topics, heard(d), d.remember);
     }
 
     private async opener(user: string, start: number, retry: boolean): Promise<string | null> {
@@ -432,22 +472,28 @@ export class Conversation {
         if (!nearby.length) return;
         this.lastOpenerTryAt = now;
         const hints = this.hints(null);
-        let text = await this.opener(openerPrompt(this.context, nearby, limiter.state.openers, hints), now, false);
+        // A cheer for a filled bounty, or (every other opener) a wanted poster; else an ordinary line.
+        const plan = this.d.bounty?.planOpener(now) ?? null;
+        if (plan) log.write('heartbeat', { opener: plan.kind, item: plan.kind === 'cheer' ? plan.item : plan.bounty.item });
+        let text = await this.opener(openerPrompt(this.context, nearby, limiter.state.openers, hints, plan), now, false);
         if (text === null) return;
         const echo = this.echo('opener', null, text);
         if (echo) {
             this.counts.retries++;
             log.write('retry', { reason: echo.reason, ...(echo.guard ? { guard: echo.guard } : {}), detail: echo.detail, purpose: 'opener', text });
             if (!this.modelAvailable(this.d.clock.now())) return;
-            text = await this.opener(openerPrompt(this.context, nearby, limiter.state.openers, { ...hints, rejected: { text, why: echo.detail } }), now, true);
+            text = await this.opener(openerPrompt(this.context, nearby, limiter.state.openers, { ...hints, rejected: { text, why: echo.detail } }, plan), now, true);
             if (text === null) return;
             const still = this.echo('opener', null, text);
             if (still) return this.refuse(still, 'opener', 'public', null, text);
         }
-        await this.send('opener', 'public', null, text);
+        if (await this.send('opener', 'public', null, text)) {
+            this.d.bounty?.openerSent(plan);
+            this.saveBounty();
+        }
     }
 
-    private async send(kind: SendKind, channel: Channel, to: string | null, text: string, topics: readonly string[] = []): Promise<boolean> {
+    private async send(kind: SendKind, channel: Channel, to: string | null, text: string, topics: readonly string[] = [], heard: readonly string[] = [], remember = ''): Promise<boolean> {
         const { io, log, limiter, clock } = this.d;
         const check = checkOutput(text, this.d.deny);
         if (!check.ok) {
@@ -456,6 +502,13 @@ export class Conversation {
             return false;
         }
         const now = clock.now();
+        // The board has the last word on any line about it, whatever the echo check let through.
+        const refusal = this.d.bounty?.checkLine(now, kind, to, check.text, heard);
+        if (refusal) {
+            this.counts.blocked++;
+            log.write('blocked', { reason: refusal.reason, detail: refusal.detail, purpose: kind, channel, to, text: check.text });
+            return false;
+        }
         const why = limiter.blocked(now, kind, to, check.text);
         if (why) {
             const repeat = why === 'repeat' || why === 'opener-reused';
@@ -488,8 +541,9 @@ export class Conversation {
         } catch (e) {
             log.write('error', { where: 'state', message: e instanceof Error ? e.message : String(e) });
         }
+        if (this.d.bounty?.recordSent(now, kind, to, check.text, heard)) this.saveBounty();
         if (to && this.d.memory) {
-            this.d.memory.recordSent(now, to, check.text, topics);
+            this.d.memory.recordSent(now, to, check.text, topics, heard, remember);
             const failed = (e: unknown) => log.write('error', { where: 'memory', message: e instanceof Error ? e.message : String(e) });
             try {
                 void Promise.resolve(this.d.saveMemory?.(this.d.memory)).catch(failed);
@@ -611,6 +665,15 @@ export const role: Role = {
         const memory = PlayerMemory.parse(ctx.state.get(PLAYERS_KEY));
         if (memory.size === 0) memory.seed(sentLines(readRecords(o.logDir, Date.now() - LIMITS.repeatWindowMs)));
 
+        // The Bounty Board: operator config only, live only while the bidder's offers file backs it.
+        const boardCfg = boardFromOptions(ctx.options);
+        if (boardCfg && !boardCfg.ok) {
+            log.write('error', { where: 'bounties', message: boardCfg.error });
+            ctx.log('bounty board refused; running without one', { error: boardCfg.error });
+        }
+        const bounty = boardCfg?.ok ? new BountyBoard(boardCfg.value, parseBountyState(ctx.state.get(BOUNTY_KEY)), undefined, Date.now()) : undefined;
+        if (bounty) log.write('heartbeat', { bounties: bounty.cfg.bounties.map(b => b.item), live: bounty.live(Date.now()).map(b => b.item), theme: bounty.cfg.theme });
+
         const conversation = new Conversation({
             io,
             model,
@@ -626,7 +689,8 @@ export const role: Role = {
             context,
             memory,
             saveMemory: m => ctx.state.set(PLAYERS_KEY, m.toJSON()),
-            material: materialFrom(persona)
+            material: materialFrom(persona),
+            ...(bounty ? { bounty, saveBounty: (s: BountyState) => ctx.state.set(BOUNTY_KEY, s) } : {})
         });
         try {
             await conversation.run(ctx.signal);

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { analyse, contentWords, GUARD, isProbe, isQuestion, isSelfId, nearRepeat, openerOf, overused, phrases, sentLines, words } from './variety';
+import { analyse, character, contentWords, GUARD, isProbe, isQuestion, isSelfId, nearRepeat, openerOf, overused, phrases, sentLines, words } from './variety';
 
 const T0 = Date.parse('2026-10-21T21:33:00Z');
 const min = 60_000;
@@ -120,7 +120,30 @@ describe('analyse', () => {
         expect(r.perPlayer10m).toEqual({ max: 4, maxPlayer: 'Bilbolaggins', playersAt4: 1 });
         expect(r.topPhrases[0]).toEqual({ key: 'a bot run', lines: 4 });
         // Lines 2, 5 and 6 are probes (checked first), 3 and 4 reuse "a bot run", 7 is fresh.
-        expect(r.guardHits).toEqual({ opener: 0, phrase: 2, word: 0, probe: 3, questions: 0 });
+        expect(r.guardHits).toEqual({ opener: 0, phrase: 2, word: 0, bit: 0, probe: 3, questions: 0 });
+    });
+
+    test('a running bit is a bit, not a tic: once in five lines unless the player brought it up', () => {
+        const recent = ['Gerald thinks that drop was rigged', 'Willows are calm', 'Shrimp deserve respect'];
+        const line = 'That egg has earned Gerald\'s approval';
+        expect(nearRepeat(line, recent)).toMatchObject({ reason: 'bit', detail: 'the gerald bit again so soon' });
+        expect(nearRepeat(line, recent, GUARD, ['who is gerald?'])).toBeNull();
+        expect(nearRepeat(line, [...recent, 'a', 'b', 'c'])).toBeNull();
+    });
+
+    test('character: running bits, opinions and callbacks to what a player said earlier', () => {
+        const T = Date.parse('2026-10-21T12:00:00Z');
+        const heard = [
+            { at: T, sender: 'Bob', text: 'my shark keeps burning' },
+            { at: T + 5 * 60_000, sender: 'Bob', text: 'back from the mine' }
+        ];
+        const sent = [
+            { at: T + 10_000, to: 'Bob', text: 'Gerald rates burnt shark two kebabs out of five' },
+            { at: T + 5 * 60_000 + 10_000, to: 'Bob', text: 'Has the shark stopped arguing with you?' }
+        ];
+        const c = character(sent, heard);
+        expect(c).toMatchObject({ lines: 2, bitLines: 1, opinions: 1, toReturning: 1, callbacks: 1, exclaimShare: 0 });
+        expect(c.bits).toMatchObject({ gerald: 1, kebabs: 1 });
     });
 
     test('sorts by time and handles an empty log', () => {

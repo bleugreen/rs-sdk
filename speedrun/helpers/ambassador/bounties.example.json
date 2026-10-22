@@ -1,0 +1,45 @@
+{
+  "bidder": "cairn_h61",
+  "theme": "wilderness week",
+  "since": "2026-10-21T00:00:00Z",
+  "list": [
+    {
+      "item": "Nature talisman",
+      "quantity": 6,
+      "maxPrice": 30000,
+      "tier": "legendary",
+      "flavour": "a green stone that hums; it opens the way to the nature altar, and nobody at this bank will say where they found theirs",
+      "aliases": ["nature tali", "nat talisman"]
+    },
+    {
+      "item": "Wine of zamorak",
+      "quantity": 5,
+      "maxPrice": 2000,
+      "tier": "rare",
+      "flavour": "a dark red wine the Zamorak monks guard jealously; taking it makes them cross",
+      "aliases": ["zamorak wine", "wine of zammy"]
+    },
+    {
+      "item": "Limpwurt root",
+      "quantity": 10,
+      "maxPrice": 500,
+      "tier": "rare",
+      "flavour": "hill giants carry them about for reasons of their own; herblore folk swear by them",
+      "aliases": ["limpwurt", "limpwurts"]
+    },
+    {
+      "item": "Big bones",
+      "quantity": 20,
+      "maxPrice": 300,
+      "tier": "common",
+      "flavour": "hill giants again; they leave more than roots behind"
+    },
+    {
+      "item": "Eye of newt",
+      "quantity": 40,
+      "maxPrice": 20,
+      "tier": "common",
+      "flavour": "for a potion nobody will tell me the name of"
+    }
+  ]
+}

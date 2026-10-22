@@ -6,10 +6,16 @@
 // start (rebuilt from the log's earlier `sent` lines), as after a deploy at that moment.
 // The simulated clock advances by each model call's real latency, so staleness and
 // pacing behave as they did live. Writes the replay's own chat log, then compares its
-// variety (variety.ts) with what was actually sent in the same window.
+// variety and character (variety.ts) with what was actually sent in the same window,
+// or with another replay's log (--compare).
+//
+// A Bounty Board can ride along: --bounties is a board config (the role's `bounties`
+// option as JSON) and --offers a fake bidder offers file (ge-offers.ts), served as if
+// freshly written at every moment of the replay; its fills keep their own times.
 //
 //   bun speedrun/helpers/ambassador/replay.ts <chat-YYYY-MM-DD.jsonl> --since ISO --until ISO
 //       [--max-calls 200] [--out DIR] [--base-url http://127.0.0.1:11434 | --key-file ~/.rs-fleet/llm-key] [--model NAME]
+//       [--bounties board.json --offers offers.json] [--compare other-replay/chat-YYYY-MM-DD.jsonl]
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,9 +23,11 @@ import { Conversation, GE_POST, LOOP, type Clock } from '../ambassador';
 import type { AmbassadorIO } from './io';
 import { ChatLog, readRecords, type LogRecord } from './log';
 import { PlayerMemory } from './memory';
+import { parseOffers, type OffersSnapshot } from '../ge-offers';
+import { boardConfig, BountyBoard, mentionsIn, type BoardConfig } from './bounty';
 import { materialFrom, ModelClient, systemPrompt, type ChatModel, type CompleteOptions, type ContextLine } from './model';
 import { buildDenyList, isOurs, Limiter, type Channel, type ChatLine, type SendKind } from './policy';
-import { analyse, formatReport, sentLines, type VarietyReport } from './variety';
+import { analyse, character, formatCharacter, formatReport, heardLines, sentLines, type CharacterReport, type VarietyReport } from './variety';
 
 export interface ReplayResult {
     calls: number;
@@ -31,9 +39,11 @@ export interface ReplayResult {
 /** Feed `seen` records to a Conversation on a simulated clock until `untilMs` or `maxCalls` model calls. */
 export async function replay(
     records: readonly LogRecord[],
-    o: { sinceMs: number; untilMs: number; maxCalls: number; model: ChatModel; persona: string; logDir: string; selfName?: string }
+    o: { sinceMs: number; untilMs: number; maxCalls: number; model: ChatModel; persona: string; logDir: string; selfName?: string; board?: BoardConfig; offers?: OffersSnapshot }
 ): Promise<ReplayResult> {
     let now = o.sinceMs;
+    const offers = o.offers;
+    const bounty = o.board ? new BountyBoard(o.board, undefined, () => (offers ? { ...offers, writtenAt: new Date(now).toISOString() } : null), o.sinceMs) : undefined;
     const clock: Clock = { now: () => now, sleep: async ms => void (now += ms) };
     const before = records.filter(r => Date.parse(r.t) < o.sinceMs);
     const limiter = new Limiter();
@@ -107,7 +117,8 @@ export async function replay(
         report: () => {},
         context,
         memory,
-        material: materialFrom(o.persona)
+        material: materialFrom(o.persona),
+        ...(bounty ? { bounty } : {})
     });
     while (now < o.untilMs && calls < o.maxCalls) {
         await conv.step();
@@ -172,6 +183,23 @@ function flag(name: string): string | undefined {
     return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
+function readLog(file: string): LogRecord[] {
+    return readFileSync(file, 'utf8')
+        .split('\n')
+        .filter(l => l.trim())
+        .map(l => JSON.parse(l) as LogRecord);
+}
+
+/** Variety and character of the lines sent in `records`, measured against the lines heard in `seen`. */
+function measure(records: readonly LogRecord[], seen: readonly LogRecord[], board?: BoardConfig): { variety: VarietyReport; character: CharacterReport; bountyLines?: number } {
+    const sent = sentLines(records);
+    return {
+        variety: analyse(sent),
+        character: character(sent, heardLines(seen)),
+        ...(board ? { bountyLines: sent.filter(s => mentionsIn(s.text, board).items.length).length } : {})
+    };
+}
+
 if (import.meta.main) {
     const file = process.argv[2];
     const since = flag('since');
@@ -180,10 +208,7 @@ if (import.meta.main) {
         console.error('usage: replay.ts <chat-log.jsonl> --since ISO --until ISO [--max-calls 200] [--out DIR] [--base-url URL] [--model NAME]');
         process.exit(2);
     }
-    const records = readFileSync(file, 'utf8')
-        .split('\n')
-        .filter(l => l.trim())
-        .map(l => JSON.parse(l) as LogRecord);
+    const records = readLog(file);
     const sinceMs = Date.parse(since);
     const untilMs = Date.parse(until);
     const outDir = flag('out') ?? mkdtempSync(join(tmpdir(), 'amb-replay-'));
@@ -194,24 +219,37 @@ if (import.meta.main) {
         : new ModelClient({ baseUrl: flag('base-url') ?? 'http://127.0.0.1:11434', api: 'ollama', model: flag('model') ?? 'qwen3.5:27b' });
     console.log(`model: ${model.label()}`);
     const persona = readFileSync(join(import.meta.dir, 'persona.md'), 'utf8');
-    const r = await replay(records, { sinceMs, untilMs, maxCalls: Number(flag('max-calls') ?? 200), model, persona, logDir: outDir });
-    const live = records.filter(x => Date.parse(x.t) >= sinceMs && Date.parse(x.t) < r.reachedMs);
+    const boardFile = flag('bounties');
+    const parsedBoard = boardFile ? boardConfig(JSON.parse(readFileSync(boardFile, 'utf8'))) : null;
+    if (parsedBoard && !parsedBoard.ok) throw new Error(`--bounties: ${parsedBoard.error}`);
+    const board = parsedBoard?.ok ? parsedBoard.value : undefined;
+    const offersFile = flag('offers');
+    const offers = offersFile ? (parseOffers(JSON.parse(readFileSync(offersFile, 'utf8'))) ?? undefined) : undefined;
+    if (offersFile && !offers) throw new Error('--offers: not an offers file');
+    const r = await replay(records, { sinceMs, untilMs, maxCalls: Number(flag('max-calls') ?? 200), model, persona, logDir: outDir, ...(board ? { board } : {}), ...(offers ? { offers } : {}) });
+    const inWindow = (x: LogRecord) => Date.parse(x.t) >= sinceMs && Date.parse(x.t) < r.reachedMs;
+    const live = records.filter(inWindow);
     const seen = live.filter(x => x.kind === 'seen');
-    const reports: { before: VarietyReport; after: VarietyReport } = {
-        before: analyse(sentLines(live)),
-        after: analyse(sentLines(r.records))
-    };
+    // The lines to compare with: what was sent live, or another replay's log over the same window.
+    const compareFile = flag('compare');
+    const before = compareFile ? readLog(compareFile).filter(inWindow) : live;
+    const label = compareFile ? `compare (${compareFile})` : 'live';
     const summary = {
-        window: { since, until, reached: new Date(r.reachedMs).toISOString(), modelCalls: r.calls, seen: seen.length },
-        before: { ...counts(live), variety: reports.before },
-        after: { ...counts(r.records), variety: reports.after },
-        pairs: pairs(live, r.records, seen)
+        window: { since, until, reached: new Date(r.reachedMs).toISOString(), modelCalls: r.calls, seen: seen.length, model: model.label(), board: board?.bounties.map(b => b.item) ?? null },
+        before: { source: label, ...counts(before), ...measure(before, seen, board) },
+        after: { ...counts(r.records), ...measure(r.records, seen, board) },
+        pairs: pairs(before, r.records, seen),
+        ...(board ? { bountyLines: sentLines(r.records).filter(s => mentionsIn(s.text, board).items.length || /bount|board/i.test(s.text)) } : {})
     };
     writeFileSync(join(outDir, 'summary.json'), JSON.stringify(summary, null, 2));
     console.log(`replay log and summary.json in ${outDir}`);
     console.log(JSON.stringify(summary.window));
-    console.log(`\n== before (live)\n${JSON.stringify(counts(live))}\n${formatReport(reports.before)}`);
-    console.log(`\n== after (replay)\n${JSON.stringify(counts(r.records))}\n${formatReport(reports.after)}`);
+    console.log(`\n== before (${label})\n${JSON.stringify(counts(before))}\n${formatReport(summary.before.variety)}\n${formatCharacter(summary.before.character)}`);
+    console.log(`\n== after (replay)\n${JSON.stringify(counts(r.records))}\n${formatReport(summary.after.variety)}\n${formatCharacter(summary.after.character)}`);
+    if (summary.bountyLines) {
+        console.log(`\n== ${summary.bountyLines.length} bounty lines`);
+        for (const l of summary.bountyLines) console.log(`${new Date(l.at).toISOString().slice(11, 19)} ${l.to ?? '(opener)'}: ${l.text}`);
+    }
     console.log(`\n== ${summary.pairs.length} pairs`);
     for (const p of summary.pairs) console.log(`${p.to}: ${p.heard}\n  before: ${p.before}\n  after:  ${p.after}`);
 }

@@ -18,6 +18,7 @@ import type { GEOffer, MarketQuote } from '../../sdk/index';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import { give, receiveFrom } from '../lib/trade';
 import { BANKS, Buyer } from './buyer';
+import { DEFAULT_OFFERS_FILE, offersSnapshot, pruneFills, readOffersFile, writeOffersFile, type SnapshotFill } from './ge-offers';
 import { accountMatches, ChatCursor, DEFAULT_COURIERS, toRegExps } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
@@ -59,6 +60,12 @@ export interface BidderOptions {
     fillCheckMinutes: number;
     /** Accounts (login-name RegExps) whose trades are accepted as funding. */
     funders: RegExp[];
+    /**
+     * Where to write our open offers and recent fills (ge-offers.ts) for the ambassador's
+     * bounty board, or null for no file. `true` in the options means the default path.
+     * Writing it is all this does: it never changes what is bid or cancelled.
+     */
+    offersFile: string | null;
 }
 
 /** Offers per line the bidder will hold at once (the server allows 6 per account). */
@@ -103,7 +110,8 @@ export function bidderOptions(raw: Record<string, unknown>): BidderOptions {
         lines,
         recheckMinutes: num('recheckMinutes', 30, 0.5),
         fillCheckMinutes: num('fillCheckMinutes', 3, 0.5),
-        funders: toRegExps(raw.funders ?? DEFAULT_COURIERS)
+        funders: toRegExps(raw.funders ?? DEFAULT_COURIERS),
+        offersFile: raw.offersFile === true ? DEFAULT_OFFERS_FILE : typeof raw.offersFile === 'string' && raw.offersFile ? raw.offersFile : null
     };
 }
 
@@ -315,11 +323,31 @@ export class Bidder {
     private lastLog = Date.now();
     private wantEarly = false;
     private last: Record<string, unknown>[] = [];
+    /** Fills collected lately, for the offers file (kept across restarts through the file itself). */
+    private fills: SnapshotFill[] = [];
 
     constructor(private readonly ctx: RoleContext) {
         this.o = bidderOptions(ctx.options);
         this.buyer = new Buyer(ctx);
         this.requests = new ChatCursor(ctx.sdk, [TRADE_REQUEST_CHAT_TYPE]);
+        const previous = this.o.offersFile ? readOffersFile(this.o.offersFile) : null;
+        if (previous && previous.account === ctx.account) this.fills = pruneFills(previous.fills, Date.now());
+    }
+
+    /**
+     * Record our open offers for the ambassador's bounty board (read while the exchange
+     * is open, so the GE state is current). A failure is logged and changes nothing else.
+     */
+    private writeOffers(): void {
+        if (!this.o.offersFile) return;
+        try {
+            const names = new Map(this.lines.map(l => [l.id, l.name] as const));
+            const now = Date.now();
+            this.fills = pruneFills(this.fills, now);
+            writeOffersFile(this.o.offersFile, offersSnapshot(this.ctx.account, this.ctx.sdk.getGEState()?.offers ?? [], names, this.fills, now));
+        } catch (e) {
+            this.log('offers file error', { error: String(e) });
+        }
     }
 
     private log(message: string, data?: Record<string, unknown>): void {
@@ -392,6 +420,7 @@ export class Bidder {
         await this.openGE();
         const ids = new Set(this.lines.map(l => l.id));
         const offers = (this.ctx.sdk.getGEState()?.offers ?? []).filter(o => ids.has(o.item));
+        this.writeOffers();
         await this.ctx.bot.closeInterface();
         if (offers.some(o => o.items > 0 || o.coins > 0)) this.wantEarly = true;
     }
@@ -417,6 +446,7 @@ export class Bidder {
             if (n > 0) {
                 line.lastFillAt = Date.now();
                 line.fillsSinceLog += n;
+                this.fills.push({ item: line.name, n, at: new Date().toISOString() });
             }
         }
         await this.buyer.collectFills();
@@ -488,6 +518,7 @@ export class Bidder {
             seen.set(line, { quote, d });
         }
         const offersNow = new Map(this.lines.map(l => [l, this.ours(l)] as const));
+        this.writeOffers();
         await bot.closeInterface();
         // 4. Bank what came in and the leftover coins, and report.
         await this.buyer.atBank(VARROCK_WEST, () => this.buyer.depositAllBut([]));
