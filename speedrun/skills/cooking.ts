@@ -33,7 +33,7 @@ import { travelTo } from '../lib/toll-gate';
 import { onStates } from '../lib/wait';
 import { xpForLevel, XP_RATE } from '../lib/xp';
 import type { Observed, RunnerSession, Step, StepContext } from '../runner/step';
-import { CRAFTING_HANDOFF_XP, WINDOW_GEM_BASE_XP } from './crafting';
+import { handoffXpOf, stagedCounts, type StagedGem } from './crafting';
 import { boothFor, boothLoc, VARROCK_WEST } from './herblore';
 
 export const skill = 'cooking';
@@ -66,12 +66,31 @@ export const UNCUT_IDS: readonly number[] = GEM_NAMES.map(g => GEM[g].uncut);
 export const CUT_IDS: readonly number[] = GEM_NAMES.map(g => GEM[g].cut);
 
 /**
- * The windows' gems: the 107 best of the fleet's 108 (rs/158's ruling (a)); the 108th, a
- * sapphire, is not cut. Their base xp is crafting.ts's WINDOW_GEM_BASE_XP.
+ * The windows' gem plan: the uncut gems staged for them (H21d's row, which crafting.ts reads and
+ * S25d's stop comes from), by gem; how many the windows cut; and S25d's hand-off they start from.
  */
-export const WINDOW_GEMS: Readonly<Record<GemName, number>> = { diamond: 2, ruby: 20, emerald: 23, sapphire: 62 };
-export const GEMS_IN_WINDOWS = Object.values(WINDOW_GEMS).reduce((a, b) => a + b, 0);
-export const windowGemBaseXp = (counts: Readonly<Record<GemName, number>> = WINDOW_GEMS) => GEM_NAMES.reduce((xp, g) => xp + counts[g] * GEM[g].cutXp, 0);
+export interface WindowPlan {
+    counts: Readonly<Record<GemName, number>>;
+    total: number;
+    handoffXp: number;
+}
+
+/** The plan for `stagedGems` (default H21d's row); a string says why the list is refused. */
+export function windowPlan(opts: Pick<CookingOptions, 'stagedGems'> = {}): WindowPlan | string {
+    const counts = stagedCounts(opts.stagedGems);
+    if (typeof counts === 'string') return counts;
+    return { counts, total: GEM_NAMES.reduce((n, g) => n + counts[g], 0), handoffXp: handoffXpOf(counts) };
+}
+
+/** Game xp the windows give cutting `counts`, by this module's own recipes. */
+export function windowsXp(counts: Readonly<Record<GemName, number>>, recipes: readonly ItemRecipe[] = GEM_RECIPES): number {
+    return GEM_NAMES.reduce((xp, g) => xp + counts[g] * (recipes.find(r => r.a === GEM[g].uncut)?.xp ?? 0), 0) * XP_RATE;
+}
+
+/** Crafting xp once the windows have cut the plan: S25d's hand-off plus the windows' xp, 99 exactly. */
+export function craftingAfterWindows(plan: WindowPlan): number {
+    return plan.handoffXp + windowsXp(plan.counts);
+}
 
 export interface CookingOptions {
     /** The wine giver beside the booth (default WINE_GIVER). */
@@ -80,8 +99,12 @@ export interface CookingOptions {
     first?: number;
     /** 'gems' (default): cut the uncut gems in the waits; 'none': the plain sequence (Crafting then 121). */
     windowWork?: 'gems' | 'none';
-    /** Gems to cut over the windows (default GEMS_IN_WINDOWS); a 108th stays banked. */
-    gems?: number;
+    /**
+     * The uncut gems staged for the windows (default H21d's row read from STEP-MANIFEST.md): the
+     * windows cut their total, and S25d's hand-off (the S25d check) is theirs. A gem banked beyond
+     * them (the fleet's 108th) stays banked.
+     */
+    stagedGems?: readonly StagedGem[];
     /** The gem recipes, as data (default GEM_RECIPES; the lab's comparability fixture passes dragonstone). */
     recipes?: readonly ItemRecipe[];
     /** The tab relog (default session.relog with no options: in page, navigation as the fallback). */
@@ -124,6 +147,8 @@ function pageOpen(s: BotWorldState): boolean {
 
 export function preconditions(s: BotWorldState, opts: CookingOptions = {}): true | string {
     if (!s.inGame || !s.player) return 'not in game';
+    const plan = windowPlan(opts);
+    if (typeof plan === 'string') return plan;
     if (level(s, 'cooking') >= 99) return true;
     const booth = opts.booth ?? BOOTH;
     const stand = booth.stand ?? { x: booth.x - 1, z: booth.z };
@@ -135,7 +160,7 @@ export function preconditions(s: BotWorldState, opts: CookingOptions = {}): true
     if (!opts.lab) {
         if (level(s, 'smithing') < 99) return `S25a not done: Smithing ${level(s, 'smithing')}`;
         if (level(s, 'herblore') < 99) return `S25e not done: Herblore ${level(s, 'herblore')}`;
-        if (xpOf(s, 'crafting') < CRAFTING_HANDOFF_XP) return `S25d not done: Crafting xp ${xpOf(s, 'crafting')} < ${CRAFTING_HANDOFF_XP} (CRAFTING_HANDOFF_XP)`;
+        if (xpOf(s, 'crafting') < plan.handoffXp) return `S25d not done: Crafting xp ${xpOf(s, 'crafting')} < ${plan.handoffXp} (the hand-off for the ${plan.total} staged gems)`;
     }
     // the notes take one slot when they arrive; held already (a resume), they need none
     if (notesHeld(s) === 0 && usedSlots(s) > INVENTORY - 1) {
@@ -209,7 +234,9 @@ export interface CookingRun {
 export type RelogKind = 'planned-1' | 'planned-2' | 'deadline';
 
 export function newRun(s: BotWorldState, opts: CookingOptions = {}): CookingRun {
-    return { windowWork: windowWorkFor(s, opts), recipes: opts.recipes ?? GEM_RECIPES, cut: 0, gems: opts.gems ?? GEMS_IN_WINDOWS, xp0: xpOf(s, 'cooking'), planned2: false, pastFirst: false, relogs: [] };
+    const plan = windowPlan(opts);
+    if (typeof plan === 'string') throw new Error(plan);
+    return { windowWork: windowWorkFor(s, opts), recipes: opts.recipes ?? GEM_RECIPES, cut: 0, gems: plan.total, xp0: xpOf(s, 'cooking'), planned2: false, pastFirst: false, relogs: [] };
 }
 
 const gemsLeft = (run: CookingRun) => Math.max(0, run.gems - run.cut);
@@ -527,6 +554,3 @@ export function steps(opts: CookingOptions = {}): Step<any>[] {
     const o: CookingOptions = { ...opts, lab: bool(opts.lab), walkIn: bool(opts.walkIn) };
     return o.walkIn ? [walkInStep(o), cookingStep(o)] : [cookingStep(o)];
 }
-
-/** The windows' gems take Crafting from the hand-off to exactly 99 (crafting.ts defines the hand-off). */
-export const CRAFTING_AFTER_WINDOWS = CRAFTING_HANDOFF_XP + WINDOW_GEM_BASE_XP * XP_RATE;

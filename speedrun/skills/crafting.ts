@@ -108,7 +108,25 @@ export const gemBaseXp = (counts: Readonly<Record<Gem, number>>) => GEMS.reduce(
 export function craftingHandoffXp(gems: readonly StagedGem[]): number {
     const counts = stagedGemCounts(gems);
     if (typeof counts === 'string') throw new Error(counts);
-    return CRAFTING_99_XP - gemBaseXp(counts) * XP_RATE;
+    return handoffXpOf(counts);
+}
+
+/** craftingHandoffXp on gems already counted. */
+export const handoffXpOf = (counts: Readonly<Record<Gem, number>>) => CRAFTING_99_XP - gemBaseXp(counts) * XP_RATE;
+
+/**
+ * The staged gems by gem, as S25d and S25c both read them: `gems` when given, else H21d's row
+ * read from STEP-MANIFEST.md; a string says why they are refused.
+ */
+export function stagedCounts(gems?: readonly StagedGem[]): Record<Gem, number> | string {
+    let list: readonly StagedGem[];
+    try {
+        list = gems ?? loadStagedGems();
+    } catch (e) {
+        return `staged gems (${GEM_ROW}): ${(e as Error).message}`;
+    }
+    const counts = stagedGemCounts(list);
+    return typeof counts === 'string' ? `staged gems (${GEM_ROW}): ${counts}` : counts;
 }
 
 /** The uncut gem entries of ledger row `row` (H21d) in `markdown` (STEP-MANIFEST.md), read by slot-ledger.ts's parser. */
@@ -171,14 +189,8 @@ export function craftingXp(s: BotWorldState): number {
 /** Where the step stops: `untilXp` when given, else the staged gems' hand-off; a string says why the gems are refused. */
 export function stopOf(opts: CraftingOptions = {}): number | string {
     if (opts.untilXp !== undefined) return opts.untilXp;
-    let gems: readonly StagedGem[];
-    try {
-        gems = opts.stagedGems ?? loadStagedGems();
-    } catch (e) {
-        return `staged gems (${GEM_ROW}): ${(e as Error).message}`;
-    }
-    const counts = stagedGemCounts(gems);
-    return typeof counts === 'string' ? `staged gems (${GEM_ROW}): ${counts}` : CRAFTING_99_XP - gemBaseXp(counts) * XP_RATE;
+    const counts = stagedCounts(opts.stagedGems);
+    return typeof counts === 'string' ? counts : handoffXpOf(counts);
 }
 
 /** `stopOf`, throwing its refusal. */
