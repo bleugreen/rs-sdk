@@ -130,14 +130,16 @@ describe('free slots (addendum 8)', () => {
         expect(steps()[0]!.preconditions(world({ inv: [...ledger(), item('Bucket')] }), {})).toBe('inventory: segment C needs 2 free slots (1 Rune chainbody, 1 Rune platelegs), 1 free: 1 short');
     });
 
-    test('the four items the magic door takes make room for the maze; without the armour the need is the key', () => {
+    test('the four items the magic door takes make room for the maze; without the armour the peak moves to E', () => {
         // A full pack at G that still holds the magic-door items and the earth rune: they are gone by G
         // and H, so the coloured key and parts 1 and 2 fit.
         const full = world({ status: 'started', inv: [...ledger(), item('Maze key'), part(3)] });
         expect(28 - full.inventory.length).toBe(0);
         expect(slotNeed(full, questItems(), LETTERS, 'G').slots).toBe(0);
         expect(steps()[6]!.preconditions(full, {})).toBe(true);
-        expect(slotNeed(world({ inv: ledger() }), questItems({ buyArmour: false }), LETTERS, 'A')).toMatchObject({ slots: 1, peak: 'D' });
+        // Without the armour the peak is E: a hand-in is held through the segment that takes it, so E counts
+        // Oziach's key and part 3 before the four door items are credited (conservative, and within 2 free).
+        expect(slotNeed(world({ inv: ledger() }), questItems({ buyArmour: false }), LETTERS, 'A')).toEqual({ slots: 2, peak: 'E', items: ['1 Maze key', '1 Map part 3'] });
     });
 
     test('every kit line has a hand-in segment', () => {
