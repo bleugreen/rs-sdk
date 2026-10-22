@@ -18,6 +18,8 @@ says which count this page took.
 
 ## How hand-offs work
 
+**Wall time at 400 ms (fold-in 28's audit).** The demo has ticked at 400 ms since 2026-10-22 19:56:29Z (RUN-ORDER.md R42), and every figure here is in ticks unless it says otherwise. A wall-time figure that converts to ticks is restated at 400 ms beside its 300 ms value: mule1's timed re-request every 15 s, ~37.5 ticks (~50 at 300 ms); an unanswered request re-sent after 8 s, ~20 ticks (~27); `gated-program.ts`'s 60 s pause, 150 ticks (200); the demo's 0.34-0.37 s ticks of 2026-10-22 ~03:4xZ, a 300 ms-era reading. Every other wall-time figure (engine stalls, relog and restart seconds, refill and ramp minutes, lab wall clocks, the gate's probe minutes, 150 ticks a minute now against 200) is **a 300 ms reading** where it was measured before 19:56:29Z and is dated where it was measured after; the run's wall clock is ticks x 0.4 s (~3.9 h on the row in force).
+
 - **Two hosts.** The helpers whose timing must be tick-exact beside SCORED run on the **Ashburn run
   machine through the launcher cairn://p/rs/117** (under rs/41): a loopback gateway, lite runners with
   the #78 relay fix, logged in before SCORED's run login and staying in through its planned relogs,
@@ -44,11 +46,11 @@ says which count this page took.
   holds 2 bones. A return of items (H11r, products in S25) is a separate trade with SCORED as the giver
   (6 to 10 ticks on the giver's side).
 - **A busy partner's retry.** A trade request that meets a busy partner (a level-up dialog, say)
-  goes unanswered and is re-sent: after 8 s, **~27 ticks a retry, on today's run commit**, and on the
+  goes unanswered and is re-sent: after 8 s, **~20 ticks a retry at 400 ms (~27 at 300), on today's run commit**, and on the
   second frame, **~2 ticks a retry, once 3042ae95's change reaches main** (rs/267's `lib/trade.ts` `openTrade`, a net patch on rs/41's mission branch, no PR yet; m,
   lab; a demo figure follows with rs/196's demo or rs/267's next slot). No hand-off row here prices a
   retry at ~27; the S07 and S18 givers re-request on their own schedules (H4.1-H4.n, H14.x).
-- **The trade giver's timed re-request** (`mule.ts` `preRequest()`, every 15 s of wall clock, no check for an open trade) can close a hand-off it lands on (rs/285). The window is narrow, well under 5% a hand-off, and a hit costs one restarted hand-off, ~4-8 ticks, with nothing lost (e, rs/41's reading of `mule.ts:600-761`; at most ~10 over the run, a RUN-ORDER.md sensitivity, R25). rs/267 moves it onto `decideRequest` in game ticks, via rs/41's branch (commit pending); it must be on the helpers' deployed commit before the giver serves SCORED.
+- **The trade giver's timed re-request** (`mule.ts` `preRequest()`, every 15 s of wall clock, ~37.5 ticks at 400 ms and ~50 at 300, no check for an open trade) can close a hand-off it lands on (rs/285). The window is narrow, well under 5% a hand-off, and a hit costs one restarted hand-off, ~4-8 ticks, with nothing lost (e, rs/41's reading of `mule.ts:600-761`; at most ~10 over the run, a RUN-ORDER.md sensitivity, R25). rs/267 moves it onto `decideRequest` in game ticks, via rs/41's branch (commit pending); it must be on the helpers' deployed commit before the giver serves SCORED.
 - **One press per offered item.** A helper offers each item with a single All or Offer-X; two presses
   on the same slot of an unstackable item land only the first (stun-pack.md section 5; `trade.ts`
   `amountButtons`, cairn://p/rs/136).

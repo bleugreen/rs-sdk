@@ -21,6 +21,8 @@ hand-off, which `speedrun/tools/slot-ledger.ts` checks against every step's free
 
 ## How to read an entry
 
+**Wall time at 400 ms (fold-in 28's audit).** The demo has ticked at 400 ms since 2026-10-22 19:56:29Z (RUN-ORDER.md R42), and every figure here is in ticks unless it says otherwise. A wall-time figure that converts to ticks is restated at 400 ms beside its 300 ms value: mule1's timed re-request every 15 s, ~37.5 ticks (~50 at 300 ms); an unanswered request re-sent after 8 s, ~20 ticks (~27); `gated-program.ts`'s 60 s pause, 150 ticks (200); the demo's 0.34-0.37 s ticks of 2026-10-22 ~03:4xZ, a 300 ms-era reading. Every other wall-time figure (engine stalls, relog and restart seconds, refill and ramp minutes, lab wall clocks, the gate's probe minutes, 150 ticks a minute now against 200) is **a 300 ms reading** where it was measured before 19:56:29Z and is dated where it was measured after; the run's wall clock is ticks x 0.4 s (~3.9 h on the row in force).
+
 **Step IDs** are provisional order v1's S00-S27 (cairn://p/rs/103). A quest or skill that the order
 splits gets one module and one `Step` object per ID, so `S10a` was Prayer 1-43 (retired in v2: its bones ride S07) and `S10b` is Tree
 Gnome Village. IDs never move: a step that changes place keeps its ID.
@@ -69,7 +71,7 @@ droppers (S03, HS6), the bone givers' load timing (H4.1-H4.n) and any `T0 + n ms
 deadline that stands for a tick count keys off observed ticks; wall clock appears only as an idle
 bound, no new tick for N ticks' worth of time scaled by the configured tick length (on the floor
 since #209's `tickClock`, 4fe2d0a8, inside the floor cae93456). The demo has
-been seen at 0.34-0.37 s a tick, where a wall-clock cue lands early by about (1 - 0.30/actual) of
+been seen at 0.34-0.37 s a tick (a 300 ms-era reading), where a wall-clock cue lands early by about (1 - 0.30/actual) of
 its delay and a deadline fires early (RUN-ORDER.md R23).
 
 **Lab staging (rs/196's finding; rs/284's guard, on main as #233).** A fresh lab account is staged
@@ -2006,7 +2008,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   of line (157 logs, 8 failed rolls against 7.58 expected; the first roll 3 ticks after the attempt,
   then 4 a roll); the hiscore read 690 (#1), against the model's median 669. **~665 (inferred)** from
   a parked login once the launch waits on a dropper's observed tick (`speedrun/tools/tick-wait.ts`):
-  the harness launched at T0 + 75 x 300 ms of wall clock on a demo ticking at 0.34-0.37 s, so the
+  the harness launched at T0 + 75 x 300 ms of wall clock on a demo ticking at 0.34-0.37 s (a 300 ms-era reading), so the
   login landed ~20 ticks before log 0 turned public and the first light went at tick 23, not ~3
   (RUN-ORDER.md R23); from a standing start the fixed cost is ~5 with the launch on observed ticks.
   **The line rate is confirmed on the demo**: per band (ticks / fires / failures) 1-15 12 / 2 / 4,
@@ -2734,7 +2736,7 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
   SCORED when the step starts).
 - **Acceptance:** demo, the receiver ticks above (6.7 / 8 / 10) for 1 / 10 / 20 stacks at a tile away
   from Varrock west.
-- **Open: `preRequest()`** re-sends a request every 15 s of wall clock without checking for an open
+- **Open: `preRequest()`** re-sends a request every 15 s of wall clock (~37.5 ticks at 400 ms, ~50 at 300) without checking for an open
   trade, which closes the trade it lands on (rs/285). The exposure is under 5% a hand-off and a hit
   costs ~4-8 ticks, at most ~10 over the run (e, rs/41's reading of `mule.ts:600-761`; RUN-ORDER.md
   R25). rs/267 moves it onto the shared `decideRequest` rule in game ticks, a net-patch commit on
@@ -2821,7 +2823,7 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
   tick-exact; the run machine only for its `cue` start. Open: the coop row, bank restocks. **Demo:**
   six droppers at 2 logins per host carried S03 to 681 (rs/269), with no log stolen. **Run day:** in
   the world before the cue and on `cueAt: 'seen'` until rs/41's child measures the observed tick
-  period (`cueAt: 'written'`'s `cueTick`, fm-row.ts:350, starts ~15% early at 0.35 s a tick;
+  period (`cueAt: 'written'`'s `cueTick`, fm-row.ts:350, starts ~15% early at 0.35 s a tick (a 300 ms-era reading; at 400 ms a cue converted at 300 lands later, not earlier);
   RUN-ORDER.md R23).
 
 ### HS7. Carp catcher: `speedrun/helpers/carp.ts` (retired, fold-in 22)
