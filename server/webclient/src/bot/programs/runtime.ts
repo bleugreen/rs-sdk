@@ -20,6 +20,7 @@
 import type { ActionResult } from '../ActionExecutor.js';
 import type { BotAction, BotWorldState } from '../types.js';
 import { FrameStats, LoopRate, MsHistogram } from './frames.js';
+import { validTickMs } from './tick-rule.js';
 import type { ProgramAction, ProgramCommand, ProgramContext, ProgramEnd, ProgramFactory, ProgramParams, ProgramStatus, TickProgram } from './types.js';
 
 export const USER_EVENTS_PER_TICK = 5;
@@ -41,7 +42,7 @@ export function userEventsOf(action: { type: string; route?: boolean }): number 
 }
 
 /** Start parameters the runtime itself reads, accepted for every program. */
-export const RUNTIME_PARAMS: readonly string[] = ['stallTicks', 'hold'];
+export const RUNTIME_PARAMS: readonly string[] = ['stallTicks', 'hold', 'tickMs'];
 
 export interface RuntimeOptions {
     /** Sends one action now (ActionExecutor.execute for the synchronous actions programs use). */
@@ -93,6 +94,14 @@ function parseHold(value: unknown): number {
     if (value === undefined) return 0;
     if (typeof value !== 'number' || !(value >= 0 && value <= 1)) throw new Error(`hold must be a share of starters in [0, 1], got ${JSON.stringify(value)}`);
     return value;
+}
+
+/** The `tickMs` start parameter, the tick length the run's frame cadence is judged by: absent is null (the run's median). */
+function parseTickMs(value: unknown): number | null {
+    if (value === undefined || value === null) return null;
+    const T = validTickMs(value);
+    if (T === null) throw new Error(`tickMs must be a tick length in ms above 0, got ${JSON.stringify(value)}`);
+    return T;
 }
 
 export class ProgramRuntime {
@@ -168,11 +177,13 @@ export class ProgramRuntime {
         const log = (line: string) => this.log(status, line, tail);
         let program: TickProgram;
         let hold: number;
+        let tickMs: number | null;
         try {
             const accepted = new Set([...factory.params, ...RUNTIME_PARAMS]);
             const unknown = Object.keys(params).filter(k => !accepted.has(k));
             if (unknown.length) throw new Error(`${name} does not declare ${unknown.join(', ')} (accepts: ${[...accepted].join(', ')})`);
             hold = parseHold(params.hold);
+            tickMs = parseTickMs(params.tickMs);
             program = factory(params, { state: this.lastState, log });
         } catch (e) {
             status.phase = 'fault';
@@ -184,7 +195,11 @@ export class ProgramRuntime {
             return status;
         }
         const stall = Number(params.stallTicks ?? program.stallTicks);
-        this.run = { program, status, stallTicks: Number.isFinite(stall) && stall > 0 ? stall : this.defaultStallTicks, ended: false, tail, frames: new FrameStats(), publish: new FrameStats(), react: new MsHistogram(1, 200), loops: new LoopRate(), hold, holding: false, held: [] };
+        const frames = new FrameStats(tickMs);
+        const publish = new FrameStats(tickMs);
+        status.frames = frames.summary();
+        status.publish = publish.summary();
+        this.run = { program, status, stallTicks: Number.isFinite(stall) && stall > 0 ? stall : this.defaultStallTicks, ended: false, tail, frames, publish, react: new MsHistogram(1, 200), loops: new LoopRate(), hold, holding: false, held: [] };
         log(`start ${JSON.stringify(params)}`);
         return status;
     }
