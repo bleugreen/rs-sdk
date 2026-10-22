@@ -27,7 +27,7 @@ import { clickContinue } from '../lib/dialogue';
 import { journalProbeName, questDone, questStatus, requireQuestStage, type QuestView } from '../lib/quests';
 import type { Area } from '../lib/travel';
 import { currentTick, waitUntil } from '../lib/wait';
-import { invCount, messagesSince, pos } from '../lib/world';
+import { invCount, messagesSince, pos, replyAfter } from '../lib/world';
 import type { Check, Observed, StepContext } from '../runner/step';
 import { allOf, inBox, questSteps, slotsCover, within, type Box, type QuestItem, type QuestOptions, type Segment } from './segments';
 import { interrupts, near, questMoves } from './small-quest';
@@ -153,8 +153,11 @@ async function prisonDoor(ctx: StepContext<any>, seg: Letter, inward: boolean): 
     let suits = 0;
     while (!passed(sdk.getState()!) && clicks < 6) {
         clicks++;
-        const sent = currentTick(sdk);
-        const woke = (s: BotWorldState) => messagesSince(s, sent + 1, /suit of armour comes to life/i).length > 0;
+        // Taken just before the click: the browser stamps the suit's message on the click's own tick
+        // and lite on the next, so no tick offset tells this open's reply from the last one's on both
+        // (m: the browser run missed open 2's at sent + 1).
+        const reply = replyAfter(sdk, /suit of armour comes to life/i);
+        const woke = reply.seen;
         const r = await opLoc(sdk, { x: DOOR.x, z: DOOR.z, name: /^prison door$/i, op: /^open$/i, radius: 12 }, /^open$/i, s => passed(s) || woke(s), { maxTicks: 12, resendEvery: 0, interrupts: interrupts() });
         if (r.ok && woke(sdk.getState()!) && !passed(sdk.getState()!)) suits++;
         else if (!r.ok) m.fail(seg, `the prison door: no answer within 12 ticks of open ${clicks}`, sdk);
