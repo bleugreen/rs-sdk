@@ -72,51 +72,6 @@ const log = labLog(`handoff-${row}`);
 const noStop = { shouldStop: () => false, logout: async () => {} };
 const leave = (s: Session) => leaveTutorial(s, log);
 
-async function wipe(s: Session): Promise<void> {
-    await cheat(s.sdk, '~clearinv inv');
-    await cheat(s.sdk, '~clearinv worn');
-    await waitUntil(s.sdk, st => st.inventory.length === 0 && st.equipment.length === 0, { maxTicks: 10 });
-}
-
-/** ::give every entry, and wait until the inventory holds them all. */
-async function stage(s: Session, items: ReadonlyArray<{ obj: string; count: number | 'all'; kind?: string }>): Promise<void> {
-    for (const i of items) await cheat(s.sdk, `give ${i.obj} ${i.count === 'all' ? 1 : i.count}`);
-    const slots = items.reduce((a, i) => a + (i.kind === 'u' ? (i.count as number) : i.kind === undefined && i.count !== 'all' ? (i.count as number) : 1), 0);
-    const r = await waitUntil(s.sdk, st => st.inventory.length >= slots, { maxTicks: 15 });
-    if (!r.ok) throw new Error(`staging ${s.name}: ${s.sdk.getState()?.inventory.length} of ${slots} slots`);
-    await waitTicks(s.sdk, 2);
-}
-
-/**
- * The partner's side: a request standing once SCORED is in view, then HS1's giver on the open trade.
- * The request re-sends only after a busy bounce or no reply, never once it has landed: a request
- * landing on an open trade closes it (decideTradeClick, as the fleet givers use it).
- */
-function serve(scoredName: string, stop: () => boolean) {
-    return (async () => {
-        let req = newClickCtx();
-        while (!stop()) {
-            const st = await nextTick(partner.sdk);
-            const t = tradeOf(st);
-            if (!t.isOpen) {
-                const p = st.nearbyPlayers.find(x => sameName(x.name, scoredName));
-                if (!p) continue;
-                const d = decideTradeClick(st, req, { noReplyTicks: 3, resendTicks: 100 });
-                req = d.next;
-                if (d.action === 'send') sendTradeClick(partner.sdk, p.index, req.sentTick, (sent, tick) => (req = clickBack(req, sent, tick)));
-                continue;
-            }
-            req = newClickCtx();
-            if (!sameName(t.partner, scoredName)) {
-                await partner.sdk.sendDeclineTrade();
-                continue;
-            }
-            return giveOpenTrade(partner.sdk, partner.bot, scoredName, partner.sdk.getInventory(), 'burst', 30_000);
-        }
-        return undefined;
-    })();
-}
-
 const rows: Array<Record<string, unknown>> = [];
 for (let n = 0; n < runs; n++) {
     if (onTutorialIsland(partner.sdk.getState()?.player)) await leave(partner);
