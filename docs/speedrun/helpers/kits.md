@@ -83,11 +83,12 @@ Options (`ROLE_OPTIONS` or the launcher entry's `options`):
 
 | Key | Default | Meaning |
 |---|---|---|
-| `kits` | required | receiver login name -> kit, in the harness's spelling `rune_axe:1,knife:1,logs:1` (`:noted` for banknotes, `cake:38:noted`) or as `[{ item, amount, noted? }]` with display names |
-| `serve` | none | the receiver to stage and serve now. Without it the role only takes returns |
+| `kits` | required | kit id -> kit (see "A second kit for the same receiver"), in the harness's spelling `rune_axe:1,knife:1,logs:1` (`:noted` for banknotes, `cake:38:noted`) or as `[{ item, amount, noted? }]` with display names |
+| `serve` | none | the kit id to stage and serve now, or an ordered list of them. A kit with a delivery record is passed over, and the next one is staged as soon as one is served. Without it the role only takes returns |
+| `keepLogs` | 0 | normal logs held back in the bank and never put into a kit (stock for later steps). At start the role chops the bank up to this count; a kit's logs come only from above it |
 | `stand` | 3222,3222 | where to wait |
 | `bank` | Draynor | where kits are staged and returns banked (Lumbridge's own booths are upstairs) |
-| `returns` | every kit receiver | accounts whose trades are answered with `receiveFrom` and banked |
+| `returns` | every kit receiver | accounts whose trades are answered with `receiveFrom` and banked. When one asks while the pack has fewer than 4 free slots (a staged full-pack kit), the giver banks the pack first and stages the kit again afterwards. The returner's request stays open meanwhile, so keep `stand` beside `bank` when kits fill the pack |
 | `freeSlots` | 10 | the receiver's free slots, for the kit size check |
 
 On bbs, from the dev copy `~/rs-dev/rehearsal-kits`, with the standalone
@@ -127,6 +128,65 @@ A hand-off, step by step:
 Returns: start it without `serve` (or leave it running after a hand-off). A
 returning account's trade request is answered with `receiveFrom`. The role gives
 nothing, logs `returned` with what came, and banks it at Draynor.
+
+## A second kit for the same receiver (a top-up)
+
+Every kit is given at most once, and its delivery record is keyed by **kit id**. A
+plain id is the receiver's login name, so records written before kit ids still
+count. A further kit for the same receiver gets a labelled id, `name+label`:
+
+```json
+{"kits":{"cairn_jumps":"knife:1,cake:7,shark:2","cairn_jumps+topup":"cake:18"},
+ "serve":["cairn_jumps","cairn_jumps+topup"]}
+```
+
+A labelled kit is checked against a full 28-slot pack, not `freeSlots`, because the
+receiver makes room first (it drops its starter items). Kits for the same receiver
+that follow one another in `serve`, and fit the giver's pack together, are staged
+in one bank visit (`carryGroup`). As soon as one is delivered, the next is offered
+from the pack. The giver keeps re-requesting the trade (an unopened trade is safe
+to retry) until the receiver opens it. A restart after kit 1 serves only kit 2.
+
+## Loading full packs: the Firemaking droppers
+
+rs/228's assisted Firemaking 99 (cairn_burns) lights 157 logs that six `fm-row`
+droppers (cairn_d01-d06, `restock: {kind:'held'}`) drop beside the Lumbridge spawn.
+A held dropper logs in already carrying its one 28-log inventory and never banks, so
+the loading happens beforehand, in three hops:
+
+1. **Woodcutters to the giver.** The logs are in the woodcutters' banks (cairn_h10-h13),
+   and the woodcutters stand at Seers'. One at a time, a woodcutter is disabled in the
+   fleet and runs the `handover` role from the dev copy with `crossKandarin: true` and
+   `bank` Draynor. It crosses White Wolf Mountain with nothing withdrawn, withdraws
+   the logs as notes at Draynor and trades them to cairn_mule2 there. Then it is
+   re-enabled on its unchanged woodcutter entry, whose role walks it back to Seers'.
+   Both crossings start on rested Hitpoints (`restForCrossing`, see woodcutter.md),
+   so expect up to about 16 minutes' rest at Draynor after the trade.
+   The giver lists the woodcutters in `returns`, so it takes and banks those trades,
+   banking a staged pack first if it fills the giver's inventory.
+2. **The giver to each dropper.** cairn_mule2 runs the giver with all six packs in
+   `kits`, `freeSlots: 28`, `serve` listing d01-d06 in order, and `stand` and `bank`
+   both Draynor. Its bank un-notes the logs, so each pack goes over as 28 real logs.
+   Each dropper gets one delivery record, exactly as a rehearsal kit does.
+3. **Each dropper takes its pack** with this role's `load` option, one dropper at a time:
+
+```json
+{"load":{"from":"cairn_mule2","kit":"logs:2,oak_logs:4,willow_logs:7,maple_logs:13,yew_logs:2","park":{"x":3232,"z":3220}}}
+```
+
+   A fresh account's first login creates it. The role skips the tutorial and banks
+   all 18 starter items at Draynor, so the pack ends up holding nothing but its logs
+   (a held dropper drops whatever it carries). It then waits for the giver to come
+   into view and takes the trade with `receiveFrom`, wanting each log type by its
+   exact name and count. Last, it walks onto its `park` tile, where it will log in
+   for the attempt. The role then returns, and the launcher entry's `final: true`
+   logs it out. A trade that delivered anything short of the pack is never retried:
+   the role ends with an attention line.
+
+The droppers' credentials are in `~/rs-fleet/bots/<name>/bot.env` (created by
+`accounts.ts` `createAccountEnv`, directory 700, file 600). They are never in
+fleet.json. The park tiles are rs/228's: z=3220, x 3232-3237 for d01-d06, beside
+the row (z=3218/3219) and off it.
 
 ## The stall option: cakes from Ardougne
 
@@ -232,3 +292,25 @@ axe bid) survive a stop. Cancel one only from a `bidder` run, by setting the lin
   The saved config's `serve` was removed before stopping. The giver is offline;
   future slots require an explicit staging start. Woodcutting's next kit is
   rune axe 1, knife 1, logs 5; its slot and later food counts come from rs/147.
+
+On 2026-10-22 (rs/237), cairn_mule2 at Lumbridge (3222,3222), from the dev copy on bbs:
+
+- 04:03:21Z: cairn_chops' kit, rune axe 1, knife 1, logs 5 (chopped while
+  staging, so the reserve below was untouched), 7 ticks.
+- 04:44:07Z: cairn_rocks' kit, rune, adamant, mithril and steel pickaxe 1 each,
+  knife 1, coins 60, logs 2, 9 giver ticks.
+- 06:10:49Z and 06:10:53Z: cairn_jumps' two kits from one staging. `cairn_jumps`
+  (knife 1, cake 7, shark 2) took 8 giver ticks. Then `cairn_jumps+topup` (cake 18)
+  was offered from the pack, 9 giver ticks. On the receiver's clock that was ticks
+  6-14, with the top-up settled at tick 24. This was the first labelled kit id on
+  the demo, and each kit was recorded once.
+- 06:57:22Z and 06:59:48Z: returns in a returns-only session (`serve: []`, returns
+  cairn_chops and cairn_rocks). The rune axe came back from cairn_chops, and the
+  rune, adamant and mithril pickaxes from cairn_rocks. **The steel pickaxe is
+  lost.** cairn_rocks died walking from Ardougne (2603,3234) to Lumbridge, kept its
+  three most valuable items, and dropped the steel pickaxe, knife, coins and logs
+  where it died.
+- Bank at 07:00:25Z: coins 96,243, sharks 90, cakes 30 (cairn_steals' 30), logs 15
+  (the `keepLogs` reserve: 5 for S09, 10 for S22/H18), rune axe 1, rune, adamant
+  and mithril pickaxe 1 each. There is no steel pickaxe and no knife left, so a kit
+  that needs either is bought first (Sourcing a kit).

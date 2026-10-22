@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { LOST_AFTER_TICKS } from '../runner/resume';
 import { FakeSdk } from './fake-sdk';
 import { fakeClock as jest, peek, tickEvery, useFakeTicks } from './fake-ticks';
-import { failureReason, IDLE_TICKS, nextTick, onStates, STALLED, waitOrThrow, waitTicks, waitUntil, type WaitResult } from './wait';
+import type { BotWorldState } from '../../sdk/types';
+import { failureReason, IDLE_TICKS, nextTick, onStates, STALLED, tickPeriod, waitOrThrow, waitTicks, waitUntil, type WaitResult } from './wait';
 
 useFakeTicks();
 
@@ -137,5 +138,47 @@ describe('onStates', () => {
         jest.advanceTimersByTime(IDLE_TICKS * 300);
         expect(await idle).toEqual({ ok: false, reason: 'idle' });
         expect([failureReason('maxTicks'), failureReason('idle')]).toEqual(['timeout', STALLED]);
+    });
+});
+
+describe('tickPeriod', () => {
+    /** A client publishing tick `tick` at `t` ms, on a clock of its own. */
+    const client = (windowMs: number) => {
+        let ms = 0;
+        const p = tickPeriod(windowMs, () => ms);
+        const at = (tick: number, t: number) => {
+            ms = t;
+            p.see({ tick } as BotWorldState);
+        };
+        return { p, at };
+    };
+
+    test('ms per tick from the ticks seen, null until they span minSpanMs; republishes within a tick do not count', () => {
+        const { p, at } = client(60_000);
+        for (let k = 0; k <= 50; k++) at(100 + k, 350 * k);
+        expect(p.msPerTick(20_000)).toBeNull();
+        for (let k = 51; k <= 100; k++) {
+            at(100 + k, 350 * k);
+            at(100 + k, 350 * k + 120);
+        }
+        expect(p.msPerTick(20_000)).toBe(350);
+    });
+
+    test('only the window counts: 300 ms ticks for 30 s, then 400 ms ticks for the last 40 s', () => {
+        const { p, at } = client(40_000);
+        let [ms, tick] = [0, 0];
+        for (; ms < 30_000; ms += 300) at(tick++, ms);
+        for (const end = ms + 40_000; ms <= end; ms += 400) at(tick++, ms);
+        expect(p.msPerTick(20_000)).toBe(400);
+    });
+
+    test('a relaunch restarts the measurement', () => {
+        const { p, at } = client(60_000);
+        for (let k = 0; k <= 100; k++) at(500 + k, 350 * k);
+        expect(p.msPerTick(20_000)).toBe(350);
+        at(3, 60_000);
+        expect(p.msPerTick(0)).toBeNull();
+        for (let k = 1; k <= 80; k++) at(3 + k, 60_000 + 300 * k);
+        expect(p.msPerTick(20_000)).toBe(300);
     });
 });

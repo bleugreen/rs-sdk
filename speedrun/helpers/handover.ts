@@ -30,8 +30,13 @@
 //   meet       { x, z } where to trade (default: stay at the bank)
 //   handovers  [{ to: 'cairn_h70', items: [{ item: 'Air talisman', n: 1 }, { item: 'Rune essence', n: 300 }] }]
 //              non-stackable items above one are withdrawn as notes
+//   crossKandarin  true lets a donor standing in Kandarin (a woodcutter at Seers') reach a `bank` or
+//              `meet` on the Lumbridge side over White Wolf Mountain (speedrun/lib/kandarin.ts
+//              crossFromKandarin). It crosses before the bank is opened, so nothing withdrawn
+//              crosses; its own role (`then`) takes it back. Default false: such a leg fails.
 import { createHash } from 'node:crypto';
 import { withdrawMany, type WithdrawSpec } from '../lib/bank';
+import { crossFromKandarin, kandarinTile } from '../lib/kandarin';
 import { isEastOfTollGate, TOLL_GP, travelTo, type Tile, type TravelResult } from '../lib/toll-gate';
 import { give, sameName, type GiveResult } from '../lib/trade';
 import { STALLED, waitTicks } from '../lib/wait';
@@ -51,6 +56,7 @@ export interface HandoverOptions {
     bank?: Tile;
     meet?: Tile;
     handovers: Handover[];
+    crossKandarin?: boolean;
 }
 
 export function handoverOptions(raw: Record<string, unknown>): HandoverOptions {
@@ -64,12 +70,19 @@ export function handoverOptions(raw: Record<string, unknown>): HandoverOptions {
         return { to, items };
     });
     if (raw.id !== undefined && (typeof raw.id !== 'string' || !/^[\w.-]{1,64}$/.test(raw.id))) throw new Error('handover: options.id must be 1-64 letters, digits, _ . or -');
+    if (raw.crossKandarin !== undefined && typeof raw.crossKandarin !== 'boolean') throw new Error('handover: options.crossKandarin must be true or false');
     return {
         ...(typeof raw.id === 'string' ? { id: raw.id } : {}),
         ...(raw.bank ? { bank: raw.bank as Tile } : {}),
         ...(raw.meet ? { meet: raw.meet as Tile } : {}),
+        ...(raw.crossKandarin === true ? { crossKandarin: true } : {}),
         handovers
     };
+}
+
+/** A leg from Kandarin to the Lumbridge side, which the plain walk cannot make (White Wolf Mountain). */
+export function leavesKandarin(from: Tile, to: Tile): boolean {
+    return kandarinTile(from) && !kandarinTile(to);
 }
 
 /** One handover's line in the account's role state. 'giving' is written before the trade opens. */
@@ -147,6 +160,8 @@ export function giveOutcome(r: GiveResult, items: Handover['items'], lost: Map<s
 /** The game-facing steps of a handover; tests replace them. */
 export interface HandoverIo {
     travel(ctx: RoleContext, to: Tile): Promise<TravelResult>;
+    /** Over White Wolf Mountain to `to` on the Lumbridge side. */
+    leaveKandarin(ctx: RoleContext, to: Tile): Promise<TravelResult>;
     openBank(ctx: RoleContext): Promise<boolean>;
     closeBank(ctx: RoleContext): Promise<void>;
     depositAll(ctx: RoleContext): Promise<void>;
@@ -157,6 +172,15 @@ export interface HandoverIo {
 
 export const gameIo: HandoverIo = {
     travel: (ctx, to) => travelTo(ctx.bot, ctx.sdk, to, { tolerance: 3, log: ctx.log, signal: ctx.signal }),
+    leaveKandarin: async (ctx, to) => {
+        const t = { bot: ctx.bot, sdk: ctx.sdk, log: ctx.log, checkSignal: () => { if (ctx.signal.aborted) throw new Error('aborted'); } };
+        try {
+            await crossFromKandarin(t, to, `(${to.x}, ${to.z})`);
+            return { ok: true, paid: 0 };
+        } catch (e) {
+            return { ok: false, paid: 0, reason: `kandarin: ${e instanceof Error ? e.message : String(e)}` };
+        }
+    },
     openBank,
     closeBank,
     depositAll: async ctx => {
@@ -181,6 +205,15 @@ function reportBank(ctx: RoleContext): void {
     ctx.reportBank({ items: ctx.sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })) });
 }
 
+/** One leg: over the mountain first when `crossKandarin` allows it and the leg leaves Kandarin. */
+async function go(ctx: RoleContext, o: Pick<HandoverOptions, 'crossKandarin'>, to: Tile, io: HandoverIo): Promise<TravelResult> {
+    if (o.crossKandarin && leavesKandarin(here(ctx), to)) {
+        const r = await io.leaveKandarin(ctx, to);
+        if (!r.ok) return r;
+    }
+    return io.travel(ctx, to);
+}
+
 function legFailed(ctx: RoleContext, leg: 'bank' | 'meet', to: Tile, r: TravelResult): Outcome {
     ctx.log(`handover: could not reach the ${leg}; not opening a bank here`, { to, from: here(ctx), reason: r.reason, paid: r.paid });
     return r.reason === 'toll gate: no toll' ? 'stop' : 'retry';
@@ -189,7 +222,7 @@ function legFailed(ctx: RoleContext, leg: 'bank' | 'meet', to: Tile, r: TravelRe
 /** One attempt at handover `h`, recorded in ctx.state under `key` from just before the trade opens. */
 export async function handoverOnce(ctx: RoleContext, h: Handover, o: HandoverOptions, key: string, io: HandoverIo = gameIo): Promise<Outcome> {
     if (o.bank) {
-        const r = await io.travel(ctx, o.bank);
+        const r = await go(ctx, o, o.bank, io);
         if (!r.ok) return legFailed(ctx, 'bank', o.bank, r);
     }
     if (!(await io.openBank(ctx))) {
@@ -206,7 +239,7 @@ export async function handoverOnce(ctx: RoleContext, h: Handover, o: HandoverOpt
         return 'retry';
     }
     if (o.meet) {
-        const r = await io.travel(ctx, o.meet);
+        const r = await go(ctx, o, o.meet, io);
         if (!r.ok) return legFailed(ctx, 'meet', o.meet, r);
     }
     if (!(await io.waitForPartner(ctx, h.to))) {
@@ -265,7 +298,7 @@ export async function runHandovers(ctx: RoleContext, o: HandoverOptions, io: Han
         else if (outcome === 'uncertain') report.uncertain.push(h.to);
         else report.failed.push(h.to);
     }
-    const back = o.bank ? await io.travel(ctx, o.bank) : { ok: true, paid: 0 };
+    const back = o.bank ? await go(ctx, o, o.bank, io) : { ok: true, paid: 0 };
     if (!back.ok) {
         ctx.log('handover: could not get back to the bank; keeping what is carried', { to: o.bank, from: here(ctx), reason: back.reason });
     } else if (await io.openBank(ctx)) {

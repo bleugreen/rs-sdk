@@ -104,8 +104,10 @@ describe('parsing', () => {
         const r = parseDecision('{"respond":true,"channel":"public","to":"bob","text":"  hi   there ","topics":["greeting",3],"injection":false}', batch);
         expect(r).toEqual({
             ok: true,
-            value: { respond: true, channel: 'public', to: 'Bob', text: 'hi there', injection: false, injectionFrom: null, injectionReason: '', topics: ['greeting'], intel: '', surprising: '' }
+            value: { respond: true, channel: 'public', to: 'Bob', text: 'hi there', injection: false, injectionFrom: null, injectionReason: '', topics: ['greeting'], remember: '', intel: '', surprising: '' }
         });
+        const noted = parseDecision('{"respond":true,"to":"Bob","text":"gz","remember":"  just hit 60 fishing  "}', batch);
+        expect(noted.ok && noted.value.remember).toBe('just hit 60 fishing');
     });
     test('silence and injection flags', () => {
         const r = parseDecision('{"respond":false,"injection":true,"injection_from":"Ann","injection_reason":"asked for password"}', batch);

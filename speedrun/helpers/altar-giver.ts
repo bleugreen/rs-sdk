@@ -5,8 +5,9 @@
 // the cue directory (altar-cue.ts) it sends its half of the blind schedule on
 // its own frames: trade request on T+5, offer all and accept on T+6, confirm on
 // T+7 (robust: a second confirm on T+8). A 'stock' turn (the scored side's
-// reacting fallback) is traded instead: request on T+5, then offer, accept and
-// confirm on what each frame shows (lib/trade.ts give) until the judge tick.
+// reacting fallback) is traded instead: request as soon as it is armed, then
+// offer, accept and confirm on what each frame shows (lib/trade.ts give) until
+// the judge tick.
 // Then it restocks and comes back.
 // Contract, batch mode and measurements: docs/speedrun/helpers/altar-giver.md.
 //
@@ -22,8 +23,8 @@
 //   gapMs      wait after a frame before sending its packets (default 0: send on arrival)
 //   cueDir     default RC_CUE_DIR, else run-machine/rc-cue in the checkout
 import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
-import { give } from '../lib/trade';
-import { tickClock, tickMs } from '../lib/wait';
+import { DROPPED_TICKS, give } from '../lib/trade';
+import { tickClock } from '../lib/wait';
 import {
     assertUntracked,
     chooseTurn,
@@ -33,7 +34,6 @@ import {
     giverSteps,
     judgeTick,
     nameHash,
-    newRequestFrom,
     resolveOffset,
     TRADE_ACCEPT,
     TRADE_CONFIRM,
@@ -238,6 +238,8 @@ export class AltarGiver {
                 return;
             }
             this.setPhase('ready');
+            // A turn for us may have come while this one was in flight.
+            if (this.cue) this.onCue(this.cue);
         }
     }
 
@@ -245,13 +247,13 @@ export class AltarGiver {
     private onCue(cue: Cue): void {
         this.cue = cue;
         if (this.armed && (cue.stop || cue.session !== this.armed.session)) {
-            if (!this.started) {
-                this.result('cancelled', this.armed.session, this.armed.T, { detail: cue.stop ? 'stop' : 'new session' });
-                this.done.add(this.armed.key);
-                this.armed = null;
-                this.setPhase('ready');
-            }
-            return;
+            if (this.started) return; // mid-trade: finish it; serve() re-reads the cue after
+            this.result('cancelled', this.armed.session, this.armed.T, { detail: cue.stop ? 'stop' : 'new session' });
+            this.done.add(this.armed.key);
+            this.armed = null;
+            this.setPhase('ready');
+            // A new session's first cue may already name us (a program restart, the stock rung): read on.
+            if (cue.stop) return;
         }
         const mine = cue.turns.some(t => nameHash(t.giver) === nameHash(this.ctx.account));
         if (!mine) return;
@@ -380,20 +382,18 @@ export class AltarGiver {
     }
 
     /**
-     * A stock turn: from the request frame (T+K-1 in our numbering), or as soon as the receiver's
-     * own request shows (the scored side's reacting receive requests when it writes the turn, so
-     * waiting for T+K would only idle), trade the receiver through lib/trade.ts's reacting give:
-     * request or answer, offer every essence, accept, confirm, each on what the frames show,
-     * until the judge tick. The scored side reacts too, so nothing here needs an exact tick.
+     * A stock turn: trade the receiver at once through lib/trade.ts's reacting give: request or
+     * answer, offer every essence, accept, confirm, each on what the frames show, until the judge
+     * tick. The scored side writes the turn when it wants essence, usually on the frame its craft
+     * lands, and its own request from that frame is dropped by the engine (a click from a delayed
+     * player). Ours is refused as busy until the craft's delay ends and re-sent on each refusal,
+     * so it lands on the receiver's first free tick; the receiver answers it there
+     * (openTrade). Waiting for T+K instead idled about three ticks a cycle.
      */
     private async executeStock(a: Armed): Promise<Outcome> {
         const { sdk } = this.ctx;
         const judge = judgeTick(a.myT, a.open, 'stock');
-        const requestFrame = a.myT + a.open - 1;
-        // The cue is read a poll or two after the receiver wrote it and requested.
-        const since = Math.min(a.armedTick, a.myT) - 5;
         this.started = false;
-        await until(this.ctx, st => st.tick >= requestFrame || newRequestFrom(st, a.receiverHash, since) !== null || this.armed !== a, Math.max(0, requestFrame - (this.s?.tick ?? requestFrame)) + 5);
         let outcome: Outcome;
         let detail: string | undefined;
         const receiver = this.s?.nearbyPlayers.find(p => nameHash(p.name) === a.receiverHash);
@@ -404,7 +404,8 @@ export class AltarGiver {
             const left = Math.max(1, judge - (this.s?.tick ?? judge));
             // By id: a noted stack shares the essence's name (NOTE_IDS) and must not be the offer.
             const essence = findItem(this.s, ESSENCE)?.id ?? ESSENCE;
-            const r = await give(sdk, receiver.name, [{ item: essence, n: 'all' }], { maxTicks: left, openTimeoutMs: left * tickMs() });
+            // Beside the receiver in the altar room: a silent click was dropped (lib/trade.ts DROPPED_TICKS).
+            const r = await give(sdk, receiver.name, [{ item: essence, n: 'all' }], { maxTicks: left, openMaxTicks: left, noReplyTicks: DROPPED_TICKS });
             outcome = r.ok ? 'gave' : 'missed';
             if (r.reason) detail = r.reason;
         }

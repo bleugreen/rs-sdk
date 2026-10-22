@@ -63,7 +63,7 @@ import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import { advance } from '../lib/dialogue';
-import { give, receiveFrom, tradeOf, type GiveSpec, type WantSpec } from '../lib/trade';
+import { give, DROPPED_TICKS, receiveFrom, tradeOf, type GiveSpec, type WantSpec } from '../lib/trade';
 import { assertUntracked, cueDir, CueWatcher, nameHash, type Cue } from './altar-cue';
 import { cheat, isLocalServer, standOn } from './altar-room';
 import { partnerIs, requestUntilOpen } from './bone-giver';
@@ -218,7 +218,7 @@ export function serveOptions(raw: unknown, env: Record<string, string | undefine
         bank: r.bank === undefined ? FALADOR_BANK : tileOption(r.bank, 'serve.bank'),
         returnTile: r.returnTile === undefined ? null : tileOption(r.returnTile, 'serve.returnTile'),
         labStock: r.labStock === true,
-        noReplyTicks: Number(r.noReplyTicks ?? 3),
+        noReplyTicks: Number(r.noReplyTicks ?? DROPPED_TICKS),
         resendTicks: Number(r.resendTicks ?? 100),
         cueDir: typeof r.cueDir === 'string' ? r.cueDir : cueDir(env)
     };

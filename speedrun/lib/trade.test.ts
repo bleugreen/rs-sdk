@@ -3,7 +3,8 @@ import type { BotWorldState, GameMessage, InventoryItem, TradeItem, TradeState }
 import { baseState, FakeSdk, flush } from './fake-sdk';
 import { fakeClock, microtasks, peek, tickEvery, useFakeTicks } from './fake-ticks';
 import { IDLE_TICKS, STALLED } from './wait';
-import { decideGiver, decideReceiver, give, newGiverCtx, newReceiverCtx, planOffers, receiveFrom, sameName, SETTLE_TICKS, type GiverCtx, type ReceiverCtx, type TradeSdk } from './trade';
+import { clickBack, decideGiver, decideReceiver, decideTradeClick, give, newClickCtx, newGiverCtx, newReceiverCtx, DROPPED_TICKS, openTrade, planOffers, receiveFrom, RESEND_TICKS, sameName, SETTLE_TICKS, type ClickCtx, type GiverCtx, type ReceiverCtx, type TradeSdk } from './trade';
+import type { SentAction } from './fake-sdk';
 
 const inv = (slot: number, id: number, name: string, count = 1): InventoryItem => ({ slot, id, name, count, optionsWithIndex: [] });
 const ti = (id: number, name: string, count: number): TradeItem => ({ slot: 0, id, name, count });
@@ -363,6 +364,88 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
         expect(Date.now() - t0).toBeLessThan(2_000);
     });
 
+    const nearH30 = { nearbyPlayers: [{ index: 7, name: 'cairn_h30', combatLevel: 3, x: 0, z: 0, distance: 1 }] } as unknown as Partial<BotWorldState>;
+    const openWithH30 = { isOpen: true, screen: 'offer' as const, partner: 'cairn_h30', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false };
+    const sending = (tick: number): GameMessage => ({ type: 0, text: 'Sending trade offer...', sender: '', tick, fromSelf: false });
+    const requests = (sdk: FakeSdk) => sdk.sent.filter(a => a.method === 'sendTradeRequest').length;
+
+    test('openTrade with noReplyTicks re-sends a request the engine dropped (sent while delayed) on the second frame without an answer, not 8 s later', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, ...nearH30 }));
+        const t0 = Date.now();
+        const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { maxTicks: 5, noReplyTicks: DROPPED_TICKS });
+        await flush();
+        expect(requests(sdk)).toBe(1);
+        // the click lands on 2 while we are delayed: no word from the engine; frame 2 may still be early for it
+        sdk.push({ tick: 2 });
+        await flush();
+        expect(requests(sdk)).toBe(1);
+        sdk.push({ tick: 3 });
+        await flush();
+        expect(requests(sdk)).toBe(2);
+        // this one is processed ("Sending trade offer..."): it stands, and is not re-sent
+        sdk.push({ tick: 4, gameMessages: [sending(4)] });
+        sdk.push({ tick: 5 });
+        sdk.push({ tick: 6 });
+        await flush();
+        expect(requests(sdk)).toBe(2);
+        sdk.push({ tick: 7, trade: openWithH30 });
+        await flush();
+        sdk.push({ tick: 20, trade: undefined });
+        await result;
+        expect(Date.now() - t0).toBeLessThan(2_000);
+    });
+
+    test('openTrade does not re-send a request answered on its landing frame, nor count an older answer as this one', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, ...nearH30, gameMessages: [sending(1)] }));
+        const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { maxTicks: 5, noReplyTicks: DROPPED_TICKS });
+        await flush();
+        // the previous click's "Sending trade offer..." (tick 1) does not answer this one
+        sdk.push({ tick: 2 });
+        sdk.push({ tick: 3 });
+        await flush();
+        expect(requests(sdk)).toBe(2);
+        // answered on its landing frame (4): standing, not re-sent
+        sdk.push({ tick: 4, gameMessages: [sending(1), sending(4)] });
+        sdk.push({ tick: 5 });
+        sdk.push({ tick: 6 });
+        await flush();
+        expect(requests(sdk)).toBe(2);
+        sdk.push({ tick: 6, trade: openWithH30 });
+        await flush();
+        sdk.push({ tick: 20, trade: undefined });
+        await result;
+    });
+
+    describe('openTrade counts observed ticks (fake timers, 300 ms nominal)', () => {
+        useFakeTicks(300);
+
+        test('maxTicks 30 opens a trade answered on tick 29 at 340 ms a tick (9.9 s, past a 30 x 300 ms wall bound)', async () => {
+            const sdk = new FakeSdk(baseState({ tick: 0, ...nearH30 }));
+            const result = openTrade(sdk as unknown as TradeSdk, 'cairn_h30', { maxTicks: 30 });
+            await microtasks();
+            for (let i = 0; i < 28; i++) {
+                tickEvery(sdk, 340, 1);
+                await microtasks();
+            }
+            fakeClock.advanceTimersByTime(340);
+            sdk.tick({ trade: openWithH30 });
+            expect(await result).toMatchObject({ ok: true, firstClickTick: 0 });
+        });
+
+        test('maxTicks 30 gives up after 30 observed ticks, however slowly they come, and not before', async () => {
+            const sdk = new FakeSdk(baseState({ tick: 0, ...nearH30 }));
+            const result = openTrade(sdk as unknown as TradeSdk, 'cairn_h30', { maxTicks: 30 });
+            await microtasks();
+            for (let i = 0; i < 30; i++) {
+                tickEvery(sdk, 500, 1);
+                await microtasks();
+            }
+            expect(await peek(result)).toBeUndefined();
+            tickEvery(sdk, 500, 1);
+            expect(await result).toMatchObject({ ok: false, reason: 'no_response' });
+        });
+    });
+
     describe('a request the engine drops while we are delayed (a stun\'s p_delay)', () => {
         const near = { nearbyPlayers: [{ index: 7, name: 'cairn_h30', combatLevel: 3, x: 0, z: 0, distance: 1 }] } as unknown as Partial<BotWorldState>;
         const requests = (sdk: FakeSdk) => sdk.sent.filter(a => a.method === 'sendTradeRequest').length;
@@ -371,7 +454,7 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
 
         test('noReplyTicks re-sends a request that drew no message, and the re-sent one opens the trade', async () => {
             const sdk = new FakeSdk(baseState({ tick: 10, ...near }));
-            const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { noReplyTicks: 2, byTick: 19 });
+            const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { noReplyTicks: 2, openMaxTicks: 9, maxTicks: 9 });
             await flush();
             expect(requests(sdk)).toBe(1);
             sdk.push({ tick: 11 });
@@ -399,7 +482,7 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
 
         test('a request the engine acknowledged is not re-sent by noReplyTicks', async () => {
             const sdk = new FakeSdk(baseState({ tick: 10, ...near }));
-            const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { noReplyTicks: 2, byTick: 16 });
+            const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { noReplyTicks: 2, openMaxTicks: 6 });
             await flush();
             sdk.push(sent(11));
             for (let t = 12; t <= 16; t++) sdk.push({ tick: t });
@@ -411,10 +494,10 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
             expect(r.reason).toBe('no_response');
         });
 
-        test('byTick ends the open on game ticks, not on the wall clock', async () => {
+        test('openMaxTicks ends the open on game ticks, not on the wall clock', async () => {
             const sdk = new FakeSdk(baseState({ tick: 10, ...near }));
             const t0 = Date.now();
-            const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { noReplyTicks: 2, byTick: 14, openTimeoutMs: 60_000 });
+            const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { noReplyTicks: 2, openMaxTicks: 4, openTimeoutMs: 60_000 });
             for (let t = 11; t <= 15; t++) {
                 await flush();
                 sdk.push({ tick: t });
@@ -519,4 +602,153 @@ describe('planOffers', () => {
 test('sameName ignores case and space/underscore differences', () => {
     expect(sameName('Sr Lab_2', 'sr_lab 2')).toBe(true);
     expect(sameName('srlab1', 'srlab2')).toBe(false);
+});
+
+// ---------------------------------------------------------------- the one click rule
+
+describe('decideTradeClick: when a trade click may go out', () => {
+    const m = (tick: number, text: string): GameMessage => ({ type: 0, text, sender: '', tick, fromSelf: false });
+    const BUSY = 'Cairnsup is busy at the moment.';
+    const SENT = 'Sending trade offer...';
+    const beside = { noReplyTicks: DROPPED_TICKS };
+    const f = (tick: number, messages: GameMessage[] = [], open = false) =>
+        baseState({ tick, gameMessages: messages, ...(open ? { trade: { isOpen: true, screen: 'offer' as const, partner: 'x', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false } } : {}) });
+    /** Frames through the rule; each click's action result comes back on `back(sentTick)` (default: at once). */
+    function run(frames: BotWorldState[], back: (sent: number) => number = s => s, rule = {}): { actions: string[]; ctx: ClickCtx } {
+        let ctx = newClickCtx();
+        const actions: string[] = [];
+        const pending: number[] = [];
+        for (const fr of frames) {
+            for (const sent of [...pending]) if (back(sent) <= fr.tick) { ctx = clickBack(ctx, sent, back(sent)); pending.splice(pending.indexOf(sent), 1); }
+            const d = decideTradeClick(fr, ctx, rule);
+            ctx = d.next;
+            actions.push(d.action === 'send' ? `send:${d.why}` : d.action);
+            if (d.action === 'send') {
+                if (back(ctx.sentTick) <= fr.tick) ctx = clickBack(ctx, ctx.sentTick, fr.tick);
+                else pending.push(ctx.sentTick);
+            }
+        }
+        return { actions, ctx };
+    }
+
+    test('sends once, holds once it stood, opens when the partner clicks', () => {
+        const r = run([f(10), f(10), f(11, [m(11, SENT)]), f(12, [m(11, SENT)]), f(36, [m(11, SENT)]), f(37, [m(11, SENT)], true)]);
+        expect(r.actions).toEqual(['send:first', 'wait', 'wait', 'wait', 'wait', 'open']);
+        expect(r.ctx).toMatchObject({ sends: 1, bounces: 0 });
+    });
+
+    test('a busy refusal is re-sent on the frame that shows it; an older refusal does not count against a newer click', () => {
+        const r = run([f(10), f(11, [m(11, BUSY)]), f(12, [m(11, BUSY), m(12, BUSY)]), f(13, [m(12, BUSY), m(13, SENT)]), f(14, [m(13, SENT)])]);
+        expect(r.actions).toEqual(['send:first', 'send:busy', 'send:busy', 'wait', 'wait']);
+        expect(r.ctx).toMatchObject({ sends: 3, bounces: 2, sentTick: 12 });
+        expect(run([f(10), f(11, [m(11, BUSY)]), f(12, [m(11, BUSY)])]).actions).toEqual(['send:first', 'send:busy', 'wait']);
+    });
+
+    test('player chat that happens to match is not an answer', () => {
+        const chat: GameMessage = { type: 2, text: 'Sending trade offer...?', sender: 'someone', tick: 11, fromSelf: false };
+        expect(run([f(10), f(11, [chat]), f(12, [chat])], s => s, beside).actions).toEqual(['send:first', 'wait', 'send:dropped']);
+    });
+
+    test(`beside the partner (noReplyTicks DROPPED_TICKS), a dropped click is re-sent ${DROPPED_TICKS} frames after its result came back`, () => {
+        expect(run([f(10), f(11), f(12), f(13)], s => s, beside).actions).toEqual(['send:first', 'wait', 'send:dropped', 'wait']);
+        expect(run([f(10), f(11), f(12), f(13)], s => s, { noReplyTicks: 3 }).actions).toEqual(['send:first', 'wait', 'wait', 'send:dropped']);
+    });
+
+    test('a relay-held click: nothing more while its result is pending (20 ticks), then its "sent" stands', () => {
+        const frames = Array.from({ length: 22 }, (_, i) => f(10 + i));
+        frames.push(f(32, [m(31, SENT)]), f(33, [m(31, SENT)]), f(34, [m(31, SENT)], true));
+        const r = run(frames, s => (s === 10 ? 30 : s));
+        expect(r.actions[0]).toBe('send:first');
+        expect(r.actions.filter(a => a.startsWith('send'))).toEqual(['send:first']);
+        expect(r.actions.at(-1)).toBe('open');
+    });
+
+    test('silence after a relay-held result counts from its return, not from the send', () => {
+        // result back on 30; no reply on 31; dropped on 32, not on 12
+        const r = run(Array.from({ length: 24 }, (_, i) => f(10 + i)), s => (s === 10 ? 30 : s), beside);
+        expect(r.actions.indexOf('send:dropped')).toBe(22);
+    });
+
+    test('by default (walk-safe: the server answers only once we are adjacent) an unanswered click waits RESEND_TICKS', () => {
+        const r = run(Array.from({ length: RESEND_TICKS + 2 }, (_, i) => f(10 + i)));
+        expect(r.actions.filter(a => a.startsWith('send'))).toEqual(['send:first', 'send:dropped']);
+        expect(r.actions.indexOf('send:dropped')).toBe(RESEND_TICKS);
+    });
+
+    test(`a request that stood is re-sent only after RESEND_TICKS (${RESEND_TICKS}) from its result`, () => {
+        const r = run([f(10), f(11, [m(11, SENT)]), f(10 + RESEND_TICKS - 1, [m(11, SENT)]), f(10 + RESEND_TICKS, [m(11, SENT)])]);
+        expect(r.actions).toEqual(['send:first', 'wait', 'wait', 'send:standing']);
+    });
+
+    test('screens open: never a click', () => {
+        expect(run([f(10, [], true), f(11, [], true), f(30, [], true)]).actions).toEqual(['open', 'open', 'open']);
+    });
+});
+
+describe('openTrade: the one driver', () => {
+    const near = { nearbyPlayers: [{ index: 7, name: 'cairn_h30', combatLevel: 3, x: 0, z: 0, distance: 1 }] } as unknown as Partial<BotWorldState>;
+    const opened = { isOpen: true, screen: 'offer' as const, partner: 'cairn_h30', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false };
+    const sentMsg = (tick: number): GameMessage => ({ type: 0, text: 'Sending trade offer...', sender: '', tick, fromSelf: false });
+    const clicks = (sdk: FakeSdk) => sdk.sent.filter(a => a.method === 'sendTradeRequest').length;
+
+    /** The demo relay: a trade click's action result comes back only when the test releases it. */
+    class HeldFake extends FakeSdk {
+        release: Array<() => void> = [];
+        override sendAction(a: SentAction) {
+            if (a.method !== 'sendTradeRequest') return super.sendAction(a);
+            this.sent.push(a);
+            return new Promise<{ success: boolean; message: string }>(done => this.release.push(() => done({ success: true, message: 'ok' })));
+        }
+    }
+
+    test('the trade opens on the frame after the click: one click, resolved on that frame', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 10, ...near }));
+        const p = openTrade(sdk as unknown as TradeSdk, 'cairn_h30', { maxTicks: 10 });
+        await flush();
+        expect(clicks(sdk)).toBe(1);
+        sdk.push({ tick: 11, trade: opened, gameMessages: [sentMsg(11)] });
+        const r = await p;
+        expect(r).toMatchObject({ ok: true, firstClickTick: 10, openTick: 11, sends: 1, landedTick: -1 });
+        sdk.push({ tick: 12, trade: opened });
+        sdk.push({ tick: 13, trade: opened });
+        await flush();
+        expect(clicks(sdk)).toBe(1);
+    });
+
+    test('a relay-batched click: result pending for 20 ticks, then "sent": no second click before it, and the trade it opens stays open', async () => {
+        const sdk = new HeldFake(baseState({ tick: 10, ...near }));
+        const p = openTrade(sdk as unknown as TradeSdk, 'cairn_h30', { maxTicks: 60 });
+        await flush();
+        for (let tick = 11; tick <= 30; tick++) sdk.push({ tick });
+        await flush();
+        expect(clicks(sdk)).toBe(1);
+        sdk.release.shift()!();
+        await flush();
+        sdk.push({ tick: 31, gameMessages: [sentMsg(31)] });
+        sdk.push({ tick: 32, gameMessages: [sentMsg(31)] });
+        sdk.push({ tick: 33, gameMessages: [sentMsg(31)] });
+        await flush();
+        expect(clicks(sdk)).toBe(1);
+        sdk.push({ tick: 34, trade: opened, gameMessages: [sentMsg(31)] });
+        expect(await p).toMatchObject({ ok: true, sends: 1, landedTick: 31, openTick: 34 });
+    });
+
+    test('closeModals: CLOSE_MODAL goes out with a click while a modal is open', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 10, ...near, modalOpen: true }));
+        const p = openTrade(sdk as unknown as TradeSdk, 'cairn_h30', { maxTicks: 10, closeModals: true });
+        await flush();
+        expect(sdk.sent.map(a => a.method)).toEqual(['sendCloseModal', 'sendTradeRequest']);
+        sdk.push({ tick: 11, trade: opened, modalOpen: false });
+        expect(await p).toMatchObject({ ok: true });
+    });
+
+    test('stopped ends the open without another click', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 10, ...near }));
+        let stop = false;
+        const p = openTrade(sdk as unknown as TradeSdk, 'cairn_h30', { stopped: () => stop, timeoutMs: Infinity });
+        await flush();
+        stop = true;
+        sdk.push({ tick: 11 });
+        expect(await p).toMatchObject({ ok: false, reason: 'stopped', sends: 1 });
+    });
 });

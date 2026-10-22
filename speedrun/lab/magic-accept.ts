@@ -21,12 +21,11 @@ import { readFileSync, writeFileSync } from 'node:fs';
 // CommonJS interop ("debug_1.default is not a function").
 import puppeteer from 'puppeteer';
 import { join } from 'node:path';
-import { decideRequest, newRequestCtx } from '../helpers/bone-giver';
 import { isTileWalkable } from '../../sdk/pathfinding';
 import { pathTiles } from '../lib/paths';
 import { closeSession, openSession, type Session } from '../lib/session';
 import { formatReport, report } from '../lib/ticks';
-import { ANY_OFFER, give, sameName, swap, tradeOf, type WantSpec } from '../lib/trade';
+import { ANY_OFFER, clickBack, decideTradeClick, give, newClickCtx, sameName, sendTradeClick, swap, tradeOf, type WantSpec } from '../lib/trade';
 import { nextTick, waitTicks, waitUntil } from '../lib/wait';
 import { wield } from '../lib/act';
 import { runSteps } from '../runner/step';
@@ -181,21 +180,21 @@ if (mode === 'diamond25') {
     const serve = async (i: number): Promise<boolean> => {
         const g = givers[i]!;
         const load = loads[i]!;
-        // The standing-request rule (bone-giver.ts decideRequest): re-send only after a busy bounce
+        // The standing-request rule (lib/trade.ts decideTradeClick): re-send only after a busy bounce
         // or no reply, never once a request landed, since a request landing on an open trade closes it.
-        let req = newRequestCtx();
+        let req = newClickCtx();
         while (!stopGiver) {
             const st = await nextTick(g.sdk);
             const t = tradeOf(st);
             if (!t.isOpen) {
                 const p = st.nearbyPlayers.find(x => sameName(x.name, scoredName));
                 if (!p) continue;
-                const d = decideRequest(st, req, { noReplyTicks: 3, resendTicks: 100 });
+                const d = decideTradeClick(st, req, { noReplyTicks: 3, resendTicks: 100 });
                 req = d.next;
-                if (d.action === 'send') void g.sdk.sendTradeRequest(p.index);
+                if (d.action === 'send') sendTradeClick(g.sdk, p.index, req.sentTick, (sent, tick) => (req = clickBack(req, sent, tick)));
                 continue;
             }
-            req = newRequestCtx();
+            req = newClickCtx();
             if (!sameName(t.partner, scoredName)) { await g.sdk.sendDeclineTrade(); continue; }
             const t0 = st.tick;
             const r = await give(g.sdk, scoredName, (Object.keys(ENCHANTS) as Array<keyof typeof ENCHANTS>).filter(k => (load[k] ?? 0) > 0).map(k => ({ item: new RegExp(`^${ENCHANTS[k].ring}$`, 'i') })), { expectTheirs: ANY_OFFER, maxTicks: 40 });
@@ -294,7 +293,7 @@ if (mode === 'h4') {
         await giveAll(scored, withRings ? [...KEPT, 'ring_of_forging 15', 'ring_of_life 5'] : KEPT, KEPT.length + (withRings ? 20 : 0));
         await giveAll(giver, H4_GIVES, H4_SLOTS);
         const free = 28 - scored.sdk.getState()!.inventory.length;
-        let req = newRequestCtx();
+        let req = newClickCtx();
         let stop = false;
         const giverSide = (async () => {
             while (!stop) {
@@ -302,9 +301,9 @@ if (mode === 'h4') {
                 if (!tradeOf(st).isOpen) {
                     const p = st.nearbyPlayers.find(x => sameName(x.name, scored.sdk.getState()!.player!.name));
                     if (!p) continue;
-                    const d = decideRequest(st, req, { noReplyTicks: 3, resendTicks: 100 });
+                    const d = decideTradeClick(st, req, { noReplyTicks: 3, resendTicks: 100 });
                     req = d.next;
-                    if (d.action === 'send') void giver.sdk.sendTradeRequest(p.index);
+                    if (d.action === 'send') sendTradeClick(giver.sdk, p.index, req.sentTick, (sent, tick) => (req = clickBack(req, sent, tick)));
                     continue;
                 }
                 return give(giver.sdk, scored.sdk.getState()!.player!.name, H4_GIVES.map(g => ({ item: new RegExp(`^${g.split(' ')[0]!.replace(/_/g, ' ').replace(/rune$/, ' rune')}$`, 'i') })), { expectTheirs: ANY_OFFER, maxTicks: 40 });

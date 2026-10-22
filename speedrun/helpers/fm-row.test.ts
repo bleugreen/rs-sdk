@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setSystemTime, test } from 'bun:test';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,10 +10,13 @@ import {
     advanceFresh,
     blockLast,
     catchUp,
+    cuePeriod,
     cueTick,
     dropTarget,
     earliestDrop,
+    FIRE_OUT_TICKS,
     FireLedger,
+    fireOutBy,
     FmRow,
     GO_FILE,
     fmRowOptions,
@@ -30,12 +33,15 @@ import {
     placeSlot,
     plannedTiles,
     REVEAL_TICKS,
+    ROLL_TICKS,
     resumeCursor,
     rowPlan,
+    shortestRevisit,
     snakeTile,
     type Pace,
     type Progress
 } from './fm-row';
+import { S03_LOGS as ROUTE_LOGS } from './fm-row';
 
 const plan = rowPlan(LAB_ROW);
 
@@ -445,6 +451,18 @@ describe('cueAt written: staggered droppers count from when the cue was written'
         expect(() => fmRowOptions({ start: 'cue', cueAt: 'written', tickMs: 0 }, {})).toThrow(/tickMs/);
     });
 
+    test('cuePeriod: observed, else the writer\'s, else nominal; a measured period is held to 250-600 ms', () => {
+        expect(cuePeriod(350, 340, 300)).toEqual({ tickMs: 350, from: 'observed' });
+        expect(cuePeriod(null, 340, 300)).toEqual({ tickMs: 340, from: 'cue' });
+        expect(cuePeriod(null, undefined, 300)).toEqual({ tickMs: 300, from: 'nominal' });
+        expect(cuePeriod(null, 'x', 300)).toEqual({ tickMs: 300, from: 'nominal' });
+        expect(cuePeriod(null, 0, 300)).toEqual({ tickMs: 300, from: 'nominal' });
+        expect(cuePeriod(120, undefined, 300)).toEqual({ tickMs: 250, from: 'observed' });
+        expect(cuePeriod(null, 2_000, 300)).toEqual({ tickMs: 600, from: 'cue' });
+        // The nominal option is configuration, taken as given.
+        expect(cuePeriod(null, undefined, 700)).toEqual({ tickMs: 700, from: 'nominal' });
+    });
+
     test('catchUp: a late dropper takes the frontier from the highest burning pair SCORED can have reached', () => {
         const burning = new Set([30, 31, 40, 60, 61]);
         const fireSlot = (i: number) => (burning.has(i) ? i : null);
@@ -474,11 +492,26 @@ function fakeRole(options: Record<string, unknown>) {
         groundItems: [] as Item[],
         nearbyPlayers: []
     };
-    const sdk = { getState: () => state, onStateUpdate: () => () => {}, scanNearbyLocs: async () => state.nearbyLocs };
+    const listeners = new Set<(s: typeof state) => void>();
+    const onStateUpdate = (l: (s: typeof state) => void) => (listeners.add(l), () => void listeners.delete(l));
+    const sdk = { getState: () => state, onStateUpdate, scanNearbyLocs: async () => state.nearbyLocs, scanGroundItems: async () => state.groundItems };
     const ctx = { sdk, bot: {}, account: 'cairn_d01', options, log: (m: string, d?: Record<string, unknown>) => logs.push({ m, d }), signal: new AbortController().signal } as unknown as RoleContext;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const role = new FmRow(ctx) as any;
-    return { role, state, logs };
+    /** The client publishes tick `tick` now. */
+    const publish = (tick: number) => {
+        state.tick = tick;
+        for (const l of listeners) l(state);
+    };
+    return { role, state, logs, publish, listeners };
+}
+
+/** A client ticking every `ms` from tick 1000 at `t0` (the fake system clock moves with it) to `ticks` later. */
+function tickAt(publish: (tick: number) => void, t0: number, ms: number, ticks: number): void {
+    for (let k = 1; k <= ticks; k++) {
+        setSystemTime(new Date(t0 + ms * k));
+        publish(1000 + k);
+    }
 }
 
 describe('role wiring', () => {
@@ -531,5 +564,228 @@ describe('role wiring', () => {
         expect(logs.at(-1)).toMatchObject({ m: 'cue', d: { seenTick: 1000, cueTick: 900 } });
         const seen = fakeRole({ start: 'cue', cueDir: dir });
         expect(await seen.role.trigger()).toBe(1000);
+    });
+
+    describe('on a 0.35 s tick with a nominal 300 ms', () => {
+        const T0 = 1_800_000_000_000;
+        const cueDirAt = (go: Record<string, unknown>) => {
+            const dir = mkdtempSync(join(tmpdir(), 'fm-row-cue-'));
+            writeFileSync(join(dir, GO_FILE), JSON.stringify({ v: 1, ...go }));
+            return dir;
+        };
+
+        test('a dropper logged in 20 s after the cue counts it back at the period it observed', async () => {
+            setSystemTime(new Date(T0));
+            try {
+                // The cue was written 20 s before the dropper's tick 1000, which is 57 of its ticks back.
+                const dir = cueDirAt({ ms: T0 - 20_000 });
+                const { role, logs, publish, listeners } = fakeRole({ start: 'cue', cueAt: 'written', tickMs: 300, cueDir: dir });
+                tickAt(publish, T0, 350, 100);
+                // 55 s at 350 ms is 157 ticks; at the nominal 300 it would be 183, placing the cue 26 ticks early.
+                expect(await role.trigger()).toBe(1100 - 157);
+                expect(logs.at(-1)).toMatchObject({ m: 'cue', d: { seenTick: 1100, tickMs: 350, tickMsFrom: 'observed', observedTickMs: 350, nominalTickMs: 300, cueTick: 943 } });
+                expect(listeners.size).toBe(0);
+            } finally {
+                setSystemTime();
+            }
+        });
+
+        test('before 20 s of ticks: the writer\'s period if the go file has one, else nominal, and the log says which', async () => {
+            setSystemTime(new Date(T0));
+            try {
+                const a = fakeRole({ start: 'cue', cueAt: 'written', tickMs: 300, cueDir: cueDirAt({ ms: T0 - 20_000, tickMs: 350 }) });
+                tickAt(a.publish, T0, 350, 40);
+                expect(await a.role.trigger()).toBe(1040 - 97);
+                expect(a.logs.at(-1)).toMatchObject({ m: 'cue', d: { tickMs: 350, tickMsFrom: 'cue', observedTickMs: null, writerTickMs: 350 } });
+                setSystemTime(new Date(T0));
+                const b = fakeRole({ start: 'cue', cueAt: 'written', tickMs: 300, cueDir: cueDirAt({ ms: T0 - 20_000 }) });
+                tickAt(b.publish, T0, 350, 40);
+                expect(await b.role.trigger()).toBe(1040 - 113);
+                expect(b.logs.at(-1)).toMatchObject({ m: 'cue', d: { tickMs: 300, tickMsFrom: 'nominal', observedTickMs: null, writerTickMs: null } });
+            } finally {
+                setSystemTime();
+            }
+        });
+
+        test('a held dropper at the row triggers on the nominal period, then places the cue again once it has 20 s of ticks', async () => {
+            setSystemTime(new Date(T0));
+            try {
+                const { role, logs, publish, listeners } = fakeRole({ start: 'cue', cueAt: 'written', tickMs: 300, cueDir: cueDirAt({ ms: T0 - 20_000 }) });
+                tickAt(publish, T0, 350, 10);
+                // 23.5 s since the cue: 78 nominal ticks, 67 observed ones.
+                const t = await role.trigger();
+                expect(t).toBe(1010 - 78);
+                role.start = role.startOf(t);
+                role.refineCue();
+                expect(role.start).toBe(1010 - 78 + 105);
+                expect(listeners.size).toBe(1);
+                for (let k = 11; k <= 70; k++) {
+                    setSystemTime(new Date(T0 + 350 * k));
+                    publish(1000 + k);
+                }
+                role.refineCue();
+                expect(role.start).toBe(1010 - 67 + 105);
+                expect(logs.slice(-2)).toMatchObject([
+                    { m: 'cue: refined', d: { seenTick: 1010, seenMs: T0 + 3_500, tickMs: 350, tickMsFrom: 'observed', cueTick: 943 } },
+                    { m: 'start', d: { logZeroDue: 1048, was: 1037 } }
+                ]);
+                expect(listeners.size).toBe(0);
+                // Placed on an observed period, it stays put.
+                role.refineCue();
+                expect(logs.at(-1)!.m).toBe('start');
+            } finally {
+                setSystemTime();
+            }
+        });
+
+        test('cueAt seen is unchanged: it starts on the tick it sees the go file and watches no ticks', async () => {
+            setSystemTime(new Date(T0));
+            try {
+                const { role, logs, publish, listeners } = fakeRole({ start: 'cue', tickMs: 300, cueDir: cueDirAt({ ms: T0 - 20_000, tickMs: 350 }) });
+                expect(listeners.size).toBe(0);
+                tickAt(publish, T0, 350, 100);
+                expect(await role.trigger()).toBe(1100);
+                expect(logs.some(l => l.m === 'cue')).toBe(false);
+            } finally {
+                setSystemTime();
+            }
+        });
+    });
+});
+
+// ------------------------------------------------------------------ rs/228's lab: the 51-tile lapped row
+
+const run = (x0: number, x1: number, z: number) => Array.from({ length: Math.abs(x1 - x0) + 1 }, (_, n) => ({ x: x0 + Math.sign(x1 - x0) * n, z }));
+/** `3222-3218@3219;3218-3243@3218;3242-3223@3219`, confirmed in the lab: every gap a 4-tick chain. */
+const ROW51 = [...run(3222, 3218, 3219), ...run(3218, 3243, 3218), ...run(3242, 3223, 3219)];
+const ROW51_OPTS = { tiles: ROW51.map(t => [t.x, t.z]), parts: 6 };
+
+describe('lapped row: a held dropper that logs in late', () => {
+    const plan51 = rowPlan(ROW51);
+    const own5 = ownLogs(157, 5, 6);
+    // Inventory 3's logs 95-99, down and not lit yet, lie on the tiles of part 5's logs 146-150.
+    const foreign = [95, 96, 97, 98, 99].map(i => ({ name: 'Magic logs', ...plan51[i]!.tile }));
+
+    test('resumeCursor: still carrying its whole load, it has dropped nothing, whatever lies on its tiles', () => {
+        expect(ROW51).toHaveLength(51);
+        expect(plan51[146]!.tile).toEqual(plan51[95]!.tile);
+        // From the ground alone the other droppers' logs read as its own.
+        expect(resumeCursor(plan51, own5, foreign)).toBe(11);
+        const holds = (n: number) => (tier: { name: string }) => (tier.name === 'Magic logs' ? n : 0);
+        // 17 logs plus spares, or exactly 17.
+        expect(resumeCursor(plan51, own5, foreign, holds(21))).toBe(0);
+        expect(resumeCursor(plan51, own5, foreign, holds(17))).toBe(0);
+        // Some already dropped: a real restart, resumed from the ground as before.
+        expect(resumeCursor(plan51, own5, foreign, holds(10))).toBe(11);
+    });
+
+    test('the role takes the fresh-start path (arm, held check, cue) instead of `resume`', async () => {
+        const { role, state, logs } = fakeRole({ ...ROW51_OPTS, part: 5, restock: { kind: 'held' }, start: 'cue', cueAt: 'written' });
+        state.groundItems = foreign;
+        state.inventory = Array.from({ length: 21 }, (_, slot) => ({ name: 'Magic logs', count: 1, slot }));
+        expect(await role.resume()).toBe(false);
+        expect(role.cursor).toBe(0);
+        expect(logs.map(l => l.m)).not.toContain('resume');
+        // Not a held dropper: the ground decides, as before.
+        const bank = fakeRole({ ...ROW51_OPTS, part: 5 });
+        bank.state.groundItems = foreign;
+        bank.state.inventory = state.inventory;
+        expect(await bank.role.resume()).toBe(true);
+        expect(bank.logs.at(-1)).toMatchObject({ m: 'resume', d: { cursor: 11 } });
+    });
+});
+
+describe('lapped row: skipOccupied and the last lap’s fire', () => {
+    test('fireOutBy: a fire seen lit at F is out for a log needed at F + 200 or later; unseen starts never are', () => {
+        expect(FIRE_OUT_TICKS).toBe(200);
+        expect(fireOutBy(900, 1100)).toBe(true);
+        expect(fireOutBy(900, 1099)).toBe(false);
+        expect(fireOutBy(null, 1_000_000)).toBe(false);
+        const t = { x: 3230, z: 3218 };
+        expect(occupied(t, [{ name: 'Fire', ...t }], [], true)).toBe(false);
+        expect(occupied(t, [{ name: 'Fire', ...t }], [{ name: 'Bones', ...t }], true)).toBe(true);
+    });
+
+    async function litAt(lit: number, start: number) {
+        const f = fakeRole({ ...ROW51_OPTS, part: 0, skipOccupied: true, spareTiles: 0 });
+        f.state.player = { worldX: ROW51[0]!.x, worldZ: ROW51[0]!.z };
+        // The dropper watches log 0's tile clear, then sees the last lap's fire lit on it.
+        f.state.tick = lit - 10;
+        await f.role.observe(f.state);
+        f.state.nearbyLocs = [...f.state.nearbyLocs, { name: 'Fire', ...ROW51[0]! }];
+        f.state.tick = lit;
+        await f.role.observe(f.state);
+        f.state.tick = lit + 100;
+        f.role.start = start;
+        return f;
+    }
+
+    test('a fire it saw lit 200 ticks before the log is needed takes the log; a younger one is skipped', async () => {
+        const out = await litAt(900, 1100);
+        expect(out.role.ledger.freshSince(ROW51[0])).toBe(900);
+        expect(out.role.chooseTile(0, out.state)).toEqual(ROW51[0]);
+        expect(out.logs.map(l => l.m)).not.toContain('skip');
+        const young = await litAt(900, 1099);
+        expect(young.role.chooseTile(0, young.state)).toEqual(ROW51[1]);
+        expect(young.logs.at(-1)).toMatchObject({ m: 'skip', d: { i: 0, from: 0, to: 1 } });
+    });
+
+    test('a fire already burning when first seen stays occupied', async () => {
+        const f = fakeRole({ ...ROW51_OPTS, part: 0, skipOccupied: true, spareTiles: 0 });
+        f.state.player = { worldX: ROW51[0]!.x, worldZ: ROW51[0]!.z };
+        f.state.nearbyLocs = [{ name: 'Tree', x: 0, z: 0 }, { name: 'Fire', ...ROW51[0]! }];
+        await f.role.observe(f.state);
+        f.role.start = 1_000_000;
+        expect(f.role.chooseTile(0, f.state)).toEqual(ROW51[1]);
+    });
+
+    test('shortestRevisit: spares bring a 51-lap round in 47 logs; spareTiles 0 there, or 1 on a 53-lap, keeps 51', () => {
+        expect(shortestRevisit(plannedTiles(ROW51, 6, 2))).toBe(47);
+        expect(ROLL_TICKS * 47).toBeLessThan(FIRE_OUT_TICKS);
+        expect(shortestRevisit(plannedTiles(ROW51, 6, 0))).toBe(51);
+        const ROW53 = [...ROW51, { x: 3222, z: 3220 }, { x: 3222, z: 3221 }];
+        expect(shortestRevisit(plannedTiles(ROW53, 6, 1))).toBe(51);
+        // S03's default snake comes round in 54.
+        expect(shortestRevisit(plannedTiles(LAB_ROW, 1, 0))).toBe(54);
+        expect(shortestRevisit(plannedTiles(LIST.slice(0, 1).concat(Array.from({ length: 200 }, (_, n) => ({ x: n, z: 0 }))), 1, 0))).toBeNull();
+    });
+});
+
+
+describe('logs: an explicit log list in place of the route', () => {
+    test('the default plan is the route, identical to rowPlan with S03_LOGS', () => {
+        const o = fmRowOptions({}, {});
+        expect(o.logs).toBe(ROUTE_LOGS);
+        expect(JSON.stringify(rowPlan(LAB_ROW, o.logs))).toBe(JSON.stringify(rowPlan(LAB_ROW, ROUTE_LOGS)));
+        expect(rowPlan(LAB_ROW, o.logs)).toHaveLength(157);
+    });
+
+    test('[{obj: logs, n: 20}] plans 20 normal logs along the path, one inventory', () => {
+        const o = fmRowOptions({ logs: [{ obj: 'logs', n: 20 }] }, {});
+        const plan = rowPlan(LAB_ROW, o.logs);
+        expect(plan).toHaveLength(20);
+        expect(plan.every(l => l.tier.obj === 'logs' && l.tier.name === 'Logs')).toBe(true);
+        expect(plan.map(l => l.slot)).toEqual([...Array(20).keys()]);
+        expect(loadFor(plan, ownLogs(plan.length, 0, 1), 0)).toEqual([{ tier: plan[0]!.tier, n: 20 }]);
+        const mixed = rowPlan(LAB_ROW, fmRowOptions({ logs: [{ obj: 'logs', n: 2 }, { obj: 'oak_logs', n: 3 }] }, {}).logs);
+        expect(mixed.map(l => l.tier.obj)).toEqual(['logs', 'logs', 'oak_logs', 'oak_logs', 'oak_logs']);
+    });
+
+    test('a bad obj or n throws', () => {
+        expect(() => fmRowOptions({ logs: [{ obj: 'teak_logs', n: 5 }] }, {})).toThrow(/logs\[0\]\.obj/);
+        expect(() => fmRowOptions({ logs: [{ obj: 'logs', n: 0 }] }, {})).toThrow(/logs\[0\]\.n/);
+        expect(() => fmRowOptions({ logs: [{ obj: 'logs', n: 2.5 }] }, {})).toThrow(/logs\[0\]\.n/);
+        expect(() => fmRowOptions({ logs: [{ obj: 'logs' }] }, {})).toThrow(/logs\[0\]\.n/);
+        expect(() => fmRowOptions({ logs: [] }, {})).toThrow(/non-empty/);
+        expect(() => fmRowOptions({ logs: { obj: 'logs', n: 20 } }, {})).toThrow(/non-empty/);
+    });
+
+    test('parts = 2 splits a list by inventory: 20 logs are one inventory, so part 1 owns none and is refused', () => {
+        expect(ownLogs(20, 0, 2)).toEqual([...Array(20).keys()]);
+        expect(fmRowOptions({ logs: [{ obj: 'logs', n: 20 }], parts: 2, part: 0 }, {}).parts).toBe(2);
+        expect(() => fmRowOptions({ logs: [{ obj: 'logs', n: 20 }], parts: 2, part: 1 }, {})).toThrow(/owns no logs/);
+        expect(ownLogs(40, 0, 2)).toHaveLength(28);
+        expect(ownLogs(40, 1, 2)).toEqual([...Array(12).keys()].map(k => 28 + k));
+        expect(fmRowOptions({ logs: [{ obj: 'logs', n: 40 }], parts: 2, part: 1, restock: { kind: 'held' } }, {}).restock.kind).toBe('held');
     });
 });

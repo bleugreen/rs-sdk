@@ -203,7 +203,7 @@ describe('the trade: bars out, products back in the same trade', () => {
 describe('anvilOptions and the booth', () => {
     test('defaults: bank restock on the tile beside the anvil, no trade limit', () => {
         const o = anvilOptions({}, { RC_CUE_DIR: '/tmp/cue' });
-        expect(o).toMatchObject({ restock: { kind: 'bank', labStock: false }, tile: HELPER_TILE, noReplyTicks: 3, resendTicks: 100, cueDir: '/tmp/cue' });
+        expect(o).toMatchObject({ restock: { kind: 'bank', labStock: false }, tile: HELPER_TILE, noReplyTicks: 2, resendTicks: 100, cueDir: '/tmp/cue' });
         expect(o.trades).toBe(Number.POSITIVE_INFINITY);
     });
 

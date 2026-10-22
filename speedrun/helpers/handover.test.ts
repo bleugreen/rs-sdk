@@ -6,7 +6,7 @@ import { borderGuard, guard, pathfinder, tollWorld } from '../lib/fake-toll-gate
 import { inAlKharid, isEastOfTollGate, type Tile } from '../lib/toll-gate';
 import type { GiveResult } from '../lib/trade';
 import { STALLED } from '../lib/wait';
-import { finishOf, gameIo, giveOutcome, handoverKey, handoverOptions, runHandovers, tollsAfterBank, withdrawSpecs, type Handover, type HandoverIo, type HandoverOptions } from './handover';
+import { finishOf, gameIo, giveOutcome, handoverKey, handoverOptions, leavesKandarin, runHandovers, tollsAfterBank, withdrawSpecs, type Handover, type HandoverIo, type HandoverOptions } from './handover';
 import { memoryRoleState, type RoleContext, type RoleState } from './role';
 
 const AL_KHARID = { x: 3290, z: 3170 };
@@ -65,6 +65,9 @@ function setup(
     const given: Handover['items'][] = [];
     const io: HandoverIo = {
         travel: gameIo.travel,
+        leaveKandarin: async () => {
+            throw new Error('no White Wolf Mountain crossing in this test');
+        },
         openBank: async () => (events.push(`openBank ${here()}`), true),
         closeBank: async () => {},
         depositAll: async () => {
@@ -298,5 +301,75 @@ describe('toll coins for the crossings after the bank', () => {
         expect(withdrawSpecs([{ item: 'Coins', n: 1000 }], 20).map(s => [nameOf(s), s.n])).toEqual([['Coins', 1020]]);
         expect(withdrawSpecs([{ item: 'Air talisman', n: 1 }], 10).map(s => [nameOf(s), s.n, s.asNote])).toEqual([['Air talisman', 1, false], ['Coins', 10, false]]);
         expect(withdrawSpecs([{ item: 'Rune essence', n: 300 }], 0).map(s => [nameOf(s), s.n, s.asNote])).toEqual([['Rune essence', 300, true]]);
+    });
+});
+
+describe('crossKandarin: a woodcutter at Seers trades on the Lumbridge side', () => {
+    // 2026-10-21 (rs/237): cairn_h10 at the Seers magic trees, Firemaking droppers' logs for cairn_mule2 at Draynor.
+    const SEERS_MAGIC = { x: 2696, z: 3423 };
+    const DRAYNOR_BANK = { x: 3092, z: 3245 };
+    const MULE2 = 'cairn_mule2';
+    const logs = (o: Partial<HandoverOptions> = {}): HandoverOptions => ({ bank: DRAYNOR_BANK, handovers: [{ to: MULE2, items: [{ item: 'Magic logs', n: 111 }, { item: 'Yew logs', n: 25 }] }], ...o });
+
+    /** Travel and the crossing are stubs that move the player; the plain walk cannot leave Kandarin. */
+    function seers() {
+        const t = setup(SEERS_MAGIC, 0);
+        const moves: string[] = [];
+        const at = () => ({ x: t.fake.state!.player!.worldX, z: t.fake.state!.player!.worldZ });
+        const moveTo = (to: Tile) => t.fake.push(s => ({ player: { ...s.player!, worldX: to.x, worldZ: to.z } }));
+        t.io.travel = async (_, to) => {
+            moves.push(`walk ${to.x},${to.z}`);
+            if (leavesKandarin(at(), to)) return { ok: false, paid: 0, reason: 'cant reach' };
+            moveTo(to);
+            return { ok: true, paid: 0 };
+        };
+        t.io.leaveKandarin = async (_, to) => {
+            moves.push(`cross ${to.x},${to.z}`);
+            moveTo(to);
+            return { ok: true, paid: 0 };
+        };
+        return { ...t, moves };
+    }
+
+    test('leavesKandarin: only a leg from Kandarin to outside it', () => {
+        expect(leavesKandarin(SEERS_MAGIC, DRAYNOR_BANK)).toBe(true);
+        expect(leavesKandarin(SEERS_MAGIC, { x: 2725, z: 3492 })).toBe(false);
+        expect(leavesKandarin(DRAYNOR_BANK, SEERS_MAGIC)).toBe(false);
+        expect(leavesKandarin(DRAYNOR_BANK, VARROCK_WEST_BANK)).toBe(false);
+    });
+
+    test('with crossKandarin it crosses once, before any bank is opened, and delivers at Draynor', async () => {
+        const t = seers();
+        const report = await runHandovers(t.ctx, logs({ crossKandarin: true }), t.io);
+        expect(report).toEqual({ done: [MULE2], uncertain: [], failed: [] });
+        expect(t.moves).toEqual([`cross ${DRAYNOR_BANK.x},${DRAYNOR_BANK.z}`, `walk ${DRAYNOR_BANK.x},${DRAYNOR_BANK.z}`, `walk ${DRAYNOR_BANK.x},${DRAYNOR_BANK.z}`]);
+        // Nothing is withdrawn before the crossing: the first bank opened is Draynor's.
+        expect(t.events[0]).toBe(`openBank ${DRAYNOR_BANK.x},${DRAYNOR_BANK.z}`);
+        expect(t.events).toContain(`give ${MULE2} ${DRAYNOR_BANK.x},${DRAYNOR_BANK.z}`);
+        // More than one log is withdrawn as notes.
+        expect(t.withdrawn[0]!.every(s => s.asNote)).toBe(true);
+    });
+
+    test('without crossKandarin the leg fails and no bank is opened', async () => {
+        const t = seers();
+        const report = await runHandovers(t.ctx, logs(), t.io);
+        expect(report.failed).toEqual([MULE2]);
+        expect(t.moves.some(m => m.startsWith('cross'))).toBe(false);
+        expect(t.events.some(e => e.startsWith('openBank'))).toBe(false);
+    });
+
+    test('a failed crossing ends the attempt before the bank', async () => {
+        const t = seers();
+        t.io.leaveKandarin = async () => ({ ok: false, paid: 0, reason: 'kandarin: died walking to Taverley' });
+        const report = await runHandovers(t.ctx, logs({ crossKandarin: true }), t.io);
+        expect(report.failed).toEqual([MULE2]);
+        expect(t.events.some(e => e.startsWith('openBank'))).toBe(false);
+        expect(t.given).toHaveLength(0);
+    });
+
+    test('the option is a boolean, absent by default', () => {
+        expect(handoverOptions(logs({ crossKandarin: true }) as unknown as Record<string, unknown>).crossKandarin).toBe(true);
+        expect(handoverOptions(logs() as unknown as Record<string, unknown>).crossKandarin).toBeUndefined();
+        expect(() => handoverOptions({ ...logs(), crossKandarin: 'yes' } as unknown as Record<string, unknown>)).toThrow(/crossKandarin/);
     });
 });

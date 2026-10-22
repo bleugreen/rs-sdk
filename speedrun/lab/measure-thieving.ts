@@ -31,8 +31,7 @@ import type { ProgramStatus } from '../lib/programs';
 import { programStatus } from '../lib/programs';
 import { closeSession, openSession, type Session } from '../lib/session';
 import { formatReport, report, TickLog, type TickRow } from '../lib/ticks';
-import { decideRequest, newRequestCtx, type RequestCtx } from '../helpers/bone-giver';
-import { decideGiver, newGiverCtx, planOffers, sameName, tradeOf, type GiverCtx, type OfferEntry } from '../lib/trade';
+import { clickBack, decideGiver, decideTradeClick, DROPPED_TICKS, newClickCtx, newGiverCtx, planOffers, sameName, sendTradeClick, tradeOf, type ClickCtx, type GiverCtx, type OfferEntry } from '../lib/trade';
 import { waitTicks, waitUntil } from '../lib/wait';
 import { runSteps } from '../runner/step';
 import { type FoodName, type LegMark, steps, type ThievingOptions } from '../skills/thieving';
@@ -150,7 +149,7 @@ const opts = (): ThievingOptions => ({
 /**
  * The lab stand-in for the S18 trade giver: it holds a side tile of the account by ::tele (never
  * while a trade is open; never a corner, never the knight's tile), answers the account's trade request with its own and keeps it standing the way
- * the S18 courier does (helpers/bone-giver.ts decideRequest: re-sent after a busy refusal or no
+ * the S18 courier does (lib/trade.ts decideTradeClick: re-sent after a busy refusal or no
  * reply, for up to 10 ticks), offers `load` sharks with one press and accepts both screens, and
  * restocks itself by ::give. `events` is its side of every top-up, by tick.
  *
@@ -163,7 +162,7 @@ const opts = (): ThievingOptions => ({
 const SIDES: ReadonlyArray<readonly [number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 function runGiver(h: Session, load: number): { stop: () => void; teles: number; events: Array<{ tick: number; ev: string }> } {
     let gctx: GiverCtx | null = null, plan: OfferEntry[] = [], lastTick = -1, lastTele = -100, lastStock = -100;
-    let answer: { rc: RequestCtx; until: number } | null = null;
+    let answer: { rc: ClickCtx; until: number } | null = null;
     const seen = new Set<string>();
     const out = { teles: 0, stop: () => {}, events: [] as Array<{ tick: number; ev: string }> };
     const ev = (tick: number, e: string) => out.events.push({ tick, ev: e });
@@ -202,17 +201,18 @@ function runGiver(h: Session, load: number): { stop: () => void; teles: number; 
         const have = hs.inventory.filter(i => /^shark$/i.test(i.name)).length;
         if (have < load * 4 && hs.tick - lastStock > 6) { void h.sdk.sendSay(`::give shark ${load * 8 - have}`); lastStock = hs.tick; }
         const idx = hs.nearbyPlayers.find(p => sameName(p.name, account))?.index;
-        if (!answer && fresh.some(m => /wishes to trade/i.test(m.text))) answer = { rc: newRequestCtx(), until: hs.tick + 10 };
+        if (!answer && fresh.some(m => /wishes to trade/i.test(m.text))) answer = { rc: newClickCtx(), until: hs.tick + 10 };
         if (answer) {
             if (hs.tick > answer.until) {
                 ev(hs.tick, `gave up after ${answer.rc.sends} sends`);
                 answer = null;
             } else if (idx === undefined) ev(hs.tick, 'account out of sight');
             else {
-                const d = decideRequest(hs, answer.rc, { noReplyTicks: 2, resendTicks: 100 });
+                const d = decideTradeClick(hs, answer.rc, { noReplyTicks: DROPPED_TICKS, resendTicks: 100 });
                 answer.rc = d.next;
                 if (d.action === 'send') {
-                    void h.sdk.sendTradeRequest(idx);
+                    const a = answer;
+                    sendTradeClick(h.sdk, idx, a.rc.sentTick, (sent, tick) => (a.rc = clickBack(a.rc, sent, tick)));
                     ev(hs.tick, `send ${d.why}`);
                 }
                 return;

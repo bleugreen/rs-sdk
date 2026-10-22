@@ -126,7 +126,7 @@ describe('serve mode', () => {
         expect(() => serveOptions({ tile: { x: 1, z: 2 }, balls: 100, receiver: 'Some Player' })).toThrow(/not a name/);
         const hash = nameHash('Some Player');
         const o = serveOptions({ tile: { x: 2570, z: 3463 }, balls: 100, receiver: hash.toUpperCase() }, {});
-        expect(o).toMatchObject({ tile: { x: 2570, z: 3463 }, balls: 100, receiver: hash, returnTile: null, labStock: false, noReplyTicks: 3, resendTicks: 100 });
+        expect(o).toMatchObject({ tile: { x: 2570, z: 3463 }, balls: 100, receiver: hash, returnTile: null, labStock: false, noReplyTicks: 2, resendTicks: 100 });
         expect(o.bank).toEqual({ x: 2946, z: 3369 }); // Falador west, where h92 banks
     });
 

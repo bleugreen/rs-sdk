@@ -31,17 +31,17 @@
 //                top the bank up with staff-made notes when it runs short.
 //   tile         {x,z} where to stand (default 3187,3427)
 //   trades       stop after this many trades (default: until the plan or the cue says stop)
-//   noReplyTicks, resendTicks   the standing request (bone-giver.ts decideRequest): 3, 100
+//   noReplyTicks, resendTicks   the standing request (bone-giver.ts requestUntilOpen, lib/trade.ts's click rule): 2, 100
 //   cueDir       default RC_CUE_DIR, else run-machine/rc-cue in the checkout
 import { join } from 'node:path';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
 import { depositMatching, withdrawMany, type BankSdk } from '../lib/bank';
 import { tickClock, waitUntil, type StateSource } from '../lib/wait';
-import { ANY_OFFER, give, receiveFrom, tradeOf, type GiveSpec, type WantSpec } from '../lib/trade';
+import { ANY_OFFER, give, DROPPED_TICKS, receiveFrom, tradeOf, type GiveSpec, type WantSpec } from '../lib/trade';
 import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, readJson, writeJsonAtomicSync, type Cue } from './altar-cue';
 import { chebyshev, cheat, isLocalServer, labTele, pos, until, type Tile } from './altar-room';
-import { decideRequest, newRequestCtx } from './bone-giver';
+import { requestUntilOpen } from './bone-giver';
 import { ensureOutOfTutorial } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
@@ -325,7 +325,7 @@ export function anvilOptions(raw: Record<string, unknown>, env: Record<string, s
         restock: { kind, labStock: r.labStock === true },
         tile,
         trades,
-        noReplyTicks: Number(raw.noReplyTicks ?? 3),
+        noReplyTicks: Number(raw.noReplyTicks ?? DROPPED_TICKS),
         resendTicks: Number(raw.resendTicks ?? 100),
         cueDir: typeof raw.cueDir === 'string' ? raw.cueDir : cueDir(env)
     };
@@ -527,40 +527,9 @@ export class AnvilHelper {
         this.publish();
     }
 
-    private requestUntilOpen(): Promise<Opened> {
-        const { ctx, o } = this;
-        return new Promise(resolve => {
-            let rc = newRequestCtx();
-            let landedTick: number | null = null;
-            let lastTick = -1;
-            let unseen = 0;
-            const finish = (ok: boolean, reason?: string) => {
-                unsub();
-                clearInterval(guard);
-                resolve({ ok, landedTick, sends: rc.sends, bounces: rc.bounces, ...(reason ? { reason } : {}) });
-            };
-            const onFrame = (st: BotWorldState) => {
-                if (st.tick === lastTick && !tradeOf(st).isOpen) return;
-                const fresh = st.tick !== lastTick;
-                lastTick = st.tick;
-                if (this.cue?.stop) return finish(false, 'cue stop');
-                const receiver = this.receiverInSight();
-                if (!receiver && !tradeOf(st).isOpen) {
-                    if (fresh && ++unseen > 10) return finish(false, 'receiver left sight');
-                    return;
-                }
-                unseen = 0;
-                const d = decideRequest(st, rc, o);
-                if (!rc.landed && d.next.landed) landedTick = st.tick;
-                rc = d.next;
-                if (d.action === 'open') return finish(true);
-                if (d.action === 'send') void ctx.sdk.sendTradeRequest(receiver!.index);
-            };
-            const unsub = ctx.sdk.onStateUpdate(onFrame);
-            const guard = setInterval(() => ctx.signal.aborted && finish(false, 'aborted'), 500);
-            const cur = this.s;
-            if (cur) onFrame(cur);
-        });
+    private async requestUntilOpen(): Promise<Opened> {
+        const r = await requestUntilOpen(this.ctx, this.o, { receiver: () => this.receiverInSight(), stopped: () => !!this.cue?.stop, log: () => {} });
+        return { ok: r.ok, landedTick: r.landedTick >= 0 ? r.landedTick : null, sends: r.sends, bounces: r.bounces, ...(r.reason ? { reason: r.reason } : {}) };
     }
 
     /** Lab: make the inventory exact with staff commands, on the tile. */

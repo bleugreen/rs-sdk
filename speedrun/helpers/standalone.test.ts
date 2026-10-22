@@ -233,15 +233,27 @@ describe('waitWhileListed', () => {
         const answers = [true, true, true, false];
         let waits = 0;
         const r = await waitWhileListed(async () => answers.shift()!, { maxMs: 60_000, everyMs: 5000, stopped: () => false, onWait: () => waits++, ...c });
-        expect(r).toEqual({ result: 'absent', waitedMs: 15_000 });
+        expect(r).toEqual({ result: 'absent', waitedMs: 15_000, waited: true });
         expect(waits).toBe(1);
     });
     test('not listed, or no answer: no wait at all', async () => {
-        expect(await waitWhileListed(async () => false, { maxMs: 60_000, everyMs: 5000, stopped: () => false, ...clock() })).toEqual({ result: 'absent', waitedMs: 0 });
-        expect(await waitWhileListed(async () => null, { maxMs: 60_000, everyMs: 5000, stopped: () => false, ...clock() })).toEqual({ result: 'unknown', waitedMs: 0 });
+        expect(await waitWhileListed(async () => false, { maxMs: 60_000, everyMs: 5000, stopped: () => false, ...clock() })).toEqual({ result: 'absent', waitedMs: 0, waited: false });
+        expect(await waitWhileListed(async () => null, { maxMs: 60_000, everyMs: 5000, stopped: () => false, ...clock() })).toEqual({ result: 'unknown', waitedMs: 0, waited: false });
+    });
+    test('a check that takes time is not a wait: never listed means waited false, whatever waitedMs says', async () => {
+        // the launcher logged "left the world after 1s" for accounts that were never listed: /playerpositions took 1 s to answer
+        const c = clock();
+        let waits = 0;
+        const slowCheck = async () => {
+            await c.pause(1200);
+            return false;
+        };
+        const r = await waitWhileListed(slowCheck, { maxMs: 60_000, everyMs: 5000, stopped: () => false, onWait: () => waits++, ...c });
+        expect(r).toEqual({ result: 'absent', waitedMs: 1200, waited: false });
+        expect(waits).toBe(0);
     });
     test('bounded: still listed at maxMs gives up; a stop ends the wait', async () => {
-        expect(await waitWhileListed(async () => true, { maxMs: 12_000, everyMs: 5000, stopped: () => false, ...clock() })).toEqual({ result: 'still-listed', waitedMs: 12_000 });
+        expect(await waitWhileListed(async () => true, { maxMs: 12_000, everyMs: 5000, stopped: () => false, ...clock() })).toEqual({ result: 'still-listed', waitedMs: 12_000, waited: true });
         let checks = 0;
         const r = await waitWhileListed(async () => (checks++, true), { maxMs: 60_000, everyMs: 5000, stopped: () => checks >= 2, ...clock() });
         expect(r.result).toBe('stopped');

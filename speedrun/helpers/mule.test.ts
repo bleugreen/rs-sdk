@@ -2,13 +2,15 @@ import { describe, expect, test } from 'bun:test';
 
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
-import type { BankItem, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
+import type { BankItem, BotWorldState, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
 import { baseState, FakeSdk, flush } from '../lib/fake-sdk';
+import { clickBack, newClickCtx, RESEND_TICKS, type ClickCtx } from '../lib/trade';
 import {
     accountMatches,
     canonName,
     countById,
     courierPicks,
+    decidePreRequest,
     firstSlotPerId,
     giveOpenTrade,
     holds,
@@ -17,6 +19,7 @@ import {
     planPackage,
     playerPattern,
     sameItems,
+    stagedExactly,
     toRegExps,
     type Package
 } from './mule';
@@ -159,5 +162,56 @@ describe('giveOpenTrade: the two-way swap (lib/trade.ts give with ANY_OFFER)', (
         const r = await giveOpenTrade(sdk as unknown as BotSDK, {} as BotActions, 'cairn_h05', kit);
         expect(r.success).toBe(false);
         expect(sdk.sent).toEqual([]);
+    });
+});
+
+describe('pre-request (lib/trade.ts decideTradeClick)', () => {
+    const SCORED = { index: 9, name: 'Cairn Scored', combatLevel: 3, x: 0, z: 0, distance: 4 };
+    const open: TradeState = { isOpen: true, screen: 'offer', partner: 'Cairn Scored', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false };
+    const f = (tick: number, extra: Partial<BotWorldState> = {}) => baseState({ tick, nearbyPlayers: [SCORED], ...extra } as Partial<BotWorldState>);
+    /** Frames through decidePreRequest; each click's result comes back at once. Returns the ticks a request went out on. */
+    function run(frames: BotWorldState[], ready = true, click: ClickCtx = newClickCtx()): number[] {
+        const sent: number[] = [];
+        for (const s of frames) {
+            const d = decidePreRequest(s, click, 'cairn_scored', ready);
+            click = d.next;
+            if (d.send !== undefined) {
+                expect(d.send).toBe(9);
+                sent.push(s.tick);
+                click = clickBack(click, click.sentTick, s.tick);
+            }
+        }
+        return sent;
+    }
+
+    test('an open trade is never followed by a request, however long it stays open', () => {
+        const frames = [f(10), ...Array.from({ length: 60 }, (_, i) => f(11 + i, { trade: open }))];
+        expect(run(frames)).toEqual([10]);
+    });
+
+    test('a standing request is re-sent on observed ticks (RESEND_TICKS), not wall clock', () => {
+        // the server answers each request "Sending trade offer..." on the tick after it
+        const sent = (tick: number) => ({ type: 0, text: 'Sending trade offer...', sender: '', tick, fromSelf: false });
+        const second = 10 + RESEND_TICKS;
+        const frames = Array.from({ length: 2 * RESEND_TICKS + 1 }, (_, i) => f(10 + i, { gameMessages: [...(i >= 1 ? [sent(11)] : []), ...(10 + i > second ? [sent(second + 1)] : [])] }));
+        expect(run(frames)).toEqual([10, second, second + RESEND_TICKS]);
+    });
+
+    test('no request while a click is pending, while no package is ready, or with the scored account beyond 12 tiles', () => {
+        const pending = { ...newClickCtx(), sentTick: 10, backTick: -1, sends: 1 };
+        expect(run([f(11), f(12), f(30)], true, pending)).toEqual([]);
+        expect(run([f(10), f(11)], false)).toEqual([]);
+        expect(run([f(10, { nearbyPlayers: [{ ...SCORED, distance: 13 }] } as Partial<BotWorldState>)])).toEqual([]);
+    });
+});
+
+describe('staging: the giver serves only exactly the package', () => {
+    const held = countById([{ id: 1637, count: 20 }]);
+    test('anything extra, anything short, or nothing staged is refused', () => {
+        const rings = Array.from({ length: 20 }, (_, i) => ({ slot: i, id: 1637, name: 'Sapphire ring', count: 1, optionsWithIndex: [] }));
+        expect(stagedExactly(rings, held)).toMatchObject({ exact: true });
+        expect(stagedExactly([...rings, { slot: 20, id: 1511, name: 'Logs', count: 1, optionsWithIndex: [] }], held)).toMatchObject({ exact: false, extra: ['Logs x1'] });
+        expect(stagedExactly(rings.slice(1), held)).toMatchObject({ exact: false, short: [1637] });
+        expect(stagedExactly(rings, null).exact).toBe(false);
     });
 });

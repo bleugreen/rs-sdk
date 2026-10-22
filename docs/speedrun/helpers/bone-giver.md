@@ -12,9 +12,17 @@ the scored account its dragon bones in two places (SUPPLIES.md, H4.1-H4.16 and H
   offers the load in one press (`lib/trade.ts give`). 16 loads, 355 bones.
 - **S18, mode `on-request`.** The scored account requests at a stun offset of its choosing and
   sizes the load then (15-21). It writes the size to `bones-ask.json` in the cue directory
-  (`writeBoneAsk`) and clicks trade on the giver. The giver stays within `follow` (3) tiles,
-  answers the request on the frame that carries it, offers exactly the asked count in one press,
-  and refills to `hold` (28) when it holds fewer than `refillBelow` (21).
+  (`writeBoneAsk`) and clicks trade on the giver. The giver holds a side tile of the scored
+  account, re-stepping whenever it moves, answers the request on the frame that carries it, offers
+  exactly the asked count in one press, and refills to `hold` (28) when it holds fewer than
+  `refillBelow` (21).
+- **Why a side tile (S18).** An op on a player reaches it only from a side: the engine uses
+  rsmod's rectangle reach (`GameMap.reachedEntity`), which a diagonal corner does not satisfy, and
+  a stunned account cannot step round to it. So a request between the stunned scored account and a
+  giver on a corner, or 2-3 tiles away, goes nowhere and draws no message. rs/279's lab stand-in
+  lost 6 of 17 due top-ups that way while it held Chebyshev distance 1 (`lab/measure-thieving.ts`).
+  The giver picks the nearest of the four orthogonal tiles that no NPC stands on, so never the
+  knight's (`sideTiles`); a side the walk cannot reach falls through to the next.
 
 The receiver is never named: it is whoever in sight matches the receiver hash in the cue
 directory's `cue.json` (`altar-cue.ts`), which the scored side writes at login. The giver
@@ -29,9 +37,16 @@ offer...", and the request stands: the giver's `%tradepartner` and the target's
 `%tradestatus = received` stay set until a trade opens or closes. So the giver answers a
 refusal on the frame that carries it (the re-send lands on the next tick) and never re-sends a
 request that landed, except after `resendTicks` (100) without a trade, in case the scored
-account relogged. `decideRequest` holds that rule and is unit-tested
-(`bone-giver.test.ts`). `lib/trade.ts give` on its own re-requests only every 8 s: that is
-where rs/105's three 30-tick trades came from (`research/bones-placement.md` section 3).
+account relogged.
+
+When a click may go out is `lib/trade.ts`'s one rule for every trade click (`decideTradeClick`,
+through `openTrade`; its header comment carries the engine facts), which `requestUntilOpen`
+calls: never while the trade is open or the last click's action result is still pending, and a
+click that drew no answer is re-sent `noReplyTicks` (2) frames after its result came back. A
+re-click sent sooner can land on the trade the first one opened and close it: on rs/197's demo
+the old rule here re-sent about a tick after a click that had opened the trade, counting from
+the send while the relay still held the click. Rs/105's three 30-tick trades came from the old
+8 s re-request in `lib/trade.ts` (`research/bones-placement.md` section 3).
 
 ## Options (`ROLE_OPTIONS`)
 
@@ -42,8 +57,8 @@ where rs/105's three 30-tick trades came from (`research/bones-placement.md` sec
 | `sites` | S07's oak then willow | `[{ giver, receiver }]` tiles in run order; the giver moves on when the receiver is not in sight within `siteWaitTicks` (30). Required for `on-request` (where to wait) |
 | `trades` | no limit | stop after this many trades (else when the cue says stop) |
 | `restock` | `{ kind: 'bank', bank: Falador west }` | `cheat` makes the bones with a staff command (lab only) |
-| `noReplyTicks`, `resendTicks` | 3, 100 | re-send with no answer; refresh a standing request |
-| `hold`, `refillBelow`, `follow` | 28, 21, 3 | `on-request` only |
+| `noReplyTicks`, `resendTicks` | 2, 100 | re-send with no answer (frames after the click's action result); refresh a standing request |
+| `hold`, `refillBelow` | 28, 21 | `on-request` only |
 
 ## Measured (local engine, `NODE_TICKRATE=300`, bgsrv-ub, 2026-10-21 12:55-13:10 PDT)
 

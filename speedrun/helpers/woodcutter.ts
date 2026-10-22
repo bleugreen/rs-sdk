@@ -41,7 +41,7 @@
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
-import { cheb, CROSSING_HITPOINTS, crossingSettings, inKandarin, TAVERLEY, trainHitpointsOnCows, travel, type Pt, type Traveller } from '../lib/kandarin';
+import { cheb, CROSSING_HITPOINTS, crossingSettings, inKandarin, restForCrossing, TAVERLEY, trainHitpointsOnCows, travel, type Pt, type Traveller } from '../lib/kandarin';
 import type { Role, RoleContext } from './role';
 import { runStandalone } from './role';
 
@@ -445,6 +445,7 @@ class Woodcutter {
         const coins = this.sdk.countInventoryItems(COINS);
         this.ctx.log('axe upgrade: walking to Bob', { coins, price, sold: plan });
         if (coins < price) return; // the coins and leftover logs are banked on the next cycle
+        await restForCrossing(this.traveller);
         await this.travel(TAVERLEY, 4, 'Taverley', 300_000);
     }
 
@@ -490,6 +491,7 @@ class Woodcutter {
         if (!this.heldAxe()) throw new Error('no axe after visiting Bob');
         this.setPhase('trek');
         this.ctx.log('trek to Seers', { from: this.pos(), axe: this.heldAxe()!.name });
+        await restForCrossing(this.traveller);
         await this.travel(TAVERLEY, 4, 'Taverley', 300_000);
         await this.travel(BANKS.seers, 3, "Seers' bank", 300_000);
         this.ctx.log('arrived at Seers', { ticks: this.tick() - t0, hitpoints: this.sdk.getSkill('Hitpoints')?.level });
@@ -506,6 +508,7 @@ class Woodcutter {
         if (this.heldAxe()) return;
         if (this.sdk.countInventoryItems(COINS) < 16) throw new Error('no axe in pack, equipment or bank, and under 16 coins');
         this.ctx.log('no axe: walking back to Bob');
+        await restForCrossing(this.traveller);
         await this.travel(TAVERLEY, 4, 'Taverley', 300_000);
         await this.visitBob();
     }

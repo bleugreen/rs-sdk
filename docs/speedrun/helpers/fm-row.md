@@ -61,7 +61,8 @@ log that disappears without a fire (taken or despawned) is logged as `lost`. It 
 because a replacement would be private for another 100 ticks.
 
 On a restart mid-row the role resumes after the last own log it still sees lying on its tile
-(`resumeCursor`) and relearns the frontier from the fires.
+(`resumeCursor`) and relearns the frontier from the fires. A `held` dropper that still carries
+its whole load has dropped nothing, so it always starts fresh (below).
 
 ## Starting
 
@@ -70,7 +71,7 @@ On a restart mid-row the role resumes after the last own log it still sees lying
 | start | Fires when | Use |
 |---|---|---|
 | `sighted` (default) | SCORED is within `sightRange` (15), by `scoredSha256` (`altar-cue.ts` nameHash) or the cue's receiver hash | the lab; or a run where SCORED waits out the first ~100 ticks at the row, logged out (firemaking.md section 6) |
-| `cue` | `<cueDir>/fm-row-go.json` (`{v:1, ms}`) is written | the run machine: the run script writes it about 105 ticks before SCORED reaches the row |
+| `cue` | `<cueDir>/fm-row-go.json` (`{v:1, ms, tickMs?}`) is written | the run machine: the run script writes it about 105 ticks before SCORED reaches the row |
 | `now` | at once | manual runs |
 
 The run cannot simply trigger on sight at the coop. S02 (Wind Strike at the coop) is 18 ticks
@@ -118,14 +119,53 @@ by default, and with all of them off the dropper behaves exactly as above.
     An own log counts on the tile it was actually dropped on, by a fire first seen at or after
     the drop. Another part's log, which we cannot see, counts by the first fresh fire from the
     slot after the last lit log's fire to the end of its block (`advanceFresh`).
+  - *The last lap's fire.* A log goes down about 105 ticks before it is lit, so on a lapped
+    row its tile's fire from the previous lap is often still burning at the drop: on a 51-tile
+    lap (204 ticks) that fire is about 100 ticks old, and fires burn 100-199 ticks
+    (`firemaking.rs2`: `100 + random(100)`). Counting it as occupied would skip nearly every
+    tile from lap 2 on and fill the blocks. So a fire the dropper saw appear at tick F (a fresh
+    fire in `FireLedger`) does not block a log whose need tick is F + 200 or later
+    (`fireOutBy`, `FIRE_OUT_TICKS`): it is out before the light can land. The need tick is a
+    lower bound on the light, so this never drops on a fire that can still be burning. A fire
+    already burning when the dropper first saw its tile may be any age and still blocks. A fire
+    tile does not block walking (`blockwalk=no`), so the dropper can stand on it to drop. The
+    rule only helps a dropper that was watching its tiles when the previous lap lit them, so on
+    a lapped row a staggered dropper should be dropping (logged in, cue seen) about a lap
+    before its first log is due. If it arrives later, those first tiles read occupied and skip.
+  - *Spares shorten revisits.* A tile's next log comes round after one lap of logs, minus the
+    empty spares in between. Under 50 logs (200 ticks) the lighter can reach a tile whose last
+    fire still burns. On rs/228's 51-tile lap with `spareTiles` 2, some tiles come round in 47
+    logs (188 ticks). Use `spareTiles` 0 on a 51-tile lap, or 1 on a 53-tile lap, which keeps
+    every revisit at 51 logs or more. `shortestRevisit(plannedTiles(...))` computes it, and the
+    role logs `warning: a tile comes round before its last fire is surely out` at start when
+    it is under 50.
 - **`restock: {kind:'held'}`**: the dropper logs in already carrying its one inventory and never
   restocks. At start it checks the load (spares on top are fine) and throws if it is short. It
   refuses a part that owns more than one inventory, which means `parts` must be 6 for the
-  route's 157 logs. `restockTicks` defaults to 0.
+  route's 157 logs. `restockTicks` defaults to 0. At login, a held dropper that still carries
+  its whole load takes the fresh start (held check, `armed`, trigger, `cue`, catch-up) whatever
+  lies on its tiles. On a lapped row those tiles are shared with earlier inventories, and the
+  logs lying there are other droppers' drops, which `resumeCursor` would otherwise read as its
+  own (rs/228's lab: a late dropper printed `resume cursor 9` and dropped nothing).
 - **`cueAt: 'written'`** (with `start: 'cue'`; the default is `'seen'`): a dropper that logs in
   after the go file was written counts from the file's `ms`, not from the tick it sees it.
-  `start = tick_now - round((Date.now() - ms) / tickMs) + 1 + reveal + lead` (`cueTick`), with
-  `tickMs` from `lib/wait.ts` `tickMs()` (`SPEEDRUN_TICK_MS`, else `NODE_TICKRATE`).
+  `start = tick_seen - round((ms_seen - ms) / period) + 1 + reveal + lead` (`cueTick`).
+  - *The period is observed, not nominal* (rs/158: cue-timed actions run on observed ticks). The
+    demo has run at 340-370 ms a tick, and counting 0.35 s ticks at a nominal 300 places the cue
+    about 15% of the elapsed time too early, so a late dropper runs ahead of the row. From the
+    moment the role starts, the dropper times every new tick it sees (`lib/wait.ts`
+    `tickPeriod`, counting ticks with `tickClock`), and `period` is their wall-clock span over
+    the ticks counted, for the last 60 s. Under 20 s of ticks it falls back to the go file's
+    `tickMs` (the writer's own observed period, if it wrote one), and then to the nominal
+    `tickMs` option (`tickMs()`: `SPEEDRUN_TICK_MS`, else `NODE_TICKRATE`, else 300). A measured
+    period is held to 250-600 ms (`cuePeriod`). A writer should record its period:
+    `{v:1, ms, tickMs: period.msPerTick(20_000)}`, leaving `tickMs` out when that is null.
+  - *Placed again once observed.* A held dropper logs in at the row and reaches its trigger in a
+    few seconds, before it has 20 s of ticks, so it places the cue on a fallback period. It keeps
+    the moment it saw the go file (tick and wall time), and once 20 s of ticks are in it places
+    the cue again from that moment at the observed period, moving `start` (`cue: refined`, then
+    `start` with `was`). A nominal period faster than the server's places the cue early, so until
+    then the dropper paces early, not late.
   - *Catch-up.* A correct `start` alone is not enough for a late dropper. By the time it arms,
     the fires from log 0 on are burnt out, so `advance` never leaves log 0, and `needTick`
     slides with the clock, putting dropper k's first log about 4 x 28k ticks late. So under
@@ -140,10 +180,11 @@ by default, and with all of them off the dropper behaves exactly as above.
 |---|---|---|
 | `row` | `{x:3019, z:3362, len:27, rows:2}` | the snake (firemaking-line.ts `--row`/`--rows`). The default is the confirmed Falador east lab row; the run's row beside the coop (SUPPLIES.md H2) is unconfirmed |
 | `tiles` | none | `[[x,z],...]` in place of `row`, cycled (above) |
+| `logs` | the route's 157 (`S03_LOGS`) | `[{obj, n}, ...]` in lighting order, each `obj` one of the route's tiers and `n` >= 1, e.g. `[{obj:'logs', n:20}]` for entry 16's demo row of normal logs; a part that owns none of the list's inventories is refused |
 | `part`, `parts` | 0, 1 | this dropper's share of the inventories |
 | `skipOccupied`, `spareTiles` | false; 2 with parts > 1, else 0 | above |
 | `start`, `scoredSha256`, `sightRange` | `sighted`, none, 15 | above. The hash, never the name |
-| `cueAt`, `tickMs` | `seen`; `lib/wait.ts` `tickMs()` | above |
+| `cueAt`, `tickMs` | `seen`; `lib/wait.ts` `tickMs()` | above. `tickMs` is only `written`'s last fallback |
 | `restock` | `{kind:'bank', bank: Falador east (3013,3357)}` | `cheat` (::give) for the local lab only; `held` above |
 | `lead` | 4 | ticks a log is public before SCORED's earliest want of it |
 | `restockTicks` | cheat 6; held 0; bank: distance from the first tile + 20 | a restock's round trip, last drop to next drop |
@@ -155,7 +196,10 @@ Log lines: `phase` (restock, armed, dropping), `start`, `drop` (`i`, tier, tick,
 need, lit; `early` if it went down more than 100 ticks before its need; `slot` and `tile` with
 `skipOccupied`), `progress` every 10 lit, `lost`, `restocked` (ticks), `fm-row: finished`. The
 opt-ins add `skip` and `skip: block full` (i, from, to), `held` (the load checked), `cue`
-(seenTick, writtenMs, cueTick) and `catch-up` (lit, slot).
+(seenTick, seenMs, writtenMs, cueTick; `tickMs` used and `tickMsFrom` observed, cue or nominal,
+beside `observedTickMs`, `writerTickMs` and `nominalTickMs`), `cue: refined` (the same, on the
+observed period) and `catch-up` (lit, slot). A layout whose shortest revisit is
+under 50 logs logs `warning: a tile comes round before its last fire is surely out`.
 
 ## Lab acceptance
 
@@ -196,6 +240,20 @@ Where each number comes from:
 - **Log 0's wait** is the private window itself. SCORED came to the row as dropping began. On the
   run that wait is either spent logged out or avoided by a `cue` start (above).
 
+### `cueAt: 'written'` on a slow tick
+
+```
+NODE_TICKRATE=350 LAB_HELPERS=rs274d speedrun/lab/lab.sh rs274w speedrun/lab/fm-row-cue.ts:--dropper=rs274d
+```
+
+`lab/fm-row-cue.ts` (rs/274): the engine ticks at 350 ms and the dropper is told `tickMs: 300`, as
+on a slow demo minute. The lab's own client writes the go file and times its ticks, which gives
+the cue's true tick in the dropper's numbering. bgsrv-mac, 2026-10-21: the dropper saw the go file
+35.0 s after it was written, 100 true ticks later. It reached its trigger 4 s after starting,
+before it had 20 s of ticks, and placed the cue on the nominal 300 ms, **17 ticks early**. That is
+the fault this fixes, and the case `cue: refined` is for. 16.5 s later it placed the cue again on
+its observed 350.7 ms, **on the true tick**. The writer observed 351.2 ms.
+
 ## Not done yet
 
 - **The run's row.** SUPPLIES.md H2 puts it beside the Lumbridge chicken coop. No row there has
@@ -203,11 +261,18 @@ Where each number comes from:
 - **Bank restock** is written (Falador east by default; `withdrawMany` of the inventory's tiers)
   but untested; the lab restocked by `::give`. Measure a trip from the chosen row, and set
   `restockTicks` and `parts` from `maxRestockTicks`.
-- **The opt-ins are unit-tested only.** No lab run has exercised `skipOccupied`, `held` or
-  `cueAt: 'written'` with its catch-up against a server yet. rs/228 labs them first.
+- **`skipOccupied` is unit-tested only.** rs/228's lab run 1 (51-tile lap, six held droppers,
+  `cueAt: 'written'`, staggered logins) exercised `held`, the written cue and catch-up: droppers
+  0-3 dropped 112 logs and all 112 were lit. It found the two faults fixed above (a late held
+  dropper's resume, and the last lap's fire). No lab run has had `skipOccupied` on yet.
 - **Restart with `skipOccupied`** resumes by the planned tiles (`resumeCursor`), so after skips in
-  the current block it can be off by up to `spareTiles` logs. A held dropper's lab plan does not
-  restart mid-row.
+  the current block it can be off by up to `spareTiles` logs.
+- **A held dropper restarting mid-row** (it carries part of its load) still resumes from the
+  logs it sees on its tiles, and on a lapped row those can be other droppers' logs. Logs it
+  carries as spares hide up to that many of its own drops, so it reads as not started.
+- **The fire-age rule trusts continuous watching.** The ledger records a fire on its tiles in
+  view, each tick. If a tile is out of view while its fire burns out and a new one is lit, the
+  new fire inherits the old one's tick and reads as out too early.
 - **Catch-up trusts a burning pair.** Two foreign fires on consecutive planned tiles, within
   SCORED's reach on schedule, would put the frontier too far on, and logs would turn public early.
 - **Demo.** No demo run, and no demo credentials for `cairn_f01`/`f02` yet (they would go in
