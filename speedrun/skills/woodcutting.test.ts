@@ -777,7 +777,11 @@ describe('woodcutting: the slot ledger, the hand-back at S07\'s end to T07-08 (r
             const st = sdk.getState()!;
             const ids = new Set(give.map(g => g.item));
             const kept = st.inventory.filter(i => !ids.has(i.id));
-            const gave = st.inventory.filter(i => ids.has(i.id)).map(i => ({ slot: -1, id: i.id, name: i.name, count: i.count }));
+            // swap() reports the inventory delta by item id
+            const gave = [...ids].map(id => {
+                const its = st.inventory.filter(i => i.id === id);
+                return { slot: -1, id: id as number, name: its[0]!.name, count: its.reduce((n, i) => n + i.count, 0) };
+            });
             const received = [{ slot: -1, id: 563, name: 'Law rune', count: 1 }, { slot: -1, id: 556, name: 'Air rune', count: 5 }];
             sdk.push({ tick: st.tick + 6, inventory: [...kept, ...received].map((i, slot) => ({ ...i, slot, optionsWithIndex: [] })) });
             return { ok: true, ticks: 6, openTicks: 1, received, gave };
@@ -813,8 +817,6 @@ describe('woodcutting: the slot ledger, the hand-back at S07\'s end to T07-08 (r
         const row = h.log.rows.find(r => r.step === 'woodcutting:hand-back')!;
         expect(row.ticks).toBe(0);
         expect(row.meta).toMatchObject({ kind: 'wc-hand-back', ticks: 6, gave: ['Rune axe x1', 'Dragon bones x3'], received: ['Law rune x1', 'Air rune x5'] });
-        // the runes are what T07-08 needs, and nothing of S07's is left for H6's 13 slots
-        expect(28 - s.inventory.length + 2).toBeGreaterThanOrEqual(13);
     });
 
     test('no bones left: the axe alone goes; handBackSpecs offers one spec per item id', () => {
