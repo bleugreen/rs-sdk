@@ -359,6 +359,56 @@ describe('pickpocket', () => {
             const { h, clicks } = run({});
             expect(h.status.counters.retargets).toBeUndefined();
             expect(clicks.every(i => i === 12)).toBe(true);
+            expect(h.status.gauges.target).toBeUndefined();
+        });
+    });
+
+    describe('prefer', () => {
+        // 12 nearest and 14 next, neither reachable; 13 farthest and reachable
+        const npcs = [
+            { index: 13, name: 'Man', options: ['Talk-to', 'Pickpocket'], x: 3204, z: 3200 },
+            { index: 14, name: 'Man', options: ['Talk-to', 'Pickpocket'], x: 3202, z: 3200 },
+            { index: 12, name: 'Man', options: ['Talk-to', 'Pickpocket'], x: 3201, z: 3200 }
+        ];
+        const run = (params: Record<string, unknown>) => {
+            const h = new Harness('pp', createPickpocket);
+            h.start('pp', { rolls: 1, npc: '^Man$', retargetTicks: 12, ...params }, makeState({ tick: 1, npcs }));
+            const msgs: Array<{ text: string; id: number }> = [];
+            let pending: number | undefined;
+            const targets: number[] = [];
+            for (let t = 2; t < 40 && h.status.phase === 'running'; t++) {
+                if (pending === 13) msgs.push({ text: "You pick the man's pocket.", id: t });
+                const sent = h.step(makeState({ tick: t, npcs, messages: msgs }));
+                pending = (sent.find(s => s.action.type === 'interactNpc')?.action as { npcIndex?: number } | undefined)?.npcIndex;
+                const g = h.status.gauges.target;
+                if (g !== undefined && g !== targets[targets.length - 1]) targets.push(g);
+            }
+            return { h, targets, clicks: h.sent.filter(s => s.action.type === 'interactNpc').map(s => (s.action as { npcIndex: number }).npcIndex) };
+        };
+
+        test('the first listed index is the target, over a nearer one', () => {
+            const { h, clicks, targets } = run({ prefer: [13, 12] });
+            expect(h.status.phase).toBe('done');
+            expect(h.status.counters.retargets).toBeUndefined();
+            expect(clicks.every(i => i === 13)).toBe(true);
+            expect(targets).toEqual([13]);
+        });
+
+        test('a retarget goes to the next listed index, not the next nearest', () => {
+            const { h, clicks, targets } = run({ prefer: [12, 13] });
+            expect(h.status.phase).toBe('done');
+            expect(h.status.counters.retargets).toBe(1);
+            expect(clicks.slice(0, 13).every(i => i === 12)).toBe(true);
+            expect(clicks).not.toContain(14);
+            expect(clicks[clicks.length - 1]).toBe(13);
+            expect(targets).toEqual([12, 13]);
+        });
+
+        test('listed indices out of sight fall back to the nearest; a bad list is refused', () => {
+            const { clicks } = run({ prefer: [99], rolls: 1, maxTicks: 6 });
+            expect(clicks[0]).toBe(12);
+            expect(() => createPickpocket({ rolls: 1, prefer: [1.5] })).toThrow('prefer must be a list of npc indices');
+            expect(() => createPickpocket({ rolls: 1, prefer: 3 })).toThrow('prefer must be a list of npc indices');
         });
     });
 

@@ -21,7 +21,7 @@ import { Spells } from '../../sdk/spells';
 import { parseIn } from '../tools/slot-ledger';
 import { xpForLevel } from '../lib/xp';
 import {
-    ARDOUGNE_SOUTH_BANK, ARROWHEAD_TIERS, BANDS, bonesTopUpAction, chargeSipPotion, type ChargeSip, DROP_BARS, eatPolicy, FOODS, foodPattern, oreTopUpAction, packReport, parseStunPack, RETALK_QUIET_TICKS, retalkDue, steps, STUN_PACK_ACTIONS, STUN_PACK_BONES_BELOW,
+    ARDOUGNE_SOUTH_BANK, ARROWHEAD_TIERS, BANDS, bonesTopUpAction, chargeSipPotion, type ChargeSip, chooseKnight, DROP_BARS, type KnightChoice, parseKnight, eatPolicy, FOODS, foodPattern, oreTopUpAction, packReport, parseStunPack, RETALK_QUIET_TICKS, retalkDue, steps, STUN_PACK_ACTIONS, STUN_PACK_BONES_BELOW,
     stunActionsFor, stunPackCheck, SUPERHEAT_BRONZE_CASTS, SUPERHEAT_SPELL, superheatActions, superheatLoad, TOPUP_RESTART_BY, topUpAction, topUpAsk, TopUpAsker, topUpDue, TopUpReceiver
 } from './thieving';
 
@@ -1172,5 +1172,120 @@ describe('thieving: the superheat top-up', () => {
         await done;
         const meta = ctx.log.rows.find(r => r.step === 'thieving:knights:detail')!.meta as { pack: ReturnType<typeof packReport> };
         expect(meta.pack).toMatchObject({ superheat: { casts: 2, oreBelow: 2 }, superheats: 140, barDrops: 139, clickSkips: 140, charges: 163, buried: 0, topUpRequests: 11, xp: { smithing: 41860 }, levels: { smithing: [1, 53] } });
+    });
+});
+
+// ------------------------------------------------------------------ knight choice
+
+describe('thieving: the knight choice', () => {
+    // A is the nearer knight (2 tiles from the account), B the farther (4); the page lists B first
+    const A = { index: 21, x: 2669, z: 3303 };
+    const B = { index: 22, x: 2671, z: 3309 };
+    const KNIGHT = /^Knight of Ardougne$/i;
+    const cheb = (x: number, z: number) => Math.max(Math.abs(x - KNIGHTS_AT.x), Math.abs(z - KNIGHTS_AT.z));
+    const knight = (k: typeof A) => ({ kind: 'npc', index: k.index, name: 'Knight of Ardougne', x: k.x, z: k.z, distance: cheb(k.x, k.z), optionsWithIndex: [{ text: 'Pickpocket', opIndex: 3 }] });
+    function knightWorld(players: Array<[string, number, number]>, inventory: InventoryItem[] = [item(0, 'Shark'), item(1, 'Shark')]): BotWorldState {
+        const s = world({ level: 57, ...KNIGHTS_AT, maxHp: 40, inventory });
+        return {
+            ...s,
+            nearbyNpcs: [knight(B), knight(A)],
+            nearbyPlayers: players.map(([name, x, z], i) => ({ kind: 'player', index: 30 + i, name, combatLevel: 99, x, z, distance: cheb(x, z) }))
+        } as never as BotWorldState;
+    }
+    // two rivals next to A (one diagonal), one on A's own tile and one two tiles from B: neither of those counts
+    const CROWD_ON_A: Array<[string, number, number]> = [['zalpha', 2670, 3304], ['zbravo', 2668, 3303], ['zcharlie', 2669, 3303], ['zdelta', 2673, 3309]];
+    const UNCROWDED = { knight: { prefer: 'uncrowded' as const } };
+
+    test('off by default, and prefer nearest is off: no prefer param and no knight row', async () => {
+        const s = knightWorld(CROWD_ON_A);
+        const off = await knightsParams({ food: 'shark' }, s);
+        expect(off).not.toHaveProperty('prefer');
+        expect(await knightsParams({ food: 'shark', knight: { prefer: 'nearest' } }, s)).toEqual(off);
+        expect(await knightsParams({ food: 'shark', knight: {} }, s)).toEqual(off);
+
+        const sdk = new PageSdk(s);
+        sdk.ending = [levelTo(99)];
+        const { ctx } = harness(sdk);
+        await steps({ food: 'shark' }).find(x => x.name === 'thieving:knights')!.run(ctx);
+        expect(ctx.log.rows.find(r => r.step === 'thieving:knights:detail')!.meta).not.toHaveProperty('knight');
+    });
+
+    test('a crowded knight A and an empty knight B: B is chosen and A is the retarget', async () => {
+        expect(chooseKnight(knightWorld(CROWD_ON_A), KNIGHT, [])).toEqual({
+            candidates: [{ index: 21, x: 2669, z: 3303, distance: 2, players: 2 }, { index: 22, x: 2671, z: 3309, distance: 4, players: 0 }],
+            chosen: 22, retarget: 21
+        });
+        const sdk = new PageSdk(knightWorld(CROWD_ON_A));
+        sdk.ending = [levelTo(99)];
+        const { ctx } = harness(sdk);
+        await steps({ food: 'shark', ...UNCROWDED }).find(x => x.name === 'thieving:knights')!.run(ctx);
+        expect(sdk.starts[0]).toMatchObject({ prefer: [22, 21], retargetTicks: 12 });
+        const meta = ctx.log.rows.find(r => r.step === 'thieving:knights:detail')!.meta as { knight: { prefer: string; choices: KnightChoice[] } };
+        expect(meta.knight.prefer).toBe('uncrowded');
+        expect(meta.knight.choices).toEqual([{ tick: 100, why: 'start', candidates: chooseKnight(knightWorld(CROWD_ON_A), KNIGHT, []).candidates, chosen: 22, retarget: 21 }]);
+    });
+
+    test('ties keep the nearest; the account\'s courier and the account itself never count', () => {
+        // one rival next to each knight
+        expect(chooseKnight(knightWorld([['zalpha', 2670, 3304], ['zbravo', 2672, 3310]]), KNIGHT, [])).toMatchObject({ chosen: 21, retarget: 22 });
+        // nobody but the courier next to A, and a player named as the account next to A
+        const s = knightWorld([[GIVER, 2670, 3304], ['t', 2668, 3302]]);
+        expect(chooseKnight(s, KNIGHT, [GIVER])).toMatchObject({ chosen: 21, retarget: 22, candidates: [{ players: 0 }, { players: 0 }] });
+        // without the exclusion the courier would push the choice to B
+        expect(chooseKnight(s, KNIGHT, [])).toMatchObject({ chosen: 22 });
+    });
+
+    test('the band passes the courier as excluded: a courier next to A keeps A', async () => {
+        const s = knightWorld([[GIVER, 2670, 3304]], [item(0, 'Shark')]);
+        const params = await knightsParams({ food: 'shark', topUp: { giver: GIVER, below: 2 }, ...UNCROWDED }, s);
+        expect(params.prefer).toEqual([21, 22]);
+    });
+
+    test('one knight in sight is the only choice; none leaves the program its default', () => {
+        const one = { ...knightWorld(CROWD_ON_A), nearbyNpcs: [knight(A)] } as never as BotWorldState;
+        expect(chooseKnight(one, KNIGHT, [])).toMatchObject({ chosen: 21, retarget: null });
+        expect(chooseKnight({ ...one, nearbyNpcs: [] }, KNIGHT, [])).toEqual({ candidates: [], chosen: null, retarget: null });
+    });
+
+    test('the retarget the program publishes goes to the other knight and is recorded', async () => {
+        const sdk = new ManualPageSdk(knightWorld(CROWD_ON_A));
+        const { ctx } = harness(sdk);
+        const done = steps({ food: 'shark', ...UNCROWDED }).find(x => x.name === 'thieving:knights')!.run(ctx);
+        await settle(() => sdk.starts.length === 1);
+        expect(sdk.starts[0]!.params.prefer).toEqual([22, 21]);
+        sdk.publish({ gauges: { target: 22 } });
+        sdk.publish({ gauges: { target: 22 }, counters: { rolls: 4 } });
+        sdk.publish({ gauges: { target: 21 }, counters: { retargets: 1 } });
+        await flush();
+        sdk.publish({ phase: 'done', result: { reason: 'level' } }, { skills: [{ name: 'Thieving', level: 99, baseLevel: 99, experience: 0 }] as never });
+        await done;
+        const meta = ctx.log.rows.find(r => r.step === 'thieving:knights:detail')!.meta as { knight: { choices: KnightChoice[] } };
+        expect(meta.knight.choices.map(c => [c.why, c.chosen])).toEqual([['start', 22], ['retarget', 21]]);
+        expect(meta.knight.choices[1]!.candidates.map(c => [c.index, c.players])).toEqual([[21, 2], [22, 0]]);
+    });
+
+    test('a restock chooses again on the way back', async () => {
+        const sdk = new PageSdk(knightWorld(CROWD_ON_A, [item(0, 'Coins', { count: 900, eat: false })]));
+        sdk.state = { ...sdk.state!, bank: { isOpen: false, noteMode: false, items: [{ slot: 0, id: 501, name: 'Shark', count: 11 }] } } as BotWorldState;
+        sdk.onSend = (a, s) => {
+            // the crowd has moved to B by the time the account is back
+            if (a.method === 'sendBankWithdraw') s.tick(st => ({ inventory: [...st.inventory, item(1, 'Shark')], nearbyPlayers: [{ kind: 'player', index: 40, name: 'zecho', combatLevel: 99, x: 2672, z: 3310, distance: 5 }] }) as never);
+        };
+        sdk.ending = [() => ({ status: { result: { reason: 'food' } } }), levelTo(99)];
+        const { ctx } = harness(sdk);
+        await steps({ food: 'shark', ...UNCROWDED }).find(x => x.name === 'thieving:knights')!.run(ctx);
+        expect(sdk.starts.map(p => p.prefer)).toEqual([[22, 21], [21, 22]]);
+        const meta = ctx.log.rows.find(r => r.step === 'thieving:knights:detail')!.meta as { knight: { choices: KnightChoice[] } };
+        expect(meta.knight.choices.map(c => [c.why, c.chosen])).toEqual([['start', 22], ['restock', 21]]);
+    });
+
+    test('parseKnight refuses what it does not know', () => {
+        expect(parseKnight(undefined)).toBeUndefined();
+        expect(parseKnight({ prefer: 'nearest' })).toBeUndefined();
+        expect(parseKnight({ prefer: 'uncrowded' })).toBe('uncrowded');
+        expect(() => parseKnight({ prefer: 'emptiest' })).toThrow("knight.prefer must be 'nearest' or 'uncrowded'");
+        expect(() => parseKnight({ prefer: 'uncrowded', radius: 2 })).toThrow("knight has no option 'radius'");
+        expect(() => parseKnight('uncrowded')).toThrow('knight must be');
+        expect(() => steps({ knight: { prefer: 'emptiest' as never } })).toThrow();
     });
 });
