@@ -82,7 +82,7 @@ import { receiveFrom, type WantSpec } from './lib/trade';
 import { tickMs, waitUntil } from './lib/wait';
 import { DROP_STEP, type Link, RESUME_STEP, type ResumeEvent, runResumable, sessionLink } from './runner/resume';
 import { BOUNDARY_STEP, type Step } from './runner/step';
-import { parsePlayer, type PlayerRow, playerPath, PoliteFetcher, TickRateNeeded, worldfeedTickMs } from './tools/hiscore-scrape';
+import { parsePlayer, type PlayerRow, playerPath, PoliteFetcher, withServerRate } from './tools/hiscore-scrape';
 
 // ------------------------------------------------------------------ arguments
 
@@ -1484,22 +1484,12 @@ async function readHiscore(account: string, origin: string, runId: string): Prom
         return null;
     }
     // Rows are written at the clean logout and show about 3 s later (hiscore-timestamps.md).
-    // A seconds-form page states no rate; it is rendered under the server's current one, which the world feed reports.
-    let tickMs: number | undefined;
     for (let attempt = 1; attempt <= 6; attempt++) {
         await Bun.sleep(5_000);
         const fetcher = new PoliteFetcher(join(ROOT, 'speedrun', 'runs', 'hiscore-cache', `rehearse-${runId}-${attempt}`), new Date(), origin);
         try {
             const html = await fetcher.get(playerPath(account));
-            let rows: PlayerRow[] | null;
-            try {
-                rows = parsePlayer(html, tickMs);
-            } catch (e) {
-                if (!(e instanceof TickRateNeeded) || tickMs !== undefined) throw e;
-                tickMs = await worldfeedTickMs(origin);
-                console.log(`[hiscore] seconds-form titles: converting under the world feed's ${tickMs} ms tick`);
-                rows = parsePlayer(html, tickMs);
-            }
+            const rows = await withServerRate(origin, tickMs => parsePlayer(html, tickMs));
             if (rows) return rows;
         } catch (e) {
             console.error(`[hiscore] ${e instanceof Error ? e.message : e}`);

@@ -143,6 +143,19 @@ export async function worldfeedTickMs(origin = BASE_URL, timeoutMs = 10_000): Pr
     });
 }
 
+/**
+ * `parse()`, and again under the world feed's current rate at `origin` if the page is in seconds form: such a
+ * page is rendered under the rate the server runs now, so that rate converts it exactly.
+ */
+export async function withServerRate<T>(origin: string, parse: (tickMs?: number) => T): Promise<T> {
+    try {
+        return parse();
+    } catch (e) {
+        if (!(e instanceof TickRateNeeded)) throw e;
+        return parse(await worldfeedTickMs(origin));
+    }
+}
+
 export interface BoardRow {
     rank: number;
     name: string;

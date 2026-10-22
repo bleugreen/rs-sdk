@@ -10,7 +10,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { parseBoard } from './hiscore-scrape';
+import { parseBoard, withServerRate } from './hiscore-scrape';
 
 const TOOL_DIR = import.meta.dir;
 const REPO_ROOT = resolve(TOOL_DIR, '../..');
@@ -305,12 +305,12 @@ export function matchCommit(commit: CommitInfo, matcher: Matcher): WatchedFile[]
 // Hiscores
 
 /**
- * Row 1 of a ranked board. Name, level and stamp come from hiscore-scrape's parseBoard, which reads either
- * Time title form; `time` is that cell's display text ("2h 59m 34s"). Throws where parseBoard does
- * (columns disagree, a stamp titleTicks rejects); undefined for a page with no board rows.
+ * Row 1 of a ranked board. Name, level and stamp come from hiscore-scrape's parseBoard, which reads every
+ * Time title form (`tickMs` converts the seconds form); `time` is that cell's display text ("2h 59m 34s").
+ * Throws where parseBoard does (columns disagree, a stamp titleTicks rejects); undefined for a page with no rows.
  */
-export function parseHiscoreTop(html: string): HiscoreRecord | undefined {
-    const top = parseBoard(html)[0];
+export function parseHiscoreTop(html: string, tickMs?: number): HiscoreRecord | undefined {
+    const top = parseBoard(html, tickMs)[0];
     const timeColumn = html.indexOf('<b>Time</b>');
     const time = timeColumn < 0 ? undefined : html.slice(timeColumn).match(/<span title="[^"]*"[^>]*>([^<]+)<\/span>/)?.[1];
     if (!top || !time) return undefined;
@@ -330,7 +330,7 @@ export async function fetchHiscoreTop(url: string): Promise<HiscoreFetch> {
     }
     let record: HiscoreRecord | undefined;
     try {
-        record = parseHiscoreTop(html);
+        record = await withServerRate(new URL(url).origin, tickMs => parseHiscoreTop(html, tickMs));
     } catch (err) {
         return { status: 'unparsed', error: err instanceof Error ? err.message : String(err) };
     }

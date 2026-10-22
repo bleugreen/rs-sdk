@@ -105,23 +105,29 @@ describe('diff parsing', () => {
 });
 
 describe('hiscores', () => {
-    const WOODCUTTING = readFileSync(join(import.meta.dir, 'fixtures/hiscore/board-woodcutting-2026-10-22.html'), 'utf8');
+    const board = (name: string) => readFileSync(join(import.meta.dir, 'fixtures/hiscore', name), 'utf8');
+    const SECONDS = board('board-woodcutting-2026-10-22.html');
+    const NORMALIZED = board('board-woodcutting-2026-10-22-400ms.html');
 
-    test('parses row 1 of the saved demo page (old form, N ticks)', () => {
+    test('parses row 1 of the saved demo page (form 1, N ticks)', () => {
         expect(parseHiscoreTop(FIXTURE)).toEqual(FIXTURE_TOP);
     });
 
-    test('parses row 1 of a new-form board (demo, 2026-10-22: S seconds of game time)', () => {
-        expect(parseHiscoreTop(WOODCUTTING)).toEqual({ name: 'cairn_chops', level: 99, ticks: 3_329, time: '16m 38s' });
+    test('parses row 1 of a normalized-form board (demo since its 400 ms restart)', () => {
+        expect(parseHiscoreTop(NORMALIZED)).toEqual({ name: 'cairn_chops', level: 99, ticks: 3_329, time: '22m 11s' });
     });
 
-    test('a seconds title off the 0.3 s grid is unparsed, not a wrong stamp', async () => {
-        const html = WOODCUTTING.replace('title="998.7 seconds', 'title="998.8 seconds');
-        expect(() => parseHiscoreTop(html)).toThrow(/not a multiple of 0.3/);
+    test('parses row 1 of a seconds-form board under the rate it was rendered at', () => {
+        expect(parseHiscoreTop(SECONDS, 300)).toEqual({ name: 'cairn_chops', level: 99, ticks: 3_329, time: '16m 38s' });
+        expect(() => parseHiscoreTop(SECONDS.replace('title="998.7 seconds', 'title="998.8 seconds'), 300)).toThrow(/not a whole number of 300 ms ticks/);
+    });
+
+    test('a title in no known form is unparsed, not a wrong stamp', async () => {
+        const html = NORMALIZED.replace('title="3,329 ticks normalized to 400 ms per tick"', 'title="3,329 ticks at 400 ms"');
         const server = Bun.serve({ port: 0, fetch: () => new Response(html) });
         try {
             const fetched = await fetchHiscoreTop(`http://127.0.0.1:${server.port}/hiscores`);
-            expect(fetched).toMatchObject({ status: 'unparsed', error: expect.stringMatching(/not a multiple of 0.3/) });
+            expect(fetched).toMatchObject({ status: 'unparsed', error: expect.stringMatching(/no known form/) });
         } finally {
             server.stop(true);
         }

@@ -39,7 +39,7 @@ import { BotSDK } from '../../sdk/index';
 import { BotActions } from '../../sdk/actions';
 import { initPathfinding } from '../../sdk/pathfinding';
 import type { BotAction, BotWorldState } from '../../sdk/types';
-import { isStamped, parsePlayer } from './hiscore-scrape';
+import { isStamped, parsePlayer, withServerRate } from './hiscore-scrape';
 
 const ROOT = join(import.meta.dir, '..', '..');
 
@@ -257,11 +257,12 @@ export interface HiscoreSkill { skill: string; rank: number | null; level: numbe
 export interface HiscoreEntry { name: string; fetchedAt: string; found: boolean; skills: HiscoreSkill[] }
 
 /**
- * Read through hiscore-scrape's parsePlayer, so either Time title form parses. A page with no skill rows
- * (an error page) or a stamp titleTicks rejects throws: the lookup is retried, not cached as unranked.
+ * Read through hiscore-scrape's parsePlayer, so every Time title form parses (`tickMs` converts the seconds
+ * form). A page with no skill rows (an error page) or a stamp titleTicks rejects throws: the lookup is
+ * retried, not cached as unranked.
  */
-export function parseHiscorePage(name: string, html: string): HiscoreEntry {
-    const rows = parsePlayer(html);
+export function parseHiscorePage(name: string, html: string, tickMs?: number): HiscoreEntry {
+    const rows = parsePlayer(html, tickMs);
     const skills = (rows ?? []).filter(isStamped).map(r => ({ skill: r.skill, rank: r.rank, level: r.level!, ticks: r.ticks! }));
     return { name, fetchedAt: new Date().toISOString(), found: rows !== null, skills };
 }
@@ -294,7 +295,8 @@ class Hiscores {
                 const key = this.queue.shift()!;
                 try {
                     const res = await fetch(`${ORIGIN}/hiscores/player/${encodeURIComponent(key)}?profile=main`, { signal: AbortSignal.timeout(10_000) });
-                    this.cache[key] = parseHiscorePage(key, await res.text());
+                    const html = await res.text();
+                    this.cache[key] = await withServerRate(ORIGIN, tickMs => parseHiscorePage(key, html, tickMs));
                     writeFileSync(this.path, JSON.stringify(this.cache));
                 } catch (e) {
                     console.warn(`[observe] hiscore ${key}: ${e}`);
