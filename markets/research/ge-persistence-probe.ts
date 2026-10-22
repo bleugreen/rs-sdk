@@ -75,6 +75,13 @@ function ledger(owner: string, item: number, coins: number): number {
     return n;
 }
 
+/** Units a probe deliberately destroys (so making room is not reported as a loss). */
+const sunk = new Map<number, number>();
+const sink = (p: P, inv: number, item: number, n: number) => {
+    p.getInventory(inv)!.remove(item, n);
+    sunk.set(item, (sunk.get(item) ?? 0) + n);
+};
+
 const tax = () => marketStore().db.query<{ t: number | null }, []>('SELECT SUM(tax) t FROM trades').get()?.t ?? 0;
 
 /** Same arithmetic as LoginServer.ts updateWealthHiscores, on the save the login thread would load. */
@@ -91,7 +98,7 @@ function total(players: P[], item: number): number {
     let n = 0;
     for (const p of players) n += held(p, item) + ledger(p.username, item, coins);
     if (item === coins) n += tax();
-    return n;
+    return n + (sunk.get(item) ?? 0);
 }
 
 function make(name: string): P {
@@ -315,6 +322,7 @@ try {
         a.invAdd(INV, coins, MAX_GP);
         a.invAdd(BANK, coins, MAX_GP);
         a.invAdd(TRADE, coins, 1000);
+        sunk.clear();
         check('P6 recovery overflow with full coin stacks', () => [a], [coins], log => {
             a.save();
             [a] = crash([a]);
@@ -326,10 +334,13 @@ try {
             a.save();
             [a] = crash([a]);
             log('save + reload x2');
-            a.getInventory(INV)!.remove(coins, 400);
+            sink(a, INV, coins, 400);
             a.recoverItems();
             a.recoverItems();
-            log('400 removed from inv, recoverItems() x2 (coins removed count as loss)');
+            log('400 destroyed from inv, recoverItems() x2');
+            a.save();
+            [a] = crash([a]);
+            log('save + reload');
         });
     }
 
