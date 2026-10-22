@@ -9,8 +9,10 @@ about 340 with bursts (inferred)**, trade included, and its 7,175 base Fishing r
 
 **Module (S19, rs/414).** `speedrun/quests/sea-slug.ts`, lab-accepted on the lite client from
 Caroline's tile (2716,3302): **fixed 346.3 m** (346, 347, 346) and **burst 310.7 m** (306, 318, 308),
-against the entry's 361 fixed and 307 burst; see 'The step module' below. The client fix
-(rs/54) is on main, so the lab patch below is history.
+against the entry's 361 fixed and 307 burst, and on the **browser client** (the entry's
+acceptance) from the same tile: **burst 311.0 m** (307, 304, 322), bgsrv-ub, beside a lite
+control chain of 304 on the same engine; see 'The step module' below. The client fix (rs/54) is
+on main, so the lab patch below is history.
 
 **Blocker found in the lab (read and measured; fixed by rs/54).** The quest needs the broken glass, which
 lies only inside two rooms on the fishing platform, and Kennith's wall, which is behind a
@@ -148,28 +150,37 @@ their combined saving (1,710 normal cycle).
 segments, A to Q, from Caroline's tile, where T18-19 leaves SCORED. H15 is traded during S18, so A
 only checks the paste and the torch. Measured on the lite client, bgsrv-mac, 300 ms, at SCORED's
 arrival levels (Firemaking 99, Fishing 1) and pack (the slot ledger after H15), module at baaff1ac,
-3 runs each:
+3 runs each. The browser column is the full chain 3 times on `--client=browser` against a local
+lab engine on bgsrv-ub (300 ms), module at 7d19e1a3 (Q's level-up wait below), with a webclient
+bundle lab-built from rs/185's tip 825d7368 (webclient tree 289d61b7; `out/bot/client.js` md5
+e5387d2305f226be686820250d6cc6cf). Lite control is one burst chain on that same engine, straight
+after.
 
-| Segment | Step rows | Row (fixed) | Fixed m | Burst m |
-|---|---|---|---|---|
-| A kit | 0 | 0 (trade during S18) | 0 | 0 |
-| B Caroline | 3 | 15 | 15 | 9.7 |
-| C Holgart, the boat | 4 | 13 | 16 | 7 |
-| D Holgart, paste and sail | 5 | 18 | 16 | 14 |
-| E glass room door, glass | 6-7 | 20 | 12 | 12 |
-| F damp sticks, dry them | 8-9 | 24 | 24 | 24 |
-| G ladder, door, Kennith | 10-12 | 36 | 26 | 22 |
-| H down, Holgart to the island | 13-15 | 54 | 50 | 49 |
-| I Kent | 16 | 16 | 26 | 24 (19-33) |
-| J Holgart back | 17 | 13 | 12.3 | 12.3 |
-| K rub, torch lit | 18 | 0 | 1 | 1 |
-| L ladder, Kennith | 19-21 | 49 | 50 | 45 |
-| M panel | 22 | 10 | 10 | 10 |
-| N Kennith | 23 | 10 | 11 | 7 |
-| O crane | 24 | 13 | 13 | 13 |
-| P down, Holgart ashore | 25-27 | 50 | 46 | 47.3 |
-| Q Caroline, reward, exit drops | 28 | 15 | 18 | 13.3 |
-| **Total** | | **356** (+5 trade = 361) | **346.3** | **310.7** |
+| Segment | Step rows | Row (fixed) | Fixed m (lite) | Burst m (lite) | Burst m (browser) | Lite control |
+|---|---|---|---|---|---|---|
+| A kit | 0 | 0 (trade during S18) | 0 | 0 | 0 | 0 |
+| B Caroline | 3 | 15 | 15 | 9.7 | 14.3 (9, 9, 25) | 9 |
+| C Holgart, the boat | 4 | 13 | 16 | 7 | 7 | 7 |
+| D Holgart, paste and sail | 5 | 18 | 16 | 14 | 14 | 14 |
+| E glass room door, glass | 6-7 | 20 | 12 | 12 | 13 | 12 |
+| F damp sticks, dry them | 8-9 | 24 | 24 | 24 | 24 | 24 |
+| G ladder, door, Kennith | 10-12 | 36 | 26 | 22 | 23 | 22 |
+| H down, Holgart to the island | 13-15 | 54 | 50 | 49 | 49.3 | 50 |
+| I Kent | 16 | 16 | 26 | 24 (19-33) | 20 | 19 |
+| J Holgart back | 17 | 13 | 12.3 | 12.3 | 12.3 | 12 |
+| K rub, torch lit | 18 | 0 | 1 | 1 | 1 | 1 |
+| L ladder, Kennith | 19-21 | 49 | 50 | 45 | 45 | 45 |
+| M panel | 22 | 10 | 10 | 10 | 10 | 10 |
+| N Kennith | 23 | 10 | 11 | 7 | 7 | 7 |
+| O crane | 24 | 13 | 13 | 13 | 13 | 13 |
+| P down, Holgart ashore | 25-27 | 50 | 46 | 47.3 | 46 | 46 |
+| Q Caroline, reward, exit drops | 28 | 15 | 18 | 13.3 | 12 | 13 |
+| **Total** | | **356** (+5 trade = 361) | **346.3** | **310.7** | **311.0** | **304** |
+
+The browser's one outlier, B at 25 in its third run, did not recur: B alone, 3 more browser runs
+with a per-tick trace, read 9, 9, 9 (m). Its log was lost with the build slot, so its cause is
+not known; it is 16 ticks, short of an engine stall. Every other browser segment is within a tick
+of the lite control.
 
 Every run opened both bridged doors (the glass room door at E, the door by Kennith's wall at G,
 closed before and open after in the trace) and gained 179,375 Fishing xp, to **level 74** (m).
@@ -195,9 +206,16 @@ What the module found, and what it corrects above:
   happens'.
 - **Exit drops:** the torch, the dry sticks, the glass and the pearls, in Q (1 tick), so T19-20
   starts with H15's runes only.
+- **Q's level-up page (m, lab trace).** `stat_advance` runs inside Caroline's script, but the
+  Fishing level-up page shows only 3 ticks after her chat closes (the quest-complete message comes
+  with the close). The module waits for that page as the target (converse `expect: 'interrupt'`),
+  so the wait ends as soon as it is answered, and skips the wait when her own talk already
+  answered it. Q on the lite client after the change, bgsrv-ub: fixed 17.3 m (18, 17, 17), burst
+  13.0 m (13, 12, 14). Fixed Q stays over its 15-tick row: the close-to-page gap, the page and
+  the drop tick are content time the row did not count.
 
 ## Open questions
 
-- The browser-client acceptance (the entry's) and a demo run on a throwaway at Firemaking 30.
+- A demo run on a throwaway at Firemaking 30 (asked of rs/41 and rs/289).
 - The stock column is inferred from the fixed run; only the Witchaven talks were measured on the
   stock client.
