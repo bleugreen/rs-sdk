@@ -46,8 +46,17 @@ async function main(): Promise<void> {
     }
 
     const items: Record<number, { name: string; quote: MarketQuote; daily: MarketHistory['history']; hourly: [number, number, number, number, number, number][] }> = {};
+    const untradeable: string[] = [];
     for (const [id, name] of ids) {
-        const quote = await m.item(id, { days: 90 });
+        let quote: MarketQuote;
+        try {
+            quote = await m.item(id, { days: 90 });
+        } catch (e) {
+            // A leader's stack can be an item the GE does not list (quest items, untradeables): note it and go on.
+            untradeable.push(name);
+            console.error(`${name} (${id}): ${e instanceof Error ? e.message : e}`);
+            continue;
+        }
         const daily = await m.history(id, { interval: DAY_MS, from: now - 90 * DAY_MS, to: now });
         const hourly = await m.history(id, { interval: HOUR_MS, from: now - 7 * DAY_MS, to: now });
         items[id] = { name, quote, daily: daily.history, hourly: hourly.history.map(b => [b.time, b.volume, b.vwap, b.low, b.high, b.trades]) };
@@ -65,7 +74,7 @@ async function main(): Promise<void> {
 
     mkdirSync(out, { recursive: true });
     const file = join(out, `ge-history-${stamp(takenAt)}.json`);
-    writeFileSync(file, JSON.stringify({ takenAt: takenAt.toISOString(), source: g.origin, hourlyColumns: ['time', 'volume', 'vwap', 'low', 'high', 'trades'], leaders, items }));
+    writeFileSync(file, JSON.stringify({ takenAt: takenAt.toISOString(), source: g.origin, hourlyColumns: ['time', 'volume', 'vwap', 'low', 'high', 'trades'], leaders, untradeable, items }));
     console.log(`\n${file}: ${g.requests} requests`);
 }
 
