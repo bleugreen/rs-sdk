@@ -479,7 +479,7 @@ function courierRole(h: Session, helperBot: string, scored: string, standing: bo
     const ctx: RoleContext = {
         bot: h.bot, sdk: h.sdk, account: helperBot, options, signal: ac.signal, state: memoryRoleState(), reportBank: () => {},
         log: (message, data) => {
-            if (/^(trade|request|ask|phase)/.test(message)) events.push({ tick: tick(), ev: `${message} ${JSON.stringify(data ?? {})}`.slice(0, 240) });
+            events.push({ tick: tick(), ev: `${message} ${JSON.stringify(data ?? {})}`.slice(0, 240) });
         }
     } as RoleContext;
     const done = new BoneGiver(ctx).run().catch(e => events.push({ tick: tick(), ev: `role error ${String(e).slice(0, 200)}` }));
@@ -614,7 +614,7 @@ switch (mode) {
         } finally {
             track.stop();
             await g.stop();
-            if (asRole) result(`pack ${tuMode} courier`, { events: g.events.filter(e => /^(trade|request|ask|role)/.test(e.ev)).slice(0, 120) });
+            if (asRole) result(`pack ${tuMode} courier`, { events: g.events.filter(e => !/^(wishes to trade|busy|sending trade offer)$/.test(e.ev)).slice(-150) });
             await closeSession(helper);
         }
         break;
