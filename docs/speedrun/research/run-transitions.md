@@ -294,3 +294,113 @@ which is outside this page.
 - **Enchant-while-walking** needs a sturdier walker before it is trusted on any leg longer than a
   straight road. Two of four runs went wrong once level-up pages interrupted clicks.
 - **Busy-tile hand-offs** can only be measured on the demo, which this issue did not touch.
+
+
+## 10. lib/travel.ts and runner/legs.ts: lab figures per leg
+
+The legs of section 2 are built as runner Steps in `speedrun/runner/legs.ts` (STEP-MANIFEST.md
+entry 11), each a hop list for `speedrun/lib/travel.ts`, the one route walker and transport
+layer. The walker is a chained run: it clicks the furthest route tile within 20 and re-clicks 3
+tiles before that click would end, opening any closed door or gate on the route ahead and, after
+a stall, the nearest door or web. It arrives only when the published position is inside the
+destination's tolerance. It follows this document's rules: no glory, and no casting while
+walking (section 5). Where a quest counts its own arrival (RUN-ORDER O6), the leg ends exactly at
+the quest's first tile and carries the full figure below. The quest module does not travel there
+itself. T19-20 now ends beside the tunnel stairs at (2820,3486), tolerance 1; (2820,3484) is the
+stairs loc.
+
+Measured on the lab (`lab/measure-legs.ts`, local Mac, 300 ms, `::tele` to the earlier step's end
+tile with that step's route stats and items; clock from the first send to the first state inside
+the destination). Reference labels: m measured, i inferred, r read from a quest document.
+
+| Leg | Reference | Measured (runs) | Delta |
+|---|---|---|---|
+| T01-02 | 50 m | 50 (51, 49) | 0% |
+| T02-03 | 5 i | **4** (4, 4) | first measurement |
+| T04-05 | 44 m | 43.5 (46, 41) | -1% |
+| T05-06 | 61 m | 61.5 (64, 59) | +1% |
+| T06-07 | 74 m | 79 (83, 75) | +7% (Taverley gate closed in the 83) |
+| T07a | 46 i | **58** (58, 58), 114 tiles | first measurement |
+| T07-08 | 131 m | 131.5 (135, 128) | 0% |
+| T08-09 | 50 m | 49 (50, 48) | -2% |
+| T09-10 | 55.5 m | 55.5 (54, 57) | 0% |
+| T10-11 | 20 m | 20 (20, 20) | 0% |
+| T11a | 36 m | 36 (36, 36) | 0% |
+| T11-12 | 71 m | 71.5 (71, 72) | +1% |
+| T12-13 | 121 r | 101.5 (103, 100) | -16% (faster than dwarf_cannon.md's figure) |
+| T13-14 | 181.5 m | 180.3 (182, 178, 181) | -1% |
+| T14-15 | 173.5 i | **174** (173, 175) | first measurement |
+| T15-16 | 158 r | 143.5 (145, 142) | -9% |
+| T16-18 | 6 m | 6.2 (7, 6, 7, 6, 6, 5) | +3% |
+| T18-19 | 49 m | 49 (49, 49) | 0% |
+| T19-20 | 42 r | 39.5 (39, 40) | -6% |
+| T20-21 | 161.5 m | 158 (158, 158); ship 17-18 = deck 14-15 + gangplank 2 | -2% |
+| T21-22 | 33 m | 32.5 (33, 32) | -2% |
+| T22-23 | 16.3 m | 18 (21 with three castle doors closed, 15 with them open) | +10% |
+| T23-24 | 90 m | 91.5 (93, 90) | +2% |
+| L24a | 69 m | 67.5 (69, 66) | -2% |
+| L24b | 54 m | 54 (56, 52) | 0% |
+| L24c | 4.5 m | 4.5 (4, 6, 4, 4, 4, 5) | 0% |
+| T24-25 | 13 m | 13 (13, 13) | 0% |
+| T25-26 | 44 m | 41.5 (39, 44) | -6% |
+| T26-27 | 179 m | 180 (180, 180) | +1% |
+| T27-17 | 185.7 m | 185.5 (186, 185) | 0% |
+
+S21 at the body altar, the plan in force (`legsFor({ s21Altar: 'body' })`, `measure-legs.ts:T20-21,T21-22:3:body`):
+T20-21 by Falador teleport, a run to the ruins south of Edgeville and the body talisman,
+**69.3** (72, 67, 69: teleport 4, run 57-62 over ~118 tiles, talisman entry 6), against the
+nature route's 158 by the Brimhaven ship; T21-22 from the body altar room 32.7 (32, 33, 33).
+
+Transports that no leg rides (`measure-legs.ts:transports`, one run each): glider Ta Quir Priw
+to Gandius 9, back 9, to Kar-Hewo 9; Lumdo Crash Island to Ape Atoll 7, back 13; Ape Atoll
+roofs (`APE_ATOLL_ROOFS`) 111, against rs/201's 112 with `bot.walkTo`; the Deserted Keep lever
+out 10; Port Sarim ship to Karamja 17. Every spell teleport took 4 ticks (5 once).
+
+**Doors and gates** (the `doors` field of each run's `RESULT leg` line). Each door met closed
+costs a leg about 2 ticks against meeting it open:
+
+| Leg | Door or gate (tile) | Seen |
+|---|---|---|
+| T01-02 | coop gate (3236,3295) | closed in every run |
+| T04-05 | Doric's door (2949,3450) | closed, then open |
+| T06-07, L24a | Taverley gate (2935,3451) | closed in one run, open in the other |
+| T07-08 | three Seers' doors (2578, 2574, 2570; z 3333) | closed in one run, open in the other |
+| T12-13 | door (2616,3345), Lawgof's gate (2568,3458) | closed in one run, open in the other |
+| T13-14, T26-27 | Ardougne door (2650,3305), lever-house door (2564,3310), Wilderness gate (3224,3904) | closed, then open |
+| T15-16 | lever-house door (2564,3310) | closed, then open |
+| T18-19 | market door (2674,3305) | closed |
+| T22-23 | Lumbridge Castle large doors (3217,3218), (3213,3220), door (3207,3217) | all closed in one run (21), all open in the other (15) |
+| T23-24 | Rusty Anchor door (3053,3259) | open |
+| L24b | Goblin Village door (2958,3506), large doors (2958,3509) | closed, then open |
+| T24-25 | Varrock door (3187,3428) | open |
+| T27-17 | Wilderness gates (3225,3903), ridge gate (2998,3931) | the ridge gate closed |
+
+Two lab rehearsals of the demo chain passed end to end: T01-02 51, T23-24 91 and 94, L24a 69,
+L24b 56, L24c 5 and 6, T06-07 75, T21-22 32.
+
+**Demo check** (rs/198, 05:26:14-05:29:04Z 2026-10-22, the lent account cairn_h55, one launch of
+`speedrun/tools/demo-legs.ts` at 2d6ff2a9, whose tree matches the mission branch's 576b7a55).
+The SDK and the lite client both went through a loopback gateway on bbs (127.0.0.1:7823), never
+the demo relay. The 19:10 PDT attempts had gone through the relay, because the account's bot.env
+had no GATEWAY_URL. Untimed prep: 200 coins from the account's bank, runes from Aubury's, a
+Lumbridge teleport and a walk to the spawn. The bar is the lab mean within 10%, or the lab's own
+spread where that is wider.
+
+| Leg | Demo | Lab | Δ | Bar | Doors met (state) |
+|---|---|---|---|---|---|
+| T01-02 | 51 | 50 | +2.0% | pass | none |
+| T23-24 | 94 | 91.5 | +2.7% | pass | door (3053,3259) open |
+| L24a | 68 | 67.5 | +0.7% | pass | gate (2936,3450) open |
+| L24b | 60 | 54 | +11.1% | miss | door (2958,3506) closed; large doors (2958,3509) closed, (2958,3510) open |
+| L24c | 8 | 4.5 | +3.5 | miss (bar ±1.5) | none |
+| T06-07 | 76 | 79 | -3.8% | pass | none |
+| T21-22 | 36 | 32.5 | +10.8% | miss (bar 3.25) | none |
+
+The misses are read from the hop breakdowns, not measured separately. L24b met two closed doors at
+about 3 ticks each, the whole gap, the same door-state split as T22-23 in the lab. L24c (Varrock
+teleport, 5 ticks, then 3 to walk 4 tiles to (3211,3425)) and T21-22 (Lumbridge teleport 4, run
+32) fit the spread of a teleport's landing tile, which the lab's small samples don't cover. No leg
+was slow in a way that points at latency: the clean legs are within 3%, and T06-07 came in 3 ticks
+under. So the demo confirms the walker. The door-bound legs (L24b, T22-23) should be priced as a
+range by door state, and the teleport legs (L24c, T21-22) as a range by landing tile, rather than
+as one mean (asked of rs/158).
