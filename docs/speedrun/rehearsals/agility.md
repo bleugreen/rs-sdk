@@ -5,8 +5,10 @@ Module: `speedrun/skills/agility.ts` (STEP-MANIFEST.md entry 1). Account:
 demo, script and sample named), **read** (`file:line`), **inferred**
 (arithmetic shown).
 
-Status: lab acceptance done (section 1); the demo attempt waits for a slot and
-for the kit decision in section 3.
+Status: lab acceptance done (section 1). Section 6 (rs/241) measured the Prayer 43 /
+Protect from Melee plan and repriced from creation: **it cannot plausibly beat
+stunagile's 6,772**. Protect as built slows the lap badly, and even a perfect
+protect leaves the from-creation floor above the record.
 
 ## 1. Lab acceptance
 
@@ -121,4 +123,127 @@ lab bot (unit-tested on the fake SDK only).
 
 ## 5. Demo attempt
 
-Pending a slot from rs/147 and the food decision in section 3.
+Not a record attempt: section 6 prices the plan below stunagile's row. Under
+main's ruling (addendum 18 as amended 19:56 PDT), cairn_jumps runs to 99 as a
+measurement once rs/147 grants it, with protect off and the kit in section 6.4.
+
+## 6. Prayer 43 and Protect from Melee (rs/241)
+
+Lab rows: bgsrv-ub, `NODE_TICKRATE=300`, headless-shell Chrome tab on a bundle
+built from rs/147's branch at 75ce523c (contains main 7711fdb7), `tickprog-lab.sh`
+mode `agility`, 10 laps each, one sample each, 2026-10-21 19:24-20:01 PDT. Host
+load 5-57 during the 10 HP rows.
+
+### 6.1 Protect modes on the Wilderness course (measured)
+
+10 HP, combat 3, Agility 52, Prayer 43, eat line 6 (eating in any phase), sharks:
+
+| Protect | Ticks / lap | Skeleton HP | Fall HP | Eats | Prayer used | Toggles | Stuck obstacles |
+|---|---|---|---|---|---|---|---|
+| off | **67.8** | 7 | 2 | 1 | 0 | 0 | 0 |
+| flick (gap 4) | 336.9 | 0 | 5 | 0 | **43 (all)** | 1,574 | 33 |
+| near (range 3) | 116.9 | 6 | 7 | 1 | 30 | 41 | 4 |
+| hold | 253.2 | 35 (after the points ran out) | 10 | 11 | 43 (all) | 991 | 21 |
+
+SCORED's S17 stats (Agility 75, HP 99, Defence 98, Prayer 99), protect off, 12
+laps: **70.3 ticks / lap** (66 clean; one log fall), skeletons 6 HP, falls 15, no
+eats, ended on 84/99. S17 needs no protect and no eating in 12 laps.
+
+What the rows show:
+- **The prayer button breaks the lap.** The obstacles that stalled are the ones with
+  a walk to the click tile (pipe 86 ticks against 17, log 90 against 17, rocks 86
+  against 10). The program already skips toggles in the 3 ticks after a click, but
+  a toggle later in the approach still cancels it (the button's
+  `p_clearpendingaction`), and the step then times out (`stepTimeout` 40) and
+  re-clicks. Every mode that toggles pays this; flick toggles most and pays most.
+- **Flick does not avoid the drain.** Reading `prayer.rs2:30-43,163-178`, an off and
+  on in one tick should clear and restart the 5-tick timer, so it never fires. In
+  the lab the flick run still used all 43 points. Either the second toggle in a tick
+  is not applied, or the timer restarts in a way the reading missed. Not
+  investigated further, because the lap cost alone rules the mode out.
+- **Hold** lasts about 215 ticks at 43 points (1 point per 5 ticks, as rs/158 read),
+  about 3 laps. After that the program keeps sending toggles at 0 points, which
+  keeps cancelling obstacles.
+- Skeleton damage with protect off was 0.7 HP per lap here against 2.8 in
+  section 1's chain: the rate varies a lot between runs.
+
+**Ruling for the module:** `protect` stays off (the default). The program's protect
+keys remain declared and opt-in, but no plan should use them until a toggle that
+never lands during an obstacle approach is built and measured.
+
+### 6.2 Prayer 1-43 priced (read and inferred; not run)
+
+Prayer 43 is 787.4 base xp (`Player.ts:77-85`; 37 is 504.9). Bury is 2 ticks per
+bone (`prayer.md` section 4). Fleet stock per rs/41 (19:5x PDT): **no dragon bones
+outside SCORED's**, about 250 spare babydragon bones, about 2,526 big bones; both
+would be handed over as notes.
+
+| Bones | Count | Bury ticks | Extra on the clock |
+|---|---|---|---|
+| babydragon (30) | 27 | about 53 | a second trade for food (about 8), or unnoting at a bank |
+| big (15) | 53 | about 105 | two loads: a second trade |
+
+Place: Lumbridge, right after S00. Drop the 16 starter items, take knife and
+27 unnoted babydragon bones in one trade (28 slots), bury, then take the food.
+About **70 ticks** in all against a no-Prayer start. stunagile's Prayer 43 at 20 s
+(about 67 ticks, S00 and trade included) fits 11 dragon bones, which we don't have.
+
+### 6.3 Repriced from creation (lab, ticks)
+
+| Part | Floor | Central | Source |
+|---|---|---|---|
+| S00, kit, drop, top-up | 25 | 25 | measured parts (S00 4, kit 8 on the twin for Fishing; drop about 3) plus one more trade (inferred) |
+| Prayer 1-43 | 0 (no protect) | 0 | 6.1: protect is not used |
+| Lumbridge to the Gnome course | 595 | 595 | measured, section 1 |
+| Gnome 1 -> 52 | 1,042 | 1,042 | measured, section 1 |
+| Gnome to the Wilderness course | 257 | 262 | measured, section 1 |
+| Wilderness 52 -> 99 | 4,908 | about 5,130 | floor: `agility-model.ts` at 66-tick clean laps with expected falls; central: the measured 67.8-70.3 laps (6.1) plus the first-lap entry (+47) |
+| Restock trip | 0 | about 100 | inferred: course gate out, a trade, the ridge back in; not measured |
+| **Total** | **about 6,830** | **about 7,150** | |
+
+Spread (inferred): fall counts dominate the run-to-run spread, about +-200 ticks
+(one standard deviation; about 14 falls expected over 52 -> 99 at about 50 ticks
+each). Against 6,772:
+- with every part at its floor, 6,830 +- 200 beats it about 40% of the time;
+- at the central 7,150 +- 200, about 3% of the time.
+
+The demo is not faster than the lab (section 1). That is far below main's
+P(#1) >= 90%, and nowhere near the 6,433 planning bar. Neither number is calibrated
+by a from-creation run with the final fixes.
+
+A perfect protect (no lap cost, no drain) would remove the restock trip and some
+skeleton stalls (about 100-180) and add Prayer 1-43 (about 70). It moves the central
+figure to about 7,050, which still doesn't clear.
+
+**What stunagile must be doing differently** (inferred). Its only stamps are Prayer
+43 (20 s) and Agility 99 (33:51), so it trained at 10 HP. With our measured
+pre-52 (about 1,925 plus its about 67 for Prayer), its 52 -> 99 would be about
+4,780 ticks, which is about 64.7 ticks a lap with falls. Our clean lap is 66. So
+the gap is in the lap's reaction ticks or in a faster 1 -> 52, not in Prayer.
+
+Checked and rejected:
+- **The Edgeville dungeon monkey bars** (20 base per 10.1-tick crossing, melee-only
+  NPCs, so Protect from Melee would make them safe). They need 15 from the south
+  end. Only the north end at z 9969 skips the check (`shortcuts.rs2:153`), and the
+  north side is a pocket reachable only over the bars (`sdk/pathfinding.ts`
+  offline routes).
+- **Another 1 -> 15 near Lumbridge or Edgeville.** There is none: the Falador
+  crumbling wall (2935,3355) needs 5, the island rope swing 10.
+- **Gnome 1 -> 15, then the bars.** About 130 ticks slower than Gnome to 52,
+  because of the Gnome -> Edgeville walk.
+
+### 6.4 Kit for the measurement run (no Prayer, protect off)
+
+At 10 HP and an eat line of 6, a shark restores at most 4 HP. A cake restores 4 per
+bite, 3 bites a slot, so about 12 HP per slot. Expected net damage for
+Walk + 52 -> 99 is about 20-200 HP (6.1 and section 1's rates, less about 50
+regenerated).
+
+| When | Items |
+|---|---|
+| At spawn, from the kit giver (10 free slots) | knife 1, cake 7, shark 2 |
+| After `drop` clears the 16 starter items, top-up from the same giver | shark 18 |
+| Courier restock near (2998,3916), only if food falls to 4 | shark 20 |
+
+That carries about 164 HP of healing on top of regeneration. The restock covers
+section 1's high rate.
