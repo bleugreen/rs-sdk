@@ -963,6 +963,64 @@ machine at its current address, and a new address is a fresh draw that needs a m
 before it is trusted. Run-host rows before 23:11 UTC in sections 7, 8 and 10 were measured on the
 held address, so their catch-up rates overstate the server's own overruns.
 
+### 22 October: a demo-side loss at 300 ms, operator restarts, then 400 ms ticks
+
+Every gate row in sections 9 and 10 above is at T = 300 ms. The demo's tick length changed at its
+19:56:28Z restart on 22 October. From then on, rows are T = 400 ms, and the gate's thresholds
+are read in T (tenet 12's principle, re-expressed by main: (c) a catch-up is an interval under
+0.5T right after one over 7/6 T; (b) is reported with T, not used as a pass line).
+
+**The loss, 16:00-19:30Z, T = 300.** Gate reads from the run host (its third address, from
+17:39Z) and the twin, both at Lumbridge from the evening on:
+
+| UTC | Run host (a) | Twin (a) | Note |
+| --- | --- | --- | --- |
+| 13:00-15:30 | 58-59/60 | 59-60/60 | normal |
+| 16:00, 16:30 | 56, 53 | 60, 59 | |
+| 16:41:28 | | | demo restart after a stall (process-start token; rs/41's fleet dropped together) |
+| 17:00-18:30 | 40, 26, 41, 34 | no reads (lab claims) | |
+| 19:00 | 26/60 | 25/60 | same reactions lost on both, offset about four trials |
+| 19:24:45 | | | restart |
+| 19:30 | 60/60, (c) 0 | 60/60, (c) 0 | 1,060 online, refilling |
+
+In the 19:00 pair the ticks arrived on time and evenly on both machines: 3 run-host ticks more
+than 40 ms behind the twin, none in the 135-218 ms held band, no glued pairs. So this was not
+the held-address fault of 21 October. The decline didn't follow the online count (1,610-1,714
+after 16:00Z, fewer than the morning's better minutes) or our own logins (59-61 at every claim).
+It began at the 16:41Z restart, and the first read after it, 19 minutes into the process, was
+already bad, so it was not uptime. The operator said in public at 16:35Z that he was 'working on
+this' and blamed bot load. The likeliest reading is per-tick work grown past the 50 ms margin
+(section 2) without the ticks themselves running late. That was not measured directly.
+
+**Operator changes, 19:36-20:08Z** (dated by the page's process-start token, `client.js?v=`,
+which the engine sets to `Date.now()` at start; server/engine/src/web/pages/client.ts:13):
+
+- 19:36:00Z: restart after a 'Server is being updated' countdown (login code 14). The hiscore Time
+  hover changed from 'N ticks' to 'N seconds of game time', a string in neither upstream b565f2d9
+  nor our fork (server/engine/src/web/pages/hiscores.ts:59-68). The served `bot/client.js` was
+  byte-identical (md5 353760e9), which the published server/Dockerfile can't produce after an
+  engine change, so the demo runs unpublished engine code from a private build.
+- 19:56:28.9Z: restart. **T = 400 ms from here**: the engine's spectator feed
+  (`wss://<host>/worldfeed`, login-free) reports `tickMs: 400` in its hello (World.tickRate,
+  server/engine/src/web/worldfeed.ts:141) and per-tick server intervals with a median of 397-402 ms.
+  rs/41's fleet tick counters agree (0.3015 s per tick at 19:50Z, 0.4000 at 20:00Z). The
+  per-address session cap fell from 100 to 50 (the operator, in public; `MAX_PLAYERS_PER_IP`,
+  server/engine/src/engine/World.ts:1052-1058, refuses with code 7 'World is full', the same code
+  as the world cap), and the world held about 1,050-1,350 online afterwards against 1,650-1,800
+  before.
+- 20:08:12Z: restart. The hover became 'N ticks normalized to 400 ms per tick' (it had the old
+  form at 19:57:48Z), and the bundle was again unchanged.
+
+**After, T = 400.** 20:00Z: both machines 60/60, (c) 0, tick p90 447 (1.12T). 20:30Z: run host
+60/60, (c) 0, p90 488 (1.22T); the twin skipped on a claim. The 20:35Z delay sweep (section 2)
+puts the margin after a frame above 250 ms at the median, over 0.6T. While 400 ms holds, (a) is
+near-certain on any calm minute.
+
+The gate records carry this from 21:00Z on: each read records the feed's configured tick length,
+60 s of the engine's own tick intervals, a `T` field, the process start and an engine fingerprint
+(section 10, 'Gate history timer'). Older history files are not rewritten; read them with T = 300
+before 19:56:28Z on 22 October and T = 400 after.
+
 ## 10. Run-host recommendation
 
 **Where.** The machine that shows the visible browser tab runs in Ashburn: Fly's iad region, AWS
