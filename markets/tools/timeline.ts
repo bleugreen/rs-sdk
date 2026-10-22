@@ -11,6 +11,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { writerExclusion } from '../lib/accounts.ts';
 import { bankTops, holdingsOf, type BankTop } from '../lib/snapshots.ts';
 
 const REPO = resolve(import.meta.dir, '../..');
@@ -61,12 +62,17 @@ export function stackChanges(tops: BankTop[], name: string, names: Map<number, s
 const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 0 });
 
 function main(): void {
-    const { values, positionals } = parseArgs({ args: Bun.argv.slice(2), allowPositionals: true, options: { dir: { type: 'string', multiple: true }, top: { type: 'string' } } });
-    const tops = loadTops(values.dir?.length ? values.dir.map(d => resolve(d)) : DEFAULT_DIRS);
+    const { values, positionals } = parseArgs({
+        args: Bun.argv.slice(2),
+        allowPositionals: true,
+        options: { dir: { type: 'string', multiple: true }, top: { type: 'string' }, 'placeholder-data': { type: 'boolean' } }
+    });
+    const ex = writerExclusion();
+    const tops = loadTops(values.dir?.length ? values.dir.map(d => resolve(d)) : DEFAULT_DIRS).map(t => ({ ...t, rows: ex.keep(t.rows) }));
     if (!tops.length) throw new Error('no bank reads found');
     const names = new Map<number, string>();
     for (const t of tops) for (const r of t.rows) for (const i of r.items) if (i.name) names.set(i.id, i.name);
-    const accounts = positionals.length ? positionals : tops.at(-1)!.rows.slice(0, Number(values.top ?? 10)).map(r => r.name);
+    const accounts = (positionals.length ? positionals : tops.at(-1)!.rows.slice(0, Number(values.top ?? 10)).map(r => r.name)).filter(n => !ex.excludes(n));
     console.log(`${tops.length} bank reads, ${tops[0]!.at} .. ${tops.at(-1)!.at}`);
     for (const name of accounts) {
         const h = holdingsOf(tops, name);
