@@ -302,14 +302,15 @@ async function main() {
                 if (!rep) {
                     const start = slotOf(t.inv, tracer);
                     const dir: 1 | -1 = start + drags < INV_SLOTS ? 1 : -1;
-                    const empty = t.inv.map((o, i) => [o, i] as const).find(([o, i]) => o === 0 && (i - start) * dir < 0 || (o === 0 && (i - start) * dir > drags))?.[1];
                     const at = (k: number) => start + k * dir;
+                    const [lo, hi] = [Math.min(at(0), at(drags)), Math.max(at(0), at(drags))];
+                    const empty = t.inv.findIndex((o, i) => o === 0 && (i < lo || i > hi));
                     const before = client.out.pos;
                     drag(at(0), at(1));
                     if (cls === 'user') for (let i = 1; i < n; i++) drag(at(i), at(i + 1));
                     if (cls === 'client') for (let i = 0; i < n; i++) camera(i);
                     if (cls === 'failed') {
-                        if (empty === undefined) throw new Error('failed class needs an empty slot off the chain');
+                        if (empty < 0) throw new Error('failed class needs an empty slot off the chain');
                         for (let i = 0; i < n; i++) drag(empty, empty === 0 ? 1 : empty - 1);
                     }
                     if (cls === 'client' || cls === 'failed') drag(at(1), at(2));
