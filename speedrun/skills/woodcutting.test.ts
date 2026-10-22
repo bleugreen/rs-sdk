@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import type { BotWorldState } from '../../sdk/types';
+import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
 import type { GatedOptions, GatedRun, GatedSegment, InPageGateOptions, SegmentTechnique } from '../lib/gated-program';
 import type { HostGate } from '../lib/hostgate';
 import type { ProgramStatus } from '../lib/programs';
 import { TickLog } from '../lib/ticks';
-import type { GiveSpec, ReceiveResult, SwapResult, WantSpec } from '../lib/trade';
+import { decideReceiver, newReceiverCtx, type GiveSpec, type ReceiveResult, type SwapResult, type WantSpec } from '../lib/trade';
 import { Observation, resolveResume } from '../runner/resume';
 import type { StepContext } from '../runner/step';
 import {
@@ -14,6 +14,7 @@ import {
 } from './woodcutting';
 import { createKnifeCycle, CYCLE_METHODS } from '../../server/webclient/src/bot/programs/knife-cycle';
 import type { ProgramAction, ProgramContext } from '../../server/webclient/src/bot/programs/types';
+import { bonesParam, buryable } from '../../server/webclient/src/bot/programs/util';
 
 const OAK = SITES.oak.stand;
 const WILLOW = SITES.willow.stand;
@@ -948,5 +949,186 @@ describe("woodcutting: the axe drop at S07's end, the scored run's 0-tick path (
         const h = harness(state({ level: 99, items: ['Knife', 'Logs'], worn: ['Rune axe'] }), { dropAxe: true });
         await h.byName('woodcutting:drop-axe').run(h.ctx);
         expect(drops_(h.sdk)).toEqual([]);
+    });
+});
+
+describe("woodcutting: S07's last bone load carries T07-08's runes, (load - 2) bones, law 1 and air 5 (rs/329's giver, rs/333)", () => {
+    const BONES_ID = 536;
+    const LAW_ID = 563;
+    const AIR_ID = 556;
+    const KIT_IDS: Record<string, number> = { 'Rune axe': 1359, Knife: 946, Logs: 1511 };
+    const bones = (n: number): TradeItem[] => Array.from({ length: n }, () => ({ slot: -1, id: BONES_ID, name: 'Dragon bones', count: 1 }));
+    const RUNES: TradeItem[] = [{ slot: -1, id: LAW_ID, name: 'Law rune', count: 1 }, { slot: -1, id: AIR_ID, name: 'Air rune', count: 5 }];
+    /** The giver's offers: a full load, and the last, 2 bones short to make room for the two rune stacks. */
+    const FULL = bones(23);
+    const LAST = [...bones(21), ...RUNES];
+
+    /** A pack with real ids (bones share one, so the inventory delta reads by id as the engine's does). */
+    const pack = (level: number, names: string[], o: { bones?: number; prayer?: number } = {}): BotWorldState => {
+        const s = state({ level, items: [], prayer: o.prayer ?? 94 });
+        const items: InventoryItem[] = names.map((name, slot) => ({
+            slot, id: KIT_IDS[name] ?? (name === 'Law rune' ? LAW_ID : name === 'Air rune' ? AIR_ID : 2000 + slot), name, count: name === 'Air rune' ? 5 : 1, optionsWithIndex: []
+        }));
+        const all = [...items, ...bones(o.bones ?? 0).map(b => ({ ...b, optionsWithIndex: [{ text: 'Bury', opIndex: 1 }] }))];
+        return { ...s, inventory: all.map((i, slot) => ({ ...i, slot })) };
+    };
+    const into = (inv: readonly InventoryItem[], items: readonly TradeItem[]): InventoryItem[] => {
+        const used = new Set(inv.map(i => i.slot));
+        const free = Array.from({ length: 28 }, (_, k) => k).filter(k => !used.has(k));
+        return [...inv, ...items.map((it, k) => ({ slot: free[k]!, id: it.id, name: it.name, count: it.count, optionsWithIndex: /bones$/i.test(it.name) ? [{ text: 'Bury', opIndex: 1 }] : [] }))];
+    };
+
+    /**
+     * receiveFrom's decisions, not a stand-in: lib/trade.ts decideReceiver judges the giver's offer
+     * against the `want` the band passes, on the offer screen, on the confirm screen and in the
+     * inventory delta. An offer that never satisfies the want ends as receiveFrom's does at maxTicks.
+     */
+    const giver = (offers: TradeItem[][]) => {
+        const wants: WantSpec[][] = [];
+        const fn = (async (sdk: FakeSdk, partner: string, o: { want?: WantSpec[]; maxTicks?: number }): Promise<ReceiveResult> => {
+            wants.push(o.want!);
+            const offer = offers[wants.length - 1]!;
+            const s0 = sdk.getState()!;
+            let ctx = newReceiverCtx(partner, s0.inventory, o.want);
+            const open = (screen: 'offer' | 'confirm') => ({ isOpen: true, screen, partner, myOffer: [], theirOffer: offer, myAccepted: false, partnerAccepted: true });
+            for (const screen of ['offer', 'confirm'] as const) {
+                const d = decideReceiver(sdk.push(s => ({ tick: s.tick + 1, trade: open(screen) })), ctx);
+                ctx = d.next;
+                if (d.action === 'decline') return { ok: false, ticks: sdk.getState()!.tick - s0.tick, received: [], reason: d.reason };
+                if (d.action !== 'accept') return { ok: false, ticks: o.maxTicks ?? 100, received: [], reason: 'timeout' };
+            }
+            const closed = { isOpen: false, screen: null, partner: null, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false };
+            const d = decideReceiver(sdk.push(s => ({ tick: s.tick + 1, trade: closed, inventory: into(s.inventory, offer) })), ctx);
+            if (d.action !== 'done') return { ok: false, ticks: sdk.getState()!.tick - s0.tick, received: [], reason: `trade ended ${d.action}` };
+            return { ok: true, ticks: sdk.getState()!.tick - s0.tick, received: d.received };
+        }) as unknown as WoodcuttingOptions['receive'];
+        return { fn, wants };
+    };
+
+    /** Run 1 buries the pack's bones, then publishes none until the band stops it for a load; later runs take the level to the band's end. */
+    const buryThenLoad: Script = async (sdk, call, n) => {
+        if (n !== 1) return undefined;
+        const s0 = sdk.getState()!;
+        let t = s0.tick;
+        sdk.push(s => ({ tick: ++t, inventory: s.inventory.filter(i => !/bones$/i.test(i.name)) }));
+        for (let k = 0; k < 4 && !call.signal?.aborted; k++) {
+            sdk.push({ tick: ++t });
+            call.opts.onProgress?.(status({ runId: 1, startedTick: s0.tick, tick: t, gauges: { bonesLeft: 0 } }), 'knife');
+        }
+        const seg: GatedSegment = { technique: 'knife', reason: 'aborted', status: status({ runId: 1, phase: 'stopped', startedTick: s0.tick, tick: t, endedTick: t }) };
+        call.opts.onSegment?.(seg);
+        return { segments: [seg], ended: call.signal?.aborted ? 'aborted' : 'done' };
+    };
+
+    const WILLOWS = 'woodcutting:willow-73-99';
+    const scored = { bury: true, bones: { giver: 'cairn_b02', lastLoad: 21 } } satisfies Partial<WoodcuttingOptions>;
+    const held = (s: BotWorldState) => s.inventory.map(i => `${i.name} x${i.count}`);
+
+    test('the last receive takes 21 bones, law 1 and air 5 after a full load; the runes ride to the band end, 2 slots left for the chopped log', async () => {
+        const g = giver([FULL, LAST]);
+        const h = harness(pack(97, KIT), { ...scored, receive: g.fn }, buryThenLoad);
+        const band = h.byName(WILLOWS);
+        expect(band.preconditions(h.sdk.getState()!, {})).toBe(true);
+        await band.run(h.ctx);
+        expect(g.wants).toHaveLength(2);
+        const loads = h.log.rows.filter(r => r.step === 'woodcutting:bones-load');
+        expect(loads.map(r => [r.ok, (r.meta as { received: number }).received])).toEqual([[true, 23], [true, 21]]);
+        const s = h.sdk.getState()!;
+        expect(held(s).filter(n => !/bones/.test(n))).toEqual(['Rune axe x1', 'Knife x1', 'Logs x1', 'Law rune x1', 'Air rune x5']);
+        expect(s.inventory.filter(i => /bones$/i.test(i.name))).toHaveLength(21);
+        // the ledger's last load: 25 free at the willows hold 21 bones and the two rune stacks, the chopped log the 24th
+        expect(28 - s.inventory.length).toBe(2);
+        expect(band.postconditions(s, {})).toBe(true);
+    });
+
+    test('a full last load (lastLoad = load, rs/329 b5603795 as read): 23 bones and the runes are received and required, and the precondition reserves the rune slots', async () => {
+        const full = { bury: true, bones: { giver: 'cairn_b02', lastLoad: 23 } } satisfies Partial<WoodcuttingOptions>;
+        const g = giver([FULL, [...FULL, ...RUNES]]);
+        const h = harness(pack(97, KIT), { ...full, receive: g.fn }, buryThenLoad);
+        const band = h.byName(WILLOWS);
+        await band.run(h.ctx);
+        expect(g.wants).toEqual([[{ item: /bones$/i, amount: 23 }], [{ item: /bones$/i, amount: 23 }]]);
+        const loads = h.log.rows.filter(r => r.step === 'woodcutting:bones-load');
+        expect(loads.map(r => [r.ok, (r.meta as { received: number }).received])).toEqual([[true, 23], [true, 23]]);
+        const s = h.sdk.getState()!;
+        expect(held(s).filter(n => !/bones/.test(n))).toEqual(['Rune axe x1', 'Knife x1', 'Logs x1', 'Law rune x1', 'Air rune x5']);
+        expect(band.postconditions(s, {})).toBe(true);
+        expect(band.postconditions(pack(99, KIT), {})).toMatch(/Camelot runes \(1 and 5\) are not held/);
+        // but it fills the pack: 25 free at the willows hold 23 bones and the two rune stacks, none left for the chopped log
+        expect(28 - s.inventory.length).toBe(0);
+        expect(band.preconditions(pack(97, KIT), {})).toBe("25 free slots and 0 bones: no room for a 23-bone load, or the last load's 23 bones and 2 rune stacks, and the log");
+        // once the runes are in, that load came: a resume needs no room for another
+        expect(band.preconditions(pack(98, [...KIT, 'Law rune', 'Air rune'], { bones: 10 }), {})).toBe(true);
+    });
+
+    test("the want is at least lastLoad bones: a full load and the runes' load pass both screens, a shorter one never does", () => {
+        const g = giver([]);
+        harness(pack(97, KIT), { ...scored, receive: g.fn });
+        const want: WantSpec[] = [{ item: /bones$/i, amount: 21 }];
+        const verdict = (offer: TradeItem[], screen: 'offer' | 'confirm') => {
+            const s = pack(97, KIT);
+            return decideReceiver({ ...s, trade: { isOpen: true, screen, partner: 'cairn_b02', myOffer: [], theirOffer: offer, myAccepted: false, partnerAccepted: true } }, newReceiverCtx('cairn_b02', s.inventory, want)).action;
+        };
+        for (const screen of ['offer', 'confirm'] as const) {
+            expect(verdict(FULL, screen)).toBe('accept');
+            expect(verdict(LAST, screen)).toBe('accept');
+            expect(verdict([...FULL, ...RUNES], screen)).toBe('accept');
+        }
+        expect(verdict([...bones(20), ...RUNES], 'offer')).toBe('wait');
+        expect(verdict([...bones(20), ...RUNES], 'confirm')).toBe('decline');
+    });
+
+    test('the want the band passes is that one (the default path, without lastLoad, still asks for the full 23)', async () => {
+        const g = giver([LAST]);
+        const h = harness(pack(97, KIT), { ...scored, receive: g.fn });
+        await h.byName(WILLOWS).run(h.ctx);
+        expect(g.wants).toEqual([[{ item: /bones$/i, amount: 21 }]]);
+        // the rehearsal's want refuses the shrunken load: the trade waits out its ticks and the band fails
+        const r = giver([LAST]);
+        const rehearsal = harness(pack(97, KIT), { bury: true, bones: { giver: 'cairn_b02' }, receive: r.fn });
+        await expect(rehearsal.byName(WILLOWS).run(rehearsal.ctx)).rejects.toThrow(/bone load 1 from cairn_b02 failed: timeout/);
+        expect(r.wants).toEqual([[{ item: /bones$/i, amount: 23 }]]);
+    });
+
+    test('the bury precondition counts the rune stacks as used and passes before the last load, on a resume after it, and on T07-08\'s pack (24 free)', () => {
+        const pre = (s: BotWorldState, o: Partial<WoodcuttingOptions> = scored) => harness(s, o).byName(WILLOWS).preconditions(s, {});
+        // before the last load: 25 free hold 21 bones, the two rune stacks and the chopped log
+        expect(pre(pack(97, KIT))).toBe(true);
+        // a resume after the last load: the runes are in, 10 bones left; 13 free
+        const resumed = pack(98, [...KIT, 'Law rune', 'Air rune'], { bones: 10 });
+        expect(28 - resumed.inventory.length).toBe(13);
+        expect(pre(resumed)).toBe(true);
+        // the runes are used slots: with 22 bones beside them one slot is free, and the log needs it
+        expect(pre(pack(98, [...KIT, 'Law rune', 'Air rune'], { bones: 22 }))).toBe('1 free inventory slots, 2 needed');
+        // without lastLoad nothing changes: the pack must hold room for a full load as before
+        expect(pre(resumed, { bury: true, bones: { giver: 'cairn_b02' } })).toMatch(/no room for a 23-bone load and the log/);
+        // T07-08: the axe dropped, the knife, the log and the two rune stacks
+        const t0708 = pack(99, ['Knife', 'Logs', 'Law rune', 'Air rune']);
+        expect(28 - t0708.inventory.length).toBe(24);
+        expect(pre(t0708)).toBe(true);
+    });
+
+    test('the runes are still held after the band: its postcondition asks for them, and knife-cycle never buries or drops them', () => {
+        const h = harness(pack(99, KIT), scored);
+        const post = (s: BotWorldState) => h.byName(WILLOWS).postconditions(s, {});
+        expect(post(pack(99, [...KIT, 'Law rune', 'Air rune'], { bones: 3 }))).toBe(true);
+        expect(post(pack(99, KIT, { bones: 3 }))).toMatch(/law 0 and air 0: the last load's Camelot runes \(1 and 5\) are not held/);
+        // the rehearsal carries no runes and its postcondition never asks
+        expect(harness(pack(99, KIT), { bury: true, bones: { giver: 'g' } }).byName(WILLOWS).postconditions(pack(99, KIT), {})).toBe(true);
+        // what the band runs: bury selects the bones only, and the willow product is the only drop
+        const params = bandParams(scored, 'willow', 99)('knife');
+        const s = pack(98, [...KIT, 'Law rune', 'Air rune'], { bones: 21 });
+        // the page's state type is the SDK's plus page-only fields buryable does not read
+        expect(new Set(buryable(s as unknown as Parameters<typeof buryable>[0], bonesParam(params.bury)!).map(i => i.name))).toEqual(new Set(['Dragon bones']));
+        const product = new RegExp(CYCLE_METHODS.willow!.product, 'i');
+        expect(s.inventory.filter(i => product.test(i.name))).toEqual([]);
+    });
+
+    test('lastLoad is validated: an integer from 1 to the load, flat as boneLastLoad from the CLI', () => {
+        expect(() => steps({ bury: 'true', boneGiver: 'g', boneLastLoad: '21' })).not.toThrow();
+        expect(() => steps({ bury: true, bones: { giver: 'g', load: 20, lastLoad: 21 } })).toThrow(/last load/);
+        expect(() => steps({ bury: true, bones: { giver: 'g', lastLoad: 0 } })).toThrow(/last load/);
+        expect(() => steps({ bury: true, boneGiver: 'g', boneLastLoad: '21.5' })).toThrow(/last load/);
+        expect(() => steps({ bury: true, boneLastLoad: '21' })).toThrow(/last load without a bone giver/);
     });
 });
