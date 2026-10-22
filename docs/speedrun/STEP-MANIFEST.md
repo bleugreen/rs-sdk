@@ -634,7 +634,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   `%treequest` 9 and `%grandtree` 160, ledger). Ranged 50 **base** for the magic shortbow (read,
   `tier50.rs2:6`), from S14. Prayer 43 for both protect prayers (S07 leaves ~94). The helper trade before segment A
   (`quests/README.md` §4 step 8): gold bar, ball of wool, monkey bones, 5 bananas, magic shortbow +
-  100 rune arrows, **2 prayer potions**, **sharks in the freed slots (9 at the floor)**, Varrock and
+  200 rune arrows, **2 prayer potions**, **sharks in the freed slots (9 at the floor)**, Varrock and
   Ardougne runes, a second antipoison(4). **H12 is superseded and provisional** (`SUPPLIES.md` H12;
   RUN-ORDER.md O37): in rs/201's lab chains of segments H to M (played as a human at 42 HP and
   Defence 1), the kit as first written, 6 prayer potions and so only 5 sharks, **died in 3 of 3**,
@@ -646,7 +646,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   through Q). Over N to P the floor kit held: sharks 8 to 5-7 over N and O and 5-9 left at P's end,
   HP 21-24, prayer 44-46 with 5 of 8 doses left, and P from a pinned start ended on 3-4 doses (m,
   rs/201); the prayer potions stay at the floor until the demon's chains measure dose use at 300 ms
-  (a third is pre-approved if P after a pin fails, RUN-ORDER.md R5). If the inventory cannot carry the margin, a higher Hitpoints or Defence level before
+  (no third: the demon kill costs ~60 points and P leaves 44-47 with 3-5 doses; rs/201's demon chains,
+  2 of 3 kills, the third out of its 100 arrows and dead, so H12 carries **200 rune arrows** and the module
+  fails fast on an empty quiver). At the Grand Tree swap SCORED wields the bow and quivers the arrows (on
+  until the gree-gree at R) and hands back the staff of fire, the mithril scimitar and any S14 leftovers
+  in the same `swap()`. rs/201's per-segment counts peak at 26 of 28 with the bow worn; the S14
+  carry-over is checked by fold-in 16's inventory table. If the inventory cannot carry the margin, a higher Hitpoints or Defence level before
   MM is priced against the order (RUN-ORDER.md O43). **Inventory census: 2 free slots at segment J**
   for the dentures and the mould (a full pack gets nothing from the crates). The unstackables are
   ~30 slots with the bow and arrows worn, before the rune stacks, the items already held and the
@@ -687,7 +692,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   summoned guard's knockout, ~+110 a recurrence), K dungeon1 434, L amulet 97, M jail2 385, N 117, O
   388, P 454; the dungeon has run 0 deaths in 9 passes at the kit floor under Protect from Melee. **R5's
   bad case beyond the expected is ~+370** (rs/185, 23:20 PDT): the demon's 120 (the quest document's,
-  until rs/201's 300 ms demon chains replace it) plus ~250 for a pin (a pin's ~375 less its 125 in the
+  until rs/201's 300 ms demon chains, 2 of 3 kills so far with segments of 342 and 330, keep it until 3 clean kills with 200 arrows) plus ~250 for a pin (a pin's ~375 less its 125 in the
   expected); the death after a rope pin
   (~340) is retired (rs/185, 23:15 PDT; P from a pinned start passed 2 of 2, 441 and 460), unless main
   overrules (RUN-ORDER.md R5). **The rope-pin rule:** wait 50 ticks, then a Varrock teleport (3 of 3 in
