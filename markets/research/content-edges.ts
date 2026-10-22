@@ -10,9 +10,8 @@
 //
 // Lab-only: uses staff cheats (::give, ::tele). Never run against the demo server.
 
-import { readFileSync } from 'node:fs';
-
 import type { BotWorldState } from '../../sdk/types';
+import { loadCosts, snap as snapWith, total } from './content-board-value';
 import { depositAll } from '../../speedrun/lib/bank';
 import { closeSession, openSession } from '../../speedrun/lib/session';
 import { waitTicks, waitUntil } from '../../speedrun/lib/wait';
@@ -22,50 +21,8 @@ import { cheat, clearInventory, leaveTutorial, mustTele, VARROCK_WEST_BANK } fro
 const MAX = 0x7fffffff;
 const VARROCK_GENERAL_STORE = { x: 3217, z: 3415 };
 
-// ---- board value: ObjType.cost by id, with a cert costing what its linked item costs (ObjType.toCertificate)
-function loadCosts(): Map<number, number> {
-    const idOf = new Map<string, number>();
-    for (const line of readFileSync('server/content/pack/obj.pack', 'utf8').split('\n')) {
-        const m = /^(\d+)=(\w+)/.exec(line);
-        if (m) idOf.set(m[2]!, Number(m[1]));
-    }
-    // Older unpacked revisions first, the current one next, hand-written configs last, so later wins.
-    const files = [...new Bun.Glob('**/*.obj').scanSync('server/content/scripts')].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
-    function rank(f: string): number {
-        const m = /^_unpack\/(\d+)\//.exec(f);
-        return m ? Number(m[1]) : 10_000;
-    }
-    const costOf = new Map<string, number>();
-    for (const f of files) {
-        let cur: string | null = null;
-        for (const raw of readFileSync(`server/content/scripts/${f}`, 'utf8').split('\n')) {
-            const line = raw.trim();
-            const head = /^\[(\w+)\]$/.exec(line);
-            if (head) { cur = head[1]!; continue; }
-            const c = /^cost=(\d+)$/.exec(line);
-            if (cur && c) costOf.set(cur, Number(c[1]));
-        }
-    }
-    const byId = new Map<number, number>();
-    for (const [name, id] of idOf) {
-        const base = name.startsWith('cert_') ? name.slice(5) : name;
-        byId.set(id, costOf.get(name) ?? costOf.get(base) ?? 1);
-    }
-    return byId;
-}
 const costs = loadCosts();
-
-type Snap = { bank: Record<string, number>; inv: Record<string, number>; ground: Record<string, number>; boardValue: number };
-function snap(s: BotWorldState | null): Snap {
-    const add = (o: Record<string, number>, k: string, n: number) => { o[k] = (o[k] ?? 0) + n; };
-    const bank: Record<string, number> = {}, inv: Record<string, number> = {}, ground: Record<string, number> = {};
-    let boardValue = 0;
-    for (const i of s?.bank.items ?? []) { add(bank, i.name, i.count); boardValue += (costs.get(i.id) ?? 1) * i.count; }
-    for (const i of s?.inventory ?? []) add(inv, i.name, i.count);
-    for (const g of s?.groundItems ?? []) if (g.distance <= 3) add(ground, g.name, g.count);
-    return { bank, inv, ground, boardValue };
-}
-const total = (x: Snap, name: string) => (x.bank[name] ?? 0) + (x.inv[name] ?? 0) + (x.ground[name] ?? 0);
+const snap = (s: BotWorldState | null) => snapWith(costs, s);
 
 const session = await openSession(botArg());
 const { sdk, bot } = session;
