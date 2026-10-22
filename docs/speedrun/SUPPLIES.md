@@ -329,12 +329,12 @@ section 1).
 3. **Budget item: the rune axe** in H4: held at 13:10 (rs/41). Without it Woodcutting would cost
    +388 (adamant) or +836 (mithril) with the knife.
 4. **Budget:** the expected total plus the fallback deltas in force is under 35,916 (RUN-ORDER.md's
-   headline scenario table: in force, the forecast at 2026-10-23, +439.0 and **35,303.8** expected;
-   today's stock, the conservative row, +634.0 and 35,498.8 on rs/331's bank reads (the 21:20 UTC count's
-   booth case, history: +833.0 and 35,697.8). **On fold-in 23's figures, every quest at its burst figure and S18 at full Charge, the budget
-   condition holds** (blood runes complete for attempt 1; with Charge + Superheat in every stocked stun, ~-58, 35,245.8; for attempts 2-3 it holds down to ~224 held and fails at 100, RUN-ORDER.md
-   section 7); if burst dialogue fails on the night the quests revert to fixed (+819.8) and it
-   fails again (36,123.6), so each quest's browser-client burst acceptance (RUN-ORDER.md O51) is part
+   headline scenario table: in force, the forecast at 2026-10-23, +440.0 and **35,217.8** expected;
+   today's stock, the conservative row, +635.0 and 35,412.8 on rs/331's bank reads (the 21:20 UTC count's
+   booth case, history: +834.0 and 35,611.8). **On fold-in 23's figures, every quest at its burst figure and S18 on Charge + Superheat in every stocked stun, the budget
+   condition holds** (blood runes complete for attempt 1; Superheat off, +58, 35,275.8; for attempts 2-3 it holds down to ~236 held and fails at 100, RUN-ORDER.md
+   section 7); if burst dialogue fails on the night the quests revert to fixed (+803.4) and it
+   fails again (36,021.2), so each quest's browser-client burst acceptance (RUN-ORDER.md O51) is part
    of it.
 5. **Held already:** 520 noted unfermented wines with the wine giver (rs/118); 70 sharks (rs/41, 10:10).
 6. **Fletching:** 570 rune arrowheads held; 1,485 mithril and 2,220 adamant arrowheads (2,070 forecast
