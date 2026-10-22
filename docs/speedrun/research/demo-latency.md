@@ -237,6 +237,30 @@ engine at a different point in the output batch (accounts are flushed one after 
 `processClientsOut`), or the load differed between the two minutes. This is listed as open; the
 measured per-vantage margins are what the recommendation uses.
 
+**22 October, 400 ms ticks.** The demo has run 400 ms ticks since its 19:56:28Z restart (the
+spectator feed's hello reads `tickMs: 400`; section 9). The same sweep from the run host at
+20:35-20:39Z (token `mvjz3zys`, 1,255-1,329 online, 10 trials per delay run up then down, so 20
+per delay, SPEEDRUN_TICK_MS=400, no restart during the sweep):
+
+| Added delay `r` | Run host, 22 Oct 20:35Z, T = 400 ms: 1 / 2 ticks |
+| --- | --- |
+| +0, +25, +50, +100 ms | 20 / 0 at each |
+| +150 ms | 18 / 2 |
+| +200 ms | 13 / 7 |
+| +250 ms | 13 / 7 |
+
+The margin after a frame is now above 250 ms at the median, over 0.6 T, against about 50 ms (0.17 T)
+on 21 October at 300 ms. The tick grew by 100 ms but the margin by about 200 ms, so the engine's
+work per tick also fell, to roughly 150-200 ms from about 250. The probe's warm GETs agree: the
+engine answered a GET in 4-48 ms (median) when it arrived 0-150 ms after a frame, and in 94-174 ms
+when it arrived 200-350 ms after, which is a busy stretch of about 200 ms at the end of each 400 ms
+cycle. The fall in work fits the lower population (about 1,250-1,350 online against 1,650-1,800,
+after the per-address cap went from 100 to 50 at the same restart), but the engine is also
+running unpublished code since 19:36Z, so the two can't be separated from here (inference). At
+this margin (a) is close to certain on any calm minute, and next-tick reactions no longer depend
+on sending within a few ms of the frame. Raw output: `/tmp/rs83-sweep-2035.json` on the run host,
+to be copied into `data/` with the account name redacted.
+
 The blind senders (section 6) agree with the sweeps: from home, sends within 50 ms of a frame hit
 the next tick 86% of the time and later sends never did; from Ashburn, 76% within 50 ms, 43% at
 50-100 ms, 12% at 100-150 ms, and none later.
