@@ -258,8 +258,8 @@ cycle. The fall in work fits the lower population (about 1,250-1,350 online agai
 after the per-address cap went from 100 to 50 at the same restart), but the engine is also
 running unpublished code since 19:36Z, so the two can't be separated from here (inference). At
 this margin (a) is close to certain on any calm minute, and next-tick reactions no longer depend
-on sending within a few ms of the frame. Raw output: `/tmp/rs83-sweep-2035.json` on the run host,
-to be copied into `data/` with the account name redacted.
+on sending within a few ms of the frame. Raw output:
+[`data/sweep-runhost-20261022T2035/`](data/sweep-runhost-20261022T2035/) (`sweep.json`, `summary.txt`).
 
 The blind senders (section 6) agree with the sweeps: from home, sends within 50 ms of a frame hit
 the next tick 86% of the time and later sends never did; from Ashburn, 76% within 50 ms, 43% at
