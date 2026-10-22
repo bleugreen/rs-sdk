@@ -34,7 +34,16 @@
 // packet back until the trade opens, for at most REQUEST_HOLD ticks (rs/106's account sent
 // nothing between its request and the open trade; the helper answers on the next tick).
 // If no trade has opened by then, the program carries on. It fires at most once per stun and
-// only on a player standing next to the account (a stunned player cannot walk). Gate it with
+// only on a player standing next to the account (a stunned player cannot walk). With `resend: n`
+// (off by default; 1 <= n <= REQUEST_HOLD) a request that has drawn neither an open trade nor the
+// engine's "Sending trade offer..." n ticks after it goes out once more, inside the hold, and the
+// hold restarts from the re-send. The engine sends that line in the same script that shows the
+// partner 'wishes to trade', so without it the partner never saw the request (a dropped op), and
+// a trade still open, or a request already answered, never draws a second one. The line reaches
+// the pack through the program's FreshMessages (`heard`), which keeps every message of a
+// publication: on the browser it shares its tick's observation id with the stun lines. Every
+// request is stamped as a status mark under the action's name, and a re-send under
+// `<name>:resend`, so a lab can place them on the account's clock. Gate it with
 // `fewer` (e.g. fewer than 3 bones) so it goes out only when a top-up is due, and give it
 // `window: [2, 4]`: rs/106's trades took 5-6 ticks from the request, so one sent later than +4
 // is still open on the attempt tick and delays the attempt. The pickpocket
@@ -340,6 +349,8 @@ export interface StunPackOptions {
     window?: unknown;
     /** Stun actions per tick, at most the budget less the knight click (default 4). */
     perTick?: unknown;
+    /** Ticks after an unanswered `player` request at which it goes out once more (default off; see the header). */
+    resend?: unknown;
 }
 
 export interface StunSummary {
@@ -357,10 +368,23 @@ export interface StunSummary {
     modalTicks: number;
     /** Ticks a `player` action owned (the knight click skipped). */
     ownedTicks: number;
+    /** `player` requests sent once more (only with `resend`). */
+    resends?: number;
 }
 
 /** Ticks after a trade request in which the program sends nothing while it waits for the trade to open. */
 export const REQUEST_HOLD = 3;
+
+/** The engine's reply to a trade request it ran (trade.rs2 [opplayer4]), in the script that tells the partner. */
+export const TRADE_SENT_RE = /^sending trade offer/i;
+
+/** A `player` request the program holds for: when it went out, and whether the engine answered it. */
+interface PendingRequest {
+    tick: number;
+    tpl: StunTemplate;
+    answered: boolean;
+    resent: boolean;
+}
 
 /** A main modal (a trade, a bank) is open: an inventory op, a button or a click would close it. */
 export function modalOpen(s: BotWorldState): boolean {
@@ -385,11 +409,20 @@ export class StunPack {
     private modalTicks = 0;
     private ownedTicks = 0;
     private playerSentThisStun = false;
-    private requestTick: number | null = null;
+    private request: PendingRequest | null = null;
+    private readonly resend: number | null;
+    private resends = 0;
     private readonly byAction: Record<string, number> = {};
 
     constructor(opts: StunPackOptions) {
         this.templates = parseStunActions(opts.actions);
+        if (opts.resend === undefined) this.resend = null;
+        else {
+            const n = num(opts.resend, 0, 'requestResend');
+            if (!Number.isInteger(n) || n < 1 || n > REQUEST_HOLD) throw new Error(`requestResend must be a whole number of ticks from 1 to ${REQUEST_HOLD} (inside the request hold)`);
+            if (!this.templates.some(t => t.kind === 'player')) throw new Error('requestResend needs a player action in stunActions');
+            this.resend = n;
+        }
         const w = opts.window ?? [2, 7];
         if (!Array.isArray(w) || w.length !== 2 || !w.every(v => Number.isInteger(v))) throw new Error('stunWindow must be [from, to], offsets from the failure tick');
         [this.from, this.to] = w as [number, number];
@@ -407,17 +440,46 @@ export class StunPack {
         this.stuns++;
     }
 
+    /** A game message the program saw: the engine's "Sending trade offer..." answers the pending request. */
+    heard(text: string): void {
+        if (this.request && TRADE_SENT_RE.test(text)) this.request.answered = true;
+    }
+
     /**
-     * True while a trade request waits for its trade to open: send nothing. Ends when a modal
-     * opens (the caller's interface rule takes over) or REQUEST_HOLD ticks have passed.
+     * True while a trade request waits for its trade to open: send nothing but the one re-send
+     * `resend` allows. Ends when a modal opens (the caller's interface rule takes over) or
+     * REQUEST_HOLD ticks have passed since the last request.
      */
-    holding(t: number, s: BotWorldState): boolean {
-        if (this.requestTick === null) return false;
-        if (modalOpen(s) || t > this.requestTick + REQUEST_HOLD) {
-            this.requestTick = null;
+    hold(ctx: ProgramContext): boolean {
+        const r = this.request;
+        if (!r) return false;
+        const t = ctx.tick;
+        if (modalOpen(ctx.state) || t > r.tick + REQUEST_HOLD) {
+            this.request = null;
             return false;
         }
-        return t > this.requestTick;
+        if (t <= r.tick) return false;
+        if (this.resend !== null && !r.resent && !r.answered && t >= r.tick + this.resend) this.resendRequest(ctx, r);
+        return true;
+    }
+
+    /** Send an unanswered request once more, if its player is still next to the account and the action still due. */
+    private resendRequest(ctx: ProgramContext, r: PendingRequest): void {
+        r.resent = true;
+        const p = resolve(r.tpl, ctx.state, new Ledger(ctx.state.inventory));
+        if (!p) {
+            ctx.count('resendSkipped');
+            return;
+        }
+        if (!ctx.send(p.action, `${p.what} (re-send)`)) {
+            this.rejected++;
+            ctx.count('stunRejected');
+            return;
+        }
+        this.resends++;
+        ctx.count('requestResends');
+        ctx.mark(`${r.tpl.name}:resend`);
+        r.tick = ctx.tick;
     }
 
     /**
@@ -496,7 +558,8 @@ export class StunPack {
             }
             if (p.t.kind === 'player') {
                 this.playerSentThisStun = true;
-                this.requestTick = t;
+                this.request = { tick: t, tpl: p.t, answered: false, resent: false };
+                ctx.mark(p.t.name);
             }
         }
         if (owned) {
@@ -528,7 +591,8 @@ export class StunPack {
             firedPerStun: this.stuns ? Math.round((this.fired / this.stuns) * 100) / 100 : 0,
             byAction: { ...this.byAction },
             modalTicks: this.modalTicks,
-            ownedTicks: this.ownedTicks
+            ownedTicks: this.ownedTicks,
+            ...(this.resend !== null ? { resends: this.resends } : {})
         };
     }
 }
