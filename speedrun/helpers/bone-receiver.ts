@@ -27,7 +27,7 @@
 import type { BotWorldState } from '../../sdk/types';
 import { receiveFrom, tradeOf } from '../lib/trade';
 import { canonName, CueWriter, cueDir, FrameLog, scopeOption, writeTopUpAsk } from './altar-cue';
-import { cheat, count, exactItem, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
+import { altarData, altarRoomOf, cheat, count, exactItem, isLocalServer, labTele, leaveRoom, pos, standOn, until, type Tile } from './altar-room';
 import { boneServer, DEFAULT_BONE_BANK, readBoneStatuses, S07_SITES } from './bone-giver';
 import { FORBIDDEN_ACCOUNTS } from './fleet-config';
 import { closeBank, depositAllExcept, openBank, walkNear } from './mule';
@@ -106,6 +106,12 @@ export const role: Role = {
                 await until(ctx, st => st.inventory.length === 0, 10);
                 if (pos(s()).x !== site.x || pos(s()).z !== site.z) await labTele(ctx, site);
             } else {
+                // Left in an altar room (the Runecraft stand-in uses these accounts too): out by its portal first.
+                const room = altarRoomOf(s());
+                if (room) {
+                    ctx.log('leaving the altar room', { altar: room });
+                    await leaveRoom(ctx, altarData(room));
+                }
                 // An empty pack has a load's free slots: bank what we carry at the givers' bank, then walk over.
                 if (s().inventory.length) {
                     const bank = DEFAULT_BONE_BANK;

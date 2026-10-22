@@ -66,6 +66,12 @@ export function inRoom(s: BotWorldState | null | undefined, altar: Altar): boole
     return p.level === altar.enter.level && Math.max(Math.abs(p.x - altar.enter.x), Math.abs(p.z - altar.enter.z)) <= 24;
 }
 
+/** The route altar whose room the player stands in, or null: a helper left in a room can't walk out of it. */
+export function altarRoomOf(s: BotWorldState | null | undefined): AltarName | null {
+    for (const name of Object.keys(ROUTE_ALTARS) as AltarName[]) if (inRoom(s, altarData(name))) return name;
+    return null;
+}
+
 export function isLocalServer(server = process.env.SERVER ?? ''): boolean {
     return /^(localhost|127\.)/.test(server);
 }
