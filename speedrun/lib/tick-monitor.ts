@@ -19,7 +19,9 @@
 // Per minute, counted on `TickCadence`:
 // - glued: an arrival under `gluedMs` (5) after the one before it;
 // - late: an arrival more than `lateMs` (120) after its expected cadence point, which is the
-//   anchor arrival plus whole ticks. The anchor moves to every arrival that is on time and not
+//   anchor arrival plus whole ticks of the observed period (`TickPeriod`), not the nominal
+//   `tickMs`: the demo server ticks at 340-370 ms, and against 300 ms every offset would carry
+//   the difference, eating that much of the late threshold on every tick. The anchor moves to every arrival that is on time and not
 //   glued, so slow drift between the server's and this machine's clocks is followed. A glued
 //   arrival never moves it: the tick glued behind a held one reads early against the cadence,
 //   and anchoring on it would make the next on-time tick read late (one hold, counted twice).
@@ -29,13 +31,84 @@
 // - the arrival offsets against the cadence: p50, p90 and max, in ms;
 // - gaps: the label went back (a relaunch restarts the client's counter) or jumped more than
 //   `gapTicks` (17, the watchdog's stale bound) at once. The cadence restarts there and the
-//   jump is not counted as glued or late.
+//   jump is not counted as glued or late;
+// - the period the window's arrivals were measured against (median, ms).
 
 import type { TickLog, TickRow } from './ticks';
 import { tickMs as defaultTickMs } from './wait';
 
+/** Ticks one period sample spans (`TickPeriod`). */
+export const PERIOD_SPAN_TICKS = 8;
+/** Period samples the rolling median is taken over: about 16 s of ticks at the demo's 340 ms. */
+export const PERIOD_WINDOW = 40;
+/** Samples before the median replaces the nominal tick length: from the 13th tick, about 4 s in. */
+export const PERIOD_MIN_SAMPLES = 5;
+
+/**
+ * The server's tick period as this side observes it: the rolling median of the last
+ * `PERIOD_WINDOW` per-tick intervals, each measured across `PERIOD_SPAN_TICKS` ticks, and the
+ * nominal length until `PERIOD_MIN_SAMPLES` of them exist.
+ *
+ * Why a span and not single intervals: a held tick and the one glued behind it give single
+ * intervals of +hold and ~0, and a path that pairs ticks (every other one held) alternates them,
+ * where a median of single intervals flips between ~0 and twice the period. Across 8 ticks a hold
+ * moves only the samples starting or ending on it, by hold / 8, and a lasting shift (a stall)
+ * raises 8 samples of 40 by shift / 8, which the median ignores. The window follows the demo's
+ * period as it moves between minutes (161-177 ticks a minute on 2026-10-21) while a minute of
+ * holds cannot drag it. The warm-up is short so that the first minute's late counts are against
+ * the measured period; before it, the nominal length still re-anchors on every on-time arrival,
+ * so a steady slow stream reads offsets of the difference (40 ms at 340), not late.
+ */
+export class TickPeriod {
+    private last: number | null = null;
+    /** Arrival times of the last `PERIOD_SPAN_TICKS + 1` consecutive labels, ending at `last`. */
+    private times: number[] = [];
+    private samples: number[] = [];
+    private median: number | null = null;
+
+    constructor(readonly nominalMs: number, readonly gapTicks: number = TICKMON_DEFAULTS.gapTicks) {}
+
+    /** Milliseconds per tick: the rolling median once measured, else the nominal length. */
+    get ms(): number {
+        return this.median ?? this.nominalMs;
+    }
+
+    get measured(): boolean {
+        return this.median !== null;
+    }
+
+    /**
+     * Tick `label` arrived at `at` (ms). A repeat is ignored; a publication that moves the label
+     * by k is k arrivals at one time; a label that goes back or jumps past `gapTicks` restarts
+     * the span (the samples so far stand: a relaunch does not change the server's tick).
+     */
+    see(label: number, at: number): void {
+        const last = this.last;
+        if (last === label) return;
+        this.last = label;
+        if (last === null || label < last || label - last > this.gapTicks) {
+            this.times = [at];
+            return;
+        }
+        for (let l = last + 1; l <= label; l++) {
+            this.times.push(at);
+            if (this.times.length > PERIOD_SPAN_TICKS + 1) this.times.shift();
+            if (this.times.length === PERIOD_SPAN_TICKS + 1) this.sample((at - this.times[0]!) / PERIOD_SPAN_TICKS);
+        }
+    }
+
+    private sample(ms: number): void {
+        this.samples.push(ms);
+        if (this.samples.length > PERIOD_WINDOW) this.samples.shift();
+        if (this.samples.length < PERIOD_MIN_SAMPLES) return;
+        const s = [...this.samples].sort((a, b) => a - b);
+        const mid = s.length >> 1;
+        this.median = s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
+    }
+}
+
 export interface TickCadenceConfig {
-    /** Milliseconds per server tick (default `tickMs()`). */
+    /** Nominal milliseconds per server tick (default `tickMs()`): the period until `TickPeriod` has measured one. */
     tickMs: number;
     /** An arrival more than this after its expected cadence point is late. */
     lateMs: number;
@@ -56,11 +129,13 @@ export interface CadenceCounts {
     gaps: number;
     /** Offset of each arrival from its expected cadence point, ms; arrivals that set the cadence have none. */
     offsets: number[];
+    /** The tick period each offset was measured against, ms (parallel to `offsets`). */
+    periods: number[];
     firstTick: number | null;
     lastTick: number | null;
 }
 
-const emptyCounts = (): CadenceCounts => ({ ticks: 0, glued: 0, late: 0, gaps: 0, offsets: [], firstTick: null, lastTick: null });
+const emptyCounts = (): CadenceCounts => ({ ticks: 0, glued: 0, late: 0, gaps: 0, offsets: [], periods: [], firstTick: null, lastTick: null });
 
 /** The classifier: feed arrivals in order with `arrive`, collect and reset the counts with `take`. */
 export class TickCadence {
@@ -71,8 +146,11 @@ export class TickCadence {
     /** Whether the last arrival that was not glued was late. */
     private soloLate = false;
     private counts = emptyCounts();
+    private readonly period: TickPeriod;
 
-    constructor(readonly cfg: TickCadenceConfig) {}
+    constructor(readonly cfg: TickCadenceConfig) {
+        this.period = new TickPeriod(cfg.tickMs, cfg.gapTicks);
+    }
 
     /** One publication: tick `label`, received at `at` (ms). A repeat of the current label is ignored. */
     arrive(label: number, at: number): void {
@@ -87,14 +165,18 @@ export class TickCadence {
             this.prevLabel = this.anchorLabel = label;
             this.prevAt = this.anchorAt = at;
             this.soloLate = false;
+            this.period.see(label, at);
             return;
         }
+        // measured before this arrival joins it: the expectation comes from the ticks before
+        const period = this.period.ms;
         for (let l = prev + 1; l <= label; l++) {
             const glued = at - this.prevAt < this.cfg.gluedMs;
-            const offset = at - (this.anchorAt + (l - this.anchorLabel) * this.cfg.tickMs);
+            const offset = at - (this.anchorAt + (l - this.anchorLabel) * period);
             const late = offset > this.cfg.lateMs;
             c.ticks++;
             c.offsets.push(offset);
+            c.periods.push(period);
             if (glued) c.glued++;
             if (late) c.late++;
             if (!glued) {
@@ -107,6 +189,7 @@ export class TickCadence {
             this.prevAt = at;
         }
         this.prevLabel = label;
+        this.period.see(label, at);
     }
 
     /** The counts since the last `take`; the cadence itself carries on. */
@@ -118,7 +201,7 @@ export class TickCadence {
 }
 
 /** One emitted window. */
-export interface TickMonMinute extends Omit<CadenceCounts, 'offsets'> {
+export interface TickMonMinute extends Omit<CadenceCounts, 'offsets' | 'periods'> {
     /** 0 for the minute that began at the first in-world tick. */
     minute: number;
     /** Wall-clock start of the window (epoch ms) and its length in seconds (60 but for a final partial one). */
@@ -129,6 +212,8 @@ export interface TickMonMinute extends Omit<CadenceCounts, 'offsets'> {
     p90: number | null;
     max: number | null;
     lateMs: number;
+    /** Median tick period the window's offsets were measured against, ms; null with no offsets. */
+    periodMs: number | null;
 }
 
 function quantile(sorted: number[], p: number): number | null {
@@ -136,16 +221,17 @@ function quantile(sorted: number[], p: number): number | null {
 }
 
 export function summarizeWindow(c: CadenceCounts, minute: number, startedAt: number, secs: number, lateMs: number): TickMonMinute {
-    const { offsets, ...rest } = c;
+    const { offsets, periods, ...rest } = c;
     const sorted = [...offsets].sort((a, b) => a - b);
-    return { ...rest, minute, startedAt, secs, p50: quantile(sorted, 0.5), p90: quantile(sorted, 0.9), max: quantile(sorted, 1), lateMs };
+    const periodMs = quantile([...periods].sort((a, b) => a - b), 0.5);
+    return { ...rest, minute, startedAt, secs, p50: quantile(sorted, 0.5), p90: quantile(sorted, 0.9), max: quantile(sorted, 1), lateMs, periodMs };
 }
 
-/** `TICKMON minute=3 at=2026-10-21T16:23:00Z secs=60 ticks=200 glued=0 late=1 p50=0 p90=2 max=151 gaps=0 lateMs=120` */
+/** `TICKMON minute=3 at=2026-10-21T16:23:00Z secs=60 ticks=176 glued=0 late=1 p50=0 p90=2 max=151 gaps=0 lateMs=120 periodMs=341` */
 export function tickMonLine(m: TickMonMinute): string {
     const v = (x: number | null) => (x === null ? '-' : String(x));
     const at = new Date(m.startedAt).toISOString().replace(/\.\d+Z$/, 'Z');
-    return `TICKMON minute=${m.minute} at=${at} secs=${m.secs} ticks=${m.ticks} glued=${m.glued} late=${m.late} p50=${v(m.p50)} p90=${v(m.p90)} max=${v(m.max)} gaps=${m.gaps} lateMs=${m.lateMs}`;
+    return `TICKMON minute=${m.minute} at=${at} secs=${m.secs} ticks=${m.ticks} glued=${m.glued} late=${m.late} p50=${v(m.p50)} p90=${v(m.p90)} max=${v(m.max)} gaps=${m.gaps} lateMs=${m.lateMs} periodMs=${v(m.periodMs)}`;
 }
 
 /** The part of the SDK the monitor reads. */
@@ -260,7 +346,7 @@ export function tickMonRow(log: TickLog, session: { name: string; sessionId: num
         ticks: m.ticks,
         wallMs: m.secs * 1000,
         ok: true,
-        meta: { line: tickMonLine(m), minute: m.minute, glued: m.glued, late: m.late, p50: m.p50, p90: m.p90, max: m.max, gaps: m.gaps, lateMs: m.lateMs },
+        meta: { line: tickMonLine(m), minute: m.minute, glued: m.glued, late: m.late, p50: m.p50, p90: m.p90, max: m.max, gaps: m.gaps, lateMs: m.lateMs, periodMs: m.periodMs },
         tickMs,
         at: new Date(m.startedAt).toISOString(),
     };

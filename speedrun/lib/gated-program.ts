@@ -9,10 +9,13 @@
 // `gate.drop` and each new slip to `gate.slip`.
 //
 // The pause rule (STEP-MANIFEST.md entry 0): catch-ups per minute over `pause.above` in the
-// knife run's frames pause to plain; once plain has run `pause.minTicks` (about a minute)
-// with catch-ups under `pause.below`, the loop re-probes and resumes on the verdict. Paused
-// drops are not fed to the gate, so a plain stretch never counts as a knife one, and the
-// resume probe starts the gate's next stretch clean.
+// knife run's frames pause to plain; once plain has run a minute's ticks with catch-ups under
+// `pause.below`, the loop re-probes and resumes on the verdict. A minute's ticks is the page's
+// catch-up window (frames.ts keeps the last 60 s of a run's frames, wall-clock) in ticks at the
+// observed period (`TickPeriod`, fed from the states' receipt times), so plain runs until that
+// window has filled with plain frames and no longer: 177 ticks at the demo's 340 ms, 200 at
+// 300 ms. `pause.minTicks` fixes the count. Paused drops are not fed to the gate, so a plain
+// stretch never counts as a knife one, and the resume probe starts the gate's next stretch clean.
 //
 // The measured switch-off is in ticks per expected roll: each drop is weighted by the rolls it
 // stands for (`rollsPerDrop`, 1 / success chance at the current level, as
@@ -28,7 +31,11 @@
 import type { BotWorldState } from '../../sdk/types';
 import { type DirectRule, type GateOptions, HostGate, type ProbeSdk } from './hostgate';
 import { awaitProgram, probeInPage, ProgramError, type ProgramSdk, type ProgramStatus, startProgram, stopProgram } from './programs';
+import { TickPeriod } from './tick-monitor';
 import { tickMs } from './wait';
+
+/** The span of the page's `frames.catchUpsLastMinute` (server/webclient/src/bot/programs/frames.ts). */
+const CATCH_UP_WINDOW_MS = 60_000;
 
 export type GatedTechnique = 'auto' | 'knife' | 'plain';
 export type SegmentTechnique = 'knife' | 'plain';
@@ -67,7 +74,7 @@ export interface PauseRule {
     above?: number;
     /** Resume when it is under this (default 1)... */
     below?: number;
-    /** ...after plain has run this many ticks (default one minute of ticks). */
+    /** ...after plain has run this many ticks (default the page's one-minute catch-up window at the observed tick period). */
     minTicks?: number;
 }
 
@@ -143,7 +150,7 @@ export function inPageGate(sdk: ProgramSdk & ProbeSdk, opts: InPageGateOptions):
  * parameters only one technique accepts (knife-cycle's `bury` is knife-only).
  */
 export async function runGatedProgram(
-    sdk: ProgramSdk,
+    sdk: ProgramSdk & { getStateReceivedAt?(): number },
     name: string,
     params: Record<string, unknown> | ((technique: SegmentTechnique) => Record<string, unknown>),
     opts: GatedOptions
@@ -155,7 +162,8 @@ export async function runGatedProgram(
     if (auto && !gate) throw new Error("runGatedProgram: technique 'auto' needs a gate");
     const above = opts.pause?.above ?? 5;
     const below = opts.pause?.below ?? 1;
-    const pauseTicks = opts.pause?.minTicks ?? Math.ceil(60000 / tickMs());
+    const period = new TickPeriod(tickMs());
+    const pauseTicks = () => opts.pause?.minTicks ?? Math.ceil(CATCH_UP_WINDOW_MS / period.ms);
     const log = opts.log ?? (() => {});
     const paramsFor = typeof params === 'function' ? params : () => params;
     const base = paramsFor('knife');
@@ -210,6 +218,8 @@ export async function runGatedProgram(
             status = await awaitProgram(sdk, started.runId, {
                 ...(opts.staleMs !== undefined ? { staleMs: opts.staleMs } : {}),
                 onProgress: st => {
+                    // the state carrying `st` is the one just received
+                    period.see(st.tick, sdk.getStateReceivedAt?.() || Date.now());
                     opts.onProgress?.(st, technique);
                     if (stopFor || !auto) return;
                     const d = dropsOf(sw, st);
@@ -225,7 +235,7 @@ export async function runGatedProgram(
                         paused = true;
                         log(`T${st.tick} pause: ${catchUps} catch-ups in the last minute, over ${above}: plain`);
                         requestStop('pause');
-                    } else if (paused && st.tick - st.startedTick >= pauseTicks && catchUps < below) {
+                    } else if (paused && st.tick - st.startedTick >= pauseTicks() && catchUps < below) {
                         log(`T${st.tick} resume: ${catchUps} catch-ups in the last minute, under ${below}: re-probe`);
                         requestStop('resume');
                     } else if (gate!.due(st.tick)) requestStop('probe');

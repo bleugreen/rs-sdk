@@ -17,9 +17,15 @@ class FakePage {
     readonly starts: Array<{ name: string; params: Record<string, unknown>; tick: number }> = [];
     status: ProgramStatus | null = null;
     catchUpsAt: (tick: number) => number = () => 0;
+    /** The server's tick length, as the gateway's receipt times read it. */
+    msPerTick = 300;
+    private receivedAt = 0;
 
     constructor(public behave: (st: ProgramStatus, tick: number) => void) {
-        Object.assign(this.sdk, { sendAction: (a: { op: string; name: string; params: Record<string, unknown> }) => Promise.resolve(this.handle(a)) });
+        Object.assign(this.sdk, {
+            sendAction: (a: { op: string; name: string; params: Record<string, unknown> }) => Promise.resolve(this.handle(a)),
+            getStateReceivedAt: () => this.receivedAt
+        });
     }
 
     private handle(a: { op: string; name: string; params: Record<string, unknown> }) {
@@ -52,6 +58,7 @@ class FakePage {
             st.frames = frames(this.catchUpsAt(t));
             this.behave(st, t);
         }
+        this.receivedAt += this.msPerTick;
         this.sdk.tick({ program: st ? structuredClone(st) : null } as Partial<BotWorldState>);
     }
 
@@ -159,6 +166,22 @@ describe('runGatedProgram', () => {
         // gate, so it was never measured as a knife stretch no faster than plain
         expect(run.segments[1]!.status.counters.successes).toBeGreaterThan(10);
         expect(gate.history.some(h => h.why === 'measured')).toBe(false);
+    });
+
+    test("the default pause is the page's one-minute catch-up window in observed ticks: 177 at 340 ms, 200 at 300 ms", async () => {
+        const pausedTicks = async (msPerTick: number) => {
+            const page = new FakePage(gather({ knife: 3, plain: 4 }));
+            page.msPerTick = msPerTick;
+            page.catchUpsAt = t => (t >= 1010 && t < 1020 ? 6 : 0);
+            const gate = scriptedGate(page, [20]);
+            const run = await drive(page, runGatedProgram(page.sdk, 'knife-cycle', { method: 'willow', successes: 100 }, { gate, technique: 'auto' }));
+            expect(shape(run.segments)).toEqual(['knife:pause', 'plain:resume', 'knife:done']);
+            const plain = run.segments[1]!.status;
+            return plain.endedTick! - plain.startedTick;
+        };
+        // 60 s at 340 ms; 60 s at the nominal 300 would hold plain 200 ticks, 68 s
+        expect(await pausedTicks(340)).toBe(Math.ceil(60_000 / 340));
+        expect(await pausedTicks(300)).toBe(200);
     });
 
     test('measured switch-off: a knife slower than plain over measureDrops drops goes plain, with no probe', async () => {
