@@ -53,9 +53,9 @@ describe('lab fixtures', () => {
         }
     });
 
-    test("A and B start at the ledger's S26 inventory: 2 free", () => {
+    test("A and B start at the ledger's S26 inventory: 3 free (fold-in 28: H22 carries no Varrock set)", () => {
         for (const f of FIXTURES.filter(x => ['A', 'B'].includes(x.letter))) {
-            expect(packSlots(add(f.items ?? {}, f.late?.items ?? {}), [...(f.worn ?? []), ...(f.late?.worn ?? [])], stackable)).toBe(26);
+            expect(packSlots(add(f.items ?? {}, f.late?.items ?? {}), [...(f.worn ?? []), ...(f.late?.worn ?? [])], stackable)).toBe(25);
         }
     });
 

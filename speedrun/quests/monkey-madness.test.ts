@@ -3,13 +3,15 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 import type { BotWorldState, InventoryItem, PlayerState, QuestJournalState } from '../../sdk/types';
-import { baseState } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk } from '../lib/fake-sdk';
+import type { ReceiveResult } from '../lib/trade';
 import { compactJournal } from '../lib/quests';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession } from '../runner/step';
 import {
     BANANA_TREE_IDS, bananaRoomDrops, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, isWaydarIntroEnd, itemMilestone, setStepNote, stopgapRetry, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
-    BELOW_30_EATING, cureWanted, eatBelowFor, inGuardCorridor, sharksToDrop, topUpRefusal, townLegPrayer, type TopUp, immunityWanted, nextBananaTree, SUPER_IMMUNE_TICKS, offAtoll, patrolLeavesLane, SEGMENT_EATING, topUpWanted, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, steps, templeLeft, treeRouteRefusal, yRoom, type MmContext,
+    BELOW_30_EATING, cureWanted, eatBelowFor, sharksToDrop, topUpRefusal, type TopUp, immunityWanted,
+    ARCHER_REACH, AUNT_BOX, crateRoute, crateSteps, entersSleepingZone, SLEEPING_DETOURS, sleepingDetour, GUARD_REACH, legPrayerFor, M_TOPUP_TILE, mLegSize, mTopUpSharks, NO_DWELL, pathTiles, pLegSize, POSTED_ARCHERS, prayerRuns, receiveLeg, RELIGIOUS_GUARDS, SLEEPING_ZONE, tilePrayer, TOPUP_TRIES, TOPUP_WAIT, tradeIdle, type Receive, nextBananaTree, SUPER_IMMUNE_TICKS, offAtoll, patrolLeavesLane, SEGMENT_EATING, topUpWanted, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, steps, templeLeft, treeRouteRefusal, yRoom, type MmContext,
 } from './monkey-madness';
 import { slotNeed } from './segments';
 
@@ -127,13 +129,10 @@ describe('eating policy', () => {
         baseState({ player: { name: 'lab', x: 0, z: 0, worldX: 0, worldZ: 0, level: 0, hp } as unknown as PlayerState, inventory: Array.from({ length: sharks }, (_, i) => item(MM_OBJ.shark, i)) } as Partial<BotWorldState>);
     /** The worst damage in any 3-tick window per segment over every valid round, without and with the hits near the guards. */
     const WORST_3_TICKS: Record<string, number> = { H: 17, I: 12, J: 15, K: 16, L: 2, M: 11, N: 13, O: 14, P: 15, Q: 2, R: 6 };
-    const WORST_IN_CORRIDOR: Record<string, number> = { J: 29, K: 24, N: 19, O: 21 };
 
-    test('the ruled thresholds are 10 + each segment\'s worst 3-tick damage, H-R, by location; 20 elsewhere; no top-ups', () => {
+    test('the ruled thresholds are 10 + each segment\'s worst 3-tick damage, H-R, everywhere (no corridor column); 20 elsewhere; no top-ups', () => {
         for (const [letter, worst] of Object.entries(WORST_3_TICKS)) expect([letter, eatBelowFor(SEGMENT_EATING, letter)]).toEqual([letter, 10 + worst]);
-        for (const [letter, worst] of Object.entries(WORST_IN_CORRIDOR)) expect([letter, eatBelowFor(SEGMENT_EATING, letter, true)]).toEqual([letter, 10 + worst]);
-        // Outside J, K, N and O the corridor changes nothing.
-        expect(eatBelowFor(SEGMENT_EATING, 'H', true)).toBe(eatBelowFor(SEGMENT_EATING, 'H'));
+        expect(Object.keys(SEGMENT_EATING).sort()).toEqual(['below', 'otherwise']);
         for (const letter of 'ABCDEFGSTUVWXYZ') expect([letter, eatBelowFor(SEGMENT_EATING, letter)]).toEqual([letter, 20]);
         expect(SEGMENT_EATING.topUpBelow).toBeUndefined();
     });
@@ -532,39 +531,193 @@ describe("Y: room for Narnode's reward", () => {
     });
 });
 
-describe('the zone prayer round the temple\'s religious guards', () => {
-    test('a leg passing within 6 of a guard spawn is prayed against melee, others against missiles', () => {
-        // N's walk from the jail yard to the temple ladder's foot, beside the guard at (2795,2775).
-        expect(townLegPrayer({ x: 2765, z: 2794 }, { x: 2794, z: 2774 }, 0)).toBe('protect_from_melee');
-        // J's first via point from Garkor, 3 south of that guard.
-        expect(townLegPrayer({ x: 2805, z: 2762 }, { x: 2795, z: 2772 }, 0)).toBe('protect_from_melee');
-        // The crate building's south door, far from every guard.
-        expect(townLegPrayer({ x: 2780, z: 2770 }, { x: 2771, z: 2763 }, 0)).toBe('protect_from_missiles');
-        // K's roof walk across the temple's first floor.
-        expect(townLegPrayer({ x: 2787, z: 2795 }, { x: 2794, z: 2774 }, 1)).toBe('protect_from_melee');
-        // Level 2 (the bamboo bridges) has no guards.
-        expect(townLegPrayer({ x: 2786, z: 2793 }, { x: 2787, z: 2795 }, 2)).toBe('protect_from_missiles');
+describe('the zone prayer by location', () => {
+    const MELEE = 'protect_from_melee';
+    const MISSILES = 'protect_from_missiles';
+    const AUNT_WAIT = { x: 2749, z: 2791 };
+
+    test('the posted archers are exactly the map\'s mm_posted_archer spawns on level 0', () => {
+        const root = join(import.meta.dir, '..', '..', 'server', 'content');
+        const id = readFileSync(join(root, 'pack', 'npc.pack'), 'utf8').split('\n').map(l => l.split('=')).find(([, n]) => n?.trim() === 'mm_posted_archer')![0]!;
+        const npcs = readFileSync(join(root, 'maps', 'm43_43.jm2'), 'utf8').split('==== NPC ====')[1]!.split('====')[0]!;
+        const spawns = [...npcs.matchAll(/^(\d+) (\d+) (\d+): (\d+)/gm)].filter(m => m[4] === id).map(m => ({ level: Number(m[1]), x: 43 * 64 + Number(m[2]), z: 43 * 64 + Number(m[3]) }));
+        expect(spawns.every(s => s.level === 0)).toBe(true);
+        const key = (p: { x: number; z: number }) => `${p.x},${p.z}`;
+        expect(spawns.map(key).sort()).toEqual(POSTED_ARCHERS.map(key).sort());
     });
 
-    test('the corridor box covers floors 0 and 1 only', () => {
-        const at = (x: number, z: number, level: number) => baseState({ player: { name: 'lab', x, z, worldX: x, worldZ: z, level, hp: 30 } as unknown as PlayerState } as Partial<BotWorldState>);
-        expect(inGuardCorridor(at(2795, 2780, 0))).toBe(true);
-        expect(inGuardCorridor(at(2795, 2780, 1))).toBe(true);
-        expect(inGuardCorridor(at(2795, 2780, 2))).toBe(false);
-        expect(inGuardCorridor(at(2770, 2780, 0))).toBe(false);
+    test('Melee beside a religious guard out of every posted archer\'s reach, and in the aunt\'s box; Missiles elsewhere', () => {
+        // The temple ladder's foot, beside the guard at (2795,2775); the corridor south of the temple; the first floor.
+        expect([tilePrayer({ x: 2794, z: 2774 }, 0), tilePrayer({ x: 2795, z: 2780 }, 0), tilePrayer({ x: 2797, z: 2785 }, 1)]).toEqual([MELEE, MELEE, MELEE]);
+        // The 13:34 round's archer-sized hits under Melee: I at (2791,2770), J's NW edge, both in reach of a post.
+        expect([tilePrayer({ x: 2791, z: 2770 }, 0), tilePrayer({ x: 2785, z: 2775 }, 0), tilePrayer({ x: 2784, z: 2772 }, 0)]).toEqual([MISSILES, MISSILES, MISSILES]);
+        // The aunt's box: the wait tile and the child's tile; the town and the bamboo bridges (level 2, no guards).
+        expect([tilePrayer(AUNT_WAIT, 0), tilePrayer({ x: 2743, z: 2795 }, 0), tilePrayer({ x: 2770, z: 2780 }, 0), tilePrayer({ x: 2790, z: 2790 }, 2)]).toEqual([MELEE, MELEE, MISSILES, MISSILES]);
+    });
+
+    test('the 11 no-dwell tiles are each in a guard\'s and an archer\'s reach, so walked under Missiles', () => {
+        expect(NO_DWELL).toHaveLength(11);
+        for (const t of NO_DWELL) {
+            expect(RELIGIOUS_GUARDS[0]!.some(g => Math.max(Math.abs(g.x - t.x), Math.abs(g.z - t.z)) <= GUARD_REACH)).toBe(true);
+            expect(POSTED_ARCHERS.some(a => Math.max(Math.abs(a.x - t.x), Math.abs(a.z - t.z)) <= ARCHER_REACH)).toBe(true);
+            expect(tilePrayer(t, 0)).toBe(MISSILES);
+        }
+    });
+
+    test('a walk\'s tiles step diagonally first, as the server walks, the start excluded', () => {
+        expect(pathTiles({ x: 0, z: 0 }, [{ x: 3, z: 1 }])).toEqual([{ x: 1, z: 1 }, { x: 2, z: 1 }, { x: 3, z: 1 }]);
+        expect(pathTiles({ x: 0, z: 0 }, [{ x: 0, z: 0 }])).toEqual([]);
+    });
+
+    test("O's walk to the wait tile is under Missiles: from the jail yard one run, from the temple Missiles once past the guards", () => {
+        // From outside the cell (a knockout's way into the town): no guard near, and the wait tile's lone Melee tile is absorbed.
+        expect(prayerRuns({ x: 2765, z: 2794 }, [AUNT_WAIT], 0)).toEqual([{ to: AUNT_WAIT, prayer: MISSILES, tiles: 16 }]);
+        // From N's end at the temple ladder's foot: Melee beside the guards, then Missiles to the wait tile (gate chain b's death).
+        const runs = prayerRuns({ x: 2794, z: 2774 }, [AUNT_WAIT], 0);
+        expect(runs.map(r => r.prayer)).toEqual([MELEE, MISSILES]);
+        expect(runs[1]!.to).toEqual(AUNT_WAIT);
+        // The Melee run ends on a guard-reach tile: the switch to Missiles comes as the walk leaves the guards.
+        expect(tilePrayer(runs[0]!.to, 0)).toBe(MELEE);
+        expect(RELIGIOUS_GUARDS[0]!.some(g => Math.max(Math.abs(g.x - runs[0]!.to.x), Math.abs(g.z - runs[0]!.to.z)) <= GUARD_REACH)).toBe(true);
+    });
+
+    test('a walk inside the aunt\'s box (the wait tile to the child) is one Melee run; out of it (P\'s start), Missiles at once', () => {
+        expect(prayerRuns(AUNT_WAIT, [{ x: 2743, z: 2795 }], 0).map(r => r.prayer)).toEqual([MELEE]);
+        expect(tilePrayer({ x: AUNT_BOX.x1 + 1, z: AUNT_WAIT.z }, 0)).toBe(MISSILES);
+        expect(prayerRuns(AUNT_WAIT, [{ x: 2770, z: 2780 }], 0).map(r => r.prayer)).toEqual([MISSILES]);
+    });
+
+    test('a run shorter than two tiles costs no switch', () => {
+        for (const runs of [prayerRuns({ x: 2765, z: 2794 }, [AUNT_WAIT], 0), prayerRuns({ x: 2794, z: 2774 }, [AUNT_WAIT], 0)]) {
+            expect(runs.every((r, i) => i === runs.length - 1 || r.tiles >= 2)).toBe(true);
+            expect(runs.every((r, i) => i === 0 || r.prayer !== runs[i - 1]!.prayer)).toBe(true);
+        }
+    });
+
+    test('unsplit legs: Melee when any run is (K\'s roof walk on floor 1), Missiles on the bridges', () => {
+        expect(legPrayerFor({ x: 2787, z: 2795 }, { x: 2794, z: 2774 }, 1)).toBe(MELEE);
+        expect(legPrayerFor({ x: 2786, z: 2793 }, { x: 2787, z: 2795 }, 2)).toBe(MISSILES);
     });
 });
 
-describe('the atoll top-up (H12o)', () => {
-    const H12O: TopUp = { from: 'helper', want: [{ item: /^Shark$/i, amount: 9 }, { item: /^Superantipoison\(4\)$/i, amount: 1 }], slots: 10 };
+describe("J: the crate building's steps", () => {
+    const DENTURES_EAST = { x: 2768, z: 2769 };
+    test('from inside the south door: east along z 2764, up x 2770, then the ruled (2770,2768) -> (2769,2769) -> (2768,2769)', () => {
+        const steps = crateSteps({ x: 2764, z: 2764 }, crateRoute({ x: 2764, z: 2764 }, DENTURES_EAST));
+        expect(steps.slice(0, 6)).toEqual([2765, 2766, 2767, 2768, 2769, 2770].map(x => ({ x, z: 2764 })));
+        expect(steps.slice(-3)).toEqual([{ x: 2770, z: 2768 }, { x: 2769, z: 2769 }, DENTURES_EAST]);
+        expect(steps.every((t, i) => Math.max(Math.abs(t.x - (steps[i - 1] ?? { x: 2764 }).x), Math.abs(t.z - (steps[i - 1] ?? { z: 2764 }).z)) === 1)).toBe(true);
+        // On to the hole crate from the dentures by the x 2770 spine: (2769,2767) holds the thread crate.
+        const hole = crateSteps(DENTURES_EAST, crateRoute(DENTURES_EAST, { x: 2769, z: 2766 }));
+        expect(hole).toEqual([{ x: 2769, z: 2769 }, { x: 2770, z: 2769 }, { x: 2770, z: 2768 }, { x: 2770, z: 2767 }, { x: 2770, z: 2766 }, { x: 2769, z: 2766 }]);
+        expect(hole.some(t => t.x === 2769 && t.z === 2767)).toBe(false);
+    });
+
+    test("refuses a step into the Sleeping Monkey's zone (x 2762-2767, z 2767-2772)", () => {
+        expect(SLEEPING_ZONE).toMatchObject({ x0: 2762, z0: 2767, x1: 2767, z1: 2772 });
+        expect(() => crateSteps(DENTURES_EAST, [{ x: 2766, z: 2769 }])).toThrow(/Sleeping Monkey's zone at 2767,2769/);
+    });
+
+    test("a human walk crossing the zone goes by the corner nearest its goal whose own route keeps out", () => {
+        // North-east of the building, bound for the bridge ladder, on a route through it (straight routes here).
+        const from = { x: 2772, z: 2780 }, to = { x: 2803, z: 2735 };
+        expect(entersSleepingZone(from, [{ x: 2763, z: 2760 }])).toBe(true);
+        const straight = (p: { x: number; z: number }) => [p];
+        expect(sleepingDetour(from, to, straight)).toEqual({ x: 2771, z: 2763 });
+        // With the south-east corner's route crossing the zone too, the north-east one.
+        const viaZone = (p: { x: number; z: number }) => (p.x === 2771 && p.z === 2763 ? [{ x: 2765, z: 2770 }, p] : [p]);
+        expect(sleepingDetour(from, to, viaZone)).toEqual({ x: 2775, z: 2774 });
+        expect(SLEEPING_DETOURS.every(d => !entersSleepingZone(d, [d]))).toBe(true);
+    });
+});
+
+describe('the atoll top-ups (H12o)', () => {
+    const P_ROW = { want: [{ item: /^Shark$/i, amount: 9 }, { item: /^Superantipoison\(4\)$/i, amount: 1 }], slots: 10 };
     const held = (n: number) => baseState({ inventory: Array.from({ length: n }, (_, i) => item(MM_OBJ.shark, i)) } as Partial<BotWorldState>);
 
     test('off by default: no option, no top-up', () => {
         expect(resolveOptions().topUpFrom).toBeUndefined();
     });
 
-    test('refused, with the reason, when the pack lacks the slots; taken when it has them', () => {
-        expect(topUpRefusal(held(18), H12O)).toBeNull();
-        expect(topUpRefusal(held(19), H12O)).toMatch(/needs 10 free slots, 9 free/);
+    test("P's row is refused, with the reason, when the pack lacks the slots; M's is the free slots less one", () => {
+        expect(topUpRefusal(held(18), P_ROW, 'helper')).toBeNull();
+        expect(topUpRefusal(held(19), P_ROW, 'helper')).toMatch(/needs 10 free slots, 9 free/);
+        expect(pLegSize(P_ROW, 'helper')(held(19))).toMatch(/9 free/);
+        expect([mTopUpSharks(held(20)), mTopUpSharks(held(27)), mTopUpSharks(held(28))]).toEqual([7, 0, 0]);
+        expect(mLegSize(held(26))).toEqual({ want: [{ item: /^Shark$/i, amount: 1 }] });
+        expect(mLegSize(held(27))).toMatch(/no free slot to spare/);
+        expect(M_TOPUP_TILE).toEqual({ x: 2763, z: 2704 });
+    });
+
+    const me = (anim: number, x = 2803) => ({ name: 'scored', x, z: 2724, worldX: x, worldZ: 2724, level: 0, hp: 30, maxHp: 42, animId: anim }) as unknown as PlayerState;
+    const helper = { kind: 'player', index: 7, name: 'Helper', combatLevel: 60, x: 2802, z: 2724 } as BotWorldState['nearbyPlayers'][number];
+    const start = (o: { anim?: number; helperInView?: boolean } = {}) =>
+        new FakeSdk(baseState({ tick: 1, player: me(o.anim ?? -1), nearbyPlayers: o.helperInView === false ? [] : [helper], inventory: [item(MM_OBJ.shark, 0)] } as Partial<BotWorldState>));
+    const okReceive = { ok: true, ticks: 4, received: [{ slot: -1, id: MM_OBJ.shark, name: 'Shark', count: 9 }] } as ReceiveResult;
+    const stub = (results: ReceiveResult[]) => {
+        const calls: Array<{ tick: number; noReplyTicks?: number; want: unknown }> = [];
+        const receive: Receive = async (sdk, _p, opts) => {
+            calls.push({ tick: sdk.getState()!.tick, noReplyTicks: opts.noReplyTicks, want: opts.want });
+            return results[Math.min(calls.length - 1, results.length - 1)]!;
+        };
+        return { calls, receive };
+    };
+
+    test('SCORED is idle for a trade click only standing still, with no animation, chat, modal or trade open', () => {
+        const s = (tick: number, o: Partial<BotWorldState> & { anim?: number; x?: number } = {}) => baseState({ tick, player: me(o.anim ?? -1, o.x), ...o } as Partial<BotWorldState>);
+        expect(tradeIdle(s(1), s(2))).toBe(true);
+        expect(tradeIdle(null, s(2))).toBe(false);
+        expect(tradeIdle(s(2), s(2))).toBe(false);
+        expect(tradeIdle(s(1, { anim: 829 }), s(2))).toBe(false); // the drink on the landing tick (gate chain a)
+        expect(tradeIdle(s(1, { x: 2802 }), s(2))).toBe(false);
+        expect(tradeIdle(s(1), s(2, { modalOpen: true }))).toBe(false);
+        expect(tradeIdle(s(1), s(2, { dialog: { isOpen: true, options: [], isWaiting: false } }))).toBe(false);
+        expect(tradeIdle(s(1), s(2, { trade: { isOpen: true, screen: 'offer', partner: 'Helper', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false } } as Partial<BotWorldState>))).toBe(false);
+    });
+
+    test('waits for SCORED to be idle (a drink in progress), then accepts, re-sending a dropped click at once beside the helper', async () => {
+        const lines: string[] = [];
+        setStepNote(l => lines.push(l));
+        const sdk = start({ anim: 829 });
+        const { calls, receive } = stub([okReceive]);
+        const r = await drive(sdk, receiveLeg(sdk as never, 'Helper', 'P', pLegSize(P_ROW, 'Helper'), receive), 100, s => ({ player: me(s.tick < 4 ? 829 : -1) }));
+        expect(r).toMatchObject({ ok: true, attempts: 1, received: '9 Shark' });
+        expect(calls).toHaveLength(1);
+        expect(calls[0]!.tick).toBeGreaterThanOrEqual(5);
+        expect(calls[0]!.noReplyTicks).toBe(2);
+        expect(lines.some(l => /S15:P top-up from Helper: attempt 1/.test(l))).toBe(true);
+    });
+
+    test('one bounded retry after a failed trade', async () => {
+        const lines: string[] = [];
+        setStepNote(l => lines.push(l));
+        const sdk = start();
+        const { calls, receive } = stub([{ ok: false, ticks: 0, received: [], reason: 'no_response' }, okReceive]);
+        const r = await drive(sdk, receiveLeg(sdk as never, 'Helper', 'M', mLegSize, receive), 100);
+        expect(r).toMatchObject({ ok: true, attempts: 2 });
+        expect(calls).toHaveLength(2);
+        expect(lines.some(l => /attempt 1 of 2: no_response; SCORED at the click: idle/.test(l))).toBe(true);
+    });
+
+    test('moves on without the top-up after the second failure, with the helper out of view, or with no room, never throwing', async () => {
+        const lines: string[] = [];
+        setStepNote(l => lines.push(l));
+        let sdk = start();
+        let s = stub([{ ok: false, ticks: 0, received: [], reason: 'closed' }]);
+        expect(await drive(sdk, receiveLeg(sdk as never, 'Helper', 'P', pLegSize(P_ROW, 'Helper'), s.receive), 100)).toMatchObject({ ok: false, attempts: TOPUP_TRIES, reason: 'closed' });
+        expect(s.calls).toHaveLength(TOPUP_TRIES);
+        expect(lines.at(-1)).toMatch(/S15:P top-up from Helper: moving on without it after 2 attempt\(s\)/);
+
+        sdk = start({ helperInView: false });
+        s = stub([okReceive]);
+        const r = await drive(sdk, receiveLeg(sdk as never, 'Helper', 'P', pLegSize(P_ROW, 'Helper'), s.receive), 100);
+        expect(r).toMatchObject({ ok: false, attempts: 0 });
+        expect(r.ticks).toBeGreaterThanOrEqual(TOPUP_WAIT);
+        expect(s.calls).toHaveLength(0);
+
+        sdk = new FakeSdk(baseState({ tick: 1, player: me(-1), nearbyPlayers: [helper], inventory: Array.from({ length: 27 }, (_, i) => item(MM_OBJ.shark, i)) } as Partial<BotWorldState>));
+        s = stub([okReceive]);
+        expect(await drive(sdk, receiveLeg(sdk as never, 'Helper', 'M', mLegSize, s.receive), 100)).toMatchObject({ ok: false, attempts: 0, reason: expect.stringMatching(/no free slot/) });
+        expect(s.calls).toHaveLength(0);
     });
 });

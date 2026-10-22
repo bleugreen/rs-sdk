@@ -35,7 +35,7 @@ import { closeSession, openSession, relog } from '../../lib/session';
 import { TickLog } from '../../lib/ticks';
 import { waitTicks } from '../../lib/wait';
 import { chebyshev, configId, pos } from '../../lib/world';
-import { BELOW_30_EATING, H12_POTIONS, H12_SHARKS, inCell, REWARD_ITEMS, SEGMENT_EATING, SEGMENTS, segmentName, steps, type EatPolicy, type MmContext, type TopUp } from '../../quests/monkey-madness';
+import { BELOW_30_EATING, H12_POTIONS, H12_SHARKS, inCell, M_TOPUP_TILE, MM_OBJ, mTopUpSharks, REWARD_ITEMS, SEGMENT_EATING, SEGMENTS, segmentName, steps, type EatPolicy, type MmContext, type TopUp } from '../../quests/monkey-madness';
 import { give as giveTo } from '../../lib/trade';
 import { slotNeed } from '../../quests/segments';
 import { BOUNDARY_STEP, runSteps, type Step } from '../../runner/step';
@@ -457,44 +457,85 @@ function trace(sdk: Pick<BotSDK, 'onStateUpdate'>, every: number): () => void {
         hp = p.hp;
         const sharks = s.inventory.filter(i => i.name === 'Shark').length;
         const by = hits.map(e => `${e.damage}<-${e.sourceType === 'npc' ? (s.nearbyNpcs.find(n => n.index === e.sourceIndex)?.name ?? `npc#${e.sourceIndex}`) : e.sourceType}`);
+        // Hit events carry no source index here (npc#-1): who stood within 2, and whom each targets, names the source.
+        if (hits.some(e => e.damage > 0)) {
+            const near = s.nearbyNpcs.filter(n => chebyshev({ x: n.tileX ?? n.x, z: n.tileZ ?? n.z }, pos(s)) <= 2).map(n => `${n.name}@${n.tileX ?? n.x},${n.tileZ ?? n.z}${n.targetIndex >= 0 ? '>' + n.targetIndex : ''}`);
+            by.push(`near=[${near.join(' ')}]`);
+        }
         const prayers = PRAYER_NAMES.filter((_, i) => s.prayers?.activePrayers[i]);
         console.log(`TRACE t=${s.tick} @${p.worldX},${p.worldZ},${p.level} hp=${p.hp} anim=${p.animId} pp=${s.prayers?.prayerPoints ?? '?'} sharks=${sharks}${prayers.length ? ' pray=' + prayers.join('+') : ''}${by.length ? ' hits=' + by.join(',') : ''}${dialogChanged ? ' dialog=' + dialog : ''}${msgs.length ? ' msgs=' + JSON.stringify(msgs) : ''}`);
     });
 }
 
 /**
- * The lab's stand-in for SUPPLIES.md H12o (rs/158 and main, 10-22 13:3x: 9 sharks + 1 super antipoison(4) at P's start;
- * the module takes its `want` and `slots` from whatever row the caller passes).
+ * The lab's stand-in for SUPPLIES.md H12o (rs/158 and main, 10-22 14:1x): M's leg, sharks into the free slots less one
+ * at the dungeon exit ladder's top; P's row, 9 sharks + 1 super antipoison(4) on the bridge jump's landing.
  */
-export const H12O_LAB: Omit<TopUp, 'from'> = { want: [{ item: /^Shark$/i, amount: 9 }, { item: /^Superantipoison\(4\)$/i, amount: 1 }], slots: 10 };
+export const H12O_LAB: Omit<TopUp, 'from'> = { m: true, p: { want: [{ item: /^Shark$/i, amount: 9 }, { item: /^Superantipoison\(4\)$/i, amount: 1 }], slots: 10 } };
 /** The helper's tile beside the bridge jump's landing (2803,2724), as rs/463's probe parked it (2803,2723 is blocked). */
 export const HELPER_TILE = { x: 2802, z: 2724 };
 const JUMP_LANDING = { x: 2803, z: 2724 };
+/** The helper's M tile: beside the dungeon exit ladder's top (M_TOPUP_TILE), the first a teleport lands on exactly. */
+export const M_HELPER_TILES: ReadonlyArray<{ x: number; z: number }> = [{ x: 2764, z: 2704 }, { x: 2762, z: 2704 }, { x: 2763, z: 2705 }];
+
+const helperLog = (leg: string) => [
+    (r: { ok: boolean; ticks: number; reason?: string }) => console.log(`lab helper ${leg} give: ${JSON.stringify({ ok: r.ok, ticks: r.ticks, reason: r.reason })}`),
+    (e: unknown) => console.log(`lab helper ${leg} give threw: ${e}`),
+] as const;
 
 /**
- * Stage the H12o helper at HELPER_TILE with exactly H12o's items and levels that survive the landing's wildlife, and
- * start its give() when SCORED lands from the bridge jump (the module's receiveTopUp then asks for the trade).
+ * Stage the one H12o helper for a run, before SCORED's first segment, so no boundary waits on it: levels that survive
+ * the atoll's wildlife, then (from M or earlier) 20 sharks on an M tile, giving mTopUpSharks of SCORED's state when
+ * SCORED climbs out with the enchanted bar; after that, or from N on, it restocks to exactly P's row on HELPER_TILE
+ * and gives it when SCORED lands from the bridge jump with the talisman. The module's receive legs ask for both trades.
+ * Returns the unsubscribe for the run's end.
  */
-async function stageTopUpHelper(helper: Awaited<ReturnType<typeof openSession>>, scored: Pick<BotSDK, 'getState' | 'onStateUpdate'>): Promise<void> {
+async function stageHelper(helper: Awaited<ReturnType<typeof openSession>>, scored: Pick<BotSDK, 'getState' | 'onStateUpdate'>, from: string): Promise<() => void> {
     const h = helper.sdk;
-    await clearInventory(h);
-    await setStats(h, { hitpoints: 70, defence: 70, attack: 70, strength: 70 });
-    await give(h, 'shark', 9);
-    await give(h, '4dose2antipoison', 1);
-    await mustTele(h, HELPER_TILE.x, HELPER_TILE.z, 0);
     const scoredName = scored.getState()!.player!.name;
-    const off = scored.onStateUpdate(s => {
+    await setStats(h, { hitpoints: 70, defence: 70, attack: 70, strength: 70 });
+    let off = () => {};
+    const stageP = async () => {
+        await clearInventory(h);
+        await give(h, 'shark', 9);
+        await give(h, '4dose2antipoison', 1);
+        await mustTele(h, HELPER_TILE.x, HELPER_TILE.z, 0);
+        off = scored.onStateUpdate(s => {
+            const p = pos(s);
+            if (p.level !== 0 || chebyshev(p, JUMP_LANDING) > 4 || !s.inventory.some(i => i.id === MM_OBJ.talisman)) return;
+            off();
+            void giveTo(h, scoredName, [{ item: /^Shark$/i, n: 'all' }, { item: /^Superantipoison\(4\)$/i }], { maxTicks: 60, openTimeoutMs: 60_000 }).then(...helperLog('P'));
+        });
+        console.log(`lab helper: staged for P at ${JSON.stringify(pos(h))}`);
+    };
+    if (from > 'M') {
+        await stageP();
+        return () => off();
+    }
+    await clearInventory(h);
+    await give(h, 'shark', 20);
+    const tile = await (async () => {
+        for (const t of M_HELPER_TILES) if ((await tele(h, t.x, t.z)) && chebyshev(pos(h), t) === 0) return t;
+        return null;
+    })();
+    if (!tile) throw new Error(`the H12o helper landed on none of the M tiles (at ${JSON.stringify(pos(h))})`);
+    console.log(`lab helper: staged for M at ${tile.x},${tile.z}`);
+    off = scored.onStateUpdate(s => {
         const p = pos(s);
-        if (p.level !== 0 || chebyshev(p, JUMP_LANDING) > 4) return;
+        if (p.level !== 0 || chebyshev(p, M_TOPUP_TILE) > 3 || !s.inventory.some(i => i.id === MM_OBJ.enchantedBar)) return;
         off();
-        void giveTo(h, scoredName, [{ item: /^Shark$/i, n: 'all' }, { item: /^Superantipoison\(4\)$/i }], { maxTicks: 60, openTimeoutMs: 60_000 })
-            .then(r => console.log(`lab helper give: ${JSON.stringify({ ok: r.ok, ticks: r.ticks, reason: r.reason })}`), e => console.log(`lab helper give threw: ${e}`));
+        const n = mTopUpSharks(s);
+        console.log(`lab helper M: SCORED ${28 - s.inventory.length} free, offering ${n} sharks`);
+        const next = () => stageP().catch(e => console.log(`lab helper P staging threw: ${e}`));
+        if (n <= 0) return void next();
+        void giveTo(h, scoredName, [{ item: /^Shark$/i, n }], { maxTicks: 60, openTimeoutMs: 60_000 }).then(r => (helperLog('M')[0](r), next()), e => (helperLog('M')[1](e), next()));
     });
+    return () => off();
 }
 
 /** --trace: one CLICK line per send SCORED's code makes, with the tick, for click timing (send to landing, re-sends). */
 function logClicks(sdk: BotSDK): void {
-    for (const m of ['sendWalk', 'sendInteractLoc', 'sendInteractNpc', 'sendUseItemOnLoc', 'sendUseItemOnNpc', 'sendUseItem', 'sendTogglePrayer', 'sendClickComponent'] as const) {
+    for (const m of ['sendWalk', 'sendInteractLoc', 'sendInteractNpc', 'sendUseItemOnLoc', 'sendUseItemOnNpc', 'sendUseItem', 'sendTogglePrayer', 'sendClickComponent', 'sendTradeRequest', 'sendAcceptTrade', 'sendDeclineTrade'] as const) {
         const rec = sdk as unknown as Record<string, (...a: unknown[]) => unknown>;
         const orig = rec[m]!.bind(sdk);
         rec[m] = (...a: unknown[]) => {
@@ -560,7 +601,7 @@ async function main(): Promise<void> {
     // A bot's first login on this engine's saves is on Tutorial Island, where every fixture's tele() refuses.
     await leaveTutorial(session);
     if (traceEvery > 0) logClicks(sdk);
-    /** --topup=<bot>: a second lab bot stands in for H12o's helper (run lab.sh with LAB_BOTS=<bot>). */
+    /** --topup=<bot>: a second lab bot stands in for H12o's one helper, both legs (run lab.sh with LAB_BOTS=<bot>). */
     const topupBot = arg('topup', '');
     const helper = topupBot ? await openSession(topupBot, { launch: true }) : null;
     if (helper) await leaveTutorial(helper);
@@ -588,7 +629,6 @@ async function main(): Promise<void> {
             const plan = topUp ? topUpPlan(ctx.sdk.getState()!, topUpReserve(next!, ctx.sdk.getState()!), topPotions) : [];
             for (const [k, n] of plan) await give(ctx.sdk, k, n);
             if (plan.length) b.given = Object.fromEntries(plan);
-            if (next === 'P' && helper) await stageTopUpHelper(helper, ctx.sdk);
             boundaries.push(b);
             use = next ? new SegmentUse(next, traps) : null;
         },
@@ -639,6 +679,7 @@ async function main(): Promise<void> {
         boundaries = [];
         uses = [];
         const unuse = sdk.onStateUpdate(s => use?.see(s));
+        const unstage = helper ? await stageHelper(helper, sdk, from) : () => {};
         let error: string | undefined;
         try {
             await runSteps(session, chain, { log, c: {} as MmContext, shouldStop: () => false });
@@ -646,6 +687,7 @@ async function main(): Promise<void> {
         } catch (e) {
             error = e instanceof Error ? e.message : String(e);
         } finally {
+            unstage();
             untrace();
             unuse();
             if (use) uses.push((use as SegmentUse).summary());
