@@ -2,7 +2,7 @@
 // logout-safe boundary, Ctrl-C, and the caller's own gate, shared by speedrun/rehearse.ts and
 // speedrun/run.ts.
 
-import { type Link, type ResumeEvent, runResumable } from '../runner/resume';
+import { type Link, type Probe, type ResumeEvent, runResumable } from '../runner/resume';
 import type { Step } from '../runner/step';
 import { EXIT_HOST_RESERVED, type HostReservation, type ReservationWatch, reservationText } from './host-reservation';
 import type { LogoutResult, Session } from './session';
@@ -36,6 +36,8 @@ export interface AttemptOptions {
     account: string;
     link: Link;
     from?: number | string;
+    /** The probes the chain's steps read on a resume walk (runner/resume.ts stepProbes). */
+    probes?: Readonly<Record<string, Probe>>;
     /** Read at every logout-safe boundary (ReservationWatch.boundary), before the other stops. */
     reservation: ReservationWatch;
     /** Ctrl-C asked for a stop. */
@@ -78,6 +80,7 @@ export async function runAttempt(session: Session, chain: ReadonlyArray<Step<any
                 held.logout = await o.logout();
             },
             ...(o.from !== undefined ? { from: o.from } : {}),
+            ...(o.probes ? { probes: o.probes } : {}),
             ...(o.onEvent ? { onEvent: o.onEvent } : {}),
         });
         if (r.resumeAt === undefined) return { outcome: r.drops ? `chain done after ${r.drops} drop(s)` : 'chain done', code: 0, paused: null };

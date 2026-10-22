@@ -37,6 +37,7 @@ import { startRunTickMonitor } from '../lib/tick-monitor';
 import { tickCounter, tickSpan, type TickLog } from '../lib/ticks';
 import { awaitScene, currentTick, nextTick, sleep, tickMs } from '../lib/wait';
 import { Fence } from './fence';
+import { journalProbeNamed } from '../lib/quests';
 import { resolveStart, runSteps, type Observed, type RunnerSession, type RunStepsOptions, type RunStepsResult, type Step } from './step';
 
 export type Probe = (session: RunnerSession) => Promise<unknown>;
@@ -58,6 +59,37 @@ export class ResumeError extends Error {
         super(`no step can start from the observed state (last done milestone #${lastDone}, first undone #${firstUndone}): ${candidates.map(c => `${c.step}: ${c.why}`).join('; ')}`);
         this.name = 'ResumeError';
     }
+}
+
+/**
+ * A step module's exported `PROBES` when it is a record of probes (skills/cooking.ts,
+ * skills/prayer.ts). A list of names (a quest's journal probes) provides none itself.
+ */
+export function moduleProbes(m: { readonly PROBES?: unknown }): Record<string, Probe> {
+    const p = m.PROBES;
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return {};
+    return Object.fromEntries(Object.entries(p).filter((e): e is [string, Probe] => typeof e[1] === 'function'));
+}
+
+/**
+ * runResumable's `probes` for `steps`: every name a step declares (Step.probes), from the modules'
+ * exported PROBES or, for a quest journal, lib/quests.ts. Throws naming each probe nothing provides,
+ * so a chain refuses before it starts instead of at the resume walk that needs it.
+ */
+export function stepProbes(steps: ReadonlyArray<Pick<Step<never>, 'name' | 'probes'>>, modules: ReadonlyArray<{ readonly PROBES?: unknown }>): Record<string, Probe> {
+    const provided: Record<string, Probe> = Object.assign({}, ...modules.map(moduleProbes));
+    const out: Record<string, Probe> = {};
+    const missing = new Map<string, string>();
+    for (const s of steps) {
+        for (const n of s.probes ?? []) {
+            if (n in out || missing.has(n)) continue;
+            const p = provided[n] ?? journalProbeNamed(n);
+            if (p) out[n] = p;
+            else missing.set(n, s.name);
+        }
+    }
+    if (missing.size) throw new Error(`no probe for ${[...missing].map(([n, step]) => `"${n}" (${step})`).join(', ')}: export it in the step module's PROBES`);
+    return out;
 }
 
 /** Lazily probed view of the game, shared by one walk. */
