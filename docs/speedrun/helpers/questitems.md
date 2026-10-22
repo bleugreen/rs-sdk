@@ -68,12 +68,59 @@ held. Tasks are listed in route order, so a fresh account walks its set once.
 | | ratmeat | raw rat meat 2 | giant rats, Lumbridge swamp (every kill) |
 | | bearmeat | raw bear meat 2 | brown bears west of Lumbridge (every kill), after Attack 20 |
 | | snapegrass | snape grass 2 | spawns on the hobgoblin peninsula, after Attack 20 |
+| far (h95) | coins, hitpoints | float; Hitpoints 30 | own pickpocket earnings, then Lumbridge cows through `kandarin.ts` |
+| | monkeybones | monkey bones 2 | monkeys west of Musa Point |
+| | jiminua | torch 2, rope 2, spade 2 | Jiminua's jungle store, Karamja; the unlit torch is named **Torch** in game |
+| | swamppaste | swamp paste 2 | Port Khazard general store |
+| | wool | ball of wool 2 | Aemad's Adventuring Supplies, East Ardougne |
+| | gnome | dwellberries 2, chocolate dust 2 | Heckel Funch, with Hudo as fallback; Grand Tree first floor |
+| | planks | plank 4 | four ground spawns at the Barbarian Outpost; three needed for H22 |
+| carp (h97) | coins, hitpoints | float; Hitpoints 30 | own pickpocket earnings, then Lumbridge cows |
+| | garlic | garlic 2 while carp is short | Morgan's upstairs cupboard, Draynor |
+| | rod, fishing | fishing rod 1; Fishing 10 | Gerrant's rod; tutorial net at Musa Point |
+| | spade, pass | spade 1, fishing pass 1 | Jiminua; mountain dwarf at the Kandarin end of the tunnel |
+| | worms | one red vine worm per missing carp | McGrubor's Wood, through the loose railing, with a spade |
+| | carp | raw giant carp 2 | Hemenster contest, pipe spot; quit before the third catch |
 
-Not yet in a set: the Karamja and Ardougne errands (unlit torch, rope and spade from
-Jiminua's jungle store, monkey bones, swamp paste from the Port Khazard general store, ball
-of wool, dwellberries and chocolate dust from the Gnome Stronghold, the three planks at the
-Barbarian Outpost) and the Fishing Contest carp helper (h97). The gold bar and the 12 steel
-nails come from the bars role (cairn://p/rs/119), which has the Smithing for them.
+Run the new sets with `{"set":"far"}` and `{"set":"carp"}`. Turning `spare` off
+uses the quest's exact item counts, including three planks and one carp.
+
+### Overseas travel and banking
+
+`speedrun/lib/ships.ts` owns the four 30-coin voyages between Port Sarim and Musa
+Point, and Brimhaven and Ardougne, including disembarking across the gangplank.
+Both sets earn their own fares and sail rather than crossing White Wolf Mountain.
+The gatherer chooses banks on its current land mass and carries tools and fares
+through Karamja, which has no bank in its bank table. It does not sail back merely
+to satisfy another task's carry list. Any Al Kharid toll crossing uses `travelTo`.
+
+`speedrun/lib/passages.ts` routes through the scripted Stronghold gate and Grand
+Tree doors that ordinary pathfinding treats as solid. Upstairs shops name their
+ladder approach. Leaving the grocers first returns to the central landing because
+the down ladder is outside the shop's scan radius.
+
+### Keeping the carp
+
+The carp is tradeable and does not decay. The helper banks existing carp and all
+bait before each trip, then withdraws **at most two red vine worms and no ordinary
+bait**. The contest decision function counts catches from worms consumed and
+chooses to leave at two, or immediately if a restarted round's count is unknown.
+Every normal exit answers Bonzo's quit dialogue at the gate; it never offers him
+the catch. Consumed garlic is not replenished after the carp target is met.
+
+### Gold, nails and staging
+
+The smithing account cairn_h20 supplied one gold bar and 12 steel nails (named
+**Nails**, item 1539) to h94. The gold bar did not come from h80: its jewellery
+targets were complete and it had no spare bar.
+
+On 2026-10-22, h94's southwest stock including spares, Gold bar 1 and Nails 12, and
+h96's Goblin mail 4, Raw rat meat 2 and Raw bear meat 2 were delivered to
+**cairn_mule1** for staging. Each one-shot handover was checked against both its
+sender ledger and the receiver's exact bank deltas. Both donors were logged out
+afterwards. h96's 102 snape grass had already been staged separately by rs/331.
+The fresh h94 bank had no planks; those remain the far set's responsibility.
+Details and delivery ids are on [rs/173](cairn://p/rs/173).
 
 ## Measured in the lab (local engine, 300 ms ticks, 25x xp)
 
@@ -86,6 +133,9 @@ nails come from the bars role (cairn://p/rs/119), which has the Smithing for the
 | Woad 4, mind bomb 2 | 133 | |
 | Crafting 1 to 8 and the bowl, from 7 soft clay | 191 | |
 | Onions, woad, berries and Aggie's dyes (no spares), from Lumbridge | 802 | |
+| Ardougne south bank to the gnome grocer; buy 2 dwellberries and 2 chocolate dust | 263 | focused lab, funded fixture; includes Femi's first-entry dialogue |
+| Grocer to the Barbarian Outpost; collect 4 planks | 254 | returns to the central ladder, then through both scripted passages |
+| Outpost to Seers' bank; deposit the far items | 207 | focused lab ends at `done`, all 8 items banked |
 
 ## On the demo (bbs, gateway 7762)
 

@@ -63,7 +63,9 @@ export const BANKS = {
     edgeville: { x: 3093, z: 3491 },
     catherby: { x: 2809, z: 3439 },
     seers: { x: 2725, z: 3491 },
-    yanille: { x: 2613, z: 3092 }
+    yanille: { x: 2613, z: 3092 },
+    ardougneSouth: { x: 2654, z: 3283 },
+    ardougneNorth: { x: 2615, z: 3333 }
 } satisfies Record<string, Tile>;
 
 /**
@@ -104,7 +106,14 @@ export const SHOPS: Record<string, ShopSpec> = {
     // Port Sarim food store: pot of flour 3, raw beef 1, raw chicken 1, banana 3, redberries 1 (port_sarim.inv wydinstore).
     wydin: { npc: /^wydin$/i, stand: { x: 3015, z: 3205 }, bank: BANKS.draynor },
     // Varrock clothes shop: silk 5 (varrock.inv clotheshop).
-    thessalia: { npc: /^thessalia$/i, stand: { x: 3205, z: 3416 }, bank: BANKS.varrockWest }
+    thessalia: { npc: /^thessalia$/i, stand: { x: 3205, z: 3416 }, bank: BANKS.varrockWest },
+    // Overseas and upstairs shops: questitems walks there by ship and ladder before buying.
+    jiminua: { npc: /^jiminua$/i, stand: { x: 2767, z: 3122 }, bank: BANKS.ardougneSouth },
+    khazard: { npc: /^shop keeper$/i, stand: { x: 2641, z: 3170 }, bank: BANKS.ardougneSouth },
+    aemad: { npc: /^(aemad|kortan)$/i, stand: { x: 2613, z: 3293 }, bank: BANKS.ardougneNorth },
+    // Both grocers are on the Grand Tree's first floor.
+    heckel: { npc: /^heckel funch$/i, stand: { x: 2493, z: 3488 }, bank: BANKS.ardougneNorth },
+    hudo: { npc: /^hudo$/i, stand: { x: 2448, z: 3509 }, bank: BANKS.ardougneNorth }
 };
 
 /** Underground maps sit 6,400 tiles north of the surface they belong to. */
