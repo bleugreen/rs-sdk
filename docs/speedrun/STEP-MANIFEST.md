@@ -2228,9 +2228,11 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   the sum of max(0, level-ups - 1) a load (L1 164 against 164 measured). Booth op 2 (Use-quickly) is
   clicked unrouted from the stand tile; routed, it costs 5 ticks an inventory (181). **On the staged
   herb-table mix** (the row in force): L3 measured the 547-mix stock at 99 in 214 program ticks + 3
-  = 217 (m; rs/387's recalibrated formula 210), +50; rs/302's corrected list from current banks
-  reaches 99 on 466 mixes with 11,562 base spare, ~185 expected by the planner, so **+21 (i)**
-  (RUN-ORDER.md section 7; +85 before). Torstol is unobtainable, so the measured 112 from 28 (bbs, 1
+  = 217 (m; rs/387's recalibrated formula 210), +50; rs/302 measured the route on current banks
+  (mission tip 074cd728, browser, 300 ms): program 188 ticks (the planner 185), about 191 as a step,
+  470 mixes, 11,562 base spare, so **+24 (m)** (RUN-ORDER.md section 7; +21 i on the planner before,
+  +85 before that). The planner is greedy, the highest base-xp recipe at each visit; a hand-tuned mix
+  could save at most ~8. Torstol is unobtainable, so the measured 112 from 28 (bbs, 1
   run, the full list) is out of reach. Fallback about 200 (estimated, read-then-act banking).
 - **Primitives:** `bank.withdrawMany`, `bank.depositAll`; use-item-on-item at 5 per tick; `levelup` (71
   level-ups).
