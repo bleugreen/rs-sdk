@@ -36,6 +36,7 @@
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
+import { climbToSurface, GUILD_CELLAR, GUILD_DOOR } from '../lib/underground';
 import { COW_CENTRE, COW_FIELD, Run as CombatRun, parseOptions as combatOptions } from './bones';
 import { Buyer } from './buyer';
 import { pointMarketAtServer } from './mule';
