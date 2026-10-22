@@ -1,0 +1,5 @@
+2026-10-21T17:46:41.905Z chrome Chrome/156.0.8078.47
+2026-10-21T17:46:42.210Z page http://127.0.0.1:8909/bot?bot=cairn_r130&server=rs-sdk-demo.fly.dev&gateway=ws%3A%2F%2F127.0.0.1%3A7861
+2026-10-21T17:47:02.723Z client loaded
+2026-10-21T17:47:05.037Z in game as cairn_r130
+2026-10-21T17:47:35.056Z stopping: closing the page (game socket close = logout)

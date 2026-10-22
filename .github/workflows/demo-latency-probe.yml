@@ -6,19 +6,95 @@ name: Demo latency probe
 # DEMO_PROBE_PASSWORD) into the demo for a few minutes, so it is dispatch-only:
 # never add push, pull_request or schedule triggers.
 #
-#   gh workflow run demo-latency-probe.yml -R bleugreen/rs-sdk --ref <branch> [-f trials=60] [-f ref=<checkout ref>]
+#   Direct/gateway pair from Ashburn (the run-night re-measure at the live player count):
+#   gh workflow run demo-latency-probe.yml -R bleugreen/rs-sdk --ref <branch>
+#   The same pair with the lite client and gateway from another ref (a relay fix under test):
+#   gh workflow run demo-latency-probe.yml -R bleugreen/rs-sdk --ref <branch> -f lite_ref=<fix branch>
+#   Burst and blind senders (rs/85's probe), direct path only:
+#   gh workflow run demo-latency-probe.yml -R bleugreen/rs-sdk --ref <branch> -f mode=direct -f trials=15 \
+#     -f direct_command='bun docs/speedrun/scripts/demo-latency-probe.ts --label=gha-$RUNNER_AZURE_REGION --out=$OUT/direct.json --phases=http,ws,react,burst,blind --trials=$TRIALS'
+#   The browser path, as the scored run plays it: a branch's browser webclient in headless
+#   Chrome, the direct lite probe first as the reference row:
+#   gh workflow run demo-latency-probe.yml -R bleugreen/rs-sdk --ref <branch> -f mode=browser -f variant=overlay -f browser_ref=<sha>
+#   gh workflow run demo-latency-probe.yml -R bleugreen/rs-sdk --ref <branch> -f mode=browser -f variant=in-page -f browser_ref=<sha>
+#
+# Probe paths. direct: demo-latency-probe.ts holds its own in-process lite session
+# on the engine websocket (BOT_USERNAME/PASSWORD in the environment). gateway: a
+# private loopback gateway plus the lite client hold the session and an SDK-runner
+# script (tickmanip-latency.ts) drives it, the way bots play. mode=pair runs direct
+# then gateway back to back on one runner, so both share a player count.
+# browser: direct first, then the browser webclient of browser_ref (its bundle, its
+# page server server/webclient/proxy.ts and its gateway) in headless Chrome, with
+# the game socket straight to the demo (?server=) and the bot overlay to a private
+# loopback gateway (?gateway=). variant=overlay reacts from an SDK script over that
+# gateway (the 'browser relay' column); variant=in-page reacts inside the page on
+# the decoded tick (rsPrograms, the 'browser direct' column). Each runs the probe,
+# then readies the account at the normal trees west of Lumbridge castle
+# (tickmanip-demo-setup.ts), runs `cycles` logs of the knife woodcutting loop, and
+# then the same number of plain woodcutting logs as the control.
+# The driver (docs/speedrun/scripts/demo-browser-page.ts) records every websocket
+# frame of the page, and the summary breaks each reaction into its hops. It runs as
+# `bun --no-install`: with the root bunfig's auto-install, debug's optional
+# require('supports-color') resolves from the global cache once the webclient's
+# install has put it there, and puppeteer then fails to load.
+# browser_ref is separate from ref because the probe scripts (ref) and the page
+# under test usually come from different branches.
+#
+# GitHub picks the runner's Azure region (eastus and centralus both occur); the
+# vantage step records it and logs in only when the Fly edge is require_edge and the
+# TCP connect p50 is at most max_connect_ms (a Quebec runner also enters Fly at iad,
+# but 24 ms away), so redispatch until a run passes.
+# Dispatch inputs left empty fall back to their defaults: a mode cannot be skipped
+# by blanking its command, and require_edge is disabled with 'any', not ''.
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: 'pair: direct then gateway on one runner (the Ashburn re-measure). direct or gateway: that path only. browser: direct, then the browser webclient of browser_ref in headless Chrome'
+        type: choice
+        options: [pair, direct, gateway, browser]
+        default: pair
       trials:
-        description: Reaction trials
+        description: Reaction trials per path
         default: '60'
-      command:
-        description: Probe command, run from the repo root with BOT, TRIALS and OUT set
-        default: bun docs/speedrun/scripts/tickmanip-latency.ts "$BOT" --trials="$TRIALS"
+      direct_command:
+        description: Direct-path probe; logs in by itself (BOT_USERNAME, PASSWORD, TRIALS, OUT in env)
+        default: bun docs/speedrun/scripts/demo-latency-probe.ts --label=gha-$RUNNER_AZURE_REGION --out=$OUT/direct.json --phases=react --trials=$TRIALS --react-delay=0
+      gateway_command:
+        description: Gateway-path probe, an SDK-runner script (BOT, TRIALS, OUT in env)
+        default: bun docs/speedrun/scripts/tickmanip-latency.ts "$BOT" --no-tele --trials="$TRIALS"
       ref:
-        description: Ref to check out and probe with (empty means the dispatched ref)
+        description: Ref to check out the probe scripts from (empty means the dispatched ref)
         default: ''
+      lite_ref:
+        description: Ref whose lite_paths (the lite client and gateway) replace the checkout's before install, for testing a client fix with these probes; empty means no overlay
+        default: ''
+      lite_paths:
+        description: Paths taken from lite_ref, space-separated (add sdk if the fix touches it)
+        default: server/webclient server/gateway
+      require_edge:
+        description: Log in only if the Fly edge region is this (iad is Ashburn); 'any' probes from every edge
+        default: iad
+      max_connect_ms:
+        description: Log in only if the TCP connect p50 to the demo is at most this many ms (Ashburn is about 3); 'any' disables
+        default: '10'
+      variant:
+        description: 'mode=browser: overlay (an SDK script reacts over the loopback gateway; rs/82) or in-page (the page reacts on the decoded tick; rs/97)'
+        type: choice
+        options: [overlay, in-page]
+        default: overlay
+      browser_ref:
+        description: 'mode=browser: branch or sha whose server/webclient (bundle, proxy.ts page server) and server/gateway run the page'
+        default: ''
+      cycles:
+        description: 'mode=browser: logs cut by the knife woodcutting loop'
+        default: '60'
+      browser_probe_command:
+        description: "mode=browser: the probe in the page; 'auto' is the variant's (overlay: tickmanip-latency.ts over the gateway; in-page: rsPrograms.run('probe'))"
+        default: auto
+      knife_command:
+        description: "mode=browser: account setup and knife loop; 'auto' is the variant's (overlay: tickmanip-cycle.ts tree-knife; in-page: rsPrograms.run('knife-cycle'))"
+        default: auto
 
 permissions:
   contents: read
@@ -31,24 +107,62 @@ concurrency:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: ${{ inputs.mode == 'browser' && 70 || 30 }}
     env:
       DEMO: rs-sdk-demo.fly.dev
       BOT: ${{ vars.DEMO_PROBE_USERNAME }}
       TRIALS: ${{ inputs.trials }}
-      PROBE_COMMAND: ${{ inputs.command }}
+      MODE: ${{ inputs.mode }}
+      PROBE_COMMAND: ${{ inputs.gateway_command }}
+      DIRECT_COMMAND: ${{ inputs.direct_command }}
+      VARIANT: ${{ inputs.variant }}
+      CYCLES: ${{ inputs.cycles }}
+      BROWSER_PROBE_COMMAND: ${{ inputs.browser_probe_command }}
+      KNIFE_COMMAND: ${{ inputs.knife_command }}
       OUT: ${{ github.workspace }}/probe-out
+      BROWSER_DIR: ${{ github.workspace }}/browser-under-test
       GATEWAY_PORT: '7851'
+      PAGE_PORT: '8899'
     steps:
+      # Resolved before the vantage gate, so a bad ref fails before an Ashburn runner is spent;
+      # actions/checkout takes a branch, a tag or a full sha, so a short sha becomes a full one.
+      - name: Resolve browser_ref
+        id: browser
+        if: inputs.mode == 'browser'
+        env:
+          BROWSER_REF: ${{ inputs.browser_ref }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BROWSER_REF" ]; then echo '::error::mode=browser needs browser_ref (the branch or sha whose browser webclient to run)'; exit 1; fi
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$BROWSER_REF" -q .sha) || { echo "::error::browser_ref '$BROWSER_REF' is not a commit of $GITHUB_REPOSITORY"; exit 1; }
+          echo "browser_ref $BROWSER_REF is $sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
+
+      - name: Overlay the lite client and gateway from lite_ref
+        if: inputs.lite_ref != ''
+        env:
+          LITE_REF: ${{ inputs.lite_ref }}
+          LITE_PATHS: ${{ inputs.lite_paths }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$LITE_REF"
+          # Remove first so the overlay is an exact copy, without files only the probe ref has.
+          rm -rf $LITE_PATHS
+          git checkout FETCH_HEAD -- $LITE_PATHS
+          echo "LITE_SHA=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_ENV"
+          git status --short | head -20
 
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
 
-      # The lite client, the gateway and the SDK runner; no engine build, no Chromium.
+      # The lite client, the gateway and the SDK runner; no engine build. Puppeteer's
+      # own Chromium is skipped: browser mode drives the runner's Chrome.
       - name: Install root, webclient and gateway dependencies
         env:
           PUPPETEER_SKIP_DOWNLOAD: 'true'
@@ -56,6 +170,9 @@ jobs:
 
       - name: Verify the vantage point (edge region, app region, HTTP timing)
         id: vantage
+        env:
+          REQUIRE_EDGE: ${{ inputs.require_edge }}
+          MAX_CONNECT_MS: ${{ inputs.max_connect_ms }}
         run: |
           set -uo pipefail
           mkdir -p "$OUT"
@@ -95,35 +212,181 @@ jobs:
               flyio_debug: $fly}' > "$OUT/vantage.json"
           cat "$OUT/vantage.json"
           echo "near=$near" >> "$GITHUB_OUTPUT"
+          echo "edge=$nr" >> "$GITHUB_OUTPUT"
+          tcp50=$(pct 1 0.5)
+          why=''
+          if [ "$REQUIRE_EDGE" != any ] && [ "$nr" != "$REQUIRE_EDGE" ]; then why="Fly edge is '$nr', not '$REQUIRE_EDGE'"; fi
+          if [ "$MAX_CONNECT_MS" != any ] && [ "${tcp50:-999}" -gt "$MAX_CONNECT_MS" ]; then why="${why:+$why; }TCP connect p50 is ${tcp50} ms, over $MAX_CONNECT_MS"; fi
+          if [ -z "$why" ]; then echo 'probe=true' >> "$GITHUB_OUTPUT"; else echo 'probe=false' >> "$GITHUB_OUTPUT"; echo "why=$why" >> "$GITHUB_OUTPUT"; fi
+          echo "RUNNER_AZURE_REGION=$(jq -r '.runner.azure.location // "unknown"' "$OUT/vantage.json")" >> "$GITHUB_ENV"
           if [ "$near" != true ]; then echo "::warning::Fly edge is '$nr', not an east-coast edge: this run is NOT near Ashburn"; fi
 
-      - name: Probe (private loopback gateway + lite client on the demo)
+      - name: Vantage not wanted, probe skipped
+        if: steps.vantage.outputs.probe == 'false'
+        env:
+          WHY: ${{ steps.vantage.outputs.why }}
+        run: |
+          echo "::notice::$WHY: no login, dispatch again for another runner" | tee "$OUT/skipped.txt"
+
+      # Browser mode, only once the vantage passed: the page under test comes from browser_ref.
+      - uses: actions/checkout@v4
+        if: inputs.mode == 'browser' && steps.vantage.outputs.probe == 'true'
+        with:
+          ref: ${{ steps.browser.outputs.sha }}
+          path: browser-under-test
+          persist-credentials: false
+
+      - name: Build the browser webclient under test
+        if: inputs.mode == 'browser' && steps.vantage.outputs.probe == 'true'
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: |
+          set -euo pipefail
+          echo "BROWSER_SHA=$(git -C "$BROWSER_DIR" rev-parse HEAD)" >> "$GITHUB_ENV"
+          [ -f "$BROWSER_DIR/server/webclient/proxy.ts" ] || { echo '::error::browser_ref has no server/webclient/proxy.ts (the page server from rs/82)'; exit 1; }
+          (cd "$BROWSER_DIR/server/gateway" && bun install --frozen-lockfile)
+          (cd "$BROWSER_DIR/server/webclient" && bun install --frozen-lockfile && BUILD_MODE=bot bun run build)
+          ls -l "$BROWSER_DIR/server/webclient/out/bot"
+          chrome=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)
+          echo "CHROME_PATH=$chrome" >> "$GITHUB_ENV"
+          if [ -n "$chrome" ]; then "$chrome" --version; fi
+
+      - uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
+        if: inputs.mode == 'browser' && steps.vantage.outputs.probe == 'true' && env.CHROME_PATH == ''
+
+      - name: Use the installed Chrome
+        if: steps.setup-chrome.outcome == 'success'
+        env:
+          CHROME: ${{ steps.setup-chrome.outputs.chrome-path }}
+        run: echo "CHROME_PATH=$CHROME" >> "$GITHUB_ENV"
+
+      - name: Probe on the demo
+        if: steps.vantage.outputs.probe == 'true'
         env:
           PASSWORD: ${{ secrets.DEMO_PROBE_PASSWORD }}
         run: |
           set -uo pipefail
           if [ -z "$BOT" ] || [ -z "$PASSWORD" ]; then echo '::error::DEMO_PROBE_USERNAME (variable) or DEMO_PROBE_PASSWORD (secret) is not set'; exit 1; fi
-          mkdir -p "bots/$BOT"
-          ( umask 077; printf 'BOT_USERNAME=%s\nPASSWORD=%s\nSERVER=%s\nSHOW_CHAT=false\nTELEMETRY=false\nGATEWAY_URL=ws://127.0.0.1:%s\n' \
-              "$BOT" "$PASSWORD" "$DEMO" "$GATEWAY_PORT" > "bots/$BOT/bot.env" )
-          unset PASSWORD
+          # run_probe <name> <command> [timeout s]: OUT/<name>.txt is the filtered output, OUT/<name>-full.log
+          # all of it, and OUT/marks.tsv its epoch-ms span (the browser frame breakdown uses it).
+          run_probe() {
+            echo "probe start $(TZ=America/Los_Angeles date '+%F %T %Z'): $2" | tee "$OUT/$1.txt"
+            local rc=0 t0
+            t0=$(date +%s%3N)
+            timeout "${3:-1200}" bash -c "$2" > "$OUT/$1-full.log" 2>&1 || rc=$?
+            echo "$1 $t0 $(date +%s%3N)" >> "$OUT/marks.tsv"
+            grep -vE 'Pathfinding|\[Runner\]|\[BotSDK\]|LOGOUT DEBUG|^chop:' "$OUT/$1-full.log" | tee -a "$OUT/$1.txt" || true
+            echo "probe end $(TZ=America/Los_Angeles date '+%F %T %Z'), exit $rc" | tee -a "$OUT/$1.txt"
+            return $rc
+          }
+          write_bot_env() {
+            mkdir -p "bots/$BOT"
+            ( umask 077; printf 'BOT_USERNAME=%s\nPASSWORD=%s\nSERVER=%s\nSHOW_CHAT=false\nTELEMETRY=false\nGATEWAY_URL=ws://127.0.0.1:%s\n' \
+                "$BOT" "$PASSWORD" "$DEMO" "$GATEWAY_PORT" > "bots/$BOT/bot.env" )
+          }
+          # The gateway path: a private loopback gateway and the lite client hold the
+          # session and the SDK-runner probe drives it. Called in a subshell, so its
+          # EXIT trap logs the client out and deletes bot.env however it ends.
+          gateway_path() {
+            write_bot_env
+            unset PASSWORD
+            (cd server/gateway && AGENT_PORT=$GATEWAY_PORT GATEWAY_HOSTNAME=127.0.0.1 WEB_MANAGEMENT_PORT=8953 exec bun run gateway.ts) > "$OUT/gateway.log" 2>&1 &
+            GW=$!
+            sleep 2
+            RN=''
+            # A failed kill (process already gone) must not change the probe's exit status.
+            stop() { set +e; kill -INT $RN 2>/dev/null; sleep 3; kill $RN $GW 2>/dev/null; sleep 1; kill -9 $RN $GW 2>/dev/null; rm -rf "bots/$BOT"; }
+            trap stop EXIT
+            # The lite runner logs into the game first and exits if the login is refused (re-login is
+            # its supervisor's job), so a session the demo still holds is retried here.
+            for attempt in 1 2 3 4; do
+              (cd server/webclient && exec bun src/lite/runner.ts "$BOT") > "$OUT/lite-runner.log" 2>&1 &
+              RN=$!
+              for i in $(seq 120); do grep -q 'Gateway connected' "$OUT/lite-runner.log" && break; kill -0 $RN 2>/dev/null || break; sleep 1; done
+              grep -q 'Gateway connected' "$OUT/lite-runner.log" && break
+              grep -q 'Account already logged in' "$OUT/lite-runner.log" || break
+              echo "gateway path: account still logged in on the demo (attempt $attempt), retrying in 45 s"
+              kill $RN 2>/dev/null || true; sleep 45
+            done
+            if ! grep -q 'Gateway connected' "$OUT/lite-runner.log"; then echo '::error::lite client did not log in'; tail -30 "$OUT/lite-runner.log"; exit 1; fi
+            sleep 3
+            run_probe gateway-path "$PROBE_COMMAND"
+          }
+          # The browser path: browser_ref's gateway on loopback, its page server in front of the
+          # demo, and headless Chrome on the page (demo-browser-page.ts logs in and holds it). The
+          # overlay registers with the loopback gateway, so SDK scripts (setup, the overlay
+          # variant's probe and knife loop) drive the tab; the in-page variant evaluates rsPrograms
+          # in the tab. Called in a subshell: its EXIT trap closes the page (the engine's logout).
+          browser_path() {
+            write_bot_env
+            mkdir -p "$OUT/page"
+            (cd "$BROWSER_DIR/server/gateway" && AGENT_PORT=$GATEWAY_PORT GATEWAY_HOSTNAME=127.0.0.1 WEB_MANAGEMENT_PORT=8953 exec bun run gateway.ts) > "$OUT/gateway.log" 2>&1 &
+            GW=$!
+            (cd "$BROWSER_DIR/server/webclient" && exec bun run proxy.ts --world="https://$DEMO" --port="$PAGE_PORT" --gateway="ws://127.0.0.1:$GATEWAY_PORT") > "$OUT/page-server.log" 2>&1 &
+            PS=$!
+            sleep 2
+            BOT_USERNAME="$BOT" bun --no-install docs/speedrun/scripts/demo-browser-page.ts open --dir="$OUT/page" --url="http://127.0.0.1:$PAGE_PORT/bot?bot=$BOT" \
+              --chrome="$CHROME_PATH" --gateway-port="$GATEWAY_PORT" > "$OUT/page-driver.log" 2>&1 &
+            PG=$!
+            unset PASSWORD
+            stop() {
+              set +e; touch "$OUT/page/stop"
+              for i in $(seq 20); do kill -0 $PG 2>/dev/null || break; sleep 1; done
+              kill $PG $PS $GW 2>/dev/null; sleep 1; kill -9 $PG $PS $GW 2>/dev/null; rm -rf "bots/$BOT"
+            }
+            trap stop EXIT
+            for i in $(seq 240); do [ -f "$OUT/page/ready" ] && break; kill -0 $PG 2>/dev/null || break; sleep 1; done
+            if [ ! -f "$OUT/page/ready" ]; then echo '::error::the page did not log in'; tail -30 "$OUT/page-driver.log"; exit 1; fi
+            for i in $(seq 60); do grep -q 'Bot connected' "$OUT/gateway.log" && break; sleep 1; done
+            if ! grep -q 'Bot connected' "$OUT/gateway.log"; then echo '::error::the page overlay did not register with the loopback gateway'; tail -20 "$OUT/gateway.log"; exit 1; fi
+            sleep 3
+            local page='bun --no-install docs/speedrun/scripts/demo-browser-page.ts eval --dir="$OUT/page" --progress="rsPrograms.status()"'
+            local setup='bun docs/speedrun/scripts/tickmanip-demo-setup.ts "$BOT"'
+            if [ "$BROWSER_PROBE_COMMAND" = auto ]; then
+              case "$VARIANT" in
+                overlay) BROWSER_PROBE_COMMAND='bun docs/speedrun/scripts/tickmanip-latency.ts "$BOT" --no-tele --trials="$TRIALS"' ;;
+                in-page) BROWSER_PROBE_COMMAND="$page"' --json="$OUT/browser-probe.json" "rsPrograms.run(\"probe\", { trials: $TRIALS })"' ;;
+              esac
+            fi
+            if [ "$KNIFE_COMMAND" = auto ]; then
+              case "$VARIANT" in
+                overlay) KNIFE_COMMAND="$setup"' && bun docs/speedrun/scripts/tickmanip-cycle.ts "$BOT" --mode=tree-knife --gate=off --demo --rolls="$CYCLES" --log="$OUT/knife/r1-knife.log"' ;;
+                in-page) KNIFE_COMMAND="$setup && $page"' --json="$OUT/knife.json" --timeout-min=30 "rsPrograms.run(\"knife-cycle\", { method: \"tree\", rolls: $CYCLES, maxTicks: 6000 })"' ;;
+              esac
+            fi
+            # The control: plain woodcutting (click, re-click when idle) at the same trees for the same
+            # number of logs, right after the knife loop in the same session, over the overlay in both
+            # variants. tickmanip-demo-report.ts weights every log by the rolls expected at its level.
+            local plain='bun docs/speedrun/scripts/tickmanip-cycle.ts "$BOT" --mode=tree-base --demo --rolls="$CYCLES" --log="$OUT/knife/r1-plain.log" && bun docs/speedrun/scripts/tickmanip-demo-report.ts "$OUT/knife"'
+            mkdir -p "$OUT/knife"
+            local rc=0
+            run_probe browser-probe "$BROWSER_PROBE_COMMAND" || rc=$?
+            run_probe knife "$KNIFE_COMMAND" 2100 || rc=$?
+            run_probe plain "$plain" 1500 || rc=$?
+            curl -s --max-time 5 "https://$DEMO/playercount" | jq -r '.count // ""' > "$OUT/players-end.txt" 2>/dev/null || true
+            return $rc
+          }
 
-          (cd server/gateway && AGENT_PORT=$GATEWAY_PORT GATEWAY_HOSTNAME=127.0.0.1 WEB_MANAGEMENT_PORT=8953 exec bun run gateway.ts) > "$OUT/gateway.log" 2>&1 &
-          GW=$!
-          sleep 2
-          (cd server/webclient && exec bun src/lite/runner.ts "$BOT") > "$OUT/lite-runner.log" 2>&1 &
-          RN=$!
-          stop() { kill -INT $RN 2>/dev/null; sleep 3; kill $RN $GW 2>/dev/null; sleep 1; kill -9 $RN $GW 2>/dev/null; rm -rf "bots/$BOT"; }
-          trap stop EXIT
-          for i in $(seq 120); do grep -q 'Gateway connected' "$OUT/lite-runner.log" && break; sleep 1; done
-          if ! grep -q 'Gateway connected' "$OUT/lite-runner.log"; then echo '::error::lite client did not log in'; tail -30 "$OUT/lite-runner.log"; exit 1; fi
-          sleep 3
+          # The demo can hold the account for minutes after the previous run's client closed
+          # ("Account already logged in"), so the direct path waits and retries a few times.
+          direct_path() {
+            export BOT_USERNAME="$BOT"
+            local rc=0
+            for attempt in 1 2 3 4; do
+              rc=0; run_probe direct "$DIRECT_COMMAND" || rc=$?
+              grep -q 'Account already logged in' "$OUT/direct-full.log" || return $rc
+              echo "direct: account still logged in on the demo (attempt $attempt), retrying in 45 s"; sleep 45
+            done
+            return $rc
+          }
 
-          echo "probe start $(TZ=America/Los_Angeles date '+%F %T %Z'): $PROBE_COMMAND" | tee "$OUT/probe.txt"
           code=0
-          timeout 1200 bash -c "$PROBE_COMMAND" > "$OUT/probe-full.log" 2>&1 || code=$?
-          grep -vE 'Pathfinding|\[Runner\]|\[BotSDK\]|LOGOUT DEBUG' "$OUT/probe-full.log" | tee -a "$OUT/probe.txt" || true
-          echo "probe end $(TZ=America/Los_Angeles date '+%F %T %Z'), exit $code" | tee -a "$OUT/probe.txt"
+          case "$MODE" in pair|direct|browser) ( direct_path ) || code=$? ;; esac
+          # Let the server finish the logout before the next path logs the same account in.
+          case "$MODE" in pair|browser) sleep 15 ;; esac
+          case "$MODE" in pair|gateway) ( gateway_path ) || code=$? ;; esac
+          case "$MODE" in browser) ( browser_path ) || code=$? ;; esac
           exit $code
 
       - name: Results (JSON, job summary)
@@ -131,27 +394,83 @@ jobs:
         env:
           NEAR: ${{ steps.vantage.outputs.near }}
           CHECKOUT_REF: ${{ inputs.ref || github.ref }}
+          LITE_REF: ${{ inputs.lite_ref }}
+          BROWSER_REF: ${{ inputs.browser_ref }}
           PASSWORD: ${{ secrets.DEMO_PROBE_PASSWORD }}
         run: |
           set -uo pipefail
-          mkdir -p "$OUT"; touch "$OUT/probe.txt"; [ -s "$OUT/vantage.json" ] || echo '{}' > "$OUT/vantage.json"
-          # Artifacts of a public repo are public: scrub the password from everything uploaded.
-          if [ -n "$PASSWORD" ]; then grep -rlF -- "$PASSWORD" "$OUT" | xargs -r sed -i "s/$PASSWORD/[redacted]/g" || true; fi
+          mkdir -p "$OUT"; [ -s "$OUT/vantage.json" ] || echo '{}' > "$OUT/vantage.json"
 
-          # A probe that writes its own OUT/probe.json wins; otherwise parse the
-          # tickmanip-latency.ts text lines ("latency in ticks ...: 2:25 3:35  (60 trials)").
-          if [ ! -s "$OUT/probe.json" ]; then
-            hist=$(grep -m1 '^latency in ticks' "$OUT/probe.txt" | sed -E 's/^[^:]*: //; s/ +\(.*$//' || true)
-            jq -n --arg h "$hist" \
-              --arg pub "$(grep -m1 '^state publication interval' "$OUT/probe.txt" | sed 's/^[^:]*: //')" \
-              --arg send "$(grep -m1 '^send resolve' "$OUT/probe.txt" | sed 's/^[^:]*: //')" \
-              '{reaction_ticks: ($h | split(" ") | map(select(test("^[0-9]+:[0-9]+$")) | split(":") | {(.[0]): (.[1] | tonumber)}) | add),
-                publication_interval_ms: $pub, send_resolve_ms: $send}' > "$OUT/probe.json"
+          # Where the time goes on the page's sockets, per browser-mode command (marks.tsv spans).
+          if [ -s "$OUT/page/frames.jsonl" ]; then
+            for f in browser-probe knife plain; do
+              read -r _ t0 t1 < <(grep "^$f " "$OUT/marks.tsv") || continue
+              bun --no-install docs/speedrun/scripts/demo-browser-page.ts frames --dir="$OUT/page" --from="$t0" --to="$t1" > "$OUT/frames-$f.txt" 2>&1 || true
+            done
           fi
-          jq -n --slurpfile v "$OUT/vantage.json" --slurpfile p "$OUT/probe.json" \
+
+          # Artifacts of a public repo are public: scrub the password from everything uploaded.
+          # Literal match (\Q...\E): the password may contain / or regex metacharacters.
+          if [ -n "$PASSWORD" ]; then grep -rlF -- "$PASSWORD" "$OUT" | xargs perl -pi -e 's/\Q$ENV{PASSWORD}\E/[redacted]/g' || true; fi
+
+          # tickmanip-latency.ts (gateway path, overlay probe) and the in-page probe's summary both
+          # print "latency in ticks (...): 1:58 2:2  (60 trials ...)"; parse that text.
+          ticks_json() {
+            local hist
+            hist=$(grep -m1 '^latency in ticks' "$OUT/$1.txt" 2>/dev/null | sed -E 's/^[^:]*: //; s/ +\(.*$//' || true)
+            jq -n --arg h "$hist" \
+              --arg pub "$(grep -m1 '^state publication interval' "$OUT/$1.txt" 2>/dev/null | sed 's/^[^:]*: //')" \
+              --arg send "$(grep -m1 '^send resolve' "$OUT/$1.txt" 2>/dev/null | sed 's/^[^:]*: //')" \
+              '{reaction_ticks: ($h | split(" ") | map(select(test("^[0-9]+:[0-9]+$")) | split(":") | {(.[0]): (.[1] | tonumber)}) | add),
+                publication_interval_ms: $pub, send_resolve_ms: $send}'
+          }
+          if [ -s "$OUT/gateway-path.txt" ]; then ticks_json gateway-path > "$OUT/gateway-path-ticks.json"; fi
+          if [ -s "$OUT/browser-probe.txt" ]; then ticks_json browser-probe > "$OUT/browser-probe-ticks.json"; fi
+          for f in gateway-path-ticks browser-probe-ticks direct; do [ -s "$OUT/$f.json" ] || echo null > "$OUT/$f.json"; done
+          # The knife loop's and the plain control's per-log figures: tickmanip-demo-report.ts's ALL
+          # lines (printed after the control) and the in-page program's knife-cycle line, each with the
+          # catch-ups its window saw on the page's game socket.
+          catchups() { grep -m1 -oE 'catch-ups [0-9]+ in [0-9.]+ min' "$OUT/frames-$1.txt" 2>/dev/null || true; }
+          knife=$({ grep -m1 -E '^knife-cycle:' "$OUT/knife.txt"; grep -E '^ALL ' "$OUT/plain.txt"; } 2>/dev/null | sed -E 's/^ALL +//; s/ +/ /g' | paste -sd ';' - || true)
+          knife="${knife:+$knife; }knife window $(catchups knife), plain window $(catchups plain)"
+          knife_detail=$(grep -hE '^(segment:|gap histogram|program |r[0-9]+ )' "$OUT/knife.txt" "$OUT/plain.txt" 2>/dev/null || true)
+          jq -n --slurpfile v "$OUT/vantage.json" --slurpfile g "$OUT/gateway-path-ticks.json" --slurpfile d "$OUT/direct.json" \
+            --slurpfile b "$OUT/browser-probe-ticks.json" \
             --arg run "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             --arg sha "$(git rev-parse HEAD)" --arg ref "$CHECKOUT_REF" \
-            '{run_url: $run, ref: $ref, sha: $sha, vantage: $v[0], probe: $p[0]}' > "$OUT/result.json"
+            --arg lref "${LITE_REF:-$CHECKOUT_REF}" --arg lsha "${LITE_SHA:-$(git rev-parse HEAD)}" \
+            --arg mode "$MODE" --arg variant "$VARIANT" --arg bref "$BROWSER_REF" --arg bsha "${BROWSER_SHA:-}" \
+            --arg knife "$knife" --arg kdetail "$knife_detail" --arg cycles "$CYCLES" \
+            --arg players_end "$(cat "$OUT/players-end.txt" 2>/dev/null)" \
+            '{run_url: $run, mode: $mode, ref: $ref, sha: $sha, lite: {ref: $lref, sha: $lsha}, vantage: $v[0], gateway_path: $g[0], direct: $d[0],
+              browser: (if $mode == "browser" then {variant: $variant, ref: $bref, sha: $bsha, probe: $b[0],
+                knife: {cycles: ($cycles | tonumber? // null), metric: $knife, detail: $kdetail}, players_online_end: ($players_end | tonumber? // null)} else null end)}' > "$OUT/result.json"
+          direct_ticks=$(grep -m1 'react delay +0 ms: ticks' "$OUT/direct.txt" 2>/dev/null | sed -E 's/.*ticks ([^ ]*).*/\1/' || true)
+          # "probe start <date> <time> PDT: ..." and "probe end <date> <time> PDT, exit N" -> "HH:MM:SS-HH:MM:SS PDT"
+          span() { [ -s "$OUT/$1.txt" ] || return 0; s=$(grep -m1 '^probe start' "$OUT/$1.txt" | awk '{print $4}'); e=$(grep -m1 '^probe end' "$OUT/$1.txt" | awk '{print $4}'); echo "$s-$e PDT"; }
+          online_end=$(jq -r '.playercountEnd // empty' "$OUT/direct.json" 2>/dev/null || true)
+          # Interval between tick publications, p50/p90/max ms: the direct probe's decoded ticks, the
+          # SDK's state publications (gateway path, overlay probe) or the page's decoded ticks (in-page).
+          # pub <file> <label regex>: the quantiles that follow the label (a line can carry others first).
+          pub() { grep -m1 -oE "$2[^(]*" "$OUT/$1.txt" 2>/dev/null | grep -oE 'p50 [0-9.]+ p90 [0-9.]+ max [0-9.]+' | head -1 || true; }
+          pub_row="$(pub direct 'tick interval p10') / $(pub gateway-path '^state publication interval') / $(pub browser-probe '^(state|page) publication interval')"
+          # The run-night gate (cairn://p/rs/83) on the direct row: (a) at least 58/60 on the next tick,
+          # (b) frame interval p90 <= 400 ms and max <= 600, (c) at most 1 catch-up per minute (a frame
+          # under 150 ms right after one over 350). Frames within 20 ms are one tick's output, which
+          # reproduces the probe's own printed interval quantiles. A failing minute is a burst.
+          gate=$(jq -r '
+            (.react.trials // []) as $tr | ($tr | map(select(.ticks == 1)) | length) as $on | ($tr | length) as $n |
+            (.react.frames.raw // [] | map(.[0])) as $f |
+            (reduce $f[] as $x ({b: [], last: null}; if .last == null or $x - .last > 20 then {b: (.b + [$x]), last: $x} else .last = $x end) | .b) as $t |
+            [range(1; $t | length) as $i | $t[$i] - $t[$i - 1]] as $iv | ($iv | sort) as $s | ($s | length) as $m |
+            (if $m > 0 then $s[[($m * 0.9 | floor), $m - 1] | min] else null end) as $p90 | ($s[-1] // null) as $max |
+            ([range(1; $iv | length) as $i | select($iv[$i] < 150 and $iv[$i - 1] > 350)] | length) as $cu |
+            (if ($t | length) > 1 then ($t[-1] - $t[0]) / 60000 else 0 end) as $mins |
+            (if $mins > 0 then $cu / $mins else null end) as $rate |
+            ($n > 0 and $on * 60 >= 58 * $n) as $a | ($p90 != null and $p90 <= 400 and $max <= 600) as $b | ($rate != null and $rate <= 1) as $c |
+            "\(if $a and $b and $c then "PASS" else "FAIL (burst)" end): a \($on)/\($n) \(if $a then "ok" else "fail" end); b frame interval p90 \($p90 // 0 | floor) max \($max // 0 | floor) \(if $b then "ok" else "fail" end); c \($cu) catch-ups in \($mins * 10 | floor / 10) min = \($rate // 0 | . * 10 | floor / 10)/min \(if $c then "ok" else "fail" end)"
+          ' "$OUT/direct.json" 2>/dev/null || echo 'not scored (no direct row)')
+          burst=''; case "$gate" in FAIL*) burst=' (burst)' ;; esac
 
           {
             echo '## Demo latency probe'
@@ -162,12 +481,33 @@ jobs:
                    "| edge (nr) / app (sr, sdc) | \(.vantage.edge_region) / \(.vantage.app_region), \(.vantage.app_dc) |",
                    "| mrtt (edge to app) ms | \(.vantage.mrtt_ms) |",
                    "| runner | \(.vantage.runner.azure.location // "?") \(.vantage.runner.ipinfo.city // "") \(.vantage.runner.ipinfo.region // "") (\(.vantage.runner.ipinfo.ip // "?")) |",
-                   "| players online | \(.vantage.players_online) |",
+                   "| players online (vantage step / end of direct probe) | \(.vantage.players_online) / \($online_end) |",
+                   "| mode / direct PDT / gateway PDT | \($mode) / \($dspan) / \($gspan) |",
                    "| TCP / TLS / TTFB(404) p50 ms | \(.vantage.http_ms.tcp_connect.p50) / \(.vantage.http_ms.tls_done.p50) / \(.vantage.http_ms.ttfb_404.p50) |",
                    "| TCP / TLS / TTFB(404) p90 ms | \(.vantage.http_ms.tcp_connect.p90) / \(.vantage.http_ms.tls_done.p90) / \(.vantage.http_ms.ttfb_404.p90) |",
-                   "| reaction ticks | \(.probe.reaction_ticks // {} | to_entries | map("\(.key):\(.value)") | join(" ")) |",
-                   "| checkout | \(.ref) @ \(.sha[0:9]) |"' "$OUT/result.json"
-            echo; echo '```'; cat "$OUT/probe.txt"; echo '```'
+                   "| reaction ticks, gateway path | \(.gateway_path.reaction_ticks // {} | to_entries | map("\(.key):\(.value)") | join(" ")) |",
+                   "| reaction ticks, direct (+0 ms) | \($direct) |",
+                   "| tick publication interval ms, p50/p90/max (direct / gateway / browser) | \($pub) |",
+                   "| run-night gate on the direct row (a >= 58/60; b p90 <= 400, max <= 600; c <= 1 catch-up/min) | \($gate) |",
+                   "| probes from | \(.ref) @ \(.sha[0:9]) |",
+                   "| lite client and gateway from | \(.lite.ref) @ \(.lite.sha[0:9]) |",
+                   (if .browser then
+                     "| browser variant (column) | \(.browser.variant) (\(if .browser.variant == "overlay" then "browser relay" else "browser direct" end)) |",
+                     "| page, bundle and gateway from | \(.browser.ref) @ \(.browser.sha[0:9]) |",
+                     "| browser probe PDT / knife PDT / plain PDT | \($bspan) / \($kspan) / \($pspan) |",
+                     "| players online, end of browser path | \(.browser.players_online_end) |",
+                     "| reaction ticks, browser \(.browser.variant)\($burst) | \(.browser.probe.reaction_ticks // {} | to_entries | map("\(.key):\(.value)") | join(" ")) |",
+                     "| knife loop and plain control, \(.browser.knife.cycles) logs each (trees west of Lumbridge castle) | \(.browser.knife.metric | gsub("\\|"; "/")) |"
+                   else empty end)' --arg direct "$direct_ticks" \
+              --arg online_end "$online_end" --arg mode "$MODE" --arg dspan "$(span direct)" --arg gspan "$(span gateway-path)" \
+              --arg bspan "$(span browser-probe)" --arg kspan "$(span knife)" --arg pspan "$(span plain)" --arg pub "$pub_row" --arg gate "$gate" --arg burst "$burst" "$OUT/result.json"
+            echo "$gate" > "$OUT/gate.txt"
+            for f in frames-browser-probe frames-knife frames-plain; do
+              if [ -s "$OUT/$f.txt" ]; then echo; echo "### where the time goes on the page's sockets: ${f#frames-}"; echo '```'; cat "$OUT/$f.txt"; echo '```'; fi
+            done
+            for f in skipped direct gateway-path browser-probe knife plain; do
+              if [ -s "$OUT/$f.txt" ]; then echo; echo "### $f"; echo '```'; cat "$OUT/$f.txt"; echo '```'; fi
+            done
           } >> "$GITHUB_STEP_SUMMARY"
           cat "$OUT/result.json"
 

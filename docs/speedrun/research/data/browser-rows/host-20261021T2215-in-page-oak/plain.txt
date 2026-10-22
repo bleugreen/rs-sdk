@@ -1,0 +1,59 @@
+probe start 2026-10-21 15:19:35 PDT: bun --no-install docs/speedrun/scripts/demo-browser-page.ts eval --dir="$OUT/page" --every=2.5 --progress="$KPROG" --json="$OUT/plain.json" --timeout-min=10 "rsPrograms.run(\"knife-cycle\", { method: \"oak\", technique: \"plain\", trees: [[3203, 3240], [3203, 3246]], maxTicks: 413 })"
+2026-10-21T22:19:35.822Z eval rsPrograms.run("knife-cycle", { method: "oak", technique: "plain", trees: [[3203, 3240], [3203, 3246]], maxTicks: 413 })
+2026-10-21T22:19:38.832Z progress {"id":3,"ph":"running","t":421,"n":0,"k":[],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:19:40.835Z progress {"id":3,"ph":"running","t":427,"n":1,"k":[426],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:19:43.842Z progress {"id":3,"ph":"running","t":436,"n":2,"k":[426,430],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:19:45.847Z progress {"id":3,"ph":"running","t":444,"n":2,"k":[426,430],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:19:48.856Z progress {"id":3,"ph":"running","t":454,"n":2,"k":[426,430],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:19:50.860Z progress {"id":3,"ph":"running","t":459,"n":2,"k":[426,430],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:19:53.865Z progress {"id":3,"ph":"running","t":470,"n":3,"k":[426,430,462],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:19:55.876Z progress {"id":3,"ph":"running","t":478,"n":4,"k":[426,430,462,471],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:19:58.882Z progress {"id":3,"ph":"running","t":488,"n":5,"k":[426,430,462,471,479],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:20:00.887Z progress {"id":3,"ph":"running","t":494,"n":5,"k":[426,430,462,471,479],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:20:03.898Z progress {"id":3,"ph":"running","t":504,"n":7,"k":[426,430,462,471,479,495,500],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:20:05.905Z progress {"id":3,"ph":"running","t":510,"n":7,"k":[426,430,462,471,479,495,500],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:20:08.913Z progress {"id":3,"ph":"running","t":521,"n":8,"k":[426,430,462,471,479,495,500,516],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:20:10.925Z progress {"id":3,"ph":"running","t":527,"n":9,"k":[426,430,462,471,479,495,500,516,524],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:20:13.936Z progress {"id":3,"ph":"running","t":537,"n":11,"k":[426,430,462,471,479,495,500,516,524,529,533],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:20:15.946Z progress {"id":3,"ph":"running","t":544,"n":12,"k":[426,430,462,471,479,495,500,516,524,529,533,541],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:20:18.953Z progress {"id":3,"ph":"running","t":554,"n":13,"k":[430,462,471,479,495,500,516,524,529,533,541,550],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:20:20.956Z progress {"id":3,"ph":"running","t":561,"n":14,"k":[462,471,479,495,500,516,524,529,533,541,550,558],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:20:23.965Z progress {"id":3,"ph":"running","t":571,"n":15,"k":[471,479,495,500,516,524,529,533,541,550,558,562],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:20:25.973Z progress {"id":3,"ph":"running","t":578,"n":16,"k":[479,495,500,516,524,529,533,541,550,558,562,575],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:20:28.981Z progress {"id":3,"ph":"running","t":587,"n":17,"k":[495,500,516,524,529,533,541,550,558,562,575,583],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:20:30.986Z progress {"id":3,"ph":"running","t":594,"n":17,"k":[495,500,516,524,529,533,541,550,558,562,575,583],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T22:20:33.997Z progress {"id":3,"ph":"running","t":604,"n":19,"k":[516,524,529,533,541,550,558,562,575,583,595,602],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:20:36.004Z progress {"id":3,"ph":"running","t":611,"n":19,"k":[516,524,529,533,541,550,558,562,575,583,595,602],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:20:39.021Z progress {"id":3,"ph":"running","t":621,"n":19,"k":[516,524,529,533,541,550,558,562,575,583,595,602],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:20:41.025Z progress {"id":3,"ph":"running","t":628,"n":20,"k":[524,529,533,541,550,558,562,575,583,595,602,622],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:20:44.034Z progress {"id":3,"ph":"running","t":638,"n":21,"k":[529,533,541,550,558,562,575,583,595,602,622,634],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:20:46.038Z progress {"id":3,"ph":"running","t":644,"n":21,"k":[529,533,541,550,558,562,575,583,595,602,622,634],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:20:49.051Z progress {"id":3,"ph":"running","t":654,"n":23,"k":[541,550,558,562,575,583,595,602,622,634,647,651],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:20:51.055Z progress {"id":3,"ph":"running","t":661,"n":24,"k":[550,558,562,575,583,595,602,622,634,647,651,655],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:20:54.064Z progress {"id":3,"ph":"running","t":671,"n":24,"k":[550,558,562,575,583,595,602,622,634,647,651,655],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:20:56.068Z progress {"id":3,"ph":"running","t":676,"n":25,"k":[558,562,575,583,595,602,622,634,647,651,655,672],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:20:59.075Z progress {"id":3,"ph":"running","t":684,"n":26,"k":[562,575,583,595,602,622,634,647,651,655,672,684],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:01.079Z progress {"id":3,"ph":"running","t":689,"n":26,"k":[562,575,583,595,602,622,634,647,651,655,672,684],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:04.087Z progress {"id":3,"ph":"running","t":698,"n":27,"k":[575,583,595,602,622,634,647,651,655,672,684,690],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:06.092Z progress {"id":3,"ph":"running","t":707,"n":28,"k":[583,595,602,622,634,647,651,655,672,684,690,699],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:09.102Z progress {"id":3,"ph":"running","t":717,"n":29,"k":[595,602,622,634,647,651,655,672,684,690,699,711],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:11.110Z progress {"id":3,"ph":"running","t":723,"n":29,"k":[595,602,622,634,647,651,655,672,684,690,699,711],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:14.124Z progress {"id":3,"ph":"running","t":734,"n":30,"k":[602,622,634,647,651,655,672,684,690,699,711,731],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:16.129Z progress {"id":3,"ph":"running","t":740,"n":30,"k":[602,622,634,647,651,655,672,684,690,699,711,731],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:19.139Z progress {"id":3,"ph":"running","t":748,"n":30,"k":[602,622,634,647,651,655,672,684,690,699,711,731],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:21.146Z progress {"id":3,"ph":"running","t":755,"n":31,"k":[622,634,647,651,655,672,684,690,699,711,731,752],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:24.151Z progress {"id":3,"ph":"running","t":764,"n":31,"k":[622,634,647,651,655,672,684,690,699,711,731,752],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:26.156Z progress {"id":3,"ph":"running","t":769,"n":31,"k":[622,634,647,651,655,672,684,690,699,711,731,752],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:29.161Z progress {"id":3,"ph":"running","t":777,"n":32,"k":[634,647,651,655,672,684,690,699,711,731,752,776],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:31.164Z progress {"id":3,"ph":"running","t":782,"n":32,"k":[634,647,651,655,672,684,690,699,711,731,752,776],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:34.175Z progress {"id":3,"ph":"running","t":789,"n":32,"k":[634,647,651,655,672,684,690,699,711,731,752,776],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:36.179Z progress {"id":3,"ph":"running","t":794,"n":32,"k":[634,647,651,655,672,684,690,699,711,731,752,776],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:39.186Z progress {"id":3,"ph":"running","t":802,"n":33,"k":[647,651,655,672,684,690,699,711,731,752,776,800],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:41.192Z progress {"id":3,"ph":"running","t":807,"n":34,"k":[651,655,672,684,690,699,711,731,752,776,800,805],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:44.198Z progress {"id":3,"ph":"running","t":815,"n":35,"k":[655,672,684,690,699,711,731,752,776,800,805,809],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:46.205Z progress {"id":3,"ph":"running","t":820,"n":35,"k":[655,672,684,690,699,711,731,752,776,800,805,809],"pr":0,"sl":0,"rs":0,"lu":1,"sw":0}
+2026-10-21T22:21:48.211Z result {"runId":3,"name":"knife-cycle","phase":"done","params":{"method":"oak","technique":"plain","trees":[[3203,3240],[3203,3246]],"maxTicks":413},"startedTick":410,"tick":825,"progressTick":809,"counters":{"successes":35,"levelUps":1},"gauges":{"ticksPerSuccess":12,"lastSuccessGap":4,"ticksPerSuccessSpan":11.265},"marks":{"successes":{"count":35,"ticks":[426,430,462,471,479,495,500,516,524,529,533,541,550,558,562,575,583,595,602,622,634,647,651,655,672,684,690,699,711,731,752,776,800,805,809]}},"packets":47,"deferred":0,"skippedTicks":0,"maxTickMs":0.2,"frames":{"n":414,"p50":320,"p90":420,"max":719,"under150":3,"over350":114,"catchUps":1,"catchUpsLastMinute":0,"catchUpsPerMinute":0.46},"publish":{"n":414,"p50":320,"p90":420,"max":720,"under150":3,"over350":114,"catchUps":1,"catchUpsLastMinute":0,"catchUpsPerMinute":0.46},"react":{"n":415,"p50":1,"p90":2,"max":3.4},"loops":{"last":75.2,"p10Last10s":72.4,"min":65.8},"last":"done","result":{"method":"oak","technique":"plain","successes":35,"ticks":414,"ticksPerSuccess":12,"gaps":22,"histogram":{"4":6,"8":5,"12":4,"16":2,"20":2,"24":2,"32":1},"span":383,"ticksPerSuccessOverSpan":11.265,"starters":0,"resyncs":0,"moves":0,"levelUps":1,"phase":0,"switches":0},"endedTick":825,"logTail":["T426 xp (anchor 411, awaiting xp since -)","T430 xp (anchor 411, awaiting xp since -)","T462 xp (anchor 411, awaiting xp since -)","T471 xp (anchor 463, awaiting xp since -)","T479 xp (anchor 463, awaiting xp since -)","T495 xp (anchor 463, awaiting xp since -)","T500 xp (anchor 496, awaiting xp since -)","T516 xp (anchor 496, awaiting xp since -)","T524 xp (anchor 496, awaiting xp since -)","T529 xp (anchor 525, awaiting xp since -)","T533 xp (anchor 525, awaiting xp since -)","T541 xp (anchor 525, awaiting xp since -)","T550 xp (anchor 542, awaiting xp since -)","T558 xp (anchor 542, awaiting xp since -)","T562 xp (anchor 542, awaiting xp since -)","T575 xp (anchor 563, awaiting xp since -)","T583 xp (anchor 563, awaiting xp since -)","T595 level 80","T595 xp (anchor 563, awaiting xp since -)","T596 target gone (anchor -, awaiting xp since -)","T597 target gone (anchor -, awaiting xp since -)","T602 xp (anchor 597, awaiting xp since -)","T622 xp (anchor 597, awaiting xp since -)","T634 xp (anchor 597, awaiting xp since -)","T647 xp (anchor 635, awaiting xp since -)","T651 xp (anchor 635, awaiting xp since -)","T655 xp (anchor 635, awaiting xp since -)","T672 xp (anchor 656, awaiting xp since -)","T684 xp (anchor 656, awaiting xp since -)","T685 target gone (anchor 656, awaiting xp since -)","T690 xp (anchor 685, awaiting xp since -)","T699 xp (anchor 691, awaiting xp since -)","T711 xp (anchor 691, awaiting xp since -)","T731 xp (anchor 691, awaiting xp since -)","T752 xp (anchor 732, awaiting xp since -)","T776 xp (anchor 732, awaiting xp since -)","T800 xp (anchor 732, awaiting xp since -)","T805 xp (anchor 801, awaiting xp since -)","T809 xp (anchor 801, awaiting xp since -)","done"]}
+server frame interval ms in the page: p50 320 p90 420 max 719, catch-ups 1 (0.5/min), under 150 3, over 350 114
+page publication interval ms: p50 320 p90 420 max 720
+program knife-cycle done: deferred 0, skippedTicks 0, maxTickMs 0.2, packets 47
+probe end 2026-10-21 15:21:48 PDT, exit 0

@@ -1,0 +1,611 @@
+{
+ "chance": [
+  32,
+  100
+ ],
+ "limit": 2,
+ "knife": {
+  "levels": "63-66",
+  "all": {
+   "logs": 19,
+   "ticks": 207,
+   "perLog": 10.89,
+   "expRolls": 63.61,
+   "perExpectedRoll": 3.25
+  },
+  "calm": {
+   "logs": 0,
+   "ticks": 0,
+   "perLog": null,
+   "expRolls": 0,
+   "perExpectedRoll": null
+  },
+  "busy": {
+   "logs": 19,
+   "ticks": 207,
+   "perLog": 10.89,
+   "expRolls": 63.61,
+   "perExpectedRoll": 3.25
+  },
+  "histogram": {
+   "3": 2,
+   "4": 4,
+   "6": 2,
+   "7": 2,
+   "12": 2,
+   "13": 3,
+   "19": 1,
+   "21": 1,
+   "27": 1,
+   "29": 1
+  },
+  "minutes": {
+   "2026-10-21T20:38:00.000Z": {
+    "catchUps": 12,
+    "softs": 23,
+    "spanMs": 43226.333251953125,
+    "rate": 16.66,
+    "calm": false
+   },
+   "2026-10-21T20:39:00.000Z": {
+    "catchUps": 4,
+    "softs": 9,
+    "spanMs": 18928.39990234375,
+    "rate": 12.68,
+    "calm": false
+   }
+  },
+  "logs": [
+   {
+    "tick": 246,
+    "level": 63,
+    "wall": 1792615096773.6667
+   },
+   {
+    "tick": 275,
+    "level": 63,
+    "wall": 1792615105134
+   },
+   {
+    "tick": 279,
+    "level": 63,
+    "wall": 1792615106470
+   },
+   {
+    "tick": 285,
+    "level": 63,
+    "wall": 1792615108309
+   },
+   {
+    "tick": 298,
+    "level": 63,
+    "wall": 1792615112002.3635
+   },
+   {
+    "tick": 311,
+    "level": 63,
+    "wall": 1792615116380.5454
+   },
+   {
+    "tick": 338,
+    "level": 65,
+    "wall": 1792615124266.4
+   },
+   {
+    "tick": 345,
+    "level": 65,
+    "wall": 1792615126234.818
+   },
+   {
+    "tick": 349,
+    "level": 65,
+    "wall": 1792615127328.2727
+   },
+   {
+    "tick": 355,
+    "level": 65,
+    "wall": 1792615129214.5557
+   },
+   {
+    "tick": 368,
+    "level": 65,
+    "wall": 1792615133084.6365
+   },
+   {
+    "tick": 371,
+    "level": 65,
+    "wall": 1792615133908
+   },
+   {
+    "tick": 383,
+    "level": 65,
+    "wall": 1792615137916.3333
+   },
+   {
+    "tick": 387,
+    "level": 65,
+    "wall": 1792615138918.6667
+   },
+   {
+    "tick": 399,
+    "level": 66,
+    "wall": 1792615142593
+   },
+   {
+    "tick": 418,
+    "level": 66,
+    "wall": 1792615148132.818
+   },
+   {
+    "tick": 422,
+    "level": 66,
+    "wall": 1792615149288.2222
+   },
+   {
+    "tick": 425,
+    "level": 66,
+    "wall": 1792615150290.889
+   },
+   {
+    "tick": 446,
+    "level": 66,
+    "wall": 1792615156820.8
+   },
+   {
+    "tick": 453,
+    "level": 66,
+    "wall": 1792615158928.4
+   }
+  ],
+  "gaps": [
+   {
+    "ticks": 29,
+    "level": 63,
+    "expRolls": 3.4133333333333336,
+    "calm": false,
+    "catchUpsInGap": 1,
+    "softsInGap": 3
+   },
+   {
+    "ticks": 4,
+    "level": 63,
+    "expRolls": 3.4133333333333336,
+    "calm": false,
+    "catchUpsInGap": 1,
+    "softsInGap": 1
+   },
+   {
+    "ticks": 6,
+    "level": 63,
+    "expRolls": 3.4133333333333336,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 1
+   },
+   {
+    "ticks": 13,
+    "level": 63,
+    "expRolls": 3.4133333333333336,
+    "calm": false,
+    "catchUpsInGap": 1,
+    "softsInGap": 2
+   },
+   {
+    "ticks": 13,
+    "level": 63,
+    "expRolls": 3.4133333333333336,
+    "calm": false,
+    "catchUpsInGap": 2,
+    "softsInGap": 3
+   },
+   {
+    "ticks": 27,
+    "level": 65,
+    "expRolls": 3.324675324675325,
+    "calm": false,
+    "catchUpsInGap": 2,
+    "softsInGap": 6
+   },
+   {
+    "ticks": 7,
+    "level": 65,
+    "expRolls": 3.324675324675325,
+    "calm": false,
+    "catchUpsInGap": 1,
+    "softsInGap": 1
+   },
+   {
+    "ticks": 4,
+    "level": 65,
+    "expRolls": 3.324675324675325,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 0
+   },
+   {
+    "ticks": 6,
+    "level": 65,
+    "expRolls": 3.324675324675325,
+    "calm": false,
+    "catchUpsInGap": 1,
+    "softsInGap": 1
+   },
+   {
+    "ticks": 13,
+    "level": 65,
+    "expRolls": 3.324675324675325,
+    "calm": false,
+    "catchUpsInGap": 1,
+    "softsInGap": 2
+   },
+   {
+    "ticks": 3,
+    "level": 65,
+    "expRolls": 3.324675324675325,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 0
+   },
+   {
+    "ticks": 12,
+    "level": 65,
+    "expRolls": 3.324675324675325,
+    "calm": false,
+    "catchUpsInGap": 2,
+    "softsInGap": 3
+   },
+   {
+    "ticks": 4,
+    "level": 65,
+    "expRolls": 3.324675324675325,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 0
+   },
+   {
+    "ticks": 12,
+    "level": 66,
+    "expRolls": 3.324675324675325,
+    "calm": false,
+    "catchUpsInGap": 2,
+    "softsInGap": 2
+   },
+   {
+    "ticks": 19,
+    "level": 66,
+    "expRolls": 3.324675324675325,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 1
+   },
+   {
+    "ticks": 4,
+    "level": 66,
+    "expRolls": 3.324675324675325,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 1
+   },
+   {
+    "ticks": 3,
+    "level": 66,
+    "expRolls": 3.324675324675325,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 1
+   },
+   {
+    "ticks": 21,
+    "level": 66,
+    "expRolls": 3.324675324675325,
+    "calm": false,
+    "catchUpsInGap": 2,
+    "softsInGap": 3
+   },
+   {
+    "ticks": 7,
+    "level": 66,
+    "expRolls": 3.324675324675325,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 1
+   }
+  ]
+ },
+ "plain": {
+  "levels": "66-68",
+  "all": {
+   "logs": 18,
+   "ticks": 221,
+   "perLog": 12.28,
+   "expRolls": 58.7,
+   "perExpectedRoll": 3.76
+  },
+  "calm": {
+   "logs": 0,
+   "ticks": 0,
+   "perLog": null,
+   "expRolls": 0,
+   "perExpectedRoll": null
+  },
+  "busy": {
+   "logs": 18,
+   "ticks": 221,
+   "perLog": 12.28,
+   "expRolls": 58.7,
+   "perExpectedRoll": 3.76
+  },
+  "histogram": {
+   "4": 3,
+   "6": 1,
+   "8": 5,
+   "9": 1,
+   "10": 1,
+   "11": 1,
+   "12": 1,
+   "15": 1,
+   "16": 1,
+   "29": 2,
+   "32": 1
+  },
+  "minutes": {
+   "2026-10-21T20:39:00.000Z": {
+    "catchUps": 6,
+    "softs": 16,
+    "spanMs": 34092.5,
+    "rate": 10.56,
+    "calm": false
+   },
+   "2026-10-21T20:40:00.000Z": {
+    "catchUps": 5,
+    "softs": 12,
+    "spanMs": 33960.28564453125,
+    "rate": 8.83,
+    "calm": false
+   }
+  },
+  "logs": [
+   {
+    "tick": 475,
+    "level": 66,
+    "wall": 1792615165907.5
+   },
+   {
+    "tick": 484,
+    "level": 67,
+    "wall": 1792615168982.6365
+   },
+   {
+    "tick": 488,
+    "level": 67,
+    "wall": 1792615170076.818
+   },
+   {
+    "tick": 496,
+    "level": 67,
+    "wall": 1792615172265.9092
+   },
+   {
+    "tick": 504,
+    "level": 67,
+    "wall": 1792615174516
+   },
+   {
+    "tick": 510,
+    "level": 67,
+    "wall": 1792615176520
+   },
+   {
+    "tick": 539,
+    "level": 67,
+    "wall": 1792615185217.6667
+   },
+   {
+    "tick": 547,
+    "level": 67,
+    "wall": 1792615187588.182
+   },
+   {
+    "tick": 563,
+    "level": 67,
+    "wall": 1792615192512.5454
+   },
+   {
+    "tick": 578,
+    "level": 67,
+    "wall": 1792615197131.125
+   },
+   {
+    "tick": 607,
+    "level": 68,
+    "wall": 1792615205651.0908
+   },
+   {
+    "tick": 611,
+    "level": 68,
+    "wall": 1792615206746.3635
+   },
+   {
+    "tick": 621,
+    "level": 68,
+    "wall": 1792615209698.8
+   },
+   {
+    "tick": 633,
+    "level": 68,
+    "wall": 1792615213691.375
+   },
+   {
+    "tick": 665,
+    "level": 68,
+    "wall": 1792615223713.182
+   },
+   {
+    "tick": 673,
+    "level": 68,
+    "wall": 1792615226023.889
+   },
+   {
+    "tick": 677,
+    "level": 68,
+    "wall": 1792615227361.6667
+   },
+   {
+    "tick": 685,
+    "level": 68,
+    "wall": 1792615229870.5
+   },
+   {
+    "tick": 696,
+    "level": 68,
+    "wall": 1792615233960.2856
+   }
+  ],
+  "gaps": [
+   {
+    "ticks": 9,
+    "level": 67,
+    "expRolls": 3.282051282051282,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 0
+   },
+   {
+    "ticks": 4,
+    "level": 67,
+    "expRolls": 3.282051282051282,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 0
+   },
+   {
+    "ticks": 8,
+    "level": 67,
+    "expRolls": 3.282051282051282,
+    "calm": false,
+    "catchUpsInGap": 2,
+    "softsInGap": 2
+   },
+   {
+    "ticks": 8,
+    "level": 67,
+    "expRolls": 3.282051282051282,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 2
+   },
+   {
+    "ticks": 6,
+    "level": 67,
+    "expRolls": 3.282051282051282,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 1
+   },
+   {
+    "ticks": 29,
+    "level": 67,
+    "expRolls": 3.282051282051282,
+    "calm": false,
+    "catchUpsInGap": 2,
+    "softsInGap": 4
+   },
+   {
+    "ticks": 8,
+    "level": 67,
+    "expRolls": 3.282051282051282,
+    "calm": false,
+    "catchUpsInGap": 1,
+    "softsInGap": 1
+   },
+   {
+    "ticks": 16,
+    "level": 67,
+    "expRolls": 3.282051282051282,
+    "calm": false,
+    "catchUpsInGap": 1,
+    "softsInGap": 2
+   },
+   {
+    "ticks": 15,
+    "level": 67,
+    "expRolls": 3.282051282051282,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 2
+   },
+   {
+    "ticks": 29,
+    "level": 68,
+    "expRolls": 3.240506329113924,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 3
+   },
+   {
+    "ticks": 4,
+    "level": 68,
+    "expRolls": 3.240506329113924,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 0
+   },
+   {
+    "ticks": 10,
+    "level": 68,
+    "expRolls": 3.240506329113924,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 0
+   },
+   {
+    "ticks": 12,
+    "level": 68,
+    "expRolls": 3.240506329113924,
+    "calm": false,
+    "catchUpsInGap": 2,
+    "softsInGap": 2
+   },
+   {
+    "ticks": 32,
+    "level": 68,
+    "expRolls": 3.240506329113924,
+    "calm": false,
+    "catchUpsInGap": 2,
+    "softsInGap": 4
+   },
+   {
+    "ticks": 8,
+    "level": 68,
+    "expRolls": 3.240506329113924,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 2
+   },
+   {
+    "ticks": 4,
+    "level": 68,
+    "expRolls": 3.240506329113924,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 1
+   },
+   {
+    "ticks": 8,
+    "level": 68,
+    "expRolls": 3.240506329113924,
+    "calm": false,
+    "catchUpsInGap": 1,
+    "softsInGap": 2
+   },
+   {
+    "ticks": 11,
+    "level": 68,
+    "expRolls": 3.240506329113924,
+    "calm": false,
+    "catchUpsInGap": 0,
+    "softsInGap": 0
+   }
+  ]
+ }
+}

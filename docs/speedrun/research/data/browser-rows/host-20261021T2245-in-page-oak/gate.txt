@@ -1,0 +1,1 @@
+PASS: a 58/60 ok; c 1 catch-ups in 1.2 min = 0.7/min ok; b (context) frame interval p90 343 max 609

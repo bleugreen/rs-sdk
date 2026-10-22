@@ -1,0 +1,40 @@
+session /home/ubuntu/rs130/out/20261021T2015-overlay exit 0
+browser page from main @ ae6d5664d, probes from 5ed37d629
+gate: FAIL (burst): a 59/60 ok; c 3 catch-ups in 1.2 min = 2.4/min fail; b (context) frame interval p90 363 max 561
+react delay +0 ms: ticks {"1":59,"2":1}  reactMs p10 0.2 p50 0.3 p90 0.4 max 9.2 (n=60)
+latency in ticks (label of the step - label sent): 1:59 2:1  (60 trials, 0 lost, 62 ticks)
+on time 59/60; dominant 1 ticks (98%, lead 0); consecutive trials agree 97%
+state publication interval ms: p10 221 p50 304 p90 363 max 519
+-- frames browser-probe
+window 2026-10-21T20:17:10.300Z - 2026-10-21T20:17:29.360Z: 469 frames
+tick output arrival interval ms: p10 70 p50 148 p90 242 max 350 (n 122); catch-ups 0 in 0.3 min
+game packet out, ms after its tick's output arrived: p10 5 p50 6 p90 147 max 324 (n 100)
+gateway actions: 60, 60 following a state within 1 s
+  tick output in -> state out (page publication): p10 1 p50 1 p90 1 max 16 (n 60)
+  state out -> action in (gateway, SDK script, gateway): p10 4 p50 4 p90 5 max 16 (n 60)
+  action in -> game packet out (overlay drain to flush): p10 0 p50 0 p90 1 max 2 (n 60)
+  tick output in -> game packet out (whole reaction in the page's view): p10 5 p50 6 p90 7 max 33 (n 60)
+-- frames knife
+window 2026-10-21T20:17:29.366Z - 2026-10-21T20:19:53.731Z: 3695 frames
+tick output arrival interval ms: p10 69 p50 154 p90 299 max 560 (n 858); catch-ups 10 in 2.4 min
+game packet out, ms after its tick's output arrived: p10 6 p50 11 p90 182 max 439 (n 577)
+gateway actions: 272, 272 following a state within 1 s
+  tick output in -> state out (page publication): p10 1 p50 7 p90 9 max 44 (n 272)
+  state out -> action in (gateway, SDK script, gateway): p10 0 p50 1 p90 5 max 23 (n 272)
+  action in -> game packet out (overlay drain to flush): p10 0 p50 0 p90 1 max 1 (n 272)
+  tick output in -> game packet out (whole reaction in the page's view): p10 6 p50 8 p90 9 max 45 (n 272)
+-- frames plain
+window 2026-10-21T20:19:53.738Z - 2026-10-21T20:21:20.917Z: 1133 frames
+tick output arrival interval ms: p10 82 p50 172 p90 295 max 553 (n 476); catch-ups 5 in 1.4 min
+game packet out, ms after its tick's output arrived: p10 6 p50 78 p90 221 max 407 (n 214)
+gateway actions: 29, 29 following a state within 1 s
+  tick output in -> state out (page publication): p10 1 p50 1 p90 1 max 2 (n 29)
+  state out -> action in (gateway, SDK script, gateway): p10 4 p50 4 p90 6 max 6 (n 29)
+  action in -> game packet out (overlay drain to flush): p10 0 p50 0 p90 1 max 1 (n 29)
+  tick output in -> game packet out (whole reaction in the page's view): p10 5 p50 6 p90 7 max 8 (n 29)
+-- knife/plain
+segment: from start T117 to last xp T552: 435 ticks, 30 catches, 14.50 ticks per catch, base 750.0, 1.72 base per tick
+segment: from start T596 to last xp T841: 245 ticks, 20 catches, 12.25 ticks per catch, base 500.0, 2.04 base per tick
+ALL knife      29 logs: 14.72 per log, 8.27 per expected roll
+ALL plain      19 logs: 12.47 per log, 7.23 per expected roll
+players end 1597

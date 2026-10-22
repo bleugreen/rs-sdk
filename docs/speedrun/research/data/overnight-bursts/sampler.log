@@ -1,0 +1,277 @@
+2026-10-21 04:25:07 start: demo-latency-probe.yml on bleugreen/rs-sdk @ agent/rs-83-coordinator-0 (lite_ref=main) every 30 min until 2026-10-21 12:00:00; dir /tmp/rs102-sampler
+2026-10-21 04:25:09 waiting: active run 39591572716 (in_progress, agent/rs-95-dispatch)
+2026-10-21 04:32:20 start: demo-latency-probe.yml on bleugreen/rs-sdk @ agent/rs-83-coordinator-0 (lite_ref=main, direct sample 6 min) every 30 min until 2026-10-21 12:00:00; dir /tmp/rs102-sampler
+2026-10-21 04:32:21 waiting: active run 39591572716 (in_progress, agent/rs-95-dispatch)
+2026-10-21 04:38:04 waiting: yielding to 39591572716 (0 min ago)
+2026-10-21 04:38:36 waiting: yielding to 39591572716 (1 min ago)
+2026-10-21 04:39:38 waiting: yielding to 39591572716 (2 min ago)
+2026-10-21 04:40:40 waiting: yielding to 39591572716 (3 min ago)
+2026-10-21 04:41:43 waiting: yielding to 39591572716 (4 min ago)
+2026-10-21 04:42:45 waiting: yielding to 39591572716 (5 min ago)
+2026-10-21 04:43:47 waiting: active run 39594067434 (in_progress, agent/rs-95-dispatch)
+2026-10-21 04:44:50 waiting: yielding to 39594067434, 39591572716 (0 min ago)
+2026-10-21 04:45:21 waiting: active run 39594236987 (in_progress, agent/rs-95-dispatch)
+2026-10-21 04:46:23 waiting: active run 39594411731 (in_progress, agent/rs-95-dispatch)
+2026-10-21 04:50:00 waiting: yielding to 39594411731, 39594236987, 39594067434 (0 min ago)
+2026-10-21 04:50:32 waiting: yielding to 39594411731, 39594236987, 39594067434 (1 min ago)
+2026-10-21 04:51:35 waiting: active run 39595061321 (in_progress, agent/rs-95-dispatch)
+2026-10-21 04:52:37 waiting: yielding to 39595061321, 39594411731, 39594236987, 39594067434 (0 min ago)
+2026-10-21 04:53:09 waiting: active run 39595244093 (in_progress, agent/rs-95-dispatch)
+2026-10-21 04:54:42 waiting: yielding to 39595244093, 39595061321, 39594411731, 39594236987 (0 min ago)
+2026-10-21 04:55:13 waiting: active run 39595481831 (in_progress, agent/rs-95-dispatch)
+2026-10-21 04:56:45 slot 2026-10-21 04:31:20: no gated run within 25 min
+2026-10-21 05:00:01 waiting: active run 39595481831 (in_progress, agent/rs-95-dispatch)
+2026-10-21 05:03:10 waiting: yielding to 39595481831, 39595244093 (1 min ago)
+2026-10-21 05:04:14 waiting: active run 39596645580 (in_progress, agent/rs-95-dispatch)
+2026-10-21 05:05:17 waiting: yielding to 39596645580, 39595481831 (0 min ago)
+2026-10-21 05:05:49 waiting: active run 39596835973 (in_progress, agent/rs-95-dispatch)
+2026-10-21 05:06:51 waiting: active run 39597024103 (queued, agent/rs-95-dispatch)
+2026-10-21 05:07:22 waiting: active run 39597024103 (in_progress, agent/rs-95-dispatch)
+2026-10-21 05:07:53 waiting: yielding to 39597024103, 39596835973, 39596645580, 39595481831 (0 min ago)
+2026-10-21 05:08:25 waiting: active run 39597212101 (in_progress, agent/rs-95-dispatch)
+2026-10-21 05:16:46 waiting: yielding to 39597212101, 39597024103 (0 min ago)
+2026-10-21 05:17:17 waiting: yielding to 39597212101, 39597024103 (1 min ago)
+2026-10-21 05:18:20 waiting: active run 39598512725 (in_progress, agent/rs-95-dispatch)
+2026-10-21 05:19:22 waiting: yielding to 39598512725, 39597212101 (0 min ago)
+2026-10-21 05:19:54 waiting: active run 39598698080 (in_progress, agent/rs-95-dispatch)
+2026-10-21 05:20:57 waiting: yielding to 39598698080, 39598512725, 39597212101 (0 min ago)
+2026-10-21 05:21:28 waiting: active run 39598880448 (in_progress, agent/rs-95-dispatch)
+2026-10-21 05:22:31 waiting: active run 39599071170 (in_progress, agent/rs-95-dispatch)
+2026-10-21 05:23:44 collect 39578579952: gate-skip
+2026-10-21 05:23:46 collect 39578736569: gate-skip
+2026-10-21 05:23:48 collect 39578933926: gate-skip
+2026-10-21 05:23:50 gated 39579095329: direct 60:0:0 relay 32:28 pub p90 348.3 max 879.2 >400 14 <200 120, 1651 online
+2026-10-21 05:23:50 collect 39579095329: gated
+2026-10-21 05:23:53 gated 39579740957: direct 15:0:0 relay 7:8 pub p90 350.7 max 710.9 >400 26 <200 204, 1564 online
+2026-10-21 05:23:53 collect 39579740957: gated
+2026-10-21 05:23:54 collect 39581116028: gate-skip
+2026-10-21 05:23:56 collect 39581263854: gate-skip
+2026-10-21 05:23:59 collect 39581434296: gate-skip
+2026-10-21 05:24:01 collect 39581591835: gate-skip
+2026-10-21 05:24:03 collect 39581748053: gate-skip
+2026-10-21 05:24:04 gated 39581904913: direct 56:4:0 relay 36:24 pub p90 362.7 max 677.1 >400 16 <200 118, 1649 online
+2026-10-21 05:24:04 collect 39581904913: gated
+2026-10-21 05:24:06 collect 39582947271: gate-skip
+2026-10-21 05:24:08 collect 39583146524: gate-skip
+2026-10-21 05:24:10 gated 39583303736: direct 60:0:0 relay 40:20 pub p90 351.1 max 612.3 >400 9 <200 124, 1658 online
+2026-10-21 05:24:10 collect 39583303736: gated
+2026-10-21 05:24:12 collect 39587062447: gate-skip
+2026-10-21 05:24:14 collect 39587341731: gate-skip
+2026-10-21 05:24:16 collect 39588258339: gate-skip
+2026-10-21 05:24:18 collect 39588933689: gate-skip
+2026-10-21 05:24:20 gated 39589100761: direct 60:0:0 relay 60:- pub p90 344.7 max 604.5 >400 10 <200 129, 1673 online
+2026-10-21 05:24:20 collect 39589100761: gated
+2026-10-21 05:24:22 collect 39590017259: gate-skip
+2026-10-21 05:24:24 gated 39590172234: direct 40:16:4 relay 40:20 pub p90 425.9 max 739.6 >400 44 <200 116, 1645 online
+2026-10-21 05:24:24 collect 39590172234: gated
+2026-10-21 05:24:26 collect 39586222595: gate-skip
+2026-10-21 05:24:28 collect 39586498824: gate-skip
+2026-10-21 05:24:30 collect 39586633572: gate-skip
+2026-10-21 05:24:32 collect 39586767778: gate-skip
+2026-10-21 05:24:34 collect 39586908991: gate-skip
+2026-10-21 05:24:36 collect 39587080554: gate-skip
+2026-10-21 05:24:39 collect 39587340436: gate-skip
+2026-10-21 05:24:41 collect 39587472313: gate-skip
+2026-10-21 05:24:43 collect 39587741342: gate-skip
+2026-10-21 05:24:45 collect 39587910183: gate-skip
+2026-10-21 05:24:48 collect 39588075965: gate-skip
+2026-10-21 05:24:50 collect 39588301856: gate-skip
+2026-10-21 05:24:52 collect 39588565752: gate-skip
+2026-10-21 05:24:54 collect 39588702337: probe-fail
+2026-10-21 05:24:56 collect 39589581311: probe-fail
+2026-10-21 05:24:58 gated 39590766611: direct 10:0:0 relay -:- pub p90 359.7 max 462.7 >400 3 <200 21, 1686 online
+2026-10-21 05:24:58 collect 39590766611: gated
+2026-10-21 05:25:00 gated 39591572716: direct 49:11:0 relay -:- pub p90 395.2 max 817.4 >400 29 <200 111, 1670 online
+2026-10-21 05:25:00 collect 39591572716: gated
+2026-10-21 05:25:02 collect 39594067434: gate-skip
+2026-10-21 05:25:04 collect 39594236987: gate-skip
+2026-10-21 05:25:06 gated 39594411731: direct 60:0:0 relay -:- pub p90 350.4 max 604.6 >400 13 <200 139, 1684 online
+2026-10-21 05:25:06 collect 39594411731: gated
+2026-10-21 05:25:07 collect 39595061321: gate-skip
+2026-10-21 05:25:09 collect 39595244093: gate-skip
+2026-10-21 05:25:11 gated 39595481831: direct 59:0:0 relay -:- pub p90 351.4 max 512.8 >400 7 <200 86, 1122 online
+2026-10-21 05:25:11 collect 39595481831: gated
+2026-10-21 05:25:13 collect 39596645580: gate-skip
+2026-10-21 05:25:15 collect 39596835973: gate-skip
+2026-10-21 05:25:17 collect 39597024103: gate-skip
+2026-10-21 05:25:19 gated 39597212101: direct 60:0:0 relay -:- pub p90 338.6 max 493.2 >400 6 <200 128, 1442 online
+2026-10-21 05:25:19 collect 39597212101: gated
+2026-10-21 05:25:21 collect 39598512725: gate-skip
+2026-10-21 05:25:23 collect 39598698080: gate-skip
+2026-10-21 05:25:25 collect 39598880448: gate-skip
+2026-10-21 05:25:26 collect 39599071170: gate-skip
+2026-10-21 05:25:26 start: demo-latency-probe.yml on bleugreen/rs-sdk @ agent/rs-83-coordinator-0 (lite_ref=main, direct sample 6 min) every 30 min until 2026-10-21 12:00:00; dir /tmp/rs102-sampler
+2026-10-21 05:25:28 waiting: active run 39599445583 (in_progress, agent/rs-95-dispatch)
+2026-10-21 05:26:32 foreign run 39599445583 (agent/rs-95-dispatch): gate-skip
+2026-10-21 05:26:34 foreign run 39599253106 (agent/rs-95-dispatch): gate-skip
+2026-10-21 05:26:34 waiting: yielding to 39599445583, 39599253106, 39599071170, 39598880448, 39598698080, 39598512725 (0 min ago)
+2026-10-21 05:27:05 waiting: active run 39599626650 (in_progress, agent/rs-95-dispatch)
+2026-10-21 05:28:08 waiting: active run 39599808213 (in_progress, agent/rs-95-dispatch)
+2026-10-21 05:29:12 foreign run 39599808213 (agent/rs-95-dispatch): gate-skip
+2026-10-21 05:29:13 foreign run 39599626650 (agent/rs-95-dispatch): gate-skip
+2026-10-21 05:29:13 waiting: yielding to 39599808213, 39599626650, 39599445583, 39599253106, 39599071170, 39598880448, 39598698080, 39598512725 (0 min ago)
+2026-10-21 05:29:44 waiting: active run 39600002457 (in_progress, agent/rs-95-dispatch)
+2026-10-21 05:30:48 foreign run 39600002457 (agent/rs-95-dispatch): gate-skip
+2026-10-21 05:30:54 slot 2026-10-21 05:24:26 attempt 1: dispatched 39600195300
+2026-10-21 05:31:58 run 39600195300: success, gate-skip
+2026-10-21 05:31:59 waiting: active run 39600195646 (in_progress, agent/rs-95-dispatch)
+2026-10-21 05:33:33 waiting: active run 39600522358 (in_progress, agent/rs-95-dispatch)
+2026-10-21 05:34:38 foreign run 39600522358 (agent/rs-95-dispatch): gate-skip
+2026-10-21 05:34:39 foreign run 39600195646 (agent/rs-95-dispatch): gate-skip
+2026-10-21 05:34:46 slot 2026-10-21 05:24:26 attempt 2: dispatched 39600713286
+2026-10-21 05:47:52 run 39600713286: success, gate-skip
+2026-10-21 05:47:55 gated 39600705668: direct 36:22:1 relay -:- pub p90 505.9 max 1458 >400 55 <200 undefined, 1717 online
+2026-10-21 05:47:55 foreign run 39600705668 (agent/rs-95-dispatch): gated
+2026-10-21 05:47:55 waiting: yielding to 39600705668 (2 min ago)
+2026-10-21 05:48:58 waiting: yielding to 39600705668 (3 min ago)
+2026-10-21 05:49:28 slot 2026-10-21 05:24:26: no gated run within 25 min
+2026-10-21 05:49:30 waiting: yielding to 39600705668 (3 min ago)
+2026-10-21 05:50:01 waiting: yielding to 39600705668 (4 min ago)
+2026-10-21 05:51:04 waiting: yielding to 39600705668 (5 min ago)
+2026-10-21 05:52:07 waiting: yielding to 39600705668 (6 min ago)
+2026-10-21 05:53:10 waiting: yielding to 39600705668 (7 min ago)
+2026-10-21 05:54:12 waiting: yielding to 39600705668 (8 min ago)
+2026-10-21 05:55:16 waiting: yielding to 39600705668 (9 min ago)
+2026-10-21 05:56:18 waiting: yielding to 39600705668 (10 min ago)
+2026-10-21 05:56:55 slot 2026-10-21 05:48:28 attempt 1: dispatched 39603726628
+2026-10-21 05:58:20 run 39603726628: success, gate-skip
+2026-10-21 05:58:29 slot 2026-10-21 05:48:28 attempt 2: dispatched 39603932981
+2026-10-21 05:59:33 run 39603932981: success, gate-skip
+2026-10-21 05:59:40 slot 2026-10-21 05:48:28 attempt 3: dispatched 39604098048
+2026-10-21 06:09:01 gated 39604098048: direct 60:0:0 relay 59:1 pub p90 369 max 636.4 >400 14 <200 undefined, 1594 online
+2026-10-21 06:09:01 run 39604098048: success, gated
+2026-10-21 06:09:08 slot 2026-10-21 06:08:01 attempt 1: dispatched 39605462121
+2026-10-21 06:18:49 gated 39605462121: direct 34:23:3 relay 60:- pub p90 519.7 max 811.9 >400 72 <200 undefined, 1684 online
+2026-10-21 06:18:49 run 39605462121: success, gated
+2026-10-21 06:30:07 slot 2026-10-21 06:30:00 attempt 1: dispatched 39608529122
+2026-10-21 06:31:32 run 39608529122: success, gate-skip
+2026-10-21 06:31:39 slot 2026-10-21 06:30:00 attempt 2: dispatched 39608763891
+2026-10-21 06:33:03 run 39608763891: success, gate-skip
+2026-10-21 06:33:11 slot 2026-10-21 06:30:00 attempt 3: dispatched 39608983146
+2026-10-21 06:34:35 run 39608983146: success, gate-skip
+2026-10-21 06:34:43 slot 2026-10-21 06:30:00 attempt 4: dispatched 39609209405
+2026-10-21 06:36:07 run 39609209405: success, gate-skip
+2026-10-21 06:36:15 slot 2026-10-21 06:30:00 attempt 5: dispatched 39609432705
+2026-10-21 06:45:35 gated 39609432705: direct 60:0:0 relay 60:- pub p90 383.8 max 555.3 >400 21 <200 undefined, 1647 online
+2026-10-21 06:45:35 run 39609432705: success, gated
+2026-10-21 07:00:08 slot 2026-10-21 07:00:00 attempt 1: dispatched 39612921940
+2026-10-21 07:09:29 gated 39612921940: direct 54:6:0 relay 50:10 pub p90 376.1 max 627 >400 16 <200 undefined, 1636 online
+2026-10-21 07:09:29 run 39612921940: success, gated
+2026-10-21 07:30:06 slot 2026-10-21 07:30:00 attempt 1: dispatched 39617315258
+2026-10-21 07:39:26 run 39617315258: success, probe-fail
+2026-10-21 07:40:00 start: demo-latency-probe.yml on bleugreen/rs-sdk @ agent/rs-83-coordinator-0 (lite_ref=main, direct sample 6 min) every 30 min until 2026-10-21 12:00:00; dir /tmp/rs102-sampler
+2026-10-21 07:40:09 slot 2026-10-21 07:39:00 attempt 1: dispatched 39618846171 (long direct, 17 min sample)
+2026-10-21 07:42:29 start: demo-latency-probe.yml on bleugreen/rs-sdk @ agent/rs-83-coordinator-0 (lite_ref=main, direct sample 6 min) every 30 min until 2026-10-21 12:00:00; dir /tmp/rs102-sampler
+2026-10-21 07:42:31 gated 39617315258: direct 59:1:0 relay 59:1 pub p90 377.1 max 581.4 >400 17 <200 undefined, 1607 online
+2026-10-21 07:42:31 orphan 39617315258: gated
+2026-10-21 07:42:42 orphan 39618846171 still running, waiting
+2026-10-21 07:44:42 start: demo-latency-probe.yml on bleugreen/rs-sdk @ agent/rs-83-coordinator-0 (lite_ref=main, direct sample 6 min) every 30 min until 2026-10-21 12:00:00; dir /tmp/rs102-sampler
+2026-10-21 07:44:56 orphan 39618846171 still running, waiting
+2026-10-21 07:59:52 gated 39618846171: direct 60:0:0 relay -:- pub p90 413.8 max 787.7 >400 33 <200 undefined, 1635 online
+2026-10-21 07:59:52 orphan 39618846171: gated
+2026-10-21 08:00:01 slot 2026-10-21 07:58:52 attempt 1: dispatched 39621799319 (long direct, 17 min sample)
+2026-10-21 08:07:51 start: demo-latency-probe.yml on bleugreen/rs-sdk @ agent/rs-83-coordinator-0 (lite_ref=main, direct sample 6 min) every 60 min until 2026-10-21 12:00:00; dir /tmp/rs102-sampler
+2026-10-21 08:08:05 orphan 39621799319 still running, waiting
+2026-10-21 08:08:34 start: demo-latency-probe.yml on bleugreen/rs-sdk @ agent/rs-83-coordinator-0 (lite_ref=main, direct sample 6 min) every 60 min until 2026-10-21 12:00:00; dir /tmp/rs102-sampler
+2026-10-21 08:08:47 orphan 39621799319 still running, waiting
+2026-10-21 08:31:51 orphan 39621799319: gate-skip
+2026-10-21 08:31:59 slot 2026-10-21 08:30:00 attempt 1: dispatched 39626537570 (long direct, 17 min sample)
+2026-10-21 08:33:23 run 39626537570: success, gate-skip
+2026-10-21 08:33:32 slot 2026-10-21 08:30:00 attempt 2: dispatched 39626763077 (long direct, 17 min sample)
+2026-10-21 08:34:36 run 39626763077: success, gate-skip
+2026-10-21 08:34:44 slot 2026-10-21 08:30:00 attempt 3: dispatched 39626935368 (long direct, 17 min sample)
+2026-10-21 08:35:48 run 39626935368: success, gate-skip
+2026-10-21 08:35:57 slot 2026-10-21 08:30:00 attempt 4: dispatched 39627115949 (long direct, 17 min sample)
+2026-10-21 08:55:39 gated 39627115949: direct 60:0:0 relay -:- pub p90 447.2 max 697.7 >400 72 <200 undefined, 1696 online
+2026-10-21 08:55:39 run 39627115949: success, gated
+2026-10-21 08:56:05 start: demo-latency-probe.yml on bleugreen/rs-sdk @ agent/rs-83-coordinator-0 (lite_ref=main, direct sample 6 min) every 60 min until 2026-10-21 12:00:00; dir /tmp/rs102-sampler
+2026-10-21 09:30:02 foreign run 39634570728 (agent/rs-83-coordinator-0): gate-skip
+2026-10-21 09:30:03 gated 39632189396: direct 59:1:0 relay -:- pub p90 407.1 max 688.5 >400 29 <200 undefined, 1701 online
+2026-10-21 09:30:03 foreign run 39632189396 (agent/rs-83-coordinator-0): gated
+2026-10-21 09:30:04 foreign run 39631865093 (agent/rs-83-coordinator-0): gate-skip
+2026-10-21 09:30:05 foreign run 39630610673 (agent/rs-83-coordinator-0): gate-skip
+2026-10-21 09:30:06 foreign run 39630272406 (agent/rs-83-coordinator-0): gate-skip
+2026-10-21 09:30:14 slot 2026-10-21 09:30:00 attempt 1: dispatched 39635322380 (pair, 6 min sample)
+2026-10-21 09:39:43 gated 39635322380: direct 60:0:0 relay -:- pub p90 411 max 723.9 >400 34 <200 undefined, 1692 online
+2026-10-21 09:39:43 run 39635322380: success, gated
+2026-10-21 10:30:04 gated 39638307989: direct 53:6:1 relay -:- pub p90 464.8 max 745.5 >400 54 <200 undefined, 1692 online
+2026-10-21 10:30:04 foreign run 39638307989 (agent/rs-83-coordinator-0): gated
+2026-10-21 10:30:05 foreign run 39638022509 (agent/rs-83-coordinator-0): gate-skip
+2026-10-21 10:30:06 foreign run 39637684887 (agent/rs-83-coordinator-0): gate-skip
+2026-10-21 10:30:14 slot 2026-10-21 10:30:00 attempt 1: dispatched 39644351408 (pair, 6 min sample)
+2026-10-21 10:31:19 run 39644351408: success, gate-skip
+2026-10-21 10:31:28 slot 2026-10-21 10:30:00 attempt 2: dispatched 39644543037 (pair, 6 min sample)
+2026-10-21 10:32:54 run 39644543037: success, gate-skip
+2026-10-21 10:33:02 slot 2026-10-21 10:30:00 attempt 3: dispatched 39644777100 (long direct, 17 min sample)
+2026-10-21 10:34:28 run 39644777100: success, gate-skip
+2026-10-21 10:34:36 slot 2026-10-21 10:30:00 attempt 4: dispatched 39645010881 (long direct, 17 min sample)
+2026-10-21 10:36:02 run 39645010881: success, gate-skip
+2026-10-21 10:36:11 slot 2026-10-21 10:30:00 attempt 5: dispatched 39645244766 (long direct, 17 min sample)
+2026-10-21 10:37:36 run 39645244766: success, gate-skip
+2026-10-21 10:37:45 slot 2026-10-21 10:30:00 attempt 6: dispatched 39645471649 (long direct, 17 min sample)
+2026-10-21 10:39:11 run 39645471649: success, gate-skip
+2026-10-21 10:39:19 slot 2026-10-21 10:30:00 attempt 7: dispatched 39645701147 (long direct, 17 min sample)
+2026-10-21 10:40:45 run 39645701147: success, gate-skip
+2026-10-21 10:40:53 slot 2026-10-21 10:30:00 attempt 8: dispatched 39645938196 (long direct, 17 min sample)
+2026-10-21 10:42:20 run 39645938196: success, gate-skip
+2026-10-21 10:42:28 slot 2026-10-21 10:30:00 attempt 9: dispatched 39646168715 (long direct, 17 min sample)
+2026-10-21 10:45:30 start: demo-latency-probe.yml on bleugreen/rs-sdk @ agent/rs-83-coordinator-0 (lite_ref=main, direct sample 6 min) every 30 min until 2026-10-21 12:00:00; dir /tmp/rs102-sampler
+2026-10-21 10:46:03 orphan 39646168715 still running, waiting
+2026-10-21 11:02:32 gated 39646168715: direct 54:6:0 relay -:- pub p90 405.7 max 589.1 >400 29 <200 undefined, 1607 online
+2026-10-21 11:02:32 orphan 39646168715: gated
+2026-10-21 11:02:42 slot 2026-10-21 11:00:00 attempt 1: dispatched 39649153112 (long direct, 17 min sample)
+2026-10-21 11:03:47 run 39649153112: success, gate-skip
+2026-10-21 11:03:56 slot 2026-10-21 11:00:00 attempt 2: dispatched 39649336063 (long direct, 17 min sample)
+2026-10-21 11:05:22 run 39649336063: success, gate-skip
+2026-10-21 11:05:31 slot 2026-10-21 11:00:00 attempt 3: dispatched 39649576326 (long direct, 17 min sample)
+2026-10-21 11:06:37 run 39649576326: success, gate-skip
+2026-10-21 11:06:47 slot 2026-10-21 11:00:00 attempt 4: dispatched 39649762329 (long direct, 17 min sample)
+2026-10-21 11:08:14 run 39649762329: success, gate-skip
+2026-10-21 11:08:23 slot 2026-10-21 11:00:00 attempt 5: dispatched 39650000503 (long direct, 17 min sample)
+2026-10-21 11:09:49 run 39650000503: success, gate-skip
+2026-10-21 11:09:58 slot 2026-10-21 11:00:00 attempt 6: dispatched 39650232447 (long direct, 17 min sample)
+2026-10-21 11:11:24 run 39650232447: success, gate-skip
+2026-10-21 11:11:34 slot 2026-10-21 11:00:00 attempt 7: dispatched 39650473878 (long direct, 17 min sample)
+2026-10-21 11:13:00 run 39650473878: success, gate-skip
+2026-10-21 11:13:09 slot 2026-10-21 11:00:00 attempt 8: dispatched 39650715215 (long direct, 17 min sample)
+2026-10-21 11:14:15 run 39650715215: success, gate-skip
+2026-10-21 11:14:25 slot 2026-10-21 11:00:00 attempt 9: dispatched 39650906461 (long direct, 17 min sample)
+2026-10-21 11:15:52 run 39650906461: success, gate-skip
+2026-10-21 11:16:00 slot 2026-10-21 11:00:00 attempt 10: dispatched 39651147238 (long direct, 17 min sample)
+2026-10-21 11:17:05 run 39651147238: success, gate-skip
+2026-10-21 11:17:13 slot 2026-10-21 11:00:00 attempt 11: dispatched 39651328097 (long direct, 17 min sample)
+2026-10-21 11:36:51 gated 39651328097: direct 55:5:0 relay -:- pub p90 406.4 max 608.3 >400 33 <200 undefined, 1618 online
+2026-10-21 11:36:51 run 39651328097: success, gated
+2026-10-21 11:36:59 slot 2026-10-21 11:30:00 attempt 1: dispatched 39654309748 (long direct, 17 min sample)
+2026-10-21 11:38:25 run 39654309748: success, gate-skip
+2026-10-21 11:38:33 slot 2026-10-21 11:30:00 attempt 2: dispatched 39654543632 (long direct, 17 min sample)
+2026-10-21 11:39:59 run 39654543632: success, gate-skip
+2026-10-21 11:40:08 slot 2026-10-21 11:30:00 attempt 3: dispatched 39654773702 (long direct, 17 min sample)
+2026-10-21 11:41:34 run 39654773702: success, gate-skip
+2026-10-21 11:41:42 slot 2026-10-21 11:30:00 attempt 4: dispatched 39655005776 (long direct, 17 min sample)
+2026-10-21 11:42:47 run 39655005776: success, gate-skip
+2026-10-21 11:42:55 slot 2026-10-21 11:30:00 attempt 5: dispatched 39655188102 (long direct, 17 min sample)
+2026-10-21 11:44:21 run 39655188102: success, gate-skip
+2026-10-21 11:44:30 slot 2026-10-21 11:30:00 attempt 6: dispatched 39655427677 (long direct, 17 min sample)
+2026-10-21 11:45:36 run 39655427677: success, gate-skip
+2026-10-21 11:45:44 slot 2026-10-21 11:30:00 attempt 7: dispatched 39655619175 (long direct, 17 min sample)
+2026-10-21 11:46:49 run 39655619175: success, gate-skip
+2026-10-21 11:46:57 slot 2026-10-21 11:30:00 attempt 8: dispatched 39655798325 (long direct, 17 min sample)
+2026-10-21 11:48:23 run 39655798325: success, gate-skip
+2026-10-21 11:48:31 slot 2026-10-21 11:30:00 attempt 9: dispatched 39656030485 (long direct, 17 min sample)
+2026-10-21 11:49:36 run 39656030485: success, gate-skip
+2026-10-21 11:49:45 slot 2026-10-21 11:30:00 attempt 10: dispatched 39656206717 (long direct, 17 min sample)
+2026-10-21 11:50:50 run 39656206717: success, gate-skip
+2026-10-21 11:50:59 slot 2026-10-21 11:30:00 attempt 11: dispatched 39656390085 (long direct, 17 min sample)
+2026-10-21 11:52:25 run 39656390085: success, gate-skip
+2026-10-21 11:52:33 slot 2026-10-21 11:30:00 attempt 12: dispatched 39656621456 (long direct, 17 min sample)
+2026-10-21 11:53:38 run 39656621456: success, gate-skip
+2026-10-21 11:53:47 slot 2026-10-21 11:30:00 attempt 13: dispatched 39656807555 (long direct, 17 min sample)
+2026-10-21 11:55:14 run 39656807555: success, gate-skip
+2026-10-21 11:55:14 slot 2026-10-21 11:30:00: no gated run within 25 min
+2026-10-21 12:00:08 slot 2026-10-21 12:00:00 attempt 1: dispatched 39657745515 (long direct, 17 min sample)
+2026-10-21 12:01:13 run 39657745515: success, gate-skip
+2026-10-21 12:01:21 slot 2026-10-21 12:00:00 attempt 2: dispatched 39657939685 (long direct, 17 min sample)
+2026-10-21 12:21:03 gated 39657939685: direct 60:0:0 relay -:- pub p90 411.6 max 621.1 >400 26 <200 undefined, 1518 online
+2026-10-21 12:21:03 run 39657939685: success, gated
+2026-10-21 12:30:00 pairs: past --until, stopping

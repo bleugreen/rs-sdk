@@ -1,0 +1,30 @@
+session /home/ubuntu/rs130/out/20261021T2035-in-page-oak exit 0
+browser page from main @ ae6d5664d, probes from 5ed37d629
+gate: FAIL (burst): a 41/60 fail; c 17 catch-ups in 1.3 min = 12.2/min fail; b (context) frame interval p90 422 max 616
+react delay +0 ms: ticks {"1":41,"2":17,"3":1,"99":1}  reactMs p10 0.2 p50 7.4 p90 8 max 11.8 (n=60)
+latency in ticks (in-page probe, label of the step - label sent): 1:51 2:7 3:2  (60 trials, 0 lost, 71 ticks)
+on time 51/60
+decoded tick interval ms in the page: p10 124 p50 312 p90 422 max 484 (n 71)
+server frame interval ms in the page: p50 320 p90 430 max 484, catch-ups 7 (7.0/min), under 150 9, over 350 21
+page publication interval ms: p50 320 p90 430 max 484
+-- frames browser-probe
+window 2026-10-21T20:37:06.762Z - 2026-10-21T20:37:28.906Z: 321 frames
+tick output arrival interval ms: p10 92 p50 154 p90 281 max 386 (n 131); catch-ups 0 in 0.4 min
+game packet out, ms after its tick's output arrived: p10 1 p50 1 p90 134 max 265 (n 108)
+-- frames knife
+window 2026-10-21T20:37:28.913Z - 2026-10-21T20:39:22.044Z: 2485 frames
+tick output arrival interval ms: p10 80 p50 149 p90 293 max 642 (n 678); catch-ups 9 in 1.9 min
+game packet out, ms after its tick's output arrived: p10 1 p50 36 p90 184 max 570 (n 345)
+gateway actions: 21, 21 following a state within 1 s
+  tick output in -> state out (page publication): p10 1 p50 1 p90 1 max 7 (n 21)
+  state out -> action in (gateway, SDK script, gateway): p10 2 p50 5 p90 6 max 21 (n 21)
+  action in -> game packet out (overlay drain to flush): p10 0 p50 1 p90 1 max 4 (n 21)
+  tick output in -> game packet out (whole reaction in the page's view): p10 6 p50 7 p90 8 max 23 (n 21)
+-- frames plain
+window 2026-10-21T20:39:22.051Z - 2026-10-21T20:40:34.398Z: 933 frames
+tick output arrival interval ms: p10 85 p50 161 p90 279 max 459 (n 423); catch-ups 4 in 1.2 min
+game packet out, ms after its tick's output arrived: p10 1 p50 74 p90 198 max 362 (n 173)
+-- knife/plain
+knife-cycle: 25 rolls, 321 ticks, 8.44 ticks per roll (mean gap), 11.75 over the span of 282; gaps {"3":3,"4":4,"6":2,"7":2,"12":2,"13":3,"15":1,"23":1}; starters 77, resyncs 6, moves 0, level-ups 3
+knife-cycle: 19 rolls, 231 ticks, 10.67 ticks per roll (mean gap), 12.28 over the span of 221; gaps {"4":3,"8":3,"12":1,"16":1,"32":1}; starters 0, resyncs 0, moves 0, level-ups 3
+players end 1603

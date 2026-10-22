@@ -1,0 +1,31 @@
+{
+  "time_pdt": "2026-10-21 12:45 PDT",
+  "host": "Ashburn run machine (AWS us-east-1c, c7i.2xlarge)",
+  "edge_region": "iad",
+  "app_region": "iad",
+  "app_dc": "iad2",
+  "mrtt_ms": null,
+  "players_online": 1679,
+  "http_ms": {
+    "tcp_connect": {
+      "p50": 2.0,
+      "p90": 2.5
+    },
+    "tls_done_p50": 19.3,
+    "ttfb_404_p50": 170.5
+  },
+  "flyio_debug": {
+    "n": "edge-dp-ash2-914f",
+    "nr": "iad",
+    "ra": "$RS_RUN_HOST",
+    "rf": "Verbatim",
+    "sr": "iad",
+    "sdc": "iad2",
+    "sid": "82962dc77ee3e8",
+    "st": 20,
+    "nrtt": 0,
+    "bn": "worker-cf-iad2-ce4c",
+    "mhn": null,
+    "mrtt": null
+  }
+}
