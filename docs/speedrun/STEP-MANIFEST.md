@@ -1180,7 +1180,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   **on main with rs/301's Thieving S18 options snapshot, #244, which carries rs/243's work** (inside the run-commit floor, entry 0). A top-up stun buries nothing either way (rs/132, `pickpocket.ts` doc comment at
   e5f83a36).
 - **Preconditions:** Thieving 57 (Fight Arena's 2,175 base). Charge: Mage Arena stage 8, the god
-  staff given (rs/114, `quests/quest-state.md`), base Magic 80. Staff of fire wielded. Load 0 (H14):
+  staff given (rs/114, `quests/quest-state.md`), Magic 80 **boosted**, as the engine checks it (`stat(magic)`, `magic.rs2:22`), or base 79 with a magic potion held: the module's `stunPack.sipForCharge` (default on, rs/361) drinks one dose before the band's first program run, outside every stun, so the stun schedule is unchanged; the +4 keeps Charge open at least 300 ticks and base 80 is at most 4 casts (two stocked stuns) away (about 1 tick, once, at base 79 only; on the route SCORED arrives at base 81 after S16, so this is correctness, not a run need; rs/361, clean commit 9a9592e3 carried by rs/147, the Thieving snapshot following, pending on the floor). Staff of fire wielded. Load 0 (H14):
   500 blood + 500 air runes (489 needed), 4,410 headless arrows, bronze 60, iron 90, steel 135,
   mithril 1,485 arrowheads, 2 sharks, ~16 dragon bones. **The top-up courier** (rs/41's `bone-giver.ts`
   on-request mode, Ashburn) **holds an orthogonally adjacent tile of SCORED at each due stun + 2**,
