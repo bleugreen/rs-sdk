@@ -632,6 +632,11 @@ starter gear, and the bank would store the notes as fermenting wine. For the
 hand-off to the run machine's trade giver, run the wine role with `receiver` set
 (`giveWine`), or trade the one noted stack by hand.
 
+**Proving the hand-off without moving the stock** (`speedrun/helpers/wine-roundtrip.ts`): the
+holder runs `giveWine` to a throwaway stand-in, which checks the notes stayed obj 1996, hands the
+stack straight back by id, and the holder checks its inventory by id is as before. Neither side
+opens a bank, makes wine or relogs, so it is safe on the run's own stock (cairn_h40's 520).
+
 Gotchas found on the demo:
 
 - The guild door (`chefdoor`) is on the south edge of 3143,3444. A walk from

@@ -222,8 +222,15 @@ async function session(ctx: RoleContext): Promise<void> {
 export const role: Role = {
     name: 'mule-standin',
     produces: [],
+    // Never throws: a launcher restarts a role that throws, and a restarted stand-in would ask the
+    // mule for every package again. It logs the error and returns, which ends the session.
     async run(ctx) {
-        await session(ctx);
+        try {
+            await session(ctx);
+        } catch (e) {
+            ctx.log('stand-in error: stopping', { error: e instanceof Error ? e.message : String(e), inventory: label(ctx.sdk.getInventory()) });
+            console.log(`RESULT mule-standin ${JSON.stringify({ account: ctx.account, error: String(e), inventory: label(ctx.sdk.getInventory()) })}`);
+        }
     },
 };
 

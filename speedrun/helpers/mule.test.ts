@@ -22,6 +22,7 @@ import {
     muleOptions,
     packageItems,
     packageOf,
+    muleCueAction,
     newCue,
     packageForCue,
     requestPackage,
@@ -83,6 +84,18 @@ describe('packages', () => {
         expect(packageForCue({ ...cue, scope: { step: 'S07', family: 'mule' } }, keyed, 'cairn_h94')).toBeNull();
         expect(packageForCue({ ...cue, scope: { step: 'H4e', family: 'bone' } }, keyed, 'cairn_h94')).toBeNull();
         expect(packageForCue(cue, pkgs, 'cairn_h94')).toBeNull(); // unkeyed packages answer no cue
+    });
+
+    test('a cue session asks once; a rewrite of it asks nothing; a stop withdraws the request', () => {
+        const start = 1_000_000;
+        const c = { session: 'a', seq: 1, ms: start };
+        expect(muleCueAction(c, null, start)).toBe('ask');
+        expect(muleCueAction({ ...c, seq: 2 }, { session: 'a', seq: 1 }, start)).toBe('none'); // fresh beacons: the served package is not re-staged
+        expect(muleCueAction({ ...c, seq: 3, stop: true }, { session: 'a', seq: 2 }, start)).toBe('stop');
+        expect(muleCueAction({ ...c, seq: 3, stop: true }, { session: 'a', seq: 3 }, start)).toBe('none'); // seen already
+        expect(muleCueAction({ ...c, session: 'b' }, { session: 'a', seq: 3 }, start)).toBe('ask');
+        expect(muleCueAction({ ...c, session: 'b', stop: true }, { session: 'a', seq: 3 }, start)).toBe('stop');
+        expect(muleCueAction({ ...c, ms: start - 120_000 }, null, start)).toBe('none');
     });
 
     test('a cue is acted on once: a new session or a later write; never one from before the mule started', () => {
