@@ -1,8 +1,8 @@
 // RUN-ORDER.md and STEP-MANIFEST.md re-summed from their own tables, with the cross-checks a
 // fold-in must keep: section 2's step table against its "Steps and legs" row, section 6's leg
 // cells against the table's legs, section 7's lines against its total rows, the M / I / E split
-// against the knife-on total, STEP-MANIFEST.md section 1 against the step table, and S16's Magic 77
-// with O43a on.
+// against the knife-on total, STEP-MANIFEST.md section 1 against the step table, the burst-fails
+// line against the quests still exposed, and S16's Magic 77 with O43a on.
 //
 //   bun docs/speedrun/scripts/run-order-sums.ts
 //   EXPECT=34914.4,32624.7,37569.4,35738.7,38305.4,36504.7 bun docs/speedrun/scripts/run-order-sums.ts
@@ -54,6 +54,24 @@ console.log(`section 2: steps ${r1(se)} / ${r1(sb)}, legs ${r1(le)} / ${r1(lb)},
 console.log(`  expected by Kind: ${Object.entries(byKind).map(([k, v]) => `${k} ${r1(v)}`).join('; ')}`);
 eq(se + le, num(footer[5]!), 'section 2 expected against its "Steps and legs" row');
 eq(sb + lb, num(footer[6]!), 'section 2 best against its "Steps and legs" row');
+
+// The burst-fails line (section 7's go/no-go table): each quest not yet browser-confirmed reverts from
+// its burst expected to its row's fixed fallback ('**fixed N m**' or '**Fixed fallback N m'); a quest
+// leaves EXPOSED when its browser run confirms its burst figure (main's ruling, fold-in 24).
+const EXPOSED = ['S15', 'S16', 'S08'];
+const burstFails = EXPOSED.map(id => {
+    const l = ro.slice(h + 2).find(x => x.startsWith(`| ${id} |`));
+    if (!l) throw new Error(`section 2 has no ${id} row`);
+    const fx = l.match(new RegExp(String.raw`\*\*[Ff]ixed (?:fallback )?(${NUM}) m`));
+    if (!fx) throw new Error(`${id}: no fixed fallback figure in its row`);
+    return [id, num(fx[1]!) - lead(cells(l)[5]!)] as const;
+});
+const bf = burstFails.reduce((a, [, d]) => a + d, 0);
+const bfRow = ro.find(l => l.startsWith('| **Burst dialogue fails on the night'));
+const bfCell = bfRow && cells(bfRow)[1]!.match(new RegExp(String.raw`^\*\*\+(${NUM})\*\*`));
+console.log(`burst-fails line: ${burstFails.map(([id, d]) => `${id} +${r1(d)}`).join(', ')} = +${r1(bf)}; the go/no-go table says +${bfCell?.[1] ?? '?'}`);
+if (!bfCell) fail.push('the go/no-go table has no "Burst dialogue fails on the night" row with a bold +N');
+else eq(bf, num(bfCell[1]!), 'the burst-fails line against the go/no-go table');
 
 // Section 6: the legs column's labelled figures.
 const s6 = ro.findIndex(l => l.startsWith('| Steps | Legs'));
@@ -132,7 +150,7 @@ else {
 // ~+9 before opening it. Browser-measured rows carry it; this counts, in the quest docs of the quests
 // measured only on lite, the route-table rows that pass a door (trapdoors and the way-in leg excluded):
 // an upper bound (i), since doors a module opens by click are not hopRun's to miss.
-const LITE_ONLY: Record<string, string> = { S08: 'plague_city.md', S11b: 'grand_tree.md', S15: 'monkey_madness.md', S16: 'mage_arena.md', S20: 'fishing_contest.md' };
+const LITE_ONLY: Record<string, string> = { S08: 'plague_city.md', S11b: 'grand_tree.md', S15: 'monkey_madness.md', S16: 'mage_arena.md' };
 let doors = 0;
 const byQuest = Object.entries(LITE_ONLY).map(([row, f]) => {
     const n = readFileSync(join(dir, 'quests', f), 'utf8').split('\n')
