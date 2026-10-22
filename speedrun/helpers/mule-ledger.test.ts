@@ -2,7 +2,10 @@ import { describe, expect, test } from 'bun:test';
 
 import type { BankItem } from '../../sdk/types';
 import { MANIFEST, parseLedger } from '../tools/slot-ledger';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { packageForCue, requestPackage } from './mule';
 import { configPackages, MULE1_NO_PACKAGE, MULE1_ON_REQUEST, MULE1_ORDER, muleDrift, muleFromLedger, onRequestGaps, packagesOf, parseFallbacks, stepAfter, stockWalk } from './mule-ledger';
 
 // Rows in the inventory ledger's grammar (STEP-MANIFEST.md); the items are the test's own.
@@ -39,29 +42,30 @@ describe('packages from the ledger', () => {
         expect(pkg('H1').package).toEqual({
             name: 'h1',
             items: [{ item: 'Staff of water', amount: 1 }, { item: 'Air rune', amount: 81 }, { item: 'Logs', amount: 2 }],
+            scope: { step: 'H1', family: 'mule' },
         });
         expect(pkg('H21d').package.items).toEqual([{ item: 'Chisel', amount: 1 }, { id: 91, amount: 358, noted: true }, { item: 'Thread', amount: 187 }]);
         expect(pkg('H21d').slots).toBe(3);
         expect(pkg('H21d').moduleLines).toEqual(['<platebody>']);
     });
 
-    test('ask form: a top-up is topUp { max: to }, the package scoped to the next step', () => {
+    test('ask form: a top-up is topUp { max: to }; the package is scoped to its hand-off id and records the step it feeds', () => {
         const h12 = pkg('H12');
         expect(h12.package.items).toContainEqual({ item: 'Shark', topUp: { max: 15 } });
         expect(h12.package.items).toContainEqual({ id: 3183, amount: 1 });
         expect(h12.package.items).toContainEqual({ item: 'Prayer potion(4)', amount: 4 });
-        expect(h12.package.scope).toEqual({ step: 'S15', family: 'mule' });
+        expect(h12.package.scope).toEqual({ step: 'H12', family: 'mule' });
         expect(h12.step).toBe('S15');
         expect(h12.topUps).toEqual([{ item: 'shark', to: 15 }]);
         expect(h12.slots).toBe(1 + 1 + 4 + 15 + 1);
         expect(h12.takesBack.map(b => b.label)).toEqual(['staff of fire x1', 'mithril scimitar x1', 'antipoison(*) all', 'coins all']);
-        expect(pkg('H22').package.scope).toEqual({ step: 'S26', family: 'mule' });
+        expect(pkg('H22').package.scope).toEqual({ step: 'H22', family: 'mule' });
     });
 
-    test('fixed form: the top-up is a fixed `to`, and the package takes no scope', () => {
+    test('fixed form: the top-up is a fixed `to`; the package keeps its hand-off scope', () => {
         const h12 = pkg('H12', fixed());
         expect(h12.package.items).toContainEqual({ item: 'Shark', amount: 15 });
-        expect(h12.package.scope).toBeUndefined();
+        expect(h12.package.scope).toEqual({ step: 'H12', family: 'mule' });
         expect(pkg('H22', fixed()).package.items).toContainEqual({ item: 'Coins', amount: 1000 });
     });
 
@@ -77,7 +81,7 @@ describe('packages from the ledger', () => {
     test('on-request packages come last and are marked; the ordered list must follow the ledger', () => {
         const lp = muleFromLedger(TABLE, { rows: ['H1', 'H12'], onRequest: ['H4e'] });
         expect(lp.map(p => [p.row, p.onRequest, p.step])).toEqual([['H1', false, 'S01'], ['H12', false, 'S15'], ['H4e', true, null]]);
-        expect(lp[2]!.package).toEqual({ name: 'h4e', items: [{ item: 'Law rune', amount: 1 }, { item: 'Air rune', amount: 5 }], onRequest: true });
+        expect(lp[2]!.package).toEqual({ name: 'h4e', items: [{ item: 'Law rune', amount: 1 }, { item: 'Air rune', amount: 5 }], scope: { step: 'H4e', family: 'mule' }, onRequest: true });
         expect(lp[2]!.takesBack.map(b => b.label)).toEqual(['rune axe x1']);
         expect(() => muleFromLedger(TABLE, { rows: ['H12', 'H1'] })).toThrow('H1 is listed after H12, but comes before it in the ledger');
         expect(() => muleFromLedger(TABLE, { rows: ['H1'], onRequest: ['H12'] })).toThrow('no fallback hand-off row H12');
@@ -94,6 +98,26 @@ describe('packages from the ledger', () => {
     });
 });
 
+describe('cues', () => {
+    test('two mule hand-offs feeding one step get distinct cues, each asking for its own package', () => {
+        const two = `
+| row | in | out | equip | needAtStart | source |
+|---|---|---|---|---|---|
+| H4 | clay x6 [u] | - | - | 6 | fixture (r) |
+| H4b | law rune x2 [s] | - | - | 1 | fixture (r) |
+| S05 | - | - | - | 0 | fixture (r) |
+`;
+        const lp = muleFromLedger(two, { rows: ['H4', 'H4b'] });
+        expect(lp.map(p => p.step)).toEqual(['S05', 'S05']);
+        expect(lp.map(p => p.package.scope)).toEqual([{ step: 'H4', family: 'mule' }, { step: 'H4b', family: 'mule' }]);
+        const dir = mkdtempSync(join(tmpdir(), 'mule-ledger-cue-'));
+        for (const want of lp) {
+            const cue = requestPackage(dir, 'cairn_h94', want.row, { tick: 1, ms: 1 });
+            expect(packageForCue(cue, packagesOf(lp), 'cairn_h94')?.name).toBe(want.package.name);
+        }
+    });
+});
+
 describe('muleDrift', () => {
     test('packages generated from the ledger have none, in either form', () => {
         expect(muleDrift({ packages: packagesOf(ask()) }, ask())).toEqual([]);
@@ -103,10 +127,10 @@ describe('muleDrift', () => {
     test('the fixed form against the ask form: each top-up and its scope', () => {
         expect(muleDrift(packagesOf(fixed()), ask())).toEqual([
             'H12: Shark: the package x15, the ledger top-up to 15',
-            'H12: scope none, the ledger\'s S15/mule',
             'H22: Coins: the package x1000, the ledger top-up to 1000',
-            'H22: scope none, the ledger\'s S26/mule',
         ]);
+        const { scope: _, ...unkeyed } = packagesOf(ask())[0]!;
+        expect(muleDrift([unkeyed, ...packagesOf(ask()).slice(1)], ask())).toEqual(["H1: scope none, the ledger's H1/mule"]);
     });
 
     test('counts, lines, names for ids, noted, missing, extra and reordered packages', () => {
