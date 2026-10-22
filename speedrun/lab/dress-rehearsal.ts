@@ -4,8 +4,11 @@
 // - each missing step group (a module not on main, with the legs inside the group) swapped for its
 //   lab stand-in (lab/stand-ins.ts), a `STAND-IN` row the report counts apart: the run is partial;
 // - the placed hand-offs traded with lab/stub-giver.ts (a lab account on the real protocol), when
-//   --stub names one; otherwise, and for the cannon rows until the one cannon receiver lands,
-//   supplied at the boundary by staff commands and logged `supply: staff` (also partial);
+//   --stub names one; otherwise supplied at the boundary by staff commands and logged
+//   `supply: staff` (also partial);
+// - the cannon rows (H11, H23) run as SCORED's own cue-served hand-off (runner/handoff.ts) when the
+//   lab run config names their holder, a lab account in cannon.ts serve mode with labStock; with no
+//   holder named they are staff-supplied like any unserved row;
 // - the modules' own helpers (ring givers, fm-row droppers, bone giver, courier, anvil, wine giver,
 //   altar givers) started by the operator in their lab modes, named in the lab run config.
 //
@@ -88,14 +91,21 @@ export interface LabChain {
     stubRows: StubRow[];
     standIns: string[];
     staffed: string[];
+    /** Cannon rows run as SCORED's real cue-served hand-off against the lab holder. */
+    cueServed: string[];
 }
 
-/** run.ts's chain as the lab runs it: stand-ins for the missing groups, staff supply for unserved rows. */
-export function labChain(chain: readonly ChainStep[], o: { manifest: string; stub: string | null; world: () => LabWorld }): LabChain {
+/**
+ * run.ts's chain as the lab runs it: stand-ins for the missing groups, the stub giver's rows, the
+ * cannon rows whose holder the config names (`cannonServed`) left as the real step, staff supply for
+ * every other row.
+ */
+export function labChain(chain: readonly ChainStep[], o: { manifest: string; stub: string | null; world: () => LabWorld; cannonServed?: readonly string[] }): LabChain {
     const out: ChainStep[] = [];
     const stubRows: StubRow[] = [];
     const standIns: string[] = [];
     const staffed: string[] = [];
+    const cueServed: string[] = [];
     for (let i = 0; i < chain.length; i++) {
         const s = chain[i]!;
         if (s.kind === 'missing') {
@@ -110,7 +120,10 @@ export function labChain(chain: readonly ChainStep[], o: { manifest: string; stu
         }
         if (s.kind === 'handoff') {
             const row = s.name.replace(/ hand-off.*$/, '');
-            if (CANNON_ROWS[row] || !o.stub) {
+            if (CANNON_ROWS[row] && o.cannonServed?.includes(row)) {
+                cueServed.push(row);
+                out.push(s);
+            } else if (CANNON_ROWS[row] || !o.stub) {
                 out.push(staffSupplyStep(s, o.manifest));
                 staffed.push(row);
             } else {
@@ -121,7 +134,7 @@ export function labChain(chain: readonly ChainStep[], o: { manifest: string; stu
         }
         out.push(s);
     }
-    return { chain: out, stubRows, standIns, staffed };
+    return { chain: out, stubRows, standIns, staffed, cueServed };
 }
 
 /** `--key=value` flags; a bare first argument is the bot (lab/lab.sh runs `bun <script> <bot> <args...>`). */
@@ -163,12 +176,17 @@ async function main(argv: string[]): Promise<number> {
     // The quest kit rows are the modules' own trades: a slice that reaches one needs its giver named.
     for (const row of KIT_PARTNER_ROWS) partners[row] ??= STAFF;
     const cfg: RunConfig = { ...raw, partners };
-    if (cfg.cueDir !== defaultCueDir()) throw new Error(`cue dir ${cfg.cueDir} is not the writers' (${defaultCueDir()})`);
+    if (cfg.cueDir !== defaultCueDir()) {
+        console.error(`[dress] REFUSED: cue dir ${cfg.cueDir} is not the one the helpers' writers use (${defaultCueDir()})`);
+        return 3;
+    }
+    // A cannon row the lab config names a holder for (cannon.ts serve, labStock) runs SCORED's real step.
+    const cannonServed = Object.keys(CANNON_ROWS).filter(r => raw.partners[r] && raw.partners[r] !== STAFF);
     const keeper = new CueKeeper(cfg.cueDir, env.BOT_USERNAME);
     const sliced = sliceUntil(buildChain(cfg, { cues: keeper, manifest }), a.until);
-    const lab = labChain(sliced, { manifest, stub: stubEnv?.BOT_USERNAME ?? null, world });
+    const lab = labChain(sliced, { manifest, stub: stubEnv?.BOT_USERNAME ?? null, world, cannonServed });
     const from = resolveFrom(lab.chain, a.from);
-    console.log(`[dress] ${env.BOT_USERNAME}: ${lab.chain.length} steps${a.until ? ` to ${a.until}` : ''}; stand-ins ${lab.standIns.join(', ') || 'none'}; staff supply ${lab.staffed.join(', ') || 'none'}; stub rows ${lab.stubRows.map(r => r.row).join(', ') || 'none'}`);
+    console.log(`[dress] ${env.BOT_USERNAME}: ${lab.chain.length} steps${a.until ? ` to ${a.until}` : ''}; stand-ins ${lab.standIns.join(', ') || 'none'}; staff supply ${lab.staffed.join(', ') || 'none'}; stub rows ${lab.stubRows.map(r => r.row).join(', ') || 'none'}; cue-served ${lab.cueServed.join(', ') || 'none'}`);
 
     const log = TickLog.open(`dress-${newRunId()}`, a.log);
     prepareCueDir(cfg.cueDir, { fresh: from === undefined });
@@ -191,7 +209,7 @@ async function main(argv: string[]): Promise<number> {
             console.error(`[dress] REFUSED: ${post}`);
             return 3;
         }
-        log.append(annotation(log, session.name, 'gate', '(gate) dress rehearsal', { meta: { until: a.until ?? null, standIns: lab.standIns, staffed: lab.staffed, stubRows: lab.stubRows, host: process.env.HOSTNAME ?? null } }));
+        log.append(annotation(log, session.name, 'gate', '(gate) dress rehearsal', { meta: { until: a.until ?? null, standIns: lab.standIns, staffed: lab.staffed, stubRows: lab.stubRows, cueServed: lab.cueServed, host: process.env.HOSTNAME ?? null } }));
         const { result } = await runChainOnSession(session, { log, chain: lab.chain, reservation: new ReservationWatch(reservationPath(a['host-reservation']), { label: 'dress' }), cues: keeper, label: 'dress', ...(from !== undefined ? { from } : {}) });
         code = result.code;
         console.log(`[dress] ${result.outcome}`);

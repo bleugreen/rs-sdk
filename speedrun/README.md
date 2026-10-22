@@ -1043,7 +1043,10 @@ module performs. Every chain step carries its RUN-ORDER id, so `--until` and
   note when its milestone already holds: S25b's booth, S18d's Fletching),
   `withCue` (the helper's cue opened before the module, afresh on every
   `resume`), and `censused` (a 0-tick `(census)` note of the pack before every
-  step). The cannon rows H11/H23 refuse until the one cannon receiver lands.
+  step). The cannon rows H11/H23 are cue-served: `handoff.ts`'s `cue` option
+  opens the `{S14|S27, cannon}` cue, waits for the holder and its request, then
+  trades the whole ledger row. It is the one cannon receiver;
+  `helpers/cannon-receiver.ts` is a thin lab and demo role that calls it.
 - **Cues.** `runner/cue-keeper.ts` writes the scored side's cues (S07 bone,
   S14/S27 cannon, S18 courier, S25a anvil) into the run's cue directory, the
   same one runecraft's altar cues, thieving's asks and the anvil plan use

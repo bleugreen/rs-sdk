@@ -36,6 +36,15 @@ describe('labChain', () => {
         expect(lab.chain.find(s => s.id === 'S01')!.name).toBe('H1 hand-off');
     });
 
+    test('a cannon row whose lab holder the config names stays SCORED\'s real cue-served step; an unnamed one is staff-supplied', () => {
+        const chain = buildChain(cfg('lab_stub'), { cues });
+        const lab = labChain(chain, { manifest, stub: 'lab_stub', world, cannonServed: ['H11'] });
+        expect([lab.cueServed, lab.staffed]).toEqual([['H11'], ['H23']]);
+        const h11 = lab.chain.find(s => s.id === 'H11')!;
+        expect([h11.name, h11.cue]).toEqual(['H11 hand-off', { step: 'S14', family: 'cannon' }]);
+        expect(lab.stubRows.map(r => r.row)).not.toContain('H11');
+    });
+
     test('without a stub giver every placed row is staff-supplied, S01 included', () => {
         const lab = labChain(sliceUntil(buildChain(cfg(STAFF), { cues }), 'S07'), { manifest, stub: null, world });
         expect(lab.staffed).toEqual(['H1', 'H4k']);
