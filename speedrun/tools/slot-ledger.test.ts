@@ -269,9 +269,7 @@ describe('STEP-MANIFEST.md', () => {
         expect(rows[0]!.row).toBe('S00');
         expect(() => walk(rows)).not.toThrow();
     });
-    // rs/158's last-fix fold-in flips this to `test.skipIf(!...)` like the one above, once its table
-    // walks clean: every row then passes, and any later change that breaks a row fails the suite.
-    test.todo('its Inventory ledger has no failing row', () => {
+    test('its Inventory ledger has no failing row', () => {
         const s = summary(walk(parseLedger(text).rows));
         expect(s.failed.map(e => `${e.row.row}: ${e.notes.join('; ')}`)).toEqual([]);
     });
