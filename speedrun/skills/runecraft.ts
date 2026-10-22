@@ -21,7 +21,7 @@
 
 import { join } from 'node:path';
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
-import { canonName, cueDir, CueWriter, MissBench, readJson, readStatuses, RUN_DIR, type GiverStatus, type Schedule, type Turn } from '../helpers/altar-cue';
+import { canonName, cueDir, CueWriter, DEFAULT_OPEN, MissBench, readJson, readStatuses, RUN_DIR, type GiverStatus, type Schedule, type Turn } from '../helpers/altar-cue';
 import type { LauncherStatus } from '../helpers/standalone';
 import { classifyPage } from '../lib/dialogue';
 import { levelUpStep, newWatcherMemory, type WatcherMemory } from '../lib/levelup';
@@ -469,10 +469,13 @@ export class CueRelay {
         this.writes++;
         this.key = key;
         this.last = cue;
+        // Named only while the turn's first packet (frame T+K-1) is still ahead: a giver reports on
+        // a turn it could still arm, while one relayed later may draw no report at all.
         const at = this.now();
+        const open = cue.open ?? DEFAULT_OPEN;
         for (const t of cue.turns) {
             const k = `${canonName(t.giver)}:${t.T}`;
-            if (!this.named.has(k)) this.named.set(k, at);
+            if (!this.named.has(k) && st.tick < t.T + open - 1) this.named.set(k, at);
         }
     }
 
