@@ -606,6 +606,37 @@ function buildRoute(sdk: TravelSdk, goal: Area, via: readonly XZ[]): XZ[] {
     return route.length ? route : [{ x: goal.x, z: goal.z }];
 }
 
+/**
+ * Whether `s.nearbyLocs` describes the scene around the player. The browser publishes a frame while
+ * it rebuilds the map region (`sceneReady` false), and that frame's loc list is not the scene's: on
+ * S12 B the closed house door (2609,3190) was missing from it on exactly the tick the run clicked
+ * past the door (rs/484). Nothing is decided from such a frame, and no loc click goes out on one:
+ * the browser drops a door click sent mid-rebuild (S12 B: 48 ticks against 37 when it did). The
+ * lite client is always ready.
+ */
+const sceneBuilt = (s: BotWorldState) => s.sceneReady !== false;
+
+/** The last route index from `from` on within `reach` of `p`: the furthest tile a click from `p` would take. */
+function reachEnd(route: readonly XZ[], from: number, p: XZ, reach: number): number {
+    let end = from;
+    for (let i = from; i < route.length && chebyshev(route[i]!, p) <= reach; i++) end = i;
+    return end;
+}
+
+/** The route index nearest `p` in [from, to]; past it when the player stands on that tile, so a door under the player is never ahead. */
+function routeAhead(route: readonly XZ[], p: XZ, from: number, to: number): number {
+    let best = from;
+    let bd = Infinity;
+    for (let i = from; i <= to && i < route.length; i++) {
+        const d = chebyshev(route[i]!, p);
+        if (d < bd) {
+            bd = d;
+            best = i;
+        }
+    }
+    return bd === 0 ? best + 1 : best;
+}
+
 function onRoute(s: BotWorldState, route: readonly XZ[], from: number, to: number, pred: (l: NearbyLoc) => boolean): NearbyLoc | null {
     const locs = s.nearbyLocs.filter(pred);
     if (!locs.length) return null;
@@ -660,12 +691,15 @@ function doorsBehind(s: BotWorldState, at: { x: number; z: number }, route: Read
     return new Set(s.nearbyLocs.filter(l => DOORISH(l) && chebyshev(l, at) <= 2 && !crossable(l)).map(doorKey));
 }
 
-/** Open a door as part of the run: the server walks to it, then opens it. Ok once no closed door is on its tile. */
+/**
+ * Open a door as part of the run: the server walks to it, then opens it. Ok once a built scene lists
+ * no closed door on its tile (a mid-rebuild frame lists none at all).
+ */
 async function openDoorOnRoute(sdk: TravelSdk, trip: Trip, door: NearbyLoc): Promise<boolean> {
     trip.door(door, 'closed', currentTick(sdk));
     trip.clicks++;
     await sdk.sendInteractLoc(door.x, door.z, door.id, opIndex(door, /^open$/i)!);
-    const r = await waitUntil(sdk, s => !s.nearbyLocs.some(l => l.x === door.x && l.z === door.z && CLOSED_DOOR(l)), { maxTicks: Math.ceil(chebyshev(pos(sdk), door) / 2) + 6 });
+    const r = await waitUntil(sdk, s => sceneBuilt(s) && !s.nearbyLocs.some(l => l.x === door.x && l.z === door.z && CLOSED_DOOR(l)), { maxTicks: Math.ceil(chebyshev(pos(sdk), door) / 2) + 6 });
     return r.ok;
 }
 
@@ -706,6 +740,8 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
     let passed = doorsBehind(sdk.getState()!, pos(sdk), route);
     let idx = 0;
     let target: XZ | null = null;
+    /** The route index of `target`: the outstanding click walks route[idx..targetIdx]. */
+    let targetIdx = -1;
     let final = false;
     let lastPos = pos(sdk);
     let lastMove = start;
@@ -717,6 +753,26 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
     let reachFrom = pos(sdk);
     let dismissed = '';
     const doorTries = new Map<string, number>();
+    /** A closed door on route[from..to] the run may still try (twice each), or null; none on a mid-rebuild frame. */
+    const doorAhead = (st: BotWorldState, from: number, to: number): NearbyLoc | null => {
+        if (!sceneBuilt(st)) return null;
+        const door = onRoute(st, route, from, to, CLOSED_DOOR);
+        return door && (doorTries.get(doorKey(door)) ?? 0) < 2 ? door : null;
+    };
+    /** Open `door` as part of the run, then start the run afresh from wherever that leaves the player. Null to go on; an outcome to end the hop. */
+    const openAhead = async (door: NearbyLoc): Promise<HopOutcome | null> => {
+        doorTries.set(doorKey(door), (doorTries.get(doorKey(door)) ?? 0) + 1);
+        await openDoorOnRoute(sdk, trip, door);
+        passed = doorPassed(sdk.getState()!, door);
+        if (!(await tickAfter(sdk, currentTick(sdk)))) return { ok: false, reason: 'no tick' };
+        t = currentTick(sdk);
+        lastMove = t;
+        clickTick = t;
+        target = null;
+        route = buildRoute(sdk, goal, via);
+        idx = 0;
+        return null;
+    };
     const eat = eater(sdk, trip, opts.eat);
     let t = start;
     for (;;) {
@@ -759,6 +815,21 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
             lastMove = t;
             needClick = true;
         }
+        // A closed door on the route within the run's reach is opened on the first built tick it is
+        // listed, between clicks too, not only when a click falls due: the loc scan lists 15 tiles to
+        // a click's 20, and a browser frame published mid-rebuild lists no door at all, so a door
+        // checked only at click time can be missed for a whole click (S12 B: +9 ticks, rs/484). The
+        // op click's server-side approach runs at the walk's 2 tiles a tick (rs/280), so opening a
+        // door early costs nothing.
+        if (!needClick && target) {
+            const from = routeAhead(route, p, idx, targetIdx);
+            const door = doorAhead(s, from, reachEnd(route, from, p, reach));
+            if (door) {
+                const end = await openAhead(door);
+                if (end) return end;
+                continue;
+            }
+        }
         // A walk click sent while the server still holds the player is dropped without a trace: the
         // player just stays put. A forced move (agility_walk) holds them through its last tile, so a
         // run that starts as one ends loses its first click. Re-send the click at the first idle
@@ -790,24 +861,14 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
                 reach = reachMax;
                 reachFrom = here;
             }
-            let ti = idx;
-            for (let i = idx; i < route.length && chebyshev(route[i]!, here) <= reach; i++) ti = i;
+            let ti = reachEnd(route, idx, here, reach);
             // A via point is a click target: the client's own routing past it is what via avoids.
             const v = via[0];
             if (v) for (let j = idx; j <= ti; j++) if (route[j]!.x === v.x && route[j]!.z === v.z) { ti = j; break; }
-            const door = onRoute(cur, route, idx, ti, CLOSED_DOOR);
-            const key = door ? `${door.x},${door.z}` : '';
-            if (door && (doorTries.get(key) ?? 0) < 2) {
-                doorTries.set(key, (doorTries.get(key) ?? 0) + 1);
-                await openDoorOnRoute(sdk, trip, door);
-                passed = doorPassed(sdk.getState()!, door);
-                if (!(await tickAfter(sdk, currentTick(sdk)))) return { ok: false, reason: 'no tick' };
-                t = currentTick(sdk);
-                lastMove = t;
-                clickTick = t;
-                target = null;
-                route = buildRoute(sdk, goal, via);
-                idx = 0;
+            const door = doorAhead(cur, idx, ti);
+            if (door) {
+                const end = await openAhead(door);
+                if (end) return end;
                 continue;
             }
             for (let j = idx; j <= ti; j++) {
@@ -815,6 +876,7 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
                 if (o) trip.door(o, 'open', t);
             }
             target = route[ti] ?? goal;
+            targetIdx = ti;
             final = ti >= route.length - 1;
             trip.clicks++;
             await sdk.sendWalk(target.x, target.z, true);
