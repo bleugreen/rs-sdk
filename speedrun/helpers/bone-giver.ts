@@ -460,19 +460,20 @@ export function readBoneStatuses(dir: string): BoneStatus[] {
 }
 
 /**
- * The group's statuses in `session`, by default the session of the newest status that has one. A
- * file another run left (another session) counts for nothing, and a giver that has ended counts.
+ * The group's statuses: with a `session`, only those counted in it (a file another run left counts
+ * for nothing; a giver that has ended counts). Without one, every status of the group, as before
+ * sessions existed: the scored step's `awaitBoneServer` passes none yet. A status written without
+ * `session` is in no session.
  */
 function sessionStatuses(statuses: readonly BoneStatus[], group: readonly string[], session?: string): BoneStatus[] {
     const g = new Set(group.map(canonName));
     const mine = statuses.filter(s => g.has(canonName(s.account)));
-    const sess = session ?? ([...mine].sort((a, b) => b.ms - a.ms).find(s => s.session !== null)?.session ?? null);
-    return mine.filter(s => s.session === sess);
+    return session === undefined ? mine : mine.filter(s => (s.session ?? null) === session);
 }
 
 /** The loads the group has given in the session: its givers' trades added up. */
 export function groupLoadsDone(statuses: readonly BoneStatus[], group: readonly string[], session?: string): number {
-    return sessionStatuses(statuses, group, session).reduce((n, s) => n + s.trades, 0);
+    return sessionStatuses(statuses, group, session).reduce((n, s) => n + (Number.isFinite(s.trades) ? s.trades : 0), 0);
 }
 
 /**
@@ -490,11 +491,12 @@ export function groupLoadsDone(statuses: readonly BoneStatus[], group: readonly 
 export function boneServer(statuses: readonly BoneStatus[], group: readonly string[], now: number, session?: string): string | undefined {
     const current = sessionStatuses(statuses, group, session);
     const done = current.reduce((n, s) => n + s.trades, 0);
-    const loads = current.find(s => s.loads !== null)?.loads ?? null;
+    // A status without `loads` or `final` (written before they existed, or a fixture) sets neither.
+    const loads = current.map(s => s.loads).find((l): l is number => typeof l === 'number' && Number.isFinite(l)) ?? null;
     if (loads !== null && done >= loads) return undefined;
     const last = loads !== null && done === loads - 1;
-    const withFinal = loads !== null && current.some(s => s.final);
-    const takes = (s: BoneStatus) => !withFinal || (s.final ? last || done + group.length <= loads! - 1 : !last);
+    const withFinal = loads !== null && current.some(s => s.final === true);
+    const takes = (s: BoneStatus) => !withFinal || (s.final === true ? last || done + group.length <= loads! - 1 : !last);
     return turnOrder(current, now, {
         eligible: s => (s.phase === 'waiting' || s.phase === 'requested' || s.phase === 'trading') && s.held > 0 && s.readyAt !== null && takes(s),
         holding: s => s.phase === 'requested' || s.phase === 'trading'

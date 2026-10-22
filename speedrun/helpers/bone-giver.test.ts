@@ -64,8 +64,18 @@ describe('a group of bone givers takes turns (S07 b01-b04)', () => {
             const other = st('cairn_b04', 'off', null, { trades: 9, session: 'old', ms: now - 900_000 });
             const mixed = [...at(11).filter(s => s.account !== 'cairn_b04'), other];
             expect(groupLoadsDone(mixed, GROUP, 's1')).toBe(at(11).filter(s => s.account !== 'cairn_b04').reduce((n, s) => n + s.trades, 0));
-            // Without a session given, the newest status's session decides.
-            expect(groupLoadsDone(mixed, GROUP)).toBe(groupLoadsDone(mixed, GROUP, 's1'));
+            // Without a session given, every status of the group counts, as before sessions (the step passes none yet).
+            expect(groupLoadsDone(mixed, GROUP)).toBe(groupLoadsDone(mixed, GROUP, 's1') + 9);
+        });
+
+        test('statuses written without session, final or loads (main\'s fixtures, older files): the server is the oldest ready, as before', () => {
+            const bare = (account: string, phase: BoneStatus['phase'], readyAt: number | null) =>
+                ({ v: 1, account, phase, held: 23, n: 23, trades: 0, bounces: 0, tile: null, readyAt, ms: now - 500 }) as unknown as BoneStatus;
+            const statuses = [bare('cairn_b02', 'waiting', 300), bare('cairn_b01', 'waiting', 100), bare('cairn_b03', 'restock', null)];
+            expect(boneServer(statuses, GROUP, now)).toBe('cairn_b01');
+            expect(groupLoadsDone(statuses, GROUP)).toBe(0);
+            // With a session asked for, a status in no session counts for nothing.
+            expect(boneServer(statuses, GROUP, now, 's1')).toBeUndefined();
         });
 
         test('the last load goes to the final giver alone, even when another has waited longer', () => {
