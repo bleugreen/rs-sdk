@@ -18,7 +18,7 @@
 //   away   the bots stay logged in, teleported out of view (--away=x,z): the host-load control
 //   base2  the bots logged out
 // Each phase sets the stand-in to --thieving (80) and its hitpoints back, runs the in-page probe
-// (--trials), then the program for --ticks. Rolls are timed from chat, the tick each line was first
+// (--trials) from the anchor, then the program for --ticks. Rolls are timed from chat, the tick each line was first
 // published; a bot's ticks are moved onto the stand-in's clock by the median offset between the two
 // clients' publications of the same server tick (wall clock, one process).
 //
@@ -31,7 +31,7 @@ import { hostname, loadavg, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ChatHistory } from '../../sdk/chat-history';
 import type { BotWorldState, GameMessage, NearbyNpc } from '../../sdk/types';
-import { probeInPage, runProgram, type ProgramStatus } from '../lib/programs';
+import { probeInPage, runProgram, stopProgram, type ProgramStatus } from '../lib/programs';
 import { closeSession, logoutClean, openSession, type Session } from '../lib/session';
 import { waitTicks, waitUntil } from '../lib/wait';
 import * as thieving from '../skills/thieving';
@@ -301,9 +301,6 @@ async function phase(name: string): Promise<void> {
             return s.nearbyPlayers.filter(p => Math.max(Math.abs(p.x - kx), Math.abs(p.z - kz)) <= 1).length >= Math.ceil(bots.length * 0.8);
         }, { maxTicks: 40 });
         prep.crowdPlacedTicks = placed.ok ? 'ok' : 'timeout';
-        // crowd: the stand-in goes beside the pinned knight; prefer: it stays on the anchor and chooses
-        const kn = state().nearbyNpcs.find(n => n.index === k.index);
-        if (kind === 'crowd' && kn) await tele(sdk, (kn.tileX ?? kn.x) - 1, kn.tileZ ?? kn.z);
     }
     let prefer: number[] | undefined;
     if (kind === 'prefer') {
@@ -334,13 +331,27 @@ async function phase(name: string): Promise<void> {
         }
     };
 
-    const probe = await segment('probe', () => probeInPage(sdk, { trials: TRIALS }));
-    const lat = probe.out.latencies;
-    const probeRow = {
-        trials: lat.length, at1: lat.filter(l => l === 1).length, hist: hist(lat), lost: probe.out.lost, ticks: probe.out.ticks,
-        steadiness: probe.out.steadiness, render: probe.render, load: probe.load, playersInView: probe.playersInView, ...(probe.out.reason ? { reason: probe.out.reason } : {})
-    };
+    // The probe runs from the anchor in every phase, the crowd in view a few tiles off. Beside the
+    // knight it measures the knight instead: once its trial direction is proven, a pinned knight
+    // standing on the probe's home tile turns every later trial into a lost one.
+    let probeRow: Record<string, unknown>;
+    try {
+        const probe = await segment('probe', () => probeInPage(sdk, { trials: TRIALS }));
+        const lat = probe.out.latencies;
+        probeRow = {
+            trials: lat.length, at1: lat.filter(l => l === 1).length, hist: hist(lat), lost: probe.out.lost, ticks: probe.out.ticks,
+            steadiness: probe.out.steadiness, render: probe.render, load: probe.load, playersInView: probe.playersInView, ...(probe.out.reason ? { reason: probe.out.reason } : {})
+        };
+    } catch (e) {
+        await stopProgram(sdk).catch(() => {});
+        probeRow = { error: String(e).slice(0, 300) };
+    }
     result(`${name} probe`, probeRow);
+    // crowd: the stand-in pickpockets beside the pinned knight; prefer: it stays on the anchor and chooses
+    if (kind === 'crowd' && knightIndex !== null) {
+        const kn = state().nearbyNpcs.find(n => n.index === knightIndex);
+        if (kn) await tele(sdk, (kn.tileX ?? kn.x) - 1, kn.tileZ ?? kn.z);
+    }
 
     const food = FOODS.shark;
     const band = BANDS.find(b => b.name === 'thieving:knights')!;
