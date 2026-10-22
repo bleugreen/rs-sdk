@@ -740,7 +740,12 @@ timeout.
 `{v:1, runId, account, sessionId, step, startTick, endTick, ticks, wallMs, ok, error?, meta?, crossedSession?, tickMs, at}`.
 A step that spans a client relaunch is flagged `crossedSession` and its ticks
 are a lower bound: the counter restarts, and the dropped player's in-world
-ticks were never observed. `report(rows)` totals per step;
+ticks were never observed. A step that spans an in-page relog (skills/cooking.ts's
+two wine relogs) is not: the page goes on counting, so its ticks are its own
+end minus start. `session.launchId`, bumped by a client launch only, names the
+count (`tickCounter`), and `sessionId` still bumps on every game session. The
+harnesses' `(session)` rows (lib/attempt.ts `SessionClock`) likewise start at
+each session's `tickBase` and end as `relog` or `relaunch`. `report(rows)` totals per step;
 `bun speedrun/lib/ticks.ts report speedrun/runs/<runId>.jsonl` prints the table
 (lower bounds marked `>=`).
 
@@ -1031,7 +1036,12 @@ from the game state on every start, never from its own memory:
 - Steps may declare `done(observed)` (a milestone: true once its effect is in
   the game and from then on), `inProgress(observed)` with a `resume` entry, and
   `probes` (named in `probes`, e.g. a bank-open probe; run only when the walk
-  needs them). `resolveResume` finds the first milestone not done, then the
+  needs them). A module whose steps read a probe of its own exports it as
+  `PROBES` (skills/cooking.ts's `wineBank`); `stepProbes(steps, modules)` gathers
+  every name the steps declare from those records and the quest journals, and
+  refuses on one nothing provides. rehearse.ts and run.ts (runner/chain.ts
+  `chainProbes`) hand the result to `runAttempt`'s `probes`, so that refusal
+  comes before any login. `resolveResume` finds the first milestone not done, then the
   latest step back to the last done milestone that can start now: in progress
   (enter by `resume`) or preconditions true (enter by `run`).
 - On a lost link (`sessionLink`: the lite runner exited, `inGame` false, or no
