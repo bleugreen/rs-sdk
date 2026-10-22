@@ -37,7 +37,7 @@ import { join } from 'node:path';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
-import { tickMs, type StateSource } from '../lib/wait';
+import { tickClock, type StateSource } from '../lib/wait';
 import { ANY_OFFER, give, receiveFrom, tradeOf, type GiveSpec, type WantSpec } from '../lib/trade';
 import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, readJson, writeJsonAtomicSync, type Cue } from './altar-cue';
 import { chebyshev, cheat, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';

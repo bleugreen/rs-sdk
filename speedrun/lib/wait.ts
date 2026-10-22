@@ -141,6 +141,11 @@ export function waitUntil(sdk: StateSource, pred: Pred, opts: WaitOptions): Prom
 
 export type StepResult<T> = { ok: true; value: T } | { ok: false; reason: WaitFailure };
 
+/** The reason string a result with a free-text `reason` reports for a failed wait: STALLED for `idle`, 'timeout' for `maxTicks`. */
+export function failureReason(r: WaitFailure): string {
+    return r === 'idle' ? STALLED : 'timeout';
+}
+
 /**
  * Feed every published state, the current one first, to `step` until it
  * returns a value (anything but undefined). Fails with `reason: 'maxTicks'`

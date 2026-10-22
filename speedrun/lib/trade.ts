@@ -34,7 +34,7 @@ import type { BotSDK } from '../../sdk/index';
 import type { ActionResult, BotWorldState, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
 import { countInventoryById, diffInventories, offerSatisfies, shortfall } from '../../sdk/trade-helpers';
 import { amountButtons, isXAmount, matchesItem, type ItemPattern } from './items';
-import { onStates, STALLED, tickMs, type StateSource } from './wait';
+import { failureReason, onStates, tickMs, type StateSource } from './wait';
 
 export type TradeSdk = StateSource &
     Pick<BotSDK, 'sendTradeRequest' | 'sendOfferItem' | 'sendAcceptTrade' | 'sendDeclineTrade'>;
@@ -476,9 +476,6 @@ function waitState(sdk: StateSource, pred: (s: BotWorldState) => boolean, ms: nu
 
 // ---------------------------------------------------------------- drivers
 
-/** A trade's failure reason when no terminal frame came: `maxTicks` ran out, or the client stopped publishing. */
-const unfinished = (reason: 'maxTicks' | 'idle') => (reason === 'idle' ? STALLED : 'timeout');
-
 export interface ReceiveResult {
     ok: boolean;
     /** Receiver clock: ticks from our first trade click to the items arriving. */
@@ -513,7 +510,7 @@ export async function receiveFrom(sdk: TradeSdk, partner: string, opts: { want?:
             default: return undefined;
         }
     });
-    if (!r.ok) return { ok: false, ticks: (sdk.getState()?.tick ?? start) - start, received: [], reason: unfinished(r.reason) };
+    if (!r.ok) return { ok: false, ticks: (sdk.getState()?.tick ?? start) - start, received: [], reason: failureReason(r.reason) };
     const outcome = r.value;
     return { ok: outcome.ok, ticks: outcome.tick - start, received: outcome.received, ...(outcome.reason ? { reason: outcome.reason } : {}) };
 }
@@ -574,7 +571,7 @@ async function giveImpl(sdk: TradeSdk, partner: string, specs: readonly GiveSpec
             default: return undefined;
         }
     });
-    if (!r.ok) return { ok: false, ticks: (sdk.getState()?.tick ?? start) - start, gave: [], sent, reason: unfinished(r.reason) };
+    if (!r.ok) return { ok: false, ticks: (sdk.getState()?.tick ?? start) - start, gave: [], sent, reason: failureReason(r.reason) };
     const outcome = r.value;
     return { ok: outcome.ok, ticks: outcome.tick - start, gave: outcome.gave, sent, ...(outcome.reason ? { reason: outcome.reason } : {}) };
 }

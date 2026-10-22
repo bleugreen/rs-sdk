@@ -28,7 +28,7 @@ import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
 import { classifyPage } from '../lib/dialogue';
 import { receiveFrom, type TradeSdk } from '../lib/trade';
-import type { StateSource } from '../lib/wait';
+import { failureReason, onStates, STALLED, type StateSource } from '../lib/wait';
 import { ITEM, WINE_COOKING_LEVEL } from './wine-common';
 
 /** login.rs2 -> ~ferment_wines_login: settimer(fermenting_wine, 20); a make does the same (wine.rs2). */
@@ -120,34 +120,6 @@ export function findBooth(s: BotWorldState): Booth | null {
     return b ? { x: b.l.x, z: b.l.z, id: b.l.id, op: b.opt!.opIndex } : null;
 }
 
-/**
- * Call `step` on every published state until it returns a value, or `maxTicks`
- * ticks pass (a wall-clock backstop covers a client that stops publishing).
- */
-function onStates<R>(sdk: StateSource, maxTicks: number, step: (s: BotWorldState) => R | undefined, tickMs = 300): Promise<R | 'timeout'> {
-    return new Promise(resolve => {
-        let done = false;
-        const start = sdk.getState()?.tick ?? 0;
-        const finish = (r: R | 'timeout') => {
-            if (done) return;
-            done = true;
-            unsubscribe();
-            clearTimeout(wall);
-            resolve(r);
-        };
-        const handle = (s: BotWorldState) => {
-            if (done) return;
-            const r = step(s);
-            if (r !== undefined) finish(r);
-            else if (s.tick - start > maxTicks) finish('timeout');
-        };
-        const unsubscribe = sdk.onStateUpdate(handle);
-        const wall = setTimeout(() => finish('timeout'), (maxTicks + 20) * tickMs);
-        const cur = sdk.getState();
-        if (cur) handle(cur);
-    });
-}
-
 // ---------------------------------------------------------------- primitives
 
 export interface ChatDrain {
@@ -229,7 +201,7 @@ export async function drainChat(sdk: StateSource & Pick<BotSDK, 'sendClickDialog
         if (closedAt < 0) closedAt = s.tick;
         return s.tick - closedAt >= quiet ? { ok: true, tick: closedAt } : undefined;
     });
-    const out = r === 'timeout' ? { ok: false, tick: sdk.getState()?.tick ?? startTick, reason: 'timeout' } : r;
+    const out = r.ok ? r.value : { ok: false, tick: sdk.getState()?.tick ?? startTick, reason: failureReason(r.reason) };
     return { ok: out.ok, pages: clicker.pages, resumes: clicker.resumes, startTick, endTick: out.tick, ...('reason' in out && out.reason ? { reason: out.reason } : {}) };
 }
 
@@ -271,7 +243,7 @@ export async function openBankThroughPages(sdk: ReceiverSdk, opts: { maxTicks?: 
         }
         return undefined;
     });
-    const out = r === 'timeout' ? { ok: false, tick: -1, reason: 'timeout' } : r;
+    const out = r.ok ? r.value : { ok: false, tick: -1, reason: failureReason(r.reason) };
     return { ok: out.ok, openTick: out.tick, startTick, pages: clicker.pages, resumes: clicker.resumes, ...('reason' in out && out.reason ? { reason: out.reason } : {}) };
 }
 
@@ -305,8 +277,8 @@ export async function depositNotes(sdk: ReceiverSdk, amount: number | 'all', opt
         count(st, ITEM.wineNote) <= left && (!opts.close || bankClosed(st)) ? st.tick : undefined
     );
     const after = count(sdk.getState(), ITEM.wineNote);
-    if (r === 'timeout') return { ok: false, deposited: held - after, doneTick: -1, reason: 'timeout' };
-    return { ok: true, deposited: held - after, doneTick: r };
+    if (!r.ok) return { ok: false, deposited: held - after, doneTick: -1, reason: failureReason(r.reason) };
+    return { ok: true, deposited: held - after, doneTick: r.value };
 }
 
 export interface Firing {
@@ -326,9 +298,9 @@ export async function awaitFiring(sdk: StateSource, dueTick: number, slack = 3):
     const xp0 = cooking(s0).xp;
     const until = Math.max(dueTick, s0?.tick ?? 0) + slack;
     const r = await onStates(sdk, until - (s0?.tick ?? 0) + 1, s => (cooking(s).xp > xp0 ? s : s.tick > until ? null : undefined));
-    const s = r === 'timeout' || r === null ? sdk.getState() : r;
-    const c = cooking(s);
-    return { fired: c.xp > xp0, tick: r === 'timeout' || r === null ? -1 : r.tick, level: c.level, xpGained: c.xp - xp0 };
+    const fired = r.ok ? r.value : null;
+    const c = cooking(fired ?? sdk.getState());
+    return { fired: c.xp > xp0, tick: fired ? fired.tick : -1, level: c.level, xpGained: c.xp - xp0 };
 }
 
 export interface Make {
@@ -348,7 +320,7 @@ export async function makeOneWine(sdk: ReceiverSdk, maxTicks = 6): Promise<Make>
     const before = count(s, ITEM.wine);
     void sdk.sendUseItemOnItem(g.slot, j.slot);
     const r = await onStates(sdk, maxTicks, st => (count(st, ITEM.wine) > before ? st.tick : undefined));
-    return r === 'timeout' ? { ok: false, tick: -1, reason: 'the make was not accepted' } : { ok: true, tick: r };
+    return r.ok ? { ok: true, tick: r.value } : { ok: false, tick: -1, reason: r.reason === 'idle' ? STALLED : 'the make was not accepted' };
 }
 
 // ---------------------------------------------------------------- the deposit for a timer
