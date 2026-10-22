@@ -27,7 +27,6 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import puppeteer from 'puppeteer';
 import { altarData, enterRoom, isLocalServer } from '../helpers/altar-room';
 import { memoryRoleState, type RoleContext } from '../helpers/role';
 import { programStatus, stopProgram, type ProgramStatus } from '../lib/programs';
@@ -123,6 +122,9 @@ async function giversReady(): Promise<void> {
 async function standInSession(): Promise<Session> {
     if (!labStage) return openSession(scored, { client: 'browser', launch: true });
     const cdpPort = Number(process.env.WEB_PORT ?? 9300) + 6;
+    // Loaded only for --lab-stage: on the demo host's Bun, importing puppeteer at module load
+    // crashes in proxy-agent (`debug_1.default is not a function`) before any login.
+    const puppeteer = (await import('puppeteer')).default;
     browser = await puppeteer.launch({
         headless: process.argv.includes('--headless'),
         defaultViewport: null,
