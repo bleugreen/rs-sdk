@@ -10,6 +10,7 @@ import { baseState, FakeSdk, flush } from '../lib/fake-sdk';
 import { clickBack, newClickCtx, RESEND_TICKS, type ClickCtx } from '../lib/trade';
 import {
     accountMatches,
+    afterServe,
     canonName,
     countById,
     courierPicks,
@@ -147,6 +148,26 @@ describe('packages', () => {
         for (const n of ['Coins', 'Law rune', 'Rune arrows', 'Mithril dart tips', 'Feather', 'Rune arrowtips', 'Thread', 'Nails']) expect(isStackableName(n)).toBe(true);
         for (const n of ['Rune essence', 'Logs', 'Shark', 'Rune platebody', 'Knife']) expect(isStackableName(n)).toBe(false);
         expect(isStackableName('Rune knife')).toBe(true);
+    });
+});
+
+describe('order mode with packages served on request', () => {
+    const p = (name: string, onRequest = false): Package => ({ name, items: [{ item: 'Logs', amount: 1 }], ...(onRequest ? { onRequest: true as const } : {}) });
+    const ordered = [p('h4k'), p('h6'), p('h4p')];
+
+    test('the due package served: the order advances', () => {
+        expect(afterServe(ordered, 1, ordered[1]!)).toEqual({ nextIndex: 2, pending: ordered[2]! });
+        expect(afterServe(ordered, 2, ordered[2]!)).toEqual({ nextIndex: 3, pending: null });
+    });
+
+    test('a fallback asked for by name in between (H4e): the due package comes up again, none skipped', () => {
+        expect(afterServe(ordered, 1, p('h4e', true))).toEqual({ nextIndex: 1, pending: ordered[1]! });
+    });
+
+    test('packageOf reads onRequest, and only as a boolean', () => {
+        expect(packageOf({ name: 'h4e', items: [{ item: 'Law rune', amount: 1 }], onRequest: true })).toEqual({ name: 'h4e', items: [{ item: 'Law rune', amount: 1 }], onRequest: true });
+        expect(packageOf({ name: 'h6', items: [{ item: 'Law rune', amount: 1 }], onRequest: false })).toEqual({ name: 'h6', items: [{ item: 'Law rune', amount: 1 }] });
+        expect(() => packageOf({ name: 'x', items: [], onRequest: 'yes' })).toThrow('onRequest must be true or false');
     });
 });
 
