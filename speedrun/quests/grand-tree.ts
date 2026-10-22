@@ -36,15 +36,15 @@ import { receiveFrom, type WantSpec } from '../lib/trade';
 import { currentTick, waitTicks, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, configId, findLoc, findNpc, invCount, invItem, messagesSince, opIndex, pos, skillLevel, worn, type LocQuery, type Tile } from '../lib/world';
 import type { Step, StepContext } from '../runner/step';
+import type { QuestOptions } from './segments';
 
 export const quest = 'grandtree' as const;
 export const stepId = 'S11b';
 
-export interface Options {
-    /** Default 'fixed'. 'burst' waits for rs/200's converse burst mode. */
-    dialogue?: 'burst' | 'fixed';
-    /** The H8 giver at the Grand Tree door. Absent, or the kit already held, means check only. */
-    kitFrom?: string;
+export interface Options extends QuestOptions {
+    // dialogue: default 'fixed' here. No conversation carries a converse `shape` yet, so 'burst'
+    // answers page by page exactly as 'fixed' does.
+    // kitFrom: the H8 giver at the Grand Tree door. Absent, or the kit already held, means check only.
     /** Default 'fire_bolt'. */
     demonSpell?: 'fire_bolt' | 'fire_blast';
 }
