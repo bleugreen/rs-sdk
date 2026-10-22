@@ -29,6 +29,8 @@ import { questDone, type QuestKey } from '../lib/quests';
 import type { GiveSpec } from '../lib/trade';
 import { tickMs } from '../lib/wait';
 import { skillLevel } from '../lib/world';
+import * as cooksAssistant from '../quests/cooks-assistant';
+import * as doricsQuest from '../quests/dorics-quest';
 import * as dragonSlayer from '../quests/dragon-slayer';
 import * as dwarfCannon from '../quests/dwarf-cannon';
 import * as fightArena from '../quests/fight-arena';
@@ -41,6 +43,7 @@ import * as agility from '../skills/agility';
 import * as cooking from '../skills/cooking';
 import * as crafting from '../skills/crafting';
 import * as firemaking from '../skills/firemaking';
+import * as fletching from '../skills/fletching';
 import * as fishing from '../skills/fishing';
 import * as herblore from '../skills/herblore';
 import * as magic from '../skills/magic';
@@ -144,6 +147,9 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
     H21d: { before: 'S25d' },
     H23: { leg: 'T26-27', afterHop: 0 },
 };
+
+/** Rows a module trades itself whose partner the run config names (kitFrom): S05's H4, the quests' kits. */
+export const KIT_PARTNER_ROWS = ['H4', 'H6', 'H7', 'H8', 'H16', 'H22'] as const;
 
 /** Exactly one group of each set is in the ledger in force (the ledger is the switch). */
 export const ALTERNATIVES: readonly (readonly (readonly string[])[])[] = [[['H12'], ['H12a', 'H12b']]];
@@ -369,7 +375,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
     const coverage = ledgerCoverage(rows);
     if (coverage.length) throw new Error(`ledger coverage: ${coverage.join('; ')}`);
     const placed = Object.keys(PLACEMENT).filter(id => inLedger.has(id));
-    const missingPartners = [...placed, 'H6', 'H7', 'H8', 'H16', 'H22'].filter(id => !cfg.partners[id] && !CANNON_ROWS[id]);
+    const missingPartners = [...placed, ...KIT_PARTNER_ROWS].filter(id => !cfg.partners[id] && !CANNON_ROWS[id]);
     if (missingPartners.length) throw new Error(`the run config names no partner for ${missingPartners.join(', ')}`);
     const partner = (id: string) => cfg.partners[id]!;
     const kitFrom = (id: string) => ({ kitFrom: partner(id) });
@@ -407,7 +413,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...steps('S03', firemaking.steps({ tiles: cfg.firemakingTiles, supply: 'row' })),
         ...steps('S04', pick('magic', magic.steps({ untilLevel: 59, giver: cfg.rings.giver, ...(cfg.rings.loads ? { loads: cfg.rings.loads } : {}) }), [magic.S04_ID])),
         L('T04-05'),
-        missingStep('S05', "S05 Doric's Quest", 'rs/416', 'doric'),
+        ...steps('S05', doricsQuest.steps(kitFrom('H4'))),
         L('T05-06'),
         // runecraft writes its own {S06, altar} cue.
         ...steps('S06', pick('runecraft', runecraft.steps({ untilLevel: 44, cueDir: cfg.cueDir }), ['S06 runecraft'])),
@@ -442,7 +448,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         L('T16-18'),
         ...before('S18'),
         ...cued({ step: 'S18', family: 'courier' }, steps('S18', pick('thieving', thieving.steps({ topUp: { giver: cfg.courier.giver, below: cfg.courier.below, mode: 'idle' }, stunPack: { superheat: { casts: 2 }, chargeUnlocked: true } }), ['thieving:knights']))),
-        whenNeeded('S18d-fallback', missingStep('S18d-fallback', 'S18d fletching', 'rs/409 (fletching.ts arrives with the next base)'), at99('fletching'), 'Fletching 99 inside S18'),
+        ...fletching.steps().map(s => whenNeeded('S18d-fallback', s, st => fletching.finished(st), 'Fletching 99 with the rune arrows kept, inside S18')),
         L('T18-19'),
         ...before('S19'),
         missingStep('S19', 'S19 Sea Slug', 'rs/185 (rs/414)', 'seaslug'),
@@ -455,7 +461,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...steps('S22', pick('fishing', fishing.steps(), ['fishing:fly-78-99'])),
         L('T22-23'),
         ...before('S23'),
-        missingStep('S23', "S23 Cook's Assistant", 'rs/416', 'cook'),
+        ...steps('S23', cooksAssistant.steps()),
         L('T23-24'),
         ...before('S24'),
         missingStep('S24', 'S24 Goblin Diplomacy (Rusty Anchor)', 'rs/416'),
