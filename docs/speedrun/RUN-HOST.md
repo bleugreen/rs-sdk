@@ -417,6 +417,21 @@ what it contains, rs/138's Chrome login and rs/164's tab-logout confirmation amo
 check: `git -C ~/rs-sdk merge-base --is-ancestor 4fe2d0a8 "$RUN_COMMIT"`. A failure means the commit
 predates at least one of the changes in that table.
 
+**The inventory check, before the start is called.** On any checkout at `RUN_COMMIT` (it reads only
+the repository), run
+
+```sh
+bun speedrun/tools/slot-ledger.ts
+```
+
+It walks SCORED's inventory through STEP-MANIFEST.md's "Inventory ledger" table, S00 to S27 in run
+order (the starter kit, every hand-off, drop, consumption and worn change), prints the whole ledger
+(each row's free slots, need and verdict, and what is held after it), and exits non-zero if any
+row's need exceeds its free slots, an item leaves that is not held, or the pack passes 28. A
+non-zero exit means a step would refuse at its start on the night, as S06 did at 13 free against 27
+before the 2026-10-21 fixes; the failing rows go to the run-order owner, who owns the loads and
+hand-offs. Rows with a `?` are listed as unknown; `--strict` fails them too.
+
 Account files: the gate account (step 6) is a throwaway demo account whose name starts with
 `cairn_`, with `~/rs-sdk/bots/<gate>/bot.env` holding `BOT_USERNAME`, `PASSWORD`,
 `SERVER=rs-sdk-demo.fly.dev`, `GATEWAY_URL=ws://127.0.0.1:7780`,

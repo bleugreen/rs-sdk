@@ -25,6 +25,7 @@
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
+import { matchesItem } from '../lib/items';
 import { startLevelUpWatcher } from '../lib/levelup';
 import { swap, type GiveSpec, type SwapResult, type WantSpec } from '../lib/trade';
 import { waitUntil, type StateSource } from '../lib/wait';
@@ -319,10 +320,90 @@ export function handBack(inventory: readonly InventoryItem[], keep: Partial<Reco
     return out;
 }
 
-/** Slots free for bars once the hand-back items leave: the cap for the next inventory. */
-export function barRoom(s: BotWorldState, cap: number, baseline: Counts): number {
-    const kept = s.inventory.length - handBack(s.inventory, {}, baseline).length;
+/**
+ * The held items the give-back names: each spec takes the first held id it matches (as lib/trade.ts
+ * planOffers does), every one held or `n` of them, one entry per slot it leaves from. The hammer and
+ * bars are the module's own and never given back.
+ */
+export function giveBackItems(inventory: readonly InventoryItem[], specs: readonly GiveSpec[]): InventoryItem[] {
+    const inSlotOrder = [...inventory].sort((a, b) => a.slot - b.slot).filter(i => !HAMMER.test(i.name) && !barOf(i));
+    const taken = new Set<number>();
+    const out: InventoryItem[] = [];
+    for (const spec of specs) {
+        const first = inSlotOrder.find(i => !taken.has(i.id) && matchesItem(i, spec.item));
+        if (!first) continue;
+        taken.add(first.id);
+        let left = spec.n === undefined || spec.n === 'all' ? Infinity : spec.n;
+        for (const i of inSlotOrder) {
+            if (i.id !== first.id || left <= 0) continue;
+            const n = Math.min(i.count, left);
+            out.push(n === i.count ? i : { ...i, count: n });
+            left -= n;
+        }
+    }
+    return out;
+}
+
+/** The inventory once `leaving` (entries of it, by slot) has gone. */
+export function afterLeaving(inventory: readonly InventoryItem[], leaving: readonly InventoryItem[]): InventoryItem[] {
+    const gone = new Map<number, number>();
+    for (const i of leaving) gone.set(i.slot, (gone.get(i.slot) ?? 0) + i.count);
+    return inventory.flatMap(i => {
+        const n = i.count - (gone.get(i.slot) ?? 0);
+        return n <= 0 ? [] : [n === i.count ? i : { ...i, count: n }];
+    });
+}
+
+/** Everything a supply takes: handBack's items, then the give-back's among what is left. */
+export function leavingItems(inventory: readonly InventoryItem[], keep: Partial<Record<Bar, number>>, baseline: Counts, giveBack: readonly GiveSpec[]): InventoryItem[] {
+    const back = handBack(inventory, keep, baseline);
+    return [...back, ...giveBackItems(afterLeaving(inventory, back), giveBack)];
+}
+
+/** Slots free for bars once the hand-back items (and any pending give-back) leave: the cap for the next inventory. */
+export function barRoom(s: BotWorldState, cap: number, baseline: Counts, giveBack: readonly GiveSpec[] = []): number {
+    const kept = afterLeaving(s.inventory, leavingItems(s.inventory, {}, baseline, giveBack)).length;
     return Math.max(0, Math.min(cap, 28 - kept - (hasHammer(s) ? 0 : 1)));
+}
+
+/**
+ * Items outside the module's own list: anything but the hammer, bars, and the products made since
+ * `baseline`, which leave in the next trade. An item SCORED arrived with that looks like a product
+ * stays, so it counts here.
+ */
+export function otherItems(s: BotWorldState, baseline: Counts): string[] {
+    const allowance = new Map(baseline);
+    const out: string[] = [];
+    for (const i of s.inventory) {
+        if (HAMMER.test(i.name) || barOf(i)) continue;
+        if (isProduct(i)) {
+            const left = allowance.get(i.id) ?? 0;
+            allowance.set(i.id, Math.max(0, left - i.count));
+            if (left < i.count) continue;
+        }
+        out.push(i.name);
+    }
+    return out;
+}
+
+/** Bars in a planned inventory. */
+export function barsIn(inv: PlannedInventory): number {
+    return Object.values(inv.bars).reduce((a, n) => a + (n ?? 0), 0);
+}
+
+/**
+ * The step's slot precondition: its inventory's bars and the hammer (held, or in seq 0's give) need
+ * that many slots beside everything else SCORED holds. Without it barRoom would shrink the trade and
+ * the step would need more inventories than its plan. A pending give-back is counted as gone: the first
+ * trade takes it before the bars arrive.
+ */
+export function slotReason(s: BotWorldState, inv: PlannedInventory, baseline: Counts, giveBack: readonly GiveSpec[] = []): string | null {
+    const gone = leavingItems(s.inventory, {}, baseline, giveBack).slice(handBack(s.inventory, {}, baseline).length);
+    const other = otherItems({ ...s, inventory: afterLeaving(s.inventory, gone) }, baseline);
+    const need = barsIn(inv) + 1;
+    if (other.length <= 28 - need) return null;
+    const after = gone.length ? ` after the give-back (${[...new Set(gone.map(i => i.name))].join(', ')})` : '';
+    return `${other.length} other items (${[...new Set(other)].join(', ')})${after}: need ${need} free slots (the hammer and ${barsIn(inv)} bars)`;
 }
 
 /** What the held bars make at `level`: the best item per bar type, as many as the bars allow. */
@@ -527,6 +608,12 @@ export interface SmithingOptions {
     /** Called once per inventory made. */
     onInventory?: (r: InventoryReport) => void;
     log?: (msg: string, data?: Record<string, unknown>) => void;
+    /**
+     * Dead items SCORED arrives with, handed to the helper in the chain's first trade beside the
+     * products (deposited at the first bank visit, banking), so the hammer and bars fit. run.ts
+     * supplies it from STEP-MANIFEST.md's inventory ledger (H21a's swap outs); nothing here names an item.
+     */
+    giveBack?: readonly GiveSpec[];
 }
 
 export interface Resolved {
@@ -538,6 +625,7 @@ export interface Resolved {
     openTicks: number;
     onInventory: (r: InventoryReport) => void;
     log: (msg: string, data?: Record<string, unknown>) => void;
+    giveBack: readonly GiveSpec[];
 }
 
 export function resolveOptions(o: SmithingOptions = {}): Resolved {
@@ -545,6 +633,10 @@ export function resolveOptions(o: SmithingOptions = {}): Resolved {
     if (supply !== 'helper' && supply !== 'bank') throw new Error(`supply must be helper or bank (got ${supply})`);
     const untilLevel = o.untilLevel ?? 99;
     if (!Number.isInteger(untilLevel) || untilLevel < 2 || untilLevel > 99) throw new Error(`untilLevel must be 2-99 (got ${untilLevel})`);
+    const giveBack = o.giveBack ?? [];
+    for (const g of giveBack) {
+        if (g.n !== undefined && g.n !== 'all' && !(Number.isInteger(g.n) && g.n > 0)) throw new Error(`giveBack ${String(g.item)}: n must be a positive integer or 'all' (got ${g.n})`);
+    }
     return {
         giver: o.giver ?? null,
         supply,
@@ -554,6 +646,7 @@ export function resolveOptions(o: SmithingOptions = {}): Resolved {
         openTicks: o.openTicks ?? 100,
         onInventory: o.onInventory ?? (() => {}),
         log: o.log ?? (() => {}),
+        giveBack,
     };
 }
 
@@ -573,12 +666,12 @@ export function firstAnnouncement(s: BotWorldState, session: string, opts: Smith
     const held = heldSegments(s, o.plan).reduce((a, g) => a + g.count * itemXp(g.product), 0);
     const fromXp = smithingXp(s) + held;
     if (fromXp >= xpForLevel(o.plan.untilLevel)) return null;
-    const inv = nextInventory(s, o.plan, fromXp, countsOf(s.inventory));
+    const inv = nextInventory(s, o.plan, fromXp, countsOf(s.inventory), o.giveBack);
     return inv ? { session, seq: 0, give: giveOf(inv, !hasHammer(s)) } : null;
 }
 
-function nextInventory(s: BotWorldState, c: PlanConfig, fromXp: number, baseline: Counts): PlannedInventory | null {
-    return routePlan(fromXp, { ...c, cap: Math.min(c.cap, barRoom(s, c.cap, baseline)) })[0] ?? null;
+function nextInventory(s: BotWorldState, c: PlanConfig, fromXp: number, baseline: Counts, giveBack: readonly GiveSpec[]): PlannedInventory | null {
+    return routePlan(fromXp, { ...c, cap: Math.min(c.cap, barRoom(s, c.cap, baseline, giveBack)) })[0] ?? null;
 }
 
 // ------------------------------------------------------------------ the cycle
@@ -603,8 +696,15 @@ export class Smithy {
      * restart stay with SCORED rather than risk handing over something it arrived with.
      */
     baseline: Map<number, number> | null = null;
+    /** The give-back has left in a completed supply. A restart keeps it: the items are gone. */
+    givenBack = false;
 
     constructor(readonly o: Resolved) {}
+
+    /** The give-back still to go: all of it until the first completed trade or bank visit. */
+    pendingGiveBack(): readonly GiveSpec[] {
+        return this.givenBack ? [] : this.o.giveBack;
+    }
 
     /** The baseline, or this state's inventory when the chain has not started (nothing made yet). */
     baselineFor(s: BotWorldState): Counts {
@@ -709,7 +809,7 @@ export class Smithy {
         const s0 = this.state(ctx);
         if (!this.session || !this.pending) {
             this.session ??= `${ctx.log.runId}/${s0.tick}`;
-            const inv = nextInventory(s0, this.o.plan, smithingXp(s0), this.baselineFor(s0));
+            const inv = nextInventory(s0, this.o.plan, smithingXp(s0), this.baselineFor(s0), this.pendingGiveBack());
             if (!inv) throw new Error('nothing left to make');
             this.pending = inv;
             await this.announce({ session: this.session, seq: this.seq, give: giveOf(inv, !hasHammer(s0)) });
@@ -723,12 +823,15 @@ export class Smithy {
             tries++;
             const s = this.state(ctx);
             const wantNow = hasHammer(s) ? want : [...want, { item: HAMMER, amount: 1 }];
-            r = await swap(this.sdk(ctx), this.o.giver!, giveSpecs(handBack(s.inventory, inv.bars, this.baselineFor(s)), s.inventory), wantNow, { closeModals: true, openTicks: this.o.openTicks });
+            const back = leavingItems(s.inventory, inv.bars, this.baselineFor(s), this.pendingGiveBack());
+            r = await swap(this.sdk(ctx), this.o.giver!, giveSpecs(back, s.inventory), wantNow, { closeModals: true, openTicks: this.o.openTicks });
             if (start < 0) start = this.state(ctx).tick - r.ticks;
             if (r.ok) break;
             this.o.log('trade failed', { seq: this.seq, reason: r.reason, ticks: r.ticks });
         }
         if (!r?.ok) throw new Error(`the anvil trade failed ${tries} times (last: ${r?.reason})`);
+        if (!this.givenBack && this.o.giveBack.length) this.o.log('given back', { seq: this.seq, items: this.o.giveBack.map(g => String(g.item)) });
+        this.givenBack = true;
         const barsIn = this.state(ctx).tick;
         this.seq++;
         await this.announceAfter(ctx, inv);
@@ -738,7 +841,7 @@ export class Smithy {
     private async bank(ctx: Ctx): Promise<{ inv: PlannedInventory; supply: SupplyTicks }> {
         const sdk = this.sdk(ctx);
         const s0 = this.state(ctx);
-        const inv = nextInventory(s0, this.o.plan, smithingXp(s0), this.baselineFor(s0));
+        const inv = nextInventory(s0, this.o.plan, smithingXp(s0), this.baselineFor(s0), this.pendingGiveBack());
         if (!inv) throw new Error('nothing left to make');
         const start = s0.tick;
         const open = await openBooth(sdk);
@@ -750,9 +853,10 @@ export class Smithy {
             if (banked < spec.n) throw new Error(`the bank holds ${banked} ${spec.item.source}, ${spec.n} needed`);
         }
         // Deposits go out in the same tick, ahead of the withdrawals: the server takes them in order.
-        depositEach(sdk, handBack(s.inventory, {}, this.baselineFor(s)), s.inventory);
+        depositEach(sdk, leavingItems(s.inventory, {}, this.baselineFor(s), this.pendingGiveBack()), s.inventory);
         const w = await withdrawMany(sdk, specs);
         if (!w.ok) throw new Error(`withdraw for ${describe(inv)}: ${w.reason ?? 'failed'}`);
+        this.givenBack = true;
         return { inv, supply: { kind: 'bank', start, open, barsIn: this.state(ctx).tick, tries: 1 } };
     }
 
@@ -914,7 +1018,7 @@ export function steps(opts: SmithingOptions = {}): Step<any>[] {
                 if (last && passed(s) && (!o.returnLast || handBack(s.inventory, {}, smithy.baselineFor(s)).length === 0)) return true;
                 if (!nearAnvil(s)) return `not within ${NEAR} tiles of the Varrock west anvil (at ${s.player.worldX},${s.player.worldZ},${s.player.level})`;
                 if (o.supply === 'helper' && !o.giver) return 'supply helper needs a giver';
-                return true;
+                return slotReason(s, inv, smithy.baselineFor(s), smithy.pendingGiveBack()) ?? true;
             },
             run: ctx => smithy.until(ctx, mark, last),
             resume: ctx => {
