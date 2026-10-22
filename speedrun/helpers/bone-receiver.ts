@@ -70,9 +70,9 @@ export const role: Role = {
         const BONES = exactItem(String(o.item ?? 'Dragon bones'));
         // One giver by name, or a group taking turns (bone-giver.ts group): then each load comes from the group's server (boneServer).
         const givers = Array.isArray(o.givers) ? (o.givers as string[]).map(String) : null;
-        if (!!givers === (o.giver !== undefined)) throw new Error('bone-receiver: give options.giver or options.givers, not both');
+        if (!!givers === (o.giver !== undefined)) throw new Error('bone-receiver: give exactly one of options.giver and options.givers');
         const named = String(o.giver ?? '');
-        if (!givers && !named) throw new Error('bone-receiver: options.giver is required');
+        if (!givers && !named) throw new Error('bone-receiver: options.giver must name the giver');
         let giver = named;
         const asks = Array.isArray(o.asks) ? (o.asks as number[]).map(Number) : null;
         const loads = asks ? asks.length : Number(o.loads ?? 8);
