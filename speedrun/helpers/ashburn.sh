@@ -16,7 +16,8 @@ KEY="$HOME/.rs-fleet/id_ed25519_ashburn"
 # verifies the host instead of failing. Public address first, then the
 # Tailscale one (rs-ashburn). The VM kept its host key when its address moved
 # from 54.242.152.95, which is no longer pinned.
-PINNED="${TMPDIR:-/tmp}/ashburn_known_hosts"
+PINNED="$(mktemp "${TMPDIR:-/tmp}/ashburn_known_hosts.XXXXXX")"
+trap 'rm -f "$PINNED"' EXIT
 # One file, not a space-separated list: push hands "${SSH[*]}" to rsync -e, which splits on spaces.
 echo '3.209.186.185,100.66.164.37 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBYCG1nNhhY0ax6lRCgxT6oxfNh4NW7mlLOdQeoWZ0wE' >"$PINNED"
 if [ -r "$HOME/.rs-fleet/known_hosts_ashburn" ]; then
@@ -31,6 +32,7 @@ if [ "${1:-}" = push ]; then
   ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
   # Only speedrun/: the host's fork clone is ~/rs-sdk, and its bots/ and runtime
   # files live outside speedrun/, so they are never touched.
-  exec rsync -az -e "${SSH[*]}" --exclude node_modules "$ROOT/speedrun/" "$HOST:rs-sdk/speedrun/"
+  rsync -az -e "${SSH[*]}" --exclude node_modules "$ROOT/speedrun/" "$HOST:rs-sdk/speedrun/"
+  exit $?
 fi
-exec "${SSH[@]}" "$HOST" "$@"
+"${SSH[@]}" "$HOST" "$@"
