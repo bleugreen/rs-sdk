@@ -1403,6 +1403,27 @@ from `CLIENT_URL` and re-navigates the tab over `CDP_URL`. The run's relogs use
 on the twin against the demo); without it a navigated relog passes ~19-20 ticks before the bot
 layer sees state (m, rs/164 and rs/174; RUN-ORDER.md section 4).
 
+**Login codes on a relog** (rs/83's reading, relayed by rs/158 at 13:3x PDT 2026-10-22; the codes'
+text is the client's own, `server/webclient/src/client/Client.ts`). A refused login is answered with
+a code, which the page shows as two lines on its title screen:
+
+| Code | The page says | What it means for the run |
+|---|---|---|
+| 7 | This world is full. Please use a different world. | the world is at its cap: **retry; not a failure** |
+| 8 | Unable to connect. Login server offline. | a login-server stall, as for ~1.5-2.5 min after a demo restart (`speedrun/lib/demo-status.ts`): reported as such |
+| 14 | The server is being updated. Please wait 1 minute and try again. | an update countdown: reported as such |
+
+The cap behind 7 is set by the demo's operator and can change with any restart (RUN-ORDER.md, the
+'world full' row). **On main, SCORED's relog doesn't tell the codes apart** (r, 2ec58839): session.ts
+`login` retries any login that ends before its first in-world tick, up to 6 attempts with backoff,
+and reconnect.ts `reconnectAfterOutage` tries one login every 10 s for up to 30 min, whatever the
+refusal. Neither reads the code. An in-page attempt writes the title screen's text to the session
+log (`in-page login ended on the title screen (...)`); a navigated attempt waits out its login
+budget (75 s for the browser). Retrying on 7 without counting it as a failure, and reporting 8 and
+14 as such, are run.ts's, **pending rs/186**. The fleet's supervisor already maps the codes
+(`speedrun/helpers/backoff.ts` `loginFailurePolicy`: 7, 8, 13 and 14 hold that account 60 s and
+pause every fleet login 60 s).
+
 **Watching SCORED's own tick stream during the run** (rs/210, on main as #176, 834f376b; measured
 against the observed tick period since rs/276's #226, de66634b; reporting `overBudget` since #325;
 all inside the run-commit floor). The start gate reads each candidate's path once. During the run, the step runner
