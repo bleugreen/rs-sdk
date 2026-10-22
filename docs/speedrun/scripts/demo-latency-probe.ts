@@ -386,12 +386,11 @@ async function openSession() {
     const { ClientProt } = await import('../../../server/webclient/src/io/ClientProt.js');
 
     const { username, password } = credentials();
-    const origin = `https://${HOST}`;
     const cacheDir = `${process.env.HOME ?? tmpdir()}/.cache/rs-sdk-lite`;
-    const { checksums } = await loadCache({ origin, cacheDir, quiet: true });
-    const locIndex = await LocIndex.load({ origin, cacheDir, versionlistCrc: checksums[5]!, quiet: true });
+    const { checksums } = await loadCache({ origin: ORIGIN, cacheDir, quiet: true });
+    const locIndex = await LocIndex.load({ origin: ORIGIN, cacheDir, versionlistCrc: checksums[5]!, quiet: true });
     const tLogin = now();
-    const connection = await GameConnection.connect({ host: HOST, secured: true, username, password, checksums });
+    const connection = await GameConnection.connect({ host: HOST, secured: SECURED, username, password, checksums });
     const loginMs = now() - tLogin;
     const client = new LiteClient({ connection, locIndex, username, password });
 
@@ -400,8 +399,43 @@ async function openSession() {
     const listeners: ((t: Tick) => void)[] = [];
     let label = 0;
     let lastArrival = 0;
+    let lastTickAt = now();
     let pumping = false;
     let again = false;
+
+    // The session ends when the socket does: its close or error event, a failed send, the
+    // connection reporting itself closed, or SILENCE_TICKS ticks without a tick. Every wait on
+    // the server races `lostP` (guard), so a phase stops at once instead of waiting for ticks that
+    // will not come.
+    let lost: SessionLost | null = null;
+    let closedByUs = false;
+    let rejectLost!: (e: SessionLost) => void;
+    const lostP = new Promise<never>((_, reject) => (rejectLost = reject));
+    lostP.catch(() => {});
+    const markLost = (reason: string) => {
+        if (lost || closedByUs) return;
+        lost = new SessionLost(reason, now());
+        clearInterval(keepalive);
+        clearInterval(watchdog);
+        console.error(`[probe] game session lost: ${reason}`);
+        rejectLost(lost);
+    };
+    /** Queue packets with `queue` and flush them; false (and the session lost) if the socket is gone. */
+    const trySend = (queue: () => void = () => {}): boolean => {
+        if (lost) return false;
+        if (connection.isClosed) {
+            markLost('game connection closed');
+            return false;
+        }
+        try {
+            queue();
+            client.flush();
+            return true;
+        } catch (e) {
+            markLost(`send failed: ${describe(e)}`);
+            return false;
+        }
+    };
 
     const pump = async () => {
         if (pumping) {
@@ -419,28 +453,34 @@ async function openSession() {
                 (pump as any).arrival = arrival;
             } while (again);
         } catch (e) {
-            console.error('[probe] pump failed', e);
+            if (connection.isClosed || e instanceof WebSocket) markLost(`pump failed: ${describe(e)}`);
+            else console.error('[probe] pump failed', e);
         } finally {
             pumping = false;
         }
     };
     client.setOnGameTickCallback(n => {
         label += n;
+        lastTickAt = now();
         const p = client.getPlayerPosition();
         const t: Tick = { label, arrival: lastArrival, decoded: now(), x: p?.worldX ?? -1, z: p?.worldZ ?? -1 };
         ticks.push(t);
         for (const l of listeners) l(t);
     });
+    const keepalive = setInterval(() => trySend(() => client.writeOpcode(ClientProt.NO_TIMEOUT)), 1000);
+    const watchdog = setInterval(() => {
+        const silent = now() - lastTickAt;
+        if (connection.isClosed) markLost('game connection closed');
+        else if (silent > SILENCE_TICKS * TICK_MS) markLost(`no game tick for ${Math.round(silent)} ms (${SILENCE_TICKS} ticks of ${TICK_MS} ms)`);
+    }, 250);
     const sock = (connection.stream as any).socket as WebSocket;
     sock.addEventListener('message', (ev: MessageEvent) => {
         lastArrival = now();
         frames.push({ t: lastArrival, bytes: (ev.data as ArrayBuffer).byteLength ?? 0 });
         void pump();
     });
-    const keepalive = setInterval(() => {
-        client.writeOpcode(ClientProt.NO_TIMEOUT);
-        client.flush();
-    }, 1000);
+    sock.addEventListener('close', (ev: CloseEvent) => markLost(`game socket closed (code ${ev.code}${ev.reason ? ` ${ev.reason}` : ''})`));
+    sock.addEventListener('error', () => markLost('game socket error'));
     void pump();
 
     return {
@@ -451,8 +491,21 @@ async function openSession() {
         username,
         onTick: (l: (t: Tick) => void) => listeners.push(l),
         offTick: (l: (t: Tick) => void) => listeners.splice(listeners.indexOf(l), 1),
+        trySend,
+        /** trySend, throwing SessionLost if the socket is gone. */
+        send: (queue?: () => void) => {
+            if (!trySend(queue)) throw lost!;
+        },
+        /** Throw SessionLost if the socket is gone. */
+        check: () => {
+            if (lost) throw lost;
+        },
+        /** `p`, or SessionLost as soon as the socket is gone. */
+        guard: <T>(p: Promise<T>): Promise<T> => Promise.race([p, lostP]),
         close: () => {
+            closedByUs = true;
             clearInterval(keepalive);
+            clearInterval(watchdog);
             connection.close();
         }
     };
@@ -536,7 +589,10 @@ function frameStats(frames: Frame[]) {
 
 async function waitTicks(s: Session, n: number) {
     const target = (s.ticks.at(-1)?.label ?? 0) + n;
-    while ((s.ticks.at(-1)?.label ?? 0) < target) await sleep(20);
+    while ((s.ticks.at(-1)?.label ?? 0) < target) {
+        s.check();
+        await sleep(20);
+    }
 }
 
 interface Trial {
