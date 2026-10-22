@@ -235,6 +235,9 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
     };
 }
 
+/** The bank can't make the next load (bones or extras): in a group the giver leaves rather than retrying. */
+export class BankShortError extends Error {}
+
 const escape = (name: string) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const exact = (name: string) => new RegExp(`^${escape(name)}$`, 'i');
 /** Any of the names, exactly. */
@@ -530,6 +533,8 @@ export class BoneGiver {
     private resumeChecked = false;
     /** restock.labSeed given (once a process). */
     private seeded = false;
+    /** Why the giver went off early (BankShortError in a group). */
+    private offDetail = '';
 
     constructor(private readonly ctx: RoleContext) {
         this.o = boneGiverOptions(ctx.options);
@@ -649,6 +654,12 @@ export class BoneGiver {
                     await this.cycle();
                 } catch (e) {
                     if (ctx.signal.aborted) break;
+                    // In a group the others cover a giver whose bank can't make its load: it leaves, saying why.
+                    if (e instanceof BankShortError && this.o.group.length) {
+                        this.offDetail = e.message;
+                        ctx.log('bank short: leaving the group', { detail: e.message, trades: this.trades });
+                        break;
+                    }
                     this.setPhase('fault', String(e).slice(0, 200));
                     await ctx.sdk.waitForTicks(10).catch(() => {});
                 }
@@ -657,7 +668,7 @@ export class BoneGiver {
             unsubOpen();
             watcher.close();
             clearInterval(heartbeat);
-            this.setPhase('off');
+            this.setPhase('off', this.offDetail);
         }
         ctx.log('bone-giver: finished', { trades: this.trades, bounces: this.bounces });
     }
@@ -924,8 +935,13 @@ export class BoneGiver {
         }
         if (!(await openBank(ctx))) throw new Error('could not open the bank');
         await depositAllExcept(ctx.sdk);
-        const bones = boneWithdrawals(ctx.sdk.getBankItems(), o.items, n);
-        if (bones.short > 0) throw new Error(`the bank is ${bones.short} short of a load of ${n} ${o.items.join(' or ')}`);
+        const bankItems = ctx.sdk.getBankItems();
+        const bones = boneWithdrawals(bankItems, o.items, n);
+        const extrasShort = extraRes.filter(e => bankItems.filter(i => e.re.test(i.name)).reduce((a, i) => a + i.count, 0) < e.count);
+        if (bones.short > 0 || extrasShort.length) {
+            await closeBank(ctx);
+            throw new BankShortError(`the bank is short: ${bones.short > 0 ? `${bones.short} of a load of ${n} ${o.items.join(' or ')}` : ''}${bones.short > 0 && extrasShort.length ? '; ' : ''}${extrasShort.map(e => `${e.count} ${e.item}`).join(', ')}`);
+        }
         const w = await withdrawMany(ctx.sdk, [...bones.specs, ...extraRes.map(e => ({ item: e.re, n: e.count }))]);
         await closeBank(ctx);
         if (!w.ok || this.held() !== n || !extrasHeld()) {
