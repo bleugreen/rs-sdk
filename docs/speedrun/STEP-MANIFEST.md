@@ -721,7 +721,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **The zoo return and the browser client** (RUN-ORDER.md R29): with `returnMonkey: 'walk'`, the default,
   the monkey is walked in from the Ardougne zoo through the Gnome Stronghold south gate (spirit trees and
   teleports destroy it), where Femi's first-visit dialogue fires, and on the browser client `advance()`
-  does not continue a dialogue a loc op opened (rs/147's cairn_jumps), until rs/147's shared-layer fix
+  does not continue a dialogue a loc op opened (rs/147's cairn_jumps), until rs/309's shared-layer fix
   lands. `returnMonkey: 'glider'` (Barnaby to Brimhaven, Gandius's glider; +30 coins in H12) avoids the
   gate; rs/201's execution 2 measures both. The module's acceptance on the browser client is O51.
 - **Fallback:** temple ladder drop fails, then wait for the access tile on the guards' 1-tile
@@ -1051,7 +1051,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   contention, the second cluster north of East Ardougne (2710-2715, 3328-3332), 3.74 by the planner
   and 4.02-4.12 measured at respawn 19 without a starter (`skills/mining.md` §4). **The zoo contested by
   other teams** (RUN-ORDER.md R26; m-demo, rs/259: waves of 7-10 accounts for ~40 of ~70 minutes,
-  ~70-100 ticks an interruption, ~335 that night): **rs/286** builds detection in the module and an
+  ~70-100 ticks an interruption, ~335 that night): **rs/311** (in place of rs/286, whose branch could not be materialized) builds detection in the module and an
   alternate 3.00-an-ore circuit by rule, with the switch lab-measured; the zoo stays the default, and
   the north cluster was held by another group on the demo too.
 - **Acceptance, local:** browser tab, 300 ms, respawn 13 emulated, 200 ores at 99. Pass: at most
