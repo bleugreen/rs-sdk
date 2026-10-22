@@ -62,7 +62,7 @@ the server handles them in order). The booth wait (`openBooth`) is bounded: it g
 40 clicks or 50 ticks with a reason, and an empty bank counts as open once it has stayed open
 into the next tick, so `labStock` can fill it in the lab and elsewhere staging fails with "the
 bank is empty, so short of ..." instead of waiting for items that never come. It reports the
-bank (`ctx.reportBank`) and walks back onto the tile. The standing request is the bone giver's `decideRequest`: a refusal ("is busy at the
+bank (`ctx.reportBank`) and walks back onto the tile. The standing request is the bone giver's `requestUntilOpen`, on `lib/trade.ts`'s one rule for trade clicks (`decideTradeClick`, `bone-giver.md`): a refusal ("is busy at the
 moment") is answered on the frame that carries it.
 
 ## Options (`ROLE_OPTIONS`)
@@ -72,7 +72,7 @@ moment") is answered on the frame that carries it.
 | `restock` | `{ kind: 'bank' }` | `bank`: the Varrock west booth. `cheat`: `~clearinv` and `::give` on the tile (local lab only). `labStock: true` (lab only) tops the bank up with staff-made notes when it runs short |
 | `tile` | 3187,3427 | where to stand |
 | `trades` | no limit | stop after this many (else the plan's or the cue's `stop`) |
-| `noReplyTicks`, `resendTicks` | 3, 100 | the standing request |
+| `noReplyTicks`, `resendTicks` | 2, 100 | the standing request |
 | `cueDir` | `RC_CUE_DIR`, else `run-machine/rc-cue` | |
 
 Launcher entry: `{ account: ..., role: 'anvil' }`. Its bank must hold the bars (SUPPLIES.md

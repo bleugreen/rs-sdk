@@ -292,3 +292,25 @@ axe bid) survive a stop. Cancel one only from a `bidder` run, by setting the lin
   The saved config's `serve` was removed before stopping. The giver is offline;
   future slots require an explicit staging start. Woodcutting's next kit is
   rune axe 1, knife 1, logs 5; its slot and later food counts come from rs/147.
+
+On 2026-10-22 (rs/237), cairn_mule2 at Lumbridge (3222,3222), from the dev copy on bbs:
+
+- 04:03:21Z: cairn_chops' kit, rune axe 1, knife 1, logs 5 (chopped while
+  staging, so the reserve below was untouched), 7 ticks.
+- 04:44:07Z: cairn_rocks' kit, rune, adamant, mithril and steel pickaxe 1 each,
+  knife 1, coins 60, logs 2, 9 giver ticks.
+- 06:10:49Z and 06:10:53Z: cairn_jumps' two kits from one staging. `cairn_jumps`
+  (knife 1, cake 7, shark 2) took 8 giver ticks. Then `cairn_jumps+topup` (cake 18)
+  was offered from the pack, 9 giver ticks. On the receiver's clock that was ticks
+  6-14, with the top-up settled at tick 24. This was the first labelled kit id on
+  the demo, and each kit was recorded once.
+- 06:57:22Z and 06:59:48Z: returns in a returns-only session (`serve: []`, returns
+  cairn_chops and cairn_rocks). The rune axe came back from cairn_chops, and the
+  rune, adamant and mithril pickaxes from cairn_rocks. **The steel pickaxe is
+  lost.** cairn_rocks died walking from Ardougne (2603,3234) to Lumbridge, kept its
+  three most valuable items, and dropped the steel pickaxe, knife, coins and logs
+  where it died.
+- Bank at 07:00:25Z: coins 96,243, sharks 90, cakes 30 (cairn_steals' 30), logs 15
+  (the `keepLogs` reserve: 5 for S09, 10 for S22/H18), rune axe 1, rune, adamant
+  and mithril pickaxe 1 each. There is no steel pickaxe and no knife left, so a kit
+  that needs either is bought first (Sourcing a kit).

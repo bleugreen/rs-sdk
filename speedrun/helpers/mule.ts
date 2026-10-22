@@ -23,10 +23,10 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import { offerSatisfies } from '../../sdk/trade-helpers';
-import type { BankItem, GameMessage, InventoryItem, TradeItem, TradeItemSpec } from '../../sdk/types';
+import type { BankItem, BotWorldState, GameMessage, InventoryItem, TradeItem, TradeItemSpec } from '../../sdk/types';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import { travelTo } from '../lib/toll-gate';
-import { ANY_OFFER, give } from '../lib/trade';
+import { ANY_OFFER, clickBack, decideTradeClick, DROPPED_TICKS, give, newClickCtx, openTrade, sameName, sendTradeClick, type ClickCtx } from '../lib/trade';
 import { tickMs } from '../lib/wait';
 import { runStandalone, type Role, type RoleContext } from './role';
 
@@ -172,6 +172,37 @@ export function firstSlotPerId(items: InventoryItem[]): InventoryItem[] {
 export function parsePackageRequest(text: string, packages: Package[]): Package | null {
     const name = text.trim().replace(/^pkg\s+/i, '').toLowerCase();
     return packages.find(p => p.name.toLowerCase() === name) ?? null;
+}
+
+/**
+ * Is the inventory exactly the staged package, nothing more and nothing less? The giver serves
+ * only then: what the scored account hands back in the same trade (ANY_OFFER, e.g. 20 enchanted
+ * rings at S05's H4 hand-off) has to fit in the slots the package frees. `extra` names what does
+ * not belong, `short` what is missing.
+ */
+export function stagedExactly(inventory: InventoryItem[], held: Map<number, number> | null): { exact: boolean; extra: string[]; short: number[] } {
+    if (!held) return { exact: false, extra: [], short: [] };
+    const inv = countById(inventory);
+    const extra = inventory.filter(i => (inv.get(i.id) ?? 0) > (held.get(i.id) ?? 0)).map(i => `${i.name} x${i.count}`);
+    const short = [...held].filter(([id, n]) => (inv.get(id) ?? 0) < n).map(([id]) => id);
+    return { exact: extra.length === 0 && short.length === 0, extra, short };
+}
+
+/** Within this many tiles the mule pre-requests the scored account. */
+export const PRE_REQUEST_TILES = 12;
+
+/**
+ * The mule's pre-request: while a package is ready (`ready`) and `serve` is within
+ * PRE_REQUEST_TILES, request it by lib/trade.ts's click rule (decideTradeClick: never while a
+ * trade is open or our last click's result is pending; a click with no reply re-sent after
+ * DROPPED_TICKS, a standing request after RESEND_TICKS, in observed ticks). `send` is the player index to click, when a click may go out.
+ */
+export function decidePreRequest(s: BotWorldState, click: ClickCtx, serve: string, ready: boolean): { next: ClickCtx; send?: number } {
+    if (!ready || s.trade?.isOpen) return { next: click };
+    const target = s.nearbyPlayers.find(p => sameName(p.name, serve) && p.distance <= PRE_REQUEST_TILES);
+    if (!target) return { next: click };
+    const d = decideTradeClick(s, click, { noReplyTicks: DROPPED_TICKS });
+    return d.action === 'send' ? { next: d.next, send: target.index } : { next: d.next };
 }
 
 /** Bank items a courier should carry: every item matching a pattern, noted, up to `freeSlots` types. */
@@ -425,9 +456,10 @@ export async function receivePackage(sdk: BotSDK, bot: BotActions, options: Rece
         received: diffItems(invBefore, sdk.getInventory()).gained
     });
 
-    // retryOnBusy: the mule is briefly "busy" while its bank is open (re-arming the next package).
-    const opened = await bot.tradeWith(playerPattern(options.mule), Math.max(1, deadline - Date.now()), { retryOnBusy: true });
-    if (!opened.success) return result(false, opened.message);
+    // lib/trade.ts openTrade re-sends a busy refusal (the mule is briefly "busy" while its bank is
+    // open, re-arming the next package) on the frame that shows it.
+    const opened = await openTrade(sdk, options.mule, { timeoutMs: Math.max(1, deadline - Date.now()) });
+    if (!opened.ok) return result(false, `Trade not opened: ${opened.reason}`);
 
     const complete = (offer: TradeItem[], partnerAccepted: boolean): boolean =>
         offer.length > 0 && (options.want ? offerSatisfies(options.want, offer) : partnerAccepted);
@@ -542,6 +574,8 @@ class Mule {
     private shortSince = 0;
     private needsBank = true;
     private lastPreRequest = 0;
+    /** The pre-request's clicks (lib/trade.ts decideTradeClick). */
+    private click: ClickCtx = newClickCtx();
     private lastGeCollect = 0;
     private readonly geDone = new Set<string>();
     private current = 'start';
@@ -661,15 +695,15 @@ class Mule {
 
     private preRequest(): void {
         const { sdk } = this.ctx;
-        if (!this.o.preRequest || !this.o.serve || !this.packageReady()) return;
-        if (Date.now() - this.lastPreRequest < 15_000) return;
-        const target = sdk.findNearbyPlayer(playerPattern(this.o.serve));
-        if (!target || target.distance > 12) return;
+        const s = sdk.getState();
+        if (!s || !this.o.preRequest || !this.o.serve) return;
+        const d = decidePreRequest(s, this.click, this.o.serve, this.packageReady() && stagedExactly(sdk.getInventory(), this.held).exact);
+        this.click = d.next;
+        if (d.send === undefined) return;
         this.lastPreRequest = Date.now();
-        // Fire and forget: the scored account sees "wishes to trade", and its own
-        // request then opens the trade on the tick it lands.
-        void sdk.sendTradeRequest(target.index);
-        this.ctx.log('pre-requested', { serve: this.o.serve, package: this.pending?.name });
+        // The scored account sees "wishes to trade", and its own click then opens the trade on the tick it lands.
+        sendTradeClick(sdk, d.send, this.click.sentTick, (sent, tick) => (this.click = clickBack(this.click, sent, tick)));
+        this.ctx.log('pre-requested', { serve: this.o.serve, package: this.pending?.name, sends: this.click.sends });
     }
 
     /** Deposit everything that is not the held package, report the bank, and withdraw the pending package. */
@@ -680,10 +714,12 @@ class Mule {
         if (sdk.getTradeState().isOpen) return;
         if (!(await openBank(ctx))) return;
         const keep = this.packageReady() ? this.held! : new Map<number, number>();
-        if (!(await depositAllExcept(sdk, keep))) ctx.log('deposit incomplete', { inventory: sdk.getInventory().map(i => `${i.name} x${i.count}`) });
+        const deposited = await depositAllExcept(sdk, keep);
+        if (!deposited) ctx.log('deposit incomplete', { inventory: sdk.getInventory().map(i => `${i.name} x${i.count}`) });
         if (!this.packageReady()) this.held = null;
 
-        if (this.pending && !this.held) {
+        // A package is staged only into an otherwise empty inventory, so `held` is the package alone.
+        if (this.pending && !this.held && deposited) {
             const plan = planPackage(this.pending, sdk.getBankItems());
             if (plan.missing.length || plan.slots > 28) {
                 if (this.shortSince === 0) ctx.log('package short', { package: this.pending.name, missing: plan.missing, slots: plan.slots });
@@ -718,9 +754,10 @@ class Mule {
         const t = sdk.getTradeState();
         if (t.isOpen && canonName(t.partner ?? '') === canonName(name)) return true;
         await closeBank(this.ctx);
-        const r = await bot.tradeWith(playerPattern(name), 15_000, { retryOnBusy: true });
-        if (!r.success) this.ctx.log('trade open failed', { with: name, result: r.message });
-        return r.success;
+        // About 15 s of ticks at 600 ms; the wall clock only gives up.
+        const r = await openTrade(sdk, name, { maxTicks: 25, timeoutMs: 30_000 });
+        if (!r.ok) this.ctx.log('trade open failed', { with: name, result: r.reason });
+        return r.ok;
     }
 
     private async serveTrade(name: string): Promise<void> {
@@ -730,6 +767,14 @@ class Mule {
         if (!this.packageReady()) {
             // Nothing to give: take what the scored account hands back.
             await this.receiveFrom(name);
+            return;
+        }
+        const staged = stagedExactly(sdk.getInventory(), this.held);
+        if (!staged.exact) {
+            ctx.log('serve refused: the inventory is not exactly the package; re-staging', { package: this.pending?.name, extra: staged.extra, short: staged.short });
+            if (sdk.getTradeState().isOpen) await bot.declineTrade();
+            this.held = null;
+            this.needsBank = true;
             return;
         }
         if (!(await this.openTradeWith(name))) return;

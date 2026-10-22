@@ -28,7 +28,7 @@
 //   gapMs        wait after a frame before sending (default 0)
 //   cueDir       as altar-giver
 import type { BotWorldState, NearbyLoc, NearbyPlayer } from '../../sdk/types';
-import { receiveFrom } from '../lib/trade';
+import { DROPPED_TICKS, receiveFrom } from '../lib/trade';
 import { tickClock, tickMs } from '../lib/wait';
 import {
     canonName,
@@ -333,7 +333,7 @@ class Receiver {
             const turn: Turn = { giver: c.giver, T: this.s!.tick + 3, schedule: 'stock' };
             const written = this.writer.current?.stop ? [] : (this.writer.current?.turns ?? []);
             this.writer.write({ beacons: this.frames.recent(), turns: [...written, turn], schedule: 'robust', open: o.open });
-            const r = await receiveFrom(ctx.sdk, c.giver, { want: [{ item: ESSENCE }], maxTicks: 30, openMaxTicks: 30 });
+            const r = await receiveFrom(ctx.sdk, c.giver, { want: [{ item: ESSENCE }], maxTicks: 30, openMaxTicks: 30, noReplyTicks: DROPPED_TICKS });
             if (r.ok) {
                 const level = rcLevel(this.s);
                 await ctx.sdk.sendInteractLoc(this.altarLoc.x, this.altarLoc.z, this.altarLoc.id, 1);

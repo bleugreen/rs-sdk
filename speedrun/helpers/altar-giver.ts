@@ -23,7 +23,7 @@
 //   gapMs      wait after a frame before sending its packets (default 0: send on arrival)
 //   cueDir     default RC_CUE_DIR, else run-machine/rc-cue in the checkout
 import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
-import { give } from '../lib/trade';
+import { DROPPED_TICKS, give } from '../lib/trade';
 import { tickClock } from '../lib/wait';
 import {
     assertUntracked,
@@ -404,7 +404,8 @@ export class AltarGiver {
             const left = Math.max(1, judge - (this.s?.tick ?? judge));
             // By id: a noted stack shares the essence's name (NOTE_IDS) and must not be the offer.
             const essence = findItem(this.s, ESSENCE)?.id ?? ESSENCE;
-            const r = await give(sdk, receiver.name, [{ item: essence, n: 'all' }], { maxTicks: left, openMaxTicks: left });
+            // Beside the receiver in the altar room: a silent click was dropped (lib/trade.ts DROPPED_TICKS).
+            const r = await give(sdk, receiver.name, [{ item: essence, n: 'all' }], { maxTicks: left, openMaxTicks: left, noReplyTicks: DROPPED_TICKS });
             outcome = r.ok ? 'gave' : 'missed';
             if (r.reason) detail = r.reason;
         }

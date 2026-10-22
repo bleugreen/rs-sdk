@@ -554,9 +554,10 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
             const st = await runProgram(ctx.sdk, 'pickpocket', params, onProgress ? { onProgress } : {});
             runs.push({ runId: st.runId, startedTick: st.startedTick, ...(st.endedTick !== undefined ? { endedTick: st.endedTick } : {}), food: food.bankName });
             if (st.phase === 'stopped' && failTick !== null) {
-                const byTick = failTick + TOPUP_RESTART_BY;
-                const r = byTick > currentTick(ctx.sdk)
-                    ? await receiveFrom(ctx.sdk, topUp!.giver, { byTick, noReplyTicks: TOPUP_NO_REPLY_TICKS })
+                // the open and the trade both end by failTick + TOPUP_RESTART_BY
+                const left = failTick + TOPUP_RESTART_BY - currentTick(ctx.sdk);
+                const r = left > 0
+                    ? await receiveFrom(ctx.sdk, topUp!.giver, { openMaxTicks: left, maxTicks: left, noReplyTicks: TOPUP_NO_REPLY_TICKS })
                     : { ok: false, received: [], reason: 'no ticks left before the attempt' };
                 // a trade still open is closed by the restarted program's first click
                 restarts.push({ failTick, restartTick: currentTick(ctx.sdk), ok: r.ok, received: r.received.reduce((a, i) => a + i.count, 0), ...(r.reason ? { reason: r.reason } : {}) });

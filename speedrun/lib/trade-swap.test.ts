@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
 import { baseState, FakeSdk, flush, type SentAction } from './fake-sdk';
-import { swap, SWAP_AWAIT_PARTNER_TICKS, SWAP_RECLICK_TICKS, tradeClickReply } from './trade';
+import { DROPPED_TICKS, RESEND_TICKS, swap, tradeClickReply } from './trade';
 
 // swap() is a driver around decideGiver / decideReceiver (their rules are tested in
 // trade.test.ts); these tests run it against a scripted server and partner.
@@ -138,7 +138,7 @@ async function drain<T>(p: Promise<T>, step: () => unknown, max = 200): Promise<
 const helperPlayer = { name: 'helper', index: 7 } as unknown as BotWorldState['nearbyPlayers'][number];
 
 describe('swap()', () => {
-    test('re-clicks a dropped click after SWAP_RECLICK_TICKS silent frames, closing an open modal with each click, and returns the bars', async () => {
+    test('opens through openTrade: re-clicks a dropped click after DROPPED_TICKS silent frames, closing an open modal with each click, and returns the bars', async () => {
         const sdk = new SwapFake(baseState({ tick: 10, inventory: [HAMMER, ...plates(5)], nearbyPlayers: [helperPlayer], dialog: { isOpen: true, options: [], isWaiting: false }, modalOpen: true }));
         const step = scriptedPartner(sdk, THEIRS, { busyUntil: 12 }); // our last item's delay: clicks before tick 12 drop
         const r = await drain(swap(sdk, 'helper', [{ item: /platebody/i }], WANT, { closeModals: true }), step);
@@ -147,7 +147,7 @@ describe('swap()', () => {
         expect(r.received).toEqual([expect.objectContaining({ id: BAR, count: 25 })]);
         expect(r.gave).toEqual([expect.objectContaining({ id: PLATE, count: 5 })]);
         const requests = sdk.sent.filter(a => a.method === 'sendTradeRequest');
-        expect(requests.length).toBe(2); // tick 10 dropped, no reply; tick 13 lands
+        expect(requests.length).toBe(2); // tick 10 dropped, no reply; tick 12 lands
         expect(requests.every(a => a.args[0] === 7)).toBe(true);
         expect(sdk.sent.some(a => a.method === 'sendCloseModal')).toBe(true);
         // The giver's burst: one Offer-All for the five unstackable platebodies, then the accept.
@@ -159,7 +159,7 @@ describe('swap()', () => {
 
     test('frames running behind the server: no second click into the trade the first one opened', async () => {
         const sdk = new SwapFake(baseState({ tick: 10, inventory: [HAMMER, ...plates(5)], nearbyPlayers: [helperPlayer] }));
-        const step = scriptedPartner(sdk, THEIRS, { lag: SWAP_RECLICK_TICKS - 1 });
+        const step = scriptedPartner(sdk, THEIRS, { lag: DROPPED_TICKS });
         const r = await drain(swap(sdk, 'helper', [{ item: /platebody/i }], WANT), step);
         expect(r).toMatchObject({ ok: true });
         expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(1);
@@ -178,10 +178,25 @@ describe('swap()', () => {
         const step = scriptedPartner(sdk, THEIRS, { busyUntil: 1_000 }); // nothing opens
         let n = 0;
         const answer = () => { if (sdk.sent.filter(a => a.method === 'sendTradeRequest').length > n) { n++; sdk.tick(cur => ({ gameMessages: [...cur.gameMessages, msg('Sending trade offer...', cur.tick + 1)] })); } else step(); };
-        const r = await drain(swap(sdk, 'helper', [{ item: /platebody/i }], WANT, { openTicks: SWAP_AWAIT_PARTNER_TICKS + 4 }), answer);
+        const r = await drain(swap(sdk, 'helper', [{ item: /platebody/i }], WANT, { openTicks: RESEND_TICKS + 4 }), answer);
         expect(r).toMatchObject({ ok: false, reason: 'no_response' });
         const at = sdk.sent.filter(a => a.method === 'sendTradeRequest').length;
-        expect(at).toBe(2); // the first, and one more after SWAP_AWAIT_PARTNER_TICKS
+        expect(at).toBe(2); // the first, and one more after RESEND_TICKS
+    });
+
+    test('no tick lost between the screens opening and the burst: the offer goes out on the open frame', async () => {
+        const sdk = new SwapFake(baseState({ tick: 10, inventory: [HAMMER, ...plates(5)], nearbyPlayers: [helperPlayer] }));
+        const step = scriptedPartner(sdk, THEIRS);
+        const at: Record<string, number> = {};
+        const inner = sdk.onSend;
+        sdk.onSend = (a, s) => {
+            at[a.method] ??= sdk.state!.tick;
+            inner(a, s);
+        };
+        const r = await drain(swap(sdk, 'helper', [{ item: /platebody/i }], WANT), step);
+        expect(r).toMatchObject({ ok: true, openTicks: 1 });
+        expect(at.sendTradeRequest).toBe(10);
+        expect(at.sendOfferItem).toBe(11); // the screens open on 11
     });
 
     test('tradeClickReply reads only replies after the click', () => {
