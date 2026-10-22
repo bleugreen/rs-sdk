@@ -913,8 +913,8 @@ band's summary row records the resolved `route` and `stand`. Every hitpoint lost
 band is a 0-tick `woodcutting:hit` row (tick, tile, the NPCs within 2 tiles). With `hpStop=N` a hit
 to N or below aborts the walk or the band's program run and fails the step, so the harness logs
 out cleanly. Options from the CLI come as strings (`--skill-opt=route=rimmington`, `hpStop=4`,
-`bury=true`, `boneGiver=`, `plainTicksPerRoll=`, `sites=<json>`, `hold=` for the lab's forced slip,
-`keepProducts=`, `handBack=`, `dropAxe=`).
+`bury=true`, `boneGiver=`, `boneLastLoad=`, `plainTicksPerRoll=`, `sites=<json>`, `hold=` for the
+lab's forced slip, `keepProducts=`, `handBack=`, `dropAxe=`).
 
 Slots (STEP-MANIFEST.md's inventory ledger, rows H4k to T07-08). The normal band passes
 knife-cycle `keepProducts` (default `NORMAL_KEEP`, 1; the program's own is 3), counting the kit's
@@ -925,7 +925,11 @@ free. The oaks then start on the axe, the knife and one log, 25 free for a 23-bo
 chopped log. S07's end has two opt-in steps, off by default since rehearsals keep their axe and
 carry no bones. The scored path: T07-08's runes ride the last bone load (`receiveFrom` takes an
 offer holding more than the bones), and `dropAxe=true` adds `woodcutting:drop-axe`, which drops
-the axe at `to` without waiting. The fallback until a bone giver can add the runes to a load:
+the axe at `to` without waiting. A giver that shrinks the last load for the two rune stacks is
+named by `bones.lastLoad` (`boneLastLoad=21`, unset by default): every receive wants at least that
+many bones, since a full-load want refuses the shrunken offer on both trade screens; the bury
+precondition needs room for the larger load and none once the runes are held; and the last band's
+postcondition asks for the runes. The fallback until a bone giver can add the runes to a load:
 `handBack=true` (the bone giver) or `handBack=<name>` adds `woodcutting:hand-back`, one `swap()`
 at `to` that gives the axe and every bone held and takes `CAMELOT_RUNES` (1 law, 5 air), a trade
 of its own, since the axe chops to the last level. Lab: `lab/handoff-slots.ts` runs both against

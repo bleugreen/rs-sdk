@@ -59,7 +59,12 @@
 // S07's end, two opt-in steps after the last band (rehearsals keep their axe and carry no bones).
 // The scored run's path: T07-08's Camelot runes ride the last bone load (receiveFrom takes an
 // offer holding more than the bones), and `dropAxe` adds `woodcutting:drop-axe`, which drops the
-// axe at `to` without waiting, as nothing after S07 chops. The fallback until a bone giver can
+// axe at `to` without waiting, as nothing after S07 chops. A giver that shrinks that load to make
+// room for the two rune stacks is named by `bones.lastLoad`, its bone count: every receive then
+// wants at least that many (receiveFrom judges the want on both screens, so a full-load want
+// would refuse the shrunken load), the bury precondition needs room for the larger of the two
+// loads and none once the runes are in (that load came, and no other follows), and the last
+// band's postcondition asks for the runes. The fallback until a bone giver can
 // add the runes to a load: `handBack` adds `woodcutting:hand-back`, one `swap()` at `to` that
 // gives the axe and every bone held and takes the runes (1 law, 5 air), a trade of its own,
 // since the axe chops to the last level, after the last load.
@@ -263,6 +268,11 @@ function count(items: readonly InventoryItem[], re: RegExp): number {
     return items.filter(i => re.test(i.name)).reduce((n, i) => n + Math.max(1, i.count), 0);
 }
 
+/** T07-08's Camelot runes, CAMELOT_RUNES, are in the pack. */
+function runesHeld(s: BotWorldState): boolean {
+    return count(s.inventory, LAW) >= 1 && count(s.inventory, AIR) >= 5;
+}
+
 function axeOf(s: BotWorldState): string | null {
     const all = [...s.equipment, ...s.inventory];
     return (all.find(i => RUNE_AXE.test(i.name)) ?? all.find(i => AXE.test(i.name)))?.name ?? null;
@@ -294,6 +304,11 @@ export interface BonesOptions {
     giver: string;
     /** Bones per load (default 23). */
     load?: number;
+    /**
+     * Bones in S07's last load, which also carries CAMELOT_RUNES (default: unset, every load is
+     * `load` and carries nothing else). From 1 to `load`.
+     */
+    lastLoad?: number;
 }
 
 export interface WoodcuttingOptions {
@@ -303,10 +318,11 @@ export interface WoodcuttingOptions {
     technique?: GatedTechnique;
     /** Bury bones inside the knife cycle on oak and willow: true, or a bones regex. */
     bury?: boolean | string;
-    /** The bone giver; `boneGiver` / `boneLoad` are the CLI's flat form (--skill-opt). */
+    /** The bone giver; `boneGiver` / `boneLoad` / `boneLastLoad` are the CLI's flat form (--skill-opt). */
     bones?: BonesOptions;
     boneGiver?: string;
     boneLoad?: number | string;
+    boneLastLoad?: number | string;
     /** The last band's Prayer postcondition with `bury` (default 94; 0 checks nothing). */
     prayerTo?: number | string;
     /** The gate's plain reference in ticks per expected roll (default 4). */
@@ -350,7 +366,7 @@ interface Resolved {
     technique: GatedTechnique;
     bury: string | true | null;
     bonesRe: RegExp;
-    bones: Required<BonesOptions> | null;
+    bones: { giver: string; load: number; lastLoad: number | null } | null;
     prayerTo: number;
     plainTicksPerRoll: number;
     route: RouteName;
@@ -396,6 +412,9 @@ function resolve(opts: WoodcuttingOptions): Resolved {
     const giver = opts.bones?.giver ?? opts.boneGiver;
     const load = numberOpt('bone load', opts.bones?.load ?? opts.boneLoad, n => Number.isInteger(n) && n >= 1 && n <= 27, BONE_LOAD);
     if (giver !== undefined && bury === null) throw new Error('woodcutting: a bone giver without bury');
+    const lastRaw = opts.bones?.lastLoad ?? opts.boneLastLoad;
+    const lastLoad = lastRaw === undefined ? null : numberOpt(`last load (an integer from 1 to the load, ${load})`, lastRaw, n => Number.isInteger(n) && n >= 1 && n <= load, load);
+    if (lastLoad !== null && !giver) throw new Error('woodcutting: a last load without a bone giver');
     const route = opts.route ?? 'taverley';
     if (!Object.hasOwn(ROUTES, route)) throw new Error(`woodcutting: route must be ${Object.keys(ROUTES).join(' or ')}, got ${JSON.stringify(route)}`);
     const sitesIn = typeof opts.sites === 'string' ? (JSON.parse(opts.sites) as Partial<Sites>) : (opts.sites ?? {});
@@ -414,7 +433,7 @@ function resolve(opts: WoodcuttingOptions): Resolved {
         technique,
         bury,
         bonesRe: new RegExp(bury === null || bury === true ? DEFAULT_BONES : bury, 'i'),
-        bones: giver ? { giver: String(giver), load } : null,
+        bones: giver ? { giver: String(giver), load, lastLoad } : null,
         prayerTo: bury === null ? 0 : numberOpt('prayerTo', opts.prayerTo, n => Number.isInteger(n) && n >= 0 && n <= 99, PRAYER_TO),
         plainTicksPerRoll: numberOpt('plainTicksPerRoll', opts.plainTicksPerRoll, n => n > 0, CYCLE.plain),
         route: route as RouteName,
@@ -850,7 +869,11 @@ function bandStep(o: Resolved, b: Band, last: boolean): Step {
         if (burying) {
             const held = bonesHeld(s);
             if (!held && !giver) return 'bury needs bones in the pack or a bone giver';
-            if (giver && free + held < giver.load + 1) return `${free} free slots and ${held} bones: no room for a ${giver.load}-bone load and the log`;
+            if (giver && giver.lastLoad === null && free + held < giver.load + 1) return `${free} free slots and ${held} bones: no room for a ${giver.load}-bone load and the log`;
+            if (giver && giver.lastLoad !== null && !runesHeld(s)) {
+                const room = Math.max(giver.load, giver.lastLoad + CAMELOT_RUNES.length);
+                if (free + held < room + 1) return `${free} free slots and ${held} bones: no room for a ${giver.load}-bone load, or the last load's ${giver.lastLoad} bones and ${CAMELOT_RUNES.length} rune stacks, and the log`;
+            }
         }
         return true;
     };
@@ -885,7 +908,7 @@ function bandStep(o: Resolved, b: Band, last: boolean): Step {
         const topUp = async () => {
             const t0 = sdk.getState()?.tick ?? 0;
             const before = bonesHeld(sdk.getState()!);
-            const r = await o.receive(sdk, giver!.giver, { want: [{ item: o.bonesRe, amount: giver!.load }], maxTicks: 60, openTimeoutMs: 20_000 });
+            const r = await o.receive(sdk, giver!.giver, { want: [{ item: o.bonesRe, amount: giver!.lastLoad ?? giver!.load }], maxTicks: 60, openTimeoutMs: 20_000 });
             const t1 = sdk.getState()?.tick ?? t0;
             const got = bonesHeld(sdk.getState()!) - before;
             loads++;
@@ -969,6 +992,7 @@ function bandStep(o: Resolved, b: Band, last: boolean): Step {
             if (!axeOf(s)) return 'the axe is gone';
             if (knifeCapable && (!count(s.inventory, KNIFE) || !count(s.inventory, LOGS))) return 'the knife or the last normal log is gone';
             if (last && burying && o.prayerTo && levelOf(s, 'prayer') < o.prayerTo) return `Prayer ${levelOf(s, 'prayer')}, below ${o.prayerTo}`;
+            if (last && giver?.lastLoad != null && !runesHeld(s)) return `law ${count(s.inventory, LAW)} and air ${count(s.inventory, AIR)}: the last load's Camelot runes (1 and 5) are not held`;
             return true;
         },
         logoutSafe: true,
@@ -984,7 +1008,7 @@ export function handBackSpecs(s: BotWorldState, bonesRe: RegExp): GiveSpec[] {
 
 function handBackStep(o: Resolved, partner: string): Step {
     const out = (s: BotWorldState) => s.inventory.filter(i => AXE.test(i.name) || o.bonesRe.test(i.name));
-    const handedBack = (s: BotWorldState) => out(s).length === 0 && count(s.inventory, LAW) >= 1 && count(s.inventory, AIR) >= 5;
+    const handedBack = (s: BotWorldState) => out(s).length === 0 && runesHeld(s);
     return {
         name: 'woodcutting:hand-back',
         preconditions: s => {

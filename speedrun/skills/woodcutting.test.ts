@@ -1108,5 +1108,6 @@ describe("woodcutting: S07's last bone load carries T07-08's runes, (load - 2) b
         expect(() => steps({ bury: true, bones: { giver: 'g', load: 20, lastLoad: 21 } })).toThrow(/last load/);
         expect(() => steps({ bury: true, bones: { giver: 'g', lastLoad: 0 } })).toThrow(/last load/);
         expect(() => steps({ bury: true, boneGiver: 'g', boneLastLoad: '21.5' })).toThrow(/last load/);
+        expect(() => steps({ bury: true, boneLastLoad: '21' })).toThrow(/last load without a bone giver/);
     });
 });
