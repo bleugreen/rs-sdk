@@ -156,9 +156,9 @@ of Goblin Diplomacy's standalone travel that the legs already carried off its ro
 cannon session, Prayer, Crafting and Cooking pass it. Fold-in 13 adds S15's measured H to M (+352),
 so Monkey Madness (4,429) passes Agility (4,327) for rank 1.
 
-The expected column sums to **31,236** (the steps) plus the legs' **2,198.5**; RUN-ORDER.md section 6
+The expected column sums to **31,236** (the steps) plus the legs' **2,215.7**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **34,719.5** knife-on expected (31,870.5 best), against the record of 35,916.
+retries, restarts) for its **34,736.7** knife-on expected (31,868.7 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -172,7 +172,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 2 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,228 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; rs/155); S17 4,114 on the engine's fall roll, 66 the clean-lap floor (rs/270); run mode 0 on both courses (m, rs/270) |
 | 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,116 | 3,116 | 3,775 | ~659 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | **on main, 4235a9e7 (#220; rs/260's snapshot of rs/230's lab-accepted module, rs/147's branch at 59ec3933)**, with `selfStarter` (plain 3.62) and `beforeRestart`; `stay2` bury (#159, rs/182) and restart fix (e5d8a058, #170; rs/207) on main; gate `measureDrops` 120 explicit (rs/259, 314989e9, reaching main with rs/147's Mining findings snapshot) |
 | 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,053 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; on rs/147's branch, changing with rs/236; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165); gate `measureDrops` 120 explicit (rs/261, building); run mode 0 (m, rs/261); **the knife demo-measured** (rs/261's cairn_chops, hiscore 3,329; S07 at its luck-free 3,053) |
-| 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,198.5 | 2,198.5 | ~2,340 i | ~140 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | lab-measured (PR #198, open; rs/198 for rs/186); its walker, `lib/travel.ts`, on main, 0658e896 (#200) |
+| 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,215.7 | 2,196.7 | ~2,340 i | ~143 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | **on main, PR #238** (rs/291's snapshot of rs/198's module for rs/186, merge 5a70e4e6): `legs.ts` and its test, `tools/demo-legs.ts`, `measure-legs.ts`, `measure-ardougne-handoff.ts`, `ticks.ts`'s `travel` rows, run-transitions.md section 10; lab-measured and demo-checked (h55); its walker, `lib/travel.ts`, on main, 0658e896 (#200); rs/294's forcemove fix pending |
 | 6 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~120 elsewhere | ~190 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` | building (rs/154, parked under the 2-4 child limit); stun pack: lab-accepted (bury, charge, arrows; rs/132); top-ups ~0 with the courier on a side tile (rs/279, lab); rs/290's opt-in idle re-send building |
 | 7 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | on main, 22552bf4 (#197; rs/231); lab-accepted (1,998 on 78-99; rs/152); gate `measureDrops` 120 explicit (#221) |
 | 8 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,972 | 1,946 | 1,997 (the bow from 70); 2,023-2,211 without the kit | ~265 | overlay | `cannon-kit.ts` (rs/59, on main) | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible); run mode ~0, at most ~9 on S27's melee phase (m/i, rs/196) |
@@ -397,9 +397,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     **rs/243** (the second Thieving part: pickpocket's `stopWhenFoodBelow` and `retargetTicks`,
     entry 6); **rs/147's Agility snapshot**, to be filed (agility's `untilLevel`, closing
     RUN-ORDER.md O40, the program's `eatAt` opt-in, f95f9558, rs/241's work, and the module default
-    `eatAt: 'land'`, a9298868, rs/270; entry 1); and **rs/291** (rs/198's `runner/legs.ts` and
-    run-transitions.md section 10, 8 files from 2dc2dbe8 on rs/186's branch, PR not open yet; entry
-    11). Gate tooling on main, not floor
+    `eatAt: 'land'`, a9298868, rs/270; entry 1); and **rs/294** (`travel.ts`'s forcemove fix; entries 8 and
+    11). rs/291's legs module is on main as PR #238 (merge 5a70e4e6, which descends from 31bdff73),
+    so it is off this list; main names the next floor commit. Gate tooling on main, not floor
     items: 5d22252d (#208, `lib/display.ts`) and c4b79f17 (#213, `lib/tab.ts` window helpers);
   - **the login cap**: our simultaneous demo logins, summed across every host, at most 100 with a
     working cap of 80, counted before SCORED logs in (main, 15:35 PDT; `RUN-HOST.md` step 7;
@@ -1416,10 +1416,20 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   (`travel.ts:693, 721, 763`), which the measured ~2 tiles a tick confirm, so the leg rows stand, and
   rs/280 turns the toggle on after every login (O45).
 - **Postconditions:** within the tolerance of the destination tile.
-- **Ticks:** **2,198.5** for the order, the twelve way-in legs at their whole ticks (1,382 until
+- **The demo check** (rs/198 via rs/186; cairn_h55, the loopback gateway on bbs, 05:26-05:29Z;
+  run-transitions.md section 10, on main): within the bar, m-demo, T01-02 51 (lab 50), T23-24 94
+  (91.5), L24a 68 (67.5) and T06-07 76 (79). **Priced as ranges** (rs/186's proposal): the door-bound
+  legs, L24b and T22-23, at the closed-door figure for the expected (the demo's state, and safe
+  because other players toggle doors) and the open-door figure for the best: L24b 60 / 54 (the door at
+  (2958,3506) and the large doors at (2958,3509), ~3 ticks each), T22-23 21 / 15; the teleport legs,
+  L24c and T21-22, at the mean over the landing square (a random walkable tile within Chebyshev 2,
+  `teleport.rs2`) for the expected, the demo reading until rs/198's per-landing-tile table (~40 casts
+  over the 5x5 square, after rs/294's `travel.ts` forcemove fix) gives the true mean, and the lab for
+  the best: L24c 8 / 4.5, T21-22 36 / 32.5. Net +17.2 expected and -1.8 best.
+- **Ticks:** **2,215.7** expected and **2,196.7** best for the order, the twelve way-in legs at their whole ticks (1,382 until
   fold-in 11 netted them against the arrival rows the quests counted; the 840.5 moved here, O6).
   Every leg is measured end to end: `research/run-transitions.md` §2, §4, §6, and rs/198's lab
-  legs through this module (m (lab), PR #198 at 3c6cd2ae, open; RUN-ORDER.md LG), which RUN-ORDER.md
+  legs through this module (m (lab), on main with rs/291's snapshot, PR #238, and run-transitions.md section 10 on main; RUN-ORDER.md LG), which RUN-ORDER.md
   takes where RT had none (T02-03 4, T07a 58, T14-15 174), where the quest documents' read figures
   stood (T12-13 101.5, T15-16 143.5, T19-20 39.5) and where it differs from RT by 2 or more (T06-07
   79, T20-21 158, T25-26 41.5); RUN-ORDER.md section 2 has every leg. The body plan in force (S21)
@@ -1429,7 +1439,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   plus the twelve arrival rows at their quest documents' stock figures, 846.5, most of them timed
   with `bot.walkTo` already).
 - **Primitives:** `speedrun/lib/travel.ts` (rs/198; **on main, 0658e896, #200**, byte-identical from
-  f0e76192; `legs.ts` itself is still PR #198): `teleport(spell)` (4 ticks,
+  f0e76192; `legs.ts` is on main too, PR #238, rs/291): `teleport(spell)` (4 ticks,
   measured), `runTo(tile)` with chained clicks re-sent 3 tiles before each leg ends, doors opened on the
   way and a knife on webs (the walker of `run-transitions-lib.ts`), spirit tree, the Ardougne lever,
   Captain Barnaby's ship (13 ticks for the dialogue and ride, gangplank 3, measured). **Stall rule:**
@@ -1446,7 +1456,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   Kolodion's cellar (2543,4713); T18-19 at Caroline (2716,3302); T19-20 at (2820,3486), tolerance 1, beside the Fishing
   Contest tunnel stairs (the stairs loc, (2820,3484), cannot be reached); T22-23 at the Lumbridge cook (3209,3215); T23-24 at the Rusty Anchor
   (3045,3257); T25-26 at the Champions' Guild door (3191,3364). rs/198's lab pass
-  measured every leg (m, lab, PR #198; RUN-ORDER.md "Changes since 71baa3a9"), all inside 10% of
+  measured every leg (m, lab, now on main with PR #238; RUN-ORDER.md "Changes since 71baa3a9"), all inside 10% of
   run-transitions.md except T12-13, T07a and T22-23 (door state: 21 with Lumbridge Castle's three
   doors closed, 15 open).
 - **Acceptance, demo (throwaway):** a throwaway with runes runs the level-free legs (T01-02, T06-07 from
