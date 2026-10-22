@@ -36,7 +36,8 @@
 //   grandtree  a leg to the Grand Tree door (the village spirit tree), then The Grand Tree
 //   mm         out of the roots, then Monkey Madness A to --mm-until (the module is not on main: pass
 //              the file pinned to the commit rs/185 names); the journal is read at the end
-//   mm-return  Lumdo back to Crash Island and Waydar's "I need to return to your kingdom."
+//   mm-return  on the atoll first the landing -> M -> P walk, timed (H12o's two trade tiles), then
+//              Lumdo back to Crash Island and Waydar's "I need to return to your kingdom."
 //              (mm_waydar.rs2 @waydar_return: the glider drops the player by the Gnomeball pitch),
 //              then up to Daero in the Grand Tree, where the helper parks logged out for run day
 //
@@ -544,6 +545,29 @@ async function outOfRoots(ctx: StepContext<any>): Promise<void> {
     await locOp(ctx, 'roots ladder up', GT.rootsLadder, /^climb-up$/i, s => pos(s).z < 6400, 20);
 }
 
+/**
+ * H12o's two trade tiles on the atoll (rs/41, from main): SCORED's segment M starts at (2763,2704) and
+ * P's trade is at (2802,2724). Whether one helper serves both depends on the walk between them.
+ */
+export const ATOLL_TRADES = { landing: { x: 2802, z: 2707 }, M: { x: 2763, z: 2704 }, P: { x: 2802, z: 2724 } } as const;
+/** Lumdo's landing and the south of the atoll around it, where G ends. */
+const ATOLL_SOUTH = { x: 2785, z: 2712, tol: 30 } as const;
+
+/** Time landing -> M -> P as a human, each leg's ticks and tiles stepped, as `note` rows. */
+async function measureAtollWalk(ctx: StepContext<any>): Promise<void> {
+    const sdk = sdkOf(ctx);
+    const legs: Array<{ leg: string; ok: boolean; ticks: number; tiles: number; at: unknown; reason?: string }> = [];
+    for (const [leg, to] of [['landing->M', ATOLL_TRADES.M], ['M->P', ATOLL_TRADES.P]] as const) {
+        const r = await runTo(sdk, { ...to, tol: 1 }, { bot: ctx.bot, eat: EAT });
+        legs.push({ leg, ok: r.ok, ticks: r.ticks, tiles: r.tiles, at: r.at, ...(r.reason ? { reason: r.reason } : {}) });
+        if (!r.ok) break;
+    }
+    logNote(ctx.log, ctx.session, 'leg:mm-return:atoll-walk', { legs });
+    console.log(`quest-helper: atoll walk ${JSON.stringify(legs)}`);
+    // Back to Lumdo for the boat; a failed leg is reported, not thrown: the return still has to happen.
+    await go(ctx, { ...ATOLL_TRADES.landing, tol: 2 }, "back to Lumdo's landing");
+}
+
 /** Gnomeball pitch, where Waydar's return flight drops the player (mm_waydar.rs2: 0_37_54_25_10). */
 export const GNOMEBALL_DROP = { x: 2393, z: 3466 } as const;
 
@@ -561,6 +585,7 @@ async function returnToKingdom(ctx: StepContext<any>): Promise<void> {
     if (nearDaero(st(ctx))) return;
     const dropped = (s: BotWorldState) => (chebyshev(pos(s), GNOMEBALL_DROP) <= 6 && pos(s).level === 0) || inGnomeStronghold(s);
     if (!dropped(st(ctx))) {
+        if (inArea(sdk, ATOLL_SOUTH)) await measureAtollWalk(ctx);
         const crash = { x: 2894, z: 2726, tol: 12 };
         if (!inArea(sdk, crash)) {
             const r = await travel(sdk, [{ kind: 'lumdo', to: 'crash_island' }], { bot: ctx.bot });
