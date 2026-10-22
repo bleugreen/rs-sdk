@@ -726,6 +726,29 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   second, labelled column. It needs `RUN_COMMIT` (and a lab or rehearsal checkout) at or after
   6c58db8e; on an older commit knife-cycle reports no per-roll figure on oak and willow, and they are
   weighted by `tickmanip-demo-report.ts` instead (the same 1/p per log).
+- **Corroborating chains (rs/261's analysis of rs/236's lab chains; a corroborating note, not the
+  shape of S07, and no re-price: no bury and other trees).** Lab, bgsrv-mac, 300 ms, one player
+  online so D = 29, rune axe carried, bury off.
+  - **Rimmington oaks and Draynor-west willows, chains c2-c6:** willow 73-99 **2,391-2,583** ticks,
+    3.05-3.22 per expected roll, or 2.96-3.11 without the respawn waits (60-86 ticks of waits a band);
+    oak 15-73 **612-653**. **The fitted success is 1.3-3.6% under the formula in all five chains**,
+    systematic; rs/261 reads it (i) as a felled tree costing the knife a cycle while it moves to the
+    next tree.
+  - **Taverley, S07's own stands** (03:31-03:50Z; code 010e477b with the Taverley default,
+    `measureDrops` 120, `waitRespawn` and the probe's `dirs`; default stats, rune axe in the pack):
+    willow 73-99 **2,394** (knife 3.053 per expected roll; 2.954 without 77 ticks of respawn waits);
+    oak 15-73 **658** (3.437 per roll; 3.124 without 58 ticks of waits at the lab's D = 29). No gate
+    switch-off in either band at 120 drops, 0 slips, 0 resyncs (RUN-ORDER.md R21). From Lumbridge
+    3,416 in all (walks 277 + 61, normal trees 1-15 22), the rehearsal's shape, not S07's.
+  - **Against S07:** its willow is priced at 3.06 per expected roll (2,386) and its oak at 627, so
+    the willow corroborates; the oak's 612-658 sits around 627, and the row already carries the lab's
+    slower oak respawn (~12 of the 627).
+  - **The felled-tree term (i, a model term, not carried separately):** about 0.84 extra cycles
+    (~2.5 ticks) per expected fell, from the capped-success oak 60-73 band across six chains (19, 8,
+    1, 6, 14 and 18 extra cycles over 105 logs, against ~13 expected fells): roughly 25-35 ticks over
+    oak and 60-80 over willow, already absorbed by S07's lite ratio. It cannot yet be told apart
+    from respawn waits ending on the lattice; a `fells` counter in knife-cycle would separate them
+    (not requested).
 - **Reference (rs/175, lab):** willow, rune axe, from WC 40, 60 logs in each of two runs: **2.84 and
   2.94 ticks per expected roll, 0 false lock-losses in 120 logs** (m, lab; rs/175, #151; its note on
   cairn://p/rs/158, 14:21 PDT, and rs/158's relay of main's summary, 14:48 PDT).
@@ -1210,7 +1233,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   boundary; Wilderness level at most 20 for spells (`quests/primitives.md` §4); food on T13-14,
   T14-15 and the Wilderness legs (aggressive NPCs took up to 31 of 42 HP, run-transitions.md §2);
   30 coins for the Brimhaven ship on the nature plan; on the body plan in force T20-21 is a Falador
-  teleport (1 water, 3 air, 1 law) and no coins (H16).
+  teleport (1 water, 3 air, 1 law) and no coins (H16). **No run energy to manage:** the engine
+  defaults `NODE_INFINITE_RUN` to true (`server/engine/src/util/Environment.ts:47`) and
+  `Player.ts`'s `updateEnergy()` (line 755) then pins run energy at 10,000 (r). The demo's
+  `fly.toml` does not set it (read), so it is on there by inference, which matches rs/163's "run
+  energy did not drain" on the demo (SUPPLIES.md H4.1-H4.n). The legs and the bone givers' trips are
+  bound by their paths, not by energy, and an energy potion is worth 0.
 - **Postconditions:** within the tolerance of the destination tile.
 - **Ticks:** **2,198.5** for the order, the twelve way-in legs at their whole ticks (1,382 until
   fold-in 11 netted them against the arrival rows the quests counted; the 840.5 moved here, O6).
