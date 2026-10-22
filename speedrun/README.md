@@ -345,8 +345,10 @@ research-script boundary and retained quest-specific code.
   the lab hit this once in 7 re-logins. So a client that exits before its
   first in-world tick is relaunched with backoff. On a browser tab,
   `login(session, { inPage: true })` logs the page back in where it stands
-  instead of navigating it (see "Relogging the browser tab in place"); it is
-  opt-in, and the watchdog keeps navigating. Each game session sets
+  instead of navigating it (see "Relogging the browser tab in place"). `login`
+  takes it only when asked and the watchdog keeps navigating, but `relog`
+  (logout, `offlineMs`, login) uses it by default, with `inPage: false` to
+  navigate; its result carries `tickBase` and `via`. Each game session sets
   `session.tickBase`, so `state.tick - session.tickBase` is the session's own
   tick on either path (1 on its first in-world tick).
 - `launchClient` sets `LITE_LOGIN_JITTER_MS=0` for the lite runner (its 0-5 s
