@@ -31,6 +31,7 @@ import { pageText, type OptionPattern } from '../lib/dialogue';
 import { INVENTORY_SIZE, type ItemPattern } from '../lib/items';
 import { questStage, questStatus, journalProbeName, type QuestView } from '../lib/quests';
 import { logNote } from '../lib/ticks';
+import { runTo, spiritTree, teleport } from '../lib/travel';
 import { receiveFrom, type WantSpec } from '../lib/trade';
 import { currentTick, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, configId, findLoc, findNpc, invCount, invItem, messagesSince, opIndex, pos, skillLevel, worn, type LocQuery, type Tile } from '../lib/world';
@@ -278,52 +279,11 @@ export function exitCheck(s: BotWorldState): true | string {
 // ------------------------------------------------------------------ stand-ins
 // Shared code not yet on this branch, each behind one function with the signature its owner
 // settled. Swapping one for the real import is a one-line change per function.
-//   runTo, teleport, spiritTree -> rs/198 speedrun/lib/travel.ts (API at 03071b40)
-//   useOn                       -> rs/200 act.ts useOn (no re-send by default)
-//   setPrayer                   -> rs/200 combat.ts setPrayer
+//   useOn     -> rs/200 act.ts useOn (no re-send by default)
+//   setPrayer -> rs/200 combat.ts setPrayer
 
 type Ctx = StepContext<unknown>;
 type Sdk = Ctx['sdk'];
-
-interface Area { x: number; z: number; level?: number; tol?: number }
-interface TravelResult { ok: boolean; ticks: number; at: Tile; reason?: string }
-interface TravelOptions { bot?: Ctx['bot'] }
-
-const inArea = (s: BotWorldState, a: Area) => pos(s).level === (a.level ?? 0) && chebyshev(pos(s), a) <= (a.tol ?? 0);
-const travelResult = (sdk: Sdk, t0: number, ok: boolean, reason?: string): TravelResult => ({ ok, ticks: currentTick(sdk) - t0, at: pos(sdk), ...(reason ? { reason } : {}) });
-
-async function runTo(sdk: Sdk, to: Area, opts: TravelOptions = {}): Promise<TravelResult> {
-    const t0 = currentTick(sdk);
-    if (inArea(sdk.getState()!, to)) return travelResult(sdk, t0, true);
-    const r = await walkTo(opts.bot!, sdk, to.x, to.z, to.tol ?? 0);
-    return travelResult(sdk, t0, r.ok && inArea(sdk.getState()!, to), r.ok ? undefined : r.message);
-}
-
-const LANDINGS = { ardougne: { x: 2661, z: 3301, tol: 2 }, varrock: { x: 3213, z: 3424, tol: 2 } } as const;
-
-export async function teleport(sdk: Sdk, spell: 'ardougne' | 'varrock', _opts: TravelOptions = {}): Promise<TravelResult> {
-    const t0 = currentTick(sdk);
-    const refusal = (s: BotWorldState) => messagesSince(s, t0 + 1, TELEPORT_REFUSED)[0];
-    await act(sdk, () => sdk.sendClickComponent(TELEPORTS[spell]), s => inArea(s, LANDINGS[spell]) || refusal(s) !== undefined, { resendEvery: 10, maxResends: 1, maxTicks: 25 });
-    const s = sdk.getState()!;
-    if (inArea(s, LANDINGS[spell])) return travelResult(sdk, t0, true);
-    const why = refusal(s);
-    return travelResult(sdk, t0, false, why ? `${spell} teleport: refused: ${why}` : `${spell} teleport: no arrival`);
-}
-
-const TREE_LOCS: Readonly<Record<number, 'stronghold' | 'village' | 'young'>> = { 1293: 'stronghold', 1294: 'village', 1317: 'young' };
-const TREE_LANDINGS = { village: { x: 2542, z: 3169, tol: 1 }, stronghold: { x: 2461, z: 3444, tol: 1 } } as const;
-
-async function spiritTree(sdk: Sdk, to: 'village' | 'stronghold', _opts: TravelOptions = {}): Promise<TravelResult> {
-    const t0 = currentTick(sdk);
-    const ids = Object.keys(TREE_LOCS).map(Number);
-    const pick = (ls: readonly { id: number; distance: number }[]) => ls.filter(l => ids.includes(l.id)).sort((a, b) => a.distance - b.distance)[0];
-    const l = (pick(sdk.getState()?.nearbyLocs ?? []) ?? pick(await sdk.scanNearbyLocs(25))) as Awaited<ReturnType<typeof findLoc>>;
-    if (!l) return travelResult(sdk, t0, false, 'no spirit tree in sight');
-    const answers = TREE_LOCS[l.id] === 'young' ? [/^yes please/i] : [/^where can i go/i, /^gnome stronghold/i];
-    const r = await actConverse(sdk, () => sdk.sendInteractLoc(l.x, l.z, l.id, l.optionsWithIndex[0]?.opIndex ?? 1), answers, { done: s => inArea(s, TREE_LANDINGS[to]), idle: 0, maxTicks: 60 });
-    return travelResult(sdk, t0, r.ok, r.ok ? undefined : r.reason);
-}
 
 async function useOn(sdk: Sdk, item: ItemPattern, target: { loc: LocQuery }, done: Pred, opts: ActOptions = {}): Promise<ActResult> {
     const loc = await findLoc(sdk, target.loc);
