@@ -35,7 +35,7 @@ import type { BotWorldState } from '../../sdk/types';
 import { give, receiveFrom, tradeOf } from '../lib/trade';
 import { canonName, CueWriter, cueDir, FrameLog, scopeOption, writeTopUpAsk } from './altar-cue';
 import { altarData, altarRoomOf, cheat, count, exactItem, isLocalServer, labTele, leaveRoom, pos, standOn, until, type Tile } from './altar-room';
-import { awaitBoneServer, DEFAULT_BONE_BANK, S07_SITES } from './bone-giver';
+import { awaitBoneServer, DEFAULT_BONE_BANK, readBoneStatuses, S07_SITES } from './bone-giver';
 import { FORBIDDEN_ACCOUNTS } from './fleet-config';
 import { closeBank, depositAllExcept, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
