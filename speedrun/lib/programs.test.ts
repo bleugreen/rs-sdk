@@ -103,6 +103,18 @@ describe('speedrun programs', () => {
         await expect(awaitProgram(sdk, 1, { staleMs: 20 })).rejects.toThrow(/wedged/);
     });
 
+    test('maxTicks gives up on a run still going after that many ticks, but not on one that ends on the last', async () => {
+        const sdk = new PageSdk(baseState());
+        sdk.runId = 1;
+        const p = awaitProgram(sdk, 1, { maxTicks: 3 });
+        for (let i = 0; i < 4; i++) sdk.publish({});
+        await expect(p).rejects.toThrow(/still running after 3 ticks/);
+        const q = awaitProgram(sdk, 1, { maxTicks: 3 });
+        for (let i = 0; i < 3; i++) sdk.publish({});
+        sdk.publish({ phase: 'done' });
+        expect((await q).phase).toBe('done');
+    });
+
     test('probeInPage summarizes the page trials like the relay probe', async () => {
         const sdk = new PageSdk(baseState());
         const p = probeInPage(sdk, { trials: 4 });
