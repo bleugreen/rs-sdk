@@ -1064,6 +1064,12 @@ stands at the Lumbridge spawn, so its tab's login is also the run profile's warm
      its current address** (rotated 17:39Z 2026-10-22; main, 11:5x PDT, via rs/158). Otherwise a
      marginal twin means **re-measure**, not the run host: no `handoff`; gate both again. The tool
      doesn't count pairs, so, like 5a.1's address rule, this is the operator's check.
+   - **Open, for main's ruling: only the run host passes** (rs/447). The eligibility line above
+     covers a tiebreak move only. When the twin fails and the run host passes, `gate` chooses the
+     run host (`chosen: run (only the run host passes; ...)`, `choose` in run-gate.ts), as "one
+     passes" above says, whatever its count of clean pairs on its current address. Whether the 4+
+     pairs condition also applies in this case is not ruled, and this page writes no rule for it:
+     the case goes to main before `handoff`.
    - **Neither passes:** no start; `gate` exits 1 (3 when a machine read re-measure and none stopped
      on a precondition). RUN-ORDER.md section 1's rule applies to both: the knife stays off on a
      failed gate, and the start waits for a passing read (re-measure both; the gate history on both
