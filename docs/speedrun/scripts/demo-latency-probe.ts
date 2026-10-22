@@ -267,29 +267,36 @@ async function phaseHttp() {
     const targets = [`http://${HOST}/cairn-latency-probe-404`, `https://${HOST}/cairn-latency-probe-404`, `https://${HOST}:7443/cairn-latency-probe-404`];
     const kind = (url: string) => (url.startsWith('http:') ? 'edge' : url.includes(':7443') ? 'gateway' : 'engine');
     const samples: CurlSample[] = [];
-    for (let i = 0; i < HTTP_N; i++) {
+    const snapshot = (): string[] => {
+        report.http = { samples };
+        const lines: string[] = [];
+        const fields = new Set<string>();
+        for (const s of samples) if (s.fly) fields.add(`nr=${s.fly.nr} sr=${s.fly.sr} sdc=${s.fly.sdc} mhn=${s.fly.mhn}`);
+        lines.push(`http fly routes: ${[...fields].join(' | ') || 'none'}`);
         for (const url of targets) {
-            const s = curlOnce(url);
-            if (s) samples.push(s);
-            await sleep(jitter(HTTP_GAP / 2));
+            const ss = samples.filter(s => s.url === url);
+            const mrtt = ss.map(s => s.fly?.mrtt).filter((v): v is number => typeof v === 'number');
+            const st = { url, codes: hist(ss.map(s => s.code)), connect: quantiles(ss.map(s => s.connectMs)), tls: quantiles(ss.map(s => s.tlsMs)), ttfb: quantiles(ss.map(s => s.ttfbMs)), mrtt: quantiles(mrtt), app: quantiles(ss.map(s => s.appMs).filter((v): v is number => v !== null)) };
+            report.http[kind(url)] = st;
+            lines.push(`http ${kind(url).padEnd(7)} ${url} codes ${JSON.stringify(st.codes)}`);
+            lines.push(`  connect ${fmtQ(st.connect)}`);
+            lines.push(`  tls     ${fmtQ(st.tls)}`);
+            lines.push(`  ttfb    ${fmtQ(st.ttfb)}`);
+            lines.push(`  mrtt    ${fmtQ(st.mrtt)}`);
+            lines.push(`  app = ttfb - tls - mrtt: ${fmtQ(st.app)}`);
         }
-    }
-    report.http = { samples };
-    const fields = new Set<string>();
-    for (const s of samples) if (s.fly) fields.add(`nr=${s.fly.nr} sr=${s.fly.sr} sdc=${s.fly.sdc} mhn=${s.fly.mhn}`);
-    summary.push(`http fly routes: ${[...fields].join(' | ') || 'none'}`);
-    for (const url of targets) {
-        const ss = samples.filter(s => s.url === url);
-        const mrtt = ss.map(s => s.fly?.mrtt).filter((v): v is number => typeof v === 'number');
-        const st = { url, codes: hist(ss.map(s => s.code)), connect: quantiles(ss.map(s => s.connectMs)), tls: quantiles(ss.map(s => s.tlsMs)), ttfb: quantiles(ss.map(s => s.ttfbMs)), mrtt: quantiles(mrtt), app: quantiles(ss.map(s => s.appMs).filter((v): v is number => v !== null)) };
-        report.http[kind(url)] = st;
-        summary.push(`http ${kind(url).padEnd(7)} ${url} codes ${JSON.stringify(st.codes)}`);
-        summary.push(`  connect ${fmtQ(st.connect)}`);
-        summary.push(`  tls     ${fmtQ(st.tls)}`);
-        summary.push(`  ttfb    ${fmtQ(st.ttfb)}`);
-        summary.push(`  mrtt    ${fmtQ(st.mrtt)}`);
-        summary.push(`  app = ttfb - tls - mrtt: ${fmtQ(st.app)}`);
-    }
+        return lines;
+    };
+    await inPhase('http', snapshot, async () => {
+        for (let i = 0; i < HTTP_N; i++) {
+            for (const url of targets) {
+                const s = curlOnce(url);
+                if (s) samples.push(s);
+                await sleep(jitter(HTTP_GAP / 2));
+            }
+            checkpoint();
+        }
+    });
 }
 
 // ------------------------------------------------------------------ ws
@@ -320,15 +327,20 @@ async function phaseWs() {
         ['gateway', `wss://${HOST}:7443`]
     ];
     const res: Record<string, number[]> = { game: [], relay: [], gateway: [] };
-    for (let i = 0; i < WS_N; i++) {
-        for (const [name, url, proto] of targets) {
-            const v = await wsHandshake(url, proto);
-            if (v !== null) res[name]!.push(v);
-            await sleep(jitter(1000));
+    const snapshot = (): string[] => {
+        report.ws = Object.fromEntries(Object.entries(res).map(([k, v]) => [k, { samples: v, q: quantiles(v) }]));
+        return Object.entries(res).map(([k, v]) => `ws handshake ${k.padEnd(7)} (fresh TCP+TLS+upgrade) ${fmtQ(quantiles(v))}`);
+    };
+    await inPhase('ws', snapshot, async () => {
+        for (let i = 0; i < WS_N; i++) {
+            for (const [name, url, proto] of targets) {
+                const v = await wsHandshake(url, proto);
+                if (v !== null) res[name]!.push(v);
+                await sleep(jitter(1000));
+            }
+            checkpoint();
         }
-    }
-    report.ws = Object.fromEntries(Object.entries(res).map(([k, v]) => [k, { samples: v, q: quantiles(v) }]));
-    for (const [k, v] of Object.entries(res)) summary.push(`ws handshake ${k.padEnd(7)} (fresh TCP+TLS+upgrade) ${fmtQ(quantiles(v))}`);
+    });
 }
 
 // ------------------------------------------------------------------ session
