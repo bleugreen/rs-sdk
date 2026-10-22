@@ -226,6 +226,11 @@ export interface Session {
      * the one a freshly launched client would publish (1 on its first in-world tick).
      */
     tickBase: number;
+    /**
+     * Bumps on each client launch only: which tick count `state.tick` belongs to (lib/ticks.ts
+     * tickCounter). An in-page login keeps it, since the page goes on counting.
+     */
+    launchId: number;
     /** Whether the account should be in the world (false around an intended logout). */
     expectInWorld: boolean;
     child: Subprocess | null;
@@ -296,6 +301,7 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         bot: new BotActions(sdk),
         sessionId: 0,
         tickBase: 0,
+        launchId: 0,
         expectInWorld: true,
         child: null,
         childExit: null,
@@ -370,9 +376,10 @@ function waitFor(sdk: BotSDK, pred: (s: BotWorldState) => boolean, ms: number): 
     return sdk.waitForCondition(pred, ms).catch(() => null);
 }
 
-/** Start the game client: a lite runner child, or the browser tab. Bumps sessionId. */
+/** Start the game client: a lite runner child, or the browser tab. Bumps sessionId and launchId. */
 export async function launchClient(session: Session): Promise<void> {
     session.sessionId++;
+    session.launchId++;
     session.tickBase = 0;
     session.childExit = null;
     session.launchedAt = Date.now();

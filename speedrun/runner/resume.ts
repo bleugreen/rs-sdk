@@ -34,7 +34,7 @@ import type { BotWorldState } from '../../sdk/types';
 import { ensureRunOn } from '../lib/run-mode';
 import type { Session } from '../lib/session';
 import { startRunTickMonitor } from '../lib/tick-monitor';
-import { tickSpan, type TickLog } from '../lib/ticks';
+import { tickCounter, tickSpan, type TickLog } from '../lib/ticks';
 import { awaitScene, currentTick, nextTick, sleep, tickMs } from '../lib/wait';
 import { Fence } from './fence';
 import { resolveStart, runSteps, type Observed, type RunnerSession, type RunStepsOptions, type RunStepsResult, type Step } from './step';
@@ -221,9 +221,9 @@ export interface ResumableResult extends RunStepsResult {
     points: Omit<ResumePoint, 'observed'>[];
 }
 
-function row(log: TickLog, session: RunnerSession, step: string, startTick: number, startSession: number, t0: number, meta: Record<string, unknown>, ok = true): void {
+function row(log: TickLog, session: RunnerSession, step: string, startTick: number, startCounter: number, t0: number, meta: Record<string, unknown>, ok = true): void {
     const endTick = currentTick(session.sdk);
-    const span = tickSpan(startTick, endTick, startSession, session.sessionId);
+    const span = tickSpan(startTick, endTick, startCounter, tickCounter(session));
     log.append({
         v: 1, runId: log.runId, account: session.name, sessionId: session.sessionId, step, startTick, endTick, ticks: span.ticks,
         wallMs: Date.now() - t0, ok, meta, ...(span.crossedSession ? { crossedSession: true } : {}), tickMs: tickMs(), at: new Date().toISOString(),
@@ -247,7 +247,7 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
         for (let attempt = 1; ; attempt++) {
             const t0 = Date.now();
             const startTick = currentTick(session.sdk);
-            const startSession = session.sessionId;
+            const startCounter = tickCounter(session);
             if (!session.sdk.getState()) await nextTick(session.sdk);
             // Whatever brought the session back (the watchdog's login or relaunch, a
             // reloaded page) left a fresh login, and a fresh login walks.
@@ -265,7 +265,7 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             }
             const { observed: _o, ...summary } = point;
             points.push(summary);
-            row(opts.log, session, RESUME_STEP, startTick, startSession, t0, { attempt, ...summary, probes: Object.keys(obs.probed), run: runMode, scene });
+            row(opts.log, session, RESUME_STEP, startTick, startCounter, t0, { attempt, ...summary, probes: Object.keys(obs.probed), run: runMode, scene });
             opts.onEvent?.({ kind: 'resume', attempt, point: summary });
             if (point.mode === 'finished') return { completed: 0, drops, points };
 
@@ -307,9 +307,9 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             opts.onEvent?.({ kind: 'drop', attempt, reason, step: current, tick: dropTick });
             if (drops > (opts.maxDrops ?? 20)) throw new Error(`gave up after ${drops - 1} drops (last: ${reason})`);
             const r0 = Date.now();
-            const dropSession = session.sessionId;
+            const dropCounter = tickCounter(session);
             await (opts.recover ? opts.recover(reason) : opts.link.restored(opts.restoreTimeoutMs ?? 30 * 60_000));
-            row(opts.log, session, DROP_STEP, dropTick, dropSession, r0, { attempt, reason, step: current, recoverMs: Date.now() - r0 }, false);
+            row(opts.log, session, DROP_STEP, dropTick, dropCounter, r0, { attempt, reason, step: current, recoverMs: Date.now() - r0 }, false);
             opts.onEvent?.({ kind: 'restored', attempt, wallMs: Date.now() - r0 });
         }
     } finally {

@@ -24,18 +24,19 @@ import type { BotWorldState } from '../../sdk/types';
 import type { Session } from '../lib/session';
 import { startRunTickMonitor, type TickMonitorSetting } from '../lib/tick-monitor';
 import { ensureRun } from '../lib/run-mode';
-import { measure, tickSpan, type TickLog } from '../lib/ticks';
+import { measure, tickCounter, tickSpan, type TickLog } from '../lib/ticks';
 import { currentTick, nextTick, tickMs, type StateSource } from '../lib/wait';
 import { meterDispatch, TickWindow, type WindowSnapshot } from './budget';
 
 export type Check<C> = (s: BotWorldState, c: C) => true | string;
 
 /**
- * `tickBase` (optional so test fakes need not carry it; a real Session always does): the tick
- * the current login's count starts from, which a resumed step that times a login-armed
- * deadline reads (skills/cooking.ts).
+ * `tickBase` and `launchId` are optional so test fakes need not carry them; a real Session always
+ * does. `tickBase` is the tick the current login's count starts from, which a resumed step that
+ * times a login-armed deadline reads (skills/cooking.ts); `launchId` tells a step row spanning an
+ * in-page relog (one count) from one spanning a relaunch (lib/ticks.ts tickCounter).
  */
-export type RunnerSession = Pick<Session, 'sdk' | 'bot' | 'name' | 'sessionId'> & Partial<Pick<Session, 'tickBase'>>;
+export type RunnerSession = Pick<Session, 'sdk' | 'bot' | 'name' | 'sessionId'> & Partial<Pick<Session, 'tickBase' | 'launchId'>>;
 
 /**
  * What the resume walk (runner/resume.ts) knows about the game: the published
@@ -162,19 +163,19 @@ export type BoundaryWait = 'post-recheck' | 'budget' | 'stale' | 'pre-recheck';
 interface Boundary {
     from: string;
     startTick: number;
-    startSession: number;
+    startCounter: number;
     t0: number;
     waits: BoundaryWait[];
     budget?: WindowSnapshot;
 }
 
 function openBoundary(session: RunnerSession, from: string): Boundary {
-    return { from, startTick: currentTick(session.sdk), startSession: session.sessionId, t0: Date.now(), waits: [] };
+    return { from, startTick: currentTick(session.sdk), startCounter: tickCounter(session), t0: Date.now(), waits: [] };
 }
 
 function closeBoundary(log: TickLog, session: RunnerSession, b: Boundary, to: string, index: number): void {
     const endTick = currentTick(session.sdk);
-    const span = tickSpan(b.startTick, endTick, b.startSession, session.sessionId);
+    const span = tickSpan(b.startTick, endTick, b.startCounter, tickCounter(session));
     log.append({
         v: 1, runId: log.runId, account: session.name, sessionId: session.sessionId, step: BOUNDARY_STEP,
         startTick: b.startTick, endTick, ticks: span.ticks, wallMs: Date.now() - b.t0, ok: true,
