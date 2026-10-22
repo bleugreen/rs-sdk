@@ -252,5 +252,5 @@ refuses with the tier and level where a stack would not fit.
 Each ended at 99 with 570 rune arrows and nothing dropped. Entry 32's bar is 59 + 5% = 61.95: 59
 is ceil(294 / 5), and the 2 ticks above it are the three level-gated short ticks and the end tick.
 Before `fill` the same cases took 62 (one tier a tick). On the rune-list route of section 2 the
-module took 51 program ticks on the browser, against `delayfree-cycle.ts`'s 50-tick span on lite on
+module took 51 program ticks on the browser (before `fill`; that route has no fillable switch), against `delayfree-cycle.ts`'s 50-tick span on lite on
 the same host (the script's figure, not the module's; lite hosts no programs).
