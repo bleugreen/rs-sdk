@@ -322,6 +322,18 @@ describe('agility Wilderness decisions', () => {
             expect(log.rows.find(r => r.step === 'agility:gate')?.meta).toMatchObject({ to: 'north', ok: true, clicks: 2, dialogues: 1 });
         });
 
+        test('a resume just inside the gate whose nearest route point is across it starts on its own side', async () => {
+            // (2461,3385), the north entrance: 3 tiles from (2461,3382) and 1 from (2461,3386)
+            // is no tie; (2459,3386) is 4 from both, and the south one comes first in the route
+            const sdk = new FakeSdk(world({ agility: 1, x: 2459, z: 3386, extra: { nearbyLocs: [gate] as unknown as BotWorldState['nearbyLocs'] } }));
+            gateServer(sdk, false);
+            const ctx = ctxFor(sdk);
+            const walks = walker(ctx, () => false);
+            await step(steps(), 'agility:walk-gnome').run(ctx as never);
+            expect(walks[0]).toBe('2461,3386');
+            expect(sdk.sent.filter(a => a.method === 'sendInteractLoc')).toEqual([]);
+        });
+
         test('a failed leg inside the Stronghold never goes back through the gate: the walk is retried once', async () => {
             // (2461,3390): north of the gate and 46 tiles from the course start, so walk-gnome runs its route
             const sdk = new FakeSdk(world({ agility: 1, x: 2461, z: 3390, extra: { nearbyLocs: [gate] as unknown as BotWorldState['nearbyLocs'] } }));

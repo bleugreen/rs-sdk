@@ -578,7 +578,13 @@ async function walkRoute(ctx: StepContext<unknown>, route: ReadonlyArray<readonl
     const s = stateOf(ctx);
     const stopEating = eatWhileWalking(ctx.sdk, o);
     try {
-        for (let i = routeStart(route, s.player!.worldX, s.player!.worldZ); i < route.length; i++) {
+        let i = routeStart(route, s.player!.worldX, s.player!.worldZ);
+        // A resume inside the Stronghold can tie routeStart's nearest point with the one across the
+        // gate: never start on the far side of the gate when a later point is on the player's side.
+        const side = gateSide(GNOME_STRONGHOLD_GATE, { x: s.player!.worldX, z: s.player!.worldZ, level: s.player!.level });
+        const sideOf = (k: number) => gateSide(GNOME_STRONGHOLD_GATE, { x: route[k]![0], z: route[k]![1] });
+        if (side) while (i < route.length - 1 && sideOf(i) && sideOf(i) !== side && route.some((_, k) => k > i && sideOf(k) === side)) i++;
+        for (; i < route.length; i++) {
             const [x, z] = route[i]!;
             let r = await ctx.bot.walkTo(x, z, 2, { timeout: 90_000 });
             if (r.success) continue;

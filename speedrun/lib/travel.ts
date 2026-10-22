@@ -875,10 +875,12 @@ export interface Gate {
 export const GNOME_STRONGHOLD_GATE = {
     label: 'Gnome Stronghold south gate',
     loc: { id: 190, x: 2459, z: 3383 },
+    // Bands around the passage, checked tile by tile on the SDK collision map: every walkable tile
+    // in each is reached from its own entrance and not from the other's (the wall bends away
+    // west of x 2458 and east of 2465). A tile in neither answers no side (gateSide null).
     sides: {
-        // the walled Stronghold, and the approach from Ardougne's north road
-        north: { x: [2420, 2510], z: [3385, 3520] },
-        south: { x: [2420, 2510], z: [3340, 3382] },
+        north: { x: [2458, 2465], z: [3385, 3440] },
+        south: { x: [2456, 2466], z: [3360, 3382] },
     },
     answers: [/^Sorry, I'm a bit busy\.$/],
 } as const satisfies Gate;
