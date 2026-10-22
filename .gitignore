@@ -48,3 +48,6 @@ server/engine/data/market.sqlite*
 /fleet-run/
 # The scored account's private name and any other accounts the fleet must refuse (fleet-config.ts).
 /forbidden-accounts.txt
+
+# markets money account names (markets/lib/accounts.ts); never committed.
+markets/accounts.local.txt
