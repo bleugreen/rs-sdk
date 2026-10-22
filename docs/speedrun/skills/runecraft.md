@@ -445,8 +445,13 @@ SCORED until the dialog opens.
 stand-in in a visible Chrome tab running the step and 3 production `altar-giver`s through
 `standalone.ts` on a shared cue directory (`speedrun/lab/runecraft-accept.ts`, 2026-10-21).
 
-The acceptance runs used rs/163's **direct-path** givers (its branch at 2bc114ac, which also
-has the body route):
+The acceptance runs used rs/163's givers (its branch at 2bc114ac, which also has the body
+route), and were meant to be on the direct path, but **every run in this section ran on the relay
+path**. The lab drivers set the giver's `path` inside the role's `options`, which nothing reads;
+`standalone.ts` takes it from the account entry into `HELPER_PATH`. The drivers now put it on the
+account entry, and `runecraft-demo.ts` refuses to start if the launcher resolved any other path.
+So the step has not yet run against direct-path givers. On the lab's loopback engine the path
+makes no measurable difference (the two tables below agree):
 
 | Run | Login order | Turns given | Gaps | Step ticks |
 |---|---|---|---|---|
@@ -456,8 +461,7 @@ has the body route):
 | nature 44, auto (chose robust) | SCORED first | 30/30 | 29 x 8 | 247 |
 | body 44, auto (chose tuned) | givers first | 30/30 | 29 x 7 | 215 |
 
-The rest used **relay-path** givers from rs/41's branch (079ccf21). In the lab the cycle does
-not depend on the path, since the engine is on loopback:
+The rest used relay-path givers from rs/41's branch (079ccf21), intentionally:
 
 | Run | Login order | Turns given | Gaps | Step ticks |
 |---|---|---|---|---|
@@ -467,7 +471,7 @@ not depend on the path, since the engine is on loopback:
 | S06: air 1 to 44, auto (robust) | SCORED first | 7/7 | 6 x 8 | 66 |
 | nature, 10 crafts, clean logout, resume walk, 10 more | givers first | 20/20 | 18 x 7 | 149 (one unbroken run: ~147) |
 
-Resume and the fault ladder, also on direct-path givers. `--reload-after`, `--relog-after` and
+Resume and the fault ladder, on the same givers (relay path, as above). `--reload-after`, `--relog-after` and
 `--junk-after` in the lab script set these up:
 
 | Run | What happened |
@@ -477,7 +481,7 @@ Resume and the fault ladder, also on direct-path givers. `--reload-after`, `--re
 | junk item kept | Fault, robust restart, fault, then the stock rung, which failed 6 times (the production giver had no `stock` turn yet). The step threw with the reason. |
 
 **On the wired module** (the real `programs.ts` and `altar-cue.ts` dependencies, base with
-rc-cycle at 23ea9f77, page built from it; givers from rs/163's `e4f60121`, direct path;
+rc-cycle at 23ea9f77, page built from it; givers from rs/163's `e4f60121`, relay path (see above);
 bgsrv-mac at load 4-9):
 
 | Run | Login order | Turns given | Gaps | Step ticks |
@@ -498,7 +502,7 @@ bgsrv-mac at load 4-9):
   ruins. The givers log in through `standalone.ts` with the bank restock, then the stand-in logs in
   through the browser tab's token login (rs/138), walks in through the ruins and runs the step.
   Every logout is confirmed in its RESULT line. `--lab-stage` is its dry run on the lab, staging
-  the accounts with staff commands first. Dry run, air, 20 cycles, 3 direct-path givers: **20/20
+  the accounts with staff commands first. Dry run, air, 20 cycles, 3 givers (relay path, see above): **20/20
   given, all tuned**; 13 in-batch gaps at 7, and 6 batch gaps of 86-87 ticks, which are the
   givers' bank round trip; 628 step ticks; every logout confirmed. A 20-turn demo takes
   7 + 7 + 6 loads from three givers.
