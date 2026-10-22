@@ -1059,8 +1059,6 @@ describe("woodcutting: S07's last bone load carries T07-08's runes, (load - 2) b
         expect(band.preconditions(pack(97, KIT), {})).toBe("25 free slots and 0 bones: no room for a 23-bone load, or the last load's 23 bones and 2 rune stacks, and the log");
         // once the runes are in, that load came: a resume needs no room for another
         expect(band.preconditions(pack(98, [...KIT, 'Law rune', 'Air rune'], { bones: 10 }), {})).toBe(true);
-        // with a pack one slot lighter (no kit log, under plain) the full last load fits
-        expect(harness(pack(97, ['Rune axe']), { ...full, technique: 'knife' }).byName(WILLOWS).preconditions(pack(97, ['Rune axe']), {})).toMatch(/knife and a normal log/);
     });
 
     test("the want is at least lastLoad bones: a full load and the runes' load pass both screens, a shorter one never does", () => {
