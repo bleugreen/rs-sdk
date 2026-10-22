@@ -326,6 +326,19 @@ describe('run: the trade through lib/trade.ts', () => {
         expect(step.postconditions(sdk.state!, {})).toBe(true);
     });
 
+    test('receive-only opens on an observed-tick bound: a partner who never answers fails at openTicks, not on the wall clock', async () => {
+        // The partner is in view but never opens the trade: the request is re-sent every
+        // DROPPED_TICKS silent ticks, and the open gives up once openTicks ticks have passed.
+        const sdk = new FakeSdk(state(pack(['Tinderbox'])));
+        const reports: HandOffReport[] = [];
+        const run = runHandOff(sdk as unknown as Parameters<typeof runHandOff>[0], plan('H1'), PARTNER, { openTicks: 8, onReport: r => reports.push(r) });
+        await expect(drive(sdk, run, 30)).rejects.toThrow(/H1 with Helper: no_response/);
+        expect(reports[0]).toMatchObject({ trade: 'receive', ok: false, reason: 'no_response' });
+        const clicks = sdk.sent.filter(a => a.method === 'sendTradeRequest').length;
+        expect(clicks).toBeGreaterThan(1);
+        expect(sdk.state!.tick - 100).toBeLessThanOrEqual(10);
+    });
+
     test('a failed trade throws with the reason, after reporting it', async () => {
         const sdk = new TradeServer(state(pack(['Tinderbox'])), tradeItems([['Cosmic rune', 10]]));
         const reports: HandOffReport[] = [];

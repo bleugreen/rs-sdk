@@ -25,8 +25,8 @@ import { readFileSync } from 'fs';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
 import { INVENTORY_SIZE } from '../lib/items';
-import { receiveFrom, sameName, swap, type GiveSpec, type SwapSdk, type WantSpec } from '../lib/trade';
-import { tickMs, waitOrThrow } from '../lib/wait';
+import { DROPPED_TICKS, receiveFrom, sameName, swap, type GiveSpec, type SwapSdk, type WantSpec } from '../lib/trade';
+import { waitOrThrow } from '../lib/wait';
 import { opIndex } from '../lib/world';
 import { MANIFEST, parseLedger, type InEntry, type Kind, type LedgerRow } from '../tools/slot-ledger';
 import type { ObservedCheck, Step } from './step';
@@ -226,11 +226,11 @@ export interface HandOffOptions<C> {
     partner: string | ((c: C) => string);
     /** The next milestone's `done`: once it holds, this hand-off counts as done whatever the inventory shows. */
     supersededBy?: ObservedCheck<C>;
-    /** Ticks to get the screens open from the first click (default 30). */
+    /** Observed ticks to get the screens open (default 30): swap()'s openTicks, receiveFrom()'s openMaxTicks. */
     openTicks?: number;
-    /** Ticks from the screens opening to the outcome (default 40). */
+    /** Observed ticks from the screens opening to the outcome (default 40). */
     maxTicks?: number;
-    /** receiveFrom only: re-send a trade click that drew no reply after this many ticks (default 2). */
+    /** receiveFrom only: re-send a trade click that drew no reply after this many ticks (default DROPPED_TICKS: the partner stands beside SCORED). swap() always uses DROPPED_TICKS. */
     noReplyTicks?: number;
     onReport?: (r: HandOffReport) => void;
 }
@@ -277,7 +277,7 @@ export async function runHandOff(sdk: HandOffSdk, plan: HandOffPlan, partner: st
         const r = await swap(sdk, partner, give, want, { closeModals: true, openTicks, maxTicks: o.maxTicks ?? 40 });
         report = { id: plan.id, partner, trade: 'swap', ok: r.ok, ticks: r.ticks, openTicks: r.openTicks, received: names(r.received), gave: names(r.gave), unequipped: off.map(e => e.name), ...(r.reason ? { reason: r.reason } : {}) };
     } else {
-        const r = await receiveFrom(sdk, partner, { want, maxTicks: o.maxTicks ?? 40, noReplyTicks: o.noReplyTicks ?? 2, openTimeoutMs: openTicks * tickMs() });
+        const r = await receiveFrom(sdk, partner, { want, maxTicks: o.maxTicks ?? 40, openMaxTicks: openTicks, openTimeoutMs: Infinity, noReplyTicks: o.noReplyTicks ?? DROPPED_TICKS });
         report = { id: plan.id, partner, trade: 'receive', ok: r.ok, ticks: r.ticks, received: names(r.received), gave: [], unequipped: [], ...(r.reason ? { reason: r.reason } : {}) };
     }
     o.onReport?.(report);
