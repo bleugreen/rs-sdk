@@ -61,6 +61,7 @@ import * as woodcutting from '../skills/woodcutting';
 import { MANIFEST, parseLedger, type LedgerRow } from '../tools/slot-ledger';
 import { handOffFrom, handOffStep } from './handoff';
 import { legById, legsFor, splitLeg, type LegStep } from './legs';
+import { type Probe, stepProbes } from './resume';
 import type { ObservedCheck, Step, StepContext } from './step';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -371,6 +372,18 @@ interface PendingHandOff {
 type Entry = ChainStep | PendingHandOff;
 
 /** The scored run's chain, S00 to S17. Throws on a config that names no partner for a placed row. */
+/** Every step module the chain is built from, for the probes they export (chainProbes). */
+const MODULES = [
+    cooksAssistant, doricsQuest, dragonSlayer, druidicRitual, goblinDiplomacy, romeoJuliet, dwarfCannon, fightArena, fishingContest, grandTree, mageArena,
+    plagueCity, treeGnomeVillage, agility, cooking, crafting, firemaking, fletching, fishing, herblore, magic, mining, prayer, ranged, runecraft, smithing,
+    start, thieving, woodcutting,
+] as const;
+
+/** runResumable's probes for `chain`, from MODULES' exported PROBES and the quest journals; throws naming any nothing provides. */
+export function chainProbes(chain: readonly ChainStep[]): Record<string, Probe> {
+    return stepProbes(chain, MODULES);
+}
+
 export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
     const manifest = o.manifest ?? readFileSync(MANIFEST, 'utf8');
     const rows = ledgerRows(manifest);

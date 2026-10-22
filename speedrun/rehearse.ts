@@ -81,7 +81,7 @@ import { cdpUrl, type ClientKind, closeSession, loadBotEnv, logoutClean, type Lo
 import { formatReport, newRunId, parseLog, report, type RowKind, type StepReport, TickLog, type TickRow } from './lib/ticks';
 import { receiveFrom, type WantSpec } from './lib/trade';
 import { tickMs, waitUntil } from './lib/wait';
-import { DROP_STEP, type Link, RESUME_STEP, type ResumeEvent, runResumable, sessionLink } from './runner/resume';
+import { DROP_STEP, type Link, type Probe, RESUME_STEP, type ResumeEvent, runResumable, sessionLink, stepProbes } from './runner/resume';
 import { BOUNDARY_STEP, type Step } from './runner/step';
 import { parsePlayer, type PlayerRow, playerPath, PoliteFetcher } from './tools/hiscore-scrape';
 
@@ -1030,6 +1030,17 @@ export interface SkillModule {
     skill: string;
     /** `to` and `toLevel` both carry --to: fishing and mining read `to`, firemaking (and the scored S03) `toLevel`. */
     steps(opts?: { to?: number; toLevel?: number; technique?: Technique; [k: string]: unknown }): Step<any>[];
+    /** The probes its steps read on a resume walk, name to probe (skills/cooking.ts); runner/resume.ts stepProbes. */
+    PROBES?: unknown;
+}
+
+/** runAttempt's probes for the attempt's steps, from the skill module's PROBES; a UsageError names any probe it lacks. */
+export function attemptProbes(steps: readonly Step<any>[], mod: Pick<SkillModule, 'PROBES'> | null): Record<string, Probe> {
+    try {
+        return stepProbes(steps, mod ? [mod] : []);
+    } catch (e) {
+        throw new UsageError(message(e));
+    }
 }
 
 async function loadSkillModule(spec: string): Promise<SkillModule> {
@@ -1120,6 +1131,9 @@ async function main(argv: string[]): Promise<number> {
     const mod = a.claim ? null : await loadSkillModule(a.skill!);
     const skillName = mod?.skill ?? CLAIM_SKILL;
     const start = await import('./skills/start');
+    // Built before any login, so a step reading a probe that no module exports refuses with nothing logged in.
+    const modSteps = mod ? mod.steps({ to: a.to, toLevel: a.to, ...(a.technique ? { technique: a.technique } : {}), ...a.skillOpts }) : [];
+    const probes = attemptProbes([...start.steps(), ...modSteps], mod);
     const runId = newRunId();
     // A resumed attempt appends to the same log; its earlier sessions count toward the summary and the hiscore check.
     const earlier = a.log && existsSync(a.log) ? parseLog(readFileSync(a.log, 'utf-8')) : [];
@@ -1260,7 +1274,7 @@ async function main(argv: string[]): Promise<number> {
                 });
             }
             if (a.kit) chain.push(kitStep(a.kit, a.kitFrom));
-            if (mod) chain.push(...mod.steps({ to: a.to, toLevel: a.to, ...(a.technique ? { technique: a.technique } : {}), ...a.skillOpts }));
+            chain.push(...modSteps);
 
             const result = await runAttempt(session, chain, {
                 log,

@@ -58,7 +58,7 @@ import { returnExtrasFromLedger, serveDrift, serveFromLedger } from './helpers/c
 import { newRunId, parseLog, TickLog, type TickRow } from './lib/ticks';
 import { formatRunReport, runReport } from './runner/run-report';
 import { patchMethod } from './runner/fence';
-import { buildChain, missingOnPath, resolveFrom, sliceUntil, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
+import { buildChain, chainProbes, missingOnPath, resolveFrom, sliceUntil, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
 import { CueKeeper, prepareCueDir } from './runner/cue-keeper';
 import { sessionLink } from './runner/resume';
 
@@ -146,11 +146,14 @@ export function loadRunConfig(path: string, runDir: string, env: Record<string, 
 
 /**
  * The chain, or why the run config cannot build it (a placed or kit row with no partner, such as
- * S05's H4 giver; a ledger row the chain does not cover): a start-gate refusal, never a crash.
+ * S05's H4 giver; a ledger row the chain does not cover; a probe a step reads that no module
+ * exports): a start-gate refusal, never a crash.
  */
 export function chainOrRefusal(cfg: RunConfig, cues: CueSink): { chain: ChainStep[] } | { refusal: string } {
     try {
-        return { chain: buildChain(cfg, { cues }) };
+        const chain = buildChain(cfg, { cues });
+        chainProbes(chain);
+        return { chain };
     } catch (e) {
         return { refusal: e instanceof Error ? e.message : String(e) };
     }
@@ -297,6 +300,8 @@ export interface ChainRunResult {
  * (log out now), runAttempt, then out of the world.
  */
 export async function runChainOnSession(session: Session, o: ChainRunOptions): Promise<ChainRunResult> {
+    // First, so a probe nothing provides throws before anything is watched or written.
+    const probes = chainProbes(o.chain);
     const tag = `[${o.label ?? 'run'}]`;
     const account = session.name;
     const log = o.log;
@@ -338,7 +343,7 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
     process.on('SIGHUP', onTerm);
     try {
         const result = await runAttempt(session, o.chain, {
-            log, account, link: sessionLink(session), reservation: o.reservation,
+            log, account, link: sessionLink(session), reservation: o.reservation, probes,
             stopAsked: () => stopAsked, gateStop: () => null, logout: () => leave(), label: o.label ?? 'run',
             ...(o.from !== undefined ? { from: o.from } : {}),
             onEvent: e => console.log(`[resume] ${JSON.stringify(e)}`),
