@@ -6,13 +6,26 @@ import { join } from 'node:path';
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BankItem, BotWorldState, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
-import { baseState, FakeSdk, flush } from '../lib/fake-sdk';
+import type { CombatEvent, NearbyNpc, PlayerState } from '../../sdk/types';
+import { baseState, drive, FakeSdk, flush, simulateWalking } from '../lib/fake-sdk';
 import { clickBack, newClickCtx, RESEND_TICKS, type ClickCtx } from '../lib/trade';
 import {
     accountMatches,
     afterServe,
     canonName,
+    carriedDoneSince,
+    carriedNeeds,
+    carriedReady,
+    carriedServedEntries,
+    carriedShort,
+    carriedStand,
     countById,
+    DEFAULT_WILDLIFE,
+    HIT_MEMORY_TICKS,
+    keepAliveDue,
+    keepAliveStep,
+    keepAliveTiles,
+    wildlifeThreat,
     courierPicks,
     cueEpoch,
     decidePreRequest,
@@ -495,5 +508,193 @@ describe('top-up lines (H12 `shark to 15`): the count comes from the scored acco
         expect(r).toMatchObject({ success: true, topUps: [], ask: null });
         expect(r.gave.map(i => [i.id, i.count]).sort()).toEqual([[SHARK, 2], [554, 300]]);
         expect(planPackage(pkg, bank([[SHARK, 'Shark', 10], [554, 'Fire rune', 1000]])).topUpShort).toEqual([]);
+    });
+});
+
+describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wildlife, keep-alive', () => {
+    const SHARK = 385;
+    const SAPP = 2448;
+    const M: CueScope = { step: 'H12oM', family: 'mule' };
+    const P: CueScope = { step: 'H12oP', family: 'mule' };
+    const M_TILE = { x: 2763, z: 2704 };
+    const P_TILE = { x: 2803, z: 2724 };
+    const raw = [
+        { name: 'H12oM', scope: M, at: M_TILE, items: [{ item: 'Shark', topUp: { max: 13 } }] },
+        { name: 'H12oP', scope: P, at: P_TILE, items: [{ item: 'Shark', amount: 9 }, { item: 'Superantipoison(4)', amount: 1 }] }
+    ];
+    const opts = muleOptions({ serve: 'cairn_scored', serveMode: 'request', carried: true, packages: raw }, { RC_CUE_DIR: '/tmp/cue-h45' });
+    const [hm, hp] = opts.packages as [Package, Package];
+    const sharks = (n: number, from = 0): InventoryItem[] => Array.from({ length: n }, (_, i) => ({ slot: from + i, id: SHARK, name: 'Shark', count: 1, optionsWithIndex: [] }));
+    const sapp = (slot: number): InventoryItem => ({ slot, id: SAPP, name: 'Superantipoison(4)', count: 1, optionsWithIndex: [] });
+    /** h45 at login: 13 + 9 sharks and the antipoison, 23 slots. */
+    const loaded = () => [...sharks(22), sapp(22)];
+    const trade = (t: Partial<TradeState>): TradeState => ({ isOpen: true, screen: 'offer', partner: 'Cairn Scored', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false, ...t });
+    const closed: TradeState = { isOpen: false, screen: null, partner: null, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false };
+    const sends = (sdk: FakeSdk) => sdk.sent.splice(0).map(a => [a.method, ...a.args]);
+    const settle = async () => {
+        for (let i = 0; i < 5; i++) await flush();
+    };
+
+    test('options: carried turns on the package tiles, wildlife and the 5-minute keep-alive; an existing (banked) config gets none of them', () => {
+        expect(opts).toMatchObject({ carried: true, wildlife: DEFAULT_WILDLIFE, clearTiles: 1, keepAliveMinutes: 5, serveMode: 'request', cueDir: '/tmp/cue-h45' });
+        expect(hm).toEqual({ name: 'H12oM', scope: M, at: M_TILE, items: [{ item: 'Shark', topUp: { max: 13 } }] });
+        expect(hp.at).toEqual(P_TILE);
+        const banked = muleOptions({ packages: [{ name: 'wine', items: [{ item: 'Jug of wine', amount: 28 }] }] }, { RC_CUE_DIR: '/tmp/cue-x' });
+        expect(banked).toMatchObject({ carried: false, wildlife: [], keepAliveMinutes: 0, stand: { x: 3185, z: 3436 } });
+        expect(banked.packages).toEqual([{ name: 'wine', items: [{ item: 'Jug of wine', amount: 28 }] }]); // no `at` key
+        expect(() => muleOptions({ packages: raw })).toThrow(/carried packages only/);
+        expect(() => muleOptions({ carried: true, ge: { orders: [] } })).toThrow(/no bank/);
+        expect(() => muleOptions({ carried: 'yes' })).toThrow(/carried/);
+        expect(() => muleOptions({ carried: true, keepAliveMinutes: -1 })).toThrow(/keepAliveMinutes/);
+        expect(() => packageOf({ name: 'x', at: { x: 1.5, z: 2 }, items: [{ item: 'Shark', amount: 1 }] })).toThrow(/whole tiles/);
+        expect(muleOptions({ carried: true, wildlife: [], keepAliveMinutes: 0 })).toMatchObject({ wildlife: [], keepAliveMinutes: 0 });
+    });
+
+    test('carriedNeeds: each package found in the one inventory; the start-of-login check sums them', () => {
+        const inv = loaded();
+        const m = carriedNeeds(hm, inv);
+        expect([...m.held]).toEqual([[SHARK, 22]]); // the top-up line's whole holding; the trade clamps it to the ask and 13
+        expect(carriedReady(m)).toBe(true);
+        const p = carriedNeeds(hp, inv);
+        expect([...p.held]).toEqual([[SHARK, 9], [SAPP, 1]]);
+        expect(carriedReady(p)).toBe(true);
+        expect(carriedShort([hm, hp], inv)).toEqual([]);
+        expect(carriedShort([hm, hp], [...sharks(21), sapp(21)])).toEqual([{ item: 'Shark', wanted: 22, have: 21 }]);
+        const noPotion = carriedNeeds(hp, sharks(22));
+        expect(noPotion.missing).toEqual([{ item: 'Superantipoison(4)', wanted: 1, have: 0 }]);
+        expect(carriedReady(noPotion)).toBe(false);
+        expect(carriedReady(carriedNeeds(hm, [sapp(0)]))).toBe(false); // nothing of the top-up to offer
+        expect(carriedNeeds(hp, [...sharks(8), sapp(8)]).missing).toEqual([{ item: 'Shark', wanted: 9, have: 8 }]);
+    });
+
+    test('M: offers exactly the asked count of its 22 sharks (never all of them), clamped to the max 13', async () => {
+        for (const [asked, n] of [[5, 5], [20, 13]] as const) {
+            const dir = mkdtempSync(join(tmpdir(), 'h12o-ask-'));
+            const inv = loaded();
+            const openMs = Date.now();
+            writeTopUpAsk(dir, [{ item: '^shark$', count: asked }], openMs + 5, M);
+            const sdk = new FakeSdk(baseState({ tick: 1, inventory: inv, trade: trade({}) }));
+            const result = serveStaged(sdk as unknown as BotSDK, {} as BotActions, { partner: 'cairn_scored', pkg: hm, held: carriedNeeds(hm, inv).held, exact: true, ask: { dir, openMs, lastServedMs: 0, maxTicks: 3 } });
+            await settle();
+            expect(sends(sdk)).toEqual([['sendOfferItem', 0, n], ['sendAcceptTrade']]);
+            const mine: TradeItem[] = [{ slot: 0, id: SHARK, name: 'Shark', count: n }];
+            sdk.tick({ inventory: [...sharks(22 - n), sapp(22 - n)], trade: trade({ myOffer: mine, myAccepted: true }) });
+            sdk.tick({ trade: trade({ screen: 'confirm', myOffer: mine, partnerAccepted: true }) });
+            await flush();
+            expect(sends(sdk)).toEqual([['sendAcceptTrade']]);
+            sdk.tick({ trade: closed });
+            const r = await result;
+            expect(r.success).toBe(true);
+            expect(r.topUps).toEqual([{ item: 'Shark', id: SHARK, max: 13, held: 22, asked, n }]);
+            expect(r.gave.map(i => [i.id, i.count])).toEqual([[SHARK, n]]);
+        }
+    });
+
+    test('P: offers exactly 9 sharks and the antipoison from 17 left after M, waiting for no ask', async () => {
+        const inv = [...sharks(17), sapp(17)];
+        const sdk = new FakeSdk(baseState({ tick: 1, inventory: inv, trade: trade({}) }));
+        const result = serveStaged(sdk as unknown as BotSDK, {} as BotActions, { partner: 'cairn_scored', pkg: hp, held: carriedNeeds(hp, inv).held, exact: true });
+        await flush();
+        expect(sends(sdk)).toEqual([['sendOfferItem', 17, -1], ['sendOfferItem', 0, 9], ['sendAcceptTrade']]);
+        const mine: TradeItem[] = [{ slot: 0, id: SHARK, name: 'Shark', count: 9 }, { slot: 1, id: SAPP, name: 'Superantipoison(4)', count: 1 }];
+        sdk.tick({ inventory: sharks(8), trade: trade({ myOffer: mine, myAccepted: true }) });
+        sdk.tick({ trade: trade({ screen: 'confirm', myOffer: mine, partnerAccepted: true }) });
+        await flush();
+        sdk.tick({ trade: closed });
+        const r = await result;
+        expect(r).toMatchObject({ success: true, topUps: [], ask: null });
+        expect(r.gave.map(i => [i.id, i.count]).sort()).toEqual([[SHARK, 9], [SAPP, 1]].sort());
+    });
+
+    test('the tile: the pending package\'s, else the next not done, so straight after M (served or withdrawn) it is P\'s; after the last it stays', () => {
+        const stand = { x: 3185, z: 3436 };
+        const none = new Set<string>();
+        expect(carriedStand([hm, hp], null, none, stand)).toEqual(M_TILE); // logged in on H12oM's cue, before reading it
+        expect(carriedStand([hm, hp], hm, none, stand)).toEqual(M_TILE);
+        expect(carriedStand([hm, hp], null, new Set(['H12oM']), stand)).toEqual(P_TILE); // M served, or its cue stopped
+        expect(carriedStand([hm, hp], hp, none, stand)).toEqual(P_TILE); // P asked for while M was never served
+        expect(carriedStand([hm, hp], null, new Set(['H12oM', 'H12oP']), stand)).toEqual(P_TILE);
+        expect(carriedStand([{ name: 'x', items: [] }], null, none, stand)).toEqual(stand);
+    });
+
+    test('the served record (RoleState): read defensively; only this login\'s entries count', () => {
+        expect(carriedServedEntries(undefined)).toEqual([]);
+        expect(carriedServedEntries([{ pkg: 'H12oM' }, 'x', { pkg: 'H12oM', session: 's1', ms: 5 }])).toEqual([{ pkg: 'H12oM', session: 's1', ms: 5 }]);
+        const entries = [{ pkg: 'H12oM', session: 'yesterday', ms: 1_000 }, { pkg: 'H12oP', session: 'yesterday', ms: 2_000 }, { pkg: 'H12oM', session: 'now', ms: 500_000 }];
+        expect([...carriedDoneSince(entries, 480_000)]).toEqual(['H12oM']); // H12oM's login cue at 480 s, less STALE_CUE_MS
+    });
+
+    describe('wildlife: what is cleared before a trade', () => {
+        const ME = { x: 2763, z: 2704 };
+        const npc = (index: number, name: string, x: number, z: number, o: Partial<NearbyNpc> = {}): NearbyNpc => ({
+            kind: 'npc', id: 1478, index, name, combatLevel: 37, x, z, tileX: x, tileZ: z, size: 1, distance: Math.max(Math.abs(x - ME.x), Math.abs(z - ME.z)),
+            hp: 35, maxHp: 35, healthPercent: 100, targetIndex: -1, inCombat: false, lastCombatTick: null, animId: -1, spotanimId: -1,
+            optionsWithIndex: [{ text: 'Attack', opIndex: 2 }], options: ['Attack'], ...o
+        });
+        const hit = (tick: number, from: number): CombatEvent => ({ tick, type: 'damage_taken', damage: 0, sourceType: 'npc', sourceIndex: from, targetType: 'player', targetIndex: -1 });
+        const at = (npcs: NearbyNpc[], events: CombatEvent[] = []) =>
+            baseState({ tick: 50, player: { worldX: ME.x, worldZ: ME.z, x: ME.x, z: ME.z, level: 0, hp: 99, maxHp: 99 } as unknown as PlayerState, nearbyNpcs: npcs, combatEvents: events });
+        const patterns = toRegExps(DEFAULT_WILDLIFE);
+        const spider = npc(7, 'Jungle spider', 2764, 2705);
+        const far = npc(8, 'Jungle spider', 2765, 2704);
+        const bird = npc(9, 'Bird', 2762, 2704);
+
+        test('a named aggressive species within clearTiles; not one further off, nor an unnamed NPC that has not hit', () => {
+            expect(wildlifeThreat(at([spider]), patterns, 1)?.index).toBe(7);
+            expect(wildlifeThreat(at([npc(1, 'Scorpion', 2762, 2703), npc(2, 'Snake', 2764, 2704)]), patterns, 1)).not.toBeNull();
+            expect(wildlifeThreat(at([far]), patterns, 1)).toBeNull();
+            expect(wildlifeThreat(at([far]), patterns, 2)?.index).toBe(8);
+            expect(wildlifeThreat(at([bird]), patterns, 1)).toBeNull();
+            expect(wildlifeThreat(at([spider]), [], 1)).toBeNull(); // wildlife: [] names nothing
+        });
+
+        test('anything that hit the mule (a miss counts) within HIT_MEMORY_TICKS, before a merely adjacent one', () => {
+            const farBird = npc(9, 'Bird', 2766, 2707);
+            expect(wildlifeThreat(at([farBird], [hit(45, 9)]), patterns, 1)?.index).toBe(9);
+            expect(wildlifeThreat(at([spider, farBird], [hit(46, 9)]), patterns, 1)?.index).toBe(9);
+            expect(wildlifeThreat(at([farBird], [hit(50 - HIT_MEMORY_TICKS, 9)]), patterns, 1)).toBeNull(); // too long ago
+        });
+
+        test('never an NPC without an Attack option, nor a dead one', () => {
+            const lumdo = npc(3, 'Lumdo', 2764, 2704, { options: ['Talk-to'], optionsWithIndex: [{ text: 'Talk-to', opIndex: 1 }] });
+            expect(wildlifeThreat(at([lumdo], [hit(49, 3)]), patterns, 1)).toBeNull();
+            expect(wildlifeThreat(at([{ ...spider, hp: 0 }]), patterns, 1)).toBeNull();
+        });
+    });
+
+    describe('keep-alive', () => {
+        test('due after keepAliveMinutes without input; never at 0', () => {
+            const every = 5 * 60_000;
+            expect(keepAliveDue(1_000_000, 1_000_000 - every + 1, every)).toBe(false);
+            expect(keepAliveDue(1_000_000, 1_000_000 - every, every)).toBe(true);
+            expect(keepAliveDue(1_000_000, 0, 0)).toBe(false);
+            expect(keepAliveTiles({ x: 10, z: 10 }, 0)).toEqual([{ x: 11, z: 10 }, { x: 10, z: 11 }, { x: 9, z: 10 }, { x: 10, z: 9 }]);
+            expect(keepAliveTiles({ x: 10, z: 10 }, 1)[0]).toEqual({ x: 10, z: 11 }); // successive ones alternate
+        });
+
+        const standing = () => new FakeSdk(baseState({ tick: 1, player: { worldX: 10, worldZ: 10, x: 10, z: 10, level: 0, hp: 99, maxHp: 99 } as unknown as PlayerState }));
+
+        test('one step out to a neighbour and one back: a click on its own tile would send nothing', async () => {
+            const sdk = standing();
+            const sim = simulateWalking(sdk, { speed: 1 });
+            const r = await drive(sdk, keepAliveStep(sdk as unknown as BotSDK, { x: 10, z: 10 }, 0), 20);
+            expect(r).toMatchObject({ moved: true, to: { x: 11, z: 10 } });
+            expect(sim.clicks.map(c => [c.x, c.z, c.from.x])).toEqual([[11, 10, 10], [10, 10, 11]]);
+            expect(sdk.state!.player).toMatchObject({ worldX: 10, worldZ: 10 });
+            expect(r.ticks).toBeLessThanOrEqual(4);
+        });
+
+        test('a neighbour it cannot step onto is skipped for the next; with none, it reports no step and sends no way back', async () => {
+            const sdk = standing();
+            const sim = simulateWalking(sdk, { speed: 1, blocked: x => x === 11 });
+            const r = await drive(sdk, keepAliveStep(sdk as unknown as BotSDK, { x: 10, z: 10 }, 0, 2), 30);
+            expect(r).toMatchObject({ moved: true, to: { x: 10, z: 11 } });
+            expect(sim.clicks.map(c => [c.x, c.z])).toEqual([[11, 10], [10, 11], [10, 10]]);
+            const boxed = standing();
+            const sim2 = simulateWalking(boxed, { speed: 1, blocked: () => true });
+            const r2 = await drive(boxed, keepAliveStep(boxed as unknown as BotSDK, { x: 10, z: 10 }, 0, 2), 30);
+            expect(r2).toMatchObject({ moved: false, to: null });
+            expect(sim2.clicks).toHaveLength(4);
+        });
     });
 });

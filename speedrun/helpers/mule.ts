@@ -26,18 +26,30 @@
 // [0, max] and to what it holds. With no usable ask it offers none of that line and logs it.
 // Mule options for it: `askWaitTicks` (default 3), `cueDir` (default RC_CUE_DIR, as the givers).
 //
+// Carried packages (`carried: true`, H12o on Ape Atoll, where there is no bank). The mule logs in
+// already holding every package, finds each package's lines in its inventory (carriedNeeds) and
+// offers every line by exact count, since the inventory holds more than the package served. Each
+// package may name the tile it is served from (`at`); the mule stands on the pending package's tile,
+// else on the first one not yet served or withdrawn (carriedStand), and walks there as soon as that
+// changes. What it served is kept in RoleState by cue session, so a restarted role never serves a
+// package twice. Two guards keep it alive between trades: it kills any NPC that hit it, or any named
+// aggressive species within `clearTiles` (wildlifeThreat; any NPC hit on either trader closes the
+// trade for both), and every `keepAliveMinutes` while idle it steps one tile out and back
+// (keepAliveStep). Both are on by default only in carried mode.
+//
 // Run standalone (lite client already running for the account):
 //   ROLE_OPTIONS='{...}' bun speedrun/helpers/mule.ts <account>            # mule
 //   ROLE_OPTIONS='{...}' bun speedrun/helpers/mule.ts <account> courier    # courier
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
-import type { BankItem, BotWorldState, GameMessage, InventoryItem, TradeItem, TradeItemSpec } from '../../sdk/types';
+import type { BankItem, BotWorldState, GameMessage, InventoryItem, NearbyNpc, TradeItem, TradeItemSpec } from '../../sdk/types';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
+import { fight } from '../lib/combat';
 import { itemRef, namesNote, refLabel, refMatches, type ItemRef, type NamedRef } from '../lib/items';
 import type { ObjPack } from '../lib/obj-pack';
 import { travelTo } from '../lib/toll-gate';
 import { ANY_OFFER, clickBack, decideTradeClick, DROPPED_TICKS, give, newClickCtx, offerSatisfies, openTrade, sameName, sendTradeClick, type ClickCtx } from '../lib/trade';
-import { tickMs } from '../lib/wait';
+import { tickMs, waitUntil, type StateSource } from '../lib/wait';
 import { awaitAsk, cueAddresses, cueDir, CueWriter, nameHash, readCue, scopeOption, type AwaitAskOptions, type Cue, type CueScope, type TopUpAsk } from './altar-cue';
 import { runStandalone, type Role, type RoleContext } from './role';
 
@@ -118,6 +130,13 @@ export interface Package {
     scope?: CueScope;
     /** Served only when asked for by name (a fallback such as H4e): never a step of order mode. */
     onRequest?: true;
+    /** Carried mode only: the tile the package is served from (carriedStand). */
+    at?: Tile;
+}
+
+export interface Tile {
+    x: number;
+    z: number;
 }
 
 /**
@@ -328,6 +347,170 @@ export function decidePreRequest(s: BotWorldState, click: ClickCtx, serve: strin
     if (!target) return { next: click };
     const d = decideTradeClick(s, click, { noReplyTicks: DROPPED_TICKS });
     return d.action === 'send' ? { next: d.next, send: target.index } : { next: d.next };
+}
+
+// ============ Carried packages (unit tested in mule.test.ts) ============
+
+/** A carried package against the inventory: what serving it takes, by id, and what the inventory lacks. */
+export interface CarriedNeeds {
+    /** id -> count: a fixed line's amount (everything held for -1), a top-up line's whole holding (the trade clamps it to the ask and max). */
+    held: Map<number, number>;
+    missing: { item: string; wanted: number; have: number }[];
+    /** Lines whose name matches more than one inventory id; the package names them by `id` instead. */
+    ambiguous: { item: string; ids: number[] }[];
+}
+
+/**
+ * Map a carried package onto the inventory, as planPackage maps a banked one onto the bank. A top-up
+ * line is never missing (the scored account may ask for none); it is in `held` when any of it is.
+ */
+export function carriedNeeds(pkg: Pick<Package, 'items'>, inventory: readonly InventoryItem[], pack?: ObjPack): CarriedNeeds {
+    const held = new Map<number, number>();
+    const missing: CarriedNeeds['missing'] = [];
+    const ambiguous: CarriedNeeds['ambiguous'] = [];
+    const inv = countById([...inventory]);
+    for (const spec of pkg.items) {
+        const ids = [...new Set(inventory.filter(i => refMatches(spec, i, pack)).map(i => i.id))];
+        if (ids.length > 1) {
+            ambiguous.push({ item: refLabel(spec), ids });
+            continue;
+        }
+        const id = ids[0];
+        const have = id === undefined ? 0 : (inv.get(id) ?? 0);
+        if (isTopUp(spec)) {
+            if (id !== undefined) held.set(id, have);
+            continue;
+        }
+        const amount = spec.amount === -1 ? have : spec.amount;
+        if (id === undefined || amount <= 0 || have < amount) {
+            missing.push({ item: refLabel(spec), wanted: spec.amount, have });
+            continue;
+        }
+        held.set(id, amount);
+    }
+    return { held, missing, ambiguous };
+}
+
+/** CarriedNeeds as a log line's fields. */
+export function carriedNeedsLog(n: CarriedNeeds): Record<string, unknown> {
+    return { held: Object.fromEntries(n.held), ...(n.missing.length ? { missing: n.missing } : {}), ...(n.ambiguous.length ? { ambiguous: n.ambiguous } : {}) };
+}
+
+/** A carried package can be served: every fixed line held, no ambiguous line, and something to offer. */
+export function carriedReady(n: CarriedNeeds): boolean {
+    return n.missing.length === 0 && n.ambiguous.length === 0 && n.held.size > 0;
+}
+
+/**
+ * The start-of-login check: what the inventory lacks for every carried package together (fixed
+ * amounts plus top-up maxes, summed by line name or id). Empty when the mule is loaded for all of them.
+ */
+export function carriedShort(pkgs: readonly Package[], inventory: readonly InventoryItem[], pack?: ObjPack): { item: string; wanted: number; have: number }[] {
+    const lines = new Map<string, { spec: PackageItem; wanted: number }>();
+    for (const spec of pkgs.flatMap(p => p.items)) {
+        const n = isTopUp(spec) ? spec.topUp.max : spec.amount;
+        if (n < 0) continue;
+        const key = spec.id !== undefined ? `#${spec.id}` : spec.item.toLowerCase();
+        const line = lines.get(key);
+        lines.set(key, { spec, wanted: (line?.wanted ?? 0) + n });
+    }
+    const out: { item: string; wanted: number; have: number }[] = [];
+    for (const { spec, wanted } of lines.values()) {
+        const have = inventory.filter(i => refMatches(spec, i, pack)).reduce((n, i) => n + i.count, 0);
+        if (have < wanted) out.push({ item: refLabel(spec), wanted, have });
+    }
+    return out;
+}
+
+/**
+ * Where a carried mule stands: the pending package's tile; else the first package (in config order)
+ * not yet served or withdrawn (`done`) that has one, the next trade's; else the last done one's, so
+ * after its last trade it stays put; else `stand`.
+ */
+export function carriedStand(packages: readonly Package[], pending: Package | null, done: ReadonlySet<string>, stand: Tile): Tile {
+    if (pending?.at) return pending.at;
+    const next = packages.find(p => p.at && !done.has(p.name));
+    if (next?.at) return next.at;
+    return [...packages].reverse().find(p => p.at && done.has(p.name))?.at ?? stand;
+}
+
+/** RoleState key: the carried packages served, by cue session, so a restarted role never serves one twice. */
+export const CARRIED_SERVED_KEY = 'carriedServed';
+export interface CarriedServed {
+    pkg: string;
+    /** The cue session that asked for it ('order' in order mode). */
+    session: string;
+    ms: number;
+}
+
+/** The RoleState record, read defensively: anything that is not a list of entries is none. */
+export function carriedServedEntries(value: unknown): CarriedServed[] {
+    if (!Array.isArray(value)) return [];
+    return value.filter((e): e is CarriedServed => !!e && typeof e.pkg === 'string' && typeof e.session === 'string' && typeof e.ms === 'number');
+}
+
+/** Packages served during this login: entries written since its cues started to count (cueEpoch, less STALE_CUE_MS). */
+export function carriedDoneSince(entries: readonly CarriedServed[], startMs: number): Set<string> {
+    return new Set(entries.filter(e => e.ms >= startMs - STALE_CUE_MS).map(e => e.pkg));
+}
+
+/** The atoll's aggressive wildlife (quest_mm.npc, hunt mode aa_aggressive_melee, hunt range 1, any combat level). */
+export const DEFAULT_WILDLIFE = ['^jungle spider$', '^scorpion$', '^snake$'];
+/** Observed ticks a hit marks its NPC as attacking the mule (an NPC swings every 4). */
+export const HIT_MEMORY_TICKS = 8;
+
+/**
+ * The NPC to kill before a trade, or null: one that hit the mule in the last HIT_MEMORY_TICKS (a miss
+ * counts), else a named aggressive species within `clearTiles` of it (Chebyshev, on the NPC's route
+ * tile). Only NPCs with an Attack option, not already dead; a hitter first, then the nearest.
+ */
+export function wildlifeThreat(s: BotWorldState, patterns: readonly RegExp[], clearTiles: number): NearbyNpc | null {
+    const me = s.player;
+    if (!me) return null;
+    const hitters = new Set((s.combatEvents ?? []).filter(e => e.type === 'damage_taken' && e.sourceType === 'npc' && e.tick > s.tick - HIT_MEMORY_TICKS).map(e => e.sourceIndex));
+    const dist = (n: NearbyNpc) => Math.max(Math.abs((n.tileX ?? n.x) - me.worldX), Math.abs((n.tileZ ?? n.z) - me.worldZ));
+    const threats = s.nearbyNpcs.filter(
+        n => n.hp !== 0 && n.options.some(o => /^attack$/i.test(o)) && (hitters.has(n.index) || (dist(n) <= clearTiles && patterns.some(p => p.test(n.name))))
+    );
+    threats.sort((a, b) => Number(hitters.has(b.index)) - Number(hitters.has(a.index)) || dist(a) - dist(b));
+    return threats[0] ?? null;
+}
+
+/** A keep-alive is due when the mule has sent nothing for `everyMs` (0: never). */
+export function keepAliveDue(nowMs: number, lastInputMs: number, everyMs: number): boolean {
+    return everyMs > 0 && nowMs - lastInputMs >= everyMs;
+}
+
+/** The tiles a keep-alive may step to: the four neighbours of `at`, starting at `turn` so successive ones alternate. */
+export function keepAliveTiles(at: Tile, turn: number): Tile[] {
+    const steps: [number, number][] = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+    return steps.map((_, i) => steps[(turn + i) % steps.length]!).map(([dx, dz]) => ({ x: at.x + dx, z: at.z + dz }));
+}
+
+export interface KeepAliveResult {
+    moved: boolean;
+    /** The neighbour it stepped to; null when no step took. */
+    to: Tile | null;
+    ticks: number;
+}
+
+/**
+ * One keep-alive: a walk click to a neighbouring tile and one back to `at`. A click on the tile the
+ * player stands on sends no packet at all (the client's route finds no step; lite movement.ts), so the
+ * one input that changes nothing in the game has to be a step. A neighbour it cannot step onto within
+ * `maxTicks` is skipped for the next.
+ */
+export async function keepAliveStep(sdk: StateSource & Pick<BotSDK, 'sendWalk'>, at: Tile, turn: number, maxTicks = 4): Promise<KeepAliveResult> {
+    const t0 = sdk.getState()?.tick ?? 0;
+    const off = (s: BotWorldState) => !!s.player && (s.player.worldX !== at.x || s.player.worldZ !== at.z);
+    for (const to of keepAliveTiles(at, turn)) {
+        void sdk.sendWalk(to.x, to.z, false);
+        if (!(await waitUntil(sdk, off, { maxTicks })).ok) continue;
+        void sdk.sendWalk(at.x, at.z, false);
+        await waitUntil(sdk, s => !!s.player && !off(s), { maxTicks });
+        return { moved: true, to, ticks: (sdk.getState()?.tick ?? t0) - t0 };
+    }
+    return { moved: false, to: null, ticks: (sdk.getState()?.tick ?? t0) - t0 };
 }
 
 /** Bank items a courier should carry: every item matching a pattern, noted, up to `freeSlots` types. */
@@ -550,6 +733,11 @@ export interface ServeOptions {
     /** Where and how long to wait for the scored account's ask; required for a package with a top-up (the scope is the package's). */
     ask?: Omit<AwaitAskOptions, 'scope'>;
     log?: (message: string, data?: Record<string, unknown>) => void;
+    /**
+     * Offer each id's count in `held`, not all of it (carried mode: the inventory holds the other
+     * packages too). A top-up line's count still comes from the ask.
+     */
+    exact?: boolean;
 }
 
 export interface ServeResult extends GiveResult {
@@ -568,14 +756,15 @@ export async function serveStaged(sdk: BotSDK, bot: BotActions, o: ServeOptions)
     const items = sdk.getInventory().filter(i => o.held.has(i.id));
     const mode = o.mode ?? 'burst';
     const timeoutMs = o.timeoutMs ?? 60_000;
-    if (!o.pkg.items.some(isTopUp)) return { ...(await giveOpenTrade(sdk, bot, o.partner, items, mode, timeoutMs)), topUps: [], ask: null };
+    const fixed = o.exact ? new Map(o.held) : undefined;
+    if (!o.pkg.items.some(isTopUp)) return { ...(await giveOpenTrade(sdk, bot, o.partner, items, mode, timeoutMs, fixed)), topUps: [], ask: null };
     if (!o.pkg.scope || !o.ask) throw new Error(`Package ${o.pkg.name} has a top-up: it needs a scope and the ask's options`);
     const ask = await awaitAsk(sdk, { ...o.ask, scope: o.pkg.scope });
     const topUps = topUpCounts(o.pkg, items, ask);
     const unserved = topUps.filter(t => t.asked === null || t.n < Math.min(t.asked === 'all' ? t.max : t.asked, t.max));
     if (!ask) o.log?.('top-up: no usable ask; offering none of the top-up lines', { package: o.pkg.name, scope: o.pkg.scope, waitedTicks: o.ask.maxTicks });
     else if (unserved.length) o.log?.('top-up: short of the ask', { package: o.pkg.name, lines: unserved });
-    const amounts = new Map(topUps.flatMap(t => (t.id === null ? [] : [[t.id, t.n] as const])));
+    const amounts = new Map([...(fixed ?? []), ...topUps.flatMap(t => (t.id === null ? [] : [[t.id, t.n] as const]))]);
     return { ...(await giveOpenTrade(sdk, bot, o.partner, items, mode, timeoutMs, amounts)), topUps, ask };
 }
 
@@ -702,6 +891,14 @@ export interface MuleOptions {
     askWaitTicks?: number;
     /** Where package cues and top-up asks are read (altar-cue.ts cueDir: RC_CUE_DIR, else run-machine/rc-cue). */
     cueDir?: string;
+    /** The packages are in the inventory from login, served where each package's `at` says; no bank, no GE. */
+    carried?: boolean;
+    /** NPC name RegExp sources to kill within `clearTiles` before a trade, with any NPC that hits the mule. Default DEFAULT_WILDLIFE when carried, else none ([] turns it off). */
+    wildlife?: string | string[];
+    /** Chebyshev tiles from the mule a named NPC is cleared within. Default 1 (the atoll wildlife's hunt range). */
+    clearTiles?: number;
+    /** Minutes without input before a keep-alive step (keepAliveStep); 0 never. Default 5 when carried, else 0. */
+    keepAliveMinutes?: number;
 }
 
 /** A cue older than this when the mule starts is a past hand-off's, never served. */
@@ -769,17 +966,27 @@ export function packageOf(raw: unknown, pack?: ObjPack): Package {
     const items = packageItems(name, p.items, pack);
     if (p.onRequest !== undefined && typeof p.onRequest !== 'boolean') throw new Error(`Package ${name}: onRequest must be true or false`);
     const onRequest = p.onRequest === true ? { onRequest: true as const } : {};
+    const at = p.at === undefined ? {} : { at: tileOption(p.at, `Package ${name} at`) };
     if (!items.some(isTopUp)) {
         // The scope keys the package for a cue (its hand-off id); a fixed package may go without.
         const scope = p.scope === undefined ? {} : { scope: scopeOption(p.scope, ['mule'], `Package ${name} scope`) };
-        return { name, items, ...scope, ...onRequest };
+        return { name, items, ...scope, ...onRequest, ...at };
     }
     const labels = items.map(i => refLabel(i).toLowerCase());
     for (const t of items.filter(isTopUp)) {
         const l = refLabel(t).toLowerCase();
         if (labels.filter(x => x === l).length > 1) throw new Error(`Package ${name}: ${refLabel(t)} is a top-up line and another line too`);
     }
-    return { name, items, scope: scopeOption(p.scope, ['mule'], `Package ${name} scope`), ...onRequest };
+    return { name, items, scope: scopeOption(p.scope, ['mule'], `Package ${name} scope`), ...onRequest, ...at };
+}
+
+/** A tile from options: `{ x, z }`, whole numbers. */
+export function tileOption(raw: unknown, where: string): Tile {
+    const t = (raw ?? {}) as Record<string, unknown>;
+    const x = Number(t.x);
+    const z = Number(t.z);
+    if (!Number.isInteger(x) || !Number.isInteger(z) || x < 0 || z < 0) throw new Error(`${where} must be { x, z } in whole tiles (got ${JSON.stringify(raw)})`);
+    return { x, z };
 }
 
 export function muleOptions(raw: Record<string, unknown>, env: Record<string, string | undefined> = process.env): Required<Omit<MuleOptions, 'serve' | 'ge'>> & Pick<MuleOptions, 'serve' | 'ge'> {
@@ -788,7 +995,20 @@ export function muleOptions(raw: Record<string, unknown>, env: Record<string, st
     if ('requestFile' in raw) throw new Error('requestFile is gone: a package is asked for by a cue scoped { step: <hand-off id>, family: "mule" } in cueDir (mule.md)');
     const askWaitTicks = Number(o.askWaitTicks ?? 3);
     if (!Number.isInteger(askWaitTicks) || askWaitTicks < 0) throw new Error(`askWaitTicks must be a whole number (got ${o.askWaitTicks})`);
+    if (o.carried !== undefined && typeof o.carried !== 'boolean') throw new Error('carried must be true or false');
+    const carried = o.carried === true;
+    const tiled = packages.filter(p => p.at).map(p => p.name);
+    if (!carried && tiled.length) throw new Error(`Package tiles (at) are for carried packages only (${tiled.join(', ')}): a banked package is served at stand`);
+    if (carried && o.ge) throw new Error('A carried mule has no bank, so no GE orders');
+    const keepAliveMinutes = Number(o.keepAliveMinutes ?? (carried ? 5 : 0));
+    if (!Number.isFinite(keepAliveMinutes) || keepAliveMinutes < 0) throw new Error(`keepAliveMinutes must be 0 or more (got ${o.keepAliveMinutes})`);
+    const clearTiles = Number(o.clearTiles ?? 1);
+    if (!Number.isInteger(clearTiles) || clearTiles < 0) throw new Error(`clearTiles must be a whole number (got ${o.clearTiles})`);
     return {
+        carried,
+        wildlife: o.wildlife ?? (carried ? DEFAULT_WILDLIFE : []),
+        clearTiles,
+        keepAliveMinutes,
         askWaitTicks,
         cueDir: typeof o.cueDir === 'string' ? o.cueDir : cueDir(env),
         serve: o.serve,
@@ -828,6 +1048,16 @@ class Mule {
     private openSeenMs = 0;
     /** Date.now() of the last top-up ask served. */
     private lastAskMs = 0;
+    /** The cue session that asked for the pending package ('order' when order mode made it pending). */
+    private pendingSession = 'order';
+    /** Carried mode: packages served or withdrawn this login, whose tiles the mule has moved past (carriedStand). */
+    private readonly done = new Set<string>();
+    private readonly wildlife: RegExp[];
+    /** The tile the mule last walked to; a different standTile() walks it there at once. */
+    private lastStand: Tile | null = null;
+    /** Date.now() of the mule's last input (a walk, a click, a fight): the keep-alive's clock. */
+    private lastInputMs = Date.now();
+    private keepAlives = 0;
 
     /** What the mule is doing: idle, consolidate (taking courier stock in), serve (preparing or giving a package), ge. */
     private phase(to: 'idle' | 'consolidate' | 'serve' | 'ge'): void {
@@ -842,6 +1072,37 @@ class Mule {
         this.requests = new ChatCursor(ctx.sdk, [TRADE_REQUEST_CHAT_TYPE]);
         this.ordered = this.o.packages.filter(p => !p.onRequest);
         if (this.o.serveMode === 'order') this.pending = this.ordered[0] ?? null;
+        this.wildlife = toRegExps(this.o.wildlife);
+        if (this.o.carried) {
+            // No bank to visit; and what this login already served (a restarted role) stays served.
+            this.needsBank = false;
+            for (const name of carriedDoneSince(this.servedEntries(), this.startMs)) this.done.add(name);
+            if (this.pending && this.done.has(this.pending.name)) ({ nextIndex: this.nextIndex, pending: this.pending } = this.afterCarried(this.pending));
+        }
+    }
+
+    private servedEntries(): CarriedServed[] {
+        return carriedServedEntries(this.ctx.state.get(CARRIED_SERVED_KEY));
+    }
+
+    /** Order mode past a carried package served before a restart: the next one not done. */
+    private afterCarried(served: Package): { nextIndex: number; pending: Package | null } {
+        let r = afterServe(this.ordered, this.nextIndex, served);
+        while (r.pending && this.done.has(r.pending.name)) r = afterServe(this.ordered, r.nextIndex, r.pending);
+        return r;
+    }
+
+    /** Where the mule stands: `stand`, or in carried mode the tile of the package it serves next. */
+    private standTile(): Tile {
+        return this.o.carried ? carriedStand(this.o.packages, this.pending, this.done, this.o.stand) : this.o.stand;
+    }
+
+    private standTolerance(): number {
+        return this.o.carried ? 1 : 3;
+    }
+
+    private touch(): void {
+        this.lastInputMs = Date.now();
     }
 
     private isServe(name: string | null | undefined): boolean {
@@ -858,8 +1119,24 @@ class Mule {
         await ensureOutOfTutorial(ctx);
         await ctx.bot.dismissBlockingUI();
         if (ctx.sdk.getTradeState().isOpen) await ctx.bot.declineTrade();
-        await walkNear(ctx, this.o.stand.x, this.o.stand.z, 3);
-        ctx.log('mule ready', { serve: this.o.serve, packages: this.o.packages.map(p => p.name), giver: this.o.giver, serveMode: this.o.serveMode });
+        const stand = this.standTile();
+        const from = ctx.sdk.getState()?.player;
+        const t0 = tick(ctx.sdk);
+        await walkNear(ctx, stand.x, stand.z, this.standTolerance());
+        this.lastStand = stand;
+        this.touch();
+        if (this.o.carried) {
+            const inv = ctx.sdk.getInventory();
+            const short = carriedShort(this.o.packages, inv);
+            ctx.log(short.length ? 'carried: SHORT of the packages it carries' : 'carried: loaded', {
+                short,
+                done: [...this.done],
+                packages: this.o.packages.map(p => ({ name: p.name, at: p.at ?? null, ...carriedNeedsLog(carriedNeeds(p, inv)) })),
+                at: stand,
+                walk: { from: from ? { x: from.worldX, z: from.worldZ } : null, ticks: tick(ctx.sdk) - t0 }
+            });
+        }
+        ctx.log('mule ready', { serve: this.o.serve, packages: this.o.packages.map(p => p.name), giver: this.o.giver, serveMode: this.o.serveMode, ...(this.o.carried ? { carried: true } : {}) });
 
         let wasOpen = false;
         const unsubOpen = ctx.sdk.onStateUpdate(st => {
@@ -895,16 +1172,23 @@ class Mule {
             this.lastCue = { session: cue.session, seq: cue.seq };
             const pkg = packageForCue(cue, this.o.packages, this.o.serve);
             ctx.log(action === 'ask' ? 'package request' : 'package request stopped', { step: cue.scope.step, session: cue.session, seq: cue.seq, found: pkg?.name ?? null, after: last });
-            if (action === 'ask' && pkg && pkg !== this.pending) {
+            if (action === 'ask' && pkg && this.o.carried && this.servedEntries().some(e => e.pkg === pkg.name && e.session === cue.session)) {
+                // A restarted role re-reads the cue it already served.
+                ctx.log('carried: already served for this cue session', { package: pkg.name, session: cue.session });
+                this.done.add(pkg.name);
+            } else if (action === 'ask' && pkg && pkg !== this.pending) {
                 this.pending = pkg;
+                this.pendingSession = cue.session;
                 this.held = null;
                 this.shortSince = 0;
             } else if (action === 'stop' && pkg && pkg === this.pending && (this.o.serveMode === 'request' || pkg.onRequest)) {
                 // Withdrawn: bank the staged package; order mode returns to the package due.
                 this.pending = this.o.serveMode === 'order' ? (this.ordered[this.nextIndex] ?? null) : null;
                 this.held = null;
-                this.needsBank = true;
+                this.needsBank = !this.o.carried;
             }
+            // A carried package withdrawn (its hand-off skipped) is passed: the mule moves on to the next tile.
+            if (action === 'stop' && pkg && this.o.carried) this.done.add(pkg.name);
         }
 
         // 2. Trade requests: the scored account first, then couriers; anyone else is ignored.
@@ -912,26 +1196,85 @@ class Mule {
         requesters.sort((a, b) => Number(this.isServe(b)) - Number(this.isServe(a)));
         for (const name of requesters) {
             if (this.isServe(name)) await this.serveTrade(name);
-            else if (this.isCourier(name)) await this.courierTrade(name);
+            else if (this.isCourier(name) && !this.o.carried) await this.courierTrade(name);
             else ctx.log('ignored trade request', { from: name });
         }
         // A request that raced the cursor can leave a screen open.
         const open = sdk.getTradeState();
         if (open.isOpen) {
             if (this.isServe(open.partner)) await this.serveTrade(open.partner!);
-            else if (this.isCourier(open.partner)) await this.courierTrade(open.partner!);
+            else if (this.isCourier(open.partner) && !this.o.carried) await this.courierTrade(open.partner!);
             else await ctx.bot.declineTrade();
         }
 
         // 3. Housekeeping between trades.
-        if (this.needsBank || this.wantsPackage()) await this.bankCycle();
+        if (!this.o.carried && (this.needsBank || this.wantsPackage())) await this.bankCycle();
         if (this.o.ge && Date.now() - this.lastGeCollect > (this.o.ge.collectEveryMin ?? 10) * 60_000) await this.geCycle();
+        // Wildlife first: a hit on either trader closes the trade the pre-request would open.
+        if (this.wildlife.length) await this.clearWildlife();
         this.preRequest();
-        if (Date.now() - this.lastPreRequest > 20_000 && distanceTo(sdk, this.o.stand.x, this.o.stand.z) > 3 && !sdk.getTradeState().isOpen) {
-            await walkNear(ctx, this.o.stand.x, this.o.stand.z, 3);
-        }
+        await this.keepStand();
+        await this.keepAlive();
         this.phase('idle');
         await nextTick(sdk);
+    }
+
+    /**
+     * Back to the stand tile. A changed tile (carried mode: the next package's) is walked to at once;
+     * otherwise only once the last pre-request is 20 s old, so the mule doesn't undo the pre-request's
+     * walk to the scored account.
+     */
+    private async keepStand(): Promise<void> {
+        const { ctx } = this;
+        const { sdk } = ctx;
+        if (sdk.getTradeState().isOpen) return;
+        const stand = this.standTile();
+        const tolerance = this.standTolerance();
+        if (this.lastStand && (stand.x !== this.lastStand.x || stand.z !== this.lastStand.z)) {
+            const from = sdk.getState()?.player;
+            const t0 = tick(sdk);
+            const ok = await walkNear(ctx, stand.x, stand.z, tolerance);
+            this.lastStand = stand;
+            this.touch();
+            ctx.log('carried: moved to the next package tile', { to: stand, from: from ? { x: from.worldX, z: from.worldZ } : null, ok, ticks: tick(sdk) - t0, next: this.pending?.name ?? this.o.packages.find(p => !this.done.has(p.name))?.name ?? null });
+            return;
+        }
+        if (Date.now() - this.lastPreRequest > 20_000 && distanceTo(sdk, stand.x, stand.z) > tolerance) {
+            await walkNear(ctx, stand.x, stand.z, tolerance);
+            this.touch();
+        }
+    }
+
+    /** Kill the NPCs wildlifeThreat names, one at a time, while no trade is open (at most 5 a cycle). */
+    private async clearWildlife(): Promise<void> {
+        const { ctx } = this;
+        const { sdk } = ctx;
+        for (let i = 0; i < 5 && !ctx.signal.aborted; i++) {
+            const s = sdk.getState();
+            if (!s || s.trade?.isOpen) return;
+            const npc = wildlifeThreat(s, this.wildlife, this.o.clearTiles);
+            if (!npc) return;
+            this.touch();
+            const hp0 = s.player?.hp ?? null;
+            const r = await fight(sdk, npc, { maxTicks: 60, findTicks: 1 });
+            this.touch();
+            ctx.log('wildlife', { npc: npc.name, index: npc.index, at: { x: npc.tileX ?? npc.x, z: npc.tileZ ?? npc.z }, end: r.end, ticks: r.ticks, dealt: r.dealt, taken: r.taken, hp: [hp0, sdk.getState()?.player?.hp ?? null] });
+        }
+    }
+
+    /** A keep-alive step when the mule has sent nothing for keepAliveMinutes, never during a trade or with the served account near. */
+    private async keepAlive(): Promise<void> {
+        const { ctx } = this;
+        const { sdk } = ctx;
+        const idleMs = Date.now() - this.lastInputMs;
+        if (!keepAliveDue(Date.now(), this.lastInputMs, this.o.keepAliveMinutes * 60_000)) return;
+        const s = sdk.getState();
+        if (!s?.player || s.trade?.isOpen || sdk.isBankOpen()) return;
+        if (this.o.serve && s.nearbyPlayers.some(p => sameName(p.name, this.o.serve) && p.distance <= PRE_REQUEST_TILES)) return;
+        const at = { x: s.player.worldX, z: s.player.worldZ };
+        const r = await keepAliveStep(sdk, at, this.keepAlives++);
+        this.touch();
+        ctx.log('keep-alive', { at, ...r, idleMs, tick: s.tick });
     }
 
     private wantsPackage(): boolean {
@@ -941,6 +1284,7 @@ class Mule {
     }
 
     private packageReady(): boolean {
+        if (this.o.carried) return !!this.pending && carriedReady(carriedNeeds(this.pending, this.ctx.sdk.getInventory()));
         return !!this.pending && !!this.held && holds(countById(this.ctx.sdk.getInventory()), this.held);
     }
 
@@ -948,10 +1292,13 @@ class Mule {
         const { sdk } = this.ctx;
         const s = sdk.getState();
         if (!s || !this.o.preRequest || !this.o.serve) return;
-        const d = decidePreRequest(s, this.click, this.o.serve, this.packageReady() && stagedExactly(sdk.getInventory(), this.held).exact);
+        // A carried package shares the inventory with the others, so only a banked one must be staged exactly.
+        const ready = this.packageReady() && (this.o.carried || stagedExactly(sdk.getInventory(), this.held).exact);
+        const d = decidePreRequest(s, this.click, this.o.serve, ready);
         this.click = d.next;
         if (d.send === undefined) return;
         this.lastPreRequest = Date.now();
+        this.touch();
         // The scored account sees "wishes to trade", and its own click then opens the trade on the tick it lands.
         sendTradeClick(sdk, d.send, this.click.sentTick, (sent, tick) => (this.click = clickBack(this.click, sent, tick)));
         this.ctx.log('pre-requested', { serve: this.o.serve, package: this.pending?.name, sends: this.click.sends });
@@ -1021,16 +1368,24 @@ class Mule {
             await this.receiveFrom(name);
             return;
         }
-        const staged = stagedExactly(sdk.getInventory(), this.held);
-        if (!staged.exact) {
-            ctx.log('serve refused: the inventory is not exactly the package; re-staging', { package: this.pending?.name, extra: staged.extra, short: staged.short });
-            if (sdk.getTradeState().isOpen) await bot.declineTrade();
-            this.held = null;
-            this.needsBank = true;
-            return;
+        this.touch();
+        if (this.o.carried) {
+            // Its own counts from the inventory; and no wildlife beside it when the trade opens.
+            if (this.wildlife.length && !sdk.getTradeState().isOpen) await this.clearWildlife();
+            this.held = carriedNeeds(this.pending!, sdk.getInventory()).held;
+        } else {
+            const staged = stagedExactly(sdk.getInventory(), this.held);
+            if (!staged.exact) {
+                ctx.log('serve refused: the inventory is not exactly the package; re-staging', { package: this.pending?.name, extra: staged.extra, short: staged.short });
+                if (sdk.getTradeState().isOpen) await bot.declineTrade();
+                this.held = null;
+                this.needsBank = true;
+                return;
+            }
         }
         if (!(await this.openTradeWith(name))) return;
         const pkg = this.pending!;
+        const session = this.pendingSession;
         // 30 s, not 60: a pre-request can open a trade the scored account did not ask for
         // yet (it accepts a stale request of theirs), and that screen must not linger.
         const r = await serveStaged(sdk, bot, {
@@ -1040,8 +1395,10 @@ class Mule {
             mode: this.o.giver,
             timeoutMs: 30_000,
             ask: { dir: this.o.cueDir, openMs: this.openSeenMs || Date.now(), lastServedMs: this.lastAskMs, maxTicks: this.o.askWaitTicks, signal: ctx.signal },
-            log: ctx.log
+            log: ctx.log,
+            exact: this.o.carried
         });
+        this.touch();
         if (r.ask) this.lastAskMs = r.ask.ms;
         ctx.log('hand-off', {
             to: name,
@@ -1056,13 +1413,20 @@ class Mule {
         });
         if (r.success) {
             this.held = null;
+            if (this.o.carried) {
+                // On disk before anything else: a restart must find it served (role.ts RoleState).
+                await this.ctx.state.set(CARRIED_SERVED_KEY, [...this.servedEntries(), { pkg: pkg.name, session, ms: Date.now() } satisfies CarriedServed]);
+                this.done.add(pkg.name);
+            }
             if (this.o.serveMode === 'order') {
                 ({ nextIndex: this.nextIndex, pending: this.pending } = afterServe(this.ordered, this.nextIndex, pkg));
             } else {
                 this.pending = null;
             }
+            this.pendingSession = 'order';
+            if (this.o.carried) ctx.log('carried: left', { inventory: sdk.getInventory().length, short: carriedShort(this.o.packages.filter(p => !this.done.has(p.name)), sdk.getInventory()) });
         }
-        this.needsBank = true;
+        this.needsBank = !this.o.carried;
     }
 
     private async courierTrade(name: string): Promise<void> {
