@@ -15,8 +15,8 @@
 // H12 before S15), and the packages come in ledger order, which is the order the run pulls them
 // (mule.ts serveMode 'order').
 //
-//   bun speedrun/helpers/mule-ledger.ts [--form ask|fixed] [--rows H12,H13] [--manifest PATH]
-//       prints { packages } for the mule's options
+//   bun speedrun/helpers/mule-ledger.ts [--form ask|fixed] [--rows H1,H3#1,H12] [--on-request H4e] [--manifest PATH]
+//       prints { packages } for the mule's options (default MULE1_ORDER, then MULE1_ON_REQUEST)
 //   ... --check FILE [--account cairn_mule1]   drift of FILE's packages (mule options, a packages
 //       list, or fleet.json) against the ledger; exit 1 on any
 //   ... --bank FILE [--account cairn_mule1]    the packages staged back to back against the account's
@@ -235,8 +235,10 @@ export function muleDrift(config: unknown, ledger: readonly LedgerPackage[], o: 
     const expected = ledger.map(l => l.package.name);
     const names = configured.map(p => p.name);
     for (const p of configured) if (!expected.includes(p.name)) out.push(`${p.name}: configured, but not one of this mule's ledger rows (${expected.join(', ')})`);
-    const common = names.filter(n => expected.includes(n));
-    const ledgerOrder = expected.filter(n => names.includes(n));
+    // Order mode serves the packages not marked onRequest, in the order configured.
+    const orderedNames = new Set(ledger.filter(l => !l.onRequest).map(l => l.package.name));
+    const common = configured.filter(p => !p.onRequest && orderedNames.has(p.name)).map(p => p.name);
+    const ledgerOrder = expected.filter(n => orderedNames.has(n) && names.includes(n));
     if (common.join() !== ledgerOrder.join()) out.push(`order: the packages run ${common.join(', ')}; the ledger's order is ${ledgerOrder.join(', ')}`);
     for (const l of ledger) {
         const want = l.package;
@@ -260,6 +262,7 @@ export function muleDrift(config: unknown, ledger: readonly LedgerPackage[], o: 
         for (const extra of lines.values()) for (const s of extra) out.push(`${l.row}: ${refLabel(s)} ${describe(s, pack)} is not in the ledger row`);
         const scope = (p: Package) => (p.scope ? `${p.scope.step}/${p.scope.family}` : 'none');
         if (scope(have) !== scope(want)) out.push(`${l.row}: scope ${scope(have)}, the ledger's ${scope(want)}`);
+        if (!!have.onRequest !== l.onRequest) out.push(`${l.row}: ${l.onRequest ? 'served in order, but only on request in the ledger list' : 'served only on request, but in the order in the ledger list'}`);
     }
     return out;
 }
@@ -304,10 +307,12 @@ function arg(argv: readonly string[], name: string): string | undefined {
 export function main(argv: readonly string[]): number {
     const form = (arg(argv, '--form') ?? 'ask') as TopUpForm;
     if (form !== 'ask' && form !== 'fixed') throw new Error(`--form must be ask or fixed (got ${form})`);
-    const rows = arg(argv, '--rows')?.split(',').map(s => s.trim()).filter(Boolean);
+    const list = (name: string) => arg(argv, name)?.split(',').map(s => s.trim()).filter(Boolean);
+    const rows = list('--rows');
+    const onRequest = list('--on-request');
     const manifest = readFileSync(arg(argv, '--manifest') ?? MANIFEST, 'utf8');
     const account = arg(argv, '--account') ?? 'cairn_mule1';
-    const ledger = muleFromLedger(manifest, { form, ...(rows ? { rows } : {}) });
+    const ledger = muleFromLedger(manifest, { form, ...(rows ? { rows } : {}), ...(onRequest ? { onRequest } : {}) });
     const check = arg(argv, '--check');
     const bankFile = arg(argv, '--bank');
     if (check) {
