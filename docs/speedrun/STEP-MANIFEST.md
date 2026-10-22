@@ -156,9 +156,9 @@ of Goblin Diplomacy's standalone travel that the legs already carried off its ro
 cannon session, Prayer, Crafting and Cooking pass it. Fold-in 13 adds S15's measured H to M (+352),
 so Monkey Madness (4,429) passes Agility (4,327) for rank 1.
 
-The expected column sums to **31,236** (the steps) plus the legs' **2,215.7**; RUN-ORDER.md section 6
+The expected column sums to **31,277** (the steps) plus the legs' **2,215.7**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **34,736.7** knife-on expected (31,868.7 best), against the record of 35,916.
+retries, restarts) for its **34,777.7** knife-on expected (31,900.7 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -169,9 +169,9 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 0 | 0 | Run chain | `speedrun/run.ts`, `runner/resume.ts` | all | boundary idle 0 m (#92); restarts ~5 each (an in-page relog, ~2, rs/174) | 0 | | | overlay | `runner/step.ts`, `runner/resume.ts` (main) | `run.ts`: building (rs/186, held: tenet 15); `runner/step.ts`, `resume.ts` on main (#29, #104, #146) |
 | 1 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,429 | 4,026 | 4,963 | ~937 | overlay | `quest-mm-*.ts` | **H-M lab-proven end to end, N-Z unrun** (A-G run; H-M 3 of 3, 1,466 m; N-Z being written by rs/201); run mode: no `p_walk`, re-paths at the Monkey Child (O) and the zoo (T), lever ~0 (r, rs/201) |
-| 2 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,228 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; rs/155); S17 4,114 on the engine's fall roll, 66 the clean-lap floor (rs/270); run mode 0 on both courses (m, rs/270) |
-| 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,116 | 3,116 | 3,775 | ~659 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | **on main, 4235a9e7 (#220; rs/260's snapshot of rs/230's lab-accepted module, rs/147's branch at 59ec3933)**, with `selfStarter` (plain 3.62) and `beforeRestart`; `stay2` bury (#159, rs/182) and restart fix (e5d8a058, #170; rs/207) on main; gate `measureDrops` 120 explicit (rs/259, 314989e9, reaching main with rs/147's Mining findings snapshot) |
-| 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,053 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; on rs/147's branch, changing with rs/236; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165); gate `measureDrops` 120 explicit (rs/261, building); run mode 0 (m, rs/261); **the knife demo-measured** (rs/261's cairn_chops, hiscore 3,329; S07 at its luck-free 3,053) |
+| 2 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,228 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; rs/155); S17 4,114 on the engine's fall roll, 66 the clean-lap floor (rs/270; cairn_jumps' demo run continues as rs/295); run mode 0 on both courses (m, rs/270) |
+| 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,157 | 3,148 | 3,775 | ~627 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | **on main, 4235a9e7 (#220; rs/260's snapshot of rs/230's lab-accepted module, rs/147's branch at 59ec3933)**, with `selfStarter` (plain 3.62) and `beforeRestart`; `stay2` bury (#159, rs/182) and restart fix (e5d8a058, #170; rs/207) on main; gate `measureDrops` 120 explicit (rs/259, 314989e9); **demo-measured** (rs/259's cairn_rocks: 3.019 per xp ore uncontested); **rs/298**, the Mining S09 snapshot (3fa6fbe4's ore drop and 314989e9), pending |
+| 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,053 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; on rs/147's branch, changing with rs/236; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165); gate `measureDrops` 120 explicit (rs/261, building); run mode 0 (m, rs/261); **the knife demo-measured** (rs/261's cairn_chops, hiscore 3,329; S07 at its luck-free 3,053); **rs/297**, the Woodcutting S07 snapshot, pending |
 | 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,215.7 | 2,196.7 | ~2,340 i | ~143 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | **on main, PR #238** (rs/291's snapshot of rs/198's module for rs/186, merge 5a70e4e6): `legs.ts` and its test, `tools/demo-legs.ts`, `measure-legs.ts`, `measure-ardougne-handoff.ts`, `ticks.ts`'s `travel` rows, run-transitions.md section 10; lab-measured and demo-checked (h55); its walker, `lib/travel.ts`, on main, 0658e896 (#200); rs/294's forcemove fix pending |
 | 6 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~120 elsewhere | ~190 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` | building (rs/154, parked under the 2-4 child limit); stun pack: lab-accepted (bury, charge, arrows; rs/132); top-ups ~0 with the courier on a side tile (rs/279, lab); rs/290's opt-in idle re-send building |
 | 7 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | on main, 22552bf4 (#197; rs/231); lab-accepted (1,998 on 78-99; rs/152); gate `measureDrops` 120 explicit (#221) |
@@ -251,7 +251,7 @@ are filed under main and held until tenet 15 is answered.
 - **4.** The module is on main, 4235a9e7 (#220): rs/260's snapshot of rs/230's lab-accepted
   `mining.ts` (rs/147's branch at 59ec3933; rs/153 and rs/212 before it), with knife-mine's
   `selfStarter` and gated-program's `beforeRestart`, inside the run-commit floor. Its gate
-  `measureDrops` is explicit at 120 (rs/259, 314989e9, via rs/147's Mining findings snapshot; RUN-ORDER.md R21). The
+  `measureDrops` is explicit at 120 (rs/259, 314989e9, reaching main with rs/298, the Mining S09 snapshot, with 3fa6fbe4's ore drop before every band start; RUN-ORDER.md R21, R27). The
   restart fix is on main (e5d8a058, #170); `knife-mine`'s `stay2` bury is on main (#159, rs/182); the in-page plain
   loop measured 4.00 ticks per ore (rs/153), and 3.62 with knife-mine's `selfStarter` (rs/230), the
   fallback in force (entry 4).
@@ -303,7 +303,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 | Dependency | Needed by | Module status | Notes |
 |---|---|---|---|
 | In-page program runtime, `lib/programs.ts` (rs/97) | 1, 3-6, 9 | on main, d09c2627 (#94) | |
-| Host gate, `lib/hostgate.ts` | in-page entries | on main, c9a6c31b (#101); **`measureDrops` default 120 on main, 148788c5 (#221; rs/262)** | The measured switch-off holds plain for `measuredOffTicks` (3,000); at the old default of 30 drops it fired on luck (RUN-ORDER.md R21: 1 of 5 lab Woodcutting chains switched twice, ~850 ticks; 0 in 4 at 120). Main's ruling (20:08 PDT): every run-day module passes an explicit `measureDrops` sized to its success chance. **Per module:** Woodcutting (3) 120 explicit (rs/261, building); Fishing (5) 120 explicit on each fly band (on main, #221); Mining (4) 120 explicit (rs/259, 314989e9: `GATE_MEASURE_DROPS`, tested; reaching main with rs/147's Mining findings snapshot): all three knife modules explicit at 120. Thieving (6), Agility (1) and Firemaking (16) do not use the gate |
+| Host gate, `lib/hostgate.ts` | in-page entries | on main, c9a6c31b (#101); **`measureDrops` default 120 on main, 148788c5 (#221; rs/262)** | The measured switch-off holds plain for `measuredOffTicks` (3,000); at the old default of 30 drops it fired on luck (RUN-ORDER.md R21: 1 of 5 lab Woodcutting chains switched twice, ~850 ticks; 0 in 4 at 120). Main's ruling (20:08 PDT): every run-day module passes an explicit `measureDrops` sized to its success chance. **Per module:** Woodcutting (3) 120 explicit (rs/261, building); Fishing (5) 120 explicit on each fly band (on main, #221); Mining (4) 120 explicit (rs/259, 314989e9: `GATE_MEASURE_DROPS`, tested; reaching main with rs/298, the Mining S09 snapshot): all three knife modules explicit at 120. Thieving (6), Agility (1) and Firemaking (16) do not use the gate |
 | `lib/gated-program.ts` (rs/156) | 3-5 | on main, 22552bf4 (#197) | reached main with rs/231's Fishing snapshot |
 | `lib/travel.ts`, the shared walker with the stall fix | 11 | on main, 0658e896 (#200) | five `speedrun/lib` files, byte-identical from rs/198's f0e76192; `STALL_TICKS = 20`: a walk that stalls returns `ok: false` instead of throwing; inside the run-commit floor |
 | `lib/display.ts` (rs/232's `frontWindows`, `grabFrame`, `frameShows`) | RUN-HOST.md steps 5 and 5a (the live-frame pass line) | on main, 5d22252d (#208) | gate tooling, not a floor item (main); with #213's `lib/tab.ts` window helpers (c4b79f17), `screenshotTab` among them |
@@ -393,7 +393,10 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     changes via rs/41's branch**: the trade giver's re-send moved onto `decideRequest` in game ticks
     (commit pending; R25) and the S18 courier holding a side tile (R24), both on the helpers'
     deployed commit before they serve SCORED, and `lib/trade.ts` `openTrade` with the altar giver
-    (3042ae95: the Runecraft stock rung at 9 a cycle and a busy partner's retry at ~2, entry 9);
+    (3042ae95: the Runecraft stock rung at 9 a cycle and a busy partner's retry at ~2, entry 9); **rs/298**, the Mining S09 snapshot (rs/259's
+    3fa6fbe4, the ore drop before every band start and restart, R27, and 314989e9, `measureDrops` 120;
+    entry 4; the scored S09 needs it); **rs/297**, the Woodcutting S07 snapshot (cairn_chops' raced code
+    and any knife-cycle opt-in hunks it needs; entry 3);
     **rs/243** (the second Thieving part: pickpocket's `stopWhenFoodBelow` and `retargetTicks`,
     entry 6); **rs/147's Agility snapshot**, to be filed (agility's `untilLevel`, closing
     RUN-ORDER.md O40, the program's `eatAt` opt-in, f95f9558, rs/241's work, and the module default
@@ -955,7 +958,19 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   fire, so about 5 logs is enough and no log margin applies. rs/230's chain agrees: 0 logs burned in
   3,493 knife ticks from creation and in 14 knife runs of ~7,000 knife ticks (m, lab; it reads the
   kit as needing 1-2), so the ~5 stand. Items out: none.
-- **Ticks:** expected and best **3,116** (knife: 3.00 ticks per ore measured with
+- **Ticks:** expected **3,157**, best **3,148** (knife). **On the demo** (rs/259's cairn_rocks to 99, m-demo): the
+  uncontested knife ran **3.019 ticks per xp ore over 647 ores** (637 gaps of 3, 4 of 6, 0 slips), respawn
+  11-12 at 1,534-1,744 online with the five-rock lap at 3.00 throughout, the gate 20/20 with 0 catch-ups at
+  every band start, late starters 0.38 per 100 ores as in the lab; level-up dialogs cost nothing visible, and
+  the logout at 99 landed on the last step's end tick, confirmed in 334 ms. Expected = 1,035 xp ores from 64
+  ((39,938.3 - 3,725) / 35 base) x 3.019 + **one band start of ~32** (`mining.iron-63`: the first in-page
+  gate probe after a login, ~30, and ~2 to the first ore), 3,157 (i on the m-demo rate). Best = the model's
+  ~1,039 rolls (the gem-table roll included) at the 3.00 floor + the same start, 3,148. Extra starts are R-row
+  costs: a relog ~22, a slip's re-probe 20, a respawn-change restart ~14 with no probe, a measured switch +D
+  (RUN-ORDER.md R18). The demo run's own band, 3,172 for 1,047 ores, is not taken: its contested restarts cut
+  it into more segments (R26). **A full pack** stalled that band at 92 after 4-5 restarts, each leaving its
+  last ore; 3fa6fbe4 drops leftover ores before every band start and restart (R27; rs/298). Before (the
+  lab's basis, 3,116 for both): 3.00 ticks per ore measured with
   `tickmanip-mine.ts`, 2 × 200 ores, total 3,134 inferred, `skills/mining.md` §2; less the model's
   18 ticks of level-ups, measured 0 in the rotation, `research/levelup-cost.md` §2, §6).
   rs/230's chain from creation ran the 63-99 band at 3.012 per ore, 1,048 ores, 0 slips, at D = 15
