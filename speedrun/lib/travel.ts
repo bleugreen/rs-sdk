@@ -740,7 +740,7 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
     let passed = doorsBehind(sdk.getState()!, pos(sdk), route);
     let idx = 0;
     let target: XZ | null = null;
-    /** The route index of `target`: the outstanding click walks route[idx..targetIdx], and the player is somewhere on it. */
+    /** The route index of `target`: the outstanding click walks route[idx..targetIdx]. */
     let targetIdx = -1;
     let final = false;
     let lastPos = pos(sdk);

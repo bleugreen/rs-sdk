@@ -299,7 +299,7 @@ describe('runTo: the chained run', () => {
      * went past the door, and only a stall found it again: +9 ticks against lite. `frame` says, for
      * the state of each new tick, whether it is a rebuild frame (an old region's loc, no door), lists
      * the closed door, or lists nothing; the door opens on the interact. A hop's first click already
-     * waits for a built scene (rs/309), so the rebuild frame that matters falls on a later click.
+     * waits for a built scene (rs/309), so the rebuild frames that matter fall mid-run.
      */
     function doorRun(doorX: number, goalX: number, frame: (s: BotWorldState) => 'rebuild' | 'door' | 'none') {
         const shut = loc(1530, 'Door', doorX, 3200, ['Open']);
@@ -326,24 +326,37 @@ describe('runTo: the chained run', () => {
         return { sdk, sim, from, run: () => drive(sdk, runTo(sdk as never, { x: goalX, z: 3200 }), 600, each) };
     }
 
-    test('a door missing from a mid-rebuild frame on the click tick is judged by the frame before: opened on that tick, as on lite', async () => {
-        // The second click (tick 109, from 3218) falls on the rebuild frame, and the door at 3230 is in its stretch.
-        const t = doorRun(3230, 3260, s => (s.tick === 109 ? 'rebuild' : 'door'));
+    // The loc scan lists 15 tiles: the door at 3230 is first listed with the player at 3216 (tick 108),
+    // between the first click (tick 100, to 3220) and the second (due at 3218, tick 109).
+    const scan = (doorX: number) => (s: BotWorldState) => (s.player!.worldX >= doorX - 15 ? 'door' as const : 'none' as const);
+
+    test('lite: a closed door on the route is opened on the first tick it is listed within reach, between clicks', async () => {
+        const t = doorRun(3230, 3260, scan(3230));
         const r = await t.run();
         expect(r.ok).toBe(true);
-        expect(t.sim.clicks[0]).toMatchObject({ x: 3220, tick: 100 });
-        expect(t.from).toEqual([{ tick: 109, x: 3218 }]);
+        expect(t.sim.clicks.map(c => c.tick)).toEqual([100, 109]);
+        expect(t.from).toEqual([{ tick: 108, x: 3216 }]);
         expect(sends(t.sdk, 'sendInteractLoc')).toEqual([[3230, 3200, 1530, 1]]);
         expect(r.doors).toEqual([expect.objectContaining({ x: 3230, z: 3200, state: 'closed' })]);
         expect(at(t.sdk)).toEqual({ x: 3260, z: 3200 });
     });
 
-    test('lite: the same door listed on the click tick is opened instead of that click', async () => {
-        const t = doorRun(3230, 3260, () => 'door');
+    test('browser: the tick the door comes into the scan is a mid-rebuild frame: no click from it, the door opened on the next built tick', async () => {
+        const t = doorRun(3230, 3260, s => (s.tick === 108 ? 'rebuild' : scan(3230)(s)));
         const r = await t.run();
         expect(r.ok).toBe(true);
-        expect(t.sim.clicks[0]).toMatchObject({ x: 3220, tick: 100 });
         expect(t.from).toEqual([{ tick: 109, x: 3218 }]);
+        expect(sends(t.sdk, 'sendInteractLoc')).toEqual([[3230, 3200, 1530, 1]]);
+        expect(at(t.sdk)).toEqual({ x: 3260, z: 3200 });
+    });
+
+    test('browser: a door listed before a mid-rebuild click tick was already opened, never clicked past', async () => {
+        // S12 B's shape: the door listed from tick 108, the click due at 109 on a rebuild frame.
+        const t = doorRun(3230, 3260, s => (s.tick === 109 ? 'rebuild' : scan(3230)(s)));
+        const r = await t.run();
+        expect(r.ok).toBe(true);
+        expect(t.from).toEqual([{ tick: 108, x: 3216 }]);
+        expect(t.sim.clicks.every(c => c.x < 3230)).toBe(true);
         expect(at(t.sdk)).toEqual({ x: 3260, z: 3200 });
     });
 
@@ -377,16 +390,6 @@ describe('runTo: the chained run', () => {
         expect(r.ok).toBe(true);
         expect(sends(sdk, 'sendInteractLoc')).toEqual([[3206, 3200, 1530, 1]]);
         expect(at(sdk)).toEqual({ x: 3220, z: 3200 });
-    });
-
-    test('a door missing from a rebuild that outlasts the grace is opened at the first built tick after it', async () => {
-        // Rebuild frames 107-109: by the click at 109 the last built frame (106) is 3 ticks old.
-        const t = doorRun(3230, 3260, s => (s.tick >= 107 && s.tick <= 109 ? 'rebuild' : 'door'));
-        const r = await t.run();
-        expect(r.ok).toBe(true);
-        expect(t.sim.clicks.slice(0, 2)).toMatchObject([{ x: 3220, tick: 100 }, { x: 3238, tick: 109, from: { x: 3218 } }]);
-        expect(t.from).toEqual([{ tick: 110, x: 3220 }]);
-        expect(at(t.sdk)).toEqual({ x: 3260, z: 3200 });
     });
 
     test('a door listed only on a frame published mid-rebuild is never opened from it', async () => {
