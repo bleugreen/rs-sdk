@@ -3,11 +3,11 @@ import { readFileSync } from 'fs';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
 import { OBJ_PACK } from '../lib/items';
 import { xpForLevel } from '../lib/xp';
-import { buildChain, PLACEMENT } from '../runner/chain';
+import { buildChain, KIT_PARTNER_ROWS, PLACEMENT } from '../runner/chain';
 import { applyStandIn, labRefusal, STAND_INS, standInFor, standInLevels, type LabWorld } from './stand-ins';
 
 const LAB: LabWorld = { staffLevel: '4', server: 'localhost', gateway: 'ws://localhost:8300/gateway' };
-const partners = Object.fromEntries([...Object.keys(PLACEMENT), 'H6', 'H7', 'H8', 'H16', 'H22'].map(id => [id, `p_${id}`]));
+const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id}`]));
 const chain = buildChain({ partners, firemakingTiles: '3240,3296', rings: { giver: 'r' }, bones: { giver: 'b' }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: '/tmp/x' }, { cues: { open: async () => {}, stop: () => {} } });
 
 describe('the guard: stand-ins run on a lab only', () => {
@@ -33,7 +33,7 @@ describe('the guard: stand-ins run on a lab only', () => {
     });
     test('the applier refuses off a lab before sending anything', async () => {
         const sdk = new FakeSdk(baseState({ inGame: true }));
-        await expect(applyStandIn({ sdk: sdk as never }, standInFor('S23')!, { ...LAB, server: 'rs-sdk-demo.fly.dev' })).rejects.toThrow('STAND-IN S23');
+        await expect(applyStandIn({ sdk: sdk as never }, standInFor('S19')!, { ...LAB, server: 'rs-sdk-demo.fly.dev' })).rejects.toThrow('STAND-IN S19');
         expect(sdk.sent).toEqual([]);
     });
 });
@@ -54,13 +54,11 @@ describe('the table', () => {
         }
     });
 
-    test("xp is base xp: Monkey Madness's +35,000 Hitpoints takes HP 42 to 97, Doric's 1,300 Mining takes Mining 1 to 49", () => {
+    test("xp is base xp: Monkey Madness's +35,000 Hitpoints takes HP 42 to 97, Sea Slug's 7,175 Fishing takes Fishing 1 to 74", () => {
         const mm = standInFor('S15')!;
         const at = (skill: string, level: number) => ({ name: skill[0]!.toUpperCase() + skill.slice(1), level, baseLevel: level, experience: xpForLevel(level) });
         const s = baseState({ skills: [at('hitpoints', 42), at('strength', 1), at('attack', 99), at('defence', 1)] });
         expect(standInLevels(s, mm).hitpoints).toBe(97);
-        expect(standInLevels(baseState({ skills: [at('mining', 1)] }), standInFor('S05')!).mining).toBe(49);
         expect(standInLevels(baseState({ skills: [at('fishing', 1)] }), standInFor('S19')!).fishing).toBe(74);
-        expect(standInLevels(baseState({ skills: [at('cooking', 1)] }), standInFor('S23')!).cooking).toBe(30);
     });
 });

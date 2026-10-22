@@ -4,10 +4,10 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { TickLog } from './lib/ticks';
 import { aliasAccount, type GateIO, LOG_ACCOUNT, loadRunConfig, parseArgs, startGates, TARGET_TOTAL, totalLevel, UsageError } from './run';
-import { buildChain, PLACEMENT, sliceUntil } from './runner/chain';
+import { buildChain, KIT_PARTNER_ROWS, PLACEMENT, sliceUntil } from './runner/chain';
 
 const cues = { open: async () => {}, stop: () => {} };
-const partners = Object.fromEntries([...Object.keys(PLACEMENT), 'H6', 'H7', 'H8', 'H16', 'H22'].map(id => [id, `p_${id}`]));
+const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id}`]));
 const cfg = { partners, firemakingTiles: '3240,3296', rings: { giver: 'r' }, bones: { giver: 'b' }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: '/tmp/x' };
 const full = buildChain(cfg, { cues });
 
@@ -71,7 +71,7 @@ describe('startGates', () => {
         }));
         expect(g.every(x => !x.ok)).toBe(true);
         expect(g.map(x => x.detail).join('\n')).toContain("live, but host's, not ours");
-        expect(g[3]!.detail).toContain('S05 Doric');
+        expect(g[3]!.detail).toContain('H11 hand-off (cannon)');
         expect(g[4]!.detail).toContain('no launcher.json');
     });
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'fs';
-import { buildChain, PLACEMENT, sliceUntil } from '../runner/chain';
+import { buildChain, KIT_PARTNER_ROWS, PLACEMENT, sliceUntil } from '../runner/chain';
 import { STAND_IN_STEP } from '../runner/run-report';
 import { MANIFEST } from '../tools/slot-ledger';
 import { LANDING_HELPER_TILE, labChain, meetingTile, STAFF } from './dress-rehearsal';
@@ -8,15 +8,15 @@ import type { LabWorld } from './stand-ins';
 
 const manifest = readFileSync(MANIFEST, 'utf8');
 const world = (): LabWorld => ({ staffLevel: '4', server: 'localhost', gateway: 'ws://localhost:8300' });
-const partners = (name: string) => Object.fromEntries([...Object.keys(PLACEMENT), 'H6', 'H7', 'H8', 'H16', 'H22'].map(id => [id, name]));
+const partners = (name: string) => Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, name]));
 const cfg = (name: string) => ({ partners: partners(name), firemakingTiles: '3240,3296', rings: { giver: 'r' }, bones: { giver: 'b' }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: '/tmp/x' });
 const cues = { open: async () => {}, stop: () => {} };
 
 describe('labChain', () => {
     test('each missing group becomes one STAND-IN step (S24 with its legs inside), and nothing refuses', () => {
         const lab = labChain(buildChain(cfg('lab_stub'), { cues }), { manifest, stub: 'lab_stub', world });
-        expect(lab.standIns).toEqual(['S05', 'S15', 'S19', 'S23', 'S24']);
-        expect(lab.chain.filter(s => s.name.startsWith(STAND_IN_STEP)).map(s => s.id)).toEqual(['S05', 'S15', 'S19', 'S23', 'S24']);
+        expect(lab.standIns).toEqual(['S15', 'S19', 'S24']);
+        expect(lab.chain.filter(s => s.name.startsWith(STAND_IN_STEP)).map(s => s.id)).toEqual(['S15', 'S19', 'S24']);
         expect(lab.chain.some(s => /^L24/.test(s.id))).toBe(false);
         expect(lab.chain.some(s => s.kind === 'missing')).toBe(false);
         expect(lab.chain.filter(s => s.preconditions.toString().includes('not built')).length).toBe(0);

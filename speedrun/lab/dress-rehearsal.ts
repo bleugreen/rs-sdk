@@ -30,7 +30,7 @@ import { ReservationWatch, reservationPath } from '../lib/host-reservation';
 import { closeSession, loadBotEnv, openSession, ROOT } from '../lib/session';
 import { newRunId, TickLog } from '../lib/ticks';
 import { loadRunConfig, runChainOnSession } from '../run';
-import { buildChain, CANNON_ROWS, noteRow, PLACEMENT, sliceUntil, resolveFrom, type ChainStep, type RunConfig } from '../runner/chain';
+import { buildChain, CANNON_ROWS, KIT_PARTNER_ROWS, noteRow, PLACEMENT, sliceUntil, resolveFrom, type ChainStep, type RunConfig } from '../runner/chain';
 import { CueKeeper, prepareCueDir } from '../runner/cue-keeper';
 import { applyEquip, handOffFrom, type HandOffSdk } from '../runner/handoff';
 import type { LegStep } from '../runner/legs';
@@ -45,8 +45,6 @@ import { stageRows, type StubPlanFile, type StubRow } from './stub-giver';
 
 /** The partner name that marks a row as staff-supplied in the lab run config. */
 export const STAFF = 'STAFF';
-/** The quest modules' kit rows (chain.ts names their partners as kitFrom). */
-const KIT_ROWS = ['H6', 'H7', 'H8', 'H16', 'H22'] as const;
 
 /** The helper's tile at the Ardougne landing (SUPPLIES.md H9-H11, H23: one tile west of the spread). */
 export const LANDING_HELPER_TILE = { x: 2658, z: 3301 };
@@ -163,7 +161,7 @@ async function main(argv: string[]): Promise<number> {
     const partners: Record<string, string> = { ...raw.partners };
     for (const row of Object.keys(PLACEMENT)) partners[row] ??= stubEnv?.BOT_USERNAME ?? STAFF;
     // The quest kit rows are the modules' own trades: a slice that reaches one needs its giver named.
-    for (const row of KIT_ROWS) partners[row] ??= STAFF;
+    for (const row of KIT_PARTNER_ROWS) partners[row] ??= STAFF;
     const cfg: RunConfig = { ...raw, partners };
     if (cfg.cueDir !== defaultCueDir()) throw new Error(`cue dir ${cfg.cueDir} is not the writers' (${defaultCueDir()})`);
     const keeper = new CueKeeper(cfg.cueDir, env.BOT_USERNAME);

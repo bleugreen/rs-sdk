@@ -13,7 +13,7 @@ import { TickLog } from '../lib/ticks';
 import { sleep, waitUntil } from '../lib/wait';
 import { MANIFEST } from '../tools/slot-ledger';
 import {
-    ALTERNATIVES, anvilAnnounce, buildChain, CENSUS_STEP, chainIds, CANNON_PENDING, ledgerCoverage, ledgerRows, missingOnPath, missingStep, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
+    ALTERNATIVES, anvilAnnounce, KIT_PARTNER_ROWS, buildChain, CENSUS_STEP, chainIds, CANNON_PENDING, ledgerCoverage, ledgerRows, missingOnPath, missingStep, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
     whenNeeded, withCue, type ChainStep, type CueSink, type RunConfig,
 } from './chain';
 import { CueKeeper, prepareCueDir } from './cue-keeper';
@@ -29,7 +29,7 @@ afterAll(() => { if (prevTick === undefined) delete process.env.SPEEDRUN_TICK_MS
 const MANIFEST_TEXT = readFileSync(MANIFEST, 'utf8');
 const RUN_ORDER = readFileSync(join(import.meta.dir, '../../docs/speedrun/RUN-ORDER.md'), 'utf8');
 
-const PARTNERS = Object.fromEntries([...Object.keys(PLACEMENT), 'H6', 'H7', 'H8', 'H16', 'H22'].map(id => [id, `p_${id.toLowerCase()}`]));
+const PARTNERS = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id.toLowerCase()}`]));
 const CONFIG: RunConfig = {
     partners: PARTNERS,
     firemakingTiles: '3240,3296;3239,3296;3238,3296',
@@ -122,6 +122,9 @@ describe('the chain', () => {
         expect(names('S22')).toEqual(['fishing:fly-78-99']);
         expect(names('S18')).toEqual(['thieving:knights']);
         expect(chain.filter(s => s.id === 'S25b-fallback').map(s => s.kind)).toEqual(['fallback']);
+        expect(chain.filter(s => s.id === 'S18d-fallback').map(s => [s.kind, s.name])).toEqual([['fallback', 'S18d-fallback fletching (fallback)']]);
+        expect(names('S05')[0]).toBe('S05:A-h4-swap');
+        expect(names('S23').length).toBeGreaterThanOrEqual(3);
         // With the zoo kit giver configured, S09 takes H4p itself.
         const withKit = buildChain({ ...CONFIG, partners: { ...PARTNERS, H4p: 'zoo' } }, { cues: recorder().cues });
         expect(withKit.filter(s => s.id === 'S09').map(s => s.name)).toEqual(['mining.kit: H4p', 'mining.iron-63', 'mining.exit']);
@@ -199,7 +202,7 @@ describe('wrappers', () => {
 
     test('--dry-run lists every refusing step on the path; --until=S04 has none', () => {
         expect(missingOnPath(chain).map(m => `${m.id} ${m.owner}`)).toEqual([
-            'S05 rs/416', `H11 ${CANNON_PENDING}`, 'S15 rs/185', 'S19 rs/185 (rs/414)', 'S23 rs/416', 'S24 rs/416', 'S24 rs/416', 'S24 rs/416', 'S24 rs/416', `H23 ${CANNON_PENDING}`,
+            `H11 ${CANNON_PENDING}`, 'S15 rs/185', 'S19 rs/185 (rs/414)', 'S24 rs/416', 'S24 rs/416', 'S24 rs/416', 'S24 rs/416', `H23 ${CANNON_PENDING}`,
         ]);
         expect(missingOnPath(sliceUntil(chain, 'S04'))).toEqual([]);
     });
@@ -207,9 +210,9 @@ describe('wrappers', () => {
     test('every step is censused: a 0-tick (census) note of the pack, free slots and worn items before it runs', async () => {
         const sdk = new FakeSdk(at({ inventory: [{ slot: 0, id: 1, name: 'Shark', count: 2, optionsWithIndex: [] }] as unknown as BotWorldState['inventory'] }));
         const log = TickLog.memory('t');
-        const m = chain.find(s => s.id === 'S05')!;
+        const m = chain.find(s => s.id === 'S15')!;
         await m.run(ctxFor(sdk, log)).catch(() => {});
-        expect(log.rows[0]).toMatchObject({ step: CENSUS_STEP, kind: 'note', ticks: 0, meta: { before: "S05 Doric's Quest", id: 'S05', free: 27, inventory: [{ name: 'Shark', count: 2 }], worn: [] } });
+        expect(log.rows[0]).toMatchObject({ step: CENSUS_STEP, kind: 'note', ticks: 0, meta: { before: 'S15 Monkey Madness', id: 'S15', free: 27, inventory: [{ name: 'Shark', count: 2 }], worn: [] } });
     });
 });
 
