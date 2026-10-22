@@ -166,6 +166,42 @@ tmux -L rehearsal new-session -d -s "$ACCOUNT" \
 - After the attempt account's logout (`[rehearse] logout: out ...` in the log), stop the recording
   (RUN-HOST.md step 8). The after-probe waits for that, at most 10 minutes.
 
+### Attempt kinds: measurement and record
+
+Every attempt declares what it is for with `--kind`, and the kind picks the rule the direct gate
+read is held to at pre-flight. The default is `measurement`.
+
+| Kind | For | The direct read refuses on | `--force-gate` |
+|---|---|---|---|
+| `measurement` (default) | pricing a method or a band, where a weaker minute is a cost to record rather than a reason to wait | (c) only: catch-ups per minute over 2 | overrides, with a warning per reason |
+| `record` | a fresh name raced once, whose time is the result | (c), **and** (a) under 58/60 next-tick reactions on a 60-trial read | refused: `--kind=record --force-gate` is a usage error (exit 2) |
+
+The record line is tenet 12's (a) line. It was calibrated at 58/60, which agreed with (c) at most
+2 on 17 of 17 reads. 60/60 is not the line, because it would refuse good minutes. A longer read
+is held to the same share, rounded up (116 of 120), and a read of fewer than 60 trials refuses,
+because it cannot show 58/60. A record attempt also needs a direct read on the lab, where a
+measurement needs none. On 2026-10-22 the cairn_steals measurement started on a 57/60 read on
+cairn_twin. That was correct for a measurement, and a record attempt would have refused it.
+
+A record attempt can't be forced. Racing a name on a minute that failed the line would spend the
+name on the very thing the line exists to prevent, and an override flag that is easy to pass would
+make the line silent. To start on such a minute anyway, run it as a measurement and say so in its
+findings.
+
+A refusal names the criterion that failed (`record attempt: (a) 57/60 next-tick reactions on the
+direct read, under the record line of 58/60`, or the (c) line, or both). It is the same exit 3
+refusal as a failing (c): it comes after the gate tab has logged out and closed, before the attempt
+account logs in, and it leaves the claim and the twin as it found them.
+
+Every attempt's tick log has a `(gate) kind` row right after `(gate) direct`. It records the kind,
+the rule it ran under, the read's (a) (`onTime`/`trials`) and (c) (`catchUpsPerMinute` against
+`catchUpLimit`), and for a record attempt the line it needed (`recordLine`) and whether the read
+held it (`recordHeld`; the row is `ok: false` with the reason when it did not). The summary's gate
+block opens with the same facts, for example `gate: kind: record (refuses below 58/60 next-tick
+reactions on the direct read, and on (c); no --force-gate); direct (a) 58/60, line 58 held; (c)
+0/min, limit 2`, so a findings doc can state which rule applied. A `--claim` parks a name and is
+not an attempt, so it takes no `--kind` and logs no kind.
+
 ## What the recording shows
 
 The on-VM recording grabs the whole X display (RUN-HOST.md step 5). Every tab on the host's

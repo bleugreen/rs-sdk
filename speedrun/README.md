@@ -1111,7 +1111,7 @@ bun speedrun/rehearse.ts --skill=<name|module.ts> --bot=<env name> [--to=99] [--
     [--gate-bot=<gate account env, default cairn_twin off a local world>] [--gate-json=<file>]
     [--gate-probe-trials=60] [--probe-trials=0]
     [--force-gate] [--from=<step name or index>] [--log=<file>] [--lab] [--insecure-query-login]
-    [--host-reservation=<file>] [--claim-owner=<rs/NNN>]
+    [--host-reservation=<file>] [--claim-owner=<rs/NNN>] [--kind=measurement|record]
 ```
 
 1. **Gate, off the clock.** `/playercount`; the direct read on a separate gate account
@@ -1121,7 +1121,12 @@ bun speedrun/rehearse.ts --skill=<name|module.ts> --bot=<env name> [--to=99] [--
    the gate account's own tab logs in and runs `probeInPage` (`--gate-probe-trials`, default 60
    with `--gate-bot`). Each is a `(gate)` row. It refuses to start (exit 3, nothing logged in) when
    (c) fails on any read, when the world does not answer, or when a non-lab world has no direct
-   read. `--force-gate` overrides. (a), (b) and (d) are printed with each verdict.
+   read. `--force-gate` overrides. (a), (b) and (d) are printed with each verdict. That is the
+   `--kind=measurement` rule, the default. `--kind=record` (a fresh name raced once) also refuses
+   below 58/60 next-tick reactions on a 60-trial direct read, needs a direct read even on the lab,
+   and refuses `--force-gate` as a usage error. A `(gate) kind` row and the summary's first gate
+   line record the kind, its rule and the read's (a) and (c)
+   (docs/speedrun/rehearsals/HARNESS.md, "Attempt kinds").
 2. **The attempt.** It launches the client (the browser through `lib/session.ts`'s one-time
    token login) under `startWatchdog`, then runs S00 (`skills/start.ts`), an optional
    `probeInPage` on this account (`--probe-trials`, on its clock), an optional kit receive (S01:
@@ -1141,7 +1146,7 @@ logout parks it. There is no gate account (not even the default `cairn_twin`), n
 tab probes and no skill module, so a claim is exactly one login. A world that does not answer
 `/playercount` still refuses it. It writes a `(gate) claim` row, so the log says it was a claim.
 The summary and the hiscore check run as for an attempt, against the Overall row only.
-`--claim` refuses every option that would add a login, a probe or a step
+`--claim` refuses every option that would add a login, a probe or a step, and `--kind`
 (docs/speedrun/rehearsals/CLAIMS.md).
 
 **Host reservation.** A run-capable host carries `~/host-reserved.json`
