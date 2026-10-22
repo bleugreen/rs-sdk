@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'fs';
 import { objPack } from '../lib/obj-pack';
 import { CANNON_ROWS, PLACEMENT } from '../runner/chain';
+import { handOffFrom } from '../runner/handoff';
 import { MANIFEST } from '../tools/slot-ledger';
 import { debugNameFor, LEDGER_OBJS } from '../lib/ledger-objs';
 import { stageRows } from './stub-giver';
@@ -16,9 +17,11 @@ describe('stub-giver staging', () => {
         expect(staged.map(r => r.row)).toEqual(rows.map(r => r.row));
         const h1 = staged.find(r => r.row === 'H1')!;
         expect(h1.stage).toContainEqual({ obj: 'staff_of_water', n: 1 });
-        // H11r is SCORED giving only: nothing staged, the set and balls wanted back.
+        // H11r as the row in force has it (two-way since fold-in 23): its `in` staged and offered, its `out` (the set, the balls) wanted back.
+        const plan = handOffFrom(manifest, 'H11r');
         const h11r = staged.find(r => r.row === 'H11r')!;
-        expect([h11r.stage.length, h11r.offer.length, h11r.want.length]).toEqual([0, 0, 5]);
+        expect([h11r.stage.length, h11r.offer.length, h11r.want.length]).toEqual([plan.receive.length, plan.receive.length, plan.give.length]);
+        expect(h11r.want.length).toBe(5);
     });
 
     test('every LEDGER_OBJS name is in obj.pack; an id entry resolves by id; an override wins', () => {
