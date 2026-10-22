@@ -54,6 +54,70 @@ export class DemoMarket {
     }
 }
 
+/**
+ * The open book's shape for one item. The market API exposes the best bid and ask and, per side, the remaining
+ * quantity and the gp it is offered at in total, not individual price levels, so depth is totals and means.
+ */
+export interface BookDepth {
+    id: number;
+    name: string;
+    /** The fixed per-item value the bank board counts (`basePrice`). */
+    basePrice: number;
+    bestBid: number | null;
+    bestAsk: number | null;
+    bidQuantity: number;
+    bidValue: number;
+    /** bidValue / bidQuantity: the average price the open bids pay. */
+    meanBid: number | null;
+    askQuantity: number;
+    askValue: number;
+    meanAsk: number | null;
+    /** Units traded in the quote's period (7 days unless the quote was read with another `days`). */
+    periodVolume: number;
+    periodVwap: number | null;
+    lastPrice: number | null;
+}
+
+export function bookDepth(q: MarketQuote): BookDepth {
+    return {
+        id: q.id,
+        name: q.name,
+        basePrice: q.basePrice,
+        bestBid: q.bid,
+        bestAsk: q.ask,
+        bidQuantity: q.buyQuantity,
+        bidValue: q.buyValue,
+        meanBid: q.buyQuantity ? q.buyValue / q.buyQuantity : null,
+        askQuantity: q.sellQuantity,
+        askValue: q.sellValue,
+        meanAsk: q.sellQuantity ? q.sellValue / q.sellQuantity : null,
+        periodVolume: q.volume,
+        periodVwap: q.vwap,
+        lastPrice: q.lastPrice
+    };
+}
+
+export interface Realisable {
+    /** Units the open bids absorb now. */
+    units: number;
+    /** gp those units fetch before the 5% seller fee: exact when the whole bid side fills, else between `low` and `high`. */
+    low: number;
+    high: number;
+    /** Units with no bid to sell into. */
+    unsold: number;
+}
+
+/**
+ * What selling `quantity` into the open bids would fetch at once. Bids fill best price first, so a partial fill
+ * pays at least the mean bid and at most the best bid per unit; filling the whole side pays exactly its value.
+ */
+export function realisable(q: MarketQuote, quantity: number): Realisable {
+    const units = Math.min(quantity, q.buyQuantity);
+    if (units === q.buyQuantity) return { units, low: q.buyValue, high: q.buyValue, unsold: quantity - units };
+    const mean = q.buyValue / q.buyQuantity;
+    return { units, low: units * mean, high: units * (q.bid ?? mean), unsold: quantity - units };
+}
+
 export interface HistoryTotals {
     buckets: number;
     volume: number;
