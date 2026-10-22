@@ -68,7 +68,7 @@ const tax = () => withDb(db => db.query<{ t: number | null }, []>('SELECT SUM(ta
 const live = (s: BotWorldState | null, ids: number[]) => (s?.inventory ?? []).filter(i => ids.includes(i.id)).reduce((n, i) => n + i.count, 0);
 
 /** Units of `ids` in a saved player (every inventory plus the recovery list), decoded as PlayerLoading.load reads it. */
-function savedUnits(owner: string, ids: number[]): { units: number; recovery: number } | null {
+function savedUnits(owner: string, ids: number[]): { units: number; recovery: number; byInv: Record<number, number> } | null {
     const save = withDb(db => db.query<{ save: Uint8Array }, [string]>('SELECT save FROM accounts WHERE owner=?').get(owner.toLowerCase())?.save);
     if (!save) return null;
     const b = save;
@@ -93,16 +93,20 @@ function savedUnits(owner: string, ids: number[]): { units: number; recovery: nu
         if (version >= 7) gVarInt();
     }
     let units = 0;
+    const byInv: Record<number, number> = {};
     const invs = g1();
     for (let i = 0; i < invs; i++) {
-        g2();
+        const type = g2();
         const size = g2();
         for (let slot = 0; slot < size; slot++) {
             const id = g2() - 1;
             if (id === -1) continue;
             let count = g1();
             if (count === 255) count = g4();
-            if (ids.includes(id)) units += count;
+            if (ids.includes(id)) {
+                units += count;
+                byInv[type] = (byInv[type] ?? 0) + count;
+            }
         }
     }
     const afk = g1();
@@ -113,7 +117,7 @@ function savedUnits(owner: string, ids: number[]): { units: number; recovery: nu
         const id = g2(), count = g4();
         if (ids.includes(id)) recovery += count;
     }
-    return { units: units + recovery, recovery };
+    return { units: units + recovery, recovery, byInv };
 }
 
 // ------------------------------------------------------------------ engine
@@ -248,12 +252,18 @@ async function main(): Promise<void> {
     await sleep(1000);
     const afterKill = { seller: savedUnits(SELLER, [COINS]), buyer: savedUnits(BUYER, [COINS]) };
     result('rows-after-sigkill', afterKill);
-    const before = sellerBefore + buyerBefore;
+    // Rows hold every inventory; the live state shows only the backpack. Coins outside the
+    // backpack (the 25 in the bank from the tutorial skip) did not move, so add them from the rows.
+    const outsideBackpack = (r: ReturnType<typeof savedUnits>) => (r ? r.units - r.recovery - (r.byInv[93] ?? 0) : 0);
+    const world = delivered.seller + delivered.buyer + outsideBackpack(afterKill.seller) + outsideBackpack(afterKill.buyer);
     const reloaded = (afterKill.seller?.units ?? 0) + (afterKill.buyer?.units ?? 0);
+    const checkpoint = (atCheckpoint.seller?.units ?? 0) + (atCheckpoint.buyer?.units ?? 0);
     result('phase-b', {
-        coinsBeforeTrade: before,
+        coinsInTheWorldAtTheKill: world,
+        coinsInTheRowsAtTheCheckpoint: checkpoint,
         coinsTheNextLoginsLoad: reloaded,
-        verdict: reloaded > before ? 'DUPLICATION' : reloaded < before ? 'loss' : 'conserved (rolled back to the checkpoint)',
+        sellerGetsBack: afterKill.seller?.recovery ?? 0,
+        verdict: reloaded > world ? 'DUPLICATION' : reloaded < world ? 'loss' : reloaded === checkpoint ? 'conserved: both rolled back to the checkpoint together' : 'conserved',
     });
 
     // The replacement engine proves the ledger opens and the rows load after the crash.
