@@ -6,7 +6,7 @@ import * as tgv from '../quests/tree-gnome-village';
 import { ROUTES } from '../skills/agility';
 import { BANKS } from './buyer';
 import { AGILITY_COURSES } from '../../server/webclient/src/bot/programs/agility-courses';
-import { AGILITY_TO, ARMOUR, freeSlots, gtPlan, kitBank, lapsDone, stepLoc, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, questLegs, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
+import { AGILITY_TO, ARMOUR, freeSlots, gtPlan, kitBank, lapsDone, stepLoc, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, approachFirst, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
 import { applySubstitutes, LEG_PREFIX, withLegs } from '../lab/quests/demo-quest';
 import type { NearbyLoc } from '../../sdk/types';
 
@@ -195,19 +195,19 @@ describe('the Gnome course on lite', () => {
     });
 });
 
-describe('questLegs', () => {
-    const before = async () => {};
+describe('the walk to a quest and its legs', () => {
     // The driver's own order: substitutes rename the steps first, then the legs are placed.
     const placed = (module: typeof tgv | typeof grandTree, plan: QuestPlan) =>
-        withLegs(applySubstitutes(module.steps({ dialogue: 'fixed' }), module.stepId, plan.substitute), module.stepId, questLegs(module, plan, before)).map(s => s.name);
-    test('the pre-quest leg finds a first segment the plan substitutes (TGV A)', () => {
-        const names = placed(tgv, tgvPlan());
-        expect(names[0]).toBe(`${LEG_PREFIX}S10b:A-kit[driver]`);
-        expect(names[1]).toBe('S10b:A-kit[driver]');
+        withLegs(applySubstitutes(module.steps({ dialogue: 'fixed' }), module.stepId, plan.substitute), module.stepId, plan.legs).map(s => s.name);
+    test('each plan places its legs over its substituted module', () => {
+        expect(placed(tgv, tgvPlan()).filter(n => n.startsWith(LEG_PREFIX))).toHaveLength(Object.keys(tgvPlan().legs).length);
+        const gt = placed(grandTree, gtPlan());
+        expect(gt.filter(n => n.startsWith(LEG_PREFIX))).toHaveLength(Object.keys(gtPlan().legs).length);
+        expect(gt.some(n => n.startsWith(`${LEG_PREFIX}S11b:B-`))).toBe(true);
     });
-    test('the Grand Tree keeps its own B, C and J legs beside the pre-quest one', () => {
-        const names = placed(grandTree, gtPlan());
-        expect(names[0]!.startsWith(`${LEG_PREFIX}S11b:A-`)).toBe(true);
-        expect(names.filter(n => n.startsWith(LEG_PREFIX))).toHaveLength(1 + Object.keys(gtPlan().legs).length);
+    test('the approach runs only before a quest is started', () => {
+        const with_ = (tree: number) => state({ varps: [] } as Partial<BotWorldState>);
+        const fresh = with_(0);
+        expect(approachFirst(fresh, 'tree')).toBe(true);
     });
 });

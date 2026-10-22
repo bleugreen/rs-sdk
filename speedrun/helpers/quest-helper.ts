@@ -64,7 +64,6 @@ import { arg, botArg, result } from '../lab/common';
 import { startLoopbackGateway } from '../lab/loopback-gateway';
 import { confirmedLogout } from '../lab/quests/aereck-burst';
 import { checkDemoTarget, formatDemoTable, refuseChat, runDemoQuest, type Leg, type QuestModule, type Substitute } from '../lab/quests/demo-quest';
-import { letterOf } from '../lab/quests/run';
 import * as grandTree from '../quests/grand-tree';
 import { demonInSight, inTree, ITEM as GT_ITEM, TILES as GT } from '../quests/grand-tree';
 import * as tgv from '../quests/tree-gnome-village';
@@ -760,23 +759,25 @@ async function runPlain(session: Session, phase: Phase, list: Step<any>[], log: 
     }
 }
 
-/**
- * The plan's legs plus `before` ahead of the quest's first segment, every one keyed by segment letter:
- * a substituted step is renamed `<name>[driver]` before the legs are placed, so only its letter still
- * finds it. A quest's own legs never sit before its first segment.
- */
-export function questLegs(module: QuestModule, plan: QuestPlan, before: Leg): Record<string, Leg> {
-    const first = module.steps({ dialogue: 'fixed' })[0]!.name;
-    const letter = letterOf(module.stepId, first);
-    if (!letter) throw new Error(`${first}: not a lettered ${module.stepId} segment`);
-    if (letter in plan.legs) throw new Error(`${module.stepId}: the plan already has a leg before ${letter}`);
-    return { ...plan.legs, [letter]: before };
-}
+export type QuestPhase = Extract<Phase, 'tree' | 'grandtree' | 'mm'>;
 
-async function runQuest(session: Session, phase: Phase, module: QuestModule, plan: QuestPlan, before: Leg, log: TickLog, until?: string): Promise<PhaseResult> {
-    const legs = questLegs(module, plan, before);
-    const r = await runDemoQuest(session, { module, opts: {}, substitute: plan.substitute, legs, log, ...(until ? { until } : {}) });
-    return { phase, ok: r.finished && !r.error, rows: r.rows, start: r.start, ...(r.error ? { error: r.error } : {}) };
+/**
+ * Whether the untimed walk to a quest's start runs: only while the quest is not started. It is not a
+ * leg before the first segment, because the resume walk may start past that segment (TGV's A is a kit
+ * check, done whenever the kit is held) and a leg before the start is dropped with it.
+ */
+export const approachFirst = (s: BotWorldState, quest: QuestPhase): boolean => questStatus(s, quest) === 'not_started';
+
+async function runQuest(session: Session, phase: QuestPhase, module: QuestModule, plan: QuestPlan, approach: Leg, log: TickLog, until?: string): Promise<PhaseResult> {
+    const n0 = log.rows.length;
+    const s = session.sdk.getState();
+    if (s && approachFirst(s, phase)) {
+        const a = await runPlain(session, phase, [legStep(`${phase}:approach`, approach)], log);
+        if (!a.ok) return a;
+    }
+    const r = await runDemoQuest(session, { module, opts: {}, substitute: plan.substitute, legs: plan.legs, log, ...(until ? { until } : {}) });
+    // runDemoQuest returns the whole shared log; the phase's rows start where it began.
+    return { phase, ok: r.finished && !r.error, rows: log.rows.slice(n0), start: r.start, ...(r.error ? { error: r.error } : {}) };
 }
 
 function snapshot(s: BotWorldState | null): Record<string, unknown> {
