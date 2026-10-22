@@ -68,6 +68,7 @@ import { withdrawMany } from '../lib/bank';
 import { give, DROPPED_TICKS, openTrade, tradeOf, type GiveSpec } from '../lib/trade';
 import { waitUntil } from '../lib/wait';
 import { existsSync, readdirSync } from 'node:fs';
+import { runIsOn } from '../lib/run-mode';
 import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, newRequestFrom, readJson, readTopUpAsk, scopeOption, turnOrder, usableAsk, writeJsonAtomicSync, type Cue, type CueScope, type TopUpAsk } from './altar-cue';
 import { chebyshev, cheat, count, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank, walkNear } from './mule';
@@ -412,6 +413,12 @@ export class BoneGiver {
     private sideMisses = 0;
     /** Loaded at the site since (BoneStatus.readyAt). */
     private readyAt: number | null = null;
+    /** The restock round trip under way: from the trade that emptied us, through the bank, back onto the giver tile. */
+    private trip: { tick: number; energy: number | null; bank?: { tick: number; energy: number | null } } | null = null;
+
+    private energy(): number | null {
+        return this.s?.player?.runEnergy ?? null;
+    }
 
     constructor(private readonly ctx: RoleContext) {
         this.o = boneGiverOptions(ctx.options);
@@ -524,6 +531,7 @@ export class BoneGiver {
             await walkNear(ctx, site.giver.x, site.giver.z, 2);
             await standOn(ctx, site.giver);
         }
+        if (this.trip) this.logTrip();
         this.setPhase('waiting', `site ${this.site}`);
         if (!(await until(ctx, () => !!this.receiverInSight() || !!this.cue?.stop, o.siteWaitTicks))) {
             this.site = (this.site + 1) % o.sites.length;
@@ -555,7 +563,10 @@ export class BoneGiver {
         this.setPhase('trading');
         // No expectTheirs: the scored account offers nothing, and anything it does offer is declined.
         const r = await give(ctx.sdk, t.partner, loadOffer(o, this.trades), { openTimeoutMs: 5_000 });
-        if (r.ok) this.trades++;
+        if (r.ok) {
+            this.trades++;
+            this.trip = { tick: this.s?.tick ?? 0, energy: this.energy() };
+        }
         ctx.log('trade', { ok: r.ok, ticks: r.ticks, gave: r.gave.map(i => `${i.name} x${i.count}`), final: extras.length > 0, waited: req.waited, sends: req.sends, bounces: req.bounces, ...(r.reason ? { reason: r.reason } : {}) });
     }
 
@@ -702,6 +713,29 @@ export class BoneGiver {
         });
     }
 
+    /**
+     * One restock round trip, logged on arriving back on the giver tile: ticks to the bank and back
+     * (the bank visit inside the second leg), run energy at the trade, the bank and the tile, and
+     * whether each leg ran. A walk click carries the run flag, so a leg runs while energy lasts:
+     * energy that fell on a leg means it ran.
+     */
+    private logTrip(): void {
+        const t = this.trip!;
+        this.trip = null;
+        const now = { tick: this.s?.tick ?? 0, energy: this.energy() };
+        const fell = (a: number | null, b: number | null) => (a === null || b === null ? null : b < a);
+        const bank = t.bank ?? null;
+        this.ctx.log('trip', {
+            roundTrip: now.tick - t.tick,
+            toBank: bank ? bank.tick - t.tick : null,
+            backWithBank: bank ? now.tick - bank.tick : null,
+            energy: { start: t.energy, bank: bank?.energy ?? null, end: now.energy },
+            ranToBank: bank ? fell(t.energy, bank.energy) : null,
+            ranBack: bank ? fell(bank.energy, now.energy) : null,
+            runToggle: runIsOn(this.s)
+        });
+    }
+
     /** Carry exactly `n` of the item and `extras`, and nothing else. */
     private async restock(n: number, extras: readonly Extra[] = []): Promise<void> {
         const { ctx, o } = this;
@@ -726,6 +760,7 @@ export class BoneGiver {
         const bank = o.restock.bank;
         this.setPhase('restock', `to the bank at ${bank.x},${bank.z}`);
         await walkNear(ctx, bank.x, bank.z, 3);
+        if (this.trip && !this.trip.bank) this.trip.bank = { tick: this.s?.tick ?? 0, energy: this.energy() };
         if (!(await openBank(ctx))) throw new Error('could not open the bank');
         await depositAllExcept(ctx.sdk);
         const w = await withdrawMany(ctx.sdk, [{ item: this.re, n }, ...extraRes.map(e => ({ item: e.re, n: e.count }))]);
