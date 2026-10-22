@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { ASK_SLACK_MS, nameHash, newRequestFrom, readTopUpAsk, usableAsk, writeTopUpAsk } from './altar-cue';
 import type { Cue } from './altar-cue';
 import type { RoleContext } from './role';
-import { askOffer, BoneGiver, boneGiverOptions, boneServer, boneWithdrawals, carryDue, groupLoadsDone, isFinalLoad, legRan, loadOffer, npcTiles, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, type BoneStatus } from './bone-giver';
+import { askOffer, BoneGiver, boneGiverOptions, boneServer, boneWithdrawals, carryDue, groupLoadsDone, isFinalLoad, legRan, loadOffer, npcTiles, onOpenSide, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, wallBetween, type BoneStatus, type FlagReader } from './bone-giver';
 import { assertDemoStandIn } from './bone-receiver';
 
 const o = { noReplyTicks: 3, resendTicks: 100 };
@@ -409,12 +409,13 @@ describe('requestUntilOpen: the shared standing request', () => {
 describe('S18 side tile: the giver holds an orthogonal neighbour of the scored account', () => {
     const scored = { x: 2662, z: 3305 };
     const knight = { x: 2663, z: 3305 };
+    const open: FlagReader = () => false;
 
     test('every chosen tile is orthogonally adjacent and never the knight\'s, whichever tile the giver starts from', () => {
         for (let dx = -3; dx <= 3; dx++) {
             for (let dz = -3; dz <= 3; dz++) {
                 const me = { x: scored.x + dx, z: scored.z + dz };
-                const sides = sideTiles(scored, me, [knight]);
+                const sides = sideTiles(scored, me, [knight], open);
                 expect(sides).toHaveLength(3);
                 for (const t of sides) {
                     expect(onSide(t, scored)).toBe(true);
@@ -425,7 +426,7 @@ describe('S18 side tile: the giver holds an orthogonal neighbour of the scored a
     });
 
     test('the nearest side first: from a corner, one step', () => {
-        const sides = sideTiles(scored, { x: scored.x - 1, z: scored.z + 1 }, [knight]);
+        const sides = sideTiles(scored, { x: scored.x - 1, z: scored.z + 1 }, [knight], open);
         expect(Math.abs(sides[0]!.x - (scored.x - 1)) + Math.abs(sides[0]!.z - (scored.z + 1))).toBe(1);
     });
 
@@ -436,7 +437,65 @@ describe('S18 side tile: the giver holds an orthogonal neighbour of the scored a
         const s = baseState({ nearbyNpcs: [{ kind: 'npc', id: 1, index: 3, name: 'Knight of Ardougne', x: 9, z: 9, tileX: scored.x - 2, tileZ: scored.z - 1, size: 2 }] } as unknown as Partial<BotWorldState>);
         const tiles = npcTiles(s);
         expect(tiles).toContainEqual({ x: scored.x - 1, z: scored.z });
-        expect(sideTiles(scored, scored, tiles).some(t => t.x === scored.x - 1 && t.z === scored.z)).toBe(false);
-        expect(sideTiles(scored, scored, [knight, ...tiles, { x: scored.x, z: scored.z + 1 }, { x: scored.x, z: scored.z - 1 }])).toEqual([]);
+        expect(sideTiles(scored, scored, tiles, open).some(t => t.x === scored.x - 1 && t.z === scored.z)).toBe(false);
+        expect(sideTiles(scored, scored, [knight, ...tiles, { x: scored.x, z: scored.z + 1 }, { x: scored.x, z: scored.z - 1 }], open)).toEqual([]);
+    });
+});
+
+describe('S18 side tile: never across a wall edge from the scored account', () => {
+    // The Ardougne knights' walled column as the SDK collision map has it (rs/459's probe of
+    // sdk/pathfinding.ts isFlagged): x=2672 carries WALL_EAST (8) and x=2673 WALL_WEST (128) at
+    // z 3299-3303 and 3306-3310; z 3304-3305 is a gap. 2673,3300 also carries LOC (256), a blocking loc.
+    const flags = new Map<string, number>();
+    const set = (x: number, z: number, f: number) => flags.set(`${x},${z}`, (flags.get(`${x},${z}`) ?? 0) | f);
+    for (const z of [3299, 3300, 3301, 3302, 3303, 3306, 3307, 3308, 3309, 3310]) {
+        set(2672, z, 8);
+        set(2673, z, 128);
+    }
+    set(2673, 3300, 256);
+    const ardougne: FlagReader = (x, z, mask) => ((flags.get(`${x},${z}`) ?? 0) & mask) !== 0;
+
+    test('the side across the x=2672 east-edge wall is refused, from either side of it', () => {
+        const west = { x: 2672, z: 3300 };
+        const east = { x: 2673, z: 3300 };
+        const fromWest = sideTiles(west, east, [], ardougne);
+        expect(fromWest).not.toContainEqual(east);
+        expect(fromWest).toHaveLength(3);
+        expect(sideTiles(east, west, [], ardougne)).not.toContainEqual(west);
+        expect(onOpenSide(east, west, ardougne)).toBe(false);
+        expect(onOpenSide(west, east, ardougne)).toBe(false);
+    });
+
+    test('a wall flagged on only one of the two tiles still counts', () => {
+        const oneSided: FlagReader = (x, z, mask) => x === 2673 && z === 3300 && (mask & 128) !== 0;
+        expect(wallBetween({ x: 2672, z: 3300 }, { x: 2673, z: 3300 }, oneSided)).toBe(true);
+        expect(wallBetween({ x: 2673, z: 3300 }, { x: 2672, z: 3300 }, oneSided)).toBe(true);
+        expect(wallBetween({ x: 2672, z: 3300 }, { x: 2672, z: 3301 }, oneSided)).toBe(false);
+    });
+
+    test('open-ground sides are kept, nearest first, and the gap in the wall is open', () => {
+        const scored = { x: 2672, z: 3300 };
+        expect(sideTiles(scored, { x: 2671, z: 3301 }, [], ardougne)).toEqual([
+            { x: 2671, z: 3300 },
+            { x: 2672, z: 3301 },
+            { x: 2672, z: 3299 }
+        ]);
+        const gap = { x: 2672, z: 3304 };
+        expect(sideTiles(gap, gap, [], ardougne)).toContainEqual({ x: 2673, z: 3304 });
+        expect(onOpenSide({ x: 2673, z: 3304 }, gap, ardougne)).toBe(true);
+    });
+
+    test('a blocking loc tile (a stall) with no wall on the shared edge is kept', () => {
+        // 2673,3300's wall is on its west edge; from 2674,3300 the shared edge is its east one.
+        const scored = { x: 2674, z: 3300 };
+        expect(sideTiles(scored, scored, [], ardougne)).toContainEqual({ x: 2673, z: 3300 });
+        expect(onOpenSide({ x: 2673, z: 3300 }, scored, ardougne)).toBe(true);
+    });
+
+    test('every side walled or occupied leaves none (stepToSide\'s "no free side tile")', () => {
+        const scored = { x: 2672, z: 3300 };
+        expect(sideTiles(scored, scored, [{ x: 2671, z: 3300 }, { x: 2672, z: 3301 }, { x: 2672, z: 3299 }], ardougne)).toEqual([]);
+        const boxed: FlagReader = (x, z, mask) => x === scored.x && z === scored.z && (mask & (2 | 8 | 32 | 128)) !== 0;
+        expect(sideTiles(scored, scored, [], boxed)).toEqual([]);
     });
 });
