@@ -1117,7 +1117,7 @@ in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scr
   is left running.
 - **Where the history lives.** Each firing writes one file, `~/gate-history/<UTC timestamp>.json`.
   A read's file starts with `utc` and `endUtc`, `commit`, `status` (`ok`, `not-probed`, `timeout`
-  or `error`), `on`, `onTime`, `catchUpsPerMinute`, `tickP90Ms`, `players` and `edge`, then
+  or `error`), `on`, `onTime`, `catchUpsPerMinute`, `tickP50Ms`, `tickP90Ms`, `players` and `edge`, then
   `preLogin` (players, `flyMachine`, `flyWorker`, `serverStartUtc`, `serverStartToken` and
   `serverUptimeMin` from step 4), with the gate's own JSON under
   `gate`. A change of `flyMachine` between files marks a redeploy or machine swap. The three
@@ -1126,7 +1126,28 @@ in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scr
   start in epoch ms), and they're null when the page or token can't be read. The uptime is
   measured to the read's `utc`. A change of `serverStartToken` marks a restart, which the player
   count alone can miss: on 22 October the world restarted at 19:24:45Z and had 740 online
-  1.6 minutes later, well over the 300 floor. A skip writes `status: skip` and its reason in `note`. A broken read (`error`, `timeout`,
+  1.6 minutes later, well over the 300 floor. `tickP50Ms` is the gate's median tick interval
+  (`result.steadiness.p50`); about 300 against about 600 tells the two tick rates apart, so it
+  dates a return to 600 ms ticks to a read. `preLogin` also carries an engine fingerprint, from
+  public pages fetched alongside the player count, each field null when its fetch fails:
+  - `hiscoreHover` is the first numeric hover on `/hiscores` (the Time column) with every
+    number as `N`. Upstream b565f2d9 and our fork render `N ticks`, and the demo has rendered
+    `N seconds of game time` since about 19:34Z on 22 October, so a change in it is a change in
+    the engine's own wording.
+  - `hiscoreChromeSha` hashes `/hiscores` with the text of every innermost table cell, every
+    player link and every number blanked. Names, ranks, levels and times don't move it; a change
+    in the engine's page template does.
+  - `playercountShape` hashes the `/playercount` response's keys and value types (its text with
+    numbers as `N` if it isn't JSON), so it moves only when that endpoint's format changes.
+  - `botBundleMd5` is the md5 of the served `/bot/client.js`. It changes at every image rebuild,
+    even from identical source (UPSTREAM-WATCH.md, "Which commit is the demo serving?"), so the
+    same value across a restart means the same image was restarted, as at 19:56Z on 22 October.
+
+  A change in `hiscoreHover` or `hiscoreChromeSha` marks an engine-side deploy; the 19:36Z
+  "Server is being updated" restart on 22 October is the first known case. The published
+  `server/Dockerfile` copies the engine before it builds the webclient, so a deploy built that
+  way also moves `botBundleMd5`; a hover or chrome change with the md5 unchanged would mean the
+  demo is built differently. A skip writes `status: skip` and its reason in `note`. A broken read (`error`, `timeout`,
   `not-probed`) puts its first error line in `note` and the last 40 lines of the probe's output in
   `outputTail`, with the account name and password redacted. The journal keeps one line per
   firing: `journalctl --user -t rs-gate-read`. Use `-t`, not `-u`: `-u` can miss the summary line,
