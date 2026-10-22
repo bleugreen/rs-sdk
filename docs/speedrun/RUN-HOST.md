@@ -157,13 +157,14 @@ relogs, every shortfall or restock pause, and the final logout that writes the h
 (#140) but not main, since #146 did not carry it. Steps 6 and 8 therefore confirm a tab's logout with
 `logoutClean` itself and the login screen in the live view.
 
-**The run-commit floor is one commit, `efdbe2e2`** (#164, rs/174's relog fix, on main at 00:14 UTC
-2026-10-22). Step 0 checks it once: `git -C ~/rs-sdk merge-base --is-ancestor efdbe2e2 "$RUN_COMMIT"`.
+**The run-commit floor is one commit, `23ea9f77`** (#178, rs/131's `rc-cycle`, on main at 00:37 UTC
+2026-10-22). Step 0 checks it once: `git -C ~/rs-sdk merge-base --is-ancestor 23ea9f77 "$RUN_COMMIT"`.
 Its history contains every earlier requirement (rs/158 in the store; here `git merge-base
---is-ancestor <commit> efdbe2e2` for each row), so no per-fix check is kept. What each one brings:
+--is-ancestor <commit> 23ea9f77` for each row), so no per-fix check is kept. What each one brings:
 
 | Commit | PR | What the run needs from it |
 |---|---|---|
+| `23ea9f77` | #178 (rs/131) | `rc-cycle`, the scored side of the Runecraft altar hand-off as an in-page program, 7-tick tuned and 8-tick robust schedules, which S06 and S21 run on (m, lab, rs/131: 7.00 ticks per craft with the givers handled first, 8.00 robust, 30 crafts each, no lost trades; STEP-MANIFEST.md entry 9) |
 | `efdbe2e2` | #164 (rs/174) | `speedrun/lib/tab.ts` `reloadOrOpenTab` closes the old page's gateway socket before a navigation, so a relog's first SDK state is at login + 1, not + 19 to + 20 (m, rs/174 on the twin against the demo, 21:58-22:08Z; RUN-ORDER.md section 4, R1, R17); the in-page relog `login(s, {inPage: true})` |
 | `96fc462a` | #120 (rs/138) | step 3's Chrome login, `tab-login.ts` and the page server's token endpoints (above) |
 | `c2d9eada` | #146 (rs/164) | `logoutClean` confirms a tab's logout through the page's own in-game flag (above) |
@@ -174,9 +175,6 @@ Its history contains every earlier requirement (rs/158 in the store; here `git m
 | `3dfc217f` | #165 (rs/162) | knife-cycle's plain + bury, which the knife-off line in force prices (S07's gate-off bones buried in the willow band; RUN-ORDER.md O31) |
 | `b6950915` | #177 | a tick program faults at start on any parameter key it does not declare, so a module built against another commit's programs stops instead of running a different program (`tick-programs.md`; STEP-MANIFEST.md entry 0) |
 | `834f376b` | #176 (rs/210) | the in-run tick-cadence monitor on the scored connection: per-minute `TICKMON` rows in the run log, no behaviour change |
-
-rs/131's `rc-cycle` (#178, pending), which S06 and S21 run on (STEP-MANIFEST.md entry 9), moves the
-floor again when it lands.
 
 **Leftover check.** It lists every tmux socket on the host with its sessions, other agents' sockets
 included, plus every `chrome*`, `ffmpeg`, `bun` and `timeout` process with its age, and the host
@@ -305,9 +303,9 @@ Then put the clone on it and build:
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && git fetch -q origin && git checkout -q --detach "$(cat $HOME/run-commit)" && bun install && (cd server/webclient && bun install && bun run build) && (cd server/gateway && bun install) && mkdir -p ~/recordings ~/rs-run/chrome-profile && git log -1 --oneline && ls server/webclient/out/bot/client.js'
 ```
 
-`RUN_COMMIT` must be at or after the run-commit floor, **`efdbe2e2`** (#164; "Credentials" lists
+`RUN_COMMIT` must be at or after the run-commit floor, **`23ea9f77`** (#178; "Credentials" lists
 what it contains, rs/138's Chrome login and rs/164's tab-logout confirmation among them). One
-check: `git -C ~/rs-sdk merge-base --is-ancestor efdbe2e2 "$RUN_COMMIT"`. A failure means the commit
+check: `git -C ~/rs-sdk merge-base --is-ancestor 23ea9f77 "$RUN_COMMIT"`. A failure means the commit
 predates at least one of the changes in that table.
 
 Account files: the gate account (step 6) is a throwaway demo account whose name starts with

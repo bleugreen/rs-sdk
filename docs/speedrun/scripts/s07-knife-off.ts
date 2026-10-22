@@ -170,7 +170,7 @@ console.log(`\naxe: adamant +${r(S07knife * 0.13)} / mithril +${r(S07knife * 0.2
 }
 
 // Re-sum the documents' own tables, as written: RUN-ORDER.md section 7 (each column, with 'same'
-// and the bracketed 'with rs/162' cells), its M / I / E split, and STEP-MANIFEST.md's expected column.
+// and the bracketed 'without rs/162, history' cells), its M / I / E split, and STEP-MANIFEST.md's expected column.
 {
     const { readFileSync } = await import('node:fs');
     const { join } = await import('node:path');
@@ -184,15 +184,15 @@ console.log(`\naxe: adamant +${r(S07knife * 0.13)} / mithril +${r(S07knife * 0.2
     for (const l of ro.slice(start + 2)) {
         const c = l.split('|').slice(1, -1).map(x => x.trim());
         if (c[0]!.startsWith('**Total**')) { total = c; continue; }
-        if (c[0]!.startsWith('Total, knife off with')) { totalPB = c; break; }
+        if (c[0]!.startsWith('Total, knife off without')) { totalPB = c; break; }
         const on = pair(c[2]!);
         const off = c[3] === 'same' ? on : pair(c[3]!);
-        const pbm = c[3]!.match(/\(([\d,]+) \/ ([\d,]+) with rs\/162\)/);
+        const pbm = c[3]!.match(/\(([\d,]+) \/ ([\d,]+) without rs\/162, history\)/);
         const pb = pbm ? [num(pbm[1]!), num(pbm[2]!)] : off;
         [on[0], on[1], off[0], off[1], pb[0]!, pb[1]!].forEach((v, i) => (sums[i]! += v));
     }
     const want = [...pair(total[2]!), ...pair(total[3]!), ...pair(totalPB[3]!)];
-    console.log(`\nRUN-ORDER.md section 7, re-summed from the document: knife on ${sums[0]} / ${sums[1]}; knife off ${sums[2]} / ${sums[3]}; with rs/162 ${sums[4]} / ${sums[5]}`);
+    console.log(`\nRUN-ORDER.md section 7, re-summed from the document: knife on ${sums[0]} / ${sums[1]}; knife off in force (with rs/162) ${sums[2]} / ${sums[3]}; without rs/162 (history) ${sums[4]} / ${sums[5]}`);
     console.log(`  the document's total rows: ${want.join(', ')}`);
     if (sums.some((v, i) => v !== want[i])) throw new Error('section 7 does not re-sum');
     const mie = ro.filter(l => /^\| [MIE]: /.test(l)).map(l => num(l.split('|')[2]!.trim()));
