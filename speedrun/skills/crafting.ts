@@ -245,7 +245,7 @@ export function preconditions(s: BotWorldState, opts: CraftingOptions = {}): tru
     if (s.nearbyLocs.length && !boothLoc(s, booth)) return `no bank booth (${booth.x},${booth.z}) in view (at ${s.player.worldX},${s.player.worldZ})`;
     const other = otherItems(s, opts.banksFirst);
     if (other.length) return `${other.length} other items (${[...new Set(other)].join(', ')}): need ${INVENTORY} free slots`;
-    const bodies = opts.maxActions === undefined ? bodiesTo(craftingXp(s), untilXp) : Math.min(bodiesTo(craftingXp(s), untilXp), opts.maxActions);
+    const bodies = plannedBodies(s, { ...opts, untilXp });
     // The whole stock is in sight while the bank is open, or the leather and thread while the
     // leather's notes are held (H21d's trade lands the package, thread with it, at once). Banked
     // out of sight, the program's first visit reads it and faults `out of supplies` if it falls short.
