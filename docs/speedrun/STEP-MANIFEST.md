@@ -164,9 +164,9 @@ cannon session, Prayer, Crafting and Cooking pass it. Fold-in 13 adds S15's meas
 so Monkey Madness (4,429) passed Agility (4,327) for rank 1; fold-in 15's N to P, the rope pin and segment X (+335) put it at 4,764. Fold-in 15 also measures Dragon Slayer (1,380), which passes
 Runecraft and Smithing for rank 10, and Dwarf Cannon (1,130), which passes Smithing for rank 12. Fold-in 17's railing recount (~968 in burst) drops Dwarf Cannon back below Smithing, to rank 13.
 
-The expected column sums to **31,408** (the steps; 32,287 before fold-in 14 moved every quest's expected to its burst figure) plus the legs' **2,209.5**; RUN-ORDER.md section 6
+The expected column sums to **31,310.8** (the steps; 31,408 before fold-in 17, 32,287 before fold-in 14 moved every quest's expected to its burst figure) plus the legs' **2,209.5**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **34,907.5** knife-on expected (32,747.7 best), against the record of 35,916.
+retries, restarts) for its **34,810.3** knife-on expected (32,641.7 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
