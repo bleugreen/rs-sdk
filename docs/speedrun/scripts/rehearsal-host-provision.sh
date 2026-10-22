@@ -5,6 +5,9 @@
 #
 #   bash docs/speedrun/scripts/rehearsal-host-provision.sh ['ssh-ed25519 AAAA... other-machine' ...]
 #
+# RS_RUN_HOST, the run host's public address (cairn://p/rs/host, never committed), finds the run
+# host to copy; RUN_INSTANCE_ID=i-... instead names it directly.
+#
 # Runs on the Mac that holds the AWS profile (AWS_PROFILE_NAME, default bglab). It refuses, printing
 # the existing instance's id and address, when an instance tagged Name=rs-ashburn-rehearsal already
 # exists (pending, running, stopping or stopped): one twin at a time. The key pair, security group
@@ -31,7 +34,7 @@ PROFILE=${AWS_PROFILE_NAME:-bglab}
 REGION=us-east-1
 NAME=rs-ashburn-rehearsal
 RUN_NAME=rs-ashburn-run
-RUN_IP=54.242.152.95
+RUN_IP=${RS_RUN_HOST:-}
 KEY=$HOME/.rs-fleet/id_ed25519_rehearsal
 KNOWN=$HOME/.rs-fleet/known_hosts_rehearsal
 RDP_PW=$HOME/.rs-fleet/rehearsal-rdp-password
@@ -52,6 +55,7 @@ if [ -n "$ID" ] && [ "$ID" != None ]; then
 fi
 
 # --- The run host, read only -------------------------------------------------------------------
+[ -n "${RUN_INSTANCE_ID:-}" ] || [ -n "$RUN_IP" ] || die "set RS_RUN_HOST from cairn://p/rs/host (or RUN_INSTANCE_ID)"
 RUN_ID=${RUN_INSTANCE_ID:-$(aws_ ec2 describe-instances --filters "Name=ip-address,Values=$RUN_IP" \
     --query 'Reservations[].Instances[].InstanceId' --output text)}
 [ -n "$RUN_ID" ] && [ "$RUN_ID" != None ] || die "cannot find $RUN_NAME ($RUN_IP); set RUN_INSTANCE_ID"

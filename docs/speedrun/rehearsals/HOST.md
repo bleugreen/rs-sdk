@@ -13,7 +13,7 @@ RUN-HOST.md's labels: **m** measured (with the time), **r** read, **i** inferred
 | | |
 |---|---|
 | Instance | `i-0f690e919614af7b2`, tag `Name=rs-ashburn-rehearsal`, launched 2026-10-21 12:57 PDT by rs/149 |
-| Address | **54.167.144.8**, an Elastic IP, so it survives a stop. SSH and RDP admit only the operator's address (security group `sg-0f1bb560e649e85c5`, a copy of the run host's ingress). Not on the tailnet |
+| Address | an Elastic IP (`$RS_TWIN_HOST`, below), so it survives a stop. SSH and RDP admit only the operator's address (security group `sg-0f1bb560e649e85c5`, a copy of the run host's ingress). Not on the tailnet |
 | Machine | c7i.2xlarge in us-east-1c on the run host's subnet: 8 vCPU (Xeon Platinum 8488C), 15 GB, 60 GB gp3 (3000 IOPS, 125 MB/s), no GPU (m) |
 | OS | the run host's AMI `ami-02a9cdd4e98bc3c78`, Ubuntu 24.04.5 (m) |
 | Desktop | XFCE served by xrdp, user `ubuntu`, `max_bpp=24`, sesman `KillDisconnected=false`, `DisconnectedTimeLimit=0`, `IdleTimeLimit=0`; no screensaver or locker installed; `xset` no-blank autostart; logind `IdleAction=ignore` (m, read back by the setup script). The operator's first connect made the desktop on display **:10**, 1920x1080, 24 planes (m, session started 20:17:57 UTC) |
@@ -24,15 +24,20 @@ RUN-HOST.md's labels: **m** measured (with the time), **r** read, **i** inferred
 | known_hosts | `~/.rs-fleet/known_hosts_rehearsal` on both machines: the three host keys cloud-init printed to the EC2 console, pinned before the first connection |
 | RDP password | `~/.rs-fleet/rehearsal-rdp-password` on the Mac, mode 600. Copy it with `pbcopy < ~/.rs-fleet/rehearsal-rdp-password`; never print it |
 
+**Addresses.** The twin's and the run host's addresses are not in this repository; they live in
+cairn://p/rs/host. Before using this page, export them in the shell or Cairn batch that runs its
+commands: `export RS_TWIN_HOST=<the twin's public address> RS_RUN_HOST=<rs-ashburn-run's public
+address> RS_RUN_TAILNET=<rs-ashburn-run's tailnet address>`. Never commit their values.
+
 **Reaching it.** Paste on the Mac, or run from a Cairn batch on executor `bgsrv-ub` (host batches)
 or `local`:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'uptime'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST 'uptime'
 ```
 
 To use a RUN-HOST.md command here, replace `id_ed25519_ashburn` with `id_ed25519_rehearsal`,
-`known_hosts_ashburn` with `known_hosts_rehearsal`, and `54.242.152.95` with `54.167.144.8`. Never
+`known_hosts_ashburn` with `known_hosts_rehearsal`, and the run host's address with `$RS_TWIN_HOST`. Never
 run RUN-HOST.md's commands unchanged: they reach the run host.
 
 ## How it differs from RUN-HOST.md
@@ -47,13 +52,13 @@ run RUN-HOST.md's commands unchanged: they reach the run host.
   `~/run-commit` and no rs/83 timer. The probe-slot minutes in RUN-HOST.md (:00-:03 and so on)
   protect measurements on the run host and don't apply here. The slot files below take the
   reservation's place.
-- **RDP** goes to the public address 54.167.144.8:3389, not to a tailnet name. Client settings are
+- **RDP** goes to the public address, `$RS_TWIN_HOST` port 3389, not to a tailnet name. Client settings are
   RUN-HOST.md step 2's (1920x1080 fixed, Retina off, 24-bit). One desktop per user applies here too,
   and a stop of the instance ends it.
 - **Live view.** There is no tailnet address to bind, so step 5's live view binds `127.0.0.1:8090`:
-  in its command, replace `http://100.66.164.37:8090/live.mjpg` with
+  in its command, replace `http://$RS_RUN_TAILNET:8090/live.mjpg` with
   `http://127.0.0.1:8090/live.mjpg`. The operator opens it through an ssh tunnel,
-  `ssh -N -L 8090:127.0.0.1:8090 <this page's ssh options> ubuntu@54.167.144.8`, then
+  `ssh -N -L 8090:127.0.0.1:8090 <this page's ssh options> ubuntu@$RS_TWIN_HOST`, then
   `http://127.0.0.1:8090/live.mjpg`. On the host, `curl` received 23 JPEG parts in 6 s from it
   (m, 20:32 UTC).
 - **Step 0** is the setup script with the commit as its argument ("Setup", below). It moves the
@@ -74,7 +79,7 @@ A new account's env file is written on the host with a fresh random password tha
 (`N` is the name main assigned):
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'N=NAME; D=$HOME/rs-sdk/bots/$N; [ -e $D/bot.env ] && { echo "$D/bot.env exists, stop"; exit 1; }; umask 077; mkdir -p $D && { echo BOT_USERNAME=$N; echo PASSWORD=$(openssl rand -hex 8); echo SERVER=rs-sdk-demo.fly.dev; echo GATEWAY_URL=ws://127.0.0.1:7780; echo "CLIENT_URL=http://127.0.0.1:8899/bot?server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:7780"; echo CDP_URL=http://127.0.0.1:9222; echo TELEMETRY=false; } >$D/bot.env && chmod 600 $D/bot.env && ls -l $D/bot.env'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST 'N=NAME; D=$HOME/rs-sdk/bots/$N; [ -e $D/bot.env ] && { echo "$D/bot.env exists, stop"; exit 1; }; umask 077; mkdir -p $D && { echo BOT_USERNAME=$N; echo PASSWORD=$(openssl rand -hex 8); echo SERVER=rs-sdk-demo.fly.dev; echo GATEWAY_URL=ws://127.0.0.1:7780; echo "CLIENT_URL=http://127.0.0.1:8899/bot?server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:7780"; echo CDP_URL=http://127.0.0.1:9222; echo TELEMETRY=false; } >$D/bot.env && chmod 600 $D/bot.env && ls -l $D/bot.env'
 ```
 
 ## Slots: at most two rehearsal logins at once
@@ -93,13 +98,13 @@ on the host (m, 20:07-20:09 UTC).
 Take a slot:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'O=rs-NNN; M=MINUTES; R="woodcutting attempt"; case "$O" in rs-[0-9]*) ;; *) echo "set O to rs-NNN"; exit 1;; esac; case "$M" in ""|*[!0-9]*) echo "set M to whole minutes"; exit 1;; esac; D=$HOME/rehearsal-slots; mkdir -p $D; exec 9>$D/.lock; flock -w 10 9 || { echo "slot lock busy"; exit 1; }; n=0; for f in $D/*.json; do [ -f "$f" ] && [ "$f" != "$D/$O.json" ] || continue; U=$(sed -n "s/.*\"until\": *\"\([^\"]*\)\".*/\1/p" "$f"); [ -n "$U" ] && [ $(date -d "$U" +%s) -gt $(date +%s) ] && n=$((n+1)); done; if [ $n -ge 2 ]; then echo "two slots held, stop:"; cat $D/*.json; exit 1; fi; printf "{\"owner\":\"%s\",\"until\":\"%s\",\"reason\":\"%s\"}\n" "$O" "$(date -u -d "now + $M minutes" +%Y-%m-%dT%H:%M:%SZ)" "$R" >$D/$O.json.tmp && mv $D/$O.json.tmp $D/$O.json && cat $D/*.json'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST 'O=rs-NNN; M=MINUTES; R="woodcutting attempt"; case "$O" in rs-[0-9]*) ;; *) echo "set O to rs-NNN"; exit 1;; esac; case "$M" in ""|*[!0-9]*) echo "set M to whole minutes"; exit 1;; esac; D=$HOME/rehearsal-slots; mkdir -p $D; exec 9>$D/.lock; flock -w 10 9 || { echo "slot lock busy"; exit 1; }; n=0; for f in $D/*.json; do [ -f "$f" ] && [ "$f" != "$D/$O.json" ] || continue; U=$(sed -n "s/.*\"until\": *\"\([^\"]*\)\".*/\1/p" "$f"); [ -n "$U" ] && [ $(date -d "$U" +%s) -gt $(date +%s) ] && n=$((n+1)); done; if [ $n -ge 2 ]; then echo "two slots held, stop:"; cat $D/*.json; exit 1; fi; printf "{\"owner\":\"%s\",\"until\":\"%s\",\"reason\":\"%s\"}\n" "$O" "$(date -u -d "now + $M minutes" +%Y-%m-%dT%H:%M:%SZ)" "$R" >$D/$O.json.tmp && mv $D/$O.json.tmp $D/$O.json && cat $D/*.json'
 ```
 
 Release it (only your own), after the last clean logout and teardown:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'O=rs-NNN; D=$HOME/rehearsal-slots; rm -f $D/$O.json; cat $D/*.json 2>/dev/null || echo "no slots held"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST 'O=rs-NNN; D=$HOME/rehearsal-slots; rm -f $D/$O.json; cat $D/*.json 2>/dev/null || echo "no slots held"'
 ```
 
 **Leftover check**, before any launch and after any teardown or bound. It is RUN-HOST.md's check with
@@ -107,7 +112,7 @@ Xvfb added and the slot files in place of the reservation. After teardown, expec
 process and none of your slots:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'for s in /tmp/tmux-$(id -u)/*; do [ -S "$s" ] && echo "tmux -L $(basename $s): $(tmux -S $s ls 2>&1 | tr "\n" " ")"; done; ps -o pid,etime,comm -p "$(pgrep -d, "^(chrome.*|ffmpeg|bun|timeout|Xvfb)$")" 2>/dev/null || echo "no chrome, ffmpeg, bun, timeout or Xvfb process"; cat ~/rehearsal-slots/*.json 2>/dev/null || echo "no slots held"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST 'for s in /tmp/tmux-$(id -u)/*; do [ -S "$s" ] && echo "tmux -L $(basename $s): $(tmux -S $s ls 2>&1 | tr "\n" " ")"; done; ps -o pid,etime,comm -p "$(pgrep -d, "^(chrome.*|ffmpeg|bun|timeout|Xvfb)$")" 2>/dev/null || echo "no chrome, ffmpeg, bun, timeout or Xvfb process"; cat ~/rehearsal-slots/*.json 2>/dev/null || echo "no slots held"'
 ```
 
 ## Attempt worktrees
@@ -128,13 +133,13 @@ removed after the attempt.
 On bgsrv-ub, in the branch's checkout (`I` is the issue, as `rs-NNN`):
 
 ```sh
-I=rs-NNN; git bundle create /tmp/$I.bundle HEAD && scp -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no /tmp/$I.bundle ubuntu@54.167.144.8:$I.bundle && rm /tmp/$I.bundle
+I=rs-NNN; git bundle create /tmp/$I.bundle HEAD && scp -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no /tmp/$I.bundle ubuntu@$RS_TWIN_HOST:$I.bundle && rm /tmp/$I.bundle
 ```
 
 On the host, make the worktree:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'I=rs-NNN; export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && git fetch -q ~/$I.bundle HEAD && git worktree add -q --detach ~/$I FETCH_HEAD && rm -rf ~/$I/bots && ln -s ~/rs-sdk/bots ~/$I/bots && cd ~/$I && bun install >/dev/null && git log -1 --oneline'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST 'I=rs-NNN; export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && git fetch -q ~/$I.bundle HEAD && git worktree add -q --detach ~/$I FETCH_HEAD && rm -rf ~/$I/bots && ln -s ~/rs-sdk/bots ~/$I/bots && cd ~/$I && bun install >/dev/null && git log -1 --oneline'
 ```
 
 In the worktree, `git status` lists bots' four tracked files (`_template/`, `create-bot.ts`) as
@@ -142,7 +147,7 @@ deleted; the symlink stands in for them, and nothing is committed there. Remove 
 teardown:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'I=rs-NNN; cd ~/rs-sdk && git worktree remove --force ~/$I && git worktree prune && rm -f ~/$I.bundle; git worktree list; ls ~/rs-sdk/bots'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST 'I=rs-NNN; cd ~/rs-sdk && git worktree remove --force ~/$I && git worktree prune && rm -f ~/$I.bundle; git worktree list; ls ~/rs-sdk/bots'
 ```
 
 `git worktree remove` deletes the symlink, not what it points to: the env files and their mode
@@ -159,7 +164,7 @@ world for up to 500 ticks, and on a rehearsal account that is playtime. In order
    stop, and look at the tab.
 
    ```sh
-   ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'cd ~/rs-sdk && timeout --kill-after=30s 2m ~/.bun/bin/bun speedrun/tools/tab-logout.ts NAME 2>&1 | grep tab-logout'
+   ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST 'cd ~/rs-sdk && timeout --kill-after=30s 2m ~/.bun/bin/bun speedrun/tools/tab-logout.ts NAME 2>&1 | grep tab-logout'
    ```
 
    `speedrun/tools/tab-logout.ts` runs `logoutClean` and then confirms through the page's own
@@ -174,7 +179,7 @@ world for up to 500 ticks, and on a rehearsal account that is playtime. In order
 3. **Stop the stack**, Xvfb included:
 
    ```sh
-   ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'tmux -L run has-session -t rec 2>/dev/null && { echo "recording still running: stop it first (RUN-HOST.md step 8)"; exit 1; }; tmux -L run kill-server; pkill -TERM -x Xvfb; sleep 3; { pgrep -a -f "[p]roxy.ts|[g]ateway.ts|rs-run/[c]hrome-profile"; pgrep -a -x Xvfb; } | grep . || echo "tab stack stopped"'
+   ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST 'tmux -L run has-session -t rec 2>/dev/null && { echo "recording still running: stop it first (RUN-HOST.md step 8)"; exit 1; }; tmux -L run kill-server; pkill -TERM -x Xvfb; sleep 3; { pgrep -a -f "[p]roxy.ts|[g]ateway.ts|rs-run/[c]hrome-profile"; pgrep -a -x Xvfb; } | grep . || echo "tab stack stopped"'
    ```
 
    Xvfb is matched by process name (`pgrep -x`), not by command line: this ssh command's own shell
@@ -207,7 +212,7 @@ Two committed scripts rebuild the twin; nothing depends on remembering steps.
   is idempotent, starts nothing long-lived, and restarts xrdp only while nobody is connected:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'bash -s -- origin/main' < docs/speedrun/scripts/rehearsal-host-setup.sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST 'bash -s -- origin/main' < docs/speedrun/scripts/rehearsal-host-setup.sh
 ```
 
 First built 2026-10-21 12:57-13:01 PDT. The setup took about 3 minutes, at main `7c3e8c706`.
@@ -258,7 +263,7 @@ median / highest 10-second p10 of 30 samples (RUN-HOST.md step 6). Read 2 is on 
 session existed yet.
 
 **Reads 7 to 12 are paired reads** (rs/170 for rs/83; read 12 for the host thread, the first
-pair after the run host moved to a new address, 3.209.186.185, at 23:11 UTC). Each started on the same second as the run
+pair after the run host moved to a new address, today's `$RS_RUN_HOST`, at 23:11 UTC). Each started on the same second as the run
 host's gate timer read (:00:00 and :30:00 UTC), so the two hosts were measured in the same minute.
 rs/83 holds the run host's side in its own `~/gate-history`, and the comparison is rs/83's call.
 Each read ran through
@@ -375,7 +380,7 @@ $0.12 a day with nothing attached:
 ```sh
 aws --profile bglab --region us-east-1 ec2 terminate-instances --instance-ids i-0f690e919614af7b2
 aws --profile bglab --region us-east-1 ec2 wait instance-terminated --instance-ids i-0f690e919614af7b2
-aws --profile bglab --region us-east-1 ec2 release-address --allocation-id "$(aws --profile bglab --region us-east-1 ec2 describe-addresses --public-ips 54.167.144.8 --query 'Addresses[0].AllocationId' --output text)"
+aws --profile bglab --region us-east-1 ec2 release-address --allocation-id "$(aws --profile bglab --region us-east-1 ec2 describe-addresses --public-ips "$RS_TWIN_HOST" --query 'Addresses[0].AllocationId' --output text)"
 ```
 
 The security group `rs-ashburn-rehearsal-sg` and the key pair `rs-ashburn-rehearsal` cost nothing,

@@ -3,7 +3,7 @@
 # host's gate timer read in the same minute (rs/83's timer fires at :00:00 and :30:00 UTC).
 # Runs on the twin as ubuntu, fed over HOST.md's ssh line from bgsrv-ub or the Mac:
 #
-#   ssh <HOST.md's ssh options> ubuntu@54.167.144.8 'bash -s -- 21:00:00' < docs/speedrun/scripts/twin-gate-pair.sh
+#   ssh <HOST.md's ssh options> ubuntu@$RS_TWIN_HOST 'bash -s -- 21:00:00' < docs/speedrun/scripts/twin-gate-pair.sh
 #
 # Environment: BOT (default cairn_gate), O, the slot owner (default rs-170), REPO, the checkout
 # whose CLI runs (default ~/rs-sdk), DRY=1 to check everything and launch nothing.

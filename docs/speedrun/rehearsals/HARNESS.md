@@ -45,7 +45,7 @@ runs below; one sample each.
 
 ## Demo acceptance (passed, rs/164, 2026-10-21 13:46-13:51 PDT)
 
-On rs-ashburn-rehearsal (54.167.144.8) under rs/147's slot. The run used a fresh throwaway,
+On rs-ashburn-rehearsal (the twin) under rs/147's slot. The run used a fresh throwaway,
 `cairn_smoke`, with the gate account `cairn_twin`. The browser tab ran on the xrdp display `:10`
 (1920x1080, 24 planes), Chrome 156 with RUN-HOST.md step 3's six flags, and the page server and
 gateway from `~/rs-sdk` at main 7c3e8c706. The harness ran from a worktree of the branch at
