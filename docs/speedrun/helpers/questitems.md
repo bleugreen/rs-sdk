@@ -27,7 +27,16 @@ held. Tasks are listed in route order, so a fresh account walks its set once.
   Hitpoints below half. Helpers carry no food.
 - Options: `set`, `spare` (default true: one spare of each item where it is cheap), `only` and
   `skip` (task ids), `float` (coins carried, default 400; under 100 the account pickpockets
-  Lumbridge men back up to it).
+  Lumbridge men back up to it), `counts` (held targets by item name that replace the tasks'
+  own; a name no selected task gathers is refused at start).
+- **Bulk runs.** `counts` turns any errand into a stockpile run: the loop banks whenever the
+  pack fills and goes back until the held target is met. The Herblore secondaries line
+  (cairn://p/rs/332) uses it for snape grass:
+  `{"set":"drops","only":["snapegrass"],"counts":{"Snape grass":102}}`. The three spawns
+  respawn 30 ticks after a pickup, shortened by the server's player-count scaling
+  (`World.scaleByPlayerCount`), and the nearest booth is Falador west. The hobgoblins there
+  hunt any player of combat level up to twice theirs (56 and 84) within one tile, so a
+  10-Hitpoint coin earner is a poor fit; h96's drops-set combat is enough.
 
 ## Sets and sources
 
