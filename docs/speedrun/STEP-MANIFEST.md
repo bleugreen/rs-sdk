@@ -414,7 +414,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   the climb comes ~1,100 ticks after S11a ends. And S17, Wilderness course laps from 75 to 99 as the run's last step, after S27's
   combat finish (leg T27-17, 185.7 ticks measured; RUN-ORDER.md O1, `research/run-transitions.md` §4).
 - **Parameters:** `course: 'gnome' | 'wilderness'`, `untilLevel` (22 / 99), `food` and `eatBelow`,
-  `technique: 'react' | 'plain'` (the rs/97 program's switch), `startStep`.
+  `eatGap` and `eatAt: 'land' | 'any'` (rs/241's PR #218, building; the module passes `eatGap: 3,
+  eatAt: 'land'` by default), `technique: 'react' | 'plain'` (the rs/97 program's switch), `startStep`.
 - **Preconditions:** S11a: Tree Gnome Village complete (the village spirit tree reaches the
   stronghold; ledger), position at the course start (2474,3436). S17: Agility 75 from The Grand
   Tree's 7,900 base (read, `quest_grandtree.rs2:199`; `skills/agility.md` §3), ridge-gate Agility
@@ -443,8 +444,28 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Food in S17:** HP drifts about -1.25 a lap with no eats, and S17 is roughly 60 laps, so SCORED
   would fall under the 60-HP player-killer line around lap 30. The module eats a shark when HP is
   below 60 (`eatBelow: 60`; about 2-3 sharks over the step, 20 HP each), not to a fixed eat line;
-  the 12 sharks in H23 stay as the margin against player killers. The cost of an eat inside a lap
-  is not measured yet.
+  the 12 sharks in H23 stay as the margin against player killers. **An eat costs 0 ticks with
+  `eatAt: 'land'`** (rs/241's PR #218, commits bdbd4ed265 and 55c60217fb; building, not on main,
+  and **pending for the run-commit floor**, entry 0): the program eats only on the obstacle-click
+  tick, just before the click, so it cannot cancel a walk. Measured (rs/270; lab, bgsrv-ub, 300 ms,
+  page built from a9298868; `rehearsals/agility.md` section 6.5 at 291727b8 on
+  agent/rs-270-builder-0): at the log balance from 13 tiles a click alone took 16 ticks to the xp,
+  3 of 3; an eat 3 ticks into the walk **lost the obstacle** every time, because `OpHeldHandler`'s
+  `clearPendingAction` (`OpHeldHandler.ts:55`) drops the interaction, not the walk, and nothing
+  happened in 40 ticks; an eat sent just before the click took 16, 0 extra. With an eat due at every
+  chance, `eatAt: 'land'` ran 10 laps at exactly 66 and `eatAt: 'any'` 4 obstacles in 278 ticks with
+  two 40-tick timeouts. At S17's arrival stats (Agility 75, HP 99, Defence 98, protect off, eat line
+  98, `eatGap: 3, eatAt: 'land'`, 15 timed laps) every eat lap cost exactly what its fall alone
+  costs (m). The engine also drops an eat while an obstacle script holds the player
+  (`OpHeldHandler.ts:16`), so a held-window eat heals nothing (r). **Without the option** (a run
+  commit lacking #218) an eat during an approach costs the 40-tick `stepTimeout`: 0-40 per eat,
+  0-120 over the 2-3 eats (rs/241's 14 laps, section 6.1: laps without an eat exactly 66, all 5
+  eats in the two fall laps, 113 with 2 and 160 with 3 and one 40-tick timeout; RUN-ORDER.md
+  sensitivity table).
+- **Falls are S17's real variance** (m, rs/270): +16 per stones fall, about +75 per rope-swing fall.
+  rs/270's 15 laps drew 6 falls (80.3 a lap) against 1 in 12 in rs/241's run, so the fall rate at
+  Agility 75-85 is the open number; a wider sample is requested of rs/270, and S17 is not re-priced
+  from 15 laps. The 75-85 band's 858 m already carries rs/155's chain's falls.
 - **Primitives:** `lib/programs.ts` `runProgram(sdk, 'agility', {course, untilLevel, food,
   eatBelow})` [rs/97] (`untilLevel` is **declared in the program at 2f1b15de (rs/147's branch), pending main** with
   rs/147's Agility snapshot, which waits on main's sign-off of four default-changing program fixes
