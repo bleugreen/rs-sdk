@@ -131,10 +131,11 @@ down to ~110 held (section 7, "The forecast at 2026-10-23"). The new cost is the
 rs/41 holds none (a GE bid of 6 at 30,025 has never filled), so S21 moves to the body altar, +205,
 on the fleet's 57 body talismans (F23), with 22 givers on 23 body talismans and no keeper (m, lab, BA); main made it the S21 plan at 15:17 PDT. The nature altar is
 a sensitivity row only: with the keeper, 2 or 4 or more nature talismans would save 171 or 205, but
-it needs ~52 tick-exact givers on the run host (rs/163's measured ~355-tick round trip) and at least 30 fleet accounts logged out under the
+it needs ~52 tick-exact givers on the run machine (rs/163's measured ~355-tick round trip) and at least 30 fleet accounts logged out under the
 80-login cap (O38). rs/194 (16:35 PDT) holds none but projects ~4 by midday on the 22nd and ~10 by
 the 23rd (i, a farm measured at ~0.25 an hour), so 4 or more now look likely by the run date; the
-open conditions are the ~52 givers' machine load (rs/163's run-host slot, 22:05Z) and main's decision. Adamantite (365 by ~12:00
+open conditions are main's (17:07 PDT): rs/194 holding 4 or more talismans before the run's eve, and the
+~65-client giver-load check passing (O41). Adamantite (365 by ~12:00
 UTC on the 22nd), the arrowtips, the cannonballs and the essence are forecast complete; diamonds
 (+88) and herbs (+85) stay deltas.
 
@@ -167,13 +168,15 @@ open swings are the knife gate itself (R2, O11) and S15's unrun atoll half (O36)
 
 ## 1. Run-machine setup and the run gate
 
-The run is first person: SCORED's browser webclient in a visible tab on the Ashburn machine, the
+The run is first person: SCORED's browser webclient in a visible tab on **the run machine**, the
+Ashburn machine chosen at the gate (RUN-HOST.md step 5a, "Choose the machine"), the
 game socket direct to the demo (`?server=`), the SDK overlay on a loopback gateway (`?gateway=`) for
 the non-reactive steps, and in-page tick programs (cairn://p/rs/97) for every reactive loop (the knife
 loops, the pickpocket re-click, Agility obstacles) (ARC).
 
 **Tick-exact helpers on the run machine (M0602, M0612).** The helpers whose packets must land on
-predicted ticks beside SCORED run on the Ashburn machine, not on bbs: the altar givers of the 7-tick
+predicted ticks beside SCORED run on the run machine, SCORED's own, not on bbs (main's plan of
+record, 16:35 PDT; RUN-HOST.md step 4): the altar givers of the 7-tick
 Runecraft cycle (S06, S21), the trade giver that serves SCORED's hand-offs, and the wine giver (S25c;
 the same account as the trade giver). They run through the launcher cairn://p/rs/117 (under rs/41):
 a loopback gateway, lite runners with the #78 relay fix, **helpers logged in before SCORED**, clean
@@ -181,11 +184,15 @@ logout, independent of `fleetctl`, documented in HELPERS.md. The altar givers fo
 contract (cairn://p/rs/97/messages, 04:59). Everything else in the fleet stays on bbs. SUPPLIES.md
 marks every giver's host.
 
-**Setup (M0550; the host since 2026-10-21).** The run machine is an AWS c7i.2xlarge in us-east-1c
-(8 vCPU, no GPU, Ubuntu 24.04, XFCE over xrdp). [RUN-HOST.md](RUN-HOST.md) is its run-night runbook,
-with every command. In order:
+**Setup (M0550; two run-capable machines since 2026-10-21, tenet 17).** Two identical AWS
+c7i.2xlarge machines in us-east-1c (8 vCPU, no GPU, Ubuntu 24.04, XFCE over xrdp) are kept
+run-capable with the same RUN_COMMIT, gate history timer, reservation, recording and live view:
+rs-ashburn-run (the run host) and its twin (cairn://p/rs/tenets/17, approved 17:44 PDT; addresses:
+cairn://p/rs/host). The run starts on whichever passes the gate immediately before the start, and
+rehearsals pause during the gate and the run. [RUN-HOST.md](RUN-HOST.md) is their run-night
+runbook, with every command. In order, steps 0-5 on **both** machines:
 
-- reserve the host before anything else starts: step 0 writes `~/host-reserved.json` (owner the run,
+- reserve each machine before anything else starts: step 0 writes `~/host-reserved.json` (owner the run,
   `until` covering setup, the 9 h run bound and an hour's margin), so every firing of rs/83's gate
   history timer (rs/140) skips; the timer is never disabled instead. run.ts refuses to start unless
   the reservation is live and its own, and removes it after the final clean logout (RUN-HOST.md,
@@ -199,20 +206,31 @@ with every command. In order:
   unobscured on display :10 for the whole run. Every launch on the host is reaped by its own hard
   timeout (9 h for the run), so nothing depends on an agent or a person being alive to stop it;
   teardown still stops everything explicitly. Chrome opens a bare page and is logged in by a
-  one-time token, so no password is ever on a command line (cairn://p/rs/138). That path exists
-  only on rs/138's branch, so no real account's credentials (fleet or SCORED) go on the host until
-  rs/138 is merged to main (RUN-HOST.md, "Rules for every launch on the host");
-- log rs/117's helpers in;
+  one-time token, so no password is ever on a command line (cairn://p/rs/138, on main since #120,
+  96fc462a; no real account's credentials, fleet or SCORED, go on either machine before its
+  `RUN_COMMIT` includes it; RUN-HOST.md, "Credentials");
+- log the opening roster in on each machine: S06's 7 air-altar givers (RUN-HOST.md step 4);
 - start the recording on the VM (ffmpeg x11grab, 1920x1080, 30 fps, libx264 veryfast crf 20);
 - check that nothing else runs (the leftover check does not count the gate history timer's
   `rs-gate-read.service`, and waits out a firing in progress);
-- measure the gate on a throwaway gate account, in the run's configuration (RDP disconnected,
-  recording and live view on);
+- **choose the machine** (RUN-HOST.md step 5a): measure the gate on both machines in the same
+  minute, each on its own throwaway gate account, in the run's configuration (RDP disconnected,
+  recording and live view on, the opening roster in). Start on the one that passes; if both pass, on
+  the run host unless the twin's read is clearly better in that minute (the run host at the margin,
+  the twin at 60 of 60 with at most 1 catch-up a minute); if neither, no start. Only reads taken
+  after a machine's last address change count. Record both reads. On the other machine the 7 log
+  out and rehearsals stay paused until the run's teardown;
+- on the chosen machine, log the rest of the roster in before SCORED (R12), and hand over from the
+  gate to the run: the gate tab logged out and closed, the run tab alone on the recorded display,
+  the recording already running, and a live frame of the capture showing the run tab, which is a
+  pass line of the gate (main, 18:16 PDT; R20);
 - only then open SCORED's tab. SCORED already exists: it was claimed with the tutorial skip and
   parked at 8 ticks (main's arc, 08:40 PDT), so this is its first login of the run, not its first ever;
-- the bbs fleet is online and H1-H5 are staged before that login.
+- the bbs roles the run uses are online, every other fleet account is logged out (tenet 16), and
+  H1-H5 are staged before that login.
 
-Gate (d) was measured there on 2026-10-21 at about 1,700 online. The tab's loop-rate p10 was 70.6-73.3
+Gate (d) was measured on the run host on 2026-10-21, before its address change, at about 1,700
+online, and on the twin at 70.8 / 72.0 / 72.9 (m, RUN-HOST.md "Measured"). The tab's loop-rate p10 was 70.6-73.3
 per second with RDP connected or disconnected and the capture on or off. The capture costs about
 0.75-0.95 of a core. Chrome was not throttled with RDP disconnected. The recording is smooth only
 disconnected: 29.9 fps against about 23 fps connected (m, RUN-HOST.md, "Measured"). Hence main's
@@ -220,7 +238,8 @@ configuration: RDP disconnected for the run (10:02 PDT 2026-10-21), now tenet 12
 cairn://p/rs/tenets/12), which supersedes tenet 11's "remote desktop connected".
 
 **The run gate, and the knife switching rule (tenet 12; M0530, M0550; ARC).** The knife is on only
-while the gate holds, measured on the run machine from the tab:
+while the gate holds, measured from the tab on each candidate machine before the start
+(RUN-HOST.md step 5a) and on the run machine during the run:
 
 | | Condition (tenet 12) | Source |
 |---|---|---|
@@ -249,8 +268,9 @@ samples, 971 of 985 reactions on the next tick; **simmer** (2-10) in 1; **severe
 simmer stretches can last hours (08:36-11:36). No hour is clean in advance, and the player count
 correlates only weakly with catch-ups (r = 0.20). 4 of the 5 severe bursts fell within 40 minutes
 before a restart (i, from two restarts). The calmest window was 12:02-12:21. So the start is picked
-from rs/140's gate history on the run host (RUN-HOST.md, "Gate history timer") plus a fresh 3-5
-minute read.
+from rs/140's gate history on both machines (RUN-HOST.md, "Gate history timer"; on the twin it is
+enabled only on run night) plus a fresh read on both in the same minute, which also picks the
+machine (RUN-HOST.md step 5a; R19).
 
 **Start conditions (main adopted rs/129's policy at 09:30, C#15; SF "Recommended policy").** Main's
 ruling of 14:55 PDT prices them at the earliest plausible run date, 2026-10-23 (F23).
@@ -275,12 +295,15 @@ ruling of 14:55 PDT prices them at the earliest plausible run date, 2026-10-23 (
   body altar, +205) and the dragon bones (+52 on the assumed ~413). Still to buy, at no tick cost
   if bought before the start: air runes ~1,400, earth 45, law 49 and blood runes (a GE bid of 200
   resting) (SUPPLIES.md, "Status by hand-off").
-- **Hard (main, 15:35 PDT; a tenet is proposed): simultaneous demo logins, summed across every
-  host, at most 100, with a working cap of 80**, counted before SCORED logs in; fleet accounts not
+- **Hard (cairn://p/rs/tenets/16, approved 17:43 PDT; main's working cap): simultaneous demo logins,
+  summed across both Ashburn machines and every other host, at most 100, with a working cap of 80**,
+  counted before SCORED logs in; anything still logged in on the machine not chosen counts (its 7
+  opening givers log out and its rehearsals pause, RUN-HOST.md step 5a); fleet accounts not
   needed during the run are logged out (RUN-HOST.md step 7; SUPPLIES.md, "Peak concurrent
   logins"). The server's operator bans at 100 simultaneous connections per IP, and spreading across
   IPs to evade it is what gets accounts banned. The S21 givers log in before SCORED, so the peak is
-  at the run login, not in S21 (O38).
+  at the run login, not in S21 (R12; O38, settled). The gate minute holds 16 on the two machines
+  (7 givers and a gate account each).
 - **Budget:** start only when the expected total plus the fallback deltas in force is under 35,916
   (the scenario table above: 35,005 on the forecast row in force, 35,292 on today's stock);
   otherwise wait, and main decides the bet.
@@ -500,11 +523,12 @@ counted (T&O row 1, via playtime-audit.md). Main's rule: two planned relogs in a
 that adds one must show it pays for itself (M0530). **No milestone saves** (main, 08:55; RES§3): a save relog protects 0
 score ticks, because playtime rolls back with the progress.
 
-**Helpers first.** rs/117's helpers on the run machine log in **before SCORED's run login** and
-**stay logged in through both planned relogs** (M0612). SCORED's relogs then put it behind them in the
-engine's player loop (players are visited by IP bucket, then login order, r, SK:runecraft §4), which
-is the order the 7-tick Runecraft cycle needs. A helper that relogs after SCORED drops to the robust
-8-tick schedule for its own trades (R12).
+**Helpers first.** rs/117's helpers on the run machine, SCORED's, log in **before SCORED's run
+login** and **stay logged in through both planned relogs** (M0612). The engine visits players by
+address group (the IPv4 address's last octet & 7, group 0 first), then login order, and a relog
+re-appends at its group's tail (r, `World.ts`; m, lab, rs/131). One machine is one group, so
+SCORED's relogs keep it behind every giver, which is the order the 7-tick Runecraft cycle needs, and
+a helper that relogs after SCORED drops to the robust 8-tick schedule for its own trades (R12).
 
 | Event | Where | When | Cost | Notes |
 |---|---|---|---|---|
@@ -1109,13 +1133,15 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
 | R9 | **Contention** at the zoo iron and the Taverley oaks and willows | S09, S07 | +150 each expected, "a few hundred" per site move | a scout helper checks the site before SCORED arrives; second sites: the iron cluster north of East Ardougne and SK:woodcutting §6's tiles. The S07 bone giver stands on the next tile, so a second tree also needs a free tile beside it |
 | R10 | **Sea Slug's client dependency** (bridged doors) | S19 | without it the quest cannot finish; Sheep Shearer (~68 i) replaces the point and Fishing starts lower | verified on the run client by rs/116 (local engine, not demo-confirmed); wait for the door loc after a teleport; if it fails on the demo, swap in Sheep Shearer before S26 and re-cost S22 |
 | R11 | **No spare quest point** at the Champions' Guild door: exactly 32 (Q§7) | S26 | any lost point blocks Dragon Slayer and the finish | check `questPoints(state)` after S24 (`speedrun/lib/quests.ts`, on main, PR #123); Sheep Shearer (~68 i) or Imp Catcher (~94 i) is the replacement |
-| R12 | **Runecraft cycle order**: the tuned cycle schedules the giver's packets too, so the giver must be processed before SCORED (IP bucket, then login order, r) | S06, S21 | robust 8-tick +1 per craft (+168 if all); a relayed giver: the stock 15-tick cycle (+1,344) | altar givers on the run machine through rs/117, logged in before SCORED and staying in; a new SCORED session (a restart) cancels armed givers (rs/117's cue contract), and the givers must be back in before SCORED |
+| R12 | **Runecraft cycle order**: the tuned cycle schedules the giver's packets too, so the giver must be processed before SCORED. **Measured** (m, lab, rs/131, bgsrv-mac, 300 ms, body altar, in-page `rc-cycle`, 30 crafts a run, 0 lost or declined trades): the engine visits players by address group, the client IPv4 address's last octet & 7, group 0 first, then by login order within a group (r, `World.ts` playerLoop, `HashTable(8)`); givers in a lower group after SCORED ran 7.00 (30 of 30 giver-first), givers in a higher group 8.00 (30 of 30 SCORED-first, each finished at 8 by the salvage), givers first in the same group 8.00 robust; rs/196 measured the same program 30 of 30 at 7 tuned and at 8 robust in both orders (RCM). On the demo the group is each machine's public address (`fly-client-ip`); a relog re-appends the player at its group's tail (r, `World.ts` processLogins; main, 16:43 PDT) | S06, S21 | **a wrong order costs exactly +1 a craft, never a declined trade** (the program reads the order off the trade screen each turn): at most ~+168 over S06 and S21 (the +161 fallback row for S21 plus S06's 7). **A giver crash** (direct path, run day): back in the world 54-74 ticks after a SIGKILL, exactly 1 turn missed, the restarted giver handled after SCORED and on the robust 8 from then on (m, lab, rs/163, 3 of 3): ~7 for the lost craft plus 1 per later turn of that giver, at most ~15 over S21 for one crash with 22 givers (i); not a section 7 line, no crash is expected. On the relay path (not run day) a crash misses 3 turns until rs/225 lands (m, lab, rs/163). A relayed giver: the stock 15-tick cycle (+1,344) | **plan of record: every tick-exact giver on SCORED's machine, logged in before SCORED and staying in** (main, 16:35-16:36 PDT; RUN-HOST.md step 4); one machine is one group, so login order decides. **Givers never relog once SCORED is in**; SCORED's own relogs keep it last. A new SCORED session (a restart) cancels armed givers (rs/117's cue contract), and the givers must be back in before SCORED. The lower-group machine (SCORED on rs-ashburn-run, group 1, givers on its twin, group 0, as of 2026-10-21; current groups in cairn://p/rs/host) is an alternative only once a cross-machine cue exists (rs/196) and rs/225's relay fix lands |
 | R13 | **Quest steps in the browser client**: every quest figure was taken on the lite client | S05-S26 | unknown; the fixed-column expected assumes one tick per page | rehearse each quest script on the run configuration; S15 and S19 are verified on the run client on a local engine (rs/116); quest state and resume through `speedrun/lib/quests.ts` (`readQuestStage`, `requireQuestStage`; on main, PR #123) |
 | R14 | **SCORED's name exposed** in the repository, logs or game chat | everywhere | a named account before the run invites interference and breaks the naming rule | SCORED never appears by name in the repository, commits or documents; rs/117's cue carries a hash, never the name; the ambassador (rs/58) will not name the scored account in game chat before the run (M0606) |
 | R15 | **The S07 bury's trades in the page**: the bury itself is measured in the tab (`knife-cycle` with `bury` and `trees`, 0.329 bones per tick in four runs, every bury landed, no measurable cost to the loop; m, #124, SK:woodcutting §9 on main). The trade itself is measured with a lite stand-in: 4 ticks per 23-bone load, refusals free (rs/141's lab giver, m; BP§3 had 5); the in-page stop, `receiveFrom` and restart is not, and the restart re-anchors on observed xp | S07 / S25b | a slow restart: a few ticks per load, ~+30 over 16 loads (i, in S25b's 95); the variant failing on the demo: +278 if the bones go to the Mining `stay2` lap and the booth, +640 all at the booth | acceptance with a real helper trading 23-bone loads (MAN entry 3); the plain loop with the bury (#165, on main as 3dfc217f, O31) shares its bury, so the fallback is the Mining `stay2` lap and the booth; always pass `trees` (without it the rate falls to 0.27-0.28, m, #124) |
 | R17 | **The wine's login + 19 deadline after a tab relog: now low-likelihood.** After planned relog 1 the sequence needs the wine giver's trade and the 29 deposit with the bank open by login + 19, because the fermentation timer fires at login + 20 (WW§3: the lab opened it at login + 7). A navigated relog on a run commit without rs/174's socket-close fix pays the twin's ~19-tick gateway takeover (first state at + 19 to + 20); with the fix, a navigated relog reaches first state at + 1 and the bank at + 3 to + 6 (m, twin), so the in-page path falling back costs about 5 s of wall time, not ticks (R174) | S25c | no scenario cost. If the deadline is missed anyway (a slow login, a restart in the window), the deadline relog (WINE) recovers it: it banks the wine first, and the new login's timer ferments the batch at its login + 20 with no action (r, WINE "The login-timer deadline fallback"; 5 of 5 demo arming relogs, m, WINE), for one more relog (~3.6). SCORED is at Cooking 30 there and cannot re-arm by making a wine (Cooking 35, SK:cooking). If the wine failed outright: kebabs +~78, with supplies nobody holds yet (SUPPLIES.md H21c): rs/184 measured camel meat at ~125 raw an account-hour bank to bank (m, cairn_h51; the desert caps at ~385 an hour), pitta needs no Cooking training, and 340 noted mixtures and 340 noted pitta (which also supply the mixtures' 340 bowls) project to ~4-5 hours on two accounts once rs/41 funds them (i, 16:40 PDT). They stay in no scenario row, and with R17 at low likelihood since rs/174's relog fix, whether to build the stock is main's and rs/41's call; fish on a range +~927 (SK:cooking route table; section 7) | both planned relogs by `login(s, {inPage: true})` with navigation as the fallback (MAN entry 29; R174; the client's second-login fix is on main, #155); `RUN_COMMIT` at or after rs/174's fix, efdbe2e2 (#164, inside the run-commit floor; RUN-HOST.md "Credentials"). Depositing the 29 before relog 1 is no longer needed and is dropped from the plan. Owner: rs/174 |
 | R16 | **The stun-pack helper on the demo**: the lab teleported the helper beside SCORED (57 times in one run); a helper 28 tiles behind cost 18 dry stuns (SP§5, §12). An offer of an unstackable item in more than one press lands only the first (rs/136) | S18 | dry stuns lose their bones (to S07 at ~0.26 each) and slow nothing else; a late top-up at k = 4 costs ~1 | the helper keeps within 3 tiles at all times; SCORED tops up early (6 bones left) when the helper is far; one press per item; rs/136 fixes `trade.ts`. Each top-up stops the in-page program before SCORED's request and restarts it once the trade is done, by stun + 9 at the latest (that click lands on T + 11, the attempt), because the program clicks the knight on every tick, stun ticks included; a top-up stun buries nothing (rs/132, `pickpocket.ts` doc comment at e5f83a36). The in-program top-up (a `player` stun action with `idleOnInterface: true`, on main since #163) is preferred over the stop and restart (MAN entry 6) |
 | R18 | **`knife-mine` (re)starts in S09.** A depleted iron rock (`rocks.loc` 450-453, still op1 Mine) passed the program's start check, so a (re)start during depletion slipped forever (rs/153's lab via rs/147, 19620b53). **rs/207** (on main as e5d8a058, #170) makes it fault: 3 of 3 depletion restarts fault at +1 tick (the control mined 0 ores in 47 ticks), and post-respawn laps run at 3.00 ticks per ore, 200 of 200 (m, lab; main, 16:12 PDT). On a running lap 4 of 5 rotation rocks are depleted at any moment, so **any knife (re)start in S09 waits out the respawn (13 ticks at respawn 13) or faults**: a relog, a lock loss, rs/156's switch from measuring back to the knife, and each switch between the `stay2` and five-rock laps | S09 | with rs/207: **+13 plus the start cost per (re)start** (i); the ~85-bone `stay2` case adds ~2 lap switches, ~+30, inside today's stock row. Without it the knife cadence is lost for the rest of the step, down to the in-page plain 4.00: up to **+~1,054** at S09's start (4,170 against 3,116, i, MP) | **`RUN_COMMIT` at or after e5d8a058** (#170; the 23ea9f77 floor covers it, RUN-HOST.md "Credentials"; MAN entry 4); the step runner's resume waits for a live rock rather than retrying |
+| R19 | **The two machines disagree at the gate.** The Fly delivery path differs by address: on 2026-10-21 rs-ashburn-run's earlier address held 5-13% of tick messages 135-218 ms in Fly's path and failed 5 of 5 same-second pairs while its twin passed every one; the machine, its TCP stack and the account were ruled out, and after the 23:11Z address change its first pairs matched the twin tick for tick (m, the host thread, 15:47-17:03 PDT; rs/83's demo-latency.md sections 9-10, 01e2ec00 on rs/83's branch). A held route can strike either machine, before or (unobserved so far) during a run | the start; every reactive step | a held route fails (a) and (c), so the knife stays off: up to the whole knife-off night, +3,117 (R2), on a machine the gate would have refused | **choose the machine** (RUN-HOST.md step 5a, tenet 17): both machines gated in the same minute, the start on one that passes, only reads after a machine's last address change counting; the gate history on both from two hours before; no stop-and-measure mid-run, the in-run `TICKMON` rows (#176) show a route going bad. Owner: the host thread |
+| R20 | **The recording captured the wrong window**: in cairn_casts' rehearsal the first-person recording showed the gate account's tab, which stayed on top of the recorded display, instead of the attempt (rs/147; main, 18:16 PDT) | the whole run | **evidence lost, not ticks** | the gate-to-run hand-over (RUN-HOST.md step 5a, line 6): the gate tab logged out and closed before the run tab opens, the run tab alone on the recorded display, the recording started before the run tab's login, **a live frame of the capture showing the run tab as a pass line of the gate**, and any later probe on the other machine. Owners: the host thread (cairn://p/rs/host) for the gate script, rs/232 for `rehearse.ts` |
 
 ## 9. Ordering questions
 
@@ -1250,6 +1276,15 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
   is in force (37,692 / 35,214); the column without it (38,428 / 35,980) is history, for a
   `RUN_COMMIT` before 3dfc217f, which RUN-HOST.md "Credentials" rules out. S07's gate off alone on
   today's stock costs +873 (+2,519 without it). rs/211 builds the bury-in-willows rule (MAN entry 3).
+- **O38, the swarm bound and when the givers log in: settled** (main, 16:35-16:36 PDT; tenet 16,
+  approved 17:43 PDT; rs/131's lab). Every tick-exact giver runs on SCORED's machine and logs in
+  before SCORED, S21's 22 included, so the peak is at the run login (SUPPLIES.md, "Peak concurrent
+  logins": 37 run accounts, ~90 with the gathering fleet's ~53, so **logging the unneeded fleet out
+  before the start is mandatory**). The start gate on the two candidate machines holds only S06's 7
+  givers and a gate account on each, 16 in all; after the choice the rest logs in on the chosen
+  machine and the other's 7 log out. Around 36 logins on one machine is fine on the swarm side, the
+  bound being per IP and the cap a total (main, 16:24 PDT); the CPU side is the load check (O41).
+  The host plan of S21's givers logging in later (16:15 PDT) is withdrawn under the plan of record.
 - Carried from v1: Cooking at Varrock west behind planned relogs, never first (a fresh account's
   first login is 159 ticks from that bank, m, WINE); Thieving after Fight Arena, Monkey Madness and
   the Mage Arena; Fishing after Sea Slug and Fishing Contest; Herblore after Druidic Ritual;
@@ -1277,7 +1312,8 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
 | O34 | Protect from Melee in S17, the Wilderness course, Agility 75-99. The demo's Agility #1, stunagile, trained Prayer to 43 before Agility ([hiscores.md](research/competitors/hiscores.md), "Agility"), which points at laps under it from Prayer 43 (i) | **not priced**: S17's row (4,213 / 3,820) and its 12 sharks (H23) stand. Drain (r): the `prayer_drain` timer runs every 5 ticks (`prayer.rs2:33`), adds drain effect x 5 to a counter and loses a point per 60 + 2 x prayer bonus (`prayer.rs2:163-174`, `equip.rs2:185`); Protect from Melee's effect is 12 (`prayers.enum:18`), so at bonus 0 it costs **1 point every 5 ticks** and Prayer 99 holds it ~495 ticks. Pricing (i): held through S17's ~4,213 ticks it needs ~843 points, ~744 past a full bar, about 24-27 prayer-potion doses at the classic 7 + level/4 = 31 a dose (not read in this engine), a net loss against ~12 eats. Falls (15% of current HP + 1, `skills/agility.md:206-218`) are most of SCORED's damage at Defence 98, Protect from Melee does not stop them, and they cannot kill above 1 HP. Only flicking near the skeletons is worth measuring: at most the ~12 eats' cost, about 0-30 | rs/155's lab run at SCORED's S17 stats: lap ticks with and without eating; skeleton hits at Defence 98; held against flicked (drain and lap cost); the no-eat HP floor | rs/155 under rs/147 |
 | O36 | **S15 is the critical path for the run date.** The Ape Atoll half (segments H-Z, ~3,300 of S15's ~4,400 stock ticks, rs/185) has never been scripted or run as one route; only the gnome half (A-G, ~680) has. S15's 4,077 rests on `quests/monkey_madness.md`'s per-row figures, ~1,475 of it never measured (e) | 4,077 / 3,726 i/e; bad-but-plausible +~860, priced before any atoll run | rs/201's H-Z, written fresh segment by segment, lab-proven 3 of 3, with measured ticks per segment sent to rs/158. **The earliest run date keys off rs/201's progress, not supplies**; supplies stay priced at 2026-10-23, since a later date only improves them (F23) | rs/201 |
 | O37 | H12 does not fit SCORED's inventory: its unstackable items alone are ~30 slots with the bow and arrows worn (gold bar 1, ball of wool 1, monkey bones 1, bananas 5, prayer potion(4) 6, shark 15, antipoison(4) 1), before the rune stacks, the items already held and the untradeable quest items picked up on the way (rs/201 to rs/41, 15:29 PDT) | H12's quantities provisional (SUPPLIES.md H12); no tick row | rs/201 counts SCORED's real inventory at S14's exit, measures food and potion use at the route's 42 HP and Defence 1, and sends rs/158 a proposal. No helper can reach the hangar or the atoll (SCORED gets there only through Daero's blindfold, segment D), so H12 can be split or moved only at the Grand Tree in segment C or D, and nothing in A-G uses its items (rs/201). rs/158's order of preference: (a) fewer sharks and doses if the lab shows them unused (free); (b) a two-way trade at C or D, SCORED handing back what S15 doesn't need in the same trade that delivers H12 (a few offer clicks, no bank trip); (c) a Grand Tree bank deposit, the only one with a tick cost worth pricing, given a row only when rs/201's counts arrive | rs/201; rs/158 |
-| O38 | The swarm bound: our simultaneous demo logins, summed across every host, at most 100, working cap 80 (main, 15:35 PDT; a tenet is proposed). **Open: when S21's givers log in.** (a) This page's reading of R12: every rs/117 giver logs in **before** SCORED, because the engine visits same-IP players in login order and that decides the 7-tick cycle, so S21's 22 givers are online from the run login. (b) The host thread's plan (16:15 PDT, going into fold-in 10): S21's roster logs in **later, on the running machine only**, and only S06's 7 givers are at the start gate on both candidate machines. Under (b), if processing order really follows login order, rs/131's `rc-cycle` detects a SCORED-first turn and finishes it on the robust 8-tick schedule: +1 a craft, ~+161 on S21. Not resolved here | under (a), with the gathering fleet's ~53 still in: **~90** from SCORED's login through S06 (37 run accounts: SCORED, the ambassador, 2 trade givers, 7 air, 4 bone and 22 body-altar givers), ~83 in S07, ~79 through S21, ~57 after; ~26 run accounts (~79 with the fleet) if the air and bone givers are drawn from the body pool. On the nature altar ~120 at the start and ~109 through S21. On one machine S21 holds ~25 (22 givers, the 2 trade givers and SCORED), above main's ~20-per-machine note (SUPPLIES.md, "Peak concurrent logins"; i) | **logging out the fleet accounts not needed during the run before SCORED's login is mandatory** (RUN-HOST.md step 7); drawing the air and bone givers from the body pool also helps. Whether processing order follows login order or a reusable player index (rs/131, rs/117) settles (a) against (b); the per-machine placement is fold-in 10's | rs/host and main (the login timing, the per-machine count, the tenet); rs/131 and rs/117 (processing order); rs/41 (fleet logouts); rs/158 |
+| O41 | **The giver-load check**: every co-located helper as lite clients beside a scored-style tab with recording, on one Ashburn machine (identical hardware, so it bounds either) | the run machine's CPU under SCORED plus ~35 helpers; pass: tab loop rate (d) p10 at least 50 a second and the recording at least 29 fps with 0 dropped (main and the host thread, 16:18-16:36 PDT). The 22-giver point (00:35-00:52Z on 2026-10-22) logged all 22 in in 190 s (m, rs/214) but its tab side never started, so no (d) or fps | the ~34-client body point (01:00-01:25Z booked); the ~65-client nature point only if rs/194 reports 4 or more nature talismans before the run's eve (main, 17:07 PDT); a failure means the givers split, which needs the cross-machine cue (R12) | the host thread (tab, recording, sampler); rs/41 and rs/214 (the roster) |
+| O42 | **The twin's run-capable install** and its facts still pending in RUN-HOST.md ("The host"): its gate clone, `~/run-commit`, read account and timer (installed disabled until run night), the givers' code and credentials, its ed25519 host key, the run host's instance id, which throwaway the twin's step 6 uses, and the second set of S06's 7 opening givers (one account is in the world only once). Also: rs/147's HOST.md (the host thread's text, 609fe89e) lets rehearsals resume on the machine not chosen right after the choice, while tenet 17 and RUN-HOST.md step 5a keep them paused until the run's teardown | no ticks; the twin cannot take the run until it is done | the install (window from 00:26Z on 2026-10-22) and the host thread's facts message; one wording for the rehearsal pause in both documents | the host thread with rs/147 (install, HOST.md); rs/41 (the second 7); rs/158 (RUN-HOST.md) |
 | O39 | `knife-mine`'s own hold rule: 3.00 ticks per ore while 3 x rocks is at least D, which would hold the five-rock lap to D = 15 and the six-rock lap to D = 18 (MP) | MAN entry 4's lap table (five-rock at D 13 or less, six-rock at 14-16, (D + 2) / 5) stays the conservative bound; no re-price | a D = 15 lab run in the Mining module (rs/212; rs/153 is closed) | rs/212 |
 | O40 | Agility's start call passes `untilLevel`, which `createAgility.params` does not declare (it stops on `laps` or `maxTicks` only; r, main at b6950915) | **faults at start on any page from b6950915 (#177)** unless the module passes `laps` / `maxTicks` or agility declares `untilLevel`; no re-price (MAN entry 1) | the module's or the program's change, then S11a and S17 accepted on a page built from the run-commit floor | rs/155 via rs/147 |
 
@@ -1311,4 +1347,9 @@ rs/162's in-page plain and plain + bury lab (PB, #165, on main as 3dfc217f); rs/
 sessions (DH, `demo-latency.md` section 8, PR into `agent/rs-83-coordinator-0`); rs/196's Runecraft
 module lab (RCM); rs/194's nature-talisman report; rs/184's kebab stock; rs/207 (#170, e5d8a058)
 and rs/132 (#163, 6e86a656) on main; the run-commit floor 23ea9f77 (#178, rs/131's `rc-cycle`) with #164 (efdbe2e2), #176 (834f376b) and #177's parameter-key fault (b6950915); all relayed by rs/158 on cairn://p/rs/206. The re-sum is
-`docs/speedrun/scripts/s07-knife-off.ts`.
+`docs/speedrun/scripts/s07-knife-off.ts`. Fold-in 10: tenets 16 and 17 (approved 17:43-17:44 PDT);
+the host thread's pairs, captures and address change (cairn://p/rs/host, 14:12-17:03 PDT) and rs/83's
+`demo-latency.md` sections 9-11 (01e2ec00 on rs/83's branch); main's placement and gate rulings
+(16:14-16:43 PDT) and recording rule (18:16 PDT); rs/131's address-group lab; rs/163's giver
+relaunch lab; rs/214's 22-giver login on the run host; rs/147's `docs/speedrun/rehearsals/HOST.md`
+(715dd4fa on rs/147's branch) for the twin; all relayed by rs/158 on cairn://p/rs/209.
