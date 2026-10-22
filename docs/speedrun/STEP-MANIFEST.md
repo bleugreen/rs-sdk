@@ -962,8 +962,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   `WorldConfig.ts:38,115` via the same doc, row 5).
 - **Postconditions:** Firemaking 99. It must pass 30 before S19 Sea Slug (read,
   `quest_seaslug.rs2:43`). Items out: none.
-- **Ticks:** expected **695** with trade refills (inferred: the model's 658 + 6 trades; the dropped
-  row's pacing around the 100-tick reveal is not built yet). Best **650** on the dropped row
+- **Ticks:** expected **695** with trade refills (inferred: the model's 658 + 6 trades). The dropped
+  row's pacing is built (H6, `helpers/fm-row.md`: two lab runs of 157 logs, 658 ticks first to last
+  fire, no gap waiting on a log). Best **650** on the dropped row
   (measured end to end 634 and 666 with the lab's restock gaps removed). Fallback **735** banking at
   Falador east (inferred) (all `skills/firemaking.md` §1).
 - **Primitives:** `act` (use tinderbox on the next log), `levelup`; `trade.receiveFrom` for the trade
@@ -975,7 +976,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   99 within 5% of 650 on the row (695 by trades).
 - **Acceptance, demo (throwaway):** a throwaway and a log-row helper throwaway, a 20-log normal-log
   row. Pass: 4 ticks per fire on at least 18 of 19 gaps, and nobody else's pickup broke the row.
-- **Start from:** `firemaking-line.ts`, `firemaking-drop.ts`, `firemaking-supply.ts`, `firemaking-model.ts`.
+- **Start from:** `firemaking-line.ts`, `firemaking-supply.ts`, `firemaking-model.ts`; the row from H6
+  `speedrun/helpers/fm-row.ts` (its lab driver `speedrun/lab/fm-row.ts` runs `firemaking-line.ts
+  --mode=ground` as the stand-in). The 2-row snake's lap turn costs 5 ticks per lap (`helpers/fm-row.md`).
 - **logoutSafe:** yes.
 
 ### 17. Fight Arena: `speedrun/quests/fight-arena.ts` (S12)
@@ -1389,13 +1392,16 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
 - **Acceptance:** local, a turnaround of at most 10 ticks with the helper's side scripted from this
   module (the 40-tick first-trade wait in the measured run was the lab helper's own setup).
 
-### H6. Log-row dropper: `speedrun/helpers/fm-row.ts` (missing)
+### H6. Log-row dropper: `speedrun/helpers/fm-row.ts` (exists, rs/187, lab-accepted)
 
 - **Gates:** S03 (exposure 650). It drops the 157 logs in row order ahead of SCORED, paced around the
   100-tick private window so each log is revealed when SCORED reaches it and not long before
   (anyone can take a revealed log; `skills/firemaking.md` §6).
-- **Builds on:** `firemaking-drop.ts`; logs from [rs/41] `woodcutter.ts`.
-- **Acceptance:** as entry 16; no gap over 4 ticks caused by a missing log.
+- **Builds on:** `firemaking-drop.ts` (now the role and `speedrun/lab/fm-row.ts`); logs from [rs/41]
+  `woodcutter.ts`.
+- **Acceptance:** as entry 16; no gap over 4 ticks caused by a missing log. Met in the lab, two runs:
+  0 such gaps, no log public more than 48 ticks before SCORED wanted it (`helpers/fm-row.md`). Not
+  tick-exact; the run machine only for its `cue` start. Open: the coop row, bank restocks, demo.
 
 ### H7. Carp catcher: `speedrun/helpers/carp.ts` (missing)
 

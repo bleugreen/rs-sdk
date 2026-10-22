@@ -27,7 +27,10 @@
  *   --mode=inv|ground  inv: tinderbox on an inventory log (the log is dropped
  *                   and lit where the player stands). ground: "Light" (op4)
  *                   on a log already on the target tile, e.g. one a helper
- *                   dropped (see firemaking-drop.ts); the client walks there.
+ *                   dropped (the fm-row helper role, speedrun/lab/fm-row.ts);
+ *                   the client walks there.
+ *   --wait=K        ground mode: give up after K ticks with no log on the next
+ *                   tile (default 40; a dropped row's first log needs ~105)
  *   --send=K        first light/walk is sent K ticks after the success is
  *                   seen (default 0: at once; the success message is emitted
  *                   the tick after the roll, once push_player's p_delay(0)
@@ -38,7 +41,9 @@
  *                   inv mode drops a second log, counted as logsPerSuccess)
  *   --restock=give|none  inv mode: ::give 27 more logs when out (default
  *                   give; the resupply itself is costed by firemaking-supply.ts)
- *   --out=PATH      JSONL per-tick log
+ *   --out=PATH      JSONL per-tick log: {t, ms, idx, me, lvl, xp, ev, msg}, and in
+ *                   ground mode `seen`, the snake indexes whose log came into
+ *                   view that tick (idx .. idx+50)
  *
  * Ticks are the lite client's count of server ticks. Base xp = game xp / 25.
  * Failures are not announced by the server (firemaking.rs2:69-74 only
@@ -67,6 +72,7 @@ const MODE = flag('mode', 'inv')!;
 const SEND = Number(flag('send', '0'));
 const RETRY = Number(flag('retry', '1'));
 const RESTOCK = flag('restock', 'give')!;
+const WAIT = Number(flag('wait', '40'));
 const OUT = flag('out', `${process.env.TMPDIR ?? '/tmp'}/firemaking-line-${BOT}-${LOGS}-${LEVEL}-${MODE}.jsonl`)!;
 const AUTO = LOGS === 'auto';
 const logName = AUTO ? /^(logs|oak logs|willow logs|maple logs|yew logs|magic logs)$/i
@@ -138,10 +144,11 @@ await runScript(async ({ bot, sdk }) => {
 
     let lastProgress = state.tick, walkStart = -1, skipped = 0;
     const restockAfter = new Set<number>();   // success counts after which the lab restocked
+    const seenIdx = new Set<number>();        // ground mode: snake indexes whose log has been in view
     while (successes < FIRES && !(UNTIL && fm(state).baseLevel >= UNTIL)) {
         state = await nextTick(state.tick);
         const t = state.tick;
-        if (t - lastProgress > 80) { console.log(`stalled at tick ${t}`); break; }
+        if (t - lastProgress > Math.max(80, WAIT)) { console.log(`stalled at tick ${t}`); break; }
         const me: [number, number] = [state.player!.worldX, state.player!.worldZ];
         const level = fm(state).baseLevel;
         const ev: string[] = [];
@@ -196,14 +203,21 @@ await runScript(async ({ bot, sdk }) => {
                 }
             } else {
                 const item = state.groundItems.find(g => g.x === target[0] && g.z === target[1] && logName.test(g.name));
-                if (!item) { ev.push(`nolog(${target})`); if (t - (evs.at(-1)?.t ?? startTick) > 40) break; }
+                if (!item) { ev.push(`nolog(${target})`); if (t - (evs.at(-1)?.t ?? startTick) > WAIT) break; }
                 else {
                     await sendAction({ type: 'interactGroundItem', x: item.x, z: item.z, itemId: item.id, optionIndex: 4 });
                     sends++; sendsThisFire++; sentAt = t; phase = 'pending'; ev.push('light');
                 }
             }
         }
-        log.write(JSON.stringify({ t, me, lvl: level, xp, ev, msg: fresh }) + '\n');
+        const cameIntoView: number[] = [];
+        if (MODE === 'ground') {
+            for (let i = idx; i <= idx + 50; i++) {
+                const [x, z] = snakeTile(i);
+                if (!seenIdx.has(i) && state.groundItems.some(g => g.x === x && g.z === z && logName.test(g.name))) { seenIdx.add(i); cameIntoView.push(i); }
+            }
+        }
+        log.write(JSON.stringify({ t, ms: Date.now(), idx, me, lvl: level, xp, ev, msg: fresh, ...(cameIntoView.length ? { seen: cameIntoView } : {}) }) + '\n');
     }
     await log.end();
 
