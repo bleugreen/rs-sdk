@@ -105,11 +105,13 @@ passes Fishing (now the knife's 1,995), the legs (1,382 measured) pass Runecraft
 Prayer (110, now inside S07) drops from 15 to 27. Re-pricing S07's knife on O19 (RUN-ORDER.md
 section 9) puts Woodcutting (2,986) below Mining (3,116), so the two swap ranks 3 and 4. rs/174's fixed
 tab relog (~2 ticks each, on the twin) returns Cooking to 80, below Prayer and Crafting, where it
-stood before rs/164's ~20.
+stood before rs/164's ~20. Fold-in 11 moved the twelve quests' way-in travel into the legs (840.5;
+RUN-ORDER.md O6): the legs (2,222.5) pass Thieving, Fishing, Combat and the Grand Tree, Dragon
+Slayer passes Dwarf Cannon, Magic passes Fishing Contest and Herblore passes Goblin Diplomacy.
 
-The expected column sums to **31,908** (the steps) plus the legs' **1,382**; RUN-ORDER.md section 6
+The expected column sums to **31,054.5** (the steps) plus the legs' **2,198.5**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **34,575** knife-on expected (31,663 best), against the record of 35,916.
+retries, restarts) for its **34,538** knife-on expected (31,649 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -122,34 +124,34 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 1 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,327 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; S17 75-85 858; rs/155) |
 | 2 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,077 | 3,726 | 4,611 | ~885 | overlay | `quest-mm-*.ts` | **doc-priced, unrun** (A-G run; H-Z being written by rs/201) |
 | 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,116 | 3,116 | 4,170 | ~1,054 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | building (rs/212, held until rs/207 merged; rs/153 closed); `stay2` bury on main (#159, rs/182); restart fix on main (e5d8a058, #170; rs/207) |
-| 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,027 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165) |
-| 5 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~120 elsewhere | ~190 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` | building (rs/154, parked under the 2-4 child limit); stun pack: lab-accepted (bury, charge, arrows; rs/132) |
-| 6 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | lab-accepted (1,998 on 78-99; rs/152) |
-| 7 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,889 | 1,829 | 2,023-2,211 | ~380 | overlay | `cannon-kit.ts` (rs/59, on main) | building (rs/186, held: tenet 15) |
-| 8 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,576 | 1,441 | 1,846 | ~405 | overlay | `quest-grandtree-full.ts` | building (rs/185, held: tenet 15) |
-| 9 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 1,382 | 1,382 | ~1,520 i | ~140 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | building (rs/186, held: tenet 15) |
-| 10 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,192 | 1,192 | ~2,530 | ~1,340 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **lab-accepted (S06 58; 7 a craft on the body and nature altars; rs/196)**; pending: the auto rule's 'handled before SCORED' field (entry 9); cycle: on main, 23ea9f77 (#178) |
-| 11 | 10 | Smithing | `speedrun/skills/smithing.ts` | S25a | 1,147 | 1,107 | 1,330 | ~223 | overlay | `smithing-trade.ts` | building (rs/186, held: tenet 15) |
-| 12 | 12 | Dwarf Cannon | `speedrun/quests/dwarf-cannon.ts` | S13 | 976 | 920 | 1,078 | ~158 | overlay | `quest-mcannon-*.ts` | building (rs/185, held: tenet 15) |
-| 13 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 966 | 945 | 1,076 | ~131 | overlay | `quest-dragon-*.ts` | building (rs/185, held: tenet 15) |
-| 14 | 14 | Tree Gnome Village | `speedrun/quests/tree-gnome-village.ts` | S10b | 896 | 842 | 1,005 | ~163 | overlay | `quest-tree-full.ts`, `quest-premm-fight.ts` | building (rs/185, held: tenet 15) |
-| 15 | 16 | Firemaking | `speedrun/skills/firemaking.ts` | S03 | 695 | 650 | 735 | ~85 | overlay | `firemaking-line.ts` | building (rs/186, held: tenet 15) |
-| 16 | 17 | Fight Arena | `speedrun/quests/fight-arena.ts` | S12 | 645 | 598 | 720 | ~122 | overlay | `quest-arena-run.ts` | building (rs/185, held: tenet 15) |
-| 17 | 18 | Plague City | `speedrun/quests/plague-city.ts` | S08 | 620 | 564 | 737 | ~173 | overlay | `quest-plague-city-*.ts` | building (rs/185, held: tenet 15) |
-| 18 | 19 | Mage Arena | `speedrun/quests/mage-arena.ts` | S16 | 581 | 574 | 606 | ~32 | overlay | `quest-magearena-*.ts` | building (rs/185, held: tenet 15) |
-| 19 | 20 | Sea Slug | `speedrun/quests/sea-slug.ts` | S19 | 394 | 340 | 495 | ~155 | overlay | `quest-smallskill-seaslug.ts` | building (rs/185, held: tenet 15) |
+| 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,027 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; on rs/147's branch, changing with rs/236; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165) |
+| 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,198.5 | 2,198.5 | ~2,340 i | ~140 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | lab-measured (PR #198, open; rs/198 for rs/186) |
+| 6 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~120 elsewhere | ~190 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` | building (rs/154, parked under the 2-4 child limit); stun pack: lab-accepted (bury, charge, arrows; rs/132) |
+| 7 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | on main, 22552bf4 (#197; rs/231); lab-accepted (1,998 on 78-99; rs/152) |
+| 8 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,972 | 1,946 | 1,997 (the bow from 70); 2,023-2,211 without the kit | ~265 | overlay | `cannon-kit.ts` (rs/59, on main) | lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, on rs/186's branch as 1ac3b8bc, PR #207); to main with rs/252 (pending); lab is the final tier (a demo test is not feasible) |
+| 9 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,528.5 | 1,393.5 | 1,798.5 | ~405 | overlay | `quest-grandtree-full.ts` | building (rs/185, held: tenet 15) |
+| 10 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,192 | 1,192 | ~2,530 | ~1,340 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **lab-accepted (S06 58; 7 a craft on the body and nature altars; rs/196); re-confirmation on the floor pending (rs/196)**; pending: the auto rule's 'handled before SCORED' field (entry 9); cycle: on main, 23ea9f77 (#178) |
+| 11 | 10 | Smithing | `speedrun/skills/smithing.ts` | S25a | 1,065 | 1,028 | 1,330 | ~302 | overlay | `smithing-trade.ts` | building (rs/186, held: tenet 15) |
+| 12 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 929 | 908 | 1,039 | ~131 | overlay | `quest-dragon-*.ts` | building (rs/185, held: tenet 15) |
+| 13 | 12 | Dwarf Cannon | `speedrun/quests/dwarf-cannon.ts` | S13 | 855 | 799 | 957 | ~158 | overlay | `quest-mcannon-*.ts` | building (rs/185, held: tenet 15) |
+| 14 | 14 | Tree Gnome Village | `speedrun/quests/tree-gnome-village.ts` | S10b | 793 | 739 | 902 | ~163 | overlay | `quest-tree-full.ts`, `quest-premm-fight.ts` | building (rs/185, held: tenet 15) |
+| 15 | 16 | Firemaking | `speedrun/skills/firemaking.ts` | S03 | 695 | 650 | 735 | ~85 | overlay | `firemaking-line.ts` | on main, 4cc468e0 (#205; rs/244) |
+| 16 | 17 | Fight Arena | `speedrun/quests/fight-arena.ts` | S12 | 571 | 524 | 646 | ~122 | overlay | `quest-arena-run.ts` | building (rs/185, held: tenet 15) |
+| 17 | 18 | Plague City | `speedrun/quests/plague-city.ts` | S08 | 491 | 435 | 608 | ~173 | overlay | `quest-plague-city-*.ts` | building (rs/185, held: tenet 15) |
+| 18 | 19 | Mage Arena | `speedrun/quests/mage-arena.ts` | S16 | 425 | 418 | 448 | ~30 | overlay | `quest-magearena-*.ts` | building (rs/185, held: tenet 15) |
+| 19 | 20 | Sea Slug | `speedrun/quests/sea-slug.ts` | S19 | 361 | 307 | 462 | ~155 | overlay | `quest-smallskill-seaslug.ts` | building (rs/185, held: tenet 15) |
 | 20 | 21 | Romeo & Juliet | `speedrun/quests/romeo-juliet.ts` | S24 | 241 | 211 | 301 | ~90 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
 | 21 | 22 | Druidic Ritual | `speedrun/quests/druidic-ritual.ts` | S24 | 239 | 220 | 284 | ~64 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
-| 22 | 23 | Fishing Contest | `speedrun/quests/fishing-contest.ts` | S20 | 223 | 200 | 276 | ~76 | overlay | `quest-smallskill-fishingcompo.ts` | building (rs/185, held: tenet 15) |
-| 23 | 24 | Magic (strike, enchant) | `speedrun/skills/magic.ts` | S02, S04 | 222 | 222 | ~250 | ~28 | overlay | `magic-strike.ts`, `magic-cadence.ts` | building (rs/186, held: tenet 15) |
-| 24 | 25 | Goblin Diplomacy | `speedrun/quests/goblin-diplomacy.ts` | S24 | 188 | 168 | 229 | ~61 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
-| 25 | 27 | Herblore | `speedrun/skills/herblore.ts` | S25e | 170 | 117 | ~200 e | ~83 | overlay | `delayfree-cycle.ts` | building (rs/186, held: tenet 15) |
-| 26 | 26 | Pre-MM cannon session | `speedrun/skills/ranged.ts` (`cannonSession`) | S14 | 132 | 132 | ~162 | ~30 | overlay | `quest-premm-cannon.ts`, `ranged-cannon.ts` | building (rs/186, held: tenet 15) |
+| 22 | 24 | Magic (strike, enchant) | `speedrun/skills/magic.ts` | S02, S04 | 222 | 222 | ~250 | ~28 | overlay | `magic-strike.ts`, `magic-cadence.ts` | building (rs/186, held: tenet 15) |
+| 23 | 23 | Fishing Contest | `speedrun/quests/fishing-contest.ts` | S20 | 181 | 158 | 234 | ~76 | overlay | `quest-smallskill-fishingcompo.ts` | building (rs/185, held: tenet 15) |
+| 24 | 27 | Herblore | `speedrun/skills/herblore.ts` | S25e | 170 | 117 | ~200 e | ~83 | overlay | `delayfree-cycle.ts` | building (rs/186, held: tenet 15) |
+| 25 | 25 | Goblin Diplomacy | `speedrun/quests/goblin-diplomacy.ts` | S24 | 143 | 123 | 184 | ~61 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
+| 26 | 26 | Pre-MM cannon session | `speedrun/skills/ranged.ts` (`cannonSession`) | S14 | 118 | 104 | ~162 | ~58 | overlay | `quest-premm-cannon.ts`, `ranged-cannon.ts` | lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, on rs/186's branch as 1ac3b8bc, PR #207); to main with rs/252 (pending); lab is the final tier (a demo test is not feasible) |
 | 27 | 15 | Prayer (bones inside S07; the booth as fallback) | `speedrun/skills/woodcutting.ts` bury option; `speedrun/skills/prayer.ts` for the booth | S25b (S10a retired) | 95 | 65 | 735 (the booth) | ~670 | in-page with S07 | `bones-wc.ts`, `prayer-bury.ts` | bury in S07: building (rs/211); gate-off plain + bury on main (rs/162, 3dfc217f, #165); booth: building (rs/186, held: tenet 15) |
 | 28 | 28 | Crafting | `speedrun/skills/crafting.ts` | S25d | 91 | 85 | 121 (no gems in the windows) | ~36 | overlay | `delayfree-cycle.ts` | building (rs/186, held: tenet 15) |
 | 29 | 29 | Cooking (wine) + gems in the windows | `speedrun/skills/cooking.ts` | S25c | 80 | 75 | ~131 (kebabs, supplies not held) | ~56 | overlay | `wine-receive.ts` [rs/41], `wine-window-lab.ts` | building (rs/186, held: tenet 15) |
-| 30 | 30 | Doric's Quest | `speedrun/quests/dorics-quest.ts` | S05 | 65 | 60 | 90 | ~30 | overlay | `quest-smallskill-doric.ts` | building (rs/185, held: tenet 15) |
-| 31 | 31 | Cook's Assistant | `speedrun/quests/cooks-assistant.ts` | S23 | 27 | 22 | 41 | ~19 | overlay | `quest-primitives-dialogue.ts` | building (rs/185, held: tenet 15) |
+| 30 | 30 | Doric's Quest | `speedrun/quests/dorics-quest.ts` | S05 | 22 | 17 | 43 | ~26 | overlay | `quest-smallskill-doric.ts` | building (rs/185, held: tenet 15) |
+| 31 | 31 | Cook's Assistant | `speedrun/quests/cooks-assistant.ts` | S23 | 17 | 12 | 31 | ~19 | overlay | `quest-primitives-dialogue.ts` | building (rs/185, held: tenet 15) |
 | 32 | 33 | Hand-off H1 | `speedrun/runner/handoff.ts` | S01 | 8 | 8 | ~10 | ~2 | overlay | `lib/trade.ts`, `mule.ts` [rs/41] | building (rs/186, held: tenet 15) |
 | 33 | 34 | Tutorial skip | `speedrun/skills/start.ts` | S00 | 8 (done) | 8 | - | - | overlay | done: SCORED claimed and parked at 8 ticks; the skip for rehearsal and gate accounts measured 3 (lab) and 4 (demo) | on main, c2d9eada (#146) |
 | 34 | 32 | Fletching | `speedrun/skills/fletching.ts` | S18d (inside the stun pack) | 0 | 0 | ~59 standalone | ~59 | in-page (with Thieving) | `stun-pack-thieve.ts`, `delayfree-cycle.ts` | building (rs/186, held: tenet 15); in-stun: lab-accepted (arrows; rs/132), plugged into rs/154's module by rs/186 |
@@ -188,12 +190,15 @@ are filed under main and held until tenet 15 is answered.
   been scripted or run as one route (rs/185); ~1,475 of the 4,077 is estimated (entry 2).
 - **3.** rs/211 builds the module (rs/151 is closed), including the bury-in-willows rule for a
   gate-off stretch, on rs/162's plain + bury (on main as 3dfc217f, #165, inside the run-commit floor; entry 3).
+  A module is present on rs/147's branch and is changing with rs/236's opt-ins (knife-cycle
+  `waitRespawn`, the probe's `dirs`) and their lab before it goes to main.
 - **4.** rs/212 builds the module (rs/153 is closed; rs/212 was held until rs/207 merged, which it
   has: e5d8a058, #170); `knife-mine`'s `stay2` bury is on main (#159, rs/182); the in-page plain
   loop measured 4.00 ticks per ore (rs/153).
 - **5.** rs/152's execution 1 passed the lab on the run's band, 1,998 against 1,995 (3,338 for the
   chain from level 1). That branch was rewritten by a replay; the work is intact at store commit
-  `28ad07aa` and is being re-applied, so no branch carries it yet.
+  `28ad07aa` and is being re-applied, so no branch carries it yet. `fishing.ts` is on main with rs/231's
+  Fishing snapshot, 22552bf4 (#197), inside the run-commit floor; S22 stays 1,998 m (lab).
 - **6, 32.** rs/154 builds the Thieving module (parked under the operator's 2-4 child limit,
   resuming after Fishing, Woodcutting and Mining); the stun pack (bones, Charge and Fletching in the
   stuns) runs on rs/132's stun-window actions, lab-accepted for bury, Charge and arrows and on main
@@ -202,7 +207,10 @@ are filed under main and held until tenet 15 is answered.
 - **9.** Lab-accepted (rs/196): S06 58 in two runs; 30-cycle runs at 7 on the body and nature
   altars with givers first, robust at 8 in either login order; resume and fault recovery measured
   (entry 9). rs/186 adopts rs/131's in-page cycle; the givers are rs/163's (helper table). Pending:
-  the auto rule's switch to a 'handled before SCORED' field (entry 9).
+  the auto rule's switch to a 'handled before SCORED' field (entry 9). Its lab runs used rs/131's
+  `rc-cycle` at 06c68a90, which differs from 23ea9f77 only by #177's `params` declaration line; a
+  re-confirmation on a page built from the run-commit floor runs tonight (rs/196).
+- **16.** On main, 4cc468e0 (#205): rs/244's snapshot of rs/228's lab-gated module, with its test.
 - **15.** The primary path is the bury option inside entry 3 (knife-cycle `bury` on main; the
   gate-off plain + bury is rs/162's, lab-measured and on main as 3dfc217f, #165); the booth fallback `skills/prayer.ts` is rs/186's.
 
@@ -228,7 +236,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 |---|---|---|---|
 | In-page program runtime, `lib/programs.ts` (rs/97) | 1, 3-6, 9 | on main, d09c2627 (#94) | |
 | Host gate, `lib/hostgate.ts` | in-page entries | on main, c9a6c31b (#101) | |
-| `lib/gated-program.ts` (rs/156) | 3-5 | on rs/147's branch (#138) | not on main; reaches main with rs/147's module snapshots |
+| `lib/gated-program.ts` (rs/156) | 3-5 | on main, 22552bf4 (#197) | reached main with rs/231's Fishing snapshot |
+| `lib/travel.ts`, the shared walker with the stall fix | 11 | building (#200) | five `speedrun/lib` files; the run-commit floor moves to its merge commit when it lands |
+| `lib/display.ts` (rs/232's `frontWindows`, `grabFrame`, `frameShows`) | RUN-HOST.md steps 5 and 5a (the live-frame pass line) | building (rs/242) | on rs/147's branch, pending main; the floor moves when it lands |
 | Quest state, `lib/quests.ts` (rs/114) | every quest entry, resume | on main, 85c8799a (#123) | |
 | knife-cycle `bury` (rs/137) | 3, 15 (S07's bones) | on main, 9b38dbc2 (#124) | |
 | knife-cycle rename and per-log stamps (rs/159) | 3, 5 | on main, c14428fc (#132) | |
@@ -241,7 +251,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 | Direct gate clean logout | the gate probe | on main, 9d26aa87 (#142), d83f2e86 (#152) | |
 | `relog(session)` (in page by default, `RelogResult.tickBase`/`via`) and the navigated relog's socket-close fix | 0 (restarts), 29 (the wine relogs, R17) | **on main, efdbe2e2 (#164; rs/174)**, inside the run-commit floor; lab-accepted on the twin and after a lab engine kill | first SDK state at login + 1 in page or navigated, the bank at + 3 to + 6 (m); an in-page attempt that does not get in is retried by navigating, at the same ticks; the client's second-login hang (rs/183) is on main, #155 |
 | **Pickpocket stun-window actions** | 6 (S18's stun pack), 32 | **on main, 6e86a656 (#163; rs/132); lab-accepted (bury, charge, arrows; a3646a67)** | 300 rolls each at 300 ms on bgsrv-mac: no Thieving cost in the page (RUN-ORDER.md O8). The stun pack failing (plain pickpocket, Charge and Fletching standalone, ~200 more bones in S07, **+~120**, RUN-ORDER.md sensitivity table) is now a demo risk only. The opt-in 'idle while an interface is open' mode is on main, `idleOnInterface: true` (declared in b6950915), with top-ups in the program as a `player` stun action (entry 6) |
-| **In-page Runecraft cycle** (`rc-cycle`) | 9 (S06, S21) | **on main, 23ea9f77 (#178; rs/131); lab-measured**, the run-commit floor | 7.00 ticks per craft with the givers handled first and 8.00 on the robust fallback, 30 crafts each, no lost trades (m, lab, rs/131); its protocol shared with rs/163's givers. Without the tuned cycle: the robust 8-tick cycle **+168**, or the stock 15-tick cycle **+1,344** if the giver is relayed (RUN-ORDER.md sensitivity table and R12) |
+| **In-page Runecraft cycle** (`rc-cycle`) | 9 (S06, S21) | **on main, 23ea9f77 (#178; rs/131); lab-measured**, inside the run-commit floor (4cc468e0) | 7.00 ticks per craft with the givers handled first and 8.00 on the robust fallback, 30 crafts each, no lost trades (m, lab, rs/131); its protocol shared with rs/163's givers. Without the tuned cycle: the robust 8-tick cycle **+168**, or the stock 15-tick cycle **+1,344** if the giver is relayed (RUN-ORDER.md sensitivity table and R12) |
 | Direct-path altar giver | 9 (S06, S21) | building (rs/163) | PR #144, open; on rs/117's launcher and rs/141's givers |
 
 ## 2. The run chain
@@ -270,7 +280,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     and margin, so rs/83's gate history timer (rs/140) skips. run.ts refuses to start unless it is
     live and the run's own, and never disables the timer (main via rs/103);
   - **main's start conditions** (09:30): Prayer xp in hand of at least 39,938 base in any bone mix; a
-    cannon set and ~1,170 cannonballs; the rune axe or main's decision to run without it; the budget
+    cannon set and ~1,270 cannonballs; the rune axe or main's decision to run without it; the budget
     (expected + fallback deltas in force under 35,916). run.ts reads them from the operator's
     checklist (`SUPPLIES.md` section 5); it does not count bones itself;
   - **`RUN_COMMIT` includes rs/164, main's `c2d9eada`** (#146; `RUN-HOST.md` "Credentials" and
@@ -286,16 +296,22 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     RUN-ORDER.md R1's bound); that case is historical on any `RUN_COMMIT` at or after c2d9eada.
     The final logout is still checked on the host (`RUN-HOST.md` step 8). A precondition, not a
     line in the totals;
-  - **`RUN_COMMIT` at or after the run-commit floor, `23ea9f77`** (#178, rs/131's `rc-cycle`, entry 9;
-    one check, `git merge-base --is-ancestor 23ea9f77 "$RUN_COMMIT"`, `RUN-HOST.md` "Credentials").
-    Its history holds efdbe2e2 (#164, rs/174's socket-close fix behind the ~2-tick relog), c2d9eada
+  - **`RUN_COMMIT` at or after the run-commit floor, `4cc468e0`** (#205, rs/244's Firemaking snapshot,
+    entry 16; one check, `git merge-base --is-ancestor 4cc468e0 "$RUN_COMMIT"`, `RUN-HOST.md`
+    "Credentials"). Its history holds 22552bf4 (#197, rs/231's Fishing snapshot: `fishing.ts`,
+    knife-cycle's `untilXp`, `followSpot` and `dropEach` declared, `lib/gated-program.ts` and `xp.ts`,
+    entry 5), 23ea9f77 (#178, rs/131's `rc-cycle`, entry 9), efdbe2e2 (#164, rs/174's socket-close fix behind the ~2-tick relog), c2d9eada
     (#146, above), e5d8a058 (#170, rs/207:
     `knife-mine` faults instead of slipping on a depleted rock, entry 4), 6e86a656 (#163, rs/132's
     stun actions, after #159's `stay2` bury, entry 4), 3dfc217f (#165, rs/162's plain + bury, the
     knife-off line in force, entry 3), b6950915 (#177: a program faults at start on a parameter key
     it does not declare, so each entry's program keys are the program's declared names) and
-    834f376b (#176, rs/210's tick-cadence monitor). Pending: rs/147's Fishing snapshot PR (number pending; `b2e02cbe` on rs/147's branch, directly on 23ea9f77),
-    which declares knife-cycle's `followSpot`, `dropEach` and `untilXp` for entry 5's net band;
+    834f376b (#176, rs/210's tick-cadence monitor). Pending, each moving the floor when it lands: #200 (the
+    shared walker `lib/travel.ts` with the stall fix, entry 11), rs/242's `lib/display.ts` (RUN-HOST.md
+    steps 5 and 5a), rs/147's Agility snapshot (agility's `untilLevel`, entry 1, RUN-ORDER.md O40) and
+    rs/243's Thieving snapshot (pickpocket's `stopWhenFoodBelow` and `retargetTicks`, entry 6) and
+    rs/252, the snapshot of rs/199's Ranged module (entries 7 and 26; 1ac3b8bc on rs/186's branch);
+    only #200 has a PR number so far;
   - **the login cap**: our simultaneous demo logins, summed across every host, at most 100 with a
     working cap of 80, counted before SCORED logs in (main, 15:35 PDT; `RUN-HOST.md` step 7;
     `SUPPLIES.md`, "Peak concurrent logins");
@@ -414,8 +430,10 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   Fallback **4,512** at the 74-tick lap a relay-driven loop would pay (inferred, same section). The
   entry total is 4,327 expected, ~3,934 best and 4,626 fallback.
 - **Primitives:** `lib/programs.ts` `runProgram(sdk, 'agility', {course, untilLevel, food,
-  eatBelow})` [rs/97] (**faults at start on any page from b6950915 (#177) unless the module passes
-  `laps` / `maxTicks`, or agility declares `untilLevel`: owner rs/155 via rs/147**; RUN-ORDER.md O40); the in-page probe before S17; `levelup` (dismissal is inside the program;
+  eatBelow})` [rs/97] (`untilLevel` is **declared in the program at 2f1b15de (rs/147's branch), pending main** with
+  rs/147's Agility snapshot, which waits on main's sign-off of four default-changing program fixes
+  and the Agility part-2 lab; until it is on the run commit, a page from b6950915 (#177) on faults at
+  start; RUN-ORDER.md O40); the in-page probe before S17; `levelup` (dismissal is inside the program;
   verify); `session.logoutClean` for the post-combat 16-tick rule if attacked. **Missing:** an
   escape for a hostile player in the Wilderness (stop the program, walk south out of level 20,
   then teleport). Nothing in the program reads `nearbyPlayers`.
@@ -724,7 +742,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   each `stay2` and five-rock lap switch) waits out the respawn (13 ticks at respawn 13) or faults:
   **+13 plus the start cost** each (i). The step's resume waits for a live rock rather than
   retrying. Without rs/207 the knife cadence is lost for the rest of the step, up to ~+1,054
-  (RUN-ORDER.md R18), so `RUN_COMMIT` must be at or after e5d8a058 (the 23ea9f77 floor covers it;
+  (RUN-ORDER.md R18), so `RUN_COMMIT` must be at or after e5d8a058 (the run-commit floor, 4cc468e0, covers it;
   entry 0).
 - **Preconditions:** rune pickaxe, knife and about 5 normal logs, Fletching 1; Mining 64; position on
   the rotation's first standing tile. The same host-gate rule as Woodcutting.
@@ -776,9 +794,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Parameters:** `method: 'fly'`, `technique` (by the gate), `reanchor: 'xp'`, `dismiss: 'now'`,
   `untilLevel: 99`, start tile (3241,3248): `followSpot` walks among the north and south tiles, so
   the tile is where it starts, not a fixed tile (rs/195's write-up, 7c841f92). The net band (rs/211's `fishing.ts`) also passes
-  `followSpot`, `dropEach` and `untilXp`: these keys are declared at `b2e02cbe` (rs/147) and reach
-  main with rs/147's Fishing snapshot PR (number pending); the run
-  commit must include it. Until then a page built from main faults on the net band.
+  `followSpot`, `dropEach` and `untilXp`, declared on main since 22552bf4 (#197, rs/231's Fishing
+  snapshot, inside the run-commit floor).
 - **Preconditions:** Fishing 78 (Sea Slug 7,175 + Fishing Contest 2,437 = 9,612 base; read via
   `skills/fishing.md` §1-3), fly fishing rod, about 520 feathers, knife and **10 normal logs**,
   Fletching 1 (the log margin, SUPPLIES.md "Log margin for knife loops": the loop leaves the fletch
@@ -831,14 +848,17 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   `stunActions` (the plan above; at most 4 packets per tick), `idleOnInterface: true`, and the top-up as
   a `player` stun action placed first in `stunActions` and gated with `fewer` (request at k = 2, or k = 4 if
   the giver is not adjacent; when fewer than 3 bones are held; early, at 6, when the giver is far).
-  **A top-up runs in the program** (preferred; on main since #163, `pickpocket.ts` doc comment): the
-  `player` stun action sends the request at stun + 2 and owns that tick, the program sends nothing
-  until the trade opens, and with `idleOnInterface: true` nothing while it is open, so the step
-  module only accepts the offer and confirm screens; rs/106's trades completed at + 7 or + 8, and the
-  + 9 click lands on T + 11, the attempt. The fallback **stops the program**: `pickpocket` clicks the
-  knight on every tick, stun ticks included, and that click closes an open trade, so the module stops
-  the program before SCORED's request at stun + 2 and restarts it once the trade is done, by stun + 9
-  at the latest. A top-up stun buries nothing either way (rs/132, `pickpocket.ts` doc comment at
+  **The top-up contract** (accepted by main, 19:28 PDT; rs/243 built it in `thieving.ts`, Thieving
+  part 2). **By default the program idles on the trade interface:** the `player` stun action sends
+  the request at stun + 2 and owns that tick, the program sends nothing until the trade opens, and
+  with `idleOnInterface: true` nothing while it is open, so the step module accepts only the two
+  trade screens (offer and confirm), at a cost of 0 in S18's row, inside the stun; rs/106's trades
+  completed at + 7 or + 8, and the + 9 click lands on T + 11, the attempt. **The fallback stops the
+  program and restarts it within + 9 ticks of the trade** (`pickpocket` otherwise clicks the knight on
+  every tick, stun ticks included, and that click closes an open trade): +9 a top-up, about **+117**
+  if all ~13 (H14.1-H14.13) fall back (RUN-ORDER.md sensitivity table). The program's new keys
+  `stopWhenFoodBelow` and `retargetTicks` are declared, with a packet-fingerprint golden test,
+  **pending rs/243's snapshot** (on the floor's pending list, entry 0). A top-up stun buries nothing either way (rs/132, `pickpocket.ts` doc comment at
   e5f83a36).
 - **Preconditions:** Thieving 57 (Fight Arena's 2,175 base). Charge: Mage Arena stage 8, the god
   staff given (rs/114, `quests/quest-state.md`), base Magic 80. Staff of fire wielded. Load 0 (H14):
@@ -877,35 +897,54 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
 ### 7. Combat finish: `speedrun/skills/ranged.ts`, `combatFinish` (S27)
 
-- **Serves:** S27: the cannon plus defensive melee at the Wilderness poison spiders (3288,3810) until
-  Defence 99, then the cannon with the mithril scimitar to Ranged 70, then the cannon plus a rapid
-  **magic shortbow with rune arrows** to Ranged 99 (knives are unobtainable; rs/124). Hitpoints fills
+- **Serves:** S27: the cannon plus defensive melee with the mithril scimitar at the Wilderness poison
+  spiders (3288,3810) until Defence 99 (214 ticks: Defence is off the critical path, rs/199), then the cannon plus a rapid
+  **magic shortbow with rune arrows** to Ranged 99, the bow on as soon as Defence reaches 99, the
+  module's default (knives are unobtainable; rs/124). Hitpoints fills
   as a by-product. S17 now follows it (RUN-ORDER.md O1), so it is no longer the last step.
-- **Parameters:** `phase` thresholds (Defence 99, Ranged 70, Ranged 99); `flickEvery: 4` (3 when
+- **Parameters:** `phase` thresholds (Defence 99, Ranged 99) and `FINISH.bowFrom` (default 50, the
+  bow's requirement, so the bow goes on when Defence reaches 99; 70 is the old plan); `flickEvery: 4` (3 when
   relay-driven); potion thresholds; `site`.
-- **Preconditions:** `questDone` for Dwarf Cannon (rs/114) and the cannon set (H23); ~1,100
-  cannonballs; the magic shortbow (H12) and SCORED's own 570 rune arrows from S18 plus MM's
-  leftovers; the mithril scimitar; ~9 ranging doses, ~3 super antipoison, 1 dose each of super
-  attack and super strength, 1 antipoison(4) (H23; no glory, rs/123); 12 sharks for S17 carried
+- **Preconditions:** `questDone` for Dwarf Cannon (rs/114) and the cannon set (H23); **1,200
+  cannonballs**, the hand-off and the gate (rs/199: ~1,110 used, 0.6 a tick meleeing and 0.5-0.6 with
+  the bow); the magic shortbow (H12) and SCORED's own 570 rune arrows from S18 plus MM's leftovers
+  (~540 used, 0.32 a bow tick; gate 550); the mithril scimitar; H23's potions (rs/199 measured, per
+  400 ticks: 1 super antipoison dose, 1 dose each of super attack and super strength while meleeing,
+  1-3 ranging doses, no sharks; no glory, rs/123); 12 sharks for S17 carried
   through. Prayer ~99 (rs/91's kit flicks Protect from Melee, Ultimate Strength and Incredible
   Reflexes). Levels after Dragon Slayer: Attack 99, Strength 99, Defence gap 1,288 base, Hitpoints gap
   ~4,220.
 - **Postconditions:** Ranged, Defence and Hitpoints 99. Items out: the cannon is left or picked up as
   the inventory needs; S17 needs only the sharks.
-- **Ticks:** expected **1,889** (inferred: 1,857 on rs/91's measured rates, `cannon-kit-model.ts`,
-  `quests/README.md` §4 step 14; the bow costs nothing against knives, measured by rs/124 at 15.77 /
-  19.02 / 20.43 Ranged per tick at 70 / 85 / 99 against knives' 15.67 / 18.29 / 19.45 (relayed on
-  cairn://p/rs/111, comment 19); no glory +20 and the mithril scimitar +12, inferred,
-  `research/supply-fallbacks.md` §10-§11). Best **1,829** (the bow's +4-5% at 85-99 on the
-  1,688-tick phase, -60 i). Fallback **2,023-2,211** without the kit.
-- **Primitives:** rs/94 `combat.ts`; **missing** `speedrun/lib/cannon.ts` (set-up, reload every ~20
-  ticks, pick-up) and the zero-drain flick scheduler (from `prayer-flick.ts`).
+- **Ticks:** expected **1,972** (inferred from rates measured through the module, rs/199, PR #207;
+  `docs/speedrun/skills/ranged.md` §1 on its branch; RUN-ORDER.md RG), with the bow from Defence's
+  close: rs/199 priced the switch from one start (Defence 99, Ranged 67), Ranged 67 to 70 in 55.3
+  firing ticks with the bow (47, 54, 65, the gear switch included) against 85.0 with the scimitar
+  (73, 98, 84), about -25 on the route. With the bow from 70 it is **1,997**: `cannon-kit-model.ts`
+  plan (e) at each window's mid-level Ranged gives 1,987 of fighting, the cannon with the mithril
+  scimitar from Ranged 50 to 70, 287 (12.30 Ranged a tick at 55, 13.80 at 85), and the bow 70-99,
+  1,700 (18.24 / 20.14 / 22.02 at 70 / 85 / 99), plus ~10 of set-up and pick-up. The 1,889 it replaces
+  took the cannon at 13.66 (measured at 85) over Ranged 55-66, where it runs 12.3, and carried the
+  mithril scimitar's +12, which goes now that Defence is off the critical path. Hitpoints fills as a
+  by-product (~5,400 against ~4,220). One of three scimitar windows lost 3 prayer points (98 to
+  95), the first melee slip seen; the bow runs were flat. Best **1,946** (the same model with each
+  bow window at its measured upper end: 85 at 20.85, the highest of its three windows,
+  19.82-20.85; 70 and 99 are single windows). Fallback **1,997** with the bow from 70, and
+  **2,023-2,211** without the kit (rs/91's and rs/31's knife figures).
+- **Primitives:** rs/94 `combat.ts`; `speedrun/lib/cannon.ts` (set-up, reload every ~20 ticks,
+  pick-up) and the zero-drain flick scheduler (from `prayer-flick.ts`): rs/199's, lab-accepted and on
+  rs/186's branch as 1ac3b8bc (PR #207), to main with rs/252 (pending). 1ac3b8bc carries
+  `FINISH.bowFrom = 50` (`speedrun/skills/ranged.ts`), which S27's 1,972 assumes, and rs/252 copies it
+  byte-identically (rs/186, via rs/158).
 - **Mode:** overlay-driven; the flicks are the one predicted-tick part (flick every 3 through the
   relay).
 - **Fallback:** no kit (2,023-2,211); if prayer runs dry, rs/91's control with Protect from Melee held.
 - **Acceptance, local:** `cannon-kit.ts` configurations 3 and 4 through the module at the
   post-Dragon Slayer stats with the bow from 70. Pass: within 5% of 13.66 + 7.65 per tick in the
   melee phase and of rs/124's bow rate in the ranged phase, with prayer points flat over 400 ticks.
+  rs/199's module ran 13.80 + 6.02 at Ranged 85 with the mithril scimitar and 13.09 + 8.45 with
+  rs/91's rune scimitar and glory, so the Defence shortfall is the weapon's, and off the critical
+  path; its bow ran above rs/124's (18.24 / 20.14 / 22.02 against 15.77 / 19.02 / 20.43).
 - **Acceptance, demo (throwaway):** not feasible (Dwarf Cannon, Attack 99, Wilderness 37).
 - **Start from:** `cannon-kit.ts`, `cannon-kit-model.ts`, `prayer-flick.ts` (rs/59, on main);
   `ranged-cannon.ts`, `ranged-model.ts`.
@@ -913,7 +952,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
 ### 8. The Grand Tree: `speedrun/quests/grand-tree.ts` (S11b)
 
-- **Serves:** S11b, after the gnome laps. Black demon by Fire Bolt at 80/1/1 and 28 HP under Protect
+- **Serves:** S11b, after the gnome laps, **from the Grand Tree door (2465,3489)**, its arrival tile:
+  the village spirit tree and the run to the door are T10-11 (entry 11; RUN-ORDER.md O6). Black demon by Fire Bolt at 80/1/1 and 28 HP under Protect
   from Melee (`quests/README.md` §4 step 4).
 - **Parameters:** `demonSpell: 'fire_bolt' | 'fire_blast'`, `dialogue: 'burst' | 'fixed'`, `from`
   (segment A-P).
@@ -928,8 +968,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   scroll if it is held and cast again, a hard error only if it is not held; Prayer 43 (~94 from S07, so no prayer potions, `SUPPLIES.md` H7-H8); Varrock and Ardougne runes.
 - **Postconditions:** `%grandtree` 160 (ledger); Agility 75; Attack +18,400, Magic +2,150 (read,
   `quest_grandtree.rs2:199-201`); 5 QP; Gnome Air (glider) available.
-- **Ticks:** expected **1,576** (fixed, inferred, `quests/README.md` §3 row; black demon 153
-  measured, rs/56, n=5). Best **1,441** (burst, r21). Fallback **1,846** (stock, inferred).
+- **Ticks:** expected **1,528.5** (fixed, inferred, `quests/README.md` §3 row's 1,576 less segment
+  A's ~47.5 of travel to the door, which is T10-11's; black demon 153 measured, rs/56, n=5). Best
+  **1,393.5** (burst, r21; 1,441 less 47.5). Fallback **1,798.5** (stock, inferred; 1,846 less 47.5).
 - **Primitives:** rs/94 `converse`, `act`, `combat` (spell fight with Protect from Melee, re-engage
   fix); `continueBurst`; `travel.ts`; `trade.receiveFrom`.
 - **Mode:** overlay-driven.
@@ -940,8 +981,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   for the demon; ~31 Fire Bolt casts, 31 chaos and 93 air with the staff of fire wielded, fit inside
   H7, and rs/202's lab records the casts); `advance` page by page if the burst fails; no Agility
   potion at all, S11a laps to 25 (+37, entry 1).
-- **Acceptance, local:** at the route's levels, 3 runs. Pass: within 10% of 1,576 fixed (1,441 with
-  burst); demon kill within 10% of 153; 0 damage under Protect from Melee (as in rs/56's 20 fights).
+- **Acceptance, local:** at the route's levels, 3 runs. Pass: within 10% of 1,528.5 fixed (1,393.5 with
+  burst), counted from the Grand Tree door; demon kill within 10% of 153; 0 damage under Protect from Melee (as in rs/56's 20 fights).
 - **Acceptance, demo (throwaway):** the level-free opening segments (King Narnode, the first
   dialogues, the glider and spirit tree legs) on a throwaway with TGV done. Pass: within 10% of the
   local segment ticks. Doing TGV first costs a throwaway about 900 ticks, so it is optional.
@@ -960,6 +1001,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   ticks) and `untilLevel`, both rc-cycle's;
   the cue file per rs/117's contract (`RC_CUE_DIR` under `run-machine/`, gitignored; `cue.json` with
   the anchor tick T and the next giver; the receiver identified by a hash of its name, never the name).
+  rs/196's module keeps `altar` module-side, as its band room (stand tile, talisman, rune, entry tile),
+  and passes rc-cycle only `{...programParams, untilLevel | untilXp, schedule, givers}`, so
+  rc-cycle's own `altar` stays at `^altar$`.
 - **Preconditions:** the talisman (air or nature) for entry; S21 needs Runecraft 44. SCORED reaches
   the nature ruins by the Ardougne-Brimhaven ship (entry 11, T20-21; no glory). Standing tile
   (2844,4832) air or (2400,4839) nature. The givers in the room, on the run machine (rs/117), logged
@@ -968,11 +1012,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **S21's altar in force (main, 15:17 PDT): the body altar.** With 0 nature talismans held, S21 runs
   at the body altar, ruins (3052,3444) south of Edgeville, with 22 givers on 23 body talismans and no
   keeper (m, lab, rs/163, 16:17 PDT: a 139-142-tick restock round trip from Edgeville bank, N =
-  ceil(142 / 7) + 1, 12 of 12 turns at 7 ticks, so S21's ticks do not change; supply-fallbacks.md §7: 194 crafts, 5,238 essence, +205 in every RUN-ORDER.md
-  scenario row). The nature altar below is the every-line-held baseline and a sensitivity row; the
+  ceil(142 / 7) + 1, 12 of 12 turns at 7 ticks, so S21's ticks do not change; supply-fallbacks.md §7: 194 crafts, 5,238 essence; +142 in every RUN-ORDER.md
+  scenario row, SF's +231 of crafts with the body route's shorter legs measured by rs/198). The nature altar below is the every-line-held baseline and a sensitivity row; the
   module takes `altar: 'body'` as well.
 - **Postconditions:** Runecraft 44 (S06) or 99 (S21). Items out: the rune stacks; S06's air runes
-  are dropped on T06-07 (below).
+  are dropped on T06-07 (below). The drop stays: a hand-back would cost ~5 ticks on SCORED's clock to
+  save a purchase made off the clock (rs/196), and `swap()` was considered for it and rejected.
 - **Ticks:** expected and best **1,192**: S06 **58**, measured in the lab (rs/196: 7 of 7 given, 6
   gaps of 7, 58 in two runs; RUN-ORDER.md RCM), and S21 **1,134** (161 x 7 + ~7, inferred from
   measured parts). Under the program a session of N crafts takes 7N ticks: the first trade's 7 (8
@@ -980,8 +1025,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   nature with givers first, 29 gaps of 7, 210 ticks). The step adds ~5-9 outside the program, the
   walk from where the ruins drop SCORED (3-4 tiles) to the stand tile, with the last craft's
   level-up dialog inside the craft's delay: 217 against 210, and 58 against 49 for S06. The body
-  altar in force adds 33 crafts at the same 7 and its own travel (+205, RUN-ORDER.md section 7),
-  which these per-step parts do not change. Travel is in entry 11 (T05-06 61 m, T20-21 161.5 m).
+  altar in force adds 33 crafts at the same 7 and its own shorter legs (+142, RUN-ORDER.md section 7),
+  which these per-step parts do not change. Travel is in entry 11 (T05-06 61 m; T20-21 158 m to the nature altar, 69.3 m to the body altar in force, rs/198).
   Robust schedule +1 a craft, +168 (66 for S06 with SCORED first, m). A clean logout between cycles
   plus the resume walk costs ~2 in-world ticks (m). Fallback **~2,530**, the stock 15-tick
   reacting cycle.
@@ -1024,24 +1069,29 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Parameters:** `giver`, the inventory plan (one mixed bronze/iron inventory to 34, then platebodies
   in iron 33, steel 48, mithril 68, adamant 88), `untilLevel: 99`.
 - **Preconditions:** a hammer; the anvil helper staged with bars (15 bronze, 39 iron, 95 steel, 280
-  mithril, 340 adamant; `skills/README.md`); position on the anvil tile.
+  mithril, 340 adamant; `skills/README.md`); position on the anvil tile; the `ANVIL_CONTRACT` with H5
+  (data in `smithing.ts`, agreed with rs/188); `run.ts` publishing `cue.json` (the receiver hash)
+  with seq 0's plan before SCORED reaches the anvil.
 - **Postconditions:** Smithing 99. Items out: every product back to the helper.
-- **Ticks:** expected **1,147** (measured end to end, `smithing-trade.ts --from 1 --until 99`, 300 ms,
-  31 inventories; the first trade waited 40 ticks on the lab helper). Best about **1,107** with the
-  helper staged (inferred, `skills/smithing.md` §1). Fallback about **1,330** (bank at the Varrock
+- **Ticks:** expected **1,065** (measured, lab: rs/197's module with a scripted H5 stand-in, 31
+  inventories; RUN-ORDER.md SM). Best **1,028** (measured, lab: rs/197's module with rs/188's real
+  H5, `speedrun/helpers/anvil.ts` at ab8b90fb, 1 to 99 including the final hand-back, 32 trades, 0
+  retries; rs/188's own runs were 1,024 and 1,058). These replace 1,147 / 1,107, whose 1,147
+  (`smithing-trade.ts --from 1 --until 99`) carried 40 ticks of the old lab helper's set-up. Fallback about **1,330** (bank at the Varrock
   west booth, raw packets; inferred from the measured 42-tick bank cycle, same table). About 4
   reactions per inventory (§1, "Client"); through the relay from Ashburn that is roughly +60
   (inferred: 31 inventories × 4 reactions × ~0.47, the share of relay reactions that land late,
-  cairn://p/rs/86 via `LAB.md`).
+  cairn://p/rs/86 via `LAB.md`). The demo leg is still to run, so the relay estimate stays +60 (e).
 - **Primitives:** `lib/trade.ts` (`receiveFrom` with `want`; SCORED also offers its 5 products, which
-  `receiveFrom` does not do: it declines when its own offer is non-empty). **Missing:** a two-way
-  swap primitive (`swap(sdk, partner, give, want)`) in `lib/trade.ts`; the smithing interface
-  make-5 click as a library call.
+  `receiveFrom` does not do: it declines when its own offer is non-empty); the two-way swap
+  (`swap(sdk, partner, give, want)`) in `lib/trade.ts` and the smithing interface make-5 click as a
+  library call: building (rs/197).
 - **Mode:** overlay-driven. An in-page trade-and-make program would recover the ~60 relay ticks,
   which is optional.
 - **Fallback:** the bank cycle.
-- **Acceptance, local:** with a staged helper, 1 to 99. Pass: within 5% of **1,107**, and a turnaround
-  of at most 10 ticks per inventory (the measured 9-10).
+- **Acceptance, local:** with the real H5, 1 to 99. Pass: within 5% of **1,028**, and at most 10
+  ticks per inventory without a level-up backlog (9 normally; 11-15 when several items cross a
+  level, an engine floor, `skills/smithing.md` §6).
 - **Acceptance, demo (throwaway):** two throwaways at the Varrock west anvil, 5 inventories of bronze
   bars. Pass: turnaround within 1 tick of the local figure plus the measured relay share.
 - **Start from:** `smithing-trade.ts`, `smithing-cycle.ts`, `smithing-model.ts`.
@@ -1049,8 +1099,10 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
 ### 11. Transition legs: `speedrun/runner/legs.ts` on `speedrun/lib/travel.ts` (between steps)
 
-- **Serves:** every move between two steps that is not inside a quest's own travel: the 25 legs of
-  RUN-ORDER.md section 2 (T01-02 to T27-17, plus S24's three inner legs and T07a inside S07). A leg is
+- **Serves:** every move between two steps, **including the way into each quest up to its arrival
+  tile**: travel into a quest belongs wholly to this module, and every quest module starts at its
+  arrival tile (RUN-ORDER.md O6; rs/185 and rs/186, 17:20 PDT). That is the 25 legs of RUN-ORDER.md
+  section 2 (T01-02 to T27-17, plus S24's three inner legs and T07a inside S07). A leg is
   a `Step` built from data, `leg(from, to, method)`, so legs are logged and resumable like steps.
 - **Parameters:** per leg: method (spell teleport, chained run, spirit tree, lever, ship), destination
   tile and tolerance, the runes used. **No glory** (unobtainable, rs/123) and **no enchanting while
@@ -1058,20 +1110,39 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Preconditions:** the runes for the method; outside combat if the next step needs a logout
   boundary; Wilderness level at most 20 for spells (`quests/primitives.md` §4); food on T13-14,
   T14-15 and the Wilderness legs (aggressive NPCs took up to 31 of 42 HP, run-transitions.md §2);
-  30 coins for the Brimhaven ship.
+  30 coins for the Brimhaven ship on the nature plan; on the body plan in force T20-21 is a Falador
+  teleport (1 water, 3 air, 1 law) and no coins (H16).
 - **Postconditions:** within the tolerance of the destination tile.
-- **Ticks:** **1,382** for the order, net of the arrival rows the quests already count (measured
-  end to end except T02-03 5 i, T07a 46 i and T14-15 173.5 i; `research/run-transitions.md` §2, §4,
-  §6; RUN-ORDER.md section 2 has every leg). Fallback about **1,520** (inferred: `bot.walkTo` at 0.57
-  per tile against the walker's 0.51, `quests/primitives.md` §2).
-- **Primitives:** `speedrun/lib/travel.ts` (**missing** in `speedrun/lib`): `teleport(spell)` (4 ticks,
+- **Ticks:** **2,198.5** for the order, the twelve way-in legs at their whole ticks (1,382 until
+  fold-in 11 netted them against the arrival rows the quests counted; the 840.5 moved here, O6).
+  Every leg is measured end to end: `research/run-transitions.md` §2, §4, §6, and rs/198's lab
+  legs through this module (m (lab), PR #198 at 3c6cd2ae, open; RUN-ORDER.md LG), which RUN-ORDER.md
+  takes where RT had none (T02-03 4, T07a 58, T14-15 174), where the quest documents' read figures
+  stood (T12-13 101.5, T15-16 143.5, T19-20 39.5) and where it differs from RT by 2 or more (T06-07
+  79, T20-21 158, T25-26 41.5); RUN-ORDER.md section 2 has every leg. The body plan in force (S21)
+  runs T20-21 by Falador teleport to the body ruins, 69.3 m, and T21-22 from the body room, 32.7 m
+  (rs/198). Fallback about **2,340** (inferred: the 1,520 for the legs as
+  netted before, `bot.walkTo` at 0.57 per tile against the walker's 0.51, `quests/primitives.md` §2,
+  plus the twelve arrival rows at their quest documents' stock figures, 846.5, most of them timed
+  with `bot.walkTo` already).
+- **Primitives:** `speedrun/lib/travel.ts` (rs/198, PR #198 at 3c6cd2ae, open): `teleport(spell)` (4 ticks,
   measured), `runTo(tile)` with chained clicks re-sent 3 tiles before each leg ends, doors opened on the
   way and a knife on webs (the walker of `run-transitions-lib.ts`), spirit tree, the Ardougne lever,
   Captain Barnaby's ship (13 ticks for the dialogue and ride, gangplank 3, measured).
 - **Mode:** overlay-driven.
 - **Fallback:** walk the route when a teleport is refused.
 - **Acceptance, local:** each leg within 10% of run-transitions.md's measured mean (`run-transitions-legs.ts`
-  is the catalogue; rerun a leg by its id).
+  is the catalogue; rerun a leg by its id). **The twelve way-in legs** each end on their quest's
+  arrival tile, inside the destination tolerance, within 10% of their RUN-ORDER.md section 2 row:
+  T04-05 at Doric (2952,3451); T07-08 at Edmond (2568,3334); T09-10 at Elkoy, the maze entrance
+  (2504,3191); T10-11 at the Grand Tree door (2465,3489), by the gnome course (S11a between its two
+  parts); T11-12 at Lady Servil (2566,3199); T12-13 at Commander Lawgof (2571,3463); T15-16 in
+  Kolodion's cellar (2543,4713); T18-19 at Caroline (2716,3302); T19-20 at (2820,3486), tolerance 1, beside the Fishing
+  Contest tunnel stairs (the stairs loc, (2820,3484), cannot be reached); T22-23 at the Lumbridge cook (3209,3215); T23-24 at the Rusty Anchor
+  (3045,3257); T25-26 at the Champions' Guild door (3191,3364). rs/198's lab pass
+  measured every leg (m, lab, PR #198; RUN-ORDER.md "Changes since 71baa3a9"), all inside 10% of
+  run-transitions.md except T12-13, T07a and T22-23 (door state: 21 with Lumbridge Castle's three
+  doors closed, 15 open).
 - **Acceptance, demo (throwaway):** a throwaway with runes runs the level-free legs (T01-02, T06-07 from
   Falador, T21-22, T23-24 and S24's inner legs once it has the runes). Pass: within 10% of the local
   figure; record each door's state.
@@ -1082,17 +1153,21 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
 ### 12. Dwarf Cannon: `speedrun/quests/dwarf-cannon.ts` (S13)
 
-- **Serves:** S13, and the same module on a helper account (the cannon holder, section 4).
-- **Preconditions:** runes for 2 Ardougne and 1 Falador teleports (`quests/README.md` §4 step 6).
+- **Serves:** S13, **from Commander Lawgof (2571,3463)**, its arrival tile: the Ardougne teleport and
+  the 189-tile walk there are T12-13 (entry 11; RUN-ORDER.md O6); and the same module on a helper
+  account (the cannon holder, section 4), after its own way in.
+- **Preconditions:** runes for 2 Ardougne and 1 Falador teleports (`quests/README.md` §4 step 6), one
+  Ardougne of them for the way in (T12-13).
 - **Postconditions:** quest complete (ledger), 750 Crafting, 1 QP, the right to buy the cannon (read,
   `nulodion.rs2:2` via rs/41).
-- **Ticks:** expected **976** (fixed, inferred), best **920** (burst, r21), fallback **1,078** (stock,
-  measured) (`quests/README.md` §3 row).
+- **Ticks:** expected **855** (fixed, inferred), best **799** (burst, r21), fallback **957** (stock,
+  measured): `quests/README.md` §3 row's 976 / 920 / 1,078 less step 1's 121, the Ardougne teleport
+  and the walk to Lawgof, which are T12-13's.
 - **Primitives:** rs/94 `converse`, `act`, `world`; `continueBurst`; `travel.ts`.
 - **Mode:** overlay-driven. **Logout-unsafe:** none; all varps are permanent.
 - **Fallback:** `advance` page by page.
 - **Acceptance, local:** `quest-mcannon-run.ts`'s route through the module, 3 runs. Pass: within 10%
-  of 976 fixed (920 burst).
+  of 855 fixed (799 burst), counted from Lawgof's tile.
 - **Acceptance, demo (throwaway):** feasible end to end (no level gate is recorded in
   `quests/dwarf_cannon.md`). Pass: within 10% of the local figure. That run also produces the
   cannon holder.
@@ -1101,7 +1176,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
 ### 13. Dragon Slayer: `speedrun/quests/dragon-slayer.ts` (S26)
 
-- **Serves:** S26: the Champions' Guild door (32 QP), Oziach, the Oracle, Ice Mountain, the Duke,
+- **Serves:** S26, **from the Champions' Guild door (3191,3364)**, its arrival tile (the run from the
+  Varrock west booth is T25-26, entry 11; RUN-ORDER.md O6): the door (32 QP), Oziach, the Oracle, Ice Mountain, the Duke,
   Melzar's Maze, Wormbrain, the ship, Ned, the voyage and Elvarg (`quests/README.md` §4 step 13).
 - **Preconditions:** 32 QP (17 route + 4 Druidic Ritual + 11 filler; read, `champions_guild.rs2:2`);
   Monkey Madness done (Attack 99, Strength ~97, Defence ~89; rune armour needs base Defence 40,
@@ -1112,16 +1188,17 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   the rune scimitar and helm are unobtainable, rs/124; no glory, rs/123).
 - **Postconditions:** quest complete; 18,650 Strength and Defence (read); 2 QP. Items out: armour can
   go back to a helper.
-- **Ticks:** expected **966**, best **945**: the quest 941 (fixed, inferred, with Elvarg at ~70
-  from 64-75 measured at 99, n=2) / 925 (burst, r21) (`quests/README.md` §3 row), plus Scavvo's
-  purchase +15-20 and the adamant helm +5 (estimated, `research/supply-fallbacks.md` §12).
-  Fallback **~1,076** (stock ~1,051, inferred, + the same 25).
+- **Ticks:** expected **929**, best **908**: the quest 904 (fixed, inferred, with Elvarg at ~70
+  from 64-75 measured at 99, n=2) / 888 (burst, r21): `quests/README.md` §3 row's 941 / 925 less
+  segment 1, the Varrock teleport and walk to the guild door, 37 inferred, which is T25-26's; plus
+  Scavvo's purchase +15-20 and the adamant helm +5 (estimated, `research/supply-fallbacks.md` §12).
+  Fallback **~1,039** (stock ~1,014, inferred, + the same 25).
 - **Primitives:** rs/94 `converse`, `act`, `combat`; `continueBurst`; `travel.ts`.
 - **Mode:** overlay-driven. **Logout-unsafe:** none, every varp is permanent (read). A death on
   Crandor is expensive and its return is untested.
 - **Fallback:** page by page; on a death, the respawn route (untested; to be measured).
 - **Acceptance, local:** `quest-dragon-*.ts` ported, at the post-MM stats, 3 runs. Pass: within 10% of
-  941 for the quest (966 with Scavvo), and Elvarg within 10% of 70.
+  904 for the quest (929 with Scavvo), counted from the guild door, and Elvarg within 10% of 70.
 - **Acceptance, demo (throwaway):** not feasible (32 QP). Demo coverage: the shared primitives.
 - **Start from:** `quest-dragon-guild.ts`, `quest-dragon-voyage.ts`, `quest-dragon-elvarg.ts`,
   `quest-dragon-lib.ts`, `quest-dragon-wreck-probe.ts`.
@@ -1129,24 +1206,25 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
 ### 14. Tree Gnome Village: `speedrun/quests/tree-gnome-village.ts` (S10b)
 
-- **Serves:** S10b; Prayer is already ~94 from S07 (S10a retired). Ardougne teleport to the
-  maze; the warlord by Fire Blast at 1/1/1 and 10 HP under Protect from Melee.
+- **Serves:** S10b; Prayer is already ~94 from S07 (S10a retired). **From Elkoy, the maze entrance
+  (2504,3191)**, its arrival tile: the run there from the zoo is T09-10 (entry 11; RUN-ORDER.md O6);
+  the warlord by Fire Blast at 1/1/1 and 10 HP under Protect from Melee.
 - **Preconditions:** Magic 59 (Fire Blast, from S04); Plague City done (teleport); Prayer 43 (~94 from S07); the
   pre-MM trade (`SUPPLIES.md` H7, `quests/README.md` §4 step 3): 6 logs, staff of fire, amulet of
   magic, 1 Antipoison(4), 2 sharks (no prayer potions now), and Fire Blast runes for about T/5 casts per fight (the
   rune counts in `pre_mm_fights.md` look too high, flagged by rs/81).
 - **Postconditions:** `%treequest` 9 (ledger); 11,450 Attack; Magic about 64; 2 QP; village spirit
   tree.
-- **Ticks:** expected **896** (fixed, r21, including ~103 inferred to reach the maze and the trade;
-  warlord 133 measured by Fire Blast, rs/56, n=2), best **842** (burst), fallback **1,005** (stock)
-  (`quests/README.md` §3 row).
+- **Ticks:** expected **793** (fixed, r21, including the trade; warlord 133 measured by Fire Blast,
+  rs/56, n=2), best **739** (burst), fallback **902** (stock): `quests/README.md` §3 row's 896 / 842 /
+  1,005 less its ~103 inferred to reach the maze from the Ardougne teleport, which T09-10 replaces.
 - **Primitives:** rs/94 `converse`, `act`, `combat` (spell fight); `continueBurst`; `travel.ts`;
   `trade.receiveFrom`.
 - **Mode:** overlay-driven. **Logout-unsafe:** Bolren's closing ceremony until the quest scroll shows
   (`quests/README.md` §4).
 - **Fallback:** Fire Bolt at Magic 51 (warlord 165 measured, n=6: +32).
-- **Acceptance, local:** `quest-tree-full.ts` at route levels, 3 runs. Pass: within 10% of 896, and
-  the warlord within 10% of 133.
+- **Acceptance, local:** `quest-tree-full.ts` at route levels, 3 runs. Pass: within 10% of 793, counted
+  from the maze entrance, and the warlord within 10% of 133.
 - **Acceptance, demo (throwaway):** the maze and the first dialogues on a throwaway (no level gate).
   Pass: within 10% of the local segment.
 - **Start from:** `quest-tree-full.ts`, `quest-gnome-fights.ts`, `quest-premm-fight.ts warlord`,
@@ -1218,38 +1296,43 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
 ### 17. Fight Arena: `speedrun/quests/fight-arena.ts` (S12)
 
-- **Serves:** S12, before any Thieving training. Fire Blast at Magic ~73 under Protect from Melee for
+- **Serves:** S12, before any Thieving training, **from Lady Servil (2566,3199)**, its arrival tile
+  (the Ardougne teleport and run there are T11-12, entry 11; RUN-ORDER.md O6). Fire Blast at Magic ~73 under Protect from Melee for
   each fight, kept on until SCORED is out of the arena door (General Khazard attacks at stage 12).
 - **Preconditions:** Magic 59 or more; Prayer 43 (~94 from S07; no potions, `SUPPLIES.md` H9); 5 coins, Ardougne runes, a few sharks
   (`quests/README.md` §4 step 5).
 - **Postconditions:** quest complete; 12,175 Attack (Attack 99 with TGV and GT; read), 2,175
   Thieving (57); 2 QP.
-- **Ticks:** expected **645** (fixed, inferred from page counts; the chain 281 measured at 94/1/1,
-  rs/56, n=1), best **598** (burst, inferred), fallback **720** (stock, inferred) (`quests/README.md`
-  §3 row).
+- **Ticks:** expected **571** (fixed, inferred from page counts; the chain 281 measured at 94/1/1,
+  rs/56, n=1), best **524** (burst, inferred), fallback **646** (stock, inferred): `quests/README.md`
+  §3 row's 645 / 598 / 720 less the 74 inferred way in (`fight_arena.md` step 0b), which is T11-12's.
 - **Primitives:** rs/94 `combat` (the protect-prayer re-engage fix comes from this quest's lab),
   `converse`, `act`.
 - **Mode:** overlay-driven. **Logout-unsafe:** the arena fights.
 - **Fallback:** melee with food (the stock chain took 14 swordfish without prayer, measured, n=1).
 - **Acceptance, local:** `quest-arena-run.ts --from 5 --spell fire_blast` at route levels, 3 runs.
-  Pass: chain within 10% of 281 and 0 damage taken.
+  Pass: chain within 10% of 281 and 0 damage taken; the quest's own ticks are counted from Lady
+  Servil's tile.
 - **Acceptance, demo (throwaway):** the opening dialogue and the cell segment (no level gate).
 - **Start from:** `quest-arena-run.ts`, `quest-premm-fight.ts`, `quest-lib.ts`.
 - **logoutSafe:** yes at the end.
 
 ### 18. Plague City: `speedrun/quests/plague-city.ts` (S08)
 
-- **Serves:** S08 (Camelot teleport in), ending by reading the magic scroll for the Ardougne teleport.
+- **Serves:** S08, **from Edmond (2568,3334)**, its arrival tile: the Camelot teleport and the
+  248-tile run there are T07-08 (entry 11; RUN-ORDER.md O6); ending by reading the magic scroll for
+  the Ardougne teleport.
 - **Preconditions:** the trade: dwellberries, 4 buckets of water, spade, rope, chocolate dust, milk,
   snape grass, Camelot runes (`quests/README.md` §4 step 2); Magic 45 for Camelot.
 - **Postconditions:** `%elenaquest` ≥ 30 after the scroll (read, `teleport.rs2:22-38`); 2,425 Mining;
   1 QP.
-- **Ticks:** expected **620** (fixed, measured), best **564** (burst, inferred), fallback **737** (stock,
-  measured) (`quests/README.md` §3 row).
+- **Ticks:** expected **491** (fixed, measured), best **435** (burst, inferred), fallback **608** (stock,
+  measured): `quests/README.md` §3 row's 620 / 564 / 737 less the 129 inferred travel to Edmond
+  (`plague_city.md` "Tick total", whose 608 is the stock figure without it), which is T07-08's.
 - **Primitives:** rs/94 `converse`, `act`; `continueBurst`; `travel.ts`.
 - **Mode:** overlay-driven. **Logout-unsafe:** none.
-- **Acceptance, local:** `quest-plague-city-lab.ts` through the module, 3 runs. Pass: within 10% of 620,
-  and **the scroll read observed** by the magic scroll leaving the inventory and its message, not by
+- **Acceptance, local:** `quest-plague-city-lab.ts` through the module, 3 runs. Pass: within 10% of 491,
+  counted from Edmond's tile, and **the scroll read observed** by the magic scroll leaving the inventory and its message, not by
   the quest tab, which shows the quest complete at `%elenaquest` 29 while the teleport needs 30
   (read, `quest.constant:23`, `teleport.rs2:35`).
 - **Acceptance, demo (throwaway):** feasible end to end (no level gate besides the teleport, which
@@ -1259,15 +1342,19 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
 ### 19. Mage Arena: `speedrun/quests/mage-arena.ts` (S16)
 
-- **Serves:** S16, Kolodion at base Magic ~76 under Protect from Magic, which unlocks Charge.
+- **Serves:** S16, **from Kolodion's cellar (2543,4713)**, its arrival tile (the Ardougne teleport,
+  lever, Keep webs and ladder are T15-16, entry 11; RUN-ORDER.md O6): Kolodion at base Magic ~76 under
+  Protect from Magic, which unlocks Charge.
 - **Preconditions:** base Magic at least 75 for Fire Wave (boosted check, read, `magic.rs2:22`;
   Kolodion's start check is `stat_base(magic) >= 60`); staff of fire, about 70 blood + 400 air
   runes, a knife for webs, 1 magic potion as insurance, prayer potions, Ardougne runes
   (`quests/README.md` §4 step 9).
 - **Postconditions:** Charge available (ledger); base Magic 80-81 (Kolodion pays 2,787-3,129 base,
   measured, rs/52).
-- **Ticks:** expected **581** (fixed, inferred upper; fight 331 measured at base 71 + potion, ~300-330
-  inferred at 76), best **574** (burst), fallback **606** (stock) (`quests/README.md` §3 row).
+- **Ticks:** expected **425** (fixed, inferred upper; fight 331 measured at base 71 + potion, ~300-330
+  inferred at 76), best **418** (burst), fallback **448** (stock): `quests/README.md` §3 row's 581 /
+  574 / 606 less the travel in, 156 in the fixed and burst columns and 158 in the stock column
+  (`mage_arena.md` "Tick total"), which is T15-16's.
 - **Primitives:** rs/94 `combat` (spell fight, Protect from Magic), `converse`; `travel.ts` (the lever
   legs); **Charge** casting at 5 per tick belongs to S18.
 - **Mode:** overlay-driven. **Logout-unsafe:** the arena fight; no teleport from the Wilderness legs, so
@@ -1275,7 +1362,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   (inferred from the two coordinates), so the order keeps the account in the Wilderness.
 - **Fallback:** sip the magic potion if base is 74-75 at arrival; Charge from 79 needs one more sip.
 - **Acceptance, local:** `quest-magearena-run.ts` at base 76, 3 runs. Pass: fight within 10% of 315
-  (inferred middle) and base 80+ after it.
+  (inferred middle) and base 80+ after it; the quest's own ticks are counted from the cellar.
 - **Acceptance, demo (throwaway):** not feasible (Magic 60).
 - **Start from:** `quest-magearena-run.ts`, `quest-magearena-travel.ts`, `quest-magearena-charge.ts`,
   `magic-boost.ts`.
@@ -1283,17 +1370,20 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
 ### 20. Sea Slug: `speedrun/quests/sea-slug.ts` (S19)
 
+- **Serves:** S19, **from Caroline (2716,3302)** in Witchaven, its arrival tile: the run from the
+  Ardougne market knights is T18-19 (entry 11; RUN-ORDER.md O6).
 - **Preconditions:** Firemaking 30 (read, `quest_seaslug.rs2:43`); swamp paste, unlit torch, Ardougne
   runes (`quests/README.md` §4 step 10). The bridged-door client fix is rs/54, made in the **lite**
   client; the browser webclient's handling of bridged doors is **unverified**. `LAB.md` notes that
   the lite client lists no locs on bridge-flagged levels.
 - **Postconditions:** 7,175 Fishing (74); 1 QP.
-- **Ticks:** expected **394** (fixed, measured), best **340** (burst, inferred), fallback **495**
-  (stock, inferred) (`quests/README.md` §3 row).
+- **Ticks:** expected **361** (fixed, measured), best **307** (burst, inferred), fallback **462**
+  (stock, inferred): `quests/README.md` §3 row's 394 / 340 / 495 less its 33 of travel, the Ardougne
+  teleport and the 29-tick run (`sea_slug.md` steps 1-2), which T18-19 replaces.
 - **Primitives:** rs/94 `converse`, `act` (loc by tile and id on bridged levels); `continueBurst`.
 - **Mode:** overlay-driven. **Logout-unsafe:** none.
 - **Acceptance, local:** `quest-smallskill-seaslug.ts` through the module in the **browser** client.
-  Pass: within 10% of 394, with every bridged door opened.
+  Pass: within 10% of 361, counted from Caroline's tile, with every bridged door opened.
 - **Acceptance, demo (throwaway):** a throwaway at Firemaking 30 (about 30 logs). Pass: completes
   within 10% of the local figure.
 - **Start from:** `quest-smallskill-seaslug.ts`, `quest-smallskill-lib.ts`, `quest-smallskill-bridge-patch.sh`.
@@ -1326,15 +1416,20 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
 ### 23. Fishing Contest: `speedrun/quests/fishing-contest.ts` (S20)
 
+- **Serves:** S20, **from (2820,3486), beside the Fishing Contest tunnel stairs** (the stairs loc,
+  (2820,3484), cannot be reached), its arrival tile: the Camelot teleport and the run east are T19-20
+  (entry 11; RUN-ORDER.md O6).
 - **Preconditions:** a raw giant carp from the carp helper (tradeable, read, `fishing.obj:362`), a rod, 1
-  bait, 5 coins, 3 Camelot casts (`quests/README.md` §4 step 11).
+  bait, 5 coins, 3 Camelot casts, the first of them T19-20's (`quests/README.md` §4 step 11).
 - **Postconditions:** 2,437 Fishing (78 with Sea Slug); 1 QP.
-- **Ticks:** expected **223** (fixed, measured), best **200**, fallback **276** (inferred)
-  (`quests/README.md` §3 row).
+- **Ticks:** expected **181** (fixed, measured), best **158**, fallback **234** (inferred):
+  `quests/README.md` §3 row's 223 / 200 / 276 less steps 1-2's 42, the Camelot teleport 4 and the
+  run east 36-40 (`fishing_contest.md`), which are T19-20's.
 - **Primitives and mode:** rs/94 `converse`, `act`; `trade.receiveFrom`; overlay-driven.
 - **Logout-unsafe:** inside the contest fence; leaving through the gate resets the contest, and a
   logout inside was not tested (same step).
-- **Acceptance, local:** `quest-smallskill-fishingcompo.ts` through the module. Pass: within 10% of 223.
+- **Acceptance, local:** `quest-smallskill-fishingcompo.ts` through the module. Pass: within 10% of 181,
+  counted from (2820,3486).
 - **Acceptance, demo (throwaway):** feasible with a carp from a second throwaway. Pass: within 10%.
 - **Start from:** `quest-smallskill-fishingcompo.ts`.
 - **logoutSafe:** yes after the fence.
@@ -1366,11 +1461,16 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
 ### 25. Goblin Diplomacy: `speedrun/quests/goblin-diplomacy.ts` (S24)
 
+- **Serves:** S24's first quest, **from the Rusty Anchor bartender (3045,3257)**, its arrival tile:
+  the Falador teleport and the run there are T23-24 (entry 11; RUN-ORDER.md O6).
 - **Preconditions:** 3 goblin mail, orange and blue dye (`quests/README.md` §4 step 12).
 - **Postconditions:** 200 Crafting (read, `quest_gobdip.rs2:62`); 5 QP. Its points are needed at the
   guild door, so it cannot share Dragon Slayer's later legs (same row).
-- **Ticks:** expected **188**, best **168**, fallback **229** (inferred; `quests/README.md` §3 row).
-- **Primitives, mode and acceptance:** as Romeo & Juliet.
+- **Ticks:** expected **143**, best **123**, fallback **184** (inferred): `quests/README.md` §3 row's
+  188 / 168 / 229 less the ~45 of arrival travel `research/run-transitions.md` §2 reads in it, which
+  T23-24 carries.
+- **Primitives, mode and acceptance:** as Romeo & Juliet (local within 15% of 143, counted from the
+  Rusty Anchor).
 - **logoutSafe:** yes.
 
 ### 26. Pre-MM cannon session: `speedrun/skills/ranged.ts`, `cannonSession` (S14)
@@ -1379,22 +1479,25 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   scimitar at Attack 99 (the rune one is unobtainable, rs/124), auto-retaliate off. This is its own entry and its own `Step` (main, 05:30,
   via the rs/103 coordinator).
 - **Preconditions:** Dwarf Cannon done; Attack 99 (TGV + GT + FA = 42,025 base, read); the cannon set
-  and cannonballs from the cannon holder; the antipoison from S10's trade, sharks.
+  and 100 cannonballs from the cannon holder (65-72 used, rs/199); the antipoison from S10's trade,
+  sharks.
 - **Postconditions:** Ranged at least 50 **base** (for the magic shortbow in S15). Cannon picked up
   and returned to the holder, or kept for S27.
-- **Ticks:** expected and best **132** (inferred): 113 to Ranged 50 (measured, rs/31,
-  `skills/ranged.md` §1), about 10 of set-up (inferred, `quests/README.md` §4 step 7) and +9 for
-  the mithril scimitar in place of the rune one (inferred, `research/supply-fallbacks.md` §10).
+- **Ticks:** expected **118** (measured, lab, through rs/199's module, PR #207; RUN-ORDER.md RG:
+  n = 4 from the step's start with the cannon set-up, 104, 124, 116 and 128; pick-up +1; prayer flat
+  under the flick, no deaths, one antipoison dose, the cannon never dry), best **104** (the fastest
+  run). They replace 132 (inferred: 113 to Ranged 50 measured by rs/31, ~10 of set-up and +9 for
+  the mithril scimitar).
   Fallback about **162** (rs/56's measured sessions of 151-153 to Ranged 54-57, + 9); the Battlefield
   of Khazard about 143 (RUN-ORDER.md S14). The leg in, T13-14, is the Ardougne lever and the Deserted
   Keep web, 181.5 measured with no glory (entry 11, `research/run-transitions.md` §2).
-- **Primitives:** **missing** `lib/cannon.ts`; rs/94 `combat` upkeep (antipoison at the first
+- **Primitives:** `lib/cannon.ts` (rs/199's, on rs/186's branch as 1ac3b8bc, PR #207; to main with rs/252); rs/94 `combat` upkeep (antipoison at the first
   poisoning).
 - **Mode:** overlay-driven. **Logout-unsafe:** combat; Wilderness level 37 at 42 HP and Defence 1
   (`quests/README.md` §4 step 7).
 - **Fallback:** if poisoned without antipoison, the poison takes 24-30 of 42 HP per session (measured,
   n=4); eat and continue.
-- **Acceptance, local:** `quest-premm-cannon.ts` at route stats. Pass: Ranged 50 within 10% of 132.
+- **Acceptance, local:** `quest-premm-cannon.ts` at route stats. Pass: Ranged 50 within 10% of 118.
 - **Acceptance, demo (throwaway):** not feasible (Attack 99, Dwarf Cannon).
 - **Start from:** `quest-premm-cannon.ts`, `ranged-cannon.ts`, `ranged-cannon-sites.ts`.
 - **logoutSafe:** no.
@@ -1490,25 +1593,34 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
 ### 30. Doric's Quest: `speedrun/quests/dorics-quest.ts` (S05)
 
+- **Serves:** S05, **from Doric (2952,3451)**, its arrival tile: the Falador teleport and the run north
+  are T04-05 (entry 11; RUN-ORDER.md O6).
 - **Preconditions:** 6 clay, 4 copper ore, 2 iron ore (`quests/README.md` §4 step 1).
 - **Postconditions:** 1,300 Mining (49); 1 QP.
-- **Ticks:** expected **65** (fixed, measured), best **60** (burst, inferred), fallback **90** (stock,
-  measured) (`quests/README.md` §3 row).
+- **Ticks:** expected **22** (fixed, measured), best **17** (burst, inferred), fallback **43** (stock,
+  measured): `quests/README.md` §3 row's 65 / 60 / 90 less its travel, 43 fixed and burst and 47 stock
+  (`dorics_quest.md` "Tick total"), which is T04-05's.
 - **Primitives and mode:** rs/94 `converse`; `continueBurst`; overlay-driven.
-- **Acceptance, local:** `quest-smallskill-doric.ts` through the module. Pass: within 10% of 65.
+- **Acceptance, local:** `quest-smallskill-doric.ts` through the module. Pass: within 10% of 22,
+  counted from Doric's tile.
 - **Acceptance, demo (throwaway):** feasible end to end. Pass: within 10% of the local figure.
 - **Start from:** `quest-smallskill-doric.ts`.
 - **logoutSafe:** yes.
 
 ### 31. Cook's Assistant: `speedrun/quests/cooks-assistant.ts` (S23)
 
+- **Serves:** S23, **from the cook (3209,3215)**, its arrival tile: the Lumbridge teleport and the
+  run are T22-23 (entry 11; RUN-ORDER.md O6).
 - **Preconditions:** egg, bucket of milk, pot of flour (`quests/README.md` §4 step 12).
 - **Postconditions:** 300 Cooking (30), 1 QP (read, `quest_cook.rs2:89`).
-- **Ticks:** expected **27**, best **22**, fallback **41** (inferred; `quests/README.md` §3 row). The
+- **Ticks:** expected **17**, best **12**, fallback **31** (inferred): `quests/README.md` §3 row's 27 /
+  22 / 41 less its ~10 of travel, the Lumbridge teleport 4 and 12 tiles (`quests/quest_points.md`),
+  which T22-23 carries. The
   quest's opening dialogue was measured in `quests/primitives.md` §1 (9 ticks at the floor for the
   short branch).
 - **Primitives and mode:** rs/94 `converse`; overlay-driven.
-- **Acceptance:** local and demo within 10% of the first measured run; feasible on a throwaway.
+- **Acceptance:** local and demo within 10% of the first measured run from the cook's tile; feasible
+  on a throwaway.
 - **Start from:** `quest-primitives-dialogue.ts`.
 - **logoutSafe:** yes.
 
@@ -1646,7 +1758,7 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
 
 ### H5. Anvil helper: `speedrun/helpers/anvil.ts` (exists, rs/188)
 
-- **Gates:** S25a (exposure 1,147). It stands on (3187,3427), offers the next 25 bars and accepts
+- **Gates:** S25a (exposure 1,065). It stands on (3187,3427), offers the next 25 bars and accepts
   SCORED's 5 products in the same trade, about 31 times (`skills/smithing.md` §1).
 - **Builds on:** `smithing-trade.ts`'s helper side (now this role); bars from [rs/41] `smelter.ts`.
 - **Acceptance:** local, a turnaround of at most 10 ticks with the helper's side scripted from this
