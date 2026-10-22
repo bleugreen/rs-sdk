@@ -1,0 +1,37 @@
+# docs/markets
+
+Research for the markets mission (rs/495, thread cairn://p/rs/markets): how the demo's wealth leaders got rich,
+what each method yields per login, and what speedrun supplies gold can buy. The code is in `markets/`
+(`markets/README.md`).
+
+| Path | Holds |
+|---|---|
+| `timeline.md` | The leaders' holdings over time, GE history against their stacks, the family census, the swarms seen in `/playerpositions`, and a per-leader verdict on where the wealth came from. |
+| `data/` | Dated public reads: `poll-*.json` (bank top 50, positions and zone rosters every 5 minutes), `census-*.json`, `ge-history-*.json`, `players-*.json`, `bank-searches-*.json`, `jump-*.json`. Formats are in `markets/lib/snapshots.ts` and each tool's header. |
+
+Other children of rs/495 own their own `docs/markets/<file>.md`.
+
+## Rules
+
+- **No login to the demo** from this mission or any child (tenet 28). Live probes run only through markets on its
+  own VM: send the method, account count, duration and what it measures to the coordinator, who forwards it.
+- Public HTTP reads only, and gently: a request every few seconds at most, polls no more than every 5 minutes.
+- A generator or dupe is confirmed in the local lab only, and reported to markets first
+  (cairn://p/rs/markets/messages).
+- No SUPPLIES.md trades, no GE volume and no load before main announces the run has ended.
+- No host address of any machine in a committed file (tenet 20). The demo's public hostname, rs-sdk-demo.fly.dev, is fine.
+
+## Lab port blocks
+
+Labs run on fedora or bgsrv-ub with `NODE_TICKRATE=400`. Check all ports with `lsof` before use.
+
+| Block | Owner | WEB / MGMT / HISCORES | NODE | AGENT | FRIEND |
+|---|---|---|---|---|---|
+| M1 | GE and persistence audit (rs/498) | 9900 / 9901 / 9902 | 44900 | 7700 | 45900 |
+| M2 | content, shop, trade and bank audit (rs/499) | 9910 / 9911 / 9912 | 44910 | 7702 | 45910 |
+| M3 | lab measurements (rs/502) | 9920 / 9921 / 9922 | 44920 | 7704 | 45920 |
+| M4 | second measurement lab (rs/502) | 9930 / 9931 / 9932 | 44930 | 7706 | 45930 |
+| M5 | shelf reader (rs/506) | 9940 / 9941 / 9942 | 44940 | 7708 | 45940 |
+| M6 | live-probe runners (rs/508) | 9950 / 9951 / 9952 | 44950 | 7712 | 45950 |
+
+The next free block for follow-ups starts at 9960 (NODE 44960); check the AGENT and FRIEND ports first.
