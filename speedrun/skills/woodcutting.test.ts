@@ -5,14 +5,15 @@ import type { GatedOptions, GatedRun, GatedSegment, InPageGateOptions, SegmentTe
 import type { HostGate } from '../lib/hostgate';
 import type { ProgramStatus } from '../lib/programs';
 import { TickLog } from '../lib/ticks';
-import type { ReceiveResult } from '../lib/trade';
+import type { GiveSpec, ReceiveResult, SwapResult, WantSpec } from '../lib/trade';
 import { Observation, resolveResume } from '../runner/resume';
 import type { StepContext } from '../runner/step';
 import {
-    BandLedger, bandFor, bandParams, BANDS, erlangB, expectedRolls, FOOTPRINT, freeDirs, hitBetween, MEASURE_DROPS, modelTicksPerLog, PROBE_DIRS, respawnTicks, routeFrom, ROUTES, SITES, skill, steps,
-    successChance, summarizeBand, type WoodcuttingOptions
+    BandLedger, bandFor, bandParams, BANDS, CAMELOT_RUNES, erlangB, expectedRolls, FOOTPRINT, freeDirs, handBackSpecs, hitBetween, MEASURE_DROPS, modelTicksPerLog, NORMAL_KEEP, PROBE_DIRS, respawnTicks, routeFrom, ROUTES,
+    SITES, skill, steps, successChance, summarizeBand, type WoodcuttingOptions
 } from './woodcutting';
-import { createKnifeCycle } from '../../server/webclient/src/bot/programs/knife-cycle';
+import { createKnifeCycle, CYCLE_METHODS } from '../../server/webclient/src/bot/programs/knife-cycle';
+import { Harness, makeState } from '../../server/webclient/src/bot/programs/testkit';
 
 const OAK = SITES.oak.stand;
 const WILLOW = SITES.willow.stand;
@@ -668,5 +669,178 @@ describe('woodcutting: the band ledger and rs/158\'s table', () => {
         });
         await expect(h.byName('woodcutting:oak-15-73').run(h.ctx)).rejects.toThrow(/ended stopped at Woodcutting 15/);
         expect(h.log.rows.some(r => r.step === 'woodcutting:oak-15-73:summary' && !r.ok)).toBe(true);
+    });
+});
+
+// ------------------------------------------------------------------ the slot ledger (rs/319)
+
+/**
+ * The normal band's plain loop, the real knife-cycle, against a scripted engine: a click on the
+ * live tree rolls r0 ticks later, every roll lands a log in the first free slot and fells the tree
+ * (a new one stands), a drop empties its slot. Returns what the pack holds once the drops land.
+ */
+function normalBand(params: Record<string, unknown>, kit: string[], rolls: number) {
+    const m = CYCLE_METHODS.tree!;
+    const h = new Harness('cycle', createKnifeCycle);
+    const inv: Array<string | null> = [...kit];
+    let tick = 1000;
+    let xp = 0;
+    let treeId = 1;
+    let nextRoll: number | null = null;
+    let chopping = false;
+    let logs = 0;
+    const spec = () => ({ tick, x: 2914, z: 3494, skills: { Woodcutting: { xp, level: 1 } }, inventory: inv, animId: chopping ? 1 : -1, locs: [{ id: treeId, x: 2915 + (treeId % 2), z: 3494, name: 'Tree', options: ['Chop down'] }] });
+    h.start('cycle', { ...params, technique: 'plain', maxTicks: rolls * 20 }, makeState(spec()));
+    const pending: Array<{ at: number; type: string; locId?: number; slot?: number }> = [];
+    const land = () => {
+        for (const p of pending.filter(p => p.at === tick)) {
+            if (p.type === 'dropItem' && p.slot !== undefined) {
+                inv[p.slot] = null;
+                chopping = false; // inventory ops clear the interaction
+            }
+            if (p.type === 'interactLoc' && p.locId === treeId) {
+                chopping = true;
+                nextRoll ??= tick + m.r0;
+            }
+        }
+    };
+    while (logs < rolls && h.status.phase === 'running' && tick < 1000 + rolls * 20) {
+        tick++;
+        land();
+        if (chopping && nextRoll === tick) {
+            xp += 250;
+            logs++;
+            const free = inv.indexOf(null);
+            if (free >= 0) inv[free] = 'Logs';
+            else inv.push('Logs');
+            treeId++;
+            chopping = false;
+            nextRoll = null;
+        }
+        for (const s of h.step(makeState(spec()))) pending.push({ at: tick + 1, type: s.action.type, locId: (s.action as { locId?: number }).locId, slot: (s.action as { slot?: number }).slot });
+    }
+    // the last label's drop lands on the next tick
+    tick++;
+    land();
+    const held = inv.filter((i): i is string => i !== null);
+    return { logs, held, used: held.length };
+}
+
+describe('woodcutting: the slot ledger, H4k to H4.x (rs/158 spec 1)', () => {
+    test('the normal band passes keepProducts 1 on both techniques; oak and willow never carry it; it is an option', () => {
+        expect(NORMAL_KEEP).toBe(1);
+        expect(bandParams({}, 'normal', 15)('plain').keepProducts).toBe(1);
+        expect(bandParams({ technique: 'knife' }, 'normal', 15)('knife').keepProducts).toBe(1);
+        expect(bandParams({}, 'oak', 73)('plain')).not.toHaveProperty('keepProducts');
+        expect(bandParams({}, 'willow', 99)('knife')).not.toHaveProperty('keepProducts');
+        expect(bandParams({ keepProducts: '3' }, 'normal', 15)('plain').keepProducts).toBe(3);
+        expect(() => steps({ keepProducts: -1 })).toThrow(/keepProducts/);
+        expect(() => steps({ keepProducts: '1.5' })).toThrow(/keepProducts/);
+    });
+
+    test("H4.x: from H4k's axe, knife and one log, the band's own knife-cycle reaches the oaks with 3 slots used, 25 free for the 24-slot load", () => {
+        const r = normalBand(bandParams({}, 'normal', 15)('plain'), ['Rune axe', 'Knife', 'Logs'], 12);
+        expect(r.logs).toBe(12);
+        expect(r.held.sort()).toEqual(['Knife', 'Logs', 'Rune axe']);
+        expect(28 - r.used).toBe(25);
+        // 23 bones and the chopped log (the ledger's H4.x need)
+        expect(28 - r.used).toBeGreaterThanOrEqual(24);
+    });
+
+    test("knife-cycle's own default (3) is the defect: 5 slots used and 23 free against 24", () => {
+        const { keepProducts: _, ...programDefault } = bandParams({}, 'normal', 15)('plain');
+        const r = normalBand(programDefault, ['Rune axe', 'Knife', 'Logs'], 12);
+        expect(r.held.filter(n => n === 'Logs')).toHaveLength(3);
+        expect(28 - r.used).toBe(23);
+    });
+});
+
+describe('woodcutting: the slot ledger, the hand-back at S07\'s end to T07-08 (rs/158 spec 2)', () => {
+    const AXE_ID = 1359;
+    const BONES_ID = 536;
+    /** SCORED at Woodcutting 99 after the willows: the axe, the knife, the log, and 3 bones the last load left. */
+    const at99 = (o: { bones?: number; worn?: boolean; level?: number; runes?: boolean } = {}): BotWorldState => {
+        const s = state({ level: o.level ?? 99, items: [], worn: o.worn ? ['Rune axe'] : [] });
+        const inv = [
+            ...(o.worn ? [] : [{ name: 'Rune axe', id: AXE_ID }]), { name: 'Knife', id: 946 }, { name: 'Logs', id: 1511 },
+            ...Array.from({ length: o.bones ?? 3 }, () => ({ name: 'Dragon bones', id: BONES_ID })),
+            ...(o.runes ? [{ name: 'Law rune', id: 563, count: 1 }, { name: 'Air rune', id: 556, count: 5 }] : [])
+        ];
+        return { ...s, inventory: inv.map((it, slot) => ({ slot, id: it.id, name: it.name, count: (it as { count?: number }).count ?? 1, optionsWithIndex: [] })) };
+    };
+    /** A swap that applies its own delta: the given ids leave, law 1 and air 5 arrive. */
+    const swapHarness = (s: BotWorldState, opts: Partial<WoodcuttingOptions>, ok = true) => {
+        const calls: Array<{ partner: string; give: GiveSpec[]; want: WantSpec[]; opts: unknown }> = [];
+        const fake = (async (sdk: FakeSdk, partner: string, give: GiveSpec[], want: WantSpec[], o: unknown): Promise<SwapResult> => {
+            calls.push({ partner, give, want, opts: o });
+            if (!ok) return { ok: false, ticks: 30, openTicks: -1, received: [], gave: [], reason: 'no_response' };
+            const st = sdk.getState()!;
+            const ids = new Set(give.map(g => g.item));
+            const kept = st.inventory.filter(i => !ids.has(i.id));
+            const gave = st.inventory.filter(i => ids.has(i.id)).map(i => ({ slot: -1, id: i.id, name: i.name, count: i.count }));
+            const received = [{ slot: -1, id: 563, name: 'Law rune', count: 1 }, { slot: -1, id: 556, name: 'Air rune', count: 5 }];
+            sdk.push({ tick: st.tick + 6, inventory: [...kept, ...received].map((i, slot) => ({ ...i, slot, optionsWithIndex: [] })) });
+            return { ok: true, ticks: 6, openTicks: 1, received, gave };
+        }) as unknown as WoodcuttingOptions['swap'];
+        const h = harness(s, { swap: fake, ...opts });
+        return { ...h, swaps: calls, step: h.byName('woodcutting:hand-back') };
+    };
+
+    test('off by default (rehearsals keep their axe); true swaps with the bone giver, a string names the partner', () => {
+        expect(harness(state({})).all.map(s => s.name)).not.toContain('woodcutting:hand-back');
+        const named = harness(state({}), { handBack: 'cairn_b04' }).all.map(s => s.name);
+        expect(named.at(-1)).toBe('woodcutting:hand-back');
+        expect(() => steps({ handBack: true })).toThrow(/no(ne| bone giver)|name the partner/);
+        expect(() => steps({ handBack: 'true', bury: true, boneGiver: 'cairn_b01' })).not.toThrow();
+        expect(() => steps({ handBack: '' })).toThrow(/handBack/);
+        expect(() => steps({ handBack: 'false' })).not.toThrow();
+    });
+
+    test('T07-08: one swap gives the axe and the bones and takes 1 law and 5 air; the pack is the knife, the log and the two rune stacks', async () => {
+        const h = swapHarness(at99(), { bury: true, bones: { giver: 'cairn_b02' }, handBack: true });
+        expect(h.step.preconditions(h.sdk.getState()!, {})).toBe(true);
+        await h.step.run(h.ctx);
+        expect(h.swaps).toHaveLength(1);
+        expect(h.swaps[0]!.partner).toBe('cairn_b02');
+        expect(h.swaps[0]!.give).toEqual([{ item: AXE_ID }, { item: BONES_ID }]);
+        expect(h.swaps[0]!.want).toEqual([...CAMELOT_RUNES]);
+        const s = h.sdk.getState()!;
+        expect(s.inventory.map(i => `${i.name} x${i.count}`)).toEqual(['Knife x1', 'Logs x1', 'Law rune x1', 'Air rune x5']);
+        expect(s.inventory).toHaveLength(4);
+        expect(h.step.postconditions(s, {})).toBe(true);
+        expect(h.step.done!({ state: s, probed: {} }, {})).toBe(true);
+        // T07-08's Camelot teleport spends both stacks: 2 slots, the knife and the log, go on to S08
+        const row = h.log.rows.find(r => r.step === 'woodcutting:hand-back')!;
+        expect(row.ticks).toBe(0);
+        expect(row.meta).toMatchObject({ kind: 'wc-hand-back', ticks: 6, gave: ['Rune axe x1', 'Dragon bones x3'], received: ['Law rune x1', 'Air rune x5'] });
+        // the runes are what T07-08 needs, and nothing of S07's is left for H6's 13 slots
+        expect(28 - s.inventory.length + 2).toBeGreaterThanOrEqual(13);
+    });
+
+    test('no bones left: the axe alone goes; handBackSpecs offers one spec per item id', () => {
+        expect(handBackSpecs(at99({ bones: 0 }), /bones$/i)).toEqual([{ item: AXE_ID }]);
+        expect(handBackSpecs(at99({ bones: 5 }), /bones$/i)).toEqual([{ item: AXE_ID }, { item: BONES_ID }]);
+    });
+
+    test('preconditions: at to, the axe carried, the slots; done once handed back (a resume skips it)', async () => {
+        const h = swapHarness(at99(), { handBack: 'cairn_b02' });
+        const pre = (s: BotWorldState) => h.step.preconditions(s, {});
+        expect(pre(at99({ level: 98 }))).toMatch(/waits for 99/);
+        expect(pre(at99({ worn: true }))).toMatch(/worn axe cannot be traded/);
+        const full = at99({ bones: 25 });
+        expect(full.inventory).toHaveLength(28);
+        expect(pre(full)).toBe(true); // the 26 offered free their slots first
+        const done = at99({ bones: 0, runes: true });
+        expect(pre({ ...done, inventory: done.inventory.filter(i => i.name !== 'Rune axe') })).toBe(true);
+        h.sdk.push({ inventory: done.inventory.filter(i => i.name !== 'Rune axe') });
+        await h.step.run(h.ctx);
+        expect(h.swaps).toHaveLength(0);
+    });
+
+    test('a failed swap fails the step and leaves the axe', async () => {
+        const h = swapHarness(at99(), { handBack: 'cairn_b02' }, false);
+        await expect(h.step.run(h.ctx)).rejects.toThrow(/swap failed: no_response/);
+        expect(h.step.postconditions(h.sdk.getState()!, {})).toMatch(/4 axe or bone slots still held/);
+        expect(h.log.rows.find(r => r.step === 'woodcutting:hand-back')!.ok).toBe(false);
     });
 });
