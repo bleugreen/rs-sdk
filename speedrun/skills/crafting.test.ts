@@ -217,7 +217,7 @@ describe('the staged gems from the inventory ledger', () => {
         expect(opal).toHaveLength(2);
         expect(() => craftingHandoffXp(opal)).toThrow('uncut opal is not an uncut gem the windows cut');
         expect(stagedGemsFrom(ledger('hard leather x954 [n]'))).toEqual([]);
-        expect(() => stagedGemsFrom(ledger('x').replace('| H21d |', '| H21x |'))).toThrow('the inventory ledger has no row H21d');
+        expect(() => stagedGemsFrom(ledger('needle x1 [u]').replace('| H21d |', '| H21x |'))).toThrow('the inventory ledger has no row H21d');
         expect(() => stagedGemsFrom('no table')).toThrow(/^the inventory ledger does not parse/);
     });
 
