@@ -384,6 +384,15 @@ export class BoneGiver {
         });
     }
 
+    /** On a side tile of the scored account (or trading with it). */
+    private besideReceiver(): boolean {
+        const s = this.s;
+        if (!s) return false;
+        if (tradeOf(s).isOpen) return true;
+        const r = this.receiverInSight();
+        return !!r && onSide(pos(s), r);
+    }
+
     private receiverInSight(): NearbyPlayer | undefined {
         const hash = this.cue?.receiver.sha256;
         return hash ? this.s?.nearbyPlayers.find(p => nameHash(p.name) === hash) : undefined;
@@ -498,6 +507,23 @@ export class BoneGiver {
             }
             if (last) throw last;
             return; // re-read where the scored account is now
+        }
+        if (o.standing) {
+            // Our request stands (lib/trade.ts's one click rule: a busy refusal re-sent on the next
+            // frame, a landed one only after resendTicks), so the scored account's own top-up click
+            // opens both screens. Off its side we drop it and re-step.
+            this.setPhase('requested', 'standing');
+            const req = await requestUntilOpen(ctx, o, {
+                receiver: () => this.receiverInSight(),
+                stopped: () => !!this.cue?.stop || !this.besideReceiver(),
+                log: ctx.log
+            });
+            this.bounces += req.bounces;
+            if (!req.ok) {
+                ctx.log('request', { ...req, standing: true });
+                return;
+            }
+            return this.serveAsk(true, this.s!.tick);
         }
         this.setPhase('waiting', 'for a request');
         const answered = await this.answerRequest();
