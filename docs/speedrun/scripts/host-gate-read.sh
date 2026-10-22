@@ -29,7 +29,7 @@
 #    Under $GATE_MIN_PLAYERS (default 300) online, or no answer, means
 #    `skip: restart suspected (players N)`: a server refilling after a restart is not a reading
 #    of the run's conditions, and a login would only add to its rush.
-# 5. ~/gate-history/<UTC>.json: commit, status, verdict, on-time, catch-ups per minute, tick p90,
+# 5. ~/gate-history/<UTC>.json: commit, status, verdict, on-time, catch-ups per minute, tick p50 and p90,
 #    players and Fly edge up front, the gate's own JSON under `gate`. A read that is not `ok`
 #    also keeps the last 40 lines of the probe's output under `outputTail` (account name and
 #    password redacted), since a Bun crash ends with its version banner, not its error.
@@ -74,10 +74,16 @@ write_record() {
         --arg phh "$pre_hover" --arg phc "$pre_chrome" --arg pps "$pre_pc_shape" --arg pbm "$pre_bundle_md5" '
         $g[0] as $j |
         def orNull: if . == "" then null else . end;
+        # tickSteadiness'"'"'s p50 (speedrun/lib/hostgate-verdict.ts), or the same nearest rank over the arrivals
+        def p50ms: ($j.result.steadiness // {}) as $s |
+            if ($s.p50 | type) == "number" and ($s.n // 1) > 0 then $s.p50
+            else ([($j.result.tickArrivalsMs // []) as $a | range(1; $a | length) | $a[.] - $a[. - 1]] | sort) as $iv |
+                if ($iv | length) == 0 then null
+                else ($iv[[($iv | length) - 1, (($iv | length) * 0.5 | floor)] | min] * 10 + 0.5 | floor) / 10 end end;
         {utc: $utc, endUtc: $end, host: $host, commit: (if $commit == "" then null else $commit end), status: $status, exit: $exit,
          note: (if $note == "" then null else $note end),
          on: $j.verdict.on, onTime: $j.result.onTime, trials: $j.result.trials,
-         catchUpsPerMinute: $j.result.steadiness.catchUpsPerMinute, tickP90Ms: $j.result.steadiness.p90,
+         catchUpsPerMinute: $j.result.steadiness.catchUpsPerMinute, tickP50Ms: p50ms, tickP90Ms: $j.result.steadiness.p90,
          players: ($j.vantage.players // (if $players == "" then null else ($players | tonumber) end)),
          edge: ($j.vantage.edge // (if $edge == "" then null else $edge end)),
          connectP50Ms: $j.vantage.connectP50, failures: $j.verdict.failures,
