@@ -27,15 +27,19 @@
 //   n            per trade (default 23: the knife loop's free slots)
 //   group        standing mode only: the accounts taking turns at the site, this one included
 //                (S07's b01-b04). Only the group's server keeps a request standing (boneServer,
-//                altar-cue.ts turnOrder); the rest wait loaded on the tile without requesting
+//                altar-cue.ts turnOrder); the rest wait loaded on the tile without requesting.
+//                With a group, `trades` counts the group's loads, and the one giver whose entry
+//                carries finalExtras serves the group's last load (boneServer)
 //   sites        [{ giver: {x,z}, receiver: {x,z} }] in run order (default: the oak tile, then the Taverley willow)
 //   siteWaitTicks  how long to wait at a site for the receiver before trying the next (default 30)
-//   trades       stop after this many trades (default: until the cue says stop)
+//   trades       stop after this many trades, the group's with a group (default: until the cue says stop)
 //   restock      { kind: 'bank'|'cheat', bank?: {x,z} } (cheat: local lab only; bank default Falador west)
 //   noReplyTicks re-send when neither answer came back (default lib/trade.ts DROPPED_TICKS, 2 frames after the click's result: the giver stands beside the receiver)
 //   resendTicks  re-send a standing request after this long without a trade (default 100)
 //   finalExtras  [{ item, count, obj? }] offered beside the bones on the LAST load only (needs `trades`;
-//                S07's T07-08 Camelot runes, law 1 and air 5); `obj` names the staff give for restock cheat
+//                S07's T07-08 Camelot runes, law 1 and air 5); `obj` names the staff give for restock cheat.
+//                In a group, on one giver only: it carries them on every trip and offers them on the
+//                group's last load, which boneServer keeps for it
 //   finalN       bones on that last load (default n - finalExtras.length: the same free slots as every load)
 //   cueDir       default RC_CUE_DIR, else run-machine/rc-cue in the checkout
 //   scope        required: { step, family }, the cue this giver serves (altar-cue.ts CueScope):
@@ -183,6 +187,10 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
     const group = ((raw.group ?? []) as string[]).map(canonName);
     if (group.length && mode !== 'standing') throw new Error('group is for the standing mode (S07) only');
     if (new Set(group).size !== group.length) throw new Error('group names an account twice');
+    // The group's last-load giver carries a whole load and the extras on every trip (the last load is any of its trips).
+    if (group.length && finalExtras.length && (n + finalExtras.length > 28 || finalN > n)) {
+        throw new Error(`in a group the finalExtras giver carries n bones and the extras on every trip: n + finalExtras must fit 28 slots and finalN must be at most n (got ${n} + ${finalExtras.length}, finalN ${finalN})`);
+    }
     return {
         mode,
         item,
@@ -209,7 +217,7 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
 
 const exact = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 
-/** True when the load after `tradesDone` completed trades is the last one, the one that carries `finalExtras`. */
+/** True when the load after `tradesDone` completed trades (the group's, with a group) is the last one, the one that carries `finalExtras`. */
 export function isFinalLoad(o: Pick<BoneGiverOptions, 'trades' | 'finalExtras'>, tradesDone: number): boolean {
     return o.finalExtras.length > 0 && tradesDone === o.trades - 1;
 }
@@ -373,6 +381,12 @@ export interface BoneStatus {
     tile: { x: number; z: number; level: number } | null;
     /** Loaded at the site since (Date.now()): waiting, requesting or trading. null otherwise. */
     readyAt: number | null;
+    /** The cue session `trades` was counted in (null before the first cue): the group's count is per session. */
+    session: string | null;
+    /** This giver carries the group's last load (its entry has finalExtras). */
+    final: boolean;
+    /** The `trades` option, the group's load count with a group; null without one. */
+    loads: number | null;
     detail?: string;
     ms: number;
 }
@@ -386,22 +400,45 @@ export function readBoneStatuses(dir: string): BoneStatus[] {
 }
 
 /**
+ * The group's statuses in `session`, by default the session of the newest status that has one. A
+ * file another run left (another session) counts for nothing, and a giver that has ended counts.
+ */
+function sessionStatuses(statuses: readonly BoneStatus[], group: readonly string[], session?: string): BoneStatus[] {
+    const g = new Set(group.map(canonName));
+    const mine = statuses.filter(s => g.has(canonName(s.account)));
+    const sess = session ?? ([...mine].sort((a, b) => b.ms - a.ms).find(s => s.session !== null)?.session ?? null);
+    return mine.filter(s => s.session === sess);
+}
+
+/** The loads the group has given in the session: its givers' trades added up. */
+export function groupLoadsDone(statuses: readonly BoneStatus[], group: readonly string[], session?: string): number {
+    return sessionStatuses(statuses, group, session).reduce((n, s) => n + s.trades, 0);
+}
+
+/**
  * The group's server: the one giver of `group` that keeps a request standing with the scored
  * account and that the scored side trades next (altar-cue.ts turnOrder). The giver already
  * requesting or trading keeps it; else the loaded giver that has waited at the site longest. Both
  * sides read it from the same status files, so a group giver requests only while it is the
  * server, and the scored step's trade click names it.
+ *
+ * The last load (the group's `loads`) belongs to the giver marked `final`, which carries the
+ * extras: no other giver serves it, and the final giver serves no load within one rotation of it
+ * (fewer than group-size loads before the last), so it is back from its last bank trip and waiting
+ * when the last load comes. Once the group has given its loads there is no server.
  */
-export function boneServer(statuses: readonly BoneStatus[], group: readonly string[], now: number): string | undefined {
-    const g = new Set(group.map(canonName));
-    return turnOrder(
-        statuses.filter(s => g.has(canonName(s.account))),
-        now,
-        {
-            eligible: s => (s.phase === 'waiting' || s.phase === 'requested' || s.phase === 'trading') && s.held > 0 && s.readyAt !== null,
-            holding: s => s.phase === 'requested' || s.phase === 'trading'
-        }
-    )[0]?.account;
+export function boneServer(statuses: readonly BoneStatus[], group: readonly string[], now: number, session?: string): string | undefined {
+    const current = sessionStatuses(statuses, group, session);
+    const done = current.reduce((n, s) => n + s.trades, 0);
+    const loads = current.find(s => s.loads !== null)?.loads ?? null;
+    if (loads !== null && done >= loads) return undefined;
+    const last = loads !== null && done === loads - 1;
+    const withFinal = loads !== null && current.some(s => s.final);
+    const takes = (s: BoneStatus) => !withFinal || (s.final ? last || done + group.length <= loads! - 1 : !last);
+    return turnOrder(current, now, {
+        eligible: s => (s.phase === 'waiting' || s.phase === 'requested' || s.phase === 'trading') && s.held > 0 && s.readyAt !== null && takes(s),
+        holding: s => s.phase === 'requested' || s.phase === 'trading'
+    })[0]?.account;
 }
 
 export class BoneGiver {
@@ -431,16 +468,52 @@ export class BoneGiver {
         return this.s?.player?.runEnergy ?? null;
     }
 
+    /** The status a previous process of this account left, read before our first write: a relaunch resumes its trades (onCue). */
+    private readonly prior: BoneStatus | null;
+    private resumeChecked = false;
+
     constructor(private readonly ctx: RoleContext) {
         this.o = boneGiverOptions(ctx.options);
         this.re = exact(this.o.item);
         if (this.o.group.length && !this.o.group.includes(canonName(ctx.account))) throw new Error(`group must include this account (${ctx.account})`);
+        this.prior = readJson<BoneStatus>(this.statusPath());
+    }
+
+    private statusPath(): string {
+        return join(this.o.cueDir, `bones-${canonName(this.ctx.account)}.json`);
+    }
+
+    /** The first cue: a relaunch within the same scored session carries on from the trades its last process counted. */
+    onCue(cue: Cue): void {
+        this.cue = cue;
+        if (this.resumeChecked) return;
+        this.resumeChecked = true;
+        const p = this.prior;
+        if (p && p.session === cue.session && Number.isInteger(p.trades) && p.trades > this.trades) {
+            this.trades = p.trades;
+            this.ctx.log('resumed', { trades: p.trades, session: cue.session });
+        }
+    }
+
+    /** The group's statuses, ours as of now rather than as last written. */
+    private statuses(): BoneStatus[] {
+        const me = canonName(this.ctx.account);
+        return [...readBoneStatuses(this.o.cueDir).filter(s => canonName(s.account) !== me), this.snapshot()];
+    }
+
+    /** Loads given so far: the group's in this session with a group, else ours. */
+    private loadsDone(): number {
+        return this.o.group.length ? groupLoadsDone(this.statuses(), this.o.group, this.cue?.session) : this.trades;
     }
 
     /** No group, or this giver is the group's server now. */
     private ourTurn(): boolean {
         if (!this.o.group.length) return true;
-        return canonName(boneServer(readBoneStatuses(this.o.cueDir), this.o.group, Date.now()) ?? '') === canonName(this.ctx.account);
+        return canonName(this.server() ?? '') === canonName(this.ctx.account);
+    }
+
+    private server(): string | undefined {
+        return boneServer(this.statuses(), this.o.group, Date.now(), this.cue?.session);
     }
 
     private get s(): BotWorldState | null {
@@ -459,9 +532,8 @@ export class BoneGiver {
         this.publish();
     }
 
-    /** bones-<account>.json beside the altar givers' status files, so the scored side can see a load is standing. */
-    private publish(): void {
-        writeJsonAtomicSync(join(this.o.cueDir, `bones-${canonName(this.ctx.account)}.json`), {
+    private snapshot(): BoneStatus {
+        return {
             v: 1,
             account: this.ctx.account,
             phase: this.phase,
@@ -471,9 +543,17 @@ export class BoneGiver {
             bounces: this.bounces,
             tile: this.s?.player ? pos(this.s) : null,
             readyAt: this.readyAt,
+            session: this.cue?.session ?? null,
+            final: this.o.group.length > 0 && this.o.finalExtras.length > 0,
+            loads: Number.isFinite(this.o.trades) ? this.o.trades : null,
             ...(this.detail ? { detail: this.detail } : {}),
             ms: Date.now()
-        } satisfies BoneStatus);
+        };
+    }
+
+    /** bones-<account>.json beside the altar givers' status files, so the scored side can see a load is standing. */
+    private publish(): void {
+        writeJsonAtomicSync(this.statusPath(), this.snapshot());
     }
 
     /** On a side tile of the scored account (or trading with it). */
@@ -493,7 +573,7 @@ export class BoneGiver {
     async run(): Promise<void> {
         const { ctx } = this;
         assertUntracked(this.o.cueDir);
-        const watcher = new CueWatcher(this.o.cueDir, this.o.scope, cue => (this.cue = cue), { log: (m, d) => ctx.log(m, d) });
+        const watcher = new CueWatcher(this.o.cueDir, this.o.scope, cue => this.onCue(cue), { log: (m, d) => ctx.log(m, d) });
         const heartbeat = setInterval(() => this.publish(), 2000);
         let wasOpen = false;
         const unsubOpen = ctx.sdk.onStateUpdate(st => {
@@ -505,7 +585,7 @@ export class BoneGiver {
             await ensureOutOfTutorial(ctx);
             await ctx.bot.dismissBlockingUI();
             if (ctx.sdk.getTradeState().isOpen) await ctx.sdk.sendDeclineTrade();
-            while (!ctx.signal.aborted && this.trades < this.o.trades && !this.cue?.stop) {
+            while (!ctx.signal.aborted && this.loadsDone() < this.o.trades && !this.cue?.stop) {
                 try {
                     await this.cycle();
                 } catch (e) {
@@ -527,10 +607,13 @@ export class BoneGiver {
     private async cycle(): Promise<void> {
         if (this.o.mode === 'on-request') return this.onRequestCycle();
         const { ctx, o } = this;
-        const extras = isFinalLoad(o, this.trades) ? o.finalExtras : [];
-        const bones = loadBones(o, this.trades);
+        // A group's last-load giver carries a whole load and the extras on every trip: any of them can be the last load.
+        const carriesFinal = o.group.length > 0 && o.finalExtras.length > 0;
+        const k = this.loadsDone();
+        const extras = carriesFinal || isFinalLoad(o, k) ? o.finalExtras : [];
+        const bones = o.group.length ? o.n : loadBones(o, k);
         if (this.held() !== bones || extras.some(e => count(this.s, exact(e.item)) < e.count)) {
-            this.setPhase('restock', extras.length ? 'the last load' : '');
+            this.setPhase('restock', carriesFinal ? 'with the last load\'s extras' : extras.length ? 'the last load' : '');
             await this.restock(bones, extras);
         }
         const site = o.sites[this.site]!;
@@ -552,9 +635,9 @@ export class BoneGiver {
         if (this.cue?.stop) return;
         // A group takes turns: wait loaded, without requesting, until we are its server.
         while (!this.ourTurn()) {
-            if (this.cue?.stop || ctx.signal.aborted || !this.receiverInSight()) return;
-            const server = boneServer(readBoneStatuses(o.cueDir), o.group, Date.now());
-            this.setPhase('waiting', server ? `queued behind ${server}` : 'queued');
+            if (this.cue?.stop || ctx.signal.aborted || !this.receiverInSight() || this.loadsDone() >= o.trades) return;
+            const server = this.server();
+            this.setPhase('waiting', server ? `queued behind ${server}` : carriesFinal ? 'holding the last load' : 'queued');
             await until(ctx, () => this.ourTurn() || !!this.cue?.stop, 2);
         }
         this.setPhase('requested');
@@ -573,12 +656,14 @@ export class BoneGiver {
         }
         this.setPhase('trading');
         // No expectTheirs: the scored account offers nothing, and anything it does offer is declined.
-        const r = await give(ctx.sdk, t.partner, loadOffer(o, this.trades), { openTimeoutMs: 5_000 });
+        // The load's index now, the group's with a group: the last one offers finalN bones and the extras.
+        const load = this.loadsDone();
+        const r = await give(ctx.sdk, t.partner, loadOffer(o, load), { openTimeoutMs: 5_000 });
         if (r.ok) {
             this.trades++;
             this.trip = { tick: this.s?.tick ?? 0, energy: this.energy(), at: pos(this.s) };
         }
-        ctx.log('trade', { ok: r.ok, ticks: r.ticks, gave: r.gave.map(i => `${i.name} x${i.count}`), final: extras.length > 0, waited: req.waited, sends: req.sends, bounces: req.bounces, ...(r.reason ? { reason: r.reason } : {}) });
+        ctx.log('trade', { ok: r.ok, ticks: r.ticks, load, gave: r.gave.map(i => `${i.name} x${i.count}`), final: isFinalLoad(o, load), waited: req.waited, sends: req.sends, bounces: req.bounces, ...(r.reason ? { reason: r.reason } : {}) });
     }
 
     /** S18: stay on a side tile of the scored account, answer its request at once, give what its ask names. */
