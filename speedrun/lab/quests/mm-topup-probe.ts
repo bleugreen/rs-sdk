@@ -31,8 +31,8 @@ import { dungeonTraps, fixture, fixtureItems, MM_VARS, PREREQ_VARS, ROUTE_LEVELS
 
 /** SCORED's tile: where the bridge jump always lands (quest_mm.rs2:1043, 0_43_42_51_36). */
 const TILE = { x: 2803, z: 2724 };
-/** The helper's tile, one south of SCORED's. */
-const HELPER_TILE = { x: 2803, z: 2723 };
+/** The helper's tile: wherever its walk from the landing stops within 1 of SCORED's ((2803,2723) is blocked). */
+let HELPER_TILE = { x: 2803, z: 2722 };
 /** Lumdo's drop on the atoll (mm_lumdo.rs2: 0_43_42_50_19). */
 const LANDING = { x: 2802, z: 2707 };
 const DAERO = { x: 2484, z: 3487, level: 1 };
@@ -115,8 +115,9 @@ tripOk &&= await leg('lumdo_to_atoll', async () => {
 const tripTicks = tick(helper) - trip0;
 if (!tripOk) await mustTele(helper.sdk, LANDING.x, LANDING.z);
 const landedAt = pos(helper.sdk);
-await leg('landing_to_tile', async () => (await walkTo(helper.bot, helper.sdk, HELPER_TILE.x, HELPER_TILE.z, 0)).ok);
-if (chebyshev(pos(helper.sdk), HELPER_TILE) > 0) await mustTele(helper.sdk, HELPER_TILE.x, HELPER_TILE.z);
+await leg('landing_to_tile', async () => (await walkTo(helper.bot, helper.sdk, TILE.x, TILE.z, 1)).ok);
+if (chebyshev(pos(helper.sdk), TILE) > 1) await mustTele(helper.sdk, HELPER_TILE.x, HELPER_TILE.z);
+HELPER_TILE = { x: pos(helper.sdk).x, z: pos(helper.sdk).z };
 result('mm_topup_trip', { helperStats, legs, tripOk, tripTicks, landedAt, at: pos(helper.sdk) });
 
 // ------------------------------------------------------------------ 2. parked: what reaches the helper
@@ -140,7 +141,8 @@ const pFix = fixture('P');
 const items = fixtureItems('P', { sharks: 0 });
 async function stageScoredPack(): Promise<void> {
     await cheat(scored.sdk, '~clearinv inv', 2);
-    for (const [k, n] of items) await give(scored.sdk, k, n);
+    const worn = new Set(scored.sdk.getState()!.equipment.map(i => i.id));
+    for (const [k, n] of items) if (!worn.has(configId('obj', k))) await give(scored.sdk, k, n);
     // The bow and arrows are worn from the Grand Tree swap to R (rs/158 01:38): out of the pack.
     for (const id of ['magic_shortbow', 'rune_arrow']) if (!scored.sdk.getState()!.equipment.some(i => i.id === configId('obj', id))) await wield(scored.sdk as never, configId('obj', id));
     await give(scored.sdk, 'shark', held);
