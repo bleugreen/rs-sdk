@@ -425,6 +425,32 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
             expect(Date.now() - t0).toBeLessThan(2_000);
         });
 
+        test('stopIf ends an unanswered open on the frame it fires, with no further request', async () => {
+            const sdk = new FakeSdk(baseState({ tick: 10, ...near, inventory: [inv(0, 1351, 'Bronze axe')] }));
+            const t0 = Date.now();
+            const result = give(sdk as unknown as TradeSdk, 'cairn_h30', [{ item: /^bronze axe$/i, n: 1 }], { openTimeoutMs: 60_000, stopIf: s => (s.tick >= 12 ? 'hit' : null) });
+            for (let t = 11; t <= 12; t++) {
+                await flush();
+                sdk.push({ tick: t });
+            }
+            const r = await result;
+            expect(r).toMatchObject({ ok: false, reason: 'stopped: hit' });
+            expect(requests(sdk)).toBe(1);
+            expect(Date.now() - t0).toBeLessThan(2_000);
+        });
+
+        test('stopIf with the trade open declines it', async () => {
+            const sdk = new FakeSdk(baseState({ tick: 10, ...near, inventory: [inv(0, 1351, 'Bronze axe')] }));
+            const result = give(sdk as unknown as TradeSdk, 'cairn_h30', [{ item: /^bronze axe$/i, n: 1 }], { stopIf: s => (s.tick >= 12 ? 'hit' : null) });
+            await flush();
+            sdk.push(openAt(11));
+            await flush();
+            sdk.push({ tick: 12 });
+            const r = await result;
+            expect(r).toMatchObject({ ok: false, reason: 'stopped: hit' });
+            expect(sdk.sent.some(a => a.method === 'sendDeclineTrade')).toBe(true);
+        });
+
         test('default-identical: without noReplyTicks an unanswered request is not re-sent within 8 s', async () => {
             const sdk = new FakeSdk(baseState({ tick: 10, ...near }));
             const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { maxTicks: 5 });
