@@ -21,31 +21,48 @@
 // Dropping a prayer toggle costs nothing at 99 Defence and Hitpoints: the commanders, the warlord and
 // the demon hit through it, and food covers them. Auto-retaliate stays off for TGV (the brief, for the
 // stronghold door), so a commander's swing never turns the account on him mid-click.
+//
+// The CLI runs the helper's whole climb in one login, each phase only when its work is not done yet:
+//
+//   bun speedrun/helpers/quest-helper.ts <account> --fleet-account --mm-module=<pinned monkey-madness.ts>
+//       [--phases=agility,tree,grandtree,mm,mm-return] [--mm-until=G]
+//
+//   agility    a leg onto the Gnome course (the route's nearest waypoint on, the stronghold gate), then
+//              skills/agility.ts to 25 (The Grand Tree's climb, quest_grandtree.rs2:25)
+//   tree       a leg to Elkoy, then Tree Gnome Village with the substitutions above
+//   grandtree  a leg to the Grand Tree door (the village spirit tree), then The Grand Tree
+//   mm         out of the roots, then Monkey Madness A to --mm-until (the module is not on main: pass
+//              the file pinned to the commit rs/185 names); the journal is read at the end
+//   mm-return  Lumdo back to Crash Island and Waydar's "I need to return to your kingdom."
+//              (mm_waydar.rs2 @waydar_return: the glider drops the player by the Gnomeball pitch)
+//
+// The account rules and the loopback gateway are demo-quest.ts's; chat is refused for the whole
+// login, and it always ends with a confirmed logout.
+import { resolve } from 'node:path';
 import type { BotWorldState } from '../../sdk/types';
 import { act, actConverse, openDoor, talkTo, type ActSdk } from '../lib/act';
 import { fight, type FightResult } from '../lib/combat';
 import { converse, levelUpInterrupt, type ConverseSdk } from '../lib/converse';
-import { questStatus } from '../lib/quests';
+import { crossingSettings } from '../lib/kandarin';
+import { journalProbe, questStatus } from '../lib/quests';
+import { closeSession, loadBotEnv, openSession, type Session } from '../lib/session';
 import { regionOf, sailTo, type Sailor } from '../lib/ships';
-import { logNote } from '../lib/ticks';
-import { inArea, runTo, spiritTree, type Area, type SpiritTree, type TravelSdk } from '../lib/travel';
+import { logNote, TickLog, type TickRow } from '../lib/ticks';
+import { GNOME_STRONGHOLD_GATE, gateSide, inArea, passGate, runTo, spiritTree, travel, type Area, type SpiritTree, type TravelSdk } from '../lib/travel';
 import { waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, findLoc, invCount, opIndex, pos, worn, type LocQuery } from '../lib/world';
+import { arg, botArg, result } from '../lab/common';
+import { startLoopbackGateway } from '../lab/loopback-gateway';
+import { confirmedLogout } from '../lab/quests/aereck-burst';
+import { checkDemoTarget, formatDemoTable, refuseChat, runDemoQuest, type Leg, type QuestModule, type Substitute } from '../lab/quests/demo-quest';
+import * as grandTree from '../quests/grand-tree';
 import { demonInSight, inTree, ITEM as GT_ITEM, TILES as GT } from '../quests/grand-tree';
-import { atRailOut, inStronghold, inVillage, ITEM as TGV_ITEM, LADDER, RAIL_OUT, STRONGHOLD_DOOR, WALL_FOOT, WARLORD } from '../quests/tree-gnome-village';
-import type { Check, StepContext } from '../runner/step';
+import * as tgv from '../quests/tree-gnome-village';
+import { ARRIVAL as ELKOY, atRailOut, inStronghold, inVillage, ITEM as TGV_ITEM, LADDER, RAIL_OUT, STRONGHOLD_DOOR, VILLAGE_TREE, WALL_FOOT, WARLORD } from '../quests/tree-gnome-village';
+import { runSteps, type Step, type StepContext } from '../runner/step';
+import { GNOME_START, ROUTES, steps as agilitySteps } from '../skills/agility';
 
-/** A module step's replacement: its own run, and its own checks where the module's assume SCORED. */
-export interface Substitute {
-    run(ctx: StepContext<any>): Promise<void>;
-    /** Default: none (the module's `pre` is bypassed on this step only). */
-    preconditions?: Check<any>;
-    /** Default: the module step's own postconditions. */
-    postconditions?: Check<any>;
-}
-
-/** An untimed travel leg before a module step, in place of the teleport the step would cast. */
-export type Leg = (ctx: StepContext<any>) => Promise<void>;
+export type { Leg, Substitute };
 
 export interface QuestPlan {
     /** Keyed by segment letter. */
@@ -392,3 +409,198 @@ export function mmPlan(): QuestPlan {
 }
 
 export const PLANS = { tree: tgvPlan, grandtree: gtPlan, mm: mmPlan } as const;
+
+// ------------------------------------------------------------------ the legs between quests (untimed)
+
+/** Agility 25 is The Grand Tree's climb (quest_grandtree.rs2:25, the boosted level). */
+export const AGILITY_TO = 25;
+/** Within this of the course start the agility module's own walk is a no-op (agility.ts GNOME_NEAR). */
+const GNOME_NEAR = 30;
+const GATE_SOUTH_INDEX = ROUTES.spawnToGnome.findIndex(([x, z]) => x === 2461 && z === 3382);
+
+/** The route's waypoint nearest `p` (Chebyshev), where the walk joins it instead of starting at Lumbridge. */
+export function nearestWaypoint(route: ReadonlyArray<readonly [number, number]>, p: { x: number; z: number }): number {
+    let best = 0;
+    for (let i = 1; i < route.length; i++) if (chebyshev({ x: route[i]![0], z: route[i]![1] }, p) < chebyshev({ x: route[best]![0], z: route[best]![1] }, p)) best = i;
+    return best;
+}
+
+const nearGnome = (s: BotWorldState) => pos(s).level === 0 && chebyshev(pos(s), { x: GNOME_START[0], z: GNOME_START[1] }) <= GNOME_NEAR;
+const inGnomeStronghold = (s: BotWorldState) => pos(s).x >= 2380 && pos(s).x <= 2500 && pos(s).z >= 3384 && pos(s).z <= 3520 && pos(s).z < 6400;
+
+/** Onto the Gnome course: the agility route from its nearest waypoint to the gate, through the gate, to the course. */
+async function toGnomeCourse(ctx: StepContext<any>): Promise<void> {
+    const s = st(ctx);
+    if (nearGnome(s)) return;
+    if (pos(s).z >= 6400) throw new Error(`underground at ${JSON.stringify(pos(s))}: climb out first`);
+    if (!inGnomeStronghold(s)) {
+        const route = ROUTES.spawnToGnome.slice(0, GATE_SOUTH_INDEX + 1);
+        for (const [x, z] of route.slice(nearestWaypoint(route, pos(s)))) await go(ctx, { x, z, tol: 3 }, 'the agility route');
+        const g = await passGate(sdkOf(ctx), GNOME_STRONGHOLD_GATE, GNOME_STRONGHOLD_GATE.sides.north);
+        if (!g.ok) throw new Error(`the Gnome Stronghold gate: ${g.reason}`);
+    }
+    await go(ctx, { x: GNOME_START[0], z: GNOME_START[1], tol: 3 }, 'to the Gnome course');
+}
+
+/** From the stronghold (the course) out of its south gate to Elkoy, where Tree Gnome Village starts. */
+async function toElkoy(ctx: StepContext<any>): Promise<void> {
+    if (chebyshev(pos(st(ctx)), ELKOY) <= 2 || inVillage(st(ctx))) return;
+    if (inGnomeStronghold(st(ctx))) {
+        if (gateSide(GNOME_STRONGHOLD_GATE, pos(st(ctx))) !== 'north') await go(ctx, { x: 2461, z: 3388, tol: 2 }, 'to the stronghold gate');
+        const g = await passGate(sdkOf(ctx), GNOME_STRONGHOLD_GATE, GNOME_STRONGHOLD_GATE.sides.south);
+        if (!g.ok) throw new Error(`the Gnome Stronghold gate: ${g.reason}`);
+    }
+    await go(ctx, { ...ELKOY, tol: 1 }, "to Elkoy's maze entrance");
+}
+
+/** From beside the village spirit tree (Tree Gnome Village's exit) to the Grand Tree door. */
+async function toGrandTree(ctx: StepContext<any>): Promise<void> {
+    if (inTree(st(ctx)) || chebyshev(pos(st(ctx)), GT.arrival) <= 10) return;
+    if (chebyshev(pos(st(ctx)), VILLAGE_TREE) <= 20) await tree(ctx, 'stronghold');
+    await go(ctx, { ...GT.arrival, tol: 2 }, 'to the Grand Tree door');
+}
+
+/** From beside Narnode in the roots (The Grand Tree's exit) up into the tree, where Monkey Madness starts. */
+async function outOfRoots(ctx: StepContext<any>): Promise<void> {
+    if (pos(st(ctx)).z < 6400) return;
+    await go(ctx, { x: GT.rootsLadder.x, z: GT.rootsLadder.z - 1, tol: 1 }, 'to the roots ladder');
+    await locOp(ctx, 'roots ladder up', GT.rootsLadder, /^climb-up$/i, s => pos(s).z < 6400, 20);
+}
+
+/** Gnomeball pitch, where Waydar's return flight drops the player (mm_waydar.rs2: 0_37_54_25_10). */
+export const GNOMEBALL_DROP = { x: 2393, z: 3466 } as const;
+
+/** After G: Lumdo back to Crash Island, then Waydar's "I need to return to your kingdom." */
+async function returnToKingdom(ctx: StepContext<any>): Promise<void> {
+    const sdk = sdkOf(ctx);
+    const home = (s: BotWorldState) => chebyshev(pos(s), GNOMEBALL_DROP) <= 6 && pos(s).level === 0;
+    if (home(st(ctx))) return;
+    const crash = { x: 2894, z: 2726, tol: 12 };
+    if (!inArea(sdk, crash)) {
+        const r = await travel(sdk, [{ kind: 'lumdo', to: 'crash_island' }], { bot: ctx.bot });
+        if (!r.ok) throw new Error(`Lumdo back to Crash Island: ${r.reason}`);
+    }
+    await talk(ctx, /^Waydar$/i, [/I need to return to your kingdom/i], home);
+}
+
+// ------------------------------------------------------------------ the CLI
+
+export const PHASES = ['agility', 'tree', 'grandtree', 'mm', 'mm-return'] as const;
+export type Phase = (typeof PHASES)[number];
+
+/** `--phases`: known names, no repeats, in the climb's order. */
+export function parsePhases(list: string): Phase[] {
+    const names = list.split(',').map(x => x.trim()).filter(Boolean);
+    for (const n of names) if (!(PHASES as readonly string[]).includes(n)) throw new Error(`unknown phase "${n}" (phases: ${PHASES.join(', ')})`);
+    if (new Set(names).size !== names.length) throw new Error(`a phase is named twice in "${list}"`);
+    const order = names.map(n => PHASES.indexOf(n as Phase));
+    if (order.some((x, i) => i > 0 && x < order[i - 1]!)) throw new Error(`phases out of order: ${list} (the climb is ${PHASES.join(', ')})`);
+    return names as Phase[];
+}
+
+const legStep = (name: string, run: Leg): Step<any> => ({ name: `leg:${name}`, preconditions: () => true, run, postconditions: () => true, logoutSafe: true });
+
+interface PhaseResult {
+    phase: Phase;
+    ok: boolean;
+    rows: TickRow[];
+    start?: unknown;
+    error?: string;
+}
+
+/** Plain steps (the agility module, the return) on the session, rows into `log`; a failure comes back, not thrown. */
+async function runPlain(session: Session, phase: Phase, list: Step<any>[], log: TickLog): Promise<PhaseResult> {
+    const n0 = log.rows.length;
+    try {
+        await runSteps(session, list, { log, c: {}, shouldStop: () => false, logout: async () => {}, tickMonitor: false });
+        return { phase, ok: true, rows: log.rows.slice(n0) };
+    } catch (e) {
+        return { phase, ok: false, rows: log.rows.slice(n0), error: e instanceof Error ? e.message : String(e) };
+    }
+}
+
+async function runQuest(session: Session, phase: Phase, module: QuestModule, plan: QuestPlan, before: Leg, log: TickLog, until?: string): Promise<PhaseResult> {
+    // The first segment's leg slot: a quest's own legs never sit before its first segment.
+    const first = module.steps({ dialogue: 'fixed' })[0]!.name;
+    const legs = { ...plan.legs, [first]: before };
+    const r = await runDemoQuest(session, { module, opts: {}, substitute: plan.substitute, legs, log, ...(until ? { until } : {}) });
+    return { phase, ok: r.finished && !r.error, rows: r.rows, start: r.start, ...(r.error ? { error: r.error } : {}) };
+}
+
+function snapshot(s: BotWorldState | null): Record<string, unknown> {
+    if (!s) return {};
+    return {
+        at: [s.player?.worldX, s.player?.worldZ, s.player?.level],
+        hp: s.player?.hp,
+        levels: Object.fromEntries(s.skills.filter(k => k.baseLevel > 1).map(k => [k.name, k.baseLevel])),
+        quests: { tree: questStatus(s, 'tree'), grandtree: questStatus(s, 'grandtree'), mm: questStatus(s, 'mm') },
+        inventory: s.inventory.map(i => `${i.name}${i.count > 1 ? ` x${i.count}` : ''}`),
+        worn: s.equipment.map(i => i.name),
+    };
+}
+
+async function main(): Promise<void> {
+    const account = botArg();
+    const phases = parsePhases(arg('phases', PHASES.join(',')));
+    const mmModule = arg('mm-module', '');
+    const mmUntil = arg('mm-until', 'G');
+    if (phases.includes('mm') && !mmModule) throw new Error('--mm-module=<monkey-madness.ts pinned to the commit rs/185 names> is required for the mm phase');
+    checkDemoTarget(loadBotEnv(account), { lab: false, fleetAccount: process.argv.includes('--fleet-account') });
+    const mm = phases.includes('mm') ? ((await import(resolve(mmModule))) as Partial<QuestModule>) : null;
+    if (mm && (typeof mm.steps !== 'function' || typeof mm.stepId !== 'string')) throw new Error(`${mmModule} does not export steps() and stepId`);
+
+    const gateway = await startLoopbackGateway(account, 'quest-helper');
+    const out: Record<string, unknown> = { account, phases, ...(mm ? { mmModule, mmUntil } : {}) };
+    const results: PhaseResult[] = [];
+    let exit = 1;
+    try {
+        const session = await openSession(account, { launch: true, readyTimeoutMs: 180_000 });
+        const allow = refuseChat(session.sdk as unknown as { sendSay(m: string): Promise<unknown> });
+        const log = TickLog.open(`quest-helper-${account}`);
+        try {
+            out.start = snapshot(session.sdk.getState());
+            console.log(`quest-helper: start ${JSON.stringify(out.start)}`);
+            for (const phase of phases) {
+                let r: PhaseResult;
+                if (phase === 'agility') r = await runPlain(session, phase, [legStep('agility', toGnomeCourse), ...agilitySteps({ to: AGILITY_TO })], log);
+                else if (phase === 'tree') {
+                    await crossingSettings(session.sdk, (m, d) => console.log(`quest-helper: ${m} ${JSON.stringify(d ?? {})}`));
+                    r = await runQuest(session, phase, tgv, tgvPlan(), toElkoy, log);
+                } else if (phase === 'grandtree') r = await runQuest(session, phase, grandTree, gtPlan(), toGrandTree, log);
+                else if (phase === 'mm') {
+                    r = await runQuest(session, phase, mm as QuestModule, mmPlan(), outOfRoots, log, mmUntil);
+                    const j = (await journalProbe('mm')(session)) as { lines?: string[] } | null;
+                    out.mmJournal = j?.lines ?? j;
+                } else r = await runPlain(session, phase, [legStep('mm-return', returnToKingdom)], log);
+                results.push(r);
+                console.log(`\n### ${phase}: ${r.ok ? 'ok' : `FAILED: ${r.error}`}\n\n${formatDemoTable(r.rows)}\n`);
+                console.log(`quest-helper: after ${phase} ${JSON.stringify(snapshot(session.sdk.getState()))}`);
+                if (!r.ok) break;
+            }
+            if (results.length === phases.length && results.every(r => r.ok)) exit = 0;
+        } catch (e) {
+            out.error = e instanceof Error ? e.message : String(e);
+        } finally {
+            allow();
+            out.end = snapshot(session.sdk.getState());
+            try {
+                const lo = await confirmedLogout(session);
+                out.logout = { ok: true, confirmedBy: lo.confirmedBy, latencyTicks: lo.latencyTicks };
+            } catch (e) {
+                out.logout = { ok: false, reason: e instanceof Error ? e.message : String(e) };
+                exit = 2;
+            }
+            await closeSession(session);
+        }
+    } finally {
+        gateway.kill('SIGTERM');
+    }
+    out.phaseResults = results.map(r => ({
+        phase: r.phase, ok: r.ok, ...(r.error ? { error: r.error } : {}), start: r.start,
+        ticks: Object.fromEntries(r.rows.filter(x => !x.kind).map(x => [x.step, x.ok ? x.ticks : `fail@${x.ticks}`])),
+    }));
+    result('quest_helper', out);
+    process.exit(exit);
+}
+
+if (import.meta.main) await main();

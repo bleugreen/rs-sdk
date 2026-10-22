@@ -3,7 +3,8 @@ import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { baseState } from '../lib/fake-sdk';
 import * as grandTree from '../quests/grand-tree';
 import * as tgv from '../quests/tree-gnome-village';
-import { gtPlan, kitCheck, mmPlan, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
+import { ROUTES } from '../skills/agility';
+import { gtPlan, kitCheck, mmPlan, nearestWaypoint, parsePhases, PHASES, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
 
 let slot = 0;
 const item = (name: string, count = 1, id = 9000 + slot): InventoryItem => ({ slot: slot++, id, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
@@ -81,5 +82,28 @@ describe('substituted checks replace SCORED-only gates', () => {
         expect(a.preconditions!(state({ quests: q('started') }), {})).toMatch(/Monkey Madness is started/);
         expect(a.preconditions!(state({ quests: q('started'), inventory: [item('Royal seal', 1, ROYAL_SEAL)] }), {})).toBe(true);
         expect(a.preconditions!(state({ quests: { tree: 'complete', grandtree: 'started', mm: 'not_started' } as unknown as BotWorldState['quests'] }), {})).toMatch(/Grand Tree/);
+    });
+});
+
+describe('parsePhases', () => {
+    test('the whole climb by default order, or any in-order subset', () => {
+        expect(parsePhases(PHASES.join(','))).toEqual([...PHASES]);
+        expect(parsePhases('grandtree, mm')).toEqual(['grandtree', 'mm']);
+    });
+    test('refuses unknown, repeated or out-of-order phases', () => {
+        expect(() => parsePhases('agility,plague')).toThrow(/unknown phase "plague"/);
+        expect(() => parsePhases('tree,tree')).toThrow(/named twice/);
+        expect(() => parsePhases('grandtree,tree')).toThrow(/out of order/);
+    });
+});
+
+describe('nearestWaypoint', () => {
+    test('joins the agility route where it passes nearest, not at Lumbridge', () => {
+        const route = ROUTES.spawnToGnome;
+        // The Grand Exchange: the route's Barbarian Village stretch, not its Lumbridge start.
+        const i = nearestWaypoint(route, { x: 3165, z: 3487 });
+        expect(i).toBeGreaterThan(0);
+        expect(route[i]).toEqual([3052, 3278]);
+        expect(nearestWaypoint(route, { x: 3201, z: 3237 })).toBe(0);
     });
 });
