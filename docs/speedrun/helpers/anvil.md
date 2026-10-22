@@ -74,8 +74,9 @@ moment") is answered on the frame that carries it.
 | `trades` | no limit | stop after this many (else the plan's or the cue's `stop`) |
 | `noReplyTicks`, `resendTicks` | 2, 100 | the standing request |
 | `cueDir` | `RC_CUE_DIR`, else `run-machine/rc-cue` | |
+| `scope` | required | `{ step: 'S25a', family: 'anvil' }`: the only cue it reads, stop included (altar-giver.md, "The cue contract") |
 
-Launcher entry: `{ account: ..., role: 'anvil' }`. Its bank must hold the bars (SUPPLIES.md
+Launcher entry: `{ account: ..., role: 'anvil', options: { scope: { step: 'S25a', family: 'anvil' } } }`. Its bank must hold the bars (SUPPLIES.md
 H21a: bronze 15, iron 39, steel 120, mithril 305, adamantite 365, and the hammer); stock moves
 from the smelters go through rs/41.
 

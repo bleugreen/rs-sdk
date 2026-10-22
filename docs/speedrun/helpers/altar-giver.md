@@ -28,6 +28,7 @@ The talisman is the 28th slot, so a giver gives 27 essence. The scored account d
 | `restock` | `{ kind: 'bank' }` | `{ kind, bank?, acceptFrom?, restockAt?, labStock? }` as above |
 | `gapMs` | 0 | wait after a frame arrives before sending (0: send on arrival) |
 | `cueDir` | `RC_CUE_DIR`, else `run-machine/rc-cue` | the cue directory |
+| `scope` | required | `{ step, family: 'altar' }`: the cue this giver serves (`S06` or `S21`; "The cue contract") |
 
 ## The cue contract
 
@@ -35,8 +36,10 @@ One directory (`RC_CUE_DIR`, default `<checkout>/run-machine/rc-cue/`, gitignore
 
 **`cue.json`** (written by the scored side; `CueWriter` in `altar-cue.ts`):
 
-    { v: 1, session, seq, receiver: { sha256 }, beacons: [{ tick, ms }, ...], schedule: 'tuned' | 'robust',
-      open: 5, turns: [{ giver, T, schedule? }, ...], stop?, ms }
+    { v: 1, scope: { step, family }, session, seq, receiver: { sha256 }, beacons: [{ tick, ms }, ...],
+      schedule: 'tuned' | 'robust', open: 5, turns: [{ giver, T, schedule? }, ...], stop?, ms }
+
+- `scope` says whom the cue is for: one run step (`step`, run.ts's id: 'S06', 'S07', 'S18', 'S21', ...) and one helper family (`family`: 'altar', 'bone' for S07's bone givers, 'courier' for S18's, 'anvil', 'cannon'). Every reader role takes the same `scope` option and acts only on a cue that matches it (`cueAddresses` in `altar-cue.ts`), its `stop` included; a cue for another step or family, or one with no scope, is ignored and logged once. So a cue is never a global stop: Runecraft's S06 cue ends with `stop: true`, and the S07 bone givers and the S18 courier reading the same directory don't see it. `CueWriter` takes the scope and refuses a cue without one, and the run writes a fresh cue, with no stop, for each helper step. There is no fallback for a scope-less cue.
 
 - `receiver.sha256` is the sha256 of the scored account's canonical name (lower case, runs of spaces and underscores become `_`). **No file names the scored account.** Givers hash the names of nearby players to find its player index, and check the trade partner the same way. `new CueWriter(dir, receiverName)` does the hashing.
 - `beacons` are the scored client's recent frames: its tick count and the wall-clock time (Date.now() scale) the frame arrived. Send several (up to 8). A single beacon is refused if two of the giver's frames sit within 100 ms of it (a catch-up after an overrun); several resolve it by pattern.
@@ -94,7 +97,7 @@ Every body giver entry has this shape; slots rotate 0, 1, 2 (east, west, south),
 ```json
 { "account": "cairn_t01", "role": "altar-giver", "path": "direct",
   "options": { "altar": "body", "slot": 0, "essence": 27,
-               "restock": { "kind": "bank" } } }
+               "restock": { "kind": "bank" }, "scope": { "step": "S21", "family": "altar" } } }
 ```
 
 No giver is `receiver` or `final`. All helpers log in **on the chosen scored machine before SCORED**, and share its local cue directory. A lower processing bucket on another machine is not a placement plan: the cue is local, not cross-machine. A giver that relogs after SCORED loses tuned ordering and takes robust turns until SCORED next relogs.
