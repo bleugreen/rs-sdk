@@ -29,7 +29,7 @@ describe('letterOf / selectSegments', () => {
 describe('summarize / formatReport', () => {
     const records = [
         { ok: true, rows: [row(BOUNDARY_STEP, 1), row(names[0]!, 30), row(BOUNDARY_STEP, 0), row(names[1]!, 10), row('tickmon', 99, true, 'tickmon')] },
-        { ok: true, rows: [row(BOUNDARY_STEP, 0), row(names[0]!, 34), row(BOUNDARY_STEP, 1), row(names[1]!, 12)] },
+        { ok: true, rows: [row(BOUNDARY_STEP, 0), row(names[0]!, 34), { ...row(names[0]!, 0, true, 'note'), meta: { casts: 27 } }, row(BOUNDARY_STEP, 1), row(names[1]!, 12)] },
         { ok: false, error: 'step "S15:B-daero" run failed: boom', rows: [row(BOUNDARY_STEP, 0), row(names[0]!, 32), row(names[1]!, 5, false)] },
     ];
 
@@ -51,6 +51,9 @@ describe('summarize / formatReport', () => {
         expect(md).toContain('| **Total** |  | 41, 47, - | 44 | 41 | 47 |  |');
         expect(md).toContain('2/3 runs passed (dialogue fixed');
         expect(md).toContain('- failure 1: step "S15:B-daero" run failed: boom');
+        // A note row is listed by run and never counted into a segment.
+        expect(r.notes).toEqual([{ run: 1, step: names[0]!, meta: { casts: 27 } }]);
+        expect(md).toContain('- run 2 S15:A-narnode: {"casts":27}');
     });
 
     test('the fixed-vs-burst comparison', () => {
@@ -88,6 +91,9 @@ describe('runLabQuest', () => {
             expect(r).toMatchObject({ runs: 2, passes: 2, dialogue: 'burst' });
             expect(r.segments.map(s => s.name)).toEqual(['S99:B-x', 'S99:C-x']);
             await expect(runLabQuest(session, quest, { from: 'A' })).rejects.toThrow(/no fixture for segment A/);
+            // check fails an otherwise passing run.
+            const checked = await runLabQuest(session, { ...quest, check: async () => 'xp short' }, { from: 'B', runs: 1 });
+            expect(checked).toMatchObject({ passes: 0, errors: ['xp short'] });
         } finally {
             clearInterval(timer);
         }

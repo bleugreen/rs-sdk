@@ -68,6 +68,8 @@ export interface LabQuest<O extends QuestOptions = QuestOptions> {
     applyFixture?(session: Session, fixture: QuestFixture): Promise<void>;
     /** Quest-specific setup after the fixture. */
     prepare?(session: Session, fixture: QuestFixture): Promise<void>;
+    /** After a run whose segments all passed: a quest-specific outcome check (a reward's xp). A string fails the run with it. */
+    check?(session: Session, fixture: QuestFixture, rows: readonly TickRow[]): string | undefined | Promise<string | undefined>;
     /** Where the fixture is set up before the final teleport (default Lumbridge's courtyard: nothing attacks there). */
     staging?: { x: number; z: number };
 }
@@ -154,6 +156,8 @@ export interface LabReport {
     /** Whole run: segments plus boundaries, for the runs that passed. */
     total: SegmentLine;
     errors: string[];
+    /** What the segments recorded about themselves (`note` rows, lib/ticks.ts logNote), by run (0-based). */
+    notes: Array<{ run: number; step: string; meta: unknown }>;
 }
 
 const isStepRow = (r: TickRow) => !r.kind && r.step !== BOUNDARY_STEP;
@@ -185,6 +189,7 @@ export function summarize(title: string, dialogue: DialogueMode, names: readonly
         boundary: { name: '(boundaries)', runs: bRuns, stats: stats(bRuns) },
         total: { name: 'Total', ...(refTotal !== undefined ? { ref: refTotal } : {}), runs: tRuns, stats: stats(tRuns.filter((x): x is number => x !== null)) },
         errors: records.filter(r => r.error).map(r => r.error!),
+        notes: records.flatMap((r, run) => r.rows.filter(x => x.kind === 'note').map(x => ({ run, step: x.step, meta: x.meta }))),
     };
 }
 
@@ -215,6 +220,7 @@ export function formatReport(r: LabReport): string {
         row(r.total, true),
     ];
     if (r.errors.length) out.push('', ...r.errors.map((e, i) => `- failure ${i + 1}: ${e}`));
+    if (r.notes.length) out.push('', 'Notes:', ...r.notes.map(n => `- run ${n.run + 1} ${n.step}: ${JSON.stringify(n.meta)}`));
     return out.join('\n');
 }
 
@@ -263,6 +269,7 @@ export async function runLabQuest<O extends QuestOptions>(session: Session | Run
         } finally {
             untrace();
         }
+        if (!error && quest.check) error = (await quest.check(s, fixture, log.rows)) || undefined;
         records.push({ ok: !error, ...(error ? { error } : {}), rows: log.rows });
         result(`${quest.stepId}_run`, {
             run, dialogue, ok: !error, ...(error ? { error } : {}),
