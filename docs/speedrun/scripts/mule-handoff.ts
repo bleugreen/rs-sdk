@@ -4,9 +4,9 @@
 //     bun docs/speedrun/scripts/mule-handoff.ts <receiver> <mule> <package> <rounds> <fast|stock>
 //
 // The mule runs speedrun/helpers/mule.ts with the same packages and serve:<receiver>
-// (giver 'burst' or 'stock', preRequest on or off). Each round: PM the package name
-// (serveMode 'request'; BENCH_REQUEST_FILE=<mule's requestFile> appends the name there
-// instead; BENCH_PM=0 skips it for serveMode 'order'), wait until the mule
+// (giver 'burst' or 'stock', preRequest on or off). Each round: with BENCH_CUE_DIR=<the mule's
+// cueDir>, ask for the package by a cue scoped to its `scope.step` (serveMode 'request'; without
+// it nothing is asked, for serveMode 'order'), wait until the mule
 // is ready (its pre-request, or READY_WAIT_MS without one), then time the receive on
 // THIS account's clock: from the trade request to the items in the inventory. With
 // BENCH_RETURN=1 the items are traded back to the mule (unmeasured) after each round;
@@ -14,8 +14,6 @@
 //
 // fast  = speedrun/helpers/mule.ts receivePackage (accept the tick the offer is complete)
 // stock = bot.trade(mule, { want })
-import { appendFileSync } from 'node:fs';
-
 import { runScript } from '../../../sdk/runner';
 import type { TradeItemSpec } from '../../../sdk/types';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../../sdk/types';
@@ -39,8 +37,10 @@ await runScript(
             const muleRequests = () =>
                 sdk.getChat({ types: [TRADE_REQUEST_CHAT_TYPE], limit: 100 }).filter(m => canonName(m.sender) === canonName(mule));
             const seen = Math.max(-1, ...muleRequests().map(key));
-            if (process.env.BENCH_REQUEST_FILE) appendFileSync(process.env.BENCH_REQUEST_FILE, `${pkg.name}\n`);
-            else if (process.env.BENCH_PM !== '0') await requestPackage(sdk, mule, pkg.name);
+            if (process.env.BENCH_CUE_DIR) {
+                if (!pkg.scope) throw new Error(`package ${pkg.name} has no scope to ask for it by`);
+                requestPackage(process.env.BENCH_CUE_DIR, receiver, pkg.scope.step, { tick: sdk.getState()!.tick, ms: Date.now() });
+            }
             const waitUntil = Date.now() + (process.env.READY_WAIT_MS ? Number(process.env.READY_WAIT_MS) : 60_000);
             let preRequested = false;
             while (Date.now() < waitUntil) {

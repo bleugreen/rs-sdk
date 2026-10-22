@@ -51,6 +51,10 @@ interface LoadResult {
     load: number;
     /** The giver this load came from. */
     giver?: string;
+    /** The last load's extras received, against what was due. */
+    extras?: string[];
+    /** With a bone list: how many of each the load brought. */
+    bones?: string[];
     ok: boolean;
     clickToBones: number;
     standingAtClick: boolean;
@@ -67,7 +71,9 @@ export const role: Role = {
         const lab = isLocalServer();
         if (!lab) assertDemoStandIn(ctx.account);
         const o = ctx.options;
-        const BONES = exactItem(String(o.item ?? 'Dragon bones'));
+        // item: one bone, or the givers' priority list (bone-giver.ts item), every one of which it takes and buries.
+        const boneNames = (Array.isArray(o.item) ? o.item : [o.item ?? 'Dragon bones']).map(String);
+        const BONES = new RegExp(`^(?:${boneNames.map(n => exactItem(n).source.slice(1, -1)).join('|')})$`, 'i');
         // One giver by name, or a group taking turns (bone-giver.ts group): then each load comes from the group's server (boneServer).
         const givers = Array.isArray(o.givers) ? (o.givers as string[]).map(String) : null;
         if (!!givers === (o.giver !== undefined)) throw new Error('bone-receiver: give exactly one of options.giver and options.givers');
@@ -78,7 +84,12 @@ export const role: Role = {
         const loads = asks ? asks.length : Number(o.loads ?? 8);
         // The giver it stands in for reads only its own step's cue: 'courier' for the asks (S18), else 'bone' (S07).
         const scope = scopeOption(o.scope, [asks ? 'courier' : 'bone']);
-        const sizeOf = (load: number) => (asks ? asks[load]! : Number(o.n ?? 23));
+        // finalExtras [{ item, count }] (and finalN, default n - extras): the last load also brings these, as S07's last load brings T07-08's runes.
+        const finalExtras = ((o.finalExtras ?? []) as { item: string; count: number }[]).map(e => ({ item: exactItem(String(e.item)), name: String(e.item), count: Number(e.count) }));
+        if (asks && finalExtras.length) throw new Error('bone-receiver: finalExtras is for the standing loads (S07)');
+        const finalN = Number(o.finalN ?? Number(o.n ?? 23) - finalExtras.length);
+        const isLast = (load: number) => finalExtras.length > 0 && load === loads - 1;
+        const sizeOf = (load: number) => (asks ? asks[load]! : isLast(load) ? finalN : Number(o.n ?? 23));
         const buryEvery = Number(o.buryEvery ?? 3);
         const site: Tile = (o.site as Tile) ?? S07_SITES[0]!.receiver;
         // A level-up page needs a staff command, so the demo raises none.
@@ -147,8 +158,19 @@ export const role: Role = {
                 const standingAtClick = s().gameMessages.some(m => m.tick >= requestSince && isRequestFrom(giver)(m));
                 const n = sizeOf(load);
                 if (asks) pendingAsk = n;
-                const r = await receiveFrom(sdk, giver, { want: [{ item: BONES, amount: n }], openTimeoutMs: 60_000 });
-                const res: LoadResult = { load, giver, ok: r.ok && count(s(), BONES) >= n, clickToBones: r.ticks, standingAtClick, ...(r.reason ? { reason: r.reason } : {}) };
+                const extras = isLast(load) ? finalExtras : [];
+                const r = await receiveFrom(sdk, giver, { want: [{ item: BONES, amount: n }, ...extras.map(e => ({ item: e.item, amount: e.count }))], openTimeoutMs: 60_000 });
+                const extrasOk = extras.every(e => count(s(), e.item) >= e.count);
+                const res: LoadResult = {
+                    load,
+                    giver,
+                    ok: r.ok && count(s(), BONES) >= n && extrasOk,
+                    clickToBones: r.ticks,
+                    standingAtClick,
+                    ...(extras.length ? { extras: extras.map(e => `${count(s(), e.item)} of ${e.count} ${e.name}`) } : {}),
+                    ...(boneNames.length > 1 ? { bones: boneNames.map(b => `${count(s(), exactItem(b))} ${b}`) } : {}),
+                    ...(r.reason ? { reason: r.reason } : {})
+                };
                 results.push(res);
                 ctx.log('load', { ...res });
                 if (!res.ok) break;
