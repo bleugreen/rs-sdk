@@ -7,7 +7,8 @@ const parse = (...argv: string[]) => parseKnights(parseArgs(argv));
 
 describe('options', () => {
     test('defaults', () => {
-        expect(parse('acc', '--minutes', '30')).toEqual({ account: 'acc', minutes: 30, out: null, withdraw: 1000, food: 20, bankAt: 25_000, keepCoins: 500, foodSource: ['shop', 'stall'] });
+        expect(parse('acc', '--minutes', '30')).toEqual({ account: 'acc', minutes: 30, out: null, withdraw: 1000, food: 20, bankAt: 25_000, keepCoins: 500, foodSource: ['shop'] });
+        expect(parse('acc', '--minutes', '5', '--food-source', 'shop,stall').foodSource).toEqual(['shop', 'stall']);
     });
     test('overrides and validation', () => {
         expect(parse('acc', '--minutes', '5', '--food-source', 'shop', '--food', '10', '--out', 'k.jsonl')).toMatchObject({ foodSource: ['shop'], food: 10, out: 'k.jsonl' });
