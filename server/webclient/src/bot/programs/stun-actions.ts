@@ -8,12 +8,19 @@
 // that opens on T+11 and blocks the attempt, so the window is at most k = 2..7.
 //
 // What an action costs is declared on its template as `delay` (stun-pack.md section 10):
-//   'none'    delay-free: Charge, arrowheads on headless arrows, a page resume.
+//   'none'    delay-free: Charge, arrowheads on headless arrows, a page resume, a drop.
 //   'tick'    p_delay(0): the rest of its tick and the whole next tick are rejected (Bury).
 //             It goes last among the tick's actions, at most one per tick, and the next
-//             label sends none.
+//             tick sends none.
+//   'tick2'   p_delay(1): as 'tick', but the next two ticks send none (Superheat Item,
+//             stun-pack.md sections 15-16). Keep its window inside [2, 5]: from k = 6 its
+//             delay covers T+10 and refuses the knight click that starts the next attempt.
 //   'action'  writes %action_delay (eating): the next attempt slips by the item's delay. It
 //             fires, and counts as costly.
+//
+// `skipClick` on a 'tick' or 'tick2' action: the knight click behind it would only be refused
+// (OpNpcHandler while delayed), so its tick sends no click, and the click's slot carries one more
+// delay-free action before it. Without it the click goes out behind the action as before.
 //
 // The templates are a priority list. Each window tick fills up to `perTick` slots (one packet
 // of the tick's 5 always stays for the knight click), taking each template as often as it
@@ -41,7 +48,7 @@ import type { BotWorldState, InventoryItem } from '../types.js';
 import type { ProgramAction, ProgramContext } from './types.js';
 import { baseLevel, num } from './util.js';
 
-export type StunDelay = 'none' | 'tick' | 'action';
+export type StunDelay = 'none' | 'tick' | 'tick2' | 'action';
 export type StunKind = 'item' | 'itemOnItem' | 'spellOnItem' | 'button' | 'player';
 
 /** A stun action as a caller writes it (a `stunActions` entry). Regular expressions are case-insensitive strings. */
@@ -63,7 +70,11 @@ export interface StunActionSpec {
     component?: number;
     /** The player's name for `player`. */
     player?: string;
-    /** The player op for `player` (default 4, trade). */
+    /**
+     * The player op for `player` (default 4, trade); for `item` without `option`, the OPHELD op
+     * by index (1-5): 5 is the client's implicit Drop, which the published options leave out
+     * when the object declares no op 5 (Client.ts's menu builder adds it; StateCollector does not).
+     */
     op?: number;
     /** Taken from `item` and `on` per fire (default 1; 15 for an arrow action). */
     uses?: number;
@@ -78,14 +89,22 @@ export interface StunActionSpec {
     /** Fires per tick (a 'tick' delay is always 1). */
     max?: number;
     delay?: StunDelay;
+    /** A 'tick' or 'tick2' action's tick sends no knight click; the slot goes to a delay-free action (the header). */
+    skipClick?: boolean;
     /** [from, to]: the offsets this action may fire on, inside the pack's window (a top-up: [2, 4]). */
     window?: [number, number];
 }
+
+/** Every key an action object may carry: any other is refused, so a spec written for a later program faults here instead of running differently. */
+const SPEC_KEYS: ReadonlyArray<keyof StunActionSpec> = ['preset', 'name', 'kind', 'item', 'option', 'on', 'spell', 'component', 'player', 'op', 'uses', 'needs', 'fewer', 'skill', 'from', 'below', 'max', 'delay', 'skipClick', 'window'];
 
 export interface StunTemplate {
     name: string;
     kind: StunKind;
     delay: StunDelay;
+    /** Ticks after its own on which the pack sends nothing: 1 for 'tick', 2 for 'tick2', else 0. */
+    rest: number;
+    skipClick: boolean;
     max: number;
     item?: RegExp;
     option?: RegExp;
@@ -120,7 +139,8 @@ export const STUN_PRESETS: Record<string, StunActionSpec[]> = {
 };
 
 const KINDS: readonly StunKind[] = ['item', 'itemOnItem', 'spellOnItem', 'button', 'player'];
-const DELAYS: readonly StunDelay[] = ['none', 'tick', 'action'];
+const DELAYS: readonly StunDelay[] = ['none', 'tick', 'tick2', 'action'];
+const REST: Record<StunDelay, number> = { none: 0, tick: 1, tick2: 2, action: 0 };
 
 function re(value: unknown, name: string): RegExp | undefined {
     if (value === undefined) return undefined;
@@ -135,15 +155,21 @@ function count(value: unknown, fallback: number, name: string): number {
 }
 
 function parseOne(spec: StunActionSpec, at: string): StunTemplate {
+    const unknown = Object.keys(spec).filter(k => !(SPEC_KEYS as readonly string[]).includes(k));
+    if (unknown.length) throw new Error(`${at} has no key ${unknown.map(k => `'${k}'`).join(', ')} (keys: ${SPEC_KEYS.join(', ')})`);
     const kind = spec.kind;
     if (!kind || !KINDS.includes(kind)) throw new Error(`${at}.kind must be one of ${KINDS.join(', ')}`);
     const delay = spec.delay ?? 'none';
     if (!DELAYS.includes(delay)) throw new Error(`${at}.delay must be one of ${DELAYS.join(', ')}`);
+    if (spec.skipClick !== undefined && typeof spec.skipClick !== 'boolean') throw new Error(`${at}.skipClick must be true or false`);
+    if (spec.skipClick && REST[delay] === 0) throw new Error(`${at}.skipClick needs a 'tick' or 'tick2' delay: only a delay refuses the click behind it`);
     const t: StunTemplate = {
         name: spec.name ?? kind,
         kind,
         delay,
-        max: delay === 'tick' ? 1 : spec.max === undefined ? Infinity : count(spec.max, 1, `${at}.max`),
+        rest: REST[delay],
+        skipClick: spec.skipClick ?? false,
+        max: REST[delay] > 0 ? 1 : spec.max === undefined ? Infinity : count(spec.max, 1, `${at}.max`),
         item: re(spec.item, `${at}.item`),
         option: re(spec.option, `${at}.option`),
         on: re(spec.on, `${at}.on`),
@@ -160,6 +186,7 @@ function parseOne(spec: StunActionSpec, at: string): StunTemplate {
         if (!Array.isArray(w) || w.length !== 2 || !w.every(v => Number.isInteger(v)) || w[0] > w[1]) throw new Error(`${at}.window must be [from, to], stun offsets`);
         t.window = [w[0], w[1]];
     }
+    if (delay === 'tick2' && !(t.window[1] <= 5)) throw new Error(`${at}: a 'tick2' action needs a window ending by +5: from +6 its p_delay(1) covers T+10 and refuses the click that starts the next attempt`);
     if (spec.skill !== undefined && (typeof spec.skill !== 'string' || !spec.skill)) throw new Error(`${at}.skill must be a skill name`);
     if (spec.needs !== undefined) {
         if (!Array.isArray(spec.needs)) throw new Error(`${at}.needs must be a list of { item, count }`);
@@ -173,7 +200,11 @@ function parseOne(spec: StunActionSpec, at: string): StunTemplate {
     }
     switch (kind) {
         case 'item':
-            if (!t.item || !t.option) throw new Error(`${at}: an item action needs item and option`);
+            if (!t.item || (!t.option && spec.op === undefined)) throw new Error(`${at}: an item action needs item and option (or op)`);
+            if (!t.option) {
+                t.op = count(spec.op, 5, `${at}.op`);
+                if (t.op > 5) throw new Error(`${at}.op must be an OPHELD op, 1 to 5`);
+            }
             break;
         case 'itemOnItem':
             if (!t.item || !t.on) throw new Error(`${at}: an itemOnItem action needs item and on`);
@@ -268,7 +299,7 @@ function resolve(t: StunTemplate, s: BotWorldState, ledger: Ledger): Pick | null
         case 'item': {
             const it = ledger.find(t.item!, t.option);
             if (!it) return null;
-            const op = it.optionsWithIndex.find(o => t.option!.test(o.text))!;
+            const op = t.option ? it.optionsWithIndex.find(o => t.option!.test(o.text))! : { opIndex: t.op!, text: `op ${t.op}` };
             pick = { t, action: { type: 'useInventoryItem', slot: it.slot, optionIndex: op.opIndex }, what: `${t.name}: ${op.text} ${it.name}` };
             used = [it];
             break;
@@ -343,7 +374,8 @@ export class StunPack {
     readonly to: number;
     private readonly perTick: number;
     private failTick: number | null = null;
-    private restTick = -1;
+    /** The last tick a delayed action's rest covers. */
+    private restUntil = -1;
     private firedThisStun = 0;
     private stuns = 0;
     private dry = 0;
@@ -390,7 +422,8 @@ export class StunPack {
 
     /**
      * Send this tick's stun actions; call it after any page resume or eat, before the knight
-     * click. True when a `player` action went out and owns the tick: send no click after it.
+     * click. True when the tick takes no click: a `player` action went out and owns the tick, or
+     * a `skipClick` action went out (its delay would refuse the click).
      */
     act(ctx: ProgramContext): boolean {
         if (this.failTick === null) return false;
@@ -400,7 +433,7 @@ export class StunPack {
             this.close();
             return false;
         }
-        if (k < this.from || t === this.restTick) return false;
+        if (k < this.from || t <= this.restUntil) return false;
         const s = ctx.state;
         if (modalOpen(s)) {
             // an open trade closes on any inventory op or button
@@ -412,29 +445,38 @@ export class StunPack {
         if (slots <= 0) return false;
         const ledger = new Ledger(s.inventory);
         const picks: Pick[] = [];
+        const taken = new Map<StunTemplate, number>();
         let owned = false;
-        for (const tpl of this.templates) {
-            if (owned) break;
-            if (k < tpl.window[0] || k > tpl.window[1]) continue;
-            if (tpl.kind === 'player') {
-                // only as the tick's first pick, once per stun
-                if (picks.length || this.playerSentThisStun) continue;
-                const p = resolve(tpl, s, ledger);
-                if (p) {
-                    picks.push(p);
-                    owned = true;
+        // Templates in priority order, each as often as it resolves (up to its max), until `limit` picks.
+        const fill = (limit: number) => {
+            for (const tpl of this.templates) {
+                if (owned) return;
+                if (k < tpl.window[0] || k > tpl.window[1]) continue;
+                if (tpl.kind === 'player') {
+                    // only as the tick's first pick, once per stun
+                    if (picks.length || this.playerSentThisStun) continue;
+                    const p = resolve(tpl, s, ledger);
+                    if (p) {
+                        picks.push(p);
+                        owned = true;
+                    }
+                    continue;
                 }
-                continue;
+                while ((taken.get(tpl) ?? 0) < tpl.max && picks.length < limit) {
+                    if (tpl.rest > 0 && picks.some(p => p.t.rest > 0)) break;
+                    const p = resolve(tpl, s, ledger);
+                    if (!p) break;
+                    picks.push(p);
+                    taken.set(tpl, (taken.get(tpl) ?? 0) + 1);
+                }
             }
-            for (let n = 0; n < tpl.max && picks.length < slots; n++) {
-                if (tpl.delay === 'tick' && picks.some(p => p.t.delay === 'tick')) break;
-                const p = resolve(tpl, s, ledger);
-                if (!p) break;
-                picks.push(p);
-            }
-        }
+        };
+        fill(slots);
+        // the click's slot, when the tick's delayed action takes no click behind it
+        if (!owned && picks.some(p => p.t.skipClick)) fill(Math.min(this.perTick + 1, ctx.budget));
         // A p_delay action rejects whatever follows it in the tick, so it goes last.
-        picks.sort((a, b) => Number(a.t.delay === 'tick') - Number(b.t.delay === 'tick'));
+        picks.sort((a, b) => Number(a.t.rest > 0) - Number(b.t.rest > 0));
+        let skipClick = false;
         for (const p of picks) {
             if (!ctx.send(p.action, p.what)) {
                 this.rejected++;
@@ -446,7 +488,8 @@ export class StunPack {
             this.byAction[p.t.name] = (this.byAction[p.t.name] ?? 0) + 1;
             ctx.count('stunFired');
             ctx.count(`stun:${p.t.name}`);
-            if (p.t.delay === 'tick') this.restTick = t + 1;
+            if (p.t.rest > 0) this.restUntil = t + p.t.rest;
+            if (p.t.skipClick) skipClick = true;
             if (p.t.delay === 'action') {
                 this.costly++;
                 ctx.count('stunCostly');
@@ -458,6 +501,10 @@ export class StunPack {
         }
         if (owned) {
             this.ownedTicks++;
+            return true;
+        }
+        if (skipClick) {
+            ctx.count('stunClickSkips');
             return true;
         }
         return false;
