@@ -65,11 +65,14 @@ describe('outlets', () => {
         // and Irksol buys them back at 300/1000
         expect(shopSellTotal(2025, 300, 5, 5, 1)).toBe(607);
     });
-    test('a standard shop prices at cost at full stock and caps at 6x below it', () => {
-        expect(shopUnitPrice(20, 100, 1000, 1000)).toBe(20);
-        expect(shopUnitPrice(20, 100, 0, 1000)).toBe(120);
-        // a general store buying an item it does not stock: 60/1000 less 1% per held unit
-        expect(shopUnitPrice(300, 60, 0, -1)).toBe(18);
+    test('a standard shop (multiplier 1000) prices at cost at full stock and caps at 6x below it', () => {
+        expect(shopUnitPrice(20, 1000, 1000, 1000)).toBe(20);
+        expect(shopUnitPrice(20, 1000, 0, 1000)).toBe(120);
+        // a general store (buy 400, delta 30) buying an item it does not stock: 40% of cost, less 3% per held unit
+        expect(shopUnitPrice(300, 400, 0, -1, 30)).toBe(120);
+        expect(shopUnitPrice(300, 400, 3, -1, 30)).toBe(93);
+        // and never below 10% of cost
+        expect(shopUnitPrice(300, 400, 100, -1, 30)).toBe(30);
     });
     test('restock per hour is a world clock', () => {
         expect(restockPerHour(500, 400)).toBe(18);
