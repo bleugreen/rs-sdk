@@ -18,6 +18,7 @@
 // The origin comes from speedrun/tools/hiscore-scrape.ts so no host is written here.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 import { BASE_URL } from '../../speedrun/tools/hiscore-scrape.ts';
 
@@ -132,7 +133,7 @@ function verifyRepo(): void {
         ok &&= introduced;
         console.log(`${introduced ? 'ok  ' : 'FAIL'} ${f.commit} ${f.file} ${JSON.stringify(f.needle)} introduced=${introduced} containsFix=${afterFix}`);
     }
-    const fixture: Observed = { hiscoresHtml: require('node:fs').readFileSync(FIXTURE_2026_10_21, 'utf8') };
+    const fixture: Observed = { hiscoresHtml: readFileSync(FIXTURE_2026_10_21, 'utf8') };
     for (const f of FINGERPRINTS.filter(f => f.surface === 'hiscores')) {
         console.log(`fixture ${FIXTURE_2026_10_21}: ${f.commit} marker present=${f.test(fixture)}`);
     }
