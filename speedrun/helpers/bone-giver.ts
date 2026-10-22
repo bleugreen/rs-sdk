@@ -271,31 +271,28 @@ export function partnerIs(s: BotWorldState | null | undefined, receiverHash: str
 
 // ------------------------------------------------------------------ on request (S18)
 
-export const ASK_FILE = 'bones-ask.json';
-
-/** The scored side's size for its next top-up; written just before it clicks trade. */
-export interface BoneAsk {
-    v: 1;
-    seq: number;
-    n: number;
-    ms: number;
+/** What the courier offers for an ask: each asked item it holds, at most the asked count, and what it is short of. */
+export interface AskOffer {
+    specs: GiveSpec[];
+    /** Asked items held short of the count (or not at all), by pattern. */
+    short: Array<{ item: string; asked: number | 'all'; held: number }>;
 }
 
-export function writeBoneAsk(dir: string, n: number, seq: number): BoneAsk {
-    if (!Number.isInteger(n) || n < 1 || n > 28) throw new Error(`a bone ask must be 1-28 (got ${n})`);
-    const ask: BoneAsk = { v: 1, seq, n, ms: Date.now() };
-    writeJsonAtomicSync(join(dir, ASK_FILE), ask);
-    return ask;
+export function askOffer(ask: Pick<TopUpAsk, 'items'>, inventory: readonly { name: string; count: number }[]): AskOffer {
+    const specs: GiveSpec[] = [];
+    const short: AskOffer['short'] = [];
+    for (const a of ask.items) {
+        const re = new RegExp(a.item, 'i');
+        const held = inventory.filter(i => re.test(i.name)).reduce((s, i) => s + i.count, 0);
+        if (held === 0 || (a.count !== 'all' && held < a.count)) short.push({ item: a.item, asked: a.count, held });
+        if (held > 0) specs.push({ item: re, n: a.count === 'all' ? 'all' : Math.min(a.count, held) });
+    }
+    return { specs, short };
 }
 
-export function readBoneAsk(dir: string): BoneAsk | null {
-    const a = readJson<BoneAsk>(join(dir, ASK_FILE));
-    return a && a.v === 1 && Number.isInteger(a.n) && Number.isInteger(a.seq) ? a : null;
-}
-
-/** An ask this request may use: newer than the last one served and written within `maxAgeMs`. */
-export function usableAsk(ask: BoneAsk | null, lastSeq: number, now = Date.now(), maxAgeMs = 60_000): BoneAsk | null {
-    return ask && ask.seq > lastSeq && now - ask.ms <= maxAgeMs ? ask : null;
+/** The carried stacks still to keep: a `once` stack drops out after it is delivered. */
+export function carryDue(carry: readonly Carried[], delivered: ReadonlySet<string>): Carried[] {
+    return carry.filter(c => !(c.once && delivered.has(c.item.toLowerCase())));
 }
 
 // ------------------------------------------------------------------ the side tile (S18)
@@ -344,7 +341,12 @@ export class BoneGiver {
     private trades = 0;
     private bounces = 0;
     private lastRequestTick = -1;
-    private lastAskSeq = 0;
+    /** Date.now() of the last ask served (altar-cue.ts usableAsk). */
+    private lastAskMs = 0;
+    /** Date.now() at the first frame showing the current trade open. */
+    private openSeenMs = 0;
+    /** `once` stacks handed over, by lower-case name. */
+    private readonly delivered = new Set<string>();
 
     constructor(private readonly ctx: RoleContext) {
         this.o = boneGiverOptions(ctx.options);
@@ -392,6 +394,12 @@ export class BoneGiver {
         assertUntracked(this.o.cueDir);
         const watcher = new CueWatcher(this.o.cueDir, cue => (this.cue = cue));
         const heartbeat = setInterval(() => this.publish(), 2000);
+        let wasOpen = false;
+        const unsubOpen = ctx.sdk.onStateUpdate(st => {
+            const open = tradeOf(st).isOpen;
+            if (open && !wasOpen) this.openSeenMs = Date.now();
+            wasOpen = open;
+        });
         try {
             await ensureOutOfTutorial(ctx);
             await ctx.bot.dismissBlockingUI();
@@ -406,6 +414,7 @@ export class BoneGiver {
                 }
             }
         } finally {
+            unsubOpen();
             watcher.close();
             clearInterval(heartbeat);
             this.setPhase('off');
@@ -454,12 +463,13 @@ export class BoneGiver {
         ctx.log('trade', { ok: r.ok, ticks: r.ticks, gave: r.gave.map(i => `${i.name} x${i.count}`), final: extras.length > 0, waited: req.waited, sends: req.sends, bounces: req.bounces, ...(r.reason ? { reason: r.reason } : {}) });
     }
 
-    /** S18: stay near the scored account, answer its request at once, give exactly what it asked for. */
+    /** S18: stay on a side tile of the scored account, answer its request at once, give what its ask names. */
     private async onRequestCycle(): Promise<void> {
         const { ctx, o } = this;
-        if (this.held() < o.refillBelow) {
+        const carry = carryDue(o.carry, this.delivered);
+        if (this.held() < o.refillBelow || carry.some(c => count(this.s, exact(c.item)) < c.count)) {
             this.setPhase('restock');
-            await this.restock(o.hold);
+            await this.restock(o.hold, carry);
         }
         let receiver = this.receiverInSight();
         if (!receiver) {
@@ -495,24 +505,49 @@ export class BoneGiver {
         // Our click on the player who requested us is the acceptance (lib/trade.ts openTrade's rule).
         const name = this.receiverInSight()?.name;
         const opened = !!name && (tradeOf(this.s!).isOpen || (await openTrade(ctx.sdk, name, { maxTicks: 5, goneTicks: 2, timeoutMs: Infinity, noReplyTicks: this.o.noReplyTicks, stopped: () => !!this.cue?.stop || ctx.signal.aborted })).ok);
+        await this.serveAsk(opened, answered);
+    }
+
+    /** The open trade with the scored account: wait for its ask, offer what it names, and decline without one. */
+    private async serveAsk(opened: boolean, answered: number): Promise<void> {
+        const { ctx, o } = this;
         const t = tradeOf(this.s!);
         if (!opened || !t.partner || !partnerIs(this.s, this.cue?.receiver.sha256)) {
             ctx.log('request: no trade with the scored account opened', { opened });
             if (opened) await ctx.sdk.sendDeclineTrade();
             return;
         }
-        const ask = usableAsk(readBoneAsk(o.cueDir), this.lastAskSeq);
-        if (!ask || ask.n > this.held()) {
-            ctx.log('request: no usable ask; declining', { ask: ask ? { seq: ask.seq, n: ask.n } : null, held: this.held() });
+        const openTick = this.s!.tick;
+        const ask = await this.waitForAsk();
+        const offer = ask ? askOffer(ask, this.s!.inventory) : null;
+        if (!ask || !offer!.specs.length) {
+            ctx.log('request: no usable ask; declining', { ask: ask?.items ?? null, waited: this.s!.tick - openTick });
             await ctx.sdk.sendDeclineTrade();
             return;
         }
-        this.lastAskSeq = ask.seq;
-        this.setPhase('trading', `${ask.n}`);
-        const openTick = this.s!.tick;
-        const r = await give(ctx.sdk, t.partner, [{ item: this.re, n: ask.n }], { openTimeoutMs: 5_000 });
-        if (r.ok) this.trades++;
-        ctx.log('trade', { ok: r.ok, ticks: r.ticks, asked: ask.n, gave: r.gave.reduce((a, i) => a + i.count, 0), answerToOpen: openTick - answered, ...(r.reason ? { reason: r.reason } : {}) });
+        this.lastAskMs = ask.ms;
+        if (offer!.short.length) ctx.log('ask: short', { short: offer!.short });
+        this.setPhase('trading', ask.items.map(a => `${a.item} ${a.count}`).join(', '));
+        const askTick = this.s!.tick;
+        const r = await give(ctx.sdk, t.partner, offer!.specs, { openTimeoutMs: 5_000 });
+        if (r.ok) {
+            this.trades++;
+            for (const c of o.carry) if (c.once && r.gave.some(g => exact(c.item).test(g.name))) this.delivered.add(c.item.toLowerCase());
+        }
+        ctx.log('trade', { ok: r.ok, ticks: r.ticks, asked: ask.items, gave: r.gave.map(i => `${i.name} x${i.count}`), answerToOpen: openTick - answered, openToAsk: askTick - openTick, ...(r.reason ? { reason: r.reason } : {}) });
+    }
+
+    /** The ask for the trade open now (altar-cue.ts usableAsk), waiting up to `askWaitTicks` observed ticks; null if none came or the trade closed. */
+    private async waitForAsk(): Promise<TopUpAsk | null> {
+        const { ctx, o } = this;
+        const t0 = this.s!.tick;
+        for (;;) {
+            const ask = usableAsk(readTopUpAsk(o.cueDir), this.openSeenMs, this.lastAskMs);
+            if (ask) return ask;
+            const s = this.s;
+            if (!s || !tradeOf(s).isOpen || s.tick - t0 > o.askWaitTicks || ctx.signal.aborted) return null;
+            await Bun.sleep(15);
+        }
     }
 
     /** Wait for the scored account's request. Resolves with the tick of the frame that carries it (or shows the trade open), or null when it moved off or the cue stopped. */
@@ -556,7 +591,7 @@ export class BoneGiver {
                 await until(ctx, st => st.inventory.length === 0, 10);
             }
             const missing = n - this.held();
-            if (missing > 0) await cheat(ctx, `give dragon_bones ${missing}`);
+            if (missing > 0) await cheat(ctx, `give ${o.obj} ${missing}`);
             for (const e of extraRes) {
                 const short = e.count - count(this.s, e.re);
                 if (short > 0) await cheat(ctx, `give ${e.obj} ${short}`);
