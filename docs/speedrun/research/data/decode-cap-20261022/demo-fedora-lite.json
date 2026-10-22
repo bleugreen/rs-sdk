@@ -1,0 +1,1564 @@
+{
+ "label": "demo-fedora",
+ "machine": "bginf-halo",
+ "platform": "linux/x64",
+ "host": "rs-sdk-demo.fly.dev",
+ "path": "lite client, direct game socket (no gateway relay)",
+ "account": "<redacted>",
+ "startedUtc": "2026-10-22T23:26:41.049Z",
+ "speedrunTickMs": "400",
+ "pageTokenBefore": "mvjz3zys",
+ "packets": {
+  "user": "INV_BUTTOND opcode 253 (USER_EVENT), com 3214 inventory:inv, [inv_buttond,inventory] -> inv_movetoslot",
+  "client": "EVENT_CAMERA_POSITION opcode 193 (CLIENT_EVENT), 4 bytes",
+  "failed": "INV_BUTTOND out of an empty slot: handler returns false, counted as CLIENT_EVENT by the fork"
+ },
+ "tracer": 304,
+ "inventoryAtStart": [
+  304,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "repeats": [
+  {
+   "cls": "user",
+   "n": 5,
+   "drags": 5,
+   "start": 1,
+   "dir": 1,
+   "sendLabel": 25,
+   "sendAfterFrameMs": 0.5,
+   "bytes": 40,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 5,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    354.3,
+    777.9,
+    1150.3
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "user",
+   "n": 5,
+   "drags": 5,
+   "start": 6,
+   "dir": 1,
+   "sendLabel": 31,
+   "sendAfterFrameMs": 0.5,
+   "bytes": 40,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 5,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    462.5,
+    833.4,
+    1201.4
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "user",
+   "n": 5,
+   "drags": 5,
+   "start": 11,
+   "dir": 1,
+   "sendLabel": 37,
+   "sendAfterFrameMs": 0.3,
+   "bytes": 40,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 5,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    435.3,
+    759.7,
+    1232
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "user",
+   "n": 6,
+   "drags": 6,
+   "start": 16,
+   "dir": 1,
+   "sendLabel": 43,
+   "sendAfterFrameMs": 0.3,
+   "bytes": 48,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 6,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 6,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 6,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    377.9,
+    778.4,
+    1187.7,
+    1576.2
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 1,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "user",
+   "n": 6,
+   "drags": 6,
+   "start": 22,
+   "dir": -1,
+   "sendLabel": 50,
+   "sendAfterFrameMs": 0.5,
+   "bytes": 48,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 6,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 6,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 6,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    337.1,
+    721.1,
+    1158.9,
+    1509.6
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 1,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "user",
+   "n": 6,
+   "drags": 6,
+   "start": 16,
+   "dir": 1,
+   "sendLabel": 57,
+   "sendAfterFrameMs": 0.3,
+   "bytes": 48,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 6,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 6,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 6,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    294.1,
+    716.6,
+    1144.5,
+    1438.2
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 1,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "user",
+   "n": 8,
+   "drags": 8,
+   "start": 22,
+   "dir": -1,
+   "sendLabel": 64,
+   "sendAfterFrameMs": 5.9,
+   "bytes": 64,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 8,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 8,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 8,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    451.3,
+    818.4,
+    1168,
+    1591.5
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 3,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "user",
+   "n": 8,
+   "drags": 8,
+   "start": 14,
+   "dir": 1,
+   "sendLabel": 71,
+   "sendAfterFrameMs": 0.2,
+   "bytes": 64,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 0,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 8,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 8,
+     "glued": false
+    },
+    {
+     "rel": 5,
+     "k": 8,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    339.5,
+    645.4,
+    998,
+    1471.6,
+    1908.8
+   ],
+   "summary": {
+    "firstRel": 2,
+    "sameTick": 5,
+    "nextTick": 3,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "user",
+   "n": 8,
+   "drags": 8,
+   "start": 22,
+   "dir": -1,
+   "sendLabel": 79,
+   "sendAfterFrameMs": 0.5,
+   "bytes": 64,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 8,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 8,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 8,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    304.8,
+    723,
+    1141.3,
+    1524
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 3,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 5,
+   "drags": 2,
+   "start": 14,
+   "dir": 1,
+   "sendLabel": 86,
+   "sendAfterFrameMs": 0.6,
+   "bytes": 41,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    419.3,
+    864.4,
+    1122.7
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 5,
+   "drags": 2,
+   "start": 16,
+   "dir": 1,
+   "sendLabel": 92,
+   "sendAfterFrameMs": 0.4,
+   "bytes": 41,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    431.4,
+    779.1,
+    1279.4
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 5,
+   "drags": 2,
+   "start": 18,
+   "dir": 1,
+   "sendLabel": 98,
+   "sendAfterFrameMs": 0.4,
+   "bytes": 41,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    433.3,
+    870.4,
+    1288.9
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 6,
+   "drags": 2,
+   "start": 20,
+   "dir": 1,
+   "sendLabel": 104,
+   "sendAfterFrameMs": 0.5,
+   "bytes": 46,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    400.2,
+    921.3,
+    1336.9
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 6,
+   "drags": 2,
+   "start": 22,
+   "dir": 1,
+   "sendLabel": 110,
+   "sendAfterFrameMs": 0.4,
+   "bytes": 46,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    419.6,
+    793.8,
+    1238.2
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 6,
+   "drags": 2,
+   "start": 24,
+   "dir": 1,
+   "sendLabel": 116,
+   "sendAfterFrameMs": 0.3,
+   "bytes": 46,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    399.2,
+    723.2,
+    1121.3
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 8,
+   "drags": 2,
+   "start": 26,
+   "dir": -1,
+   "sendLabel": 122,
+   "sendAfterFrameMs": 0.5,
+   "bytes": 56,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    424.2,
+    805.3,
+    1229.2
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 8,
+   "drags": 2,
+   "start": 24,
+   "dir": 1,
+   "sendLabel": 128,
+   "sendAfterFrameMs": 0.3,
+   "bytes": 56,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    337,
+    724.6,
+    1105.2
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 8,
+   "drags": 2,
+   "start": 26,
+   "dir": -1,
+   "sendLabel": 134,
+   "sendAfterFrameMs": 0.4,
+   "bytes": 56,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    423.8,
+    831.6,
+    1254.5
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 19,
+   "drags": 2,
+   "start": 24,
+   "dir": 1,
+   "sendLabel": 140,
+   "sendAfterFrameMs": 0.2,
+   "bytes": 111,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    382,
+    881.5,
+    1394.7
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 19,
+   "drags": 2,
+   "start": 26,
+   "dir": -1,
+   "sendLabel": 146,
+   "sendAfterFrameMs": 0.2,
+   "bytes": 111,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    574.4,
+    867.4,
+    1275.1
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 19,
+   "drags": 2,
+   "start": 24,
+   "dir": 1,
+   "sendLabel": 152,
+   "sendAfterFrameMs": 0.4,
+   "bytes": 111,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 0,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    278.8,
+    705.2,
+    1156.6,
+    1494.2
+   ],
+   "summary": {
+    "firstRel": 2,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 20,
+   "drags": 2,
+   "start": 26,
+   "dir": -1,
+   "sendLabel": 159,
+   "sendAfterFrameMs": 0.2,
+   "bytes": 116,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 0,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 1,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 5,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    300.5,
+    938.4,
+    1393.9,
+    1723.9,
+    1879.2
+   ],
+   "summary": {
+    "firstRel": 2,
+    "sameTick": 1,
+    "nextTick": 1,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 20,
+   "drags": 2,
+   "start": 24,
+   "dir": 1,
+   "sendLabel": 167,
+   "sendAfterFrameMs": 0.3,
+   "bytes": 116,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 1,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    536.9,
+    839.5,
+    1256,
+    1608
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 1,
+    "nextTick": 1,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 20,
+   "drags": 2,
+   "start": 26,
+   "dir": -1,
+   "sendLabel": 174,
+   "sendAfterFrameMs": 0.3,
+   "bytes": 116,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 0,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 1,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 5,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    257.8,
+    700.3,
+    1236.5,
+    1586.2,
+    1857.2
+   ],
+   "summary": {
+    "firstRel": 2,
+    "sameTick": 1,
+    "nextTick": 1,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 21,
+   "drags": 2,
+   "start": 24,
+   "dir": 1,
+   "sendLabel": 182,
+   "sendAfterFrameMs": 0.3,
+   "bytes": 121,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 0,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 1,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 5,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    260.4,
+    479.6,
+    757.7,
+    1054.5,
+    1605
+   ],
+   "summary": {
+    "firstRel": 2,
+    "sameTick": 1,
+    "nextTick": 1,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 21,
+   "drags": 2,
+   "start": 26,
+   "dir": -1,
+   "sendLabel": 190,
+   "sendAfterFrameMs": 0.3,
+   "bytes": 121,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 1,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    301.8,
+    814.8,
+    1099.9,
+    1480.5
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 1,
+    "nextTick": 1,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "client",
+   "n": 21,
+   "drags": 2,
+   "start": 24,
+   "dir": 1,
+   "sendLabel": 197,
+   "sendAfterFrameMs": 0.3,
+   "bytes": 121,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 1,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    406.7,
+    911.6,
+    1205.1,
+    1676.3
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 1,
+    "nextTick": 1,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "failed",
+   "n": 5,
+   "drags": 2,
+   "start": 26,
+   "dir": -1,
+   "sendLabel": 204,
+   "sendAfterFrameMs": 0.3,
+   "bytes": 56,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    541,
+    902.8,
+    1084.3
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "failed",
+   "n": 5,
+   "drags": 2,
+   "start": 24,
+   "dir": 1,
+   "sendLabel": 210,
+   "sendAfterFrameMs": 0.4,
+   "bytes": 56,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    530.5,
+    862.2,
+    1233
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "failed",
+   "n": 5,
+   "drags": 2,
+   "start": 26,
+   "dir": -1,
+   "sendLabel": 216,
+   "sendAfterFrameMs": 0.2,
+   "bytes": 56,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    441.2,
+    788.3,
+    1353.9
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "failed",
+   "n": 8,
+   "drags": 2,
+   "start": 24,
+   "dir": 1,
+   "sendLabel": 222,
+   "sendAfterFrameMs": 0.3,
+   "bytes": 80,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    685.4,
+    1000.4,
+    1369.6
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "failed",
+   "n": 8,
+   "drags": 2,
+   "start": 26,
+   "dir": -1,
+   "sendLabel": 228,
+   "sendAfterFrameMs": 0.3,
+   "bytes": 80,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    581.3,
+    852.6,
+    1193.6
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "failed",
+   "n": 8,
+   "drags": 2,
+   "start": 24,
+   "dir": 1,
+   "sendLabel": 234,
+   "sendAfterFrameMs": 0.2,
+   "bytes": 80,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 2,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 2,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    325.4,
+    777.9,
+    1081.3
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 2,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  }
+ ],
+ "preflight": {
+  "cls": "preflight",
+  "n": 1,
+  "drags": 1,
+  "start": 0,
+  "dir": 1,
+  "sendLabel": 19,
+  "sendAfterFrameMs": 0.8,
+  "bytes": 8,
+  "samples": [
+   {
+    "rel": 1,
+    "k": 1,
+    "glued": false
+   },
+   {
+    "rel": 2,
+    "k": 1,
+    "glued": false
+   },
+   {
+    "rel": 3,
+    "k": 1,
+    "glued": false
+   }
+  ],
+  "tickArrivalsMs": [
+   440.3,
+   769.6,
+   1218.8
+  ],
+  "summary": {
+   "firstRel": 1,
+   "sameTick": 1,
+   "nextTick": 0,
+   "later": 0,
+   "missing": 0,
+   "glued": false
+  }
+ },
+ "tickIntervalMs": {
+  "n": 236,
+  "p10": 289,
+  "p50": 400,
+  "p90": 516
+ },
+ "pageTokenAfter": "mvjz3zys",
+ "restartedDuringRun": false,
+ "endedUtc": "2026-10-22T23:28:17.701Z",
+ "table": {
+  "user 5": {
+   "5/0/0": 3
+  },
+  "user 6": {
+   "5/1/0": 3
+  },
+  "user 8": {
+   "5/3/0": 3
+  },
+  "client 5": {
+   "2/0/0": 3
+  },
+  "client 6": {
+   "2/0/0": 3
+  },
+  "client 8": {
+   "2/0/0": 3
+  },
+  "client 19": {
+   "2/0/0": 3
+  },
+  "client 20": {
+   "1/1/0": 3
+  },
+  "client 21": {
+   "1/1/0": 3
+  },
+  "failed 5": {
+   "2/0/0": 3
+  },
+  "failed 8": {
+   "2/0/0": 3
+  }
+ },
+ "logout": {
+  "confirmed": true,
+  "utc": "2026-10-22T23:28:21.927Z"
+ },
+ "bankReturn": {
+  "opened": true,
+  "inventoryEmptyAfter": true,
+  "returned": true
+ }
+}
