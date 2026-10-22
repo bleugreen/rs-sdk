@@ -1,7 +1,10 @@
 # Bone giver (dragon bones beside the scored account)
 
 `speedrun/helpers/bone-giver.ts`, a run-machine role started by the launcher
-(`standalone.ts`, HELPERS.md "Helpers on the run machine"), like the altar givers. It hands
+(`standalone.ts`, HELPERS.md "Helpers on the run machine"), like the altar givers. On run
+day S07's givers carry `stopOn: { step: 'S07', family: 'bone' }`: the role ends on S07's stop
+anyway, and the launcher then logs the account out at once instead of leaving it in the world
+until the launcher's stop (HELPERS.md, "The cue gate"). It hands
 the scored account its dragon bones in two places (SUPPLIES.md, H4.1-H4.16 and H14.1-H14.13):
 
 - **S07, mode `standing` (default).** While the scored account chops with the knife cycle and
