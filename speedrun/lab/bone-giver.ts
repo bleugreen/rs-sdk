@@ -73,7 +73,17 @@ const config = {
         const g = givers.map((account, i) => ({
             account,
             role: 'bone-giver',
-            options: asks.length ? { mode: 'on-request', restock: { kind: 'cheat' }, sites, scope } : { ...stock, sites, scope, ...limit, ...(i === finalAt ? { finalExtras: mix.length ? RUNES.map(({ item, count }) => ({ item, count })) : RUNES } : {}) }
+            options: asks.length
+                ? { mode: 'on-request', restock: { kind: 'cheat' }, sites, scope }
+                : {
+                      ...stock,
+                      // The final giver's bank also gets the runes: with --mix every extra is a real withdrawal too.
+                      ...(mix.length && i === finalAt ? { restock: { ...stock.restock, labSeed: [...(stock.restock as { labSeed: unknown[] }).labSeed, ...RUNES.map(r => ({ obj: r.obj, n: r.count }))] } } : {}),
+                      sites,
+                      scope,
+                      ...limit,
+                      ...(i === finalAt ? { finalExtras: mix.length ? RUNES.map(({ item, count }) => ({ item, count })) : RUNES } : {})
+                  }
         }));
         const who = nGivers > 1 ? { givers } : { giver };
         const extras = finalAt >= 0 ? { finalExtras: RUNES.map(({ item, count }) => ({ item, count })) } : {};
