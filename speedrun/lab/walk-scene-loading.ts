@@ -5,7 +5,12 @@
 // entry walk (skills/runecraft.ts enter: bot.walkTo to the stand tile, tolerance 0) starts on the
 // landing's first published state, before the room's region is built.
 //
-//   NODE_TICKRATE=400 LAB_RUNNERS=0 speedrun/lab/lab.sh <bot> speedrun/lab/walk-scene-loading.ts[:runs]
+//   NODE_TICKRATE=400 LAB_RUNNERS=0 speedrun/lab/lab.sh <bot> speedrun/lab/walk-scene-loading.ts[:runs][:--cpu-throttle=N]
+//
+// A lab host builds the room in about a tick, so the first walk is usually routed anyway. The
+// demo's browser client took seconds (rs/310). --cpu-throttle=N (diagnostic) slows the tab's CPU
+// N-fold from the ruins click until the entry walk ends, which stretches the build to the demo's
+// length and makes the walk sent during it go unrouted.
 //
 // The tab is the lab's /bot page in headless Chrome (lab/browser.ts): `bun run build` in
 // server/webclient first. One `RESULT walk {...}` line per run: sceneReady when the walk starts, the
@@ -22,12 +27,17 @@ import { clearInventory, give, leaveTutorial, mustTele, setStats } from './setup
 
 const botName = process.argv[2];
 if (!botName) throw new Error('usage: walk-scene-loading.ts <bot> [runs]');
-const runs = Number(process.argv[3] ?? 3);
+const runs = Number(process.argv.slice(3).find(a => !a.startsWith('--')) ?? 3);
+const throttleArg = process.argv.find(a => a.startsWith('--cpu-throttle='))?.slice('--cpu-throttle='.length);
+const throttle = throttleArg === undefined ? null : Number(throttleArg);
 const result = (name: string, v: unknown) => console.log(`RESULT ${name} ${JSON.stringify(v)}`);
 
 const chrome = await launchLabBrowser(botName);
 const session = await openSession(botName, { client: 'browser', launch: true, insecureQueryLogin: true });
 const { sdk, bot } = session;
+const page = (await chrome.browser.pages()).find(p => p.url().includes('/bot'));
+if (throttle !== null && !page) throw new Error('--cpu-throttle: no /bot tab to throttle');
+console.log(`walk-scene-loading: ${runs} run(s) on the browser client${throttle === null ? '' : `, tab CPU throttled ${throttle}x from the ruins click to the walk's end`}`);
 
 // Wall ms between consecutive observed ticks.
 let lastTick = -1;
@@ -72,6 +82,10 @@ try {
         await mustTele(sdk, leg.def.start.x, leg.def.start.z);
         await waitUntil(sdk, st => st.sceneReady !== false && st.nearbyLocs.length > 0, { maxTicks: 200 });
 
+        // Throttled for the leg's last hop only (the ruins click) and the walk after it.
+        const hops = leg.def.hops;
+        const before = await runLeg({ ...leg.def, hops: hops.slice(0, -1), dest: { x: 2984, z: 3293, tol: 2 } }, { sdk, bot });
+        if (throttle !== null) await page!.emulateCPUThrottling(throttle);
         const legRun = await runLeg(leg.def, { sdk, bot });
         const s0 = sdk.getState()!;
         sends.length = 0;
@@ -80,12 +94,14 @@ try {
         const unsub = sdk.onStateUpdate(s => { if (builtTick === null && s.sceneReady !== false) builtTick = s.tick; });
         const w = await bot.walkTo(stand.x, stand.z, 0);
         unsub();
+        if (throttle !== null) await page!.emulateCPUThrottling(null);
         const s1 = sdk.getState()!;
         const onStand = s1.player?.worldX === stand.x && s1.player?.worldZ === stand.z;
         if (!w.success || !onStand) exit = 1;
         result('walk', {
             run,
-            legTicks: legRun?.ticks ?? null,
+            cpuThrottle: throttle,
+            legTicks: (before?.ticks ?? 0) + (legRun?.ticks ?? 0),
             from: { x: s0.player?.worldX, z: s0.player?.worldZ },
             to: stand,
             sceneReadyAtStart: s0.sceneReady,
