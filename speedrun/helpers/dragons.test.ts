@@ -252,3 +252,27 @@ describe('scales option', () => {
         expect(spawns.filter(p => footprintDistance(SAFE_TILE, p, 1) <= 10)).toHaveLength(4);
     });
 });
+
+describe('scalesOnly', () => {
+    const so = dragonOptions({ scalesOnly: true, tripCasts: 500, minCasts: 60 });
+    const base: View = { tutorial: false, melee: 20, magic: 99, where: 'surface', freeSlots: 20, carried: { ...EMPTY_KIT }, banked: { ...EMPTY_KIT }, coins: 0, loot: 0 };
+    const step = (v: Partial<View>) => decideStep({ ...base, ...v }, so);
+    test('implies scales; the trip carries no rune kit, only laws and food (cairn_h56, 2026-10-22: no death or chaos runes on sale)', () => {
+        expect(so.scales).toBe(true);
+        expect(so.tripCasts).toBe(0);
+        expect(so.minCasts).toBe(0);
+        const k = tripKit(99, so);
+        expect([k.mind, k.chaos, k.death]).toEqual([0, 0, 0]);
+        expect(k.law).toBe(so.tripLaws);
+    });
+    test('enters with laws, food, staff and key but no runes, and stays in the room with no spell while laws and space last', () => {
+        const kit = { ...EMPTY_KIT, law: 25, food: 4, staff: 1, key: 1 };
+        expect(step({ carried: kit })).toBe('enter');
+        expect(step({ where: 'room', carried: kit })).toBe('farm');
+        expect(step({ where: 'room', carried: { ...kit, law: 0 } })).toBe('leave');
+        expect(step({ where: 'room', carried: kit, freeSlots: 0 })).toBe('leave');
+    });
+    test('without it, no spell in the room still means leave', () => {
+        expect(decideStep({ ...base, where: 'room', carried: { ...EMPTY_KIT, law: 25, staff: 1, key: 1, food: 4 } }, dragonOptions({ scales: true }))).toBe('leave');
+    });
+});

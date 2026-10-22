@@ -125,7 +125,10 @@ Gates that came from demo failures:
 Options (`ROLE_OPTIONS`): `train` (20), `keyMagic` (41), `tripCasts` (500), `tripLaws` (25),
 `tripFood` (4), `minFood` (2), `food` ("Shark"), `minCasts` (60), `buyTrips` (1), `blast`
 (true: wind blast from 41; false keeps to wind bolt), `hides` (false), `scales` (false: true
-also telegrabs the room's blue dragon scale ground spawns, after any bones; see below), `guild`
+also telegrabs the room's blue dragon scale ground spawns, after any bones; see below),
+`scalesOnly` (false: true implies `scales` and zero casts, so the trip carries laws, food,
+staff and key but no combat runes, and stays on the tile telegrabbing until the laws or the
+pack run out; for when death and chaos are out of stock, as on 2026-10-22), `guild`
 (66; 100 is off), `lawMax` (3,500), `prices` (caps: chaos 60, death 90), `shopPrices` (estimates),
 `funders`.
 

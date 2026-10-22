@@ -254,6 +254,12 @@ export interface DragonOptions {
      * weapon poison from kwuarm, antifire from lantadyme). Bones are grabbed first.
      */
     scales: boolean;
+    /**
+     * Scales only: no spells and no rune kit, just laws and food; stand on the safe tile and
+     * telegrab scale spawns (and any drop) until the laws or the pack run out. Implies `scales`.
+     * For when the combat runes are out of stock and the scales are what the trip is for.
+     */
+    scalesOnly: boolean;
     /** Price caps: also the budget estimate per trip. */
     prices: { staff: number; mind: number; chaos: number; death: number; law: number; food: number };
     /** Accounts whose trade requests are accepted as funding. */
@@ -285,7 +291,8 @@ export function grabOrder(name: string): number {
 }
 
 export function dragonOptions(o: Record<string, unknown>): DragonOptions {
-    const num = (k: string, d: number) => (typeof o[k] === 'number' ? (o[k] as number) : d);
+    const scalesOnly = o.scalesOnly === true;
+    const num = (k: string, d: number) => (scalesOnly && (k === 'tripCasts' || k === 'minCasts') ? 0 : typeof o[k] === 'number' ? (o[k] as number) : d);
     const p = (o.prices ?? {}) as Record<string, number>;
     return {
         train: num('train', 20),
@@ -299,7 +306,8 @@ export function dragonOptions(o: Record<string, unknown>): DragonOptions {
         buyTrips: num('buyTrips', 1),
         blast: o.blast !== false,
         hides: o.hides === true,
-        scales: o.scales === true,
+        scales: o.scales === true || scalesOnly,
+        scalesOnly,
         prices: {
             staff: p.staff ?? 3000, mind: p.mind ?? 10, chaos: p.chaos ?? 60, death: p.death ?? 90, law: num('lawMax', p.law ?? 3500), food: p.food ?? 900
         },
@@ -445,7 +453,7 @@ export function decideStep(v: View, o: DragonOptions): Step {
     if (v.where === 'room') {
         const spell = castable(v.magic, v.carried, o.blast);
         const canGrab = !needLaw || v.carried.law >= TELEGRAB.law;
-        if (v.freeSlots === 0 || !spell || !canGrab) return 'leave';
+        if (v.freeSlots === 0 || (!spell && !o.scalesOnly) || !canGrab) return 'leave';
         return 'farm';
     }
     if (v.melee < o.train) return 'train';
@@ -1036,8 +1044,12 @@ class Dragons {
                 return;
             }
         }
-        const spell = castable(this.magic(), this.carried(), this.o.blast);
-        if (!spell) return;
+        const spell = this.o.scalesOnly ? null : castable(this.magic(), this.carried(), this.o.blast);
+        if (!spell) {
+            // Scales only: wait on the tile for the next spawn.
+            if (this.o.scalesOnly) await this.sdk.waitForTicks(1);
+            return;
+        }
         const target = s.nearbyNpcs.filter(n => /^blue dragon$/i.test(n.name) && (n.hp ?? 1) > 0 && !this.badSw.has(`${n.tileX ?? n.x},${n.tileZ ?? n.z}`) && this.reach(n, spell) === 'cast')
             .sort((a, b) => (a.hp ?? 999) - (b.hp ?? 999))[0];
         if (!target) { await this.sdk.waitForTicks(1); return; }
