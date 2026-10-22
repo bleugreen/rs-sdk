@@ -15,7 +15,8 @@
 //   module    speedrun/skills/agility.ts's agility:walk-gnome from the gate's south side
 //   converse  the gate clicked through act.ts actConverse (converse.ts's continue path)
 //   advance   the gate clicked, then lib/dialogue.ts advance() page by page
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import puppeteer from 'puppeteer';
 import type { BotWorldState } from '../../sdk/types';
@@ -48,10 +49,14 @@ const clientUrl = `CLIENT_URL=http://localhost:${webPort}/bot?gateway=${encodeUR
 writeFileSync(envPath, envText.replace(/^CLIENT_URL=.*\n?/m, '').trimEnd() + `\n${clientUrl}\n`, { mode: 0o600 });
 
 const cdpPort = Number(webPort) + 5;
+// A profile and config home of its own: executors that sandbox $HOME refuse Chrome's ~/.config.
+const chromeHome = mkdtempSync(join(tmpdir(), 'gnome-gate-chrome-'));
 const browser = await puppeteer.launch({
     headless,
     defaultViewport: null,
-    args: ['--no-sandbox', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`]
+    userDataDir: join(chromeHome, 'profile'),
+    env: { ...process.env, XDG_CONFIG_HOME: chromeHome, XDG_CACHE_HOME: chromeHome },
+    args: ['--no-sandbox', '--disable-crash-reporter', '--disable-breakpad', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`]
 });
 process.env.SPEEDRUN_CDP_URL = `http://127.0.0.1:${cdpPort}`;
 
