@@ -587,12 +587,14 @@ export async function useOn(sdk: ActSdk, item: ItemPattern, target: UseTarget, d
     let resends = 0;
     let landed = false;
     let sentAt = t0;
+    let cursor = messageCursor(s0);
     let moved = t0;
     let last: Tile = pos(sdk);
     let inv = s0 ? invSignature(s0) : '';
     let anim = s0?.player?.animId ?? -1;
     const resend = (tick: number) => {
         sentAt = tick;
+        cursor = messageCursor(sdk);
         moved = tick;
         resends++;
         void click();
@@ -698,7 +700,7 @@ export const TELEPORT_REFUSED = /mysterious force blocks|can't use this teleport
  */
 export async function castTeleport(sdk: ActSdk, spell: keyof typeof TELEPORTS | number, maxTicks = 25, landed?: Pred): Promise<ActResult & { at: Tile }> {
     const p0 = pos(sdk);
-    const t0 = sdk.getState()?.tick ?? 0;
+    const cursor = messageCursor(sdk);
     const component = typeof spell === 'number' ? spell : TELEPORTS[spell];
     let refusal: string | undefined;
     const r = await act(
