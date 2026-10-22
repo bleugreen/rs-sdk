@@ -1133,7 +1133,8 @@ demo's tick period").
 
 **No second gate mid-run.** SCORED's logged-in ticks keep counting and the recording, the live view
 and the helpers are on the chosen machine, so the run never stops to re-measure or to change
-machine. The held-tick monitor (step 7) is how a path going bad mid-run would be seen. The evidence
+machine. A demo restart mid-run is ridden out in place (step 7, "A demo restart during the run").
+The held-tick monitor (step 7) is how a path going bad mid-run would be seen. The evidence
 so far: the hold of 2026-10-21 was a persistent property of one address over about 5 hours; no path
 has yet been seen going bad mid-run (the host thread, 16:15 PDT).
 
@@ -1471,6 +1472,57 @@ minute (i).
 It is a reading, not a gate: nothing stops on it. A run of minutes with double-digit `late` on
 SCORED means the path went bad mid-run; tell main (and rs/158 for the record). `SPEEDRUN_TICKMON=off`
 in the run's environment turns it off, and `SPEEDRUN_TICKMON_LATE_MS` changes the threshold.
+
+**A demo restart during the run** (RUN-ORDER.md R7, "demo restart mid-run", written by fold-in 25:
+its costs and what is unknown; three restarts came in 32 minutes on 2026-10-22, 19:24-19:56Z).
+Nobody touches the display: the run's own code brings everything back, and the operator watches and
+records. Mechanics read on main are marked r (2ec58839); those not on main are **pending rs/186 and
+rs/41**.
+
+What the operator sees:
+
+- **Every session drops.** In the live view SCORED's client draws `Connection lost` and `Please
+  wait - attempting to reestablish` once 15 s pass without a packet, tries one login of its own,
+  and with the server down falls back to the title screen (r: `lostCon` in Client.ts). The helpers
+  and the fleet drop at the same moment.
+- **The outage from outside:** `/playercount` stops answering for ~30 s, then answers 0; logins are
+  refused with code 8 for ~1.5-2.5 min; the count refills over ~10 min (r:
+  `speedrun/lib/demo-status.ts`, rs/102). The bundle-token command (above) prints a new token.
+- **SCORED's tick stream:** the TICKMON minute of the drop shows fewer ticks and a `gaps` count
+  (the counter went back at the relog); the monitor runs on through the drop (`runResumable`, r).
+
+What the run does:
+
+- **The fleet relogs in rs/41's order, and the helpers return to their tiles.** The tick-exact
+  helpers come back as relaunched lite children (step 4) through the fleet's login limiter, which
+  brings a dropped fleet back gradually and holds every fleet login 60 s after a 7, 8, 13 or 14
+  refusal (`speedrun/helpers/backoff.ts`, r). reconnect.ts gives a login-order gate (`beforeLogin`:
+  tick-exact helpers in first, r), and the helper roles restart from any position (altar-giver.ts,
+  bone-giver.ts, r). The run-night order itself is rs/41's: **pending rs/41**.
+- **SCORED relogs through run.ts's resume** (rs/186). On main the watchdog sees the world gone and
+  calls `reconnectAfterOutage` (`speedrun/lib/reconnect.ts`), which waits while `/playercount`
+  doesn't answer, then tries one login every 10 s, for up to 30 min. `runResumable`
+  (`speedrun/runner/resume.ts`) abandons the step attempt, waits for the session, and walks the
+  manifest again from the game state, since a restart rolls the account back to its last world
+  checkpoint (r). The login codes are as above: 7 retried and not a failure, 8 and 14 reported as
+  such, **pending rs/186** (on main every refusal is retried alike). run.ts itself is **pending
+  rs/186**.
+- **SCORED's relog loads a cold bundle (seconds, from loopback).** A navigated relog reloads the
+  page, and the page server answers the bundle from loopback with `no-store` on every load; the
+  on-demand IndexedDB cache stays warm (above). reconnect.ts's default login navigates; the lab's
+  restart measurement logged back in inside the page instead, 2.0 s after the engine was ready,
+  with no bundle load (speedrun/README.md, "After a server restart"). Which of the two run.ts uses
+  is **pending rs/186**.
+- **The step in progress resumes by its module's rules.** The walk enters the latest step whose
+  `inProgress` holds through its `resume`, or else one whose preconditions hold through `run`
+  (resume.ts, r). A restart inside an S15 no-logout segment loses the segment (RUN-ORDER.md R7).
+
+What the operator does: touch nothing on the display and run no step by hand. Record the drop's UTC
+time, the new bundle token and the tick length (step 5a's command) in the run's record; if the tick
+length changed, tell main. Watch the live view for SCORED back in game and the run log for its
+resume row. Tell main if SCORED isn't back within reconnect's 30 minutes, or if the walk stops for
+the operator (resume.ts then prints each candidate step's reason). The recording and the live view
+run on through it: they grab the display, not the game.
 
 **Before S09: who is on the zoo iron cluster** (main, 21:58 PDT 2026-10-21; rs/259's threshold,
 relayed by rs/158 at 22:37 PDT). S09 mines the six-rock cluster south of the Ardougne zoo (rocks
