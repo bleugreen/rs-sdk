@@ -110,9 +110,9 @@ export function runeArrowsOf(st: FletchStock): number {
     return (st.arrows.rune ?? 0) + st.runeWorn;
 }
 
-/** Rune tips this stock can still turn into arrows: tips, headless arrows and Fletching 75 all needed. */
+/** Rune arrows this stock can still make: rune tips with headless arrows, at Fletching 75. */
 function runeFletchable(st: FletchStock): number {
-    return levelForXp(st.xp) >= RUNE.level || st.xp >= 0 ? Math.min(st.tips.rune ?? 0, st.headless) : 0;
+    return levelForXp(st.xp) >= RUNE.level ? Math.min(st.tips.rune ?? 0, st.headless) : 0;
 }
 
 // ------------------------------------------------------------------ the plan
@@ -288,7 +288,7 @@ export function finished(s: BotWorldState, opts: FletchingOptions = {}): boolean
     const keep = opts.keepRune ?? RUNE_KEEP;
     if (keep <= 0 || (opts.tiers && !opts.tiers.includes('rune'))) return true;
     const st = stockOf(s);
-    return runeArrowsOf(st) >= keep || (fletchingLevel(s) < RUNE.level ? true : runeFletchable(st) === 0);
+    return runeArrowsOf(st) >= keep || runeFletchable(st) === 0;
 }
 
 export function preconditions(s: BotWorldState, opts: FletchingOptions = {}): true | string {
@@ -361,7 +361,6 @@ export function fletchingStep(opts: FletchingOptions = {}): Step<any> {
         const s = ctx.sdk.getState();
         if (s && planFletch(stockOf(s), opts).runs.length) throw new Error(`fletching: still work left after ${MAX_RUNS} program runs`);
     };
-    const to = opts.toLevel ?? 99;
     return {
         name: STEP_NAME,
         preconditions: s => preconditions(s, opts),
@@ -370,7 +369,7 @@ export function fletchingStep(opts: FletchingOptions = {}): Step<any> {
         postconditions: s => postconditions(s, opts),
         logoutSafe: true,
         done: (o: Observed) => finished(o.state, opts),
-        inProgress: (o: Observed) => !!o.state.player && !finished(o.state, opts) && fletchingXp(o.state) > 0 && fletchingXp(o.state) < xpForLevel(to) + 1e12
+        inProgress: (o: Observed) => !!o.state.player && !finished(o.state, opts) && fletchingXp(o.state) > 0
     };
 }
 
