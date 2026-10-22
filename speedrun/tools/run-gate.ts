@@ -324,6 +324,9 @@ export const relabel = (text: string, name: string | null, label: string) => rel
 /** What a gate account is called in everything run-gate prints or writes. */
 export const gateLabel = (m: Machine | null) => (m ? `GATE-${m}` : 'GATE');
 
+/** Both machines' gate accounts relabelled at once: what the Mac runs over every line, its log and choice.json. */
+export const gateScrub = (accounts: Partial<Record<Machine, string | undefined>>) => (s: string) => relabelAll(s, MACHINES.map(m => [accounts[m], gateLabel(m)] as const));
+
 export function gateRow(m: string, g: MachineGate | null): string {
     if (!g) return `${m.padEnd(5)} not gated`;
     const minute = g.startedUtc.slice(11, 16);
@@ -1190,7 +1193,7 @@ async function mac(argv: readonly string[]): Promise<number> {
         if (ms.length === 2 && accounts.run === accounts.twin) throw new Stop('each machine gates on its own account: one account is in the world only once (RUN-HOST.md step 0)');
         const prefer = parsePrefer(f.get('prefer'));
         // Each machine relabels its own account; this catches either name in anything that comes back.
-        const scrub = (s: string) => relabelAll(s, MACHINES.map(m => [accounts[m], gateLabel(m)] as const));
+        const scrub = gateScrub(accounts);
         const extra = ['minutes', 'rehearse'].flatMap(k => (f.get(k) ? [`--${k}=${f.get(k)}`] : []));
         say(`[run-gate] preference: ${prefer} (${f.get('prefer') ? '--prefer' : 'the default'}; both pass: ${prefer}, unless the tiebreak moves it)`);
         if (ms.length < 2) say(`[run-gate] WARNING: gating ${ms.join('')} only; a run-day choice gates both machines in the same minute (tenet 17)`);
