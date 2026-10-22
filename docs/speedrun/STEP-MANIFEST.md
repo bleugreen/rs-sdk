@@ -667,12 +667,13 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   +310, inferred). Per segment (rs/201, means): H jail1 172, I garkor 60, J cellar 318 (one chain 392: a
   summoned guard's knockout, ~+110 a recurrence), K dungeon1 434, L amulet 97, M jail2 385, N 117, O
   388, P 454; the dungeon has run 0 deaths in 9 passes at the kit floor under Protect from Melee. **R5's
-  bad case beyond the expected is the demon's piece + ~250** (a pin's ~375 less its 125 in the expected),
-  read as ~+300 and ~+550 with the demon's piece pending from rs/185; the death after a rope pin
+  bad case beyond the expected is ~+370** (rs/185, 23:20 PDT): the demon's 120 (the quest document's,
+  until rs/201's 300 ms demon chains replace it) plus ~250 for a pin (a pin's ~375 less its 125 in the
+  expected); the death after a rope pin
   (~340) is retired (rs/185, 23:15 PDT; P from a pinned start passed 2 of 2, 441 and 460), unless main
   overrules (RUN-ORDER.md R5). **The rope-pin rule:** wait 50 ticks, then a Varrock teleport (3 of 3 in
   4 ticks; waiting freed 1 of 3 and a relog 0 of 3, logout being refused in combat; m, rs/201: 9 pins
-  in 55 climbs); H12 carries one Varrock teleport's runes for it.
+  in 55 climbs); H12 carries a spare Varrock teleport for it (SUPPLIES.md H12).
   The quest document's own split: travel 2,277, dialogue 826 fixed / 463 burst, interactions 250, fight
   267, waits 336 (mixed measured, read and inferred; `quests/monkey_madness.md`, "Tick total").
 - **Primitives:** `lib/dialogue.ts` `continueBurst` with known page counts, guarded choices (rs/94
