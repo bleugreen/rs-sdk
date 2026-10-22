@@ -44,7 +44,8 @@ const STARTS: Record<Letter, { stage: number; at: [number, number, number]; item
     L: { stage: 110, at: [2482, 3463, 1], items: [BOOK, SCROLL, 'grandtree_journal', 'grandtree_order', 'grandtree_gloughskey', 'grandtree_invasionplans'] },
     M: { stage: 120, at: [2464, 3497, 0], items: [BOOK, SCROLL, 'grandtree_journal', 'grandtree_order', 'grandtree_gloughskey', 'grandtree_twigt', 'grandtree_twigu', 'grandtree_twigz', 'grandtree_twigo'] },
     N1: { stage: 130, at: [2487, 3465, 2], items: [BOOK, SCROLL, 'grandtree_journal', 'grandtree_order', 'grandtree_gloughskey'] },
-    N2: { stage: 130, at: [2487, 3465, 2], items: [BOOK, SCROLL, 'grandtree_journal', 'grandtree_order', 'grandtree_gloughskey'] },
+    // Underground where the fight is: a drop mid-fight relogs SCORED here, and N2's re-entry walks back to the pillars.
+    N2: { stage: 130, at: [2491, 9864, 0], items: [BOOK, SCROLL, 'grandtree_journal', 'grandtree_order', 'grandtree_gloughskey'] },
     O: { stage: 140, at: [2491, 9864, 0], items: [BOOK, SCROLL, 'grandtree_journal', 'grandtree_order', 'grandtree_gloughskey'] },
     P: { stage: 150, at: [2464, 9895, 0], items: [BOOK, SCROLL, 'grandtree_journal', 'grandtree_order', 'grandtree_gloughskey'] },
 };
@@ -67,7 +68,7 @@ function fixture(l: Letter): QuestFixture {
         levels: LEVELS,
         vars: { tutorial: 1000, treequest: 9, elenaquest: 30, grandtree: st.stage },
         // Quest items first: a full inventory drops a give silently.
-        items: { ...counts(st.items), staff_of_fire: 1, amulet_of_magic: 1, ...runes, shark: 2, '4doseantipoison': 1, ...(at(l) <= at('M') ? { '4dose1agility': 1 } : {}) },
+        items: { ...counts(st.items), staff_of_fire: 1, amulet_of_magic: 1, ...runes, shark: 2, '4doseantipoison': 1, ...(at(l) <= at('M') ? { '4dose1agility': 1 } : at(l) <= at('N2') ? { '3dose1agility': 1 } : {}) },
         worn: ['staff_of_fire', 'amulet_of_magic'],
         tile: { x: st.at[0], z: st.at[1], level: st.at[2] },
     };
@@ -86,7 +87,11 @@ export const grandTree: LabQuest<Options> = {
     stepId,
     steps,
     fixtures: LETTERS.map(fixture),
-    options: { demonSpell: arg('spell', 'fire_bolt') as Options['demonSpell'] },
+    options: {
+        demonSpell: arg('spell', 'fire_bolt') as Options['demonSpell'],
+        // One line per conversation: whether the pages followed its shape, and what burst.
+        onTalk: (who, r) => console.log(`TALK ${who}: ${r.ticks} ticks, ${r.pages} pages; shape ${r.shape ? `matches=${r.shape.matches} burst=${r.shape.burst} burstPages=${r.shape.burstPages} stepPages=${r.shape.stepPages} failedBursts=${r.shape.failedBursts} expected="${r.shape.expected}" seen="${r.shape.seen}"${r.shape.stopped ? ` stopped=${r.shape.stopped}` : ''}` : 'none'}`),
+    },
     // The plan's per-segment targets (inferred, rs/202's plan v4); the acceptance figure is the 1,576 total.
     reference: { A: 78, B: 184, C: 141, D: 48, E: 38, F: 22, G: 42, H: 46, I: 150, J: 170, K: 164, L: 41, M: 55, N1: 29, N2: 153, O: 95, P: 104 },
     async prepare(session, f) {
