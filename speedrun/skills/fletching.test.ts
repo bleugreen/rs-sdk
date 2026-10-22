@@ -193,7 +193,7 @@ describe('module', () => {
 
 describe('planFletch: tier order', () => {
     test('best tier the level allows, first: rune over adamant at 75, adamant over mithril at 60, mithril at 74 with rune held', () => {
-        const first = (level: number, stacks: Stack[]) => Object.keys(planFletch(stockOf(world({ level, stacks })), { maxActions: 1, keepRune: 0 }).runs[0]!.byTier);
+        const first = (level: number, stacks: Stack[]) => Object.keys(planFletch(stockOf(world({ level, stacks })), { maxActions: 1, keepRune: 0 }).runs[0]?.byTier ?? {});
         const all: Stack[] = [[HEADLESS_ARROW, 1000], [T.mithril.tips, 150], [T.adamant.tips, 150], [T.rune.tips, 150]];
         expect(first(75, all)).toEqual(['rune']);
         expect(first(74, all)).toEqual(['adamant']);
@@ -219,13 +219,15 @@ describe('planFletch: tier order', () => {
 
 describe('planFletch: the 570 rune keep', () => {
     test('below 75 with headless arrows short: the run to 75 is capped so the rune tips keep theirs', () => {
-        // level 70, 600 adamant and 570 rune tips, 1,000 headless: best-first to 75 would leave too few
-        const st = stockOf(world({ level: 70, stacks: [[HEADLESS_ARROW, 1000], [T.adamant.tips, 600], [T.rune.tips, 570]] }));
+        // level 70: 75 is 2,219.68 base away, 15 adamant actions (225 headless); 820 headless leaves
+        // 25 over the 570 the rune tips need, inside a tick of lag, so the run to 75 is capped
+        const st = stockOf(world({ level: 70, stacks: [[HEADLESS_ARROW, 820], [T.adamant.tips, 600], [T.rune.tips, 570]] }));
         const plan = planFletch(st, { toLevel: 80 });
-        expect(plan.runs.map(r => r.kind)).toEqual(['reserve', 'route']);
-        expect(plan.runs[0]).toMatchObject({ tiers: ['adamant', 'mithril', 'steel', 'iron', 'bronze'], untilLevel: 75, maxActions: Math.floor((1000 - 570) / 15) });
-        expect(plan.runs[0]!.levelTo).toBe(75);
-        expect(plan.runeArrows).toBe(570);
+        expect(plan.runs.map(r => r.kind)).toEqual(['reserve', 'route', 'rune']);
+        expect(plan.runs[0]).toMatchObject({ tiers: ['adamant', 'mithril', 'steel', 'iron', 'bronze'], untilLevel: 75, maxActions: Math.floor((820 - 570) / 15), actions: 15, levelTo: 75 });
+        // 75 to 80 on rune alone leaves rune tips at 80: the rune run makes the rest
+        expect(plan.runs[1]).toMatchObject({ untilLevel: 80, byTier: { rune: plan.runs[1]!.actions } });
+        expect([plan.runeArrows, plan.keeps, plan.level]).toEqual([570, true, 80]);
     });
 
     test('when the lower tiers cannot reach 75 without the rune headless arrows, the plan names the block', () => {
@@ -235,8 +237,9 @@ describe('planFletch: the 570 rune keep', () => {
     });
 
     test('plenty of headless arrows: no reserve run (the margin covers a tick of level lag)', () => {
-        const plan = planFletch(stockOf(world({ level: 70, stacks: [[HEADLESS_ARROW, 1000 + 15 * 40], [T.adamant.tips, 600], [T.rune.tips, 570]] })), { toLevel: 80 });
-        expect(plan.runs.map(r => r.kind)).toEqual(['route']);
+        const plan = planFletch(stockOf(world({ level: 70, stacks: [[HEADLESS_ARROW, 870], [T.adamant.tips, 600], [T.rune.tips, 570]] })), { toLevel: 80 });
+        expect(plan.runs.map(r => r.kind)).toEqual(['route', 'rune']);
+        expect(plan.runs[0]!.byTier).toMatchObject({ adamant: 15 });
         expect(LAG_HEADLESS).toBe(75);
     });
 
@@ -263,11 +266,13 @@ describe('planFletch: free slots', () => {
         expect(full([[HEADLESS_ARROW, 60], [T.bronze.tips, 15]]).slotFault).toBeUndefined();
     });
 
-    test("one slot free carries today's whole route: each tier's tips empty before the next tier's stack opens, or its stack is already held", () => {
+    test("today's route from 1 needs 3 free slots: mithril, adamant and rune arrows each open while the tier below still holds tips", () => {
         const stacks = today();
-        const plan = planFletch(stockOf(world({ level: 1, stacks, others: 28 - stacks.length - 1 })));
-        expect(plan.slotFault).toBeUndefined();
-        expect(planFletch(stockOf(world({ level: 1, stacks, others: 28 - stacks.length }))).slotFault).toMatch(/^no free slot for bronze arrows at Fletching 1/);
+        const fault = (free: number) => planFletch(stockOf(world({ level: 1, stacks, others: 28 - stacks.length - free }))).slotFault ?? 'fits';
+        expect(fault(0)).toMatch(/^no free slot for bronze arrows at Fletching 1/);
+        expect(fault(1)).toMatch(/^no free slot for adamant arrows at Fletching 60/);
+        expect(fault(2)).toMatch(/^no free slot for rune arrows at Fletching 75/);
+        expect(fault(3)).toBe('fits');
     });
 });
 
@@ -293,7 +298,7 @@ describe('preconditions', () => {
     });
 
     test('supplies short of 99, and the rune keep, refuse with how far they reach', () => {
-        expect(preconditions(world({ level: 1, stacks: today({ adamant: 1000 }) }))).toMatch(/^supplies short: \d+ base xp \(they reach Fletching 9\d; \d+ actions: bronze 4, iron 6, steel 9, mithril 99, adamant 67, rune 38\)$/);
+        expect(preconditions(world({ level: 1, stacks: today({ adamant: 1000 }) }))).toBe('supplies short: 10698 base xp (they reach Fletching 94; 223 actions: rune 38, adamant 67, mithril 99, steel 9, iron 6, bronze 4)');
         expect(preconditions(world({ level: 1, stacks: today({ headless: 1500 }) }))).toBe('rune keep: reaching Fletching 75 needs the headless arrows the rune tips need: 1500 headless arrows, 570 kept for rune, take the lower tiers only to Fletching 73');
         expect(preconditions(world({ level: 1, stacks: today({ rune: 300, adamant: 3000 }) }))).toBe('rune keep: the stock ends with 300 rune arrows (pack and quiver), below 570 (rune tips 300, rune arrows 0, headless after the route 1785)');
         expect(preconditions(world({ level: 1, stacks: today({ rune: 300, adamant: 3000 }) }), { keepRune: 300 })).toBe(true);
@@ -361,11 +366,12 @@ describe('the step on the page (item-cycle stack mode)', () => {
         expect(held(state, T.adamant.tips)).toBe(300);
     });
 
-    test('97 with the rune tips late: the route takes rune first to 99, then the rest of the rune', async () => {
+    test('97 with the rune tips late: the route takes rune first to 99, then a rune-only run makes the rest', async () => {
+        // 97 to 99 is 5,171.52 base; the 570 rune tips are 7,125
         const page = new StackPage(world({ level: 97, stacks: [[HEADLESS_ARROW, 1200], [T.adamant.tips, 630], [T.rune.tips, 570]] }));
         const { outcome, state } = await drive(page);
         expect(outcome).toEqual({ ok: true, value: { completed: 1 } });
-        expect(page.starts.map(p => p.maxActions === undefined ? 'route' : 'rune')).toEqual(['route']);
+        expect(page.starts.map(p => [p.untilLevel, p.maxActions, p.recipes.length])).toEqual([[99, undefined, 6], [undefined, 10, 1]]);
         expect(state.skills[0]!.baseLevel).toBe(99);
         expect(held(state, T.rune.arrow)).toBe(570);
     });
@@ -390,34 +396,39 @@ describe('the step on the page (item-cycle stack mode)', () => {
 // ---------------------------------------------------------------- the hard rule
 
 describe('the rune keep is a hard rule', () => {
-    /** Stocks around the reserve's edge: the step either refuses, or ends at 99 with 570 rune arrows and nothing dropped. */
-    const cases: Array<[string, Parameters<typeof world>[0]]> = [
-        ['today from 1', { level: 1 }],
-        ...[3000, 2000, 1700, 1600, 1500].map(h => [`from 1, ${h} headless`, { level: 1, stacks: today({ headless: h }) }] as [string, Parameters<typeof world>[0]]),
-        ...[1700, 1300, 1200, 1100, 1000, 900, 700].map(h => [`from 70, ${h} headless`, { level: 70, stacks: [[HEADLESS_ARROW, h], [T.mithril.tips, 300], [T.adamant.tips, 1500], [T.rune.tips, 570]] }] as [string, Parameters<typeof world>[0]]),
-        ['from 97, rune late', { level: 97, stacks: [[HEADLESS_ARROW, 1500], [T.adamant.tips, 930], [T.rune.tips, 570]] }],
-        ['99, 300 rune tips left', { level: 99, stacks: [[HEADLESS_ARROW, 300], [T.rune.tips, 300], [T.rune.arrow, 270]] }]
+    /**
+     * Stocks around the reserve's edge (headless arrows short of the lower tiers plus the rune tips'
+     * 570), with targets the stock reaches, so the keep alone decides: the step either refuses, or
+     * ends at the target with 570 rune arrows and nothing dropped.
+     */
+    type Case = [name: string, w: Parameters<typeof world>[0], to: number];
+    const cases: Case[] = [
+        ['today from 1', { level: 1 }, 99],
+        ...[1500, 1560, 1600, 1650, 1700, 2000].map(h => [`from 1, ${h} headless, to 80`, { level: 1, stacks: today({ headless: h }) }, 80] as Case),
+        ...[700, 790, 800, 820, 860, 900, 1200].map(h => [`from 70, ${h} headless, to 80`, { level: 70, stacks: [[HEADLESS_ARROW, h], [T.mithril.tips, 300], [T.adamant.tips, 1500], [T.rune.tips, 570]] }, 80] as Case),
+        ['from 97, rune late', { level: 97, stacks: [[HEADLESS_ARROW, 1500], [T.adamant.tips, 930], [T.rune.tips, 570]] }, 99],
+        ['99, 300 rune tips left', { level: 99, stacks: [[HEADLESS_ARROW, 300], [T.rune.tips, 300], [T.rune.arrow, 270]] }, 99]
     ];
 
     for (const lag of [1, 2]) {
-        test(`refuse, or end with Fletching 99 and 570 rune arrows (page lag ${lag})`, async () => {
+        test(`refuse, or end at the target with 570 rune arrows (page lag ${lag})`, async () => {
             const verdicts: string[] = [];
-            for (const [name, o] of cases) {
+            for (const [name, o, to] of cases) {
                 const s = world(o);
-                const pre = preconditions(s);
+                const pre = preconditions(s, { toLevel: to });
                 const page = new StackPage(s, lag);
-                const { outcome, state } = await drive(page);
+                const { outcome, state } = await drive(page, { toLevel: to });
                 if (pre !== true) {
                     expect({ name, ok: outcome.ok, starts: page.starts.length }).toEqual({ name, ok: false, starts: 0 });
                     verdicts.push(`${name}: refused`);
                     continue;
                 }
-                expect({ name, ok: outcome.ok, level: state.skills[0]!.baseLevel, rune: held(state, T.rune.arrow) >= RUNE_KEEP, dropped: page.dropped }).toEqual({ name, ok: true, level: 99, rune: true, dropped: 0 });
+                expect({ name, ok: outcome.ok, level: state.skills[0]!.baseLevel >= to, rune: held(state, T.rune.arrow) >= RUNE_KEEP, dropped: page.dropped }).toEqual({ name, ok: true, level: true, rune: true, dropped: 0 });
                 verdicts.push(`${name}: kept`);
             }
             // both outcomes are exercised: the edge sits inside the grid
             expect(verdicts.some(v => v.endsWith('refused'))).toBe(true);
-            expect(verdicts.filter(v => v.endsWith('kept')).length).toBeGreaterThan(5);
+            expect(verdicts.filter(v => v.endsWith('kept')).length).toBeGreaterThan(8);
         });
     }
 });
