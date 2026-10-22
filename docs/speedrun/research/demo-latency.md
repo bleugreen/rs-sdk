@@ -433,7 +433,7 @@ the lite client's direct game socket (no gateway relay). On the frame of a settl
 a whole burst as one websocket message, so the server reads every packet of it at the same input
 read. Then it reads the inventory frames tick by tick:
 
-- **user N**: N chained INV_BUTTOND drags (opcode 253, USER_EVENT, IfButton-style category in
+- **user N**: N chained INV_BUTTOND drags (opcode 253, USER_EVENT per
   server/engine/src/network/game/client/model/InvButtonD.ts:5) of one tracer item, an item held
   once, slot p to p+1 to p+2 and so on. `[inv_buttond,inventory]` runs inline
   (InvButtonDHandler.ts:49-52, then `inv_movetoslot` in player/scripts/inventory.rs2), so the
@@ -468,6 +468,31 @@ In the lab every burst went out 0.1-0.9 ms after the frame and landed on the nex
 reproduces the fork's rule exactly, which validates the method. **Five user actions per tick, and a
 20-event client budget that failed user actions draw on instead of the user cap.** Charge behaves
 like the drag, so on our engine nothing in its script holds it to one cast per tick.
+
+**On the demo, through the run's own path.** rs/396 re-ran rs/287's Father Aereck driver
+(`speedrun/lab/quests/aereck-burst.ts <acct> --launch --client=browser`) at 20:52:46-20:54:43Z on
+22 October. That was after the 19:34Z engine change, at T = 400, with demo token mvjz3zys. It ran on
+the browser client: headless Chrome on the run host through a loopback gateway.ts and proxy.ts,
+with served bundle client.js md5 9e1fe24a. Dialogue continue is RESUME_PAUSEBUTTON, a USER_EVENT
+(model/ResumePauseButton.ts:5), and the driver sends a burst's k continues in one volley
+(speedrun/lib/dialogue.ts:221). **All 24 bursts landed in their sending tick, 8 of them five-page
+bursts**, and every burst talk took 8.00 ticks, the floor. A deferred fifth page would read 9.00
+(rs/185's analysis, cairn://p/rs/185/1/coordinator/task/burst-cap/artifact). So the demo engine
+decoded five user events in one tick on the browser path. That is the measurement main's pricing
+ruling of 5 rests on.
+
+The browser row is a dialogue burst, not a drag burst. A drag-level browser row would need an
+in-page program that sends N drags on one tick. BotAction has no drag action, and
+`window.rsPrograms` starts only registered programs (server/webclient/src/bot/programs/host.ts
+`controls`), so that needs a webclient change. The in-page runtime also refuses a sixth send in a
+tick on its own (`USER_EVENTS_PER_TICK = 5`, server/webclient/src/bot/programs/runtime.ts), so a
+program can't probe past 5 there anyway.
+
+rs/466's Charge result (5 clicks via the gateway relay, 4 casts in the tick and the 5th 'a few
+ticks later') is not the decode cap. Carry-over would land the fifth on the very next tick, and on
+the lab Charge carries over exactly like the drag. Of rs/83's candidates, (c), a script queue, is
+out on our engine. That leaves (b), the relay delivering the five clicks across a tick boundary,
+or a demo-side change specific to spells.
 
 ## 7. The browser tab's sockets, and the route the run's input must take
 
