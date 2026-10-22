@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseCounts, TASKS, withCounts, type Gatherer } from './questitems';
+import { Gatherer, parseCounts, TASKS, withCounts } from './questitems';
 
 /** makes() for the drop tasks reads only the spare rule. */
 const gatherer = (spare: boolean) => ({ n: (base: number, extra = 1) => (spare ? base + extra : base) }) as unknown as Gatherer;
@@ -31,5 +31,17 @@ describe('questitems counts option', () => {
         expect(() => parseCounts({ 'Snape grass': -1 })).toThrow(/non-negative integer/);
         expect(() => parseCounts({ 'Snape grass': 1.5 })).toThrow(/non-negative integer/);
         expect(() => parseCounts({ 'Snape grass': '100' })).toThrow(/non-negative integer/);
+    });
+
+    test("a running task reads its targets from the loop's current task, counts applied", () => {
+        // The task's own done check must use the counted target, or a bulk run stops at the default.
+        const g = Object.assign(Object.create(Gatherer.prototype) as Gatherer, { spare: true });
+        expect(() => g.target('Snape grass')).toThrow(/no task is running/);
+        g.current = TASKS.snapegrass!;
+        expect(g.target('Snape grass')).toBe(2);
+        g.current = withCounts(TASKS.snapegrass!, parseCounts({ 'Snape grass': 102 }));
+        expect(g.target('Snape grass')).toBe(102);
+        expect(g.wants()).toEqual([{ item: 'Snape grass', count: 102 }]);
+        expect(g.target('Raw bear meat')).toBe(0);
     });
 });
