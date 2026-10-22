@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { findDoorsAlongPath, findLongPath } from '../../sdk/pathfinding';
 import type { ActionResult, BotWorldState } from '../../sdk/types';
 import { createAgility } from '../../server/webclient/src/bot/programs/agility';
 import { baseState, FakeSdk, flush, type SentAction } from '../lib/fake-sdk';
@@ -9,7 +10,7 @@ import type { ProgramStatus } from '../lib/programs';
 import { TickLog } from '../lib/ticks';
 import type { StepContext } from '../runner/step';
 import {
-    AgilityStop, COURSE_GATE, DEFAULT_FOOD, defaultEatBelow, engaged, finalLogout, parseOptions, parseWant, PAUSE_STEP, pausesTaken, planBands, retreat, RIDGE_GATE, routeStart, SAFE_TILE, skill, steps
+    AgilityStop, COURSE_GATE, DEFAULT_FOOD, defaultEatBelow, engaged, finalLogout, parseOptions, parseWant, PAUSE_STEP, pausesTaken, planBands, retreat, RIDGE_GATE, ridgeSide, ROUTES, routeStart, SAFE_TILE, skill, steps
 } from './agility';
 
 function player(o: Partial<NonNullable<BotWorldState['player']>> & { x?: number; z?: number } = {}): BotWorldState['player'] {
@@ -343,6 +344,105 @@ describe('agility Wilderness decisions', () => {
             await step(steps(), 'agility:walk-gnome').run(ctx as never);
             expect(sdk.sent.filter(a => a.method === 'sendInteractLoc')).toEqual([]);
             expect(walks.filter(w => w === '2461,3386')).toHaveLength(2);
+        });
+    });
+
+    describe('walk-wilderness and the ridge gate (rs/494)', () => {
+        /** Tiles whose path, ending there, makes the SDK's walkTo click the ridge gate: the gate's cardinal neighbours. */
+        const besideGate = (x: number, z: number) => Math.abs(x - RIDGE_GATE.x) + Math.abs(z - RIDGE_GATE.z) === 1;
+
+        /** The server: a ridge click from the gate's south side or the corridor crosses (or, `falls` times first, drops into the pit). */
+        function ridgeServer(sdk: FakeSdk, falls = 0) {
+            sdk.onSend = (a, f) => {
+                if (a.method !== 'sendInteractLoc' || a.args[2] !== RIDGE_GATE.id) return;
+                const side = ridgeSide(f.state);
+                if (side !== 'gate' && side !== 'corridor') return;
+                const fall = falls-- > 0;
+                setTimeout(() => f.tick(s => ({
+                    player: { ...s.player!, worldX: fall ? 3001 : 2998, worldZ: fall ? 3923 : 3931 },
+                    ...(fall ? { gameMessages: [{ text: 'You lose your footing and fall into the wolf pit.', tick: s.tick + 1, type: 0 }] as never } : {})
+                })), 0);
+            };
+        }
+        /** bot.walkTo that arrives on its target tile. */
+        function arrivingWalker(sdk: FakeSdk, ctx: StepContext<unknown>) {
+            const walks: Array<[number, number]> = [];
+            (ctx.bot as unknown as { walkTo: (x: number, z: number) => Promise<unknown> }).walkTo = async (x, z) => {
+                walks.push([x, z]);
+                sdk.tick(s => ({ player: { ...s.player!, worldX: x, worldZ: z } }));
+                return { success: true, message: 'Arrived' };
+            };
+            return walks;
+        }
+        const legs = (log: TickLog) => log.rows.find(r => r.step === 'agility:walk-wilderness:legs')!.meta;
+
+        test('ridgeSide: north of the gate is never at the gate; the corridor and the pit are told apart', () => {
+            expect(ridgeSide(world({ x: 2998, z: 3918 }))).toBe('corridor');
+            expect(ridgeSide(world({ x: 2998, z: 3930 }))).toBe('corridor');
+            expect(ridgeSide(world({ x: 3001, z: 3923 }))).toBe('north'); // a fall's landing
+            expect(ridgeSide(world({ x: 3000, z: 3917 }))).toBe('north');
+            expect(ridgeSide(world({ x: RIDGE_GATE.approach[0], z: RIDGE_GATE.approach[1] }))).toBe('gate');
+            expect(ridgeSide(world({ x: RIDGE_GATE.stage[0], z: RIDGE_GATE.stage[1] }))).toBe('gate');
+            expect(ridgeSide(world({ x: 3004, z: 3940 }))).toBe('course');
+            expect(ridgeSide(world({ x: 3006, z: 3911 }))).toBe('away');
+            expect(ridgeSide(world({ x: 3158, z: 3953 }))).toBe('away'); // the keep web's far side
+        });
+
+        test('from the corridor north of the gate (rs/310\'s stop): no walk, the gate clicked from there, in the course', async () => {
+            const sdk = new FakeSdk(world({ x: 2998, z: 3918 }));
+            ridgeServer(sdk);
+            const log = TickLog.memory();
+            const ctx = ctxFor(sdk, log);
+            const walks = arrivingWalker(sdk, ctx);
+            await step(steps(), 'agility:walk-wilderness').run(ctx as never);
+            expect(walks).toEqual([]);
+            expect(sdk.sent.filter(a => a.method === 'sendInteractLoc').map(a => a.args)).toEqual([[RIDGE_GATE.x, RIDGE_GATE.z, RIDGE_GATE.id, 1]]);
+            expect(ridgeSide(sdk.getState())).toBe('course');
+            expect(legs(log)).toMatchObject({ ridgeFrom: 'corridor', ridgeTries: 1 });
+        });
+
+        test('from the keep web: the route ends on the stage, no walk ends beside the gate, one click crosses', async () => {
+            const sdk = new FakeSdk(world({ x: 3158, z: 3953 }));
+            ridgeServer(sdk);
+            const log = TickLog.memory();
+            const ctx = ctxFor(sdk, log);
+            const walks = arrivingWalker(sdk, ctx);
+            await step(steps(), 'agility:walk-wilderness').run(ctx as never);
+            expect(walks).toEqual(ROUTES.keepToRidge.slice(1).map(([x, z]) => [x, z]));
+            expect(walks.at(-1)).toEqual(RIDGE_GATE.stage);
+            expect(walks.some(([x, z]) => besideGate(x, z))).toBe(false);
+            expect(sdk.sent.filter(a => a.method === 'sendInteractLoc')).toHaveLength(1);
+            expect(legs(log)).toMatchObject({ ridgeFrom: 'away', ridgeTries: 1 });
+        });
+
+        test('a fall into the wolf pit walks back to the stage, never to the approach, and clicks again', async () => {
+            const sdk = new FakeSdk(world({ x: RIDGE_GATE.stage[0], z: RIDGE_GATE.stage[1] }));
+            ridgeServer(sdk, 1);
+            const log = TickLog.memory();
+            const ctx = ctxFor(sdk, log);
+            const walks = arrivingWalker(sdk, ctx);
+            const run = step(steps(), 'agility:walk-wilderness').run(ctx as never);
+            // crossRidge waits 3 ticks after a fall before walking back
+            for (let k = 0; k < 20 && sdk.sent.filter(a => a.method === 'sendInteractLoc').length < 2; k++) {
+                await flush();
+                sdk.tick();
+            }
+            await run;
+            expect(walks).toEqual([RIDGE_GATE.stage]);
+            expect(sdk.sent.filter(a => a.method === 'sendInteractLoc')).toHaveLength(2);
+            expect(ridgeSide(sdk.getState())).toBe('course');
+            expect(legs(log)).toMatchObject({ ridgeFrom: 'gate', ridgeTries: 2 });
+        });
+
+        test('the SDK pathfinder sees no door on any walk the module makes to the ridge (and does see one on a walk to the approach)', () => {
+            const route = ROUTES.keepToRidge;
+            const gateOn = (from: readonly [number, number], to: readonly [number, number]) =>
+                findDoorsAlongPath(findLongPath(0, from[0], from[1], to[0], to[1], 500)).some(d => d.x === RIDGE_GATE.x && d.z === RIDGE_GATE.z);
+            for (let i = 0; i + 1 < route.length; i++) expect(gateOn(route[i]!, route[i + 1]!)).toBe(false);
+            // the wolf pit (a fall lands on 3001,3923) and the ridge beside the corridor, back to the stage
+            for (const from of [[3001, 3923], [3003, 3919], [3000, 3918], [3005, 3926], [3010, 3920]] as const) expect(gateOn(from, RIDGE_GATE.stage)).toBe(false);
+            // why the stage: a walk ending on the approach has walkTo's door opener click the ridge itself
+            expect(gateOn(route[route.length - 2]!, RIDGE_GATE.approach)).toBe(true);
         });
     });
 
