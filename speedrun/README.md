@@ -45,6 +45,7 @@ speedrun/
     example-bank.ts  'bank everything at Varrock west', end to end
   skills/         the run's step modules: `skill` and `steps({to, ...})` returning runner Steps
     start.ts      S00, the tutorial skip on a brand-new account's first login
+    agility.ts    Gnome course to 52, the lever to the Wilderness course, 52 -> to, final logout
     fishing.ts    S22 fly fishing under the gated knife loop, and the from-1 net and walk bands
     woodcutting.ts  S07: normal trees, oaks and willows at Taverley under the in-page gate
   quests/         the quest step modules: `quest`, `stepId`, `steps(opts)`, one Step per segment
@@ -899,6 +900,49 @@ tutorial. Precondition: on Tutorial Island. Postcondition: on (3222,3222) with t
 |---|---|
 | S00 step row, first published state to Lumbridge with the kit | **3** (3 of 3): question page +1, choice page +2, landed +3 |
 | Stock `bot.skipTutorial()` (manifest entry 34, `travel-walk-enchant.ts`) | 6 |
+
+## skills/agility.ts
+
+Each module exports `skill` and `steps(opts)`, returning `runner/step.ts` steps
+the scored run chains and `rehearse.ts` runs alone. Steps are level-driven: each
+reads the level and the tile at its precondition and is a no-op once its band is
+passed, so a module runs from any start level. Band steps carry `done`, are
+`logoutSafe`, and have stable names.
+
+**`agility.ts`** (STEP-MANIFEST.md entry 1). Steps `agility:walk-gnome`,
+`agility:gnome` (1 -> min(to, 52)), `agility:walk-wilderness` (the Gnome
+Stronghold gate, the Ardougne lever, the Deserted Keep web with the knife, the
+ridge gate at 52) and `agility:wilderness` (52 -> to). The run's S11a is
+`steps({to: 22})`; S17 arrives inside the Wilderness course, so only the last
+step acts. Options (strings are accepted, as `--skill-opt` passes them):
+
+- `to` (99), `technique` (`auto`/`knife` = the in-page reaction, `plain` for
+  measurement only), `food`, `eatBelow` (default ceil(0.6 x max HP) on the
+  Wilderness course: 6 at 10 HP, 60 at 99);
+- `finish`: `final-logout` (default at `to` 99) waits for the level-up chain,
+  walks to the pipe's start tile (3004,3937) if a fight is on, waits out the
+  16-tick combat window and logs out with `logoutClean`; the postcondition
+  accepts that logged-out end;
+- `pauseFor` (`none` by default, rs/147's ruling), `playerRadius` (15) and the
+  threat parameters, passed to the program (docs/speedrun/tick-programs.md);
+  `maxPauses` (3);
+- `drop`: a pattern of items to drop before the walk to the Gnome course (a
+  fresh account's 18-slot starter kit leaves 10 free; the rehearsal drops the 16
+  that are not food).
+
+What each Wilderness end does: a pause (`pauseFor` fired) logs out at once,
+writes an `agility:pause` row and throws `AgilityStop('paused-for-player')`;
+resume with `--from=agility:wilderness` and the same `--log`, which is where the
+pause count lives. More than `maxPauses` pauses in a band refuses to resume
+(`pause-limit`) until `--skill-opt=pauseLimitAck=true`, after the coordinator
+has answered. A player's hit (`attacked`) never fights back: it eats at the
+line, steps away from the attacker, logs out the first tick the combat window
+allows, and throws `retreat`. A death logs out at the respawn and throws
+`died`. No food at the line logs out and throws `no-food`. Walks eat at the
+same line and open a gate the pathfinder cannot route through. Ledger rows
+(zero ticks): `agility:pause`, `agility:retreat`, `agility:death`,
+`agility:final-logout`, `agility:walk-wilderness:legs`; the program results and
+the level ticks are `rehearse.ts`'s `(program)` and `(reach)` rows.
 
 ## Lab
 
