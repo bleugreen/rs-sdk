@@ -35,8 +35,8 @@
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyNpc, PrayerName } from '../../sdk/types';
 import {
-    assembledCannon, ballsHeld, besideCannon, CANNON_PART_OBJS, CANNONBALL_OBJ, CannonKeeper, cannonCentre, hasCannonSet, MessageCursor, pickUpCannon, placedCannon,
-    setUpCannon, setupTiles,
+    assembledCannon, ballsHeld, besideCannon, CANNON_PART_OBJS, CANNON_PARTS, CANNONBALL, CANNONBALL_OBJ, CannonKeeper, cannonCentre, freeSlots, hasCannonSet, MessageCursor,
+    PICKUP_FREE_SLOTS, pickUpCannon, placedCannon, setUpCannon, setupTiles,
 } from '../lib/cannon';
 import { prayerActive } from '../lib/combat';
 import { classifyPage, clickContinue } from '../lib/dialogue';
@@ -617,6 +617,45 @@ function prayerReason(s: BotWorldState, prayers: PrayerName[]): string | null {
     return low.length ? `Prayer ${lvl} is too low for ${low.join(', ')}` : null;
 }
 
+/** The worn shield's equipment slot (`^wearpos_lhand`, equip.constant), which the magic shortbow also takes (bows.obj `wearpos2=lefthand`). */
+export const LEFT_HAND_SLOT = 5;
+const VIAL = /^vial$/i;
+
+/** Inventory items outside the module's own list: the cannon and its balls, the weapons and arrows, sharks and potions. */
+export function otherItems(s: BotWorldState, scimitar: RegExp = SCIMITAR): string[] {
+    const own = [CANNONBALL, scimitar, BOW, ARROWS, SHARK, VIAL, ...Object.values(POTION)];
+    const part = (name: string) => CANNON_PARTS.some(p => p.toLowerCase() === name.toLowerCase());
+    return s.inventory.filter(i => !part(i.name) && !own.some(re => re.test(i.name))).map(i => i.name);
+}
+
+/**
+ * Free slots the step takes into the pack beyond what it holds. A cannon set held is set up, which
+ * frees the 4 slots its pick-up retakes; a cannon already placed needs PICKUP_FREE_SLOTS for the
+ * pick-up (cannon_setup.rs2). Wielding the two-handed bow puts a worn shield into the pack, less
+ * the slot the held rune arrows free going to the quiver.
+ */
+export function slotNeed(s: BotWorldState, o: { pickUp: boolean; bowAhead: boolean }): { need: number; why: string[] } {
+    const why: string[] = [];
+    let need = 0;
+    if (o.pickUp && !hasCannonSet(s) && placedCannon(s)) {
+        need += PICKUP_FREE_SLOTS;
+        why.push(`${PICKUP_FREE_SLOTS} to pick up the placed cannon`);
+    }
+    const shield = s.equipment.find(i => i.slot === LEFT_HAND_SLOT);
+    if (o.bowAhead && shield && !worn(s, BOW) && invCount(s, ARROWS) === 0) {
+        need += 1;
+        why.push(`1 for the ${shield.name} the magic shortbow takes off`);
+    }
+    return { need, why };
+}
+
+function slotReason(s: BotWorldState, o: { pickUp: boolean; bowAhead: boolean; scimitar?: RegExp }): string | null {
+    const { need, why } = slotNeed(s, o);
+    if (freeSlots(s) >= need) return null;
+    const other = otherItems(s, o.scimitar);
+    return `${other.length} other items (${[...new Set(other)].join(', ')}): need ${need} free slots (${why.join('; ')}), ${freeSlots(s)} free`;
+}
+
 function held(s: BotWorldState, re: RegExp): boolean {
     return invCount(s, re) > 0 || worn(s, re) !== null;
 }
@@ -668,7 +707,7 @@ export function cannonSessionStep(opts: RangedOptions = {}): Step<any> {
             if (!nearSite(s, site)) return `not at the poison spiders (at ${pos(s).x},${pos(s).z}; the leg T13-14 ends at ${site.x},${site.z})`;
             if (baseLevel(s, 'Attack') < 99) return `Attack ${baseLevel(s, 'Attack')}: the cannon's accuracy is the scimitar's at Attack 99`;
             if (!held(s, opts.scimitar ?? SCIMITAR)) return `no ${(opts.scimitar ?? SCIMITAR).source.replace(/[\^$]/g, '')}`;
-            return cannonReason(s, minBalls) ?? prayerReason(s, prayers) ?? true;
+            return cannonReason(s, minBalls) ?? prayerReason(s, prayers) ?? slotReason(s, { pickUp: opts.pickUp?.s14 ?? true, bowAhead: false, scimitar: opts.scimitar }) ?? true;
         },
         run,
         resume: run,
@@ -704,7 +743,8 @@ export function combatFinishStep(opts: RangedOptions = {}): Step<any> {
                 if (arrows(s) < minArrows) return `${arrows(s)} rune arrows, the bow phase needs ${minArrows}`;
                 if (t.bowFrom < 50) return `finish.bowFrom ${t.bowFrom}: the magic shortbow needs Ranged 50`;
             }
-            return cannonReason(s, minBalls) ?? prayerReason(s, [PFM, US, IR]) ?? true;
+            const bowAhead = baseLevel(s, 'Ranged') < t.ranged;
+            return cannonReason(s, minBalls) ?? prayerReason(s, [PFM, US, IR]) ?? slotReason(s, { pickUp: opts.pickUp?.s27 ?? true, bowAhead, scimitar: opts.scimitar }) ?? true;
         },
         run,
         resume: run,
