@@ -334,8 +334,9 @@ describe('runTo: the chained run', () => {
         const t = doorRun(3230, 3260, scan(3230));
         const r = await t.run();
         expect(r.ok).toBe(true);
-        expect(t.sim.clicks.map(c => c.tick)).toEqual([100, 109]);
         expect(t.from).toEqual([{ tick: 108, x: 3216 }]);
+        // No click fell due before the door: the first click's walk was still running.
+        expect(t.sim.clicks.filter(c => c.tick <= 108).map(c => c.x)).toEqual([3220]);
         expect(sends(t.sdk, 'sendInteractLoc')).toEqual([[3230, 3200, 1530, 1]]);
         expect(r.doors).toEqual([expect.objectContaining({ x: 3230, z: 3200, state: 'closed' })]);
         expect(at(t.sdk)).toEqual({ x: 3260, z: 3200 });
@@ -356,7 +357,8 @@ describe('runTo: the chained run', () => {
         const r = await t.run();
         expect(r.ok).toBe(true);
         expect(t.from).toEqual([{ tick: 108, x: 3216 }]);
-        expect(t.sim.clicks.every(c => c.x < 3230)).toBe(true);
+        // The walk clicks before the door opened stop short of it; the next goes out once it is open.
+        expect(t.sim.clicks.filter(c => c.tick <= 109).map(c => c.x)).toEqual([3220]);
         expect(at(t.sdk)).toEqual({ x: 3260, z: 3200 });
     });
 
