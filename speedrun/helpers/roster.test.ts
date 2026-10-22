@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { allocate, batches, essencePerGiver, giverEntries, launchConfig, provisionPlan, roster, type Stockpile } from './roster';
+import { parseLaunchConfig } from './standalone';
 
 describe('roster', () => {
     test('22 primary names in order', () => {
@@ -28,6 +29,19 @@ describe('roster', () => {
 });
 
 describe('launcher entries', () => {
+    test('generated configs preserve the direct roster through the real launcher parser', () => {
+        const accounts = roster(22, ['cairn_t05']).accounts;
+        for (const role of ['idle', 'altar-giver'] as const) {
+            const generated = launchConfig(accounts, { role, gatewayPort: 7796 });
+            const parsed = parseLaunchConfig(JSON.parse(JSON.stringify(generated)));
+            expect(parsed.accounts.map(a => a.account)).toEqual(accounts);
+            expect(parsed.accounts.every(a => a.path === 'direct' && a.role === role && !a.receiver && !a.final)).toBe(true);
+            expect(parsed.accounts.map(a => a.options)).toEqual(giverEntries(accounts, { role }).map(a => a.options));
+            expect(parsed.gatewayPort).toBe(7796);
+            expect(parsed.stopDeadlineMs).toBe(25_000);
+        }
+    });
+
     test('run-day givers: body altar, direct path, slots round-robin', () => {
         const e = giverEntries(roster(4).accounts, { role: 'altar-giver', acceptFrom: '^cairn_h31$' });
         expect(e.map(x => (x.options as { slot: number }).slot)).toEqual([0, 1, 2, 0]);
