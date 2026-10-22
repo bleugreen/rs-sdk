@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CONTENT_SCRIPTS, chooseInv, contentNpcShops, loadContent, parseInvConfigs, parseNpcShops } from './content';
+import { CONTENT_SCRIPTS, chooseInv, contentNpcShops, loadContent, parseInvConfigs, parseNpcShops, parseScriptShops } from './content';
 import { STOPS } from './stops';
 
 describe('content parsing', () => {
@@ -14,12 +14,15 @@ describe('content parsing', () => {
         expect(invs.get('other')).toEqual([]);
     });
 
-    test('shop-owning NPCs', () => {
-        expect(parseNpcShops('[betty]\nname=Betty\nop3=Trade\nparam=owned_shop,magicshop\n[guard]\nname=Guard\n')).toEqual([{ debug: 'betty', name: 'Betty', inv: 'magicshop' }]);
+    test('shop-owning NPCs and their price params', () => {
+        expect(parseNpcShops('[betty]\nname=Betty\nop3=Trade\nparam=owned_shop,magicshop\nparam=shop_sell_multiplier,1000\nparam=shop_buy_multiplier,600\nparam=shop_delta,10\n[guard]\nname=Guard\n')).toEqual([
+            { debug: 'betty', name: 'Betty', inv: 'magicshop', sell: 1000, buy: 600, haggle: 10 }
+        ]);
+        expect(parseScriptShops('if (x) {\n    ~openshop(memberstaffshop, 550, 1000, 20, "Zaff\'s Superior Staffs!");\n}')).toEqual(new Map([['memberstaffshop', { buy: 550, sell: 1000, haggle: 20 }]]));
     });
 
     test('of several inventories, the one whose stock is on the shelf', () => {
-        const content = { stock: (inv: string) => (inv === 'staffshop' ? [{ obj: 'plainstaff', count: 5, rate: 1 }] : [{ obj: 'plainstaff', count: 5, rate: 1 }, { obj: 'battlestaff', count: 5, rate: 1 }]), objName: () => undefined };
+        const content = { shopParams: () => undefined, stock: (inv: string) => (inv === 'staffshop' ? [{ obj: 'plainstaff', count: 5, rate: 1 }] : [{ obj: 'plainstaff', count: 5, rate: 1 }, { obj: 'battlestaff', count: 5, rate: 1 }]), objName: () => undefined };
         expect(chooseInv(['memberstaffshop', 'staffshop'], content, ['plainstaff', 'battlestaff'])).toBe('memberstaffshop');
         expect(chooseInv(['staffshop'], content, [])).toBe('staffshop');
     });
@@ -41,6 +44,14 @@ describe('the stop table against this checkout', () => {
         }
         const zaff = readFileSync(join(CONTENT_SCRIPTS, 'areas', 'area_varrock', 'scripts', 'zaff.rs2'), 'utf8');
         for (const inv of STOPS.zaff.inv) expect(zaff).toContain(`~openshop(${inv},`);
+    });
+
+    test("every stop's haggle is known: the SDK cannot see it (shop_haggle is not transmitted)", () => {
+        for (const s of Object.values(STOPS)) for (const inv of s.inv) expect({ inv, haggle: typeof content.shopParams(inv)?.haggle }).toEqual({ inv, haggle: 'number' });
+        // The general stores and Drogo, whose haggle the lab showed the SDK reporting as 10.
+        expect(content.shopParams('generalshop1')?.haggle).toBe(30);
+        expect(content.shopParams('miningstore')?.haggle).toBe(20);
+        expect(content.shopParams('memberstaffshop')).toEqual({ buy: 550, sell: 1000, haggle: 20 });
     });
 
     test('object names come from obj.pack', () => {

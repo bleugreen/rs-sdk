@@ -283,7 +283,7 @@ export class ShelfReader {
         if (!content) return null;
         const inv = chooseInv(stop.inv, content, items.map(i => content.objName(i.id) ?? null));
         const stock = new Map((content.stock(inv) ?? []).map(s => [s.obj, s.count]));
-        return { inv, objName: id => content.objName(id), stockBase: obj => stock.get(obj) };
+        return { inv, haggle: content.shopParams(inv)?.haggle, objName: id => content.objName(id), stockBase: obj => stock.get(obj) };
     }
 
     /**
