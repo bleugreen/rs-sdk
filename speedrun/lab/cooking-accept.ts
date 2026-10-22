@@ -15,7 +15,8 @@
 //           module cuts 107 in the windows; the rest of the quota is cut standalone after it. plain:
 //           windowWork 'none', then all 160 standalone. Normalised = ticks less the first firing's
 //           Cooking level-ups (one page script a tick), as WW normalises.
-//   run     the run's own start: Cooking 30, Crafting at CRAFTING_HANDOFF_XP, the fleet's 108 gems
+//   run     the run's own start: Cooking 30, Crafting at the hand-off for H21d's staged gems
+//           (craftingHandoffXp; steps() reads the same row by default), the fleet's 108 gems
 //           (2 diamond, 20 ruby, 23 emerald, 63 sapphire: the 108th stays banked), the chisel
 //           banked (S25d stows it) or held. Reports the inventory slots at each point, burst 1's
 //           ticks, the P1 leak.
@@ -44,7 +45,7 @@ import { levelForXp, xpForLevel } from '../lib/xp';
 import { Observation, resolveResume } from '../runner/resume';
 import { runSteps, type RunnerSession } from '../runner/step';
 import { CHISEL, GIVER_TILE, PROBES, STEP_NAME, steps, type CookingOptions } from '../skills/cooking';
-import { CRAFTING_HANDOFF_XP } from '../skills/crafting';
+import { craftingHandoffXp, loadStagedGems } from '../skills/crafting';
 import { boothFor, SCORED_TILE, VARROCK_WEST } from '../skills/herblore';
 import { launchLabBrowser, type LabBrowser } from './browser';
 import { cheat, leaveTutorial, mustTele } from './setup';
@@ -152,7 +153,7 @@ async function stage(o: { cooking: number; crafting: number; gems: Record<string
     await say('~clearinv bank', 1);
     await say(`setstat cooking ${o.cooking}`, 1);
     // ::setstat sets the level's floor xp (there is no exact-xp cheat): the run case starts at
-    // Crafting 96's floor, below CRAFTING_HANDOFF_XP, and reports where the 107 gems leave it
+    // the hand-off level's floor, below the hand-off xp, and reports where the staged gems leave it
     await say(`setstat crafting ${o.crafting}`, 1);
     await mustTele(sdk, SCORED_TILE.x, SCORED_TILE.z);
     await waitUntil(sdk, s => s.nearbyLocs.some(l => l.id === VARROCK_WEST.id && l.x === VARROCK_WEST.x && l.z === VARROCK_WEST.z), { maxTicks: 20 });
@@ -270,7 +271,7 @@ try {
         if (rest > 0) await runItemCycle({ sdk, session, log }, { mode: 'tool', skill: 'crafting', recipes: [DRAGONSTONE], booth: boothFor(state()), maxActions: rest, step: 'S25c lab standalone' });
         result.quota = { inWindows: done ?? 0, standalone: rest };
     } else {
-        await stage({ cooking: 30, crafting: levelForXp(CRAFTING_HANDOFF_XP), gems: RUN_GEMS, chisel: chiselAt });
+        await stage({ cooking: 30, crafting: levelForXp(craftingHandoffXp(loadStagedGems())), gems: RUN_GEMS, chisel: chiselAt });
         cookingStart = 30;
         armed();
         if (which === 'run') {
