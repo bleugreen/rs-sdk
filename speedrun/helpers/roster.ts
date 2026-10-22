@@ -22,6 +22,29 @@ export const ESSENCE_PER_TRIP = 27;
 export const S21_ESSENCE = 5238;
 /** Demo logins from bbs during provisioning: at most this many at once (rs/214, rs/41's fleet headroom). */
 export const PROVISION_BATCH = 5;
+/** T21-22's Lumbridge teleport, handed back after S21's last craft (SUPPLIES.md H17e; runecraft.ts S21_HAND_BACK). */
+export const S21_HAND_BACK = [
+    { item: 'Law rune', n: 1 },
+    { item: 'Air rune', n: 3 },
+    { item: 'Earth rune', n: 1 }
+] as const;
+
+/**
+ * The hand-back giver: the one whose turn follows the last essence turn. The roster serves in
+ * strict rotation (oldest ready first, and a round trip of ~140 ticks is under the 22 x 7 a giver
+ * waits), so delivery k (from 0) is roster slot k mod N. With D deliveries the turn after the last
+ * falls to slot D mod N, which by then has made floor(D / N) essence trades: S21's 194 on 22 givers
+ * give slot 18, cairn_t19, after 8 trades. Staged with exactly those trades' essence and the hand-back
+ * items, its bank runs out of essence after its last trade and its next trip is runes-only
+ * (altar-room.ts bankWithdrawals), arriving in the room about as the last craft lands.
+ */
+export function handBackSlot(total = S21_ESSENCE, givers = BODY_ROSTER_SIZE): { index: number; trades: number; essence: number } {
+    positiveInteger(total, 'total essence');
+    positiveInteger(givers, 'giver count');
+    const deliveries = Math.ceil(total / ESSENCE_PER_TRIP);
+    const trades = Math.floor(deliveries / givers);
+    return { index: deliveries % givers, trades, essence: trades * ESSENCE_PER_TRIP };
+}
 
 const PRIMARY = Array.from({ length: 22 }, (_, i) => `cairn_t${String(i + 1).padStart(2, '0')}`);
 /** Spares, used in this order when a primary name is refused. New names need rs/41's approval. */
@@ -77,11 +100,14 @@ export function giverEntries(accounts: string[], o: EntryOptions): Record<string
     validateAccounts(accounts);
     if (o.role !== 'idle' && o.role !== 'altar-giver') throw new Error('role must be idle or altar-giver');
     if (o.acceptFrom) new RegExp(o.acceptFrom);
+    const handBack = handBackSlot(S21_ESSENCE, accounts.length).index;
     return accounts.map((account, i) => {
         if (o.role === 'idle') return { account, role: 'idle', path: 'direct', options: { heartbeatMinutes: 1 } };
         const restock: Record<string, unknown> = { kind: 'bank' };
         if (o.acceptFrom) restock.acceptFrom = o.acceptFrom;
-        return { account, role: 'altar-giver', path: 'direct', options: { altar: 'body', slot: i % GIVER_SLOTS, essence: ESSENCE_PER_TRIP, restock } };
+        const options: Record<string, unknown> = { altar: 'body', slot: i % GIVER_SLOTS, essence: ESSENCE_PER_TRIP, restock, scope: { step: 'S21', family: 'altar' } };
+        if (i === handBack) options.handBack = S21_HAND_BACK.map(h => ({ ...h }));
+        return { account, role: 'altar-giver', path: 'direct', options };
     });
 }
 
@@ -127,8 +153,18 @@ export interface Transfer {
  * givers themselves, forbidden or not cairn_ helpers are never used.
  */
 export function allocate(stock: Stockpile, item: string, givers: string[], each: number): Transfer[] {
-    validateAccounts(givers);
     positiveInteger(each, 'allocation');
+    return allocateEach(stock, item, givers, () => each);
+}
+
+/** As allocate, with each giver's own count (0: nothing for it). */
+export function allocateEach(stock: Stockpile, item: string, givers: string[], countFor: (giver: string) => number): Transfer[] {
+    validateAccounts(givers);
+    const wants = givers.map(g => {
+        const n = countFor(g);
+        if (!Number.isSafeInteger(n) || n < 0) throw new Error('allocation must be a non-negative safe integer');
+        return n;
+    });
     if (!stock || typeof stock.accounts !== 'object' || stock.accounts === null || Array.isArray(stock.accounts)) throw new Error('stockpile needs accounts');
     for (const a of Object.values(stock.accounts)) {
         if (!a || (a.bank !== undefined && !Array.isArray(a.bank))) throw new Error('invalid stockpile account');
@@ -143,11 +179,12 @@ export function allocate(stock: Stockpile, item: string, givers: string[], each:
         .filter(h => h.left > 0)
         .sort((a, b) => b.left - a.left || a.name.localeCompare(b.name));
     const have = holders.reduce((n, h) => n + h.left, 0);
-    if (have < each * givers.length) throw new Error(`${item}: need ${each * givers.length}, the stockpile holds ${have}`);
+    const total = wants.reduce((a, n) => a + n, 0);
+    if (have < total) throw new Error(`${item}: need ${total}, the stockpile holds ${have}`);
     const out: Transfer[] = [];
     let h = 0;
-    for (const to of givers) {
-        let need = each;
+    for (const [g, to] of givers.entries()) {
+        let need = wants[g]!;
         while (need > 0) {
             const holder = holders[h]!;
             const n = Math.min(need, holder.left);
@@ -165,15 +202,21 @@ export function allocate(stock: Stockpile, item: string, givers: string[], each:
 export interface ProvisionPlan {
     roster: Roster;
     batches: string[][];
+    /** Every giver's essence but the hand-back giver's. */
     essence: { perGiver: number; trips: number };
+    /** The hand-back giver: its essence trades' worth of essence and the hand-back items, for its bank (staging names the donor of the items). */
+    handBack: { account: string; essence: number; trades: number; items: { item: string; n: number }[] };
     talismans: Transfer[];
     essenceTransfers: Transfer[];
 }
 
 export function provisionPlan(stock: Stockpile, r: Roster, total = S21_ESSENCE): ProvisionPlan {
     const essence = essencePerGiver(total, r.accounts.length);
+    const hb = handBackSlot(total, r.accounts.length);
+    const handBackAccount = r.accounts[hb.index]!;
     const talismans = allocate(stock, 'Body talisman', r.accounts, 1);
-    const essenceTransfers = allocate(stock, 'Rune essence', r.accounts, essence.perGiver);
+    // One donor pass in roster order: the hand-back giver takes only its trades' essence, so its bank runs out after its last trade.
+    const essenceTransfers = allocateEach(stock, 'Rune essence', r.accounts, a => (a === handBackAccount ? hb.essence : essence.perGiver));
     const donors = new Set([...talismans, ...essenceTransfers].map(t => t.from));
     // The five-client provisioning budget includes donors, not only recipients.
     if (donors.size >= PROVISION_BATCH) throw new Error('too many donors for one provisioning window; ask rs/41 to consolidate stock first');
@@ -181,6 +224,7 @@ export function provisionPlan(stock: Stockpile, r: Roster, total = S21_ESSENCE):
         roster: r,
         batches: batches(r.accounts, PROVISION_BATCH - donors.size),
         essence,
+        handBack: { account: handBackAccount, essence: hb.essence, trades: hb.trades, items: S21_HAND_BACK.map(i => ({ ...i })) },
         talismans,
         essenceTransfers
     };

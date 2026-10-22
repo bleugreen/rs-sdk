@@ -33,13 +33,14 @@
 //   trades       stop after this many trades (default: until the plan or the cue says stop)
 //   noReplyTicks, resendTicks   the standing request (bone-giver.ts requestUntilOpen, lib/trade.ts's click rule): 2, 100
 //   cueDir       default RC_CUE_DIR, else run-machine/rc-cue in the checkout
+//   scope        required: { step, family: 'anvil' }, the cue this helper serves (altar-cue.ts CueScope; S25a)
 import { join } from 'node:path';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
 import { depositMatching, withdrawMany, type BankSdk } from '../lib/bank';
 import { tickClock, waitUntil, type StateSource } from '../lib/wait';
 import { ANY_OFFER, give, DROPPED_TICKS, receiveFrom, tradeOf, type GiveSpec, type WantSpec } from '../lib/trade';
-import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, readJson, writeJsonAtomicSync, type Cue } from './altar-cue';
+import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, readJson, scopeOption, writeJsonAtomicSync, type Cue, type CueScope } from './altar-cue';
 import { chebyshev, cheat, isLocalServer, labTele, pos, until, type Tile } from './altar-room';
 import { requestUntilOpen } from './bone-giver';
 import { ensureOutOfTutorial } from './mule';
@@ -310,6 +311,7 @@ export interface AnvilOptions {
     noReplyTicks: number;
     resendTicks: number;
     cueDir: string;
+    scope: CueScope;
 }
 
 export function anvilOptions(raw: Record<string, unknown>, env: Record<string, string | undefined> = process.env): AnvilOptions {
@@ -327,7 +329,8 @@ export function anvilOptions(raw: Record<string, unknown>, env: Record<string, s
         trades,
         noReplyTicks: Number(raw.noReplyTicks ?? DROPPED_TICKS),
         resendTicks: Number(raw.resendTicks ?? 100),
-        cueDir: typeof raw.cueDir === 'string' ? raw.cueDir : cueDir(env)
+        cueDir: typeof raw.cueDir === 'string' ? raw.cueDir : cueDir(env),
+        scope: scopeOption(raw.scope, ['anvil'])
     };
 }
 
@@ -422,7 +425,7 @@ export class AnvilHelper {
     async run(): Promise<void> {
         const { ctx, o } = this;
         assertUntracked(o.cueDir);
-        const watcher = new CueWatcher(o.cueDir, cue => (this.cue = cue));
+        const watcher = new CueWatcher(o.cueDir, o.scope, cue => (this.cue = cue), { log: (m, d) => ctx.log(m, d) });
         const heartbeat = setInterval(() => this.publish(), 2000);
         try {
             await ensureOutOfTutorial(ctx);

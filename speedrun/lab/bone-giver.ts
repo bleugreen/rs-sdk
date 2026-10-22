@@ -45,8 +45,9 @@ const config = {
     // before the scored account (SUPPLIES.md section 5); --order=receiver-first measures the reverse.
     accounts: (() => {
         const sites = [{ giver: { x: 2913, z: 3494 }, receiver: { x: 2914, z: 3494 } }];
-        const g = { account: giver, role: 'bone-giver', options: asks.length ? { mode: 'on-request', restock: { kind: 'cheat' }, sites } : { restock: { kind: 'cheat' }, sites, trades: loads } };
-        const r = { account: receiver, role: 'bone-receiver', receiver: true, final: true, options: asks.length ? { giver, asks, pageLoads: [] } : { giver, loads, pageLoads: pages, holdTicks: hold } };
+        const scope = asks.length ? { step: 'S18', family: 'courier' } : { step: 'S07', family: 'bone' };
+        const g = { account: giver, role: 'bone-giver', options: asks.length ? { mode: 'on-request', restock: { kind: 'cheat' }, sites, scope } : { restock: { kind: 'cheat' }, sites, trades: loads, scope } };
+        const r = { account: receiver, role: 'bone-receiver', receiver: true, final: true, options: asks.length ? { giver, asks, pageLoads: [], scope } : { giver, loads, pageLoads: pages, holdTicks: hold, scope } };
         return arg('order', 'giver-first') === 'receiver-first' ? [r, g] : [g, r];
     })()
 };

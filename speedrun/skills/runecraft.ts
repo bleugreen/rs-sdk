@@ -13,7 +13,9 @@
 //     copied into cue.json, one cue session per program run, with a stop cue on every
 //     end so armed givers stand down;
 //   - fault ladder: failed tuned turns restart the program with every giver robust;
-//     a further fault falls back to the stock reacting cycle.
+//     a further fault falls back to the stock reacting cycle;
+//   - hand-back: after S21's last craft a hand-back giver trades SCORED T21-22's
+//     teleport runes in a reacting turn of its own (HandBack, S21_HAND_BACK).
 //
 // Level-ups need nothing while the program runs: the trade request on T+5 closes
 // the level-up dialog (runecraft.md section 4; 8 of 8 measured at air 1). A
@@ -22,7 +24,7 @@
 
 import { join } from 'node:path';
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
-import { canonName, cueDir, CueWriter, readJson, readStatuses, RUN_DIR, type GiverStatus, type Schedule, type Turn } from '../helpers/altar-cue';
+import { canonName, cueDir, CueWriter, readJson, readStatuses, RUN_DIR, type CueScope, type GiverStatus, type HandBackItem, type Schedule, type Turn } from '../helpers/altar-cue';
 import type { LauncherStatus } from '../helpers/standalone';
 import { classifyPage } from '../lib/dialogue';
 import { levelUpStep, newWatcherMemory, type WatcherMemory } from '../lib/levelup';
@@ -98,6 +100,40 @@ export const LOAD = 27;
  * end at 45), so the band keeps its 7 crafts; S06's givers carry `essence: 26` (altar-giver.ts).
  */
 export const S06_LOAD = 26;
+
+/** One item of a hand-back (altar-cue.ts, the givers' contract): the name the giver offers it by and how many. */
+export type { HandBackItem };
+
+/**
+ * Items a giver trades SCORED after a band's last craft: the step's hand-off contract as data
+ * (STEP-MANIFEST.md's inventory ledger; SUPPLIES.md H17e).
+ *
+ * - Who: a hand-back giver in the room, ready or armed, whose status lists the items
+ *   (`handBack`), or the account named by `giver`. It holds its talisman and these items and no
+ *   essence: a talisman and 27 essence fill a giver's pack, so no essence giver can carry them.
+ *   Holding no essence also keeps it out of the essence feed.
+ * - When: SCORED names it in a reacting `stock` cue turn that carries `items`, written on the
+ *   first frame after the program ends (the last craft), with T three ticks ahead as in the
+ *   stock rung.
+ * - Who requests: both, as on any stock turn. The giver requests at once and re-sends on each
+ *   'busy' until the craft's delay ends; SCORED's openTrade answers it, or requests itself.
+ * - What: exactly `items` from the giver, nothing from SCORED.
+ */
+export interface HandBack {
+    items: readonly HandBackItem[];
+    giver?: string;
+}
+
+/** T21-22's Lumbridge teleport (1 law, 3 air, 1 earth), handed back after S21's last craft so every S21 load stays 27 (SUPPLIES.md H17e). */
+export const S21_HAND_BACK: HandBack = {
+    items: [
+        { item: 'Law rune', n: 1 },
+        { item: 'Air rune', n: 3 },
+        { item: 'Earth rune', n: 1 }
+    ]
+};
+/** Hand-back trades tried before the step fails. */
+export const HAND_BACK_TRIES = 3;
 const TALISMAN_DROPS = 3;
 /** Game xp per base xp point (fly.toml NODE_XPRATE; rc-cycle's XP_RATE). */
 export const XP_RATE = 25;
@@ -121,6 +157,8 @@ export interface Band {
     untilXp?: number;
     /** Essence per trade (default LOAD). The band's givers must carry exactly this many (`essence`). */
     load?: number;
+    /** Traded to SCORED after the band's last craft (S21: S21_HAND_BACK). */
+    handBack?: HandBack;
 }
 
 // ------------------------------------------------------------------ views
@@ -129,8 +167,8 @@ export interface Band {
 // speedrun/lib/programs.ts. These are the parts of those types it reads, narrowed
 // so a scripted test only has to fill in what the step uses.
 
-/** A giver's status file, as far as the feed reads it. */
-export type GiverStatusView = Pick<GiverStatus, 'account' | 'phase' | 'loggedInAt' | 'essence' | 'inRoom' | 'readyAt' | 'ms'>;
+/** A giver's status file, as far as the feed reads it. `handBack`: what a hand-back giver holds for the hand-back (HandBack). */
+export type GiverStatusView = Pick<GiverStatus, 'account' | 'phase' | 'loggedInAt' | 'essence' | 'inRoom' | 'readyAt' | 'ms' | 'handBack'>;
 
 /** <runDir>/launcher.json, as far as the schedule choice reads it. */
 export type LauncherView = Pick<LauncherStatus, 'helpersReady' | 'ms'> & {
@@ -140,7 +178,7 @@ export type LauncherView = Pick<LauncherStatus, 'helpersReady' | 'ms'> & {
 /**
  * A cue turn. 'stock' is the reacting turn of the last fallback rung: the giver side
  * on the base does not know it yet (rs/163 adds it), and CueWriter writes the turn
- * through unchanged.
+ * through unchanged. `items` on a stock turn replaces the essence with exactly those items (the hand-back).
  */
 export type CueTurn = Omit<Turn, 'schedule'> & { schedule?: Schedule | 'stock' };
 
@@ -182,8 +220,8 @@ export interface RunecraftDeps {
     sendProgramInput(sdk: ProgramSdk, data: unknown): Promise<unknown>;
     /** The cue's fields from a status, and a key that changes when they do. */
     rcCueFields(status: ProgramStatus | null | undefined): (CueFields & { key: string }) | null;
-    /** A new cue session. */
-    openCue(dir: string, receiverName: string): CueSink;
+    /** A new cue session, addressed to `scope` (the band's step, family 'altar'): readers of another step or family ignore it, its stop included. */
+    openCue(dir: string, receiverName: string, scope: CueScope): CueSink;
     readStatuses(dir: string): GiverStatusView[];
     readLauncher(runDir: string): LauncherView | null;
     /** RC_CUE_DIR, else run-machine/rc-cue. */
@@ -204,7 +242,7 @@ export const defaultDeps: RunecraftDeps = {
     stopProgram,
     sendProgramInput,
     rcCueFields,
-    openCue: (dir, receiverName) => new CueWriter(dir, receiverName),
+    openCue: (dir, receiverName, scope) => new CueWriter(dir, receiverName, scope),
     readStatuses,
     readLauncher: readLauncherFile,
     cueDir: () => cueDir(),
@@ -242,6 +280,23 @@ export function standTile(altar: Tile): Tile {
 
 export function essenceHeld(s: BotWorldState): number {
     return s.inventory.filter(i => ESSENCE.test(i.name)).reduce((n, i) => n + i.count, 0);
+}
+
+function sameItem(name: string, item: string): boolean {
+    return name.toLowerCase() === item.toLowerCase();
+}
+
+/** SCORED holds at least the hand-back's count of each of its items. */
+export function holdsHandBack(s: BotWorldState, hb: HandBack): boolean {
+    return hb.items.every(w => s.inventory.filter(i => sameItem(i.name, w.item)).reduce((n, i) => n + i.count, 0) >= w.n);
+}
+
+/**
+ * The band's craft target is reached but its hand-back is still owed: SCORED is in the room without
+ * the items. Out of the room the hand-back counts as done, since the next leg spends the items.
+ */
+export function handBackPending(s: BotWorldState, band: Band): boolean {
+    return !!band.handBack && !!s.player && reached(s, band) && inRoom(s, band.altar) && !holdsHandBack(s, band.handBack);
 }
 
 /** Inventory items that are not this altar's talisman, rune essence or this altar's rune: each takes a slot a trade of 27 needs. */
@@ -353,6 +408,18 @@ export function giverFeed(statuses: readonly GiverStatusView[], now: number, sch
         .filter(s => (s.phase === 'ready' || s.phase === 'armed') && s.inRoom && now - s.ms <= STATUS_FRESH_MS && s.essence >= load)
         .sort((a, b) => (a.readyAt ?? Infinity) - (b.readyAt ?? Infinity))
         .map(s => ({ name: s.account, schedule: scheduleOf(s.account), ...(s.readyAt !== null ? { readyAt: s.readyAt } : {}) }));
+}
+
+/**
+ * The hand-back giver to name: ready or armed, in the room, with a fresh status, and either the
+ * named `giver` or one whose status lists at least the items; oldest ready first.
+ */
+export function handBackGiver(statuses: readonly GiverStatusView[], now: number, hb: HandBack): string | undefined {
+    const covers = (held: readonly HandBackItem[] | undefined) => !!held && hb.items.every(w => held.some(h => sameItem(h.item, w.item) && h.n >= w.n));
+    return statuses
+        .filter(s => (s.phase === 'ready' || s.phase === 'armed') && s.inRoom && now - s.ms <= STATUS_FRESH_MS)
+        .filter(s => (hb.giver ? canonName(s.account) === canonName(hb.giver) : covers(s.handBack)))
+        .sort((a, b) => (a.readyAt ?? Infinity) - (b.readyAt ?? Infinity))[0]?.account;
 }
 
 export function feedKey(entries: readonly GiverEntry[]): string {
@@ -508,16 +575,21 @@ export interface RunecraftOptions {
     programParams?: Record<string, unknown>;
     /** Dismiss the last craft's level-up dialog after the program ends (default true). */
     dismissLevelUp?: boolean;
+    /** S21's hand-back (default S21_HAND_BACK); false for none. */
+    s21HandBack?: HandBack | false;
+    /** Hand-back trades tried before the step fails (default HAND_BACK_TRIES). */
+    handBackTries?: number;
     deps?: Partial<RunecraftDeps>;
 }
 
 export const DEFAULT_GIVER_WAIT_TICKS = 300;
 
-/** The bands of `steps()`: S06 air 1-44, then S21 44-99 at nature (or body), capped by untilLevel. */
-export function bands(opts: Pick<RunecraftOptions, 's21Altar' | 'untilLevel'> = {}): Band[] {
+/** The bands of `steps()`: S06 air 1-44, then S21 44-99 at nature (or body) with its hand-back, capped by untilLevel. */
+export function bands(opts: Pick<RunecraftOptions, 's21Altar' | 'untilLevel' | 's21HandBack'> = {}): Band[] {
     const cap = opts.untilLevel ?? 99;
     const out: Band[] = [{ id: 'S06', altar: 'air', from: 1, untilLevel: Math.min(44, cap), load: S06_LOAD }];
-    if (cap > 44) out.push({ id: 'S21', altar: opts.s21Altar ?? 'nature', from: 44, untilLevel: cap });
+    const handBack = opts.s21HandBack === false ? undefined : (opts.s21HandBack ?? S21_HAND_BACK);
+    if (cap > 44) out.push({ id: 'S21', altar: opts.s21Altar ?? 'nature', from: 44, untilLevel: cap, ...(handBack ? { handBack } : {}) });
     return out;
 }
 
@@ -551,12 +623,16 @@ export function altarStep(band: Band, opts: RunecraftOptions = {}): Step<any> {
         preconditions: s => preconditions(s, band),
         run: entry,
         resume: entry,
-        postconditions: s => (reached(s, band) ? true : band.untilXp !== undefined ? `Runecraft xp ${rcXp(s)} < ${band.untilXp}` : `Runecraft ${rcLevel(s)} < ${band.untilLevel}`),
+        postconditions: s => {
+            if (!reached(s, band)) return band.untilXp !== undefined ? `Runecraft xp ${rcXp(s)} < ${band.untilXp}` : `Runecraft ${rcLevel(s)} < ${band.untilLevel}`;
+            if (band.handBack && !holdsHandBack(s, band.handBack)) return `the hand-back (${band.handBack.items.map(i => `${i.n} ${i.item}`).join(', ')}) is not held`;
+            return true;
+        },
         logoutSafe: true,
-        done: (o: Observed) => reached(o.state, band),
+        done: (o: Observed) => reached(o.state, band) && !handBackPending(o.state, band),
         inProgress: (o: Observed) => {
             const s = o.state;
-            return !!s.player && !reached(s, band) && rcLevel(s) > band.from && inRoom(s, band.altar);
+            return (!!s.player && !reached(s, band) && rcLevel(s) > band.from && inRoom(s, band.altar)) || handBackPending(s, band);
         }
     };
 }
@@ -610,8 +686,9 @@ class Driver {
         return (this.cueDirPath ??= this.opts.cueDir ?? this.deps.cueDir());
     }
 
+    /** Every cue session of the step (program runs, the stock rung, the hand-back) is addressed to this band's step. */
     private openCue(): CueSink {
-        return this.deps.openCue(this.cueDir, this.ctx.session.name);
+        return this.deps.openCue(this.cueDir, this.ctx.session.name, { step: this.band.id, family: 'altar' });
     }
 
     private scoredLoggedInAt(): number | null {
@@ -638,10 +715,15 @@ class Driver {
     }
 
     async run(): Promise<void> {
-        if (reached(this.state(), this.band)) return;
-        await this.enter();
-        await this.dropTalisman();
-        await this.ladder();
+        if (!reached(this.state(), this.band)) {
+            await this.enter();
+            await this.dropTalisman();
+            await this.ladder();
+        }
+        // a resume at the target in the room runs only the hand-back
+        const traded = this.band.handBack ? await this.handBack(this.band.handBack) : false;
+        // the hand-back's trade closes the last craft's level-up dialog, as the program's requests do
+        if ((this.opts.dismissLevelUp ?? true) && !(traded && !this.state().dialog?.isOpen)) await this.dismissLevelUp();
     }
 
     /** Step onto the stand tile (0-2 tiles from where the room puts you). */
@@ -722,7 +804,6 @@ class Driver {
                 throw cause;
             }
         }
-        if (this.opts.dismissLevelUp ?? true) await this.dismissLevelUp();
     }
 
     private lastRunning: BotWorldState | null = null;
@@ -848,15 +929,7 @@ class Driver {
         const { sdk, deps } = this;
         const t0 = Date.now();
         const startTick = this.state().tick;
-        const beacons: { tick: number; ms: number }[] = [];
-        const onState = (s: BotWorldState) => {
-            const last = beacons[beacons.length - 1];
-            if (last && s.tick <= last.tick) return;
-            beacons.push({ tick: s.tick, ms: deps.now() });
-            if (beacons.length > 8) beacons.splice(0, beacons.length - 8);
-        };
-        onState(this.state());
-        const unsubscribe = sdk.onStateUpdate(onState);
+        const beacons = this.frames();
         const sink = this.openCue();
         const turns: CueTurn[] = [];
         const open = Number(this.opts.programParams?.open ?? 5);
@@ -875,7 +948,7 @@ class Driver {
                     const giver = await this.waitForGiver();
                     const turn = this.state().tick;
                     turns.push({ giver: giver.name, T: turn + lead, schedule: 'stock' });
-                    sink.write({ beacons: [...beacons], turns: [...turns], schedule: 'robust', open });
+                    sink.write({ beacons: beacons.recent(), turns: [...turns], schedule: 'robust', open });
                     const r = await deps.receiveFrom(sdk, giver.name, { want: [{ item: ESSENCE, amount: this.band.load ?? LOAD }], maxTicks: 30, openMaxTicks: 30, noReplyTicks: DROPPED_TICKS });
                     trades++;
                     timeline.push({ turn, receive: r.ticks ?? -1, received: this.state().tick, ...(r.ok ? {} : { reason: r.reason }) });
@@ -897,8 +970,8 @@ class Driver {
             error = e;
             throw e;
         } finally {
-            unsubscribe();
-            if (beacons.length) sink.write({ beacons: [...beacons], turns: [...turns], schedule: 'robust', open, stop: true });
+            beacons.close();
+            sink.write({ beacons: beacons.recent(), turns: [...turns], schedule: 'robust', open, stop: true });
             const endTick = this.sdk.getState()?.tick ?? startTick;
             const gaps = craftTicks.slice(1).map((t, i) => t - craftTicks[i]!);
             this.ctx.log.append({
@@ -929,6 +1002,86 @@ class Driver {
                 at: new Date().toISOString()
             });
         }
+    }
+
+    /** SCORED's last 8 frames, kept until `close`, for a cue written outside the program (the page writes its own beacons). */
+    private frames(): { recent: () => { tick: number; ms: number }[]; close: () => void } {
+        const list: { tick: number; ms: number }[] = [];
+        const see = (s: BotWorldState) => {
+            const last = list[list.length - 1];
+            if (last && s.tick <= last.tick) return;
+            list.push({ tick: s.tick, ms: this.deps.now() });
+            if (list.length > 8) list.splice(0, list.length - 8);
+        };
+        see(this.state());
+        const close = this.sdk.onStateUpdate(see);
+        return { recent: () => [...list], close };
+    }
+
+    /**
+     * The hand-back (HandBack): name a hand-back giver in a stock turn carrying the items and
+     * receive exactly those, up to handBackTries times. Resolves true when a trade ran, false
+     * when SCORED already held the items. One annotation row (0 ticks: the step's row has them).
+     */
+    private async handBack(hb: HandBack): Promise<boolean> {
+        if (holdsHandBack(this.state(), hb)) return false;
+        const { sdk, deps } = this;
+        const startTick = this.state().tick;
+        const beacons = this.frames();
+        const sink = this.openCue();
+        const turns: CueTurn[] = [];
+        const open = Number(this.opts.programParams?.open ?? 5);
+        const lead = Number(this.opts.programParams?.lead ?? 3);
+        const tries = this.opts.handBackTries ?? HAND_BACK_TRIES;
+        const want = hb.items.map(i => ({ item: new RegExp(`^${i.item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), amount: i.n }));
+        const attempts: { giver: string; turn: number; received: number; ticks?: number; reason?: string }[] = [];
+        let error: unknown = null;
+        try {
+            for (let i = 0; i < tries; i++) {
+                const giver = await this.waitForHandBackGiver(hb);
+                const turn = this.state().tick;
+                turns.push({ giver, T: turn + lead, schedule: 'stock', items: hb.items.map(i => ({ ...i })) });
+                sink.write({ beacons: beacons.recent(), turns: [...turns], schedule: 'robust', open });
+                const r = await deps.receiveFrom(sdk, giver, { want, maxTicks: 30, openMaxTicks: 30, noReplyTicks: DROPPED_TICKS });
+                const ok = r.ok && holdsHandBack(this.state(), hb);
+                attempts.push({ giver, turn, received: this.state().tick, ...(r.ticks !== undefined ? { ticks: r.ticks } : {}), ...(ok ? {} : { reason: r.reason ?? 'traded, but the items are not all held' }) });
+                if (ok) return true;
+            }
+            throw new Error(`${this.name}: the hand-back failed ${tries} times (${attempts.map(a => `${a.giver}: ${a.reason}`).join('; ')})`);
+        } catch (e) {
+            error = e;
+            throw e;
+        } finally {
+            beacons.close();
+            if (turns.length) sink.write({ beacons: beacons.recent(), turns: [...turns], schedule: 'robust', open, stop: true });
+            const endTick = this.sdk.getState()?.tick ?? startTick;
+            this.ctx.log.append({
+                v: 1,
+                runId: this.ctx.log.runId,
+                account: this.ctx.session.name,
+                sessionId: this.ctx.session.sessionId,
+                step: 'runecraft:hand-back',
+                startTick,
+                endTick,
+                ticks: 0,
+                wallMs: 0,
+                ok: !error,
+                ...(error ? { error: error instanceof Error ? error.message : String(error) } : {}),
+                meta: { kind: 'rc-hand-back', band: this.band.id, items: hb.items, stepTicks: endTick - startTick, attempts, cueSession: sink.session },
+                tickMs: tickMs(),
+                at: new Date().toISOString()
+            });
+        }
+    }
+
+    private async waitForHandBackGiver(hb: HandBack): Promise<string> {
+        let found: string | undefined;
+        const pick = () => (found = handBackGiver(this.deps.readStatuses(this.cueDir), this.deps.now(), hb)) !== undefined;
+        if (pick()) return found!;
+        const bound = this.opts.giverWaitTicks ?? DEFAULT_GIVER_WAIT_TICKS;
+        const w = await waitUntil(this.sdk, pick, { maxTicks: bound });
+        if (!w.ok || !found) throw new Error(`${this.name}: no hand-back giver ${hb.giver ? `(${hb.giver}) ` : ''}ready in the room for ${bound} ticks (a giver whose status lists ${hb.items.map(i => `${i.n} ${i.item}`).join(', ')} under handBack)`);
+        return found;
     }
 
     private async waitForGiver(): Promise<GiverEntry> {

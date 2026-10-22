@@ -8,6 +8,7 @@ import {
     assertUntracked,
     canonName,
     chooseTurn,
+    cueAddresses,
     CueWatcher,
     CueWriter,
     cycleTicks,
@@ -21,11 +22,14 @@ import {
     readCue,
     readStatuses,
     resolveOffset,
+    scopeOption,
     scoredSteps,
     turnKey,
     writeStatus,
     type Beacon,
-    type Cue
+    type Cue,
+    type CueFamily,
+    type CueScope
 } from './altar-cue';
 
 const frames = (ticks: number[], ms0: number, step = 300, jitter: (i: number) => number = () => 0): Beacon[] =>
@@ -33,6 +37,7 @@ const frames = (ticks: number[], ms0: number, step = 300, jitter: (i: number) =>
 
 const cue = (over: Partial<Cue> = {}): Cue => ({
     v: 1,
+    scope: { step: 'S06', family: 'altar' },
     session: 's1',
     seq: 1,
     receiver: { sha256: nameHash('stand_in') },
@@ -212,18 +217,90 @@ describe('names', () => {
     });
 });
 
+const S06_ALTAR: CueScope = { step: 'S06', family: 'altar' };
+
+describe('cue scopes', () => {
+    test('a cue addresses only its own step and family; a cue without a scope addresses nobody', () => {
+        expect(cueAddresses(cue(), 'S06', 'altar')).toBe(true);
+        expect(cueAddresses(cue(), 'S21', 'altar')).toBe(false);
+        expect(cueAddresses(cue(), 'S06', 'bone')).toBe(false);
+        expect(cueAddresses({ ...cue(), scope: undefined } as unknown as Cue, 'S06', 'altar')).toBe(false);
+        expect(cueAddresses(null, 'S06', 'altar')).toBe(false);
+    });
+
+    test('the writer refuses a missing or malformed scope', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'rc-cue-'));
+        expect(() => new CueWriter(dir, 'x', undefined as unknown as CueScope)).toThrow(/scope \{ step, family \} is required/);
+        expect(() => new CueWriter(dir, 'x', { step: '', family: 'altar' })).toThrow(/needs a step/);
+        expect(() => new CueWriter(dir, 'x', { step: 'S07', family: 'bones' as CueFamily })).toThrow(/family must be one of/);
+    });
+
+    test("a role's scope option must name a family the role serves", () => {
+        expect(scopeOption({ step: 'S07', family: 'bone' }, ['bone'])).toEqual({ step: 'S07', family: 'bone' });
+        expect(() => scopeOption({ step: 'S07', family: 'courier' }, ['bone'])).toThrow(/scope.family must be bone/);
+        expect(() => scopeOption(undefined, ['altar'])).toThrow(/^scope: a cue scope/);
+    });
+
+    test("S06's stop is invisible to an S07 bone and an S18 courier watcher; an S06 altar watcher stops on it; each foreign scope is logged once", async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'rc-cue-'));
+        const seen: Record<string, Cue[]> = { altar: [], bone: [], courier: [] };
+        const logs: Record<string, string[]> = { altar: [], bone: [], courier: [] };
+        const watch = (k: 'altar' | 'bone' | 'courier', scope: CueScope) => new CueWatcher(dir, scope, c => seen[k]!.push(c), { pollMs: 5, log: m => logs[k]!.push(m) });
+        const watchers = [watch('altar', S06_ALTAR), watch('bone', { step: 'S07', family: 'bone' }), watch('courier', { step: 'S18', family: 'courier' })];
+        const w = new CueWriter(dir, 'scored', S06_ALTAR);
+        w.addTurn({ giver: 'cairn_h70', T: 10 }, [{ tick: 3, ms: 1 }]);
+        await Bun.sleep(30);
+        w.stop([{ tick: 4, ms: 2 }]);
+        await Bun.sleep(30);
+        expect(seen.altar!.at(-1)!.stop).toBe(true);
+        expect(seen.bone).toEqual([]);
+        expect(seen.courier).toEqual([]);
+        expect(logs.bone).toEqual(['cue ignored: addressed to another step or family']);
+        expect(logs.courier).toEqual(['cue ignored: addressed to another step or family']);
+        expect(logs.altar).toEqual([]);
+
+        // S07's own cue, written after S06's stop, reaches the bone watcher and only it.
+        new CueWriter(dir, 'scored', { step: 'S07', family: 'bone' }).write({ beacons: [{ tick: 5, ms: 3 }], turns: [] });
+        await Bun.sleep(30);
+        expect(seen.bone!.map(c => [c.scope.step, !!c.stop])).toEqual([['S07', false]]);
+        expect(seen.altar!.every(c => c.scope.step === 'S06')).toBe(true);
+        for (const x of watchers) x.close();
+    });
+
+    test('a cue without a scope is refused, logged once, and never reaches the role', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'rc-cue-'));
+        const seen: Cue[] = [];
+        const logs: string[] = [];
+        const watcher = new CueWatcher(dir, S06_ALTAR, c => seen.push(c), { pollMs: 5, log: m => logs.push(m) });
+        const { scope: _scope, ...legacy } = cue({ stop: true });
+        writeFileSync(join(dir, 'cue.json'), JSON.stringify(legacy));
+        await Bun.sleep(30);
+        writeFileSync(join(dir, 'cue.json'), JSON.stringify({ ...legacy, seq: 2 }));
+        await Bun.sleep(30);
+        watcher.close();
+        expect(seen).toEqual([]);
+        expect(logs).toEqual(['cue refused: cue.json has no scope { step, family }']);
+    });
+
+    test('the watcher refuses to start without a scope', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'rc-cue-'));
+        expect(() => new CueWatcher(dir, undefined as unknown as CueScope, () => {})).toThrow(/CueWatcher: a cue scope/);
+    });
+});
+
 describe('files', () => {
     test('writer, watcher and status files round-trip, and the cue never holds the name', async () => {
         const dir = mkdtempSync(join(tmpdir(), 'rc-cue-'));
         const seen: Cue[] = [];
-        const watcher = new CueWatcher(dir, c => seen.push(c), 5);
-        const w = new CueWriter(dir, 'secret_name');
+        const watcher = new CueWatcher(dir, S06_ALTAR, c => seen.push(c), { pollMs: 5 });
+        const w = new CueWriter(dir, 'secret_name', S06_ALTAR);
         w.addTurn({ giver: 'cairn_h70', T: 10 }, [{ tick: 3, ms: 1 }]);
         w.addTurn({ giver: 'cairn_h71', T: 17 }, [{ tick: 4, ms: 2 }]);
         await Bun.sleep(60);
         watcher.close();
         const read = readCue(dir)!;
         expect(read.seq).toBe(2);
+        expect(read.scope).toEqual(S06_ALTAR);
         expect(read.turns.map(t => t.giver)).toEqual(['cairn_h70', 'cairn_h71']);
         expect(JSON.stringify(read)).not.toContain('secret');
         expect(read.receiver.sha256).toBe(nameHash('Secret Name'));

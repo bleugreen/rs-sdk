@@ -16,7 +16,7 @@
 //   lab only: questVarp (::setvar mcannon N first; 11 is complete), setUp (default false)
 import type { BotWorldState } from '../../sdk/types';
 import { give, receiveFrom, sameName } from '../lib/trade';
-import { CueWriter, cueDir, FrameLog } from './altar-cue';
+import { CueWriter, cueDir, FrameLog, scopeOption } from './altar-cue';
 import { chebyshev, cheat, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
 import { holdsLoad, loadSpecs, loadWant } from './cannon';
 import { ensureOutOfTutorial, walkNear } from './mule';
@@ -74,6 +74,7 @@ export const role: Role = {
         const tile: Tile = { x: t.x, z: t.z };
         const balls = Number(o.balls);
         if (!Number.isInteger(balls) || balls < 1) throw new Error('cannon-receiver: options.balls is required');
+        const scope = scopeOption(o.scope, ['cannon']);
         const lab = isLocalServer();
         if ((o.questVarp !== undefined || o.setUp) && !lab) throw new Error('questVarp and setUp are for the local lab only');
         const { sdk } = ctx;
@@ -92,7 +93,7 @@ export const role: Role = {
 
         const frames = new FrameLog();
         const unsub = sdk.onStateUpdate(st => void frames.add(st.tick));
-        const writer = new CueWriter(cueDir(), ctx.account);
+        const writer = new CueWriter(cueDir(), ctx.account, scope);
         let result: ReceiverResult = { ok: false, ticks: 0, standingAtClick: false, received: [], reason: 'not started' };
         try {
             await until(ctx, () => frames.recent().length >= 4, 10);

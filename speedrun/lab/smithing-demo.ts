@@ -9,7 +9,7 @@
 //       Varrock west bank takes one trade from each named giver in turn (only from that giver),
 //       banks everything and logs out. Prints AT_BANK once it stands there.
 //   ... the helper's anvil role under speedrun/helpers/standalone.ts
-//       ({account: <h>, role: 'anvil', final: true, options: {restock: {kind: 'bank'}}}), whose
+//       ({account: <h>, role: 'anvil', final: true, options: {restock: {kind: 'bank'}, scope: {step: 'S25a', family: 'anvil'}}}), whose
 //       cue directory is <runDir>/rc-cue.
 //   bun speedrun/lab/smithing-demo.ts scored --scored=<s> --helper=<h> --cue=<runDir>/rc-cue
 //       [--until=52] [--bars=bronze_bar] [--cap=25]
@@ -120,7 +120,7 @@ if (!travel.ok) throw new Error(`travel to the anvil: ${travel.reason}`);
 const anvilPath = '../helpers/anvil.ts';
 const { writeAnvilPlan } = (await import(anvilPath)) as { writeAnvilPlan: (dir: string, m: AnvilPlanMsg) => unknown };
 const st0 = s.sdk.getState()!;
-new CueWriter(cueDir, st0.player!.name).write({ beacons: [{ tick: st0.tick, ms: Date.now() }], turns: [] });
+new CueWriter(cueDir, st0.player!.name, { step: 'S25a', family: 'anvil' }).write({ beacons: [{ tick: st0.tick, ms: Date.now() }], turns: [] });
 const announced: AnvilPlanMsg[] = [];
 const announce = (m: AnvilPlanMsg) => { announced.push(m); writeAnvilPlan(cueDir, m); };
 const tickLog = labLog('smithing-demo');

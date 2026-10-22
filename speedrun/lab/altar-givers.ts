@@ -49,11 +49,13 @@ for (const account of [...givers, receiver]) {
 }
 
 const receiverFirst = variant.endsWith('receiver-first');
+/** The stand-in's cue and its givers' (altar-cue.ts CueScope). */
+const LAB_SCOPE = { step: 'LAB', family: 'altar' };
 const giverEntries = givers.map((account, slot) => ({
     account,
     role: 'altar-giver',
     path: giverPath(slot),
-    options: { altar, slot, essence, restock: variant === 'bank' ? { kind: 'bank', labStock: true } : { kind: 'cheat' } }
+    options: { altar, slot, essence, restock: variant === 'bank' ? { kind: 'bank', labStock: true } : { kind: 'cheat' }, scope: LAB_SCOPE }
 }));
 const receiverEntry = {
     account: receiver,
@@ -68,7 +70,8 @@ const receiverEntry = {
         schedule: variant.startsWith('robust') ? 'robust' : variant === 'stock' ? 'stock' : 'tuned',
         // Measure what the login order does rather than let the receiver correct for it.
         autoRobust: false,
-        restock: { kind: 'cheat' }
+        restock: { kind: 'cheat' },
+        scope: LAB_SCOPE
     }
 };
 const config = {
