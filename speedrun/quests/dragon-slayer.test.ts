@@ -116,18 +116,18 @@ describe('entry and kit', () => {
 });
 
 describe('free slots (addendum 8)', () => {
-    // The inventory ledger's S26 start: H22 (the kit, plus the legs' fire rune) and the m'speak amulet, 2 free.
-    const ledger = () => [...KIT(), item('Fire rune'), item("M'speak amulet")];
+    // The inventory ledger's S26 start: H22 (the kit; no Varrock set, so no fire rune) and the m'speak amulet, 3 free.
+    const ledger = () => [...KIT(), item("M'speak amulet")];
 
     test('the letters are the segments', () => {
         expect(steps().map(s => s.name.slice(4, 5))).toEqual([...LETTERS]);
     });
 
     test("the ledger's start covers the step: the peak is Scavvo's two pieces at C", () => {
-        expect(28 - ledger().length).toBe(2);
+        expect(28 - ledger().length).toBe(3);
         expect(slotNeed(world({ inv: ledger() }), questItems(), LETTERS, 'A')).toEqual({ slots: 2, peak: 'C', items: ['1 Rune chainbody', '1 Rune platelegs'] });
         expect(steps()[0]!.preconditions(world({ inv: ledger() }), {})).toBe(true);
-        expect(steps()[0]!.preconditions(world({ inv: [...ledger(), item('Bucket')] }), {})).toBe('inventory: segment C needs 2 free slots (1 Rune chainbody, 1 Rune platelegs), 1 free: 1 short');
+        expect(steps()[0]!.preconditions(world({ inv: [...ledger(), item('Bucket'), item('Pot')] }), {})).toBe('inventory: segment C needs 2 free slots (1 Rune chainbody, 1 Rune platelegs), 1 free: 1 short');
     });
 
     test('the four items the magic door takes make room for the maze; without the armour the peak moves to E', () => {
