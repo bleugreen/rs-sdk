@@ -47,6 +47,143 @@ describe('act', () => {
     });
 });
 
+describe('the jump guard', () => {
+    // A forced move (agility_walk) steps by p_teleport: the player's teleportTick is the tick of each step.
+    const placed = (x: number, z: number, tick: number, level = 0) => ({ ...player(x, z, level), teleportTick: tick }) as PlayerState;
+    const sentAt = (sdk: FakeSdk, method: string) => sdk.sent.filter(a => a.method === method).length;
+
+    test('act holds the first click while the player was placed this tick, then sends it once and it lands', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 10, player: placed(2465, 3493, 10) }));
+        let done = false;
+        const p = act(sdk as never, () => sdk.sendInteractLoc(2466, 3495, 1, 1), () => done);
+        await flush();
+        expect(sentAt(sdk, 'sendInteractLoc')).toBe(0);
+        await ticks(sdk, 1); // tick 11: settled
+        expect(sentAt(sdk, 'sendInteractLoc')).toBe(1);
+        await ticks(sdk, 1, () => ({ player: placed(2465, 3494, 10) })); // the click lands: a step
+        done = true;
+        await ticks(sdk, 1);
+        const r = await p;
+        expect(r).toMatchObject({ ok: true, resends: 0, settleTicks: 1 });
+        expect(r.unansweredResends).toBeUndefined();
+        expect(sentAt(sdk, 'sendInteractLoc')).toBe(1);
+    });
+
+    test('act re-sends once a post-jump click that draws no reply in REPLY_TICKS', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 20, player: placed(2465, 3493, 19) }));
+        let done = false;
+        const p = act(sdk as never, () => sdk.sendInteractLoc(2466, 3495, 1, 1), () => done, { resendEvery: 6 });
+        await ticks(sdk, 2);
+        expect(sentAt(sdk, 'sendInteractLoc')).toBe(1);
+        await ticks(sdk, 1); // 3 ticks since the send, nothing happened
+        expect(sentAt(sdk, 'sendInteractLoc')).toBe(2);
+        await ticks(sdk, 3); // the re-send is not itself re-sent by the jump rule
+        expect(sentAt(sdk, 'sendInteractLoc')).toBe(2);
+        done = true;
+        await ticks(sdk, 1);
+        expect(await p).toMatchObject({ ok: true, unansweredResends: 1 });
+    });
+
+    test('a click that is not just after a jump keeps the old rule (no early re-send)', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 50, player: placed(10, 10, 30) }));
+        const p = act(sdk as never, () => sdk.sendInteractLoc(5, 5, 1, 1), () => false, { resendEvery: 6, maxTicks: 5 });
+        await ticks(sdk, 6);
+        expect(await p).toMatchObject({ ok: false, resends: 0 });
+        expect(sentAt(sdk, 'sendInteractLoc')).toBe(1);
+    });
+
+    test('act re-sends a refused send on the next settled tick and counts it', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        let refuse = 2;
+        const click = () => {
+            sdk.sent.push({ method: 'sendInteractNpc', args: [8143, 1] });
+            return Promise.resolve(refuse-- > 0 ? { success: false, message: 'no route', reason: 'cant_reach' } : { success: true, message: 'ok' });
+        };
+        let done = false;
+        const p = act(sdk as never, click, () => done, { resendEvery: 0 });
+        await ticks(sdk, 1);
+        expect(sentAt(sdk, 'sendInteractNpc')).toBe(2);
+        await ticks(sdk, 1);
+        expect(sentAt(sdk, 'sendInteractNpc')).toBe(3);
+        await ticks(sdk, 2);
+        expect(sentAt(sdk, 'sendInteractNpc')).toBe(3);
+        done = true;
+        await ticks(sdk, 1);
+        expect(await p).toMatchObject({ ok: true, refusedResends: 2 });
+    });
+
+    test('act waits out a region load (sceneReady false) before the first click', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, sceneReady: false, player: player(10, 10) }));
+        let done = false;
+        const p = act(sdk as never, () => sdk.sendInteractLoc(5, 5, 1, 1), () => done);
+        await ticks(sdk, 4);
+        expect(sentAt(sdk, 'sendInteractLoc')).toBe(0);
+        await ticks(sdk, 1, () => ({ sceneReady: true }));
+        expect(sentAt(sdk, 'sendInteractLoc')).toBe(1);
+        done = true;
+        await ticks(sdk, 1);
+        expect(await p).toMatchObject({ ok: true, settleTicks: 5 });
+    });
+
+    test('talkTo after the Grand Tree door: the dropped first click is re-sent in REPLY_TICKS, not after openTicks', async () => {
+        const narnode = npc(7, 'King Narnode Shareen');
+        // The door's last p_teleport step lands on tick 41 and still holds the player then.
+        const sdk = new FakeSdk(baseState({ tick: 41, player: placed(2465, 3493, 41), nearbyNpcs: [narnode] }));
+        let clicks = 0;
+        sdk.onSend = a => {
+            if (a.method !== 'sendInteractNpc') return;
+            clicks++;
+            // the server drops the first click it gets (the script still held the player); the second lands
+            if (clicks === 2) setTimeout(() => sdk.tick({ dialog: cont('n1') }), 1);
+        };
+        const p = talkTo(sdk as never, narnode, [], { idle: 1 });
+        await ticks(sdk, 4); // 42: settled, first click; 45: no reply in 3 ticks, re-sent
+        expect(clicks).toBe(2);
+        await flush();
+        await ticks(sdk, 1, () => ({ dialog: closed }));
+        await ticks(sdk, 2);
+        const r = await p;
+        expect(r).toMatchObject({ ok: true, opened: true, clicks: 1, settleTicks: 1, unansweredResends: 1 });
+        expect(r.firstTick - 41).toBeLessThanOrEqual(6);
+    });
+
+    test('talkTo at the top of the tree: a send refused as unroutable after the ladder is re-sent the next tick', async () => {
+        const charlie = npc(8143, 'Charlie');
+        const sdk = new FakeSdk(baseState({ tick: 46, player: placed(2467, 3495, 45, 3), nearbyNpcs: [charlie] }));
+        let n = 0;
+        (sdk as unknown as { sendInteractNpc: (i: number, o: number) => Promise<unknown> }).sendInteractNpc = (i, o) => {
+            sdk.sent.push({ method: 'sendInteractNpc', args: [i, o] });
+            if (++n === 1) return Promise.resolve({ success: false, message: 'no route', reason: 'cant_reach' });
+            setTimeout(() => sdk.tick({ dialog: cont('c1') }), 1);
+            return Promise.resolve({ success: true, message: 'ok' });
+        };
+        const p = talkTo(sdk as never, charlie, [], { idle: 1 });
+        await flush();
+        expect(n).toBe(1);
+        await ticks(sdk, 1);
+        expect(n).toBe(2);
+        await flush();
+        await ticks(sdk, 1, () => ({ dialog: closed }));
+        await ticks(sdk, 2);
+        expect(await p).toMatchObject({ ok: true, opened: true, clicks: 1, refusedResends: 1 });
+    });
+
+    test('talkTo with no jump and a click that lands sends exactly one click', async () => {
+        const bob = npc(3, 'Bob');
+        const sdk = new FakeSdk(baseState({ tick: 5, player: player(1, 1), nearbyNpcs: [bob] }));
+        sdk.onSend = a => {
+            if (a.method === 'sendInteractNpc') setTimeout(() => sdk.tick({ dialog: cont('b1') }), 1);
+        };
+        const p = talkTo(sdk as never, bob, [], { idle: 1 });
+        await flush();
+        await ticks(sdk, 1, () => ({ dialog: closed }));
+        await ticks(sdk, 2);
+        const r = await p;
+        expect(sentAt(sdk, 'sendInteractNpc')).toBe(1);
+        expect([r.settleTicks, r.refusedResends, r.unansweredResends]).toEqual([undefined, undefined, undefined]);
+    });
+});
+
 describe('act interrupts', () => {
     const page = (pageId: string, text: string): DialogState => ({ ...cont(pageId), allComponents: [{ id: 1, type: 4, buttonType: 0, option: '', text }] });
     const monkey = { name: 'monkey', match: (s: BotWorldState) => /monkey in your backpack/i.test(s.dialog.allComponents?.[0]?.text ?? ''), dismiss: 'continue' as const };
