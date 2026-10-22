@@ -225,7 +225,7 @@ describe('options', () => {
     });
 
     test('command-line flags, both spellings, with the account left alone', () => {
-        const flags = parseArgs(['cairn_m1', '--stops', 'aubury,Betty', '--out=/tmp/x.jsonl', '--repeat', '3', '--every=200']);
+        const flags = parseArgs(['acct01', '--stops', 'aubury,Betty', '--out=/tmp/x.jsonl', '--repeat', '3', '--every=200']);
         expect(flags).toEqual({ stops: 'aubury,Betty', out: '/tmp/x.jsonl', repeat: 3, every: 200 });
         expect(parseOptions(flags)).toEqual({ stops: ['aubury', 'betty'] as StopKey[], out: '/tmp/x.jsonl', repeat: 3, every: 200 });
         expect(() => parseArgs(['--buy', 'yes'])).toThrow(/unknown option/);
