@@ -29,7 +29,7 @@
 //   cueDir       as altar-giver
 import type { BotWorldState, NearbyLoc, NearbyPlayer } from '../../sdk/types';
 import { receiveFrom } from '../lib/trade';
-import { tickMs } from '../lib/wait';
+import { tickClock, tickMs } from '../lib/wait';
 import {
     canonName,
     cycleTicks,
@@ -376,7 +376,15 @@ class Receiver {
         return new Promise(resolve => {
             let i = 0;
             let lastTick = -1;
+            const end = () => {
+                unsub();
+                clock.stop();
+                resolve();
+            };
+            // Sending the last step ends the turn; the tick limit only matters if the tick clock restarts.
+            const limit = (steps.at(-1)?.send ?? 0) - (this.s?.tick ?? 0) + 20;
             const onFrame = (st: BotWorldState) => {
+                clock.see(st);
                 if (st.tick === lastTick) return;
                 lastTick = st.tick;
                 while (i < steps.length && st.tick >= steps[i]!.send) {
@@ -385,17 +393,10 @@ class Receiver {
                     else fire(actions);
                     i++;
                 }
-                if (i >= steps.length) {
-                    unsub();
-                    clearTimeout(wall);
-                    resolve();
-                }
+                if (i >= steps.length || clock.elapsed > limit) end();
             };
+            const clock = tickClock(this.s?.tick, end, this.s?.tick);
             const unsub = sdk.onStateUpdate(onFrame);
-            const wall = setTimeout(() => {
-                unsub();
-                resolve();
-            }, 30_000);
             if (this.s) onFrame(this.s);
         });
     }
