@@ -88,7 +88,7 @@ export const IMMUNITY = { superAntipoison: 570, antipoison: 120 } as const;
 
 /** The cannon holder's hand-off, as data (H11 / H11r / H23; agreed with rs/189 through rs/41). */
 export const CANNON_HANDOFF = {
-    S14: { in: { parts: CANNON_PART_OBJS, cannonballs: 100 }, out: 'the set and the unfired balls, back to the holder after the step (H11r)' },
+    S14: { in: { parts: CANNON_PART_OBJS, cannonballs: 100 }, out: 'the set and the unfired balls, back to the holder after the step (H11r); the same trade brings Monkey Madness\'s magic shortbow and 200 rune arrows the other way, so runner/handoff.ts runs H11r as swap() from its ledger row' },
     // Measured use: S14 65-72 balls; S27 ~1,110 (0.6 a tick meleeing, 0.5-0.6 with the bow), +~90 margin.
     S27: { in: { parts: CANNON_PART_OBJS, cannonballs: 1200 }, out: 'the set and the unfired balls, picked up at the end' },
     obj: CANNONBALL_OBJ,
