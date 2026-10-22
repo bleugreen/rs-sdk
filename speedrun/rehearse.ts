@@ -82,7 +82,7 @@ import { receiveFrom, type WantSpec } from './lib/trade';
 import { tickMs, waitUntil } from './lib/wait';
 import { DROP_STEP, type Link, RESUME_STEP, type ResumeEvent, runResumable, sessionLink } from './runner/resume';
 import { BOUNDARY_STEP, type Step } from './runner/step';
-import { parsePlayer, type PlayerRow, playerPath, PoliteFetcher } from './tools/hiscore-scrape';
+import { parsePlayer, type PlayerRow, playerPath, PoliteFetcher, withServerRate } from './tools/hiscore-scrape';
 
 // ------------------------------------------------------------------ arguments
 
@@ -932,14 +932,16 @@ export interface HiscoreCheck {
     diff: number | null;
     ok: boolean | null;
     basis: string;
+    /** The tick length the row's Time title stated or was converted under; absent for a plain `N ticks` title. */
+    tickMs?: number;
 }
 
 /** Manifest entry 0's demo acceptance: the hiscore playtime within 2 ticks of the log. */
 export const HISCORE_TOLERANCE = 2;
 
-function check(row: string, hiscore: number, expected: number | null, basis: string): HiscoreCheck {
+function check(row: string, hiscore: number, expected: number | null, basis: string, tickMs: number | undefined): HiscoreCheck {
     const diff = expected === null ? null : hiscore - expected;
-    return { row, hiscore, expected, diff, ok: diff === null ? null : Math.abs(diff) <= HISCORE_TOLERANCE, basis };
+    return { row, hiscore, expected, diff, ok: diff === null ? null : Math.abs(diff) <= HISCORE_TOLERANCE, basis, ...(tickMs === undefined ? {} : { tickMs }) };
 }
 
 /**
@@ -956,13 +958,13 @@ export function compareHiscore(s: Summary, rows: readonly PlayerRow[] | null, sk
             out.push({ row: target.skill, hiscore: null, expected: null, diff: null, ok: null, basis: 'no row (under level 15)' });
         } else {
             const at = [...s.reach].reverse().find(r => r.skill === skill.toLowerCase() && r.level === target.level);
-            out.push(check(`${target.skill} ${target.level}`, target.ticks, at?.playtime ?? null, at ? `level ${target.level} reached in the log` : `level ${target.level} not reached in this log`));
+            out.push(check(`${target.skill} ${target.level}`, target.ticks, at?.playtime ?? null, at ? `level ${target.level} reached in the log` : `level ${target.level} not reached in this log`, target.tickMs));
         }
     }
     const overall = rows.find(r => r.category === 0);
     if (overall?.ticks != null) {
-        if (s.reach.length) out.push(check('Overall', overall.ticks, Math.max(...s.reach.map(r => r.playtime)), 'the latest level gained in the log'));
-        else out.push(check('Overall', overall.ticks, s.sessions.length ? s.playtime : null, 'logout playtime (no level gained)'));
+        if (s.reach.length) out.push(check('Overall', overall.ticks, Math.max(...s.reach.map(r => r.playtime)), 'the latest level gained in the log', overall.tickMs));
+        else out.push(check('Overall', overall.ticks, s.sessions.length ? s.playtime : null, 'logout playtime (no level gained)', overall.tickMs));
     }
     return out;
 }
@@ -996,7 +998,8 @@ export function formatSummary(
     if (o.hiscore) {
         for (const h of o.hiscore) {
             const mark = h.ok === null ? '' : h.ok ? ' ok' : ` OFF by ${h.diff}`;
-            lines.push(`hiscore ${h.row}: ${h.hiscore ?? '-'} vs log ${h.expected ?? '-'}${h.diff === null ? '' : ` (${h.diff >= 0 ? '+' : ''}${h.diff})`}${mark}; ${h.basis}`);
+            const rate = h.tickMs === undefined ? '' : ` at ${h.tickMs} ms/tick`;
+            lines.push(`hiscore ${h.row}: ${h.hiscore ?? '-'}${rate} vs log ${h.expected ?? '-'}${h.diff === null ? '' : ` (${h.diff >= 0 ? '+' : ''}${h.diff})`}${mark}; ${h.basis}`);
         }
         if (o.hiscoreUrl) lines.push(`  ${o.hiscoreUrl}`);
     }
@@ -1485,7 +1488,8 @@ async function readHiscore(account: string, origin: string, runId: string): Prom
         await Bun.sleep(5_000);
         const fetcher = new PoliteFetcher(join(ROOT, 'speedrun', 'runs', 'hiscore-cache', `rehearse-${runId}-${attempt}`), new Date(), origin);
         try {
-            const rows = parsePlayer(await fetcher.get(playerPath(account)));
+            const html = await fetcher.get(playerPath(account));
+            const rows = await withServerRate(origin, tickMs => parsePlayer(html, tickMs));
             if (rows) return rows;
         } catch (e) {
             console.error(`[hiscore] ${e instanceof Error ? e.message : e}`);

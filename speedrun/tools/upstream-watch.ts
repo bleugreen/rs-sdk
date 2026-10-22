@@ -10,6 +10,8 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
+import { parseBoard, withServerRate } from './hiscore-scrape';
+
 const TOOL_DIR = import.meta.dir;
 const REPO_ROOT = resolve(TOOL_DIR, '../..');
 export const DEFAULT_WATCHLIST = join(TOOL_DIR, 'upstream-watchlist.json');
@@ -302,17 +304,17 @@ export function matchCommit(commit: CommitInfo, matcher: Matcher): WatchedFile[]
 // ---------------------------------------------------------------------------
 // Hiscores
 
-export function parseHiscoreTop(html: string): HiscoreRecord | undefined {
-    const name = html.match(/href="\/hiscores\/player\/([^"?]+)\?profile=/)?.[1];
-    const level = html.match(/<b>Level<\/b><br>\s*([\d,]+)<br>/)?.[1];
-    const time = html.match(/<span title="([\d,]+) ticks"[^>]*>([^<]+)<\/span>/);
-    if (!name || !level || !time) return undefined;
-    return {
-        name: decodeURIComponent(name),
-        level: Number(level.replaceAll(',', '')),
-        ticks: Number(time[1]!.replaceAll(',', '')),
-        time: time[2]!.trim()
-    };
+/**
+ * Row 1 of a ranked board. Name, level and stamp come from hiscore-scrape's parseBoard, which reads every
+ * Time title form (`tickMs` converts the seconds form); `time` is that cell's display text ("2h 59m 34s").
+ * Throws where parseBoard does (columns disagree, a stamp titleTicks rejects); undefined for a page with no rows.
+ */
+export function parseHiscoreTop(html: string, tickMs?: number): HiscoreRecord | undefined {
+    const top = parseBoard(html, tickMs)[0];
+    const timeColumn = html.indexOf('<b>Time</b>');
+    const time = timeColumn < 0 ? undefined : html.slice(timeColumn).match(/<span title="[^"]*"[^>]*>([^<]+)<\/span>/)?.[1];
+    if (!top || !time) return undefined;
+    return { name: top.name, level: top.level, ticks: top.ticks, time: time.trim() };
 }
 
 export type HiscoreFetch = { status: 'ok'; record: HiscoreRecord } | { status: 'unreachable' | 'unparsed'; error: string } | { status: 'skipped' };
@@ -326,7 +328,12 @@ export async function fetchHiscoreTop(url: string): Promise<HiscoreFetch> {
     } catch (err) {
         return { status: 'unreachable', error: err instanceof Error ? err.message : String(err) };
     }
-    const record = parseHiscoreTop(html);
+    let record: HiscoreRecord | undefined;
+    try {
+        record = await withServerRate(new URL(url).origin, tickMs => parseHiscoreTop(html, tickMs));
+    } catch (err) {
+        return { status: 'unparsed', error: err instanceof Error ? err.message : String(err) };
+    }
     return record ? { status: 'ok', record } : { status: 'unparsed', error: `could not find row 1 in ${html.length} characters of HTML` };
 }
 
@@ -427,7 +434,7 @@ function renderHiscore(h: HiscoreFinding): string {
             lines.push(`Could not fetch the hiscores page (${h.error}). This is a warning only; the record stays ${h.previous ? describeHiscore(h.previous) : 'unset'}.`);
             break;
         case 'unparsed':
-            lines.push(`**The hiscores page loaded but row 1 could not be parsed** (${h.error}). The ranking page's markup changed; check the hiscores entry's diffs and update \`parseHiscoreTop\`.`);
+            lines.push(`**The hiscores page loaded but row 1 could not be parsed** (${h.error}). The ranking page's markup changed; check the hiscores entry's diffs and update \`parseBoard\` in hiscore-scrape.ts.`);
             break;
         case 'ok': {
             const cur = h.current!;

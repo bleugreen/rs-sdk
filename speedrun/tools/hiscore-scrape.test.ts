@@ -2,37 +2,78 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { analyzeAccount, diffPlayers, parseBank, parseBoard, parseOutfit, parsePlayer, type PlayerRow, titleTicks } from './hiscore-scrape.ts';
+import { analyzeAccount, diffPlayers, parseBank, parseBoard, parseOutfit, parsePlayer, type PlayerRow, TickRateNeeded, titleTicks, withServerRate } from './hiscore-scrape.ts';
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, 'fixtures', name), 'utf8');
 
-// Fixtures named *-2026-10-22.html were fetched live from the demo on 2026-10-22, after it switched the
-// Time title from `N ticks` to `S seconds of game time` (first seen about 19:34 UTC by rs/455; a deploy
-// marker for engine code not on GitHub). S = 0.3 x ticks; the tick rate itself is unchanged. The older
-// fixtures keep the `N ticks` form, which the engine's own page (lab worlds) still renders.
+// The demo's Time title has had three forms (all fetched live on 2026-10-22):
+//   older fixtures         `N ticks`, which the engine's own page (lab worlds) still renders;
+//   *-2026-10-22.html      `S seconds of game time` (about 19:34 to 19:56 UTC, rs/455), S = ticks x 300 ms then;
+//   *-2026-10-22-400ms.html `N ticks normalized to 400 ms per tick`, since the demo's ~19:56 UTC restart onto
+//                          400 ms ticks (rs/147). The same accounts carry the same tick counts in all of them.
 describe('titleTicks', () => {
-    test('old form: N ticks', () => {
-        expect(titleTicks('12,006', 'ticks')).toBe(12_006);
-        expect(titleTicks('764', 'ticks')).toBe(764);
+    test('form 1: N ticks', () => {
+        expect(titleTicks('12,006 ticks')).toEqual({ ticks: 12_006 });
+        expect(titleTicks('764 ticks', 400)).toEqual({ ticks: 764 });
     });
 
-    test('new form: S seconds of game time, S = 0.3 x ticks, exact', () => {
-        expect(titleTicks('998.7', 'seconds of game time')).toBe(3_329);
-        expect(titleTicks('207', 'seconds of game time')).toBe(690);
-        expect(titleTicks('2,247', 'seconds of game time')).toBe(7_490);
-        expect(titleTicks('3,601.8', 'seconds of game time')).toBe(12_006);
-        expect(titleTicks('0.3', 'seconds of game time')).toBe(1);
-        // Every tick count up to 100k survives the round trip through the demo's one-decimal rendering.
-        for (let t = 0; t <= 100_000; t += 7) {
-            const s = (t * 0.3).toLocaleString('en-US', { maximumFractionDigits: 1 });
-            expect(titleTicks(s, 'seconds of game time')).toBe(t);
+    test('form 3: N ticks normalized to M ms per tick gives the ticks and the rate', () => {
+        expect(titleTicks('3,329 ticks normalized to 400 ms per tick')).toEqual({ ticks: 3_329, tickMs: 400 });
+        expect(titleTicks('35,916 ticks normalized to 600 ms per tick', 400)).toEqual({ ticks: 35_916, tickMs: 600 });
+    });
+
+    test('form 2: S seconds of game time converts exactly under the given rate, never an assumed one', () => {
+        expect(() => titleTicks('998.7 seconds of game time')).toThrow(TickRateNeeded);
+        expect(titleTicks('998.7 seconds of game time', 300)).toEqual({ ticks: 3_329, tickMs: 300 });
+        expect(titleTicks('207 seconds of game time', 300)).toEqual({ ticks: 690, tickMs: 300 });
+        expect(titleTicks('2,247 seconds of game time', 300)).toEqual({ ticks: 7_490, tickMs: 300 });
+        expect(titleTicks('3,601.8 seconds of game time', 300)).toEqual({ ticks: 12_006, tickMs: 300 });
+        expect(titleTicks('1,331.6 seconds of game time', 400)).toEqual({ ticks: 3_329, tickMs: 400 });
+        expect(titleTicks('0.6 seconds of game time', 600)).toEqual({ ticks: 1, tickMs: 600 });
+        // Every tick count up to 100k survives the round trip through a one-decimal rendering.
+        for (const ms of [300, 400, 600]) {
+            for (let t = 0; t <= 100_000; t += 7) {
+                const s = ((t * ms) / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 });
+                expect(titleTicks(`${s} seconds of game time`, ms).ticks).toBe(t);
+            }
         }
     });
 
-    test('a value off the 0.3 s grid or a fractional tick count is rejected, not rounded', () => {
-        expect(() => titleTicks('998.8', 'seconds of game time')).toThrow(/not a multiple of 0.3/);
-        expect(() => titleTicks('998.75', 'seconds of game time')).toThrow(/not a multiple of 0.3/);
-        expect(() => titleTicks('1.5', 'ticks')).toThrow(/not a whole tick count/);
+    test('a value off the rate grid, a fractional tick count or an unknown form is rejected, not rounded', () => {
+        expect(() => titleTicks('998.8 seconds of game time', 300)).toThrow(/not a whole number of 300 ms ticks/);
+        expect(() => titleTicks('998.75 seconds of game time', 300)).toThrow(/not a whole number of 300 ms ticks/);
+        expect(() => titleTicks('998.7 seconds of game time', 400)).toThrow(/not a whole number of 400 ms ticks/);
+        expect(() => titleTicks('1.5 ticks')).toThrow(/not a whole tick count/);
+        expect(() => titleTicks('1.5 ticks normalized to 400 ms per tick')).toThrow(/not a whole tick count/);
+        expect(() => titleTicks('3,329 ticks at 400 ms')).toThrow(/no known form/);
+        expect(() => titleTicks('16m 38s')).toThrow(/no known form/);
+    });
+});
+
+describe('withServerRate', () => {
+    test('a page that states its stamps parses without asking the server', async () => {
+        const html = fixture('hiscore/board-woodcutting-2026-10-22-400ms.html');
+        // An origin nothing listens on: reaching it would fail the parse.
+        expect((await withServerRate('http://127.0.0.1:9', ms => parseBoard(html, ms)))[0]).toMatchObject({ ticks: 3_329, tickMs: 400 });
+    });
+
+    test('a seconds-form page converts under the hello frame\'s tickMs', async () => {
+        const server = Bun.serve({
+            port: 0,
+            fetch: (req, srv) => (srv.upgrade(req) ? undefined : new Response('no', { status: 400 })),
+            websocket: {
+                open: ws => {
+                    ws.send(JSON.stringify({ t: 'hello', v: 1, tick: 1, tickMs: 300, players: 0 }));
+                },
+                message: () => {}
+            }
+        });
+        try {
+            const rows = await withServerRate(`http://127.0.0.1:${server.port}`, ms => parseBoard(fixture('hiscore/board-woodcutting-2026-10-22.html'), ms));
+            expect(rows[0]).toEqual({ rank: 1, name: 'cairn_chops', level: 99, ticks: 3_329, tickMs: 300 });
+        } finally {
+            server.stop(true);
+        }
     });
 });
 
@@ -50,12 +91,22 @@ describe('parseBoard', () => {
         expect(rows[0]!.level).toBeGreaterThan(100);
     });
 
-    test('new-form board (demo, 2026-10-22): seconds titles convert to the same ticks', () => {
-        const rows = parseBoard(fixture('hiscore/board-woodcutting-2026-10-22.html'));
+    test('seconds-form board (demo, 2026-10-22, 300 ms): converts under the given rate to the same ticks', () => {
+        const html = fixture('hiscore/board-woodcutting-2026-10-22.html');
+        expect(() => parseBoard(html)).toThrow(TickRateNeeded);
+        const rows = parseBoard(html, 300);
         expect(rows).toHaveLength(21);
-        expect(rows[0]).toEqual({ rank: 1, name: 'cairn_chops', level: 99, ticks: 3_329 });
+        expect(rows[0]).toEqual({ rank: 1, name: 'cairn_chops', level: 99, ticks: 3_329, tickMs: 300 });
         expect(rows[1]!.ticks).toBe(3_403); // 1,020.9 s
         expect(rows.every(r => Number.isInteger(r.ticks))).toBe(true);
+    });
+
+    test('normalized-form board (demo since its 400 ms restart): the same ticks, and the rate', () => {
+        const rows = parseBoard(fixture('hiscore/board-woodcutting-2026-10-22-400ms.html'));
+        expect(rows).toHaveLength(21);
+        expect(rows[0]).toEqual({ rank: 1, name: 'cairn_chops', level: 99, ticks: 3_329, tickMs: 400 });
+        expect(rows[1]).toMatchObject({ ticks: 3_403, tickMs: 400 });
+        expect(rows.slice(0, 10).map(r => r.ticks)).toEqual(parseBoard(fixture('hiscore/board-woodcutting-2026-10-22.html'), 300).slice(0, 10).map(r => r.ticks));
     });
 });
 
@@ -79,19 +130,22 @@ describe('parsePlayer', () => {
         expect(parsePlayer(html.replaceAll('profile=main', 'profile=lab'))).toEqual(parsePlayer(html));
     });
 
-    test('new-form player pages (demo, 2026-10-22) carry the same ticks the old form did', () => {
-        const chops = parsePlayer(fixture('hiscore/player-cairn_chops-2026-10-22.html'))!;
-        expect(chops).toHaveLength(21);
-        expect(chops.find(r => r.skill === 'Woodcutting')).toMatchObject({ category: 9, rank: 1, level: 99, ticks: 3_329 });
-        expect(chops.find(r => r.skill === 'Overall')).toMatchObject({ level: 126, ticks: 3_329 });
-        expect(chops.find(r => r.skill === 'Attack')).toMatchObject({ level: null, ticks: null });
-        const burns = parsePlayer(fixture('hiscore/player-cairn_burns-2026-10-22.html'))!;
-        expect(burns.find(r => r.skill === 'Firemaking')).toMatchObject({ category: 12, level: 99, ticks: 690 });
+    test('seconds-form and normalized-form player pages (demo, 2026-10-22) carry the same ticks', () => {
+        for (const [suffix, tickMs] of [['2026-10-22', 300], ['2026-10-22-400ms', 400]] as const) {
+            const chops = parsePlayer(fixture(`hiscore/player-cairn_chops-${suffix}.html`), suffix.endsWith('400ms') ? undefined : tickMs)!;
+            expect(chops).toHaveLength(21);
+            expect(chops.find(r => r.skill === 'Woodcutting')).toEqual({ category: 9, skill: 'Woodcutting', rank: 1, level: 99, ticks: 3_329, tickMs });
+            expect(chops.find(r => r.skill === 'Overall')).toMatchObject({ level: 126, ticks: 3_329, tickMs });
+            expect(chops.find(r => r.skill === 'Attack')).toEqual({ category: 1, skill: 'Attack', rank: null, level: null, ticks: null });
+            const burns = parsePlayer(fixture(`hiscore/player-cairn_burns-${suffix}.html`), suffix.endsWith('400ms') ? undefined : tickMs)!;
+            expect(burns.find(r => r.skill === 'Firemaking')).toMatchObject({ category: 12, level: 99, ticks: 690, tickMs });
+        }
+        expect(() => parsePlayer(fixture('hiscore/player-cairn_chops-2026-10-22.html'))).toThrow(TickRateNeeded);
     });
 
-    test('a seconds title off the 0.3 s grid fails the page instead of mis-reporting a stamp', () => {
+    test('a seconds title off the rate grid fails the page instead of mis-reporting a stamp', () => {
         const html = fixture('hiscore/player-cairn_burns-2026-10-22.html').replaceAll('title="207 seconds', 'title="207.1 seconds');
-        expect(() => parsePlayer(html)).toThrow(/not a multiple of 0.3/);
+        expect(() => parsePlayer(html, 300)).toThrow(/not a whole number of 300 ms ticks/);
     });
 
     test('a missing player is null', () => {

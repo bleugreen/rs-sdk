@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { BotAction, BotWorldState } from '../../sdk/types';
 import { activityOf, allowAction, parseHiscorePage } from './observe';
 
@@ -82,16 +84,45 @@ describe('parseHiscorePage', () => {
          <td align="right">${level}</td>
          <td align="right"><span title="${ticks} ticks" style="">1h</span></td></tr>`;
 
-    test('reads skill, rank, level and exact ticks', () => {
+    const fixture = (name: string) => readFileSync(join(import.meta.dir, 'fixtures/hiscore', name), 'utf8');
+
+    test('old form (lab worlds): reads skill, rank, level and exact ticks', () => {
         const h = parseHiscorePage('stunbaron', row('Overall', '1', '1,881', '35,916') + row('Mining', '7', '99', '12,006'));
         expect(h.found).toBe(true);
         expect(h.skills).toEqual([
-            { skill: 'Overall', rank: '1', level: '1,881', ticks: 35916 },
-            { skill: 'Mining', rank: '7', level: '99', ticks: 12006 },
+            { skill: 'Overall', rank: 1, level: 1881, ticks: 35916 },
+            { skill: 'Mining', rank: 7, level: 99, ticks: 12006 },
         ]);
+    });
+
+    test('normalized form (demo since its 400 ms restart): ticks read straight from the title', () => {
+        const h = parseHiscorePage('cairn_chops', fixture('player-cairn_chops-2026-10-22-400ms.html'));
+        expect(h.found).toBe(true);
+        expect(h.skills.find(s => s.skill === 'Woodcutting')).toEqual({ skill: 'Woodcutting', rank: 1, level: 99, ticks: 3_329 });
+        expect(h.skills.find(s => s.skill === 'Overall')).toMatchObject({ level: 126, ticks: 3_329 });
+        // Skills under level 15 have no row on the page.
+        expect(h.skills.some(s => s.skill === 'Attack')).toBe(false);
+        const burns = parseHiscorePage('cairn_burns', fixture('player-cairn_burns-2026-10-22-400ms.html'));
+        expect(burns.skills.find(s => s.skill === 'Firemaking')).toMatchObject({ level: 99, ticks: 690 });
+    });
+
+    test('seconds form (demo, 19:34 to 19:56 UTC): the same ticks under the rate it was rendered at', () => {
+        const html = fixture('player-cairn_chops-2026-10-22.html');
+        expect(parseHiscorePage('cairn_chops', html, 300).skills.find(s => s.skill === 'Woodcutting')).toEqual({ skill: 'Woodcutting', rank: 1, level: 99, ticks: 3_329 });
+        expect(() => parseHiscorePage('cairn_chops', html)).toThrow(/no tick rate/);
+    });
+
+    test('a seconds title off the rate grid throws instead of caching a wrong stamp', () => {
+        const html = fixture('player-cairn_burns-2026-10-22.html').replaceAll('title="207 seconds', 'title="207.1 seconds');
+        expect(() => parseHiscorePage('cairn_burns', html, 300)).toThrow(/not a whole number of 300 ms ticks/);
+    });
+
+    test('a page with no skill rows throws rather than reading as unranked', () => {
+        expect(() => parseHiscorePage('x', '<html><body>502 Bad Gateway</body></html>')).toThrow(/no skill rows/);
     });
 
     test('a missing player is not found', () => {
         expect(parseHiscorePage('nobody', '<p>Player "nobody" not found.</p>').found).toBe(false);
+        expect(parseHiscorePage('nobody', fixture('player-missing.html'))).toMatchObject({ found: false, skills: [] });
     });
 });

@@ -387,6 +387,18 @@ describe('compareHiscore', () => {
     test('no page yet', () => {
         expect(compareHiscore(summarize([]), null, 'mining')[0]!.basis).toContain('no player page');
     });
+
+    test('each check records the tick length its row\'s title stated, and the summary prints it', () => {
+        const s = summarize([reached('woodcutting', 15, 41), session(60)]);
+        const rows = player([[0, 'Overall', 46, 41], [9, 'Woodcutting', 15, 42]]).map(r => ({ ...r, tickMs: 400 }));
+        const checks = compareHiscore(s, rows, 'woodcutting');
+        expect(checks).toEqual([
+            { row: 'Woodcutting 15', hiscore: 42, expected: 41, diff: 1, ok: true, basis: 'level 15 reached in the log', tickMs: 400 },
+            { row: 'Overall', hiscore: 41, expected: 41, diff: 0, ok: true, basis: 'the latest level gained in the log', tickMs: 400 },
+        ]);
+        const text = formatSummary(s, { account: 'a', skill: 'woodcutting', to: 15, outcome: 'chain done', gate: [], hiscore: checks });
+        expect(text).toContain('hiscore Woodcutting 15: 42 at 400 ms/tick vs log 41 (+1) ok');
+    });
 });
 
 describe('trackers', () => {
