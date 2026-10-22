@@ -44,9 +44,23 @@
 //   Dargaud is inside the Ranging Guild (Ranged 40 at the door), so that
 //   camper trains Ranged on cows first.
 //
-// Both modes accept funding trades (coins, or feathers in headless mode) from
+// mode 'bows' (Varrock west bank, beside the Grand Exchange): strung bows for the
+// scored account, made by this account, training Fletching first when it must.
+//   bows: [{ bow, count }]  strung bows to hold, in order (BOWS keys, e.g. 'magic shortbow')
+//   level                   Fletching to reach before anything else is trained for (default 80)
+//   trainLog                the log trained on, bought when the bank is short (default 'Yew logs')
+//   maxPrices               GE caps per item name (default MAX_PRICES)
+//   xpRate                  the server's xp multiplier (default 25, the demo's)
+//   Each step is chosen from the live level, xp and holdings (bowsStep): a line
+//   the level allows is made at once (cut, string, bank); otherwise it trains on
+//   the best bow `trainLog` allows, cutting whole inventories with Make-X.
+//   Unstrung and strung bows share a name in this revision ("Magic shortbow" is
+//   both 72 and 861), so bows are counted and moved by item id.
+//
+// Every mode accepts funding trades (coins, or feathers in headless mode) from
 // `funders` (default our helper accounts) while waiting at Varrock west bank,
-// the place bidder.ts's `fund` trip delivers to.
+// the place bidder.ts's `fund` trip and the handover role deliver to.
+import { resolveSkillDialogProduct } from '../../sdk/action-quantity';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { receiveFrom } from '../lib/trade';
@@ -137,6 +151,134 @@ export function headlessStep(c: HeadlessCounts, target: number): 'done' | 'shaft
     if (c.shafts + c.logs * 15 < need) return 'shafts';
     if (c.feathers < Math.min(need, c.shafts)) return 'feathers';
     return 'attach';
+}
+
+/**
+ * Bows by tier: the log, the level and base xp of cutting it (cut_logs.dbrow;
+ * stringing gives the same), and the unstrung and strung item ids (obj.pack).
+ * Strung and unstrung share the display name.
+ */
+export interface BowSpec {
+    name: string;
+    log: string;
+    level: number;
+    xp: number;
+    unstrung: number;
+    strung: number;
+}
+export const BOWS: Record<string, BowSpec> = {
+    'willow shortbow': { name: 'Willow shortbow', log: 'Willow logs', level: 35, xp: 33.3, unstrung: 60, strung: 849 },
+    'willow longbow': { name: 'Willow longbow', log: 'Willow logs', level: 40, xp: 41.5, unstrung: 58, strung: 847 },
+    'maple shortbow': { name: 'Maple shortbow', log: 'Maple logs', level: 50, xp: 50, unstrung: 64, strung: 853 },
+    'maple longbow': { name: 'Maple longbow', log: 'Maple logs', level: 55, xp: 58.3, unstrung: 62, strung: 851 },
+    'yew shortbow': { name: 'Yew shortbow', log: 'Yew logs', level: 65, xp: 67.5, unstrung: 68, strung: 857 },
+    'yew longbow': { name: 'Yew longbow', log: 'Yew logs', level: 70, xp: 75, unstrung: 66, strung: 855 },
+    'magic shortbow': { name: 'Magic shortbow', log: 'Magic logs', level: 80, xp: 83.3, unstrung: 72, strung: 861 },
+    'magic longbow': { name: 'Magic longbow', log: 'Magic logs', level: 85, xp: 91.5, unstrung: 70, strung: 859 }
+};
+export const BOW_STRING = 'Bow string';
+/** GE caps (asks on 2026-10-22: yew logs 399, magic logs 2,250, bow string 146). */
+export const MAX_PRICES: Record<string, number> = { 'Yew logs': 450, 'Maple logs': 300, 'Willow logs': 100, 'Magic logs': 2600, 'Bow string': 250 };
+/** Bows made per bank trip: knife + logs + strings fill 27 of 28 slots. */
+export const MAKE_PER_TRIP = 13;
+
+export function bowSpec(bow: string): BowSpec {
+    const spec = BOWS[bow.trim().toLowerCase()];
+    if (!spec) throw new Error(`fletcher bows: unknown bow '${bow}' (one of ${Object.keys(BOWS).join(', ')})`);
+    return spec;
+}
+
+/** Experience at the start of `level` (the standard table, which the engine's xp multiplier leaves alone). */
+export function xpForLevel(level: number): number {
+    let points = 0;
+    for (let l = 1; l < level; l++) points += Math.floor(l + 300 * 2 ** (l / 7));
+    return Math.floor(points / 4);
+}
+
+/** The best-xp bow `log` makes at `level`, or null when the level allows none. */
+export function trainingBow(level: number, log: string): BowSpec | null {
+    const options = Object.values(BOWS).filter(b => b.log.toLowerCase() === log.trim().toLowerCase() && b.level <= level);
+    return options.sort((a, b) => b.xp - a.xp)[0] ?? null;
+}
+
+/** Logs of `bow` to cut from `xp` to the start of `level` at `xpRate` times base xp. */
+export function logsToLevel(xp: number, level: number, bow: BowSpec, xpRate: number): number {
+    return Math.max(0, Math.ceil((xpForLevel(level) - xp) / (bow.xp * xpRate)));
+}
+
+export interface BowLine {
+    bow: string;
+    count: number;
+}
+export interface BowsPlan {
+    lines: BowLine[];
+    level: number;
+    trainLog: string;
+    xpRate: number;
+}
+/** Bank + pack counts: bows by id (`strung`, `unstrung`), logs and strings by name (`item`, notes included). */
+export interface BowHoldings {
+    strung(bow: BowSpec): number;
+    unstrung(bow: BowSpec): number;
+    item(name: string): number;
+}
+export type BowStep =
+    | { kind: 'make'; bow: BowSpec; make: number; cut: number; buyLogs: number; buyStrings: number }
+    | { kind: 'train'; bow: BowSpec; target: number; logs: number; buyLogs: number }
+    | { kind: 'done' }
+    | { kind: 'stuck'; reason: string };
+
+/**
+ * What the bows mode does next. The first line short of its count that the
+ * level allows is made (at most MAKE_PER_TRIP per trip, unstrung bows held
+ * first). Otherwise it trains toward the plan's level, or the level of the
+ * first line still short if that is higher, on the best bow of `trainLog`.
+ */
+export function bowsStep(level: number, xp: number, held: BowHoldings, plan: BowsPlan): BowStep {
+    const short = plan.lines.map(l => ({ bow: bowSpec(l.bow), need: l.count - held.strung(bowSpec(l.bow)) })).filter(l => l.need > 0);
+    const ready = short.find(l => l.bow.level <= level);
+    if (ready) {
+        const make = Math.min(ready.need, MAKE_PER_TRIP);
+        const cut = make - Math.min(make, held.unstrung(ready.bow));
+        return {
+            kind: 'make',
+            bow: ready.bow,
+            make,
+            cut,
+            buyLogs: Math.max(0, cut - held.item(ready.bow.log)),
+            buyStrings: Math.max(0, make - held.item(BOW_STRING))
+        };
+    }
+    const target = Math.max(plan.level, ...short.map(l => l.bow.level));
+    if (level >= target) return { kind: 'done' };
+    const bow = trainingBow(level, plan.trainLog);
+    if (!bow) return { kind: 'stuck', reason: `Fletching ${level} makes no bow from ${plan.trainLog}` };
+    const logs = logsToLevel(xp, target, bow, plan.xpRate);
+    return { kind: 'train', bow, target, logs, buyLogs: Math.max(0, logs - held.item(plan.trainLog)) };
+}
+
+interface DialogButton {
+    index: number;
+    text: string;
+}
+const squash = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, '');
+const isMake = (t: string) => /^make(x|\d+)$/.test(squash(t));
+
+/**
+ * The button that makes the most of `product` in a skill_multi dialog, whose
+ * products each have Make X, Make 10, Make 5 and a button carrying the
+ * product's name (Make 1). The name button closes its group when the first
+ * one is not the dialog's first option, and opens it otherwise.
+ */
+export function makeButton(options: readonly DialogButton[], product: DialogButton): { button: DialogButton; kind: 'x' | '10' | '5' | '1' } {
+    const at = options.findIndex(o => o.index === product.index);
+    const firstName = options.findIndex(o => o.text.trim() !== '' && !isMake(o.text));
+    const group = firstName === 0 ? options.slice(at + 1, at + 4) : options.slice(Math.max(0, at - 3), at);
+    for (const kind of ['x', '10', '5'] as const) {
+        const button = group.find(o => squash(o.text) === `make${kind}`);
+        if (button) return { button, kind };
+    }
+    return { button: product, kind: '1' };
 }
 
 // ------------------------------------------------------------------ places
@@ -627,10 +769,257 @@ class Fletcher {
         this.ctx.log('done', { mode: 'camp', shop, held: holdings() });
     }
 
+    // ---------------------------------------------------------------- bows mode
+
+    private bankIds = new Map<number, number>();
+
+    private invId(id: number): number {
+        return this.sdk.getInventory().filter(i => i.id === id).reduce((a, i) => a + i.count, 0);
+    }
+    private heldId(id: number): number {
+        return this.invId(id) + (this.bankIds.get(id) ?? 0);
+    }
+    private xp(): number {
+        return this.sdk.getSkill('Fletching')?.experience ?? 0;
+    }
+    private level(): number {
+        return this.sdk.getSkill('Fletching')?.baseLevel ?? 1;
+    }
+    private get holdings(): BowHoldings {
+        return {
+            strung: b => this.heldId(b.strung),
+            unstrung: b => this.heldId(b.unstrung),
+            // By name, so the GE's banknotes in the pack count too.
+            item: name => this.held(new RegExp(`^${name}$`, 'i'))
+        };
+    }
+
+    /** Varrock west bank, refreshing the per-id counts as well. */
+    private async atVarrockBank<T>(body: () => Promise<T>): Promise<T> {
+        return this.atBank(BANKS.varrockWest, async () => {
+            try {
+                return await body();
+            } finally {
+                this.bankIds = new Map(this.sdk.getBankItems().map(i => [i.id, i.count]));
+            }
+        });
+    }
+
+    /** Deposit everything but the knife, one id at a time (same-named bows are different ids). */
+    private async depositAllButKnife(): Promise<void> {
+        for (let pass = 0; pass < 3; pass++) {
+            const item = this.sdk.getInventory().find(i => !KNIFE.test(i.name));
+            if (!item) return;
+            for (const id of [...new Set(this.sdk.getInventory().filter(i => !KNIFE.test(i.name)).map(i => i.id))]) {
+                const it = this.sdk.getInventory().find(i => i.id === id);
+                if (it) await this.bot.depositItem(it, -1);
+            }
+        }
+    }
+
+    private async withdrawId(id: number, n: number): Promise<number> {
+        const b = this.sdk.getBankItems().find(i => i.id === id);
+        const take = Math.min(n, b?.count ?? 0);
+        if (b && take > 0) await this.bot.withdrawItem(b, take);
+        return take;
+    }
+
+    /** Buy toward holding `quantity` of each line at the GE, waiting at Varrock west for funds when the coins fall short. */
+    private async buyBowSupplies(lines: { item: string; quantity: number }[]): Promise<void> {
+        const caps = { ...MAX_PRICES, ...((this.ctx.options.maxPrices as Record<string, number> | undefined) ?? {}) };
+        const todo = lines.filter(l => l.quantity > this.held(new RegExp(`^${l.item}$`, 'i')));
+        if (todo.length === 0) return;
+        const cost = todo.reduce((a, l) => a + (l.quantity - this.held(new RegExp(`^${l.item}$`, 'i'))) * (caps[l.item] ?? 1000), 0);
+        if (this.held(COINS) < cost) {
+            this.setPhase('wait-funds', { cost });
+            await this.waitForFunds(`${cost} coins for ${todo.map(l => `${l.item} x${l.quantity}`).join(', ')}`, () => this.held(COINS) >= cost);
+        }
+        this.setPhase('buy', { lines: todo });
+        await this.atVarrockBank(async () => {
+            await this.depositAllButKnife();
+            await this.buyer.setCoins(Math.min(cost, this.held(COINS)));
+        });
+        for (const l of todo) {
+            const r = await this.buyer.buyAtGE({ item: l.item, quantity: l.quantity, source: 'ge', maxPrice: caps[l.item] });
+            this.ctx.log('ge', { ...r });
+        }
+        await this.atVarrockBank(() => this.depositAllButKnife());
+    }
+
+    private async ensureKnifeAtVarrock(): Promise<void> {
+        if (this.slot(KNIFE)) return;
+        await this.atVarrockBank(async () => void (await this.withdraw(KNIFE, 1)));
+        if (!this.slot(KNIFE)) throw new Error('fletcher bows: no knife in the pack or the Varrock west bank');
+    }
+
+    /**
+     * Cut every carried `bow.log` into unstrung `bow`s: knife on log, the bow's
+     * Make-X with the carried count, then wait while the queued cuts land. The
+     * queue is weak, so anything that interrupts it just costs a re-click.
+     */
+    private async cutCarried(bow: BowSpec): Promise<number> {
+        const logRe = new RegExp(`^${bow.log}$`, 'i');
+        const start = this.inv(logRe);
+        let stalls = 0;
+        while (this.inv(logRe) > 0 && stalls < 4) {
+            this.checkSignal();
+            await this.bot.dismissBlockingUI();
+            const before = this.inv(logRe);
+            const knife = this.slot(KNIFE);
+            const log = this.slot(logRe);
+            if (!knife || !log) break;
+            await this.sdk.sendUseItemOnItem(knife.slot, log.slot);
+            const opened = await this.sdk.waitForCondition(s => s.dialog.isOpen && s.dialog.options.some(o => isMake(o.text)), 5000).then(
+                () => true,
+                () => false
+            );
+            if (opened) {
+                const options = this.state().dialog.options;
+                const product = resolveSkillDialogProduct(options, bow.name);
+                if (!product) throw new Error(`fletcher bows: no '${bow.name}' in the dialog (${options.map(o => o.text.trim()).join(' | ')})`);
+                const { button, kind } = makeButton(options, product);
+                await this.sdk.sendClickDialog(button.index);
+                if (kind === 'x') {
+                    await this.sdk.waitForTicks(1);
+                    await this.sdk.sendCountDialog(before);
+                }
+                // Progress is one log every 2-3 ticks; 8 still ticks means the queue ended.
+                let last = before;
+                for (let idle = 0; this.inv(logRe) > 0 && idle < 8; ) {
+                    await this.sdk.waitForTicks(1);
+                    const n = this.inv(logRe);
+                    if (n < last) {
+                        last = n;
+                        idle = 0;
+                    } else idle++;
+                }
+            }
+            if (this.inv(logRe) < before) stalls = 0;
+            else {
+                stalls++;
+                const st = this.state();
+                this.ctx.log('cut stalled', { bow: bow.name, logs: before, dialog: st.dialog.isOpen ? st.dialog.options.map(o => o.text.trim()) : null, messages: st.gameMessages.slice(-4).map(m => m.text) });
+            }
+        }
+        return start - this.inv(logRe);
+    }
+
+    /** String every carried unstrung `bow`: one delay-free use per bow, each gated on the strung count rising. */
+    private async stringCarried(bow: BowSpec): Promise<number> {
+        const stringRe = /^bow string$/i;
+        let made = 0;
+        let stalls = 0;
+        while (this.invId(bow.unstrung) > 0 && this.inv(stringRe) > 0 && stalls < 4) {
+            this.checkSignal();
+            await this.bot.dismissBlockingUI();
+            const had = this.invId(bow.strung);
+            const s = this.slot(stringRe)!;
+            const u = this.sdk.getInventory().find(i => i.id === bow.unstrung)!;
+            await this.sdk.sendUseItemOnItem(s.slot, u.slot);
+            const ok = await this.sdk.waitForCondition(st => st.inventory.filter(i => i.id === bow.strung).reduce((a, i) => a + i.count, 0) > had, 3000).then(
+                () => true,
+                () => false
+            );
+            if (ok) {
+                made++;
+                stalls = 0;
+            } else {
+                stalls++;
+                this.ctx.log('string stalled', { bow: bow.name, messages: this.state().gameMessages.slice(-3).map(m => m.text) });
+            }
+        }
+        return made;
+    }
+
+    private async makeBows(step: Extract<BowStep, { kind: 'make' }>): Promise<void> {
+        const { bow } = step;
+        if (step.buyLogs > 0 || step.buyStrings > 0) {
+            await this.buyBowSupplies([
+                { item: bow.log, quantity: this.held(new RegExp(`^${bow.log}$`, 'i')) + step.buyLogs },
+                { item: BOW_STRING, quantity: this.held(/^bow string$/i) + step.buyStrings }
+            ]);
+            return; // re-plan from the new holdings
+        }
+        this.setPhase(`make:${bow.name}`, { make: step.make, cut: step.cut, level: this.level() });
+        await this.atVarrockBank(async () => {
+            await this.depositAllButKnife();
+            await this.withdrawId(bow.unstrung, step.make - step.cut);
+            await this.withdraw(new RegExp(`^${bow.log}$`, 'i'), step.cut);
+            await this.withdraw(/^bow string$/i, step.make);
+        });
+        const cut = await this.cutCarried(bow);
+        const strung = await this.stringCarried(bow);
+        await this.atVarrockBank(() => this.depositAllButKnife());
+        this.ctx.log('made', { bow: bow.name, cut, strung, held: this.heldId(bow.strung), level: this.level() });
+    }
+
+    private async train(step: Extract<BowStep, { kind: 'train' }>): Promise<void> {
+        const { bow } = step;
+        if (step.buyLogs > 0) {
+            await this.buyBowSupplies([{ item: bow.log, quantity: this.held(new RegExp(`^${bow.log}$`, 'i')) + step.buyLogs }]);
+            return;
+        }
+        const logRe = new RegExp(`^${bow.log}$`, 'i');
+        this.setPhase(`train:${bow.name}`, { level: this.level(), target: step.target, logs: step.logs });
+        const t0 = this.tick();
+        const xp0 = this.xp();
+        let cut = 0;
+        while (this.level() < step.target && this.held(logRe) > 0) {
+            this.checkSignal();
+            const before = this.tick();
+            await this.atVarrockBank(async () => {
+                await this.depositAllButKnife();
+                await this.withdraw(logRe, 27);
+            });
+            if (this.inv(logRe) === 0) break;
+            const n = await this.cutCarried(bow);
+            cut += n;
+            const hours = Math.max(((this.tick() - t0) * 0.3) / 3600, 1e-6);
+            const left = logsToLevel(this.xp(), step.target, trainingBow(this.level(), bow.log) ?? bow, Number(this.ctx.options.xpRate ?? 25));
+            this.ctx.log('trip', {
+                bow: bow.name,
+                cut: n,
+                ticks: this.tick() - before,
+                level: this.level(),
+                xp: this.xp(),
+                logsPerHour: Math.round(cut / hours),
+                xpPerHour: Math.round((this.xp() - xp0) / hours),
+                logsLeft: left,
+                etaMinutes: Math.round((left / Math.max(cut / hours, 1)) * 60)
+            });
+            if (n === 0) throw new Error(`fletcher bows: cut no ${bow.log} in a whole trip`);
+        }
+        await this.atVarrockBank(() => this.depositAllButKnife());
+    }
+
+    async bows(): Promise<void> {
+        const lines = ((this.ctx.options.bows as BowLine[] | undefined) ?? [{ bow: 'magic shortbow', count: 6 }]).map(l => ({ bow: bowSpec(l.bow).name, count: Number(l.count) }));
+        const plan: BowsPlan = {
+            lines,
+            level: Number(this.ctx.options.level ?? 80),
+            trainLog: String(this.ctx.options.trainLog ?? 'Yew logs'),
+            xpRate: Number(this.ctx.options.xpRate ?? 25)
+        };
+        await this.ensureKnifeAtVarrock();
+        await this.atVarrockBank(() => this.depositAllButKnife());
+        this.ctx.log('start', { mode: 'bows', plan, level: this.level(), xp: this.xp() });
+        for (;;) {
+            this.checkSignal();
+            const step = bowsStep(this.level(), this.xp(), this.holdings, plan);
+            if (step.kind === 'done') break;
+            if (step.kind === 'stuck') throw new Error(`fletcher bows: ${step.reason}`);
+            if (step.kind === 'make') await this.makeBows(step);
+            else await this.train(step);
+        }
+        this.setPhase('done');
+        this.ctx.log('done', { mode: 'bows', level: this.level(), held: Object.fromEntries(lines.map(l => [l.bow, this.heldId(bowSpec(l.bow).strung)])) });
+    }
+
     async run(): Promise<void> {
         await this.buyer.prepare();
         try {
             if (this.ctx.options.mode === 'camp') await this.camp();
+            else if (this.ctx.options.mode === 'bows') await this.bows();
             else await this.headless();
         } catch (e) {
             if (e instanceof Stop) return;
@@ -641,7 +1030,7 @@ class Fletcher {
 
 export const role: Role = {
     name: 'fletcher',
-    produces: [HEADLESS, SHAFT, /^(bronze|iron|steel|mithril|adamant) arrowtips$/i],
+    produces: [HEADLESS, SHAFT, /^(bronze|iron|steel|mithril|adamant) arrowtips$/i, /^(willow|maple|yew|magic) (short|long)bow$/i],
     async run(ctx: RoleContext) {
         await new Fletcher(ctx).run();
     }
