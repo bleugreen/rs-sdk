@@ -30,6 +30,16 @@
 // part of the respawn), so two chests give 4 blood runes per respawn period;
 // a second account adds nothing unless other players take chests first.
 // docs/speedrun/helpers/chest.md has the measured rate.
+//
+// Stopping: the only way out of the basement is the trap's teleport (the
+// handover's walker has no route up the ladder and through the locked door), so
+// a role stopped below ground strands the next role. A stop is asked for with
+// the stop file (<role-state dir>/<account>.chest-stop) or by reaching `target`:
+// the role keeps looting until the trap puts it on the surface, banks what it
+// carries at the East Ardougne north bank, deletes the stop file and finishes.
+// Never stop the process itself while the account is below ground.
+import { existsSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import { act } from '../lib/act';
 import { ensureRunOn } from '../lib/run-mode';
@@ -37,7 +47,7 @@ import { travelTo } from '../lib/toll-gate';
 import { waitTicks } from '../lib/wait';
 import { chebyshev, invCount, opIndex, pos, skillLevel } from '../lib/world';
 import { closeBank, openBank } from './mule';
-import { runStandalone, type Role, type RoleContext } from './role';
+import { runStandalone, standaloneStateDir, type Role, type RoleContext } from './role';
 
 export interface Pt {
     x: number;
@@ -103,7 +113,9 @@ export type Step =
     | { do: 'downstairs' }
     | { do: 'approach' }
     | { do: 'loot'; chest: number }
-    | { do: 'wait' };
+    | { do: 'wait' }
+    /** Stopping, and on the surface with nothing left to bank: finish here. */
+    | { do: 'done' };
 
 export interface PlanInput {
     zone: Zone;
@@ -114,19 +126,24 @@ export interface PlanInput {
     bankAt: number;
     /** A bank visit failed recently: carry on looting instead of retrying it. */
     bankBlocked: boolean;
+    /** A stop was asked for: finish at the next point on the surface, after banking. */
+    stopping: boolean;
 }
 
 /**
  * The next step. Banking happens only on the surface near Ardougne, where the
  * teleport drops the player anyway; inside the tower or the cave the role always
  * heads for the chests. In the cave: the nearest ready chest, else walk until
- * both chests are in view, else wait beside them for a respawn.
+ * both chests are in view, else wait beside them for a respawn. A stop is
+ * honoured only on the surface: below ground the role carries on until the
+ * trap's teleport takes it out.
  */
 export function planStep(i: PlanInput): Step {
     switch (i.zone) {
         case 'away':
-            return { do: 'travel' };
+            return i.stopping ? { do: 'done' } : { do: 'travel' };
         case 'near':
+            if (i.stopping) return i.carried > 0 && !i.bankBlocked ? { do: 'bank' } : { do: 'done' };
             return i.carried >= i.bankAt && !i.bankBlocked ? { do: 'bank' } : { do: 'door' };
         case 'upstairs':
             return { do: 'downstairs' };
@@ -173,6 +190,8 @@ export interface ChestOptions {
     minCombat: number;
     /** Ticks between progress lines. */
     reportTicks: number;
+    /** A file whose existence asks the role to stop (default <role-state dir>/<account>.chest-stop). */
+    stopFile?: string;
 }
 
 export function chestOptions(raw: Record<string, unknown>): ChestOptions {
@@ -187,7 +206,8 @@ export function chestOptions(raw: Record<string, unknown>): ChestOptions {
         keepCoins: num('keepCoins', 1000),
         target: num('target', 0),
         minCombat: num('minCombat', SAFE_COMBAT),
-        reportTicks: Math.max(100, num('reportTicks', 1000))
+        reportTicks: Math.max(100, num('reportTicks', 1000)),
+        ...(typeof raw.stopFile === 'string' && raw.stopFile ? { stopFile: raw.stopFile } : {})
     };
 }
 
@@ -201,6 +221,7 @@ const STATE_KEY = 'chest';
 
 class ChestRunner {
     private readonly o: ChestOptions;
+    private readonly stopFile: string;
     private progress: Progress;
     /** This session only (rates). */
     private opens = 0;
@@ -220,6 +241,7 @@ class ChestRunner {
 
     constructor(private readonly ctx: RoleContext) {
         this.o = chestOptions(ctx.options);
+        this.stopFile = this.o.stopFile ?? join(standaloneStateDir(), `${ctx.account}.chest-stop`);
         const p = ctx.state.get(STATE_KEY) as Partial<Progress> | undefined;
         this.progress = { gained: p?.gained ?? 0, opens: p?.opens ?? 0, banked: p?.banked ?? 0 };
     }
@@ -252,17 +274,20 @@ class ChestRunner {
 
         let phase: Step['do'] | null = null;
         while (!this.ctx.signal.aborted) {
-            if (this.o.target > 0 && this.progress.gained >= this.o.target) {
-                this.report('target reached');
-                return;
-            }
+            const targetReached = this.o.target > 0 && this.progress.gained >= this.o.target;
+            const stopping = targetReached || existsSync(this.stopFile);
             await this.ctx.bot.dismissBlockingUI();
             await this.eatIfLow();
             const st = this.s;
             const here = pos(st);
             const zone = zoneOf(here);
             const chests = zone === 'basement' ? this.observe(st) : this.seen;
-            const step = planStep({ zone, at: here, chests, carried: invCount(st, BLOOD), bankAt: this.o.bankAt, bankBlocked: st.tick < this.bankBlockedUntil });
+            const step = planStep({ zone, at: here, chests, carried: invCount(st, BLOOD), bankAt: this.o.bankAt, bankBlocked: st.tick < this.bankBlockedUntil, stopping });
+            if (step.do === 'done') {
+                rmSync(this.stopFile, { force: true });
+                this.report('finished', { reason: targetReached ? 'target reached' : 'stop file', at: here, carried: invCount(st, BLOOD) });
+                return;
+            }
             if (step.do !== phase && step.do !== 'wait') this.ctx.log('phase', { phase: step.do, at: here });
             if (step.do !== 'wait') this.waitingSince = -1;
             phase = step.do;
@@ -309,6 +334,8 @@ class ChestRunner {
                 return this.walk(CHEST_APPROACH, 2);
             case 'loot':
                 return this.loot(step.chest);
+            case 'done':
+                return;
             case 'wait':
                 if (this.waitingSince < 0) {
                     this.waitingSince = this.s.tick;
@@ -453,7 +480,7 @@ class ChestRunner {
         }
     }
 
-    private report(message: string): void {
+    private report(message: string, extra: Record<string, unknown> = {}): void {
         const s = this.ctx.sdk.getState();
         const ticks = (s?.tick ?? this.startTick) - this.startTick;
         const ms = Date.now() - this.startedAt;
@@ -468,7 +495,8 @@ class ChestRunner {
             bloodPerHour: perHour(this.gained, ms),
             bloodPer1000Ticks: ticks > 0 ? +((this.gained * 1000) / ticks).toFixed(1) : null,
             msPerTick: ticks > 0 ? Math.round(ms / ticks) : null,
-            assignment: this.progress
+            assignment: this.progress,
+            ...extra
         });
     }
 }

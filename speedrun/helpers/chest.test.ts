@@ -8,6 +8,7 @@ const plan = (over: Partial<PlanInput>): PlanInput => ({
     carried: 0,
     bankAt: 40,
     bankBlocked: false,
+    stopping: false,
     ...over
 });
 
@@ -81,6 +82,24 @@ describe('planStep', () => {
     });
 });
 
+describe('planStep: stopping', () => {
+    test('below ground a stop is not honoured: loot, wait, climb on until the trap teleports us out', () => {
+        expect(planStep(plan({ stopping: true }))).toEqual({ do: 'loot', chest: 1 });
+        expect(planStep(plan({ stopping: true, chests: ['looted', 'looted'] }))).toEqual({ do: 'wait' });
+        expect(planStep(plan({ stopping: true, zone: 'tower' }))).toEqual({ do: 'ladder' });
+    });
+
+    test('on the surface: bank whatever is carried, then finish', () => {
+        expect(planStep(plan({ stopping: true, zone: 'near', carried: 2 }))).toEqual({ do: 'bank' });
+        expect(planStep(plan({ stopping: true, zone: 'near', carried: 0 }))).toEqual({ do: 'done' });
+        expect(planStep(plan({ stopping: true, zone: 'near', carried: 30, bankBlocked: true }))).toEqual({ do: 'done' });
+    });
+
+    test('away from Ardougne a stop finishes at once instead of travelling', () => {
+        expect(planStep(plan({ stopping: true, zone: 'away', carried: 50 }))).toEqual({ do: 'done' });
+    });
+});
+
 describe('who may run it', () => {
     const ones = { attack: 1, strength: 1, defence: 1, hitpoints: 10, prayer: 1, ranged: 1, magic: 1 };
 
@@ -105,6 +124,7 @@ describe('options and rates', () => {
         expect(chestOptions({})).toEqual({ bankAt: 40, keepCoins: 1000, target: 0, minCombat: 107, reportTicks: 1000 });
         expect(chestOptions({ bankAt: 0, target: 570 }).bankAt).toBe(2);
         expect(chestOptions({ target: 570 }).target).toBe(570);
+        expect(chestOptions({ stopFile: '/tmp/x.chest-stop' }).stopFile).toBe('/tmp/x.chest-stop');
         expect(() => chestOptions({ bankAt: -1 })).toThrow(/bankAt/);
         expect(() => chestOptions({ target: '570' })).toThrow(/target/);
     });
