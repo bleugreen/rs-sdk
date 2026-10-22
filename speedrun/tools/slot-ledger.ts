@@ -256,7 +256,7 @@ export function parseLedger(markdown: string): ParseResult {
 // ------------------------------------------------------------------ the walk
 
 /** A stack held, or worn: one slot when stackable or noted, one per item when not. */
-interface Held extends ItemRef {
+export interface Held extends ItemRef {
     kind: Kind;
     /** null: unknown. */
     count: number | null;
@@ -307,6 +307,8 @@ export interface LedgerEntry {
     /** The inventory and the worn set once the row is done. */
     held: string;
     worn: string;
+    /** The same, as stacks (copies): what tools/rune-pins.ts reads the runes and the worn staff from. */
+    stacks: { inv: readonly Held[]; worn: readonly Held[] };
 }
 
 const isHandOff = (row: string) => /^H/.test(row);
@@ -488,7 +490,8 @@ export function walk(rows: readonly LedgerRow[]): LedgerEntry[] {
             notes.push(`held at an unknown count: ${vague.join(', ')}`);
         }
         if (unknownCounts.length) notes.push(`? counts: ${unknownCounts.join(', ')}`);
-        return { row, free, need: row.need, used, verdict, notes, held: Pack.show(pack.inv), worn: Pack.show(pack.worn) };
+        const stacks = { inv: pack.inv.map(h => ({ ...h })), worn: pack.worn.map(h => ({ ...h })) };
+        return { row, free, need: row.need, used, verdict, notes, held: Pack.show(pack.inv), worn: Pack.show(pack.worn), stacks };
     });
 }
 

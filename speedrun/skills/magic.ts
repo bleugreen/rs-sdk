@@ -36,6 +36,7 @@ import { levelUpChain } from '../lib/levelup';
 import { swap, type GiveSpec, type SwapResult, type SwapSdk, type WantSpec } from '../lib/trade';
 import { failureReason, onStates, waitUntil, type StateSource } from '../lib/wait';
 import { chebyshev, invCount, opIndex, worn } from '../lib/world';
+import type { RuneUseTable } from '../lib/travel';
 import { levelForXp, XP_RATE, xpForLevel } from '../lib/xp';
 import type { Step, StepContext } from '../runner/step';
 
@@ -250,6 +251,24 @@ export function simulatePlan(xp: number, held: RingCounts, loads: readonly RingC
     if (levelForXp(x) >= untilLevel) return done();
     return { ok: false, reason: `the rings end at Magic ${levelForXp(x)}, short of ${untilLevel}`, casts, runes, level: levelForXp(x) };
 }
+
+/** Wind Strike's runes a cast (magic_combat_spells.dbrow `magic_spell_wind_strike`). */
+export const WIND_STRIKE_RUNES = { mindrune: 1, airrune: 1 } as const;
+/**
+ * S02's casts, the measured maximum: 3 strikes in 3 of 4 lab runs, 4 in 1 (magic.md section 9,
+ * rs/285). Five happen only if every strike splashes (4 x 5.5 base is short of level 7's 23.3).
+ */
+export const S02_MAX_STRIKES = 4;
+
+/** The route's S04 plan: ROUTE_LOADS enchanted from the bottom of Magic 7 to 59. */
+const S04_ROUTE = simulatePlan(xpForLevel(7), {}, ROUTE_LOADS, 59);
+
+/** S02's and S04's runes on the route (lib/travel.ts RuneUseTable), net of the staff of water (Lvl-1 enchant's water). */
+export const RUNE_USE: RuneUseTable = {
+    S02: { mindrune: WIND_STRIKE_RUNES.mindrune * S02_MAX_STRIKES, airrune: WIND_STRIKE_RUNES.airrune * S02_MAX_STRIKES },
+    S04: { cosmicrune: S04_ROUTE.runes.cosmic, airrune: S04_ROUTE.runes.air, firerune: S04_ROUTE.runes.fire, earthrune: S04_ROUTE.runes.earth },
+};
+export const RUNE_STAFF = 'staff of water';
 
 /** Slack on load inference, in base xp: covers S02 ending a few base past its level (one Wind Strike is at most ~13). */
 export const RESUME_SLACK_BASE = 100;

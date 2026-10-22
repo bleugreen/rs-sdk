@@ -103,17 +103,42 @@ export const SPELLS: Readonly<Record<Spell, SpellInfo>> = {
 const RUNES: readonly Rune[] = ['air', 'water', 'earth', 'fire', 'law'];
 const STAFF = /^(?:staff of (air|water|earth|fire)|(air|water|earth|fire) battlestaff|mystic (air|water|earth|fire) staff)$/i;
 
+/** The element a worn item supplies without runes: a staff, battlestaff or mystic staff's; null for anything else. */
+export function staffElement(name: string): Rune | null {
+    const m = STAFF.exec(name);
+    return ((m?.[1] ?? m?.[2] ?? m?.[3])?.toLowerCase() as Rune | undefined) ?? null;
+}
+
 /** Runes in the inventory; a worn elemental staff makes its element unlimited. */
 export function runesHeld(src: StateLike): Record<Rune, number> {
     const s = stateOf(src);
     const held = Object.fromEntries(RUNES.map(r => [r, invCount(s, new RegExp(`^${r} rune$`, 'i'))])) as Record<Rune, number>;
     for (const w of s?.equipment ?? []) {
-        const m = STAFF.exec(w.name);
-        const el = (m?.[1] ?? m?.[2] ?? m?.[3])?.toLowerCase() as Rune | undefined;
+        const el = staffElement(w.name);
         if (el) held[el] = Infinity;
     }
     return held;
 }
+
+/** A rune's obj debug name (obj.pack 554-566, skill_magic/configs/runes.obj): the key of a declared rune use. */
+export type RuneName =
+    | 'airrune' | 'waterrune' | 'earthrune' | 'firerune' | 'mindrune' | 'bodyrune' | 'deathrune'
+    | 'naturerune' | 'chaosrune' | 'lawrune' | 'cosmicrune' | 'bloodrune' | 'soulrune';
+
+/** Runes consumed, by debug name, net of the element a worn staff supplies. */
+export type RuneUse = Readonly<Partial<Record<RuneName, number>>>;
+
+/**
+ * A step module's declared rune use on the route path, exported as `RUNE_USE` (agreed with rs/185,
+ * 2026-10-22): keyed by a segment letter of the module's `stepId`, or by a ledger row id where a
+ * skill module covers several steps (`S04`). Combat casts with a measured range count the measured
+ * maximum. Beside it, optionally: `RUNE_STAFF`, the worn staff (its ledger name, `staff of fire`)
+ * whose element the counts leave out, and `RUNE_USE_FALLBACK`, a fallback path's use in the same
+ * shape. speedrun/tools/rune-pins.ts holds them to STEP-MANIFEST.md's inventory ledger.
+ */
+export type RuneUseTable = Readonly<Record<string, RuneUse>>;
+
+export const runeName = (r: Rune): RuneName => `${r}rune`;
 
 export function addRunes(a: Runes, b: Runes): Runes {
     const out: Runes = { ...a };
