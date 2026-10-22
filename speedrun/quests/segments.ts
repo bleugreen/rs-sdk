@@ -18,7 +18,7 @@
 import type { BotWorldState } from '../../sdk/types';
 import type { QuestKey, StageName } from '../data/quest-stages';
 import type { ConverseOptions } from '../lib/converse';
-import { matchesItem } from '../lib/items';
+import { matchesItem, type ItemPattern } from '../lib/items';
 import { requireQuestStage, type QuestView } from '../lib/quests';
 import { receiveFrom, type WantSpec } from '../lib/trade';
 import type { Check, ObservedCheck, Step, StepContext } from '../runner/step';
@@ -164,8 +164,8 @@ export function freeSlots(s: BotWorldState): number {
 
 /** An item the content hands the step inside it, held from the segment that receives it through `until`. */
 export interface QuestItem {
-    /** As the inventory names it. */
-    item: string | RegExp;
+    /** As the inventory names it, or its config id where several items share a name (matchesItem). */
+    item: ItemPattern;
     /** For refusals; default the pattern. */
     name?: string;
     /** How many the content gives (default 1). */
@@ -190,8 +190,10 @@ export interface SlotNeed {
 /**
  * Free slots the step needs from segment `at` on: at each segment, every item
  * held there (received at or after `at`, not yet taken), less what the
- * inventory already holds of it; the peak over the segments. An item received
- * before `at` is already in the pack or spent, so it needs nothing.
+ * inventory already holds of it, less the slots that what the pack holds now
+ * frees once it is handed back (an item past its `until`); the peak over the
+ * segments. An item received before `at` is already in the pack or spent, so
+ * it needs nothing.
  */
 export function slotNeed(s: BotWorldState, items: readonly QuestItem[], letters: readonly string[], at: string): SlotNeed {
     const idx = (l: string) => {
@@ -207,9 +209,14 @@ export function slotNeed(s: BotWorldState, items: readonly QuestItem[], letters:
         for (const q of items) {
             const from = idx(q.from);
             const until = q.until === undefined ? letters.length - 1 : idx(q.until);
-            if (from < start || x < from || x > until) continue;
             const have = s.inventory.filter(i => matchesItem(i, q.item)).length;
             const n = q.n ?? 1;
+            if (x > until) {
+                // Handed back before this segment: whatever of it the pack holds now is a free slot here.
+                slots -= q.stackable ? (have ? 1 : 0) : Math.min(have, n);
+                continue;
+            }
+            if (from < start || x < from) continue;
             const add = q.stackable ? (have ? 0 : 1) : Math.max(0, n - have);
             if (!add) continue;
             slots += add;
