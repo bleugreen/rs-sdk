@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { BotWorldState, InventoryItem, PlayerState } from '../../sdk/types';
 import { PRAYER_INDICES } from '../../sdk/types';
 import { QUESTS } from '../data/quest-stages';
-import { drive, FakeSdk, baseState } from '../lib/fake-sdk';
+import { drive, FakeSdk, baseState, runeNeedProblems } from '../lib/fake-sdk';
 import { journalProbeName } from '../lib/quests';
 import { TickLog } from '../lib/ticks';
 import { configId } from '../lib/world';
@@ -13,7 +13,8 @@ import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import { parseLedger } from '../tools/slot-ledger';
 import { DEFAULT_DIALOGUE, slotNeed } from './segments';
 import {
-    ARRIVAL, BOLREN, exitCheck, H7, h7Want, inVillage, JUMP_IN, kitCheck, LETTERS, MONTAI, observed, QUEST_ITEMS, quest, REWARD_ATTACK_XP, resolveOptions, stepId, steps, VILLAGE_TREE, WARLORD,
+    ARRIVAL, BOLREN, exitCheck, H7, h7Want, inVillage, JUMP_IN, kitCheck, LETTERS, MONTAI, observed, QUEST_ITEMS, quest, REWARD_ATTACK_XP, resolveOptions, RUNE_NEED, RUNE_STAFF, RUNE_USE,
+    stepId, steps, VILLAGE_TREE, WARLORD, WARLORD_CASTS, WARLORD_MAX_CASTS,
 } from './tree-gnome-village';
 
 const ORB = configId('obj', 'orb_of_protection');
@@ -369,3 +370,17 @@ describe('N: the exit state', () => {
 });
 
 void PRAYER_INDICES;
+
+describe('rune pins: RUNE_USE and RUNE_NEED agree with K (tools/rune-pins.ts)', () => {
+    test("RUNE_NEED.K is exactly what K's precondition wants held", () => {
+        expect(runeNeedProblems(s => byLetter('K').preconditions(s, {}), startState('K').state, RUNE_NEED.K!)).toEqual([]);
+    });
+    test("K's Fire Blasts are the measured maximum, inside WARLORD_CASTS, their fire the staff's", () => {
+        expect(RUNE_USE.K!.deathrune).toBe(WARLORD_MAX_CASTS);
+        expect(WARLORD_MAX_CASTS).toBeLessThanOrEqual(WARLORD_CASTS);
+        expect(RUNE_USE.K!.firerune).toBeUndefined();
+        const s = startState('K').state;
+        const staff = new RegExp(RUNE_STAFF, 'i');
+        expect(byLetter('K').preconditions({ ...s, equipment: s.equipment.filter(i => !staff.test(i.name)) }, {})).toMatch(staff);
+    });
+});

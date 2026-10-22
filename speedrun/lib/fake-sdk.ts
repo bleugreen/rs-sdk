@@ -3,6 +3,7 @@
 
 import type { ActionResult, BotWorldState, DialogState, GameMessage, InventoryItem, SkillState, TradeState } from '../../sdk/types';
 import { PLAYER_CHAT_TYPES } from '../../sdk/types';
+import type { RuneName, RuneUse } from './travel';
 
 export interface SentAction {
     method: string;
@@ -36,6 +37,29 @@ export function baseState(overrides: Partial<BotWorldState> = {}): BotWorldState
         varps: { option_run: 1 },
         ...overrides,
     } as BotWorldState;
+}
+
+/** `s` with its rune stacks replaced by exactly `runes` (`lawrune` held as `Law rune`); every other item kept. */
+export function withRunes(s: BotWorldState, runes: RuneUse): BotWorldState {
+    const kept = s.inventory.filter(i => !/ rune$/i.test(i.name));
+    let slot = Math.max(-1, ...s.inventory.map(i => i.slot));
+    const label = (r: RuneName) => `${r[0]!.toUpperCase()}${r.slice(1, -'rune'.length)} rune`;
+    const stacks = (Object.entries(runes) as [RuneName, number][]).filter(([, n]) => n > 0).map(([r, n]): InventoryItem => ({ slot: ++slot, id: 0, name: label(r), count: n, optionsWithIndex: [] }));
+    return { ...s, inventory: [...kept, ...stacks] };
+}
+
+/**
+ * Where `check` and a module's declared RUNE_NEED disagree: `check` should pass on `s` holding exactly
+ * `need`'s runes, and fail with any one of them a rune short. Empty when they agree.
+ */
+export function runeNeedProblems(check: (s: BotWorldState) => true | string, s: BotWorldState, need: RuneUse): string[] {
+    const problems: string[] = [];
+    const at = check(withRunes(s, need));
+    if (at !== true) problems.push(`refused holding the need: ${at}`);
+    for (const [r, n] of Object.entries(need) as [RuneName, number][]) {
+        if (n > 0 && check(withRunes(s, { ...need, [r]: n - 1 })) === true) problems.push(`passed one ${r} short (${n - 1} of ${n})`);
+    }
+    return problems;
 }
 
 export class FakeSdk {

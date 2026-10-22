@@ -39,13 +39,13 @@
 
 import type { BotWorldState, PrayerName } from '../../sdk/types';
 import { act, actConverse, dropItems, openDoor, talkTo, type ActSdk } from '../lib/act';
-import { COMBAT_SPELLS, fight, prayerActive, setPrayer, type CombatSpell, type FightResult } from '../lib/combat';
+import { COMBAT_SPELLS, combatSpellUse, fight, prayerActive, setPrayer, type CombatSpell, type FightResult } from '../lib/combat';
 import { converse, levelUpInterrupt, type ConverseResult, type ConverseSdk } from '../lib/converse';
 import { pageText, type OptionPattern } from '../lib/dialogue';
 import { matchesItem, type ItemPattern } from '../lib/items';
 import { journalProbeName, questPoints, questStatus, requireQuestStage, type QuestView } from '../lib/quests';
 import { logNote } from '../lib/ticks';
-import { inArea, runTo, type Area, type TravelSdk } from '../lib/travel';
+import { inArea, runTo, type Area, type RuneUseTable, type TravelSdk } from '../lib/travel';
 import { receiveFrom, type WantSpec } from '../lib/trade';
 import { currentTick, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, configId, findLoc, invCount, opIndex, pos, skillXp, worn, type LocQuery } from '../lib/world';
@@ -194,6 +194,17 @@ const slots = (at: Letter) => slotsCover(QUEST_ITEMS, LETTERS, at);
 
 /** Casts the runes must cover: rs/56's 133-tick kill at the 5-tick cast delay is ~27; 165 by Fire Bolt ~33. */
 export const WARLORD_CASTS = 35;
+/** The warlord's Fire Blasts at their measured maximum: rs/342's lab kills at K took 20-26 casts (m, 300 ms, n = 7). */
+export const WARLORD_MAX_CASTS = 26;
+
+/** The worn staff whose element RUNE_USE leaves out (kitCheck wants it worn). */
+export const RUNE_STAFF = 'staff of fire';
+
+/** The step's runes on the route (lib/travel.ts RuneUseTable): the warlord's casts at K, at their measured maximum. */
+export const RUNE_USE: RuneUseTable = { K: combatSpellUse(resolveOptions().warlordSpell, WARLORD_MAX_CASTS, RUNE_STAFF) };
+
+/** What K's precondition wants held: WARLORD_CASTS casts' runes. */
+export const RUNE_NEED: RuneUseTable = { K: combatSpellUse(resolveOptions().warlordSpell, WARLORD_CASTS, RUNE_STAFF) };
 /** The reward, `stat_advance(attack, 114500)` (tenths) at the engine's 25x rate. */
 export const REWARD_ATTACK_XP = 286_250;
 

@@ -18,6 +18,7 @@ import { PRAYER_INDICES, type BotWorldState, type InventoryItem, type NearbyNpc,
 import { clickContinue } from './dialogue';
 import { matchesItem, type ItemPattern } from './items';
 import { levelUpChain } from './levelup';
+import { scaleUse, type RuneName, type RuneUse } from './travel';
 import { waitUntil, type Pred, type StateSource } from './wait';
 import { npcByIndex, opIndex, waitForNpc, type NamePattern } from './world';
 
@@ -33,6 +34,13 @@ export const COMBAT_SPELLS = {
     fire_blast: { component: 1181, magic: 59, rune: /^Death rune$/i, runeName: 'death', air: 4, fire: 5 },
 } as const;
 export type CombatSpell = keyof typeof COMBAT_SPELLS;
+
+/** `spell`'s runes for `casts` casts as a rune use (lib/travel.ts RuneUse), less the element `staff` supplies. */
+export function combatSpellUse(spell: CombatSpell, casts: number, staff?: string): RuneUse {
+    const sp = COMBAT_SPELLS[spell];
+    const one: Partial<Record<RuneName, number>> = { [`${sp.runeName}rune` as RuneName]: 1, airrune: sp.air, firerune: sp.fire };
+    return scaleUse(one, casts, staff);
+}
 
 export function prayerActive(s: BotWorldState, prayer: PrayerName): boolean {
     return s.prayers?.activePrayers?.[PRAYER_INDICES[prayer]] === true;
