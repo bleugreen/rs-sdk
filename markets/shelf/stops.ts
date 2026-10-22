@@ -35,6 +35,13 @@ export interface Stop {
     key: string;
     /** The shop as players know it; the server's title is recorded from the open shop. */
     shop: string;
+    /**
+     * The shop's content inventory (the shopkeeper's `owned_shop`, or the inv a script
+     * opens). Several when the world decides: Zaff opens memberstaffshop on a members
+     * world and staffshop otherwise (zaff.rs2); the reader records the one whose
+     * configured stock matches the shelf.
+     */
+    inv: readonly string[];
     /** Who offers Trade. */
     npc: RegExp;
     /** Walk target: the shopkeeper's spawn (openShop walks the last tiles itself). */
@@ -65,38 +72,48 @@ export function inRangingGuild(p: Tile): boolean {
     return p.x >= d.x && p.x <= 2700 && p.z >= 3400 && p.z < d.z && p.x + p.z <= 6114;
 }
 
-/** Every stop the reader knows, keyed by markets' names. Spawns from wiki/npcs/*.md. */
+/** General stores are run by a keeper and an assistant who open the same inventory. */
+const GENERAL = /^shop (keeper|assistant)$/i;
+
+/** Every stop the reader knows, keyed by markets' names. Spawns from wiki/npcs/*.md and wiki/shops/*.md. */
 export const STOPS = {
-    gemtrader: { key: 'gemtrader', shop: 'Gem Trader, Al Kharid', npc: /^gem trader$/i, stand: { x: 3288, z: 3212 }, for: 'uncut and cut gems' },
-    aubury: { key: 'aubury', shop: "Aubury's Rune Shop, Varrock", npc: /^aubury$/i, stand: { x: 3253, z: 3401 }, for: 'elemental, mind, body, chaos and death runes' },
-    drogo: { key: 'drogo', shop: "Drogo's Mining Emporium, Dwarven Mine", npc: /^drogo dwarf$/i, stand: { x: 3036, z: 9846 }, entry: ICE_MOUNTAIN_TRAPDOOR, for: 'ores and bars' },
-    herquin: { key: 'herquin', shop: "Herquin's Gems, Falador", npc: /^herquin$/i, stand: { x: 2944, z: 3334 }, for: 'gems' },
-    grum: { key: 'grum', shop: "Grum's Gold Exchange, Port Sarim", npc: /^grum$/i, stand: { x: 3013, z: 3248 }, for: 'gold jewellery' },
-    betty: { key: 'betty', shop: "Betty's Magic Emporium, Port Sarim", npc: /^betty$/i, stand: { x: 3013, z: 3258 }, for: 'runes' },
-    jiminua: { key: 'jiminua', shop: "Jiminua's Jungle Store, Karamja", npc: /^jiminua$/i, stand: { x: 2767, z: 3122 }, for: 'Antipoison and general stock' },
-    davon: { key: 'davon', shop: "Davon's Amulet Store, Brimhaven", npc: /^davon$/i, stand: { x: 2803, z: 3152 }, for: 'amulets' },
+    'general-lumbridge': { key: 'general-lumbridge', shop: 'Lumbridge General Store', inv: ['generalshop1'], npc: GENERAL, stand: { x: 3211, z: 3247 }, for: 'general stock and what players sold in' },
+    gemtrader: { key: 'gemtrader', shop: 'Gem Trader, Al Kharid', inv: ['gemshop2'], npc: /^gem trader$/i, stand: { x: 3288, z: 3212 }, for: 'uncut and cut gems' },
+    aubury: { key: 'aubury', shop: "Aubury's Rune Shop, Varrock", inv: ['runeshop'], npc: /^aubury$/i, stand: { x: 3253, z: 3401 }, for: 'elemental, mind, body, chaos and death runes' },
+    'general-varrock': { key: 'general-varrock', shop: 'Varrock General Store', inv: ['generalshop2'], npc: GENERAL, stand: { x: 3217, z: 3413 }, for: 'general stock and what players sold in' },
+    zaff: { key: 'zaff', shop: "Zaff's Superior Staffs, Varrock", inv: ['memberstaffshop', 'staffshop'], npc: /^zaff$/i, stand: { x: 3203, z: 3432 }, for: 'staves and battlestaves' },
+    drogo: { key: 'drogo', shop: "Drogo's Mining Emporium, Dwarven Mine", inv: ['miningstore'], npc: /^drogo dwarf$/i, stand: { x: 3036, z: 9846 }, entry: ICE_MOUNTAIN_TRAPDOOR, for: 'ores and bars' },
+    'general-falador': { key: 'general-falador', shop: 'Falador General Store', inv: ['generalshop4'], npc: GENERAL, stand: { x: 2957, z: 3387 }, for: 'general stock and what players sold in' },
+    herquin: { key: 'herquin', shop: "Herquin's Gems, Falador", inv: ['gemshop'], npc: /^herquin$/i, stand: { x: 2944, z: 3334 }, for: 'gems' },
+    grum: { key: 'grum', shop: "Grum's Gold Exchange, Port Sarim", inv: ['goldshop'], npc: /^grum$/i, stand: { x: 3013, z: 3248 }, for: 'gold jewellery' },
+    betty: { key: 'betty', shop: "Betty's Magic Emporium, Port Sarim", inv: ['magicshop'], npc: /^betty$/i, stand: { x: 3013, z: 3258 }, for: 'runes' },
+    jiminua: { key: 'jiminua', shop: "Jiminua's Jungle Store, Karamja", inv: ['junglestore'], npc: /^jiminua$/i, stand: { x: 2767, z: 3122 }, for: 'Antipoison and general stock' },
+    davon: { key: 'davon', shop: "Davon's Amulet Store, Brimhaven", inv: ['amuletshop'], npc: /^davon$/i, stand: { x: 2803, z: 3152 }, for: 'amulets' },
     dargaud: {
         key: 'dargaud',
         shop: "Dargaud's Bow and Arrows, Ranging Guild",
+        inv: ['ranging_guild_bowshop'],
         npc: /^bow and arrow salesman$/i,
         stand: { x: 2672, z: 3434 },
         entry: RANGING_GUILD_DOOR,
         requires: { ranged: 40 },
         for: 'rune arrows, arrowtips and bows'
     },
-    hickton: { key: 'hickton', shop: 'Hicktons Archery Emporium, Catherby', npc: /^hickton$/i, stand: { x: 2822, z: 3442 }, for: 'arrowtips' },
+    hickton: { key: 'hickton', shop: 'Hicktons Archery Emporium, Catherby', inv: ['archeryshop2'], npc: /^hickton$/i, stand: { x: 2822, z: 3442 }, for: 'arrowtips' },
     magicguild: {
         key: 'magicguild',
         shop: 'Magic Guild Store, Yanille',
+        inv: ['magicguildshop'],
         npc: /^magic store owner$/i,
         stand: { x: 2594, z: 3087, level: 1 },
         for: 'every elemental, catalytic and combination rune',
         configOnly: 'upstairs behind the Magic 66 guild door'
     },
-    irksol: { key: 'irksol', shop: 'Irksol', npc: /^irksol$/i, stand: { x: 3247, z: 9589 }, for: 'ruby rings', configOnly: 'not reachable by a fresh account' },
+    irksol: { key: 'irksol', shop: 'Irksol', inv: ['cheapringshop'], npc: /^irksol$/i, stand: { x: 3247, z: 9589 }, for: 'ruby rings', configOnly: 'not reachable by a fresh account' },
     lundail: {
         key: 'lundail',
         shop: "Lundail's Arena-side Rune Shop, Mage Arena",
+        inv: ['magearena_runeshop'],
         npc: /^lundail$/i,
         stand: { x: 2536, z: 4718 },
         for: 'cosmic, law and death runes',
@@ -107,13 +124,30 @@ export const STOPS = {
 export type StopKey = keyof typeof STOPS;
 
 /**
- * The default route from a fresh spawn in Lumbridge: east through the toll gate
- * to Al Kharid and back, north to Varrock, west to Ice Mountain and down to the
- * Dwarven Mine, Falador, south to Port Sarim, the ship to Karamja (Musa Point),
- * across the island to Brimhaven, the ship to Ardougne, north to the Ranging
- * Guild and east to Catherby. 80 coins of fares: the toll twice and two voyages.
+ * The default route from a fresh spawn in Lumbridge: the Lumbridge general store
+ * beside it, east through the toll gate to Al Kharid and back, north to Varrock
+ * (Aubury, the general store, Zaff), west to Ice Mountain and down to the
+ * Dwarven Mine, Falador (general store, Herquin), south to Port Sarim, the ship
+ * to Karamja (Musa Point), across the island to Brimhaven, the ship to
+ * Ardougne, north to the Ranging Guild and east to Catherby. 80 coins of fares:
+ * the toll twice and two voyages.
  */
-export const DEFAULT_ROUTE: StopKey[] = ['gemtrader', 'aubury', 'drogo', 'herquin', 'grum', 'betty', 'jiminua', 'davon', 'dargaud', 'hickton'];
+export const DEFAULT_ROUTE: StopKey[] = [
+    'general-lumbridge',
+    'gemtrader',
+    'aubury',
+    'general-varrock',
+    'zaff',
+    'drogo',
+    'general-falador',
+    'herquin',
+    'grum',
+    'betty',
+    'jiminua',
+    'davon',
+    'dargaud',
+    'hickton'
+];
 
 export function isStopKey(k: string): k is StopKey {
     return Object.hasOwn(STOPS, k);
@@ -174,6 +208,25 @@ export function judgeStop(stop: Stop, s: Situation): Verdict {
     return { go: true, fare };
 }
 
+// ------------------------------------------------------------------ prices
+
+/** shop.rs2 calc_shop_value: the multiplier less haggle per unit of `diff`, clamped, scaled to the base cost. */
+export function shopValue(baseCost: number, haggle: number, multiplier: number, diff: number): number {
+    const off = Math.min(1000, Math.max(-5000, diff * haggle));
+    return Math.floor((Math.max(100, multiplier - off) * baseCost) / 1000);
+}
+
+/**
+ * The server's price to buy the next unit and the shop's offer for one, at
+ * `count` on the shelf (shop.rs2 adjusted_item_cost_buying/_selling, price_mod):
+ * the difference from the configured stock, or the whole count for stock
+ * outside the base config (a general store's sold-in items).
+ */
+export function livePrices(baseCost: number, cfg: ShopConfig, count: number, stockBase: number | null): { buy: number; sell: number } {
+    const diff = count - (stockBase ?? 0);
+    return { buy: Math.max(1, shopValue(baseCost, cfg.haggle, cfg.sellMultiplier, diff)), sell: shopValue(baseCost, cfg.haggle, cfg.buyMultiplier, diff) };
+}
+
 // ------------------------------------------------------------------ records
 
 /** One JSONL line per shelf item. */
@@ -184,11 +237,19 @@ export interface ItemRecord {
     /** 1-based read number (several with --repeat). */
     read: number;
     shopTitle: string;
+    /** The shop's content inventory. */
+    inv: string;
     slot: number;
     itemId: number;
     name: string;
+    /** The object's content (debug) name; null when this checkout's obj.pack lacks the id. */
+    obj: string | null;
     /** On the shelf when the shop opened. */
     count: number;
+    /** The configured stock the price is reckoned from; null for stock outside the base config, or without content. */
+    stockBase: number | null;
+    /** Whether the item is in the inventory's base config (false: sold in by players); null without content. */
+    inBaseConfig: boolean | null;
     baseCost: number;
     /**
      * The SDK's price to buy one (StateCollector): computed from baseCost and
@@ -200,7 +261,19 @@ export interface ItemRecord {
     sellPrice: number;
     /** The server's own price to buy the next unit now, from the shop's Value option ("X: currently costs N gp."); null when no answer came. */
     valuePrice: number | null;
+    /** livePrices at `count` from the content's stock config: the buy price should equal valuePrice; null without content or shop config. */
+    computedBuyPrice: number | null;
+    /** What the shop pays for one at `count` (no Value message exists for selling without the item in hand). */
+    computedSellPrice: number | null;
     tick: number;
+}
+
+/** What the content says about the open shop, for one read; null when the checkout has no content. */
+export interface ShelfContent {
+    inv: string;
+    objName(id: number): string | undefined;
+    /** Configured stock of an object; undefined when it is not in the base config. */
+    stockBase(obj: string): number | undefined;
 }
 
 /** One JSONL line per shop visit, before its items. */
@@ -210,6 +283,7 @@ export interface ShopRecord {
     stop: string;
     read: number;
     shopTitle: string;
+    inv: string;
     shopConfig: ShopConfig | null;
     items: number;
     at: Tile;
@@ -271,28 +345,43 @@ export interface ShelfRead {
     legMs: number;
     legTicks: number;
     shop: Pick<ShopState, 'title' | 'shopItems' | 'shopConfig'>;
-    /** Server Value prices by item name, lower-cased. */
-    values: ReadonlyMap<string, number>;
+    /** Server Value prices by shelf slot. */
+    values: ReadonlyMap<number, number>;
+    /** The stop's inventory name when there is no content to say more. */
+    inv: string;
+    content: ShelfContent | null;
 }
 
 /** The shop line and one item line per shelf slot for one read of one shop. */
 export function shelfRecords(r: ShelfRead): [ShopRecord, ...ItemRecord[]] {
+    const inv = r.content?.inv ?? r.inv;
     const base = { utc: r.utc, stop: r.stop, read: r.read, shopTitle: r.shop.title, tick: r.tick };
-    const shop: ShopRecord = { kind: 'shop', ...base, shopConfig: r.shop.shopConfig ?? null, items: r.shop.shopItems.length, at: r.at, legMs: r.legMs, legTicks: r.legTicks };
-    const items = r.shop.shopItems.map(
-        (i): ItemRecord => ({
+    const cfg = r.shop.shopConfig;
+    const shop: ShopRecord = { kind: 'shop', ...base, inv, shopConfig: cfg ?? null, items: r.shop.shopItems.length, at: r.at, legMs: r.legMs, legTicks: r.legTicks };
+    const items = r.shop.shopItems.map((i): ItemRecord => {
+        const obj = r.content?.objName(i.id) ?? null;
+        const stockBase = r.content && obj !== null ? (r.content.stockBase(obj) ?? null) : null;
+        const inBaseConfig = r.content && obj !== null ? stockBase !== null : null;
+        const live = cfg && inBaseConfig !== null ? livePrices(i.baseCost, cfg, i.count, stockBase) : null;
+        return {
             kind: 'item',
             ...base,
+            inv,
             slot: i.slot,
             itemId: i.id,
             name: i.name,
+            obj,
             count: i.count,
+            stockBase,
+            inBaseConfig,
             baseCost: i.baseCost,
             buyPrice: i.buyPrice,
             sellPrice: i.sellPrice,
-            valuePrice: r.values.get(i.name.toLowerCase()) ?? null
-        })
-    );
+            valuePrice: r.values.get(i.slot) ?? null,
+            computedBuyPrice: live?.buy ?? null,
+            computedSellPrice: live?.sell ?? null
+        };
+    });
     return [shop, ...items];
 }
 
