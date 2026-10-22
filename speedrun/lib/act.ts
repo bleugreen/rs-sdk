@@ -189,7 +189,8 @@ function replied(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState):
     if (s.dialog.isOpen || s.modalOpen) return true;
     const anim = s.player?.animId ?? -1;
     if (anim >= 0 && anim !== b.anim) return true;
-    if (s.gameMessages.some(m => m.tick > b.messages)) return true;
+    // "I can't reach that!" is the click failing, not the engine answering it.
+    if (s.gameMessages.some(m => m.tick > b.messages && !CANT_REACH.test(m.text))) return true;
     return invKey(s) !== b.inv;
 }
 

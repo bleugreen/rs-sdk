@@ -71,6 +71,18 @@ describe('the jump guard', () => {
         expect(sentAt(sdk, 'sendInteractLoc')).toBe(1);
     });
 
+    test("\"I can't reach that!\" after a post-jump click is not a reply: the click is re-sent", async () => {
+        const sdk = new FakeSdk(baseState({ tick: 30, player: jumped(10, 10, 30) }));
+        let done = false;
+        const p = act(sdk as never, () => sdk.sendInteractNpc(7, 1), () => done, { resendEvery: 0 });
+        await ticks(sdk, 1, () => ({ gameMessages: [{ type: 0, text: "I can't reach that!", sender: '', tick: 31, fromSelf: false }] }));
+        await ticks(sdk, 2);
+        expect(sentAt(sdk, 'sendInteractNpc')).toBe(2);
+        done = true;
+        await ticks(sdk, 1);
+        expect(await p).toMatchObject({ ok: true, unansweredResends: 1 });
+    });
+
     test('a ladder landing (p_telejump) holds nobody: the click goes out on the landing tick', async () => {
         const sdk = new FakeSdk(baseState({ tick: 50, player: jumped(2466, 3496, 50, 3) }));
         const p = act(sdk as never, () => sdk.sendInteractLoc(2466, 3495, 1, 1), () => true);
