@@ -2682,9 +2682,11 @@ before its next use; P3, no new trade unless unavoidable, each +5 i on its step;
 is a finding for rs/158. rs/304's walker reads **89 rows: 87 pass, 2 unknown (S18's and S25c's own
 peaks), 0 fail** (83 rows, 22 pass, 4 unknown and 57 failing before). Three trades are new: H4e
 (S07's end, the Camelot runes in and the axe back), H4p (the Mining kit at S09's arrival) and H17e
-(T21-22's runes after S21's last craft). Three sub-rows put a need where it falls: S15 Y (Narnode's
-reward, the step's exit need), S18 load 0 (H14's bones spent before the first top-up) and S25d bank
-(the notes banked on the first booth visit). **Food is not subtracted** unless a floor is measured
+(T21-22's runes after S21's last craft). Four sub-rows put a need or a drop where it falls: S15 Y (Narnode's
+reward, the step's exit need), S18 load 0 (H14's bones spent before the first top-up), S25d bank
+(the notes banked on the first booth visit) and S10b N (Tree Gnome Village's gnome amulet dropped at
+segment N after the reward, fold-in 22: a row's `out` is applied before its `in`, so a reward and its
+drop cannot share a row). **Food is not subtracted** unless a floor is measured
 (S17's 2): the top-ups (`NAME to N`) and the walk carry the no-eat count, the slot bound. **Quest
 leftovers are read from the quests' scripts**, each row citing the file and line, and each leaves on
 the next leg or trade.
@@ -2786,7 +2788,8 @@ S10b) or fire (S10b to S14) supplies its element.
 | S09 | - | rune pickaxe x1 (drop: `mining.exit` at 99); logs all (drop: `mining.exit`) | - | 4 | MAN entry 4 (r); `mining.ts` FREE_SLOTS 4: ore, a gem, a stray fletch (r); `mining.exit` drops every pickaxe, log and leftover ore, gem or arrow shaft at 99, never the knife, 0 ticks (rs/319, d60cee33, m, lab) |
 | S10a | - | - | - | 0 | retired: Prayer comes from S07, RUN-ORDER S10a (r) |
 | H7 | logs x6 [u]; staff of fire x1 [u]; amulet of magic x1 [u]; antipoison(3) @175 x1 [u] (obj `3doseantipoison`); shark x2 [u]; death rune x110 [s]; chaos rune x40 [s]; air rune x550 [s] | - | +staff of fire; -staff of water; +amulet of magic | 14 | SUPPLIES H7 (r); 14, the staff of water back into the pack (rs/158 01:12 PDT, r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
-| S10b | gnome amulet x1 [u] (the reward, `quest_tree.rs2:97`) | logs x6 (hand-in: Montai, `commander_montai.rs2:32`); death rune x26 (consume: ~26 Fire Blasts); air rune x104 (consume); staff of water x1 (drop: segment A, dead since H7); gnome amulet x1 (drop: segment N) | - | 1 | `quest_tree` (r): Bolren takes both orbs of protection back (`king_bolren.rs2:73,98`), so the amulet alone stays; the need, one orb held at a time (r); MAN entry 14 (r); the cast count ~26 (i); the drops at A and N (rs/342, m; fold-in 22) |
+| S10b | gnome amulet x1 [u] (the reward, `quest_tree.rs2:97`) | logs x6 (hand-in: Montai, `commander_montai.rs2:32`); death rune x26 (consume: ~26 Fire Blasts); air rune x104 (consume); staff of water x1 (drop: segment A, dead since H7) | - | 1 | `quest_tree` (r): Bolren takes both orbs of protection back (`king_bolren.rs2:73,98`), so the amulet alone stays; the need, one orb held at a time (r); MAN entry 14 (r); the cast count ~26 (i); the staff's drop at A (rs/342, m; fold-in 22) |
+| S10b N | - | gnome amulet x1 (drop: segment N, after the reward) | - | 0 | rs/342 (m; fold-in 22): the reward drops at N, so S11a has nothing to drop; a sub-row, because a row gives before it receives (r) |
 | S11a | - | - | - | 0 | MAN entry 1 (r); nothing left to drop: S10b drops the staff of water at A and the gnome amulet at N (rs/342, fold-in 22), clearing S11b's segment L (r); P1 (r) |
 | H8 | agility potion(3) x1 [u]; law rune x5 [s] (1 Varrock, 4 Ardougne); air rune x3 [s]; fire rune x1 [s]; water rune x4 [s] | - | - | 3 | SUPPLIES H8 (r); 3: the potion and the new law and fire stacks (r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
 | S11b | translation book x1 [u]; hazelmere's scroll x1 [u]; glough's journal x1 [u]; lumber order x1 [u]; glough's key x1 [u] (kept after the reward, all untradeable) | chaos rune x31 (consume: ~31 Fire Bolts); air rune x93 (consume); law rune x3 (consume: one Varrock and one Ardougne teleport inside the quest); air rune x3 (consume); water rune x2 (consume) | - | 9 | MAN entry 8: 9 free at segment L, the quest's items (r); rs/202's lab, 14 free at L (m); the five kept items (`king_narnode.rs2:306`, `hazelmere.rs2:36`, `quest_grandtree.rs2:104`, `foreman.rs2:114`, `anita.rs2:18`; only the Daconia rock is deleted, `quest_grandtree.rs2:195-197`), the peak 9 with the four twigs (r); the teleports inside the quest (i); the potion keeps its slot at 3 doses (r) |
