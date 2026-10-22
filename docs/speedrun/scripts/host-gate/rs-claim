@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""rs-claim: the one lock on this Ashburn machine (tenet 21), owned by cairn://p/rs/host.
+
+The lock is ~/host-reserved.json, the file rs-gate-read.timer already skips on.
+
+  rs-claim status
+  rs-claim take OWNER LOGINS MINUTES WHAT...  claim only when staged and ready
+  rs-claim touch OWNER                        activity: keeps a long measurement from going stale
+  rs-claim release OWNER                      on completion, after logout and teardown
+  rs-claim preempt MINUTES DRAIN REASON...    host only: gate series, address rotation, scored run
+
+A claim's 'until' is take + MINUTES + 10 min; touch pushes it to now + 10 min when that is later.
+Past 'until' the claim is stale and anyone may take it. LOGINS is checked before granting:
+our accounts online now (names starting 'Cairn ' plus the private names hashed in
+~/claims/private.sha256) + LOGINS must be at most 100 (tenet 16). If the count cannot be
+fetched, the claim is refused. Preempt replaces the holder's claim with host's, starting after
+DRAIN minutes; the displaced holder sees it on status/touch and must log out and release.
+Every change is appended to ~/claims/log.jsonl.
+"""
+import datetime as dt, fcntl, hashlib, json, os, sys, urllib.request
+
+HOME = os.path.expanduser("~")
+F = os.path.join(HOME, "host-reserved.json")
+D = os.path.join(HOME, "claims")
+CAP = 100
+URL = "https://rs-sdk-demo.fly.dev/playerpositions"
+
+def now(): return dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+def iso(t): return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+def parse(s): return dt.datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+def die(msg, code=1): print(msg); sys.exit(code)
+
+def read():
+    try: return json.load(open(F))
+    except FileNotFoundError: return None
+    except Exception as e: die(f"unreadable {F}: {e}; ask host", 2)
+
+def write(c):
+    tmp = F + ".tmp"
+    with open(tmp, "w") as f: f.write(json.dumps(c) + "\n")
+    os.replace(tmp, F)
+
+def log(ev, **kw):
+    with open(os.path.join(D, "log.jsonl"), "a") as f:
+        f.write(json.dumps({"at": iso(now()), "event": ev, **kw}) + "\n")
+
+def live(c): return c is not None and parse(c["until"]) > now()
+
+def ours_online():
+    try:
+        priv = {l.strip() for l in open(os.path.join(D, "private.sha256")) if l.strip()}
+        with urllib.request.urlopen(URL, timeout=15) as r: names = [p["name"] for p in json.load(r)]
+    except Exception as e:
+        return None, f"login count unavailable ({e})"
+    n = 0
+    for name in names:
+        k = name.replace("_", " ").lower()
+        if k.startswith("cairn ") or hashlib.sha256(k.encode()).hexdigest() in priv: n += 1
+    return n, f"{n} of ours online of {len(names)}"
+
+def show(c):
+    if c is None: return "free"
+    s = f"{c['owner']} logins={c.get('logins','?')} until={c['until']} ({'live' if live(c) else 'STALE'})"
+    if c.get("starts"): s += f" starts={c['starts']}"
+    if c.get("what") or c.get("reason"): s += f" : {c.get('what') or c.get('reason')}"
+    if c.get("displaced"): s += f"\n  PREEMPTED {c['displaced']['owner']}: log out and release by {c['starts']}"
+    return s
+
+def main(a):
+    os.makedirs(D, exist_ok=True)
+    lk = open(os.path.join(D, ".lock"), "w"); fcntl.flock(lk, fcntl.LOCK_EX)
+    c = read(); cmd = a[0] if a else "status"
+    if cmd == "status":
+        print(show(c)); print(ours_online()[1]); return
+    if cmd == "take" and len(a) >= 5:
+        owner, logins, minutes, what = a[1], int(a[2]), int(a[3]), " ".join(a[4:])
+        if live(c) and c["owner"] != owner: die(f"refused, held: {show(c)}")
+        if c and c.get("displaced") and owner != "host": die(f"refused, host preempt pending: {show(c)}")
+        n, msg = ours_online()
+        if n is None: die(f"refused: {msg}")
+        if n + logins > CAP: die(f"refused: {msg} + {logins} declared > {CAP} (tenet 16)")
+        t = now(); new = {"owner": owner, "logins": logins, "what": what, "reason": what, "taken": iso(t),
+                          "touched": iso(t), "until": iso(t + dt.timedelta(minutes=minutes + 10))}
+        if c and live(c) and c["owner"] == owner and c.get("starts"): new["starts"] = c["starts"]
+        write(new); log("take", owner=owner, logins=logins, minutes=minutes, what=what, count=n,
+                        replaced=(c or {}).get("owner"))
+        print(f"granted: {show(new)}\n{msg}"); return
+    if cmd == "touch" and len(a) == 2:
+        if not c or c["owner"] != a[1]:
+            if c and c.get("displaced", {}).get("owner") == a[1]: die(f"PREEMPTED: {show(c)}", 3)
+            die(f"not yours: {show(c)}")
+        if not live(c): die(f"your claim went stale: {show(c)}; take again")
+        t = now(); c["touched"] = iso(t); c["until"] = iso(max(parse(c["until"]), t + dt.timedelta(minutes=10)))
+        write(c); print(show(c)); return
+    if cmd == "release" and len(a) == 2:
+        if c and c["owner"] == a[1]:
+            os.remove(F); log("release", owner=a[1]); print("released; free"); return
+        if c and c.get("displaced", {}).get("owner") == a[1]:
+            c["displaced"]["released"] = iso(now()); write(c); log("release-displaced", owner=a[1])
+            print(f"released; host holds: {show(c)}"); return
+        die(f"nothing of yours to release: {show(c)}")
+    if cmd == "preempt" and len(a) >= 4:
+        minutes, drain, reason = int(a[1]), int(a[2]), " ".join(a[3:])
+        t = now(); s = t + dt.timedelta(minutes=drain if live(c) and c["owner"] != "host" else 0)
+        new = {"owner": "host", "logins": 1, "what": reason, "reason": reason, "taken": iso(t), "touched": iso(t),
+               "starts": iso(s), "until": iso(s + dt.timedelta(minutes=minutes))}
+        if live(c) and c["owner"] != "host":
+            new["displaced"] = {k: c.get(k) for k in ("owner", "logins", "what", "until")}
+        write(new); log("preempt", reason=reason, minutes=minutes, drain=drain, displaced=(new.get("displaced") or {}).get("owner"))
+        print(show(new)); return
+    die(__doc__, 2)
+
+if __name__ == "__main__": main(sys.argv[1:])
