@@ -55,4 +55,17 @@ for (const n of [1, 10, 10]) {
 const after = item(target.id);
 console.log(`RESULT after ${JSON.stringify({ item: after.name, count: after.count, sdkBuyPrice: after.buyPrice, valuePrice: await value(after) })}`);
 await bot.closeShop();
+
+// Sell some into the Lumbridge general store, which does not stock them: the
+// shelf reader's next visit there sees stock outside the base config.
+await mustTele(sdk, 3211, 3245);
+const general = await bot.openShop(/^shop (keeper|assistant)$/i);
+if (!general.success) throw new Error(general.message);
+await waitUntil(sdk, st => st.shop.shopItems.length > 0, { maxTicks: 5 });
+const c1 = coins();
+const sold = await bot.sellToShop(new RegExp(`^${target.name}$`, 'i'), 10);
+await waitTicks(sdk, 2);
+const shelved = sdk.getState()!.shop.shopItems.find(i => i.id === target.id);
+console.log(`RESULT sold-in ${JSON.stringify({ shop: sdk.getState()!.shop.title, item: target.name, sold: sold.success, received: coins() - c1, count: shelved?.count ?? null, sdkBuyPrice: shelved?.buyPrice ?? null, valuePrice: shelved ? await value(shelved) : null })}`);
+await bot.closeShop();
 process.exit(0);
