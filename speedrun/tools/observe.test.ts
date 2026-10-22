@@ -102,11 +102,9 @@ describe('parseHiscorePage', () => {
         expect(h.skills.find(s => s.skill === 'Woodcutting')).toEqual({ skill: 'Woodcutting', rank: 1, level: 99, ticks: 3_329 });
         // Skills under level 15 have no row on the page.
         expect(h.skills.some(s => s.skill === 'Attack')).toBe(false);
-        const burns = parsePageOf('cairn_burns');
+        const burns = parseHiscorePage('cairn_burns', fixture('player-cairn_burns-2026-10-22.html'));
         expect(burns.skills.find(s => s.skill === 'Firemaking')).toEqual({ skill: 'Firemaking', rank: expect.any(Number), level: 99, ticks: 690 });
     });
-
-    const parsePageOf = (name: string) => parseHiscorePage(name, fixture(`player-${name}-2026-10-22.html`));
 
     test('a seconds title off the 0.3 s grid throws instead of caching a wrong stamp', () => {
         const html = fixture('player-cairn_burns-2026-10-22.html').replaceAll('title="207 seconds', 'title="207.1 seconds');
