@@ -210,6 +210,33 @@ describe('BotStateCollector positions', () => {
     });
 });
 
+describe('BotStateCollector jumps and region loading', () => {
+    test('teleportTick is the tick of the last teleport-type update of the player, unchanged by walking', () => {
+        const client = createClient();
+        const collector = new BotStateCollector(client);
+        expect((collector as any).collectPlayerState(1, 100).teleportTick).toBeNull();
+        client.localPlayer.teleports = 1; // login, or a ladder, or one agility_walk p_teleport step
+        expect((collector as any).collectPlayerState(5, 100).teleportTick).toBe(5);
+        // a walk step moves the player without a teleport-type update
+        client.localPlayer.x += 128;
+        expect((collector as any).collectPlayerState(6, 100).teleportTick).toBe(5);
+        client.localPlayer.teleports = 2;
+        expect((collector as any).collectPlayerState(9, 100).teleportTick).toBe(9);
+        // a second collect within the tick (the overlay's) does not move it
+        expect((collector as any).collectPlayerState(10, 100).teleportTick).toBe(9);
+    });
+
+    test('sceneReady is false while the client builds the region (sceneState 1), true once built (2)', () => {
+        const client = createClient();
+        client.ingame = true;
+        const collector = new BotStateCollector(client);
+        client.sceneState = 1;
+        expect(collector.collectState(1, false).sceneReady).toBe(false);
+        client.sceneState = 2;
+        expect(collector.collectState(2, false).sceneReady).toBe(true);
+    });
+});
+
 describe('BotStateCollector op feedback', () => {
     test('counts a map-flag unset as a rejection only while the player stands still', () => {
         const client = createClient();
