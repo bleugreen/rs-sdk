@@ -463,3 +463,15 @@ noise) is noise at n = 1 and was not the basis.
 - **Lab tooling fixes** (rs/335): tickprog-lab.sh now shows create-bot's output and stops without
   a bot.env (rs/324's earlier failure was an underscore in the name); the courier stand-in looked
   for `arrowheads`, but the items are `<tier> arrowtips`.
+
+**Charge on boosted Magic (rs/361).** The Charge precondition checks **boosted** Magic 80, as the
+engine does (`stat(magic)`, magic.rs2:22). `stunPack.sipForCharge` (default on) drinks one
+magic-potion dose at base 79 with boosted below 80, before the band's first program run (after the
+resume re-check), outside every stun, so the stun schedule and the packet stream are unchanged: the
+program starts on params identical to the base-80 run, and the test asserts it. The cost is the
+dose's `p_delay(1)`, about one tick, once. One dose is enough: the +4 (consume_effects.dbrow
+`stat_change,magic,4`) decays one level per 100 ticks, so 83 keeps Charge open for at least 300
+ticks, while base 79 to 80 is at most 3.99 casts (two stocked stuns) at 180 base xp and 25x. The sip
+comes before the program, not in a stun window, because the program gates stun actions on base
+level with no fire-once rule, so a sip action would repeat every stun. The refusal string names
+base, boosted, and whether a potion is held.

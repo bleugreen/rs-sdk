@@ -40,17 +40,23 @@
 // module also stops it for a top-up on a failure with bones below the bar. The bones, the
 // arrowheads still to come and the food all arrive through that one trade; sizing the load is
 // the giver's. Before the band starts (and again before its first program run, which a resume
-// enters without the preconditions) it refuses with a reason: Charge, while Magic is below 99,
-// needs base Magic 80, Mage Arena stage 8 (the varp is not transmitted, rs/114, so the evidence
-// is a god staff held or worn, or `chargeUnlocked` from the run's own record), a fire staff worn
-// and a cast's blood and air runes; arrows, while Fletching is below 99, need headless arrows and
-// an arrowhead tier the level can use; and the giver must stand on a side tile of the account,
-// never a corner, because the stunned account cannot step round one to reach it (rs/279). The
-// detail row reports what the pack sent (`stun:*` counters summed over the band's program runs)
-// and the Prayer, Magic and Fletching experience and levels it gained.
+// enters without the preconditions) it refuses with a reason: Charge, while base Magic is below
+// 99, needs Magic 80 as the engine checks it, boosted (`stat(magic)`, magic.rs2:22), or base 79
+// with a magic potion held (`sipForCharge`, on by default): the band then drinks one dose before
+// its first program run, outside any stun, so the stun schedule is unchanged. The +4 keeps
+// Charge open for at least 300 ticks (a boost falls a level per 100, stat.rs2), and base 80 is at
+// most 4 casts, two stocked stuns, away on the engine's curve. Charge also needs Mage Arena stage
+// 8 (the varp is not transmitted, rs/114, so the evidence is a god staff held or worn, or
+// `chargeUnlocked` from the run's own record), a fire staff worn and a cast's blood and air runes;
+// arrows, while Fletching is below 99, need headless arrows and an arrowhead tier the level can
+// use; and the giver must stand on a side tile of the account, never a corner, because the
+// stunned account cannot step round one to reach it (rs/279). The detail row reports what the
+// pack sent (`stun:*` counters summed over the band's program runs), the Prayer, Magic and
+// Fletching experience and levels it gained, and the sip's ticks when there was one.
 
 import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
 import { depositMatching, withdrawMany } from '../lib/bank';
+import { act } from '../lib/act';
 import { advance } from '../lib/dialogue';
 import { withLevelUpDismissal } from '../lib/levelup';
 import { overBudgetMeta, runProgram, stopProgram, type ProgramStatus } from '../lib/programs';
@@ -322,6 +328,11 @@ export interface StunPackOptions {
      * transmitted (rs/114), so without it the precondition wants a god staff, held or worn.
      */
     chargeUnlocked?: boolean;
+    /**
+     * At base Magic 79, boosted below 80, with a magic potion held: drink one dose before the first
+     * program run so Charge's boosted check passes (default on; it fires only in that case).
+     */
+    sipForCharge?: boolean;
 }
 
 /** A stocked stun buries 3 (stun-pack.md section 5): with fewer held, the next stun's top-up is due. */
@@ -351,6 +362,7 @@ export function stunActionsFor(topUp: TopUp | undefined, food: Food, pack: Requi
 }
 
 const baseOf = (s: BotWorldState, name: string) => s.skills.find(k => k.name.toLowerCase() === name)?.baseLevel ?? 1;
+const boostedOf = (s: BotWorldState, name: string) => s.skills.find(k => k.name.toLowerCase() === name)?.level ?? 1;
 const held = (s: BotWorldState, re: RegExp) => s.inventory.filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0);
 
 export function bonesHeld(s: BotWorldState): number {
@@ -364,17 +376,39 @@ const FIRE_STAFF = /^(staff of fire|fire battlestaff|mystic fire staff)$/i;
 /** Arrowhead tiers and the Fletching level each needs (stun-actions.ts ARROW_TIERS; the tests check they agree). */
 export const ARROWHEAD_TIERS: ReadonlyArray<readonly [string, number]> = [['rune', 75], ['adamant', 60], ['mithril', 45], ['steel', 30], ['iron', 15], ['bronze', 1]];
 
+/** Charge's level (magic_spells.dbrow magic_spell_charge), checked against the boosted level (magic.rs2:22). */
+export const CHARGE_LEVEL = 80;
+/** Any dose of a magic potion: +4 Magic (consume_effects.dbrow 1magic_consumable_effect). */
+const MAGIC_POTION = /^magic potion\([1-4]\)$/i;
+
+/**
+ * The magic potion `sipForCharge` drinks before the band's first program run, or none: only at
+ * base Magic CHARGE_LEVEL - 1 with the boosted level still below CHARGE_LEVEL (the header).
+ */
+export function chargeSipPotion(s: BotWorldState, pack: Pick<Required<StunPackOptions>, 'sipForCharge'>): InventoryItem | undefined {
+    if (!pack.sipForCharge || baseOf(s, 'magic') !== CHARGE_LEVEL - 1 || boostedOf(s, 'magic') >= CHARGE_LEVEL) return undefined;
+    return s.inventory.find(i => MAGIC_POTION.test(i.name));
+}
+
+/** Charge's level refusal: base, boosted, and whether a potion is held (and why it is not sipped). */
+function chargeLevelRefusal(s: BotWorldState, pack: Pick<Required<StunPackOptions>, 'sipForCharge'>): string {
+    const base = baseOf(s, 'magic');
+    const potion = s.inventory.some(i => MAGIC_POTION.test(i.name));
+    const why = !potion ? '' : !pack.sipForCharge ? ' (sipForCharge off)' : ` (the sip is for base ${CHARGE_LEVEL - 1} only)`;
+    return `the stun pack's Charge needs Magic ${CHARGE_LEVEL}: base ${base}, boosted ${boostedOf(s, 'magic')}, ${potion ? 'a magic potion held' : 'no magic potion held'}${why}`;
+}
+
 /**
  * The pack's start check (the header): true, or why the band refuses. Read from the band's
  * start state: Charge's and the arrows' supplies for their first stun (more arrive by top-up)
  * and the giver's tile.
  */
-export function stunPackCheck(s: BotWorldState, giver: string, pack: Required<StunPackOptions>): true | string {
+export function stunPackCheck(s: BotWorldState, giver: string, pack: Pick<Required<StunPackOptions>, 'chargeUnlocked' | 'sipForCharge'>): true | string {
     const p = s.player;
     if (!p) return 'no player';
-    const magic = baseOf(s, 'magic');
-    if (magic < 99) {
-        if (magic < 80) return `the stun pack's Charge needs base Magic 80 (base Magic ${magic})`;
+    // the program fires Charge while base Magic is below 99 (stun-actions.ts STUN_PRESETS.charge)
+    if (baseOf(s, 'magic') < 99) {
+        if (boostedOf(s, 'magic') < CHARGE_LEVEL && !chargeSipPotion(s, pack)) return chargeLevelRefusal(s, pack);
         const staff = [...s.inventory, ...s.equipment].some(i => GOD_STAFF.test(i.name));
         if (!pack.chargeUnlocked && !staff) return "the stun pack's Charge needs Mage Arena stage 8 (staff_given): no god staff held or worn, and no chargeUnlocked from the run's record";
         if (!s.equipment.some(i => FIRE_STAFF.test(i.name))) return "the stun pack's Charge needs a staff of fire wielded (its fire runes)";
@@ -398,14 +432,46 @@ export function stunPackCheck(s: BotWorldState, giver: string, pack: Required<St
 /** `stunPack` as given: off, or every field set (validated: it may come off a command line). */
 export function parseStunPack(value: unknown, topUp: TopUp | undefined): Required<StunPackOptions> | undefined {
     if (value === undefined || value === false) return undefined;
-    if (value !== true && (typeof value !== 'object' || value === null || Array.isArray(value))) throw new Error(`stunPack must be true or { bonesBelow?, chargeUnlocked? } (got ${JSON.stringify(value)})`);
+    if (value !== true && (typeof value !== 'object' || value === null || Array.isArray(value))) throw new Error(`stunPack must be true or { bonesBelow?, chargeUnlocked?, sipForCharge? } (got ${JSON.stringify(value)})`);
     const o = (value === true ? {} : value) as StunPackOptions;
-    for (const k of Object.keys(o)) if (k !== 'bonesBelow' && k !== 'chargeUnlocked') throw new Error(`stunPack has no option '${k}' (bonesBelow, chargeUnlocked)`);
+    const keys = ['bonesBelow', 'chargeUnlocked', 'sipForCharge'];
+    for (const k of Object.keys(o)) if (!keys.includes(k)) throw new Error(`stunPack has no option '${k}' (${keys.join(', ')})`);
     const bonesBelow = o.bonesBelow ?? STUN_PACK_BONES_BELOW;
     if (!Number.isInteger(bonesBelow) || bonesBelow < 1) throw new Error(`stunPack.bonesBelow must be a whole number of at least 1 (got ${JSON.stringify(o.bonesBelow)})`);
     if (o.chargeUnlocked !== undefined && typeof o.chargeUnlocked !== 'boolean') throw new Error('stunPack.chargeUnlocked must be true or false');
+    if (o.sipForCharge !== undefined && typeof o.sipForCharge !== 'boolean') throw new Error('stunPack.sipForCharge must be true or false');
     if (!topUp) throw new Error('stunPack needs topUp: its bones arrive through the top-up trade (stun-pack.md section 5)');
-    return { bonesBelow, chargeUnlocked: o.chargeUnlocked ?? false };
+    return { bonesBelow, chargeUnlocked: o.chargeUnlocked ?? false, sipForCharge: o.sipForCharge ?? true };
+}
+
+/** `sipForCharge`'s one dose, on observed ticks: sent on `sentTick`, the boost first published on `boostedTick`. */
+export interface ChargeSip {
+    potion: string;
+    base: number;
+    /** Boosted Magic before and after. */
+    from: number;
+    to: number;
+    sentTick: number;
+    boostedTick: number;
+    resends: number;
+}
+
+/** Ticks `sipForCharge` waits for the boost: a dose lands on the next tick and holds the player 1 (consume_messages.dbrow message_delay). */
+export const CHARGE_SIP_MAX_TICKS = 8;
+
+/** Drink `sipForCharge`'s dose if one is due (chargeSipPotion) and wait until the boosted level shows CHARGE_LEVEL. */
+async function sipForCharge(ctx: Ctx, pack: Required<StunPackOptions>): Promise<ChargeSip | undefined> {
+    const s = state(ctx);
+    const pot = chargeSipPotion(s, pack);
+    if (!pot) return undefined;
+    const base = baseOf(s, 'magic');
+    const from = boostedOf(s, 'magic');
+    const drink = pot.optionsWithIndex.find(o => /^drink$/i.test(o.text))?.opIndex ?? 1;
+    // a re-send only after 3 ticks with no boost, so a dose that landed is never doubled
+    const r = await act(ctx.sdk, () => ctx.sdk.sendUseItem(pot.slot, drink), st => boostedOf(st, 'magic') >= CHARGE_LEVEL, { resendEvery: 3, maxResends: 1, maxTicks: CHARGE_SIP_MAX_TICKS });
+    const after = state(ctx);
+    if (!r.ok) throw new Error(`the stun pack's sip for Charge did not raise Magic to ${CHARGE_LEVEL} within ${CHARGE_SIP_MAX_TICKS} ticks: base ${base}, boosted ${boostedOf(after, 'magic')} (${pot.name})`);
+    return { potion: pot.name, base, from, to: boostedOf(after, 'magic'), sentTick: s.tick, boostedTick: after.tick, resends: r.resends };
 }
 
 const PACK_SKILLS = ['prayer', 'magic', 'fletching'] as const;
@@ -671,6 +737,8 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
         const ok = stunPackCheck(state(ctx), topUp!.giver, pack);
         if (ok !== true) throw new Error(ok);
     }
+    // before the first program run, outside every stun: the check passed at base 79 on the potion
+    const sip = pack ? await sipForCharge(ctx, pack) : undefined;
     const skills0 = packSkills(state(ctx));
     const stunCounters: Record<string, number> = {};
     const paramsFor = (food: Food) => {
@@ -753,7 +821,7 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
         meta: {
             anchor, policy, food: cfg.foods.map(f => f.bankName).join(','), runs, restocks,
             ...(topUp ? { topUp: { mode, trades: receiver?.trades ?? [], restarts } } : {}),
-            ...(pack ? { pack: packReport(stunCounters, skills0, packSkills(state(ctx)), pack.bonesBelow) } : {})
+            ...(pack ? { pack: { ...packReport(stunCounters, skills0, packSkills(state(ctx)), pack.bonesBelow), ...(sip ? { sip } : {}) } } : {})
         },
         tickMs: tickMs(), at: new Date().toISOString()
     });
