@@ -949,7 +949,7 @@ class AccountRun implements Stoppable {
         if (this.retired !== null || this.L.isStopping) return;
         const { account } = this.entry;
         const why = `stop cue for ${scopeText(cue.scope)} (session ${cue.session}, seq ${cue.seq})`;
-        if (this.state === 'queued' || this.state === 'awaiting-cue' || this.state === 'stopped') {
+        if (this.state === 'queued' || this.state === 'awaiting-cue') {
             this.L.log(`[launcher] ${account}: ${why} before its login: it never logs in`);
             this.neverLogsIn(why, 'stopped');
             return;
@@ -1219,7 +1219,7 @@ class AccountRun implements Stoppable {
     }
 
     private async stopNow(deadline: number): Promise<void> {
-        if (this.state === 'queued' || this.state === 'awaiting-cue' || this.state === 'stopped') {
+        if (this.state === 'queued' || this.state === 'awaiting-cue') {
             this.state = 'stopped';
             return;
         }
