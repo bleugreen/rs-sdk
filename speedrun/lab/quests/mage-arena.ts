@@ -4,7 +4,10 @@
 //   speedrun/lab/lab.sh <bot> 'speedrun/lab/quests/mage-arena.ts:--from=B:--until=C:--runs=3:--spell=fire_blast'
 //
 // --spell=fire_wave|fire_blast (default the module's, fire_wave); --magic=N the arrival's base Magic,
-// set at the bottom of the level (default 76: 8,092.7 base, rs/371's pricing); --prayer=N prayer points
+// set at the bottom of the level (default 76: 8,092.7 base, rs/371's pricing); --xp=N the arrival's base
+// Magic xp instead (the level is the one it falls in): ::setstat puts the xp at the level's floor, then
+// High Level Alchemy (a fixed 65 base a cast, magic_spells.dbrow) climbs to the nearest cast of N, and
+// the coins it makes are dropped (rs/158's route arrival, 77 at ~9,118); --prayer=N prayer points
 // at arrival (default 40: S15's demon leaves 30-50 of 94, m, rs/201; i for the chain); --potion=0 drops
 // the magic potion from the kit (acceptance (a)); --trace=N.
 //
@@ -20,16 +23,18 @@
 
 import type { BotWorldState } from '../../../sdk/types';
 import { prayerDoses } from '../../lib/combat';
-import { xpForLevel } from '../../lib/xp';
+import { baseToXp, levelForXp, xpForLevel, XP_RATE } from '../../lib/xp';
+import { invItem, skillXp } from '../../lib/world';
 import { exitMagic, newTally, quest, SPELL_RUNES, stepId, steps, type FightTally, type KolodionSpell, type Options } from '../../quests/mage-arena';
 import { arg, result } from '../common';
-import { cheat, setvar } from '../setup';
+import { cheat, dropMatching, give, setvar } from '../setup';
 import { waitTicks } from '../../lib/wait';
 import { labMain, type LabQuest, type QuestFixture } from './run';
 
 const SPELL = arg('spell', 'fire_wave') as KolodionSpell;
 if (SPELL !== 'fire_wave' && SPELL !== 'fire_blast') throw new Error(`--spell=${SPELL}: want fire_wave or fire_blast`);
-const MAGIC = Number(arg('magic', '76'));
+const XP_AT = Number(arg('xp', '0'));
+const MAGIC = XP_AT ? levelForXp(baseToXp(XP_AT)) : Number(arg('magic', '76'));
 const PRAYER_AT = Number(arg('prayer', '40'));
 const POTION = arg('potion', '1') !== '0';
 const FROM = arg('from', 'A');
@@ -80,8 +85,50 @@ const fights: Array<FightTally & { exit: ReturnType<typeof exitMagic>; ok: boole
 
 const options: Omit<Options, 'dialogue'> = { spell: SPELL, tally, ...(/^[D-F]/.test(FROM) ? { fought: true } : {}) };
 
+/** High Level Alchemy (interface.pack magic:highlvl_alchemy): 65 base xp a cast, whatever the item. */
+const HIGH_ALCH = { component: 1178, base: 65 } as const;
+
+/** Climb from the level's floor to the cast nearest `target` base xp; the staff of fire pays the fire runes. */
+async function alchTo(sdk: Parameters<NonNullable<LabQuest['prepare']>>[0]['sdk'], target: number): Promise<number> {
+    const n = Math.max(0, Math.round((target - skillXp(sdk, 'magic') / XP_RATE) / HIGH_ALCH.base));
+    if (!n) return 0;
+    await give(sdk, 'naturerune', n);
+    for (let i = 0; i < n; i++) {
+        await give(sdk, 'iron_bar', 1);
+        const xp0 = skillXp(sdk, 'magic');
+        for (let k = 0; k < 8 && skillXp(sdk, 'magic') === xp0; k++) {
+            const bar = invItem(sdk, /^iron bar$/i);
+            if (bar) await sdk.sendSpellOnItem(bar.slot, HIGH_ALCH.component);
+            await waitTicks(sdk, 2);
+        }
+        if (skillXp(sdk, 'magic') === xp0) throw new Error(`alchTo: cast ${i + 1} of ${n} paid no xp`);
+    }
+    await dropMatching(sdk, [/^coins$/i, /^iron bar$/i, /^nature rune$/i]);
+    return n;
+}
+
+/**
+ * Every wall-clock gap over 1.5 s between new ticks, with the tick jump across it: a jump of 1 is a
+ * pause upstream of the client (engine or socket), a jump of many is a client that drained a backlog.
+ * Diagnoses the fight's 'client stopped publishing' (rs/371).
+ */
+let gapMonitor = false;
+function watchGaps(sdk: Parameters<NonNullable<LabQuest['prepare']>>[0]['sdk']): void {
+    if (gapMonitor) return;
+    gapMonitor = true;
+    let lastTick = -1;
+    let lastMs = Date.now();
+    sdk.onStateUpdate(s => {
+        if (s.tick === lastTick) return;
+        const ms = Date.now();
+        if (lastTick >= 0 && ms - lastMs > 1500) console.log(`GAP ${ms - lastMs} ms ending ${(ms / 1000).toFixed(1)}, tick ${lastTick} -> ${s.tick} (+${s.tick - lastTick}) at ${s.player?.worldX},${s.player?.worldZ} npcs ${s.nearbyNpcs.length} msgs ${JSON.stringify(s.gameMessages.slice(-2).map(m => m.text))}`);
+        lastTick = s.tick;
+        lastMs = ms;
+    });
+}
+
 const lab: LabQuest<Options> = {
-    title: `Mage Arena (${SPELL}, base Magic ${MAGIC}, prayer ${PRAYER_AT}${POTION ? '' : ', no magic potion'})`,
+    title: `Mage Arena (${SPELL}, base Magic ${MAGIC}${XP_AT ? ` at ~${XP_AT} base xp` : ''}, prayer ${PRAYER_AT}${POTION ? '' : ', no magic potion'})`,
     stepId,
     steps,
     fixtures: FIXTURES,
@@ -90,6 +137,7 @@ const lab: LabQuest<Options> = {
     options,
     async prepare(session, f) {
         const sdk = session.sdk;
+        watchGaps(sdk);
         Object.assign(tally, newTally(SPELL));
         // ::setstat puts the level at its bottom: check the arrival xp is the level's floor.
         await waitTicks(sdk, 2);
@@ -97,6 +145,8 @@ const lab: LabQuest<Options> = {
         const pts = s.prayers?.prayerPoints ?? 0;
         if (f.letter <= 'C' && pts > PRAYER_AT) await cheat(sdk, `~stat_drain prayer ${pts - PRAYER_AT} 0`, 2);
         if (f.letter <= 'C') await setvar(sdk, quest, 0);
+        const alchs = XP_AT && f.letter <= 'C' ? await alchTo(sdk, XP_AT) : 0;
+        if (alchs) console.log(`ARRIVAL ${alchs} high alchemy casts to ~${XP_AT} base`);
         await waitTicks(sdk, 2);
         const s1 = sdk.getState()!;
         console.log(`ARRIVAL magic xp ${(skill(s1, 'magic')?.experience ?? 0) / 25} base (level ${MAGIC} floor ${xpForLevel(MAGIC) / 25}), prayer ${s1.prayers?.prayerPoints}/${s1.prayers?.prayerLevel}, doses ${prayerDoses(s1)}, hp ${s1.player?.hp}, free ${28 - s1.inventory.length}`);
