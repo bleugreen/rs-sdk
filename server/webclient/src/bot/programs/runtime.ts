@@ -19,7 +19,7 @@ import type { ProgramAction, ProgramCommand, ProgramContext, ProgramEnd, Program
 export const USER_EVENTS_PER_TICK = 5;
 
 /** Start parameters the runtime itself reads, accepted for every program. */
-export const RUNTIME_PARAMS: readonly string[] = ['stallTicks'];
+export const RUNTIME_PARAMS: readonly string[] = ['stallTicks', 'hold'];
 
 export interface RuntimeOptions {
     /** Sends one action now (ActionExecutor.execute for the synchronous actions programs use). */
@@ -40,6 +40,8 @@ export interface RuntimeOptions {
     log?: (line: string) => void;
     /** Called once when a run ends, with its final status. */
     onEnd?: (status: ProgramStatus) => void;
+    /** The draw for the `hold` parameter (default Math.random). */
+    random?: () => number;
 }
 
 interface Run {
@@ -53,11 +55,23 @@ interface Run {
     /** 1 ms buckets up to 200 ms. */
     react: MsHistogram;
     loops: LoopRate;
+    /** Share of starter bundles to hold one tick (`hold` start parameter, test only). */
+    hold: number;
+    /** This tick's starter bundle is being held: its sends queue in `held`. */
+    holding: boolean;
+    held: Array<{ action: ProgramAction; what?: string }>;
 }
 
 const LOG_TAIL = 40;
 /** Stamps a mark keeps: 64 events at a 3-tick cadence span about 2 minutes, far beyond any poll interval. */
 export const MARK_TAIL = 64;
+
+/** The `hold` start parameter: absent is 0; otherwise a share in [0, 1]. */
+function parseHold(value: unknown): number {
+    if (value === undefined) return 0;
+    if (typeof value !== 'number' || !(value >= 0 && value <= 1)) throw new Error(`hold must be a share of starters in [0, 1], got ${JSON.stringify(value)}`);
+    return value;
+}
 
 export class ProgramRuntime {
     private readonly registry = new Map<string, ProgramFactory>();
@@ -131,10 +145,12 @@ export class ProgramRuntime {
         const tail: string[] = [];
         const log = (line: string) => this.log(status, line, tail);
         let program: TickProgram;
+        let hold: number;
         try {
             const accepted = new Set([...factory.params, ...RUNTIME_PARAMS]);
             const unknown = Object.keys(params).filter(k => !accepted.has(k));
             if (unknown.length) throw new Error(`${name} does not declare ${unknown.join(', ')} (accepts: ${[...accepted].join(', ')})`);
+            hold = parseHold(params.hold);
             program = factory(params, { state: this.lastState, log });
         } catch (e) {
             status.phase = 'fault';
@@ -146,7 +162,7 @@ export class ProgramRuntime {
             return status;
         }
         const stall = Number(params.stallTicks ?? program.stallTicks);
-        this.run = { program, status, stallTicks: Number.isFinite(stall) && stall > 0 ? stall : this.defaultStallTicks, ended: false, tail, frames: new FrameStats(), publish: new FrameStats(), react: new MsHistogram(1, 200), loops: new LoopRate() };
+        this.run = { program, status, stallTicks: Number.isFinite(stall) && stall > 0 ? stall : this.defaultStallTicks, ended: false, tail, frames: new FrameStats(), publish: new FrameStats(), react: new MsHistogram(1, 200), loops: new LoopRate(), hold, holding: false, held: [] };
         log(`start ${JSON.stringify(params)}`);
         return status;
     }
@@ -239,6 +255,11 @@ export class ProgramRuntime {
             },
             send: (action: ProgramAction, what?: string) => {
                 if (run.ended) return false;
+                if (run.holding) {
+                    // a held bundle reads as sent: the program carries on as if the host were late
+                    run.held.push({ action, what });
+                    return true;
+                }
                 if (sent >= budget) {
                     st.deferred++;
                     this.log(st, `T${state.tick} over budget, not sent: ${what ?? action.type}`, run.tail);
@@ -268,6 +289,12 @@ export class ProgramRuntime {
             gauge: (name, value) => {
                 st.gauges[name] = value;
             },
+            starter: () => {
+                if (run.hold <= 0 || run.holding || !((this.opts.random ?? Math.random)() < run.hold)) return;
+                run.holding = true;
+                st.counters.held = (st.counters.held ?? 0) + 1;
+                this.log(st, `T${state.tick} hold: starter bundle held to the next tick`, run.tail);
+            },
             mark: name => {
                 const m = (st.marks[name] ??= { count: 0, ticks: [] });
                 m.count++;
@@ -291,6 +318,9 @@ export class ProgramRuntime {
                 this.end(run, 'fault');
             }
         };
+        // last tick's held bundle goes out first, ahead of anything the program sends now
+        run.holding = false;
+        for (const { action, what } of run.held.splice(0)) ctx.send(action, `${what ?? action.type} (held)`);
         try {
             run.program.onTick(ctx);
         } catch (e) {

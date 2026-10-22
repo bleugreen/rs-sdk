@@ -35,6 +35,11 @@ the time, and the reactive steps are worth roughly 3,000 ticks over the route.
   (`NetworkPlayer`, `ClientGameProtCategory`): a sixth would silently land a tick
   late, so it is refused and counted as `deferred`. A program that throws or reports
   no progress for its stall window faults instead of escaping into the game loop.
+  The test-only start parameter `hold` (a share in [0, 1]) holds that share of
+  starter bundles to the next tick: a program marks a bundle with `ctx.starter()`
+  (knife-cycle and knife-mine, before knife on logs), its sends queue, and they go
+  out first on the next tick, counted in `held`. It reproduces the lab scripts'
+  `--inject-late`; unset, `ctx.starter()` does nothing.
 - **Status** (`state.program`, `window.rsPrograms.status()`). It carries the run id,
   phase (`running`, `done`, `fault`, `stopped`, `replaced`), counters and gauges,
   packets, `deferred`, `skippedTicks` (ticks the page decoded together in one pass),
@@ -72,9 +77,9 @@ the time, and the reactive steps are worth roughly 3,000 ticks over the route.
   `?program=<name>&programArgs=<json>` starts that program 5 in-game ticks after login.
 - **Undeclared parameter keys fault.** Each factory declares the start keys it reads
   (`createKnifeCycle.params = [...]`, just above the factory), and the runtime adds its
-  own `stallTicks`. A start carrying any other top-level key faults through the
+  own `stallTicks` and `hold`. A start carrying any other top-level key faults through the
   bad-parameters path, naming the keys and the program (`bad parameters: knife-cycle does
-  not declare dropEach (accepts: ...)`), before the factory runs. An unknown key is
+  not declare dropeach (accepts: ...)`), before the factory runs. An unknown key is
   either a typo or a page built from a commit without that program change (rs/211: a
   twin served from main would have dropped mission-branch opt-ins and run the plain
   program), and either way the run is not the one asked for. `register` refuses a factory
@@ -92,7 +97,7 @@ the host gate can select with the same parameters.
 |---|---|---|---|
 | `probe` | `speedrun/lib/hostgate.ts` `probeOnTime` | `trials`, `maxWait` | n/a |
 | `knife-mine` | `tickmanip-mine.ts` | `steps` (stand>rock pairs), `respawn`, `ores`, `starter: 'knife' \| 'none'` | `starter: 'none'` (plain and adjacent-rock transitions) |
-| `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `successes` / `untilLevel` / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'`; with `bury`, plain + bury |
+| `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `successes` / `untilLevel` / `untilXp` (game xp) / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'`; with `bury`, plain + bury; opt-in `followSpot` (re-click a moved spot on the label that shows its new tile) and `dropEach` (drop the product on the label that shows it, with the re-click, both landing on R+1) |
 | `pickpocket` | `thieving-pickpocket.ts` (`--eat=auto`); `stunActions` from `stun-pack-thieve.ts` (rs/106) | `npc`, `rolls`, `food`, `eatBelow`, `forcedBelow`, `stunActions` (`bury`, `charge`, `arrows`, or action objects), `stunWindow`, `stunPerTick` | n/a: it clicks every tick |
 | `agility` | `agility-course.ts` | `course` (`gnome`, `barbarian`, `wilderness`, or an object; `agility-courses.ts`), `laps` | `technique: 'plain'` waits `settleTicks` after each obstacle |
 | `rc-cycle` | `runecraft-cycle.ts --mode=tuned/robust` (the scored half) | `untilLevel` / `untilXp`, `schedule` (default `robust`), `givers`, `open` (5), `lead` (3) | the stock 15-tick reacting cycle (SDK side) |
@@ -263,8 +268,10 @@ Notes that differ from the lite scripts:
 
 `docs/speedrun/scripts/tickprog-lab.sh` runs one batch: the engine and gateway on a
 port block, this checkout's bundle, the bot's page in Chrome (`tickprog-tab.ts`,
-headful unless `HEADLESS=1`), then each `tickprog-measure.ts` mode (`probe`, `mine`,
-`fly`, `willow`, `tree`, `pickpocket`, `agility`), plus `wedge` (the watchdog check,
+headful unless `HEADLESS=1`; `HEADLESS=shell` uses chrome-headless-shell where a batch
+sandbox kills full Chrome), then each `tickprog-measure.ts` mode (`probe`, `mine`,
+`fly`, `willow`, `tree`, `pickpocket`, `agility`; `fly`, `willow` and `tree` take
+`--gated [--hold=0.15]` to run through `speedrun/lib/gated-program.ts`), plus `wedge` (the watchdog check,
 `tickprog-wedge.ts`) and `throttle` (Chrome background throttling,
 `tickprog-throttle.ts`). The tab driver prints one `[program] end {json}` line per
 finished run, read from `rsPrograms.history`, and samples rendering once a second.

@@ -6,7 +6,7 @@
 //       [--debug-port=9397]
 //
 // Headful by default (the scored run is a visible tab); HEADLESS=1 for a runner
-// without a display. The password comes from bots/<bot>/bot.env: through a proxy.ts
+// without a display, HEADLESS=shell for one whose sandbox kills full Chrome. The password comes from bots/<bot>/bot.env: through a proxy.ts
 // origin as a one-time login token (the bot.env must be mode 600), on the local
 // lab's engine page in the query. Prints TAB-READY once
 // the page is in game, and one `[program] end {json}` line per finished program run,
@@ -46,7 +46,8 @@ const url = await mintLoginToken(pageEnv).then(
     }
 );
 
-const headless = process.env.HEADLESS === '1' || process.env.HEADLESS === 'true';
+// HEADLESS=shell runs chrome-headless-shell, for a batch sandbox where full Chrome crashes at launch
+const headless = process.env.HEADLESS === 'shell' ? 'shell' : process.env.HEADLESS === '1' || process.env.HEADLESS === 'true';
 // Chrome throttles timers and frames in a hidden, minimised or covered tab, and a
 // program reacts once per game-loop pass, so by default the tab runs with throttling
 // off. --stock-chrome keeps Chrome's defaults (what a hand-opened browser does).
