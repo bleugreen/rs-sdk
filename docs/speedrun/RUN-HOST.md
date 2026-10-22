@@ -356,6 +356,14 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'bash ~/.local/lib/rs-gate/uninstall.sh'
 ```
 
+## Steps 0-5 run on both machines
+
+On run night steps 0 to 5 run on **both** machines, each in its own ssh form ("Reaching them"), so
+that either can take the run when step 5a chooses: the same RUN_COMMIT, reservation, bring-up,
+opening helpers, recording and live view (tenet 17). Where a step differs on the twin, it says so
+in a **Twin:** line. Steps 6's gate runs on both inside step 5a; steps 7 and 8 run on the chosen
+machine only; step 9 tears down both.
+
 ## 0. Prepare the checkout (once per run commit)
 
 **On run night, step 0 starts with the run's host reservation**, before anything else on this page
@@ -376,8 +384,8 @@ the root `bun install` had been done (m). Main names the run's commit (`RUN_COMM
 writes it to **`~/run-commit`**: one line, the full 40-hex commit. Only step 0 writes that file,
 and it writes it **before** it moves `~/rs-sdk`. rs/83's gate timer reads the same file and checks
 that commit out in its own clone, `~/gate/rs-sdk`. Main seeded it with `ae6d5664` (main on
-2026-10-21), and `~/rs-sdk` is already at that commit (r: main via rs/103). Replace `C` with the full
-commit:
+2026-10-21); rs/83 and the host thread moved the file and `~/rs-sdk` to f9b5ef44 at 23:13-23:35Z
+(r: the host thread, 16:13-16:36 PDT). Replace `C` with the full commit:
 
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'C=0000000000000000000000000000000000000000; case "$C" in *[!0-9a-f]*) echo "not a commit: $C"; exit 1;; esac; [ ${#C} -eq 40 ] || { echo "need the full 40-hex commit"; exit 1; }; printf "%s\n" "$C" >$HOME/run-commit.tmp && mv $HOME/run-commit.tmp $HOME/run-commit && cat $HOME/run-commit'
@@ -405,6 +413,14 @@ written here only as `$SCORED_ENV`. It must be `~/rs-sdk/bots/<account>/bot.env`
 named after `BOT_USERNAME` (`bots/*/` is gitignored, so it stays outside git): the page server and
 the run's session.ts both read accounts from `~/rs-sdk/bots`. **It is not put on the host until
 `~/rs-sdk` is at a `RUN_COMMIT` that includes #120.** Never use a fleet or helper account for the gate.
+SCORED's env file goes only on the machine step 5a chooses, after the choice.
+
+**Twin:** step 0 runs there only under the run's reservation and with no rehearsal attempt worktree
+in use, since attempts add their worktrees from `~/rs-sdk`; if the twin is not chosen, `~/rs-sdk`
+goes back to main after the run's teardown (rs/147's HOST.md, "Run-capable twin"). Each machine has
+**its own gate account**: one account is in the world only once, and the two gates run in the same
+minute (step 5a). Which throwaway the twin's step 6 uses is **pending (rs/host, with rs/147)**; it
+is never one of rs/147's rehearsal accounts unless rs/147 lends it.
 
 ## 1. Preconditions: Fly edge iad, TCP connect p50 at most 5 ms
 
@@ -412,8 +428,9 @@ the run's session.ts both read accounts from `~/rs-sdk/bots`. **It is not put on
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'curl -s -o /dev/null -D - https://rs-sdk-demo.fly.dev/ | grep -i "^fly-request-id"; for i in $(seq 20); do curl -s -o /dev/null -w "%{time_connect}\n" https://rs-sdk-demo.fly.dev/; done | sort -n | awk "{ms[NR]=\$1*1000} END {printf \"TCP connect ms over %d: p50 %.1f p90 %.1f max %.1f\n\", NR, ms[int(NR/2)+1], ms[int(NR*0.9)+1], ms[NR]}"'
 ```
 
-Pass: the request id ends in `-iad`, and p50 is at most 5 ms. On 2026-10-21 at 16:26 UTC: `-iad`,
-p50 1.9 ms, p90 2.6, max 2.7 over 20 (m). rs/96's gate CLI checks the same preconditions itself
+Pass: the request id ends in `-iad`, and p50 is at most 5 ms. On 2026-10-21 at 16:26 UTC, on the run
+host at its old address: `-iad`, p50 1.9 ms, p90 2.6, max 2.7 over 20 (m). The twin's gate reads
+showed TCP p50 1.9-2.3 ms (m, rs/149 and rs/170, 20:22-23:30Z). rs/96's gate CLI checks the same preconditions itself
 before it probes (step 6), so this step is the early warning, not the record.
 
 ## 2. The operator's remote desktop
@@ -434,6 +451,10 @@ them against the client in use):
   session, and with it display :10, Chrome and the recording.
 - A mid-run reconnect to look at something is safe for the run, because the tab doesn't slow down.
   The recording drops frames while connected, so disconnect again as soon as possible.
+
+**Twin:** the operator connects to `54.167.144.8:3389`, the public address, with the same client
+settings; the twin is not on the tailnet. On run night the operator holds two sessions, one per
+machine, and disconnects both before step 5 starts the recordings.
 
 After the operator connects, read which display the session is on and its geometry; it must be
 1920x1080 at 24 planes. If it is not, the session predates the client settings: main ends it from
@@ -535,7 +556,65 @@ Before the third grep's literal was written `"token""="`, a `2` in the middle ca
 
 ## 4. Helpers on the run machine (rs/117)
 
-The tick-exact helpers (the Runecraft altar givers, the trade giver, the wine giver, the S07 bone givers) run on this
+**Where they run: on SCORED's machine, logged in before SCORED** (main's plan of record, 16:35-16:36
+PDT 2026-10-21). At the gate only the **opening roster**, S06's 7 air-altar givers, is logged in, on
+**each** candidate machine, so each gate is read under the opening load (main, 16:14 and 16:36
+PDT). After step 5a chooses, the rest of the roster logs in on the chosen machine before SCORED, and
+the other machine's 7 log out. So both machines carry the launcher at RUN_COMMIT and, on run night
+only, the givers' mode-600 env files (main, 16:14 PDT; on the twin **pending (rs/host)**). The CPU
+under the full roster is established before run day by the giver-load check, not at the gate
+(below).
+
+Why SCORED's machine:
+
+- **The cue.** The altar cue (`cue.json` in `RC_CUE_DIR`) is a file on the machine that writes it,
+  so a giver on the other machine cannot read SCORED's cue today (main, 16:35 PDT).
+- **The path.** Each tick-exact giver is itself a reactive program on SCORED's critical path, so its
+  own delivery path must be clean, and the only evidence that a path is clean is that machine's gate
+  read just before the start. Co-located, one gate covers SCORED and its givers (the host thread,
+  co-signed by main, 16:13-16:14 PDT). **Never bbs or a home machine** for a tick-exact role.
+- **The order.** The engine visits players in 8 buckets by the client's IPv4 address, bucket = last
+  octet & 7, bucket 0 first, and within a bucket in login order; a relog re-appends the player at
+  its bucket's tail (r, `World.ts` playerLoop and `HashTable(8)`, main's rulings 16:25-16:43 PDT; m,
+  lab, rs/131: a giver in a lower bucket was handled first whatever the login order, 7.00 ticks a
+  craft, 30 of 30; one in a higher bucket after, 8.00). On the demo the address is the machine's
+  public one, `fly-client-ip` (r, rs/131; the table above has each machine's bucket). One machine
+  is one address and one bucket, so login order decides: **the givers log in before SCORED and never
+  relog once SCORED is in.** A giver relaunched after SCORED is in comes back behind SCORED, and its
+  turns run robust at 8 until SCORED's next relog: about 7 ticks for the craft lost in the cue plus
+  1 per later turn of that giver, at most ~15 over S21 for one crash with 22 givers (m, lab, rs/163:
+  back in the world 54-74 ticks after a SIGKILL, exactly 1 turn missed, later turns 8, 3 of 3
+  repeats on the direct path; RUN-ORDER.md R12).
+
+**Which helpers the rule binds:**
+
+| Helper | Tick-exact? | Where |
+|---|---|---|
+| S06 air-altar givers (7) and S21 body-altar givers (22) | yes: the 7-tick cycle schedules their packets (R12) | SCORED's machine, before SCORED |
+| Trade givers (2): the hand-offs, H4m, S18's top-ups, the wine (SUPPLIES.md) | tick-sensitive: an S18 top-up must finish by stun + 9 (R16), the wine's bank by login + 19 (R17) | SCORED's machine, before SCORED |
+| S07 bone givers b01-b04 | no: SCORED's loop stops, receives and restarts, and a refused request costs SCORED 0 because the giver re-sends on the next tick (m, lab, rs/141) | SCORED's machine with the roster (rs/117's launcher, SUPPLIES.md H4.1); their machine decides no cycle, but they count in the load check |
+| Cannon helper (H11, H11r, H23), carp helper, couriers, lookouts | no | bbs fleet; their machine doesn't matter |
+
+**The lower-bucket machine is an alternative, not the plan.** Givers on a machine whose bucket is
+below SCORED's would precede SCORED whatever their login time: with the dated table above, SCORED
+on the run host and the givers on the twin, both machines passing the gate. It needs a
+cross-machine cue (rs/196 to scope), rs/196's auto rule keyed to "handled before SCORED" rather than
+login order (STEP-MANIFEST.md entry 9), and, if those givers ran the relay path, rs/225's relaunch
+fix: a relay giver misses 3 turns per crash until it lands (m, lab, rs/163), against 1 on the direct
+path. The table's buckets are as of 2026-10-21; a re-address supersedes them.
+
+**Load and logins.** The chosen machine carries SCORED and ~35 helpers on the body plan (7 air, 22
+body, 4 bone, 2 trade givers). The giver-load check runs every co-located helper as lite clients
+beside a scored-style tab with recording; it passes at tab loop rate (d) p10 of at least 50 per
+second and recording at 29 fps or more with 0 dropped (main and the host thread, 16:18-16:36 PDT).
+It is **pending (rs/host, with rs/41 and rs/214)**: at the 22-giver point (00:35-00:52Z on
+2026-10-22) all 22 logged in in 190 s (m, rs/214) but the tab side never started, so there is no
+(d) or fps reading; the ~34-client body point is booked for 01:00-01:25Z. The ~65-client nature
+point runs only if rs/194 reports 4 or more nature talismans before the run's eve (main, 17:07 PDT;
+RUN-ORDER.md O41). Around 25-36 logins on one machine is fine on the swarm side: the demo's bound
+is per IP and our cap is a total (main, 16:24 PDT; "~20 a machine" was an observation, not a cap).
+
+**How.** The tick-exact helpers (the Runecraft altar givers, the trade giver, the wine giver, the S07 bone givers) run on this
 machine through rs/117's launcher, `speedrun/helpers/standalone.ts`, from this same checkout, on their
 own loopback gateway (7795 by default). How to configure, start and stop them is
 [HELPERS.md](HELPERS.md), "Helpers on the run machine" (cairn://p/rs/117); this page doesn't repeat
@@ -543,7 +622,7 @@ it. The one ordering rule that touches this runbook: **the helpers are logged in
 opens** (the launcher's `helpersReady`), because login order decides the 7- or 8-tick Runecraft
 cycle. Every helper counts against the 80-login cap from its login until it logs out (step 7), and
 SCORED's run login is the peak, because S21's altar givers are already in (SUPPLIES.md, "Peak
-concurrent logins"). After a demo restart the helpers come back by relaunching rs/141's headless
+concurrent logins"). At the gate the 7 opening givers on **each** machine count, 14 in all. After a demo restart the helpers come back by relaunching rs/141's headless
 lite-runner child processes (`fleet.ts`, `standalone.ts`), not tabs: the OS closes the old child's
 gateway socket when it exits, so there is no gateway takeover (inferred from the code; owned by
 rs/41), and the earlier lite restart measurement read 3 in-world ticks after the relogin
@@ -626,6 +705,15 @@ It costs 3.7% of one core (m: `pidstat` over 40 s, 16:53 UTC, ~150 kbit/s), and 
 beside it still wrote 29.7 fps with no drops (m: 70 s, 16:54 UTC). It was tested with `curl` on the
 host (217 frames in 72 s); nobody has opened it in the operator's browser yet. Teardown stops it with
 the rest of the stack (or `tmux -L run kill-session -t live` on its own).
+
+**Twin:** there is no tailnet address to bind, so the live view binds `127.0.0.1:8090` (the filter in
+"Reaching them" makes that change), and the operator opens it through an ssh tunnel from the Mac,
+`ssh -N -L 8091:127.0.0.1:8090` with the twin's ssh options to `ubuntu@54.167.144.8`, then
+`http://127.0.0.1:8091/live.mjpg` (local port 8091 so it can sit beside the run host's view). On the
+twin `curl` received 23 JPEG parts in 6 s from it (m, rs/149, 20:32 UTC; HOST.md, which tunnels to
+local port 8090). The tunnel is one ssh session: if it drops, the view stops and the recording on
+the machine does not (i). The twin's recording beside its gate tab wrote 29.91 fps with 0 dropped
+(m, rs/149, read 5).
 
 ## 6. Quiesce check and the gate
 
