@@ -34,10 +34,10 @@ export const LUMBRIDGE_SPAWN = { x: 3222, z: 3222 } as const;
 export const PLAYER_KIT = 3559;
 /**
  * Ticks of the observed tick length the tab may stay silent between "Yes please." and the landing.
- * Measured on the browser client (rs/337, bgsrv-mac, 300 ms ticks): 0.58 s quiet (3 of 3), 1.6 s
- * and 4.5 s with the tab's CPU throttled 4x and 10x; at load ~165 it outlasted 6 s (rs/320). 100
- * ticks (30 s) is 3x the inferred load-165 rebuild; a dead client still fails here, and the
- * resumable runner recovers it.
+ * Measured on the browser client (300 ms ticks): 0.6 s on a quiet machine, growing about linearly
+ * with a starved tab (9.3 s at 20x CPU throttle, 21 s at 40x); at load ~165 it outlasted 6 s.
+ * 100 ticks (30 s) covers a tab about 50x starved; a dead client still fails here, and the
+ * resumable runner recovers it. Figures: speedrun/README.md, skills/start.ts.
  */
 export const LANDING_IDLE_TICKS = 100;
 /** Items of the starter kit the postcondition checks (tutorial.rs2 inv_add list). */
