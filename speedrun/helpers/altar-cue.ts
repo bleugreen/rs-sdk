@@ -93,8 +93,8 @@ export function scopeOption(raw: unknown, families: readonly CueFamily[], name =
     return { step: s.step, family: s.family };
 }
 
-/** The cue is for the reader of `step` and `family`. */
-export function cueAddresses(cue: Pick<Cue, 'scope'> | null | undefined, step: string, family: CueFamily): boolean {
+/** The cue (or top-up ask) is for the reader of `step` and `family`. */
+export function cueAddresses(cue: { scope?: CueScope | null } | null | undefined, step: string, family: CueFamily): boolean {
     return !!cue?.scope && cue.scope.step === step && cue.scope.family === family;
 }
 
