@@ -42,7 +42,7 @@ import { tickMs, waitUntil } from '../lib/wait';
 import { runSteps } from '../runner/step';
 import { defaultCapacity, DEFAULT_ID, steps, tradePlan, type Tile } from '../skills/firemaking';
 import { arg, botArg, result } from './common';
-import { cheat, clearInventory, give, mustTele, setstat } from './setup';
+import { cheat, clearInventory, give, leaveTutorial, mustTele, setstat } from './setup';
 
 const ROOT = resolve(import.meta.dir, '..', '..');
 // runScript copies the running bot's bot.env into process.env (sdk/runner.ts), and a helper that
@@ -76,8 +76,9 @@ const S03_RUNES = ['airrune', 'mindrune', 'waterrune', 'earthrune', 'bodyrune', 
 const emit = (o: Record<string, unknown>) => console.log(JSON.stringify({ role, ...o }));
 const at = (s: BotWorldState | null, t: Tile) => s?.player?.worldX === t[0] && s?.player?.worldZ === t[1];
 
-async function outOfTutorial(actions: { skipTutorial(): Promise<unknown> }, sdk: { getState(): BotWorldState | null; sendClickDialog(o: number): Promise<unknown>; waitForTicks(n: number): Promise<unknown> }) {
-    await actions.skipTutorial().catch(() => {});
+/** Off Tutorial Island through S00's tutorialSkip (every side tab open), then any open dialog dismissed. */
+async function outOfTutorial(actions: Session['bot'], sdk: Session['sdk']) {
+    await leaveTutorial({ sdk, bot: actions, name: me, sessionId: 0 });
     while (sdk.getState()?.dialog.isOpen) {
         await sdk.sendClickDialog(0);
         await sdk.waitForTicks(1);
