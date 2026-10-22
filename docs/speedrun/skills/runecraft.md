@@ -370,3 +370,150 @@ start of each session.
 - **The one 14-tick gap at nature** (13 of 14 at 7) was a missed cycle that the
   script did not flag. Probably a late publication; not seen in 90 other 300 ms
   cycles.
+
+## 9. The step module
+
+`speedrun/skills/runecraft.ts` is the scored run's Runecraft module (STEP-MANIFEST.md entry 9):
+`steps()` returns **S06 runecraft** (air, 1-44) and **S21 runecraft** (nature, or body with
+`s21Altar: 'body'`, 44-99), both `logoutSafe`. It does not craft by itself. It drives the
+page's `rc-cycle` program (cairn://p/rs/131), which owns the tick schedule, and it does the
+three things the page cannot do:
+
+- **The giver feed.** On every published state it reads the givers' status files
+  (`giver-<account>.json`, rs/117's contract in `docs/speedrun/helpers/altar-giver.md`). It
+  keeps givers that are `ready` or `armed`, in the room, loaded with 27 essence and heartbeating
+  within 5 s, oldest `readyAt` first, and hands that list to the program through its input op,
+  only when the list changes.
+- **The schedule per giver.** Under `schedule: 'auto'` (the default) the processing order the
+  page reads off each giver's trade screens decides.
+  - **First guess**, before any turn: tuned only when `run-machine/launcher.json` is fresh (10 s),
+    says `helpersReady`, and records the giver's login before SCORED's. SCORED's login time is
+    the session's last client launch, never later than the login, so the guess errs toward
+    robust.
+  - **After that**, the order rc-cycle read on the giver's latest turn takes over:
+    `giver-first` gives tuned, `scored-first` gives robust. That one observation covers the
+    login order, the engine's IP buckets (a giver on a lower bucket is handled first even when
+    it logged in later; rs/131's lab: 30/30 at 7) and a relog mid-session.
+  - **Demotion:** a giver whose tuned turns fail twice in a row (`missed` or `late`) is fed
+    robust for the rest of the step, whatever the order says.
+- **The cue relay.** The page shares its turns and recent frames; the module copies them into
+  `cue.json` whenever they change, one cue session per program run, and writes a `stop` cue at
+  every end (done, fault, its own stop, a dropped page). The receiver appears only as a hash of
+  its name.
+
+**Fault ladder.**
+1. When the program faults on `N turns in a row failed` while any giver was on tuned, the
+   module restarts it once with every giver robust.
+2. A further fault falls back to the stock reacting cycle (`fallback: 'stock'`): a `stock` turn
+   in the cue, then a reacting receive through `lib/trade.ts` and an altar click per cycle. The
+   giver side's reacting `stock` turn kind is rs/163's (`TurnSchedule` in `altar-cue.ts`).
+   Without it the rung ends in a fault. Its row carries a per-cycle timeline (turn written,
+   receive ticks, essence in, craft).
+3. `no altar in sight` re-enters the stand tile once.
+4. A reloaded page is rethrown for `runResumable`. On a restart the program re-derives its
+   anchor from the inventory and trade screen, so resuming the step is simply running it again.
+5. Waiting for a giver is progress up to `giverWaitTicks` (300), after which the step stops the
+   program and says why. The restock logout ("only when it pays") is not built.
+
+Each program end logs one `kind: 'program'` TickLog row carrying the counters, the gap
+histogram, the schedule given to each giver and why, the givers demoted, the last failed turns,
+and the first craft's offset from the program start (the session's first trade).
+
+**The talisman drop is checked.** SCORED drops its talisman on entry, because the slot is one of
+the 27 a trade needs. The server ignores a drop sent while the player is delayed, and gives no
+message. With the talisman kept, the first trade still fits (27 free slots). After the first
+craft the rune stack takes the 28th slot, and every later trade fails, under every rung of the
+ladder. So the step waits for the talisman to leave the inventory, re-sends the drop up to 3
+times, and otherwise stops before any program run. The error names each drop's reply and
+whether a dialog or interface was open. Program rows carry `talismanDrops`.
+
+**Level-ups.** Nothing handles level-ups while the program runs: the trade request on T+5
+closes the dialog. Only the last craft's dialog is answered, through `lib/levelup.ts`, after the
+program ends. That costs no ticks the account could have used, because the craft's delay holds
+SCORED until the dialog opens.
+
+**Preconditions.**
+- Runecraft is at least the band start.
+- SCORED is in the altar's room, judged by position (within 24 tiles of the entry tile) rather
+  than by the altar loc. Right after a login the position is published before the scene's locs,
+  and the resume walk observes that first state.
+- Nothing in the inventory except this altar's talisman (dropped on entry), essence and this
+  altar's runes. The step refuses S21 while S06's air runes are still held, because a trade of 27
+  needs 27 free slots.
+
+**Measured** (m), local lab at `NODE_TICKRATE=300` on bgsrv-mac (load 5-7), with SCORED's
+stand-in in a visible Chrome tab running the step and 3 production `altar-giver`s through
+`standalone.ts` on a shared cue directory (`speedrun/lab/runecraft-accept.ts`, 2026-10-21).
+
+The acceptance runs used rs/163's **direct-path** givers (its branch at 2bc114ac, which also
+has the body route):
+
+| Run | Login order | Turns given | Gaps | Step ticks |
+|---|---|---|---|---|
+| nature 44, auto (chose tuned) | givers first | 30/30 | 29 x 7 | 217 |
+| nature 44, robust | givers first | 30/30 | 29 x 8 | 247 |
+| nature 44, robust | SCORED first | 30/30 | 29 x 8 | 247 |
+| nature 44, auto (chose robust) | SCORED first | 30/30 | 29 x 8 | 247 |
+| body 44, auto (chose tuned) | givers first | 30/30 | 29 x 7 | 215 |
+
+The rest used **relay-path** givers from rs/41's branch (079ccf21). In the lab the cycle does
+not depend on the path, since the engine is on loopback:
+
+| Run | Login order | Turns given | Gaps | Step ticks |
+|---|---|---|---|---|
+| nature 44, tuned / robust / auto | givers first | 30/30 each | 29 x 7 / 29 x 8 / 29 x 7 | 217 / 247 / 217 |
+| nature 44, robust / auto (chose robust) | SCORED first | 30/30 each | 29 x 8 | 247 |
+| S06: air 1 to 44, auto (tuned), two runs | givers first | 7/7 each | 6 x 7 | **58** each |
+| S06: air 1 to 44, auto (robust) | SCORED first | 7/7 | 6 x 8 | 66 |
+| nature, 10 crafts, clean logout, resume walk, 10 more | givers first | 20/20 | 18 x 7 | 149 (one unbroken run: ~147) |
+
+Resume and the fault ladder, also on direct-path givers. `--reload-after`, `--relog-after` and
+`--junk-after` in the lab script set these up:
+
+| Run | What happened |
+|---|---|
+| page reload after 8 crafts, under `runResumable` | Classed as a drop. The resume walk found the step in progress, and the restarted program ran the other 12 at 7 (the first trade again 7). The ticks across the reload aren't observable from the client's counter, which restarts (the row is `crossedSession`). |
+| junk item after 5 crafts, dropped when the next program run starts | 6 failed turns, both tuned givers demoted, then the fault. The robust restart recovered: 15/15 at 8. |
+| junk item kept | Fault, robust restart, fault, then the stock rung, which failed 6 times (the production giver had no `stock` turn yet). The step threw with the reason. |
+
+**On the wired module** (the real `programs.ts` and `altar-cue.ts` dependencies, base with
+rc-cycle at 23ea9f77, page built from it; givers from rs/163's `e4f60121`, direct path;
+bgsrv-mac at load 4-9):
+
+| Run | Login order | Turns given | Gaps | Step ticks |
+|---|---|---|---|---|
+| nature 44, auto (chose tuned), first run on a fresh engine | givers first | 30/30 | 29 x 7 | 218 |
+| nature 44, robust | SCORED first | 30/30 | 29 x 8 | 248 |
+| S06: air 1 to 44, auto (tuned) | givers first | 7/7 | 6 x 7 | 58 |
+| junk item after 3 crafts, kept until the stock rung starts (4 runs) | givers first | program 3/3 at 7, then fault, robust restart, fault | stock rung: 9 crafts, 8 x 31 | 353-382 |
+
+- **The stock rung costs 31 ticks a cycle, not 15.** Every reacting receive takes exactly 30
+  ticks from SCORED's first trade click to the essence arriving. The exception is the rung's
+  first trade, which takes 5. The same 30 came with rs/163's busy re-send in SCORED's
+  `lib/trade.ts`, so it isn't the request re-send. The constant points at the giver's stock
+  window, which is open. Until it is settled, price the fallback at 31 a cycle.
+- **The demo driver** (`speedrun/lab/runecraft-demo.ts`) runs the same step against a real server
+  with no staff commands. The accounts arrive staged: each giver holds an air talisman and 27
+  essence, with the rest banked at Falador east; the stand-in holds only an air talisman at the
+  ruins. The givers log in through `standalone.ts` with the bank restock, then the stand-in logs in
+  through the browser tab's token login (rs/138), walks in through the ruins and runs the step.
+  Every logout is confirmed in its RESULT line. `--lab-stage` is its dry run on the lab, staging
+  the accounts with staff commands first. Dry run, air, 20 cycles, 3 direct-path givers: **20/20
+  given, all tuned**; 13 in-batch gaps at 7, and 6 batch gaps of 86-87 ticks, which are the
+  givers' bank round trip; 628 step ticks; every logout confirmed. A 20-turn demo takes
+  7 + 7 + 6 loads from three givers.
+- **The "unexplained run" below was the talisman.** The first run on a freshly booted engine
+  gave its first turn and then failed every turn, including the stock rung's. It ended holding
+  the nature talisman. A later fresh-boot run stopped on the talisman check instead (3 drops
+  ignored). The drop check above is the fix.
+
+What the table shows:
+- **The session's first trade** costs 7 ticks under the program, measured as program start to
+  first craft (8 under robust). The manifest prices it at 5; the stock trade in section 7
+  costs 9.
+- **S06** is 58 against the manifest's 54 (+7%).
+- **Outside the program**, the step spends about 7-9 ticks: the walk from the entry tile to the
+  stand tile, and the last craft's level-up.
+- **One run not counted.** The first tuned run on a freshly booted lab gave its first turn and
+  then missed 12 in a row, tuned and robust alike. It was the talisman drop being ignored (see
+  the wired-module table above), and it did not recur in the 177 turns after it.
