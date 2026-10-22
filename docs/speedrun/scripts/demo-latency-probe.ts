@@ -356,6 +356,7 @@ function credentials(): { username: string; password: string } {
             .filter(l => l.includes('=') && !l.startsWith('#'))
             .map(l => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()])
     );
+    if (!env.BOT_USERNAME || !env.PASSWORD) throw new Error(`no credentials: ${path} lacks BOT_USERNAME or PASSWORD`);
     return { username: env.BOT_USERNAME, password: env.PASSWORD };
 }
 
