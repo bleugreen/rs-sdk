@@ -245,6 +245,8 @@ export interface DoneRecord {
     utc: string;
     read: string[];
     skipped: string[];
+    /** Stopped by a signal before the route ended. */
+    aborted: boolean;
     wallMs: number;
     ticks: number;
     tick: number;
