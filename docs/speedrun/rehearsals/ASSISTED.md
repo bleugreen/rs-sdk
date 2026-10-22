@@ -92,7 +92,7 @@ without it, a 1-99 takes about 240 ticks (i). Disclosure cost: zero.
 
 **4. Supplies.** 3,600 headless arrows; arrowtips 60 bronze, 90 iron, 135 steel, 225 mithril, 495
 adamant and 2,595 rune (r, fletching.md §7). Line: fletcher (h76-h79). rs/41's ledger snapshot
-(about 15:05 PDT, reply of 17:1x): 4,410 headless arrows held, all earmarked; 570 rune arrowtips
+(about 15:05 PDT, sent to rs/216 on 2026-10-21): 4,410 headless arrows held, all earmarked; 570 rune arrowtips
 held, earmarked for SCORED's S27 arrows; 1,220 adamant and 762 mithril tips held; 2,595 more rune
 tips would take many hours of one account camping Hickton's shop at up to ~300 gp each. So no
 free stock exists for the rune line. The adamant-cap variant (3,735 adamant tips) is slower and
@@ -267,8 +267,9 @@ exception for 3, as rs/196 got.
 **6. Module.** rs/197 is building `speedrun/skills/smithing.ts` and `lib/trade.ts` `swap()`
 (STEP-MANIFEST.md entry 10). rs/188's anvil helper is lab-measured (PR #179 open). A rehearsal on
 the lab would add the three unmeasured parts: the walk from the spawn, the kit offload, and the
-browser webclient's turnaround. Run it from a `::setstat`-free fresh lab account at the spawn with
-the 18-item kit. Pass: 99 within about 1,180 ticks of login.
+browser webclient's turnaround. Run it from a fresh lab account standing at the spawn with the
+18-item kit (no `::setstat`, no `::give` to the account). Pass: 99 within about 1,180 ticks of
+login.
 
 **Verdict: GO on price, gated on adamantite.** Smithing is the one row with real room (~110 ticks
 under the bar) and no lever. Before an attempt: (1) main decides whether ~20 account-hours of
