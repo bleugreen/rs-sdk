@@ -132,7 +132,10 @@ export interface FletchRun {
     maxActions?: number;
     actions: number;
     byTier: Partial<Record<ArrowTier, number>>;
-    /** ceil(actions / 5): the program's work ticks. */
+    /**
+     * The program's work ticks: it sends one tier a tick, so each run of same-tier actions takes
+     * ceil(run / 5) (a tier switch mid-burst leaves the tick short).
+     */
     ticks: number;
     levelFrom: number;
     levelTo: number;
@@ -174,6 +177,14 @@ function simulate(st: FletchStock, rows: readonly ArrowTierRow[], kind: FletchRu
     const byTier: FletchRun['byTier'] = {};
     let n = 0;
     let slotFault: string | undefined;
+    // the page sends one tier a tick: each run of same-tier actions takes ceil(run / 5) ticks
+    let ticks = 0;
+    let segTier: ArrowTier | null = null;
+    let seg = 0;
+    const closeSeg = () => {
+        ticks += Math.ceil(seg / PER_TICK);
+        seg = 0;
+    };
     for (;;) {
         const level = levelForXp(st.xp);
         if (stop.untilLevel !== undefined && level >= stop.untilLevel) break;
@@ -197,8 +208,14 @@ function simulate(st: FletchStock, rows: readonly ArrowTierRow[], kind: FletchRu
         st.arrows[r.tier] = (st.arrows[r.tier] ?? 0) + k;
         st.xp += k * r.xpPerArrow * XP_RATE;
         byTier[r.tier] = (byTier[r.tier] ?? 0) + 1;
+        if (r.tier !== segTier) {
+            closeSeg();
+            segTier = r.tier;
+        }
+        seg++;
         n++;
     }
+    closeSeg();
     const run: FletchRun = {
         kind,
         tiers: rows.map(r => r.tier),
@@ -206,7 +223,7 @@ function simulate(st: FletchStock, rows: readonly ArrowTierRow[], kind: FletchRu
         ...(stop.maxActions !== undefined ? { maxActions: stop.maxActions } : {}),
         actions: n,
         byTier,
-        ticks: Math.ceil(n / PER_TICK),
+        ticks,
         levelFrom,
         levelTo: levelForXp(st.xp)
     };
