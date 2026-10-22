@@ -23,7 +23,7 @@
 // (speedrun/lib/xp.ts), not RuneScape's 13,034,431, and the issue that asked for this priced the
 // account on the latter, so the RESULT also gives the rate on that scale (x 13.05) for comparison.
 
-import type { BotWorldState, NearbyNpc } from '../../sdk/types';
+import type { BotWorldState, NearbyNpc, PrayerName } from '../../sdk/types';
 import { startLevelUpWatcher } from '../lib/levelup';
 import { closeSession, openSession } from '../lib/session';
 import { waitTicks, waitUntil } from '../lib/wait';
@@ -70,7 +70,7 @@ for (let i = 0; i < 5 && sdk.getState()!.combatStyle?.currentStyle !== P.style; 
     await waitTicks(sdk, 2);
 }
 if (sdk.getState()!.combatStyle?.currentStyle !== P.style) throw new Error('combat style not set');
-const wanted = ['protect_from_melee', ...(BOOST ? ['ultimate_strength', 'incredible_reflexes'] : [])] as const;
+const wanted: PrayerName[] = ['protect_from_melee', ...(BOOST ? ['ultimate_strength', 'incredible_reflexes'] as const : [])];
 const ensurePrayers = async () => {
     for (const p of wanted) if (!sdk.isPrayerActive(p)) { await sdk.sendTogglePrayer(p); await waitTicks(sdk, 1); }
 };
