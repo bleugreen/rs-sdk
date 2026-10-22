@@ -1,4 +1,4 @@
-# tickmanip-cycle tree-knife level=99 phase=0 rolls=30 until=0 dismiss=now reanchor=click xplag=0 gate=off lead=auto demo=true inject-late=0 host=ip-172-31-31-189 at=2026-10-21T20:17:34.697Z
+# tickmanip-cycle tree-knife level=99 phase=0 rolls=30 until=0 dismiss=now reanchor=click xplag=0 gate=off lead=auto demo=true inject-late=0 host=rs-ashburn-run at=2026-10-21T20:17:34.697Z
 setup tick=117 pos=3194,3230 xp=51875 level=56
 T118 send click loc 1276@3191,3234 op1
 T118 bootstrap phase 0

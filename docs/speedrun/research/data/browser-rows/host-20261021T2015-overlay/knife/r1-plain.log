@@ -1,4 +1,4 @@
-# tickmanip-cycle tree-base level=99 phase=0 rolls=20 until=0 dismiss=now reanchor=click xplag=0 gate=off lead=auto demo=true inject-late=0 host=ip-172-31-31-189 at=2026-10-21T20:19:53.899Z
+# tickmanip-cycle tree-base level=99 phase=0 rolls=20 until=0 dismiss=now reanchor=click xplag=0 gate=off lead=auto demo=true inject-late=0 host=rs-ashburn-run at=2026-10-21T20:19:53.899Z
 setup tick=596 pos=3218,3230 xp=71250 level=61
 T597 DIALOG open at 3218,3230: 
 T597 send dismiss dialog

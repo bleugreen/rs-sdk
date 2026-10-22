@@ -1,4 +1,4 @@
-demo-latency-probe ashburn-host (ip-172-31-31-189) 10/21/2026, 12:45:29 PDT -> rs-sdk-demo.fly.dev
+demo-latency-probe ashburn-host (rs-ashburn-run) 10/21/2026, 12:45:29 PDT -> rs-sdk-demo.fly.dev
 players online at start: 1679
 react: login 1226 ms, 543 messages, msgs/tick p10 1 p50 1 p90 1 max 94 (n=259), tick interval p10 171.6 p50 299.6 p90 467.8 max 640.6 (n=258)
 react delay +0 ms: ticks {"1":51,"2":9}  reactMs p10 0.2 p50 0.2 p90 0.3 max 0.8 (n=60)

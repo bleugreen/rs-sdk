@@ -1,5 +1,5 @@
 probe start 2026-10-21 13:17:10 PDT: bun docs/speedrun/scripts/tickmanip-latency.ts "$BOT" --no-tele --trials="$TRIALS"
-probe from ip-172-31-31-189 at 2026-10-21T20:17:10.733Z, server rs-sdk-demo.fly.dev
+probe from rs-ashburn-run at 2026-10-21T20:17:10.733Z, server rs-sdk-demo.fly.dev
 latency in ticks (label of the step - label sent): 1:59 2:1  (60 trials, 0 lost, 62 ticks)
 on time 59/60; dominant 1 ticks (98%, lead 0); consecutive trials agree 97%
 sequence: 111111111111111121111111111111111111111111111111111111111111

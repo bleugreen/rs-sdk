@@ -4,7 +4,7 @@ Pathfinding initialized in 197ms (136704 zones + 297 mainland fill, 1268350 tile
 [BotSDK] Game state ready!
 [BotSDK] Connected and game state ready
 [Runner] Connected to bot "cairn_r130"
-probe from ip-172-31-31-189 at 2026-10-21T20:17:10.733Z, server rs-sdk-demo.fly.dev
+probe from rs-ashburn-run at 2026-10-21T20:17:10.733Z, server rs-sdk-demo.fly.dev
 latency in ticks (label of the step - label sent): 1:59 2:1  (60 trials, 0 lost, 62 ticks)
 on time 59/60; dominant 1 ticks (98%, lead 0); consecutive trials agree 97%
 sequence: 111111111111111121111111111111111111111111111111111111111111

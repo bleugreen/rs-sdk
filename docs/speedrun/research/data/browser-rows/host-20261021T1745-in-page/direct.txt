@@ -1,5 +1,5 @@
 probe start 2026-10-21 10:45:05 PDT: bun docs/speedrun/scripts/demo-latency-probe.ts --label=ashburn-host --out=$OUT/direct.json --phases=react --trials=$TRIALS --react-delay=0
-demo-latency-probe ashburn-host (ip-172-31-31-189) 10/21/2026, 10:45:05 PDT -> rs-sdk-demo.fly.dev
+demo-latency-probe ashburn-host (rs-ashburn-run) 10/21/2026, 10:45:05 PDT -> rs-sdk-demo.fly.dev
 players online at start: 1615
 react: login 2814 ms, 546 messages, msgs/tick p10 1 p50 1 p90 1 max 93 (n=264), tick interval p10 171 p50 280.7 p90 398.2 max 715.3 (n=263)
 react delay +0 ms: ticks {"1":57,"2":3}  reactMs p10 0.2 p50 0.2 p90 0.3 max 0.8 (n=60)
