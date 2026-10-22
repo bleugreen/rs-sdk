@@ -34,7 +34,8 @@
 //   mm         out of the roots, then Monkey Madness A to --mm-until (the module is not on main: pass
 //              the file pinned to the commit rs/185 names); the journal is read at the end
 //   mm-return  Lumdo back to Crash Island and Waydar's "I need to return to your kingdom."
-//              (mm_waydar.rs2 @waydar_return: the glider drops the player by the Gnomeball pitch)
+//              (mm_waydar.rs2 @waydar_return: the glider drops the player by the Gnomeball pitch),
+//              then up to Daero in the Grand Tree, where the helper parks logged out for run day
 //
 // The account rules and the loopback gateway are demo-quest.ts's; chat is refused for the whole
 // login, and it always ends with a confirmed logout.
@@ -470,17 +471,30 @@ async function outOfRoots(ctx: StepContext<any>): Promise<void> {
 /** Gnomeball pitch, where Waydar's return flight drops the player (mm_waydar.rs2: 0_37_54_25_10). */
 export const GNOMEBALL_DROP = { x: 2393, z: 3466 } as const;
 
-/** After G: Lumdo back to Crash Island, then Waydar's "I need to return to your kingdom." */
+/** Daero on the Grand Tree's first floor (monkey-madness.ts DAERO): where the helper parks for run day. */
+export const DAERO = { x: 2484, z: 3487, level: 1 } as const;
+const nearDaero = (s: BotWorldState) => pos(s).level === DAERO.level && chebyshev(pos(s), DAERO) <= 3;
+
+/**
+ * After G: Lumdo back to Crash Island, Waydar's "I need to return to your kingdom." (the glider drops the
+ * player by the Gnomeball pitch), then into the Grand Tree and up to Daero, where it parks logged out:
+ * on run day Daero's flight and Lumdo take it back to the atoll (rs/463).
+ */
 async function returnToKingdom(ctx: StepContext<any>): Promise<void> {
     const sdk = sdkOf(ctx);
-    const home = (s: BotWorldState) => chebyshev(pos(s), GNOMEBALL_DROP) <= 6 && pos(s).level === 0;
-    if (home(st(ctx))) return;
-    const crash = { x: 2894, z: 2726, tol: 12 };
-    if (!inArea(sdk, crash)) {
-        const r = await travel(sdk, [{ kind: 'lumdo', to: 'crash_island' }], { bot: ctx.bot });
-        if (!r.ok) throw new Error(`Lumdo back to Crash Island: ${r.reason}`);
+    if (nearDaero(st(ctx))) return;
+    const dropped = (s: BotWorldState) => (chebyshev(pos(s), GNOMEBALL_DROP) <= 6 && pos(s).level === 0) || inGnomeStronghold(s);
+    if (!dropped(st(ctx))) {
+        const crash = { x: 2894, z: 2726, tol: 12 };
+        if (!inArea(sdk, crash)) {
+            const r = await travel(sdk, [{ kind: 'lumdo', to: 'crash_island' }], { bot: ctx.bot });
+            if (!r.ok) throw new Error(`Lumdo back to Crash Island: ${r.reason}`);
+        }
+        await talk(ctx, /^Waydar$/i, [/I need to return to your kingdom/i], dropped);
     }
-    await talk(ctx, /^Waydar$/i, [/I need to return to your kingdom/i], home);
+    await enterTree(ctx);
+    await treeLadder(ctx, DAERO.level);
+    await go(ctx, { ...DAERO, tol: 2 }, 'to Daero');
 }
 
 // ------------------------------------------------------------------ the CLI
