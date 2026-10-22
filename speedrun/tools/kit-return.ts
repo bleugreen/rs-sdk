@@ -16,10 +16,12 @@
 //   distance and each teleport's refusal. Move the giver to a safe tile within 30 tiles of the
 //   account and pass that tile as --at=x,z.
 // - Every tick of the run, and of the wait on the trade after it, is watched: the first hitpoint
-//   lost or hit taken halts the run where it stands (or declines the trade) and skips the trade. Logout is refused for 16 ticks after a hit, and an aggressive NPC
-//   keeps hitting an account that stands still, so it runs back once to where the run began (the
-//   tiles it just crossed unhurt), logs out (logoutClean waits out the post-combat window) and
-//   exits 4 naming the attacker. It never resumes the walk or retries.
+//   lost or hit taken halts the run where it stands (or declines the trade) and skips the trade.
+//   Logout is refused for 16 ticks after a hit, and an aggressive NPC keeps hitting an account
+//   that stands still or backs off a few tiles, so it runs once to a tile ESCAPE_TILES (20) from
+//   the attacker (the run's start when that is far enough, else straight away from it), logs out
+//   (logoutClean waits out the post-combat window) and exits 4 naming the attacker. It never
+//   resumes the walk or retries. A death on the way is reported as such, with the tile.
 //
 // Then it opens the trade itself and offers exactly the listed items (debug names, as rehearse.ts
 // --kit), retrying once if the first trade closes (a giver serves one request at a time), then
@@ -28,7 +30,6 @@
 // is out of game; 1 any other failure.
 
 import type { BotWorldState } from '../../sdk/types';
-import type { BotSDK } from '../../sdk/index';
 import { parseKit } from '../rehearse';
 import { closeSession, loadBotEnv, logoutClean, openSession, type ClientKind, type Session } from '../lib/session';
 import { tabInGame } from '../lib/tab';

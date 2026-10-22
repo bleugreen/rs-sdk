@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import type { BotWorldState, CombatEvent, InventoryItem, NearbyNpc, PlayerState } from '../../sdk/types';
+import type { BotWorldState, CombatEvent, InventoryItem, NearbyNpc, NearbyPlayer, PlayerState } from '../../sdk/types';
 import { baseState, drive, FakeSdk, simulateWalking } from '../lib/fake-sdk';
-import { approach, attackerOf, damageWatch, DEFAULT_GIVER_TILE, MEET_RADIUS, planApproach } from './kit-return';
+import { approach, attackerOf, damageWatch, DEFAULT_GIVER_TILE, ESCAPE_TILES, MEET_RADIUS, planApproach, retreatTile } from './kit-return';
 
 const player = (worldX: number, worldZ: number, hp = 10, level = 0) => ({ name: 'kr', x: worldX, z: worldZ, worldX, worldZ, level, hp, maxHp: 10, isDead: false }) as PlayerState;
 const item = (slot: number, name: string, count = 1) => ({ slot, id: 1000 + slot, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
@@ -57,7 +57,7 @@ describe('damageWatch', () => {
         const watch = damageWatch(state(3230, 3222));
         expect(watch(state(3229, 3222, { tick: 101 }))).toBeNull();
         const d = watch(state(3228, 3222, { tick: 102, player: player(3228, 3222, 8), combatEvents: [hit(102, 2)], nearbyNpcs: [wizard(3226, 3223)] }));
-        expect(d).toEqual({ tick: 102, hp: 8, by: 'Dark wizard (level 7) at 3226,3223' });
+        expect(d).toEqual({ tick: 102, hp: 8, by: 'Dark wizard (level 7) at 3226,3223', at: { x: 3226, z: 3223 } });
     });
 
     test('a hit of 0 is an attack too; an event from before the watch is not', () => {
@@ -75,7 +75,52 @@ describe('damageWatch', () => {
 
     test('attackerOf falls back to the nearest NPC in combat when the event source is out of view', () => {
         const s = state(3230, 3222, { combatEvents: [{ ...hit(101, 1), sourceIndex: 99 }], nearbyNpcs: [wizard(3229, 3222)] });
-        expect(attackerOf(s, 100)).toBe('Dark wizard (level 7) at 3229,3222');
+        expect(attackerOf(s, 100)).toEqual({ by: 'Dark wizard (level 7) at 3229,3222', at: { x: 3229, z: 3222 } });
+    });
+
+    test('a hit credited to the player faced (the giver, opening the trade) names the NPC fighting instead', () => {
+        const giver = { kind: 'player', index: 3, name: 'cairn_mule2', combatLevel: 3, x: 3222, z: 3222, distance: 1 } as NearbyPlayer;
+        const ev: CombatEvent = { ...hit(101, 0), sourceType: 'other_player', sourceIndex: 3 };
+        expect(attackerOf(state(3223, 3222, { combatEvents: [ev], nearbyPlayers: [giver], nearbyNpcs: [wizard(3227, 3222)] }), 100).by).toMatch(/^Dark wizard/);
+        expect(attackerOf(state(3223, 3222, { combatEvents: [ev], nearbyPlayers: [giver] }), 100)).toEqual({ by: 'unknown (the client credits cairn_mule2, the player faced, who is not fighting)', at: null });
+        expect(attackerOf(state(3223, 3222, { combatEvents: [ev], nearbyPlayers: [{ ...giver, inCombat: true }] }), 100).by).toBe('player cairn_mule2 (level 3)');
+    });
+
+    test('a hit on an NPC near by (someone else fighting it) is not a hit on the player', () => {
+        const watch = damageWatch(state(3230, 3222));
+        const onNpc: CombatEvent = { tick: 101, type: 'damage_taken', damage: 3, sourceType: 'other_player', sourceIndex: -1, targetType: 'npc', targetIndex: 7 };
+        expect(watch(state(3229, 3222, { tick: 101, combatEvents: [onNpc] }))).toBeNull();
+    });
+});
+
+describe('retreatTile', () => {
+    const anywhere = () => true;
+
+    test('the run start when it is ESCAPE_TILES from the attacker', () => {
+        expect(retreatTile({ x: 3225, z: 3222 }, { x: 3223, z: 3222 }, { x: 3245, z: 3222 }, anywhere)).toEqual({ x: 3245, z: 3222 });
+    });
+
+    test('a start inside the attacker\'s reach (the lab death): straight away from the attacker instead', () => {
+        // Hit at 3228 by a wizard at 3226; the start, 3238, is 12 tiles from it.
+        expect(retreatTile({ x: 3228, z: 3222 }, { x: 3226, z: 3222 }, { x: 3238, z: 3222 }, anywhere)).toEqual({ x: 3226 + ESCAPE_TILES, z: 3222 });
+    });
+
+    test('turns by 45 degrees, then 90, when the straight line is not reachable; never toward the attacker', () => {
+        const tried: string[] = [];
+        const t = retreatTile({ x: 3228, z: 3222 }, { x: 3226, z: 3222 }, { x: 3238, z: 3222 }, (x, z) => {
+            tried.push(`${x},${z}`);
+            return tried.length === 4;
+        });
+        expect(tried).toEqual(['3246,3222', '3246,3242', '3246,3202', '3226,3242']);
+        expect(t).toEqual({ x: 3226, z: 3242 });
+        const all: string[] = [];
+        expect(retreatTile({ x: 3228, z: 3222 }, { x: 3226, z: 3222 }, { x: 3238, z: 3222 }, (x, z) => (all.push(`${x},${z}`), false))).toBeNull();
+        expect(all).not.toContain('3206,3222');
+        expect(all).toHaveLength(7);
+    });
+
+    test('no attacker in view: measured from where the hit landed, away along the run back', () => {
+        expect(retreatTile({ x: 3228, z: 3222 }, null, { x: 3238, z: 3222 }, anywhere)).toEqual({ x: 3228 + ESCAPE_TILES, z: 3222 });
     });
 });
 
