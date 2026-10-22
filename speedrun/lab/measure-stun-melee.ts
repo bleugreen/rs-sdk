@@ -116,7 +116,7 @@ await new Promise<void>(resolve => {
         }
         for (const k of skills) {
             const L = lvl(s, k);
-            if (L > lastLvl[k]!) { levelTicks.push({ skill: k, level: L, tick: t - tFirst }); lastLvl[k] = L; }
+            if (L > lastLvl[k]!) { levelTicks.push({ skill: k, level: L, tick: tFirst < 0 ? 0 : t - tFirst }); lastLvl[k] = L; }
         }
         // Prayer: count points spent; top back up to 43 below 10 (the potion stand-in).
         const pp = s.prayers?.prayerPoints ?? lastPrayer;
