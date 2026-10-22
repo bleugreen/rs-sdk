@@ -7,15 +7,18 @@
 # generated on each builder machine (~/.rs-fleet/id_ed25519_ashburn) with the VM's
 # host key pinned, never StrictHostKeyChecking=no. Non-login commands do not have
 # Bun on PATH: use ~/.bun/bin/bun or `bash -lc '...'`.
+# The host's address never lives in the repository: it comes from ASHBURN_HOST
+# or the private, per-machine ~/.rs-fleet/ashburn-host (user@address, mode 600),
+# and its pinned host key from ~/.rs-fleet/known_hosts_ashburn.
 set -euo pipefail
 
-HOST="${ASHBURN_HOST:-ubuntu@54.242.152.95}"
+HOST_FILE="$HOME/.rs-fleet/ashburn-host"
+HOST="${ASHBURN_HOST:-$( [ -r "$HOST_FILE" ] && tr -d '[:space:]' <"$HOST_FILE" )}"
 KEY="$HOME/.rs-fleet/id_ed25519_ashburn"
 KNOWN_HOSTS="$HOME/.rs-fleet/known_hosts_ashburn"
-if [ ! -r "$KNOWN_HOSTS" ]; then
-  KNOWN_HOSTS="${TMPDIR:-/tmp}/ashburn_known_hosts"
-  # Public address first, then the Tailscale one (rs-ashburn).
-  echo '54.242.152.95,100.66.164.37 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBYCG1nNhhY0ax6lRCgxT6oxfNh4NW7mlLOdQeoWZ0wE' >"$KNOWN_HOSTS"
+if [ -z "$HOST" ] || [ ! -r "$KNOWN_HOSTS" ]; then
+  echo "ashburn.sh: this machine lacks $HOST_FILE or $KNOWN_HOSTS; ask rs/41 or main to install them" >&2
+  exit 2
 fi
 SSH=(ssh -o BatchMode=yes -o UserKnownHostsFile="$KNOWN_HOSTS" -o StrictHostKeyChecking=yes -o CheckHostIP=no)
 if [ -r "$KEY" ]; then
