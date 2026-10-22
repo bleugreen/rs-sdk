@@ -121,14 +121,18 @@ export class Harness {
     private tick = 0;
     /** Make dispatch reject actions of these types. */
     reject = new Set<string>();
+    /** Answer an action as the client would (userEvents, a refusal); undefined means the default success. */
+    respond: ((action: BotAction) => ActionResult | undefined) | null = null;
 
     /** A bare function registers as a program that accepts no keys of its own. */
     constructor(name: string, factory: ProgramFactory | ((params: ProgramParams, init: ProgramInit) => TickProgram), opts: { packetsPerTick?: number; stallTicks?: number; now?: () => number; wallNow?: () => number; random?: () => number } = {}) {
         this.runtime = new ProgramRuntime({
             dispatch: (action): ActionResult => {
                 if (this.reject.has(action.type)) return { success: false, message: 'rejected' };
+                const r = this.respond?.(action);
+                if (r && !r.success) return r;
                 this.sent.push({ tick: this.tick, action });
-                return { success: true, message: 'ok' };
+                return r ?? { success: true, message: 'ok' };
             },
             now: () => 0,
             // with now() at 0, a frame's Date.now() stamp equals the arrival passed to step()

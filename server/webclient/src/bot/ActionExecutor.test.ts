@@ -47,6 +47,29 @@ describe('ActionExecutor interaction routing', () => {
     });
 });
 
+describe('ActionExecutor route flag and user events', () => {
+    test('passes route to the client and reports 2 user events only for a routed op', () => {
+        const calls: unknown[][] = [];
+        const client = {
+            interactLoc: (...args: unknown[]) => {
+                calls.push(args);
+                return args[4] === false ? { success: true as const } : { success: true as const, routed: true };
+            },
+            interactNpc: (...args: unknown[]) => (calls.push(args), args[2] === false ? { success: false as const, reason: 'not_in_reach' as const } : { success: true as const, routed: false }),
+            projectTileToScreen: () => null,
+            projectNpcToScreen: () => null
+        };
+        const executor = new ActionExecutor(client as any);
+        const loc = { type: 'interactLoc' as const, x: 3186, z: 3436, locId: 2213, optionIndex: 2, reason: 'test' };
+        expect(executor.execute(loc)).toEqual({ success: true, message: 'Interacting with loc 2213', phase: 'dispatch', userEvents: 2 });
+        expect(executor.execute({ ...loc, route: false })).toEqual({ success: true, message: 'Interacting with loc 2213', phase: 'dispatch' });
+        expect(calls.map(c => c[4])).toEqual([true, false]);
+        // a routing op that found no route wrote the op alone: no userEvents
+        expect(executor.execute({ type: 'interactNpc', npcIndex: 7, optionIndex: 1, reason: 'test' })).not.toHaveProperty('userEvents');
+        expect(executor.execute({ type: 'interactNpc', npcIndex: 7, optionIndex: 1, reason: 'test', route: false })).toMatchObject({ success: false, reason: 'not_in_reach', phase: 'validation' });
+    });
+});
+
 describe('ActionExecutor argument validation', () => {
     /** A client every method of which fails the test: validation must answer first. */
     const untouchable = new Proxy({}, {

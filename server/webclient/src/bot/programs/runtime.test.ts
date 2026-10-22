@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import '../../lite/test-support/browser-globals.js';
 
-import { MARK_TAIL, parseProgramCommand, ProgramRuntime } from './runtime.js';
+import { MARK_TAIL, parseProgramCommand, ProgramRuntime, userEventsOf } from './runtime.js';
 import { declared, Harness, makeState } from './testkit.js';
 import type { TickProgram } from './types.js';
 
@@ -319,5 +319,53 @@ describe('parseProgramCommand', () => {
         expect(parseProgramCommand({ op: 'input', data: { givers: ['a'] } })).toEqual({ op: 'input', data: { givers: ['a'] } });
         expect(typeof parseProgramCommand({ op: 'input' })).toBe('string');
         expect(typeof parseProgramCommand(null)).toBe('string');
+    });
+});
+
+describe('ProgramRuntime user-event accounting', () => {
+    test('userEventsOf: a routed op is 2, an unrouted one 1, anything else 1', () => {
+        expect(userEventsOf({ type: 'interactLoc' })).toBe(2);
+        expect(userEventsOf({ type: 'interactLoc', route: false })).toBe(1);
+        expect(userEventsOf({ type: 'interactNpc', route: false })).toBe(1);
+        expect(userEventsOf({ type: 'pickupItem', route: false })).toBe(1);
+        expect(userEventsOf({ type: 'interactPlayer', route: false })).toBe(2);
+        expect(userEventsOf({ type: 'useItemOnItem' })).toBe(1);
+    });
+
+    test('packets count the events the client reports; a tick of 5 sends with a routed op is over budget, the gate unchanged', () => {
+        let routed = true;
+        const h = new Harness('burst', () => ({
+            onTick(ctx) {
+                for (let i = 0; i < 4; i++) ctx.send({ type: 'useItemOnItem', sourceSlot: 14 + i, targetSlot: i });
+                ctx.send({ type: 'interactLoc', x: 1, z: 1, locId: 2, optionIndex: 1, ...(routed ? {} : { route: false }) });
+                ctx.progress();
+            }
+        }));
+        h.respond = a => (a.type === 'interactLoc' && (a as { route?: boolean }).route !== false ? { success: true, message: 'ok', userEvents: 2 } : undefined);
+        h.start('burst');
+        h.step(makeState({ tick: 1 }));
+        // all five sends went out (the per-send gate is as before), but they are 6 events
+        expect(h.sent).toHaveLength(5);
+        expect(h.status.packets).toBe(6);
+        expect(h.status.deferred).toBe(0);
+        expect(h.status.counters.overBudget).toBe(1);
+        routed = false;
+        h.step(makeState({ tick: 2 }));
+        expect(h.sent).toHaveLength(10);
+        expect(h.status.packets).toBe(11);
+        expect(h.status.counters.overBudget).toBe(1);
+    });
+
+    test('a client result without userEvents counts 1 per send, as before', () => {
+        const h = new Harness('plain', () => ({
+            onTick(ctx) {
+                for (let i = 0; i < 5; i++) ctx.send({ type: 'interactNpc', npcIndex: i, optionIndex: 1 });
+                ctx.progress();
+            }
+        }));
+        h.start('plain');
+        h.step(makeState({ tick: 1 }));
+        expect(h.status.packets).toBe(5);
+        expect(h.status.counters.overBudget).toBeUndefined();
     });
 });

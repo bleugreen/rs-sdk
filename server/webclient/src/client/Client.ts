@@ -130,7 +130,9 @@ export type ClientActionFailureReason =
     | 'item_not_found'
     | 'target_not_found'
     | 'out_of_scene'
-    | 'cant_reach';
+    | 'cant_reach'
+    /** An unrouted op (interactLoc route: false) asked for where the player is not already in reach. */
+    | 'not_in_reach';
 
 /**
  * Result of validating and routing a client-side interaction.
@@ -1144,7 +1146,8 @@ export class Client extends GameShell {
      * Option 1 is usually "Talk-to", Option 2 might be "Pickpocket", etc.
      * Use getNearbyNpcs() to see available options for each NPC
      */
-    interactNpc(npcIndex: number, optionIndex: number): ClientActionResult {
+    /** `route` false: the OPNPC alone, refused (not_in_reach) unless the player is already adjacent to the NPC's footprint (see interactLoc). */
+    interactNpc(npcIndex: number, optionIndex: number, route: boolean = true): ClientActionResult {
         if (!this.ingame || !this.out || !this.localPlayer) {
             return { success: false, reason: 'not_in_game' };
         }
@@ -1167,7 +1170,10 @@ export class Client extends GameShell {
         // Attempt the route, but always dispatch (see talkToNpc): apnpc ops are
         // legitimately interactable at range through walls.
         const size = n.type?.size ?? 1;
-        const routed = this.tryMove(this.localPlayer.routeX[0], this.localPlayer.routeZ[0], n.routeX[0], n.routeZ[0], false, size, size, 0, 0, 0, 2);
+        if (!route && !this.inReachFrom(n.routeX[0], n.routeZ[0], size, size, 0, 0, 0)) {
+            return { success: false, reason: 'not_in_reach' };
+        }
+        const routed = route ? this.tryMove(this.localPlayer.routeX[0], this.localPlayer.routeZ[0], n.routeX[0], n.routeZ[0], false, size, size, 0, 0, 0, 2) : undefined;
 
         // Send the appropriate OPNPC packet based on option index
         const opcodes = [
@@ -1180,7 +1186,7 @@ export class Client extends GameShell {
         this.writePacketOpcode(opcodes[optionIndex - 1]);
         this.out.p2(npcIndex);
 
-        return { success: true, routed };
+        return route ? { success: true, routed } : { success: true };
     }
 
     /**
@@ -1385,7 +1391,8 @@ export class Client extends GameShell {
      * Pick up a ground item at the specified world coordinates
      * Use the groundItems from BotState to get item locations
      */
-    pickupGroundItem(worldX: number, worldZ: number, itemId: number): ClientActionResult {
+    /** `route` false: the OPOBJ3 alone, refused (not_in_reach) unless the player is on or beside the item's tile (see interactLoc). */
+    pickupGroundItem(worldX: number, worldZ: number, itemId: number, route: boolean = true): ClientActionResult {
         if (!this.ingame || !this.out || !this.localPlayer) {
             return { success: false, reason: 'not_in_game' };
         }
@@ -1405,6 +1412,14 @@ export class Client extends GameShell {
         // scenery), retry with a 1x1 loc footprint, then dispatch regardless -
         // the server accepts an ADJACENT take (reachedEntity shape -2) and is
         // the authority on reachability.
+        if (!route) {
+            if (!this.inReachOfObj(sceneX, sceneZ)) return { success: false, reason: 'not_in_reach' };
+            this.writePacketOpcode(ClientProt.OPOBJ3);
+            this.out.p2(worldX);
+            this.out.p2(worldZ);
+            this.out.p2(itemId);
+            return { success: true };
+        }
         let routed = this.tryMove(
             this.localPlayer.routeX[0],
             this.localPlayer.routeZ[0],
@@ -1443,7 +1458,8 @@ export class Client extends GameShell {
      * Interact with a ground item using a specific option (1-5)
      * Option 1 = op[0], Option 2 = op[1], Option 3 = Take (op[2]), etc.
      */
-    interactGroundItem(worldX: number, worldZ: number, itemId: number, optionIndex: number): ClientActionResult {
+    /** `route` false: the OPOBJ alone, refused (not_in_reach) unless the player is on or beside the item's tile (see interactLoc). */
+    interactGroundItem(worldX: number, worldZ: number, itemId: number, optionIndex: number, route: boolean = true): ClientActionResult {
         if (!this.ingame || !this.out || !this.localPlayer) {
             return { success: false, reason: 'not_in_game' };
         }
@@ -1463,7 +1479,10 @@ export class Client extends GameShell {
         // First send MOVE_OPCLICK via tryMove (type=2) to walk to the item.
         // As in pickupGroundItem: retry an unroutable tile with a 1x1
         // footprint and dispatch regardless, matching the authentic client.
-        let routed = this.tryMove(
+        if (!route && !this.inReachOfObj(sceneX, sceneZ)) {
+            return { success: false, reason: 'not_in_reach' };
+        }
+        let routed = !route ? undefined : this.tryMove(
             this.localPlayer.routeX[0],
             this.localPlayer.routeZ[0],
             sceneX,
@@ -1474,7 +1493,7 @@ export class Client extends GameShell {
             0,      // forceapproach
             2       // type = MOVE_OPCLICK
         );
-        if (!routed) {
+        if (route && !routed) {
             routed = this.tryMove(
                 this.localPlayer.routeX[0],
                 this.localPlayer.routeZ[0],
@@ -1501,7 +1520,7 @@ export class Client extends GameShell {
         this.out.p2(worldZ);
         this.out.p2(itemId);
 
-        return { success: true, routed };
+        return route ? { success: true, routed } : { success: true };
     }
 
     /**
@@ -2479,6 +2498,36 @@ export class Client extends GameShell {
 
         const srcX = this.localPlayer.routeX[0];
         const srcZ = this.localPlayer.routeZ[0];
+        const a = this.locApproach(sceneX, sceneZ, locId);
+        return this.tryMove(srcX, srcZ, sceneX, sceneZ, false, a.width, a.length, a.angle, a.shape, a.forceapproach, 2);
+    }
+
+    /**
+     * True when the player's own tile already satisfies the loc's reach rule: the test
+     * tryMove applies to each tile it visits, applied to the source tile alone. An op
+     * sent from here needs no route packet.
+     */
+    private inReachOfLoc(sceneX: number, sceneZ: number, locId: number): boolean {
+        const a = this.locApproach(sceneX, sceneZ, locId);
+        return this.inReachFrom(sceneX, sceneZ, a.width, a.length, a.angle, a.shape, a.forceapproach);
+    }
+
+    /** A ground item's reach, as pickupGroundItem routes to it: its own tile, else a 1x1 footprint beside it. */
+    private inReachOfObj(sceneX: number, sceneZ: number): boolean {
+        return this.inReachFrom(sceneX, sceneZ, 0, 0, 0, 0, 0) || this.inReachFrom(sceneX, sceneZ, 1, 1, 0, 0, 0);
+    }
+
+    /** tryMove's arrival test from the player's own tile: an op from here needs no route. */
+    private inReachFrom(sceneX: number, sceneZ: number, width: number, length: number, angle: number, shape: number, forceapproach: number): boolean {
+        const collisionMap: CollisionMap | null = this.collision[this.minusedlevel];
+        if (!this.localPlayer || !collisionMap) {
+            return false;
+        }
+        return this.reachedFrom(collisionMap, this.localPlayer.routeX[0], this.localPlayer.routeZ[0], sceneX, sceneZ, width, length, angle, shape, forceapproach);
+    }
+
+    /** The reach rule tryMove uses for a loc on a scene tile: its footprint, angle, shape (+1) and forceapproach. */
+    private locApproach(sceneX: number, sceneZ: number, locId: number): { width: number; length: number; angle: number; shape: number; forceapproach: number } {
         const info = this.locSceneInfo(sceneX, sceneZ, locId);
         const shape = info?.shape ?? LocShape.CENTREPIECE_STRAIGHT;
         const angle = info?.angle ?? LocAngle.WEST;
@@ -2501,16 +2550,23 @@ export class Client extends GameShell {
                 forceapproach = ((forceapproach << angle) & 0xf) + (forceapproach >> (4 - angle));
             }
 
-            return this.tryMove(srcX, srcZ, sceneX, sceneZ, false, width, height, 0, 0, forceapproach, 2);
+            return { width, length: height, angle: 0, shape: 0, forceapproach };
         }
 
-        return this.tryMove(srcX, srcZ, sceneX, sceneZ, false, 0, 0, angle, shape + 1, 0, 2);
+        return { width: 0, length: 0, angle, shape: shape + 1, forceapproach: 0 };
     }
 
     /**
      * Interact with a location/object in the world (doors, trees, etc.)
      */
-    interactLoc(worldX: number, worldZ: number, locId: number, optionIndex: number): ClientActionResult {
+    /**
+     * `route` false sends the OPLOC alone, without the MOVE_OPCLICK ahead of it: one user
+     * event instead of two, for a player already standing in reach (a booth it banks at
+     * every few ticks). It is refused, with nothing written, when the player's tile does not
+     * satisfy the loc's reach rule, so it never sends an op the server would answer with
+     * "I can't reach that!".
+     */
+    interactLoc(worldX: number, worldZ: number, locId: number, optionIndex: number, route: boolean = true): ClientActionResult {
         if (!this.ingame || !this.out || !this.localPlayer) {
             return { success: false, reason: 'not_in_game' };
         }
@@ -2535,12 +2591,15 @@ export class Client extends GameShell {
         if (!loc) {
             return { success: false, reason: 'target_not_found' };
         }
+        if (!route && !this.inReachOfLoc(destSceneX, destSceneZ, locId)) {
+            return { success: false, reason: 'not_in_reach' };
+        }
         // Attempt a route, but always dispatch. Approach ops (aploc scripts like
         // Waterfall's "Swim to" rock or the Wizard Tower stairs) trigger at tiles
         // the routefinder can never reach, and the server owns the reach check
         // anyway — worst case it answers "I can't reach that!" instead of us
         // aborting silently.
-        const routed = this.routeToLoc(destSceneX, destSceneZ, locId);
+        const routed = route ? this.routeToLoc(destSceneX, destSceneZ, locId) : undefined;
 
         const opcodes = [
             ClientProt.OPLOC1,
@@ -2554,7 +2613,7 @@ export class Client extends GameShell {
         this.out.p2(worldZ);
         this.out.p2(locId);
 
-        return { success: true, routed };
+        return route ? { success: true, routed } : { success: true };
     }
 
     /**
@@ -8210,6 +8269,25 @@ export class Client extends GameShell {
         return true;
     }
 
+    /** tryMove's arrival test: does tile (x, z) reach destination (dx, dz) under these loc rules. */
+    private reachedFrom(collisionMap: CollisionMap, x: number, z: number, dx: number, dz: number, locWidth: number, locLength: number, locAngle: number, locShape: number, forceapproach: number): boolean {
+        if (x === dx && z === dz) {
+            return true;
+        }
+
+        if (locShape !== LocShape.WALL_STRAIGHT) {
+            if ((locShape < LocShape.WALLDECOR_STRAIGHT_OFFSET || locShape === LocShape.CENTREPIECE_STRAIGHT) && collisionMap.testWall(x, z, dx, dz, locShape - 1, locAngle)) {
+                return true;
+            }
+
+            if (locShape < LocShape.CENTREPIECE_STRAIGHT && collisionMap.testWDecor(x, z, dx, dz, locShape - 1, locAngle)) {
+                return true;
+            }
+        }
+
+        return locWidth !== 0 && locLength !== 0 && collisionMap.testLoc(x, z, dx, dz, locWidth, locLength, forceapproach);
+    }
+
     private tryMove(srcX: number, srcZ: number, dx: number, dz: number, tryNearest: boolean, locWidth: number, locLength: number, locAngle: number, locShape: number, forceapproach: number, type: number): boolean {
         const collisionMap: CollisionMap | null = this.collision[this.minusedlevel];
         if (!collisionMap) {
@@ -8249,24 +8327,7 @@ export class Client extends GameShell {
             z = this.routeZ[length];
             length = (length + 1) % bufferSize;
 
-            if (x === dx && z === dz) {
-                arrived = true;
-                break;
-            }
-
-            if (locShape !== LocShape.WALL_STRAIGHT) {
-                if ((locShape < LocShape.WALLDECOR_STRAIGHT_OFFSET || locShape === LocShape.CENTREPIECE_STRAIGHT) && collisionMap.testWall(x, z, dx, dz, locShape - 1, locAngle)) {
-                    arrived = true;
-                    break;
-                }
-
-                if (locShape < LocShape.CENTREPIECE_STRAIGHT && collisionMap.testWDecor(x, z, dx, dz, locShape - 1, locAngle)) {
-                    arrived = true;
-                    break;
-                }
-            }
-
-            if (locWidth !== 0 && locLength !== 0 && collisionMap.testLoc(x, z, dx, dz, locWidth, locLength, forceapproach)) {
+            if (this.reachedFrom(collisionMap, x, z, dx, dz, locWidth, locLength, locAngle, locShape, forceapproach)) {
                 arrived = true;
                 break;
             }
