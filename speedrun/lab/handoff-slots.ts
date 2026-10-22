@@ -18,15 +18,16 @@ import { nextTick, waitTicks, waitUntil } from '../lib/wait';
 import { steps as miningSteps } from '../skills/mining';
 import { steps as woodcuttingSteps } from '../skills/woodcutting';
 import { arg, botArg, labLog, result } from './common';
-import { cheat, setstat, tele } from './setup';
+import { cheat, leaveTutorial, setstat, tele } from './setup';
 
 const scored = await openSession(botArg());
 const mule = await openSession(arg('mule', 'srlab2'), { pathfinding: false });
+await leaveTutorial(scored);
+await leaveTutorial(mule);
 const log = labLog('handoff-slots');
 const ctx = { session: scored, sdk: scored.sdk, bot: scored.bot, c: {}, log } as never;
 
 async function stage(s: Session, gives: string[], count: number): Promise<void> {
-    await cheat(s.sdk, 'setvar tutorial 1000');
     await cheat(s.sdk, '~clearinv inv');
     await waitUntil(s.sdk, st => st.inventory.length === 0, { maxTicks: 10 });
     for (const g of gives) await cheat(s.sdk, g);
