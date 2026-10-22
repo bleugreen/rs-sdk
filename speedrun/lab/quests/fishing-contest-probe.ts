@@ -8,6 +8,7 @@ import type { NearbyLoc, NearbyNpc } from '../../../sdk/types';
 import { opLoc } from '../../lib/act';
 import { closeSession, openSession } from '../../lib/session';
 import { waitTicks, waitUntil } from '../../lib/wait';
+import { runTo } from '../../lib/travel';
 import { pos } from '../../lib/world';
 import { botArg, result } from '../common';
 import { cheat, clearInventory, give, leaveTutorial, mustTele, setStats } from '../setup';
@@ -31,11 +32,6 @@ async function look(label: string, x: number, z: number, locRe: RegExp, npcRe: R
     return { locs, npcs };
 }
 
-function pathLen(x: number, z: number): number {
-    const p = sdk.findPath(x, z, 500);
-    return p.success && p.reachedDestination !== false ? p.waypoints.length : -1;
-}
-
 try {
     await leaveTutorial(session);
     await clearInventory(sdk);
@@ -43,25 +39,43 @@ try {
     await give(sdk, ['spade']);
     await cheat(sdk, '~energy', 1);
 
-    await look('stairs', 2820, 3486, /stair/i, /dwarf/i, 10);
-    await look('hemenster', 2644, 3441, /gate|pipe|fence/i, /bonzo|morris|stranger|fishing spot|grandpa|joshua|dave/i, 20);
 
-    // McGrubor's railing from both sides: which one the squeeze moves into, and the vines' path from there.
-    for (const side of [-1, 1]) {
-        const { locs } = await look(`railing${side < 0 ? 'W' : 'E'}`, 2662 + (side < 0 ? -1 : 1), 3500, /railing|gate|vine/i, /forester/i, 40);
+    // McGrubor's railing: the squeeze from each side (the tile it ends on, not the approach step), then a
+    // real run to the nearest vine from there, its trail, and a dig with the spade.
+    for (const side of ['W', 'E'] as const) {
+        const from = { x: side === 'W' ? 2661 : 2662, z: 3500 };
+        const { locs } = await look(`railing${side}`, from.x, from.z, /railing|gate|vine/i, /forester/i, 40);
         const rail = locs.find(l => /loose railing/i.test(l.name));
         if (!rail) continue;
-        const before = pos(sdk);
-        const r = await opLoc(sdk, rail, 1, s => pos(s).x !== before.x || pos(s).z !== before.z, { maxTicks: 15 });
-        await waitTicks(sdk, 3);
+        const t0 = sdk.getState()!.tick;
+        const r = await opLoc(sdk, rail, 1, s => s.gameMessages.some(m => m.tick >= t0 && /squeeze through/i.test(m.text)), { maxTicks: 15, resendEvery: 0 });
+        await waitUntil(sdk, s => pos(s).x !== from.x, { maxTicks: 8 });
+        await waitTicks(sdk, 2);
         const after = pos(sdk);
-        const vines = (await sdk.scanNearbyLocs(40)).filter(l => /^vine$/i.test(l.name) && l.options.some(o => /check/i.test(o)));
-        const ranked = vines
-            .map(v => ({ v, d: Math.max(...[[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => -pathLen(v.x + dx!, v.z + dz!))) }))
-            .map(({ v, d }) => ({ v, steps: -d }))
-            .sort((a, b) => (a.steps < 0 ? 1e9 : a.steps) - (b.steps < 0 ? 1e9 : b.steps));
-        console.log(`squeeze from ${before.x},${before.z}: ok ${r.ok} in ${r.ticks} -> ${after.x},${after.z}; vines by path: ${ranked.slice(0, 8).map(({ v, steps }) => `${v.x},${v.z}#${v.id}:${steps}`).join('  ')}`);
-        result(`fc_probe_squeeze${side < 0 ? 'W' : 'E'}`, { before, ok: r.ok, ticks: r.ticks, after, vines: ranked.map(({ v, steps }) => ({ x: v.x, z: v.z, id: v.id, steps })) });
+        console.log(`squeeze from ${from.x},${from.z}: message ${r.ok} at +${r.ticks}; on ${after.x},${after.z} at +${sdk.getState()!.tick - t0}`);
+        const trail: string[] = [];
+        const unsub = sdk.onStateUpdate(s => {
+            const p = pos(s);
+            const last = trail[trail.length - 1];
+            const here = `${p.x},${p.z}`;
+            if (!last?.endsWith(here)) trail.push(`${s.tick - t0}:${here}`);
+        });
+        const w0 = sdk.getState()!.tick;
+        const walk = await runTo(sdk as never, { x: 2631, z: 3500, tol: 0 }, { bot: session.bot as never });
+        unsub();
+        const walked = sdk.getState()!.tick - w0;
+        console.log(`run to the vine (2631,3500) from ${after.x},${after.z}: ok ${walk.ok} (${walk.reason ?? ''}) ${walked} ticks; trail ${trail.join(' ')}`);
+        const vine = (await sdk.scanNearbyLocs(3)).filter(l => /^vine$/i.test(l.name)).sort((a, b) => a.distance - b.distance)[0];
+        let dug = 'no vine';
+        if (vine) {
+            const d0 = sdk.getState()!.tick;
+            const dig = await opLoc(sdk, vine, /check/i, s => s.inventory.some(i => /red vine worm/i.test(i.name)), { maxTicks: 15 });
+            dug = `${vine.x},${vine.z}#${vine.id}: ${dig.ok ? 'worm' : 'none'} at +${sdk.getState()!.tick - d0}; msgs ${JSON.stringify(sdk.getState()!.gameMessages.filter(m => m.tick >= d0).map(m => m.text))}`;
+        }
+        console.log(`dig: ${dug}`);
+        result(`fc_probe_squeeze${side}`, { from, after, walkOk: walk.ok, walked, trail, dug });
+        await clearInventory(sdk);
+        await give(sdk, ['spade']);
     }
 } finally {
     await closeSession(session);
