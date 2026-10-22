@@ -329,6 +329,9 @@ export function sideTiles(receiver: Tile, me: Tile, npcs: readonly Tile[]): Tile
 
 // ------------------------------------------------------------------ role
 
+/** Observed ticks one side step waits before the courier re-reads where the scored account is. */
+export const SIDE_STEP_TICKS = 4;
+
 export type BonePhase = 'start' | 'restock' | 'travel' | 'waiting' | 'requested' | 'trading' | 'fault' | 'off';
 
 export class BoneGiver {
@@ -347,6 +350,8 @@ export class BoneGiver {
     private openSeenMs = 0;
     /** `once` stacks handed over, by lower-case name. */
     private readonly delivered = new Set<string>();
+    /** Side steps in a row that got no nearer (stepToSide tries the next side). */
+    private sideMisses = 0;
 
     constructor(private readonly ctx: RoleContext) {
         this.o = boneGiverOptions(ctx.options);
@@ -491,21 +496,8 @@ export class BoneGiver {
             if (!receiver) return;
         }
         if (!onSide(pos(this.s), receiver)) {
-            const sides = sideTiles(receiver, pos(this.s), npcTiles(this.s));
-            if (!sides.length) throw new Error(`no free side tile beside the scored account at ${receiver.x},${receiver.z}`);
             this.setPhase('travel', 'to a side tile');
-            // A side the walk cannot reach (a wall, a fence) falls through to the next.
-            let last: unknown = null;
-            for (const side of sides) {
-                try {
-                    await standOn(ctx, side);
-                    last = null;
-                    break;
-                } catch (e) {
-                    last = e;
-                }
-            }
-            if (last) throw last;
+            await this.stepToSide(receiver);
             return; // re-read where the scored account is now
         }
         if (o.standing) {
@@ -574,6 +566,30 @@ export class BoneGiver {
             if (!s || !tradeOf(s).isOpen || s.tick - t0 > o.askWaitTicks || ctx.signal.aborted) return null;
             await Bun.sleep(15);
         }
+    }
+
+    /**
+     * One bounded step toward a free side tile of the scored account. The walk's action result is
+     * not awaited: among the wandering knights it can take a minute to come back (lab, 300 ms: the
+     * courier stood 180-350 ticks in one standOn while the account moved on, and about half the due
+     * top-ups found it 5-15 tiles off). Instead it waits at most SIDE_STEP_TICKS observed ticks, or
+     * until it is on a side or the account has moved, and the caller re-reads. A side the walk did
+     * not get nearer to (a wall, a fence) yields to the next one on the following step.
+     */
+    private async stepToSide(receiver: Tile): Promise<void> {
+        const { ctx } = this;
+        const sides = sideTiles(receiver, pos(this.s), npcTiles(this.s));
+        if (!sides.length) throw new Error(`no free side tile beside the scored account at ${receiver.x},${receiver.z}`);
+        const side = sides[this.sideMisses % sides.length]!;
+        const from = pos(this.s);
+        const dist = (t: Tile) => Math.abs(t.x - side.x) + Math.abs(t.z - side.z);
+        void ctx.sdk.sendWalk(side.x, side.z).catch(() => {});
+        const hash = this.cue?.receiver.sha256;
+        await until(ctx, st => {
+            const r = st.nearbyPlayers.find(p => nameHash(p.name) === hash);
+            return !r || r.x !== receiver.x || r.z !== receiver.z || onSide(pos(st), r);
+        }, SIDE_STEP_TICKS);
+        this.sideMisses = dist(pos(this.s)) < dist(from) || onSide(pos(this.s), receiver) ? 0 : this.sideMisses + 1;
     }
 
     /** Wait for the scored account's request. Resolves with the tick of the frame that carries it (or shows the trade open), or null when it moved off or the cue stopped. */
