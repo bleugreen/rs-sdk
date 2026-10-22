@@ -197,7 +197,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 19 | 20 | Sea Slug | `speedrun/quests/sea-slug.ts` | S19 | 307 | 307 | 462 | ~155 | overlay | `quest-smallskill-seaslug.ts` | building (rs/185, held: tenet 15) |
 | 20 | 21 | Romeo & Juliet | `speedrun/quests/romeo-juliet.ts` | S24 | 211 | 211 | 301 | ~90 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
 | 21 | 22 | Druidic Ritual | `speedrun/quests/druidic-ritual.ts` | S24 | 220 | 220 | 284 | ~64 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
-| 22 | 24 | Magic (strike, enchant) | `speedrun/skills/magic.ts` | S02, S04 | 205 | 203 | ~231 | ~28 | overlay | `magic-strike.ts`, `magic-cadence.ts` | building (rs/285); S02 14 m (12 / 12 / 12 / 17 in the lab, 17 on the demo; best 12); **demo-confirmed for the enchant cadence** (cairn_m01: 20 sapphire enchants in 60 ticks, 19 of 19 gaps at 3); S04 191 m (lab, 2 of 2) with `handBack: 'keep'`, the last 20 rings to H4's swap |
+| 22 | 24 | Magic (strike, enchant) | `speedrun/skills/magic.ts` | S02, S04 | 213 | 208 | ~231 | ~23 | overlay | `magic-strike.ts`, `magic-cadence.ts` | **on main as #255** (acec0aec, rs/316, inside the floor); **browser client, lab: S02 20.3 m (best 17), S04 192.7 m (best 191)** (rs/285, fold-in 17); on lite before: S02 14 m (12 / 12 / 12 / 17 in the lab, 17 on the demo; best 12); **demo-confirmed for the enchant cadence** (cairn_m01: 20 sapphire enchants in 60 ticks, 19 of 19 gaps at 3); S04 191 m (lab, 2 of 2) with `handBack: 'keep'`, the last 20 rings to H4's swap |
 | 23 | 23 | Fishing Contest | `speedrun/quests/fishing-contest.ts` | S20 | 158 | 158 | 234 | ~76 | overlay | `quest-smallskill-fishingcompo.ts` | building (rs/185, held: tenet 15) |
 | 24 | 27 | Herblore | `speedrun/skills/herblore.ts` | S25e | 170 | 117 | ~200 e | ~83 | overlay | `delayfree-cycle.ts` | building (rs/186, held: tenet 15) |
 | 25 | 26 | Pre-MM cannon session | `speedrun/skills/ranged.ts` (`cannonSession`) | S14 | 118 | 104 | ~162 | ~58 | overlay | `quest-premm-cannon.ts`, `ranged-cannon.ts` | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible) |
@@ -1928,7 +1928,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Postconditions:** Magic 7 (S02; 8 only after an overshooting fourth strike), 59 (S04; Fire Blast, the Ardougne teleport at 51) with the last load's
   20 enchanted rings held. Items out: 40 enchanted rings to the giver in ring trades 2-3, and the last 20
   handed back at H4 (S05, Doric's) as a `swap()` (entry 30).
-- **Ticks:** S02 **14** expected and **12** best (measured, rs/285's module: 12, 12, 12 and 17 in the lab and 17 on
+- **Ticks (browser client, fold-in 17):** S02 **20.3** expected and **17** best, S04 **192.7** expected and **191** best (measured, rs/285, lab, a cold arrival from S01's tile, 3 runs each: S02 24 / 20 / 17, S04 192 / 195 / 191; the browser adds up to 6 to S02 over lite, a late first strike after the landing and an occasional missed click label); expected **213**, best **208**. On the lite client before: S02 **14** expected and **12** best (measured, rs/285's module: 12, 12, 12 and 17 in the lab and 17 on
   the demo, cairn_m01 on the twin, 06:35Z, ~1,790 online; the length is set by the damage rolls, 3 strikes or
   4, not by the client; 18 before, `skills/magic.md` §1): three Wind Strikes reach Magic 7 in 12 ticks when the hits are big
   enough, since 582 game xp needs an average of ~7.8 base a strike (5.5 on the cast and 2 a damage,
@@ -1940,7 +1940,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   2: 57 of 57 in-load gaps at 3, each ring trade 4 ticks on SCORED's clock, load turnarounds 7; 204
   inferred before, from 180 cast ticks and 3 ring trades at 8). **The ring givers stand on SCORED's side
   of any wall or fence at the row's end** (`RING_CONTRACT.where`: a wall cost ~20 in an earlier lab run).
-  Expected **205**, best **203**. **H4's slots** (rs/158's rule on rs/285's lab): SCORED drops the 2 body runes with
+  Expected **205**, best **203** on the lite client. **H4's slots** (rs/158's rule on rs/285's lab): SCORED drops the 2 body runes with
   the starter junk on T01-02, and S02 drops the 11 mind runes at its exit (nothing on the route casts
   with either; the starter's water runes go too, the staff of water covering water), and S04's exit drops the tinderbox and the
   leftover 4 earth runes (the 5 diamond enchants spend H1's 50) on T04-05's walk out, because H4 needs 23 free slots and SCORED would arrive at Doric's with 22, and S06 needs 26-27 (entry 9); that leaves 1
