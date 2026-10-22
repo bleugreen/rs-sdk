@@ -343,7 +343,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 | Firemaking's message reader through the SDK's ChatHistory | 16 (S03) | **on main, 4dfe80c0 (#297; rs/364)**, inside the run-commit floor | `msgKey` kept only the first message of each tick; on the fix S03's browser re-lab ran 647 / 663 / 683 (2, 6 and 11 failed rolls), every gap 4 an attempt apart from the two known lap turns, laps 2-3 at 4.000, no lost logs or waits: S03 stays 681 m (demo) (m, rs/364); RUN-ORDER.md R34, closed |
 | Crafting S25d and the item-cycle in-page program, with `stow` | 28 (S25d), 29 (S25c's stow) | **on main, c8ea24da (#302; rs/380's snapshot of rs/186 at 95f0aeac)**, inside the run-commit floor | `skills/crafting.ts` and its test, `lab/crafting-accept.ts`, `crafting.md`, the in-page `item-cycle` program and `lib/item-cycle.ts`, byte-identical; `herblore.ts` and its test only as crafting's import (S25e not lab-accepted); the opt-in `mixed` loads S25c's W2 and P2 cut are not in it (rs/339, building; on the pending list) |
 | Dwarf Cannon step module and `segments.ts`'s slot helpers (`QuestItem`, `slotNeed`, `slotsCover`, `freeSlots`, `INVENTORY_SLOTS`) | 12 (S13); the quest modules' slot checks | **on main, 425c7047 (#299; rs/373's snapshot of rs/185 at 3502672e, #286)**, inside the run-commit floor |
-| The ledger's item identity: `slot-ledger.ts`'s `NAME @ID`, `NAME(*)` and `<placeholder>`, `runner/handoff.ts` by id or family, `lib/items.ts` `objName` / `noteOf`, `lib/trade.ts` `offerSatisfies` | 33 (every hand-off); the inventory ledger | **on main, 2fb76a38 (#305; rs/381's snapshot of rs/186 at 9a161cf2, rs/365 at 4f300e35)**: the run-commit floor | accepts the old and the new forms, so this manifest's rows, by game name with ids in notes, walk 89 of 89 under it; the conversion to `@ID` is fold-in 21's, and until then the hand-offs match by exact name (parity-pinned); `helpers/mule.ts` uses `offerSatisfies` as the one want rule | the module, its tests, lab runner and demo driver, byte-identical; `act.ts` and `quests.ts` untouched; rs/258's credit-past-`until` `slotNeed` change is not in it and comes with rs/377 (pending) |
+| The ledger's item identity: `slot-ledger.ts`'s `NAME @ID`, `NAME(*)` and `<placeholder>`, `runner/handoff.ts` by id or family, `lib/items.ts` `objName` / `noteOf`, `lib/trade.ts` `offerSatisfies` | 33 (every hand-off); the inventory ledger | **on main, 2fb76a38 (#305; rs/381's snapshot of rs/186 at 9a161cf2, rs/365 at 4f300e35)**: the run-commit floor | accepts the old and the new forms; fold-in 21 wrote this manifest's ledger rows in the new ones (`NAME @ID`, `NAME(*)`, `<placeholder>`), and they walk 89 of 89 under it, row for row as before; `helpers/mule.ts` uses `offerSatisfies` as the one want rule | the module, its tests, lab runner and demo driver, byte-identical; `act.ts` and `quests.ts` untouched; rs/258's credit-past-`until` `slotNeed` change is not in it and comes with rs/377 (pending) |
 | Direct-path altar giver | 9 (S06, S21) | building (rs/163) | PR #144, open; on rs/117's launcher and rs/141's givers |
 
 ## 2. The run chain
@@ -2662,30 +2662,57 @@ the next leg or trade.
   ends at the first line that does not start with `|`. `-` is an empty cell.
 - `row`: the RUN-ORDER.md id (`S04`, `T04-05`, `H4`, `H4k`), with `H4.x`, `H4m.x` and `H14.x` for
   one load of H4.1-H4.n, H4m.1-H4m.4 and H14.1-H14.13.
-- `in`: entries separated by `; `, each `NAME xCOUNT [K]`. K is `s` (stackable: one slot per NAME,
-  merging with a held stack), `u` (unstackable: COUNT slots) or `n` (noted: one slot per NAME,
-  merging). COUNT is an integer or `?`. Text in parentheses after `[K]` is a note. NAME is lower case
-  and compared exactly. A top-up is `NAME to N [K]` in the count position (as `out` uses `all`), e.g.
-  `shark to 9 [u]`: the row brings the held count, pack and worn, up to N, so max(0, N - held) arrive.
-  For `u` that many slots; for `s` and `n` one slot when the pack holds none of NAME and some
-  arrives, else none. N is an integer; there is no `to ?`.
-- `out`: entries `NAME xCOUNT (REASON ...)` or `NAME all (REASON ...)`; COUNT is an integer or `?`.
+- `in`: entries separated by `; `, each `ITEM xCOUNT [K]`. K is `s` (stackable: one slot per stack,
+  merging with a held stack), `u` (unstackable: COUNT slots) or `n` (noted: one slot per stack,
+  merging). COUNT is an integer or `?`. Text in parentheses after `[K]` is a note. A top-up is
+  `ITEM to N [K]` in the count position (as `out` uses `all`), e.g. `shark to 9 [u]`: the row
+  brings the held count, pack and worn, up to N, so max(0, N - held) arrive. For `u` that many
+  slots; for `s` and `n` one slot when the pack holds none of ITEM and some arrives, else none. N
+  is an integer; there is no `to ?`.
+- `out`: entries `ITEM xCOUNT (REASON ...)` or `ITEM all (REASON ...)`; COUNT is an integer or `?`.
   REASON's first word is `drop`, `trade`, `swap`, `consume`, `hand-in` or `deposit`. `swap` means
   given in the same trade as the row's `in`, so it frees its slots before the need check
   (`trade.rs2:161-190` counts offered items as freed). An `out` may name a worn item, which leaves
   the worn set at no slot cost. An `out` of an item that is neither held nor worn is an error.
+- **ITEM** is one of four forms (rs/365's grammar, on main with #305, the floor; `slot-ledger.ts`
+  parses them and `runner/handoff.ts` trades by them):
+  - `NAME`: the game name, lower case, matched by name; a potion's dose is part of it
+    (`prayer potion(4)`). Every item whose game name picks out the obj the run means.
+  - `NAME @ID`: matched by obj id, NAME only a label. The id is always the **unnoted** obj, also at
+    `[n]`: the walk keys the stack by it, and the hand-off trades an `[n]` entry as its banknote,
+    read through obj.pack's cert link (`guam potion (unf) @91 x41 [n]` arrives as obj 92). For a
+    name the game gives to several objs where the run means one: the bucket of water (`@1929`),
+    the unlit and the lit torch (`@596`, `@594`), the monkey bones (`@3183`), the gree-gree
+    (`@4031`, which has no note, so never `[n]`), the antipoisons H7 and H12 bring (`@175`,
+    `@2446`) and the unfinished potions, both 'Unfinished potion' in game (`@91` guam, `@101`
+    irit). The obj's debug name in the entry's note (`torch_unlit`) is the id's cross-check.
+  - `NAME(*)`: any dose of the potion NAME, for an `out` once doses may have been drunk: each dose
+    form held is a stack of its own, and the out takes from every one (`antipoison(*) all`,
+    `prayer potion(*) all`, `magic potion(*) x1`, `agility potion(*) x1`). An `in` names the dose it
+    brings.
+  - `<NAME>`: a category placeholder, for a load another module trades rather than `handoff.ts`:
+    `<gem ring>` and `<enchanted ring>` (`magic.ts`'s ring loads), `<bars>` and `<platebody>`
+    (`smithing.ts`'s). The walk counts their slots; the hand-off neither trades nor checks them.
+
+  An entry finds what is held by its id, else by name; a NAME that would match two id stacks is
+  refused unless it takes `all`. Some names the game also gives to other objs stay by name, as
+  rs/365's conversion of fold-in 18 left them: coins, logs, bones, the m'speak amulet, the magic
+  shortbow, and the starter kit's shortbow, raw shrimps, pot of flour and broken glass. A hand-off
+  that trades one of them accepts any obj of that name.
 - `equip`: entries `+NAME` (inventory to worn: the item must be held, and its slot frees) and
-  `-NAME` (worn to inventory: it takes a slot). There is no equipment-slot model, so a swap of
-  weapons is written as both (`+staff of fire; -staff of water`). Worn items take no slots, and the
-  worn set is empty at S00.
+  `-NAME` (worn to inventory: it takes a slot), by game name only (`+monkey greegree` wears the
+  `@4031` stack S15 brings). There is no equipment-slot model, so a swap of weapons is written as
+  both (`+staff of fire; -staff of water`). Worn items take no slots, and the worn set is empty at
+  S00.
 - `needAtStart`: an integer or `?`: the free slots the row needs when it starts, after its swap
-  outs. For a hand-off it is the slots its `in` adds given what SCORED then holds (new NAMEs for `s`
+  outs. For a hand-off it is the slots its `in` adds given what SCORED then holds (new stacks for `s`
   and `n`, COUNT for `u`); for a step it is the step's own peak beyond its `in` (S07's 2, S09's 4,
   S13's 6 railings), from its module's precondition or its entry.
 - `source`: one or more citations, each labelled `(m)` measured, `(r)` read or `(i)` inferred.
-- **Item identity** (rs/365, on main with #305, the floor): the walker also accepts `NAME @ID`,
-  `NAME(*)` and `<placeholder>` entries. The rows here stay by game name, with obj ids in notes,
-  until fold-in 21 converts them; until then the hand-offs match by exact name (parity-pinned).
+
+Fold-in 21 wrote the rows in the ITEM forms (rs/365's conversion of fold-in 18's table,
+`speedrun/tools/fixtures/slot-ledger/fold-in-18-ids.md`, with H15's torch as fold-in 20 left it);
+the walk is unchanged, row for row.
 
 **Order within a row:** (1) the swap outs; (2) free slots >= needAtStart; (3) the other outs;
 (4) `in`; (5) `equip`; (6) slots used <= 28. A hand-off row also fails if its `in` adds more slots
