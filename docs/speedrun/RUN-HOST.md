@@ -522,7 +522,8 @@ between the two Ashburn machines keeps its cache (same origin, same Chrome major
 
 **The run tab's profile is warm before it opens** (step 7, main's ruling). This step's build is the
 final served-webclient rebuild unless another follows; step 7's verification login (the gate tab's,
-step 6) runs after the last one, so a later rebuild means running it again.
+step 6) runs after the last one, so a later rebuild means running it again, and so does a demo
+restart after it (step 7, "The warm-up comes after the last demo restart").
 
 **The inventory check, before the start is called.** On any checkout at `RUN_COMMIT` (it reads only
 the repository), run
@@ -1023,6 +1024,21 @@ Before `gate`, on both machines: `up` passed (step 3); the opening roster is in 
 account's env check passed (step 3); the quiesce check is clean (step 6); and each gate account
 stands at the Lumbridge spawn, so its tab's login is also the run profile's warm-up (step 7).
 
+**The demo's tick length, read before the gate series** (main's ruling, relayed by rs/158 at 13:1x
+PDT 2026-10-22). Right before `gate`, read the tick length the demo announces on its spectator feed
+and record it in the run's record: the feed's first message, `hello`, carries `tickMs`, the
+engine's `World.tickRate` (`server/engine/src/web/worldfeed.ts`). It is read again right before the
+run tab opens (step 7, the hand-off), and **a change between the two readings means stop: no
+start**. The value goes beside the warm-up's bundle token (step 7). On the Mac; the command opens
+the feed, prints the `hello`'s `tickMs` and closes, with its own 10 s limit:
+
+```sh
+bun -e 'const ws = new WebSocket("wss://rs-sdk-demo.fly.dev/worldfeed"); const t = setTimeout(() => { console.log("no hello within 10 s"); process.exit(1); }, 10000); ws.onmessage = e => { const m = JSON.parse(String(e.data)); if (m.t !== "hello") return; clearTimeout(t); console.log(new Date().toISOString().slice(0, 19) + "Z demo tickMs " + m.tickMs); ws.close(); process.exit(0); }; ws.onerror = () => { console.log("world feed refused the connection"); process.exit(1); };'
+```
+
+It printed `demo tickMs 400` at 20:10Z on 2026-10-22 (m, rs/469, from fedora; "Measured: the
+demo's tick period").
+
 1. **Gate both in the same minute: `gate`.** It runs step 6 on both machines in parallel, each on
    its own gate account, and refuses the same account twice (one account is in the world only once).
    The two names are typed on the Mac and never committed. Bound: 40 min a machine:
@@ -1300,7 +1316,51 @@ at that exact origin (rs/41, via rs/158). Two layers, of which run-gate.ts check
 The gate timer's direct-path login opens no browser and warms nothing, and a fresh or `mkdtemp`
 profile is cold.
 
-**The hand-off.** On the chosen machine, with the machine chosen (step 5a), the full roster in
+**The warm-up comes after the last demo restart: the bundle token** (main's ruling, relayed by
+rs/158 at 13:0x-13:2x PDT 2026-10-22; the command is the host thread's). The demo's page imports the
+client as `./bot/client.js?v=<token>` (`server/engine/view/bot.ejs`), and the engine sets the token
+once at process start, `Date.now().toString(36)` (`server/engine/src/web/pages/client.ts`), so it
+changes at every demo restart and decodes to the process's start time (rs/449). The page server
+passes the page through from the demo (`server/webclient/proxy.ts`), so the run tab's page carries
+the demo's current token. Main's rules:
+
+- the warm-up login, the gate account's login at the Lumbridge spawn through the run's profile and
+  address (above), comes **after the last demo restart before the start**;
+- a demo restart during the gate series means **one more gate-account login** before the run tab
+  opens;
+- the operator runs the command below with the warm-up login, right after `gate`, and records the
+  token **beside the tick-length reading** (step 5a) in the run's record. It runs again right before
+  the run tab opens (the hand-off, below). **A different token means a restart came in between:
+  warm up again**, with one more gate-account login, before `handoff`.
+
+The token is run-night state: it goes in the run's record, never on this page. `-m 10` is curl's
+own limit, not a `timeout` pipe. It prints one `client.js?v=` line; no line means the page didn't
+answer, so read again:
+
+```sh
+curl -s -m 10 https://rs-sdk-demo.fly.dev/bot | grep -oE 'client\.js\?v=[A-Za-z0-9]+'
+```
+
+**The one more login, on main.** run-gate.ts has no login-only command: the gate account's tab logs
+in only inside `gate` (step 6, line 3). So on main the extra gate-account login is another `gate`,
+which also reads both paths again after the restart and renews the choice for `handoff`'s 20-minute
+limit. A login-only warm-up in the tool is not built.
+
+**Where the code differs from the ruling's reason** (r, main at 2ec58839; sent to main with this
+fold-in). The reason given for the rule is that a restart cools the run profile's cached bundle.
+The page server answers `/bot/client.js` for any `?v=` from the checkout's own `out/bot`, with
+`Cache-Control: no-store` (proxy.ts; step 0, "What identifies a build"). So the profile never holds
+a copy of the bundle under any token: every page load, the warm-up's and SCORED's, fetches it from
+loopback (seconds), and a new token changes nothing the profile caches. What the warm-up warms is
+the on-demand IndexedDB cache at the page's origin, which a restart leaves warm ("Measured: the run
+tab's browser profile"). The page's other files come from the demo under the demo's own cache
+headers, not read here. By the code, the token check is a restart detector between the warm-up and
+the run tab rather than a bundle-cache check. The rules above stand as ruled.
+
+**The hand-off.** Right before it, on the Mac, read the demo's tick length (step 5a's command) and
+the bundle token (above) again and record both. **A tick length different from step 5a's reading
+is a stop**: no start; tell main. A different token means one more gate-account login first
+(above). Then, on the chosen machine, with the machine chosen (step 5a), the full roster in
 (step 4), the recording running (step 5), the gate's Chrome gone, the profile warm and the login
 count at or under 80: put `$SCORED_ENV` on it (step 0), run step 3's env check with
 `ENV=$SCORED_ENV` (expect only `mode 600`), then hand over. `$SCORED_ENV` is set in the Mac's shell
