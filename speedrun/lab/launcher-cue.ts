@@ -1,14 +1,16 @@
 // The run-machine launcher's cue gate (stopOn, loginOn) against the local lab engine, six idle accounts
 // (cairn_lc01..06) sharing one cue directory, and the cues written here as run.ts would:
 //   lc01 relay   no gate                         stays in until the launcher's stop (no regression)
-//   lc02 relay   stopOn  S06/altar                logs out as soon as S06's stop is written
+//   lc02 relay   stopOn  S06/altar                stays in across a segment stop and the next session (as
+//                                                runecraft.ts writes S21's), logs out on the final stop
 //   lc03 direct  stopOn  S06/altar                the same on the direct path
-//   lc04 relay   loginOn H12o/mule                ignores other cues; logs in on H12o's open; out on its stop
-//   lc05 relay   loginOn S21/altar                S21's stop comes first: it never logs in
+//   lc04 relay   loginOn H12o/mule                ignores other cues; logs in on H12o's open; stays in on its
+//                                                plain stop, out when the next scope's cue opens
+//   lc05 relay   loginOn S21/altar                S21's final stop comes first: it never logs in
 //   lc06 direct  loginOn S99/ring, 0.25 min      no cue: its wait expires, it never logs in
-// Before the launch an S06/altar stop is left in cue.json, as an earlier attempt would: it must not
-// keep lc02/lc03 out. Prints RESULT lines (and FAIL lines for any check that does not hold). Through
-// lab.sh, which starts the engine (its own lite runner and gateway are not used):
+// helpersReady holds while lc04-lc06 wait logged out (ready-or-waiting). Before the launch an S06/altar
+// final stop is left in cue.json, as an earlier attempt would: it must not keep lc02/lc03 out.
+// Prints RESULT lines (and FAIL lines for any check that does not hold). Through lab.sh, which starts the engine (its own lite runner and gateway are not used):
 //
 //   LAB_RUNNERS=0 WEB_PORT=9496 WEB_MANAGEMENT_PORT=9497 HISCORES_WEB_PORT=9498 NODE_PORT=44196 AGENT_PORT=8496 \
 //     speedrun/lab/lab.sh cuelab speedrun/lab/launcher-cue.ts
@@ -79,8 +81,8 @@ async function until(what: string, ok: () => boolean | Promise<boolean>, ms: num
     return Date.now() - start;
 }
 
-// An earlier attempt's stop, left in cue.json before this launch.
-new CueWriter(cueDir, 'scored', S06).stop(beacon());
+// An earlier attempt's final stop, left in cue.json before this launch.
+new CueWriter(cueDir, 'scored', S06).stop(beacon(), { final: true });
 await sleep(50);
 
 const child: Subprocess<'ignore', 'pipe', 'inherit'> = Bun.spawn([process.execPath, 'speedrun/helpers/standalone.ts', configPath], { cwd: ROOT, env: process.env, stdin: 'ignore', stdout: 'pipe', stderr: 'inherit' });
@@ -111,7 +113,11 @@ const bound = setTimeout(() => {
 
 try {
     await until('helpersReady', () => status()?.helpersReady === true, 240_000);
-    check(true, `helpersReady with lc01-lc03 online and lc04-lc06 logged out (loginOn): ${status()!.accounts.map(a => `${a.account}=${a.state}`).join(' ')}`);
+    const atReady = status()!.accounts;
+    check(
+        ['cairn_lc04', 'cairn_lc05'].every(n => atReady.find(a => a.account === n)?.cue?.state === 'waiting'),
+        `helpersReady with lc01-lc03 online and lc04-lc06 logged out waiting for their cues: ${atReady.map(a => `${a.account}=${a.state}/${a.cue?.state ?? '-'}`).join(' ')}`
+    );
     check(acct('cairn_lc02')?.state === 'online' && acct('cairn_lc03')?.state === 'online', 'the stop left from before the launch kept nobody out (lc02, lc03 online)');
 
     // lc06: no cue for S99/ring within 15 s.
@@ -127,10 +133,10 @@ try {
     await sleep(3000);
     check(acct('cairn_lc04')?.state === 'awaiting-cue' && acct('cairn_lc04')?.logins === 0 && !(await listed('cairn_lc04')), `S07/bone, H12/mule and H12o/ring opened nothing for lc04 (${acct('cairn_lc04')?.state})`);
 
-    // S21's stop before its open: lc05 never logs in, even when S21 opens afterwards.
+    // S21's final stop before its open: lc05 never logs in, even when S21 opens afterwards.
     const s21 = new CueWriter(cueDir, 'scored', S21);
-    s21.stop(beacon());
-    await until('lc05 never logs in', () => !!lineAt(/cairn_lc05: stop cue for S21\/altar .* before its login: it never logs in/), 5000);
+    s21.stop(beacon(), { final: true });
+    await until('lc05 never logs in', () => !!lineAt(/cairn_lc05: final stop for S21\/altar .* before its login: it never logs in/), 5000);
     new CueWriter(cueDir, 'scored', S21).write({ beacons: beacon(), turns: [] });
     await sleep(4000);
     check(acct('cairn_lc05')?.logins === 0 && acct('cairn_lc05')?.cue?.state === 'stopped' && !(await listed('cairn_lc05')), `lc05: S21's stop before its open kept it out, and a later open did not log it in (${acct('cairn_lc05')?.state})`);
@@ -145,27 +151,59 @@ try {
     const listedMs = await until('lc04 listed', async () => (await listed('cairn_lc04')) === true, 10_000).then(() => Date.now() - openAt);
     check(acct('cairn_lc04')?.logins === 1, `lc04 logged in on H12o/mule's open: in the world ${inMs} ms after the write, role started ${roleMs} ms, listed ${listedMs} ms after it (logins ${acct('cairn_lc04')?.logins})`);
 
-    // S06 stops: lc02 (relay) and lc03 (direct) log out at once; lc01 and lc04 stay.
-    const s06 = new CueWriter(cueDir, 'scored', S06);
-    s06.write({ beacons: beacon(), turns: [] });
+    // S06 as runecraft.ts writes S21: a segment's stop, a new session (the robust restart, the stock rung,
+    // the hand-back), then the step's final stop. lc02 (relay) and lc03 (direct) stay in until the final stop.
+    const seg1 = new CueWriter(cueDir, 'scored', S06);
+    seg1.write({ beacons: beacon(), turns: [] });
     await sleep(500);
-    const stopAt = Date.now();
-    s06.stop(beacon());
+    const segStopAt = Date.now();
+    seg1.stop(beacon());
+    for (const name of ['cairn_lc02', 'cairn_lc03']) await until(`${name} stood down`, () => acct(name)?.cue?.state === 'stood-down', 10_000);
+    await sleep(5000);
     for (const name of ['cairn_lc02', 'cairn_lc03']) {
+        const a = acct(name);
+        const inWorld = (await listed(name)) === true;
+        check(
+            a?.state === 'online' && a.cue?.state === 'stood-down' && a.logout == null && inWorld && !lineAt(new RegExp(`${name}: out of the run`)),
+            `${name} (${a?.path}) stayed in the world ${Date.now() - segStopAt} ms after S06's segment stop (state ${a?.state}, gate ${a?.cue?.state}, listed ${inWorld})`
+        );
+    }
+    check(status()?.helpersReady === true, 'helpersReady true while lc02 and lc03 stand down between segments');
+    const seg2 = new CueWriter(cueDir, 'scored', S06);
+    seg2.write({ beacons: beacon(), turns: [] });
+    for (const name of ['cairn_lc02', 'cairn_lc03']) await until(`${name} watching`, () => acct(name)?.cue?.state === 'watching', 10_000);
+    await sleep(2000);
+    seg2.stop(beacon());
+    await sleep(3000);
+    const both = ['cairn_lc02', 'cairn_lc03'];
+    check(
+        both.every(n => acct(n)?.state === 'online' && acct(n)?.cue?.state === 'stood-down'),
+        `after the new session and its plain stop, lc02 and lc03 are still in (${both.map(n => `${n}=${acct(n)?.state}/${acct(n)?.cue?.state}`).join(' ')})`
+    );
+    const stopAt = Date.now();
+    seg2.stop(beacon(), { final: true });
+    for (const name of both) {
         const ms = await until(`${name} out`, () => !!lineAt(new RegExp(`${name}: out of the run on its stop cue`)), 60_000);
         const goneMs = await until(`${name} unlisted`, async () => (await listed(name)) === false, 30_000).then(() => Date.now() - stopAt);
-        check(acct(name)?.logout === 'out' && acct(name)?.cue?.state === 'stopped', `${name} (${acct(name)?.path}) logged out on S06's stop: reported ${ms} ms after the write, unlisted ${goneMs} ms after it (logout: ${acct(name)?.logout})`);
+        check(acct(name)?.logout === 'out' && acct(name)?.cue?.state === 'stopped', `${name} (${acct(name)?.path}) logged out on S06's final stop: reported ${ms} ms after the write, unlisted ${goneMs} ms after it (logout: ${acct(name)?.logout})`);
     }
     await sleep(2000);
-    check(acct('cairn_lc01')?.state === 'online' && (await listed('cairn_lc01')) === true, 'lc01 (no gate) is still in after S06\'s stop');
-    check(status()?.helpersReady === true, 'helpersReady still true after lc02 and lc03 left on their stop');
+    check(acct('cairn_lc01')?.state === 'online' && (await listed('cairn_lc01')) === true, "lc01 (no gate) is still in after S06's final stop");
+    check(status()?.helpersReady === true, 'helpersReady still true after lc02 and lc03 left on their final stop');
 
-    // H12o's stop after its trade: lc04 logs out.
-    const h12oStop = Date.now();
+    // H12o's plain stop after its trade: lc04 stays in; the next scope's open (S07/bone) logs it out.
     h12o.stop(beacon());
+    await until('lc04 stood down', () => acct('cairn_lc04')?.cue?.state === 'stood-down', 10_000);
+    await sleep(3000);
+    check(acct('cairn_lc04')?.state === 'online' && (await listed('cairn_lc04')) === true, `lc04 stayed in on H12o's plain stop (gate ${acct('cairn_lc04')?.cue?.state})`);
+    const nextAt = Date.now();
+    new CueWriter(cueDir, 'scored', { step: 'S07', family: 'bone' }).write({ beacons: beacon(), turns: [] });
     const outMs = await until('lc04 out', () => !!lineAt(/cairn_lc04: out of the run on its stop cue/), 60_000);
-    const goneMs = await until('lc04 unlisted', async () => (await listed('cairn_lc04')) === false, 30_000).then(() => Date.now() - h12oStop);
-    check(acct('cairn_lc04')?.logout === 'out' && acct('cairn_lc04')?.cue?.state === 'stopped', `lc04 logged out on H12o's stop: reported ${outMs} ms after the write, unlisted ${goneMs} ms after it (logout: ${acct('cairn_lc04')?.logout}, gate ${acct('cairn_lc04')?.cue?.state})`);
+    const goneMs = await until('lc04 unlisted', async () => (await listed('cairn_lc04')) === false, 30_000).then(() => Date.now() - nextAt);
+    check(
+        acct('cairn_lc04')?.logout === 'out' && acct('cairn_lc04')?.cue?.state === 'stopped' && !!lineAt(/cairn_lc04: cue for S07\/bone .* after H12o\/mule's stop/),
+        `lc04 logged out when S07/bone opened after H12o's stop: reported ${outMs} ms after the write, unlisted ${goneMs} ms after it (logout: ${acct('cairn_lc04')?.logout})`
+    );
 
     // No account restarts or logs back in after leaving.
     await sleep(5000);
