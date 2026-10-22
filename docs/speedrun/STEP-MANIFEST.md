@@ -1292,7 +1292,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   `nulodion.rs2:2` via rs/41).
 - **Ticks:** expected **855** (fixed, inferred), best **799** (burst, r21), fallback **957** (stock,
   measured): `quests/README.md` §3 row's 976 / 920 / 1,078 less step 1's 121, the Ardougne teleport
-  and the walk to Lawgof, which are T12-13's.
+  and the walk to Lawgof, which are T12-13's. **Advance notice (rs/257, inferred, not in the
+  expected):** at SCORED's arrival levels, Crafting and Smithing 1, the railings succeed 24% of the
+  time against the 45% priced and the shed rolls 53% against 99% (`railings.rs2:78`,
+  `mcannon_broken_cannon.rs2:90-97`), so ~1,080-1,100 (+230-245) until rs/257's lab rows price it
+  (RUN-ORDER.md section 7, "The quest block's go/no-go figure"). Food: the sharks come through H10
+  from helper stock, sized at the measured damage x1.5 (main, 20:39 PDT).
 - **Primitives:** rs/94 `converse`, `act`, `world`; `continueBurst`; `travel.ts`.
 - **Mode:** overlay-driven. **Logout-unsafe:** none; all varps are permanent.
 - **Fallback:** `advance` page by page.

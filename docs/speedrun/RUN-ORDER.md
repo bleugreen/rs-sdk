@@ -363,7 +363,7 @@ RT's measured no-glory method (RT, "No amulet of glory").
 | T11-12 | M | Narnode to Lady Servil (2566,3199), S12's arrival tile | Ardougne teleport + run | | 71 m (RT `L11`: 71, 71; the way into Fight Arena) | 71 m | | | safe | | |
 | S12 | I | Fight Arena | Fire Blast, Protect from Melee per fight | Attack 99, Thieving 1-57, Magic to ~76 | 571 i (Q§3's 645 less its 74 i way in, `fight_arena.md` step 0b; from the arrival tile, Lady Servil (2566,3199); the way in is T11-12) | 524 i (598 less 74) | in: H9; out: 2 QP | - | **unsafe**: the arena fights | - | General Khazard at stage 12: prayer on until out of the door |
 | T12-13 | M | Lady Servil to Lawgof (2571,3463), S13's arrival tile | Ardougne teleport + run, 189 tiles | | 101.5 m (rs/198, m (lab), LG: 103, 100; `dwarf_cannon.md` step 1 counted 121, r, the Ardougne teleport 4 + 117 walked; the way into Dwarf Cannon) | 101.5 m | | | safe | | |
-| S13 | I | Dwarf Cannon | quest | Crafting 1-42 | 855 i (Q§3's 976 less the 121 of its step 1; from the arrival tile, Lawgof (2571,3463); the way in is T12-13) | 799 i (920 less 121) | in: H10; out: the cannon unlock, 1 QP | - | safe | - | railing rolls vary |
+| S13 | I | Dwarf Cannon | quest | Crafting 1-42 | 855 i (Q§3's 976 less the 121 of its step 1; from the arrival tile, Lawgof (2571,3463); the way in is T12-13) | 799 i (920 less 121) | in: H10; out: the cannon unlock, 1 QP | - | safe | - | railing rolls vary: **advance notice, ~1,080-1,100 i** at SCORED's Crafting and Smithing 1 (rs/257: railings 24% against 45%, shed rolls 53% against 99%; `railings.rs2:78`, `mcannon_broken_cannon.rs2:90-97`), +230-245, not in the expected until rs/257's lab rows (section 7, "The quest block's go/no-go figure") |
 | T13-14 | M | Lawgof to the poison spiders (3288,3810) | Ardougne teleport, run to the lever, lever, Deserted Keep web, run | | 181.5 m (RT `L13L`: 182, 181) | 181.5 m | H11 at the Ardougne teleport landing (spread (2659-2663, 3299-3303); helper on (2658,3301), or (2659,3301) if blocked, pending rs/198's two-bot lab check; SUPPLIES.md H11), after the teleport | | safe until the lever | | aggressive NPCs took up to 31 of 42 HP on the way (RT§2): carry food; PK |
 | S14 | M | poison spiders, Wilderness 37 | pre-MM cannon session, **mithril scimitar** wielded, auto-retaliate off | Ranged 1-50+ | 118 m (rs/199, m (lab), RG: n = 4 from the step's start with the cannon set-up, 104, 124, 116 and 128; pick-up +1; 65-72 of the 100 balls, prayer flat under the flick, no deaths, one antipoison dose, the cannon never dry; 132 i before: 113 m firing, rs/31, ~10 of set-up, +9 for the mithril scimitar, SF§10) | 104 m (the fastest of the four) | in: H11 (cannon set, ~100 balls, the scimitar, food); out: the set and leftover balls (H11r) | cannon helper (rs/125) | **unsafe**: combat, Wilderness | Battlefield of Khazard (2523,3239): ~143 i | PK at combat ~52, 42 HP, Defence 1 (R8); Protect from Melee is available from S07 on (Prayer ~94) |
 | T14-15 | M | spiders to Narnode | walk to Wilderness 20 (66 m), Ardougne teleport, the Khazard young spirit tree, village tree, stronghold (103.5 m) | | 174 m (rs/198, m (lab), LG: 173, 175, end to end on this route, O26; RT§2's composite of measured parts was 173.5 i; the two other no-glory variants measured 187-188) | 174 m | H11r at the Ardougne landing | | safe from level 20 | | |
@@ -744,12 +744,13 @@ in force; 38,309 / 35,884 without rs/162, history).** Fold-in 13 (rs/265), one c
 | **6. The run-commit floor moves to 1514f47a** (#222, rs/268's Runecraft step module), whose history holds 148788c5 (#221) and 4235a9e7 (#220, the Mining module); entry 4 on main with `selfStarter` (explicit `measureDrops` pending rs/259) and entry 9 on main; PR #218 pending for the floor; O44 (rs/272's melee investigation) opened | - | 0 | 0 | rs/158 (20:19 and 20:42 PDT) |
 | **7. S15's segments H to M measured end to end** (rs/201: lab, 300 ms, route levels, fixed dialogue, 3 of 3 with 2 prayer potions and 9 sharks; chains 1,438 / 1,414 / 1,546, mean 1,466, 0 ticks between segments) against the fixed column's 1,114 for H to M (rs/185, from Q's chapter-2 rows): expected +352, m for that span; best +300 at the fastest chain. H to M's ticks relabelled: 850 out of the probes (I) and 264 out of the never-measured rows (E), 1,466 into M. R5 stays +860 beyond the expected, whole on N to Z (none of its components falls in H to M); main agreed to take the measured delta into the expected (20:39 PDT) | Quests (42): 10,791.5 / 9,908.5 to 11,143.5 / 10,208.5 | **+352** | **+300** | rs/201's ledger (cairn://p/rs/201, corrected 20:25 PDT); rs/185 via rs/158 |
 | **8. S07 corroborated, not re-priced:** rs/261's reading of rs/236's lab chains (willow 73-99 2,391-2,583, 3.05-3.22 per expected roll; oak 15-73 612-653; fitted success 1.3-3.6% under the formula, read as a felled-tree cycle) and its Taverley chain at S07's stands (willow 2,394 at 3.053 against S07's 2,386 at 3.06; oak 658 at D = 29; no switch-off at 120 drops, R21); the felled-tree term noted as a model term in MAN entry 3. Infinite run on the engine (`NODE_INFINITE_RUN`), so energy potions are worth 0 (MAN entry 11; SUPPLIES.md H4.1-H4.n) | - | 0 | 0 | rs/261 via rs/158 |
+| **9. The quest block's go/no-go figure:** the row in force in MM's bad case, R5 whole on N to Z, S13 at 855: 36,035, ~119 over; the advance-notice case with S13 at ~1,080-1,100 (i, rs/257), ~349-364 over, not in the expected; the levers; the quest-block rules (arrival levels, S13's food, no reorder until the lab rows land) | - | 0 | 0 | main, 20:39 PDT; rs/257 |
 | **Net, knife on** | | **+352** | **+300** | |
 
 The totals after each item (knife on; knife off in force, with rs/162's plain + bury; without it,
 history): item 1, 34,456 / 31,567, **37,178 / 34,713**, 37,914 / 35,479; items 2 to 6, the same;
 item 7, **34,808 / 31,867**, **37,530 / 35,013**, 38,266 / 35,779, and the row in force **35,175 /
-32,217**, 741 under the record; item 8, the same.
+32,217**, 741 under the record; items 8 and 9, the same.
 
 **Changes since 71baa3a9 (fold-in 10, rs/209, which moved no total; 34,575 / 31,663 knife on;
 37,692 / 35,214 knife off in force; 38,428 / 35,980 without rs/162, history).** Fold-in 11 (rs/218):
@@ -1194,6 +1195,23 @@ wait, summoned knockout guards, prayers in town), so nothing is counted twice. *
 the row in force is 36,035, about 119 over the record: the bad case is over the record.** rs/185's
 N-to-Z chains report each R5 component as retired or measured, segment by segment (section 9).
 
+**The quest block's go/no-go figure** (main, 20:39 PDT): until R5's components are retired, the
+working figure for the quest block is **the row in force in Monkey Madness's bad case, R5 whole on
+N to Z, with S13 at entry 12's 855: 36,035, about 119 over the record** (i). The advance-notice
+case adds S13 at ~1,080-1,100 (i, rs/257: at Crafting and Smithing 1 the railings succeed 24% of
+the time against the 45% priced and the shed rolls 53% against 99%, `railings.rs2:78`,
+`mcannon_broken_cannon.rs2:90-97`; +230-245, **not in the expected**): **about 349-364 over** (i).
+The levers that close it, none priced until its lab rows land:
+
+1. which of R5's components rs/185's N-to-Z chains retire: the aunt twice (240), the demon twice
+   (120), a dungeon death (340), a failed ladder approach (~340) (quests/README.md:575; H to M's two
+   dungeon passes already ran 6 of 6 without a death);
+2. S13's measured figure from rs/257's lab rows;
+3. any level reachable earlier at less cost than the failures it saves: Crafting or Smithing before
+   S13, Hitpoints or Defence before Monkey Madness (O43), unpriced until lab rows land.
+
+Nothing reorders until those lab rows land (section 9, "Quest-block rules").
+
 **Sensitivity of the knife-on expected 34,808** (each alone; i from the cited inputs):
 
 | Change | Ticks | Basis |
@@ -1443,6 +1461,16 @@ N-to-Z chains report each R5 component as retired or measured, segment by segmen
   Plague City before the teleport users; the cannon session after Attack 99 and before Monkey
   Madness; Mining from 64; the dialogue column; the Runecraft givers on the run machine; the wine
   last inside S25.
+
+**Quest-block rules** (main, 20:39 PDT):
+
+- **Arrival levels.** Every quest child checks its entry's assumed levels against this order's
+  arrival levels and reports any gap to rs/158, so food, prayer and level moves are priced together
+  in one fold-in.
+- **Food.** S13's sharks come through H10 from helper stock, sized at the measured damage x1.5.
+- **No reorder yet.** Nothing in the order moves until the quests' lab rows land (rs/185's N-to-Z
+  chains, rs/257's Dwarf Cannon rows). R5 is being retired component by component (O36); the
+  working go/no-go figure meanwhile is section 7's bad case, about 119 over the record.
 
 **Open** (the measurement that settles each, and its owner):
 
