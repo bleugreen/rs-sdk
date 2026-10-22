@@ -375,8 +375,8 @@ describe('I: the shed reads its replies by publication, on either client\'s stam
                 return { gameMessages: [...st.gameMessages, ...text.map(t => ({ type: 0, tick, text: t, observationId: publication }))] } as Partial<BotWorldState>;
             };
             const at = (tick: number, e: (st: BotWorldState) => Partial<BotWorldState>) => {
-                const prev = events.get(tick);
-                events.set(tick, prev ? st => ({ ...prev(st), ...e({ ...st, ...prev(st) }) }) : e);
+                if (events.has(tick)) throw new Error(`fake server: two events at tick ${tick}`);
+                events.set(tick, e);
             };
             let roll = 0;
             sdk.onSend = (a, f) => {
@@ -410,9 +410,10 @@ describe('I: the shed reads its replies by publication, on either client\'s stam
             const ctx = { session, sdk, bot: session.bot, c: {}, log: TickLog.memory('t') } as unknown as StepContext<unknown>;
             const tally = newTally();
             const t0 = sdk.state!.tick;
-            await drive(sdk, byLetter('I').run(ctx) as Promise<unknown>, 300, each);
+            const shed = steps({ tally }).find(x => letterOf(x.name) === 'I')!;
+            await drive(sdk, shed.run(ctx) as Promise<unknown>, 300, each);
             expect(sdk.sent.filter(a => a.method === 'sendInteractLoc').length).toBe(ROLLS.length);
-            expect(tally.shedFindFails === 0 && tally.shedInspects === 0).toBe(true); // the default table's tally, not this one
+            expect(tally).toMatchObject({ shedInspects: 8, shedFindFails: 3, shedFixTries: 4, shedFixFails: 0 });
             // Each roll is a click, a reply on the next tick and at most the menu's p_delay and a fix: well under one 40-tick wait per miss.
             expect(sdk.state!.tick - t0).toBeLessThan(90);
         });
