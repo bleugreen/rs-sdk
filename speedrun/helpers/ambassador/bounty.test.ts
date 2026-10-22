@@ -218,6 +218,21 @@ describe('openers: posters and cheers', () => {
         expect(b.newFills(T0 + 8 * MIN)).toEqual([]);
     });
 
+    test('cheers and posters never take two openers in a row, and a fill from the future waits', () => {
+        const { b, box } = board();
+        box.s = snap({ fills: [{ item: 'Limpwurt root', n: 2, at: new Date(T0 + 30 * MIN).toISOString() }] });
+        expect(b.newFills(T0 + MIN)).toEqual([]);
+        const poster = b.planOpener(T0 + MIN);
+        expect(poster?.kind).toBe('poster');
+        b.recordSent(T0 + MIN, 'opener', null, 'Wanted: a nature talisman, 30k on the GE');
+        b.openerSent(poster);
+        box.s = snap({ fills: [{ item: 'Limpwurt root', n: 2, at: new Date(T0 + 30 * MIN).toISOString() }] }, T0 + 30 * MIN);
+        // The fill is due now, but the last opener was about the board: an ordinary one first.
+        expect(b.planOpener(T0 + 31 * MIN)).toBeNull();
+        b.openerSent(null);
+        expect(b.planOpener(T0 + 46 * MIN)).toMatchObject({ kind: 'cheer', item: 'Limpwurt root', n: 2 });
+    });
+
     test('fills from before the role started, or of items not on the board, are not cheered', () => {
         const old = snap({ fills: [{ item: 'Nature talisman', n: 2, at: new Date(T0 - 3 * 3600_000).toISOString() }, { item: 'Dragon bones', n: 5, at: new Date(T0).toISOString() }] });
         const { b } = board(old);

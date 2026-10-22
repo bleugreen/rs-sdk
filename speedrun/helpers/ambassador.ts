@@ -122,7 +122,7 @@ export const LOOP = {
     /** Directions from the persona's Material suggested with each prompt. */
     materialPicks: 3,
     /** After this many of our lines without a question, a question is welcome if Pebble is curious. */
-    curiousAfter: 5,
+    curiousAfter: 4,
     /** Pebble's Collection had this many exhibits before it was counted in the log. */
     exhibitsBefore: 40
 } as const;

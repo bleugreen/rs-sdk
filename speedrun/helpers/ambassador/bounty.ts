@@ -234,14 +234,14 @@ export interface BountyState {
     lastPitched: Record<string, number>;
     /** Fills at or before this ms have been cheered (or were too old to cheer). */
     fillCursor: number;
-    /** Whether the last opener was a poster, so posters and other openers alternate. */
-    lastOpenerPoster: boolean;
+    /** Whether the last opener was about the board (a poster or a cheer), so the next one is not. */
+    lastOpenerBounty: boolean;
 }
 
 export const BOUNTY_KEY = 'bounty';
 
 export function emptyBountyState(): BountyState {
-    return { lastPitchAt: 0, pitchedTo: {}, posters: {}, lastPitched: {}, fillCursor: 0, lastOpenerPoster: false };
+    return { lastPitchAt: 0, pitchedTo: {}, posters: {}, lastPitched: {}, fillCursor: 0, lastOpenerBounty: false };
 }
 
 export function parseBountyState(raw: unknown): BountyState {
@@ -250,7 +250,7 @@ export function parseBountyState(raw: unknown): BountyState {
     const r = raw as Partial<BountyState>;
     if (typeof r.lastPitchAt === 'number') s.lastPitchAt = r.lastPitchAt;
     if (typeof r.fillCursor === 'number') s.fillCursor = r.fillCursor;
-    if (typeof r.lastOpenerPoster === 'boolean') s.lastOpenerPoster = r.lastOpenerPoster;
+    if (typeof r.lastOpenerBounty === 'boolean') s.lastOpenerBounty = r.lastOpenerBounty;
     for (const key of ['pitchedTo', 'lastPitched'] as const) {
         const m = r[key];
         if (m && typeof m === 'object') for (const [k, v] of Object.entries(m)) if (typeof v === 'number') s[key][k] = v;
@@ -435,7 +435,8 @@ export class BountyBoard {
         for (const f of snap.fills) {
             const at = Date.parse(f.at);
             const item = items.get(f.item.toLowerCase());
-            if (!item || at <= this.state.fillCursor || now - at > BOUNTY.cheerWithinMs) continue;
+            // A fill "from the future" is a clock skew or a bad file: not cheered until its time comes.
+            if (!item || at <= this.state.fillCursor || at > now || now - at > BOUNTY.cheerWithinMs) continue;
             const e = by.get(item) ?? { item, n: 0, upTo: 0 };
             e.n += f.n;
             e.upTo = Math.max(e.upTo, at);
@@ -445,14 +446,15 @@ export class BountyBoard {
     }
 
     /**
-     * What a quiet-time opener should be: a cheer for a fill, else (every other opener,
-     * when a pitch is allowed) a wanted poster for the bounty pitched least recently,
-     * else null (an ordinary opener, which must not bring bounties up).
+     * What a quiet-time opener should be. After an opener about the board, an ordinary
+     * one (null, which must not bring bounties up); otherwise a cheer for a new fill, else
+     * a wanted poster for the bounty pitched least recently when a pitch is allowed.
      */
     planOpener(now: number): OpenerPlan | null {
+        if (this.state.lastOpenerBounty || this.pitchBlocked(now, null) !== null) return null;
         const fill = this.newFills(now)[0];
-        if (fill && this.pitchBlocked(now, null) === null) return { kind: 'cheer', item: fill.item, n: fill.n, hunters: this.huntersFor(fill.item, now), upTo: fill.upTo };
-        if (this.state.lastOpenerPoster || !this.mayPitch(now, null)) return null;
+        if (fill) return { kind: 'cheer', item: fill.item, n: fill.n, hunters: this.huntersFor(fill.item, now), upTo: fill.upTo };
+        if (!this.mayPitch(now, null)) return null;
         const live = this.live(now).sort((a, b) => (this.state.lastPitched[a.item] ?? 0) - (this.state.lastPitched[b.item] ?? 0));
         const bounty = live[0];
         if (!bounty) return null;
@@ -462,6 +464,6 @@ export class BountyBoard {
     /** An opener went out under `plan` (or an ordinary one under null). */
     openerSent(plan: OpenerPlan | null): void {
         if (plan?.kind === 'cheer') this.state.fillCursor = Math.max(this.state.fillCursor, plan.upTo);
-        this.state.lastOpenerPoster = plan?.kind === 'poster';
+        this.state.lastOpenerBounty = plan !== null;
     }
 }
