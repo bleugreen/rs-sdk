@@ -5,7 +5,7 @@ const row = (name: string, items: [number, string, number, number][]) => ({ rank
 
 test('diffAccount pairs an account\'s stacks across the queries both files ran', () => {
     const before: Searches = { rune: [row('stein', [[1436, 'Rune essence', 100, 400], [1079, 'Rune platelegs', 2, 128000]])], logs: [row('stein', [[1515, 'Yew logs', 10, 1600]])], only: [] };
-    const after: Searches = { rune: [row('stein', [[1436, 'Rune essence', 100, 400]]), row('x', [[1079, 'Rune platelegs', 9, 1])])], logs: [], coins: [row('stein', [[995, 'Coins', 5, 5]])] };
+    const after: Searches = { rune: [row('stein', [[1436, 'Rune essence', 100, 400]]), row('x', [[1079, 'Rune platelegs', 9, 1]])], logs: [], coins: [row('stein', [[995, 'Coins', 5, 5]])] };
     expect(diffAccount(before, after, 'stein')).toEqual([
         { id: 1079, name: 'Rune platelegs', before: 2, after: null, gpBefore: 128000, gpAfter: null },
         { id: 1515, name: 'Yew logs', before: 10, after: null, gpBefore: 1600, gpAfter: null },
