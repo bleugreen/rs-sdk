@@ -176,7 +176,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | Rank | # | Entry | Module | Steps | Expected | Best | Fallback | At stake | Mode | Code to start from | Module status |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 0 | 0 | Run chain | `speedrun/run.ts`, `runner/resume.ts` | all | boundary idle 0 m (#92); restarts ~5 each (an in-page relog, ~2, rs/174) | 0 | | | overlay | `runner/step.ts`, `runner/resume.ts` (main) | `run.ts`: building (rs/186, held: tenet 15); `runner/step.ts`, `resume.ts` on main (#29, #104, #146) |
-| 1 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,413 | 4,300 | 5,298 | ~998 | overlay | `quest-mm-*.ts` | **H-P lab-proven end to end, Q-Z unrun** (A-G run; H-M 3 of 3, 1,466 m; N, O, P 3 of 3, 117 / 388 / 454 m; Q-Z being written by rs/201); run mode: no `p_walk`, re-paths at the Monkey Child (O) and the zoo (T), lever ~0 (r, rs/201) |
+| 1 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,400.8 | 4,220 | 5,298 | ~1,078 | overlay | `quest-mm-*.ts` | **H-P lab-proven end to end, Q-Z unrun** (A-G run; H-M 3 of 3, 1,466 m; N, O, P 3 of 3, 117 / 388 / 454 m; Q-Z being written by rs/201); run mode: no `p_walk`, re-paths at the Monkey Child (O) and the zoo (T), lever ~0 (r, rs/201) |
 | 2 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,228 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | **on main, cae93456 (#245; rs/300's snapshot)**; lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; rs/155); S17 4,114 on the engine's fall roll, 66 the clean-lap floor (rs/270; cairn_jumps' demo run continues as rs/295); run mode 0 on both courses (m, rs/270) |
 | 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,157 | 3,148 | 3,775 | ~627 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | **on main, 4235a9e7 (#220; rs/260's snapshot of rs/230's lab-accepted module, rs/147's branch at 59ec3933)**, with `selfStarter` (plain 3.62) and `beforeRestart`; `stay2` bury (#159, rs/182) and restart fix (e5d8a058, #170; rs/207) on main; gate `measureDrops` 120 explicit (rs/259, 314989e9); **demo-measured** (rs/259's cairn_rocks: 3.019 per xp ore uncontested); on main with rs/298 (#242, inside the floor 811e9eb2: 3fa6fbe4's ore drop and 314989e9) |
 | 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,053 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | **on main** (#243, de3a4944: rs/297's snapshot of cairn_chops' raced module, the run-commit floor; rs/211 and rs/236 before it; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165); gate `measureDrops` 120 explicit (rs/261, on main with #243); run mode 0 (m, rs/261); **the knife demo-measured** (rs/261's cairn_chops, hiscore 3,329; S07 at its luck-free 3,053); **on main, de3a4944 (#243; rs/297's snapshot as cairn_chops raced it, knife-cycle's `waitRespawn` declared)** |
@@ -671,7 +671,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   N 117, O 388, P 454); Q to Z has never been scripted or run as one route (rs/185). rs/201 writes it fresh, segment by
   segment, lab-proven 3 of 3, and sends measured ticks per segment to rs/158. It is the run date's
   critical path (RUN-ORDER.md O36).
-- **Ticks:** expected **4,413** (burst, fold-in 14; measured, inferred and estimated: §3's burst 3,726 with the fixed column's measured deltas below, +687; H to M 1,394 and O 365 inferred, the measured 1,466 and 388 less 72 and 23 of dialogue pages at the burst rule; N 117, P 454 and X 336 measured, no dialogue; 907 measured, ~2,762 inferred, ~744 estimated; RUN-ORDER.md S15). Fixed fallback **4,764** (fixed client, with the failure budget: `quests/README.md` §3's 4,077, 3,897
+- **Ticks:** expected **4,400.8** (burst, fold-in 14, with X at 323.8 since fold-in 17; measured, inferred and estimated: §3's burst 3,726 with the fixed column's measured deltas below, +687; H to M 1,394 and O 365 inferred, the measured 1,466 and 388 less 72 and 23 of dialogue pages at the burst rule; N 117, P 454 and X 323.8 measured, no dialogue; 894.8 measured, ~2,762 inferred, ~744 estimated; RUN-ORDER.md S15). Fixed fallback **4,751.8** (fixed client, with the failure budget: `quests/README.md` §3's 4,077, 3,897
   success + ~180, with segments H to P as measured, **2,425 measured** end to end, lab, 300 ms, route
   levels, fixed dialogue, the kit floor; rs/201's ledger, cairn://p/rs/201, against rs/185's fixed
   column): H to M 1,466 against 1,114, +352 (chains 1,438 / 1,414 / 1,546; the jail yard's patrol
@@ -681,13 +681,13 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   bananas talk slipped to her next loop, +100-126); P 454 (456 / 458 / 448 and 449, no deaths)
   against 374, +80. The failure budget: the aunt retired (6 of 6 clean), 180 to 60, -120; the rope pin
   at 1 in 3 chains, ~375 a pin (wait 50 ticks, then a Varrock teleport; the way back ~320, inferred),
-  +~125 (inferred, rs/185, 23:15 PDT; +90 before). Segment X, the sigil and the Jungle Demon: 336 (342 / 330,
-  m, n = 2) against fixed 311, +25 (rs/185, 23:52 PDT). The rest: ~1,397 inferred (the gnome half as played,
+  +~125 (inferred, rs/185, 23:15 PDT; +90 before). Segment X, the sigil and the Jungle Demon: 323.8 (n = 5, fold-in 17: 350 / 347 / 250 on 200 rune arrows,
+  rs/201 execution 2, and 342 / 330 on 100; m) against fixed 311, +12.8 (+25 at n = 2, rs/185, 23:52 PDT); the demon's bad-case piece retired. The rest: ~1,397 inferred (the gnome half as played,
   the atoll segments outside H-P measured one at a time, the trade, the expected failures and the rope
   pin) and ~882 estimated (the atoll rows outside H-P that `quests/monkey_madness.md` tags R, T or I,
-  never measured); RUN-ORDER.md S15. Best **4,300** (burst success path 3,546, r21 recomputation, plus
+  never measured); RUN-ORDER.md S15. Best **4,220** (burst success path 3,546, r21 recomputation, plus
   the same expected failures, with H to M at its fastest chain, 1,414, +300, and N, O and P at their
-  fastest, 116, 340 and 448, with the same -120 and +125, and X at its faster kill, 330, +19: +274). O's burst (~236-300, inferred, to be
+  fastest, 116, 340 and 448, with the same -120 and +125, and X at its fastest kill, 250, -80 in fold-in 17; +274 in fold-in 15 with X at 330). O's burst (~236-300, inferred, to be
   measured) is a lever on the best case only. Fallback **~5,298** (stock column with failures, +352 and
   +335, inferred). Per segment (rs/201, means): H jail1 172, I garkor 60, J cellar 318 (one chain 392: a
   summoned guard's knockout, ~+110 a recurrence), K dungeon1 434, L amulet 97, M jail2 385, N 117, O
