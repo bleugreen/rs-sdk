@@ -18,19 +18,25 @@
 //   leg      only thieving:to-ardougne, from wherever the account stands
 //   topup    S18's helper top-ups at the scored run's stats: --mode=idle|restart --helper=<bot>
 //            (HELPER=<bot> in tickprog-lab.sh) [--thieving=57 --hp=97 --sharks=2 --below=2
-//            --load=1 --to=99]. The helper is a lite stand-in that stays beside the account by
-//            ::tele and answers the account's request with one shark offer.
+//            --load=1 --to=99] [--resend=1: idle mode's topUp.resend]. The helper is a lite
+//            stand-in that stays beside the account by ::tele and answers the account's request
+//            with one shark offer. Both accounts leave Tutorial Island through S00's skip first.
 //   pack     S18 with the stun pack (rs/324): the account at post-Monkey Madness stats with Load 0
 //            (stun-pack.md section 6), steps({ topUp, stunPack }) on the knights band, and the
 //            helper stand-in as the courier: it brings dragon bones to fill, sharks back to 2, and
 //            the adamant and rune arrowheads once each when the account is down to one tier.
-//            --mode=idle|restart --helper=<bot> [--to=99 --below=2 --bones-below=3]
+//            --mode=idle|restart --helper=<bot> [--to=99 --below=2 --bones-below=3] [--resend=1]
+// Both trade modes trace every request on the account's clock: the program's `topup` marks, the
+// account's own trade lines, and the giver's 'wishes to trade', which the giver sees on its own
+// tick and the trace moves onto the account's by the clocks' sampled offset (`clock` in the
+// summary: the offset histogram, which is one value and its neighbours while no tick is dropped).
 // Staging is outside the measured steps. Every step row and every pickpocket end status is
 // printed as a RESULT line; the end statuses carry the gap histograms, skippedTicks, frames,
 // publish, react and loops. Every run also samples the account each tick, and a leg run prints
 // its sub-legs (`RESULT leg <name>`): ticks, tiles, ticks at 2, 1 and 0 steps, energy, weight.
 
 import { hostname, loadavg } from 'os';
+import { ChatHistory } from '../../sdk/chat-history';
 import type { BotWorldState } from '../../sdk/types';
 import type { ProgramStatus } from '../lib/programs';
 import { programStatus } from '../lib/programs';
@@ -184,24 +190,64 @@ const sharkGiver = (load: number): GiverPolicy => ({
     }
 });
 
-function runGiver(h: Session, policy: GiverPolicy): { stop: () => void; teles: number; events: Array<{ tick: number; ev: string }> } {
-    let gctx: GiverCtx | null = null, plan: OfferEntry[] = [], lastTick = -1, lastTele = -100, lastStock = -100;
+/** A giver event on both clocks: `own` is the giver's tick, `tick` the account's (giver tick less the clock offset). */
+export interface GiverEvent { tick: number; own: number; ev: string }
+
+/**
+ * Each client counts the server ticks it decoded since it started, so the giver's tick and the
+ * account's differ by a fixed offset while neither drops a tick. `skew` samples it from both
+ * sides: on a giver update (giver tick less the account's latest) and on an account update (the
+ * giver's latest less the account tick). The side whose state arrived second reads the other's
+ * current tick and the first reads the other's previous one, so the samples are the offset and
+ * one either side of it, and the offset is the value both sides see most. It is taken from the
+ * samples near each event, so a client that drops a tick moves it there and not run-wide.
+ */
+function clockOffset(skew: ReadonlyArray<{ own: number; d: number }>, own: number, near = 50): number | null {
+    const counts = new Map<number, number>();
+    for (const s of skew) if (Math.abs(s.own - own) <= near) counts.set(s.d, (counts.get(s.d) ?? 0) + 1);
+    if (counts.size === 0) return skew.length && near < Infinity ? clockOffset(skew, own, Infinity) : null;
+    return [...counts].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]![0];
+}
+
+function runGiver(h: Session, policy: GiverPolicy): { stop: () => void; teles: number; events: () => GiverEvent[]; clock: () => { offsets: Record<number, number>; samples: number; unmapped: number } } {
+    let gctx: GiverCtx | null = null, plan: OfferEntry[] = [], lastTick = -1, lastTele = -100, lastStock = -100, lastAccountTick = -1;
     let answer: { rc: ClickCtx; until: number } | null = null;
-    const seen = new Set<string>();
-    const out = { teles: 0, stop: () => {}, events: [] as Array<{ tick: number; ev: string }> };
-    const ev = (tick: number, e: string) => out.events.push({ tick, ev: e });
+    const chat = new ChatHistory();
+    chat.record(h.sdk.getState()?.gameMessages ?? []);
+    const raw: Array<{ own: number; ev: string }> = [];
+    const skew: Array<{ own: number; d: number }> = [];
+    const ev = (tick: number, e: string) => raw.push({ own: tick, ev: e });
     const burst = () => { for (const e of plan) for (const a of e.amounts) void h.sdk.sendOfferItem(e.slot, a); void h.sdk.sendAcceptTrade(); };
-    out.stop = h.sdk.onStateUpdate(hs => {
+    const onAccount = (t: number) => {
+        const off = clockOffset(skew, t);
+        return off === null ? null : t - off;
+    };
+    const out = {
+        teles: 0,
+        stop: () => {},
+        events: (): GiverEvent[] => raw.flatMap(e => {
+            const tick = onAccount(e.own);
+            return tick === null ? [] : [{ tick, own: e.own, ev: e.ev }];
+        }),
+        clock: () => {
+            const offsets: Record<number, number> = {};
+            for (const s of skew) offsets[s.d] = (offsets[s.d] ?? 0) + 1;
+            return { offsets, samples: skew.length, unmapped: raw.filter(e => onAccount(e.own) === null).length };
+        }
+    };
+    const unAccount = sdk.onStateUpdate(s => {
+        if (!s?.inGame || s.tick === lastAccountTick) return;
+        lastAccountTick = s.tick;
+        const g = h.sdk.getState();
+        if (g?.inGame) skew.push({ own: g.tick, d: g.tick - s.tick });
+    });
+    const unGiver = h.sdk.onStateUpdate(hs => {
         if (!hs?.inGame || hs.tick === lastTick) return;
         lastTick = hs.tick;
         const s = sdk.getState();
+        if (s?.inGame) skew.push({ own: hs.tick, d: hs.tick - s.tick });
         const account = s?.player?.name ?? bot;
-        const fresh = (hs.gameMessages ?? []).filter(m => {
-            const key = m.observationId !== undefined ? `o${m.observationId}` : `${m.tick}|${m.text}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
+        const fresh = chat.record(hs.gameMessages ?? []);
         for (const m of fresh) if (/wishes to trade|busy at the moment|^sending trade offer/i.test(m.text)) ev(hs.tick, m.text.replace(/^.*(wishes to trade|busy|sending trade offer).*$/i, '$1').toLowerCase());
         if (gctx) {
             const d = decideGiver(hs, gctx);
@@ -252,6 +298,7 @@ function runGiver(h: Session, policy: GiverPolicy): { stop: () => void; teles: n
             out.teles++;
         }
     });
+    out.stop = () => { unGiver(); unAccount(); };
     return out;
 }
 
@@ -260,8 +307,9 @@ function runGiver(h: Session, policy: GiverPolicy): { stop: () => void; teles: n
  * its game message, the trade's open and close ticks, the food count, and whether the giver was
  * within 1 tile on each failure's +2 (the program's `player` action needs it). It also records
  * the tick of every trade request the module sends (the restart path's `openTrade` clicks; the
- * idle path's request goes out from the page program and is not seen here) and every server
- * op rejection (UNSET_MAP_FLAG, which OpPlayerHandler sends for a click from a delayed player).
+ * idle path's requests and re-sends come from the page program's status marks, `topup` and
+ * `topup:resend`, stamped on the tick the program sent them) and every server op rejection
+ * (UNSET_MAP_FLAG, which OpPlayerHandler sends for a click from a delayed player).
  *
  * With `bonesBelow` (the pack) a stun is also due when the account holds fewer bones, and
  * `topUpLog` is one row per due stun: the giver's tile less the account's on +2 (the tick the
@@ -269,21 +317,28 @@ function runGiver(h: Session, policy: GiverPolicy): { stop: () => void; teles: n
  * (idle: the program's `stun:topup*` counters rising; restart: the module's request click);
  * and whether the trade opened and completed (bones or sharks held went up across it).
  */
-function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ tick: number; ev: string }>, bonesBelow?: number) {
+function trackTopUps(giver: string, below: number, giverEventsNow: () => GiverEvent[], bonesBelow?: number) {
     const fails: number[] = [], rolls: number[] = [], opens: number[] = [], closes: number[] = [];
     const clicks: number[] = [], rejects: number[] = [];
+    const requestMarks = new Set<number>(), resendMarks = new Set<number>();
     const send = sdk.sendTradeRequest.bind(sdk);
     sdk.sendTradeRequest = (...a: Parameters<typeof send>) => {
         clicks.push(sdk.getState()?.tick ?? -1);
         return send(...a);
     };
     let rejected = sdk.getState()?.opFeedback?.opRejectedCount ?? 0;
-    /** The account's trade lines (requests, refusals, sends) by tick. */
-    const tradeLines: Array<{ tick: number; text: string }> = [];
+    /**
+     * The account's trade lines (requests, refusals, sends) by tick, with the publication that first
+     * carried each (`id`, its observationId), how many messages that publication brought (`of`) and
+     * the line's place among them (`at`, from 0): a reader that keys on observationId alone keeps
+     * only the first message of each publication.
+     */
+    const tradeLines: Array<{ tick: number; text: string; id: number | null; of: number; at: number }> = [];
     const dueFails: number[] = [], adjacentAt2: Record<number, boolean> = {};
     /** The giver's tile less the account's on each failure's +2: an op on a player reaches it only from a side, not a corner. */
     const offsetAt2: Record<number, [number, number]> = {};
-    const seen = new Set<string>();
+    const chat = new ChatHistory();
+    chat.record(sdk.getState()?.gameMessages ?? []);
     let last = -1, wasOpen = false, food = Infinity;
     const bonesOf = (s: BotWorldState) => s.inventory.filter(i => /bones$/i.test(i.name)).reduce((a, i) => a + i.count, 0);
     const supplies = (s: BotWorldState) => bonesOf(s) + s.inventory.filter(i => /^shark$/i.test(i.name)).length;
@@ -293,19 +348,23 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
     const un = sdk.onStateUpdate((s: BotWorldState) => {
         if (s.tick === last) return;
         last = s.tick;
+        const marks = (programStatus(s) as ProgramStatus | null)?.marks;
+        for (const t of marks?.topup?.ticks ?? []) requestMarks.add(t);
+        for (const t of marks?.['topup:resend']?.ticks ?? []) resendMarks.add(t);
         const st = programStatus(s);
         if (st && st.name === 'pickpocket') {
             const n = (st.counters['stun:topup'] ?? 0) + (st.counters['stun:topup:bones'] ?? 0);
             if (st.runId !== reqRun) { reqRun = st.runId; reqSeen = 0; }
             for (; reqSeen < n; reqSeen++) requests.push(s.tick);
         }
-        for (const m of s.gameMessages ?? []) {
-            const key = m.observationId !== undefined ? `o${m.observationId}` : `${m.tick}|${m.text}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
+        const fresh = chat.record(s.gameMessages ?? []);
+        for (const m of fresh) {
             if (/You fail to pick/i.test(m.text)) { fails.push(s.tick); rolls.push(s.tick); if (food < below) dueFails.push(s.tick); }
             else if (/^You pick the/i.test(m.text)) rolls.push(s.tick);
-            else if (/trade|busy/i.test(m.text)) tradeLines.push({ tick: s.tick, text: m.text.slice(0, 60) });
+            else if (/trade|busy/i.test(m.text)) {
+                const pub = fresh.filter(o => o.observationId === m.observationId);
+                tradeLines.push({ tick: s.tick, text: m.text.slice(0, 60), id: m.observationId ?? null, of: pub.length, at: pub.indexOf(m) });
+            }
         }
         food = s.inventory.filter(i => /^shark$/i.test(i.name)).length;
         const r = s.opFeedback?.opRejectedCount ?? rejected;
@@ -337,27 +396,66 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
         const stat = (rs: typeof rows) => {
             const hist: Record<number, number> = {};
             for (const r of rs) hist[r.gap!] = (hist[r.gap!] ?? 0) + 1;
-            return { stuns: rs.length, meanGap: rs.length ? +(rs.reduce((a, r) => a + r.gap!, 0) / rs.length).toFixed(2) : null, hist };
+            const mean = rs.length ? rs.reduce((a, r) => a + r.gap!, 0) / rs.length : null;
+            const sd = mean !== null && rs.length > 1 ? Math.sqrt(rs.reduce((a, r) => a + (r.gap! - mean) ** 2, 0) / (rs.length - 1)) : null;
+            return { stuns: rs.length, meanGap: mean === null ? null : +mean.toFixed(2), sdGap: sd === null ? null : +sd.toFixed(2), hist };
         };
         const top = rows.filter(r => r.open !== null);
-        const other = stat(rows.filter(r => r.open === null));
+        const other = stat(rows.filter(r => r.open === null && !dueFails.includes(r.f)));
         const topStat = stat(top);
+        // a stun's window: its failure to +12, cut at the next failure so two stuns never share a tick
+        const inStun = (t: number, f: number) => {
+            const next = fails.find(x => x > f);
+            return t >= f && t <= f + 12 && (next === undefined || t < next);
+        };
+        const giverEvents = giverEventsNow();
+        const wishes = giverEvents.filter(e => e.ev === 'wishes to trade').map(e => e.tick);
+        const sentLines = tradeLines.filter(l => /^sending trade offer/i.test(l.text)).map(l => l.tick);
+        // per due failure: the program's request and re-send, what the engine ran, and the trade
+        const due = dueFails.map(f => ({
+            f,
+            requested: [...requestMarks].some(t => inStun(t, f)),
+            resent: [...resendMarks].some(t => inStun(t, f)),
+            wishes: wishes.filter(t => inStun(t, f)).length,
+            sent: sentLines.filter(t => inStun(t, f)).length,
+            opened: opens.some(o => inStun(o, f)),
+            gap: rows.find(r => r.f === f)?.gap ?? null
+        }));
+        const missed = rows.filter(r => r.open === null && dueFails.includes(r.f));
+        const missedStat = stat(missed);
+        const resentDue = due.filter(d => d.resent);
         return {
-            topUpStuns: topStat, otherStuns: other,
+            allStuns: stat(rows), topUpStuns: topStat, otherStuns: other, missedDueStuns: missedStat,
+            resentStuns: stat(rows.filter(r => resentDue.some(d => d.f === r.f))),
             costPerTopUp: topStat.meanGap !== null && other.meanGap !== null ? +(topStat.meanGap - other.meanGap).toFixed(2) : null,
+            costPerMissedStun: missedStat.meanGap !== null && other.meanGap !== null ? +(missedStat.meanGap - other.meanGap).toFixed(2) : null,
             topUps: top.map(r => ({ f: r.f, open: r.open, close: r.close, gap: r.gap })),
+            requestMarks: requestMarks.size, resendMarks: resendMarks.size, giverWishes: wishes.length, accountSent: sentLines.length,
+            // the account's "Sending trade offer..." lines that a reader keying on observationId alone would drop
+            accountSentShared: tradeLines.filter(l => /^sending trade offer/i.test(l.text) && l.at > 0).length,
+            dueRequested: due.filter(d => d.requested).length,
+            dueLanded: due.filter(d => d.opened).length,
+            dueResent: resentDue.length,
+            dueResentLanded: resentDue.filter(d => d.opened).length,
+            // a stun whose partner saw 'wishes to trade' twice, or whose account the engine answered twice
+            doubleRequests: due.filter(d => d.wishes > 1 || d.sent > 1).length,
+            // every 'wishes to trade' outside a due stun's window (a request the trace did not expect)
+            strayWishes: wishes.filter(t => !dueFails.some(f => inStun(t, f))).length,
             dueFails: dueFails.length,
             dueNotAdjacent: dueFails.filter(f => adjacentAt2[f] === false).length,
             dueDiagonal: dueFails.filter(f => offsetAt2[f] && offsetAt2[f]![0] !== 0 && offsetAt2[f]![1] !== 0).length,
             // per due failure, both sides' trade lines at their offset from it (the next 12 ticks)
             requestClicks: clicks.length,
-            trace: dueFails.slice(0, 40).map(f => ({
+            trace: dueFails.slice(0, 60).map(f => ({
                 f,
                 giverAt2: offsetAt2[f]?.join(',') ?? null,
+                requests: [...requestMarks].filter(t => inStun(t, f)).map(t => `+${t - f}`),
+                resends: [...resendMarks].filter(t => inStun(t, f)).map(t => `+${t - f}`),
+                gap: rows.find(r => r.f === f)?.gap ?? null,
                 clicks: clicks.filter(t => t >= f && t <= f + 12).map(t => `+${t - f}`),
                 rejected: rejects.filter(t => t >= f && t <= f + 12).map(t => `+${t - f}`),
-                account: tradeLines.filter(l => l.tick >= f && l.tick <= f + 12).map(l => `+${l.tick - f} ${l.text}`),
-                giver: giverEvents.filter(e => e.tick >= f && e.tick <= f + 12).map(e => `+${e.tick - f} ${e.ev}`),
+                account: tradeLines.filter(l => inStun(l.tick, f)).map(l => `+${l.tick - f} ${l.text} [o${l.id ?? '-'} ${l.at + 1}/${l.of}]`),
+                giver: giverEvents.filter(e => inStun(e.tick, f)).map(e => `+${e.tick - f} ${e.ev}`),
                 opened: opens.find(o => o >= f && o <= f + 12) ?? null
             }))
         };
@@ -484,10 +582,12 @@ switch (mode) {
         const helperBot = arg('helper', '');
         if (!helperBot) throw new Error('topup needs --helper=<bot> (HELPER=<bot> in tickprog-lab.sh)');
         const tuMode = arg('mode', 'idle') as 'idle' | 'restart';
+        const resend = arg('resend', '') === '1';
         const below = Number(arg('below', '2'));
         const load = Number(arg('load', '1'));
+        await leaveTutorial(session);
         const helper = await openSession(helperBot, { launch: true, pathfinding: false });
-        await helper.bot.skipTutorial().catch(() => {});
+        await leaveTutorial(helper);
         await helper.sdk.sendSay('::~clearinv inv');
         await helper.sdk.sendSay(`::give shark ${load * 8}`);
         await say(`setstat thieving ${arg('thieving', '57')}`);
@@ -499,14 +599,18 @@ switch (mode) {
         const g = runGiver(helper, sharkGiver(load));
         await waitUntil(sdk, s => s.nearbyPlayers.some(p => sameName(p.name, giver) && p.distance <= 1), { maxTicks: 30 });
         const track = trackTopUps(giver, below, g.events);
-        result('topup', { ...where(), mode: tuMode, giver, below, load, hp: sdk.getState()!.player!.hp, thieving: arg('thieving', '57'), to: arg('to', '99') });
+        const clock = () => ({ clock: g.clock() });
+        const label = `${tuMode}${resend ? '+resend' : ''}`;
+        result('topup', { ...where(), mode: label, giver, below, load, hp: sdk.getState()!.player!.hp, thieving: arg('thieving', '57'), to: arg('to', '99') });
         try {
-            const rows = await runList(steps({ ...opts(), food: 'shark', topUp: { giver, below, mode: tuMode } }).filter(s => s.name === 'thieving:knights'));
+            const rows = await runList(steps({ ...opts(), food: 'shark', topUp: { giver, below, mode: tuMode, ...(resend ? { resend } : {}) } }).filter(s => s.name === 'thieving:knights'));
             const band = rows.find(r => r.step === 'thieving:knights');
-            result(`topup ${tuMode} summary`, { bandTicks: band?.ticks ?? null, helperTeles: g.teles, ...track.summary() });
+            // the module's receiver: a trade that closed without the food arriving is a closed trade
+            const trades = ((rows.find(r => r.step === 'thieving:knights:detail')?.meta as { topUp?: { trades?: Array<{ ok: boolean; reason?: string }> } } | undefined)?.topUp?.trades) ?? [];
+            result(`topup ${label} summary`, { bandTicks: band?.ticks ?? null, helperTeles: g.teles, trades: trades.length, closedTrades: trades.filter(t => !t.ok).map(t => t.reason ?? 'closed'), ...clock(), ...track.rollStats(), ...track.summary() });
         } catch (e) {
             // a band that ran out of food still reports what its top-ups did
-            result(`topup ${tuMode} summary`, { bandTicks: null, error: String(e), helperTeles: g.teles, ...track.summary() });
+            result(`topup ${label} summary`, { bandTicks: null, error: String(e), helperTeles: g.teles, ...clock(), ...track.rollStats(), ...track.summary() });
         } finally {
             track.stop();
             g.stop();
@@ -520,8 +624,10 @@ switch (mode) {
         const tuMode = arg('mode', 'idle') as 'idle' | 'restart';
         const below = Number(arg('below', '2'));
         const bonesBelow = Number(arg('bones-below', '3'));
+        const resend = arg('resend', '') === '1';
+        const label = `${tuMode}${resend ? '+resend' : ''}`;
         const helper = await openSession(helperBot, { launch: true, pathfinding: false });
-        await helper.bot.skipTutorial().catch(() => {});
+        await leaveTutorial(helper);
         await helper.sdk.sendSay('::~clearinv inv');
         // staging, off the clock: SCORED after Monkey Madness and the Mage Arena (stun-pack.md section 3)
         await leaveTutorial(session);
@@ -544,18 +650,18 @@ switch (mode) {
         await waitUntil(sdk, s => s.nearbyPlayers.some(p => sameName(p.name, giver) && Math.abs(p.x - s.player!.worldX) + Math.abs(p.z - s.player!.worldZ) === 1), { maxTicks: 40 });
         const track = trackTopUps(giver, below, g.events, bonesBelow);
         const s0 = sdk.getState()!;
-        result('pack', { ...where(), mode: tuMode, giver, below, bonesBelow, hp: s0.player!.hp, inventory: s0.inventory.map(i => `${i.name}x${i.count}`), equipment: s0.equipment.map(i => i.name) });
+        result('pack', { ...where(), mode: label, giver, below, bonesBelow, hp: s0.player!.hp, inventory: s0.inventory.map(i => `${i.name}x${i.count}`), equipment: s0.equipment.map(i => i.name) });
         try {
-            const rows = await runList(steps({ to: Number(arg('to', '99')), food: 'shark', topUp: { giver, below, mode: tuMode }, stunPack: { bonesBelow, chargeUnlocked: true } }).filter(s => s.name === 'thieving:knights'));
+            const rows = await runList(steps({ to: Number(arg('to', '99')), food: 'shark', topUp: { giver, below, mode: tuMode, ...(resend ? { resend } : {}) }, stunPack: { bonesBelow, chargeUnlocked: true } }).filter(s => s.name === 'thieving:knights'));
             const band = rows.find(r => r.step === 'thieving:knights');
             const detail = rows.find(r => r.step === 'thieving:knights:detail')?.meta as { runs?: Array<{ startedTick: number; endedTick?: number }>; pack?: unknown } | undefined;
             const programTicks = (detail?.runs ?? []).reduce((a, r) => a + ((r.endedTick ?? r.startedTick) - r.startedTick), 0);
             const programDeferred = endedPrograms.reduce((a, st) => a + (st.deferred ?? 0), 0);
-            result(`pack ${tuMode} summary`, { bandTicks: band?.ticks ?? null, ok: band?.ok ?? false, programTicks, programDeferred, ...track.rollStats(), pack: detail?.pack ?? null, topUpTrades: (detail as { topUp?: unknown } | undefined)?.topUp ?? null, helperTeles: g.teles, ...track.summary() });
-            result(`pack ${tuMode} topups`, track.topUpLog());
+            result(`pack ${label} summary`, { bandTicks: band?.ticks ?? null, ok: band?.ok ?? false, programTicks, programDeferred, ...track.rollStats(), pack: detail?.pack ?? null, topUpTrades: (detail as { topUp?: unknown } | undefined)?.topUp ?? null, helperTeles: g.teles, clock: g.clock(), ...track.summary() });
+            result(`pack ${label} topups`, track.topUpLog());
         } catch (e) {
-            result(`pack ${tuMode} summary`, { bandTicks: null, error: String(e), helperTeles: g.teles, ...track.rollStats(), ...track.summary() });
-            result(`pack ${tuMode} topups`, track.topUpLog());
+            result(`pack ${label} summary`, { bandTicks: null, error: String(e), helperTeles: g.teles, clock: g.clock(), ...track.rollStats(), ...track.summary() });
+            result(`pack ${label} topups`, track.topUpLog());
         } finally {
             track.stop();
             g.stop();

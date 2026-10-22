@@ -54,7 +54,11 @@
 //   action, no click), resuming on the first tick it is closed. The step module only accepts
 //   the offer and confirm screens. rs/106's trades requested at +2 completed at +7 or +8, so
 //   the click sent on +9, which lands on T+11, keeps the next attempt on time; a trade still
-//   open then delays the attempt by the ticks it stays open.
+//   open then delays the attempt by the ticks it stays open. `requestResend: n` (off by default)
+//   sends a request the engine never answered once more, n ticks after it and inside the hold
+//   (stun-actions.ts header).
+//   Every request and re-send is stamped in the status marks (the action's name, and
+//   `<name>:resend`), so a lab can line them up against the partner's 'wishes to trade'.
 // - Stop and restart: the module stops the program before its own request and restarts it once
 //   the trade is done, by +9 at the latest. The restarted program has not seen that failure,
 //   so it sends no stun actions for the rest of that stun (a top-up stun buries nothing in
@@ -71,7 +75,7 @@ export type PickpocketEnd = 'level' | 'rolls' | 'maxTicks' | 'food';
 /** How long a target given up by `retargetTicks` stays avoided. */
 const AVOID_TICKS = 100;
 
-createPickpocket.params = ['npc', 'option', 'rolls', 'untilLevel', 'maxTicks', 'every', 'eat', 'food', 'heal', 'forcedBelow', 'eatBelow', 'stopWhenFoodBelow', 'retargetTicks', 'idleOnInterface', 'stunActions', 'stunWindow', 'stunPerTick'] as const;
+createPickpocket.params = ['npc', 'option', 'rolls', 'untilLevel', 'maxTicks', 'every', 'eat', 'food', 'heal', 'forcedBelow', 'eatBelow', 'stopWhenFoodBelow', 'retargetTicks', 'idleOnInterface', 'stunActions', 'stunWindow', 'stunPerTick', 'requestResend'] as const;
 export function createPickpocket(params: ProgramParams): TickProgram {
     const npcRe = regex(params.npc, '^Knight of Ardougne$', 'npc');
     const opRe = regex(params.option, '^pickpocket$', 'option');
@@ -88,7 +92,8 @@ export function createPickpocket(params: ProgramParams): TickProgram {
     const stopBelow = num(params.stopWhenFoodBelow, 0, 'stopWhenFoodBelow');
     const retargetTicks = num(params.retargetTicks, 0, 'retargetTicks');
     const idleOnInterface = params.idleOnInterface === true;
-    const stun = params.stunActions === undefined ? null : new StunPack({ actions: params.stunActions, window: params.stunWindow, perTick: params.stunPerTick });
+    if (params.requestResend !== undefined && params.stunActions === undefined) throw new Error('requestResend needs stunActions with a player action');
+    const stun = params.stunActions === undefined ? null : new StunPack({ actions: params.stunActions, window: params.stunWindow, perTick: params.stunPerTick, ...(params.requestResend !== undefined ? { resend: params.requestResend } : {}) });
 
     const messages = new FreshMessages();
     let started = false;
@@ -235,7 +240,7 @@ export function createPickpocket(params: ProgramParams): TickProgram {
                     lastStunEnd = t + 8;
                 } else if (/during combat/i.test(m.text)) {
                     ctx.count('combatBlocks');
-                }
+                } else stun?.heard(m.text);
             }
             if (picked) ctx.count('successes', picked);
             if (rolls > rollsBefore) {
@@ -253,7 +258,7 @@ export function createPickpocket(params: ProgramParams): TickProgram {
             if (t - startTick > maxTicks) return finish(ctx, 'maxTicks');
             if (hp <= 0 || s.player.isDead) return ctx.fault('died', summary());
 
-            if (stun?.holding(t, s)) {
+            if (stun?.hold(ctx)) {
                 // a trade request waits for its trade: any packet would replace or close it
                 ctx.count('requestHoldTicks');
                 lastIdleTick = t;

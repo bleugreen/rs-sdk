@@ -39,10 +39,12 @@ interface Landing {
  * next one (p_delay(0)); eating while not free adds 3 to the action delay; Charge and arrows
  * have no delay.
  *
- * With a `helper` standing next to the account: a trade request landing on L opens the trade
- * from L+2 (the helper answers on L+1) for `openTicks` states, then delivers `bones`. A click
- * landing after the request in the same tick replaces it; any packet landing while the trade
- * is open closes it with nothing delivered.
+ * With a `helper` standing next to the account: a trade request landing on L draws "Sending trade
+ * offer..." on L and opens the trade from L+2 (the helper answers on L+1) for `openTicks` states,
+ * then delivers `bones`. A click landing after the request in the same tick replaces it; any
+ * packet landing while the trade is open closes it with nothing delivered. `drop` makes the
+ * engine lose the nth request that reaches it (no message, nothing opens), and `late` holds the
+ * nth back that many ticks (a packet that missed its tick).
  */
 interface ThieveOpts {
     ticks: number;
@@ -60,7 +62,7 @@ interface ThieveOpts {
     params?: Record<string, unknown>;
     kit?: Kit;
     dialogAt?: (tick: number) => boolean;
-    helper?: { openTicks?: number; bones: number };
+    helper?: { openTicks?: number; bones: number; drop?: (nth: number) => boolean; late?: (nth: number) => number };
 }
 
 function thieve(opts: ThieveOpts) {
@@ -85,7 +87,7 @@ function thieve(opts: ThieveOpts) {
     const failedAttempts: number[] = [];
     const landings: Landing[] = [];
     let attemptAt: number | null = null;
-    const trade = { requests: 0, replaced: 0, opened: 0, done: 0, broken: 0, openFrom: -1, closeAt: -1, requestedOn: [] as number[], doneOn: [] as number[] };
+    const trade = { requests: 0, replaced: 0, opened: 0, done: 0, broken: 0, openFrom: -1, closeAt: -1, requestedOn: [] as number[], doneOn: [] as number[], arrived: 0, droppedOn: [] as number[] };
     const tradeOpen = (t: number) => t >= trade.openFrom && t < trade.closeAt;
     const inventory = () => [
         ...Array.from({ length: kit.food }, () => ({ name: foodName, options: ['Eat', 'Drop'] })),
@@ -115,7 +117,7 @@ function thieve(opts: ThieveOpts) {
         });
     };
     h.start('pp', { maxTicks: opts.ticks, ...opts.params }, state());
-    const pending: Array<{ at: number; sent: Sent; name?: string }> = [];
+    const pending: Array<{ at: number; sent: Sent; name?: string; nth?: number }> = [];
     for (let i = 0; i < opts.ticks + 5 && h.status.phase === 'running'; i++) {
         tick++;
         // processPlayers of the last tick's attempt: the roll
@@ -158,6 +160,17 @@ function thieve(opts: ThieveOpts) {
                 trade.openFrom = -1;
             }
             if (a.type === 'interactPlayer' && opts.helper) {
+                const nth = p.nth ?? trade.arrived++;
+                const late = p.nth === undefined ? (opts.helper.late?.(nth) ?? 0) : 0;
+                if (late > 0) {
+                    pending.push({ ...p, at: tick + late, nth });
+                    continue;
+                }
+                if (opts.helper.drop?.(nth)) {
+                    trade.droppedOn.push(tick);
+                    continue;
+                }
+                msgs.push({ text: 'Sending trade offer...', tick, id: msgId++ });
                 trade.requests++;
                 trade.requestedOn.push(tick);
                 requestedNow = true;
@@ -525,6 +538,76 @@ describe('pickpocket stun actions', () => {
             expect(r.h.status.counters.retargets ?? 0).toBe(0);
         });
 
+        describe('requestResend', () => {
+            const resend = (helper: ThieveOpts['helper'], requestResend?: number) =>
+                thieve({ ticks: 400, outcome: everyFifthFails, kit: { bones: 4, blood: 6000, air: 6000, food: 4 }, helper, params: { stunActions: [TOPUP, 'bury', 'charge'], idleOnInterface: true, ...(requestResend !== undefined ? { requestResend } : {}) } });
+            /** Per stun: the ticks (from the failed attempt) on which a request reached the engine and was run. */
+            const perStun = (r: ReturnType<typeof thieve>) => r.failedAttempts.map((f, i) => {
+                const next = r.failedAttempts[i + 1] ?? Infinity;
+                return {
+                    sent: r.landings.filter(l => l.type === 'interactPlayer' && l.tick > f && l.tick < next).map(l => l.tick - f),
+                    ran: r.trade.requestedOn.filter(t => t > f && t < next).map(t => t - f)
+                };
+            });
+
+            test('a dropped request goes out once more at +3 after it, and its trade opens without breaking', () => {
+                const r = resend({ bones: 12, drop: n => n % 2 === 0 }, 3);
+                const res = r.h.status.result as Result;
+                expect(r.trade.droppedOn.length).toBeGreaterThan(0);
+                expect(r.trade.broken).toBe(0);
+                expect(r.trade.replaced).toBe(0);
+                for (const s of perStun(r).filter(s => s.sent.length)) {
+                    // the request lands on T+4; a re-send, sent 3 ticks after it, on T+7
+                    expect(s.sent[0]).toBe(4);
+                    expect(s.sent.length).toBeLessThanOrEqual(2);
+                    if (s.sent.length === 2) expect(s.sent[1]).toBe(7);
+                    // never two requests the engine ran in one stun
+                    expect(s.ran.length).toBeLessThanOrEqual(1);
+                }
+                // every dropped request was re-sent, and every re-send was run (only even requests drop)
+                expect(res.stun!.resends).toBe(r.trade.droppedOn.length);
+                expect(r.h.status.counters.requestResends).toBe(r.trade.droppedOn.length);
+                expect(r.trade.requests).toBe(perStun(r).filter(s => s.sent.length).length);
+                expect(r.h.status.marks['topup:resend']!.count).toBe(res.stun!.resends!);
+                expect(r.h.status.marks.topup!.count).toBe(res.stun!.byAction.topup);
+            });
+
+            test('a request the engine ran is not re-sent, so a helper that drops nothing sees the same packets', () => {
+                const on = resend({ bones: 12 }, 3);
+                const off = resend({ bones: 12 });
+                expect(on.h.sent.map(s => `${s.tick} ${JSON.stringify(s.action)}`)).toEqual(off.h.sent.map(s => `${s.tick} ${JSON.stringify(s.action)}`));
+                expect((on.h.status.result as Result).stun!.resends).toBe(0);
+            });
+
+            test('a request that lands up to 2 ticks late draws its reply inside the hold and is not re-sent', () => {
+                // (2 late opens the trade after the hold, so the next click breaks it: with or without the option)
+                for (const late of [1, 2]) {
+                    const r = resend({ bones: 12, late: () => late }, 3);
+                    const off = resend({ bones: 12, late: () => late });
+                    expect((r.h.status.result as Result).stun!.resends).toBe(0);
+                    expect(r.h.sent).toEqual(off.h.sent);
+                    for (const s of perStun(r)) expect(s.ran.length).toBeLessThanOrEqual(1);
+                }
+            });
+
+            test('without it a dropped request is lost for the stun (the golden scenario topupIdleDropped)', () => {
+                const r = resend({ bones: 12, drop: n => n % 2 === 0 });
+                expect(r.trade.droppedOn.length).toBeGreaterThan(0);
+                for (const s of perStun(r)) expect(s.sent.length).toBeLessThanOrEqual(1);
+                expect((r.h.status.result as Result).stun!.resends).toBeUndefined();
+            });
+
+            test('rejects a re-send outside the hold or without a player action', () => {
+                const h = new Harness('pp', createPickpocket);
+                for (const params of [{ requestResend: 0 }, { requestResend: 4 }, { requestResend: 1.5 }, { requestResend: 'x' }, { requestResend: 3, stunActions: ['bury'] }, { requestResend: 3, stunActions: undefined }]) {
+                    const s = h.runtime.start('pp', { maxTicks: 10, stunActions: [TOPUP], ...params });
+                    expect(s.phase).toBe('fault');
+                    expect(s.fault).toMatch(/bad parameters/);
+                }
+                expect(h.runtime.start('pp', { maxTicks: 10, stunActions: [TOPUP], requestResend: 3 }).phase).toBe('running');
+            });
+        });
+
         test('a trade still open on the attempt tick delays the attempt by its extra ticks', () => {
             const r = run(true, 7);
             const res = r.h.status.result as Result;
@@ -549,7 +632,9 @@ describe('pickpocket stun actions', () => {
             forced: { ticks: 200, hp: 7, outcome: () => false, params: { eatBelow: 0 } },
             stunPack: { ticks: 300, outcome: everyFifthFails, ...PACK },
             dialog: { ticks: 60, outcome: n => n !== 1, ...PACK, dialogAt: t => t % 17 === 0 },
-            topupIdle: { ticks: 260, outcome: everyFifthFails, kit: { bones: 4, blood: 6000, air: 6000, food: 4 }, helper: { bones: 12 }, params: { stunActions: [TOPUP, 'bury', 'charge'], idleOnInterface: true } }
+            topupIdle: { ticks: 260, outcome: everyFifthFails, kit: { bones: 4, blood: 6000, air: 6000, food: 4 }, helper: { bones: 12 }, params: { stunActions: [TOPUP, 'bury', 'charge'], idleOnInterface: true } },
+            // the engine loses every other request: without requestResend nothing more goes out
+            topupIdleDropped: { ticks: 400, outcome: everyFifthFails, kit: { bones: 4, blood: 6000, air: 6000, food: 4 }, helper: { bones: 12, drop: n => n % 2 === 0 }, params: { stunActions: [TOPUP, 'bury', 'charge'], idleOnInterface: true } }
         };
         // from the program at 75ce523c (rs/132's stun pack and #177's declarations, before these options)
         const GOLDEN: Record<string, { packets: number; sha256: string }> = {
@@ -560,7 +645,9 @@ describe('pickpocket stun actions', () => {
             forced: { packets: 210, sha256: '1c204154156119560acf57f9f615458e54bdb92a8d7601f7d3f4034a30b8d2ed' },
             stunPack: { packets: 624, sha256: 'e0d40f331367b92820aacb4123c944df3ca5721a6fcdf5b0319ac23d9fdd9041' },
             dialog: { packets: 77, sha256: '6916cf3211f73476a94289f932e7bb9c930c0552cf40a017173b8cb99225f210' },
-            topupIdle: { packets: 370, sha256: 'de88150a3da15a304d1843221961b8b3bf4d97fd61abf3dd66f9b1e33a909d54' }
+            topupIdle: { packets: 370, sha256: 'de88150a3da15a304d1843221961b8b3bf4d97fd61abf3dd66f9b1e33a909d54' },
+            // from the program at fbd04cc9, before requestResend
+            topupIdleDropped: { packets: 553, sha256: '16de9edb07254354f7b40c8df1bdcd163da696170e8e5d99316c5dedb8734bbb' }
         };
         const trace = (o: ThieveOpts) => thieve(o).h.sent.map(s => `${s.tick} ${JSON.stringify(s.action)}`);
 

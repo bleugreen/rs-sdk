@@ -7,10 +7,10 @@ import { baseState, FakeSdk, flush, type SentAction } from '../lib/fake-sdk';
 import type { ProgramStatus } from '../lib/programs';
 import { TickLog } from '../lib/ticks';
 import type { Step, StepContext } from '../runner/step';
-import { STUN_PRESETS } from '../../server/webclient/src/bot/programs/stun-actions';
+import { REQUEST_HOLD, STUN_PRESETS } from '../../server/webclient/src/bot/programs/stun-actions';
 import {
     ARDOUGNE_SOUTH_BANK, ARROWHEAD_TIERS, BANDS, bonesTopUpAction, eatPolicy, FOODS, foodPattern, packReport, RETALK_QUIET_TICKS, retalkDue, steps, STUN_PACK_ACTIONS, STUN_PACK_BONES_BELOW,
-    stunPackCheck, TOPUP_RESTART_BY, topUpAction, topUpDue, TopUpReceiver
+    stunPackCheck, TOPUP_RESEND_TICKS, TOPUP_RESTART_BY, topUpAction, topUpDue, TopUpReceiver
 } from './thieving';
 
 describe('sail retalk', () => {
@@ -343,6 +343,8 @@ describe('thieving helper top-ups', () => {
         const done = steps({ food: 'cake', topUp }).find(s => s.name === 'thieving:knights')!.run(ctx);
         await settle(() => sdk.starts.length === 1);
         expect(sdk.starts[0]!.params).toMatchObject({ idleOnInterface: true, stunActions: [topUpAction(topUp, FOODS.cake)], retargetTicks: 12 });
+        // off by default: no requestResend key at all, so the page runs today's program
+        expect(sdk.starts[0]!.params).not.toHaveProperty('requestResend');
         const action = topUpAction(topUp, FOODS.cake) as { fewer: Array<{ item: string; than: number }> };
         expect(action).toMatchObject({ name: 'topup', kind: 'player', player: '^cairn_mule2$', window: [2, 2] });
         expect(action.fewer[0]!.than).toBe(4);
@@ -361,6 +363,26 @@ describe('thieving helper top-ups', () => {
         const meta = ctx.log.rows.find(r => r.step === 'thieving:knights:detail')!.meta as { topUp: { mode: string; trades: Array<{ ok: boolean; received: number }> } };
         expect(meta.topUp.mode).toBe('idle');
         expect(meta.topUp.trades.map(t => [t.ok, t.received])).toEqual([[true, 10]]);
+    });
+
+    test('idle mode with resend: requestResend at TOPUP_RESEND_TICKS, inside the hold, and every key declared', async () => {
+        const sdk = new ManualPageSdk(world({ level: 60, x: 2670, z: 3305, maxHp: 40, inventory: [cake(0), cake(1)] }));
+        const { ctx } = harness(sdk);
+        const done = steps({ food: 'cake', topUp: { giver: GIVER, below: 4, resend: true } }).find(s => s.name === 'thieving:knights')!.run(ctx);
+        await settle(() => sdk.starts.length === 1);
+        expect(sdk.starts[0]!.params).toMatchObject({ idleOnInterface: true, requestResend: TOPUP_RESEND_TICKS });
+        expect(TOPUP_RESEND_TICKS).toBeLessThanOrEqual(REQUEST_HOLD);
+        // the page refuses a key the program does not declare (#177)
+        const declared: readonly string[] = createPickpocket.params;
+        expect(Object.keys(sdk.starts[0]!.params).filter(k => !declared.includes(k))).toEqual([]);
+        sdk.publish({ phase: 'done', result: { reason: 'level' } }, { skills: [{ name: 'Thieving', level: 99, baseLevel: 99, experience: 0 }] as never });
+        await done;
+    });
+
+    test('resend is idle-only and boolean', () => {
+        expect(() => steps({ topUp: { giver: GIVER, below: 4, mode: 'restart', resend: true } })).toThrow(/idle mode/);
+        expect(() => steps({ topUp: { giver: GIVER, below: 4, resend: 3 as never } })).toThrow(/true or false/);
+        expect(() => steps({ topUp: { giver: GIVER, below: 4, mode: 'restart', resend: false } })).not.toThrow();
     });
 
     test('restart mode: stop at the failure, receive the trade, restart within TOPUP_RESTART_BY ticks', async () => {
@@ -608,6 +630,16 @@ describe('thieving: the stun pack', () => {
         expect(() => steps({ topUp: TOPUP, stunPack: 'on' as never })).toThrow(/stunPack must be/);
         expect(steps({ topUp: TOPUP, stunPack: true }).length).toBe(7);
         expect(STUN_PACK_BONES_BELOW).toBe(3);
+    });
+
+    test('idle mode with resend and the pack: requestResend beside the pack actions, every key declared, and the program accepts it', async () => {
+        const topUp = { ...TOPUP, resend: true };
+        const params = await knightsParams({ food: 'shark', topUp, stunPack: PACK }, packWorld());
+        expect(params.stunActions).toEqual([topUpAction(topUp, FOODS.shark), bonesTopUpAction(topUp, 3), 'bury', 'charge', 'arrows']);
+        expect(params.requestResend).toBe(TOPUP_RESEND_TICKS);
+        const declared = new Set<string>(createPickpocket.params);
+        expect(Object.keys(params).filter(k => !declared.has(k))).toEqual([]);
+        expect(() => createPickpocket(params)).not.toThrow();
     });
 
     test('idle mode: the food top-up, the bones top-up, then bury, charge and arrows; every key one the program declares', async () => {
