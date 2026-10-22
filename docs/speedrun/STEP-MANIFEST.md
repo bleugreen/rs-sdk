@@ -2150,12 +2150,15 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   leather an attempt (928 and a spare 26), 1 needle and at least 187 thread (it wears every 5th body;
   `%thread_used` is perm and not transmitted, so s = 4 is assumed; 6 thread held per 26-load); rs/350
   stages 1,142 leather and 230 thread. The cycle is the needle, the thread and 26 leather, 28 slots, at
-  ~7.5 ticks an inventory (inferred, `skills/crafting.md`), and the precondition checks the thread
+  **7.0 ticks an inventory** (m, rs/359; ~7.5 inferred before, `skills/crafting.md`), and the precondition checks the thread
   before each burst (a body with no thread opens a modal). **S25d's first booth visit banks the chisel,
   the gem stacks and H21e's herbs** (not against its 28 free); S25c's first burst withdraws the chisel
   and gems (0 i if it shares the burst's tick, +1 otherwise); S25d's last visit deposits the needle,
-  thread and bodies, so S25e starts at 28 free. Priced in RUN-ORDER.md's scenario rows at **+177 i**
-  (928 x 7.5 / 26 = 267.7 against this entry's 91).
+  thread and bodies, so S25e starts at 28 free. Priced in RUN-ORDER.md's scenario rows at **+172**:
+  **263 m** (fold-in 19; rs/359, lab, browser, 3 of 3: 45 to `CRAFTING_HANDOFF_XP`, 928 bodies in 37 visits, 7.0
+  ticks per 26 bodies; **Kind M (lab, rs/359)** on the leather route; the demo not run, needing a borrowed
+  account at Crafting 28+) against this entry's 91 (+177 i before, 928 x 7.5 / 26 = 267.7). The fallback with
+  no gems in the windows is the leather route standalone to 99, **314 m**; S25e starts at 28 free in every run.
 - **Postconditions:** Crafting 99. Items out: the cut gems (the windows) and the hard leather bodies.
 - **Ticks:** expected **91**, best **85**: the diamond-only supply's ~121 from 42 (dragonstones
   are unobtainable; measured 117 from 43, `skills/crafting.md` section 1) less the 107 diamonds cut in
@@ -2700,7 +2703,7 @@ S10b) or fire (S10b to S14) supplies its element.
 | S25a | platebody x5 [u] (back to the helper in the next trade) | bars x25 (consume: smithed) | - | 0 | MAN entry 10 (r) |
 | H21d | chisel x1 [u]; uncut sapphire x62 [n]; uncut emerald x23 [n]; uncut ruby x20 [n]; uncut diamond x2 [n] (the 107 best of the 108 held gems, for S25c's windows); hard leather x954 [n]; needle x1 [u]; thread x187 [s] (S25d's line: 928 bodies and a spare 26, the thread wearing every 5th body); guam potion (unf) x41 [n] (obj `guamvial`; in game 'Unfinished potion', a name it shares with `iritvial`); irit potion (unf) x405 [n] (obj `iritvial`; in game 'Unfinished potion'); eye of newt x432 [n] (H21d and H21e in one trade) | platebody x5 (swap: the last 5, H21a's final hand-back); hammer x1 (swap: back in H22) | - | 11 | SUPPLIES H21d, H21e (r); rs/158's final S25d ruling: the windows cut the gems (rs/339), S25d crafts hard leather (rs/359, its counts on the engine curve) (r); rs/350's package, read from `leather.rs2` `@craft_leather` (r); the hammer out and back for S25e's 28 free (rs/158, r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
 | S25d bank | - | uncut sapphire all (deposit: banked on the first booth visit, withdrawn with the chisel in S25c's windows); uncut emerald all (deposit); uncut ruby all (deposit); uncut diamond all (deposit); hard leather all (deposit: withdrawn 26 an inventory); guam potion (unf) all (deposit); irit potion (unf) all (deposit); eye of newt all (deposit); chisel x1 (deposit: for S25c's windows) | - | 0 | SUPPLIES H21d (r); rs/359: the first booth visit banks the chisel, the gem stacks and the herbs, not against S25d's 28 free (r); the first booth visit, before S25d's own need; the gems cut in the wine windows, as the 107 diamonds were (wine-window.md section 5 B) (i) |
-| S25d | - | needle x1 (deposit: the last booth visit, for S25e's 28 free); thread all (deposit) | - | 26 | MAN entry 28: hard leather bodies, 26 an inventory beside the needle and thread, ~7.5 ticks an inventory (i); rs/359's precondition checks the thread before each burst, and the last visit deposits the needle, thread and bodies (r); the leather line in force for the ~32,500 base the gems leave (rs/41, rs/350; rs/158 04:3x PDT, r) |
+| S25d | - | needle x1 (deposit: the last booth visit, for S25e's 28 free); thread all (deposit) | - | 26 | MAN entry 28: hard leather bodies, 26 an inventory beside the needle and thread, 7.0 ticks an inventory (m, rs/359); rs/359's precondition checks the thread before each burst, and the last visit deposits the needle, thread and bodies (r); the leather line in force for the ~32,500 base the gems leave (rs/41, rs/350; rs/158 04:3x PDT, r) |
 | S25e | - | - | - | 28 | MAN entry 27; rs/302's herblore.ts precondition, 28 free with the notes banked (r) |
 | H21b | - | - | - | 0 | retired on the stock in force, SUPPLIES H21b (r) |
 | H21c | unfermented wine x520 [n] | - | - | 1 | SUPPLIES H21c: SCORED enters relog 1 holding at most 27 items (r) |
