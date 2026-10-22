@@ -1443,7 +1443,13 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   keeper (m, lab, rs/163, 16:17 PDT: a 139-142-tick restock round trip from Edgeville bank, N =
   ceil(142 / 7) + 1, 12 of 12 turns at 7 ticks, so S21's ticks do not change; supply-fallbacks.md §7: 194 crafts, 5,238 essence; +142 in every RUN-ORDER.md
   scenario row, SF's +231 of crafts with the body route's shorter legs measured by rs/198). The nature altar below is the every-line-held baseline and a sensitivity row; the
-  module takes `altar: 'body'` as well.
+  module takes `altar: 'body'` as well. **T21-22's runes (H17e)** come back after the last craft from
+  **a runes-only hand-back trip**: the giver's body talisman and 1 law, 3 air and 1 earth, no essence,
+  because a talisman plus 27 essence fills 28 slots; one of the 22 givers on a trip after the last
+  essence turn (rs/196's preference: no extra login or talisman), or a 23rd account; rs/41 decides,
+  the account pending, and the roster count and login peak stay unless it is a 23rd. SCORED's side is
+  built on rs/186's branch (023d8842, unit tests only); +5 i on S21, fold-in 18's price; the lab is
+  pending, after rs/330's giver side (fold-in 20).
 - **Postconditions:** Runecraft 44 (S06) or 99 (S21). Items out: the rune stacks; S06's air runes
   are dropped on T06-07 (below). The drop stays: a hand-back would cost ~5 ticks on SCORED's clock to
   save a purchase made off the clock (rs/196), and `swap()` was considered for it and rejected.
@@ -1474,7 +1480,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   **On the floor** (rs/196: a page built from the base carrying `rc-cycle` at 23ea9f77, module
   3f02f336, rs/163's givers e4f60121, lab 300 ms): nature at 44, tuned auto, 30/30
   at 29 x 7 (218 step ticks); nature at 44, robust with SCORED handled first, 30/30 at 29 x 8 (248);
-  S06 air 1 to 44, 7/7 at 6 x 7, 58 ticks.
+  S06 air 1 to 44, 7/7 at 6 x 7, 58 ticks. **Under #287's message-reader fix** (rs/196, m, lab,
+  browser, direct-path givers; fold-in 20): 30 of 30 crafts, 29 gaps of 7, step 218, all giver-first,
+  0 late, identical to the pre-fix figure (RUN-ORDER.md R34, closed).
 - **Path: relay in the lab, confirmed direct for the tuned nature run.** Every module figure above,
   and the stock rung's, ran on the **relay path**: the lab script set the givers' `path` in role
   options, but the launcher reads it only from the account entry, so it defaulted to relay (rs/196;
@@ -2728,7 +2736,7 @@ S10b) or fire (S10b to S14) supplies its element.
 | T20-21 | - | law rune x1 (consume: Falador teleport); air rune x3 (consume); water rune x1 (consume); law rune all (drop: the surplus, so S21 starts holding only the talisman); air rune all (drop); water rune all (drop); fishing rod x1 (drop: Fishing Contest's leftovers); fishing pass x1 (drop); raw shrimps x1 (drop); body talisman x1 (drop: on entry, as at S06) | - | 0 | RUN-ORDER T20-21, the body plan in force (r); rs/318 rulings 6 and 7 (r); P1; Fishing Contest's exit drops, rs/185, issue pending (r) |
 | H17 | rune essence x27 [u] (one of 194 deliveries) | - | - | 27 | SUPPLIES H17 (r); MAN entry 9 (r); 28 free, the staff of fire worn and the arrows quivered (rs/318 ruling 7, r) |
 | S21 | body rune x? [s] (crafted) | rune essence x27 (consume: one craft) | - | 0 | MAN entry 9 (r); the body runes are a stack, so the uncounted product takes one slot (r) |
-| H17e | law rune x1 [s]; air rune x3 [s]; earth rune x1 [s] (T21-22's Lumbridge teleport) | - | - | 3 | rs/318 ruling 7 (r): from the last body-altar giver after the last craft, +5 i on S21 (i); owner rs/196 (`runecraft.ts` via `receiveFrom`, the Runecraft follow-up snapshot) (r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
+| H17e | law rune x1 [s]; air rune x3 [s]; earth rune x1 [s] (T21-22's Lumbridge teleport) | - | - | 3 | rs/318 ruling 7 (r): after the last craft, +5 i on S21 (i); from **a runes-only hand-back trip** (the giver's body talisman and the runes, no essence, since a talisman plus 27 essence fills 28 slots: one of the 22 givers after the last essence turn, or a 23rd account; rs/41 decides, the account pending; fold-in 20) (r); SCORED's side built on rs/186's branch (023d8842, unit tests only), the lab pending after rs/330's giver side (r); owner rs/196 (`runecraft.ts` via `receiveFrom`) (r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
 | T21-22 | - | law rune x1 (consume: Lumbridge teleport); air rune x3 (consume); earth rune x1 (consume); body rune all (drop: S21's product) | - | 0 | RUN-ORDER T21-22 (r); P1 (r) |
 | H18 | fly fishing rod x1 [u]; feather x580 [s]; logs x10 [u]; law rune x1 [s]; air rune x3 [s]; earth rune x1 [s]; knife x1 [u] (back from H14) | - | - | 16 | SUPPLIES H18 (r); the knife's return (rs/318 ruling 7; rs/158 02:2x PDT, r); owner rs/320 (r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
 | S22 | - | feather x520 (consume) | - | 1 | MAN entry 5 (r); `fishing.ts`: one free slot for the catch (r) |
