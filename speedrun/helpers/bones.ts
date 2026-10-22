@@ -156,10 +156,10 @@ const HILL_GIANTS: Spot = {
     }
 };
 
-const TAVERLEY_DUNGEON_LADDER: Tile = { x: 2884, z: 3397 };
-const TAVERLEY_DUNGEON_BOTTOM: Tile = { x: 2884, z: 9798 };
-const DUSTY_KEY_DOOR: Tile = { x: 2924, z: 9803 };
-const DUSTY_KEY = /^dusty key$/i;
+export const TAVERLEY_DUNGEON_LADDER: Tile = { x: 2884, z: 3397 };
+export const TAVERLEY_DUNGEON_BOTTOM: Tile = { x: 2884, z: 9798 };
+export const DUSTY_KEY_DOOR: Tile = { x: 2924, z: 9803 };
+export const DUSTY_KEY = /^dusty key$/i;
 const JAIL_KEY = /^jail key$/i;
 /** Taverley dungeon jail: the Jailer walks the corridor; Velrak's cell is south of the door at (2931, 9690) and opens from inside without a key. */
 const JAILER: Tile = { x: 2933, z: 9693 };
@@ -172,7 +172,7 @@ const inVelrakCell = (t: Tile) => t.z < VELRAK_CELL_DOOR.z && t.z > 9675 && Math
  * Velrak's cell with it, and accept his key (velrak_the_explorer.rs2 gives one to anyone not
  * carrying one). One step per call; returns true once the key is carried and the cell is left.
  */
-async function fetchDustyKey(r: Run): Promise<boolean> {
+export async function fetchDustyKey(r: Run): Promise<boolean> {
     if (!(await r.routeToSpot(BABY_BLUE))) return false;
     if (!r.underground()) {
         if (!(await r.walk(TAVERLEY_DUNGEON_LADDER.x, TAVERLEY_DUNGEON_LADDER.z + 1, 2, 300_000))) return false;
@@ -225,7 +225,7 @@ async function fetchDustyKey(r: Run): Promise<boolean> {
  * True when (x, z) on level 0 reaches `to` with the door at `door` shut, i.e. the two are on the
  * same side of it. Uses the SDK's offline collision map (already loaded for walkTo).
  */
-function sameSideOf(door: Tile, from: Tile, to: Tile): boolean {
+export function sameSideOf(door: Tile, from: Tile, to: Tile): boolean {
     const d = getDoorAt(0, door.x, door.z);
     const path = findLongPath(0, from.x, from.z, to.x, to.z, 500, d ? [d] : []);
     const end = path.at(-1) ?? from;
@@ -661,6 +661,7 @@ export function parseOptions(o: Record<string, unknown>): Options {
 interface Target { npc: RegExp; area: Box; centre: Tile; loot: RegExp | null }
 type Outcome = 'killed' | 'lost' | 'flee' | 'none' | 'full';
 
+/** One account's live session; the dragons role (dragons.ts) reuses its walking, climbing, fighting and training. */
 export class Run {
     readonly bot: BotActions;
     readonly sdk: BotSDK;

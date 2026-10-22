@@ -7,32 +7,38 @@
 //   bun docs/speedrun/scripts/smithing-trade.ts <scored> --helper <bot> --from 1 --until 99
 //                                       route: the per-item plan of smithing-model.ts
 //   common: [--dispose trade|drop] [--dialog ignore|click] [--minutes 40]
+//           [--restock bank|cheat] (the helper's restock; bank tops itself up with staff notes)
 //
-// Run it through smithing-lab.sh with HELPER=<bot>. It spawns itself as the helper
-// (`--role helper`); the two processes share a plan file under $TMPDIR naming the next
-// inventory's bars ({seq, bars, products}).
+// Run it through smithing-lab.sh with HELPER=<bot>. The helper is the anvil role
+// (speedrun/helpers/anvil.ts) run standalone on <bot>: this script writes the cue (its own
+// name hash) and anvil-plan.json (the next inventory's items) into a fresh cue directory
+// under $TMPDIR, as the run's S25a step does, and the helper restocks at the Varrock west
+// booth between trades. Without a hammer, the first inventory asks the helper for one.
 //
 // Packet plan (all raw packets, from observed ticks):
-//   free     from the tick after the inventory's last xp, trade-op the helper every tick (the
-//            helper also requests every tick; a request to a delayed player is refused,
-//            trade.rs2 [opplayer4,_], so whichever lands first opens the trade).
+//   free     from the tick after the inventory's last xp, trade-op the helper every tick. The
+//            helper's request is normally standing by then, so the first click that lands
+//            opens both screens (trade.rs2 [opplayer4,_]).
 //   trade    offer-all per finished item id (re-sent until the offer holds them all), then
 //            accept once the helper's bars are on the screen; accept the confirm screen. The
 //            space check (trade.rs2 enough_trade_space) counts the room our own offer frees.
 //   anvil    use-bar-on-anvil every tick until the smithing interface opens, then make-10 /
 //            make-5 / make-1 for the planned count (INV_BUTTON3/2/1).
 // Level-up dialogs are clicked through the tick they appear.
-import { readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { mkdtempSync, readFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join, resolve } from 'path';
 import { runScript } from '../../../sdk/runner';
 import type { BotWorldState } from '../../../sdk/types';
+import { CueWriter, FrameLog } from '../../../speedrun/helpers/altar-cue';
+import { writeAnvilPlan } from '../../../speedrun/helpers/anvil';
+import { sameName } from '../../../speedrun/lib/trade';
 
 const argv = process.argv.slice(2);
 function arg(name: string, def: string): string {
     const i = argv.indexOf(`--${name}`);
     return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1]! : def;
 }
-const ROLE = arg('role', 'scored');
 const PRODUCT = arg('product', 'adamant_platebody');
 const LEVEL = Number(arg('level', '99'));
 const CYCLES = Number(arg('cycles', '4'));
@@ -40,7 +46,8 @@ const FROM = Number(arg('from', '0'));
 const UNTIL = Number(arg('until', '0'));
 const OVERHEAD = Number(arg('overhead', '7')); // plan only: per-inventory turnaround
 const SWITCH = Number(arg('switch', '2')); // plan only: cost of changing item in an inventory
-const PLAN_FILE = arg('planfile', `${process.env.TMPDIR ?? '/tmp'}/smithing-trade-plan.json`);
+const CUE_DIR = arg('cuedir', '') || mkdtempSync(join(tmpdir(), 'anvil-cue-'));
+const RESTOCK = arg('restock', 'bank');
 const STALL = Number(arg('stall', '100'));
 // trade: hand finished items back inside the trade. drop: drop up to 3 with the trade click and
 // the rest with the next use-bar (5-bar items only: 25 free slots are needed for the bars).
@@ -52,7 +59,6 @@ const DIALOG = arg('dialog', 'ignore');
 const ANVIL: [number, number] = [3188, 3426]; // Varrock west anvil (loc 2783)
 const ANVIL_ID = 2783;
 const SCORED_TILE: [number, number] = [3187, 3426];
-const HELPER_TILE: [number, number] = [3187, 3427];
 const SMITHING_IF = 994;
 const COLUMN_BASE = 1119; // interface.pack: 1119=smithing:column1 .. 1123=column5
 const CAP = 27;
@@ -154,7 +160,6 @@ async function waitTicks(sdk: any, n: number): Promise<BotWorldState> {
 const tele = (p: [number, number]) => `::tele 0,${p[0] >> 6},${p[1] >> 6},${p[0] & 63},${p[1] & 63}`;
 const count = (items: { name: string; count: number }[], re: RegExp) => items.filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0);
 const smith = (s: BotWorldState) => s.skills.find(k => k.name === 'Smithing')!;
-type PlanMsg = { seq: number; bars: Record<string, number>; products: number };
 
 async function clearInventory(sdk: any, keep: RegExp) {
     for (let k = 0; k < 12; k++) {
@@ -164,84 +169,6 @@ async function clearInventory(sdk: any, keep: RegExp) {
         for (const j of junk) sdk.sendDropItem(j.slot).catch(() => {});
         await waitTicks(sdk, 2);
     }
-}
-
-// ================= helper =================
-if (ROLE === 'helper') {
-    const partner = arg('partner', '').toLowerCase();
-    await runScript(async ({ bot, sdk }) => {
-        await bot.skipTutorial?.();
-        await sdk.sendSay(tele(HELPER_TILE));
-        await waitTicks(sdk, 3);
-        await clearInventory(sdk, /^$/);
-        let s = await waitTicks(sdk, 1);
-        let delivered = -1;
-        let inTrade = false;
-        let tradingSeq = -1;
-        let seenSeq = -1;
-        let seenTick = -1;
-        let stagedSeq = -1;
-        let stagedAt = -1;
-        let offeredTick = -1;
-        let gaveTick = -99;
-        let plan: PlanMsg | null = null;
-        const end = Date.now() + 60 * 60_000;
-        while (Date.now() < end) {
-            s = await nextTick(sdk, s.tick);
-            try { plan = JSON.parse(readFileSync(PLAN_FILE, 'utf8')) as PlanMsg; } catch { /* mid-write */ }
-            if (!plan) continue;
-            if ((plan as any).stop) break;
-            const t = s.trade;
-            if (t?.isOpen) {
-                if (!inTrade) { inTrade = true; tradingSeq = plan.seq; offeredTick = -99; }
-                if (t.screen === 'offer') {
-                    // Offer and accept in one tick. An offer resets both accepts (trade.rs2
-                    // movetotrade), so if the scored account's offer lands after ours we re-accept
-                    // on the next tick that shows it accepted.
-                    const want = Object.values(plan.bars).reduce((a, b) => a + b, 0);
-                    if (t.myOffer.reduce((a, i) => a + i.count, 0) < want && s.tick > offeredTick + 1) {
-                        for (const bar of Object.keys(plan.bars)) {
-                            if (count(t.myOffer, barRe(bar)) >= plan.bars[bar]!) continue;
-                            const it = s.inventory.find(i => barRe(bar).test(i.name));
-                            if (it) sdk.sendOfferItem(it.slot, -1).catch(() => {});
-                        }
-                        sdk.sendAcceptTrade().catch(() => {});
-                        offeredTick = s.tick;
-                    } else if (!t.myAccepted && s.tick > offeredTick) sdk.sendAcceptTrade().catch(() => {});
-                } else if (t.screen === 'confirm' && !t.myAccepted) sdk.sendAcceptTrade().catch(() => {});
-                continue;
-            }
-            if (inTrade) {
-                inTrade = false;
-                if (!Object.keys(plan.bars).some(b => count(s.inventory, barRe(b)) > 0)) delivered = tradingSeq;
-            }
-            if (plan.seq !== seenSeq) { seenSeq = plan.seq; seenTick = s.tick; }
-            if (delivered >= plan.seq) {
-                // Idle: get rid of the finished items the scored account handed back.
-                const junk = s.inventory.slice(0, 5);
-                for (const j of junk) sdk.sendDropItem(j.slot).catch(() => {});
-                continue;
-            }
-            // Stage exactly the planned bars, then keep requesting the trade.
-            const extra = s.inventory.filter(i => !Object.keys(plan!.bars).some(b => barRe(b).test(i.name)));
-            const over = Object.keys(plan.bars).flatMap(b => s.inventory.filter(i => barRe(b).test(i.name)).slice(plan!.bars[b]!));
-            const drops = [...extra, ...over].slice(0, 5);
-            if (drops.length) { for (const d of drops) sdk.sendDropItem(d.slot).catch(() => {}); continue; }
-            const short = Object.entries(plan.bars).filter(([b, n]) => count(s.inventory, barRe(b)) < n);
-            if (short.length) {
-                if (s.tick - gaveTick > 3) {
-                    for (const [b, n] of short) sdk.sendSay(`::give ${b} ${n - count(s.inventory, barRe(b))}`).catch(() => {});
-                    gaveTick = s.tick;
-                }
-                continue;
-            }
-            if (stagedSeq === plan.seq && s.tick - stagedAt === 32 && !s.trade?.isOpen) console.log(`HELPER waiting seq ${plan.seq} at ${s.tick}: pos ${s.player?.worldX},${s.player?.worldZ} msgs ${s.gameMessages.slice(-5).map(m => `${m.tick}:${m.text}`).join(' | ')}`);
-            if (stagedSeq !== plan.seq) { stagedAt = s.tick; stagedSeq = plan.seq; console.log(`HELPER seq ${plan.seq}: plan seen ${seenTick}, staged ${s.tick}`); }
-            const p = s.nearbyPlayers.find(x => x.name.toLowerCase() === partner);
-            if (p) sdk.sendTradeRequest(p.index).catch(() => {});
-        }
-    }, { timeout: 61 * 60_000, printState: false });
-    process.exit(0);
 }
 
 // ================= scored account =================
@@ -258,15 +185,28 @@ await runScript(async ({ bot, sdk }) => {
     let s = await waitTicks(sdk, 3);
     for (let k = 0; k < 20 && smith(s).baseLevel !== start; k++) s = await waitTicks(sdk, 1);
     await clearInventory(sdk, /^hammer$/i);
-    if (!(sdk.getState() as BotWorldState).inventory.some(i => /^hammer$/i.test(i.name))) await sdk.sendSay('::give hammer 1');
     s = await waitTicks(sdk, 3);
+    const needHammer = !s.inventory.some(i => /^hammer$/i.test(i.name));
     console.log(`dispose=${DISPOSE} dialog=${DIALOG}; plan: ${PLAN.length} inventories from level ${smith(s).baseLevel}; first: ${PLAN[0]!.segs.map(g => `${g.count}x ${g.row.name}`).join(', ')}`);
     if (route) for (const [i, inv] of PLAN.entries()) if (inv.segs.length > 1 || i < 3) console.log(`  inv ${i}: ${inv.segs.map(g => `${g.count}x ${g.row.name}`).join(', ')}`);
 
     const me = s.player!.name;
-    const writePlan = (seq: number, products: number) => writeFileSync(PLAN_FILE, JSON.stringify({ seq, bars: PLAN[seq]?.bars ?? {}, products } satisfies PlanMsg));
-    writePlan(0, 0);
-    const helperProc = Bun.spawn(['bun', import.meta.path, HELPER, '--role', 'helper', '--partner', me, '--planfile', PLAN_FILE], { stdout: 'inherit', stderr: 'inherit' });
+    // The helper's side: the cue names us by hash, the plan file names the next inventory.
+    const frames = new FrameLog();
+    sdk.onStateUpdate((st: BotWorldState) => void frames.add(st.tick));
+    s = await waitTicks(sdk, 2);
+    const cue = new CueWriter(CUE_DIR, me);
+    cue.write({ beacons: frames.recent().length ? frames.recent() : [{ tick: s.tick, ms: Date.now() }], turns: [] });
+    const giveFor = (seq: number): Record<string, number> => ({ ...(PLAN[seq]?.bars ?? {}), ...(seq === 0 && needHammer ? { hammer: 1 } : {}) });
+    const writePlan = (seq: number) => {
+        if (seq < PLAN.length) writeAnvilPlan(CUE_DIR, { session: cue.session, seq, give: giveFor(seq) });
+    };
+    writePlan(0);
+    // The child logs in as the helper from bots/<helper>/bot.env, so none of our credentials may leak into its env.
+    const helperEnv: Record<string, string | undefined> = { ...process.env, ROLE_OPTIONS: JSON.stringify({ restock: { kind: RESTOCK, labStock: true }, cueDir: CUE_DIR }), RC_CUE_DIR: CUE_DIR, HELPER_LAB_TELE: '1' };
+    for (const k of ['BOT_USERNAME', 'PASSWORD', 'SERVER', 'GATEWAY_URL', 'SHOW_CHAT']) delete helperEnv[k];
+    const helperProc = Bun.spawn(['bun', 'speedrun/helpers/anvil.ts', HELPER], { cwd: resolve(import.meta.dir, '../../..'), env: helperEnv, stdout: 'inherit', stderr: 'inherit' });
+    console.log(`helper: anvil role on ${HELPER} (restock ${RESTOCK}), cue ${CUE_DIR}`);
 
     let phase: 'free' | 'trade' | 'anvil' | 'smith' = 'free';
     let inv = 0;
@@ -333,7 +273,7 @@ await runScript(async ({ bot, sdk }) => {
                 // (Player.ts), and the helper's trade requests bounce off until it closes.
                 if (s.dialog.isOpen || s.modalOpen) { sdk.sendCloseModal().catch(() => {}); closes++; }
                 if (L.request > 0 && s.tick - L.request === 8) console.log(`SLOW OPEN inv ${inv} at ${s.tick}: pos ${s.player?.worldX},${s.player?.worldZ} helper ${JSON.stringify(s.nearbyPlayers.map(p => [p.name, p.x, p.z]))} msgs ${s.gameMessages.slice(-5).map(m => `${m.tick}:${m.text}`).join(' | ')}`);
-                const h = s.nearbyPlayers.find(p => p.name.toLowerCase() === HELPER.toLowerCase());
+                const h = s.nearbyPlayers.find(p => sameName(p.name, HELPER));
                 if (h) {
                     if (DISPOSE === 'drop') for (const p of s.inventory.filter(i => !/^hammer$/i.test(i.name)).slice(0, 3)) sdk.sendDropItem(p.slot).catch(() => {});
                     sdk.sendTradeRequest(h.index).catch(() => {});
@@ -344,7 +284,7 @@ await runScript(async ({ bot, sdk }) => {
         }
         if (phase === 'trade') {
             const t = s.trade;
-            const want = Object.values(PLAN[inv]!.bars).reduce((a, b) => a + b, 0);
+            const want = Object.values(giveFor(inv)).reduce((a, b) => a + b, 0);
             if (t?.isOpen && t.screen === 'offer') {
                 // Offer-all once per finished item id (the trade-side inventory keeps main-inventory slots).
                 // Offer-all per finished item id until the offer holds every item, and only then
@@ -367,13 +307,13 @@ await runScript(async ({ bot, sdk }) => {
                 } else if (!t.myAccepted && theirs >= want) sdk.sendAcceptTrade().catch(() => {});
             } else if (t?.isOpen && t.screen === 'confirm' && !t.myAccepted) sdk.sendAcceptTrade().catch(() => {});
             else if (!t?.isOpen) {
-                const have = Object.keys(PLAN[inv]!.bars).reduce((a, b) => a + count(s.inventory, barRe(b)), 0);
+                const have = Object.keys(giveFor(inv)).reduce((a, b) => a + count(s.inventory, barRe(b)), 0);
                 if (have >= want) {
                     L.barsIn = s.tick;
                     progress = s.tick;
                     phase = 'anvil';
                     freeFrom = s.tick;
-                    writePlan(inv + 1, DISPOSE === 'drop' ? 0 : PLAN[inv]!.segs.reduce((a, g) => a + g.count, 0));
+                    writePlan(inv + 1);
                 } else if (closedAt < 0) closedAt = s.tick;
                 // Closed without the bars (declined): re-request at once.
                 else if (s.tick - closedAt >= 2) { phase = 'free'; declines++; }
@@ -415,7 +355,8 @@ await runScript(async ({ bot, sdk }) => {
             }
         }
     }
-    writeFileSync(PLAN_FILE, JSON.stringify({ stop: true, seq: 1e9, bars: {}, products: 0 }));
+    writeAnvilPlan(CUE_DIR, { session: cue.session, seq: inv + 1, give: {}, stop: true });
+    cue.stop(frames.recent(1));
 
     // ---- report ----
     console.log('\ninv  request  ->open  ->barsIn  ->click  xp ticks after first click              lastXp->nextClick  click->nextClick');
@@ -433,11 +374,21 @@ await runScript(async ({ bot, sdk }) => {
     const gaps: Record<number, number> = {};
     for (const l of logs) for (let i = 1; i < l.xps.length; i++) { const g = l.xps[i]! - l.xps[i - 1]!; gaps[g] = (gaps[g] ?? 0) + 1; }
     console.log(`xp gap histogram (within inventories): ${JSON.stringify(gaps)}`);
+    // The manifest's turnaround: the inventory's last xp to the next inventory's first make click.
+    const turn = logs.flatMap((l, i) => {
+        const next = logs[i + 1]?.clicks[0];
+        const last = l.xps[l.xps.length - 1];
+        return next !== undefined && last !== undefined ? [next - last] : [];
+    });
+    const hist: Record<number, number> = {};
+    for (const t of turn) hist[t] = (hist[t] ?? 0) + 1;
+    if (turn.length) console.log(`turnaround (last xp -> next make click), ${turn.length} trades: ${turn.join(' ')}; histogram ${JSON.stringify(hist)}; mean ${(turn.reduce((a, b) => a + b, 0) / turn.length).toFixed(2)}, max ${Math.max(...turn)}`);
     console.log(`failed trades: ${declines}; close-modal sends: ${closes}; interface click resends: ${retries}; ticks with a dialog open: ${dialogTicks}; levels ${Math.min(...Object.keys(levelTicks).map(Number))} -> ${smith(s).baseLevel}`);
     if (route) {
         console.log(`route ${start} -> ${UNTIL}: first trade request ${firstRequest}, level ${UNTIL} at ${reached}: ${reached - firstRequest} ticks over ${logs.length} inventories (plan ${PLAN.length})`);
         const marks = [10, 20, 30, 33, 40, 48, 50, 60, 68, 70, 80, 88, 90, 95, 99].filter(l => levelTicks[l]);
         console.log(`ticks from first request to level: ${marks.map(l => `${l}:${levelTicks[l]! - firstRequest}`).join(' ')}`);
     }
-    helperProc.kill();
+    // The helper stops on the plan's stop; give it a moment to log out cleanly.
+    if ((await Promise.race([helperProc.exited.then(() => true), Bun.sleep(15_000).then(() => false)])) === false) helperProc.kill();
 }, { timeout: 61 * 60_000 });
