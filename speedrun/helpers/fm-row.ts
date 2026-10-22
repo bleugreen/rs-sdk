@@ -511,7 +511,9 @@ export class FmRow {
             const end = plannedTiles(this.path, this.o.parts, this.o.spareTiles, this.plan.length).at(-1)!.slot + 2 * INVENTORY;
             for (let s = 0; s <= end; s++) {
                 const t = pathTile(this.path, s);
-                if (!seen.has(tileKey(t))) seen.add(tileKey(t)) && this.watchTiles.push(t);
+                if (seen.has(tileKey(t))) continue;
+                seen.add(tileKey(t));
+                this.watchTiles.push(t);
             }
         }
     }

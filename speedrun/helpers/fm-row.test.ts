@@ -2,8 +2,13 @@ import { describe, expect, test } from 'bun:test';
 
 import {
     advance,
+    advanceFresh,
+    blockLast,
+    catchUp,
+    cueTick,
     dropTarget,
     earliestDrop,
+    FireLedger,
     fmRowOptions,
     inventoryOf,
     LAB_ROW,
@@ -12,7 +17,11 @@ import {
     maxRestockTicks,
     NO_PROGRESS,
     needTick,
+    occupied,
     ownLogs,
+    pathTile,
+    placeSlot,
+    plannedTiles,
     REVEAL_TICKS,
     resumeCursor,
     rowPlan,
@@ -268,5 +277,178 @@ describe('options', () => {
         expect(() => fmRowOptions({ scoredSha256: 'cairn_f02' }, {})).toThrow(/sha-256/);
         expect(() => fmRowOptions({ part: 2, parts: 2 }, {})).toThrow(/part/);
         expect(() => fmRowOptions({ start: 'later' }, {})).toThrow(/start/);
+    });
+});
+
+// ------------------------------------------------------------------ opt-ins (all default off)
+
+const LIST = Array.from({ length: 50 }, (_, n) => ({ x: 3240 - n, z: 3218 }));
+
+describe('tiles: an explicit list in place of the snake', () => {
+    test('the plan walks the list in order and cycles it', () => {
+        const p = rowPlan(LIST);
+        expect(p[0]!.tile).toEqual({ x: 3240, z: 3218 });
+        expect(p[49]!.tile).toEqual({ x: 3191, z: 3218 });
+        expect(p[50]!.tile).toEqual(p[0]!.tile);
+        expect(pathTile(LAB_ROW, 27)).toEqual(snakeTile(LAB_ROW, 27));
+    });
+
+    test('options: [x, z] pairs, never with row, and the bank trip measured from the first tile', () => {
+        const o = fmRowOptions({ tiles: [[3240, 3218], [3239, 3218]] }, {});
+        expect(o.tiles).toEqual([{ x: 3240, z: 3218 }, { x: 3239, z: 3218 }]);
+        expect(o.restockTicks).toBe(Math.max(3240 - 3013, 3357 - 3218) + 20);
+        expect(fmRowOptions({}, {}).tiles).toBeNull();
+        expect(() => fmRowOptions({ tiles: [[1, 2]], row: LAB_ROW }, {})).toThrow(/not both/);
+        expect(() => fmRowOptions({ tiles: [] }, {})).toThrow(/non-empty/);
+        expect(() => fmRowOptions({ tiles: [[1, 2, 3]] }, {})).toThrow(/tiles\[0\]/);
+        expect(() => fmRowOptions({ tiles: [[1, 'a']] }, {})).toThrow(/tiles\[0\]\.z/);
+    });
+});
+
+describe('skipOccupied: blocks with spares, skips, fresh-fire progress', () => {
+    test('spareTiles: off by default, 2 per block with parts > 1, 0 with one dropper, overridable to 0', () => {
+        expect([fmRowOptions({}, {}).skipOccupied, fmRowOptions({}, {}).spareTiles]).toEqual([false, 0]);
+        expect(fmRowOptions({ skipOccupied: true }, {}).spareTiles).toBe(0);
+        expect(fmRowOptions({ skipOccupied: true, parts: 6 }, {}).spareTiles).toBe(2);
+        expect(fmRowOptions({ skipOccupied: true, parts: 6, spareTiles: 0 }, {}).spareTiles).toBe(0);
+        expect(() => fmRowOptions({ spareTiles: 2 }, {})).toThrow(/skipOccupied/);
+        expect(() => fmRowOptions({ skipOccupied: 'yes' }, {})).toThrow(/skipOccupied/);
+    });
+
+    test('plannedTiles: each inventory is 28 logs then its spares, carried by part k % parts', () => {
+        const layout = plannedTiles(LIST, 6, 2);
+        expect(layout).toHaveLength(157 + 6 * 2);
+        expect(layout.map(t => t.slot)).toEqual(layout.map((_, n) => n));
+        expect(layout[27]).toMatchObject({ slot: 27, inventory: 0, part: 0, log: 27 });
+        expect(layout[28]).toMatchObject({ slot: 28, inventory: 0, part: 0, log: null });
+        expect(layout[29]).toMatchObject({ inventory: 0, log: null });
+        expect(layout[30]).toMatchObject({ slot: 30, inventory: 1, part: 1, log: 28, tile: LIST[30] });
+        // The last inventory is 17 logs and its 2 spares.
+        expect(layout.filter(t => t.inventory === 5).map(t => t.log)).toEqual([...Array.from({ length: 17 }, (_, m) => 140 + m), null, null]);
+        // The plan agrees with the layout; with no spares it is the old one-log-per-slot plan.
+        const p = rowPlan(LIST, undefined, 2);
+        for (const t of layout) if (t.log !== null) expect(p[t.log]).toMatchObject({ slot: t.slot, tile: t.tile });
+        expect(rowPlan(LAB_ROW, undefined, 0)).toEqual(rowPlan(LAB_ROW).map((l, i) => ({ ...l, slot: i })));
+        expect(plannedTiles(LIST, 6, 0).map(t => t.log)).toEqual(Array.from({ length: 157 }, (_, n) => n));
+    });
+
+    test('a skip stays inside its block when parts > 1, and has no limit with one dropper', () => {
+        expect(blockLast(0, 157, 2, 6)).toBe(29);
+        expect(blockLast(55, 157, 2, 6)).toBe(59);
+        expect(blockLast(150, 157, 2, 6)).toBe(150 + 17 + 2 - 1);
+        expect(blockLast(0, 157, 0, 6)).toBe(27);
+        expect(blockLast(0, 157, 0, 1)).toBe(Number.POSITIVE_INFINITY);
+    });
+
+    test('placeSlot takes the first free slot, else the block’s last one', () => {
+        const taken = new Set([10, 11]);
+        expect(placeSlot(9, 29, s => taken.has(s))).toEqual({ slot: 9, full: false });
+        expect(placeSlot(10, 29, s => taken.has(s))).toEqual({ slot: 12, full: false });
+        expect(placeSlot(10, 11, s => taken.has(s))).toEqual({ slot: 11, full: true });
+        // The previous log already went on the block's last slot.
+        expect(placeSlot(30, 29, () => false)).toEqual({ slot: 29, full: true });
+        expect(placeSlot(5, Number.POSITIVE_INFINITY, s => s < 8)).toEqual({ slot: 8, full: false });
+    });
+
+    test('occupied: a fire, or any ground item but ashes', () => {
+        const t = { x: 3230, z: 3218 };
+        expect(occupied(t, [], [])).toBe(false);
+        expect(occupied(t, [{ name: 'Fire', ...t }], [])).toBe(true);
+        expect(occupied(t, [{ name: 'Daisies', ...t }, { name: 'Fire', x: 3231, z: 3218 }], [])).toBe(false);
+        expect(occupied(t, [], [{ name: 'Ashes', ...t }])).toBe(false);
+        expect(occupied(t, [], [{ name: 'Bones', ...t }])).toBe(true);
+        expect(occupied(t, [], [{ name: 'Magic logs', ...t }])).toBe(true);
+    });
+
+    test('FireLedger: a fire counts only if its tile was seen clear first; clearing forgets it', () => {
+        const a = { x: 1, z: 1 };
+        const b = { x: 2, z: 1 };
+        const l = new FireLedger();
+        l.watch(a, true, 10);
+        expect(l.freshSince(a)).toBeNull();
+        l.watch(a, true, 11);
+        expect(l.freshSince(a)).toBeNull();
+        l.watch(b, false, 10);
+        l.watch(b, true, 12);
+        l.watch(b, true, 13);
+        expect(l.freshSince(b)).toBe(12);
+        // Burnt out, then relit on the next lap.
+        l.watch(a, false, 200);
+        l.watch(a, true, 260);
+        expect(l.freshSince(a)).toBe(260);
+        l.watch(b, false, 300);
+        expect(l.freshSince(b)).toBeNull();
+    });
+
+    test('advanceFresh moves over consecutive found fires, searching on from the last one’s slot', () => {
+        // Log 0 burns at slot 0; log 1 was pushed to slot 2; log 2 has no fire yet.
+        const fires = new Map([[0, 0], [2, 1]]);
+        const seenFrom: number[] = [];
+        const fireAt = (i: number, from: number) => {
+            seenFrom.push(from);
+            for (const [s, log] of fires) if (log === i && s >= from) return s;
+            return null;
+        };
+        const r = advanceFresh(NO_PROGRESS, -1, 157, fireAt, 50);
+        expect(r).toEqual({ progress: { lit: 2, litTick: 50 }, litSlot: 2 });
+        expect(seenFrom).toEqual([0, 1, 3]);
+        const same = advanceFresh(r.progress, r.litSlot, 157, () => null, 51);
+        expect(same.progress).toBe(r.progress);
+        expect(advanceFresh({ lit: 157, litTick: 9 }, 160, 157, () => 0, 52).progress.lit).toBe(157);
+    });
+});
+
+describe('restock held: preloaded droppers', () => {
+    test('parts 6: each part holds its one inventory and never restocks', () => {
+        for (let part = 0; part < 6; part++) {
+            const o = fmRowOptions({ parts: 6, part, restock: { kind: 'held' } }, {});
+            expect([o.restock.kind, o.restockTicks]).toEqual(['held', 0]);
+        }
+        // The loads rs/228 sends to the droppers, by part.
+        const own = (part: number) => ownLogs(157, part, 6);
+        expect(loadFor(plan, own(0), 0).map(l => [l.tier.name, l.n])).toEqual([['Logs', 2], ['Oak logs', 4], ['Willow logs', 7], ['Maple logs', 13], ['Yew logs', 2]]);
+        expect(loadFor(plan, own(1), 0).map(l => [l.tier.name, l.n])).toEqual([['Yew logs', 22], ['Magic logs', 6]]);
+        expect(loadFor(plan, own(5), 0).map(l => [l.tier.name, l.n])).toEqual([['Magic logs', 17]]);
+    });
+
+    test('refuses a part that owns more than one inventory, or none', () => {
+        expect(() => fmRowOptions({ parts: 2, restock: { kind: 'held' } }, {})).toThrow(/owns 3/);
+        expect(() => fmRowOptions({ restock: { kind: 'held' } }, {})).toThrow(/parts must be 6/);
+        expect(() => fmRowOptions({ parts: 7, part: 6, restock: { kind: 'held' } }, {})).toThrow(/owns 0/);
+        expect(() => fmRowOptions({ restock: { kind: 'mule' } }, {})).toThrow(/held/);
+    });
+});
+
+describe('cueAt written: staggered droppers count from when the cue was written', () => {
+    test('cueTick: one tick per tickMs back from the tick it was seen, never ahead of it', () => {
+        expect(cueTick(5000, 1_000_000, 1_000_000 - 30_000, 300)).toBe(5000 - 100);
+        expect(cueTick(5000, 1_000_000, 1_000_000 - 30_000, 600)).toBe(5000 - 50);
+        expect(cueTick(5000, 1_000_000, 1_000_000 - 140, 300)).toBe(5000);
+        expect(cueTick(5000, 1_000_000, 1_000_000 - 160, 300)).toBe(4999);
+        expect(cueTick(5000, 1_000_000, 1_000_000 + 9_000, 300)).toBe(5000);
+    });
+
+    test('options: seen by default, written only with start cue, tickMs from wait.ts unless given', () => {
+        expect(fmRowOptions({}, {}).cueAt).toBe('seen');
+        expect(fmRowOptions({ start: 'cue', cueAt: 'written' }, { NODE_TICKRATE: '300' }).tickMs).toBe(300);
+        expect(fmRowOptions({ start: 'cue', cueAt: 'written' }, { NODE_TICKRATE: '600', SPEEDRUN_TICK_MS: '420' }).tickMs).toBe(420);
+        expect(fmRowOptions({ start: 'cue', cueAt: 'written', tickMs: 600 }, { NODE_TICKRATE: '300' }).tickMs).toBe(600);
+        expect(() => fmRowOptions({ cueAt: 'written' }, {})).toThrow(/start 'cue'/);
+        expect(() => fmRowOptions({ start: 'cue', cueAt: 'later' }, {})).toThrow(/cueAt/);
+        expect(() => fmRowOptions({ start: 'cue', cueAt: 'written', tickMs: 0 }, {})).toThrow(/tickMs/);
+    });
+
+    test('catchUp: a late dropper takes the frontier from the highest burning pair SCORED can have reached', () => {
+        const burning = new Set([30, 31, 40, 60, 61]);
+        const fireSlot = (i: number) => (burning.has(i) ? i : null);
+        // At 200, SCORED can be at most 49 logs on; 60-61 are someone else's, 40 alone is not a pair.
+        const c = catchUp(157, fireSlot, 0, 200)!;
+        expect(c).toEqual({ progress: { lit: 32, litTick: 196 }, litSlot: 31 });
+        // The next log is wanted from the next tick on, not one roll per log after log 0.
+        expect(needTick(c.progress, 32, 200, 0)).toBe(196);
+        expect(needTick(c.progress, 33, 200, 0)).toBe(201);
+        expect(catchUp(157, fireSlot, 0, 100)).toBeNull();
+        expect(catchUp(157, i => (i === 0 ? 0 : null), 0, 4)).toEqual({ progress: { lit: 1, litTick: 0 }, litSlot: 0 });
+        expect(catchUp(157, i => (i === 0 ? 0 : null), 0, 3)).toBeNull();
     });
 });
