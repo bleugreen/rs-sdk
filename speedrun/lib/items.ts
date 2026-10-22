@@ -1,6 +1,42 @@
 // Item matching shared by the bank and trade planners.
 
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
 export type ItemPattern = string | RegExp | number;
+
+/** Every obj's id and debug name, one `id=name` line each. */
+export const OBJ_PACK = join(import.meta.dir, '../../server/content/pack/obj.pack');
+
+let objs: { byId: Map<number, string>; byName: Map<string, number> } | null = null;
+
+function objPack() {
+    if (!objs) {
+        objs = { byId: new Map(), byName: new Map() };
+        for (const line of readFileSync(OBJ_PACK, 'utf8').split('\n')) {
+            const m = line.match(/^(\d+)=(\S+)$/);
+            if (!m) continue;
+            objs.byId.set(Number(m[1]), m[2]!);
+            objs.byName.set(m[2]!, Number(m[1]));
+        }
+    }
+    return objs;
+}
+
+/** The obj's debug name (`guamvial`), or undefined when obj.pack has no such id. */
+export function objName(id: number): string | undefined {
+    return objPack().byId.get(id);
+}
+
+/**
+ * The id of the obj's banknote, or undefined when it has none. The packer links obj X to the obj
+ * named `cert_X` (its certlink, server/engine/tools/pack/config/ObjConfig.ts), so the note is read
+ * from obj.pack by that name rather than assumed to be the next id.
+ */
+export function noteOf(id: number): number | undefined {
+    const name = objName(id);
+    return name === undefined || name.startsWith('cert_') ? undefined : objPack().byName.get(`cert_${name}`);
+}
 
 /**
  * A number matches the item id; a string is a case-insensitive substring of

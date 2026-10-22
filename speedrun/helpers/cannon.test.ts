@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { InventoryItem, TradeItem } from '../../sdk/types';
-import { offerSatisfies } from '../../sdk/trade-helpers';
-import { planOffers } from '../lib/trade';
+import { offerSatisfies, planOffers } from '../lib/trade';
 import { nameHash } from './altar-cue';
 import { holdsLoad, interfaceText, ironOreToBuy, isWest, loadSpecs, loadWant, nextWork, parseOptions, railingDamage, serveOptions, serveResume, stageFromJournal, type Holdings } from './cannon';
 

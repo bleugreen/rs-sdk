@@ -22,11 +22,10 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
-import { offerSatisfies } from '../../sdk/trade-helpers';
 import type { BankItem, BotWorldState, GameMessage, InventoryItem, TradeItem, TradeItemSpec } from '../../sdk/types';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import { travelTo } from '../lib/toll-gate';
-import { ANY_OFFER, clickBack, decideTradeClick, DROPPED_TICKS, give, newClickCtx, openTrade, sameName, sendTradeClick, type ClickCtx } from '../lib/trade';
+import { ANY_OFFER, clickBack, decideTradeClick, DROPPED_TICKS, give, newClickCtx, offerSatisfies, openTrade, sameName, sendTradeClick, type ClickCtx } from '../lib/trade';
 import { tickMs } from '../lib/wait';
 import { runStandalone, type Role, type RoleContext } from './role';
 
