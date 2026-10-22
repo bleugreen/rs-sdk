@@ -38,7 +38,8 @@ import { readCue } from '../helpers/altar-cue';
 import { programStatus } from '../lib/programs';
 import { Observation, resolveResume, runResumable, sessionLink } from '../runner/resume';
 import { runSteps } from '../runner/step';
-import { onTutorialIsland, tutorialSkip } from '../skills/start';
+import { onTutorialIsland } from '../lib/world';
+import { tutorialSkip } from '../skills/start';
 import { ALTAR_ROOMS, altarStep, craftXp, findAltar, rcLevel, rcXp, readLauncherFile, xpAfterCrafts, type AltarName, type Band, type ScheduleMode } from '../skills/runecraft';
 
 const scored = process.argv[2];
