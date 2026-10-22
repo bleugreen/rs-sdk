@@ -11,22 +11,45 @@ import { runSteps, type RunnerSession } from '../runner/step';
 import {
     bodiesTo,
     CRAFTING_99_XP,
-    CRAFTING_HANDOFF_XP,
+    craftingHandoffXp,
+    gemBaseXp,
+    GEM_ROW,
     HANDOFF_BANKED,
     HARD_LEATHER_BODY,
     ITEM,
+    loadStagedGems,
     LOAD,
     plannedBodies,
     preconditions,
     skill,
+    stagedGemCounts,
+    stagedGemsFrom,
     STEP_NAME,
     steps,
     supplyFor,
     threadFor,
-    WINDOW_GEM_BASE_XP,
-    XP_PER_BODY
+    XP_PER_BODY,
+    type StagedGem
 } from './crafting';
 import { HERB_NOTES, VARROCK_WEST } from './herblore';
+
+/** rs/158's full window mix, by name as H21d's row writes it: 107 gems, 6,567.5 base. */
+const FULL: StagedGem[] = [
+    { name: 'uncut sapphire', count: 62 },
+    { name: 'uncut emerald', count: 23 },
+    { name: 'uncut ruby', count: 20 },
+    { name: 'uncut diamond', count: 2 }
+];
+/** rs/41's short mix, by id: 6 sapphire, 5 emerald and 3 ruby fewer (93 gems, 892.5 base less). */
+const SHORT: StagedGem[] = [
+    { name: 'uncut sapphire', id: 1623, count: 56 },
+    { name: 'uncut emerald', id: 1621, count: 18 },
+    { name: 'uncut ruby', id: 1619, count: 17 },
+    { name: 'uncut diamond', id: 1617, count: 2 }
+];
+/** The tests' own staged list, so a change to H21d's row does not move their numbers. */
+const O = { stagedGems: FULL };
+const HANDOFF = craftingHandoffXp(FULL);
 
 const ROOT = join(import.meta.dir, '../..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
@@ -95,35 +118,117 @@ describe('the content', () => {
 // ---------------------------------------------------------------- the stop and the supply
 
 describe('the hand-off and the supply', () => {
-    test('CRAFTING_HANDOFF_XP: 99 less the windows gems, Crafting 96', () => {
-        expect(WINDOW_GEM_BASE_XP).toBe(6567.5);
-        expect(CRAFTING_HANDOFF_XP).toBe(xpForLevel(99) - 6567.5 * 25);
-        expect(CRAFTING_HANDOFF_XP).toBe(834270.5);
-        expect(levelForXp(CRAFTING_HANDOFF_XP)).toBe(96);
+    test('the full mix: 6,567.5 base, the hand-off 834,270.5, Crafting 96', () => {
+        expect(stagedGemCounts(FULL)).toEqual({ sapphire: 62, emerald: 23, ruby: 20, diamond: 2 });
+        expect(gemBaseXp(stagedGemCounts(FULL) as never)).toBe(6567.5);
+        expect(HANDOFF).toBe(xpForLevel(99) - 6567.5 * 25);
+        expect(HANDOFF).toBe(834270.5);
+        expect(levelForXp(HANDOFF)).toBe(96);
         expect(CRAFTING_99_XP).toBe(xpForLevel(99));
         expect(XP_PER_BODY).toBe(875);
     });
 
-    test('per attempt from 45 (Goblin Diplomacy): 928 bodies, 954 leather, 187 thread, a needle', () => {
+    test('the short mix: 892.5 base fewer moves the stop up 22,312.5 xp, still Crafting 96', () => {
+        expect(gemBaseXp(stagedGemCounts(SHORT) as never)).toBe(6567.5 - 892.5);
+        expect(craftingHandoffXp(SHORT)).toBe(xpForLevel(99) - 5675 * 25);
+        expect(craftingHandoffXp(SHORT)).toBe(856583);
+        expect(craftingHandoffXp(SHORT) - HANDOFF).toBe(892.5 * 25);
+        expect(levelForXp(craftingHandoffXp(SHORT))).toBe(96);
+    });
+
+    test('an empty mix: Crafting goes to 99 itself', () => {
+        expect(craftingHandoffXp([])).toBe(CRAFTING_99_XP);
+        expect(plannedBodies(world(), { stagedGems: [] })).toBe(1116);
+        expect(craftingHandoffXp([{ name: 'uncut ruby', count: 0 }])).toBe(CRAFTING_99_XP);
+    });
+
+    test('by name or by id, any case; two stacks of one gem add', () => {
+        expect(craftingHandoffXp([{ name: 'Uncut Diamond', count: 1 }])).toBe(CRAFTING_99_XP - 107.5 * 25);
+        expect(craftingHandoffXp([{ id: 1617, count: 1 }])).toBe(CRAFTING_99_XP - 107.5 * 25);
+        // with an id the name is only a label (the ledger's rule)
+        expect(craftingHandoffXp([{ name: 'gems', id: 1623, count: 2 }])).toBe(CRAFTING_99_XP - 100 * 25);
+        expect(stagedGemCounts([{ name: 'uncut sapphire', count: 30 }, { id: 1623, count: 32 }])).toMatchObject({ sapphire: 62 });
+    });
+
+    test('an unknown gem, a noted id or a count not whole: refused with the reason, in craftingHandoffXp and the precondition', () => {
+        const known = 'uncut sapphire @1623, uncut emerald @1621, uncut ruby @1619, uncut diamond @1617';
+        expect(() => craftingHandoffXp([...FULL, { name: 'uncut dragonstone', id: 1631, count: 1 }])).toThrow(`uncut dragonstone @1631 is not an uncut gem the windows cut (${known})`);
+        expect(() => craftingHandoffXp([{ name: 'uncut opal', count: 3 }])).toThrow('uncut opal is not an uncut gem the windows cut');
+        // the ledger's @ID is the unnoted id: a cert id is not a gem
+        expect(stagedGemCounts([{ name: 'uncut sapphire', id: 1624, count: 62 }])).toMatch(/^uncut sapphire @1624 is not an uncut gem/);
+        expect(stagedGemCounts([{ name: 'uncut ruby', count: null }])).toBe('uncut ruby: count ? is not a whole number of gems');
+        expect(stagedGemCounts([{ name: 'uncut ruby', count: 2.5 }])).toBe('uncut ruby: count 2.5 is not a whole number of gems');
+        expect(preconditions(world(), { stagedGems: [{ id: 1631, count: 1 }] })).toBe(`staged gems (H21d): gem @1631 is not an uncut gem the windows cut (${known})`);
+        // an explicit untilXp needs no gems
+        expect(preconditions(world({ inventory: [] }), { stagedGems: [{ id: 1631, count: 1 }], untilXp: CRAFTING_99_XP })).toBe(true);
+        // the step refuses to run, and is neither done nor in progress
+        const [s] = steps({ stagedGems: [{ id: 1631, count: 1 }] });
+        expect(s!.done!(new Observation(world({ xp: CRAFTING_99_XP, inventory: [] })), {})).toBe(false);
+    });
+
+    test('per attempt from 45 (Goblin Diplomacy): the full mix 928 bodies, 954 leather, 187 thread; the short mix 953, 979, 192', () => {
         expect(levelForXp(950 * 25)).toBe(45);
-        expect(supplyFor(xpForLevel(45))).toEqual({ bodies: 928, hardLeather: 954, thread: 187, needle: 1 });
-        expect(supplyFor(xpForLevel(42)).bodies).toBe(933);
+        expect(supplyFor(xpForLevel(45), HANDOFF)).toEqual({ bodies: 928, hardLeather: 954, thread: 187, needle: 1 });
+        expect(supplyFor(xpForLevel(42), HANDOFF).bodies).toBe(933);
+        expect(supplyFor(xpForLevel(45), craftingHandoffXp(SHORT))).toEqual({ bodies: 953, hardLeather: 979, thread: 192, needle: 1 });
         expect(supplyFor(xpForLevel(45), CRAFTING_99_XP).bodies).toBe(1116);
     });
 
     test('the stop at untilXp and not past it: the body that reaches it is the last', () => {
         const x = xpForLevel(45);
-        const n = bodiesTo(x);
-        expect(x + n * XP_PER_BODY).toBeGreaterThanOrEqual(CRAFTING_HANDOFF_XP);
-        expect(x + (n - 1) * XP_PER_BODY).toBeLessThan(CRAFTING_HANDOFF_XP);
-        expect(bodiesTo(CRAFTING_HANDOFF_XP)).toBe(0);
-        expect(bodiesTo(CRAFTING_HANDOFF_XP + 1000)).toBe(0);
-        expect(bodiesTo(CRAFTING_HANDOFF_XP - 875)).toBe(1);
-        expect(bodiesTo(CRAFTING_HANDOFF_XP - 875.5)).toBe(2);
+        const n = bodiesTo(x, HANDOFF);
+        expect(x + n * XP_PER_BODY).toBeGreaterThanOrEqual(HANDOFF);
+        expect(x + (n - 1) * XP_PER_BODY).toBeLessThan(HANDOFF);
+        expect(bodiesTo(HANDOFF, HANDOFF)).toBe(0);
+        expect(bodiesTo(HANDOFF + 1000, HANDOFF)).toBe(0);
+        expect(bodiesTo(HANDOFF - 875, HANDOFF)).toBe(1);
+        expect(bodiesTo(HANDOFF - 875.5, HANDOFF)).toBe(2);
     });
 
     test('threadFor: the worst-case wear (one with the first body, then every 5th)', () => {
         expect([0, 1, 2, 6, 7, 26, 27, 928].map(threadFor)).toEqual([0, 1, 2, 2, 3, 6, 7, 187]);
+    });
+});
+
+// ---------------------------------------------------------------- H21d's row
+
+describe('the staged gems from the inventory ledger', () => {
+    const ledger = (h21d: string) =>
+        [
+            '## Inventory ledger',
+            '',
+            '| row | in | out | equip | needAtStart | source |',
+            '|---|---|---|---|---|---|',
+            '| H21c | unfermented wine x520 [n] | - | - | 1 | (r) |',
+            `| H21d | ${h21d} | - | - | 17 | (r) |`,
+            ''
+        ].join('\n');
+
+    test("H21d's gem entries, by name as the manifest writes them, and nothing else of the row", () => {
+        const row = 'chisel x1 [u]; uncut sapphire x62 [n]; uncut emerald x23 [n]; uncut ruby x20 [n]; uncut diamond x2 [n] (the 107); hard leather x954 [n]; needle x1 [u]; thread x187 [s]; guam potion (unf) @91 x358 [n]';
+        const gems = stagedGemsFrom(ledger(row));
+        expect(gems).toEqual(FULL);
+        expect(craftingHandoffXp(gems)).toBe(834270.5);
+    });
+
+    test('by id (rs/365), an unknown uncut gem kept so that it is refused, the row or the table missing', () => {
+        expect(stagedGemsFrom(ledger('uncut ruby @1619 x17 [n]; needle x1 [u]'))).toEqual([{ name: 'uncut ruby', id: 1619, count: 17 }]);
+        const opal = stagedGemsFrom(ledger('uncut sapphire x62 [n]; uncut opal x3 [n]'));
+        expect(opal).toHaveLength(2);
+        expect(() => craftingHandoffXp(opal)).toThrow('uncut opal is not an uncut gem the windows cut');
+        expect(stagedGemsFrom(ledger('hard leather x954 [n]'))).toEqual([]);
+        expect(() => stagedGemsFrom(ledger('x').replace('| H21d |', '| H21x |'))).toThrow('the inventory ledger has no row H21d');
+        expect(() => stagedGemsFrom('no table')).toThrow(/^the inventory ledger does not parse/);
+    });
+
+    test("STEP-MANIFEST.md's own H21d row reads as known gems (the default the steps take)", () => {
+        expect(GEM_ROW).toBe('H21d');
+        const gems = loadStagedGems();
+        expect(gems.length).toBeGreaterThan(0);
+        expect(typeof stagedGemCounts(gems)).toBe('object');
+        expect(levelForXp(craftingHandoffXp(gems))).toBeGreaterThanOrEqual(90);
+        const [s] = steps();
+        expect(s!.done!(new Observation(world({ xp: craftingHandoffXp(gems), inventory: [] })), {})).toBe(true);
     });
 });
 
