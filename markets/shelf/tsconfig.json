@@ -1,5 +1,6 @@
 {
   // The root tsconfig's include does not cover markets/: `bunx tsc -p markets/shelf` typechecks the reader.
   "extends": "../../tsconfig.json",
+  "compilerOptions": { "types": ["bun"], "typeRoots": ["../../node_modules/@types"] },
   "include": ["**/*.ts"]
 }
