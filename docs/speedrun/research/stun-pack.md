@@ -603,9 +603,12 @@ trades, only 2-6 of the 13-19 top-ups were requested for ore.
 
 ### Open
 
-- The real courier (rs/41's bone-giver on-request) sizes its load from the module's top-up ask
-  (rs/330's `topUpAsk`, landing as its own snapshot, rs/392). The ore has to go into that ask before
-  this can run with the real courier. The lab here used the stand-in's `superheatLoad` path.
+- The ore is in the module's top-up ask: with superheat on, `topUpAsk` (rs/330's, on main through
+  rs/392) fills the bone slots from `superheatOre`, the one sizing `superheatLoad` also writes, and
+  `TopUpAsker` records a load that leaves fewer than `IRON_LOAD_FLOOR` (8, rs/158's floor) iron ore
+  as a shortfall on the detail row. The real courier (rs/41's bone-giver on-request) offers that ask
+  as written, but it does not carry ore yet, so `measure-thieving.ts --courier=role --superheat`
+  refuses to start. The lab above ran with the stand-in, which offers through the same `askOffer`.
 - Staging is outside this change: the bones moved to S07 (~210), Load 0's ore and ~160 nature runes,
   and the courier's iron stock. They are for rs/158 and rs/41. run.ts is untouched, and the row in
   force stays on full Charge.
