@@ -6,11 +6,15 @@
 //    off, then on. Both clients send the MOVE_OPCLICK route with the ctrl-run
 //    flag (lite movement.ts tryMoveTo, browser Client.ts tryMove), which sets
 //    the engine's tempRun, so this approach runs either way.
-// B. Engine-driven: the engine's interaction test `::~itest 25`
-//    (cheat_interactions.rs2) adds a tree 10 tiles away and calls p_oploc(1).
-//    No client route, no tempRun: the toggle alone sets the pace. The same holds
-//    for any engine re-path (an NPC target after the client's route runs out)
-//    once the player has stood still for a tick, and for scripted p_walk.
+// B. Engine-driven: the engine's interaction test `::~itest 27`
+//    (cheat_interactions.rs2) adds a goblin 10 tiles away and calls
+//    p_opnpc(2). The engine paths to an NPC (or player) target itself
+//    (Player.ts pathToPathingTarget); with no client route there is no tempRun,
+//    so the toggle alone sets the pace. The same holds for an engine re-path
+//    after the player stood still for a tick (tempRun clears on any tick
+//    without a step) and for scripted p_walk. A loc target has no such path:
+//    with clientRoutefinder on, the engine never paths to a loc itself
+//    (`::~itest 25`, p_oploc on a tree 10 tiles away, does not move at all).
 //
 // Reported per attempt: ticks from the click's tick to the tick of the last
 // step, the tiles stepped (summed per tick, so detours count), and the ticks
@@ -42,7 +46,7 @@ if (onTutorialIsland(sdk.getState()?.player)) {
     await ensureRunOn(sdk);
 }
 
-interface Approach { part: 'A client route' | 'B engine p_oploc'; mode: 'walk' | 'run'; ticks: number; tiles: number; stepTicks: number; toggle: boolean | null }
+interface Approach { part: 'A client route' | 'B engine p_opnpc'; mode: 'walk' | 'run'; ticks: number; tiles: number; stepTicks: number; toggle: boolean | null }
 
 /**
  * Fire `go`, then follow the player tick by tick until it has stepped and then
@@ -111,16 +115,16 @@ for (let i = 0; i < n; i++) {
     }
 }
 
-// B. Engine-driven p_oploc (the tree is deleted 5 ticks after it is added, so
-// the walk is cut short; the pace over the steps taken is what counts).
+// B. Engine-driven p_opnpc (the goblin is deleted 5 ticks after it is added,
+// so a walk is cut short; the pace over the steps taken is what counts).
 for (let i = 0; i < n; i++) {
     for (const running of [false, true]) {
-        record(await follow('B engine p_oploc', running, () => cheat(sdk, '~itest 25')));
+        record(await follow('B engine p_opnpc', running, () => cheat(sdk, '~itest 27')));
         await waitTicks(sdk, 3);
     }
 }
 
-for (const part of ['A client route', 'B engine p_oploc'] as const) {
+for (const part of ['A client route', 'B engine p_opnpc'] as const) {
     for (const mode of ['walk', 'run'] as const) {
         const m = rows.filter(r => r.part === part && r.mode === mode);
         const sum = (f: (r: Approach) => number) => m.reduce((s, r) => s + f(r), 0);
