@@ -158,7 +158,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 7 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | on main, 22552bf4 (#197; rs/231); lab-accepted (1,998 on 78-99; rs/152); gate `measureDrops` 120 explicit (#221) |
 | 8 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,972 | 1,946 | 1,997 (the bow from 70); 2,023-2,211 without the kit | ~265 | overlay | `cannon-kit.ts` (rs/59, on main) | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible); run mode ~0, at most ~9 on S27's melee phase (m/i, rs/196) |
 | 9 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,493 | 1,403 | 1,763 | ~360 | overlay | `quest-grandtree-full.ts` | building (rs/202 under rs/185); **lab: 3 of 3 full A-to-P runs at SCORED's levels** (1,403 / 1,504 / 1,422) |
-| 10 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,192 | 1,192 | ~5,220 | ~4,030 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **on main, 1514f47a (#222; rs/268's snapshot of rs/196's module, rs/186's branch at 0c349da6)**, the run-commit floor; twin demo pending; **lab-accepted (rs/196, module 3f02f336, relay path (lab): nature at 44 tuned 30/30 at 29 x 7, robust 30/30 at 29 x 8; S06 7/7 at 6 x 7, 58)**; the tuned nature run confirmed on the direct path, 30/30 at 29 x 7 (rs/196, 3b161c12); pending: the auto rule's 'handled before SCORED' field (entry 9); cycle: on main, 23ea9f77 (#178) |
+| 10 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,192 | 1,192 | ~5,220 | ~4,030 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **on main, 1514f47a (#222; rs/268's snapshot of rs/196's module, rs/186's branch at 0c349da6)**, the run-commit floor; **lab-accepted, with a partial demo confirmation** (9/9 tuned on the real server, n small; the 20-cycle demo acceptance pending); **lab-accepted (rs/196, module 3f02f336, relay path (lab): nature at 44 tuned 30/30 at 29 x 7, robust 30/30 at 29 x 8; S06 7/7 at 6 x 7, 58)**; the tuned nature run confirmed on the direct path, 30/30 at 29 x 7 (rs/196, 3b161c12); pending: the auto rule's 'handled before SCORED' field (entry 9); cycle: on main, 23ea9f77 (#178) |
 | 11 | 10 | Smithing | `speedrun/skills/smithing.ts` | S25a | 1,065 | 1,028 | 1,330 | ~302 | overlay | `smithing-trade.ts` | building (rs/186, held: tenet 15) |
 | 12 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 969 | 908 | 1,079 | ~171 | overlay | `quest-dragon-*.ts` | building (rs/258 under rs/185); run mode: no `p_walk`, re-paths at ten moving NPCs and the six maze monsters, lever ~0 (r, rs/258) |
 | 13 | 12 | Dwarf Cannon | `speedrun/quests/dwarf-cannon.ts` | S13 | 855 | 799 | 957 | ~158 | overlay | `quest-mcannon-*.ts` | building (rs/257 under rs/185); run mode: no `p_walk`, re-paths at Lawgof (A, C, E, H, J, L) and Nulodion (K), lever ~0 (r, rs/257) |
@@ -246,7 +246,9 @@ are filed under main and held until tenet 15 is answered.
   (6e86a656, #163). rs/186
   plugs Fletching into rs/154's module, and entry 32's standalone module is rs/186's.
 - **9.** On main, 1514f47a (#222): rs/268's snapshot of rs/196's lab-accepted module (rs/186's
-  branch at 0c349da6), the run-commit floor; the twin demo is still to come. Lab-accepted (rs/196): S06 58 in two runs; 30-cycle runs at 7 on the body and nature
+  branch at 0c349da6); lab-accepted, with a partial demo confirmation (9 of 9 tuned turns on the
+  real server, rs/196; the 20-cycle demo acceptance pending a retry once the givers' banks are
+  topped up). Lab-accepted (rs/196): S06 58 in two runs; 30-cycle runs at 7 on the body and nature
   altars with givers first, robust at 8 in either login order; resume and fault recovery measured
   (entry 9). rs/186 adopts rs/131's in-page cycle; the givers are rs/163's (helper table). Pending:
   the auto rule's switch to a 'handled before SCORED' field (entry 9). Its first lab runs used rs/131's
@@ -298,7 +300,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 | Direct gate clean logout | the gate probe | on main, 9d26aa87 (#142), d83f2e86 (#152) | |
 | `relog(session)` (in page by default, `RelogResult.tickBase`/`via`) and the navigated relog's socket-close fix | 0 (restarts), 29 (the wine relogs, R17) | **on main, efdbe2e2 (#164; rs/174)**, inside the run-commit floor; lab-accepted on the twin and after a lab engine kill | first SDK state at login + 1 in page or navigated, the bank at + 3 to + 6 (m); an in-page attempt that does not get in is retried by navigating, at the same ticks; the client's second-login hang (rs/183) is on main, #155 |
 | **Pickpocket stun-window actions** | 6 (S18's stun pack), 32 | **on main, 6e86a656 (#163; rs/132); lab-accepted (bury, charge, arrows; a3646a67)** | 300 rolls each at 300 ms on bgsrv-mac: no Thieving cost in the page (RUN-ORDER.md O8). The stun pack failing (plain pickpocket, Charge and Fletching standalone, ~200 more bones in S07, **+~120**, RUN-ORDER.md sensitivity table) is now a demo risk only. The opt-in 'idle while an interface is open' mode is on main, `idleOnInterface: true` (declared in b6950915), with top-ups in the program as a `player` stun action (entry 6) |
-| **In-page Runecraft cycle** (`rc-cycle`) | 9 (S06, S21) | **on main, 23ea9f77 (#178; rs/131); lab-measured**, inside the run-commit floor (entry 0) | 7.00 ticks per craft with the givers handled first and 8.00 on the robust fallback, 30 crafts each, no lost trades (m, lab, rs/131); its protocol shared with rs/163's givers. Without the tuned cycle: the robust 8-tick cycle **+168**, or the stock reacting cycle, measured at **31 ticks a craft** on the run commit today (rs/196), **+~4,030** on the nature altar's crafts (+~4,820 at the body altar's), if the giver is relayed or the program faults (RUN-ORDER.md R12); **9 a cycle** once rs/267's PR (`lib/trade.ts` `openTrade` with the altar giver; not on main) is on main (m, lab, rs/267), +~320 on the nature plan and +~400 on the body plan (i) |
+| **In-page Runecraft cycle** (`rc-cycle`) | 9 (S06, S21) | **on main, 23ea9f77 (#178; rs/131); lab-measured**, inside the run-commit floor (entry 0) | 7.00 ticks per craft with the givers handled first and 8.00 on the robust fallback, 30 crafts each, no lost trades (m, lab, rs/131); its protocol shared with rs/163's givers. Without the tuned cycle: the robust 8-tick cycle **+168**, or the stock reacting cycle, measured at **31 ticks a craft** on the run commit today (rs/196), **+~4,030** on the nature altar's crafts (+~4,820 at the body altar's), if the giver is relayed or the program faults (RUN-ORDER.md R12); **9 a cycle** once 3042ae95's change reaches main (rs/267's `lib/trade.ts` `openTrade` with the altar giver: a net patch on rs/41's mission branch, not on main, no PR yet) (m, lab, rs/267), +~320 on the nature plan and +~400 on the body plan (i) |
 | Direct-path altar giver | 9 (S06, S21) | building (rs/163) | PR #144, open; on rs/117's launcher and rs/141's givers |
 
 ## 2. The run chain
@@ -1194,7 +1196,16 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   in before SCORED (`helpersReady`); for S21, the roster and the talisman keeper at the ruins
   (`research/supply-fallbacks.md` §7). Otherwise use **robust**. **The step checks that SCORED's
   talisman actually dropped on entry** (rs/196): a silently ignored drop leaves 26 free slots and
-  fails every later trade on every rung; it caused the earlier unexplained fresh-boot run.
+  fails every later trade on every rung; it caused the earlier unexplained fresh-boot run. In 1 of 2
+  body-altar lab runs (rs/267) the check stopped S21's entry ('the body talisman is still held
+  after 3 drops'). rs/196 diagnosed it from the server as **a lab artefact**: the account had been
+  staged off Tutorial Island by a staff teleport, which leaves every side tab hidden (`tutorial.rs2`
+  `start_tutorial`), so the inventory click was ignored. It cannot occur after S00, whose skip opens
+  every tab: with the lab staging through S00, 10 of 10 fresh-account runs (5 body, 5 nature)
+  dropped the talisman first try (the lab script fixed at 77013df9 on the mission branch), and in the
+  twin demo (04:26Z, the nature altar) it dropped first try (`runecraft.md` section 9 at 6f517e1d on
+  the mission branch). The module keeps the refusal as a guard, and its message names the cause (the
+  lab-staging rule, "How to read an entry").
 - **S21's altar in force (main, 15:17 PDT): the body altar.** With 0 nature talismans held, S21 runs
   at the body altar, ruins (3052,3444) south of Edgeville, with 22 givers on 23 body talismans and no
   keeper (m, lab, rs/163, 16:17 PDT: a 139-142-tick restock round trip from Edgeville bank, N =
@@ -1218,11 +1229,11 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   rs/196: 4 runs of 9 crafts each after two forced program faults; every reacting receive took
   exactly 30 except the first, which looks like the giver's stock window, rs/163 looking at it): S06
   ~220 and S21 ~5,000 at the nature altar's 161 crafts, ~6,000 at the body altar's 194, the plan in
-  force (i; a sensitivity, not a section 7 line). **Once rs/267's PR (`lib/trade.ts` `openTrade` with the altar giver; not on main) is on main the stock rung is 9 a
+  force (i; a sensitivity, not a section 7 line). **Once 3042ae95's change reaches main (rs/267's `lib/trade.ts` `openTrade` with the altar giver: a net patch on rs/41's mission branch, not on main, no PR yet) the stock rung is 9 a
   cycle** (m, lab, 300 ms, nature 44, rs/267: 8 of 8 gaps at 9; each stock trade 8 ticks from SCORED's
   first click, the rung's first 5), so the whole step on stock is ~1,512 for S06 + S21 on the nature
-  plan (161 x 9 + 7 x 9) and ~1,809 on the body plan in force (194 x 9 + 7 x 9) (i); the 31-a-cycle
-  figures apply until the PR merges (pending for the floor, entry 0). The rungs: tuned 7 (in force),
+  plan (161 x 9 + 7 x 9) and ~1,809 on the body plan in force (194 x 9 + 7 x 9) (i); **the body altar measured at the same 9 a cycle** (m, lab, bgsrv-mac, 300 ms, Runecraft 44, `runecraft-accept.ts --altar=body --cycles=12 --junk-after=3 --junk-clear-stock --path=direct`, three direct-path givers on the body room's tiles, rs/267's tree 915e2958 on ecf82f31: stock gaps 8 x 9, the first stock trade 5 then 8 x 8, step 181, 12 of 12 trades given), so the body plan's figure rests on a measured body rung; the 31-a-cycle
+  figures apply until 3042ae95's change is on main (pending for the floor, entry 0). The rungs: tuned 7 (in force),
   robust 8 (+1 a craft), stock 31 today and 9 with rs/267.
 - **Lab (rs/196, RUN-ORDER.md RCM; relay path (lab), every run below):** auto with givers first chose tuned (29 x 7, step 217 on nature
   and 215 on body); robust ran 29 x 8 in either login order (step 247); auto with SCORED first chose
@@ -1239,7 +1250,14 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   the numbers stand. The first direct-path figure (m, lab, bgsrv-mac, 300 ms, rs/196's mission
   branch at 3b161c12, the launcher logging `direct` for all 3 givers): nature 44, auto with givers
   first chose tuned, **30/30 crafts at 29 x 7, step 218, first craft 7**, identical to the relay
-  figure. The twin demo on the real server is still to come. rs/131's processing-order runs
+  figure. **Partial demo confirmation** (rs/196, the real server, rs-sdk-demo.fly.dev, from the
+  twin; mission 3b161c12, the launcher logging `direct` for givers h70-h72, co-located and logged in
+  first): **9 of 9 blind turns gave, all tuned and giver-first, in-batch gaps 7 and 7, first craft
+  7** (m, demo). It stopped at 9 cycles on essence supply (the banks held ~180 against 540), so it is
+  not the 20-cycle acceptance. No turn missed with the twin's tick monitor showing 24-52 late ticks
+  a minute (p90 ~200 ms), counts taken before #226's observed-period fix and likely inflated by a
+  slow tick. The 20-cycle demo acceptance waits for a retry once rs/41 banks at least 189 essence
+  per giver. rs/131's processing-order runs
   (RUN-ORDER.md R12) are a separate measurement and keep their labels.
 - **The auto rule and placement:** the module's auto rule picks tuned for givers that logged in
   before SCORED, which is right for the plan of record: every giver on SCORED's machine, one address
@@ -1257,7 +1275,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   confirm and click the altar on T+7, re-anchoring on the observed craft; run.ts's Runecraft step owns
   `cue.json`, the page supplies the beacon.
 - **Mode:** in-page.
-- **Fallback:** robust 8-tick if the processing order is wrong; the stock reacting cycle if the program faults (31 a craft on the run commit today, 9 once rs/267's PR is on main; both measured); SCORED logging out while givers restock only when it pays (~3.6 + 5 per batch, a tab relog with rs/174's fix).
+- **Fallback:** robust 8-tick if the processing order is wrong; the stock reacting cycle if the program faults (31 a craft on the run commit today, 9 once 3042ae95's change reaches main; both measured); SCORED logging out while givers restock only when it pays (~3.6 + 5 per batch, a tab relog with rs/174's fix).
 - **Acceptance, local:** a browser tab for SCORED and a direct-path giver on the lab engine at 300 ms,
   nature altar at 44, 30 cycles. Pass: at least 28 of 30 at **7**, and robust at 8 in either login
   order.
