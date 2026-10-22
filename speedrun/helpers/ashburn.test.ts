@@ -13,7 +13,7 @@ test('Ashburn pins the current address even with an older local known_hosts file
         mkdirSync(bin);
         writeFileSync(join(home, '.rs-fleet', 'known_hosts_ashburn'), 'old-host ssh-ed25519 old-key\n');
         writeFileSync(join(bin, 'ssh'), '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o700 });
-        const env = { ...process.env, HOME: home, TMPDIR: dir, PATH: bin + ':' + process.env.PATH };
+        const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, TMPDIR: dir, PATH: bin + ':' + process.env.PATH };
         delete env.ASHBURN_HOST;
         const script = resolve(import.meta.dir, 'ashburn.sh');
         const result = spawnSync('bash', [script, 'true'], { env, encoding: 'utf8' });
