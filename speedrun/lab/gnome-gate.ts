@@ -19,10 +19,6 @@
 //   module-east  the same from (2489,3389), the route point before the gate (the demo's approach)
 //   converse  the gate clicked through act.ts actConverse (converse.ts's continue path)
 //   advance   the gate clicked, then lib/dialogue.ts advance() page by page
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import puppeteer from 'puppeteer';
 import type { BotWorldState } from '../../sdk/types';
 import { actConverse } from '../lib/act';
 import { converse } from '../lib/converse';
@@ -34,14 +30,13 @@ import { waitUntil } from '../lib/wait';
 import { pos } from '../lib/world';
 import { runSteps } from '../runner/step';
 import { steps as agilitySteps } from '../skills/agility';
+import { launchLabBrowser } from './browser';
 import { arg, botArg, result } from './common';
 import { cheat, leaveTutorial, mustTele, setvar } from './setup';
 
 const bot = botArg();
 const phases = arg('phases', 'load,module,converse,advance').split(',');
 const headless = !process.argv.includes('--headful');
-const webPort = process.env.WEB_PORT ?? '9300';
-const agentPort = process.env.AGENT_PORT ?? '8300';
 
 /** The gate (gnome_areagate, loc 190) and its two entrances (gnome_gate.rs2: loc_coord + (2,-1) and + (2,2)). */
 const GATE = { id: 190, x: 2459, z: 3383 };

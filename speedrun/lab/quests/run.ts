@@ -12,7 +12,9 @@
 // fixed; both runs every repetition in each mode and prints the comparison);
 // --trace=N prints the player every N ticks and on every hp, dialogue or chat
 // change; --launch makes this script launch (and own) the bot's client, which
-// a fixture's relog needs: run lab.sh with LAB_RUNNERS=0 then. Lab only: staff
+// a fixture's relog needs: run lab.sh with LAB_RUNNERS=0 then; --client=browser
+// runs this checkout's page in a headless tab instead (implies --launch; build
+// the bundle first: `bun run build` in server/webclient). Lab only: staff
 // commands. Under the table the report lists each run's `note` rows (what a
 // segment recorded about itself: casts, refusals, free slots), and a quest's
 // `check` can fail a run whose segments passed (a reward's xp).
@@ -34,6 +36,7 @@ import { waitTicks } from '../../lib/wait';
 import { configId } from '../../lib/world';
 import type { DialogueMode, QuestOptions } from '../../quests/segments';
 import { BOUNDARY_STEP, runSteps, type RunnerSession, type Step } from '../../runner/step';
+import { launchLabBrowser } from '../browser';
 import { arg, botArg, result } from '../common';
 import { stats, type Stats } from '../record';
 import { cheat, clearInventory, give, leaveTutorial, mustTele, setStats, tele } from '../setup';
@@ -310,13 +313,17 @@ export function labArgs(): Omit<LabRunOptions, 'dialogue'> & { dialogue: Dialogu
     const from = arg('from', '');
     if (!from) throw new Error('--from=<segment letter or step name> is required');
     const until = arg('until', from);
-    return { from, until, runs: Number(arg('runs', '1')), dialogue, trace: Number(arg('trace', '0')), launch: process.argv.includes('--launch') };
+    const client = arg('client', 'lite');
+    if (client !== 'lite' && client !== 'browser') throw new Error(`--client=${client}: want lite or browser`);
+    return { from, until, runs: Number(arg('runs', '1')), dialogue, trace: Number(arg('trace', '0')), launch: process.argv.includes('--launch') || client === 'browser', client };
 }
 
 /** Open the lab bot's session, run, print the table(s) and a RESULT line, close. */
 export async function labMain<O extends QuestOptions>(quest: LabQuest<O>): Promise<LabReport[]> {
     const a = labArgs();
-    const session = await openSession(botArg(), { launch: a.launch });
+    // --client=browser: this checkout's page in a headless lab tab (lab/browser.ts), launched and owned here
+    const chrome = a.client === 'browser' ? await launchLabBrowser(botArg()) : null;
+    const session = await openSession(botArg(), a.client === 'browser' ? { client: 'browser', launch: true, insecureQueryLogin: true } : { launch: a.launch });
     try {
         // A bot's first login on this engine's saves is on Tutorial Island, where every fixture's tele() refuses.
         await leaveTutorial(session);
@@ -332,5 +339,6 @@ export async function labMain<O extends QuestOptions>(quest: LabQuest<O>): Promi
         return reports;
     } finally {
         await closeSession(session);
+        await chrome?.kill();
     }
 }
