@@ -12,7 +12,7 @@ Code:
 | File | What |
 |---|---|
 | `speedrun/helpers/grapes.ts` | role `grapes`: Cooking Guild camper (`source: guild`), Phoenix Gang hideout camper (`source: phoenix`, joins the gang first) or Goblin Village camper (`source: goblins`), from a fresh account |
-| `speedrun/helpers/jugs.ts` | role `jugs`: buys jugs at the Varrock general store, fills them at the fountain, banks at Varrock east |
+| `speedrun/helpers/jugs.ts` | role `jugs`: buys jugs at a general store (`store`: `varrock`, the default, `falador` or `lumbridge`), fills them at the fountain beside it, banks nearby (Varrock east, Falador west, Draynor) |
 | `speedrun/helpers/wine.ts` | role `wine` (maker), `makeNotedWine`, `giveWine` / `giveWineKit` (giver) |
 | `speedrun/helpers/wine-receive.ts` | the scored account's side: `splitDelivery` (default), `receiveWine` (one firing), the login-timer deadline fallback, `openBankThroughPages` / `drainChat` (level-up pages) |
 | `speedrun/helpers/wine-ferment.ts` | model of the fermentation timer and a Monte Carlo of delivery plans (`bun speedrun/helpers/wine-ferment.ts`) |
@@ -466,7 +466,10 @@ other drop table or quest reward has them.
 
 Jugs are not the constraint. The `jugs` role makes about 120-146 jugs of water
 per hour (cairn_h42: 243 banked in its first 1.9 hours on the demo) from the Varrock general store (stock 2, one restock per 100 ticks,
-1-2 gp each) and the fountain. The guild camper picks up the guild's jug spawn
+1-2 gp each) and the fountain. Falador's and Lumbridge's general stores have the
+same shelf (`stock2=jug_empty,2,100`), and the restock, not the walk, sets the
+rate, so each extra store adds another ~120 an hour: run one account per store
+(`store` in `JUG_STORES`, `jugs.ts`). The guild camper picks up the guild's jug spawn
 and fills it at the sink there. 520 jugs take one account about 4 hours and
 about 700 gp. A faster free source, not built or measured here: Hassan in the
 Al Kharid palace hands a jug of water to anyone whose Prince Ali Rescue is not
@@ -553,7 +556,7 @@ the bank. Every restart was camping within 1 to 17 s and took a grape after it.
 The fleet had sent h46, restarted at the spawn, to the chicken pen (no food,
 membership unknown), and h40 had been trying every tick to walk onto the
 table.
-- `jugs`: `{"target":600}`. It needs coins in its bank (a fresh account sells its
+- `jugs`: `{"target":600}`, plus `"store":"falador"` or `"lumbridge"` for a second or third account. It needs coins in its bank (a fresh account sells its
   starter kit for the first few).
 - `wine`: `{"acceptFrom":"^cairn_(h\\d+|mule\\d)$","receiver":"..."}` on the
   Cooking-35 account at Varrock west bank. It accepts trades of noted grapes and
