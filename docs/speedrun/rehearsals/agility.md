@@ -702,7 +702,7 @@ model's mean carries longer fall stalls than these 13 cost.
 
 | | Ticks |
 |---|---|
-| Playtime by the logs | 1,784 (A-C) + 306 (D) + 4,904 (E) - 1 = **6,994** (E's figure counts its last tick + 1 once) |
+| Playtime by the logs | 1,784 (A-C) + 306 (D) + 4,904 (E) = **6,994** (each session's last tick + 1) |
 | Hiscore, Agility 99 and Overall | **7,111** at 400 ms/tick: **#2**; stunagile's 6,772 is 339 under |
 | Hiscore over the logs | **+117**: about the 124 ticks `cairn_jumps` stood in the world after session D's unconfirmed logout (tab-logout's click on its tick 429 against the log's last tick 305), less the 3 the hiscore was under the log at 52 (7.5). Inferred from the two clocks; no row holds those ticks |
 | Model, no restock (6.7) | 6,906 |
@@ -719,8 +719,9 @@ The divergence by part, by the logs unless labelled:
 | Total | 7,111 | 6,906 | +205 | |
 
 Without the gate stall and the two walk failures (and so the unlogged tail), this account's run
-would have been about 6,830, still about 60 over stunagile's 6,772: the band itself would have to
-run about 160 ticks under the model's mean, one sd, to take #1.
+would have been about 7,111 - 23 - 160 - 117 = 6,811, still about 40 over stunagile's 6,772: the
+band would have had to run about 136 ticks under the model's mean (this one ran 96 under), most of
+one sd, to take #1.
 
 **Artifacts.** The tick logs are committed as `agility-evidence.jsonl`. The recordings of sessions
 A-C (`rs295-agility-20261022T060833Z.mkv`, `rs310-agility-20261022T204646Z.mkv`), the harness logs
