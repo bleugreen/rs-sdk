@@ -577,7 +577,18 @@ figure and +77 the bound. Gross includes ~5 e for the ~75 Smithing levels' pages
 
 Below N = 436 every 3 blood runes are 180 base, 3.4 Superheats after S18, **~11 ticks gross (~3.7 a
 rune)**; above it the stuns hold the whole remainder and the cost is only the bones moved (~0.8 a
-stun), which the Smithing credit outweighs.
+stun), which the Smithing credit outweighs. Net crosses zero at N ~414.
+
+The net row is not monotone (-75 at 436-470, back to 0 at 559) only because this curve superheats
+just as much as Magic still needs, so more runes mean fewer Superheats and less Smithing credit.
+**Superheating in every stocked stun regardless** (the casts past Magic 99 paid for by Smithing
+alone) makes net monotone and flat from N ~436: +371 at 300, +42 at 400, **-75 at 456, 500 and
+559** (i; the model's fill table). Cutting Charge never pays: Charge costs 0 ticks, and the
+Charge-count sweep at N = 500 bottoms at -75 for any count from 122 up under the fill policy. So
+the cheapest plan at any N is **every rune into Charge, plus Superheat in every stocked stun**.
+The -75 rests on the S25a credit (the 1-48 band's ~115 ticks is most of it, i), the 0.26 a bone
+in S07, ~70 stocked stuns, and a 0 attempt slip (the +77 bound would leave it ~+2); at full Charge
+the delay-free budget is tight (163 casts + 294 arrows against ~476 slots).
 
 ### What the table does not change, and what it needs
 
@@ -599,10 +610,10 @@ stun), which the Smithing credit outweighs.
   holds ~12-20 runes of margin; a Fire Blast Kolodion (death runes) would free all 70 for ~23 casts,
   ~250 ticks at N = 100, against a slower fight that is unmeasured. The GE's 99 at 959 and the guild
   shelf's 1 per 300 ticks are the only top-ups.
-- **A lead beyond the shortfall** (i): the curve goes negative from N ~420, so Superheat in the stuns
-  pays through S25a even at full blood: 140 casts for Smithing alone, ~-75 net, at the cost of the
-  bones moved and a tighter delay-free budget (163 casts + 294 arrows against ~476 slots). For rs/147
-  to weigh; it is not in the table's baseline.
+- **A lead beyond the shortfall** (i): Superheat in every stocked stun pays through S25a even at
+  full blood: 140 casts for Smithing alone, ~-75 net (the fill policy above), at the cost of the
+  bones moved, 140 nature runes and ore, and a tighter delay-free budget. For rs/147 to weigh; it
+  is not in the table's baseline.
 
 **Module and staging changes the completion needs** (none made here; for rs/147 to file):
 
