@@ -45,13 +45,17 @@ cost anything:
   **~650 ticks** (measured end to end 634 and 666 with the lab's restock
   gaps removed; model 658; a 54-log dropped row measured at exactly 4.00
   ticks per fire, 75.95 base xp per tick).
-- **An adjacent helper trades each inventory** (5 ticks per trade, measured
-  6 of 6): **~695 ticks** (inferred: 658 + 5 refills x 6 + the first trade
-  of 5).
+- **An adjacent helper trades each inventory**: **~720 ticks** at S03's real
+  start (measured 709 and 717 through the step module, section 9). There the
+  account holds its tinderbox and seven rune stacks, so a refill holds 20
+  logs and the route takes 8 trades, not 6 of 27. Each costs about 6 ticks of
+  chain (a 4-tick trade, then the fresh start after it). The earlier ~695
+  (inferred: 658 + 5 refills x 6 + the first trade of 5) assumed an
+  inventory holding only the tinderbox.
 - **Banking** at Falador east: ~735 ticks with raw clicks, ~755 with the
   stock SDK helpers (inferred from a measured 12 / 15-tick bank cycle).
 
-The dropped row is about 45 ticks faster than trades. It needs helpers to
+The dropped row is about 45 ticks faster than trades (about 45-60 at S03's real start, section 9). It needs helpers to
 pace their drops around the 100-tick private window of a dropped item
 (section 6). That pacing is the H6 role `speedrun/helpers/fm-row.ts`
 ([helpers/fm-row.md](../helpers/fm-row.md)): in two lab runs of all 157 logs
@@ -342,7 +346,12 @@ exactly 157).
 | Magic logs | 107 | magic trees (75) or the exchange |
 | Tinderbox | 1 | the tutorial's (keep it); otherwise any general store |
 
-Trade cadence: 6 hand-overs of 27 (the account holds a tinderbox).
+Trade cadence at S03's real start: 8 hand-overs of 20, because the account
+holds the tinderbox and seven rune stacks (`firemaking.ts` `tradePlan(0, 99,
+20)`, section 9). 1: 2 logs + 4 oak + 7 willow + 7 maple. 2: 6 maple + 14
+yew. 3: 10 yew + 10 magic. 4-7: 20 magic each. 8: 17 magic.
+
+With an inventory holding only a tinderbox: 6 hand-overs of 27.
 1: 2 logs + 4 oak + 7 willow + 13 maple + 1 yew. 2: 23 yew + 4 magic. 3-5:
 27 magic each. 6: 22 magic. Each is 5 ticks for the account. If 1 -> 30
 happens before Sea Slug, the first hand-over is just 2 logs + 4 oak, and
@@ -369,3 +378,87 @@ snake, one per tile.
 - **Interleaving pyre logs with lighting** (pyre clicks in the three idle
   ticks of each fire, and the light re-sent last in the tick) is unmeasured.
   It only matters if the quest is done.
+
+## 9. The S03 step module and entry 16's lab acceptance
+
+`speedrun/skills/firemaking.ts` is S03 (STEP-MANIFEST.md entry 16): one step,
+`S03 firemaking`, logout-safe, done at the target level. Its `supply` option
+says where the logs come from. `row` (helper-dropped logs) and `trade` (a
+giver beside the line) are built; `bank` refuses in preconditions.
+
+**One Lighter, two sources.** The lighting loop is the pure state machine
+`Lighter`, fed one state per tick. In `ground` mode (the row) it lights the
+log on the next planned tile with the ground op. In `held` mode (trade) it
+uses the tinderbox on the best held log while standing on the next planned
+tile; that light drops the log on the account's tile and runs the same
+4-tick clock, so the chain and the push are the row's. The row path is
+pinned decision by decision by `firemaking.golden.test.ts` against
+`firemaking.row-golden.json` (recorded from the module as rs/228 left it);
+the trace still matches after rs/269's inferred-fire rule. Held mode differs
+in three places:
+
+- A held light that took is seen at once (the log leaves the inventory), so
+  it is resent only while the log is still held.
+- Success is the message, or rs/269's rule when the message never shows: the
+  log gone from its tile a whole tick, a fire there, and this account's xp
+  risen.
+- A chained light prints no attempt message, so the roll animation is the
+  sign of rolling. The backstop relights a dropped log where it lies after 8
+  ticks without it (`HELD_BACKSTOP_TICKS`; a rolling light shows it on two
+  ticks of every four). Keyed on the attempt message instead, it relit
+  logs that were still rolling, in the lab.
+
+**The trade hand-off, as data.** `tradePlan(fromXp, toLevel, capacity, tiles)`
+lists each refill: when it falls due (the fire count `atLit`), the package by
+tier, the account's tile then, and the giver's tile. The giver's tile is
+beside the account's, off the planned tiles and within reach on the SDK's
+collision map (`mapReach`: walkable, no wall edge between). On the Falador
+east lab snake the north tile at the first row's west end is across a wall
+edge ("I can't reach that!"), so that refill's giver stands west. `capacity`
+defaults to 28 less the non-log items held. The account refills with
+`lib/trade.ts` `receiveFrom` when no lightable log is held. The giver sends
+its request as the account's last held log rolls, when the account is
+beside its tile: a request is a player op, so one sent while the account is
+further off walks the giver off its tile, and the account's trade click then
+chases it down the row (lab, a trade lost that way).
+
+**Lab acceptance** (`speedrun/lab/firemaking-accept.ts`, through `lab.sh`).
+The account starts as at S03: the tinderbox, the five starter rune types and
+H1's cosmic and fire runes, the staff of water wielded, Magic 7, Firemaking
+1, and 10 tiles from the row's entry. The step runs through `runSteps`. The
+row is dropped by the real H6 role (`helpers/fm-row.ts`, `start: cue`,
+restock by `::give`) on its lab snake (54 tiles a lap); the step starts when
+log 0 is due, as the run's cue start arranges. The trade giver is the
+script's own (`--role=giver`: `lib/trade.ts` `give`, packages and tiles from
+`tradePlan`, restocked by `::give`). local (macOS), 300 ms, 2026-10-21:
+
+| | Row (H6 dropper) | Trade (8 refills of 20) |
+|---|---|---|
+| S03 step, 1 -> 99 | 660, 700, 660 (m) | 717, 709 (m, final code) |
+| Against entry 16 | 650: +1.5%, +7.7%, +1.5% | 695: +3.2%, +2.0% |
+| Failed rolls (7.58 expected) | 4, 14, 4 | 7, 5 |
+| Overhead beyond 4 ticks per roll | 16 each: the approach (6) and two lap turns (5 each) | 61 each: the approach and first trade, 8 refills, two lap turns |
+| 54-log row: lap 2, logs 54-107 | 4.000 ticks per fire, every gap 4, all three runs (m) | |
+| Lap 3, logs 108-156 | 4.000, every gap 4 | 4.25 (two refills inside) |
+| Dropper / refills | 157 dropped, 0 lost, 0 early | 4 ticks per trade (the first, 8) |
+
+The spread is the failed rolls below level 43, all inside the first lap: the
+700 came from 11 failures on log 0 at level 1. With the expected 7.58
+failures the step is **~674 on the row and ~719 by trades** (i: 4 x (157 +
+7.58) plus the measured overhead), +3.7% and +3.5% over entry 16's 650 and
+695. Earlier trade runs on the way there measured 751, 746 and 724: an early
+giver request, then a held light that rolled once and stopped (25 ticks
+under the old 16-tick backstop).
+
+**Demo acceptance: not run.** Two things stand in the way:
+
+- Entry 16's pass line (4 ticks on at least 18 of 19 gaps, 20 normal logs) is
+  out of reach for a fresh lighter: from level 1 the rolls fail often until
+  level 43, so 15 of 19 gaps are 4 ticks on average, and 18 or more come up
+  about 1 time in 20 (`rollChance` with the 25x xp rate). A line the module
+  controls is "every gap is 4 ticks per roll, no slip, and nothing lost to
+  anyone's pickup".
+- H6 (`fm-row.ts`) always drops S03's route (2 normal logs, then oak, willow,
+  maple, ...). A throwaway dropper can only chop normal logs, so the 20-log
+  normal row needs a log-list option on the role (rs/187), or a dropper in
+  the acceptance script.
