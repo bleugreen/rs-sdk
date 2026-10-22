@@ -426,3 +426,26 @@ T21-22 (Lumbridge teleport, run to (3241,3248)): 40 casts, 14 tiles seen (x 3219
 x 3222 gives 32-33 (z 3216, 3218, 3219: 32; z 3217, 3220: 33), x 3221 gives 33 (z 3216-3220), x
 3220 gives 33 (z 3218, 3219), x 3219 gives 34 (z 3218, 3219). The cast means (4.8 and 33.0, against
 the earlier lab means 4.5 and 32.5) are the expected figures.
+
+**Browser client** (rs/308, phase 1: before rs/309's region-loaded wait; lab, bgsrv-mac, 300 ms,
+`measure-legs.ts --client=browser`, a headless Chrome tab on the lab's /bot page with this
+checkout's bundle, and the lite runs beside it on the same machine; observed ticks; the per-hop
+timeline is `lab/leg-trace.ts`):
+
+| Leg | Lite, same machine | Browser | Browser, 3 ticks' wait after the landing (diagnostic) | Where the browser loses |
+|---|---|---|---|---|
+| T05-06 | 60.7 (61, 61, 60) | **74.1** over 11 runs (64-77); 1 failure in 12 | 66, 66, 66 (63 less the wait) | the first walk click, sent on the landing tick, misroutes: the player walks 14 tiles south (2964,3379 to 2965,3365) for an east target, 128 tiles against 107; in 9 of 11 runs |
+| T20-21 (body) | 69 (67, 69, 71) | **74.7** (69, 85, 69, 67, 70, 88) | 71, 72, 72 | the same misroute after the Falador landing in 2 of 6 (+16, +19) |
+| T10-11 | 20 (20, 20, 20) | 21 (21, 21, 21) | - | the run's first click after the stronghold landing doesn't move the player; re-sent a tick later |
+| T13-14 | 179.7 (185, 176, 178) | 189.3 (211, 179, 178) | - | the first run's knife on the keep web (a cold region after the lever) drew no reply 6 times, re-sent every 6 ticks by act: 47 ticks against 20-24 |
+| T14-15 | 173.7 (173, 174, 174) | **fails 3 of 3** | - | the stronghold tree hop finds no spirit tree at the village (2542,3169) straight after the young tree lands there: the loc lookup runs before the region is built |
+
+With the first walk click held until the region is built, T05-06's run hop is 55 against lite's
+53-54 (an 8-tick wait gives 55-56 too), so the browser's T05-06 excess is the click after the
+landing, not the route or the door. The one unexplained browser failure (the air talisman not in
+the published inventory at the ruins, although the leg's precondition saw it) did not recur in
+6 more runs. Lite on the same machine: T02-03 6, 4, 4 (the coop gate (3236,3295) closed in the
+6, not met in the others); T25-26 42, 42, 42 (no door met). First dialogue page after the click:
+the spirit trees +1 to +2 on both clients; the Ardougne lever +4 on the first pull (the warning)
+and no page after it, where act's 6-idle re-send sends a second pull at +7 or +8 that the
+server drops (the landing at 10-11 either way).
