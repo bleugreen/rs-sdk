@@ -9,7 +9,7 @@ import { TickLog } from '../lib/ticks';
 import type { Step, StepContext } from '../runner/step';
 import { STUN_PRESETS } from '../../server/webclient/src/bot/programs/stun-actions';
 import {
-    ARDOUGNE_SOUTH_BANK, ARROWHEAD_TIERS, BANDS, bonesTopUpAction, eatPolicy, FOODS, foodPattern, packReport, RETALK_QUIET_TICKS, retalkDue, steps, STUN_PACK_ACTIONS, STUN_PACK_BONES_BELOW,
+    ARDOUGNE_SOUTH_BANK, ARROWHEAD_TIERS, BANDS, bonesTopUpAction, chargeSipPotion, type ChargeSip, eatPolicy, FOODS, foodPattern, packReport, parseStunPack, RETALK_QUIET_TICKS, retalkDue, steps, STUN_PACK_ACTIONS, STUN_PACK_BONES_BELOW,
     stunPackCheck, TOPUP_RESTART_BY, topUpAction, topUpDue, TopUpReceiver
 } from './thieving';
 
@@ -558,7 +558,7 @@ describe('thieving: the packets without the stun pack', () => {
 const named = (slot: number, name: string, count = 1, options: string[] = []): InventoryItem => ({ slot, id: 300 + slot, name, count, optionsWithIndex: options.map((text, i) => ({ text, opIndex: i + 1 })) });
 
 /** Load 0 (stun-pack.md section 6) at the knights, the giver on the east side tile. */
-function packWorld(o: { magic?: number; fletching?: number; giverAt?: [number, number] | null; inventory?: InventoryItem[]; equipment?: string[]; drop?: RegExp } = {}): BotWorldState {
+function packWorld(o: { magic?: number; boosted?: number; fletching?: number; giverAt?: [number, number] | null; inventory?: InventoryItem[]; equipment?: string[]; drop?: RegExp } = {}): BotWorldState {
     const inventory = o.inventory ?? [
         named(0, 'Shark', 1, ['Eat']), named(1, 'Shark', 1, ['Eat']), named(2, 'Blood rune', 489), named(3, 'Air rune', 489), named(4, 'Headless arrow', 3600),
         named(5, 'Bronze arrowheads', 60), named(6, 'Iron arrowheads', 90), named(7, 'Steel arrowheads', 135), named(8, 'Mithril arrowheads', 225),
@@ -568,7 +568,7 @@ function packWorld(o: { magic?: number; fletching?: number; giverAt?: [number, n
     const giverAt: [number, number] | null = o.giverAt === undefined ? [1, 0] : o.giverAt;
     return {
         ...s,
-        skills: [...s.skills, { name: 'Magic', level: o.magic ?? 80, baseLevel: o.magic ?? 80, experience: 1000 }, { name: 'Fletching', level: o.fletching ?? 1, baseLevel: o.fletching ?? 1, experience: 0 }, { name: 'Prayer', level: 43, baseLevel: 43, experience: 500 }],
+        skills: [...s.skills, { name: 'Magic', level: o.boosted ?? o.magic ?? 80, baseLevel: o.magic ?? 80, experience: 1000 }, { name: 'Fletching', level: o.fletching ?? 1, baseLevel: o.fletching ?? 1, experience: 0 }, { name: 'Prayer', level: 43, baseLevel: 43, experience: 500 }],
         equipment: (o.equipment ?? ['Staff of fire']).map((n, i) => named(i, n)),
         nearbyPlayers: giverAt ? [{ kind: 'player', index: 7, name: GIVER, combatLevel: 3, x: KNIGHTS_AT.x + giverAt[0], z: KNIGHTS_AT.z + giverAt[1], distance: Math.max(Math.abs(giverAt[0]), Math.abs(giverAt[1])) }] : []
     } as BotWorldState;
@@ -605,6 +605,7 @@ describe('thieving: the stun pack', () => {
         expect(() => steps({ topUp: TOPUP, stunPack: { bonesBelow: 2.5 } })).toThrow(/bonesBelow/);
         expect(() => steps({ topUp: TOPUP, stunPack: { giver: 'x' } as never })).toThrow(/no option 'giver'/);
         expect(() => steps({ topUp: TOPUP, stunPack: { chargeUnlocked: 'yes' } as never })).toThrow(/chargeUnlocked/);
+        expect(() => steps({ topUp: TOPUP, stunPack: { sipForCharge: 'yes' } as never })).toThrow(/sipForCharge must be true or false/);
         expect(() => steps({ topUp: TOPUP, stunPack: 'on' as never })).toThrow(/stunPack must be/);
         expect(steps({ topUp: TOPUP, stunPack: true }).length).toBe(7);
         expect(STUN_PACK_BONES_BELOW).toBe(3);
@@ -674,7 +675,7 @@ describe('thieving: the stun pack', () => {
         expect(both.h.status.counters['stun:topup']).toBe(byOffset(both, 2).length);
         expect(both.h.status.counters['stun:topup:bones']).toBeUndefined();
         // the program's own reach is distance <= 1, corners included; the start check refuses a corner
-        expect(stunPackCheck(packWorld({ giverAt: [1, 1] }), GIVER, { bonesBelow: 3, chargeUnlocked: true })).toMatch(/not on a side tile/);
+        expect(stunPackCheck(packWorld({ giverAt: [1, 1] }), GIVER, { chargeUnlocked: true, sipForCharge: true })).toMatch(/not on a side tile/);
         const far = programTrace(params, { ticks: 120, inventory: kit({ bones: 2 }), giverAt: [2, 0] });
         expect(far.h.sent.some(s => s.action.type === 'interactPlayer')).toBe(false);
     });
@@ -690,7 +691,7 @@ describe('thieving: the stun pack', () => {
 });
 
 describe('thieving: the stun pack\'s start check', () => {
-    const pack = { bonesBelow: 3, chargeUnlocked: false };
+    const pack = { bonesBelow: 3, chargeUnlocked: false, sipForCharge: true };
     const check = (s: BotWorldState, p = pack) => stunPackCheck(s, GIVER, p);
     const god = (extra: Parameters<typeof packWorld>[0] = {}) => packWorld({ equipment: ['Staff of fire'], ...extra, inventory: [...packWorld().inventory, named(30, 'Saradomin staff')] });
 
@@ -701,7 +702,7 @@ describe('thieving: the stun pack\'s start check', () => {
     });
 
     test('each refusal', () => {
-        expect(check(packWorld({ magic: 79 }), { ...pack, chargeUnlocked: true })).toMatch(/base Magic 80 \(base Magic 79\)/);
+        expect(check(packWorld({ magic: 79 }), { ...pack, chargeUnlocked: true })).toBe("the stun pack's Charge needs Magic 80: base 79, boosted 79, no magic potion held");
         expect(check(packWorld())).toMatch(/Mage Arena stage 8/);
         expect(check(god({ equipment: [] }))).toMatch(/staff of fire wielded/);
         expect(check(packWorld({ drop: /^blood rune$/i }), { ...pack, chargeUnlocked: true })).toMatch(/3 blood and 3 air runes \(holding 0 and 489\)/);
@@ -710,6 +711,25 @@ describe('thieving: the stun pack\'s start check', () => {
         expect(check(packWorld({ giverAt: null }), { ...pack, chargeUnlocked: true })).toMatch(/not in sight/);
         expect(check(packWorld({ giverAt: [-1, 1] }), { ...pack, chargeUnlocked: true })).toMatch(/at -1,1 from the account, not on a side tile/);
         expect(check(packWorld({ giverAt: [0, 2] }), { ...pack, chargeUnlocked: true })).toMatch(/not on a side tile/);
+    });
+
+    test('Charge checks boosted Magic 80, as the engine does; base 79 passes on a magic potion to sip', () => {
+        const unlocked = { ...pack, chargeUnlocked: true };
+        const withPotion = (o: Parameters<typeof packWorld>[0] = {}) => packWorld({ ...o, inventory: [...packWorld().inventory, MAGIC_POTION(3)] });
+        expect(check(packWorld({ magic: 80 }), unlocked)).toBe(true);
+        expect(chargeSipPotion(withPotion({ magic: 80 }), unlocked)).toBeUndefined();
+        // a boost already up needs no sip
+        expect(check(packWorld({ magic: 79, boosted: 80 }), unlocked)).toBe(true);
+        expect(chargeSipPotion(packWorld({ magic: 79, boosted: 80, inventory: [...packWorld().inventory, MAGIC_POTION(1)] }), unlocked)).toBeUndefined();
+        // base 79, boosted 79: any dose held passes, and is the one to sip
+        expect(check(withPotion({ magic: 79 }), unlocked)).toBe(true);
+        expect(chargeSipPotion(withPotion({ magic: 79 }), unlocked)?.name).toBe('Magic potion(3)');
+        expect(check(packWorld({ magic: 79 }), unlocked)).toBe("the stun pack's Charge needs Magic 80: base 79, boosted 79, no magic potion held");
+        // a drained level counts as the engine counts it
+        expect(check(packWorld({ magic: 80, boosted: 78 }), unlocked)).toBe("the stun pack's Charge needs Magic 80: base 80, boosted 78, no magic potion held");
+        // the potion held but not sipped: the refusal says why
+        expect(check(withPotion({ magic: 79 }), { ...unlocked, sipForCharge: false })).toBe("the stun pack's Charge needs Magic 80: base 79, boosted 79, a magic potion held (sipForCharge off)");
+        expect(check(withPotion({ magic: 78 }), unlocked)).toBe("the stun pack's Charge needs Magic 80: base 78, boosted 78, a magic potion held (the sip is for base 79 only)");
     });
 
     test('Charge is not checked at Magic 99, nor the arrows at Fletching 99', () => {
@@ -736,6 +756,90 @@ describe('thieving: the stun pack\'s start check', () => {
         await expect(steps({ topUp: TOPUP, stunPack: PACK }).find(s => s.name === 'thieving:knights')!.run(ctx)).rejects.toThrow(/not on a side tile/);
         expect(sdk.starts).toEqual([]);
         expect(sdk.sent).toEqual([]);
+    });
+});
+
+/** A magic potion as the client lists it (potions.obj: iop1 Drink, iop4 Empty), in slot 25, after Load 0. */
+const MAGIC_POTION = (doses: number): InventoryItem => ({ slot: 25, id: 3040, name: `Magic potion(${doses})`, count: 1, optionsWithIndex: [{ text: 'Drink', opIndex: 1 }, { text: 'Empty', opIndex: 4 }] });
+
+describe('thieving: the stun pack\'s sip for Charge', () => {
+    const magicTo = (st: BotWorldState, level: number) => st.skills.map(k => (k.name === 'Magic' ? { ...k, level } : k));
+    /** The band on a page whose engine answers a dose: +4 boosted Magic and one dose fewer, on the next tick. */
+    function sipping(s: BotWorldState) {
+        const sdk = new ManualPageSdk(s);
+        sdk.onSend = (a, f) => {
+            if (a.method !== 'sendUseItem') return;
+            queueMicrotask(() => f.tick(st => ({
+                skills: magicTo(st, st.skills.find(k => k.name === 'Magic')!.level + 4) as never,
+                inventory: st.inventory.map(i => (i.slot === a.args[0] ? MAGIC_POTION(Number(/\((\d)\)/.exec(i.name)![1]) - 1) : i))
+            })));
+        };
+        const { ctx } = harness(sdk);
+        const done = steps({ food: 'shark', topUp: TOPUP, stunPack: PACK }).find(x => x.name === 'thieving:knights')!.run(ctx);
+        const finish = async () => {
+            sdk.publish({ phase: 'done', result: { reason: 'level' } }, { skills: [...sdk.state!.skills.filter(k => k.name !== 'Thieving'), { name: 'Thieving', level: 99, baseLevel: 99, experience: 0 }] as never });
+            await done;
+            return (ctx.log.rows.find(r => r.step === 'thieving:knights:detail')!.meta as { pack: Record<string, unknown> }).pack;
+        };
+        return { sdk, done, finish };
+    }
+
+    test('stunPack.sipForCharge defaults on', () => {
+        expect(parseStunPack(true, TOPUP)).toEqual({ bonesBelow: 3, chargeUnlocked: false, sipForCharge: true });
+        expect(parseStunPack({ sipForCharge: false }, TOPUP)).toMatchObject({ sipForCharge: false });
+    });
+
+    test('base 80: no sip, and the program starts on the same params', async () => {
+        const world80 = packWorld({ inventory: [...packWorld().inventory, MAGIC_POTION(4)] });
+        const { sdk, finish } = sipping(world80);
+        await settle(() => sdk.starts.length === 1);
+        expect(sdk.sent).toEqual([]);
+        const pack = await finish();
+        expect(pack).not.toHaveProperty('sip');
+        expect(sdk.state!.inventory.some(i => i.name === 'Magic potion(4)')).toBe(true);
+    });
+
+    test('base 79 with a potion: exactly one sip, the boost observed, then the program on the base-80 params', async () => {
+        const base80 = await knightsParams({ food: 'shark', topUp: TOPUP, stunPack: PACK }, packWorld());
+        const { sdk, finish } = sipping(packWorld({ magic: 79, inventory: [...packWorld().inventory, MAGIC_POTION(4)] }));
+        const t0 = sdk.state!.tick;
+        await settle(() => sdk.starts.length === 1);
+        // the dose, by its Drink op, before the program (which sends every Charge) starts
+        expect(sdk.sent).toEqual([{ method: 'sendUseItem', args: [25, 1] }]);
+        expect(sdk.state!.skills.find(k => k.name === 'Magic')).toMatchObject({ level: 83, baseLevel: 79 });
+        expect(sdk.starts[0]!.tick).toBeGreaterThan(t0);
+        // the stun schedule is the base-80 one: the same params, so the same packets
+        expect(sdk.starts[0]!.params).toEqual(base80);
+        const pack = await finish();
+        expect(sdk.sent.filter(a => a.method === 'sendUseItem')).toHaveLength(1);
+        expect(pack.sip).toEqual({ potion: 'Magic potion(4)', base: 79, from: 79, to: 83, sentTick: t0, boostedTick: t0 + 1, resends: 0 } satisfies ChargeSip);
+        expect(sdk.starts[0]!.tick).toBeGreaterThanOrEqual((pack.sip as ChargeSip).boostedTick);
+    });
+
+    test('base 79 without a potion: the band refuses with base, boosted and no potion, before any packet', async () => {
+        const { sdk, done } = sipping(packWorld({ magic: 79 }));
+        await expect(done).rejects.toThrow("the stun pack's Charge needs Magic 80: base 79, boosted 79, no magic potion held");
+        expect(sdk.starts).toEqual([]);
+        expect(sdk.sent).toEqual([]);
+        const knights = steps({ topUp: TOPUP, stunPack: PACK }).find(s => s.name === 'thieving:knights')!;
+        expect(knights.preconditions(packWorld({ magic: 79 }), {})).toBe("the stun pack's Charge needs Magic 80: base 79, boosted 79, no magic potion held");
+        expect(knights.preconditions(packWorld({ magic: 79, inventory: [...packWorld().inventory, MAGIC_POTION(1)] }), {})).toBe(true);
+    });
+
+    test('a dose that never shows fails the band after CHARGE_SIP_MAX_TICKS, re-sent once', async () => {
+        const sdk = new ManualPageSdk(packWorld({ magic: 79, inventory: [...packWorld().inventory, MAGIC_POTION(4)] }));
+        const { ctx } = harness(sdk);
+        const done = steps({ food: 'shark', topUp: TOPUP, stunPack: PACK }).find(x => x.name === 'thieving:knights')!.run(ctx);
+        let failed: unknown;
+        done.catch(e => { failed = e; });
+        for (let i = 0; i < 12 && !failed; i++) {
+            await flush();
+            sdk.tick();
+        }
+        await settle(() => !!failed);
+        expect(String(failed)).toMatch(/sip for Charge did not raise Magic to 80 within 8 ticks: base 79, boosted 79 \(Magic potion\(4\)\)/);
+        expect(sdk.sent.map(a => a.method)).toEqual(['sendUseItem', 'sendUseItem']);
+        expect(sdk.starts).toEqual([]);
     });
 });
 
