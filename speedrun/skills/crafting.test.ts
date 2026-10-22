@@ -255,45 +255,45 @@ function world(o: { level?: number; xp?: number; inventory?: InventoryItem[]; ba
 
 describe('preconditions', () => {
     test('the real start: Crafting 45 at the booth holding the hand-off passes (H21d/H21e stacks are banked, not blocking)', () => {
-        expect(preconditions(world())).toBe(true);
-        expect(preconditions(world({ level: 42 }))).toBe(true);
+        expect(preconditions(world(), O)).toBe(true);
+        expect(preconditions(world({ level: 42 }), O)).toBe(true);
     });
 
     test('below 28: hard leather bodies need 28', () => {
-        expect(preconditions(world({ level: 27 }))).toBe('Crafting 27 is below 28: hard leather bodies need 28 (leather.dbrow craft_hardleather_body)');
+        expect(preconditions(world({ level: 27 }), O)).toBe('Crafting 27 is below 28: hard leather bodies need 28 (leather.dbrow craft_hardleather_body)');
     });
 
     test('free slots: anything not the cycle or the hand-off stacks blocks the 28-slot working inventory', () => {
-        expect(preconditions(world({ inventory: [...HANDED, item(6, 2347, 1, 'Hammer'), item(7, 1351, 1, 'Bronze axe')] }))).toBe('2 other items (Hammer, Bronze axe): need 28 free slots');
+        expect(preconditions(world({ inventory: [...HANDED, item(6, 2347, 1, 'Hammer'), item(7, 1351, 1, 'Bronze axe')] }), O)).toBe('2 other items (Hammer, Bronze axe): need 28 free slots');
         // bodies, unnoted leather and notes of either are the cycle's own (a resume mid-inventory)
-        expect(preconditions(world({ inventory: [item(0, ITEM.needle), item(1, ITEM.thread, 100), item(2, ITEM.body), item(3, ITEM.hardLeather), item(4, ITEM.hardLeatherNote, 954), item(5, ITEM.bodyNote, 3)] }))).toBe(true);
+        expect(preconditions(world({ inventory: [item(0, ITEM.needle), item(1, ITEM.thread, 187), item(2, ITEM.body), item(3, ITEM.hardLeather), item(4, ITEM.hardLeatherNote, 954), item(5, ITEM.bodyNote, 3)] }), O)).toBe(true);
         // a caller can name what its own first visit banks
-        expect(preconditions(world({ inventory: [...HANDED, item(6, 2347, 1, 'Hammer')] }), { banksFirst: [...HANDOFF_BANKED, 2347] })).toBe(true);
+        expect(preconditions(world({ inventory: [...HANDED, item(6, 2347, 1, 'Hammer')] }), { ...O, banksFirst: [...HANDOFF_BANKED, 2347] })).toBe(true);
     });
 
     test('leather notes held short of the bodies say so', () => {
         const inv = [item(0, ITEM.needle), item(1, ITEM.thread, 230), item(2, ITEM.hardLeatherNote, 900, 'Hard leather')];
-        expect(preconditions(world({ inventory: inv }))).toBe('supplies short: 900 hard leather for 928 bodies to 834270.5 xp (they reach Crafting 95)');
+        expect(preconditions(world({ inventory: inv }), O)).toBe('supplies short: 900 hard leather for 928 bodies to 834270.5 xp (they reach Crafting 95)');
         // 928 exactly is enough; the spare inventory is the hand-off's margin, not a precondition
-        expect(preconditions(world({ inventory: [...inv.slice(0, 2), item(2, ITEM.hardLeatherNote, 928)] }))).toBe(true);
+        expect(preconditions(world({ inventory: [...inv.slice(0, 2), item(2, ITEM.hardLeatherNote, 928)] }), O)).toBe(true);
     });
 
     test('with the bank open: thread on both sides of the worst-case bound, the needle, the leather', () => {
         const bank = (thread: number, needle = 1, leather = 954): Array<[number, number]> => [[ITEM.hardLeather, leather], [ITEM.thread, thread], [ITEM.needle, needle]];
-        expect(preconditions(world({ inventory: [], bank: bank(187) }))).toBe(true);
-        expect(preconditions(world({ inventory: [], bank: bank(186) }))).toBe('thread short: 186 for 928 bodies (one worn every 5th, 187 at the worst-case wear)');
-        expect(preconditions(world({ inventory: [item(0, ITEM.thread, 100)], bank: bank(87) }))).toBe(true);
-        expect(preconditions(world({ inventory: [], bank: bank(187, 0) }))).toBe('no needle held or banked');
-        expect(preconditions(world({ inventory: [], bank: bank(187, 1, 927) }))).toMatch(/^supplies short: 927 hard leather for 928 bodies/);
+        expect(preconditions(world({ inventory: [], bank: bank(187) }), O)).toBe(true);
+        expect(preconditions(world({ inventory: [], bank: bank(186) }), O)).toBe('thread short: 186 for 928 bodies (one worn every 5th, 187 at the worst-case wear)');
+        expect(preconditions(world({ inventory: [item(0, ITEM.thread, 100)], bank: bank(87) }), O)).toBe(true);
+        expect(preconditions(world({ inventory: [], bank: bank(187, 0) }), O)).toBe('no needle held or banked');
+        expect(preconditions(world({ inventory: [], bank: bank(187, 1, 927) }), O)).toMatch(/^supplies short: 927 hard leather for 928 bodies/);
         // banked and the bank closed: out of sight, the program's first visit judges them
-        expect(preconditions(world({ inventory: [] }))).toBe(true);
+        expect(preconditions(world({ inventory: [] }), O)).toBe(true);
     });
 
     test('no booth in view; a bad untilXp; the stop already reached; not in game', () => {
-        expect(preconditions(world({ booth: false }))).toBe('no bank booth (3186,3436) in view (at 3185,3436)');
+        expect(preconditions(world({ booth: false }), O)).toBe('no bank booth (3186,3436) in view (at 3185,3436)');
         expect(preconditions(world(), { untilXp: 0 })).toContain('untilXp 0 is not a Crafting xp');
         expect(preconditions(world(), { untilXp: CRAFTING_99_XP + 1 })).toContain('is not a Crafting xp');
-        expect(preconditions(world({ xp: CRAFTING_HANDOFF_XP, booth: false, inventory: [item(0, 2347, 1, 'Hammer')] }))).toBe(true);
+        expect(preconditions(world({ xp: HANDOFF, booth: false, inventory: [item(0, 2347, 1, 'Hammer')] }), O)).toBe(true);
         expect(preconditions(baseState({ inGame: false }))).toBe('not in game');
     });
 
@@ -305,46 +305,47 @@ describe('preconditions', () => {
 
 describe('steps', () => {
     test('one logout-safe step, S25d; done is the stop reached AND the cycle stowed', () => {
-        const [s, ...rest] = steps();
+        const [s, ...rest] = steps(O);
         expect(rest).toEqual([]);
         expect(s!.name).toBe(STEP_NAME);
         expect(s!.logoutSafe).toBe(true);
         const obs = (xp: number, inventory: InventoryItem[] = []) => new Observation(world({ xp, inventory }));
-        expect(s!.done!(obs(CRAFTING_HANDOFF_XP), {})).toBe(true);
-        expect(s!.done!(obs(CRAFTING_HANDOFF_XP - 1), {})).toBe(false);
+        expect(s!.done!(obs(HANDOFF), {})).toBe(true);
+        expect(s!.done!(obs(HANDOFF - 1), {})).toBe(false);
         // reached, but the last visit has not deposited the needle yet: not done, in progress
         const unstowed = [item(0, ITEM.needle), item(1, ITEM.thread, 40), item(2, ITEM.body, 1)];
-        expect(s!.done!(obs(CRAFTING_HANDOFF_XP + 400, unstowed), {})).toBe(false);
-        expect(s!.inProgress!(obs(CRAFTING_HANDOFF_XP + 400, unstowed), {})).toBe(true);
+        expect(s!.done!(obs(HANDOFF + 400, unstowed), {})).toBe(false);
+        expect(s!.inProgress!(obs(HANDOFF + 400, unstowed), {})).toBe(true);
         // S25c's later chisel and gems do not undo it
-        expect(s!.done!(obs(CRAFTING_HANDOFF_XP + 400, [item(0, ITEM.chisel), item(1, 1617, 27)]), {})).toBe(true);
+        expect(s!.done!(obs(HANDOFF + 400, [item(0, ITEM.chisel), item(1, 1617, 27)]), {})).toBe(true);
         expect(s!.inProgress!(obs(xpForLevel(45), HANDED), {})).toBe(true);
         expect(s!.inProgress!(obs(xpForLevel(45), []), {})).toBe(false);
-        expect(s!.postconditions(world({ xp: CRAFTING_HANDOFF_XP - 1, inventory: [] }), {})).toBe(`Crafting xp ${CRAFTING_HANDOFF_XP - 1} < ${CRAFTING_HANDOFF_XP}`);
-        expect(s!.postconditions(world({ xp: CRAFTING_HANDOFF_XP, inventory: unstowed }), {})).toBe('the stow left Needle, obj 1131 in the inventory'.replace('Needle', 'obj 1733'));
-        expect(s!.postconditions(world({ xp: CRAFTING_HANDOFF_XP, inventory: [] }), {})).toBe(true);
+        expect(s!.postconditions(world({ xp: HANDOFF - 1, inventory: [] }), {})).toBe(`Crafting xp ${HANDOFF - 1} < ${HANDOFF}`);
+        expect(s!.postconditions(world({ xp: HANDOFF, inventory: unstowed }), {})).toBe('the stow left Needle, obj 1131 in the inventory'.replace('Needle', 'obj 1733'));
+        expect(s!.postconditions(world({ xp: HANDOFF, inventory: [] }), {})).toBe(true);
         // the standalone stop is 99
         const [solo] = steps({ untilXp: CRAFTING_99_XP });
-        expect(solo!.done!(obs(CRAFTING_HANDOFF_XP), {})).toBe(false);
+        expect(solo!.done!(obs(HANDOFF), {})).toBe(false);
         expect(solo!.done!(obs(CRAFTING_99_XP), {})).toBe(true);
     });
 
     test('resume: mid-inventory resumes; 45 with nothing held starts; the stop stowed finishes; the stop unstowed resumes', async () => {
         const walk = async (xp: number, inventory: InventoryItem[]) => {
-            const p = await resolveResume(steps(), new Observation(world({ xp, inventory })), {});
+            const p = await resolveResume(steps(O), new Observation(world({ xp, inventory })), {});
             return p.mode === 'finished' ? ['finished'] : [p.step, p.mode];
         };
         const mid = [item(0, ITEM.needle), item(1, ITEM.thread, 120), ...[...Array(10).keys()].map(i => item(2 + i, ITEM.body)), ...[...Array(16).keys()].map(i => item(12 + i, ITEM.hardLeather))];
         expect(await walk(xpForLevel(70) + 875 * 3, mid)).toEqual([STEP_NAME, 'resume']);
         expect(await walk(xpForLevel(45), [])).toEqual([STEP_NAME, 'run']);
-        expect(await walk(CRAFTING_HANDOFF_XP + 400, [])).toEqual(['finished']);
-        expect(await walk(CRAFTING_HANDOFF_XP + 400, [item(0, ITEM.needle), item(1, ITEM.thread, 40)])).toEqual([STEP_NAME, 'resume']);
+        expect(await walk(HANDOFF + 400, [])).toEqual(['finished']);
+        expect(await walk(HANDOFF + 400, [item(0, ITEM.needle), item(1, ITEM.thread, 40)])).toEqual([STEP_NAME, 'resume']);
     });
 
     test('plannedBodies: from the state the step starts in, capped by maxActions', () => {
-        expect(plannedBodies(world())).toBe(928);
-        expect(plannedBodies(world(), { maxActions: 26 })).toBe(26);
-        expect(plannedBodies(world({ xp: CRAFTING_HANDOFF_XP }))).toBe(0);
+        expect(plannedBodies(world(), O)).toBe(928);
+        expect(plannedBodies(world(), { ...O, maxActions: 26 })).toBe(26);
+        expect(plannedBodies(world({ xp: HANDOFF }), O)).toBe(0);
+        expect(plannedBodies(world(), { stagedGems: SHORT })).toBe(953);
     });
 });
 
@@ -392,10 +393,10 @@ async function scripted(start: BotWorldState, opts: Parameters<typeof steps>[0],
 
 describe('runSteps over steps()', () => {
     test('S25d starts the program in tool mode: exact maxActions to the hand-off, untilXp, stow, the thread kept, the quick-bank op', async () => {
-        const { result, starts, log } = await scripted(world(), {}, xpForLevel(45) + 928 * 875);
+        const { result, starts, log } = await scripted(world(), O, xpForLevel(45) + 928 * 875);
         expect(result).toEqual({ completed: 1 });
         expect(starts).toHaveLength(1);
-        expect(starts[0]).toMatchObject({ mode: 'tool', skill: 'crafting', maxActions: 928, untilXp: CRAFTING_HANDOFF_XP, stow: true, booth: { ...VARROCK_WEST, option: 2, stand: { x: 3185, z: 3436 } } });
+        expect(starts[0]).toMatchObject({ mode: 'tool', skill: 'crafting', maxActions: 928, untilXp: HANDOFF, stow: true, booth: { ...VARROCK_WEST, option: 2, stand: { x: 3185, z: 3436 } } });
         expect(starts[0]!.recipes).toEqual([{ name: 'hardleather_body', level: 28, xp: 35, a: 1743, tool: 1733, keep: [{ id: 1734, every: 5 }], products: [1131] }]);
         expect(log.rows.find(r => r.kind === 'program')).toMatchObject({ step: STEP_NAME, ok: true });
         expect((log.rows.find(r => r.kind === 'program')!.meta as { result: { stowed: boolean } }).result.stowed).toBe(true);
@@ -410,12 +411,12 @@ describe('runSteps over steps()', () => {
 
     test('resume mid-inventory: maxActions counts from the xp the state shows, one body short of the stop is one', async () => {
         const mid = [item(0, ITEM.needle), item(1, ITEM.thread, 30), item(2, ITEM.body), item(3, ITEM.hardLeather)];
-        const { starts } = await scripted(world({ xp: CRAFTING_HANDOFF_XP - 875, inventory: mid }), {}, CRAFTING_HANDOFF_XP);
+        const { starts } = await scripted(world({ xp: HANDOFF - 875, inventory: mid }), O, HANDOFF);
         expect(starts[0]).toMatchObject({ maxActions: 1, stow: true });
     });
 
     test('the stop reached but the needle still held (a logout before the last visit): the program only stows', async () => {
-        const { result, starts } = await scripted(world({ xp: CRAFTING_HANDOFF_XP + 400, inventory: [item(0, ITEM.needle), item(1, ITEM.thread, 40), item(2, ITEM.body, 1)] }), {}, CRAFTING_HANDOFF_XP + 400);
+        const { result, starts } = await scripted(world({ xp: HANDOFF + 400, inventory: [item(0, ITEM.needle), item(1, ITEM.thread, 40), item(2, ITEM.body, 1)] }), O, HANDOFF + 400);
         expect(result).toEqual({ completed: 1 });
         expect(starts[0]).toMatchObject({ maxActions: 0, stow: true });
     });
