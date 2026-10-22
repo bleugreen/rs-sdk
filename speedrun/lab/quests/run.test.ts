@@ -4,7 +4,7 @@ import { baseState, FakeSdk } from '../../lib/fake-sdk';
 import type { TickRow } from '../../lib/ticks';
 import { questSteps, type QuestOptions } from '../../quests/segments';
 import { BOUNDARY_STEP, type RunnerSession } from '../../runner/step';
-import { formatComparison, formatReport, letterOf, runLabQuest, selectSegments, summarize, type LabQuest, type QuestFixture } from './run';
+import { baseXpGained, formatComparison, formatReport, letterOf, runLabQuest, selectSegments, skillXps, summarize, type LabQuest, type QuestFixture } from './run';
 
 const prevTick = process.env.SPEEDRUN_TICK_MS;
 beforeAll(() => { process.env.SPEEDRUN_TICK_MS = '5'; });
@@ -61,6 +61,21 @@ describe('summarize / formatReport', () => {
         const fixed = summarize('MM', 'fixed', names.slice(0, 1), [{ ok: true, rows: [row(names[0]!, 30)] }]);
         const burst = summarize('MM', 'burst', names.slice(0, 1), [{ ok: true, rows: [row(names[0]!, 12)] }]);
         expect(formatComparison(fixed, burst)).toContain('| S15:A-narnode | 30 | 12 | 18 |');
+    });
+});
+
+describe('skillXps / baseXpGained', () => {
+    test('game xp over XP_RATE (25), to 0.1 base', () => {
+        expect(baseXpGained({ defence: 0 }, { defence: 4300 })).toEqual({ defence: 172 });
+        expect(baseXpGained({ magic: 1000 }, { magic: 2234 })).toEqual({ magic: 49.4 }); // 1,234 / 25 = 49.36
+    });
+    test('only the skills of the first snapshot; one the second lacks gained nothing', () => {
+        expect(baseXpGained({ magic: 500 }, { defence: 2500 })).toEqual({ magic: 0 });
+    });
+    test('a skill the state does not publish reads as 0 game xp', () => {
+        const s = baseState({ skills: [{ name: 'Magic', level: 77, baseLevel: 77, experience: 218_900 }] } as never);
+        expect(skillXps(s)).toEqual({ magic: 218_900, defence: 0, hitpoints: 0 });
+        expect(skillXps(null)).toEqual({ magic: 0, defence: 0, hitpoints: 0 });
     });
 });
 
