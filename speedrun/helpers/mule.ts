@@ -703,7 +703,9 @@ export async function giveOpenTrade(
     }
 
     const count = (id: number): number | 'all' => amounts?.get(id) ?? 'all';
-    const offered = firstSlotPerId(items).filter(i => count(i.id) !== 0);
+    // Each id from its lowest slot, offered in the order the ids first appear in `items` (X counts still go last, planOffers).
+    const first = new Map(firstSlotPerId(items).map(i => [i.id, i]));
+    const offered = [...new Set(items.map(i => i.id))].map(id => first.get(id)!).filter(i => count(i.id) !== 0);
     if (mode === 'stock') {
         const names = offered.map(i => {
             const n = count(i.id);
@@ -745,12 +747,24 @@ export interface ServeResult extends GiveResult {
 }
 
 /**
+ * `items` in the package's line order (then by slot), so the offers follow the lines whatever slot each
+ * sits in: H12oP's Superantipoison(4), a one-press All, goes before its sharks for every ask.
+ */
+export function byPackageLine(pkg: Pick<Package, 'items'>, items: readonly InventoryItem[], pack?: ObjPack): InventoryItem[] {
+    const line = (i: InventoryItem) => {
+        const n = pkg.items.findIndex(spec => refMatches(spec, i, pack));
+        return n < 0 ? pkg.items.length : n;
+    };
+    return [...items].sort((a, b) => line(a) - line(b) || a.slot - b.slot);
+}
+
+/**
  * Give the staged package in the trade open with `partner`. A fixed package is all of each
  * staged id, as ever. A package with a top-up first waits for the scored account's ask (altar-cue.ts
  * awaitAsk, scoped to the package) and offers each top-up line's topUpCounts count.
  */
 export async function serveStaged(sdk: BotSDK, bot: BotActions, o: ServeOptions): Promise<ServeResult> {
-    const items = sdk.getInventory().filter(i => o.held.has(i.id));
+    const items = byPackageLine(o.pkg, sdk.getInventory().filter(i => o.held.has(i.id)));
     const mode = o.mode ?? 'burst';
     const timeoutMs = o.timeoutMs ?? 60_000;
     const fixed = o.exact ? new Map(o.held) : undefined;

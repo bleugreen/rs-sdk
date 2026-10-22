@@ -354,14 +354,13 @@ This is the run-day config; `mule.test.ts` parses this block and checks it again
 carried-mode tests serve. Both packages are top-ups sized by SCORED's ask (rs/158): M up to 13 sharks,
 P up to 1 Superantipoison(4) and 9 sharks. The game names the potion `Superantipoison(4)` (obj 2448,
 `4dose2antipoison`), one word with no space. h45 logs in carrying the potion and 22 sharks (13 + 9,
-`carriedShort` sums the maxes), 23 slots, and nothing else in the pack, staged **potion first** so it
-sits in slot 0.
+`carriedShort` sums the maxes), 23 slots, and nothing else in the pack.
 
-**Offer order.** In one trade the mule offers by inventory slot, lowest first, with any X count
-(anything but 1, 5, 10 or the whole stack) after the button presses (`lib/trade.ts` `planOffers`).
-The package's line order doesn't decide it. With the potion in slot 0 it goes first for every ask;
-staged after the sharks, an ask of 1 or 5 sharks would go before it. Either way the trade completes
-only when both sides confirm, so the order changes nothing SCORED receives. Its own `cueDir` keeps
+**Offer order.** In one trade the mule offers in the package's line order (`byPackageLine`), each id
+from its lowest slot, with any X count (anything but 1, 5, 10 or the whole stack) after the button
+presses (`lib/trade.ts` `planOffers`). H12oP's potion line comes first and is always a one-press All,
+so it is offered first for every ask, whatever slot it sits in; nothing in the staging has to hold it.
+The trade completes only when both sides confirm, so the order changes nothing SCORED receives. Its own `cueDir` keeps
 mule1's H12 cue apart; there H12oP's cue replaces H12oM's in the one `cue.json`. What `run.ts` writes
 (rs/393), with SCORED as the receiver:
 
@@ -415,7 +414,7 @@ sharks and the potion, and there is no bank on the atoll:
 
 1. Lumdo (at the landing, 2802,2707) to Crash Island, then Waydar's return to the Gnome Stronghold.
 2. Bank at the Grand Tree: deposit the leftover sharks and any potion, withdraw 1 Superantipoison(4)
-   first (slot 0) and then 22 Shark, and keep the rune set worn and nothing else in the pack.
+   and 22 Shark, and keep the rune set worn and nothing else in the pack.
 3. Back via Daero (the blindfold) to Waydar, Crash Island and Lumdo: 42 ticks (rs/463, m), then the
    ~10-tick walk from the landing to P's tile; log out there.
 

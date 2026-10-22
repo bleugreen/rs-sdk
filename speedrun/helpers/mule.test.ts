@@ -695,10 +695,11 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
         expect(n(sharks(9), [{ item: POTION, count: 1 }, { item: '^shark$', count: 9 }])).toEqual([[1, 0], [9, 9]]); // no potion held
     });
 
-    test('offer order is inventory slot order with X counts last, never the package\'s line order', async () => {
-        // Sharks staged before the potion: Offer-5 (a button) on slot 0 goes before the potion; 7 is an X count, so it goes last.
+    test('offer order is the package\'s line order whatever the slots (X counts last): the potion first for every ask', async () => {
+        // Sharks staged before the potion: the potion's one-press All still goes first, Offer-5 (a button) next, an X count (7) last.
         for (const [count, expected] of [
-            [5, [['sendOfferItem', 0, 5], ['sendOfferItem', 22, -1], ['sendAcceptTrade']]],
+            [1, [['sendOfferItem', 22, -1], ['sendOfferItem', 0, 1], ['sendAcceptTrade']]],
+            [5, [['sendOfferItem', 22, -1], ['sendOfferItem', 0, 5], ['sendAcceptTrade']]],
             [7, [['sendOfferItem', 22, -1], ['sendOfferItem', 0, 7], ['sendAcceptTrade']]]
         ] as const) {
             const { sdk, result } = await serveP([...sharks(17), sapp(22)], [{ item: POTION, count: 1 }, { item: '^shark$', count }]);
