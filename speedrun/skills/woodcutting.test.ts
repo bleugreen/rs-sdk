@@ -702,12 +702,13 @@ function normalBand(params: Record<string, unknown>, kit: string[], rolls: numbe
         };
     };
     // the page runtime's contract, reduced to what a tick needs: 5 packets a tick, done ends the run
-    let phase: 'running' | 'done' | 'fault' = 'running';
-    const program = createKnifeCycle({ ...params, technique: 'plain' }, { state: snapshot(), log: () => {} });
+    let phase = 'running' as 'running' | 'done' | 'fault';
+    const program = createKnifeCycle({ ...params, technique: 'plain' });
     const step = (state: BotWorldState): ProgramAction[] => {
         const sent: ProgramAction[] = [];
         const ctx: ProgramContext = {
-            state, tick: state.tick, ticksAdvanced: 1, nowMs: 0, wallMs: 0, frames: [],
+            // the page's state type is the SDK's plus page-only fields knife-cycle does not read
+            state: state as unknown as ProgramContext['state'], tick: state.tick, ticksAdvanced: 1, nowMs: 0, wallMs: 0, frames: [],
             get budget() { return 5 - sent.length; },
             send: a => (sent.length < 5 ? (sent.push(a), true) : false),
             count: () => {}, gauge: () => {}, starter: () => {}, mark: () => {}, share: () => {}, progress: () => {}, log: () => {},
