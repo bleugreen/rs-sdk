@@ -14,7 +14,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import './dom-shim.js';
+import './test-support/browser-globals.js';
 
 import { invalidateCache, loadCache } from './cache.js';
 import { LoginError } from './net/GameConnection.js';

@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+
+import '../../lite/test-support/browser-globals.js';
+
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { registerPrograms } from './index.js';

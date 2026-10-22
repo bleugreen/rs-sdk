@@ -11,7 +11,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import './dom-shim.js';
+import './test-support/browser-globals.js';
 
 import SeqType, { RestartMode } from '#/config/SeqType.js';
 import SpotType from '#/config/SpotType.js';

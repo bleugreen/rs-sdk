@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+
+import '../../lite/test-support/browser-globals.js';
+
 import { FrameStats, LoopRate } from './frames.js';
 
 describe('FrameStats', () => {

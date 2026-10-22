@@ -12,11 +12,10 @@
 // The previous baseline is put back afterwards, not just forgotten: loadCache()
 // is memoized and will not recapture, so a real-cache suite that runs later would
 // otherwise find no baseline, or this suite's stub, behind a loaded cache.
-//
-// Import ../dom-shim.js (or install equivalent DOM globals) before this module:
-// IfType pulls in graphics code that touches `document` at module scope.
 
 import { afterAll, beforeAll } from 'bun:test';
+
+import './browser-globals.js';
 
 import IfType from '#/config/IfType.js';
 

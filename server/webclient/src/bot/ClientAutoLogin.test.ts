@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 
-import '../lite/dom-shim.js';
+import '../lite/test-support/browser-globals.js';
 
 const { Client } = await import('../client/Client.js');
 const { default: Pix8 } = await import('#/graphics/Pix8.js');

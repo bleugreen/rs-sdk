@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 
-import '../lite/dom-shim.js';
+import '../lite/test-support/browser-globals.js';
 
 import { CollisionFlag } from '#/dash3d/CollisionFlag.js';
 import { LocAngle } from '#/dash3d/LocAngle.js';
@@ -24,6 +24,7 @@ const { LiteClient } = await import('../lite/LiteClient.js');
 const { dispatch } = await import('../lite/protocol/incoming.js');
 const { captureBaseInterfaces, resetBaseInterfaces } = await import('../lite/interfaces.js');
 const { useStubBaseline } = await import('../lite/test-support/stub-baseline.js');
+const { useOwnConfigTables } = await import('../lite/test-support/config-tables.js');
 const { BotSDK } = await import('../../../../sdk/index.js');
 const { default: ClientBuild } = await import('../client/ClientBuild.js');
 const { default: World } = await import('#/dash3d/World.js');
@@ -52,6 +53,9 @@ function defineObj(id: number, name: string): void {
 // The lite fixtures recapture the baseline from the components they define; the
 // file's own stub baseline hands back whatever was captured before it.
 useStubBaseline();
+// defineObj, defineLoc and the out-of-table lookups below swap in one-entry
+// LocType/NpcType/ObjType tables; the tables in place before the file go back after it.
+useOwnConfigTables(LocType, NpcType, ObjType);
 
 for (const kind of ['browser', 'lite'] as const) {
     describe(`${kind} guarded dialogue clicks`, () => {

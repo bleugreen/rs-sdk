@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+
+import '../../lite/test-support/browser-globals.js';
+
 import { readFileSync } from 'node:fs';
 import { type Axe, AXES, axeOf, catchChance, createKnifeCycle, CYCLE_METHODS, lockWindow, SHAFTS_BUTTON, TREE_CHANCE } from './knife-cycle.js';
 import { Harness, makeState, type StateSpec } from './testkit.js';

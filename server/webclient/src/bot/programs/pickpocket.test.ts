@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+
+import '../../lite/test-support/browser-globals.js';
+
 import { createPickpocket } from './pickpocket.js';
 import { CHARGE_COMPONENT, type StunSummary } from './stun-actions.js';
 import { Harness, makeState, type Sent } from './testkit.js';

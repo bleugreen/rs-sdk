@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import '../lite/dom-shim.js';
+import '../lite/test-support/browser-globals.js';
 
 const { BotStateCollector } = await import('./StateCollector.js');
 const { default: IfType } = await import('#/config/IfType.js');

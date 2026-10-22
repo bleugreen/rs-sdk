@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import '../lite/test-support/browser-globals.js';
+
 type WorkerTimerModule = typeof import('./WorkerTimer.js');
 
 /**

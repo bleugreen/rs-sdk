@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+
+import '../../lite/test-support/browser-globals.js';
+
 import { createProbe, type InPageProbeResult } from './probe.js';
 import { Harness, makeState } from './testkit.js';
 

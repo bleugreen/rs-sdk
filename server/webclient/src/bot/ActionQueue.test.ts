@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+
+import '../lite/test-support/browser-globals.js';
+
 import { BotActionQueue } from './ActionQueue.js';
 import type { QueuedBotAction } from './ActionQueue.js';
 

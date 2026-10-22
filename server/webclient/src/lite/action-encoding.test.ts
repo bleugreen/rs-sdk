@@ -17,7 +17,7 @@
 
 import { beforeAll, describe, expect, test } from 'bun:test';
 
-import './dom-shim.js';
+import './test-support/browser-globals.js';
 
 import CollisionMap from '#/dash3d/CollisionMap.js';
 import JString from '#/datastruct/JString.js';

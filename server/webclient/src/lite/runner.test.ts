@@ -13,6 +13,8 @@
 
 import { describe, expect, test } from 'bun:test';
 
+import './test-support/browser-globals.js';
+
 import type { ActionResult } from '#/bot/ActionExecutor.js';
 import type { BotAction } from '#/bot/types.js';
 

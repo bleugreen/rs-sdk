@@ -12,7 +12,7 @@
 
 import { beforeAll, describe, expect, test } from 'bun:test';
 
-import './dom-shim.js';
+import './test-support/browser-globals.js';
 
 import IfType from '#/config/IfType.js';
 import Packet from '#/io/Packet.js';

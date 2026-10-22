@@ -17,7 +17,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import './dom-shim.js';
+import './test-support/browser-globals.js';
 
 import Packet from '#/io/Packet.js';
 import { ServerProt } from '#/io/ServerProt.js';

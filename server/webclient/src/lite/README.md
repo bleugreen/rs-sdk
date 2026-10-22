@@ -50,6 +50,7 @@ combat style, chat.
 | `actions.ts` | the interaction/accessor surface |
 | `interfaces.ts` | per-client copy-on-write view of `IfType.list` |
 | `dom-shim.ts` | ~70 lines so browser modules import under Bun |
+| `test-support/` | shared by lite and bot suites: `browser-globals.ts` (every webclient suite's first import), `stub-baseline.ts` (a suite's own interface baseline), `config-tables.ts` (puts back the LocType/NpcType/ObjType tables a suite replaced) |
 
 ## Correctness strategy
 

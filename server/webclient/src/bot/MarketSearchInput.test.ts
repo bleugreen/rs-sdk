@@ -1,4 +1,7 @@
 import { expect, test } from 'bun:test';
+
+import '../lite/test-support/browser-globals.js';
+
 import { MarketSearchInput, displayedSearchItem, SEARCH_FIELD, SEARCH_CLEAR, SEARCH_ACK, RESULT_BUTTON, RESULT_ICON, SEARCH_PLACEHOLDER, type SearchComponent } from '../client/MarketSearchInput';
 
 function fixture() {

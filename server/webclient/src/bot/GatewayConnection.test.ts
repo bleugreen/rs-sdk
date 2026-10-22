@@ -1,4 +1,7 @@
 import { expect, test } from 'bun:test';
+
+import '../lite/test-support/browser-globals.js';
+
 import { getBotPassword, getBotUsername, redeemLoginToken, type LoginTokenWindow } from './GatewayConnection.js';
 
 function fakeWindow(href: string, answer: () => Response) {

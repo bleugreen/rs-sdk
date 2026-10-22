@@ -5,6 +5,9 @@
 // wraps at 256 and corrupts the protocol stream.
 
 import { describe, test, expect } from 'bun:test';
+
+import './test-support/browser-globals.js';
+
 import Packet from '#/io/Packet.js';
 import WordPack from '#/wordfilter/WordPack.js';
 

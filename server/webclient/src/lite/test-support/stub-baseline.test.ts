@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import '../dom-shim.js';
+import './browser-globals.js';
 
 import IfType from '#/config/IfType.js';
 

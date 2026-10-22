@@ -17,7 +17,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import '../dom-shim.js';
+import '../test-support/browser-globals.js';
 
 import ClientBuild from '#/client/ClientBuild.js';
 import CollisionMap, { BuildArea } from '#/dash3d/CollisionMap.js';
