@@ -69,7 +69,7 @@ const STEP_MS = 1000;
  * driven. The idle timers are the one real-time clock left, and STEP_MS puts them past any stall.
  */
 async function stepped<T>(sdk: TutorialSdk, p: () => Promise<T>, maxTicks = 100): Promise<T> {
-    const prevTick = process.env.SPEEDRUN_TICK_MS;
+    const prevMs = process.env.SPEEDRUN_TICK_MS;
     process.env.SPEEDRUN_TICK_MS = String(STEP_MS);
     let now = Date.now();
     setSystemTime(now);
@@ -82,7 +82,7 @@ async function stepped<T>(sdk: TutorialSdk, p: () => Promise<T>, maxTicks = 100)
     } finally {
         sdk.stepped = false;
         setSystemTime();
-        process.env.SPEEDRUN_TICK_MS = prevTick;
+        process.env.SPEEDRUN_TICK_MS = prevMs;
     }
 }
 
