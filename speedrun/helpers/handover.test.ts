@@ -440,7 +440,7 @@ describe('id-addressed items (H21e: one unfinished potion type apart from anothe
             }));
             return { ok: true };
         };
-        // The partner takes the guam and the ranarr leaves too, but the trade reports only the guam.
+        // The trade moves only the guam: the ranarr notes stay carried, and the same name does not cover them.
         t.io.give = async (ctx, to, items) => {
             t.given.push(items);
             offered = offerSpecs(items, ctx.sdk.getInventory());

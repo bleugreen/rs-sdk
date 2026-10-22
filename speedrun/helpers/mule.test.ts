@@ -15,6 +15,7 @@ import {
     giveOpenTrade,
     holds,
     isStackableName,
+    packageItems,
     parsePackageRequest,
     planPackage,
     playerPattern,
@@ -87,6 +88,51 @@ describe('packages', () => {
     test('amount -1 takes the whole bank stack', () => {
         const plan = planPackage({ name: 'all', items: [{ item: 'logs', amount: -1, noted: true }] }, bank([[1511, 'Logs', 77]]));
         expect(plan.withdrawals[0]!.amount).toBe(77);
+    });
+
+    // obj.pack: 91 guamvial / 92 cert_guamvial, 99 ranarrvial / 100 cert_ranarrvial, all "Unfinished potion".
+    describe('by obj id (H21e: unfinished potions share one name)', () => {
+        const UNF = 'Unfinished potion';
+        const herbBank = bank([[91, UNF, 483], [99, UNF, 360], [221, 'Eye of newt', 50]]);
+
+        test('a shared name is ambiguous, never the first bank item', () => {
+            const plan = planPackage({ name: 'h21e', items: [{ item: UNF, amount: 100, noted: true }] }, herbBank);
+            expect(plan.withdrawals).toEqual([]);
+            expect(plan.ambiguous).toEqual([{ item: UNF, ids: [91, 99] }]);
+        });
+
+        test('each id picks its own bank stack; a note id withdraws noted from the item id', () => {
+            const plan = planPackage(
+                { name: 'h21e', items: [{ id: 92, amount: 100 }, { id: 99, amount: 50, noted: true }, { item: 'Eye of newt', amount: 50, noted: true }] },
+                herbBank
+            );
+            expect(plan.ambiguous).toEqual([]);
+            expect(plan.withdrawals.map(w => [w.bankItem.id, w.amount, w.noted])).toEqual([[91, 100, true], [99, 50, true], [221, 50, true]]);
+            expect(plan.slots).toBe(3);
+            const short = planPackage({ name: 'x', items: [{ id: 100, amount: 400 }] }, herbBank);
+            expect(short.missing).toEqual([{ item: 'obj 100', wanted: 400, have: 360 }]);
+        });
+
+        test('staged and offered by id: the guam notes do not stand in for the ranarr notes', () => {
+            const held = countById(inv([[0, 92, UNF, 100], [1, 100, UNF, 50]]));
+            expect(stagedExactly(inv([[0, 92, UNF, 100], [1, 100, UNF, 50]]), held).exact).toBe(true);
+            const wrong = stagedExactly(inv([[0, 92, UNF, 150]]), held);
+            expect(wrong.exact).toBe(false);
+            expect(wrong.short).toEqual([100]);
+            expect(firstSlotPerId(inv([[0, 92, UNF, 100], [1, 100, UNF, 50]])).map(i => i.id)).toEqual([92, 100]);
+        });
+
+        test('options: item or id (exactly one); a note id cannot be noted: false; name lines unchanged', () => {
+            expect(packageItems('p', [{ id: 92, amount: 5 }, { item: 'Shark', amount: 2 }, { id: 99, amount: -1, noted: true }])).toEqual([
+                { id: 92, amount: 5 },
+                { item: 'Shark', amount: 2 },
+                { id: 99, amount: -1, noted: true }
+            ]);
+            expect(() => packageItems('p', [{ item: UNF, id: 91, amount: 1 }])).toThrow(/exactly one of item/);
+            expect(() => packageItems('p', [{ id: 92, amount: 1, noted: false }])).toThrow(/is a note/);
+            expect(() => packageItems('p', [{ id: 9_999_999, amount: 1 }])).toThrow(/not in obj.pack/);
+            expect(() => packageItems('p', [{ id: 91, amount: 0 }])).toThrow(/bad amount for obj 91/);
+        });
     });
 
     test('stackable guess covers coins, runes and ammunition but not plain items', () => {
