@@ -36,7 +36,7 @@ import { CROSSING_HITPOINTS, crossFromKandarin, crossingRestTarget, crossToKanda
 import { logNote } from '../lib/ticks';
 import { addRunes, FOOD, inArea, missingRunes, runTo, SPELLS, teleport, type Area, type Spell, type TravelSdk } from '../lib/travel';
 import { currentTick, waitOrThrow, waitTicks, waitUntil, type StateSource } from '../lib/wait';
-import { chebyshev, findNpc, invCount, invItem, messagesSince, pos, skillLevel, type LocQuery } from '../lib/world';
+import { chebyshev, findNpc, invCount, invItem, messageCursor, messagesAfter, pos, skillLevel, type LocQuery } from '../lib/world';
 import type { Check, Observed, StepContext } from '../runner/step';
 import { allOf, questSteps, slotsCover, stageAtLeast, talkShape, within, type QuestItem, type QuestOptions, type Segment } from './segments';
 
@@ -288,20 +288,23 @@ async function op(ctx: Ctx, q: LocQuery, option: string | RegExp, done: (s: BotW
  * cannot fire into the delays: on the demo the railing choice opened 6-7 ticks after the click, the
  * re-sent Inspect restarted the search and closed the choice it had opened, and the 'Try' click
  * landed on nothing (rs/257's demo trace). Then waits for `ready` without clicking again. False
- * when the op itself took no effect (a shut door in front of the shed's cannon).
+ * when the op itself took no effect (a shut door in front of the shed's cannon). `cursor` is the
+ * messageCursor taken before the click: the browser stamps the reply on the click's own tick, lite
+ * on the next, so a tick filter misses the browser's reply and every roll that opens no dialogue
+ * waited out `maxTicks`.
  */
-async function opStarted(ctx: Ctx, q: LocQuery, option: string | RegExp, since: number, started: RegExp, ready: (s: BotWorldState) => boolean, what: string, maxTicks = 40): Promise<boolean> {
+async function opStarted(ctx: Ctx, q: LocQuery, option: string | RegExp, cursor: number, started: RegExp, ready: (s: BotWorldState) => boolean, what: string, maxTicks = 40): Promise<boolean> {
     const sdk = sdkOf(ctx);
-    const r = await opLoc(sdk, q, option, s => ready(s) || messagesSince(s, since, started).length > 0, { maxTicks, interrupts: interrupts() });
+    const r = await opLoc(sdk, q, option, s => ready(s) || messagesAfter(s, cursor, started).length > 0, { maxTicks, interrupts: interrupts() });
     if (!r.ok) return false;
     await waitOrThrow(sdk, ready, 15, `${what}: the dialogue after the op`);
     return true;
 }
 
-/** Wait for a game message matching `re` sent from tick `since` on; returns those messages. */
-async function message(sdk: StateSource, since: number, re: RegExp, maxTicks: number, what: string): Promise<string[]> {
-    await waitOrThrow(sdk, s => messagesSince(s, since, re).length > 0, maxTicks, what);
-    return messagesSince(sdk, since, re);
+/** Wait for a game message matching `re` newer than `cursor` (messageCursor); returns those messages. */
+async function message(sdk: StateSource, cursor: number, re: RegExp, maxTicks: number, what: string): Promise<string[]> {
+    await waitOrThrow(sdk, s => messagesAfter(s, cursor, re).length > 0, maxTicks, what);
+    return messagesAfter(sdk, cursor, re);
 }
 
 /** One failed railing's damage (railings.rs2:87-90). */
@@ -387,12 +390,12 @@ async function railings(ctx: Ctx, opts: Options | undefined, tally: Tally): Prom
                 if (attempt >= 60) throw new Error(`railing at ${r.x},${r.z}: 60 tries without a success`);
                 if (currentTick(sdk) > deadline) throw new Error(`railings: over ${RAILINGS_MAX_TICKS} ticks (${tally.railingTries} tries)`);
                 await eatIfLow(ctx, opts, tally);
-                // From the next tick on: the last try's message must not count.
-                const since = currentTick(sdk) + 1;
+                // Taken before the click: the last try's messages must not count.
+                const cursor = messageCursor(sdk);
                 const where = `railing at ${r.x},${r.z}`;
-                const landed = await opStarted(ctx, { x: r.x, z: r.z, id: r.id, radius: 25 }, 'Inspect', since, RAILING_SEARCH, s => s.dialog.isOpen || messagesSince(s, since, ALREADY_FIXED_RAILING).length > 0, where);
+                const landed = await opStarted(ctx, { x: r.x, z: r.z, id: r.id, radius: 25 }, 'Inspect', cursor, RAILING_SEARCH, s => s.dialog.isOpen || messagesAfter(s, cursor, ALREADY_FIXED_RAILING).length > 0, where);
                 if (!landed) throw new Error(`${where}: no effect within 40 ticks at ${JSON.stringify(pos(sdk))}`);
-                if (messagesSince(sdk, since, ALREADY_FIXED_RAILING).length) {
+                if (messagesAfter(sdk, cursor, ALREADY_FIXED_RAILING).length) {
                     tally.railingsSkipped++;
                     break;
                 }
@@ -405,7 +408,7 @@ async function railings(ctx: Ctx, opts: Options | undefined, tally: Tally): Prom
                 const c = await converse(sdk, ['Try to replace the railing.'], { idle: 1 });
                 if (!c.ok || c.options !== 1) throw new Error(`railing at ${r.x},${r.z}: the choice was not answered (${c.reason ?? `${c.options} options`})`);
                 tally.railingTries++;
-                const msgs = await message(sdk, since, RAILING_RESULT, 20, `railing result at ${r.x},${r.z}`);
+                const msgs = await message(sdk, cursor, RAILING_RESULT, 20, `railing result at ${r.x},${r.z}`);
                 if (msgs.some(m => /no problems/i.test(m))) {
                     // railings.rs2: p_delay(2) before the bit is set; a click inside it is dropped.
                     await waitTicks(sdk, 3);
@@ -460,12 +463,12 @@ async function lollk(ctx: Ctx, opts: Options | undefined): Promise<void> {
     const sdk = sdkOf(ctx);
     if (!inCave(sdk.getState())) await enterCave(ctx);
     await go(ctx, CRATE_STAND, 'to the crate');
-    const since = currentTick(sdk) + 1;
+    const cursor = messageCursor(sdk);
     const nothing = /find nothing/i;
-    await op(ctx, { x: CRATE.x, z: CRATE.z, name: /crate/i, radius: 20 }, 'Search', s => s.dialog.isOpen || messagesSince(s, since, /find nothing|it's empty/i).length > 0, 'the crate');
-    if (messagesSince(sdk, since, /it's empty/i).length) throw new Error('crate: empty, so the quest is not at stage 4');
+    await op(ctx, { x: CRATE.x, z: CRATE.z, name: /crate/i, radius: 20 }, 'Search', s => s.dialog.isOpen || messagesAfter(s, cursor, /find nothing|it's empty/i).length > 0, 'the crate');
+    if (messagesAfter(sdk, cursor, /it's empty/i).length) throw new Error('crate: empty, so the quest is not at stage 4');
     // mcannon_crate.rs2: Lollk already out (a resumed segment) leaves the crate empty-handed; talk to him.
-    const r = messagesSince(sdk, since, nothing).length
+    const r = messagesAfter(sdk, cursor, nothing).length
         ? await talkTo(sdk, YOUNGSTER_RE, [], { interrupts: interrupts(), ...talkShape(opts, SHAPES.lollk) })
         : await converse(sdk, [], { interrupts: interrupts(), ...talkShape(opts, SHAPES.lollk) });
     if (!r.ok) throw new Error(`Lollk: ${r.reason}`);
@@ -484,16 +487,16 @@ async function shed(ctx: Ctx, opts: Options | undefined, tally: Tally): Promise<
     const deadline = currentTick(sdk) + SHED_MAX_TICKS;
     for (let i = 0; i < 80; i++) {
         if (currentTick(sdk) > deadline) throw new Error(`cannon: over ${SHED_MAX_TICKS} ticks (${part} parts fixed)`);
-        const since = currentTick(sdk) + 1;
-        const landed = await opStarted(ctx, { name: /broken multicannon/i, radius: 10 }, 'Inspect', since, CANNON_INSPECTING, s => s.dialog.isOpen || messagesSince(s, since, CANNON_INSPECT).length > 0, 'cannon');
+        const cursor = messageCursor(sdk);
+        const landed = await opStarted(ctx, { name: /broken multicannon/i, radius: 10 }, 'Inspect', cursor, CANNON_INSPECTING, s => s.dialog.isOpen || messagesAfter(s, cursor, CANNON_INSPECT).length > 0, 'cannon');
         if (!landed) {
             // The shed door shut in front of the bot (dwarf_cannon.md "The shed door").
             await openDoor(sdk, SHED_DOOR.x, SHED_DOOR.z);
             continue;
         }
-        if (messagesSince(sdk, since, /strange dwarf contraption/i).length) return; // stage 8 or later
+        if (messagesAfter(sdk, cursor, /strange dwarf contraption/i).length) return; // stage 8 or later
         tally.shedInspects++;
-        if (messagesSince(sdk, since, /can't quite find/i).length) {
+        if (messagesAfter(sdk, cursor, /can't quite find/i).length) {
             tally.shedFindFails++;
             continue;
         }
@@ -503,7 +506,7 @@ async function shed(ctx: Ctx, opts: Options | undefined, tally: Tally): Promise<
             const c = await converse(sdk, [PARTS[part]!], { idle: 1 });
             if (!c.ok || c.options !== 1) throw new Error(`cannon: the part choice was not answered (${c.reason ?? `${c.options} options`})`);
             tally.shedFixTries++;
-            const msgs = await message(sdk, since, CANNON_FIX, 15, 'part fix result');
+            const msgs = await message(sdk, cursor, CANNON_FIX, 15, 'part fix result');
             if (msgs.some(m => /need a tool kit/i.test(m))) throw new Error('cannon: no tool kit');
             if (msgs.some(m => /manage to fix it|already fixed this part/i.test(m))) {
                 part++;
