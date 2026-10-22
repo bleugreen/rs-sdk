@@ -730,7 +730,7 @@ export async function swap(sdk: SwapSdk, partner: string, give: readonly GiveSpe
     const start = s0.tick;
     type Outcome = { ok: boolean; tick: number; received: TradeItem[]; gave: TradeItem[]; reason?: string };
     const fail = (tick: number, reason: string): Outcome => ({ ok: false, tick, received: [], gave: [], reason });
-    const outcome = await drive<Outcome>(sdk, openTicks + (opts.maxTicks ?? 40), s => {
+    const r = await onStates<Outcome>(sdk, openTicks + (opts.maxTicks ?? 40), s => {
         const t = tradeOf(s);
         if (!sawOpen && !t.isOpen) {
             if (s.tick - (firstClick >= 0 ? firstClick : start) > openTicks) return fail(s.tick, firstClick >= 0 ? 'no_response' : 'player_not_found');
@@ -774,7 +774,8 @@ export async function swap(sdk: SwapSdk, partner: string, give: readonly GiveSpe
     });
     const from = firstClick >= 0 ? firstClick : openTick >= 0 ? openTick : start;
     const opened = openTick >= 0 ? openTick - (firstClick >= 0 ? firstClick : openTick) : -1;
-    if (outcome === 'timeout') return { ok: false, ticks: (sdk.getState()?.tick ?? from) - from, openTicks: opened, received: [], gave: [], reason: 'timeout' };
+    if (!r.ok) return { ok: false, ticks: (sdk.getState()?.tick ?? from) - from, openTicks: opened, received: [], gave: [], reason: failureReason(r.reason) };
+    const outcome = r.value;
     return { ok: outcome.ok, ticks: outcome.tick - from, openTicks: opened, received: outcome.received, gave: outcome.gave, ...(outcome.reason ? { reason: outcome.reason } : {}) };
 }
 
