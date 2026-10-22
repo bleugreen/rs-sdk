@@ -316,6 +316,11 @@ export function extraSpecs(extras: readonly ServeExtra[]): GiveSpec[] {
     return extras.map(e => ({ item: exactName(e.item), n: e.count }));
 }
 
+/** Extras as wants: at least `count` of each, by exact name. */
+export function extraWants(extras: readonly ServeExtra[]): WantSpec[] {
+    return extras.map(e => ({ item: exactName(e.item), amount: e.count }));
+}
+
 /**
  * The serve's one trade, already open with `partner`: the load and its extras out, and whatever
  * the scored account puts up taken back in the same trade (ANY_OFFER; no hand-off expects
@@ -368,7 +373,7 @@ export async function takeBackTrade(sdk: SwapSdk, partner: string, returnExtras:
 
 /** Delivered both ways: the set came in, and every return extra went out. */
 export function takeBackDelivered(r: Pick<TakeBackResult, 'ok' | 'received' | 'gave'>, returnExtras: readonly ServeExtra[]): boolean {
-    return r.ok && offerSatisfies(loadWant(0), r.received) && offerSatisfies(returnExtras.map(e => ({ item: exactName(e.item), amount: e.count })), r.gave);
+    return r.ok && offerSatisfies(loadWant(0), r.received) && offerSatisfies(extraWants(returnExtras), r.gave);
 }
 
 /**
