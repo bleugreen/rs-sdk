@@ -1,0 +1,252 @@
+import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+import type { BotWorldState, InventoryItem, QuestJournalState } from '../../sdk/types';
+import { baseState } from '../lib/fake-sdk';
+import { compactJournal } from '../lib/quests';
+import type { Observed } from '../runner/step';
+import {
+    DEFAULT_OPTIONS, doneAt, itemMilestone, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
+    patrolLeavesLane, resolveOptions, seg, segmentName, SEGMENTS, stepId,
+} from './monkey-madness';
+
+const item = (id: number, slot = 0): InventoryItem => ({ slot, id, name: `obj ${id}`, count: 1, optionsWithIndex: [] });
+
+/** Lines as the server wraps them: arbitrary breaks, colour tags kept. */
+function journal(text: string): QuestJournalState {
+    const words = text.split(' ');
+    const lines: string[] = [];
+    for (let i = 0; i < words.length; i += 4) lines.push(`@str@${words.slice(i, i + 4).join(' ')}`);
+    return { title: 'Monkey Madness', lines, open: false, tick: 50 };
+}
+
+function obs(o: { status?: 'not_started' | 'started' | 'complete'; text?: string; inv?: number[]; worn?: number[] } = {}): Observed {
+    const state = baseState({
+        quests: { mm: o.status ?? 'started' },
+        inventory: (o.inv ?? []).map((id, i) => item(id, i)),
+        equipment: (o.worn ?? []).map((id, i) => item(id, i)),
+    } as Partial<BotWorldState>);
+    return { state, probed: { [JOURNAL_PROBE]: o.text === undefined ? null : journal(o.text) } };
+}
+
+// Journal texts as mm_journal.rs2 builds them at representative points.
+const CH1 = '@dre@Chapter 1:||';
+const AFTER_A = `${CH1}@dre@King Narnode Shareen:|| @str@Narnode has given me a copy of the Royal Seal so that I may identify myself as his envoy.|| @dbl@I have agreed to investigate the @dre@Karamjan@dbl@ shipyard.`;
+const AFTER_B = `${CH1}@str@Narnode has given me a copy of the Royal Seal so that I may identify myself as his envoy.|| @str@I have investigated the Karamjan shipyard.||`;
+const MID_E = `${AFTER_B} @str@Narnode has given me some handwritten orders.|| @str@I have been taken to the Underground Military Glider Hangar.|| @dbl@I cannot go on the mission until reinitialisation has been|@dbl@completed.`;
+const CH1_DONE = `${CH1}@str@I have found that the 10th squad were indeed blown off course and never reached the shipyard.`;
+const AFTER_H = `${CH1_DONE}||@dre@Chapter 2:||@str@I have made my rather painful way to a large village|@str@populated by various types of monkey.`;
+const AFTER_I = `${AFTER_H}||@dre@Sergeant Garkor:||@str@I found Sergeant Gakor hiding towards the east of the village.`;
+const IN_L = `${AFTER_I}||@str@Zooknock is capable of transforming my body into that of a monkey.`;
+const CH3 = `${CH1_DONE}||@dre@Chapter 2:||@str@I have made contact with the rest of the 10th squad||@dre@Chapter 3:||@str@I found Sergeant Gakor hiding`;
+const AFTER_R = `${CH3}||@str@I have disguised myself as a Karamjan monkey.||@dbl@I must seek audience with @dre@Awowogei@dbl@, proposing an alliance`;
+const AFTER_S = `${CH3}||@dre@Awowogei:||@dbl@To demonstrate my worthiness, I have been asked to rescue one of the Karamjan type of monkey from the zoo in @dre@Ardougne@dbl@.`;
+const AFTER_V = `${CH3}||@dre@Awowogei:||@str@I have rescued one of the monkeys from the zoo in Ardougne@str@and have shown the evidence to Awowogei. I appear to have@str@earnt Awowogei's favour.`;
+const AFTER_W = `${AFTER_V}||@str@In order to fool this spell, Garkor has given me a sigil which @str@identifies me with the squad.`;
+const POST_DEMON = `${CH1_DONE}||@dre@Chapter 2:||@dre@Chapter 3:||@str@I earnt @str@Awowogei's favour.||@dbl@With the help of the 10th squad I managed to slay @dre@Glough's@dbl@ 'pet'||@dbl@I must now report to @dre@King Narnode@dbl@.`;
+const REPORTED = POST_DEMON.replace("@dbl@I must now report to @dre@King Narnode@dbl@.", '@str@I have reported to King Narnode.');
+const COMPLETE = `${REPORTED}||@red@QUEST COMPLETE!||@dbl@I should find Daero and enroll with the Royal Guard training programme.`;
+const TRAINED = `${REPORTED}||@red@QUEST COMPLETE!||@str@I found Daero and enrolled in the Royal Guard training @str@programme.`;
+
+describe('segments', () => {
+    test('26 unique names A-Z, all prefixed S15:', () => {
+        const names = SEGMENTS.map(segmentName);
+        expect(names).toHaveLength(26);
+        expect(new Set(names).size).toBe(26);
+        expect(SEGMENTS.map(d => d.letter).join('')).toBe('ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+        for (const n of names) expect(n.startsWith(`${stepId}:`)).toBe(true);
+        expect(names[0]).toBe('S15:A-narnode');
+    });
+
+    test('logout-unsafe exactly on E, G, Q, W and X (the manifest stretches)', () => {
+        expect(SEGMENTS.filter(d => !d.logoutSafe).map(d => d.letter).join('')).toBe('EGQWX');
+    });
+
+    test('travel segments are K, M, P and U', () => {
+        expect(SEGMENTS.filter(d => d.travel).map(d => d.letter).join('')).toBe('KMPU');
+    });
+
+    test('the stock reference column sums to the doc rows (~4,418)', () => {
+        expect(SEGMENTS.reduce((a, d) => a + d.stockRef, 0)).toBe(4418);
+    });
+
+    test('option defaults', () => {
+        expect(DEFAULT_OPTIONS).toMatchObject({ dialogue: 'fixed', templeMethod: 'ladder', returnMonkey: 'walk' });
+        expect(resolveOptions({ returnMonkey: 'glider' })).toMatchObject({ dialogue: 'fixed', templeMethod: 'ladder', returnMonkey: 'glider' });
+    });
+});
+
+describe('jail patrol handover', () => {
+    const npc = (name: string, x: number, z: number) => ({ kind: 'npc', id: 1, index: name.length, name, combatLevel: 1, x, z, tileX: x, tileZ: z, size: 2, distance: 3, hp: null, maxHp: null, healthPercent: null, targetIndex: -1, inCombat: false }) as never;
+    const at = (...g: Array<[string, number, number]>) => {
+        const s = baseState();
+        s.nearbyNpcs = g.map(([n, x, z]) => npc(n, x, z));
+        return s;
+    };
+    test('fires only when a gorilla steps off the lane top westward', () => {
+        expect(patrolLeavesLane(at(['Aberab', 2772, 2801], ['Trefaji', 2767, 2803]), at(['Aberab', 2771, 2801], ['Trefaji', 2767, 2803]))).toBe(true);
+        // The incoming gorilla passes the same tiles eastward.
+        expect(patrolLeavesLane(at(['Trefaji', 2770, 2801]), at(['Trefaji', 2771, 2801]))).toBe(false);
+        expect(patrolLeavesLane(at(['Trefaji', 2771, 2801]), at(['Trefaji', 2772, 2801]))).toBe(false);
+        // Down the lane, not off it.
+        expect(patrolLeavesLane(at(['Aberab', 2772, 2801]), at(['Aberab', 2772, 2800]))).toBe(false);
+        expect(patrolLeavesLane(at(['Monkey Guard', 2772, 2801]), at(['Monkey Guard', 2771, 2801]))).toBe(false);
+    });
+});
+
+describe('object ids', () => {
+    test('match server/content/pack/obj.pack', () => {
+        const pack = new Map<string, number>();
+        for (const line of readFileSync(join(import.meta.dir, '..', '..', 'server', 'content', 'pack', 'obj.pack'), 'utf8').split('\n')) {
+            const i = line.indexOf('=');
+            if (i > 0) pack.set(line.slice(i + 1).trim(), Number(line.slice(0, i)));
+        }
+        const debug: Record<keyof typeof MM_OBJ, string> = {
+            royalSeal: 'mm_gnome_royal_seal', orders: 'mm_narnode_orders', dentures: 'mm_monkey_dentures', enchantedBar: 'mm_enchanted_gold_bar',
+            amuletMould: 'mm_monkey_amulet_mould', amulet: 'mm_amulet_of_monkey_speak', amuletUnstrung: 'mm_amulet_of_monkey_speak_without_string',
+            talisman: 'mm_monkey_talisman', greegree: 'mm_monkey_greegree_for_normal_monkey', monkey: 'mm_monkey_in_backpack', sigil: 'mm_sigil',
+            monkeyBones: 'mm_normal_monkey_bones', goldBar: 'gold_bar', ballOfWool: 'ball_of_wool', banana: 'banana', magicShortbow: 'magic_shortbow',
+            runeArrow: 'rune_arrow', prayerPotion4: '4doseprayerrestore', antipoison4: '4doseantipoison', shark: 'shark',
+        };
+        for (const [k, name] of Object.entries(debug)) expect([k, pack.get(name)]).toEqual([k, MM_OBJ[k as keyof typeof MM_OBJ]]);
+        PUZZLE_TILE_IDS.forEach((id, i) => expect(pack.get(`reinitialisation_${String(i + 1).padStart(2, '0')}`)).toBe(id));
+    });
+});
+
+describe('mmMilestone', () => {
+    const at = (letter: string) => seg(letter);
+
+    test('not started is -1; the seal alone (journal unread) is A', () => {
+        expect(mmMilestone(obs({ status: 'not_started' }))).toBe(-1);
+        expect(mmMilestone(obs({ status: 'not_started', inv: [MM_OBJ.royalSeal] }))).toBe(at('A'));
+        expect(mmMilestone(obs({ inv: [MM_OBJ.royalSeal] }))).toBe(at('A'));
+    });
+
+    test('unobservable (no quest list) is -1', () => {
+        const o = obs();
+        delete (o.state as Partial<BotWorldState>).quests;
+        expect(mmMilestone(o)).toBe(-1);
+    });
+
+    test('every journal mark maps to its segment, tags and line breaks ignored', () => {
+        for (const [letter, phrase] of JOURNAL_MARKS) expect([letter, journalMilestone(compactJournal(journal(phrase).lines.join('')))]).toEqual([letter, seg(letter)]);
+        expect(mmMilestone(obs({ text: AFTER_A, inv: [MM_OBJ.royalSeal] }))).toBe(at('A'));
+        expect(mmMilestone(obs({ text: AFTER_B, inv: [MM_OBJ.royalSeal] }))).toBe(at('B'));
+        expect(mmMilestone(obs({ text: MID_E, inv: [MM_OBJ.royalSeal] }))).toBe(at('D'));
+        expect(mmMilestone(obs({ text: AFTER_H }))).toBe(at('H'));
+        expect(mmMilestone(obs({ text: AFTER_I }))).toBe(at('I'));
+        expect(mmMilestone(obs({ text: AFTER_R, inv: [MM_OBJ.amulet], worn: [MM_OBJ.greegree] }))).toBe(at('R'));
+        expect(mmMilestone(obs({ text: AFTER_S, worn: [MM_OBJ.amulet, MM_OBJ.greegree] }))).toBe(at('S'));
+        expect(mmMilestone(obs({ text: AFTER_V, inv: [MM_OBJ.amulet, MM_OBJ.greegree] }))).toBe(at('V'));
+        expect(mmMilestone(obs({ text: AFTER_W, inv: [MM_OBJ.sigil] }))).toBe(at('W'));
+    });
+
+    test('"seek audience with Awowogei" alone is not R: Garkor says it from need_correct_disguise on', () => {
+        const before = `${CH3}||@str@Garkor wants me to seek audience with Awowogei, @str@pretending that I am an envoy||@dbl@I must disguise myself as a Karamjan monkey.`;
+        expect(mmMilestone(obs({ text: before, inv: [MM_OBJ.amulet, MM_OBJ.greegree] }))).toBe(at('Q'));
+    });
+
+    test('items carry the milestone through chapter 2, where the journal has no new phrase', () => {
+        expect(itemMilestone(obs({ inv: [MM_OBJ.dentures] }).state)).toBe(-1);
+        expect(mmMilestone(obs({ text: AFTER_I, inv: [MM_OBJ.dentures] }))).toBe(at('I'));
+        expect(mmMilestone(obs({ text: AFTER_I, inv: [MM_OBJ.dentures, MM_OBJ.amuletMould] }))).toBe(at('J'));
+        // Zooknock took the dentures (story told): the mould alone still shows the cellar done.
+        expect(mmMilestone(obs({ text: IN_L, inv: [MM_OBJ.amuletMould, MM_OBJ.goldBar] }))).toBe(at('J'));
+        expect(mmMilestone(obs({ text: IN_L, inv: [MM_OBJ.enchantedBar, MM_OBJ.amuletMould] }))).toBe(at('L'));
+        expect(mmMilestone(obs({ text: IN_L, inv: [MM_OBJ.amuletUnstrung] }))).toBe(at('L'));
+        expect(mmMilestone(obs({ text: IN_L, inv: [MM_OBJ.amulet] }))).toBe(at('N'));
+        expect(mmMilestone(obs({ text: IN_L, worn: [MM_OBJ.amulet], inv: [MM_OBJ.talisman] }))).toBe(at('O'));
+    });
+
+    test('monotone across consumption and the collapses', () => {
+        // Route order of evidence; each later state must not fall below the earlier one.
+        const route: Observed[] = [
+            obs({ text: AFTER_A, inv: [MM_OBJ.royalSeal] }),
+            obs({ text: AFTER_B, inv: [MM_OBJ.royalSeal] }),
+            obs({ text: `${AFTER_B} @str@Narnode has given me some handwritten orders.`, inv: [MM_OBJ.royalSeal, MM_OBJ.orders] }),
+            obs({ text: MID_E, inv: [MM_OBJ.royalSeal] }),
+            obs({ text: `${MID_E.replace(/@dbl@I cannot.*$/, '')}||@str@I have completed reinitialisation.`, inv: [MM_OBJ.royalSeal] }),
+            obs({ text: `${MID_E.replace(/@dbl@I cannot.*$/, '')}||@str@I have completed reinitialisation.||@str@Waydar and I landed our glider on a small island`, inv: [MM_OBJ.royalSeal] }),
+            obs({ text: `${CH1_DONE}||@dre@Chapter 2:` }),
+            obs({ text: AFTER_H }),
+            obs({ text: AFTER_I }),
+            obs({ text: AFTER_I, inv: [MM_OBJ.dentures, MM_OBJ.amuletMould] }),
+            obs({ text: IN_L, inv: [MM_OBJ.amuletMould, MM_OBJ.goldBar] }),
+            obs({ text: IN_L, inv: [MM_OBJ.amuletMould] }),
+            obs({ text: IN_L, inv: [MM_OBJ.enchantedBar, MM_OBJ.amuletMould] }),
+            obs({ text: IN_L, inv: [MM_OBJ.amuletUnstrung] }),
+            obs({ text: IN_L, inv: [MM_OBJ.amulet] }),
+            obs({ text: IN_L, worn: [MM_OBJ.amulet], inv: [MM_OBJ.talisman, MM_OBJ.monkeyBones] }),
+            // Q gives the bones first, so the talisman is the last thing handed over.
+            obs({ text: IN_L, worn: [MM_OBJ.amulet], inv: [MM_OBJ.talisman] }),
+            obs({ text: CH3, worn: [MM_OBJ.amulet], inv: [MM_OBJ.greegree] }),
+            obs({ text: AFTER_R, worn: [MM_OBJ.amulet, MM_OBJ.greegree] }),
+            obs({ text: AFTER_S, worn: [MM_OBJ.amulet, MM_OBJ.greegree] }),
+            obs({ text: AFTER_S, worn: [MM_OBJ.amulet], inv: [MM_OBJ.greegree, MM_OBJ.monkey] }),
+            obs({ text: AFTER_V, worn: [MM_OBJ.amulet, MM_OBJ.greegree] }),
+            obs({ text: AFTER_W, worn: [MM_OBJ.amulet], inv: [MM_OBJ.greegree, MM_OBJ.sigil] }),
+            obs({ text: POST_DEMON, inv: [MM_OBJ.greegree] }),
+            obs({ text: REPORTED }),
+            obs({ status: 'complete', text: COMPLETE }),
+            obs({ status: 'complete', text: TRAINED }),
+        ];
+        const ms = route.map(mmMilestone);
+        for (let i = 1; i < ms.length; i++) expect([i, ms[i]! >= ms[i - 1]!]).toEqual([i, true]);
+        expect(ms.at(-1)).toBe(at('Z'));
+        expect(ms.at(-2)).toBe(at('Y'));
+        expect(ms.at(-4)).toBe(at('X'));
+    });
+
+    test('the post-demon journal alone (items gone) is X; reported is still X; complete is Y', () => {
+        expect(mmMilestone(obs({ text: POST_DEMON }))).toBe(at('X'));
+        expect(mmMilestone(obs({ text: REPORTED }))).toBe(at('X'));
+        expect(mmMilestone(obs({ status: 'complete', text: COMPLETE }))).toBe(at('Y'));
+        // The quest tab alone (probe failed) still shows Y.
+        expect(mmMilestone(obs({ status: 'complete' }))).toBe(at('Y'));
+    });
+
+    test('doneAt is milestone >= index', () => {
+        const o = obs({ text: AFTER_I });
+        expect(doneAt('H')(o)).toBe(true);
+        expect(doneAt('I')(o)).toBe(true);
+        expect(doneAt('J')(o)).toBe(false);
+    });
+});
+
+describe("the aunt's loop", () => {
+    test('house time left falls along the loop and is 0 in the house', async () => {
+        const { AUNT_LOOP, auntWindowLeft, auntLoopAt, AUNT_BACK_IN } = await import('./monkey-madness');
+        let prev = Infinity;
+        for (const [x, z] of AUNT_LOOP) {
+            const left = auntWindowLeft({ x, z });
+            expect(left).toBeLessThanOrEqual(prev);
+            prev = left;
+        }
+        expect(auntWindowLeft({ x: 2743, z: 2791 })).toBe(AUNT_BACK_IN - 2 - 1);
+        expect(auntWindowLeft({ x: 2739, z: 2794 })).toBe(0);
+        expect(auntLoopAt({ x: 2742, z: 2794 })).toBeNull(); // her first wait, inside
+        expect(auntWindowLeft({ x: 2743, z: 2792 })).toBe(0); // her second wait, inside
+    });
+    test('the loop is contiguous: each tile departs when the next arrives, one step apart', async () => {
+        const { AUNT_LOOP } = await import('./monkey-madness');
+        for (let i = 1; i < AUNT_LOOP.length; i++) {
+            const [x0, z0, , d0] = AUNT_LOOP[i - 1]!;
+            const [x1, z1, a1] = AUNT_LOOP[i]!;
+            expect(a1).toBe(d0);
+            expect(Math.max(Math.abs(x1 - x0), Math.abs(z1 - z0))).toBe(1);
+        }
+    });
+});
+
+describe('stepping away from the demon', () => {
+    test('straight away from it, inside the arena', async () => {
+        const { awayFrom, ARENA } = await import('./monkey-madness');
+        expect(awayFrom({ x: 2720, z: 9180 }, { x: 2717, z: 9177 })).toEqual({ x: 2726, z: 9186 });
+        // Against the arena's east edge the straight line is out: turn.
+        const t = awayFrom({ x: 2748, z: 9180 }, { x: 2745, z: 9180 });
+        expect(t.x).toBeGreaterThanOrEqual(ARENA.x0 + 2);
+        expect(t.x).toBeLessThanOrEqual(ARENA.x1 - 2);
+        expect(Math.max(Math.abs(t.x - 2745), Math.abs(t.z - 9180))).toBeGreaterThan(3);
+    });
+});
