@@ -93,8 +93,9 @@ export function createPickpocket(params: ProgramParams): TickProgram {
     const eatBelowParam = params.eatBelow === undefined ? undefined : num(params.eatBelow, 0, 'eatBelow');
     const stopBelow = num(params.stopWhenFoodBelow, 0, 'stopWhenFoodBelow');
     const retargetTicks = num(params.retargetTicks, 0, 'retargetTicks');
-    const prefer = params.prefer === undefined ? [] : params.prefer;
-    if (!Array.isArray(prefer) || !prefer.every(i => Number.isInteger(i) && i >= 0)) throw new Error('prefer must be a list of npc indices');
+    const preferParam = params.prefer ?? [];
+    if (!Array.isArray(preferParam) || !preferParam.every(i => Number.isInteger(i) && i >= 0)) throw new Error('prefer must be a list of npc indices');
+    const prefer: readonly number[] = preferParam;
     const idleOnInterface = params.idleOnInterface === true;
     const stun = params.stunActions === undefined ? null : new StunPack({ actions: params.stunActions, window: params.stunWindow, perTick: params.stunPerTick });
 
