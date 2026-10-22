@@ -69,8 +69,11 @@ export const DEMON_CASTS = 35;
 export const TELEPORT_MAGIC = 51;
 /** Free slots SCORED needs after H8 for the quest items (rs/158, entry 8). */
 export const FREE_SLOTS = 9;
-/** Base Agility after the reward: 22 plus 7,900 xp at the engine's 25x rate (197,500) is level 57. */
-export const AGILITY_AFTER = 57;
+/**
+ * Base Agility after the reward, STEP-MANIFEST entry 8's postcondition. On this engine's xp curve
+ * (engine/entity/Player.ts; CONVENTIONS.md) level 22 plus 7,900 xp at the 25x rate lands at 75.
+ */
+export const AGILITY_AFTER = 75;
 
 export const ITEM = {
     bark: /^Bark sample$/i,
@@ -341,13 +344,16 @@ interface TalkOpts {
  * close the chat during their p_delays, and an idle long enough to span them would be dead ticks.
  */
 async function talk(sdk: Sdk, opts: Options, npc: RegExp, t: TalkOpts): Promise<ConverseResult> {
-    const fixed = resolveOptions(opts).dialogue === 'fixed';
     let seen = false;
     const stop = sdk.onStateUpdate(s => {
         if (t.expect && t.expect.test(pageText(s.dialog))) seen = true;
     });
     try {
-        const until: Pred = s => (!t.expect || !fixed || seen) && (!t.until || t.until(s));
+        // The expect page is the only proof some stages moved (the runner re-checks postconditions, not
+        // done), so it gates the end in both modes. A blind burst skips the middle of a continue run;
+        // each shape marks the page before the expect page `state`, so the expect page starts a run
+        // and is always published.
+        const until: Pred = s => (!t.expect || seen) && (!t.until || t.until(s));
         const r = await talkTo(sdk, npc, t.choices ?? [], {
             idle: 2, maxTicks: 600, unmatched: 'stop', closeModals: true, findTicks: 15, until,
             ...(t.shape ? talkShape(resolveOptions(opts), t.shape) : {}),
@@ -358,7 +364,7 @@ async function talk(sdk: Sdk, opts: Options, npc: RegExp, t: TalkOpts): Promise<
             const p = pos(sdk);
             throw new Error(`${npc.source}: ${r.reason} at ${p.x},${p.z},${p.level} after ${r.clicks} click(s); last pages: ${r.transcript.slice(-4).join(' | ')}`);
         }
-        if (t.expect && fixed && !seen) throw new Error(`${npc.source}: the conversation never showed /${t.expect.source}/, the page after the stage change`);
+        if (t.expect && !seen) throw new Error(`${npc.source}: the conversation never showed /${t.expect.source}/, the page after the stage change`);
         return r;
     } finally {
         stop();
@@ -586,7 +592,6 @@ const name = (letter: string) => `${stepId}:${letter}`;
 
 export function steps(input: Options = {}): Step<any>[] {
     const opts = resolveOptions(input);
-    if (opts.dialogue === 'burst') throw new Error("dialogue 'burst' needs rs/200's converse burst mode, which is not on this branch yet");
     const note = (ctx: Ctx, step: string, meta: Record<string, unknown>) => logNote(ctx.log, ctx.session, step, meta);
 
     return [
@@ -663,7 +668,7 @@ export function steps(input: Options = {}): Step<any>[] {
             preconditions: isStarted,
             run: async ctx => {
                 await gloughUp(ctx.sdk, ctx);
-                await talk(ctx.sdk, opts, /^Glough$/i, { shape: '10c', expect: /Your type can't be trusted/i });
+                await talk(ctx.sdk, opts, /^Glough$/i, { shape: '8c, state, 1c', expect: /Your type can't be trusted/i });
             },
             postconditions: isStarted,
             logoutSafe: true,
@@ -676,7 +681,7 @@ export function steps(input: Options = {}): Step<any>[] {
             run: async ctx => {
                 await gloughDown(ctx.sdk);
                 await enterTree(ctx.sdk, ctx);
-                await talk(ctx.sdk, opts, NARNODE, { shape: '7c', expect: /He's on the top level of the tree/i });
+                await talk(ctx.sdk, opts, NARNODE, { shape: '5c, state, 1c', expect: /He's on the top level of the tree/i });
             },
             postconditions: isStarted,
             logoutSafe: true,
@@ -689,7 +694,7 @@ export function steps(input: Options = {}): Step<any>[] {
             run: async ctx => {
                 await enterTree(ctx.sdk, ctx);
                 await treeLadder(ctx.sdk, 3);
-                await talk(ctx.sdk, opts, /^Charlie$/i, { shape: '11c', expect: /I don't know what he's up to/i });
+                await talk(ctx.sdk, opts, /^Charlie$/i, { shape: '8c, state, 2c', expect: /I don't know what he's up to/i });
             },
             postconditions: isStarted,
             logoutSafe: true,
@@ -717,7 +722,7 @@ export function steps(input: Options = {}): Step<any>[] {
             run: async ctx => {
                 await gloughUp(ctx.sdk, ctx);
                 // Glough calls the guards, the jail, Charlie, then Narnode lets you out (charlie.rs2, king_narnode.rs2).
-                await talk(ctx.sdk, opts, /^Glough$/i, { shape: '4c, state, state, 7c, state, state, 5c', expect: /glider pilot fly you away/i });
+                await talk(ctx.sdk, opts, /^Glough$/i, { shape: '4c, state, state, 7c, state, state, 1c, state, 3c', expect: /glider pilot fly you away/i });
             },
             postconditions: isStarted,
             logoutSafe: true,
@@ -786,7 +791,7 @@ export function steps(input: Options = {}): Step<any>[] {
                 await villageToStronghold(sdk);
                 await enterTree(sdk, ctx);
                 await treeLadder(sdk, 3);
-                await talk(sdk, opts, /^Charlie$/i, { shape: '9c', expect: /I'll see what I can find/i });
+                await talk(sdk, opts, /^Charlie$/i, { shape: '8c, state', expect: /I'll see what I can find/i });
             },
             postconditions: isStarted,
             logoutSafe: true,

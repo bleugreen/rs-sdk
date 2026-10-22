@@ -70,9 +70,10 @@ describe('segment table', () => {
         expect(list.filter(s => !s.logoutSafe).map(s => s.name)).toEqual(['S11b:N1-trapdoor']);
         expect(list.filter(s => !s.done).map(s => s.name)).toEqual(['S11b:N1-trapdoor']);
     });
-    test('option defaults: fixed dialogue, Fire Bolt; burst waits for rs/200', () => {
-        expect(resolveOptions()).toEqual({ dialogue: 'fixed', demonSpell: 'fire_bolt' });
-        expect(() => steps({ dialogue: 'burst' })).toThrow(/rs\/200/);
+    test('option defaults: the shared burst dialogue, Fire Bolt; both modes build', () => {
+        expect(resolveOptions()).toEqual({ dialogue: 'burst', demonSpell: 'fire_bolt' });
+        expect(steps({ dialogue: 'burst' })).toHaveLength(17);
+        expect(steps({ dialogue: 'fixed' })).toHaveLength(17);
     });
 });
 
@@ -329,7 +330,7 @@ describe('P: the exit state', () => {
         expect(steps()[16]!.postconditions(done(AGILITY_AFTER), {})).toBe(true);
     });
     test('Agility short of the reward fails', () => {
-        expect(exitCheck(done(AGILITY_AFTER - 1))).toMatch(/Agility 56 after the reward/);
+        expect(exitCheck(done(AGILITY_AFTER - 1))).toMatch(/Agility 74 after the reward/);
     });
     test('still holding the rock or above ground fails', () => {
         const s = done(AGILITY_AFTER);
