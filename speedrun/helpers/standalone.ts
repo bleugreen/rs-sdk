@@ -697,6 +697,11 @@ class Launcher {
         return this.stopReq.why !== null;
     }
 
+    /** Resolves when the launcher's stop is requested. */
+    get stopRequested(): Promise<void> {
+        return this.stopReq.requested;
+    }
+
     /** Wait `ms`, or less if a stop is requested meanwhile. */
     private pauseUnlessStopped(ms: number): Promise<void> {
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -737,11 +742,19 @@ class Launcher {
         this.onStop = stop;
         const timer = setInterval(() => this.writeStatus(), 2000);
         try {
+            // From here on a stop cue counts, even for an account still waiting its turn to log in.
+            for (const a of this.accounts) a.arm();
             await this.startGateway();
             // Sequential, in config order: the next account logs in only after the previous one is in the world.
             // Each wait is raced against a stop: a login still pending is the account's stop's to end.
             for (const a of this.accounts) {
                 if (this.isStopping) break;
+                if (a.entry.loginOn) {
+                    // It logs in when its cue opens, whenever that is; the accounts after it don't wait for it.
+                    void a.startOnCue().catch(e => stop(`${a.entry.account}: login on cue failed: ${e instanceof Error ? e.message : String(e)}`, 1));
+                    continue;
+                }
+                if (a.retired) continue; // its stop cue came before its turn: it never logs in
                 if (a.entry.after === 'ready') await this.waitForGiversReady(a);
                 if (this.isStopping) break;
                 await Promise.race([a.start(), this.stopReq.requested]);
@@ -755,6 +768,7 @@ class Launcher {
             this.log(`[launcher] stopping: ${this.stopReq.why}`);
             const deadline = this.stopReq.deadline;
             await stopAllWithin(this.accounts, deadline - GATEWAY_STOP_RESERVE_MS);
+            for (const a of this.accounts) a.disarm();
             this.log(`[launcher] stop: ${stopSummary(this.accounts.map(a => a.summary()))}`);
             await this.stopGateway(deadline);
             this.stopReq.finished();
@@ -767,7 +781,11 @@ class Launcher {
     onStop: (why: string, code?: number) => void = () => undefined;
 
     private async waitForGiversReady(a: AccountRun): Promise<void> {
-        const earlier = this.accounts.slice(0, this.accounts.indexOf(a)).filter(x => x.entry.role === 'altar-giver').map(x => x.entry.account);
+        // A giver that logs in only on a cue, or has already left on its stop, is not waited for.
+        const earlier = this.accounts
+            .slice(0, this.accounts.indexOf(a))
+            .filter(x => x.entry.role === 'altar-giver' && !x.entry.loginOn && !x.retired)
+            .map(x => x.entry.account);
         const dir = String(process.env.RC_CUE_DIR ?? join(this.cfg.runDir, 'rc-cue'));
         this.log(`[launcher] ${a.entry.account} waits for ${earlier.join(', ')} to be ready`);
         while (!this.isStopping) {
@@ -840,6 +858,13 @@ class AccountRun implements Stoppable {
     private readonly relogin = new Backoff({ initialMs: 10_000, maxMs: 60_000, resetAfterMs: 5 * 60_000 });
     private supervising: Promise<void> | null = null;
     private readonly roles: RoleLoop;
+    /** Why the account left the run before the launcher's stop (its stop cue, or no login cue in time); null while in it. */
+    retired: string | null = null;
+    private gate: CueGate | null = null;
+    private cue: AccountCueStatus | null = null;
+    /** The cue that logged this account in (loginOn). */
+    private loginCue: Cue | null = null;
+    private stopping: Promise<void> | null = null;
 
     constructor(
         private readonly L: Launcher,
@@ -850,7 +875,7 @@ class AccountRun implements Stoppable {
             spawn: () => this.spawnRole(),
             // A direct-path role logs out before it exits, which can take a combat timer.
             ...(entry.path === 'direct' ? { killGraceMs: DIRECT_STOP_GRACE_MS } : {}),
-            isStopping: () => this.L.isStopping,
+            isStopping: () => this.halted,
             log: line => this.L.log(line),
             onFinal: (why, code) => this.L.onStop(why, code)
         });
@@ -858,6 +883,15 @@ class AccountRun implements Stoppable {
 
     private get envPath(): string {
         return join(this.L.cfg.botsDir, this.entry.account, 'bot.env');
+    }
+
+    /** The launcher is stopping, or this account has left the run: nothing logs in or restarts. */
+    private get halted(): boolean {
+        return this.L.isStopping || this.retired !== null;
+    }
+
+    private get cueDir(): string {
+        return accountCueDir(this.entry, this.L.cfg.runDir);
     }
 
     summary(): LauncherStatus['accounts'][number] {
@@ -869,8 +903,101 @@ class AccountRun implements Stoppable {
             state: this.state,
             loggedInAt: this.loggedInAt,
             logins: this.logins,
-            logout: this.stopOutcome
+            logout: this.stopOutcome,
+            ...(this.cue ? { cue: { ...this.cue } } : {})
         };
+    }
+
+    private setGate(state: GateState): void {
+        if (this.cue) this.cue = { ...this.cue, state, ms: Date.now() };
+    }
+
+    /** Start reading the account's login and stop cues (loginOn, stopOn), if it has any. */
+    arm(): void {
+        const { loginOn, stopOn, account } = this.entry;
+        if (!loginOn && !stopOn) return;
+        this.cue = { login: loginOn ? scopeText(loginOn) : null, stop: stopOn ? scopeText(stopOn) : null, state: loginOn ? 'waiting' : 'watching', ms: Date.now() };
+        this.gate = new CueGate({
+            dir: this.cueDir,
+            login: loginOn,
+            stop: stopOn,
+            since: this.L.startedAt,
+            onStop: cue => this.onStopCue(cue),
+            // Every account sees every other family's cues go by: those notes go to its own log.
+            log: line => this.note('cue', line)
+        });
+        this.L.log(`[launcher] ${account}: reading ${this.cueDir}${loginOn ? `; logs in when a cue for ${scopeText(loginOn)} opens` : ''}${stopOn ? `; logs out when one for ${scopeText(stopOn)} says stop` : ''}`);
+    }
+
+    disarm(): void {
+        this.gate?.close();
+        this.gate = null;
+    }
+
+    /** Out of the run before logging in: nothing to log out of. */
+    private neverLogsIn(why: string, gate: GateState): void {
+        this.retired ??= why;
+        this.setGate(gate);
+        this.state = 'stopped';
+        this.stopOutcome = 'not-in-world';
+        this.disarm();
+        this.L.writeStatus();
+    }
+
+    /** A stop addressed to stopOn's scope: the account leaves the run now, without waiting for the launcher's stop. */
+    private onStopCue(cue: Cue): void {
+        if (this.retired !== null || this.L.isStopping) return;
+        const { account } = this.entry;
+        const why = `stop cue for ${scopeText(cue.scope)} (session ${cue.session}, seq ${cue.seq})`;
+        if (this.state === 'queued' || this.state === 'awaiting-cue' || this.state === 'stopped') {
+            this.L.log(`[launcher] ${account}: ${why} before its login: it never logs in`);
+            this.neverLogsIn(why, 'stopped');
+            return;
+        }
+        this.retired = why;
+        this.setGate('stopped');
+        this.L.log(`[launcher] ${account}: ${why}: stopping role ${this.entry.role} and logging out now`);
+        // The launcher's own stop path for this one account (a combat refusal waited out and clicked
+        // again), under the same budget, with the same kill at its end.
+        void stopAllWithin([this], Date.now() + this.L.cfg.stopDeadlineMs).then(() => {
+            this.disarm();
+            this.L.log(`[launcher] ${account}: out of the run on its stop cue (logout: ${this.stopOutcome})`);
+            this.L.writeStatus();
+        });
+    }
+
+    /** loginOn: logged out until the login cue opens, then the normal start (login, then role). */
+    async startOnCue(): Promise<void> {
+        const on = this.entry.loginOn!;
+        const { account } = this.entry;
+        if (this.halted || !this.gate) return;
+        this.state = 'awaiting-cue';
+        const minutes = Math.round(on.waitMs / 60_000);
+        this.L.log(`[launcher] ${account}: logged out until a cue for ${scopeText(on)} opens (at most ${minutes} min)`);
+        this.L.writeStatus();
+        const w = await this.gate.waitForLogin(on.waitMs, this.L.stopRequested);
+        if (w.result === 'stopped' || this.L.isStopping) return;
+        if (w.result === 'stop') {
+            // onStopCue has handled a stop on stopOn's scope; this is the login scope's, when stopOn names another.
+            if (this.retired === null) {
+                const why = `stop cue for ${scopeText(w.cue.scope)} (session ${w.cue.session}, seq ${w.cue.seq})`;
+                this.L.log(`[launcher] ${account}: ${why} before its login: it never logs in`);
+                this.neverLogsIn(why, 'stopped');
+            }
+            return;
+        }
+        if (w.result === 'expired') {
+            const why = `no cue for ${scopeText(on)} within ${minutes} min`;
+            this.L.log(`[launcher] !!! ${account}: ${why}: it never logs in`);
+            this.neverLogsIn(why, 'expired');
+            return;
+        }
+        if (this.halted) return;
+        this.loginCue = w.cue;
+        this.setGate('opened');
+        this.L.log(`[launcher] ${account}: cue for ${scopeText(on)} opened (session ${w.cue.session}, seq ${w.cue.seq}): logging in`);
+        this.state = 'queued';
+        await this.start();
     }
 
     /**
@@ -885,14 +1012,14 @@ class AccountRun implements Stoppable {
         const { result, waitedMs, waited } = await waitWhileListed(() => listedInWorld(origin, name), {
             maxMs: LINGER_WAIT_MS,
             everyMs: LINGER_POLL_MS,
-            stopped: () => this.L.isStopping,
+            stopped: () => this.halted,
             onWait: () => this.L.log(`[launcher] ${name}: still in the world from an earlier session; its login waits until ${origin}/playerpositions drops it (at most ${LINGER_WAIT_MS / 60_000} min)`)
         });
         if (result === 'still-listed') this.L.log(`[launcher] ${name}: still listed after ${Math.round(waitedMs / 1000)}s; logging in anyway`);
         else if (waited && result === 'absent') this.L.log(`[launcher] ${name}: left the world after ${Math.round(waitedMs / 1000)}s`);
     }
 
-    private note(stream: 'lite' | 'role', line: string): void {
+    private note(stream: 'lite' | 'role' | 'cue', line: string): void {
         appendFileSync(join(this.L.logDir, `${this.entry.account}.${stream}.log`), `${iso()} ${line}\n`);
     }
 
@@ -912,10 +1039,12 @@ class AccountRun implements Stoppable {
         }
         const why = checkBotEnv(this.botEnv, this.entry.account, this.L.gatewayUrl);
         if (why) throw new Error(`${this.entry.account}: ${this.envPath}: ${why}`);
+        if (this.entry.loginOn || this.entry.stopOn) assertUntracked(this.cueDir);
     }
 
     /** Log in (waiting for it), start the role, and keep both running in the background. */
     async start(): Promise<void> {
+        if (this.halted) return;
         if (this.entry.path === 'direct') return this.startDirect();
         const first = await this.session();
         this.supervising = this.supervise(first);
@@ -941,12 +1070,13 @@ class AccountRun implements Stoppable {
             if (p.needsAttention) this.L.log(`[launcher] ${this.entry.account}: login refused with code ${this.refusal}; check its credentials`);
             this.refusal = null;
             const until = Date.now() + p.accountDelayMs;
-            while (Date.now() < until && !this.L.isStopping) await sleep(500);
+            while (Date.now() < until && !this.halted) await sleep(500);
         }
-        if (this.L.isStopping) return;
+        if (this.halted) return;
         await this.waitForEarlierCopy();
-        if (this.L.isStopping) return;
+        if (this.halted) return;
         await this.L.takeLogin();
+        if (this.halted) return;
         this.state = 'logging-in';
         this.logins++;
         this.L.log(`[launcher] ${this.entry.account}: logging in to ${this.botEnv.SERVER} (direct)`);
@@ -955,11 +1085,11 @@ class AccountRun implements Stoppable {
     /** One login: resolves once the client is in the world, with a promise for the session's end. */
     private async session(): Promise<{ ended: Promise<{ code: number | null; login?: { code: number } }> }> {
         for (;;) {
-            if (this.L.isStopping) return { ended: Promise.resolve({ code: null }) };
+            if (this.halted) return { ended: Promise.resolve({ code: null }) };
             await this.waitForEarlierCopy();
-            if (this.L.isStopping) return { ended: Promise.resolve({ code: null }) };
+            if (this.halted) return { ended: Promise.resolve({ code: null }) };
             await this.L.takeLogin();
-            if (this.L.isStopping) return { ended: Promise.resolve({ code: null }) };
+            if (this.halted) return { ended: Promise.resolve({ code: null }) };
             this.state = 'logging-in';
             this.logins++;
             this.L.log(`[launcher] ${this.entry.account}: logging in to ${this.botEnv.SERVER}`);
@@ -1010,6 +1140,8 @@ class AccountRun implements Stoppable {
     }
 
     private async backoff(exit: { code: number | null; login?: { code: number } }, onlineSince: number | null): Promise<void> {
+        // A client closed by a stop is not a failure, and the stop owns the account's state.
+        if (this.halted) return;
         this.state = 'backoff';
         let wait = this.relogin.failure(onlineSince, Date.now());
         if (exit.login) {
@@ -1020,27 +1152,27 @@ class AccountRun implements Stoppable {
         }
         this.L.log(`[launcher] ${this.entry.account}: client exited (${exit.code}); next login in ${Math.round(wait / 1000)}s`);
         const until = Date.now() + wait;
-        while (Date.now() < until && !this.L.isStopping) await sleep(500);
+        while (Date.now() < until && !this.halted) await sleep(500);
     }
 
     /** Re-login after unexpected client exits. A relog puts the account at the end of its processing bucket; the giver notices. */
     private async supervise(first: { ended: Promise<{ code: number | null; login?: { code: number } }> }): Promise<void> {
         let s = first;
-        while (!this.L.isStopping) {
+        while (!this.halted) {
             const exit = await s.ended;
             this.lite = null;
-            if (this.L.isStopping || this.state === 'stopping') return;
+            if (this.halted || this.state === 'stopping') return;
             await this.backoff(exit, this.loggedInAt);
-            if (this.L.isStopping) return;
+            if (this.halted) return;
             s = await this.session();
-            if (this.state === 'online' && !this.L.isStopping) await this.roles.relaunched();
+            if (this.state === 'online' && !this.halted) await this.roles.relaunched();
         }
     }
 
     /** One role process, its output piped to <account>.role.log; it resolves `exited` only once that output is drained. */
     private spawnRole(): RoleProcess {
         const e = this.entry;
-        const env = roleEnv(process.env, this.botEnv, e, this.L.gatewayUrl, this.L.cfg.runDir, this.loggedInAt ?? Date.now(), this.L.cfg.stopDeadlineMs);
+        const env = roleEnv(process.env, this.botEnv, e, this.L.gatewayUrl, this.L.cfg.runDir, this.loggedInAt ?? Date.now(), this.L.cfg.stopDeadlineMs, this.loginCue?.ms);
         const child = Bun.spawn([process.execPath, `speedrun/helpers/${e.role}.ts`, e.account, ...e.args], { ...OWN_GROUP, cwd: ROOT, env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
         const onLine = (line: string) => {
             this.note('role', line);
@@ -1077,9 +1209,17 @@ class AccountRun implements Stoppable {
         };
     }
 
-    /** Role first (it may be mid-trade), then logout by the button, then the client; every wait ends by `deadline`. */
-    async stop(deadline: number): Promise<void> {
-        if (this.state === 'queued') {
+    /**
+     * Role first (it may be mid-trade), then logout by the button, then the client; every wait ends by
+     * `deadline`. Once: a launcher stop that finds the account already leaving on its stop cue waits for that.
+     */
+    stop(deadline: number): Promise<void> {
+        this.stopping ??= this.stopNow(deadline);
+        return this.stopping;
+    }
+
+    private async stopNow(deadline: number): Promise<void> {
+        if (this.state === 'queued' || this.state === 'awaiting-cue' || this.state === 'stopped') {
             this.state = 'stopped';
             return;
         }
