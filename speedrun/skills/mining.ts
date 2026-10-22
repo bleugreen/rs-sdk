@@ -79,6 +79,11 @@ export interface MiningOpts {
      * names allows exactly those, hazards and all.
      */
     fallback?: string | string[];
+    /**
+     * Start an iron band even when no fallback site is safe at this combat level (default false):
+     * for rehearsals that mean to walk into a site's hunters (`combatGate`).
+     */
+    acceptHazards?: boolean | string;
     /** rs/111's S07 fallback (bones on the stay2 lap): a seam, not built. */
     bury?: unknown;
     /** The trade giver at the zoo that hands over H4p (H4P_KIT) before the iron bands; none by default. */
@@ -467,6 +472,12 @@ interface Shared {
     gate: HostGate | null;
 }
 
+/** A boolean option, from a script's params or a CLI string; absent is false. */
+function flag(v: unknown, name: string): boolean {
+    if (v !== undefined && v !== true && v !== false && v !== 'true' && v !== 'false') throw new Error(`mining: ${name} must be true or false, not ${JSON.stringify(v)}`);
+    return v === true || v === 'true';
+}
+
 export function steps(raw: MiningOpts = {}): Step<any>[] {
     if (raw.bury !== undefined) throw new Error("mining: the stay2 bones seam (rs/111's S07 fallback) is not built");
     const to = Math.min(99, toNumber(raw.to ?? 99, 'to'));
@@ -479,12 +490,11 @@ export function steps(raw: MiningOpts = {}): Step<any>[] {
     const travel = raw.travel ?? 'auto';
     if (travel !== 'auto' && travel !== 'none') throw new Error(`mining: travel must be auto or none, not ${travel}`);
     if (raw.kitGiver !== undefined && (typeof raw.kitGiver !== 'string' || !raw.kitGiver.trim())) throw new Error(`mining: kitGiver must be a name, not ${JSON.stringify(raw.kitGiver)}`);
-    const d = raw.dropAtExit;
-    if (d !== undefined && d !== true && d !== false && d !== 'true' && d !== 'false') throw new Error(`mining: dropAtExit must be true or false, not ${JSON.stringify(d)}`);
-    const dropAtExit = d === true || d === 'true';
+    const dropAtExit = flag(raw.dropAtExit, 'dropAtExit');
+    const acceptHazards = flag(raw.acceptHazards, 'acceptHazards');
     const fallback = parseFallback(raw.fallback);
     const shared: Shared = { gate: null };
-    const o = { to, technique, respawn, rotation: raw.rotation, origin: raw.origin, site, fallback };
+    const o = { to, technique, respawn, rotation: raw.rotation, origin: raw.origin, site, fallback, acceptHazards };
 
     const out: Step<any>[] = [prepStep(to)];
     if (to > 1) out.push(copperStep(Math.min(15, to), site));
@@ -718,6 +728,19 @@ function atIronSite(s: BotWorldState, fb: Fallback): true | string {
     return fb.sites.length ? `not at the zoo or a fallback site (${key(here(s))})` : `not at the zoo cluster (${key(here(s))})`;
 }
 
+/**
+ * rs/158's ruling (mining.md section 11): a band with a fallback starts only if some site the
+ * fallback may use is safe at the account's combat level (`safeFrom`). Otherwise 'auto' has no
+ * site to go to and fails on the third contest event, and a named list walks the account to
+ * hunters that attack it. `acceptHazards` overrides it; with no fallback it does not apply.
+ */
+function combatGate(s: BotWorldState, fb: Fallback, acceptHazards: boolean): true | string {
+    const combat = combatLevel(s);
+    if (!fb.sites.length || acceptHazards || fb.sites.some(n => combat >= SITES[n]!.safeFrom)) return true;
+    const needs = fb.sites.map((n, i) => `${n}${i ? '' : ' needs'} ${Number.isFinite(SITES[n]!.safeFrom) ? SITES[n]!.safeFrom : 'never'}`);
+    return `combat ${combat}: no site the contested-rock fallback may use is safe (${needs.join(', ')})`;
+}
+
 function zooStep(to: number, o: { rotation?: string | undefined; fallback: Fallback }): Step<any> {
     return {
         name: 'mining.travel: zoo',
@@ -742,6 +765,7 @@ interface IronOpts {
     rotation?: string | undefined;
     origin?: string | undefined;
     fallback: Fallback;
+    acceptHazards: boolean;
 }
 
 /** Watches the rotation's rock tiles: each depletion's observed respawn (dead label to live label, plus one). */
@@ -853,6 +877,8 @@ function ironStep(name: string, start: number, end: number, failures: boolean, o
             if (miningLevel(s) < start) return `Mining ${miningLevel(s)} < ${start}`;
             if (pickaxeRate(s.inventory, miningLevel(s)) === null) return 'no usable pickaxe';
             if (freeOfOre(s) < FREE_SLOTS) return `${28 - freeOfOre(s)} other items: need ${FREE_SLOTS} free slots (ore, a gem, a stray fletch)`;
+            const gate = combatGate(s, o.fallback, o.acceptHazards);
+            if (gate !== true) return gate;
             return atIronSite(s, o.fallback);
         },
         run: async ctx => {

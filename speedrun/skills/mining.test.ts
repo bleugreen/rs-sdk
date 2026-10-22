@@ -619,7 +619,7 @@ describe('contested iron bands', () => {
 
     test('resumed at a fallback site: the zoo walk stays put and the band mines there', async () => {
         gatedCalls.length = 0;
-        const sdk = new MiningSdk(atSite('ardougneNorth', 70));
+        const sdk = new MiningSdk(atSite('ardougneNorth', 70, SCORED));
         const zooWalk = m.steps({ travel: 'none', fallback: 'ardougneNorth' }).find(s => s.name === 'mining.travel: zoo')!;
         const walks: string[] = [];
         await zooWalk.run(ctxWithWalk(sdk, walks));
@@ -629,6 +629,30 @@ describe('contested iron bands', () => {
         onGated = (s, params) => s.push({ skills: skills(params.untilLevel as number) });
         await band({ fallback: 'ardougneNorth' }).run(ctxWithWalk(sdk, walks));
         expect(gatedCalls[0]!.params.steps).toBe(m.SITES.ardougneNorth!.rotations.five!.steps);
+    });
+
+    test("rs/158's combat gate: a fallback with no site safe at this combat refuses S09 unless acceptHazards", () => {
+        // SCORED at Prayer 93 is combat 42, at 94 combat 43
+        const at = (mining: number, prayer: number) => atSite('zoo', mining, SCORED.map(([n, l]) => [n, n === 'Prayer' ? prayer : l] as [string, number]));
+        expect([m.combatLevel(at(70, 93)), m.combatLevel(at(70, 94)), m.SITES.ardougneNorth!.safeFrom]).toEqual([42, 43, 43]);
+        const refusal = (needs: string) => `combat 42: no site the contested-rock fallback may use is safe (${needs})`;
+        for (const [name, mining] of [['mining.iron-15', 45], ['mining.iron-63', 70]] as const) {
+            const pre = (o: Record<string, unknown>, prayer: number) =>
+                [name, m.steps({ travel: 'none', respawn: 13, technique: 'knife', ...o }).find(s => s.name === name)!.preconditions(at(mining, prayer), {})];
+            expect(pre({ fallback: 'auto' }, 93)).toEqual([name, refusal('ardougneNorth needs 43, rellekka 129, wilderness31 never')]);
+            expect(pre({ fallback: 'auto' }, 94)).toEqual([name, true]);
+            expect(pre({ fallback: ['ardougneNorth'] }, 93)).toEqual([name, refusal('ardougneNorth needs 43')]);
+            expect(pre({ fallback: ['rellekka'] }, 93)).toEqual([name, refusal('rellekka needs 129')]);
+            expect(pre({ fallback: 'rellekka,wilderness31' }, 93)).toEqual([name, refusal('rellekka needs 129, wilderness31 never')]);
+            expect(pre({ fallback: ['rellekka'], acceptHazards: true }, 93)).toEqual([name, true]);
+            expect(pre({ fallback: ['rellekka'], acceptHazards: 'true' }, 93)).toEqual([name, true]);
+            expect(pre({ fallback: ['rellekka'], acceptHazards: false }, 93)).toEqual([name, refusal('rellekka needs 129')]);
+            expect(pre({ fallback: 'none' }, 93)).toEqual([name, true]);
+            expect(pre({}, 93)).toEqual([name, true]);
+        }
+        // a band already past is done whatever the combat
+        expect(band({ fallback: 'auto' }).preconditions(at(99, 93), {})).toBe(true);
+        expect(() => m.steps({ acceptHazards: 'yes' })).toThrow(/acceptHazards must be true or false/);
     });
 });
 
