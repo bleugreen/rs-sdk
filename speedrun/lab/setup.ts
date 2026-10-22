@@ -144,6 +144,50 @@ export async function getvar(sdk: LabSdk, name: string, maxTicks = 10): Promise<
 }
 
 /**
+ * Read several varps or varbits at once with `::getvar`, collecting the replies as they are published (the client
+ * keeps only the last 50 game messages). A var with no reply within `maxTicks` is absent from the result: a
+ * protected varp is not read while the player cannot act.
+ */
+export async function readVars(sdk: LabSdk, names: readonly string[], maxTicks = Math.ceil(names.length / 5) + 8): Promise<Map<string, number>> {
+    const want = new Set(names.map(n => n.toLowerCase()));
+    const got = new Map<string, number>();
+    const t0 = sdk.getState()?.tick ?? 0;
+    const see = (s: BotWorldState) => {
+        for (const m of s.gameMessages) {
+            if (m.type !== 0 || m.tick < t0) continue;
+            const r = /^get (\S+): (-?\d+)$/.exec(m.text);
+            if (r && want.has(r[1]!.toLowerCase())) got.set(r[1]!.toLowerCase(), Number(r[2]));
+        }
+    };
+    const unsub = sdk.onStateUpdate(see);
+    try {
+        await Promise.all(names.map(n => sdk.sendSay(`::getvar ${n}`)));
+        await waitUntil(sdk, s => (see(s), got.size >= want.size), { maxTicks });
+    } finally {
+        unsub();
+    }
+    return got;
+}
+
+/**
+ * `::setvar` each var and confirm it with `::getvar`, re-sending those that did not take. The server refuses a set
+ * on a protected varp while the player cannot act ("Please finish what you are doing first.", ClientCheatHandler
+ * setvar), for example during a fade or a cutscene's delay, and says so only in a game message; an unchecked set
+ * leaves the previous run's value behind. Throws if any var still differs after `rounds` rounds.
+ */
+export async function setVars(sdk: LabSdk, vars: Readonly<Record<string, number>>, rounds = 4): Promise<void> {
+    let todo = Object.entries(vars);
+    for (let round = 0; round < rounds && todo.length; round++) {
+        if (round > 0) await waitTicks(sdk, 3);
+        await Promise.all(todo.map(([k, v]) => cheat(sdk, `setvar ${k} ${v}`)));
+        await waitTicks(sdk, Math.ceil(todo.length / 5) + 1);
+        const got = await readVars(sdk, todo.map(([k]) => k));
+        todo = todo.filter(([k, v]) => got.get(k.toLowerCase()) !== v);
+    }
+    if (todo.length) throw new Error(`setVars: still not set after ${rounds} rounds: ${todo.map(([k, v]) => `${k}=${v}`).join(', ')}`);
+}
+
+/**
  * Empty the inventory and the worn slots: `::~clearinv` both, then unequip
  * and drop whatever is left (the debugproc alone is unreliable in this lab).
  */
