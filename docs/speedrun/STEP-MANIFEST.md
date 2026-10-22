@@ -156,9 +156,9 @@ of Goblin Diplomacy's standalone travel that the legs already carried off its ro
 cannon session, Prayer, Crafting and Cooking pass it. Fold-in 13 adds S15's measured H to M (+352),
 so Monkey Madness (4,429) passes Agility (4,327) for rank 1.
 
-The expected column sums to **31,277** (the steps) plus the legs' **2,215.7**; RUN-ORDER.md section 6
+The expected column sums to **31,688** (the steps) plus the legs' **2,215.7**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **34,777.7** knife-on expected (31,886.7 best), against the record of 35,916.
+retries, restarts) for its **35,188.7** knife-on expected (32,342.7 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -179,7 +179,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 9 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,493 | 1,389 | 1,763 | ~374 | overlay | `quest-grandtree-full.ts` | building (rs/202 under rs/185); **lab: 3 of 3 full A-to-P runs at SCORED's levels** (1,403 / 1,504 / 1,422) |
 | 10 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,192 | 1,192 | ~5,220 | ~4,030 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **on main, 1514f47a (#222; rs/268's snapshot of rs/196's module, rs/186's branch at 0c349da6)**, the run-commit floor; **lab-accepted, with a partial demo confirmation** (9/9 tuned on the real server, n small; the 20-cycle demo acceptance pending); **lab-accepted (rs/196, module 3f02f336, relay path (lab): nature at 44 tuned 30/30 at 29 x 7, robust 30/30 at 29 x 8; S06 7/7 at 6 x 7, 58)**; the tuned nature run confirmed on the direct path, 30/30 at 29 x 7 (rs/196, 3b161c12); pending: the auto rule's 'handled before SCORED' field (entry 9); cycle: on main, 23ea9f77 (#178) |
 | 11 | 10 | Smithing | `speedrun/skills/smithing.ts` | S25a | 1,065 | 1,028 | 1,330 | ~302 | overlay | `smithing-trade.ts` | **on main (#230)**, with `lib/trade.ts` `swap()` and `anvil.ts`'s restock and off-tile fixes; the demo attempt inconclusive (rs/197, entry 10) |
-| 12 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 969 | 908 | 1,079 | ~171 | overlay | `quest-dragon-*.ts` | building (rs/258 under rs/185); run mode: no `p_walk`, re-paths at ten moving NPCs and the six maze monsters, lever ~0 (r, rs/258) |
+| 12 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 1,380 | 1,364 | ~1,490 | ~126 | overlay | `quest-dragon-*.ts` | building (rs/258 under rs/185); **lab: a single pass per segment, 1,380** (rs/258), the three acceptance chains to come; run mode: no `p_walk`, re-paths at ten moving NPCs and the six maze monsters, lever ~0 (r, rs/258) |
 | 13 | 12 | Dwarf Cannon | `speedrun/quests/dwarf-cannon.ts` | S13 | 855 | 799 | 957 | ~158 | overlay | `quest-mcannon-*.ts` | building (rs/257 under rs/185); run mode: no `p_walk`, re-paths at Lawgof (A, C, E, H, J, L) and Nulodion (K), lever ~0 (r, rs/257) |
 | 14 | 14 | Tree Gnome Village | `speedrun/quests/tree-gnome-village.ts` | S10b | 793 | 739 | 902 | ~163 | overlay | `quest-tree-full.ts`, `quest-premm-fight.ts` | building (rs/185, held: tenet 15) |
 | 15 | 16 | Firemaking | `speedrun/skills/firemaking.ts` | S03 | 681 | 650 | 735 | ~85 | overlay | `firemaking-line.ts` | on main, 4cc468e0 (#205; rs/244), with the inferred-fire counter (#229); **demo-measured**, 681 m (rs/269, cairn_burns) |
@@ -1532,39 +1532,50 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   the rune scimitar and helm are unobtainable, rs/124; no glory, rs/123).
 - **Postconditions:** quest complete; 18,650 Strength and Defence (read); 2 QP. Items out: armour can
   go back to a helper.
-- **Ticks:** expected **969**, best **908**, **lab table pending (rs/258)**: the quest 904 (fixed,
-  inferred, with Elvarg at ~70 from 64-75 measured at 99 with a **rune** scimitar, n=2) / 888 (burst,
-  r21): `quests/README.md` §3 row's 941 / 925 less segment 1, the Varrock teleport and walk to the
-  guild door, 37 inferred, which is T25-26's; plus Scavvo's purchase +15-20 (estimated, re-priced
-  with rs/258's table) and the adamant helm +5 (estimated, `research/supply-fallbacks.md` §12); plus
-  **Elvarg in mithril, +40 (inferred), the expected case** (main, 20:52 PDT): SCORED fights with the
-  mithril scimitar, hit chance ~0.55 and max hit 16 against rune's 0.65 and 20 at Attack 99 and
-  Strength 97 (`combat.rs2:7`, `player_combat.rs2:53-65`, `scimitars.obj`; rs/258's pre-lab
-  estimate, ~110 ticks for Elvarg's 120 HP against ~74), until rs/258's measured fight replaces it.
-  Best keeps the rune scimitar, the upside if h61's GE bid fills (~-40). Fallback **~1,079** (stock
-  ~1,014, inferred, + the same 25 + 40). **Pending notes, not in the expected:** Melzar's Maze by the
-  entrance room's ladder, which drops the player into the chest room (`ladders.rs2:83-85`), ~30
-  against the 259 inferred, -229 (i, verified in the lab before it is priced); the guild to Oziach
-  without a glory, a ~180-tile walk, +72 (i, until measured).
+- **Ticks:** expected **1,380, measured** (rs/258, lab, **a single pass per segment**, mithril scimitar, from the arrival tile;
+  main, 22:23 PDT; the three acceptance chains replace it when they land), best **1,364** (inferred: the pass
+  less the quest document's fixed-against-burst gap of 16, since the pass's dialogue mode is not recorded).
+  Against the doc-priced 969 / 908 (`quests/README.md` §3's 941 / 925 less segment 1's 37, Scavvo +15-20 e,
+  the adamant helm +5 e and fold-in 13's Elvarg in mithril +40 i, which this replaces):
+
+  | Segment | Measured | Was |
+  |---|---|---|
+  | Melzar's Maze, six key fights (no shortcut: the cellar ladder is in the one-way exit room, `funexit` at (2938,3252), `melzars_maze.rs2`) | 384-388 | 259 |
+  | Elvarg, mithril scimitar (n = 3: 93 / 116 / 112; fight only 85 / 108 / 104) | 107 | 70 |
+  | The guild to Oziach, walked | 163 | ~60 |
+  | The dock to Ned, walked | 106 | 30 |
+  | Oziach to the Oracle and the trapdoor detour | per rs/258's table | |
+
+  The +72 no-glory walk to Oziach (i) and Melzar's -229 shortcut (withdrawn) are superseded by the
+  measured legs. **Sensitivities:** the rune scimitar, an upside only (not held), priced from rs/258's
+  measurement with it, mithril the bound; a helper-supplied teleport for the walked legs (Oziach, Ned),
+  the first lever, priced on what SCORED can carry at that point (rs/258, rs/185). Melzar's Maze has no
+  shortcut. Fallback **~1,490** (inferred: the stock column's ~110 of extra dialogue over the fixed on
+  the measured figure).
 - **Scavvo's stock** (RUN-ORDER.md R22): one shared rune chainbody and one pair of platelegs
-  (`champions_guild.inv`, r). SCORED buys them upstairs on arrival; **at stock 0 the module takes
-  the cheaper of** waiting for the restock (the engine's restock timer) or going on in mithril (the
-  measured fight), both carried as sensitivities pending rs/258, and it checks stock and fails loudly
-  otherwise. No 32-QP helper exists (rs/41).
+  (`champions_guild.inv`, r). SCORED buys them upstairs on arrival; **at stock 0 the module goes on
+  without them**: the restock adds a unit per `tick % stockrate == 0` (`World.ts:1377`; 15,000 and
+  11,500), an expected wait of ~7,500 (i), and the module waits only if `restockWait <
+  armourlessCost` (unit-tested), so in practice it never waits; the cost is the armourless Elvarg
+  delta, pending rs/258. The pieces only equip for the fight (Defence bonus); no quest check uses
+  them, and both are tradeable. No 32-QP helper exists (rs/41).
 - **A death on Crandor** (r, rs/258): death keeps the three priciest items (`death.rs2`: the rune
   platelegs, chainbody and adamant helm); the scimitar, amulet, shield, sharks and coins drop and
   expire in 200 ticks (`lootdrop.constant`); the Karamja wall opens from outside only after it has
   been opened from Crandor (`crandor.rs2`, `%dragon_wall`). So the return is the ship again (the Duke
   for a new shield, Ned re-hired, the hull patched again), with a **helper re-supply** of a weapon,
   food, 3 planks, 12 nails and a hammer; rs/258 builds it as the Elvarg segment's resume path and
-  measures it once.
+  measures it once. **The Crandor death kit** (a contingency supply, not part of H22; SUPPLIES.md): a
+  mithril-or-better scimitar, 8 sharks, 3 planks, 12 nails and a hammer from the on-call helper
+  cairn_mule2 (`resupplyFrom`) at Lumbridge, Draynor or Port Sarim, staged by rs/237; rs/258 rates
+  the risk low (Elvarg's max hit is 10 with the shield, against ~97 HP).
 - **Primitives:** rs/94 `converse`, `act`, `combat`; `continueBurst`; `travel.ts`.
 - **Mode:** overlay-driven. **Logout-unsafe:** none, every varp is permanent (read). A death on
   Crandor is expensive and its return is untested.
 - **Fallback:** page by page; on a death, the respawn route (untested; to be measured).
 - **Acceptance, local:** `quest-dragon-*.ts` ported, at the post-MM stats (99/97/89, mithril scimitar
-  and adamant helm), 3 runs. Pass: within 10% of 944 for the quest (969 with Scavvo), counted from
-  the guild door, and Elvarg within 10% of ~110 (the mithril estimate) until rs/258's table sets it.
+  and adamant helm), 3 runs. Pass: within 10% of 1,380 (the single pass), counted from the guild
+  door, and Elvarg within 10% of 107 (the mithril pass).
 - **Acceptance, demo (throwaway):** not feasible (32 QP). Demo coverage: the shared primitives.
 - **Start from:** `quest-dragon-guild.ts`, `quest-dragon-voyage.ts`, `quest-dragon-elvarg.ts`,
   `quest-dragon-lib.ts`, `quest-dragon-wreck-probe.ts`.
