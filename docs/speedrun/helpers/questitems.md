@@ -107,7 +107,9 @@ nothing.
 
 ### Keeping the carp
 
-The carp is tradeable and does not decay. The helper banks existing carp and all
+**The raw giant carp is not tradeable** (`server/content/scripts/skill_fishing/configs/fishing.obj`, `[raw_giant_carp]` `tradeable=no`; the red vine worm and the fishing pass are untradeable too). On the demo, h97's two carp could not be handed to mule1: the offer arrived empty both times. So the scored account catches its own carp, and helpers stage only garlic, rod, bait, coins and a spade for H16 (rs/158, 2026-10-22). The `carp` set below still works and documents the contest, but what it produces cannot reach the scored account.
+
+The helper banks existing carp and all
 bait before each trip, then withdraws **at most two red vine worms and no ordinary
 bait**. The contest decision function counts catches from worms consumed and
 chooses to leave at two, or immediately if a restarted round's count is unknown.
