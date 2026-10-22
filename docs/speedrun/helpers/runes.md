@@ -70,3 +70,5 @@ WEB_PORT=9560 WEB_MANAGEMENT_PORT=9561 HISCORES_WEB_PORT=9562 NODE_PORT=44560 AG
 ```
 
 The lab checks the walking, banking and shop parts (the guild scenario's capped trips work there), but not the parts that use an inventory item or a spell. On this lab setup, strikes on the cows, wielding the bronze axe and using it on the keep web were all ignored by the engine with no game message, while the same actions work on the demo. Until that is understood, Magic training and the web crossing are checked on the demo. If the crossing fails there, the role pulls the keep lever and leaves rather than staying in the Wilderness.
+
+Likely cause (inferred, rs/284): the lab's staging exposure. A fresh account staged off Tutorial Island by `::tele` keeps its side tabs hidden, so its item ops, item use and magic-tab spells are dropped silently; on the demo the account came through the tutorial skip, which opens them (STEP-MANIFEST.md, "Lab staging"; the guard is on main, #233).

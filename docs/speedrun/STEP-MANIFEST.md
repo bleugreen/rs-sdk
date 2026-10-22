@@ -61,6 +61,25 @@ since #209's `tickClock`, 4fe2d0a8). The demo has
 been seen at 0.34-0.37 s a tick, where a wall-clock cue lands early by about (1 - 0.30/actual) of
 its delay and a deadline fires early (RUN-ORDER.md R23).
 
+**Lab staging (rs/196's finding; rs/284's guard, on main as #233).** A fresh lab account is staged
+through S00 (`tutorial_complete`), never teleported off Tutorial Island: a brand-new account's first
+login on the island clears every side tab (`tutorial.rs2` `start_tutorial`), a staff teleport never
+restores them, and the account's **side-tab clicks** are then dropped silently. On a hidden-tab
+account the server drops item ops and item use, spells cast from the magic tab, prayer toggles, the
+run toggle and combat-style buttons; modals (bank, shop, trade, dialogue) are unaffected
+(`Player.isComponentVisible`). The exposure needs all three of: the account's first login on that
+engine's save data (a new name, slot or engine); staging off the island by `::tele` instead of S00;
+and side-tab clicks afterwards. A rerun on the same engine is unaffected, because the second login
+restores the tabs. The guard is on main (#233): `speedrun/lab/setup.ts` `tele()` and `mustTele()`
+refuse on Tutorial Island (start.ts's `onTutorialIsland`, pointing at S00's `tutorialSkip`), and lab
+scripts that stage fresh accounts go through the skip. **No relabels** (rs/284's report): no row in
+force rests on an exposed script. S25a is priced from rs/197's module (`smithing-trade.ts` fed only
+the superseded 1,147 and the ~1,330 bank fallback, a sensitivity); the `combat-rate.ts` ogre rate in
+`skills/ranged.md`:143 sits in no row; `runes-lab.ts` and `measure-dragons.ts` feed no SCORED
+figure; and Runecraft's counted rows each carry `talismanDrops` 1 or could not have completed with
+hidden tabs, while its givers leave the tutorial through `bot.skipTutorial()` (rs/196; entry 9's
+talisman-drop stop was this artefact).
+
 **Run mode (rs/280; RUN-ORDER.md O45).** Run on is the scored account's default (main, 21:32 PDT): rs/280's
 `ensureRunOn` turns the toggle on after every login and relog (`option_run` is not saved), with a
 per-step opt-out for lab A/B only. The lever is ~0: every walk the shared walker sends and every
