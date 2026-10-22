@@ -31,7 +31,8 @@ async function stage(s: Session, gives: string[], count: number): Promise<void> 
     await cheat(s.sdk, '~clearinv inv');
     await waitUntil(s.sdk, st => st.inventory.length === 0, { maxTicks: 10 });
     for (const g of gives) await cheat(s.sdk, g);
-    await waitUntil(s.sdk, st => st.inventory.length >= count, { maxTicks: 10 });
+    const r = await waitUntil(s.sdk, st => st.inventory.length >= count, { maxTicks: 10 });
+    if (!r.ok) throw new Error(`staging ${s.name}: ${gives.join(', ')} left ${s.sdk.getState()!.inventory.length} slots, ${count} expected`);
     await waitTicks(s.sdk, 2);
 }
 
@@ -63,7 +64,7 @@ await tele(scored.sdk, 2920, 3406);
 await tele(mule.sdk, 2920, 3407);
 await setstat(scored.sdk, 'woodcutting', 99);
 await stage(scored, ['give rune_axe 1', 'give knife 1', 'give logs 1', 'give dragon_bones 3'], 6);
-await stage(mule, ['give law_rune 1', 'give air_rune 5'], 2);
+await stage(mule, ['give lawrune 1', 'give airrune 5'], 2);
 const handBack = woodcuttingSteps({ handBack: muleName }).find(s => s.name === 'woodcutting:hand-back')!;
 const pre1 = handBack.preconditions(scored.sdk.getState()!, {});
 const m1 = muleGives(scoredName);
