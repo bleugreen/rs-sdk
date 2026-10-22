@@ -9,7 +9,8 @@
  * Each poll also records every player standing in the watched zones (markets/lib/positions.ts ZONES: the GE
  * table, the banks, the fishing spots, the essence mine and the air altar). Each poll prints the leaders, online
  * family counts and zone headcounts; a gain too large for ordinary play between two polls
- * (markets/lib/snapshots.ts jumps()) prints a JUMP line.
+ * (markets/lib/snapshots.ts jumps()) prints a JUMP line and saves jump-<stamp>.json: the jumps, everyone within
+ * 8 tiles of each online jumper, and the full position lists of that poll and the one before.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -17,7 +18,7 @@ import { parseArgs } from 'node:util';
 import { readBank } from '../lib/boards.ts';
 import { DEMO_SERVER, Gentle } from '../lib/demo.ts';
 import { familyOf } from '../lib/families.ts';
-import { readPositions, zoneRoster, type Position } from '../lib/positions.ts';
+import { playerNameKey, readPositions, zoneRoster, type Position } from '../lib/positions.ts';
 import { decodePolls, encodePoll, formatPollFile, jumps, type BankRow, type PollFile } from '../lib/snapshots.ts';
 
 const MIN_EVERY_S = 300;
@@ -27,6 +28,16 @@ export const DEFAULT_OUT = resolve(import.meta.dir, '../../docs/markets/data');
 export function blockFile(at: Date, hours: number): string {
     const h = Math.floor(at.getUTCHours() / hours) * hours;
     return `poll-${at.toISOString().slice(0, 10)}T${String(h).padStart(2, '0')}Z.json`;
+}
+
+/** For each jumping account that is online, everyone within `radius` tiles of it on its level. */
+export function jumpNeighbours(found: { name: string }[], positions: Position[], radius = 8): Record<string, Position[] | null> {
+    const out: Record<string, Position[] | null> = {};
+    for (const j of found) {
+        const me = positions.find(p => playerNameKey(p.name) === playerNameKey(j.name));
+        out[j.name] = me ? positions.filter(p => p !== me && p.level === me.level && Math.abs(p.x - me.x) <= radius && Math.abs(p.z - me.z) <= radius) : null;
+    }
+    return out;
 }
 
 const gp = (n: number): string => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : `${(n / 1e6).toFixed(1)}M`);
@@ -44,6 +55,7 @@ async function main(): Promise<void> {
     mkdirSync(out, { recursive: true });
     const g = new Gentle({ server: values.server ?? DEMO_SERVER });
     let previous: BankRow[] | null = null;
+    let previousPositions: Position[] | null = null;
 
     for (let next = Date.now(); ; ) {
         const at = new Date();
@@ -66,9 +78,16 @@ async function main(): Promise<void> {
         console.log(`${at.toISOString().slice(0, 16)}Z online=${positions?.length ?? '?'} | ${leaders || 'bank read failed'} | families online ${[...online].map(([f, n]) => `${f} ${n}`).join(', ')}`);
         if (record.zones) console.log(`  zones: ${Object.entries(record.zones).map(([z, names]) => `${z} ${names.length}`).join(', ')}`);
         if (bank && previous) {
-            for (const j of jumps(previous, bank)) console.log(`  JUMP ${j.name} ${j.from === null ? 'new' : gp(j.from)} -> ${gp(j.to)} (+${gp(j.delta)})`);
+            const found = jumps(previous, bank);
+            for (const j of found) console.log(`  JUMP ${j.name} ${j.from === null ? 'new' : gp(j.from)} -> ${gp(j.to)} (+${gp(j.delta)})`);
+            if (found.length) {
+                const jumpFile = join(out, `jump-${at.toISOString().replace(/[:]/g, '').replace(/\.\d+Z$/, 'Z')}.json`);
+                writeFileSync(jumpFile, JSON.stringify({ at: at.toISOString(), jumps: found, near: jumpNeighbours(found, positions ?? []), positionsBefore: previousPositions, positionsAfter: positions }));
+                console.log(`  saved ${jumpFile}`);
+            }
         }
         if (bank) previous = bank;
+        if (positions) previousPositions = positions;
         if (values.once) return;
         next += every * 1000;
         await Bun.sleep(Math.max(0, next - Date.now()));
