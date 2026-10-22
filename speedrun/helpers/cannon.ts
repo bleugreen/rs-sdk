@@ -25,7 +25,10 @@
 // `extras` (H11: the mithril scimitar, runes and sharks; H23: the magic shortbow) in the same
 // offer, taking back whatever the scored account offers in that trade (nothing is expected). With
 // `returnTile`, it then waits there for the set and the leftover balls to come back
-// (H11r) and banks them. The scored account is never named: it is whoever in sight
+// (H11r) and keeps them. With `returnExtras` (H11r: Monkey Madness's magic shortbow and
+// 200 rune arrows) that take-back is two-way: the holder carries them from the bank with the
+// load, and offers them in the same trade as the set comes back (lib/trade.ts swap); without,
+// it only receives (receiveFrom). The scored account is never named: it is whoever in sight
 // matches `receiver` (the sha256 of its canonical name, altar-cue.ts nameHash) or,
 // without it, the receiver hash in the cue directory's cue.json.
 //   serve.tile {x,z}        where the holder stands (required)
@@ -36,6 +39,9 @@
 //   serve.receiver hex      sha256 of the scored account's canonical name (default: the cue)
 //   serve.bank {x,z}        where to load from (default Falador west; every bank is one bank)
 //   serve.returnTile {x,z}  after the give, take the set back here
+//   serve.returnExtras [{ item, count, obj? }]  given in the take-back trade (needs returnTile); as
+//                           extras, and distinct from them; carried from the start, so the load
+//                           and these together must fit 28 slots
 //   serve.labStock          local lab only: make the load with staff commands
 //   serve.id                names the hand-off in ctx.state (default tile and balls); a restart
 //                           resumes it, so a hand-off that completed is never given twice
@@ -70,7 +76,9 @@ import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import { advance } from '../lib/dialogue';
-import { ANY_OFFER, give, DROPPED_TICKS, receiveFrom, tradeOf, type GiveResult, type GiveSpec, type TradeSdk, type WantSpec } from '../lib/trade';
+import { ANY_OFFER, give, DROPPED_TICKS, offerSatisfies, receiveFrom, swap, tradeOf, type GiveResult, type GiveSpec, type SwapSdk, type TradeSdk, type WantSpec } from '../lib/trade';
+import type { TradeItem } from '../../sdk/types';
+import { INVENTORY_SIZE } from '../lib/items';
 import { assertUntracked, cueDir, CueWatcher, nameHash, scopeOption, type Cue, type CueScope } from './altar-cue';
 import { cheat, isLocalServer, standOn } from './altar-room';
 import { partnerIs, requestUntilOpen } from './bone-giver';
@@ -201,6 +209,8 @@ export interface ServeOptions {
     receiver: string | null;
     bank: Pt;
     returnTile: Pt | null;
+    /** Offered in the take-back trade at `returnTile` while the set comes back (H11r's Monkey Madness bow and rune arrows). */
+    returnExtras: ServeExtra[];
     labStock: boolean;
     noReplyTicks: number;
     resendTicks: number;
@@ -232,8 +242,14 @@ export function serveOptions(raw: unknown, env: Record<string, string | undefine
     const tile = tileOption(r.tile, 'serve.tile');
     const labStock = r.labStock === true;
     const extras = serveExtras(r.extras, labStock);
-    const stacks = loadStacks(extras);
-    if (stacks > 28) throw new Error(`serve.extras: the load takes ${stacks} slots (the 4 parts, the balls and the extras), more than 28`);
+    const returnTile = r.returnTile === undefined ? null : tileOption(r.returnTile, 'serve.returnTile');
+    const returnExtras = serveExtras(r.returnExtras, labStock, 'serve.returnExtras');
+    if (returnExtras.length && !returnTile) throw new Error('serve.returnExtras needs serve.returnTile: they are given in the take-back trade');
+    const both = returnExtras.find(e => extras.some(x => x.item.toLowerCase() === e.item.toLowerCase()));
+    if (both) throw new Error(`serve.returnExtras: ${both.item} is in serve.extras too; one item goes out in one trade`);
+    // The return extras are carried from the start, beside the load.
+    const stacks = loadStacks([...extras, ...returnExtras]);
+    if (stacks > INVENTORY_SIZE) throw new Error(`serve.extras: the load takes ${stacks} slots (the 4 parts, the balls, the extras and the return extras), more than ${INVENTORY_SIZE}`);
     return {
         id: typeof r.id === 'string' && r.id ? r.id : `${tile.x},${tile.z}x${balls}`,
         tile,
@@ -241,7 +257,8 @@ export function serveOptions(raw: unknown, env: Record<string, string | undefine
         extras,
         receiver,
         bank: r.bank === undefined ? FALADOR_BANK : tileOption(r.bank, 'serve.bank'),
-        returnTile: r.returnTile === undefined ? null : tileOption(r.returnTile, 'serve.returnTile'),
+        returnTile,
+        returnExtras,
         labStock,
         noReplyTicks: Number(r.noReplyTicks ?? DROPPED_TICKS),
         resendTicks: Number(r.resendTicks ?? 100),
@@ -254,22 +271,25 @@ export function serveOptions(raw: unknown, env: Record<string, string | undefine
 const exactName = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 const BALL = /^cannonball$/i;
 
-/** serve.extras: `[{ item, count, obj? }]`, each a distinct item that is not part of the set or the balls. */
-export function serveExtras(raw: unknown, labStock: boolean): ServeExtra[] {
+/**
+ * serve.extras (or serve.returnExtras, named by `what`): `[{ item, count, obj? }]`, each a
+ * distinct item that is not part of the set or the balls.
+ */
+export function serveExtras(raw: unknown, labStock: boolean, what = 'serve.extras'): ServeExtra[] {
     if (raw === undefined) return [];
-    if (!Array.isArray(raw)) throw new Error('serve.extras must be a list of { item, count }');
+    if (!Array.isArray(raw)) throw new Error(`${what} must be a list of { item, count }`);
     const extras = (raw as Record<string, unknown>[]).map((e, i) => {
         const count = Number(e?.count);
-        if (typeof e?.item !== 'string' || !e.item.trim() || !Number.isInteger(count) || count < 1) throw new Error(`serve.extras[${i}] needs an item name and a whole count`);
-        if (e.obj !== undefined && typeof e.obj !== 'string') throw new Error(`serve.extras[${i}].obj must be a staff-give name`);
-        if (labStock && typeof e.obj !== 'string') throw new Error(`serve.extras[${i}] needs obj (the staff-give name) with labStock`);
+        if (typeof e?.item !== 'string' || !e.item.trim() || !Number.isInteger(count) || count < 1) throw new Error(`${what}[${i}] needs an item name and a whole count`);
+        if (e.obj !== undefined && typeof e.obj !== 'string') throw new Error(`${what}[${i}].obj must be a staff-give name`);
+        if (labStock && typeof e.obj !== 'string') throw new Error(`${what}[${i}] needs obj (the staff-give name) with labStock`);
         return { item: e.item.trim(), count, ...(typeof e.obj === 'string' ? { obj: e.obj } : {}) };
     });
     const names = new Set<string>();
     for (const e of extras) {
         const key = e.item.toLowerCase();
-        if (names.has(key)) throw new Error(`serve.extras lists ${e.item} twice`);
-        if (BALL.test(e.item) || CANNON_PARTS.some(p => p.toLowerCase() === key)) throw new Error(`serve.extras: ${e.item} is already in the load`);
+        if (names.has(key)) throw new Error(`${what} lists ${e.item} twice`);
+        if (BALL.test(e.item) || CANNON_PARTS.some(p => p.toLowerCase() === key)) throw new Error(`${what}: ${e.item} is already in the load`);
         names.add(key);
     }
     return extras;
@@ -289,7 +309,12 @@ export function loadStacks(extras: readonly ServeExtra[] = []): number {
  * amountButtons): 5 offers plus one per extra, one trade.
  */
 export function loadSpecs(balls: number, extras: readonly ServeExtra[] = []): GiveSpec[] {
-    return [...CANNON_PARTS.map(p => ({ item: exactName(p), n: 1 })), { item: BALL, n: balls }, ...extras.map(e => ({ item: exactName(e.item), n: e.count }))];
+    return [...CANNON_PARTS.map(p => ({ item: exactName(p), n: 1 })), { item: BALL, n: balls }, ...extraSpecs(extras)];
+}
+
+/** Extras as give() specs, by exact name and count: carried exactly, each is one All press. */
+export function extraSpecs(extras: readonly ServeExtra[]): GiveSpec[] {
+    return extras.map(e => ({ item: exactName(e.item), n: e.count }));
 }
 
 /**
@@ -307,15 +332,62 @@ export function loadWant(balls: number): WantSpec[] {
     return [...CANNON_PARTS.map(p => ({ item: exactName(p), amount: 1 })), ...(balls > 0 ? [{ item: BALL, amount: balls }] : [])];
 }
 
+type Carried = ReadonlyArray<{ name: string; count: number }>;
+const carriedCount = (inventory: Carried, re: RegExp) => inventory.filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0);
+
 /** True when `inventory` carries a whole set, at least `balls` cannonballs, and every extra. */
-export function holdsLoad(inventory: ReadonlyArray<{ name: string; count: number }>, balls: number, extras: readonly ServeExtra[] = []): boolean {
-    const n = (re: RegExp) => inventory.filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0);
-    return CANNON_PARTS.every(p => n(exactName(p)) >= 1) && n(BALL) >= balls && extras.every(e => n(exactName(e.item)) >= e.count);
+export function holdsLoad(inventory: Carried, balls: number, extras: readonly ServeExtra[] = []): boolean {
+    return CANNON_PARTS.every(p => carriedCount(inventory, exactName(p)) >= 1) && carriedCount(inventory, BALL) >= balls && holdsExtras(inventory, extras);
 }
 
-/** A hand-off's progress in ctx.state: `giving` is written just before the trade, so a crash mid-trade is seen. */
+/** True when `inventory` carries at least `count` of every extra. */
+export function holdsExtras(inventory: Carried, extras: readonly ServeExtra[]): boolean {
+    return extras.every(e => carriedCount(inventory, exactName(e.item)) >= e.count);
+}
+
+// ------------------------------------------------------------------ the take-back (H11r)
+
+/** The take-back's outcome, one shape for both trades it may be (receiveFrom, swap). */
+export interface TakeBackResult {
+    ok: boolean;
+    ticks: number;
+    received: TradeItem[];
+    gave: TradeItem[];
+    reason?: string;
+}
+
+/**
+ * The take-back trade with `partner` (the scored account's own request): the set back, balls
+ * optional (loadWant(0)). With `returnExtras` it is lib/trade.ts swap, the extras out by exact
+ * count in the same trade; without, the receive-only receiveFrom it has always been.
+ */
+export async function takeBackTrade(sdk: SwapSdk, partner: string, returnExtras: readonly ServeExtra[]): Promise<TakeBackResult> {
+    if (returnExtras.length === 0) return { ...(await receiveFrom(sdk, partner, { want: loadWant(0), openTimeoutMs: 20_000 })), gave: [] };
+    // openTicks: about receiveFrom's 20 s at 600 ms; maxTicks: receiveFrom's default, the scored side offers five stacks.
+    return swap(sdk, partner, extraSpecs(returnExtras), loadWant(0), { openTicks: 34, maxTicks: 100 });
+}
+
+/** Delivered both ways: the set came in, and every return extra went out. */
+export function takeBackDelivered(r: Pick<TakeBackResult, 'ok' | 'received' | 'gave'>, returnExtras: readonly ServeExtra[]): boolean {
+    return r.ok && offerSatisfies(loadWant(0), r.received) && offerSatisfies(returnExtras.map(e => ({ item: exactName(e.item), amount: e.count })), r.gave);
+}
+
+/**
+ * Room for the set and the balls to come back: the server checks the inventory with our offer
+ * already out of it (trade.rs2 enough_trade_space), so the return extras' slots count as free.
+ * Assumes the return extras are carried at exactly their counts, as serveLoad withdraws them.
+ */
+export function takeBackFits(inventory: Carried, returnExtras: readonly ServeExtra[]): boolean {
+    const kept = inventory.filter(i => !returnExtras.some(e => exactName(e.item).test(i.name))).length;
+    return kept + CANNON_PARTS.length + 1 <= INVENTORY_SIZE;
+}
+
+/**
+ * A hand-off's progress in ctx.state: `giving` is written just before the trade, so a crash
+ * mid-trade is seen; `returning` likewise just before a take-back that gives `returnExtras`.
+ */
 export interface ServeRecord {
-    phase: 'giving' | 'gave' | 'returned';
+    phase: 'giving' | 'gave' | 'returning' | 'returned';
     at: string;
 }
 
@@ -325,9 +397,11 @@ export const serveKey = (id: string) => `cannon-serve:${id}`;
  * Where a (re)started serve picks up, from its record and whether the load is still
  * carried. After `giving` the load still carried means the trade never completed
  * (a closed trade puts offered items back); the load gone means it probably did,
- * which is `uncertain`: carried on as given, and flagged for a person.
+ * which is `uncertain`: carried on as given, and flagged for a person. After `returning`
+ * the same holds for the return extras: still carried, the take-back never completed;
+ * gone, it probably did (`uncertain-return`). Without return extras `carriesReturn` is true.
  */
-export function serveResume(rec: ServeRecord | undefined, carriesLoad: boolean, takesBack: boolean): 'give' | 'take-back' | 'done' | 'uncertain' {
+export function serveResume(rec: ServeRecord | undefined, carriesLoad: boolean, takesBack: boolean, carriesReturn = true): 'give' | 'take-back' | 'done' | 'uncertain' | 'uncertain-return' {
     const afterGive = takesBack ? 'take-back' : 'done';
     switch (rec?.phase) {
         case undefined:
@@ -336,6 +410,8 @@ export function serveResume(rec: ServeRecord | undefined, carriesLoad: boolean, 
             return carriesLoad ? 'give' : 'uncertain';
         case 'gave':
             return afterGive;
+        case 'returning':
+            return carriesReturn ? 'take-back' : 'uncertain-return';
         case 'returned':
             return 'done';
     }
