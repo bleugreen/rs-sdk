@@ -158,6 +158,8 @@ export interface KitReturnOptions {
 export interface KitReturnResult {
     /** One of EXIT. */
     code: number;
+    /** Where the account was first seen dead or respawned, if it died during the call. */
+    died: string | null;
     approach?: ApproachResult;
     gave: boolean;
     logout: Awaited<ReturnType<typeof logoutClean>>;
@@ -174,6 +176,11 @@ export async function kitReturn(session: Session, o: KitReturnOptions): Promise<
     const here = () => fmtTile(pos(sdk));
     const before = Object.fromEntries(o.items.map(k => [k.name, held(sdk.getState()!.inventory, k.name)]));
     say(`${session.name}: in game at ${here()} (T${tick()}, hp ${sdk.getState()?.player?.hp}); holds ${JSON.stringify(before)}`);
+    const life0 = sdk.getState()?.player?.lifeId;
+    let deathAt: string | null = null;
+    const stopDeathWatch = sdk.onStateUpdate(s => {
+        if (!deathAt && s.player && (s.player.isDead || (life0 !== undefined && s.player.lifeId !== life0))) deathAt = `${fmtTile(pos(s))} (T${s.tick})`;
+    });
     let code: number = EXIT.failed;
     let gave = false;
     let ap: ApproachResult | undefined;
@@ -209,11 +216,16 @@ export async function kitReturn(session: Session, o: KitReturnOptions): Promise<
         say((err as Error).message);
     }
     const logout = await logoutClean(session);
+    stopDeathWatch();
+    if (deathAt) {
+        say(`THE ACCOUNT DIED: first seen dead or respawned at ${deathAt}. All but the 3 most valuable items are on the ground where it fell; recover them now.`);
+        if (code === EXIT.ok) code = EXIT.failed;
+    }
     if (!logout.ok) {
         say(`LOGOUT FAILED (${logout.reason})${code === EXIT.damaged ? `: the account may still be under attack at ${here()}, hp ${sdk.getState()?.player?.hp}. Act on the tab now.` : ''}`);
         if (code === EXIT.ok) code = EXIT.failed;
     }
-    return { code, ...(ap ? { approach: ap } : {}), gave, logout };
+    return { code, died: deathAt, ...(ap ? { approach: ap } : {}), gave, logout };
 }
 
 function parseArgs(argv: readonly string[]) {

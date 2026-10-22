@@ -6,8 +6,9 @@
 // Scenarios, each with one bronze axe to return, at 10 hitpoints unless noted:
 //   refuse-far        Magic 1 at rs/296's Ardougne tile: refused, never moves (exit 3)
 //   teleport-first    Magic 31 and the runes at Draynor: Lumbridge teleport, run, trade (exit 0)
-//   damage-stop       Magic 1, 16 tiles out, a young dark wizard spawned on the route: halted,
-//                     backed off, logged out (exit 4, naming the wizard)
+//   damage-stop       Magic 1, 24 tiles out, a young dark wizard spawned on the route 12 tiles
+//                     ahead: halted, backed off to the start, logged out alive (exit 4, naming it)
+// A scenario passes only if the account did not die.
 //   refuse-wilderness Magic 99 and the runes on the Wilderness Agility course, 99 hitpoints so
 //                     the course's monsters do not kill it first: refused (exit 3)
 
@@ -47,13 +48,13 @@ async function scenario(label: string, expect: number, stage: () => Promise<void
     const r = await kitReturn(kit, { giver: giver.name, items, at: DEFAULT_GIVER_TILE });
     const g = await recv;
     const giverAxes = giver.sdk.getState()!.inventory.filter(i => /^bronze axe$/i.test(i.name)).length;
-    const pass = r.code === expect && r.logout.ok && (expect !== EXIT.ok || giverAxes === giverAxes0 + 1);
+    const pass = r.code === expect && r.logout.ok && !r.died && (expect !== EXIT.ok || giverAxes === giverAxes0 + 1);
     if (!pass) failed++;
     result(`kit-return ${label}`, {
         pass, expect, code: r.code, from, lastSeenAt: pos(kit.sdk), ticks: (kit.sdk.getState()?.tick ?? t0) - t0,
         plan: r.approach?.plan, reason: r.approach?.reason, damage: r.approach?.damage, gave: r.gave,
         giverReceived: g?.received ?? null, logout: { ok: r.logout.ok, by: r.logout.confirmedBy, reason: r.logout.reason },
-        deaths: kit.sdk.getState()?.player?.respawnCount ?? null,
+        died: r.died, deaths: kit.sdk.getState()?.player?.respawnCount ?? null,
     });
 }
 
@@ -64,9 +65,10 @@ await scenario('teleport-first', EXIT.ok, async () => {
     await mustTele(kit.sdk, 3093, 3244);
 });
 await scenario('damage-stop', EXIT.damaged, async () => {
-    await mustTele(kit.sdk, 3231, 3222);
+    // The wizard (hunt range 3) on the route, 12 tiles from a start it cannot see.
+    await mustTele(kit.sdk, 3234, 3222);
     await cheat(kit.sdk, 'npcadd young_dark_wizard', 2);
-    await mustTele(kit.sdk, 3238, 3222);
+    await mustTele(kit.sdk, 3246, 3222);
 });
 await scenario('refuse-wilderness', EXIT.refused, async () => {
     await setStats(kit.sdk, { magic: 99, hitpoints: 99 });
