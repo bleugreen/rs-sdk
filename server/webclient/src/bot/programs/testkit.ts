@@ -15,7 +15,8 @@ export interface StateSpec {
     maxHp?: number;
     animId?: number;
     skills?: Record<string, { xp: number; level?: number }>;
-    inventory?: Array<string | { name: string; options?: string[]; count?: number }>;
+    /** By slot; null is an empty slot (the items after it keep their slots). */
+    inventory?: Array<string | { name: string; options?: string[]; count?: number } | null>;
     /** Worn items, by name. */
     equipment?: string[];
     npcs?: Array<Partial<NearbyNpc> & { index: number; name: string; options?: string[] }>;
@@ -34,11 +35,12 @@ export interface StateSpec {
 export function makeState(spec: StateSpec): BotWorldState {
     const x = spec.x ?? 3200;
     const z = spec.z ?? 3200;
-    const inventory: InventoryItem[] = (spec.inventory ?? []).map((it, slot) => {
+    const inventory: InventoryItem[] = (spec.inventory ?? []).flatMap((it, slot) => {
+        if (it === null) return [];
         const name = typeof it === 'string' ? it : it.name;
         const options = typeof it === 'string' ? ['Use', 'Drop'] : (it.options ?? ['Use', 'Drop']);
         const count = typeof it === 'string' ? 1 : (it.count ?? 1);
-        return { slot, id: 1000 + slot, name, count, optionsWithIndex: options.map((text, i) => ({ text, opIndex: i + 1 })) };
+        return [{ slot, id: 1000 + slot, name, count, optionsWithIndex: options.map((text, i) => ({ text, opIndex: i + 1 })) }];
     });
     const npcs = (spec.npcs ?? []).map(n => {
         const options = n.options ?? ['Talk-to'];
@@ -116,7 +118,7 @@ export class Harness {
     reject = new Set<string>();
 
     /** A bare function registers as a program that accepts no keys of its own. */
-    constructor(name: string, factory: ProgramFactory | ((params: ProgramParams, init: ProgramInit) => TickProgram), opts: { packetsPerTick?: number; stallTicks?: number; now?: () => number; wallNow?: () => number } = {}) {
+    constructor(name: string, factory: ProgramFactory | ((params: ProgramParams, init: ProgramInit) => TickProgram), opts: { packetsPerTick?: number; stallTicks?: number; now?: () => number; wallNow?: () => number; random?: () => number } = {}) {
         this.runtime = new ProgramRuntime({
             dispatch: (action): ActionResult => {
                 if (this.reject.has(action.type)) return { success: false, message: 'rejected' };
