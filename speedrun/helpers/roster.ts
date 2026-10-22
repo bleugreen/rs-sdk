@@ -157,8 +157,11 @@ export function allocate(stock: Stockpile, item: string, givers: string[], each:
     return allocateEach(stock, item, givers, () => each);
 }
 
-/** As allocate, with each giver's own count (0: nothing for it). */
-export function allocateEach(stock: Stockpile, item: string, givers: string[], countFor: (giver: string) => number): Transfer[] {
+/**
+ * As allocate, with each giver's own count (0: nothing for it). Holders in `prefer` (donors the
+ * plan already logs in) are used before any other holder.
+ */
+export function allocateEach(stock: Stockpile, item: string, givers: string[], countFor: (giver: string) => number, prefer: ReadonlySet<string> = new Set()): Transfer[] {
     validateAccounts(givers);
     const wants = givers.map(g => {
         const n = countFor(g);
@@ -177,7 +180,7 @@ export function allocateEach(stock: Stockpile, item: string, givers: string[], c
         .filter(([name]) => !skip.has(name) && ACCOUNT_NAME_RE.test(name) && !FORBIDDEN_ACCOUNTS.has(name))
         .map(([name, a]) => ({ name, left: (a.bank ?? []).filter(i => i.name === item).reduce((n, i) => n + i.count, 0) }))
         .filter(h => h.left > 0)
-        .sort((a, b) => b.left - a.left || a.name.localeCompare(b.name));
+        .sort((a, b) => Number(prefer.has(b.name)) - Number(prefer.has(a.name)) || b.left - a.left || a.name.localeCompare(b.name));
     const have = holders.reduce((n, h) => n + h.left, 0);
     const total = wants.reduce((a, n) => a + n, 0);
     if (have < total) throw new Error(`${item}: need ${total}, the stockpile holds ${have}`);
@@ -208,6 +211,8 @@ export interface ProvisionPlan {
     handBack: { account: string; essence: number; trades: number; items: { item: string; n: number }[] };
     talismans: Transfer[];
     essenceTransfers: Transfer[];
+    /** The hand-back items into the hand-back giver's bank, from a talisman or essence donor when one holds them. */
+    handBackTransfers: Transfer[];
 }
 
 export function provisionPlan(stock: Stockpile, r: Roster, total = S21_ESSENCE): ProvisionPlan {
@@ -217,7 +222,10 @@ export function provisionPlan(stock: Stockpile, r: Roster, total = S21_ESSENCE):
     const talismans = allocate(stock, 'Body talisman', r.accounts, 1);
     // One donor pass in roster order: the hand-back giver takes only its trades' essence, so its bank runs out after its last trade.
     const essenceTransfers = allocateEach(stock, 'Rune essence', r.accounts, a => (a === handBackAccount ? hb.essence : essence.perGiver));
-    const donors = new Set([...talismans, ...essenceTransfers].map(t => t.from));
+    // A few runes: from a donor already logging in rather than one more login in the hand-back giver's batch.
+    const bulkDonors = new Set([...talismans, ...essenceTransfers].map(t => t.from));
+    const handBackTransfers = S21_HAND_BACK.flatMap(i => allocateEach(stock, i.item, r.accounts, a => (a === handBackAccount ? i.n : 0), bulkDonors));
+    const donors = new Set([...bulkDonors, ...handBackTransfers.map(t => t.from)]);
     // The five-client provisioning budget includes donors, not only recipients.
     if (donors.size >= PROVISION_BATCH) throw new Error('too many donors for one provisioning window; ask rs/41 to consolidate stock first');
     return {
@@ -226,7 +234,8 @@ export function provisionPlan(stock: Stockpile, r: Roster, total = S21_ESSENCE):
         essence,
         handBack: { account: handBackAccount, essence: hb.essence, trades: hb.trades, items: S21_HAND_BACK.map(i => ({ ...i })) },
         talismans,
-        essenceTransfers
+        essenceTransfers,
+        handBackTransfers
     };
 }
 
