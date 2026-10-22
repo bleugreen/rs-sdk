@@ -46,6 +46,7 @@ speedrun/
   skills/         the run's step modules: `skill` and `steps({to, ...})` returning runner Steps
     start.ts      S00, the tutorial skip on a brand-new account's first login
     fishing.ts    S22 fly fishing under the gated knife loop, and the from-1 net and walk bands
+    mining.ts     S09 iron at the Ardougne zoo under the gated knife-mine loop, and the from-1 bands
   rehearse.ts     one single-skill rehearsal attempt end to end (gate, S00, kit, steps, logout, hiscore)
   lab/            local lab: never imported by lib/
     lab.sh        engine + gateway + lite runners on port block 9300
@@ -677,6 +678,34 @@ margin: 783 for 20-99, 595 for 78-99). Each gated segment and a band summary
 share, spot-move costs, resyncs and slips) go to the tick log as 0-tick rows tagged
 `fishing:<band>:segment` and `:summary`. Running out of feathers stops the band with an error
 that names the level reached.
+
+## skills/mining.ts
+
+STEP-MANIFEST.md entry 4 (S09) as level-driven steps that run from any start level:
+`mining.prep` (drops only tutorial.rs2's starter items, and only on an account below 15),
+`mining.copper` (1-15 at Rimmington, an SDK loop), the `mining.travel: ...` legs (Port Sarim,
+Karamja, Brimhaven, the customs ship to Ardougne, the zoo; `travel: 'none'` keeps only the zoo
+walk), `mining.iron-15` (15-63) and `mining.iron-63` (63 to the target). Each band reads the
+level from state and is a no-op once passed, so the scored run, already in Ardougne at Mining
+64, runs the zoo walk and the last band.
+
+```ts
+import { steps } from '../skills/mining';
+await runSteps(session, steps({ to: 99, respawn: 'auto', technique: 'auto' }), { log, c: {} });
+```
+
+The iron bands run `knife-mine` through `lib/gated-program.ts` `runGatedProgram` (the
+`deps` export is the seam the tests replace). Below 63 the program runs with `success: 'iron'`
+(a failed roll whose swing was seen is planned from like a success) and `rate` from the held
+pickaxes (`rateTable`: rune 41, adamant 31, mithril 21, steel 6, bronze). The respawn comes
+from /playercount (`respawnFor`, player_count.rs2's scale; `scheduledRespawn` plans for 150
+players fewer) at each band start and every 100 ticks, and a watch on the rotation's rocks logs
+each observed respawn and restarts the band when one is longer than the schedule. The lap is
+the one with the lowest modelled ticks per ore at that respawn (`lapModel`, `rotationFor`: a
+knife lap of n rocks holds 3 ticks per ore while 3n >= D). A rock counts as live only with its
+Mine option and an id outside 450-453 (depleted iron keeps Mine; the same set as knife-mine's
+`EMPTY_ROCKS`). Lab runs: `tickprog-measure.ts mine` (one program run, with `--success`,
+`--pickaxes`, `--rotation`, `--gated`) and `mineband` (the module's iron bands in the page).
 
 ## runner/step.ts
 

@@ -6,9 +6,15 @@
 //   probe        in-page latency probe            --trials=60 [--no-tele]
 //   mine         knife iron rotation at respawn 13 (player_count pinned locally)
 //                                                --ores=200 [--starter=knife|none] [--steps=d13|stay2|<pairs>]
-//                                                [--level=99] [--bury [--prayer=43]]
+//                [--level=99 [--hold]] holds Mining at the level (::setstat on each level-up)
+//                [--pickaxes=rune|kit|bronze] kit: bronze, steel, mithril, adamant and rune
+//                [--success] knife-mine's failed-roll handling (`success: 'iron'`), with `rate`
+//                [--rotation=five|six] (mining.ts's laps; overrides --steps) [--respawn=13]
+//                [--gated [--hold-starters=0.15]] [--bury [--prayer=43]]
 //                --bury buries dragon bones on the lap's short-entry stay (knife-mine `bury`;
 //                bones-placement.md section 4, the stay2 lap); topped up as in oak
+//   mineband     speedrun/skills/mining.ts's iron bands from --level to --until, as the run
+//                chains them (--respawn=13 --technique=auto|knife|plain --pickaxes=kit)
 //   fly          knife fly fishing, Lumbridge     --level=20 --until=99 | --successes=N [--technique=plain]
 //   willow       knife willows, Draynor           --successes=150
 //   oak          knife oaks, Taverley (2914,3494) --successes=200 [--level=60] [--bury [--prayer=43]] [--technique=plain]
@@ -51,9 +57,10 @@ import { type GatedTechnique, inPageGate, runGatedProgram } from '../../../speed
 import { latencyHistogram } from '../../../speedrun/lib/hostgate';
 import { awaitProgram, probeInPage, ProgramError, programStatus, runProgram, startProgram } from '../../../speedrun/lib/programs';
 import { runGivers } from './tickprog-rc-givers';
-import { statRandom } from '../../../server/webclient/src/bot/programs/util';
 import { openSession, closeSession, type Session } from '../../../speedrun/lib/session';
+import { TickLog } from '../../../speedrun/lib/ticks';
 import { decideGiver, decideReceiver, newGiverCtx, newReceiverCtx, planOffers, sameName, tradeOf, type GiverCtx, type OfferEntry, type ReceiverCtx } from '../../../speedrun/lib/trade';
+import * as mining from '../../../speedrun/skills/mining';
 
 const bot = process.argv[2];
 const mode = process.argv[3];
@@ -171,28 +178,74 @@ await runScript(async ({ bot: actions, sdk }) => {
             if (st) console.log(`frame arrival to decision ms: p50 ${st.react.p50} p90 ${st.react.p90} max ${st.react.max}; loops/s last ${st.loops.last} p10(10 s) ${st.loops.p10Last10s}; frames p90 ${st.frames.p90} ms, catch-ups ${st.frames.catchUps}`);
             return;
         }
-        case 'mine': {
-            const steps = ROTATIONS[flag('steps', 'd13')!] ?? flag('steps')!;
+        case 'mine':
+        case 'mineband': {
+            const level = num('level', 99);
+            const kit = flag('pickaxes', mode === 'mineband' ? 'kit' : 'rune')!;
+            const D = num('respawn', 13);
+            const rotation = flag('rotation');
+            const stepsName = rotation ?? flag('steps', 'd13')!;
+            const steps = rotation ? mining.ROTATIONS[rotation]!.steps : (ROTATIONS[stepsName] ?? stepsName);
             const [sx, sz] = steps.trim().split(/\s+/)[0]!.split('>')[0]!.split(',').map(Number) as [number, number];
             const bury = has('bury');
-            const level = num('level', 99);
             await clearInventory();
             await say(`::setstat mining ${level}`);
+            for (const stat of ['hitpoints', 'defence', 'attack', 'strength']) await say(`::setstat ${stat} 70`);
             if (bury) await say(`::setstat prayer ${num('prayer', 43)}`);
-            await say('::give rune_pickaxe 1');
-            await knifeKit(bury ? 2 : 10);
+            for (const p of kit === 'kit' ? ['bronze', 'steel', 'mithril', 'adamant', 'rune'] : [kit]) await say(`::give ${p}_pickaxe 1`);
+            await knifeKit(bury ? 2 : 4);
             if (bury) await say('::give dragon_bones 20');
             await tele(`0,${sx >> 6},${sz >> 6},${sx & 63},${sz & 63}`, sx, sz);
-            // every rock respawned from a previous run (the program takes each rock's id at its start)
-            if (!DEMO) await sdk.waitForTicks(14);
+            // every rotation rock live (the program takes each rock's id at its start)
+            if (!DEMO) await sdk.waitForTicks(D + 2);
             while (sdk.getState()?.dialog.isOpen) { await sdk.sendClickDialog(0); await sdk.waitForTicks(1); }
-            const params: Record<string, unknown> = { steps, respawn: num('respawn', 13), starter: flag('starter', 'knife'), ores: num('ores', 200) };
+            if (mode === 'mineband') {
+                const until = num('until', 99);
+                const log = TickLog.memory();
+                const ctx = { session: { sdk, bot: actions, name: bot, sessionId: 0 }, sdk, bot: actions, c: {}, log } as never;
+                const t0 = sdk.getState()!.tick;
+                for (const st of mining.steps({ to: until, respawn: D, travel: 'none', technique: (flag('technique', 'auto') as mining.Technique), ...(rotation ? { rotation } : {}) })) {
+                    if (!st.name.startsWith('mining.iron')) continue;
+                    const s0 = sdk.getState()!.tick;
+                    await st.run(ctx);
+                    console.log(`${st.name}: ${sdk.getState()!.tick - s0} ticks, level ${mining.miningLevel(sdk.getState())}`);
+                }
+                console.log(`mineband ${level}-${until} at respawn ${D}: ${sdk.getState()!.tick - t0} ticks (${where()})`);
+                for (const r of log.rows) console.log(`${r.step} T${r.startTick}-${r.endTick} (${r.ticks}): ${JSON.stringify(r.meta)}`);
+                return;
+            }
+            const inv = sdk.getState()!.inventory;
+            const params: Record<string, unknown> = {
+                steps, respawn: D, starter: flag('starter', 'knife'), ores: num('ores', 200),
+                ...(has('success') ? { success: 'iron', rate: mining.rateTable(inv) } : kit !== 'rune' ? { rate: mining.rateTable(inv) } : {}),
+            };
             if (bury) params.bury = '^dragon bones$';
-            const started = await startProgram(sdk, 'knife-mine', params);
-            const un = bury ? topUpBones() : () => {};
+            // hold the level: the success chance and the pickaxe stay those of --level
+            let last = level;
+            const unHold = has('hold') ? sdk.onStateUpdate(s => {
+                const lv = mining.miningLevel(s);
+                if (lv !== level && lv !== last) void sdk.sendSay(`::setstat mining ${level}`);
+                last = lv;
+            }) : () => {};
+            const unBones = bury ? topUpBones() : () => {};
+            const un = () => { unHold(); unBones(); };
+            const label = `knife-mine ${stepsName} L${level} ${kit}${has('success') ? ' success' : ''}${bury ? ' bury' : ''}`;
             try {
+                if (has('gated')) {
+                    const hold = Number(flag('hold-starters', '0'));
+                    if (hold) params.hold = hold;
+                    const gate = inPageGate(sdk, { plainTicksPerRoll: mining.plainTicksPerOre(D), trials: num('trials', 20), log: l => console.log(`  ${l}`) });
+                    const run = await runGatedProgram(sdk, 'knife-mine', params, { gate, technique: flag('technique', 'auto') as GatedTechnique, onProgress: progress, log: l => console.log(`  ${l}`) });
+                    for (const seg of run.segments) report(`knife-mine segment ${seg.technique} (${seg.reason})`, seg.status);
+                    for (const h of gate.history) console.log(`gate T${h.tick} ${h.why}: ${h.on ? 'knife' : 'plain'}${h.result ? `, probe ${h.result.ticks} ticks` : ''}${h.measured ? `, measured knife ${h.measured.knife.toFixed(2)} vs plain ${h.measured.plain}` : ''}`);
+                    return;
+                }
+                const started = await startProgram(sdk, 'knife-mine', params);
                 const end = await awaitProgram(sdk, started.runId, { onProgress: progress });
-                return report(`knife-mine ${flag('steps', 'd13')} L${level}${bury ? ' bury' : ''}`, end);
+                const r = end.result as { ores: number; ticks: number; failed?: number } | undefined;
+                const p = statRandom(level, 96, 350);
+                if (r) console.log(`level ${level} (p ${p.toFixed(3)}, 3/p ${(3 / p).toFixed(2)}): ${r.ores} ores in ${r.ticks} ticks, ${(r.ticks / r.ores).toFixed(2)} per ore, ${(r.ticks / (r.ores + (r.failed ?? 0))).toFixed(2)} per roll seen, ${((r.ticks / r.ores) * p).toFixed(2)} per expected roll`);
+                return report(label, end);
             } finally {
                 un();
             }
@@ -446,7 +499,7 @@ await runScript(async ({ bot: actions, sdk }) => {
             return;
         }
         default:
-            throw new Error(`unknown mode ${mode}: probe, mine, fly, willow, oak, tav-willow, tree, pickpocket, agility, rc`);
+            throw new Error(`unknown mode ${mode}: probe, mine, mineband, fly, willow, oak, tav-willow, tree, pickpocket, agility, rc`);
     }
     }
 
