@@ -61,7 +61,8 @@ const pickpocket = (target: keyof typeof SPOTS): Method => ({
 
 const fishing = (c: string, tool: string): Method => ({
     role: async () => (await import('../fish')).role,
-    options: { catch: c },
+    // --keep=Raw bass|Oyster: drop the rest when the pack fills ('|'-separated: parallel.ts splits on ',')
+    options: { catch: c, ...(arg('keep', '') ? { keep: arg('keep', '').split('|') } : {}) },
     stats: { fishing: num('fishing', 99) },
     inv: [[tool, 1]],
     bank: CATHERBY_BANK,
