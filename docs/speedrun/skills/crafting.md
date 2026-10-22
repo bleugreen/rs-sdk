@@ -122,7 +122,9 @@ that trade belongs to the quest plan.
   inputs (battlestaff + orb), 14 per inventory: measured 4-5 ticks per cycle, like Herblore.
 - **Hard leather body** is the one leather item crafted directly: `[opheldu,hard_leather]` with a
   needle calls `@craft_leather(hardleather_body, 1)`, which makes it at once without the queue
-  every other leather item uses (`leather.rs2:36,47-48,116-134`). One thread per 5 bodies.
+  every other leather item uses (`leather.rs2:36,47-48,116-134`). A body needs one thread held,
+  and every fifth body deletes one (`%thread_used`), so n bodies take floor((n-1+s)/5)+1 thread
+  for a starting `%thread_used` of s (0-4): 224 for 1,116 bodies.
   Not measured; inferred to run like gems (26 per inventory with needle and thread).
 - **Level-up boxes.** OPHELDU closes the chat modal, so cutting never stalls. At a bank visit
   each pending level-up (a queued `p_pausebutton` script, `levelup.rs2`) holds the booth for a
@@ -200,8 +202,11 @@ Fallback lists (from 42):
   30 elemental runes each, so **828 cosmic runes** (GE: 370 ever traded, no sellers now) and
   276 unpowered orbs (molten glass + glassblowing pipe, Crafting 46).
 - **Diamonds only**: 364 uncut diamonds, chisel.
-- **Hard leather bodies**: about 1,120 hard leather (cowhides tanned by a helper; cows are
-  everywhere; GE cowhides last traded at 100 gp), 1 needle, about 225 thread. Supply-safe.
+- **Hard leather bodies**: 1,142 hard leather for 1,116 bodies plus a spare inventory, 1 needle,
+  224 thread (230 staged). There is no GE market for hard leather and only a handful of cowhides
+  (2026-10-22), so the `hides` helper role takes cowhides in the Lumbridge fields and has the
+  Al Kharid tanner tan them at 3 gp each: about 250-550 leather per account-hour, measured
+  ([helpers/hides.md](../helpers/hides.md)). Supply-safe.
 
 **Hand-off.** One trade of noted gems (1-3 stacks) plus the chisel, deposited at the training
 booth. The scored account must stand at a bank for the cycle.
