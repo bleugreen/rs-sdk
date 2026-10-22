@@ -8,10 +8,13 @@
 //   LAB_BLOCK=37 NODE_TICKRATE=400 HEADLESS=1 bash docs/speedrun/scripts/tickprog-lab.sh <stand-in> \
 //       speedrun/lab/crowded-knight.ts:--crowd=10:--ticks=200:--trials=60
 //
-// Phases, in --phases order (default base1,crowd,away,base2), each on the stand-in's observed ticks:
+// Phases, in --phases order (default base1,crowd,prefer,away,base2), each on the stand-in's observed ticks:
 //   base1  no bots in the world
 //   crowd  the bots click the knight every tick (they path to its side tiles; players never block
 //          players, so any number fit) while the stand-in pickpockets the knight nearest it
+//   prefer the bots crowd the knight nearest the anchor; the stand-in stays on the anchor and runs
+//          with rs/480's `prefer` list, ordered by thieving.ts `chooseKnight` (needs rs/480's
+//          thieving.ts and pickpocket.ts in the tree the page was built from; refused otherwise)
 //   away   the bots stay logged in, teleported out of view (--away=x,z): the host-load control
 //   base2  the bots logged out
 // Each phase sets the stand-in to --thieving (80) and its hitpoints back, runs the in-page probe
@@ -31,6 +34,7 @@ import type { BotWorldState, GameMessage, NearbyNpc } from '../../sdk/types';
 import { probeInPage, runProgram, type ProgramStatus } from '../lib/programs';
 import { closeSession, logoutClean, openSession, type Session } from '../lib/session';
 import { waitTicks, waitUntil } from '../lib/wait';
+import * as thieving from '../skills/thieving';
 import { BANDS, eatPolicy, FOODS, foodPattern } from '../skills/thieving';
 import { arg, result } from './common';
 import { cheat, leaveTutorial, tele } from './setup';
@@ -44,7 +48,11 @@ const TRIALS = Number(arg('trials', '60'));
 const THIEVING = Number(arg('thieving', '80'));
 const HP = Number(arg('hp', '97'));
 const PREFIX = arg('prefix', 'ck479');
-const PHASES = arg('phases', 'base1,crowd,away,base2').split(',').filter(Boolean);
+const PHASES = arg('phases', 'base1,crowd,prefer,away,base2').split(',').filter(Boolean);
+/** rs/480's uncrowded choice, when the tree has it (on main through rs/480's PR, not on this branch). */
+const chooseKnight = (thieving as unknown as {
+    chooseKnight?: (s: BotWorldState, npc: RegExp, exclude: readonly string[]) => { candidates: Array<{ index: number; players: number; distance: number }>; chosen: number | null; retarget: number | null };
+}).chooseKnight;
 const LOGIN_BATCH = Number(arg('login-batch', '5'));
 const [AWAY_X, AWAY_Z] = arg('away', '2705,3305').split(',').map(Number) as [number, number];
 const ANCHOR = BANDS.find(b => b.name === 'thieving:knights')!.anchors[0]!;
@@ -178,13 +186,22 @@ const say = async (cmd: string) => {
     await waitTicks(sdk, 1);
 };
 
-// per-tick samples on the stand-in: players in view, the crowd's knight and the stand-in's tile
-const samples: Array<{ tick: number; players: number; knight: { x: number; z: number } | null; at: { x: number; z: number } }> = [];
+// per-tick samples on the stand-in: players in view, every knight in sight [index, x, z] and the stand-in's tile
+const samples: Array<{ tick: number; players: number; knights: Array<[number, number, number]>; at: { x: number; z: number } }> = [];
 let knightIndex: number | null = null;
 const me = new Watch(sdk, s => {
-    const k = knightIndex === null ? undefined : s.nearbyNpcs.find(n => n.index === knightIndex);
-    samples.push({ tick: s.tick, players: s.nearbyPlayers.length, knight: k ? { x: k.tileX ?? k.x, z: k.tileZ ?? k.z } : null, at: { x: s.player!.worldX, z: s.player!.worldZ } });
+    const knights = s.nearbyNpcs.filter(n => KNIGHT.test(n.name)).map(n => [n.index, n.tileX ?? n.x, n.tileZ ?? n.z] as [number, number, number]);
+    samples.push({ tick: s.tick, players: s.nearbyPlayers.length, knights, at: { x: s.player!.worldX, z: s.player!.worldZ } });
 });
+
+/** A knight's track over a window: tiles moved, ticks seen, the stand-in's mean Chebyshev distance to it. */
+function knightTrack(index: number | null, inWin: (t: number) => boolean) {
+    if (index === null) return null;
+    const seen = samples.filter(x => inWin(x.tick)).map(x => ({ at: x.at, k: x.knights.find(k => k[0] === index) })).filter(x => x.k);
+    const moves = seen.slice(1).filter((x, i) => x.k![1] !== seen[i]!.k![1] || x.k![2] !== seen[i]!.k![2]).length;
+    const dist = seen.length ? +(seen.reduce((a, x) => a + Math.max(Math.abs(x.at.x - x.k![1]), Math.abs(x.at.z - x.k![2])), 0) / seen.length).toFixed(2) : null;
+    return { index, seenTicks: seen.length, moves, standInMeanDist: dist };
+}
 
 await leaveTutorial(session);
 await say('~clearinv inv');
@@ -249,7 +266,8 @@ async function phase(name: string): Promise<void> {
     const kind = name.replace(/\d+$/, '');
     const prep: Record<string, unknown> = {};
     if (kind === 'base' && botsIn) prep.logout = await logoutBots();
-    if ((kind === 'crowd' || kind === 'away') && !botsIn) {
+    if (kind === 'prefer' && !chooseKnight) throw new Error("prefer: this tree's thieving.ts has no chooseKnight (rs/480); overlay rs/480's thieving.ts and pickpocket.ts for the lab");
+    if ((kind === 'crowd' || kind === 'away' || kind === 'prefer') && !botsIn) {
         const t0 = Date.now();
         await loginBots();
         prep.loginWallMs = Date.now() - t0;
@@ -260,9 +278,9 @@ async function phase(name: string): Promise<void> {
         await sdk.sendClickDialog(0);
         await waitTicks(sdk, 1);
     }
-    if (kind === 'crowd') {
+    if (kind === 'crowd' || kind === 'prefer') {
         const k = knightNear(state());
-        if (!k) throw new Error('crowd: no knight in view of the anchor');
+        if (!k) throw new Error(`${name}: no knight in view of the anchor`);
         knightIndex = k.index;
         for (const b of bots) await cheat(b.session.sdk, 'setstat hitpoints 99');
         prep.knight = { index: k.index, x: k.tileX ?? k.x, z: k.tileZ ?? k.z };
@@ -277,9 +295,15 @@ async function phase(name: string): Promise<void> {
             return s.nearbyPlayers.filter(p => Math.max(Math.abs(p.x - kx), Math.abs(p.z - kz)) <= 1).length >= Math.ceil(bots.length * 0.8);
         }, { maxTicks: 40 });
         prep.crowdPlacedTicks = placed.ok ? 'ok' : 'timeout';
-        // the stand-in goes beside the pinned knight, as SCORED would
+        // crowd: the stand-in goes beside the pinned knight; prefer: it stays on the anchor and chooses
         const kn = state().nearbyNpcs.find(n => n.index === k.index);
-        if (kn) await tele(sdk, (kn.tileX ?? kn.x) - 1, kn.tileZ ?? kn.z);
+        if (kind === 'crowd' && kn) await tele(sdk, (kn.tileX ?? kn.x) - 1, kn.tileZ ?? kn.z);
+    }
+    let prefer: number[] | undefined;
+    if (kind === 'prefer') {
+        const c = chooseKnight!(state(), KNIGHT, []);
+        prefer = [c.chosen, c.retarget].filter((i): i is number => i !== null);
+        prep.choice = { ...c, crowdedKnight: knightIndex };
     }
     if (kind === 'away') {
         for (const b of bots) b.knight = null;
@@ -316,11 +340,17 @@ async function phase(name: string): Promise<void> {
     const band = BANDS.find(b => b.name === 'thieving:knights')!;
     const params = {
         npc: band.npc, food: foodPattern(food), heal: food.heal, eat: 'window', ...eatPolicy(state().player!.maxHp, food.heal, band.stunDamage),
-        stopWhenFoodBelow: 1, retargetTicks: 12, maxTicks: TICKS
+        stopWhenFoodBelow: 1, retargetTicks: 12, maxTicks: TICKS, ...(prefer ? { prefer } : {})
     };
     const rej0 = me.rejected;
     const botRej0 = bots.map(b => b.watch.rejected);
-    const prog = await segment('pickpocket', () => runProgram(sdk, 'pickpocket', params, { maxTicks: TICKS + 80 }));
+    // the program's `target` gauge (published with a prefer list): every change, on the stand-in's ticks
+    const targets: Array<{ tick: number; target: number }> = [];
+    const onProgress = (p: ProgramStatus) => {
+        const g = p.gauges?.target;
+        if (g !== undefined && targets[targets.length - 1]?.target !== g) targets.push({ tick: p.tick, target: g });
+    };
+    const prog = await segment('pickpocket', () => runProgram(sdk, 'pickpocket', params, { maxTicks: TICKS + 80, onProgress }));
     const st = prog.out as ProgramStatus;
     const t0 = st.startedTick;
     const t1 = st.endedTick ?? prog.t1;
@@ -330,7 +360,7 @@ async function phase(name: string): Promise<void> {
     const myLines = me.lines.filter(x => inWin(x.tick));
 
     // the crowd's rolls on the stand-in's clock, and how many players rolled on each tick
-    const crowd = bots.length && kind === 'crowd'
+    const crowd = bots.length && (kind === 'crowd' || kind === 'prefer')
         ? bots.map(b => {
             const off = clockOffset(me, b.watch);
             const rolls = b.watch.rolls.map(x => ({ tick: x.tick + off.offset, ok: x.ok })).filter(x => inWin(x.tick));
@@ -353,9 +383,7 @@ async function phase(name: string): Promise<void> {
     const shared = myRolls.filter(x => (perTick.get(x.tick)?.bots ?? 0) > 0);
     const alone = myRolls.filter(x => (perTick.get(x.tick)?.bots ?? 0) === 0);
     const botRolls = crowd.flatMap(c => c.rolls);
-    const winSamples = samples.filter(x => inWin(x.tick));
-    const kTiles = winSamples.map(x => x.knight).filter((k): k is { x: number; z: number } => !!k);
-    const knightMoves = kTiles.slice(1).filter((k, i) => k.x !== kTiles[i]!.x || k.z !== kTiles[i]!.z).length;
+    const finalTarget = st.gauges?.target ?? null;
     const row = {
         phase: name, host: hostname(), tickrate: process.env.NODE_TICKRATE ?? '', ticks: t1 - t0, startedTick: t0, endedTick: t1, phaseOk: st.phase,
         thieving: THIEVING, rolls: r.rolls, successes: r.successes, fails: r.fails, successRate: r.successRate,
@@ -365,9 +393,8 @@ async function phase(name: string): Promise<void> {
         opRejected: me.rejected - rej0, lines: tally(myLines),
         packets: st.packets, packetsPerTick: +(st.packets / Math.max(1, t1 - t0)).toFixed(3), deferred: st.deferred, skippedTicks: st.skippedTicks, maxTickMs: st.maxTickMs,
         frames: st.frames, publish: st.publish, react: st.react, loops: st.loops, render: prog.render, load: prog.load, playersInView: prog.playersInView,
-        knightMoves, knightSeenTicks: kTiles.length, standInMeanKnightDist: kTiles.length
-            ? +(winSamples.filter(x => x.knight).reduce((a, x) => a + Math.max(Math.abs(x.at.x - x.knight!.x), Math.abs(x.at.z - x.knight!.z)), 0) / kTiles.length).toFixed(2)
-            : null,
+        crowdedKnight: knightTrack(knightIndex, inWin), ...(prefer ? { prefer, targets, targetKnight: knightTrack(finalTarget, inWin) } : {}),
+        knightsInSight: samples.filter(x => inWin(x.tick)).length ? +(samples.filter(x => inWin(x.tick)).reduce((a, x) => a + x.knights.length, 0) / samples.filter(x => inWin(x.tick)).length).toFixed(1) : null,
         ...(crowd.length ? {
             crowd: {
                 bots: crowd.length, rolls: botRolls.length, successes: botRolls.filter(x => x.ok).length, stuns: crowd.reduce((a, c) => a + c.stuns, 0),
