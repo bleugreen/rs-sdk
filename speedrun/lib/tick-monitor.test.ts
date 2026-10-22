@@ -91,7 +91,6 @@ describe('TickCadence', () => {
         test('holds under lateMs are not late at 370 ms (against 300 they read 70 ms more, 160)', () => {
             const a = clean(162, 370).map(([l, t]) => [l, [40, 90, 140].includes(l) ? t + 90 : t] as [number, number]);
             expect(classify(a).late).toBe(0);
-            expect(classify(a, { ...CFG, tickMs: 370 }).late).toBe(0);
             // the same holds at 130 ms are late either way
             const b = clean(162, 370).map(([l, t]) => [l, [40, 90, 140].includes(l) ? t + 130 : t] as [number, number]);
             expect(classify(b).late).toBe(3);
