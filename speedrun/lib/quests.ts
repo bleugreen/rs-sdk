@@ -102,6 +102,21 @@ function freshJournal(view: QuestView, key: QuestKey): QuestJournalState | null 
     return j.open || s.tick - j.tick <= JOURNAL_FRESH_TICKS ? j : null;
 }
 
+/**
+ * The text of `key`'s journal from a probe or a fresh state, compacted as
+ * markers are matched (tags and whitespace removed), or null when there is
+ * none. For quests whose sub-stages show only in the journal's prose: match
+ * a phrase with `journalText(view, key)?.includes(compactJournal(phrase))`.
+ */
+export function journalText(view: QuestView, key: QuestKey): string | null {
+    const t = table(key);
+    const j = freshJournal(view, key);
+    if (!j || !t.journalTitle || compact(j.title) !== compact(t.journalTitle)) return null;
+    return compact(j.lines.join(''));
+}
+
+export { compact as compactJournal };
+
 /** Where `key` stands, as far as the published state (and any journal probe) shows; null when unobservable. */
 export function questStage(view: QuestView, key: QuestKey): QuestStageReading | null {
     const status = questStatus(stateOf(view), key);
