@@ -33,7 +33,7 @@
 
 import type { BotWorldState, PrayerName, QuestJournalState } from '../../sdk/types';
 import { actConverse, dropItems, opLoc, talkTo, wield, type ActSdk } from '../lib/act';
-import { COMBAT_SPELLS, fight, prayerActive, setPrayer, type CombatSdk, type FightOptions, type FightResult } from '../lib/combat';
+import { COMBAT_SPELLS, fight, prayerActive, questCastStyle, setPrayer, type CombatSdk, type FightOptions, type FightResult } from '../lib/combat';
 import { converse, levelUpInterrupt, type ConverseResult, type ConverseSdk } from '../lib/converse';
 import { pageText, type OptionPattern } from '../lib/dialogue';
 import type { ItemPattern } from '../lib/items';
@@ -361,6 +361,7 @@ export function fightOptions(opts: Options | undefined): FightOptions {
         food: opts?.food ?? FOOD,
         maxTicks: 1500,
         findTicks: 40,
+        ...questCastStyle(),
     };
 }
 
