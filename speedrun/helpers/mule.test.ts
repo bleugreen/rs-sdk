@@ -84,7 +84,8 @@ describe('packages', () => {
 
     test('stackable guess covers coins, runes and ammunition but not plain items', () => {
         for (const n of ['Coins', 'Law rune', 'Rune arrows', 'Mithril dart tips', 'Feather', 'Rune arrowtips']) expect(isStackableName(n)).toBe(true);
-        for (const n of ['Rune essence', 'Logs', 'Shark', 'Rune platebody']) expect(isStackableName(n)).toBe(false);
+        for (const n of ['Rune essence', 'Logs', 'Shark', 'Rune platebody', 'Knife']) expect(isStackableName(n)).toBe(false);
+        expect(isStackableName('Rune knife')).toBe(true);
     });
 });
 

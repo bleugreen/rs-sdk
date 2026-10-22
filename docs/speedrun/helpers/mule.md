@@ -11,8 +11,8 @@ gatherers:
 - **the scored account's side**: `receivePackage` (and `requestPackage`), the calls the
   speedrun makes to take a package from the mule.
 
-Accounts: `cairn_mule1` is the mule; `cairn_mule2` is reserved for a second one (never
-logged in yet, so it does not exist on the demo until its first login).
+Accounts: `cairn_mule1` is the mule. `cairn_mule2` runs the rehearsal kit giver
+([kits.md](kits.md)) outside the fleet.
 `cairn_h05` stood in for the scored account in tests.
 
 ## Why it is shaped this way

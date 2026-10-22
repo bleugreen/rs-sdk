@@ -24,7 +24,8 @@ The speedrun's scored account (its name is chosen by the operator and kept out o
 | [grapes, jugs, wine](helpers/wine.md) | Grapes (guild, Phoenix hideout, goblins), jugs of water, noted unfermented wine (Cooking) | cairn_h40-h49 | cairn://p/rs/47. Three roles; `wine` is the Cooking-35 maker and giver. |
 | [bones](helpers/bones.md) | Dragon bones or the best Prayer xp per helper-hour | cairn_h50-h54 | cairn://p/rs/48 |
 | [herbs](helpers/herbs.md) | Unfinished potions (the herb-table mix), vials of water, eyes of newt (Herblore) | cairn_h84-h87 | cairn://p/rs/122 |
-| [mule](helpers/mule.md) | Consolidates stock, serves trades to the scored account | cairn_mule1, cairn_mule2 (stand-in receiver cairn_h05) | cairn://p/rs/49 |
+| [mule](helpers/mule.md) | Consolidates stock, serves trades to the scored account | cairn_mule1 (stand-in receiver cairn_h05) | cairn://p/rs/49 |
+| [kits](helpers/kits.md) | Starter kits for the per-skill rehearsal accounts, given at Lumbridge right after each tutorial skip; takes the tools back after each 99 | cairn_mule2, outside the fleet | cairn://p/rs/161. Never the scored run's gear. |
 | [coins / buyer](helpers/coins.md) | Coins; Grand Exchange and shop purchases | cairn_h60-h65 | cairn://p/rs/50 |
 | [fletcher](helpers/fletcher.md) | Headless arrows; arrowheads from shop restocks (Fletching) | cairn_h76-h79 | cairn://p/rs/120. `headless` mode on one account, `camp` mode per archery shop. |
 | [bidder](helpers/bidder.md) | Standing GE buy offers just above the competing bids, up to per-item targets (dragon bones, grapes) | cairn_h61 | cairn://p/rs/63 |
