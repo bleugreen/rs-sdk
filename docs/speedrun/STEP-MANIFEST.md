@@ -1196,7 +1196,11 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   1-3 ranging doses, no sharks; no glory, rs/123); 12 sharks for S17 carried
   through. Prayer ~99 (rs/91's kit flicks Protect from Melee, Ultimate Strength and Incredible
   Reflexes). Levels after Dragon Slayer: Attack 99, Strength 99, Defence gap 1,288 base, Hitpoints gap
-  ~4,220.
+  ~4,220. **Slots** (`ranged.ts` `slotNeed`): the step refuses unless its free slots cover what it
+  takes into the pack: 4 for the pick-up if the cannon is already placed (a held set frees its own 4
+  at set-up), and 1 for a worn shield the two-handed magic shortbow takes off (`bows.obj`
+  `wearpos2=lefthand`) unless rune arrows held in the pack free a slot going to the quiver. On the
+  route (the anti-dragon shield worn, S18's 570 rune arrows in the pack, H23's set held) that is 0.
 - **Postconditions:** Ranged, Defence and Hitpoints 99. Items out: the cannon is left or picked up as
   the inventory needs; S17 needs only the sharks.
 - **Ticks:** expected **1,972** (inferred from rates measured through the module, rs/199, PR #207;
@@ -1421,7 +1425,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   make-5 click (`skills/smithing.md` §1).
 - **Parameters:** `giver`, the inventory plan (one mixed bronze/iron inventory to 34, then platebodies
   in iron 33, steel 48, mithril 68, adamant 88), `untilLevel: 99`.
-- **Preconditions:** a hammer; the anvil helper staged with bars (15 bronze, 39 iron, 95 steel, 280
+- **Preconditions:** **slots**: each inventory's step refuses unless the hammer and its bars (24 for
+  the first, 25 after: 25 or 26 slots) fit beside every other item held (`smithing.ts` `slotReason`;
+  the previous inventory's products are the module's own, since they leave in the trade); a hammer; the anvil helper staged with bars (15 bronze, 39 iron, 95 steel, 280
   mithril, 340 adamant; `skills/README.md`); position on the anvil tile; the `ANVIL_CONTRACT` with HS5
   (data in `smithing.ts`, agreed with rs/188); `run.ts` publishing `cue.json` (the receiver hash)
   with seq 0's plan before SCORED reaches the anvil.
@@ -1981,7 +1987,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Serves:** S14, Ranged 1 to 50 base at the Wilderness poison spiders (3288,3810), wielding the mithril
   scimitar at Attack 99 (the rune one is unobtainable, rs/124), auto-retaliate off. This is its own entry and its own `Step` (main, 05:30,
   via the rs/103 coordinator).
-- **Preconditions:** Dwarf Cannon done; Attack 99 (TGV + GT + FA = 42,025 base, read); the cannon set
+- **Preconditions:** **slots**: 0 beyond a held cannon set, or 4 free for the pick-up if the cannon
+  is already placed (`ranged.ts` `slotNeed`, as entry 7); Dwarf Cannon done; Attack 99 (TGV + GT + FA = 42,025 base, read); the cannon set
   and 100 cannonballs from the cannon holder (65-72 used, rs/199), received through
   `helpers/cannon-receiver.ts`, which `run.ts` calls (rs/186), not the Ranged module; the antipoison from S10's trade,
   sharks.
