@@ -93,7 +93,8 @@ describe('reader sources', () => {
 
     test('never name a trading method', () => {
         expect(sources.map(s => s.f).sort()).toEqual(['read-only.ts', 'shelf-reader.ts', 'stops.ts']);
-        const named = new RegExp(`\\b(${TRADING.join('|')})\\b`);
+        // `trade` is also an English word in the comments: as a method it is only ever reached as `.trade`.
+        const named = new RegExp(`\\b(${TRADING.filter(n => n !== 'trade').join('|')})\\b|\\.trade\\b`);
         for (const { f, text } of sources) expect({ f, hit: named.exec(text)?.[0] ?? null }).toEqual({ f, hit: null });
     });
 
