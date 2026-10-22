@@ -1,0 +1,23 @@
+demo-latency-probe runhost-sweep (rs-ashburn-run) 10/22/2026, 13:35:12 PDT -> rs-sdk-demo.fly.dev
+players online at start: 1329
+react: login 697 ms, 936 messages, msgs/tick p10 1 p50 1 p90 1 max 89 (n=595), tick interval p10 322.8 p50 396.9 p90 457.1 max 624.6 (n=594)
+react delay +0 ms: ticks {"1":20}  reactMs p10 0.4 p50 7.7 p90 9.4 max 10.5 (n=20)
+react delay +25 ms: ticks {"1":20}  reactMs p10 24.4 p50 31.8 p90 32.5 max 36 (n=20)
+react delay +50 ms: ticks {"1":20}  reactMs p10 49.4 p50 56.8 p90 57.9 max 57.9 (n=20)
+react delay +100 ms: ticks {"1":20}  reactMs p10 99.5 p50 106.9 p90 108.4 max 109.2 (n=20)
+react delay +150 ms: ticks {"1":18,"2":2}  reactMs p10 149.6 p50 157.1 p90 157.7 max 158.1 (n=20)
+react delay +200 ms: ticks {"1":13,"2":7}  reactMs p10 206.9 p50 207.5 p90 207.9 max 208 (n=20)
+react delay +250 ms: ticks {"1":13,"2":7}  reactMs p10 256.7 p50 257 p90 258.2 max 258.3 (n=20)
+react delay +250 ms: ticks {"1":13,"2":7}  reactMs p10 256.7 p50 257 p90 258.2 max 258.3 (n=20)
+react delay +200 ms: ticks {"1":13,"2":7}  reactMs p10 206.9 p50 207.5 p90 207.9 max 208 (n=20)
+react delay +150 ms: ticks {"1":18,"2":2}  reactMs p10 149.6 p50 157.1 p90 157.7 max 158.1 (n=20)
+react delay +100 ms: ticks {"1":20}  reactMs p10 99.5 p50 106.9 p90 108.4 max 109.2 (n=20)
+react delay +50 ms: ticks {"1":20}  reactMs p10 49.4 p50 56.8 p90 57.9 max 57.9 (n=20)
+react delay +25 ms: ticks {"1":20}  reactMs p10 24.4 p50 31.8 p90 32.5 max 36 (n=20)
+react delay +0 ms: ticks {"1":20}  reactMs p10 0.4 p50 7.7 p90 9.4 max 10.5 (n=20)
+warm GET engine:443  ttfb p10 4 p50 47.5 p90 215.2 max 304.4 (n=99)
+  by phase since frame: 0:47.5(18) 50:22.6(14) 100:4.2(11) 150:7.7(10) 200:93.9(20) 250:151.6(12) 300:173.8(8) 350:161(5) 400:49.1(1)
+warm GET gateway:7443 ttfb p10 4.5 p50 15.5 p90 70.4 max 452.4 (n=99)
+  by phase since frame: 0:11.4(15) 50:19.3(9) 100:9.1(20) 150:47.7(14) 200:31.1(14) 250:22.5(6) 300:23.4(10) 350:14(8) 400:4.8(1) 500:15.5(2)
+players online at end: 1255
+json: /tmp/rs83-sweep-2035.json
