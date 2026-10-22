@@ -75,7 +75,8 @@ describe('the chain', () => {
         }
         // A leg's neighbours, skipping the hand-offs, cue stops and fallbacks between them.
         const skip = (s: ChainStep) => (s.kind === 'handoff' && s.id !== 'S01') || s.kind === 'cue' || s.kind === 'fallback';
-        const refers = (s: ChainStep, ref: string) => s.id === ref || s.name === ref || (s.id.startsWith(ref) && /^[a-z]$/.test(s.id.slice(ref.length)));
+        // Strict (plan v37): a leg's key is a chain step's id or its name, nothing looser.
+        const refers = (s: ChainStep, ref: string) => s.id === ref || s.name === ref;
         chain.forEach((s, i) => {
             if (s.kind !== 'leg') return;
             const def = (s as unknown as LegStep).def;
@@ -124,7 +125,7 @@ describe('the chain', () => {
 
     test('the steps keep their modules: S09 drops the travel steps, S07 the module walk, S17 the walk to the pipe', () => {
         const names = (id: string) => chain.filter(s => s.id === id && s.kind === 'step').map(s => s.name);
-        expect(names('S09')).toEqual(['mining.iron-63', 'mining.exit']);
+        expect(names('S09')).toEqual(['mining.kit: H4p', 'mining.iron-63', 'mining.exit']);
         expect(names('S07')).toEqual(['woodcutting:walk-oaks', 'woodcutting:normal-1-15', 'woodcutting:oak-15-73', 'woodcutting:willow-73-99', 'woodcutting:drop-axe']);
         expect(names('S17')).toEqual(['agility:wilderness']);
         expect(names('S22')).toEqual(['fishing:fly-78-99']);
@@ -133,9 +134,9 @@ describe('the chain', () => {
         expect(chain.filter(s => s.id === 'S18d-fallback').map(s => [s.kind, s.name])).toEqual([['fallback', 'S18d-fallback fletching (fallback)']]);
         expect(names('S05')[0]).toBe('S05:A-h4-swap');
         expect(names('S23').length).toBeGreaterThanOrEqual(3);
-        // With the zoo kit giver configured, S09 takes H4p itself.
-        const withKit = buildChain({ ...CONFIG, partners: { ...PARTNERS, H4p: 'zoo' } }, { cues: recorder().cues });
-        expect(withKit.filter(s => s.id === 'S09').map(s => s.name)).toEqual(['mining.kit: H4p', 'mining.iron-63', 'mining.exit']);
+        // H4p is the run's only rune pickaxe: a config without its giver does not build.
+        const { H4p: _h4p, ...noKit } = PARTNERS;
+        expect(() => buildChain({ ...CONFIG, partners: noKit }, { cues: recorder().cues })).toThrow('names no partner for H4p');
     });
 
     test('a config that names no partner for a placed row is refused, every missing name at once', () => {
@@ -210,7 +211,7 @@ describe('wrappers', () => {
 
     test('--dry-run lists every refusing step on the path; --until=S04 has none', () => {
         expect(missingOnPath(chain).map(m => `${m.id} ${m.owner}`)).toEqual([
-            'S15 rs/185', 'S19 rs/185 (rs/414)', 'S24 rs/416', 'S24 rs/416', 'S24 rs/416', 'S24 rs/416',
+            'S15 rs/185', 'S19 rs/185 (rs/414)', ...Array(6).fill('S24 rs/416'),
         ]);
         expect(missingOnPath(sliceUntil(chain, 'S04'))).toEqual([]);
     });
