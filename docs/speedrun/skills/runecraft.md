@@ -486,12 +486,16 @@ bgsrv-mac at load 4-9):
 | nature 44, robust | SCORED first | 30/30 | 29 x 8 | 248 |
 | S06: air 1 to 44, auto (tuned) | givers first | 7/7 | 6 x 7 | 58 |
 | junk item after 3 crafts, kept until the stock rung starts (4 runs) | givers first | program 3/3 at 7, then fault, robust restart, fault | stock rung: 9 crafts, 8 x 31 | 353-382 |
+| the same, after rs/267's `openTrade` and giver fixes | givers first | the same | stock rung: 9 crafts, **8 x 9** | 181 |
 
-- **The stock rung costs 31 ticks a cycle, not 15.** Every reacting receive takes exactly 30
-  ticks from SCORED's first trade click to the essence arriving. The exception is the rung's
-  first trade, which takes 5. The same 30 came with rs/163's busy re-send in SCORED's
-  `lib/trade.ts`, so it isn't the request re-send. The constant points at the giver's stock
-  window, which is open. Until it is settled, price the fallback at 31 a cycle.
+- **The stock rung costs 9 ticks a cycle** (it cost 31 until rs/267). Each reacting receive takes 8
+  ticks from SCORED's first trade click, the rung's first trade 5. The 31 was SCORED's request,
+  sent on the frame its craft lands, being dropped (a click from a delayed player), then the
+  level-up dialog that opens as the delay ends making SCORED "busy" to every giver request until
+  `openTrade`'s 8 s re-send closed it. `openTrade` now re-sends a request that drew no answer by
+  the second frame (`helpers/altar-giver.md`, "The stock cycle"). Counted from the craft frame,
+  8 is the floor while SCORED clicks during the delay. Waiting out the delay before the first
+  click would count the trade from SCORED's first free tick, not shorten the cycle.
 - **The demo driver** (`speedrun/lab/runecraft-demo.ts`) runs the same step against a real server
   with no staff commands. The accounts arrive staged: each giver holds an air talisman and 27
   essence, with the rest banked at Falador east; the stand-in holds only an air talisman at the
