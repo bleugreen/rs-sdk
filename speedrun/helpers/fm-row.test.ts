@@ -1,4 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import type { RoleContext } from './role';
 
 import {
     advance,
@@ -9,6 +14,8 @@ import {
     dropTarget,
     earliestDrop,
     FireLedger,
+    FmRow,
+    GO_FILE,
     fmRowOptions,
     inventoryOf,
     LAB_ROW,
@@ -450,5 +457,78 @@ describe('cueAt written: staggered droppers count from when the cue was written'
         expect(catchUp(157, fireSlot, 0, 100)).toBeNull();
         expect(catchUp(157, i => (i === 0 ? 0 : null), 0, 4)).toEqual({ progress: { lit: 1, litTick: 0 }, litSlot: 0 });
         expect(catchUp(157, i => (i === 0 ? 0 : null), 0, 3)).toBeNull();
+    });
+});
+
+// ------------------------------------------------------------------ the role's wiring, against a fake client
+
+type Item = { name: string; x: number; z: number };
+
+function fakeRole(options: Record<string, unknown>) {
+    const logs: Array<{ m: string; d?: Record<string, unknown> }> = [];
+    const state = {
+        tick: 1000,
+        player: { worldX: LIST[0]!.x, worldZ: LIST[0]!.z },
+        inventory: [] as Array<{ name: string; count: number; slot: number }>,
+        nearbyLocs: [{ name: 'Tree', x: 0, z: 0 }] as Item[],
+        groundItems: [] as Item[],
+        nearbyPlayers: []
+    };
+    const sdk = { getState: () => state, onStateUpdate: () => () => {}, scanNearbyLocs: async () => state.nearbyLocs };
+    const ctx = { sdk, bot: {}, account: 'cairn_d01', options, log: (m: string, d?: Record<string, unknown>) => logs.push({ m, d }), signal: new AbortController().signal } as unknown as RoleContext;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const role = new FmRow(ctx) as any;
+    return { role, state, logs };
+}
+
+describe('role wiring', () => {
+    test('restock held: checks the load and throws if short, spares allowed; never walks', async () => {
+        const { role, state, logs } = fakeRole({ tiles: LIST.map(t => [t.x, t.z]), parts: 6, part: 5, restock: { kind: 'held' } });
+        state.inventory = [{ name: 'Magic logs', count: 10, slot: 0 }];
+        await expect(role.restock()).rejects.toThrow(/short of 17 Magic logs \(holds 10\)/);
+        state.inventory = Array.from({ length: 22 }, (_, slot) => ({ name: 'Magic logs', count: 1, slot }));
+        await role.restock();
+        expect(logs.map(l => l.m)).toEqual(['held']);
+    });
+
+    test('skipOccupied: a foreign item moves the log on, inside its block; a full block logs it', () => {
+        const { role, state, logs } = fakeRole({ tiles: LIST.map(t => [t.x, t.z]), parts: 6, part: 0, skipOccupied: true });
+        state.groundItems = [{ name: 'Bones', ...LIST[0]! }, { name: 'Ashes', ...LIST[1]! }];
+        expect(role.chooseTile(0, state)).toEqual(LIST[1]);
+        expect(logs.at(-1)).toMatchObject({ m: 'skip', d: { i: 0, from: 0, to: 1 } });
+        // Log 27 is the block's last log; with slots 27-29 taken it goes on 29 anyway.
+        role.placed.set(26, { slot: 27, tick: 0 });
+        state.player = { worldX: LIST[28]!.x, worldZ: LIST[28]!.z };
+        state.nearbyLocs = [{ name: 'Fire', ...LIST[28]! }, { name: 'Fire', ...LIST[29]! }];
+        state.groundItems = [];
+        expect(role.chooseTile(27, state)).toEqual(LIST[29]);
+        expect(logs.at(-1)).toMatchObject({ m: 'skip: block full', d: { i: 27, from: 28, to: 29 } });
+    });
+
+    test('skipOccupied progress: only fresh fires count, an own log only where it was dropped', async () => {
+        const { role, state } = fakeRole({ tiles: LIST.map(t => [t.x, t.z]), parts: 6, part: 0, skipOccupied: true });
+        // A foreign fire already burning on log 0's tile when the dropper first looks.
+        state.nearbyLocs = [{ name: 'Tree', x: 0, z: 0 }, { name: 'Fire', ...LIST[0]! }];
+        await role.observe(state);
+        role.placed.set(0, { slot: 1, tick: 1001 });
+        role.dropped.set(0, 1001);
+        state.tick = 1100;
+        await role.observe(state);
+        expect(role.progress.lit).toBe(0);
+        // Our log 0 lit on slot 1, the tile it was dropped on (seen clear since the first look).
+        state.tick = 1120;
+        state.nearbyLocs.push({ name: 'Fire', ...LIST[1]! });
+        await role.observe(state);
+        expect([role.progress.lit, role.litSlot]).toEqual([1, 1]);
+    });
+
+    test('cueAt written: a go file written 30 s ago at 300 ms a tick counts from 100 ticks back', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'fm-row-cue-'));
+        writeFileSync(join(dir, GO_FILE), JSON.stringify({ v: 1, ms: Date.now() - 30_000 }));
+        const { role, logs } = fakeRole({ start: 'cue', cueAt: 'written', tickMs: 300, cueDir: dir });
+        expect(await role.trigger()).toBe(900);
+        expect(logs.at(-1)).toMatchObject({ m: 'cue', d: { seenTick: 1000, cueTick: 900 } });
+        const seen = fakeRole({ start: 'cue', cueDir: dir });
+        expect(await seen.role.trigger()).toBe(1000);
     });
 });
