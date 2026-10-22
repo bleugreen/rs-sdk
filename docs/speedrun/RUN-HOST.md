@@ -944,7 +944,7 @@ preference, step 5a), but the gate still chooses (tenet 17), and the plan holds 
   **29 fleet accounts plus the cannon helper**, and nothing else. No development sessions and no
   executor demo logins run from them on run day (rs/41's map, via rs/158).
 - **Families log out when their step is done:** after S03, S04, S06 and S07, that step's helper
-  family logs out when the step's scope closes (its final stop cue, or the next scope's cue).
+  family logs out on the step's stop cue.
 - **S21's body-altar givers log in inside SCORED's relog.** SCORED makes its one in-page relog before
   S21, and the 22 givers log in during it, not before SCORED's first login: about 3.5 wall minutes
   through the launcher's limiter (rs/41; 22 logins took 190 s, m, rs/214). SCORED's login closes the
