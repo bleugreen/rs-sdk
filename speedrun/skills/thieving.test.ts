@@ -379,7 +379,7 @@ describe('thieving helper top-ups', () => {
         expect(readTopUpAsk(CUE)!.items).toEqual(ask);
     });
 
-    test('topUpAsk with the pack: bones to fill, food back to 2, the next courier tier once at one tier held, one slot for arrows', () => {
+    test('topUpAsk with the pack: bones to fill, food back to 2, the first courier tier at one tier held, the next on the following top-up, one slot for arrows', () => {
         const skills = (fletching: number) => [{ name: 'Thieving', level: 60, baseLevel: 60, experience: 0 }, { name: 'Fletching', level: fletching, baseLevel: fletching, experience: 0 }] as never;
         const pack = (tiers: string[], o: { fletching?: number; coins?: boolean; sharks?: number } = {}) => {
             const names = ['Blood rune', 'Air rune', 'Headless arrow', ...tiers.map(t => `${t} arrowtips`), 'Mithril arrow', ...(o.coins === false ? [] : ['Coins']), 'Babydragon bones', 'Babydragon bones'];

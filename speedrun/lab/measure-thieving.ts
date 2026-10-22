@@ -30,6 +30,10 @@
 //            nature runes and ore in place of the bones (skills/thieving.ts superheatLoad, from
 //            Smithing 1: copper and tin for the 12 bronze casts, then iron), the courier brings ore,
 //            and the summary's `stuns` row classes every stun and gives the slip
+//            [--stock=scored] the scored run's arrow stock (STEP-MANIFEST.md H14 and H14.x): 4,560
+//            headless arrows and 1,485 mithril tips in Load 0, 2,220 adamant and 570 rune with the
+//            courier, in place of the lab's rune-heavy 3,600 / 225 / 495 / 2,595; the summary's
+//            `tiers` gives the tick each tier was first held and the stuns before it
 // Staging is outside the measured steps. Every step row and every pickpocket end status is
 // printed as a RESULT line; the end statuses carry the gap histograms, skippedTicks, frames,
 // publish, react and loops. Every run also samples the account each tick, and a leg run prints
@@ -328,6 +332,8 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
     /** Ticks a bone left the pack (a bury; a trade only adds bones). */
     const buries: number[] = [];
     let bonesWas = -1;
+    /** The first tick each arrowtip tier was held, and base Fletching then (the courier's tiers arrive by trade). */
+    const tierSeen: Record<string, { tick: number; fletching: number }> = {};
     const un = sdk.onStateUpdate((s: BotWorldState) => {
         if (s.tick === last) return;
         last = s.tick;
@@ -341,6 +347,10 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
         const b = bonesOf(s);
         if (bonesWas >= 0) for (let k = b; k < bonesWas; k++) buries.push(s.tick);
         bonesWas = b;
+        for (const i of s.inventory) {
+            const tier = /^(\w+) arrow(head|tip)s$/i.exec(i.name)?.[1]?.toLowerCase();
+            if (tier && !tierSeen[tier]) tierSeen[tier] = { tick: s.tick, fletching: s.skills.find(k => k.name.toLowerCase() === 'fletching')?.baseLevel ?? 1 };
+        }
         const st = programStatus(s);
         if (st && st.name === 'pickpocket') {
             const n = (st.counters['stun:topup'] ?? 0) + (st.counters['stun:topup:bones'] ?? 0) + (st.counters['stun:topup:ore'] ?? 0);
@@ -454,10 +464,10 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
             rows
         };
     };
-    /** The stuns by class (the doc above) and the slip per superheat stun. */
-    const stunStats = () => {
+    /** Every completed stun, classed (the doc above). */
+    const stunRows = () => {
         const inStun = (ts: readonly number[], f: number, next: number) => ts.filter(t => t > f && t < next);
-        const rows = fails.map(f => {
+        return fails.map(f => {
             const next = rolls.find(r => r > f);
             if (next === undefined) return null;
             const casts = inStun(xpTicks.smithing, f, next), buries = inStun(xpTicks.prayer, f, next);
@@ -467,6 +477,15 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
             const kind = trade ? 'topup' : casts.length ? 'superheat' : buries.length ? 'bury' : 'dry';
             return { f, gap: next - f, kind, page, pageFrom: page ? pages[0]! - f : null, casts: casts.map(t => t - f), buries: buries.map(t => t - f) };
         }).filter((r): r is NonNullable<typeof r> => r !== null);
+    };
+    /** Each arrowtip tier's first tick held, base Fletching then, and the stuns (all, and superheat) before it. */
+    const tierArrivals = () => {
+        const rows = stunRows();
+        return Object.fromEntries(Object.entries(tierSeen).map(([t, a]) => [t, { ...a, stunsBefore: rows.filter(r => r.f < a.tick).length, superheatStunsBefore: rows.filter(r => r.f < a.tick && r.kind === 'superheat').length }]));
+    };
+    /** The stuns by class (the doc above) and the slip per superheat stun. */
+    const stunStats = () => {
+        const rows = stunRows();
         const mean = (a: number[]) => (a.length ? +(a.reduce((x, y) => x + y, 0) / a.length).toFixed(3) : null);
         const hist = (a: number[]) => { const h: Record<number, number> = {}; for (const v of a) h[v] = (h[v] ?? 0) + 1; return h; };
         const cls = (pick: (r: (typeof rows)[number]) => boolean) => {
@@ -499,7 +518,7 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
             reference: { n: ref.n, meanGap: ref.meanGap, noPage: refNo }
         };
     };
-    return { stop: () => { un(); sdk.sendTradeRequest = send; }, summary, rollStats, topUpLog, stunStats };
+    return { stop: () => { un(); sdk.sendTradeRequest = send; }, summary, rollStats, topUpLog, stunStats, tierArrivals };
 }
 
 /**
@@ -521,7 +540,15 @@ function oreLoad(s: BotWorldState, free: number): Array<{ name: string; n: numbe
     return superheatOre(s, free).map(l => ({ name: l.name, n: l.give })).filter(e => e.n > 0);
 }
 
-function courier(superheat?: Required<SuperheatOptions>): GiverPolicy {
+/** The courier's adamant and rune tips: the lab's rune-heavy stock, or the scored run's (`--stock=scored`). */
+interface CourierTips {
+    adamant: number;
+    rune: number;
+}
+const LAB_TIPS: CourierTips = { adamant: 495, rune: 2595 };
+const SCORED_TIPS: CourierTips = { adamant: 2220, rune: 570 };
+
+function courier(tips: CourierTips, superheat?: Required<SuperheatOptions>): GiverPolicy {
     const mem = { tiers: new Set<string>() };
     return {
         load: (hs, s) => (s ? askOffer({ items: topUpAsk(s, FOODS.shark, true, mem, superheat) }, hs.inventory).specs : []),
@@ -550,8 +577,8 @@ function courier(superheat?: Required<SuperheatOptions>): GiverPolicy {
                 ...ore,
                 ...(!superheat && n(/^dragon bones$/i) < 22 ? [`give dragon_bones ${22 - n(/^dragon bones$/i)}`] : []),
                 ...(n(/^shark$/i) < 2 ? [`give shark ${2 - n(/^shark$/i)}`] : []),
-                ...(!mem.tiers.has('adamant') && n(/^adamant arrow(head|tip)s$/i) === 0 ? ['give adamant_arrowheads 495'] : []),
-                ...(!mem.tiers.has('rune') && n(/^rune arrow(head|tip)s$/i) === 0 ? ['give rune_arrowheads 2595'] : [])
+                ...(!mem.tiers.has('adamant') && n(/^adamant arrow(head|tip)s$/i) === 0 ? [`give adamant_arrowheads ${tips.adamant}`] : []),
+                ...(!mem.tiers.has('rune') && n(/^rune arrow(head|tip)s$/i) === 0 ? [`give rune_arrowheads ${tips.rune}`] : [])
             ];
         }
     };
@@ -565,7 +592,7 @@ const COURIER_SITE = { giver: { x: 2671, z: 3305 }, receiver: { x: 2670, z: 3305
  * cue names the account by hash, the module's TopUpAsker writes each ask, and the courier restocks
  * by ::give (restock kind cheat). Its log lines and trade messages are `events`, for the trace.
  */
-function courierRole(h: Session, helperBot: string, scored: string, standing: boolean) {
+function courierRole(h: Session, helperBot: string, scored: string, standing: boolean, tips: CourierTips) {
     const dir = process.env.RC_CUE_DIR!;
     process.env.HELPER_LAB_TELE = '1';
     // a launched role has its bot.env's SERVER; restock kind cheat checks it is the local lab
@@ -588,7 +615,7 @@ function courierRole(h: Session, helperBot: string, scored: string, standing: bo
     const options = {
         mode: 'on-request', item: 'Babydragon bones', hold: 22, refillBelow: 21, standing, scope,
         restock: { kind: 'cheat' }, sites: [COURIER_SITE],
-        carry: [{ item: 'Shark', count: 2, obj: 'shark' }, { item: 'Adamant arrowtips', count: 495, obj: 'adamant_arrowheads', once: true }, { item: 'Rune arrowtips', count: 2595, obj: 'rune_arrowheads', once: true }]
+        carry: [{ item: 'Shark', count: 2, obj: 'shark' }, { item: 'Adamant arrowtips', count: tips.adamant, obj: 'adamant_arrowheads', once: true }, { item: 'Rune arrowtips', count: tips.rune, obj: 'rune_arrowheads', once: true }]
     };
     const ctx: RoleContext = {
         bot: h.bot, sdk: h.sdk, account: helperBot, options, signal: ac.signal, state: memoryRoleState(), reportBank: () => {},
@@ -692,6 +719,9 @@ switch (mode) {
         // --courier=role: the run's courier (bone-giver.ts) instead of the stand-in; --standing turns on its standing request
         const asRole = arg('courier', 'standin') === 'role';
         const standing = process.argv.includes('--standing');
+        const stock = arg('stock', 'lab');
+        if (stock !== 'lab' && stock !== 'scored') throw new Error(`--stock is lab or scored, not ${stock}`);
+        const tips = stock === 'scored' ? SCORED_TIPS : LAB_TIPS;
         if (asRole && casts) throw new Error("pack --courier=role --superheat: the run's courier carries no ore yet (rs/41 stages it), so this lab runs with the stand-in only");
         const helper = await openSession(helperBot, { launch: true, pathfinding: asRole });
         await helper.bot.skipTutorial().catch(() => {});
@@ -707,7 +737,7 @@ switch (mode) {
         await waitUntil(sdk, s => s.equipment.some(i => /^staff of fire$/i.test(i.name)), { maxTicks: 5 });
         // Load 0 (H14): runes for 163 casts (or --blood), headless arrows, bronze to mithril arrowheads, 2 sharks;
         // with superheat its nature runes too
-        const load0: Array<[string, number]> = [['bloodrune', blood], ['airrune', 500], ...(casts ? [['naturerune', 300] as [string, number]] : []), ['headless_arrow', 3600], ['bronze_arrowheads', 60], ['iron_arrowheads', 90], ['steel_arrowheads', 135], ['mithril_arrowheads', 225], ['shark', 2]];
+        const load0: Array<[string, number]> = [['bloodrune', blood], ['airrune', 500], ...(casts ? [['naturerune', 300] as [string, number]] : []), ['headless_arrow', stock === 'scored' ? 4560 : 3600], ['bronze_arrowheads', 60], ['iron_arrowheads', 90], ['steel_arrowheads', 135], ['mithril_arrowheads', stock === 'scored' ? 1485 : 225], ['shark', 2]];
         await giveAll(load0.filter(([, n]) => n > 0));
         if (!(await tele(sdk, 2670, 3305))) throw new Error('tele to the knights failed');
         // every free slot less one for coins and one for a new arrow product stack: bones, or the superheat ore
@@ -717,12 +747,15 @@ switch (mode) {
         await waitTicks(sdk, 2);
         while (sdk.getState()!.dialog?.isOpen) { await sdk.sendClickDialog(0); await waitTicks(sdk, 1); }
         const giver = helper.sdk.getState()?.player?.name ?? helperBot;
-        const g = asRole ? courierRole(helper, helperBot, sdk.getState()!.player!.name, standing) : runGiver(helper, courier(casts ? { casts, oreBelow: casts } : undefined));
+        const g = asRole ? courierRole(helper, helperBot, sdk.getState()!.player!.name, standing, tips) : runGiver(helper, courier(tips, casts ? { casts, oreBelow: casts } : undefined));
         await waitUntil(sdk, s => s.nearbyPlayers.some(p => sameName(p.name, giver) && Math.abs(p.x - s.player!.worldX) + Math.abs(p.z - s.player!.worldZ) === 1), { maxTicks: asRole ? 200 : 40 });
         const oreHeldNow = (s: BotWorldState) => s.inventory.filter(i => /^(iron|copper) ore$/i.test(i.name)).length;
         const track = trackTopUps(giver, below, g.events, casts ? { of: oreHeldNow, below: casts } : { of: s => s.inventory.filter(i => /bones$/i.test(i.name)).reduce((a, i) => a + i.count, 0), below: bonesBelow });
         const s0 = sdk.getState()!;
-        result('pack', { ...where(), mode: tuMode, giver, courier: asRole ? (standing ? 'role, standing' : 'role') : 'stand-in', below, bonesBelow, blood, superheat: casts || false, hp: s0.player!.hp, inventory: s0.inventory.map(i => `${i.name}x${i.count}`), equipment: s0.equipment.map(i => i.name) });
+        const bloodOf = (s: BotWorldState | null) => (s?.inventory ?? []).filter(i => /^blood runes?$/i.test(i.name)).reduce((a, i) => a + i.count, 0);
+        const levels = (s: BotWorldState | null) => Object.fromEntries(['magic', 'fletching', 'smithing', 'thieving'].map(k => [k, s?.skills.find(x => x.name.toLowerCase() === k)?.baseLevel ?? null]));
+        const blood0 = bloodOf(sdk.getState());
+        result('pack', { ...where(), mode: tuMode, giver, courier: asRole ? (standing ? 'role, standing' : 'role') : 'stand-in', stock, tips, below, bonesBelow, blood, superheat: casts || false, hp: s0.player!.hp, inventory: s0.inventory.map(i => `${i.name}x${i.count}`), equipment: s0.equipment.map(i => i.name) });
         const stunPack = casts ? { chargeUnlocked: true, superheat: { casts } } : { bonesBelow, chargeUnlocked: true };
         try {
             const rows = await runList(steps({ to: Number(arg('to', '99')), food: 'shark', topUp: { giver, below, mode: tuMode }, stunPack }).filter(s => s.name === 'thieving:knights'));
@@ -730,11 +763,12 @@ switch (mode) {
             const detail = rows.find(r => r.step === 'thieving:knights:detail')?.meta as { runs?: Array<{ startedTick: number; endedTick?: number }>; pack?: unknown } | undefined;
             const programTicks = (detail?.runs ?? []).reduce((a, r) => a + ((r.endedTick ?? r.startedTick) - r.startedTick), 0);
             const programDeferred = endedPrograms.reduce((a, st) => a + (st.deferred ?? 0), 0);
-            result(`pack ${tuMode} summary`, { bandTicks: band?.ticks ?? null, ok: band?.ok ?? false, programTicks, programDeferred, ...track.rollStats(), pack: detail?.pack ?? null, topUpTrades: (detail as { topUp?: unknown } | undefined)?.topUp ?? null, helperTeles: g.teles, ...track.summary() });
+            const end = sdk.getState();
+            result(`pack ${tuMode} summary`, { bandTicks: band?.ticks ?? null, ok: band?.ok ?? false, programTicks, programDeferred, end: levels(end), bloodUsed: blood0 - bloodOf(end), tiers: track.tierArrivals(), ...track.rollStats(), pack: detail?.pack ?? null, topUpTrades: (detail as { topUp?: unknown } | undefined)?.topUp ?? null, helperTeles: g.teles, ...track.summary() });
             result(`pack ${tuMode} topups`, track.topUpLog());
             result(`pack ${tuMode} stuns`, track.stunStats());
         } catch (e) {
-            result(`pack ${tuMode} summary`, { bandTicks: null, error: String(e), helperTeles: g.teles, ...track.rollStats(), ...track.summary() });
+            result(`pack ${tuMode} summary`, { bandTicks: null, error: String(e), end: levels(sdk.getState()), bloodUsed: blood0 - bloodOf(sdk.getState()), tiers: track.tierArrivals(), helperTeles: g.teles, ...track.rollStats(), ...track.summary() });
             result(`pack ${tuMode} topups`, track.topUpLog());
             result(`pack ${tuMode} stuns`, track.stunStats());
         } finally {
