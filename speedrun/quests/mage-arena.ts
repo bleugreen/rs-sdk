@@ -9,7 +9,8 @@
 //   C fight        the five forms; finish_mage_arena teleports back to the cellar
 //   D pool         the sparkling pool to the chamber
 //   E statue       a god's statue, and the cape it drops
-//   F guardian     the chamber guardian's staff: %magearena 8, Charge unlocked
+//   F guardian     the chamber guardian's staff: %magearena 8, Charge unlocked; then the exit drops
+//                  (the god staff, the god cape and the sharks above S18's 2: the ledger's T16-18 row)
 //
 // What the content does that this module is built around (server/content/scripts/areas/
 // area_mage_arena/scripts):
@@ -58,15 +59,15 @@ export type KolodionSpell = 'fire_wave' | 'fire_blast';
  */
 export const SPELLS: Readonly<Record<KolodionSpell, { component: number; level: number; rune: RegExp; runeName: string; air: number }>> = {
     fire_wave: { component: 1189, level: 75, rune: /^blood rune$/i, runeName: 'Blood rune', air: 5 },
-    fire_blast: { component: 1181, level: 59, rune: /^death rune$/i, runeName: 'Death rune', air: 5 },
+    fire_blast: { component: 1181, level: 59, rune: /^death rune$/i, runeName: 'Death rune', air: 4 },
 };
 
 /**
  * H13's runes for the fight by spell (SUPPLIES.md H13: 70 blood + 400 air for Fire Wave). Fire
- * Blast's death runes are the lab's maximum casts plus margin (rs/371's pricing; the H13 kit for
- * that column is 'death x N + margin').
+ * Blast's death runes are the lab's maximum casts plus margin: 57-78 casts over 3 fights from the
+ * route's arrival (Magic 77, ~9,118 base; m, lab, 300 ms, rs/371), so 78 + 12.
  */
-export const SPELL_RUNES: Readonly<Record<KolodionSpell, number>> = { fire_wave: 70, fire_blast: 100 };
+export const SPELL_RUNES: Readonly<Record<KolodionSpell, number>> = { fire_wave: 70, fire_blast: 90 };
 export const AIR_RUNES = 400;
 
 export type God = 'saradomin' | 'guthix' | 'zamorak';
@@ -128,6 +129,32 @@ export const QUEST_ITEMS: readonly QuestItem[] = [
     { item: GOD_CAPE, name: 'God cape', from: 'E' },
     { item: GOD_STAFF, name: 'God staff', from: 'F' },
 ];
+
+/**
+ * S16's exit drops, the inventory ledger's T16-18 row done at F's end (as Dwarf Cannon drops its tool
+ * kit and Monkey Madness its seal inside their steps): the god staff (untradeable) and the god cape
+ * are dead once %magearena is 8, which the staff's handing-over sets (chamber_guardian.rs2:15);
+ * Charge needs neither (charge.rs2 checks the stage). The sharks go down to S18's 2.
+ */
+export const EXIT_DROPS: readonly RegExp[] = [GOD_STAFF, GOD_CAPE];
+export const KEEP_SHARKS = 2;
+
+/** The inventory items the exit drops: every EXIT_DROPS item, and the sharks after the first `keepSharks`. */
+export function exitDropItems(s: BotWorldState, keepSharks = KEEP_SHARKS): InventoryItem[] {
+    const dead = s.inventory.filter(i => EXIT_DROPS.some(p => p.test(i.name)));
+    const sharks = s.inventory.filter(i => SHARK.test(i.name)).slice(Math.max(0, keepSharks));
+    return [...dead, ...sharks];
+}
+
+/** The exit's state: none of EXIT_DROPS held or worn, at most `keepSharks` sharks. */
+export function exitClean(keepSharks = KEEP_SHARKS): Check<any> {
+    return s => {
+        const kept = EXIT_DROPS.filter(p => held(s, p)).map(String);
+        const sharks = invCount(s, SHARK);
+        if (kept.length) return `still holding ${kept.join(', ')} (S16's exit drops, the ledger's T16-18 row)`;
+        return sharks <= keepSharks ? true : `${sharks} sharks held, S18 takes ${keepSharks} (the ledger's T16-18 row)`;
+    };
+}
 
 /** S16's share of H13: the fight's runes. The staff of fire is worn (a precondition); the prayer potions are counted as prayer budget. */
 export function kit(spell: KolodionSpell): KitItem[] {
@@ -212,6 +239,8 @@ export interface Options extends QuestOptions {
     drinkBelow?: number;
     /** Eat a shark below this HP in the fight (default 30; under the prayer nothing should hit). */
     eatBelow?: number;
+    /** Sharks kept at the exit (default KEEP_SHARKS, S18's 2); the rest are dropped with the god staff and cape. */
+    keepSharks?: number;
     /** Fight's tick bound (default 1500). */
     fightMaxTicks?: number;
     /** Counters the fight fills in (casts, runes, xp, prayer), for the lab's report. */
@@ -298,7 +327,7 @@ const kitHeld = (spell: KolodionSpell): Check<any> => s => {
 const inCellarCheck = within(CELLAR, "Kolodion's cellar");
 const inChamberCheck = within(CHAMBER, 'the chamber');
 const capeHeld: Check<any> = s => (held(s, GOD_CAPE) ? true : 'no god cape held or worn');
-const staffHeld: Check<any> = s => (held(s, GOD_STAFF) ? true : 'no god staff held or worn (Charge is %magearena 8: the staff given)');
+const chargeSeen = (memo: { chargeUnlocked: boolean }): Check<any> => () => (memo.chargeUnlocked ? true : 'Charge not seen unlocked: no god staff from the guardian (%magearena 8)');
 const noDialog: Check<any> = s => (s.dialog.isOpen || s.modalOpen ? 'a dialogue or modal is still open' : true);
 
 /** The fight's start: everything B needs besides the place. */
@@ -436,10 +465,18 @@ const SHAPE_GUARDIAN = '4c, state';
 const TOUGH_ONE = /you're a tough one|what now\?|step into the magic pool/i;
 const REFUSED = /cannot enter the arena while carrying weapons or armour/i;
 
+/** chamber_guardian.rs2:21-23, his default once %magearena is 8: the staff was given before. */
+const HELLO_AGAIN = /are you looking for another staff/i;
+
 /** Shared by the segments of one `steps()` call: what the run has seen that the client cannot show. */
 interface RunMemo {
     fought: boolean;
+    /** %magearena 8 seen: the staff in hand, or the guardian's stage-8 greeting. */
+    chargeUnlocked: boolean;
 }
+
+/** F's durable mark once the exit drops are out: neither god item held, the dropped staff on the ground beside SCORED. */
+const exitedChamber = (s: BotWorldState) => inChamber(s) && !held(s, GOD_STAFF) && !held(s, GOD_CAPE) && s.groundItems.some(g => GOD_STAFF.test(g.name) && g.distance <= 3);
 
 async function talkKolodion(sdk: Sdk, opts: Options | undefined, memo: RunMemo): Promise<void> {
     const spell = opts?.spell ?? DEFAULT_SPELL;
@@ -529,23 +566,46 @@ async function statueSegment(sdk: Sdk, opts: Options | undefined): Promise<void>
     }
 }
 
-async function guardianSegment(sdk: Sdk, opts: Options | undefined): Promise<void> {
-    if (held(sdk.getState()!, GOD_STAFF)) return;
-    let guard = findNpc(sdk, GUARDIAN);
-    if (!guard) {
-        const r = await runTo(sdk, GUARDIAN_STAND);
-        if (!r.ok) throw new Error(`guardian: could not reach him (${r.reason ?? 'unknown'})`);
-        guard = findNpc(sdk, GUARDIAN);
+async function guardianSegment(sdk: Sdk, opts: Options | undefined, memo: RunMemo): Promise<void> {
+    if (held(sdk.getState()!, GOD_STAFF)) memo.chargeUnlocked = true;
+    if (!memo.chargeUnlocked) {
+        let guard = findNpc(sdk, GUARDIAN);
+        if (!guard) {
+            const r = await runTo(sdk, GUARDIAN_STAND);
+            if (!r.ok) throw new Error(`guardian: could not reach him (${r.reason ?? 'unknown'})`);
+            guard = findNpc(sdk, GUARDIAN);
+        }
+        if (!guard) throw new Error('guardian: not in view');
+        let again = false;
+        const unsub = sdk.onStateUpdate(s => {
+            if (HELLO_AGAIN.test(pageText(s.dialog))) again = true;
+        });
+        // 'No thanks.' answers only his stage-8 choice (a run resumed after the drop); the first visit has none.
+        const d = await talkTo(sdk, guard, ['No thanks.'], { ...talkShape(opts, SHAPE_GUARDIAN), openTicks: 60 }).finally(unsub);
+        if (!d.opened) throw new Error('guardian: no dialogue');
+        if (again) memo.chargeUnlocked = true;
+        else {
+            // inv_add before the objbox: the staff is in the pack (or on the floor with a full pack) by now
+            await waitUntil(sdk, s => held(s, GOD_STAFF), { maxTicks: 5 });
+            if (!held(sdk.getState()!, GOD_STAFF)) {
+                const p = await pickup(sdk, GOD_STAFF, { maxTicks: 20 });
+                if (!p.ok) throw new Error('guardian: no god staff held (a full pack drops it on the floor)');
+            }
+            memo.chargeUnlocked = true;
+        }
     }
-    if (!guard) throw new Error('guardian: not in view');
-    const d = await talkTo(sdk, guard, [], { ...talkShape(opts, SHAPE_GUARDIAN), openTicks: 60 });
-    if (!d.opened) throw new Error('guardian: no dialogue');
-    // inv_add before the objbox: the staff is in the pack (or on the floor with a full pack) by now
-    await waitUntil(sdk, s => held(s, GOD_STAFF), { maxTicks: 5 });
-    if (!held(sdk.getState()!, GOD_STAFF)) {
-        const p = await pickup(sdk, GOD_STAFF, { maxTicks: 20 });
-        if (!p.ok) throw new Error('guardian: no god staff held (a full pack drops it on the floor)');
+    await exitDrop(sdk, opts?.keepSharks ?? KEEP_SHARKS);
+}
+
+/** Drop exitDropItems in one tick (a drop is a 0-tick op standing still), then check none is left. */
+async function exitDrop(sdk: Sdk, keepSharks: number): Promise<void> {
+    for (let i = 0; i < 3; i++) {
+        const pick = new Set<object>(exitDropItems(sdk.getState()!, keepSharks));
+        if (!pick.size) break;
+        await dropItems(sdk, it => pick.has(it));
     }
+    const left = exitClean(keepSharks)(sdk.getState()!, undefined);
+    if (left !== true) throw new Error(`exit: ${left}`);
 }
 
 const slots = (at: (typeof LETTERS)[number]) => slotsCover(QUEST_ITEMS, LETTERS, at);
@@ -553,7 +613,8 @@ const stateOf = (o: Observed) => o.state;
 
 export function steps(opts?: Options) {
     const spell = opts?.spell ?? DEFAULT_SPELL;
-    const memo: RunMemo = { fought: opts?.fought ?? false };
+    const keepSharks = opts?.keepSharks ?? KEEP_SHARKS;
+    const memo: RunMemo = { fought: opts?.fought ?? false, chargeUnlocked: false };
     const kitA = kitSegment(opts, kit(spell), {
         letter: 'A', label: 'kit',
         preconditions: allOf(inCellarCheck, kolodionLevel, fireStaffWorn, protectLevel, entryClean, slots('A')),
@@ -589,22 +650,23 @@ export function steps(opts?: Options) {
             preconditions: allOf(inCellarCheck, () => (memo.fought ? true : 'the fight is not known to be won (%magearena 6 is not transmitted): B asks Kolodion')),
             run: ctx => poolSegment(ctx.sdk, opts),
             postconditions: inChamberCheck,
-            done: o => inChamber(stateOf(o)) || held(stateOf(o), GOD_CAPE) || held(stateOf(o), GOD_STAFF),
+            done: o => inChamber(stateOf(o)) || held(stateOf(o), GOD_CAPE) || held(stateOf(o), GOD_STAFF) || exitedChamber(stateOf(o)),
         },
         {
             letter: 'E', label: 'statue', logoutSafe: true,
             preconditions: allOf(inChamberCheck, slots('E')),
             run: ctx => statueSegment(ctx.sdk, opts),
             postconditions: capeHeld,
-            done: o => held(stateOf(o), GOD_CAPE) || held(stateOf(o), GOD_STAFF),
+            done: o => held(stateOf(o), GOD_CAPE) || held(stateOf(o), GOD_STAFF) || exitedChamber(stateOf(o)),
         },
         {
             letter: 'F', label: 'guardian', logoutSafe: true,
             preconditions: allOf(inChamberCheck, capeHeld, slots('F')),
-            run: ctx => guardianSegment(ctx.sdk, opts),
-            // Charge unlocked (%magearena 8, charge.rs2:4): the staff is its only evidence. T16-18 drops staff and cape.
-            postconditions: allOf(staffHeld, capeHeld, inChamberCheck, noDialog),
-            done: o => held(stateOf(o), GOD_STAFF),
+            run: ctx => guardianSegment(ctx.sdk, opts, memo),
+            // Charge unlocked (%magearena 8, charge.rs2:4): the staff in hand (or the guardian's stage-8 greeting) is
+            // its only evidence, seen before the exit drops put the staff and cape on the floor.
+            postconditions: allOf(chargeSeen(memo), exitClean(keepSharks), inChamberCheck, noDialog),
+            done: o => exitedChamber(stateOf(o)),
         },
     ];
     return questSteps(stepId, segs);
