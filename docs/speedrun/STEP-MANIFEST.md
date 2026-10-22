@@ -159,7 +159,7 @@ Runecraft and Smithing for rank 10, and Dwarf Cannon (1,130), which passes Smith
 
 The expected column sums to **32,261.25** (the steps) plus the legs' **2,209.5**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **35,755.75** knife-on expected (32,783.7 best), against the record of 35,916.
+retries, restarts) for its **35,760.75** knife-on expected (32,788.7 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -735,7 +735,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   oak and willow), `untilLevel` (the band end), `technique: 'knife' | 'plain'` (chosen by the host gate, not by hand), `bury: boolean` (the bury
   variant), `reanchor: 'xp'`, `dismiss: 'now' | 'blind' | 'none'` (knife-cycle's values, default `'now'`, r), `respawnD` (module-side only, not a knife-cycle key: felled-tree wait, from the
   observed player count), `bones` (the giver; loads of 23; the step's trades, not a program key).
-- **Preconditions:** rune axe (H4, held at 13:10; the adamant axe is the priced fallback, +394), knife and at least
+- **Preconditions:** rune axe (from **H4k** at the normal trees, (2912,3495), as S07 starts, with the rune pickaxe, a knife and 6 logs; held at 13:10, on cairn_h90; the adamant axe is the priced fallback, +394), knife and at least
   1 normal log, Fletching 1, members world. Free inventory except the kit. Position on the band's tile.
   **The bone giver** (Ashburn, rs/117) on the next tile, (2913,3494) or (2920,3407), requesting first
   while SCORED holds 2 bones. **Tab gate (tenet 12, run.ts entry):** knife mode only while it holds;
@@ -1307,7 +1307,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   rs/196's module keeps `altar` module-side, as its band room (stand tile, talisman, rune, entry tile),
   and passes rc-cycle only `{...programParams, untilLevel | untilXp, schedule, givers}`, so
   rc-cycle's own `altar` stays at `^altar$`.
-- **Preconditions:** the talisman (air or nature) for entry; S21 needs Runecraft 44. SCORED reaches
+- **Preconditions:** the talisman (air or nature) for entry; S21 needs Runecraft 44. **S06's slots** (rs/196's census, m/r, lab 300 ms; rs/158's rulings, 23:2x PDT): as routed SCORED held 14 other items and the air stack, 13 free against 27, so the step refused at its start (0 crafts with the check bypassed). Fixed by rule: drops at 0 ticks on the way (the body and water runes on T01-02, the mind runes at S02's exit, the tinderbox and leftover earth at S04's exit, Doric's 180 coins on T05-06), H4 without water or kits (the kits at H4k, S07), and **26-essence loads** (7 x 26 still reaches 44, `lib/xp.ts`; H5 182), conditional on rs/196 confirming rc-cycle and the givers take a 26 load; S06's ticks stay 58 until that run (59 measured with the target inventory); fallback, a law-rune trade after the last craft, +5 i. SCORED reaches
   the nature ruins by the Ardougne-Brimhaven ship (entry 11, T20-21; no glory). Standing tile
   (2844,4832) air or (2400,4839) nature. The givers in the room, on the run machine (rs/117), logged
   in before SCORED (`helpersReady`); for S21, the roster and the talisman keeper at the ruins
@@ -1715,7 +1715,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   observed tick period: `cueAt: 'written'` converts wall time into ticks at 300 ms and starts early
   on a slow demo (RUN-ORDER.md R23). The step's launch waits on a dropper's observed tick, never on
   T0 + n x 300 ms.
-- **Postconditions:** Firemaking 99. It must pass 30 before S19 Sea Slug (read,
+- **Postconditions:** Firemaking 99; the tinderbox is dropped at S04's exit on T04-05 (S06's slot rule). It must pass 30 before S19 Sea Slug (read,
   `quest_seaslug.rs2:43`). Items out: none.
 - **Ticks:** expected **681, measured on the demo** (rs/269's cairn_burns, 2026-10-22 03:43-03:47Z,
   ~1,700-1,790 online; the six droppers at 2 logins per host; the gate 60/60 direct and 58/60
@@ -1929,7 +1929,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   of any wall or fence at the row's end** (`RING_CONTRACT.where`: a wall cost ~20 in an earlier lab run).
   Expected **204.25**, best **203**. **H4's slots** (rs/158's rule on rs/285's lab): SCORED drops the 2 body runes with
   the starter junk on T01-02, and S02 drops the 11 mind runes at its exit (nothing on the route casts
-  with either), because H4 needs 23 free slots and SCORED would arrive at Doric's with 22; that leaves 1
+  with either; the starter's water runes go too, the staff of water covering water), and S04's exit drops the tinderbox and the
+  leftover 4 earth runes (the 5 diamond enchants spend H1's 50) on T04-05's walk out, because H4 needs 23 free slots and SCORED would arrive at Doric's with 22, and S06 needs 26-27 (entry 9); that leaves 1
   spare, confirmed (swap 6, 6; receive 6, 6; 4 of 4 trials; `skills/magic.md` section 9). **Not on the walk**: the walk to Doric's with the casts riding measured
   252-258 against ~240 for casting standalone and teleporting, and 2 of 4 riding runs went wrong
   (`research/run-transitions.md` §5). Wind Strike leaves its 5 level-up pages open: answer them
@@ -2085,7 +2086,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Serves:** S05, **from Doric (2952,3451)**, its arrival tile: the Falador teleport and the run north
   are T04-05 (entry 11; RUN-ORDER.md O6).
 - **Preconditions:** 6 clay, 4 copper ore, 2 iron ore (`quests/README.md` §4 step 1). **S04's last 20 enchanted
-  rings go back in H4's trade** as a `swap()` in the same trade (`lib/trade.ts`, on main, #230; `trade.rs2:161-190` counts offered items as freed, so no extra slots): SCORED's half is rs/185's S05 module, `dorics-quest.ts`, using magic.ts's `enchantedRingSpecs(state)`; the trade giver's half already exists, HS1's `giveOpenTrade` (`speedrun/helpers/mule.ts:345-376`), which calls `lib/trade.ts` `give()` with `expectTheirs: ANY_OFFER` and re-accepts after SCORED's offer resets both accepts (`mule.test.ts:128` tests the two-way swap; rs/41). Fallback: a give-only trade at Doric's with the same giver, +4-8 (RUN-ORDER.md sensitivity); the swap costs 0 (6 ticks with the 20 rings and 6 without, m, rs/285). **Slots:** H4 needs 23 free (22
+  rings go back in H4's trade**, and H4 is now clay 6, copper 4, iron 2, the air talisman, law 2 and air 6 (no water, no
+  kits: those come at H4k, S07); SCORED drops the 180-coin reward on T05-06's run. The rings go back as a `swap()` in the same trade (`lib/trade.ts`, on main, #230; `trade.rs2:161-190` counts offered items as freed, so no extra slots): SCORED's half is rs/185's S05 module, `dorics-quest.ts`, using magic.ts's `enchantedRingSpecs(state)`; the trade giver's half already exists, HS1's `giveOpenTrade` (`speedrun/helpers/mule.ts:345-376`), which calls `lib/trade.ts` `give()` with `expectTheirs: ANY_OFFER` and re-accepts after SCORED's offer resets both accepts (`mule.test.ts:128` tests the two-way swap; rs/41). Fallback: a give-only trade at Doric's with the same giver, +4-8 (RUN-ORDER.md sensitivity); the swap costs 0 (6 ticks with the 20 rings and 6 without, m, rs/285). **Slots:** H4 needs 23 free (22
   unstackables and the new law stack); SCORED has them only after dropping the 2 body runes on T01-02 and
   the 11 mind runes at S02's exit (entry 24), with 1 to spare (confirmed, 4 of 4 trials, `magic.md` section 9).
 - **Postconditions:** 1,300 Mining (49); 1 QP.
