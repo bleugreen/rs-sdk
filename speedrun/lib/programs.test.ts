@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ActionResult } from '../../sdk/types';
 import { baseState, FakeSdk, flush, type SentAction } from './fake-sdk';
-import { awaitProgram, marksSince, probeInPage, ProgramError, programCounters, type ProgramStatus, runProgram, startProgram } from './programs';
+import { awaitProgram, marksSince, overBudgetMeta, probeInPage, ProgramError, programCounters, type ProgramStatus, runProgram, startProgram } from './programs';
 
 /** A FakeSdk with the relay the page answers: records program actions, replies like ProgramRuntime.command. */
 class PageSdk extends FakeSdk {
@@ -125,5 +125,15 @@ describe('speedrun programs', () => {
         // the page's tick gaps are scored like any probe's arrivals: 460 then 120 is a catch-up
         expect(r.steadiness).toMatchObject({ n: 4, max: 460, catchUps: 1 });
         expect(sdk.actions[0]).toMatchObject({ op: 'start', name: 'probe', params: { trials: 4, maxWait: 8 } });
+    });
+});
+
+describe('overBudgetMeta', () => {
+    test("a program row's meta carries overBudget only when the page counted any", () => {
+        expect(overBudgetMeta({ counters: { overBudget: 3, actions: 9 } })).toEqual({ overBudget: 3 });
+        expect(overBudgetMeta({ counters: { actions: 9 } })).toEqual({});
+        expect(overBudgetMeta({ counters: { overBudget: 0 } })).toEqual({});
+        expect(overBudgetMeta(null)).toEqual({});
+        expect(overBudgetMeta(undefined)).toEqual({});
     });
 });

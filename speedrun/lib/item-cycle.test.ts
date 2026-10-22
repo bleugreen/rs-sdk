@@ -89,11 +89,13 @@ describe('planRoute', () => {
         expect(p.byRecipe).toEqual({ attack: 5 });
     });
 
-    test('expectedTicks: 4 per inventory plus 0.3 per level-up drop', () => {
+    test("expectedTicks: 4 per inventory plus each load's level-up pages beyond the first", () => {
         const p = planRoute(xpForLevel(90), 91, RECIPES, stock([[DWARF_WEED, 500], [WINE_OF_ZAMORAK, 500]]));
-        const drops = p.loads.reduce((n, l) => n + l.levelups, 0);
-        expect(drops).toBe(1);
-        expect(p.expectedTicks).toBe(Math.round((p.loads.length * 4 + 0.3) * 10) / 10);
+        expect(p.loads.reduce((n, l) => n + l.levelups, 0)).toBe(1);
+        expect(p.expectedTicks).toBe(p.loads.length * 4); // a load's one page clears during its work ticks
+        expect(planRoute(xpForLevel(90), 91, RECIPES, stock([[DWARF_WEED, 500], [WINE_OF_ZAMORAK, 500]]), { freePagesPerLoad: 0 }).expectedTicks).toBe(p.loads.length * 4 + 1);
+        // herblore-accept L1 from 28 on the supply-safe list: 164 program ticks measured (bgsrv-mac, 3 of 3)
+        expect(planRoute(POST_RITUAL - 1, 99, RECIPES, stock([[GUAM, 41], [IRIT, 405], [EYE, 432]])).expectedTicks).toBe(164);
     });
 });
 

@@ -243,6 +243,7 @@ Gateway: `AGENT_PORT`, plus `WEB_MANAGEMENT_PORT` so it finds its engine
 | thieving | 8950 | 8951 | 8952 | 43650 | 7850 |
 | tickmanip | 8960 | 8961 | 8962 | 43660 | 7860 |
 | runecraft (step module; givers' gateway 8175, Chrome DevTools 9275) | 9270 | 9271 | 9272 | 43970 | 8170 |
+| 12: herblore (step module, `lab/herblore-accept.ts`; Chrome DevTools 9027) | 9020 | 9021 | 9022 | 43720 | 7920 |
 
 The default block belongs to whoever is not on this list (the fletch-menu client
 hang fix, the quest-route issues). Quest-route children should take blocks from
