@@ -140,7 +140,7 @@ export class ShelfReader {
             if (!(e instanceof Aborted || this.ctx.signal.aborted)) throw e;
             aborted = true;
         } finally {
-            const done = { kind: 'done' as const, utc: new Date().toISOString(), read, skipped, aborted, wallMs: Date.now() - wall0, ticks: this.tick() - tick0, tick: this.tick() };
+            const done: ShelfRecord = { kind: 'done', utc: new Date().toISOString(), read, skipped, aborted, wallMs: Date.now() - wall0, ticks: this.tick() - tick0, tick: this.tick() };
             this.emit(done);
             this.ctx.log('done', { ...done, out: this.out });
         }
@@ -314,8 +314,8 @@ export const role: Role = {
 };
 
 if (import.meta.main) {
-    // Flags after the account become role options; ROLE_OPTIONS still works and the flags win.
-    const flags = parseArgs(process.argv.slice(3));
+    // Flags become role options (the account is the one bare argument); ROLE_OPTIONS still works and the flags win.
+    const flags = parseArgs(process.argv.slice(2));
     process.env.ROLE_OPTIONS = JSON.stringify({ ...(JSON.parse(process.env.ROLE_OPTIONS ?? '{}') as Record<string, unknown>), ...flags });
     parseOptions(JSON.parse(process.env.ROLE_OPTIONS) as Record<string, unknown>); // fail on a bad option before logging in
     await runStandalone(role);
