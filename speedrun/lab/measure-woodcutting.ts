@@ -246,7 +246,8 @@ await runScript(async ({ bot: actions, sdk }) => {
         await setstat(sdk, 'woodcutting', level);
         if (flag('prayer')) await setstat(sdk, 'prayer', Number(flag('prayer')));
         await kit();
-        const bones = Number(flag('bones', bury && !helperName ? String(load) : '0'));
+        // a giver or a group brings the first load; alone the account starts with one
+        const bones = Number(flag('bones', bury && !helperName && !nGivers ? String(load) : '0'));
         if (bones) await give(sdk, Array(bones).fill('dragon_bones'));
         const stand = sites[tree].stand;
         if (!(await tele(sdk, stand[0], stand[1]))) throw new Error(`tele to ${stand.join(',')} failed`);
