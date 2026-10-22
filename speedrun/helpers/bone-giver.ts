@@ -25,6 +25,9 @@
 //   item         item to give (default 'Dragon bones'; S18 'Babydragon bones', the dragon-first rule)
 //   obj          its staff-give name for restock cheat (default the item name in snake case)
 //   n            per trade (default 23: the knife loop's free slots)
+//   group        standing mode only: the accounts taking turns at the site, this one included
+//                (S07's b01-b04). Only the group's server keeps a request standing (boneServer,
+//                altar-cue.ts turnOrder); the rest wait loaded on the tile without requesting
 //   sites        [{ giver: {x,z}, receiver: {x,z} }] in run order (default: the oak tile, then the Taverley willow)
 //   siteWaitTicks  how long to wait at a site for the receiver before trying the next (default 30)
 //   trades       stop after this many trades (default: until the cue says stop)
@@ -64,7 +67,8 @@ import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
 import { give, DROPPED_TICKS, openTrade, tradeOf, type GiveSpec } from '../lib/trade';
 import { waitUntil } from '../lib/wait';
-import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, newRequestFrom, readTopUpAsk, scopeOption, usableAsk, writeJsonAtomicSync, type Cue, type CueScope, type TopUpAsk } from './altar-cue';
+import { existsSync, readdirSync } from 'node:fs';
+import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, newRequestFrom, readJson, readTopUpAsk, scopeOption, turnOrder, usableAsk, writeJsonAtomicSync, type Cue, type CueScope, type TopUpAsk } from './altar-cue';
 import { chebyshev, cheat, count, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
@@ -113,6 +117,8 @@ export interface BoneGiverOptions {
     askWaitTicks: number;
     sites: Site[];
     siteWaitTicks: number;
+    /** standing: the accounts taking turns (canonical names, this one included); empty: no group. */
+    group: string[];
     trades: number;
     restock: { kind: 'bank' | 'cheat'; bank: Tile };
     noReplyTicks: number;
@@ -172,6 +178,10 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
         throw new Error(`finalN must be at least 1 and finalN + finalExtras must fit 28 slots (got ${raw.finalN ?? finalN} + ${finalExtras.length})`);
     }
     const item = String(raw.item ?? 'Dragon bones');
+    if (raw.group !== undefined && (!Array.isArray(raw.group) || raw.group.length < 2 || raw.group.some(g => typeof g !== 'string' || !g.trim()))) throw new Error('group must list at least two account names, this one included');
+    const group = ((raw.group ?? []) as string[]).map(canonName);
+    if (group.length && mode !== 'standing') throw new Error('group is for the standing mode (S07) only');
+    if (new Set(group).size !== group.length) throw new Error('group names an account twice');
     return {
         mode,
         item,
@@ -184,6 +194,7 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
         askWaitTicks,
         sites,
         siteWaitTicks: Number(raw.siteWaitTicks ?? 30),
+        group,
         trades,
         restock: { kind, bank: r.bank ? tile(r.bank, 'restock.bank') : DEFAULT_BONE_BANK },
         noReplyTicks: Number(raw.noReplyTicks ?? DROPPED_TICKS),
@@ -338,6 +349,49 @@ export const SIDE_STEP_TICKS = 4;
 
 export type BonePhase = 'start' | 'restock' | 'travel' | 'waiting' | 'requested' | 'trading' | 'fault' | 'off';
 
+/** bones-<account>.json: a bone giver's status, beside the altar givers' in the cue directory. */
+export interface BoneStatus {
+    v: 1;
+    account: string;
+    phase: BonePhase;
+    held: number;
+    n: number;
+    trades: number;
+    bounces: number;
+    tile: { x: number; z: number; level: number } | null;
+    /** Loaded at the site since (Date.now()): waiting, requesting or trading. null otherwise. */
+    readyAt: number | null;
+    detail?: string;
+    ms: number;
+}
+
+export function readBoneStatuses(dir: string): BoneStatus[] {
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+        .filter(f => /^bones-.+\.json$/.test(f))
+        .map(f => readJson<BoneStatus>(join(dir, f)))
+        .filter((s): s is BoneStatus => !!s && s.v === 1 && typeof s.account === 'string');
+}
+
+/**
+ * The group's server: the one giver of `group` that keeps a request standing with the scored
+ * account and that the scored side trades next (altar-cue.ts turnOrder). The giver already
+ * requesting or trading keeps it; else the loaded giver that has waited at the site longest. Both
+ * sides read it from the same status files, so a group giver requests only while it is the
+ * server, and the scored step's trade click names it.
+ */
+export function boneServer(statuses: readonly BoneStatus[], group: readonly string[], now: number): string | undefined {
+    const g = new Set(group.map(canonName));
+    return turnOrder(
+        statuses.filter(s => g.has(canonName(s.account))),
+        now,
+        {
+            eligible: s => (s.phase === 'waiting' || s.phase === 'requested' || s.phase === 'trading') && s.held > 0 && s.readyAt !== null,
+            holding: s => s.phase === 'requested' || s.phase === 'trading'
+        }
+    )[0]?.account;
+}
+
 export class BoneGiver {
     readonly o: BoneGiverOptions;
     private readonly re: RegExp;
@@ -356,10 +410,19 @@ export class BoneGiver {
     private readonly delivered = new Set<string>();
     /** Side steps in a row that got no nearer (stepToSide tries the next side). */
     private sideMisses = 0;
+    /** Loaded at the site since (BoneStatus.readyAt). */
+    private readyAt: number | null = null;
 
     constructor(private readonly ctx: RoleContext) {
         this.o = boneGiverOptions(ctx.options);
         this.re = exact(this.o.item);
+        if (this.o.group.length && !this.o.group.includes(canonName(ctx.account))) throw new Error(`group must include this account (${ctx.account})`);
+    }
+
+    /** No group, or this giver is the group's server now. */
+    private ourTurn(): boolean {
+        if (!this.o.group.length) return true;
+        return canonName(boneServer(readBoneStatuses(this.o.cueDir), this.o.group, Date.now()) ?? '') === canonName(this.ctx.account);
     }
 
     private get s(): BotWorldState | null {
@@ -374,6 +437,7 @@ export class BoneGiver {
         if (phase !== this.phase || detail !== this.detail) this.ctx.log('phase', { from: this.phase, to: phase, ...(detail ? { detail } : {}) });
         this.phase = phase;
         this.detail = detail;
+        this.readyAt = phase === 'waiting' || phase === 'requested' || phase === 'trading' ? (this.readyAt ?? Date.now()) : null;
         this.publish();
     }
 
@@ -388,9 +452,10 @@ export class BoneGiver {
             trades: this.trades,
             bounces: this.bounces,
             tile: this.s?.player ? pos(this.s) : null,
+            readyAt: this.readyAt,
             ...(this.detail ? { detail: this.detail } : {}),
             ms: Date.now()
-        });
+        } satisfies BoneStatus);
     }
 
     /** On a side tile of the scored account (or trading with it). */
@@ -451,18 +516,31 @@ export class BoneGiver {
             await this.restock(bones, extras);
         }
         const site = o.sites[this.site]!;
-        this.setPhase('travel', `site ${this.site}`);
-        if (process.env.HELPER_LAB_TELE === '1' && chebyshev(pos(this.s), site.giver) > 150) await labTele(ctx, site.giver);
-        await walkNear(ctx, site.giver.x, site.giver.z, 2);
-        await standOn(ctx, site.giver);
+        const p = pos(this.s);
+        // Already on the tile (a request that came to nothing, a turn waited out): keep our place in the group's order.
+        if (p.x !== site.giver.x || p.z !== site.giver.z) {
+            this.setPhase('travel', `site ${this.site}`);
+            if (process.env.HELPER_LAB_TELE === '1' && chebyshev(p, site.giver) > 150) await labTele(ctx, site.giver);
+            await walkNear(ctx, site.giver.x, site.giver.z, 2);
+            await standOn(ctx, site.giver);
+        }
         this.setPhase('waiting', `site ${this.site}`);
         if (!(await until(ctx, () => !!this.receiverInSight() || !!this.cue?.stop, o.siteWaitTicks))) {
             this.site = (this.site + 1) % o.sites.length;
+            this.setPhase('travel', `site ${this.site}`);
             return;
         }
         if (this.cue?.stop) return;
+        // A group takes turns: wait loaded, without requesting, until we are its server.
+        while (!this.ourTurn()) {
+            if (this.cue?.stop || ctx.signal.aborted || !this.receiverInSight()) return;
+            const server = boneServer(readBoneStatuses(o.cueDir), o.group, Date.now());
+            this.setPhase('waiting', server ? `queued behind ${server}` : 'queued');
+            await until(ctx, () => this.ourTurn() || !!this.cue?.stop, 2);
+        }
         this.setPhase('requested');
-        const req = await requestUntilOpen(ctx, o, { receiver: () => this.receiverInSight(), stopped: () => !!this.cue?.stop, log: ctx.log });
+        // Two group givers can both start requesting on one frame: the order keeps the one ready longest, and the other stands down.
+        const req = await requestUntilOpen(ctx, o, { receiver: () => this.receiverInSight(), stopped: () => !!this.cue?.stop || !this.ourTurn(), log: ctx.log });
         this.bounces += req.bounces;
         if (!req.ok) {
             ctx.log('request', { ...req });

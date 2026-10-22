@@ -28,7 +28,7 @@ import type { BotWorldState } from '../../sdk/types';
 import { receiveFrom, tradeOf } from '../lib/trade';
 import { canonName, CueWriter, cueDir, FrameLog, scopeOption, writeTopUpAsk } from './altar-cue';
 import { cheat, count, exactItem, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
-import { DEFAULT_BONE_BANK, S07_SITES } from './bone-giver';
+import { boneServer, DEFAULT_BONE_BANK, readBoneStatuses, S07_SITES } from './bone-giver';
 import { FORBIDDEN_ACCOUNTS } from './fleet-config';
 import { closeBank, depositAllExcept, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
@@ -49,6 +49,8 @@ const isRequestFrom = (giver: string) => (m: { type: number; text: string; sende
 
 interface LoadResult {
     load: number;
+    /** The giver this load came from. */
+    giver?: string;
     ok: boolean;
     clickToBones: number;
     standingAtClick: boolean;
@@ -66,8 +68,12 @@ export const role: Role = {
         if (!lab) assertDemoStandIn(ctx.account);
         const o = ctx.options;
         const BONES = exactItem(String(o.item ?? 'Dragon bones'));
-        const giver = String(o.giver ?? '');
-        if (!giver) throw new Error('bone-receiver: options.giver is required');
+        // One giver by name, or a group taking turns (bone-giver.ts group): then each load comes from the group's server (boneServer).
+        const givers = Array.isArray(o.givers) ? (o.givers as string[]).map(String) : null;
+        if (!!givers === (o.giver !== undefined)) throw new Error('bone-receiver: give options.giver or options.givers, not both');
+        const named = String(o.giver ?? '');
+        if (!givers && !named) throw new Error('bone-receiver: options.giver is required');
+        let giver = named;
         const asks = Array.isArray(o.asks) ? (o.asks as number[]).map(Number) : null;
         const loads = asks ? asks.length : Number(o.loads ?? 8);
         // The giver it stands in for reads only its own step's cue: 'courier' for the asks (S18), else 'bone' (S07).
@@ -119,6 +125,15 @@ export const role: Role = {
             let requestSince = s().tick;
             for (let load = 0; load < loads && !ctx.signal.aborted; load++) {
                 // The trade, once the pack is empty (the first load starts empty) and the giver is beside us.
+                if (givers) {
+                    let server: string | undefined;
+                    const found = await until(ctx, () => (server = boneServer(readBoneStatuses(cueDir()), givers, Date.now())) !== undefined, 400);
+                    if (!found || !server) {
+                        results.push({ load, ok: false, clickToBones: 0, standingAtClick: false, reason: 'no group giver ready' });
+                        break;
+                    }
+                    giver = server;
+                }
                 const near = (st: BotWorldState) => st.nearbyPlayers.some(p => p.name.toLowerCase().replace(/\s+/g, '_') === giver.toLowerCase());
                 if (!(await until(ctx, near, 400))) {
                     results.push({ load, ok: false, clickToBones: 0, standingAtClick: false, reason: 'giver never came into sight' });
@@ -128,7 +143,7 @@ export const role: Role = {
                 const n = sizeOf(load);
                 if (asks) pendingAsk = n;
                 const r = await receiveFrom(sdk, giver, { want: [{ item: BONES, amount: n }], openTimeoutMs: 60_000 });
-                const res: LoadResult = { load, ok: r.ok && count(s(), BONES) >= n, clickToBones: r.ticks, standingAtClick, ...(r.reason ? { reason: r.reason } : {}) };
+                const res: LoadResult = { load, giver, ok: r.ok && count(s(), BONES) >= n, clickToBones: r.ticks, standingAtClick, ...(r.reason ? { reason: r.reason } : {}) };
                 results.push(res);
                 ctx.log('load', { ...res });
                 if (!res.ok) break;
@@ -181,6 +196,7 @@ export const role: Role = {
                 ok: done.length,
                 clickToBones: { mean: mean(done.map(r => r.clickToBones)), all: done.map(r => r.clickToBones) },
                 standingAtClick: done.filter(r => r.standingAtClick).length,
+                givers: done.map(r => r.giver ?? null),
                 buryGap: { mean: mean(done.flatMap(r => (r.buryGap === undefined ? [] : [r.buryGap]))), all: done.map(r => r.buryGap ?? null) },
                 pages: results.flatMap(r => (r.page ? [{ load: r.load, ...r.page }] : []))
             })}`
