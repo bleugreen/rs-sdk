@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+
+import '../../lite/test-support/browser-globals.js';
+
 import { createRcCycle, cycleTicks, scoredSteps, type RcShared, type TurnResult } from './rc-cycle.js';
 import { Harness, makeState } from './testkit.js';
 
