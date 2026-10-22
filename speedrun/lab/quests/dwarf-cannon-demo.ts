@@ -22,9 +22,7 @@
 //
 // --lab is the dry run on a local engine through lab.sh (LAB_RUNNERS=0, so this script owns the
 // client): a fresh lab account staged with staff commands as the throwaway stands on the demo.
-import type { Subprocess } from 'bun';
-import { join, resolve } from 'node:path';
-import { closeSession, loadBotEnv, logoutClean, openSession } from '../../lib/session';
+import { closeSession, logoutClean, openSession } from '../../lib/session';
 import { TickLog } from '../../lib/ticks';
 import { runTo } from '../../lib/travel';
 import { invCount } from '../../lib/world';
@@ -33,10 +31,10 @@ import { ARRIVAL, MIN_FOOD, newTally, observed, quest, steps } from '../../quest
 import type { DialogueMode } from '../../quests/segments';
 import { runSteps } from '../../runner/step';
 import { arg, botArg, result } from '../common';
+import { startLoopbackGateway } from '../loopback-gateway';
 import { clearInventory, give, leaveTutorial, mustTele, setStats } from '../setup';
 import { trace } from './run';
 
-const ROOT = resolve(import.meta.dir, '..', '..', '..');
 const account = botArg();
 const lab = process.argv.includes('--lab');
 const dialogue = arg('dialogue', 'burst') as DialogueMode;
@@ -55,28 +53,7 @@ const LAB_BY_MODE: Readonly<Record<DialogueMode, Record<string, number>>> = {
     fixed: { A: 15, B: 281.7, C: 13.3, D: 30.3, E: 27, F: 58, G: 47, H: 107.3, I: 124.3, J: 54, K: 410.5, L: 421.5 },
 };
 
-let gateway: Subprocess | null = null;
-if (!lab) {
-    const url = loadBotEnv(account).GATEWAY_URL ?? '';
-    const m = /^ws:\/\/127\.0\.0\.1:(\d+)\/?$/.exec(url);
-    if (!m) throw new Error(`bots/${account}/bot.env: GATEWAY_URL must be ws://127.0.0.1:<port> (tenet 12, the loopback gateway)`);
-    const port = m[1]!;
-    const up = () => fetch(`http://127.0.0.1:${port}/status`, { signal: AbortSignal.timeout(1500) }).then(() => true, () => false);
-    if (await up()) throw new Error(`something already answers on 127.0.0.1:${port}; pick another port`);
-    gateway = Bun.spawn([process.execPath, 'server/gateway/gateway.ts'], {
-        cwd: ROOT,
-        env: { ...process.env, AGENT_PORT: port, GATEWAY_HOSTNAME: '127.0.0.1', GATEWAY_PUBLIC_PORT: '0', LOGIN_SERVER: 'false', ENGINE_MANAGEMENT_URL: 'http://127.0.0.1:9' },
-        stdin: 'ignore',
-        stdout: Bun.file(join(process.env.TMPDIR ?? '/tmp', `dc-demo-gateway-${port}.log`)),
-        stderr: 'inherit',
-    });
-    const deadline = Date.now() + 20_000;
-    while (!(await up())) {
-        if (gateway.exitCode !== null || Date.now() > deadline) throw new Error(`gateway did not come up on 127.0.0.1:${port}`);
-        await Bun.sleep(250);
-    }
-    say('loopback gateway up', { port: Number(port) });
-}
+const gateway = lab ? null : await startLoopbackGateway(account, 'dc-demo');
 
 const s = await openSession(account, { launch: true, readyTimeoutMs: 180_000 });
 const log = TickLog.memory('dc-demo');
