@@ -82,9 +82,50 @@ describe('provisioning', () => {
 
     test('the whole plan', () => {
         const p = provisionPlan(stock, roster(3), 270);
-        expect(p.batches).toEqual([['cairn_t01', 'cairn_t02', 'cairn_t03']]);
+        expect(p.batches).toEqual([['cairn_t01', 'cairn_t02'], ['cairn_t03']]);
         expect(p.essence).toEqual({ perGiver: 108, trips: 4 });
         expect(p.talismans.length).toBe(3);
         expect(p.essenceTransfers.reduce((n, x) => n + x.count, 0)).toBe(324);
+    });
+});
+
+
+describe('roster input boundaries', () => {
+    test('unknown refusals do not silently select a different roster', () => {
+        expect(() => roster(22, ['cairn_typo'])).toThrow(/unknown/);
+    });
+
+    test('configs reject duplicate, forbidden and empty accounts', () => {
+        for (const accounts of [[], ['cairn_t01', 'cairn_t01'], ['cairn_dot_md']]) {
+            expect(() => launchConfig(accounts, { role: 'idle' })).toThrow();
+        }
+        expect(() => launchConfig(roster().accounts, { role: 'idle', gatewayPort: NaN })).toThrow();
+        expect(() => giverEntries(roster().accounts, { role: 'altar-giver', acceptFrom: '[' })).toThrow();
+    });
+
+    test('quantities and batches must be finite positive integers within the limit', () => {
+        for (const value of [0, -1, NaN, Infinity, 1.5]) {
+            expect(() => essencePerGiver(value)).toThrow();
+            expect(() => essencePerGiver(100, value)).toThrow();
+        }
+        expect(() => batches(roster().accounts, 6)).toThrow();
+        expect(() => allocate({ accounts: {} }, 'Rune essence', roster(1).accounts, NaN)).toThrow();
+    });
+
+    test('malformed stock is rejected instead of producing a partial plan', () => {
+        for (const count of [-1, NaN, Infinity, 0.5]) {
+            expect(() => allocate({ accounts: { cairn_h30: { bank: [{ name: 'Rune essence', count }] } } }, 'Rune essence', roster(1).accounts, 1)).toThrow(/invalid stockpile/);
+        }
+    });
+
+    test('donors count toward the five-client provisioning cap', () => {
+        const stock: Stockpile = { accounts: {
+            cairn_h51: { bank: [{ name: 'Body talisman', count: 57 }] },
+            cairn_h33: { bank: [{ name: 'Rune essence', count: 10000 }] }
+        } };
+        const p = provisionPlan(stock, roster());
+        expect(p.batches.map(b => b.length)).toEqual([3, 3, 3, 3, 3, 3, 3, 1]);
+        expect(p.batches.flat()).toEqual(p.roster.accounts);
+        expect(p.essenceTransfers.reduce((n, t) => n + t.count, 0)).toBe(5346);
     });
 });

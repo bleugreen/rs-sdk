@@ -38,22 +38,32 @@ export interface Roster {
  * keeps its position and is replaced by the next unused spare, so slot
  * assignment and login order stay stable for everyone else.
  */
-export function roster(count = BODY_ROSTER_SIZE, refused: Iterable<string> = [], primary = PRIMARY, spares = SPARES): Roster {
-    if (!Number.isInteger(count) || count < 1 || count > primary.length) throw new Error(`count must be 1-${primary.length}`);
+export function roster(count = BODY_ROSTER_SIZE, refused: Iterable<string> = []): Roster {
+    if (!Number.isInteger(count) || count < 1 || count > PRIMARY.length) throw new Error(`count must be 1-${PRIMARY.length}`);
     const out = new Set(refused);
-    const free = spares.filter(s => !out.has(s));
+    for (const name of out) if (![...PRIMARY, ...SPARES].includes(name)) throw new Error(`unknown refused account: ${name}`);
+    const free = SPARES.filter(s => !out.has(s));
     const substituted: Record<string, string> = {};
-    const accounts = primary.slice(0, count).map(name => {
+    const accounts = PRIMARY.slice(0, count).map(name => {
         if (!out.has(name)) return name;
         const spare = free.shift();
         if (!spare) throw new Error(`no spare left for ${name}; ask rs/41 before creating new names`);
         substituted[name] = spare;
         return spare;
     });
+    validateAccounts(accounts);
+    return { accounts, substituted };
+}
+
+function validateAccounts(accounts: string[]): void {
+    if (!accounts.length || new Set(accounts).size !== accounts.length) throw new Error('accounts must be non-empty and unique');
     for (const a of accounts) {
         if (!ACCOUNT_NAME_RE.test(a) || FORBIDDEN_ACCOUNTS.has(a)) throw new Error(`refusing ${a}`);
     }
-    return { accounts, substituted };
+}
+
+function positiveInteger(value: number, name: string): void {
+    if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${name} must be a positive safe integer`);
 }
 
 export interface EntryOptions {
@@ -64,6 +74,9 @@ export interface EntryOptions {
 
 /** One launcher entry per giver, in login order, slots round-robin, every one on the direct path. */
 export function giverEntries(accounts: string[], o: EntryOptions): Record<string, unknown>[] {
+    validateAccounts(accounts);
+    if (o.role !== 'idle' && o.role !== 'altar-giver') throw new Error('role must be idle or altar-giver');
+    if (o.acceptFrom) new RegExp(o.acceptFrom);
     return accounts.map((account, i) => {
         if (o.role === 'idle') return { account, role: 'idle', path: 'direct', options: { heartbeatMinutes: 1 } };
         const restock: Record<string, unknown> = { kind: 'bank' };
@@ -73,11 +86,13 @@ export function giverEntries(accounts: string[], o: EntryOptions): Record<string
 }
 
 export function launchConfig(accounts: string[], o: EntryOptions & { gatewayPort?: number }): Record<string, unknown> {
-    return { gatewayPort: o.gatewayPort ?? 7795, accounts: giverEntries(accounts, o) };
+    const gatewayPort = o.gatewayPort ?? 7795;
+    if (!Number.isInteger(gatewayPort) || gatewayPort < 1024 || gatewayPort > 65535) throw new Error('invalid gateway port');
+    return { gatewayPort, accounts: giverEntries(accounts, o) };
 }
 
 export function batches<T>(xs: readonly T[], size = PROVISION_BATCH): T[][] {
-    if (!Number.isInteger(size) || size < 1) throw new Error('batch size must be a positive integer');
+    if (!Number.isInteger(size) || size < 1 || size > PROVISION_BATCH) throw new Error(`batch size must be 1-${PROVISION_BATCH}`);
     const out: T[][] = [];
     for (let i = 0; i < xs.length; i += size) out.push(xs.slice(i, i + size));
     return out;
@@ -85,6 +100,8 @@ export function batches<T>(xs: readonly T[], size = PROVISION_BATCH): T[][] {
 
 /** Essence each giver's bank holds before the run: the fair share, rounded up to whole trips. */
 export function essencePerGiver(total = S21_ESSENCE, givers = BODY_ROSTER_SIZE): { perGiver: number; trips: number } {
+    positiveInteger(total, 'total essence');
+    positiveInteger(givers, 'giver count');
     const trips = Math.ceil(Math.ceil(total / givers) / ESSENCE_PER_TRIP);
     return { perGiver: trips * ESSENCE_PER_TRIP, trips };
 }
@@ -110,6 +127,15 @@ export interface Transfer {
  * givers themselves, forbidden or not cairn_ helpers are never used.
  */
 export function allocate(stock: Stockpile, item: string, givers: string[], each: number): Transfer[] {
+    validateAccounts(givers);
+    positiveInteger(each, 'allocation');
+    if (!stock || typeof stock.accounts !== 'object' || stock.accounts === null || Array.isArray(stock.accounts)) throw new Error('stockpile needs accounts');
+    for (const a of Object.values(stock.accounts)) {
+        if (!a || (a.bank !== undefined && !Array.isArray(a.bank))) throw new Error('invalid stockpile account');
+        for (const entry of a.bank ?? []) {
+            if (!entry || typeof entry.name !== 'string' || !Number.isSafeInteger(entry.count) || entry.count < 0) throw new Error('invalid stockpile item');
+        }
+    }
     const skip = new Set(givers);
     const holders = Object.entries(stock.accounts)
         .filter(([name]) => !skip.has(name) && ACCOUNT_NAME_RE.test(name) && !FORBIDDEN_ACCOUNTS.has(name))
@@ -146,12 +172,17 @@ export interface ProvisionPlan {
 
 export function provisionPlan(stock: Stockpile, r: Roster, total = S21_ESSENCE): ProvisionPlan {
     const essence = essencePerGiver(total, r.accounts.length);
+    const talismans = allocate(stock, 'Body talisman', r.accounts, 1);
+    const essenceTransfers = allocate(stock, 'Rune essence', r.accounts, essence.perGiver);
+    const donors = new Set([...talismans, ...essenceTransfers].map(t => t.from));
+    // The five-client provisioning budget includes donors, not only recipients.
+    if (donors.size >= PROVISION_BATCH) throw new Error('too many donors for one provisioning window; ask rs/41 to consolidate stock first');
     return {
         roster: r,
-        batches: batches(r.accounts),
+        batches: batches(r.accounts, PROVISION_BATCH - donors.size),
         essence,
-        talismans: allocate(stock, 'Body talisman', r.accounts, 1),
-        essenceTransfers: allocate(stock, 'Rune essence', r.accounts, essence.perGiver)
+        talismans,
+        essenceTransfers
     };
 }
 
