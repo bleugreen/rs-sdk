@@ -520,12 +520,12 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
     const P_TILE = { x: 2803, z: 2724 };
     const raw = [
         { name: 'H12oM', scope: M, at: M_TILE, items: [{ item: 'Shark', topUp: { max: 13 } }] },
-        { name: 'H12oP', scope: P, at: P_TILE, items: [{ item: 'Shark', amount: 9 }, { item: 'Super antipoison(4)', amount: 1 }] }
+        { name: 'H12oP', scope: P, at: P_TILE, items: [{ item: 'Shark', amount: 9 }, { item: 'Superantipoison(4)', amount: 1 }] }
     ];
     const opts = muleOptions({ serve: 'cairn_scored', serveMode: 'request', carried: true, packages: raw }, { RC_CUE_DIR: '/tmp/cue-h45' });
     const [hm, hp] = opts.packages as [Package, Package];
     const sharks = (n: number, from = 0): InventoryItem[] => Array.from({ length: n }, (_, i) => ({ slot: from + i, id: SHARK, name: 'Shark', count: 1, optionsWithIndex: [] }));
-    const sapp = (slot: number): InventoryItem => ({ slot, id: SAPP, name: 'Super antipoison(4)', count: 1, optionsWithIndex: [] });
+    const sapp = (slot: number): InventoryItem => ({ slot, id: SAPP, name: 'Superantipoison(4)', count: 1, optionsWithIndex: [] });
     /** h45 at login: 13 + 9 sharks and the antipoison, 23 slots. */
     const loaded = () => [...sharks(22), sapp(22)];
     const trade = (t: Partial<TradeState>): TradeState => ({ isOpen: true, screen: 'offer', partner: 'Cairn Scored', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false, ...t });
@@ -561,7 +561,7 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
         expect(carriedShort([hm, hp], inv)).toEqual([]);
         expect(carriedShort([hm, hp], [...sharks(21), sapp(21)])).toEqual([{ item: 'Shark', wanted: 22, have: 21 }]);
         const noPotion = carriedNeeds(hp, sharks(22));
-        expect(noPotion.missing).toEqual([{ item: 'Super antipoison(4)', wanted: 1, have: 0 }]);
+        expect(noPotion.missing).toEqual([{ item: 'Superantipoison(4)', wanted: 1, have: 0 }]);
         expect(carriedReady(noPotion)).toBe(false);
         expect(carriedReady(carriedNeeds(hm, [sapp(0)]))).toBe(false); // nothing of the top-up to offer
         expect(carriedNeeds(hp, [...sharks(8), sapp(8)]).missing).toEqual([{ item: 'Shark', wanted: 9, have: 8 }]);
@@ -596,7 +596,7 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
         const result = serveStaged(sdk as unknown as BotSDK, {} as BotActions, { partner: 'cairn_scored', pkg: hp, held: carriedNeeds(hp, inv).held, exact: true });
         await flush();
         expect(sends(sdk)).toEqual([['sendOfferItem', 17, -1], ['sendOfferItem', 0, 9], ['sendAcceptTrade']]);
-        const mine: TradeItem[] = [{ slot: 0, id: SHARK, name: 'Shark', count: 9 }, { slot: 1, id: SAPP, name: 'Super antipoison(4)', count: 1 }];
+        const mine: TradeItem[] = [{ slot: 0, id: SHARK, name: 'Shark', count: 9 }, { slot: 1, id: SAPP, name: 'Superantipoison(4)', count: 1 }];
         sdk.tick({ inventory: sharks(8), trade: trade({ myOffer: mine, myAccepted: true }) });
         sdk.tick({ trade: trade({ screen: 'confirm', myOffer: mine, partnerAccepted: true }) });
         await flush();

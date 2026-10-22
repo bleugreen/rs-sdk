@@ -1120,6 +1120,8 @@ class Mule {
         await ctx.bot.dismissBlockingUI();
         if (ctx.sdk.getTradeState().isOpen) await ctx.bot.declineTrade();
         const stand = this.standTile();
+        const from = ctx.sdk.getState()?.player;
+        const t0 = tick(ctx.sdk);
         await walkNear(ctx, stand.x, stand.z, this.standTolerance());
         this.lastStand = stand;
         this.touch();
@@ -1130,7 +1132,8 @@ class Mule {
                 short,
                 done: [...this.done],
                 packages: this.o.packages.map(p => ({ name: p.name, at: p.at ?? null, ...carriedNeedsLog(carriedNeeds(p, inv)) })),
-                at: stand
+                at: stand,
+                walk: { from: from ? { x: from.worldX, z: from.worldZ } : null, ticks: tick(ctx.sdk) - t0 }
             });
         }
         ctx.log('mule ready', { serve: this.o.serve, packages: this.o.packages.map(p => p.name), giver: this.o.giver, serveMode: this.o.serveMode, ...(this.o.carried ? { carried: true } : {}) });
