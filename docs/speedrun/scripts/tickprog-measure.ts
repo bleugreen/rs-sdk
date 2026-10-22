@@ -30,7 +30,9 @@
 //                the program requests at stun +2..+4 when under 3 bones and idles while the
 //                trade is open; the helper (a lite client teleported beside the account)
 //                offers --load=9 bones with one press; this script accepts for the account
-//   agility      Wilderness course                --laps=10 [--course=gnome]
+//   agility      Wilderness course                --laps=10 [--course=gnome] [--level --hp --cakes --until --eat-below [--eat-gap --eat-at=any|land] --run]
+//   eat-probe    an eat against the walk to the Wilderness log balance  --trials=3 [--eat-delay=3]
+//   agility-steps  speedrun/skills/agility.ts      [--level --hp --at=x,z --knife --cakes --to --only=steps --opt=k=v]
 //   rc           rc-cycle at an altar with lite givers (GIVERS=a,b in tickprog-lab.sh)
 //                --givers=a,b --crafts=30 --schedule=robust|tuned [--altar=body]
 //                (this script plays run.ts: it hands the program's turns and beacons to the
@@ -41,10 +43,12 @@
 // the host, its load and the time. The tab must already be open (tickprog-tab.ts).
 import { hostname, loadavg } from 'os';
 import { runScript } from '../../../sdk/runner';
+import { FreshMessages, statRandom, XP_RATE } from '../../../server/webclient/src/bot/programs/util';
+import { FAIL_RE as AGILITY_FAIL_RE } from '../../../server/webclient/src/bot/programs/agility';
+import { AGILITY_COURSES, stepFromPosition } from '../../../server/webclient/src/bot/programs/agility-courses';
 import { latencyHistogram } from '../../../speedrun/lib/hostgate';
 import { awaitProgram, probeInPage, ProgramError, programStatus, runProgram, startProgram } from '../../../speedrun/lib/programs';
 import { runGivers } from './tickprog-rc-givers';
-import { statRandom } from '../../../server/webclient/src/bot/programs/util';
 import { openSession, closeSession, type Session } from '../../../speedrun/lib/session';
 import { decideGiver, decideReceiver, newGiverCtx, newReceiverCtx, planOffers, sameName, tradeOf, type GiverCtx, type OfferEntry, type ReceiverCtx } from '../../../speedrun/lib/trade';
 
@@ -54,6 +58,8 @@ const flag = (name: string, def?: string) => process.argv.find(a => a.startsWith
 const has = (name: string) => process.argv.includes(`--${name}`);
 const DEMO = has('demo');
 const num = (name: string, def: number) => Number(flag(name, String(def)));
+/** ::tele's level,mx,mz,lx,lz form of a ground tile. */
+const teleSpec = (x: number, z: number) => `0,${x >> 6},${z >> 6},${x & 63},${z & 63}`;
 const where = () => `host ${hostname()} load ${loadavg().map(l => l.toFixed(1)).join(' ')} at ${new Date().toISOString()}`;
 
 // rs/5's zoo-cluster rotation at respawn 13 (tickmanip-mine-run.sh, mining.md section 4)
@@ -381,16 +387,133 @@ await runScript(async ({ bot: actions, sdk }) => {
             }
         }
         case 'agility': {
+            // --level (99) --hp (99) --cakes=N (given, after clearing the inventory) --until=L (instead of --laps)
+            // --eat-below (with --eat-gap, 3) --food --pause-for --start=x,z (instead of the course start)
             const course = flag('course', 'wilderness')!;
-            const start: Record<string, [string, number, number]> = { wilderness: ['0,46,61,60,33', 3004, 3937], gnome: ['0,38,53,42,44', 2474, 3436], barbarian: ['0,39,55,55,34', 2551, 3554] };
+            const start: Record<string, [number, number]> = { wilderness: [3004, 3937], gnome: [2474, 3436], barbarian: [2551, 3554] };
             if (!DEMO) {
-                await say('::setstat agility 99');
-                await say('::setstat hitpoints 99');
-                const [spec, x, z] = start[course]!;
-                await tele(spec, x, z);
+                await say(`::setstat agility ${num('level', 99)}`);
+                await say(`::setstat hitpoints ${num('hp', 99)}`);
+                if (flag('defence')) await say(`::setstat defence ${num('defence', 1)}`);
+                if (flag('prayer')) await say(`::setstat prayer ${num('prayer', 1)}`);
+                if (flag('cakes') || flag('sharks')) {
+                    await clearInventory();
+                    for (let i = 0; i < num('cakes', 0); i++) await say('::give cake 1');
+                    for (let i = 0; i < num('sharks', 0); i++) await say('::give shark 1');
+                }
+                const [x, z] = flag('start') ? (flag('start')!.split(',').map(Number) as [number, number]) : start[course]!;
+                await tele(teleSpec(x, z), x, z);
             }
-            const end = await runProgram(sdk, 'agility', { course, laps: num('laps', 10), technique: flag('technique', 'react') }, { onProgress: progress });
+            const params: Record<string, unknown> = { course, technique: flag('technique', 'react'), startStep: 'auto' };
+            if (flag('until')) params.untilLevel = num('until', 99);
+            else params.laps = num('laps', 10);
+            // the lab rows in docs/speedrun/rehearsals/agility.md eat in any phase: eatGap turns that on
+            if (flag('eat-below')) Object.assign(params, { eatBelow: num('eat-below', 0), eatGap: num('eat-gap', 3) });
+            if (flag('eat-at')) params.eatAt = flag('eat-at');
+            if (flag('food')) params.food = flag('food');
+            if (flag('pause-for')) params.pauseFor = flag('pause-for');
+            if (flag('protect')) params.protect = flag('protect');
+            if (flag('flick-gap')) params.flickGap = num('flick-gap', 4);
+            // --run turns run on first (controls:com_5, component 153; the button clears a pending
+            // interaction, so it goes out before the program's first click)
+            if (has('run') && sdk.getState()?.varps?.option_run !== 1) {
+                await sdk.sendClickComponent(153);
+                await sdk.waitForTicks(2);
+            }
+            console.log(`agility: option_run ${sdk.getState()?.varps?.option_run ?? 'unknown'}, run energy ${sdk.getState()?.player?.runEnergy ?? 'unknown'}`);
+            // lap bonuses and falls with their ticks, each fall named by the obstacle zone the
+            // player stood in the tick before (for falls per lap by obstacle)
+            const lapLog = { bonus: [] as number[], falls: [] as Array<{ tick: number; step: string }>, steps: { one: 0, two: 0, jump: 0 } };
+            const courseDef = AGILITY_COURSES[course as keyof typeof AGILITY_COURSES];
+            const fresh = new FreshMessages(sdk.getState());
+            let lastXp = sdk.getState()!.skills.find(k => /^agility$/i.test(k.name))?.experience ?? 0;
+            let lastPos: [number, number] = [sdk.getState()!.player!.worldX, sdk.getState()!.player!.worldZ];
+            let traceLeft = num('trace', 0);
+            let traceXp = lastXp;
+            const stopLapLog = sdk.onStateUpdate(s => {
+                const xpNow = s.skills.find(k => /^agility$/i.test(k.name))?.experience ?? lastXp;
+                if (courseDef && (xpNow - lastXp) / XP_RATE >= courseDef.lapBonus - 0.05) lapLog.bonus.push(s.tick);
+                lastXp = xpNow;
+                if (courseDef && fresh.take(s).some(m => AGILITY_FAIL_RE.test(m.text))) lapLog.falls.push({ tick: s.tick, step: stepFromPosition(courseDef, lastPos[0], lastPos[1]) ?? '?' });
+                // --trace=N: one line per tick for the first N ticks (position, xp gained, animation)
+                if (traceLeft > 0 && s.player) {
+                    traceLeft--;
+                    console.log(`TRACE ${s.tick} ${s.player.worldX},${s.player.worldZ} xp+${((xpNow - traceXp) / XP_RATE).toFixed(1)} anim ${s.player.animId}`);
+                    traceXp = xpNow;
+                }
+                if (s.player) {
+                    // ticks with a one-tile move (walking), a two-tile move (running), or more (a teleport or forced move)
+                    const d = Math.max(Math.abs(s.player.worldX - lastPos[0]), Math.abs(s.player.worldZ - lastPos[1]));
+                    if (d === 1) lapLog.steps.one++;
+                    else if (d === 2) lapLog.steps.two++;
+                    else if (d > 2) lapLog.steps.jump++;
+                    lastPos = [s.player.worldX, s.player.worldZ];
+                }
+            });
+            const t0 = sdk.getState()!.tick;
+            const end = await runProgram(sdk, 'agility', params, { onProgress: progress });
+            stopLapLog?.();
+            console.log(`LAPLOG ${JSON.stringify(lapLog)}`);
+            console.log(`agility: ${end.tick - t0} ticks from the start call to the end; hp ${sdk.getState()?.player?.hp}/${sdk.getState()?.player?.maxHp}`);
             return report(`agility ${course}`, end);
+        }
+        case 'eat-probe': {
+            // The eat/obstacle mechanism (agility.md section 6.5): the Wilderness log balance
+            // (3001,3945) clicked from (2996,3958), 13 tiles off, at Agility 99. Per trial: 'ctrl'
+            // clicks only; 'walk' eats --eat-delay ticks after the click, during the walk; 'click'
+            // sends the eat and then the click back to back. Prints ticks from the click to the
+            // log's 20 xp ('lost' after 40), the tick the shark went, and where the player ended.
+            const trials = num('trials', 3);
+            const delay = num('eat-delay', 3);
+            const LOG_LOC = [2297, 3001, 3945] as const;
+            const FROM = [2996, 3958] as const;
+            await say('::setstat agility 99');
+            await say('::setstat hitpoints 99');
+            await clearInventory();
+            for (let i = 0; i < 27; i++) await say('::give shark 1');
+            const xp = () => sdk.getState()!.skills.find(k => /^agility$/i.test(k.name))?.experience ?? 0;
+            const sharks = () => sdk.getState()!.inventory.filter(i => /^shark$/i.test(i.name));
+            const eat = async () => {
+                const f = sharks()[0];
+                if (!f) throw new Error('eat-probe: out of sharks');
+                await sdk.sendUseItem(f.slot, f.optionsWithIndex.find(o => /^eat$/i.test(o.text))?.opIndex ?? 1);
+            };
+            const rows: Array<Record<string, unknown>> = [];
+            for (const kind of ['ctrl', 'walk', 'click'] as const) {
+                for (let n = 0; n < trials; n++) {
+                    await tele(teleSpec(FROM[0], FROM[1]), FROM[0], FROM[1]);
+                    await sdk.waitForTicks(3);
+                    const x0 = xp();
+                    const s0 = sharks().length;
+                    const hp0 = sdk.getState()!.player!.hp;
+                    if (kind === 'click') await eat();
+                    await sdk.sendInteractLoc(LOG_LOC[1], LOG_LOC[2], LOG_LOC[0], 1);
+                    const t0 = sdk.getState()!.tick;
+                    let eatTick = -1;
+                    let xpTick = -1;
+                    let ate = false;
+                    while (xpTick < 0) {
+                        const s = await sdk.waitForTicks(1);
+                        if (s.tick - t0 > 40) break;
+                        if (kind === 'walk' && !ate && s.tick - t0 >= delay) {
+                            ate = true;
+                            await eat();
+                        }
+                        if (eatTick < 0 && sharks().length < s0) eatTick = s.tick;
+                        if (xp() - x0 >= 19.9) xpTick = s.tick;
+                    }
+                    const p = sdk.getState()!.player!;
+                    const row = {
+                        kind, n, xpTicks: xpTick < 0 ? 'lost' : xpTick - t0, eatTick: eatTick < 0 ? null : eatTick - t0,
+                        end: [p.worldX, p.worldZ], fell: p.worldZ > 6400, hpLost: hp0 - p.hp
+                    };
+                    rows.push(row);
+                    console.log(`EATPROBE ${JSON.stringify(row)}`);
+                    await sdk.waitForTicks(2);
+                }
+            }
+            console.log(`RESULT eat-probe ${where()} ${JSON.stringify(rows)}`);
+            return;
         }
         case 'rc': {
             const givers = (flag('givers') ?? process.env.GIVERS ?? '').split(',').filter(Boolean);
@@ -401,8 +524,47 @@ await runScript(async ({ bot: actions, sdk }) => {
             console.log(`RESULT rc ${JSON.stringify(lab.summary)}`);
             return;
         }
+        case 'agility-steps': {
+            // speedrun/skills/agility.ts steps against the lab: --level --hp --at=x,z --cakes=N --knife --to=99
+            // --only=step,step (default all) --opt=k=v,k=v (more steps() options). Logout is the logout button.
+            const { steps } = await import('../../../speedrun/skills/agility');
+            const { runSteps } = await import('../../../speedrun/runner/step');
+            const { TickLog, formatReport, report: tickReport } = await import('../../../speedrun/lib/ticks');
+            if (!DEMO) {
+                await clearInventory();
+                await say(`::setstat agility ${num('level', 1)}`);
+                await say(`::setstat hitpoints ${num('hp', 10)}`);
+                if (has('knife')) await say('::give knife 1');
+                for (let i = 0; i < num('cakes', 0); i++) await say('::give cake 1');
+                for (let i = 0; i < num('sharks', 0); i++) await say('::give shark 1');
+                if (flag('at')) {
+                    const [x, z] = flag('at')!.split(',').map(Number) as [number, number];
+                    await tele(teleSpec(x, z), x, z);
+                }
+                await sdk.waitForTicks(2);
+            }
+            const extra = Object.fromEntries((flag('opt') ?? '').split(',').filter(Boolean).map(kv => kv.split('=') as [string, string]));
+            const logout = async () => {
+                const t = sdk.getState()!.tick;
+                await sdk.sendClickComponent(2458);
+                for (let k = 0; k < 20 && sdk.getState()?.inGame; k++) await new Promise(r => setTimeout(r, 300));
+                console.log(`logout button clicked at tick ${t}; inGame ${sdk.getState()?.inGame}`);
+            };
+            let list = steps({ to: num('to', 99), ...extra, logout });
+            // short names (walk-gnome): tickprog-lab.sh splits a mode's arguments on ':'
+            if (flag('only')) list = list.filter(s => flag('only')!.split(',').some(n => s.name === n || s.name === `agility:${n}`));
+            const log = TickLog.open(`agility-lab-${Date.now()}`);
+            try {
+                await runSteps({ sdk, bot: actions, name: bot!, sessionId: 1 }, list, { log, c: {} as never, shouldStop: () => false });
+            } finally {
+                console.log(formatReport(tickReport(log.rows)));
+                for (const r of log.rows.filter(r => r.step.startsWith('agility:') && r.ticks === 0)) console.log(`ROW ${r.step} T${r.startTick} ${JSON.stringify(r.meta)}`);
+                console.log(`log ${log.path}; ${where()}`);
+            }
+            return;
+        }
         default:
-            throw new Error(`unknown mode ${mode}: probe, mine, fly, willow, oak, tav-willow, tree, pickpocket, agility, rc`);
+            throw new Error(`unknown mode ${mode}: probe, mine, fly, willow, oak, tav-willow, tree, pickpocket, agility, agility-steps, eat-probe, rc`);
     }
     }
 
