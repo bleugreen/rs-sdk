@@ -247,6 +247,45 @@ describe('the jump guard', () => {
     });
 });
 
+describe('a landed click is not re-sent while its script runs', () => {
+    test("Dwarf Cannon's railing at the demo's timing: the message lands on the next tick, the choice 7 ticks later; no re-send", async () => {
+        // railings.rs2: mes(...), p_delay(2), mes(...), p_delay(2), then the choice; 6-7 ticks on the demo
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(2556, 3475) }));
+        const msg = (text: string, tick: number) => ({ type: 0, text, sender: '', tick, fromSelf: false });
+        const p = actConverse(sdk as never, () => sdk.sendInteractLoc(2555, 3475, 15, 1), [/^try to replace/i], { resendEvery: 6, done: s => s.gameMessages.some(m => /you attempt/i.test(m.text)) });
+        await ticks(sdk, 1, () => ({ gameMessages: [msg('You inspect the railing...', 2)] }));
+        await ticks(sdk, 6);
+        expect(sdk.sent.filter(a => a.method === 'sendInteractLoc')).toHaveLength(1);
+        await ticks(sdk, 1, () => ({ dialog: { isOpen: true, isWaiting: false, pageId: 'r', options: [{ index: 1, text: 'Try to replace the railing.', buttonType: 1, componentId: 1 }, { index: 2, text: 'Leave it be.', buttonType: 1, componentId: 2 }] } }));
+        await ticks(sdk, 1, () => ({ dialog: closed, gameMessages: [msg('You attempt to replace the railing...', 10)] }));
+        await ticks(sdk, 3);
+        const r = await p;
+        expect(r.ok).toBe(true);
+        expect(sdk.sent.filter(a => a.method === 'sendInteractLoc')).toHaveLength(1);
+    });
+
+    test('a click that drew nothing is still re-sent after the idle ticks; a walk that stops short is re-clicked', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        const p = act(sdk as never, () => sdk.sendInteractLoc(5, 5, 1, 1), () => false, { resendEvery: 3, maxTicks: 4 });
+        await ticks(sdk, 4);
+        expect((await p).resends).toBe(1);
+
+        const w = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        const q = act(w as never, () => w.sendWalk(0, 10), () => false, { resendEvery: 3, maxTicks: 6 });
+        await ticks(w, 1, () => ({ player: player(8, 10) })); // it moves (a landed walk), then stops short
+        await ticks(w, 5);
+        expect((await q).resends).toBe(1);
+    });
+
+    test("other players' chat is not the engine answering the click", async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        const p = act(sdk as never, () => sdk.sendInteractLoc(5, 5, 1, 1), () => false, { resendEvery: 3, maxTicks: 4 });
+        await ticks(sdk, 1, () => ({ gameMessages: [{ type: 2, text: 'hi', sender: 'someone', tick: 2, fromSelf: false }] }));
+        await ticks(sdk, 3);
+        expect((await p).resends).toBe(1);
+    });
+});
+
 describe('act interrupts', () => {
     const page = (pageId: string, text: string): DialogState => ({ ...cont(pageId), allComponents: [{ id: 1, type: 4, buttonType: 0, option: '', text }] });
     const monkey = { name: 'monkey', match: (s: BotWorldState) => /monkey in your backpack/i.test(s.dialog.allComponents?.[0]?.text ?? ''), dismiss: 'continue' as const };

@@ -5,7 +5,9 @@
 // The server drops a click that arrives while a script holds the player (a
 // p_delay, a forced move), and the lite client drops an interaction it
 // believes has no route. Neither says so, so `act` re-sends while the player
-// stands still with no dialogue open. It also re-sends on "I can't reach
+// stands still with no dialogue open, unless the click's script has already
+// answered (a game message, an animation, an interface): that click landed,
+// and a re-send would restart its script. It also re-sends on "I can't reach
 // that!", which a door animation or an NPC in the way can cause.
 //
 // Jumps (the jump guard, `settle` and `ClickGuard`): the first click after the
@@ -23,7 +25,7 @@
 
 import type { BotSDK } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
-import type { BotWorldState, GroundItem, NearbyLoc, NearbyNpc } from '../../sdk/types';
+import { PLAYER_CHAT_TYPES, type BotWorldState, type GroundItem, type NearbyLoc, type NearbyNpc } from '../../sdk/types';
 import { converse, dismissInterrupt, matchInterrupt, type ConverseOptions, type ConverseResult, type ConverseSdk, type Interrupt } from './converse';
 import { pageText, type OptionPattern } from './dialogue';
 import { matchesItem, type ItemPattern } from './items';
@@ -111,6 +113,12 @@ const refusedSend = (r: unknown) => typeof r === 'object' && r !== null && (r as
  */
 export class ClickGuard {
     readonly counts: { refusedResends: number; unansweredResends: number } = { refusedResends: 0, unansweredResends: 0 };
+    /**
+     * The last send drew a script's answer (see replyKind): it landed and its script is running
+     * (a loc op that p_delays before its dialogue: Dwarf Cannon's railings, the Wilderness lever,
+     * the spirit trees), so it is never re-sent on idle ticks; re-sending would restart the script.
+     */
+    scriptAnswered = false;
     private refusedAt = -1;
     private sentAt = -1;
     private watching = false;
@@ -130,6 +138,7 @@ export class ClickGuard {
         const tick = s?.tick ?? 0;
         this.sentAt = tick;
         this.base = s ? snapshot(s) : null;
+        this.scriptAnswered = false;
         const jumpTick = s?.player?.teleportTick ?? null;
         // Only the first send after a jump is watched for a reply, and it is re-sent at most once.
         if (this.counts.unansweredResends === 0 && (this.opts.alwaysWatch || (jumpTick !== null && tick - jumpTick <= JUMP_WINDOW))) this.watching = true;
@@ -142,6 +151,7 @@ export class ClickGuard {
 
     /** Feed a published state; true when it re-sent. */
     step(s: BotWorldState): boolean {
+        if (!this.scriptAnswered && this.base && replyKind(this.base, s) === 'script') this.scriptAnswered = true;
         if (this.refusedAt >= 0) {
             // A send reported as scene_loading did go out and may have landed: a reply settles it.
             if (this.answered(s) || (this.base && replied(this.base, s))) {
@@ -183,15 +193,24 @@ function snapshot(s: BotWorldState) {
     return { x: p.x, z: p.z, level: p.level, anim: s.player?.animId ?? -1, inv: invKey(s), messages: s.gameMessages.length ? s.gameMessages.at(-1)!.tick : -1 };
 }
 
-function replied(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): boolean {
-    const p = pos(s);
-    if (p.x !== b.x || p.z !== b.z || p.level !== b.level) return true;
-    if (s.dialog.isOpen || s.modalOpen) return true;
+/**
+ * The engine's first answer to a click since `b` was taken: 'script' when its script has started
+ * (a dialogue or modal, a new animation, a game message, an inventory change), 'moved' when the
+ * only answer is a step, null when nothing yet. Other players' chat, and "I can't reach that!"
+ * (the click failing), are not answers.
+ */
+function replyKind(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): 'script' | 'moved' | null {
+    if (s.dialog.isOpen || s.modalOpen) return 'script';
     const anim = s.player?.animId ?? -1;
-    if (anim >= 0 && anim !== b.anim) return true;
-    // "I can't reach that!" is the click failing, not the engine answering it.
-    if (s.gameMessages.some(m => m.tick > b.messages && !CANT_REACH.test(m.text))) return true;
-    return invKey(s) !== b.inv;
+    if (anim >= 0 && anim !== b.anim) return 'script';
+    if (s.gameMessages.some(m => m.tick > b.messages && !PLAYER_CHAT_TYPES.includes(m.type) && !CANT_REACH.test(m.text))) return 'script';
+    if (invKey(s) !== b.inv) return 'script';
+    const p = pos(s);
+    return p.x !== b.x || p.z !== b.z || p.level !== b.level ? 'moved' : null;
+}
+
+function replied(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): boolean {
+    return replyKind(b, s) !== null;
 }
 
 type DismissSdk = Pick<BotSDK, 'getState' | 'sendClickDialog' | 'clickDialogByText' | 'sendCloseModal'>;
@@ -252,7 +271,9 @@ export async function act(sdk: StateSource & Partial<DismissSdk>, click: () => P
                     return false;
                 }
             }
-            if (every <= 0 || resends >= maxResends || s.dialog.isOpen) return false;
+            // The idle re-send is only for a click that drew nothing: one whose script answered has
+            // landed, and re-sending it would restart the script (rs/257: Dwarf Cannon's railing).
+            if (every <= 0 || resends >= maxResends || s.dialog.isOpen || guard.scriptAnswered) return false;
             const refused = messagesSince(s, sent + 1, CANT_REACH).length > 0;
             if (refused || (s.tick - Math.max(sent, still) >= every)) {
                 sent = s.tick;
