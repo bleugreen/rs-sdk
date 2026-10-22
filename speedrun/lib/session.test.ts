@@ -3,6 +3,7 @@ import { fakeCdp } from './fake-cdp';
 import { FakeSdk, flush, runToggleServer } from './fake-sdk';
 import { IF_RUN_ON, runIsOn } from './run-mode';
 import { loginTokenProof } from '../../server/webclient/login-token';
+import { IF_RETALIATE_OFF, IF_RETALIATE_ON } from './session';
 import {
     LOGOUT_BUTTON,
     abandonClient,
@@ -663,6 +664,45 @@ describe('login with inPage: the tab logs back in where it is', () => {
             expect(r.run).toEqual({ on: true, presses: 1 });
             expect(runPresses(sdk)).toBe(1);
             expect(runIsOn(sdk.getState())).toBe(true);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    /** The server's controls:com_2 / com_3: the published autoRetaliateEnabled follows a tick later. */
+    const retaliateServer = (sdk: FakeSdk) => (a: { method: string; args: unknown[] }) => {
+        if (a.method !== 'sendClickComponent' || (a.args[0] !== IF_RETALIATE_ON && a.args[0] !== IF_RETALIATE_OFF)) return;
+        const on = a.args[0] === IF_RETALIATE_ON;
+        setTimeout(() => sdk.tick({ autoRetaliateEnabled: on }), 1);
+    };
+    const retaliatePresses = (sdk: FakeSdk) => sdk.sent.filter(a => a.method === 'sendClickComponent' && (a.args[0] === IF_RETALIATE_ON || a.args[0] === IF_RETALIATE_OFF)).map(a => a.args[0]);
+
+    test('login with auto-retaliate on turns it off once, confirmed from the published setting', async () => {
+        const cdp = fakeCdp('srtest', PASSWORD);
+        try {
+            const { session, sdk } = pageSession(cdp);
+            sdk.state = { ...sdk.state!, varps: { option_run: 1 }, autoRetaliateEnabled: true };
+            sdk.onSend = retaliateServer(sdk);
+            cdp.hooks.onAutoLogin = () => getsIn(cdp, sdk);
+            const r = await login(session, { inPage: true, timeoutMs: 3_000 });
+            expect(r.retaliate).toEqual({ on: false, presses: 1 });
+            expect(retaliatePresses(sdk)).toEqual([IF_RETALIATE_OFF]);
+            expect(sdk.getState()!.autoRetaliateEnabled).toBe(false);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('login with auto-retaliate already off sends nothing (the button stops the current action)', async () => {
+        const cdp = fakeCdp('srtest', PASSWORD);
+        try {
+            const { session, sdk } = pageSession(cdp);
+            sdk.state = { ...sdk.state!, varps: { option_run: 1 }, autoRetaliateEnabled: false };
+            sdk.onSend = retaliateServer(sdk);
+            cdp.hooks.onAutoLogin = () => getsIn(cdp, sdk);
+            const r = await login(session, { inPage: true, timeoutMs: 3_000 });
+            expect(r.retaliate).toEqual({ on: false, presses: 0 });
+            expect(retaliatePresses(sdk)).toEqual([]);
         } finally {
             cdp.stop();
         }
