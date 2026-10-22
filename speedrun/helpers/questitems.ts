@@ -1004,6 +1004,7 @@ export const TASKS: Record<string, Task> = {
     logs: {
         id: 'logs',
         makes: g => [want('Logs', g.n(6))],
+        carry: () => [want('Bronze axe', 1)],
         run: g => g.chop(T.lumbridgeTrees, () => g.held('Logs') >= g.target('Logs'))
     },
     wydin: {
@@ -1030,6 +1031,9 @@ export const TASKS: Record<string, Task> = {
         // and the clay the bowl task turns into pots for Crafting 8. Tin is for bulk runs
         // only (`counts`, e.g. the Superheat fallback's ore): no quest here takes it.
         makes: g => [want('Copper ore', g.n(4)), want('Iron ore', g.n(2)), want('Clay', clayReserve(g) + clayForBowls(g)), want('Tin ore', 0)],
+        // The tutorial's pickaxe is kept across bank visits, but an account whose bank was
+        // handed over (or emptied by a deposit-all) starts without it.
+        carry: () => [want('Bronze pickaxe', 1)],
         async run(g) {
             const copper = g.target('Copper ore');
             const iron = g.target('Iron ore');
