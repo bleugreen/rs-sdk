@@ -258,8 +258,15 @@ async function main() {
 
     /** Click logout:try_logout (com 2458, as speedrun/lib/session.ts) until the server sends LOGOUT. */
     let logoutInfo: { confirmed: boolean; utc: string } | null = null;
+    let beforeLogout: (() => Promise<void>) | null = null;
+    let bankReturn: { opened: boolean; inventoryEmptyAfter: boolean; returned: boolean } | null = null;
     cleanup = async () => {
         cleanup = null;
+        try {
+            await beforeLogout?.();
+        } catch (e) {
+            console.error('[decode-cap] before logout:', e);
+        }
         for (let i = 0; i < 6 && !client.isLoggedOut(); i++) {
             client.writeOpcode(ClientProt.IF_BUTTON);
             client.out.p2(2458);
@@ -280,6 +287,70 @@ async function main() {
     };
 
     await waitTicks(8);
+
+    // --bank: an account with an empty inventory borrows one item from its own bank (Banker op 3,
+    // [apnpc3,_bank_teller] -> openbank in interface_bank/scripts/banker.rs2) and deposits
+    // everything back before the logout. One item is enough: it is the tracer, and every other
+    // slot is empty. --lab-bank-setup first stands a lab bot in Varrock west bank and banks its kit.
+    const invEmpty = () => ticks.at(-1)!.inv.every(o => o === 0);
+    const waitUntil = async (pred: () => boolean, maxTicks: number) => {
+        for (let i = 0; i < maxTicks && !pred(); i++) await nextTick();
+        return pred();
+    };
+    const openBank = async (): Promise<boolean> => {
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const idx = client.findNpcIndexByExactName('Banker');
+            if (idx === undefined) throw new Error('no Banker in view');
+            client.interactNpc(idx, 3);
+            client.flush();
+            if (await waitUntil(() => client.isBankOpen(), 15)) return true;
+        }
+        return false;
+    };
+    const closeModal = async () => {
+        client.writeOpcode(ClientProt.CLOSE_MODAL);
+        client.flush();
+        await waitTicks(3);
+    };
+    const BANK_SIDE_INV = 2006; // bank_side:inv (server/webclient/src/lite/actions.ts)
+    const depositAll = async () => {
+        for (let pass = 0; pass < 4; pass++) {
+            const side = Array.from(client.ifType(BANK_SIDE_INV)?.linkObjType ?? []);
+            const slots = side.map((o, i) => (o > 0 ? i : -1)).filter(i => i >= 0);
+            if (!slots.length) return;
+            for (const s of slots) client.bankDeposit(s, -1);
+            client.flush();
+            await waitTicks(3);
+        }
+    };
+    if (args.has('lab-bank-setup')) {
+        cheat('tele 0,49,53,47,48'); // 3183,3440, Varrock west bank
+        await waitTicks(6);
+        if (!(await openBank())) throw new Error('lab: bank did not open');
+        await depositAll();
+        await closeModal();
+    }
+    if (args.has('bank') && invEmpty()) {
+        if (!(await openBank())) throw new Error('bank did not open');
+        const items = client.getBankItems();
+        if (!items.length) throw new Error('the bank is empty');
+        client.bankWithdraw(items[0]!.slot, 1);
+        client.flush();
+        await waitTicks(3);
+        await closeModal();
+        await waitUntil(() => !invEmpty(), 10);
+        console.log(`bank: withdrew 1 item (bank slot ${items[0]!.slot}); inventory ${invEmpty() ? 'STILL EMPTY' : 'holds it'}`);
+        beforeLogout = async () => {
+            beforeLogout = null;
+            const opened = await openBank();
+            if (opened) await depositAll();
+            await closeModal();
+            await waitTicks(2);
+            const returned = opened && invEmpty();
+            bankReturn = { opened, inventoryEmptyAfter: invEmpty(), returned };
+            console.log(`bank: deposit back ${returned ? 'confirmed (inventory empty again)' : 'NOT confirmed'}`);
+        };
+    }
     // The first inventory frame can trail the first in-world ticks; wait for it.
     for (let i = 0; i < 40 && ticks.at(-1)!.inv.every(o => o === 0); i++) await nextTick();
     if (ticks.at(-1)!.inv.every(o => o === 0)) {
@@ -474,6 +545,7 @@ async function main() {
 
     await cleanup?.();
     report.logout = logoutInfo;
+    report.bankReturn = bankReturn;
     save();
     process.exit(0);
 }
