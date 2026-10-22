@@ -87,23 +87,75 @@ directory. With `start: 'sighted'` (and `scoredSha256` in its fleet options) it 
 With `start: 'cue'` it runs beside the scored client through `standalone.ts`
 (`{ account, role: 'fm-row', options: { start: 'cue', row, restock } }`).
 
+## Opt-ins for a busy row and staggered droppers
+
+The assisted Firemaking attempt (rs/228) runs on a row beside the Lumbridge spawn with six
+preloaded droppers, one inventory each. It needs four options that S03 does not use. Each is off
+by default, and with all of them off the dropper behaves exactly as above.
+
+- **`tiles`**: an explicit list of tiles, `[[x,z],...]`, walked in order and cycled, in place of
+  the `row` snake. A snake cannot leave out tiles that refuse a fire (decor), and a refused
+  planned tile never shows a fire, so progress would stall on it. Leave those tiles out of the
+  list. Giving both `row` and `tiles` is an error.
+- **`skipOccupied`**: before a drop, if the log's tile has a fire or any ground item except ashes
+  on it, the log goes on the next free tile, and the logs after it follow it. Ashes are allowed
+  because a burnt-out fire leaves them for 100 ticks (`firemaking.rs2`), so on a 50-tile lap our
+  own ashes often lie on the next lap's tiles, and they do not stop a light. The lighter follows
+  the logs it can see, not a tile index.
+  - *Blocks.* A skip pushes a log one tile on. If that tile were the next dropper's first, the
+    next dropper could not see our log, which is private for 100 ticks, and would drop on top of
+    it. So each inventory gets its own block of 28 + `spareTiles` planned tiles. Skips use up that
+    block's spares and never cross into the next block. A log with no free tile left is dropped
+    on the block's last tile and logged `skip: block full`. `spareTiles` defaults to 2 with
+    parts > 1 and 0 with one dropper, and it can be set to 0 or more. One dropper sees all its
+    own logs, so with parts = 1 a skip has no block limit and shifts the later logs on.
+    `plannedTiles(path, parts, spareTiles)` is the layout as a pure function (slot, tile,
+    inventory, part, and the log, or null on a spare), for lab scripts and tick logs.
+  - *Progress.* A busy row has foreign fires, and a cycled list repeats tiles, so a fire on a
+    tile no longer proves that SCORED lit our log. In this mode a fire counts only if it is
+    fresh (`FireLedger`): its tile was watched with no fire on it after arming, before the fire
+    appeared. A tile watched clear forgets its fire, so a tile relit on the next lap counts again.
+    An own log counts on the tile it was actually dropped on, by a fire first seen at or after
+    the drop. Another part's log, which we cannot see, counts by the first fresh fire from the
+    slot after the last lit log's fire to the end of its block (`advanceFresh`).
+- **`restock: {kind:'held'}`**: the dropper logs in already carrying its one inventory and never
+  restocks. At start it checks the load (spares on top are fine) and throws if it is short. It
+  refuses a part that owns more than one inventory, which means `parts` must be 6 for the
+  route's 157 logs. `restockTicks` defaults to 0.
+- **`cueAt: 'written'`** (with `start: 'cue'`; the default is `'seen'`): a dropper that logs in
+  after the go file was written counts from the file's `ms`, not from the tick it sees it.
+  `start = tick_now - round((Date.now() - ms) / tickMs) + 1 + reveal + lead` (`cueTick`), with
+  `tickMs` from `lib/wait.ts` `tickMs()` (`SPEEDRUN_TICK_MS`, else `NODE_TICKRATE`).
+  - *Catch-up.* A correct `start` alone is not enough for a late dropper. By the time it arms,
+    the fires from log 0 on are burnt out, so `advance` never leaves log 0, and `needTick`
+    slides with the clock, putting dropper k's first log about 4 x 28k ticks late. So under
+    `written` (and only then), while progress is still at log 0, the dropper takes the frontier
+    from the highest log that burns now together with the log before it (one fire alone may be
+    anyone's), if SCORED can have got that far: log i is lit no sooner than `start` + 4(i + 1)
+    (`catchUp`, logged as `catch-up`). It then expects the next log from the next tick on.
+
 ## Options
 
 | Option | Default | Meaning |
 |---|---|---|
 | `row` | `{x:3019, z:3362, len:27, rows:2}` | the snake (firemaking-line.ts `--row`/`--rows`). The default is the confirmed Falador east lab row; the run's row beside the coop (SUPPLIES.md H2) is unconfirmed |
+| `tiles` | none | `[[x,z],...]` in place of `row`, cycled (above) |
 | `part`, `parts` | 0, 1 | this dropper's share of the inventories |
+| `skipOccupied`, `spareTiles` | false; 2 with parts > 1, else 0 | above |
 | `start`, `scoredSha256`, `sightRange` | `sighted`, none, 15 | above. The hash, never the name |
-| `restock` | `{kind:'bank', bank: Falador east (3013,3357)}` | `cheat` (::give) for the local lab only |
+| `cueAt`, `tickMs` | `seen`; `lib/wait.ts` `tickMs()` | above |
+| `restock` | `{kind:'bank', bank: Falador east (3013,3357)}` | `cheat` (::give) for the local lab only; `held` above |
 | `lead` | 4 | ticks a log is public before SCORED's earliest want of it |
-| `restockTicks` | cheat 6; bank: distance + 20 | a restock's round trip, last drop to next drop |
+| `restockTicks` | cheat 6; held 0; bank: distance from the first tile + 20 | a restock's round trip, last drop to next drop |
 | `dropTicks` | 2 | ticks per drop when catching up |
 | `scanRadius` | 32 | scan for fires beyond the state's 15 tiles |
 | `lingerTicks` | 400 | after the last drop, how long to watch for it to be lit |
 
 Log lines: `phase` (restock, armed, dropping), `start`, `drop` (`i`, tier, tick, ms, target,
-need, lit; `early` if it went down more than 100 ticks before its need), `progress` every 10 lit,
-`lost`, `restocked` (ticks), `fm-row: finished`.
+need, lit; `early` if it went down more than 100 ticks before its need; `slot` and `tile` with
+`skipOccupied`), `progress` every 10 lit, `lost`, `restocked` (ticks), `fm-row: finished`. The
+opt-ins add `skip` and `skip: block full` (i, from, to), `held` (the load checked), `cue`
+(seenTick, writtenMs, cueTick) and `catch-up` (lit, slot).
 
 ## Lab acceptance
 
@@ -151,6 +203,13 @@ Where each number comes from:
 - **Bank restock** is written (Falador east by default; `withdrawMany` of the inventory's tiers)
   but untested; the lab restocked by `::give`. Measure a trip from the chosen row, and set
   `restockTicks` and `parts` from `maxRestockTicks`.
+- **The opt-ins are unit-tested only.** No lab run has exercised `skipOccupied`, `held` or
+  `cueAt: 'written'` with its catch-up against a server yet. rs/228 labs them first.
+- **Restart with `skipOccupied`** resumes by the planned tiles (`resumeCursor`), so after skips in
+  the current block it can be off by up to `spareTiles` logs. A held dropper's lab plan does not
+  restart mid-row.
+- **Catch-up trusts a burning pair.** Two foreign fires on consecutive planned tiles, within
+  SCORED's reach on schedule, would put the frontier too far on, and logs would turn public early.
 - **Demo.** No demo run, and no demo credentials for `cairn_f01`/`f02` yet (they would go in
   `~/rs-fleet/bots/` or, for a run-machine helper, bbs `~/rs-run-machine/bots/`, created with
   `accounts.ts createAccountEnv`). The logs come from the woodcutters' stock through rs/41.
