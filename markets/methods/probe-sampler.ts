@@ -246,6 +246,11 @@ export interface ProbeContext<O> {
     /** Aborted by SIGINT/SIGTERM: return at the next safe point; the lifecycle then logs out. */
     signal: AbortSignal;
     sampler: Sampler;
+    /**
+     * The probe's own totals, filled in as it goes: the totals line carries whatever is here when
+     * the run ends, finished, failed or cancelled by a signal mid-action.
+     */
+    totals: Record<string, unknown>;
     /** An `event` line in the output, and the same on stderr. */
     event(message: string, data?: Record<string, unknown>): void;
 }
@@ -256,8 +261,12 @@ export interface ProbeSpec<O extends CommonOptions> {
     parse(a: Args): O;
     /** Item counts each sample carries, by label. */
     items: Readonly<Record<string, RegExp>>;
-    /** Runs the probe; returns its own totals. Must check `signal` between actions. */
-    run(ctx: ProbeContext<O>): Promise<Record<string, unknown>>;
+    /**
+     * Runs the probe, keeping its totals in `ctx.totals`. It runs inside the SDK's execution
+     * context (sdk/execution-context.ts), so a signal also rejects the SDK wait in flight; loops
+     * should still check `signal` between actions.
+     */
+    run(ctx: ProbeContext<O>): Promise<void>;
 }
 
 export interface ProbeDeps {
@@ -271,6 +280,8 @@ export interface ProbeDeps {
     sink(out: string | null): Sink;
     stderr(line: string): void;
     tickMs(): number;
+    /** Run `work` with `signal` as the SDK's execution signal. */
+    withSignal<T>(signal: AbortSignal, work: () => Promise<T>): Promise<T>;
 }
 
 export const defaultDeps: ProbeDeps = {
@@ -295,6 +306,10 @@ export const defaultDeps: ProbeDeps = {
     sink: jsonlSink,
     stderr: line => process.stderr.write(line + '\n'),
     tickMs: () => Number(process.env.SPEEDRUN_TICK_MS || process.env.NODE_TICKRATE) || 300,
+    async withSignal(signal, work) {
+        const { executionContext } = await import('../../sdk/execution-context');
+        return executionContext.run({ signal }, work);
+    },
 };
 
 /**
@@ -331,7 +346,7 @@ export async function runProbe<O extends CommonOptions>(spec: ProbeSpec<O>, argv
     let sampler: Sampler | null = null;
     let end: TotalsRecord['end'] = 'done';
     let error: string | undefined;
-    let own: Record<string, unknown> = {};
+    const own: Record<string, unknown> = {};
     let logout: TotalsRecord['logout'] = null;
     try {
         session = await deps.open(options.account);
@@ -345,7 +360,8 @@ export async function runProbe<O extends CommonOptions>(spec: ProbeSpec<O>, argv
             if (options.out) deps.stderr(JSON.stringify(rec));
         };
         event('start', { options });
-        own = await spec.run({ session, sdk, bot, options, signal: controller.signal, sampler: s, event });
+        const ctx: ProbeContext<O> = { session, sdk, bot, options, signal: controller.signal, sampler: s, totals: own, event };
+        await deps.withSignal(controller.signal, () => spec.run(ctx));
         if (controller.signal.aborted) end = 'signal';
     } catch (e) {
         if (controller.signal.aborted) end = 'signal';
@@ -354,8 +370,6 @@ export async function runProbe<O extends CommonOptions>(spec: ProbeSpec<O>, argv
             error = e instanceof Error ? e.message : String(e);
             deps.stderr(`${spec.name}: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
         }
-        const partial = (e as { totals?: Record<string, unknown> } | null)?.totals;
-        if (partial) own = partial;
     }
     if (sampler) sampler.phase = 'logout';
     if (session) {
@@ -388,13 +402,6 @@ export async function runProbe<O extends CommonOptions>(spec: ProbeSpec<O>, argv
     if (session) await deps.close(session);
     for (const off of offs) off();
     return end === 'error' || !logout?.ok ? 1 : 0;
-}
-
-/** An error that carries the totals gathered before it, so the totals line keeps them. */
-export class ProbeError extends Error {
-    constructor(message: string, readonly totals: Record<string, unknown>) {
-        super(message);
-    }
 }
 
 // ------------------------------------------------------------------ shared moves
