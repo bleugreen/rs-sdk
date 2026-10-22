@@ -293,6 +293,72 @@ describe('runTo: the chained run', () => {
         expect(at(sdk)).toEqual({ x: 3230, z: 3200 });
     });
 
+    /**
+     * S12 B on the browser (rs/484): the run's click tick fell on a frame the browser published while
+     * it rebuilt the map region (sceneReady false), whose loc list lacked the house door. The click
+     * went past the door, and only a stall found it again: +9 ticks against lite. `listDoor` decides,
+     * from the tick's state, whether the closed door is listed; the door opens on the interact.
+     */
+    function doorRun(listDoor: (s: BotWorldState) => boolean, first: Partial<BotWorldState> = {}) {
+        const shut = loc(1530, 'Door', 3216, 3200, ['Open']);
+        const sdk = world(3200, 3200, first);
+        let open = false;
+        const from: Array<{ tick: number; x: number }> = [];
+        const sim = simulateWalking(sdk, { blocked: x => !open && x === 3216 });
+        const prev = sdk.onSend;
+        sdk.onSend = (a, f) => {
+            prev(a, f);
+            if (a.method === 'sendInteractLoc') {
+                from.push({ tick: f.state!.tick, x: f.state!.player!.worldX });
+                open = true;
+                queueMicrotask(() => f.tick({ nearbyLocs: [loc(1531, 'Door', 3216, 3200, ['Close'])] }));
+            }
+        };
+        const each = (s: BotWorldState): Partial<BotWorldState> => (open ? {} : { sceneReady: true, nearbyLocs: listDoor(s) ? [shut] : [] });
+        return { sdk, sim, from, run: () => drive(sdk, runTo(sdk as never, { x: 3240, z: 3200 }), 600, each) };
+    }
+
+    test('a door missing from a mid-rebuild frame on the click tick is opened at the next built tick, with no stall', async () => {
+        // Tick 100 is the rebuild frame: it lists a loc of the old region and not the door.
+        const t = doorRun(() => true, { sceneReady: false, nearbyLocs: [loc(1530, 'Door', 3120, 3120, ['Open'])] });
+        const r = await t.run();
+        expect(r.ok).toBe(true);
+        expect(t.sim.clicks[0]).toMatchObject({ x: 3220, tick: 100 });
+        expect(t.from).toEqual([{ tick: 101, x: 3202 }]);
+        expect(sends(t.sdk, 'sendInteractLoc')).toEqual([[3216, 3200, 1530, 1]]);
+        expect(r.doors).toEqual([expect.objectContaining({ x: 3216, z: 3200, state: 'closed' })]);
+        expect(at(t.sdk)).toEqual({ x: 3240, z: 3200 });
+    });
+
+    test('lite: the same door listed on the click tick is opened instead of that click', async () => {
+        const t = doorRun(() => true, { nearbyLocs: [loc(1530, 'Door', 3216, 3200, ['Open'])] });
+        const r = await t.run();
+        expect(r.ok).toBe(true);
+        expect(t.sdk.sent[0]).toEqual({ method: 'sendInteractLoc', args: [3216, 3200, 1530, 1] });
+        expect(t.from).toEqual([{ tick: 100, x: 3200 }]);
+        expect(at(t.sdk)).toEqual({ x: 3240, z: 3200 });
+    });
+
+    test('a door past the 15-tile loc scan at the click is opened as soon as it is listed, before the player reaches it', async () => {
+        const t = doorRun(s => s.player!.worldX >= 3216 - 15);
+        const r = await t.run();
+        expect(r.ok).toBe(true);
+        expect(t.sim.clicks[0]).toMatchObject({ x: 3220, tick: 100 });
+        // Listed from 3202 on (tick 101); opened on that tick, far short of the wall at 3216.
+        expect(t.from).toEqual([{ tick: 101, x: 3202 }]);
+        expect(at(t.sdk)).toEqual({ x: 3240, z: 3200 });
+    });
+
+    test('a door listed only on a frame published mid-rebuild is never opened from it', async () => {
+        // The door reads closed only on rebuild frames (sceneReady false); every built frame lists none.
+        const sdk = world(3200, 3200);
+        simulateWalking(sdk);
+        const ghost = loc(1530, 'Door', 3210, 3200, ['Open']);
+        const r = await drive(sdk, runTo(sdk as never, { x: 3230, z: 3200 }), 600, s => (s.tick % 2 ? { sceneReady: false, nearbyLocs: [ghost] } : { sceneReady: true, nearbyLocs: [] }));
+        expect(r.ok).toBe(true);
+        expect(sends(sdk, 'sendInteractLoc')).toEqual([]);
+    });
+
     test('an open door on the route is recorded open and never clicked', async () => {
         const sdk = world(3200, 3200, { nearbyLocs: [loc(1531, 'Door', 3210, 3200, ['Close'])] });
         simulateWalking(sdk);
