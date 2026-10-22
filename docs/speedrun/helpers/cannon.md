@@ -13,7 +13,8 @@ ROLE_OPTIONS='{"balls":1160}' bun speedrun/helpers/cannon.ts cairn_h92
 
 With `serve` in its options the same role is the **cannon holder** at run time: it hands the
 scored account one set and its cannonballs in one trade (H11, H23) and can take them back
-(H11r). See "Serve mode" below.
+(H11r), handing over more items in that same take-back trade (H11r: Monkey Madness's magic
+shortbow and 200 rune arrows). See "Serve mode" below.
 
 ## Options
 
@@ -133,12 +134,13 @@ ROLE_OPTIONS='{"serve":{"id":"H11","tile":{"x":2570,"z":3463},"balls":100,"retur
   bun speedrun/helpers/cannon.ts cairn_h92
 ```
 
-1. **Load.** Unless it already carries a set, `balls` cannonballs and every `serve.extras` item,
-   it banks everything at `serve.bank` (default Falador west; every bank is one bank) and
-   withdraws one of each part, exactly `balls` balls and each extra's `count`. Exactly the load
-   is carried, so each item is one All press in the trade (`items.ts amountButtons`): five for
-   the set and balls, one more per extra. The load must fit 28 slots, in the holder's inventory
-   and in the offer alike (`cannon.ts loadStacks`: one per part, one for the balls, one per
+1. **Load.** Unless it already carries a set, `balls` cannonballs, every `serve.extras` item and
+   every `serve.returnExtras` item, it banks everything at `serve.bank` (default Falador west;
+   every bank is one bank) and withdraws one of each part, exactly `balls` balls and each extra's
+   and return extra's `count`. Exactly the load is carried, so each item is one All press in its
+   trade (`items.ts amountButtons`): five for the set and balls, one more per extra; 200 rune
+   arrows carried as 200 are one All press too, never an X offer. The load and the return extras
+   must fit 28 slots together (`cannon.ts loadStacks`: one per part, one for the balls, one per
    stackable extra, `count` per unstackable one); options that do not fit are refused at start.
 2. **Stand** on `serve.tile` (walking over White Wolf Mountain if the tile is west of it).
 3. **Find the receiver by name hash, never by name**: `serve.receiver` (the sha256 of the scored
@@ -154,14 +156,25 @@ ROLE_OPTIONS='{"serve":{"id":"H11","tile":{"x":2570,"z":3463},"balls":100,"retur
    `expectTheirs: ANY_OFFER`, so anything the scored account offers in that trade is taken back.
    No hand-off plans to hand anything back here, and taking it is harmless: an offer from SCORED
    resets both accepts and the holder re-accepts. A trade opened by anyone else is declined.
-6. With `serve.returnTile`: **take the set back** (H11r). It stands there, waits for the
-   receiver's own trade request (matched by hash in the chat), and receives with
-   `receiveFrom`, wanting the four parts; leftover balls are optional.
+6. With `serve.returnTile`: **take the set back** (H11r, `cannon.ts takeBackTrade`). It checks
+   there is room for the set and the balls (`takeBackFits`: the slots its own offer frees count
+   as free, as `trade.rs2 enough_trade_space` counts them), stands there, waits for the
+   receiver's own trade request (matched by hash in the chat) and wants the four parts; leftover
+   balls are optional. Without `serve.returnExtras` it only receives (`lib/trade.ts receiveFrom`,
+   whose receiver declines any trade it has offered into). With them it trades both ways in the
+   one trade (`lib/trade.ts swap`): the return extras out, the set in. The outcome counts only as
+   a delivery both ways (`takeBackDelivered`: the set arrived and every return extra left); a
+   completed trade that is not is flagged for a person.
 
 Each hand-off is recorded in the role's `ctx.state` under `cannon-serve:<id>`: `giving` just
-before the trade, then `gave`, then `returned`. A restarted holder resumes from the record and
-never gives a hand-off twice; a restart after `giving` with the load gone is taken as given and
-flagged for a person (`attention`). Give each hand-off its own `serve.id` (H11, H23).
+before the trade, then `gave`, then (with return extras) `returning` just before the take-back
+trade, then `returned`. A restarted holder resumes from the record and never gives a hand-off
+twice. A restart after `giving` with the load gone is taken as given and flagged for a person
+(`attention`). A restart after `gave` goes to the take-back, withdrawing any return extra that is
+no longer carried. A restart after `returning` with the return extras still carried means the
+take-back trade never completed (a closed trade puts offered items back), so the take-back runs
+again; with them gone it is taken as returned, flagged unless the set is in hand. Give each
+hand-off its own `serve.id` (H11, H23).
 
 | `serve` option | Default | Meaning |
 |---|---|---|
@@ -172,6 +185,7 @@ flagged for a person (`attention`). Give each hand-off its own `serve.id` (H11, 
 | `receiver` | the cue | sha256 hex of the scored account's canonical name |
 | `bank` | Falador west | Where to load |
 | `returnTile` | none | Take the set back here afterwards (H11r) |
+| `returnExtras` | none | `[{ item, count, obj? }]`: given in the take-back trade at `returnTile` (required with it), validated as `extras` and distinct from them. Carried from the start with the load. H11r: `Magic shortbow` 1 (`obj` `magic_shortbow`), `Rune arrow` 200 (`rune_arrow`) |
 | `labStock` | false | Local lab only: make the load with staff commands |
 | `noReplyTicks`, `resendTicks`, `cueDir` | 2, 100, `RC_CUE_DIR` | As the bone giver |
 | `scope` | required without `receiver` | `{ step, family: 'cannon' }` (S14 or S27): the cue the receiver hash comes from; another step's cue is ignored (altar-giver.md, "The cue contract") |
@@ -179,7 +193,11 @@ flagged for a person (`attention`). Give each hand-off its own `serve.id` (H11, 
 **The scored side's contract**: stand beside the holder and call
 `receiveFrom(holder, { want: loadWant(balls) })` (`loadWant` is exported from `cannon.ts`). A want
 is a minimum, so the extras need not be listed; add them to `want` to refuse a trade without
-them. For H11r, `give(holder, loadSpecs(leftover))`.
+them. For H11r without return extras, `give(holder, loadSpecs(leftover))`. With return extras
+the holder offers them in the same trade, which a plain `give` declines (its partner may offer
+nothing by default): use `give(holder, loadSpecs(leftover), { expectTheirs })` with the return
+extras as `expectTheirs`, or `swap(holder, loadSpecs(leftover), want)`. The stand-in receiver's
+give-back (`cannon-receiver.ts`) is the plain `give`, so it does not cover return extras yet.
 
 **Stand-in receiver**: `speedrun/helpers/cannon-receiver.ts` writes the cue, waits for the
 holder's request, receives as the scored step does and reports the trade's ticks on its own

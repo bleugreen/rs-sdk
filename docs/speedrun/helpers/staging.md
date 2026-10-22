@@ -27,7 +27,7 @@ b01-b04, h70-h75) show nothing. Every move below was confirmed on both sides: th
 |---|---|---|---|
 | Trade giver 1 (`mule` role, packages served in order) | **cairn_mule1** (fleet, Varrock west bank; `serve` set on run day) | Ashburn run machine; credentials go there only through host, on run day | H1, H3, H4, H4k, H4p, H6-H10, H12-H16, H18-H20, H21d, H21e, H22, H23's potions and sharks |
 | Trade giver 2 | **cairn_mule2** (outside fleet.json, credentials in `~/rs-fleet/bots`; the rehearsal-kit giver until the run; named by rs/41, 01:36) | Ashburn, as above | **H21c, the wine giver** (below), and any hand-off trade giver 1 cannot reach in time (rs/117 splits them); holds attempt 2's axe and pickaxe |
-| Cannon helper | cairn_h92 (`cannon.ts` serve mode, dev copy `~/rs-dev/cannon`) | bbs | H11, H11r, H23's cannon, balls and shortbow |
+| Cannon helper | cairn_h92 (`cannon.ts` serve mode, dev copy `~/rs-dev/cannon`) | bbs | H11, H11r, H23's cannon, balls and shortbow; H11r's Monkey Madness shortbow and rune arrows |
 | Bone givers | cairn_b01-b04 (`bone-giver.ts`) | Ashburn | H4.1-H4.n; the last load also gives T07-08's Camelot runes |
 | Air-altar givers (S06) | 7 givers: h70, h71, h72 staged by rs/196's morning sequence, 4 not yet named | Ashburn | H5 |
 | Body-altar givers (S21) | cairn_t01-t22, spares t23-t27 (`roster.ts`) | Ashburn | H17 |
@@ -71,7 +71,7 @@ named in the gap column.
 | H9 | mule1 | in: coins 5, law 2, water 2, shark 3 | mule1 | **yes** | - |
 | H10 | mule1 | in: law 5, water 5, air 3, sharks up to 8 in all (8 staged; the giver tops up to 8 by what SCORED holds) | mule1 | **yes** | - |
 | H11 | h92 | in: cannon set 1, cannonballs 100, mithril scimitar 1, law 4, water 4, shark 2 | **h92's bank (12:19 UTC): 2 sets, 1,416 balls, mithril scimitar 2, law 12, water 18, shark 7, magic shortbow 3** (from mule1, rs331-mule1-h92-extras-1); the third scimitar is on h63 | partly | On run day h92's serve config gets `serve.extras` (rs/344, in the fleet's code since 50ddd0f5): `[{"item":"Mithril scimitar","count":1},{"item":"Law rune","count":4},{"item":"Water rune","count":4},{"item":"Shark","count":2}]`; h92's dev copy (`~/rs-dev/cannon`) predates it, so the run-day serve runs from the fleet's code (rs/41). **Risk:** h92's accumulating role keeps `food: 5` and may eat banked sharks; top up to 6 before the run (rs/41). h63's scimitar to h92 with the next consolidation (rs/331) |
-| H11r | h92 | back: cannon set, leftover balls (~30) | - | n/a | h92 receives (serve `returnTile`) |
+| H11r | h92 | back: cannon set, leftover balls (~30); in: magic shortbow 1, rune arrow 200 (Monkey Madness's, moved here from H12 by rs/158; SCORED wields them at once) | h92: magic shortbow 3 (2 per attempt: H11r and H23); rune arrows: none yet (mule1 holds 200) | partly | One two-way trade at the Ardougne landing after S14: h92's serve config gets `serve.returnExtras` `[{"item":"Magic shortbow","count":1},{"item":"Rune arrow","count":200}]` beside `returnTile` (`cannon.ts` take-back through `lib/trade.ts swap`). h92 carries them from its bank with the H11 load, so **h92 holds 2 magic shortbows and 200 rune arrows per attempt**. The scored side's take-back must accept them (`give` with `expectTheirs`, or `swap`) |
 | H12 | mule1 | in: gold bar 1, ball of wool 1, monkey bones 1, banana 5, magic shortbow 1, rune arrow 200, prayer potion(4) 2, antipoison(4) 1, shark 9, law 6, air 6, fire 2 (two real Varrock sets), water 4; back: staff of fire, mithril scimitar, knife, Fight Arena's 1,000 coins, dead items | everything on the list is on mule1: gold bar, bananas, wool 3, monkey bones 2, magic shortbow 6, rune arrows 200, prayer potion(4) and antipoison(4) (rs/348, 11:55 UTC), sharks, runes | **held, not final** | **rs/158 hold (05:0x PDT): the 9-shark + 2-potion floor died in rs/201's A-Z chains**; main ruled a re-sized kit plus a new mid-quest top-up on the gnome half (placeholder **H12m**). More sharks and doses, split across H12 and H12m, come from rs/201's execution 4 via rs/158; then they are staged (sharks on hand: mule1 60, ~148 elsewhere) |
 | H13 | mule1 | in: blood 70, air 400, magic potion(4) 1 (insurance), prayer potion(4) 2, law 4, water 4, staff of fire 1, knife 1 (both back from H12); back: the magic shortbow | air, runes, blood (H13's 70 of 456), prayer potion(4) 2 (rs/348) on mule1; magic potion (insurance only): GE bid resting on h62, none held | **yes** (the insurance potion aside) | Blood: **456 on mule1** (rs/347: 94 from h88 at 09:46, 276 and 86 from h90 at 10:50 and 11:51 UTC): this row's 70 held for attempt 1, 386 toward S18's 500 (rs/372's chest batches from h47 close it ~05:10 PDT). Potions: rs/348 is brewing attempt 1's on h84 (prayer(4) 4, antipoison 2, superantipoison(4) 2, super attack, super strength) for mule1; **h84 is not to be touched until rs/348 says it is free**. Death runes for rs/185's possible Fire Blast at Kolodion: standing bids below. **Allocation (rs/158, rs/185 via rs/41): the first 70 blood runes of each attempt go to this row (S16's Fire Wave kit), the rest to S18's courier load 0 (H14).** Potions: rs/348. The magic potion is insurance only |
 | H14 | S18 courier (trade-giver pool) | **load 0** at S18's start: blood 500 and air 500 (Charge, 163 casts x 3 = 489 each), headless arrow 4,410, arrowtips bronze 60, iron 90, steel 135, mithril 1,485, shark 2, babydragon bones to every free slot less one (~16) | all on mule1 except blood and bones | partly | Blood: rs/347; the courier gets every blood rune after H13's first 70 of the attempt (500 for Charge). Bones: babydragon only (rs/158), from h51-h54 to the courier (rs/41) |
@@ -107,12 +107,15 @@ the ledger on main says when the run starts. Leftover kits after an attempt go b
 and balls (H11, H23) are on h92, and the wine (H21c) is on h40. Every other row is partly staged,
 with the missing items named above.
 
-**Two magic shortbows per attempt (rs/158's ruling, 02:4x PDT).** mule1 gives one at H12 and
-takes it back at H13, where it stays. h92 holds its own from the start and gives it in H23's
-cannon trade, with the set and balls (rs/344 adds `serveExtras` to `cannon.ts` serve). There is
-no mid-run bow transfer. rs/346 fletches them, one to mule1 and one to h92 per attempt. Fallback
-if they are late: a willow shortbow from the Ranging Guild shop (stock 20), 2 per attempt bought
-by cairn_h91 when rs/158 or rs/185 asks (rs/41).
+**Two magic shortbows per attempt (rs/158's ruling, 02:4x PDT), both now h92's.** rs/158 has
+since moved Monkey Madness's bow and its 200 rune arrows from H12 (mule1) to H11r: h92 gives
+them in the take-back trade at the Ardougne landing after S14 (`serve.returnExtras`), and SCORED
+wields them at once. h92's second bow goes in H23's cannon trade, with the set and balls
+(`serve.extras`, rs/344). So h92 holds **2 magic shortbows and 200 rune arrows per attempt**,
+carried from its bank. There is no mid-run bow transfer. rs/346 fletched them; mule1's bows and
+rune arrows, no longer needed at H12, are the stock to move to h92. Fallback if they are late: a
+willow shortbow from the Ranging Guild shop (stock 20), 2 per attempt bought by cairn_h91 when
+rs/158 or rs/185 asks (rs/41).
 
 ## Per attempt
 
@@ -157,7 +160,7 @@ covers the three small sets above (law 6, air 8, water 4, earth 1).
 | Rune axe | 1 | mule1 1, mule2 1 | 2 | h90's GE line, 2 more (approved to 300,000) |
 | Rune pickaxe | 1 | mule1 3, mule2 1 | 4 | - |
 | Mithril scimitar | 1 | mule1 2, h63 1 (bought 09:35; mule2's 1 is the contingency's) | 3 | Zeke (Al Kharid, ~1,050) |
-| Magic shortbow | **2** (mule1's for H12-H13, h92's for H23) | mule1 3, h92 3 | 3 | rs/346 fletched them; hedge: yew shortbow 2 on mule2, willow shortbows at the Ranging Guild via h91 |
+| Magic shortbow | **2** (both h92's: H11r and H23) | mule1 3, h92 3 | 3 once mule1's move to h92 (h92 alone: 1) | rs/346 fletched them; hedge: yew shortbow 2 on mule2, willow shortbows at the Ranging Guild via h91 |
 | Staff of water | 1 | mule1 3 | 3 | Zaff (Varrock, 1,500, stock 2) |
 | Staff of fire | 1 | mule1 3 (+ h55, h56 casting) | 3 | Zaff |
 | Knife | 1 | mule1 3, h94 2 | 5 | Shantay, 6 gp |
