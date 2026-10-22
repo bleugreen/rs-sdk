@@ -22,7 +22,8 @@
 // givers read. Started by the run-machine launcher (standalone.ts) like them.
 //
 // Role options (ROLE_OPTIONS):
-//   item         item to give (default 'Dragon bones')
+//   item         item to give (default 'Dragon bones'; S18 'Babydragon bones', the dragon-first rule)
+//   obj          its staff-give name for restock cheat (default the item name in snake case)
 //   n            per trade (default 23: the knife loop's free slots)
 //   sites        [{ giver: {x,z}, receiver: {x,z} }] in run order (default: the oak tile, then the Taverley willow)
 //   siteWaitTicks  how long to wait at a site for the receiver before trying the next (default 30)
@@ -35,25 +36,33 @@
 //   finalN       bones on that last load (default n - finalExtras.length: the same free slots as every load)
 //   cueDir       default RC_CUE_DIR, else run-machine/rc-cue in the checkout
 //
-// mode 'on-request' (S18's stun-pack top-ups, SUPPLIES.md H14.1-H14.13): the scored
-// account requests, at a stun offset of its choosing, and sizes the load at that
-// moment. It writes the size to bones-ask.json in the cue directory (writeBoneAsk)
-// and clicks trade on this helper. The helper holds a side tile of it (sideTile:
-// orthogonally adjacent, never an NPC's tile, re-stepped whenever it moves), answers
-// the request on the frame that carries it, offers exactly the asked count in one
-// press, and refills to `hold` whenever it holds fewer than `refillBelow`. Why a side:
-// an op on a player reaches it only from a side (rsmod's rectangle reach,
-// GameMap.reachedEntity), and a stunned account cannot step round a corner, so a
-// request between a stunned account and a giver on a corner or 2-3 tiles off goes
-// nowhere and draws no message (rs/279's lab: 6 of 17 due top-ups lost that way).
-// Options for it: hold (default 28), refillBelow (default 21); sites[0] says where to
-// wait when the scored account is out of sight (required).
+// mode 'on-request' (S18's stun-pack courier, SUPPLIES.md H14.1-H14.13): the scored
+// account requests at a stun offset of its choosing (the Thieving module's top-up),
+// and once the trade is open it writes what it wants (the top-up ask, altar-cue.ts:
+// bones to fill its free slots, food back to 2, an arrowtip tier once) to the cue
+// directory. The courier can't size a load itself: it can't see the scored account's
+// inventory. It holds a side tile of the scored account (orthogonally adjacent, never
+// an NPC's tile, re-stepped whenever it moves), answers the request on the frame that
+// carries it, offers what the ask names (each item in one press), and refills to `hold`
+// bones and its `carry` list whenever it holds fewer than `refillBelow` bones or less
+// than a carried count. Why a side: an op on a player reaches it only from a side
+// (rsmod's rectangle reach, GameMap.reachedEntity), and a stunned account cannot step
+// round a corner, so a request between a stunned account and a giver on a corner or 2-3
+// tiles off goes nowhere and draws no message (rs/279's lab: 6 of 17 due top-ups lost
+// that way). Options for it:
+//   hold, refillBelow  bones held after a restock (default 28; less the carry's slots) and the refill bar (21)
+//   carry        [{ item, count, obj?, once? }] the other stacks the courier keeps for the ask:
+//                sharks, the adamant and rune arrowtips (`once`: delivered once, then not restocked)
+//   standing     keep our own trade request standing with the scored account, so its
+//                click opens both screens (default off; rs/158's acceptance in bone-giver.md)
+//   askWaitTicks observed ticks to wait after the open for the ask (default 2), then decline
+//   sites[0]     where to wait when the scored account is out of sight (required)
 import { join } from 'node:path';
 import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
 import { give, DROPPED_TICKS, openTrade, tradeOf, type GiveSpec } from '../lib/trade';
 import { waitUntil } from '../lib/wait';
-import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, newRequestFrom, readJson, writeJsonAtomicSync, type Cue } from './altar-cue';
+import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, newRequestFrom, readTopUpAsk, usableAsk, writeJsonAtomicSync, type Cue, type TopUpAsk } from './altar-cue';
 import { chebyshev, cheat, count, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
@@ -74,19 +83,32 @@ export const DEFAULT_BONE_BANK: Tile = { x: 2946, z: 3368 };
 
 export type BoneMode = 'standing' | 'on-request';
 
-/** An item the last load carries beside the bones; `obj` is its staff-give name (restock kind cheat). */
+/** An item carried beside the bones; `obj` is its staff-give name (restock kind cheat). */
 export interface Extra {
     item: string;
     count: number;
     obj?: string;
 }
 
+/** A stack the on-request courier keeps for the ask; `once`: delivered in one top-up, then not restocked. */
+export interface Carried extends Extra {
+    once?: boolean;
+}
+
 export interface BoneGiverOptions {
     mode: BoneMode;
     item: string;
+    /** The item's staff-give name (restock kind cheat). */
+    obj: string;
     n: number;
     hold: number;
     refillBelow: number;
+    /** on-request: the other stacks kept for the ask. */
+    carry: Carried[];
+    /** on-request: keep our own request standing with the scored account. */
+    standing: boolean;
+    /** on-request: observed ticks after the open to wait for the ask. */
+    askWaitTicks: number;
     sites: Site[];
     siteWaitTicks: number;
     trades: number;
@@ -123,13 +145,19 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
     if (kind !== 'bank' && kind !== 'cheat') throw new Error(`restock.kind must be bank or cheat (got ${kind})`);
     const trades = raw.trades === undefined ? Number.POSITIVE_INFINITY : Number(raw.trades);
     if (!(trades >= 1)) throw new Error(`trades must be at least 1 (got ${raw.trades})`);
-    const finalExtras = ((raw.finalExtras ?? []) as unknown[]).map((e, i) => {
+    const extra = (what: string) => (e: unknown, i: number): Carried => {
         const r = (e ?? {}) as Record<string, unknown>;
         const count = Number(r.count);
-        if (typeof r.item !== 'string' || !r.item || !Number.isInteger(count) || count < 1) throw new Error(`finalExtras[${i}] needs an item name and a whole count`);
-        if (kind === 'cheat' && typeof r.obj !== 'string') throw new Error(`finalExtras[${i}] needs obj (the staff-give name) with restock kind cheat`);
-        return { item: r.item, count, ...(typeof r.obj === 'string' ? { obj: r.obj } : {}) };
-    });
+        if (typeof r.item !== 'string' || !r.item || !Number.isInteger(count) || count < 1) throw new Error(`${what}[${i}] needs an item name and a whole count`);
+        if (kind === 'cheat' && typeof r.obj !== 'string') throw new Error(`${what}[${i}] needs obj (the staff-give name) with restock kind cheat`);
+        return { item: r.item, count, ...(typeof r.obj === 'string' ? { obj: r.obj } : {}), ...(r.once === true ? { once: true } : {}) };
+    };
+    const finalExtras: Extra[] = ((raw.finalExtras ?? []) as unknown[]).map(extra('finalExtras')).map(({ once: _, ...e }) => e);
+    const carry = ((raw.carry ?? []) as unknown[]).map(extra('carry'));
+    if (mode !== 'on-request' && (carry.length || raw.standing !== undefined || raw.askWaitTicks !== undefined)) throw new Error('carry, standing and askWaitTicks are for the on-request mode (S18) only');
+    const askWaitTicks = Number(raw.askWaitTicks ?? 2);
+    if (!Number.isInteger(askWaitTicks) || askWaitTicks < 0) throw new Error(`askWaitTicks must be a whole number (got ${raw.askWaitTicks})`);
+    if (raw.standing !== undefined && typeof raw.standing !== 'boolean') throw new Error('standing must be true or false');
     if (finalExtras.length) {
         if (mode !== 'standing') throw new Error('finalExtras is for the standing mode (S07) only');
         if (!Number.isFinite(trades)) throw new Error('finalExtras needs trades: the last load is the trades-th');
@@ -140,12 +168,17 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
     if (finalExtras.length && (!Number.isInteger(finalN) || finalN < 1 || finalN + finalExtras.length > 28)) {
         throw new Error(`finalN must be at least 1 and finalN + finalExtras must fit 28 slots (got ${raw.finalN ?? finalN} + ${finalExtras.length})`);
     }
+    const item = String(raw.item ?? 'Dragon bones');
     return {
         mode,
-        item: String(raw.item ?? 'Dragon bones'),
+        item,
+        obj: typeof raw.obj === 'string' ? raw.obj : item.toLowerCase().replace(/\s+/g, '_'),
         n,
         hold,
         refillBelow,
+        carry,
+        standing: raw.standing === true,
+        askWaitTicks,
         sites,
         siteWaitTicks: Number(raw.siteWaitTicks ?? 30),
         trades,
