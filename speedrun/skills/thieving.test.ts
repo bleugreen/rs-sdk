@@ -1166,7 +1166,7 @@ describe('thieving: the superheat top-up', () => {
         const at = (fletching: number, stacks: Array<[string, number]>) => {
             const names: Array<[string, number]> = [['Shark', 1], ['Shark', 1], ['Blood rune', 50], ['Air rune', 50], ['Nature rune', 90], ['Headless arrow', 3000], ['Coins', 4000], ...stacks, ['Iron ore', 1], ['Iron ore', 1]];
             const s = shWorld({ smithing: 30, ore: [] });
-            return { ...s, inventory: names.map(([n, c], i) => named(i, n, c)), skills: [...s.skills.filter(k => k.name !== 'Fletching'), { name: 'Fletching', level: fletching, baseLevel: fletching, experience: xpForLevel(fletching) }] } as BotWorldState;
+            return { ...s, inventory: names.map(([n, c], i) => named(i, n, c, n === 'Shark' ? ['Eat'] : undefined)), skills: [...s.skills.filter(k => k.name !== 'Fletching'), { name: 'Fletching', level: fletching, baseLevel: fletching, experience: xpForLevel(fletching) }] } as BotWorldState;
         };
         const asker = new TopUpAsker(GIVER, mkdtempSync(join(tmpdir(), 'tiers-')), [FOODS.shark], true, sh);
         const trade = (s: BotWorldState) => {
@@ -1174,14 +1174,15 @@ describe('thieving: the superheat top-up', () => {
             return asker.step({ ...s, trade: screen('offer') as never, tick: s.tick + 1 })!;
         };
         const tiers = (items: AskItem[]) => items.filter(a => /arrow\(head/.test(a.item)).map(a => a.item);
-        // Fletching 50 on mithril alone (bronze to steel used up): 12 held, 15 free, the tier and the arrow slot out: 13 iron
+        // Fletching 50 on mithril alone (bronze to steel used up): 11 held, 17 free, the tier and the arrow slot out: 15 iron
         const first = trade(at(50, [['Mithril arrowheads', 1200], ['Mithril arrow', 285]]));
         expect(tiers(first)).toEqual(['^adamant arrow(head|tip)s$']);
-        expect(first.find(a => a.item === '^iron ore$')!.count).toBe(13);
+        expect(first).toEqual([{ item: '^iron ore$', count: 15 }, { item: '^adamant arrow(head|tip)s$', count: 'all' }]);
         // the next top-up: Fletching 62, the best tier held in use, so mithril and adamant are both held; rune goes out here
         const second = trade(at(62, [['Mithril arrowheads', 900], ['Mithril arrow', 585], ['Adamant arrowheads', 2000], ['Adamant arrow', 220]]));
         expect(tiers(second)).toEqual(['^rune arrow(head|tip)s$']);
-        expect(second.find(a => a.item === '^iron ore$')!.count).toBe(11);
+        // the adamant tips and arrows now hold 2 more slots, and the rune tips' slot comes out of the ore: 13 iron
+        expect(second).toEqual([{ item: '^iron ore$', count: 13 }, { item: '^rune arrow(head|tip)s$', count: 'all' }]);
         // every later top-up asks no tier, a short band's included (the stand-in for 60-68 Superheat stuns: mithril still held)
         for (const f of [64, 66, 68]) expect(tiers(trade(at(f, [['Mithril arrowheads', 600], ['Mithril arrow', 885], ['Adamant arrowheads', 1700], ['Adamant arrow', 520], ['Rune arrowheads', 570]])))).toEqual([]);
     });
