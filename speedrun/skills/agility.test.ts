@@ -323,9 +323,9 @@ describe('agility Wilderness decisions', () => {
         });
 
         test('a resume just inside the gate whose nearest route point is across it starts on its own side', async () => {
-            // (2461,3385), the north entrance: 3 tiles from (2461,3382) and 1 from (2461,3386)
-            // is no tie; (2459,3386) is 4 from both, and the south one comes first in the route
-            const sdk = new FakeSdk(world({ agility: 1, x: 2459, z: 3386, extra: { nearbyLocs: [gate] as unknown as BotWorldState['nearbyLocs'] } }));
+            // (2465,3385), inside the gate's north band: 4 tiles (Chebyshev) from both (2461,3382) and
+            // (2461,3386), and the south one comes first in the route, so routeStart picks it
+            const sdk = new FakeSdk(world({ agility: 1, x: 2465, z: 3385, extra: { nearbyLocs: [gate] as unknown as BotWorldState['nearbyLocs'] } }));
             gateServer(sdk, false);
             const ctx = ctxFor(sdk);
             const walks = walker(ctx, () => false);
