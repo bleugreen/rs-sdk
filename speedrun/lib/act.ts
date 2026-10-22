@@ -196,7 +196,7 @@ const invKey = (s: BotWorldState) => s.inventory.map(i => `${i.slot}:${i.id}:${i
 
 function snapshot(s: BotWorldState) {
     const p = pos(s);
-    return { x: p.x, z: p.z, level: p.level, anim: s.player?.animId ?? -1, inv: invKey(s), messages: s.gameMessages.length ? s.gameMessages.at(-1)!.tick : -1 };
+    return { x: p.x, z: p.z, level: p.level, anim: s.player?.animId ?? -1, inv: invKey(s), messages: s.gameMessages.length ? s.gameMessages.at(-1)!.tick : -1, modal: s.modalOpen };
 }
 
 /**
@@ -206,7 +206,8 @@ function snapshot(s: BotWorldState) {
  * (the click failing), are not answers.
  */
 function replyKind(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): 'script' | 'moved' | null {
-    if (s.dialog.isOpen || s.modalOpen) return 'script';
+    // A modal already open at the send (S00's character design) is not an answer.
+    if (s.dialog.isOpen || (s.modalOpen && !b.modal)) return 'script';
     const anim = s.player?.animId ?? -1;
     if (anim >= 0 && anim !== b.anim) return 'script';
     if (s.gameMessages.some(m => m.tick > b.messages && !PLAYER_CHAT_TYPES.includes(m.type) && !CANT_REACH.test(m.text))) return 'script';

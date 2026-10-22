@@ -49,6 +49,24 @@ describe('S00 tutorial skip', () => {
         expect(tutorialSkip.done!({ state: sdk.getState()!, probed: {} }, {})).toBe(true);
     });
 
+    test('a first Talk-to the server drops (the browser still building the region) is re-sent once it draws no reply', async () => {
+        const sdk = new TutorialSdk('Yes please.');
+        const content = sdk.onSend;
+        let talks = 0;
+        sdk.onSend = (a, s) => {
+            if (a.method === 'sendInteractNpc' && ++talks === 1) return;
+            content(a, s);
+        };
+        const run = tutorialSkip.run(ctx(sdk));
+        for (let i = 0; i < 6 && talks < 2; i++) {
+            await flush();
+            sdk.tick();
+        }
+        await run;
+        expect(sdk.sent.filter(a => a.method === 'sendInteractNpc')).toHaveLength(2);
+        expect(tutorialSkip.postconditions(sdk.getState()!, {})).toBe(true);
+    });
+
     test('turns run on once it lands: no login could, the controls tab is hidden on the island', async () => {
         const sdk = new TutorialSdk('Yes please.');
         sdk.push({ varps: { option_run: 0 } });
