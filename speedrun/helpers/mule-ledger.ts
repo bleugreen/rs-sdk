@@ -182,8 +182,19 @@ export function muleFromLedger(manifest: string = readFileSync(MANIFEST, 'utf8')
     const keys = ordered.map(loadKey);
     const late = ordered.findIndex((p, i) => i > 0 && keys[i]! < keys[i - 1]!);
     if (late >= 0) throw new Error(`${ordered[late]!.row} is listed after ${ordered[late - 1]!.row}, but comes before it in the ledger`);
-    const onRequest = (o.onRequest ?? (o.rows ? [] : MULE1_ON_REQUEST)).map(id => build(id, true));
+    const onRequest = (o.onRequest ?? (o.rows ? [] : missingOnRequest(rows).absentFrom(MULE1_ON_REQUEST))).map(id => build(id, true));
     return [...ordered, ...onRequest];
+}
+
+/** The on-request packages the ledger has no row for: they cannot be generated (the default skips them). */
+function missingOnRequest(rows: readonly LedgerRow[]) {
+    const has = (id: string) => rows.some(r => r.row === id);
+    return { absentFrom: (ids: readonly string[]) => ids.filter(has), missing: (ids: readonly string[]) => ids.filter(id => !has(id)) };
+}
+
+/** MULE1_ON_REQUEST rows the ledger in `manifest` lacks, so no package can be built for them. */
+export function onRequestGaps(manifest: string = readFileSync(MANIFEST, 'utf8')): string[] {
+    return missingOnRequest(parseLedger(manifest).rows).missing(MULE1_ON_REQUEST);
 }
 
 /** The mule options' `packages` for these ledger packages. */
@@ -329,6 +340,7 @@ export function main(argv: readonly string[]): number {
         return short.length ? 1 : 0;
     }
     console.log(JSON.stringify({ packages: packagesOf(ledger) }, null, 2));
+    if (!onRequest && !rows) for (const id of onRequestGaps(manifest)) console.error(`${id}: served on request, but the ledger has no ${id} row, so it has no package`);
     for (const l of ledger) {
         const notes = [`${l.slots} slots`, l.takesBack.length ? `takes back ${l.takesBack.map(b => b.label).join('; ')}` : 'takes nothing back', ...(l.moduleLines.length ? [`the module's: ${l.moduleLines.join(', ')}`] : [])];
         console.error(`${l.row} (line ${l.line}, before ${l.step}): ${notes.join('; ')}`);
