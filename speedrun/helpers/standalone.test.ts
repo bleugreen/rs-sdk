@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { DIRECT_IN_WORLD, DIRECT_IN_WORLD_RE, DIRECT_REFUSED_RE } from './role';
-import { checkBotEnv, helpersReady, parseLaunchConfig, RoleLoop, type RoleProcess, roleEnv } from './standalone';
+import { checkBotEnv, helpersReady, parseLaunchConfig, RoleLoop, type RoleProcess, roleEnv, type Stoppable, stopAllWithin } from './standalone';
 
 const gw = 'ws://127.0.0.1:7795';
 
@@ -15,6 +15,7 @@ describe('launcher config', () => {
         });
         expect(c.gatewayPort).toBe(7795);
         expect(c.loginSpacingMs).toBe(5000);
+        expect(c.stopDeadlineMs).toBe(25_000);
         expect(c.accounts.map(a => a.account)).toEqual(['cairn_h70', 'cairn_h75']);
         expect(c.accounts[1]).toMatchObject({ receiver: true, final: true, after: 'ready', args: [], path: 'relay' });
         expect(c.runDir.endsWith('run-machine')).toBe(true);
@@ -50,6 +51,62 @@ describe('launcher config', () => {
         expect(() => parseLaunchConfig({ accounts: [{ account: 'cairn_h70', role: 'no-such-role' }] })).toThrow(/no speedrun/);
         expect(() => parseLaunchConfig({ accounts: [] })).toThrow();
         expect(() => parseLaunchConfig({ gatewayPort: 80, accounts: [{ account: 'cairn_h70', role: 'idle' }] })).toThrow(/gatewayPort/);
+    });
+
+    test('stopDeadlineMs: settable, never below 5 s', () => {
+        expect(parseLaunchConfig({ stopDeadlineMs: 12_000, accounts: [{ account: 'cairn_h70', role: 'idle' }] }).stopDeadlineMs).toBe(12_000);
+        expect(() => parseLaunchConfig({ stopDeadlineMs: 1000, accounts: [{ account: 'cairn_h70', role: 'idle' }] })).toThrow(/stopDeadlineMs/);
+        expect(() => parseLaunchConfig({ stopDeadlineMs: 'soon', accounts: [{ account: 'cairn_h70', role: 'idle' }] })).toThrow(/stopDeadlineMs/);
+    });
+});
+
+describe('stopAllWithin: one deadline for the whole stop', () => {
+    const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+    function account(stopMs: number | 'hang' | 'throw') {
+        const a = { deadlines: [] as number[], kills: 0 } as Stoppable & { deadlines: number[]; kills: number };
+        a.stop = async deadline => {
+            a.deadlines.push(deadline);
+            if (stopMs === 'hang') return new Promise<void>(() => undefined);
+            if (stopMs === 'throw') throw new Error('logout failed');
+            await sleep(stopMs);
+        };
+        a.kill = () => void a.kills++;
+        return a;
+    }
+
+    test('accounts stop in parallel, not one after another, and none is killed', async () => {
+        const accounts = [account(80), account(80), account(80), account(80)];
+        const t0 = Date.now();
+        const deadline = t0 + 2000;
+        expect(await stopAllWithin(accounts, deadline)).toBe(0);
+        expect(Date.now() - t0).toBeLessThan(250); // serial would be >= 320
+        expect(accounts.every(a => a.kills === 0)).toBe(true);
+        expect(accounts.every(a => a.deadlines.length === 1 && a.deadlines[0] === deadline)).toBe(true);
+    });
+
+    test('at the deadline an account still stopping is killed; the others are not, and the call returns by then', async () => {
+        const quick = account(20);
+        const stuck = account('hang');
+        const t0 = Date.now();
+        expect(await stopAllWithin([quick, stuck], t0 + 150)).toBe(1);
+        const took = Date.now() - t0;
+        expect(took).toBeGreaterThanOrEqual(140);
+        expect(took).toBeLessThan(400);
+        expect(stuck.kills).toBe(1);
+        expect(quick.kills).toBe(0);
+    });
+
+    test('a stop that fails counts as finished (it has its own fallbacks), not as late', async () => {
+        const failing = account('throw');
+        expect(await stopAllWithin([failing], Date.now() + 500)).toBe(0);
+        expect(failing.kills).toBe(0);
+    });
+
+    test('a deadline already past kills every account at once', async () => {
+        const a = account('hang');
+        const b = account('hang');
+        expect(await stopAllWithin([a, b], Date.now() - 1)).toBe(2);
+        expect(a.kills + b.kills).toBe(2);
     });
 });
 
