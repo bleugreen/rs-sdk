@@ -457,6 +457,11 @@ describe('steps and preconditions', () => {
         // S06's air runes still held at S21: 26 free slots, every trade would fail
         expect(preconditions(s({ inventory: [item(0, 'Nature talisman'), item(1, 'Air rune', 300), item(2, 'Nature rune', 50)] }), s21!)).toBe('1 other items (Air rune): need 27 free slots');
         expect(preconditions(s({ inventory: [item(0, 'Bronze axe'), item(1, 'Tinderbox')] }), s21!)).toBe('2 other items (Bronze axe, Tinderbox): need 27 free slots');
+        // S06 as the route reaches the air altar (rs/196's census): H4's kits, the teleport and starter runes, Doric's coins, the tinderbox
+        const census = [item(0, 'Air talisman'), item(1, 'Air rune', 24), item(2, 'Water rune', 7), item(3, 'Earth rune', 4), item(4, 'Law rune', 2), item(5, 'Coins', 180), item(6, 'Tinderbox'), item(7, 'Rune axe'), item(8, 'Rune pickaxe'), item(9, 'Knife'), ...[10, 11, 12, 13, 14, 15].map(i => item(i, 'Logs'))];
+        expect(preconditions(s({ altar: AIR_ALTAR, level: 1, inventory: census }), s06!)).toBe('14 other items (Water rune, Earth rune, Law rune, Coins, Tinderbox, Rune axe, Rune pickaxe, Knife, Logs): need 27 free slots');
+        // one rune stack beside the air runes already leaves 26 free
+        expect(preconditions(s({ altar: AIR_ALTAR, level: 1, inventory: [item(0, 'Air talisman'), item(1, 'Air rune', 24), item(2, 'Law rune', 1)] }), s06!)).toBe('1 other items (Law rune): need 27 free slots');
         // a passed band is a no-op wherever the account stands
         expect(preconditions(s({ level: 50, altar: null }), s06!)).toBe(true);
         expect(preconditions(baseState({ inGame: false }), s21!)).toBe('not in game');
