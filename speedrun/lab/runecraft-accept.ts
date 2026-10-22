@@ -23,6 +23,11 @@
 //   --junk-after=N     ::give SCORED a junk item after N crafts (26 free slots: every trade fails, the
 //                      program faults); with --junk-clear it is dropped once the next program run starts,
 //                      with --junk-clear-stock once the cue carries the stock rung's first turn
+//   --kill-after=N[,M,...]  relaunch measurement: after N crafts, on the first cue naming cairn_rcg2 for a turn
+//                      whose first packet is still ahead, SIGKILL its process by the PID the launcher logged
+//                      (the role on the direct path, the lite client on the relay); the launcher relaunches
+//                      it. One KILL line per kill: scored ticks from the kill to its new login and to its
+//                      next trade that gave, and the turns it and the others missed meanwhile
 //   --headless         Chrome without a window
 // The scored stand-in is the lab bot named on the lab.sh line; never the scored account.
 // Prints one RESULT line with the step's ticks and the program rows.
@@ -170,11 +175,84 @@ try {
     const crafts = () => Math.floor((rcXp(sdk.getState()!) - xp0) / perCraft + 0.01);
     const reloadAfter = flag('reload-after');
     const junkAfter = flag('junk-after');
+    const killAfter = (flag('kill-after') ?? '').split(',').filter(Boolean).map(Number);
+    if (killAfter.length && givers.length < 2) throw new Error('--kill-after kills cairn_rcg2: needs --givers=2 or more');
+    const victim = givers[1]!;
+    const seenResults = new Set<string>();
+    const pidOf = (): number | null => {
+        let text = '';
+        try {
+            text = readFileSync(join(base, 'launcher.log'), 'utf8');
+        } catch {
+            return null;
+        }
+        const re = path === 'direct' ? new RegExp(`${victim}: role altar-giver started \\(pid (\\d+)\\)`, 'g') : new RegExp(`${victim}: client started \\(pid (\\d+)\\)`, 'g');
+        const all = [...text.matchAll(re)];
+        return all.length ? Number(all[all.length - 1]![1]) : null;
+    };
+    const victimStatus = (): { loggedInAt: number | null; phase: string } | null => {
+        try {
+            return JSON.parse(readFileSync(join(cueDir, `giver-${victim}.json`), 'utf8'));
+        } catch {
+            return null;
+        }
+    };
+    interface Kill {
+        n: number;
+        crafts: number;
+        tick: number;
+        pid: number;
+        T: number;
+        loggedInAt: number | null;
+        backTick?: number;
+        next?: { tick: number; T: number; schedule: string };
+        victimFailed: string[];
+        othersFailed: string[];
+        othersGave: number;
+    }
+    const kills: Kill[] = [];
+    let killing = false;
     let reloaded = false;
     let junked: number | null = null;
     let cleared = false;
     const unwatch = sdk.onStateUpdate(s => {
         if (!s.inGame) return;
+        if (killAfter.length) {
+            const shared = (programStatus(s) as { shared?: { results?: { giver: string; T: number; schedule: string; outcome: string; tick: number }[] } } | null)?.shared;
+            const k = kills[kills.length - 1];
+            for (const r of shared?.results ?? []) {
+                const id = `${r.giver}:${r.T}:${r.tick}:${r.outcome}`;
+                if (seenResults.has(id)) continue;
+                seenResults.add(id);
+                if (!k || k.next || r.tick < k.tick) continue;
+                const mine = r.giver.toLowerCase() === victim;
+                if (mine && r.outcome === 'gave') {
+                    k.next = { tick: r.tick, T: r.T, schedule: r.schedule };
+                    const line = { kill: k.n, path: path ?? 'relay', killedAfterCrafts: k.crafts, namedFor: k.T, backInWorldTicks: k.backTick === undefined ? null : k.backTick - k.tick, nextTradeTicks: r.tick - k.tick, nextTradeSchedule: r.schedule, victimFailed: k.victimFailed, othersFailed: k.othersFailed, othersGave: k.othersGave };
+                    console.log(`KILL ${JSON.stringify(line)}`);
+                } else if (mine) k.victimFailed.push(`${r.outcome}@${r.T}`);
+                else if (r.outcome === 'gave') k.othersGave++;
+                else k.othersFailed.push(`${r.giver}:${r.outcome}@${r.T}`);
+            }
+            if (k && !k.next && k.backTick === undefined) {
+                const st = victimStatus();
+                if (st && st.loggedInAt !== k.loggedInAt) k.backTick = s.tick;
+            }
+            const due = killAfter[kills.length];
+            if (!killing && due !== undefined && (!k || k.next) && crafts() >= due) {
+                const cue = readCue(cueDir);
+                const turn = cue && !cue.stop ? [...cue.turns].reverse().find(t => t.giver.toLowerCase() === victim) : undefined;
+                const pid = pidOf();
+                if (turn && cue && s.tick < turn.T + cue.open - 2 && pid) {
+                    killing = true;
+                    const loggedInAt = victimStatus()?.loggedInAt ?? null;
+                    process.kill(pid, 'SIGKILL');
+                    kills.push({ n: kills.length + 1, crafts: crafts(), tick: s.tick, pid, T: turn.T, loggedInAt, victimFailed: [], othersFailed: [], othersGave: 0 });
+                    console.log(`killed ${victim} (pid ${pid}, ${path ?? 'relay'}) on tick ${s.tick} after ${crafts()} crafts, named for T=${turn.T}`);
+                    killing = false;
+                }
+            }
+        }
         if (reloadAfter && !reloaded && crafts() >= Number(reloadAfter)) {
             reloaded = true;
             void browser.pages().then(ps => ps.find(p => p.url().includes(`bot=${scored}`))?.reload()).then(() => console.log(`reloaded the page after ${reloadAfter} crafts`));
@@ -224,6 +302,8 @@ try {
         console.log(`completed ${r.completed}`);
     }
     unwatch();
+    for (const k of kills.filter(k => !k.next)) console.log(`KILL ${JSON.stringify({ kill: k.n, path: path ?? 'relay', killedAfterCrafts: k.crafts, namedFor: k.T, backInWorldTicks: k.backTick === undefined ? null : k.backTick - k.tick, nextTradeTicks: null, victimFailed: k.victimFailed, othersFailed: k.othersFailed, othersGave: k.othersGave })}`);
+    if (killAfter.length > kills.length) console.log(`only ${kills.length} of ${killAfter.length} kills happened`);
 } catch (e) {
     exit = 1;
     console.error(`runecraft-accept failed: ${e instanceof Error ? e.message : String(e)}`);
