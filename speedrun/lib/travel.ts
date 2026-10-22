@@ -883,6 +883,14 @@ export const GNOME_STRONGHOLD_GATE = {
     answers: [/^Sorry, I'm a bit busy\.$/],
 } as const satisfies Gate;
 
+/** The side of `gate` whose region holds `t` (on level 0), or null when neither does. */
+export function gateSide(gate: Gate, t: { x: number; z: number; level?: number }): string | null {
+    for (const [side, r] of Object.entries(gate.sides)) {
+        if ((t.level ?? 0) === (r.level ?? 0) && t.x >= r.x[0] && t.x <= r.x[1] && t.z >= r.z[0] && t.z <= r.z[1]) return side;
+    }
+    return null;
+}
+
 export interface GateResult extends JumpCounts {
     ok: boolean;
     startTick: number;
