@@ -494,8 +494,10 @@ export async function fightKolodion(sdk: Sdk, o: FightOpts = {}): Promise<FightT
     const s1 = sdk.getState()!;
     t.ticks = s1.tick - tArena;
     t.runesUsed = runes0 - invCount(s1, SPELLS[spell].rune);
-    if (t.fallback && fb) t.fallback.runesUsed = fbRunes0 - invCount(s1, SPELLS[fb].rune);
-    t.casts = t.runesUsed + (t.fallback?.runesUsed ?? 0);
+    // set inside fallBack: read through the declared type, not the `null` narrowed above
+    const taken = t.fallback as FightTally['fallback'];
+    if (taken && fb) taken.runesUsed = fbRunes0 - invCount(s1, SPELLS[fb].rune);
+    t.casts = t.runesUsed + (taken?.runesUsed ?? 0);
     t.airUsed = air0 - invCount(s1, /^air rune$/i);
     t.hp1 = s1.player?.hp ?? 0;
     t.prayer1 = s1.prayers?.prayerPoints ?? 0;
