@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Gentle } from './demo.ts';
-import { DemoMarket, historyMoves, historyTotals, stackOverVolume, type Bucket } from './market.ts';
+import { bookDepth, DemoMarket, historyMoves, historyTotals, realisable, stackOverVolume, type Bucket } from './market.ts';
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, 'fixtures', name), 'utf8');
 const realFetch = globalThis.fetch;
@@ -50,6 +50,26 @@ describe('DemoMarket (recorded replies)', () => {
         serve({ '/api/market/items': () => new Response(fixture('market-items.json')) });
         expect((await new DemoMarket(gate()).find('uncut dragonstone'))?.id).toBe(1631);
         expect(await new DemoMarket(gate()).find('uncut')).toBeNull();
+    });
+});
+
+describe('book depth', () => {
+    const air = JSON.parse(fixture('market-item-556.json'));
+
+    test('totals and means per side', () => {
+        const d = bookDepth(air);
+        expect(d).toMatchObject({ bestBid: 5, bestAsk: 21, bidQuantity: 101_281, bidValue: 407_121, askQuantity: 154_231, basePrice: 4 });
+        expect(d.meanBid).toBeCloseTo(4.0197, 3);
+        expect(d.meanAsk).toBeCloseTo(21.0, 1);
+    });
+
+    test('realisable value fills the bids and leaves the rest unsold', () => {
+        expect(realisable(air, 1_923_311_135)).toEqual({ units: 101_281, low: 407_121, high: 407_121, unsold: 1_923_311_135 - 101_281 });
+        const part = realisable(air, 1000);
+        expect(part.units).toBe(1000);
+        expect(part.low).toBeCloseTo(4019.7, 0);
+        expect(part.high).toBe(5000);
+        expect(realisable({ ...air, buyQuantity: 0, buyValue: 0, bid: null }, 10)).toEqual({ units: 0, low: 0, high: 0, unsold: 10 });
     });
 });
 
