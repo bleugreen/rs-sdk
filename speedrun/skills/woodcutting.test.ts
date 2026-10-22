@@ -1,4 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { nameHash, readCue, writeJsonAtomicSync } from '../helpers/altar-cue';
 import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
 import type { GatedOptions, GatedRun, GatedSegment, InPageGateOptions, SegmentTechnique } from '../lib/gated-program';
@@ -10,7 +14,7 @@ import { Observation, resolveResume } from '../runner/resume';
 import type { StepContext } from '../runner/step';
 import {
     BandLedger, bandFor, bandParams, BANDS, CAMELOT_RUNES, erlangB, expectedRolls, FOOTPRINT, freeDirs, handBackSpecs, hitBetween, MEASURE_DROPS, modelTicksPerLog, NORMAL_KEEP, PROBE_DIRS, respawnTicks, routeFrom, ROUTES,
-    SITES, skill, steps, successChance, summarizeBand, type WoodcuttingOptions
+    S07_BONE_CUE, SITES, skill, steps, successChance, summarizeBand, type WoodcuttingOptions
 } from './woodcutting';
 import { createKnifeCycle, CYCLE_METHODS } from '../../server/webclient/src/bot/programs/knife-cycle';
 import type { ProgramAction, ProgramContext } from '../../server/webclient/src/bot/programs/types';
@@ -1131,4 +1135,180 @@ describe("woodcutting: S07's last bone load carries T07-08's runes, (load - 2) b
         expect(() => steps({ bury: true, boneGiver: 'g', boneLastLoad: '21.5' })).toThrow(/last load/);
         expect(() => steps({ bury: true, boneLastLoad: '21' })).toThrow(/last load without a bone giver/);
     });
+});
+
+describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.group)", () => {
+    const GROUP = ['cairn_b01', 'cairn_b02', 'cairn_b03', 'cairn_b04'];
+    const OAKS = 'woodcutting:oak-15-73';
+    const WILLOWS = 'woodcutting:willow-73-99';
+    const newDir = () => mkdtempSync(join(tmpdir(), 'wc-group-'));
+
+    /** A giver's bones-<account>.json as bone-giver.ts publishes it: loaded and waiting since `readyAt`, or away restocking. */
+    const publish = (dir: string, account: string, readyAt: number | null) =>
+        writeJsonAtomicSync(join(dir, `bones-${account}.json`), { v: 1, account, phase: readyAt === null ? 'restock' : 'waiting', held: readyAt === null ? 0 : 23, n: 23, trades: 0, bounces: 0, tile: null, readyAt, ms: Date.now() });
+
+    /**
+     * The group as its status files show it. All four start loaded at the site, b02 longest, then b03,
+     * b01, b04 (the demo's order). The giver that serves a load goes to the bank; the one away since the
+     * load before comes back loaded, newest in line. `lastAt`: that load carries 21 bones and the runes.
+     */
+    const group = (dir: string, o: { start?: Record<string, number | null>; lastAt?: number } = {}) => {
+        const ready: Record<string, number | null> = o.start ?? { cairn_b02: 1, cairn_b03: 2, cairn_b01: 3, cairn_b04: 4 };
+        let clock = 10;
+        let away: string | null = null;
+        for (const a of GROUP) publish(dir, a, ready[a] ?? null);
+        const receives: Array<{ partner: string; want: unknown }> = [];
+        const fn = (async (sdk: FakeSdk, partner: string, opt: { want?: unknown }): Promise<ReceiveResult> => {
+            receives.push({ partner, want: opt.want });
+            publish(dir, partner, null);
+            if (away) publish(dir, away, ++clock);
+            away = partner;
+            const last = receives.length === o.lastAt;
+            const s = sdk.getState()!;
+            const add = [...Array.from({ length: last ? 21 : 23 }, () => 'Dragon bones'), ...(last ? ['Law rune', 'Air rune'] : [])];
+            sdk.push({ tick: s.tick + 4, inventory: [...s.inventory, ...add.map((n, k) => item(s.inventory.length + k, n, n === 'Air rune' ? 5 : 1))] });
+            return { ok: true, ticks: 4, received: [] };
+        }) as unknown as WoodcuttingOptions['receive'];
+        return { fn, receives, publish: (a: string, r: number | null) => publish(dir, a, r) };
+    };
+
+    /** Runs 1..`loads` bury the pack and ask for a load; later runs take the band to its end, publishing no bones left on the way. */
+    const buryRuns = (loads: number): Script => async (sdk, call, n) => {
+        const s0 = sdk.getState()!;
+        let t = s0.tick;
+        sdk.push(s => ({ tick: ++t, inventory: s.inventory.filter(i => !/bones$/i.test(i.name)) }));
+        for (let k = 0; k < 4 && !call.signal?.aborted; k++) {
+            sdk.push({ tick: ++t });
+            call.opts.onProgress?.(status({ runId: n, startedTick: s0.tick, tick: t, gauges: { bonesLeft: 0 } }), 'knife');
+        }
+        const aborted = !!call.signal?.aborted;
+        if (!aborted) setLevel(sdk, call.params('knife').untilLevel as number, { tick: ++t });
+        const seg: GatedSegment = { technique: 'knife', reason: aborted ? 'aborted' : 'done', status: status({ runId: n, phase: aborted ? 'stopped' : 'done', startedTick: s0.tick, tick: t, endedTick: t }) };
+        call.opts.onSegment?.(seg);
+        if (n > loads && aborted) throw new Error(`run ${n} asked for a load past the script's ${loads}`);
+        return { segments: [seg], ended: aborted ? 'aborted' : 'done' };
+    };
+
+    const loadRows = (h: ReturnType<typeof harness>) => h.log.rows.filter(r => r.step === 'woodcutting:bones-load');
+
+    /** Ticks pushed every few ms, as a live client publishes them while the band waits on a server. */
+    const ticking = (sdk: FakeSdk) => {
+        const timer = setInterval(() => sdk.push(s => ({ tick: s.tick + 1 })), 2);
+        return () => clearInterval(timer);
+    };
+
+    test('options: one giver or a group of two or more distinct names (comma-separated from the CLI); serverWait is the group\'s; handBack true needs one giver', () => {
+        expect(steps({ bury: true, boneGroup: 'cairn_b01,cairn_b02,cairn_b03,cairn_b04' })).toHaveLength(steps({ bury: true, bones: { group: GROUP } }).length);
+        expect(() => steps({ bury: true, bones: { giver: 'g', group: GROUP } })).toThrow(/one bone giver or a group, not both/);
+        expect(() => steps({ bury: true, boneGroup: 'cairn_b01' })).toThrow(/at least two giver names/);
+        expect(() => steps({ bury: true, bones: { group: ['cairn_b01', 'Cairn B01'] } })).toThrow(/names a giver twice/);
+        expect(() => steps({ bury: true, bones: { giver: 'g', serverWait: 50 } })).toThrow(/serverWait is for a bone group/);
+        expect(() => steps({ bury: true, bones: { group: GROUP, serverWait: 0 } })).toThrow(/bad serverWait/);
+        expect(() => steps({ bones: { group: GROUP } })).toThrow(/a bone giver without bury/);
+        expect(() => steps({ bury: true, bones: { group: GROUP }, handBack: true })).toThrow(/a group has no one giver/);
+        expect(() => steps({ bury: true, bones: { group: GROUP, lastLoad: 21 } })).not.toThrow();
+    });
+
+    test('eight loads go round the four givers in boneServer order (b02, b03, b01, b04, twice), each wanting a full load; the step writes the S07 bone cue and stops it at the end', async () => {
+        const dir = newDir();
+        const g = group(dir);
+        const h = harness(state({ level: 60 }), { bury: true, to: 70, bones: { group: GROUP }, cueDir: dir, receive: g.fn }, buryRuns(7));
+        await h.byName(OAKS).run(h.ctx);
+        const order = ['cairn_b02', 'cairn_b03', 'cairn_b01', 'cairn_b04'];
+        expect(g.receives.map(r => r.partner)).toEqual([...order, ...order]);
+        expect(g.receives.every(r => JSON.stringify(r.want) === JSON.stringify([{ item: /bones$/i, amount: 23 }]))).toBe(true);
+        expect(loadRows(h).map(r => [(r.meta as { giver: string }).giver, (r.meta as { serverWait: number }).serverWait, r.ok])).toEqual([...order, ...order].map(a => [a, 0, true]));
+        const cue = readCue(dir)!;
+        expect(cue.scope).toEqual(S07_BONE_CUE);
+        expect(cue.receiver.sha256).toBe(nameHash('cairn_test'));
+        expect(cue.stop).toBe(true);
+    });
+
+    test('one cue session spans both burying bands; only the last band stops it', async () => {
+        const dir = newDir();
+        const g = group(dir);
+        const h = harness(state({ level: 60 }), { bury: true, bones: { group: GROUP }, cueDir: dir, receive: g.fn }, buryRuns(1));
+        await h.byName(OAKS).run(h.ctx);
+        const oak = readCue(dir)!;
+        expect(oak.stop).toBeUndefined();
+        h.sdk.push({ player: { ...h.sdk.getState()!.player!, worldX: SITES.willow.stand[0], worldZ: SITES.willow.stand[1] } });
+        await h.byName(WILLOWS).run(h.ctx);
+        const willow = readCue(dir)!;
+        expect(willow.session).toBe(oak.session);
+        expect(willow.seq).toBeGreaterThan(oak.seq);
+        expect(willow.stop).toBe(true);
+        expect(g.receives.map(r => r.partner)).toEqual(['cairn_b02', 'cairn_b03', 'cairn_b01']);
+    });
+
+    test('while no giver serves (all four away) the load waits on observed ticks, then takes the first giver back', async () => {
+        const dir = newDir();
+        const g = group(dir, { start: {} });
+        const h = harness(state({ level: 60 }), { bury: true, bones: { group: GROUP }, cueDir: dir, receive: g.fn }, buryRuns(0));
+        const t0 = h.sdk.getState()!.tick;
+        h.sdk.onStateUpdate(s => {
+            if (s.tick === t0 + 12) g.publish('cairn_b03', 50);
+        });
+        const stop = ticking(h.sdk);
+        try {
+            await h.byName(OAKS).run(h.ctx);
+        } finally {
+            stop();
+        }
+        expect(g.receives.map(r => r.partner)).toEqual(['cairn_b03']);
+        const row = loadRows(h)[0]!;
+        expect(row.meta).toMatchObject({ giver: 'cairn_b03', received: 23 });
+        expect((row.meta as { serverWait: number }).serverWait).toBeGreaterThanOrEqual(12);
+        expect(row.ticks).toBe(0);
+    });
+
+    test('a load that finds no server within serverWait fails the band with a clear refusal, and no trade is clicked', async () => {
+        const dir = newDir();
+        const g = group(dir, { start: {} });
+        const h = harness(state({ level: 60 }), { bury: true, bones: { group: GROUP, serverWait: 6 }, cueDir: dir, receive: g.fn }, buryRuns(0));
+        const stop = ticking(h.sdk);
+        try {
+            await expect(h.byName(OAKS).run(h.ctx)).rejects.toThrow(
+                'woodcutting:oak-15-73: bone load 1 from the group (cairn_b01, cairn_b02, cairn_b03, cairn_b04) failed: no giver of the group served within 6 observed ticks'
+            );
+        } finally {
+            stop();
+        }
+        expect(g.receives).toHaveLength(0);
+        expect(h.calls).toHaveLength(0);
+        expect(loadRows(h).map(r => [r.ok, (r.meta as { giver: unknown }).giver])).toEqual([[false, null]]);
+        // the cue stays up for a resume: a failed band never stops the group
+        expect(readCue(dir)!.stop).toBeUndefined();
+    });
+
+    test('one giver is unchanged: the same partner every load, no cue written, the same load row', async () => {
+        const dir = newDir();
+        const h = harness(state({ level: 60, bones: 3 }), { bury: true, bones: { giver: 'cairn_giver' }, cueDir: dir });
+        await h.byName(OAKS).run(h.ctx);
+        const empty = harness(state({ level: 60 }), { bury: true, bones: { giver: 'cairn_giver' }, cueDir: dir });
+        await empty.byName(OAKS).run(empty.ctx);
+        expect(empty.receives.map(r => r.partner)).toEqual(['cairn_giver']);
+        expect(readdirSync(dir)).toEqual([]);
+        expect(loadRows(empty)[0]!.meta).toEqual({ kind: 'wc-bones-load', band: OAKS, load: 1, ticks: 5, stepTicks: 5, received: 23 });
+    });
+
+    for (const [lastAt, from] of [[3, 'cairn_b01'], [4, 'cairn_b04']] as const) {
+        test(`the last load's 21 bones and runes from whichever giver serves it (${from}, load ${lastAt}): the same want every load, then no load after the runes`, async () => {
+            const dir = newDir();
+            const g = group(dir, { lastAt });
+            const h = harness(state({ level: 97, prayer: 94 }), { bury: true, bones: { group: GROUP, lastLoad: 21 }, cueDir: dir, receive: g.fn }, buryRuns(lastAt - 1));
+            const band = h.byName(WILLOWS);
+            expect(band.preconditions(h.sdk.getState()!, {})).toBe(true);
+            await band.run(h.ctx);
+            expect(g.receives.map(r => r.partner)).toEqual(['cairn_b02', 'cairn_b03', 'cairn_b01', 'cairn_b04'].slice(0, lastAt));
+            expect(g.receives.at(-1)!.partner).toBe(from);
+            expect(g.receives.every(r => JSON.stringify(r.want) === JSON.stringify([{ item: /bones$/i, amount: 21 }]))).toBe(true);
+            // the run after the runes buried its bones and published none left, and the band chopped on to its end
+            expect(h.calls).toHaveLength(lastAt);
+            expect(h.calls.at(-1)!.signal!.aborted).toBe(false);
+            const s = h.sdk.getState()!;
+            expect(s.inventory.filter(i => /rune$/i.test(i.name)).map(i => `${i.name} x${i.count}`)).toEqual(['Law rune x1', 'Air rune x5']);
+            expect(band.postconditions(s, {})).toBe(true);
+            expect(readCue(dir)!.stop).toBe(true);
+        });
+    }
 });
