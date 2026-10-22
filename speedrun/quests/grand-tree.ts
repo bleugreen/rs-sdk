@@ -24,8 +24,8 @@
 // in sight' test waits for the scene first (rs/185 addendum 4).
 
 import type { BotWorldState, PrayerName } from '../../sdk/types';
-import { act, actConverse, talkTo, type ActOptions, type ActResult } from '../lib/act';
-import { fight, prayerActive, type FightResult } from '../lib/combat';
+import { act, actConverse, talkTo, useOn } from '../lib/act';
+import { fight, prayerActive, setPrayer, type FightResult } from '../lib/combat';
 import { converse, type ConverseResult } from '../lib/converse';
 import { pageText, type OptionPattern } from '../lib/dialogue';
 import { INVENTORY_SIZE, type ItemPattern } from '../lib/items';
@@ -275,28 +275,13 @@ export function exitCheck(s: BotWorldState): true | string {
     return true;
 }
 
-// ------------------------------------------------------------------ stand-ins
-// Shared code not yet on this branch, each behind one function with the signature its owner
-// settled. Swapping one for the real import is a one-line change per function.
-//   useOn     -> rs/200 act.ts useOn (no re-send by default)
-//   setPrayer -> rs/200 combat.ts setPrayer
-
 type Ctx = StepContext<unknown>;
 type Sdk = Ctx['sdk'];
 
-async function useOn(sdk: Sdk, item: ItemPattern, target: { loc: LocQuery }, done: Pred, opts: ActOptions = {}): Promise<ActResult> {
-    const loc = await findLoc(sdk, target.loc);
-    if (!loc) throw new Error(`useOn: no loc ${JSON.stringify(target.loc)} near ${JSON.stringify(pos(sdk))}`);
-    const it = invItem(sdk, item);
-    if (!it) throw new Error(`useOn: no ${String(item)} in the inventory`);
-    return act(sdk, () => sdk.sendUseItemOnLoc(it.slot, loc.x, loc.z, loc.id), done, { resendEvery: 0, ...opts });
-}
-
-async function setPrayer(sdk: Sdk, name: PrayerName, on: boolean): Promise<void> {
-    const s = sdk.getState();
-    if (s && prayerActive(s, name) === on) return;
-    const r = await act(sdk, () => sdk.sendTogglePrayer(name), st => prayerActive(st, name) === on, { resendEvery: 3, maxResends: 2, maxTicks: 10 });
-    if (!r.ok) throw new Error(`${name} did not turn ${on ? 'on' : 'off'}`);
+/** setPrayer, but a prayer that does not turn as asked stops the step. */
+async function pray(sdk: Sdk, name: PrayerName, on: boolean): Promise<void> {
+    const r = await setPrayer(sdk, name, on);
+    if (!r.ok) throw new Error(`${name} did not turn ${on ? 'on' : 'off'}: ${r.reason}`);
 }
 
 // ------------------------------------------------------------------ moves
@@ -497,7 +482,7 @@ async function villageToStronghold(sdk: Sdk): Promise<void> {
 
 /** Open the trapdoor with Protect from Melee on, and answer Glough's scene until the demon is in sight. */
 async function trapdoorScene(sdk: Sdk): Promise<void> {
-    await setPrayer(sdk, 'protect_from_melee', true);
+    await pray(sdk, 'protect_from_melee', true);
     await loc(sdk, 'trapdoor', TILES.trapdoor, /^open$/i, underground, { maxTicks: 20 });
     await converse(sdk, [], { idle: 2, openTicks: 20, maxTicks: 80, until: demonInSight, closeModals: true, unmatched: 'stop' });
     if (!demonInSight(sdk.getState()!)) throw new Error('no black demon in sight after the trapdoor scene');
@@ -734,7 +719,7 @@ export function steps(input: Options = {}): Step<any>[] {
                 // SCORED walks off at the first page after the landing (walking ends the dialogue),
                 // under Protect from Melee from boarding until through the shipyard gate.
                 const westOfGate = !inKaramja(s0) || pos(s0).x < TILES.shipyardGate.x;
-                if (westOfGate) await setPrayer(sdk, 'protect_from_melee', true);
+                if (westOfGate) await pray(sdk, 'protect_from_melee', true);
                 if (!inKaramja(sdk.getState()!)) {
                     await enterTree(sdk, ctx);
                     await treeLadder(sdk, 3);
@@ -756,7 +741,7 @@ export function steps(input: Options = {}): Step<any>[] {
                     await locTalk(sdk, 'shipyard gate', TILES.shipyardGate, /^open$/i, [/Glough sent me/i, /^Ka\.$/, /^Lu\.$/, /^Min\.$/], s => pos(s).x >= TILES.shipyardGate.x, { idle: 2 });
                 }
                 if (westOfGate) {
-                    await setPrayer(sdk, 'protect_from_melee', false);
+                    await pray(sdk, 'protect_from_melee', false);
                     const s1 = sdk.getState()!;
                     note(ctx, name('I-karamja'), { crash: { hpLost: hp0 - skillLevel(s1, 'hitpoints'), prayerUsed: prayer0 - (s1.prayers?.prayerPoints ?? 0) } });
                 }
