@@ -39,7 +39,15 @@
 // when this cycle's click already went to the fallen one, a re-click goes out now.
 //
 // Plain (`technique: 'plain'`): click the target, re-click only when it is gone,
-// the player went idle, or after dropping a full inventory.
+// the player went idle, or after dropping a full inventory. Two opt-in refinements
+// for fishing: `followSpot` re-clicks the nearest spot on the label that shows the
+// clicked spot on a new tile (otherwise a moved spot, which keeps its index, is only
+// noticed once the player has idled past the stall window), and `dropEach` drops
+// the catch on the label that shows it and re-clicks in the same pass, so both land
+// on R+1. A drop clears the interaction but not the action clock, and on R+1 every
+// attempt label continues (fly from any offset; net, bait and cage only on R+1 and
+// R+2: skills/fishing.md section 6), so the roll lattice is kept and a full
+// inventory never happens.
 //
 // Plain + bury (`technique: 'plain'` with `bury`, the knife-off fallback the host gate
 // switches to): the plain clock with a bone in its idle ticks, as bones-wc.ts `plainbury`
@@ -178,14 +186,18 @@ function parseMethod(value: unknown): CycleMethod {
     throw new Error('method is required (a preset name or a method object)');
 }
 
-createKnifeCycle.params = ['method', 'technique', 'successes', 'untilLevel', 'maxTicks', 'xpLag', 'lead', 'dismiss', 'reanchor', 'drop', 'window', 'trees', 'keepProducts', 'bury', 'phase'] as const;
+createKnifeCycle.params = ['method', 'technique', 'successes', 'untilLevel', 'untilXp', 'maxTicks', 'xpLag', 'lead', 'dismiss', 'reanchor', 'followSpot', 'dropEach', 'drop', 'window', 'trees', 'keepProducts', 'bury', 'phase'] as const;
 export function createKnifeCycle(params: ProgramParams): TickProgram {
     const method = parseMethod(params.method);
     const technique = oneOf(params.technique, ['knife', 'plain'] as const, 'knife', 'technique');
     const successTarget = num(params.successes, Infinity, 'successes');
     const untilLevel = num(params.untilLevel, 0, 'untilLevel');
+    /** End once the skill's xp (game xp, as published) reaches this: a band that stops at a quest-start xp. */
+    const untilXp = num(params.untilXp, 0, 'untilXp');
     const maxTicks = num(params.maxTicks, Infinity, 'maxTicks');
-    if (successTarget === Infinity && !untilLevel && maxTicks === Infinity) throw new Error('give successes, untilLevel or maxTicks');
+    if (successTarget === Infinity && !untilLevel && !untilXp && maxTicks === Infinity) throw new Error('give successes, untilLevel, untilXp or maxTicks');
+    const followSpot = params.followSpot === true;
+    const dropEach = params.dropEach === true;
     const xpLag = num(params.xpLag, 0, 'xpLag');
     const lead = num(params.lead, 0, 'lead');
     const dismiss = oneOf(params.dismiss, ['now', 'blind', 'none'] as const, 'now', 'dismiss');
@@ -230,6 +242,9 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
     let resyncs = 0;
     let moves = 0;
     let levelUps = 0;
+    // The gap from the last success before each spot move to the first success after it.
+    const moveGaps: number[] = [];
+    let moveFrom: number | null = null;
     let fellBack: string | undefined;
     let lastTick = 0;
     let switches = 0;
@@ -296,6 +311,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
         const knife = invItem(ctx.state, KNIFE);
         const logs = invItem(ctx.state, LOGS);
         if (!knife || !logs) return false;
+        ctx.starter();
         ctx.send({ type: 'useItemOnItem', sourceSlot: knife.slot, targetSlot: logs.slot }, 'knife on logs');
         ctx.send({ type: 'clickComponent', componentId: SHAFTS_BUTTON }, `button ${SHAFTS_BUTTON}`);
         return true;
@@ -409,6 +425,20 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
         if (targetGone || answerDialog(ctx, t)) click(ctx);
     };
 
+    // A spot that teleported keeps its index: compare its tile with the clicked one.
+    const spotMoved = (ctx: ProgramContext): boolean => {
+        const cur = current;
+        if (cur?.kind !== 'npc' || !currentTile || (anchor === null && awaitXpSince === null)) return false;
+        const n = ctx.state.nearbyNpcs.find(m => m.index === cur.index);
+        const at = n ? [n.tileX ?? n.x, n.tileZ ?? n.z] : null;
+        if (at && at[0] === currentTile[0] && at[1] === currentTile[1]) return false;
+        moves++;
+        ctx.count('moves');
+        moveFrom = successes.lastTick ?? ctx.tick;
+        ctx.log(`spot #${cur.index} moved ${currentTile.join(',')} -> ${at ? at.join(',') : 'gone'}`);
+        return true;
+    };
+
     const summary = () => {
         const g = successes.stats();
         return {
@@ -426,6 +456,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
             starters,
             resyncs,
             moves,
+            moveGaps: [...moveGaps],
             levelUps,
             phase: curPhase,
             switches,
@@ -470,6 +501,10 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                 lastXp = xp;
                 ctx.count('successes');
                 ctx.mark('successes');
+                if (moveFrom !== null) {
+                    moveGaps.push(t - moveFrom);
+                    moveFrom = null;
+                }
                 // A lost 3-tick lock shows as success gaps that are not multiples of 3 and a rising span figure.
                 ctx.gauge('ticksPerSuccess', successes.ticksPerEvent);
                 if (p) ctx.gauge('ticksPerExpectedRoll', ticksPerExpectedRoll());
@@ -507,7 +542,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
             } else dialogOpenSince = null;
             idleTicks = (s.player?.animId ?? -1) === -1 ? idleTicks + 1 : 0;
 
-            if (successes.count >= successTarget || t - startTick > maxTicks || (untilLevel && lvl >= untilLevel)) return ctx.done(summary());
+            if (successes.count >= successTarget || t - startTick > maxTicks || (untilLevel && lvl >= untilLevel) || (untilXp && xp >= untilXp)) return ctx.done(summary());
 
             // Answer a level-up the tick it is seen (and again if it is still open 3 ticks on).
             // The engine opens it after R+1's packets, so the starter already in is unaffected
@@ -529,15 +564,31 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                     anchor = null;
                     return;
                 }
+                const moved = followSpot && spotMoved(ctx);
+                const catchLabel = dropEach && dropProducts && xpNow && droppable(s).length > 0;
                 if (s.dialog?.isOpen) {
                     ctx.send({ type: 'clickDialogOption', optionIndex: 0 }, 'dismiss dialog');
-                    breakAt(t);
-                    anchor = null;
+                    if (!catchLabel) {
+                        breakAt(t);
+                        anchor = null;
+                        return;
+                    }
+                }
+                if (catchLabel) {
+                    // dropEach (header): the drops and the re-click land on R+1; one slot is left for the click
+                    for (const p of droppable(s).slice(0, Math.max(0, ctx.budget - 1))) ctx.send({ type: 'dropItem', slot: p.slot }, `drop ${p.name}`);
+                    if (moved || targetGone) {
+                        current = null;
+                        currentTile = null;
+                        breakAt(t);
+                    }
+                    if (click(ctx)) anchor = t;
                     return;
                 }
                 const stalled = anchor !== null && t - Math.max(anchor, lastXpTick) > 12 && idleTicks >= 2;
-                if (anchor === null || targetGone || stalled) {
+                if (anchor === null || targetGone || stalled || moved) {
                     current = null;
+                    currentTile = null;
                     if (click(ctx)) {
                         anchor = t;
                         breakAt(t);
@@ -546,20 +597,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                 return;
             }
 
-            // A spot that teleported keeps its index: compare its tile with the clicked one.
-            let moved = false;
-            const cur = current;
-            if (cur?.kind === 'npc' && currentTile && (anchor !== null || awaitXpSince !== null)) {
-                const n = s.nearbyNpcs.find(m => m.index === cur.index);
-                const at = n ? [n.tileX ?? n.x, n.tileZ ?? n.z] : null;
-                if (!at || at[0] !== currentTile[0] || at[1] !== currentTile[1]) {
-                    moved = true;
-                    moves++;
-                    ctx.count('moves');
-                    ctx.log(`spot #${cur.index} moved ${currentTile.join(',')} -> ${at ? at.join(',') : 'gone'}`);
-                }
-            }
-
+            const moved = spotMoved(ctx);
             const lost = anchor !== null && t - Math.max(anchor + method.r0 + 1, lastXpTick) > (windowOverride || lockWindow(method, lvl, axe));
             // A non-depleting tree that fell is not a lost lock (header): the schedule's next click picks a live tree.
             const switchTree = targetGone && !moved && !lost && anchor !== null && method.kind === 'loc' && !method.depletes;

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import '../../lite/test-support/browser-globals.js';
 
 import { readFileSync } from 'node:fs';
-import { type Axe, AXES, axeOf, catchChance, createKnifeCycle, CYCLE_METHODS, lockWindow, SHAFTS_BUTTON, TREE_CHANCE } from './knife-cycle.js';
+import { type Axe, AXES, axeOf, catchChance, createKnifeCycle, CYCLE_METHODS, type CycleMethod, lockWindow, SHAFTS_BUTTON, TREE_CHANCE } from './knife-cycle.js';
 import { Harness, makeState, type StateSpec } from './testkit.js';
 import { statRandom } from './util.js';
 
@@ -17,7 +17,8 @@ import { statRandom } from './util.js';
  * sent on label c land on c + latency.
  */
 function serverRun(opts: {
-    method: 'willow' | 'oak' | 'fly' | 'tree';
+    /** A preset, or a method object (the small net). */
+    method: 'willow' | 'oak' | 'fly' | 'tree' | CycleMethod;
     technique?: 'knife' | 'plain';
     ticks: number;
     latency?: (n: number) => number;
@@ -45,8 +46,10 @@ function serverRun(opts: {
     equipment?: string[];
     /** Rolls (counted from 1) that fail: the cadence goes on, no xp and no log. */
     miss?: (roll: number) => boolean;
+    /** Each success puts this product in the first free slot; a landed drop empties its slot. */
+    catches?: string;
 }) {
-    const m = CYCLE_METHODS[opts.method]!;
+    const m = typeof opts.method === 'string' ? CYCLE_METHODS[opts.method]! : opts.method;
     const skill = m.skill === 'fishing' ? 'Fishing' : 'Woodcutting';
     const h = new Harness('cycle', createKnifeCycle);
     let tick = 1000;
@@ -64,11 +67,12 @@ function serverRun(opts: {
     let delayedOn = -1;
     let prayerXp = 0;
     let buryXpOn = -1;
-    const pending: Array<{ at: number; type: string; locId?: number }> = [];
+    const pending: Array<{ at: number; type: string; locId?: number; slot?: number }> = [];
     let rolls = 0;
     const rollTicks: number[] = [];
     const buryTicks: number[] = [];
-    const inventory: Array<string | { name: string; options: string[] }> = [
+    let maxInventory = 0;
+    const inventory: Array<string | { name: string; options: string[] } | null> = [
         ...(opts.inventory ?? ['Knife', 'Logs', 'Logs', 'Logs', 'Logs', 'Logs']),
         ...(opts.axe ? [opts.axe] : []),
         ...Array.from({ length: opts.bones ?? 0 }, () => ({ name: 'Dragon bones', options: ['Bury', 'Drop'] }))
@@ -83,7 +87,7 @@ function serverRun(opts: {
         equipment: opts.equipment,
         animId: interacting ? 1 : -1,
         dialogOpen: dialog,
-        npcs: m.kind === 'npc' ? [{ index: 7, name: 'Fishing spot', x: spotX, z: 3200, options: ['Lure', 'Bait'] }] : [],
+        npcs: m.kind === 'npc' ? [{ index: 7, name: 'Fishing spot', x: spotX, z: 3200, options: ['Lure', 'Bait', 'Net'] }] : [],
         locs: m.kind === 'loc'
             ? [
                 ...Array.from({ length: opts.deadTrees ?? 0 }, (_, i) => ({ id: 900 + i, x: 3200, z: 3200 + i, name: treeName, options: ['Chop down'] })),
@@ -102,11 +106,12 @@ function serverRun(opts: {
         if (buryXpOn === tick) {
             prayerXp += 72 * 25;
             buryTicks.push(tick);
-            inventory.splice(inventory.findIndex(i => typeof i !== 'string' && i.name === 'Dragon bones'), 1);
+            inventory.splice(inventory.findIndex(i => i !== null && typeof i !== 'string' && i.name === 'Dragon bones'), 1);
         }
         for (const p of pending.filter(p => p.at === tick)) {
             if (tick === delayedOn) continue; // p_delay(0) after a bury: every packet is rejected
             if (p.type === 'useItemOnItem' || p.type === 'dropItem' || p.type === 'useInventoryItem') interacting = false; // inventory ops clear the interaction
+            if (opts.catches && p.type === 'dropItem' && p.slot !== undefined) inventory[p.slot] = null;
             if (p.type === 'useItemOnItem') clock = tick + 2;
             if (p.type === 'useItemOnItem' && tick === lastRoll + 1) starter = true;
             if (p.type === 'useInventoryItem') {
@@ -137,6 +142,12 @@ function serverRun(opts: {
             if (!opts.miss?.(++rolls)) {
                 xp += 500;
                 rollTicks.push(tick);
+                if (opts.catches) {
+                    const free = inventory.indexOf(null);
+                    if (free >= 0) inventory[free] = opts.catches;
+                    else inventory.push(opts.catches);
+                    maxInventory = Math.max(maxInventory, inventory.filter(i => i !== null).length);
+                }
                 if (m.depletes || (opts.fellEvery && rollTicks.length % opts.fellEvery === 0)) {
                     treeId++;
                     interacting = false;
@@ -147,10 +158,10 @@ function serverRun(opts: {
             }
         }
         if (opts.merged?.(tick)) { skipped++; continue; }
-        for (const s of h.step(makeState(spec()), 1 + skipped)) pending.push({ at: tick + (opts.latency?.(n++) ?? 1), type: s.action.type, locId: (s.action as { locId?: number }).locId });
+        for (const s of h.step(makeState(spec()), 1 + skipped)) pending.push({ at: tick + (opts.latency?.(n++) ?? 1), type: s.action.type, locId: (s.action as { locId?: number }).locId, slot: (s.action as { slot?: number }).slot });
         skipped = 0;
     }
-    return { h, rollTicks, buryTicks };
+    return { h, rollTicks, buryTicks, maxInventory };
 }
 
 const gapsOf = (ticks: number[]) => ticks.slice(1).map((t, i) => t - ticks[i]!);
@@ -243,6 +254,17 @@ describe('knife cycle', () => {
         const gaps = gapsOf(rollTicks).slice(1);
         // one plain-length gap where the starter was late, 3s otherwise
         expect(gaps.filter(g => g !== 3)).toEqual([4]);
+    });
+
+    test('hold: a held starter bundle goes out whole on the next label; hold 0 sends exactly what no hold sends', () => {
+        const plain = serverRun({ method: 'willow', ticks: 120 });
+        expect(serverRun({ method: 'willow', ticks: 120, params: { hold: 0 } }).h.timeline()).toEqual(plain.h.timeline());
+        const held = serverRun({ method: 'willow', ticks: 120, params: { hold: 1 } });
+        const first = plain.h.sent.find(s => s.action.type === 'useItemOnItem')!.tick;
+        expect(held.h.sent.filter(s => s.tick === first)).toHaveLength(0);
+        expect(held.h.sent.filter(s => s.tick === first + 1).map(s => s.action.type)).toEqual(['useItemOnItem', 'clickComponent', 'interactLoc']);
+        expect(held.h.status.counters.held).toBe(held.h.status.counters.starters);
+        expect(held.rollTicks.length).toBeLessThan(plain.rollTicks.length);
     });
 
     test('two ticks decoded at once (a skipped starter label) re-lock on the next roll', () => {
@@ -369,11 +391,109 @@ describe('knife cycle', () => {
         expect(gapsOf(relocked).every(g => g === 3)).toBe(true);
     });
 
+    test('untilXp ends the run on the label that shows the xp', () => {
+        const { h, rollTicks } = serverRun({ method: 'fly', ticks: 2000, params: { untilXp: 5000 } });
+        expect(h.status.phase).toBe('done');
+        expect(rollTicks).toHaveLength(10);
+        expect(h.status.result).toMatchObject({ successes: 10 });
+        expect(h.status.endedTick).toBe(rollTicks[9]);
+        expect(() => createKnifeCycle({ method: 'fly', untilXp: 240300 })).not.toThrow();
+    });
+
+    test('a spot move records the gap that spans it', () => {
+        const { h, rollTicks } = serverRun({ method: 'fly', ticks: 200, spotMovesAt: 1060 });
+        const before = rollTicks.filter(t => t < 1060).at(-1)!;
+        const after = rollTicks.find(t => t > 1060)!;
+        expect(h.status.result).toMatchObject({ moves: 1, moveGaps: [after - before] });
+    });
+
     test('the lost-lock window scales with the catch chance', () => {
         expect(lockWindow(CYCLE_METHODS.fly!, 99)).toBe(15);
         expect(lockWindow(CYCLE_METHODS.fly!, 20)).toBeGreaterThan(15);
         // no axe: no chance, the preset's window
         expect(lockWindow(CYCLE_METHODS.willow!, 30)).toBe(18);
+    });
+});
+
+describe('knife cycle: plain fishing refinements', () => {
+    const ROD = ['Fly fishing rod', 'Feather'];
+    const firstClickAfter = (h: ReturnType<typeof serverRun>['h'], t: number) => h.sent.find(s => s.tick >= t && s.action.type === 'interactNpc')?.tick;
+
+    test('followSpot: a moved spot is re-clicked on the label that shows its new tile', () => {
+        const { h, rollTicks } = serverRun({ method: 'fly', technique: 'plain', ticks: 200, inventory: ROD, spotMovesAt: 1060, params: { followSpot: true } });
+        expect(firstClickAfter(h, 1060)).toBe(1060);
+        expect(h.status.result).toMatchObject({ moves: 1 });
+        // the click lands on 1061 and the first roll comes r0 later; the plain cycle holds on either side
+        expect(rollTicks.find(t => t > 1060)).toBe(1061 + CYCLE_METHODS.fly!.r0);
+        expect(gapsOf(rollTicks.filter(t => t > 1060)).every(g => g === 5)).toBe(true);
+    });
+
+    test('without followSpot plain still waits for the stall window after a move', () => {
+        const { h } = serverRun({ method: 'fly', technique: 'plain', ticks: 200, inventory: ROD, spotMovesAt: 1060 });
+        expect(firstClickAfter(h, 1060)!).toBeGreaterThan(1065);
+        expect(h.status.result).toMatchObject({ moves: 0 });
+    });
+
+    test('dropEach: the catch label drops it and re-clicks, and the 5-tick lattice holds', () => {
+        const { h, rollTicks, maxInventory } = serverRun({ method: 'fly', technique: 'plain', ticks: 300, inventory: ROD, catches: 'Raw trout', params: { dropEach: true } });
+        expect(gapsOf(rollTicks).every(g => g === 5)).toBe(true);
+        expect(rollTicks.length).toBeGreaterThan(55);
+        for (const r of rollTicks.slice(0, -1)) expect(h.sent.filter(s => s.tick === r).map(s => s.action.type)).toEqual(['dropItem', 'interactNpc']);
+        expect(maxInventory).toBe(ROD.length + 1);
+    });
+
+    test('dropEach: a level-up on the catch label is answered first, then the drop and the click', () => {
+        const base = serverRun({ method: 'fly', technique: 'plain', ticks: 100, inventory: ROD, catches: 'Raw trout', params: { dropEach: true } });
+        const r = base.rollTicks[4]!;
+        const { h, rollTicks } = serverRun({ method: 'fly', technique: 'plain', ticks: 100, inventory: ROD, catches: 'Raw trout', dialogAt: r, params: { dropEach: true } });
+        expect(h.sent.filter(s => s.tick === r).map(s => s.action.type)).toEqual(['clickDialogOption', 'dropItem', 'interactNpc']);
+        expect(gapsOf(rollTicks).every(g => g === 5)).toBe(true);
+    });
+
+    test('dropEach with followSpot: a move between catches gets a lone re-click, and the catches after it are dropped', () => {
+        const base = serverRun({ method: 'fly', technique: 'plain', ticks: 200, inventory: ROD, catches: 'Raw trout', params: { dropEach: true } });
+        const move = base.rollTicks[8]! + 2;
+        const { h, rollTicks, maxInventory } = serverRun({ method: 'fly', technique: 'plain', ticks: 200, inventory: ROD, catches: 'Raw trout', spotMovesAt: move, params: { dropEach: true, followSpot: true } });
+        expect(h.sent.filter(s => s.tick === move).map(s => s.action.type)).toEqual(['interactNpc']);
+        expect(h.status.result).toMatchObject({ moves: 1, moveGaps: [rollTicks.find(t => t > move)! - (move - 2)] });
+        const next = rollTicks.find(t => t > move)!;
+        expect(h.sent.filter(s => s.tick === next).map(s => s.action.type)).toEqual(['dropItem', 'interactNpc']);
+        expect(maxInventory).toBe(ROD.length + 1);
+    });
+
+    test('dropEach on the small net: drop and re-click on R+1 keep the 6-tick lattice', () => {
+        const NET: CycleMethod = { skill: 'fishing', kind: 'npc', target: '^fishing spot$', option: '^net$', product: '^raw ', clickOnRoll: true, r0: 5, plainCycle: 6, lockWindow: 45 };
+        const { h, rollTicks, maxInventory } = serverRun({ method: NET, technique: 'plain', ticks: 200, inventory: ['Small fishing net'], catches: 'Raw shrimps', params: { dropEach: true, followSpot: true } });
+        expect(gapsOf(rollTicks).every(g => g === 6)).toBe(true);
+        expect(h.sent.filter(s => s.tick === rollTicks[3]).map(s => s.action.type)).toEqual(['dropItem', 'interactNpc']);
+        expect(h.sent.find(s => s.action.type === 'interactNpc')?.action).toMatchObject({ optionIndex: 3 });
+        expect(maxInventory).toBe(2);
+    });
+
+    test('dropEach keeps keepProducts: the first products are never dropped', () => {
+        const { h, rollTicks, maxInventory } = serverRun({ method: 'willow', technique: 'plain', ticks: 120, inventory: [], catches: 'Willow logs', params: { dropEach: true, keepProducts: 2 } });
+        expect(gapsOf(rollTicks).every(g => g === 4)).toBe(true);
+        const dropped = h.sent.filter(s => s.action.type === 'dropItem').map(s => (s.action as { slot: number }).slot);
+        expect(dropped.length).toBe(rollTicks.length - 2);
+        expect(dropped.every(slot => slot >= 2)).toBe(true);
+        expect(maxInventory).toBe(3);
+    });
+
+    test('dropEach with a short budget: the click keeps its slot and the leftover drops go out on the next catch', () => {
+        // six old catches and a level-up on the catch label: the dismissal, three drops and the click fill the 5 packets
+        const base = serverRun({ method: 'fly', technique: 'plain', ticks: 100, inventory: [...ROD, ...Array(6).fill('Raw trout')], catches: 'Raw trout' });
+        const r = base.rollTicks[0]!;
+        const { h, rollTicks } = serverRun({ method: 'fly', technique: 'plain', ticks: 100, inventory: [...ROD, ...Array(6).fill('Raw trout')], catches: 'Raw trout', dialogAt: r, params: { dropEach: true } });
+        expect(h.sent.filter(s => s.tick === r).map(s => s.action.type)).toEqual(['clickDialogOption', 'dropItem', 'dropItem', 'dropItem', 'interactNpc']);
+        expect(h.status.deferred).toBe(0);
+        expect(h.sent.filter(s => s.tick === rollTicks[1]).map(s => s.action.type)).toEqual(['dropItem', 'dropItem', 'dropItem', 'dropItem', 'interactNpc']);
+        expect(gapsOf(rollTicks).every(g => g === 5)).toBe(true);
+    });
+
+    test('without dropEach plain keeps the catches until the inventory is full', () => {
+        const { h, rollTicks, maxInventory } = serverRun({ method: 'fly', technique: 'plain', ticks: 100, inventory: ROD, catches: 'Raw trout' });
+        expect(h.sent.some(s => s.action.type === 'dropItem')).toBe(false);
+        expect(maxInventory).toBe(ROD.length + rollTicks.length);
     });
 });
 

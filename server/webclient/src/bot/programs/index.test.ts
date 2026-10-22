@@ -41,8 +41,8 @@ describe('registered programs', () => {
     });
 
     test('an undeclared key faults a real program before it runs', () => {
-        const s = runtime.start('knife-cycle', { method: 'willow', successes: 10, dropEach: true });
+        const s = runtime.start('knife-cycle', { method: 'willow', successes: 10, dropeach: true });
         expect(s.phase).toBe('fault');
-        expect(s.fault).toContain('knife-cycle does not declare dropEach');
+        expect(s.fault).toContain('knife-cycle does not declare dropeach');
     });
 });
