@@ -24,8 +24,7 @@ function run(opts: { ticks: number; params?: Record<string, unknown>; failClick?
     const h = new Harness('agl', createAgility);
     let tick = 50;
     let xp = 0;
-    let msgId = 0;
-    const msgs: Array<{ text: string; tick: number; id: number }> = [];
+    const msgs: Array<{ text: string; tick: number }> = [];
     const done: Array<{ at: number; id: number; ok: boolean }> = [];
     const completions: Array<{ tick: number; id: number }> = [];
     const xpOf: Record<number, number> = { 1: 10, 2: 10, 3: 50 };
@@ -47,7 +46,7 @@ function run(opts: { ticks: number; params?: Record<string, unknown>; failClick?
         }
         for (const d of done.filter(d => d.at === tick)) {
             if (d.ok) { xp += xpOf[d.id]!; completions.push({ tick, id: d.id }); }
-            else msgs.push({ text: 'You slip and fall.', tick, id: msgId++ });
+            else msgs.push({ text: 'You slip and fall.', tick });
         }
         for (const s of h.step(state())) if (s.action.type === 'interactLoc') pending.push({ at: tick + 1, id: s.action.locId });
     }
