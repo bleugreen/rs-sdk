@@ -42,7 +42,7 @@ import { journalProbeName, questStage, questStatus, requireQuestStage, type Ques
 import { logNote } from '../lib/ticks';
 import { inArea, runTo, type Area, type TravelSdk } from '../lib/travel';
 import { currentTick, waitTicks, waitUntil, type Pred } from '../lib/wait';
-import { configId, invCount, messageCursor, messagesAfter, pos } from '../lib/world';
+import { configId, invCount, pos, replyAfter } from '../lib/world';
 import { QUESTS } from '../data/quest-stages';
 import type { Check, Observed, StepContext } from '../runner/step';
 import { allOf, baseLevels, inBox, kitSegment, kitWant, questSteps, slotsCover, talkShape, type Box, type KitItem, type QuestItem, type QuestOptions, type Segment } from './segments';
@@ -473,15 +473,6 @@ async function pickupAt(ctx: Ctx, seg: Letter, what: string, item: number, at: {
     const r = await act(sdk, () => sdk.sendPickup(at.x, at.z, item), s => invCount(s, item) > before, { resendEvery: 3, maxTicks: 40, interrupts: interrupts() });
     if (!r.ok) fail(seg, `${what} was not picked up (${r.reason})`, sdk);
     note(ctx, seg, { pickup: what, waited: currentTick(sdk) - t0 - r.ticks, clickToHeld: r.ticks, resends: r.resends });
-}
-
-/**
- * A click's game-message reply matching `re`, from a cursor taken before the click: the browser
- * stamps a reply on the click's own tick and lite on the next, so no tick offset serves both.
- */
-export function replyAfter(sdk: Pick<Sdk, 'getState'>, re: RegExp): { seen: (s: BotWorldState) => boolean; first: () => string | undefined } {
-    const cursor = messageCursor(sdk.getState());
-    return { seen: s => messagesAfter(s, cursor, re).length > 0, first: () => messagesAfter(sdk.getState(), cursor, re)[0] };
 }
 
 /** Climb the platform ladder to `level` (up from the ground floor, down from the upper floor). */
