@@ -7,7 +7,9 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ASK_SLACK_MS, nameHash, newRequestFrom, readTopUpAsk, usableAsk, writeTopUpAsk } from './altar-cue';
-import { askOffer, boneGiverOptions, boneServer, carryDue, isFinalLoad, legRan, loadOffer, npcTiles, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, type BoneStatus } from './bone-giver';
+import type { Cue } from './altar-cue';
+import type { RoleContext } from './role';
+import { askOffer, BoneGiver, boneGiverOptions, boneServer, boneWithdrawals, carryDue, groupLoadsDone, isFinalLoad, legRan, loadOffer, npcTiles, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, type BoneStatus } from './bone-giver';
 import { assertDemoStandIn } from './bone-receiver';
 
 const o = { noReplyTicks: 3, resendTicks: 100 };
@@ -30,7 +32,7 @@ const bgo = (raw: Record<string, unknown>, env?: Record<string, string | undefin
 
 describe('a group of bone givers takes turns (S07 b01-b04)', () => {
     const now = 50_000;
-    const st = (account: string, phase: BoneStatus['phase'], readyAt: number | null, extra: Partial<BoneStatus> = {}): BoneStatus => ({ v: 1, account, phase, held: 23, n: 23, trades: 0, bounces: 0, tile: null, readyAt, ms: now - 500, ...extra });
+    const st = (account: string, phase: BoneStatus['phase'], readyAt: number | null, extra: Partial<BoneStatus> = {}): BoneStatus => ({ v: 1, account, phase, held: 23, n: 23, trades: 0, bounces: 0, tile: null, readyAt, session: null, final: false, loads: null, ms: now - 500, ...extra });
     const GROUP = ['cairn_b01', 'cairn_b02', 'cairn_b03', 'cairn_b04'];
 
     test('the server is the giver already requesting or trading; else the loaded giver waiting longest', () => {
@@ -50,6 +52,69 @@ describe('a group of bone givers takes turns (S07 b01-b04)', () => {
         expect(boneServer([...statuses, st('cairn_b04', 'waiting', 999)], GROUP, now)).toBe('cairn_b04');
     });
 
+    describe("the group's last load (finalExtras on one giver, rs/147's ruling)", () => {
+        // 16 loads on 4 givers; b03 carries T07-08's runes. trades split so the group has given `done`.
+        const at = (done: number, phases: Partial<Record<string, BoneStatus['phase']>> = {}, session = 's1') => {
+            const per = [Math.ceil(done / 4), Math.ceil((done - 1) / 4), Math.ceil((done - 2) / 4), Math.ceil((done - 3) / 4)].map(x => Math.max(0, x));
+            return GROUP.map((a, i) => st(a, phases[a] ?? 'waiting', 100 * (i + 1), { trades: per[i]!, session, loads: 16, final: a === 'cairn_b03' }));
+        };
+
+        test('the group count adds up its givers in the session, an ended giver included and another run\'s file not', () => {
+            expect(groupLoadsDone(at(11, { cairn_b01: 'off' }), GROUP)).toBe(11);
+            const other = st('cairn_b04', 'off', null, { trades: 9, session: 'old', ms: now - 900_000 });
+            const mixed = [...at(11).filter(s => s.account !== 'cairn_b04'), other];
+            expect(groupLoadsDone(mixed, GROUP, 's1')).toBe(at(11).filter(s => s.account !== 'cairn_b04').reduce((n, s) => n + s.trades, 0));
+            // Without a session given, the newest status's session decides.
+            expect(groupLoadsDone(mixed, GROUP)).toBe(groupLoadsDone(mixed, GROUP, 's1'));
+        });
+
+        test('the last load goes to the final giver alone, even when another has waited longer', () => {
+            expect(boneServer(at(15), GROUP, now)).toBe('cairn_b03');
+            expect(boneServer(at(15, { cairn_b03: 'restock' }), GROUP, now)).toBeUndefined();
+        });
+
+        test('within one rotation of the last load the final giver waits it out; before that it takes its turn', () => {
+            // done 12-14: fewer than 4 loads before the last, so b03 is passed over though it is oldest of b03, b04.
+            for (const done of [12, 13, 14]) expect(boneServer(at(done, { cairn_b01: 'restock', cairn_b02: 'restock' }), GROUP, now)).toBe('cairn_b04');
+            expect(boneServer(at(11, { cairn_b01: 'restock', cairn_b02: 'restock' }), GROUP, now)).toBe('cairn_b03');
+        });
+
+        test('no server once the group has given its loads; without a final giver the last load is anyone\'s', () => {
+            expect(boneServer(at(16), GROUP, now)).toBeUndefined();
+            const plain = at(15).map(s => ({ ...s, final: false }));
+            expect(boneServer(plain, GROUP, now)).toBe('cairn_b01');
+        });
+
+        test('options: the final giver carries a whole load and the extras on every trip', () => {
+            const RUNES = [
+                { item: 'Law rune', count: 1 },
+                { item: 'Air rune', count: 5 }
+            ];
+            expect(bgo({ group: GROUP, trades: 16, finalExtras: RUNES })).toMatchObject({ n: 23, finalN: 21, trades: 16 });
+            expect(() => bgo({ group: GROUP, trades: 16, n: 27, finalExtras: RUNES })).toThrow(/fit 28 slots/);
+            expect(() => bgo({ group: GROUP, trades: 16, finalN: 23, n: 22, finalExtras: RUNES })).toThrow(/finalN must be at most n/);
+        });
+    });
+
+    test('a relaunched giver resumes its trades from its own status file in the same session, and only then', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'bone-resume-'));
+        writeFileSync(join(dir, 'bones-cairn_b02.json'), JSON.stringify(st('cairn_b02', 'restock', null, { trades: 3, session: 's1' })));
+        const logs: string[] = [];
+        const ctx = (account: string) => ({ account, options: { group: GROUP, cueDir: dir, scope: { step: 'S07', family: 'bone' } }, sdk: { getState: () => null }, log: (m: string) => logs.push(m) }) as unknown as RoleContext;
+        const cue = (session: string) => ({ session }) as unknown as Cue;
+        const trades = (g: BoneGiver) => (g as unknown as { trades: number }).trades;
+        const same = new BoneGiver(ctx('cairn_b02'));
+        same.onCue(cue('s1'));
+        expect(trades(same)).toBe(3);
+        expect(logs).toEqual(['resumed']);
+        const other = new BoneGiver(ctx('cairn_b02'));
+        other.onCue(cue('s2'));
+        expect(trades(other)).toBe(0);
+        // Only the first cue decides: a later cue of the old session changes nothing.
+        other.onCue(cue('s1'));
+        expect(trades(other)).toBe(0);
+    });
+
     test('status files round-trip from the cue directory', () => {
         const dir = mkdtempSync(join(tmpdir(), 'bone-status-'));
         writeFileSync(join(dir, 'bones-cairn_b01.json'), JSON.stringify(st('cairn_b01', 'waiting', 7)));
@@ -65,6 +130,46 @@ describe('a group of bone givers takes turns (S07 b01-b04)', () => {
         expect(() => bgo({ group: ['cairn_b01', 'cairn_b01'] })).toThrow(/twice/);
         const site = [{ giver: { x: 1, z: 2 }, receiver: { x: 1, z: 3 } }];
         expect(() => bgo({ mode: 'on-request', sites: site, group: ['cairn_b01', 'cairn_b02'] })).toThrow(/standing mode/);
+    });
+});
+
+describe('the item priority list (S07: dragon bones first, then babydragon, from each giver\'s own bank)', () => {
+    const MIX = ['Dragon bones', 'Babydragon bones'];
+    const specs = (xs: readonly { item: unknown; n?: unknown }[]) => xs.map(s => [String(s.item), s.n]);
+
+    test('a single item behaves as before: one spec of the whole load, from the one item', () => {
+        const o = bgo({});
+        expect(o.items).toEqual(['Dragon bones']);
+        expect(specs(loadOffer(o, 0))).toEqual([['/^Dragon bones$/i', 23]]);
+        expect(specs(loadOffer(o, 0, () => 5))).toEqual([['/^Dragon bones$/i', 23]]);
+        expect(boneWithdrawals([{ name: 'Dragon bones', count: 40 }, { name: 'Babydragon bones', count: 99 }], o.items, 23)).toEqual({ specs: [{ item: /^Dragon bones$/i, n: 23 }], short: 0 });
+    });
+
+    test('the bank fills a load from the first bone it still holds, then the next', () => {
+        const bank = (d: number, b: number) => [{ name: 'Dragon bones', count: d }, { name: 'Babydragon bones', count: b }, { name: 'Law rune', count: 1 }];
+        expect(specs(boneWithdrawals(bank(63, 200), MIX, 23).specs)).toEqual([['/^Dragon bones$/i', 23]]);
+        expect(specs(boneWithdrawals(bank(17, 200), MIX, 23).specs)).toEqual([['/^Dragon bones$/i', 17], ['/^Babydragon bones$/i', 6]]);
+        expect(specs(boneWithdrawals(bank(0, 200), MIX, 23).specs)).toEqual([['/^Babydragon bones$/i', 23]]);
+        expect(boneWithdrawals(bank(5, 10), MIX, 23).short).toBe(8);
+    });
+
+    test('the load offers what is carried, first item first; the last load keeps finalN and the extras', () => {
+        const o = bgo({ item: MIX, group: ['cairn_b01', 'cairn_b02'], trades: 4, finalExtras: [{ item: 'Law rune', count: 1 }, { item: 'Air rune', count: 5 }] });
+        const carried = (d: number, b: number) => (name: string) => (name === 'Dragon bones' ? d : b);
+        expect(specs(loadOffer(o, 0, carried(17, 6)))).toEqual([['/^Dragon bones$/i', 17], ['/^Babydragon bones$/i', 6]]);
+        expect(specs(loadOffer(o, 0, carried(0, 23)))).toEqual([['/^Babydragon bones$/i', 23]]);
+        // The final giver holds 23 and offers 21, dragon first, beside the runes.
+        expect(specs(loadOffer(o, 3, carried(10, 13)))).toEqual([['/^Dragon bones$/i', 10], ['/^Babydragon bones$/i', 11], ['/^Law rune$/i', 1], ['/^Air rune$/i', 5]]);
+    });
+
+    test('options: distinct names, the standing mode only; labSeed on the bank restock only', () => {
+        expect(bgo({ item: MIX }).item).toBe('Dragon bones');
+        expect(() => bgo({ item: [] })).toThrow(/non-empty list/);
+        expect(() => bgo({ item: ['Dragon bones', 'dragon bones'] })).toThrow(/twice/);
+        const site = [{ giver: { x: 1, z: 2 }, receiver: { x: 1, z: 3 } }];
+        expect(() => bgo({ mode: 'on-request', sites: site, item: MIX })).toThrow(/standing mode/);
+        expect(bgo({ restock: { kind: 'bank', labSeed: [{ obj: 'cert_dragon_bones', n: 30 }] } }).restock.labSeed).toEqual([{ obj: 'cert_dragon_bones', n: 30 }]);
+        expect(() => bgo({ restock: { kind: 'cheat', labSeed: [{ obj: 'x', n: 1 }] } })).toThrow(/labSeed/);
     });
 });
 
