@@ -343,7 +343,14 @@ research-script boundary and retained quest-specific code.
   seconds after a logout can be accepted and then dropped while the old
   session's save is still flushing (`World.ts`, "old session is mid-logout");
   the lab hit this once in 7 re-logins. So a client that exits before its
-  first in-world tick is relaunched with backoff.
+  first in-world tick is relaunched with backoff. On a browser tab,
+  `login(session, { inPage: true })` logs the page back in where it stands
+  instead of navigating it (see "Relogging the browser tab in place"). `login`
+  takes it only when asked and the watchdog keeps navigating, but `relog`
+  (logout, `offlineMs`, login) uses it by default, with `inPage: false` to
+  navigate; its result carries `tickBase` and `via`. Each game session sets
+  `session.tickBase`, so `state.tick - session.tickBase` is the session's own
+  tick on either path (1 on its first in-world tick).
 - `launchClient` sets `LITE_LOGIN_JITTER_MS=0` for the lite runner (its 0-5 s
   fleet jitter only delays a takeover). For the browser it uses `CLIENT_URL`
   from the bot.env as the page (proxy.ts with `?server=`/`?gateway=`) and
@@ -393,6 +400,88 @@ samples), never showed the password or a `token=` in any process, and
 afterwards the tab's URL held neither. Residual exposure: the CDP port itself
 lets any local user drive Chrome and read the page's memory, so the run host
 should stay single-user.
+
+### Relogging the browser tab in place
+
+A relog that navigates the tab throws away the loaded client: the new
+document downloads and unpacks the game again, rebuilds the map from storage
+and opens a fresh socket to the gateway. `login(session, { inPage: true })`
+(`tab.ts` `pageLogin`) keeps the page instead. After `logoutClean` the page
+sits on its title screen with its overlay and gateway socket still up; a
+`Runtime.evaluate` over CDP carries only a fresh one-time token, which the
+page redeems at its own server (`POST /bot/login`, as a `?token=` load does)
+and hands straight to the client's `autoLogin`, so the password never leaves
+the page. If the page cannot (no tab, no client, the token refused) that
+attempt navigates as before. A login that ends without getting in (refused by
+the server, or a client that cannot log in twice) lands back on the title
+screen, which `pageLoginState` reads with the message and anything the client
+threw; the retry after the usual backoff navigates, which costs the same ticks.
+
+**The tick count goes on.** The overlay counts PLAYER_INFO only in game and
+the page is not reloaded, so the new session's first tick reads the old count
++ 1. `login` returns the page's count at the login as `tickBase` and stores it
+on the session. A second login in the same page needs a client with rs/183's
+`autoLogin` fix (it waits on `loadingComplete`, not on the loading bar, which
+every logout's title redraw sets back to 10); on an older bundle the in-page
+login never gets past that wait, reads as ended, and the retry navigates.
+
+`speedrun/tools/relog-probe.ts <bot> --via=navigate,page --n=3 --bank`
+alternates the two paths in one session. It reports each relog in the new
+session's own ticks: the first state the SDK received, a bank-booth click sent
+the moment the booth is in the scene, and the tick the bank read open. It also
+records the page's own timeline from a 50 ms DevTools sampler: new document,
+loaded, login started, in world, first tick, and gateway socket up, with the
+page's tick at that moment. `speedrun/lab/measure-relog.ts` runs it on the lab
+engine behind proxy.ts and Chrome, the way the run host has them in front of
+the demo.
+
+**Where a navigating relog's ~20 ticks went (rs/164's twin finding).** Not the
+page: on the twin the re-navigated page was in the world 5.9-7.4 s after the
+out with its gateway socket already up at its tick 0, but the SDK's first state
+came at 11.7-13.2 s, session tick 19-20. The navigation did not close the old
+document's gateway socket on the twin's Chrome (the lab's headless Chrome did),
+so the gateway (`server/gateway/gateway.ts`) took the new page's registration
+for a second session: it sent the old one `save_and_disconnect`, waited out its
+5 s takeover timeout, force-closed it, and completed the new registration 700 ms
+later, dropping every state the new page sent meanwhile (5.7 s = 19 ticks at
+300 ms). `tab.ts` `reloadOrOpenTab` now closes the old page's gateway socket
+(auto-reconnect off) before it navigates, so the gateway sees the old session go
+and registers the new page at once. That fixes every navigation: the default
+`login`, the watchdog's relaunch, and the in-page path's fallback.
+
+Twin (rs-ashburn-rehearsal against the demo, `cairn_smoke` on the xrdp display,
+the tab stack from `~/rs-sdk` at main 7c3e8c706, standing on a Draynor booth
+tile; 2026-10-21 21:58-22:08Z, 1,618-1,629 online; rs/174). Ticks are the
+session's own; three relogs per row, alternating paths in one session:
+
+| Path | Out to in world | First SDK state | Booth click | Bank open |
+|---|---|---|---|---|
+| navigate, before the fix | 13.4 / 13.3 / 12.1 s | tick 20 / 19 / 20 | 20 / 19 / 20 | (booth click wrong, not measured) |
+| navigate, gateway socket released first | 7.2 / 7.9 / 7.7 s | tick 1 / 1 / 1 | 2 / 3 / 5 | 3 / 4 / 6 |
+| in page | 2.1 / 2.1 / 2.2 s | tick 1 / 1 / 1 | 2 / 2 / 2 | 3 / 3 / 3 |
+
+(The in-page rows of the first run read the same: first state tick 1, booth click 2.)
+Both paths now act from the session's first ticks, well inside the wine step's
+bank-open-by-login+19 bar. The in-page relog is about 5 s shorter in wall time
+and sees the scene from its tick 2, where a navigated page needs 2-5 ticks to
+rebuild its map. Click to confirmed out was 0 ticks and 215-431 ms throughout,
+confirmed by the page.
+
+Lab (bbl.local, 300 ms ticks, headless Chrome, standing a few steps from the
+Varrock west booths, which adds a walk to the bank-open tick; this Chrome closed
+the old socket on its own): navigate 15.4-28.6 s out to in world, first state
+tick 2, bank open 12-20; in page 1.4-2.9 s, first state tick 1, bank open 6-11.
+On a bundle with rs/183's `autoLogin` fix and no speedrun-side workaround (the
+Mac at load ~120): in page 3 of 3 got in on the first attempt, 1.9-2.9 s, first
+state tick 1, bank open 7 / 10 / 9.
+
+**After a server restart** (`measure-relog.ts --restart`, the lab engine
+SIGKILLed under a logged-in tab, as the demo dies): the page dropped out 1.0 s
+after the kill, the replacement engine was ready at 20.3 s, and
+`reconnectAfterOutage` with `login: (s, t) => login(s, { attempts: 1, timeoutMs:
+t, inPage: true })` got back in 2.0 s later, in the page, on its first attempt
+with no refusals, at session tick 2 when it returned. The page's gateway socket
+was up throughout.
 - `startWatchdog` acts while the account should be in the world. A client
   whose tick stopped advancing for 17 ticks (~5 s; the demo has gone ~2 s
   without a frame and recovered), or whose gateway status is dead or

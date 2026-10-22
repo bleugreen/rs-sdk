@@ -24,7 +24,7 @@ import type { Subprocess } from 'bun';
 import type { BotSDK } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
 import type { BotStatus, BotWorldState } from '../../sdk/types';
-import { pageInGame } from './tab';
+import { pageInGame, pageLogin, pageLoginState, type PageLoginStart } from './tab';
 import { sleep, tickMs, waitUntil } from './wait';
 
 export const ROOT = join(import.meta.dir, '..', '..');
@@ -152,8 +152,17 @@ export interface Session {
     readonly insecureQueryLogin: boolean;
     readonly sdk: BotSDK;
     readonly bot: BotActions;
-    /** Bumps on every client launch; the client's tick counter restarts with it. */
+    /**
+     * Bumps on every game session: each client launch, whose tick counter restarts with it, and each
+     * in-page login (login's `inPage`), whose page keeps counting from its earlier sessions.
+     */
     sessionId: number;
+    /**
+     * What the client's tick count stood at when this game session began: 0 after a launch, the
+     * page's earlier count after an in-page login. `state.tick - tickBase` is the session's own tick,
+     * the one a freshly launched client would publish (1 on its first in-world tick).
+     */
+    tickBase: number;
     /** Whether the account should be in the world (false around an intended logout). */
     expectInWorld: boolean;
     child: Subprocess | null;
@@ -213,6 +222,7 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         sdk,
         bot: new BotActions(sdk),
         sessionId: 0,
+        tickBase: 0,
         expectInWorld: true,
         child: null,
         childExit: null,
@@ -273,6 +283,7 @@ function waitFor(sdk: BotSDK, pred: (s: BotWorldState) => boolean, ms: number): 
 /** Start the game client: a lite runner child, or the browser tab. Bumps sessionId. */
 export async function launchClient(session: Session): Promise<void> {
     session.sessionId++;
+    session.tickBase = 0;
     session.childExit = null;
     session.launchedAt = Date.now();
     if (session.client === 'lite') {
@@ -501,45 +512,126 @@ export async function waitLoggedOut(session: Session, ms: number): Promise<void>
     await sleep(ms);
 }
 
+export interface LoginOptions {
+    timeoutMs?: number;
+    attempts?: number;
+    /**
+     * Browser only: log the tab back in where it stands (lib/tab.ts pageLogin) instead of
+     * navigating it to a fresh token URL. The page keeps its loaded client, its game cache and its
+     * socket to the gateway, so the bot sees the new session from its first ticks. If the page cannot
+     * (no tab, no DevTools port, no client, the token refused) the attempt navigates instead, as
+     * without this option.
+     */
+    inPage?: boolean;
+}
+
+export interface LoginResult {
+    wallMs: number;
+    attempts: number;
+    /** How the last attempt got in: a client launch (the tab navigated, or a lite child), or the page in place. */
+    via: 'launch' | 'page';
+    /** session.tickBase for the new session. */
+    tickBase: number;
+}
+
 /**
- * Relaunch the client after a logout and wait for an advancing tick.
+ * Log back in after a logout and wait for an advancing tick: by default a client launch (a lite
+ * child, or the tab re-navigated to a fresh token URL), with `inPage` the page itself.
  *
  * A login seconds after a logout can be accepted by the login thread and then
  * dropped by the world while the old session's save is still flushing
  * (World.ts: "old session is mid-logout"); the lite client then ends its
- * session at once. So a client that exits before its first in-world tick is
- * relaunched with backoff, up to `attempts` times.
+ * session at once, and an in-page login falls back to the title screen. So a
+ * login that ends before its first in-world tick is retried with backoff, up to
+ * `attempts` times; after an in-page attempt the retries navigate.
  */
-export async function login(session: Session, opts: { timeoutMs?: number; attempts?: number } = {}): Promise<{ wallMs: number; attempts: number }> {
+export async function login(session: Session, opts: LoginOptions = {}): Promise<LoginResult> {
     const t0 = Date.now();
     const deadline = t0 + (opts.timeoutMs ?? 90_000);
     const maxAttempts = opts.attempts ?? 6;
+    const cdp = session.client === 'browser' && !session.insecureQueryLogin ? cdpUrl(session.env) : undefined;
+    let inPage = opts.inPage === true && cdp !== undefined;
     for (let attempt = 1; ; attempt++) {
         const sinceTick = session.lastInWorldTick;
         const sinceAdvance = session.lastAdvanceAt;
-        await launchClient(session);
-        const outcome = await waitInWorldOrExit(session, sinceTick, sinceAdvance, Math.max(1_000, deadline - Date.now()));
+        let via: LoginResult['via'] = 'launch';
+        if (inPage) {
+            const start = await loginInPage(session, cdp!);
+            if (start.started) via = 'page';
+            else {
+                // The page cannot log itself in, now or later: navigate from here on.
+                appendFileSync(session.logPath, `[speedrun] session ${session.sessionId}: in-page login unavailable (${start.reason}); navigating the tab\n`);
+                inPage = false;
+            }
+        }
+        if (via === 'launch') await launchClient(session);
+        const ended = via === 'page' ? () => pageLoginEnded(session, cdp!) : undefined;
+        const outcome = await waitInWorldOrExit(session, sinceTick, sinceAdvance, Math.max(1_000, deadline - Date.now()), ended);
         if (outcome === 'in-world') {
             session.expectInWorld = true;
             session.watchdog?.resume();
-            return { wallMs: Date.now() - t0, attempts: attempt };
+            return { wallMs: Date.now() - t0, attempts: attempt, via, tickBase: session.tickBase };
         }
         if (outcome === 'timeout' || attempt >= maxAttempts || session.childExit === 3) {
-            throw new Error(`${session.name}: login failed after ${attempt} attempt(s) (${outcome}, exit ${session.childExit})`);
+            throw new Error(`${session.name}: login failed after ${attempt} attempt(s) (${outcome}, ${via === 'page' ? 'in page' : `exit ${session.childExit}`})`);
         }
+        // An in-page login that ended without getting in is not tried in the page again: a page
+        // whose client cannot log in twice (a bundle before rs/183's autoLogin fix) would fail every
+        // attempt, and a navigation costs the same ticks, only some seconds more.
+        if (via === 'page') inPage = false;
         await sleep(backoffMs(attempt));
     }
+}
+
+/**
+ * Start an in-page login with a fresh one-time token, and on success begin the new game session
+ * (sessionId, launchedAt, tickBase) the way launchClient does for a launch.
+ */
+async function loginInPage(session: Session, cdp: string): Promise<{ started: boolean; reason?: string }> {
+    let start: PageLoginStart | null;
+    try {
+        start = await pageLogin(cdp, session.name, await mintLoginToken(session.env));
+    } catch (err) {
+        return { started: false, reason: (err as Error).message };
+    }
+    if (!start) return { started: false, reason: 'no tab for this bot' };
+    if (!start.started) return { started: false, reason: start.reason };
+    session.sessionId++;
+    // Without a reload the page goes on counting; its last published tick is the fallback base.
+    session.tickBase = start.tickBase ?? session.lastInWorldTick;
+    session.childExit = null;
+    session.launchedAt = Date.now();
+    appendFileSync(
+        session.logPath,
+        `[speedrun] session ${session.sessionId}: in-page login at ${new Date().toISOString()} (tick base ${session.tickBase}, gateway socket ${start.gatewayConnected === null ? 'unknown' : start.gatewayConnected ? 'up' : 'down'})\n`
+    );
+    return { started: true };
+}
+
+/**
+ * True once an in-page login has ended without getting in: the page is neither in game nor logging
+ * in (it is back on the title screen, whose message says why). Unknown reads as not ended.
+ */
+async function pageLoginEnded(session: Session, cdp: string): Promise<boolean> {
+    const st = await pageLoginState(cdp, session.name).catch(() => null);
+    if (!st || st.inGame || st.loginInProgress) return false;
+    appendFileSync(session.logPath, `[speedrun] session ${session.sessionId}: in-page login ended on the title screen (${st.message || 'no message'}${st.error ? `; threw ${st.error}` : ''})\n`);
+    return true;
 }
 
 export interface RelogResult {
     logout: LogoutResult;
     /**
-     * Tick of the new session's first in-world state. The client's tick counter
-     * restarts with the launch and counts the ticks the account has been in the
-     * world, so this is also the in-world ticks the login cost before the state
-     * was visible.
+     * Client tick of the new session's first in-world state, comparable with
+     * state.tick. After a launch the counter restarts, so this is also the
+     * in-world ticks the login cost before the state was visible; after an
+     * in-page login the page counts on, and that cost is loginTick - tickBase.
      */
     loginTick: number;
+    /** session.tickBase for the new session (0 after a launch). */
+    tickBase: number;
+    /** How login got in: a client launch, or the page logging in where it stands. */
+    via: LoginResult['via'];
     loginWallMs: number;
     attempts: number;
 }
@@ -550,31 +642,48 @@ export interface RelogResult {
  * flushes), and a fresh login. A relog re-arms the login timers (wine's
  * fermentation among them). It does not skip queued level-up pages: the
  * logout runs them out first, one per in-world tick (LOGOUT_WAIT_TICKS).
+ *
+ * A browser tab with CDP logs back in where it stands (login's `inPage`, on by
+ * default here), which falls back to navigating it; a lite client relaunches.
  */
-export async function relog(session: Session, opts: { offlineMs?: number; loginTimeoutMs?: number } = {}): Promise<RelogResult> {
+export async function relog(session: Session, opts: { offlineMs?: number; loginTimeoutMs?: number; inPage?: boolean } = {}): Promise<RelogResult> {
     const logout = await logoutClean(session);
     if (!logout.ok) throw new Error(`${session.name}: logout failed: ${logout.reason}`);
     if (opts.offlineMs ?? 2_000) await sleep(opts.offlineMs ?? 2_000);
     const before = Date.now();
     let first: number | null = null;
     const unsub = session.sdk.onStateUpdate(st => {
-        // Only states from the relaunched client count; it starts after `before`.
+        // Only states from the new session count; its launch or in-page login starts after `before`.
         if (first === null && session.launchedAt >= before && st.inGame && (st.player?.worldX ?? 0) > 0) first = st.tick;
     });
     try {
-        const r = await login(session, { timeoutMs: opts.loginTimeoutMs });
-        return { logout, loginTick: first ?? session.sdk.getState()?.tick ?? 0, loginWallMs: r.wallMs, attempts: r.attempts };
+        const r = await login(session, { timeoutMs: opts.loginTimeoutMs, inPage: opts.inPage ?? true });
+        return { logout, loginTick: first ?? session.sdk.getState()?.tick ?? 0, tickBase: r.tickBase, via: r.via, loginWallMs: r.wallMs, attempts: r.attempts };
     } finally {
         unsub();
     }
 }
 
-/** Resolve once the tick advances past what was seen before the launch, or the lite child exits. */
-async function waitInWorldOrExit(session: Session, sinceTick: number, sinceAdvance: number, ms: number): Promise<'in-world' | 'exited' | 'timeout'> {
+/**
+ * Resolve once the tick advances past what was seen before the launch, or the login ends without
+ * getting in: the lite child exits, or `ended` (polled about every 300 ms) says so.
+ */
+async function waitInWorldOrExit(
+    session: Session,
+    sinceTick: number,
+    sinceAdvance: number,
+    ms: number,
+    ended?: () => Promise<boolean>
+): Promise<'in-world' | 'exited' | 'timeout'> {
     const deadline = Date.now() + ms;
     let firstTick: number | null = null;
+    let nextEndedCheck = Date.now() + 300;
     while (Date.now() < deadline) {
         if (session.client === 'lite' && session.childExit !== null) return 'exited';
+        if (ended && Date.now() >= nextEndedCheck) {
+            nextEndedCheck = Date.now() + 300;
+            if (await ended()) return 'exited';
+        }
         const s = session.sdk.getState();
         if (s?.inGame && session.lastAdvanceAt > sinceAdvance && session.lastAdvanceAt > session.launchedAt) {
             if (firstTick === null) firstTick = s.tick;
