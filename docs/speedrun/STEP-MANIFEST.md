@@ -114,11 +114,12 @@ stood before rs/164's ~20. Fold-in 11 moved the twelve quests' way-in travel int
 RUN-ORDER.md O6): the legs (2,222.5) pass Thieving, Fishing, Combat and the Grand Tree, Dragon
 Slayer passes Dwarf Cannon, Magic passes Fishing Contest and Herblore passes Goblin Diplomacy. Fold-in 11's part 5 takes the ~82
 of Goblin Diplomacy's standalone travel that the legs already carried off its row (to 61), so the
-cannon session, Prayer, Crafting and Cooking pass it.
+cannon session, Prayer, Crafting and Cooking pass it. Fold-in 13 adds S15's measured H to M (+352),
+so Monkey Madness (4,429) passes Agility (4,327) for rank 1.
 
-The expected column sums to **30,972.5** (the steps) plus the legs' **2,198.5**; RUN-ORDER.md section 6
+The expected column sums to **31,324.5** (the steps) plus the legs' **2,198.5**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **34,456** knife-on expected (31,567 best), against the record of 35,916.
+retries, restarts) for its **34,808** knife-on expected (31,867 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -128,8 +129,8 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | Rank | # | Entry | Module | Steps | Expected | Best | Fallback | At stake | Mode | Code to start from | Module status |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 0 | 0 | Run chain | `speedrun/run.ts`, `runner/resume.ts` | all | boundary idle 0 m (#92); restarts ~5 each (an in-page relog, ~2, rs/174) | 0 | | | overlay | `runner/step.ts`, `runner/resume.ts` (main) | `run.ts`: building (rs/186, held: tenet 15); `runner/step.ts`, `resume.ts` on main (#29, #104, #146) |
-| 1 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,327 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; S17 75-85 858; rs/155) |
-| 2 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,077 | 3,726 | 4,611 | ~885 | overlay | `quest-mm-*.ts` | **doc-priced, unrun** (A-G run; H-Z being written by rs/201) |
+| 2 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,327 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; S17 75-85 858; rs/155) |
+| 1 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,429 | 4,026 | 4,963 | ~937 | overlay | `quest-mm-*.ts` | **H-M lab-proven end to end, N-Z unrun** (A-G run; H-M 3 of 3, 1,466 m; N-Z being written by rs/201) |
 | 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,116 | 3,116 | 3,775 | ~659 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | **on main, 4235a9e7 (#220; rs/260's snapshot of rs/230's lab-accepted module, rs/147's branch at 59ec3933)**, with `selfStarter` (plain 3.62) and `beforeRestart`; `stay2` bury (#159, rs/182) and restart fix (e5d8a058, #170; rs/207) on main; gate `measureDrops` 120 by the default, its explicit value pending rs/259 |
 | 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,027 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; on rs/147's branch, changing with rs/236; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165); gate `measureDrops` 120 explicit (rs/261, building) |
 | 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,198.5 | 2,198.5 | ~2,340 i | ~140 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | lab-measured (PR #198, open; rs/198 for rs/186); its walker, `lib/travel.ts`, on main, 0658e896 (#200) |
@@ -193,8 +194,9 @@ are filed under main and held until tenet 15 is answered.
   Agility 99 (the acceptance asks 8 of 10 at 66, +1); Gnome 1-22 measured 114 against the 122
   inferred. S17 75-99 adopted at 4,213: 75-85 measured 858 end to end in the lab chain, 85-99
   3,355 inferred from it (RUN-ORDER.md S17). The demo rehearsal is still to run.
-- **2.** **Doc-priced, unrun** (A-G run; H-Z being written by rs/201): the Ape Atoll half has never
-  been scripted or run as one route (rs/185); ~1,475 of the 4,077 is estimated (entry 2).
+- **2.** **H-M lab-proven end to end, N-Z unrun** (A-G run; rs/201 ran H to M 3 of 3 at route
+  levels, 1,466 against the fixed column's 1,114, +352 in the expected; N-Z being written by rs/201);
+  ~1,211 of the 4,429 is estimated (entry 2).
 - **3.** rs/211 builds the module (rs/151 is closed), including the bury-in-willows rule for a
   gate-off stretch, on rs/162's plain + bury (on main as 3dfc217f, #165, inside the run-commit floor; entry 3).
   A module is present on rs/147's branch and is changing with rs/236's opt-ins (knife-cycle
@@ -544,16 +546,27 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Postconditions:** quest complete (ledger; reward xp visible: Strength ~97, Attack 99, Defence ~89
   per `quests/README.md` §2), 3 QP (20 of the 32 so far). Items out: the bow and leftover arrows
   can go back to a helper. The gree-gree is not needed later.
-- **Status: doc-priced, unrun** (A-G run; H-Z being written by rs/201). The Ape Atoll half (segments
-  H-Z, ~3,300 of ~4,400 stock ticks) has never been scripted or run as one route (rs/185). rs/201
-  writes it fresh, segment by segment, lab-proven 3 of 3, and sends measured ticks per segment to
-  rs/158. It is the run date's critical path (RUN-ORDER.md O36).
-- **Ticks:** expected **4,077** (fixed client, with the failure budget: 3,897 success + ~180; ~2,602
-  inferred, the gnome half as played, the atoll segments measured one at a time, the trade and the
-  failures, and ~1,475 estimated, the atoll rows `quests/monkey_madness.md` tags R, T or I, never
-  measured, RUN-ORDER.md S15; `quests/README.md` §3 row, which includes rs/59's temple ladder drop at 33-36 measured and the
-  walked zoo return +100 inferred). Best **3,726** (burst success path 3,546, r21 recomputation, same
-  row, plus the same ~180 of expected failures; RUN-ORDER.md S15). Fallback **4,611** (stock column with failures, same row). The quest document's own split:
+- **Status: H-M lab-proven end to end, N-Z unrun** (A-G run). The Ape Atoll half (segments H-Z,
+  ~3,300 of ~4,400 stock ticks) is written and lab-proven 3 of 3 from H to M (rs/201, 1,466 m); N to
+  Z has never been scripted or run as one route (rs/185). rs/201 writes it fresh, segment by
+  segment, lab-proven 3 of 3, and sends measured ticks per segment to rs/158. It is the run date's
+  critical path (RUN-ORDER.md O36).
+- **Ticks:** expected **4,429** (fixed client, with the failure budget: `quests/README.md` §3's
+  4,077, 3,897 success + ~180, with segments H to M as measured: **1,466 measured** end to end, lab,
+  300 ms, route levels, fixed dialogue, chains 1,438 / 1,414 / 1,546 with 0 ticks between segments
+  (rs/201's ledger, cairn://p/rs/201, corrected 20:25 PDT), against the fixed column's 1,114 for H to
+  M (H 88, I 70, J 114, K 374, L 86, M 382; rs/185): **+352**, the jail yard's patrol wait,
+  summoned knockout guards and protect prayers in town. The rest: ~1,752 inferred (the gnome half as
+  played, the atoll segments outside H-M measured one at a time, the trade and the failures) and
+  ~1,211 estimated (the atoll rows outside H-M that `quests/monkey_madness.md` tags R, T or I, never
+  measured), RUN-ORDER.md S15; the §3 row includes rs/59's temple ladder drop at 33-36 measured and
+  the walked zoo return +100 inferred). Best **4,026** (burst success path 3,546, r21 recomputation,
+  same row, plus the same ~180 of expected failures, with H to M at its fastest chain, 1,414, +300;
+  RUN-ORDER.md S15). Fallback **4,963** (stock column with failures, same row, +352, inferred).
+  Per segment (rs/201, means): H jail1 172, I garkor 60, J cellar 318 (one chain 392: a summoned
+  guard's knockout, ~+110 a recurrence), K dungeon1 434, L amulet 97, M jail2 385; the two dungeon
+  passes ran 6 of 6 without a death under Protect from Melee with the 9-shark kit. R5's bad case
+  stays +860 beyond the expected, whole on N to Z (RUN-ORDER.md R5). The quest document's own split:
   travel 2,277, dialogue 826 fixed / 463 burst, interactions 250, fight 267, waits 336 (mixed
   measured, read and inferred; `quests/monkey_madness.md`, "Tick total"). The Ape Atoll hazards
   were measured at 70/70/70 and the route arrives at Defence 1 (open item (a), `quests/README.md`).
