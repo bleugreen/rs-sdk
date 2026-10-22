@@ -3,7 +3,13 @@
 // Plague City runs the whole quest, A to L, walking K and L over White Wolf Mountain
 // (teleports: false). No staff commands.
 //
-//   bun speedrun/lab/quests/dwarf-cannon-demo.ts <account> [--dialogue=burst|fixed]
+//   bun speedrun/lab/quests/dwarf-cannon-demo.ts <account> [--dialogue=burst|fixed] [--fallback=fixed] [--trace=N]
+//
+// It starts at the first segment whose `done` is false on the account's state, so an account a
+// failed demo left mid-quest resumes there; only a start at A stages onto the arrival tile and
+// checks A's preconditions. --fallback=fixed re-runs from the then-first undone segment in fixed
+// dialogue if the first mode fails, in the same login. --trace=N prints the player every N ticks
+// and every dialogue page and chat line (lab/quests/run.ts `trace`).
 //
 // Tenet 12: the account's bot.env must carry GATEWAY_URL=ws://127.0.0.1:<port>. This script starts
 // the loopback SDK gateway on that port (as magic-demo.ts does) and launches the lite client
@@ -23,17 +29,21 @@ import { TickLog } from '../../lib/ticks';
 import { runTo } from '../../lib/travel';
 import { invCount } from '../../lib/world';
 import { questStatus } from '../../lib/quests';
-import { ARRIVAL, MIN_FOOD, newTally, quest, steps } from '../../quests/dwarf-cannon';
+import { ARRIVAL, MIN_FOOD, newTally, observed, quest, steps } from '../../quests/dwarf-cannon';
 import type { DialogueMode } from '../../quests/segments';
 import { runSteps } from '../../runner/step';
 import { arg, botArg, result } from '../common';
 import { clearInventory, give, leaveTutorial, mustTele, setStats } from '../setup';
+import { trace } from './run';
 
 const ROOT = resolve(import.meta.dir, '..', '..', '..');
 const account = botArg();
 const lab = process.argv.includes('--lab');
 const dialogue = arg('dialogue', 'burst') as DialogueMode;
 if (dialogue !== 'burst' && dialogue !== 'fixed') throw new Error(`--dialogue=${dialogue}: want burst or fixed`);
+const fallback = arg('fallback', '') as DialogueMode | '';
+if (fallback && fallback !== 'fixed' && fallback !== 'burst') throw new Error(`--fallback=${fallback}: want fixed or burst`);
+const traceEvery = Number(arg('trace', '0'));
 const say = (m: string, d?: Record<string, unknown>) => console.log(`demo: ${m}${d ? ` ${JSON.stringify(d)}` : ''}`);
 
 /**
@@ -72,8 +82,27 @@ const s = await openSession(account, { launch: true, readyTimeoutMs: 180_000 });
 const log = TickLog.memory('dc-demo');
 const tally = newTally();
 let pass = false;
-const out: Record<string, unknown> = { account, lab, dialogue };
+const out: Record<string, unknown> = { account, lab, dialogue, ...(fallback ? { fallback } : {}) };
 const inventory = () => (s.sdk.getState()?.inventory ?? []).map(i => `${i.name}${i.count > 1 ? ` x${i.count}` : ''}`);
+const untrace = traceEvery > 0 ? trace(s.sdk as never, traceEvery) : () => undefined;
+const segRows = () => log.rows.filter(r => !r.kind && r.step.startsWith('S13:'));
+
+/** Run the module in `mode` from its first undone segment; at A, stage onto the arrival tile and check A first. */
+async function attempt(mode: DialogueMode): Promise<void> {
+    const list = steps({ teleports: false, dialogue: mode, tally });
+    const from = list.findIndex(st => !st.done?.(observed(s.sdk.getState()!), {}));
+    if (from < 0) return;
+    say('from', { step: list[from]!.name, dialogue: mode });
+    if (from === 0) {
+        // Untimed staging onto the arrival tile, where the run's leg T12-13 would leave SCORED.
+        const there = await runTo(s.sdk as never, ARRIVAL, { bot: s.bot as never });
+        if (!there.ok) throw new Error(`to the arrival tile ${ARRIVAL.x},${ARRIVAL.z}: ${there.reason ?? 'not arrived'}`);
+        const pre = list[0]!.preconditions(s.sdk.getState()!, {});
+        if (pre !== true) throw new Error(`segment A refuses: ${pre}`);
+    }
+    await runSteps(s, list.slice(from), { log, c: {}, shouldStop: () => false, logout: async () => {}, tickMonitor: false });
+}
+
 try {
     if (lab) {
         await leaveTutorial(s);
@@ -87,16 +116,16 @@ try {
     out.start = { at: [st0.player!.worldX, st0.player!.worldZ, st0.player!.level], hp: `${st0.player!.hp}/${hp?.baseLevel}`, sharks: invCount(st0, /^shark$/i), quest: questStatus(st0, quest), inventory: inventory() };
     say('start', out.start as Record<string, unknown>);
 
-    // Untimed staging onto the arrival tile, where the run's leg T12-13 would leave SCORED.
-    const there = await runTo(s.sdk as never, ARRIVAL, { bot: s.bot as never });
-    if (!there.ok) throw new Error(`to the arrival tile ${ARRIVAL.x},${ARRIVAL.z}: ${there.reason ?? 'not arrived'}`);
+    try {
+        await attempt(dialogue);
+    } catch (err) {
+        if (!fallback) throw err;
+        out.firstError = err instanceof Error ? err.message : String(err);
+        say('falling back', { to: fallback, error: out.firstError });
+        await attempt(fallback);
+    }
 
-    const list = steps({ teleports: false, dialogue, tally });
-    const pre = list[0]!.preconditions(s.sdk.getState()!, {});
-    if (pre !== true) throw new Error(`segment A refuses: ${pre}`);
-    await runSteps(s, list, { log, c: {}, shouldStop: () => false, logout: async () => {}, tickMonitor: false });
-
-    const rows = log.rows.filter(r => !r.kind && r.step.startsWith('S13:'));
+    const rows = segRows();
     const lab0 = LAB_BY_MODE[dialogue];
     out.segments = rows.map(r => {
         const letter = r.step.split(':')[1]!.split('-')[0]!;
@@ -108,11 +137,14 @@ try {
     const st = s.sdk.getState()!;
     out.end = { at: [st.player!.worldX, st.player!.worldZ, st.player!.level], hp: st.player!.hp, quest: questStatus(st, quest), inventory: inventory() };
     out.tally = { ...tally, minHp: Number.isFinite(tally.minHp) ? tally.minHp : null };
-    pass = rows.length === list.length && rows.every(r => r.ok) && questStatus(st, quest) === 'complete';
+    // Pass: the quest complete and the exit state reached (L ran and passed its postconditions).
+    pass = questStatus(st, quest) === 'complete' && rows.some(r => r.step.startsWith('S13:L-') && r.ok);
 } catch (err) {
     out.error = err instanceof Error ? err.message : String(err);
-    out.partial = log.rows.filter(r => !r.kind && r.step.startsWith('S13:')).map(r => ({ step: r.step, ok: r.ok, ticks: r.ticks }));
+    out.partial = segRows().map(r => ({ step: r.step, ok: r.ok, ticks: r.ticks }));
 } finally {
+    untrace();
+    out.final = { inventory: inventory(), quest: questStatus(s.sdk.getState()!, quest) };
     const lo = await logoutClean(s);
     out.logout = { ok: lo.ok, latencyTicks: lo.latencyTicks, ...(lo.ok ? {} : { reason: (lo as { reason?: string }).reason }) };
     await closeSession(s);
