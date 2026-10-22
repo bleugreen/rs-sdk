@@ -43,6 +43,8 @@ import { readCue } from '../helpers/altar-cue';
 import { programStatus } from '../lib/programs';
 import { Observation, resolveResume, runResumable, sessionLink } from '../runner/resume';
 import { runSteps } from '../runner/step';
+import { onTutorialIsland } from '../lib/world';
+import { tutorialSkip } from '../skills/start';
 import { ALTAR_ROOMS, altarStep, craftXp, findAltar, rcLevel, rcXp, readLauncherFile, xpAfterCrafts, type AltarName, type Band, type ScheduleMode } from '../skills/runecraft';
 
 const scored = process.argv[2];
@@ -141,6 +143,10 @@ try {
         await sdk.sendSay(cmd);
         await sdk.waitForTicks(2);
     };
+    // A new lab account logs in on Tutorial Island, whose login script hides the side tabs; a staff
+    // teleport off it keeps them hidden and the server ignores every inventory action, the talisman
+    // drop included (rs/196). S00's skip opens them, as on the run.
+    if (onTutorialIsland(sdk.getState()?.player)) await runSteps(session, [tutorialSkip], { log, c: {}, shouldStop: () => false, logout: async () => {} });
     // The stand-in: nothing in the inventory but the altar's talisman, the band's level, in the room.
     while (sdk.getState()?.dialog.isOpen) {
         await sdk.sendClickDialog(0);
