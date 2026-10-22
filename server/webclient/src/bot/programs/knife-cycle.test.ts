@@ -784,3 +784,95 @@ describe('knife cycle: plain + bury', () => {
         expect(buryTicks.filter(t => t > 1080).length).toBeGreaterThanOrEqual(late.length - 2);
     });
 });
+
+/** Every packet with its label and full action, FNV-1a hashed: enough to pin a run's stream. */
+function streamDigest(h: ReturnType<typeof serverRun>['h']): string {
+    const s = h.sent.map(x => `${x.tick} ${JSON.stringify(x.action)}`).join('\n');
+    let d = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) d = Math.imul(d ^ s.charCodeAt(i), 0x01000193) >>> 0;
+    return d.toString(16);
+}
+
+/** Default-parameter scenarios whose packets no opt-in may change. */
+const DEFAULT_RUNS: Record<string, () => ReturnType<typeof serverRun>> = {
+    willow: () => serverRun({ method: 'willow', ticks: 300, axe: 'Rune axe', level: 80 }),
+    oakFalls: () => serverRun({ method: 'oak', ticks: 300, fellEvery: 8, fellLag: 1 }),
+    oakAllDown: () => serverRun({ method: 'oak', ticks: 300, fellEvery: 8, allDownFor: 5 }),
+    willowRespawnWait: () => serverRun({ method: 'willow', ticks: 400, axe: 'Rune axe', fellEvery: 8, allDownFor: 30 }),
+    willowMisses: () => serverRun({ method: 'willow', ticks: 300, axe: 'Rune axe', level: 75, miss: r => r >= 20 && r < 30 }),
+    oakBury: () => serverRun({ method: 'oak', ticks: 200, bones: 20, fellEvery: 8, allDownFor: 30, params: { bury: true } }),
+    plain: () => serverRun({ method: 'willow', technique: 'plain', ticks: 200, fellEvery: 8, allDownFor: 30 }),
+    tree: () => serverRun({ method: 'tree', ticks: 200 }),
+    fly: () => serverRun({ method: 'fly', ticks: 200, spotMovesAt: 1060 })
+};
+
+/** DEFAULT_RUNS' digests with knife-cycle.ts as of rs/147's bad407ef (before `waitRespawn`). */
+const DEFAULT_GOLDEN: Record<string, string> = {
+    willow: 'eab56468', oakFalls: 'd6980233', oakAllDown: '83378a83', willowRespawnWait: '18bb1caa', willowMisses: '399c2e32',
+    oakBury: '5b7aa5a3', plain: 'a8c3a668', tree: '2d7e32ef', fly: '96c97070'
+};
+
+describe('knife cycle: default stream', () => {
+    test('without the opt-in parameters, every packet is as before (golden digests from bad407ef)', () => {
+        const got = Object.fromEntries(Object.entries(DEFAULT_RUNS).map(([k, run]) => [k, streamDigest(run().h)]));
+        expect(got).toEqual(DEFAULT_GOLDEN);
+    });
+
+    test('waitRespawn false is the default stream', () => {
+        for (const k of ['willowRespawnWait', 'oakAllDown'] as const) {
+            const base = DEFAULT_RUNS[k]!();
+            const m = k === 'oakAllDown' ? 'oak' : 'willow';
+            const off = k === 'oakAllDown'
+                ? serverRun({ method: m, ticks: 300, fellEvery: 8, allDownFor: 5, params: { waitRespawn: false } })
+                : serverRun({ method: m, ticks: 400, axe: 'Rune axe', fellEvery: 8, allDownFor: 30, params: { waitRespawn: false } });
+            expect(streamDigest(off.h)).toBe(streamDigest(base.h));
+        }
+    });
+});
+
+describe('knife cycle: waitRespawn', () => {
+    const WAIT = { method: 'willow', ticks: 400, axe: 'Rune axe', fellEvery: 8, allDownFor: 30 } as const;
+
+    test('every listed tree down for longer than the lock window: no slip, no resync, and the lock resumes on the respawn', () => {
+        const base = serverRun(WAIT);
+        expect(base.h.status.counters.slips).toBeGreaterThan(0);
+        const { h, rollTicks } = serverRun({ ...WAIT, params: { waitRespawn: true } });
+        expect(h.status.counters.slips ?? 0).toBe(0);
+        expect(h.status.counters.resyncs ?? 0).toBe(0);
+        expect(h.status.counters.respawnWaits).toBeGreaterThan(0);
+        // no starter goes out while every tree is down (it would fletch the log)
+        const fell = rollTicks[7]!;
+        expect(h.sent.filter(s => s.action.type === 'useItemOnItem' && s.tick > fell && s.tick <= fell + 30)).toHaveLength(0);
+        // locked again between the respawn and the next fall (roll 16)
+        const relocked = rollTicks.slice(9, 16);
+        expect(relocked[0]! - fell).toBeLessThan(45);
+        expect(gapsOf(relocked).every(g => g === 3)).toBe(true);
+        // at least as many logs as the default, which pays a resync and a re-anchor for each wait
+        expect(h.status.counters.successes!).toBeGreaterThanOrEqual(base.h.status.counters.successes!);
+        const r = h.status.result as { respawnWaits: number[] };
+        // the counter counts waits as they start; the list holds the finished ones (the run may end inside one)
+        expect(r.respawnWaits.length).toBeGreaterThanOrEqual(h.status.counters.respawnWaits! - 1);
+        expect(r.respawnWaits.length).toBeGreaterThan(0);
+        expect(r.respawnWaits.every(w => w >= 29 && w <= 32)).toBe(true);
+    });
+
+    test('misses with a tree standing are still a lost lock', () => {
+        const run = (params: Record<string, unknown>) => serverRun({ method: 'willow', ticks: 300, axe: 'Rune axe', level: 75, miss: r => r >= 20 && r < 30, params });
+        const on = run({ waitRespawn: true });
+        expect(on.h.status.counters.slips).toBe(1);
+        expect(streamDigest(on.h)).toBe(streamDigest(run({}).h));
+    });
+
+    test('with bury, a respawn wait is no slip either', () => {
+        const base = serverRun({ method: 'oak', ticks: 200, bones: 20, fellEvery: 8, allDownFor: 30, params: { bury: true } });
+        const on = serverRun({ method: 'oak', ticks: 200, bones: 20, fellEvery: 8, allDownFor: 30, params: { bury: true, waitRespawn: true } });
+        expect(base.h.status.counters.slips).toBeGreaterThan(0);
+        expect(on.h.status.counters.slips ?? 0).toBe(0);
+    });
+
+    test('refused where nothing falls and respawns: fishing spots and normal trees', () => {
+        expect(() => createKnifeCycle({ method: 'fly', successes: 5, waitRespawn: true })).toThrow(/waitRespawn/);
+        expect(() => createKnifeCycle({ method: 'tree', successes: 5, waitRespawn: true })).toThrow(/waitRespawn/);
+        expect(() => createKnifeCycle({ method: 'willow', successes: 5, waitRespawn: true })).not.toThrow();
+    });
+});

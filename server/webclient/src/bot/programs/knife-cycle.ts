@@ -38,6 +38,14 @@
 // the roll tick takes the roll. The next scheduled click goes to a live tree, or,
 // when this cycle's click already went to the fallen one, a re-click goes out now.
 //
+// When every tree is down the schedule sends nothing and keeps its phase for the respawn, but
+// the lock window still runs, so a wait longer than it (the willows' respawn is about 29 ticks
+// at low load, the window 18) ends in `resync (no xp)` and counts a slip. With `waitRespawn`
+// (non-depleting trees only) each label on which no listed tree stands moves the window's start
+// to it: a respawn wait is neither a slip nor a resync. The result's `respawnWaits` lists each
+// wait's length, from the first label that showed every tree down to the first that showed one
+// standing.
+//
 // Plain (`technique: 'plain'`): click the target, re-click only when it is gone,
 // the player went idle, or after dropping a full inventory. Two opt-in refinements
 // for fishing: `followSpot` re-clicks the nearest spot on the label that shows the
@@ -186,7 +194,7 @@ function parseMethod(value: unknown): CycleMethod {
     throw new Error('method is required (a preset name or a method object)');
 }
 
-createKnifeCycle.params = ['method', 'technique', 'successes', 'untilLevel', 'untilXp', 'maxTicks', 'xpLag', 'lead', 'dismiss', 'reanchor', 'followSpot', 'dropEach', 'drop', 'window', 'trees', 'keepProducts', 'bury', 'phase'] as const;
+createKnifeCycle.params = ['method', 'technique', 'successes', 'untilLevel', 'untilXp', 'maxTicks', 'xpLag', 'lead', 'dismiss', 'reanchor', 'followSpot', 'dropEach', 'drop', 'window', 'trees', 'keepProducts', 'bury', 'phase', 'waitRespawn'] as const;
 export function createKnifeCycle(params: ProgramParams): TickProgram {
     const method = parseMethod(params.method);
     const technique = oneOf(params.technique, ['knife', 'plain'] as const, 'knife', 'technique');
@@ -216,6 +224,8 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
     const keepProducts = num(params.keepProducts, productRe.test('Logs') ? 3 : 0, 'keepProducts');
     const bonesRe = bonesParam(params.bury);
     if (bonesRe && !method.buryOnRoll) throw new Error(`bury is not supported for this method: its first click does not roll on a due clock (presets that allow it: ${Object.keys(CYCLE_METHODS).filter(k => CYCLE_METHODS[k]!.buryOnRoll).join(', ')})`);
+    const waitRespawn = params.waitRespawn === true;
+    if (waitRespawn && (method.kind !== 'loc' || method.depletes)) throw new Error('waitRespawn needs a tree that stands after a log and respawns when it falls (oak, willow)');
 
     let plain = technique === 'plain';
     let started = false;
@@ -254,6 +264,11 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
     let buried = 0;
     let noBoneCycles = 0;
     let lateClicks = 0;
+    // waitRespawn: the first label of the current all-down wait, the last label that showed every
+    // tree down (the lock window starts there), and each finished wait's length.
+    let downSince: number | null = null;
+    let downLast = -Infinity;
+    const respawnWaits: number[] = [];
     let prayerLevelUps = 0;
     let lastPrayerXp = 0;
     let lastPrayerLevel = 0;
@@ -463,6 +478,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
             ...(bonesRe
                 ? { buried, burySent, buriesPerTick: lastTick > startTick ? Math.round((buried / (lastTick - startTick)) * 1000) / 1000 : 0, noBoneCycles, lateClicks, prayerLevelUps }
                 : {}),
+            ...(waitRespawn ? { respawnWaits: [...respawnWaits] } : {}),
             ...(fellBack ? { fellBack } : {})
         };
     };
@@ -598,7 +614,21 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
             }
 
             const moved = spotMoved(ctx);
-            const lost = anchor !== null && t - Math.max(anchor + method.r0 + 1, lastXpTick) > (windowOverride || lockWindow(method, lvl, axe));
+            if (waitRespawn && anchor !== null) {
+                if (!findTarget(s)) {
+                    if (downSince === null) {
+                        downSince = t;
+                        ctx.count('respawnWaits');
+                        ctx.log('every listed tree down: waiting for the respawn');
+                    }
+                    downLast = t;
+                } else if (downSince !== null) {
+                    respawnWaits.push(t - downSince);
+                    ctx.log(`a tree stands again after ${t - downSince} ticks`);
+                    downSince = null;
+                }
+            }
+            const lost = anchor !== null && t - Math.max(anchor + method.r0 + 1, lastXpTick, downLast) > (windowOverride || lockWindow(method, lvl, axe));
             // A non-depleting tree that fell is not a lost lock (header): the schedule's next click picks a live tree.
             const switchTree = targetGone && !moved && !lost && anchor !== null && method.kind === 'loc' && !method.depletes;
             if (switchTree) {
