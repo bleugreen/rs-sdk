@@ -125,7 +125,8 @@ class Fisher {
         if (!r.ok) this.ctx.log('walk failed', { message: r.message });
         const opened = await this.ctx.bot.openBank();
         if (!opened.success) throw new Error(`openBank: ${opened.message}`);
-        const d = await depositMatching(this.ctx.sdk, [(i: { name: string }) => !this.c.tool.test(i.name)] as never);
+        const catchIds = [...new Set(this.ctx.sdk.getState()!.inventory.filter(i => !this.c.tool.test(i.name)).map(i => i.id))];
+        const d = await depositMatching(this.ctx.sdk, catchIds);
         if (!d.ok) this.ctx.log('deposit incomplete', { reason: d.reason });
         this.banks++;
         this.ctx.reportBank({ items: this.ctx.sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })) });
