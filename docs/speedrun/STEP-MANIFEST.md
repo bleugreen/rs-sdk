@@ -1452,9 +1452,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   scenario row, SF's +231 of crafts with the body route's shorter legs measured by rs/198). The nature altar below is the every-line-held baseline and a sensitivity row; the
   module takes `altar: 'body'` as well. **T21-22's runes (H17e)** come back after the last craft from
   **a runes-only hand-back trip**: the giver's body talisman and 1 law, 3 air and 1 earth, no essence,
-  because a talisman plus 27 essence fills 28 slots; one of the 22 givers on a trip after the last
-  essence turn (rs/196's preference: no extra login or talisman), or a 23rd account; rs/41 decides,
-  the account pending, and the roster count and login peak stay unless it is a 23rd. SCORED's side is
+  because a talisman plus 27 essence fills 28 slots; one of the 22 givers on a runes-only final trip
+  after the last essence turn, no 23rd account (rs/41, 05:1x PDT), the account from rs/330's
+  rotation, so the roster count and login peak stay. SCORED's side is
   built on rs/186's branch (023d8842, unit tests only); +5 i on S21, fold-in 18's price; the lab is
   pending, after rs/330's giver side (fold-in 20).
 - **Postconditions:** Runecraft 44 (S06) or 99 (S21). Items out: the rune stacks; S06's air runes
@@ -2326,8 +2326,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   (main's ruling, fold-in 20): 150 adamant tips and 150 headless arrows an attempt over the 2,070 /
   4,410 that reach 99 with only 2.18 base spare, so 1,502.18 spare (by script); adamant because S18
   starts at 0 free and adamant stacks with what SCORED holds (mithril would open 2 new stacks); rs/41
-  buys ~145 adamant tips an attempt at Hickton's. The 4,410 headless arrows held cover one attempt;
-  attempts 2 and 3 are being made by cairn_h78.
+  buys the margin on cairn_h76 at Hickton's (target 2,520, about 2.5 h). Headless arrows: 4,560 an
+  attempt, 13,680 for three, 4,410 held and 9,270 being made by cairn_h78 (rs/41, 05:1x PDT).
 - **Postconditions:** Fletching 99; **570 rune arrows kept** for S27.
 - **Ticks:** **0** inside S18 (measured: 240 actions inside the stuns in every pack run,
   `research/stun-pack.md` §3; the 2,220 adamant + 570 rune mix is 304 actions, 294 before fold-in
@@ -2753,7 +2753,7 @@ S10b) or fire (S10b to S14) supplies its element.
 | T20-21 | - | law rune x1 (consume: Falador teleport); air rune x3 (consume); water rune x1 (consume); law rune all (drop: the surplus, so S21 starts holding only the talisman); air rune all (drop); water rune all (drop); fishing rod x1 (drop: Fishing Contest's leftovers); fishing pass x1 (drop); raw shrimps x1 (drop); body talisman x1 (drop: on entry, as at S06) | - | 0 | RUN-ORDER T20-21, the body plan in force (r); rs/318 rulings 6 and 7 (r); P1; Fishing Contest's exit drops, rs/185, issue pending (r) |
 | H17 | rune essence x27 [u] (one of 194 deliveries) | - | - | 27 | SUPPLIES H17 (r); MAN entry 9 (r); 28 free, the staff of fire worn and the arrows quivered (rs/318 ruling 7, r) |
 | S21 | body rune x? [s] (crafted) | rune essence x27 (consume: one craft) | - | 0 | MAN entry 9 (r); the body runes are a stack, so the uncounted product takes one slot (r) |
-| H17e | law rune x1 [s]; air rune x3 [s]; earth rune x1 [s] (T21-22's Lumbridge teleport) | - | - | 3 | rs/318 ruling 7 (r): after the last craft, +5 i on S21 (i); from **a runes-only hand-back trip** (the giver's body talisman and the runes, no essence, since a talisman plus 27 essence fills 28 slots: one of the 22 givers after the last essence turn, or a 23rd account; rs/41 decides, the account pending; fold-in 20) (r); SCORED's side built on rs/186's branch (023d8842, unit tests only), the lab pending after rs/330's giver side (r); owner rs/196 (`runecraft.ts` via `receiveFrom`) (r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
+| H17e | law rune x1 [s]; air rune x3 [s]; earth rune x1 [s] (T21-22's Lumbridge teleport) | - | - | 3 | rs/318 ruling 7 (r): after the last craft, +5 i on S21 (i); from **a runes-only hand-back trip** (the giver's body talisman and the runes, no essence, since a talisman plus 27 essence fills 28 slots: one of the 22 givers on a runes-only final trip after the last essence turn, no 23rd account (rs/41, 05:1x PDT), the account from rs/330's rotation; fold-in 20) (r); SCORED's side built on rs/186's branch (023d8842, unit tests only), the lab pending after rs/330's giver side (r); owner rs/196 (`runecraft.ts` via `receiveFrom`) (r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
 | T21-22 | - | law rune x1 (consume: Lumbridge teleport); air rune x3 (consume); earth rune x1 (consume); body rune all (drop: S21's product) | - | 0 | RUN-ORDER T21-22 (r); P1 (r) |
 | H18 | fly fishing rod x1 [u]; feather x580 [s]; logs x10 [u]; law rune x1 [s]; air rune x3 [s]; earth rune x1 [s]; knife x1 [u] (back from H14) | - | - | 16 | SUPPLIES H18 (r); the knife's return (rs/318 ruling 7; rs/158 02:2x PDT, r); owner rs/320 (r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
 | S22 | - | feather x520 (consume) | - | 1 | MAN entry 5 (r); `fishing.ts`: one free slot for the catch (r) |
