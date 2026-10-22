@@ -18,6 +18,9 @@
 //   skip   task ids to leave out
 //   coins  float carried for shops and NPC fees (default 400); below 100 the account
 //          pickpockets Lumbridge men back up to it
+//   counts held targets by item name that replace the tasks' own, for a bulk run of an
+//          errand, e.g. {"only":["snapegrass"],"counts":{"Snape grass":102}}; a name no
+//          selected task gathers is refused at start
 import { resolveSkillDialogProduct } from '../../sdk/action-quantity';
 import { advance, classifyPage, resetDialogueMemory } from '../lib/dialogue';
 import { waitUntil } from '../lib/wait';
@@ -528,6 +531,24 @@ async function trainOnGoblins(g: Gatherer): Promise<void> {
 /** The wants still short. */
 const short = (g: Gatherer, ws: Want[]) => ws.filter(w => g.held(w.item) < w.count);
 
+/** The `counts` option by lower-cased item name; throws on anything but non-negative integers. */
+export function parseCounts(raw: unknown): Map<string, number> {
+    if (raw === undefined) return new Map();
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('questitems: counts must be an object of item name to held target');
+    return new Map(
+        Object.entries(raw).map(([item, n]) => {
+            if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) throw new Error(`questitems: counts[${JSON.stringify(item)}] must be a non-negative integer, got ${JSON.stringify(n)}`);
+            return [norm(item), n];
+        })
+    );
+}
+
+/** `t` with its held targets replaced where `counts` names the item. */
+export function withCounts(t: Task, counts: ReadonlyMap<string, number>): Task {
+    if (counts.size === 0) return t;
+    return { ...t, makes: g => t.makes(g).map(w => (counts.has(norm(w.item)) ? want(w.item, counts.get(norm(w.item))!) : w)) };
+}
+
 export const TASKS: Record<string, Task> = {
     goblinmail: {
         id: 'goblinmail',
@@ -790,10 +811,14 @@ export async function runGatherer(ctx: RoleContext): Promise<void> {
     if (!ids) throw new Error(`questitems: unknown set ${setName} (sets: ${Object.keys(SETS).join(', ')})`);
     const only = Array.isArray(o.only) ? (o.only as string[]) : null;
     const skip = Array.isArray(o.skip) ? (o.skip as string[]) : [];
-    const tasks = ids.filter(id => (!only || only.includes(id)) && !skip.includes(id)).map(id => TASKS[id]!);
+    const counts = parseCounts(o.counts);
+    const tasks = ids.filter(id => (!only || only.includes(id)) && !skip.includes(id)).map(id => withCounts(TASKS[id]!, counts));
     const g = new Gatherer(ctx, o.spare !== false, typeof o.float === 'number' ? o.float : 400);
 
     await prepare(ctx);
+    const gathered = new Set(tasks.flatMap(t => t.makes(g).map(w => norm(w.item))));
+    const unmatched = [...counts.keys()].filter(item => !gathered.has(item));
+    if (unmatched.length > 0) throw new Error(`questitems: counts names items no selected task gathers: ${unmatched.join(', ')}`);
     await g.buyer.prepare();
     await g.atBank();
     ctx.log('phase', { phase: setName, tasks: tasks.map(t => t.id) });
