@@ -810,9 +810,9 @@ Why each flag:
 **Where they run: on SCORED's machine, logged in before SCORED** (main's plan of record, 16:35-16:36
 PDT 2026-10-21). At the gate only the **opening roster**, S06's 7 air-altar givers, is logged in, on
 **each** candidate machine, so each gate is read under the opening load (main, 16:14 and 16:36
-PDT). After step 5a chooses, the bone and trade givers log in on the chosen machine before SCORED,
-S21's givers later, ahead of S21 ("The per-address login plan", below), and the other machine's 7 log
-out. So both machines carry the launcher at RUN_COMMIT and, on run night
+PDT). After step 5a chooses, the bone and trade givers log in on the chosen machine before SCORED;
+S21's givers later, inside SCORED's relog before S21, and the S18 courier and the S25a anvil helper
+only for their own steps ("The per-address login plan", below); and the other machine's 7 log out. So both machines carry the launcher at RUN_COMMIT and, on run night
 only, the givers' mode-600 env files (main, 16:14 PDT; on the twin **pending (rs/host)**). The CPU
 under the full roster is established before run day by the giver-load check, not at the gate
 (below).
@@ -833,7 +833,7 @@ Why SCORED's machine:
   public one, `fly-client-ip` (r, rs/131; the table above has each machine's bucket). One machine
   is one address and one bucket, so login order decides: **a step's givers are in before SCORED's
   last login ahead of that step, and never relog after it**: S06's before SCORED's first login, S21's
-  before SCORED's one in-page relog ahead of S21 ("The per-address login plan", below). A giver
+  inside SCORED's one in-page relog ahead of S21, before its login ("The per-address login plan", below). A giver
   relaunched after that comes back behind SCORED, and its turns run robust at 8 until SCORED's next
   relog: about 7 ticks for the craft lost in the cue plus
   1 per later turn of that giver, at most ~15 over S21 for one crash with 22 givers (m, lab, rs/163:
@@ -882,10 +882,12 @@ scope is not in force, and rs/393's writer is pending likewise.
 
 | Helper | Tick-exact? | Where |
 |---|---|---|
-| S06 air-altar givers (7) and S21 body-altar givers (22) | yes: the 7-tick cycle schedules their packets (R12) | SCORED's machine: S06's before SCORED's first login; S21's late, before SCORED's in-page relog ahead of S21 (below) |
+| S06 air-altar givers (7: h70-h72 and e11-e14) and S21 body-altar givers (22) | yes: the 7-tick cycle schedules their packets (R12) | SCORED's machine: S06's before SCORED's first login; S21's late, inside SCORED's in-page relog ahead of S21 (below) |
 | Trade givers (2): the hand-offs, H4m, S18's top-ups, the wine (SUPPLIES.md) | tick-sensitive: an S18 top-up must finish by stun + 9 (R16), the wine's bank by login + 19 (R17) | SCORED's machine, before SCORED |
 | S07 bone givers b01-b04 | no: SCORED's loop stops, receives and restarts, and a refused request costs SCORED 0 because the giver re-sends on the next tick (m, lab, rs/141) | SCORED's machine with the roster (rs/117's launcher, SUPPLIES.md H4.1); their machine decides no cycle, but they count in the load check |
-| Cannon helper (H11, H11r, H23), carp helper, couriers, lookouts | no | bbs fleet; their machine doesn't matter |
+| S18 courier e15, scope {S18, courier} | no | SCORED's machine, in rs/41's on-address roster; logged in for S18 only (below) |
+| S25a anvil helper a01, scope {S25a, anvil} | not ruled here; run machine only (HELPERS.md) | SCORED's machine, in rs/41's on-address roster; logged in for S25a only (below) |
+| Cannon helper (H11, H11r, H23; h92), carp helper, lookouts | no | the home address (bbs fleet); their machine doesn't matter |
 
 **Browser tabs on bbs don't receive the region's locs** (m, rs/359, 11:25Z 2026-10-22, a dated
 observation): a browser tab on bbs had 0 locs and 16 npcs from the demo world after 65 ticks, in 3
@@ -900,16 +902,17 @@ fix: a relay giver misses 3 turns per crash until it lands (m, lab, rs/163), aga
 path. The table's buckets are as of 2026-10-21; a re-address supersedes them.
 
 **Load and logins.** The chosen machine carries SCORED and ~35 helpers on the body plan (7 air, 22
-body, 4 bone, 2 trade givers). The giver-load check runs every co-located helper as lite clients
+body, 4 bone, 2 trade givers), plus the courier and the anvil helper for their steps, never all at
+once: at most 26 on its address at a time ("The per-address login plan", below). The giver-load check runs every co-located helper as lite clients
 beside a scored-style tab with recording; it passes at tab loop rate (d) p10 of at least 50 per
 second and recording at 29 fps or more with 0 dropped (main and the host thread, 16:18-16:36 PDT).
 It is **pending (rs/host, with rs/41 and rs/214)**: at the 22-giver point (00:35-00:52Z on
 2026-10-22) all 22 logged in in 190 s (m, rs/214) but the tab side never started, so there is no
 (d) or fps reading; the ~34-client body point is booked for 01:00-01:25Z. The ~65-client nature
 point runs only if rs/194 reports 4 or more nature talismans before the run's eve (main, 17:07 PDT;
-RUN-ORDER.md O41). Around 25-36 logins on one machine was ruled fine on the swarm side while the demo's per-IP bound
-was 100 (main, 16:24 PDT; "~20 a machine" was an observation, not a cap). The bound has been 50 an
-address since 13:2x PDT 2026-10-22 ("The per-address login plan", below).
+RUN-ORDER.md O41). Around 25-36 logins on one machine was ruled fine on the swarm side (main, 16:24
+PDT; "~20 a machine" was an observation, not a cap). The demo's bound is 50 an address and ours is 45
+("The per-address login plan", below).
 
 **How.** The tick-exact helpers (the Runecraft altar givers, the trade giver, the wine giver, the S07 bone givers) run on this
 machine through rs/117's launcher, `speedrun/helpers/standalone.ts`, from this same checkout, on their
@@ -919,27 +922,40 @@ it. The one ordering rule that touches this runbook: **the helpers are logged in
 opens** (the launcher's `helpersReady`), because login order decides the 7- or 8-tick Runecraft
 cycle. Every helper counts against the 80-login cap from its login until it logs out (step 7), and against
 its address's per-IP cap (below). With S21's altar givers in from the start, SCORED's run login was
-the peak (SUPPLIES.md, "Peak concurrent logins"); under the per-address plan below, the peak per
-address is rs/41's map, pending. At the gate the 7 opening givers on **each** machine count, 14 in all. After a demo restart the helpers come back by relaunching rs/141's headless
+the peak (SUPPLIES.md, "Peak concurrent logins"); under the per-address plan below, rs/41's map puts
+SCORED's address at 25 at the start and 26 during S21's ramp. At the gate the 7 opening givers on **each** machine count, 14 in all. After a demo restart the helpers come back by relaunching rs/141's headless
 lite-runner child processes (`fleet.ts`, `standalone.ts`), not tabs: the OS closes the old child's
 gateway socket when it exits, so there is no gateway takeover (inferred from the code; owned by
 rs/41), and the earlier lite restart measurement read 3 in-world ticks after the relogin
 (`RESILIENCE.md` section 6).
 
-**The per-address login plan** (main, 13:3x-13:4x PDT 2026-10-22, via rs/158; RUN-ORDER.md R43).
-One run machine is one address, so SCORED's machine carries SCORED, its gate account until the
-gate's kill, and every helper launched there:
+**The per-address login plan** (main, 13:3x-13:4x PDT 2026-10-22, via rs/158; rs/41's address map,
+accepted by main at 14:1x PDT; RUN-ORDER.md R43). One run machine is one address, so SCORED's
+machine carries SCORED, its gate account until the gate's kill, and every helper launched there.
+**SCORED's run-day address is most likely the twin's** (rs/41's map; the twin is the gate's default
+preference, step 5a), but the gate still chooses (tenet 17), and the plan holds on either machine:
 
 - **The cap.** The demo's operator caps simultaneous logins at **50 per IP** (public Discord, 13:2x
-  PDT; it was 100 and may rise). A working cap of **45 per address** is proposed as tenet 16's
-  successor and is not ruled; until it is, tenet 16's 80, summed across every host, stands (step 7).
+  PDT; it may rise). **Ours is 45 per address**, the working figure since main accepted rs/41's map.
+  Tenet 16's 80, summed across every host, applies beside it (step 7).
+- **The peak per address** (rs/41's map): **25 on SCORED's address at the start and 26 during S21's
+  ramp**, inside SCORED's relog before S21. Both are under 45.
+- **The home address on run day, a run-day rule:** the home machines (bbs and every executor) carry
+  **29 fleet accounts plus the cannon helper**, and nothing else. No development sessions and no
+  executor demo logins run from them on run day (rs/41's map, via rs/158).
 - **Families log out when their step is done:** after S03, S04, S06 and S07, that step's helper
-  family logs out.
-- **S21's body-altar givers log in late, then SCORED relogs once.** The 22 givers log in ahead of
-  S21, not before SCORED's first login. Then SCORED makes its one in-page relog before S21, which
-  re-appends it at its group's tail behind them, so they are handled first and the cycle stays at 7
-  (R12; the in-page relog is `login(session, {inPage: true})`, step 7). 22 logins took 190 s through
-  the launcher's limiter (m, rs/214), so their trigger leads S21 by at least that (i).
+  family logs out on the step's stop cue.
+- **S21's body-altar givers log in inside SCORED's relog.** SCORED makes its one in-page relog before
+  S21, and the 22 givers log in during it, not before SCORED's first login: about 3.5 wall minutes
+  through the launcher's limiter (rs/41; 22 logins took 190 s, m, rs/214). SCORED's login closes the
+  relog after the last of them, which re-appends it at its group's tail behind them, so they are
+  handled first and the cycle stays at 7 (R12; the in-page relog is `login(session, {inPage: true})`,
+  step 7).
+- **The courier and the anvil helper log in for their own step only:** the courier for S18, scope
+  {S18, courier}, and the anvil helper for S25a, scope {S25a, anvil} (rs/41; their names are in the
+  roster table above). Their credentials go to SCORED's machine with the rest of the on-address
+  roster (rs/41; "Credentials"). Anything this page prints names them by role, `courier` and `anvil`,
+  never by account, as the gate accounts print only as `GATE-run` and `GATE-twin` (step 5a.3).
 - **The atoll helper, H12o,** is cued by run.ts at least 52 ticks before S15's segment P. H12o is a
   lever under S15's risk line, with no ledger row until it is ruled in (RUN-ORDER.md R37).
 - **Triggers.** The family logouts, the late logins, SCORED's relog and H12o's cue are triggered by
@@ -947,9 +963,14 @@ gate's kill, and every helper launched there:
   `speedrun/lab/quests/run.ts`), and the schedule is rs/41's: **both pending**. On main nothing
   triggers them.
 
-**The peak per address is pending rs/41's map** of which accounts log in from which address. No
-account name or address goes on this page. `handoff`'s login count is a total across every host
-(step 7), and nothing on main counts logins per address.
+**Where the code differs** (r, main): a cue's `stop` stands its readers down (`altar-cue.ts`, no
+action on a stopped cue) but logs nobody out. A family's logout is the launcher's own stop (SIGINT
+or SIGTERM, then each account clicks logout; `standalone.ts`), so until run.ts and rs/41's schedule
+are on main, a family's logout is that launcher's stop. The launcher spaces logins by
+`loginSpacingMs`, 5 s by default. Neither `handoff`'s count (`--cap`, 80) nor `rs-claim take`'s (100)
+counts an address: both are totals across every host, and nothing on main counts logins per
+address. So 45 an address is the operator's check against rs/41's map. No address goes on this page,
+and account names only in the roster table.
 
 **The S07 bone givers** are rs/41's four, **cairn_b01-b04**, which serve SUPPLIES.md's H4.1-H4.n
 at the Woodcutting trees. They take turns, and they're a role rs/141 added to the same launcher
@@ -1064,7 +1085,7 @@ opening roster (S06's 7 air-altar givers) logged in on each (step 4), the record
 running, RDP disconnected. **Rehearsals are paused on both machines** from the start of the gate series on run day until the
 scored run's teardown, meaning SCORED's hiscore row has landed at its final logout and the recording
 is stopped (main, 19:00 PDT 2026-10-21; tenet 17). Rehearsal logins and their helpers count against
-the same per-IP cap (50 an address since 13:2x PDT 2026-10-22, 100 before; step 4, "The
+the same per-address caps (the operator's 50 and our 45; step 4, "The
 per-address login plan") and 80 working cap as the run's own roster, which peaks near 72 under the
 nature plan, and going over costs the run. No rehearsal claim may run into the gate series, and an attempt in
 flight pauses at its next step boundary once the run's claim appears (rehearse.ts, `--claim-owner`;
@@ -1163,9 +1184,10 @@ the tick length with rs/471, pending (step 6, line 2).
    passes), and the Mac relabels both in everything streamed back, its log and `choice.json`. Run on
    a machine by hand without `--role`, the label is plain `GATE`.
 4. **On the chosen machine:** the 4 bone and 2 trade givers log in through rs/117's launcher before
-   SCORED. S21's 22 body-altar givers log in later, ahead of S21 (step 4, "The per-address login
-   plan"; 22 logins took 190 s through the launcher's limiter, m, rs/214 on the run host,
-   00:35-00:39Z on 2026-10-22). Then step 7's login count (`handoff` re-checks it), then the launch
+   SCORED. S21's 22 body-altar givers log in later, inside SCORED's relog before S21 (step 4, "The
+   per-address login plan"; about 3.5 wall minutes through the launcher's limiter, rs/41; 22 logins
+   took 190 s, m, rs/214 on the run host, 00:35-00:39Z on 2026-10-22), and the courier and the anvil
+   helper only for S18 and S25a. Then step 7's login count (`handoff` re-checks it), then the launch
    dry run and `handoff` (step 7), within 20 minutes of the gate (`--max-gate-age`).
 5. **On the other machine,** before SCORED's first login: its 7 opening givers log out cleanly
    (HELPERS.md teardown; send their stop at least 5 minutes before they must be out of the world,
@@ -1333,8 +1355,8 @@ its rehearsals paused and its timer skipping under the claim, and any rehearsal 
 that did not log out counts; the bbs fleet (rs/41 reports its count to the operator; no command on
 this page reads it); the ambassador's host (rs/58); and any other host with one of our accounts in
 the world. With SCORED's 1 the total must be **at most 80**, the working cap. Per address, the demo's operator
-caps logins at 50 per IP since 13:2x PDT 2026-10-22 (100 before, then the ban threshold; 45 an
-address proposed as tenet 16's successor; step 4, "The per-address login plan"), and spreading
+caps logins at 50 per IP (13:2x PDT 2026-10-22) and ours is 45 an address (step 4, "The per-address
+login plan"), and spreading
 accounts across IPs to evade a cap is what gets accounts banned. The gate minute holds the 7 opening givers and a gate
 account on each machine, 16 on the two (step 5a). **Fleet accounts not needed during the run are logged out**
 before the count, their stop sent at least 5 minutes before it: the server logs out at most one
@@ -1342,9 +1364,10 @@ player per tick world-wide, so a stop of many accounts queues (rs/267; HELPERS.m
 SUPPLIES.md, "Peak concurrent logins", has the count by run phase: on the body-altar plan (22 givers,
 rs/163) the start is ~90 with the gathering fleet's ~53 in and 37 without it, so **logging the
 unneeded fleet out first is mandatory**. Those counts have S21's givers in from SCORED's first
-login. Under the per-address plan they log in later, ahead of S21, on the chosen machine (step 4;
-RUN-ORDER.md O38 for the machine), so the start is lower, and the peak per address is rs/41's map,
-pending. Do not log SCORED in over the cap. `handoff` re-checks it as a hard check: our accounts
+login. Under the per-address plan they log in later, inside SCORED's relog before S21, on the chosen
+machine (step 4; RUN-ORDER.md O38 for the machine), so the start is lower: rs/41's map puts SCORED's
+address at 25 at the start and 26 during S21's ramp, and the home address at 29 fleet accounts plus
+the cannon helper. Do not log SCORED in over either cap. `handoff` re-checks it as a hard check: our accounts
 online, as `rs-claim status` counts them on `/playerpositions` (every host's), plus SCORED's 1, at
 most 80 (`--cap`); it refuses if the count can't be read. **The code counts a total, not an
 address:** nothing on main counts logins per address.
@@ -1434,7 +1457,7 @@ renews the choice for `handoff`'s 20-minute limit.
 the bundle token (above) again and record both. **A tick length different from step 5a's reading
 is a stop**: no start; tell main (main kept this stop-on-change for the reads before the start,
 13:5x PDT). A different token means `gate` again first (above). Then, on the chosen machine, with
-the machine chosen (step 5a), the start's roster in (step 4; S21's givers come later), the recording running (step 5), the gate's Chrome gone, the profile warm and the login
+the machine chosen (step 5a), the start's roster in (step 4; S21's givers come inside SCORED's relog before S21), the recording running (step 5), the gate's Chrome gone, the profile warm and the login
 count at or under 80: put `$SCORED_ENV` on it (step 0), run step 3's env check with
 `ENV=$SCORED_ENV` (expect only `mode 600`), then the launch dry run (below), then hand over. `$SCORED_ENV` is set in the Mac's shell
 to the env file's path on the machine. Use `--machine=run` when the gate chose the run host. Bound:
