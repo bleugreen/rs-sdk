@@ -157,8 +157,8 @@ function tally(lines: Array<{ text: string }>): Record<string, number> {
 function ensureBotEnv(name: string): void {
     const env = join(ROOT, 'bots', name, 'bot.env');
     if (!existsSync(env)) {
-        const r = Bun.spawnSync(['bun', 'bots/create-bot.ts', name, '--local', '--no-chat'], { cwd: ROOT });
-        if (!existsSync(env)) throw new Error(`create-bot ${name} left no bot.env: ${r.stdout?.toString() ?? ''}${r.stderr?.toString() ?? ''}`);
+        const r = Bun.spawnSync(['bun', 'bots/create-bot.ts', name, '--local', '--no-chat'], { cwd: ROOT, stdout: 'pipe', stderr: 'pipe' });
+        if (!existsSync(env)) throw new Error(`create-bot ${name} left no bot.env: ${r.stdout.toString()}${r.stderr.toString()}`);
     }
     const web = process.env.WEB_PORT;
     const agent = process.env.AGENT_PORT;
