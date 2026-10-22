@@ -25,8 +25,11 @@
 // The CLI runs the helper's whole climb in one login, each phase only when its work is not done yet:
 //
 //   bun speedrun/helpers/quest-helper.ts <account> --fleet-account --mm-module=<pinned monkey-madness.ts>
-//       [--phases=agility,tree,grandtree,mm,mm-return] [--mm-until=G]
+//       [--phases=kit,logs,agility,tree,grandtree,mm,mm-return] [--mm-until=G]
 //
+//   kit        at the nearest bank (the buyer banked its purchases): sharks, the weapon (worn), a bronze
+//              axe while the logs are short, coins for the fares
+//   logs       Montai's 6 logs from the normal trees west of Draynor
 //   agility    a leg onto the Gnome course (the route's nearest waypoint on, the stronghold gate), then
 //              skills/agility.ts to 25 (The Grand Tree's climb, quest_grandtree.rs2:25)
 //   tree       a leg to Elkoy, then Tree Gnome Village with the substitutions above
@@ -41,7 +44,8 @@
 // login, and it always ends with a confirmed logout.
 import { resolve } from 'node:path';
 import type { BotWorldState } from '../../sdk/types';
-import { act, actConverse, openDoor, talkTo, type ActSdk } from '../lib/act';
+import { act, actConverse, openDoor, talkTo, wield, type ActSdk } from '../lib/act';
+import { withdrawMany, type WithdrawSpec } from '../lib/bank';
 import { fight, type FightResult } from '../lib/combat';
 import { converse, levelUpInterrupt, type ConverseSdk } from '../lib/converse';
 import { crossingSettings } from '../lib/kandarin';
@@ -62,6 +66,7 @@ import * as tgv from '../quests/tree-gnome-village';
 import { ARRIVAL as ELKOY, atRailOut, inStronghold, inVillage, ITEM as TGV_ITEM, LADDER, RAIL_OUT, STRONGHOLD_DOOR, VILLAGE_TREE, WALL_FOOT, WARLORD } from '../quests/tree-gnome-village';
 import { runSteps, type Step, type StepContext } from '../runner/step';
 import { GNOME_START, ROUTES, steps as agilitySteps } from '../skills/agility';
+import { BANKS } from './buyer';
 
 export type { Leg, Substitute };
 
@@ -89,8 +94,20 @@ export interface HelperKit {
     weapon: RegExp;
 }
 
-/** At TGV's start: Montai's 6 logs, food for the warlord, the stronghold and the demon after it, the scimitar worn. */
-export const TGV_KIT: HelperKit = { logs: 6, sharks: 15, weapon: /^Rune scimitar$/i };
+/**
+ * The melee weapon. A rune scimitar is not buyable on the demo (docs/speedrun/helpers/market.md: one
+ * bid, no ask), so the helper wields an adamant longsword from Varrock's sword shop; either serves.
+ */
+export const WEAPON = /^(Rune scimitar|Adamant longsword)$/i;
+export const AXE = /^Bronze axe$/i;
+const COINS = /^Coins$/i;
+/** Fares on the way (Brimhaven to Ardougne 30) with room to spare. */
+export const KIT_COINS = 300;
+/** Sharks taken from the bank: TGV's warlord and GT's demon, with a margin over TGV_KIT's floor. */
+export const KIT_SHARKS = 18;
+
+/** At TGV's start: Montai's 6 logs, food for the warlord, the stronghold and the demon after it, the weapon worn. */
+export const TGV_KIT: HelperKit = { logs: 6, sharks: 15, weapon: WEAPON };
 
 export function kitCheck(s: BotWorldState, kit: HelperKit): true | string {
     const logs = invCount(s, TGV_ITEM.logs);
@@ -411,6 +428,65 @@ export function mmPlan(): QuestPlan {
 
 export const PLANS = { tree: tgvPlan, grandtree: gtPlan, mm: mmPlan } as const;
 
+// ------------------------------------------------------------------ the kit and the logs (untimed)
+
+/** What the kit phase takes from the bank: the shortfall of each kit line against what is held or worn. */
+export function kitWithdraws(s: BotWorldState): WithdrawSpec[] {
+    const want: WithdrawSpec[] = [];
+    const sharks = invCount(s, SHARK);
+    if (sharks < KIT_SHARKS) want.push({ item: SHARK, n: KIT_SHARKS - sharks });
+    if (invCount(s, WEAPON) === 0 && !worn(s, WEAPON)) want.push({ item: WEAPON, n: 1 });
+    if (invCount(s, TGV_ITEM.logs) < TGV_KIT.logs && invCount(s, AXE) === 0 && !worn(s, AXE)) want.push({ item: AXE, n: 1 });
+    const coins = invCount(s, COINS);
+    if (coins < KIT_COINS) want.push({ item: COINS, n: KIT_COINS - coins });
+    return want;
+}
+
+const SURFACE_BANKS = Object.values(BANKS).filter(b => !('level' in b) || !b.level);
+
+/** Withdraw the kit at the nearest bank (banks are shared) and wield the weapon. */
+async function kitUp(ctx: StepContext<any>): Promise<void> {
+    const sdk = sdkOf(ctx);
+    const want = kitWithdraws(st(ctx));
+    if (want.length) {
+        const here = pos(st(ctx));
+        const bank = [...SURFACE_BANKS].sort((a, b) => chebyshev(a, here) - chebyshev(b, here))[0]!;
+        await go(ctx, { ...bank, tol: 2 }, 'to the bank');
+        const opened = await ctx.bot.openBank();
+        if (!opened.success) throw new Error(`bank: ${opened.message}`);
+        await waitUntil(sdk, s => s.bank?.isOpen === true, { maxTicks: 10 });
+        const r = await withdrawMany(ctx.sdk, want);
+        await ctx.sdk.sendCloseModal();
+        await waitUntil(sdk, s => !s.bank?.isOpen, { maxTicks: 5 });
+        if (!r.ok || r.missing.length) throw new Error(`kit: withdraw ${r.reason ?? 'short'}; missing ${r.missing.map(m => String(m.item)).join(', ') || 'none'}`);
+    }
+    if (!worn(st(ctx), WEAPON)) {
+        const w = await wield(sdk, WEAPON);
+        if (!w.ok) throw new Error('kit: could not wield the weapon');
+    }
+}
+
+/** Normal trees west of Draynor's bank, on the agility route's first stretch. */
+const TREES = { x: 3098, z: 3262, tol: 4 } as const;
+const TREE = /^Tree$/i;
+const CHOP = /^chop down$/i;
+
+/** Chop Montai's 6 logs from normal trees (Woodcutting 1, the bronze axe). */
+async function chopLogs(ctx: StepContext<any>): Promise<void> {
+    const sdk = sdkOf(ctx);
+    for (let tries = 0; invCount(st(ctx), TGV_ITEM.logs) < TGV_KIT.logs; tries++) {
+        if (tries >= 60) throw new Error(`only ${invCount(st(ctx), TGV_ITEM.logs)} logs after 60 chops`);
+        const tree = await findLoc(sdk, { name: TREE, op: CHOP, radius: 15 });
+        if (!tree) {
+            await go(ctx, TREES, 'to the trees');
+            continue;
+        }
+        const n0 = invCount(st(ctx), TGV_ITEM.logs);
+        const standing = (s: BotWorldState) => s.nearbyLocs.some(l => l.x === tree.x && l.z === tree.z && l.id === tree.id);
+        await act(sdk, () => sdk.sendInteractLoc(tree.x, tree.z, tree.id, opIndex(tree, CHOP)!), s => invCount(s, TGV_ITEM.logs) > n0 || !standing(s), { maxTicks: 60, interrupts: interrupts() });
+    }
+}
+
 // ------------------------------------------------------------------ the legs between quests (untimed)
 
 /** Agility 25 is The Grand Tree's climb (quest_grandtree.rs2:25, the boosted level). */
@@ -499,7 +575,7 @@ async function returnToKingdom(ctx: StepContext<any>): Promise<void> {
 
 // ------------------------------------------------------------------ the CLI
 
-export const PHASES = ['agility', 'tree', 'grandtree', 'mm', 'mm-return'] as const;
+export const PHASES = ['kit', 'logs', 'agility', 'tree', 'grandtree', 'mm', 'mm-return'] as const;
 export type Phase = (typeof PHASES)[number];
 
 /** `--phases`: known names, no repeats, in the climb's order. */
@@ -576,7 +652,9 @@ async function main(): Promise<void> {
             console.log(`quest-helper: start ${JSON.stringify(out.start)}`);
             for (const phase of phases) {
                 let r: PhaseResult;
-                if (phase === 'agility') r = await runPlain(session, phase, [legStep('agility', toGnomeCourse), ...agilitySteps({ to: AGILITY_TO })], log);
+                if (phase === 'kit') r = await runPlain(session, phase, [legStep('kit', kitUp)], log);
+                else if (phase === 'logs') r = await runPlain(session, phase, [legStep('logs', chopLogs)], log);
+                else if (phase === 'agility') r = await runPlain(session, phase, [legStep('agility', toGnomeCourse), ...agilitySteps({ to: AGILITY_TO })], log);
                 else if (phase === 'tree') {
                     await crossingSettings(session.sdk, (m, d) => console.log(`quest-helper: ${m} ${JSON.stringify(d ?? {})}`));
                     r = await runQuest(session, phase, tgv, tgvPlan(), toElkoy, log);

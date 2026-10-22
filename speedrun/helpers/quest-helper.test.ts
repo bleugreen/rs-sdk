@@ -4,7 +4,7 @@ import { baseState } from '../lib/fake-sdk';
 import * as grandTree from '../quests/grand-tree';
 import * as tgv from '../quests/tree-gnome-village';
 import { ROUTES } from '../skills/agility';
-import { gtPlan, kitCheck, mmPlan, nearestWaypoint, parsePhases, PHASES, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
+import { gtPlan, KIT_COINS, KIT_SHARKS, kitCheck, kitWithdraws, mmPlan, nearestWaypoint, parsePhases, PHASES, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
 
 let slot = 0;
 const item = (name: string, count = 1, id = 9000 + slot): InventoryItem => ({ slot: slot++, id, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
@@ -51,6 +51,21 @@ describe('kitCheck', () => {
         expect(kitCheck(kit(6, 3), TGV_KIT)).toMatch(/3 sharks/);
         expect(kitCheck(kit(6, TGV_KIT.sharks, false), TGV_KIT)).toMatch(/not worn/);
     });
+    test('an adamant longsword serves as the weapon (no rune scimitar on the demo)', () => {
+        const s = state({ inventory: [...Array.from({ length: 6 }, () => item('Logs')), ...Array.from({ length: TGV_KIT.sharks }, () => item('Shark'))], equipment: [item('Adamant longsword')] });
+        expect(kitCheck(s, TGV_KIT)).toBe(true);
+    });
+});
+
+describe('kitWithdraws', () => {
+    const names = (s: BotWorldState) => kitWithdraws(s).map(w => [String(w.item), w.n]);
+    test('an empty pack takes the sharks, the weapon, the axe and the fares', () => {
+        expect(names(state({ inventory: [], equipment: [] }))).toEqual([[String(/^Shark$/i), KIT_SHARKS], [String(/^(Rune scimitar|Adamant longsword)$/i), 1], [String(/^Bronze axe$/i), 1], [String(/^Coins$/i), KIT_COINS]]);
+    });
+    test('only the shortfall, no axe once the logs are held, nothing for a worn weapon', () => {
+        const s = state({ inventory: [item('Shark', 1), ...Array.from({ length: 6 }, () => item('Logs')), item('Coins', 1000)], equipment: [item('Adamant longsword')] });
+        expect(names(s)).toEqual([[String(/^Shark$/i), KIT_SHARKS - 1]]);
+    });
 });
 
 describe('substituted checks replace SCORED-only gates', () => {
@@ -89,6 +104,7 @@ describe('parsePhases', () => {
     test('the whole climb by default order, or any in-order subset', () => {
         expect(parsePhases(PHASES.join(','))).toEqual([...PHASES]);
         expect(parsePhases('grandtree, mm')).toEqual(['grandtree', 'mm']);
+        expect(parsePhases('kit,logs,agility')).toEqual(['kit', 'logs', 'agility']);
     });
     test('refuses unknown, repeated or out-of-order phases', () => {
         expect(() => parsePhases('agility,plague')).toThrow(/unknown phase "plague"/);
