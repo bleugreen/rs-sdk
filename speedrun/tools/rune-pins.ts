@@ -471,7 +471,7 @@ export const ledgerLegs = (): LegLike[] => legsFor({ s21Altar: 'body' }).map(l =
 
 export const FOLD_IN_25 = 'rs/158 fold-in 25: H8 law x7 / water x6, S11b out law 5 / water 4';
 const REPORTED = 'reported to rs/158 and rs/186 by rs/451, 2026-10-22, for a fold-in';
-const S26_VARROCK = 'reported to rs/158 by rs/464, 2026-10-22, for a fold-in: dragon-slayer.ts casts Lumbridge (F) and Falador (G) only, and T25-26 is a run';
+const S26_VARROCK = "rs/158's ruling on rs/464's report, 2026-10-22: S26 and H22 drop the Varrock set (fold-in 28); dragon-slayer.ts casts Lumbridge (F) and Falador (G) only, and T25-26 is a run";
 
 /**
  * Known findings on main's ledger, each awaiting the change named. T11-12's water is not short

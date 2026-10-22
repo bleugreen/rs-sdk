@@ -150,8 +150,8 @@ export const QUEST_COINS = 12_000;
 /**
  * H22 as this step uses it (SUPPLIES.md): the quest items, the planks, nails and hammer, 10 sharks,
  * one Lumbridge and one Falador cast, and the coins. The scimitar (H22's rune one; H11's mithril one
- * as the fallback), adamant helm and amulet are worn or held; KIT_WORN checks them. H22's Varrock and Ardougne runes are T25-26's and
- * T26-27's.
+ * as the fallback), adamant helm and amulet are worn or held; KIT_WORN checks them. H22's Ardougne runes are T26-27's;
+ * it carries no Varrock set, since nothing from T25-26 to T26-27 casts one (rs/158's ruling).
  */
 export function kitItems(opts: Options = {}): KitItem[] {
     const buy = opts.buyArmour ?? true;

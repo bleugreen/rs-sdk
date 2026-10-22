@@ -54,8 +54,8 @@ const MAGIC_DOOR_ITEMS = { wizards_mind_bomb: 1, silk: 1, lobster_pot: 1, bowl_u
 const HULL = { woodplank: 3, nails: 12, hammer: 1 } as const;
 const RUNES_LUMBRIDGE = { lawrune: 1, airrune: 3, earthrune: 1 } as const;
 const RUNES_FALADOR = { lawrune: 1, airrune: 3, waterrune: 1 } as const;
-/** H22 also carries T25-26's Varrock and T26-27's Ardougne casts (the inventory ledger's H22 row). */
-const RUNES_LEGS = { lawrune: 3, airrune: 3, firerune: 1, waterrune: 2 } as const;
+/** H22 also carries T26-27's Ardougne cast (T25-26 is a run: no Varrock set, rs/158's ruling). */
+const RUNES_ARDOUGNE = { lawrune: 2, waterrune: 2 } as const;
 /** Swapped off at H22 and dropped in S26's B. */
 const MSPEAK = 'mm_amulet_of_monkey_speak';
 export const add = (...parts: Array<Readonly<Record<string, number>>>): Record<string, number> => {
@@ -68,7 +68,7 @@ const wear = (list: readonly string[]) => Object.fromEntries(list.map(k => [k, 1
 const QUEST_COINS = ds.QUEST_COINS + ds.SCAVVO.chainbody + ds.SCAVVO.platelegs;
 
 /** H22 as the step receives it (the quest items first: a full inventory drops a give silently). */
-const H22 = add(MAGIC_DOOR_ITEMS, HULL, RUNES_LUMBRIDGE, RUNES_FALADOR, RUNES_LEGS, { coins: QUEST_COINS, shark: 10 }, wear(WORN_KIT));
+const H22 = add(MAGIC_DOOR_ITEMS, HULL, RUNES_LUMBRIDGE, RUNES_FALADOR, RUNES_ARDOUGNE, { coins: QUEST_COINS, shark: 10 }, wear(WORN_KIT));
 
 /** Given (then worn, for `worn`) after the standard fixture has worn its own `worn`. */
 export interface LateItems {

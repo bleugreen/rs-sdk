@@ -5,7 +5,7 @@ import { TickLog } from '../lib/ticks';
 import type { Observed, StepContext } from '../runner/step';
 import {
     AIR_RUNES, ARRIVAL, barredReason, entryRefusal, exitClean, exitDropItems, exitMagic, FALLBACK_RUNES, fightKolodion, formPicker, KEEP_SHARKS, kit, LETTERS, newTally, prayerBudget, quest,
-    FIRE_WAVE_MAX_CASTS, RUNE_NEED, RUNE_USE, RUNE_USE_FALLBACK, SPELL_RUNES, SPELLS, spellReady, stepId, steps, type Options,
+    FIRE_WAVE_MAX_CASTS, RUNE_NEED, RUNE_USE, SPELL_RUNES, SPELLS, spellReady, stepId, steps, type Options,
 } from './mage-arena';
 
 // Config ids from server/content/pack/obj.pack: entryRefusal reads the categories by id.
@@ -79,7 +79,7 @@ describe('segment table', () => {
 // ------------------------------------------------------------------ spells and kit
 
 describe('spells and kit (H13)', () => {
-    test('Fire Wave by default: 90 blood, 25 death behind it, 400 air', () => {
+    test('Fire Wave by default: 90 blood, 25 death behind it, 550 air', () => {
         expect(kit('fire_wave').map(k => [String(k.item), k.n])).toEqual([
             [String(/^blood rune$/i), 90], [String(/^death rune$/i), FALLBACK_RUNES], [String(/^air rune$/i), AIR_RUNES],
         ]);
@@ -471,9 +471,16 @@ describe('rune pins: RUNE_USE and RUNE_NEED agree with the kit (tools/rune-pins.
     test("RUNE_NEED.B is exactly what B's fightReady wants held (H13's kit)", () => {
         expect(runeNeedProblems(s => seg('B').preconditions(s, {}), without(arrival(), /greegree/i), RUNE_NEED.B!)).toEqual([]);
     });
-    test("C's Fire Waves are the measured maximum, inside SPELL_RUNES; the fallback spends the whole kit's spell runes", () => {
-        expect(RUNE_USE.C).toEqual({ bloodrune: FIRE_WAVE_MAX_CASTS, airrune: FIRE_WAVE_MAX_CASTS * SPELLS.fire_wave.air });
+    test("C's use is the guarded worst case, the whole kit: every Wave, then every fallback Blast", () => {
+        expect(RUNE_USE.C).toEqual({ bloodrune: SPELL_RUNES.fire_wave, deathrune: FALLBACK_RUNES, airrune: AIR_RUNES });
+        expect(RUNE_USE.C).toEqual(RUNE_NEED.B!);
         expect(FIRE_WAVE_MAX_CASTS).toBeLessThanOrEqual(SPELL_RUNES.fire_wave);
-        expect(RUNE_USE_FALLBACK.C).toMatchObject({ bloodrune: SPELL_RUNES.fire_wave, deathrune: FALLBACK_RUNES });
+    });
+    test('the kit check refuses 549 air and passes 550 (H13 stages 550)', () => {
+        expect(AIR_RUNES).toBe(550);
+        const ready = without(arrival(), /greegree/i);
+        const air = (n: number) => ({ ...ready, inventory: ready.inventory.map(i => (/^air rune$/i.test(i.name) ? { ...i, count: n } : i)) });
+        expect(seg('B').preconditions(air(549), {})).toMatch(/air rune 549 held, want >= 550/);
+        expect(seg('B').preconditions(air(550), {})).toBe(true);
     });
 });

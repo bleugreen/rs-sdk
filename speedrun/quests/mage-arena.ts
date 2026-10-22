@@ -69,7 +69,6 @@ export const SPELLS: Readonly<Record<KolodionSpell, { component: number; level: 
  * fights, so 78 + 12.
  */
 export const SPELL_RUNES: Readonly<Record<KolodionSpell, number>> = { fire_wave: 90, fire_blast: 90 };
-export const AIR_RUNES = 400;
 
 /**
  * The guard behind a spell: when its runes run out mid-fight the fight finishes on this one, since
@@ -78,6 +77,11 @@ export const AIR_RUNES = 400;
  */
 export const FALLBACK: Readonly<Record<KolodionSpell, KolodionSpell | null>> = { fire_wave: 'fire_blast', fire_blast: null };
 export const FALLBACK_RUNES = 25;
+/**
+ * Air for the guarded path (rs/158's ruling, 10-22): every Fire Wave's 5 and then every fallback
+ * Fire Blast's 4, 550, as H13 stages it. Fire Blast's own 90 casts take 360 of it.
+ */
+export const AIR_RUNES = SPELL_RUNES.fire_wave * SPELLS.fire_wave.air + FALLBACK_RUNES * SPELLS.fire_blast.air;
 
 export type God = 'saradomin' | 'guthix' | 'zamorak';
 /** The statues (chamber.rs2; mage_arena.md step 10). Praying puts the cape on the tile south of it. */
@@ -274,8 +278,8 @@ export const DEFAULT_GOD: God = 'saradomin';
 
 /**
  * Fire Wave's measured maximum from the route's arrival: 42-59 casts over rs/371's 25 counted fights
- * (m, lab, 300 ms). One more fight outlasted 70 casts uncounted; SPELL_RUNES' 90 and the fallback
- * are sized for it (RUNE_USE_FALLBACK).
+ * (m, lab, 300 ms). One more fight outlasted 70 casts uncounted, so RUNE_USE declares the guarded
+ * worst case instead (rs/158's ruling): SPELL_RUNES' Waves, then the fallback's Blasts.
  */
 export const FIRE_WAVE_MAX_CASTS = 59;
 
@@ -287,8 +291,14 @@ const castUse = (spell: KolodionSpell, casts: number): RuneUse => ({ [SPELL_RUNE
 /** The worn staff whose element RUNE_USE leaves out (fightReady wants it worn). */
 export const RUNE_STAFF = 'staff of fire';
 
-/** The step's runes on the route (lib/travel.ts RuneUseTable): the fight (C) at Fire Wave's measured maximum. */
-export const RUNE_USE: RuneUseTable = { C: castUse(DEFAULT_SPELL, FIRE_WAVE_MAX_CASTS) };
+/**
+ * The step's runes on the route (lib/travel.ts RuneUseTable): the fight (C) at its guarded worst case,
+ * the spell's kit all spent and then the fallback's, since the measured maximum is open past 70.
+ * Leftover blood merges into S18's stack, so the ledger never counts on it.
+ */
+export const RUNE_USE: RuneUseTable = {
+    C: sumUse(castUse(DEFAULT_SPELL, SPELL_RUNES[DEFAULT_SPELL]), FALLBACK[DEFAULT_SPELL] ? castUse(FALLBACK[DEFAULT_SPELL]!, FALLBACK_RUNES) : {}),
+};
 
 /** What fightReady wants held from B on (A receives it): the default spell's kit, its fallback's included. */
 export const RUNE_NEED: RuneUseTable = {
@@ -298,10 +308,6 @@ export const RUNE_NEED: RuneUseTable = {
     ),
 };
 
-/** The fallback path: the spell's runes all spent, then the fallback's. */
-export const RUNE_USE_FALLBACK: RuneUseTable = {
-    C: sumUse(castUse(DEFAULT_SPELL, SPELL_RUNES[DEFAULT_SPELL]), FALLBACK[DEFAULT_SPELL] ? castUse(FALLBACK[DEFAULT_SPELL]!, FALLBACK_RUNES) : {}),
-};
 
 /** What one fight did, for the lab and the run's record. */
 export interface FightTally {
