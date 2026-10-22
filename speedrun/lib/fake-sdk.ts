@@ -32,6 +32,8 @@ export function baseState(overrides: Partial<BotWorldState> = {}): BotWorldState
         modalInterface: -1,
         combatEvents: [],
         prayers: { activePrayers: [], prayerPoints: 0, prayerLevel: 1 },
+        // Run on, as every login leaves the scored account (lib/run-mode.ts).
+        varps: { option_run: 1 },
         ...overrides,
     } as BotWorldState;
 }

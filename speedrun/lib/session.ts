@@ -262,8 +262,10 @@ export interface OpenOptions {
 
 /**
  * Connect a control SDK to `botName` (from bots/<name>/bot.env), optionally
- * launching its client, and wait for a live, advancing tick. Unlike runScript,
- * a disconnect is not fatal: logout and relaunch are normal events here.
+ * launching its client, and wait for a live, advancing tick, then turn run on
+ * (lib/run-mode.ts; a press only when it reads off, which closes any open
+ * modal). Unlike runScript, a disconnect is not fatal: logout and relaunch are
+ * normal events here.
  */
 export async function openSession(botName: string, opts: OpenOptions = {}): Promise<Session> {
     const env = loadBotEnv(botName);
@@ -311,6 +313,9 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         // the whole budget rather than the short attach-time window.
         const ready = opts.readyTimeoutMs ?? 120_000;
         await waitAdvancingTick(session, ready, opts.launch ? ready : undefined);
+        // A client we attach to may have logged in on its own (lab runners, a
+        // relaunch by another process); every login leaves run off.
+        await ensureRunOn(sdk);
     } catch (err) {
         // The client we launched may be in the world even though this process never
         // saw it advance; left running it would hold the player there indefinitely.
@@ -600,6 +605,8 @@ export interface LoginResult {
     via: 'launch' | 'page';
     /** session.tickBase for the new session. */
     tickBase: number;
+    /** The run toggle after login turned it on (lib/run-mode.ts); not counted in wallMs. */
+    run: EnsureRunResult;
 }
 
 /**
@@ -612,6 +619,11 @@ export interface LoginResult {
  * session at once, and an in-page login falls back to the title screen. So a
  * login that ends before its first in-world tick is retried with backoff, up to
  * `attempts` times; after an in-page attempt the retries navigate.
+ *
+ * Once in, it turns run on and confirms it (lib/run-mode.ts ensureRunOn: the
+ * toggle is not saved, so every login starts walking), throwing a
+ * RunToggleError if it will not; relog, the watchdog's login and the outage
+ * reconnect all come through here.
  */
 export async function login(session: Session, opts: LoginOptions = {}): Promise<LoginResult> {
     const t0 = Date.now();
@@ -638,7 +650,9 @@ export async function login(session: Session, opts: LoginOptions = {}): Promise<
         if (outcome === 'in-world') {
             session.expectInWorld = true;
             session.watchdog?.resume();
-            return { wallMs: Date.now() - t0, attempts: attempt, via, tickBase: session.tickBase };
+            const wallMs = Date.now() - t0;
+            const run = await ensureRunOn(session.sdk);
+            return { wallMs, attempts: attempt, via, tickBase: session.tickBase, run };
         }
         if (outcome === 'timeout' || attempt >= maxAttempts || session.childExit === 3) {
             throw new Error(`${session.name}: login failed after ${attempt} attempt(s) (${outcome}, ${via === 'page' ? 'in page' : `exit ${session.childExit}`})`);
