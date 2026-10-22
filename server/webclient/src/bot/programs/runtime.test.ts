@@ -141,6 +141,19 @@ describe('ProgramRuntime', () => {
         expect(s.react).toMatchObject({ n: 3, max: 20 });
     });
 
+    test("the tickMs parameter is the T a run's frames are judged by; a bad one is a bad parameter", () => {
+        const rt = new ProgramRuntime({ dispatch: () => ({ success: true, message: '' }), now: () => 0 });
+        rt.register('a', declared(() => ({ onTick: c => c.progress() })));
+        expect(rt.start('a', { tickMs: 400 }).frames).toMatchObject({ T: 400, TSource: 'driver' });
+        // 440 then 180 is a catch-up at T = 300, not at the driver's 400
+        rt.onTick(makeState({ tick: 1 }), 1, [0]);
+        rt.onTick(makeState({ tick: 2 }), 1, [400]);
+        rt.onTick(makeState({ tick: 3 }), 1, [840]);
+        rt.onTick(makeState({ tick: 4 }), 1, [1020]);
+        expect(rt.status()!.frames).toMatchObject({ n: 3, catchUps: 0, underHalfT: 1, overSevenSixthsT: 0, T: 400, TSource: 'driver' });
+        expect(rt.start('a', { tickMs: 0 })).toMatchObject({ phase: 'fault', fault: 'bad parameters: tickMs must be a tick length in ms above 0, got 0' });
+    });
+
     test('a factory that throws reports bad parameters as a fault', () => {
         const rt = new ProgramRuntime({ dispatch: () => ({ success: true, message: '' }) });
         rt.register('x', declared(() => { throw new Error('trials must be a number'); }));
