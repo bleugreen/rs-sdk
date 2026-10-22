@@ -4,7 +4,8 @@
 //
 //   1. woodcutting:hand-back at the willow stand, Woodcutting 99: SCORED gives the rune axe and
 //      3 leftover bones and takes T07-08's Camelot runes (1 law, 5 air). Ledger rows H4.end, T07-08.
-//   2. mining.kit: H4p at the zoo, Mining 64: SCORED receives the rune pickaxe and 2 logs. Then, at
+//      Then the scored path's woodcutting:drop-axe, with the runes already held: 0 ticks.
+//   2. mining.kit: H4p at the zoo, Mining 64: SCORED receives the rune pickaxe and a log. Then, at
 //      Mining 99, mining.exit drops the pickaxe, the logs and a leftover ore. Rows H4p, S09, H7.
 //
 //   LAB_HELPERS=<mule> speedrun/lab/lab.sh <scored> 'speedrun/lab/handoff-slots.ts:--mule=<mule>'
@@ -80,12 +81,22 @@ const pass1 = pre1 === true && err1 === null && post1 === true && r1.success && 
     && JSON.stringify(sum(r1.received)) === JSON.stringify(['Dragon bones x3', 'Rune axe x1']);
 const row1 = log.rows.find(r => r.step === 'woodcutting:hand-back');
 
+// ---- 1b. the scored path's axe drop at S07's end (rs/158's ruling): runes already held
+await stage(scored, ['give rune_axe 1', 'give knife 1', 'give logs 1', 'give lawrune 1', 'give airrune 5'], 5);
+const dropAxe = woodcuttingSteps({ dropAxe: true }).find(s => s.name === 'woodcutting:drop-axe')!;
+const tA = scored.sdk.getState()!.tick;
+await dropAxe.run(ctx);
+const axeTicks = scored.sdk.getState()!.tick - tA;
+await waitTicks(scored.sdk, 2);
+const afterAxe = pack(scored);
+const passAxe = axeTicks === 0 && JSON.stringify(afterAxe) === JSON.stringify(want1) && dropAxe.done!({ state: scored.sdk.getState()!, probed: {} }, {}) === true;
+
 // ---- 2. H4p at the zoo, then the exit drops (rs/158 specs 3 and 4)
 await tele(scored.sdk, 2607, 3235);
 await tele(mule.sdk, 2608, 3235);
 await setstat(scored.sdk, 'mining', 64);
 await stage(scored, ['give knife 1', 'give logs 1'], 2);
-await stage(mule, ['give rune_pickaxe 1', 'give logs 2'], 3);
+await stage(mule, ['give rune_pickaxe 1', 'give logs 1'], 2);
 const all = miningSteps({ travel: 'none', respawn: 13, kitGiver: muleName, dropAtExit: true });
 const kit = all.find(s => s.name === 'mining.kit: H4p')!;
 const exit = all.find(s => s.name === 'mining.exit')!;
@@ -98,7 +109,7 @@ const r2 = await m2;
 await waitTicks(scored.sdk, 2);
 const after2 = pack(scored);
 const post2 = kit.postconditions(scored.sdk.getState()!, {});
-const want2 = ['Knife x1', 'Logs x1', 'Logs x1', 'Logs x1', 'Rune pickaxe x1'];
+const want2 = ['Knife x1', 'Logs x1', 'Logs x1', 'Rune pickaxe x1'];
 const pass2 = pre2 === true && err2 === null && post2 === true && r2.success && JSON.stringify(after2) === JSON.stringify(want2);
 
 await setstat(scored.sdk, 'mining', 99);
@@ -111,10 +122,11 @@ await waitTicks(scored.sdk, 2);
 const after3 = pack(scored);
 const pass3 = runTicks === 0 && JSON.stringify(after3) === JSON.stringify(['Knife x1']) && exit.done!({ state: scored.sdk.getState()!, probed: {} }, {}) === true;
 
-const pass = pass1 && pass2 && pass3;
+const pass = pass1 && passAxe && pass2 && pass3;
 result('handoff-slots', {
     pass,
     handBack: { pass: pass1, pre: pre1, error: err1, post: post1, after: after1, free: 28 - after1.length, row: row1?.meta, mule: { success: r1.success, ticks: r1.ticks, received: sum(r1.received), message: r1.message } },
+    dropAxe: { pass: passAxe, runTicks: axeTicks, after: afterAxe, free: 28 - afterAxe.length },
     kit: { pass: pass2, pre: pre2, error: err2, post: post2, after: after2, free: 28 - after2.length, mule: { success: r2.success, ticks: r2.ticks, message: r2.message } },
     exit: { pass: pass3, runTicks, after: after3, free: 28 - after3.length },
 });

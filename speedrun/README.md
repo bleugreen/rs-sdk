@@ -871,7 +871,8 @@ Slots (STEP-MANIFEST.md's inventory ledger, rows H4p to H7). Each iron band refu
 without `FREE_SLOTS` (4) free, ores counted as free since the band drops them first. Two steps
 are the scored run's and off by default, since a rehearsal brings its kit from Lumbridge and keeps
 it: `kitGiver=<name>` adds `mining.kit: H4p` after the zoo walk, one `receiveFrom` of `H4P_KIT`
-(the rune pickaxe and 2 normal logs) whose precondition counts the kit's 3 slots and the band's 4;
+(the rune pickaxe and a normal log; S07's kept log is the second) whose precondition counts the
+kit's 2 slots and the band's 4;
 `dropAtExit=true` adds `mining.exit`, which drops `EXIT_DROPS` (every pickaxe, every log, a
 leftover ore, gem or arrow shaft; never the knife) at `to`, 5 a tick and the last batch sent
 without waiting, so the leg after keeps its queue. Lab: `lab/handoff-slots.ts` runs both steps
@@ -912,7 +913,7 @@ band is a 0-tick `woodcutting:hit` row (tick, tile, the NPCs within 2 tiles). Wi
 to N or below aborts the walk or the band's program run and fails the step, so the harness logs
 out cleanly. Options from the CLI come as strings (`--skill-opt=route=rimmington`, `hpStop=4`,
 `bury=true`, `boneGiver=`, `plainTicksPerRoll=`, `sites=<json>`, `hold=` for the lab's forced slip,
-`keepProducts=`, `handBack=`).
+`keepProducts=`, `handBack=`, `dropAxe=`).
 
 Slots (STEP-MANIFEST.md's inventory ledger, rows H4k to T07-08). The normal band passes
 knife-cycle `keepProducts` (default `NORMAL_KEEP`, 1; the program's own is 3), counting the kit's
@@ -920,11 +921,14 @@ logs, and the program ends on the label that shows its last log, after its last 
 oak and willow band first drops the normal logs past `keepProducts` (`extraLogs`; the starter
 takes the first log), sent without waiting before its walk; its bury precondition counts them as
 free. The oaks then start on the axe, the knife and one log, 25 free for a 23-bone load and the
-chopped log. `handBack=true` (the bone giver) or `handBack=<name>` adds `woodcutting:hand-back`
-after the last band: one `swap()` that gives the axe and every bone held and takes
-`CAMELOT_RUNES` (1 law, 5 air) for T07-08. It is a trade of its own at `to`, since the axe chops
-to the last level, and it is off by default: rehearsals keep their axe and carry no bones.
-Lab: `lab/handoff-slots.ts` runs it against the mule giver.
+chopped log. S07's end has two opt-in steps, off by default since rehearsals keep their axe and
+carry no bones. The scored path: T07-08's runes ride the last bone load (`receiveFrom` takes an
+offer holding more than the bones), and `dropAxe=true` adds `woodcutting:drop-axe`, which drops
+the axe at `to` without waiting. The fallback until a bone giver can add the runes to a load:
+`handBack=true` (the bone giver) or `handBack=<name>` adds `woodcutting:hand-back`, one `swap()`
+at `to` that gives the axe and every bone held and takes `CAMELOT_RUNES` (1 law, 5 air), a trade
+of its own, since the axe chops to the last level. Lab: `lab/handoff-slots.ts` runs both against
+the mule giver.
 
 `BandLedger` files every tick of a band by level and technique from the program statuses, and
 `summarizeBand` turns it into rs/158's table: per sub-band (oak 15-60 and 60-73, willow 73-85 and

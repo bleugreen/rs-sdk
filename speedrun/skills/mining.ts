@@ -10,8 +10,9 @@
 //   mining.travel: ...     Port Sarim, the ship to Karamja, Brimhaven, the customs ship to
 //                          Ardougne, the zoo; each leg a no-op once past (`travel: 'none'`
 //                          keeps only the zoo walk)
-//   mining.kit: H4p        with `kitGiver`: the rune pickaxe and 2 normal logs by trade at the
-//                          zoo (STEP-MANIFEST.md's ledger, H4p); rehearsals bring their kit
+//   mining.kit: H4p        with `kitGiver`: the rune pickaxe and a normal log by trade at the
+//                          zoo (STEP-MANIFEST.md's ledger, H4p; S07's kept log is the second);
+//                          rehearsals bring their kit
 //   mining.iron-15         15-63: iron, knife-mine with `success: 'iron'` (failed rolls) and
 //                          the held pickaxes' rates
 //   mining.iron-63         63-to: iron, knife-mine as measured (every roll succeeds)
@@ -260,10 +261,13 @@ export const STARTER_JUNK = [
 ];
 /** Free slots the bands want: ore, a gem, a stray fletch. */
 export const FREE_SLOTS = 4;
-/** H4p (STEP-MANIFEST.md's ledger): the iron kit by trade at the zoo; knife-mine loses none of the logs (rs/226, 1,050 ores). */
-export const H4P_KIT: readonly WantSpec[] = [{ item: /^rune pickaxe$/i, amount: 1 }, { item: /^logs$/i, amount: 2 }];
-/** Slots H4p adds: the pickaxe and two unstackable logs. */
-export const KIT_SLOTS = 3;
+/**
+ * H4p (STEP-MANIFEST.md's ledger): the iron kit by trade at the zoo. One log, since S07's kept log
+ * arrives too (rs/158's ruling); knife-mine loses none of them (rs/226, 1,050 ores).
+ */
+export const H4P_KIT: readonly WantSpec[] = [{ item: /^rune pickaxe$/i, amount: 1 }, { item: /^logs$/i, amount: 1 }];
+/** Slots H4p adds: the pickaxe and an unstackable log. */
+export const KIT_SLOTS = 2;
 /** Dead at S09's end: the pickaxes and the logs (the knife stays), and what an interrupted lap leaves. */
 export const EXIT_DROPS: readonly RegExp[] = [...PICKAXES.map(p => p.name), /^logs$/i, /ore$|^uncut /i, /^arrow shaft$/i];
 
@@ -371,7 +375,7 @@ function kitStep(to: number, giver: string): Step<any> {
         preconditions: s => {
             if (skip(s)) return true;
             const need = KIT_SLOTS + FREE_SLOTS;
-            return freeOfOre(s) >= need ? true : `${28 - freeOfOre(s)} other items: H4p's rune pickaxe and 2 logs and the band need ${need} free slots`;
+            return freeOfOre(s) >= need ? true : `${28 - freeOfOre(s)} other items: H4p's rune pickaxe and log and the band need ${need} free slots`;
         },
         run: async ctx => {
             const { sdk } = ctx;
@@ -382,7 +386,7 @@ function kitStep(to: number, giver: string): Step<any> {
             ctx.log.append({ ...row(ctx, 'mining.kit: H4p', { kind: 'mining-kit', ok: r.ok, ticks: r.ticks, received: r.received.map(i => `${i.name} x${i.count}`), ...(r.reason ? { reason: r.reason } : {}) }, t0), ticks: 0, ok: r.ok });
             if (!r.ok) throw new Error(`H4p from the trade giver failed: ${r.reason}`);
         },
-        postconditions: s => (skip(s) ? true : 'H4p did not arrive: no rune pickaxe or fewer than 2 logs'),
+        postconditions: s => (skip(s) ? true : 'H4p did not arrive: no rune pickaxe or no log'),
         logoutSafe: true,
         done: ob => skip(ob.state),
     };

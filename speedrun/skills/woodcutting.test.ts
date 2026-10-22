@@ -917,3 +917,36 @@ describe('woodcutting: the slot ledger, the hand-back at S07\'s end to T07-08 (r
         expect(h.log.rows.find(r => r.step === 'woodcutting:hand-back')!.ok).toBe(false);
     });
 });
+
+describe("woodcutting: the axe drop at S07's end, the scored run's 0-tick path (rs/158's ruling)", () => {
+    test('off by default; with dropAxe it is the last step, after the hand-back when both are set', () => {
+        expect(harness(state({})).all.map(s => s.name)).not.toContain('woodcutting:drop-axe');
+        expect(harness(state({}), { dropAxe: 'true' }).all.map(s => s.name).at(-1)).toBe('woodcutting:drop-axe');
+        expect(harness(state({}), { dropAxe: true, handBack: 'cairn_h01' }).all.map(s => s.name).slice(-2)).toEqual(['woodcutting:hand-back', 'woodcutting:drop-axe']);
+        expect(() => steps({ dropAxe: 'yes' })).toThrow(/dropAxe/);
+    });
+
+    test("T07-08: the runes came in the last load; at 99 the axe goes without waiting and the pack is the knife, the log and the runes", async () => {
+        const at99 = state({ level: 99, items: ['Rune axe', 'Knife', 'Logs', 'Law rune', 'Air rune'] });
+        const h = harness(at99, { dropAxe: true });
+        const drop = h.byName('woodcutting:drop-axe');
+        expect(drop.preconditions(at99, {})).toBe(true);
+        expect(drop.done!({ state: at99, probed: {} }, {})).toBe(false);
+        const t0 = h.sdk.getState()!.tick;
+        await drop.run(h.ctx);
+        expect(h.sdk.getState()!.tick).toBe(t0);
+        expect(drops_(h.sdk)).toEqual([0]);
+        // sent, not yet published: the postcondition passes without a tick's wait
+        expect(drop.postconditions(h.sdk.getState()!, {})).toBe(true);
+        const after = { ...at99, inventory: at99.inventory.filter(i => i.slot !== 0) };
+        expect(after.inventory.map(i => i.name)).toEqual(['Knife', 'Logs', 'Law rune', 'Air rune']);
+        expect(drop.done!({ state: after, probed: {} }, {})).toBe(true);
+        expect(drop.preconditions(state({ level: 98 }), {})).toMatch(/waits for 99/);
+    });
+
+    test('a worn axe is not dropped; a pack without an axe sends nothing', async () => {
+        const h = harness(state({ level: 99, items: ['Knife', 'Logs'], worn: ['Rune axe'] }), { dropAxe: true });
+        await h.byName('woodcutting:drop-axe').run(h.ctx);
+        expect(drops_(h.sdk)).toEqual([]);
+    });
+});

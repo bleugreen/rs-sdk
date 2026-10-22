@@ -330,6 +330,8 @@ export interface WoodcuttingOptions {
      * partner. Gives the axe and any bones held, takes CAMELOT_RUNES.
      */
     handBack?: boolean | string;
+    /** Drop the axe at `to` without waiting (default false: a rehearsal keeps it). */
+    dropAxe?: boolean | string;
     /** Test seams. */
     runGated?: typeof runGatedProgram;
     makeGate?: typeof inPageGate;
@@ -357,6 +359,7 @@ interface Resolved {
     keepProducts: number;
     /** The hand-back's partner, or null for none. */
     handBack: string | null;
+    dropAxe: boolean;
     runGated: typeof runGatedProgram;
     makeGate: typeof inPageGate;
     receive: typeof receiveFrom;
@@ -419,6 +422,7 @@ function resolve(opts: WoodcuttingOptions): Resolved {
         probeDirs: flag('probeDirs', opts.probeDirs, true),
         keepProducts: numberOpt('keepProducts (an integer from 0 to 27)', opts.keepProducts, n => Number.isInteger(n) && n >= 0 && n <= 27, NORMAL_KEEP),
         handBack,
+        dropAxe: flag('dropAxe', opts.dropAxe, false),
         runGated: opts.runGated ?? runGatedProgram,
         makeGate: opts.makeGate ?? inPageGate,
         receive: opts.receive ?? receiveFrom,
@@ -1007,6 +1011,30 @@ function handBackStep(o: Resolved, partner: string): Step {
     };
 }
 
+/** At `to`: drop every axe in the pack, without waiting (as mining.exit): the leg after keeps its queue. */
+function dropAxeStep(o: Resolved): Step {
+    const axes = (s: BotWorldState) => s.inventory.filter(i => AXE.test(i.name));
+    const sent = new Set<number>();
+    return {
+        name: 'woodcutting:drop-axe',
+        preconditions: s => (wcLevel(s) >= o.to ? true : `Woodcutting ${wcLevel(s)}: the axe drop waits for ${o.to}`),
+        async run({ sdk }) {
+            sent.clear();
+            for (const i of axes(sdk.getState()!).slice(0, 5)) {
+                sent.add(i.slot);
+                void sdk.sendDropItem(i.slot);
+            }
+        },
+        // a drop sent and not yet published passes: waiting on it would cost the leg a tick
+        postconditions: s => {
+            const left = axes(s).filter(i => !sent.has(i.slot));
+            return left.length ? `still held at S07's end: ${left.map(i => i.name).join(', ')}` : true;
+        },
+        logoutSafe: true,
+        done: ({ state }) => wcLevel(state) >= o.to && axes(state).length === 0
+    };
+}
+
 /** The woodcutting steps from the current state to `to` (see the file comment). */
 export function steps(opts: WoodcuttingOptions = {}): Step[] {
     const o = resolve(opts);
@@ -1020,6 +1048,7 @@ export function steps(opts: WoodcuttingOptions = {}): Step[] {
         bandStep(o, oak, !willowLast),
         walkStep(o, 'woodcutting:walk-willows', o.sites.willow.stand, s => wcLevel(s) >= oakEnd && wcLevel(s) < o.to, []),
         bandStep(o, willow, willowLast),
-        ...(o.handBack !== null ? [handBackStep(o, o.handBack)] : [])
+        ...(o.handBack !== null ? [handBackStep(o, o.handBack)] : []),
+        ...(o.dropAxe ? [dropAxeStep(o)] : [])
     ];
 }

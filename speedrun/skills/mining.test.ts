@@ -252,14 +252,14 @@ describe('the slot ledger (rs/158 specs 3 and 4)', () => {
         expect(m.steps({ dropAtExit: 'false' }).map(s => s.name)).not.toContain('mining.exit');
     });
 
-    test("H4p and S09: at the zoo with S07's knife and log, one receive brings the rune pickaxe and 2 logs; 5 slots used, the band's 4 free", async () => {
+    test("H4p and S09: at the zoo with S07's knife and log, one receive brings the rune pickaxe and 1 log; 4 slots used, the band's 4 free", async () => {
         const sdk = new MiningSdk(atZoo(64, ['Knife', 'Logs']));
         const calls: Array<{ partner: string; want: unknown }> = [];
         const real = m.deps.receiveFrom;
         m.deps.receiveFrom = (async (s: FakeSdk, partner: string, o: { want: unknown }) => {
             calls.push({ partner, want: o.want });
             const st = s.state!;
-            s.push({ tick: st.tick + 5, inventory: [...st.inventory, item('Rune pickaxe', 2), item('Logs', 3), item('Logs', 4)] });
+            s.push({ tick: st.tick + 5, inventory: [...st.inventory, item('Rune pickaxe', 2), item('Logs', 3)] });
             return { ok: true, ticks: 5, received: [] };
         }) as never;
         const kit = step('mining.kit: H4p');
@@ -270,21 +270,22 @@ describe('the slot ledger (rs/158 specs 3 and 4)', () => {
             m.deps.receiveFrom = real;
         }
         expect(calls).toEqual([{ partner: 'cairn_h01', want: [...m.H4P_KIT] }]);
-        expect(names(sdk.state!)).toEqual(['Knife', 'Logs', 'Rune pickaxe', 'Logs', 'Logs']);
-        expect(28 - sdk.state!.inventory.length).toBe(23);
+        expect(m.H4P_KIT).toEqual([{ item: /^rune pickaxe$/i, amount: 1 }, { item: /^logs$/i, amount: 1 }]);
+        expect(names(sdk.state!)).toEqual(['Knife', 'Logs', 'Rune pickaxe', 'Logs']);
+        expect(28 - sdk.state!.inventory.length).toBe(24);
         expect(kit.postconditions(sdk.state!, {})).toBe(true);
         expect(kit.done!(obs(sdk.state!), {})).toBe(true);
         expect(step('mining.iron-63').preconditions(sdk.state!, {})).toBe(true);
     });
 
-    test("H4p's free-slot precondition counts the kit's 3 and the band's 4; a kit already held trades nothing", async () => {
+    test("H4p's free-slot precondition counts the kit's 2 and the band's 4; a kit already held trades nothing", async () => {
         const crowded = (n: number) => atZoo(64, ['Knife', ...Array.from({ length: n }, () => 'Shark')]);
         const kit = step('mining.kit: H4p');
-        expect(kit.preconditions(crowded(20), {})).toBe(true);
-        expect(kit.preconditions(crowded(21), {})).toBe("22 other items: H4p's rune pickaxe and 2 logs and the band need 7 free slots");
+        expect(kit.preconditions(crowded(21), {})).toBe(true);
+        expect(kit.preconditions(crowded(22), {})).toBe("23 other items: H4p's rune pickaxe and log and the band need 6 free slots");
         // ores do not count: the band drops them first
-        expect(kit.preconditions(atZoo(64, ['Knife', ...Array(20).fill('Shark'), 'Iron ore', 'Iron ore']), {})).toBe(true);
-        const held = atZoo(64, ['Rune pickaxe', 'Knife', 'Logs', 'Logs']);
+        expect(kit.preconditions(atZoo(64, ['Knife', ...Array(21).fill('Shark'), 'Iron ore', 'Iron ore']), {})).toBe(true);
+        const held = atZoo(64, ['Rune pickaxe', 'Knife', 'Logs']);
         expect(kit.done!(obs(held), {})).toBe(true);
         const sdk = new MiningSdk(held);
         await kit.run(ctxFor(sdk));
