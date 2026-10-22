@@ -24,6 +24,7 @@ import { Database } from 'bun:sqlite';
 import { existsSync, openSync, readFileSync } from 'fs';
 import { join } from 'path';
 import type { Subprocess } from 'bun';
+import { MarketClient } from '../../sdk/market';
 import type { BotWorldState } from '../../sdk/types';
 import { ROOT, closeSession, login, logoutClean, openSession, type Session } from '../../speedrun/lib/session';
 import { openTrade, tradeOf } from '../../speedrun/lib/trade';
@@ -146,6 +147,8 @@ async function startEngine(): Promise<void> {
 
 async function ready(name: string, prep: (s: Session) => Promise<void>): Promise<Session> {
     const s = await openSession(name, { launch: true, pathfinding: false });
+    // BotSDK.buildClientUrl assumes a local web server on :8888; the lab serves on WEB_PORT.
+    s.sdk.getGEAvailability = () => new MarketClient(`http://localhost:${process.env.WEB_PORT ?? 9300}/bot`).status();
     await leaveTutorial(s);
     await tele(s.sdk, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z);
     await prep(s);
