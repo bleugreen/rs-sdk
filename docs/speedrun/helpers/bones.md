@@ -315,6 +315,38 @@ the hour without restarting them. The later failed-fishing fallback and stricter
 fixes were unit-tested separately; this hour does not exercise those failure paths.
 The acceptance observation is complete and is not being extended to hide these differences.
 
+## Nature talismans (rs/194)
+
+The scored account's Runecraft step S21 wants at least 4 nature talismans (plus the keeper's). The fleet held none on 2026-10-21, and none had ever traded on the GE. This section is the drop survey behind the `nature_hobgoblins` spot. Labels as above: **read**, **measured**, **inferred**.
+
+**The only source is the gem table (read).** In this revision `nature_talisman` appears in exactly one place a player can get it from: `randomjewel` in `drop tables/scripts/shared_droptables.rs2:66-75`. It is not in any shop inventory or quest reward. There are no ground spawns (no object 1462 or 1463 in any map's `==== OBJ ====` section), and the only other mention is the staff cheat bank. The gem table rolls `random(128)`. On a members world, results 61-64 give a talisman: a **nature** talisman when the killer is overground (`coordz(coord) <= 6400`), and a **chaos** talisman below that. With Legends' Quest done, result 61 goes to the mega-rare table instead (no fleet account has it). A worn **ring of wealth** shortens the roll to `random(65)`, so 4/65 instead of 4/128, nearly double. So for an NPC whose own drop table sends `w` of its `d` rolls to the gem table, one kill gives a nature talisman with probability `(w/d) x (4/128)`, and only on the surface. The gem table is also reached through the ultra-rare table (20/128 of it), which adds under 1% to the NPCs that have one. The random-event monsters that roll the gem table (dryad, watchman, rock golem, zombie) don't matter here: the demo has random events off.
+
+**Confirmation on the demo (measured, qualitative).** cairn_h51 banked one *chaos* talisman from the underground baby blue room, which is the underground branch of the same roll. So the members-only talisman branch fires on this server.
+
+**Every NPC that rolls it, by kills per nature talisman** (read: drop scripts, `all.npc` levels, map spawns; the Wilderness is x 2944-3391, z 3520-3967):
+
+| NPC (level) | Gem share, cited | Kills per talisman | Overground outside the Wilderness | Wilderness | Underground (chaos instead) |
+|---|---|---:|---|---:|---:|
+| Fire giant (86) | 11/128, `fire_giant.rs2:50` | 372 | none | 0 | 28 |
+| Green dragon (79) | 5/128, `green_dragon.rs2:55` | 819 | none | 5 | 0 |
+| Chaos dwarf (48) | 5/128, `chaos_dwarf.rs2:56` | 819 | none | 7 | 10 |
+| Greater demon (92), red dragon (152) | 5/128, `greater_demon.rs2:52`, `red_dragon.rs2:55` | 819 | none | 4 each | 17, 6 |
+| Blue dragon (111), black demon (172) | 5/128, `blue_dragon.rs2:55`, `black_demon.rs2:53` | 819 | none | 0 | 10, 11 |
+| **Moss giant (42)** | 4/128, `moss_giant.rs2:69` | **1,024** | 12: Kandarin (2549-2556, 3401-3409) 4, walkable; north-west Karamja (2691-2699, 3204-3216) 5, no walking path; Crandor 3 | 3 | 27 |
+| Ice giant (53) | 4/128, `ice_giant.rs2:66` | 1,024 | 4 at (2804-2824, 3506-3514), fenced off: the pathfinder ends 4-5 tiles short of every one | 9 | 10 |
+| Lesser demon (82) | 4/128, `lesser_demon.rs2:13` | 1,024 | 6: Crandor 2, a caged one on the Wizards' Tower, 3 at (2412-2416, 4677-4684) | 8 | 19 |
+| Black knight (33) | 3/128, `black_knight.rs2:61` | 1,365 | 20: Black Knights' Fortress 15 (3014-3032, 3502-3517, three floors, behind two doors), 5 scattered | 11 | 19 |
+| Hill giant (28) | 3/128, `giant.rs2:58` | 1,365 | 3 at (2507-2548, 3144-3149) | 6 | 18 |
+| Ice warrior (57) | 3/128, `ice_warrior.rs2:43` | 1,365 | 2, beside the fenced ice giants | 26 | 25 |
+| **Hobgoblin (28 and 42)** | 2/128, `hobgoblin.rs2:68` and `:128` | **2,048** | 30: **Asgarnia peninsula (2905-2920, 3266-3295) 10, walkable from Falador with no door**; (2443-2451, 3329-3362) 6; Crandor 4; Karamja 3; (2656-2675, 3720-3731) 5 | 26 | 29 |
+| Paladin (62), armed skeleton (22) | 2/128, `paladin.rs2:45`, `skeleton.rs2:110` | 2,048 | Ardougne castle 22; Crandor and a plane-2 room, 15 | 0, 28 | 0, 37 |
+| Tribesman (32) | 2/138, `tribesman.rs2:59` | 2,208 | Karamja 21 | 0 | 0 |
+| Jogre, pirate, chaos druid, dwarf, zombie, unarmed skeleton, Gunthor | 1/128 | 4,096 | various | | |
+
+Some NPCs roll the gem table too but weren't mapped to spawns here (their drop label is a category): bandits (3/128, `bandit.rs2:52`), bandit camp leaders (2/128), Morytania vampires (4/128, `vampire.rs2:44`), shadow warriors (8/128, `shadow_warrior.rs2:37`, in the Legends' Guild basement, so underground), white knights (1/128), the troll general (5/128), Tyras guards (5/128), and werewolves and Canifis citizens (1/512 and 1/512 of their rolls). The Kalphite workers' and soldiers' 3-4/128 are all in the underground lair.
+
+**The site chosen (inferred until measured).** Every wide slot is underground (chaos) or in the Wilderness (PvP is live there, see Where each tier comes from). The best walkable overground site is Kandarin's 4 moss giants (1 in 1,024 per kill). Getting there crosses White Wolf Mountain (`speedrun/lib/kandarin.ts`), and its nearest bank is not in this role's list. The `nature_hobgoblins` spot takes Asgarnia's peninsula instead: 10 spawns, a door-free walk from Falador west bank, and monsters that barely hurt a 98-99 combat helper (so `food: none` by default). The peninsula's ceiling is set by respawns: 10 spawns at 100 ticks each, plus about 6 ticks a kill, is at most about 1,130 kills an hour, so about **0.55 talismans an hour for the whole site**. One account kills fast enough to approach that ceiling, and a second one mostly shares it. The moss giants' ceiling is 4 spawns at 60 ticks, about 670 kills an hour or 0.65 talismans an hour. Running both sites would roughly double the rate. A ring of wealth nearly doubles every figure here.
+
 ## Ugthanki camels (meat for the kebab fallback)
 
 `spot: 'ugthanki'` gathers raw ugthanki meat, the meat in the kebab mixtures of Cooking route 2
@@ -352,9 +384,9 @@ back after 700 ticks: about 385 an hour at the ~330 ms tick the demo actually de
 
 | Option | Default | Meaning |
 |---|---|---|
-| `spot` | `hill_giants` | `hill_giants`, or `baby_blue` (withdraws or fetches its dusty key; a 30-minute acquisition failure uses hill giants for one trip, then retries; banks at Falador West), or `ugthanki` (raw ugthanki meat in the Kharidian desert; banks at Shantay's chest; see below) |
+| `spot` | `hill_giants` | `hill_giants`; `baby_blue` (withdraws or fetches its dusty key; a 30-minute acquisition failure uses hill giants for one trip, then retries; banks at Falador West); `ugthanki` (raw ugthanki meat in the Kharidian desert; banks at Shantay's chest; see below); or `nature_hobgoblins` (nature talismans, below; banks at Falador West) |
 | `train` | 50 | Attack/Strength/Defence target on cows before the spot |
-| `food` | `ge` for `baby_blue`, else `fish` | `ge`: buy `foodItem` at the Grand Exchange (below); `fish`: catch and cook trout/salmon; `none`: rest at the bank when hurt (about 30 s per hp: useless in practice) |
+| `food` | the spot's own (`ge` for `baby_blue` and `ugthanki`, `none` for `nature_hobgoblins`), else `fish` | `ge`: buy `foodItem` at the Grand Exchange (below); `fish`: catch and cook trout/salmon; `none`: rest at the bank when hurt (about 30 s per hp: useless in practice) |
 | `foodItem` | `Shark` | GE food: the item bought and eaten |
 | `foodPerTrip` | 10 | GE food: taken out of the bank per trip |
 | `buyFood` | 150 | GE food: how many to hold after an exchange visit, coins permitting |

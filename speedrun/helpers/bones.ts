@@ -97,6 +97,8 @@ export interface Spot {
     inside?(r: Run): boolean;
     /** Obtain `requires` when neither the inventory nor the bank has it; one step per call, true when done. */
     acquire?(r: Run): Promise<boolean>;
+    /** Where food comes from when the options do not say (default 'fish'). */
+    food?: FoodSource;
     /** Spawns too spread out to see from one tile: with no target in view, walk this loop. */
     patrol?: Tile[];
     /** Carried items a bank visit leaves in the inventory (consumables the spot needs, like passes). */
@@ -253,6 +255,7 @@ const BABY_BLUE: Spot = {
     bones: /^babydragon bones$/i,
     area: { x1: 2876, z1: 9740, x2: 2923, z2: 9810 },
     centre: BABY_BLUE_CENTRE,
+    food: 'ge',
     requires: DUSTY_KEY,
     acquire: fetchDustyKey,
     inside(r) {
@@ -351,6 +354,34 @@ const CHAOS_DRUIDS_TAVERLEY: Spot = {
     }
 };
 
+/**
+ * Nature talismans come only from the gem table (`randomjewel`, shared_droptables.rs2), on 4
+ * of its 128 rolls and only overground: below UNDERGROUND_Z the same roll gives a chaos
+ * talisman. So a talisman spot must be on the surface, and the rate per kill is the NPC's
+ * gem-table share times 4/128.
+ *
+ * Asgarnia's hobgoblin peninsula, south of Falador: 10 overground spawns at (2905-2920,
+ * 3266-3295), nine level 28 (29 hp) and one level 42 (49 hp). They are cowardly and respawn
+ * in 100 ticks (the engine default). Both kinds roll the gem table on 2/128 (hobgoblin.rs2),
+ * so a talisman drops on 1 kill in 2,048. It is a walk from Falador west bank with no door,
+ * and they barely hurt a high-Defence helper, so it rests instead of carrying food.
+ */
+const NATURE_HOBGOBLINS: Spot = {
+    id: 'nature_hobgoblins',
+    npc: /^hobgoblin$/i,
+    bones: /^nature talisman$/i,
+    area: { x1: 2898, z1: 3260, x2: 2928, z2: 3300 },
+    centre: { x: 2910, z: 3284 },
+    food: 'none',
+    async enter(r) {
+        if (!(await r.routeToSpot(this))) return false;
+        return r.walk(this.centre.x, this.centre.z, 4, 300_000);
+    },
+    async leave(r) {
+        return r.walk(FALADOR_WEST_BANK.x, FALADOR_WEST_BANK.z, 3, 300_000);
+    }
+};
+
 // Kharidian desert, through the Shantay Pass. The gate (shantay_pass_henge_doorway, 4 wide at
 // (3302-3305, 3116)) takes a Shantay pass going south (shantay_pass.rs2) and is free going north.
 const SHANTAY: Tile = { x: 3304, z: 3123 };
@@ -429,6 +460,7 @@ const UGTHANKI: Spot = {
     area: DESERT,
     centre: { x: 3275, z: 3094 },
     patrol: patrolTour(SHANTAY_GATE_SOUTH, UGTHANKI_SPAWNS),
+    food: 'ge',
     // Coins stay carried for passes and the Al Kharid toll gate.
     keep: /^(shantay pass|coins)$/i,
     async enter(r) {
@@ -464,6 +496,7 @@ export const SPOTS: Record<string, Spot> = {
     baby_blue: BABY_BLUE,
     chaos_druids: CHAOS_DRUIDS,
     chaos_druids_taverley: CHAOS_DRUIDS_TAVERLEY,
+    nature_hobgoblins: NATURE_HOBGOBLINS,
     ugthanki: UGTHANKI
 };
 
@@ -595,7 +628,7 @@ export function parseOptions(o: Record<string, unknown>): Options {
     const spotId = typeof o.spot === 'string' ? o.spot : 'hill_giants';
     const spot = SPOTS[spotId];
     if (!spot) throw new Error(`bones: unknown spot '${spotId}' (known: ${Object.keys(SPOTS).join(', ')})`);
-    const food = (o.food ?? (spot === BABY_BLUE || spot === UGTHANKI ? 'ge' : 'fish')) as FoodSource;
+    const food = (o.food ?? spot.food ?? 'fish') as FoodSource;
     if (!FOOD_SOURCES.includes(food)) throw new Error(`bones: unknown food '${String(o.food)}' (known: ${FOOD_SOURCES.join(', ')})`);
     return {
         spot,

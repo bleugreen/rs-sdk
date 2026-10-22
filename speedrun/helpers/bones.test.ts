@@ -7,6 +7,8 @@ import { Run } from './bones';
 import { memoryRoleState } from './role';
 import { summarizeWindow } from '../../docs/speedrun/scripts/bones-dev/stats';
 import { fishingHaul, gearRank, healOf, inBabyBlueRoom, inDesert, isClutter, keepOnBank, parseOptions, patrolTour, SPOTS, UGTHANKI_SPAWNS } from './bones';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 describe('ugthanki spot', () => {
     test('the desert is south of the Shantay Pass gate; the camp, chest and Al Kharid are not', () => {
@@ -103,6 +105,53 @@ test('parseOptions defaults and rejects unknown spots', () => {
     expect(o).toMatchObject({ food: 'ge', foodItem: 'Shark', foodPerTrip: 10, buyFood: 150, maxFoodPrice: 900, coinWaitMin: 20 });
     expect(o.coinsFrom?.test('cairn_h63')).toBe(true);
     expect(o.coinsFrom?.test('cairn_h50')).toBe(false);
+});
+
+describe('nature talisman spot', () => {
+    const CONTENT = join(import.meta.dir, '..', '..', 'server', 'content');
+    /** Overground spawns of the named NPCs in one map square, read from the game's own map file. */
+    function spawns(square: string, names: string[]): { x: number; z: number }[] {
+        const ids = new Set(readFileSync(join(CONTENT, 'pack', 'npc.pack'), 'utf8').split('\n')
+            .map(l => /^(\d+)=(\w+)$/.exec(l.trim())).filter(m => m && names.includes(m[2]!)).map(m => Number(m![1])));
+        const [mx, mz] = /m(\d+)_(\d+)/.exec(square)!.slice(1).map(Number) as [number, number];
+        const map = readFileSync(join(CONTENT, 'maps', `${square}.jm2`), 'utf8');
+        const npcs = map.slice(map.indexOf('==== NPC ===='));
+        return [...npcs.matchAll(/^0 (\d+) (\d+): (\d+)$/gm)].filter(m => ids.has(Number(m[3]))).map(m => ({ x: mx * 64 + Number(m[1]), z: mz * 64 + Number(m[2]) }));
+    }
+
+    test('hobgoblins: the product is the nature talisman, no food carried by default', () => {
+        const o = parseOptions({ spot: 'nature_hobgoblins' });
+        expect(o.spot.id).toBe('nature_hobgoblins');
+        expect(o.spot.bones.test('Nature talisman')).toBe(true);
+        expect(o.spot.bones.test('Chaos talisman')).toBe(false);
+        expect(o.spot.npc.test('Hobgoblin')).toBe(true);
+        expect(o.food).toBe('none');
+        expect(parseOptions({ spot: 'nature_hobgoblins', food: 'ge' }).food).toBe('ge');
+        expect(o.loot.test('Nature talisman')).toBe(true);
+    });
+
+    test('every talisman spot is overground, where the gem table gives nature rather than chaos', () => {
+        const talismanSpots = Object.values(SPOTS).filter(s => s.bones.test('Nature talisman'));
+        expect(talismanSpots.length).toBeGreaterThan(0);
+        for (const s of talismanSpots) {
+            expect(s.area.z2).toBeLessThanOrEqual(6400);
+            expect(s.centre.z).toBeLessThanOrEqual(6400);
+        }
+    });
+
+    test("the hobgoblins' area holds every peninsula spawn in the map file", () => {
+        const { area, centre } = SPOTS.nature_hobgoblins!;
+        const inside = (p: { x: number; z: number }) => p.x >= area.x1 && p.x <= area.x2 && p.z >= area.z1 && p.z <= area.z2;
+        const peninsula = spawns('m45_51', ['hobgoblin_unarmed', 'hobgoblin_armed']);
+        expect(peninsula.length).toBe(10);
+        for (const p of peninsula) expect(inside(p)).toBe(true);
+        expect(inside(centre)).toBe(true);
+    });
+
+    test('baby blues still buy their food at the exchange', () => {
+        expect(parseOptions({ spot: 'baby_blue' }).food).toBe('ge');
+        expect(parseOptions({ spot: 'hill_giants' }).food).toBe('fish');
+    });
 });
 
 test('healOf knows sharks and defaults small', () => {
