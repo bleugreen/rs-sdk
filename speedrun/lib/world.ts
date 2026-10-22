@@ -222,7 +222,7 @@ export function routeTiles(from: { x: number; z: number }, waypoints: ReadonlyAr
     return t;
 }
 
-export type ConfigKind = 'npc' | 'loc' | 'obj';
+export type ConfigKind = 'npc' | 'loc' | 'obj' | 'seq' | 'interface';
 
 const PACK_DIR = join(import.meta.dir, '..', '..', 'server', 'content', 'pack');
 const packCache = new Map<ConfigKind, Map<string, number>>();
