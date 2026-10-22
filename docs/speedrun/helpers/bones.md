@@ -315,11 +315,44 @@ the hour without restarting them. The later failed-fishing fallback and stricter
 fixes were unit-tested separately; this hour does not exercise those failure paths.
 The acceptance observation is complete and is not being extended to hide these differences.
 
+## Ugthanki camels (meat for the kebab fallback)
+
+`spot: 'ugthanki'` gathers raw ugthanki meat, the meat in the kebab mixtures of Cooking route 2
+(`docs/speedrun/skills/cooking.md`, section 4). It uses the same fighter, eat guard, GE food and
+banking as the other spots. Only the spot is new.
+
+- **The camels:** 25 spawns (npc 840, `maps/m49_47`..`m51_48`), level 42, 45 hp, cowardly,
+  respawning after 700 ticks, with one raw meat per kill (`ugthanki.rs2`). They are too spread
+  out to see from one tile, so with no target in view the role walks a patrol loop, a
+  nearest-first tour of all 25 spawns starting at the gate (`patrolTour`).
+- **Getting in:** the Shantay Pass gate takes one Shantay pass going south and is free going
+  north (`shantay_pass.rs2`). The role buys 40 passes at a time from Shantay (5 gp each),
+  fetching coins from the bank first, and clicks through the guard's dialogue.
+- **Banking:** at Shantay's chest, north of the gate. The chest's only option is Open, which
+  shows a message box and then the bank (`shantay_chest.rs2`). The SDK's `openBank` now accepts
+  it (`sdk/actions.ts`, a candidate for upstream). The desert side of the gate is not counted
+  as near the chest.
+- **Kept items:** passes and coins stay carried over bank visits (`Spot.keep`). The coins pay
+  for passes and for the Al Kharid toll gate, which walks across the fence go through
+  (`speedrun/lib/toll-gate.ts` `travelTo`). The desert is always left by the Shantay gate.
+- **Desert heat** (`desert_heat.rs2`) does 1-10 damage every 50-190 ticks without a waterskin.
+  The eat guard covers it, and the role carries no waterskins.
+- **Food:** `ge` by default (sharks).
+
+**Measured (the line's only record; the line is parked).** cairn_h51 (99 melee) on the demo,
+2026-10-21 23:31-23:44 UTC: 32 kills, 32 raw ugthanki meat, 8 sharks eaten, 0 deaths. The
+first trip, chest to chest, brought back 20 meat in 9.5 minutes: **about 125 meat per
+account-hour. This is a single-trip rate, not a steady-state one.** Part of that trip killed
+camels already standing, and the hour-long measurement never happened because h51 ran out of
+food and starved into the coin loop described below. The desert's ceiling is 25 camels each
+back after 700 ticks: about 385 an hour at the ~330 ms tick the demo actually delivers (about
+430 at the configured 300 ms), so two accounts fit without competing much.
+
 ## Options (`ROLE_OPTIONS` JSON)
 
 | Option | Default | Meaning |
 |---|---|---|
-| `spot` | `hill_giants` | `hill_giants`, or `baby_blue` (withdraws or fetches its dusty key; a 30-minute acquisition failure uses hill giants for one trip, then retries; banks at Falador West) |
+| `spot` | `hill_giants` | `hill_giants`, or `baby_blue` (withdraws or fetches its dusty key; a 30-minute acquisition failure uses hill giants for one trip, then retries; banks at Falador West), or `ugthanki` (raw ugthanki meat in the Kharidian desert; banks at Shantay's chest; see below) |
 | `train` | 50 | Attack/Strength/Defence target on cows before the spot |
 | `food` | `ge` for `baby_blue`, else `fish` | `ge`: buy `foodItem` at the Grand Exchange (below); `fish`: catch and cook trout/salmon; `none`: rest at the bank when hurt (about 30 s per hp: useless in practice) |
 | `foodItem` | `Shark` | GE food: the item bought and eaten |
@@ -487,6 +520,11 @@ second simultaneous login. Check the first fresh-session line and subsequent bab
   every id carried under a name.
 - A courier that starts in Al Kharid gets stuck at the toll gate (its walk does not pay).
   The first funding trip crossed it with `crossTollGate` (now `speedrun/lib/toll-gate.ts`).
+- **Kept coins are not a haul.** With GE food unaffordable, the role falls back to fishing,
+  and the fishing fallback banks any haul it carries first. It used to count every carried
+  coin as haul. The ugthanki spot keeps its coins over bank visits, so each visit left the
+  coins, and the next cycle sent it straight back: cairn_h51 made 979 visits to Shantay's
+  chest in 32 minutes. `fishingHaul` counts coins only on a spot that banks them.
 - Bank calls are still the stock `bot.depositItem` per item name, about 10 names a visit.
   Switching to `speedrun/lib/bank.ts` `depositMatching` would save a few seconds per
   visit; the 78-tile walk dominates, so it was left for later.
