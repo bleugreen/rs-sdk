@@ -248,6 +248,42 @@ describe('firemaking: the lighting engine', () => {
         expect(d.light).toEqual({ x: 3221, z: 3219, itemId: 2 });
     });
 
+    test('a log that turns into a fire with this account\'s xp but no success message is a fire, not lost (rs/269 demo)', () => {
+        const at: Tile = [3222, 3219];
+        const both = [ground(3222, 3219, 'Logs', 1), ground(3221, 3219, 'Logs', 2)];
+        const L = new Lighter(tiles, state({ tick: 0, at, xp: 0, ground: both }), opts);
+        L.onTick(state({ tick: 0, at, xp: 0, ground: both }));
+        L.onTick(state({ tick: 1, at, xp: 0, ground: both, msgs: [msg('You attempt to light the logs.', 1)] }));
+        const rest = [ground(3221, 3219, 'Logs', 2)];
+        // tick 4: the log becomes a fire and the xp lands; the message never shows
+        expect(L.onTick(state({ tick: 4, at: [3221, 3219], xp: 40, ground: rest, fires: [at] })).light).toBeUndefined();
+        const d = L.onTick(state({ tick: 5, at: [3221, 3219], xp: 40, ground: rest, fires: [at] }));
+        expect(L.events.filter(e => e.kind === 'lost')).toEqual([]);
+        expect(L.events[0]).toMatchObject({ kind: 'fire', n: 0, tick: 4, tile: [3222, 3219], failures: 0, inferred: true });
+        expect(L.fires).toBe(1);
+        expect(d.light).toEqual({ x: 3221, z: 3219, itemId: 2 });
+        // the missed message arriving late does not complete the next log
+        L.onTick(state({ tick: 6, at: [3221, 3219], xp: 40, ground: rest, fires: [at], msgs: [msg('The fire catches and the logs begin to burn.', 6)] }));
+        expect(L.fires).toBe(1);
+        // the next log's own success, 4 ticks on, counts with no failures
+        L.onTick(state({ tick: 8, at: [3220, 3219], xp: 80, ground: [], fires: [at, [3221, 3219]], msgs: [msg('The fire catches and the logs begin to burn.', 8)] }));
+        expect(L.fires).toBe(2);
+        expect(L.events.at(-1)).toMatchObject({ kind: 'fire', n: 1, tile: [3221, 3219], gap: 4, failures: 0 });
+        expect(L.events.at(-1)).not.toHaveProperty('inferred');
+    });
+
+    test('a log that turns into a fire without this account\'s xp (a stranger lit it) is still lost', () => {
+        const at: Tile = [3222, 3219];
+        const both = [ground(3222, 3219, 'Logs', 1), ground(3221, 3219, 'Logs', 2)];
+        const L = new Lighter(tiles, state({ tick: 0, at, xp: 0, ground: both }), opts);
+        L.onTick(state({ tick: 0, at, xp: 0, ground: both }));
+        const rest = [ground(3221, 3219, 'Logs', 2)];
+        L.onTick(state({ tick: 1, at, xp: 0, ground: rest, fires: [at] }));
+        L.onTick(state({ tick: 2, at, xp: 0, ground: rest, fires: [at] }));
+        expect(L.events[0]).toEqual({ kind: 'lost', tick: 2, tile: [3222, 3219], tier: 'Logs' });
+        expect(L.fires).toBe(0);
+    });
+
     test('with nothing to light it walks to the entry once, and the wait is logged when a log shows', () => {
         const L = new Lighter(tiles, state({ tick: 0 }), opts);
         expect(L.onTick(state({ tick: 0 })).walk).toEqual([3222, 3219]);

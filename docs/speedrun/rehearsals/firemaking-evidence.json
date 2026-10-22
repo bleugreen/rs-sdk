@@ -1,0 +1,661 @@
+{
+ "about": "rs/228 lab evidence for the assisted Firemaking 1-99: the RESULT line of each lab run, as printed by speedrun/lab/firemaking-row.ts (rowcheck*) and speedrun/lab/firemaking-assisted.ts (full*). Lab engine on bbs, NODE_TICKRATE=300, lite client, 2026-10-21 18:25-19:03 PDT. Droppers: fm-row from the rs/41 mission branch at 47342ae6. rowcheck1 ran before the unreachable-tile fix (650c4121); full1 failed on fm-row resuming late droppers (see firemaking.md).",
+ "runs": [
+  {
+   "run": "rowcheck1",
+   "result": {
+    "tiles": 59,
+    "dropped": 59,
+    "dropTicks": 144,
+    "fires": 10,
+    "ended": "Error: firemaking: nothing to light for 13 ticks after 10 fires (cursor 59)",
+    "refused": [
+     "3217,3219",
+     "3217,3218"
+    ],
+    "gaps": {
+     "4": 8,
+     "173": 1
+    },
+    "offBeat": [
+     {
+      "n": 5,
+      "tile": "3218,3218",
+      "gap": 173,
+      "fresh": true,
+      "send": 167
+     }
+    ],
+    "first": {
+     "tile": "3222,3219",
+     "fixedTicks": 3
+    },
+    "summary": {
+     "ended": "firemaking: nothing to light for 13 ticks after 10 fires (cursor 59)",
+     "fires": 10,
+     "failures": 0,
+     "expectedFailures": 0,
+     "line": 40,
+     "overhead": 269,
+     "firstAttemptTick": 181,
+     "firstSuccessTick": 185,
+     "fixedTicks": 3,
+     "slips": 1,
+     "slipTicks": 169,
+     "fresh": 2,
+     "sends": {
+      "R+2": 8,
+      "R+3": 0,
+      "R+4": 0,
+      "R+5": 0,
+      "later": 1
+     },
+     "lost": 47,
+     "refused": 2,
+     "skips": 0,
+     "resends": 38,
+     "nolog": 0,
+     "nologTicks": 0,
+     "dismissed": 3,
+     "endLevel": 83,
+     "endXp": 343119
+    }
+   }
+  },
+  {
+   "run": "rowcheck2",
+   "result": {
+    "tiles": 63,
+    "dropped": 63,
+    "dropTicks": 143,
+    "fires": 62,
+    "ended": "Error: firemaking: nothing to light for 13 ticks after 62 fires (cursor 63)",
+    "refused": [
+     "3218,3217"
+    ],
+    "gaps": {
+     "4": 60,
+     "9": 1
+    },
+    "offBeat": [
+     {
+      "n": 60,
+      "tile": "3221,3217",
+      "gap": 9,
+      "fresh": true,
+      "send": 2
+     }
+    ],
+    "first": {
+     "tile": "3222,3219",
+     "fixedTicks": 3
+    },
+    "summary": {
+     "ended": "firemaking: nothing to light for 13 ticks after 62 fires (cursor 63)",
+     "fires": 62,
+     "failures": 0,
+     "expectedFailures": 0,
+     "line": 248,
+     "overhead": 21,
+     "firstAttemptTick": 187,
+     "firstSuccessTick": 191,
+     "fixedTicks": 3,
+     "slips": 1,
+     "slipTicks": 5,
+     "fresh": 2,
+     "sends": {
+      "R+2": 60,
+      "R+3": 0,
+      "R+4": 1,
+      "R+5": 0,
+      "later": 0
+     },
+     "lost": 0,
+     "refused": 1,
+     "skips": 0,
+     "resends": 0,
+     "nolog": 0,
+     "nologTicks": 0,
+     "dismissed": 14,
+     "endLevel": 94,
+     "endXp": 738059
+    }
+   }
+  },
+  {
+   "run": "full1",
+   "result": {
+    "exit": 1,
+    "claimTicks": 3,
+    "claimSession": [
+     {
+      "step": "(session)",
+      "ticks": 6,
+      "meta": {
+       "firstObservedTick": 4,
+       "ended": "logout",
+       "logout": {
+        "ok": true,
+        "clickTick": 6,
+        "lastInWorldTick": 6,
+        "latencyTicks": 0,
+        "wallMs": 400,
+        "confirmedBy": "child"
+       }
+      }
+     }
+    ],
+    "attemptTicks": 604,
+    "steps": [
+     {
+      "step": "(resume)",
+      "ticks": 0,
+      "ok": true
+     },
+     {
+      "step": "(boundary)",
+      "ticks": 0,
+      "ok": true
+     },
+     {
+      "step": "S03 firemaking",
+      "ticks": 604,
+      "ok": false
+     }
+    ],
+    "session": [
+     {
+      "step": "(session)",
+      "ticks": 606,
+      "meta": {
+       "firstObservedTick": 3,
+       "ended": "logout",
+       "logout": {
+        "ok": true,
+        "clickTick": 606,
+        "lastInWorldTick": 606,
+        "latencyTicks": 0,
+        "wallMs": 402,
+        "confirmedBy": "child"
+       }
+      }
+     }
+    ],
+    "summary": {
+     "ended": "firemaking: nothing to light for 121 ticks after 112 fires (cursor 112)",
+     "fires": 112,
+     "failures": 8,
+     "expectedFailures": 7.58,
+     "line": 480,
+     "overhead": 124,
+     "firstAttemptTick": 5,
+     "firstSuccessTick": 21,
+     "fixedTicks": 3,
+     "slips": 0,
+     "slipTicks": 0,
+     "fresh": 1,
+     "sends": {
+      "R+2": 111,
+      "R+3": 0,
+      "R+4": 0,
+      "R+5": 0,
+      "later": 0
+     },
+     "lost": 0,
+     "refused": 0,
+     "skips": 0,
+     "resends": 1,
+     "nolog": 1,
+     "nologTicks": 0,
+     "dismissed": 58,
+     "endLevel": 93,
+     "endXp": 660015
+    },
+    "summaryTicks": 604,
+    "bands": [
+     {
+      "band": "fm-01-15",
+      "ticks": 4,
+      "fires": 2,
+      "failures": 3,
+      "expectedFailures": 4.353,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 1,
+      "startTick": 21,
+      "endTick": 25
+     },
+     {
+      "band": "fm-15-30",
+      "ticks": 36,
+      "fires": 4,
+      "failures": 5,
+      "expectedFailures": 2.485,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 0,
+      "startTick": 25,
+      "endTick": 61
+     },
+     {
+      "band": "fm-30-45",
+      "ticks": 28,
+      "fires": 7,
+      "failures": 0,
+      "expectedFailures": 0.741,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 0,
+      "startTick": 61,
+      "endTick": 89
+     },
+     {
+      "band": "fm-45-60",
+      "ticks": 52,
+      "fires": 13,
+      "failures": 0,
+      "expectedFailures": 0,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 0,
+      "startTick": 89,
+      "endTick": 141
+     },
+     {
+      "band": "fm-60-75",
+      "ticks": 96,
+      "fires": 24,
+      "failures": 0,
+      "expectedFailures": 0,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 0,
+      "startTick": 141,
+      "endTick": 237
+     },
+     {
+      "band": "fm-75-99",
+      "ticks": 369,
+      "fires": 62,
+      "failures": 0,
+      "expectedFailures": 0,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 0,
+      "startTick": 237,
+      "endTick": 485
+     }
+    ],
+    "droppers": {
+     "fmd1": "{\"t\":\"2026-10-22T01:49:19.809Z\",\"account\":\"fmd1\",\"role\":\"fm-row\",\"message\":\"catch-up\",\"lit\":1,\"slot\":0,\"tick\":139} | {\"t\":\"2026-10-22T01:49:58.217Z\",\"account\":\"fmd1\",\"role\":\"fm-row\",\"message\":\"fm-row: finished\",\"dropped\":28,\"lit\":28,\"lost\":[],\"early\":0}",
+     "fmd2": "{\"t\":\"2026-10-22T01:49:19.810Z\",\"account\":\"fmd2\",\"role\":\"fm-row\",\"message\":\"catch-up\",\"lit\":1,\"slot\":0,\"tick\":66} | {\"t\":\"2026-10-22T01:50:31.832Z\",\"account\":\"fmd2\",\"role\":\"fm-row\",\"message\":\"fm-row: finished\",\"dropped\":28,\"lit\":56,\"lost\":[],\"early\":0}",
+     "fmd3": "{\"t\":\"2026-10-22T01:49:40.203Z\",\"account\":\"fmd3\",\"role\":\"fm-row\",\"message\":\"catch-up\",\"lit\":13,\"slot\":12,\"tick\":22} | {\"t\":\"2026-10-22T01:51:05.448Z\",\"account\":\"fmd3\",\"role\":\"fm-row\",\"message\":\"fm-row: finished\",\"dropped\":28,\"lit\":84,\"lost\":[],\"early\":0}",
+     "fmd4": "{\"t\":\"2026-10-22T01:50:15.930Z\",\"account\":\"fmd4\",\"role\":\"fm-row\",\"message\":\"catch-up\",\"lit\":42,\"slot\":41,\"tick\":29} | {\"t\":\"2026-10-22T01:51:39.062Z\",\"account\":\"fmd4\",\"role\":\"fm-row\",\"message\":\"fm-row: finished\",\"dropped\":28,\"lit\":112,\"lost\":[],\"early\":0}",
+     "fmd5": "",
+     "fmd6": ""
+    },
+    "out": "/home/bleu/rs-228-lab/full1"
+   }
+  },
+  {
+   "run": "full2",
+   "result": {
+    "exit": 0,
+    "claimTicks": 3,
+    "claimSession": [
+     {
+      "step": "(session)",
+      "ticks": 6,
+      "meta": {
+       "firstObservedTick": 4,
+       "ended": "logout",
+       "logout": {
+        "ok": true,
+        "clickTick": 6,
+        "lastInWorldTick": 6,
+        "latencyTicks": 0,
+        "wallMs": 302,
+        "confirmedBy": "child"
+       }
+      }
+     }
+    ],
+    "attemptTicks": 687,
+    "steps": [
+     {
+      "step": "(resume)",
+      "ticks": 0,
+      "ok": true
+     },
+     {
+      "step": "(boundary)",
+      "ticks": 0,
+      "ok": true
+     },
+     {
+      "step": "S03 firemaking",
+      "ticks": 687,
+      "ok": true
+     },
+     {
+      "step": "(boundary)",
+      "ticks": 0,
+      "ok": true
+     }
+    ],
+    "session": [
+     {
+      "step": "(session)",
+      "ticks": 689,
+      "meta": {
+       "firstObservedTick": 3,
+       "ended": "logout",
+       "logout": {
+        "ok": true,
+        "clickTick": 689,
+        "lastInWorldTick": 689,
+        "latencyTicks": 0,
+        "wallMs": 301,
+        "confirmedBy": "child"
+       }
+      }
+     }
+    ],
+    "summary": {
+     "ended": "done",
+     "fires": 157,
+     "failures": 14,
+     "expectedFailures": 7.58,
+     "line": 684,
+     "overhead": 3,
+     "firstAttemptTick": 5,
+     "firstSuccessTick": 29,
+     "fixedTicks": 3,
+     "slips": 0,
+     "slipTicks": 0,
+     "fresh": 1,
+     "sends": {
+      "R+2": 156,
+      "R+3": 0,
+      "R+4": 0,
+      "R+5": 0,
+      "later": 0
+     },
+     "lost": 0,
+     "refused": 0,
+     "skips": 0,
+     "resends": 2,
+     "nolog": 1,
+     "nologTicks": 0,
+     "dismissed": 64,
+     "endLevel": 99,
+     "endXp": 1001790
+    },
+    "summaryTicks": 687,
+    "bands": [
+     {
+      "band": "fm-01-15",
+      "ticks": 24,
+      "fires": 2,
+      "failures": 10,
+      "expectedFailures": 4.353,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 1,
+      "startTick": 29,
+      "endTick": 53
+     },
+     {
+      "band": "fm-15-30",
+      "ticks": 32,
+      "fires": 4,
+      "failures": 4,
+      "expectedFailures": 2.485,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 0,
+      "startTick": 53,
+      "endTick": 85
+     },
+     {
+      "band": "fm-30-45",
+      "ticks": 28,
+      "fires": 7,
+      "failures": 0,
+      "expectedFailures": 0.741,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 0,
+      "startTick": 85,
+      "endTick": 113
+     },
+     {
+      "band": "fm-45-60",
+      "ticks": 52,
+      "fires": 13,
+      "failures": 0,
+      "expectedFailures": 0,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 0,
+      "startTick": 113,
+      "endTick": 165
+     },
+     {
+      "band": "fm-60-75",
+      "ticks": 96,
+      "fires": 24,
+      "failures": 0,
+      "expectedFailures": 0,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 0,
+      "startTick": 165,
+      "endTick": 261
+     },
+     {
+      "band": "fm-75-99",
+      "ticks": 428,
+      "fires": 107,
+      "failures": 0,
+      "expectedFailures": 0,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 0,
+      "startTick": 261,
+      "endTick": 689
+     }
+    ],
+    "droppers": {
+     "fmd7": "{\"t\":\"2026-10-22T01:55:17.672Z\",\"account\":\"fmd7\",\"role\":\"fm-row\",\"message\":\"catch-up\",\"lit\":1,\"slot\":0,\"tick\":156} | {\"t\":\"2026-10-22T01:56:00.885Z\",\"account\":\"fmd7\",\"role\":\"fm-row\",\"message\":\"fm-row: finished\",\"dropped\":28,\"lit\":28,\"lost\":[],\"early\":0}",
+     "fmd8": "{\"t\":\"2026-10-22T01:55:17.667Z\",\"account\":\"fmd8\",\"role\":\"fm-row\",\"message\":\"catch-up\",\"lit\":1,\"slot\":0,\"tick\":156} | {\"t\":\"2026-10-22T01:56:34.505Z\",\"account\":\"fmd8\",\"role\":\"fm-row\",\"message\":\"fm-row: finished\",\"dropped\":28,\"lit\":56,\"lost\":[],\"early\":0}",
+     "fmd9": "{\"t\":\"2026-10-22T01:55:17.664Z\",\"account\":\"fmd9\",\"role\":\"fm-row\",\"message\":\"catch-up\",\"lit\":1,\"slot\":0,\"tick\":156} | {\"t\":\"2026-10-22T01:57:08.114Z\",\"account\":\"fmd9\",\"role\":\"fm-row\",\"message\":\"fm-row: finished\",\"dropped\":28,\"lit\":84,\"lost\":[],\"early\":0}",
+     "fmd10": "{\"t\":\"2026-10-22T01:55:17.671Z\",\"account\":\"fmd10\",\"role\":\"fm-row\",\"message\":\"catch-up\",\"lit\":1,\"slot\":0,\"tick\":156} | {\"t\":\"2026-10-22T01:57:41.729Z\",\"account\":\"fmd10\",\"role\":\"fm-row\",\"message\":\"fm-row: finished\",\"dropped\":28,\"lit\":112,\"lost\":[],\"early\":0}",
+     "fmd11": "{\"t\":\"2026-10-22T01:55:17.664Z\",\"account\":\"fmd11\",\"role\":\"fm-row\",\"message\":\"catch-up\",\"lit\":1,\"slot\":0,\"tick\":156} | {\"t\":\"2026-10-22T01:58:15.334Z\",\"account\":\"fmd11\",\"role\":\"fm-row\",\"message\":\"fm-row: finished\",\"dropped\":28,\"lit\":140,\"lost\":[],\"early\":0}",
+     "fmd12": "{\"t\":\"2026-10-22T01:55:17.667Z\",\"account\":\"fmd12\",\"role\":\"fm-row\",\"message\":\"catch-up\",\"lit\":1,\"slot\":0,\"tick\":156} | {\"t\":\"2026-10-22T01:58:35.741Z\",\"account\":\"fmd12\",\"role\":\"fm-row\",\"message\":\"fm-row: finished\",\"dropped\":17,\"lit\":157,\"lost\":[],\"early\":0}"
+    },
+    "out": "/home/bleu/rs-228-lab/full2"
+   }
+  },
+  {
+   "run": "full3",
+   "result": {
+    "exit": 0,
+    "claimTicks": 3,
+    "claimSession": [
+     {
+      "step": "(session)",
+      "ticks": 6,
+      "meta": {
+       "firstObservedTick": 4,
+       "ended": "logout",
+       "logout": {
+        "ok": true,
+        "clickTick": 6,
+        "lastInWorldTick": 6,
+        "latencyTicks": 0,
+        "wallMs": 401,
+        "confirmedBy": "child"
+       }
+      }
+     }
+    ],
+    "attemptTicks": 643,
+    "steps": [
+     {
+      "step": "(resume)",
+      "ticks": 0,
+      "ok": true
+     },
+     {
+      "step": "(boundary)",
+      "ticks": 0,
+      "ok": true
+     },
+     {
+      "step": "S03 firemaking",
+      "ticks": 643,
+      "ok": true
+     },
+     {
+      "step": "(boundary)",
+      "ticks": 0,
+      "ok": true
+     }
+    ],
+    "session": [
+     {
+      "step": "(session)",
+      "ticks": 645,
+      "meta": {
+       "firstObservedTick": 3,
+       "ended": "logout",
+       "logout": {
+        "ok": true,
+        "clickTick": 645,
+        "lastInWorldTick": 645,
+        "latencyTicks": 0,
+        "wallMs": 401,
+        "confirmedBy": "child"
+       }
+      }
+     }
+    ],
+    "summary": {
+     "ended": "done",
+     "fires": 157,
+     "failures": 3,
+     "expectedFailures": 7.58,
+     "line": 640,
+     "overhead": 3,
+     "firstAttemptTick": 5,
+     "firstSuccessTick": 9,
+     "fixedTicks": 3,
+     "slips": 0,
+     "slipTicks": 0,
+     "fresh": 1,
+     "sends": {
+      "R+2": 156,
+      "R+3": 0,
+      "R+4": 0,
+      "R+5": 0,
+      "later": 0
+     },
+     "lost": 0,
+     "refused": 0,
+     "skips": 0,
+     "resends": 0,
+     "nolog": 1,
+     "nologTicks": 0,
+     "dismissed": 64,
+     "endLevel": 99,
+     "endXp": 1001790
+    },
+    "summaryTicks": 643,
+    "bands": [
+     {
+      "band": "fm-01-15",
+      "ticks": 12,
+      "fires": 2,
+      "failures": 2,
+      "expectedFailures": 4.353,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 1,
+      "startTick": 9,
+      "endTick": 21
+     },
+     {
+      "band": "fm-15-30",
+      "ticks": 20,
+      "fires": 4,
+      "failures": 1,
+      "expectedFailures": 2.485,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 0,
+      "startTick": 21,
+      "endTick": 41
+     },
+     {
+      "band": "fm-30-45",
+      "ticks": 28,
+      "fires": 7,
+      "failures": 0,
+      "expectedFailures": 0.741,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 0,
+      "startTick": 41,
+      "endTick": 69
+     },
+     {
+      "band": "fm-45-60",
+      "ticks": 52,
+      "fires": 13,
+      "failures": 0,
+      "expectedFailures": 0,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 0,
+      "startTick": 69,
+      "endTick": 121
+     },
+     {
+      "band": "fm-60-75",
+      "ticks": 96,
+      "fires": 24,
+      "failures": 0,
+      "expectedFailures": 0,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 0,
+      "startTick": 121,
+      "endTick": 217
+     },
+     {
+      "band": "fm-75-99",
+      "ticks": 428,
+      "fires": 107,
+      "failures": 0,
+      "expectedFailures": 0,
+      "slips": 0,
+      "slipTicks": 0,
+      "fresh": 0,
+      "startTick": 217,
+      "endTick": 645
+     }
+    ],
+    "droppers": {
+     "fmd13": "{\"t\":\"2026-10-22T02:00:30.137Z\",\"account\":\"fmd13\",\"role\":\"fm-row\",\"message\":\"fm-row: finished\",\"dropped\":28,\"lit\":28,\"lost\":[],\"early\":0}",
+     "fmd14": "{\"t\":\"2026-10-22T02:01:03.746Z\",\"account\":\"fmd14\",\"role\":\"fm-row\",\"message\":\"fm-row: finished\",\"dropped\":28,\"lit\":56,\"lost\":[],\"early\":0}",
+     "fmd15": "{\"t\":\"2026-10-22T02:01:37.362Z\",\"account\":\"fmd15\",\"role\":\"fm-row\",\"message\":\"fm-row: finished\",\"dropped\":28,\"lit\":84,\"lost\":[],\"early\":0}",
+     "fmd16": "{\"t\":\"2026-10-22T02:02:10.976Z\",\"account\":\"fmd16\",\"role\":\"fm-row\",\"message\":\"fm-row: finished\",\"dropped\":28,\"lit\":112,\"lost\":[],\"early\":0}",
+     "fmd17": "{\"t\":\"2026-10-22T02:02:44.589Z\",\"account\":\"fmd17\",\"role\":\"fm-row\",\"message\":\"fm-row: finished\",\"dropped\":28,\"lit\":140,\"lost\":[],\"early\":0}",
+     "fmd18": "{\"t\":\"2026-10-22T02:03:04.994Z\",\"account\":\"fmd18\",\"role\":\"fm-row\",\"message\":\"fm-row: finished\",\"dropped\":17,\"lit\":157,\"lost\":[],\"early\":0}"
+    },
+    "out": "/home/bleu/rs-228-lab/full3"
+   }
+  }
+ ]
+}
