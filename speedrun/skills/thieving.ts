@@ -27,19 +27,32 @@
 //   click lands on the next attempt's tick. Every wait in it counts game ticks.
 // rs/106's trades requested at +2 completed at +7 or +8.
 //
-// The stun pack (rs/106's design; the program side is rs/132's `stunActions`) is not wired
-// here: `stunPack` throws, and main keeps it out of the rehearsal row. It plugs in where
-// `topUpAction` does, as more `stunActions` entries after the top-up (bury, Charge, arrows),
-// with the courier's bones and runes arriving through the same top-up trade. Its
-// preconditions: base Magic 80 and Mage Arena stage 8 for Charge, the giver within 1 tile
-// when the request goes out (a stunned player cannot walk).
+// The stun pack (`stunPack`, off by default; rs/106's design, docs/speedrun/research/stun-pack.md;
+// the program side is rs/132's `stunActions`). On the 57-99 knights band only (S18), with a
+// top-up: every stun also buries bones and casts Charge until Magic 99, then fletches arrows, all
+// in the stun's window. In idle mode the program's list is the food top-up, a second top-up
+// request gated on bones (fewer than `bonesBelow`, default 3, one stocked stun's burials), then
+// the presets `bury`, `charge` and `arrows`: the first request that is due owns its stun's +2, so
+// a top-up stun buries nothing, and the others carry three delay-free actions and a bury at +2,
+// +4 and +6 (sections 2 and 10). In restart mode the program gets the three presets and the
+// module also stops it for a top-up on a failure with bones below the bar. The bones, the
+// arrowheads still to come and the food all arrive through that one trade; sizing the load is
+// the giver's. Before the band starts (and again before its first program run, which a resume
+// enters without the preconditions) it refuses with a reason: Charge, while Magic is below 99,
+// needs base Magic 80, Mage Arena stage 8 (the varp is not transmitted, rs/114, so the evidence
+// is a god staff held or worn, or `chargeUnlocked` from the run's own record), a fire staff worn
+// and a cast's blood and air runes; arrows, while Fletching is below 99, need headless arrows and
+// an arrowhead tier the level can use; and the giver must stand on a side tile of the account,
+// never a corner, because the stunned account cannot step round one to reach it (rs/279). The
+// detail row reports what the pack sent (`stun:*` counters summed over the band's program runs)
+// and the Prayer, Magic and Fletching experience and levels it gained.
 
 import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
 import { depositMatching, withdrawMany } from '../lib/bank';
 import { advance } from '../lib/dialogue';
 import { withLevelUpDismissal } from '../lib/levelup';
 import { runProgram, stopProgram, type ProgramStatus } from '../lib/programs';
-import { decideReceiver, newReceiverCtx, receiveFrom, type ReceiverCtx } from '../lib/trade';
+import { decideReceiver, newReceiverCtx, receiveFrom, sameName, type ReceiverCtx } from '../lib/trade';
 import { currentTick, nextTick, tickMs, waitUntil } from '../lib/wait';
 import type { Step, StepContext } from '../runner/step';
 
@@ -152,6 +165,8 @@ export interface Band {
     anchors: readonly Tile[];
     /** HP per failure (pickpocket.dbrow stun_damage). */
     stunDamage: number;
+    /** The band `stunPack` runs on (S18, Thieving 57-99). */
+    stunPack?: true;
 }
 
 /** The route below 55 is thieving.md section 2's; spawns are read from the map files. */
@@ -163,7 +178,7 @@ export const BANDS: readonly Band[] = [
     { name: 'thieving:guards', from: 40, to: 55, npc: '^Guard$', anchors: [{ x: 2661, z: 3306 }], stunDamage: 2 },
     // the eastern knights wander least (thieving.md section 6)
     { name: 'thieving:knights-55', from: 55, to: 57, npc: '^Knight of Ardougne$', anchors: [{ x: 2670, z: 3305 }], stunDamage: 3 },
-    { name: 'thieving:knights', from: 57, to: 99, npc: '^Knight of Ardougne$', anchors: [{ x: 2670, z: 3305 }], stunDamage: 3 }
+    { name: 'thieving:knights', from: 57, to: 99, npc: '^Knight of Ardougne$', anchors: [{ x: 2670, z: 3305 }], stunDamage: 3, stunPack: true }
 ];
 
 export function thievingLevel(s: BotWorldState): number {
@@ -176,10 +191,6 @@ export function hasPagePrograms(s: BotWorldState): boolean {
 }
 
 // ------------------------------------------------------------------ options
-
-export interface StunPackOptions {
-    [k: string]: unknown;
-}
 
 export type Restock = 'bank' | ((ctx: StepContext<Record<string, never>>) => Promise<void>);
 
@@ -279,9 +290,137 @@ export class TopUpReceiver {
     }
 }
 
-/** Restart mode: this status shows a failure the last one did not, with food below `below`. */
-export function topUpDue(status: Pick<ProgramStatus, 'counters' | 'gauges'>, seenFails: number, below: number): boolean {
-    return (status.counters.fails ?? 0) > seenFails && (status.gauges.food ?? Infinity) < below;
+/**
+ * Restart mode: this status shows a failure the last one did not, with food below `below`, or,
+ * with the stun pack, fewer than `bones.below` bones held.
+ */
+export function topUpDue(status: Pick<ProgramStatus, 'counters' | 'gauges'>, seenFails: number, below: number, bones?: { held: number; below: number }): boolean {
+    if ((status.counters.fails ?? 0) <= seenFails) return false;
+    return (status.gauges.food ?? Infinity) < below || (!!bones && bones.held < bones.below);
+}
+
+// ------------------------------------------------------------------ stun pack
+
+/** `stunPack` (the header). `true` takes the defaults. */
+export interface StunPackOptions {
+    /** A top-up is also due once fewer than this many bones are held (default STUN_PACK_BONES_BELOW). */
+    bonesBelow?: number;
+    /**
+     * Mage Arena stage 8 (staff_given) on the run's own record, from S16's step. The varp is not
+     * transmitted (rs/114), so without it the precondition wants a god staff, held or worn.
+     */
+    chargeUnlocked?: boolean;
+}
+
+/** A stocked stun buries 3 (stun-pack.md section 5): with fewer held, the next stun's top-up is due. */
+export const STUN_PACK_BONES_BELOW = 3;
+
+/** The pack after the top-up: the program's presets in rs/106's priority order (stun-pack.md sections 2 and 10). */
+export const STUN_PACK_ACTIONS = ['bury', 'charge', 'arrows'] as const;
+
+/** The bury preset's item (stun-actions.ts STUN_PRESETS.bury). */
+const BONES_PATTERN = 'bones$';
+
+/** The `player` stun action that requests a top-up on a stun's +2 when the bones run low (the food's is topUpAction). */
+export function bonesTopUpAction(topUp: TopUp, bonesBelow: number): Record<string, unknown> {
+    return { name: 'topup:bones', kind: 'player', player: `^${escape(topUp.giver)}$`, fewer: [{ item: BONES_PATTERN, than: bonesBelow }], window: [2, 2] };
+}
+
+/**
+ * The knights band's `stunActions`, or none: idle mode puts the food top-up first and, with the
+ * pack, the bones top-up and the presets after it; restart mode's module requests its own top-ups,
+ * so the program gets only the presets.
+ */
+export function stunActionsFor(topUp: TopUp | undefined, food: Food, pack: Required<StunPackOptions> | undefined): unknown[] | undefined {
+    const mode = topUp?.mode ?? 'idle';
+    if (topUp && mode === 'idle') return [topUpAction(topUp, food), ...(pack ? [bonesTopUpAction(topUp, pack.bonesBelow), ...STUN_PACK_ACTIONS] : [])];
+    if (pack) return [...STUN_PACK_ACTIONS];
+    return undefined;
+}
+
+const baseOf = (s: BotWorldState, name: string) => s.skills.find(k => k.name.toLowerCase() === name)?.baseLevel ?? 1;
+const held = (s: BotWorldState, re: RegExp) => s.inventory.filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0);
+
+export function bonesHeld(s: BotWorldState): number {
+    return held(s, new RegExp(BONES_PATTERN, 'i'));
+}
+
+/** Kolodion's reward at Mage Arena stage 8 (quest-stages.ts magearena: the god staff given). */
+const GOD_STAFF = /^(saradomin|guthix|zamorak) staff$/i;
+/** A worn staff that supplies Charge's three fire runes. */
+const FIRE_STAFF = /^(staff of fire|fire battlestaff|mystic fire staff)$/i;
+/** Arrowhead tiers and the Fletching level each needs (stun-actions.ts ARROW_TIERS; the tests check they agree). */
+export const ARROWHEAD_TIERS: ReadonlyArray<readonly [string, number]> = [['rune', 75], ['adamant', 60], ['mithril', 45], ['steel', 30], ['iron', 15], ['bronze', 1]];
+
+/**
+ * The pack's start check (the header): true, or why the band refuses. Read from the band's
+ * start state: Charge's and the arrows' supplies for their first stun (more arrive by top-up)
+ * and the giver's tile.
+ */
+export function stunPackCheck(s: BotWorldState, giver: string, pack: Required<StunPackOptions>): true | string {
+    const p = s.player;
+    if (!p) return 'no player';
+    const magic = baseOf(s, 'magic');
+    if (magic < 99) {
+        if (magic < 80) return `the stun pack's Charge needs base Magic 80 (base Magic ${magic})`;
+        const staff = [...s.inventory, ...s.equipment].some(i => GOD_STAFF.test(i.name));
+        if (!pack.chargeUnlocked && !staff) return "the stun pack's Charge needs Mage Arena stage 8 (staff_given): no god staff held or worn, and no chargeUnlocked from the run's record";
+        if (!s.equipment.some(i => FIRE_STAFF.test(i.name))) return "the stun pack's Charge needs a staff of fire wielded (its fire runes)";
+        const blood = held(s, /^blood runes?$/i);
+        const air = held(s, /^air runes?$/i);
+        if (blood < 3 || air < 3) return `the stun pack's Charge needs 3 blood and 3 air runes (holding ${blood} and ${air})`;
+    }
+    const fletching = baseOf(s, 'fletching');
+    if (fletching < 99) {
+        if (held(s, /^headless arrows?$/i) === 0) return "the stun pack's arrows need headless arrows";
+        const usable = ARROWHEAD_TIERS.filter(([, lvl]) => lvl <= fletching).map(([t]) => t);
+        if (!usable.some(t => held(s, new RegExp(`^${t} arrow(head|tip)s$`, 'i')) > 0)) return `the stun pack's arrows need arrowheads Fletching ${fletching} can use (${usable.join(', ')})`;
+    }
+    const g = s.nearbyPlayers.find(q => sameName(q.name, giver));
+    if (!g) return `the stun pack's giver ${giver} is not in sight`;
+    const dx = g.x - p.worldX, dz = g.z - p.worldZ;
+    if (Math.abs(dx) + Math.abs(dz) !== 1) return `the stun pack's giver ${giver} is at ${dx},${dz} from the account, not on a side tile (a stunned account cannot step round a corner to reach it, rs/279)`;
+    return true;
+}
+
+/** `stunPack` as given: off, or every field set (validated: it may come off a command line). */
+export function parseStunPack(value: unknown, topUp: TopUp | undefined): Required<StunPackOptions> | undefined {
+    if (value === undefined || value === false) return undefined;
+    if (value !== true && (typeof value !== 'object' || value === null || Array.isArray(value))) throw new Error(`stunPack must be true or { bonesBelow?, chargeUnlocked? } (got ${JSON.stringify(value)})`);
+    const o = (value === true ? {} : value) as StunPackOptions;
+    for (const k of Object.keys(o)) if (k !== 'bonesBelow' && k !== 'chargeUnlocked') throw new Error(`stunPack has no option '${k}' (bonesBelow, chargeUnlocked)`);
+    const bonesBelow = o.bonesBelow ?? STUN_PACK_BONES_BELOW;
+    if (!Number.isInteger(bonesBelow) || bonesBelow < 1) throw new Error(`stunPack.bonesBelow must be a whole number of at least 1 (got ${JSON.stringify(o.bonesBelow)})`);
+    if (o.chargeUnlocked !== undefined && typeof o.chargeUnlocked !== 'boolean') throw new Error('stunPack.chargeUnlocked must be true or false');
+    if (!topUp) throw new Error('stunPack needs topUp: its bones arrive through the top-up trade (stun-pack.md section 5)');
+    return { bonesBelow, chargeUnlocked: o.chargeUnlocked ?? false };
+}
+
+const PACK_SKILLS = ['prayer', 'magic', 'fletching'] as const;
+
+function packSkills(s: BotWorldState): Record<(typeof PACK_SKILLS)[number], { xp: number; level: number }> {
+    const one = (n: string) => {
+        const k = s.skills.find(x => x.name.toLowerCase() === n);
+        return { xp: k?.experience ?? 0, level: k?.baseLevel ?? 1 };
+    };
+    return { prayer: one('prayer'), magic: one('magic'), fletching: one('fletching') };
+}
+
+/** The pack's line in the detail row: what it sent (summed `stun:*` counters) and the experience it gained. */
+export function packReport(counters: Readonly<Record<string, number>>, before: ReturnType<typeof packSkills>, after: ReturnType<typeof packSkills>, bonesBelow: number) {
+    const sent = (re: RegExp) => Object.entries(counters).filter(([k]) => re.test(k)).reduce((a, [, n]) => a + n, 0);
+    return {
+        bonesBelow,
+        buried: sent(/^stun:bury$/),
+        charges: sent(/^stun:charge$/),
+        arrowActions: sent(/^stun:arrows:/),
+        topUpRequests: sent(/^stun:topup(:bones)?$/),
+        fired: counters.stunFired ?? 0,
+        rejected: counters.stunRejected ?? 0,
+        counters: Object.fromEntries(Object.entries(counters).filter(([k]) => k.startsWith('stun'))),
+        xp: Object.fromEntries(PACK_SKILLS.map(k => [k, after[k].xp - before[k].xp])),
+        levels: Object.fromEntries(PACK_SKILLS.map(k => [k, [before[k].level, after[k].level]]))
+    };
 }
 
 export interface ThievingOptions {
@@ -298,8 +437,8 @@ export interface ThievingOptions {
     restock?: Restock;
     /** Helper top-ups inside the bands (the scored run); without it a band only restocks. */
     topUp?: TopUp;
-    /** Not implemented (rs/132); passing it throws. */
-    stunPack?: StunPackOptions;
+    /** rs/106's stun pack on the 57-99 knights band (the header); needs `topUp`. Off unless passed. */
+    stunPack?: StunPackOptions | boolean;
     [k: string]: unknown;
 }
 
@@ -309,6 +448,7 @@ interface Config {
     foods: readonly Food[];
     restock: Restock;
     topUp?: TopUp;
+    stunPack?: Required<StunPackOptions>;
 }
 
 // ------------------------------------------------------------------ movement
@@ -490,6 +630,7 @@ function bandStep(band: Band, cfg: Config): Step {
             if (lvl >= end) return true;
             if (lvl < band.from) return `Thieving ${lvl} is below ${band.name}'s ${band.from}`;
             if (!hasPagePrograms(s)) return 'thieving needs the in-page pickpocket program (browser client)';
+            if (band.stunPack && cfg.stunPack) return stunPackCheck(s, cfg.topUp!.giver, cfg.stunPack);
             return true;
         },
         run: ctx => runBand(ctx, band, end, cfg),
@@ -512,17 +653,29 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
     if (dist(s, anchor) > 8) await walk(ctx, anchor, 3);
     const topUp = cfg.topUp;
     const mode = topUp?.mode ?? 'idle';
-    const paramsFor = (food: Food) => ({
-        npc: band.npc,
-        untilLevel: end,
-        food: foodPattern(food),
-        heal: food.heal,
-        eat: 'window',
-        ...eatPolicy(state(ctx).player!.maxHp, food.heal, band.stunDamage),
-        stopWhenFoodBelow: 1,
-        retargetTicks: 12,
-        ...(topUp && mode === 'idle' ? { idleOnInterface: true, stunActions: [topUpAction(topUp, food)] } : {})
-    });
+    const pack = band.stunPack ? cfg.stunPack : undefined;
+    if (pack) {
+        // again here: a resumed band skips the preconditions
+        const ok = stunPackCheck(state(ctx), topUp!.giver, pack);
+        if (ok !== true) throw new Error(ok);
+    }
+    const skills0 = packSkills(state(ctx));
+    const stunCounters: Record<string, number> = {};
+    const paramsFor = (food: Food) => {
+        const stunActions = stunActionsFor(topUp, food, pack);
+        return {
+            npc: band.npc,
+            untilLevel: end,
+            food: foodPattern(food),
+            heal: food.heal,
+            eat: 'window',
+            ...eatPolicy(state(ctx).player!.maxHp, food.heal, band.stunDamage),
+            stopWhenFoodBelow: 1,
+            retargetTicks: 12,
+            ...(topUp && mode === 'idle' ? { idleOnInterface: true } : {}),
+            ...(stunActions ? { stunActions } : {})
+        };
+    };
     let policy = eatPolicy(s.player!.maxHp, heldFood(s, cfg.foods).heal, band.stunDamage);
     const restocks: Array<{ ticks: number; food: number; hp: number }> = [];
     const runs: Array<Pick<ProgramStatus, 'runId' | 'startedTick' | 'endedTick'> & { food: string }> = [];
@@ -541,7 +694,9 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
             let seenFails = 0;
             const onProgress = topUp && mode === 'restart'
                 ? (st: ProgramStatus) => {
-                    if (failTick === null && topUpDue(st, seenFails, topUp.below)) {
+                    const s = ctx.sdk.getState();
+                    const bones = pack && s ? { held: bonesHeld(s), below: pack.bonesBelow } : undefined;
+                    if (failTick === null && topUpDue(st, seenFails, topUp.below, bones)) {
                         failTick = st.tick;
                         void stopProgram(ctx.sdk).catch(() => {});
                     }
@@ -553,6 +708,7 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
             policy = { eatBelow: params.eatBelow, forcedBelow: params.forcedBelow };
             const st = await runProgram(ctx.sdk, 'pickpocket', params, onProgress ? { onProgress } : {});
             runs.push({ runId: st.runId, startedTick: st.startedTick, ...(st.endedTick !== undefined ? { endedTick: st.endedTick } : {}), food: food.bankName });
+            for (const [k, n] of Object.entries(st.counters ?? {})) if (k.startsWith('stun')) stunCounters[k] = (stunCounters[k] ?? 0) + n;
             if (st.phase === 'stopped' && failTick !== null) {
                 // the open and the trade both end by failTick + TOPUP_RESTART_BY
                 const left = failTick + TOPUP_RESTART_BY - currentTick(ctx.sdk);
@@ -581,7 +737,11 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
     ctx.log.append({
         v: 1, runId: ctx.log.runId, account: ctx.session.name, sessionId: ctx.session.sessionId, step: `${band.name}:detail`,
         startTick: t, endTick: t, ticks: 0, wallMs: 0, ok: true,
-        meta: { anchor, policy, food: cfg.foods.map(f => f.bankName).join(','), runs, restocks, ...(topUp ? { topUp: { mode, trades: receiver?.trades ?? [], restarts } } : {}) },
+        meta: {
+            anchor, policy, food: cfg.foods.map(f => f.bankName).join(','), runs, restocks,
+            ...(topUp ? { topUp: { mode, trades: receiver?.trades ?? [], restarts } } : {}),
+            ...(pack ? { pack: packReport(stunCounters, skills0, packSkills(state(ctx)), pack.bonesBelow) } : {})
+        },
         tickMs: tickMs(), at: new Date().toISOString()
     });
 }
@@ -637,11 +797,11 @@ function provisionStep(cfg: Config): Step {
 }
 
 export function steps(opts: ThievingOptions = {}): Step[] {
-    if (opts.stunPack) throw new Error('stun pack not implemented (rs/132; STEP-MANIFEST entry 6)');
     const foods = parseFoods(opts.food);
     const topUp = opts.topUp;
     if (topUp && (!topUp.giver || !(topUp.below >= 1) || !['idle', 'restart', undefined].includes(topUp.mode))) throw new Error(`topUp needs a giver, below >= 1 and mode idle or restart (got ${JSON.stringify(topUp)})`);
-    const cfg: Config = { to: opts.to ?? 99, foods, restock: opts.restock ?? 'bank', ...(topUp ? { topUp } : {}) };
+    const stunPack = parseStunPack(opts.stunPack, topUp);
+    const cfg: Config = { to: opts.to ?? 99, foods, restock: opts.restock ?? 'bank', ...(topUp ? { topUp } : {}), ...(stunPack ? { stunPack } : {}) };
     const [men, ...ardougne] = BANDS;
     return [bandStep(men!, cfg), legStep(cfg), provisionStep(cfg), ...ardougne.map(b => bandStep(b, cfg))];
 }
