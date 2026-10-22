@@ -824,7 +824,7 @@ describe('defaultDeps: the real cue and status files', () => {
     afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
     test('a relayed program run writes a cue.json the givers read, naming SCORED only by a hash', () => {
-        const relay = new CueRelay(() => defaultDeps.openCue(dir, 'Lab Scored'), defaultDeps.rcCueFields);
+        const relay = new CueRelay(() => defaultDeps.openCue(dir, 'Lab Scored', { step: 'S06', family: 'altar' }), defaultDeps.rcCueFields);
         const turns = [{ giver: 'lab_g1', T: 110, schedule: 'tuned' as const }];
         relay.update(status({ runId: 7, shared: { v: 1, open: 5, schedule: 'robust', beacons: [{ tick: 100, ms: 1 }], turns, results: [], queue: [], waiting: null } } as Partial<ProgramStatus>));
         expect(readCue(dir)).toMatchObject({ receiver: { sha256: nameHash('lab_scored') }, schedule: 'robust', open: 5, turns, seq: 1 });
