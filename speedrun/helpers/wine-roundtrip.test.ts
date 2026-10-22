@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { NearbyPlayer } from '../../sdk/types';
 import { baseState, drive, FakeSdk } from '../lib/fake-sdk';
 import type { RoleContext } from './role';
 import { standinRole } from './wine-roundtrip';
 
-const H40 = { kind: 'player' as const, index: 7, name: 'Cairn H40', combatLevel: 3, x: 3185, z: 3436 };
+const H40: NearbyPlayer = { kind: 'player', index: 7, name: 'Cairn H40', combatLevel: 3, x: 3185, z: 3436, distance: 1 };
 
 function standin(sdk: FakeSdk, options: Record<string, unknown>) {
     const logs: { m: string; d?: Record<string, unknown> }[] = [];
