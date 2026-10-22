@@ -15,13 +15,14 @@ describe('poll file codec', () => {
         ];
         file.polls.push(encodePoll(file, '2026-10-22T23:00:00.000Z', first, pos, isFamily));
         file.polls.push(encodePoll(file, '2026-10-22T23:05:00.000Z', second, null, isFamily));
-        file.polls.push(encodePoll(file, '2026-10-22T23:10:00.000Z', null, pos, isFamily));
+        file.polls.push(encodePoll(file, '2026-10-22T23:10:00.000Z', null, pos, isFamily, ps => ({ here: ps.map(p => p.name) })));
         expect(file.polls[0]!.rows).toHaveLength(2);
         expect(file.polls[1]!.rows).toEqual([['b', 500, [556, 125]]]);
         expect(file.polls[0]!.families).toEqual([['Soko', 3185, 3436, 0]]);
         const decoded = decodePolls(JSON.parse(formatPollFile(file)));
         expect(decoded.map(p => p.bank)).toEqual([first, second, null]);
         expect(decoded.map(p => p.online)).toEqual([2, null, 2]);
+        expect(decoded.map(p => p.zones)).toEqual([null, null, { here: ['Soko', 'Other'] }]);
         expect(formatPollFile(file).split('\n')).toHaveLength(6);
     });
 });
