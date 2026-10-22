@@ -330,7 +330,7 @@ section 1).
    +388 (adamant) or +836 (mithril) with the knife.
 4. **Budget:** the expected total plus the fallback deltas in force is under 35,916 (RUN-ORDER.md's
    headline scenario table: in force, the forecast at 2026-10-23, +440.0 and **35,289.1** expected;
-   today's stock, the conservative row, +611.8 and 35,454.2 on rs/383's staging on 251 dragon (the 21:20 UTC count's
+   today's stock, the conservative row, +611.8 and 35,452.3 on rs/383's staging on 251 dragon (the 21:20 UTC count's
    booth case, history: +840.7 and 35,683.1). **On fold-in 25's figures, every quest at its burst figure and S18 on Charge + Superheat in every stocked stun, the budget
    condition holds** (blood runes complete for attempt 1; Superheat off, +58, 35,347.1; for attempts 2-3 it holds down to ~259 held and fails at 100, RUN-ORDER.md
    section 7); if burst dialogue fails on the night the quests not yet browser-confirmed revert to fixed (+655.8, S19 and S26 off since fold-in 24, S05, S23 and S24 since fold-in 25) and it
