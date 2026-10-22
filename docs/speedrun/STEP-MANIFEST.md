@@ -57,7 +57,7 @@ timed on **observed game ticks** (the tick stream or `TICKMON`), never on wall-c
 droppers (S03, HS6), the bone givers' load timing (H4.1-H4.n) and any `T0 + n ms` launch in run.ts. A
 deadline that stands for a tick count keys off observed ticks; wall clock appears only as an idle
 bound, no new tick for N ticks' worth of time scaled by the configured tick length (on the floor
-since #209's `tickClock`, 4fe2d0a8, inside the floor 6804061a). The demo has
+since #209's `tickClock`, 4fe2d0a8, inside the floor cae93456). The demo has
 been seen at 0.34-0.37 s a tick, where a wall-clock cue lands early by about (1 - 0.30/actual) of
 its delay and a deadline fires early (RUN-ORDER.md R23).
 
@@ -170,10 +170,10 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 0 | 0 | Run chain | `speedrun/run.ts`, `runner/resume.ts` | all | boundary idle 0 m (#92); restarts ~5 each (an in-page relog, ~2, rs/174) | 0 | | | overlay | `runner/step.ts`, `runner/resume.ts` (main) | `run.ts`: building (rs/186, held: tenet 15); `runner/step.ts`, `resume.ts` on main (#29, #104, #146) |
 | 1 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,739 | 4,281 | 5,273 | ~992 | overlay | `quest-mm-*.ts` | **H-P lab-proven end to end, Q-Z unrun** (A-G run; H-M 3 of 3, 1,466 m; N, O, P 3 of 3, 117 / 388 / 454 m; Q-Z being written by rs/201); run mode: no `p_walk`, re-paths at the Monkey Child (O) and the zoo (T), lever ~0 (r, rs/201) |
-| 2 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,228 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; rs/155); S17 4,114 on the engine's fall roll, 66 the clean-lap floor (rs/270; cairn_jumps' demo run continues as rs/295); run mode 0 on both courses (m, rs/270) |
+| 2 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,228 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | **on main, cae93456 (#245; rs/300's snapshot)**; lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; rs/155); S17 4,114 on the engine's fall roll, 66 the clean-lap floor (rs/270; cairn_jumps' demo run continues as rs/295); run mode 0 on both courses (m, rs/270) |
 | 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,157 | 3,148 | 3,775 | ~627 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | **on main, 4235a9e7 (#220; rs/260's snapshot of rs/230's lab-accepted module, rs/147's branch at 59ec3933)**, with `selfStarter` (plain 3.62) and `beforeRestart`; `stay2` bury (#159, rs/182) and restart fix (e5d8a058, #170; rs/207) on main; gate `measureDrops` 120 explicit (rs/259, 314989e9); **demo-measured** (rs/259's cairn_rocks: 3.019 per xp ore uncontested); on main with rs/298 (#242, inside the floor 811e9eb2: 3fa6fbe4's ore drop and 314989e9) |
 | 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,053 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | **on main** (#243, de3a4944: rs/297's snapshot of cairn_chops' raced module, the run-commit floor; rs/211 and rs/236 before it; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165); gate `measureDrops` 120 explicit (rs/261, on main with #243); run mode 0 (m, rs/261); **the knife demo-measured** (rs/261's cairn_chops, hiscore 3,329; S07 at its luck-free 3,053); **on main, de3a4944 (#243; rs/297's snapshot as cairn_chops raced it, knife-cycle's `waitRespawn` declared)** |
-| 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,209.5 | 2,195.7 | ~2,340 i | ~144 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | **on main, PR #238** (rs/291's snapshot of rs/198's module for rs/186, merge 5a70e4e6): `legs.ts` and its test, `tools/demo-legs.ts`, `measure-legs.ts`, `measure-ardougne-handoff.ts`, `ticks.ts`'s `travel` rows, run-transitions.md section 10; lab-measured and demo-checked (h55); its walker, `lib/travel.ts`, on main, 0658e896 (#200); rs/294's forcemove door fix on main (#240); both inside the floor 6804061a |
+| 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,209.5 | 2,195.7 | ~2,340 i | ~144 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | **on main, PR #238** (rs/291's snapshot of rs/198's module for rs/186, merge 5a70e4e6): `legs.ts` and its test, `tools/demo-legs.ts`, `measure-legs.ts`, `measure-ardougne-handoff.ts`, `ticks.ts`'s `travel` rows, run-transitions.md section 10; lab-measured and demo-checked (h55); its walker, `lib/travel.ts`, on main, 0658e896 (#200); rs/294's forcemove door fix on main (#240); both inside the floor cae93456 |
 | 6 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~120 elsewhere | ~190 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` | **on main** (#244, 6804061a: rs/301's Thieving S18 module options, with rs/243's `stopWhenFoodBelow`, `retargetTicks` and the top-up contract; rs/154 before it); stun pack: lab-accepted (bury, charge, arrows; rs/132); top-ups ~0 with the courier on a side tile (rs/279, lab); rs/290's opt-in idle re-send building |
 | 7 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | on main, 22552bf4 (#197; rs/231); lab-accepted (1,998 on 78-99; rs/152); gate `measureDrops` 120 explicit (#221) |
 | 8 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,972 | 1,946 | 1,997 (the bow from 70); 2,023-2,211 without the kit | ~265 | overlay | `cannon-kit.ts` (rs/59, on main) | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible); run mode ~0, at most ~9 on S27's melee phase (m/i, rs/196) |
@@ -238,7 +238,7 @@ are filed under main and held until tenet 15 is answered.
 
 - **0.** `speedrun/run.ts` does not exist; `runner/step.ts` (#29), `runner/resume.ts` (#104, with
   #146's sessionLink fix), `runner/budget.ts` and `runner/fence.ts` are on main.
-- **1.** rs/155's lab pass (PR #149, open into rs/147): 9 of 9 Wilderness laps at exactly 66 at
+- **1.** **On main** with rs/300's snapshot (#245, cae93456, the run-commit floor; O40 closed). rs/155's lab pass (PR #149, open into rs/147): 9 of 9 Wilderness laps at exactly 66 at
   Agility 99 (the acceptance asks 8 of 10 at 66, +1); Gnome 1-22 measured 114 against the 122
   inferred. S17 75-99 at 4,114 (i): the engine's fall roll with rs/270's measured lap and fall
   costs, cross-checked by its level crossings (948 m for 76-85) and rs/155's 858 m (RUN-ORDER.md S17). The demo rehearsal is still to run.
@@ -372,9 +372,13 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     RUN-ORDER.md R1's bound); that case is historical on any `RUN_COMMIT` at or after c2d9eada.
     The final logout is still checked on the host (`RUN-HOST.md` step 8). A precondition, not a
     line in the totals;
-  - **`RUN_COMMIT` at or after the run-commit floor, `6804061a`** (#244; one check,
-    `git merge-base --is-ancestor 6804061a "$RUN_COMMIT"`, `RUN-HOST.md` "Credentials"). Its newest
-    entry is #244 (rs/301, the Thieving S18 module options, carrying rs/243's work: `thieving.ts` with
+  - **`RUN_COMMIT` at or after the run-commit floor, `cae93456`** (#245; one check,
+    `git merge-base --is-ancestor cae93456 "$RUN_COMMIT"`, `RUN-HOST.md` "Credentials"). Its newest
+    entry is #245 (rs/300, the Agility S11a/S17 snapshot: `skills/agility.ts` and its test with
+    `untilLevel` and `eatAt: 'land'`, `programs/agility.ts` with every module key declared, rs/155's four
+    accepted default fixes, `startStep: 'auto'`, the pitExit click-by-id fallback and the `FAIL_RE`
+    export, `agility-courses.ts`, `agility-model.ts` and `rehearsals/agility.md`; entry 1; RUN-ORDER.md O40,
+    closed), then 6804061a's #244 (rs/301, the Thieving S18 module options, carrying rs/243's work: `thieving.ts` with
     tests, `measure-thieving.ts`, `thieving-sim.ts`, pickpocket's `stopWhenFoodBelow` and `retargetTicks`
     declared with a default-identical golden test; two approved defaults, `eatBelow` floored at
     `forcedBelow` + 1 and banknotes not counted as food; `trade.ts`'s opt-in `byTick`, `noReplyTicks` and
@@ -409,11 +413,6 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     knife-off line in force, entry 3), b6950915 (#177: a program faults at start on a parameter key
     it does not declare, so each entry's program keys are the program's declared names) and
     834f376b (#176, rs/210's tick-cadence monitor). Pending, each moving the floor when it lands (main and rs/158, 23:09 PDT and after):
-    **rs/300**, the Agility S11a/S17 snapshot (01cb7b2b on de3a4944, PR pending), **first for O40**: without it S11a and S17
-    fault at start on any page from b6950915 (agility's `untilLevel`, RUN-ORDER.md O40, which closes
-    when rs/300 is on main); it also carries `eatAt: 'land'` (the program's opt-in, f95f9558, rs/241's
-    work, and the module default, a9298868, rs/270), the tests, `programs/agility.ts`'s parameter
-    declarations and the `FAIL_RE` export, `agility-model.ts` and agility.md through 6.8 (entry 1);
     **rs/280** (run on after every login and relog, `ensureRunOn`; RUN-ORDER.md O45); **rs/267's
     changes via rs/41's branch**: the trade giver's re-send moved onto `decideRequest` in game ticks
     (commit pending; R25), and two pieces that reach main in **rs/41's fleet snapshot 3**, filed once
@@ -522,8 +521,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   combat finish (leg T27-17, 185.7 ticks measured; RUN-ORDER.md O1, `research/run-transitions.md` §4).
 - **Parameters:** `course: 'gnome' | 'wilderness'`, `untilLevel` (22 / 99), `food` and `eatBelow`,
   `eatGap` and `eatAt: 'land' | 'any'` (the program's opt-in, f95f9558, rs/241's work; the module passes
-  `eatGap: 3, eatAt: 'land'` by default, a9298868, rs/270; both reach main with rs/300, the Agility
-  snapshot, building), `technique: 'react' | 'plain'` (the rs/97 program's switch), `startStep`.
+  `eatGap: 3, eatAt: 'land'` by default, a9298868, rs/270; both on main with rs/300's
+  Agility snapshot, #245), `technique: 'react' | 'plain'` (the rs/97 program's switch), `startStep`.
 - **Preconditions:** S11a: Tree Gnome Village complete (the village spirit tree reaches the
   stronghold; ledger), position at the course start (2474,3436). S17: Agility 75 from The Grand
   Tree's 7,900 base (read, `quest_grandtree.rs2:199`; `skills/agility.md` §3), ridge-gate Agility
@@ -559,7 +558,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   below 60 (`eatBelow: 60`; about 2-3 sharks over the step, 20 HP each), not to a fixed eat line;
   the 12 sharks in H23 stay as the margin against player killers. **An eat costs 0 ticks with
   `eatAt: 'land'`** (the program's opt-in, f95f9558, rs/241's work, and the module default, a9298868,
-  rs/270; not on main: they reach it with **rs/300, the Agility snapshot, building, pending for the
+  rs/270; **on main with rs/300's Agility snapshot, #245, inside the
   run-commit floor**, entry 0; the PR first cited for them was closed unmerged): the program eats only on the obstacle-click
   tick, just before the click, so it cannot cancel a walk. Measured (rs/270; lab, bgsrv-ub, 300 ms,
   page built from a9298868; `rehearsals/agility.md` section 6.5 at 291727b8 on
@@ -589,15 +588,16 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   script fixes its own start tile, so there is no route lever. **The competitor-lap question is
   closed**: stunagile's 6,772 is the 21st percentile of the simulated S17 distribution (fewer falls),
   not a faster lap (§6.8).
-- **rs/300** (the Agility S11a/S17 snapshot, PR head 01cb7b2b on de3a4944, PR pending): with it main's
-  `programs/agility.ts` declares every key the module sends (`untilLevel`, `eatGap`, `eatAt`,
-  `restockBelow`, `protect*`, `pauseFor`, `playerRadius`, `threat*`), so O40 closes when it merges. It
-  carries rs/155's four default-behaviour changes, signed off by main: a death faults the run; the pit
-  ladder retries every 12 ticks; an underground start climbs out first; and more result fields.
+- **rs/300, on main as #245** (inside the run-commit floor cae93456): main's `programs/agility.ts` declares
+  every key the module sends (`untilLevel`, `eatGap`, `eatAt`, `restockBelow`, `protect*`, `pauseFor`,
+  `playerRadius`, `threat*`), so O40 is closed. It carries rs/155's four default-behaviour changes, signed
+  off by main: a death faults the run; the pit ladder retries every 12 ticks; an underground start
+  climbs out first; and more result fields; with `startStep: 'auto'`, the pitExit click-by-id fallback
+  and the `FAIL_RE` export.
 - **Primitives:** `lib/programs.ts` `runProgram(sdk, 'agility', {course, untilLevel, food,
   eatBelow})` [rs/97] (`untilLevel` is **declared in the program at 2f1b15de (rs/147's branch), pending main** with
-  rs/300, the Agility S11a/S17 snapshot (building; O40 closes when it is on main); until it is on the run commit, a page from b6950915 (#177) on faults at
-  start; RUN-ORDER.md O40); the in-page probe before S17; `levelup` (dismissal is inside the program;
+  rs/300's Agility snapshot, on main as #245 inside the floor, so a page from the floor no longer
+  faults at start (RUN-ORDER.md O40, closed)); the in-page probe before S17; `levelup` (dismissal is inside the program;
   verify); `session.logoutClean` for the post-combat 16-tick rule if attacked. **Missing:** an
   escape for a hostile player in the Wilderness (stop the program, walk south out of level 20,
   then teleport). Nothing in the program reads `nearbyPlayers`.
