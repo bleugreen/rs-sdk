@@ -35,14 +35,56 @@ describe('runTo: the chained run', () => {
         expect(at(sdk)).toEqual({ x: 3240, z: 3200 });
     });
 
-    test('a dropped click is re-sent after 3 ticks standing still, with a shorter reach', async () => {
+    test('a dropped click is re-sent to the same tile at the first tick the player stands idle', async () => {
         const sdk = world(3200, 3200);
         const sim = simulateWalking(sdk, { accept: n => n !== 1 });
         const r = await drive(sdk, runTo(sdk as never, { x: 3240, z: 3200 }));
         expect(r.ok).toBe(true);
         expect(sim.clicks[0]).toMatchObject({ x: 3220, tick: 100 });
-        expect(sim.clicks[1]).toMatchObject({ x: 3210, tick: 103, from: { x: 3200, z: 3200 } });
+        expect(sim.clicks[1]).toMatchObject({ x: 3220, tick: 101, from: { x: 3200, z: 3200 } });
+        expect(r.ticks).toBe(21);
         expect(at(sdk)).toEqual({ x: 3240, z: 3200 });
+    });
+
+    test('a re-sent click that is dropped too is a stall 3 ticks after the first click, with a shorter reach', async () => {
+        const sdk = world(3200, 3200);
+        const sim = simulateWalking(sdk, { accept: n => n > 2 });
+        const r = await drive(sdk, runTo(sdk as never, { x: 3240, z: 3200 }));
+        expect(r.ok).toBe(true);
+        expect(sim.clicks.slice(0, 3)).toMatchObject([{ x: 3220, tick: 100 }, { x: 3220, tick: 101 }, { x: 3210, tick: 103, from: { x: 3200, z: 3200 } }]);
+        expect(at(sdk)).toEqual({ x: 3240, z: 3200 });
+    });
+
+    test('a forced move out of a door: the click it drops is re-sent once the move ends, and the door behind is never reopened', async () => {
+        // The Grand Tree door (gnome_gate.rs2 open_tree_door): the run starts on the forced move's
+        // last held tick, so its first click is dropped, and the move carries the player one more
+        // tile. The closed door beside the start is the one just come through: opening it would
+        // forcemove the player back inside (rs/185, ~50 ticks on each Grand Tree exit).
+        const sdk = world(3200, 3200, { nearbyLocs: [loc(1, 'Tree Door', 3200, 3201, ['Open'])] });
+        const sim = simulateWalking(sdk, { accept: n => n !== 1 });
+        const r = await drive(sdk, runTo(sdk as never, { x: 3200, z: 3170 }), 600, s => (s.tick === 100 ? { player: player(3200, 3199) } : {}));
+        expect(r.ok).toBe(true);
+        expect(sends(sdk, 'sendInteractLoc')).toEqual([]);
+        expect(sim.clicks[1]).toMatchObject({ x: 3200, z: 3180, tick: 102, from: { x: 3200, z: 3199 } });
+        expect(r.ticks).toBe(17);
+        expect(at(sdk)).toEqual({ x: 3200, z: 3170 });
+    });
+
+    test('a stall just past a door the run opened never reopens it', async () => {
+        const sdk = world(3200, 3200, { nearbyLocs: [loc(1530, 'Door', 3210, 3200, ['Open'])] });
+        const closedAt = (x: number, z: number) => sdk.state!.nearbyLocs.some(l => l.x === x && l.z === z && l.options.includes('Open'));
+        // Something holds the player at 3212 until tick 115, right after the door has shut again behind them.
+        simulateWalking(sdk, { blocked: (x, z) => closedAt(x, z) || (x === 3213 && sdk.state!.tick < 115) });
+        const prev = sdk.onSend;
+        sdk.onSend = (a, f) => {
+            prev(a, f);
+            if (a.method === 'sendInteractLoc') queueMicrotask(() => f.tick({ nearbyLocs: [loc(1531, 'Door', 3210, 3200, ['Close'])] }));
+        };
+        const shut = (s: BotWorldState) => (s.player!.worldX >= 3211 && s.nearbyLocs[0]!.options.includes('Close') ? { nearbyLocs: [loc(1530, 'Door', 3210, 3200, ['Open'])] } : {});
+        const r = await drive(sdk, runTo(sdk as never, { x: 3230, z: 3200 }), 600, shut);
+        expect(r.ok).toBe(true);
+        expect(sends(sdk, 'sendInteractLoc')).toEqual([[3210, 3200, 1530, 1]]);
+        expect(at(sdk)).toEqual({ x: 3230, z: 3200 });
     });
 
     test('arrives within the tolerance without running to the exact tile', async () => {

@@ -425,7 +425,8 @@ export interface RunOptions extends TravelOptions {
  * Run to `to` with chained clicks: the furthest route tile within `reach` (Chebyshev), re-clicked
  * `lead` tiles before it is reached (quests/primitives.md section 2: 0.51 ticks per route tile).
  * A closed door or gate on the route ahead is opened as part of the run; a stall of 3 ticks opens
- * the nearest door or slashes the nearest web, then re-routes.
+ * the nearest door (never the one the run last went through) or slashes the nearest web, then
+ * re-routes. A click the player does not move on is re-sent at the first idle tick.
  */
 export function runTo(sdk: TravelSdk, to: Area, opts: RunOptions = {}): Promise<TravelResult> {
     return travel(sdk, [{ kind: 'run', to, ...(opts.via ? { via: opts.via } : {}), ...(opts.wildernessAtMost !== undefined ? { wildernessAtMost: opts.wildernessAtMost } : {}) }], opts);
@@ -494,6 +495,8 @@ async function hopTeleport(sdk: TravelSdk, trip: Trip, spell: Spell): Promise<Ho
 const CLOSED_DOOR = (l: NearbyLoc) => /door|gate/i.test(l.name) && opIndex(l, /^open$/i) !== undefined;
 const OPEN_DOOR = (l: NearbyLoc) => /door|gate/i.test(l.name) && opIndex(l, /^close$/i) !== undefined;
 const WEB = (l: NearbyLoc) => /^web$/i.test(l.name) && opIndex(l, /^slash$/i) !== undefined;
+const DOORISH = (l: NearbyLoc) => /door|gate/i.test(l.name);
+const doorKey = (l: { x: number; z: number }) => `${l.x},${l.z}`;
 /** The cooked fish `eat` takes by default (and legs.ts counts as food). */
 export const FOOD = /^(shark|swordfish|lobster|tuna|salmon|trout|bass|monkfish|pike)$/i;
 
@@ -550,13 +553,29 @@ function eater(sdk: TravelSdk, trip: Trip, o?: EatOptions): (s: BotWorldState) =
     };
 }
 
-/** Open the closed door or gate nearest the player within 2 tiles; false when there is none. */
-async function openNearbyDoor(sdk: TravelSdk, trip: Trip): Promise<boolean> {
+/** Open the closed door or gate nearest the player within 2 tiles, except those in `passed`; the door opened, or null. */
+async function openNearbyDoor(sdk: TravelSdk, trip: Trip, passed: ReadonlySet<string>): Promise<NearbyLoc | null> {
     const p = pos(sdk);
-    const door = (await sdk.scanNearbyLocs(4)).filter(l => CLOSED_DOOR(l) && chebyshev(l, p) <= 2).sort((a, b) => a.distance - b.distance)[0];
-    if (!door) return false;
+    const door = (await sdk.scanNearbyLocs(4)).filter(l => CLOSED_DOOR(l) && chebyshev(l, p) <= 2 && !passed.has(doorKey(l))).sort((a, b) => a.distance - b.distance)[0];
+    if (!door) return null;
     await openDoorOnRoute(sdk, trip, door);
-    return true;
+    return door;
+}
+
+/**
+ * The door a run has just gone through, as loc keys: `door` and every door or gate loc within a
+ * tile of it (a double door; the Grand Tree's door has a loc on each side). Open or shut alike.
+ */
+function doorPassed(s: BotWorldState, door: { x: number; z: number }): Set<string> {
+    return new Set([doorKey(door), ...s.nearbyLocs.filter(l => DOORISH(l) && chebyshev(l, door) <= 1).map(doorKey)]);
+}
+
+/**
+ * The door a run starting at `at` has just come through: every door or gate loc within 2 tiles that
+ * `route` does not cross. A door the run needs is on its route, and the run opens that one itself.
+ */
+function doorsBehind(s: BotWorldState, at: { x: number; z: number }, route: ReadonlyArray<{ x: number; z: number }>): Set<string> {
+    return new Set(s.nearbyLocs.filter(l => DOORISH(l) && chebyshev(l, at) <= 2 && !route.some(t => t.x === l.x && t.z === l.z)).map(doorKey));
 }
 
 /** Open a door as part of the run: the server walks to it, then opens it. Ok once no closed door is on its tile. */
@@ -598,6 +617,11 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
     const start = currentTick(sdk);
     const via = [...viaIn];
     let route = buildRoute(sdk, goal, via);
+    // A stall never opens the door the run last went through. The Grand Tree's door forcemoves the
+    // player through it (gnome_gate.rs2 open_tree_door), so opening it again from the far side sends
+    // them straight back (rs/185: ~50 ticks on each exit). At the start that door is the one just
+    // come through; afterwards it is the last one the run opened.
+    let passed = doorsBehind(sdk.getState()!, pos(sdk), route);
     let idx = 0;
     let target: XZ | null = null;
     let final = false;
@@ -605,6 +629,8 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
     let lastMove = start;
     let clickTick = -99;
     let stalls = 0;
+    /** The `lastMove` of the idle spell the outstanding click was last re-sent in. */
+    let resentFor = -1;
     let reach = reachMax;
     let reachFrom = pos(sdk);
     let dismissed = '';
@@ -634,7 +660,8 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
         if (!needClick && t - lastMove >= 3 && t - clickTick >= 3) {
             stalls++;
             if (stalls > maxStalls) return fallback(`run to ${fmtTile(goal)} stalled ${maxStalls} times at ${fmtTile(p)}`);
-            const opened = await openNearbyDoor(sdk, trip);
+            const opened = await openNearbyDoor(sdk, trip, passed);
+            if (opened) passed = doorPassed(sdk.getState()!, opened);
             const slashed = !opened && (await slashNearbyWeb(sdk, trip, goal, opts));
             if (!opened && !slashed) reach = Math.max(4, Math.floor(reach / 2));
             route = buildRoute(sdk, goal, via);
@@ -642,6 +669,16 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
             t = currentTick(sdk);
             lastMove = t;
             needClick = true;
+        }
+        // A walk click sent while the server still holds the player is dropped without a trace: the
+        // player just stays put. A forced move (agility_walk) holds them through its last tile, so a
+        // run that starts as one ends loses its first click. Re-send the click at the first idle
+        // tick, once per idle spell: a second walk to the same tile costs nothing when the first
+        // landed, and the stall above still counts from the first click.
+        if (!needClick && target && t > clickTick && t - lastMove >= 1 && resentFor !== lastMove) {
+            resentFor = lastMove;
+            trip.clicks++;
+            await sdk.sendWalk(target.x, target.z, true);
         }
         if (needClick) {
             const cur = sdk.getState()!;
@@ -674,6 +711,7 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
             if (door && (doorTries.get(key) ?? 0) < 2) {
                 doorTries.set(key, (doorTries.get(key) ?? 0) + 1);
                 await openDoorOnRoute(sdk, trip, door);
+                passed = doorPassed(sdk.getState()!, door);
                 if (!(await tickAfter(sdk, currentTick(sdk)))) return { ok: false, reason: 'no tick' };
                 t = currentTick(sdk);
                 lastMove = t;
