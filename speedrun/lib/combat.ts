@@ -24,6 +24,16 @@ import { npcByIndex, opIndex, waitForNpc, type NamePattern } from './world';
 export type UpkeepSdk = StateSource & Pick<BotSDK, 'sendUseItem' | 'sendTogglePrayer'>;
 export type CombatSdk = UpkeepSdk & Pick<BotSDK, 'sendInteractNpc' | 'sendSpellOnNpc' | 'sendClickDialog' | 'clickDialogByText'>;
 
+/**
+ * Standard-spellbook combat spells the route casts: interface component, Magic level, the rune
+ * each cast uses up, and air and fire runes per cast (a worn staff of fire supplies the fire).
+ */
+export const COMBAT_SPELLS = {
+    fire_bolt: { component: 1169, magic: 35, rune: /^Chaos rune$/i, runeName: 'chaos', air: 3, fire: 4 },
+    fire_blast: { component: 1181, magic: 59, rune: /^Death rune$/i, runeName: 'death', air: 4, fire: 5 },
+} as const;
+export type CombatSpell = keyof typeof COMBAT_SPELLS;
+
 export function prayerActive(s: BotWorldState, prayer: PrayerName): boolean {
     return s.prayers?.activePrayers?.[PRAYER_INDICES[prayer]] === true;
 }
