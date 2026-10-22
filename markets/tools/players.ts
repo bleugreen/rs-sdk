@@ -11,6 +11,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { OVERALL, parsePlayer, playerPath, QUEST_POINTS, withServerRate, type PlayerRow } from '../../speedrun/tools/hiscore-scrape.ts';
+import { writerExclusion } from '../lib/accounts.ts';
 import { Gentle, HttpError } from '../lib/demo.ts';
 
 const stamp = (d: Date) => d.toISOString().replace(/[:]/g, '').replace(/\.\d+Z$/, 'Z');
@@ -26,13 +27,15 @@ export function summarisePlayer(rows: PlayerRow[] | null): string {
 }
 
 async function main(): Promise<void> {
-    const { values, positionals } = parseArgs({ args: Bun.argv.slice(2), allowPositionals: true, options: { out: { type: 'string' } } });
+    const { values, positionals } = parseArgs({ args: Bun.argv.slice(2), allowPositionals: true, options: { out: { type: 'string' }, 'placeholder-data': { type: 'boolean' } } });
     if (!positionals.length) throw new Error('usage: players.ts NAME... [--out=DIR]');
+    const ex = writerExclusion();
     const out = values.out ? resolve(values.out) : resolve(import.meta.dir, '../../docs/markets/data');
     const g = new Gentle();
     const takenAt = new Date();
     const players: Record<string, PlayerRow[] | null> = {};
-    for (const name of positionals) {
+    // An excluded name is skipped silently: not read, not written, not printed.
+    for (const name of positionals.filter(n => !ex.excludes(n))) {
         let html: string;
         try {
             html = await g.text(playerPath(name));
