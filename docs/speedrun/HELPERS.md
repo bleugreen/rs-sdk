@@ -91,7 +91,7 @@ flowchart LR
 
 ## Capacity and the IP cap
 
-The demo allows **100 concurrent sessions per source IP**, and bbs shares its public IP with everything else on the operator's network: the scored run, labs, development. The fleet refuses more than **60** enabled accounts; aim for 20-40. A 1,100-account swarm once ran the 4 GB demo server out of memory (`World.ts`), so the cap is also manners. Measured on bbs (32 cores, 61 GB):
+The demo allows **50 concurrent sessions per source IP** (the operator cut it from 100 on 2026-10-22); our own ceiling is **45 per address**, counting fleet accounts, dev copies and children's demo logins together. bbs shares its public IP with every executor on the operator's network (local, bgsrv-mac, bgsrv-ub, fedora); the run host and the rehearsal twin each have their own (measured 2026-10-22 by `sha256(ifconfig.me)`). On run day the bbs side holds only the fleet roles the run uses plus the cannon helper; dev copies stop and demo logins from the executors freeze. The fleet refuses more than **60** enabled accounts, and `maxOnline` (34 since 2026-10-22) caps how many log in at once. A 1,100-account swarm once ran the 4 GB demo server out of memory (`World.ts`), so the cap is also manners. Measured on bbs (32 cores, 61 GB):
 
 | Accounts | Supervisor RSS | Gateway RSS | Lite clients RSS | CPU, % of one core (supervisor / gateway / all clients) |
 |---|---|---|---|---|
@@ -271,7 +271,9 @@ The run-day schedule (cue shapes agreed between rs/41 and rs/393, rs/186's rulin
 | S06 air givers (`altar-giver`) | `stopOn: { step: 'S06', family: 'altar' }` | `runecraft.ts` (its stop after the last craft) |
 | S07 bone givers (`bone-giver`) | `stopOn: { step: 'S07', family: 'bone' }` | `run.ts` |
 | S21 body givers (`altar-giver`) | `loginOn: { step: 'S21', family: 'altar' }` | `runecraft.ts`'s pre-login step opens S21's cue before SCORED's relog and waits for every giver to be ready |
-| H12o atoll helper (`mule`, cairn_h45) | `loginOn: { step: 'H12o', family: 'mule' }` | `run.ts`, at least 52 ticks before Monkey Madness segment P; stopped after the trade |
+| S18 stun-pack courier (`bone-giver` on request, cairn_e15) | `loginOn: { step: 'S18', family: 'courier' }` | `run.ts`: opened before S18 as the login trigger, stopped after S18 |
+| H12o atoll helper (`mule`, cairn_h45) | `loginOn: { step: 'H12oM', family: 'mule' }`, `stopOn: { step: 'H12oP', family: 'mule' }` | `run.ts`: H12oM opened at least ~70 ticks before Monkey Madness segment M (it is also M's top-up ask, up to 13 sharks); H12oP opened after M's trade (9 sharks + 1 super antipoison(4)) and stopped after P's. The helper stays logged in on P's tile between the two trades (role-side keep-alive) |
+| H21a anvil giver (`anvil`, cairn_a01) | `loginOn: { step: 'S25a', family: 'anvil' }` | `run.ts`: opened before S25a, stopped after it |
 
 `fmrow` and `ring` are cue families only the launcher reads. The mule family has one `cue.json` per directory, so no other mule-family cue may be open while H12o's is (rs/393's chain test). If that ever has to happen, H12o's helper gets its own directory through `cueDir`, not a new family. Cue-triggered logins go through the same login limiter as every other login (burst 3, then 6 a minute, at least 4 s apart), so a large family opened at once logs in over minutes: 22 givers take about 3.5. `speedrun/lab/launcher-cue.ts` runs the whole gate against the lab engine (rs/475, fedora, 300 ms ticks): a `stopOn` account was reported out 0.1-0.4 s after the stop's write and gone from `/playerpositions` within 0.5 s on both paths; the `loginOn` account was in the world 0.9 s after its open and out 0.3 s after its stop; the stop-first and expired accounts never logged in; the account with no gate stayed in; and the stale stop from before the launch kept nobody out.
 
