@@ -54,11 +54,15 @@
 // it (rs/196's lab, rs/158's ruling). So each oak and willow band starts by dropping every
 // normal log past `keepProducts`, sent without waiting before the walk to the stand (0 ticks;
 // the starter takes the first log), and the oaks start with the axe, the knife and one log,
-// which leaves a 23-bone load and the chopped log their 24 slots with one to spare. With `handBack`, a sixth step,
-// `woodcutting:hand-back`, runs once `to` is reached: one `swap()` that gives the axe and every
-// bone still held to the partner and takes T07-08's Camelot runes (1 law, 5 air). It is a trade
-// of its own at S07's end, not part of a bone load: the axe chops to the last level, after the
-// last load. Rehearsals keep their axe and carry no bones, so it is off unless asked for.
+// which leaves a 23-bone load and the chopped log their 24 slots with one to spare.
+//
+// S07's end, two opt-in steps after the last band (rehearsals keep their axe and carry no bones).
+// The scored run's path: T07-08's Camelot runes ride the last bone load (receiveFrom takes an
+// offer holding more than the bones), and `dropAxe` adds `woodcutting:drop-axe`, which drops the
+// axe at `to` without waiting, as nothing after S07 chops. The fallback until a bone giver can
+// add the runes to a load: `handBack` adds `woodcutting:hand-back`, one `swap()` at `to` that
+// gives the axe and every bone held and takes the runes (1 law, 5 air), a trade of its own,
+// since the axe chops to the last level, after the last load.
 
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { GATED_PROGRAMS, type GatedSegment, type GatedTechnique, inPageGate, type InPageGateOptions, runGatedProgram, type SegmentTechnique } from '../lib/gated-program';
