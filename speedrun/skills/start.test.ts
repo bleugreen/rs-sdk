@@ -214,6 +214,30 @@ describe('S00 tutorial skip', () => {
         });
     });
 
+    test('a tab far behind the server: the page wait counts from the server tick the talk reached', async () => {
+        // As at 40x throttle: the talk executes ~10 server ticks late and the page comes 14 observed
+        // ticks after execution, past TALK_TICKS. ClickGuard may re-send it meanwhile; that send does nothing here.
+        await atTickMs(20, async () => {
+            const sdk = new TutorialSdk('Yes please.');
+            let talks = 0;
+            sdk.sendInteractNpc = (i: number, op: number) => {
+                sdk.sent.push({ method: 'sendInteractNpc', args: [i, op] });
+                if (++talks > 1) return Promise.resolve({ success: true, message: 'ok' });
+                return (async () => {
+                    await Bun.sleep(100); sdk.tick();
+                    await Bun.sleep(110); sdk.tick();
+                    setTimeout(async () => {
+                        for (let k = 0; k < 13; k++) { await Bun.sleep(1); sdk.tick(); }
+                        sdk.tick({ modalOpen: false, modalInterface: -1, dialog: cont as BotWorldState['dialog'] });
+                    }, 1);
+                    return { success: true, message: 'ok' };
+                })();
+            };
+            await tutorialSkip.run(ctx(sdk));
+            expect(tutorialSkip.postconditions(sdk.getState()!, {})).toBe(true);
+        });
+    });
+
     test('a tab far behind the server: the landing wait counts from the server tick "Yes please." reached', async () => {
         // As at 30x-40x throttle: "Yes please." executes ~10 server ticks late, and the landing comes
         // once the tab has decoded that far: more than LANDING_TICKS observed ticks after the choice page.

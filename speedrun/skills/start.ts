@@ -18,8 +18,8 @@
 // stands next to the player the client sends no route, so a step it takes that tick leaves the
 // engine nothing to walk.
 //
-// The waits after the continue and after "Yes please." count from the server tick the click
-// reached (lib/wait.ts serverClock), not from the page. A starved browser tab runs a queued click
+// The waits after the talk, the continue and "Yes please." count from the server tick the click
+// reached (lib/wait.ts serverClock), not from the send or the page. A starved browser tab runs a queued click
 // only when it has decoded its backlog of ticks, and decodes the reply after the rest of it: with
 // the tab throttled 30x from login, the continue sent at tick 4 executed at tick 19, wall time put
 // the server near tick 29, and the choice page came at 30.
@@ -52,7 +52,7 @@ export const PLAYER_KIT = 3559;
  * resumable runner recovers it. The measured table is in speedrun/README.md, section skills/start.ts.
  */
 export const LANDING_IDLE_TICKS = 100;
-/** Ticks from the talk's execution to the guide's page (ClickGuard's one re-send included). */
+/** Ticks from the talk reaching the server to the guide's page (ClickGuard's one re-send included). */
 export const TALK_TICKS = 12;
 /** Ticks from the continue reaching the server to the choice page. */
 export const CHOICE_TICKS = 6;
@@ -141,6 +141,7 @@ async function skipObserved({ sdk, session, log }: StepContext<unknown>, landing
 
     let guard: ClickGuard | null = null;
     let talkSent = -1;
+    let talkLate = 0;
     if (!s.dialog.isOpen) {
         const guide = guideOf(s);
         if (!guide) throw new Error('no RuneScape Guide in view');
@@ -152,15 +153,18 @@ async function skipObserved({ sdk, session, log }: StepContext<unknown>, landing
         guard = new ClickGuard(sdk, () => sdk.sendInteractNpc(guide.index, talk.opIndex), st => st.dialog.isOpen, { alwaysWatch: true });
         talkSent = sdk.getState()?.tick ?? -1;
         await guard.send();
+        // The page wait below runs from this tick; a tab behind the server gets the page that much later.
+        const executed = sdk.getState()?.tick ?? talkSent;
+        talkLate = Math.max(0, clock(Date.now()) - executed);
     }
 
     // Page one: the guide's question, a continue page.
     const stopGuard = guard ? sdk.onStateUpdate(st => void guard.step(st)) : () => {};
-    const asked = await waitUntil(sdk, st => classifyPage(st.dialog) !== 'none' && !st.dialog.isWaiting, { maxTicks: TALK_TICKS }).finally(stopGuard);
+    const asked = await waitUntil(sdk, st => classifyPage(st.dialog) !== 'none' && !st.dialog.isWaiting, { maxTicks: TALK_TICKS + talkLate }).finally(stopGuard);
     const resends = guard?.report() ?? {};
     if (Object.keys(resends).length) logNote(log, session, 'S00:resend', { click: 'talk', ...resends });
     if (!asked.ok) {
-        const talked = guard ? `talk sent at tick ${talkSent}, re-sends ${JSON.stringify(resends)}; ` : '';
+        const talked = guard ? `talk sent at tick ${talkSent}${talkLate ? `, reached the server ${talkLate} ticks after it executed` : ''}, re-sends ${JSON.stringify(resends)}; ` : '';
         throw new Error(`the guide did not answer within ${TALK_TICKS} ticks (${talked}${stateTrace(asked.state)})`);
     }
     let page = asked.state;
