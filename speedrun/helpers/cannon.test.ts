@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import type { InventoryItem, TradeItem } from '../../sdk/types';
+import type { InventoryItem, TradeItem, TradeState } from '../../sdk/types';
 import { offerSatisfies } from '../../sdk/trade-helpers';
+import { baseState, FakeSdk, flush } from '../lib/fake-sdk';
 import { planOffers } from '../lib/trade';
 import { nameHash } from './altar-cue';
-import { holdsLoad, interfaceText, ironOreToBuy, isWest, loadSpecs, loadWant, nextWork, parseOptions, railingDamage, serveOptions, serveResume, stageFromJournal, type Holdings } from './cannon';
+import { holdsLoad, interfaceText, ironOreToBuy, isWest, loadSpecs, loadWant, nextWork, parseOptions, railingDamage, serveOptions, serveResume, serveTrade, stageFromJournal, type Holdings } from './cannon';
 
 // Journal pages as the lite client published them in the lab (interface 8134, `::setvar mcannon N`).
 const JOURNAL: Record<number, string[]> = {
@@ -159,6 +160,35 @@ describe('serve mode', () => {
         expect(plan.map(e => e.name)).toEqual(LOAD.map(([n]) => n));
         expect(plan.every(e => e.amounts.length === 1 && e.amounts[0] === -1)).toBe(true);
         expect(plan.map(e => e.expected)).toEqual([1, 1, 1, 1, 100]);
+    });
+
+    test('two-way serve (H23): the load goes out, the scored account\'s magic shortbow comes back in the same trade, re-accepted after its offer resets both accepts', async () => {
+        const load = inv(LOAD);
+        const mine: TradeItem[] = load.map((i, slot) => ({ slot, id: i.id, name: i.name, count: i.count }));
+        const bow: TradeItem[] = [{ slot: 0, id: 861, name: 'Magic shortbow', count: 1 }];
+        const trade = (t: Partial<TradeState>): TradeState => ({ isOpen: true, screen: 'offer', partner: 'Scored Player', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false, ...t });
+        const sdk = new FakeSdk(baseState({ tick: 1, inventory: load, trade: trade({}) }));
+        const methods = () => sdk.sent.splice(0).map(a => a.method);
+        const r = serveTrade(sdk, 'Scored Player', 100);
+        await flush();
+        // Five All presses and the accept behind them.
+        expect(methods()).toEqual(['sendOfferItem', 'sendOfferItem', 'sendOfferItem', 'sendOfferItem', 'sendOfferItem', 'sendAcceptTrade']);
+        // The bow lands after our accept: both accepts reset, and we accept again on the next frame.
+        sdk.tick({ inventory: [], trade: trade({ myOffer: mine, theirOffer: bow }) });
+        await flush();
+        expect(methods()).toEqual(['sendAcceptTrade']);
+        // Not twice on one frame's republication, and not while our accept stands.
+        sdk.tick({ trade: trade({ myOffer: mine, theirOffer: bow, myAccepted: true }) });
+        await flush();
+        expect(methods()).toEqual([]);
+        sdk.tick({ trade: trade({ screen: 'confirm', myOffer: mine, theirOffer: bow, partnerAccepted: true }) });
+        await flush();
+        expect(methods()).toEqual(['sendAcceptTrade']);
+        sdk.tick({ inventory: [{ slot: 0, id: 861, name: 'Magic shortbow', count: 1, optionsWithIndex: [] } as unknown as InventoryItem], trade: undefined });
+        await flush();
+        const out = await r;
+        expect(out.ok).toBe(true);
+        expect(out.gave.map(i => i.name).sort()).toEqual(LOAD.map(([n]) => n).sort());
     });
 
     test('holdsLoad needs every part and enough balls', () => {
