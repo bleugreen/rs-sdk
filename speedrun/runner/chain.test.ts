@@ -60,7 +60,7 @@ describe('chainProbes', () => {
     });
 
     test('a step reading a probe no module exports refuses', () => {
-        expect(() => chainProbes([...chain, tag('S99', 'step', { name: 'S99 x', preconditions: () => true, postconditions: () => true, run: async () => {}, probes: ['nowhere'] })])).toThrow('no probe for "nowhere" (S99 x)');
+        expect(() => chainProbes([...chain, tag('S99', 'step', { name: 'S99 x', preconditions: () => true, postconditions: () => true, run: async () => {}, logoutSafe: true, probes: ['nowhere'] })])).toThrow('no probe for "nowhere" (S99 x)');
     });
 });
 

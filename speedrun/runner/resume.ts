@@ -65,8 +65,8 @@ export class ResumeError extends Error {
  * A step module's exported `PROBES` when it is a record of probes (skills/cooking.ts,
  * skills/prayer.ts). A list of names (a quest's journal probes) provides none itself.
  */
-export function moduleProbes(m: { readonly PROBES?: unknown }): Record<string, Probe> {
-    const p = m.PROBES;
+export function moduleProbes(m: object): Record<string, Probe> {
+    const p = (m as { readonly PROBES?: unknown }).PROBES;
     if (!p || typeof p !== 'object' || Array.isArray(p)) return {};
     return Object.fromEntries(Object.entries(p).filter((e): e is [string, Probe] => typeof e[1] === 'function'));
 }
@@ -76,7 +76,7 @@ export function moduleProbes(m: { readonly PROBES?: unknown }): Record<string, P
  * exported PROBES or, for a quest journal, lib/quests.ts. Throws naming each probe nothing provides,
  * so a chain refuses before it starts instead of at the resume walk that needs it.
  */
-export function stepProbes(steps: ReadonlyArray<Pick<Step<never>, 'name' | 'probes'>>, modules: ReadonlyArray<{ readonly PROBES?: unknown }>): Record<string, Probe> {
+export function stepProbes(steps: ReadonlyArray<Pick<Step<never>, 'name' | 'probes'>>, modules: ReadonlyArray<object>): Record<string, Probe> {
     const provided: Record<string, Probe> = Object.assign({}, ...modules.map(moduleProbes));
     const out: Record<string, Probe> = {};
     const missing = new Map<string, string>();
