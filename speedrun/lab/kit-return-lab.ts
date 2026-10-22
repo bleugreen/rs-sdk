@@ -6,7 +6,7 @@
 // Scenarios, each with one bronze axe to return, at 10 hitpoints unless noted:
 //   refuse-far        Magic 1 at rs/296's Ardougne tile: refused, never moves (exit 3)
 //   teleport-first    Magic 31 and the runes at Draynor: Lumbridge teleport, run, trade (exit 0)
-//   damage-stop       Magic 1, 24 tiles out, a young dark wizard spawned on the route 12 tiles
+//   damage-stop       Magic 1, 16 tiles out, a young dark wizard spawned on the route 6 tiles
 //                     ahead: halted, backed off to the start, logged out alive (exit 4, naming it)
 // A scenario passes only if the account did not die.
 //   refuse-wilderness Magic 99 and the runes on the Wilderness Agility course, 99 hitpoints so
@@ -65,10 +65,10 @@ await scenario('teleport-first', EXIT.ok, async () => {
     await mustTele(kit.sdk, 3093, 3244);
 });
 await scenario('damage-stop', EXIT.damaged, async () => {
-    // The wizard (hunt range 3) on the route, 12 tiles from a start it cannot see.
-    await mustTele(kit.sdk, 3234, 3222);
+    // The wizard (hunt range 3) on the route, 6 tiles from the start; east of x 3238 is the River Lum.
+    await mustTele(kit.sdk, 3232, 3222);
     await cheat(kit.sdk, 'npcadd young_dark_wizard', 2);
-    await mustTele(kit.sdk, 3246, 3222);
+    await mustTele(kit.sdk, 3238, 3222);
 });
 await scenario('refuse-wilderness', EXIT.refused, async () => {
     await setStats(kit.sdk, { magic: 99, hitpoints: 99 });
