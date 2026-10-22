@@ -126,10 +126,10 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 1 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,327 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; S17 75-85 858; rs/155) |
 | 2 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,077 | 3,726 | 4,611 | ~885 | overlay | `quest-mm-*.ts` | **doc-priced, unrun** (A-G run; H-Z being written by rs/201) |
 | 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,116 | 3,116 | 3,775 | ~659 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | building (rs/212, held until rs/207 merged; rs/153 closed); `stay2` bury on main (#159, rs/182); restart fix on main (e5d8a058, #170; rs/207) |
-| 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,027 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; on rs/147's branch, changing with rs/236; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165) |
+| 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,027 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; on rs/147's branch, changing with rs/236; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165); gate `measureDrops` 120 explicit (rs/261, building) |
 | 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,198.5 | 2,198.5 | ~2,340 i | ~140 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | lab-measured (PR #198, open; rs/198 for rs/186); its walker, `lib/travel.ts`, on main, 0658e896 (#200) |
 | 6 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~120 elsewhere | ~190 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` | building (rs/154, parked under the 2-4 child limit); stun pack: lab-accepted (bury, charge, arrows; rs/132) |
-| 7 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | on main, 22552bf4 (#197; rs/231); lab-accepted (1,998 on 78-99; rs/152) |
+| 7 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | on main, 22552bf4 (#197; rs/231); lab-accepted (1,998 on 78-99; rs/152); gate `measureDrops` 120 explicit (#221) |
 | 8 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,972 | 1,946 | 1,997 (the bow from 70); 2,023-2,211 without the kit | ~265 | overlay | `cannon-kit.ts` (rs/59, on main) | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible) |
 | 9 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,528.5 | 1,393.5 | 1,798.5 | ~405 | overlay | `quest-grandtree-full.ts` | building (rs/185, held: tenet 15) |
 | 10 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,192 | 1,192 | ~5,220 | ~4,030 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **lab-accepted on the floor (rs/196, module 3f02f336: nature at 44 tuned 30/30 at 29 x 7, robust 30/30 at 29 x 8; S06 7/7 at 6 x 7, 58)**; pending: the auto rule's 'handled before SCORED' field (entry 9); cycle: on main, 23ea9f77 (#178) |
@@ -239,7 +239,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 | Dependency | Needed by | Module status | Notes |
 |---|---|---|---|
 | In-page program runtime, `lib/programs.ts` (rs/97) | 1, 3-6, 9 | on main, d09c2627 (#94) | |
-| Host gate, `lib/hostgate.ts` | in-page entries | on main, c9a6c31b (#101) | |
+| Host gate, `lib/hostgate.ts` | in-page entries | on main, c9a6c31b (#101); **`measureDrops` default 120 on main, 148788c5 (#221; rs/262)** | The measured switch-off holds plain for `measuredOffTicks` (3,000); at the old default of 30 drops it fired on luck (RUN-ORDER.md R21: 1 of 5 lab Woodcutting chains switched twice, ~850 ticks; 0 in 4 at 120). Main's ruling (20:08 PDT): every run-day module passes an explicit `measureDrops` sized to its success chance. **Per module:** Woodcutting (3) 120 explicit (rs/261, building); Fishing (5) 120 explicit on each fly band (on main, #221); Mining (4) 120 by the default, its explicit value pending rs/259 (nearly safe at 64-99: every iron roll succeeds). Thieving (6), Agility (1) and Firemaking (16) do not use the gate |
 | `lib/gated-program.ts` (rs/156) | 3-5 | on main, 22552bf4 (#197) | reached main with rs/231's Fishing snapshot |
 | `lib/travel.ts`, the shared walker with the stall fix | 11 | on main, 0658e896 (#200) | five `speedrun/lib` files, byte-identical from rs/198's f0e76192; `STALL_TICKS = 20`: a walk that stalls returns `ok: false` instead of throwing; inside the run-commit floor |
 | `lib/display.ts` (rs/232's `frontWindows`, `grabFrame`, `frameShows`) | RUN-HOST.md steps 5 and 5a (the live-frame pass line) | on main, 5d22252d (#208) | gate tooling, not a floor item (main); with #213's `lib/tab.ts` window helpers (c4b79f17), `screenshotTab` among them |
@@ -846,6 +846,10 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   combat 4, so at SCORED's combat in S22 the expected attacks, and the cost, are **0**: rs/195 saw
   no guard engagement in 78-99 on the demo or in either lab band. The guard is off by default; rs/220
   tracks the bot layer attributing the spider's hit to the fishing spot.
+- **The gate's switch-off:** each fly band passes `measureDrops: 120` (on main, #221; RUN-ORDER.md
+  R21). cairn_casts' demo had 0 measured switch-offs; its one knife-to-plain change, at tick 3,060,
+  was log exhaustion (rs/147's read of `rehearsals/fishing-evidence.json`), so no false fire is in
+  S22's figures.
 - **Primitives:** `runProgram(sdk, 'knife-cycle', {method:'fly', ...})` [rs/97], `probeInPage`,
   `HostGate`. **Missing:** the forced-slip hook.
 - **Mode:** in-page. This is the largest knife gain (`skills/tick-manipulation.md` §1).
