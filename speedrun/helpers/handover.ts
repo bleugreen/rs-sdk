@@ -5,8 +5,10 @@
 // earner to a buyer.
 //
 // Travel: the donor may stand on either side of the Al Kharid toll gate (coin
-// earners work in Al Kharid). Every leg goes through travelTo, which pays the
-// toll when the destination is across the fence. A leg that fails ends the
+// earners work in Al Kharid), or underground in the Dwarven Mine or the Mining
+// Guild cellar (smelters). Every leg goes through travelTo, which climbs out
+// first (lib/underground.ts) and pays the toll when the destination is across
+// the fence. A leg that fails ends the
 // attempt before the next step: the bank is opened only once the donor stands
 // at `bank`, since openBank opens whatever booth is nearest. Coins for the toll
 // crossings still ahead (out to `meet`, back to `bank`) are withdrawn with the
@@ -39,6 +41,7 @@ import { withdrawMany, type WithdrawSpec } from '../lib/bank';
 import { crossFromKandarin, kandarinTile } from '../lib/kandarin';
 import { isEastOfTollGate, TOLL_GP, travelTo, type Tile, type TravelResult } from '../lib/toll-gate';
 import { give, sameName, type GiveResult } from '../lib/trade';
+import { climbToSurface, isUnderground, NO_WAY_UP } from '../lib/underground';
 import { STALLED, waitTicks } from '../lib/wait';
 import { altarData, inRoom, leaveRoom, ROUTE_ALTARS, type AltarName } from './altar-room';
 import { inMine } from './essence';
@@ -216,7 +219,8 @@ async function go(ctx: RoleContext, o: Pick<HandoverOptions, 'crossKandarin'>, t
 
 function legFailed(ctx: RoleContext, leg: 'bank' | 'meet', to: Tile, r: TravelResult): Outcome {
     ctx.log(`handover: could not reach the ${leg}; not opening a bank here`, { to, from: here(ctx), reason: r.reason, paid: r.paid });
-    return r.reason === 'toll gate: no toll' ? 'stop' : 'retry';
+    // Another attempt would fail the same way: no toll, or a dungeon with no known way up.
+    return r.reason === 'toll gate: no toll' || r.reason?.startsWith(NO_WAY_UP) ? 'stop' : 'retry';
 }
 
 /** One attempt at handover `h`, recorded in ctx.state under `key` from just before the trade opens. */
@@ -319,7 +323,10 @@ export function finishOf(report: HandoverReport): RoleFinish {
 /**
  * Get to where a bank is reachable on foot. The fleet parks essence miners
  * wherever their trip stopped, often inside the essence mine, and an altar
- * helper may be parked in an altar room; both are left by their portal.
+ * helper may be parked in an altar room; both are left by their portal. A
+ * smelter may be in the Dwarven Mine or the guild cellar: it climbs out here so
+ * that a list with no `bank` opens a booth on the surface. A failed climb is
+ * logged and left to the legs, whose travelTo tries again or reports it.
  */
 async function leaveEnclosure(ctx: RoleContext): Promise<void> {
     for (const name of Object.keys(ROUTE_ALTARS) as AltarName[]) {
@@ -335,6 +342,10 @@ async function leaveEnclosure(ctx: RoleContext): Promise<void> {
         for (let t = 0; t < 25 && inMine(ctx.sdk.getState()); t++) await ctx.sdk.waitForTicks(1).catch(() => {});
     }
     if (inMine(ctx.sdk.getState())) throw new Error('the essence mine portal did not take us out');
+    if (isUnderground(here(ctx))) {
+        const r = await climbToSurface(ctx.bot, ctx.sdk, { log: ctx.log, signal: ctx.signal });
+        if (!r.ok) ctx.log('handover: still underground', { at: here(ctx), reason: r.reason });
+    }
 }
 
 export const role: Role = {

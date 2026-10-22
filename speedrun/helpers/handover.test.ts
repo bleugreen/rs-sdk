@@ -3,8 +3,10 @@ import type { InventoryItem } from '../../sdk/types';
 import type { WithdrawSpec } from '../lib/bank';
 import type { FakeSdk } from '../lib/fake-sdk';
 import { borderGuard, guard, pathfinder, tollWorld } from '../lib/fake-toll-gate';
+import { minePathfinder, mineWorld } from '../lib/fake-underground';
 import { inAlKharid, isEastOfTollGate, type Tile } from '../lib/toll-gate';
 import type { GiveResult } from '../lib/trade';
+import { isUnderground, NO_WAY_UP } from '../lib/underground';
 import { STALLED } from '../lib/wait';
 import { finishOf, gameIo, giveOutcome, handoverKey, handoverOptions, leavesKandarin, runHandovers, tollsAfterBank, withdrawSpecs, type Handover, type HandoverIo, type HandoverOptions } from './handover';
 import { memoryRoleState, type RoleContext, type RoleState } from './role';
@@ -150,6 +152,50 @@ describe('handover across the Al Kharid toll gate', () => {
         expect(report.failed).toEqual([H76]);
         expect(t.events).toEqual([]);
         expect(t.logs.filter(m => m.includes('not opening a bank'))).toHaveLength(3);
+    });
+});
+
+describe('handover from underground', () => {
+    // 2026-10-22 (rs/197, rs/266): smelters cairn_h21-h23 at the Dwarven Mine adamantite rocks,
+    // bars for cairn_a01 at Varrock west, banked at Falador east.
+    const ADDY_ROCKS = { x: 3039, z: 9766 };
+    const FALADOR_EAST_BANK = { x: 3013, z: 3357 };
+    const A01 = 'cairn_a01';
+    const bar = (o: Partial<HandoverOptions> = {}): HandoverOptions => ({ bank: FALADOR_EAST_BANK, meet: VARROCK_WEST_MEET, handovers: [{ to: A01, items: [{ item: 'Adamantite bar', n: 1 }] }], ...o });
+
+    /** setup() with the mine's door and ladders, and a walk that cannot leave the map it starts on. */
+    function mine(at: Tile, mining: number) {
+        const t = setup(at, 0);
+        const m = minePathfinder(t.fake, t.ctx.bot);
+        (t.ctx as { bot: unknown }).bot = m.bot;
+        const { climbs } = mineWorld(t.fake, mining);
+        return { ...t, climbs, walks: m.calls };
+    }
+
+    test('from the adamantite rocks: climbs out once, banks at Falador east, trades at Varrock west, banks again', async () => {
+        const t = mine(ADDY_ROCKS, 85);
+        const report = await runHandovers(t.ctx, bar(), t.io);
+        expect(report).toEqual({ done: [A01], uncertain: [], failed: [] });
+        expect(t.climbs).toHaveLength(1);
+        expect(t.events).toEqual([
+            `openBank ${FALADOR_EAST_BANK.x},${FALADOR_EAST_BANK.z}`,
+            'deposit',
+            `give ${A01} ${VARROCK_WEST_MEET.x},${VARROCK_WEST_MEET.z}`,
+            `openBank ${FALADOR_EAST_BANK.x},${FALADOR_EAST_BANK.z}`,
+            'deposit'
+        ]);
+        // Underground, no walk asked for a tile on the surface.
+        expect(t.walks.filter(w => w.underground).every(w => isUnderground({ x: w.to[0], z: w.to[1] }))).toBe(true);
+    });
+
+    test('a dungeon with no known way up: one attempt, no bank opened, the handover stops', async () => {
+        const t = mine({ x: 2901, z: 9765 }, 85);
+        const report = await runHandovers(t.ctx, bar(), t.io);
+        expect(report.failed).toEqual([A01]);
+        expect(t.events).toEqual([]);
+        expect(t.logs.filter(m => m.includes('not opening a bank'))).toHaveLength(1);
+        expect(t.walks).toEqual([]);
+        expect(NO_WAY_UP).toContain('underground');
     });
 });
 
