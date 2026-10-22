@@ -32,7 +32,12 @@ Gnome Village. IDs never move: a step that changes place keeps its ID.
   gate holds; the plain loop is the step's fallback, and RUN-ORDER.md shows the knife-off total
   beside it.
 - **Best** is the fast path as measured on the direct path: the knife column, the burst-dialogue
-  column, the rs/91 kit, and so on.
+  column, the rs/91 kit, and so on. A quest's burst column is slightly conservative: rs/200 measured
+  its burst mode 1-2 ticks under the corrected `1 + ceil((k-1)/5)` rule (Cook's Assistant's start
+  6-7 against 8, the Grand Tree's Narnode start net ~11 against 13; `speedrun/lab/quests/dialogue-burst.ts`,
+  n = 3 each), because a run of k pages after an option or state page costs ceil(k/5) and a run
+  followed by a state page +1, so each quest child's `dialogue: 'both'` measurement supersedes the
+  column for its entry, with no re-price until then (the rule is in `quests/*.md`, rs/185's).
 - **Fallback** is what the step costs when its fast path fails: for a knife skill the plain loop
   (the knife-off column). For a quest it is the stock column,
   because read-then-act through the SDK relay costs about the stock client's 2 ticks per page (a
@@ -45,6 +50,16 @@ engine line), **inferred** (arithmetic or a model over measured and read inputs,
 `docs/speedrun/` unless a branch is named. `[rs/41]` means read on cairn://p/rs/41/1/coordinator,
 `[rs/59]` on cairn://p/rs/59/1/coordinator, `[rs/94]` on cairn://p/rs/94/1/builder and `[rs/97]`
 on cairn://p/rs/97/1/builder.
+
+**Timing (run-wide; main, 20:59 PDT).** Every cue-timed hand-off, helper login or helper action is
+timed on **observed game ticks** (the tick stream or `TICKMON`), never on wall-clock multiples of
+300 ms: the Runecraft givers' cue (entry 9, H4), the anvil's `cue.json` (H5), the Firemaking
+droppers (S03, H6), the bone givers' load timing (H4.1-H4.n) and any `T0 + n ms` launch in run.ts. A
+deadline that stands for a tick count keys off observed ticks; wall clock appears only as an idle
+bound, no new tick for N ticks' worth of time scaled by the configured tick length (on the floor
+since #209's `tickClock`, 4fe2d0a8). The demo has
+been seen at 0.34-0.37 s a tick, where a wall-clock cue lands early by about (1 - 0.30/actual) of
+its delay and a deadline fires early (RUN-ORDER.md R23).
 
 **Mode.** An entry is **in-page** when its loop reacts on the decoded tick or sends on predicted
 ticks. That means an rs/97 tick program inside the browser webclient, started and awaited through
@@ -109,11 +124,12 @@ stood before rs/164's ~20. Fold-in 11 moved the twelve quests' way-in travel int
 RUN-ORDER.md O6): the legs (2,222.5) pass Thieving, Fishing, Combat and the Grand Tree, Dragon
 Slayer passes Dwarf Cannon, Magic passes Fishing Contest and Herblore passes Goblin Diplomacy. Fold-in 11's part 5 takes the ~82
 of Goblin Diplomacy's standalone travel that the legs already carried off its row (to 61), so the
-cannon session, Prayer, Crafting and Cooking pass it.
+cannon session, Prayer, Crafting and Cooking pass it. Fold-in 13 adds S15's measured H to M (+352),
+so Monkey Madness (4,429) passes Agility (4,327) for rank 1.
 
-The expected column sums to **30,972.5** (the steps) plus the legs' **2,198.5**; RUN-ORDER.md section 6
+The expected column sums to **31,315** (the steps) plus the legs' **2,198.5**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **34,456** knife-on expected (31,567 best), against the record of 35,916.
+retries, restarts) for its **34,798.5** knife-on expected (31,876.5 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -123,21 +139,21 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | Rank | # | Entry | Module | Steps | Expected | Best | Fallback | At stake | Mode | Code to start from | Module status |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 0 | 0 | Run chain | `speedrun/run.ts`, `runner/resume.ts` | all | boundary idle 0 m (#92); restarts ~5 each (an in-page relog, ~2, rs/174) | 0 | | | overlay | `runner/step.ts`, `runner/resume.ts` (main) | `run.ts`: building (rs/186, held: tenet 15); `runner/step.ts`, `resume.ts` on main (#29, #104, #146) |
-| 1 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,327 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; S17 75-85 858; rs/155) |
-| 2 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,077 | 3,726 | 4,611 | ~885 | overlay | `quest-mm-*.ts` | **doc-priced, unrun** (A-G run; H-Z being written by rs/201) |
-| 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,116 | 3,116 | 4,170 | ~1,054 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | building (rs/212, held until rs/207 merged; rs/153 closed); `stay2` bury on main (#159, rs/182); restart fix on main (e5d8a058, #170; rs/207) |
-| 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,027 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; on rs/147's branch, changing with rs/236; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165) |
+| 1 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,429 | 4,026 | 4,963 | ~937 | overlay | `quest-mm-*.ts` | **H-M lab-proven end to end, N-Z unrun** (A-G run; H-M 3 of 3, 1,466 m; N-Z being written by rs/201) |
+| 2 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,327 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; S17 75-85 858; rs/155) |
+| 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,116 | 3,116 | 3,775 | ~659 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | **on main, 4235a9e7 (#220; rs/260's snapshot of rs/230's lab-accepted module, rs/147's branch at 59ec3933)**, with `selfStarter` (plain 3.62) and `beforeRestart`; `stay2` bury (#159, rs/182) and restart fix (e5d8a058, #170; rs/207) on main; gate `measureDrops` 120 by the default, its explicit value pending rs/259 |
+| 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,027 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; on rs/147's branch, changing with rs/236; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165); gate `measureDrops` 120 explicit (rs/261, building) |
 | 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,198.5 | 2,198.5 | ~2,340 i | ~140 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | lab-measured (PR #198, open; rs/198 for rs/186); its walker, `lib/travel.ts`, on main, 0658e896 (#200) |
 | 6 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~120 elsewhere | ~190 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` | building (rs/154, parked under the 2-4 child limit); stun pack: lab-accepted (bury, charge, arrows; rs/132) |
-| 7 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | on main, 22552bf4 (#197; rs/231); lab-accepted (1,998 on 78-99; rs/152) |
+| 7 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | on main, 22552bf4 (#197; rs/231); lab-accepted (1,998 on 78-99; rs/152); gate `measureDrops` 120 explicit (#221) |
 | 8 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,972 | 1,946 | 1,997 (the bow from 70); 2,023-2,211 without the kit | ~265 | overlay | `cannon-kit.ts` (rs/59, on main) | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible) |
-| 9 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,528.5 | 1,393.5 | 1,798.5 | ~405 | overlay | `quest-grandtree-full.ts` | building (rs/185, held: tenet 15) |
-| 10 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,192 | 1,192 | ~5,220 | ~4,030 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **lab-accepted on the floor (rs/196, module 3f02f336: nature at 44 tuned 30/30 at 29 x 7, robust 30/30 at 29 x 8; S06 7/7 at 6 x 7, 58)**; pending: the auto rule's 'handled before SCORED' field (entry 9); cycle: on main, 23ea9f77 (#178) |
+| 9 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,493 | 1,403 | 1,763 | ~360 | overlay | `quest-grandtree-full.ts` | building (rs/202 under rs/185); **lab: 3 of 3 full A-to-P runs at SCORED's levels** (1,403 / 1,504 / 1,422) |
+| 10 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,192 | 1,192 | ~5,220 | ~4,030 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **on main, 1514f47a (#222; rs/268's snapshot of rs/196's module, rs/186's branch at 0c349da6)**, the run-commit floor; twin demo pending; **lab-accepted (rs/196, module 3f02f336, relay path (lab): nature at 44 tuned 30/30 at 29 x 7, robust 30/30 at 29 x 8; S06 7/7 at 6 x 7, 58)**; the tuned nature run confirmed on the direct path, 30/30 at 29 x 7 (rs/196, 3b161c12); pending: the auto rule's 'handled before SCORED' field (entry 9); cycle: on main, 23ea9f77 (#178) |
 | 11 | 10 | Smithing | `speedrun/skills/smithing.ts` | S25a | 1,065 | 1,028 | 1,330 | ~302 | overlay | `smithing-trade.ts` | building (rs/186, held: tenet 15) |
-| 12 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 929 | 908 | 1,039 | ~131 | overlay | `quest-dragon-*.ts` | building (rs/185, held: tenet 15) |
+| 12 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 969 | 908 | 1,079 | ~171 | overlay | `quest-dragon-*.ts` | building (rs/185, held: tenet 15) |
 | 13 | 12 | Dwarf Cannon | `speedrun/quests/dwarf-cannon.ts` | S13 | 855 | 799 | 957 | ~158 | overlay | `quest-mcannon-*.ts` | building (rs/185, held: tenet 15) |
 | 14 | 14 | Tree Gnome Village | `speedrun/quests/tree-gnome-village.ts` | S10b | 793 | 739 | 902 | ~163 | overlay | `quest-tree-full.ts`, `quest-premm-fight.ts` | building (rs/185, held: tenet 15) |
-| 15 | 16 | Firemaking | `speedrun/skills/firemaking.ts` | S03 | 695 | 650 | 735 | ~85 | overlay | `firemaking-line.ts` | on main, 4cc468e0 (#205; rs/244) |
+| 15 | 16 | Firemaking | `speedrun/skills/firemaking.ts` | S03 | 681 | 650 | 735 | ~85 | overlay | `firemaking-line.ts` | on main, 4cc468e0 (#205; rs/244); **demo-measured**, 681 m (rs/269, cairn_burns) |
 | 16 | 17 | Fight Arena | `speedrun/quests/fight-arena.ts` | S12 | 571 | 524 | 646 | ~122 | overlay | `quest-arena-run.ts` | building (rs/185, held: tenet 15) |
 | 17 | 18 | Plague City | `speedrun/quests/plague-city.ts` | S08 | 491 | 435 | 608 | ~173 | overlay | `quest-plague-city-*.ts` | building (rs/185, held: tenet 15) |
 | 18 | 19 | Mage Arena | `speedrun/quests/mage-arena.ts` | S16 | 425 | 418 | 448 | ~30 | overlay | `quest-magearena-*.ts` | building (rs/185, held: tenet 15) |
@@ -168,6 +184,14 @@ scripts are in section 4; the shared primitives and their build order are in sec
 2. **`runSteps` idled SCORED at every boundary**: fixed (#92, measured 2 ticks per boundary before
    and 0 after; main, 08:30).
 3. **S09 starts at Mining 64**, not 49 (Plague City's 2,425 base): accepted by main (M0602).
+5. **Arrival levels** (rs/185's audit, 20:50 PDT, under main's 20:39 PDT rule): **no gap** in ten entries: Fight
+   Arena, Plague City, Mage Arena, Sea Slug, Romeo & Juliet, Druidic Ritual, Fishing Contest, Goblin
+   Diplomacy, Doric's and Cook's (no level check, or SCORED at or above the lab's levels, r). The
+   gaps are in entries 8 (the glider-crash jogres, ruled), 13 (Elvarg in mithril, +40 i) and 14
+   (two Khazard commanders, Protect from Melee). Every Protect rule (entries 8, 14 and 26's flick)
+   toggles at a stand or on a click tick: the prayer button cancels a walk in progress
+   (`clearPendingAction`; rs/241's Agility finding), and each toggle's tick cost is pending its
+   module's lab runs.
 4. **The tuned Runecraft cycle needs a direct-path giver**: the givers run on SCORED's machine, the
    Ashburn machine chosen at the gate (RUN-HOST.md steps 4 and 5a), through rs/117's launcher; rs/131 builds the scored side's in-page cycle.
 
@@ -188,15 +212,20 @@ are filed under main and held until tenet 15 is answered.
   Agility 99 (the acceptance asks 8 of 10 at 66, +1); Gnome 1-22 measured 114 against the 122
   inferred. S17 75-99 adopted at 4,213: 75-85 measured 858 end to end in the lab chain, 85-99
   3,355 inferred from it (RUN-ORDER.md S17). The demo rehearsal is still to run.
-- **2.** **Doc-priced, unrun** (A-G run; H-Z being written by rs/201): the Ape Atoll half has never
-  been scripted or run as one route (rs/185); ~1,475 of the 4,077 is estimated (entry 2).
+- **2.** **H-M lab-proven end to end, N-Z unrun** (A-G run; rs/201 ran H to M 3 of 3 at route
+  levels, 1,466 against the fixed column's 1,114, +352 in the expected; N-Z being written by rs/201);
+  ~1,211 of the 4,429 is estimated (entry 2).
 - **3.** rs/211 builds the module (rs/151 is closed), including the bury-in-willows rule for a
   gate-off stretch, on rs/162's plain + bury (on main as 3dfc217f, #165, inside the run-commit floor; entry 3).
   A module is present on rs/147's branch and is changing with rs/236's opt-ins (knife-cycle
   `waitRespawn`, the probe's `dirs`) and their lab before it goes to main.
-- **4.** rs/212 builds the module (rs/153 is closed; rs/212 was held until rs/207 merged, which it
-  has: e5d8a058, #170); `knife-mine`'s `stay2` bury is on main (#159, rs/182); the in-page plain
-  loop measured 4.00 ticks per ore (rs/153).
+- **4.** The module is on main, 4235a9e7 (#220): rs/260's snapshot of rs/230's lab-accepted
+  `mining.ts` (rs/147's branch at 59ec3933; rs/153 and rs/212 before it), with knife-mine's
+  `selfStarter` and gated-program's `beforeRestart`, inside the run-commit floor. Its explicit gate
+  `measureDrops` is pending rs/259 (120 by the library default until then; RUN-ORDER.md R21). The
+  restart fix is on main (e5d8a058, #170); `knife-mine`'s `stay2` bury is on main (#159, rs/182); the in-page plain
+  loop measured 4.00 ticks per ore (rs/153), and 3.62 with knife-mine's `selfStarter` (rs/230), the
+  fallback in force (entry 4).
 - **5.** rs/152's execution 1 passed the lab on the run's band, 1,998 against 1,995 (3,338 for the
   chain from level 1). That branch was rewritten by a replay; the work is intact at store commit
   `28ad07aa` and is being re-applied, so no branch carries it yet. `fishing.ts` is on main with rs/231's
@@ -206,14 +235,19 @@ are filed under main and held until tenet 15 is answered.
   stuns) runs on rs/132's stun-window actions, lab-accepted for bury, Charge and arrows and on main
   (6e86a656, #163). rs/186
   plugs Fletching into rs/154's module, and entry 32's standalone module is rs/186's.
-- **9.** Lab-accepted (rs/196): S06 58 in two runs; 30-cycle runs at 7 on the body and nature
+- **9.** On main, 1514f47a (#222): rs/268's snapshot of rs/196's lab-accepted module (rs/186's
+  branch at 0c349da6), the run-commit floor; the twin demo is still to come. Lab-accepted (rs/196): S06 58 in two runs; 30-cycle runs at 7 on the body and nature
   altars with givers first, robust at 8 in either login order; resume and fault recovery measured
   (entry 9). rs/186 adopts rs/131's in-page cycle; the givers are rs/163's (helper table). Pending:
   the auto rule's switch to a 'handled before SCORED' field (entry 9). Its first lab runs used rs/131's
   `rc-cycle` at 06c68a90, which differs from 23ea9f77 only by #177's `params` declaration line;
   rs/196 re-confirmed it on a page built from the base carrying 23ea9f77 (module 3f02f336, rs/163's
-  givers e4f60121 on the direct path, lab 300 ms), so it is **lab-accepted on the floor** (entry 9).
+  givers e4f60121, lab 300 ms; on the **relay path**, since the launcher read no `path` from the role
+  options, entry 9), so it is **lab-accepted on the floor**, and its tuned nature run is confirmed on
+  the direct path (entry 9).
 - **16.** On main, 4cc468e0 (#205): rs/244's snapshot of rs/228's lab-gated module, with its test.
+  **Demo-measured**: rs/269's cairn_burns ran S03 at 681 on the demo, the first whole step measured
+  end to end there (entry 16).
 - **15.** The primary path is the bury option inside entry 3 (knife-cycle `bury` on main; the
   gate-off plain + bury is rs/162's, lab-measured and on main as 3dfc217f, #165); the booth fallback `skills/prayer.ts` is rs/186's.
 
@@ -238,7 +272,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 | Dependency | Needed by | Module status | Notes |
 |---|---|---|---|
 | In-page program runtime, `lib/programs.ts` (rs/97) | 1, 3-6, 9 | on main, d09c2627 (#94) | |
-| Host gate, `lib/hostgate.ts` | in-page entries | on main, c9a6c31b (#101) | |
+| Host gate, `lib/hostgate.ts` | in-page entries | on main, c9a6c31b (#101); **`measureDrops` default 120 on main, 148788c5 (#221; rs/262)** | The measured switch-off holds plain for `measuredOffTicks` (3,000); at the old default of 30 drops it fired on luck (RUN-ORDER.md R21: 1 of 5 lab Woodcutting chains switched twice, ~850 ticks; 0 in 4 at 120). Main's ruling (20:08 PDT): every run-day module passes an explicit `measureDrops` sized to its success chance. **Per module:** Woodcutting (3) 120 explicit (rs/261, building); Fishing (5) 120 explicit on each fly band (on main, #221); Mining (4) 120 by the default, its explicit value pending rs/259 (nearly safe at 64-99: every iron roll succeeds). Thieving (6), Agility (1) and Firemaking (16) do not use the gate |
 | `lib/gated-program.ts` (rs/156) | 3-5 | on main, 22552bf4 (#197) | reached main with rs/231's Fishing snapshot |
 | `lib/travel.ts`, the shared walker with the stall fix | 11 | on main, 0658e896 (#200) | five `speedrun/lib` files, byte-identical from rs/198's f0e76192; `STALL_TICKS = 20`: a walk that stalls returns `ok: false` instead of throwing; inside the run-commit floor |
 | `lib/display.ts` (rs/232's `frontWindows`, `grabFrame`, `frameShows`) | RUN-HOST.md steps 5 and 5a (the live-frame pass line) | on main, 5d22252d (#208) | gate tooling, not a floor item (main); with #213's `lib/tab.ts` window helpers (c4b79f17), `screenshotTab` among them |
@@ -248,13 +282,13 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 | knife-cycle axe-aware p (rs/175) | 3 | on main, 6c58db8e (#151) | |
 | knife-cycle plain + bury | 3, 15 | **on main, 3dfc217f (#165; rs/162)**; lab-measured | S07's gate-off fallback: `technique: 'plain'` with `bury` and `trees`, no new key; willow 0.226 bones a tick with trades at 3.89 per expected roll, oak 60-75 0.195 at 4.29 (m, lab; entry 3). The knife-off line in force; inside the run-commit floor (`RUN-HOST.md` "Credentials"); before it, knife-cycle refused `bury` with the plain technique |
 | knife-mine `bury` on `stay2` | 4 | on main, #159 (rs/182; merged 15:52 PDT) | O35, closed: the ~85 bones placed in S09 on today's stock (the conservative row), at most +0.02 a Mining ore and ~0.21 ticks a bone in trades (m, lab). Where it cannot fire they go to the booth, **+119** against the lap (RUN-ORDER.md section 7); ~61 more dragon bones also close it, as the row in force assumes |
-| knife-mine `selfStarter` (plain trick takes the next rock as timer starter) | 4 | building (rs/230) | sim 3.60 ticks per ore plain at D = 13 and 15, lab six-rock 3.83 at D = 19; would take S09's plain from 4.00 to ~3.60, about -400 on a knife-off night; not re-priced (entry 4) |
+| knife-mine `selfStarter` (plain trick takes the next rock as timer starter) | 4 | **on main, 4235a9e7 (#220; rs/230's module, rs/260's snapshot)** | lab plain + `selfStarter` 3.62 ticks per ore on the five-rock lap at D = 13 (150 ores, 0 slips) and 3.61 at D = 15 (200), six-rock 3.83 at D = 19 (m, lab, rs/230); S09's plain fallback 4,170 to 3,775, -395 on a knife-off night (entry 4). A page must declare it, or knife-mine faults at start |
 | knife-mine depleted-rock restart fix | 4 | on main, e5d8a058 (#170; rs/207) | 3 of 3 depletion restarts fault at +1 tick; post-respawn laps 3.00 per ore, 200 of 200 (m, lab). Any S09 knife (re)start then waits out the respawn, +13 plus the start; a `RUN_COMMIT` requirement (RUN-ORDER.md R18) |
 | `logoutClean` tab confirmation | 0, 1 (final logout), every relog | on main, c2d9eada (#146) | |
 | Direct gate clean logout | the gate probe | on main, 9d26aa87 (#142), d83f2e86 (#152) | |
 | `relog(session)` (in page by default, `RelogResult.tickBase`/`via`) and the navigated relog's socket-close fix | 0 (restarts), 29 (the wine relogs, R17) | **on main, efdbe2e2 (#164; rs/174)**, inside the run-commit floor; lab-accepted on the twin and after a lab engine kill | first SDK state at login + 1 in page or navigated, the bank at + 3 to + 6 (m); an in-page attempt that does not get in is retried by navigating, at the same ticks; the client's second-login hang (rs/183) is on main, #155 |
 | **Pickpocket stun-window actions** | 6 (S18's stun pack), 32 | **on main, 6e86a656 (#163; rs/132); lab-accepted (bury, charge, arrows; a3646a67)** | 300 rolls each at 300 ms on bgsrv-mac: no Thieving cost in the page (RUN-ORDER.md O8). The stun pack failing (plain pickpocket, Charge and Fletching standalone, ~200 more bones in S07, **+~120**, RUN-ORDER.md sensitivity table) is now a demo risk only. The opt-in 'idle while an interface is open' mode is on main, `idleOnInterface: true` (declared in b6950915), with top-ups in the program as a `player` stun action (entry 6) |
-| **In-page Runecraft cycle** (`rc-cycle`) | 9 (S06, S21) | **on main, 23ea9f77 (#178; rs/131); lab-measured**, inside the run-commit floor (8a741554) | 7.00 ticks per craft with the givers handled first and 8.00 on the robust fallback, 30 crafts each, no lost trades (m, lab, rs/131); its protocol shared with rs/163's givers. Without the tuned cycle: the robust 8-tick cycle **+168**, or the stock reacting cycle, measured at **31 ticks a craft** (rs/196), **+~4,030** on the nature altar's crafts (+~4,820 at the body altar's), if the giver is relayed or the program faults (RUN-ORDER.md R12) |
+| **In-page Runecraft cycle** (`rc-cycle`) | 9 (S06, S21) | **on main, 23ea9f77 (#178; rs/131); lab-measured**, inside the run-commit floor (entry 0) | 7.00 ticks per craft with the givers handled first and 8.00 on the robust fallback, 30 crafts each, no lost trades (m, lab, rs/131); its protocol shared with rs/163's givers. Without the tuned cycle: the robust 8-tick cycle **+168**, or the stock reacting cycle, measured at **31 ticks a craft** on the run commit today (rs/196), **+~4,030** on the nature altar's crafts (+~4,820 at the body altar's), if the giver is relayed or the program faults (RUN-ORDER.md R12); **9 a cycle** once rs/267's PR (`lib/trade.ts` `openTrade` with the altar giver; not on main) is on main (m, lab, rs/267), +~320 on the nature plan and +~400 on the body plan (i) |
 | Direct-path altar giver | 9 (S06, S21) | building (rs/163) | PR #144, open; on rs/117's launcher and rs/141's givers |
 
 ## 2. The run chain
@@ -299,9 +333,15 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     RUN-ORDER.md R1's bound); that case is historical on any `RUN_COMMIT` at or after c2d9eada.
     The final logout is still checked on the host (`RUN-HOST.md` step 8). A precondition, not a
     line in the totals;
-  - **`RUN_COMMIT` at or after the run-commit floor, `8a741554`** (#212, rs/252's snapshot of rs/199's
-    combat step module, entries 7 and 26; one check, `git merge-base --is-ancestor 8a741554 "$RUN_COMMIT"`,
-    `RUN-HOST.md` "Credentials"). Its history holds 0658e896 (#200, the shared walker `lib/travel.ts`,
+  - **`RUN_COMMIT` at or after the run-commit floor, `4fe2d0a8`** (#209, rs/246: one idle timeout,
+    `tickClock`, for every tick-keyed wait, `maxTicks` on observed ticks and only `IDLE_TICKS`, 20
+    ticks of silence, in wall clock; RUN-ORDER.md R23; one check, `git merge-base --is-ancestor
+    4fe2d0a8 "$RUN_COMMIT"`, `RUN-HOST.md` "Credentials"). Its history holds 1514f47a (#222, rs/268's
+    snapshot of rs/196's Runecraft step module, entry 9), 148788c5 (#221, rs/262: `HostGate`'s
+    `measureDrops` default 120, fishing's explicit 120; RUN-ORDER.md R21), 4235a9e7 (#220, rs/260's
+    snapshot of rs/230's Mining module: `mining.ts`, knife-mine's `selfStarter`, gated-program's
+    `beforeRestart`; entry 4), 8a741554 (#212, rs/252's snapshot of rs/199's combat step module,
+    entries 7 and 26), 0658e896 (#200, the shared walker `lib/travel.ts`,
     entry 11), 73a6a8a3 (#210, fleet snapshot 2), 4cc468e0 (#205, rs/244's Firemaking snapshot, entry 16), 22552bf4 (#197, rs/231's Fishing snapshot: `fishing.ts`,
     knife-cycle's `untilXp`, `followSpot` and `dropEach` declared, `lib/gated-program.ts` and `xp.ts`,
     entry 5), 23ea9f77 (#178, rs/131's `rc-cycle`, entry 9), efdbe2e2 (#164, rs/174's socket-close fix behind the ~2-tick relog), c2d9eada
@@ -311,9 +351,14 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     knife-off line in force, entry 3), b6950915 (#177: a program faults at start on a parameter key
     it does not declare, so each entry's program keys are the program's declared names) and
     834f376b (#176, rs/210's tick-cadence monitor). Pending, each moving the floor when it lands: rs/147's Agility
-    snapshot (agility's `untilLevel`, entry 1, RUN-ORDER.md O40), rs/243's Thieving snapshot
+    snapshot (agility's `untilLevel`, entry 1, RUN-ORDER.md O40), PR #218 (rs/241's `eatAt: 'land'`,
+    entry 1), rs/267's PR (`lib/trade.ts` `openTrade`
+    with the altar giver: the Runecraft stock rung at 9 a cycle and a busy partner's retry at ~2,
+    entry 9), rs/276 (the
+    tick monitor's late count against observed intervals and gated-program's pause in observed
+    ticks, R23; it changes a run-night pass line), rs/243's Thieving snapshot
     (pickpocket's `stopWhenFoodBelow` and `retargetTicks`, entry 6) and PR #198 (rs/198's
-    `runner/legs.ts`, entry 11); only #198 has a PR number so far. Gate tooling on main, not floor
+    `runner/legs.ts`, entry 11); #198 and #218 have PR numbers so far. Gate tooling on main, not floor
     items: 5d22252d (#208, `lib/display.ts`) and c4b79f17 (#213, `lib/tab.ts` window helpers);
   - **the login cap**: our simultaneous demo logins, summed across every host, at most 100 with a
     working cap of 80, counted before SCORED logs in (main, 15:35 PDT; `RUN-HOST.md` step 7;
@@ -413,7 +458,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   the climb comes ~1,100 ticks after S11a ends. And S17, Wilderness course laps from 75 to 99 as the run's last step, after S27's
   combat finish (leg T27-17, 185.7 ticks measured; RUN-ORDER.md O1, `research/run-transitions.md` §4).
 - **Parameters:** `course: 'gnome' | 'wilderness'`, `untilLevel` (22 / 99), `food` and `eatBelow`,
-  `technique: 'react' | 'plain'` (the rs/97 program's switch), `startStep`.
+  `eatGap` and `eatAt: 'land' | 'any'` (rs/241's PR #218, building; the module passes `eatGap: 3,
+  eatAt: 'land'` by default), `technique: 'react' | 'plain'` (the rs/97 program's switch), `startStep`.
 - **Preconditions:** S11a: Tree Gnome Village complete (the village spirit tree reaches the
   stronghold; ledger), position at the course start (2474,3436). S17: Agility 75 from The Grand
   Tree's 7,900 base (read, `quest_grandtree.rs2:199`; `skills/agility.md` §3), ridge-gate Agility
@@ -442,8 +488,28 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Food in S17:** HP drifts about -1.25 a lap with no eats, and S17 is roughly 60 laps, so SCORED
   would fall under the 60-HP player-killer line around lap 30. The module eats a shark when HP is
   below 60 (`eatBelow: 60`; about 2-3 sharks over the step, 20 HP each), not to a fixed eat line;
-  the 12 sharks in H23 stay as the margin against player killers. The cost of an eat inside a lap
-  is not measured yet.
+  the 12 sharks in H23 stay as the margin against player killers. **An eat costs 0 ticks with
+  `eatAt: 'land'`** (rs/241's PR #218, commits bdbd4ed265 and 55c60217fb; building, not on main,
+  and **pending for the run-commit floor**, entry 0): the program eats only on the obstacle-click
+  tick, just before the click, so it cannot cancel a walk. Measured (rs/270; lab, bgsrv-ub, 300 ms,
+  page built from a9298868; `rehearsals/agility.md` section 6.5 at 291727b8 on
+  agent/rs-270-builder-0): at the log balance from 13 tiles a click alone took 16 ticks to the xp,
+  3 of 3; an eat 3 ticks into the walk **lost the obstacle** every time, because `OpHeldHandler`'s
+  `clearPendingAction` (`OpHeldHandler.ts:55`) drops the interaction, not the walk, and nothing
+  happened in 40 ticks; an eat sent just before the click took 16, 0 extra. With an eat due at every
+  chance, `eatAt: 'land'` ran 10 laps at exactly 66 and `eatAt: 'any'` 4 obstacles in 278 ticks with
+  two 40-tick timeouts. At S17's arrival stats (Agility 75, HP 99, Defence 98, protect off, eat line
+  98, `eatGap: 3, eatAt: 'land'`, 15 timed laps) every eat lap cost exactly what its fall alone
+  costs (m). The engine also drops an eat while an obstacle script holds the player
+  (`OpHeldHandler.ts:16`), so a held-window eat heals nothing (r). **Without the option** (a run
+  commit lacking #218) an eat during an approach costs the 40-tick `stepTimeout`: 0-40 per eat,
+  0-120 over the 2-3 eats (rs/241's 14 laps, section 6.1: laps without an eat exactly 66, all 5
+  eats in the two fall laps, 113 with 2 and 160 with 3 and one 40-tick timeout; RUN-ORDER.md
+  sensitivity table).
+- **Falls are S17's real variance** (m, rs/270): +16 per stones fall, about +75 per rope-swing fall.
+  rs/270's 15 laps drew 6 falls (80.3 a lap) against 1 in 12 in rs/241's run, so the fall rate at
+  Agility 75-85 is the open number; a wider sample is requested of rs/270, and S17 is not re-priced
+  from 15 laps. The 75-85 band's 858 m already carries rs/155's chain's falls.
 - **Primitives:** `lib/programs.ts` `runProgram(sdk, 'agility', {course, untilLevel, food,
   eatBelow})` [rs/97] (`untilLevel` is **declared in the program at 2f1b15de (rs/147's branch), pending main** with
   rs/147's Agility snapshot, which waits on main's sign-off of four default-changing program fixes
@@ -485,11 +551,20 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   `%treequest` 9 and `%grandtree` 160, ledger). Ranged 50 **base** for the magic shortbow (read,
   `tier50.rs2:6`), from S14. Prayer 43 for both protect prayers (S07 leaves ~94). The helper trade before segment A
   (`quests/README.md` §4 step 8): gold bar, ball of wool, monkey bones, 5 bananas, magic shortbow +
-  100 rune arrows, 6 prayer potions (insurance, O27), about 15 food, Varrock and Ardougne runes, a second
-  antipoison(4). **H12's quantities are provisional** (`SUPPLIES.md` H12; RUN-ORDER.md O37): its
-  unstackables alone are ~30 slots with the bow and arrows worn, before the rune stacks, the items
-  already held and the untradeable quest items. rs/201 counts SCORED's real inventory at S14's exit,
-  measures food and potion use at 42 HP and Defence 1, and proposes the split. H12 can be split or
+  100 rune arrows, **2 prayer potions**, **sharks in the freed slots (9 at the floor)**, Varrock and
+  Ardougne runes, a second antipoison(4). **H12 is superseded and provisional** (`SUPPLIES.md` H12;
+  RUN-ORDER.md O37): in rs/201's lab chains of segments H to M (played as a human at 42 HP and
+  Defence 1), the kit as first written, 6 prayer potions and so only 5 sharks, **died in 3 of 3**,
+  each with all 24 doses unused; 2 prayer potions and 9 sharks **survived 3 of 3**, ending on 0-2
+  sharks, using ~70 of the base 94 prayer points plus 4-5 doses and 1 antipoison drink (m, lab).
+  **Main's kit rule (20:33 PDT):** size H12 for 3 of 3 clean chains with margin, not for chains
+  ending on 0-2 sharks; 2 potions and 9 sharks is the floor, and the final shark count comes from
+  rs/201's N-to-Q and demon (X) measurements (pending; rs/185 reports end-of-chain shark counts
+  through Q). If the inventory cannot carry the margin, a higher Hitpoints or Defence level before
+  MM is priced against the order (RUN-ORDER.md O43). **Inventory census: 2 free slots at segment J**
+  for the dentures and the mould (a full pack gets nothing from the crates). The unstackables are
+  ~30 slots with the bow and arrows worn, before the rune stacks, the items already held and the
+  untradeable quest items. H12 can be split or
   moved only at the Grand Tree in segment C or D (no helper reaches the hangar or the atoll), in
   rs/158's order: fewer sharks and doses, a two-way trade at C or D, a Grand Tree bank deposit. The
   gold bar is not made yet (cairn_h20 mines and smelts it); the wool and monkey bones come from
@@ -499,16 +574,27 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Postconditions:** quest complete (ledger; reward xp visible: Strength ~97, Attack 99, Defence ~89
   per `quests/README.md` §2), 3 QP (20 of the 32 so far). Items out: the bow and leftover arrows
   can go back to a helper. The gree-gree is not needed later.
-- **Status: doc-priced, unrun** (A-G run; H-Z being written by rs/201). The Ape Atoll half (segments
-  H-Z, ~3,300 of ~4,400 stock ticks) has never been scripted or run as one route (rs/185). rs/201
-  writes it fresh, segment by segment, lab-proven 3 of 3, and sends measured ticks per segment to
-  rs/158. It is the run date's critical path (RUN-ORDER.md O36).
-- **Ticks:** expected **4,077** (fixed client, with the failure budget: 3,897 success + ~180; ~2,602
-  inferred, the gnome half as played, the atoll segments measured one at a time, the trade and the
-  failures, and ~1,475 estimated, the atoll rows `quests/monkey_madness.md` tags R, T or I, never
-  measured, RUN-ORDER.md S15; `quests/README.md` §3 row, which includes rs/59's temple ladder drop at 33-36 measured and the
-  walked zoo return +100 inferred). Best **3,726** (burst success path 3,546, r21 recomputation, same
-  row, plus the same ~180 of expected failures; RUN-ORDER.md S15). Fallback **4,611** (stock column with failures, same row). The quest document's own split:
+- **Status: H-M lab-proven end to end, N-Z unrun** (A-G run). The Ape Atoll half (segments H-Z,
+  ~3,300 of ~4,400 stock ticks) is written and lab-proven 3 of 3 from H to M (rs/201, 1,466 m); N to
+  Z has never been scripted or run as one route (rs/185). rs/201 writes it fresh, segment by
+  segment, lab-proven 3 of 3, and sends measured ticks per segment to rs/158. It is the run date's
+  critical path (RUN-ORDER.md O36).
+- **Ticks:** expected **4,429** (fixed client, with the failure budget: `quests/README.md` §3's
+  4,077, 3,897 success + ~180, with segments H to M as measured: **1,466 measured** end to end, lab,
+  300 ms, route levels, fixed dialogue, chains 1,438 / 1,414 / 1,546 with 0 ticks between segments
+  (rs/201's ledger, cairn://p/rs/201, corrected 20:25 PDT), against the fixed column's 1,114 for H to
+  M (H 88, I 70, J 114, K 374, L 86, M 382; rs/185): **+352**, the jail yard's patrol wait,
+  summoned knockout guards and protect prayers in town. The rest: ~1,752 inferred (the gnome half as
+  played, the atoll segments outside H-M measured one at a time, the trade and the failures) and
+  ~1,211 estimated (the atoll rows outside H-M that `quests/monkey_madness.md` tags R, T or I, never
+  measured), RUN-ORDER.md S15; the §3 row includes rs/59's temple ladder drop at 33-36 measured and
+  the walked zoo return +100 inferred). Best **4,026** (burst success path 3,546, r21 recomputation,
+  same row, plus the same ~180 of expected failures, with H to M at its fastest chain, 1,414, +300;
+  RUN-ORDER.md S15). Fallback **4,963** (stock column with failures, same row, +352, inferred).
+  Per segment (rs/201, means): H jail1 172, I garkor 60, J cellar 318 (one chain 392: a summoned
+  guard's knockout, ~+110 a recurrence), K dungeon1 434, L amulet 97, M jail2 385; the two dungeon
+  passes ran 6 of 6 without a death under Protect from Melee with the 9-shark kit. R5's bad case
+  stays +860 beyond the expected, whole on N to Z (RUN-ORDER.md R5). The quest document's own split:
   travel 2,277, dialogue 826 fixed / 463 burst, interactions 250, fight 267, waits 336 (mixed
   measured, read and inferred; `quests/monkey_madness.md`, "Tick total"). The Ape Atoll hazards
   were measured at 70/70/70 and the route arrives at Defence 1 (open item (a), `quests/README.md`).
@@ -668,6 +754,29 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   second, labelled column. It needs `RUN_COMMIT` (and a lab or rehearsal checkout) at or after
   6c58db8e; on an older commit knife-cycle reports no per-roll figure on oak and willow, and they are
   weighted by `tickmanip-demo-report.ts` instead (the same 1/p per log).
+- **Corroborating chains (rs/261's analysis of rs/236's lab chains; a corroborating note, not the
+  shape of S07, and no re-price: no bury and other trees).** Lab, bgsrv-mac, 300 ms, one player
+  online so D = 29, rune axe carried, bury off.
+  - **Rimmington oaks and Draynor-west willows, chains c2-c6:** willow 73-99 **2,391-2,583** ticks,
+    3.05-3.22 per expected roll, or 2.96-3.11 without the respawn waits (60-86 ticks of waits a band);
+    oak 15-73 **612-653**. **The fitted success is 1.3-3.6% under the formula in all five chains**,
+    systematic; rs/261 reads it (i) as a felled tree costing the knife a cycle while it moves to the
+    next tree.
+  - **Taverley, S07's own stands** (03:31-03:50Z; code 010e477b with the Taverley default,
+    `measureDrops` 120, `waitRespawn` and the probe's `dirs`; default stats, rune axe in the pack):
+    willow 73-99 **2,394** (knife 3.053 per expected roll; 2.954 without 77 ticks of respawn waits);
+    oak 15-73 **658** (3.437 per roll; 3.124 without 58 ticks of waits at the lab's D = 29). No gate
+    switch-off in either band at 120 drops, 0 slips, 0 resyncs (RUN-ORDER.md R21). From Lumbridge
+    3,416 in all (walks 277 + 61, normal trees 1-15 22), the rehearsal's shape, not S07's.
+  - **Against S07:** its willow is priced at 3.06 per expected roll (2,386) and its oak at 627, so
+    the willow corroborates; the oak's 612-658 sits around 627, and the row already carries the lab's
+    slower oak respawn (~12 of the 627).
+  - **The felled-tree term (i, a model term, not carried separately):** about 0.84 extra cycles
+    (~2.5 ticks) per expected fell, from the capped-success oak 60-73 band across six chains (19, 8,
+    1, 6, 14 and 18 extra cycles over 105 logs, against ~13 expected fells): roughly 25-35 ticks over
+    oak and 60-80 over willow, already absorbed by S07's lite ratio. It cannot yet be told apart
+    from respawn waits ending on the lattice; a `fells` counter in knife-cycle would separate them
+    (not requested).
 - **Reference (rs/175, lab):** willow, rune axe, from WC 40, 60 logs in each of two runs: **2.84 and
   2.94 ticks per expected roll, 0 false lock-losses in 120 logs** (m, lab; rs/175, #151; its note on
   cairn://p/rs/158, 14:21 PDT, and rs/158's relay of main's summary, 14:48 PDT).
@@ -711,23 +820,24 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   integer `scale`, iron's base 20; `skills/mining.md` §4). Then take the lap whose period covers the
   D + 2 ticks a rock needs between rolls: `ceil((D + 2) / 3)` rocks at 3 ticks a move (mining.md §4).
 
-  | Observed D | Online (r, the formula) | Lap | Knife ticks per ore |
-  |---|---|---|---|
-  | Observed D, by knife-mine's rule 3n >= D (n rocks) | Online (r, the formula) | Lap | Knife ticks per ore |
-  |---|---|---|---|
-  | 15 or less | more than 800 | the five-rock demo lap (15 ticks) | 3.00 (m at D = 13, mining.md §4); **3.02 at D = 15** (150 ores, 0 slips, one 6-tick gap; m, lab, rs/230) |
-  | 16-18 | 201-800 | the six-rock lap (18 ticks with the knife) | 3.00 (m at D = 15, 150 ores, rs/230; holds to D = 18 by the rule, i) |
-  | 19 or more | 200 or fewer | neither holds | six-rock **3.53** at D = 19 (120 ores, 0 slips; m, lab, rs/230; mining.md's 3.50); five-rock **4.16** at D = 19 (a 9-tick wait once a lap, m, rs/230) |
+  | Observed D, by knife-mine's rule 3n >= D (n rocks) | Online (r, the formula) | Lap | Knife ticks per ore | Plain ticks per ore (with `selfStarter`) |
+  |---|---|---|---|---|
+  | 15 or less | more than 800 | the five-rock demo lap (15 ticks) | 3.00 (m at D = 13, mining.md §4; 3.04 without `selfStarter` and 3.00 with it, 150 ores each, 0 slips, rs/230); **3.02 at D = 15** (150 ores, 0 slips, one 6-tick gap; m, lab, rs/230) | **3.62** at D = 13 (150 ores, 0 slips, 59 tricks) and 3.61 at D = 15 (200); 3.99 without the option (m, lab, rs/230) |
+  | 16-18 | 201-800 | the six-rock lap (18 ticks with the knife) | 3.00 (m at D = 15, 150 ores, rs/230; holds to D = 18 by the rule, i) | not measured; at most D = 19's 3.83 (i: a shorter respawn waits less) |
+  | 19 or more | 200 or fewer | neither holds | six-rock **3.50** at D = 19 (120 ores, 0 slips; m, lab, rs/230); five-rock **4.16** at D = 19 (a 9-tick wait once a lap, m, rs/230) | six-rock **3.83** at D = 19 (100 ores, 0 slips; the lite script's 3.84), 4.17 without the option (m, lab, rs/230) |
 
   **The rule is measured** (rs/230, Mining part 3; lab, bgsrv-mac, 300 ms, player count pinned in
   content, page built from rs/147's branch after 23ea9f77), replacing rs/153's conservative table
   (D at most 13 for five rocks, 14-16 for six). The engine sets D from the online count
   (`player_count.rs2`); the usual ~1,600 online is D = 12, so the 3,116 knife ticks and nothing in
-  force move (RUN-ORDER.md O39, settled). **Plain at 4.00 is the in-force figure**; rs/230's
-  `selfStarter`, a declared opt-in that lets knife-mine's plain trick take the next rock as the timer
-  starter (golden default unchanged), would bring it to ~3.60 (sim 3.60 at D = 13 and 15; lab
-  six-rock plain + `selfStarter` 3.83 at D = 19 against lite's 3.84; the D = 13 lab run is to
-  follow), about -400 on a knife-off night. Building (rs/230); not re-priced.
+  force move (RUN-ORDER.md O39, settled). **Plain with `selfStarter` is the in-force fallback**
+  (on main, 4235a9e7, #220): the declared opt-in lets knife-mine's plain trick take the next rock as
+  the timer starter (golden default unchanged). Without it the trick refused that rock, which on the
+  five-rock lap is the only live one beside two of the five stands, so plain never tricked (4.00, 20
+  ticks a lap); with it, it tricks on those two transitions, 18 ticks a lap, **3.62** at D = 13 (m,
+  lab, rs/230; `rehearsals/mining.md` section 2 on rs/147's branch at 59ec3933). The module passes
+  it on every iron band; it is inert under the knife. S09's knife-off figure is re-priced on it
+  (RUN-ORDER.md fold-in 13): 4,170 to 3,775.
 - **Bones on the `stay2` lap** (today's 21:20 UTC stock, RUN-ORDER.md's conservative row; none on the
   forecast at 2026-10-23, whose 554 non-stun bones all fit S07; RUN-ORDER.md section 7): the ~85
   babydragon bones past S07's ~978 ride the lap `2603,3233>2602,3233 2605,3234>2605,3235
@@ -755,9 +865,15 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   lab; main, 16:12 PDT). On a running lap 4 of 5 rotation rocks are depleted at any moment, so any
   knife (re)start in S09 (a relog, a lock loss, rs/156's switch from measuring back to the knife,
   each `stay2` and five-rock lap switch) waits out the respawn (13 ticks at respawn 13) or faults:
-  **+13 plus the start cost** each (i). The step's resume waits for a live rock rather than
-  retrying. Without rs/207 the knife cadence is lost for the rest of the step, up to ~+1,054
-  (RUN-ORDER.md R18), so `RUN_COMMIT` must be at or after e5d8a058 (the run-commit floor, 8a741554, covers it;
+  **+13 plus the start cost** each (i). Measured since (rs/230, D = 13, a forced measured
+  switch-off): the restart after 30 knife ores found 1 of 5 rocks live and waited **13 ticks (= D)**,
+  then plain ran 120 ores with 0 slips; after a re-probe of 20 ticks or more the lap is already live
+  and the wait is **0** (7 of 7). So a switch that follows mining costs +D, a re-probe's return the
+  start alone. The module waits for every lap rock before each start: `ironBand` before each
+  `runGatedProgram` call (relog, resume, respawn change) and gated-program's opt-in `beforeRestart`
+  before every start after the first (on main, #220). The step's resume waits for a live rock rather
+  than retrying. Without rs/207 the knife cadence is lost for the rest of the step, up to ~+1,054
+  (RUN-ORDER.md R18), so `RUN_COMMIT` must be at or after e5d8a058 (the run-commit floor covers it;
   entry 0).
 - **Preconditions:** rune pickaxe, knife and about 5 normal logs, Fletching 1; Mining 64; position on
   the rotation's first standing tile. The same host-gate rule as Woodcutting.
@@ -766,16 +882,21 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   xp, 3.033 ticks per ore; one-sided 95% upper bound 0.94 logs per 1,000 knife ticks; m, lab, rs/226;
   `skills/mining.md` section 7 "Logs over a long lap" and `speedrun/lab/measure-mine-logs.ts`, PR
   pending). knife-mine's ore drop on the same label clears the weak fletch queue the tick it would
-  fire, so about 5 logs is enough and no log margin applies. Items out: none.
+  fire, so about 5 logs is enough and no log margin applies. rs/230's chain agrees: 0 logs burned in
+  3,493 knife ticks from creation and in 14 knife runs of ~7,000 knife ticks (m, lab; it reads the
+  kit as needing 1-2), so the ~5 stand. Items out: none.
 - **Ticks:** expected and best **3,116** (knife: 3.00 ticks per ore measured with
   `tickmanip-mine.ts`, 2 × 200 ores, total 3,134 inferred, `skills/mining.md` §2; less the model's
   18 ticks of level-ups, measured 0 in the rotation, `research/levelup-cost.md` §2, §6).
-  Fallback **4,170** plain: the in-page plain loop measured **4.00** ticks per ore at D = 13 and
-  Mining 99 (rs/153's lab via rs/147, 15:46 PDT; success is 100% from 63, so it holds over 64-99),
-  so (3,765 - 17.5) x 4.00 / 3.61 + 17.5 = 4,170 with the model's unmeasured level-up cost kept
-  (inferred). The lite client's 3,765 (adjacent-rock "timer starter", 3.61 ticks per ore measured
-  with `mining-rotation.ts`, 200 ores at emulated respawn 13, `mining-model.ts` §1) needs an in-page
-  adjacent-rock lap, which is not built; on the zoo lap the adjacent-rock transition never triggers. About **4,000** on a quiet server
+  rs/230's chain from creation ran the 63-99 band at 3.012 per ore, 1,048 ores, 0 slips, at D = 15
+  (m, lab; default stats, so it corroborates the 3,116 without relabelling it).
+  Fallback **3,775** plain (best 3,765): the in-page plain loop with `selfStarter` measured **3.62**
+  ticks per ore at D = 13 and 3.61 at D = 15 at Mining 99 (rs/230, above; success is 100% from 63,
+  so it holds over 64-99), so (3,765 - 17.5) x 3.62 / 3.61 + 17.5 = 3,775 with the model's
+  unmeasured level-up cost kept (inferred). The lite client's 3,765 is the adjacent-rock "timer
+  starter" at 3.61 ticks per ore (`mining-rotation.ts`, 200 ores at emulated respawn 13,
+  `mining-model.ts` §1), which the page now matches. Without the option the in-page plain loop
+  measured **4.00** (rs/153's lab via rs/147, 15:46 PDT), 4,170, the fallback before #220. About **4,000** on a quiet server
   without the knife (inferred, same section). From 49, for comparison, 4,034 normal
   and 3,360 knife (inferred, `skills/mining.md` §1-2).
 - **Primitives:** `runProgram(sdk, 'knife-mine', {steps, respawn, starter, untilLevel})` [rs/97];
@@ -783,8 +904,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   (from `mining-rotation-plan.ts`) checked into the module.
 - **Mode:** in-page. The ore drop, starter and run go out on R+1 and the rock click so it lands
   by R+3 (`skills/tick-manipulation.md` §5, "Mining, moving to the next rock").
-- **Fallback:** `starter: 'none'`, the in-page plain loop at 4.00 ("plain only" in rs/97's
-  `knife-mine`; the lite adjacent-rock 3.61 is not built in the page). Slip recovery is in the program: no xp within 6 labels, let the clock expire
+- **Fallback:** `starter: 'none'`, the in-page plain loop with `selfStarter` at 3.62 ("plain only" in
+  rs/97's `knife-mine`, with the option; 4.00 without it). Slip recovery is in the program: no xp within 6 labels, let the clock expire
   5 ticks, restart with one plain transition. Forced-slip reference: iron **3.51** ticks per ore
   with 15% of starters held, against 3.53 (measured; `skills/README.md`, open question 1). For
   contention, the second cluster north of East Ardougne (2710-2715, 3328-3332), 3.74 by the planner
@@ -793,7 +914,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   **3.15** ticks per ore (3.00 +5%). rs/97's program measured 3.00 with 200 of 200 on the predicted
   tick (rs/97 in-page results via main, 05:50), and rs/82's overlay loop measured 3.05 in a tab
   (`LAB.md`).
-  Forced slip at 15%: at most 3.69 (3.51 +5%). Without the starter: within 5% of 4.00 (rs/153's in-page plain).
+  Forced slip at 15%: at most 3.69 (3.51 +5%). Without the starter, with `selfStarter`: within 5% of 3.62 (rs/230); without the option, 4.00
+  (rs/153's in-page plain).
 - **Acceptance, demo (throwaway):** needs Mining 15 for iron, which is cheap on a throwaway (about 61
   ticks of copper, `skills/mining.md` §2). From Ashburn: probe at least 58 of 60, then 100 iron ores
   knife against 100 adjacent-rock at the zoo cluster, at the observed player count. Pass: knife
@@ -832,6 +954,10 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   combat 4, so at SCORED's combat in S22 the expected attacks, and the cost, are **0**: rs/195 saw
   no guard engagement in 78-99 on the demo or in either lab band. The guard is off by default; rs/220
   tracks the bot layer attributing the spider's hit to the fishing spot.
+- **The gate's switch-off:** each fly band passes `measureDrops: 120` (on main, #221; RUN-ORDER.md
+  R21). cairn_casts' demo had 0 measured switch-offs; its one knife-to-plain change, at tick 3,060,
+  was log exhaustion (rs/147's read of `rehearsals/fishing-evidence.json`), so no false fire is in
+  S22's figures.
 - **Primitives:** `runProgram(sdk, 'knife-cycle', {method:'fly', ...})` [rs/97], `probeInPage`,
   `HostGate`. **Missing:** the forced-slip hook.
 - **Mode:** in-page. This is the largest knife gain (`skills/tick-manipulation.md` §1).
@@ -984,15 +1110,44 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   scroll if it is held and cast again, a hard error only if it is not held; Prayer 43 (~94 from S07, so no prayer potions, `SUPPLIES.md` H7-H8); Varrock and Ardougne runes.
 - **Postconditions:** `%grandtree` 160 (ledger); Agility 75; Attack +18,400, Magic +2,150 (read,
   `quest_grandtree.rs2:199-201`); 5 QP; Gnome Air (glider) available.
-- **Ticks:** expected **1,528.5** (fixed, inferred, `quests/README.md` §3 row's 1,576 less segment
-  A's ~47.5 of travel to the door, which is T10-11's; black demon 153 measured, rs/56, n=5). Best
-  **1,393.5** (burst, r21; 1,441 less 47.5). Fallback **1,798.5** (stock, inferred; 1,846 less 47.5).
+- **Ticks:** expected **1,493** (measured and inferred): rs/202's **3 of 3 full A-to-P runs** (lab,
+  300 ms, fixed dialogue, SCORED's S11b levels, the real `travel.ts`): **1,403 / 1,504 / 1,422, mean
+  1,443** (m), with segment P at its expected **104** (inferred) in place of the runs' 54: P is the
+  Daconia root search, 33 ticks in two runs (root 10, first in the search order) and 96 in one (root
+  5), and the model's 104 is its expected cost over a random root. Measured from the arrival tile:
+  segment A has no travel (the fixture starts on the door tile; A's 73 is the door, Narnode's talk
+  with his trapdoor walk and two objboxes), as RUN-ORDER.md O6 has it. Per segment (means): A 73, B
+  178, C 158.7, D 41.7, E 51.7, F 21.3, G 38.7, H 47.7, I 141, J 157, K 130, L 62.3, M 52, N1 31, N2
+  121.3, O 83.7, P 54 (the draw). B and C on the real `travel.ts`: 178 against 184 inferred, 158-159
+  against 141 (+13%). Best **1,403** (m, the fastest run). Fallback **~1,763** (stock, inferred: the
+  stock column's 270 of extra dialogue over the fixed on the measured figure). No burst figure yet
+  (the conversations carry no shapes), so the burst column is unchanged; 1,528.5 / 1,393.5 i before.
+- **The fight and the kit** (rs/202, m): the demon (N2) 113-127 ticks, 20-24 casts, 0 damage, prayer
+  21-24, staff of fire worn; across 13 lab Fire Bolt kills 113-163 ticks and 20-30 casts, so 35 chaos
+  runes cover it (5 spare at the worst seen). The climb: 1 dose, 0 refusals in every run. Free slots:
+  18 at S11b's start with H8 held and 14 at L (the 9-slot precondition is met). **The scroll read**
+  (S08's acceptance, the `%elenaquest` 29 variant): the first Ardougne teleport is refused with 'You
+  haven't learnt how to cast this spell yet.'; reading the scroll shows two pages and removes it; the
+  second cast lands. Segment B ran 187 with the read against 178 without (entry 18).
 - **Primitives:** rs/94 `converse`, `act`, `combat` (spell fight with Protect from Melee, re-engage
   fix); `continueBurst`; `travel.ts`; `trade.receiveFrom`.
 - **Mode:** overlay-driven.
 - **Logout-unsafe:** from opening Glough's trapdoor to the black demon kill, because the demon
   deletes itself on logout or beyond 17 tiles (`quests/README.md` §4). Protect from Melee goes on
   before the trapdoor opens.
+- **Module rule: Protect from Melee from boarding the glider to the shipyard gate** (rs/202, m, lab).
+  The jogres at the Karamja glider crash were never priced; unprotected, they killed SCORED in **3
+  of 11** lab runs at its arrival stats. With the prayer on from boarding to the shipyard gate, **0
+  HP lost in 10 of 10 runs**, for 4-7 prayer points. The black demon does not attack first (m), and
+  the jungle spiders took at most 4 HP. The tick cost of the toggle is pending (rs/202). **Arrival
+  levels checked** (rs/202's audit, main's 20:39 PDT rule): Attack 80, Strength 1, Defence 1, HP 28,
+  Magic 64, Prayer 94, Agility 22, with **no level gap**. The final A-to-P runs re-price S11b in a
+  later fold-in. The prayer button cancels a walk in progress (`clearPendingAction`; rs/241's Agility
+  finding), so the module toggles at a stand or on a click tick. **Measured** (rs/202, the A-to-P
+  runs): every toggle is sent standing still; on takes 1 tick (before the glider at I, before the
+  trapdoor at N1); off at the shipyard gate takes 4, because the first click is dropped while the
+  gate's scene holds the player and `setPrayer` re-sends after 3; no walk was cancelled. The
+  Karamja crash cost 0 HP and 4 prayer points in every run, segment I 141 each time.
 - **Fallback:** Fire Blast if Fire Bolt's casts run short (Magic ~64 after the warlord, unmeasured
   for the demon; ~31 Fire Bolt casts, 31 chaos and 93 air with the staff of fire wielded, fit inside
   H7, and rs/202's lab records the casts); `advance` page by page if the burst fails; no Agility
@@ -1037,7 +1192,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   are dropped on T06-07 (below). The drop stays: a hand-back would cost ~5 ticks on SCORED's clock to
   save a purchase made off the clock (rs/196), and `swap()` was considered for it and rejected.
 - **Ticks:** expected and best **1,192**: S06 **58**, measured in the lab (rs/196: 7 of 7 given, 6
-  gaps of 7, 58 in two runs; RUN-ORDER.md RCM), and S21 **1,134** (161 x 7 + ~7, inferred from
+  gaps of 7, 58 in two runs; relay path (lab), RUN-ORDER.md RCM), and S21 **1,134** (161 x 7 + ~7, inferred from
   measured parts). Under the program a session of N crafts takes 7N ticks: the first trade's 7 (8
   robust; the old 5 was the lite trade) and N - 1 gaps of 7 (30-cycle runs, 30 of 30 given: body and
   nature with givers first, 29 gaps of 7, 210 ticks). The step adds ~5-9 outside the program, the
@@ -1046,20 +1201,33 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   altar in force adds 33 crafts at the same 7 and its own shorter legs (+142, RUN-ORDER.md section 7),
   which these per-step parts do not change. Travel is in entry 11 (T05-06 61 m; T20-21 158 m to the nature altar, 69.3 m to the body altar in force, rs/198).
   Robust schedule +1 a craft, +168 (66 for S06 with SCORED first, m). A clean logout between cycles
-  plus the resume walk costs ~2 in-world ticks (m). Fallback **~5,220**, the stock reacting cycle at its measured **31 ticks a craft** (m, lab,
+  plus the resume walk costs ~2 in-world ticks (m). Fallback **~5,220 on the run commit today**, the stock reacting cycle at its measured **31 ticks a craft** (m, lab,
   rs/196: 4 runs of 9 crafts each after two forced program faults; every reacting receive took
   exactly 30 except the first, which looks like the giver's stock window, rs/163 looking at it): S06
   ~220 and S21 ~5,000 at the nature altar's 161 crafts, ~6,000 at the body altar's 194, the plan in
-  force (i; a sensitivity, not a section 7 line). The rungs: tuned 7 (in force), robust 8 (+1 a
-  craft), stock 31.
-- **Lab (rs/196, RUN-ORDER.md RCM):** auto with givers first chose tuned (29 x 7, step 217 on nature
+  force (i; a sensitivity, not a section 7 line). **Once rs/267's PR (`lib/trade.ts` `openTrade` with the altar giver; not on main) is on main the stock rung is 9 a
+  cycle** (m, lab, 300 ms, nature 44, rs/267: 8 of 8 gaps at 9; each stock trade 8 ticks from SCORED's
+  first click, the rung's first 5), so the whole step on stock is ~1,512 for S06 + S21 on the nature
+  plan (161 x 9 + 7 x 9) and ~1,809 on the body plan in force (194 x 9 + 7 x 9) (i); the 31-a-cycle
+  figures apply until the PR merges (pending for the floor, entry 0). The rungs: tuned 7 (in force),
+  robust 8 (+1 a craft), stock 31 today and 9 with rs/267.
+- **Lab (rs/196, RUN-ORDER.md RCM; relay path (lab), every run below):** auto with givers first chose tuned (29 x 7, step 217 on nature
   and 215 on body); robust ran 29 x 8 in either login order (step 247); auto with SCORED first chose
   robust, 29 x 8. **Resume:** a page reload after 8 crafts was resumed by `runResumable`, and the
   remaining 12 ran at 7, the resumed first trade again at 7 (m). **Fault:** with 6 trades forced to fail, the program restarted robust and recovered at 8 a craft (m).
   **On the floor** (rs/196: a page built from the base carrying `rc-cycle` at 23ea9f77, module
-  3f02f336, rs/163's givers e4f60121 on the direct path, lab 300 ms): nature at 44, tuned auto, 30/30
+  3f02f336, rs/163's givers e4f60121, lab 300 ms): nature at 44, tuned auto, 30/30
   at 29 x 7 (218 step ticks); nature at 44, robust with SCORED handled first, 30/30 at 29 x 8 (248);
   S06 air 1 to 44, 7/7 at 6 x 7, 58 ticks.
+- **Path: relay in the lab, confirmed direct for the tuned nature run.** Every module figure above,
+  and the stock rung's, ran on the **relay path**: the lab script set the givers' `path` in role
+  options, but the launcher reads it only from the account entry, so it defaulted to relay (rs/196;
+  the fix is with rs/186). On the loopback lab engine the relay and direct tables are identical, so
+  the numbers stand. The first direct-path figure (m, lab, bgsrv-mac, 300 ms, rs/196's mission
+  branch at 3b161c12, the launcher logging `direct` for all 3 givers): nature 44, auto with givers
+  first chose tuned, **30/30 crafts at 29 x 7, step 218, first craft 7**, identical to the relay
+  figure. The twin demo on the real server is still to come. rs/131's processing-order runs
+  (RUN-ORDER.md R12) are a separate measurement and keep their labels.
 - **The auto rule and placement:** the module's auto rule picks tuned for givers that logged in
   before SCORED, which is right for the plan of record: every giver on SCORED's machine, one address
   group, logged in first (main, 16:35 PDT; RUN-ORDER.md R12, measured by rs/131). Only the
@@ -1076,7 +1244,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   confirm and click the altar on T+7, re-anchoring on the observed craft; run.ts's Runecraft step owns
   `cue.json`, the page supplies the beacon.
 - **Mode:** in-page.
-- **Fallback:** robust 8-tick if the processing order is wrong; the stock reacting cycle (31 a craft, measured) if the program faults; SCORED logging out while givers restock only when it pays (~3.6 + 5 per batch, a tab relog with rs/174's fix).
+- **Fallback:** robust 8-tick if the processing order is wrong; the stock reacting cycle if the program faults (31 a craft on the run commit today, 9 once rs/267's PR is on main; both measured); SCORED logging out while givers restock only when it pays (~3.6 + 5 per batch, a tab relog with rs/174's fix).
 - **Acceptance, local:** a browser tab for SCORED and a direct-path giver on the lab engine at 300 ms,
   nature altar at 44, 30 cycles. Pass: at least 28 of 30 at **7**, and robust at 8 in either login
   order.
@@ -1135,7 +1303,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   boundary; Wilderness level at most 20 for spells (`quests/primitives.md` §4); food on T13-14,
   T14-15 and the Wilderness legs (aggressive NPCs took up to 31 of 42 HP, run-transitions.md §2);
   30 coins for the Brimhaven ship on the nature plan; on the body plan in force T20-21 is a Falador
-  teleport (1 water, 3 air, 1 law) and no coins (H16).
+  teleport (1 water, 3 air, 1 law) and no coins (H16). **No run energy to manage:** the engine
+  defaults `NODE_INFINITE_RUN` to true (`server/engine/src/util/Environment.ts:47`) and
+  `Player.ts`'s `updateEnergy()` (line 755) then pins run energy at 10,000 (r). The demo's
+  `fly.toml` does not set it (read), so it is on there by inference, which matches rs/163's "run
+  energy did not drain" on the demo (SUPPLIES.md H4.1-H4.n). The legs and the bone givers' trips are
+  bound by their paths, not by energy, and an energy potion is worth 0.
 - **Postconditions:** within the tolerance of the destination tile.
 - **Ticks:** **2,198.5** for the order, the twelve way-in legs at their whole ticks (1,382 until
   fold-in 11 netted them against the arrival rows the quests counted; the 840.5 moved here, O6).
@@ -1189,7 +1362,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   `nulodion.rs2:2` via rs/41).
 - **Ticks:** expected **855** (fixed, inferred), best **799** (burst, r21), fallback **957** (stock,
   measured): `quests/README.md` §3 row's 976 / 920 / 1,078 less step 1's 121, the Ardougne teleport
-  and the walk to Lawgof, which are T12-13's.
+  and the walk to Lawgof, which are T12-13's. **Advance notice (rs/257, inferred, not in the
+  expected):** at SCORED's arrival levels, Crafting and Smithing 1, the railings succeed 24% of the
+  time against the 45% priced and the shed rolls 53% against 99% (`railings.rs2:78`,
+  `mcannon_broken_cannon.rs2:90-97`), so ~1,080-1,100 (+230-245) until rs/257's lab rows price it
+  (RUN-ORDER.md section 7, "The quest block's go/no-go figure"). Food: the sharks come through H10
+  from helper stock, sized at the measured damage x1.5 (main, 20:39 PDT).
 - **Primitives:** rs/94 `converse`, `act`, `world`; `continueBurst`; `travel.ts`.
 - **Mode:** overlay-driven. **Logout-unsafe:** none; all varps are permanent.
 - **Fallback:** `advance` page by page.
@@ -1215,17 +1393,39 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   the rune scimitar and helm are unobtainable, rs/124; no glory, rs/123).
 - **Postconditions:** quest complete; 18,650 Strength and Defence (read); 2 QP. Items out: armour can
   go back to a helper.
-- **Ticks:** expected **929**, best **908**: the quest 904 (fixed, inferred, with Elvarg at ~70
-  from 64-75 measured at 99, n=2) / 888 (burst, r21): `quests/README.md` §3 row's 941 / 925 less
-  segment 1, the Varrock teleport and walk to the guild door, 37 inferred, which is T25-26's; plus
-  Scavvo's purchase +15-20 and the adamant helm +5 (estimated, `research/supply-fallbacks.md` §12).
-  Fallback **~1,039** (stock ~1,014, inferred, + the same 25).
+- **Ticks:** expected **969**, best **908**, **lab table pending (rs/258)**: the quest 904 (fixed,
+  inferred, with Elvarg at ~70 from 64-75 measured at 99 with a **rune** scimitar, n=2) / 888 (burst,
+  r21): `quests/README.md` §3 row's 941 / 925 less segment 1, the Varrock teleport and walk to the
+  guild door, 37 inferred, which is T25-26's; plus Scavvo's purchase +15-20 (estimated, re-priced
+  with rs/258's table) and the adamant helm +5 (estimated, `research/supply-fallbacks.md` §12); plus
+  **Elvarg in mithril, +40 (inferred), the expected case** (main, 20:52 PDT): SCORED fights with the
+  mithril scimitar, hit chance ~0.55 and max hit 16 against rune's 0.65 and 20 at Attack 99 and
+  Strength 97 (`combat.rs2:7`, `player_combat.rs2:53-65`, `scimitars.obj`; rs/258's pre-lab
+  estimate, ~110 ticks for Elvarg's 120 HP against ~74), until rs/258's measured fight replaces it.
+  Best keeps the rune scimitar, the upside if h61's GE bid fills (~-40). Fallback **~1,079** (stock
+  ~1,014, inferred, + the same 25 + 40). **Pending notes, not in the expected:** Melzar's Maze by the
+  entrance room's ladder, which drops the player into the chest room (`ladders.rs2:83-85`), ~30
+  against the 259 inferred, -229 (i, verified in the lab before it is priced); the guild to Oziach
+  without a glory, a ~180-tile walk, +72 (i, until measured).
+- **Scavvo's stock** (RUN-ORDER.md R22): one shared rune chainbody and one pair of platelegs
+  (`champions_guild.inv`, r). SCORED buys them upstairs on arrival; **at stock 0 the module takes
+  the cheaper of** waiting for the restock (the engine's restock timer) or going on in mithril (the
+  measured fight), both carried as sensitivities pending rs/258, and it checks stock and fails loudly
+  otherwise. No 32-QP helper exists (rs/41).
+- **A death on Crandor** (r, rs/258): death keeps the three priciest items (`death.rs2`: the rune
+  platelegs, chainbody and adamant helm); the scimitar, amulet, shield, sharks and coins drop and
+  expire in 200 ticks (`lootdrop.constant`); the Karamja wall opens from outside only after it has
+  been opened from Crandor (`crandor.rs2`, `%dragon_wall`). So the return is the ship again (the Duke
+  for a new shield, Ned re-hired, the hull patched again), with a **helper re-supply** of a weapon,
+  food, 3 planks, 12 nails and a hammer; rs/258 builds it as the Elvarg segment's resume path and
+  measures it once.
 - **Primitives:** rs/94 `converse`, `act`, `combat`; `continueBurst`; `travel.ts`.
 - **Mode:** overlay-driven. **Logout-unsafe:** none, every varp is permanent (read). A death on
   Crandor is expensive and its return is untested.
 - **Fallback:** page by page; on a death, the respawn route (untested; to be measured).
-- **Acceptance, local:** `quest-dragon-*.ts` ported, at the post-MM stats, 3 runs. Pass: within 10% of
-  904 for the quest (929 with Scavvo), counted from the guild door, and Elvarg within 10% of 70.
+- **Acceptance, local:** `quest-dragon-*.ts` ported, at the post-MM stats (99/97/89, mithril scimitar
+  and adamant helm), 3 runs. Pass: within 10% of 944 for the quest (969 with Scavvo), counted from
+  the guild door, and Elvarg within 10% of ~110 (the mithril estimate) until rs/258's table sets it.
 - **Acceptance, demo (throwaway):** not feasible (32 QP). Demo coverage: the shared primitives.
 - **Start from:** `quest-dragon-guild.ts`, `quest-dragon-voyage.ts`, `quest-dragon-elvarg.ts`,
   `quest-dragon-lib.ts`, `quest-dragon-wreck-probe.ts`.
@@ -1236,7 +1436,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Serves:** S10b; Prayer is already ~94 from S07 (S10a retired). **From Elkoy, the maze entrance
   (2504,3191)**, its arrival tile: the run there from the zoo is T09-10 (entry 11; RUN-ORDER.md O6);
   the warlord by Fire Blast at 1/1/1 and 10 HP under Protect from Melee.
-- **Preconditions:** Magic 59 (Fire Blast, from S04); Plague City done (teleport); Prayer 43 (~94 from S07); the
+- **Preconditions:** Magic 59 (Fire Blast, from S04); Plague City done (teleport); **Prayer at least 43
+  at S10b's start, met** (an ordering check, main 20:52 PDT: Prayer is priced inside S07, whose bury,
+  S25b, ends at ~94 before S10b, which is why S10a is retired; RUN-ORDER.md rows S25b and S10a); the
   pre-MM trade (`SUPPLIES.md` H7, `quests/README.md` §4 step 3): 6 logs, staff of fire, amulet of
   magic, 1 Antipoison(4), 2 sharks (no prayer potions now), and Fire Blast runes for about T/5 casts per fight (the
   rune counts in `pre_mm_fights.md` look too high, flagged by rs/81).
@@ -1247,11 +1449,19 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   1,005 less its ~103 inferred to reach the maze from the Ardougne teleport, which T09-10 replaces.
 - **Primitives:** rs/94 `converse`, `act`, `combat` (spell fight); `continueBurst`; `travel.ts`;
   `trade.receiveFrom`.
+- **Protect from Melee from the crumbled wall to the ladder down** (approved, main 20:52 PDT): two
+  Khazard commanders stand on that stretch (r, `quest_tree.rs2:56-65, 71-75`); ~9 prayer points, ~0
+  ticks (i). The prayer button cancels a walk in progress (`clearPendingAction`; rs/241's Agility
+  finding), so the module toggles at a stand or on a click tick; the toggle's tick cost is pending
+  the lab runs. The rule is also in `quests/README.md` §4 step 3 (rs/185, bfb9ca72).
 - **Mode:** overlay-driven. **Logout-unsafe:** Bolren's closing ceremony until the quest scroll shows
   (`quests/README.md` §4).
 - **Fallback:** Fire Bolt at Magic 51 (warlord 165 measured, n=6: +32).
-- **Acceptance, local:** `quest-tree-full.ts` at route levels, 3 runs. Pass: within 10% of 793, counted
-  from the maze entrance, and the warlord within 10% of 133.
+- **Acceptance, local:** `quest-tree-full.ts` at route levels, **Attack, Strength and Defence 1 and 10
+  HP** (SCORED's arrival; not `quest-gnome-setup.ts`'s 70/70/70), 3 runs. Pass: within 10% of 793,
+  counted from the maze entrance, and the warlord within 10% of 133. The first run also settles the
+  wolves, giant and ogre that spawn 8-16 tiles from the maze route and would hunt combat 43 (rs/185,
+  open), reported as m.
 - **Acceptance, demo (throwaway):** the maze and the first dialogues on a throwaway (no level gate).
   Pass: within 10% of the local segment.
 - **Start from:** `quest-tree-full.ts`, `quest-gnome-fights.ts`, `quest-premm-fight.ts warlord`,
@@ -1299,12 +1509,35 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Parameters:** `row` (start tile and direction), `supply: 'row' | 'trade' | 'bank'`.
 - **Preconditions:** a tinderbox (in the tutorial starter kit, `[rs/59] research/travel-and-overhead.md`);
   the row dropped ahead and revealed (a dropped obj is private to its dropper for 100 ticks, read,
-  `WorldConfig.ts:38,115` via the same doc, row 5).
+  `WorldConfig.ts:38,115` via the same doc, row 5). **The droppers are in the world before the cue
+  and use `cueAt: 'seen'`** (counting from the observed tick) until rs/41's child measures the
+  observed tick period: `cueAt: 'written'` converts wall time into ticks at 300 ms and starts early
+  on a slow demo (RUN-ORDER.md R23). The step's launch waits on a dropper's observed tick, never on
+  T0 + n x 300 ms.
 - **Postconditions:** Firemaking 99. It must pass 30 before S19 Sea Slug (read,
   `quest_seaslug.rs2:43`). Items out: none.
-- **Ticks:** expected **695** with trade refills (inferred: the model's 658 + 6 trades). The dropped
-  row's pacing is built (H6, `helpers/fm-row.md`: two lab runs of 157 logs, 658 ticks first to last
-  fire, no gap waiting on a log). Best **650** on the dropped row
+- **Ticks:** expected **681, measured on the demo** (rs/269's cairn_burns, 2026-10-22 03:43-03:47Z,
+  ~1,700-1,790 online; the six droppers at 2 logins per host; the gate 60/60 direct and 58/60
+  in-page; `rehearsals/firemaking.md` on rs/147's line, rs/269 at 2480e3b4). The session ran 683
+  ticks from a parked login: 2 from the login to the step, 21 fixed before the first light, and 660
+  of line (157 logs, 8 failed rolls against 7.58 expected; the first roll 3 ticks after the attempt,
+  then 4 a roll); the hiscore read 690 (#1), against the model's median 669. **~665 (inferred)** from
+  a parked login once the launch waits on a dropper's observed tick (`speedrun/tools/tick-wait.ts`):
+  the harness launched at T0 + 75 x 300 ms of wall clock on a demo ticking at 0.34-0.37 s, so the
+  login landed ~20 ticks before log 0 turned public and the first light went at tick 23, not ~3
+  (RUN-ORDER.md R23); from a standing start the fixed cost is ~5 with the launch on observed ticks.
+  **The line rate is confirmed on the demo**: per band (ticks / fires / failures) 1-15 12 / 2 / 4,
+  15-30 32 / 4 / 4, 30-45 28 / 7 / 0, 45-60 52 / 13 / 0, 60-75 96 / 24 / 0, 75-99 428 / 107 / 0,
+  **exactly 4.00 ticks a log from 30 to 99 with strangers standing on the row**: no stolen logs,
+  slips or resends (m). `firemaking.ts`'s `failures` over-counts (13 against 8 real) through its
+  `lost` path; rs/269 fixes it before S03 reports from it. The 695 before was the trade refills'
+  (inferred: the model's 658 + 6 trades). The dropped row's pacing is built (H6, `helpers/fm-row.md`:
+  two lab runs of 157 logs, 658 ticks first to last fire, no gap waiting on a log). **An eastward row
+  costs nothing** (rs/269, m, demo): after each light the player steps back onto the previous fire
+  (`firemaking.rs2` `push_player` pushes west first; the `fire` loc is `blockwalk=no`), yet 78 east
+  and 78 west logs both ran at exactly 4.000 ticks per clean log, both lap turns took 4 ticks, and
+  every chained light went at R+2 with 0 slips; the cadence is the script's 4-tick roll clock. No
+  route change; the only effect is 1 tick less slack for a late light on east-row logs. Best **650** on the dropped row
   (measured end to end 634 and 666 with the lab's restock gaps removed). Fallback **735** banking at
   Falador east (inferred) (all `skills/firemaking.md` §1).
 - **Primitives:** `act` (use tinderbox on the next log), `levelup`; `trade.receiveFrom` for the trade
@@ -1361,7 +1594,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Acceptance, local:** `quest-plague-city-lab.ts` through the module, 3 runs. Pass: within 10% of 491,
   counted from Edmond's tile, and **the scroll read observed** by the magic scroll leaving the inventory and its message, not by
   the quest tab, which shows the quest complete at `%elenaquest` 29 while the teleport needs 30
-  (read, `quest.constant:23`, `teleport.rs2:35`).
+  (read, `quest.constant:23`, `teleport.rs2:35`). The observable in the 29 variant (rs/202, m, the
+  Grand Tree's segment B): the first Ardougne teleport is refused with 'You haven't learnt how to
+  cast this spell yet.'; reading the scroll shows two pages and removes it; the second cast lands.
 - **Acceptance, demo (throwaway):** feasible end to end (no level gate besides the teleport, which
   can be walked). Pass: within 10% of the local figure, and the Ardougne teleport casts afterwards.
 - **Start from:** `quest-plague-city-lab.ts`, `quest-plague-city-segments.ts`, `quest-plague-city-routes.ts`.
@@ -1525,7 +1760,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Primitives:** `lib/cannon.ts` (rs/199's, on main as 8a741554, #212); rs/94 `combat` upkeep (antipoison at the first
   poisoning).
 - **Mode:** overlay-driven. **Logout-unsafe:** combat; Wilderness level 37 at 42 HP and Defence 1
-  (`quests/README.md` §4 step 7).
+  (`quests/README.md` §4 step 7). **The flick's toggles:** the prayer button cancels a walk in
+  progress (`clearPendingAction`; rs/241's Agility finding), so each toggle goes at a stand or on a
+  click tick; its tick cost is pending the module's lab runs (S14's 118 m already carries the flick).
 - **Fallback:** if poisoned without antipoison, the poison takes 24-30 of 42 HP per session (measured,
   n=4); eat and continue.
 - **Acceptance, local:** `quest-premm-cannon.ts` at route stats. Pass: Ranged 50 within 10% of 118.
@@ -1809,7 +2046,11 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
   `woodcutter.ts`.
 - **Acceptance:** as entry 16; no gap over 4 ticks caused by a missing log. Met in the lab, two runs:
   0 such gaps, no log public more than 48 ticks before SCORED wanted it (`helpers/fm-row.md`). Not
-  tick-exact; the run machine only for its `cue` start. Open: the coop row, bank restocks, demo.
+  tick-exact; the run machine only for its `cue` start. Open: the coop row, bank restocks. **Demo:**
+  six droppers at 2 logins per host carried S03 to 681 (rs/269), with no log stolen. **Run day:** in
+  the world before the cue and on `cueAt: 'seen'` until rs/41's child measures the observed tick
+  period (`cueAt: 'written'`'s `cueTick`, fm-row.ts:350, starts ~15% early at 0.35 s a tick;
+  RUN-ORDER.md R23).
 
 ### H7. Carp catcher: `speedrun/helpers/carp.ts` (building, rs/173)
 
