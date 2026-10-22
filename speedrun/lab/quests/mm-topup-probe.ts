@@ -56,8 +56,13 @@ const END_OF_G = {
 const rounds = Number(arg('rounds', '3'));
 const park = Number(arg('park', '100'));
 const held = Number(arg('sharks', '3'));
-/** The most sharks offered; each round offers min(this, SCORED's free slots - 1), the 1 for the super antipoison. */
+/**
+ * The most sharks offered; each round offers min(this, SCORED's free slots - 1). At P the super antipoison(4) rides
+ * with them and fills the last slot; at M the offer is sharks only (rs/158: the super antipoison rides H12o-P alone),
+ * which leaves 1 slot free after the trade.
+ */
 const offer = Number(arg('offer', '10'));
+const withSuper = at === 'P';
 /** At M, round 3's free slots: the pack filled with sharks down to this many free. */
 const tight = Number(arg('tight', '6'));
 const until = arg('until', at).toUpperCase();
@@ -85,11 +90,11 @@ async function homeTele(s: Session): Promise<void> {
     for (let k = 0; k < 6 && chebyshev(pos(s.sdk), STAGING) > 5; k++) if (!(await tele(s.sdk, STAGING.x, STAGING.z))) await waitTicks(s.sdk, 5);
 }
 
-/** The helper's pack: `n` sharks and one super antipoison(4), nothing else. */
+/** The helper's pack: `n` sharks, plus one super antipoison(4) at P, nothing else. */
 async function stageHelperPack(n: number): Promise<void> {
     await cheat(helper.sdk, '~clearinv inv', 2);
     if (n > 0) await give(helper.sdk, 'shark', n);
-    await give(helper.sdk, '4dose2antipoison', 1);
+    if (withSuper) await give(helper.sdk, '4dose2antipoison', 1);
 }
 
 // ------------------------------------------------------------------ 1. the helper's stage and trip
@@ -190,10 +195,10 @@ for (let r = 1; r <= rounds; r++) {
     if (r > 1) await stageScoredPack(isTight ? tight : undefined);
     if (chebyshev(pos(scored.sdk), TILE) > 0) await mustTele(scored.sdk, TILE.x, TILE.z);
     if (chebyshev(pos(helper.sdk), HELPER_TILE) > 0) await mustTele(helper.sdk, HELPER_TILE.x, HELPER_TILE.z);
-    // Sized to the room on arrival: the super antipoison takes one slot, the sharks the rest up to --offer.
+    // Sized to the room on arrival: free - 1 sharks (up to --offer); at P the super antipoison takes the last slot.
     const n = Math.min(offer, free(scored.sdk.getState()!) - 1);
-    if (n < 0) {
-        trades.push({ round: r, ok: false, reason: 'no free slot for the super antipoison', free: free(scored.sdk.getState()!) });
+    if (n < (withSuper ? 0 : 1)) {
+        trades.push({ round: r, ok: false, reason: 'no room for the offer', free: free(scored.sdk.getState()!) });
         result('mm_topup_trade', trades[trades.length - 1]);
         continue;
     }
@@ -215,16 +220,16 @@ for (let r = 1; r <= rounds; r++) {
             lastTick = s.tick;
             lastAt = Date.now();
         }
-        if (arrived < 0 && sharks(s) >= before.sharks + n && superDoses(s) > before.supers) arrived = s.tick;
+        if (arrived < 0 && sharks(s) >= before.sharks + n && (!withSuper || superDoses(s) > before.supers)) arrived = s.tick;
     });
     // The helper keeps a request standing as soon as SCORED is in view (run night: it is parked first); SCORED's
     // receiveFrom clicks the helper on landing, which accepts it.
     const h0 = tick(helper);
-    const offered = [...(n > 0 ? [{ item: /^Shark$/i, n: 'all' as const }] : []), { item: /^Superantipoison\(4\)$/i }];
+    const offered = [...(n > 0 ? [{ item: /^Shark$/i, n: 'all' as const }] : []), ...(withSuper ? [{ item: /^Superantipoison\(4\)$/i }] : [])];
     const giving = giveTo(helper.sdk, scoredName, offered, { maxTicks: 60 });
     await waitTicks(scored.sdk, 1);
     const t0 = tick(scored);
-    const want = [...(n > 0 ? [{ item: /^Shark$/i, amount: n }] : []), { item: /^Superantipoison\(4\)$/i, amount: 1 }];
+    const want = [...(n > 0 ? [{ item: /^Shark$/i, amount: n }] : []), ...(withSuper ? [{ item: /^Superantipoison\(4\)$/i, amount: 1 }] : [])];
     const got = await receiveFrom(scored.sdk, helperName, { want, maxTicks: 60 });
     const gave = await giving;
     await waitUntil(scored.sdk, () => arrived >= 0, { maxTicks: 5 });
