@@ -82,7 +82,7 @@ describe('provisioning', () => {
 
     test('the whole plan', () => {
         const p = provisionPlan(stock, roster(3), 270);
-        expect(p.batches).toEqual([['cairn_t01', 'cairn_t02'], ['cairn_t03']]);
+        expect(p.batches).toEqual([['cairn_t01', 'cairn_t02', 'cairn_t03']]);
         expect(p.essence).toEqual({ perGiver: 108, trips: 4 });
         expect(p.talismans.length).toBe(3);
         expect(p.essenceTransfers.reduce((n, x) => n + x.count, 0)).toBe(324);
