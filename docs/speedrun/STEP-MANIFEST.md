@@ -208,7 +208,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 25 | 26 | Pre-MM cannon session | `speedrun/skills/ranged.ts` (`cannonSession`) | S14 | 118 | 104 | ~162 | ~58 | overlay | `quest-premm-cannon.ts`, `ranged-cannon.ts` | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible) |
 | 26 | 15 | Prayer (bones inside S07; the booth as fallback) | `speedrun/skills/woodcutting.ts` bury option; `speedrun/skills/prayer.ts` for the booth | S25b (S10a retired) | 145 | 115 | 735 (the booth) | ~670 | in-page with S07 | `bones-wc.ts`, `prayer-bury.ts` | bury in S07: on main (knife-cycle's `bury`, #124, through `woodcutting.ts`, #243 and #293); gate-off plain + bury on main (rs/162, 3dfc217f, #165); booth: **lab-accepted on both clients** (rs/395, 58.0 a 28-bone inventory on lite and the browser, m; fold-in 23), **on main, 7315c6d7 (#326; rs/408)**, inside the run-commit floor |
 | 27 | 28 | Crafting | `speedrun/skills/crafting.ts` | S25d | 91 | 85 | 121 (no gems in the windows) | ~36 | overlay | `delayfree-cycle.ts` | **on main, c8ea24da (#302; rs/380's snapshot of rs/186 at 95f0aeac), inside the run-commit floor**, with the item-cycle program and `stow`; **lab-accepted** (263 m on the leather route, browser, 3 of 3; rs/359) and **demo-accepted** (rs/359, 11:25Z: cairn_h80, browser, 26 bodies, 7 ticks a turnaround against the lab's 7.03 and the bar's 7.7, event peak 5, overBudget 0, a clean page-confirmed logout) |
-| 28 | 29 | Cooking (wine) + gems in the windows | `speedrun/skills/cooking.ts` | S25c | 81 | 77 | ~131 (kebabs, supplies not held) | ~54 | overlay | `wine-receive.ts` [rs/41], `wine-window-lab.ts` | **on main, 881fa6a4 (#315; rs/394's snapshot of rs/186 at 7a0bb76e), inside the run-commit floor**, with item-cycle's opt-in `mixed` loads for W2 and P2 (`stow` on main with #302); **lab-accepted** (rs/339, `cooking-accept.ts`, browser, 77 / 85 / 81, m, at the route's 520 wines, Cooking 30 (the run starts at about 24, no change, rs/186; fold-in 23), Crafting 96, 107 gems; slots m; fold-in 22); **demo-accepted on mechanics** (rs/339, the rehearsal twin's browser tab, 13:20-13:28Z: both relogs in page at 1 tick, 0 logout latency, the bank by login + 11 against + 19, both firings at + 20; the 52-wine demo's 73 ticks check mechanics only) |
+| 28 | 29 | Cooking (wine) + gems in the windows | `speedrun/skills/cooking.ts` | S25c | 81 | 77 | ~131 (kebabs, supplies not held) | ~54 | overlay | `wine-receive.ts` [rs/41], `wine-window-lab.ts` | **on main, 881fa6a4 (#315; rs/394's snapshot of rs/186 at 7a0bb76e), inside the run-commit floor**, with item-cycle's opt-in `mixed` loads for W2 and P2 (`stow` on main with #302); **lab-accepted** (rs/339, `cooking-accept.ts`, browser, 77 / 85 / 81, m, at the route's 520 wines, Cooking 30 (the run's start), Crafting 96, 107 gems; slots m; fold-in 22); **demo-accepted on mechanics** (rs/339, the rehearsal twin's browser tab, 13:20-13:28Z: both relogs in page at 1 tick, 0 logout latency, the bank by login + 11 against + 19, both firings at + 20; the 52-wine demo's 73 ticks check mechanics only) |
 | 29 | 25 | Goblin Diplomacy | `speedrun/quests/goblin-diplomacy.ts` | S24 | 41 | 41 | 102 | ~61 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
 | 30 | 30 | Doric's Quest | `speedrun/quests/dorics-quest.ts` | S05 | 17 | 17 | 43 | ~26 | overlay | `quest-smallskill-doric.ts` | building: **rs/416** (the five small quests; lab-measured on lite, 3 of 3 each mode, fold-in 23) |
 | 31 | 31 | Cook's Assistant | `speedrun/quests/cooks-assistant.ts` | S23 | 12 | 12 | 31 | ~19 | overlay | `quest-primitives-dialogue.ts` | building: **rs/416** (the five small quests; lab-measured on lite, fold-in 23) |
@@ -2405,7 +2405,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
 ### 29. Cooking by wine: `speedrun/skills/cooking.ts` (S25c), with gems in the windows
 
-- **Serves:** S25c, Cooking about 24 (after S23's 300 base; the start level changes neither the wine count nor the ticks: rs/186, `cooking.md` and `cooking.ts` corrected on its branch as 4aeef3b1, the plan sized for a start at 1, P(99) 99.1% at 29 + 420, the lab's level-1 fixture reaching 99; ~0-2 ticks of extra level-up page clearing, i, unmeasured; fold-in 23) to 99 by fermenting 520 unfermented wines in the bank across two
+- **Serves:** S25c, Cooking 30 to 99 by fermenting 520 unfermented wines in the bank across two
   firings, armed by the run's **two planned relogs** at Varrock west bank ([rs/41] `helpers/wine.md`,
   "Default sequence for the scored account"), with **uncut gems cut in the waits**
   (`research/wine-window.md` §5 B; 107 gems, Crafting's share).
@@ -2441,7 +2441,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   the noted wine.
 - **Postconditions:** Cooking 99; 107 more gems cut. Items out: the wine (29 deposited at burst 1,
   the rest at P1) and the chisel (stowed on the last visit), so SCORED leaves with 28 free for H22.
-- **Ticks:** expected **81**, best **77**, measured through the module (m, lab, browser; rs/339, through the module (`cooking-accept.ts`), bgsrv-mac, browser, 300 ms, rs/339's hash 14b1f173, at the run's levels (Cooking 30 in the lab, the run's start about 24, no change; Crafting 96, the fleet's 108 gems), 3 reps: 77, 85, 81 scored ticks; `cooking.md` section 9; fold-in 22). Before: expected 80, best 75, WINE's demo run A and projection, 75-85, measured with 2
+- **Ticks:** expected **81**, best **77**, measured through the module (m, lab, browser; rs/339, through the module (`cooking-accept.ts`), bgsrv-mac, browser, 300 ms, rs/339's hash 14b1f173, at the run's levels (Cooking 30, the run's start; Crafting 96, the fleet's 108 gems), 3 reps: 77, 85, 81 scored ticks; `cooking.md` section 9; fold-in 22). Before: expected 80, best 75, WINE's demo run A and projection, 75-85, measured with 2
   ticks per relog on the lite client; a tab relog with rs/174's fix measured ~2 on the twin
   (RUN-ORDER.md section 4), so fold-in 3's + 2 x 18 is undone. The
   gems save 15-16 ticks of Crafting at Crafting 55 on WW's earlier setup, not the 30-31 wine-window.md §2
@@ -2496,8 +2496,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Serves:** S23, **from the cook (3209,3215)**, its arrival tile: the Lumbridge teleport and the
   run are T22-23 (entry 11; RUN-ORDER.md O6).
 - **Preconditions:** egg, bucket of milk, pot of flour (`quests/README.md` §4 step 12).
-- **Postconditions:** 300 Cooking base, 1 QP (read, `quest_cook.rs2:89`): Cooking 30 on the old reading, about 24 on
-  rs/416's (`stat_advance(cooking, 3000)` = 300 base = 7,500 game xp), pending rs/416's confirmation (fold-in 23).
+- **Postconditions:** 300 Cooking base, 1 QP (read, `quest_cook.rs2:89`): Cooking 30 (300 base, 7,500 game xp, `stat_advance(cooking, 3000)`; level 30 starts at 7,345 and 31 at 7,952, `speedrun/lib/xp.ts`;
+  fold-in 23's 'about 24' reverted, rs/186 via rs/158, fold-in 24).
 - **Ticks:** expected **12 m** (burst), best **12 m**, fixed **19 m** (fold-in 23: rs/416, lab, lite, bgsrv-mac, from the arrival tile). Before it: expected **12** (burst, fold-in 14), best **12**, fixed fallback **17**, fallback **31** (inferred): `quests/README.md` §3 row's 27 /
   22 / 41 less its ~10 of travel, the Lumbridge teleport 4 and 12 tiles (`quests/quest_points.md`),
   which T22-23 carries. The
