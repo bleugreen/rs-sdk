@@ -1064,3 +1064,80 @@ describe('item-cycle stack mode (arrows)', () => {
         expect(createItemCycle.params).toContain('fill');
     });
 });
+
+/**
+ * The callers that never pass `fill` (herblore.ts, crafting.ts, cooking.ts W1 and W2/P2, and a stack
+ * call without it) must send exactly what the program sent before `fill` existed. Each golden is the
+ * whole stream of one run to its end: every packet of every tick, every field in order, as the
+ * pre-fill program (main 23f93a66) sent it in this world. Omitting `fill` and passing `fill: false`
+ * must both reproduce it.
+ */
+describe('the default send stream: fill off leaves every other call shape unchanged', () => {
+    const stream = (w: World): string[] => {
+        const by = new Map<number, string[]>();
+        for (const { tick, action } of w.h.sent) {
+            const { type, ...rest } = action as unknown as Record<string, unknown>;
+            const one = [type, ...Object.entries(rest).map(([k, v]) => `${k}=${JSON.stringify(v)}`)].join(' ');
+            by.set(tick, [...(by.get(tick) ?? []), one]);
+        }
+        const st = w.h.status;
+        const end = st.phase === 'fault' ? st.fault : st.phase === 'done' ? (st.result as ItemCycleResult).ended : 'still running';
+        return [...[...by].map(([t, sends]) => `T${t} ${sends.join(' | ')}`), `end ${st.phase}: ${end}`];
+    };
+
+    const gems = (id: number, n: number): Obj[] => Array.from({ length: n }, () => ({ id, count: 1 }));
+    const w2Bank = (): Obj[] => [{ id: UNCUT_DIAMOND, count: 2 }, { id: UNCUT_RUBY, count: 20 }, { id: UNCUT_EMERALD, count: 23 }, { id: UNCUT_SAPPHIRE, count: 36 }];
+    const adamantArrow: CycleRecipe = { name: 'adamantarrow', level: 60, xp: 150, a: HEADLESS, b: ADAMANT_HEADS, products: [ADAMANT_ARROW] };
+
+    /** Each call shape as its caller makes it; `extra` is where the test adds `fill: false`. */
+    const SHAPES: Record<string, { world: (extra: Record<string, unknown>) => World; ticks: number }> = {
+        // herblore.ts: pair, booth, untilLevel. From an empty inventory: the reset visit, level-up pages, the switch to super attack at 45, out of supplies
+        'herblore pair': {
+            world: extra => new World({ mode: 'pair', recipes: [attack, superAttack], xp: LEVEL_XP[45]! - 2 * 625 + 1, bank: [{ id: GUAM_UNF, count: 14 }, { id: IRIT_UNF, count: 28 }, { id: EYE, count: 50 }], params: extra }),
+            ticks: 60
+        },
+        // crafting.ts: tool, booth, maxActions + untilXp, stow
+        'crafting tool stow': {
+            world: extra => new World({ mode: 'tool', recipes: [body], xp: LEVEL_XP[45]!, inventory: [{ id: NEEDLE, count: 1 }, { id: THREAD, count: 230 }], bank: [{ id: HARD_LEATHER, count: 60 }], params: { untilLevel: undefined, maxActions: 30, untilXp: LEVEL_XP[45]! + 40 * 35 * 25, stow: true, ...extra } }),
+            ticks: 60
+        },
+        // tool with a held load ahead of the booth cycle, then the stow
+        'crafting tool held stow': {
+            world: extra => new World({ mode: 'tool', recipes: [body], xp: LEVEL_XP[45]!, inventory: [{ id: NEEDLE, count: 1 }, { id: THREAD, count: 230 }, ...gems(HARD_LEATHER, 10)], bank: [{ id: HARD_LEATHER, count: 40 }], params: { untilLevel: undefined, maxActions: 40, held: true, stow: true, ...extra } }),
+            ticks: 60
+        },
+        // cooking.ts W1: held, bank: false, mixed, maxActions
+        'cooking W1 mixed held': {
+            world: extra => new World({ mode: 'tool', recipes: GEMS, xp: LEVEL_XP[96]!, inventory: [{ id: WINE_NOTE, count: 491 }, { id: CHISEL, count: 1 }, ...gems(UNCUT_SAPPHIRE, 26)], bank: w2Bank(), params: { untilLevel: undefined, maxActions: 26, held: true, bank: false, mixed: true, ...extra } }),
+            ticks: 20
+        },
+        // cooking.ts W2/P2: mixed, booth, stow, maxActions
+        'cooking W2 mixed stow': {
+            world: extra => new World({ mode: 'tool', recipes: GEMS, xp: LEVEL_XP[96]! + 26 * 50 * 25, inventory: [{ id: CHISEL, count: 1 }], bank: w2Bank(), params: { untilLevel: undefined, maxActions: 81, mixed: true, stow: true, ...extra } }),
+            ticks: 60
+        },
+        // stack without fill (the branch fill restructured): one tier a tick across the rune -> adamant switch
+        'stack one tier a tick': {
+            world: extra => new World({ mode: 'stack', recipes: [adamantArrow, runeArrow], xp: LEVEL_XP[80]!, inventory: [{ id: HEADLESS, count: 1000 }, { id: RUNE_HEADS, count: 45 }, { id: ADAMANT_HEADS, count: 900 }], params: { untilLevel: undefined, maxActions: 60, ...extra } }),
+            ticks: 30
+        }
+    };
+
+    const GOLDEN: Record<string, string[]> = {};
+
+    const runShape = (name: string, extra: Record<string, unknown>) => {
+        const w = SHAPES[name]!.world(extra);
+        w.start();
+        w.run(SHAPES[name]!.ticks);
+        return { w, lines: stream(w) };
+    };
+
+    for (const name of Object.keys(SHAPES)) {
+        test(`${name}: the whole stream matches the pre-fill program's, with fill omitted and with fill: false`, () => {
+            const off = runShape(name, {});
+            expect(off.lines).toEqual(GOLDEN[name]!);
+            expect(off.w.ignored).toEqual([]);
+            expect(runShape(name, { fill: false }).lines).toEqual(GOLDEN[name]!);
+        });
+    }
+});
