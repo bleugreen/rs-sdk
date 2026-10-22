@@ -44,7 +44,7 @@ staff of water 3, staff of fire 3, rune axe 1, rune pickaxe 3, mithril scimitar 
 talisman 1; sapphire ring 12, emerald ring 27, ruby ring 16, diamond ring 5; ball of wool 1;
 rune arrow 200; headless arrow 4,410; arrowtips bronze 60, iron 90, steel 135, mithril 1,500,
 adamant 2,075, rune 570; adamant full helm 1; shark 60; feather 580; fly fishing rod 1, fishing
-rod 1, fishing bait 5; chisel 1; normal logs 16 (+3 in flight from cairn_h13); snape grass 102;
+rod 1, fishing bait 5; chisel 1; normal logs 19 (cairn_h13's 3 landed 09:29); snape grass 102;
 eye of newt 50; coins 126,059. Attempt 1 uses one of each tool; the spare staffs, pickaxes,
 scimitars and knives are attempts 2 and 3's (per-attempt section).
 
@@ -79,7 +79,7 @@ named in the gap column.
 | H15 | mule1 | in: swamp paste 1, unlit torch 1, law 2, water 2 | runes on mule1; **paste and torch: none** | partly | rs/173 `far` (Port Khazard store, Jiminua's) |
 | H16 | mule1 + h97 | in: raw giant carp 1, fishing rod 1, bait 1, coins 5, law 5, air 21, water 1, earth 1, SCORED's body talisman 1; back: the knife | all on mule1 except the carp | partly | Carp: rs/173 `carp` set on h97, not created (rs/41 to resume rs/173) |
 | H17 | body-altar givers | in: essence 27 a delivery, 194 deliveries (5,238); **the last giver also gives Lumbridge runes: law 1, air 3, earth 1** | essence 101,782; 22 body talismans of 57 | no | Givers staged by `roster.ts plan`. The last giver's runes need an altar-giver final-extras option like rs/329's bone-giver one, **not yet in rs/329's scope** (rs/41) |
-| H18 | mule1 | in: fly fishing rod 1, feather 580, logs 10, law 1, air 3, earth 1, knife 1 (back from H16) | mule1 (logs 19 with h13's 3) | **yes** once h13's 3 logs land | - |
+| H18 | mule1 | in: fly fishing rod 1, feather 580, logs 10, law 1, air 3, earth 1, knife 1 (back from H16) | mule1 (logs 19) | **yes** | - |
 | H19 | mule1 | in: egg 1, bucket of milk 1, pot of flour 1, law 1, air 3, water 1 | runes on mule1; egg, milk, flour h94 | partly | h94 (rs/173), as H4 |
 | H20 | mule1 | in: goblin mail 3, orange dye 1, blue dye 1, raw rat meat 1, raw bear meat 1, raw beef 1, raw chicken 1, cadava berries 1, law 2, air 6, water 1, fire 1 | runes on mule1; goblin mail and meats h96, the rest h94 | partly | h94 and h96's quest items wait for rs/173 (rs/41 01:5x) |
 | H21a | anvil giver | in: hammer 1, then 31 loads of 24-25 bars (bronze 15, iron 39, steel 120, mithril 305, adamant 365), each taking 5 platebodies back; takes every dead item back | adamant **354 (11 short)**, the rest ample (h20-h23); hammer h20, h91 | no | Adamant: h22/h23 smelting (rs/41's forecast 365 by ~12:00 UTC). Anvil giver to name (rs/41, rs/188) |
@@ -90,7 +90,7 @@ named in the gap column.
 | H23 | h92 + mule1 | in: cannon set 1, cannonballs 1,200 (h92); ranging potion(4) 3, super antipoison(4) 2, super attack(4) 1, super strength(4) 1, shark 12, magic shortbow 1 (back from H13; mule1) | set, balls on h92; sharks on mule1; **no potions held** | partly | Potions from the herb line (rs/41): irit and kwuarm unf on h85, eye of newt, limpwurt; ranging needs Herblore 72. GE: ranging bid 5,000, no sellers |
 | DS re-supply (contingency, rs/258) | mule2 | mithril scimitar, hammer, 8 sharks; planks 3, nails 12 | on mule2: scimitar, hammer, sharks | partly | Planks and nails: GE bids rest on mule2 (#19502 at 450, #19505 at 200), neither ever traded; fallback nails smithed by a smelter (h20/h21 steel), planks from the Rimmington spawn. Re-run `kits/mule2-ds.json` to collect fills (rs/41, low priority) |
 
-**Fully staged today:** H1, H3, H4k, H4p, H9, H10 and, once h13's logs land, H18. The cannon set
+**Fully staged today:** H1, H3, H4k, H4p, H9, H10 and H18. The cannon set
 and balls (H11, H23) are on h92, and the wine (H21c) is on h40. Every other row is partly staged,
 with the missing items named above.
 
@@ -173,7 +173,7 @@ fresh id `rs331-<donor>-mule1-1`. fleet.json backups are in `~/rs-dev/staging-33
 | 09:23 | cairn_h64 | `buyer`: air rune 1,400 on the GE (29,400) | `coins` {} |
 | 09:24 | cairn_h78 (fleet, disabled) | handover `--then idle`: headless arrow 4,410 → mule1 | `fletcher` headless, target 4,410, disabled; logged out 09:24 |
 | 09:25 | cairn_h64 | handover rs331-h64-mule1-1: coins 126,010, air 1,400, earth 120, fire 200, water 31, staff of water 2, staff of fire 2, rune pickaxe 2, mithril scimitar 2, knife 2 → mule1 | `coins` {} |
-| 09:26 | cairn_h13 (fleet) | handover rs331-h13-mule1-1: normal logs 3 → mule1 (crossing from Seers') | `woodcutter` {} |
+| 09:26-09:29 | cairn_h13 (fleet) | handover rs331-h13-mule1-1: normal logs 3 → mule1 (crossed from Seers') | `woodcutter` {} |
 
 Funding used: 74,481 + 29,400 on h64; h90's two open GE offers escrow 100,025 (axe) and 13,025
 (shortbow) from its own 468,995. Under the 480,000 rs/41 approved.
