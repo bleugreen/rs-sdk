@@ -13,7 +13,8 @@ const SOURCES: Record<string, string> = {
     'knife-cycle': 'knife-cycle.ts',
     'knife-mine': 'knife-mine.ts',
     pickpocket: 'pickpocket.ts',
-    agility: 'agility.ts'
+    agility: 'agility.ts',
+    'rc-cycle': 'rc-cycle.ts'
 };
 
 const runtime = registerPrograms(new ProgramRuntime({ dispatch: () => ({ success: true, message: '' }) }));

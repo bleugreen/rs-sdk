@@ -169,6 +169,7 @@ interface PendingCraft {
     from: Active | null;
 }
 
+createRcCycle.params = ['open', 'schedule', 'untilLevel', 'untilXp', 'lead', 'maxGiverDistance', 'maxFailures', 'altar', 'craftOption', 'givers'] as const;
 export function createRcCycle(params: ProgramParams): TickProgram {
     const open = num(params.open, 5, 'open');
     if (!Number.isInteger(open) || open < 2) throw new Error('open must be an integer of at least 2');
