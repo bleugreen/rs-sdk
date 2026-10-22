@@ -1643,7 +1643,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
 - **Serves:** S03, a tinderbox line near Lumbridge, 157 logs (2 normal, 4 oak, 7 willow, 13 maple, 24
   yew, 107 magic), highest tier unlocked, on a helper-dropped row (`skills/firemaking.md` §1).
-- **Parameters:** `row` (start tile and direction), `supply: 'row' | 'trade' | 'bank'`.
+- **Parameters:** `tiles`, an explicit list in lighting order and the same list the dropper gets (it replaces
+  `row`, a start tile and direction; rs/245), `supply: 'row' | 'trade' | 'bank'`.
 - **Preconditions:** a tinderbox (in the tutorial starter kit, `[rs/59] research/travel-and-overhead.md`);
   the row dropped ahead and revealed (a dropped obj is private to its dropper for 100 ticks, read,
   `WorldConfig.ts:38,115` via the same doc, row 5). **The droppers are in the world before the cue
@@ -1668,7 +1669,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   **exactly 4.00 ticks a log from 30 to 99 with strangers standing on the row**: no stolen logs,
   slips or resends (m). `firemaking.ts`'s `failures` over-counts (13 against 8 real) through its
   `lost` path; rs/269 fixes it before S03 reports from it. The 695 before was the trade refills'
-  (inferred: the model's 658 + 6 trades). The dropped row's pacing is built (HS6, `helpers/fm-row.md`:
+  (inferred: the model's 658 + 6 trades). **Corroboration** (m, lab, rs/245's lab acceptance through the step module, 300 ms, branch 954ed235, `firemaking.md` section 9): 660 / 700 / 660 against an expected 674 i (4 x (157 + 7.58 failed rolls) + 16 of overhead: a 6-tick approach and two 5-tick lap turns), the spread being failed rolls below level 43, laps 2 and 3 at exactly 4.000 ticks a fire; the demo measurement outranks the lab. The dropped row's pacing is built (HS6, `helpers/fm-row.md`:
   two lab runs of 157 logs, 658 ticks first to last fire, no gap waiting on a log). **An eastward row
   costs nothing** (rs/269, m, demo): after each light the player steps back onto the previous fire
   (`firemaking.rs2` `push_player` pushes west first; the `fire` loc is `blockwalk=no`), yet 78 east
@@ -1681,11 +1682,17 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   fallback.
 - **Mode:** overlay-driven. Every roll is a fixed 4-tick chain, and only the refills react (§1,
   "Client").
-- **Fallback:** adjacent-helper trades.
+- **Fallback:** adjacent-helper trades, **8 refills of 20**, because S03 starts holding 8 non-log items: ~719
+  (717 and 709 m, rs/245; `firemaking.ts` `tradePlan`; SUPPLIES.md H2), each trade 4 ticks when the giver
+  requests on the last held log's roll. The giver's tile must be reachable from SCORED's on the collision
+  map (a wall edge at the lab snake's west end failed a trade), and the giver must not request early (a
+  request is a player op and walks it off its tile).
 - **Acceptance, local:** a 54-log dropped row. Pass: **4.00** ticks per fire (measured) +2%, and 1 to
-  99 within 5% of 650 on the row (695 by trades).
+  99 within 5% of 650 on the row (~719 by trades, 8 refills of 20).
 - **Acceptance, demo (throwaway):** a throwaway and a log-row helper throwaway, a 20-log normal-log
-  row. Pass: 4 ticks per fire on at least 18 of 19 gaps, and nobody else's pickup broke the row.
+  row. Pass: every gap equals 4 ticks times the number of rolls on that log (from the tick log), with no walk,
+  dropped click or helper wait between fires, and no log lost to anyone's pickup. The raw count of 4-tick
+  gaps out of 19 is reported for information; at level 1 it is RNG-bound (P(>=18 of 19) is about 5%).
 - **Start from:** `firemaking-line.ts`, `firemaking-supply.ts`, `firemaking-model.ts`; the row from HS6
   `speedrun/helpers/fm-row.ts` (its lab driver `speedrun/lab/fm-row.ts` runs `firemaking-line.ts
   --mode=ground` as the stand-in). The 2-row snake's lap turn costs 5 ticks per lap (`helpers/fm-row.md`).
