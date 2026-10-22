@@ -135,13 +135,30 @@ The content's `process_fletch_logs` queue in
 `server/content/scripts/skill_fletching/scripts/cut_logs.rs2` consumes a log and awards
 Fletching XP whenever a queued shaft action completes (r). The knife path normally
 interrupts that work; this run demonstrates that some completions still occur.
-The saved log does not identify which packet ordering caused each completion.
 
-**Supply recommendation:** do not treat one log, or the five-log rehearsal kit, as a
-proved sufficient supply. S22's exact-start fresh kit needs its own consumption allowance,
-and the run-order owner must price the demonstrated plain fallback until that allowance
-is validated. This 1–99 attempt does not establish an exact safe log count for S22.
-The 800 feathers covered the attempt; 688 fly catches were recorded.
+**What consumed the logs:** most likely completed arrow-shaft fletches (i). Fletching
+levelled at five distinct client ticks, **1,129, 1,522, 1,973, 2,647 and 3,060** (to 3, 5,
+6, 8 and 9; the last is the exhaustion above), one per log lost (m). They were not
+dropped: the raced fly preset drops only `raw ` products (r). They were not burned: the
+module has no burn action (r). These are XP-observation ticks consistent with five shaft
+completions, not a captured inventory delta or server packet trace, so no trace proves
+which packet ordering (a late label, for instance) let each fletch complete.
+
+**Loss rate:** the knife ran in three segments, 445–635 (190), 645–1,235 (590) and
+1,274–3,060 (1,786), so **2,566 active knife ticks**. The five losses fell at cumulative
+knife exposures 674, 1,028, 1,479, 2,153 and 2,566, giving **5 logs per 2,566 active knife
+ticks, 1 per 513.2** (m). It is not 1 per ~600: that figure divided by the 3,060 session
+ticks to exhaustion, which include the tutorial, kit, walks, net band, probes and guard.
+It is one attempt's estimate, not an upper bound, and it is Fishing's rate only; knife-mine
+needs its own count.
+
+**Supply recommendation:** carry **10 fresh normal logs for S22** (about 2,000 knife ticks
+from 9,612 base; doubling the observed rate gives ceil(2 × 2,000 / 513.2) = 8, and 10 keeps
+margin). Each log takes its own inventory slot, and the module does not procure them.
+This attempt does not establish the exact safe count; until one is measured, price the
+demonstrated plain fallback as the cost of running out. A ~3,000-tick knife rehearsal
+from level 20 would stage 12. The 800 feathers covered the attempt; 688 fly catches were
+recorded.
 
 ### Moving spots, not depletion respawns
 
@@ -163,8 +180,11 @@ within six tiles, eats starter food at 4 HP or below, and fights a spider that s
 reaches it. The band resumes with the same gate rather than paying a new probe (r).
 The normal river spiders cannot pursue to that safe tile from their spawn positions.
 
-**Demo engagement:** tick 635–645, Giant spider, 8 HP to 8 HP, fled, no food, no fight,
-then resumed fishing. No other guard engagement was logged (m).
+**Demo engagement:** tick 635–645, in the fly 20–78 band, Giant spider, 8 HP to 8 HP,
+fled, no food, no fight, then resumed fishing. That 10-tick escape was the only guard
+engagement logged. **The demo's 78–99 band saw zero guard engagements**, as did both
+retained lab 78–99 bands (m). Zero engagements is not proof of zero hits, since the
+trigger waits for 8 HP, and three samples give no defensible attacks-per-pass rate.
 
 The browser labs ran on **bbs via SSH**, isolated in `~/rs-195-lab`, at
 `NODE_TICKRATE=300`, headless browser, not the demo. bgsrv-mac's earlier port collision
@@ -183,6 +203,13 @@ The content's cowardly hunt refuses a player above twice the spider's combat lev
 (2), explaining that immunity (r). A fight is **not a fixed 45-tick charge**:
 the final pass cost 99. Eating is unit-tested, but these successful live fights did not
 exercise it.
+
+**For the scored S22:** at the scored run's combat level (above 4) the natural river
+spiders do not hunt the account (r, the cowardly rule above), so expected engagements are
+zero, the guard stays off by default, and S22 carries **no automatic guard charge**. The
+10-tick escape is a low-combat hazard measured on a fresh account; if a fight ever does
+happen, the measured costs are 45 (earlier lab pass) and 99 (final lab fight), not a fixed
+figure.
 
 **Correction to the readiness report:** `fly78` began at the level-78 floor,
 232,501 XP, then spent 47 ticks reaching 242,001 XP before its 1,973-tick high band.
@@ -241,7 +268,7 @@ The ranked board was still stale at 17:27 but showed cairn_casts first at 17:29:
 The code defaults to a five-minute, request-triggered ranking cache with background
 refresh; player stats are read directly. The live cache override is unknown (r/m).
 
-Focused regression check on the current implementation: **32 fishing tests pass,
+Focused regression check on the current implementation: **32 of 32 fishing tests pass,
 149 assertions**. They cover threat attribution, safe retreat, following spiders,
 fight/eat behavior, death, opt-in boundaries and log-exhaustion fallback.
 Prior development reported 445 tests and both typechecks passing at the accepted hash.
