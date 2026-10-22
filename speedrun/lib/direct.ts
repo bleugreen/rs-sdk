@@ -391,6 +391,27 @@ export interface DirectLogoutResult {
     endTick: number;
     wallMs: number;
     reason?: string;
+    /** The server answered a click with its can't-log-out message (combat). Only the relay's logout reads chat. */
+    refused?: boolean;
+}
+
+/**
+ * What a logout came to. `out`: the server removed the player. `queued`: the click went out on
+ * a live session that kept receiving ticks, so the server has it and will remove the player on
+ * its turn, even after the socket closes. The demo removes at most one logging-out player per
+ * tick across the whole world, lowest player slot first (World.processLogouts: each removal is
+ * a whole-world checkpoint inside a 50 ms budget), so with ~1,700 players online a clicked
+ * account can wait minutes. `unconfirmed`: nothing shows the click was served (no ticks after
+ * it, a refusal, or no click), so the player may be held until the server times it out.
+ */
+export type LogoutOutcome = 'out' | 'queued' | 'unconfirmed';
+
+/** Ticks served after the first click before an unconfirmed logout counts as queued: the click's own cycle and one more. */
+export const QUEUED_AFTER_TICKS = 2;
+
+export function logoutOutcome(r: DirectLogoutResult): LogoutOutcome {
+    if (r.ok) return 'out';
+    return r.clicks > 0 && !r.refused && r.endTick - r.clickTick >= QUEUED_AFTER_TICKS ? 'queued' : 'unconfirmed';
 }
 
 export interface DirectSession {
@@ -492,7 +513,9 @@ export function directLogoutText(r: DirectLogoutResult): string {
         const how = r.via === 'logout' ? 'server sent LOGOUT' : 'server closed the socket';
         return `out of the world: ${how} ${r.endTick - r.clickTick} tick(s) after the first click (${clicks})`;
     }
-    return `NOT CONFIRMED (${r.reason}; ${clicks}): the socket is closed, so the server may hold the player up to 500 ticks`;
+    const served = `${r.endTick - r.clickTick} tick(s) arrived after the first click`;
+    if (logoutOutcome(r) === 'queued') return `QUEUED (${r.reason}; ${clicks}; ${served}): the server has the click and removes the player on its turn`;
+    return `NOT CONFIRMED (${r.reason}${r.refused ? '; refused in combat' : ''}; ${clicks}; ${served}): the server may hold the player until it times out`;
 }
 
 const LITE = new URL('../../server/webclient/src/lite/', import.meta.url);

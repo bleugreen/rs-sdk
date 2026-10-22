@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { DirectBridge, type DirectBotClient, type DirectClient, type DirectLogoutResult, type DirectLogoutTarget, type DirectSessionEnd, directLogoutText, directProbeSdk, loadActionQueue, logoutDirect } from './direct';
+import { DirectBridge, type DirectBotClient, type DirectClient, type DirectLogoutResult, type DirectLogoutTarget, type DirectSessionEnd, directLogoutText, directProbeSdk, loadActionQueue, logoutDirect, logoutOutcome, QUEUED_AFTER_TICKS } from './direct';
 import type { ActionResult, BotAction, BotWorldState } from '../../sdk/types';
 import { BotSDK } from '../../sdk/index';
 import { waitForFreshState } from './fresh-state';
@@ -171,8 +171,28 @@ describe('directLogoutText', () => {
             'out of the world: server sent LOGOUT 1 tick(s) after the first click (1 click, 312 ms)'
         );
         expect(directLogoutText({ ok: false, via: null, clicks: 2, clickTick: 10, endTick: 40, wallMs: 10000, reason: 'still in the world after 10000 ms' })).toMatch(
-            /^NOT CONFIRMED \(still in the world after 10000 ms; 2 clicks, 10000 ms\)/
+            /^QUEUED \(still in the world after 10000 ms; 2 clicks, 10000 ms; 30 tick\(s\) arrived after the first click\)/
         );
+        expect(directLogoutText({ ok: false, via: null, clicks: 1, clickTick: 10, endTick: 10, wallMs: 10000, reason: 'still in the world after 10000 ms' })).toMatch(
+            /^NOT CONFIRMED \(still in the world after 10000 ms; 1 click, 10000 ms; 0 tick\(s\) arrived after the first click\)/
+        );
+    });
+});
+
+describe('logoutOutcome', () => {
+    const r = (over: Partial<DirectLogoutResult>): DirectLogoutResult => ({ ok: false, via: null, clicks: 1, clickTick: 10, endTick: 10, wallMs: 20_000, reason: 'still in the world', ...over });
+    test('out once the server removed the player', () => {
+        expect(logoutOutcome(r({ ok: true, via: 'logout', endTick: 11 }))).toBe('out');
+        expect(logoutOutcome(r({ ok: true, via: 'server-close', endTick: 11 }))).toBe('out');
+    });
+    test("queued: the click went out and the server kept serving ticks (rs/214's 9 accounts behind the demo's removal queue)", () => {
+        expect(logoutOutcome(r({ endTick: 10 + QUEUED_AFTER_TICKS }))).toBe('queued');
+        expect(logoutOutcome(r({ clicks: 2, endTick: 60 }))).toBe('queued');
+    });
+    test('unconfirmed: a stalled client (no ticks after the click), a combat refusal, or no click at all', () => {
+        expect(logoutOutcome(r({ endTick: 11 }))).toBe('unconfirmed');
+        expect(logoutOutcome(r({ endTick: 60, refused: true }))).toBe('unconfirmed');
+        expect(logoutOutcome(r({ clicks: 0, endTick: 60, reason: 'not in game' }))).toBe('unconfirmed');
     });
 });
 

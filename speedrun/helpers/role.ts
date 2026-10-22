@@ -182,6 +182,8 @@ export const DIRECT_IN_WORLD = (account: string, host: string) => `[direct] '${a
 export const DIRECT_IN_WORLD_RE = /^\[direct\] '.+' logged into /;
 /** The line a direct-path role prints when the server refuses its login, then exits 1. */
 export const DIRECT_REFUSED_RE = /^\[direct\] login refused \(code (\d+)\)/;
+/** The `logout` field of the direct role's last line: lib/direct.ts `LogoutOutcome`. */
+export const DIRECT_LOGOUT_RE = /"logout":"(out|queued|unconfirmed)"/;
 
 /**
  * The direct path (launcher `path: 'direct'`, HELPER_PATH=direct): this process logs the
@@ -194,7 +196,7 @@ export const DIRECT_REFUSED_RE = /^\[direct\] login refused \(code (\d+)\)/;
  * server runs another client revision (as the lite runner).
  */
 async function runDirect(role: Role): Promise<never> {
-    const [{ openDirectSession, directLogoutText }, { initPathfinding }, { executionContext, abortable }] = await Promise.all([
+    const [{ openDirectSession, directLogoutText, logoutOutcome }, { initPathfinding }, { executionContext, abortable }] = await Promise.all([
         import('../lib/direct'),
         import('../../sdk/pathfinding'),
         import('../../sdk/execution-context')
@@ -276,8 +278,13 @@ async function runDirect(role: Role): Promise<never> {
     }
     if (end && !stopping) code = 1;
 
-    // logoutDirect re-clicks through a post-combat refusal and closes the client either way.
-    if (!end) line({ message: `logout: ${directLogoutText(await session.logout({ timeoutMs: 35_000 }))}` });
-    else session.close();
+    // logoutDirect re-clicks through a post-combat refusal and closes the client either way. The
+    // launcher's DIRECT_LOGOUT_MS ends before its kill, so the outcome line is always written.
+    const logoutMs = Number(process.env.DIRECT_LOGOUT_MS) || 35_000;
+    if (!end) {
+        line({ message: 'logout: clicking', budgetMs: logoutMs, tick: sdk.getState()?.tick ?? null });
+        const r = await session.logout({ timeoutMs: logoutMs });
+        line({ message: `logout: ${directLogoutText(r)}`, logout: logoutOutcome(r) });
+    } else session.close();
     process.exit(code);
 }

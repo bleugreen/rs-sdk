@@ -2,7 +2,24 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { CatchUpMeter, DemoMonitor, demoOrigin, formatStatus, readStatus, RestartTracker, type DemoSample } from './demo-status';
+import { CatchUpMeter, DemoMonitor, demoOrigin, formatStatus, listedInWorld, playerNameKey, readStatus, RestartTracker, type DemoSample } from './demo-status';
+
+describe('listedInWorld', () => {
+    const serve = (body: unknown, status = 200) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
+    test("matches the account against the server's display names", async () => {
+        expect(playerNameKey('Cairn T06')).toBe(playerNameKey('cairn_t06'));
+        const players = [{ name: 'Cairn T06', x: 3094, z: 3106, level: 0 }, { name: 'someone', x: 0, z: 0, level: 0 }];
+        expect(await listedInWorld('https://w', 'cairn_t06', 1000, serve(players))).toBe(true);
+        expect(await listedInWorld('https://w', 'cairn_t07', 1000, serve(players))).toBe(false);
+        expect(await listedInWorld('https://w', 'cairn_t06', 1000, serve({ players }))).toBe(true);
+    });
+    test('null when the world does not answer with a list', async () => {
+        expect(await listedInWorld('https://w', 'cairn_t06', 1000, serve([], 503))).toBeNull();
+        expect(await listedInWorld('https://w', 'cairn_t06', 1000, serve({ error: 'x' }))).toBeNull();
+        const down = (async () => Promise.reject(new Error('refused'))) as unknown as typeof fetch;
+        expect(await listedInWorld('https://w', 'cairn_t06', 1000, down)).toBeNull();
+    });
+});
 
 const T = (hms: string) => Date.parse(`2026-10-21T${hms}-07:00`);
 const at = (hms: string, players: number | null): DemoSample => ({ at: T(hms), players, ms: 50 });

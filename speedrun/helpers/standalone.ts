@@ -35,6 +35,15 @@
 // an outer `timeout` that kills the launcher would otherwise leave them running.
 // Processes are only ever signalled through their own child handles.
 //
+// The server, not the client, paces the leaving: the demo removes at most one
+// logging-out player per tick across the whole world, lowest player slot first,
+// so a clicked account can wait minutes behind everyone else logging out. Each
+// account's logout wait therefore ends inside the deadline and reports its
+// outcome (lib/direct.ts LogoutOutcome: out, queued or unconfirmed); a queued
+// account leaves on its turn after its socket closes. Each account's first login
+// waits until the server no longer lists it, because a copy still in the world
+// refuses the login (code 5).
+//
 // Config (JSON):
 //   gatewayPort      loopback gateway port (default 7795; the fleet uses 7790-7799 on bbs)
 //   botsDir          directory of <account>/bot.env (default <checkout>/bots)
@@ -50,12 +59,14 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Subprocess } from 'bun';
 import { BotSDK } from '../../sdk/index';
+import { demoOrigin, listedInWorld } from '../lib/demo-status';
+import { type DirectLogoutResult, directLogoutText, type LogoutOutcome, logoutOutcome } from '../lib/direct';
 import { COMBAT_LOGOUT_TICKS, LOGOUT_BUTTON } from '../lib/session';
 import { parseBotEnv } from './accounts';
 import { assertUntracked, readStatuses, writeJsonAtomicSync } from './altar-cue';
 import { Backoff, LoginLimiter, loginFailurePolicy } from './backoff';
 import { ACCOUNT_NAME_RE, FORBIDDEN_ACCOUNTS, ROLE_NAME_RE } from './fleet-config';
-import { DIRECT_IN_WORLD_RE, DIRECT_REFUSED_RE } from './role';
+import { DIRECT_IN_WORLD_RE, DIRECT_LOGOUT_RE, DIRECT_REFUSED_RE } from './role';
 
 const ROOT = resolve(import.meta.dir, '..', '..');
 
@@ -132,8 +143,25 @@ export function checkBotEnv(env: Record<string, string>, account: string, gatewa
     return null;
 }
 
+/**
+ * How long a direct-path role may wait for its LOGOUT once stopped: it must write its outcome
+ * and exit before the launcher's per-account kill (the deadline less the gateway's share),
+ * with room to abort the role and exit.
+ */
+export function directLogoutBudgetMs(stopDeadlineMs: number): number {
+    return Math.max(2000, stopDeadlineMs - GATEWAY_STOP_RESERVE_MS - 3000);
+}
+
 /** The environment a role process gets: its bot.env (minus GATEWAY_URL), the loopback gateway, options and the cue directory. */
-export function roleEnv(base: Record<string, string | undefined>, botEnv: Record<string, string>, e: LaunchEntry, gatewayUrl: string, runDir: string, loggedInAt: number): Record<string, string> {
+export function roleEnv(
+    base: Record<string, string | undefined>,
+    botEnv: Record<string, string>,
+    e: LaunchEntry,
+    gatewayUrl: string,
+    runDir: string,
+    loggedInAt: number,
+    stopDeadlineMs = 25_000
+): Record<string, string> {
     const { GATEWAY_URL: _ignored, ...creds } = botEnv;
     const out: Record<string, string> = {};
     for (const [k, v] of Object.entries(base)) if (v !== undefined) out[k] = v;
@@ -147,11 +175,61 @@ export function roleEnv(base: Record<string, string | undefined>, botEnv: Record
         // The role's RoleState (role.ts): what a handover already gave survives a role restart.
         ROLE_STATE_DIR: base.ROLE_STATE_DIR ?? join(runDir, 'role-state'),
         LOGGED_IN_AT: String(loggedInAt),
-        HELPER_PATH: e.path
+        HELPER_PATH: e.path,
+        ...(e.path === 'direct' ? { DIRECT_LOGOUT_MS: String(directLogoutBudgetMs(stopDeadlineMs)) } : {})
     };
 }
 
 export type AccountState = 'queued' | 'logging-in' | 'online' | 'backoff' | 'stopping' | 'stopped';
+
+/** How an account's stop ended: its logout's outcome, killed at the deadline before reporting one, or nothing to log out of. */
+export type StopOutcome = LogoutOutcome | 'killed' | 'not-in-world';
+
+const STOP_LABELS: [StopOutcome, string][] = [
+    ['out', 'logged out'],
+    ['queued', "logout queued at the server (clicked and served, still in its removal queue at the deadline; each leaves on its turn)"],
+    ['unconfirmed', 'logout unconfirmed (no tick served after the click, or refused in combat)'],
+    ['killed', 'killed at the deadline before reporting'],
+    ['not-in-world', 'not in the world']
+];
+
+/** One line for a finished stop: counts by outcome, naming every account that did not log out. */
+export function stopSummary(accounts: { account: string; logout?: StopOutcome | null }[]): string {
+    const parts: string[] = [];
+    for (const [outcome, label] of STOP_LABELS) {
+        const names = accounts.filter(a => a.logout === outcome).map(a => a.account);
+        if (names.length) parts.push(outcome === 'out' || outcome === 'not-in-world' ? `${names.length} ${label}` : `${names.length} ${label}: ${names.join(', ')}`);
+    }
+    const lingering = accounts.some(a => a.logout === 'queued' || a.logout === 'unconfirmed' || a.logout === 'killed');
+    return `${parts.join('; ') || 'nothing to stop'}${lingering ? ". The next launch's first login of each waits until the server no longer lists it" : ''}`;
+}
+
+/** How long an account's first login waits for the server to drop a copy of it an earlier stop left in the world (rs/214: 2-5 min at 1,745 players). */
+const LINGER_WAIT_MS = 6 * 60_000;
+const LINGER_POLL_MS = 5000;
+
+/**
+ * Wait while `listed()` says the account is still in the world, polling every `everyMs`, for at
+ * most `maxMs`. An unanswered check (null) doesn't hold anything up.
+ */
+export async function waitWhileListed(
+    listed: () => Promise<boolean | null>,
+    o: { maxMs: number; everyMs: number; stopped: () => boolean; onWait?: () => void; pause?: (ms: number) => Promise<void>; now?: () => number }
+): Promise<{ result: 'absent' | 'unknown' | 'still-listed' | 'stopped'; waitedMs: number }> {
+    const now = o.now ?? Date.now;
+    const pause = o.pause ?? sleep;
+    const t0 = now();
+    let waiting = false;
+    for (;;) {
+        if (o.stopped()) return { result: 'stopped', waitedMs: now() - t0 };
+        const l = await listed();
+        if (l !== true) return { result: l === null ? 'unknown' : 'absent', waitedMs: now() - t0 };
+        if (!waiting) o.onWait?.();
+        waiting = true;
+        if (now() - t0 >= o.maxMs) return { result: 'still-listed', waitedMs: now() - t0 };
+        await pause(Math.min(o.everyMs, Math.max(0, o.maxMs - (now() - t0))));
+    }
+}
 
 export interface LauncherStatus {
     pid: number;
@@ -159,7 +237,7 @@ export interface LauncherStatus {
     gatewayPort: number;
     /** Every non-receiver account is online (logged in since the launcher started it). */
     helpersReady: boolean;
-    accounts: { account: string; role: string; receiver: boolean; path: LaunchEntry['path']; state: AccountState; loggedInAt: number | null; logins: number }[];
+    accounts: { account: string; role: string; receiver: boolean; path: LaunchEntry['path']; state: AccountState; loggedInAt: number | null; logins: number; logout?: StopOutcome | null }[];
     ms: number;
 }
 
@@ -170,11 +248,15 @@ export function helpersReady(accounts: LauncherStatus['accounts']): boolean {
 
 // ------------------------------------------------------------------ processes
 
-const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+function sleep(ms: number): Promise<void> {
+    return new Promise<void>(r => setTimeout(r, ms));
+}
 const iso = () => new Date().toISOString();
 const LOGIN_TIMEOUT_MS = 90_000;
-/** A direct-path role's logout: 8 s for the click, a 17-tick combat wait, 8 s again. */
+/** A direct-path role's logout outside a launcher stop (its own DIRECT_LOGOUT_MS budget is inside the stop's deadline). */
 const DIRECT_STOP_GRACE_MS = 40_000;
+/** A relay account's logout wait ends this long before its deadline, leaving the client time to close. */
+const RELAY_CLOSE_RESERVE_MS = 1500;
 
 async function pipeLines(stream: ReadableStream<Uint8Array>, onLine: (line: string) => void): Promise<void> {
     const decoder = new TextDecoder();
@@ -479,8 +561,8 @@ class Launcher {
             if (!this.isStopping) this.stopReq.request('startup failed', 1);
             this.log(`[launcher] stopping: ${this.stopReq.why}`);
             const deadline = this.stopReq.deadline;
-            const killed = await stopAllWithin(this.accounts, deadline - GATEWAY_STOP_RESERVE_MS);
-            if (killed) this.log(`[launcher] ${killed} account(s) not stopped by the deadline; their processes were killed, and they stay in the world until the server times them out`);
+            await stopAllWithin(this.accounts, deadline - GATEWAY_STOP_RESERVE_MS);
+            this.log(`[launcher] stop: ${stopSummary(this.accounts.map(a => a.summary()))}`);
             await this.stopGateway(deadline);
             this.stopReq.finished();
             clearInterval(timer);
@@ -559,6 +641,7 @@ class AccountRun implements Stoppable {
     state: AccountState = 'queued';
     loggedInAt: number | null = null;
     logins = 0;
+    stopOutcome: StopOutcome | null = null;
     private lite: Subprocess<'ignore', 'pipe', 'pipe'> | null = null;
     private botEnv: Record<string, string> = {};
     private readonly relogin = new Backoff({ initialMs: 10_000, maxMs: 60_000, resetAfterMs: 5 * 60_000 });
@@ -585,7 +668,35 @@ class AccountRun implements Stoppable {
     }
 
     summary(): LauncherStatus['accounts'][number] {
-        return { account: this.entry.account, role: this.entry.role, receiver: this.entry.receiver, path: this.entry.path, state: this.state, loggedInAt: this.loggedInAt, logins: this.logins };
+        return {
+            account: this.entry.account,
+            role: this.entry.role,
+            receiver: this.entry.receiver,
+            path: this.entry.path,
+            state: this.state,
+            loggedInAt: this.loggedInAt,
+            logins: this.logins,
+            logout: this.stopOutcome
+        };
+    }
+
+    /**
+     * Before this run's first login of the account: a copy an earlier stop left in the world (its
+     * logout still in the server's removal queue, or a killed client) refuses the login with code 5
+     * and spends the login limiter's attempts, so wait until the server no longer lists it.
+     */
+    private async waitForEarlierCopy(): Promise<void> {
+        if (this.logins > 0) return;
+        const origin = demoOrigin(this.botEnv.SERVER);
+        const name = this.entry.account;
+        const { result, waitedMs } = await waitWhileListed(() => listedInWorld(origin, name), {
+            maxMs: LINGER_WAIT_MS,
+            everyMs: LINGER_POLL_MS,
+            stopped: () => this.L.isStopping,
+            onWait: () => this.L.log(`[launcher] ${name}: still in the world from an earlier session; its login waits until ${origin}/playerpositions drops it (at most ${LINGER_WAIT_MS / 60_000} min)`)
+        });
+        if (result === 'still-listed') this.L.log(`[launcher] ${name}: still listed after ${Math.round(waitedMs / 1000)}s; logging in anyway`);
+        else if (waitedMs > 0 && result === 'absent') this.L.log(`[launcher] ${name}: left the world after ${Math.round(waitedMs / 1000)}s`);
     }
 
     private note(stream: 'lite' | 'role', line: string): void {
@@ -640,6 +751,8 @@ class AccountRun implements Stoppable {
             while (Date.now() < until && !this.L.isStopping) await sleep(500);
         }
         if (this.L.isStopping) return;
+        await this.waitForEarlierCopy();
+        if (this.L.isStopping) return;
         await this.L.takeLogin();
         this.state = 'logging-in';
         this.logins++;
@@ -649,6 +762,8 @@ class AccountRun implements Stoppable {
     /** One login: resolves once the client is in the world, with a promise for the session's end. */
     private async session(): Promise<{ ended: Promise<{ code: number | null; login?: { code: number } }> }> {
         for (;;) {
+            if (this.L.isStopping) return { ended: Promise.resolve({ code: null }) };
+            await this.waitForEarlierCopy();
             if (this.L.isStopping) return { ended: Promise.resolve({ code: null }) };
             await this.L.takeLogin();
             if (this.L.isStopping) return { ended: Promise.resolve({ code: null }) };
@@ -732,7 +847,7 @@ class AccountRun implements Stoppable {
     /** One role process, its output piped to <account>.role.log; it resolves `exited` only once that output is drained. */
     private spawnRole(): RoleProcess {
         const e = this.entry;
-        const env = roleEnv(process.env, this.botEnv, e, this.L.gatewayUrl, this.L.cfg.runDir, this.loggedInAt ?? Date.now());
+        const env = roleEnv(process.env, this.botEnv, e, this.L.gatewayUrl, this.L.cfg.runDir, this.loggedInAt ?? Date.now(), this.L.cfg.stopDeadlineMs);
         const child = Bun.spawn([process.execPath, `speedrun/helpers/${e.role}.ts`, e.account, ...e.args], { ...OWN_GROUP, cwd: ROOT, env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
         const onLine = (line: string) => {
             this.note('role', line);
@@ -747,6 +862,8 @@ class AccountRun implements Stoppable {
             }
             const refused = DIRECT_REFUSED_RE.exec(line);
             if (refused) this.refusal = Number(refused[1]);
+            const logout = DIRECT_LOGOUT_RE.exec(line);
+            if (logout) this.stopOutcome = logout[1] as LogoutOutcome;
         };
         const exited = Promise.all([pipeLines(child.stdout, onLine), pipeLines(child.stderr, onLine), child.exited]).then(() => {
             if (e.path === 'direct' && this.state !== 'stopping') {
@@ -776,38 +893,58 @@ class AccountRun implements Stoppable {
         // A relay client that never got into the world has nothing to log out of: close it at once.
         const inWorld = this.state === 'online';
         this.state = 'stopping';
+        const direct = this.entry.path === 'direct';
         const role = this.roles.running;
         if (role && role.exitCode === null) {
             role.kill('SIGTERM');
-            if (!(await exitedWithin(role, remaining(deadline, this.entry.path === 'direct' ? DIRECT_STOP_GRACE_MS : 15_000)))) role.kill('SIGKILL');
+            // A direct role logs out itself, within DIRECT_LOGOUT_MS, and reports how (DIRECT_LOGOUT_RE).
+            if (!(await exitedWithin(role, remaining(deadline, direct ? DIRECT_STOP_GRACE_MS : 15_000)))) {
+                role.kill('SIGKILL');
+                if (direct) this.stopOutcome ??= 'killed';
+            }
         }
         await this.roles.done.catch(() => undefined);
+        if (direct) this.stopOutcome ??= inWorld ? 'unconfirmed' : 'not-in-world';
         const lite = this.lite;
+        // Left unset while a relay logout runs, so a kill in the middle of it reads 'killed'.
+        if (!direct && !(inWorld && lite && lite.exitCode === null)) this.stopOutcome = 'not-in-world';
         if (lite && lite.exitCode === null) {
-            const out = !inWorld ? false : await this.logout(lite, deadline).catch(e => {
-                this.L.log(`[launcher] ${this.entry.account}: logout failed: ${e}`);
-                return false;
-            });
-            if (!out) {
-                this.L.log(`[launcher] ${this.entry.account}: ${inWorld ? 'no clean logout' : 'not in the world'}; closing the client`);
+            if (inWorld) {
+                const r = await this.relayLogout(lite, deadline);
+                this.stopOutcome = logoutOutcome(r);
+                this.L.log(`[launcher] ${this.entry.account}: logout: ${directLogoutText(r)}`);
+            }
+            if (lite.exitCode === null) {
+                this.L.log(`[launcher] ${this.entry.account}: ${inWorld ? `logout ${this.stopOutcome}` : 'not in the world'}; closing the client`);
                 lite.kill('SIGINT');
                 if (!(await exitedWithin(lite, remaining(deadline, 5000)))) lite.kill('SIGKILL');
             }
         }
         await this.supervising?.catch(() => undefined);
         this.state = 'stopped';
-        this.L.log(`[launcher] ${this.entry.account}: stopped`);
+        this.L.log(`[launcher] ${this.entry.account}: stopped (logout: ${this.stopOutcome})`);
     }
 
     /** Past the stop's deadline: SIGKILL this account's own role and client, whatever they are doing. */
     kill(): void {
         for (const p of [this.roles.running, this.lite]) if (p && p.exitCode === null) p.kill('SIGKILL');
         this.state = 'stopped';
-        this.L.log(`[launcher] ${this.entry.account}: killed at the stop deadline`);
+        // A logout already reported queued or out stays so: the server holds the click, not the process.
+        this.stopOutcome ??= 'killed';
+        this.L.log(`[launcher] ${this.entry.account}: killed at the stop deadline (logout: ${this.stopOutcome})`);
     }
 
-    /** Click logout through our own SDK connection and wait for the client to leave. Refused in combat: wait it out once. */
-    private async logout(lite: Subprocess, deadline: number): Promise<boolean> {
+    /**
+     * Click logout through our own SDK connection and wait, until shortly before the deadline, for
+     * the client to leave: the server's removal queue can hold a clicked player far longer than a
+     * tick. Refused in combat: wait the combat window out and click again.
+     */
+    private async relayLogout(lite: Subprocess, deadline: number): Promise<DirectLogoutResult> {
+        const waitUntil = deadline - RELAY_CLOSE_RESERVE_MS;
+        const t0 = performance.now();
+        let clicks = 0;
+        let clickTick = 0;
+        let refused = false;
         const sdk = new BotSDK({
             botUsername: this.entry.account,
             password: this.botEnv.PASSWORD!,
@@ -818,17 +955,34 @@ class AccountRun implements Stoppable {
             showChat: false,
             readyTimeout: 0
         });
+        const tick = () => sdk.getState()?.tick ?? 0;
+        const refusedSince = (t: number) => sdk.getState()?.gameMessages.some(m => /can't log ?out/i.test(m.text) && m.tick >= t) ?? false;
+        const result = (ok: boolean, reason?: string): DirectLogoutResult => ({
+            ok,
+            via: ok ? 'logout' : null,
+            clicks,
+            clickTick,
+            endTick: tick(),
+            wallMs: performance.now() - t0,
+            ...(reason ? { reason } : {}),
+            ...(refused ? { refused } : {})
+        });
         try {
-            await Promise.race([sdk.connect(), sleep(remaining(deadline, 10_000)).then(() => Promise.reject(new Error('gateway handshake timed out')))]);
-            for (let attempt = 0; attempt < 2; attempt++) {
-                const clickTick = sdk.getState()?.tick ?? 0;
+            await Promise.race([sdk.connect(), sleep(remaining(waitUntil, 10_000)).then(() => Promise.reject(new Error('gateway handshake timed out')))]);
+            clickTick = tick();
+            while (Date.now() < waitUntil) {
+                const sent = tick();
                 await sdk.sendClickComponent(LOGOUT_BUTTON).catch(() => undefined);
-                if (await exitedWithin(lite, remaining(deadline, 8_000))) return true;
-                const refused = sdk.getState()?.gameMessages.some(m => /can't log ?out/i.test(m.text) && m.tick >= clickTick);
-                if (!refused || remaining(deadline, 15_000) === 0) return false;
-                await sdk.waitForCondition(s => s.tick >= clickTick + COMBAT_LOGOUT_TICKS + 1, remaining(deadline, 15_000)).catch(() => undefined);
+                clicks++;
+                refused = false;
+                while (lite.exitCode === null && Date.now() < waitUntil && !(refused = refusedSince(sent))) await sleep(100);
+                if (lite.exitCode !== null) return result(true);
+                if (!refused) break;
+                await sdk.waitForCondition(s => s.tick >= sent + COMBAT_LOGOUT_TICKS + 1, remaining(waitUntil, 15_000)).catch(() => undefined);
             }
-            return false;
+            return result(false, `still in the world after ${Math.round(performance.now() - t0)} ms`);
+        } catch (e) {
+            return result(false, `logout failed: ${e instanceof Error ? e.message : String(e)}`);
         } finally {
             await sdk.disconnect().catch(() => undefined);
         }

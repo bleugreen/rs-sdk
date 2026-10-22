@@ -56,6 +56,30 @@ export async function samplePlayerCount(origin: string, timeoutMs = 4_000): Prom
     }
 }
 
+/** The key a player name compares by: the server's display name capitalises words and shows `_` as a space. */
+export function playerNameKey(name: string): string {
+    return name.trim().toLowerCase().replace(/[\s_]+/g, ' ');
+}
+
+/**
+ * Whether GET /playerpositions lists `account`. It lists every player in the world loop (cached
+ * 1 s server side), including one that clicked logout and still waits in the server's removal
+ * queue. Never throws: null when the world did not answer with a player list.
+ */
+export async function listedInWorld(origin: string, account: string, timeoutMs = 5_000, fetchImpl: typeof fetch = fetch): Promise<boolean | null> {
+    try {
+        const res = await fetchImpl(`${origin}/playerpositions`, { signal: AbortSignal.timeout(timeoutMs) });
+        if (!res.ok) return null;
+        const body = (await res.json()) as unknown;
+        const players = Array.isArray(body) ? body : (body as { players?: unknown } | null)?.players;
+        if (!Array.isArray(players)) return null;
+        const key = playerNameKey(account);
+        return players.some(p => typeof (p as { name?: unknown })?.name === 'string' && playerNameKey((p as { name: string }).name) === key);
+    } catch {
+        return null;
+    }
+}
+
 export type DemoPhase = 'unknown' | 'up' | 'down' | 'refusing' | 'recovering';
 
 export interface RestartRecord {
