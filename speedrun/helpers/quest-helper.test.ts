@@ -134,7 +134,8 @@ describe("the kit leaves room for Montai's logs", () => {
     });
     test('the login that stalled: 22 sharks, the bronze longsword, the axe, coins and 3 logs', () => {
         const s = state({ inventory: [item('Bronze longsword'), item('Bronze axe'), ...sharks(22), item('Coins', 300), item('Logs'), item('Logs'), item('Logs')] });
-        expect(logShortfall(s)).toBe(2);
+        expect(freeSlots(s)).toBe(0);
+        expect(logShortfall(s)).toBe(3);
         const d = kitDeposits(s);
         expect(d.some(p => p.test('Bronze longsword'))).toBe(true);
         expect(d.some(p => p.test('Shark'))).toBe(true);
