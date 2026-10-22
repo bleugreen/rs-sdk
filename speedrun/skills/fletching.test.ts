@@ -7,7 +7,7 @@ import { TickLog } from '../lib/ticks';
 import { levelForXp, XP_RATE, xpForLevel } from '../lib/xp';
 import { Observation, resolveResume } from '../runner/resume';
 import { runSteps, type RunnerSession } from '../runner/step';
-import { finished, LAG_HEADLESS, planFletch, preconditions, recipeFor, RUNE_KEEP, skill, STEP_ID, STEP_NAME, steps, stockOf, type FletchingOptions } from './fletching';
+import { finished, RESERVE_MARGIN, planFletch, preconditions, recipeFor, RUNE_KEEP, skill, STEP_ID, STEP_NAME, steps, stockOf, type FletchingOptions } from './fletching';
 
 const T = Object.fromEntries(ARROW_TIERS.map(t => [t.tier, t])) as Record<ArrowTier, (typeof ARROW_TIERS)[number]>;
 
@@ -220,14 +220,14 @@ describe('planFletch: tier order', () => {
 describe('planFletch: the 570 rune keep', () => {
     test('below 75 with headless arrows short: the run to 75 is capped so the rune tips keep theirs', () => {
         // level 70: 75 is 2,219.68 base away, 15 adamant actions (225 headless); 820 headless leaves
-        // 25 over the 570 the rune tips need, inside a tick of lag, so the run to 75 is capped
+        // 25 over the 570 the rune tips need, inside the lag margin, so the run to 75 is capped
         const st = stockOf(world({ level: 70, stacks: [[HEADLESS_ARROW, 820], [T.adamant.tips, 600], [T.rune.tips, 570]] }));
         const plan = planFletch(st, { toLevel: 80 });
         expect(plan.runs.map(r => r.kind)).toEqual(['reserve', 'route', 'rune']);
         expect(plan.runs[0]).toMatchObject({ tiers: ['adamant', 'mithril', 'steel', 'iron', 'bronze'], untilLevel: 75, maxActions: Math.floor((820 - 570) / 15), actions: 15, levelTo: 75 });
-        // 75 to 80 on rune alone leaves rune tips at 80: the rune run makes the rest
+        // 75 to 80 on rune alone leaves rune tips at 80: the rune run makes the rest (and carries on to 84)
         expect(plan.runs[1]).toMatchObject({ untilLevel: 80, byTier: { rune: plan.runs[1]!.actions } });
-        expect([plan.runeArrows, plan.keeps, plan.level]).toEqual([570, true, 80]);
+        expect([plan.runeArrows, plan.keeps, plan.level]).toEqual([570, true, 84]);
     });
 
     test('when the lower tiers cannot reach 75 without the rune headless arrows, the plan names the block', () => {
@@ -236,11 +236,12 @@ describe('planFletch: the 570 rune keep', () => {
         expect(plan.runeArrows).toBe(0);
     });
 
-    test('plenty of headless arrows: no reserve run (the margin covers a tick of level lag)', () => {
-        const plan = planFletch(stockOf(world({ level: 70, stacks: [[HEADLESS_ARROW, 870], [T.adamant.tips, 600], [T.rune.tips, 570]] })), { toLevel: 80 });
-        expect(plan.runs.map(r => r.kind)).toEqual(['route', 'rune']);
-        expect(plan.runs[0]!.byTier).toMatchObject({ adamant: 15 });
-        expect(LAG_HEADLESS).toBe(75);
+    test("headless arrows to spare beyond the lag margin: no reserve run (today's stock has ~2,985 at 75)", () => {
+        expect(RESERVE_MARGIN).toBe(750);
+        const at = (h: number) => planFletch(stockOf(world({ level: 70, stacks: [[HEADLESS_ARROW, h], [T.adamant.tips, 600], [T.rune.tips, 570]] })), { toLevel: 80 }).runs.map(r => r.kind);
+        // 225 to reach 75, 570 for the rune tips, 750 margin
+        expect(at(225 + 570 + 750)).toEqual(['route', 'rune']);
+        expect(at(225 + 570 + 749)).toEqual(['reserve', 'route', 'rune']);
     });
 
     test('99 reached with rune tips still held (a late courier): a rune-only run to the keep', () => {
@@ -300,7 +301,7 @@ describe('preconditions', () => {
     test('supplies short of 99, and the rune keep, refuse with how far they reach', () => {
         expect(preconditions(world({ level: 1, stacks: today({ adamant: 1000 }) }))).toBe('supplies short: 10698 base xp (they reach Fletching 94; 223 actions: rune 38, adamant 67, mithril 99, steel 9, iron 6, bronze 4)');
         expect(preconditions(world({ level: 1, stacks: today({ headless: 1500 }) }))).toBe('rune keep: reaching Fletching 75 needs the headless arrows the rune tips need: 1500 headless arrows, 570 kept for rune, take the lower tiers only to Fletching 73');
-        expect(preconditions(world({ level: 1, stacks: today({ rune: 300, adamant: 3000 }) }))).toBe('rune keep: the stock ends with 300 rune arrows (pack and quiver), below 570 (rune tips 300, rune arrows 0, headless after the route 1785)');
+        expect(preconditions(world({ level: 1, stacks: today({ rune: 300, adamant: 3000 }) }))).toBe('rune keep: the stock ends with 300 rune arrows (pack and quiver), below 570 (rune tips 300, rune arrows 0, headless after the route 270)');
         expect(preconditions(world({ level: 1, stacks: today({ rune: 300, adamant: 3000 }) }), { keepRune: 300 })).toBe(true);
     });
 
@@ -371,7 +372,8 @@ describe('the step on the page (item-cycle stack mode)', () => {
         const page = new StackPage(world({ level: 97, stacks: [[HEADLESS_ARROW, 1200], [T.adamant.tips, 630], [T.rune.tips, 570]] }));
         const { outcome, state } = await drive(page);
         expect(outcome).toEqual({ ok: true, value: { completed: 1 } });
-        expect(page.starts.map(p => [p.untilLevel, p.maxActions, p.recipes.length])).toEqual([[99, undefined, 6], [undefined, 10, 1]]);
+        // the plan's rune run is 10; the burst that crosses 99 lands 2 more rune actions first
+        expect(page.starts.map(p => [p.untilLevel, p.maxActions, p.recipes.length])).toEqual([[99, undefined, 6], [undefined, 8, 1]]);
         expect(state.skills[0]!.baseLevel).toBe(99);
         expect(held(state, T.rune.arrow)).toBe(570);
     });
@@ -410,8 +412,11 @@ describe('the rune keep is a hard rule', () => {
         ['99, 300 rune tips left', { level: 99, stacks: [[HEADLESS_ARROW, 300], [T.rune.tips, 300], [T.rune.arrow, 270]] }, 99]
     ];
 
+    /** Rune arrows held plus those the rune tips can still make: what the keep can still reach. */
+    const runeReach = (s: BotWorldState) => held(s, T.rune.arrow) + (s.skills[0]!.baseLevel >= 75 ? Math.min(held(s, T.rune.tips), held(s, HEADLESS_ARROW)) : held(s, T.rune.tips) > 0 ? -1 : 0);
+
     for (const lag of [1, 2]) {
-        test(`refuse, or end at the target with 570 rune arrows (page lag ${lag})`, async () => {
+        test(`refuse, or end at the target with 570 rune arrows; a staler page never spends the rune share (page lag ${lag})`, async () => {
             const verdicts: string[] = [];
             for (const [name, o, to] of cases) {
                 const s = world(o);
@@ -423,12 +428,18 @@ describe('the rune keep is a hard rule', () => {
                     verdicts.push(`${name}: refused`);
                     continue;
                 }
-                expect({ name, ok: outcome.ok, level: state.skills[0]!.baseLevel >= to, rune: held(state, T.rune.arrow) >= RUNE_KEEP, dropped: page.dropped }).toEqual({ name, ok: true, level: true, rune: true, dropped: 0 });
-                verdicts.push(`${name}: kept`);
+                if (lag === 1) {
+                    // the page as the engine runs it (fletching.md section 4): the step reaches the target with the keep
+                    expect({ name, ok: outcome.ok, level: state.skills[0]!.baseLevel >= to, rune: held(state, T.rune.arrow) >= RUNE_KEEP, dropped: page.dropped }).toEqual({ name, ok: true, level: true, rune: true, dropped: 0 });
+                } else {
+                    // a tick staler: the step may fall short of its target, but never by spending the rune share
+                    expect({ name, runeReach: runeReach(state) >= RUNE_KEEP, dropped: page.dropped }).toEqual({ name, runeReach: true, dropped: 0 });
+                }
+                verdicts.push(`${name}: ${outcome.ok ? 'kept' : 'short'}`);
             }
             // both outcomes are exercised: the edge sits inside the grid
             expect(verdicts.some(v => v.endsWith('refused'))).toBe(true);
-            expect(verdicts.filter(v => v.endsWith('kept')).length).toBeGreaterThan(8);
+            expect(verdicts.filter(v => v.endsWith('kept')).length).toBeGreaterThan(lag === 1 ? 8 : 4);
         });
     }
 });

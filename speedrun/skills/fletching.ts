@@ -10,8 +10,9 @@
 // The rune keep. S27 fires the 570 rune arrows SCORED fletches from its 570 rune arrowtips, so
 // the step ends only with `keepRune` rune arrows held (pack and quiver). Two things could lose
 // them, and the plan guards both. Below 75, lower tiers share the headless arrows the rune tips
-// need: when going best-first to 75 would leave fewer than the rune tips' share (less one tick of
-// the page's level lag), the run to 75 is capped with `maxActions`. And when Fletching reaches
+// need: when going best-first to 75 would leave less than the rune tips' share plus a margin for
+// the page's level lag at the band edges, the run to 75 is capped with `maxActions`, which holds
+// whatever the lag (an action takes at most 15). And when Fletching reaches
 // `toLevel` with rune tips still held (the courier brings them late, at about 96), a last run
 // fletches rune only until the keep is made. The step refuses up front when the stock cannot end
 // with the keep.
@@ -42,10 +43,13 @@ export const PER_TICK = 5;
 const INVENTORY = 28;
 const RUNE = ARROW_TIERS.find(t => t.tier === 'rune')!;
 /**
- * Headless arrows the page may still spend on a lower tier after the level reaches 75: it reads the
- * level one tick late, so one more tick of the old tier, 5 actions of 15.
+ * The headroom over the rune tips' share below which the run to 75 is capped. The page picks the
+ * tier from the level it last saw, so at each band edge (15, 30, 45, 60, 75) a burst or two still
+ * goes to the old tier and the route spends more headless arrows than the plan's walk. 2 ticks of
+ * 5 actions of 15 at each of the five edges; the cap itself holds whatever the lag, since an action
+ * takes at most 15.
  */
-export const LAG_HEADLESS = PER_TICK * ARROWS_PER_ACTION;
+export const RESERVE_MARGIN = 2 * PER_TICK * ARROWS_PER_ACTION * 5;
 /** Program runs one step makes at most (reserve, route, rune), plus one re-plan after a short run. */
 const MAX_RUNS = 4;
 
@@ -230,11 +234,11 @@ export function planFletch(stock: FletchStock, opts: FletchingOptions = {}): Fle
         const lower = rows.filter(r => r.tier !== 'rune');
         const gate = Math.min(RUNE.level, to);
         if (levelForXp(st.xp) < gate && needRune() > 0 && (st.tips.rune ?? 0) > 0) {
-            // Would best-first to 75 leave the rune tips their headless arrows, with a tick of lag to spare?
+            // Would best-first to 75 leave the rune tips their headless arrows, with the page's lag to spare?
             const reserve = Math.min(needRune(), st.tips.rune ?? 0);
             const probe = clone(st);
             simulate(probe, lower, 'route', { untilLevel: gate });
-            if (probe.headless - reserve < LAG_HEADLESS) {
+            if (probe.headless - reserve < RESERVE_MARGIN) {
                 const cap = Math.floor(Math.max(0, st.headless - reserve) / ARROWS_PER_ACTION);
                 add(simulate(st, lower, 'reserve', { untilLevel: gate, maxActions: cap }));
                 if (!slotFault && levelForXp(st.xp) < gate) {
