@@ -156,9 +156,9 @@ of Goblin Diplomacy's standalone travel that the legs already carried off its ro
 cannon session, Prayer, Crafting and Cooking pass it. Fold-in 13 adds S15's measured H to M (+352),
 so Monkey Madness (4,429) passes Agility (4,327) for rank 1.
 
-The expected column sums to **31,315** (the steps) plus the legs' **2,198.5**; RUN-ORDER.md section 6
+The expected column sums to **31,216** (the steps) plus the legs' **2,198.5**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **34,798.5** knife-on expected (31,876.5 best), against the record of 35,916.
+retries, restarts) for its **34,699.5** knife-on expected (31,876.5 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -169,7 +169,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 0 | 0 | Run chain | `speedrun/run.ts`, `runner/resume.ts` | all | boundary idle 0 m (#92); restarts ~5 each (an in-page relog, ~2, rs/174) | 0 | | | overlay | `runner/step.ts`, `runner/resume.ts` (main) | `run.ts`: building (rs/186, held: tenet 15); `runner/step.ts`, `resume.ts` on main (#29, #104, #146) |
 | 1 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,429 | 4,026 | 4,963 | ~937 | overlay | `quest-mm-*.ts` | **H-M lab-proven end to end, N-Z unrun** (A-G run; H-M 3 of 3, 1,466 m; N-Z being written by rs/201); run mode: no `p_walk`, re-paths at the Monkey Child (O) and the zoo (T), lever ~0 (r, rs/201) |
-| 2 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,327 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; S17 75-85 858; rs/155); run mode 0 on both courses (m, rs/270) |
+| 2 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,228 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; rs/155); S17 4,114 on the engine's fall roll, 66 the clean-lap floor (rs/270); run mode 0 on both courses (m, rs/270) |
 | 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,116 | 3,116 | 3,775 | ~659 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | **on main, 4235a9e7 (#220; rs/260's snapshot of rs/230's lab-accepted module, rs/147's branch at 59ec3933)**, with `selfStarter` (plain 3.62) and `beforeRestart`; `stay2` bury (#159, rs/182) and restart fix (e5d8a058, #170; rs/207) on main; gate `measureDrops` 120 by the default, its explicit value pending rs/259 |
 | 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,027 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; on rs/147's branch, changing with rs/236; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165); gate `measureDrops` 120 explicit (rs/261, building); run mode 0 (m, rs/261) |
 | 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,198.5 | 2,198.5 | ~2,340 i | ~140 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | lab-measured (PR #198, open; rs/198 for rs/186); its walker, `lib/travel.ts`, on main, 0658e896 (#200) |
@@ -239,8 +239,8 @@ are filed under main and held until tenet 15 is answered.
   #146's sessionLink fix), `runner/budget.ts` and `runner/fence.ts` are on main.
 - **1.** rs/155's lab pass (PR #149, open into rs/147): 9 of 9 Wilderness laps at exactly 66 at
   Agility 99 (the acceptance asks 8 of 10 at 66, +1); Gnome 1-22 measured 114 against the 122
-  inferred. S17 75-99 adopted at 4,213: 75-85 measured 858 end to end in the lab chain, 85-99
-  3,355 inferred from it (RUN-ORDER.md S17). The demo rehearsal is still to run.
+  inferred. S17 75-99 at 4,114 (i): the engine's fall roll with rs/270's measured lap and fall
+  costs, cross-checked by its level crossings (948 m for 76-85) and rs/155's 858 m (RUN-ORDER.md S17). The demo rehearsal is still to run.
 - **2.** **H-M lab-proven end to end, N-Z unrun** (A-G run; rs/201 ran H to M 3 of 3 at route
   levels, 1,466 against the fixed column's 1,114, +352 in the expected; N-Z being written by rs/201);
   ~1,211 of the 4,429 is estimated (entry 2).
@@ -499,8 +499,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   the climb comes ~1,100 ticks after S11a ends. And S17, Wilderness course laps from 75 to 99 as the run's last step, after S27's
   combat finish (leg T27-17, 185.7 ticks measured; RUN-ORDER.md O1, `research/run-transitions.md` §4).
 - **Parameters:** `course: 'gnome' | 'wilderness'`, `untilLevel` (22 / 99), `food` and `eatBelow`,
-  `eatGap` and `eatAt: 'land' | 'any'` (rs/241's PR #218, building; the module passes `eatGap: 3,
-  eatAt: 'land'` by default), `technique: 'react' | 'plain'` (the rs/97 program's switch), `startStep`.
+  `eatGap` and `eatAt: 'land' | 'any'` (the program's opt-in, f95f9558, rs/241's work; the module passes
+  `eatGap: 3, eatAt: 'land'` by default, a9298868, rs/270; both reach main with rs/147's Agility snapshot,
+  to be filed), `technique: 'react' | 'plain'` (the rs/97 program's switch), `startStep`.
 - **Preconditions:** S11a: Tree Gnome Village complete (the village spirit tree reaches the
   stronghold; ledger), position at the course start (2474,3436). S17: Agility 75 from The Grand
   Tree's 7,900 base (read, `quest_grandtree.rs2:199`; `skills/agility.md` §3), ridge-gate Agility
@@ -509,16 +510,21 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Postconditions:** Agility 22 (S11a) or 99 (S17); food left. Items out: none.
 - **Ticks:** S11a **114** (measured in the lab by rs/155, PR #149: the in-page program, Gnome 1-22
   at 300 ms; the earlier 122 was inferred, 149.4 base at 1.22 per tick from a 70.7-tick lap measured
-  at 100 ms only, `skills/agility.md` §2-3). S17 expected **4,213** at rs/155's lab pace: 75-85
-  **858 measured** end to end in its chain from level 1 (the in-page program at 300 ms, level-crossing
-  tick to level-crossing tick, laps only, at 10 HP with eats; `rehearsals/agility.md` §1 on rs/155's
-  branch, PR #149), 85-99 **3,355 inferred** (`agility-model.ts --lap=66`'s 3,078 scaled by the
-  chain's 52-85 against the model, 1,999 / 1,830 = 1.09). The 66-tick clean lap is measured 9 of 9 at
+  at 100 ms only, `skills/agility.md` §2-3). S17 expected **4,114** (inferred: the engine's fall roll with
+  the measured lap and fall costs; rs/270, `rehearsals/agility.md` §6.7 at f439bc7f on
+  agent/rs-270-builder-0): `stat_random(agility, lo, 250)`, lo 200 for the rope swing and the log and
+  180 for the stones (`wilderness_course.rs2`), a fall 7.1% a try at 75 and 2.3% at 99 on the rope and
+  log, 9.0% and 2.3% on the stones (r); falls cost stones +16, log +47, rope +75, and the lap is 66 (m);
+  `agility-model.ts --lap=66 --sim` over 20,000 runs gives 75-85 1,051 (sd 80), 85-99 3,128 (sd 109),
+  75-99 4,114 (sd 142), laps and falls only. Level crossings 76 to 85 measured mean 948 over 12-13
+  laps (~1,020 with a lap for 75 to 76), against 1,051 (m). It replaces 4,213 at rs/155's lab pace
+  (75-85 858 measured, `rehearsals/agility.md` §1 on rs/155's branch; 85-99 3,355 inferred). The 66-tick clean lap is measured 9 of 9 at
   300 ms on bbs with the fixed lite client and 9 of 9 in the page at Agility 99 (rs/155); the
   model's 4,024 is history (`skills/agility.md` §1-2). Best about **3,820** (inferred: the lab fell 4 times in 39 laps
-  against the model's 9, so the model reads about 5% pessimistic; `skills/agility.md` §2).
+  against the model's 9, `skills/agility.md` §2; about 2.1 sd under the simulated 4,114, kept as
+  the best basis).
   Fallback **4,512** at the 74-tick lap a relay-driven loop would pay (inferred, same section). The
-  entry total is 4,327 expected, ~3,934 best and 4,626 fallback.
+  entry total is 4,228 expected, ~3,934 best and 4,626 fallback.
 - **S17 at SCORED's stats** (rs/241, m, lab, bgsrv-ub, 300 ms, the in-page `agility` program, one
   sample; `docs/speedrun/rehearsals/agility.md` section 6 on rs/241's branch at 2cf6fc15): Agility
   75, HP 99, Defence 98, Prayer 99, protect off, 12 laps at 70.3 a lap (66 clean and one log-fall
@@ -530,8 +536,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   would fall under the 60-HP player-killer line around lap 30. The module eats a shark when HP is
   below 60 (`eatBelow: 60`; about 2-3 sharks over the step, 20 HP each), not to a fixed eat line;
   the 12 sharks in H23 stay as the margin against player killers. **An eat costs 0 ticks with
-  `eatAt: 'land'`** (rs/241's PR #218, commits bdbd4ed265 and 55c60217fb; building, not on main,
-  and **pending for the run-commit floor**, entry 0): the program eats only on the obstacle-click
+  `eatAt: 'land'`** (the program's opt-in, f95f9558, rs/241's work, and the module default, a9298868,
+  rs/270; not on main: they reach it with **rs/147's Agility snapshot, to be filed, pending for the
+  run-commit floor**, entry 0; the PR first cited for them was closed unmerged): the program eats only on the obstacle-click
   tick, just before the click, so it cannot cancel a walk. Measured (rs/270; lab, bgsrv-ub, 300 ms,
   page built from a9298868; `rehearsals/agility.md` section 6.5 at 291727b8 on
   agent/rs-270-builder-0): at the log balance from 13 tiles a click alone took 16 ticks to the xp,
@@ -543,14 +550,23 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   98, `eatGap: 3, eatAt: 'land'`, 15 timed laps) every eat lap cost exactly what its fall alone
   costs (m). The engine also drops an eat while an obstacle script holds the player
   (`OpHeldHandler.ts:16`), so a held-window eat heals nothing (r). **Without the option** (a run
-  commit lacking #218) an eat during an approach costs the 40-tick `stepTimeout`: 0-40 per eat,
+  commit without the snapshot) an eat during an approach costs the 40-tick `stepTimeout`: 0-40 per eat,
   0-120 over the 2-3 eats (rs/241's 14 laps, section 6.1: laps without an eat exactly 66, all 5
   eats in the two fall laps, 113 with 2 and 160 with 3 and one 40-tick timeout; RUN-ORDER.md
   sensitivity table).
-- **Falls are S17's real variance** (m, rs/270): +16 per stones fall, about +75 per rope-swing fall.
-  rs/270's 15 laps drew 6 falls (80.3 a lap) against 1 in 12 in rs/241's run, so the fall rate at
-  Agility 75-85 is the open number; a wider sample is requested of rs/270, and S17 is not re-priced
-  from 15 laps. The 75-85 band's 858 m already carries rs/155's chain's falls.
+- **Falls are S17's whole variance** (m, rs/270): by obstacle at S17's arrival stats (5 runs of 75 to
+  85, 69 laps, 63 timed; `rehearsals/agility.md` §6.6), stones 0.058 falls a lap at +16, the log 0.043
+  at +47, the rope swing 0.072 at +75, the pipe and rocks 0, the costs adding (66 + 75 + 16 = 157):
+  ~8.4 ticks a lap expected, ~74 a lap at 75-85 (i), and the engine roll above prices the rest.
+  **66 is the floor for a clean lap** (m, rs/270, a per-tick trace of 3 clean laps at 99, all 66;
+  §6.8 at 721654c8): 19 walking ticks and 47 script ticks (pipe 17: 10 tiles in 5, script 12; rope
+  swing 7: 1 tile, script 6; stones 15: 3 tiles in 2, arrivedelay 1, six 2-tick jumps; log 17: 14
+  tiles in 7, then a teleport and 8 forced tiles; rocks 10: 8 tiles in 4, arrivedelay 1, climb 4).
+  Each click lands on the tick after the xp shows, and a click during an obstacle's delay is dropped
+  (`OpLocHandler.ts`, 'cannot interact while delayed'); every approach runs at 2 tiles a tick and each
+  script fixes its own start tile, so there is no route lever. **The competitor-lap question is
+  closed**: stunagile's 6,772 is the 21st percentile of the simulated S17 distribution (fewer falls),
+  not a faster lap (§6.8).
 - **Primitives:** `lib/programs.ts` `runProgram(sdk, 'agility', {course, untilLevel, food,
   eatBelow})` [rs/97] (`untilLevel` is **declared in the program at 2f1b15de (rs/147's branch), pending main** with
   rs/147's Agility snapshot, which waits on main's sign-off of four default-changing program fixes
