@@ -18,9 +18,9 @@
 //   leg      only thieving:to-ardougne, from wherever the account stands
 //   topup    S18's helper top-ups at the scored run's stats: --mode=idle|restart --helper=<bot>
 //            (HELPER=<bot> in tickprog-lab.sh) [--thieving=57 --hp=97 --sharks=2 --below=2
-//            --load=1 --to=99]. The helper is a lite
-//            stand-in that stays beside the account by ::tele and answers the account's request
-//            with one shark offer. Both accounts leave Tutorial Island through S00's skip first.
+//            --load=1 --to=99]. The helper is a lite stand-in that stays beside the account by
+//            ::tele and answers the account's request with one shark offer. Both accounts leave
+//            Tutorial Island through S00's skip first.
 //   pack     S18 with the stun pack (rs/324): the account at post-Monkey Madness stats with Load 0
 //            (stun-pack.md section 6), steps({ topUp, stunPack }) on the knights band, and the
 //            helper stand-in as the courier: it brings dragon bones to fill, sharks back to 2, and
