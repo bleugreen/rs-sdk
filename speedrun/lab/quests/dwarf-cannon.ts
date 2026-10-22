@@ -85,8 +85,8 @@ export const FIXTURES: readonly QuestFixture[] = [
     fx('H', 5, RAILS, { x: 2571, z: 9849 }),
     fx('I', 6, RAILS, LAWGOF, { mcannontoolkit: 1 }),
     fx('J', 8, RAILS | PARTS, { x: 2574, z: 3462 }, { mcannontoolkit: 1 }),
-    fx('K', 9, RAILS | PARTS, LAWGOF),
-    fx('L', 10, RAILS | PARTS, { x: 3012, z: 3453 }, { nulodions_notes: 1, ammo_mould: 1 }),
+    fx('K', 9, RAILS | PARTS, LAWGOF, { mcannontoolkit: 1 }),
+    fx('L', 10, RAILS | PARTS, { x: 3012, z: 3453 }, { mcannontoolkit: 1, nulodions_notes: 1, ammo_mould: 1 }),
 ];
 
 /**
