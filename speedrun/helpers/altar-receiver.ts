@@ -34,6 +34,7 @@ import {
     canonName,
     cycleTicks,
     CueWriter,
+    MissBench,
     cueDir,
     DEFAULT_OPEN,
     FrameLog,
@@ -58,7 +59,8 @@ export interface Candidate {
 
 /**
  * The next batch: ready, fresh (heartbeat within 5 s), loaded givers in the
- * room, in sight on a tile orthogonally next to ours, oldest ready first. A giver
+ * room, not benched after a failed turn (altar-cue.ts MissBench, as the run's
+ * step), in sight on a tile orthogonally next to ours, oldest ready first. A giver
  * that logged in after us is handled after us in each tick, so with autoRobust it
  * gets the robust schedule.
  */
@@ -66,11 +68,12 @@ export function chooseBatch(
     statuses: readonly GiverStatus[],
     nearby: readonly NearbyPlayer[],
     me: Tile,
-    o: { names?: string[]; batch?: number; schedule: Schedule; autoRobust: boolean; myLoggedInAt: number | null; now: number }
+    o: { names?: string[]; batch?: number; schedule: Schedule; autoRobust: boolean; myLoggedInAt: number | null; now: number; bench?: MissBench }
 ): Candidate[] {
     const wanted = o.names?.map(canonName);
     return statuses
         .filter(s => (s.phase === 'ready' || s.phase === 'armed') && s.inRoom && s.essence > 0 && o.now - s.ms < 5_000)
+        .filter(s => !o.bench?.skips(s))
         .filter(s => !wanted || wanted.includes(canonName(s.account)))
         .sort((a, b) => (a.readyAt ?? 0) - (b.readyAt ?? 0))
         .flatMap(s => {
@@ -124,6 +127,9 @@ class Receiver {
     private readonly restockMs: number[] = [];
     private readonly waits: number[] = [];
     private readonly tradedAt = new Map<string, number>();
+    private readonly bench = new MissBench();
+    /** giver:T -> Date.now() of the cue write that named it. */
+    private readonly namedAt = new Map<string, number>();
     private altarLoc!: NearbyLoc;
     private me!: Tile;
     private writer!: CueWriter;
@@ -255,7 +261,7 @@ class Receiver {
                     this.tradedAt.delete(s.account);
                 }
             }
-            batch = chooseBatch(statuses, this.s?.nearbyPlayers ?? [], this.me, { ...o, schedule: blindSchedule(o.schedule), myLoggedInAt: this.loggedInAt, now: Date.now() });
+            batch = chooseBatch(statuses, this.s?.nearbyPlayers ?? [], this.me, { ...o, schedule: blindSchedule(o.schedule), myLoggedInAt: this.loggedInAt, now: Date.now(), bench: this.bench });
             // Everyone we wait for, or after two minutes whoever is there.
             if (batch.length >= wantN || (batch.length > 0 && Date.now() - waitStart > 120_000)) break;
             await Bun.sleep(250);
@@ -273,6 +279,7 @@ class Receiver {
         ctx.log('batch', { ready: batch.map(b => `${b.giver}:${b.schedule}`), T0: turn.T, now });
         const written: Turn[] = [...(this.writer.current?.stop ? [] : (this.writer.current?.turns ?? []))];
         this.writer.write({ beacons: this.frames.recent(), turns: [...written, turn], schedule: o.schedule, open: o.open });
+        this.named(turn);
 
         // One turn per craft: at each craft click the next ready giver (oldest ready first, not the one
         // trading now) gets the next T. The batch ends when nobody is ready or the batch size is reached.
@@ -283,11 +290,12 @@ class Receiver {
             const current: Candidate = c;
             await this.runTurn(turn, current, () => {
                 if (i + 1 >= (o.batch ?? Infinity) || this.turns.length + 1 >= o.cycles) return;
-                const ready = chooseBatch(readStatuses(o.dir), this.s?.nearbyPlayers ?? [], this.me, { ...o, schedule: blindSchedule(o.schedule), myLoggedInAt: this.loggedInAt, now: Date.now() });
+                const ready = chooseBatch(readStatuses(o.dir), this.s?.nearbyPlayers ?? [], this.me, { ...o, schedule: blindSchedule(o.schedule), myLoggedInAt: this.loggedInAt, now: Date.now(), bench: this.bench });
                 const pick = ready.find(r => r.giver !== current.giver);
                 if (!pick) return;
                 next = { c: pick, turn: { giver: pick.giver, T: nextT, schedule: pick.schedule } };
                 this.writer.addTurn(next.turn, this.frames.recent());
+                this.named(next.turn);
             });
             // The craft landing on nextT shows in the frames after it; give it four.
             await until(ctx, st => st.tick >= nextT + 4 || this.crafts.length > nCrafts, 12);
@@ -295,6 +303,7 @@ class Receiver {
             const craftTick = ok ? this.crafts[this.crafts.length - 1]! : null;
             this.turns.push({ giver: current.giver, T: turn.T, schedule: current.schedule, ok, craftTick });
             this.tradedAt.set(current.giver, Date.now());
+            if (!ok) this.missed(turn);
             const prev = this.turns[this.turns.length - 2];
             const gap = ok && i > 0 && prev?.ok && prev.craftTick !== null ? craftTick! - prev.craftTick : null;
             if (gap !== null) this.gaps.push(gap);
@@ -333,6 +342,7 @@ class Receiver {
             const turn: Turn = { giver: c.giver, T: this.s!.tick + 3, schedule: 'stock' };
             const written = this.writer.current?.stop ? [] : (this.writer.current?.turns ?? []);
             this.writer.write({ beacons: this.frames.recent(), turns: [...written, turn], schedule: 'robust', open: o.open });
+            this.named(turn);
             const r = await receiveFrom(ctx.sdk, c.giver, { want: [{ item: ESSENCE }], maxTicks: 30, openMaxTicks: 30, noReplyTicks: DROPPED_TICKS });
             if (r.ok) {
                 const level = rcLevel(this.s);
@@ -346,6 +356,7 @@ class Receiver {
             const craftTick = ok ? this.crafts[this.crafts.length - 1]! : null;
             this.turns.push({ giver: c.giver, T: turn.T, schedule: 'stock', ok, craftTick });
             this.tradedAt.set(c.giver, Date.now());
+            if (!ok) this.missed(turn);
             const gap = craftTick !== null && prevCraft !== null ? craftTick - prevCraft : null;
             if (gap !== null) this.gaps.push(gap);
             prevCraft = craftTick;
@@ -355,6 +366,16 @@ class Receiver {
         this.writer.stop(this.frames.recent());
         if (ctx.sdk.getTradeState().isOpen) await ctx.sdk.sendDeclineTrade();
         await ctx.sdk.waitForTicks(4).catch(() => {});
+    }
+
+    private named(turn: Turn): void {
+        this.namedAt.set(`${canonName(turn.giver)}:${turn.T}`, Date.now());
+    }
+
+    /** A failed turn benches its giver until it reports ready again. */
+    private missed(turn: Turn): void {
+        this.bench.miss(turn.giver, this.namedAt.get(`${canonName(turn.giver)}:${turn.T}`));
+        this.ctx.log('bench', { giver: turn.giver, T: turn.T, benched: this.bench.benched });
     }
 
     /** Send the scored half of one turn on our own frames. `atCraft` runs as the craft click goes out. */
