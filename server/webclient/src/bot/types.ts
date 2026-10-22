@@ -469,6 +469,14 @@ export interface BotState {
     trade: TradeState;
     ge?: GEState | null;
     inGame: boolean;
+    /**
+     * The client has built the region around the player (sceneState 2). False
+     * while it shows "Loading - please wait.": after a login, a teleport or a
+     * walk into a new build area, until every map file is fetched and built.
+     * Meanwhile the collision maps are stale, so a loc, NPC or walk click
+     * routes against the wrong map (or not at all) and is sent anyway.
+     */
+    sceneReady: boolean;
     /** Recent combat events (damage, kills) - bounded to last ~50 ticks */
     combatEvents: CombatEvent[];
     /** Dialog state (NPC chat, options) */
