@@ -21,6 +21,61 @@ function dispatch(sdk: BotSDK): Promise<ActionResult> {
     return (sdk as any).sendAction({ type: 'walkTo', x: 0, z: 0, running: true, reason: 'SDK' });
 }
 
+describe('BotSDK.sendAction while the region loads', () => {
+    const withScene = (sceneReady: boolean | undefined) => {
+        const stub = stubSdk(20);
+        (stub.sdk as any).state = { inGame: true, ...(sceneReady === undefined ? {} : { sceneReady }) };
+        return stub;
+    };
+
+    /** Answer each dispatch as the client does: success, with the click's own data. */
+    const answering = (sdk: BotSDK, sent: any[]) => {
+        (sdk as any).send = (msg: any) => {
+            sent.push(msg);
+            queueMicrotask(() => (sdk as any).handleMessage(JSON.stringify({ type: 'sdk_action_result', actionId: msg.actionId, result: { success: true, message: 'Interacting with loc 190', data: { routed: false } } })));
+        };
+    };
+
+    test('sends a world click but never reports it as a success', async () => {
+        const { sdk, sent } = withScene(false);
+        answering(sdk, sent);
+        for (const action of [
+            { type: 'interactLoc', x: 2459, z: 3383, locId: 190, optionIndex: 1, reason: 'SDK' },
+            { type: 'interactNpc', npcIndex: 5, optionIndex: 1, reason: 'SDK' },
+            { type: 'walkTo', x: 1, z: 2, running: true, reason: 'SDK' }
+        ]) {
+            const r: ActionResult = await (sdk as any).sendAction(action);
+            expect(r).toMatchObject({ success: false, reason: 'scene_loading', phase: 'dispatch', data: { routed: false } });
+        }
+        expect(sent).toHaveLength(3);
+    });
+
+    test('a click the client fails while the region loads keeps its own failure', async () => {
+        const { sdk, sent } = withScene(false);
+        (sdk as any).send = (msg: any) => {
+            sent.push(msg);
+            queueMicrotask(() => (sdk as any).handleMessage(JSON.stringify({ type: 'sdk_action_result', actionId: msg.actionId, result: { success: false, message: 'no route', reason: 'cant_reach' } })));
+        };
+        const r = await dispatch(sdk);
+        expect(r).toMatchObject({ success: false, reason: 'cant_reach' });
+    });
+
+    test('sends a world click once the region is built, and when the client does not publish sceneReady', async () => {
+        for (const ready of [true, undefined]) {
+            const { sdk, sent } = withScene(ready);
+            await dispatch(sdk);
+            expect(sent).toHaveLength(1);
+        }
+    });
+
+    test('sends a click that is not routed in the world while the region loads (dialogue, inventory)', async () => {
+        const { sdk, sent } = withScene(false);
+        await (sdk as any).sendAction({ type: 'clickDialogOption', optionIndex: 0, reason: 'SDK' });
+        await (sdk as any).sendAction({ type: 'useInventoryItem', slot: 0, optionIndex: 1, reason: 'SDK' });
+        expect(sent).toHaveLength(2);
+    });
+});
+
 describe('BotSDK.sendAction dispatch failures', () => {
     test('cleans pending dispatches when the socket write throws synchronously', async () => {
         const { sdk, pending } = stubSdk(5000);

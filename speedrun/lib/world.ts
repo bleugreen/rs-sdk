@@ -121,7 +121,10 @@ function nearest(locs: NearbyLoc[], q: LocQuery): NearbyLoc | null {
 }
 
 /** The nearest loc matching `q`: from the published list, else from an on-demand scan. */
-export async function findLoc(sdk: Pick<BotSDK, 'getState' | 'scanNearbyLocs'>, q: LocQuery): Promise<NearbyLoc | null> {
+export async function findLoc(sdk: Pick<BotSDK, 'getState' | 'scanNearbyLocs'> & Partial<StateSource>, q: LocQuery): Promise<NearbyLoc | null> {
+    // While the client rebuilds the region (sceneReady false: the browser client after a teleport,
+    // a spirit tree or a relog) its loc lists are empty or the old region's, so wait for the built region.
+    if (sdk.getState()?.sceneReady === false && sdk.onStateUpdate) await waitUntil(sdk as StateSource, s => s.sceneReady !== false, { maxTicks: 60 });
     return nearest(sdk.getState()?.nearbyLocs ?? [], q) ?? nearest(await sdk.scanNearbyLocs(q.radius ?? 25), q);
 }
 

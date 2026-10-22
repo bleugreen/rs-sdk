@@ -19,6 +19,7 @@
 // grows with a starved tab, so the wait's idle bound is LANDING_IDLE_TICKS, not wait.ts's IDLE_TICKS.
 
 import type { BotWorldState, NearbyNpc } from '../../sdk/types';
+import { ClickGuard, settle } from '../lib/act';
 import { classifyPage } from '../lib/dialogue';
 import { ensureRunOn } from '../lib/run-mode';
 import { logNote } from '../lib/ticks';
@@ -94,16 +95,22 @@ async function skipObserved({ sdk, session, log }: StepContext<unknown>, landing
     }
     if (designOpen(s)) void sdk.sendAcceptCharacterDesign();
 
+    let guard: ClickGuard | null = null;
     if (!s.dialog.isOpen) {
         const guide = guideOf(s);
         if (!guide) throw new Error('no RuneScape Guide in view');
         const talk = guide.optionsWithIndex.find(o => /^talk/i.test(o.text));
         if (!talk) throw new Error('the RuneScape Guide has no Talk-to option');
-        void sdk.sendInteractNpc(guide.index, talk.opIndex);
+        // The first click after login is the one most often lost (the browser client is still
+        // building the region): sent from a settled position, and re-sent once if it draws no reply.
+        await settle(sdk);
+        guard = new ClickGuard(sdk, () => sdk.sendInteractNpc(guide.index, talk.opIndex), st => st.dialog.isOpen, { alwaysWatch: true });
+        await guard.send();
     }
 
     // Page one: the guide's question, a continue page.
-    const asked = await waitUntil(sdk, st => classifyPage(st.dialog) !== 'none' && !st.dialog.isWaiting, { maxTicks: 12 });
+    const stopGuard = guard ? sdk.onStateUpdate(st => void guard.step(st)) : () => {};
+    const asked = await waitUntil(sdk, st => classifyPage(st.dialog) !== 'none' && !st.dialog.isWaiting, { maxTicks: 12 }).finally(stopGuard);
     if (!asked.ok) throw new Error('the guide did not answer within 12 ticks');
     let page = asked.state;
     if (classifyPage(page.dialog) === 'continue') {

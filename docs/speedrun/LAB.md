@@ -158,6 +158,55 @@ with `scripts/runclient-check.ts` on both clients against one local engine (the
   powered hangar 21 ticks later (lite 22). `sendClickComponentWithOption(11130, 5, slot)`
   sends INV_BUTTON5 and moves nothing on either client.
 
+### Region loads and jumps
+
+The browser client builds each region from fetched map files, showing "Loading - please
+wait" until it is done; that took one tick on a warm lab and tens of ticks after a long
+`::tele` (46 above), and longer against the demo. Meanwhile its collision maps are stale,
+yet a loc or NPC click still sends its packet: sometimes it lands (an adjacent target needs
+no route), sometimes the player never moves (rs/295's resumed session at the Gnome gate).
+The lite client builds within the tick and never shows it. Both clients now publish
+`sceneReady` (false while building), and the SDK reports a world click sent then as
+`reason: 'scene_loading'`, never as a success; it is still sent, so raw callers behave as
+before.
+
+The first click after the player's position jumps is the one most often lost. The bot
+state's `player.teleportTick` is the tick of the last teleport-type update and
+`player.teleportJump` its jump bit: false for `p_teleport`, the scripted steps
+(`agility_walk`: the Gnome Stronghold gate, the Grand Tree door) whose script still holds
+the player the tick they land, so a click then is dropped; true for `p_telejump` (ladders,
+stairs, teleport spells, login), which holds nobody. `speedrun/lib/act.ts` applies one rule
+to every `act`/`actConverse`/`talkTo` click: wait for a settled position (region built, not
+on a held step's tick), re-send a send the client refused (`cant_reach`) or could not
+confirm (`scene_loading`) on the next settled tick unless a reply came, and re-send once a
+click sent within 2 ticks of a jump that draws no reply in 3 ticks, counted from when the
+client executed it. Results carry `settleTicks`, `refusedResends` and `unansweredResends`.
+Measured on the Grand Tree (lite, bgsrv-ub, cairn://p/rs/309): every tree entry's Narnode
+talk now leaves the landing tile in 2 ticks (25 of 25), against 17-19 on 11 of 13 before
+(rs/299). Charlie is talked to through his cell bars, so the lite client never finds a route
+to him: it still sends the op (`routed: false`, logged as `cant_reach`) and the server's
+approach range answers it.
+
+The same rule reaches the paths that do not click through `act`. `travel.ts` settles before
+every hop, so the first walk click after a teleport landing is routed on a built region
+(T05-06 on the browser was sent 14 tiles south before) and a hop's loc lookup sees the new
+region's locs (the village spirit tree straight after a young-tree landing).
+`world.ts` `findLoc` waits for a built region too. S00's first Talk-to after login goes
+through `ClickGuard` with `alwaysWatch`, so it is re-sent once if it draws no reply.
+
+A click whose script has answered (a game message, a new animation, an interface) has
+landed, and `act` never re-sends it on idle ticks, because that would restart a script that
+p_delays before its page (Dwarf Cannon's railing, the Wilderness lever, the spirit trees).
+That holds only for a click sent from an idle player. A click sent while an earlier script
+is still answering (an animation playing, or a game message in the last 2 ticks) keeps the
+idle re-send, because that script's later messages are not its answer and the click may
+have been dropped while the script held the player. Glough's tree climb, sent as an Agility
+potion's boost shows, is the measured case.
+
+The browser client publishes each dialogue component's whole text, as the lite client does.
+It used to cut each line at 50 characters, so `pageText` lost the end of every long line
+(Narnode's "glider pilot fly you away" in S11b H).
+
 **Against the demo.** `server/webclient/proxy.ts` serves this build's bot bundle in front
 of a remote world, and the page takes `?server=` (game socket) and `?gateway=` (overlay
 gateway) parameters (`src/util/Endpoints.ts`). The page logs in with a one-time token,

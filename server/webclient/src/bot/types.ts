@@ -330,6 +330,20 @@ export interface PlayerState {
     respawnCount: number;
     /** Public game tick when death was last observed, or null if none was observed. */
     lastDeathTick: number | null;
+    /**
+     * Public game tick of the last teleport-type update of this player: a server-placed move
+     * rather than a walk or run step. Teleports, ladders and stairs (plane changes), login, and
+     * the scripted moves that step by p_teleport (agility_walk: the Gnome Stronghold gate, the
+     * Grand Tree door). The script that placed the player usually still holds them that tick,
+     * so a click sent then is dropped. Null before the first.
+     */
+    teleportTick: number | null;
+    /**
+     * The jump bit of that update: true for p_telejump (teleport spells, ladders and stairs,
+     * login), false for p_teleport, which the scripted moves step by (agility_walk) and whose
+     * script holds the player through the tick it lands. Null before the first.
+     */
+    teleportJump: boolean | null;
 }
 
 // Combat style state
@@ -469,6 +483,14 @@ export interface BotState {
     trade: TradeState;
     ge?: GEState | null;
     inGame: boolean;
+    /**
+     * The client has built the region around the player (sceneState 2). False
+     * while it shows "Loading - please wait.": after a login, a teleport or a
+     * walk into a new build area, until every map file is fetched and built.
+     * Meanwhile the collision maps are stale, so a loc, NPC or walk click
+     * routes against the wrong map (or not at all) and is sent anyway.
+     */
+    sceneReady: boolean;
     /** Recent combat events (damage, kills) - bounded to last ~50 ticks */
     combatEvents: CombatEvent[];
     /** Dialog state (NPC chat, options) */

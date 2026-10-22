@@ -32,6 +32,7 @@
 import { readFileSync } from 'fs';
 import type { BotWorldState } from '../../sdk/types';
 import { advance } from '../lib/dialogue';
+import { gateSide, GNOME_STRONGHOLD_GATE, passGate, type Gate } from '../lib/travel';
 import { withLevelUpDismissal } from '../lib/levelup';
 import { ProgramError, runProgram, type ProgramStatus } from '../lib/programs';
 import { logoutClean, type Session } from '../lib/session';
@@ -557,53 +558,46 @@ function eatWhileWalking(sdk: StepContext<unknown>['sdk'], o: AgilityOptions): (
 }
 
 /**
- * Click the nearest closed gate or door. The Gnome Stronghold gate's script
- * (gnome_gate.rs2) swaps the gate out for 5 ticks and force-moves the player 3
- * tiles through, so it never shows a Close option: wait for that move, or for a
- * plain door's loc to change, before walking on (a walk sent mid-script is dropped).
+ * When the failed leg ends across the Gnome Stronghold gate from the player, go through it with
+ * the shared helper (lib/travel.ts passGate, which clears Femi's first-visit scene and confirms the
+ * far side), and say so; otherwise there is no gate to pass, and the caller just retries the walk.
+ * A failed leg on one side of the gate (inside the Stronghold, on the course) never passes it.
  */
-async function passGate(ctx: StepContext<unknown>): Promise<boolean> {
-    const s = stateOf(ctx);
-    const p = s.player!;
-    const gate = s.nearbyLocs
-        .filter(l => /gate|door/i.test(l.name) && l.distance <= 6 && l.optionsWithIndex.some(o => /^open$/i.test(o.text)))
-        .sort((a, b) => a.distance - b.distance)[0];
-    if (!gate) return false;
-    for (let click = 0; click < 2; click++) {
-        void ctx.sdk.sendInteractLoc(gate.x, gate.z, gate.id, gate.optionsWithIndex.find(o => /^open$/i.test(o.text))!.opIndex);
-        let goneAt = -1;
-        const r = await waitUntil(ctx.sdk, st => {
-            const q = st.player;
-            if (st.dialog?.isOpen) return true;
-            if (q && cheb(q.worldX, q.worldZ, p.worldX, p.worldZ) >= 2) return true;
-            if (goneAt < 0 && !st.nearbyLocs.some(l => l.id === gate.id && l.x === gate.x && l.z === gate.z)) goneAt = st.tick;
-            return goneAt >= 0 && st.tick >= goneAt + 4;
-        }, { maxTicks: 20 });
-        if (!r.ok || !r.state.dialog?.isOpen) break;
-        // From the south on a first visit the Gnome gate starts Femi's boxes scene instead
-        // (gnome_gate.rs2, femi.rs2): decline, which sets %femi_help, and click again.
-        for (let k = 0; k < 10 && ctx.sdk.getState()?.dialog?.isOpen; k++) {
-            const a = await advance(ctx.sdk, { choose: /^Sorry, I'm a bit busy\.$/, maxTicks: 6 });
-            if (!a.ok) break;
-        }
-    }
-    await nextTick(ctx.sdk);
-    return true;
+async function throughGate(ctx: StepContext<unknown>, x: number, z: number, first: string): Promise<string> {
+    const p = stateOf(ctx).player!;
+    const here = gateSide(GNOME_STRONGHOLD_GATE, { x: p.worldX, z: p.worldZ, level: p.level });
+    const there = gateSide(GNOME_STRONGHOLD_GATE, { x, z });
+    if (!here || !there || here === there) return 'no gate between';
+    const sides: Gate['sides'] = GNOME_STRONGHOLD_GATE.sides;
+    const g = await passGate(ctx.sdk as never, GNOME_STRONGHOLD_GATE, sides[there]!);
+    row(ctx, 'agility:gate', ctx.sdk.getState()?.tick ?? -1, { to: there, ok: g.ok, ticks: g.ticks, clicks: g.clicks, dialogues: g.dialogues, ...(g.reason ? { reason: g.reason } : {}) }, g.ok);
+    if (!g.ok) throw new Error(`walk to (${x},${z}): ${first}; the ${GNOME_STRONGHOLD_GATE.label}: ${g.reason}`);
+    return `went through the gate to its ${there} side`;
 }
 
 async function walkRoute(ctx: StepContext<unknown>, route: ReadonlyArray<readonly [number, number]>, o: AgilityOptions): Promise<void> {
     const s = stateOf(ctx);
     const stopEating = eatWhileWalking(ctx.sdk, o);
     try {
-        for (let i = routeStart(route, s.player!.worldX, s.player!.worldZ); i < route.length; i++) {
+        let i = routeStart(route, s.player!.worldX, s.player!.worldZ);
+        // A resume inside the Stronghold can tie routeStart's nearest point with the one across the
+        // gate: never start on the far side of the gate when a later point is on the player's side.
+        const side = gateSide(GNOME_STRONGHOLD_GATE, { x: s.player!.worldX, z: s.player!.worldZ, level: s.player!.level });
+        const sideOf = (k: number) => gateSide(GNOME_STRONGHOLD_GATE, { x: route[k]![0], z: route[k]![1] });
+        if (side) while (i < route.length - 1 && sideOf(i) && sideOf(i) !== side && route.some((_, k) => k > i && sideOf(k) === side)) i++;
+        for (; i < route.length; i++) {
             const [x, z] = route[i]!;
             let r = await ctx.bot.walkTo(x, z, 2, { timeout: 90_000 });
-            // the SDK pathfinder has no route through a closed gate (the Gnome Stronghold's): go through it
-            if (!r.success && /no path|no waypoints/i.test(r.message) && !(await passGate(ctx))) {
-                throw new Error(`walk to (${x},${z}): ${r.message}; and no gate to open`);
-            }
-            if (!r.success) r = await ctx.bot.walkTo(x, z, 3, { timeout: 90_000 });
-            if (!r.success) throw new Error(`walk to (${x},${z}): ${r.message}`);
+            if (r.success) continue;
+            // A closed gate (the Gnome Stronghold's) fails the walk in more than one way: the
+            // pathfinder's "no path", or a path walked up to the gate that ends "Stuck at" /
+            // "Could not reach" (the demo, rs/295), where bot.walkTo's own door opener may have
+            // clicked the gate and opened Femi's scene. Whatever the message, go through the gate
+            // when the leg ends across it, then walk the leg once more.
+            const first = r.message;
+            const gated = await throughGate(ctx, x, z, first);
+            r = await ctx.bot.walkTo(x, z, 3, { timeout: 90_000 });
+            if (!r.success) throw new Error(`walk to (${x},${z}): ${r.message} (first try: ${first}; ${gated})`);
         }
     } finally {
         stopEating();

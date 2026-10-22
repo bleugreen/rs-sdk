@@ -2726,7 +2726,7 @@ export class Client extends GameShell {
                 type: com.type,
                 buttonType: com.buttonType,
                 option: com.buttonText || '',
-                text: (com.text || '').substring(0, 50),
+                text: com.text || '',
                 scripts: com.scripts ? JSON.stringify(com.scripts) : undefined,
                 scriptOperand: com.scriptOperand ? JSON.stringify(com.scriptOperand) : undefined,
                 clientCode: com.clientCode || undefined

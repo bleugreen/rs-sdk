@@ -44,6 +44,20 @@ describe('world', () => {
         expect(await findLoc(sdk as never, { op: 'climb' })).toBeNull(); // string ops match exactly
     });
 
+    test('findLoc waits for the region to be built before it reads the loc lists', async () => {
+        const tree = loc(1317, 'Spirit tree', 2542, 3170, 1, ['Talk-to', 'Travel']);
+        const sdk = new FakeSdk(baseState({ tick: 1, sceneReady: false, nearbyLocs: [] }));
+        let found: NearbyLoc | null | undefined;
+        const p = findLoc(sdk as never, { op: /travel/i }).then(l => (found = l));
+        await Promise.resolve();
+        sdk.tick();
+        await Promise.resolve();
+        expect(found).toBeUndefined();
+        sdk.tick({ sceneReady: true, nearbyLocs: [tree] });
+        await p;
+        expect(found?.id).toBe(1317);
+    });
+
     test('invCount sums stacks; messagesSince keeps game messages from a tick on', () => {
         const s = baseState({
             inventory: [{ slot: 0, id: 1, name: 'Shark', count: 1, optionsWithIndex: [] }, { slot: 1, id: 1, name: 'Shark', count: 1, optionsWithIndex: [] }],
