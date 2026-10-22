@@ -77,7 +77,7 @@ teleports the account to Lumbridge, and the tab then fetches and rebuilds the re
 publishes another frame. On the `local` Mac at a load average of about 165 (16 cores) that silence
 outlasted `lib/wait.ts`'s idle detector (`IDLE_TICKS` of wall time), so the skip failed with "not
 at Lumbridge with the starter kit 8 ticks after the skip" although every click had landed, and an
-earlier attempt timed out waiting for the guide's first page. The same driver passed 6 of 6
+earlier attempt timed out waiting for the guide's first page. The same driver passed 4 of 4
 fresh-account skips on bgsrv-mac at a load of 4 (rs/320, 2026-10-22). Check `uptime` before a
 browser lab that starts on a fresh account.
 

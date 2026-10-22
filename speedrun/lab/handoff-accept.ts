@@ -6,7 +6,8 @@
 //
 // The row is read from the inventory ledger: STEP-MANIFEST.md by default, `--ledger=FILE` (H13's
 // out-and-back form is speedrun/lab/fixtures/handoff-h13.md until fold-in 18 writes it), or
-// `--ledger-ref=REF` for the manifest as of another branch (rs/158's, where the table is).
+// `--ledger-ref=REF` for the manifest as of another branch (rs/158's, where the table is). An
+// executor cell that cannot fetch that branch takes the row's table lines in a file, `--ledger=FILE`.
 //
 // H1: S01's real precondition. <scored> must be a fresh account (its first login on this engine):
 //   S00's tutorialSkip lands it on S01's tile (Lumbridge, 3222,3222), where the partner already
