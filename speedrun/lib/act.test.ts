@@ -112,6 +112,24 @@ describe('the jump guard', () => {
         expect(await p).toMatchObject({ ok: true, refusedResends: 2 });
     });
 
+    test('a send reported as scene_loading that drew a reply is not re-sent', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        const click = () => {
+            sdk.sent.push({ method: 'sendInteractLoc', args: [5, 5, 1, 1] });
+            return Promise.resolve({ success: false, message: 'sent while loading', reason: 'scene_loading' });
+        };
+        let done = false;
+        const p = act(sdk as never, click, () => done, { resendEvery: 0 });
+        await ticks(sdk, 1, () => ({ player: player(9, 10) })); // it landed: the player steps
+        await ticks(sdk, 2);
+        expect(sentAt(sdk, 'sendInteractLoc')).toBe(1);
+        done = true;
+        await ticks(sdk, 1);
+        const r = await p;
+        expect(r.ok).toBe(true);
+        expect(r.refusedResends).toBeUndefined();
+    });
+
     test('act waits out a region load (sceneReady false) before the first click', async () => {
         const sdk = new FakeSdk(baseState({ tick: 1, sceneReady: false, player: player(10, 10) }));
         let done = false;

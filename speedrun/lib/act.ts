@@ -68,7 +68,7 @@ const CANT_REACH = /can't reach that/i;
 export interface JumpCounts {
     /** Ticks waited before the first click for a settled position (the region built, the player not placed that tick). */
     settleTicks?: number;
-    /** Re-sends of a send the client or SDK refused (cant_reach, scene_loading). */
+    /** Re-sends of a send the client refused (cant_reach) or the SDK could not confirm (scene_loading) that drew no reply. */
     refusedResends?: number;
     /** Re-sends of a click sent just after a jump that drew no reply within REPLY_TICKS. */
     unansweredResends?: number;
@@ -125,12 +125,10 @@ export class ClickGuard {
         const s = this.sdk.getState();
         const tick = s?.tick ?? 0;
         this.sentAt = tick;
+        this.base = s ? snapshot(s) : null;
         const jumpTick = s?.player?.teleportTick ?? null;
         // Only the first send after a jump is watched for a reply, and it is re-sent at most once.
-        if (this.counts.unansweredResends === 0 && jumpTick !== null && tick - jumpTick <= JUMP_WINDOW) {
-            this.watching = true;
-            this.base = s ? snapshot(s) : null;
-        }
+        if (this.counts.unansweredResends === 0 && jumpTick !== null && tick - jumpTick <= JUMP_WINDOW) this.watching = true;
         const r = await this.click();
         this.refusedAt = refusedSend(r) ? (this.sdk.getState()?.tick ?? tick) : -1;
     }
@@ -138,6 +136,12 @@ export class ClickGuard {
     /** Feed a published state; true when it re-sent. */
     step(s: BotWorldState): boolean {
         if (this.refusedAt >= 0) {
+            // A send reported as scene_loading did go out and may have landed: a reply settles it.
+            if (this.answered(s) || (this.base && replied(this.base, s))) {
+                this.refusedAt = -1;
+                this.watching = false;
+                return false;
+            }
             if (s.tick <= this.refusedAt || unsettled(s) || this.counts.refusedResends >= MAX_REFUSED_RESENDS) return false;
             this.counts.refusedResends++;
             void this.send();
