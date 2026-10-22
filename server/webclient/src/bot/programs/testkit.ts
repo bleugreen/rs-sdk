@@ -2,7 +2,7 @@
 // whose dispatch records every packet with the tick it went out on.
 
 import type { ActionResult } from '../ActionExecutor.js';
-import type { BotAction, BotWorldState, GameMessage, InventoryItem, NearbyLoc, NearbyNpc, NearbyPlayer, TradeState } from '../types.js';
+import type { BotAction, BotWorldState, CombatEvent, GameMessage, InventoryItem, NearbyLoc, NearbyNpc, NearbyPlayer, TradeState } from '../types.js';
 import { ProgramRuntime } from './runtime.js';
 import type { ProgramFactory, ProgramInit, ProgramParams, ProgramStatus, TickProgram } from './types.js';
 
@@ -30,6 +30,10 @@ export interface StateSpec {
     /** A main modal (trade screen) is open. */
     tradeOpen?: boolean;
     inGame?: boolean;
+    combatLevel?: number;
+    combatEvents?: CombatEvent[];
+    lifeId?: number;
+    isDead?: boolean;
 }
 
 export function makeState(spec: StateSpec): BotWorldState {
@@ -68,7 +72,7 @@ export function makeState(spec: StateSpec): BotWorldState {
     const players: NearbyPlayer[] = (spec.players ?? []).map(p => {
         const px = p.x ?? x + 1;
         const pz = p.z ?? z;
-        return { kind: 'player', combatLevel: 3, ...p, x: px, z: pz, distance: Math.max(Math.abs(px - x), Math.abs(pz - z)) };
+        return { kind: 'player', combatLevel: 3, combatTargetType: 'none', combatTargetIndex: -1, inCombat: false, ...p, x: px, z: pz, distance: Math.max(Math.abs(px - x), Math.abs(pz - z)) };
     });
     const messages: GameMessage[] = (spec.messages ?? []).map(m => ({ type: m.type ?? 0, text: m.text, sender: m.sender ?? '', tick: m.tick ?? spec.tick, observationId: m.id, fromSelf: false }));
     const trade: TradeState = { isOpen: false, screen: null, partner: null, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false, ...(spec.trade || spec.tradeOpen ? { isOpen: true, screen: 'offer', ...spec.trade } : {}) };
@@ -78,9 +82,9 @@ export function makeState(spec: StateSpec): BotWorldState {
         tick: spec.tick,
         inGame: spec.inGame ?? true,
         player: {
-            name: 'cairn_test', combatLevel: 3, hp: spec.hp ?? 99, maxHp: spec.maxHp ?? 99, x: 0, z: 0,
+            name: 'cairn_test', combatLevel: spec.combatLevel ?? 3, hp: spec.hp ?? 99, maxHp: spec.maxHp ?? 99, x: 0, z: 0,
             worldX: x, worldZ: z, level: spec.level ?? 0, runEnergy: 100, runWeight: 0, animId: spec.animId ?? -1, spotanimId: -1,
-            combat: { inCombat: false, targetIndex: -1, targetType: 'none', lastDamageTick: -1 }, isDead: false, lifeId: 0, respawnCount: 0, lastDeathTick: null
+            combat: { inCombat: false, targetIndex: -1, targetType: 'none', lastDamageTick: -1 }, isDead: spec.isDead ?? false, lifeId: spec.lifeId ?? 0, respawnCount: 0, lastDeathTick: null
         },
         skills,
         inventory,
@@ -93,6 +97,7 @@ export function makeState(spec: StateSpec): BotWorldState {
         trade,
         groundItems: [],
         gameMessages: messages,
+        combatEvents: spec.combatEvents ?? [],
         dialog: { isOpen: spec.dialogOpen ?? false, options: [], isWaiting: false, allComponents: [] },
         interface: { isOpen: false, interfaceId: -1, options: [], inventories: [], debugInfo: [] }
     } as unknown as BotWorldState;

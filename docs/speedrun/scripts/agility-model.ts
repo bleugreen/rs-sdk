@@ -1,7 +1,9 @@
 // Agility route model: turns the measured lap times and fall costs into ticks per
 // level band. Every constant is labelled with where it came from; rerun with
-//   bun docs/speedrun/scripts/agility-model.ts [--lap=66]
+//   bun docs/speedrun/scripts/agility-model.ts [--lap=66] [--sim[=20000] --record=6772 --fixed=1971 --restock=0]
 // --lap is the clean Wilderness lap in ticks (default: the 300 ms measurement below).
+// --sim adds a lap-by-lap Monte Carlo of the Wilderness bands (each obstacle's fail roll at the
+// current level, fall loops repeating) and P(fixed + restock + 52->99 < record).
 const argv = process.argv.slice(2);
 
 // ---- level curve (server/engine/src/engine/entity/Player.ts:77-85), base xp = fine / 10 / 25
@@ -155,4 +157,45 @@ for (const [a, b, name, rate] of bands) {
 console.log(`\nCombos that finish 99 without training (core = GT+Regicide+TR+UP = ${core}, need ${(X99 - core).toFixed(1)} more):`);
 for (const [name, xp] of [['1 Legends pick', Q.legendsPick], ['2 Tourist Trap picks', 2 * Q.touristPick], ['Fremennik + 1 Tourist Trap pick', Q.fremennik + Q.touristPick], ['1 Tourist Trap pick', Q.touristPick], ['Fremennik', Q.fremennik]] as [string, number][]) {
     console.log(`  ${name}: ${(core + xp).toFixed(1)} -> ${core + xp >= X99 ? '99, 0 ticks' : `${r(to99(core + xp))} ticks left`}`);
+}
+
+// ---- Monte Carlo (--sim): the spread of the Wilderness bands, for a P(#1) against a record row.
+// Fall costs measured at 75-85 on 66-tick laps (docs/speedrun/rehearsals/agility.md section 6.6):
+// a stones fall +16 ticks (no xp), a log fall +47 (the stones redone, +20 base), a rope-swing fall
+// +75 (stones, log and pipe redone, +52.5 base). They add: a lap with a rope and a stones fall was 157.
+const simArg = argv.find(a => a === '--sim' || a.startsWith('--sim='));
+if (simArg) {
+    const N = Number(simArg.split('=')[1] ?? 20000);
+    const flagNum = (k: string, d: number) => Number(argv.find(a => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d);
+    const record = flagNum('record', 6772), fixed = flagNum('fixed', 1971), restock = flagNum('restock', 0);
+    let seed = 12345;
+    const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+    const simBand = (from: number, to: number) => {
+        let xp = LEVEL_BASE[from]!, t = 0, laps = 0, falls = 0;
+        while (xp < LEVEL_BASE[to]! - 1e-9) {
+            const L = levelOf(xp);
+            const pr = 1 - succ(200, 250, L), ps = 1 - succ(180, 250, L);
+            t += WILD_CLEAN_LAP;
+            laps++;
+            while (rnd() < pr) { t += 75; xp += 52.5; falls++; }
+            while (rnd() < ps) { t += 16; falls++; }
+            while (rnd() < pr) { t += 47; xp += 20; falls++; }
+            xp += WILD_LAP_XP;
+        }
+        return { t, laps, falls };
+    };
+    console.log(`\nMonte Carlo, ${N} runs, clean lap ${WILD_CLEAN_LAP}:`);
+    for (const [a, b] of [[52, 99], [75, 85], [85, 99], [75, 99]] as const) {
+        const ts: number[] = [];
+        let laps = 0, falls = 0;
+        for (let i = 0; i < N; i++) { const s = simBand(a, b); ts.push(s.t); laps += s.laps; falls += s.falls; }
+        ts.sort((x, y) => x - y);
+        const mean = ts.reduce((x, y) => x + y, 0) / N;
+        const sd = Math.sqrt(ts.reduce((x, y) => x + (y - mean) ** 2, 0) / N);
+        console.log(`  ${a}->${b}: mean ${r(mean)}, sd ${r(sd)}, p5 ${ts[(N * 0.05) | 0]}, p95 ${ts[(N * 0.95) | 0]}; ${(laps / N).toFixed(1)} laps, ${(falls / N).toFixed(1)} falls`);
+        if (a === 52 && b === 99) {
+            const bar = record - fixed - restock;
+            console.log(`  total = ${fixed} fixed + ${restock} restock + 52->99: mean ${r(mean + fixed + restock)}; P(< ${record}) = ${((ts.filter(x => x < bar).length / N) * 100).toFixed(1)}%`);
+        }
+    }
 }
