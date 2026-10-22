@@ -16,7 +16,7 @@ import { footprintDistance, SAFE_TILE, type Tile } from '../helpers/dragons';
 import { openSession } from '../lib/session';
 import { waitTicks } from '../lib/wait';
 import { arg, botArg, result } from './common';
-import { setstat, tele } from './setup';
+import { leaveTutorial, setstat, tele } from './setup';
 
 const trials = Number(arg('trials', '3'));
 const standTicks = Number(arg('ticks', '16'));
@@ -25,6 +25,7 @@ const me = botArg().toLowerCase();
 
 const session = await openSession(botArg());
 const { sdk } = session;
+await leaveTutorial(session);
 
 // A combat-70 account like a demo helper at the tile: it must survive one dragonfire (max 50).
 for (const [skill, lv] of [['attack', 40], ['strength', 40], ['defence', 40], ['hitpoints', 70], ['magic', 75]] as const) await setstat(sdk, skill, lv);

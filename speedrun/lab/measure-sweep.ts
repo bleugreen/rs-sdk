@@ -22,7 +22,7 @@ import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { closeSession, login, logoutClean, openSession, type Session } from '../lib/session';
 import { nextTick, waitTicks, waitUntil } from '../lib/wait';
 import { arg, botArg, result } from './common';
-import { cheat, setstat, tele, VARROCK_WEST_BANK } from './setup';
+import { cheat, leaveTutorial, setstat, tele, VARROCK_WEST_BANK } from './setup';
 
 const main = await openSession(botArg());
 const { sdk, bot } = main;
@@ -108,14 +108,10 @@ async function dismissAll(s: Session = main, maxTicks = 60) {
 }
 
 // A bot made by create-bot is still in the tutorial: no side tabs, so the server refuses every
-// held op and tab button. Finish the tutorial, leave the island and log in again.
+// held op and tab button. S00's skip opens them (setup.ts leaveTutorial).
 async function ensureTabs(s: Session) {
-    await cheat(s.sdk, 'setvar tutorial 1000');
-    await waitTicks(s.sdk, 2);
+    await leaveTutorial(s);
     await teleTo(s, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z);
-    result(`setup logout ${s.name}`, await logoutClean(s));
-    await login(s);
-    await waitTicks(s.sdk, 5);
 }
 
 // ---- 1. Agility Arena tickets ----

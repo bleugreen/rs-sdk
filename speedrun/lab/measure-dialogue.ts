@@ -7,12 +7,13 @@ import { closeSession, openSession } from '../lib/session';
 import { formatReport, report } from '../lib/ticks';
 import { sleep, tickMs, waitTicks, waitUntil } from '../lib/wait';
 import { arg, botArg, labLog, result, sample } from './common';
-import { CARLA, tele } from './setup';
+import { CARLA, leaveTutorial, tele } from './setup';
 
 const n = Number(arg('n', '3'));
 const session = await openSession(botArg());
 const { sdk, bot } = session;
 const log = labLog('dialogue');
+await leaveTutorial(session);
 
 if (!(await tele(sdk, CARLA.x, CARLA.z))) throw new Error('tele to Carla failed');
 

@@ -10,7 +10,7 @@ import { Runes, type Phase } from '../helpers/runes';
 import { openSession } from '../lib/session';
 import { waitTicks } from '../lib/wait';
 import { arg, botArg } from './common';
-import { cheat, give, setstat, tele } from './setup';
+import { cheat, give, leaveTutorial, setstat, tele } from './setup';
 
 interface Scenario {
     phase: Phase;
@@ -23,6 +23,7 @@ const name = botArg();
 const only = arg('only', 'talismans,magic,guild,lundail').split(',');
 const s = await openSession(name);
 const sdk = s.sdk;
+await leaveTutorial(s);
 const log = (message: string, data?: Record<string, unknown>) => console.log(JSON.stringify({ t: sdk.getState()?.tick, message, ...data }));
 
 const scenarios: Scenario[] = [

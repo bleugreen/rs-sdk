@@ -10,12 +10,13 @@ import { formatReport, report } from '../lib/ticks';
 import { giveAll, receiveFrom } from '../lib/trade';
 import { waitTicks } from '../lib/wait';
 import { arg, botArg, labLog, result, sample } from './common';
-import { give, LAB_ITEMS, tele, VARROCK_WEST_BANK } from './setup';
+import { give, LAB_ITEMS, leaveTutorial, tele, VARROCK_WEST_BANK } from './setup';
 
 const n = Number(arg('n', '3'));
 const recv = await openSession(botArg());
 const giver = await openSession(arg('giver', 'srlab2'), { pathfinding: false });
 const log = labLog('trade');
+for (const s of [recv, giver]) await leaveTutorial(s);
 
 await tele(recv.sdk, VARROCK_WEST_BANK.x - 2, VARROCK_WEST_BANK.z);
 await tele(giver.sdk, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z);

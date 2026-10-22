@@ -43,7 +43,7 @@ import { sleep, tickMs, waitTicks, waitUntil } from '../lib/wait';
 import { runResumable, sessionLink, type ResumeEvent } from '../runner/resume';
 import type { Step } from '../runner/step';
 import { arg, botArg, result } from './common';
-import { cheat, tele, VARROCK_WEST_BANK } from './setup';
+import { cheat, leaveTutorial, tele, VARROCK_WEST_BANK } from './setup';
 
 const SCORED = botArg();
 const PARTNER = arg('partner', 'srrs2');
@@ -115,11 +115,10 @@ const monitor = new DemoMonitor(`http://localhost:${WEB_PORT}`, { file: null, ev
 
 async function ready(name: string, prep: (s: Session) => Promise<void>): Promise<Session> {
     const s = await openSession(name, { launch: true, pathfinding: false });
-    await cheat(s.sdk, 'setvar tutorial 1000');
-    await waitTicks(s.sdk, 2);
+    await leaveTutorial(s);
     await tele(s.sdk, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z);
     await prep(s);
-    // Tabs are set at login off the tutorial island (probe-engine.ts ensureTabs).
+    // Measure from a clean login, with the staging saved by a clean logout.
     await logoutClean(s);
     await login(s);
     await waitTicks(s.sdk, 3);

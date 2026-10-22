@@ -15,7 +15,7 @@ import { castDecision, collisionLineOfSight, dropGrabbable, footprintDistance, o
 import { openSession } from '../lib/session';
 import { waitTicks, waitUntil } from '../lib/wait';
 import { arg, botArg, result } from './common';
-import { cheat, give, setstat, tele } from './setup';
+import { cheat, give, leaveTutorial, setstat, tele } from './setup';
 
 const SPELLS: Record<string, number> = { fire_bolt: 1169, fire_blast: 1181, earth_bolt: 1166, water_bolt: 1163, fire_strike: 1158 };
 const TELEGRAB = 1168;
@@ -31,6 +31,7 @@ const spot: Tile = { x: sx!, z: sz! };
 
 const session = await openSession(botArg());
 const { sdk, bot } = session;
+await leaveTutorial(session);
 const los = await collisionLineOfSight();
 
 // ---- fixture ----

@@ -8,11 +8,12 @@
 //   NODE_TICKRATE=300 speedrun/lab/lab.sh boneTrip speedrun/lab/measure-bone-trip.ts:--trials=2
 import { closeSession, openSession } from '../lib/session';
 import { arg, botArg, result } from './common';
-import { cheat, near, tele } from './setup';
+import { cheat, leaveTutorial, near, tele } from './setup';
 
 const trials = Number(arg('trials', '2'));
 const session = await openSession(botArg());
 const { sdk, bot } = session;
+await leaveTutorial(session);
 const BANK = { x: 2946, z: 3368 };
 const SITES = { oak: { x: 2913, z: 3494 }, willow: { x: 2920, z: 3407 } };
 const energy = () => (sdk.getState()?.player as { runEnergy?: number } | undefined)?.runEnergy ?? null;

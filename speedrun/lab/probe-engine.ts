@@ -18,7 +18,7 @@ import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { closeSession, login, logoutClean, openSession } from '../lib/session';
 import { nextTick, waitTicks, waitUntil } from '../lib/wait';
 import { arg, botArg, result } from './common';
-import { cheat, setstat, tele, VARROCK_WEST_BANK } from './setup';
+import { cheat, leaveTutorial, setstat, tele, VARROCK_WEST_BANK } from './setup';
 
 const session = await openSession(botArg());
 const { sdk, bot } = session;
@@ -278,16 +278,10 @@ async function probeBankHeld() {
 
 // A bot made by create-bot is still in the tutorial: its side tabs (inventory, magic, ...) are
 // unset, so the server refuses every held op and tab button as "component not visible"
-// (Player.ts isComponentVisible). Tabs are set at login off Tutorial Island (login.rs2
-// ~initalltabs), so finish the tutorial, leave the island and log in again.
+// (Player.ts isComponentVisible). S00's skip opens them (setup.ts leaveTutorial).
 async function ensureTabs() {
-    await cheat(sdk, 'setvar tutorial 1000');
-    await waitTicks(sdk, 2);
+    await leaveTutorial(session);
     if (!(await tele(sdk, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z))) throw new Error('tele bank');
-    const out = await logoutClean(session);
-    result('setup logout', out);
-    await login(session);
-    await waitTicks(sdk, 5);
 }
 
 const table: Record<string, () => Promise<void>> = { bury: probeBury, held: probeHeld, charge: probeCharge, wine: probeWine, bankheld: probeBankHeld };
