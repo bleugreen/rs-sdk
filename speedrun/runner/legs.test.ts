@@ -241,6 +241,6 @@ describe('the catalogue, continued', () => {
 
     test('legsAfter interleaves by step id', () => {
         expect(legsAfter('S13').map(l => l.def.id)).toEqual(['T13-14']);
-        expect(legsAfter('S24 Druidic Ritual').map(l => l.def.id)).toEqual(['L24b']);
+        expect(legsAfter('S24:D9-kaqemeex-reward').map(l => l.def.id)).toEqual(['L24b']);
     });
 });

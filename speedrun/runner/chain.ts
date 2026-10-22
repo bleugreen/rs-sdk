@@ -149,7 +149,7 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
 };
 
 /** Rows a module trades itself whose partner the run config names (kitFrom): S05's H4, the quests' kits. */
-export const KIT_PARTNER_ROWS = ['H4', 'H6', 'H7', 'H8', 'H16', 'H22'] as const;
+export const KIT_PARTNER_ROWS = ['H4', 'H4p', 'H6', 'H7', 'H8', 'H16', 'H22'] as const;
 
 /** Exactly one group of each set is in the ledger in force (the ledger is the switch). */
 export const ALTERNATIVES: readonly (readonly (readonly string[])[])[] = [[['H12'], ['H12a', 'H12b']]];
@@ -427,7 +427,8 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         L('T07-08'),
         ...steps('S08', plagueCity.steps(kitFrom('H6'))),
         L('T08-09'),
-        ...steps('S09', mining.steps({ travel: 'none', dropAtExit: true, ...(cfg.partners.H4p ? { kitGiver: cfg.partners.H4p } : {}) }).filter(s => ['mining.kit: H4p', 'mining.iron-63', 'mining.exit'].includes(s.name))),
+        // H4p is the run's only rune pickaxe: its giver is a required config row (KIT_PARTNER_ROWS).
+        ...steps('S09', pick('mining', mining.steps({ travel: 'none', kitGiver: partner('H4p'), dropAtExit: true }), ['mining.kit: H4p', 'mining.iron-63', 'mining.exit'])),
         L('T09-10'),
         ...steps('S10b', treeGnomeVillage.steps(kitFrom('H7'))),
         L('T10-11'),
@@ -464,13 +465,16 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...steps('S23', cooksAssistant.steps()),
         L('T23-24'),
         ...before('S24'),
-        missingStep('S24', 'S24 Goblin Diplomacy (Rusty Anchor)', 'rs/416'),
+        // rs/416's segment names at the legs' boundaries (plan v37), until its modules land.
+        missingStep('S24', 'S24:G2-dye-mail', 'rs/416'),
         L('L24a'),
-        missingStep('S24', 'S24 Druidic Ritual', 'rs/416', 'druid'),
+        missingStep('S24', 'S24:D1-kaqemeex-start', 'rs/416'),
+        missingStep('S24', 'S24:D9-kaqemeex-reward', 'rs/416', 'druid'),
         L('L24b'),
-        missingStep('S24', 'S24 Goblin Village', 'rs/416', 'gobdip'),
+        missingStep('S24', 'S24:G3-orange-request', 'rs/416'),
+        missingStep('S24', 'S24:G6-plain-mail', 'rs/416', 'gobdip'),
         L('L24c'),
-        missingStep('S24', 'S24 Romeo and Juliet', 'rs/416', 'romeojuliet'),
+        missingStep('S24', 'S24:R1-juliet', 'rs/416', 'romeojuliet'),
         L('T24-25'),
         ...cued(
             { step: 'S25a', family: 'anvil' },
@@ -532,9 +536,9 @@ export function resolveFrom(chain: readonly ChainStep[], from: string | undefine
     return i;
 }
 
-/** The refusing steps on the chain (missing modules, the pending cannon rows), in order. */
+/** The refusing steps on the chain (the modules not on main), in order. */
 export function missingOnPath(chain: readonly ChainStep[]): { index: number; id: string; name: string; owner: string }[] {
-    return chain.flatMap((s, index) => (s.owner && (s.kind === 'missing' || s.kind === 'handoff') ? [{ index, id: s.id, name: s.name, owner: s.owner }] : []));
+    return chain.flatMap((s, index) => (s.owner && s.kind === 'missing' ? [{ index, id: s.id, name: s.name, owner: s.owner }] : []));
 }
 
 // ------------------------------------------------------------------ RUN-ORDER.md section 2

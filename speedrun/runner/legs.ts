@@ -367,15 +367,15 @@ export const LEGS: readonly LegStep[] = [
         expected: { ticks: 90, label: 'm', source: rt('L23f') + ': 90, 90', net: 45 },
     }),
     leg('L24a', T.rustyAnchor, T.kaqemeex, [tele('falador'), run(T.kaqemeex.x, T.kaqemeex.z, T.kaqemeex.tol)], {
-        after: 'S24 Goblin Diplomacy (Rusty Anchor)', before: 'S24 Druidic Ritual', method: 'Falador teleport + run to Kaqemeex',
+        after: 'S24:G2-dye-mail', before: 'S24:D1-kaqemeex-start', method: 'Falador teleport + run to Kaqemeex',
         expected: { ticks: 69, label: 'm', source: rt('L24a') + ': 74, 64', net: 69 },
     }),
     leg('L24b', T.kaqemeex, T.goblinGenerals, [run(T.goblinGenerals.x, T.goblinGenerals.z, T.goblinGenerals.tol)], {
-        after: 'S24 Druidic Ritual', before: 'S24 Goblin Village', method: 'run Kaqemeex to the generals',
+        after: 'S24:D9-kaqemeex-reward', before: 'S24:G3-orange-request', method: 'run Kaqemeex to the generals',
         expected: { ticks: 54, label: 'm', source: rt('L24b') + ': 56, 52', net: 54 },
     }),
     leg('L24c', T.goblinGenerals, T.romeo, [tele('varrock'), run(T.romeo.x, T.romeo.z, T.romeo.tol)], {
-        after: 'S24 Goblin Village', before: 'S24 Romeo and Juliet', method: 'Varrock teleport + run to Romeo',
+        after: 'S24:G6-plain-mail', before: 'S24:R1-juliet', method: 'Varrock teleport + run to Romeo',
         expected: { ticks: 4.5, label: 'm', source: rt('L24c') + ': 5, 4', net: 4.5 },
     }),
     leg('T24-25', T.romeo, T.westAnvil, [run(T.westAnvil.x, T.westAnvil.z, T.westAnvil.tol)], {
@@ -383,7 +383,7 @@ export const LEGS: readonly LegStep[] = [
         expected: { ticks: 13, label: 'm', source: rt('L24e') + ': 13, 13', net: 13 },
     }),
     leg('T25-26', T.westBooth, T.championsGuild, [run(T.championsGuild.x, T.championsGuild.z, T.championsGuild.tol)], {
-        after: 'S25', before: 'S26', method: "run the booth to the Champions' Guild door", countedBy: 'S26',
+        after: 'S25c', before: 'S26', method: "run the booth to the Champions' Guild door", countedBy: 'S26',
         expected: { ticks: 44, label: 'm', source: rt('L25') + ': 39, 49', net: 7 },
     }),
     leg('T26-27', T.elvargExit, T.spiders, TO_SPIDERS, {
