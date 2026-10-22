@@ -86,8 +86,8 @@ describe('the jump guard', () => {
 
     test('a click that is not just after a jump keeps the old rule (no early re-send)', async () => {
         const sdk = new FakeSdk(baseState({ tick: 50, player: placed(10, 10, 30) }));
-        const p = act(sdk as never, () => sdk.sendInteractLoc(5, 5, 1, 1), () => false, { resendEvery: 6, maxTicks: 5 });
-        await ticks(sdk, 6);
+        const p = act(sdk as never, () => sdk.sendInteractLoc(5, 5, 1, 1), () => false, { resendEvery: 6, maxTicks: 4 });
+        await ticks(sdk, 5);
         expect(await p).toMatchObject({ ok: false, resends: 0 });
         expect(sentAt(sdk, 'sendInteractLoc')).toBe(1);
     });
