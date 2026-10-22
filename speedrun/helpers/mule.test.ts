@@ -22,7 +22,9 @@ import {
     muleOptions,
     packageItems,
     packageOf,
-    parsePackageRequest,
+    newCue,
+    packageForCue,
+    requestPackage,
     planPackage,
     playerPattern,
     sameItems,
@@ -68,10 +70,30 @@ describe('packages', () => {
         { name: 'bars', items: [{ item: 'Adamantite bar', amount: 100, noted: true }, { item: 'Coins', amount: 5000 }] }
     ];
 
-    test('PM text selects a package by name, with or without the pkg prefix', () => {
-        expect(parsePackageRequest('bars', pkgs)?.name).toBe('bars');
-        expect(parsePackageRequest('pkg WINE ', pkgs)?.name).toBe('wine');
-        expect(parsePackageRequest('hello', pkgs)).toBeNull();
+    test('a cue scoped to a hand-off asks for the package keyed to it, for the account the mule serves only', () => {
+        const keyed: Package[] = [
+            { name: 'h4k', scope: { step: 'H4k', family: 'mule' }, items: [{ item: 'Rune axe', amount: 1 }] },
+            { name: 'h4e', scope: { step: 'H4e', family: 'mule' }, items: [{ item: 'Law rune', amount: 1 }], onRequest: true },
+        ];
+        const dir = mkdtempSync(join(tmpdir(), 'mule-cue-'));
+        const cue = requestPackage(dir, 'cairn_h94', 'H4e', { tick: 10, ms: 1_000 });
+        expect(cue.scope).toEqual({ step: 'H4e', family: 'mule' });
+        expect(packageForCue(cue, keyed, 'Cairn H94')?.name).toBe('h4e');
+        expect(packageForCue(cue, keyed, 'cairn_h95')).toBeNull();
+        expect(packageForCue({ ...cue, scope: { step: 'S07', family: 'mule' } }, keyed, 'cairn_h94')).toBeNull();
+        expect(packageForCue({ ...cue, scope: { step: 'H4e', family: 'bone' } }, keyed, 'cairn_h94')).toBeNull();
+        expect(packageForCue(cue, pkgs, 'cairn_h94')).toBeNull(); // unkeyed packages answer no cue
+    });
+
+    test('a cue is acted on once: a new session or a later write; never one from before the mule started', () => {
+        const start = 1_000_000;
+        const c = { session: 'a', seq: 1, ms: start };
+        expect(newCue(c, null, start)).toBe(true);
+        expect(newCue(c, { session: 'a', seq: 1 }, start)).toBe(false);
+        expect(newCue({ ...c, seq: 2 }, { session: 'a', seq: 1 }, start)).toBe(true);
+        expect(newCue({ ...c, session: 'b' }, { session: 'a', seq: 5 }, start)).toBe(true);
+        expect(newCue({ ...c, ms: start - 120_000 }, null, start)).toBe(false);
+        expect(newCue(null, null, start)).toBe(false);
     });
 
     test('plan maps package items onto bank items and counts slots', () => {
@@ -314,7 +336,10 @@ describe('top-up lines (H12 `shark to 15`): the count comes from the scored acco
         expect(() => packageItems('p', [{ item: 'Shark', topUp: {} }])).toThrow(/topUp.max/);
         expect(() => packageOf({ name: 'p', items: [{ item: 'Shark', topUp: { max: 15 } }] })).toThrow(/scope/);
         expect(() => packageOf({ name: 'p', scope: { step: 'S18', family: 'courier' }, items: [{ item: 'Shark', topUp: { max: 15 } }] })).toThrow(/family must be mule/);
-        expect(() => packageOf({ name: 'p', scope: SCOPE, items: [{ item: 'Shark', amount: 2 }] })).toThrow(/scope is for a package with a top-up/);
+        // A fixed package may carry its scope: the key a cue asks for it by.
+        expect(packageOf({ name: 'p', scope: SCOPE, items: [{ item: 'Shark', amount: 2 }] })).toEqual({ name: 'p', scope: SCOPE, items: [{ item: 'Shark', amount: 2 }] });
+        expect(() => packageOf({ name: 'p', scope: { step: 'H4', family: 'bone' }, items: [{ item: 'Shark', amount: 2 }] })).toThrow(/family must be mule/);
+        expect(() => muleOptions({ requestFile: '/tmp/x' })).toThrow(/requestFile is gone/);
         expect(() => packageOf({ name: 'p', scope: SCOPE, items: [{ item: 'Shark', amount: 2 }, { item: 'shark', topUp: { max: 15 } }] })).toThrow(/another line/);
         const o = muleOptions({ packages: [{ name: 'wine', items: [{ item: 'Jug of wine', amount: 28 }] }] }, { RC_CUE_DIR: '/tmp/cue-x' });
         expect(o).toMatchObject({ askWaitTicks: 3, cueDir: '/tmp/cue-x', packages: [{ name: 'wine', items: [{ item: 'Jug of wine', amount: 28 }] }] });
