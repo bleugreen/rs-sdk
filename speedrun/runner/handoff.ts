@@ -398,7 +398,8 @@ export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step
     return {
         name: `${plan.id} hand-off`,
         logoutSafe: true,
-        preconditions: (s, c) => handOffPre(s, plan, partner(c)),
+        // A cue-served partner comes after the cue, so it need not be in view yet.
+        preconditions: (s, c) => handOffPre(s, plan, partner(c), { partnerInView: !opts.cue }),
         postconditions: s => {
             const missing = handOffMissing(s, plan);
             return missing.length ? `${plan.id} after the trade: ${missing.join('; ')}` : true;
@@ -406,7 +407,8 @@ export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step
         done: (o, c) => handOffMissing(o.state, plan).length === 0 || !!opts.supersededBy?.(o, c),
         inProgress: o => tradeLanded(o.state, plan) && handOffMissing(o.state, plan).length > 0,
         async run(ctx) {
-            await runHandOff(sdkOf(ctx.sdk), plan, partner(ctx.c), opts);
+            if (opts.cue) await runHandOffOnCue(ctx, plan, partner(ctx.c), opts.cue, opts);
+            else await runHandOff(sdkOf(ctx.sdk), plan, partner(ctx.c), opts);
         },
         async resume(ctx) {
             await applyEquip(sdkOf(ctx.sdk), plan);
