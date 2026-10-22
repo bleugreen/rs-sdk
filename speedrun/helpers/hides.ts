@@ -159,6 +159,14 @@ export function nextStep(s: Situation, o: HidesOptions): Step {
     return 'gather';
 }
 
+/**
+ * Whether a bank visit makes a shop visit due. Not when it only banked what the
+ * shop just sold: the shelf restocks one thread every 5 ticks, so going straight
+ * back would shuttle between Dommik and the bank for a handful each time instead
+ * of gathering. One visit per trip finds the shelf refilled by minutes of work.
+ */
+export const shopDueAfterBank = (previous: Step | null): boolean => previous !== 'shop';
+
 /** Thread and needles still to buy, or null when the bank already holds them. */
 export function shopNeed(bank: Banked, o: HidesOptions): { thread: number; needle: number } | null {
     const need = { thread: Math.max(0, o.thread - bank.thread), needle: Math.max(0, o.needle - bank.needle) };
@@ -338,6 +346,7 @@ export const role: Role = {
         const avoidTile = new Map<string, number>();
         let seen: Banked | null = null;
         let shopDue = false;
+        let last: Step | null = null;
         let lastProgress = Date.now();
 
         while (!ctx.signal.aborted) {
@@ -349,7 +358,7 @@ export const role: Role = {
                     break;
                 case 'bank':
                     seen = await bank(ctx, o, tally);
-                    shopDue = true;
+                    shopDue = shopDueAfterBank(last);
                     break;
                 case 'shop':
                     shopDue = false;
@@ -363,6 +372,7 @@ export const role: Role = {
                     await gather(ctx, f, tally, avoidNpc, avoidTile);
                     break;
             }
+            last = step;
             if (Date.now() - lastProgress > 5 * 60_000) {
                 lastProgress = Date.now();
                 const inv = carried(ctx.sdk.getInventory());

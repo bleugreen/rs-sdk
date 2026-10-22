@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { GroundItem, InventoryItem, NearbyNpc } from '../../sdk/types';
-import { banked, carried, FIELDS, hidesOptions, minCoins, nextStep, pickCow, pickHide, shopNeed, threadNeeded, type Banked, type Carried } from './hides';
+import { banked, carried, FIELDS, hidesOptions, minCoins, nextStep, pickCow, pickHide, shopDueAfterBank, shopNeed, threadNeeded, type Banked, type Carried } from './hides';
 
 const item = (slot: number, name: string, count = 1): InventoryItem => ({ slot, id: 1000 + slot, name, count, optionsWithIndex: [] });
 const hides = (n: number, from = 1) => Array.from({ length: n }, (_, i) => item(from + i, 'Cowhide'));
@@ -75,6 +75,12 @@ describe('nextStep', () => {
         expect(nextStep({ inv: inv(), bank: bank({ leather: 400, thread: 230, needle: 1 }), shopDue: true }, o)).toBe('done');
         expect(nextStep({ inv: inv(), bank: bank({ leather: 400, thread: 200, needle: 1 }), shopDue: false }, o)).toBe('gather');
         expect(nextStep({ inv: inv(), bank: bank({ leather: 399, thread: 230, needle: 1 }), shopDue: false }, o)).toBe('gather');
+    });
+    test('a bank visit right after shopping does not send it back to the shop (rs/350: shuttled for 5 thread a visit)', () => {
+        expect(shopDueAfterBank('shop')).toBe(false);
+        expect(shopDueAfterBank('tan')).toBe(true);
+        expect(shopDueAfterBank('gather')).toBe(true);
+        expect(shopDueAfterBank(null)).toBe(true);
     });
     test('shopNeed', () => {
         const o = hidesOptions({ target: 1, thread: 230, needle: 1 });
