@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, GameMessage } from '../../sdk/types';
 import type { BotSDK } from '../../sdk/index';
-import { baseState, FakeSdk, type SentAction } from '../lib/fake-sdk';
+import { baseState, FakeSdk, flush, type SentAction } from '../lib/fake-sdk';
+import { give } from '../lib/trade';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { nameHash, newRequestFrom } from './altar-cue';
-import { boneGiverOptions, npcTiles, onSide, partnerIs, readBoneAsk, requestUntilOpen, S07_SITES, sideTiles, usableAsk, writeBoneAsk } from './bone-giver';
+import { boneGiverOptions, isFinalLoad, loadOffer, npcTiles, onSide, partnerIs, readBoneAsk, requestUntilOpen, S07_SITES, sideTiles, usableAsk, writeBoneAsk } from './bone-giver';
 
 const o = { noReplyTicks: 3, resendTicks: 100 };
 const msg = (tick: number, text: string): GameMessage => ({ type: 0, text, sender: '', tick, fromSelf: false });
@@ -40,6 +41,55 @@ describe('bone giver options', () => {
         expect(() => boneGiverOptions({ sites: [{ giver: { x: 1 }, receiver: { x: 1, z: 2 } }] })).toThrow(/giver needs/);
         expect(() => boneGiverOptions({ restock: { kind: 'trade' } })).toThrow(/restock.kind/);
         expect(boneGiverOptions({ trades: 2, restock: { kind: 'cheat' } })).toMatchObject({ trades: 2, restock: { kind: 'cheat' } });
+    });
+});
+
+describe('finalExtras: the last S07 load also carries T07-08\'s Camelot runes', () => {
+    const RUNES = [{ item: 'Law rune', count: 1, obj: 'lawrune' }, { item: 'Air rune', count: 5, obj: 'airrune' }];
+    const o = boneGiverOptions({ trades: 3, finalExtras: RUNES }, {});
+    const names = (load: number) => loadOffer(o, load).map(s => [String(s.item), s.n]);
+
+    test('the last load offers bones and runes; earlier loads bones only', () => {
+        expect(names(0)).toEqual([['/^Dragon bones$/i', 23]]);
+        expect(names(1)).toEqual([['/^Dragon bones$/i', 23]]);
+        expect(isFinalLoad(o, 2)).toBe(true);
+        expect(names(2)).toEqual([['/^Dragon bones$/i', 23], ['/^Law rune$/i', 1], ['/^Air rune$/i', 5]]);
+        // Without finalExtras no load is special.
+        const plain = boneGiverOptions({ trades: 3 }, {});
+        expect(isFinalLoad(plain, 2)).toBe(false);
+        expect(loadOffer(plain, 2)).toHaveLength(1);
+    });
+
+    test('options: needs a finite trades count, the standing mode, 28 slots, and obj for the lab cheat', () => {
+        expect(() => boneGiverOptions({ finalExtras: RUNES }, {})).toThrow(/needs trades/);
+        expect(() => boneGiverOptions({ trades: 3, n: 27, finalExtras: RUNES }, {})).toThrow(/28 slots/);
+        expect(boneGiverOptions({ trades: 3, n: 26, finalExtras: RUNES }, {}).finalExtras).toHaveLength(2);
+        expect(() => boneGiverOptions({ trades: 3, finalExtras: [{ item: 'Law rune', count: 0 }] }, {})).toThrow(/whole count/);
+        expect(() => boneGiverOptions({ trades: 3, restock: { kind: 'cheat' }, finalExtras: [{ item: 'Law rune', count: 1 }] }, {})).toThrow(/obj/);
+        const site = [{ giver: { x: 1, z: 2 }, receiver: { x: 1, z: 3 } }];
+        expect(() => boneGiverOptions({ mode: 'on-request', sites: site, trades: 3, finalExtras: RUNES }, {})).toThrow(/standing/);
+    });
+
+    test('the last load is one burst of three All presses, and the scored account\'s offer is never accepted (no expectTheirs)', async () => {
+        const bones = Array.from({ length: 23 }, (_, slot) => ({ slot, id: 536, name: 'Dragon bones', count: 1, optionsWithIndex: [] }));
+        const inventory = [...bones, { slot: 23, id: 563, name: 'Law rune', count: 1, optionsWithIndex: [] }, { slot: 24, id: 556, name: 'Air rune', count: 5, optionsWithIndex: [] }];
+        const trade = { isOpen: true, screen: 'offer' as const, partner: 'Scored Player', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false };
+        const sdk = new FakeSdk(baseState({ tick: 10, inventory, trade } as Partial<BotWorldState>));
+        const r = give(sdk, 'Scored Player', loadOffer(o, 2), { openTimeoutMs: 5_000, maxTicks: 6 });
+        await flush();
+        expect(sdk.sent.splice(0).map(a => [a.method, ...a.args])).toEqual([['sendOfferItem', 0, -1], ['sendOfferItem', 23, -1], ['sendOfferItem', 24, -1], ['sendAcceptTrade']]);
+        const mine = [{ slot: 0, id: 536, name: 'Dragon bones', count: 23 }, { slot: 1, id: 563, name: 'Law rune', count: 1 }, { slot: 2, id: 556, name: 'Air rune', count: 5 }];
+        const theirs = [{ slot: 0, id: 1351, name: 'Bronze axe', count: 1 }];
+        // The scored account puts something up: both accepts reset, and the giver does not re-accept.
+        for (let i = 0; i < 3; i++) {
+            sdk.tick({ trade: { ...trade, myOffer: mine, theirOffer: theirs } });
+            await flush();
+        }
+        expect(sdk.sent.filter(a => a.method === 'sendAcceptTrade')).toHaveLength(0);
+        // On the confirm screen it declines.
+        sdk.tick({ trade: { ...trade, screen: 'confirm', myOffer: mine, theirOffer: theirs, partnerAccepted: true } });
+        expect(await r).toMatchObject({ ok: false, reason: 'partner confirm offer is not acceptable' });
+        expect(sdk.sent.map(a => a.method)).toEqual(['sendDeclineTrade']);
     });
 });
 
