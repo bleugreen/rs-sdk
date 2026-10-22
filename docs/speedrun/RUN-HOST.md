@@ -429,8 +429,8 @@ order (the starter kit, every hand-off, drop, consumption and worn change), prin
 (each row's free slots, need and verdict, and what is held after it), and exits non-zero if any
 row's need exceeds its free slots, an item leaves that is not held, or the pack passes 28. A
 non-zero exit means a step would refuse at its start on the night, as S06 did at 13 free against 27
-before the 2026-10-21 fixes: the start waits until the run-order owner has fixed the failing rows.
-Rows with a `?` are listed as unknown; `--strict` fails them too, and should pass before the run.
+before the 2026-10-21 fixes; the failing rows go to the run-order owner, who owns the loads and
+hand-offs. Rows with a `?` are listed as unknown; `--strict` fails them too.
 
 Account files: the gate account (step 6) is a throwaway demo account whose name starts with
 `cairn_`, with `~/rs-sdk/bots/<gate>/bot.env` holding `BOT_USERNAME`, `PASSWORD`,
