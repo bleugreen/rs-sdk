@@ -39,7 +39,7 @@
 
 import type { BotWorldState, PrayerName } from '../../sdk/types';
 import { act, actConverse, dropItems, openDoor, talkTo, type ActSdk } from '../lib/act';
-import { COMBAT_SPELLS, fight, prayerActive, questCastStyle, setPrayer, type CombatSpell, type FightResult } from '../lib/combat';
+import { COMBAT_SPELLS, fight, prayerActive, setPrayer, type CombatSpell, type FightResult } from '../lib/combat';
 import { converse, levelUpInterrupt, type ConverseResult, type ConverseSdk } from '../lib/converse';
 import { pageText, type OptionPattern } from '../lib/dialogue';
 import { matchesItem, type ItemPattern } from '../lib/items';
@@ -472,7 +472,7 @@ async function killWarlord(ctx: Ctx, opts: Options): Promise<WarlordReport> {
     const prayerOnTicks = await pray(ctx, 'protect_from_melee', true);
     const f: FightResult = await fight(sdk, /^Khazard warlord$/i, {
         spell: sp.component, prayer: 'protect_from_melee', eatBelow: 6, food: ITEM.shark, maxTicks: 1500, findTicks: 15, onDialog: 'continue',
-        done: s => holds(s, ITEM.orbs), ...questCastStyle(),
+        done: s => holds(s, ITEM.orbs),
     });
     const report: WarlordReport = {
         spell, ticks: f.ticks, casts: runes0 - invCount(sdk, sp.rune), clicks: f.attacks, dealt: f.dealt, taken: f.taken, prayerUsed: f.prayerUsed,
