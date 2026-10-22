@@ -98,19 +98,24 @@ describe('one source for the row: the holder\'s serve built from the ledger rows
         expect(h23.extras.map(e => e.item)).toContain('magic shortbow');
         expect(h23.topUps.map(t => [t.item, t.to])).toEqual([['shark', 12]]);
         for (const e of [...h11.extras, ...h23.extras, ...h11.topUps, ...h23.topUps]) expect(objPack().ids.has(e.obj)).toBe(true);
-        // H11r is give-only in the ledger in force: nothing to return.
-        expect(returnExtrasFromLedger()).toEqual([]);
+        // The take-back is exactly the H11r row's `in` (two-way since fold-in 23: the bow and the arrows).
+        const { handOffFrom } = await import('../runner/handoff');
+        const { readFileSync } = await import('fs');
+        const { MANIFEST } = await import('../tools/slot-ledger');
+        const h11r = handOffFrom(readFileSync(MANIFEST, 'utf8'), 'H11r');
+        expect(returnExtrasFromLedger().map(e => [e.item, e.count])).toEqual(h11r.receive.map(r => [r.name, r.count]));
         expect(() => serveFromLedger('H9')).toThrow('not a cannon row');
     });
 
-    test("a two-way H11r row (rs/158's, once rs/403 is deployed) returns the bow and arrows from the same reader", async () => {
+    test('a give-only H11r row returns nothing; the two-way row returns the bow and arrows, by obj name for labStock', async () => {
         const { returnExtrasFromLedger } = await import('./cannon-receiver');
         const { readFileSync } = await import('fs');
         const { MANIFEST } = await import('../tools/slot-ledger');
         const text = readFileSync(MANIFEST, 'utf8');
         const row = text.split('\n').find(l => l.startsWith('| H11r |'))!;
-        const twoWay = text.replace(row, row.replace('| H11r | - |', '| H11r | magic shortbow x1 [u]; rune arrow x200 [s] |'));
-        expect(returnExtrasFromLedger(twoWay).map(e => [e.item, e.count, e.obj])).toEqual([['magic shortbow', 1, 'magic_shortbow'], ['rune arrow', 200, 'rune_arrow']]);
+        const giveOnly = text.replace(row, `| H11r | - | ${row.split('|')[3]!.trim().replace(/\(swap/g, '(trade')} | - | 0 | fixture (r) |`);
+        expect(returnExtrasFromLedger(giveOnly)).toEqual([]);
+        expect(returnExtrasFromLedger(text).map(e => [e.item, e.count, e.obj])).toEqual([['magic shortbow', 1, 'magic_shortbow'], ['rune arrow', 200, 'rune_arrow']]);
     });
 
     test('serveDrift: a serve equal to the row is clean; the staged shark 2 against a top-up to 9 is reported', async () => {

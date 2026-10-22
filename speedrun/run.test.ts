@@ -4,6 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { TickLog } from './lib/ticks';
 import { MANIFEST } from './tools/slot-ledger';
+import { returnExtrasFromLedger } from './helpers/cannon-receiver';
 import { readFileSync } from 'fs';
 import { aliasAccount, cannonServeDrift, chainOrRefusal, type GateIO, LOG_ACCOUNT, loadRunConfig, parseArgs, startGates, TARGET_TOTAL, totalLevel, UsageError } from './run';
 import { buildChain, KIT_PARTNER_ROWS, PLACEMENT, sliceUntil } from './runner/chain';
@@ -90,7 +91,8 @@ describe('gate 6: the cannon holder\'s serve against the ledger rows', () => {
     const h11Row = manifest.split('\n').find(l => l.startsWith('| H11 |'))!;
     // Fold-in 24's shape (rs/158): H11 the set and 100 balls, the scimitar and runes, no sharks.
     const foldIn24 = manifest.replace(h11Row, h11Row.replace(/; shark to 9 \[u\][^|]*/, ' '));
-    const h11 = { balls: 100, extras: [{ item: 'Mithril scimitar', count: 1 }, { item: 'Law rune', count: 4 }, { item: 'Water rune', count: 4 }], returnExtras: [] };
+    // The take-back is whatever the H11r row in force gives SCORED (two-way since fold-in 23).
+    const h11 = { balls: 100, extras: [{ item: 'Mithril scimitar', count: 1 }, { item: 'Law rune', count: 4 }, { item: 'Water rune', count: 4 }], returnExtras: returnExtrasFromLedger(foldIn24).map(({ item, count }) => ({ item, count })) };
 
     test('only on a path that reaches a cannon row; a missing serve file refuses with where it should be', async () => {
         const io = { floor: async () => ({ ok: true as const, floor: 'f', runCommit: 'a'.repeat(40), line: 1 }), reservation: () => ({ owner: 'o', state: { state: 'live' as const, reservation: { owner: 'o', until: '2099-01-01T00:00:00Z', reason: '' } }, path: '/h' }), slotLedger: async () => ({ code: 0, out: '' }), helpersReady: () => true, cannonServe: () => ({ path: '/run/cannon-serve.json', serve: null, error: 'ENOENT' }) };
@@ -105,6 +107,7 @@ describe('gate 6: the cannon holder\'s serve against the ledger rows', () => {
         // Today's ledger still has `shark to 9`: no fixed serve count is safe against a top-up.
         expect(cannonServeDrift({ H11: { ...h11, extras: [...h11.extras, { item: 'Shark', count: 2 }] } }, ['H11'], manifest).join()).toContain('top-up to 9');
         expect(cannonServeDrift({ H11: { ...h11, returnExtras: [{ item: 'Magic shortbow', count: 1 }] } }, ['H11'], foldIn24).join()).toContain('H11r: serve.returnExtras');
+        expect(cannonServeDrift({ H11: { ...h11, returnExtras: [] } }, ['H11'], foldIn24).join()).toContain('H11r: serve.returnExtras []');
         expect(cannonServeDrift({}, ['H23'], foldIn24)).toEqual(['H23: no serve options for the row']);
     });
 });
