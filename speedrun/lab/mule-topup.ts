@@ -20,7 +20,7 @@ import { closeSession, openSession, type Session } from '../lib/session';
 import { sameName, swap, tradeOf } from '../lib/trade';
 import { nextTick, waitTicks, waitUntil } from '../lib/wait';
 import { arg, botArg, result } from './common';
-import { cheat, tele, VARROCK_WEST_BANK } from './setup';
+import { cheat, leaveTutorial, tele, VARROCK_WEST_BANK } from './setup';
 
 const SCOPE: CueScope = { step: 'S15', family: 'mule' };
 const MAX = 15;
@@ -43,6 +43,17 @@ async function stage(s: Session, gives: string[], count: number): Promise<void> 
 const sharksIn = (items: Array<{ name: string; count: number }>) => items.filter(i => /^shark$/i.test(i.name)).reduce((n, i) => n + i.count, 0);
 const sum = (items: Array<{ name: string; count: number }>) => Object.fromEntries(items.map(i => [i.name, i.count]));
 
+// A fresh lab account starts on Tutorial Island: leave it as S00 does before any teleport (a staging retry, not measured).
+for (const s of [scored, mule]) {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            await leaveTutorial(s);
+            break;
+        } catch (e) {
+            if (attempt >= 3) throw e;
+        }
+    }
+}
 await tele(scored.sdk, VARROCK_WEST_BANK.x - 1, VARROCK_WEST_BANK.z);
 await tele(mule.sdk, VARROCK_WEST_BANK.x + 1, VARROCK_WEST_BANK.z);
 const scoredName = scored.sdk.getState()!.player!.name;
