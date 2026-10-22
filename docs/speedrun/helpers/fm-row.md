@@ -86,7 +86,10 @@ run in the bbs fleet like any gatherer, and the direct path (`lib/direct.ts`) is
 The one thing that ties it to the run machine is the `cue` start, because the cue is a local
 directory. With `start: 'sighted'` (and `scoredSha256` in its fleet options) it runs from bbs.
 With `start: 'cue'` it runs beside the scored client through `standalone.ts`
-(`{ account, role: 'fm-row', options: { start: 'cue', row, restock } }`).
+(`{ account, role: 'fm-row', options: { start: 'cue', row, restock } }`). On run day the
+droppers also carry `stopOn: { step: 'S03', family: 'fmrow' }`: `run.ts` writes that cue's stop
+after S03, and the launcher logs them out at once (HELPERS.md, "The cue gate"). The role itself
+never reads the `fmrow` cue; its start stays `fm-row-go.json`.
 
 ## Opt-ins for a busy row and staggered droppers
 

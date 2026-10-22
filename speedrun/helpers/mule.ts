@@ -707,6 +707,17 @@ export interface MuleOptions {
 /** A cue older than this when the mule starts is a past hand-off's, never served. */
 export const STALE_CUE_MS = 60_000;
 
+/**
+ * Where the mule's cues start to count (newCue's `startMs`): its start, or, for an account the
+ * launcher logged in on a cue (standalone.ts loginOn), that cue's write (LOGIN_CUE_MS) when it is
+ * earlier. The login can take longer than STALE_CUE_MS, and the cue that logged the mule in is the
+ * request it is there to serve.
+ */
+export function cueEpoch(env: Record<string, string | undefined> = process.env, now = Date.now()): number {
+    const ms = Number(env.LOGIN_CUE_MS);
+    return Number.isFinite(ms) && ms > 0 ? Math.min(now, ms) : now;
+}
+
 /** A cue the mule has not acted on yet: a new session, or a later write of the last one. */
 export function newCue(cue: Pick<Cue, 'session' | 'seq' | 'ms'> | null, last: { session: string; seq: number } | null, startMs: number): boolean {
     if (!cue || cue.ms < startMs - STALE_CUE_MS) return false;
@@ -795,9 +806,9 @@ class Mule {
     private readonly o: ReturnType<typeof muleOptions>;
     private readonly courierPatterns: RegExp[];
     private readonly requests: ChatCursor;
-    /** The last mule cue acted on, and when this role started (a cue older than that, less STALE_CUE_MS, is a past one). */
+    /** The last mule cue acted on, and when this role's cues start to count (cueEpoch; a cue older than that, less STALE_CUE_MS, is a past one). */
     private lastCue: { session: string; seq: number } | null = null;
-    private readonly startMs = Date.now();
+    private readonly startMs = cueEpoch();
     /** Package to serve next, or null. */
     private pending: Package | null = null;
     /** Order mode's packages: every package but those served only on request. */
