@@ -12,7 +12,7 @@
 //   4. H12oP stops: the launcher logs h45 out.
 // Prints RESULT lines (FAIL for a check that does not hold). Through lab.sh, h45 with a bot.env only:
 //
-//   NODE_TICKRATE=400 LAB_BOTS=<h45> LAB_TIMEOUT=2400 speedrun/lab/lab.sh <scored> 'speedrun/lab/atoll-mule.ts:--mule=<h45>'
+//   NODE_TICKRATE=400 LAB_BOTS=cairn_lab45 LAB_TIMEOUT=2400 speedrun/lab/lab.sh <scored> 'speedrun/lab/atoll-mule.ts:--mule=cairn_lab45'
 //
 // Options: --wait=850 (ticks SCORED is away between the trades), --lead=70, --spiders=2, --gw=8479
 // (the launcher's loopback gateway port).
@@ -70,7 +70,8 @@ async function giveN(s: Session, obj: string, n: number, matches: RegExp): Promi
 }
 
 // ---- 1. Stage h45 through its own client, then park it logged out on P's tile.
-const muleBot = arg('mule', 'srh45');
+// The launcher takes cairn_ helper names only; a lab-only one (cairn_lab45) exists on the lab engine alone.
+const muleBot = arg('mule', 'cairn_lab45');
 const muleEnv = loadBotEnv(muleBot);
 const muleAcct = muleEnv.BOT_USERNAME!;
 const scoredBot = botArg();
@@ -206,7 +207,8 @@ const h45Status = () => status()?.accounts.find(a => a.account === muleAcct);
 
 async function untilTicks(what: string, ok: () => boolean, maxTicks: number): Promise<number> {
     const t0 = tick();
-    const r = await waitUntil(sdk, () => ok(), { maxTicks });
+    const r = await waitUntil(sdk, () => ok() || child.exitCode !== null, { maxTicks });
+    if (child.exitCode !== null && !ok()) throw new Error(`the launcher exited (${child.exitCode}) while waiting for ${what}`);
     if (!r.ok) throw new Error(`timed out (${maxTicks} ticks) waiting for ${what}`);
     return tick() - t0;
 }
