@@ -282,3 +282,42 @@ section 6) and a deposit of about 2 ticks (inferred, not measured; the lab used
   numbers come from `primitives.md`.
 - **Bone supply rate** (dragon kills per hour, GE liquidity) belongs to the
   helper logistics and was not measured.
+
+## 9. Module: the booth fallback (`speedrun/skills/prayer.ts`, S25b)
+
+Prayer's primary path buries inside other modules: S07's knife loop (`woodcutting.ts`), the Mining
+`stay2` lap and S18's stuns (STEP-MANIFEST.md entry 15). `prayer.ts` is **booth-only**. It runs
+when bones are left over and buries them at the Varrock west booth (3186,3436), from (3185,3436).
+
+- **Loop** (overlay-driven, one decision per observed tick). With bones in the pack, it clicks Bury
+  on the lowest bone slot every tick. The server drops the click in each bury's delayed tick, so
+  the accepted clicks land every 2 ticks (section 4). With none left, it clicks the booth (Use-quickly)
+  on the first tick the pack shows none. When the bank is open, it sends `lib/bank.ts` `withdrawMany`
+  (`n: 'fill'`, or exact counts when a second bone type completes the load) and close in the same
+  tick. Level-up pages go through `lib/levelup`'s watcher, which listens ahead of the loop, so
+  Continue leaves before that tick's Bury.
+- **Event budget.** The budget never binds. The peak is 3 events in a tick: the routed booth click
+  (MOVE_OPCLICK + OPLOC) beside a Continue, or a withdraw beside its close.
+- **Parameters:** `bones` (a count or `'all'`), `untilLevel` (the last load takes only the bones
+  it needs), `take` (bone types, dragon first and then babydragon), and `freeSlots` (default 28;
+  the inventory ledger has no S25b row of its own).
+- **Preconditions refuse, never throw.** They refuse when the account is not at the booth, when no
+  bones are held or banked (judged only while the bank is open; with the bank closed, the first
+  visit refuses with the same reason), and when the first withdrawal would not have its free slots.
+- **Resume.** The step is logoutSafe between loads, and `run` works from any state at the booth, so
+  held bones are buried first. A held noted stack is banked on the first visit, which costs that
+  visit one tick. The `boneBank` probe lets `done` see a closed bank.
+
+**Lab acceptance** (`speedrun/lab/prayer-accept.ts`): bgsrv-mac (macOS, 12 cores), load 1.8-3.8, local
+engine at 300 ms, browser runs on a freshly built webclient bundle, measured 2026-10-22:
+
+| Case | Client | Bones | Cycles, bank open to bank open | Step ticks | Level-up pages | Pass |
+|---|---|---|---|---|---|---|
+| inv5 | lite | 140 | 58, 58, 58, 58, 58 | 292 | 47 | yes |
+| inv5 | browser | 140 | 58, 58, 58, 58, 58 | 292 | 47 | yes |
+| cold, run 1 | browser | 56 | 58, 58 (bank open 1 tick after the step starts) | 118 | 34 | yes |
+| cold, run 2 | browser | 56 | 58, 58 (1 tick) | 118 | 34 | yes |
+| cold, run 3 | browser | 56 | 58, 58 (1 tick) | 118 | 34 | yes |
+
+The bar is 58 + 5% = 60.9. Every in-inventory xp gap was 2 ticks and every bank gap was 4. No
+booth click was dropped after the cold walk in from Varrock east bank (one per visit).
