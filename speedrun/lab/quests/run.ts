@@ -39,7 +39,7 @@ import { BOUNDARY_STEP, runSteps, type RunnerSession, type Step } from '../../ru
 import { launchLabBrowser } from '../browser';
 import { arg, botArg, result } from '../common';
 import { stats, type Stats } from '../record';
-import { cheat, clearInventory, give, leaveTutorial, mustTele, setStats, tele } from '../setup';
+import { clearInventory, give, leaveTutorial, mustTele, setStats, setVars, tele } from '../setup';
 
 /** A segment's start state on the lab account. */
 export interface QuestFixture {
@@ -92,10 +92,7 @@ export async function applyFixture(session: Session, f: QuestFixture, staging: {
     await tele(sdk, staging.x, staging.z);
     await clearInventory(sdk);
     const vars = Object.entries(f.vars ?? {});
-    if (vars.length) {
-        await Promise.all(vars.map(([k, v]) => cheat(sdk, `setvar ${k} ${v}`)));
-        await waitTicks(sdk, Math.ceil(vars.length / 5) + 2);
-    }
+    if (vars.length) await setVars(sdk, Object.fromEntries(vars));
     if (f.relog ?? vars.length > 0) {
         if (!session.child && session.client !== 'browser') throw new Error(`fixture ${f.letter}: the quest tab only shows the vars after a relog, which needs this script to own the client (LAB_RUNNERS=0 and --launch), or relog: false`);
         await relog(session);
