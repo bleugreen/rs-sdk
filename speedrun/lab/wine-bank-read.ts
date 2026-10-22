@@ -123,7 +123,7 @@ async function logout(l: Live, label: string): Promise<void> {
     if (!r.ok) throw new Error(`logout not confirmed: ${directLogoutText(r)}`);
 }
 
-async function readBank(l: Live, label: string): Promise<void> {
+async function readBank(l: Live, label: string): Promise<string> {
     const t0 = tickOf(l.sdk);
     await openBank(ctxOf(l));
     const opened = tickOf(l.sdk);
@@ -131,6 +131,7 @@ async function readBank(l: Live, label: string): Promise<void> {
     const wine = wineItems(items);
     await closeBank(l.bot, l.sdk);
     out('bank read', { read: label, askedTick: t0, openTick: opened, closeTick: tickOf(l.sdk), sinceLogin: opened - l.loginTick, closedSinceLogin: tickOf(l.sdk) - l.loginTick, wine, cookingXp: cookingXp(l.sdk) });
+    return JSON.stringify(wine);
 }
 
 // ---- leaving the Cooks' Guild (stairs and door as in speedrun/helpers/grapes.ts) ----
@@ -254,9 +255,8 @@ const readAt = [22, 30, 38, 46, 54, 62];
 let lastWine = '';
 for (const at of readAt) {
     while (tickOf(b.sdk) - b.loginTick < at) await b.sdk.waitForStateUpdate();
-    await readBank(b, `+${at}`);
     // once the unfermented wine is gone, one confirming read is enough
-    const now = JSON.stringify(wineItems(b.sdk.getBankItems()));
+    const now = await readBank(b, `+${at}`);
     if (lastWine && now === lastWine && !now.includes(`"id":${ITEM.wine},`)) break;
     lastWine = now;
 }
