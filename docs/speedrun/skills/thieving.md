@@ -304,7 +304,13 @@ measured spot checks in section 4):
   NPC; only `npc.delayed` is checked (`OpNpcHandler.ts:27-31`). Two bots on
   the same knight both kept the 2-tick cadence: 146 of 163 and 164 of 175
   success gaps were 2 (measured, 200 rolls each at 85). The market guards,
-  paladins and heroes ignore pickpocketing.
+  paladins and heroes ignore pickpocketing. Even so, rs/158 asked S18 to
+  prefer a knight no other thiever stands next to: `thieving.ts`'s opt-in
+  `knight: { prefer: 'uncrowded' }` (off by default) scores the two nearest
+  knights by the other players on the 8 tiles around each and hands the
+  program both in that order (`pickpocket.ts` `prefer`), so the retarget is
+  the other knight. Whether a crowd costs picks or frame time is rs/479's
+  lab measurement, not this rule's.
 - **Members world only** (`pickpocket.rs2:101-104`). The demo server is
   members (`fly.toml:23`, `NODE_MEMBERS = "true"`).
 - **The bot must click every tick, blindly.** The cadence needs a click to land
