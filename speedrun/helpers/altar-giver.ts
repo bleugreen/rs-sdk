@@ -181,6 +181,10 @@ export class AltarGiver {
 
     private result(outcome: Outcome, session: string, T: number, extra: { myT?: number; detail?: string } = {}): void {
         this.last = { session, T, outcome, ...extra, ms: Date.now() };
+        // Still loaded after the turn: ready again from now, which is what lifts the scored side's
+        // skip after a failed turn (altar-cue.ts MissBench). It also puts us behind the givers
+        // that have waited longer.
+        if (outcome !== 'gave' && (this.phase === 'ready' || this.phase === 'armed')) this.readyAt = Date.now();
         this.ctx.log('turn', { outcome, T, ...extra });
         this.publish();
     }
