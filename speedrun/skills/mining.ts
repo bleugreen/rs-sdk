@@ -34,6 +34,13 @@
 // click lands no earlier than the rock's respawn, so a lap of n rocks holds 3 ticks per ore
 // while 3n >= D (`lapModel`, the program's own planning rule); the lap with the lowest ticks
 // per ore at D is chosen (`rotationFor`).
+//
+// Contention (`fallback`, opt-in). Other players on the lap show as lap rocks depleting with no
+// mining xp of ours (`ContestWatch`). The watch always logs them in the band row; with `fallback`
+// set, each one stops the program and the band retries in place once the lap is whole again, up
+// to CONTEST_RETRIES in CONTEST_WINDOW ticks, then walks to the nearest other site in SITES that
+// the fallback allows and whose hunters leave this combat level alone (`nextSite`; `acceptHazards`
+// lifts that). Without `fallback` the band is the zoo-only band it was.
 
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import { demoOrigin, samplePlayerCount } from '../lib/demo-status';
@@ -67,6 +74,18 @@ export interface MiningOpts {
     travel?: 'auto' | 'none';
     /** The world's HTTP origin for /playercount (default: the bot's bot.env SERVER). */
     origin?: string;
+    /**
+     * Where a contested band may go (`parseFallback`): 'none' (default) keeps the zoo-only band;
+     * 'auto' allows every other site, a list of SITES names exactly those; either way only a site
+     * whose hunters leave this combat level alone (`safeFrom`), unless `acceptHazards`.
+     */
+    fallback?: string | string[];
+    /**
+     * Let the fallback use sites whose hunters attack this combat level (default false): an iron
+     * band starts with no safe site (`combatGate`) and switches into unsafe ones (`nextSite`). For
+     * rehearsals that mean to walk into a site's hunters.
+     */
+    acceptHazards?: boolean | string;
     /** rs/111's S07 fallback (bones on the stay2 lap): a seam, not built. */
     bury?: unknown;
     /** The trade giver at the zoo that hands over H4p (H4P_KIT) before the iron bands; none by default. */
@@ -199,11 +218,78 @@ export function lapModel(steps: string, D: number): LapModel {
     return { ticksPerOre: Math.round(((R - mark) / (st.length * 10)) * 1000) / 1000, waits: waits / 10, maxTiles, problems };
 }
 
-/** The rotation with the fewest ticks per ore at D (the first listed on a tie). */
+/** The zoo's rotation with the fewest ticks per ore at D (the first listed on a tie). */
 export function rotationFor(D: number): string {
+    return lapFor('zoo', D);
+}
+
+// ------------------------------------------------------------------ sites and contention
+
+export interface Site {
+    /** The cluster's centre: the account is at the site within SITE_RADIUS of it. */
+    centre: P;
+    /** Its knife laps; `lapFor` picks one by D. */
+    rotations: Record<string, Rotation>;
+    /**
+     * The lowest combat level that no hunter reaching its laps or the walk to it from the zoo
+     * attacks. A `cowardly` NPC attacks combat <= 2 x its own outside the Wilderness and anyone
+     * inside (Npc.ts, hunt check_nottoostrong=outside_wilderness), so the Wilderness is Infinity.
+     */
+    safeFrom: number;
+    hazards: string;
+}
+
+export const SITE_RADIUS = 10;
+
+/**
+ * mining-rotation-plan.ts's iron clusters that plan 3.00 per ore at D=13-15 (`--free-starter
+ * --run 2`). Laps from a search over each cluster's stands: five distinct rocks, moves of at
+ * most 2 steps on the SDK's pathfinder, no two rocks from one stand, lapModel 3.00 at D=13 and
+ * 15 (and the six at 18). The cluster at 2437,9902 (underground) has no such lap. Walks are
+ * findLongPath's tiles (docs/speedrun/rehearsals/mining.md, section 11).
+ */
+export const SITES: Record<string, Site> = {
+    zoo: { centre: ZOO, rotations: ROTATIONS, safeFrom: 0, hazards: 'no hunter reaches the laps' },
+    // 2710-2715,3328-3332: 132 tiles from the zoo, 56 from the Ardougne teleport
+    ardougneNorth: {
+        centre: [2713, 3330],
+        rotations: {
+            five: { steps: '2711,3330>2711,3329 2712,3330>2712,3329 2713,3331>2713,3332 2714,3331>2715,3331 2713,3330>2714,3330', basis: 'lapModel 3.00 at D=13-15; 3.6-4.2 at 16-19 (no six-rock lap with moves of 2 or less)' },
+        },
+        safeFrom: 43,
+        hazards: 'brown bears (combat 21) spawn 4 tiles from the laps and beside the walk from the zoo, and attack combat 42 or less',
+    },
+    // 2722-2728,3688-3696: 555 tiles from the zoo, 296 from the Camelot teleport
+    rellekka: {
+        centre: [2724, 3693],
+        rotations: {
+            five: { steps: '2722,3694>2722,3695 2723,3693>2723,3692 2725,3692>2725,3691 2724,3694>2725,3694 2723,3694>2723,3695', basis: 'lapModel 3.00 at D=13-15' },
+            six: { steps: '2722,3694>2722,3695 2723,3693>2723,3692 2725,3692>2725,3691 2726,3692>2727,3692 2725,3693>2725,3694 2723,3694>2723,3695', basis: 'lapModel 3.00 at D=16-18' },
+        },
+        safeFrom: 129,
+        hazards: 'a wolf (combat 64) and black unicorns (27) beside every walk there attack combat 128 and 54 or less',
+    },
+    // 3088-3101,3765-3769, Wilderness level 31: 278 tiles from Edgeville
+    wilderness31: {
+        centre: [3096, 3767],
+        rotations: {
+            five: { steps: '3100,3767>3099,3767 3100,3768>3099,3768 3100,3767>3100,3766 3101,3766>3101,3765 3101,3767>3101,3768', basis: 'lapModel 3.00 at D=13-15' },
+        },
+        safeFrom: Infinity,
+        hazards: 'Wilderness level 31: hobgoblins (combat 28) spawn 2 tiles from the laps and attack anyone there, and so may other players',
+    },
+};
+
+/** The site among `names` the account stands at, if any. */
+export function siteAt(p: P, names: readonly string[]): string | undefined {
+    return names.find(n => cheb(p, SITES[n]!.centre) <= SITE_RADIUS);
+}
+
+/** The site's lap with the fewest ticks per ore at D (the first listed on a tie). */
+export function lapFor(site: string, D: number): string {
     let best = '';
     let bestT = Infinity;
-    for (const [name, r] of Object.entries(ROTATIONS)) {
+    for (const [name, r] of Object.entries(SITES[site]!.rotations)) {
         const t = lapModel(r.steps, D).ticksPerOre;
         if (t < bestT) {
             best = name;
@@ -211,6 +297,58 @@ export function rotationFor(D: number): string {
         }
     }
     return best;
+}
+
+/** Player.getCombatLevel from the state's base levels. */
+export function combatLevel(s: BotWorldState): number {
+    const lv = (n: string, d = 1) => s.skills.find(k => k.name.toLowerCase() === n)?.baseLevel ?? d;
+    const base = 0.25 * (lv('defence') + lv('hitpoints', 10) + Math.floor(lv('prayer') / 2));
+    const melee = 0.325 * (lv('attack') + lv('strength'));
+    const range = 0.325 * (Math.floor(lv('ranged') / 2) + lv('ranged'));
+    const magic = 0.325 * (Math.floor(lv('magic') / 2) + lv('magic'));
+    return Math.floor(base + Math.max(melee, range, magic));
+}
+
+export interface Fallback {
+    /** Sites besides the zoo a contested band may go to; none keeps the zoo-only band. */
+    sites: string[];
+    /** Sites whose `safeFrom` the account's combat level doesn't reach are allowed too (rehearsals). */
+    acceptHazards: boolean;
+}
+
+export function parseFallback(v: unknown, acceptHazards = false): Fallback {
+    if (v === undefined || v === null || v === 'none') return { sites: [], acceptHazards };
+    if (v === 'auto') return { sites: Object.keys(SITES).filter(n => n !== 'zoo'), acceptHazards };
+    const sites = (Array.isArray(v) ? v : String(v).split(',')).map(x => String(x).trim()).filter(Boolean);
+    const others = Object.keys(SITES).filter(n => n !== 'zoo');
+    if (!sites.length || sites.some(n => !others.includes(n))) throw new Error(`mining: fallback must be none, auto or a list of ${others.join(', ')}, not ${String(v)}`);
+    return { sites, acceptHazards };
+}
+
+/**
+ * A contest event (another player's ore off the lap, or a lap wait that never saw it whole)
+ * below this many in CONTEST_WINDOW costs one retry in place: stop the program, wait for the
+ * lap, restart. One more leaves the site. A retry costs D/2 to D+10 ticks and the walk to
+ * ardougneNorth about 70 (mining.md section 11), so two retries cost about one switch: a
+ * passer-by's ore or two is waited out, and a third in the window means someone is mining the
+ * lap, which over the band's ~3,000 ticks costs far more than the walk.
+ */
+export const CONTEST_RETRIES = 2;
+/** Ticks (3 minutes) over which contest events count; rs/259's group held the zoo for 3+ minutes. */
+export const CONTEST_WINDOW = 600;
+/** Site changes per band; past them a contested band fails (the harness logs out cleanly). */
+export const MAX_SWITCHES = 2;
+
+/**
+ * Where a contested band goes: the zoo and the fallback sites, less the one it leaves and, unless
+ * `acceptHazards`, any whose hunters attack this combat level (rs/158: mid-band as at the start);
+ * a site not contested within CONTEST_WINDOW before one that was, then the nearest.
+ */
+export function nextSite(from: string, at: P, combat: number, fb: Fallback, contestedAt: ReadonlyMap<string, number>, now: number): string | undefined {
+    const recently = (n: string) => (contestedAt.has(n) && now - contestedAt.get(n)! < CONTEST_WINDOW ? 1 : 0);
+    return ['zoo', ...fb.sites]
+        .filter(n => n !== from && (fb.acceptHazards || combat >= SITES[n]!.safeFrom))
+        .sort((a, b) => recently(a) - recently(b) || cheb(at, SITES[a]!.centre) - cheb(at, SITES[b]!.centre))[0];
 }
 
 /** pickaxes.obj: levelrequire and mining_rate; pickaxe_checker.rs2 takes the best one usable. */
@@ -336,6 +474,12 @@ interface Shared {
     gate: HostGate | null;
 }
 
+/** A boolean option, from a script's params or a CLI string; absent is false. */
+function flag(v: unknown, name: string): boolean {
+    if (v !== undefined && v !== true && v !== false && v !== 'true' && v !== 'false') throw new Error(`mining: ${name} must be true or false, not ${JSON.stringify(v)}`);
+    return v === true || v === 'true';
+}
+
 export function steps(raw: MiningOpts = {}): Step<any>[] {
     if (raw.bury !== undefined) throw new Error("mining: the stay2 bones seam (rs/111's S07 fallback) is not built");
     const to = Math.min(99, toNumber(raw.to ?? 99, 'to'));
@@ -348,11 +492,10 @@ export function steps(raw: MiningOpts = {}): Step<any>[] {
     const travel = raw.travel ?? 'auto';
     if (travel !== 'auto' && travel !== 'none') throw new Error(`mining: travel must be auto or none, not ${travel}`);
     if (raw.kitGiver !== undefined && (typeof raw.kitGiver !== 'string' || !raw.kitGiver.trim())) throw new Error(`mining: kitGiver must be a name, not ${JSON.stringify(raw.kitGiver)}`);
-    const d = raw.dropAtExit;
-    if (d !== undefined && d !== true && d !== false && d !== 'true' && d !== 'false') throw new Error(`mining: dropAtExit must be true or false, not ${JSON.stringify(d)}`);
-    const dropAtExit = d === true || d === 'true';
+    const dropAtExit = flag(raw.dropAtExit, 'dropAtExit');
+    const fallback = parseFallback(raw.fallback, flag(raw.acceptHazards, 'acceptHazards'));
     const shared: Shared = { gate: null };
-    const o = { to, technique, respawn, rotation: raw.rotation, origin: raw.origin, site };
+    const o = { to, technique, respawn, rotation: raw.rotation, origin: raw.origin, site, fallback };
 
     const out: Step<any>[] = [prepStep(to)];
     if (to > 1) out.push(copperStep(Math.min(15, to), site));
@@ -580,18 +723,39 @@ function travelSteps(to: number): Step<any>[] {
     ];
 }
 
-function zooStep(to: number, o: { rotation?: string | undefined }): Step<any> {
+/** At the zoo, or at a site the fallback allows: where an iron band may start. */
+function atIronSite(s: BotWorldState, fb: Fallback): true | string {
+    if (siteAt(here(s), ['zoo', ...fb.sites])) return true;
+    return fb.sites.length ? `not at the zoo or a fallback site (${key(here(s))})` : `not at the zoo cluster (${key(here(s))})`;
+}
+
+/**
+ * rs/158's ruling (mining.md section 11): a band with a fallback starts only if some site the
+ * fallback may use is safe at the account's combat level (`safeFrom`). Otherwise 'auto' has no
+ * site to go to and fails on the third contest event, and a named list walks the account to
+ * hunters that attack it. `acceptHazards` overrides it; with no fallback it does not apply.
+ */
+function combatGate(s: BotWorldState, fb: Fallback): true | string {
+    const combat = combatLevel(s);
+    if (!fb.sites.length || fb.acceptHazards || fb.sites.some(n => combat >= SITES[n]!.safeFrom)) return true;
+    const needs = fb.sites.map((n, i) => `${n}${i ? '' : ' needs'} ${Number.isFinite(SITES[n]!.safeFrom) ? SITES[n]!.safeFrom : 'never'}`);
+    return `combat ${combat}: no site the contested-rock fallback may use is safe (${needs.join(', ')})`;
+}
+
+function zooStep(to: number, o: { rotation?: string | undefined; fallback: Fallback }): Step<any> {
     return {
         name: 'mining.travel: zoo',
         preconditions: s => (s.inGame ? true : 'not in game'),
         run: async ctx => {
             const s = ctx.sdk.getState()!;
             if (miningLevel(s) >= to || miningLevel(s) < 15) return;
+            // resumed at the fallback site a contested band moved to: the band mines there
+            if (siteAt(here(s), o.fallback.sites)) return;
             if (region(here(s)) !== 'ardougne' || !onLevel0(s)) throw new Error(`not on the Ardougne side at ${key(here(s))} level ${s.player?.level}: travel first`);
             const first = parseSteps(ROTATIONS[o.rotation ?? 'five']!.steps)[0]!.stand;
             if (cheb(here(s), first) > 3) await walk(ctx, first[0], first[1], 0);
         },
-        postconditions: s => (miningLevel(s) >= to || miningLevel(s) < 15 || cheb(here(s), ZOO) <= 10 ? true : `not at the zoo cluster (${key(here(s))})`),
+        postconditions: s => (miningLevel(s) >= to || miningLevel(s) < 15 ? true : atIronSite(s, o.fallback)),
         logoutSafe: false,
     };
 }
@@ -601,6 +765,7 @@ interface IronOpts {
     respawn: number | 'auto';
     rotation?: string | undefined;
     origin?: string | undefined;
+    fallback: Fallback;
 }
 
 /** Watches the rotation's rock tiles: each depletion's observed respawn (dead label to live label, plus one). */
@@ -630,6 +795,79 @@ class RespawnWatch {
     }
 }
 
+export interface ContestEvent {
+    tick: number;
+    kind: 'depletion' | 'lap';
+    rock?: string;
+}
+
+/**
+ * Another player's ore off our lap: a lap rock seen live, then depleted on a label with no mining
+ * xp of ours within one label of it. A success depletes the rock and gives its xp in one tick
+ * (mining.rs2: loc_change and stat_advance after the same p_delay), and a gem or a failed roll
+ * does neither, so each depletion of ours pairs with one xp rise. A tile with no Mine loc on it
+ * (the scene not loaded, the account elsewhere) is not observed.
+ */
+export class ContestWatch {
+    readonly events: ContestEvent[] = [];
+    own = 0;
+    private readonly live = new Map<string, boolean>();
+    private pending: Array<{ tick: number; rock: string }> = [];
+    private xpTicks: number[] = [];
+    private lastXp: number | null = null;
+    private readonly unsub: () => void;
+    constructor(sdk: Pick<StepContext<any>['sdk'], 'onStateUpdate'>, private readonly lapRocks: () => readonly P[], private readonly onEvent: (e: ContestEvent) => void = () => {}) {
+        this.unsub = sdk.onStateUpdate(s => this.observe(s));
+    }
+    observe(s: BotWorldState): void {
+        const xp = miningXp(s);
+        if (this.lastXp !== null && xp > this.lastXp) this.xpTicks.push(s.tick);
+        this.lastXp = xp;
+        for (const r of this.lapRocks()) {
+            const loc = s.nearbyLocs.find(l => l.x === r[0] && l.z === r[1] && l.optionsWithIndex.some(o => MINE.test(o.text)));
+            // Out of view, the rock's state is unknown: a depletion first seen after a scene reload is
+            // late, and would pair with the next ore's xp and leave that ore's depletion unpaired.
+            if (!loc) {
+                this.live.delete(key(r));
+                continue;
+            }
+            const live = !EMPTY_ROCKS.has(loc.id);
+            if (this.live.get(key(r)) === true && !live) this.pending.push({ tick: s.tick, rock: key(r) });
+            this.live.set(key(r), live);
+        }
+        this.pending = this.pending.filter(d => {
+            const i = this.xpTicks.findIndex(t => Math.abs(t - d.tick) <= 1);
+            if (i >= 0) {
+                this.xpTicks.splice(i, 1);
+                this.own++;
+                return false;
+            }
+            if (s.tick < d.tick + 2) return true;
+            this.add({ tick: d.tick, kind: 'depletion', rock: d.rock });
+            return false;
+        });
+        this.xpTicks = this.xpTicks.filter(t => t >= s.tick - 3);
+    }
+    /** A wait of D+10 ticks that never saw the whole lap live. */
+    lapTimeout(tick: number): void {
+        this.add({ tick, kind: 'lap' });
+    }
+    recent(now: number): number {
+        return this.events.filter(e => now - e.tick < CONTEST_WINDOW).length;
+    }
+    /** More events in the window than CONTEST_RETRIES retries cover: leave the site. */
+    tripped(now: number): boolean {
+        return this.recent(now) > CONTEST_RETRIES;
+    }
+    stop(): void {
+        this.unsub();
+    }
+    private add(e: ContestEvent): void {
+        this.events.push(e);
+        this.onEvent(e);
+    }
+}
+
 function ironStep(name: string, start: number, end: number, failures: boolean, o: IronOpts, shared: Shared): Step<any> {
     const inBand = (s: BotWorldState) => miningLevel(s) >= start && miningLevel(s) < end;
     return {
@@ -639,7 +877,9 @@ function ironStep(name: string, start: number, end: number, failures: boolean, o
             if (miningLevel(s) < start) return `Mining ${miningLevel(s)} < ${start}`;
             if (pickaxeRate(s.inventory, miningLevel(s)) === null) return 'no usable pickaxe';
             if (freeOfOre(s) < FREE_SLOTS) return `${28 - freeOfOre(s)} other items: need ${FREE_SLOTS} free slots (ore, a gem, a stray fletch)`;
-            return cheb(here(s), ZOO) <= 10 ? true : `not at the zoo cluster (${key(here(s))})`;
+            const gate = combatGate(s, o.fallback);
+            if (gate !== true) return gate;
+            return atIronSite(s, o.fallback);
         },
         run: async ctx => {
             if (!inBand(ctx.sdk.getState()!)) return;
@@ -661,6 +901,9 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
     const { sdk } = ctx;
     const t0 = currentTick(sdk);
     const log = (line: string) => console.log(`[${name}] ${line}`);
+    const switching = o.fallback.sites.length > 0;
+    // a band resumed after a switch starts where it stands
+    let site = (switching && siteAt(here(sdk.getState()!), ['zoo', ...o.fallback.sites])) || 'zoo';
     let players: number | null = null;
     let D: number;
     if (o.respawn === 'auto') {
@@ -681,18 +924,71 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
         }
     };
     let faults = 0;
-    let rotation = o.rotation ?? rotationFor(D);
+    const lap = (d: number) => (site === 'zoo' ? o.rotation : undefined) ?? lapFor(site, d);
+    let rotation = lap(D);
     let abort = new AbortController();
     let abortWhy = '';
-    const rocks = (r: string) => [...new Map(parseSteps(ROTATIONS[r]!.steps).map(st => [key(st.rock), st.rock])).values()];
-    const allRocks = [...new Map(Object.values(ROTATIONS).flatMap(r => parseSteps(r.steps)).map(st => [key(st.rock), st.rock])).values()];
-    const watch = new RespawnWatch(sdk, allRocks, d => {
-        if (d > D && !abort.signal.aborted) {
-            abortWhy = `observed respawn ${d} > scheduled ${D}`;
-            D = d;
-            abort.abort();
+    let contestAbort = false;
+    const rotations = () => SITES[site]!.rotations;
+    const rocks = (r: string) => [...new Map(parseSteps(rotations()[r]!.steps).map(st => [key(st.rock), st.rock])).values()];
+    const siteRocks = () => [...new Map(Object.values(rotations()).flatMap(r => parseSteps(r.steps)).map(st => [key(st.rock), st.rock])).values()];
+    const observedRespawn: Record<number, number> = {};
+    const watchRespawn = () =>
+        new RespawnWatch(sdk, siteRocks(), d => {
+            // a gap past the engine's longest respawn is a rock taken again before we saw it back
+            if (switching && d > respawnFor(0)) return;
+            if (d > D && !abort.signal.aborted) {
+                abortWhy = `observed respawn ${d} > scheduled ${D}`;
+                D = d;
+                abort.abort();
+            }
+        }, () => D);
+    let watch = watchRespawn();
+    // contention: logged always, acted on only with a fallback
+    const contestLog: Array<ContestEvent & { site: string }> = [];
+    const contestedAt = new Map<string, number>();
+    const switches: Array<{ tick: number; from: string; to: string; walkTicks: number; events: number }> = [];
+    let retries = 0;
+    let own = 0;
+    const watchContest = (): ContestWatch =>
+        new ContestWatch(sdk, () => rocks(rotation), e => {
+            contestLog.push({ ...e, site });
+            log(`T${e.tick} contested ${site}: ${e.kind === 'lap' ? `the lap not whole in ${D + 10} ticks` : `another player's ore off ${e.rock}`} (${contest.recent(e.tick)} in ${CONTEST_WINDOW} ticks)`);
+            if (switching && !abort.signal.aborted) {
+                abortWhy = `contested: ${e.kind} ${e.rock ?? ''}`.trim();
+                contestAbort = true;
+                abort.abort();
+            }
+        });
+    let contest = watchContest();
+    const merge = () => {
+        for (const [d, n] of Object.entries(watch.histogram)) observedRespawn[Number(d)] = (observedRespawn[Number(d)] ?? 0) + n;
+        own += contest.own;
+    };
+    const leave = async () => {
+        const now = currentTick(sdk);
+        const s = sdk.getState()!;
+        contestedAt.set(site, now);
+        const combat = combatLevel(s);
+        const to = switches.length < MAX_SWITCHES ? nextSite(site, here(s), combat, o.fallback, contestedAt, now) : undefined;
+        if (!to) {
+            const why = switches.length >= MAX_SWITCHES ? `after ${MAX_SWITCHES} switches` : `for combat ${combat} (${o.fallback.sites.map(n => `${n}: ${SITES[n]!.hazards}`).join('; ')})`;
+            throw new Error(`contested at ${[...contestedAt.keys()].join(' and ')} (${contest.recent(now)} events in ${CONTEST_WINDOW} ticks) and no site left ${why}`);
         }
-    }, () => D);
+        if (combat < SITES[to]!.safeFrom) log(`WARNING: ${to} at combat ${combat}: ${SITES[to]!.hazards}`);
+        const first = parseSteps(SITES[to]!.rotations[lapFor(to, D)]!.steps)[0]!.stand;
+        log(`T${now} leaving ${site} for ${to}, ${cheb(here(s), first)} tiles away`);
+        watch.stop();
+        contest.stop();
+        merge();
+        const events = contest.recent(now);
+        await walk(ctx, first[0], first[1], 0);
+        switches.push({ tick: now, from: site, to, walkTicks: currentTick(sdk) - now, events });
+        site = to;
+        rotation = lap(D);
+        watch = watchRespawn();
+        contest = watchContest();
+    };
     let poll: ReturnType<typeof setInterval> | undefined;
     if (o.respawn === 'auto') {
         poll = setInterval(() => {
@@ -700,7 +996,7 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
                 if (p === null) return;
                 players = p;
                 const d = scheduledRespawn(p);
-                const r = o.rotation ?? rotationFor(d);
+                const r = lap(d);
                 if ((d > D || r !== rotation) && !abort.signal.aborted) {
                     abortWhy = `${p} players: respawn ${D} -> ${d}, rotation ${rotation} -> ${r}`;
                     D = d;
@@ -713,12 +1009,25 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
         for (;;) {
             const s = sdk.getState()!;
             if (miningLevel(s) >= end) break;
-            rotation = o.rotation ?? rotationFor(D);
+            rotation = lap(D);
+            if (switching && contest.tripped(currentTick(sdk))) {
+                await leave();
+                continue;
+            }
+            // before every start: a restart, a retry in place, and the new site's first lap after a switch
             await clearOres();
             const live = (st: BotWorldState) => rocks(rotation).every(p => liveRock(st, p));
             if (!live(s)) {
-                const r = await waitUntil(sdk, live, { maxTicks: D + 10 });
-                if (!r.ok) throw new Error(`the ${rotation} rotation's rocks are not all live after ${D + 10} ticks: someone else mining here?`);
+                const r = await waitUntil(sdk, switching ? st => live(st) || contest.tripped(st.tick) : live, { maxTicks: D + 10 });
+                if (switching) {
+                    if (!r.ok) contest.lapTimeout(currentTick(sdk));
+                    if (!r.ok || contest.tripped(currentTick(sdk))) continue;
+                } else if (!r.ok) throw new Error(`the ${rotation} rotation's rocks are not all live after ${D + 10} ticks: someone else mining here?`);
+            }
+            // a contest seen while waiting is counted; the lap is whole again, so start
+            if (contestAbort) {
+                contestAbort = false;
+                abort = new AbortController();
             }
             const inv = sdk.getState()!.inventory;
             const canKnife = inv.some(i => /^knife$/i.test(i.name)) && inv.some(i => /^logs$/i.test(i.name));
@@ -726,7 +1035,7 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
             if (!canKnife && o.technique !== 'plain') log('no knife or no logs left: plain');
             if (technique === 'auto' && !shared.gate) shared.gate = deps.inPageGate(sdk as never, { plainTicksPerRoll: plainTicksPerOre(D), measureDrops: GATE_MEASURE_DROPS, log });
             const params: Record<string, unknown> = {
-                steps: ROTATIONS[rotation]!.steps,
+                steps: rotations()[rotation]!.steps,
                 respawn: D,
                 untilLevel: end,
                 rate: rateTable(inv),
@@ -734,7 +1043,7 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
                 // plain's timer trick on the next rock itself (inert under the knife)
                 selfStarter: true,
             };
-            log(`T${currentTick(sdk)} level ${miningLevel(sdk.getState())}: respawn ${D}${players !== null ? ` (${players} players)` : ''}, rotation ${rotation}, ${technique}`);
+            log(`T${currentTick(sdk)} level ${miningLevel(sdk.getState())}: respawn ${D}${players !== null ? ` (${players} players)` : ''}, ${site === 'zoo' ? '' : `${site} `}rotation ${rotation}, ${technique}`);
             try {
                 const r = await deps.runGatedProgram(sdk, 'knife-mine', params, {
                     ...(shared.gate && technique === 'auto' ? { gate: shared.gate } : {}),
@@ -747,19 +1056,26 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
                     beforeRestart: async (next, prev) => {
                         await clearOres();
                         const w0 = currentTick(sdk);
-                        const r = await waitUntil(sdk, live, { maxTicks: D + 10 });
+                        const r = await waitUntil(sdk, switching ? st => live(st) || abort.signal.aborted : live, { maxTicks: D + 10 });
                         restartWaits.push({ tick: w0, ticks: currentTick(sdk) - w0, after: `${prev.technique}:${prev.reason}`, next, ok: r.ok });
                         log(`T${currentTick(sdk)} restart ${next} after ${prev.technique}:${prev.reason}: waited ${currentTick(sdk) - w0} ticks for the lap`);
                     },
                     onSegment: seg => {
                         segments.push(seg);
-                        ctx.log.append(row(ctx, `(segment) ${name}`, { technique: seg.technique, reason: seg.reason, respawn: D, rotation, counters: seg.status.counters, result: seg.status.result, frames: seg.status.frames, logTail: seg.status.logTail }, seg.status.startedTick, seg.status.endedTick ?? seg.status.tick));
+                        ctx.log.append(row(ctx, `(segment) ${name}`, { technique: seg.technique, reason: seg.reason, respawn: D, rotation, ...(site === 'zoo' ? {} : { site }), counters: seg.status.counters, result: seg.status.result, frames: seg.status.frames, logTail: seg.status.logTail }, seg.status.startedTick, seg.status.endedTick ?? seg.status.tick));
                     },
                     log,
                 });
                 if (r.ended === 'aborted') {
-                    restarts.push({ tick: currentTick(sdk), why: abortWhy, D, rotation });
-                    log(`restart: ${abortWhy}`);
+                    if (contestAbort) {
+                        // a retry in place (the loop waits for the lap), or the loop leaves
+                        if (contest.tripped(currentTick(sdk))) log(`T${currentTick(sdk)} ${contest.recent(currentTick(sdk))} contest events in ${CONTEST_WINDOW} ticks: leaving ${site}`);
+                        else log(`T${currentTick(sdk)} retry ${++retries}: ${abortWhy}`);
+                    } else {
+                        restarts.push({ tick: currentTick(sdk), why: abortWhy, D, rotation });
+                        log(`restart: ${abortWhy}`);
+                    }
+                    contestAbort = false;
                     abort = new AbortController();
                     continue;
                 }
@@ -775,10 +1091,14 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
         }
     } finally {
         watch.stop();
+        contest.stop();
+        merge();
         if (poll) clearInterval(poll);
         ctx.log.append(row(ctx, `(band) ${name}`, {
-            players, respawn: D, rotation, restarts, restartWaits, oreDrops, faults, observedRespawn: watch.histogram, gate: shared.gate?.summary() ?? null,
+            players, respawn: D, rotation, restarts, restartWaits, oreDrops, faults, observedRespawn, gate: shared.gate?.summary() ?? null,
             segments: segments.map(sg => ({ technique: sg.technique, reason: sg.reason, ticks: (sg.status.endedTick ?? sg.status.tick) - sg.status.startedTick, ores: sg.status.counters.ores ?? 0, slips: sg.status.counters.slips ?? 0, failed: sg.status.counters.failed ?? 0, result: sg.status.result })),
+            site,
+            contest: { fallback: o.fallback.sites, foreign: contestLog.length, own, retries, switches, events: contestLog.slice(0, 50) },
         }, t0, currentTick(sdk)));
     }
 }
