@@ -64,6 +64,14 @@ const NET_PARAMS = { method: NET_METHOD, dropEach: true, followSpot: true } as c
  */
 export const PLAIN_TICKS_PER_ROLL = 5.35;
 
+/**
+ * Catches per measured switch-off sample, passed to each band's gate explicitly rather than
+ * left to hostgate's default. The switch-off compares a sample mean with plain, and a small
+ * sample switches an honest knife off on luck; the catch chance here starts near 0.25 at
+ * level 20, noisier than the trees this was first sized on.
+ */
+export const MEASURE_DROPS = 120;
+
 /** Feathers carried per expected catch. */
 export const FEATHER_MARGIN = 1.15;
 
@@ -383,7 +391,7 @@ export interface FishingOptions {
     technique?: GatedTechnique;
     /** Game xp where fly-20-78 ends and fly-78-99 starts (default S22's 9,612 base). */
     runStartXp?: number | string;
-    /** inPageGate options over the module's own (plainTicksPerRoll defaults to PLAIN_TICKS_PER_ROLL). */
+    /** inPageGate options over the module's own (plainTicksPerRoll defaults to PLAIN_TICKS_PER_ROLL, measureDrops to MEASURE_DROPS). */
     gate?: Partial<InPageGateOptions>;
     /** Extra knife-cycle parameters, test and lab only (rs/156's forced-slip `hold`); never set on an attempt. */
     params?: Record<string, unknown>;
@@ -660,7 +668,7 @@ function bandStep(o: Resolved, b: Band): Step {
         if (!s0 || b.passed(s0)) return;
         const start = fishingOf(s0);
         // A fresh gate per band: its first probe and bootstrap are the band's own, as on the run.
-        const gate = technique === 'auto' ? o.makeGate(sdk, { plainTicksPerRoll: PLAIN_TICKS_PER_ROLL, log: o.log, ...o.gate }) : undefined;
+        const gate = technique === 'auto' ? o.makeGate(sdk, { plainTicksPerRoll: PLAIN_TICKS_PER_ROLL, measureDrops: MEASURE_DROPS, log: o.log, ...o.gate }) : undefined;
         const segments: BandSegment[] = [];
         let fromXp = start.xp;
         let noFeathersAt: number | null = null;

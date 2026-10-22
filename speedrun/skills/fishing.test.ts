@@ -9,7 +9,7 @@ import { xpForLevel } from '../lib/xp';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Step, StepContext } from '../runner/step';
 import {
-    answerThreat, bandFor, DRAYNOR, expectedRolls, feathersNeeded, FLY_PARAMS, flyRollsPerCatch, type FishingOptions, GUARD_DEFAULTS, type GuardIo, NET_METHOD, PLAIN_TICKS_PER_ROLL, RIVER,
+    answerThreat, bandFor, DRAYNOR, expectedRolls, feathersNeeded, FLY_PARAMS, flyRollsPerCatch, type FishingOptions, GUARD_DEFAULTS, type GuardIo, MEASURE_DROPS, NET_METHOD, PLAIN_TICKS_PER_ROLL, RIVER,
     rollYield, SAFE, skill, steps, summarizeBand, threatOf, type BandSegment
 } from './fishing';
 
@@ -198,6 +198,9 @@ describe('fishing: running the bands', () => {
         expect(fly1.opts.gate).toBe(h.gates[0]!.gate);
         expect(fly2.opts.gate).toBe(h.gates[1]!.gate);
         expect(h.gates.every(g => g.opts.plainTicksPerRoll === PLAIN_TICKS_PER_ROLL)).toBe(true);
+        // the measured switch-off's sample size is the module's own, not hostgate's default
+        expect(MEASURE_DROPS).toBe(120);
+        expect(h.gates.every(g => g.opts.measureDrops === MEASURE_DROPS)).toBe(true);
     });
 
     test('a fixed technique gets no gate', async () => {
