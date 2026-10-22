@@ -31,7 +31,6 @@ beforeEach(() => {
     env = { ...process.env, HOME: home, TMPDIR: tmp, PATH: `${bin}:${process.env.PATH}` };
     delete env.RS_RUN_HOST;
     delete env.RS_RUN_TAILNET;
-    delete env.ASHBURN_HOST;
 });
 
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
