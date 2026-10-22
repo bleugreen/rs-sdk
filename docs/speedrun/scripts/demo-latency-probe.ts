@@ -83,8 +83,11 @@ const SECURED = !(HOST.startsWith('localhost') || HOST.startsWith('127.'));
 const ORIGIN = `${SECURED ? 'https' : 'http'}://${HOST}`;
 const TICK_MS = tickMs();
 const TICK_MS_FROM = ['SPEEDRUN_TICK_MS', 'NODE_TICKRATE'].find(k => Number(process.env[k]) === TICK_MS && tickMs({ [k]: process.env[k] }) === TICK_MS) ?? 'default';
-/** Ticks without a tick after which the game session counts as lost. */
-const SILENCE_TICKS = 15;
+/**
+ * Ticks without a tick after which the game session counts as lost: for a socket that stays open
+ * with nothing behind it. The demo's worst recorded overrun is about 1.5 s, far inside this.
+ */
+const SILENCE_TICKS = 12;
 
 /** Wall clock in ms with sub-ms resolution. */
 const now = (): number => performance.timeOrigin + performance.now();
