@@ -810,8 +810,9 @@ Why each flag:
 **Where they run: on SCORED's machine, logged in before SCORED** (main's plan of record, 16:35-16:36
 PDT 2026-10-21). At the gate only the **opening roster**, S06's 7 air-altar givers, is logged in, on
 **each** candidate machine, so each gate is read under the opening load (main, 16:14 and 16:36
-PDT). After step 5a chooses, the rest of the roster logs in on the chosen machine before SCORED, and
-the other machine's 7 log out. So both machines carry the launcher at RUN_COMMIT and, on run night
+PDT). After step 5a chooses, the bone and trade givers log in on the chosen machine before SCORED,
+S21's givers later, ahead of S21 ("The per-address login plan", below), and the other machine's 7 log
+out. So both machines carry the launcher at RUN_COMMIT and, on run night
 only, the givers' mode-600 env files (main, 16:14 PDT; on the twin **pending (rs/host)**). The CPU
 under the full roster is established before run day by the giver-load check, not at the gate
 (below).
@@ -1432,8 +1433,8 @@ renews the choice for `handoff`'s 20-minute limit.
 **The hand-off.** Right before it, on the Mac, read the demo's tick length (step 5a's command) and
 the bundle token (above) again and record both. **A tick length different from step 5a's reading
 is a stop**: no start; tell main (main kept this stop-on-change for the reads before the start,
-13:5x PDT). A different token means `gate` again first (above). Then, on the chosen machine, with the machine chosen (step 5a), the full roster in
-(step 4), the recording running (step 5), the gate's Chrome gone, the profile warm and the login
+13:5x PDT). A different token means `gate` again first (above). Then, on the chosen machine, with
+the machine chosen (step 5a), the start's roster in (step 4; S21's givers come later), the recording running (step 5), the gate's Chrome gone, the profile warm and the login
 count at or under 80: put `$SCORED_ENV` on it (step 0), run step 3's env check with
 `ENV=$SCORED_ENV` (expect only `mode 600`), then the launch dry run (below), then hand over. `$SCORED_ENV` is set in the Mac's shell
 to the env file's path on the machine. Use `--machine=run` when the gate chose the run host. Bound:
