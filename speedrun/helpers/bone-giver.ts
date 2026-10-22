@@ -905,6 +905,7 @@ export class BoneGiver {
         }
         const bank = o.restock.bank;
         this.setPhase('restock', `to the bank at ${bank.x},${bank.z}`);
+        if (process.env.HELPER_LAB_TELE === '1' && chebyshev(pos(this.s), bank) > 150) await labTele(ctx, bank);
         await walkNear(ctx, bank.x, bank.z, 3);
         if (this.trip && !this.trip.bank) this.trip.bank = { tick: this.s?.tick ?? 0, energy: this.energy(), at: pos(this.s) };
         if (o.restock.labSeed && isLocalServer() && !this.seeded) {
