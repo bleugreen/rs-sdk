@@ -292,19 +292,6 @@ describe('ScheduleAdapter', () => {
         expect(a.choose('g2', guess)).toEqual({ schedule: 'robust', why: 'two tuned turns failed' });
     });
 
-    test('a new login (a relaunch) forgets the order read off the previous session and the tuned misses toward a demotion', () => {
-        const a = new ScheduleAdapter();
-        const guess = { schedule: 'robust' as const, why: 'giver logged in after SCORED' };
-        a.login('g1', 500);
-        a.observe([r('g1', 100, 'gave', { order: 'giver-first' }), r('g1', 107, 'missed')]);
-        a.login('g1', 500);
-        expect(a.choose('g1', guess).schedule).toBe('tuned');
-        a.login('G1', 9_000);
-        expect(a.choose('g1', guess)).toEqual(guess);
-        a.observe([r('g1', 200, 'missed')]);
-        expect(a.isDemoted('g1')).toBe(false);
-    });
-
     test('a turn that gave, salvaged ones included, breaks the run; no-giver and robust turns do not count', () => {
         const a = new ScheduleAdapter();
         a.observe([r('g1', 100, 'missed'), r('g1', 107, 'gave', { salvaged: true, order: 'scored-first' }), r('g1', 114, 'missed')]);
@@ -385,25 +372,10 @@ describe('CueRelay', () => {
                 const session = `s${++n}`;
                 return { session, write: f => void writes.push({ session, fields: f }) };
             },
-            rcCueFields,
-            () => clock
+            rcCueFields
         );
         return { r, writes };
     }
-    let clock = 0;
-
-    test('namedAt: the first write carrying a turn while its first packet (T+K-1) is ahead; a new run starts afresh', () => {
-        const { r } = relay();
-        clock = 1_000;
-        r.update(sharedStatus(1, [{ giver: 'Lab G1', T: 110, schedule: 'tuned' }], { tick: 100 }));
-        clock = 2_000;
-        r.update(sharedStatus(1, [{ giver: 'lab_g1', T: 110, schedule: 'tuned' }, { giver: 'lab_g2', T: 117, schedule: 'tuned' }], { tick: 104 }));
-        // relayed on the frame of its first packet: the giver may never report on it
-        r.update(sharedStatus(1, [{ giver: 'lab_g2', T: 117, schedule: 'tuned' }, { giver: 'lab_g3', T: 104, schedule: 'tuned' }], { tick: 108 }));
-        expect([r.namedAt('lab_g1', 110), r.namedAt('lab_g2', 117), r.namedAt('lab_g3', 104), r.namedAt('lab_g1', 117)]).toEqual([1_000, 2_000, undefined, undefined]);
-        r.update(sharedStatus(2, [], { tick: 120 }));
-        expect(r.namedAt('lab_g1', 110)).toBeUndefined();
-    });
 
     test('rewrites the cue only when the turns change, not for new beacons alone', () => {
         const { r, writes } = relay();
@@ -622,38 +594,6 @@ describe('the step driving rc-cycle', () => {
         expect(h.starts[0]!.givers).toEqual([{ name: 'lab_g1', schedule: 'tuned', readyAt: 900 }]);
         expect(h.inputs).toEqual([{ givers: [{ name: 'lab_g1', schedule: 'robust', readyAt: 900 }] }]);
         expect(h.programRows()[0]!.meta).toMatchObject({ demoted: ['lab_g1'], why: { lab_g1: 'two tuned turns failed' } });
-    });
-
-    test('a failed turn drops its giver from the feed until it reports ready after the turn was named', async () => {
-        const h = new Harness(world({}));
-        h.statuses = [h.giver('lab_g1', { readyAt: 900 }), h.giver('lab_g2', { readyAt: 901 })];
-        const missed: RcTurnResult = { giver: 'lab_g1', T: 110, schedule: 'robust', outcome: 'no-giver', tick: 115 };
-        const turn = [{ giver: 'lab_g1', T: 110, schedule: 'robust' as const }];
-        h.scripts.push(async run => {
-            run.step({ turns: turn });
-            h.now = 11_000;
-            // its client died: the status file keeps its last write, heartbeat and all
-            run.step({ turns: turn, results: [missed] });
-            run.step({ turns: turn, results: [missed] });
-            // relaunched: ready from the new process
-            h.statuses = [h.giver('lab_g1', { readyAt: 10_500, loggedInAt: 10_400 }), h.giver('lab_g2', { readyAt: 901 })];
-            run.step({ turns: turn, results: [missed] });
-            return run.end('done', {}, { result: summary(2) });
-        });
-        await altarStep(nature44, h.opts()).run(h.ctx());
-        expect(h.inputs.map(i => i.givers.map(g => g.name))).toEqual([['lab_g2'], ['lab_g2', 'lab_g1']]);
-        expect(h.programRows()[0]!.meta).toMatchObject({ benched: [] });
-    });
-
-    test('a failed turn the cue never carried benches nobody', async () => {
-        const h = new Harness(world({}));
-        h.statuses = [h.giver('lab_g1')];
-        h.scripts.push(async run => {
-            run.step({ results: [{ giver: 'lab_g1', T: 110, schedule: 'robust', outcome: 'missed', tick: 117 }] });
-            return run.end('done', {}, { result: summary(1) });
-        });
-        await altarStep(nature44, h.opts()).run(h.ctx());
-        expect(h.inputs).toEqual([]);
     });
 
     test('auto promotes a robust giver to tuned once the page reads it was handled first', async () => {

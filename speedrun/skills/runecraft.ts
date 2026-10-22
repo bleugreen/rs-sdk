@@ -21,7 +21,7 @@
 
 import { join } from 'node:path';
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
-import { canonName, cueDir, CueWriter, DEFAULT_OPEN, MissBench, readJson, readStatuses, RUN_DIR, type GiverStatus, type Schedule, type Turn } from '../helpers/altar-cue';
+import { canonName, cueDir, CueWriter, readJson, readStatuses, RUN_DIR, type GiverStatus, type Schedule, type Turn } from '../helpers/altar-cue';
 import type { LauncherStatus } from '../helpers/standalone';
 import { classifyPage } from '../lib/dialogue';
 import { levelUpStep, newWatcherMemory, type WatcherMemory } from '../lib/levelup';
@@ -280,25 +280,8 @@ export class ScheduleAdapter {
     private readonly order = new Map<string, 'giver-first' | 'scored-first'>();
     /** Demoted givers: name key -> the name as the results gave it. */
     private readonly out = new Map<string, string>();
-    /** Each giver's login as its status last showed it. */
-    private readonly logins = new Map<string, number | null>();
 
     constructor(readonly misses = 2) {}
-
-    /**
-     * A giver's login from its status file. A new one (a relaunch) makes the order observed
-     * before it, and the tuned misses counted toward a demotion, say nothing: a relogged giver
-     * is handled after SCORED, so its first turn back goes on the launcher's guess (robust),
-     * not on a giver-first order read off its previous session.
-     */
-    login(giver: string, loggedInAt: number | null): void {
-        const k = canonName(giver);
-        const prev = this.logins.get(k);
-        this.logins.set(k, loggedInAt);
-        if (prev === undefined || prev === loggedInAt) return;
-        this.order.delete(k);
-        this.streak.delete(k);
-    }
 
     /** Fold in a status's results (re-sent results are ignored); returns the givers demoted by them. */
     observe(results: readonly RcTurnResult[] | undefined): string[] {
@@ -353,13 +336,11 @@ export class ScheduleAdapter {
 /**
  * The givers to offer the page, oldest-ready first: loaded (27 essence), in the
  * room, ready or armed, with a status written in the last 5 s (a giver rewrites it
- * at least every 2 s), and not skipped (`skip`: the bench after a failed turn,
- * altar-cue.ts MissBench).
+ * at least every 2 s).
  */
-export function giverFeed(statuses: readonly GiverStatusView[], now: number, scheduleOf: (giver: string) => RcSchedule, skip: (s: GiverStatusView) => boolean = () => false): GiverEntry[] {
+export function giverFeed(statuses: readonly GiverStatusView[], now: number, scheduleOf: (giver: string) => RcSchedule): GiverEntry[] {
     return statuses
         .filter(s => (s.phase === 'ready' || s.phase === 'armed') && s.inRoom && now - s.ms <= STATUS_FRESH_MS && s.essence >= LOAD)
-        .filter(s => !skip(s))
         .sort((a, b) => (a.readyAt ?? Infinity) - (b.readyAt ?? Infinity))
         .map(s => ({ name: s.account, schedule: scheduleOf(s.account), ...(s.readyAt !== null ? { readyAt: s.readyAt } : {}) }));
 }
@@ -431,21 +412,13 @@ export class CueRelay {
     private runId = -1;
     private key: string | null = null;
     private last: CueFields | null = null;
-    /** giver:T -> Date.now() of the first write that carried the turn (MissBench's `namedAt`). */
-    private readonly named = new Map<string, number>();
     writes = 0;
     sessions: string[] = [];
 
     constructor(
         private readonly open: () => CueSink,
-        private readonly fieldsOf: (st: ProgramStatus) => (CueFields & { key: string }) | null,
-        private readonly now: () => number = () => Date.now()
+        private readonly fieldsOf: (st: ProgramStatus) => (CueFields & { key: string }) | null
     ) {}
-
-    /** When the cue first named `giver` for T in this relay's run; undefined if it never did. */
-    namedAt(giver: string, T: number): number | undefined {
-        return this.named.get(`${canonName(giver)}:${T}`);
-    }
 
     update(st: ProgramStatus | null | undefined): void {
         if (!st) return;
@@ -455,7 +428,6 @@ export class CueRelay {
             this.sink = null;
             this.key = null;
             this.last = null;
-            this.named.clear();
         }
         const f = this.fieldsOf(st);
         if (!f) return;
@@ -469,14 +441,6 @@ export class CueRelay {
         this.writes++;
         this.key = key;
         this.last = cue;
-        // Named only while the turn's first packet (frame T+K-1) is still ahead: a giver reports on
-        // a turn it could still arm, while one relayed later may draw no report at all.
-        const at = this.now();
-        const open = cue.open ?? DEFAULT_OPEN;
-        for (const t of cue.turns) {
-            const k = `${canonName(t.giver)}:${t.T}`;
-            if (!this.named.has(k) && st.tick < t.T + open - 1) this.named.set(k, at);
-        }
     }
 
     /** End this run's cue session with a stop cue, taking the final status's fields when it is this run's. */
@@ -604,9 +568,6 @@ class Driver {
     private readonly deps: RunecraftDeps;
     private readonly mode: ScheduleMode;
     private readonly adapter = new ScheduleAdapter();
-    /** Givers skipped after a failed turn until they report ready again (altar-cue.ts MissBench). */
-    private readonly bench = new MissBench();
-    private readonly benchSeen = new Set<string>();
     private readonly assigned = new Map<string, { schedule: RcSchedule; why: string }>();
     /** Talisman drops sent on entry (more than 1: the server ignored one). */
     private talismanDrops = 0;
@@ -651,12 +612,7 @@ class Driver {
         const now = this.deps.now();
         const launcher = this.mode === 'auto' && !forceRobust ? this.deps.readLauncher(this.opts.runDir ?? RUN_DIR) : null;
         const scored = this.scoredLoggedInAt();
-        const statuses = this.deps.readStatuses(this.cueDir);
-        for (const s of statuses) this.adapter.login(s.account, s.loggedInAt);
-        return giverFeed(
-            statuses,
-            now,
-            g => {
+        return giverFeed(this.deps.readStatuses(this.cueDir), now, g => {
             const choice = forceRobust
                 ? { schedule: 'robust' as const, why: this.mode === 'robust' ? 'forced robust' : 'robust restart' }
                 : this.mode === 'auto'
@@ -664,22 +620,9 @@ class Driver {
                   : this.adapter.isDemoted(g)
                     ? { schedule: 'robust' as const, why: 'two tuned turns failed' }
                     : giverSchedule(this.mode, launcher, g, scored, now);
-                this.assigned.set(g, choice);
-                return choice.schedule;
-            },
-            s => this.bench.skips(s)
-        );
-    }
-
-    /** Bench the giver of each newly seen failed turn, from when the cue first named it for that turn. */
-    private benchMisses(results: readonly RcTurnResult[] | undefined, relay: CueRelay): void {
-        for (const r of results ?? []) {
-            if (r.outcome === 'gave') continue;
-            const id = `${canonName(r.giver)}:${r.T}:${r.tick}:${r.outcome}`;
-            if (this.benchSeen.has(id)) continue;
-            this.benchSeen.add(id);
-            this.bench.miss(r.giver, relay.namedAt(r.giver, r.T));
-        }
+            this.assigned.set(g, choice);
+            return choice.schedule;
+        });
     }
 
     async run(): Promise<void> {
@@ -783,8 +726,7 @@ class Driver {
         const params = { ...this.opts.programParams, ...target, schedule: base, givers: initial };
         const relay = new CueRelay(
             () => this.openCue(),
-            st => deps.rcCueFields(st),
-            () => deps.now()
+            st => deps.rcCueFields(st)
         );
         const sender = new FeedSender(e => deps.sendProgramInput(sdk, { givers: e }), initial);
         const waitBound = this.opts.giverWaitTicks ?? DEFAULT_GIVER_WAIT_TICKS;
@@ -806,7 +748,6 @@ class Driver {
                     relay.update(st);
                     const shared = rcShared(st);
                     this.adapter.observe(shared?.results);
-                    this.benchMisses(shared?.results, relay);
                     if (stopping) return;
                     sender.offer(this.feed(forceRobust));
                     if (shared?.waiting === 'giver') {
@@ -870,7 +811,6 @@ class Driver {
                 schedules: Object.fromEntries([...this.assigned].map(([g, a]) => [g, a.schedule])),
                 why: Object.fromEntries([...this.assigned].map(([g, a]) => [g, a.why])),
                 demoted: this.adapter.demoted,
-                benched: this.bench.benched,
                 orders: (shared?.results ?? []).reduce<Record<string, number>>((h, r) => (r.order ? ((h[r.order] = (h[r.order] ?? 0) + 1), h) : h), {}),
                 // the last failed turns as the page judged them, for the lab's diagnosis
                 failed: (shared?.results ?? [])
