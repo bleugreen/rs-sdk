@@ -22,7 +22,8 @@
 // givers read. Started by the run-machine launcher (standalone.ts) like them.
 //
 // Role options (ROLE_OPTIONS):
-//   item         item to give (default 'Dragon bones')
+//   item         item to give (default 'Dragon bones'; S18 'Babydragon bones', the dragon-first rule)
+//   obj          its staff-give name for restock cheat (default the item name in snake case)
 //   n            per trade (default 23: the knife loop's free slots)
 //   sites        [{ giver: {x,z}, receiver: {x,z} }] in run order (default: the oak tile, then the Taverley willow)
 //   siteWaitTicks  how long to wait at a site for the receiver before trying the next (default 30)
@@ -35,25 +36,33 @@
 //   finalN       bones on that last load (default n - finalExtras.length: the same free slots as every load)
 //   cueDir       default RC_CUE_DIR, else run-machine/rc-cue in the checkout
 //
-// mode 'on-request' (S18's stun-pack top-ups, SUPPLIES.md H14.1-H14.13): the scored
-// account requests, at a stun offset of its choosing, and sizes the load at that
-// moment. It writes the size to bones-ask.json in the cue directory (writeBoneAsk)
-// and clicks trade on this helper. The helper holds a side tile of it (sideTile:
-// orthogonally adjacent, never an NPC's tile, re-stepped whenever it moves), answers
-// the request on the frame that carries it, offers exactly the asked count in one
-// press, and refills to `hold` whenever it holds fewer than `refillBelow`. Why a side:
-// an op on a player reaches it only from a side (rsmod's rectangle reach,
-// GameMap.reachedEntity), and a stunned account cannot step round a corner, so a
-// request between a stunned account and a giver on a corner or 2-3 tiles off goes
-// nowhere and draws no message (rs/279's lab: 6 of 17 due top-ups lost that way).
-// Options for it: hold (default 28), refillBelow (default 21); sites[0] says where to
-// wait when the scored account is out of sight (required).
+// mode 'on-request' (S18's stun-pack courier, SUPPLIES.md H14.1-H14.13): the scored
+// account requests at a stun offset of its choosing (the Thieving module's top-up),
+// and once the trade is open it writes what it wants (the top-up ask, altar-cue.ts:
+// bones to fill its free slots, food back to 2, an arrowtip tier once) to the cue
+// directory. The courier can't size a load itself: it can't see the scored account's
+// inventory. It holds a side tile of the scored account (orthogonally adjacent, never
+// an NPC's tile, re-stepped whenever it moves), answers the request on the frame that
+// carries it, offers what the ask names (each item in one press), and refills to `hold`
+// bones and its `carry` list whenever it holds fewer than `refillBelow` bones or less
+// than a carried count. Why a side: an op on a player reaches it only from a side
+// (rsmod's rectangle reach, GameMap.reachedEntity), and a stunned account cannot step
+// round a corner, so a request between a stunned account and a giver on a corner or 2-3
+// tiles off goes nowhere and draws no message (rs/279's lab: 6 of 17 due top-ups lost
+// that way). Options for it:
+//   hold, refillBelow  bones held after a restock (default 28; less the carry's slots) and the refill bar (21)
+//   carry        [{ item, count, obj?, once? }] the other stacks the courier keeps for the ask:
+//                sharks, the adamant and rune arrowtips (`once`: delivered once, then not restocked)
+//   standing     keep our own trade request standing with the scored account, so its
+//                click opens both screens (default off; rs/158's acceptance in bone-giver.md)
+//   askWaitTicks observed ticks to wait after the open for the ask (default 2), then decline
+//   sites[0]     where to wait when the scored account is out of sight (required)
 import { join } from 'node:path';
 import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
 import { give, DROPPED_TICKS, openTrade, tradeOf, type GiveSpec } from '../lib/trade';
 import { waitUntil } from '../lib/wait';
-import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, newRequestFrom, readJson, writeJsonAtomicSync, type Cue } from './altar-cue';
+import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, newRequestFrom, readTopUpAsk, usableAsk, writeJsonAtomicSync, type Cue, type TopUpAsk } from './altar-cue';
 import { chebyshev, cheat, count, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
@@ -74,19 +83,32 @@ export const DEFAULT_BONE_BANK: Tile = { x: 2946, z: 3368 };
 
 export type BoneMode = 'standing' | 'on-request';
 
-/** An item the last load carries beside the bones; `obj` is its staff-give name (restock kind cheat). */
+/** An item carried beside the bones; `obj` is its staff-give name (restock kind cheat). */
 export interface Extra {
     item: string;
     count: number;
     obj?: string;
 }
 
+/** A stack the on-request courier keeps for the ask; `once`: delivered in one top-up, then not restocked. */
+export interface Carried extends Extra {
+    once?: boolean;
+}
+
 export interface BoneGiverOptions {
     mode: BoneMode;
     item: string;
+    /** The item's staff-give name (restock kind cheat). */
+    obj: string;
     n: number;
     hold: number;
     refillBelow: number;
+    /** on-request: the other stacks kept for the ask. */
+    carry: Carried[];
+    /** on-request: keep our own request standing with the scored account. */
+    standing: boolean;
+    /** on-request: observed ticks after the open to wait for the ask. */
+    askWaitTicks: number;
     sites: Site[];
     siteWaitTicks: number;
     trades: number;
@@ -123,13 +145,19 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
     if (kind !== 'bank' && kind !== 'cheat') throw new Error(`restock.kind must be bank or cheat (got ${kind})`);
     const trades = raw.trades === undefined ? Number.POSITIVE_INFINITY : Number(raw.trades);
     if (!(trades >= 1)) throw new Error(`trades must be at least 1 (got ${raw.trades})`);
-    const finalExtras = ((raw.finalExtras ?? []) as unknown[]).map((e, i) => {
+    const extra = (what: string) => (e: unknown, i: number): Carried => {
         const r = (e ?? {}) as Record<string, unknown>;
         const count = Number(r.count);
-        if (typeof r.item !== 'string' || !r.item || !Number.isInteger(count) || count < 1) throw new Error(`finalExtras[${i}] needs an item name and a whole count`);
-        if (kind === 'cheat' && typeof r.obj !== 'string') throw new Error(`finalExtras[${i}] needs obj (the staff-give name) with restock kind cheat`);
-        return { item: r.item, count, ...(typeof r.obj === 'string' ? { obj: r.obj } : {}) };
-    });
+        if (typeof r.item !== 'string' || !r.item || !Number.isInteger(count) || count < 1) throw new Error(`${what}[${i}] needs an item name and a whole count`);
+        if (kind === 'cheat' && typeof r.obj !== 'string') throw new Error(`${what}[${i}] needs obj (the staff-give name) with restock kind cheat`);
+        return { item: r.item, count, ...(typeof r.obj === 'string' ? { obj: r.obj } : {}), ...(r.once === true ? { once: true } : {}) };
+    };
+    const finalExtras: Extra[] = ((raw.finalExtras ?? []) as unknown[]).map(extra('finalExtras')).map(({ once: _, ...e }) => e);
+    const carry = ((raw.carry ?? []) as unknown[]).map(extra('carry'));
+    if (mode !== 'on-request' && (carry.length || raw.standing !== undefined || raw.askWaitTicks !== undefined)) throw new Error('carry, standing and askWaitTicks are for the on-request mode (S18) only');
+    const askWaitTicks = Number(raw.askWaitTicks ?? 2);
+    if (!Number.isInteger(askWaitTicks) || askWaitTicks < 0) throw new Error(`askWaitTicks must be a whole number (got ${raw.askWaitTicks})`);
+    if (raw.standing !== undefined && typeof raw.standing !== 'boolean') throw new Error('standing must be true or false');
     if (finalExtras.length) {
         if (mode !== 'standing') throw new Error('finalExtras is for the standing mode (S07) only');
         if (!Number.isFinite(trades)) throw new Error('finalExtras needs trades: the last load is the trades-th');
@@ -140,12 +168,17 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
     if (finalExtras.length && (!Number.isInteger(finalN) || finalN < 1 || finalN + finalExtras.length > 28)) {
         throw new Error(`finalN must be at least 1 and finalN + finalExtras must fit 28 slots (got ${raw.finalN ?? finalN} + ${finalExtras.length})`);
     }
+    const item = String(raw.item ?? 'Dragon bones');
     return {
         mode,
-        item: String(raw.item ?? 'Dragon bones'),
+        item,
+        obj: typeof raw.obj === 'string' ? raw.obj : item.toLowerCase().replace(/\s+/g, '_'),
         n,
         hold,
         refillBelow,
+        carry,
+        standing: raw.standing === true,
+        askWaitTicks,
         sites,
         siteWaitTicks: Number(raw.siteWaitTicks ?? 30),
         trades,
@@ -238,31 +271,28 @@ export function partnerIs(s: BotWorldState | null | undefined, receiverHash: str
 
 // ------------------------------------------------------------------ on request (S18)
 
-export const ASK_FILE = 'bones-ask.json';
-
-/** The scored side's size for its next top-up; written just before it clicks trade. */
-export interface BoneAsk {
-    v: 1;
-    seq: number;
-    n: number;
-    ms: number;
+/** What the courier offers for an ask: each asked item it holds, at most the asked count, and what it is short of. */
+export interface AskOffer {
+    specs: GiveSpec[];
+    /** Asked items held short of the count (or not at all), by pattern. */
+    short: Array<{ item: string; asked: number | 'all'; held: number }>;
 }
 
-export function writeBoneAsk(dir: string, n: number, seq: number): BoneAsk {
-    if (!Number.isInteger(n) || n < 1 || n > 28) throw new Error(`a bone ask must be 1-28 (got ${n})`);
-    const ask: BoneAsk = { v: 1, seq, n, ms: Date.now() };
-    writeJsonAtomicSync(join(dir, ASK_FILE), ask);
-    return ask;
+export function askOffer(ask: Pick<TopUpAsk, 'items'>, inventory: readonly { name: string; count: number }[]): AskOffer {
+    const specs: GiveSpec[] = [];
+    const short: AskOffer['short'] = [];
+    for (const a of ask.items) {
+        const re = new RegExp(a.item, 'i');
+        const held = inventory.filter(i => re.test(i.name)).reduce((s, i) => s + i.count, 0);
+        if (held === 0 || (a.count !== 'all' && held < a.count)) short.push({ item: a.item, asked: a.count, held });
+        if (held > 0) specs.push({ item: re, n: a.count === 'all' ? 'all' : Math.min(a.count, held) });
+    }
+    return { specs, short };
 }
 
-export function readBoneAsk(dir: string): BoneAsk | null {
-    const a = readJson<BoneAsk>(join(dir, ASK_FILE));
-    return a && a.v === 1 && Number.isInteger(a.n) && Number.isInteger(a.seq) ? a : null;
-}
-
-/** An ask this request may use: newer than the last one served and written within `maxAgeMs`. */
-export function usableAsk(ask: BoneAsk | null, lastSeq: number, now = Date.now(), maxAgeMs = 60_000): BoneAsk | null {
-    return ask && ask.seq > lastSeq && now - ask.ms <= maxAgeMs ? ask : null;
+/** The carried stacks still to keep: a `once` stack drops out after it is delivered. */
+export function carryDue(carry: readonly Carried[], delivered: ReadonlySet<string>): Carried[] {
+    return carry.filter(c => !(c.once && delivered.has(c.item.toLowerCase())));
 }
 
 // ------------------------------------------------------------------ the side tile (S18)
@@ -299,6 +329,9 @@ export function sideTiles(receiver: Tile, me: Tile, npcs: readonly Tile[]): Tile
 
 // ------------------------------------------------------------------ role
 
+/** Observed ticks one side step waits before the courier re-reads where the scored account is. */
+export const SIDE_STEP_TICKS = 4;
+
 export type BonePhase = 'start' | 'restock' | 'travel' | 'waiting' | 'requested' | 'trading' | 'fault' | 'off';
 
 export class BoneGiver {
@@ -311,7 +344,14 @@ export class BoneGiver {
     private trades = 0;
     private bounces = 0;
     private lastRequestTick = -1;
-    private lastAskSeq = 0;
+    /** Date.now() of the last ask served (altar-cue.ts usableAsk). */
+    private lastAskMs = 0;
+    /** Date.now() at the first frame showing the current trade open. */
+    private openSeenMs = 0;
+    /** `once` stacks handed over, by lower-case name. */
+    private readonly delivered = new Set<string>();
+    /** Side steps in a row that got no nearer (stepToSide tries the next side). */
+    private sideMisses = 0;
 
     constructor(private readonly ctx: RoleContext) {
         this.o = boneGiverOptions(ctx.options);
@@ -349,6 +389,15 @@ export class BoneGiver {
         });
     }
 
+    /** On a side tile of the scored account (or trading with it). */
+    private besideReceiver(): boolean {
+        const s = this.s;
+        if (!s) return false;
+        if (tradeOf(s).isOpen) return true;
+        const r = this.receiverInSight();
+        return !!r && onSide(pos(s), r);
+    }
+
     private receiverInSight(): NearbyPlayer | undefined {
         const hash = this.cue?.receiver.sha256;
         return hash ? this.s?.nearbyPlayers.find(p => nameHash(p.name) === hash) : undefined;
@@ -359,6 +408,12 @@ export class BoneGiver {
         assertUntracked(this.o.cueDir);
         const watcher = new CueWatcher(this.o.cueDir, cue => (this.cue = cue));
         const heartbeat = setInterval(() => this.publish(), 2000);
+        let wasOpen = false;
+        const unsubOpen = ctx.sdk.onStateUpdate(st => {
+            const open = tradeOf(st).isOpen;
+            if (open && !wasOpen) this.openSeenMs = Date.now();
+            wasOpen = open;
+        });
         try {
             await ensureOutOfTutorial(ctx);
             await ctx.bot.dismissBlockingUI();
@@ -373,6 +428,7 @@ export class BoneGiver {
                 }
             }
         } finally {
+            unsubOpen();
             watcher.close();
             clearInterval(heartbeat);
             this.setPhase('off');
@@ -421,12 +477,13 @@ export class BoneGiver {
         ctx.log('trade', { ok: r.ok, ticks: r.ticks, gave: r.gave.map(i => `${i.name} x${i.count}`), final: extras.length > 0, waited: req.waited, sends: req.sends, bounces: req.bounces, ...(r.reason ? { reason: r.reason } : {}) });
     }
 
-    /** S18: stay near the scored account, answer its request at once, give exactly what it asked for. */
+    /** S18: stay on a side tile of the scored account, answer its request at once, give what its ask names. */
     private async onRequestCycle(): Promise<void> {
         const { ctx, o } = this;
-        if (this.held() < o.refillBelow) {
+        const carry = carryDue(o.carry, this.delivered);
+        if (this.held() < o.refillBelow || carry.some(c => count(this.s, exact(c.item)) < c.count)) {
             this.setPhase('restock');
-            await this.restock(o.hold);
+            await this.restock(o.hold, carry);
         }
         let receiver = this.receiverInSight();
         if (!receiver) {
@@ -439,22 +496,26 @@ export class BoneGiver {
             if (!receiver) return;
         }
         if (!onSide(pos(this.s), receiver)) {
-            const sides = sideTiles(receiver, pos(this.s), npcTiles(this.s));
-            if (!sides.length) throw new Error(`no free side tile beside the scored account at ${receiver.x},${receiver.z}`);
             this.setPhase('travel', 'to a side tile');
-            // A side the walk cannot reach (a wall, a fence) falls through to the next.
-            let last: unknown = null;
-            for (const side of sides) {
-                try {
-                    await standOn(ctx, side);
-                    last = null;
-                    break;
-                } catch (e) {
-                    last = e;
-                }
-            }
-            if (last) throw last;
+            await this.stepToSide(receiver);
             return; // re-read where the scored account is now
+        }
+        if (o.standing) {
+            // Our request stands (lib/trade.ts's one click rule: a busy refusal re-sent on the next
+            // frame, a landed one only after resendTicks), so the scored account's own top-up click
+            // opens both screens. Off its side we drop it and re-step.
+            this.setPhase('requested', 'standing');
+            const req = await requestUntilOpen(ctx, o, {
+                receiver: () => this.receiverInSight(),
+                stopped: () => !!this.cue?.stop || !this.besideReceiver(),
+                log: ctx.log
+            });
+            this.bounces += req.bounces;
+            if (!req.ok) {
+                ctx.log('request', { ...req, standing: true });
+                return;
+            }
+            return this.serveAsk(true, this.s!.tick);
         }
         this.setPhase('waiting', 'for a request');
         const answered = await this.answerRequest();
@@ -462,24 +523,73 @@ export class BoneGiver {
         // Our click on the player who requested us is the acceptance (lib/trade.ts openTrade's rule).
         const name = this.receiverInSight()?.name;
         const opened = !!name && (tradeOf(this.s!).isOpen || (await openTrade(ctx.sdk, name, { maxTicks: 5, goneTicks: 2, timeoutMs: Infinity, noReplyTicks: this.o.noReplyTicks, stopped: () => !!this.cue?.stop || ctx.signal.aborted })).ok);
+        await this.serveAsk(opened, answered);
+    }
+
+    /** The open trade with the scored account: wait for its ask, offer what it names, and decline without one. */
+    private async serveAsk(opened: boolean, answered: number): Promise<void> {
+        const { ctx, o } = this;
         const t = tradeOf(this.s!);
         if (!opened || !t.partner || !partnerIs(this.s, this.cue?.receiver.sha256)) {
             ctx.log('request: no trade with the scored account opened', { opened });
             if (opened) await ctx.sdk.sendDeclineTrade();
             return;
         }
-        const ask = usableAsk(readBoneAsk(o.cueDir), this.lastAskSeq);
-        if (!ask || ask.n > this.held()) {
-            ctx.log('request: no usable ask; declining', { ask: ask ? { seq: ask.seq, n: ask.n } : null, held: this.held() });
+        const openTick = this.s!.tick;
+        const ask = await this.waitForAsk();
+        const offer = ask ? askOffer(ask, this.s!.inventory) : null;
+        if (!ask || !offer!.specs.length) {
+            ctx.log('request: no usable ask; declining', { ask: ask?.items ?? null, waited: this.s!.tick - openTick });
             await ctx.sdk.sendDeclineTrade();
             return;
         }
-        this.lastAskSeq = ask.seq;
-        this.setPhase('trading', `${ask.n}`);
-        const openTick = this.s!.tick;
-        const r = await give(ctx.sdk, t.partner, [{ item: this.re, n: ask.n }], { openTimeoutMs: 5_000 });
-        if (r.ok) this.trades++;
-        ctx.log('trade', { ok: r.ok, ticks: r.ticks, asked: ask.n, gave: r.gave.reduce((a, i) => a + i.count, 0), answerToOpen: openTick - answered, ...(r.reason ? { reason: r.reason } : {}) });
+        this.lastAskMs = ask.ms;
+        if (offer!.short.length) ctx.log('ask: short', { short: offer!.short });
+        this.setPhase('trading', ask.items.map(a => `${a.item} ${a.count}`).join(', '));
+        const askTick = this.s!.tick;
+        const r = await give(ctx.sdk, t.partner, offer!.specs, { openTimeoutMs: 5_000 });
+        if (r.ok) {
+            this.trades++;
+            for (const c of o.carry) if (c.once && r.gave.some(g => exact(c.item).test(g.name))) this.delivered.add(c.item.toLowerCase());
+        }
+        ctx.log('trade', { ok: r.ok, ticks: r.ticks, asked: ask.items, gave: r.gave.map(i => `${i.name} x${i.count}`), answerToOpen: openTick - answered, openToAsk: askTick - openTick, ...(r.reason ? { reason: r.reason } : {}) });
+    }
+
+    /** The ask for the trade open now (altar-cue.ts usableAsk), waiting up to `askWaitTicks` observed ticks; null if none came or the trade closed. */
+    private async waitForAsk(): Promise<TopUpAsk | null> {
+        const { ctx, o } = this;
+        const t0 = this.s!.tick;
+        for (;;) {
+            const ask = usableAsk(readTopUpAsk(o.cueDir), this.openSeenMs, this.lastAskMs);
+            if (ask) return ask;
+            const s = this.s;
+            if (!s || !tradeOf(s).isOpen || s.tick - t0 > o.askWaitTicks || ctx.signal.aborted) return null;
+            await Bun.sleep(15);
+        }
+    }
+
+    /**
+     * One bounded step toward a free side tile of the scored account. The walk's action result is
+     * not awaited: among the wandering knights it can take a minute to come back (lab, 300 ms: the
+     * courier stood 180-350 ticks in one standOn while the account moved on, and about half the due
+     * top-ups found it 5-15 tiles off). Instead it waits at most SIDE_STEP_TICKS observed ticks, or
+     * until it is on a side or the account has moved, and the caller re-reads. A side the walk did
+     * not get nearer to (a wall, a fence) yields to the next one on the following step.
+     */
+    private async stepToSide(receiver: Tile): Promise<void> {
+        const { ctx } = this;
+        const sides = sideTiles(receiver, pos(this.s), npcTiles(this.s));
+        if (!sides.length) throw new Error(`no free side tile beside the scored account at ${receiver.x},${receiver.z}`);
+        const side = sides[this.sideMisses % sides.length]!;
+        const from = pos(this.s);
+        const dist = (t: Tile) => Math.abs(t.x - side.x) + Math.abs(t.z - side.z);
+        void ctx.sdk.sendWalk(side.x, side.z).catch(() => {});
+        const hash = this.cue?.receiver.sha256;
+        await until(ctx, st => {
+            const r = st.nearbyPlayers.find(p => nameHash(p.name) === hash);
+            return !r || r.x !== receiver.x || r.z !== receiver.z || onSide(pos(st), r);
+        }, SIDE_STEP_TICKS);
+        this.sideMisses = dist(pos(this.s)) < dist(from) || onSide(pos(this.s), receiver) ? 0 : this.sideMisses + 1;
     }
 
     /** Wait for the scored account's request. Resolves with the tick of the frame that carries it (or shows the trade open), or null when it moved off or the cue stopped. */
@@ -523,7 +633,7 @@ export class BoneGiver {
                 await until(ctx, st => st.inventory.length === 0, 10);
             }
             const missing = n - this.held();
-            if (missing > 0) await cheat(ctx, `give dragon_bones ${missing}`);
+            if (missing > 0) await cheat(ctx, `give ${o.obj} ${missing}`);
             for (const e of extraRes) {
                 const short = e.count - count(this.s, e.re);
                 if (short > 0) await cheat(ctx, `give ${e.obj} ${short}`);

@@ -6,8 +6,8 @@ import { give } from '../lib/trade';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { nameHash, newRequestFrom } from './altar-cue';
-import { boneGiverOptions, isFinalLoad, loadOffer, npcTiles, onSide, partnerIs, readBoneAsk, requestUntilOpen, S07_SITES, sideTiles, usableAsk, writeBoneAsk } from './bone-giver';
+import { ASK_SLACK_MS, nameHash, newRequestFrom, readTopUpAsk, usableAsk, writeTopUpAsk } from './altar-cue';
+import { askOffer, boneGiverOptions, carryDue, isFinalLoad, loadOffer, npcTiles, onSide, partnerIs, requestUntilOpen, S07_SITES, sideTiles } from './bone-giver';
 
 const o = { noReplyTicks: 3, resendTicks: 100 };
 const msg = (tick: number, text: string): GameMessage => ({ type: 0, text, sender: '', tick, fromSelf: false });
@@ -110,24 +110,50 @@ describe('on-request mode (S18 top-ups)', () => {
         expect(newRequestFrom(s, nameHash('someone_else'), 0)).toBe(19);
     });
 
-    test('the ask: written by the scored side, used once, and only while fresh', () => {
+    test('the ask: written by the scored side at the open, used for the trade opened since, once', () => {
         const dir = mkdtempSync(join(tmpdir(), 'bone-ask-'));
-        expect(readBoneAsk(dir)).toBeNull();
-        const a = writeBoneAsk(dir, 17, 1);
-        expect(readBoneAsk(dir)).toEqual(a);
-        expect(usableAsk(a, 0, a.ms + 1000)).toEqual(a);
-        expect(usableAsk(a, 1, a.ms + 1000)).toBeNull(); // already served
-        expect(usableAsk(a, 0, a.ms + 61_000)).toBeNull(); // stale
-        expect(() => writeBoneAsk(dir, 0, 2)).toThrow();
-        expect(() => writeBoneAsk(dir, 29, 2)).toThrow();
+        expect(readTopUpAsk(dir)).toBeNull();
+        const a = writeTopUpAsk(dir, [{ item: 'bones$', count: 17 }, { item: '^shark$', count: 2 }], 10_000);
+        expect(readTopUpAsk(dir)).toEqual(a);
+        // the courier saw the trade open a little after the scored side wrote: within the slack
+        expect(usableAsk(a, 10_000 + ASK_SLACK_MS, 0)).toEqual(a);
+        // written before this trade opened: an earlier trade's ask, never sized onto this one
+        expect(usableAsk(a, 10_000 + ASK_SLACK_MS + 1, 0)).toBeNull();
+        expect(usableAsk(a, 10_000, 10_000)).toBeNull(); // already served
+        expect(() => writeTopUpAsk(dir, [])).toThrow(/at least one/);
+        expect(() => writeTopUpAsk(dir, [{ item: 'bones$', count: 0 }])).toThrow(/count/);
+        expect(() => writeTopUpAsk(dir, [{ item: '(', count: 1 }])).toThrow(/compile/);
     });
 
-    test('options: on-request needs a waiting site; hold and refill bounds', () => {
+    test('askOffer: each asked item it holds, at most the count, one spec per item; short items reported', () => {
+        const inv = [
+            ...Array.from({ length: 20 }, () => ({ name: 'Babydragon bones', count: 1 })),
+            { name: 'Shark', count: 1 },
+            { name: 'Adamant arrowtips', count: 2070 }
+        ];
+        const r = askOffer({ items: [{ item: 'bones$', count: 18 }, { item: '^shark$', count: 2 }, { item: '^adamant arrow(head|tip)s$', count: 'all' }, { item: '^rune arrow(head|tip)s$', count: 'all' }] }, inv);
+        expect(r.specs.map(s => [String(s.item), s.n])).toEqual([['/bones$/i', 18], ['/^shark$/i', 1], ['/^adamant arrow(head|tip)s$/i', 'all']]);
+        expect(r.short).toEqual([{ item: '^shark$', asked: 2, held: 1 }, { item: '^rune arrow(head|tip)s$', asked: 'all', held: 0 }]);
+    });
+
+    test('carryDue: a once stack drops out after it is delivered; the rest stay', () => {
+        const carry = [{ item: 'Shark', count: 2 }, { item: 'Adamant arrowtips', count: 2070, once: true }, { item: 'Rune arrowtips', count: 570, once: true }];
+        expect(carryDue(carry, new Set())).toHaveLength(3);
+        expect(carryDue(carry, new Set(['adamant arrowtips'])).map(c => c.item)).toEqual(['Shark', 'Rune arrowtips']);
+    });
+
+    test('options: on-request needs a waiting site; hold and refill bounds; carry, standing and askWaitTicks', () => {
         expect(() => boneGiverOptions({ mode: 'on-request' })).toThrow(/needs sites/);
         const site = [{ giver: { x: 2655, z: 3306 }, receiver: { x: 2655, z: 3305 } }];
-        expect(boneGiverOptions({ mode: 'on-request', sites: site })).toMatchObject({ mode: 'on-request', hold: 28, refillBelow: 21 });
+        expect(boneGiverOptions({ mode: 'on-request', sites: site })).toMatchObject({ mode: 'on-request', hold: 28, refillBelow: 21, carry: [], standing: false, askWaitTicks: 2 });
         expect(() => boneGiverOptions({ mode: 'on-request', sites: site, hold: 20, refillBelow: 21 })).toThrow(/refillBelow/);
         expect(() => boneGiverOptions({ mode: 'sometimes' })).toThrow(/mode/);
+        const courier = boneGiverOptions({ mode: 'on-request', sites: site, item: 'Babydragon bones', hold: 22, refillBelow: 15, standing: true, carry: [{ item: 'Shark', count: 2 }, { item: 'Rune arrowtips', count: 570, once: true }] });
+        expect(courier).toMatchObject({ obj: 'babydragon_bones', standing: true, carry: [{ item: 'Shark', count: 2 }, { item: 'Rune arrowtips', count: 570, once: true }] });
+        expect(() => boneGiverOptions({ carry: [{ item: 'Shark', count: 2 }] })).toThrow(/on-request mode/);
+        expect(() => boneGiverOptions({ standing: true })).toThrow(/on-request mode/);
+        expect(() => boneGiverOptions({ mode: 'on-request', sites: site, standing: 'yes' })).toThrow(/standing/);
+        expect(() => boneGiverOptions({ mode: 'on-request', sites: site, restock: { kind: 'cheat' }, carry: [{ item: 'Shark', count: 2 }] })).toThrow(/obj/);
     });
 });
 
