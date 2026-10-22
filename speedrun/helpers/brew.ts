@@ -40,6 +40,16 @@ export const LIMPWURT_ROOT = 225;
 export const UNICORN_HORN = 237;
 export const UNICORN_HORN_DUST = 235;
 export const PESTLE_AND_MORTAR = 233;
+
+/**
+ * Herblore secondaries ground from a held item with the pestle and mortar (grind_ingredient.rs2),
+ * by `grind` option name: S25e's dragon scale dust (weapon poison, antifire) and chocolate dust
+ * (energy potion).
+ */
+export const GRINDS: Readonly<Record<string, { from: number; to: number }>> = {
+    scales: { from: 243, to: 241 }, // blue dragon scale -> dragon scale dust
+    chocolate: { from: 1973, to: 1975 } // chocolate bar -> chocolate dust
+};
 export const VIAL_OF_WATER = 227;
 const EMPTY_VIAL = 229;
 
@@ -81,11 +91,16 @@ export interface BrewOptions {
     /** An account that will trade the missing inputs (a `handover` donor); waited for at the bank once nothing else is left. */
     receiveFrom: string | null;
     receiveMinutes: number;
+    /** GRINDS entries ground in full whatever the targets need; with them, `targets` may be empty. */
+    grind: { from: number; to: number }[];
 }
 
 export function brewOptions(raw: Record<string, unknown>): BrewOptions {
-    const list = raw.targets;
-    if (!Array.isArray(list) || list.length === 0) throw new Error('brew: options.targets is required');
+    const names = raw.grind === undefined ? [] : raw.grind;
+    if (!Array.isArray(names) || names.some(n => !GRINDS[String(n)])) throw new Error(`brew: options.grind must list ${Object.keys(GRINDS).join(', ')}`);
+    const grind = names.map(n => GRINDS[String(n)]!);
+    const list = raw.targets ?? (grind.length ? [] : undefined);
+    if (!Array.isArray(list) || (list.length === 0 && grind.length === 0)) throw new Error('brew: options.targets is required (or grind)');
     const targets = list.map((t: Record<string, unknown>, i: number) => {
         const potion = String(t.potion ?? '');
         if (!POTIONS[potion]) throw new Error(`brew: targets[${i}].potion must be one of ${Object.keys(POTIONS).join(', ')} (got '${potion}')`);
@@ -103,7 +118,17 @@ export function brewOptions(raw: Record<string, unknown>): BrewOptions {
     const receiveFrom = raw.receiveFrom === undefined ? null : String(raw.receiveFrom);
     if (receiveFrom !== null && !/^cairn_[a-z0-9_]{1,6}$/.test(receiveFrom)) throw new Error('brew: receiveFrom must be a cairn_ account');
     const receiveMinutes = typeof raw.receiveMinutes === 'number' ? raw.receiveMinutes : 45;
-    return { targets, wants, hornsPerTrip, receiveFrom, receiveMinutes };
+    return { targets, wants, hornsPerTrip, receiveFrom, receiveMinutes, grind };
+}
+
+/** The next pestle job: the horns the targets need first, then every held item of a `grind` entry. */
+export function nextGrind(items: readonly { id: number; count: number }[], horns: number, grind: readonly { from: number; to: number }[]): { from: number; to: number; n: number } | null {
+    if (horns > 0) return { from: UNICORN_HORN, to: UNICORN_HORN_DUST, n: horns };
+    for (const g of grind) {
+        const n = countOf(items, g.from);
+        if (n > 0) return { ...g, n };
+    }
+    return null;
 }
 
 const countOf = (items: readonly { id: number; count: number }[], id: number) =>
@@ -299,22 +324,23 @@ class Brewer {
             return null;
         }
         // 2-3. Pestle and mortar, then grind.
-        if (p.grind > 0) {
-            if (countOf(this.bank ?? [], PESTLE_AND_MORTAR) === 0) {
+        const job = nextGrind(this.holdings(), p.grind, this.opt.grind);
+        if (job) {
+            if (countOf(this.bank ?? [], PESTLE_AND_MORTAR) === 0 && this.carried(PESTLE_AND_MORTAR).length === 0) {
                 await this.closeBank();
                 await this.buyPestle();
                 return null;
             }
             await this.take(PESTLE_AND_MORTAR, 1);
-            const n = await this.take(UNICORN_HORN, Math.min(p.grind, 27));
+            const n = await this.take(job.from, Math.min(job.n, 27));
             await this.closeBank();
             this.run.phase('grind');
             const pestle = this.carried(PESTLE_AND_MORTAR)[0];
-            const horns = this.carried(UNICORN_HORN);
-            if (pestle) for (const h of horns) await this.run.sdk.sendUseItemOnItem(pestle.slot, h.slot);
-            await this.run.waitFor(s => countOf(s.inventory, UNICORN_HORN) === 0, 12);
+            const held = this.carried(job.from);
+            if (pestle) for (const h of held) await this.run.sdk.sendUseItemOnItem(pestle.slot, h.slot);
+            await this.run.waitFor(s => countOf(s.inventory, job.from) === 0, 12);
             await bot.dismissBlockingUI();
-            this.ctx.log('ground', { horns: n, dust: countOf(this.inv(), UNICORN_HORN_DUST) });
+            this.ctx.log('ground', { from: job.from, n, dust: countOf(this.inv(), job.to) });
             return null;
         }
         // 4. Unfinished potions short: mix them.

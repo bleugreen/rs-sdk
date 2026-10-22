@@ -192,7 +192,7 @@ describe('handover from underground', () => {
     });
 
     test('a dungeon with no known way up: one attempt, no bank opened, the handover stops', async () => {
-        const t = mine({ x: 2901, z: 9765 }, 85);
+        const t = mine({ x: 3109, z: 9935 }, 85); // the Edgeville dungeon druids: underground.ts has no way up from there
         const report = await runHandovers(t.ctx, bar(), t.io);
         expect(report.failed).toEqual([A01]);
         expect(t.events).toEqual([]);

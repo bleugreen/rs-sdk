@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { arranged, brewOptions, brewsNeeded, dosesHeld, feasible, nextPour, plan, POTIONS, UNICORN_HORN, UNICORN_HORN_DUST } from './brew';
+import { arranged, brewOptions, brewsNeeded, dosesHeld, feasible, GRINDS, nextGrind, nextPour, plan, POTIONS, UNICORN_HORN, UNICORN_HORN_DUST } from './brew';
 
 /** Decant in a model of the engine (decant_potion.rs2): the used slot gets min(4, a+b), the target the rest (0 = an empty vial). */
 function decantAll(start: number[], w: { four: number; three: number }): number[] {
@@ -134,5 +134,27 @@ describe('brewOptions', () => {
         expect(() => brewOptions({})).toThrow();
         expect(() => brewOptions({ targets: [{ potion: 'ranging', doses: 4, n: 1 }] })).toThrow();
         expect(() => brewOptions({ targets: [{ potion: 'prayer', doses: 2, n: 1 }] })).toThrow();
+    });
+});
+
+describe('grind option', () => {
+    test('a grind-only run needs no targets; unknown names are refused', () => {
+        const o = brewOptions({ grind: ['scales', 'chocolate'] });
+        expect(o.targets).toEqual([]);
+        expect(o.grind).toEqual([GRINDS.scales!, GRINDS.chocolate!]);
+        expect(() => brewOptions({ grind: ['bones'] })).toThrow();
+        expect(() => brewOptions({})).toThrow();
+    });
+    test('the ids are the content\'s (obj.pack): blue dragon scale 243 -> dust 241, chocolate bar 1973 -> dust 1975', () => {
+        expect(GRINDS.scales).toEqual({ from: 243, to: 241 });
+        expect(GRINDS.chocolate).toEqual({ from: 1973, to: 1975 });
+    });
+    test('horns the targets need come first, then each grind entry until none is held', () => {
+        const g = [GRINDS.scales!, GRINDS.chocolate!];
+        const items = [{ id: 243, count: 30 }, { id: 1973, count: 5 }];
+        expect(nextGrind(items, 2, g)).toEqual({ from: UNICORN_HORN, to: UNICORN_HORN_DUST, n: 2 });
+        expect(nextGrind(items, 0, g)).toEqual({ from: 243, to: 241, n: 30 });
+        expect(nextGrind([{ id: 1973, count: 5 }, { id: 241, count: 30 }], 0, g)).toEqual({ from: 1973, to: 1975, n: 5 });
+        expect(nextGrind([{ id: 241, count: 30 }], 0, g)).toBeNull();
     });
 });

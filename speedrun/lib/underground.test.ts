@@ -2,13 +2,22 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { baseState, FakeSdk } from './fake-sdk';
 import { minePathfinder, mineWorld } from './fake-underground';
 import { travelTo, type Tile, type TollGateSdk } from './toll-gate';
-import { climbToSurface, GUILD_DOOR, GUILD_LADDER, ICE_LADDER, isUnderground, NO_WAY_UP, surfacePlan, type SurfaceStep } from './underground';
+import { climbToSurface, GUILD_DOOR, GUILD_LADDER, ICE_LADDER, isUnderground, NO_WAY_UP, surfacePlan, TAVERLEY_LADDER, type SurfaceStep } from './underground';
 
 /** rs/197, 2026-10-22 02:34Z: cairn_h22 at the adamantite rocks, behind the guild door. */
 const ADDY_ROCKS = { x: 3039, z: 9766 };
 const GUILD_CENTRE = { x: 3042, z: 9740 };
 const NURMOF = { x: 2998, z: 9846 };
 const TAVERLEY_BABY_BLUES = { x: 2901, z: 9765 };
+/** rs/331, 2026-10-22 13:04Z: cairn_h85 at the Taverley chaos druids, 'no known way up'. */
+const TAVERLEY_DRUIDS = { x: 2936, z: 9847 };
+/** The dragons role's safe tile, behind the dusty key door. */
+const TAVERLEY_SAFE_TILE = { x: 2901, z: 9810 };
+/** Taverley's strip east of x 2959, inside the Dwarven Mine's box but not part of the mine. */
+const TAVERLEY_EAST_STRIP = { x: 2965, z: 9785 };
+/** The Edgeville dungeon chaos druids: a dungeon this module does not know. */
+const EDGEVILLE_DRUIDS = { x: 3109, z: 9935 };
+const FALADOR_WEST_BANK = { x: 2946, z: 3368 };
 const VARROCK_WEST = { x: 3185, z: 3436 };
 const FALADOR_EAST_BANK = { x: 3013, z: 3357 };
 
@@ -35,7 +44,11 @@ describe('surfacePlan', () => {
 
     test('on the surface there is nothing to do; an unknown dungeon has no plan', () => {
         expect(surfacePlan(VARROCK_WEST, 1)).toEqual([]);
-        expect(surfacePlan(TAVERLEY_BABY_BLUES, 99)).toBeNull();
+        expect(surfacePlan(EDGEVILLE_DRUIDS, 99)).toBeNull();
+    });
+
+    test('Taverley Dungeon (druids, baby blues, the dragon room, the strip beside the mine): its ladder', () => {
+        for (const t of [TAVERLEY_DRUIDS, TAVERLEY_BABY_BLUES, TAVERLEY_SAFE_TILE, TAVERLEY_EAST_STRIP]) expect(surfacePlan(t, 1)).toEqual(up(TAVERLEY_LADDER));
     });
 });
 
@@ -75,10 +88,18 @@ describe('climbToSurface', () => {
     });
 
     test('an unknown dungeon: fails at once without a walk', async () => {
-        const w = world(TAVERLEY_BABY_BLUES, 99);
+        const w = world(EDGEVILLE_DRUIDS, 99);
         const r = await climbToSurface(w.bot, w.sdk);
-        expect(r).toEqual({ ok: false, reason: `${NO_WAY_UP} from (2901, 9765)` });
+        expect(r).toEqual({ ok: false, reason: `${NO_WAY_UP} from (3109, 9935)` });
         expect(w.calls).toEqual([]);
+    });
+
+    test('rs/331: from the Taverley chaos druids, walks to the ladder and climbs out beside Taverley', async () => {
+        const w = world(TAVERLEY_DRUIDS, 1);
+        expect(await climbToSurface(w.bot, w.sdk)).toEqual({ ok: true });
+        expect(w.calls.map(c => c.to)).toEqual([[TAVERLEY_LADDER.stand.x, TAVERLEY_LADDER.stand.z]]);
+        expect(w.climbs).toEqual([TAVERLEY_LADDER.at]);
+        expect(w.pos()).toEqual({ x: TAVERLEY_LADDER.stand.x, z: TAVERLEY_LADDER.stand.z - 6400 });
     });
 });
 
@@ -108,9 +129,17 @@ describe('travelTo from underground', () => {
     });
 
     test('an unknown dungeon fails with the reason, before any walk', async () => {
-        const w = world(TAVERLEY_BABY_BLUES, 99);
+        const w = world(EDGEVILLE_DRUIDS, 99);
         const r = await travelTo(w.bot, w.sdk, VARROCK_WEST);
-        expect(r).toEqual({ ok: false, paid: 0, reason: `${NO_WAY_UP} from (2901, 9765)` });
+        expect(r).toEqual({ ok: false, paid: 0, reason: `${NO_WAY_UP} from (3109, 9935)` });
         expect(w.calls).toEqual([]);
+    });
+
+    test('rs/331: from the Taverley druids to Falador west bank (an H21e handover): the ladder, then the walk', async () => {
+        const w = world(TAVERLEY_DRUIDS, 1);
+        const r = await travelTo(w.bot, w.sdk, FALADOR_WEST_BANK);
+        expect(r).toEqual({ ok: true, paid: 0 });
+        expect(w.calls.map(c => c.to)).toEqual([[TAVERLEY_LADDER.stand.x, TAVERLEY_LADDER.stand.z], [FALADOR_WEST_BANK.x, FALADOR_WEST_BANK.z]]);
+        expect(w.pos()).toEqual(FALADOR_WEST_BANK);
     });
 });

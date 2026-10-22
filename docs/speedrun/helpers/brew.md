@@ -60,6 +60,7 @@ inventory (`plan()`), so a restart resumes and potions already held count:
 | `receiveFrom` | none | A `cairn_` account that will trade the missing inputs |
 | `receiveMinutes` | 45 | How long to wait for it |
 | `hornsPerTrip` | 27 | Horns gathered per trip |
+| `grind` | none | `["scales", "chocolate"]`: grind every held blue dragon scale (243 into dragon scale dust 241) and chocolate bar (1973 into chocolate dust 1975), after the horns the targets need. With `grind`, `targets` may be left out: a grind-only run for S25e's secondaries |
 
 ## Measured
 
