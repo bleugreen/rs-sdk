@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, PlayerState } from '../../sdk/types';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
 import { resolveStart, type StepContext } from '../runner/step';
-import { allOf, baseLevels, DEFAULT_DIALOGUE, kitSegment, kitWant, questSteps, segmentName, stageAtLeast, stageDone, talkShape, within, type Segment } from './segments';
+import { allOf, baseLevels, DEFAULT_DIALOGUE, freeSlots, kitSegment, kitWant, questSteps, segmentName, slotNeed, slotsCover, stageAtLeast, stageDone, talkShape, within, type QuestItem, type Segment } from './segments';
 
 const item = (slot: number, name: string, count = 1) => ({ slot, id: slot, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
 const seg = (letter: string, label: string, extra: Partial<Segment> = {}): Segment => ({ letter, label, logoutSafe: true, run: async () => {}, ...extra });
@@ -117,5 +117,48 @@ describe('kitSegment', () => {
         const [kit] = questSteps('S11b', [kitSegment(undefined, KIT, { letter: 'A', label: 'narnode-kit', preconditions: () => 'TGV not complete' })]);
         expect(kit!.name).toBe('S11b:A-narnode-kit');
         expect(kit!.preconditions(baseState(), {})).toBe('TGV not complete');
+    });
+});
+
+describe('slotNeed and slotsCover', () => {
+    const letters = ['A', 'B', 'C', 'D', 'E'];
+    const pack = (...names: string[]) => baseState({ inventory: names.map((n, i) => item(i, n)) });
+    const filled = (n: number, ...names: string[]) => pack(...names, ...Array.from({ length: n - names.length }, () => 'Bucket'));
+
+    test('an unstackable item takes a slot each; a stack takes one', () => {
+        const items: QuestItem[] = [{ item: /^railing$/i, name: 'Railing', n: 6, from: 'A', until: 'B' }, { item: /^cannonball$/i, n: 200, stackable: true, from: 'A' }];
+        expect(slotNeed(pack(), items, letters, 'A')).toEqual({ slots: 7, peak: 'A', items: ['6 Railing', '200 /^cannonball$/i'] });
+    });
+
+    test('what is already held counts against the need, a held stack fully', () => {
+        const items: QuestItem[] = [{ item: /^railing$/i, n: 6, from: 'A', until: 'B' }, { item: /^coins$/i, n: 500, stackable: true, from: 'A' }];
+        expect(slotNeed(pack('Railing', 'Railing', 'Coins'), items, letters, 'A').slots).toBe(4);
+    });
+
+    test('items taken mid-quest free their slots: the need is the peak, not the sum', () => {
+        const items: QuestItem[] = [
+            { item: 'Railing', n: 6, from: 'A', until: 'B' },
+            { item: 'Remains', from: 'C', until: 'C' },
+            { item: 'Tool kit', from: 'D' },
+            { item: 'Notes', n: 2, from: 'E' },
+        ];
+        expect(slotNeed(pack(), items, letters, 'A')).toMatchObject({ slots: 6, peak: 'A' });
+        // From C on the railings are behind the step: the peak is E's kit and notes.
+        expect(slotNeed(pack(), items, letters, 'C')).toEqual({ slots: 3, peak: 'E', items: ['1 Tool kit', '2 Notes'] });
+        // An item received before `at` is not asked for again, held or spent.
+        expect(slotNeed(pack(), items, letters, 'E')).toEqual({ slots: 2, peak: 'E', items: ['2 Notes'] });
+    });
+
+    test('nothing to receive needs nothing; an unknown letter throws', () => {
+        expect(slotNeed(pack(), [], letters, 'A')).toEqual({ slots: 0, peak: null, items: [] });
+        expect(() => slotNeed(pack(), [{ item: 'x', from: 'Z' }], letters, 'A')).toThrow(/segment Z/);
+    });
+
+    test('slotsCover passes at the need exactly and names the shortfall below it', () => {
+        const items: QuestItem[] = [{ item: 'Railing', name: 'Railing', n: 6, from: 'B', until: 'C' }];
+        const check = slotsCover(items, letters, 'A');
+        expect(freeSlots(filled(22))).toBe(6);
+        expect(check(filled(22), {})).toBe(true);
+        expect(check(filled(24), {})).toBe('inventory: segment B needs 6 free slots (6 Railing), 4 free: 2 short');
     });
 });
