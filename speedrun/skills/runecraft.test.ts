@@ -7,6 +7,8 @@ import { nameHash, readCue, writeStatus } from '../helpers/altar-cue';
 import { baseState, FakeSdk, type SentAction } from '../lib/fake-sdk';
 import { ProgramError, rcCueFields, type ProgramStatus } from '../lib/programs';
 import { TickLog } from '../lib/ticks';
+import { DROPPED_TICKS } from '../lib/trade';
+import { levelForXp } from '../lib/xp';
 import { Observation, resolveResume } from '../runner/resume';
 import { runSteps, type RunnerSession, type StepContext } from '../runner/step';
 import {
@@ -14,6 +16,7 @@ import {
     bands,
     classifyFault,
     craftXp,
+    S06_LOAD,
     CueRelay,
     defaultDeps,
     feedKey,
@@ -330,6 +333,12 @@ describe('giver feed', () => {
         ]);
     });
 
+    test('a band with a smaller load feeds givers loaded with that many', () => {
+        const statuses = [st('short', { essence: 26, readyAt: 100 }), st('full', { readyAt: 200 })];
+        expect(giverFeed(statuses, now, () => 'tuned').map(e => e.name)).toEqual(['full']);
+        expect(giverFeed(statuses, now, () => 'tuned', 26).map(e => e.name)).toEqual(['short', 'full']);
+    });
+
     test('FeedSender sends only a changed feed, one at a time, and retries after a refusal', async () => {
         const sent: GiverEntry[][] = [];
         let refuse = false;
@@ -434,10 +443,10 @@ describe('steps and preconditions', () => {
     test('S06 air 1-44 then S21 44-99, capped by untilLevel, S21 at body on request', () => {
         expect(steps().map(s => s.name)).toEqual(['S06 runecraft', 'S21 runecraft']);
         expect(bands()).toEqual([
-            { id: 'S06', altar: 'air', from: 1, untilLevel: 44 },
+            { id: 'S06', altar: 'air', from: 1, untilLevel: 44, load: 26 },
             { id: 'S21', altar: 'nature', from: 44, untilLevel: 99 }
         ]);
-        expect(bands({ untilLevel: 30 })).toEqual([{ id: 'S06', altar: 'air', from: 1, untilLevel: 30 }]);
+        expect(bands({ untilLevel: 30 })).toEqual([{ id: 'S06', altar: 'air', from: 1, untilLevel: 30, load: 26 }]);
         expect(bands({ s21Altar: 'body', untilLevel: 60 })[1]).toEqual({ id: 'S21', altar: 'body', from: 44, untilLevel: 60 });
         expect(steps().every(s => s.logoutSafe && !!s.done && !!s.inProgress && !!s.resume)).toBe(true);
     });
@@ -457,6 +466,14 @@ describe('steps and preconditions', () => {
         // S06's air runes still held at S21: 26 free slots, every trade would fail
         expect(preconditions(s({ inventory: [item(0, 'Nature talisman'), item(1, 'Air rune', 300), item(2, 'Nature rune', 50)] }), s21!)).toBe('1 other items (Air rune): need 27 free slots');
         expect(preconditions(s({ inventory: [item(0, 'Bronze axe'), item(1, 'Tinderbox')] }), s21!)).toBe('2 other items (Bronze axe, Tinderbox): need 27 free slots');
+        // S06 as the route reaches the air altar (rs/196's census): H4's kits, the teleport and starter runes, Doric's coins, the tinderbox
+        const census = [item(0, 'Air talisman'), item(1, 'Air rune', 24), item(2, 'Water rune', 7), item(3, 'Earth rune', 4), item(4, 'Law rune', 2), item(5, 'Coins', 180), item(6, 'Tinderbox'), item(7, 'Rune axe'), item(8, 'Rune pickaxe'), item(9, 'Knife'), ...[10, 11, 12, 13, 14, 15].map(i => item(i, 'Logs'))];
+        expect(preconditions(s({ altar: AIR_ALTAR, level: 1, inventory: census }), s06!)).toBe('14 other items (Water rune, Earth rune, Law rune, Coins, Tinderbox, Rune axe, Rune pickaxe, Knife, Logs): need 26 free slots');
+        // S06's load of 26 leaves room for T06-07's law runes beside the air runes, and for nothing else
+        expect(preconditions(s({ altar: AIR_ALTAR, level: 1, inventory: [item(0, 'Air talisman'), item(1, 'Air rune', 24), item(2, 'Law rune', 2)] }), s06!)).toBe(true);
+        expect(preconditions(s({ altar: AIR_ALTAR, level: 1, inventory: [item(0, 'Air talisman'), item(1, 'Air rune', 24), item(2, 'Law rune', 2), item(3, 'Coins', 180)] }), s06!)).toBe('2 other items (Law rune, Coins): need 26 free slots');
+        // a full load of 27 leaves none
+        expect(preconditions(s({ altar: AIR_ALTAR, level: 1, inventory: [item(0, 'Air talisman'), item(2, 'Law rune', 2)] }), { ...s06!, load: 27 })).toBe('1 other items (Law rune): need 27 free slots');
         // a passed band is a no-op wherever the account stands
         expect(preconditions(s({ level: 50, altar: null }), s06!)).toBe(true);
         expect(preconditions(baseState({ inGame: false }), s21!)).toBe('not in game');
@@ -643,7 +660,9 @@ describe('the step driving rc-cycle', () => {
         const h = new Harness(world({ xp: 44_000 }));
         h.statuses = [h.giver('lab_g1')];
         h.scripts.push(async run => turnsFailed(run, 'robust'));
-        h.receive = async () => {
+        const receiveOpts: unknown[] = [];
+        h.receive = async (_sdk, _partner, opts) => {
+            receiveOpts.push(opts);
             h.sdk.tick({ inventory: essence(27) });
             return { ok: true };
         };
@@ -662,6 +681,9 @@ describe('the step driving rc-cycle', () => {
         const rows = h.programRows();
         expect(rows.map(r => r.meta!.program)).toEqual(['rc-cycle', 'stock']);
         expect(rows[1]).toMatchObject({ ok: true, meta: { crafts: 1, trades: 1, rungs: ['program', 'stock'] } });
+        // SCORED stands beside the giver, so a dropped request is re-sent after DROPPED_TICKS (rs/267: 9 a cycle, not ~31),
+        // and the open is bounded in observed ticks rather than wall-clock.
+        expect(receiveOpts).toEqual([{ want: [{ item: expect.anything(), amount: 27 }], maxTicks: 30, openMaxTicks: 30, noReplyTicks: DROPPED_TICKS }]);
     });
 
     test("without the stock fallback a robust fault throws the program's fault", async () => {
@@ -777,6 +799,10 @@ describe('the step driving rc-cycle', () => {
 describe('xpAfterCrafts', () => {
     test('a full load is 27 essence at the altar base xp, times the server xp rate', () => {
         expect(craftXp('air')).toBe(27 * 5 * 25);
+        expect(craftXp('air', S06_LOAD)).toBe(26 * 5 * 25);
+        // S06 keeps its 7 crafts at 26 a load: 6 leave Runecraft 42, 7 reach 44
+        expect(levelForXp(6 * craftXp('air', S06_LOAD))).toBe(42);
+        expect(levelForXp(7 * craftXp('air', S06_LOAD))).toBe(44);
         expect(craftXp('nature')).toBe(27 * 9 * 25);
     });
 
