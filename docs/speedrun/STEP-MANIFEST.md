@@ -2823,7 +2823,7 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
   tick-exact; the run machine only for its `cue` start. Open: the coop row, bank restocks. **Demo:**
   six droppers at 2 logins per host carried S03 to 681 (rs/269), with no log stolen. **Run day:** in
   the world before the cue and on `cueAt: 'seen'` until rs/41's child measures the observed tick
-  period (`cueAt: 'written'`'s `cueTick`, fm-row.ts:350, starts ~15% early at 0.35 s a tick (a 300 ms-era reading; at 400 ms a cue converted at 300 lands later, not earlier);
+  period (`cueAt: 'written'`'s `cueTick`, fm-row.ts:350, starts ~15% early at 0.35 s a tick (a 300 ms-era reading; at 400 ms a cue converted at 300 ms would land ~25% early, which is why S03's cue is in ticks, T0 + 78);
   RUN-ORDER.md R23).
 
 ### HS7. Carp catcher: `speedrun/helpers/carp.ts` (retired, fold-in 22)
