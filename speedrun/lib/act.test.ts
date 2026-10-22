@@ -196,6 +196,25 @@ describe('the jump guard', () => {
         });
     });
 
+    // The browser stamps a click's message reply with the click's own tick (rs/308); lite with the next one.
+    test('a post-jump click answered by a message stamped with its own tick, after a message on that tick, is not re-sent', async () => {
+        const rum = { type: 0, text: 'Your Karamjan rum gets broken and spilled.', sender: '', tick: 30, observationId: 10, fromSelf: false };
+        const sdk = new FakeSdk(baseState({ tick: 30, player: jumped(2662, 3305, 30), gameMessages: [rum] }));
+        const p = act(sdk as never, () => sdk.sendInteractLoc(2661, 3306, 1, 1), () => false, { resendEvery: 0, maxTicks: 5 });
+        await ticks(sdk, 1, () => ({ gameMessages: [rum, { type: 0, text: 'The door is locked.', sender: '', tick: 30, observationId: 11, fromSelf: false }] }));
+        await ticks(sdk, 4);
+        expect(sentAt(sdk, 'sendInteractLoc')).toBe(1);
+        expect((await p).unansweredResends).toBeUndefined();
+    });
+
+    test("act's idle re-send takes \"I can't reach that!\" stamped with the click's own tick as a refusal", async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        const p = act(sdk as never, () => sdk.sendWalk(0, 0), () => false, { resendEvery: 50, maxTicks: 3 });
+        await ticks(sdk, 1, () => ({ gameMessages: [{ type: 0, text: "I can't reach that!", sender: '', tick: 1, observationId: 4, fromSelf: false }] }));
+        await ticks(sdk, 3);
+        expect((await p).resends).toBe(1);
+    });
+
     test('act re-sends once a post-jump click that draws no reply in REPLY_TICKS', async () => {
         const sdk = new FakeSdk(baseState({ tick: 20, player: placed(2465, 3493, 19) }));
         let done = false;
@@ -504,6 +523,14 @@ describe('loc, npc and item helpers', () => {
         expect(sdk.sent.length).toBe(1);
     });
 
+    test("castTeleport ends on a refusal the browser stamped with the cast's own tick", async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(3000, 3000) }));
+        const p = castTeleport(sdk as never, 'ardougne');
+        await ticks(sdk, 1, () => ({ gameMessages: [{ type: 0, text: 'You must have completed Plague City to use this spell.', sender: '', tick: 1, observationId: 7, fromSelf: false }] }));
+        expect(await p).toMatchObject({ ok: false, ticks: 1, reason: 'refused: You must have completed Plague City to use this spell.' });
+        expect(sdk.sent.length).toBe(1);
+    });
+
     test('castTeleport ignores a refusal message older than the cast', async () => {
         const old = { type: 0, text: 'You do not have enough Law Runes to cast this spell.', sender: '', tick: 1, fromSelf: false };
         const sdk = new FakeSdk(baseState({ tick: 1, player: player(3000, 3000), gameMessages: [old] }));
@@ -696,6 +723,15 @@ describe('useOn', () => {
         const sdk = holding();
         const p = useOn(sdk as never, 'Key', { loc: { x: 0, z: 0, id: 1 } }, keyGone, { maxTicks: 3 });
         await ticks(sdk, 1, () => ({ gameMessages: [{ type: 0, text: "I can't reach that!", sender: '', tick: 2, fromSelf: false }] }));
+        await ticks(sdk, 3);
+        expect((await p).resends).toBe(1);
+    });
+
+    test("\"I can't reach that!\" stamped with the click's own tick (the browser) is a drop too", async () => {
+        const sdk = holding();
+        const t = sdk.state!.tick;
+        const p = useOn(sdk as never, 'Key', { loc: { x: 0, z: 0, id: 1 } }, keyGone, { maxTicks: 3 });
+        await ticks(sdk, 1, () => ({ gameMessages: [{ type: 0, text: "I can't reach that!", sender: '', tick: t, observationId: 50, fromSelf: false }] }));
         await ticks(sdk, 3);
         expect((await p).resends).toBe(1);
     });

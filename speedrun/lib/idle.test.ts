@@ -31,6 +31,14 @@ describe('message-based idle', () => {
         expect(await p).toMatchObject({ ok: true, tick: 103, last: 100, changed: false, levelUps: 0 });
     });
 
+    test('a message the browser stamped with the call tick, published after the call, is new', async () => {
+        const sdk = new FakeSdk(baseState({ player: player(), gameMessages: [{ ...message(99), observationId: 40 }] }));
+        const p = idle(sdk, { maxTicks: 60 });
+        sdk.tick({ gameMessages: [{ ...message(99), observationId: 40 }, { ...message(100), observationId: 41 }] });
+        for (let i = 0; i < 3; i++) sdk.tick();
+        expect(await p).toMatchObject({ ok: true, last: 101, changed: true });
+    });
+
     test('x, z, level and new game messages reset the endpoint, but player chat does not', async () => {
         const sdk = ready();
         const p = idle(sdk, { maxTicks: 80 });
