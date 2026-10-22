@@ -724,25 +724,26 @@ const BURSTS = Number(args.get('bursts') ?? 20);
 const BURST_N = Math.min(4, Number(args.get('burst-n') ?? 3));
 const BURST_SPACING = Number(args.get('burst-spacing') ?? 70);
 const BLIND_N = Number(args.get('blind') ?? 200);
-const BLIND_PERIOD = Number(args.get('blind-period') ?? 300);
+const BLIND_PERIOD = Number(args.get('blind-period') ?? TICK_MS);
 const BLIND_OFFSET = Number(args.get('blind-offset') ?? 0);
 
 function nextTick(s: Session): Promise<Tick> {
-    return new Promise(resolve => {
-        const l = (t: Tick) => {
-            s.offTick(l);
-            resolve(t);
-        };
-        s.onTick(l);
-    });
+    return s.guard(
+        new Promise(resolve => {
+            const l = (t: Tick) => {
+                s.offTick(l);
+                resolve(t);
+            };
+            s.onTick(l);
+        })
+    );
 }
 
 async function goHome(s: Session, home: [number, number]) {
     for (let i = 0; i < 3; i++) {
         const t = s.ticks.at(-1)!;
         if (t.x === home[0] && t.z === home[1]) return;
-        s.client.walkTo(home[0], home[1], false);
-        s.client.flush();
+        s.send(() => s.client.walkTo(home[0], home[1], false));
         await waitTicks(s, 4);
     }
 }
@@ -750,10 +751,29 @@ async function goHome(s: Session, home: [number, number]) {
 const blockIndex = (t: Tick, home: [number, number]) => BLOCK.findIndex(([dx, dz]) => t.x === home[0] + dx && t.z === home[1] + dz);
 
 async function phaseBurst(s: Session) {
-    await waitTicks(s, 3);
-    const home: [number, number] = [s.ticks.at(-1)!.x, s.ticks.at(-1)!.z];
+    let home: [number, number] | null = null;
     const bursts: { label: number; arrival: number; sentOffsetMs: number[]; landed: (number | null)[]; absorbed: boolean[]; nextIntervalMs: number | null }[] = [];
-    for (let b = 0; b < BURSTS; b++) {
+    const snapshot = (): string[] => {
+        report.burst = { home, n: BURST_N, spacingMs: BURST_SPACING, bursts };
+        const lines = [`burst: ${bursts.length} of ${BURSTS} bursts of ${BURST_N} walks, ${BURST_SPACING} ms apart after the tick frame`];
+        for (let i = 0; i < BURST_N; i++) {
+            const ls = bursts.map(b => b.landed[i]).filter((v): v is number => v !== null);
+            const rel = bursts.filter(b => b.landed[i] !== null && b.landed[0] !== null).map(b => b.landed[i]! - b.landed[0]!);
+            lines.push(`  packet ${i} (+${i * BURST_SPACING} ms): ticks after T ${JSON.stringify(hist(ls))}  relative to packet 0 ${JSON.stringify(hist(rel))}  undetected ${bursts.length - ls.length}`);
+        }
+        return lines;
+    };
+    await inPhase('burst', snapshot, async () => {
+        await waitTicks(s, 3);
+        const at: [number, number] = (home = [s.ticks.at(-1)!.x, s.ticks.at(-1)!.z]);
+        for (let b = 0; b < BURSTS; b++) {
+            bursts.push(await burstOnce(at));
+            checkpoint();
+        }
+        await goHome(s, at);
+    });
+
+    async function burstOnce(home: [number, number]) {
         await goHome(s, home);
         await waitTicks(s, 1);
         const t = await nextTick(s);
@@ -761,8 +781,7 @@ async function phaseBurst(s: Session) {
         for (let i = 0; i < BURST_N; i++) {
             const due = t.arrival + i * BURST_SPACING;
             if (due > now()) await sleep(due - now());
-            s.client.walkTo(home[0] + BLOCK[i]![0], home[1] + BLOCK[i]![1], false);
-            s.client.flush();
+            s.send(() => s.client.walkTo(home[0] + BLOCK[i]![0], home[1] + BLOCK[i]![1], false));
             sent.push(now() - t.arrival);
         }
         await waitTicks(s, 7);
@@ -781,25 +800,16 @@ async function phaseBurst(s: Session) {
             }
         }
         const next = s.ticks.find(o => o.label === t.label + 1);
-        bursts.push({ label: t.label, arrival: t.arrival, sentOffsetMs: sent.map(v => Math.round(v * 10) / 10), landed, absorbed, nextIntervalMs: next ? Math.round((next.arrival - t.arrival) * 10) / 10 : null });
-    }
-    await goHome(s, home);
-    report.burst = { home, n: BURST_N, spacingMs: BURST_SPACING, bursts };
-    summary.push(`burst: ${BURSTS} bursts of ${BURST_N} walks, ${BURST_SPACING} ms apart after the tick frame`);
-    for (let i = 0; i < BURST_N; i++) {
-        const ls = bursts.map(b => b.landed[i]).filter((v): v is number => v !== null);
-        const rel = bursts.filter(b => b.landed[i] !== null && b.landed[0] !== null).map(b => b.landed[i]! - b.landed[0]!);
-        summary.push(`  packet ${i} (+${i * BURST_SPACING} ms): ticks after T ${JSON.stringify(hist(ls))}  relative to packet 0 ${JSON.stringify(hist(rel))}  undetected ${bursts.length - ls.length}`);
+        return { label: t.label, arrival: t.arrival, sentOffsetMs: sent.map(v => Math.round(v * 10) / 10), landed, absorbed, nextIntervalMs: next ? Math.round((next.arrival - t.arrival) * 10) / 10 : null };
     }
 }
 
 async function phaseBlind(s: Session) {
-    await waitTicks(s, 3);
-    await goHome(s, home0(s));
-    const home: [number, number] = [s.ticks.at(-1)!.x, s.ticks.at(-1)!.z];
+    let home: [number, number] | null = null;
     const sends: { k: number; sent: number; aimed: number; phaseMs: number; landed: number | null; absorbed: boolean }[] = [];
     let last = -1;
     const l = (t: Tick) => {
+        if (!home) return;
         // smallest k beyond the last visible packet whose tile matches; packets in between were absorbed
         for (let k = last + 1; k < sends.length; k++) {
             if (BLOCK[k % 4]![0] === t.x - home[0] && BLOCK[k % 4]![1] === t.z - home[1]) {
@@ -812,68 +822,86 @@ async function phaseBlind(s: Session) {
             }
         }
     };
-    s.onTick(l);
-    const first = await nextTick(s);
-    const t0 = first.arrival + BLIND_OFFSET;
-    for (let k = 0; k < BLIND_N; k++) {
-        const due = t0 + k * BLIND_PERIOD;
-        if (due > now()) await sleep(due - now());
-        const seen = s.ticks.at(-1)!;
-        s.client.walkTo(home[0] + BLOCK[k % 4]![0], home[1] + BLOCK[k % 4]![1], false);
-        s.client.flush();
-        const sent = now();
-        sends.push({ k, sent, aimed: seen.label + 1, phaseMs: Math.round((sent - seen.arrival) * 10) / 10, landed: null, absorbed: false });
-    }
-    await waitTicks(s, 6);
-    s.offTick(l);
-    await goHome(s, home);
-    const slips = sends.filter(x => x.landed !== null).map(x => x.landed! - x.aimed);
-    report.blind = { home, periodMs: BLIND_PERIOD, offsetMs: BLIND_OFFSET, sends };
-    summary.push(`blind: ${BLIND_N} walks every ${BLIND_PERIOD} ms, aimed at (latest tick seen)+1`);
-    summary.push(`  slip (landed - aimed) ${JSON.stringify(hist(slips))}  on aim ${((slips.filter(v => v === 0).length / Math.max(1, slips.length)) * 100).toFixed(0)}%  absorbed ${sends.filter(x => x.absorbed).length}  undetected ${sends.length - slips.length}`);
-    const buckets: Record<string, number[]> = {};
-    for (const x of sends) if (x.landed !== null && x.phaseMs < 600) (buckets[String(Math.floor(x.phaseMs / 50) * 50)] ??= []).push(x.landed - x.aimed);
-    summary.push('  on-aim share by send phase since frame: ' + Object.entries(buckets).sort((a, b) => Number(a[0]) - Number(b[0])).map(([k, v]) => `${k}:${Math.round((v.filter(x => x === 0).length / v.length) * 100)}%(${v.length})`).join(' '));
+    const snapshot = (): string[] => {
+        const slips = sends.filter(x => x.landed !== null).map(x => x.landed! - x.aimed);
+        report.blind = { home, periodMs: BLIND_PERIOD, offsetMs: BLIND_OFFSET, sends };
+        const lines = [`blind: ${sends.length} of ${BLIND_N} walks every ${BLIND_PERIOD} ms, aimed at (latest tick seen)+1`];
+        lines.push(`  slip (landed - aimed) ${JSON.stringify(hist(slips))}  on aim ${((slips.filter(v => v === 0).length / Math.max(1, slips.length)) * 100).toFixed(0)}%  absorbed ${sends.filter(x => x.absorbed).length}  undetected ${sends.length - slips.length}`);
+        const buckets: Record<string, number[]> = {};
+        for (const x of sends) if (x.landed !== null && x.phaseMs < 2 * TICK_MS) (buckets[String(Math.floor(x.phaseMs / 50) * 50)] ??= []).push(x.landed - x.aimed);
+        lines.push('  on-aim share by send phase since frame: ' + Object.entries(buckets).sort((a, b) => Number(a[0]) - Number(b[0])).map(([k, v]) => `${k}:${Math.round((v.filter(x => x === 0).length / v.length) * 100)}%(${v.length})`).join(' '));
+        return lines;
+    };
+    await inPhase('blind', snapshot, async () => {
+        await waitTicks(s, 3);
+        await goHome(s, home0(s));
+        const at: [number, number] = (home = [s.ticks.at(-1)!.x, s.ticks.at(-1)!.z]);
+        s.onTick(l);
+        try {
+            const first = await nextTick(s);
+            const t0 = first.arrival + BLIND_OFFSET;
+            // No checkpoints inside the clock: writing the JSON would shift the sends it is timing.
+            for (let k = 0; k < BLIND_N; k++) {
+                const due = t0 + k * BLIND_PERIOD;
+                if (due > now()) await sleep(due - now());
+                const seen = s.ticks.at(-1)!;
+                s.send(() => s.client.walkTo(at[0] + BLOCK[k % 4]![0], at[1] + BLOCK[k % 4]![1], false));
+                const sent = now();
+                sends.push({ k, sent, aimed: seen.label + 1, phaseMs: Math.round((sent - seen.arrival) * 10) / 10, landed: null, absorbed: false });
+            }
+            await waitTicks(s, 6);
+        } finally {
+            s.offTick(l);
+        }
+        await goHome(s, at);
+    });
 }
 const home0 = (s: Session): [number, number] => [s.ticks.at(-1)!.x, s.ticks.at(-1)!.z];
 
 async function phaseSample(s: Session) {
     const counts: { t: number; count: number | null }[] = [];
-    const end = now() + MINUTES * 60_000;
     const first = s.frames.length;
-    while (now() < end) {
-        const c = await fetch(`https://${HOST}/playercount`).then(r => r.json()).then((j: any) => j.count as number).catch(() => null);
-        counts.push({ t: now(), count: c });
-        await sleep(30_000);
-    }
-    const fs = s.frames.slice(first);
-    report.sample = { minutes: MINUTES, counts, frames: frameStats(fs) };
-    const cs = counts.map(c => c.count).filter((v): v is number => v !== null);
-    summary.push(`sample ${MINUTES} min: players ${Math.min(...cs)}-${Math.max(...cs)}, tick interval ${fmtQ(report.sample.frames.intervals)}, >400 ms: ${report.sample.frames.over400}/${report.sample.frames.n}`);
+    const snapshot = (): string[] => {
+        report.sample = { minutes: MINUTES, counts, frames: frameStats(s.frames.slice(first)) };
+        const cs = counts.map(c => c.count).filter((v): v is number => v !== null);
+        const minutes = counts.length ? Math.round(((counts.at(-1)!.t - counts[0]!.t) / 60_000) * 10) / 10 : 0;
+        return [`sample ${MINUTES} min (${minutes} min between first and last count): players ${cs.length ? `${Math.min(...cs)}-${Math.max(...cs)}` : '-'}, tick interval ${fmtQ(report.sample.frames.intervals)}, >400 ms: ${report.sample.frames.over400}/${report.sample.frames.n}`, ...tickNote(report.sample.frames.intervals)];
+    };
+    await inPhase('sample', snapshot, async () => {
+        const end = now() + MINUTES * 60_000;
+        while (now() < end) {
+            counts.push({ t: now(), count: await s.guard(playercount()) });
+            checkpoint();
+            await s.guard(sleep(30_000));
+        }
+    });
 }
 
 // ------------------------------------------------------------------ main
 
-report.playercountStart = await fetch(`https://${HOST}/playercount`).then(r => r.json()).then((j: any) => j.count).catch(() => null);
-summary.push(`players online at start: ${report.playercountStart}`);
-if (PHASES.includes('http')) await phaseHttp();
-if (PHASES.includes('ws')) await phaseWs();
-if (['react', 'burst', 'blind', 'sample'].some(p => PHASES.includes(p))) {
-    const s = await openSession();
-    try {
-        if (PHASES.includes('react')) await phaseReact(s);
-        if (PHASES.includes('burst')) await phaseBurst(s);
-        if (PHASES.includes('blind')) await phaseBlind(s);
-        if (PHASES.includes('sample')) await phaseSample(s);
-    } finally {
-        s.close();
+try {
+    report.playercountStart = await playercount();
+    summary.push(`players online at start: ${report.playercountStart}`);
+    if (PHASES.includes('http')) await phaseHttp();
+    if (PHASES.includes('ws')) await phaseWs();
+    if (['react', 'burst', 'blind', 'sample'].some(p => PHASES.includes(p))) {
+        currentPhase = 'login';
+        const s = await openSession();
+        session = s;
+        try {
+            if (PHASES.includes('react')) await phaseReact(s);
+            if (PHASES.includes('burst')) await phaseBurst(s);
+            if (PHASES.includes('blind')) await phaseBlind(s);
+            if (PHASES.includes('sample')) await phaseSample(s);
+        } finally {
+            s.close();
+        }
     }
+    currentPhase = 'end';
+    report.playercountEnd = await playercount();
+    summary.push(`players online at end: ${report.playercountEnd}`);
+} catch (e) {
+    if (e instanceof SessionLost) abort('socket', e.message, 3, e.at);
+    abort('error', describe(e), 1);
 }
-report.playercountEnd = await fetch(`https://${HOST}/playercount`).then(r => r.json()).then((j: any) => j.count).catch(() => null);
-report.endedPdt = pdt(Date.now());
-summary.push(`players online at end: ${report.playercountEnd}`);
-report.summary = summary;
-writeFileSync(OUT, JSON.stringify(report));
-console.log(summary.join('\n'));
-console.log(`json: ${OUT}`);
-process.exit(0);
+finish(0);
