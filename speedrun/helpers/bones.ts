@@ -32,6 +32,7 @@ import { Buyer } from './buyer';
 import { EatGuard } from './eat-guard';
 import { waitForFreshState } from '../lib/fresh-state';
 import { accountMatches, playerPattern } from './mule';
+import { isEastOfTollGate, travelTo } from '../lib/toll-gate';
 
 interface Box { x1: number; z1: number; x2: number; z2: number }
 interface Tile { x: number; z: number }
@@ -49,7 +50,9 @@ const VARROCK_WEST_BANK: Tile = { x: 3185, z: 3436 };
 const EDGEVILLE_BANK: Tile = { x: 3094, z: 3491 };
 const DRAYNOR_BANK: Tile = { x: 3092, z: 3243 };
 const FALADOR_WEST_BANK: Tile = { x: 2946, z: 3368 };
-const BANKS = [VARROCK_WEST_BANK, EDGEVILLE_BANK, DRAYNOR_BANK, FALADOR_WEST_BANK];
+/** Shantay's chest, north of the pass: a bank (shantay_chest.rs2), opened from the north. */
+const SHANTAY_CHEST: Tile = { x: 3309, z: 3121 };
+const BANKS = [VARROCK_WEST_BANK, EDGEVILLE_BANK, DRAYNOR_BANK, FALADOR_WEST_BANK, SHANTAY_CHEST];
 
 const EDGEVILLE_TRAPDOOR: Tile = { x: 3097, z: 3468 };
 const EDGEVILLE_LADDER_BOTTOM: Tile = { x: 3096, z: 9867 };
@@ -94,6 +97,10 @@ export interface Spot {
     inside?(r: Run): boolean;
     /** Obtain `requires` when neither the inventory nor the bank has it; one step per call, true when done. */
     acquire?(r: Run): Promise<boolean>;
+    /** Spawns too spread out to see from one tile: with no target in view, walk this loop. */
+    patrol?: Tile[];
+    /** Carried items a bank visit leaves in the inventory (consumables the spot needs, like passes). */
+    keep?: RegExp;
 }
 
 /** Edgeville dungeon hill giants: 12 spawns around (3096-3120, 9816-9850), level 28, 35 hp, big bones. */
@@ -344,11 +351,120 @@ const CHAOS_DRUIDS_TAVERLEY: Spot = {
     }
 };
 
+// Kharidian desert, through the Shantay Pass. The gate (shantay_pass_henge_doorway, 4 wide at
+// (3302-3305, 3116)) takes a Shantay pass going south (shantay_pass.rs2) and is free going north.
+const SHANTAY: Tile = { x: 3304, z: 3123 };
+const SHANTAY_GATE_NORTH: Tile = { x: 3303, z: 3118 };
+const SHANTAY_GATE_SOUTH: Tile = { x: 3303, z: 3115 };
+const SHANTAY_PASS = /^shantay pass$/i;
+/** Passes bought per visit to Shantay (5 gp each, stackable, 500 in stock). */
+const PASSES_PER_BUY = 40;
+const DESERT: Box = { x1: 3184, z1: 3008, x2: 3327, z2: 3116 };
+export const inDesert = (p: Tile) => inBox(DESERT, p.x, p.z);
+
+/** The 25 Ugthanki spawns (npc 840 in maps m49_47..m51_48). */
+export const UGTHANKI_SPAWNS: Tile[] = [
+    [3190, 3054], [3192, 3016], [3208, 3032], [3217, 3064], [3217, 3111], [3222, 3086], [3238, 3015],
+    [3238, 3101], [3244, 3080], [3253, 3116], [3255, 3095], [3258, 3063], [3267, 3077], [3268, 3052],
+    [3269, 3110], [3275, 3094], [3281, 3056], [3291, 3078], [3291, 3100], [3305, 3089], [3307, 3055],
+    [3318, 3020], [3318, 3040], [3318, 3078], [3321, 3104]
+].map(([x, z]) => ({ x: x!, z: z! }));
+
+/** Visit every tile once, always going to the nearest one not yet visited (a closed loop when repeated). */
+export function patrolTour(start: Tile, tiles: Tile[]): Tile[] {
+    const left = tiles.slice();
+    const tour: Tile[] = [];
+    let at = start;
+    while (left.length) {
+        let best = 0;
+        for (let i = 1; i < left.length; i++) if (dist(at, left[i]!) < dist(at, left[best]!)) best = i;
+        at = left.splice(best, 1)[0]!;
+        tour.push(at);
+    }
+    return tour;
+}
+
+/** Buy passes from Shantay with the coins carried, fetching coins from the bank first. */
+async function buyShantayPasses(r: Run): Promise<boolean> {
+    const coins = () => r.carried(/^coins$/i);
+    if (coins() < 5) {
+        await r.bank('coins for Shantay passes', null, [{ re: /^coins$/i, n: 5 * PASSES_PER_BUY + 50 }]);
+        if (coins() < 5) {
+            r.ctx.log('ugthanki: no coins for a Shantay pass');
+            return false;
+        }
+    }
+    if (!(await r.walk(SHANTAY.x, SHANTAY.z, 3, 600_000))) return false;
+    const open = await r.bot.openShop(/^shantay$/i);
+    if (!open.success) {
+        r.ctx.log('ugthanki: Shantay shop did not open', { reason: open.message });
+        return false;
+    }
+    await r.bot.buyFromShop(SHANTAY_PASS, Math.min(PASSES_PER_BUY, Math.floor(coins() / 5)));
+    await r.bot.closeShop();
+    r.ctx.log('ugthanki: bought Shantay passes', { passes: r.carried(SHANTAY_PASS), coins: coins() });
+    return r.carrying(SHANTAY_PASS);
+}
+
+async function shantayGate(r: Run): Promise<boolean> {
+    const gate = (await r.sdk.scanNearbyLocs(6)).find(l => /^shantay pass$/i.test(l.name));
+    if (!gate) {
+        r.ctx.log('ugthanki: no Shantay pass gate', { at: [r.pos().x, r.pos().z] });
+        return false;
+    }
+    await r.bot.interactLoc(gate, /go-through/i);
+    return true;
+}
+
+/**
+ * Ugthanki camels in the Kharidian desert: 25 spawns, level 42, 45 hp, cowardly, respawn
+ * 700 ticks; one raw ugthanki meat per kill (ugthanki.rs2). The kebab line's meat.
+ * Desert heat (desert_heat.rs2) hurts 1-10 every 50-190 ticks without a waterskin; the eat
+ * guard covers it. Banks at Shantay's chest; each entry costs a pass.
+ */
+const UGTHANKI: Spot = {
+    id: 'ugthanki',
+    npc: /^ugthanki$/i,
+    bones: /^raw ugthanki meat$/i,
+    area: DESERT,
+    centre: { x: 3275, z: 3094 },
+    patrol: patrolTour(SHANTAY_GATE_SOUTH, UGTHANKI_SPAWNS),
+    // Coins stay carried for passes and the Al Kharid toll gate.
+    keep: /^(shantay pass|coins)$/i,
+    async enter(r) {
+        if (inDesert(r.pos())) return true;
+        if (!(await r.routeToSpot(this))) return false;
+        if (!r.carrying(SHANTAY_PASS) && !(await buyShantayPasses(r))) return false;
+        if (!(await r.walk(SHANTAY_GATE_NORTH.x, SHANTAY_GATE_NORTH.z, 1, 600_000))) return false;
+        if (!(await shantayGate(r))) return false;
+        // The guard's dialogue (and the poster, on the first entry) runs before the teleport.
+        for (let page = 0; page < 20 && !inDesert(r.pos()); page++) {
+            const d = r.sdk.getDialog();
+            if (!d?.isOpen) { await r.sdk.waitForTicks(1); continue; }
+            const pick = d.options.find(o => /doesn't scare me/i.test(o.text));
+            if (pick) await r.sdk.clickDialogByText(pick.text);
+            else await r.sdk.sendClickDialog(0);
+            await r.sdk.waitForTicks(1);
+        }
+        await r.bot.dismissBlockingUI();
+        return inDesert(r.pos());
+    },
+    async leave(r) {
+        if (inDesert(r.pos())) {
+            if (!(await r.walk(SHANTAY_GATE_SOUTH.x, SHANTAY_GATE_SOUTH.z, 1, 300_000))) return false;
+            if (!(await shantayGate(r))) return false;
+            if (!(await r.waitFor(s => !inDesert({ x: s.player?.worldX ?? 0, z: s.player?.worldZ ?? 0 }), 10))) return false;
+        }
+        return r.walk(SHANTAY_CHEST.x, SHANTAY_CHEST.z, 2, 120_000);
+    }
+};
+
 export const SPOTS: Record<string, Spot> = {
     hill_giants: HILL_GIANTS,
     baby_blue: BABY_BLUE,
     chaos_druids: CHAOS_DRUIDS,
-    chaos_druids_taverley: CHAOS_DRUIDS_TAVERLEY
+    chaos_druids_taverley: CHAOS_DRUIDS_TAVERLEY,
+    ugthanki: UGTHANKI
 };
 
 // ---------------------------------------------------------------------------
@@ -470,7 +586,7 @@ export function parseOptions(o: Record<string, unknown>): Options {
     const spotId = typeof o.spot === 'string' ? o.spot : 'hill_giants';
     const spot = SPOTS[spotId];
     if (!spot) throw new Error(`bones: unknown spot '${spotId}' (known: ${Object.keys(SPOTS).join(', ')})`);
-    const food = (o.food ?? (spot === BABY_BLUE ? 'ge' : 'fish')) as FoodSource;
+    const food = (o.food ?? (spot === BABY_BLUE || spot === UGTHANKI ? 'ge' : 'fish')) as FoodSource;
     if (!FOOD_SOURCES.includes(food)) throw new Error(`bones: unknown food '${String(o.food)}' (known: ${FOOD_SOURCES.join(', ')})`);
     return {
         spot,
@@ -624,14 +740,16 @@ export class Run {
         return !!s && pred(s);
     }
 
-    /** Exit the dungeon we are actually in, not the spot selected for our next trip. */
+    /** Exit the dungeon (or the desert) we are actually in, not the spot selected for our next trip. */
     locationSpot(): Spot | null {
+        if (inDesert(this.pos())) return UGTHANKI;
         if (!this.underground()) return null;
         return this.pos().x < 3000 ? BABY_BLUE : HILL_GIANTS;
     }
 
     async routeToSpot(spot: Spot): Promise<boolean> {
         const here = this.locationSpot();
+        if (here && (here === UGTHANKI) !== (spot === UGTHANKI)) return here.leave(this);
         if (here && (here.centre.x < 3000) !== (spot.centre.x < 3000)) return here.leave(this);
         if (!here && inBrassHouse(this.pos())) return this.throughBrassDoor(false);
         return true;
@@ -640,18 +758,33 @@ export class Run {
     async walk(x: number, z: number, tol: number, timeout: number): Promise<boolean> {
         if (z < UNDERGROUND_Z) {
             const here = this.locationSpot();
-            if (here && !(await here.leave(this))) return false;
+            if (here && !inBox(here.area, x, z) && !(await here.leave(this))) return false;
             if (inBrassHouse(this.pos()) && !inBrassHouse({ x, z }) && !(await this.throughBrassDoor(false))) return false;
         }
         for (let attempt = 0; attempt < 3; attempt++) {
             if (this.aborted()) return false;
             if (dist(this.pos(), { x, z }) <= tol) return true;
-            const r = await this.bot.walkTo(x, z, tol, { timeout });
+            const r = await this.walkOnce(x, z, tol, timeout);
             await this.sdk.waitForTicks(1);
             if (dist(this.pos(), { x, z }) <= tol + 1) return true;
             this.ctx.log('walk retry', { to: [x, z], at: [this.pos().x, this.pos().z], reason: r.message });
         }
         return dist(this.pos(), { x, z }) <= tol + 1;
+    }
+
+    /**
+     * One surface walk. Across the Al Kharid fence it goes through the toll gate (10 gp
+     * carried), since walkTo takes the gate for a door and stalls there. The desert is
+     * left by the Shantay gate, never by the toll gate.
+     */
+    private async walkOnce(x: number, z: number, tol: number, timeout: number): Promise<{ message: string }> {
+        const from = this.pos();
+        const to = { x, z };
+        if (z < UNDERGROUND_Z && !inDesert(from) && !inDesert(to) && isEastOfTollGate(from) !== isEastOfTollGate(to)) {
+            const r = await travelTo(this.bot, this.sdk, to, { tolerance: tol, signal: this.ctx.signal, log: (m, d) => this.ctx.log(`travel: ${m}`, d) });
+            return { message: r.ok ? `travelled, paid ${r.paid}` : (r.reason ?? 'travel failed') };
+        }
+        return this.bot.walkTo(x, z, tol, { timeout });
     }
 
     /** Use a ladder or trapdoor near `at`; `down` decides which side of UNDERGROUND_Z counts as done. Opens a closed trapdoor first. */
@@ -707,6 +840,7 @@ export class Run {
     summary(): Record<string, unknown> {
         const hours = (Date.now() - this.startedAt) / 3_600_000;
         const bones = Object.entries(this.looted).filter(([k]) => /bones/i.test(k)).reduce((a, [, v]) => a + v, 0);
+        const product = Object.entries(this.looted).filter(([k]) => this.opt.spot.bones.test(k)).reduce((a, [, v]) => a + v, 0);
         const sorted = [...this.killTicks].sort((a, b) => a - b);
         const pct = (p: number) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] ?? null;
         return {
@@ -716,6 +850,8 @@ export class Run {
             deaths: this.deaths,
             hours: Number(hours.toFixed(3)),
             bonesPerHour: hours > 0 ? Math.round(bones / hours) : 0,
+            /** The spot's product (bones, herbs, meat) per hour. */
+            productPerHour: hours > 0 ? Math.round(product / hours) : 0,
             killTicks: { n: sorted.length, p10: pct(0.1), p50: pct(0.5), p90: pct(0.9) },
             levels: ['Attack', 'Strength', 'Defence', 'Hitpoints', 'Fishing', 'Cooking'].map(s => `${s.slice(0, 2)}${this.level(s)}`).join(' ')
         };
@@ -769,7 +905,8 @@ export class Run {
 
     // ---- banking (kept small so it can move to speedrun/lib) ----
 
-    nearBank(): boolean { return !this.underground() && BANKS.some(b => dist(this.pos(), b) <= 8); }
+    /** Shantay's chest is 6 tiles from the desert side of the gate, which is not near it. */
+    nearBank(): boolean { return !this.underground() && !inDesert(this.pos()) && BANKS.some(b => dist(this.pos(), b) <= 8); }
 
     /**
      * Open the nearest bank (walking out of the spot first if needed), deposit everything
@@ -810,7 +947,8 @@ export class Run {
         // un-noted, and without fishing the fishing kit and raw fish only cost slots.
         const fishingKit = (n: string) => ROD.test(n) || FEATHER.test(n) || RAW_FISH.test(n) || NET.test(n) || NET_FISH.test(n);
         const fishing = this.fishing();
-        const keep = (i: InventoryItem) => keepOnBank(i.name, lv, this.opt.spot.requires) && !(FOOD.test(i.name) && !edible(i)) && (fishing || !fishingKit(i.name));
+        const keep = (i: InventoryItem) => (this.opt.spot.keep?.test(i.name) ?? false) ||
+            (keepOnBank(i.name, lv, this.opt.spot.requires) && !(FOOD.test(i.name) && !edible(i)) && (fishing || !fishingKit(i.name)));
         const seen = new Set<number>();
         for (const item of this.state().inventory) {
             if (seen.has(item.id) || keep(item)) continue;
@@ -1328,6 +1466,15 @@ export class Run {
         return false;
     }
 
+    /** Next stop on the spot's patrol loop. */
+    patrolIndex = 0;
+
+    async patrolStep(route: Tile[]): Promise<void> {
+        let t = route[this.patrolIndex % route.length]!;
+        if (dist(this.pos(), t) <= 3) t = route[++this.patrolIndex % route.length]!;
+        await this.walk(t.x, t.z, 2, 120_000);
+    }
+
     // ---- the cycle ----
 
     trainingDone(): boolean { return ['Attack', 'Strength', 'Defence'].every(s => this.level(s) >= this.opt.train); }
@@ -1462,8 +1609,9 @@ export class Run {
             });
         }
         if (out === 'none') {
-            // Everything is dead or taken; drift back to the centre and wait for respawns.
-            if (dist(this.pos(), spot.centre) > 6) await this.walk(spot.centre.x, spot.centre.z, 4, 60_000);
+            // Everything is dead or taken: walk the patrol, or drift back to the centre and wait for respawns.
+            if (spot.patrol?.length) await this.patrolStep(spot.patrol);
+            else if (dist(this.pos(), spot.centre) > 6) await this.walk(spot.centre.x, spot.centre.z, 4, 60_000);
             else await this.sdk.waitForTicks(3);
         } else if (out === 'flee') {
             this.ctx.log('fleeing', { hp: Number(this.hpFrac().toFixed(2)) });
