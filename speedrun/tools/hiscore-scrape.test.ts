@@ -61,7 +61,12 @@ describe('withServerRate', () => {
         const server = Bun.serve({
             port: 0,
             fetch: (req, srv) => (srv.upgrade(req) ? undefined : new Response('no', { status: 400 })),
-            websocket: { open: ws => ws.send(JSON.stringify({ t: 'hello', v: 1, tick: 1, tickMs: 300, players: 0 })), message: () => {} }
+            websocket: {
+                open: ws => {
+                    ws.send(JSON.stringify({ t: 'hello', v: 1, tick: 1, tickMs: 300, players: 0 }));
+                },
+                message: () => {}
+            }
         });
         try {
             const rows = await withServerRate(`http://127.0.0.1:${server.port}`, ms => parseBoard(fixture('hiscore/board-woodcutting-2026-10-22.html'), ms));
