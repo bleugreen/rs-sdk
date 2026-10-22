@@ -24,7 +24,7 @@
 // in sight' test waits for the scene first (rs/185 addendum 4).
 
 import type { BotWorldState, PrayerName } from '../../sdk/types';
-import { act, actConverse, talkTo, TELEPORTS, walkTo, type ActOptions, type ActResult } from '../lib/act';
+import { act, actConverse, talkTo, type ActOptions, type ActResult } from '../lib/act';
 import { fight, prayerActive, type FightResult } from '../lib/combat';
 import { converse, type ConverseResult } from '../lib/converse';
 import { pageText, type OptionPattern } from '../lib/dialogue';
@@ -154,7 +154,6 @@ export const ROOT_ORDER = [10, 8, 9, 7, 6, 5, 4, 1, 2, 3, 11, 12, 13, 14, 15] as
 const NARNODE = /^King Narnode( Shareen)?$/i;
 const DEMON = /^Black demon$/i;
 const CLIMB_REFUSED = /at least 25 Agility to climb/i;
-const TELEPORT_REFUSED = /haven't learnt how to cast this spell|must have completed Plague City|do not have enough|need a magic level/i;
 const ROOT_EMPTY = /search the root but don't find anything|don't find anything interesting|turns out to be nothing/i;
 
 // ------------------------------------------------------------------ state
