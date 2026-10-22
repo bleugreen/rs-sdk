@@ -120,7 +120,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 1 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,327 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; S17 75-85 858; rs/155) |
 | 2 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,077 | 3,726 | 4,611 | ~885 | overlay | `quest-mm-*.ts` | **doc-priced, unrun** (A-G run; H-Z being written by rs/201) |
 | 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,116 | 3,116 | 4,170 | ~1,054 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | building (rs/212, held until rs/207 merged; rs/153 closed); `stay2` bury on main (#159, rs/182); restart fix on main (e5d8a058, #170; rs/207) |
-| 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,027 | 2,969 | 4,121 (4,025 with #165) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; rs/151 closed); gate-off plain + bury lab-measured (rs/162, #165 open) |
+| 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,027 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; rs/151 closed); gate-off plain + bury lab-measured (rs/162, #165 open) |
 | 5 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~120 elsewhere | ~190 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` | building (rs/154, parked under the 2-4 child limit); stun pack: lab-accepted (bury, charge, arrows; rs/132) |
 | 6 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | lab-accepted (1,998 on 78-99; rs/152) |
 | 7 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,889 | 1,829 | 2,023-2,211 | ~380 | overlay | `cannon-kit.ts` (rs/59, on main) | building (rs/186, held: tenet 15) |
@@ -185,7 +185,7 @@ are filed under main and held until tenet 15 is answered.
 - **2.** **Doc-priced, unrun** (A-G run; H-Z being written by rs/201): the Ape Atoll half has never
   been scripted or run as one route (rs/185); ~1,475 of the 4,077 is estimated (entry 2).
 - **3.** rs/211 builds the module (rs/151 is closed), including the bury-in-willows rule for a
-  gate-off stretch, conditional on rs/162's #165 being on the run commit (entry 3).
+  gate-off stretch, on rs/162's plain + bury (on main as 3dfc217f, #165, inside the run-commit floor; entry 3).
 - **4.** rs/212 builds the module (rs/153 is closed; rs/212 was held until rs/207 merged, which it
   has: e5d8a058, #170); `knife-mine`'s `stay2` bury is on main (#159, rs/182); the in-page plain
   loop measured 4.00 ticks per ore (rs/153).
@@ -202,7 +202,7 @@ are filed under main and held until tenet 15 is answered.
   (entry 9). rs/186 adopts rs/131's in-page cycle; the givers are rs/163's (helper table). Pending:
   the auto rule's switch to a 'handled before SCORED' field (entry 9).
 - **15.** The primary path is the bury option inside entry 3 (knife-cycle `bury` on main; the
-  gate-off plain + bury is rs/162's #165, lab-measured and open); the booth fallback `skills/prayer.ts` is rs/186's.
+  gate-off plain + bury is rs/162's, lab-measured and on main as 3dfc217f, #165); the booth fallback `skills/prayer.ts` is rs/186's.
 
 **Helper-side scripts (section 4).** H2-H6 are rs/41's (main's ruling).
 
@@ -231,14 +231,14 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 | knife-cycle `bury` (rs/137) | 3, 15 (S07's bones) | on main, 9b38dbc2 (#124) | |
 | knife-cycle rename and per-log stamps (rs/159) | 3, 5 | on main, c14428fc (#132) | |
 | knife-cycle axe-aware p (rs/175) | 3 | on main, 6c58db8e (#151) | |
-| knife-cycle plain + bury | 3, 15 | lab-measured (rs/162, PR #165, open; in main's 16:45 PDT batch) | S07's gate-off fallback: `technique: 'plain'` with `bury` and `trees`, no new key; willow 0.226 bones a tick with trades at 3.89 per expected roll, oak 60-75 0.195 at 4.29 (m, lab; entry 3). Knife-cycle on main refuses `bury` with the plain technique until it merges; then `RUN_COMMIT` at or after its merge commit (`RUN-HOST.md` "Credentials") |
+| knife-cycle plain + bury | 3, 15 | **on main, 3dfc217f (#165; rs/162)**; lab-measured | S07's gate-off fallback: `technique: 'plain'` with `bury` and `trees`, no new key; willow 0.226 bones a tick with trades at 3.89 per expected roll, oak 60-75 0.195 at 4.29 (m, lab; entry 3). The knife-off line in force; inside the efdbe2e2 floor (`RUN-HOST.md` "Credentials"); before it, knife-cycle refused `bury` with the plain technique |
 | knife-mine `bury` on `stay2` | 4 | on main, #159 (rs/182; merged 15:52 PDT) | O35, closed: the ~85 bones placed in S09 on today's stock (the conservative row), at most +0.02 a Mining ore and ~0.21 ticks a bone in trades (m, lab). Where it cannot fire they go to the booth, **+119** against the lap (RUN-ORDER.md section 7); ~61 more dragon bones also close it, as the row in force assumes |
 | knife-mine depleted-rock restart fix | 4 | on main, e5d8a058 (#170; rs/207) | 3 of 3 depletion restarts fault at +1 tick; post-respawn laps 3.00 per ore, 200 of 200 (m, lab). Any S09 knife (re)start then waits out the respawn, +13 plus the start; a `RUN_COMMIT` requirement (RUN-ORDER.md R18) |
 | `logoutClean` tab confirmation | 0, 1 (final logout), every relog | on main, c2d9eada (#146) | |
 | Direct gate clean logout | the gate probe | on main, 9d26aa87 (#142), d83f2e86 (#152) | |
-| In-page relog `login({inPage:true})` and the navigated relog's socket-close fix | 0 (restarts), 29 (the wine relogs, R17) | lab-accepted on the twin and after a lab engine kill (rs/174, PR #164, head a2a1564cf, merging in the 16:45 PDT window) | first SDK state at login + 1 in page or navigated, the bank at + 3 to + 6 (m); an in-page attempt that does not get in is retried by navigating, at the same ticks; the client's second-login hang (rs/183) is on main, #155 |
-| **Pickpocket stun-window actions** | 6 (S18's stun pack), 32 | **on main, 6e86a656 (#163; rs/132); lab-accepted (bury, charge, arrows; a3646a67)** | 300 rolls each at 300 ms on bgsrv-mac: no Thieving cost in the page (RUN-ORDER.md O8). The stun pack failing (plain pickpocket, Charge and Fletching standalone, ~200 more bones in S07, **+~120**, RUN-ORDER.md sensitivity table) is now a demo risk only. An opt-in 'idle while an interface is open' mode is requested, pending |
-| **In-page Runecraft cycle** (`rc-cycle`) | 9 (S06, S21) | **building (rs/131)** | started 14:55 PDT; 7-tick tuned with the 8-tick fallback, its protocol shared with rs/163's givers. Without the tuned cycle: the robust 8-tick cycle **+168**, or the stock 15-tick cycle **+1,344** if the giver is relayed (RUN-ORDER.md sensitivity table and R12) |
+| In-page relog `login({inPage:true})` and the navigated relog's socket-close fix | 0 (restarts), 29 (the wine relogs, R17) | **on main, efdbe2e2 (#164; rs/174), the run-commit floor**; lab-accepted on the twin and after a lab engine kill | first SDK state at login + 1 in page or navigated, the bank at + 3 to + 6 (m); an in-page attempt that does not get in is retried by navigating, at the same ticks; the client's second-login hang (rs/183) is on main, #155 |
+| **Pickpocket stun-window actions** | 6 (S18's stun pack), 32 | **on main, 6e86a656 (#163; rs/132); lab-accepted (bury, charge, arrows; a3646a67)** | 300 rolls each at 300 ms on bgsrv-mac: no Thieving cost in the page (RUN-ORDER.md O8). The stun pack failing (plain pickpocket, Charge and Fletching standalone, ~200 more bones in S07, **+~120**, RUN-ORDER.md sensitivity table) is now a demo risk only. The opt-in 'idle while an interface is open' mode is on main, `idleOnInterface: true` (declared in b6950915), with top-ups in the program as a `player` stun action (entry 6) |
+| **In-page Runecraft cycle** (`rc-cycle`) | 9 (S06, S21) | **building (rs/131; #178, pending)** | started 14:55 PDT; 7-tick tuned with the 8-tick fallback, its protocol shared with rs/163's givers. Without the tuned cycle: the robust 8-tick cycle **+168**, or the stock 15-tick cycle **+1,344** if the giver is relayed (RUN-ORDER.md sensitivity table and R12) |
 | Direct-path altar giver | 9 (S06, S21) | building (rs/163) | PR #144, open; on rs/117's launcher and rs/141's givers |
 
 ## 2. The run chain
@@ -271,7 +271,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     (expected + fallback deltas in force under 35,916). run.ts reads them from the operator's
     checklist (`SUPPLIES.md` section 5); it does not count bones itself;
   - **`RUN_COMMIT` includes rs/164, main's `c2d9eada`** (#146; `RUN-HOST.md` "Credentials" and
-    step 0, `git merge-base --is-ancestor c2d9eada "$RUN_COMMIT"`). c2d9eada is byte-identical to
+    step 0; the floor below contains it). c2d9eada is byte-identical to
     rs/147's 4e0e8ae4, whose code is 3ed0cd49c, the commit that ran on the twin. With it the page
     confirmed every tab logout in 222-324 ms, 0 ticks of latency, and `session.ts` no longer
     consults the gateway for a browser session, since the gateway still said `inGame: true`
@@ -283,11 +283,15 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     RUN-ORDER.md R1's bound); that case is historical on any `RUN_COMMIT` at or after c2d9eada.
     The final logout is still checked on the host (`RUN-HOST.md` step 8). A precondition, not a
     line in the totals;
-  - **`RUN_COMMIT` also at or after rs/174's merge commit** (PR #164, named when it lands: the
-    socket-close fix behind the ~2-tick relog) and **6e86a656** (#163, rs/132's stun actions), which
-    contains **#159** (`knife-mine`'s `stay2` bury, entry 4) and **e5d8a058** (#170, rs/207:
-    `knife-mine` faults instead of slipping on a depleted rock, entry 4); **#165** (rs/162's plain +
-    bury) once it merges, for the knife-off line with rs/162 (`RUN-HOST.md` "Credentials");
+  - **`RUN_COMMIT` at or after the run-commit floor, `efdbe2e2`** (#164, rs/174's socket-close fix
+    behind the ~2-tick relog; one check, `git merge-base --is-ancestor efdbe2e2 "$RUN_COMMIT"`,
+    `RUN-HOST.md` "Credentials"). Its history holds c2d9eada (#146, above), e5d8a058 (#170, rs/207:
+    `knife-mine` faults instead of slipping on a depleted rock, entry 4), 6e86a656 (#163, rs/132's
+    stun actions, after #159's `stay2` bury, entry 4), 3dfc217f (#165, rs/162's plain + bury, the
+    knife-off line in force, entry 3), b6950915 (#177: a program faults at start on a parameter key
+    it does not declare, so each entry's program keys are the program's declared names) and
+    834f376b (#176, rs/210's tick-cadence monitor). rs/131's `rc-cycle` (#178, pending) moves it
+    again (entry 9);
   - **the login cap**: our simultaneous demo logins, summed across every host, at most 100 with a
     working cap of 80, counted before SCORED logs in (main, 15:35 PDT; `RUN-HOST.md` step 7;
     `SUPPLIES.md`, "Peak concurrent logins");
@@ -504,10 +508,11 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   willows 73-99 from (2920,3406) (`skills/woodcutting.md` §1). **It also carries S25b**: 355 dragon
   bones buried inside the knife loop, which takes Prayer to ~94 before S10b
   (`research/bones-placement.md` §2, §5). S10a is retired.
-- **Parameters:** `band` table (method preset `tree` / `oak` / `willow` and its standing tile),
-  `technique: 'knife' | 'plain'` (chosen by the host gate, not by hand), `bury: boolean` (the bury
+- **Parameters:** to knife-cycle, per band of the module's band table (the standing tile is the
+  module's): `method` (the preset `tree` / `oak` / `willow`), `trees` (the band's reachable tiles, on
+  oak and willow), `untilLevel` (the band end), `technique: 'knife' | 'plain'` (chosen by the host gate, not by hand), `bury: boolean` (the bury
   variant), `reanchor: 'xp'`, `dismiss: 'now' | 'blind' | 'none'` (knife-cycle's values, default `'now'`, r), `respawnD` (felled-tree wait, from the
-  observed player count), `bones` (the giver; loads of 23).
+  observed player count), `bones` (the giver; loads of 23; the step's trades, not a program key).
 - **Preconditions:** rune axe (H4, held at 13:10; the adamant axe is the priced fallback, +394), knife and at least
   1 normal log, Fletching 1, members world. Free inventory except the kit. Position on the band's tile.
   **The bone giver** (Ashburn, rs/117) on the next tile, (2913,3494) or (2920,3407), requesting first
@@ -539,14 +544,16 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   `skills/woodcutting.md` §9, taken below 60 too): +41, past rs/158's ~30-tick threshold. The lab's
   oak respawn (D ~29 at ~2 online) is slower than the demo's (~20), worth ~12 of the 627 (i,
   §2's 812 against 796). Best keeps 569 (0.761, the fastest WC 60 run). Normal trees plain (14).
-  **Fallback 4,121** plain at the in-page rates (rs/162, m, lab, rune axe): oak 15-73 plain alone
+  **Fallback 4,025** in force, the plain loop with rs/162's plain + bury (#165, on main as 3dfc217f;
+  below). Plain alone **4,121** at the in-page rates (rs/162, m, lab, rune axe; the fallback before
+  #165, history): oak 15-73 plain alone
   891 (600 from WC 15 to L67, 126.4 expected rolls, and the other 59.0 at the WC 60-75 run's 4.93,
   i) and willow 73-99 at the WC 88-93 run's 4.13 per expected roll over the band (i), 3,216, plus
   normal 14. The lite model's 3,881 (§2's 3,958 less the model's 77 ticks of level-ups, measured 0
   when the page is answered on the next label, `research/levelup-cost.md` §2, §6) took drops as
-  free; the in-page plain loop loses ticks to its full-inventory drop. With #165, **4,025**: the 355
+  free; the in-page plain loop loses ticks to its full-inventory drop. With the bury, **4,025**: the 355
   bones ride the willow band's first ~1,570 ticks at 3.89, the rest at 4.13. The bury adds **95**
-  expected / **65** best on Prayer's line (entry 15), knife on or, with #165, knife off. The oak-to-willow walk (46 i) is a leg (entry 11). A move to a second site
+  expected / **65** best on Prayer's line (entry 15), knife on or off. The oak-to-willow walk (46 i) is a leg (entry 11). A move to a second site
   under contention costs "a few hundred" (estimated, `skills/README.md` open question 5).
 - **In the page** (cairn://p/rs/137, merged to main as PR #124; `skills/woodcutting.md` section 9 and `tick-programs.md` on main): local engine,
   300 ms, visible tab, oak at 60, 200 rolls per run: knife + bury **0.329 bones per tick** in all
@@ -558,7 +565,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   must pass **`trees`** (the reachable oak and willow tiles) with `bury`: without it a fallen tree
   sends the click to an oak that needs a walk, each bury cancels the walk, and the rate falls to
   0.27-0.28 bones per tick at 5.2-5.5 ticks per roll (m).
-- **rs/162's lab** (PR #165; local engine at 300 ms, a visible tab on bgsrv-mac, probe 60/60, rune
+- **rs/162's lab** (PR #165, on main as 3dfc217f; local engine at 300 ms, a visible tab on bgsrv-mac, probe 60/60, rune
   axe, 600 ticks a run, `::give` top-ups; per-roll figures weighted by the sum of 1/p at each log's
   level; `tick-programs.md` "Measured" on #165, `tickprog-measure.ts oak|tav-willow
   --technique=plain --bury`). The trades are not in the figures; rs/105's 5 ticks per 25-bone load
@@ -590,10 +597,11 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   `lib/hostgate.ts`, `hostgate-verdict.ts`. **Missing:** a program-side band change (a stop, a walk and a new start is fine); the
   forced-slip test hook (section 5, item 7).
 - **Mode:** in-page.
-- **Fallback:** the plain loop when the gate is off, **4,121** (Ticks). **Knife-cycle on main refuses
-  `bury` on the plain loop today**, so until rs/162's PR #165 is merged a gate-off stretch's bones go
-  to the Mining `stay2` lap if its knife holds, else the booth (RUN-ORDER.md O31). **With #165**
-  (lab-measured, rs/162, above) the step selects `technique: 'plain'` with `bury` and `trees`. There
+- **Fallback:** the plain loop when the gate is off, **4,025** with the bury (Ticks). rs/162's plain
+  + bury is on main (3dfc217f, #165, inside the run-commit floor, entry 0) and lab-measured (above);
+  on a commit before it knife-cycle refused `bury` on the plain loop, and a gate-off stretch's bones
+  went to the Mining `stay2` lap if its knife held, else the booth (4,121 here and 735 on Prayer's
+  line, history; RUN-ORDER.md O31). The step selects `technique: 'plain'` with `bury` and `trees`. There
   is no new key: the gated loop flips only `technique`, so the step passes `bury` and `trees` to
   both techniques. Against rs/158's bar (at least 0.22 bones a tick in the page with no loss of
   Woodcutting rate), **willow passes**: 0.240 / 0.235 bones a tick at 3.97 / 3.81 per expected roll,
@@ -611,7 +619,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   in #165); measured and not used. The module passes `bury` only in those stretches (a stop and
   restart at a band or level boundary, as the band change already is). The oak rates were measured
   at WC 60-75 only; below 60 level-ups come more often, so oak's bones a tick there are lower (i).
-  rs/211 builds the rule conditional on #165 being present. With #165, Prayer's knife-off line is the
+  rs/211 builds the rule. Prayer's knife-off line is the
   same 95 / 65 of trades and restarts (entry 15); RUN-ORDER.md section 7 prices each scenario row's
   bones to the booth ("Knife off, by scenario row"). If the bury variant fails on the demo: the bones go to the Mining `stay2` lap (up to ~200, entry 4)
   and the booth (+278 in all; +640 if all at the booth).
@@ -703,7 +711,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   each `stay2` and five-rock lap switch) waits out the respawn (13 ticks at respawn 13) or faults:
   **+13 plus the start cost** each (i). The step's resume waits for a live rock rather than
   retrying. Without rs/207 the knife cadence is lost for the rest of the step, up to ~+1,054
-  (RUN-ORDER.md R18), so `RUN_COMMIT` must be at or after e5d8a058 (the 6e86a656 floor covers it;
+  (RUN-ORDER.md R18), so `RUN_COMMIT` must be at or after e5d8a058 (the efdbe2e2 floor covers it;
   entry 0).
 - **Preconditions:** rune pickaxe, knife and about 5 normal logs, Fletching 1; Mining 64; position on
   the rotation's first standing tile. The same host-gate rule as Woodcutting.
@@ -791,14 +799,18 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   a bury, no xp action at +8.
 - **Parameters:** `npc: 'Knight of Ardougne'`, `untilLevel: 99`, `eat: 'window'` (at or below 77
   HP, at least 4 ticks after a stun, in a success window), `forcedBelow` (6 HP, inside a stun),
-  `stunActions` (the plan above; at most 4 packets per tick), `topUp` (request at k = 2, or k = 4 if
+  `stunActions` (the plan above; at most 4 packets per tick), `idleOnInterface: true`, and the top-up as
+  a `player` stun action placed first in `stunActions` and gated with `fewer` (request at k = 2, or k = 4 if
   the giver is not adjacent; when fewer than 3 bones are held; early, at 6, when the giver is far).
-  **A top-up stops the program**: `pickpocket` clicks the knight on every tick, stun ticks included,
-  and that click closes an open trade, so the module stops the program before SCORED's request at
-  stun + 2 and restarts it once the trade is done, by stun + 9 at the latest (the + 9 click lands on
-  T + 11, the attempt); a top-up stun buries nothing (rs/132, `pickpocket.ts` doc comment at
-  e5f83a36). An opt-in 'idle while an interface is open' mode is requested from rs/132, pending and
-  preferred over the stop and restart.
+  **A top-up runs in the program** (preferred; on main since #163, `pickpocket.ts` doc comment): the
+  `player` stun action sends the request at stun + 2 and owns that tick, the program sends nothing
+  until the trade opens, and with `idleOnInterface: true` nothing while it is open, so the step
+  module only accepts the offer and confirm screens; rs/106's trades completed at + 7 or + 8, and the
+  + 9 click lands on T + 11, the attempt. The fallback **stops the program**: `pickpocket` clicks the
+  knight on every tick, stun ticks included, and that click closes an open trade, so the module stops
+  the program before SCORED's request at stun + 2 and restarts it once the trade is done, by stun + 9
+  at the latest. A top-up stun buries nothing either way (rs/132, `pickpocket.ts` doc comment at
+  e5f83a36).
 - **Preconditions:** Thieving 57 (Fight Arena's 2,175 base). Charge: Mage Arena stage 8, the god
   staff given (rs/114, `quests/quest-state.md`), base Magic 80. Staff of fire wielded. Load 0 (H14):
   500 blood + 500 air runes (489 needed), 4,410 headless arrows, bronze 60, iron 90, steel 135,
@@ -1126,9 +1138,10 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   inferred for the in-page stop, `receiveFrom` and restart (RUN-ORDER.md R15). rs/137 measured the
   bury itself at no cost in the page, 0.329 bones per tick (#124). On a stock that needs more bones,
   each extra bone in S07 costs ~0.26 (0.17 best), S07 holds ~978 non-stun bones, and the rest go to
-  the Mining `stay2` lap and the booth (RUN-ORDER.md section 7). Knife off: **735** at the booth
-  until rs/162's #165 is merged; **95 / 65** with it, the same loads' trades and restarts, with the
-  bury riding the plain loop's willow band at no Woodcutting cost (entry 3). Fallback **735**, the 355 bones at the
+  the Mining `stay2` lap and the booth (RUN-ORDER.md section 7). Knife off: **95 / 65** (rs/162's
+  plain + bury, on main as 3dfc217f, #165), the same loads' trades and restarts, with the
+  bury riding the plain loop's willow band at no Woodcutting cost (entry 3); 735 at the booth before
+  #165 (history). Fallback **735**, the 355 bones at the
   booth (58 ticks per 28-bone inventory, `skills/prayer.md` §1).
 - **Primitives:** entry 3's; for the booth `lib/bank.ts` `withdrawMany` with `n:'fill'` and a blind
   bury every 2 ticks.

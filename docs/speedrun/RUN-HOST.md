@@ -136,7 +136,7 @@ and in shell history (rs/130). It is gone from this runbook; never rebuild it.
 
 `tab-login.ts` and the page server's token endpoints are on main since rs/138's merge (#120,
 `96fc462a`), so every command marked **requires rs/138 on RUN_COMMIT** needs step 0's `RUN_COMMIT`
-to be `96fc462a` or a descendant of it. **No real account's credentials, fleet or SCORED, go on the
+to be `96fc462a` or a descendant of it (the run-commit floor below contains it). **No real account's credentials, fleet or SCORED, go on the
 host while `~/rs-sdk` is at an older commit** (main, 10:20 PDT): step 4 (the helpers are fleet
 accounts) and step 7 (SCORED) check this first.
 
@@ -153,31 +153,30 @@ commit it cannot confirm a tab's logout: the gateway keeps `inGame: true` with s
 the page leaves the game, so the check waits out its timeout and reports a failure (m, rs/149 on the
 rehearsal twin, via rs/147, 2026-10-21; cairn://p/rs/164). That would affect SCORED's two planned
 relogs, every shortfall or restock pause, and the final logout that writes the hiscore row
-(RUN-ORDER.md section 4 and R1). Check it the same way as `96fc462a`:
-`git -C ~/rs-sdk merge-base --is-ancestor c2d9eada "$RUN_COMMIT"`. c2d9eada descends from 96fc462a,
-so this one check covers rs/138 as well; step 0 keeps both lines so that a failure names the missing
-requirement. rs/149's `speedrun/tools/tab-logout.ts`, the interim confirm, reached rs/147's branch
+(RUN-ORDER.md section 4 and R1). The run-commit floor below contains it. rs/149's `speedrun/tools/tab-logout.ts`, the interim confirm, reached rs/147's branch
 (#140) but not main, since #146 did not carry it. Steps 6 and 8 therefore confirm a tab's logout with
 `logoutClean` itself and the login screen in the live view.
 
-`RUN_COMMIT` must also be at or after three more changes. **rs/174's merge commit** (PR #164, head
-a2a1564cf, merging in main's 16:45 PDT window with rs/183's client fix; named when it lands): `speedrun/lib/tab.ts` `reloadOrOpenTab` closes the old page's gateway socket before
-a navigation, so a relog's first SDK state is at login + 1, not + 19 to + 20; on a commit without it
-a navigated relog pays the twin's ~19-tick gateway takeover (m, rs/174 on the twin against the demo,
-21:58-22:08Z; RUN-ORDER.md section 4). The client's second-login fix it builds on is already on main
-(#155). **#159**, `knife-mine`'s `stay2` bury (rs/182, merged on main at 15:52 PDT), which today's
-stock row prices (RUN-ORDER.md O35). **rs/207**, on main as **`e5d8a058`** (#170): `knife-mine`
-faults instead of slipping forever when a restart lands on a depleted iron rock (RUN-ORDER.md R18).
-Main's **`6e86a656`** (#163, rs/132's stun-window actions, which S18's stun pack runs on) descends
-from e5d8a058, #159 (`93ae0738`) and #155 (`faae9b13`), so **`RUN_COMMIT` at or after 6e86a656**
-covers all three: `git -C ~/rs-sdk merge-base --is-ancestor 6e86a656 "$RUN_COMMIT"`. rs/174's merge
-commit is checked the same way once named.
+**The run-commit floor is one commit, `efdbe2e2`** (#164, rs/174's relog fix, on main at 00:14 UTC
+2026-10-22). Step 0 checks it once: `git -C ~/rs-sdk merge-base --is-ancestor efdbe2e2 "$RUN_COMMIT"`.
+Its history contains every earlier requirement (rs/158 in the store; here `git merge-base
+--is-ancestor <commit> efdbe2e2` for each row), so no per-fix check is kept. What each one brings:
 
-**#165** (rs/162's plain + bury in knife-cycle; open, in main's 16:45 PDT merge batch) is not a
-requirement yet. Knife-cycle on main refuses `bury` with the plain technique, so RUN-ORDER.md prices
-a knife-off night without it, its bones at the booth (O31). Once #165 merges, `RUN_COMMIT` at or after
-its merge commit makes the knife-off line with rs/162 the one in force (S07's gate-off bones buried
-in the willow band), checked the same way; RUN-ORDER.md names the commit at the next fold-in.
+| Commit | PR | What the run needs from it |
+|---|---|---|
+| `efdbe2e2` | #164 (rs/174) | `speedrun/lib/tab.ts` `reloadOrOpenTab` closes the old page's gateway socket before a navigation, so a relog's first SDK state is at login + 1, not + 19 to + 20 (m, rs/174 on the twin against the demo, 21:58-22:08Z; RUN-ORDER.md section 4, R1, R17); the in-page relog `login(s, {inPage: true})` |
+| `96fc462a` | #120 (rs/138) | step 3's Chrome login, `tab-login.ts` and the page server's token endpoints (above) |
+| `c2d9eada` | #146 (rs/164) | `logoutClean` confirms a tab's logout through the page's own in-game flag (above) |
+| `faae9b13` | #155 (rs/183) | the client's second-login fix the in-page relog builds on |
+| `93ae0738` | #159 (rs/182) | `knife-mine`'s `stay2` bury, which today's stock row prices (RUN-ORDER.md O35) |
+| `e5d8a058` | #170 (rs/207) | `knife-mine` faults instead of slipping forever when a restart lands on a depleted iron rock (RUN-ORDER.md R18) |
+| `6e86a656` | #163 (rs/132) | pickpocket's stun-window actions, which S18's stun pack runs on |
+| `3dfc217f` | #165 (rs/162) | knife-cycle's plain + bury, which the knife-off line in force prices (S07's gate-off bones buried in the willow band; RUN-ORDER.md O31) |
+| `b6950915` | #177 | a tick program faults at start on any parameter key it does not declare, so a module built against another commit's programs stops instead of running a different program (`tick-programs.md`; STEP-MANIFEST.md entry 0) |
+| `834f376b` | #176 (rs/210) | the in-run tick-cadence monitor on the scored connection: per-minute `TICKMON` rows in the run log, no behaviour change |
+
+rs/131's `rc-cycle` (#178, pending), which S06 and S21 run on (STEP-MANIFEST.md entry 9), moves the
+floor again when it lands.
 
 **Leftover check.** It lists every tmux socket on the host with its sessions, other agents' sockets
 included, plus every `chrome*`, `ffmpeg`, `bun` and `timeout` process with its age, and the host
@@ -306,17 +305,10 @@ Then put the clone on it and build:
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && git fetch -q origin && git checkout -q --detach "$(cat $HOME/run-commit)" && bun install && (cd server/webclient && bun install && bun run build) && (cd server/gateway && bun install) && mkdir -p ~/recordings ~/rs-run/chrome-profile && git log -1 --oneline && ls server/webclient/out/bot/client.js'
 ```
 
-`RUN_COMMIT` must include rs/138's merge (#120, `96fc462a`): step 3's Chrome login
-(`speedrun/tools/tab-login.ts` and the page server's token endpoints) arrived with it ("Credentials",
-above). Check with `git -C ~/rs-sdk merge-base --is-ancestor 96fc462a "$RUN_COMMIT"`.
-`RUN_COMMIT` must also include rs/164, on main as `c2d9eada` (#146; the same code as 4e0e8ae4 on
-rs/147's branch and 3ed0cd49c on the twin), so that `logoutClean` can confirm a logout from the tab
-("Credentials"). Check with
-`git -C ~/rs-sdk merge-base --is-ancestor c2d9eada "$RUN_COMMIT"`. c2d9eada descends from
-96fc462a, so this check alone covers both requirements; the `96fc462a` line stays beside it so a
-failure says which one is missing. `RUN_COMMIT` must also be at or after `6e86a656` (which contains
-#159, rs/207's `e5d8a058` and #155) and rs/174's merge commit, and, for the knife-off line with
-rs/162, #165's ("Credentials"); check each the same way once its commit is named.
+`RUN_COMMIT` must be at or after the run-commit floor, **`efdbe2e2`** (#164; "Credentials" lists
+what it contains, rs/138's Chrome login and rs/164's tab-logout confirmation among them). One
+check: `git -C ~/rs-sdk merge-base --is-ancestor efdbe2e2 "$RUN_COMMIT"`. A failure means the commit
+predates at least one of the changes in that table.
 
 Account files: the gate account (step 6) is a throwaway demo account whose name starts with
 `cairn_`, with `~/rs-sdk/bots/<gate>/bot.env` holding `BOT_USERNAME`, `PASSWORD`,
