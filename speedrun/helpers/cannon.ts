@@ -21,7 +21,8 @@
 // does no quest or production. It carries one set (the four parts) and `balls`
 // cannonballs from the bank, stands on `tile`, keeps a trade request standing with
 // the scored account (bone-giver.ts requestUntilOpen), and gives the whole load in
-// one trade (lib/trade.ts give) when the scored account's own click opens it. With
+// one trade (lib/trade.ts give) when the scored account's own click opens it, taking
+// back whatever the scored account offers in that same trade (H23: the magic shortbow). With
 // `returnTile`, it then waits there for the set and the leftover balls to come back
 // (H11r) and banks them. The scored account is never named: it is whoever in sight
 // matches `receiver` (the sha256 of its canonical name, altar-cue.ts nameHash) or,
@@ -63,7 +64,7 @@ import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import { advance } from '../lib/dialogue';
-import { give, DROPPED_TICKS, receiveFrom, tradeOf, type GiveSpec, type WantSpec } from '../lib/trade';
+import { ANY_OFFER, give, DROPPED_TICKS, receiveFrom, tradeOf, type GiveResult, type GiveSpec, type TradeSdk, type WantSpec } from '../lib/trade';
 import { assertUntracked, cueDir, CueWatcher, nameHash, type Cue } from './altar-cue';
 import { cheat, isLocalServer, standOn } from './altar-room';
 import { partnerIs, requestUntilOpen } from './bone-giver';
@@ -234,6 +235,16 @@ const BALL = /^cannonball$/i;
  */
 export function loadSpecs(balls: number): GiveSpec[] {
     return [...CANNON_PARTS.map(p => ({ item: exactName(p), n: 1 })), { item: BALL, n: balls }];
+}
+
+/**
+ * The serve's one trade, already open with `partner`: the load out, and whatever the scored
+ * account puts up taken back in the same trade (ANY_OFFER; H23 hands the magic shortbow back,
+ * the scored side's swap). Its offer resets both accepts; give() re-accepts once per tick while
+ * our offer is the whole load, and checks both offers again on the confirm screen.
+ */
+export function serveTrade(sdk: TradeSdk, partner: string, balls: number): Promise<GiveResult> {
+    return give(sdk, partner, loadSpecs(balls), { expectTheirs: ANY_OFFER, openTimeoutMs: 5_000 });
 }
 
 /** What the receiver must see offered before it accepts: the set, and the balls when there are any. */
@@ -1304,11 +1315,14 @@ class Cannon {
         }
         this.setPhase('serve-trading');
         await this.record('giving');
-        const r = await give(this.sdk, partner, loadSpecs(so.balls), { openTimeoutMs: 5_000 });
+        const before = this.sdk.getInventory().map(i => ({ ...i }));
+        const r = await serveTrade(this.sdk, partner, so.balls);
+        const received = this.sdk.getInventory().filter(i => !before.some(b => b.id === i.id)).map(i => `${i.name} x${i.count}`);
         this.log('hand-off', {
             ok: r.ok,
             giverTicks: r.ticks,
             gave: r.gave.map(i => `${i.name} x${i.count}`),
+            received,
             waitedTicks: this.tick() - t0,
             requestToOpen: req.waited,
             sends: req.sends,
