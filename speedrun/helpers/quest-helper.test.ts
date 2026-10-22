@@ -4,7 +4,7 @@ import { baseState } from '../lib/fake-sdk';
 import * as grandTree from '../quests/grand-tree';
 import * as tgv from '../quests/tree-gnome-village';
 import { ROUTES } from '../skills/agility';
-import { ARMOUR, gtPlan, KIT_COINS, KIT_SHARKS, kitCheck, kitWithdraws, mmPlan, nearestWaypoint, parsePhases, PHASES, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
+import { ARMOUR, freeSlots, gtPlan, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
 
 let slot = 0;
 const item = (name: string, count = 1, id = 9000 + slot): InventoryItem => ({ slot: slot++, id, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
@@ -121,5 +121,45 @@ describe('nearestWaypoint', () => {
         expect(i).toBeGreaterThan(0);
         expect(route[i]).toEqual([3000, 3287]);
         expect(nearestWaypoint(route, { x: 3201, z: 3237 })).toBe(0);
+    });
+});
+
+describe('the kit leaves room for Montai\'s logs', () => {
+    const sharks = (n: number) => Array.from({ length: n }, () => item('Shark'));
+    test('the full kit and 6 logs fill the pack exactly', () => {
+        const s = state({ inventory: [...sharks(KIT_SHARKS), item('Bronze axe'), item('Coins', KIT_COINS)], equipment: [] });
+        expect(freeSlots(s)).toBe(TGV_KIT.logs);
+        expect(logShortfall(s)).toBe(0);
+    });
+    test('the login that stalled: 22 sharks, the bronze longsword, the axe, coins and 3 logs', () => {
+        const s = state({ inventory: [item('Bronze longsword'), item('Bronze axe'), ...sharks(22), item('Coins', 300), item('Logs'), item('Logs'), item('Logs')] });
+        expect(logShortfall(s)).toBe(2);
+        const d = kitDeposits(s);
+        expect(d.some(p => p.test('Bronze longsword'))).toBe(true);
+        expect(d.some(p => p.test('Shark'))).toBe(true);
+        for (const keep of ['Bronze axe', 'Coins', 'Logs']) expect(d.some(p => p.test(keep))).toBe(false);
+    });
+    test('nothing to bank for a pack that is only the kit', () => {
+        expect(kitDeposits(state({ inventory: [...sharks(KIT_SHARKS), item('Bronze axe'), item('Coins', 10)] }))).toEqual([]);
+    });
+    test('an outside item with regex characters banks by its exact name', () => {
+        const d = kitDeposits(state({ inventory: [item('Ring of dueling(8)')] }));
+        expect(d).toHaveLength(1);
+        expect(d[0]!.test('Ring of dueling(8)')).toBe(true);
+        expect(d[0]!.test('Ring of dueling(7)')).toBe(false);
+    });
+});
+
+describe('pickTree', () => {
+    const loc = (x: number, z: number, name = 'Tree', op = 'Chop down') => ({ x, z, id: 1276, name, optionsWithIndex: [{ text: op, opIndex: 1 }] }) as unknown as import('../../sdk/types').NearbyLoc;
+    const here = { x: 3256, z: 3243 };
+    test('the nearest choppable tree in range, skipping trees given up on and other locs', () => {
+        const near = loc(3258, 3243);
+        const far = loc(3262, 3250);
+        expect(pickTree([far, near, loc(3257, 3243, 'Dead tree'), loc(3256, 3244, 'Tree', 'Examine')], here, new Set())).toBe(near);
+        expect(pickTree([far, near], here, new Set(['3258,3243']))).toBe(far);
+    });
+    test('none in range is null', () => {
+        expect(pickTree([loc(3300, 3243)], here, new Set())).toBeNull();
     });
 });
