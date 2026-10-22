@@ -321,7 +321,10 @@ export function walk(rows: readonly LedgerRow[]): LedgerEntry[] {
         // (1) swap outs, then (2) the need check.
         for (const e of row.out.filter(e => e.reason === 'swap')) attempt(() => pack.out(e));
         const free = INVENTORY_SLOTS - pack.used();
-        if (row.need === null) {
+        if (free < 0) {
+            worse('OVERFLOW');
+            notes.push(`${-free} over before the row, carried from an earlier one`);
+        } else if (row.need === null) {
             worse('unknown');
             notes.push('needAtStart ?');
         } else if (free < row.need) {
@@ -332,7 +335,7 @@ export function walk(rows: readonly LedgerRow[]): LedgerEntry[] {
         for (const e of row.out.filter(e => e.reason !== 'swap')) attempt(() => pack.out(e));
         const freeForIn = INVENTORY_SLOTS - pack.used();
         const adds = row.in.reduce((a, e) => a + pack.adds(e), 0);
-        if (isHandOff(row.row) && adds > freeForIn) {
+        if (isHandOff(row.row) && adds > 0 && freeForIn >= 0 && adds > freeForIn) {
             worse('SHORT');
             notes.push(`the trade adds ${adds} slots, ${freeForIn} free`);
         }
@@ -375,6 +378,7 @@ export function summary(entries: readonly LedgerEntry[], strict = false): { fail
     const inferredRows = entries.filter(e => inferred(e.row));
     const lines = [
         `${entries.length} rows: ${entries.length - failed.length - unknown.length} pass, ${unknown.length} unknown, ${failed.length} fail; ${inferredRows.length} INFERRED`,
+        ...(failed.length ? [`first failing row: ${failed[0]!.row.row}; a later row may only carry its excess`] : []),
         ...failed.map(e => `FAIL ${e.row.row} (line ${e.row.line}): ${e.verdict}: ${e.notes.join('; ')}`),
         ...unknown.map(e => `${strict ? 'FAIL' : 'unknown'} ${e.row.row} (line ${e.row.line}): ${e.notes.join('; ')}`),
     ];
