@@ -393,6 +393,22 @@ async function main() {
         writeFileSync(OUT, JSON.stringify(report, null, 1));
     };
 
+    /** Click logout:try_logout (com 2458, as speedrun/lib/session.ts) until the server sends LOGOUT. */
+    cleanup = async () => {
+        cleanup = null;
+        for (let i = 0; i < 6 && !client.isLoggedOut(); i++) {
+            client.writeOpcode(ClientProt.IF_BUTTON);
+            client.out.p2(2458);
+            client.flush();
+            for (let j = 0; j < 20 && !client.isLoggedOut(); j++) await sleep(100);
+        }
+        report.logout = { confirmed: client.isLoggedOut(), utc: new Date().toISOString() };
+        console.log(`logout: ${client.isLoggedOut() ? 'confirmed by the server' : 'NOT confirmed'}`);
+        save();
+        clearInterval(keepalive);
+        connection.close();
+    };
+
     const pre = await run('preflight', 1);
     report.preflight = pre;
     if (pre.summary.firstRel === null) {
@@ -446,10 +462,18 @@ async function main() {
     for (const [k, v] of Object.entries(table)) console.log(`TABLE ${k}: ${Object.entries(v).map(([c, m]) => `${c} x${m}`).join(', ')}`);
     console.log(`wrote ${OUT}`);
 
-    clearInterval(keepalive);
-    await sleep(500);
-    connection.close();
+    await cleanup?.();
     process.exit(0);
 }
 
-if (import.meta.main) await main();
+let cleanup: (() => Promise<void>) | null = null;
+
+if (import.meta.main) {
+    try {
+        await main();
+    } catch (e) {
+        console.error(e);
+        await cleanup?.();
+        process.exit(1);
+    }
+}
