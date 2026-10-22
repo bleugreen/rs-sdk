@@ -226,13 +226,21 @@ booth. The scored account must stand at a bank for the cycle.
 **The line in force is hard leather bodies, not gems.** The fleet can't source the diamonds by
 run day, and every gem it holds goes to S25c's wine windows (rs/158's ruling, 2026-10-22). S25d
 makes hard leather bodies from Crafting 45 (Dwarf Cannon's 750 plus Goblin Diplomacy's 200 base)
-and **stops at `CRAFTING_HANDOFF_XP`**, not 99. The windows' gems (6,567.5 base) then carry
+and **stops at the hand-off for the gems actually staged**, not 99. The windows' gems then carry
 Crafting to 99 in S25c.
 
-**The hand-off constant** is defined once, in `crafting.ts`, and `cooking.ts` imports it:
-`CRAFTING_HANDOFF_XP = xpForLevel(99) - WINDOW_GEM_BASE_XP x XP_RATE` = 834,270.5 game xp
-(33,370.82 base, Crafting 96). The stop is the step option `untilXp`, which defaults to the
-hand-off. `CRAFTING_99_XP` is the standalone stop.
+**The hand-off is a function of the staged gems, not a constant.**
+`craftingHandoffXp(gems) = xpForLevel(99) - XP_RATE x sum(cutXp(gem) x count)`. The cut xp comes
+from jeweller.ts's `GEM` table, which S25c's recipes are also built from. The staged gems have
+one source: H21d's row of STEP-MANIFEST.md's inventory ledger, read through slot-ledger.ts's
+`parseLedger` (`stagedGemsFrom`, `loadStagedGems`). Each `uncut <gem>` entry counts, named or by
+id. Both steps take that list as the option `stagedGems` and default to H21d's row, so S25d's
+stop and S25c's windows never disagree. For the full 107 (2 diamond, 20 ruby, 23 emerald,
+62 sapphire: 6,567.5 base) the hand-off is 834,270.5 game xp, Crafting 96. rs/41's short mix of
+93 (6 sapphire, 5 emerald and 3 ruby fewer) gives 856,583. An empty list gives 99, so Crafting
+goes the whole way itself. A gem the windows don't cut (an opal, a dragonstone, a noted id) or a
+count that isn't a whole number makes the precondition refuse with the reason. The option
+`untilXp` overrides the stop, and `CRAFTING_99_XP` is the standalone stop.
 
 **Mechanics read from this server's content** (crafting.test.ts checks each one):
 
@@ -244,8 +252,11 @@ hand-off. `CRAFTING_99_XP` is the standalone stop.
   floor((n - 1 + 4) / 5) + 1 thread: 6 for a load of 26, 187 for 928 bodies. With no thread, the
   content opens an objbox and makes nothing.
 - Needle and thread both stack, so a load is 28 - 2 = **26**.
-- From 45: **928 bodies** to the hand-off, 1,116 to 99. Per attempt: 954 hard leather (928 plus a
-  spare inventory), at least 187 thread and 1 needle. rs/350 stages 1,142 leather and 230 thread.
+- From 45: **928 bodies** to the full mix's hand-off, 953 to the short mix's, and 1,116 to 99. Per
+  attempt: 954 hard leather (928 plus a spare inventory) and at least 187 thread for the full
+  mix, or 979 and 192 for the short mix, plus 1 needle. The precondition checks the leather and
+  thread against the bodies to the stop in force, both when the bank is open and when H21d's
+  leather notes are held (the trade lands the thread with them).
 
 **How it runs.** It uses the page's item-cycle program in tool mode (needle as the tool), with two
 opt-in additions to the program (item-cycle.ts):

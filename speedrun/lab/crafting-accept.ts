@@ -14,7 +14,8 @@
 // S00's tutorialSkip, setup.ts leaveTutorial, before any teleport):
 //   l1    S25d's real start: Crafting 45, the hand-off held (needle, 230 thread, 954 hard leather
 //         as banknotes, with H21d/H21e's chisel, gem and herb notes beside them). Cold arrival: ::tele
-//         to Varrock east bank, then walk in to (3185,3436). To CRAFTING_HANDOFF_XP; the last visit
+//         to Varrock east bank, then walk in to (3185,3436). To the hand-off for H21d's staged gems
+//         (craftingHandoffXp, STEP-MANIFEST.md's row as it stands); the last visit
 //         stows needle, thread and bodies. Reported against --expected (rs/158's figure).
 //   l2    standalone: as l1 with 1,142 leather notes (rs/350's staging), to 99.
 //   cold  the browser standard: the cold walk-in, then two inventories (maxActions 52) and the stow.
@@ -40,7 +41,7 @@ import { levelForXp, xpForLevel } from '../lib/xp';
 import { Observation, resolveResume } from '../runner/resume';
 import { runSteps, type RunnerSession } from '../runner/step';
 import { boothFor, SCORED_TILE, VARROCK_WEST } from '../skills/herblore';
-import { CRAFTING_99_XP, CRAFTING_HANDOFF_XP, craftingLevel, craftingXp, cycleItems, HARD_LEATHER_BODY, ITEM, LOAD, preconditions, STEP_NAME, steps, supplyFor } from '../skills/crafting';
+import { CRAFTING_99_XP, craftingHandoffXp, craftingLevel, loadStagedGems, craftingXp, cycleItems, HARD_LEATHER_BODY, ITEM, LOAD, preconditions, STEP_NAME, steps, supplyFor } from '../skills/crafting';
 import { launchLabBrowser, type LabBrowser } from './browser';
 import { cheat, leaveTutorial, mustTele, near, setstat } from './setup';
 
@@ -55,6 +56,8 @@ if (!bot || !which || !CASES.includes(which)) {
 const where = () => `host ${hostname()} load ${loadavg().map(l => l.toFixed(1)).join(' ')} at ${new Date().toISOString()}`;
 
 const START_LEVEL = 45;
+/** S25d's stop in the run: the hand-off for H21d's staged gems, as steps() reads them by default. */
+const HANDOFF_XP = craftingHandoffXp(loadStagedGems());
 const VARROCK_EAST_BANK = { x: 3253, z: 3420 };
 /** H21d/H21e's stacks for later steps, handed over with S25d's (the first visit banks them). */
 const LATER_STACKS: Record<string, number> = { chisel: 1, cert_uncut_diamond: 107, cert_iritvial: 405, cert_eye_of_newt: 432 };
@@ -185,7 +188,7 @@ await (async () => {
     try {
         if (which === 'l1' || which === 'l2' || which === 'cold') {
             await stage({ walkIn: true });
-            const untilXp = which === 'l2' ? CRAFTING_99_XP : CRAFTING_HANDOFF_XP;
+            const untilXp = which === 'l2' ? CRAFTING_99_XP : HANDOFF_XP;
             await handOff(which === 'l2' ? 1142 : 954);
             result.startXp = craftingXp(state());
             result.supply = supplyFor(craftingXp(state()), untilXp);
@@ -210,7 +213,7 @@ await (async () => {
             console.log(`  resume walk: ${point.mode} ${point.step ?? ''} (${point.reason})`);
             result.resume = { mode: point.mode, step: point.step, logoutTick: before, heldAtLogout: held };
             await runSteps(session, steps(), { log, c: {}, shouldStop: () => false, logout: async () => {}, startMode: point.mode === 'resume' ? 'resume' : 'run', observed: obs, tickMonitor: false });
-            finish({ untilXp: CRAFTING_HANDOFF_XP, reached: craftingXp(state()) >= CRAFTING_HANDOFF_XP });
+            finish({ untilXp: HANDOFF_XP, reached: craftingXp(state()) >= HANDOFF_XP });
         } else {
             // demo: no staff commands; the account's own needle, thread and leather, a booth in view.
             // Right after a login the position is published before the scene's locs: wait for the booth.

@@ -769,7 +769,7 @@ describe('item-cycle held, bank: false and mixed loads (the cooking wine windows
         // the first visit: All of diamond, ruby, then emerald (All gives the 5 that fit), close
         expect(w.sentAt(w.shared.visits[0]!.seen)).toEqual(['withdraw #0 -1', 'withdraw #1 -1', 'withdraw #2 -1', 'closeModal']);
         expect(w.inv.every(o => o === null)).toBe(true);
-        // W1's 26 sapphires and these 81: the windows' 6,567.5 base (crafting.ts WINDOW_GEM_BASE_XP)
+        // W1's 26 sapphires and these 81: the full 107-gem mix's 6,567.5 base (crafting.ts craftingHandoffXp over H21d's staged gems)
         expect((w.xp - crafting96) / 25).toBe(6567.5);
         expect(w.bank).toEqual(expect.arrayContaining([{ id: DIAMOND, count: 2 }, { id: RUBY, count: 20 }, { id: EMERALD, count: 23 }, { id: SAPPHIRE, count: 36 }, { id: CHISEL, count: 1 }]));
         expect(w.ignored).toEqual([]);
