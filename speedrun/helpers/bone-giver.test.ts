@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ASK_SLACK_MS, nameHash, newRequestFrom, readTopUpAsk, usableAsk, writeTopUpAsk } from './altar-cue';
-import { askOffer, boneGiverOptions, boneServer, carryDue, isFinalLoad, loadOffer, npcTiles, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, type BoneStatus } from './bone-giver';
+import { askOffer, boneGiverOptions, boneServer, carryDue, isFinalLoad, legRan, loadOffer, npcTiles, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, type BoneStatus } from './bone-giver';
 import { assertDemoStandIn } from './bone-receiver';
 
 const o = { noReplyTicks: 3, resendTicks: 100 };
@@ -65,6 +65,17 @@ describe('a group of bone givers takes turns (S07 b01-b04)', () => {
         expect(() => bgo({ group: ['cairn_b01', 'cairn_b01'] })).toThrow(/twice/);
         const site = [{ giver: { x: 1, z: 2 }, receiver: { x: 1, z: 3 } }];
         expect(() => bgo({ mode: 'on-request', sites: site, group: ['cairn_b01', 'cairn_b02'] })).toThrow(/standing mode/);
+    });
+});
+
+describe('legRan: a leg ran when it beat one tile a tick', () => {
+    test('Falador west bank to the oak tile (126 tiles) in 105 ticks ran; in 130 it is undecided; no position, no verdict', () => {
+        const bank = { x: 2946, z: 3368 };
+        const oak = { x: 2913, z: 3494 };
+        expect(legRan(oak, bank, 105)).toBe(true);
+        expect(legRan(oak, bank, 130)).toBeNull();
+        expect(legRan({ x: -1, z: -1 }, bank, 50)).toBeNull();
+        expect(legRan(oak, bank, 0)).toBeNull();
     });
 });
 
