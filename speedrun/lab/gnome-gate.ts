@@ -51,8 +51,9 @@ writeFileSync(envPath, envText.replace(/^CLIENT_URL=.*\n?/m, '').trimEnd() + `\n
 const cdpPort = Number(webPort) + 5;
 // A profile and config home of its own: executors that sandbox $HOME refuse Chrome's ~/.config.
 const chromeHome = mkdtempSync(join(tmpdir(), 'gnome-gate-chrome-'));
+// Headless runs use chrome-headless-shell: bgsrv-ub's full Chrome traps on start under the executor.
 const browser = await puppeteer.launch({
-    headless,
+    headless: headless ? 'shell' : false,
     defaultViewport: null,
     userDataDir: join(chromeHome, 'profile'),
     env: { ...process.env, XDG_CONFIG_HOME: chromeHome, XDG_CACHE_HOME: chromeHome },
