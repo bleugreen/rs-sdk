@@ -682,12 +682,15 @@ function doorsBehind(s: BotWorldState, at: { x: number; z: number }, route: Read
     return new Set(s.nearbyLocs.filter(l => DOORISH(l) && chebyshev(l, at) <= 2 && !crossable(l)).map(doorKey));
 }
 
-/** Open a door as part of the run: the server walks to it, then opens it. Ok once no closed door is on its tile. */
+/**
+ * Open a door as part of the run: the server walks to it, then opens it. Ok once a built scene lists
+ * no closed door on its tile (a mid-rebuild frame lists none at all).
+ */
 async function openDoorOnRoute(sdk: TravelSdk, trip: Trip, door: NearbyLoc): Promise<boolean> {
     trip.door(door, 'closed', currentTick(sdk));
     trip.clicks++;
     await sdk.sendInteractLoc(door.x, door.z, door.id, opIndex(door, /^open$/i)!);
-    const r = await waitUntil(sdk, s => !s.nearbyLocs.some(l => l.x === door.x && l.z === door.z && CLOSED_DOOR(l)), { maxTicks: Math.ceil(chebyshev(pos(sdk), door) / 2) + 6 });
+    const r = await waitUntil(sdk, s => sceneBuilt(s) && !s.nearbyLocs.some(l => l.x === door.x && l.z === door.z && CLOSED_DOOR(l)), { maxTicks: Math.ceil(chebyshev(pos(sdk), door) / 2) + 6 });
     return r.ok;
 }
 

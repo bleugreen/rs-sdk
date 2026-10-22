@@ -357,6 +357,28 @@ describe('runTo: the chained run', () => {
         expect(at(t.sdk)).toEqual({ x: 3240, z: 3200 });
     });
 
+    test('a mid-rebuild frame while the server walks to the door is not the door opening: one click per door', async () => {
+        // T12-13 and T22-23 on the browser: the frame after the interact lacked the door, the run went
+        // on as if it were open, then met it shut and clicked it again.
+        const sdk = world(3200, 3200, { nearbyLocs: [loc(1530, 'Door', 3206, 3200, ['Open'])] });
+        let openAt = Infinity;
+        simulateWalking(sdk, { blocked: x => sdk.state!.tick < openAt && x === 3206 });
+        const prev = sdk.onSend;
+        sdk.onSend = (a, f) => {
+            prev(a, f);
+            if (a.method === 'sendInteractLoc') openAt = f.state!.tick + 4;
+        };
+        const each = (s: BotWorldState): Partial<BotWorldState> => {
+            const t = s.tick + 1;
+            if (t === 101) return { sceneReady: false, nearbyLocs: [] };
+            return { sceneReady: true, nearbyLocs: [loc(t >= openAt ? 1531 : 1530, 'Door', 3206, 3200, [t >= openAt ? 'Close' : 'Open'])] };
+        };
+        const r = await drive(sdk, runTo(sdk as never, { x: 3220, z: 3200 }), 600, each);
+        expect(r.ok).toBe(true);
+        expect(sends(sdk, 'sendInteractLoc')).toEqual([[3206, 3200, 1530, 1]]);
+        expect(at(sdk)).toEqual({ x: 3220, z: 3200 });
+    });
+
     test('a door listed only on a frame published mid-rebuild is never opened from it', async () => {
         // The door reads closed only on rebuild frames (sceneReady false); every built frame lists none.
         const sdk = world(3200, 3200);
