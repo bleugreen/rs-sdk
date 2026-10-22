@@ -26,10 +26,15 @@
 #    fingerprint: the hiscores Time hover's template, a hash of the hiscores page's static chrome,
 #    a hash of /playercount's shape and the md5 of the served bot client. Each of these is null
 #    when its fetch or parse fails; report-only, never a skip. All fetches run side by side.
+#    Alongside them, host-gate-feed.ts (beside this script) reads the engine's login-free world
+#    feed for $GATE_FEED_SECONDS (default and most 60): the configured tick length and the
+#    engine's own tick intervals, also under `preLogin`. That read is the check's longest part,
+#    and the budget below holds 75 s for it on top of the probe's own.
 #    Under $GATE_MIN_PLAYERS (default 300) online, or no answer, means
 #    `skip: restart suspected (players N)`: a server refilling after a restart is not a reading
 #    of the run's conditions, and a login would only add to its rush.
-# 5. ~/gate-history/<UTC>.json: commit, status, verdict, on-time, catch-ups per minute, tick p50 and p90,
+# 5. ~/gate-history/<UTC>.json: commit, status, verdict, T (the tick length: the feed's configured
+#    value, else the gate's tick p50 rounded), on-time, catch-ups per minute, tick p50 and p90,
 #    players and Fly edge up front, the gate's own JSON under `gate`. A read that is not `ok`
 #    also keeps the last 40 lines of the probe's output under `outputTail` (account name and
 #    password redacted), since a Bun crash ends with its version banner, not its error.
@@ -44,14 +49,19 @@ sentinel=${GATE_SENTINEL:-$HOME/host-reserved.json}
 run_commit_file=${GATE_RUN_COMMIT_FILE:-$HOME/run-commit}
 bun=${BUN:-$HOME/.bun/bin/bun}
 min_players=${GATE_MIN_PLAYERS:-300}
-# the unit's hard stop is TimeoutStartSec=270; the probe gets what preparation left of this
-budget_end=$((SECONDS + 262))
+feed_seconds=${GATE_FEED_SECONDS:-60}
+[[ $feed_seconds =~ ^[1-9][0-9]?$ ]] && [ "$feed_seconds" -le 60 ] || feed_seconds=60
+feed_helper="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/host-gate-feed.ts"
+# the unit's hard stop is TimeoutStartSec=345; the probe gets what preparation left of this, after
+# the pre-login check's 75 s (the feed read under its own `timeout`)
+budget_end=$((SECONDS + 262 + 75))
 
 utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 commit=
 pre_players= pre_sid= pre_bn=
 pre_start_token= pre_start_utc= pre_uptime_min=
 pre_hover= pre_chrome= pre_pc_shape= pre_bundle_md5=
+pre_feed=
 mkdir -p "$history"
 record="$history/$(date -u -d "$utc" +%Y-%m-%dT%H%M%SZ).json"
 n=1
@@ -71,9 +81,12 @@ write_record() {
         --arg status "$status" --argjson exit "$code" --arg note "$note" --arg edge "$edge" --arg players "$players" \
         --arg tail "$tail" --arg pp "$pre_players" --arg psid "$pre_sid" --arg pbn "$pre_bn" \
         --arg pst "$pre_start_token" --arg psu "$pre_start_utc" --arg pup "$pre_uptime_min" \
-        --arg phh "$pre_hover" --arg phc "$pre_chrome" --arg pps "$pre_pc_shape" --arg pbm "$pre_bundle_md5" '
+        --arg phh "$pre_hover" --arg phc "$pre_chrome" --arg pps "$pre_pc_shape" --arg pbm "$pre_bundle_md5" \
+        --arg pfeed "$pre_feed" '
         $g[0] as $j |
         def orNull: if . == "" then null else . end;
+        def num: if type == "number" then . else null end;
+        ($pfeed | if . == "" then {} else (try fromjson catch {}) end | if type == "object" then . else {} end) as $f |
         # the p50 of tickSteadiness (speedrun/lib/hostgate-verdict.ts), else its nearest rank over the arrivals
         def p50ms: ($j.result.steadiness // {}) as $s |
             if ($s.p50 | type) == "number" and ($s.n // 1) > 0 then $s.p50
@@ -82,16 +95,21 @@ write_record() {
                 else ($iv[[($iv | length) - 1, (($iv | length) * 0.5 | floor)] | min] * 10 + 0.5 | floor) / 10 end end;
         {utc: $utc, endUtc: $end, host: $host, commit: (if $commit == "" then null else $commit end), status: $status, exit: $exit,
          note: (if $note == "" then null else $note end),
+         T: (($f.tickMsConfigured | num) // (p50ms | if . == null then null else (. + 0.5 | floor) end)),
          on: $j.verdict.on, onTime: $j.result.onTime, trials: $j.result.trials,
          catchUpsPerMinute: $j.result.steadiness.catchUpsPerMinute, tickP50Ms: p50ms, tickP90Ms: $j.result.steadiness.p90,
          players: ($j.vantage.players // (if $players == "" then null else ($players | tonumber) end)),
          edge: ($j.vantage.edge // (if $edge == "" then null else $edge end)),
          connectP50Ms: $j.vantage.connectP50, failures: $j.verdict.failures,
-         preLogin: (if ($pp + $psid + $pbn + $pst + $phh + $phc + $pps + $pbm) == "" then null
+         preLogin: (if ($pp + $psid + $pbn + $pst + $phh + $phc + $pps + $pbm + $pfeed) == "" then null
                     else {players: ($pp | orNull | if . == null then null else tonumber end),
                           flyMachine: ($psid | orNull), flyWorker: ($pbn | orNull),
                           serverStartUtc: ($psu | orNull), serverStartToken: ($pst | orNull),
                           serverUptimeMin: ($pup | orNull | if . == null then null else tonumber end),
+                          feedTick: ($f.feedTick | num),
+                          feedTickMs: ($f.feedTickMs | if type == "object" then {n, p50, p90, max, min} | map_values(num) else null end),
+                          feedTickGaps: ($f.feedTickGaps | num),
+                          tickMsConfigured: ($f.tickMsConfigured | num),
                           hiscoreHover: ($phh | orNull), hiscoreChromeSha: ($phc | orNull),
                           playercountShape: ($pps | orNull), botBundleMd5: ($pbm | orNull)} end),
          gate: $j}
@@ -229,7 +247,10 @@ trap 'rm -rf "$tmp"' EXIT
 case "$server" in
     ""|localhost*|127.*) ;;
     *)
-        # side by side, so the check waits no longer than the page and bundle fetched in turn
+        # side by side, so the check waits no longer than the feed read
+        (cd "$tmp" && timeout $((feed_seconds + 15)) "$bun" "$feed_helper" "$server" --seconds="$feed_seconds") \
+            > "$tmp/feed.out" 2>/dev/null &
+        feed_pid=$!
         curl -s --max-time 8 -H 'flyio-debug: doit' -D "$tmp/pc.h" -o "$tmp/pc.json" "https://$server/playercount" &
         pc_pid=$!
         curl -s -f --max-time 8 -o "$tmp/hiscores.html" "https://$server/hiscores" &
@@ -241,14 +262,16 @@ case "$server" in
             pre_bundle_md5=$(md5sum < "$tmp/bot.js" | cut -c1-32)
             [[ $pre_bundle_md5 =~ ^[0-9a-f]{32}$ ]] && [ -s "$tmp/bot.js" ] || pre_bundle_md5=
         fi
-        wait "$pc_pid" "$hs_pid"
+        wait "$pc_pid" "$hs_pid" "$feed_pid"
+        pre_feed=$(jq -c 'select(type == "object")' "$tmp/feed.out" 2>/dev/null | head -1)
         playercount_shape "$tmp/pc.json"
         hiscore_marks "$tmp/hiscores.html"
         pre_players=$(jq -r '.count // empty' "$tmp/pc.json" 2>/dev/null | grep -E '^[0-9]+$' || true)
         fly=$(sed -n 's/^flyio-debug:[[:space:]]*//Ip' "$tmp/pc.h" 2>/dev/null | tr -d '\r' | head -1)
         pre_sid=$(jq -r '.sid // empty' <<<"$fly" 2>/dev/null || true)
         pre_bn=$(jq -r '.bn // empty' <<<"$fly" 2>/dev/null || true)
-        echo "pre-login: ${pre_players:-?} online, fly machine ${pre_sid:-?}"
+        echo "pre-login: ${pre_players:-?} online, fly machine ${pre_sid:-?}," \
+            "$(jq -r '"tick \(.tickMsConfigured // "?") ms, feed p50 \(.feedTickMs.p50 // "?") ms"' <<<"${pre_feed:-null}" 2>/dev/null)"
         if [ -z "$pre_players" ]; then
             skip "restart suspected (playercount unavailable)"
         elif [ "$pre_players" -lt "$min_players" ]; then
