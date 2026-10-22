@@ -321,10 +321,12 @@ section 1).
 3. **Budget item: the rune axe** in H4: held at 13:10 (rs/41). Without it Woodcutting would cost
    +388 (adamant) or +836 (mithril) with the knife.
 4. **Budget:** the expected total plus the fallback deltas in force is under 35,916 (RUN-ORDER.md's
-   headline scenario table: in force, the forecast at 2026-10-23, +367 and **36,153.5** expected;
-   today's stock, the conservative row, +654 and 36,440.5, or +773 and 36,559.5 if its ~85 Mining-lap
-   bones go to the booth). **On fold-in 15's figures the budget condition fails**: the start waits on
-   a lever in RUN-ORDER.md section 7's go/no-go, fold-in 14's fast-dialogue move first.
+   headline scenario table: in force, the forecast at 2026-10-23, +367 and **35,274.5** expected;
+   today's stock, the conservative row, +654 and 35,561.5, or +773 and 35,680.5 if its ~85 Mining-lap
+   bones go to the booth). **On fold-in 14's figures, every quest at its burst figure, the budget
+   condition holds**; if burst dialogue fails on the night the quests revert to fixed (+879) and it
+   fails again (36,153.5), so each quest's browser-client burst acceptance (RUN-ORDER.md O51) is part
+   of it.
 5. **Held already:** 520 noted unfermented wines with the wine giver (rs/118); 70 sharks (rs/41, 10:10).
 6. **Fletching:** 570 rune arrowheads held; 1,485 mithril and 2,070 adamant arrowheads forecast
    complete by the 23rd (adamant ~09:30 UTC on the 22nd); the bronze, iron and steel stacks; 4,410

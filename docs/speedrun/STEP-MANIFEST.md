@@ -27,20 +27,25 @@ Gnome Village. IDs never move: a step that changes place keeps its ID.
 
 **Three tick figures** per entry, all on SCORED's clock (in-world ticks at 300 ms):
 
-- **Expected** is RUN-ORDER.md v2's knife-on expected for the step. For a quest that is the
-  fixed-client column with its failure budget (`quests/README.md` §3). For a knife skill it is the
+- **Expected** is RUN-ORDER.md v2's knife-on expected for the step. For a quest it is the **burst**
+  figure with its failure budget (fold-in 14; main's ruling, 2026-10-21 23:52 PDT, after rs/287's demo
+  validation on the lite client): the module's measured burst where one exists, else
+  `quests/README.md` §3's burst column, on the fixed figure's basis. The fixed figure is the step's
+  fallback if burst fails (`continueBurst` drops to `advance`, 1 tick a page), and each entry gives it. For a knife skill it is the
   **knife** figure at rs/97's in-page rates, the column RUN-ORDER.md's headline uses while the run
   gate holds; the plain loop is the step's fallback, and RUN-ORDER.md shows the knife-off total
   beside it.
-- **Best** is the fast path as measured on the direct path: the knife column, the burst-dialogue
-  column, the rs/91 kit, and so on. A quest's burst column is slightly conservative: rs/200 measured
+- **Best** is the fast path as measured on the direct path: the knife column, the rs/91 kit, and so
+  on; for a quest, a measured case faster than the burst expected where one exists (S13, S15, S26),
+  else the expected itself. A quest's burst column is slightly conservative: rs/200 measured
   its burst mode 1-2 ticks under the corrected `1 + ceil((k-1)/5)` rule (Cook's Assistant's start
   6-7 against 8, the Grand Tree's Narnode start net ~11 against 13; `speedrun/lab/quests/dialogue-burst.ts`,
   n = 3 each), because a run of k pages after an option or state page costs ceil(k/5) and a run
   followed by a state page +1, so each quest child's `dialogue: 'both'` measurement supersedes the
   column for its entry, with no re-price until then (the rule is in `quests/*.md`, rs/185's).
 - **Fallback** is what the step costs when its fast path fails: for a knife skill the plain loop
-  (the knife-off column). For a quest it is the stock column,
+  (the knife-off column). For a quest the Fallback column is the stock column (the fixed figure,
+  burst's own fallback, is in each entry and in RUN-ORDER.md's quest rows),
   because read-then-act through the SDK relay costs about the stock client's 2 ticks per page (a
   relay reaction lands a tick late about half the time, cairn://p/rs/86 via `skills/README.md`,
   open question 1).
@@ -672,7 +677,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   N 117, O 388, P 454); Q to Z has never been scripted or run as one route (rs/185). rs/201 writes it fresh, segment by
   segment, lab-proven 3 of 3, and sends measured ticks per segment to rs/158. It is the run date's
   critical path (RUN-ORDER.md O36).
-- **Ticks:** expected **4,764** (fixed client, with the failure budget: `quests/README.md` §3's 4,077, 3,897
+- **Ticks:** expected **4,413** (burst, fold-in 14; measured, inferred and estimated: §3's burst 3,726 with the fixed column's measured deltas below, +687; H to M 1,394 and O 365 inferred, the measured 1,466 and 388 less 72 and 23 of dialogue pages at the burst rule; N 117, P 454 and X 336 measured, no dialogue; 907 measured, ~2,762 inferred, ~744 estimated; RUN-ORDER.md S15). Fixed fallback **4,764** (fixed client, with the failure budget: `quests/README.md` §3's 4,077, 3,897
   success + ~180, with segments H to P as measured, **2,425 measured** end to end, lab, 300 ms, route
   levels, fixed dialogue, the kit floor; rs/201's ledger, cairn://p/rs/201, against rs/185's fixed
   column): H to M 1,466 against 1,114, +352 (chains 1,438 / 1,414 / 1,546; the jail yard's patrol
@@ -686,7 +691,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   m, n = 2) against fixed 311, +25 (rs/185, 23:52 PDT). The rest: ~1,397 inferred (the gnome half as played,
   the atoll segments outside H-P measured one at a time, the trade, the expected failures and the rope
   pin) and ~882 estimated (the atoll rows outside H-P that `quests/monkey_madness.md` tags R, T or I,
-  never measured); RUN-ORDER.md S15. Best **4,281** (burst success path 3,546, r21 recomputation, plus
+  never measured); RUN-ORDER.md S15. Best **4,300** (burst success path 3,546, r21 recomputation, plus
   the same expected failures, with H to M at its fastest chain, 1,414, +300, and N, O and P at their
   fastest, 116, 340 and 448, with the same -120 and +125, and X at its faster kill, 330, +19: +274). O's burst (~236-300, inferred, to be
   measured) is a lever on the best case only. Fallback **~5,298** (stock column with failures, +352 and
@@ -1252,7 +1257,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   scroll if it is held and cast again, a hard error only if it is not held; Prayer 43 (~94 from S07, so no prayer potions, `SUPPLIES.md` H7-H8); Varrock and Ardougne runes.
 - **Postconditions:** `%grandtree` 160 (ledger); Agility 75; Attack +18,400, Magic +2,150 (read,
   `quest_grandtree.rs2:199-201`); 5 QP; Gnome Air (glider) available.
-- **Ticks:** expected **1,493** (measured and inferred): rs/202's **3 of 3 full A-to-P runs** (lab,
+- **Ticks:** expected **1,389** (burst, fold-in 14; measured and inferred: rs/202's burst chain below, P at its expected 104). Fixed fallback **1,493** (measured and inferred): rs/202's **3 of 3 full A-to-P runs** (lab,
   300 ms, fixed dialogue, SCORED's S11b levels, the real `travel.ts`): **1,403 / 1,504 / 1,422, mean
   1,443** (m), with segment P at its expected **104** (inferred) in place of the runs' 54: P is the
   Daconia root search, 33 ticks in two runs (root 10, first in the search order) and 96 in one (root
@@ -1261,7 +1266,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   with his trapdoor walk and two objboxes), as RUN-ORDER.md O6 has it. Per segment (means): A 73, B
   178, C 158.7, D 41.7, E 51.7, F 21.3, G 38.7, H 47.7, I 141, J 157, K 130, L 62.3, M 52, N1 31, N2
   121.3, O 83.7, P 54 (the draw). B and C on the real `travel.ts`: 178 against 184 inferred, 158-159
-  against 141 (+13%). Best **~1,389** (m/i: rs/202's one burst A-to-P chain, 1,433, 0 failed bursts, every shape held, with P
+  against 141 (+13%). Best **~1,389**, the expected (m/i: rs/202's one burst A-to-P chain, 1,433, 0 failed bursts, every shape held, with P
   at 148 on a drawn root 14, re-based to P's expected 104; n = 1; per segment A 56, B 171, C 148, D 36,
   E 49, F 14, G 39, H 40, I 115, J 153, K 126, L 49, M 53, N1 28, N2 132, O 76, P 148; 1,403 m, the
   fastest fixed run, before). Fallback **~1,763** (stock, inferred: the stock column's 270 of extra
@@ -1546,7 +1551,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   Ardougne of them for the way in (T12-13).
 - **Postconditions:** quest complete (ledger), 750 Crafting, 1 QP, the right to buy the cannon (read,
   `nulodion.rs2:2` via rs/41).
-- **Ticks:** expected **1,130** (measured; rs/257, lab, 300 ms, from the arrival tile beside Lawgof (2571,3463), the full quest A-L, 3 runs a mode at each level set, all passed, 0 deaths; per-segment table in rs/257's message to rs/158, 21:58 PDT), best **999** (measured, the real-level burst
+- **Ticks:** expected **1,072** (burst, fold-in 14; measured: rs/257's real-level burst runs, mean 999, with the railings (B) at the measured-rate ~450 and the shed (I) at the fixed runs' 133, neither having dialogue, so the saving is the other ten segments' 58; RUN-ORDER.md S13). Fixed fallback **1,130** (measured; rs/257, lab, 300 ms, from the arrival tile beside Lawgof (2571,3463), the full quest A-L, 3 runs a mode at each level set, all passed, 0 deaths; per-segment table in rs/257's message to rs/158, 21:58 PDT), best **999** (measured, the real-level burst
   mean), fallback **~1,232** (inferred: the stock column's ~102 over the fixed on the measured figure). At SCORED's
   real levels (Crafting 1, Smithing 1, 42 HP, Magic 76): fixed 913 / 1,155 / 1,344 (mean 1,137), burst 973 / 1,077 /
   946 (mean 999); at 60/60, the old basis, fixed 758 and burst 731. The expected is the fixed mean with the
@@ -1595,9 +1600,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   the rune scimitar and helm are unobtainable, rs/124; no glory, rs/123).
 - **Postconditions:** quest complete; 18,650 Strength and Defence (read); 2 QP. Items out: armour can
   go back to a helper.
-- **Ticks:** expected **1,380, measured** (rs/258, lab, **a single pass per segment**, mithril scimitar, from the arrival tile;
-  main, 22:23 PDT; the three acceptance chains replace it when they land), best **1,364** (inferred: the pass
-  less the quest document's fixed-against-burst gap of 16, since the pass's dialogue mode is not recorded).
+- **Ticks:** expected **1,334, measured** (burst, fold-in 14: rs/258's three burst chains, 1,304 / 1,334 / 1,365, n = 3;
+  lab, lite client, browser acceptance pending (O51), mithril kit; rs/258 execution 1 via rs/185 and rs/158,
+  2026-10-22), best **1,304** (measured, the fastest chain; 1,364 inferred before, the single pass less the
+  quest document's fixed-against-burst gap of 16). Fixed fallback **1,380, measured** (rs/258, lab, **a single
+  pass per segment**, mithril scimitar, from the arrival tile; main, 22:23 PDT; one fixed chain has since
+  measured 1,324, n = 1, and the fixed figure stays until rs/258's three fixed runs land).
   Against the doc-priced 969 / 908 (`quests/README.md` §3's 941 / 925 less segment 1's 37, Scavvo +15-20 e,
   the adamant helm +5 e and fold-in 13's Elvarg in mithril +40 i, which this replaces):
 
@@ -1611,9 +1619,11 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
   The +72 no-glory walk to Oziach (i) and Melzar's -229 shortcut (withdrawn) are superseded by the
   measured legs. **Sensitivities:** the rune scimitar, an upside only (not held), priced from rs/258's
-  measurement with it, mithril the bound; a helper-supplied teleport for the walked legs (Oziach, Ned),
-  the first lever, priced on what SCORED can carry at that point (rs/258, rs/185). Melzar's Maze has no
-  shortcut. Fallback **~1,490** (inferred: the stock column's ~110 of extra dialogue over the fixed on
+  measurement with it, mithril the bound. The walked legs are no lever: no castable teleport closes D
+  (the guild to Oziach), E (Oziach, the Oracle and the trapdoor) or J (the dock to Ned), and the old 966
+  assumed a charged glory, which is unobtainable (rs/123; rs/258 via rs/158, 2026-10-22); rs/258's
+  execution 2 sends a per-leg glory saving, hypothetical while glories are unobtainable. The death
+  return, segment L, measured at 495 (rs/258). Melzar's Maze has no shortcut. Fallback **~1,490** (inferred: the stock column's ~110 of extra dialogue over the fixed on
   the measured figure).
 - **Scavvo's stock** (RUN-ORDER.md R22): one shared rune chainbody and one pair of platelegs
   (`champions_guild.inv`, r). SCORED buys them upstairs on arrival; **at stock 0 the module goes on
@@ -1657,8 +1667,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   rune counts in `pre_mm_fights.md` look too high, flagged by rs/81).
 - **Postconditions:** `%treequest` 9 (ledger); 11,450 Attack; Magic about 64; 2 QP; village spirit
   tree.
-- **Ticks:** expected **793** (fixed, r21, including the trade; warlord 133 measured by Fire Blast,
-  rs/56, n=2), best **739** (burst), fallback **902** (stock): `quests/README.md` §3 row's 896 / 842 /
+- **Ticks:** expected **739** (burst, fold-in 14), best **739** (the expected), fixed fallback **793**
+  (r21, including the trade; warlord 133 measured by Fire Blast, rs/56, n=2), fallback **902** (stock): `quests/README.md` §3 row's 896 / 842 /
   1,005 less its ~103 inferred to reach the maze from the Ardougne teleport, which T09-10 replaces.
 - **Primitives:** rs/94 `converse`, `act`, `combat` (spell fight); `continueBurst`; `travel.ts`;
   `trade.receiveFrom`.
@@ -1783,8 +1793,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   (`quests/README.md` §4 step 5).
 - **Postconditions:** quest complete; 12,175 Attack (Attack 99 with TGV and GT; read), 2,175
   Thieving (57); 2 QP.
-- **Ticks:** expected **571** (fixed, inferred from page counts; the chain 281 measured at 94/1/1,
-  rs/56, n=1), best **524** (burst, inferred), fallback **646** (stock, inferred): `quests/README.md`
+- **Ticks:** expected **524** (burst, fold-in 14, inferred; the chain 281 measured at 94/1/1, rs/56,
+  n=1), best **524** (the expected), fixed fallback **571** (inferred from page counts), fallback
+  **646** (stock, inferred): `quests/README.md`
   §3 row's 645 / 598 / 720 less the 74 inferred way in (`fight_arena.md` step 0b), which is T11-12's.
 - **Primitives:** rs/94 `combat` (the protect-prayer re-engage fix comes from this quest's lab),
   `converse`, `act`.
@@ -1806,7 +1817,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   snape grass, Camelot runes (`quests/README.md` §4 step 2); Magic 45 for Camelot.
 - **Postconditions:** `%elenaquest` ≥ 30 after the scroll (read, `teleport.rs2:22-38`); 2,425 Mining;
   1 QP.
-- **Ticks:** expected **491** (fixed, measured), best **435** (burst, inferred), fallback **608** (stock,
+- **Ticks:** expected **435** (burst, fold-in 14, inferred), best **435** (the expected), fixed fallback **491** (measured), fallback **608** (stock,
   measured): `quests/README.md` §3 row's 620 / 564 / 737 less the 129 inferred travel to Edmond
   (`plague_city.md` "Tick total", whose 608 is the stock figure without it), which is T07-08's.
 - **Primitives:** rs/94 `converse`, `act`; `continueBurst`; `travel.ts`.
@@ -1833,8 +1844,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   (`quests/README.md` §4 step 9).
 - **Postconditions:** Charge available (ledger); base Magic 80-81 (Kolodion pays 2,787-3,129 base,
   measured, rs/52).
-- **Ticks:** expected **425** (fixed, inferred upper; fight 331 measured at base 71 + potion, ~300-330
-  inferred at 76), best **418** (burst), fallback **448** (stock): `quests/README.md` §3 row's 581 /
+- **Ticks:** expected **418** (burst, fold-in 14, inferred upper; fight 331 measured at base 71 + potion,
+  ~300-330 inferred at 76), best **418** (the expected), fixed fallback **425**, fallback **448** (stock): `quests/README.md` §3 row's 581 /
   574 / 606 less the travel in, 156 in the fixed and burst columns and 158 in the stock column
   (`mage_arena.md` "Tick total"), which is T15-16's.
 - **Primitives:** rs/94 `combat` (spell fight, Protect from Magic), `converse`; `travel.ts` (the lever
@@ -1859,7 +1870,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   client; the browser webclient's handling of bridged doors is **unverified**. `LAB.md` notes that
   the lite client lists no locs on bridge-flagged levels.
 - **Postconditions:** 7,175 Fishing (74); 1 QP.
-- **Ticks:** expected **361** (fixed, measured), best **307** (burst, inferred), fallback **462**
+- **Ticks:** expected **307** (burst, fold-in 14, inferred), best **307** (the expected), fixed fallback **361** (measured), fallback **462**
   (stock, inferred): `quests/README.md` §3 row's 394 / 340 / 495 less its 33 of travel, the Ardougne
   teleport and the 29-tick run (`sea_slug.md` steps 1-2), which T18-19 replaces.
 - **Primitives:** rs/94 `converse`, `act` (loc by tile and id on bridged levels); `continueBurst`.
@@ -1875,7 +1886,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 
 - **Preconditions:** the quest's items (no step list yet in `quests/quest_points.md`; to be written).
 - **Postconditions:** 5 QP; SCORED in Varrock beside the Champions' Guild (`quests/README.md` §4 step 12).
-- **Ticks:** expected **241**, best **211**, fallback **301** (all inferred from page counts; no
+- **Ticks:** expected **211** (burst, fold-in 14), best **211**, fixed fallback **241**, fallback **301** (all inferred from page counts; no
   recorded runs; `quests/README.md` §3 row).
 - **Primitives and mode:** rs/94 `converse`, `act`; `continueBurst`; overlay-driven.
 - **Acceptance, local:** the first measured run sets the figure; pass within 15% of 241 (wider,
@@ -1890,7 +1901,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   untradeable, so SCORED dips them itself; read, `quest_druid.obj`).
 - **Postconditions:** Herblore 3+ (250 base, read, `quest_druid.rs2:3`), the only practical unlock for
   Herblore (measured, rs/37 via `quests/README.md` §1); 4 QP.
-- **Ticks:** expected **239**, best **220**, fallback **284** (inferred; `quests/README.md` §3 row).
+- **Ticks:** expected **220** (burst, fold-in 14), best **220**, fixed fallback **239**, fallback **284** (inferred; `quests/README.md` §3 row).
 - **Primitives and mode:** as Romeo & Juliet.
 - **Acceptance:** as Romeo & Juliet (15% local, 10% demo). The Taverley Dungeon leg is unchecked at
   low combat in the README, but by S24 SCORED is past Monkey Madness.
@@ -1904,7 +1915,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Preconditions:** a raw giant carp from the carp helper (tradeable, read, `fishing.obj:362`), a rod, 1
   bait, 5 coins, 3 Camelot casts, the first of them T19-20's (`quests/README.md` §4 step 11).
 - **Postconditions:** 2,437 Fishing (78 with Sea Slug); 1 QP.
-- **Ticks:** expected **181** (fixed, measured), best **158**, fallback **234** (inferred):
+- **Ticks:** expected **158** (burst, fold-in 14, inferred), best **158**, fixed fallback **181** (measured), fallback **234** (inferred):
   `quests/README.md` §3 row's 223 / 200 / 276 less steps 1-2's 42, the Camelot teleport 4 and the
   run east 36-40 (`fishing_contest.md`), which are T19-20's.
 - **Primitives and mode:** rs/94 `converse`, `act`; `trade.receiveFrom`; overlay-driven.
@@ -1966,7 +1977,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Preconditions:** 3 goblin mail, orange and blue dye (`quests/README.md` §4 step 12).
 - **Postconditions:** 200 Crafting (read, `quest_gobdip.rs2:62`); 5 QP. Its points are needed at the
   guild door, so it cannot share Dragon Slayer's later legs (same row).
-- **Ticks:** expected **61**, best **41**, fallback **102** (inferred): `quests/README.md` §3 row's
+- **Ticks:** expected **41** (burst, fold-in 14), best **41**, fixed fallback **61**, fallback **102** (inferred): `quests/README.md` §3 row's
   188 / 168 / 229 less the ~127 of travel in that standalone figure (`quests/quest_points.md`
   lines 147-150: the Falador teleport and the walk to the Rusty Anchor, then the bartender to Goblin
   Village), all of which T23-24 (90 m) and S24's inner legs (`L24a`, `L24b`) carry (entry 11). Until
@@ -2107,7 +2118,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   unstackables and the new law stack); SCORED has them only after dropping the 2 body runes on T01-02 and
   the 11 mind runes at S02's exit (entry 24), with 1 to spare (confirmed, 4 of 4 trials, `magic.md` section 9).
 - **Postconditions:** 1,300 Mining (49); 1 QP.
-- **Ticks:** expected **22** (fixed, measured), best **17** (burst, inferred), fallback **43** (stock,
+- **Ticks:** expected **17** (burst, fold-in 14, inferred), best **17** (the expected), fixed fallback **22** (measured), fallback **43** (stock,
   measured): `quests/README.md` §3 row's 65 / 60 / 90 less its travel, 43 fixed and burst and 47 stock
   (`dorics_quest.md` "Tick total"), which is T04-05's.
 - **Primitives and mode:** rs/94 `converse`; `continueBurst`; overlay-driven.
@@ -2123,7 +2134,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   run are T22-23 (entry 11; RUN-ORDER.md O6).
 - **Preconditions:** egg, bucket of milk, pot of flour (`quests/README.md` §4 step 12).
 - **Postconditions:** 300 Cooking (30), 1 QP (read, `quest_cook.rs2:89`).
-- **Ticks:** expected **17**, best **12**, fallback **31** (inferred): `quests/README.md` §3 row's 27 /
+- **Ticks:** expected **12** (burst, fold-in 14), best **12**, fixed fallback **17**, fallback **31** (inferred): `quests/README.md` §3 row's 27 /
   22 / 41 less its ~10 of travel, the Lumbridge teleport 4 and 12 tiles (`quests/quest_points.md`),
   which T22-23 carries. The
   quest's opening dialogue was measured in `quests/primitives.md` §1 (9 ticks at the floor for the
