@@ -24,6 +24,11 @@ that cost earlier sessions hours.
   directory; on Linux executors that exhausts file descriptors and Bun panics
   (`us_create_timer: returned null: 24`, EMFILE) right after "World ready".
 - Concurrent scripts need distinct log paths; name them per bot.
+- **A lab driven over ssh outlives its batch.** If a batch ssh's into another
+  host instead of being placed on that executor, a batch that times out kills
+  only the local ssh client and the remote job keeps running. Start long remote
+  labs in a named tmux server (`tmux -L <name>`) with output tee'd to a file,
+  read the file, and kill the session when you are done.
 
 ## Staff cheats
 
@@ -77,6 +82,13 @@ regularly hides the damage. Before measuring anywhere with aggressive NPCs,
 
 - **A click sent during a `p_delay` or a stun is dropped** with no message.
   Wait the delay out before re-sending.
+- **A queued run survives a `p_delay`; a move click in the cast's tick kills it.**
+  The walk queue keeps stepping while the player is delayed, so one run click plus
+  an enchant every 3 ticks covers the same tiles in the same ticks as the run
+  alone, and a level-up dialog doesn't stop it. A move click sent in the same tick
+  as a cast stops the run completely. Click the run first, cast on later ticks,
+  and re-click only on a free tick. Scripts that call `p_stopaction` (bury) do
+  stop the walk (`docs/speedrun/research/travel-and-overhead.md`).
 - Quest scenes often `if_close; p_delay(n)` mid-dialogue; a dialogue runner
   must not treat a short close as the end of the conversation.
 - `bot.walkTo` aimed just in front of a door may open it and walk through.
