@@ -29,11 +29,10 @@
 import type { BotSDK } from '../../../sdk/index';
 import type { BotWorldState } from '../../../sdk/types';
 import { wield } from '../../lib/act';
-import { castingStyle } from '../../lib/combat';
 import { pageText, resetDialogueMemory } from '../../lib/dialogue';
 import { closeSession, openSession, relog, type Session } from '../../lib/session';
 import { TickLog, type TickRow } from '../../lib/ticks';
-import { waitTicks, waitUntil } from '../../lib/wait';
+import { waitTicks } from '../../lib/wait';
 import { XP_RATE } from '../../lib/xp';
 import { configId } from '../../lib/world';
 import type { DialogueMode, QuestOptions } from '../../quests/segments';
@@ -247,12 +246,6 @@ export interface LabRunOptions {
     dialogue?: DialogueMode;
     /** Print the player every N ticks (0: off). */
     trace?: number;
-    /**
-     * The quest fights' casting style (lib/combat.ts castingStyle) for these runs. Set, each run
-     * also starts on the weapon's first style, as the route arrives, so a defensive run's style
-     * click is inside its figures.
-     */
-    casting?: 'normal' | 'defensive';
 }
 
 /** Skills whose base xp gained each run's RESULT line carries. */
@@ -280,7 +273,6 @@ export async function runLabQuest<O extends QuestOptions>(session: Session | Run
     const fixture = quest.fixtures.find(f => f.letter === letter);
     if (!fixture) throw new Error(`${quest.title}: no fixture for segment ${letter}`);
     const records: RunRecord[] = [];
-    if (o.casting) castingStyle.style = o.casting;
     for (let run = 0; run < (o.runs ?? 1); run++) {
         if (run > 0) chosen = build();
         // The dialogue layer remembers the last page it acted on per sdk: run N's last page must not
@@ -290,11 +282,6 @@ export async function runLabQuest<O extends QuestOptions>(session: Session | Run
         if (quest.applyFixture) await quest.applyFixture(s, fixture);
         else await applyFixture(s, fixture, quest.staging);
         if (quest.prepare) await quest.prepare(s, fixture);
-        if (o.casting) {
-            void session.sdk.sendSetCombatStyle(0);
-            const reset = await waitUntil(session.sdk, st => (st.combatStyle?.currentStyle ?? 0) === 0, { maxTicks: 5 });
-            if (!reset.ok) throw new Error(`${quest.title}: the combat style did not reset to 0 before run ${run}`);
-        }
         const xp0 = skillXps(session.sdk.getState());
         const log = TickLog.memory();
         const untrace = o.trace ? trace(session.sdk, o.trace) : () => undefined;
@@ -312,7 +299,6 @@ export async function runLabQuest<O extends QuestOptions>(session: Session | Run
             run, dialogue, ok: !error, ...(error ? { error } : {}),
             ticks: Object.fromEntries(log.rows.filter(isStepRow).map(r => [r.step, r.ok ? r.ticks : `fail@${r.ticks}`])),
             boundary: log.rows.filter(r => !r.kind && r.step === BOUNDARY_STEP).reduce((a, r) => a + r.ticks, 0),
-            ...(o.casting ? { casting: o.casting } : {}),
             xpBase: baseXpGained(xp0, skillXps(session.sdk.getState())),
         });
     }
@@ -342,8 +328,6 @@ export function trace(sdk: Pick<BotSDK, 'onStateUpdate'>, every: number): () => 
 
 /** The command line for a quest's lab file: `<bot> --from --until --runs --dialogue --trace`. */
 export function labArgs(): Omit<LabRunOptions, 'dialogue'> & { dialogue: DialogueMode | 'both'; launch: boolean; client: 'lite' | 'browser' } {
-    const casting = arg('casting', '');
-    if (casting !== '' && casting !== 'normal' && casting !== 'defensive') throw new Error(`--casting=${casting}: want normal or defensive`);
     const dialogue = arg('dialogue', 'fixed');
     if (dialogue !== 'fixed' && dialogue !== 'burst' && dialogue !== 'both') throw new Error(`--dialogue=${dialogue}: want fixed, burst or both`);
     const from = arg('from', '');
@@ -351,10 +335,7 @@ export function labArgs(): Omit<LabRunOptions, 'dialogue'> & { dialogue: Dialogu
     const until = arg('until', from);
     const client = arg('client', 'lite');
     if (client !== 'lite' && client !== 'browser') throw new Error(`--client=${client}: want lite or browser`);
-    return {
-        from, until, runs: Number(arg('runs', '1')), dialogue, trace: Number(arg('trace', '0')), launch: process.argv.includes('--launch') || client === 'browser', client,
-        ...(casting ? { casting } : {}),
-    };
+    return { from, until, runs: Number(arg('runs', '1')), dialogue, trace: Number(arg('trace', '0')), launch: process.argv.includes('--launch') || client === 'browser', client };
 }
 
 /** Open the lab bot's session, run, print the table(s) and a RESULT line, close. */
