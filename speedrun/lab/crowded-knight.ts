@@ -212,10 +212,17 @@ for (const [k, v] of [['defence', 89], ['hitpoints', HP], ['thieving', THIEVING]
 if (!(await tele(sdk, ANCHOR.x, ANCHOR.z))) throw new Error('tele to the knights failed');
 
 const bots: CrowdBot[] = [];
-const botNames = Array.from({ length: CROWD }, (_, i) => `${PREFIX}b${String(i + 1).padStart(2, '0')}`);
 let botsIn = false;
+let round = 0;
 
+/**
+ * Each login round takes fresh names: a name logged in again in this process first reads the gateway's
+ * last published state from its previous session, whose tick is ahead of the new client's.
+ */
 async function loginBots(): Promise<void> {
+    round++;
+    bots.length = 0;
+    const botNames = Array.from({ length: CROWD }, (_, i) => `${PREFIX}r${round}b${String(i + 1).padStart(2, '0')}`);
     for (const n of botNames) ensureBotEnv(n);
     for (let i = 0; i < botNames.length; i += LOGIN_BATCH) {
         const batch = await Promise.all(botNames.slice(i, i + LOGIN_BATCH).map(async n => {
@@ -229,15 +236,21 @@ async function loginBots(): Promise<void> {
     botsIn = true;
 }
 
-async function logoutBots(): Promise<Array<{ bot: string; ok: boolean; reason?: string }>> {
+/** Log every bot out, retrying: with 40 at once, some were still in the world at logoutClean's 24 s bound. */
+async function logoutBots(): Promise<{ ok: number; failed: Array<{ bot: string; reason?: string }>; attempts: number }> {
+    for (const b of bots) b.knight = null;
     const out = await Promise.all(bots.map(async b => {
-        b.knight = null;
-        const r = await logoutClean(b.session).catch(e => ({ ok: false, reason: String(e) }));
+        let r: { ok: boolean; reason?: string } = { ok: false };
+        let attempts = 0;
+        while (!r.ok && attempts < 3 && b.session.sdk.getState()?.inGame) {
+            attempts++;
+            r = await logoutClean(b.session, { timeoutMs: 40_000 }).catch(e => ({ ok: false, reason: String(e) }));
+        }
         await closeSession(b.session);
-        return { bot: b.session.name, ok: r.ok, ...('reason' in r && r.reason ? { reason: r.reason } : {}) };
+        return { bot: b.session.name, ok: r.ok || !b.session.sdk.getState()?.inGame, attempts, ...(r.reason ? { reason: r.reason } : {}) };
     }));
     botsIn = false;
-    return out;
+    return { ok: out.filter(o => o.ok).length, failed: out.filter(o => !o.ok).map(o => ({ bot: o.bot, ...(o.reason ? { reason: o.reason } : {}) })), attempts: Math.max(0, ...out.map(o => o.attempts)) };
 }
 
 async function teleBots(x: number, z: number, spread: boolean): Promise<number> {
@@ -316,6 +329,9 @@ async function phase(name: string): Promise<void> {
     }
     if (kind === 'base') knightIndex = null;
     prep.botRssMb = rss();
+    // let a login or logout burst's host load pass before measuring
+    await waitTicks(sdk, 15);
+    prep.load = load();
 
     const segment = async <T>(label: string, fn: () => Promise<T>) => {
         const l0 = statsLines().length;
