@@ -361,7 +361,7 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 On run night steps 0 to 5 run on **both** machines, each in its own ssh form ("Reaching them"), so
 that either can take the run when step 5a chooses: the same RUN_COMMIT, reservation, bring-up,
 opening helpers, recording and live view (tenet 17). Where a step differs on the twin, it says so
-in a **Twin:** line. Steps 6's gate runs on both inside step 5a; steps 7 and 8 run on the chosen
+in a **Twin:** line. Step 6's gate runs on both inside step 5a; steps 7 and 8 run on the chosen
 machine only; step 9 tears down both.
 
 ## 0. Prepare the checkout (once per run commit)
@@ -715,11 +715,59 @@ local port 8090). The tunnel is one ssh session: if it drops, the view stops and
 the machine does not (i). The twin's recording beside its gate tab wrote 29.91 fps with 0 dropped
 (m, rs/149, read 5).
 
+## 5a. Choose the machine: the gate on both
+
+SCORED's machine is chosen by the gate immediately before the start, not named in advance (tenet
+17). Both machines have been through steps 0-5: reserved, on RUN_COMMIT, the tab stack up, the
+opening roster (S06's 7 air-altar givers) logged in on each (step 4), the recording and the live view
+running, RDP disconnected. Rehearsals are paused on both: rs/147 grants none that would still run
+when the run's window opens, and an attempt in flight logs out at its next step boundary when the
+reservation appears (rs/147's HOST.md, "Run-capable twin").
+
+1. **Gate both in the same minute.** Run step 6 on both machines at once: the quiesce check, then
+   (a)-(c) started in the same minute on both (rs/96's CLI, the same flags), then (d) on both, each
+   on its own gate account. Same-minute reads compare the two delivery paths on one server minute: on
+   2026-10-21 the server's own tick distribution was the same on both machines to the millisecond
+   while one address's path held ticks (m, the host thread's pairs, 21:00-23:00Z). If they cannot
+   overlap (one ssh line down, say), run them back to back, the run host first, and record that they
+   did not share a minute.
+2. **Choose.**
+   - **One passes:** start on it.
+   - **Both pass:** start on **the run host**, the default: its new address reads clean ("Measured:
+     the new address and same-minute pairs") and the run host stays preferred by its documentation
+     (main, 15:54 PDT; under tenet 17 that is only a default). **The tiebreak:** start on the twin
+     instead only when its read is clearly better in that minute, meaning the run host passed at the
+     margin ((a) 58 or 59 of 60, or (c) exactly 2 catch-ups a minute, or a (d) sample under 60 loops
+     a second) while the twin read (a) 60 of 60 and (c) at most 1.
+   - **Neither passes:** no start. RUN-ORDER.md section 1's rule applies to both: the knife stays
+     off on a failed gate, and the start waits for a passing read (re-measure both; the gate history
+     on both shows when).
+3. **Record both reads**: for each machine the minute, (a) on-time of 60, (b) p90, (c) catch-ups a
+   minute, (d) lowest / median / highest p10 and the players online, with the choice and the reason,
+   in the run's record and, after the run, in "Measured" below. Each machine keeps its own outputs
+   (`~/rs-run/gate-loops.jsonl` and the CLI's output) until teardown.
+4. **On the chosen machine:** the rest of the roster logs in through rs/117's launcher before SCORED
+   (22 body-altar, 4 bone and 2 trade givers; 22 logins took 190 s through the launcher's limiter, m,
+   rs/214 on the run host, 00:35-00:39Z on 2026-10-22), then step 7's login count, then SCORED.
+5. **On the other machine,** before SCORED's first login: its 7 opening givers log out cleanly
+   (HELPERS.md teardown) and its tab stack and recording stop (step 9's commands there). Its
+   reservation stays live and **rehearsals there stay stopped until the run's teardown** (tenet 17:
+   rehearsals pause during the gate and the run). rs/147's HOST.md (the host thread's text, 609fe89e)
+   lets them resume on the machine not chosen right after the choice; until that is reconciled this
+   page follows tenet 17 and the mission's brief (RUN-ORDER.md O42).
+
+**No second gate mid-run.** SCORED's logged-in ticks keep counting and the recording, the live view
+and the helpers are on the chosen machine, so the run never stops to re-measure or to change
+machine. The held-tick monitor (step 7) is how a path going bad mid-run would be seen. The evidence
+so far: the hold of 2026-10-21 was a persistent property of one address over about 5 hours; no path
+has yet been seen going bad mid-run (the host thread, 16:15 PDT).
+
 ## 6. Quiesce check and the gate
 
 **Quiesce.** Nothing runs on the machine but the session's desktop, the `run` tmux stack (gateway,
 page server, Chrome, recording), rs/117's launcher with its lite runners and roles, and system
-daemons. The `run` stack includes the live view (step 5). The drained Cairn executor's daemon (`cairn-exec`) was idle at 0.3% of a core (m, 16:15
+daemons. The `run` stack includes the live view (step 5). On the twin, no rehearsal process, slot
+file or Xvfb either (the leftover check, "Twin:"). The drained Cairn executor's daemon (`cairn-exec`) was idle at 0.3% of a core (m, 16:15
 UTC); whether it stays up during the run is main's call. No second Chrome, no other `bun`, no other
 ffmpeg, and no tmux server but `run` (the leftover check, "Rules for every launch", lists them all).
 The gate history timer is quiet: step 0's reservation makes every firing skip, so no
@@ -729,8 +777,10 @@ The gate history timer is quiet: step 0's reservation makes every firing skip, s
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'uptime; ls /tmp/tmux-$(id -u)/; ps -eo pid,pcpu,etime,args --sort=-pcpu | cut -c1-160 | head -20; pgrep -c -f "chrome --type=gpu-process" | sed "s/^/Chrome GPU processes (expect 1): /"'
 ```
 
-**The gate** is measured here, on this machine, right before the run, at the real player count, and
-**on a gate account, never SCORED**: SCORED's playtime starts at its first login, which is step 7.
+**The gate** is measured on **each** candidate machine inside step 5a, right before the run, at the
+real player count, and **on a gate account, never SCORED**, each machine its own (step 0): SCORED's
+playtime starts at its first login, which is step 7. The opening roster is logged in on the machine
+being gated (step 4).
 Measure it in the run's configuration: RDP disconnected, with the recording and the live view running.
 The conditions and what to do on a failure are in RUN-ORDER.md section 1 and tenet 12.
 
@@ -782,23 +832,26 @@ programs run, which is what the in-run monitor reads.
 
 **Only once `RUN_COMMIT` includes #120** (rs/138, on main since `96fc462a`; "Credentials").
 
-**The login cap, a pre-start condition** (main, 15:35 PDT; a tenet is proposed). Before SCORED logs
-in, count our simultaneous demo logins **summed across every host**: rs/117's launcher on this host
-(its `helpersReady` roster), the bbs fleet (rs/41 reports its count to the operator; no command on
-this page reads it), the ambassador's host (rs/58), and any other host with one of our accounts in
+**The login cap, a pre-start condition** (cairn://p/rs/tenets/16, approved 17:43 PDT; main's working
+cap). Before SCORED logs in, count our simultaneous demo logins **summed across both Ashburn machines
+and every other host**: rs/117's launcher on the chosen machine (its `helpersReady` roster); on the
+other machine, anything still logged in, which should be nothing once its 7 opening givers are out,
+its rehearsals paused and its timer skipping under the reservation, and any rehearsal account there
+that did not log out counts; the bbs fleet (rs/41 reports its count to the operator; no command on
+this page reads it); the ambassador's host (rs/58); and any other host with one of our accounts in
 the world. With SCORED's 1 the total must be **at most 80**, the working cap: 100 simultaneous
 connections per IP is the server operator's ban threshold, and spreading accounts across IPs to
-evade it is what gets accounts banned. **Fleet accounts not needed during the run are logged out**
+evade it is what gets accounts banned. The gate minute holds the 7 opening givers and a gate
+account on each machine, 16 on the two (step 5a). **Fleet accounts not needed during the run are logged out**
 before the count; gathering is finished by run day. The gate account is already out (step 6).
 SUPPLIES.md, "Peak concurrent logins", has the count by run phase: on the body-altar plan (22 givers,
 rs/163) the start is ~90 with the gathering fleet's ~53 in and 37 without it, so **logging the
-unneeded fleet out first is mandatory**. When S21's givers log in (at the start or later, on the
-running machine) is open (RUN-ORDER.md O38). Do not log
-SCORED in over the cap.
+unneeded fleet out first is mandatory**. S21's givers log in before SCORED, on the chosen machine
+(step 4; RUN-ORDER.md O38, settled). Do not log SCORED in over the cap.
 
-With the helpers in (step 4), the recording running (step 5), the gate passed (step 6) and the
-login count at or under 80, launch
-Chrome as in step 3 with `ENV=$SCORED_ENV` and `T=9h`. Then log it in with step 3's tab-login
+On the chosen machine, with the machine chosen (step 5a), the full roster in (step 4), the
+recording running (step 5) and the login count at or under 80, put `$SCORED_ENV` on it (step 0) and
+launch Chrome as in step 3 with `ENV=$SCORED_ENV` and `T=9h`. Then log it in with step 3's tab-login
 command, with the same `ENV`; it exits 0 once SCORED is in game. run.ts checks that step 0's host
 reservation is live and the run's own, and refuses to start otherwise. From here the run scripts drive the tab through the gateway on
 7780 (RUN-ORDER.md, STEP-MANIFEST.md). Nobody touches the window. Relaunches during the run go the
@@ -808,9 +861,49 @@ With rs/174's fix on `RUN_COMMIT` either path costs ~2 ticks on SCORED's clock (
 login + 1; m, rs/174 on the twin against the demo); without it a navigated relog passes ~19-20
 ticks before the bot layer sees state (m, rs/164 and rs/174; RUN-ORDER.md section 4).
 
+**Watching SCORED's own tick stream during the run** (rs/210, on main as #176, 834f376b, inside the
+run-commit floor). The start gate reads each candidate's path once. During the run, the step runner
+(`runSteps` or `runResumable`) runs a passive tick-cadence monitor on SCORED's connection from its
+first in-world tick. It acts on nothing. Once a minute it appends a `kind: "tickmon"` row to the run
+log (`speedrun/runs/<runId>.jsonl`) and prints the same line, tagged `TICKMON`, on the run's stdout:
+
+```
+TICKMON minute=12 at=2026-10-22T01:12:00Z secs=60 ticks=200 glued=0 late=0 p50=0 p90=2 max=7 gaps=0 lateMs=120
+```
+
+Read it on the chosen machine with `grep -o 'TICKMON[^"]*' ~/rs-sdk/speedrun/runs/<runId>.jsonl | tail -5`
+(or follow the run's stdout).
+
+- `ticks`: tick arrivals in the minute, 200 at the demo's 300 ms (`fly.toml:26`, `NODE_TICKRATE=300`).
+  Fewer means the tab stopped publishing for part of the minute: a relog, or a stall the watchdog
+  will see.
+- `glued`: arrivals under 5 ms after the previous one. These are ticks held on the path and
+  released together.
+- `late`: arrivals more than `lateMs` (120 ms) after the tick's expected point on the cadence. The
+  cadence follows each on-time arrival, so slow clock drift does not count. A tick glued behind a
+  held one is not counted twice. A lasting shift of the cadence (a server stall beyond the engine's
+  two-tick catch-up) costs two late ticks, after which the cadence follows the shift.
+- `p50`/`p90`/`max`: each arrival's offset from its expected point, in ms.
+- `gaps`: the tick counter went back (a relog) or jumped more than 17 ticks; the cadence restarts
+  there.
+
+Times come from the loopback gateway's receipt of the tab's publication, so this is the tab's tick
+stream as the run scripts see it.
+
+What to expect (m, bgsrv-mac, local engine at `NODE_TICKRATE=300`, rs/210): a clean path reads
+`glued=0 late=0` with p90 at most 3 ms and max at most 21 ms in every minute (5 minutes, 1,000
+ticks). With a proxy holding 8% of server-to-client chunks for 150-350 ms, it read late 16-22 and
+glued 2-12 per minute (86 late and 26 glued over 1,000 ticks). On 2026-10-21 the run host's old
+address took 5-13% of ticks late (rs/83), which is 10-26 late per minute at the run's 200 ticks a
+minute (i).
+
+It is a reading, not a gate: nothing stops on it. A run of minutes with double-digit `late` on
+SCORED means the path went bad mid-run; tell main (and rs/158 for the record). `SPEEDRUN_TICKMON=off`
+in the run's environment turns it off, and `SPEEDRUN_TICKMON_LATE_MS` changes the threshold.
+
 ## 8. Stop the recording and pull it
 
-After SCORED's final clean logout (the run script's `logoutClean`), and only once that logout is
+On the chosen machine (in its ssh form). After SCORED's final clean logout (the run script's `logoutClean`), and only once that logout is
 confirmed, stop ffmpeg with `q`, so it finishes the file, and check what it wrote. The final logout
 is what writes SCORED's hiscore row (RUN-ORDER.md section 4, "Final logout"). With `RUN_COMMIT` at
 or after `c2d9eada` ("Credentials"), `logoutClean` confirms the logout from the page's own in-game
@@ -843,7 +936,9 @@ mkdir -p ~/Movies/rs-run && scp -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-
 
 ## 9. Teardown
 
-Teardown stops everything explicitly; the bounds are only the backstop. Stop rs/117's helpers as
+On both machines: the chosen one after step 8, the other right after step 5a's choice for its
+opening givers and tab stack (its reservation stays until the run is over). Teardown stops
+everything explicitly; the bounds are only the backstop. Stop rs/117's helpers as
 HELPERS.md says (clean logouts first). Then stop the tab's stack. The recording must already be
 stopped (step 8), since killing tmux under ffmpeg cuts the file short:
 
@@ -856,13 +951,16 @@ it. Without them the check always found that shell and never printed `tab stack 
 UTC).
 
 Then run the leftover check ("Rules for every launch"). After a rehearsal, remove its host
-reservation; after the run, run.ts removes the run's. The session itself stays: nobody logs out of
+reservation; after the run, run.ts removes the run's on the chosen machine, and the operator removes
+the run's reservation on the other machine with the removal command (`O=run`), after which rehearsals
+there may resume. On the twin, if it was not chosen, `~/rs-sdk` then goes back to main for the
+attempts (step 0, "Twin:"). The session itself stays: nobody logs out of
 XFCE. The recording stays on the host until its copy on the Mac is checked.
 
-## Measured: gate (d) on this host, 2026-10-21, at the old address
+## Measured: gate (d) on the run host, 2026-10-21, at the old address
 
-**Taken at the old address, 54.242.152.95**, before the move to 3.209.186.185 ("The host"), so
-these figures do not stand for the new address until gate (d) is measured there.
+**Taken at the old address, 54.242.152.95** (released), before the move to 3.209.186.185 ("The two
+machines"), so these figures do not stand for the new address until gate (d) is measured there.
 
 **How it was taken.** On this host (c7i.2xlarge, 8 vCPU, no GPU), 16:28-16:52 UTC (09:28-09:52
 PDT), with the demo at about 1,690-1,700 online (the page's footer, m). Chrome 156.0.8078.47 was
@@ -905,10 +1003,10 @@ top-left 1920x1080) had Chrome at about 1.45 cores and ffmpeg at 1.7, against 0.
 The scene differed, so it is not a clean comparison, but it agrees with fixing the session at
 1920x1080 (m for the figures, i for the reading).
 
-### Corroborating: the rehearsal twin's gate read of record (not this host)
+### The twin's gate read of record
 
-Taken on **rs-ashburn-rehearsal** (i-0f690e919614af7b2), rs/147's twin of this host with the same
-AMI, instance type and subnet, **not on this host**. It is the first full pass in the run-night
+Taken on **rs-ashburn-rehearsal** (i-0f690e919614af7b2), the twin, with the run host's AMI,
+instance type and subnet. It is the first full pass in the run-night
 configuration: RDP disconnected, recording on, xrdp display :10, throwaway account cairn_twin
 (m, 2026-10-21 20:22-20:29 UTC; rs/149, `docs/speedrun/rehearsals/HOST.md` on rs/147's branch,
 via rs/147, 13:46 PDT).
@@ -924,6 +1022,26 @@ via rs/147, 13:46 PDT).
 | Host | ~32% busy |
 | Online | 1,589 |
 
-All m. It shows that the run-night configuration passes all four conditions on identical hardware
-in a calm minute. It does not replace this host's own reads (step 6 and rs/140's gate history),
-and the run is never played on the twin (tenet 13).
+All m. It shows that the run-night configuration passes all four conditions on the twin in a calm
+minute. Under tenet 17 the twin is a run candidate, so this is its own baseline; it replaces neither
+machine's gate read before the start (step 5a) nor the gate history on either (tenet 13 kept the
+twin for rehearsals only; tenet 17 narrowed it).
+
+## Measured: the new address and same-minute pairs
+
+(a) on-time of 60 and (c) catch-ups a minute from rs/96's direct CLI, the same flags on both
+machines, read in the same second (the run host's timer read against a twin read started at the
+same second; m, as cited).
+
+| UTC (2026-10-21/22) | Run host address | Run host (a), (c), p90 | Twin (a), (c), p90 | Online | Source |
+|---|---|---|---|---|---|
+| 21:00, 21:30, 22:00, 22:30, 23:00 (five pairs) | 54.242.152.95 (old) | 51-58 of 60, 4.98-15.0 a minute: **fail in all five** | 59-60 of 60, 0-1 a minute: **pass in all five** | 1,502-1,627 | m: the host thread, 15:47 and 16:12 PDT; rs/83 |
+| 23:30 | 3.209.186.185 | 60, 1.0, 382.5 ms: **pass** | 60, 1.0, 382.7 ms: **pass** | 1,545 | m: the host thread, 16:33 PDT: aligned tick by tick, 0 ticks late by more than 40 ms, 0 glued, against 18 late and 7 glued at 23:00 |
+| 00:00 | 3.209.186.185 | 60, 1.0, 388.6 ms: **pass** | 60, 1.0, 388.0 ms: **pass** | 1,670 | m: the host thread, 17:03 PDT: aligned to 0.4 ms, 0 late or glued |
+| 00:30 (unpaired: the twin was in a rehearsal) | 3.209.186.185 | 60, 0, 515 ms: **pass** on (a) and (c) | - | 1,731 | m: rs/83, 17:33 PDT |
+| Gate (d) at the new address, either machine with the opening roster | 3.209.186.185 | **pending** (no (d) read since the move; the giver-load check's tab side is the next one, rs/host) | **pending** | | |
+| rs/170's raw pair files (`tickArrivalsMs`) | | | `docs/speedrun/rehearsals/twin-pairs/` on `agent/rs-170-builder-0` (rs/170 is closed): **pending** their merge, for a tick-by-tick table here | | |
+
+The raw arrivals of every pair are kept on the run host (`~/host-captures`) and on bgsrv-mac
+(`~/hostpair`) by the host thread. Two clean pairs and one clean single read at the new address make
+it "consistent with fixed"; the series continues on both timers (rs/83, 16:32 PDT).
