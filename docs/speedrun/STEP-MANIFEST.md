@@ -207,7 +207,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 29 | 25 | Goblin Diplomacy | `speedrun/quests/goblin-diplomacy.ts` | S24 | 41 | 41 | 102 | ~61 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
 | 30 | 30 | Doric's Quest | `speedrun/quests/dorics-quest.ts` | S05 | 17 | 17 | 43 | ~26 | overlay | `quest-smallskill-doric.ts` | building (rs/185, held: tenet 15) |
 | 31 | 31 | Cook's Assistant | `speedrun/quests/cooks-assistant.ts` | S23 | 12 | 12 | 31 | ~19 | overlay | `quest-primitives-dialogue.ts` | building (rs/185, held: tenet 15) |
-| 32 | 33 | Hand-off H1 | `speedrun/runner/handoff.ts` | S01 | 8 | 8 | ~10 | ~2 | overlay | `lib/trade.ts`, `mule.ts` [rs/41] | building (rs/186, held: tenet 15) |
+| 32 | 33 | Hand-offs (H1 and every H row) | `speedrun/runner/handoff.ts` | S01 | 8 | 8 | ~10 | ~2 | overlay | `lib/trade.ts`, `mule.ts` [rs/41] | lab-accepted (H1 5, H13 out and back 6, lite and browser, rs/320) |
 | 33 | 34 | Tutorial skip | `speedrun/skills/start.ts` | S00 | 8 (done) | 8 | - | - | overlay | done: SCORED claimed and parked at 8 ticks; the skip for rehearsal and gate accounts measured 3 (lab) and 4 (demo) | on main, c2d9eada (#146) |
 | 34 | 32 | Fletching | `speedrun/skills/fletching.ts` | S18d (inside the stun pack) | 0 | 0 | ~59 standalone | ~59 | in-page (with Thieving) | `stun-pack-thieve.ts`, `delayfree-cycle.ts` | building (rs/186, held: tenet 15); in-stun: lab-accepted (arrows; rs/132), plugged into rs/154's module by rs/186 |
 
@@ -1196,7 +1196,11 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   1-3 ranging doses, no sharks; no glory, rs/123); 12 sharks for S17 carried
   through. Prayer ~99 (rs/91's kit flicks Protect from Melee, Ultimate Strength and Incredible
   Reflexes). Levels after Dragon Slayer: Attack 99, Strength 99, Defence gap 1,288 base, Hitpoints gap
-  ~4,220.
+  ~4,220. **Slots** (`ranged.ts` `slotNeed`): the step refuses unless its free slots cover what it
+  takes into the pack: 4 for the pick-up if the cannon is already placed (a held set frees its own 4
+  at set-up), and 1 for a worn shield the two-handed magic shortbow takes off (`bows.obj`
+  `wearpos2=lefthand`) unless rune arrows held in the pack free a slot going to the quiver. On the
+  route (the anti-dragon shield worn, S18's 570 rune arrows in the pack, H23's set held) that is 0.
 - **Postconditions:** Ranged, Defence and Hitpoints 99. Items out: the cannon is left or picked up as
   the inventory needs; S17 needs only the sharks.
 - **Ticks:** expected **1,972** (inferred from rates measured through the module, rs/199, PR #207;
@@ -1421,7 +1425,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   make-5 click (`skills/smithing.md` §1).
 - **Parameters:** `giver`, the inventory plan (one mixed bronze/iron inventory to 34, then platebodies
   in iron 33, steel 48, mithril 68, adamant 88), `untilLevel: 99`.
-- **Preconditions:** a hammer; the anvil helper staged with bars (15 bronze, 39 iron, 95 steel, 280
+- **Preconditions:** **slots**: each inventory's step refuses unless the hammer and its bars (24 for
+  the first, 25 after: 25 or 26 slots) fit beside every other item held (`smithing.ts` `slotReason`;
+  the previous inventory's products are the module's own, since they leave in the trade); a hammer; the anvil helper staged with bars (15 bronze, 39 iron, 95 steel, 280
   mithril, 340 adamant; `skills/README.md`); position on the anvil tile; the `ANVIL_CONTRACT` with HS5
   (data in `smithing.ts`, agreed with rs/188); `run.ts` publishing `cue.json` (the receiver hash)
   with seq 0's plan before SCORED reaches the anvil.
@@ -1981,7 +1987,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Serves:** S14, Ranged 1 to 50 base at the Wilderness poison spiders (3288,3810), wielding the mithril
   scimitar at Attack 99 (the rune one is unobtainable, rs/124), auto-retaliate off. This is its own entry and its own `Step` (main, 05:30,
   via the rs/103 coordinator).
-- **Preconditions:** Dwarf Cannon done; Attack 99 (TGV + GT + FA = 42,025 base, read); the cannon set
+- **Preconditions:** **slots**: 0 beyond a held cannon set, or 4 free for the pick-up if the cannon
+  is already placed (`ranged.ts` `slotNeed`, as entry 7); Dwarf Cannon done; Attack 99 (TGV + GT + FA = 42,025 base, read); the cannon set
   and 100 cannonballs from the cannon holder (65-72 used, rs/199), received through
   `helpers/cannon-receiver.ts`, which `run.ts` calls (rs/186), not the Ranged module; the antipoison from S10's trade,
   sharks.
@@ -2153,21 +2160,41 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Start from:** `stun-pack-thieve.ts`, `delayfree-cycle.ts`.
 - **logoutSafe:** with S18.
 
-### 33. Hand-off H1: `speedrun/runner/handoff.ts` (S01)
+### 33. Hand-offs: `speedrun/runner/handoff.ts` (H1 at S01, and every H row SCORED trades in)
 
-- **Serves:** S01, the first trade at Lumbridge (3222,3222), and the receive side of every later
-  package hand-off. Contents are in `SUPPLIES.md`.
-- **Parameters:** `giver`, `want` (the package's item list).
-- **Preconditions:** the trade giver (Ashburn, rs/117) beside SCORED, with the package prepared and
-  pre-requesting. H1 carries no rings: the starter kit leaves about 10 free slots.
-- **Postconditions:** the package in SCORED's inventory, with nothing given away.
-- **Ticks:** **8** (measured: 4 ticks for 1 noted stack, 8 for 23, 12 of 12 at each of four staging
-  tiles, `research/run-transitions.md` §3, confirming `speedrun/README.md`).
-- **Primitives:** `lib/trade.ts` `receiveFrom` with `want`; `receivePackage` in [rs/41] `mule.ts`.
+- **Serves:** every hand-off row of the inventory ledger (rs/303's table and its row grammar):
+  S01's H1 at Lumbridge (3222,3222), the out-and-back rows H13, H16, H18, H22 and H23 (rs/318's
+  rulings 5 to 7), and any later H row. `run.ts` puts one `handOff(id, {partner, supersededBy})`
+  Step per row between the skill and quest steps.
+- **Parameters:** the row id and the partner's account name. The row is the data: its `in` is what
+  SCORED receives, its `out` (reason `swap` or `trade`) what it gives, its `equip` what it wears
+  afterwards. The module names no item; it reads the row through `speedrun/tools/slot-ledger.ts`'s
+  parser, the table's one reader. A top-up entry (`NAME to N`, counting what is held) asks only for
+  the difference, and makes no trade when nothing is lacking.
+- **Trade:** `lib/trade.ts`, `swap()` when the row gives anything and `receiveFrom()` when it only
+  receives. Both open on an observed-tick bound and re-send a dropped click after `DROPPED_TICKS`,
+  since the partner stands beside SCORED. `swap()` offers only the inventory, so a worn item the
+  row gives is taken off first.
+- **Preconditions:** the partner in view (it is on the tile before SCORED arrives, rs/41's rule for
+  every helper); SCORED holds exactly what it gives; what it receives fits the free slots, counting
+  the slots the given items free (the server counts an offered item as freed, `trade.rs2`) and the
+  slot each unequip takes first. A received stack takes a slot only when none is in the pack.
+- **Postconditions and `done`:** the post-hand-off state: every `in` at its count, every given item
+  gone, the equip changes in place. `done` also holds once the next milestone's `done` does
+  (`supersededBy`), because later steps use up what a hand-off brought. A logout after the trade
+  but before the equip changes resumes into the equip changes only; a logout mid-trade refunds
+  both sides and the step runs again.
+- **Ticks:** **8** budgeted for H1. Lab (`NODE_TICKRATE=300`, loopback gateway, observed ticks on
+  SCORED's clock, `speedrun/lab/handoff-accept.ts`, rs/320): H1 on a fresh account straight after
+  S00, with rs/158's six-stack package, 5 / 5 / 5 on the lite client and 5 / 5 / 5 on the browser
+  client. H13 out and back (the worn bow taken off and handed back; the staff of fire, the knife and
+  six supply stacks in), 6 / 6 / 6 on each client: the swap's 5 and 1 for the unequip, which only a
+  row giving something worn pays.
+- **Primitives:** `lib/trade.ts` `swap` / `receiveFrom`; the giver side is [rs/41] `mule.ts`
+  `giveOpenTrade` (one trade per row, rs/329; the cannon holder takes the bow back at H23).
 - **Mode:** overlay-driven.
-- **Acceptance:** local, within 1 tick of 4 / 8; demo, within 1 tick of rs/49's 6.7 / 8 / 10 through a
-  loopback gateway.
-- **Start from:** `lib/trade.ts`, [rs/41] `mule.ts` `receivePackage`, `run-transitions-handoff.ts`.
+- **Acceptance:** local, within 1 tick of 4 / 8 (met: 5); demo, within 1 tick of rs/49's 6.7 / 8 / 10
+  through a loopback gateway (not run yet: it needs rs/41's throwaways).
 - **logoutSafe:** yes.
 
 ### 34. Tutorial skip: `speedrun/skills/start.ts` (S00): done
