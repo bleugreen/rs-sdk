@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# One run-night gate read on the run host, as rs-gate-read.timer fires it (host-gate/) or by hand.
+# One run-night gate read on either Ashburn machine (the run host or its twin), as rs-gate-read.timer
+# fires it (host-gate/) or by hand.
 # Operations: docs/speedrun/research/demo-latency.md, section 10, "Gate history timer".
 #
 #   bash ~/.local/lib/rs-gate/host-gate-read.sh        (the copy install.sh puts there)
@@ -155,7 +156,7 @@ fi
 env_file="$repo/bots/$bot/bot.env"
 [ -r "$env_file" ] || { echo "error: no $env_file"; write_record error 1 "no bots/$bot/bot.env"; exit 1; }
 account=$(sed -n 's/^BOT_USERNAME=//p' "$env_file" | tr -d '\r')
-password=$(sed -n 's/^BOT_PASSWORD=//p' "$env_file" | tr -d '\r')
+password=$(sed -n 's/^PASSWORD=//p' "$env_file" | tr -d '\r')
 server=$(sed -n 's/^SERVER=//p' "$env_file" | tr -d '\r')
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT

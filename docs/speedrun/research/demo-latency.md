@@ -1088,7 +1088,8 @@ rs/102 does.
 ### Gate history timer
 
 The gate's own history (the gate of tenet 12) accumulates on the run host
-(`ubuntu@$RS_RUN_HOST`, `rs-ashburn-run`, whose address changed at 23:11 UTC on 21 October) until the scored run, without an agent. It's a systemd user timer owned by
+(`ubuntu@$RS_RUN_HOST`, `rs-ashburn-run`) and, since 02:30 UTC on 22 October, on its twin
+(`ubuntu@$RS_TWIN_HOST`, `rs-ashburn-rehearsal`; see 'Twin' below) until the scored run, without an agent. It's a systemd user timer owned by
 mission rs/83. The user lingers, so the timer runs with no one logged in. The units and scripts are
 in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scripts/host-gate-read.sh`.
 `install.sh` copies all of them to `~/.local/lib/rs-gate` on the host, and the timer runs that copy.
@@ -1141,6 +1142,18 @@ in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scr
   resume, run `bash ~/.local/lib/rs-gate/install.sh`. To remove it, run
   `bash ~/.local/lib/rs-gate/uninstall.sh`. That also stops a read in progress, and it keeps
   `~/gate-history` and the clone.
+- **Twin.** Tenet 17 keeps both Ashburn machines run-capable and gates both, so the twin runs the
+  same timer, installed by rs/249 at 02:29-02:32 UTC on 22 October, item for item from the run
+  host. It has the same five files (identical sha256), byte-identical unit text and the same
+  `:00`/`:30` schedule, enabled. Its blob-less clone `~/gate/rs-sdk` is detached at the run host's
+  `~/run-commit`, with the same dependency stamp, and lingering is on. Its account is its own fresh
+  `cairn_` throwaway, whose name and password exist only in the twin's mode-600 `bots/gate/bot.env`.
+  The two machines fire in the same minutes, and each keeps its own history, so files with the same
+  name on the two machines are one same-minute pair: the paired series tenet 17 asks for, read
+  without anyone running it. The twin's first scheduled firing (02:30) skipped as reserved by
+  rs/249's install claim. Its first read, inside that claim, passed (60/60, 0 catch-ups per minute,
+  tick p90 426 ms, 1,561 online, edge iad) and logged out. From then on step 0 writes `~/run-commit`
+  on both machines together.
 
 ## 11. Open questions
 
