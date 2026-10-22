@@ -109,8 +109,8 @@ The Q§3 rows sum to 11,689 fixed and 10,811 burst with Monkey Madness's expecte
 
 | | Knife loops on (run gate holds) | Knife loops off all night, with rs/162's plain + bury (**in force**, #165 on main) | Knife loops off all night, without it (history) |
 |---|---|---|---|
-| **Expected** | **34,765.3**: 1,150.7 under the record | **37,420.3**: 1,504.3 over | 38,156.3: 2,240.3 over |
-| **Best** | **32,453.7**: 3,462.3 under | **35,567.7**: 348.3 under | 36,333.7: 417.7 over |
+| **Expected** | **34,826.3**: 1,089.7 under the record | **37,481.3**: 1,565.3 over | 38,217.3: 2,301.3 over |
+| **Best** | **32,505.7**: 3,410.3 under | **35,619.7**: 296.3 under | 36,385.7: 469.7 over |
 
 rs/162's plain + bury is on main (#165, merged as 3dfc217f at 23:46 UTC) and lab-measured (PB):
 willow passes rs/158's bar at ~0.226 bones a tick with trades, oak falls short at ~0.195 and is
@@ -128,21 +128,21 @@ Knife on:
 
 | Supply scenario (knife on) | Fallback deltas (exp / best) | Expected | Best | Against the record (exp) |
 |---|---|---|---|---|
-| **Forecast at 2026-10-23 (in force)**: **380 dragon bones** (rs/41's planning figure, ~450 if funding never lapses; the dragon room's 3 dragons cap it at two accounts, ~14 an hour combined) and 220 babydragon to 33,938 base, 600 non-stun bones in S07 (+64 / +47: +12 against 413 and 141; condition: dragon farming funded and running, rs/41; each dragon bone above 380 removes 2.4 babydragon from S07); 0 nature talismans, so S21 at the body altar on the fleet's 57 body talismans (+142); the diamonds unobtainable by the 23rd (rs/41): the wine windows cut 107 of the 108 held gems and S25d crafts 928 hard leather bodies (+172: 263 m (rs/359, lab, browser, 3 of 3; Kind M (lab, rs/359) on the leather route) against the diamond basis's 91 i; rs/350's leather line, complete about 05:30 PDT 2026-10-22), mixed herbs (+85), the agility potion not obtainable today, so S11b's laps-to-25 fallback (+37; -37 the upside once one is held, rs/348); forecast complete (0): arrowtips, cannonballs, 365 adamantite bars, essence; the rune axe held | +505 / +488 | **35,270.3** | **32,941.7** | **-645.7** |
-| Every line held: 555 dragon bones, rune axe, the full lists; S07's 355 dragon bones leave Prayer 92 and combat 42, so main's hard precondition, combat 43 at S09 (Prayer 95, 30,264.5 base), is met by burying **157 more babydragon bones in S07, ~+41 i** (main, 05:2x PDT), which closes R26's unmitigated case here | +41 / +41 | 34,806.3 | 32,494.7 | -1,109.7 |
-| rs/41's 09:35 plan (history): adamantite 0 (+119), mixed gems (+88), mixed herbs (+85), 2 nature talismans with a keeper (+34), 2,070 adamant + 570 rune arrowtips (0); 555 dragon bones and the rune axe held | +326 / +326 | 35,091.3 | 32,779.7 | -824.7 |
-| **Today's stock (conservative)**: rs/331's per-account bank reads (08:48-09:56Z): 172 dragon and 1,533 babydragon (2,526 big unused); S07 takes every dragon bone, then babydragon to 33,938 base (39,938 less the stuns' 6,000): 172 + 719 = 891 bones in ~39 loads, inside S07's ~978, Prayer 96+ at S07's end; the stuns 200 babydragon + 20 spare; nothing past S07: ~+88 against fold-in 17's 554 at ~0.26 a bone (+140 / +123 in all); 0 nature talismans, the body altar (+142); the 09:35 plan's adamantite 0 (+119) and herbs (+85), the gems (+172) and the agility potion (+37) as in force; the rune axe held | +700 / +683 | **35,465.3** | **33,136.7** | **-450.7** |
-| History, the 21:20 UTC count: today's stock with the ~85 at the booth instead: the Mining bury cannot fire (iron respawning slower than 13 ticks, or a run commit without #159) (+339 / +284) | +899 / +844 | 35,664.3 | 33,297.7 | -251.7 |
+| **Forecast at 2026-10-23 (in force)**: **380 dragon bones** (rs/41's planning figure, ~450 if funding never lapses; the dragon room's 3 dragons cap it at two accounts, ~14 an hour combined) and 220 babydragon to 33,938 base, 600 non-stun bones in S07 (+64 / +47: +12 against 413 and 141; condition: dragon farming funded and running, rs/41; each dragon bone above 380 removes 2.4 babydragon from S07); 0 nature talismans, so S21 at the body altar on the fleet's 57 body talismans (+142); the diamonds unobtainable by the 23rd (rs/41): the wine windows cut 107 of the 108 held gems and S25d crafts 928 hard leather bodies (+172: 263 m (rs/359, lab, browser, 3 of 3; Kind M (lab, rs/359) on the leather route) against the diamond basis's 91 i; rs/350's leather line, complete about 05:30 PDT 2026-10-22), mixed herbs (+85), the agility potion not obtainable today, so S11b's laps-to-25 fallback (+37; -37 the upside once one is held, rs/348); forecast complete (0): arrowtips, cannonballs, 365 adamantite bars, essence; the rune axe held | +500 / +483 | **35,326.3** | **32,988.7** | **-589.7** |
+| Every line held: 555 dragon bones, rune axe, the full lists; S07's 355 dragon bones leave Prayer 92 and combat 42, so main's hard precondition, combat 43 at S09 (Prayer 95, 30,264.5 base), is met by burying **157 more babydragon bones in S07, ~+41 i** (main, 05:2x PDT), which closes R26's unmitigated case here | +41 / +41 | 34,867.3 | 32,546.7 | -1,048.7 |
+| rs/41's 09:35 plan (history): adamantite 0 (+119), mixed gems (+88), mixed herbs (+85), 2 nature talismans with a keeper (+34), 2,070 adamant + 570 rune arrowtips (0); 555 dragon bones and the rune axe held | +326 / +326 | 35,152.3 | 32,831.7 | -763.7 |
+| **Today's stock (conservative)**: rs/331's per-account bank reads (08:48-09:56Z): 172 dragon and 1,533 babydragon (2,526 big unused); S07 takes every dragon bone, then babydragon to 33,938 base (39,938 less the stuns' 6,000): 172 + 719 = 891 bones in ~39 loads, inside S07's ~978, Prayer 96+ at S07's end; the stuns 200 babydragon + 20 spare; nothing past S07: ~+88 against fold-in 17's 554 at ~0.26 a bone (+140 / +123 in all); 0 nature talismans, the body altar (+142); the 09:35 plan's adamantite 0 (+119) and herbs (+85), the gems (+172) and the agility potion (+37) as in force; the rune axe held | +695 / +678 | **35,521.3** | **33,183.7** | **-394.7** |
+| History, the 21:20 UTC count: today's stock with the ~85 at the booth instead: the Mining bury cannot fire (iron respawning slower than 13 ticks, or a run commit without #159) (+339 / +284) | +894 / +839 | 35,720.3 | 33,344.7 | -195.7 |
 
 (i: section 7, "Supply fallbacks"; every delta is SF's line re-priced on this order.) **In force,
-on rs/41's forecast for 2026-10-23, the knife-on expected is under the record: 35,270.3, 645.7 under
-(1.8%)**; best clears it by 2,974.3, and with every line held the expected is 1,109.7 under (3.1%).
+on rs/41's forecast for 2026-10-23, the knife-on expected is under the record: 35,326.3, 589.7 under
+(1.6%)**; best clears it by 2,927.3, and with every line held the expected is 1,048.7 under (2.9%).
 Fold-in 15 had moved it over (36,153.5, 237.5 over: Dragon Slayer, Dwarf Cannon and Monkey Madness
 measured; section 7, "Changes since d9b3fa9b"). **Fold-in 14 brings it back under**: on main's ruling
 (2026-10-21 23:52 PDT, after rs/287's demo validation of burst dialogue on the lite client) every
 quest row's expected is its burst figure, -879, with Dragon Slayer's burst measured (1,334 m, three
-chains). **Fold-in 17 takes a further 97.2 off** (S13 on the railing recount -104, S15's segment X and Q to S -3.2, S06 +2, Magic on the browser client +8; section 7, "Changes since 4a4699fa"). **Fold-in 18 takes 45.0 off** (the slot fixes' three new trades +15, S15's segments T and U measured -4 and -46, S13 on Dwarf Cannon's acceptance -10, J's door regression in it; section 7, "Changes since ab7bb6e9"), and the in-force row's diamonds become the wine windows' held gems and S25d's hard leather, +89 (+177 against +88: diamonds are unobtainable by the 23rd), its bones rs/41's 380 dragon (+12), and its agility potion, not obtainable today, S11b's laps-to-25 fallback, +37 (rs/348). **If burst fails on the night the quests revert to their fixed figures, +881.5** (+879 before fold-in 18's S13), and the row
-in force is 36,151.8, 235.8 over. The validation ran on the lite client, so each quest's
+chains). **Fold-in 17 takes a further 97.2 off** (S13 on the railing recount -104, S15's segment X and Q to S -3.2, S06 +2, Magic on the browser client +8; section 7, "Changes since 4a4699fa"). **Fold-in 18 takes 45.0 off** (the slot fixes' three new trades +15, S15's segments T and U measured -4 and -46, S13 on Dwarf Cannon's acceptance -10, J's door regression in it; section 7, "Changes since ab7bb6e9"), and the in-force row's diamonds become the wine windows' held gems and S25d's hard leather, +89 (+177 against +88: diamonds are unobtainable by the 23rd), its bones rs/41's 380 dragon (+12), and its agility potion, not obtainable today, S11b's laps-to-25 fallback, +37 (rs/348). **Fold-in 19 adds 61.0** (S15's atoll half measured end to end, its fixed row built from its parts, +128; S13's J on rs/343's door fix -25; S26's pinned rerun -42; section 7, "Changes since cd34aa5e"), and the in-force row's hard leather is measured, -5 (+172 against +177). Blood runes are a named sensitivity, the row in force staying at full Charge (main): at today's 370 held it is 35,465.3, 450.7 under, and the budget holds down to ~232 held (i, rs/367's curve; section 7). **If burst fails on the night the quests revert to their fixed figures, +864.2** (+881.5 before fold-in 19), and the row
+in force is 36,190.5, 274.5 over. The validation ran on the lite client, so each quest's
 browser-client acceptance (O51) runs burst, and a quest whose burst does not hold there reverts in
 its row (section 7, "The statement and the go/no-go figure"). The forecast's bones are an assumption
 until rs/112's firm forecast (due 16:00 PDT): ~14 dragon bones an hour from 22:00 UTC on the 21st
@@ -162,21 +162,21 @@ UTC on the 22nd), the arrowtips, the cannonballs and the essence are forecast co
 (+172, the wine windows' held gems and S25d's hard leather, 263 m) and herbs (+85) stay deltas.
 
 **Today's stock (conservative)** keeps the 21:20 UTC bones and, line by line, the worse of rs/41's
-09:35 plan and today's count: **450.7 under the record (1.3%)** on rs/331's bank reads (172 dragon, 1,533 babydragon at 09:56Z: S07 takes 891 bones and nothing passes it). The rest of this paragraph is on the 21:20 UTC count, history. On that stock 49 dragon and 1,214
+09:35 plan and today's count: **394.7 under the record (1.1%)** on rs/331's bank reads (172 dragon, 1,533 babydragon at 09:56Z: S07 takes 891 bones and nothing passes it). The rest of this paragraph is on the 21:20 UTC count, history. On that stock 49 dragon and 1,214
 babydragon reach Prayer 99 with ~197 babydragon to spare, so another babydragon bone is worth ~0.
 S07 holds 978 of the 1,063 non-stun bones; the other ~85 ride the Mining `stay2` lap on
 `knife-mine`'s bury, on main since #159 (15:52 PDT; O35 closed by its option (a), and a run-commit
 requirement). If the bury cannot fire, because iron respawns slower than 13 ticks or the run commit
-lacks #159, they go to the booth: +119, 251.7 under (history), and another dragon bone is then worth ~2.9 until
+lacks #159, they go to the booth: +119, 195.7 under (history), and another dragon bone is then worth ~2.9 until
 ~61 more are held (section 7, "Today's stock").
 
 The knife gate failing all night adds +2,655 with rs/162's plain + bury, in force (+3,391 without
 it, R2; S09's plain fallback is the in-page plain loop with `selfStarter`, 3.62 ticks per ore
 measured at D = 13, MR, and S07's the in-page plain rates, PB). **Monkey Madness's bad case beyond
 its expected, ~+250 (one rope pin, i; rs/185, 00:38 PDT: the Jungle Demon passed 3 of 3 clean on 200
-arrows, so its 120 is retired, R5), puts the row in force at 35,520.3, about 395.7 under**, and today's
-stock at 35,715.3, 200.7 under; S13's railings at
-p90 (+~150 on the recount) alone would put the row in force at 35,420.3, 495.7 under. S15's atoll half, H
+arrows, so its 120 is retired, R5), puts the row in force at 35,576.3, about 339.7 under**, and today's
+stock at 35,771.3, 144.7 under; S13's railings at
+p90 (+~150 on the recount) alone would put the row in force at 35,476.3, 439.7 under. S15's atoll half, H
 to Z, is measured segment by segment, 3 of 3 each (H to P end to end, 2,425 m, rs/201; X 323.8 over five kills; Q, R and S 625
 chained; T 120 and U 319, fold-in 18; V 14, W 96, Y 175 and Z 73, fold-in 19), so none of S15's burst 4,487.8 is estimated (its
 fixed 4,838.8 is built from the parts, 4,170.8 m for H to Z), and
@@ -185,8 +185,8 @@ A relog from SCORED's tab is back to about **2 ticks** (m, R174): the ~20 that T
 old page's gateway socket outliving the navigation, which rs/174 now closes first. The two planned
 relogs and the expected restarts give back the +63 / +36 fold-in 3 added and 2 more (section 7), a
 demo restart costs about 5 (R7), and the wine's login + 19 deadline is met at login + 3 to + 6 (R17, now
-low-likelihood). If the wine failed outright, the fish route (+~927) would leave the run ~285.5 over the record
-on the row in force (~572.5 over on today's stock, ~691.5 with its bones at the booth). The in-page willow
+low-likelihood). If the wine failed outright, the fish route (+~927) would leave the run ~337.3 over the record
+on the row in force (~532.3 over on today's stock, ~731.3 with its bones at the booth). The in-page willow
 question is settled (O19, section 9): rs/97's 4.83 ticks per log was the server's chop RNG at level
 99, not the client, so S07's willow knife takes the lite ratio, and its knife is now measured on the demo (rs/261's cairn_chops): the luck-free 3,053
 against #129's 3,390. The biggest open swings are the knife gate itself (R2, O11), S15's unrun atoll
@@ -331,9 +331,10 @@ ruling of 14:55 PDT prices them at the earliest plausible run date, 2026-10-23 (
   at the run login, not in S21 (R12; O38, settled). The gate minute holds 16 on the two machines
   (7 givers and a gate account each).
 - **Budget:** start only when the expected total plus the fallback deltas in force is under 35,916
-  (the scenario table above: 35,270.3 on the forecast row in force, 35,465.3 on today's stock, **both
-  under it on fold-in 18's figures**, every quest at its burst figure; if burst fails on the night they
-  are 36,151.8 and 36,346.8, both over, so each quest's browser-client burst acceptance, O51, is part
+  (the scenario table above: 35,326.3 on the forecast row in force, 35,521.3 on today's stock, **both
+  under it on fold-in 19's figures**, every quest at its burst figure and S18 at full Charge (with today's
+  370 blood runes the row in force is 35,465.3, and it stays under down to ~232 held, i, section 7's
+  blood-rune table); if burst fails on the night they are 36,190.5 and 36,385.5, both over, so each quest's browser-client burst acceptance, O51, is part
   of the condition); otherwise wait, and main decides the bet.
 
 ## 2. Step table (a)
@@ -424,9 +425,9 @@ RT's measured no-glory method (RT, "No amulet of glory").
 | S17 | I | Wilderness Agility course, Wilderness 50-56 | laps, in-page obstacle program | Agility 75-99 | **4,114 i** on the engine's fall roll (rs/270, `docs/speedrun/rehearsals/agility.md` §6.7 at f439bc7f on agent/rs-270-builder-0): the fall chance is `stat_random(agility, lo, 250)`'s, success (floor(lo·(99−L)/98) + floor(250·(L−1)/98) + 1)/256, with lo 200 for the rope swing and the log (`wilderness_course.rs2`, the `[oploc1,obstical_ropeswing2]` and `wilderness_log_balance1` blocks) and 180 for the stones (r): a fall 7.1% a try at 75 and 2.3% at 99 on the rope and the log, 9.0% and 2.3% on the stones; the fall costs measured, stones +16, log +47, rope +75, and the clean lap 66 (m). `agility-model.ts --lap=66 --sim`, 20,000 runs: **75-85 1,051 (sd 80), 85-99 3,128 (sd 109), 75-99 4,114 (sd 142)**, laps and falls only (no entry lap or final logout), the row's basis. Cross-checks (m): level crossings 76 to 85 measured 933 / 874 / 954 / 982 / 997 (mean 948) over 12-13 laps, ~1,020 with one lap for 75 to 76, against the simulated 1,051; rs/270's 69 laps at 75-85 (agility.md §6.6): stones 0.058 falls a lap, log 0.043, rope 0.072, pipe and rocks 0, the costs adding (66 + 75 + 16 = 157), ~74 a lap expected. **66 is the floor for a clean lap** (m, rs/270, a per-tick trace of 3 clean laps at 99, all 66; agility.md §6.8 at 721654c8): 19 walking ticks and 47 script ticks (pipe 17, rope swing 7, stones 15, log 17, rocks 10); each click lands on the tick after the xp shows and a click during an obstacle's delay is dropped (`OpLocHandler.ts`, 'cannot interact while delayed'), every approach runs at 2 tiles a tick and each script fixes its own start tile, so no reaction tick is lost and there is no route lever: S17's variance is falls only. **The competitor-lap question is closed**: stunagile's 6,772 is the 21st percentile of the simulated S17 distribution (fewer falls), not a faster lap (§6.8). 4,213 m/i before (rs/155's lab pace: 75-85 858 m, 85-99 3,355 i); the model's 4,024 is history; level-ups at 0, LU§2 | 3,820 i (fewer falls: about 2.1 sd under the simulation's 4,114, kept as the best basis; the lab's 75-85 ran under the model's 946) | in: 12 sharks (H23) | - | safe between laps out of combat, not a pause point; **the last step**: the clean logout after the last level-up is free | relay-driven laps, 74 i: 4,512 | PK (R8); skeletons (rs/241 at SCORED's stats, protect off, m, n = 1: 6 HP over 12 laps; no Protect from Melee, O34 settled; a shark below 60 HP, MAN entry 1; one eat at the 60 line in each of rs/270's five 75-85 runs, 4 HP from skeletons); **an eat costs 0 with `eatAt: 'land'`** (rs/270, m, lab, 15 timed laps at S17's arrival stats with an eat due at every chance: every eat lap cost exactly what its fall alone costs). The option is **on main with rs/300's Agility snapshot (#245, inside the run-commit floor cae93456)**: the program's `eatAt` opt-in (f95f9558, rs/241's work) and the module default `eatAt: 'land'` (a9298868, rs/270), so on the floor an eat costs 0. History only, for a run commit below the floor: without the option an eat sent during an approach made `OpHeldHandler`'s `clearPendingAction` drop the obstacle interaction and the program waited out its 40-tick `stepTimeout` (m, rs/270), 0-40 per eat, 0-120 over the 2-3 eats. **Falls are S17's whole variance** (sd 142 over the step, above)
 | | | | **Steps and legs** (without section 6's allowances), knife on | | **33,521.3** | **32,421.7** | | | | | |
 
-The last row is the step figures (31,250.8 expected, 30,174 best; 31,310.8 / 30,377 before fold-in 18, 31,408 / 30,483 before fold-in 17, 32,287 / 30,543 before fold-in 14's burst move) and the legs (2,209.5 expected, 2,195.7 best,
+The last row is the step figures (31,311.8 expected, 30,226 best; 31,250.8 / 30,174 before fold-in 19, 31,310.8 / 30,377 before fold-in 18, 31,408 / 30,483 before fold-in 17, 32,287 / 30,543 before fold-in 14's burst move) and the legs (2,209.5 expected, 2,195.7 best,
 all m; section 6). S25's 1,406 / 1,305 is S25a + S25c + S25d + S25e. Section
-7's best total is 30,174 + 2,195.7 legs + 69 hand-offs + 15 level-up pages = 32,453.7. Until fold-in
+7's best total is 30,226 + 2,195.7 legs + 69 hand-offs + 15 level-up pages = 32,505.7. Until fold-in
 11 the row read 33,243 / 31,593: fold-in 9's S07 oak band (+41), S06 (+4) and S21 (+2) reached the
 rows and section 7 but not this sum, which is now its rows' sum again.
 
@@ -732,28 +733,28 @@ under the total give the line without it, now history.
 **Like for like.** Both comparisons put the twelve quests' 840.5 of way-in travel back on the quest
 line, where the tally counted it; since fold-in 11 it sits in the overhead line's legs (O6), which
 moves it between the two lines and changes no total. The tally's expected column took the plain loops
-for the three knife skills, so its 38,742 compares with the knife-off expected in force, 37,420.3
-(with rs/162's plain + bury): 1,321.7 lower, mostly Prayer (-605: the bones ride the plain loop's
+for the three knife skills, so its 38,742 compares with the knife-off expected in force, 37,481.3
+(with rs/162's plain + bury): 1,260.7 lower, mostly Prayer (-605: the bones ride the plain loop's
 willow band), contention (-600), Mining (-259: from 64, -269, and the in-page plain loop with
-`selfStarter` at 3.62 against the lite 3.61, +10) and the quests (-296.7: fold-in 14's burst expected,
--879, fold-in 17's -107.2 and fold-in 18's -60 on the quest rows, against Dragon Slayer, Dwarf Cannon and Monkey Madness's H to S and X and the Grand Tree measured),
+`selfStarter` at 3.62 against the lite 3.61, +10) and the quests (-235.7: fold-in 14's burst expected,
+-879, fold-in 17's -107.2, fold-in 18's -60 and fold-in 19's +61 on the quest rows, against Dragon Slayer, Dwarf Cannon and Monkey Madness's H to Z and the Grand Tree measured),
 against combat (+233, the cannon session and
 S27 on rs/199's module rates), +150 of overrun, Runecraft (+94), Agility (+82: S17 on the engine's
 fall roll) and Woodcutting (+67: the in-page plain loop, PB), with Smithing -82 and Magic -32. Without
-rs/162 (history, 38,156.3) it is 585.7 lower, with Prayer at the booth (+35) and Woodcutting +163.
-The tally's best took the knife, so its 31,324 compares with the knife-on best 32,453.7: 1,129.7
-higher, mostly the quests (+898.5, at their measured best), the measured legs inside the overhead
+rs/162 (history, 38,217.3) it is 524.7 lower, with Prayer at the booth (+35) and Woodcutting +163.
+The tally's best took the knife, so its 31,324 compares with the knife-on best 32,505.7: 1,181.7
+higher, mostly the quests (+950.5, at their measured best), the measured legs inside the overhead
 line (+540.2), combat (+300) and Runecraft (+294), against contention (-300) and Mining (-212).
 Woodcutting's best is 59 under the tally's, which already took the lite willow ratio: the difference
 is the level-up release.
 
 **The three largest changes against the 04:20 tally** (knife on, expected, like for like: the
-quests' line reads -1,077.2 only because its way-in travel now sits in the overhead line, O6, and is
--236.7 with it): Fishing -1,415 (the knife column); Woodcutting -905 (the knife at the demo's luck-free
+quests' line reads -1,076.2 only because its way-in travel now sits in the overhead line, O6, and is
+-235.7 with it): Fishing -1,415 (the knife column); Woodcutting -905 (the knife at the demo's luck-free
 figure, O19, and the level-up release); Mining -877 (from 64, the knife on the demo's 3.019, the
 level-up release). The largest increase is now the demo-latency and overrun line, +500 (e), then
 combat, +233; the quests, +749.5 on their fixed figures (Dragon Slayer, Dwarf Cannon and Monkey
-Madness measured), are -236.7 on the burst expected (fold-in 14, and fold-in 17's -107.2). Contention and retries (-600, a
+Madness measured), are -235.7 on the burst expected (fold-in 14, fold-in 17's -107.2, fold-in 18's -60 and fold-in 19's +61). Contention and retries (-600, a
 re-estimate, e) is the next largest decrease. The largest
 measured change is Prayer, -605 (BP; rs/141).
 
@@ -767,6 +768,11 @@ measured change is Prayer, -605 (BP; rs/141).
 | **4. Dragon Slayer's pinned rerun** (rs/258, bgsrv-mac, lab, 300 ms, lite client, route levels and kit, from the arrival tile, 6 of 6): burst 1,269 / 1,338 / 1,268, **mean 1,292**; fixed 1,293 / 1,341 / 1,328, **mean 1,321** (the fallback, from 1,380); best the fastest burst, **1,268**; Kind M; the browser acceptance (O51) pending. **S26 D's '+21' is not a door stall**: on #289's travel.ts every door-start segment moved 1-3 ticks (D 119 / 119), the gap to the probe's 101 being its tile tolerance (i), so D leaves the door-start row and R32; S26 not exposed to the delayed loc-script re-send (R36) | Quests (42): S26 1,334 / 1,304 to 1,292 / 1,268 | **-42** | **-36** | rs/258 via rs/158 |
 | **5. S25d's hard leather measured** (rs/359, lab, browser, 3 of 3): 263 m from 45 to `CRAFTING_HANDOFF_XP` (928 bodies, 37 visits, 7.0 ticks per 26 bodies), Kind M (lab) on the leather route; the step row stays on the every-line-held diamond basis (91 i), so the scenario delta is **+172** (263 m against 91 i) in place of +177 i; standalone to 99 with no gems in the windows 314 m, the fallback; the leather staging complete about 05:30 PDT 2026-10-22 (rs/350, measured rate) | scenario rows only: the row in force -5 | 0 | 0 | rs/359, rs/350 via rs/158 |
 | **6. Blood runes priced as a named sensitivity** (rs/367; main's ruling: the row in force stays at full Charge): Charge to the runes' end, then Superheat Item; **+1,027 / +527 / +42 i** at N = 100 / 250 / 400, +1,128 with none; break-even 559, ~3.7 ticks per rune below 436; **+139 i at today's 370**, the row in force 35,465.3 there; the stun-pack-fails row +1,398 / +909 / +434 if the runes are short too; R35 priced; the Superheat insurance (rs/147, opt-in) pending; SUPPLIES' blood, nature and ore lines | sensitivity only | 0 | 0 | rs/367, rs/147, rs/41, rs/331 via rs/158; main |
+| **7. Risk rows and notes, no totals:** R36 'delayed loc-script re-send' (rs/257, m, demo: S13's railing Inspect fixed in the module; skills none; legs ~6 hops at up to ~6-15 each, i, rs/186; S26 none, rs/258; the canonical fix rides rs/309); R34's Firemaking clause closed (rs/364: S03 stays 681 m); entry 34's re-send on 'I can't reach that!' (rs/345, +1 tick, rehearsal and gate protection only); entry 6's re-lab with the message-reader fix beside rs/335's runs (rs/363); rs/360 built (300468c5); S15's reward xp checked against S16-S27, no mismatch. The ledger's two `?` rows (S18's needAtStart and coin count, rs/147; S25c's needAtStart, rs/339) stay `?`: their texts have not arrived | - | 0 | 0 | rs/257, rs/186, rs/258, rs/364, rs/345, rs/363, rs/360 via rs/158 |
+| **The statement:** section 7's go/no-go on fold-in 19's figures: the row in force 35,326.3, 589.7 under; at today's 370 blood runes 35,465.3, 450.7 under (the budget holding down to ~232 held, i, and failing at 100: 36,353.3, 437.3 over); with burst failing +864.2, 36,190.5, 274.5 over; at Monkey Madness's ~+250 35,576.3, ~339.7 under; S13's railings at p90 35,476.3; the headline, scenario rows, section 1's budget, like for like, the M / I / E split, the sensitivity heading, section 9's note, the manifest's section 1 and sum and SUPPLIES' budget item re-stated; the script's EXPECT and FROM | - | 0 | 0 | rs/158 |
+| **Net, knife on** | | **+61.0** | **+52** | knife off in force and history the same |
+
+The totals after each item (knife on; knife off in force; without rs/162, history): item 1, none; item 2, 34,740.3 / 32,428.7, 37,395.3 / 35,542.7, 38,131.3 / 36,308.7; item 3, 34,868.3 / 32,541.7, 37,523.3 / 35,655.7, 38,259.3 / 36,421.7; item 4, **34,826.3 / 32,505.7**, **37,481.3 / 35,619.7**, 38,217.3 / 36,385.7. The scenario rows (items 5 to 7): the row in force **35,326.3 / 32,988.7, 589.7 under the record** (35,465.3, 450.7 under, at today's 370 blood runes); today's stock (conservative) 35,521.3 / 33,183.7; every line held 34,867.3 / 32,546.7. **The correction in item 3:** on the delta method fold-in 19 would have read 34,681.3 / 32,425.7 knife on and the row in force 35,181.3, 734.7 under; S15's fixed row built from its parts puts back the ~187 that rs/201's stock column never carried.
 
 **Changes since ab7bb6e9 (fold-in 17, rs/307; 34,810.3 / 32,641.7 knife on; 37,465.3 / 35,755.7 knife off in force; 38,201.3 / 36,521.7 without rs/162, history).** Fold-in 18 (rs/318): every failing row of STEP-MANIFEST.md's inventory ledger cleared on rs/158's rulings, then the items that arrived during it; every knife-off line moves with the knife-on line:
 
@@ -1093,10 +1099,12 @@ legs measured 23 more than the quest documents count).
 
 | Kind | Ticks | Share |
 |---|---|---|
-| M: measured end to end on the route's method (steps and legs; the quests measured in burst: S26's three chains and S11b's chain at SCORED's levels, and S13 end to end on rs/257's acceptance, B at the formula's expected tries (fold-in 18); S15's N, P, X and R, which have no dialogue (X at 323.8 over five kills and R at 403 since fold-in 17); S03 on the demo, the first whole step measured end to end there) | 13,358.8 | 38.6% |
-| I: inferred (models, measured parts assembled, quests' mixed rows including S15's probe-measured segments, **the quests' burst figures built from fixed-dialogue measurements or Q§3's page-modelled burst column** (S05, S08, S10b, S12, S16, S19, S20, S23, S24, S15's H to M and O), S17 on the engine's fall roll, S07's knife on the demo's luck-free figure, S15's T to Z at the burst rule on their measured fixed figures (T and U fold-in 18; V to Z fold-in 19, with the probe rows out), hand-offs (H4e, H4p and H17e since fold-in 18), level-ups, relog tail, restarts) | 20,267.5 | 57.8% |
-| E: estimated allowances (contention, overrun, relay, retries) (S15's never-measured Ape Atoll rows are gone: V to Z measured, fold-in 19, ~61 in burst before; T's and U's ~104 and ~307 out in fold-in 18) | 1,200.0 | 3.6% |
+| M: measured end to end on the route's method (steps and legs; the quests measured in burst: S26's three chains and S11b's chain at SCORED's levels, and S13 end to end on rs/257's acceptance, B at the formula's expected tries (fold-in 18), J on the door fix (fold-in 19); S26 on rs/258's pinned rerun (fold-in 19); S15's N, P, X and R, which have no dialogue (X at 323.8 over five kills and R at 403 since fold-in 17); S03 on the demo, the first whole step measured end to end there) | 13,358.8 | 38.4% |
+| I: inferred (models, measured parts assembled, quests' mixed rows including S15's probe-measured segments, **the quests' burst figures built from fixed-dialogue measurements or Q§3's page-modelled burst column** (S05, S08, S10b, S12, S16, S19, S20, S23, S24, S15's H to M and O), S17 on the engine's fall roll, S07's knife on the demo's luck-free figure, S15's T to Z at the burst rule on their measured fixed figures (T and U fold-in 18; V to Z fold-in 19, with the probe rows out), hand-offs (H4e, H4p and H17e since fold-in 18), level-ups, relog tail, restarts) | 20,267.5 | 58.2% |
+| E: estimated allowances (contention, overrun, relay, retries) (S15's never-measured Ape Atoll rows are gone: V to Z measured, fold-in 19, ~61 in burst before; T's and U's ~104 and ~307 out in fold-in 18) | 1,200.0 | 3.4% |
 | **Total** | **34,826.3** | |
+
+Fold-in 19 against fold-in 18's split (13,425.8 / 20,078.1 / 1,261.4): M -67.0, I +189.4, E -61.4: S13's J on the door fix (M -25.0) and S26's pinned rerun (M -42); S15's atoll half measured end to end and its fixed row built from its parts, the probe rows' ~157 out of I and the never-measured rows' ~61.4 out of E, V to Z's 346.4 at the burst rule into I (I +189.4, E -61.4). **On the burst expected the plan is 38.4% measured end to end, and S15 carries no estimated ticks.**
 
 Fold-in 18 against fold-in 17's split (13,105.8 / 20,031.5 / 1,673): M +320.0, I +46.6, E -411.6: S13 measured end to end on Dwarf Cannon's acceptance, J's door regression in it (M +320.0, its railings' 330 i out); S15's segments T and U measured, their stock (124 and 365, fixed) taken out of the never-measured rows at those rows' burst-to-fixed ratio, 473 / 562 (E -104.4 and -307.2, i), and put in at that share plus their measured deltas, -4 and -46 (I +100.4 and +261.2); and the three new trades H4e, H4p and H17e (I +15). Fold-in 17 against fold-in 14's split (13,139.5 / 19,824 / 1,944): M -33.7, I +207.5, E -271: S13 on the railing recount (item 1: its ten measured segments and the shed stay M at 637.5, -434.5; the railings at the formula rate, I +330.5); S06 at 26 a load (item 4: M +2); segment X over five kills (item 8: M -12.2); Magic on the browser client (item 9: M +8); and S15's Q to S measured (item 12: R's 403 into M, +403; Q's 38 and S's 135 at the burst rule into I and R's 296-tick probe out, -123; Q's 65, R's 93-tick walk and S's 113 out of the never-measured rows, E -271). **On the burst expected the plan is 37.6% measured end to end.**
 
@@ -1329,27 +1337,30 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
 
 **Monkey Madness after H to P** (fold-in 15; i on m inputs). S15's segments H to P are measured end to end in the lab (rs/201, 3 of 3 at route levels and the kit floor): H to M 1,466 (+352, fold-in 13), N 117 (+34), O 388 (+191, the six-run mean) and P 454 (+80); the aunt is retired (-120 off the failure allowance), and the rope pin is carried at 1 in 3 chains at ~375 a pin, the module waiting 50 ticks and then teleporting (+~125, i; rs/185, 23:15 PDT), and segment X (the sigil and the Jungle Demon) is measured at 336 against 311 (m, n = 2; +25, best +19), so S15's fixed figure is 4,764 (+335) and best 4,300 (+274); on the burst expected (fold-in 14) S15 is 4,413. **R5 beyond the expected is ~+370** (rs/185, 23:20 PDT): the demon's piece, 120 (the quest document's, until rs/201's demon chains at 300 ms (2 of 3 kills so far, 342 and 330; the 120 stays until 3 clean kills with 200 arrows) replace it), plus ~250 for a pin; the death after a rope pin (~340) is retired by rs/185, and main may overrule it (R5). **rs/185 (00:38 PDT): the demon passed 3 of 3 clean on 200 arrows, so its 120 retires and the working bad case is ~+250, one rope pin** (R5 changes in fold-in 17). Section 7's go/no-go below prints the row in force at both. O's fast-dialogue window (the four talks in one loop of the aunt's patrol, ~236-300 in burst, i, to be measured) would take a further ~65-129 off O's burst 365 i: a lever, not in either column. rs/185's Q-to-Z chains report each remaining component segment by segment (section 9).
 
-**The statement and the go/no-go figure** (fold-in 18, on fold-in 17's form; main's rulings of 20:39 and 22:23 PDT, and of
-23:52 PDT on burst dialogue; rs/185, 00:38 PDT, on Monkey Madness's bad case; i on the cited inputs,
+**The statement and the go/no-go figure** (fold-in 19, on fold-in 18's form; main's rulings of 20:39 and 22:23 PDT, of
+23:52 PDT on burst dialogue and of 07:5x PDT on blood runes; rs/185, 00:38 PDT, on Monkey Madness's bad case; i on the cited inputs,
 `run-order-sums.ts`'s figures):
 
-- **The row in force's knife-on expected is under the record: 35,270.3, 645.7 under** (best 32,941.7,
-  2,974.3 under), every quest at its burst figure (fold-in 14's move in force), the diamonds as the
-  windows' held gems and S25d's hard leather (+177), the bones on rs/41's 380 dragon (+12) and the agility potion's fallback (+37, rs/348). With every line held it is
-  34,806.3, 1,109.7 under (with S07's 157 more bones; 34,765.3 at section 7's figures); on today's
-  stock 35,465.3, 450.7 under (rs/331's bank reads). The start condition's budget holds on these figures (section 1).
+- **The row in force's knife-on expected is under the record: 35,326.3, 589.7 under** (best 32,988.7,
+  2,927.3 under), every quest at its burst figure (fold-in 14's move in force), the diamonds as the
+  windows' held gems and S25d's hard leather (+172, 263 m), the bones on rs/41's 380 dragon (+12) and the agility potion's fallback (+37, rs/348). With every line held it is
+  34,867.3, 1,048.7 under (with S07's 157 more bones; 34,826.3 at section 7's figures); on today's
+  stock 35,521.3, 394.7 under (rs/331's bank reads). The start condition's budget holds on these figures (section 1).
+- **Blood runes held** (R35; main: the row in force stays at full Charge, a named sensitivity): at
+  today's 370, +139 i, **35,465.3, 450.7 under**; the budget holds down to ~232 held (i, rs/367's curve),
+  and at the 22:00 UTC count's 100, +1,027 i, it fails: 36,353.3, 437.3 over.
 - **Without fold-in 14's move**, if burst dialogue fails on the night and every quest reverts to its
-  fixed figure, +881.5: the row in force **36,151.8, 235.8 over** (today's stock 36,346.8, 430.8 over).
+  fixed figure, +864.2: the row in force **36,190.5, 274.5 over** (today's stock 36,385.5, 469.5 over).
   rs/287 validated burst on the lite client; each quest's browser-client acceptance (O51) runs burst,
   and a quest whose burst does not hold there reverts to fixed in its row (the per-quest figures are in
   the sensitivity row below).
 - **Go/no-go at Monkey Madness's bad case**, ~+250 beyond the expected (one rope pin, i; rs/185,
-  00:38 PDT; the demon's 120 retired on 3 of 3 clean kills on 200 arrows, R5): **35,520.3, ~395.7
-  under**; without fold-in 14's move 36,401.8, ~485.8 over. If main overruled rs/185 and the death
-  after a rope pin (~340) came back, ~+590: 35,860.3, ~55.7 under.
+  00:38 PDT; the demon's 120 retired on 3 of 3 clean kills on 200 arrows, R5): **35,576.3, ~339.7
+  under**; without fold-in 14's move 36,440.5, ~524.5 over. If main overruled rs/185 and the death
+  after a rope pin (~340) came back, ~+590: 35,916.3, ~0.3 over.
 - **Beside it, not folded into R5: S13's railings at p90, +~150** (the formula rate, 37 tries; p99
-  +~340; rs/257's recount): 35,420.3, ~495.7 under; with Monkey Madness's ~+250 as well, 35,670.3,
-  ~245.7 under. Until they are re-measured on rs/343's fix (#289), the walk-only legs that may start beside a door
+  +~340; rs/257's recount): 35,476.3, ~439.7 under; with Monkey Madness's ~+250 as well, 35,726.3,
+  ~189.7 under. Until they are re-measured on rs/343's fix (#289), the walk-only legs that may start beside a door
   add up to ~+50 i more (T02-03 and T25-26, R32).
 
 The levers that widen the margin, none in the expected until measured (fold-in 14's burst move, the
@@ -1367,11 +1378,11 @@ first lever until now, is in it):
 Run mode is not one (~0, O45). Nothing reorders until the lab rows land (section 9, "Quest-block
 rules").
 
-**Sensitivity of the knife-on expected 34,765.3** (each alone; i from the cited inputs):
+**Sensitivity of the knife-on expected 34,826.3** (each alone; i from the cited inputs):
 
 | Change | Ticks | Basis |
 |---|---|---|
-| **Burst dialogue fails on the night: the quests revert to their fixed figures** (the reverse of fold-in 14; `continueBurst` drops to `advance`, 1 tick a page) | **+881.5** | each quest row's fixed fallback: S15 +351, S11b +104, S24 +69, S13 +60.5 (+58 before fold-in 18), S08 +56, S10b +54, S19 +54, S12 +47, S26 +46, S20 +23, S16 +7, S05 +5, S23 +5; the row in force 36,151.8, 235.8 over (36,056.3, 140.3 over, before fold-in 18; 36,153.5, 237.5 over, before fold-in 17). rs/287 validated burst on the demo on the lite client (0 failed bursts in 24; 8.13 ticks a 16-page talk against the lab's 8.00); the run uses the browser client, so each quest's browser-client acceptance (O51) runs burst, and a quest whose burst does not hold there reverts to fixed in its row by its own figure here. The fallback's `advance()` is itself exposed to R29's loc-op fault until rs/147's fix lands |
+| **Burst dialogue fails on the night: the quests revert to their fixed figures** (the reverse of fold-in 14; `continueBurst` drops to `advance`, 1 tick a page) | **+864.2** | each quest row's fixed fallback: S15 +351, S11b +104, S24 +69, S13 +60.2 (+60.5 before fold-in 19's J, +58 before fold-in 18), S08 +56, S10b +54, S19 +54, S12 +47, S26 +29 (+46 before rs/258's pinned rerun), S20 +23, S16 +7, S05 +5, S23 +5; the row in force 36,190.5, 274.5 over (36,151.8, 235.8 over, before fold-in 19; 36,056.3, 140.3 over, before fold-in 18; 36,153.5, 237.5 over, before fold-in 17). rs/287 validated burst on the demo on the lite client (0 failed bursts in 24; 8.13 ticks a 16-page talk against the lab's 8.00); the run uses the browser client, so each quest's browser-client acceptance (O51) runs burst, and a quest whose burst does not hold there reverts to fixed in its row by its own figure here. The fallback's `advance()` is itself exposed to R29's loc-op fault until rs/147's fix lands |
 | **The door-start stall's residue, until re-measured on rs/343's fix** (R32; the fix on main as #289, 66edfe82, inside the floor) | **T02-03 and T25-26 up to +~50 i**, a sensitivity | S13's J is re-measured on the fix and re-priced (28.7 / 20.3 m, rs/257; fold-in 19), so it leaves this row; the fix should restore the rest, but they are not measured on it, so each stays a sensitivity until its owner re-measures. The legs, rs/186 (i, from legs.ts tiles and run-transitions.md section 10): T02-03 up to +~25 (the chicken pen's coop gate (3236,3295), shut in every T01-02 run), T25-26 up to +~25 (measured 39 and 49, the spread fitting a bank door); T09-10 listed, door state unknown; skills not exposed (no skill module calls travel.ts), teleport-first legs not exposed (the run hop starts at the landing tile), Monkey Madness not exposed (rs/201: runTo only in U and Y, both measured 3 of 3); Dragon Slayer not exposed: its D walk measured 122 in every run of execution 3 against the earlier probe's 101, +21 (m), once carried here as 'S26 D +21 (m; the hut door is the inferred cause), sensitivity', but on #289's travel.ts every door-start segment moved by only 1-3 ticks (D 119 / 119, E 108 / 107, F 40 / 41, I 60 / 60, K 197 / 194; m, rs/258's pinned rerun), and the gap to 101 is the probe's tile tolerance against the module's exact hut tile (i), so S26 D leaves this row (fold-in 19); rs/185's quest list to come. A sensitivity on each row, not a re-price, since the fix restores the old figures (main) |
 | S16 ends at Magic 79 with no magic potion (R33) | **closed** | arrival ~9,117.5 base, level 77 (+866.5 of the inventory ledger's teleports S04 to T15-16 included; the README's 8,201-8,391 counted none), and every measured Kolodion fight (+2,787-3,129) exits at 81; it holds while Fight Arena's inferred +~1,540 exceeds 515 base; the magic potion best effort (GE bid only); rs/361's boosted Charge gate as correctness, on main with #290 (rs/366, ab39cdae), inside the floor |
 | S27 without ranging potions | **at most ~5% of S27's bow-phase ticks** (0 measurable) | rs/186: at Ranged 85 the bow phase measured 20.85 Ranged xp a tick without the potion (one 400-tick window) against 20.45 and 19.82 with it (two windows), the cannon's share dominating; one window is good to about +/-5%; the module sips only if one is carried; optional, staged if the bid fills |
@@ -1683,9 +1694,9 @@ The model's sensitivities (i): 55 or 80 stocked stuns in place of 70, +87 / -58 
 - **Food.** S13's sharks come through H10 from helper stock, sized at the measured damage x1.5.
 - **No reorder yet.** Nothing in the order moves until the quests' lab rows land (rs/185's N-to-Z
   chains, rs/257's Dwarf Cannon rows). R5 is being retired component by component (O36); the
-  working go/no-go figure meanwhile is section 7's: the row in force 645.7 under on its burst
-  expected and ~395.7 under in Monkey Madness's ~+250 bad case (fold-in 18), and 235.8 over if burst
-  fails on the night.
+  working go/no-go figure meanwhile is section 7's: the row in force 589.7 under on its burst
+  expected and ~339.7 under in Monkey Madness's ~+250 bad case (fold-in 19), and 274.5 over if burst
+  fails on the night; at today's 370 blood runes, 450.7 under.
 
 **Open** (the measurement that settles each, and its owner):
 
