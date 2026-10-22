@@ -391,11 +391,13 @@ bundle becomes 5) is phase 2 below. The other needs no packet change: count the 
 2 in the stun pack's per-tick budget, so a dry tick carries 3 delay-free actions, not 4. A dry stun
 has 24 slots against the ~4.8 the pack needs per stun (section 2), so the dropped slot is free.
 
-### Phase 2: route:false (pending)
+### Phase 2: route:false (deferred)
 
-Waiting on the opt-in `route: false` for `interactNpc` (cairn://p/rs/302's builder, for rs/186)
-to reach this branch. The measurement: an opt-in pickpocket param that sends the re-click
-unrouted when SCORED is adjacent to the knight and routed otherwise, the dry variant above rerun
-with it (does the bundle come to 5, does T+10 stay clear), and the stocked 57-99 run. Expected
-from phase 1: no deferrals in dry stuns and no change in a stocked run, so a saving of 0 to ~10
-ticks over 57-99 (i).
+Not measured: the most it can save is the 0 to ~10 ticks above, and nothing in a run whose
+helper keeps every stun stocked. **Trigger:** price it only if a run's stuns are not kept stocked
+(dry stuns while Charge or arrows are still due), once the opt-in `route: false` for
+`interactNpc` (cairn://p/rs/302's builder, for rs/186) is on main. The measurement then: an
+opt-in pickpocket param that sends the re-click unrouted when SCORED is adjacent to the knight
+and routed otherwise (knights wander), default packets unchanged; the dry variant above rerun
+with it (does the bundle come to 5, does T+10 stay clear) and the 57-99 run. The decode trace is
+re-applied for that lab with `git show cb742c6a9d | git apply` (see `stun-trace.ts`).
