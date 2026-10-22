@@ -2,7 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { BotWorldState } from '../../sdk/types';
 import { baseState, FakeSdk, flush } from '../lib/fake-sdk';
 import type { StepContext } from '../runner/step';
-import { LUMBRIDGE_SPAWN, onTutorialIsland, PLAYER_KIT, tutorialSkip } from './start';
+import { IF_RUN_ON } from '../lib/run-mode';
+import { onTutorialIsland } from '../lib/world';
+import { LUMBRIDGE_SPAWN, PLAYER_KIT, tutorialSkip } from './start';
 
 const prevTick = process.env.SPEEDRUN_TICK_MS;
 beforeAll(() => { process.env.SPEEDRUN_TICK_MS = '5'; });

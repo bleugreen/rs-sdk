@@ -43,6 +43,13 @@ export function at(x: number, z: number, level = 0, tol = 0): Pred {
     };
 }
 
+/** Tutorial Island and its dungeon, as `~in_tutorial_island` reads them (util.rs2). */
+export function onTutorialIsland(p: { worldX: number; worldZ: number } | null | undefined): boolean {
+    if (!p) return false;
+    const { worldX: x, worldZ: z } = p;
+    return (x >= 3053 && x <= 3156 && z >= 3056 && z <= 3136) || (x >= 3072 && x <= 3118 && z >= 9492 && z <= 9535);
+}
+
 /** A number matches the config id; a string is a case-insensitive substring of the name; a RegExp is tested on it. */
 export type NamePattern = string | RegExp | number;
 
