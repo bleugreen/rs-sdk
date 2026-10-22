@@ -8,7 +8,7 @@ import { EXIT_HOST_RESERVED, type HostReservation, type ReservationWatch, reserv
 import type { LogoutResult, Session } from './session';
 import type { BotWorldState } from '../../sdk/types';
 import type { ProgramStatus } from './programs';
-import type { RowKind, TickLog, TickRow } from './ticks';
+import { type RowKind, tickCounter, type TickLog, type TickRow } from './ticks';
 import { tickMs } from './wait';
 
 /** The `gate` annotation row an attempt paused by a live reservation writes. */
@@ -113,14 +113,54 @@ export async function runAttempt(session: Session, chain: ReadonlyArray<Step<any
 
 // ------------------------------------------------------------------ trackers (fed every published state)
 
-/** Per client session (lib/session.ts sessionId): first and last in-world tick seen. */
+/** How a game session ended: the attempt's logout, an in-page relog (the page went on counting), or a client relaunch. */
+export type SessionEnd = 'logout' | 'relog' | 'relaunch';
+
+/** What SessionClock reads off a session at each state. tickBase and launchId default as in lib/ticks.ts tickCounter. */
+export type ClockedSession = Pick<Session, 'sessionId'> & Partial<Pick<Session, 'tickBase' | 'launchId'>>;
+
+/**
+ * Per game session (lib/session.ts sessionId): the tick its count starts from (`base`: 0 after a
+ * launch, the page's earlier count after an in-page login) and the first and last in-world tick seen.
+ */
 export class SessionClock {
-    readonly sessions = new Map<number, { first: number; last: number }>();
-    observe(sessionId: number, s: Pick<BotWorldState, 'tick' | 'inGame'>): void {
+    readonly sessions = new Map<number, { first: number; last: number; base: number }>();
+    private seen: { sessionId: number; counter: number } | null = null;
+
+    observe(sessionId: number, s: Pick<BotWorldState, 'tick' | 'inGame'>, tickBase = 0): void {
         if (!s.inGame) return;
         const e = this.sessions.get(sessionId);
-        if (!e) this.sessions.set(sessionId, { first: s.tick, last: s.tick });
+        if (!e) this.sessions.set(sessionId, { first: s.tick, last: s.tick, base: tickBase });
         else e.last = Math.max(e.last, s.tick);
+    }
+
+    /**
+     * Feed one published state of `session`. When a new game session has begun, the one before it
+     * is closed first, as a relog when the count went on (same tickCounter) or a relaunch.
+     */
+    track(log: TickLog, account: string, session: ClockedSession, s: Pick<BotWorldState, 'tick' | 'inGame'>): TickRow | null {
+        const prev = this.seen;
+        const counter = tickCounter(session);
+        const closed = prev && prev.sessionId !== session.sessionId ? this.close(log, account, prev.sessionId, prev.counter === counter ? 'relog' : 'relaunch') : null;
+        this.seen = { sessionId: session.sessionId, counter };
+        this.observe(session.sessionId, s, session.tickBase ?? 0);
+        return closed;
+    }
+
+    /**
+     * Append the `(session)` row of a session seen, from its tick base to `endTick` (default its
+     * last in-world tick), so its ticks are its own and not the page's earlier sessions'; then forget it.
+     */
+    close(log: TickLog, account: string, sessionId: number, ended: SessionEnd, endTick?: number, logout?: LogoutResult): TickRow | null {
+        const e = this.sessions.get(sessionId);
+        if (!e) return null;
+        const r = annotation(log, account, 'session', '(session)', {
+            sessionId, startTick: e.base, endTick: endTick ?? e.last,
+            meta: { firstObservedTick: e.first, ended, ...(e.base ? { tickBase: e.base } : {}), ...(logout ? { logout } : {}) },
+        });
+        log.append(r);
+        this.sessions.delete(sessionId);
+        return r;
     }
 }
 
@@ -128,6 +168,14 @@ export interface ReachEvent {
     skill: string;
     level: number;
     tick: number;
+}
+
+/** A `reach` row; an in-page session's tick base rides in meta, so summarize reads the session's own tick. */
+export function reachRow(log: Pick<TickLog, 'runId'>, account: string, session: ClockedSession, r: ReachEvent): TickRow {
+    const base = session.tickBase ?? 0;
+    return annotation(log, account, 'reach', `(reach) ${r.skill} ${r.level}`, {
+        sessionId: session.sessionId, startTick: r.tick, meta: { skill: r.skill, level: r.level, ...(base ? { tickBase: base } : {}) },
+    });
 }
 
 /** Base-level gains in any skill, one event per level (a multi-level jump gives one per level). */

@@ -69,7 +69,7 @@ import { basename, dirname, isAbsolute, join } from 'path';
 import type { BotWorldState } from '../sdk/types';
 import { clock, DemoMonitor, demoOrigin, samplePlayerCount } from './lib/demo-status';
 import { directDecision, type DirectVerdict, verdictText } from './lib/hostgate';
-import { PAUSE_STEP, annotation, ProgramTracker, programRow, ReachTracker, runAttempt, SessionClock } from './lib/attempt';
+import { PAUSE_STEP, annotation, ProgramTracker, programRow, ReachTracker, reachRow, runAttempt, SessionClock } from './lib/attempt';
 import { EXIT_HOST_RESERVED, reservationPath, claimOwner, reservationText, claimBin, claimToucher, ReservationWatch, reservationRefusal } from './lib/host-reservation';
 import { probeInPage, programStatus, type ProgramStatus } from './lib/programs';
 import { reconnectAfterOutage, serverDownProbe } from './lib/reconnect';
@@ -565,11 +565,12 @@ export function summarize(rows: readonly TickRow[]): Summary {
     let prior = 0;
     for (const r of rows) {
         if (r.kind === 'session') {
-            const playtime = r.endTick + 1;
+            // From the session's own tick base: an in-page login's row starts at the page's earlier count.
+            const playtime = r.endTick - Math.max(0, r.startTick) + 1;
             sessions.push({ sessionId: r.sessionId, ticks: r.ticks, playtime, lowerBound: r.crossedSession === true || r.meta?.ended === 'relaunch' });
             prior += playtime;
         } else if (r.kind === 'reach') {
-            reach.push({ skill: String(r.meta?.skill), level: Number(r.meta?.level), playtime: prior + r.endTick });
+            reach.push({ skill: String(r.meta?.skill), level: Number(r.meta?.level), playtime: prior + r.endTick - Number(r.meta?.tickBase ?? 0) });
         } else if (r.kind === 'gate' && r.step === PAUSE_STEP) {
             const m = r.meta ?? {};
             pauses.push({
@@ -1192,21 +1193,9 @@ async function main(argv: string[]): Promise<number> {
             const clock = new SessionClock();
             const reach = new ReachTracker();
             const programs = new ProgramTracker();
-            let seenSession = session.sessionId;
-            const closeSessionRow = (id: number, ended: 'logout' | 'relaunch', endTick?: number, logout?: LogoutResult) => {
-                const e = clock.sessions.get(id);
-                if (!e) return;
-                const end = endTick ?? e.last;
-                log.append(annotation(log, account, 'session', '(session)', { sessionId: id, startTick: 0, endTick: end, meta: { firstObservedTick: e.first, ended, ...(logout ? { logout } : {}) } }));
-                clock.sessions.delete(id);
-            };
             const unsubscribe = session.sdk.onStateUpdate(s => {
-                if (session.sessionId !== seenSession) {
-                    closeSessionRow(seenSession, 'relaunch');
-                    seenSession = session.sessionId;
-                }
-                clock.observe(session.sessionId, s);
-                for (const r of reach.observe(s)) log.append(annotation(log, account, 'reach', `(reach) ${r.skill} ${r.level}`, { sessionId: session.sessionId, startTick: r.tick, meta: { skill: r.skill, level: r.level } }));
+                clock.track(log, account, session, s);
+                for (const r of reach.observe(s)) log.append(reachRow(log, account, session, r));
                 for (const st of programs.observe(programStatus(s))) log.append(programRow(log, account, session.sessionId, st));
             });
             // /playercount through the attempt (rs/158): an HTTP GET beside the game socket, no game packets.
@@ -1297,7 +1286,7 @@ async function main(argv: string[]): Promise<number> {
             unsubscribe();
             const out = lastLogout as LogoutResult | null;
             // A step that logged out itself: its click was on the last in-world tick (logout latency 0).
-            closeSessionRow(session.sessionId, 'logout', out?.ok ? out.lastInWorldTick : session.lastInWorldTick, out ?? undefined);
+            clock.close(log, account, session.sessionId, 'logout', out?.ok ? out.lastInWorldTick : session.lastInWorldTick, out ?? undefined);
             await readPlayers('end');
             return {
                 value: result,

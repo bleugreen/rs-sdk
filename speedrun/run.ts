@@ -49,7 +49,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
 import type { BotWorldState } from '../sdk/types';
 import { cueDir as defaultCueDir, RUN_DIR } from './helpers/altar-cue';
-import { annotation, ProgramTracker, programRow, ReachTracker, runAttempt, SessionClock, type AttemptResult } from './lib/attempt';
+import { annotation, ProgramTracker, programRow, ReachTracker, reachRow, runAttempt, SessionClock, type AttemptResult } from './lib/attempt';
 import { claimBin, claimOwner, EXIT_HOST_RESERVED, readReservation, ReservationWatch, reservationPath, claimToucher, type ReservationWatch as Watch } from './lib/host-reservation';
 import { programStatus } from './lib/programs';
 import { checkRunFloor, gitIn, type FloorCheck } from './lib/run-floor';
@@ -303,22 +303,11 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
     const clock = new SessionClock();
     const reach = new ReachTracker();
     const programs = new ProgramTracker();
-    let seenSession = session.sessionId;
     let lastState: BotWorldState | null = null;
-    const closeSessionRow = (id: number, ended: 'logout' | 'relaunch', endTick?: number, logout?: LogoutResult) => {
-        const e = clock.sessions.get(id);
-        if (!e) return;
-        log.append(annotation(log, account, 'session', '(session)', { sessionId: id, startTick: 0, endTick: endTick ?? e.last, meta: { firstObservedTick: e.first, ended, ...(logout ? { logout } : {}) } }));
-        clock.sessions.delete(id);
-    };
     const unsubscribe = session.sdk.onStateUpdate(s => {
         if (s.inGame) lastState = s;
-        if (session.sessionId !== seenSession) {
-            closeSessionRow(seenSession, 'relaunch');
-            seenSession = session.sessionId;
-        }
-        clock.observe(session.sessionId, s);
-        for (const r of reach.observe(s)) log.append(annotation(log, account, 'reach', `(reach) ${r.skill} ${r.level}`, { sessionId: session.sessionId, startTick: r.tick, meta: { skill: r.skill, level: r.level } }));
+        clock.track(log, account, session, s);
+        for (const r of reach.observe(s)) log.append(reachRow(log, account, session, r));
         for (const st of programs.observe(programStatus(s))) log.append(programRow(log, account, session.sessionId, st));
     });
     const unCues = o.cues?.attach(session.sdk);
@@ -367,7 +356,7 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
         for (const st of programs.flush()) log.append(programRow(log, account, session.sessionId, st));
         unsubscribe();
         const out = lastLogout as LogoutResult | null;
-        closeSessionRow(session.sessionId, 'logout', out?.ok ? out.lastInWorldTick : session.lastInWorldTick, out ?? undefined);
+        clock.close(log, account, session.sessionId, 'logout', out?.ok ? out.lastInWorldTick : session.lastInWorldTick, out ?? undefined);
     }
 }
 
