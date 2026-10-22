@@ -18,11 +18,12 @@ import { tickMs } from './wait';
  * `gate` (a gate reading taken before or during the run), `reach` (the tick a level was first
  * observed), `hiscore` (the public row read after logout, against the log), `players` (a
  * /playercount read during the attempt), `tickmon` (one minute of the in-run tick-cadence monitor,
- * tick-monitor.ts; its `ticks` are the tick arrivals it read). `report` lists them
+ * tick-monitor.ts; its `ticks` are the tick arrivals it read), `note` (figures a step records about
+ * its own run, such as a fight's cast count, written with `logNote`). `report` lists them
  * apart and never sums them into the total. A row without a kind is a step, boundary or runner
  * row, and the step and boundary rows together cover the run.
  */
-export type RowKind = 'session' | 'program' | 'gate' | 'reach' | 'hiscore' | 'players' | 'tickmon';
+export type RowKind = 'session' | 'program' | 'gate' | 'reach' | 'hiscore' | 'players' | 'tickmon' | 'note';
 
 export interface TickRow {
     v: 1;
@@ -142,6 +143,16 @@ export async function measure<T>(
             at: new Date().toISOString(),
         });
     }
+}
+
+/** Append a zero-tick `note` row: what `step` measured about itself, in `meta`. Being a kinded row, it never counts toward a total. */
+export function logNote(log: TickLog, target: MeasureTarget, step: string, meta: Record<string, unknown>): void {
+    const t = resolveTarget(target);
+    const tick = t.sdk.getState()?.tick ?? -1;
+    log.append({
+        v: 1, kind: 'note', runId: log.runId, account: t.account(), sessionId: t.sessionId(), step,
+        startTick: tick, endTick: tick, ticks: 0, wallMs: 0, ok: true, meta, tickMs: tickMs(), at: new Date().toISOString(),
+    });
 }
 
 /**
