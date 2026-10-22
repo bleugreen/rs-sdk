@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { DialogState } from '../../sdk/types';
-import { burstTicks, converse, dialogueRuns } from './converse';
+import { burstTicks, converse, dialogueRuns, levelUpInterrupt, parseShape, shapeRuns, type Interrupt } from './converse';
 import { baseState, FakeSdk, flush } from './fake-sdk';
 import { fakeClock, peek, tickEvery, useFakeTicks } from './fake-ticks';
 import { IDLE_TICKS, STALLED } from './wait';
@@ -209,5 +209,196 @@ describe('dialogueRuns / burstTicks', () => {
         expect(dialogueRuns(t)).toBe('2c, opt, 1c');
         expect(burstTicks([...Array(7)].map((_, i) => `[${i}] page: x`))).toBe(2);
         expect(burstTicks(t)).toBe(3);
+    });
+});
+
+/**
+ * A server for burst tests: dialogue clicks queue up and the test's ticks apply
+ * at most 5 of them (the engine's per-tick cap), publishing once per tick. A
+ * continue that reaches a choice page is refused and dropped, as the engine does.
+ */
+function tickServer(sdk: FakeSdk, pages: DialogState[]) {
+    let i = 0;
+    const owed: Array<'continue' | 'option'> = [];
+    sdk.onSend = a => {
+        if (a.method === 'sendClickDialog') owed.push('continue');
+        else if (a.method === 'clickDialogByText') owed.push(/continue/i.test(String(a.args[0])) ? 'continue' : 'option');
+    };
+    sdk.tick({ dialog: pages[0]! });
+    return {
+        async run(ticks: number) {
+            for (let t = 0; t < ticks; t++) {
+                await flush();
+                await flush();
+                for (let n = 0; n < 5 && owed.length; n++) {
+                    const kind = owed.shift()!;
+                    const cur = pages[i];
+                    if (!cur) continue;
+                    const isChoice = cur.options.some(o => o.buttonType === 1);
+                    if (kind === 'continue' && isChoice) continue;
+                    i++;
+                }
+                sdk.tick({ dialog: pages[i] ?? closed });
+            }
+        },
+    };
+}
+
+const conts = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => cont(`${prefix}${i + 1}`));
+const blindSends = (sdk: FakeSdk) => sdk.sent.filter(s => s.method === 'sendClickDialog' && (s.args[1] as { blind?: boolean } | undefined)?.blind).length;
+
+describe('converse burst mode', () => {
+    const pages = () => [...conts('a', 2), choice('c', 'Yes', 'No'), ...conts('b', 7)];
+
+    test('bursts each continue run of the shape and lands on the choice and on the close', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const p = converse(sdk as never, ['Yes'], { shape: '2c, opt, 7c', burst: true });
+        const srv = tickServer(sdk, pages());
+        await srv.run(10);
+        const r = await p;
+        expect(r).toMatchObject({ ok: true, pages: 9, options: 1 });
+        expect(r.shape).toMatchObject({ burst: true, burstPages: 9, stepPages: 0, bursts: 2, failedBursts: 0, expected: '2c, opt, 7c', seen: '2c, opt, 7c', matches: true });
+        expect(blindSends(sdk)).toBe(9);
+        expect(dialogueRuns(r.transcript)).toBe('2c, opt, 7c');
+    });
+
+    test('fixed mode with a shape answers page by page and still checks the shape', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const p = converse(sdk as never, ['Yes'], { shape: '2c, opt, 7c' });
+        const srv = tickServer(sdk, pages());
+        await srv.run(16);
+        const r = await p;
+        expect(blindSends(sdk)).toBe(0);
+        expect(r.shape).toMatchObject({ burst: false, burstPages: 0, stepPages: 9, bursts: 0, matches: true });
+    });
+
+    test('burst is faster than fixed on the same pages', async () => {
+        const timed = async (burst: boolean) => {
+            const sdk = new FakeSdk(baseState({ tick: 1 }));
+            const p = converse(sdk as never, ['Yes'], { shape: '2c, opt, 7c', burst });
+            const srv = tickServer(sdk, pages());
+            await srv.run(16);
+            return (await p).ticks;
+        };
+        const fixed = await timed(false);
+        const burst = await timed(true);
+        expect(fixed).toBe(11); // 9 pages + 1 option, a tick each, plus the first page's publication
+        // First publication + ceil(2/5) + 1 option + ceil(7/5): the run after the option is burst whole from its
+        // first observed page, a tick under CONVENTIONS.md's 1 + ceil((k-1)/5) rule.
+        expect(burst).toBe(5);
+    });
+
+    test('a state page is answered alone and the run before it waits for a quiet tick', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const p = converse(sdk as never, [], { shape: '2c, state, 3c', burst: true });
+        const srv = tickServer(sdk, [...conts('a', 2), cont('s'), ...conts('b', 3)]);
+        await srv.run(12);
+        const r = await p;
+        expect(r.shape).toMatchObject({ burstPages: 5, stepPages: 1, bursts: 2, matches: true, expected: '6c' });
+        const kinds = sdk.sent.map(s => (s.method === 'sendClickDialog' ? 'blind' : 'guarded'));
+        expect(kinds).toEqual(['blind', 'blind', 'guarded', 'blind', 'blind', 'blind']);
+    });
+
+    test('an under-counted run does not land: bursting stops and the rest goes page by page', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const p = converse(sdk as never, ['Yes'], { shape: '2c, opt, 7c', burst: true });
+        const srv = tickServer(sdk, [...conts('a', 3), choice('c', 'Yes', 'No'), ...conts('b', 2)]);
+        await srv.run(20);
+        const r = await p;
+        expect(r.ok).toBe(true);
+        expect(r.options).toBe(1);
+        expect(r.shape!.failedBursts).toBe(1);
+        expect(r.shape!.stopped).toMatch(/burst of 2 did not land/);
+        expect(r.shape!.matches).toBe(false);
+        expect(blindSends(sdk)).toBe(2); // none after the failure
+    });
+
+    test('a page the shape does not expect turns bursting off before anything is sent blind', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const p = converse(sdk as never, ['Yes'], { shape: 'opt, 5c', burst: true });
+        const srv = tickServer(sdk, [...conts('a', 2), choice('c', 'Yes', 'No'), ...conts('b', 5)]);
+        await srv.run(16);
+        const r = await p;
+        expect(blindSends(sdk)).toBe(0);
+        expect(r.shape!.stopped).toMatch(/a continue page came at part 1, opt/);
+        expect(r).toMatchObject({ ok: true, pages: 7, options: 1 });
+    });
+
+    test('a client that refuses blind continues falls back to one page per tick', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const orig = sdk.sendClickDialog.bind(sdk);
+        sdk.sendClickDialog = (async (...args: unknown[]) => {
+            if ((args[1] as { blind?: boolean } | undefined)?.blind) return { success: false, message: 'blind continue unsupported' };
+            return orig(...args);
+        }) as never;
+        const p = converse(sdk as never, ['Yes'], { shape: '2c, opt, 7c', burst: true });
+        const srv = tickServer(sdk, pages());
+        await srv.run(16);
+        const r = await p;
+        expect(r).toMatchObject({ ok: true, pages: 9, options: 1 });
+        expect(r.shape).toMatchObject({ burstPages: 0, stepPages: 9, bursts: 1, failedBursts: 1, matches: true });
+        expect(r.shape!.stopped).toMatch(/burst refused: blind continue unsupported/);
+    });
+
+    test('burst without a shape, or a bad shape, rejects before sending', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, dialog: cont('a') }));
+        await expect(converse(sdk as never, [], { burst: true })).rejects.toThrow(/needs the conversation's shape/);
+        await expect(converse(sdk as never, [], { shape: '3c, maybe' })).rejects.toThrow(/bad shape token "maybe"/);
+        expect(sdk.sent).toEqual([]);
+    });
+});
+
+describe('parseShape / shapeRuns', () => {
+    test('tokens, repeats and merging', () => {
+        expect(parseShape('3c, opt, 3c, state, 8c, opt, 13c')).toEqual([
+            { kind: 'continue', n: 3 }, { kind: 'opt' }, { kind: 'continue', n: 3 }, { kind: 'state' }, { kind: 'continue', n: 8 }, { kind: 'opt' }, { kind: 'continue', n: 13 },
+        ]);
+        expect(parseShape('3c, 2 opt, 2c, 1c')).toEqual([{ kind: 'continue', n: 3 }, { kind: 'opt' }, { kind: 'opt' }, { kind: 'continue', n: 3 }]);
+        expect(shapeRuns('3c, opt, 3c, state, 8c, opt, 13c')).toBe('3c, opt, 12c, opt, 13c');
+        expect(shapeRuns('state, 6c, state, 8c, opt, 4c')).toBe('16c, opt, 4c');
+        expect(() => parseShape('0c')).toThrow();
+    });
+});
+
+describe('converse interrupts', () => {
+    const monkey: Interrupt = { name: 'monkey', match: s => /monkey in your backpack/i.test(s.dialog.allComponents?.map(c => c.text).join(' ') ?? ''), dismiss: 'continue' };
+
+    test('an unsolicited page before the conversation is dismissed and does not count as it opening', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const p = converse(sdk as never, [], { interrupts: [monkey], openTicks: 3 });
+        script(sdk, [cont('m', 'The monkey in your backpack... I\'m hungry!')]);
+        await settle(sdk, 6);
+        const r = await p;
+        expect(r).toMatchObject({ opened: false, pages: 0, interrupts: 1, reason: 'no dialogue opened' });
+    });
+
+    test('mid-conversation: dismissed apart from the pages and the shape', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const p = converse(sdk as never, ['Yes'], { interrupts: [monkey], shape: '1c, opt, 1c' });
+        script(sdk, [cont('a'), cont('m', 'The monkey in your backpack... Are we nearly there yet?'), choice('c', 'Yes', 'No'), cont('b')]);
+        await settle(sdk, 10);
+        const r = await p;
+        expect(r).toMatchObject({ ok: true, pages: 2, options: 1, interrupts: 1 });
+        expect(r.shape!.matches).toBe(true);
+        expect(r.transcript.some(l => /interrupt monkey: The monkey/.test(l))).toBe(true);
+    });
+
+    test('close dismissal sends close-modal; without interrupts the field is absent', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, dialog: cont('m', 'The monkey in your backpack...') }));
+        sdk.onSend = (a, f) => { if (a.method === 'sendCloseModal') queueMicrotask(() => f.tick({ dialog: closed })); };
+        const p = converse(sdk as never, [], { interrupts: [{ ...monkey, dismiss: 'close' }], openTicks: 2 });
+        await settle(sdk, 4);
+        expect((await p).interrupts).toBe(1);
+        expect(sdk.sent.map(s => s.method)).toEqual(['sendCloseModal']);
+        const plain = new FakeSdk(baseState({ tick: 1 }));
+        const q = converse(plain as never, [], { openTicks: 1 });
+        await settle(plain, 3);
+        expect('interrupts' in (await q)).toBe(false);
+    });
+
+    test('levelUpInterrupt matches level-up pages only', () => {
+        const it = levelUpInterrupt();
+        expect(it.match(baseState({ tick: 5, dialog: cont('l', 'Congratulations, you just advanced a Prayer level.') }))).toBe(true);
+        expect(it.match(baseState({ tick: 6, dialog: cont('n', 'Thank you, adventurer.') }))).toBe(false);
     });
 });

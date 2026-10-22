@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, DialogState, NearbyLoc, NearbyNpc, PlayerState } from '../../sdk/types';
-import { act, actConverse, castTeleport, openDoor, opLoc, pickup, talkTo, wield } from './act';
+import { act, actConverse, castTeleport, openDoor, opLoc, pickup, talkTo, useOn, wield } from './act';
 import { baseState, FakeSdk, flush } from './fake-sdk';
 
 const player = (worldX: number, worldZ: number, level = 0) => ({ worldX, worldZ, level, hp: 10, maxHp: 10 }) as PlayerState;
@@ -44,6 +44,37 @@ describe('act', () => {
         await ticks(sdk, 1, () => ({ gameMessages: [{ type: 0, text: "I can't reach that!", sender: '', tick: 2, fromSelf: false }] }));
         await ticks(sdk, 3);
         expect((await p).resends).toBe(1);
+    });
+});
+
+describe('act interrupts', () => {
+    const page = (pageId: string, text: string): DialogState => ({ ...cont(pageId), allComponents: [{ id: 1, type: 4, buttonType: 0, option: '', text }] });
+    const monkey = { name: 'monkey', match: (s: BotWorldState) => /monkey in your backpack/i.test(s.dialog.allComponents?.[0]?.text ?? ''), dismiss: 'continue' as const };
+
+    test('an unsolicited page is dismissed and the click re-sent once it has gone', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        let done = false;
+        const p = act(sdk as never, () => sdk.sendWalk(0, 0), () => done, { resendEvery: 0, interrupts: [monkey] });
+        await ticks(sdk, 1, () => ({ dialog: page('m', 'The monkey in your backpack... I\'m tired!') }));
+        expect(sdk.sent.map(s => s.method)).toEqual(['sendWalk', 'clickDialogByText']);
+        await ticks(sdk, 1, () => ({ dialog: closed }));
+        expect(sdk.sent.map(s => s.method)).toEqual(['sendWalk', 'clickDialogByText', 'sendWalk']);
+        done = true;
+        await ticks(sdk, 1);
+        expect(await p).toMatchObject({ ok: true, resends: 1, interrupts: 1 });
+    });
+
+    test('a dialogue that is not an interrupt only holds off re-sends, as before', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        const p = act(sdk as never, () => sdk.sendWalk(0, 0), () => false, { resendEvery: 2, maxTicks: 4, interrupts: [monkey] });
+        await ticks(sdk, 5, () => ({ dialog: page('q', 'Hello traveller.') }));
+        expect(await p).toMatchObject({ ok: false, resends: 0, interrupts: 0 });
+        expect(sdk.sent.map(s => s.method)).toEqual(['sendWalk']);
+    });
+
+    test('interrupts need an sdk that can dismiss pages', async () => {
+        const src = { getState: () => baseState(), onStateUpdate: () => () => {} };
+        await expect(act(src as never, async () => {}, () => true, { interrupts: [monkey] })).rejects.toThrow(/interrupts need an sdk/);
     });
 });
 
@@ -257,5 +288,83 @@ describe('action segment recording', () => {
         await ticks(sdk, 1, () => ({ dialog: closed }));
         await ticks(sdk, 3);
         expect(await p).toMatchObject({ startTick: 1, endTick: 6, ticks: 5, pages: 1, interactions: 1, note: 'timeout' });
+    });
+});
+
+describe('useOn', () => {
+    const inv = (...items: Array<[number, string, number?]>) =>
+        items.map(([slot, name, count]) => ({ slot, id: 100 + slot, name, count: count ?? 1, optionsWithIndex: [] }));
+    const holding = (extra: Partial<BotWorldState> = {}) => new FakeSdk(baseState({ tick: 1, player: { ...player(10, 10), animId: -1 }, inventory: inv([3, 'Key'], [5, 'Twigs']), ...extra }));
+    const keyGone = (s: BotWorldState) => !s.inventory.some(i => i.name === 'Key');
+
+    test('a loc given by tile and id is sent as is, without a lookup', async () => {
+        const sdk = holding();
+        sdk.scanNearbyLocs = async () => { throw new Error('no scan expected'); };
+        const p = useOn(sdk as never, 'Key', { loc: { x: 2480, z: 3463, id: 2436 } }, keyGone);
+        await ticks(sdk, 2);
+        await ticks(sdk, 1, () => ({ inventory: inv([5, 'Twigs']) }));
+        expect(await p).toMatchObject({ ok: true, resends: 0, landed: true, target: { kind: 'loc', x: 2480, z: 3463, id: 2436 } });
+        expect(sdk.sent).toEqual([{ method: 'sendUseItemOnLoc', args: [3, 2480, 3463, 2436] }]);
+    });
+
+    test('no blind re-send by default: a walk toward the target, then a slow effect', async () => {
+        const sdk = holding();
+        const p = useOn(sdk as never, 'Key', { loc: { x: 0, z: 0, id: 1 } }, keyGone);
+        await ticks(sdk, 4, i => ({ player: { ...player(10 - i, 10), animId: -1 } }));
+        await ticks(sdk, 3, () => ({ player: { ...player(6, 10), animId: 832 } }));
+        await ticks(sdk, 5);
+        await ticks(sdk, 1, () => ({ inventory: inv([5, 'Twigs']) }));
+        expect(await p).toMatchObject({ ok: true, resends: 0 });
+    });
+
+    test('a click that evidently did nothing is sent once more after droppedAfter ticks', async () => {
+        const sdk = holding();
+        const p = useOn(sdk as never, 'Key', { loc: { x: 0, z: 0, id: 1 } }, keyGone, { droppedAfter: 4 });
+        await ticks(sdk, 3);
+        expect(sdk.sent.length).toBe(1);
+        await ticks(sdk, 1);
+        expect(sdk.sent.length).toBe(2);
+        await ticks(sdk, 1, () => ({ inventory: inv([5, 'Twigs']) }));
+        expect(await p).toMatchObject({ ok: true, resends: 1 });
+    });
+
+    test('a use that landed and did not satisfy done is never re-sent', async () => {
+        const sdk = holding();
+        const p = useOn(sdk as never, 'Key', { loc: { x: 0, z: 0, id: 1 } }, keyGone, { droppedAfter: 2, maxTicks: 8 });
+        await ticks(sdk, 1, () => ({ gameMessages: [{ type: 0, text: 'Nothing interesting happens.', sender: '', tick: 2, fromSelf: false }] }));
+        await ticks(sdk, 9);
+        expect(await p).toMatchObject({ ok: false, resends: 0, landed: true, reason: 'done never held' });
+    });
+
+    test("\"I can't reach that!\" is a drop: re-sent at once", async () => {
+        const sdk = holding();
+        const p = useOn(sdk as never, 'Key', { loc: { x: 0, z: 0, id: 1 } }, keyGone, { maxTicks: 3 });
+        await ticks(sdk, 1, () => ({ gameMessages: [{ type: 0, text: "I can't reach that!", sender: '', tick: 2, fromSelf: false }] }));
+        await ticks(sdk, 3);
+        expect((await p).resends).toBe(1);
+    });
+
+    test('resendEvery opts in to act\'s blind re-send', async () => {
+        const sdk = holding();
+        const p = useOn(sdk as never, 'Key', { loc: { x: 0, z: 0, id: 1 } }, () => false, { resendEvery: 2, droppedAfter: 0, maxResends: 3, maxTicks: 7 });
+        await ticks(sdk, 1, () => ({ gameMessages: [{ type: 0, text: 'Nothing interesting happens.', sender: '', tick: 2, fromSelf: false }] }));
+        await ticks(sdk, 8);
+        expect((await p).resends).toBe(3);
+    });
+
+    test('on an npc by name, and on another item (never its own slot)', async () => {
+        const sdk = holding({ nearbyNpcs: [npc(42, 'Zooknock')], inventory: inv([3, 'Twigs'], [5, 'Twigs']) });
+        const a = useOn(sdk as never, 'Twigs', { npc: /zooknock/i }, () => true);
+        await ticks(sdk, 1);
+        expect(await a).toMatchObject({ ok: true, target: { kind: 'npc', index: 42 } });
+        const b = useOn(sdk as never, 'Twigs', { item: 'Twigs' }, () => true);
+        await ticks(sdk, 1);
+        expect(await b).toMatchObject({ target: { kind: 'item', slot: 5 } });
+        expect(sdk.sent.map(s => [s.method, ...s.args])).toEqual([['sendUseItemOnNpc', 3, 42], ['sendUseItemOnItem', 3, 5]]);
+    });
+
+    test('throws when the item is not held', async () => {
+        const sdk = holding({ inventory: [] });
+        await expect(useOn(sdk as never, 'Key', { loc: { x: 0, z: 0, id: 1 } }, () => true)).rejects.toThrow(/no Key in the inventory/);
     });
 });

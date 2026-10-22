@@ -28,6 +28,64 @@ export function prayerActive(s: BotWorldState, prayer: PrayerName): boolean {
     return s.prayers?.activePrayers?.[PRAYER_INDICES[prayer]] === true;
 }
 
+/** Prayer level each prayer needs (the 2004 prayer book, in PRAYER_INDICES order: 1, 4, 7, ... 43). */
+export const PRAYER_LEVELS: Readonly<Record<PrayerName, number>> = Object.fromEntries(
+    (Object.entries(PRAYER_INDICES) as Array<[PrayerName, number]>).map(([name, i]) => [name, 1 + 3 * i])
+) as Record<PrayerName, number>;
+
+export interface SetPrayerOptions {
+    /** Give up after this many ticks (default 10). */
+    maxTicks?: number;
+    /** Re-toggle when the published state has not changed this many ticks after a toggle (default 3; a toggle shows in 1-2). */
+    retryAfter?: number;
+    /** At most this many re-toggles (default 2). */
+    maxRetries?: number;
+}
+
+export interface SetPrayerResult {
+    ok: boolean;
+    /** Call to the first state showing the prayer as asked (0 when it already was). */
+    ticks: number;
+    toggles: number;
+    reason?: 'level' | 'no points' | 'timeout';
+}
+
+/**
+ * Turn a prayer on or off outside a fight, confirmed from the published prayer
+ * state. Already as asked: no click. On needs the prayer level and some points,
+ * checked before anything is sent. A toggle that has not shown after
+ * `retryAfter` ticks is sent again; never sooner, since a second toggle that
+ * lands behind a late first one turns the prayer back.
+ */
+export async function setPrayer(sdk: UpkeepSdk, prayer: PrayerName, on: boolean, opts: SetPrayerOptions = {}): Promise<SetPrayerResult> {
+    const s0 = sdk.getState();
+    if (!s0) throw new Error('setPrayer: no state');
+    const t0 = s0.tick;
+    if (prayerActive(s0, prayer) === on) return { ok: true, ticks: 0, toggles: 0 };
+    if (on && (s0.prayers?.prayerLevel ?? 0) < PRAYER_LEVELS[prayer]) return { ok: false, ticks: 0, toggles: 0, reason: 'level' };
+    if (on && (s0.prayers?.prayerPoints ?? 0) <= 0) return { ok: false, ticks: 0, toggles: 0, reason: 'no points' };
+    const retryAfter = opts.retryAfter ?? 3;
+    const maxRetries = opts.maxRetries ?? 2;
+    let toggles = 1;
+    let sent = t0;
+    void sdk.sendTogglePrayer(prayer);
+    const r = await waitUntil(
+        sdk,
+        s => {
+            if (prayerActive(s, prayer) === on) return true;
+            if (on && (s.prayers?.prayerPoints ?? 0) <= 0) return false;
+            if (s.tick - sent >= retryAfter && toggles <= maxRetries) {
+                sent = s.tick;
+                toggles++;
+                void sdk.sendTogglePrayer(prayer);
+            }
+            return false;
+        },
+        { maxTicks: opts.maxTicks ?? 10 }
+    );
+    return { ok: r.ok, ticks: r.tick - t0, toggles, ...(r.ok ? {} : { reason: on && (r.state?.prayers?.prayerPoints ?? 0) <= 0 ? ('no points' as const) : ('timeout' as const) }) };
+}
+
 /** Prayer potion doses held: a "Prayer potion(3)" counts 3. */
 export function prayerDoses(s: BotWorldState): number {
     return s.inventory.reduce((a, i) => {

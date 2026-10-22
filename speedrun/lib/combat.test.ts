@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, CombatEvent, DialogState, InventoryItem, NearbyNpc, PlayerState } from '../../sdk/types';
-import { fight, Upkeep } from './combat';
+import { fight, PRAYER_LEVELS, setPrayer, Upkeep } from './combat';
 import { baseState, FakeSdk, flush } from './fake-sdk';
 
 const player = (hp: number, inCombat = true) => ({ worldX: 0, worldZ: 0, level: 0, hp, maxHp: 20, isDead: false, combat: { inCombat, targetIndex: -1, targetType: 'none', lastDamageTick: -1 } }) as unknown as PlayerState;
@@ -161,5 +161,62 @@ describe('Upkeep', () => {
         expect(u.step(st(5, 6, false))).toBe(false); // switched off again: toggled back on
         expect(sdk.sent.at(-1)!.method).toBe('sendTogglePrayer');
         expect(u.prayerUsed).toBe(14);
+    });
+});
+
+describe('setPrayer', () => {
+    const MELEE = 14;
+    const prayers = (on: boolean, points = 43, level = 43) => {
+        const activePrayers = Array(15).fill(false);
+        activePrayers[MELEE] = on;
+        return { prayers: { activePrayers, prayerPoints: points, prayerLevel: level } };
+    };
+
+    test('the level table matches the prayer book', () => {
+        expect(PRAYER_LEVELS.thick_skin).toBe(1);
+        expect(PRAYER_LEVELS.protect_items).toBe(25);
+        expect(PRAYER_LEVELS.protect_from_melee).toBe(43);
+    });
+
+    test('already as asked: no click', async () => {
+        const sdk = arena(prayers(true));
+        expect(await setPrayer(sdk as never, 'protect_from_melee', true)).toEqual({ ok: true, ticks: 0, toggles: 0 });
+        expect(sdk.sent).toEqual([]);
+    });
+
+    test('turns it on, confirmed by the published state', async () => {
+        const sdk = arena(prayers(false));
+        const p = setPrayer(sdk as never, 'protect_from_melee', true);
+        await tick(sdk);
+        await tick(sdk, prayers(true));
+        expect(await p).toEqual({ ok: true, ticks: 2, toggles: 1 });
+        expect(sends(sdk, 'sendTogglePrayer').map(a => a.args[0])).toEqual(['protect_from_melee']);
+    });
+
+    test('turns it off', async () => {
+        const sdk = arena(prayers(true));
+        const p = setPrayer(sdk as never, 'protect_from_melee', false);
+        await tick(sdk, prayers(false));
+        expect(await p).toMatchObject({ ok: true, toggles: 1 });
+    });
+
+    test('refuses without sending below the level or with no points', async () => {
+        const low = arena(prayers(false, 40, 42));
+        expect(await setPrayer(low as never, 'protect_from_melee', true)).toMatchObject({ ok: false, reason: 'level' });
+        const empty = arena(prayers(false, 0));
+        expect(await setPrayer(empty as never, 'protect_from_melee', true)).toMatchObject({ ok: false, reason: 'no points' });
+        expect([...low.sent, ...empty.sent]).toEqual([]);
+    });
+
+    test('a dropped toggle is sent again after retryAfter ticks, never sooner', async () => {
+        const sdk = arena(prayers(false));
+        const p = setPrayer(sdk as never, 'protect_from_melee', true, { retryAfter: 3 });
+        await tick(sdk);
+        await tick(sdk);
+        expect(sends(sdk, 'sendTogglePrayer').length).toBe(1);
+        await tick(sdk);
+        expect(sends(sdk, 'sendTogglePrayer').length).toBe(2);
+        await tick(sdk, prayers(true));
+        expect(await p).toMatchObject({ ok: true, toggles: 2, ticks: 4 });
     });
 });
