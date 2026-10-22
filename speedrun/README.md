@@ -17,12 +17,13 @@ speedrun/
     bank.ts       depositAll, depositMatching, withdrawMany (+ pure planners)
     trade.ts      give / giveAll (giver), receiveFrom (receiver) (+ pure per-tick decisions)
     dialogue.ts   classifyPage, clickOption, clickContinue, advance, continueBurst
-    converse.ts   whole conversations, choice queues, dialogueRuns and burstTicks
+    converse.ts   whole conversations, choice queues, the shape-driven burst mode, unsolicited-page
+                  interrupts, dialogueRuns and burstTicks
     levelup.ts    isLevelUpPage, levelUpChain, isLevelUp, startLevelUpWatcher, withLevelUpDismissal
-    combat.ts     fight (one target by world index), Upkeep (prayer, potions, food)
+    combat.ts     fight (one target by world index), Upkeep (prayer, potions, food), setPrayer
     world.ts      position, entity/item/skill queries, message windows and tile counters
     paths.ts      collision-map route lengths (separate from light world queries)
-    act.ts        act, actConverse, talkTo, loc/item/door actions, walks and spell teleports
+    act.ts        act, actConverse, talkTo, useOn, loc/item/door actions, walks and spell teleports
     idle.ts       message-based idle waits and animation-based settled predicates
     session.ts    openSession, launchClient, logoutClean, waitLoggedOut, login, startWatchdog,
                   abandonClient, markProgress
@@ -45,10 +46,15 @@ speedrun/
   skills/         the run's step modules: `skill` and `steps({to, ...})` returning runner Steps
     start.ts      S00, the tutorial skip on a brand-new account's first login
     fishing.ts    S22 fly fishing under the gated knife loop, and the from-1 net and walk bands
+  quests/         the quest step modules: `quest`, `stepId`, `steps(opts)`, one Step per segment
+    segments.ts   the shared scaffold: questSteps, QuestOptions, talkShape, kitSegment, checks
   lab/            local lab: never imported by lib/
     lab.sh        engine + gateway + lite runners on port block 9300
     setup.ts      staff fixtures: tele/mustTele, give/ensureItem, setStats, setvar/getvar, clearInventory
     record.ts     Recorder segments, stats, trace and RESULT output for quest measurements
+    quests/run.ts the quest modules' lab runner: segment fixtures, --from/--until/--runs/
+                  --dialogue/--trace/--launch, per-segment tick tables
+    quests/dialogue-burst.ts  fixed vs burst on the Cook's Assistant and Grand Tree openings
     measure-*.ts  the measurements quoted below (measure-runner.ts: runner boundary ticks)
     probe-engine.ts      engine-rule probes (docs/speedrun/research/engine-sweep/engine.md)
     census-delayfree.ts  static census of delay-free item/xp triggers (same doc)
@@ -310,6 +316,76 @@ in `lab/`, which `lib/` never imports.
   and `RESULT <title> {total, segments}`. It is not the scored runner's
   `TickLog`, and its totals do not include idle-confirmation tails unless a
   caller deliberately marks them.
+
+## Quest step modules: the shared layer
+
+`quests/<quest>.ts` modules (rs/185) are built from a segment table with
+`quests/segments.ts`. `questSteps(stepId, segments)` names each Step
+`<stepId>:<letter>-<label>` (S15:A-narnode; run.ts keys on the step id and
+`runSteps({from})` starts at any full name), defaults missing checks to
+passing, and passes `done`/`inProgress`/`resume`/`probes` through only when
+given, so a pure travel segment stays transient for the resume walk.
+`QuestOptions` is the base of every module's options: `dialogue` ('burst' by
+default) and `kitFrom`. `kitSegment` is the standard first segment: it only
+checks the inventory when the kit is held, receives the missing amounts with
+`trade.receiveFrom(kitFrom)` otherwise, and has no `done`, because the kit is
+spent later and holding it is not a durable mark. Position checks (`within`)
+judge by coordinates: after a reconnect the first state has no scene.
+
+**Burst mode.** `converse(sdk, choices, { shape, burst })` takes the
+conversation's shape in CONVENTIONS.md notation (`3c, opt, 3c, state, 8c`) and
+clears each run of two or more continues with one `continueBurst`, from the
+run's first observed page. Every page is checked against the shape as it
+comes; the first disagreement, or a burst that does not land whole, turns
+bursting off and the conversation goes on one page per tick, so a wrong shape
+costs ticks, never a mis-click. `result.shape` counts burst and per-tick pages
+and reports `seen` against `expected`. In fixed mode the shape is still
+checked, which is how a lab run validates a doc's recorded shape. A run
+followed by a `state` page waits one quiet tick, since nothing else tells its
+landing apart; a run followed by an option or the close does not. A shape that
+over-counts a run before a choice is invisible (the engine refuses the extra
+continue at the choice); one that under-counts costs about 3 ticks.
+
+Measured on the lab at 300 ms, 3 runs per mode, talk click to dialogue closed
+(`lab/quests/dialogue-burst.ts`, 2026-10-21):
+
+| Conversation | Shape | Fixed | Burst |
+|---|---|---|---|
+| Cook's Assistant start | 1c, opt, 3c, opt, 2c | 9, 13, 12 | 6, 6, 7 |
+| Grand Tree, King Narnode start | 3c, opt, 3c, state, 8c, opt, 13c | 52, 51, 53 | 33, 33, 34 |
+
+The Grand Tree figures include its two scripted cutscenes (about 14 ticks
+down the trapdoor and 8 back up, the same in both modes). The run after an
+option is burst whole from its first page, so it costs ceil(k/5) rather than
+CONVENTIONS.md's 1 + ceil((k-1)/5).
+
+**Interrupts.** `interrupts: [{ match, dismiss }]` on `converse` and `act`
+dismisses pages the step did not ask for (the Monkey Madness backpack monkey).
+`converse` counts them apart and never treats one as the conversation opening
+or reopening; `act` dismisses and then re-sends its click once the page has
+gone. `levelUpInterrupt()` is the level-up rule in the same shape. `match`
+must give the same answer when called twice on one state.
+
+**useOn and setPrayer.** `useOn(sdk, item, {loc}|{npc}|{item}, done)` does not
+re-send blindly by default, because most uses spend the item or start an
+action: it re-sends only a click after which nothing happened (no movement,
+animation, dialogue, message or inventory change), or at once on "I can't
+reach that!". A loc given with its tile and id is clicked without a lookup, so
+it works on bridged levels. `setPrayer` checks the level (`PRAYER_LEVELS`,
+from prayers.dbrow) and points before sending, confirms from the published
+prayer state, and re-toggles only after `retryAfter` ticks, so a late first
+toggle is never flipped back.
+
+**Lab runner.** `lab/quests/run.ts` applies a segment's fixture (vars, items,
+worn items, levels, tile), runs `--from..--until` through `runSteps` with a
+`TickLog`, repeats `--runs` times and prints a markdown table (per-run ticks,
+mean, min, max, delta against the quest's reference, boundaries, total);
+`--dialogue=both` adds the fixed-vs-burst comparison. `::setvar` changes a
+quest's varp but not the quest tab's colours, which are what the bot
+publishes as `quests`; the content recolours the tab at login
+(`login.rs2` `~update_questlist`). A fixture that sets vars therefore relogs,
+which needs the script to own the client: run with `LAB_RUNNERS=0` and
+`--launch`.
 
 The migration does not revise historical measurements. New runs may differ
 because retry policies, endpoint definitions and counter meanings have changed;
