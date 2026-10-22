@@ -53,8 +53,8 @@ on cairn://p/rs/97/1/builder.
 
 **Timing (run-wide; main, 20:59 PDT).** Every cue-timed hand-off, helper login or helper action is
 timed on **observed game ticks** (the tick stream or `TICKMON`), never on wall-clock multiples of
-300 ms: the Runecraft givers' cue (entry 9, H4), the anvil's `cue.json` (H5), the Firemaking
-droppers (S03, H6), the bone givers' load timing (H4.1-H4.n) and any `T0 + n ms` launch in run.ts. A
+300 ms: the Runecraft givers' cue (entry 9, HS4), the anvil's `cue.json` (HS5), the Firemaking
+droppers (S03, HS6), the bone givers' load timing (H4.1-H4.n) and any `T0 + n ms` launch in run.ts. A
 deadline that stands for a tick count keys off observed ticks; wall clock appears only as an idle
 bound, no new tick for N ticks' worth of time scaled by the configured tick length (on the floor
 since #209's `tickClock`, 4fe2d0a8). The demo has
@@ -251,18 +251,18 @@ are filed under main and held until tenet 15 is answered.
 - **15.** The primary path is the bury option inside entry 3 (knife-cycle `bury` on main; the
   gate-off plain + bury is rs/162's, lab-measured and on main as 3dfc217f, #165); the booth fallback `skills/prayer.ts` is rs/186's.
 
-**Helper-side scripts (section 4).** H2-H6 are rs/41's (main's ruling).
+**Helper-side scripts (section 4).** They are numbered **HS1-HS8** (helper script), so that a bare H-number always means a SUPPLIES.md hand-off (H1-H23, H4.x, H14.x): "H4" is the S05 hand-off at Doric's, served by the trade giver (HS1), and "HS4" is the in-room essence giver. HS2-HS6 are rs/41's (main's ruling).
 
 | Helper | Gates | Module status | Notes |
 |---|---|---|---|
-| H1 mule, hand-off and quest-item giver | S01, every helper trade | on rs/41's branch (rs/49, #34) | the step packages and per-tile positioning (section 4) are rs/41's, no issue yet; quest items rs/126, rs/173 |
-| H2 stun-pack courier | S18 | on rs/41's branch (rs/141): `bone-giver.ts`'s S18 on-request mode; the Charge and Fletching stacks building (rs/163, held: not before 15:25 PDT) | rs/163's execution 2 extends `bone-giver.ts`; there is no `stun-courier.ts` |
-| H3 cannon holder | S14, S27 | on rs/41's branch (rs/125): `cannon.ts`; the hand-off verified in the lab and on the demo (rs/189) | cairn_h92 holds two sets and 1,416 balls (rs/41, 15:00 PDT); `cannon.ts` serve mode hands over a set and balls in one trade: 4 ticks on the receiver's clock in the lab, 6 on the demo with h92 as the quest-complete receiver; the quest gates buying and Set-up, not trading |
-| H4 in-room essence giver | S06, S21 | on rs/41's branch (rs/117, rs/141): `altar-giver.ts`; the direct path building (rs/163) | `altar-giver.ts`, `altar-cue.ts`, `altar-room.ts`; rs/163's direct-path transport (PR #144; lab 21 of 21, host slot 22:05Z); there is no `rc-giver.ts`. rs/163 sized the body-altar roster at 22 givers on 23 body talismans, no keeper, on a measured 139-142-tick restock round trip (m, lab, 16:17 PDT), with 0 nature talismans held; the earlier 14 givers rested on a ~90-tick estimate (RUN-ORDER.md section 7) |
-| H5 anvil helper | S25a | building (rs/188) | `anvil.ts`, new |
-| H6 log-row dropper | S03 | building (rs/187) | `fm-row.ts`, new, first in rs/187's queue |
-| H7 carp catcher | S20 | building (rs/173) | cairn_h97 catches the carp ahead and banks it |
-| H8 wine giver | S25c | on rs/41's branch (rs/47, rs/88) | `giveWine`; acceptance is entry 29's (rs/186) |
+| HS1 mule, hand-off and quest-item giver | S01, every helper trade | on rs/41's branch (rs/49, #34) | the step packages and per-tile positioning (section 4) are rs/41's, no issue yet; quest items rs/126, rs/173 |
+| HS2 stun-pack courier | S18 | on rs/41's branch (rs/141): `bone-giver.ts`'s S18 on-request mode; the Charge and Fletching stacks building (rs/163, held: not before 15:25 PDT) | rs/163's execution 2 extends `bone-giver.ts`; there is no `stun-courier.ts` |
+| HS3 cannon holder | S14, S27 | on rs/41's branch (rs/125): `cannon.ts`; the hand-off verified in the lab and on the demo (rs/189) | cairn_h92 holds two sets and 1,416 balls (rs/41, 15:00 PDT); `cannon.ts` serve mode hands over a set and balls in one trade: 4 ticks on the receiver's clock in the lab, 6 on the demo with h92 as the quest-complete receiver; the quest gates buying and Set-up, not trading |
+| HS4 in-room essence giver | S06, S21 | on rs/41's branch (rs/117, rs/141): `altar-giver.ts`; the direct path building (rs/163) | `altar-giver.ts`, `altar-cue.ts`, `altar-room.ts`; rs/163's direct-path transport (PR #144; lab 21 of 21, host slot 22:05Z); there is no `rc-giver.ts`. rs/163 sized the body-altar roster at 22 givers on 23 body talismans, no keeper, on a measured 139-142-tick restock round trip (m, lab, 16:17 PDT), with 0 nature talismans held; the earlier 14 givers rested on a ~90-tick estimate (RUN-ORDER.md section 7) |
+| HS5 anvil helper | S25a | building (rs/188) | `anvil.ts`, new |
+| HS6 log-row dropper | S03 | building (rs/187) | `fm-row.ts`, new, first in rs/187's queue |
+| HS7 carp catcher | S20 | building (rs/173) | cairn_h97 catches the carp ahead and banks it |
+| HS8 wine giver | S25c | on rs/41's branch (rs/47, rs/88) | `giveWine`; acceptance is entry 29's (rs/186) |
 | S07 bone givers b01-b04 | S07 | building (rs/163) | `bone-giver.ts` in the launcher on rs/41's branch (rs/141); rs/163 puts b01-b03 on the demo |
 
 **Program and library dependencies.** The in-page programs and `speedrun/lib` changes the entries
@@ -1261,13 +1261,13 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Parameters:** `giver`, the inventory plan (one mixed bronze/iron inventory to 34, then platebodies
   in iron 33, steel 48, mithril 68, adamant 88), `untilLevel: 99`.
 - **Preconditions:** a hammer; the anvil helper staged with bars (15 bronze, 39 iron, 95 steel, 280
-  mithril, 340 adamant; `skills/README.md`); position on the anvil tile; the `ANVIL_CONTRACT` with H5
+  mithril, 340 adamant; `skills/README.md`); position on the anvil tile; the `ANVIL_CONTRACT` with HS5
   (data in `smithing.ts`, agreed with rs/188); `run.ts` publishing `cue.json` (the receiver hash)
   with seq 0's plan before SCORED reaches the anvil.
 - **Postconditions:** Smithing 99. Items out: every product back to the helper.
-- **Ticks:** expected **1,065** (measured, lab: rs/197's module with a scripted H5 stand-in, 31
+- **Ticks:** expected **1,065** (measured, lab: rs/197's module with a scripted HS5 stand-in, 31
   inventories; RUN-ORDER.md SM). Best **1,028** (measured, lab: rs/197's module with rs/188's real
-  H5, `speedrun/helpers/anvil.ts` at ab8b90fb, 1 to 99 including the final hand-back, 32 trades, 0
+  HS5, `speedrun/helpers/anvil.ts` at ab8b90fb, 1 to 99 including the final hand-back, 32 trades, 0
   retries; rs/188's own runs were 1,024 and 1,058). These replace 1,147 / 1,107, whose 1,147
   (`smithing-trade.ts --from 1 --until 99`) carried 40 ticks of the old lab helper's set-up. Fallback about **1,330** (bank at the Varrock
   west booth, raw packets; inferred from the measured 42-tick bank cycle, same table). About 4
@@ -1281,7 +1281,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Mode:** overlay-driven. An in-page trade-and-make program would recover the ~60 relay ticks,
   which is optional.
 - **Fallback:** the bank cycle.
-- **Acceptance, local:** with the real H5, 1 to 99. Pass: within 5% of **1,028**, and at most 10
+- **Acceptance, local:** with the real HS5, 1 to 99. Pass: within 5% of **1,028**, and at most 10
   ticks per inventory without a level-up backlog (9 normally; 11-15 when several items cross a
   level, an engine floor, `skills/smithing.md` §6).
 - **Acceptance, demo (throwaway):** two throwaways at the Varrock west anvil, 5 inventories of bronze
@@ -1531,7 +1531,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   **exactly 4.00 ticks a log from 30 to 99 with strangers standing on the row**: no stolen logs,
   slips or resends (m). `firemaking.ts`'s `failures` over-counts (13 against 8 real) through its
   `lost` path; rs/269 fixes it before S03 reports from it. The 695 before was the trade refills'
-  (inferred: the model's 658 + 6 trades). The dropped row's pacing is built (H6, `helpers/fm-row.md`:
+  (inferred: the model's 658 + 6 trades). The dropped row's pacing is built (HS6, `helpers/fm-row.md`:
   two lab runs of 157 logs, 658 ticks first to last fire, no gap waiting on a log). **An eastward row
   costs nothing** (rs/269, m, demo): after each light the player steps back onto the previous fire
   (`firemaking.rs2` `push_player` pushes west first; the `fire` loc is `blockwalk=no`), yet 78 east
@@ -1549,7 +1549,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   99 within 5% of 650 on the row (695 by trades).
 - **Acceptance, demo (throwaway):** a throwaway and a log-row helper throwaway, a 20-log normal-log
   row. Pass: 4 ticks per fire on at least 18 of 19 gaps, and nobody else's pickup broke the row.
-- **Start from:** `firemaking-line.ts`, `firemaking-supply.ts`, `firemaking-model.ts`; the row from H6
+- **Start from:** `firemaking-line.ts`, `firemaking-supply.ts`, `firemaking-model.ts`; the row from HS6
   `speedrun/helpers/fm-row.ts` (its lab driver `speedrun/lab/fm-row.ts` runs `firemaking-line.ts
   --mode=ground` as the stand-in). The 2-row snake's lap turn costs 5 ticks per lap (`helpers/fm-row.md`).
 - **logoutSafe:** yes.
@@ -1957,7 +1957,7 @@ place before the step that needs them, and each step's precondition checks for i
 ranked by the exposure of the step they gate. The stockpiling roles (woodcutter, smelter, essence,
 bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIES.md` covers them.
 
-### H1. Hand-off giver and quest-item giver: `speedrun/helpers/mule.ts` (on rs/41's branch, rs/49)
+### HS1. Hand-off giver and quest-item giver: `speedrun/helpers/mule.ts` (on rs/41's branch, rs/49)
 
 - **Gates:** S01 and every helper trade in `quests/README.md` §4's last column, plus the S14/S27
   supplies and the S25 block. That is roughly 20-30 trades on SCORED's clock at 5-10 ticks each,
@@ -1970,7 +1970,7 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
 - **Acceptance:** demo, the receiver ticks above (6.7 / 8 / 10) for 1 / 10 / 20 stacks at a tile away
   from Varrock west.
 
-### H2. Stun-pack courier: `speedrun/helpers/bone-giver.ts`, S18 on-request mode (on rs/41's branch, rs/141; the Charge and Fletching stacks building, rs/163)
+### HS2. Stun-pack courier: `speedrun/helpers/bone-giver.ts`, S18 on-request mode (on rs/41's branch, rs/141; the Charge and Fletching stacks building, rs/163)
 
 - **Gates:** S18 (exposure ~2,040). It stands beside the knights with bone loads (21-24 per load) and
   the Charge and Fletching stacks, and trades in a success window about every 12 stuns, 9-10 times
@@ -1982,7 +1982,7 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
 - **Acceptance:** local, a top-up inside a success window at most 5 ticks (the trade floor) without
   breaking the next 2-tick success gap.
 
-### H3. Cannon holder: `speedrun/helpers/cannon.ts` (on rs/41's branch, rs/125; serve mode, rs/189)
+### HS3. Cannon holder: `speedrun/helpers/cannon.ts` (on rs/41's branch, rs/125; serve mode, rs/189)
 
 - **Gates:** S14 and S27 (exposure 1,857 + ~140). Only an account that has done Dwarf Cannon can buy
   the cannon from Nulodion (read, `nulodion.rs2:1-5`), and the ammo mould is untradeable
@@ -2006,7 +2006,7 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
   while it walked in, clicked after its 30-tick wait, and the 8 likely include walking to the
   holder. h92's bank was unchanged across the leg (`helpers/cannon.md`, Demo leg).
 
-### H4. In-room essence giver: `speedrun/helpers/altar-giver.ts` (on rs/41's branch, rs/117 and rs/141; the direct path building, rs/163)
+### HS4. In-room essence giver: `speedrun/helpers/altar-giver.ts` (on rs/41's branch, rs/117 and rs/141; the direct path building, rs/163)
 
 - **Gates:** S06 and S21 (exposure 1,330, at stake ~1,340). It stands beside SCORED inside the altar
   room with 27 essence per cycle and sends its half of the schedule on predicted ticks: request on
@@ -2024,7 +2024,7 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
   `essence.ts`.
 - **Acceptance:** as entry 9.
 
-### H5. Anvil helper: `speedrun/helpers/anvil.ts` (exists, rs/188)
+### HS5. Anvil helper: `speedrun/helpers/anvil.ts` (exists, rs/188)
 
 - **Gates:** S25a (exposure 1,065). It stands on (3187,3427), offers the next 25 bars and accepts
   SCORED's 5 products in the same trade, about 31 times (`skills/smithing.md` §1).
@@ -2037,7 +2037,7 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
   queued level-up pages open one per tick after the make chain and ahead of SCORED's trade
   interaction, about a tick per item that crossed a level (an engine floor, traced by rs/197).
 
-### H6. Log-row dropper: `speedrun/helpers/fm-row.ts` (exists, rs/187, lab-accepted)
+### HS6. Log-row dropper: `speedrun/helpers/fm-row.ts` (exists, rs/187, lab-accepted)
 
 - **Gates:** S03 (exposure 650). It drops the 157 logs in row order ahead of SCORED, paced around the
   100-tick private window so each log is revealed when SCORED reaches it and not long before
@@ -2052,14 +2052,14 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
   period (`cueAt: 'written'`'s `cueTick`, fm-row.ts:350, starts ~15% early at 0.35 s a tick;
   RUN-ORDER.md R23).
 
-### H7. Carp catcher: `speedrun/helpers/carp.ts` (building, rs/173)
+### HS7. Carp catcher: `speedrun/helpers/carp.ts` (building, rs/173)
 
 - **Gates:** S20 (exposure 223). It enters the contest itself and leaves before its third catch with
   a raw giant carp, then trades it (`quests/README.md` §4 step 11). A drop-and-pickup saves about 4-7
   ticks over a trade (inferred, `[rs/59] research/travel-and-overhead.md`, ranked row 5).
 - **Acceptance:** demo, a throwaway produces a carp and hands it over.
 
-### H8. Wine giver: `speedrun/helpers/wine.ts` `giveWine` (on rs/41's branch, rs/47 and rs/88)
+### HS8. Wine giver: `speedrun/helpers/wine.ts` `giveWine` (on rs/41's branch, rs/47 and rs/88)
 
 - **Gates:** S25c (exposure ~80). It waits until SCORED is in sight after the planned relog
   (`waitForPlayer`; the lib's `openTrade` gives up after 5 ticks without a sighting) and gives the
@@ -2106,7 +2106,7 @@ In build order. An item is listed where the first entry that needs it would othe
 9. **`speedrun/lib/cannon.ts`** and the zero-drain flick scheduler (entries 7 and 26).
 10. **`lib/trade.ts` additions:** a two-way `swap` (Smithing), and moving `receivePackage` and
     `relog` from the rs/41 branch to main.
-11. **A direct-path transport for helpers** (H4, and optionally H5).
+11. **A direct-path transport for helpers** (HS4, and optionally HS5).
 12. **Browser-client checks before the quests that needed lite-client fixes:** the Monkey Madness
     puzzle's OPHELD send (rs/23) and bridged doors for Sea Slug (rs/54).
 
