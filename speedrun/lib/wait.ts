@@ -70,10 +70,11 @@ export interface TickClock {
  * The tick count and dead-client detector for anything that listens to
  * published states with a tick limit: `onIdle` fires once no new tick has
  * arrived for `IDLE_TICKS * tickMs()`. Armed on creation; `lastTick` is the
- * tick already seen (it does not count as new). There is deliberately no
+ * tick already seen (it does not count as new). Counting starts at `from`, or
+ * at the first state seen when `from` is undefined. There is deliberately no
  * total-time budget: ticks are the limit, however slowly they come.
  */
-export function tickClock(from: number, onIdle: () => void, lastTick?: number): TickClock {
+export function tickClock(from: number | undefined, onIdle: () => void, lastTick?: number): TickClock {
     const idleMs = IDLE_TICKS * tickMs();
     let prev = from;
     let last = lastTick;
@@ -90,7 +91,7 @@ export function tickClock(from: number, onIdle: () => void, lastTick?: number): 
             return elapsed;
         },
         see(s) {
-            elapsed += Math.max(0, s.tick - prev);
+            if (prev !== undefined) elapsed += Math.max(0, s.tick - prev);
             prev = s.tick;
             if (s.tick === last) return;
             last = s.tick;
@@ -135,6 +136,39 @@ export function waitUntil(sdk: StateSource, pred: Pred, opts: WaitOptions): Prom
             if (counts(s) && pred(s)) finish({ ok: true, state: s, tick: s.tick });
             else if (clock.elapsed > maxTicks) finish({ ok: false, reason: 'maxTicks', state: s, tick: s.tick });
         });
+    });
+}
+
+export type StepResult<T> = { ok: true; value: T } | { ok: false; reason: WaitFailure };
+
+/**
+ * Feed every published state, the current one first, to `step` until it
+ * returns a value (anything but undefined). Fails with `reason: 'maxTicks'`
+ * once more than `maxTicks` ticks pass without one (counted from the current
+ * tick, as `tickClock` counts), or `reason: 'idle'` once the client stops
+ * publishing.
+ */
+export function onStates<T>(sdk: StateSource, maxTicks: number, step: (s: BotWorldState) => T | undefined): Promise<StepResult<T>> {
+    return new Promise(resolve => {
+        let done = false;
+        const finish = (r: StepResult<T>) => {
+            if (done) return;
+            done = true;
+            unsubscribe();
+            clock.stop();
+            resolve(r);
+        };
+        const cur = sdk.getState();
+        const clock = tickClock(cur?.tick ?? 0, () => finish({ ok: false, reason: 'idle' }), cur?.tick);
+        const handle = (s: BotWorldState) => {
+            if (done) return;
+            clock.see(s);
+            const v = step(s);
+            if (v !== undefined) finish({ ok: true, value: v });
+            else if (clock.elapsed > maxTicks) finish({ ok: false, reason: 'maxTicks' });
+        };
+        const unsubscribe = sdk.onStateUpdate(handle);
+        if (cur) handle(cur);
     });
 }
 

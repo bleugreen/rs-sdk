@@ -34,7 +34,7 @@ import type { BotSDK } from '../../sdk/index';
 import type { ActionResult, BotWorldState, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
 import { countInventoryById, diffInventories, offerSatisfies, shortfall } from '../../sdk/trade-helpers';
 import { amountButtons, isXAmount, matchesItem, type ItemPattern } from './items';
-import { tickMs, type StateSource } from './wait';
+import { onStates, STALLED, tickMs, type StateSource } from './wait';
 
 export type TradeSdk = StateSource &
     Pick<BotSDK, 'sendTradeRequest' | 'sendOfferItem' | 'sendAcceptTrade' | 'sendDeclineTrade'>;
@@ -476,30 +476,8 @@ function waitState(sdk: StateSource, pred: (s: BotWorldState) => boolean, ms: nu
 
 // ---------------------------------------------------------------- drivers
 
-/** Feed every published state to `step` until it returns a terminal value. */
-function drive<T>(sdk: StateSource, maxTicks: number, step: (s: BotWorldState) => T | undefined): Promise<T | 'timeout'> {
-    return new Promise(resolve => {
-        const start = sdk.getState()?.tick ?? 0;
-        let done = false;
-        const finish = (v: T | 'timeout') => {
-            if (done) return;
-            done = true;
-            unsub();
-            clearTimeout(wall);
-            resolve(v);
-        };
-        const handle = (s: BotWorldState) => {
-            if (done) return;
-            const r = step(s);
-            if (r !== undefined) finish(r);
-            else if (s.tick - start > maxTicks) finish('timeout');
-        };
-        const unsub = sdk.onStateUpdate(handle);
-        const wall = setTimeout(() => finish('timeout'), (maxTicks + 10) * tickMs());
-        const cur = sdk.getState();
-        if (cur) handle(cur);
-    });
-}
+/** A trade's failure reason when no terminal frame came: `maxTicks` ran out, or the client stopped publishing. */
+const unfinished = (reason: 'maxTicks' | 'idle') => (reason === 'idle' ? STALLED : 'timeout');
 
 export interface ReceiveResult {
     ok: boolean;
@@ -522,7 +500,7 @@ export async function receiveFrom(sdk: TradeSdk, partner: string, opts: { want?:
     const open = await openTrade(sdk, partner, { timeoutMs: opts.openTimeoutMs ?? 60_000 });
     if (!open.ok) return { ok: false, ticks: 0, received: [], reason: open.reason };
     const start = open.firstClickTick;
-    const outcome = await drive(sdk, opts.maxTicks ?? 100, s => {
+    const r = await onStates(sdk, opts.maxTicks ?? 100, s => {
         const d = decideReceiver(s, ctx);
         ctx = d.next;
         switch (d.action) {
@@ -535,7 +513,8 @@ export async function receiveFrom(sdk: TradeSdk, partner: string, opts: { want?:
             default: return undefined;
         }
     });
-    if (outcome === 'timeout') return { ok: false, ticks: (sdk.getState()?.tick ?? start) - start, received: [], reason: 'timeout' };
+    if (!r.ok) return { ok: false, ticks: (sdk.getState()?.tick ?? start) - start, received: [], reason: unfinished(r.reason) };
+    const outcome = r.value;
     return { ok: outcome.ok, ticks: outcome.tick - start, received: outcome.received, ...(outcome.reason ? { reason: outcome.reason } : {}) };
 }
 
@@ -581,7 +560,7 @@ async function giveImpl(sdk: TradeSdk, partner: string, specs: readonly GiveSpec
     }
     let ctx = newGiverCtx(partner, s0.inventory, plan, opts.expectTheirs);
     let sent = 0;
-    const outcome = await drive(sdk, opts.maxTicks ?? 100, s => {
+    const r = await onStates(sdk, opts.maxTicks ?? 100, s => {
         const d = decideGiver(s, ctx);
         ctx = d.next;
         switch (d.action) {
@@ -595,7 +574,8 @@ async function giveImpl(sdk: TradeSdk, partner: string, specs: readonly GiveSpec
             default: return undefined;
         }
     });
-    if (outcome === 'timeout') return { ok: false, ticks: (sdk.getState()?.tick ?? start) - start, gave: [], sent, reason: 'timeout' };
+    if (!r.ok) return { ok: false, ticks: (sdk.getState()?.tick ?? start) - start, gave: [], sent, reason: unfinished(r.reason) };
+    const outcome = r.value;
     return { ok: outcome.ok, ticks: outcome.tick - start, gave: outcome.gave, sent, ...(outcome.reason ? { reason: outcome.reason } : {}) };
 }
 

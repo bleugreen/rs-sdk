@@ -203,7 +203,7 @@ export interface BoothOpen {
  * Re-click the booth nearest the anvil every tick until the bank opens. Resolves on the
  * frame the bank shows its items, or, for an empty bank, once it has stayed open into a
  * later tick with none: what to do about an empty bank is the caller's call. Bounded by
- * clicks, by ticks, and by wall clock for a client that stops publishing.
+ * clicks and by ticks; `stalled` is a client that stops publishing (wait.ts tickClock).
  */
 export function openBooth(sdk: BoothSdk, opts: { maxClicks?: number; maxTicks?: number; signal?: AbortSignal } = {}): Promise<BoothOpen> {
     const maxClicks = opts.maxClicks ?? 40;
@@ -219,12 +219,13 @@ export function openBooth(sdk: BoothSdk, opts: { maxClicks?: number; maxTicks?: 
             done = true;
             unsub();
             clearInterval(guard);
-            clearTimeout(wall);
+            clock.stop();
             const ticks = st && firstTick !== null ? st.tick - firstTick : 0;
             resolve({ ok, clicks, ticks, empty: ok && !!st && st.bank.items.length === 0, ...(reason ? { reason } : {}) });
         };
         const onFrame = (st: BotWorldState) => {
             if (done) return;
+            clock.see(st);
             firstTick ??= st.tick;
             if (st.bank.isOpen) {
                 // The item list can arrive a frame after the modal, within the same tick.
@@ -233,7 +234,7 @@ export function openBooth(sdk: BoothSdk, opts: { maxClicks?: number; maxTicks?: 
                 return;
             }
             openTick = null;
-            if (st.tick - firstTick >= maxTicks) return finish(false, st, 'ticks');
+            if (clock.elapsed >= maxTicks) return finish(false, st, 'ticks');
             if (st.tick === clickTick) return;
             if (clicks >= maxClicks) return finish(false, st, 'clicks');
             clickTick = st.tick;
@@ -241,10 +242,10 @@ export function openBooth(sdk: BoothSdk, opts: { maxClicks?: number; maxTicks?: 
             const b = boothOf(st);
             if (b) void sdk.sendInteractLoc(b.loc.x, b.loc.z, b.loc.id, b.op);
         };
+        const cur = sdk.getState();
+        const clock = tickClock(cur?.tick, () => finish(false, sdk.getState(), 'stalled'), cur?.tick);
         const unsub = sdk.onStateUpdate(onFrame);
         const guard = setInterval(() => opts.signal?.aborted && finish(false, sdk.getState(), 'aborted'), 500);
-        const wall = setTimeout(() => finish(false, sdk.getState(), 'stalled'), (maxTicks + 10) * tickMs());
-        const cur = sdk.getState();
         if (cur) onFrame(cur);
     });
 }

@@ -140,7 +140,7 @@ export function giveOutcome(r: GiveResult, items: Handover['items'], lost: Map<s
     }
     if ([...lost.values()].some(n => n > 0)) return 'uncertain';
     if (r.reason !== undefined && NEVER_OPENED.has(r.reason)) return 'retry';
-    if (r.reason === 'timeout' || r.reason?.startsWith('no settlement')) return 'uncertain';
+    if (r.reason === 'timeout' || r.reason === STALLED || r.reason?.startsWith('no settlement')) return 'uncertain';
     return 'retry';
 }
 
