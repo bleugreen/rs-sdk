@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { TickLog } from './lib/ticks';
-import { aliasAccount, type GateIO, LOG_ACCOUNT, loadRunConfig, parseArgs, startGates, TARGET_TOTAL, totalLevel, UsageError } from './run';
+import { aliasAccount, chainOrRefusal, type GateIO, LOG_ACCOUNT, loadRunConfig, parseArgs, startGates, TARGET_TOTAL, totalLevel, UsageError } from './run';
 import { buildChain, KIT_PARTNER_ROWS, PLACEMENT, sliceUntil } from './runner/chain';
 
 const cues = { open: async () => {}, stop: () => {} };
@@ -78,6 +78,15 @@ describe('startGates', () => {
     test('the scored run needs its own claim: none named, or none live, refuses', async () => {
         expect((await startGates(s04, io({ reservation: () => ({ owner: undefined, state: live('rs/393'), path: '/h' }) })))[1]!.ok).toBe(false);
         expect((await startGates(s04, io({ reservation: () => ({ owner: 'rs/393', state: { state: 'none' }, path: '/h' }) })))[1]!.detail).toContain('no live claim');
+    });
+});
+
+describe('the run config as a start gate', () => {
+    test("a config without S05's H4 giver (or any placed row's partner) refuses with the reason, it does not crash", () => {
+        const { H4: _h4, ...noH4 } = partners;
+        const r = chainOrRefusal({ ...cfg, partners: noH4 }, cues);
+        expect('refusal' in r && r.refusal).toContain('names no partner for H4');
+        expect('chain' in chainOrRefusal(cfg, cues)).toBe(true);
     });
 });
 

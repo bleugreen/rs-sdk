@@ -47,7 +47,7 @@ import { newRunId, parseLog, TickLog, type TickRow } from './lib/ticks';
 import { formatRunReport, runReport } from './runner/run-report';
 import { ProgramTracker, programRow, ReachTracker, SessionClock } from './rehearse';
 import { patchMethod } from './runner/fence';
-import { buildChain, missingOnPath, resolveFrom, sliceUntil, type ChainStep, type RunConfig } from './runner/chain';
+import { buildChain, missingOnPath, resolveFrom, sliceUntil, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
 import { CueKeeper, prepareCueDir } from './runner/cue-keeper';
 import { sessionLink } from './runner/resume';
 
@@ -126,6 +126,18 @@ export function loadRunConfig(path: string, runDir: string, env: Record<string, 
     const dir = env.RC_CUE_DIR || join(runDir, 'rc-cue');
     if (setEnv) env.RC_CUE_DIR = dir;
     return { ...(c as RunConfig), cueDir: resolve(dir) };
+}
+
+/**
+ * The chain, or why the run config cannot build it (a placed or kit row with no partner, such as
+ * S05's H4 giver; a ledger row the chain does not cover): a start-gate refusal, never a crash.
+ */
+export function chainOrRefusal(cfg: RunConfig, cues: CueSink): { chain: ChainStep[] } | { refusal: string } {
+    try {
+        return { chain: buildChain(cfg, { cues }) };
+    } catch (e) {
+        return { refusal: e instanceof Error ? e.message : String(e) };
+    }
 }
 
 // ------------------------------------------------------------------ start gates
@@ -317,7 +329,13 @@ async function main(argv: string[]): Promise<number> {
     const cfg = loadRunConfig(a.config, a.runDir);
     const owner = claimOwner(a.claimOwner);
     const keeper = new CueKeeper(cfg.cueDir, a.bot);
-    const full = buildChain(cfg, { cues: keeper });
+    const built = chainOrRefusal(cfg, keeper);
+    if ('refusal' in built) {
+        console.error(`[gate] REFUSED run config: ${built.refusal}`);
+        console.error('[run] nothing was logged in');
+        return EXIT_REFUSED;
+    }
+    const full = built.chain;
     const chain = sliceUntil(full, a.until);
     const from = resolveFrom(chain, a.from);
     if (cfg.cueDir !== defaultCueDir()) throw new Error(`the cue directory ${cfg.cueDir} is not the one the helpers' writers use (${defaultCueDir()})`);

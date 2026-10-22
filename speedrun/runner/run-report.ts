@@ -51,7 +51,8 @@ export function runReport(rows: readonly TickRow[], chain: readonly ChainStep[],
     const idOf = new Map(chain.map(s => [s.name, s.id]));
     const table = new Map(parseStepTable(runOrder).map(r => [r.id, r]));
     const byId = new Map<string, number>();
-    const stepRows = rows.filter(r => !r.kind && idOf.has(r.step) && !isStandIn(r));
+    // A staff supply is not the trade RUN-ORDER prices: it is listed, never compared.
+    const stepRows = rows.filter(r => !r.kind && idOf.has(r.step) && !isStandIn(r) && !r.step.includes(STAFF_SUPPLY_STEP));
     for (const r of stepRows) {
         const id = idOf.get(r.step)!;
         if (!/^S\d/.test(id) || /-fallback$/.test(id)) continue;

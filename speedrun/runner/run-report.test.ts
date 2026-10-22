@@ -45,8 +45,10 @@ describe('runReport', () => {
         expect(formatRunReport(r)).toContain('-> rs/158');
     });
 
-    test('a staff supply also marks the run partial; a clean run is complete', () => {
+    test('a staff supply also marks the run partial and is never compared to RUN-ORDER; a clean run is complete', () => {
         expect(runReport([row(`${STAFF_SUPPLY_STEP} H11`, 0, { kind: 'note' })], chain, RUN_ORDER).partial).toBe(true);
+        const staffed = [{ id: 'S01', name: `H1 hand-off (${STAFF_SUPPLY_STEP})` }] as unknown as ChainStep[];
+        expect(runReport([row(`H1 hand-off (${STAFF_SUPPLY_STEP})`, 12)], staffed, RUN_ORDER).steps).toEqual([]);
         const clean = runReport([row('S02 magic', 20)], chain, RUN_ORDER);
         expect(clean.partial).toBe(false);
         expect(formatRunReport(clean)).toContain('complete');

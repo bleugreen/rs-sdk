@@ -26,7 +26,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { serveFromLedger } from '../helpers/cannon-receiver';
+import { returnExtrasFromLedger, serveFromLedger } from '../helpers/cannon-receiver';
 
 const ROOT = resolve(import.meta.dir, '..', '..');
 const arg = (k: string, d: string) => process.argv.find(a => a.startsWith(`--${k}=`))?.split('=')[1] ?? d;
@@ -36,10 +36,13 @@ const balls = h11.balls;
 const extras = [...h11.extras, ...h11.topUps.map(t => ({ item: t.item, count: t.to, obj: t.obj }))];
 const setUp = arg('setup', '1') !== '0';
 const mm = arg('mm', '0') === '1';
-const MM = [
-    { item: 'Magic shortbow', count: 1, obj: 'magic_shortbow' },
-    { item: 'Rune arrow', count: 200, obj: 'rune_arrow' }
-];
+// H11r's two-way form (Monkey Madness's bow and arrows back with the set) from the ledger row itself,
+// so the lab cannot drift from it: while the row is give-only there is nothing to return.
+const MM = returnExtrasFromLedger();
+if (mm && MM.length === 0) {
+    console.error('cannon-handoff: --mm=1 needs the H11r ledger row two-way (in: magic shortbow, rune arrows); the row in force is give-only');
+    process.exit(2);
+}
 const webPort = process.env.WEB_PORT ?? '9300';
 
 // Inside the Lumbridge cow pen (lib/kandarin.ts COW_PEN): open grass, outside every
