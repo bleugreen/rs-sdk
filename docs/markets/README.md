@@ -38,7 +38,7 @@ and by tests in the local lab:
 - **stein's +1.20B in 38 hours was a coin hand-off.** Only about 10M of coal left its bank.
 
 **What this means for us:** the board's leaders are not a method to copy. Their raw sharks, bass, oysters and air
-runs have no meaningful bids (the whole GE bid pool was about 1.11B coins at 22:30Z), so they rank on store cost
+runes have no meaningful bids (the whole GE bid pool was about 1.11B coins at 22:30Z), so they rank on store cost
 but are worth almost nothing as capital. The mission was reframed from board rank to capital.
 
 ### 2. The method table
