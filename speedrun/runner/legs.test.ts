@@ -353,8 +353,7 @@ describe('leg drops', () => {
         await drive(sdk, legById('T11-12').run(ctxFor(sdk)));
         expect(drops.map(d => d.slot)).toEqual([2, 3, 4, 5, 6]);
         expect(new Set(drops.slice(0, DROPS_PER_TICK).map(d => d.tick)).size).toBe(1);
-        expect(sdk.state!.inventory.some(i => i.name === 'Agility potion(2)')).toBe(true);
-        expect(held[0]).toEqual(['Water rune', 'Law rune']);
+        expect(held[0]).toEqual(['Water rune', 'Law rune', 'Agility potion(2)']);
         expect(inArea(sdk.state!, TILES.ladyServil)).toBe(true);
     });
 
