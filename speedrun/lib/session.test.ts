@@ -8,8 +8,12 @@ import { loginTokenProof } from '../../server/webclient/login-token';
 import {
     IF_RETALIATE_OFF,
     IF_RETALIATE_ON,
+    INTERFACE_HOLD_TICKS,
     LOGOUT_BUTTON,
+    LOGOUT_CONFIRM_TICKS,
     abandonClient,
+    adoptSession,
+    openInterface,
     backoffMs,
     browserUrl,
     gatewayPath,
@@ -470,6 +474,154 @@ describe('logoutClean on a browser tab: the page confirms, never the gateway', (
         attached.sdk.checkBotStatus = async () => ({ status: 'dead', inGame: false });
         expect(await loggedOutBy(attached.session)).toBe('gateway');
     });
+});
+
+describe('the watchdog logout refuses while a bank or trade is open (rs/511)', () => {
+    const wedged = { ...healthy, msSinceAdvance: 5_000 };
+    const hold = { interfaceHoldMs: 40_000 };
+
+    test('a wedged client with the bank or a trade open waits, for at most the hold, then the old verdict', () => {
+        expect(watchdogDecision({ ...wedged, ...hold, interfaceOpen: 'bank', msInterfaceHeld: 0 })).toBe('wait');
+        expect(watchdogDecision({ ...wedged, ...hold, interfaceOpen: 'trade', msInterfaceHeld: 40_000 })).toBe('wait');
+        // Bounded: a stuck interface still ends in the logout (and its relaunch fallback), never a silent hang.
+        expect(watchdogDecision({ ...wedged, ...hold, interfaceOpen: 'trade', msInterfaceHeld: 40_001 })).toBe('logout');
+        expect(watchdogDecision({ ...wedged, ...hold, interfaceOpen: null, msInterfaceHeld: 0 })).toBe('logout');
+        expect(watchdogDecision(wedged)).toBe('logout');
+    });
+
+    test("a stalled bot's stop is held the same way; the relaunch fallback, the outage path and a healthy client are not changed", () => {
+        const stalled = { ...healthy, progressStaleTicks: 100, ticksSinceProgress: 101 };
+        expect(watchdogDecision({ ...stalled, ...hold, interfaceOpen: 'bank', msInterfaceHeld: 0 })).toBe('wait');
+        expect(watchdogDecision({ ...stalled, ...hold, interfaceOpen: 'bank', msInterfaceHeld: 50_000 })).toBe('stop');
+        expect(watchdogDecision({ ...wedged, ...hold, logoutFailed: true, interfaceOpen: 'bank', msInterfaceHeld: 0 })).toBe('relaunch');
+        expect(watchdogDecision({ ...wedged, ...hold, serverDown: true, interfaceOpen: 'bank', msInterfaceHeld: 0 })).toBe('outage');
+        expect(watchdogDecision({ ...healthy, ...hold, interfaceOpen: 'bank', msInterfaceHeld: 0 })).toBe('ok');
+        expect(INTERFACE_HOLD_TICKS).toBeGreaterThan(17);
+    });
+
+    test('openInterface reads the bank first, then the trade', () => {
+        expect(openInterface({ bank: { isOpen: true, items: [], noteMode: false } } as never)).toBe('bank');
+        expect(openInterface({ bank: { isOpen: false, items: [], noteMode: false }, trade: { isOpen: true } } as never)).toBe('trade');
+        expect(openInterface({ bank: { isOpen: false, items: [], noteMode: false } } as never)).toBeNull();
+        expect(openInterface(null)).toBeNull();
+    });
+
+    test('startWatchdog: no logout click while the bank is open (said once), the logout once it closes', async () => {
+        const { session, sdk } = fakeSession({ lastAdvanceAt: Date.now() - 10_000 });
+        sdk.state = { ...sdk.state!, bank: { isOpen: true, items: [], noteMode: false } };
+        const rec = recorder(true);
+        const events: WatchdogEvent[] = [];
+        const wd = startWatchdog(session, { timer: false, actions: rec.actions, onEvent: e => events.push(e) });
+        await wd.check();
+        await wd.check();
+        expect(rec.calls).toEqual([]);
+        expect(events.map(e => [e.verdict, e.reason.split(' (')[0]])).toEqual([['wait', 'logout held: the bank is open']]);
+        sdk.state = { ...sdk.state!, bank: { isOpen: false, items: [], noteMode: false } };
+        await wd.check();
+        expect(rec.calls).toEqual(['logout', 'login']);
+    });
+});
+
+describe('logoutClean: a click is confirmed within LOGOUT_CONFIRM_TICKS or sent again (rs/511)', () => {
+    // 30 ms ticks: the confirm loop polls every tickMs/3, so it sees every tick the fake publishes.
+    let prevTick: string | undefined;
+    beforeEach(() => {
+        prevTick = process.env.SPEEDRUN_TICK_MS;
+        process.env.SPEEDRUN_TICK_MS = '30';
+    });
+    afterEach(() => {
+        if (prevTick === undefined) delete process.env.SPEEDRUN_TICK_MS;
+        else process.env.SPEEDRUN_TICK_MS = prevTick;
+    });
+    /** A lite session ticking every 30 ms whose child exits on logout click number `exitOn`. */
+    function ticking(exitOn: number) {
+        const f = fakeSession({ lastInWorldTick: 200 });
+        f.sdk.state = { ...f.sdk.state!, tick: 200 };
+        const clicks: number[] = [];
+        f.sdk.onSend = (a, sdk) => {
+            if (a.method !== 'sendClickComponent' || a.args[0] !== LOGOUT_BUTTON) return;
+            clicks.push(sdk.state!.tick);
+            if (clicks.length === exitOn) f.child.exit(0);
+        };
+        const timer = setInterval(() => f.sdk.tick(), 30);
+        return { ...f, clicks, stop: () => clearInterval(timer) };
+    }
+
+    test('confirmed on the first click: one send, 0 ticks, the happy path as before', async () => {
+        const t = ticking(1);
+        try {
+            const r = await logoutClean(t.session, { timeoutMs: 2_000 });
+            expect(r).toMatchObject({ ok: true, sends: 1, confirmTicks: 0, confirmedBy: 'child' });
+            expect(t.clicks).toEqual([200]);
+        } finally {
+            t.stop();
+        }
+    });
+
+    test('a lost click is sent again LOGOUT_CONFIRM_TICKS ticks later, not waited on; the ticks to confirmed-out are reported', async () => {
+        const t = ticking(2);
+        try {
+            const r = await logoutClean(t.session, { timeoutMs: 5_000 });
+            expect(r.ok).toBe(true);
+            expect(r.sends).toBe(2);
+            expect(t.clicks[1]! - t.clicks[0]!).toBeGreaterThanOrEqual(LOGOUT_CONFIRM_TICKS);
+            expect(t.clicks[1]! - t.clicks[0]!).toBeLessThanOrEqual(LOGOUT_CONFIRM_TICKS + 2);
+            expect(r.confirmTicks).toBeGreaterThanOrEqual(LOGOUT_CONFIRM_TICKS);
+            expect(r.clickTick).toBe(200);
+        } finally {
+            t.stop();
+        }
+    });
+
+    test('never confirmed: re-sent each LOGOUT_CONFIRM_TICKS up to the 60-tick bound, then not confirmed', async () => {
+        const t = ticking(Infinity);
+        try {
+            const r = await logoutClean(t.session, { timeoutMs: 10_000 });
+            expect(r).toMatchObject({ ok: false, reason: 'still in game after timeout', sends: 15 });
+            expect(t.clicks.length).toBe(15);
+        } finally {
+            t.stop();
+        }
+    });
+});
+
+describe("logoutClean on the lite client: the world's player list confirms when nothing else does (rs/461)", () => {
+    test('the gateway still holding the in-game state, the account gone from /playerpositions: out by the world', async () => {
+        let listed = true;
+        const server = Bun.serve({ port: 0, fetch: () => Response.json({ players: listed ? [{ name: 'Srtest' }, { name: 'Other' }] : [{ name: 'Other' }] }) });
+        try {
+            const f = fakeSession({ child: null });
+            (f.session as { env: Record<string, string> }).env = { BOT_USERNAME: 'srtest', PASSWORD: 'x', SERVER: `localhost:${server.port}` };
+            f.sdk.checkBotStatus = async () => ({ status: 'stale', inGame: true });
+            expect(await loggedOutBy(f.session, { world: true })).toBeNull();
+            listed = false;
+            expect(await loggedOutBy(f.session)).toBeNull(); // only asked with `world`
+            expect(await loggedOutBy(f.session, { world: true })).toBe('world');
+            const r = await logoutClean(f.session, { timeoutMs: 3_000 });
+            expect(r).toMatchObject({ ok: true, confirmedBy: 'world' });
+        } finally {
+            server.stop(true);
+        }
+    });
+});
+
+test('a gateway reading cached while the session was out is dropped on resume: no logout of the new session', async () => {
+    const { session, sdk } = fakeSession({ lastAdvanceAt: Date.now() - 10_000 });
+    sdk.checkBotStatus = async () => ({ status: 'stale', inGame: true });
+    const rec = recorder(true);
+    const wd = startWatchdog(session, { timer: false, actions: { ...rec.actions, logout: async s => (rec.calls.push('logout'), s.watchdog?.pause(), { ...loggedOut, ok: false, reason: 'x' }) } });
+    await wd.check(); // reads 'stale' (and acts on the stale tick)
+    sdk.checkBotStatus = async () => ({ status: 'active', inGame: true });
+    wd.resume(); // a relog brought the session back
+    rec.calls.length = 0;
+    await wd.check();
+    expect(rec.calls).toEqual([]);
+});
+
+test("adoptSession begins a login made outside this process: a new session id, the page's tick base, back in the world", () => {
+    const { session } = fakeSession({ client: 'browser', child: null, expectInWorld: false, sessionId: 3 } as Partial<Session>);
+    adoptSession(session, 830);
+    expect([session.sessionId, session.tickBase, session.expectInWorld]).toEqual([4, 830, true]);
 });
 
 test('backoff doubles from 1 s and caps at 30 s', () => {

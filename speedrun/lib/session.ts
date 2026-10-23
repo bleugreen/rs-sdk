@@ -512,7 +512,7 @@ export function cdpUrl(env: BotEnv): string | undefined {
  * What showed the account had left the world: the published state (`inGame: false`), the lite
  * child's exit, the browser page's own in-game flag read over CDP, or the gateway (lite only).
  */
-export type LogoutSignal = 'state' | 'child' | 'page' | 'gateway';
+export type LogoutSignal = 'state' | 'child' | 'page' | 'gateway' | 'world';
 
 export interface LogoutResult {
     ok: boolean;
@@ -524,9 +524,24 @@ export interface LogoutResult {
     /** Set when ok. */
     confirmedBy?: LogoutSignal;
     reason?: string;
+    /** Logout clicks sent: 1 unless a click went unconfirmed for LOGOUT_CONFIRM_TICKS and was sent again. */
+    sends?: number;
+    /** Observed ticks from the first click to the read that confirmed the account out (set when ok). */
+    confirmTicks?: number;
 }
 
 const CANT_LOGOUT = /can't log out/i;
+
+/**
+ * Observed ticks one logout click gets to show the account out before it is sent again. A click
+ * removes an idle player in its own tick: 0 ticks in 42 of 42 lab relogs (research/wine-window.md),
+ * 0 ticks in 215-431 ms on the twin (rs/164, rs/172), 2 ticks on the demo with a 1-in-29 tail
+ * (wine.md). Twice the demo's figure. A click not confirmed by then is sent again rather than waited
+ * on: on rs/310's Agility rehearsal an unconfirmed tab logout left the account in the world for 117
+ * ticks, all of them playtime. The queued level-up case (LOGOUT_WAIT_TICKS) stays covered: a
+ * re-send while the queue runs out is harmless, and the overall bound is unchanged.
+ */
+export const LOGOUT_CONFIRM_TICKS = 4;
 
 /**
  * Default wait for a logout to complete. A logout normally leaves the world in
@@ -543,7 +558,10 @@ const LOGOUT_WAIT_TICKS = 60;
  * first; if the server still refuses, waits the remaining ticks and retries
  * once. Verification: no in-game tick after the click, and the lite child
  * exited (session end) or the gateway reports the bot dead / the browser
- * publishes inGame:false.
+ * publishes inGame:false (loggedOutBy). A click not confirmed within
+ * LOGOUT_CONFIRM_TICKS observed ticks is sent again, up to LOGOUT_WAIT_TICKS
+ * after the first; `timeoutMs` stays the wall-clock backstop for a client that
+ * publishes nothing.
  */
 export async function logoutClean(session: Session, opts: { timeoutMs?: number } = {}): Promise<LogoutResult> {
     const { sdk } = session;
@@ -561,10 +579,12 @@ export async function logoutClean(session: Session, opts: { timeoutMs?: number }
     }
 
     session.expectInWorld = false;
+    let sends = 0;
     for (let attempt = 0; attempt < 2; attempt++) {
         const clickTick = sdk.getState()?.tick ?? -1;
-        void sdk.sendClickComponent(LOGOUT_BUTTON);
-        const out = await waitLoggedOutSignal(session, opts.timeoutMs ?? Math.max(5_000, LOGOUT_WAIT_TICKS * tickMs()), clickTick);
+        const w = await waitLoggedOutSignal(session, opts.timeoutMs ?? Math.max(5_000, LOGOUT_WAIT_TICKS * tickMs()), clickTick);
+        sends += w.sends;
+        const out = w.out;
         if (out === 'refused' && attempt === 0) {
             await waitUntil(sdk, () => false, { maxTicks: COMBAT_LOGOUT_TICKS + 1 });
             continue;
@@ -577,22 +597,45 @@ export async function logoutClean(session: Session, opts: { timeoutMs?: number }
             lastInWorldTick,
             latencyTicks: Math.max(0, lastInWorldTick - clickTick),
             wallMs: Date.now() - t0,
-            ...(ok ? { confirmedBy: out } : { reason: out === 'refused' ? 'logout refused (combat)' : 'still in game after timeout' }),
+            sends,
+            ...(ok ? { confirmedBy: out, confirmTicks: w.ticks } : { reason: out === 'refused' ? 'logout refused (combat)' : 'still in game after timeout' }),
         };
     }
     throw new Error('unreachable');
 }
 
-async function waitLoggedOutSignal(session: Session, timeoutMs: number, clickTick: number): Promise<LogoutSignal | 'refused' | 'timeout'> {
+/** Wall ms between /playerpositions reads while a lite logout waits (the server caches the list 1 s). */
+const WORLD_LIST_EVERY_MS = 1_000;
+
+/**
+ * Send the logout click and wait for loggedOutBy, sending it again each LOGOUT_CONFIRM_TICKS
+ * observed ticks it goes unconfirmed, until LOGOUT_WAIT_TICKS ticks after the first or `timeoutMs`
+ * of wall time (the backstop for a client that publishes nothing).
+ */
+async function waitLoggedOutSignal(session: Session, timeoutMs: number, clickTick: number): Promise<{ out: LogoutSignal | 'refused' | 'timeout'; sends: number; ticks: number }> {
     const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
+    let sends = 0;
+    let sentAt = -Infinity;
+    let nextWorld = Date.now() + WORLD_LIST_EVERY_MS;
+    let ticks = 0;
+    for (;;) {
         const s = session.sdk.getState();
-        if (s?.gameMessages.some(m => CANT_LOGOUT.test(m.text) && m.tick >= clickTick)) return 'refused';
-        const by = await loggedOutBy(session);
-        if (by) return by;
+        ticks = Math.max(ticks, (s?.tick ?? clickTick) - clickTick);
+        if (ticks - sentAt >= LOGOUT_CONFIRM_TICKS && ticks < LOGOUT_WAIT_TICKS) {
+            sentAt = ticks;
+            sends++;
+            void Promise.resolve()
+                .then(() => session.sdk.sendClickComponent(LOGOUT_BUTTON))
+                .catch(() => {});
+        }
+        if (s?.gameMessages.some(m => CANT_LOGOUT.test(m.text) && m.tick >= clickTick)) return { out: 'refused', sends, ticks };
+        const world = Date.now() >= nextWorld;
+        if (world) nextWorld = Date.now() + WORLD_LIST_EVERY_MS;
+        const by = await loggedOutBy(session, { world });
+        if (by) return { out: by, sends, ticks };
+        if (ticks >= LOGOUT_WAIT_TICKS || Date.now() >= deadline) return { out: 'timeout', sends, ticks };
         await sleep(Math.min(100, tickMs() / 3));
     }
-    return 'timeout';
 }
 
 /**
@@ -603,9 +646,19 @@ async function waitLoggedOutSignal(session: Session, timeoutMs: number, clickTic
  * page is asked itself over CDP (`window.gameClient.ingame`). A missing tab does not count as out: a
  * closed tab is a dropped client, which the server keeps in the world. Without CDP only a published
  * `inGame: false` confirms a browser logout.
+ *
+ * A lite client with nothing else to show (its child still running, the gateway still holding the
+ * last in-game state) is out once the world's own player list (/playerpositions, which lists a
+ * player until the server has removed it) no longer has it; asked only with `world`, since it is an
+ * HTTP read (rs/461: a lite logout reported unconfirmed with the account already gone).
  */
-export async function loggedOutBy(session: Session): Promise<LogoutSignal | null> {
-    if (session.client === 'lite' && session.child) return session.childExit !== null ? 'child' : null;
+export async function loggedOutBy(session: Session, o: { world?: boolean } = {}): Promise<LogoutSignal | null> {
+    const worldGone = async () => {
+        if (!o.world) return false;
+        const { demoOrigin, listedInWorld } = await import('./demo-status');
+        return (await listedInWorld(demoOrigin(session.env.SERVER), session.env.BOT_USERNAME ?? session.name)) === false;
+    };
+    if (session.client === 'lite' && session.child) return session.childExit !== null ? 'child' : (await worldGone()) ? 'world' : null;
     const s = session.sdk.getState();
     if (s && !s.inGame) return 'state';
     if (session.client === 'browser') {
@@ -615,7 +668,8 @@ export async function loggedOutBy(session: Session): Promise<LogoutSignal | null
         return inGame === false ? 'page' : null;
     }
     const status = await gatewayStatus(session);
-    return status?.status === 'dead' || status?.inGame === false ? 'gateway' : null;
+    if (status?.status === 'dead' || status?.inGame === false) return 'gateway';
+    return (await worldGone()) ? 'world' : null;
 }
 
 /** True once the account has left the world (see loggedOutBy). */
@@ -868,6 +922,22 @@ export async function relog(session: Session, opts: { offlineMs?: number; loginT
 }
 
 /**
+ * Begin, on this session, a game session someone else logged the page into (the operator's
+ * relog-now while run.ts waited after a drop), as loginInPage does for one of our own: sessionId,
+ * tickBase (the page's count when that login started, when known), launchedAt; and the watchdog back
+ * on. The caller then waits for the advancing tick (resume.ts sessionLink restored).
+ */
+export function adoptSession(session: Session, tickBase: number = session.lastInWorldTick): void {
+    session.sessionId++;
+    session.tickBase = tickBase;
+    session.childExit = null;
+    session.launchedAt = Date.now();
+    session.expectInWorld = true;
+    session.watchdog?.resume();
+    appendFileSync(session.logPath, `[speedrun] session ${session.sessionId}: adopted a login made outside this process at ${new Date().toISOString()} (tick base ${tickBase})\n`);
+}
+
+/**
  * How often waitInWorldOrExit asks `ended` (a page read through the browser tab). A wall cadence
  * bounding that read's cost, not a tick: before the login lands there are no ticks to count.
  */
@@ -928,6 +998,27 @@ export interface WatchdogInputs {
     progressStaleTicks: number | null;
     /** The world itself is gone (demo restart, or our network): lib/reconnect.ts. Probed only when unhealthy. */
     serverDown: boolean;
+    /** A bank or trade interface open in the last published state (null or absent: none). */
+    interfaceOpen?: 'bank' | 'trade' | null;
+    /** Wall ms the watchdog has held its logout for that interface, and how long it may (INTERFACE_HOLD_TICKS). */
+    msInterfaceHeld?: number;
+    interfaceHoldMs?: number;
+}
+
+/**
+ * Ticks (of wall time: a wedged client publishes none) the watchdog holds a logout while a bank or
+ * trade is open, before it logs out anyway. A bank burst or a trade's accepts end within a few
+ * ticks and the step's own waits fail long before this; a logout click then would close the
+ * interface under the step (the button runs if_close), and the server keeps a player with a modal
+ * open in the world anyway. Bounded, so a stuck interface still ends in the old verdict.
+ */
+export const INTERFACE_HOLD_TICKS = 100;
+
+/** What the watchdog's logout would close: an open bank or trade in `s`. */
+export function openInterface(s: Pick<BotWorldState, 'bank' | 'trade'> | null | undefined): 'bank' | 'trade' | null {
+    if (s?.bank?.isOpen) return 'bank';
+    if (s?.trade?.isOpen) return 'trade';
+    return null;
 }
 
 /**
@@ -959,8 +1050,10 @@ export function watchdogDecision(i: WatchdogInputs): WatchdogVerdict {
     // A client that is still logging in is not stale; only its exit counts.
     if (!i.tickedSinceLaunch && i.msSinceLaunch < i.launchGraceMs) return 'ok';
     const wedged = i.msSinceAdvance > i.staleMs || i.gateway === 'dead' || i.gateway === 'stale';
-    if (wedged) return i.serverDown ? 'outage' : i.logoutFailed ? relaunch : 'logout';
-    if (i.progressStaleTicks !== null && i.ticksSinceProgress !== null && i.ticksSinceProgress > i.progressStaleTicks) return 'stop';
+    // The logout refuses while a bank or trade is open, for a bounded hold (INTERFACE_HOLD_TICKS).
+    const held = !!i.interfaceOpen && (i.msInterfaceHeld ?? 0) <= (i.interfaceHoldMs ?? Infinity);
+    if (wedged) return i.serverDown ? 'outage' : i.logoutFailed ? relaunch : held ? 'wait' : 'logout';
+    if (i.progressStaleTicks !== null && i.ticksSinceProgress !== null && i.ticksSinceProgress > i.progressStaleTicks) return held ? 'wait' : 'stop';
     return 'ok';
 }
 
@@ -1029,6 +1122,12 @@ export interface WatchdogOptions {
      * Without it every drop is treated as the client's.
      */
     serverDown?: () => Promise<boolean>;
+    /**
+     * Asked before a logout, relaunch or stop: a reason to stand down instead (run.ts: the page is
+     * out of the world, which its drop recovery relogs in page; a logout and relaunch here would
+     * race it with a client relaunch). Null: act as usual.
+     */
+    standDown?: () => Promise<string | null>;
 }
 
 /**
@@ -1060,6 +1159,9 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
     let busy = false;
     let gateway: BotStatus['status'] | null = null;
     let lastGatewayPoll = 0;
+    const interfaceHoldMs = INTERFACE_HOLD_TICKS * tickMs();
+    let heldSince: number | null = null;
+    let lastWait = '';
 
     const emit = (verdict: WatchdogVerdict, reason: string) => opts.onEvent?.({ at: Date.now(), verdict, reason, sessionId: session.sessionId });
     const backOff = () => {
@@ -1077,12 +1179,15 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
                 gateway = (await gatewayStatus(session))?.status ?? null;
             }
             const msSinceAdvance = Date.now() - session.lastAdvanceAt;
+            const interfaceOpen = openInterface(session.sdk.getState());
+            if (!interfaceOpen) heldSince = null;
             const stale = staleMs();
             const decide = (serverDown: boolean) => watchdogDecision({
                 expectInWorld: session.expectInWorld, paused, now: Date.now(), msSinceAdvance, staleMs: stale,
                 msSinceLaunch: Date.now() - session.launchedAt, tickedSinceLaunch: session.lastAdvanceAt > session.launchedAt, launchGraceMs,
                 gateway, childExit: session.child ? session.childExit : null, nextAttemptAt, logoutFailed,
                 ticksSinceProgress: progressStaleTicks === null ? null : session.ticksSinceProgress, progressStaleTicks, serverDown,
+                interfaceOpen, msInterfaceHeld: heldSince === null ? 0 : Date.now() - heldSince, interfaceHoldMs,
             });
             let verdict = decide(false);
             if ((verdict === 'logout' || verdict === 'relaunch' || verdict === 'wait') && opts.serverDown) {
@@ -1093,9 +1198,28 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
                     attempt = 0;
                     logoutFailed = false;
                 }
+                lastWait = '';
                 return;
             }
-            emit(verdict, `childExit=${session.childExit} sinceAdvance=${msSinceAdvance}ms gateway=${gateway}`);
+            const why = `childExit=${session.childExit} sinceAdvance=${msSinceAdvance}ms gateway=${gateway}`;
+            if (verdict === 'wait' && interfaceOpen && !logoutFailed) {
+                // The logout is held for the open interface: said once per hold, not every tick.
+                heldSince ??= Date.now();
+                const line = `logout held: the ${interfaceOpen} is open (${why})`;
+                if (lastWait !== line.split(' (')[0]) emit('wait', line);
+                lastWait = line.split(' (')[0]!;
+                return;
+            }
+            if ((verdict === 'logout' || verdict === 'relaunch' || verdict === 'stop') && opts.standDown) {
+                const hold = await opts.standDown().catch(() => null);
+                if (hold) {
+                    if (lastWait !== hold) emit('wait', `${verdict} held: ${hold} (${why})`);
+                    lastWait = hold;
+                    return;
+                }
+            }
+            lastWait = '';
+            emit(verdict, why);
             if (verdict === 'give_up') {
                 gaveUp = true;
                 return;
@@ -1170,6 +1294,10 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
             paused = false;
             session.lastAdvanceAt = Date.now();
             session.ticksSinceProgress = 0;
+            // A gateway status read while the session was out (stale, dead) says nothing about the new
+            // one: without this the first check after a relog logs the healthy page out (rs/511's lab).
+            gateway = null;
+            lastGatewayPoll = Date.now();
         },
         check,
         get relaunches() {

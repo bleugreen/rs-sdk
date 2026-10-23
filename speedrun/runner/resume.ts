@@ -145,10 +145,28 @@ export async function resolveResume<C>(steps: ReadonlyArray<Step<C>>, obs: Obser
         await obs.ensure(s.probes);
         if (s.inProgress?.(obs, c)) return point(j, 'resume', `${s.name} is in progress`);
         const pre = s.preconditions(obs.state, c);
-        if (pre === true) return point(j, 'run', `${s.name} can start`);
-        why.push({ step: s.name, why: pre });
+        if (pre === true && !s.marker) return point(j, 'run', `${s.name} can start`);
+        const at = pre === true ? await markerPlace(steps, j, obs, c) : pre;
+        if (at === true) return point(j, 'run', `${s.name} can start`);
+        why.push({ step: s.name, why: at });
     }
     throw new ResumeError(why, lastDone, firstUndone);
+}
+
+/**
+ * Whether the walk stands at marker `j` (Step.marker): the step before it finished (its
+ * postconditions hold and it is not in progress), or the step after it is in progress or can start.
+ * The reason otherwise, so the walk goes on down to the unfinished step before it.
+ */
+async function markerPlace<C>(steps: ReadonlyArray<Step<C>>, j: number, obs: Observation, c: C): Promise<true | string> {
+    const prev = steps[j - 1];
+    const next = steps[j + 1];
+    if (!prev || !next) return true;
+    await obs.ensure(prev.probes);
+    if (prev.postconditions(obs.state, c) === true && !prev.inProgress?.(obs, c)) return true;
+    await obs.ensure(next.probes);
+    if (next.inProgress?.(obs, c) || next.preconditions(obs.state, c) === true) return true;
+    return `a marker: ${prev.name} has not finished and ${next.name} cannot start`;
 }
 
 // ------------------------------------------------------------------ link
@@ -174,7 +192,17 @@ export interface SessionLinkOptions {
     /** Ticks without an advancing in-world tick before the session counts as lost (default LOST_AFTER_TICKS). */
     staleTicks?: number;
     pollMs?: number;
+    /**
+     * The page's own in-game flag (lib/tab.ts pageInGame; null: unknown). A browser page that falls
+     * out of the world stops publishing rather than publishing inGame false, so without this a drop
+     * is seen only at `staleTicks`, the same bound the watchdog acts on. With it the page is asked
+     * once the tick has stood PAGE_CHECK_TICKS, and an out page is lost at once (run.ts's drop path).
+     */
+    pageInGame?: () => Promise<boolean | null>;
 }
+
+/** Ticks the tick may stand before the link asks the page whether it is still in the world. */
+export const PAGE_CHECK_TICKS = 3;
 
 /**
  * A Link over a live Session. Lost: the lite child exited, the client publishes
@@ -190,18 +218,31 @@ export function sessionLink(session: Session, opts: SessionLinkOptions = {}): Li
     const staleMs = () => idleBoundMs({ ticks: opts.staleTicks ?? LOST_AFTER_TICKS, period: session.period });
     const pollMs = opts.pollMs ?? 100;
     let lostAt = 0;
+    // When the page last read out of the world (0: not since the tick last advanced).
+    let pageOutAt = 0;
+    let pageAskedAt = 0;
     const why = (): string | null => {
         if (session.client === 'lite' && session.child && session.childExit !== null && session.expectInWorld) return `client exited (${session.childExit})`;
         const s = session.sdk.getState();
         if (s && !s.inGame && session.expectInWorld) return 'client out of game';
+        if (pageOutAt && session.lastAdvanceAt > pageOutAt) pageOutAt = 0;
+        if (pageOutAt && session.expectInWorld) return 'page out of game';
         const since = Date.now() - session.lastAdvanceAt;
         if (since > staleMs() && session.expectInWorld) return `no tick for ~${Math.round(since / periodMs(session.period))} ticks (${since} ms)`;
         return null;
+    };
+    const askPage = async () => {
+        const ask = opts.pageInGame;
+        const now = Date.now();
+        if (!ask || !session.expectInWorld || now - session.lastAdvanceAt <= PAGE_CHECK_TICKS * tickMs() || now - pageAskedAt < tickMs()) return;
+        pageAskedAt = now;
+        if ((await ask().catch(() => null)) === false && session.lastAdvanceAt < now) pageOutAt = Date.now();
     };
     return {
         isLost: () => why() !== null,
         lost: async signal => {
             while (!signal.aborted) {
+                await askPage();
                 const w = why();
                 if (w) {
                     lostAt = Date.now();
@@ -250,8 +291,8 @@ export interface ResumableOptions<C> extends Omit<RunStepsOptions<C>, 'from' | '
     probes?: Readonly<Record<string, Probe>>;
     /** Operator override for the first attempt only (`--from`); later attempts always walk. */
     from?: number | string;
-    /** Bring the session back after a drop. Default: wait for `link.restored` (the watchdog reconnects). */
-    recover?: (reason: string) => Promise<void>;
+    /** Bring the session back after a drop (`at`: the step it cut and the tick). Default: wait for `link.restored` (the watchdog reconnects). */
+    recover?: (reason: string, at: { step: string | null; tick: number }) => Promise<void>;
     /** Give up after this many drops (default 20). */
     maxDrops?: number;
     /** Longest wait for the session to come back (default 30 min: a restart takes ~2-3). */
@@ -353,7 +394,7 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             if (drops > (opts.maxDrops ?? 20)) throw new Error(`gave up after ${drops - 1} drops (last: ${reason})`);
             const r0 = Date.now();
             const dropCounter = tickCounter(session);
-            await (opts.recover ? opts.recover(reason) : opts.link.restored(opts.restoreTimeoutMs ?? 30 * 60_000));
+            await (opts.recover ? opts.recover(reason, { step: current, tick: dropTick }) : opts.link.restored(opts.restoreTimeoutMs ?? 30 * 60_000));
             row(opts.log, session, DROP_STEP, dropTick, dropCounter, r0, { attempt, reason, step: current, recoverMs: Date.now() - r0 }, false);
             opts.onEvent?.({ kind: 'restored', attempt, wallMs: Date.now() - r0 });
         }
