@@ -340,7 +340,7 @@ describe('woodcutting: program parameters per band and technique', () => {
         expect(bandTechnique({ bury: true, technique: 'knife' }, 'willow')).toBe('knife');
         expect(bandTechnique({ bury: true }, 'normal')).toBe('plain');
         expect(bandTechnique({}, 'willow')).toBe('auto');
-        const h = harness(state({ level: 1 }), { bury: true, bones: { giver: 'g' } });
+        const h = harness(state({ level: 1 }), { bury: true, bones: { giver: 'g' }, prayerTo: 0 });
         await h.byName('woodcutting:normal-1-15').run(h.ctx);
         await h.byName('woodcutting:oak-15-73').run(h.ctx);
         await h.byName('woodcutting:walk-willows').run(h.ctx);
@@ -1594,7 +1594,7 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
      * counts on the giver's status and sends it to restock; the group's last load, from the `final` giver,
      * is 21 bones and the runes.
      */
-    const session = (o: { loads: number; trades?: Record<string, number>; final?: boolean }) => {
+    const session = (o: { loads: number; trades?: Record<string, number>; final?: boolean; bone?: string }) => {
         const dir = newDir();
         new BoneCue(dir, A4).write(baseState({ tick: 900 }), 'cairn_test');
         const put = (account: string, st: Partial<BoneStatus> = {}) =>
@@ -1604,14 +1604,19 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
             });
         for (const a of GROUP) put(a);
         const served: Array<{ partner: string; want: unknown }> = [];
+        // the giver that served the load before comes back loaded, newest in line
+        let away: string | null = null;
+        let clock = 10;
         const receive = (async (sdk: FakeSdk, partner: string, opt: { want?: unknown }) => {
             const all = readBoneStatuses(dir);
             const st = all.find(x => x.account === partner)!;
             const last = st.final && groupLoadsDone(all, GROUP, A4) === o.loads - 1;
             served.push({ partner, want: opt.want });
             put(partner, { phase: 'restock', held: 0, readyAt: null, trades: st.trades + 1 });
+            if (away) put(away, { trades: all.find(x => x.account === away)!.trades, readyAt: ++clock });
+            away = partner;
             const s = sdk.getState()!;
-            const add = [...Array.from({ length: last ? 21 : 23 }, () => 'Dragon bones'), ...(last ? ['Law rune', 'Air rune'] : [])];
+            const add = [...Array.from({ length: last ? 21 : 23 }, () => o.bone ?? 'Dragon bones'), ...(last ? ['Law rune', 'Air rune'] : [])];
             sdk.push({ tick: s.tick + 4, inventory: [...s.inventory, ...add.map((n, k) => item(s.inventory.length + k, n, n === 'Air rune' ? 5 : 1))] });
             return { ok: true, ticks: 4, received: [] };
         }) as unknown as WoodcuttingOptions['receive'];
@@ -1755,6 +1760,44 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         expect(band.done!({ state: end, probed: {} }, {})).toBe(true);
         expect(band.postconditions(end, {})).toBe('Prayer 92, below 99');
         expect(readCue(g.dir)!.stop).toBe(true);
+    });
+
+    // rs/186 23:4xZ: the givers relaunch babydragon-only; the resumed pack still holds 23 dragon bones.
+    test("the default bones pattern takes dragon and babydragon bones alike: the slot count, the program's bury, and the load's want", () => {
+        const mixed = state({ level: 73, items: ['Rune axe', 'Knife', 'Logs', 'Oak logs', ...Array.from({ length: 3 }, () => 'Babydragon bones')], bones: 20, prayer: 53 });
+        expect(28 - mixed.inventory.length).toBe(1);
+        const h = harness(mixed, { bury: true, bones: { group: GROUP }, cueDir: newDir(), prayerTo: 99 });
+        expect(h.byName(WILLOWS).preconditions(mixed, {})).toBe(true);
+        const re = bonesParam(bandParams({ bury: true }, 'willow', 99)('knife').bury)!;
+        expect(['Dragon bones', 'Babydragon bones'].map(n => re.test(n))).toEqual([true, true]);
+        const buryOp = { ...mixed, inventory: mixed.inventory.map(i => (/bones$/i.test(i.name) ? { ...i, optionsWithIndex: [{ text: 'Bury', opIndex: 1 }] } : i)) };
+        expect(buryable(buryOp, re)).toHaveLength(23);
+        expect(decideReceiver(
+            { ...mixed, trade: { isOpen: true, screen: 'confirm', partner: 'cairn_b01', myOffer: [], theirOffer: Array.from({ length: 23 }, () => ({ slot: -1, id: 534, name: 'Babydragon bones', count: 1 })), myAccepted: false, partnerAccepted: true } },
+            newReceiverCtx('cairn_b01', mixed.inventory, [{ item: /bones$/i, amount: 23 }])
+        ).action).toBe('accept');
+    });
+
+    test('a long tail of babydragon loads past WC 99 (Prayer 90 to 99 at one level a load): nine loads in turn, no throw while loads remain, then a clean close', async () => {
+        const g = session({ loads: 40, trades: { cairn_b01: 2 }, bone: 'Babydragon bones' });
+        const start = inSight(state({ level: 99, prayer: 90, bones: 23 }));
+        const h = harness(start, s07(g.dir, g.receive), prayerRuns(1, []));
+        const stop = ticking(h.sdk);
+        try {
+            await h.byName(WILLOWS).run(h.ctx);
+        } finally {
+            stop();
+        }
+        // the held 23 dragon bones go first (90 -> 91), then eight babydragon loads to 99
+        expect(loadRows(h).map(r => (r.meta as { load: number }).load)).toEqual([3, 4, 5, 6, 7, 8, 9, 10]);
+        expect(loadRows(h).every(r => r.ok && (r.meta as { serverWait: number }).serverWait === 0)).toBe(true);
+        expect(new Set(g.served.map(r => r.partner))).toEqual(new Set(GROUP));
+        expect(h.calls).toHaveLength(9);
+        const end = h.sdk.getState()!;
+        expect(h.byName(WILLOWS).postconditions(end, {})).toBe(true);
+        const cue = readCue(g.dir)!;
+        expect([cue.session, cue.stop]).toEqual([A4, true]);
+        expect(groupLoadsDone(readBoneStatuses(g.dir), GROUP, A4)).toBe(10);
     });
 
     test('a resume at WC 99 still owing Prayer re-enters the willow band (the walk first when away); paid or spent, the module is finished', async () => {
