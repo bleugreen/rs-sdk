@@ -1771,7 +1771,7 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         const re = bonesParam(bandParams({ bury: true }, 'willow', 99)('knife').bury)!;
         expect(['Dragon bones', 'Babydragon bones'].map(n => re.test(n))).toEqual([true, true]);
         const buryOp = { ...mixed, inventory: mixed.inventory.map(i => (/bones$/i.test(i.name) ? { ...i, optionsWithIndex: [{ text: 'Bury', opIndex: 1 }] } : i)) };
-        expect(buryable(buryOp, re)).toHaveLength(23);
+        expect(buryable(buryOp as unknown as Parameters<typeof buryable>[0], re)).toHaveLength(23);
         expect(decideReceiver(
             { ...mixed, trade: { isOpen: true, screen: 'confirm', partner: 'cairn_b01', myOffer: [], theirOffer: Array.from({ length: 23 }, () => ({ slot: -1, id: 534, name: 'Babydragon bones', count: 1 })), myAccepted: false, partnerAccepted: true } },
             newReceiverCtx('cairn_b01', mixed.inventory, [{ item: /bones$/i, amount: 23 }])
