@@ -8,7 +8,7 @@ import { cancelMulePreparation, holdMule, readMulePreparation, writeMuleReady, t
 import { muleDelivery } from '../helpers/mule-itinerary';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
 import { holdInputs } from '../tools/mule-hold';
-import { muleScope } from './chain';
+import { buildChain, cueAround, KIT_PARTNER_ROWS, muleScope, PLACEMENT, type RunConfig } from './chain';
 import { CUE_REFRESH_TICKS, CueKeeper } from './cue-keeper';
 import { DeliveryOwner, deliveryOwnerFor, type DeliveryRow } from './delivery-owner';
 
@@ -208,6 +208,55 @@ describe('the run owner\'s per-row sequence', () => {
         const c = readMulePreparation(dir, MULE)!;
         expect([c.op, c.row, c.seq]).toEqual(['prepare', 'H1', b.preparationSeq]);
         expect(b.preparationSeq).toBe(2);
+    });
+});
+
+describe('a late carrier is waited for, not refused', () => {
+    const PARTNERS = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id.toLowerCase()}`]));
+    const cfg = (dir: string): RunConfig => ({
+        partners: { ...PARTNERS, H1: MULE, H4: MULE, H4k: MULE }, firemakingTiles: '3240,3296;3239,3296;3238,3296', rings: { giver: 'r' }, bones: { giver: 'b' },
+        courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: dir, muleCueDir: dir,
+    });
+
+    test("the chain's mule hand-off (H1) does not want its carrier in view before the step: the cue's ready gate waits for it", () => {
+        const dir = dirOf('late-pre');
+        const chain = buildChain(cfg(dir), { cues: new CueKeeper(dir, SCORED) });
+        const h1 = chain.find(s => s.cue?.family === 'mule' && s.cue.step === 'H1')!;
+        expect(h1.kind).toBe('handoff');
+        const pre = h1.preconditions(baseState({ tick: 1, inGame: true }), {} as never);
+        expect(String(pre)).not.toContain('not in view');
+        expect(pre).toBe(true);
+    });
+
+    test('a carrier ready 80 ticks after the open is waited for and the cue then written; one beyond the bound refuses with its status', async () => {
+        const dir = dirOf('late');
+        const sdk = new FakeSdk(baseState({ tick: 1, inGame: true }));
+        const owner = new DeliveryOwner(dir, RUN, SCORED, rows);
+        const keeper = new CueKeeper(dir, SCORED, owner);
+        let late = 80;
+        const offs = [keeper.attach(sdk), sdk.onStateUpdate(() => { late--; })];
+        let offCarrier: () => void = () => {};
+        const offLate = sdk.onStateUpdate(() => { if (late === 0) offCarrier = carrier(sdk, dir); });
+        const timer = setInterval(() => sdk.tick(), 1);
+        let ran = 0;
+        const step = cueAround({ id: 'H1', kind: 'handoff', name: 'H1 hand-off', logoutSafe: true, preconditions: () => true, postconditions: () => true, run: async () => { ran = sdk.getState()!.tick; } } as never, muleScope('H1'), keeper, { final: false });
+        try {
+            const t0 = sdk.getState()!.tick;
+            await step.run({ sdk } as never);
+            const cue = cueIn(dir);
+            expect(ran - t0).toBeGreaterThanOrEqual(80);
+            expect(cue.session).toBe(`${RUN}:H1`);
+            expect(cue.stop).toBe(true);
+            // Beyond the bound (READY_MAX_TICKS, 600): the step refuses with the carrier's last status; it never hangs.
+            offCarrier();
+            const never = cueAround({ id: 'H4', kind: 'handoff', name: 'H4 hand-off', logoutSafe: true, preconditions: () => true, postconditions: () => true, run: async () => { throw new Error('ran'); } } as never, muleScope('H4'), keeper, { final: false });
+            await expect(never.run({ sdk } as never)).rejects.toThrow(/H4: carrier cairn_mule1 was not ready within 600 ticks .*H1 ready/);
+        } finally {
+            clearInterval(timer);
+            offs.forEach(f => f());
+            offLate();
+            offCarrier();
+        }
     });
 });
 

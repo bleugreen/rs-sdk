@@ -432,6 +432,12 @@ export interface HandOffOptions<C> {
     /** receiveFrom only: re-send a trade click that drew no reply after this many ticks (default DROPPED_TICKS: the partner stands beside SCORED). swap() always uses DROPPED_TICKS. */
     noReplyTicks?: number;
     onReport?: (r: HandOffReport) => void;
+    /**
+     * The partner comes after the step's cue opens: a delivery carrier, whose readiness the cue's open
+     * awaits (bounded, refusing with its status; runner/delivery-owner.ts). The precondition then does
+     * not want it in view; the run, after the open, waits PARTNER_AFTER_CUE_TICKS for it in sight.
+     */
+    partnerAfterCue?: boolean;
     /** Called once just before the trade's first click: a delivery row rewrites its cue (CueKeeper.refresh), so the carrier meets a fresh one. */
     beforeTrade?: () => void;
     /** A partner that serves on a cue (the cannon holder, cannon.ts serve mode: see runHandOffOnCue), or sizes its top-ups from SCORED's ask (`ask`). */
@@ -569,6 +575,9 @@ export async function runHandOff(sdk: HandOffSdk, plan: HandOffPlan, partner: st
     return report;
 }
 
+/** Observed ticks a partnerAfterCue hand-off waits, once its cue is open, for its partner in sight. */
+export const PARTNER_AFTER_CUE_TICKS = 30;
+
 /** The resumable Step for one hand-off row. Its name starts with the row id (`H13 hand-off`). */
 export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step<C> {
     const partner = (c: C) => (typeof opts.partner === 'function' ? opts.partner(c) : opts.partner);
@@ -583,7 +592,7 @@ export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step
         name: `${plan.id} hand-off`,
         logoutSafe: true,
         // A cue-served partner comes after the cue, so it need not be in view yet.
-        preconditions: (s, c) => handOffPre(s, plan, partner(c), { partnerInView: !opts.cue?.open }),
+        preconditions: (s, c) => handOffPre(s, plan, partner(c), { partnerInView: !opts.cue?.open && !opts.partnerAfterCue }),
         postconditions: s => {
             const missing = handOffMissing(s, plan);
             return missing.length ? `${plan.id} after the trade: ${missing.join('; ')}` : true;
@@ -591,6 +600,13 @@ export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step
         done: (o, c) => handOffMissing(o.state, plan).length === 0 || !!supersededBy?.(o, c) || (!!record?.has(plan.id) && givenGone(o.state, plan)),
         inProgress: o => tradeLanded(o.state, plan) && handOffMissing(o.state, plan).length > 0,
         async run(ctx) {
+            if (opts.partnerAfterCue && !trade.cue?.open) {
+                const who = partner(ctx.c);
+                const seen = await waitUntil(sdkOf(ctx.sdk), s => s.nearbyPlayers.some(p => sameName(p.name, who)), { maxTicks: PARTNER_AFTER_CUE_TICKS });
+                if (!seen.ok) throw new Error(`${plan.id}: ${who} is not in view ${PARTNER_AFTER_CUE_TICKS} ticks after its cue opened`);
+                const pre = handOffPre(sdkOf(ctx.sdk).getState()!, plan, who);
+                if (pre !== true) throw new Error(pre);
+            }
             if (trade.cue?.open) await runHandOffOnCue(ctx, plan, partner(ctx.c), trade.cue, trade);
             else await runHandOff(sdkOf(ctx.sdk), plan, partner(ctx.c), trade);
             mark(ctx.sdk);

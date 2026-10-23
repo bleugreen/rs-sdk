@@ -868,7 +868,8 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         const ask = !scope && plan.receive.some(r => r.topUp) ? { scope: muleScope(e.row), ask: { dir: muleCueDir(cfg) } } : undefined;
         const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : ask;
         const muleRow = !scope && MULE_ROWS.includes(e.row);
-        const beforeTrade = muleRow ? { beforeTrade: () => { o.cues.refresh?.(muleScope(e.row)); } } : {};
+        // A carrier late to its stand is waited for at the cue's open (the ready gate), not refused by the precondition.
+        const beforeTrade = muleRow ? { partnerAfterCue: true, beforeTrade: () => { o.cues.refresh?.(muleScope(e.row)); } } : {};
         const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs } : {}), ...(cue ? { cue } : {}), ...beforeTrade }), cue ? { cue: cue.scope } : {});
         out.unshift(muleRow ? mule(s, e.row) : s);
     }
