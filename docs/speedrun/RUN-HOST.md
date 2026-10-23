@@ -517,8 +517,8 @@ rebuilds the bundle on each machine at a commit at or after a4456c73 (the floor 
 step 3's served = built check then runs within each machine as usual.
 
 **The served webclient is rebuilt from the run commit at every step 0** (main 21:3x via rs/158;
-fold-in 33). The final run commit carries an `sdk/` change (rs/186's walker fix for the browser's
-`walkTo`, 01304312, with fleet snapshot 11 moving the floor), and the SDK reaches the tab only
+fold-in 33). The final run commit carries an `sdk/` change (**rs/564**, the `sdk/` snapshot carrying rs/186's
+`walkTo` fix, 01304312; fleet snapshot 11 also moves the floor), and the SDK reaches the tab only
 through the served bot bundle. So whenever `~/run-commit` changes, the install and build above run
 again on both machines before anything is launched, and step 3's served = built check confirms
 that each machine serves what it built from that commit. A bundle built from an earlier commit is
