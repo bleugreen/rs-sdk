@@ -69,6 +69,24 @@ describe('walk', () => {
         expect(summary(entries).ok).toBe(true);
     });
 
+    test("a hand-off's drops: after the need check, before the in must fit; a worn one leaves at no slot cost", () => {
+        const rows = [
+            '| S00 | khazard helmet x1 [u]; junk x26 [u] | - | +khazard helmet | 27 | (r) |',
+            '| H13 | staff of fire x1 [u]; knife x1 [u]; air rune x1 [s] | junk x2 (drop); khazard helmet x1 (drop: unworn first) | +staff of fire | 1 | (r) |',
+        ];
+        const { rows: parsed, errors } = parseLedger(table(...rows));
+        expect(errors).toEqual([]);
+        expect(parsed[1]!.out.map(o => [o.name, o.count, o.reason])).toEqual([['junk', 2, 'drop'], ['khazard helmet', 1, 'drop']]);
+        const entries = walk(parsed);
+        // 2 free at the need check; the drops make it 4, so the trade's 3 fit; the staff's wield frees 1.
+        expect(byRow(entries, 'H13')).toMatchObject({ free: 2, used: 26, verdict: 'pass', held: expect.not.stringContaining('khazard') });
+        expect(byRow(entries, 'H13').worn).toBe('staff of fire x1');
+        // Without the junk's drop the trade's 3 slots do not fit: the drops are what make the room.
+        const short = run(table(rows[0]!, rows[1]!.replace('junk x2 (drop); ', '')));
+        expect(byRow(short, 'H13')).toMatchObject({ verdict: 'SHORT' });
+        expect(byRow(short, 'H13').notes.join('; ')).toMatch(/the trade adds 3 slots, 2 free/);
+    });
+
     test('a table that fails at a named step, and the walk goes on to the end', () => {
         const entries = run(table(NEARLY_FULL, '| H5 | essence x2 [u] | - | - | 2 | (r) |', '| S06 | - | essence x2 (consume) | - | 0 | (r) |'));
         const h5 = byRow(entries, 'H5');
