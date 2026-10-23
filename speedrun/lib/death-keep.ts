@@ -22,6 +22,8 @@ export interface ObjInfo {
     cost: number;
     /** `param=destroy_death,^true`: never kept, whatever its cost. */
     destroy: boolean;
+    /** Has a `wearpos=`: it can be worn. */
+    wearable?: boolean;
     /** obj.pack's id for the debug name; undefined when the pack lacks it. */
     id?: number;
 }
@@ -65,7 +67,7 @@ export function contentObjs(dir = CONTENT_SCRIPTS, pack: ObjPack = objPack()): O
             const debug = b.match(/^\[([^\]]+)\]/)?.[1];
             const name = b.match(/^name=(.*)$/m)?.[1];
             if (!debug || !name || /^certtemplate=/m.test(b)) continue;
-            objs.push({ debug, name, cost: Number(b.match(/^cost=(\d+)$/m)?.[1] ?? 0), destroy: /^param=destroy_death,\^true$/m.test(b), id: pack.ids.get(debug) });
+            objs.push({ debug, name, cost: Number(b.match(/^cost=(\d+)$/m)?.[1] ?? 0), destroy: /^param=destroy_death,\^true$/m.test(b), wearable: /^wearpos=/m.test(b), id: pack.ids.get(debug) });
         }
     }
     const table = objTable(objs);
@@ -75,13 +77,17 @@ export function contentObjs(dir = CONTENT_SCRIPTS, pack: ObjPack = objPack()): O
 
 /**
  * The obj an item names: by id when it has one, else by game name (the config whose debug name is the
- * name in snake case, then the only one). Undefined when unknown or when a name is ambiguous.
+ * name in snake case, then the only one; for an item worn, the only wearable one, as the strung
+ * M'speak amulet against the unstrung). Undefined when unknown or when a name stays ambiguous.
  */
-export function objOf(table: ObjTable, item: { name: string; id?: number }): ObjInfo | undefined {
+export function objOf(table: ObjTable, item: { name: string; id?: number; worn?: boolean }): ObjInfo | undefined {
     if (item.id !== undefined) return table.byId.get(item.id);
     const all = table.byName.get(item.name.toLowerCase()) ?? [];
     const snake = item.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
-    return all.find(o => o.debug === snake) ?? (all.length === 1 ? all[0] : undefined);
+    const exact = all.find(o => o.debug === snake);
+    if (exact) return exact;
+    const pool = item.worn ? all.filter(o => o.wearable) : all;
+    return pool.length === 1 ? pool[0] : undefined;
 }
 
 /** A stack on the hero for the keep: `count` units of one obj, worn or carried. */
