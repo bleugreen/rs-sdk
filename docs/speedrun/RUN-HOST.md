@@ -907,8 +907,9 @@ Why each flag:
   `handoff`, before SCORED's login and again after it;
 - after the login, **the secrets check, `0 0 0`**: processes showing the password, processes showing
   `token=`, and tab URLs showing either. The tool runs it in process, so no command line holds the
-  password. For SCORED, since main's 12:05Z ruling (fold-in 37), the login is run.ts's and these
-  in-game checks follow it (step 7); `handoff --no-login` logs nobody in.
+  password. For SCORED, since main's 12:10Z ruling (fold-in 37), the login is run.ts's:
+  `handoff --no-login` runs the secrets check at the title screen, and the operator runs it again once
+  SCORED is in world (step 7, "The secrets check runs twice").
 
 ## 4. Helpers on the run machine (rs/117)
 
@@ -1336,8 +1337,8 @@ the tick length T on main since #385 (a4456c73, rs/471; fold-in 31; step 6, line
    helpers (the 7 air givers and the 17) and SCORED (fold-in 36: rs/41's correction, the roster being 17, 4 + 6 + 3 + 4; 24 written at fold-ins 34-35 on a count of 16). Before `handoff`: step 7's login count
    (`handoff` re-checks it), the demo's `tickMs` and bundle token re-read and the launch dry run,
    within 20 minutes of the gate (`--max-gate-age`). **Where the code differs** (r, run-gate.ts at
-   this fold-in's base): `handoff` opens the run tab and logs SCORED in as one command (since main's 12:05Z ruling, fold-in
-37, `handoff --no-login` opens it only, and run.ts does the one login) and reads no
+   this fold-in's base): `handoff` opens the run tab and logs SCORED in as one command (since main's 12:10Z ruling, fold-in
+37, `handoff --no-login` opens it at the title screen only, and run.ts does the one login) and reads no
    load, so reading (ii) is the host's own read on the chosen machine while the tab is up and before
    the login; how it is taken inside `handoff` is the host thread's (pending).
 5. **On the other machine,** before SCORED's first login: its 7 opening givers log out cleanly
@@ -1668,7 +1669,7 @@ printf '<%s>\n' bun speedrun/tools/run-gate.ts handoff --machine=twin --scored-e
 ```
 
 Expect seven lines, each argument whole (m with six, fedora (bginf-halo), bash, a stand-in path,
-2026-10-22; `--no-login` added by main's 12:05Z ruling, fold-in 37, its exact name the code's at the
+2026-10-22; `--no-login` added by main's 12:10Z ruling, fold-in 37, its exact name the code's at the
 commit main names):
 
 ```
@@ -1704,10 +1705,12 @@ round. Then on the machine, in order, each a hard check:
    **exactly one Bot Client window, 1920 wide**;
 7. **the live-frame pass line** (step 5): the window in front is the run tab, and an x11grab frame
    of the display matches the page's own screenshot, at most 12/255;
-8. **with `--no-login` it stops here** (main's ruling, 12:05Z via rs/158; fold-in 37): SCORED's bare
-   page is up and not logged in, and `handoff` hands the open tab to run.ts. Before the ruling it
-   logged SCORED in with tab-login, then ran **the secrets check, `0 0 0`**, and repeated the
-   one-window check and the live frame in game; those now follow run.ts's login (below).
+8. **it leaves the tab at the title screen and logs nobody in** (main's ruling, 12:10Z via rs/158;
+   fold-in 37; the host's `--no-login` flag): its pre-login checks are the live frame at the title
+   screen, the single window and the login count (items 2-7), and its `secretsCheck`
+   (`tools/run-gate.ts:767-779`) still runs there, where it should read `0 0 0`. Before the ruling it
+   logged SCORED in with tab-login, then ran the secrets check, the one-window check and the live
+   frame in game.
 
 Without `--no-login` it ends `PASS: SCORED is in game, alone and in front on the recorded display,
 with the recording showing it` and exits 0; with it, its pass line is the code's at the commit main
@@ -1727,7 +1730,8 @@ any difference):
 3. start the helper launcher (step 4; step 5a.4, item 2);
 4. after the hand-over, start run.ts in the run's tmux on the chosen machine; its preflight then
    checks the floor, the delivery config and the cannon serve, prepares each carrier's first row, and
-   logs SCORED in:
+   logs SCORED in (the only login);
+5. straight after run.ts reports in-game, the operator's secrets check (below):
 
 ```sh
 export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && bun speedrun/run.ts --bot="$(basename "$(dirname "$SCORED_ENV")")" --config=<run config json> --run-dir=$HOME/rs-sdk/run-machine --run-commit=$(cat ~/run-commit)
@@ -1739,25 +1743,39 @@ export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && bun speedrun/run.ts --bot="$(ba
 `<run checkout>/bots/<name>/bot.env` on the chosen machine (step 0's precondition). The run dir must equal the helper launcher's `runDir`: both
 default to `<checkout>/run-machine` (helpers/altar-cue.ts:587, helpers/standalone.ts:50), and
 cannon-serve.json defaults to `<run dir>/cannon-serve.json` (run.ts:142). Items 1-3 come before the
-tab, at step 5a.4 item 2; item 4 comes after `handoff --no-login`.
+tab, at step 5a.4 item 2; items 4 and 5 after `handoff --no-login`. The command above is item 4's.
 
-**SCORED is logged in exactly once, by run.ts** (main's ruling, 12:05Z via rs/158; fold-in 37).
-`handoff` runs login-free with `--no-login` (the host's flag in `tools/run-gate.ts`, landing in the
-commit main names at 14:00Z; its exact name re-checked there, the code winning) and hands the open tab
-to run.ts, whose launch navigates that tab to a fresh login token and logs SCORED in (r, rs/186 at
-9f2efb03: `lib/session.ts` `openBrowserClient`, `lib/tab.ts` `reloadOrOpenTab`). **Straight after
-run.ts reports in-game:** the secrets check, `0 0 0` (step 3), with the one-window check and the live
-frame, which `handoff` ran after its own login and now has no login to follow. run.ts at 38902b56
-runs no secrets check of its own (`run-gate.ts`'s `secretsCheck` runs only inside `gate` and
-`handoff`), so the operator runs it unless the code at the named commit does it elsewhere; its
-standalone command is **pending the host**. **Only if `--no-login` is not in the named commit**
-(main's fallback wording): after handoff's verification, log SCORED out cleanly in the tab (logout
-button, confirmed on the page) BEFORE starting run.ts. The logout must be confirmed before run.ts
-starts, or the second login meets the duplicate-session stall. **Why** (main): the hiscores count the
-account's total logged-in ticks, so any pre-run login is ticks on the record, about 25-75 for
-`handoff`'s own login and minutes if a dropped session lingers (`playtime-audit.md` rows 4d and 4b).
-The run clock the ladder prices from is the server's first login of the account, not run.ts's
-`tickBase` (RUN-ORDER.md section 7). From
+**SCORED is logged in exactly once, by run.ts** (main's ruling, 12:10Z via rs/158, superseding the
+12:05Z summary; fold-in 37). `handoff` runs its pre-login checks (the live frame at the title screen,
+the single window, the login count) and leaves the tab at the title screen, with the host's
+`--no-login` flag (its exact name the code's at the commit main names). run.ts performs the only
+login. **No run.ts change is needed** (r, rs/186 at 9f2efb03; every file:line re-checked at the
+named commit, the code winning): run.ts:573 always mints a token and navigates the one
+`bot=<SCORED>` tab (`lib/tab.ts:206-218`), then waits for in-world ticks (`lib/session.ts:347`),
+the same from the title screen; its only reads of the page's in-game state are the S21 relog resume
+(run.ts:578-586, which refuses a live page, so a title-screen tab is what it wants) and the watchdog
+after login (:499, :517).
+
+**The secrets check runs twice.** First `handoff`'s `secretsCheck` (`tools/run-gate.ts:767-779`),
+at the title screen, reading `0 0 0`. Then, **straight after run.ts reports in-game (S00 started),
+an operator step, not inside run.ts**: the host's secrets-only invocation of run-gate.ts (**command
+pending the host**), expected `0 0 0` (processes showing the password, processes showing `token=`,
+tab URLs showing either). It reads `0 0 0` because run.ts passes the token over CDP, not argv, and
+the page strips `token` from its URL (`GatewayConnection.ts:48-51`). **Anything other than `0 0 0`
+goes to main before S01's first action.** The proof is rs/496's twin re-run, which runs the check
+once after run.ts's login: **pending**, like the ladder note's proofs.
+
+**Why** (main, 12:10Z): the server's clock runs from SCORED's first login and keeps counting on a
+dropped connection (`playtime-audit.md` rows 4b and 4d); a takeover under 10 s is refused by the
+login server (`LoginServer.ts:573-601`); the gateway's duplicate-session stall is ~19-20 ticks
+(rs/174). The run clock the ladder prices from is the server's first login of the account, not
+run.ts's `tickBase` (RUN-ORDER.md section 7).
+
+**Fallback, only if the host's `--no-login` flag misses 13:15Z** (main's wording): after handoff's
+verification, log SCORED out cleanly in the tab (confirmed on the page) before starting run.ts.
+Priced as `handoff`'s own logged-in ticks, inferred tens, a start-cost line beside the row, outside
+the expected total (RUN-ORDER.md section 7's ladder). A logout not confirmed before run.ts starts
+runs into the login server's 10 s takeover refusal and the gateway's duplicate-session stall. From
 here the run scripts drive the tab through the gateway on 7780 (RUN-ORDER.md, STEP-MANIFEST.md).
 Nobody touches the window. Relaunches during the run go the same way: session.ts mints a fresh token
 from `CLIENT_URL` and re-navigates the tab over `CDP_URL`. The run's relogs use
@@ -1979,6 +1997,20 @@ stand down on a StepError or a first Ctrl-C, per family** (rs/574's retire rule,
   next logout-safe boundary, to resume later, exit 4), SIGHUP, a refused resume, a host reservation
   and a crash exit. Cannon is out of scope: on run day h92 runs in bbs's fleet in
   receiver-in-sight mode and reads no cue.
+- **Measured (lab): rs/597's stand-by lab** (bgsrv-mac, 400 ms, a scratch copy of 075c1763,
+  04:18-04:32 PDT 2026-10-23, via rs/158; fold-in 37; no figure moves). **Altar and mule: relaunch
+  none**, now measured: after a non-final stop both stayed logged in for 10 minutes, the altar giver
+  served the fresh session and the mule's role stayed live. **The mule caveat:** after a plain stop
+  the mule releases its stand and waits, logged in, at Draynor bank (3092,3245), and its served
+  journal refuses a row it has already delivered ('delivery already served'), so a re-run of a step
+  whose mule hand-off already landed gets nothing more from the mule. That is correct unless SCORED
+  lost those items (a death, say), when the recovery is the respawn kit or the by-hand procedure
+  ("After a player-kill"), not the mule. A re-run where the mule's row was never served is untested:
+  unmeasured. **The bone givers:** their roles exit on a plain stop (measured: `bone-giver: finished`
+  0.2 s after the stop), but the launcher keeps both accounts logged in, so 'relaunch the bone
+  givers' means first stopping that launcher entry, so the old login does not stay in the world, and
+  only then relaunching. The anvil, log-row and courier helpers stay code-reading until measured;
+  the same 'stop the entry first' applies to them as a precaution.
 - Helpers are **retired** (a final stop, `[run] cues closed final`) **only** on a completed whole
   run, SIGTERM or a second Ctrl-C, which **end the attempt**: a launcher never re-arms a retired
   scope (`helpers/standalone.ts`'s ScopeSessions), so a re-run after one finds no helpers.
@@ -2022,11 +2054,14 @@ The checks, in order, before re-running. Any one failing means **do not re-run: 
    expired claim makes gate 2 refuse with an `rs-claim take ...` hint (`run.ts:252-261`), so retake it
    as step 0 does first.
 6. **The helpers, per family** (#468, 4657eed8, rs/583 from rs/186 @43f03530; fold-in 36). The log
-   reads `[run] cues closed non-final: a re-run re-arms the helpers`. Relaunch the failed step's
-   bone, anvil, fm-row or courier helpers before the re-run (they exit on a non-final stop and the
-   launcher does not restart them), and start the ring givers by hand if S04 failed; the altar and
+   reads `[run] cues closed non-final: a re-run re-arms the helpers`. For the failed step's bone,
+   anvil, fm-row or courier helpers, first stop their launcher entries, so the old logins do not stay
+   in the world, then relaunch them before the re-run (their roles exit on a non-final stop while the
+   launcher keeps the accounts logged in: measured for the bone givers, code-reading for the others,
+   rs/597; fold-in 37), and start the ring givers by hand if S04 failed; the altar and
    mule givers stand by logged in on SCORED's address (up to 25-26 at S21, rs/41), and the
-   re-run's cue re-arms them. If it reads `[run] cues closed final` (a SIGTERM or a second Ctrl-C was sent), the
+   re-run's cue re-arms them (measured, rs/597; a mule row already delivered is not served again,
+   the caveat above). If it reads `[run] cues closed final` (a SIGTERM or a second Ctrl-C was sent), the
    attempt has been ended and the helpers retired: do not re-run, tell main.
 7. **The step is not on the non-admitting list**: RUN-ORDER.md section 7's margin ladder and its
    attempt-ending lines (A and B are on main, #462 and #453, so fold-in 33's conditional note after
