@@ -13,6 +13,11 @@
 //
 // --landing-wait=N (diagnostic, not the run's path): the leg's first hop, N ticks, then the rest.
 //
+// --drops=without|with|pair (the leg-row drops, runner/legs.ts `drops`): `without` carries exactly the
+// runes the hops spend and nothing the leg drops; `with` adds the ledger's drop outs (LEDGER_DROPS);
+// `pair` runs both on each run, without first. The leg's clock (travel's) includes the burst, so
+// with minus without is the burst's cost; each `RESULT leg` also carries the burst rows (LegDrops).
+//
 // Setup is untimed (::setstat, ::setvar, ::give, ::tele; lab/setup.ts; a fresh account leaves
 // Tutorial Island through setup.ts leaveTutorial first). The clock is TravelResult.ticks: from the
 // first hop's send to the first published state inside the destination. One `RESULT leg {...}`
@@ -22,8 +27,9 @@
 // `RESULT table` with each leg's mean against its expected figure.
 
 import type { BotSDK } from '../../sdk/index';
+import type { BotWorldState } from '../../sdk/types';
 import type { BotActions } from '../../sdk/actions';
-import { legById, legsFor, runLeg, TILES, type LegStep, type S21Altar } from '../runner/legs';
+import { dropsDue, legById, legsFor, runLeg, TILES, type LegDrops, type LegStep, type S21Altar } from '../runner/legs';
 import { APE_ATOLL_ROOFS, glide, hopNeeds, lumdoBoat, pullLever, sail, travel, type TravelResult, type TravelSdk } from '../lib/travel';
 import { closeSession, logoutClean, openSession, type ClientKind } from '../lib/session';
 import { TickLog } from '../lib/ticks';
@@ -78,18 +84,50 @@ const STATS: Record<string, Record<string, number>> = {
 const TALISMANS: Record<string, string> = { 'T05-06': 'air_talisman' };
 const S21_TALISMAN: Record<S21Altar, string> = { nature: 'nature_talisman', body: 'body_talisman' };
 
-/** The step's real inventory for this leg: what its hops consume, food where it is asked for, nothing else. */
-export function legSetup(l: LegStep): Setup {
+/**
+ * Each drop leg's STEP-MANIFEST ledger drop outs (the `drop` reason on its row) as debug names, at
+ * run-day counts where the ledger says `all`. A stack is one drop action whatever its count, so the
+ * slots, not the counts, are what the burst costs. T20-21 and T21-22 are the body altar's legs.
+ */
+export const LEDGER_DROPS: Readonly<Record<string, readonly [string, number][]>> = {
+    'T01-02': [['bronze_axe', 1], ['net', 1], ['shrimp', 1], ['bucket_empty', 1], ['pot_empty', 1], ['bread', 1], ['bronze_pickaxe', 1], ['bronze_dagger', 1], ['bronze_sword', 1], ['wooden_shield', 1], ['shortbow', 1], ['bronze_arrow', 25], ['bodyrune', 2], ['waterrune', 6]],
+    'T04-05': [['tinderbox', 1], ['earthrune', 4]],
+    'T06-07': [['airrune', 594]],
+    'T11-12': [['4dose1agility', 1], ['grandtree_translationbook', 1], ['grandtree_scroll', 1], ['grandtree_journal', 1], ['grandtree_order', 1], ['grandtree_gloughskey', 1]],
+    'T20-21': [['lawrune', 2], ['airrune', 40], ['waterrune', 3], ['fishing_rod', 1]],
+    'T21-22': [['bodyrune', 300]],
+    'T22-23': [['fly_fishing_rod', 1], ['logs', 1], ['feather', 300], ['knife', 1]],
+    'T26-27': [['hammer', 1]],
+};
+
+export type DropsMode = 'without' | 'with';
+
+/** The step's real inventory for this leg: what its hops consume, food where it is asked for, nothing else; `drops`: see --drops. */
+export function legSetup(l: LegStep, drops?: DropsMode): Setup {
     const d = l.def;
     const need = hopNeeds(d.hops);
     const items: [string, number][] = [];
-    if (need.magic) items.push(...TELE_RUNES);
+    // TELE_RUNES' surplus would itself be dropped on a leg whose drops name that rune.
+    if (drops) items.push(...Object.entries(need.runes).filter(([, n]) => (n ?? 0) > 0).map(([r, n]) => [`${r}rune`, n!] as [string, number]));
+    else if (need.magic) items.push(...TELE_RUNES);
     if (d.food) items.push(['shark', 6]);
     if (need.knife) items.push(['knife', 1]);
     if (need.coins) items.push(['coins', 100]);
     const t = d.id === 'T20-21' ? S21_TALISMAN[d.dest === TILES.bodyAltar ? 'body' : 'nature'] : TALISMANS[d.id];
     if (t) items.push([t, 1]);
+    if (drops === 'with') {
+        const ledger = LEDGER_DROPS[d.id];
+        if (!ledger) throw new Error(`--drops=with: ${d.id} has no ledger drops (the drop legs: ${Object.keys(LEDGER_DROPS).join(', ')})`);
+        items.push(...ledger);
+    }
     return { at: [d.start.x, d.start.z, d.start.level ?? 0], stats: STATS[d.id] ?? LATE, vars: VARS, items };
+}
+
+/** The held items the leg drops somewhere along it (before any hop, or on arrival). */
+function droppable(l: LegStep, s: BotWorldState): string[] {
+    const seen = new Map<number, string>();
+    for (let at = 0; at <= l.def.hops.length; at++) for (const i of dropsDue(l.def, s, at)) seen.set(i.slot, i.name);
+    return [...seen.values()];
 }
 
 /**
@@ -136,6 +174,11 @@ const runs = Number(runsArg ?? 2);
 // rest, to show whether a click right after the landing is what costs a client ticks.
 const landingWaitArg = rest.find(a => a.startsWith('--landing-wait='))?.slice('--landing-wait='.length);
 const landingWait = landingWaitArg === undefined ? null : Number(landingWaitArg);
+const dropsArg = rest.find(a => a.startsWith('--drops='))?.slice('--drops='.length);
+if (dropsArg !== undefined && dropsArg !== 'with' && dropsArg !== 'without' && dropsArg !== 'pair') throw new Error('--drops must be with, without or pair');
+if (dropsArg !== undefined && landingWait !== null) throw new Error('--drops and --landing-wait do not combine');
+/** The setups each run measures, in order. */
+const modes: (DropsMode | undefined)[] = dropsArg === 'pair' ? ['without', 'with'] : [dropsArg as DropsMode | undefined];
 
 /** The leg as runLeg runs it, but with `wait` ticks between its first hop and the rest; the clock includes the wait. */
 async function runLegSplit(l: LegStep, sdk: BotSDK, bot: BotActions, wait: number): Promise<TravelResult> {
@@ -161,34 +204,45 @@ async function runLegSplit(l: LegStep, sdk: BotSDK, bot: BotActions, wait: numbe
 // pointed at the lab's gateway, refusing a port an earlier Chrome still holds.
 const browser: LabBrowser | null = client === 'browser' ? await launchLabBrowser(botName) : null;
 const session = await openSession(botName, client === 'browser' ? { client: 'browser', launch: true, insecureQueryLogin: true } : {});
-console.log(`measure-legs: ${which} x${runs} on the ${client} client${landingWait === null ? '' : `, ${landingWait} ticks' wait after the first hop (diagnostic)`}`);
+console.log(`measure-legs: ${which} x${runs} on the ${client} client${landingWait === null ? '' : `, ${landingWait} ticks' wait after the first hop (diagnostic)`}${dropsArg ? `, drops ${dropsArg}` : ''}`);
 
 async function main(sdk: BotSDK, bot: BotActions): Promise<void> {
     await leaveTutorial(session, TickLog.memory());
     await setup(sdk, { at: [3222, 3218, 0], stats: {}, vars: {}, items: [] }); // warm-up: the first counted leg does not start on a just-loaded login
     await waitTicks(sdk, 5);
     if (which === 'transports') return transports(sdk, bot);
-    const table: Array<{ id: string; label: string; expected: number; runs: number[]; mean: number | null; deltaPct: number | null; failures: string[] }> = [];
+    type Row = { id: string; drops: DropsMode | null; label: string; expected: number; runs: number[]; bursts: number[]; mean: number | null; deltaPct: number | null; failures: string[] };
+    const table: Row[] = [];
     for (const l of legs) {
         const d = l.def;
-        const row = { id: d.id, label: d.expected.label, expected: d.expected.ticks, runs: [] as number[], mean: null as number | null, deltaPct: null as number | null, failures: [] as string[] };
-        for (let r = 0; r < runs; r++) {
+        const rows = modes.map(m => ({ id: d.id, drops: m ?? null, label: d.expected.label, expected: d.expected.ticks, runs: [] as number[], bursts: [] as number[], mean: null as number | null, deltaPct: null as number | null, failures: [] as string[] }));
+        for (let r = 0; r < runs; r++) for (const [mi, mode] of modes.entries()) {
+            const row = rows[mi]!;
             let trace: ReturnType<typeof startTrace> | null = null;
             try {
-                await setup(sdk, legSetup(l));
+                await setup(sdk, legSetup(l, mode));
                 const pre = l.preconditions(sdk.getState()!, undefined);
                 if (pre !== true) throw new Error(`precondition: ${pre}`);
+                if (mode) {
+                    // The setup must hold exactly what the mode says the leg drops, or the difference prices something else.
+                    const held = droppable(l, sdk.getState()!);
+                    const want = mode === 'with' ? LEDGER_DROPS[d.id]!.length : 0;
+                    if (held.length !== want) throw new Error(`--drops=${mode}: the leg would drop ${held.length} slot(s) (${held.join(', ') || 'none'}), not ${want}`);
+                }
                 trace = startTrace(sdk);
-                const out = landingWait === null ? await runLeg(d, { sdk, bot }) : await runLegSplit(l, sdk, bot, landingWait);
+                const legLog = TickLog.memory('measure-legs');
+                const out = landingWait === null ? await runLeg(d, { sdk, bot, log: legLog, session: { name: botName, sessionId: 0 } as never }) : await runLegSplit(l, sdk, bot, landingWait);
                 trace.stop();
                 if (!out) throw new Error('already arrived at the start');
+                const bursts = ((legLog.rows.find(x => x.kind === 'travel')?.meta as { drops?: LegDrops[] } | undefined)?.drops ?? []);
+                row.bursts.push(bursts.reduce((a, b) => a + b.ticks, 0));
                 const hops = hopRows(out.segments, trace.sends, trace.frames, out.endTick);
                 result('hops', { id: d.id, run: r, client, hops, sends: trace.sends.map(s => ({ ...s, tick: s.tick - out.startTick })) });
                 console.log(`HOPS ${d.id} run ${r} ${client}: ${hopLine(hops)}`);
                 const post = l.postconditions(sdk.getState()!, undefined);
                 if (post !== true) throw new Error(`postcondition: ${post}`);
                 row.runs.push(out.ticks);
-                result('leg', { id: d.id, run: r, client, ok: true, ticks: out.ticks, expected: d.expected.ticks, segments: out.segments, doors: out.doors, clicks: out.clicks, tiles: out.tiles, webTries: out.webTries, ate: out.ate, hpMin: out.hpMin, ...(out.fellBack ? { fellBack: out.fellBack } : {}), at: out.at });
+                result('leg', { id: d.id, run: r, client, ok: true, ticks: out.ticks, ...(mode ? { drops: mode, bursts } : {}), expected: d.expected.ticks, segments: out.segments, doors: out.doors, clicks: out.clicks, tiles: out.tiles, webTries: out.webTries, ate: out.ate, hpMin: out.hpMin, ...(out.fellBack ? { fellBack: out.fellBack } : {}), at: out.at });
             } catch (e) {
                 trace?.stop();
                 if (trace?.frames.length) {
@@ -199,17 +253,24 @@ async function main(sdk: BotSDK, bot: BotActions): Promise<void> {
                 }
                 const msg = e instanceof Error ? e.message : String(e);
                 row.failures.push(msg);
-                result('leg', { id: d.id, run: r, client, ok: false, error: msg, at: sdk.getState()?.player ? { x: sdk.getState()!.player!.worldX, z: sdk.getState()!.player!.worldZ, level: sdk.getState()!.player!.level } : null });
+                result('leg', { id: d.id, run: r, client, ok: false, ...(mode ? { drops: mode } : {}), error: msg, at: sdk.getState()?.player ? { x: sdk.getState()!.player!.worldX, z: sdk.getState()!.player!.worldZ, level: sdk.getState()!.player!.level } : null });
                 if (sdk.getState()?.player?.hp === 0) await waitTicks(sdk, 10);
             }
             await cheat(sdk, 'setstat hitpoints 99');
         }
-        if (row.runs.length) {
-            row.mean = Math.round((row.runs.reduce((a, b) => a + b, 0) / row.runs.length) * 10) / 10;
-            row.deltaPct = Math.round(((row.mean - row.expected) / row.expected) * 1000) / 10;
+        for (const row of rows) {
+            if (row.runs.length) {
+                row.mean = Math.round((row.runs.reduce((a, b) => a + b, 0) / row.runs.length) * 10) / 10;
+                row.deltaPct = Math.round(((row.mean - row.expected) / row.expected) * 1000) / 10;
+            }
+            table.push(row);
+            console.log(`LEG ${d.id.padEnd(7)} ${client.padEnd(7)}${row.drops ? ` ${row.drops.padEnd(7)}` : ''} ${String(row.mean ?? '-').padStart(6)} vs ${String(row.expected).padStart(6)} (${d.expected.label}) ${row.deltaPct === null ? 'FAILED' : `${row.deltaPct > 0 ? '+' : ''}${row.deltaPct}%`} runs ${row.runs.join(',')}${row.drops ? ` bursts ${row.bursts.join(',')}` : ''}${row.failures.length ? ` failures: ${row.failures.join(' | ')}` : ''}`);
         }
-        table.push(row);
-        console.log(`LEG ${d.id.padEnd(7)} ${client.padEnd(7)} ${String(row.mean ?? '-').padStart(6)} vs ${String(row.expected).padStart(6)} (${d.expected.label}) ${row.deltaPct === null ? 'FAILED' : `${row.deltaPct > 0 ? '+' : ''}${row.deltaPct}%`} runs ${row.runs.join(',')}${row.failures.length ? ` failures: ${row.failures.join(' | ')}` : ''}`);
+        const [without, withDrops] = rows;
+        if (dropsArg === 'pair' && without?.mean != null && withDrops?.mean != null) {
+            console.log(`DROPS ${d.id.padEnd(7)} ${client.padEnd(7)} without ${without.mean} with ${withDrops.mean}: +${Math.round((withDrops.mean - without.mean) * 10) / 10} ticks (bursts ${withDrops.bursts.join(',')})`);
+            result('drops', { id: d.id, client, without: without.runs, with: withDrops.runs, bursts: withDrops.bursts, delta: Math.round((withDrops.mean - without.mean) * 10) / 10 });
+        }
     }
     result('table', { client, legs: table });
 }
