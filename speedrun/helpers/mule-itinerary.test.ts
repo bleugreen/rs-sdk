@@ -190,7 +190,7 @@ describe('delivery topology', () => {
 });
 
 describe('module load order', () => {
-    for (const order of [['./questitems', './mule-itinerary'], ['./mule-itinerary', './questitems'], ['./questitems', './mule']]) {
+    for (const order of [['./questitems', './mule-itinerary'], ['./mule-itinerary', './questitems'], ['./questitems', './mule'], ['./mule', './questitems']]) {
         test(order.join(' then ') + ' both load in a fresh process', () => {
             const code = order.map(m => `await import(${JSON.stringify(new URL(m + '.ts', import.meta.url).pathname)});`).join(' ') + " console.log('LOADED');";
             const r = Bun.spawnSync([process.execPath, '-e', code], { stdout: 'pipe', stderr: 'pipe' });
