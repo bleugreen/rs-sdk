@@ -120,6 +120,13 @@ export interface RunConfig {
      * segment M that login is written. With no lead the trigger refuses rather than assume one.
      */
     h12o?: { cueDir: string; loginDir: string; leadTicks?: number };
+    /**
+     * The banked delivery carriers' run (runner/delivery-owner.ts): `run` is the attempt's one
+     * delivery id (e.g. `a1-20261023`), the `--delivery-run` every carrier's config is generated with
+     * (helpers/mule-ledger.ts); `launcherConfig` is the helper launcher's config those carriers run
+     * from, which run.ts's preflight checks against it. Required when the path has a mule row.
+     */
+    delivery?: { run: string; launcherConfig: string };
 }
 
 /**
@@ -138,8 +145,10 @@ export function muleCueDir(cfg: Pick<RunConfig, 'cueDir' | 'muleCueDir'>): strin
 export interface CueSink {
     /** Open `scope`'s cue (a fresh session when `fresh`, else only when another scope or none is open). */
     open(scope: CueScope, ctx: Pick<StepContext<unknown>, 'sdk'>, o: { fresh: boolean }): Promise<void>;
-    /** Write the stop of `scope`'s cue if it is the open one. */
-    stop(scope: CueScope, ctx: StepContext<unknown>, o?: { final?: boolean }): void;
+    /** Write the stop of `scope`'s cue if it is the open one (`failed`: the step threw). */
+    stop(scope: CueScope, ctx: StepContext<unknown>, o?: { final?: boolean; failed?: boolean }): void;
+    /** Rewrite `scope`'s open delivery cue now, just before its trade; record-only sinks may omit this. */
+    refresh?(scope: CueScope): boolean;
     /** Runtime ownership of a module's direct writer; record-only sinks may omit this. */
     writer?(scope: CueScope): runecraft.CueSink;
     /**
@@ -318,7 +327,7 @@ export function cueAround(step: ChainStep, scope: CueScope, cues: CueSink, stop:
         try {
             await f(ctx);
         } catch (e) {
-            cues.stop(scope, ctx, { final: false });
+            cues.stop(scope, ctx, { final: false, failed: true });
             throw e;
         }
         cues.stop(scope, ctx, stop);
@@ -781,8 +790,10 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         // A row with a `to N` entry is served by a standing giver that sizes it from SCORED's ask (mule.ts, rs/429), scoped to the row.
         const ask = !scope && plan.receive.some(r => r.topUp) ? { scope: muleScope(e.row), ask: { dir: muleCueDir(cfg) } } : undefined;
         const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : ask;
-        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs } : {}), ...(cue ? { cue } : {}) }), cue ? { cue: cue.scope } : {});
-        out.unshift(!scope && MULE_ROWS.includes(e.row) ? mule(s, e.row) : s);
+        const muleRow = !scope && MULE_ROWS.includes(e.row);
+        const beforeTrade = muleRow ? { beforeTrade: () => { o.cues.refresh?.(muleScope(e.row)); } } : {};
+        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs } : {}), ...(cue ? { cue } : {}), ...beforeTrade }), cue ? { cue: cue.scope } : {});
+        out.unshift(muleRow ? mule(s, e.row) : s);
     }
     return cueMuleRows(out, muleRows, partner, o.cues).map(censused);
 }

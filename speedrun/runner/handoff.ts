@@ -432,6 +432,8 @@ export interface HandOffOptions<C> {
     /** receiveFrom only: re-send a trade click that drew no reply after this many ticks (default DROPPED_TICKS: the partner stands beside SCORED). swap() always uses DROPPED_TICKS. */
     noReplyTicks?: number;
     onReport?: (r: HandOffReport) => void;
+    /** Called once just before the trade's first click: a delivery row rewrites its cue (CueKeeper.refresh), so the carrier meets a fresh one. */
+    beforeTrade?: () => void;
     /** A partner that serves on a cue (the cannon holder, cannon.ts serve mode: see runHandOffOnCue), or sizes its top-ups from SCORED's ask (`ask`). */
     cue?: HandOffCue;
 }
@@ -545,6 +547,7 @@ export async function runHandOff(sdk: HandOffSdk, plan: HandOffPlan, partner: st
         : () => {};
     let report: HandOffReport;
     try {
+    if (want.length || plan.give.length) o.beforeTrade?.();
     if (!want.length && !plan.give.length) {
         // Every top-up already met and nothing to give: no trade.
         report = { id: plan.id, partner, trade: 'receive', ok: true, ticks: 0, received: [], gave: [], unequipped: off.map(e => e.name), dropped };

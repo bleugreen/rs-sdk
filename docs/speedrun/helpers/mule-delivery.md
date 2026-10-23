@@ -327,6 +327,56 @@ can rearm at the next sequence; a final stop is terminal, including after restar
 Different fresh sessions inherit no turns. This is a single-writer protocol, not a
 distributed compare-and-swap mechanism.
 
+## Run owner
+
+The scored run's side of this lifecycle has one implementation, `DeliveryOwner` in
+`speedrun/runner/delivery-owner.ts`. `run.ts`'s mule `CueKeeper` and the lab
+harnesses (`lab/mule-delivery.ts`, `lab/delivery-chain.ts`) all use it. A carrier
+configured with `deliveryRun` authorizes a trade only when the live cue carries
+its row's session (`deliveryCueAuthorizes` in `helpers/mule.ts`). A cue under any
+other session, such as the random one a plain `CueWriter` mints, is refused at
+every row.
+
+For each delivery row R on the path, in chain order:
+
+1. **Prepare.** Each carrier's first row still ahead is prepared after the start
+   gates and before SCORED logs in. A later row is prepared when the same
+   carrier's previous row stops after its step succeeded. A failed step's stop
+   prepares nothing, so the re-run reopens the unserved row. A matching live
+   prepare is reused.
+2. **Ready gate.** The `{R, mule}` cue's open first stops any open cue, then
+   waits (at most `READY_MAX_TICKS` observed ticks) for
+   `readyFor(..., preparationSeq)`. It refuses with the carrier's last status,
+   and refuses at once on a delivery fault. The gate is at the cue's open, so a
+   hand-off step's own precondition (the partner in view, which the resume
+   walker also uses to place SCORED at the meeting) is evaluated before it.
+3. **Cue.** The cue is written under `deliverySession(run, R)`. While it is
+   open it is rewritten (same session, seq+1) every `CUE_REFRESH_TICKS`, and
+   again just before a hand-off's first trade click (`beforeTrade`). The
+   carrier refuses a cue older than `STALE_CUE_MS`. A re-run reopening an
+   unserved row adopts the persisted session and continues its sequence.
+4. **Stop.** The stop is final on each carrier's last row (`cueMuleRows`) and
+   plain otherwise.
+
+The run id is the run config's `delivery.run`. It is the same token every
+carrier's options are generated with (`mule-ledger.ts --delivery-run`).
+`run.ts`'s preflight refuses before any login when the path has a delivery row
+and any of these hold:
+
+- `delivery.run` is missing or malformed;
+- the launcher config at `delivery.launcherConfig` cannot be read;
+- a row's carrier entry there has another `deliveryRun`, another `serve`,
+  another cue directory, or no package for the row;
+- a carrier attempt this run cancelled has not been resumed by the operator.
+
+`run.ts` writes no hold. A hold only works written before the carrier starts:
+a running carrier with no control file stages its first row at once, and a
+later hold never passes `heldFor`. The hold is therefore the run host's step
+before the helper launcher, once per carrier:
+`bun speedrun/tools/mule-hold.ts --config <launcher config> --account <carrier>`.
+It reads everything from the generated entry. A carrier never held works through
+the same prepare and ready sequence.
+
 ## Explicit carrier assignment and launch gates
 
 `muleRunOptionsByAccount(ledger,cueRoot,{deliveryRun,serve,itinerary?,accounts})`
