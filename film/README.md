@@ -125,13 +125,13 @@ frame to the next, and for each trace event finds the first frame where the regi
   action lands, a server round trip later.
 - **feed**: the player's tile in `feed.jsonl` against the same tile in the client's state.
 
-The sample (`film/samples/firemaking-80`, 48 s, 400 ms ticks, Firemaking 80 to 88 over 27 fires):
+The sample (`film/samples/firemaking-80`, 49 s, 400 ms ticks, Firemaking 80 to 88 over 27 fires):
 
 | measure | found | offset |
 | --- | --- | --- |
-| chat in the chatbox after its `videoMs` | 36 / 36 | 24 to 77 ms, median 42 ms (0.11 ticks) |
-| a light's log leaving the inventory after it was sent | 27 / 27 | 413 to 463 ms, median 439 ms (1.10 ticks) |
-| the client's tile change after the feed's | 28 | median 1 ms, max 398 ms (one tick, once) |
+| chat in the chatbox after its `videoMs` | 36 / 36 | 22 to 68 ms, median 41 ms (0.10 ticks) |
+| a light's log leaving the inventory after it was sent | 27 / 27 | 419 to 481 ms, median 436 ms (1.09 ticks) |
+| the client's tile change after the feed's | 28 | median 1 ms, max 409 ms (one tick, once) |
 
 So the trace and the video agree to within two output frames (40 ms each); a highlighted line lands
 one tick before its effect shows, which is the game's own round trip.
@@ -143,8 +143,8 @@ Chrome DevTools `Page.startScreencast` in chrome-headless-shell (the lab's one l
 JPEG frame carries its compositor timestamp; `film/screencast.ts` re-times them onto a constant rate
 (each output frame shows the latest capture by then) and encodes with ffmpeg: libx264 if present,
 else libopenh264 (Fedora's ffmpeg), else VP9 WebM. In the sample the screencast delivered 58.6 fps
-(frame gaps median 16.7 ms, p95 20.3 ms, max 61.8 ms), so a 25 fps output frame is at most 58 ms
-stale and 16 ms at p95.
+(frame gaps median 16.6 ms, p95 21.3 ms, max 63.6 ms), so a 25 fps output frame is at most 43 ms
+stale and 17 ms at p95.
 
 ## The world feed recorder
 
