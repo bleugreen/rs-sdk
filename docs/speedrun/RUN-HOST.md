@@ -584,15 +584,12 @@ rs/158; fold-in 36). run-gate reads the gate account's settings from
 directory 700, gitignored). Verify it is present on both machines before the 15:00Z gate series (it
 was missing on both at 11:0xZ; the gate timer uses a different path). Never name the gate account.
 
-**The cannon serve file, before the run tab opens** (main 04:15 PDT via rs/41 and rs/158; fold-in 36).
-`<run dir>/cannon-serve.json` on the run host is byte-exact to rs/41's generated file (sha256
-f0e57ad6107d2621…; H11: 100 balls + mithril scimitar, law 4, water 4, returnExtras the magic shortbow
-and 200 rune arrows; H23: 1,200 balls + knife, Superantipoison(4), antipoison(4), super attack(3), super
-strength(3), shark 2, magic shortbow), placed by the host before SCORED logs in; check its sha256 before
-the run tab opens. A mismatch is a stop: tell main and rs/41.
+**The cannon serve file, before SCORED logs in** (rs/41's wording via rs/158, main 04:15 PDT; fold-in 36).
+Before SCORED logs in, <run dir>/cannon-serve.json holds exactly host's bytes, sha256 f0e57ad6107d2621d0c12306a5cec6ee70fe73db1a2c39e5d2a28cbfca96a7c6 (the JSON plus one trailing newline); run.ts's preflight gate "cannon serve" (run.ts:286-294) must read "H11, H23 served as the ledger rows want"; a missing file or any drift is a refusal.
 
-**h92's serve ids are per attempt** (main 04:15 PDT via rs/41; fold-in 36). h92's `serve.id` is per
-attempt (a1-H11, a1-H23 for attempt 1); attempt 2 needs a2-* ids, regenerated, before its start.
+**h92 on the run commit, and its serve ids per attempt** (rs/41's wording via rs/158; fold-in 36).
+h92 is applied on bbs on the run commit: fleet role cannon, serve.id a1-H11 at the Ardougne landing (2658,3301), returnTile the same, fallback (2659,3301) per SUPPLIES H11 (still pending rs/198's two-bot check), then a1-H23 on the same tile.
+serve.id is per attempt: a2-H11 / a2-H23 for attempt 2, a3-* for 3; a completed a1-* record survives restarts and a reused id resumes as done and gives nothing, so rs/41 reassigns h92 between attempts.
 
 **The inventory check, before the start is called.** On any checkout at `RUN_COMMIT` (it reads only
 the repository), run
