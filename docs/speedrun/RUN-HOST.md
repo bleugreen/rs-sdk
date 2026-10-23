@@ -670,9 +670,24 @@ refusal. the carrier configs come from the generator and check below (fold-in 37
 3. **Merge** the three entries into `<R>/helpers.json` in login order; the run config gets
    `delivery: { run: "a1-20261023", launcherConfig: "<R>/helpers.json" }`, with `muleCueDir` =
    `<RC>/mule` if set.
-4. **mule-hold** for cairn_mule1, cairn_h55 and cairn_h03, before the launcher only, never on a
-   relaunch (step 5a.4).
-5. **Report:** the host sends the hash line, the three exit codes and `sha256sum <R>/carriers.json
+4. **mule-hold: NOT used for attempt 1** (main 13:15Z 2026-10-23): the carriers launch unheld in
+   the roster phase and self-stage their first rows. With the hold, run.ts's first-row prepare at
+   login leaves SCORED waiting ~160 ticks at H1 (the twin's live H1 with the hold measured 167 ticks
+   at H1, almost all waiting); rs/598's lab run 2 proved the unheld shape with ready wait 0. **Main's wording (13:22Z): 'mule-hold: not used for attempt 1. Carriers launch
+   unheld in the roster phase; the launcher must start at least 2 minutes (>= ~180 ticks) before
+   step 7's login so mule1's first stand is ready (its bank-and-walk measured 72 s on the twin); the
+   run-day order gives it over 5 minutes.'** Confirmed from code (rs/186; mule.ts:1252, :1326-1335;
+   run.ts:659-663; delivery-owner.ts:58-59, :93-96): `syncPreparation` skips the reset when the
+   package is already pending, so run.ts's first-row prepare then reuses the self-staged
+   row without re-banking (helpers/mule.ts:1283-1312, runner/delivery-owner.ts:89-96), and nothing in
+   run.ts's preflight needs a hold file (rs/186). `mule-hold.ts` stays in the commit, unused. The
+   mule-hold text below is kept for reference only.
+   **Carriers' parked sides (main 13:20Z 2026-10-23, from rs/41's code read):** before the launcher
+   starts, verify each carrier is parked on its side of the Taverley boundary: cairn_h55 WEST,
+   cairn_mule1 and cairn_h03 EAST. `deliveryWalk` refuses any walk across the boundary and sets
+   `deliveryFault`, which refuses every later row for that carrier (mule.ts:1419-1421 at 233d0f34).
+   A carrier on the wrong side is moved before the launcher starts, never after.
+5. **Report:** the host sends the hash line (no mule-hold exit codes for attempt 1) and `sha256sum <R>/carriers.json
    <R>/helpers.json` to rs/41 and main before the launcher starts.
 
 **The fleet on the run commit:** back at 29/29 on 233d0f34 at ~12:11Z, 27 while two stand-ins serve
@@ -1366,7 +1381,7 @@ the tick length T on main since #385 (a4456c73, rs/471; fold-in 31; step 6, line
    1. the gate minute (line 1): the gate account and S06's 7 air-altar givers on **both** machines;
    2. after the choice, on SCORED's machine, first (main 04:30 PDT via rs/158, rs/186's wording; fold-in 37; it comes
       with rs/598, its line citations from rs/186's branch at rs/598, re-checked against the run commit main names):
-      **Hold each delivery carrier before starting the helper launcher.** Run `bun speedrun/tools/mule-hold.ts --config <launcher config json> --account <carrier>` for every carrier in the generated carrier config. The hold must be written before the carrier starts: a running carrier with no control file selects and stages its first row at once (helpers/mule.ts:1250-1257, :1480, :1828; re-cited at the run commit 233d0f34, where rs/186's :1240, :1314-1323 and :1478 had moved), and a hold written after that leaves a staged carrier whose readiness check `heldFor` never passes (helpers/mule-readiness.ts:159). `holdMule` also refuses a hold after a prepare in the same attempt (helpers/mule-readiness.ts:303). If this step is skipped, the run still works through run.ts's per-row prepare and readiness gate, but the carrier pre-stages its first row.
+      **NOT for attempt 1 (main 13:15Z): carriers launch unheld and self-stage their first rows; skip this hold (step 0, item 4).** Reference text: **Hold each delivery carrier before starting the helper launcher.** Run `bun speedrun/tools/mule-hold.ts --config <launcher config json> --account <carrier>` for every carrier in the generated carrier config. The hold must be written before the carrier starts: a running carrier with no control file selects and stages its first row at once (helpers/mule.ts:1250-1257, :1480, :1828; re-cited at the run commit 233d0f34, where rs/186's :1240, :1314-1323 and :1478 had moved), and a hold written after that leaves a staged carrier whose readiness check `heldFor` never passes (helpers/mule-readiness.ts:159). `holdMule` also refuses a hold after a prepare in the same attempt (helpers/mule-readiness.ts:303). If this step is skipped, the run still works through run.ts's per-row prepare and readiness gate, but the carrier pre-stages its first row.
       The hold command (rs/598, on main as #487, 233d0f34, the run commit: `speedrun/tools/mule-hold.ts`; `docs/speedrun/helpers/mule-delivery.md`, 'Run owner', lines 330-379 at 233d0f34; via rs/158): once per banked delivery carrier, for example `--config run-machine/<launcher>.json --account cairn_mule1`; the run id, serve, cue directory, first row and tile all come from the generated launcher entry. Exit 0 = held; 1 = refused (after this run's prepare, or over another run's live control); 2 = usage; an identical repeat is a no-op. After its gates, run.ts prepares each carrier's first row before SCORED logs in.
       Then rs/117's launcher logs in the **17 roster accounts** (4 + 6 + 3 + 4; fold-in 36, rs/41's correction of 16):
       mule1, mule2, h55, h03, the 6 S03 droppers, the 3 S04 ring givers (h81, h63, h66; fold-in 38,
@@ -1448,6 +1463,8 @@ machine's 1-minute load average stays **under 4.0** (half its 8 vCPUs) for the w
 reason: a helper on a CPU-starved host fails readiness closed. Its held-status goes stale past 3 s
 against a 400 ms write cadence, so a healthy mule reads as not ready (main's delivery-engine proof:
 load 37 on 8 cores did it in 7 s).
+
+**The rule in force (main 13:10Z 2026-10-23, the host's measurement; supersedes the 4.0 threshold everywhere below):** pre-start readings (i) and (ii) and the mid-run ALERT pass on **CPU busy under 60% (the sampler's process CPU and `vmstat` 100 - id) AND PSI `cpu some avg60` under 25% AND no helper reporting not-ready**; the 1-minute load average is **logged only**, with no threshold. Why: on the twin's run-day composition with the delivery path live, load1 read 5.35 before SCORED's login while the CPU was 64-70% idle and PSI 5-7%, because ~300 bun threads waking each tick inflate the runnable count; the ceiling exists to catch CPU starvation (a held-status stale past 3 s), which busy% and PSI measure directly and load average does not. rs-loadlog gains PSI, busy% and the oldest helper status age: `~/.local/bin/rs-loadlog OUT [SECONDS] [RUN_DIR]` (both machines, untracked host tooling), its lines `busy=% psi60= load1 load5 ... status_max_age=s status_over3s=n notready=n helpersReady=`; on run day at the hand-off: `nohup setsid timeout <bound> ~/.local/bin/rs-loadlog ~/rs-run/<run>/load.log 30 /home/ubuntu/rs-sdk/run-machine >/dev/null 2>&1 &`. ALERT = busy >= 60% or psi60 >= 25; ALERT2 = two consecutive, to main and the operator as messages, the run not stopping. Measured on the twin 13:05-13:07Z: busy 31-36%, PSI 5-7%, PASS, with load1 4.7-6.5 in the same minutes and H1's tick-exact hand-off succeeding (the host). Where the text below says 'under 4.0' or 'at or over 4.0', read this rule.
 
 - **Pre-start** (main 23:0x via rs/158, the host thread's wording; fold-in 34). The pre-start load condition is TWO readings. Each is a settled 1-minute load average, taken after 60 s with no new login. (i) After helpersReady and before the tab starts (rs/41's start-sequence step 3). (ii) After the tab and the recording have started and before SCORED's login (step 4); this is the decisive one. Both must be under 4.0, or the start waits and the reading is taken again. The reading at the gate pass, with the machine quiesced, is logged but is not a condition. The
   start order is step 5a.4's.
@@ -1791,7 +1808,7 @@ any difference):
 
 1. place cannon-serve.json and rs/41's launcher json in the run dir and check cannon-serve's sha256
    (step 0, "The cannon serve file");
-2. run `mule-hold.ts` once per banked delivery carrier (step 5a.4, item 2: the hold);
+2. **no mule-hold for attempt 1** (main 13:15Z: carriers launch unheld and self-stage; a hold costs ~160 ticks at H1);
 3. start the helper launcher (step 4; step 5a.4, item 2);
 4. after the hand-over, start run.ts in the run's tmux on the chosen machine; its preflight then
    checks the floor, the delivery config and the cannon serve, prepares each carrier's first row, and
@@ -2302,6 +2319,7 @@ segment (e.g. `S05:A-h4-swap`), and the tick log gets a `(resume)` row with the 
 **The run-day watch list** (fold-in 36; main via rs/158):
 
 - **A death on a leg** (main's wording, 03:15 PDT, via rs/158). A Lumbridge respawn mid-leg is a death. The leg re-walks from Lumbridge on its own (~205 ticks from T06-07; travel.ts re-paths in the same leg, no re-run needed: rs/589's 02:18 run reported ok). Check the kit-gap line on that leg's row (T06-07: none, the worn staff kept, the runes spent or dropped) before the next hand-off. A respawn mid-leg means a jump to Lumbridge's respawn tile (3221,3218) on a leg that does not home-teleport: that tile is also the home teleport's landing. The walker does not flag it (rs/593, green at 26fbcce9, waits until after attempt 1); watch the live view and the run log.
+- **SCORED's tab over ~3 hours (R44)** (rs/186 via rs/158, 13:1xZ 2026-10-23). run.ts's stdout carries one `TABMEM minute=… nodes=…` line a minute from rs/393's sampler (`speedrun/lib/tab-memory.ts`, wired into `runChainOnSession`); the host watches it against main's 100k-node alert and messages main and the operator at the alert, the run not stopping. No hours-long reading exists: the twin's pass 2 read heap 85.0 → 84.9 MB flat and nodes 584 → 1,547 in 3 minutes (~19k nodes an hour if linear, inferred), so 100k would come near hour 5, after the run's ~3.9 h, if the growth stays linear.
 
 **An attempt cut short before H11r: h92 and H23** (main's ruling via rs/158; fold-in 36). h92's H11r
 take-back waits without a bound at its return tile (`speedrun/helpers/cannon.ts:1545-1598`, `takeBack`'s
