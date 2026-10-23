@@ -364,3 +364,27 @@ export async function waitTicks(sdk: StateSource, n: number): Promise<BotWorldSt
 export function sleep(ms: number): Promise<void> {
     return new Promise(r => setTimeout(r, ms));
 }
+
+/**
+ * Longest wait for the client's scene after a login (a launch, a relog, a resume walk) before the
+ * caller goes on anyway; the one bound for the launch path and the resume walk (main's ruling). rs/41's
+ * cold-profile probe at Varrock west (rs/424): the scene ready at tick 73, 351 loc models draining at
+ * ~15 files a second after the maps were in at +0.7 s.
+ */
+export const SCENE_READY_MAX_TICKS = 200;
+
+export interface SceneWait {
+    ready: boolean;
+    ticks: number;
+}
+
+/**
+ * Wait for the client's own scene-ready signal (`sceneReady`; undefined on an older client counts
+ * as ready). Never throws: past `maxTicks` it reports `ready: false` and the caller goes on. Nearby
+ * locs and NPCs cannot stand in for it: an empty list is also a normal empty scene.
+ */
+export async function awaitScene(sdk: StateSource, maxTicks = SCENE_READY_MAX_TICKS): Promise<SceneWait> {
+    const t0 = currentTick(sdk);
+    const r = await waitUntil(sdk, s => s.sceneReady !== false, { maxTicks });
+    return { ready: r.ok, ticks: currentTick(sdk) - t0 };
+}

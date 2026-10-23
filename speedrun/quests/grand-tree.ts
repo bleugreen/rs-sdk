@@ -23,7 +23,7 @@
 // again after a drop does not repeat a teleport. Positions are judged by coordinates; a 'nothing
 // in sight' test waits for the scene first (rs/185 addendum 4).
 
-import type { BotWorldState, PrayerName } from '../../sdk/types';
+import type { BotWorldState, NearbyLoc, PrayerName } from '../../sdk/types';
 import { act, actConverse, talkTo, useOn, type ActOptions } from '../lib/act';
 import { COMBAT_SPELLS, combatSpellUse, fight, prayerActive, setPrayer, type FightResult } from '../lib/combat';
 import { converse, type ConverseResult } from '../lib/converse';
@@ -125,8 +125,12 @@ const UNDERGROUND_Z = 6400;
 export const TILES = {
     /** Where T10-11 leaves SCORED. */
     arrival: { x: 2465, z: 3489 },
-    /** The tree door: scripted, forcemoves two tiles north or south. */
+    /**
+     * The tree doors, two centrepiece locs two tiles wide (treedoorl, treedoorr, m38_54): scripted,
+     * each forcemoves two tiles north or south (gnome_gate.rs2 open_tree_door).
+     */
     door: { x: 2464, z: 3492 },
+    doorRight: { x: 2466, z: 3492 },
     doorOutside: { x: 2465, z: 3490 },
     doorInside: { x: 2465, z: 3494 },
     treeLadder: { x: 2466, z: 3495 },
@@ -393,10 +397,57 @@ async function dismissPages(sdk: Sdk): Promise<void> {
     await converse(sdk, [], { idle: 1, openTicks: 2, maxTicks: 40, closeModals: true, unmatched: 'stop' });
 }
 
+const OPEN = /^open$/i;
+/**
+ * Ticks to wait for a tree door to show Open again. Anyone's crossing turns the door they used
+ * into its open form for 6 ticks (gnome_gate.rs2 open_tree_door, loc_change(_, 6)); that form has
+ * no ops and keeps the door's blocking shape, so it cannot be walked through, only waited out.
+ */
+export const TREE_DOOR_WAIT = 8;
+/** Clicks before a crossing refuses: a click can land just as another player's crossing turns that door. */
+export const TREE_DOOR_CLICKS = 3;
+/** Click to the forced move's landing, with act's re-send at 6 still inside it. */
+const TREE_DOOR_CLICK_TICKS = 15;
+
+/** The nearer tree door that shows Open now (findLoc: waits for the scene, scans on a miss). */
+async function openTreeDoor(sdk: Sdk): Promise<NearbyLoc | null> {
+    const doors = await Promise.all([TILES.door, TILES.doorRight].map(d => findLoc(sdk, { x: d.x, z: d.z, op: OPEN })));
+    const here = pos(sdk);
+    return doors.filter((d): d is NearbyLoc => d !== null).sort((a, b) => chebyshev(a, here) - chebyshev(b, here))[0] ?? null;
+}
+
+const showsOpenTreeDoor = (s: BotWorldState) =>
+    s.nearbyLocs.some(l => l.z === TILES.door.z && (l.x === TILES.door.x || l.x === TILES.doorRight.x) && opIndex(l, OPEN) !== undefined);
+
+/**
+ * Through the Grand Tree doorway, confirmed by `crossed`. Either door takes SCORED through in the
+ * same ticks, so a door another player has just opened is passed over for the other; with both
+ * open, wait up to TREE_DOOR_WAIT ticks for one to close. Refuses once no door shows Open within
+ * that wait, or after TREE_DOOR_CLICKS clicks that did not cross.
+ */
+export async function crossTreeDoor(sdk: Sdk, what: string, crossed: Pred): Promise<void> {
+    for (let click = 1; ; click++) {
+        let door = await openTreeDoor(sdk);
+        if (!door) {
+            const opened = await waitUntil(sdk, showsOpenTreeDoor, { maxTicks: TREE_DOOR_WAIT });
+            door = opened.ok ? await openTreeDoor(sdk) : null;
+        }
+        if (!door) {
+            throw new Error(`${what}: neither tree door (${TILES.door.x},${TILES.door.z}) nor (${TILES.doorRight.x},${TILES.doorRight.z}) showed Open within ${TREE_DOOR_WAIT} ticks near ${JSON.stringify(pos(sdk))}`);
+        }
+        const d = door;
+        const r = await act(sdk, () => sdk.sendInteractLoc(d.x, d.z, d.id, opIndex(d, OPEN)!), crossed, { maxTicks: TREE_DOOR_CLICK_TICKS });
+        if (r.ok || crossed(sdk.getState()!)) return;
+        if (click >= TREE_DOOR_CLICKS) {
+            throw new Error(`${what}: ${click} tree door clicks did not cross (last on (${d.x},${d.z}), ${TREE_DOOR_CLICK_TICKS} ticks each) near ${JSON.stringify(pos(sdk))}`);
+        }
+    }
+}
+
 async function enterTree(sdk: Sdk, ctx: Pick<Ctx, 'bot'>): Promise<void> {
     if (inTree(sdk.getState()!)) return;
     await go({ sdk, bot: ctx.bot }, TILES.doorOutside, 1);
-    await loc(sdk, 'tree door in', TILES.door, /^open$/i, s => pos(s).z >= 3493);
+    await crossTreeDoor(sdk, 'tree door in', s => pos(s).z >= 3493);
 }
 
 async function treeLadder(sdk: Sdk, to: number): Promise<void> {
@@ -410,7 +461,7 @@ async function leaveTree(sdk: Sdk, ctx: Pick<Ctx, 'bot'>): Promise<void> {
     if (!inTree(sdk.getState()!)) return;
     await treeLadder(sdk, 0);
     await go({ sdk, bot: ctx.bot }, TILES.doorInside, 0);
-    await loc(sdk, 'tree door out', TILES.door, /^open$/i, s => pos(s).z <= 3491);
+    await crossTreeDoor(sdk, 'tree door out', s => pos(s).z <= 3491);
 }
 
 async function gloughUp(sdk: Sdk, ctx: Pick<Ctx, 'bot'>): Promise<void> {

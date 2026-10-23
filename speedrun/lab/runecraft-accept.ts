@@ -33,10 +33,10 @@
 //   --headless         Chrome without a window
 // The scored stand-in is the lab bot named on the lab.sh line; never the scored account.
 // Prints one RESULT line with the step's ticks and the program rows.
-import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Subprocess } from 'bun';
 import { closeSession, login, logoutClean, openSession, type Session } from '../lib/session';
 import { TickLog } from '../lib/ticks';
 import { waitUntil } from '../lib/wait';
@@ -49,7 +49,8 @@ import { labClientUrl, launchLabBrowser } from './browser';
 import { mustTele } from './setup';
 import { onTutorialIsland } from '../lib/world';
 import { tutorialSkip } from '../skills/start';
-import { ALTAR_ROOMS, altarStep, craftXp, findAltar, rcLevel, rcXp, readLauncherFile, xpAfterCrafts, S21_HAND_BACK, type AltarName, type Band, type ScheduleMode } from '../skills/runecraft';
+import { ALTAR_ROOMS, altarStep, craftXp, findAltar, rcLevel, rcXp, xpAfterCrafts, S21_HAND_BACK, type AltarName, type Band, type ScheduleMode } from '../skills/runecraft';
+import { altarGiverLaunch, spawnAltarGivers, stopAltarGivers, waitAltarGiversReady, writeLabBotEnvs, type GiverPath } from './altar-launch';
 
 const scored = process.argv[2];
 if (!scored) throw new Error('usage: runecraft-accept.ts <lab-scored-bot> --giver-root=DIR [...]');
@@ -91,49 +92,27 @@ process.env.RC_CUE_DIR = cueDir;
 // standalone.ts takes only cairn_ helper names (fleet-config.ts ACCOUNT_NAME_RE); these exist on the lab engine alone
 const givers = Array.from({ length: nGivers }, (_, i) => `cairn_rcg${i + 1}`);
 const helpers = handBack ? [...givers, HB] : givers;
-for (const account of helpers) {
-    mkdirSync(join(botsDir, account), { recursive: true, mode: 0o700 });
-    writeFileSync(join(botsDir, account, 'bot.env'), `BOT_USERNAME=${account}\nPASSWORD=${randomBytes(6).toString('hex')}\nSERVER=localhost:${webPort}\nSHOW_CHAT=false\nTELEMETRY=false\nPROFANITY_FILTER=false\n`, { mode: 0o600 });
-}
-const config = {
-    gatewayPort: agentPort + 5,
+writeLabBotEnvs(botsDir, helpers, `localhost:${webPort}`);
+const config = altarGiverLaunch({
+    givers,
+    band: { id: bandId, altar },
     botsDir,
     runDir,
-    loginSpacingMs: 2000,
-    accounts: givers.map((account, i) => ({ account, role: 'altar-giver', ...(path ? { path } : {}), options: { altar, slot: i % 3, essence: 27, restock: { kind: 'cheat' }, scope: { step: bandId, family: 'altar' } } })).concat(handBack ? [{ account: HB, role: 'altar-giver', ...(path ? { path } : {}), options: { altar, slot: givers.length % 3, essence: 27, restock: { kind: 'bank' } as never, scope: { step: bandId, family: 'altar' }, handBack: S21_HAND_BACK.items.map(i => ({ ...i })) } as never }] : [])
-};
-writeFileSync(join(base, 'launch.json'), JSON.stringify(config, null, 2));
+    gatewayPort: agentPort + 5,
+    ...(path ? { path: path as GiverPath } : {}),
+    ...(handBack ? { handBack: { account: HB, items: S21_HAND_BACK.items } } : {})
+});
 console.log(`runecraft-accept: ${altar} from ${level}, ${cycles ? `${cycles} cycles` : `until ${untilLevel ?? 99}`}, schedule ${schedule}, ${order}, ${givers.length} givers${path ? ` (${path})` : ''}; run files in ${base}`);
 
 // the block's spare ports: the givers' loopback gateway on AGENT_PORT+5, Chrome's DevTools on WEB_PORT+5
 const cdpPort = Number(webPort) + 5;
 const chrome = await launchLabBrowser(scored, { headless, cdpPort });
 
-let launcher: ReturnType<typeof Bun.spawn> | null = null;
+let launcher: Subprocess | null = null;
 const startGivers = async () => {
-    launcher = Bun.spawn([process.execPath, 'speedrun/helpers/standalone.ts', join(base, 'launch.json')], {
-        cwd: giverRoot,
-        env: { ...process.env, HELPER_LAB_TELE: '1', RC_CUE_DIR: cueDir },
-        stdout: Bun.file(join(base, 'launcher.log')),
-        stderr: Bun.file(join(base, 'launcher.err'))
-    });
-    // ready: every giver logged in (launcher.json) and standing loaded in the room (its status file)
-    const t0 = Date.now();
-    for (;;) {
-        const l = readLauncherFile(runDir);
-        const ready = helpers.filter(g => {
-            try {
-                const s = JSON.parse(readFileSync(join(cueDir, `giver-${g}.json`), 'utf8'));
-                return s.phase === 'ready' && s.inRoom && Date.now() - s.ms < 5000;
-            } catch {
-                return false;
-            }
-        });
-        if (l?.helpersReady && ready.length === helpers.length) break;
-        if (Date.now() - t0 > 240_000) throw new Error(`givers not ready after 240 s (ready: ${ready.join(', ') || 'none'}; see ${base}/run/logs)`);
-        await Bun.sleep(500);
-    }
-    console.log(`givers ready after ${Math.round((Date.now() - t0) / 1000)} s`);
+    const l = spawnAltarGivers({ root: giverRoot, base, config, cueDir });
+    launcher = l;
+    console.log(`givers ready after ${await waitAltarGiversReady(l, { runDir, cueDir, accounts: helpers })} s`);
 };
 
 
@@ -281,10 +260,8 @@ try {
         await logoutClean(session).catch(() => {});
         await closeSession(session).catch(() => {});
     }
-    if (launcher) {
-        (launcher as { kill(sig?: string): void }).kill('SIGINT');
-        await Promise.race([(launcher as { exited: Promise<unknown> }).exited, Bun.sleep(20_000)]);
-    }
+    const l = launcher as Subprocess | null;
+    if (l) await stopAltarGivers(l, 20_000);
     await chrome.kill().catch(() => {});
 }
 process.exit(exit);

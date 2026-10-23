@@ -19,7 +19,8 @@
 // first tile and the quest module does not travel there itself (rs/185, 17:55 PDT). `expected`
 // holds the leg's full measured figure; `net` is what it adds to RUN-ORDER.md's step totals.
 
-import type { BotWorldState } from '../../sdk/types';
+import type { BotWorldState, InventoryItem } from '../../sdk/types';
+import { dropItems, type ActSdk } from '../lib/act';
 import { measure } from '../lib/ticks';
 import {
     boxAround, FOOD, fmtTile, hopNeeds, hopsDestination, inArea, inRegion, missingRunes, SPELLS, travel, wildernessLevel,
@@ -68,6 +69,11 @@ export interface LegDef {
     checkpoints?: readonly Checkpoint[];
     /** The next step's own figure counts this travel (the leg replaces that arrival row). */
     countedBy?: string;
+    /**
+     * What the leg drops: its STEP-MANIFEST ledger row's `drop` outs, by inventory name (legs.test.ts
+     * pins each to its row). See dropsDue for when each goes.
+     */
+    drops?: readonly RegExp[];
     expected: Expected;
 }
 
@@ -127,6 +133,82 @@ export function legPreconditions(def: LegDef, s: BotWorldState): true | string {
     return true;
 }
 
+// ------------------------------------------------------------------ drops
+
+/** Inventory actions sent in one tick (measured; rs/158's ruling). A longer burst spans ticks. */
+export const DROPS_PER_TICK = 5;
+/** Ticks one batch of drops is watched for before what is left is sent again. */
+export const DROP_WATCH_TICKS = 3;
+/** Batches sent again, beyond the ones the drops need, before the leg gives up. */
+export const DROP_RESENDS = 3;
+
+/** Whether a hop in `hops` needs the held item (`name`, obj `id`): a spell's runes, an item used on a loc, the webs' knife, a ship's coins. */
+export function neededBy(hops: readonly Hop[], name: string, id?: number): boolean {
+    const need = hopNeeds(hops);
+    const rune = /^(\w+) rune$/i.exec(name)?.[1]?.toLowerCase();
+    if (rune && ((need.runes as Record<string, number | undefined>)[rune] ?? 0) > 0) return true;
+    if (need.knife && /^knife$/i.test(name)) return true;
+    if (need.coins > 0 && /^coins$/i.test(name)) return true;
+    return need.items.some(p => (typeof p === 'number' ? p === id : typeof p === 'string' ? p.toLowerCase() === name.toLowerCase() : p.test(name)));
+}
+
+/**
+ * The held items `def` drops before hop `at` (at = hops.length: on arrival): those its `drops` name
+ * that no hop from `at` on needs. So most go in one burst before the first click, and a rune the
+ * leg's own teleport spends goes on the standing tick after the landing, before the next click
+ * (an inventory click cancels a walk, so never mid-run). Read from what is held, so a resumed leg
+ * drops only what is still there.
+ */
+export function dropsDue(def: LegDef, s: BotWorldState, at: number): InventoryItem[] {
+    if (!def.drops?.length) return [];
+    const rest = def.hops.slice(at);
+    return s.inventory.filter(i => i.count > 0 && def.drops!.some(p => p.test(i.name)) && !neededBy(rest, i.name, i.id));
+}
+
+export interface LegDrops {
+    /** The hop the drops went before (hops.length: on arrival). */
+    at: number;
+    ok: boolean;
+    dropped: string[];
+    ticks: number;
+    /** Batches sent, the first sends and any sent again. */
+    batches: number;
+    reason?: string;
+}
+
+const names = (items: readonly InventoryItem[]) => [...new Set(items.map(i => i.name))].join(', ');
+
+/**
+ * Drop what is due before hop `at`: DROPS_PER_TICK at a time (act.dropItems), each batch confirmed
+ * from state before the next is sent, what a batch left held sent again (a drop from a delayed
+ * player is ignored), bounded. Never throws: a failure is the reason, naming what is still held.
+ */
+export async function dropDue(sdk: ActSdk, def: LegDef, at: number): Promise<LegDrops> {
+    const t0 = currentTick(sdk);
+    const first = sdk.getState();
+    const initial = first ? dropsDue(def, first, at) : [];
+    const out: LegDrops = { at, ok: true, dropped: [], ticks: 0, batches: 0 };
+    const limit = Math.ceil(initial.length / DROPS_PER_TICK) + DROP_RESENDS;
+    for (;;) {
+        const s = sdk.getState();
+        const due = s ? dropsDue(def, s, at) : [];
+        out.ticks = currentTick(sdk) - t0;
+        if (!due.length) return out;
+        if (out.batches >= limit) return { ...out, ok: false, reason: `${def.id}: still holding ${names(due)} after ${out.batches} drop batches` };
+        const batch = due.slice(0, DROPS_PER_TICK);
+        const pick = new Set<object>(batch);
+        out.batches++;
+        try {
+            // dropItems reads the same state object, so `pick` finds these very items.
+            await dropItems(sdk, i => pick.has(i), DROP_WATCH_TICKS);
+        } catch (e) {
+            return { ...out, ticks: currentTick(sdk) - t0, ok: false, reason: `${def.id}: dropping ${names(batch)}: ${e instanceof Error ? e.message : String(e)}` };
+        }
+        const after = sdk.getState();
+        out.dropped.push(...batch.filter(b => !after?.inventory.some(i => i.slot === b.slot && i.id === b.id)).map(b => b.name));
+    }
+}
+
 /** logoutSafe is false for legs inside or out of the Wilderness above level 20 (STEP-MANIFEST.md entry 11). */
 export function legLogoutSafe(def: LegDef): boolean {
     const places: { x: number; z: number }[] = [def.start, def.dest];
@@ -139,11 +221,11 @@ export function legLogoutSafe(def: LegDef): boolean {
 
 // ------------------------------------------------------------------ the Step
 
-function logTravel(ctx: StepContext<unknown>, name: string, from: number, r: TravelResult): void {
+function logTravel(ctx: StepContext<unknown>, name: string, from: number, r: TravelResult, drops: readonly LegDrops[]): void {
     ctx.log.append({
         v: 1, kind: 'travel', runId: ctx.log.runId, account: ctx.session.name, sessionId: ctx.session.sessionId, step: name,
         startTick: r.startTick, endTick: r.endTick, ticks: r.ticks, wallMs: 0, ok: r.ok, ...(r.reason ? { error: r.reason } : {}),
-        meta: { fromHop: from, segments: r.segments, doors: r.doors, clicks: r.clicks, tiles: r.tiles, webTries: r.webTries, ate: r.ate, hpMin: r.hpMin, ...(r.fellBack ? { fellBack: r.fellBack } : {}) },
+        meta: { fromHop: from, segments: r.segments, doors: r.doors, clicks: r.clicks, tiles: r.tiles, webTries: r.webTries, ate: r.ate, hpMin: r.hpMin, ...(r.fellBack ? { fellBack: r.fellBack } : {}), ...(drops.length ? { drops } : {}) },
         tickMs: 0, at: new Date().toISOString(),
     });
 }
@@ -151,11 +233,28 @@ function logTravel(ctx: StepContext<unknown>, name: string, from: number, r: Tra
 /** The leg's travel from where the player stands: nothing when arrived, else from the first hop not yet past. */
 export async function runLeg(def: LegDef, ctx: Pick<StepContext<unknown>, 'sdk' | 'bot'> & Partial<Pick<StepContext<unknown>, 'log' | 'session'>>, name = def.id): Promise<TravelResult | null> {
     const s = ctx.sdk.getState();
-    if (!s || arrived(def, s)) return null;
+    if (!s) return null;
+    const drops: LegDrops[] = [];
+    const dropAt = async (at: number): Promise<string | null> => {
+        const d = await dropDue(ctx.sdk as unknown as ActSdk, def, at);
+        if (d.batches) drops.push(d);
+        return d.ok ? null : d.reason!;
+    };
+    if (arrived(def, s)) {
+        // Arrived (a resume), with whatever the leg drops still held: drop it, nothing else.
+        const why = await dropAt(def.hops.length);
+        if (why) throw new Error(why);
+        return null;
+    }
     const from = resumeHop(def, s);
-    const r = await travel(ctx.sdk as unknown as TravelSdk, def.hops, { bot: ctx.bot, from, ...(def.food ? { eat: {} } : {}) });
-    if (ctx.log && ctx.session) logTravel(ctx as StepContext<unknown>, name, from, r);
+    const r = await travel(ctx.sdk as unknown as TravelSdk, def.hops, { bot: ctx.bot, from, ...(def.food ? { eat: {} } : {}), ...(def.drops?.length ? { beforeHop: dropAt } : {}) });
+    const why = r.ok ? await dropAt(def.hops.length) : null;
+    if (ctx.log && ctx.session) logTravel(ctx as StepContext<unknown>, name, from, r, drops);
+    // Drops refused before a hop stop the trip; their reason (naming what is held) is the leg's.
+    const refused = drops.find(d => !d.ok);
+    if (refused) throw new Error(refused.reason!);
     if (!r.ok) throw new Error(`${def.id}: ${r.reason ?? 'travel failed'} (at ${fmtTile(r.at)})`);
+    if (why) throw new Error(why);
     return r;
 }
 
@@ -172,7 +271,11 @@ export function leg(id: string, from: Area, to: Area, method: readonly Hop[], op
         preconditions: s => legPreconditions(def, s),
         run,
         resume: run,
-        postconditions: s => (arrived(def, s) ? true : `${id}: not within ${def.dest.tol ?? 0} of ${fmtTile(def.dest)} (at ${fmtTile(pos(s))})`),
+        postconditions: s => {
+            if (!arrived(def, s)) return `${id}: not within ${def.dest.tol ?? 0} of ${fmtTile(def.dest)} (at ${fmtTile(pos(s))})`;
+            const held = dropsDue(def, s, def.hops.length);
+            return held.length ? `${id}: still holding ${names(held)}, which the leg drops` : true;
+        },
         logoutSafe: legLogoutSafe(def),
         inProgress: (o: Observed) => resumeHop(def, o.state) > 0 && !arrived(def, o.state),
     };
@@ -213,7 +316,8 @@ export const TILES = {
     daero: { x: 2484, z: 3486, level: 1 },
     kolodionCellar: { x: 2543, z: 4713, tol: 4 },
     chamberGuardian: { x: 2506, z: 4696 },
-    knights: { x: 2655, z: 3305, tol: 3 },
+    /** S18's knights anchor (thieving.ts `thieving:knights`), so the band does not walk ~15 unpriced tiles from the market. */
+    knights: { x: 2670, z: 3305, tol: 3 },
     caroline: { x: 2716, z: 3302, tol: 1 },
     /** Beside the tunnel stairs (2820,3484, a loc): the quest clicks the stairs and the dwarf stops it. */
     fishingContest: { x: 2820, z: 3486, tol: 1 },
@@ -252,6 +356,11 @@ const WILD_FOOD = 2;
 export const LEGS: readonly LegStep[] = [
     leg('T01-02', T.lumbridgeSpawn, T.coop, [run(T.coop.x, T.coop.z, T.coop.tol)], {
         after: 'S01', before: 'S02', method: 'run to the coop gate',
+        // The starter junk, and the body and water runes (the staff of water covers water).
+        drops: [
+            /^bronze axe$/i, /^small fishing net$/i, /^shrimps$/i, /^bucket$/i, /^pot$/i, /^bread$/i, /^bronze pickaxe$/i,
+            /^bronze dagger$/i, /^bronze sword$/i, /^wooden shield$/i, /^shortbow$/i, /^bronze arrow$/i, /^body rune$/i, /^water rune$/i,
+        ],
         expected: { ticks: 50, label: 'm', source: rt('L01') + ': 51, 49, 49', net: 50 },
     }),
     leg('T02-03', T.coop, T.firemakingRow, [run(T.firemakingRow.x, T.firemakingRow.z, T.firemakingRow.tol)], {
@@ -260,6 +369,8 @@ export const LEGS: readonly LegStep[] = [
     }),
     leg('T04-05', T.firemakingRow, T.doric, [tele('falador'), run(T.doric.x, T.doric.z, T.doric.tol)], {
         after: 'S04', before: 'S05', method: 'Falador teleport + run', countedBy: 'S05',
+        // S03's tinderbox and S04's leftover earth runes (S06's slot rule).
+        drops: [/^tinderbox$/i, /^earth rune$/i],
         expected: { ticks: 44, label: 'm', source: rt('L04') + ': 46, 42', net: 1 },
     }),
     leg('T05-06', T.doric, T.airAltar, [tele('falador'), run(2984, 3293, 2), { kind: 'item-on-loc', item: /^air talisman$/i, loc: { id: 2452 }, arrive: T.airAltar, label: 'air talisman on the ruins' }], {
@@ -268,11 +379,13 @@ export const LEGS: readonly LegStep[] = [
     }),
     leg('T06-07', T.airAltar, T.taverleyNormals, [tele('falador'), run(T.taverleyNormals.x, T.taverleyNormals.z, T.taverleyNormals.tol)], {
         after: 'S06', before: 'S07', method: 'Falador teleport + run',
+        // S06's air runes, after the Falador teleport has spent its 3.
+        drops: [/^air rune$/i],
         expected: { ticks: 74, label: 'm', source: rt('L06') + ': 75, 73', net: 74 },
     }),
     leg('T07a', T.taverleyOaks, T.taverleyWillows, [run(T.taverleyWillows.x, T.taverleyWillows.z, T.taverleyWillows.tol)], {
-        after: 'S07 oaks', before: 'S07 willows', method: 'run, oak tile to willow tile',
-        expected: { ticks: 46, label: 'i', source: 'RUN-ORDER.md T07a: 88 tiles at 0.51 ticks per route tile (quests/primitives.md section 2)', net: 46 },
+        after: 'woodcutting:oak-15-73', before: 'woodcutting:willow-73-99', method: 'run, oak tile to willow tile',
+        expected: { ticks: 58, label: 'm', source: "run-transitions.md section 10: rs/198's lab, 58, 58 over its 114-tile route (46 i over 88 tiles before)", net: 58 },
     }),
     leg('T07-08', T.taverleyWillows, T.edmond, [tele('camelot'), run(T.edmond.x, T.edmond.z, T.edmond.tol)], {
         after: 'S07', before: 'S08', method: 'Camelot teleport + run', countedBy: 'S08',
@@ -297,6 +410,8 @@ export const LEGS: readonly LegStep[] = [
     }),
     leg('T11-12', T.narnodeRoots, T.ladyServil, [tele('ardougne'), run(T.ladyServil.x, T.ladyServil.z, T.ladyServil.tol)], {
         after: 'S11b', before: 'S12', method: 'Ardougne teleport + run', countedBy: 'S12',
+        // The Grand Tree's leftovers and segment M's agility potion, at whatever dose (6: two ticks of drops).
+        drops: [/^translation book$/i, /^hazelmere's scroll$/i, /^glough's journal$/i, /^lumber order$/i, /^glough's key$/i, /^agility potion\(\d\)$/i],
         expected: { ticks: 71, label: 'm', source: rt('L11') + ': 71, 71', net: -3 },
     }),
     leg('T12-13', T.ladyServil, T.lawgof, [tele('ardougne'), run(T.lawgof.x, T.lawgof.z, T.lawgof.tol)], {
@@ -331,8 +446,8 @@ export const LEGS: readonly LegStep[] = [
         expected: { ticks: 158, label: 'r', source: 'mage_arena.md "Tick total": 4 + 61 + 15 + 75 + 3 (run-transitions.md section 2)', net: 0 },
     }),
     leg('T16-18', T.chamberGuardian, T.knights, [tele('ardougne'), run(T.knights.x, T.knights.z, T.knights.tol)], {
-        after: 'S16', before: 'S18', method: 'Ardougne teleport from the chamber + run',
-        expected: { ticks: 6, label: 'm', source: 'run-transitions.md section 4, `L16B`: 6, 6, 6', net: 6 },
+        after: 'S16', before: 'S18', method: 'Ardougne teleport from the chamber + run to the knights anchor',
+        expected: { ticks: 14, label: 'i', source: 'run-transitions.md section 4, `L16B`: 6, 6, 6 to the market (2655,3305), + 8 i for the run on to the anchor (2670,3305) (rs/158, fold-in 23; until measured)', net: 14 },
     }),
     leg('T18-19', T.knights, T.caroline, [run(T.caroline.x, T.caroline.z, T.caroline.tol)], {
         after: 'S18', before: 'S19', method: 'run the market to Caroline', countedBy: 'S19',
@@ -359,6 +474,8 @@ export const LEGS: readonly LegStep[] = [
     }),
     leg('T22-23', T.flySpots, T.cook, [tele('lumbridge'), run(T.cook.x, T.cook.z, T.cook.tol)], {
         after: 'S22', before: 'S23', method: 'Lumbridge teleport + run', countedBy: 'S23',
+        // S22's kit, its knife included: H23 hands a fresh knife back for T26-27's keep web (rs/158).
+        drops: [/^fly fishing rod$/i, /^logs$/i, /^feather$/i, /^knife$/i],
         expected: { ticks: 16.3, label: 'm', source: rt('L22t') + ': 20, 15, 14', net: 6.3 },
     }),
     leg('T23-24', T.cook, T.rustyAnchor, [tele('falador'), run(T.rustyAnchor.x, T.rustyAnchor.z, T.rustyAnchor.tol)], {
@@ -366,15 +483,15 @@ export const LEGS: readonly LegStep[] = [
         expected: { ticks: 90, label: 'm', source: rt('L23f') + ': 90, 90', net: 45 },
     }),
     leg('L24a', T.rustyAnchor, T.kaqemeex, [tele('falador'), run(T.kaqemeex.x, T.kaqemeex.z, T.kaqemeex.tol)], {
-        after: 'S24 Goblin Diplomacy (Rusty Anchor)', before: 'S24 Druidic Ritual', method: 'Falador teleport + run to Kaqemeex',
+        after: 'S24:G2-dye-mail', before: 'S24:D1-kaqemeex-start', method: 'Falador teleport + run to Kaqemeex',
         expected: { ticks: 69, label: 'm', source: rt('L24a') + ': 74, 64', net: 69 },
     }),
     leg('L24b', T.kaqemeex, T.goblinGenerals, [run(T.goblinGenerals.x, T.goblinGenerals.z, T.goblinGenerals.tol)], {
-        after: 'S24 Druidic Ritual', before: 'S24 Goblin Village', method: 'run Kaqemeex to the generals',
+        after: 'S24:D9-kaqemeex-reward', before: 'S24:G3-orange-request', method: 'run Kaqemeex to the generals',
         expected: { ticks: 54, label: 'm', source: rt('L24b') + ': 56, 52', net: 54 },
     }),
     leg('L24c', T.goblinGenerals, T.romeo, [tele('varrock'), run(T.romeo.x, T.romeo.z, T.romeo.tol)], {
-        after: 'S24 Goblin Village', before: 'S24 Romeo and Juliet', method: 'Varrock teleport + run to Romeo',
+        after: 'S24:G6-plain-mail', before: 'S24:R1-juliet', method: 'Varrock teleport + run to Romeo',
         expected: { ticks: 4.5, label: 'm', source: rt('L24c') + ': 5, 4', net: 4.5 },
     }),
     leg('T24-25', T.romeo, T.westAnvil, [run(T.westAnvil.x, T.westAnvil.z, T.westAnvil.tol)], {
@@ -382,11 +499,12 @@ export const LEGS: readonly LegStep[] = [
         expected: { ticks: 13, label: 'm', source: rt('L24e') + ': 13, 13', net: 13 },
     }),
     leg('T25-26', T.westBooth, T.championsGuild, [run(T.championsGuild.x, T.championsGuild.z, T.championsGuild.tol)], {
-        after: 'S25', before: 'S26', method: "run the booth to the Champions' Guild door", countedBy: 'S26',
+        after: 'S25c', before: 'S26', method: "run the booth to the Champions' Guild door", countedBy: 'S26',
         expected: { ticks: 44, label: 'm', source: rt('L25') + ': 39, 49', net: 7 },
     }),
     leg('T26-27', T.elvargExit, T.spiders, TO_SPIDERS, {
         after: 'S26', before: 'S27', method: 'Ardougne teleport + lever + keep web + run', food: WILD_FOOD, checkpoints: TO_SPIDERS_CHECKPOINTS,
+        drops: [/^hammer$/i],
         expected: { ticks: 179, label: 'm', source: rt('L26L') + ': 179 (1 run)', net: 179 },
     }),
     leg('T27-17', T.spiders, T.wildernessPipe, [
@@ -415,10 +533,15 @@ export const BODY_ALTAR_LEGS: readonly LegStep[] = [
         { kind: 'item-on-loc', item: /^body talisman$/i, loc: { id: 2457 }, arrive: T.bodyAltar, label: 'body talisman on the ruins' },
     ], {
         after: 'S20', before: 'S21', method: 'Falador teleport + run to the body ruins + body talisman',
+        // The surplus runes once the teleport has spent its own (S21 starts holding only the talisman),
+        // and Fishing Contest's rod. The talisman is runecraft.ts's to drop, on entry, as at S06.
+        drops: [/^law rune$/i, /^air rune$/i, /^water rune$/i, /^fishing rod$/i],
         expected: { ticks: 69.3, label: 'm', source: 'speedrun/README.md legs table, lab/measure-legs.ts: 72, 67, 69 (teleport 4, ~118 tiles 57-62, talisman 6)', net: 69.3 },
     }),
     leg('T21-22', T.bodyAltar, T.flySpots, [tele('lumbridge'), run(T.flySpots.x, T.flySpots.z, T.flySpots.tol)], {
         after: 'S21', before: 'S22', method: 'Lumbridge teleport from the body altar room + run',
+        // S21's product.
+        drops: [/^body rune$/i],
         expected: { ticks: 33, label: 'm', source: rt('L21') + ': 32, 34 (the same teleport and run from the nature room)', net: 33 },
     }),
 ];
@@ -438,6 +561,59 @@ export function legById(id: string, catalogue: readonly LegStep[] = LEGS): LegSt
 /** The legs that follow step `after`, in run order (run.ts interleaves them by id). */
 export function legsAfter(after: string, catalogue: readonly LegStep[] = LEGS): LegStep[] {
     return catalogue.filter(l => l.def.after === after);
+}
+
+// ------------------------------------------------------------------ splits
+
+/** A standard teleport's cast to landing (run-transitions.md section 2: "teleport 4" in every teleport leg's parts). */
+export const TELEPORT_TICKS = 4;
+
+export interface SplitOptions {
+    /** Where part a ends and part b starts (default: the landing of hop `afterHop` when it is a teleport). */
+    meet?: Area;
+    /** Part a's share of the leg's figure (default TELEPORT_TICKS when part a ends with a teleport). */
+    firstTicks?: number;
+    /** Its source, for part a's `expected.source`. */
+    firstSource?: string;
+}
+
+const tenth = (n: number) => Math.round(n * 10) / 10;
+
+/**
+ * A leg cut in two after hop `afterHop`, so a hand-off can sit between the parts (the Ardougne
+ * landing, SUPPLIES' meeting spread 2659-2663, 3299-3303). Part a (`<id>a`) runs hops 0..afterHop
+ * and arrives in `meet`; part b (`<id>b`) runs the rest from there. No new travel: each part is an
+ * ordinary leg whose checkpoints are the original's, renumbered. `expected` splits in proportion,
+ * part a's ticks from `firstTicks`, and the two nets sum to the original's exactly.
+ */
+export function splitLeg(l: LegStep, afterHop: number, o: SplitOptions = {}): [LegStep, LegStep] {
+    const d = l.def;
+    if (afterHop < 0 || afterHop >= d.hops.length - 1) throw new Error(`${d.id}: cannot split after hop ${afterHop} of ${d.hops.length}`);
+    const cut = d.hops[afterHop]!;
+    const meet = o.meet ?? (cut.kind === 'teleport' ? SPELLS[cut.spell].landing : undefined);
+    if (!meet) throw new Error(`${d.id}: hop ${afterHop} is not a teleport, so the split needs a meeting area`);
+    const firstTicks = o.firstTicks ?? (cut.kind === 'teleport' && afterHop === 0 ? TELEPORT_TICKS : undefined);
+    if (firstTicks === undefined) throw new Error(`${d.id}: part a's share of ${d.expected.ticks} ticks must be given (firstTicks)`);
+    if (firstTicks <= 0 || firstTicks >= d.expected.ticks) throw new Error(`${d.id}: part a's ${firstTicks} ticks are outside the leg's ${d.expected.ticks}`);
+    const share = firstTicks / d.expected.ticks;
+    const netA = tenth(d.expected.net * share);
+    const cps = d.checkpoints ?? [];
+    const a: LegOptions = {
+        after: d.after, before: `${d.id}b`, method: `${d.method}, part a (to the landing)`,
+        ...(d.food ? { food: d.food } : {}),
+        ...(cps.some(c => c.after < afterHop) ? { checkpoints: cps.filter(c => c.after < afterHop) } : {}),
+        expected: { ticks: firstTicks, label: d.expected.label, source: o.firstSource ?? `${d.id} split after hop ${afterHop}: ${firstTicks} of ${d.expected.ticks} (${d.expected.source})`, net: netA },
+    };
+    const rest = cps.filter(c => c.after > afterHop).map(c => ({ after: c.after - afterHop - 1, in: c.in }));
+    const b: LegOptions = {
+        after: `${d.id}a`, before: d.before, method: `${d.method}, part b (from the landing)`,
+        ...(d.food ? { food: d.food } : {}),
+        ...(d.nextStart ? { nextStart: d.nextStart } : {}),
+        ...(d.countedBy ? { countedBy: d.countedBy } : {}),
+        ...(rest.length ? { checkpoints: rest } : {}),
+        expected: { ticks: tenth(d.expected.ticks - firstTicks), label: d.expected.label, source: `${d.id} split after hop ${afterHop}: the rest of ${d.expected.ticks} (${d.expected.source})`, net: tenth(d.expected.net - netA) },
+    };
+    return [leg(`${d.id}a`, d.start, meet, d.hops.slice(0, afterHop + 1), a), leg(`${d.id}b`, meet, d.dest, d.hops.slice(afterHop + 1), b)];
 }
 
 /** The step-module convention: every leg, or the ones named. */

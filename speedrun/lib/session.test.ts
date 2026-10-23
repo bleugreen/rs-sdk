@@ -1,3 +1,4 @@
+import { preLoginDeadline, preLoginReady, type RunecraftOptions } from '../skills/runecraft';
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { fakeCdp } from './fake-cdp';
 import { FakeSdk, flush, runToggleServer } from './fake-sdk';
@@ -21,6 +22,7 @@ import {
     parseBotEnv,
     relog,
     sessionGateway,
+    settleScene,
     startWatchdog,
     track,
     watchdogDecision,
@@ -144,6 +146,7 @@ function fakeSession(over: Partial<Session> = {}): { session: Session; sdk: Fake
         sdk,
         bot: null,
         sessionId: 1,
+        launchId: 1,
         expectInWorld: true,
         child,
         childExit: null,
@@ -629,14 +632,111 @@ describe('login with inPage: the tab logs back in where it is', () => {
         };
     }
 
+
+    test('S21 dispatch re-reads the roster after async gate and token mint, and expires it after redemption without fallback', async () => {
+        for (const delayAt of ['gate', 'mint', 'redeem'] as const) {
+            const cdp = fakeCdp('srtest', PASSWORD);
+            const { session, sdk } = pageSession(cdp);
+            let now = Date.now();
+            const clock = spyOn(Date, 'now').mockImplementation(() => now);
+            const originalFetch = globalThis.fetch;
+            const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(Object.assign(async (...args: Parameters<typeof fetch>) => {
+                const response = await originalFetch(...args);
+                const path = new URL(String(args[0])).pathname;
+                if ((delayAt === 'mint' && path === '/bot/login-token') || (delayAt === 'redeem' && path === '/bot/login')) now += 6_000;
+                return response;
+            }, { preconnect: originalFetch.preconnect }));
+            try {
+                const statuses = [{ account: 'giver', phase: 'ready' as const, loggedInAt: 1, essence: 27, inRoom: true, readyAt: 1, ms: now }];
+                const options: RunecraftOptions = { s21Altar: 'body', s21Givers: ['giver'], deps: { now: () => now, readStatuses: () => statuses } };
+                expect(preLoginReady(options)).toBe(true);
+                session.beforeLogin = async () => { await Promise.resolve(); if (delayAt === 'gate') now += 6_000; };
+                cdp.hooks.onAutoLogin = () => getsIn(cdp, sdk);
+                let checks = 0;
+                await expect(login(session, { inPage: true, requireInPage: true, attempts: 1,
+                    beforeDispatch: () => { checks++; expect(cdp.page.minted).toHaveLength(1); return preLoginDeadline(options); },
+                })).rejects.toThrow(delayAt === 'redeem' ? 'readiness expired' : 'roster not ready');
+                expect(checks).toBe(1);
+                expect(cdp.page.autoLogins).toEqual([]);
+                expect(cdp.page.navigations).toEqual([]);
+                expect(session.sessionId).toBe(1);
+            } finally { fetchSpy.mockRestore(); clock.mockRestore(); cdp.stop(); }
+        }
+    });
+
+
+    test('strict in-page login refuses a page that becomes live or pending during token redemption', async () => {
+        for (const state of ['live', 'pending'] as const) {
+            const cdp = fakeCdp('srtest', PASSWORD);
+            const { session } = pageSession(cdp);
+            const originalFetch = globalThis.fetch;
+            let flipped = false;
+            const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(Object.assign(async (...args: Parameters<typeof fetch>) => {
+                const response = await originalFetch(...args);
+                if (new URL(String(args[0])).pathname === '/bot/login') {
+                    expect(cdp.client.ingame).toBe(false);
+                    expect(cdp.client.loginInProgress).toBe(false);
+                    expect(cdp.page.redeemed).toHaveLength(1);
+                    await Promise.resolve();
+                    cdp.client.ingame = state === 'live';
+                    cdp.client.loginInProgress = state === 'pending';
+                    flipped = true;
+                }
+                return response;
+            }, { preconnect: originalFetch.preconnect }));
+            try {
+                await expect(login(session, { inPage: true, requireInPage: true, attempts: 1,
+                    beforeDispatch: () => Date.now() + 5_000,
+                })).rejects.toThrow(state === 'live' ? 'already in game' : 'a login is already in progress');
+                expect(flipped).toBe(true);
+                expect(cdp.page.autoLogins).toEqual([]);
+                expect(cdp.page.navigations).toEqual([]);
+                expect(session.sessionId).toBe(1);
+            } finally { fetchSpy.mockRestore(); cdp.stop(); }
+        }
+    });
+
+    test('strict in-page login cannot navigate a live, pending or missing client', async () => {
+        for (const state of ['live', 'pending', 'missing'] as const) {
+            const cdp = fakeCdp('srtest', PASSWORD);
+            try {
+                const { session } = pageSession(cdp);
+                cdp.client.ingame = state === 'live';
+                cdp.client.loginInProgress = state === 'pending';
+                cdp.page.hasClient = state !== 'missing';
+                await expect(login(session, { inPage: true, requireInPage: true, attempts: 1, beforeDispatch: () => Date.now() + 5_000 })).rejects.toThrow('in-page login refused');
+                expect(cdp.page.autoLogins).toEqual([]);
+                expect(cdp.page.navigations).toEqual([]);
+            } finally { cdp.stop(); }
+        }
+    });
+
+
+    test('guarded login refuses insecure engine-page and lite configurations before sending anything', async () => {
+        for (const mode of ['insecure', 'lite', 'no-cdp'] as const) {
+            const cdp = fakeCdp('srtest', PASSWORD);
+            try {
+                const { session } = pageSession(cdp);
+                if (mode === 'insecure') Object.assign(session, { insecureQueryLogin: true });
+                if (mode === 'lite') Object.assign(session, { client: 'lite' });
+                if (mode === 'no-cdp') Object.assign(session, { env: { ...session.env, CDP_URL: undefined } });
+                await expect(login(session, { inPage: true, requireInPage: true, beforeDispatch: () => Date.now() + 5_000 })).rejects.toThrow('requires an in-page browser login');
+                expect(cdp.page.minted).toEqual([]);
+                expect(cdp.page.autoLogins).toEqual([]);
+                expect(cdp.page.navigations).toEqual([]);
+            } finally { cdp.stop(); }
+        }
+    });
+
     test('no navigation, one token redeemed in the page, and the new session counts on from the page tick', async () => {
         const cdp = fakeCdp('srtest', PASSWORD);
         try {
             const { session, sdk } = pageSession(cdp);
             cdp.hooks.onAutoLogin = () => getsIn(cdp, sdk);
-            const r = await login(session, { inPage: true, timeoutMs: 3_000 });
+            const r = await login(session, { inPage: true, requireInPage: true, beforeDispatch: () => Date.now() + 5_000, timeoutMs: 3_000 });
             expect(r).toMatchObject({ via: 'page', attempts: 1, tickBase: 40 });
-            expect(session).toMatchObject({ sessionId: 2, tickBase: 40, expectInWorld: true });
+            // A new game session on the page's own count: the launch is unchanged.
+            expect(session).toMatchObject({ sessionId: 2, tickBase: 40, launchId: 1, expectInWorld: true });
             expect(sdk.state!.tick - session.tickBase).toBe(2);
             expect(cdp.page.navigations).toEqual([]);
             expect(cdp.page.minted).toHaveLength(1);
@@ -676,6 +776,7 @@ describe('login with inPage: the tab logs back in where it is', () => {
             cdp.hooks.onNavigate = () => getsIn(cdp, sdk, 1);
             const r = await login(session, { inPage: true, timeoutMs: 3_000 });
             expect(r).toMatchObject({ via: 'launch', attempts: 1, tickBase: 0 });
+            expect(session.launchId).toBe(2);
             expect(cdp.page.navigations).toHaveLength(1);
             expect(cdp.page.navigations[0]).toContain('token=');
             expect(cdp.page.autoLogins).toEqual([]);
@@ -836,5 +937,42 @@ describe('login with inPage: the tab logs back in where it is', () => {
         } finally {
             cdp.stop();
         }
+    });
+});
+
+describe("settleScene: a launched browser tab's scene, the same wait as the resume walk's", () => {
+    const ticking = (sdk: FakeSdk, each: (tick: number) => Partial<ReturnType<FakeSdk['getState']> & object> = () => ({})) => setInterval(() => sdk.tick(s => each(s.tick)), 2);
+
+    test('waits for sceneReady and records the wait on the session', async () => {
+        const sdk = new FakeSdk();
+        sdk.push({ tick: 1, inGame: true, sceneReady: false, nearbyLocs: [] });
+        const timer = ticking(sdk, t => (t >= 12 ? { sceneReady: true } : {}));
+        const s = { sdk, name: 'lab' } as unknown as Session;
+        const r = await settleScene(s, 50);
+        clearInterval(timer);
+        expect(r.ready).toBe(true);
+        expect(r.ticks).toBeGreaterThanOrEqual(10);
+        expect(s.scene).toEqual(r);
+        expect(sdk.getState()!.sceneReady).toBe(true);
+    });
+
+    test('an older client without the flag counts as ready at once', async () => {
+        const sdk = new FakeSdk();
+        sdk.push({ tick: 1, inGame: true });
+        expect(await settleScene({ sdk, name: 'lab' } as unknown as Session, 50)).toEqual({ ready: true, ticks: 0 });
+    });
+
+    test('a scene that never loads: recorded as a timeout and warned, never thrown', async () => {
+        const sdk = new FakeSdk();
+        sdk.push({ tick: 1, inGame: true, sceneReady: false });
+        const timer = ticking(sdk);
+        const warn = spyOn(console, 'warn').mockImplementation(() => {});
+        const s = { sdk, name: 'lab' } as unknown as Session;
+        const r = await settleScene(s, 5);
+        clearInterval(timer);
+        expect(r.ready).toBe(false);
+        expect(s.scene?.ready).toBe(false);
+        expect(warn.mock.calls.join(' ')).toContain('scene was not ready');
+        warn.mockRestore();
     });
 });
