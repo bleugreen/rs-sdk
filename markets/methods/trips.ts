@@ -65,7 +65,7 @@ export function trips(snaps: readonly BankSnap[], nameOf: NameOf = debugNameOf, 
 }
 
 /**
- * Bank and pack together, as one snapshot: what an account holds outside its worn slots. A loop's
+ * Bank, pack and worn slots together, as one snapshot: everything an account holds. A loop's
  * last trip is usually unfinished when a run stops; comparing holdings at the first bank visit
  * (taken after the withdrawal, so the food carried out is still counted) with holdings at the stop
  * charges only what was actually consumed, so the whole run counts, not just the closed trips.
