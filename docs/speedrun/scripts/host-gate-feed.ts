@@ -4,6 +4,7 @@
 //
 //   bun host-gate-feed.ts <server> [--seconds=60] [--log=PATH]
 //   bun host-gate-feed.ts --pathcheck <FEED_LOG> <GATE_JSON> <PROBE_END_ISO> [--tick-ms=T]
+//   bun host-gate-feed.ts --earlyticks <RECORD_JSON>
 //
 // Read: connects to wss://<server>/worldfeed, takes the hello frame's tickMs (World.tickRate, the
 // configured rate) and tick, subscribes to an empty 1x1 tile and collects the {t:'tick', k, ms}
@@ -23,6 +24,9 @@
 // cannot be made. The probe prints PROBE_END_ISO as its last tick arrives, which places its frames
 // on the epoch clock to a few ms; `pathCheck` below says what is done with them. T is --tick-ms,
 // else the feed's median interval. Report-only: nothing here feeds the gate's verdict.
+//
+// Early ticks: reads a gate history record and prints `earlyTicks` (below) for its top-level T and
+// its gate's `result.tickArrivalsMs` as one JSON value, null when either is missing. Report-only too.
 
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 
@@ -194,6 +198,44 @@ export function compactFeedLog(feed: readonly FeedTick[]) {
     return { k0: feed[0]!.k, t0EpochMs: round1(t0), k: feed.map(f => f.k - feed[0]!.k), ms: feed.map(f => f.ms), at: feed.map(f => round1(f.at - t0)) };
 }
 
+// ------------------------------------------------------------------ early ticks
+
+/** An early tick is a probe interval under 3/4 T: the short ticks after an overrun that (c)'s T/2 does not count. */
+export const EARLY_UNDER_T = 0.75;
+
+export interface EarlyTicks {
+    /** 0.75 T, ms. */
+    thresholdMs: number;
+    /** Probe intervals under thresholdMs. */
+    count: number;
+    /** count per minute of arrivals; a window under a minute counts as one, as (c)'s catch-ups do. */
+    perMinute: number;
+    /** The probe's shortest interval, early or not. */
+    minIntervalMs: number;
+}
+
+/** How many of the probe's tick intervals came under 3/4 T. Null without a positive T or two finite arrivals. */
+export function earlyTicks(arrivalsMs: unknown, T: unknown): EarlyTicks | null {
+    if (typeof T !== 'number' || !(T > 0) || !Number.isFinite(T)) return null;
+    if (!Array.isArray(arrivalsMs) || arrivalsMs.length < 2 || !arrivalsMs.every(a => typeof a === 'number' && Number.isFinite(a))) return null;
+    const a = arrivalsMs as number[];
+    const threshold = T * EARLY_UNDER_T;
+    let count = 0;
+    let min = Infinity;
+    for (let i = 1; i < a.length; i++) {
+        const d = a[i]! - a[i - 1]!;
+        if (d < threshold) count++;
+        min = Math.min(min, d);
+    }
+    const spanMs = a[a.length - 1]! - a[0]!;
+    return {
+        thresholdMs: round1(threshold),
+        count,
+        perMinute: Math.round(((count * 60_000) / Math.max(spanMs, 60_000)) * 100) / 100,
+        minIntervalMs: round1(min),
+    };
+}
+
 // ------------------------------------------------------------------ feed read
 
 // Nearest rank, as tickSteadiness (speedrun/lib/hostgate-verdict.ts) takes its quantiles.
@@ -292,17 +334,30 @@ function pathCheckCli(logPath: string | undefined, gatePath: string | undefined,
     console.log(JSON.stringify(out));
 }
 
+function earlyTicksCli(recordPath: string | undefined) {
+    let out: EarlyTicks | null = null;
+    try {
+        const record = JSON.parse(readFileSync(recordPath ?? '', 'utf8')) as { T?: unknown; gate?: { result?: { tickArrivalsMs?: unknown } } | null };
+        out = earlyTicks(record.gate?.result?.tickArrivalsMs, record.T);
+    } catch {
+        // report-only: an unreadable record is null
+    }
+    console.log(JSON.stringify(out));
+}
+
 if (import.meta.main) {
     const args = process.argv.slice(2);
     const opt = (name: string) => args.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3);
-    if (args[0] === '--pathcheck') {
+    if (args[0] === '--earlyticks') {
+        earlyTicksCli(args[1]);
+    } else if (args[0] === '--pathcheck') {
         const [logPath, gatePath, endIso] = args.slice(1).filter(a => !a.startsWith('--'));
         pathCheckCli(logPath, gatePath, endIso, opt('tick-ms'));
     } else {
         const server = args[0];
         const seconds = Number(opt('seconds') ?? 60);
         if (!server || !/^[A-Za-z0-9.-]+(:[0-9]+)?$/.test(server) || !(seconds > 0)) {
-            console.error('usage: bun host-gate-feed.ts <server> [--seconds=60] [--log=PATH]\n       bun host-gate-feed.ts --pathcheck <FEED_LOG> <GATE_JSON> <PROBE_END_ISO> [--tick-ms=T]');
+            console.error('usage: bun host-gate-feed.ts <server> [--seconds=60] [--log=PATH]\n       bun host-gate-feed.ts --pathcheck <FEED_LOG> <GATE_JSON> <PROBE_END_ISO> [--tick-ms=T]\n       bun host-gate-feed.ts --earlyticks <RECORD_JSON>');
             process.exit(64);
         }
         readFeed(server, seconds, opt('log') ?? null);

@@ -43,6 +43,9 @@
 #    copy of the same ticks and labels each late or catch-up tick the server's or the path's; the
 #    feed's ticks are kept compact under `feedLog`, after `gate`. Report-only: null when it cannot
 #    be made, and never a skip or a change to status or verdict.
+#    `earlyTicks` (host-gate-feed.ts --earlyticks, on the record just written) counts the probe's
+#    tick intervals under 0.75 T, per minute, beside (b)'s p90: the short ticks after an overrun
+#    that (c)'s T/2 does not count. Report-only as well; null on skips and on reads not `ok`.
 #    One summary line goes to stdout (the journal). Exit 0 for skips and every verdict, red
 #    included; 1 when the read itself broke (timeout, crash), with its record still written.
 set -uo pipefail
@@ -105,6 +108,7 @@ write_record() {
          T: (($f.tickMsConfigured | num) // (p50ms | if . == null then null else (. + 0.5 | floor) end)),
          on: $j.verdict.on, onTime: $j.result.onTime, trials: $j.result.trials,
          catchUpsPerMinute: $j.result.steadiness.catchUpsPerMinute, tickP50Ms: p50ms, tickP90Ms: $j.result.steadiness.p90,
+         earlyTicks: null,
          players: ($j.vantage.players // (if $players == "" then null else ($players | tonumber) end)),
          edge: ($j.vantage.edge // (if $edge == "" then null else $edge end)),
          connectP50Ms: $j.vantage.connectP50, failures: $j.verdict.failures,
@@ -347,9 +351,18 @@ errline() { grep -v '^Bun v[0-9]' "$tmp/out.txt" | grep -m1 -iE 'error|panic|exc
 [ "$status" = ok ] || note="${gateline:-$(errline)}"
 [ "$status" = ok ] || [ -n "$note" ] || note=$(lastline)
 write_record "$status" "$code" "$note" "$tmp/gate.json" "$tmp/out.txt"
+# early ticks, report-only: from the written record's T and arrivals, filled in place (the record
+# already stands with null, so a kill here loses only this field), in what the budget has left
+if [ "$status" = ok ] && [ $((budget_end + 7 - SECONDS)) -ge 1 ]; then
+    early=$(timeout $(( budget_end + 7 - SECONDS < 5 ? budget_end + 7 - SECONDS : 5 )) "$bun" "$feed_helper" --earlyticks "$record" 2>/dev/null) &&
+        jq -e 'type == "object"' <<<"$early" >/dev/null 2>&1 &&
+        jq --argjson e "$early" '.earlyTicks = $e' "$record" > "$record.tmp" && mv "$record.tmp" "$record"
+    rm -f "$record.tmp"
+fi
 jq -r '(.pathCheck | if . == null then "null" else
         "slow:\(.serverSlow),catchup:\(.serverCatchUp),held:\(.pathHeld),unmatched:\(.unmatched),offset:\(.offsetMs)ms,spread:\(.offsetSpreadMs)ms,matched:\(.ticksMatched)" end) as $pc |
-    "gate \(.utc) status=\(.status) on=\(.on) onTime=\(.onTime)/\(.trials) catchups/min=\(.catchUpsPerMinute) p90=\(.tickP90Ms) players=\(.players) edge=\(.edge) path=\($pc) commit=\(.commit[0:9]) -> '"$record"'"' "$record"
+    (.earlyTicks | if type == "object" then "\(.perMinute)/min" else "null" end) as $early |
+    "gate \(.utc) status=\(.status) on=\(.on) onTime=\(.onTime)/\(.trials) catchups/min=\(.catchUpsPerMinute) p90=\(.tickP90Ms) early=\($early) players=\(.players) edge=\(.edge) path=\($pc) commit=\(.commit[0:9]) -> '"$record"'"' "$record"
 if [ "$status" != ok ]; then
     echo "$status (exit $code): $note"
     [ "$status" = not-probed ] || exit 1

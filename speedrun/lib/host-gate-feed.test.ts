@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { compactFeedLog, type FeedTick, parseFeedLog, pathCheck } from '../../docs/speedrun/scripts/host-gate-feed';
+import { compactFeedLog, earlyTicks, type FeedTick, parseFeedLog, pathCheck } from '../../docs/speedrun/scripts/host-gate-feed';
 
 const T = 400;
 const K0 = 5000;
@@ -186,5 +186,71 @@ describe('--pathcheck', () => {
         // no gate JSON: the log is still kept, the check is null
         expect(run(LIVE, join(dir, 'missing.json'), end)).toEqual({ pathCheck: null, feedLog: compactFeedLog(feed) });
         expect(run(join(dir, 'missing.log'), join(dir, 'gate.json'), end)).toEqual({ pathCheck: null, feedLog: null });
+    });
+});
+
+/** Arrivals (ms after the first) for consecutive intervals, as the gate writes tickArrivalsMs. */
+function arrivalsOf(intervals: number[]): number[] {
+    let at = 0;
+    return [0, ...intervals.map(d => (at += d))];
+}
+
+describe('earlyTicks', () => {
+    test('steady ticks have none', () => {
+        expect(earlyTicks(arrivalsOf(steady(150)), T)).toEqual({ thresholdMs: 300, count: 0, perMinute: 0, minIntervalMs: 400 });
+    });
+
+    test('the short ticks after an 870 ms overrun count, though (c) sees no catch-up', () => {
+        // 00:30Z on 23 Oct in miniature: an overrun, then two early ticks over T/2
+        const iv = steady(150);
+        iv.splice(40, 3, 870, 260, 280);
+        iv.splice(100, 3, 850, 250, 299.9);
+        const r = earlyTicks(arrivalsOf(iv), T)!;
+        // the overruns stretch the span to 60,410 ms
+        expect(r).toEqual({ thresholdMs: 300, count: 4, perMinute: 3.97, minIntervalMs: 250 });
+        // under T/2 is not needed, under 3/4 T is; exactly 3/4 T is not early
+        iv[110] = 300;
+        expect(earlyTicks(arrivalsOf(iv), T)!.count).toBe(4);
+    });
+
+    test('per minute is over the arrivals span, a short window counting as one minute', () => {
+        const iv = steady(300);
+        iv.splice(10, 2, 870, 260);
+        iv.splice(200, 2, 870, 260);
+        // 300 intervals near 400 ms: about two minutes
+        const r = earlyTicks(arrivalsOf(iv), T)!;
+        expect(r.count).toBe(2);
+        expect(r.perMinute).toBeCloseTo(1, 1);
+        expect(earlyTicks(arrivalsOf([400, 870, 260, 400]), T)).toEqual({ thresholdMs: 300, count: 1, perMinute: 1, minIntervalMs: 260 });
+    });
+
+    test('T = 300 scales the threshold to 225', () => {
+        const iv = Array.from({ length: 200 }, () => 300);
+        iv.splice(50, 3, 650, 220, 230);
+        expect(earlyTicks(arrivalsOf(iv), 300)).toEqual({ thresholdMs: 225, count: 1, perMinute: 1, minIntervalMs: 220 });
+    });
+
+    test('null when T or the arrivals are missing', () => {
+        const a = arrivalsOf(steady(150));
+        for (const t of [null, undefined, 0, -400, NaN, '400']) expect(earlyTicks(a, t)).toBeNull();
+        for (const arr of [null, undefined, [], [0], [0, NaN, 800], [0, '400'], { length: 2 }]) expect(earlyTicks(arr, T)).toBeNull();
+    });
+});
+
+describe('--earlyticks', () => {
+    test('reads T and the gate arrivals from a history record', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'earlyticks-'));
+        const iv = steady(150);
+        iv.splice(40, 3, 870, 260, 280);
+        const arrivals = arrivalsOf(iv);
+        const run = (file: string) => JSON.parse(Bun.spawnSync(['bun', SCRIPT, '--earlyticks', join(dir, file)]).stdout.toString());
+        writeFileSync(join(dir, 'ok.json'), JSON.stringify({ status: 'ok', T, earlyTicks: null, gate: { result: { tickArrivalsMs: arrivals } } }));
+        writeFileSync(join(dir, 'skip.json'), JSON.stringify({ status: 'skip', T: null, earlyTicks: null, gate: null }));
+        writeFileSync(join(dir, 'noT.json'), JSON.stringify({ status: 'ok', T: null, gate: { result: { tickArrivalsMs: arrivals } } }));
+        expect(run('ok.json')).toEqual(earlyTicks(arrivals, T));
+        expect(run('ok.json').count).toBe(2);
+        expect(run('skip.json')).toBeNull();
+        expect(run('noT.json')).toBeNull();
+        expect(run('missing.json')).toBeNull();
     });
 });
