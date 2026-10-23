@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, DialogState } from '../../sdk/types';
 import { burstTicks, converse, dialogueRuns, levelUpInterrupt, parseShape, shapeRuns, type Interrupt } from './converse';
+import { classifyPage as classify } from './dialogue';
 import { baseState, FakeSdk, flush } from './fake-sdk';
 import { fakeClock, peek, tickEvery, useFakeTicks } from './fake-ticks';
 import { IDLE_TICKS, STALLED } from './wait';
@@ -117,6 +118,82 @@ describe('converse', () => {
         await settle(sdk, 4);
         const r = await p;
         expect(r).toMatchObject({ ok: true, options: 1, remaining: [] });
+    });
+
+    test('a pick the server drops is sent again on the same menu, counted once, not taken for an unanswerable menu', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        let picks = 0;
+        sdk.onSend = (a, f) => {
+            if (a.method !== 'clickDialogByText') return;
+            const cur = f.state!.dialog;
+            if (classify(cur) === 'choice' && ++picks === 1) return; // accepted by the client, never answered by the server
+            queueMicrotask(() => f.tick({ dialog: classify(cur) === 'choice' ? cont('a') : closed }));
+        };
+        const p = converse(sdk as never, [/cannot convince/i], { shape: 'opt, 1c' });
+        sdk.tick({ dialog: choice('m', 'What now?', 'I cannot convince Lumdo') });
+        await settle(sdk, 12);
+        const r = await p;
+        expect(picks).toBe(2);
+        expect(r).toMatchObject({ ok: true, options: 1, pages: 1, remaining: [] });
+        expect(r.shape).toMatchObject({ matches: true, seen: 'opt, 1c' });
+        expect(r.transcript.some(l => /re-sent > I cannot convince Lumdo/.test(l))).toBe(true);
+    });
+
+    test('a pick the server drops twice is not sent a third time: the talk throws with the transcript tail', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        let picks = 0;
+        sdk.onSend = (a, f) => {
+            if (a.method !== 'clickDialogByText') return;
+            if (classify(f.state!.dialog) === 'choice') picks++; // accepted by the client, never answered by the server
+        };
+        const p = converse(sdk as never, [/cannot convince/i], { shape: 'opt, 1c' });
+        const caught = p.then(() => null, (e: Error) => e);
+        sdk.tick({ dialog: choice('m', 'What now?', 'I cannot convince Lumdo') });
+        await settle(sdk, 40);
+        expect(picks).toBe(2);
+        expect((await caught)?.message).toMatch(/"I cannot convince Lumdo" was sent twice on the same menu and the server answered neither; after: .*> I cannot convince Lumdo.*re-sent > I cannot convince Lumdo/);
+    });
+
+    test('the same menu after a page in between is a new menu, answered from the queue', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const p = converse(sdk as never, ['A', 'B']);
+        script(sdk, [choice('m', 'A', 'B'), cont('x'), choice('m', 'A', 'B'), cont('y')]);
+        await settle(sdk, 10);
+        const r = await p;
+        expect(r).toMatchObject({ options: 2, remaining: [] });
+        expect(sdk.sent.map(s => String(s.args[0]))).toEqual(['/^A$/', '/^Click here to continue$/', '/^B$/', '/^Click here to continue$/']);
+    });
+
+    test('menus whose options are alike are told apart by their headers: each is answered from the queue', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const p = converse(sdk as never, ['0004', '0003', '0005']);
+        // The ballista's three coordinate menus (quest_tree.rs2 oploc2,catabow): the same options, only the header differs.
+        const headed = (header: string): DialogState => ({ ...choice('m', '0003', '0004', '0005'), allComponents: words(`${header} 0003 0004 0005`) });
+        script(sdk, [headed('Enter the height-coordinate'), headed('Enter the x-coordinate'), headed('Enter the y-coordinate'), cont('fired')]);
+        await settle(sdk, 12);
+        const r = await p;
+        expect(r).toMatchObject({ ok: true, options: 3, remaining: [] });
+        expect(sdk.sent.map(s => String(s.args[0]))).toEqual(['/^0004$/', '/^0003$/', '/^0005$/', '/^Click here to continue$/']);
+    });
+
+    test('a shape that expects another menu takes the same menu shown again as the next one, not a dropped pick', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const p = converse(sdk as never, ['0004', '0003'], { shape: 'opt, opt, 1c' });
+        script(sdk, [choice('m', 'Pick', '0003', '0004'), choice('m', 'Pick', '0003', '0004'), cont('done')]);
+        await settle(sdk, 12);
+        const r = await p;
+        expect(r).toMatchObject({ ok: true, options: 2, remaining: [] });
+        expect(r.shape).toMatchObject({ matches: true });
+        expect(sdk.sent.map(s => String(s.args[0]))).toEqual(['/^0004$/', '/^0003$/', '/^Click here to continue$/']);
+    });
+
+    test('a throw carries the end of the transcript', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const p = converse(sdk as never, ['A']);
+        const caught = p.then(() => null, (e: Error) => e);
+        script(sdk, [choice('m1', 'A', 'B'), cont('said A'), choice('m2', 'C', 'D')]);
+        await settle(sdk, 8);
+        expect((await caught)?.message).toMatch(/no choice matches \[C \| D\]; remaining \(none\); after: .*> A.*page: said A/);
     });
 
     test('a refusal with no new publication waits instead of spinning on the same state', async () => {

@@ -284,6 +284,9 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
 
     return new Promise((resolve, reject) => {
         let last: { key: string; tick: number; sawWaiting: boolean } | null = null;
+        /** The last pick that went out: its menu, its pattern and text, how many pages had been answered when it did, and its re-sends. */
+        let picked: { menu: string; pattern: OptionPattern; text: string; answered: number; resent: number } | null = null;
+        const answered = () => res.pages + res.levelUps + (res.interrupts ?? 0);
         let busy = false;
         let closedSince = -1;
         let untilAt = -1;
@@ -387,6 +390,25 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
                     } else last = null;
                     return;
                 }
+                // The menu by its id, its page text (a header tells apart menus whose options are alike) and its options.
+                const menu = `${d.pageId ?? ''}|${pageText(d)}|${d.options.map(o => o.text).join('/')}`;
+                if (picked && picked.menu === menu && picked.answered === answered() && expected()?.kind !== 'opt') {
+                    // The menu it was picked on, with no page since and no further menu in the shape: the client took the
+                    // pick and the server never answered it. Send it again, once; it was counted, and the shape moved past it, when it first went out.
+                    // A server that drops it again is not asked a third time: the next queued choice would be the wrong answer.
+                    if (picked.resent >= 1) {
+                        const after = res.transcript.slice(-4).join(' ');
+                        return fail(new Error(`converse: "${picked.text}" was sent twice on the same menu and the server answered neither; after: ${after}`));
+                    }
+                    const c = await clickOption(sdk, picked.pattern);
+                    if (c.ok) {
+                        picked.resent++;
+                        note(s.tick, `re-sent > ${c.text}`);
+                    }
+                    else if (c.reason === 'unsupported_client') fail(new Error('converse: the client does not support guarded dialogue clicks; update and restart it'));
+                    else last = null;
+                    return;
+                }
                 checkShape(s.tick, 'opt');
                 const idx = queue.findIndex(p => findOption(d, p) !== undefined);
                 let pattern: OptionPattern | undefined = idx >= 0 ? queue[idx] : undefined;
@@ -394,10 +416,14 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
                     const texts = d.options.map(o => o.text);
                     if (unmatched === 'first' && texts[0] !== undefined) pattern = texts[0];
                     else if (unmatched === 'stop') return finish(false, `no choice for [${texts.join(' | ')}]`);
-                    else return fail(new Error(`converse: no choice matches [${texts.join(' | ')}]; remaining ${queue.map(String).join(', ') || '(none)'}`));
+                    else {
+                        const after = res.transcript.slice(-4).join(' ');
+                        return fail(new Error(`converse: no choice matches [${texts.join(' | ')}]; remaining ${queue.map(String).join(', ') || '(none)'}${after ? `; after: ${after}` : ''}`));
+                    }
                 }
                 const c = await clickOption(sdk, pattern);
                 if (c.ok) {
+                    picked = { menu, pattern, text: c.text ?? String(pattern), answered: answered(), resent: 0 };
                     res.options++;
                     if (idx >= 0 && !opts.keep) queue.splice(idx, 1);
                     note(s.tick, `> ${c.text}${idx < 0 ? ' (default)' : ''}`);
