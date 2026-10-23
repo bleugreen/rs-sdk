@@ -277,6 +277,16 @@ describe('handOffPre', () => {
         expect(handOffRoom(alone(full(24)), h13)).toMatch(/the trade adds 5, 1 short/);
         expect(handOffRoom(alone(filler(28), [wornItem('Mithril scimitar')]), plan('H12'))).toMatch(/taking off Mithril scimitar to give needs 1/);
     });
+    test('GOLDEN-GEN', () => {
+        // Packs from roomy to full for three trade shapes: receive only (H1), a held give (H13), a worn give (H12).
+        const bow = (n: number) => [...filler(n), item(n, 'Magic shortbow')];
+        const sweep: Array<[string, BotWorldState, HandOffPlan]> = [
+            ...[22, 23, 24, 25, 26].map((n): [string, BotWorldState, HandOffPlan] => [`H1 filler ${n}`, state(filler(n)), plan('H1')]),
+            ...[20, 21, 22, 23, 24, 25, 26, 27].map((n): [string, BotWorldState, HandOffPlan] => [`H13 filler ${n} + bow`, state(bow(n)), plan('H13')]),
+            ...[24, 25, 26, 27, 28].map((n): [string, BotWorldState, HandOffPlan] => [`H12 filler ${n}, scimitar worn`, state(filler(n), [wornItem('Mithril scimitar')]), plan('H12')]),
+        ];
+        console.log('GOLDEN=' + JSON.stringify(sweep.map(([at, s, p]) => [at, handOffPre(s, p, PARTNER)])));
+    });
 });
 
 // ------------------------------------------------------------------ done and in progress
