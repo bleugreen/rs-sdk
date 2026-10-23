@@ -553,7 +553,7 @@ describe('a walked hop relocated by something it did not do', () => {
         const r = await drive(sdk, runTo(sdk as never, { x: 2920, z: 3413 }, { onRelocated: ev => (seen.push(ev), 'fail') }), 600, death);
         expect(r.ok).toBe(false);
         expect(r.reason).toMatch(/^run to 2920,3413: relocated from 2952,3413 to 3222,3216: respawn \(270 tiles in 1 tick; hp 0 before it, lowest 0\)$/);
-        expect(r.relocated).toMatchObject({ respawn: true, from: { x: 2952, z: 3413 }, to: { x: 3222, z: 3216 }, tick: 106, hp: 0, hpMin: 0 });
+        expect(r.relocated).toMatchObject({ respawn: true, from: { x: 2954, z: 3413 }, to: { x: 3222, z: 3216 }, tick: 106, hp: 0, hpMin: 0 });
         expect(seen).toHaveLength(1);
         // No click from Lumbridge: the run ended on the respawn's own tick, and did not re-path.
         expect(sim.clicks.every(c => c.tick < 106)).toBe(true);
@@ -577,7 +577,7 @@ describe('a walked hop relocated by something it did not do', () => {
         const away = (s: BotWorldState) => (s.tick + 1 === 103 ? { player: { ...s.player!, worldX: 3100, worldZ: 3100, x: 3100, z: 3100 } } : {});
         const r = await drive(sdk, runTo(sdk as never, { x: 2920, z: 3413 }, { onRelocated: () => 'fail' }), 600, away);
         expect(r.ok).toBe(false);
-        expect(r.reason).toMatch(/relocated from 2958,3413 to 3100,3100: death or forced teleport \(313 tiles in 1 tick; hp 10 before it, lowest 10\)/);
+        expect(r.reason).toMatch(/relocated from 2960,3413 to 3100,3100: death or forced teleport \(313 tiles in 1 tick; hp 10 before it, lowest 10\)/);
         expect(r.relocated?.respawn).toBe(false);
 
         const click = world(3200, 3200);
@@ -620,10 +620,12 @@ describe('a walked hop relocated by something it did not do', () => {
         expect(b.ok).toBe(true);
         expect(b.relocated).toBeUndefined();
 
-        // Six ticks unpublished, 20 tiles on: 15 + 2 for each tick past the first allows 25.
+        // Each jump below is measured from 3204, the tile published on tick 102 (a patch sees the
+        // walk's step already taken). Six ticks unpublished, 20 tiles on: 15 + 2 for each tick past
+        // the first allows 25.
         const quiet = world(3200, 3200);
         simulateWalking(quiet);
-        const gap = (s: BotWorldState) => (s.tick + 1 === 103 ? { tick: s.tick + 6, player: player(s.player!.worldX + 20, 3200) } : {});
+        const gap = (s: BotWorldState) => (s.tick + 1 === 103 ? { tick: s.tick + 6, player: player(3204 + 20, 3200) } : {});
         const q = await drive(quiet, runTo(quiet as never, { x: 3260, z: 3200 }, fail), 600, gap);
         expect(q.ok).toBe(true);
         expect(q.relocated).toBeUndefined();
@@ -631,7 +633,7 @@ describe('a walked hop relocated by something it did not do', () => {
         for (const [tiles, flagged] of [[RELOCATE_TILES, false], [RELOCATE_TILES + 1, true]] as const) {
             const sdk = world(3200, 3200);
             simulateWalking(sdk);
-            const jump = (s: BotWorldState) => (s.tick + 1 === 103 ? { player: player(s.player!.worldX + tiles, 3200) } : {});
+            const jump = (s: BotWorldState) => (s.tick + 1 === 103 ? { player: player(3204 + tiles, 3200) } : {});
             const r = await drive(sdk, runTo(sdk as never, { x: 3260, z: 3200 }, fail), 600, jump);
             expect(r.ok).toBe(!flagged);
             expect(r.relocated === undefined).toBe(!flagged);
