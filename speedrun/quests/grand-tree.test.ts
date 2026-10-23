@@ -11,7 +11,7 @@ import { configId } from '../lib/world';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import {
-    AGILITY_AFTER, ardougneTeleport, climbToPillars, crossTreeDoor, DEMON_CASTS, DEMON_MAX_CASTS, entryCheck, exitCheck, FREE_SLOTS, gtStage, H8, ITEM, kitCheck, PILLARS, resolveOptions, ROOTS,
+    AGILITY_AFTER, ardougneTeleport, climbToPillars, crossTreeDoor, DEMON_CASTS, DEMON_CONTENTION, DEMON_MAX_CASTS, entryCheck, exitCheck, FREE_SLOTS, gtStage, H8, ITEM, kitCheck, PILLARS, resolveOptions, ROOTS,
     RUNE_NEED, RUNE_STAFF, RUNE_USE, searchRoot, steps, TILES, TREE_DOOR_CLICKS, TREE_DOOR_WAIT,
 } from './grand-tree';
 
@@ -490,5 +490,11 @@ describe('rune pins: RUNE_USE and RUNE_NEED agree with the kit (tools/rune-pins.
         expect(RUNE_USE.N2!.chaosrune).toBe(DEMON_MAX_CASTS);
         expect(DEMON_MAX_CASTS).toBeLessThanOrEqual(DEMON_CASTS);
         expect(RUNE_USE.N2!.firerune).toBeUndefined();
+    });
+});
+
+describe('the demon on a shared world (rs/520)', () => {
+    test('ours by its hit; another player\'s refuses for good, so the wait is short', () => {
+        expect(DEMON_CONTENTION).toEqual({ adoptHitter: true, contested: { waitTicks: 30 } });
     });
 });

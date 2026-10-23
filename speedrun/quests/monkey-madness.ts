@@ -31,7 +31,7 @@
 import type { BotWorldState, PrayerName } from '../../sdk/types';
 import type { QuestKey } from '../data/quest-stages';
 import { act, actConverse, dropItems, invOp, opLoc, pickup, slotOf, talkTo, useOn, walkTo, wield } from '../lib/act';
-import { fight, prayerActive, setPrayer, Upkeep } from '../lib/combat';
+import { fight, prayerActive, setPrayer, Upkeep, type FightOptions } from '../lib/combat';
 import { converse, type Interrupt } from '../lib/converse';
 import { pageText } from '../lib/dialogue';
 import { compactJournal, journalProbeName, journalText, questStatus, type QuestView } from '../lib/quests';
@@ -2080,6 +2080,12 @@ export const ARENA = { x0: 2688, z0: 9152, x1: 2751, z1: 9215, level: 1 } as con
 const DEMON = /^Jungle Demon$/i;
 /** The demon (size 3) melees on half its attacks within 2 tiles of its edge (mm_demon.rs2:332-340): from its centre tile, 3. */
 export const DEMON_TOO_CLOSE = 4;
+/**
+ * The Jungle Demon is spawned per player and refuses everyone else for good ("That is not your enemy!",
+ * mm_demon.rs2 opnpc2/apnpc2), so another player's nearer demon is passed over and ours taken once it
+ * hits; waiting frees nothing, and 30 ticks only covers our own demon arriving.
+ */
+export const JUNGLE_DEMON_CONTENTION: Pick<FightOptions, 'adoptHitter' | 'contested'> = { adoptHitter: true, contested: { waitTicks: 30 } };
 
 /**
  * A tile about `far` tiles from `from` on the far side of the player, for
@@ -2131,6 +2137,7 @@ async function demonFight(ctx: Ctx, note: (line: string) => void, bow: number): 
         let steps = 0;
         const centre = (n: { x: number; z: number; tileX?: number; tileZ?: number }) => ({ x: n.tileX ?? n.x, z: n.tileZ ?? n.z });
         const f = await fight(sdk, DEMON, {
+            ...JUNGLE_DEMON_CONTENTION,
             prayer: 'protect_from_magic', drinkBelow: DRINK_BELOW, stallTicks: 8, eatBelow: eating.below, food: MM_OBJ.shark,
             maxTicks: 2000, onDialog: 'continue',
             onTick: async (s, target) => {
