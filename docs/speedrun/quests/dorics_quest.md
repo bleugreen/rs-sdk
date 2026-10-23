@@ -70,12 +70,49 @@ The inferred figure in `quest_points.md` (75 / 60 / 51) was close; the walk is a
 | Done first, from level 1 | 282 | same table (4,316 → 4,034) |
 | Quiet server | 147 | same table, second column |
 
+## The step module (S05, `speedrun/quests/dorics-quest.ts`)
+
+The run does Doric's Quest as step S05, from Doric's tile (2952,3451; T04-05's landing, so
+the teleport and the walk above are the leg's, not the step's), in three segments:
+
+| Segment | What | Fixed (m) | Burst (m) |
+|---|---|---|---|
+| A `h4-swap` | SUPPLIES.md hand-off H4 as one `swap()`: the ores, the air talisman and the T05-06 / T06-07 runes in; S04's last 20 enchanted rings out | 0 (landed in the fixture); 6 m (rs/285) | 0; 6 m |
+| B `doric-start` | `1c, opt, 2c, opt, 3c` | 9, 9, 9 | 6, 6, 6 |
+| C `doric-hand-in` | `5c`, the Mining level-up page answered, the 180 coins dropped | 9, 9, 9 | 5, 5, 5 |
+| | **From Doric's tile, trade landed** | **18** | **11** |
+
+Measured on bgsrv-mac, lab at 300 ms, `speedrun/lab/quests/dorics-quest.ts`: lite client 3 of
+3 in each mode; browser client (bundle md5 64caf234) burst 11. With the trade, 24 fixed and 17
+burst against the manifest's 22 and 17.
+
+Where the module differs from the step list above:
+
+- **H4 is the step's own trade.** Its items and its free-slot need are read from STEP-MANIFEST.md's
+  inventory ledger (row H4, through `runner/handoff.ts`), and the rings, the row's `<enchanted
+  ring>` placeholder, are what `skills/magic.ts` `enchantedRingSpecs` names. The server counts
+  offered items as freed, so the free-slot check credits the rings' slots, and segment A refuses
+  before the trade, naming the shortfall, when the pack cannot take H4 (main's ruling, 2026-10-21
+  23:31 PDT). On the route the ledger reads 14 needed (13 unstackables and a new law stack) with
+  27 free after the rings go.
+- **The coins are dropped inside the step,** the tick they land: the completion is already queued
+  two pages before (`quest_doric.rs2:80`), so the drop closes Doric's last page and loses nothing.
+  The ledger's T05-06 drop moves into S05.
+- **The Mining level-up page is answered.** It opens 1-2 ticks after the completion (m), and the
+  next leg's teleport would not close it. The shared `small-quest.ts` completion helper first
+  requires the completed quest tab, then uses `converse` with `expect: 'interrupt'` and a
+  fresh level-up interrupt recogniser. A quest scroll is closed without treating it as the
+  queued reward page. When the preceding talk already answered the reward, or no level-up
+  is expected, there is no extra reward-opening window. The helper confirms scroll closure
+  before returning; the Doric lab checks that neither chat nor modal remains open.
+
 ## Risks and gotchas
 
 - None found. No fight, no random step, no forced wait. Doric's house door is open.
-- Logout-safe: `%doricquest` is `scope=perm` (`quest_doric.varp`).
-- The quest-complete scroll and the Mining level-up page need not be dismissed; the
-  next click closes them.
+- Logout-safe: `%doricquest` is `scope=perm` (`quest_doric.varp`), and the quest tab shows every
+  stage, so a resume needs no journal read.
+- The quest-complete scroll needs no dismissing on this client (none was seen in the lab runs);
+  the Mining level-up page does (above).
 
 ## Open questions
 
