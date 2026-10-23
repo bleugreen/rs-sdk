@@ -1730,9 +1730,25 @@ export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && bun speedrun/run.ts --bot="$(ba
 `<run checkout>/bots/<name>/bot.env` on the chosen machine (step 0's precondition). The run dir must equal the helper launcher's `runDir`: both
 default to `<checkout>/run-machine` (helpers/altar-cue.ts:587, helpers/standalone.ts:50), and
 cannon-serve.json defaults to `<run dir>/cannon-serve.json` (run.ts:142). Items 1-3 come before the
-tab, at step 5a.4 item 2; item 4 comes after `handoff`, which has already logged SCORED in. How
-run.ts takes over that session is the code's, at the commit main names (**pending rs/186**'s exact
-takeover step). From
+tab, at step 5a.4 item 2; item 4 comes after `handoff`, which has already logged SCORED in.
+
+**run.ts logs SCORED in a second time** (r, rs/186 from the code at 9f2efb03, which rs/598 does not
+touch; fold-in 37). It neither waits at the title screen nor adopts `handoff`'s session: `handoff`
+opens the tab and logs SCORED in (`tools/run-gate.ts` `launchTab` and `tabLogin`, then 'The run
+scripts take it from here'); run.ts's `openRunSession` calls `openSession` with `launch` true unless
+an S21 relog is pending, whose browser launch mints a fresh login token and `Page.navigate`s SCORED's
+one tab to it (`lib/session.ts` `openBrowserClient`, `lib/tab.ts` `reloadOrOpenTab`), so the game
+session `handoff` made is dropped by the navigation **without a logout** and the page logs SCORED in
+again. run.ts's tick clock is per launch (`launchId` and `tickBase` reset in `launchClient`), so
+`handoff`'s ticks are not on run.ts's clock, which starts at its own login. **Operator wording, while
+main keeps the sequence as built:** "After `handoff` passes, start run.ts at once. run.ts re-navigates
+the tab and logs SCORED in again; this is expected. Do not touch the tab. run.ts's clock starts at
+its own login." **Open, unmeasured:** the navigated-away session leaves a player the server may still
+list when the second login arrives; elsewhere a dropped account's next login waited until
+`/playerpositions` dropped it, up to minutes (HELPERS.md, "Stopping"); no rehearsal has run `handoff`
+then run.ts. **Also open:** whether `handoff`'s logged-in ticks count on SCORED's server-side
+playtime, the score (`playtime-audit.md`), is not established here. rs/186 has put the double login to
+main as a start-sequence decision, and this wording may change with its ruling. From
 here the run scripts drive the tab through the gateway on 7780 (RUN-ORDER.md, STEP-MANIFEST.md).
 Nobody touches the window. Relaunches during the run go the same way: session.ts mints a fresh token
 from `CLIENT_URL` and re-navigates the tab over `CDP_URL`. The run's relogs use
