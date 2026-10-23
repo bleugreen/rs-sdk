@@ -388,20 +388,14 @@ const MANIFEST = readFileSync(join(import.meta.dir, '../../docs/speedrun/STEP-MA
 const IN_FORCE: readonly LegStep[] = legsFor({ s21Altar: 'body' });
 
 /**
- * Ledger drops on a leg row that a step module performs, not the leg (each `row item`). rs/158's
- * fold-in 33 is to move these onto the module's own row.
+ * Ledger drops on a leg row that a step module performs, not the leg (each `row item`). Empty since
+ * rs/158's fold-in 33 moved the talismans (runecraft.ts dropTalisman) and S16's god staff and cape
+ * (mage-arena.ts exitDrop) onto the modules' own rows.
  */
-const MODULE_EXIT_DROPS: Readonly<Record<string, string>> = {
-    'T05-06 air talisman': 'skills/runecraft.ts Driver.dropTalisman, S06\'s first act in the altar room (the talisman enters the room)',
-    'T20-21 body talisman': 'skills/runecraft.ts Driver.dropTalisman, S21\'s first act in the altar room (as at S06)',
-    'T16-18 god staff': 'quests/mage-arena.ts exitDrop (exitDropItems), at S16\'s exit',
-    'T16-18 god cape': 'quests/mage-arena.ts exitDrop (exitDropItems), at S16\'s exit',
-};
+const MODULE_EXIT_DROPS: Readonly<Record<string, string>> = {};
 
 /** Ledger drops on a leg row no code performs yet, each with the ruling it waits on. */
-const PENDING_DROPS: Readonly<Record<string, string>> = {
-    'T22-23 knife': "rs/158: T26-27's keep web needs a knife (hopNeeds) and no later row gives one back",
-};
+const PENDING_DROPS: Readonly<Record<string, string>> = {};
 
 const sampleName = (o: OutEntry) => (o.family ? `${o.name}(2)` : o.name);
 
@@ -412,7 +406,7 @@ describe('leg drops: the STEP-MANIFEST ledger contract', () => {
 
     test('the ledger has leg rows with drops to check', () => {
         expect(legRows.filter(r => r.out.some(o => o.reason === 'drop')).map(r => r.row)).toEqual(
-            ['T01-02', 'T04-05', 'T05-06', 'T06-07', 'T11-12', 'T16-18', 'T20-21', 'T21-22', 'T22-23', 'T26-27'],
+            ['T01-02', 'T04-05', 'T06-07', 'T11-12', 'T20-21', 'T21-22', 'T22-23', 'T26-27'],
         );
     });
 
