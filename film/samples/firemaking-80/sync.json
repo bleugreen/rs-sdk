@@ -19,61 +19,61 @@
     "found": 36,
     "offsetMs": {
       "n": 36,
-      "median": 49.3,
-      "p95": 68.3,
-      "max": 71.3,
-      "min": 29.2568359375,
-      "p10": 30.2568359375,
-      "medianTicks": 0.12,
-      "maxAbsTicks": 0.18
+      "median": 42.2,
+      "p95": 77.2,
+      "max": 77.2,
+      "min": 24.157958984375,
+      "p10": 33.157958984375,
+      "medianTicks": 0.11,
+      "maxAbsTicks": 0.19
     },
     "sample": [
       {
-        "videoMs": 1982.7431640625,
+        "videoMs": 1989.842041015625,
         "changeMs": 2040,
-        "offsetMs": 57.3,
+        "offsetMs": 50.2,
         "what": "You attempt to light the logs."
       },
       {
-        "videoMs": 3590.7431640625,
-        "changeMs": 3640,
-        "offsetMs": 49.3,
+        "videoMs": 3605.842041015625,
+        "changeMs": 3680,
+        "offsetMs": 74.2,
         "what": "The fire catches and the logs begin to burn."
       },
       {
-        "videoMs": 5195.7431640625,
+        "videoMs": 5196.842041015625,
         "changeMs": 5240,
-        "offsetMs": 44.3,
+        "offsetMs": 43.2,
         "what": "The fire catches and the logs begin to burn."
       },
       {
-        "videoMs": 6790.7431640625,
-        "changeMs": 6840,
-        "offsetMs": 49.3,
+        "videoMs": 6802.842041015625,
+        "changeMs": 6880,
+        "offsetMs": 77.2,
         "what": "The fire catches and the logs begin to burn."
       },
       {
-        "videoMs": 6790.7431640625,
-        "changeMs": 6840,
-        "offsetMs": 49.3,
+        "videoMs": 6802.842041015625,
+        "changeMs": 6880,
+        "offsetMs": 77.2,
         "what": "Congratulations, you just advanced a fire making level."
       },
       {
-        "videoMs": 8391.7431640625,
+        "videoMs": 8403.842041015625,
         "changeMs": 8440,
-        "offsetMs": 48.3,
+        "offsetMs": 36.2,
         "what": "The fire catches and the logs begin to burn."
       },
       {
-        "videoMs": 9995.7431640625,
+        "videoMs": 10004.842041015625,
         "changeMs": 10040,
-        "offsetMs": 44.3,
+        "offsetMs": 35.2,
         "what": "The fire catches and the logs begin to burn."
       },
       {
-        "videoMs": 11597.7431640625,
+        "videoMs": 11606.842041015625,
         "changeMs": 11640,
-        "offsetMs": 42.3,
+        "offsetMs": 33.2,
         "what": "The fire catches and the logs begin to burn."
       }
     ]
@@ -94,61 +94,61 @@
     "found": 27,
     "offsetMs": {
       "n": 27,
-      "median": 447.3,
-      "p95": 467.3,
-      "max": 470.3,
-      "min": 410.2568359375,
-      "p10": 420.2568359375,
-      "medianTicks": 1.12,
-      "maxAbsTicks": 1.17
+      "median": 439.2,
+      "p95": 459.2,
+      "max": 463.2,
+      "min": 413.157958984375,
+      "p10": 427.157958984375,
+      "medianTicks": 1.1,
+      "maxAbsTicks": 1.16
     },
     "sample": [
       {
-        "videoMs": 1577.7431640625,
+        "videoMs": 1591.842041015625,
         "changeMs": 2040,
-        "offsetMs": 462.3,
+        "offsetMs": 448.2,
         "what": "useItemOnItem"
       },
       {
-        "videoMs": 3591.7431640625,
+        "videoMs": 3605.842041015625,
         "changeMs": 4040,
-        "offsetMs": 448.3,
+        "offsetMs": 434.2,
         "what": "useItemOnItem"
       },
       {
-        "videoMs": 5196.7431640625,
+        "videoMs": 5196.842041015625,
         "changeMs": 5640,
-        "offsetMs": 443.3,
+        "offsetMs": 443.2,
         "what": "useItemOnItem"
       },
       {
-        "videoMs": 6791.7431640625,
+        "videoMs": 6803.842041015625,
         "changeMs": 7240,
-        "offsetMs": 448.3,
+        "offsetMs": 436.2,
         "what": "useItemOnItem"
       },
       {
-        "videoMs": 8391.7431640625,
+        "videoMs": 8403.842041015625,
         "changeMs": 8840,
-        "offsetMs": 448.3,
+        "offsetMs": 436.2,
         "what": "useItemOnItem"
       },
       {
-        "videoMs": 9996.7431640625,
+        "videoMs": 10005.842041015625,
         "changeMs": 10440,
-        "offsetMs": 443.3,
+        "offsetMs": 434.2,
         "what": "useItemOnItem"
       },
       {
-        "videoMs": 11598.7431640625,
+        "videoMs": 11606.842041015625,
         "changeMs": 12040,
-        "offsetMs": 441.3,
+        "offsetMs": 433.2,
         "what": "useItemOnItem"
       },
       {
-        "videoMs": 13200.7431640625,
+        "videoMs": 13206.842041015625,
         "changeMs": 13640,
-        "offsetMs": 439.3,
+        "offsetMs": 433.2,
         "what": "useItemOnItem"
       }
     ]
@@ -159,12 +159,12 @@
     "clientMinusFeedMs": {
       "n": 28,
       "median": 1,
-      "p95": 4,
-      "max": 400,
+      "p95": 3,
+      "max": 398,
       "min": 0,
       "p10": 0,
       "medianTicks": 0,
-      "maxAbsTicks": 1
+      "maxAbsTicks": 0.99
     }
   }
 }

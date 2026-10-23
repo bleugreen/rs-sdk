@@ -37,32 +37,32 @@
     "at 3019,3362,0"
   ],
   "git": {
-    "commit": "5451ea4c63f2be1d160f145556818ba634694ef2",
+    "commit": "2e0774367fd3f8c6472055551a427073e77a43ca",
     "dirty": true
   },
   "tickMs": {
     "configured": 400,
     "feedHello": 400,
     "observed": {
-      "n": 119,
+      "n": 120,
       "median": 401,
-      "p95": 406,
-      "max": 416
+      "p95": 403,
+      "max": 405
     }
   },
   "start": {
-    "ms": 1792791734564.2568,
-    "tick": null,
-    "clientTick": 20
+    "ms": 1792792009803.158,
+    "tick": 45,
+    "clientTick": 19
   },
   "end": {
-    "ms": 1792791782861.702,
+    "ms": 1792792058087.503,
     "tick": 165,
     "clientTick": 139
   },
-  "durationMs": 48297,
-  "script_": {
-    "startVideoMs": 984,
+  "durationMs": 48284,
+  "run": {
+    "startVideoMs": 997,
     "end": "exited 1 after 46.3 s"
   },
   "xpGained": {
@@ -164,31 +164,31 @@
     "file": "clip.mp4",
     "encoder": "libopenh264",
     "crf": 26,
-    "bytes": 4150021,
+    "bytes": 4148534,
     "fps": 25,
     "width": 764,
     "height": 502,
     "frames": 1208,
     "method": "Chrome DevTools Page.startScreencast (JPEG q90, chrome-headless-shell, the bot page's ?minimal canvas at 765x503), each frame stamped with its compositor time, re-timed to a constant rate (the latest frame at each output frame), encoded by ffmpeg libopenh264",
-    "captured": 2830,
+    "captured": 2832,
     "captureFps": 58.6,
     "intervalMs": {
-      "n": 2829,
+      "n": 2831,
       "median": 16.7,
-      "p95": 20.7,
-      "max": 82.1
+      "p95": 20.3,
+      "max": 61.8
     },
     "staleMs": {
       "n": 1208,
       "median": 8.6,
-      "p95": 18.4,
-      "max": 79.7
+      "p95": 16.3,
+      "max": 58
     },
     "receiveLagMs": {
-      "n": 2830,
-      "median": 7.1,
-      "p95": 8.8,
-      "max": 89.5
+      "n": 2832,
+      "median": 6.9,
+      "p95": 8.9,
+      "max": 11.6
     },
     "crop": {
       "x": 0,
@@ -201,8 +201,8 @@
     "file": "feed.jsonl",
     "url": "ws://localhost:9700/worldfeed",
     "protocol": 1,
-    "frames": 133,
-    "ticks": 120,
+    "frames": 134,
+    "ticks": 121,
     "areas": [
       {
         "x": 2923,
@@ -216,7 +216,7 @@
   "trace": {
     "file": "trace.jsonl",
     "start": 1,
-    "pos": 119,
+    "pos": 120,
     "action": 35,
     "chat": 36,
     "xp": 27,
