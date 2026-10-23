@@ -100,7 +100,7 @@ describe('chunk boundaries (pinned: a change here is a change in the docs or the
     test("S22: S15's reward from its xp (HP 42 to 97), Mage Arena's staff given, S21's body runes reported unstaged", () => {
         const b = at('S22');
         expect(lv(b)).toEqual({ attack: '99', defence: '89', strength: '97', hitpoints: '97', ranged: '~50', prayer: '99', magic: '99', woodcutting: '99', fletching: '99', fishing: '78', firemaking: '99', crafting: '42', smithing: '~54', mining: '99', agility: '75', thieving: '99', runecraft: '99' });
-        expect(b.quests.map(q => `${q.key}=${q.value}`)).toEqual(['doric=100', 'elena=30', 'tree=9', 'grandtree=160', 'arena=14', 'mcannon=11', 'magearena=8', 'seaslug=12', 'fishingcompo=5', 'mm=9']);
+        expect(b.quests.map(q => `${q.key}=${q.value}`)).toEqual(['doric=100', 'elena=30', 'tree=9', 'grandtree=160', 'arena=14', 'mcannon=11', 'mm=9', 'magearena=8', 'seaslug=12', 'fishingcompo=5']);
         expect(b.qp).toBe(17);
         expect(b.ledgerAfter).toBe('H17e');
         expect(items(b.inv)).toEqual(['lawrune x1', 'airrune x3', 'earthrune x1']);

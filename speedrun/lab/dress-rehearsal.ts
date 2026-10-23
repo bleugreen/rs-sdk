@@ -215,8 +215,9 @@ export function labChain(chain: readonly ChainStep[], o: { manifest: string; stu
         // which then finds it landed, unless the lab config names a real giver for it.
         const kit = Object.keys(KIT_SEGMENTS).find(r => KIT_SEGMENTS[r] === s.name);
         if (kit && !o.kitServed?.includes(kit)) {
-            const plan = KIT_PLANS[kit]!;
-            out.push(staffSupplyStep({ ...s, id: kit, kind: 'handoff', name: `${kit} hand-off` }, o.manifest, st => plan(st, o.manifest)));
+            // A row with no KIT_PLANS entry (H12) is staff-supplied as its ledger row stands.
+            const plan = KIT_PLANS[kit];
+            out.push(staffSupplyStep({ ...s, id: kit, kind: 'handoff', name: `${kit} hand-off` }, o.manifest, plan ? st => plan(st, o.manifest) : undefined));
             staffed.push(kit);
         }
         if (s.kind === 'handoff') {

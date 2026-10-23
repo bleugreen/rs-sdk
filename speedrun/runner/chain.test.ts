@@ -3,7 +3,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { BotWorldState, PlayerState } from '../../sdk/types';
-import { CUE_FILE, CueWatcher, CueWriter, type Cue, type CueScope } from '../helpers/altar-cue';
+import { ASK_FILE, CUE_FILE, CueWatcher, CueWriter, type Cue, type CueScope, type TopUpAsk } from '../helpers/altar-cue';
+import * as monkeyMadness from '../quests/monkey-madness';
 import { PLAN_FILE } from '../helpers/anvil';
 import { GO_FILE } from '../helpers/fm-row';
 import { handOffFrom, HandOffRecord } from './handoff';
@@ -21,7 +22,7 @@ import * as cooking from '../skills/cooking';
 import * as mining from '../skills/mining';
 import {
     ALTERNATIVES, anvilAnnounce, CANNON_ROWS, cueAround, cueMuleRows, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleScope, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
-    whenNeeded, withCue, h12oLogin, h12oLoginRefusal, H12O_LOGIN, type ChainStep, type CueSink, type RunConfig,
+    whenNeeded, withCue, askedOnTrade, h12oLogin, h12oLoginRefusal, h12oTopUp, H12O_LOGIN, type ChainStep, type CueSink, type RunConfig,
 } from './chain';
 import { CUE_BEACONS, CueKeeper, exitStopIsFinal, prepareCueDir, RunCues } from './cue-keeper';
 import { ScopeSessions } from '../helpers/standalone';
@@ -37,7 +38,8 @@ afterAll(() => { if (prevTick === undefined) delete process.env.SPEEDRUN_TICK_MS
 const MANIFEST_TEXT = readFileSync(MANIFEST, 'utf8');
 const RUN_ORDER = readFileSync(join(import.meta.dir, '../../docs/speedrun/RUN-ORDER.md'), 'utf8');
 
-const PARTNERS = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id.toLowerCase()}`]));
+// Fold-in 23's H12a and H12b share one giver: Monkey Madness's one gtSwap trades both.
+const PARTNERS: Record<string, string> = { ...Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id.toLowerCase()}`])), H12a: 'p_h12', H12b: 'p_h12' };
 const CONFIG: RunConfig = {
     partners: PARTNERS,
     firemakingTiles: '3240,3296;3239,3296;3238,3296',
@@ -47,6 +49,8 @@ const CONFIG: RunConfig = {
     anvil: { giver: 'anvil_helper' },
     cueDir: join(tmpdir(), 'chain-test-cue'),
 };
+/** CONFIG with h45's block: everything the full path needs, so nothing on it refuses. */
+const COMPLETE: RunConfig = { ...CONFIG, h12o: { account: 'cairn_h45', cueDir: join(tmpdir(), 'chain-test-h45-cue'), loginDir: join(tmpdir(), 'chain-test-h45-login'), leadTicks: 300 } };
 
 function recorder() {
     const opened: { scope: CueScope; fresh: boolean }[] = [];
@@ -64,7 +68,7 @@ const CARRIERS: Record<string, readonly string[]> = {
     h03: ['H1', 'H4'],
     mule1: ['H4k', 'H6', 'H9', 'H13', 'H22'],
     mule2: ['H4p', 'H7', 'H8', 'H10', 'H14'],
-    h55: ['H15', 'H16', 'H18', 'H19', 'H20', 'H21d'],
+    h55: ['H12', 'H12a', 'H12b', 'H15', 'H16', 'H18', 'H19', 'H20', 'H21d'],
     h92: ['H11', 'H11r', 'H23'],
 };
 const CARRIER_CONFIG: RunConfig = { ...CONFIG, partners: Object.fromEntries(Object.entries(CARRIERS).flatMap(([who, rows]) => rows.map(r => [r, who]))) };
@@ -186,7 +190,7 @@ describe('ledger coverage', () => {
         expect(ledgerCoverage(ledgerRows(MANIFEST_TEXT))).toEqual([]);
     });
 
-    test("H12 (or fold-in 23's H12a + H12b) is Monkey Madness's own trade until h12Plan lands: covered, never placed", () => {
+    test("H12 (or fold-in 23's H12a + H12b) is Monkey Madness's own trade, in segment A's gtSwap: covered, never placed", () => {
         expect(ledgerCoverage(ledgerRows(FOLD_IN_23))).toEqual([]);
         for (const text of [MANIFEST_TEXT, FOLD_IN_23]) {
             const ids = buildChain(CONFIG, { cues: recorder().cues, manifest: text }).map(s => s.id);
@@ -253,19 +257,19 @@ describe('wrappers', () => {
         expect(m.done!(new Observation(at({ quests: {} })), {})).toBe(false);
     });
 
-    test('--dry-run lists every refusing step on the path; --until=S04 has none', () => {
-        expect(missingOnPath(chain).map(m => `${m.id} ${m.owner}`)).toEqual([
-            'S15 rs/185',
-        ]);
+    test('--dry-run lists every refusing step on the path: none with a complete run config, the H12o login without h45\'s block; --until=S04 has none', () => {
+        expect(missingOnPath(buildChain(COMPLETE, { cues: recorder().cues }))).toEqual([]);
+        expect(missingOnPath(chain).map(m => `${m.id}: ${m.owner}`)).toEqual([`H12o login: ${h12oLoginRefusal(CONFIG)}`]);
         expect(missingOnPath(sliceUntil(chain, 'S04'))).toEqual([]);
     });
 
     test('every step is censused: a 0-tick (census) note of the pack, free slots and worn items before it runs', async () => {
         const sdk = new FakeSdk(at({ inventory: [{ slot: 0, id: 1, name: 'Shark', count: 2, optionsWithIndex: [] }] as unknown as BotWorldState['inventory'] }));
         const log = TickLog.memory('t');
-        const m = chain.find(s => s.id === 'S15')!;
-        await m.run(ctxFor(sdk, log)).catch(() => {});
-        expect(log.rows[0]).toMatchObject({ step: CENSUS_STEP, kind: 'note', ticks: 0, meta: { before: 'S15 Monkey Madness', id: 'S15', free: 27, inventory: [{ name: 'Shark', count: 2 }], worn: [] } });
+        // CONFIG has no h12o block, so the login step refuses at once: after its census.
+        const m = chain.find(s => s.id === 'H12o login')!;
+        await expect(m.run(ctxFor(sdk, log))).rejects.toThrow('no h12o block');
+        expect(log.rows[0]).toMatchObject({ step: CENSUS_STEP, kind: 'note', ticks: 0, meta: { before: 'H12o h45 login trigger', id: 'H12o login', free: 27, inventory: [{ name: 'Shark', count: 2 }], worn: [] } });
     });
 });
 
@@ -373,7 +377,7 @@ describe('cues', () => {
         for (const s of chain) if (s.cue) scopes.set(s.id, `${s.cue.step}/${s.cue.family}`);
         expect(Object.fromEntries(scopes)).toEqual({
             S01: 'H1/mule', S03: 'S03/fmrow', S04: 'S04/ring', S05: 'H4/mule', H4k: 'H4k/mule', S07: 'S07/bone', H6: 'H6/mule', H4p: 'H4p/mule', H7: 'H7/mule', H8: 'H8/mule', H9: 'H9/mule', H10: 'H10/mule', H11: 'S14/cannon', S14: 'S14/cannon',
-            H13: 'H13/mule', H14: 'H14/mule', S18: 'S18/courier', H15: 'H15/mule', H16: 'H16/mule', H18: 'H18/mule', H19: 'H19/mule', H20: 'H20/mule', S25a: 'S25a/anvil', H21d: 'H21d/mule', H22: 'H22/mule',
+            S15: 'H12/mule', H13: 'H13/mule', H14: 'H14/mule', S18: 'S18/courier', H15: 'H15/mule', H16: 'H16/mule', H18: 'H18/mule', H19: 'H19/mule', H20: 'H20/mule', S25a: 'S25a/anvil', H21d: 'H21d/mule', H22: 'H22/mule',
             H23: 'S27/cannon', S27: 'S27/cannon',
         });
         expect(chain.filter(s => s.id === 'S07' && s.kind === 'step').every(s => s.cue?.family === 'bone')).toBe(true);
@@ -382,7 +386,7 @@ describe('cues', () => {
         expect(grouped.filter(s => s.id === 'S07').map(s => s.name)).toEqual(chain.filter(s => s.id === 'S07').map(s => s.name));
         expect(grouped.filter(s => s.id === 'S07').some(s => s.cue)).toBe(false);
         expect(chain.filter(s => s.id === 'S06' || s.id === 'S21').some(s => s.cue)).toBe(false);
-        expect(chain.filter(s => s.kind === 'cue').map(s => s.id)).toEqual(['S03 go cue', 'S06 cue stop', 'S14 cue stop', 'S18 cue stop', 'S21 cue stop', 'S25a cue stop', 'S27 cue stop']);
+        expect(chain.filter(s => s.kind === 'cue').map(s => s.id)).toEqual(['S03 go cue', 'S06 cue stop', 'S14 cue stop', 'H12o login', 'S18 cue stop', 'S21 cue stop', 'S25a cue stop', 'S27 cue stop']);
     });
 
     test("S03's {S03, fmrow} and S04's {S04, ring} open afresh before their step and stop after it, failed or not", async () => {
@@ -743,14 +747,14 @@ describe('cues', () => {
     test("each mule carrier's last row in the chain stops final, every other mule row plain; the cannon rows are not mule rows", () => {
         const c = buildChain(CARRIER_CONFIG, { cues: recorder().cues });
         expect(muleStops(c)).toEqual([
-            'H1:plain', 'H4:final', 'H4k:plain', 'H6:plain', 'H4p:plain', 'H7:plain', 'H8:plain', 'H9:plain', 'H10:plain',
+            'H1:plain', 'H4:final', 'H4k:plain', 'H6:plain', 'H4p:plain', 'H7:plain', 'H8:plain', 'H9:plain', 'H10:plain', 'H12:plain',
             'H13:plain', 'H14:final', 'H15:plain', 'H16:plain', 'H18:plain', 'H19:plain', 'H20:plain', 'H21d:final', 'H22:final',
         ]);
         // H4's final is on Doric's segment A, the kit segment that trades it.
         expect(c.find(s => s.cue?.step === 'H4')!.name).toBe(KIT_SEGMENTS.H4!);
         for (const id of ['H11', 'H11r', 'H23']) expect(c.find(s => s.id === id)!.cue?.family ?? null).not.toBe('mule');
-        // The fold-in 23 ledger (H12a + H12b, both inside S15) places the same rows.
-        expect(muleStops(buildChain(CARRIER_CONFIG, { cues: recorder().cues, manifest: FOLD_IN_23 }))).toEqual(muleStops(c));
+        // The fold-in 23 ledger (H12a + H12b, both in S15's one gtSwap) places the same rows; its split kit is not cued.
+        expect(muleStops(buildChain(CARRIER_CONFIG, { cues: recorder().cues, manifest: FOLD_IN_23 }))).toEqual(muleStops(c).filter(s => !s.startsWith('H12:')));
     });
 
     test("'last' is over the rows in the ledger in force: without H22, mule1's last row is H13", () => {
@@ -1051,7 +1055,7 @@ describe("H12o: h45's login trigger", () => {
     test('writes one H12o/mule cue into the login-only folder and nothing into the role folder', async () => {
         const d = dirs();
         try {
-            await h12oLogin({ cueDir: d.cueDir, h12o: { cueDir: d.role, loginDir: d.login, leadTicks: 100 } }).run(ctxFor(frame()));
+            await h12oLogin({ cueDir: d.cueDir, h12o: { account: 'cairn_h45', cueDir: d.role, loginDir: d.login, leadTicks: 100 } }).run(ctxFor(frame()));
             const cue = JSON.parse(readFileSync(join(d.login, CUE_FILE), 'utf8')) as Cue;
             expect(cue.scope).toEqual(H12O_LOGIN);
             expect([cue.seq, cue.stop, cue.final, cue.turns]).toEqual([1, undefined, undefined, []]);
@@ -1063,24 +1067,32 @@ describe("H12o: h45's login trigger", () => {
         }
     });
 
-    test('refuses, writing nothing, with no h12o block, no lead time, a lead that is not a positive whole number, or a role folder for the login folder', async () => {
+    test('refuses, writing nothing and with the top-ups off, with no h12o block, no account, no lead time, a lead that is not a positive whole number, or a role folder for the login folder', async () => {
         const d = dirs();
         try {
+            const h = { account: 'cairn_h45', cueDir: d.role, loginDir: d.login };
             const cases: [Pick<RunConfig, 'cueDir' | 'muleCueDir' | 'h12o'>, string][] = [
                 [{ cueDir: d.cueDir }, 'no h12o block'],
-                [{ cueDir: d.cueDir, h12o: { cueDir: d.role, loginDir: d.login } }, 'no h12o.leadTicks'],
-                [{ cueDir: d.cueDir, h12o: { cueDir: d.role, loginDir: d.login, leadTicks: 0 } }, 'not a positive whole number'],
-                [{ cueDir: d.cueDir, h12o: { cueDir: d.role, loginDir: d.login, leadTicks: 2.5 } }, 'not a positive whole number'],
-                [{ cueDir: d.cueDir, h12o: { cueDir: d.role, loginDir: d.role, leadTicks: 100 } }, 'is a role folder'],
-                [{ cueDir: d.cueDir, h12o: { cueDir: d.role, loginDir: join(d.cueDir, 'mule'), leadTicks: 100 } }, 'is a role folder'],
-                [{ cueDir: d.cueDir, h12o: { cueDir: d.role, loginDir: `${d.cueDir}/.`, leadTicks: 100 } }, 'is a role folder'],
+                [{ cueDir: d.cueDir, h12o: { cueDir: d.role, loginDir: d.login, leadTicks: 100 } }, 'no h12o.account'],
+                [{ cueDir: d.cueDir, h12o: h }, 'no h12o.leadTicks'],
+                [{ cueDir: d.cueDir, h12o: { ...h, leadTicks: 0 } }, 'not a positive whole number'],
+                [{ cueDir: d.cueDir, h12o: { ...h, leadTicks: 2.5 } }, 'not a positive whole number'],
+                [{ cueDir: d.cueDir, h12o: { ...h, loginDir: d.role, leadTicks: 100 } }, 'is a role folder'],
+                [{ cueDir: d.cueDir, h12o: { ...h, loginDir: join(d.cueDir, 'mule'), leadTicks: 100 } }, 'is a role folder'],
+                [{ cueDir: d.cueDir, h12o: { ...h, loginDir: `${d.cueDir}/.`, leadTicks: 100 } }, 'is a role folder'],
             ];
             for (const [cfg, why] of cases) {
                 expect(h12oLoginRefusal(cfg)).toContain(why);
+                expect(h12oLogin(cfg).refuses).toBe(h12oLoginRefusal(cfg)!);
+                expect(h12oTopUp(cfg)).toBeUndefined();
                 await expect(h12oLogin(cfg).run(ctxFor(frame()))).rejects.toThrow(why);
             }
             expect([d.role, d.login, d.cueDir].some(p => existsSync(p))).toBe(false);
-            expect(h12oLoginRefusal({ cueDir: d.cueDir, h12o: { cueDir: d.role, loginDir: d.login, leadTicks: 100 } })).toBeNull();
+            const ok = { cueDir: d.cueDir, h12o: { ...h, leadTicks: 100 } };
+            expect(h12oLoginRefusal(ok)).toBeNull();
+            expect(h12oLogin(ok).refuses).toBeUndefined();
+            // Both legs from h45, in its role folder; no item list (the module sizes each leg).
+            expect(h12oTopUp(ok)).toEqual({ from: 'cairn_h45', m: true, p: true, cueDir: d.role });
         } finally {
             rmSync(d.base, { recursive: true, force: true });
         }
@@ -1101,8 +1113,98 @@ describe("H13 for attempt 1: the landing hand-off only", () => {
         expect(a).toBeGreaterThan(0);
         const between = chain.slice(a + 1, b);
         expect(between.map(s => `${s.kind}:${s.cue ? `${s.cue.step}/${s.cue.family}` : '-'}`)).toEqual(['handoff:H13/mule']);
-        // T15-16's own route ends on the ladder to the cellar; that is travel, not the cellar helpers.
-        const text = chain.filter(s => s.kind !== 'leg').map(s => `${s.id} ${s.name} ${s.cue ? `${s.cue.step}/${s.cue.family}` : ''}`).join('\n');
+        // T15-16's own route ends on the ladder to the cellar; that is travel, not the cellar helpers. S15's
+        // J-cellar is the atoll's cellar, nothing of H13's.
+        const text = chain.filter(s => s.kind !== 'leg' && s.id !== 'S15').map(s => `${s.id} ${s.name} ${s.cue ? `${s.cue.step}/${s.cue.family}` : ''}`).join('\n');
         expect(text).not.toMatch(/cellar|\bh41\b|\bh52\b/i);
+    });
+});
+
+describe('S15: Monkey Madness on the chain', () => {
+    const full = buildChain(COMPLETE, { cues: recorder().cues });
+    const s15 = full.filter(s => s.id === 'S15');
+    const st = (more: Partial<BotWorldState> = {}) => baseState({ tick: 10, inGame: true, player: { name: 'Scored Name', x: 3200, z: 3200, worldX: 3200, worldZ: 3200, level: 0 } as PlayerState, ...more });
+    const inv = (...items: [id: number, name: string, count: number][]) => items.map(([id, name, count], slot) => ({ slot, id, name, count, optionsWithIndex: [] })) as unknown as BotWorldState['inventory'];
+
+    test("S15 is monkey-madness's own segments A-Z in order, and nothing on the full path refuses", () => {
+        expect(s15.map(s => s.name)).toEqual(monkeyMadness.steps().map(s => s.name));
+        expect(s15.every(s => s.kind === 'step')).toBe(true);
+        expect(full.some(s => s.kind === 'missing')).toBe(false);
+        expect(missingOnPath(full)).toEqual([]);
+        expect(() => chainProbes(full)).not.toThrow();
+    });
+
+    test("h45's login trigger is the one step between segments L and M; its done is past M, so a resume into N..Z walks past it and one into M fires it", () => {
+        const i = full.findIndex(s => s.id === 'H12o login');
+        expect([full[i - 1]!.name, full[i]!.name, full[i + 1]!.name]).toEqual(['S15:L-amulet', 'H12o h45 login trigger', 'S15:M-jail2']);
+        expect(full.filter(s => s.id === 'H12o login')).toHaveLength(1);
+        const login = full[i]!;
+        expect(login.probes).toEqual([monkeyMadness.JOURNAL_PROBE]);
+        const holding = (id: number) => new Observation(st({ quests: { mm: 'started' }, inventory: inv([id, 'quest item', 1]) }));
+        // L done (the enchanted bar held), M's travel to the H12o-M leg still ahead: it fires.
+        expect(login.done!(holding(monkeyMadness.MM_OBJ.enchantedBar), {})).toBe(false);
+        // N done (the strung amulet held): past M, walked past.
+        expect(login.done!(holding(monkeyMadness.MM_OBJ.amulet), {})).toBe(true);
+    });
+
+    test("H12 is cued {H12, mule} around segment A, the gtSwap, and no other S15 segment; A trades the kit with H12's partner", () => {
+        expect(s15.filter(s => s.cue).map(s => [s.name, s.cue])).toEqual([[KIT_SEGMENTS.H12, { step: 'H12', family: 'mule' }]]);
+        expect(s15[0]!.name).toBe(KIT_SEGMENTS.H12!);
+        expect(MULE_ROWS).toContain('H12');
+        // A short kit passes A's kit check (it has a kitFrom), so A's next check, the place, refuses.
+        const away = st({ quests: { tree: 'complete', grandtree: 'complete' } });
+        expect(s15[0]!.preconditions(away, {})).toContain('not at the Grand Tree');
+        const split = buildChain(COMPLETE, { cues: recorder().cues, manifest: FOLD_IN_23 }).find(s => s.id === 'S15')!;
+        expect([split.name, split.cue, split.preconditions(away, {})]).toEqual([KIT_SEGMENTS.H12, undefined, expect.stringContaining('not at the Grand Tree')]);
+        expect(() => buildChain({ ...COMPLETE, partners: { ...PARTNERS, H12a: 'p_one', H12b: 'p_two' } }, { cues: recorder().cues, manifest: FOLD_IN_23 })).toThrow('not one partner for both');
+        expect(() => buildChain({ ...COMPLETE, partners: Object.fromEntries(Object.entries(PARTNERS).filter(([r]) => r !== 'H12')) }, { cues: recorder().cues })).toThrow('names no partner for H12');
+    });
+
+    test("H12's ask names exactly its row's `to N` entries at what SCORED lacks, written once on the trade's open frame; nothing is asked when they are met", async () => {
+        const plan = handOffFrom(MANIFEST_TEXT, 'H12');
+        const tops = plan.receive.filter(r => r.topUp);
+        expect(tops.map(r => [r.pattern.source, r.count])).toEqual([[expect.stringMatching(/shark/i), 15]]);
+        const d = mkdtempSync(join(tmpdir(), 'chain-h12-ask-'));
+        try {
+            const sharks = (n: number) => inv([385, 'Shark', 1]).flatMap(() => Array.from({ length: n }, (_, slot) => ({ slot, id: 385, name: 'Shark', count: 1, optionsWithIndex: [] }))) as unknown as BotWorldState['inventory'];
+            const trade = (isOpen: boolean, partner = 'p_h12') => ({ trade: { isOpen, partner } as unknown as BotWorldState['trade'] });
+            const asks: TopUpAsk[] = [];
+            const step = (sdk: FakeSdk): ChainStep => tag('S15', 'step', {
+                name: KIT_SEGMENTS.H12!, logoutSafe: true, preconditions: () => true, postconditions: () => true,
+                run: async () => {
+                    sdk.push(trade(true, 'someone else'));
+                    expect(existsSync(join(d, ASK_FILE))).toBe(false);
+                    for (let k = 0; k < 3; k++) {
+                        sdk.push(trade(true));
+                        if (existsSync(join(d, ASK_FILE))) asks.push(JSON.parse(readFileSync(join(d, ASK_FILE), 'utf8')) as TopUpAsk);
+                        rmSync(join(d, ASK_FILE), { force: true });
+                    }
+                    sdk.push(trade(false));
+                },
+            });
+            const sdk = new FakeSdk(st({ inventory: sharks(4) }));
+            await askedOnTrade(step(sdk), plan, 'p_h12', d).run(ctxFor(sdk));
+            expect(asks.map(a => [a.items, a.scope])).toEqual([[[{ item: tops[0]!.pattern.source, count: 11 }], { step: 'H12', family: 'mule' }]]);
+            // Unsubscribed once the step returns: a later open writes nothing.
+            sdk.push(trade(true));
+            expect(existsSync(join(d, ASK_FILE))).toBe(false);
+            // Fifteen held: met, so no ask at all.
+            const met = new FakeSdk(st({ inventory: sharks(15) }));
+            asks.length = 0;
+            await askedOnTrade(step(met), plan, 'p_h12', d).run(ctxFor(met));
+            expect(asks).toEqual([]);
+        } finally {
+            rmSync(d, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('S11a: the gnome course to Agility 25', () => {
+    test("S11a's one step is agility:gnome and it ends at Agility 25, the Grand Tree's pillar climb without a potion", () => {
+        const s11a = chain.filter(s => s.id === 'S11a');
+        expect(s11a.map(s => s.name)).toEqual(['agility:gnome']);
+        const at = (level: number) => baseState({ tick: 1, inGame: true, skills: [{ name: 'Agility', level, baseLevel: level, experience: 0 }] } as never);
+        expect(s11a[0]!.postconditions(at(24), {})).not.toBe(true);
+        expect(s11a[0]!.postconditions(at(25), {})).toBe(true);
     });
 });

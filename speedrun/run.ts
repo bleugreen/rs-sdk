@@ -646,7 +646,7 @@ async function main(argv: string[]): Promise<number> {
     for (const g of gates) console.log(`[gate] ${g.ok ? 'ok     ' : 'REFUSED'} ${g.gate}: ${g.detail}`);
     if (a.dryRun) {
         console.log(`\n${chain.length} steps${a.until ? ` (--until=${a.until})` : ''}:`);
-        chain.forEach((s, i) => console.log(`${String(i).padStart(3)}  ${s.id.padEnd(14)} ${s.kind.padEnd(8)} ${s.name}${s.owner ? `  [refuses: ${s.owner}]` : ''}`));
+        chain.forEach((s, i) => console.log(`${String(i).padStart(3)}  ${s.id.padEnd(14)} ${s.kind.padEnd(8)} ${s.name}${s.owner ?? s.refuses ? `  [refuses: ${s.owner ?? s.refuses}]` : ''}`));
         return gates.every(g => g.ok) ? 0 : EXIT_REFUSED;
     }
     if (!gates.every(g => g.ok)) {
