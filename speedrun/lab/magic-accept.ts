@@ -127,9 +127,15 @@ if (mode === 'diamond25') {
     await cheat(scored.sdk, 'setstat magic 7');
     await waitUntil(scored.sdk, st => magicLevel(st) === 7, { maxTicks: 10 });
     await giveAll(scored, ['staff_of_water 1'], 1);
-    const w = await wield(scored.sdk, /^staff of water$/i);
-    if (!w.ok) throw new Error(`wielding the staff: ${w.reason ?? 'failed'}`);
+    // --staff=held (rs/627): the run day's shape, the staff in the pack, so S04's confirmed wield runs.
+    if (arg('staff', 'worn') !== 'held') {
+        const w = await wield(scored.sdk, /^staff of water$/i);
+        if (!w.ok) throw new Error(`wielding the staff: ${w.reason ?? 'failed'}`);
+    }
     await giveAll(scored, ['tinderbox 1', 'cosmicrune 60', 'airrune 81', 'firerune 80', 'earthrune 50'], 5);
+    // --noted-held=N (rs/626): attempt 2's pack, a noted Emerald ring stack held at S04's start, which S04 must refuse.
+    const notedHeld = Number(arg('noted-held', '0'));
+    if (notedHeld > 0) await giveAll(scored, [`cert_emerald_ring ${notedHeld}`], 1);
 
     // ---------------------------------------------------------------- the stand-in ring givers
     // One giver per load (rs/41: cairn_h81-h83), each staged with its load before the step: the
@@ -191,7 +197,11 @@ if (mode === 'diamond25') {
     const enchanted = end.inventory.filter(i => /^ring of /i.test(i.name)).length;
     const unenchanted = end.inventory.filter(i => / ring$/i.test(i.name)).length;
     const lastLoad = Object.values(loads.at(-1)!).reduce((a, n) => a + (n ?? 0), 0);
-    pass = !error && rows.length === 1 && rows[0]!.ok && magicLevel(end) >= untilLevel && enchanted === lastLoad && unenchanted === 0;
+    const notedPack = end.inventory.filter(i => /^emerald ring$/i.test(i.name) && i.id !== 1639).map(i => `${i.name} @${i.id} x${i.count}`);
+    pass = notedHeld > 0
+        ? !!error && /noted rings held/.test(error) && reports.length === 0
+        : !error && rows.length === 1 && rows[0]!.ok && magicLevel(end) >= untilLevel && enchanted === lastLoad && unenchanted === 0;
+    console.log(`S04 WIELD ${JSON.stringify(rep?.wield ?? null)} startTick=${rep?.startTick ?? null} staff=${arg('staff', 'worn')} notedHeld=${notedHeld} notedPack=${JSON.stringify(notedPack)} error=${JSON.stringify(error ?? null)}`);
     const against = Math.round((204 * nLoads) / 3);
     result('magic s04', { pass, loads: nLoads, untilLevel, step: rows, against, moved, level: magicLevel(end), enchanted, unenchanted, report: rep, giver: giverLog, ...(error ? { error } : {}) });
     for (const g of givers) await closeSession(g);
