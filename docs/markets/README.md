@@ -9,7 +9,8 @@ what each method yields per login, and what speedrun supplies gold can buy. The 
 | `timeline.md` | The leaders' holdings over time, GE history against their stacks, the family census, the swarms seen in `/playerpositions`, and a per-leader verdict on where the wealth came from. |
 | `data/` | Dated public reads: `poll-*.json` (bank top 50, positions and zone rosters every 5 minutes), `census-*.json`, `ge-history-*.json`, `players-*.json`, `bank-searches-*.json`, `jump-*.json`. Formats are in `markets/lib/snapshots.ts` and each tool's header. |
 
-Other children of rs/495 own their own `docs/markets/<file>.md`.
+Other children of rs/495 own their own `docs/markets/<file>.md`; `scaling-limits.md` (rs/519) holds every limit on
+logins per address, login rate, registration and world population.
 
 ## Rules
 
@@ -33,5 +34,6 @@ Labs run on fedora or bgsrv-ub with `NODE_TICKRATE=400`. Check all ports with `l
 | M4 | second measurement lab (rs/502) | 9930 / 9931 / 9932 | 44930 | 7706 | 45930 |
 | M5 | shelf reader (rs/506) | 9940 / 9941 / 9942 | 44940 | 7708 | 45940 |
 | M6 | live-probe runners (rs/508) | 9950 / 9951 / 9952 | 44950 | 7712 | 45950 |
+| M7 | login-limit lab (rs/519; LOGIN 43960, LOGGER 43961) | 9960 / 9961 / 9962 | 44960 | 7960 | 45960 |
 
-The next free block for follow-ups starts at 9960 (NODE 44960); check the AGENT and FRIEND ports first.
+The next free block for follow-ups starts at 9970 (NODE 44970); check the AGENT, FRIEND, LOGIN and LOGGER ports first.
