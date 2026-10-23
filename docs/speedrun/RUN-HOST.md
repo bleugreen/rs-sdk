@@ -955,7 +955,7 @@ opens** (the launcher's `helpersReady`), because login order decides the 7- or 8
 cycle. Every helper counts against the 80-login cap from its login until it logs out (step 7), and against
 its address's per-IP cap (below). With S21's altar givers in from the start, SCORED's run login was
 the peak (SUPPLIES.md, "Peak concurrent logins"); under the per-address plan below, rs/41's map puts
-SCORED's address at 24 at the start (23 helpers + SCORED, step 5a.4; 25 before fold-in 34) and 26 during S21's ramp. At the gate the 7 opening givers on **each** machine count, 14 in all. After a demo restart the helpers come back by relaunching rs/141's headless
+SCORED's address at 25 at the start (24 helpers + SCORED, step 5a.4; fold-in 36: rs/41's correction, the roster being 17, 4 + 6 + 3 + 4; 24 written at fold-ins 34-35 on a count of 16) and 26 during S21's ramp (SCORED, mule1, mule2, a01 and the 22 S21 givers, h03 counted under main's 19:3x ruling; unchanged by the 17, rs/41; the worst case on today's runner 29: + h55, the carriers idle to the end, 27, + h45 if its P stop is plain, 28, + h94 on an R8 death, 29, all under 45). At the gate the 7 opening givers on **each** machine count, 14 in all. After a demo restart the helpers come back by relaunching rs/141's headless
 lite-runner child processes (`fleet.ts`, `standalone.ts`), not tabs: the OS closes the old child's
 gateway socket when it exits, so there is no gateway takeover (inferred from the code; owned by
 rs/41), and the earlier lite restart measurement read 3 in-world ticks after the relogin
@@ -970,8 +970,8 @@ preference, step 5a), but the gate still chooses (tenet 17), and the plan holds 
 - **The cap.** The demo's operator caps simultaneous logins at **50 per IP** (public Discord, 13:2x
   PDT; it may rise). **Ours is 45 per address**, the working figure since main accepted rs/41's map.
   Tenet 16's 80, summed across every host, applies beside it (step 7).
-- **The peak per address** (rs/41's map): **24 on SCORED's address at the start (S01: the 7 air givers, the 16 roster logins and SCORED; rs/41's start order, main ruled, fold-in 34; 25 before) and 26 during S21's
-  ramp**, inside SCORED's relog before S21. Both are under 45.
+- **The peak per address** (rs/41's map): **25 on SCORED's address at the start (S01: the 7 air givers, the 17 roster logins and SCORED; rs/41's start order, main ruled; fold-in 36: rs/41's correction, the roster being 17, 4 + 6 + 3 + 4; 24 written at fold-ins 34-35 on a count of 16) and 26 during S21's
+  ramp**, inside SCORED's relog before S21 (the worst case 29 on today's runner: + h55, the carriers idle to the end, + h45 if its P stop is plain, + h94 on an R8 death; rs/41). All under 45.
 - **The home address on run day, a run-day rule:** the home machines (bbs and every executor) carry
   **29 fleet accounts plus the cannon helper**, and nothing else, with **one named exception** (main 17:0x via rs/158, fold-in 31): **R8's spawn helper** (rs/526; a fleet spare, never named here), parked logged out beside the Lumbridge respawn tile, with 0 run-day logins, or 1 cued login on a player-kill, logged out after its trade. No development sessions and no
   executor demo logins run from them on run day (rs/41's map, via rs/158).
@@ -1230,7 +1230,7 @@ the tick length T on main since #385 (a4456c73, rs/471; fold-in 31; step 6, line
 4. **On the chosen machine, the start order** (rs/41's wording, main ruled and applied 22:4x via
    rs/158; fold-in 34). rs/41's start sequence:
    1. the gate minute (line 1): the gate account and S06's 7 air-altar givers on **both** machines;
-   2. after the choice, on SCORED's machine, rs/117's launcher logs in the **16 roster accounts**:
+   2. after the choice, on SCORED's machine, rs/117's launcher logs in the **17 roster accounts** (4 + 6 + 3 + 4; fold-in 36, rs/41's correction of 16):
       mule1, mule2, h55, h03, the 6 S03 droppers, the 3 S04 ring givers (h81-h83) and the 4 S07 bone
       givers (b01-b04), about 2.5-3 minutes;
    3. wait for the launcher's `helpersReady`, then **load reading (i)** (step 6, "The load ceiling"),
@@ -1243,8 +1243,8 @@ the tick length T on main since #385 (a4456c73, rs/471; fold-in 31; step 6, line
    cue gates (`loginOn` {S25a, anvil} and {S18, courier}). S21's 22 body-altar givers log in later,
    inside SCORED's relog before S21 (step 4, "The per-address login plan"; about 3.5 wall minutes
    through the launcher's limiter, rs/41; 22 logins took 190 s, m, rs/214 on the run host,
-   00:35-00:39Z on 2026-10-22). **The start-window count on SCORED's address is 24 at S01**: 23
-   helpers (the 7 air givers and the 16) and SCORED. Before `handoff`: step 7's login count
+   00:35-00:39Z on 2026-10-22). **The start-window count on SCORED's address is 25 at S01**: 24
+   helpers (the 7 air givers and the 17) and SCORED (fold-in 36: rs/41's correction, the roster being 17, 4 + 6 + 3 + 4; 24 written at fold-ins 34-35 on a count of 16). Before `handoff`: step 7's login count
    (`handoff` re-checks it), the demo's `tickMs` and bundle token re-read and the launch dry run,
    within 20 minutes of the gate (`--max-gate-age`). **Where the code differs** (r, run-gate.ts at
    this fold-in's base): `handoff` opens the run tab and logs SCORED in as one command and reads no
@@ -1293,12 +1293,19 @@ load 37 on 8 cores did it in 7 s).
 
 - **Pre-start** (main 23:0x via rs/158, the host thread's wording; fold-in 34). The pre-start load condition is TWO readings. Each is a settled 1-minute load average, taken after 60 s with no new login. (i) After helpersReady and before the tab starts (rs/41's start-sequence step 3). (ii) After the tab and the recording have started and before SCORED's login (step 4); this is the decisive one. Both must be under 4.0, or the start waits and the reading is taken again. The reading at the gate pass, with the machine quiesced, is logged but is not a condition. The
   start order is step 5a.4's.
-- **Mid-run.** At the hand-off (step 7) host starts an untracked sampler on the chosen machine,
-  writing every 30 s to `~/rs-run/<run>/load.log`: the UTC time, `/proc/loadavg`, and the CPU use
-  of chrome, ffmpeg and each helper process. A sample at or over 4.0 is logged and alerts the
-  operator's live view; **the run does not stop** (helpers fail closed and sit out rather than
-  misfire). Two consecutive samples at or over 4.0 also go to main, which decides whether to stop a
-  helper on the machine.
+- **Mid-run** (main ruled 02:2x via rs/158; fold-in 36). At the hand-off (step 7) host starts the
+  sampler on the chosen machine, `~/.local/bin/rs-loadlog OUT [SECONDS]` (untracked host tooling,
+  installed on both machines, its sha256 beginning 2348a022), under `timeout`, with no tmux, writing
+  every 30 s to `~/rs-run/<run>/load.log`, which stays on the never-deleted list (step 9). Each line
+  has the UTC time, load1 / load5 and the per-process CPU of chrome, ffmpeg and each helper (bun, by
+  role and account). `bun_total` is every bun process (helpers, run.ts and the gateway); the
+  per-helper figures are the `bun:<role>:<account>` entries; SCORED and the gate accounts never
+  appear by name. rs-loadlog names an account only for a helper role process (a script under
+  `speedrun/helpers/`); every other bun process is logged by its script name alone (`bun:run`, for
+  example), and Chrome only as the aggregate `chrome`, never its command line or URLs (host's test on
+  the run host, 08:53-08:54Z: a stand-in name passed to run.ts appeared 0 times). A sample at or
+  over 4.0 is logged. Load alerts reach the operator as MESSAGES, never on the display: host tails ~/rs-run/<run>/load.log on the chosen machine and, on an ALERT sample (>= 4.0), messages main and the operator's channel within about a minute; ALERT2 (two consecutive) goes to main, who decides whether to stop a helper; the run does not stop. Nothing is drawn on :10, because the recording and the live view grab the same display. Helpers fail
+  closed and sit out rather than misfire.
 - **sysstat.** Both machines sample sysstat every minute (the drop-in
   `/etc/systemd/system/sysstat-collect.timer.d/every-minute.conf`, in place since 05:28Z 23 Oct);
   teardown removes it after the run (step 9).
@@ -1911,6 +1918,14 @@ segment (e.g. `S05:A-h4-swap`), and the tick log gets a `(resume)` row with the 
   30 observed ticks for a published state that carries the player (`runner/resume.ts` `awaitPlayer`,
   `PLAYER_MAX_TICKS`), so a re-run no longer sees S00 undone on an empty first state; past the bound
   the walk observes anyway, so a 'not in game' refusal after it goes to main.
+
+**An attempt cut short before H11r: h92 and H23** (main's ruling via rs/158; fold-in 36). h92's H11r
+take-back waits without a bound at its return tile (`speedrun/helpers/cannon.ts:1545-1598`, `takeBack`'s
+`for (;;)`, run through `retryUntil`, `:1375`, `:1394-1396`), and the fleet's `then` to the H23 serve fires
+only when the H11 serve finishes. So if S14 aborts before H11r, or the run ends before T14-15, h92
+waits there and H23 is never served until the operator reassigns it: `fleetctl assign cairn_h92 cannon
+--options <H23 serve>` and a reload, a role change with no relogin, before H23. The unbounded wait is
+deliberate, not a defect: it is what makes an operator re-run of S14 safe for H11r.
 
 **The socket-drop recovery, on main** (#466, 86e7aa37: rs/511's work via rs/547, snapshotted as
 rs/580 from rs/186 @34d0ecf4, 16 files byte-identical, with `cueStop(S27)` above T27-17; fold-in 35;
