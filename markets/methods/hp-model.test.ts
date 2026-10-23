@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import {
     attackRoll,
     bestWeapon,
+    chooseSite,
     chooseStyle,
+    shopPays,
     damagePerTick,
     defenceRoll,
     expectedSwings,
@@ -83,6 +85,23 @@ describe('the weapon path', () => {
         expect(bestWeapon(20, 40, SCIMITARS, TARGETS.crab)?.name).toBe('Mithril scimitar');
         expect(bestWeapon(30, 40, [steel], TARGETS.crab)?.name).toBe('Steel scimitar');
         expect(bestWeapon(1, 1, [mithril], TARGETS.crab)).toBeNull();
+    });
+});
+
+describe('the site and the shop', () => {
+    test('the cows to ~52 Hitpoints, the crabs route above (its crossing and food runs then pay)', () => {
+        expect(chooseSite(30)).toBe('cows');
+        expect(chooseSite(40)).toBe('cows');
+        expect(chooseSite(50)).toBe('cows');
+        expect(chooseSite(60)).toBe('crabs');
+        expect(chooseSite(70)).toBe('crabs');
+        expect(chooseSite(99)).toBe('crabs');
+    });
+    test("Zeke's errand does not pay on the cows below the crossover; the crabs route always shops", () => {
+        expect(shopPays(40, 'cows')).toBe(false);
+        expect(shopPays(50, 'cows')).toBe(false);
+        expect(shopPays(70, 'cows')).toBe(true);
+        expect(shopPays(40, 'crabs')).toBe(true);
     });
 });
 
