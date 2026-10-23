@@ -606,15 +606,27 @@ describe('login with inPage: the tab logs back in where it is', () => {
         return f;
     }
 
-    /** The server accepts the login: the page is in game, then publishes two ticks. */
+    /**
+     * The server accepts the login: the page is in game, then publishes two ticks. login() counts
+     * the session as in the world once two of its 50 ms polls have read different ticks, so each
+     * tick is published only after a poll has read the state before it, as a real server's 600 ms
+     * ticks always are. Two ticks on fixed timers can both land between two polls when timers run
+     * late on a busy host, and the login then waits out its deadline.
+     */
     function getsIn(cdp: ReturnType<typeof fakeCdp>, sdk: FakeSdk, first?: number) {
         setTimeout(() => {
             cdp.client.ingame = true;
             cdp.client.loginInProgress = false;
-            if (first === undefined) sdk.tick();
-            else sdk.push({ tick: first });
-            setTimeout(() => sdk.tick(), 30);
         }, 30);
+        const ticks = [() => (first === undefined ? sdk.tick() : sdk.push({ tick: first })), () => sdk.tick()];
+        const read = sdk.getState.bind(sdk);
+        let lastRead: ReturnType<FakeSdk['getState']> | undefined;
+        sdk.getState = () => {
+            const s = read();
+            if (s !== lastRead && ticks.length > 0) setTimeout(ticks.shift()!, 30);
+            lastRead = s;
+            return s;
+        };
     }
 
     test('no navigation, one token redeemed in the page, and the new session counts on from the page tick', async () => {

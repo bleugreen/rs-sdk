@@ -136,6 +136,13 @@ function trySession(port: number): Promise<unknown> {
 /** What the server's CRCs become after the simulated redeploy. */
 let redeployed: number[] = [];
 
+// Each test spends its time in the session's own recovery: after the first
+// response 6, invalidateCache() drops the memoized archives and loadCache()
+// unpacks them again from disk. That is single-threaded CPU work (the mock's
+// HTTP and websocket replies take milliseconds): 1.6-1.9 s on an idle 8-core
+// host, 11 s with its cores 4x oversubscribed and up to 26 s at 8x.
+const SESSION_RECOVERY_TIMEOUT_MS = 60_000;
+
 describe.skipIf(!liteOriginReachable)('startSession recovery from login response 6', () => {
     test('re-fetches /crc and retries with the new checksums', async () => {
         if (!available) {
@@ -160,7 +167,7 @@ describe.skipIf(!liteOriginReachable)('startSession recovery from login response
         } finally {
             mock.stop();
         }
-    });
+    }, SESSION_RECOVERY_TIMEOUT_MS);
 
     test('does not retry when the re-fetched checksums are unchanged', async () => {
         if (!available) {
@@ -180,5 +187,5 @@ describe.skipIf(!liteOriginReachable)('startSession recovery from login response
         } finally {
             mock.stop();
         }
-    });
+    }, SESSION_RECOVERY_TIMEOUT_MS);
 });

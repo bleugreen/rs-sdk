@@ -4,6 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseBankSnapshots, rankMatchingBanks } from '../src/web/pages/BankHiscores.js';
 
+// A fixture process that imports the engine is CPU-bound: about 1 s on an idle
+// 8-core host, up to 3.6 s with its cores 4x oversubscribed and 7.3 s at 8x, so
+// bun's 5 s default fails on a busy machine. Matches the other engine subprocess tests.
+const ENGINE_SUBPROCESS_TIMEOUT_MS = 15_000;
+
 const item = (name: string, value: number, count = 100) => ({ name, value, count });
 const row = (username: string, items: ReturnType<typeof item>[], value = 1000000) => ({ username, value, items: JSON.stringify(items) });
 
@@ -23,7 +28,7 @@ test('bank snapshots clear withdrawn items and empty banks without rewriting unc
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
-});
+}, ENGINE_SUBPROCESS_TIMEOUT_MS);
 
 test('matches literal substrings ignoring case and sums full stack values once', () => {
     const banks = parseBankSnapshots([row('wealthy', [item('Lobster', 1000000), item('Shrimps', 20)]), row('shrimp-holder', [item('Raw shrimps', 400), item('Shrimps', 600), item('Lobster', 100)], 1100), row('unrelated', [item('Lobster', 5000000)])]);
@@ -81,4 +86,4 @@ test('bank search HTTP page uses eligible banks, preserves profiles, and escapes
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
-});
+}, ENGINE_SUBPROCESS_TIMEOUT_MS);
