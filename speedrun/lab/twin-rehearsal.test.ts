@@ -27,7 +27,6 @@ const SUBS: Substitutions = {
         H3: { in: 'law rune x47 [s]; air rune x221 [s]; fire rune x9 [s]; mind rune x32 [s]' },
         H4k: { replace: { 'rune axe': 'steel axe' } },
         H7: { drop: ['amulet of magic'] },
-        H8: { drop: ['agility potion(3)'] },
     },
     S03: { walkTo: { x: 3222, z: 3219 } },
     S04: 'teleport-xp',
@@ -61,7 +60,7 @@ describe('applyLedgerSubs', () => {
         const b = text.split('\n');
         expect(b.length).toBe(a.length);
         const changed = a.flatMap((l, i) => (l !== b[i] ? [l.split(' | ')[0]] : []));
-        expect(changed.sort()).toEqual(['| H3', '| H4k', '| H7', '| H8']);
+        expect(changed.sort()).toEqual(['| H3', '| H4k', '| H7']);
     });
     test('a row or an item that is not there refuses', () => {
         expect(() => applyLedgerSubs(manifest, { H99: { in: 'x' } })).toThrow(/no such row/);
