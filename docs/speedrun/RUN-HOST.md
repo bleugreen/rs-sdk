@@ -518,7 +518,7 @@ step 3's served = built check then runs within each machine as usual.
 
 **The served webclient is rebuilt from the run commit at every step 0** (main 21:3x via rs/158;
 fold-in 33). The final run commit carries an `sdk/` change (**rs/564**, the `sdk/` snapshot carrying rs/186's
-`walkTo` fix, 01304312; fleet snapshot 11 also moves the floor), and the SDK reaches the tab only
+`walkTo` fix, 01304312, on main as #459, a1ce2209, fold-in 35; fleet snapshot 11, #451, also moved the floor), and the SDK reaches the tab only
 through the served bot bundle. So whenever `~/run-commit` changes, the install and build above run
 again on both machines before anything is launched, and step 3's served = built check confirms
 that each machine serves what it built from that commit. A bundle built from an earlier commit is
@@ -977,7 +977,7 @@ preference, step 5a), but the gate still chooses (tenet 17), and the plan holds 
   executor demo logins run from them on run day (rs/41's map, via rs/158).
 - **Families log out when their step is done:** after S03, S04, S06 and S07, that step's helper
   family logs out when the step's scope closes (its final stop cue, or the next scope's cue). After
-  rs/491 (rs/41's c97bc1c5; pending in fleet snapshot 11) a plain stop only stands a helper down; the
+  rs/491 (rs/41's c97bc1c5; on main in fleet snapshot 11, #451, ee75d700) a plain stop only stands a helper down; the
   launcher logs it out on a stop carrying `final: true` (rs/490 writes it on each family's last stop
   and on abort) or on a later scope's cue.
 - **S21's body-altar givers log in inside SCORED's relog** (rs/186's ruling to rs/490; fold-in 31):
@@ -1911,7 +1911,7 @@ segment (e.g. `S05:A-h4-swap`), and the tick log gets a `(resume)` row with the 
   and refuses 'not in game'. Until rs/562's bounded wait for a populated player state lands, on an
   account past the tutorial re-run once more.
 
-**Once rs/547 is on the floor** (rs/547, rs/511's successor under rs/186, its PR due 01:00 PDT;
+**Once rs/547 is on the floor** (rs/547, rs/511's successor under rs/186, reaching main as the snapshot rs/580, fold-in 35;
 the figures below were measured on rs/511's patch: built and unit-tested, and lab-measured
 on bgsrv-mac, the lab engine at 400 ms, the browser client, tree 1fccc5b7 + rs/511's patch,
 cairn://p/rs/511/comments/2; fold-in 32). **rs/511 is not a start condition** (main), so the
