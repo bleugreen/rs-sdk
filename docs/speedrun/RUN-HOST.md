@@ -1757,7 +1757,7 @@ tab, at step 5a.4 item 2; items 4 and 5 after `handoff --no-login`. The command 
 12:05Z summary; fold-in 37). `handoff` runs its pre-login checks (the live frame at the title screen,
 the single window, the login count) and leaves the tab at the title screen, with `--no-login` (#485, in the run commit 233d0f34; `run-gate.ts`'s usage line 14). run.ts performs the only
 login. **No run.ts change is needed** (r, rs/186 at 9f2efb03; every file:line re-checked at the
-named commit, the code winning): run.ts:574 always mints a token and navigates the one
+run commit 233d0f34, the code winning): run.ts:574 always mints a token and navigates the one
 `bot=<SCORED>` tab (`lib/tab.ts:206-218`), then waits for in-world ticks (`lib/session.ts:346`),
 the same from the title screen; its only reads of the page's in-game state are the S21 relog resume
 (run.ts:579-587, which refuses a live page, so a title-screen tab is what it wants) and the watchdog

@@ -2660,8 +2660,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   Step per row between the skill and quest steps.
 - **A walking carrier late to its tile throws the step** (rs/598's lab run 1, main 12:35Z; the
   mechanics rs/186's, via rs/158; fold-in 37): `runner/handoff.ts:284` checks 'partner in view' on
-  the resume walker before the cue's bounded ready wait (at 38902b56 a cue-served partner skips it,
-  :582; rs/598's lab run refused at H4k), so a carrier not at its stand when SCORED reaches the row
+  the resume walker before the cue's bounded ready wait (at the run commit 233d0f34, not reordered by #487, which adds only a `beforeTrade` hook; a
+  cue-served partner skips it, :585-586; rs/598's lab run refused at H4k), so a carrier not at its stand when SCORED reaches the row
   makes the step refuse and run.ts end. A refusal is a thrown step: the re-run is RUN-HOST's
   whole-launcher relaunch, one SCORED login, ~11.7 ticks (m, rs/595) plus re-entry, not
   attempt-ending. Doric's H4 is not exposed: it waits inside its segment (302 measured). rs/598's reorder (main pre-approved) is not in the run commit, so the cliff stands for attempt 1. **Exposure by row: the carrier's route against SCORED's chain since that carrier's previous
