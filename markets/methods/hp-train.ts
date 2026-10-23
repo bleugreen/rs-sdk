@@ -1,16 +1,17 @@
 // Fresh-account Hitpoints trainer for markets' phase 2 (docs/markets/hp-training.md).
 //
-//   bun markets/methods/hp-train.ts <account> --to <HP level> [--out FILE] [--site crabs|cows]
-//       [--coins N] [--switch-hp 30] [--food NAME] [--food-per-trip N]
+//   bun markets/methods/hp-train.ts <account> [--to 40] [--site auto|cows|crabs] [--out FILE]
+//       [--coins 1700] [--switch-hp 30] [--kebabs -1] [--food-per-trip 20] [--prayer N] [--pray]
 //
 // Melee gives 1.33 base Hitpoints xp per damage in every style (combat.rs2), so the trainer
-// maximises damage per tick: it buys every scimitar Zeke sells that the coins cover in one visit
-// (iron, steel, mithril), wields each as Attack reaches it, trains Attack or Strength by
-// hp-model.ts chooseStyle (never Defence), and fights the softest high-hitpoint target it can
-// reach. Default: the Lumbridge cows to Hitpoints 30 (the White Wolf Mountain crossing's
-// threshold, speedrun/lib/kandarin.ts), over the mountain to Seers' Village, then the rock crabs
-// north-east of Rellekka. At the target level it walks to the bank and logs out with the totals
-// line (probe-sampler.ts runProbe).
+// maximises damage per tick: it trains Attack or Strength by hp-model.ts chooseStyle (never
+// Defence) on the site chooseSite picks for the target. To ~52 HP (the default 40): the Lumbridge
+// cows with the tutorial's bronze sword, spending nothing. Above: one visit to Zeke for every
+// scimitar the coins cover (iron, steel, mithril, each wielded as Attack reaches it), kebabs from
+// Karim, the cows to 30 (White Wolf Mountain's crossing threshold, speedrun/lib/kandarin.ts),
+// over the mountain to Seers', then the rock crabs north-east of Rellekka. At the target it walks
+// to the bank and logs out with the totals line (probe-sampler.ts runProbe). --prayer N --pray is
+// the slower Prayer-first variant (bury the cows' bones to Prayer N, then pray while training).
 //
 // Start: an account off Tutorial Island on the Lumbridge side, its coins in the bank (or carried).
 import type { BotActions } from '../../sdk/actions';
@@ -602,7 +603,6 @@ export const spec: ProbeSpec<HpOptions> = {
             const s0 = sdk.getState()!;
             ctx.totals.start = { hp: skill(s0, 'hitpoints'), attack: skill(s0, 'attack'), strength: skill(s0, 'strength'), defence: skill(s0, 'defence'), at: here(s0) };
             await crossingSettings(sdk, t.log); // auto-retaliate off, run on
-            const coinsAt = (s: BotWorldState) => coinsHeld(s) + (s.bank?.isOpen ? countIn(s.bank.items, COINS) : 0);
 
             // 1. The scimitars (one visit to Zeke) and, for a Kandarin site, the kebabs.
             sampler.phase = 'kit';
@@ -640,7 +640,6 @@ export const spec: ProbeSpec<HpOptions> = {
                 ctx.totals.kebabTicks = tick() - k0;
                 ctx.totals.coinsKebabs = bought; // 1 coin each (kebab_seller.rs2)
             }
-            void coinsAt;
 
             // 2. The cows, to the target or to the crossing's Hitpoints.
             const cowsTo = site.kandarin ? Math.min(o.switchHp, o.to) : o.to;
