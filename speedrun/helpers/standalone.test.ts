@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from '
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { type Cue, CUE_FILE, type CueScope, CueWriter, readCue } from './altar-cue';
+import { type AskItem, type Cue, CUE_FILE, type CueScope, CueWriter, readCue, writeTopUpAsk } from './altar-cue';
 import { cueEpoch, muleCueAction, muleOptions } from './mule';
 import { DIRECT_IN_WORLD, DIRECT_IN_WORLD_RE, DIRECT_LOGOUT_RE, DIRECT_REFUSED_RE } from './role';
 import {
@@ -27,6 +27,7 @@ import {
     sameCueDir,
     type ScopeClosed,
     ScopeSessions,
+    type StopOn,
     type Stoppable,
     StopRequest,
     stopAllWithin,
@@ -940,6 +941,238 @@ describe('a login-only folder (loginOn.cueDir): the login trigger apart from the
         expect(two.watching).toEqual([dir, dir]);
         two.close();
         expect(two.watching).toEqual([]);
+    });
+});
+
+describe('stopOn.closesOnStop: the stop scope closes on its first stop (a writer that never marks one final)', () => {
+    const root = resolve(import.meta.dir, '..', '..');
+    const H12O: CueScope = { step: 'H12o', family: 'mule' };
+    const M: CueScope = { step: 'H12oM', family: 'mule' };
+    const P: CueScope = { step: 'H12oP', family: 'mule' };
+    const PC: StopOn = { ...P, closesOnStop: true };
+    const beacon = [{ tick: 1, ms: 1 }];
+    const open = { beacons: beacon, turns: [] };
+    const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+    const never = new Promise<void>(() => undefined);
+    const parse = (e: Record<string, unknown>) => parseLaunchConfig({ accounts: [{ account: 'cairn_h45', role: 'mule', ...e }] }, root).accounts[0]!;
+    let seq = 0;
+    const cue = (scope: CueScope, session: string, o: { stop?: boolean; final?: boolean; ms?: number } = {}): Cue => ({
+        v: 1,
+        scope,
+        session,
+        seq: ++seq,
+        receiver: { sha256: 'x' },
+        beacons: beacon,
+        schedule: 'robust',
+        open: 5,
+        turns: [],
+        ...(o.stop ? { stop: true } : {}),
+        ...(o.final ? { final: true } : {}),
+        ms: o.ms ?? 1000
+    });
+
+    /**
+     * h45's gate in either folder mode: 'one', the role folder alone with login H12oM (mule-ledger.ts's
+     * carried entry); 'two', the login scope H12o read in its own login folder (HELPERS.md's two-folder entry).
+     */
+    function h45(mode: 'one' | 'two', stop: StopOn = PC) {
+        const base = mkdtempSync(join(tmpdir(), 'closes-on-stop-'));
+        const roleDir = join(base, 'h45-cue');
+        const loginDir = join(base, 'h45-login');
+        mkdirSync(roleDir);
+        mkdirSync(loginDir);
+        const stops: ScopeClosed[] = [];
+        const sessions: string[] = [];
+        const gate = (since = Date.now() - 1) =>
+            new CueGate({
+                dir: roleDir,
+                ...(mode === 'two' ? { loginDir } : {}),
+                login: mode === 'two' ? H12O : M,
+                stop,
+                since,
+                onStop: c => stops.push(c),
+                onSession: (ev, c) => sessions.push(`${ev} ${c.scope.step}`),
+                log: () => undefined,
+                pollMs: 5
+            });
+        return { roleDir, loginDir, stops, sessions, gate, role: (s: CueScope) => new CueWriter(roleDir, 'scored', s), login: () => new CueWriter(loginDir, 'scored', H12O) };
+    }
+
+    test('ScopeSessions: the first stop closes it (stop-closes), once; a final still closes; an earlier launch\'s stop is nothing; default off stands down', () => {
+        const s = new ScopeSessions(P, 100, true);
+        expect(s.own(cue(P, 'old', { stop: true, ms: 50 }))).toBeNull();
+        expect(s.state).toBe('none');
+        expect(s.own(cue(P, 'a'))).toBe('open');
+        expect(s.other(cue(M, 'b', { stop: true }))).toBeNull(); // another scope's stop while P is open
+        expect(s.own(cue(P, 'c', { stop: true }))).toBe('closed');
+        expect(s.closed).toMatchObject({ why: 'stop-closes', scope: P, cue: { session: 'c', stop: true } });
+        expect(closedText(s.closed!)).toMatch(/^stop for H12oP\/mule \(session c, seq \d+\), which closes it \(closesOnStop\)$/);
+        expect(s.own(cue(P, 'd'))).toBeNull(); // decided once: a later session does not reopen it
+        expect(s.own(cue(P, 'd', { stop: true, final: true }))).toBeNull();
+        const f = new ScopeSessions(P, 100, true);
+        expect(f.own(cue(P, 'e', { stop: true, final: true }))).toBe('closed');
+        expect(f.closed!.why).toBe('final');
+        expect(new ScopeSessions(P, 100).own(cue(P, 'g', { stop: true }))).toBe('stood-down');
+    });
+
+    test('config: on stopOn, kept only when true; refused outside stopOn, on a final entry, or not a boolean', () => {
+        expect(parse({ loginOn: M, stopOn: PC }).stopOn).toEqual(PC);
+        const off = parse({ loginOn: M, stopOn: { ...P, closesOnStop: false } }).stopOn;
+        expect(off).toEqual(P);
+        expect(off).not.toHaveProperty('closesOnStop');
+        expect(parse({ loginOn: M }).stopOn).not.toHaveProperty('closesOnStop');
+        const two = parse({ cueDir: 'run-machine/h45-cue', loginOn: { ...H12O, cueDir: 'run-machine/h45-login' }, stopOn: PC });
+        expect(two.stopOn).toEqual(PC);
+        const bad = (e: Record<string, unknown>) => () => parse(e);
+        expect(bad({ loginOn: M, closesOnStop: true })).toThrow(/accounts\[0\]: closesOnStop belongs to stopOn/);
+        expect(bad({ closesOnStop: false })).toThrow(/closesOnStop belongs to stopOn/);
+        expect(bad({ loginOn: { ...M, closesOnStop: true } })).toThrow(/accounts\[0\]\.loginOn: closesOnStop belongs to stopOn/);
+        expect(bad({ stopOn: { ...P, closesOnStop: 'yes' } })).toThrow(/accounts\[0\]\.stopOn\.closesOnStop: true or false \(got "yes"\)/);
+        expect(bad({ stopOn: PC, final: true })).toThrow(/accounts\[0\]\.stopOn\.closesOnStop: refused on a final entry/);
+        expect(parse({ stopOn: { ...P, closesOnStop: false }, final: true }).final).toBe(true);
+    });
+
+    for (const mode of ['one', 'two'] as const) {
+        test(`${mode} folder(s): in on the login cue; M's stop and P's open leave it in; P's plain stop logs it out, once; a later P session does nothing`, async () => {
+            const t = h45(mode);
+            const g = t.gate();
+            const trigger = mode === 'two' ? t.login().write(open) : null;
+            const m = t.role(M);
+            const mOpen = m.write(open);
+            expect(await g.waitForLogin(5000, never)).toMatchObject({ result: 'open', cue: { session: (trigger ?? mOpen).session } });
+            m.stop(beacon);
+            await sleep(20);
+            t.role(P).write(open);
+            await sleep(20);
+            expect(t.stops).toEqual([]);
+            expect(t.sessions).toEqual(['open H12oP']);
+            const pStop = t.role(P).stop(beacon);
+            expect(g.stopClosedNow()).toMatchObject({ why: 'stop-closes', scope: PC }); // the re-read before any login sees it too
+            await sleep(20);
+            expect(t.stops.map(c => [c.why, c.scope.step, c.cue.session, c.cue.final ?? false])).toEqual([['stop-closes', 'H12oP', pStop.session, false]]);
+            const later = t.role(P);
+            later.write(open);
+            await sleep(20);
+            later.stop(beacon);
+            await sleep(20);
+            expect(t.stops.length).toBe(1);
+            expect(t.sessions).toEqual(['open H12oP']); // no reopen: the launcher has retired it
+            g.close();
+        });
+
+        test(`${mode} folder(s): P's plain stop before the login keeps it out for good, the login cue after it included`, async () => {
+            const t = h45(mode);
+            const g = t.gate();
+            t.role(P).stop(beacon);
+            expect(await g.waitForLogin(5000, never)).toMatchObject({ result: 'stop', closed: { why: 'stop-closes', scope: PC } });
+            await sleep(1);
+            expect(t.stops.length).toBe(1);
+            if (mode === 'two') t.login().write(open);
+            else t.role(M).write(open);
+            await sleep(30);
+            expect(await g.waitForLogin(5000, never)).toMatchObject({ result: 'stop', closed: { why: 'stop-closes' } });
+            g.close();
+        });
+
+        test(`${mode} folder(s): a P stop from an earlier launch is ignored; this launch's first P stop closes`, async () => {
+            const t = h45(mode);
+            const stale = t.role(P);
+            stale.write(open);
+            stale.stop(beacon);
+            if (mode === 'two') t.login().write(open);
+            await sleep(5);
+            const g = t.gate(Date.now());
+            let settled: LoginWait | null = null;
+            void g.waitForLogin(5000, never).then(w => (settled = w));
+            await sleep(30);
+            expect(settled).toBeNull();
+            expect(t.stops).toEqual([]);
+            if (mode === 'two') t.login().write(open);
+            t.role(M).write(open);
+            await sleep(30);
+            expect(settled).toMatchObject({ result: 'open' });
+            t.role(P).write(open);
+            await sleep(20);
+            expect(t.stops).toEqual([]);
+            t.role(P).stop(beacon);
+            await sleep(20);
+            expect(t.stops.map(c => c.why)).toEqual(['stop-closes']);
+            g.close();
+        });
+    }
+
+    test('loginOn and stopOn one scope in one folder: a closing stop before the open keeps it out (without closesOnStop it keeps waiting)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'closes-on-stop-'));
+        const opts = { dir, login: H12O, since: Date.now() - 1, log: () => undefined, pollMs: 5 };
+        const stops: ScopeClosed[] = [];
+        const g = new CueGate({ ...opts, stop: { ...H12O, closesOnStop: true }, onStop: c => stops.push(c) });
+        new CueWriter(dir, 'scored', H12O).stop(beacon);
+        expect(await g.waitForLogin(5000, never)).toMatchObject({ result: 'stop', closed: { why: 'stop-closes', scope: H12O } });
+        await sleep(1);
+        expect(stops.length).toBe(1);
+        g.close();
+    });
+
+    /**
+     * The contract with Monkey Madness's module at its gate commit 8e02fecc (speedrun/quests/monkey-madness.ts
+     * legCue, h12oLeg, receiveLeg): every leg cue is a new CueWriter session in h45's role folder, SCORED the
+     * receiver; an open is write({ beacons, turns: [] }) and a stop is stop(beacons), never final. M opens as
+     * M leaves Zooknock; M's leg writes its scoped ask (topup-ask.json, same folder) on the trade's open frame,
+     * M's stop only when nothing was traded, then P's open; P's leg, segments later, writes its ask, then P's
+     * stop once its receive leg returns. run.ts's login cue is H12o's open in the login folder (two folders).
+     */
+    const mmLegCue = (dir: string, leg: CueScope, action: 'open' | 'stop'): Cue => {
+        const w = new CueWriter(dir, 'scored', leg);
+        const beacons = [{ tick: 1, ms: Date.now() }];
+        return action === 'open' ? w.write({ beacons, turns: [] }) : w.stop(beacons);
+    };
+    const mAsk: AskItem[] = [{ item: '^shark$', count: 15 }];
+    const pAsk: AskItem[] = [
+        { item: '^superantipoison\\(4\\)$', count: 1 },
+        { item: '^shark$', count: 9 }
+    ];
+
+    for (const mode of ['one', 'two'] as const) {
+        for (const mTraded of [true, false]) {
+            test(`MM 8e02fecc, ${mode} folder(s), M ${mTraded ? 'traded' : 'not traded'}: in on the login cue, in across M's stop and P's open, out on P's stop`, async () => {
+                const t = h45(mode);
+                const g = t.gate();
+                const trigger = mode === 'two' ? t.login().write(open) : null; // run.ts
+                const mOpen = mmLegCue(t.roleDir, M, 'open');
+                expect(await g.waitForLogin(5000, never)).toMatchObject({ result: 'open', cue: { session: (trigger ?? mOpen).session } });
+                writeTopUpAsk(t.roleDir, mAsk, Date.now(), M);
+                if (!mTraded) mmLegCue(t.roleDir, M, 'stop');
+                await sleep(20);
+                mmLegCue(t.roleDir, P, 'open');
+                await sleep(30);
+                expect(t.stops).toEqual([]);
+                writeTopUpAsk(t.roleDir, pAsk, Date.now(), P);
+                await sleep(20);
+                expect(t.stops).toEqual([]);
+                const pStop = mmLegCue(t.roleDir, P, 'stop');
+                expect(pStop).toMatchObject({ stop: true, seq: 1 });
+                expect(pStop.final).toBeUndefined();
+                await sleep(30);
+                expect(t.stops.map(c => [c.why, c.scope.step, c.cue.session])).toEqual([['stop-closes', 'H12oP', pStop.session]]);
+                expect(t.sessions).toEqual(['open H12oP']);
+                g.close();
+            });
+        }
+    }
+
+    test("MM 8e02fecc without closesOnStop: P's stop only stands h45 down, so it stays in the world (why the fallback exists)", async () => {
+        const t = h45('two', P);
+        const g = t.gate();
+        t.login().write(open);
+        mmLegCue(t.roleDir, M, 'open');
+        expect((await g.waitForLogin(5000, never)).result).toBe('open');
+        mmLegCue(t.roleDir, P, 'open');
+        await sleep(20);
+        mmLegCue(t.roleDir, P, 'stop');
+        await sleep(30);
+        expect(t.stops).toEqual([]);
+        expect(t.sessions).toEqual(['open H12oP', 'stood-down H12oP']);
+        g.close();
     });
 });
 

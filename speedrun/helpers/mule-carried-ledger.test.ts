@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MANIFEST } from '../tools/slot-ledger';
 import { h45FromLedger, h45LauncherEntry, main, materializeDeliveryPackage, muleFromLedger } from './mule-ledger';
+import { parseLaunchConfig } from './standalone';
 
 const manifest = readFileSync(MANIFEST, 'utf8');
 const saved = join(import.meta.dir, '../../docs/speedrun/scripts/h45-carried-packages.json');
@@ -90,6 +91,25 @@ describe('ledger-derived carried h45 entry', () => {
             writeFileSync(path, JSON.stringify(entry));
             expect(main(['--carried-h45', '--check', path])).toBe(1);
         }
+    });
+
+    test('closesOnStop only on request: the default entry has none; with it, stopOn H12oP closes on its first stop, and the launcher takes the entry', () => {
+        const plain = h45LauncherEntry(manifest);
+        expect(plain.stopOn).toEqual({ step: 'H12oP', family: 'mule' });
+        expect(plain.stopOn).not.toHaveProperty('closesOnStop');
+        const fallback = h45LauncherEntry(manifest, { closesOnStop: true });
+        expect(fallback.stopOn).toEqual({ step: 'H12oP', family: 'mule', closesOnStop: true });
+        expect({ ...fallback, stopOn: plain.stopOn }).toEqual(plain); // nothing else changes
+        for (const e of [plain, fallback]) {
+            const parsed = parseLaunchConfig({ accounts: [e] }).accounts[0]!;
+            expect(parsed).toMatchObject({ account: 'cairn_h45', loginOn: { step: 'H12oM', family: 'mule' }, stopOn: e.stopOn, final: false });
+        }
+        const dir = mkdtempSync(join(tmpdir(), 'h45-closes-'));
+        const path = join(dir, 'h45.json');
+        writeFileSync(path, JSON.stringify(fallback));
+        expect(main(['--carried-h45', '--closes-on-stop', '--check', path])).toBe(0);
+        expect(main(['--carried-h45', '--check', path])).toBe(1);
+        expect(main(['--carried-h45', '--closes-on-stop', '--check', saved])).toBe(1);
     });
 
     test('exclusive carried CLI refuses banked or fixed overrides and missing arguments', () => {

@@ -55,10 +55,12 @@
 //                    final:    when this role exits, stop everything
 //                    after:    'ready': log in only once every earlier altar-giver reports ready
 //                    path:     'relay' (default): lite runner + loopback gateway; 'direct': the role's own client
-//                    stopOn:   { step, family }: when the scope closes (its final stop, or the next scope's
-//                              cue after its stop), stop the role and log the account out at once; a
-//                              plain stop (one session of several) leaves it in (closed before its
-//                              login: it never logs in)
+//                    stopOn:   { step, family, closesOnStop? }: when the scope closes (its final stop, or the
+//                              next scope's cue after its stop), stop the role and log the account out at
+//                              once; a plain stop (one session of several) leaves it in (closed before its
+//                              login: it never logs in). closesOnStop: the scope's first stop since the
+//                              launch closes it as a final stop does (for a writer that never marks one
+//                              final); refused with final
 //                    loginOn:  { step, family, waitMinutes?, cueDir? }: stay logged out until a cue addressed
 //                              to it opens, then log in and start the role; its scope is also the stop scope
 //                              unless stopOn names another. Waits at most waitMinutes (default 600).
@@ -102,11 +104,19 @@ export interface LaunchEntry {
     after: 'login' | 'ready';
     path: 'relay' | 'direct';
     /** Log out at once when this scope closes (CueGate); loginOn's scope when not set. */
-    stopOn: CueScope | null;
+    stopOn: StopOn | null;
     /** Stay logged out until a cue addressed to this scope opens. */
     loginOn: LoginOn | null;
     /** The account's cue directory, absolute; null: RC_CUE_DIR, else <runDir>/rc-cue. */
     cueDir: string | null;
+}
+
+export interface StopOn extends CueScope {
+    /**
+     * The scope's first stop written since the launch closes it, as a final stop does (ScopeSessions):
+     * for a writer whose last stop is not marked final. Present only when true.
+     */
+    closesOnStop?: true;
 }
 
 export interface LoginOn extends CueScope {
@@ -130,6 +140,17 @@ function scopeField(raw: unknown, name: string): CueScope {
     if (err) throw new Error(`${name}: ${err}`);
     const s = raw as CueScope;
     return { step: s.step, family: s.family };
+}
+
+function stopField(raw: unknown, name: string, final: boolean): StopOn {
+    const scope = scopeField(raw, name);
+    const closes = (raw as Record<string, unknown>).closesOnStop;
+    if (closes === undefined || closes === false) return scope;
+    if (closes !== true) throw new Error(`${name}.closesOnStop: true or false (got ${JSON.stringify(closes)})`);
+    if (final) {
+        throw new Error(`${name}.closesOnStop: refused on a final entry: its role's exit already stops the whole launcher, and closesOnStop is for one account leaving while the run goes on`);
+    }
+    return { ...scope, closesOnStop: true };
 }
 
 export interface LaunchConfig {
@@ -166,8 +187,10 @@ export function parseLaunchConfig(raw: unknown, root = ROOT): LaunchConfig {
         if (path !== 'relay' && path !== 'direct') throw new Error(`accounts[${i}]: path must be relay or direct`);
         const options = (a.options ?? {}) as Record<string, unknown>;
         let loginOn: LoginOn | null = null;
+        if (a.closesOnStop !== undefined) throw new Error(`accounts[${i}]: closesOnStop belongs to stopOn ({ step, family, closesOnStop }); refused without it`);
         if (a.loginOn !== undefined) {
             const l = (a.loginOn ?? {}) as Record<string, unknown>;
+            if (l.closesOnStop !== undefined) throw new Error(`accounts[${i}].loginOn: closesOnStop belongs to stopOn, the scope whose stop logs the account out; name that scope as stopOn`);
             const minutes = Number(l.waitMinutes ?? DEFAULT_LOGIN_WAIT_MINUTES);
             if (!Number.isFinite(minutes) || minutes <= 0) throw new Error(`accounts[${i}].loginOn: waitMinutes must be a positive number (got ${JSON.stringify(l.waitMinutes)})`);
             if (after === 'ready') throw new Error(`accounts[${i}]: loginOn and after: 'ready' are alternatives`);
@@ -177,7 +200,7 @@ export function parseLaunchConfig(raw: unknown, root = ROOT): LaunchConfig {
             const loginDir = typeof l.cueDir === 'string' ? resolve(root, l.cueDir) : null;
             loginOn = { ...scopeField(l, `accounts[${i}].loginOn`), waitMs: minutes * 60_000, cueDir: loginDir };
         }
-        const stopOn = a.stopOn === undefined ? (loginOn ? { step: loginOn.step, family: loginOn.family } : null) : scopeField(a.stopOn, `accounts[${i}].stopOn`);
+        const stopOn = a.stopOn === undefined ? (loginOn ? { step: loginOn.step, family: loginOn.family } : null) : stopField(a.stopOn, `accounts[${i}].stopOn`, a.final === true);
         // The gate must read the directory the role reads: options.cueDir, when given, is that directory.
         const own = a.cueDir === undefined ? null : resolve(root, String(a.cueDir));
         const roles = typeof options.cueDir === 'string' ? resolve(root, options.cueDir) : null;
@@ -415,12 +438,16 @@ export function gateEvent(cue: Pick<Cue, 'stop' | 'final' | 'ms'>, since: number
     return cue.final ? 'final' : 'stop';
 }
 
-/** A scope that is over for the launcher: its final stop, or `cue`, the next scope's, after its stop `after`. */
-export type ScopeClosed = { scope: CueScope; cue: Cue } & ({ why: 'final' } | { why: 'next-scope'; after: Cue });
+/**
+ * A scope that is over for the launcher: its final stop; its first stop, for a scope whose stop closes it
+ * (closesOnStop); or `cue`, the next scope's, after its stop `after`.
+ */
+export type ScopeClosed = { scope: CueScope; cue: Cue } & ({ why: 'final' } | { why: 'stop-closes' } | { why: 'next-scope'; after: Cue });
 
 export function closedText(c: ScopeClosed): string {
     const at = (cue: Cue) => `session ${cue.session}, seq ${cue.seq}`;
     if (c.why === 'final') return `final stop for ${scopeText(c.scope)} (${at(c.cue)})`;
+    if (c.why === 'stop-closes') return `stop for ${scopeText(c.scope)} (${at(c.cue)}), which closes it (closesOnStop)`;
     return `cue for ${scopeText(c.cue.scope)} (${at(c.cue)}) after ${scopeText(c.scope)}'s stop (${at(c.after)})`;
 }
 
@@ -429,6 +456,7 @@ export function closedText(c: ScopeClosed): string {
  * down: the step may open another (runecraft.ts's program segments, its stock rung and hand-back, a
  * resumed step's reopen). The scope closes on a final stop, or on a cue for another scope written
  * after its stop: cue.json holds one scope at a time, so the next scope's cue means this one is over.
+ * With `closesOnStop` (StopOn.closesOnStop) there are no segments: the first stop closes the scope.
  * A cue from before `since` changes nothing. Each method returns the transition it made, if any.
  */
 export class ScopeSessions {
@@ -438,7 +466,8 @@ export class ScopeSessions {
 
     constructor(
         readonly scope: CueScope,
-        private readonly since: number
+        private readonly since: number,
+        private readonly closesOnStop = false
     ) {}
 
     /** A new cue addressed to the scope. */
@@ -447,6 +476,11 @@ export class ScopeSessions {
         if (!ev || this.state === 'closed') return null;
         if (ev === 'final') {
             this.closed = { scope: this.scope, cue, why: 'final' };
+            this.state = 'closed';
+            return 'closed';
+        }
+        if (ev === 'stop' && this.closesOnStop) {
+            this.closed = { scope: this.scope, cue, why: 'stop-closes' };
             this.state = 'closed';
             return 'closed';
         }
@@ -482,8 +516,8 @@ export interface CueGateOptions {
     loginDir?: string;
     /** loginOn's scope: its first open lets the account log in; its closing before that keeps it out. */
     login: CueScope | null;
-    /** stopOn's scope: its closing ends the account's run (onStop). */
-    stop: CueScope | null;
+    /** stopOn's scope: its closing ends the account's run (onStop); with closesOnStop, its first stop closes it. */
+    stop: StopOn | null;
     /** Cues written before this (Date.now()) are an earlier launch's. */
     since: number;
     /** `stop`'s scope closed, once; called outside the watcher's callback. */
@@ -523,8 +557,10 @@ export class CueGate {
             assertDistinctCueDirs(o.dir, o.loginDir);
         }
         const same = o.loginDir === undefined && !!o.login && !!o.stop && scopeText(o.login) === scopeText(o.stop);
-        this.loginScope = o.login ? new ScopeSessions(o.login, o.since) : null;
-        this.stopScope = same ? this.loginScope : o.stop ? new ScopeSessions(o.stop, o.since) : null;
+        // One scope for both: the stop scope's rule is its rule, so a closing stop before the open keeps the account out.
+        const closes = o.stop?.closesOnStop === true;
+        this.loginScope = o.login ? new ScopeSessions(o.login, o.since, same && closes) : null;
+        this.stopScope = same ? this.loginScope : o.stop ? new ScopeSessions(o.stop, o.since, closes) : null;
         // The role folder first: a login folder's open already on disk is read only after it (onCue).
         const order = o.loginDir !== undefined ? [this.stopScope, this.loginScope] : [this.loginScope, this.stopScope];
         for (const s of new Set(order)) {
@@ -1119,7 +1155,7 @@ class AccountRun implements Stoppable {
         });
         const loginAt = loginOn?.cueDir ? ` in its login folder ${loginOn.cueDir} (read only until it logs in)` : '';
         this.L.log(
-            `[launcher] ${account}: reading ${this.cueDir}${loginOn ? `; logs in when a cue for ${scopeText(loginOn)} opens${loginAt}` : ''}${stopOn ? `; logs out when ${scopeText(stopOn)} closes (its final stop, or the next scope's cue after its stop)` : ''}`
+            `[launcher] ${account}: reading ${this.cueDir}${loginOn ? `; logs in when a cue for ${scopeText(loginOn)} opens${loginAt}` : ''}${stopOn ? `; logs out when ${scopeText(stopOn)} closes (${stopOn.closesOnStop ? 'its first stop: closesOnStop' : "its final stop, or the next scope's cue after its stop"})` : ''}`
         );
     }
 

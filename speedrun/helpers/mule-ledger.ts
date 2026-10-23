@@ -24,6 +24,8 @@
 //       ledger; exit 1 on any
 //   ... --bank FILE [--account cairn_mule1]    the packages staged back to back against the account's
 //       bank in stockpile.json (stockWalk): missing, ambiguous, top-ups short
+//   ... --carried-h45 [--closes-on-stop] [--manifest PATH] [--check FILE]   h45's launcher entry
+//       (h45LauncherEntry), or the check of FILE against it; --closes-on-stop sets stopOn.closesOnStop
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -228,12 +230,17 @@ export function h45FromLedger(manifest: string = readFileSync(MANIFEST, 'utf8'))
     });
 }
 
-/** Sanitized review entry, not staging evidence or authorization to launch an account. */
-export function h45LauncherEntry(manifest?: string) {
+/**
+ * Sanitized review entry, not staging evidence or authorization to launch an account. `closesOnStop`:
+ * H12oP's first stop logs h45 out (standalone.ts StopOn.closesOnStop), for a P stop not marked final;
+ * off by default, which leaves the entry as it was.
+ */
+export function h45LauncherEntry(manifest?: string, o: { closesOnStop?: boolean } = {}) {
     const ledger = h45FromLedger(manifest);
+    const stop = ledger[1]!.package.scope!;
     return {
         account: 'cairn_h45', role: 'mule', cueDir: 'run-machine/h45-cue',
-        loginOn: ledger[0]!.package.scope!, stopOn: ledger[1]!.package.scope!,
+        loginOn: ledger[0]!.package.scope!, stopOn: o.closesOnStop ? { ...stop, closesOnStop: true as const } : stop,
         options: { serve: '<SCORED>', serveMode: 'request', carried: true, packages: packagesOf(ledger) },
     };
 }
@@ -529,14 +536,15 @@ function arg(argv: readonly string[], name: string): string | undefined {
 
 export function main(argv: readonly string[]): number {
     if (argv.includes('--carried-h45')) {
-        const allowed = new Set(['--carried-h45', '--manifest', '--check']);
+        const allowed = new Set(['--carried-h45', '--closes-on-stop', '--manifest', '--check']);
+        const bare = new Set(['--carried-h45', '--closes-on-stop']);
         for (let i = 0; i < argv.length; i++) {
             const flag = argv[i]!;
             if (!allowed.has(flag)) throw new Error(`--carried-h45 does not accept ${flag}`);
-            if (flag !== '--carried-h45' && (!argv[++i] || argv[i]!.startsWith('--'))) throw new Error(`${flag} needs a file`);
+            if (!bare.has(flag) && (!argv[++i] || argv[i]!.startsWith('--'))) throw new Error(`${flag} needs a file`);
         }
         const file = arg(argv, '--manifest');
-        const entry = h45LauncherEntry(file ? readFileSync(file, 'utf8') : undefined);
+        const entry = h45LauncherEntry(file ? readFileSync(file, 'utf8') : undefined, { closesOnStop: argv.includes('--closes-on-stop') });
         const check = arg(argv, '--check');
         if (check) {
             const config = JSON.parse(readFileSync(check, 'utf8'));
