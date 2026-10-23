@@ -102,7 +102,7 @@ async function main(): Promise<void> {
         if (!inv?.restock) continue;
         for (const st of inv.stock) {
             const o = c.objs.get(st.obj);
-            const q = o ? quotes.get(o.name.toLowerCase()) : undefined;
+            const q = o ? quotes.get(o.display.toLowerCase()) : undefined;
             if (!o || !q || st.rate <= 0) continue;
             const row = hedgeRow(
                 { shop: s.title, obj: st.obj, cost: o.cost, sell: s.sell, delta: s.delta, base: st.base, rate: st.rate, stock: live.get(`${s.inv}:${st.obj}`) ?? st.base },
