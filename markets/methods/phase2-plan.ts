@@ -55,19 +55,25 @@ const IRON = 91_800; // 1,208 ore/h into the iron bid at its 80 mean, less 5%
 const STEEL = 208_000; // 160 bars/h at the 7-day flow's 1,369, less 5%
 const SHILO_SHARED = 301_000; // 233 gems/h (one regular on the site) x 1,291 a gem with the jade bid
 const SHILO_AFTER_JADE = 171_000;
+// The jade bid (3,768 at 08:45Z) drains at ~173/h by others (22:30Z -> 08:45Z) plus our ~55/h: empty ~16.5 h on.
+const JADE_HOURS = 3768 / (173 + 233 * (30 / 128));
+const SHILO_CAP = SHILO_SHARED * (JADE_HOURS - 0.8);
+// The iron bid (993,853 at 08:45Z; others take ~530/h): 12 logins at 1,208 ore/h get ~96% of it, at the 80 mean less 5%.
+const IRON_LOGINS = 12;
+const IRON_CAP = Math.round(993_853 * ((IRON_LOGINS * 1208) / (IRON_LOGINS * 1208 + 530))) * 76;
 
 /** Allocation A: knights allowed. */
 export const WITH_KNIGHTS: PlanRow[] = [
-    { method: 'Shilo gem rocks', logins: 1, perLogin: SHILO_SHARED, setupHours: 0.8, capCoins: 3768 * 2375 * (64 / 30) * 0.583 * 0 + 9_000_000, afterCap: SHILO_AFTER_JADE },
+    { method: 'Shilo gem rocks', logins: 1, perLogin: SHILO_SHARED, setupHours: 0.8, capCoins: SHILO_CAP, afterCap: SHILO_AFTER_JADE },
     { method: 'Steel bars', logins: 1, perLogin: STEEL, setupHours: 0.2 },
     { method: 'Knights of Ardougne', logins: 43, perLogin: KNIGHTS, setupHours: 0.3 }
 ];
 
 /** Allocation B: knights left free for S18. */
 export const WITHOUT_KNIGHTS: PlanRow[] = [
-    { method: 'Shilo gem rocks', logins: 1, perLogin: SHILO_SHARED, setupHours: 0.8, capCoins: 9_000_000, afterCap: SHILO_AFTER_JADE },
+    { method: 'Shilo gem rocks', logins: 1, perLogin: SHILO_SHARED, setupHours: 0.8, capCoins: SHILO_CAP, afterCap: SHILO_AFTER_JADE },
     { method: 'Steel bars', logins: 1, perLogin: STEEL, setupHours: 0.2 },
-    { method: 'Iron ore', logins: 12, perLogin: IRON, setupHours: 0.1, capCoins: 400_000 * 76, afterCap: GUARDS },
+    { method: 'Iron ore', logins: IRON_LOGINS, perLogin: IRON, setupHours: 0.1, capCoins: IRON_CAP, afterCap: GUARDS },
     { method: 'Heroes', logins: 8, perLogin: HEROES, setupHours: 0.35 },
     { method: 'Varrock guards', logins: 23, perLogin: GUARDS, setupHours: 0.25 }
 ];
