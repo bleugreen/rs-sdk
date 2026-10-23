@@ -82,6 +82,8 @@ export type ChainStep = AnyStep & {
     owner?: string;
     /** withCue: the helper cue opened before it runs. */
     cue?: CueScope;
+    /** cueAround: whether a success ends the cue with a final stop (a throw's stop is never final). */
+    finalStop?: boolean;
 };
 
 // ------------------------------------------------------------------ the run config
@@ -271,10 +273,30 @@ export const muleScope = (row: string): CueScope => ({ step: row, family: 'mule'
 /**
  * `step` with mule1's {row, mule} cue around it (cueAround): a repeated hand-off rewrites its own
  * package's cue, and one skipped as done writes none and leaves none open, so the next cue always
- * names its own package.
+ * names its own package. A served carrier keeps its stand until its session's stop (helpers/mule.ts
+ * keepsStandAfterServe): `final` ends it there for good, a plain stop only releases it for a later row.
  */
-export function muleCued(step: ChainStep, row: string, cues: CueSink): ChainStep {
-    return cueAround(step, muleScope(row), cues, { final: false });
+export function muleCued(step: ChainStep, row: string, cues: CueSink, o: { final?: boolean } = {}): ChainStep {
+    return cueAround(step, muleScope(row), cues, { final: o.final ?? false });
+}
+
+/**
+ * The chain's mule cues, decided over the whole built chain: each step in `rows` (step to its ledger
+ * row) is muleCued, and each carrier's last such step in chain order stops final on success, so no
+ * carrier stands until the launcher ends; every earlier row of that carrier stops plain. 'Last' is over
+ * the steps present, so an alternative or fallback the ledger in force leaves out never counts.
+ */
+export function cueMuleRows(chain: readonly ChainStep[], rows: ReadonlyMap<ChainStep, string>, carrierOf: (row: string) => string, cues: CueSink): ChainStep[] {
+    const last = new Map<string, ChainStep>();
+    for (const s of chain) {
+        const row = rows.get(s);
+        if (row !== undefined) last.set(carrierOf(row), s);
+    }
+    const finals = new Set(last.values());
+    return chain.map(s => {
+        const row = rows.get(s);
+        return row === undefined ? s : muleCued(s, row, cues, { final: finals.has(s) });
+    });
 }
 
 /**
@@ -301,7 +323,7 @@ export function cueAround(step: ChainStep, scope: CueScope, cues: CueSink, stop:
         }
         cues.stop(scope, ctx, stop);
     };
-    return { ...step, cue: scope, run: wrap(step.run), resume: wrap(step.resume ?? step.run) };
+    return { ...step, cue: scope, finalStop: stop.final ?? true, run: wrap(step.run), resume: wrap(step.resume ?? step.run) };
 }
 
 export function ledgerRows(manifest: string): LedgerRow[] {
@@ -598,6 +620,12 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
 
     const s14: CueScope = { step: 'S14', family: 'cannon' };
     const s27: CueScope = { step: 'S27', family: 'cannon' };
+    /** The steps mule1's {row, mule} cue goes around, cued by cueMuleRows once the chain is built. */
+    const muleRows = new Map<ChainStep, string>();
+    const mule = (s: ChainStep, row: string): ChainStep => {
+        muleRows.set(s, row);
+        return s;
+    };
 
     const woodcuttingAll = woodcutting.steps({ bury: true, bones: cfg.bones, dropAxe: true, prayerTo: 99, ...(o.attempt && cfg.bones.group ? { boneSession: boneSession(o.attempt) } : {}) });
     const wc = (n: string) => pick('woodcutting', woodcuttingAll, [n]);
@@ -640,7 +668,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...steps('S03', firemaking.steps({ tiles: cfg.firemakingTiles, supply: 'row' })).map(s => cueAround(s, FAMILY_CUES.S03, o.cues)),
         ...steps('S04', pick('magic', magic.steps({ untilLevel: 59, giver: cfg.rings.giver, ...(cfg.rings.loads ? { loads: cfg.rings.loads } : {}) }), [magic.S04_ID])).map(s => cueAround(s, FAMILY_CUES.S04, o.cues)),
         L('T04-05'),
-        ...steps('S05', doricsQuest.steps(kitFrom('H4'))).map(s => (s.name === KIT_SEGMENTS.H4 ? muleCued(s, 'H4', o.cues) : s)),
+        ...steps('S05', doricsQuest.steps(kitFrom('H4'))).map(s => (s.name === KIT_SEGMENTS.H4 ? mule(s, 'H4') : s)),
         L('T05-06'),
         // Runecraft drives the writer's turns; the run owns its lifetime, including aborts.
         ...steps('S06', pick('runecraft', runecraft.steps({ untilLevel: 44, cueDir: cfg.cueDir, deps: rcDeps }), ['S06 runecraft'])),
@@ -754,9 +782,9 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         const ask = !scope && plan.receive.some(r => r.topUp) ? { scope: muleScope(e.row), ask: { dir: muleCueDir(cfg) } } : undefined;
         const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : ask;
         const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs } : {}), ...(cue ? { cue } : {}) }), cue ? { cue: cue.scope } : {});
-        out.unshift(!scope && MULE_ROWS.includes(e.row) ? muleCued(s, e.row, o.cues) : s);
+        out.unshift(!scope && MULE_ROWS.includes(e.row) ? mule(s, e.row) : s);
     }
-    return out.map(censused);
+    return cueMuleRows(out, muleRows, partner, o.cues).map(censused);
 }
 
 // ------------------------------------------------------------------ slicing
