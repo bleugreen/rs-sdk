@@ -682,7 +682,7 @@ refusal. the carrier configs come from the generator and check below (fold-in 37
    row without re-banking (helpers/mule.ts:1283-1312, runner/delivery-owner.ts:89-96), and nothing in
    run.ts's preflight needs a hold file (rs/186). `mule-hold.ts` stays in the commit, unused. The
    mule-hold text below is kept for reference only.
-5. **Report:** the host sends the hash line, the three exit codes and `sha256sum <R>/carriers.json
+5. **Report:** the host sends the hash line (no mule-hold exit codes for attempt 1) and `sha256sum <R>/carriers.json
    <R>/helpers.json` to rs/41 and main before the launcher starts.
 
 **The fleet on the run commit:** back at 29/29 on 233d0f34 at ~12:11Z, 27 while two stand-ins serve
