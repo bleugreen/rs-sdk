@@ -1,0 +1,5264 @@
+{
+ "generatedFrom": {
+  "book": "docs/markets/data/ge-book-2026-10-22T2230Z.json",
+  "bookAt": "2026-10-22T22:30:38.810Z",
+  "tickMs": 400,
+  "ticksPerHour": 9000
+ },
+ "counts": {
+  "objs": 2756,
+  "shops": 137,
+  "shopLines": 1091,
+  "recipes": 230,
+  "groundSpawns": 1204,
+  "bookRows": 125
+ },
+ "candidates": [
+  {
+   "rank": 1,
+   "boardRatePerHour": 1564650,
+   "id": "proc:battlestaff",
+   "method": "Buy battlestaves, attach charged water orbs, bank",
+   "kind": "processing",
+   "inputs": "Crafting 54, Magic 56 (Charge Water Orb at the obelisk), coins 7,000 a staff, unpowered orbs, cosmic and water runes",
+   "boardPerHour": 1564650,
+   "coinsPerHour": 0,
+   "sellTo": "bank (no market)",
+   "scaling": "world clock",
+   "worldUnitsPerHour": 190,
+   "marketUnits": null,
+   "cap": "battlestaff restock 190 an hour (Magic Guild Store 5@90, Zaff's Superior Staffs! 5@100); orbs take their own casting time",
+   "conflict": "low: the run uses staves of fire and water, not battlestaves",
+   "basis": "estimated",
+   "notes": "15500 board for 7000 coins + an orb's 265 of inputs: +8235 a staff; spends 1,330,000 coins an hour, which were board value already; assumes base stock (Zaff live read pending, the Magic Guild config only): board an hour at half shelves 1,505,850, at empty shelves 1,466,650"
+  },
+  {
+   "rank": 2,
+   "boardRatePerHour": 1075831.89,
+   "id": "mine:gem_rock",
+   "method": "Mine Shilo gem rocks, sell uncut gems into their bids",
+   "kind": "mining",
+   "inputs": "Mining 40, Shilo Village (quest), pickaxe",
+   "boardPerHour": 15641.16,
+   "coinsPerHour": 1075831.89,
+   "sellTo": "GE bids, ~2,500 each",
+   "scaling": "world clock",
+   "worldUnitsPerHour": 447.39,
+   "marketUnits": 37663,
+   "cap": "7 rocks at one site, respawn 130 ticks at 1400 players (base 200): 447 gems an hour world-wide, shared with whoever is there; opal bids (2342) fill first",
+   "conflict": "medium: S25c crafts 107 staged gems; the fleet gem supplier buys gems",
+   "basis": "estimated",
+   "notes": "per gem 2405 coins net vs 35 board; opal 60/128 @2375 (2342 bid), jade 30/128 @2375 (5540 bid), red_topaz 15/128 @2375 (9873 bid; flow 8669 on 1132), sapphire 9/128 @2375 (8499 bid), emerald 5/128 @2375 (9423 bid), ruby 5/128 @2375 (9978 bid; flow 9332 on 1059), diamond 4/128 @3325 (9668 bid)"
+  },
+  {
+   "rank": 3,
+   "boardRatePerHour": 438117.21,
+   "id": "smelt:runite_bar",
+   "method": "Mine runite ore and 8 coal, smelt runite bar, sell",
+   "kind": "smelting",
+   "inputs": "Mining 85, Smithing 85",
+   "boardPerHour": 56235.2,
+   "coinsPerHour": 438117.21,
+   "sellTo": "GE bid, 38954 net",
+   "scaling": "world clock",
+   "worldUnitsPerHour": 28.12,
+   "marketUnits": 2017,
+   "cap": "5 runite_ore rocks, best site 2 (28 ore an hour world-wide); market 2,017 units",
+   "conflict": "none known",
+   "basis": "estimated",
+   "notes": "120 ticks a bar: ore 40.4, coal 8 x 7.6, smelt 5, banking"
+  },
+  {
+   "rank": 4,
+   "boardRatePerHour": 423110.28,
+   "id": "smelt:steel_bar",
+   "method": "Mine iron ore and 2 coal, smelt steel bar, sell",
+   "kind": "smelting",
+   "inputs": "Mining 30, Smithing 30",
+   "boardPerHour": 32546.94,
+   "coinsPerHour": 423110.28,
+   "sellTo": "GE flow, 1300 net",
+   "scaling": "GE weekly flow",
+   "worldUnitsPerHour": 69750,
+   "marketUnits": 73672,
+   "cap": "124 iron_ore rocks, best site 16 (69750 ore an hour world-wide); market 73,672 units a week",
+   "conflict": "none known (check: cannonballs for S27 are 1,200 an attempt)",
+   "basis": "estimated",
+   "notes": "28 ticks a bar: ore 3.0, coal 2 x 7.6, smelt 5, banking"
+  },
+  {
+   "rank": 5,
+   "boardRatePerHour": 232067.47,
+   "id": "mine:adamantite_ore",
+   "method": "Mine adamantite ore, sell",
+   "kind": "mining",
+   "inputs": "Mining 70, pickaxe",
+   "boardPerHour": 85162.37,
+   "coinsPerHour": 232067.47,
+   "sellTo": "GE bid, 1090 net",
+   "scaling": "GE bid depth",
+   "worldUnitsPerHour": 900.76,
+   "marketUnits": 18226,
+   "cap": "55 rocks (best site 13), respawn 520 ticks at 1400 players (base 800), 10% a roll at 99: 901 an hour world-wide; market 18,226 units",
+   "conflict": "none known",
+   "basis": "estimated",
+   "notes": "29.5 ticks a unit + 40-tick bank trips"
+  },
+  {
+   "rank": 6,
+   "boardRatePerHour": 204842.98,
+   "id": "mine:iron_ore",
+   "method": "Mine iron ore, sell",
+   "kind": "mining",
+   "inputs": "Mining 15, pickaxe",
+   "boardPerHour": 34140.5,
+   "coinsPerHour": 204842.98,
+   "sellTo": "GE flow, 102 net",
+   "scaling": "GE weekly flow",
+   "worldUnitsPerHour": 69750,
+   "marketUnits": 552355,
+   "cap": "124 rocks (best site 16), respawn 13 ticks at 1400 players (base 20), 100% a roll at 99: 69750 an hour world-wide; market 552,355 units",
+   "conflict": "low: the Superheat fallback buys ~500 on its own bid",
+   "basis": "measured",
+   "notes": "3.0 ticks a unit + 40-tick bank trips (3.0 a roll measured on the demo, mining.md; the bank trip estimated)"
+  },
+  {
+   "rank": 7,
+   "boardRatePerHour": 157269.33,
+   "id": "smelt:adamantite_bar",
+   "method": "Mine adamantite ore and 6 coal, smelt adamantite bar, sell",
+   "kind": "smelting",
+   "inputs": "Mining 70, Smithing 70",
+   "boardPerHour": 63623.49,
+   "coinsPerHour": 157269.33,
+   "sellTo": "GE bid, 1582 net",
+   "scaling": "GE bid depth",
+   "worldUnitsPerHour": 900.76,
+   "marketUnits": 24886,
+   "cap": "55 adamantite_ore rocks, best site 13 (901 ore an hour world-wide); market 24,886 units",
+   "conflict": "none known",
+   "basis": "estimated",
+   "notes": "91 ticks a bar: ore 29.5, coal 6 x 7.6, smelt 5, banking"
+  },
+  {
+   "rank": 8,
+   "boardRatePerHour": 140727.64,
+   "id": "wc:yew_logs",
+   "method": "Cut yew logs, sell",
+   "kind": "woodcutting",
+   "inputs": "Woodcutting 60, rune axe",
+   "boardPerHour": 59410.09,
+   "coinsPerHour": 140727.64,
+   "sellTo": "GE flow, 379 net",
+   "scaling": "GE weekly flow",
+   "worldUnitsPerHour": null,
+   "marketUnits": 352894,
+   "cap": "352,894 traded in 7 days (2101 an hour)",
+   "conflict": "low: S03 drops 24 yew and 107 magic logs (woodcutter role)",
+   "basis": "estimated",
+   "notes": "woodcutting.md ideal 7.69 base xp a tick, 175 xp a log"
+  },
+  {
+   "rank": 9,
+   "boardRatePerHour": 121987.08,
+   "id": "wc:magic_logs",
+   "method": "Cut magic logs, sell",
+   "kind": "woodcutting",
+   "inputs": "Woodcutting 75, rune axe",
+   "boardPerHour": 59954.51,
+   "coinsPerHour": 121987.08,
+   "sellTo": "GE flow, 2137 net",
+   "scaling": "GE weekly flow",
+   "worldUnitsPerHour": null,
+   "marketUnits": 9590,
+   "cap": "9,590 traded in 7 days (57 an hour)",
+   "conflict": "low: S03 drops 107 magic logs (woodcutter role)",
+   "basis": "estimated",
+   "notes": "woodcutting.md ideal 5.37 base xp a tick, 250 xp a log"
+  },
+  {
+   "rank": 10,
+   "boardRatePerHour": 110998.77,
+   "id": "thieve:pickpocket_knight_of_ardougne",
+   "method": "Pickpocket knight of ardougne",
+   "kind": "thieving",
+   "inputs": "Thieving 55, food",
+   "boardPerHour": 110998.77,
+   "coinsPerHour": 110998.77,
+   "sellTo": "coins (loot at market)",
+   "scaling": "logins",
+   "worldUnitsPerHour": null,
+   "marketUnits": null,
+   "cap": "none: every target NPC serves any number of logins",
+   "conflict": "high: S18 pickpockets the East Ardougne knights on run day; the coins earners use guards",
+   "basis": "estimated",
+   "notes": "94% success at 99, 50 a success; model x 0.65, the guards' measured/model ratio; loot coins 50 (128)"
+  },
+  {
+   "rank": 11,
+   "boardRatePerHour": 106786.64,
+   "id": "thieve:pickpocket_hero",
+   "method": "Pickpocket hero",
+   "kind": "thieving",
+   "inputs": "Thieving 80, food",
+   "boardPerHour": 79271.98,
+   "coinsPerHour": 106786.64,
+   "sellTo": "coins (loot at market)",
+   "scaling": "logins",
+   "worldUnitsPerHour": null,
+   "marketUnits": null,
+   "cap": "none: every target NPC serves any number of logins",
+   "conflict": "low: the coins earners (coins.md) use guards",
+   "basis": "estimated",
+   "notes": "39% success at 99, 278 a success; model x 0.65, the guards' measured/model ratio; loot coins 200-300 (105), deathrune 2 (8), jug_wine 1 (6), bloodrune 1 (5), fire_orb 1 (2), diamond 1 (1), gold_ore 1 (1)"
+  },
+  {
+   "rank": 12,
+   "boardRatePerHour": 97884.88,
+   "id": "thieve:pickpocket_rogue",
+   "method": "Pickpocket rogue",
+   "kind": "thieving",
+   "inputs": "Thieving 32, food",
+   "boardPerHour": 79512.67,
+   "coinsPerHour": 97884.88,
+   "sellTo": "coins (loot at market)",
+   "scaling": "logins",
+   "worldUnitsPerHour": null,
+   "marketUnits": null,
+   "cap": "none: every target NPC serves any number of logins",
+   "conflict": "low: the coins earners (coins.md) use guards",
+   "basis": "estimated",
+   "notes": "94% success at 99, 36 a success; model x 0.65, the guards' measured/model ratio; loot coins 25-40 (108), airrune 8 (8), jug_wine 1 (6), lockpick 1 (5), iron_dagger_p 1 (1)"
+  },
+  {
+   "rank": 13,
+   "boardRatePerHour": 96356.12,
+   "id": "mine:gold_ore",
+   "method": "Mine gold ore, bank",
+   "kind": "mining",
+   "inputs": "Mining 40, pickaxe",
+   "boardPerHour": 96356.12,
+   "coinsPerHour": 0,
+   "sellTo": "bank (no market)",
+   "scaling": "logins",
+   "worldUnitsPerHour": 2826.45,
+   "marketUnits": null,
+   "cap": "44 rocks (best site 10), respawn 130 ticks at 1400 players (base 200), 30% a roll at 99: 2826 an hour world-wide",
+   "conflict": "none known",
+   "basis": "estimated",
+   "notes": "10.1 ticks a unit + 40-tick bank trips"
+  },
+  {
+   "rank": 14,
+   "boardRatePerHour": 93449.36,
+   "id": "fish:shark",
+   "method": "Harpoon and cook sharks, sell",
+   "kind": "fishing",
+   "inputs": "Fishing 76, Cooking 80, harpoon",
+   "boardPerHour": 55404.76,
+   "coinsPerHour": 93449.36,
+   "sellTo": "GE flow, 506 net",
+   "scaling": "GE weekly flow",
+   "worldUnitsPerHour": null,
+   "marketUnits": 92018,
+   "cap": "92,018 traded in 7 days (548 an hour)",
+   "conflict": "medium: the fleet buys sharks on the GE (H12, H22, H23)",
+   "basis": "estimated",
+   "notes": "fishing.md measured 2.52 base xp a tick at 99 (110 xp a shark) + a 3.6-tick cook; burns not deducted"
+  },
+  {
+   "rank": 15,
+   "boardRatePerHour": 88799.02,
+   "id": "thieve:pickpocket_viking",
+   "method": "Pickpocket viking",
+   "kind": "thieving",
+   "inputs": "Thieving 45, food",
+   "boardPerHour": 88799.02,
+   "coinsPerHour": 88799.02,
+   "sellTo": "coins (loot at market)",
+   "scaling": "logins",
+   "worldUnitsPerHour": null,
+   "marketUnits": null,
+   "cap": "none: every target NPC serves any number of logins",
+   "conflict": "low: the coins earners (coins.md) use guards",
+   "basis": "estimated",
+   "notes": "94% success at 99, 40 a success; model x 0.65, the guards' measured/model ratio; loot coins 40 (128)"
+  },
+  {
+   "rank": 16,
+   "boardRatePerHour": 88148.31,
+   "id": "mine:mithril_ore",
+   "method": "Mine mithril ore, bank",
+   "kind": "mining",
+   "inputs": "Mining 55, pickaxe",
+   "boardPerHour": 88148.31,
+   "coinsPerHour": 0,
+   "sellTo": "bank (no market)",
+   "scaling": "logins",
+   "worldUnitsPerHour": 2584.9,
+   "marketUnits": null,
+   "cap": "79 rocks (best site 19), respawn 260 ticks at 1400 players (base 400), 20% a roll at 99: 2585 an hour world-wide",
+   "conflict": "none known",
+   "basis": "estimated",
+   "notes": "15.1 ticks a unit + 40-tick bank trips"
+  },
+  {
+   "rank": 17,
+   "boardRatePerHour": 81000,
+   "id": "shop:tbwt_tiadeche_final_inventory:tbwt_raw_karambwan",
+   "method": "Buy Raw karambwan from Tiadeche's Karambwan Stall, bank",
+   "kind": "shop",
+   "inputs": "coins (110 each)",
+   "boardPerHour": 81000,
+   "coinsPerHour": -99000,
+   "sellTo": "bank",
+   "scaling": "world clock",
+   "worldUnitsPerHour": 900,
+   "marketUnits": null,
+   "cap": "10 base stock, +1 every 10 ticks (900 an hour); 10 more below cost once (+810)",
+   "conflict": "none known",
+   "basis": "estimated",
+   "notes": "200 board for 110 coins (1.82 a coin) at 2781,3057; assumes base stock (config only); below base the price rises 10 per mille a unit, so the row is worth nothing once the shelf is 11 or more under base"
+  },
+  {
+   "rank": 18,
+   "boardRatePerHour": 75310.86,
+   "id": "shopge:lawrune",
+   "method": "Buy Law runes at rune shops as they restock, sell",
+   "kind": "shop to GE",
+   "inputs": "coins; the shops: Magic Guild Store (2595,3087,1), Lundail's Arena-side Rune Shop (2534,4719)",
+   "boardPerHour": 0,
+   "coinsPerHour": 75310.86,
+   "sellTo": "GE flow, 1964 net",
+   "scaling": "world clock",
+   "worldUnitsPerHour": 60,
+   "marketUnits": 6576,
+   "cap": "restock 60 an hour across 2 shops; GE flow 39 an hour; one-off 2,222,133 coins buying full shelves down to the GE price",
+   "conflict": "medium: the fleet buys ~55 law runes at rune shops",
+   "basis": "estimated",
+   "notes": "assumes base stock (shelves world-shared; a live read pending for Aubury and Betty, config only for the Magic Guild and Lundail); coins an hour at half shelves 68,461, at empty shelves 67,482, and the one-off is gone"
+  },
+  {
+   "rank": 19,
+   "boardRatePerHour": 75285.28,
+   "id": "mine:coal",
+   "method": "Mine coal, sell",
+   "kind": "mining",
+   "inputs": "Mining 30, pickaxe",
+   "boardPerHour": 44576.81,
+   "coinsPerHour": 75285.28,
+   "sellTo": "GE bid, 76 net (depth at the best bid unverified)",
+   "scaling": "GE bid depth",
+   "worldUnitsPerHour": 32477.57,
+   "marketUnits": 11509,
+   "cap": "262 rocks (best site 45), respawn 65 ticks at 1400 players (base 100), 39% a roll at 99: 32478 an hour world-wide; market 11,509 units",
+   "conflict": "none known",
+   "basis": "estimated",
+   "notes": "7.6 ticks a unit + 40-tick bank trips"
+  },
+  {
+   "rank": 20,
+   "boardRatePerHour": 71522.25,
+   "id": "thieve:pickpocket_paladin",
+   "method": "Pickpocket paladin",
+   "kind": "thieving",
+   "inputs": "Thieving 70, food",
+   "boardPerHour": 71522.25,
+   "coinsPerHour": 71522.25,
+   "sellTo": "coins (loot at market)",
+   "scaling": "logins",
+   "worldUnitsPerHour": null,
+   "marketUnits": null,
+   "cap": "none: every target NPC serves any number of logins",
+   "conflict": "low: the coins earners (coins.md) use guards",
+   "basis": "estimated",
+   "notes": "59% success at 99, 110 a success; model x 0.65, the guards' measured/model ratio; loot coins 80 (128), chaosrune 2 (128)"
+  },
+  {
+   "rank": 21,
+   "boardRatePerHour": 69168.5,
+   "id": "fish:lobster",
+   "method": "Cage lobsters, sell",
+   "kind": "fishing",
+   "inputs": "Fishing 40, lobster pot",
+   "boardPerHour": 69168.5,
+   "coinsPerHour": 0,
+   "sellTo": "bank (no market)",
+   "scaling": "logins",
+   "worldUnitsPerHour": null,
+   "marketUnits": null,
+   "cap": "none (banked)",
+   "conflict": "none known",
+   "basis": "estimated",
+   "notes": "fishing.md measured 4.99 base xp a tick at 99 (90 xp a lobster)"
+  },
+  {
+   "rank": 22,
+   "boardRatePerHour": 66600,
+   "id": "thieve:pickpocket_guard",
+   "method": "Pickpocket guard",
+   "kind": "thieving",
+   "inputs": "Thieving 40, food",
+   "boardPerHour": 66600,
+   "coinsPerHour": 66600,
+   "sellTo": "coins (loot at market)",
+   "scaling": "logins",
+   "worldUnitsPerHour": null,
+   "marketUnits": null,
+   "cap": "none: every target NPC serves any number of logins",
+   "conflict": "low: the coins earners (coins.md) use guards",
+   "basis": "measured",
+   "notes": "94% success at 99, 30 a success; coins.md 7.4 gp a tick (cairn_h61); loot coins 30 (128)"
+  },
+  {
+   "rank": 23,
+   "boardRatePerHour": 54487.26,
+   "id": "thieve:pickpocket_gnome",
+   "method": "Pickpocket gnome",
+   "kind": "thieving",
+   "inputs": "Thieving 75, food",
+   "boardPerHour": 54487.26,
+   "coinsPerHour": 54487.26,
+   "sellTo": "coins (loot at market)",
+   "scaling": "logins",
+   "worldUnitsPerHour": null,
+   "marketUnits": null,
+   "cap": "none: every target NPC serves any number of logins",
+   "conflict": "low: the coins earners (coins.md) use guards",
+   "basis": "estimated",
+   "notes": "47% success at 99, 123 a success; model x 0.65, the guards' measured/model ratio; loot king_worm 1 (55), coins 300 (30), swamp_toad 1 (28), gold_ore 1 (8), earthrune 1 (5), fire_orb 1 (2)"
+  },
+  {
+   "rank": 24,
+   "boardRatePerHour": 53054.16,
+   "id": "thieve:pickpocket_watchman",
+   "method": "Pickpocket watchman",
+   "kind": "thieving",
+   "inputs": "Thieving 65, food",
+   "boardPerHour": 53054.16,
+   "coinsPerHour": 53054.16,
+   "sellTo": "coins (loot at market)",
+   "scaling": "logins",
+   "worldUnitsPerHour": null,
+   "marketUnits": null,
+   "cap": "none: every target NPC serves any number of logins",
+   "conflict": "low: the coins earners (coins.md) use guards",
+   "basis": "estimated",
+   "notes": "63% success at 99, 72 a success; model x 0.65, the guards' measured/model ratio; loot coins 60 (128), bread 1 (128)"
+  },
+  {
+   "rank": 25,
+   "boardRatePerHour": 51935.81,
+   "id": "shopge:deathrune",
+   "method": "Buy Death runes at rune shops as they restock, sell",
+   "kind": "shop to GE",
+   "inputs": "coins; the shops: Magic Guild Store (2595,3087,1), Aubury's Rune Shop (3253,3402), Lundail's Arena-side Rune Shop (2534,4719), Betty's Magic Emporium (3012,3259)",
+   "boardPerHour": 0,
+   "coinsPerHour": 51935.81,
+   "sellTo": "GE flow, 374 net",
+   "scaling": "world clock",
+   "worldUnitsPerHour": 240,
+   "marketUnits": 25364,
+   "cap": "restock 240 an hour across 4 shops; GE flow 151 an hour; one-off 756,551 coins buying full shelves down to the GE price",
+   "conflict": "low: 110 death runes banked",
+   "basis": "estimated",
+   "notes": "assumes base stock (shelves world-shared; a live read pending for Aubury and Betty, config only for the Magic Guild and Lundail); coins an hour at half shelves 30,724, at empty shelves 29,289, and the one-off is gone"
+  },
+  {
+   "rank": 26,
+   "boardRatePerHour": 44181.82,
+   "id": "mine:blankrune",
+   "method": "Mine rune essence, sell",
+   "kind": "mining",
+   "inputs": "Mining 1, pickaxe",
+   "boardPerHour": 3272.73,
+   "coinsPerHour": 44181.82,
+   "sellTo": "GE flow, 54 net",
+   "scaling": "GE weekly flow",
+   "worldUnitsPerHour": null,
+   "marketUnits": 515804,
+   "cap": "4 rocks (best site 4), respawn 0 ticks at 1400 players (base 0), 100% a roll at 99; market 515,804 units",
+   "conflict": "low: S06/S21 essence (5,427) is staged, fleet ledger 63,674 complete",
+   "basis": "measured",
+   "notes": "11 ticks an essence with trips (coins.md, rs/46's trip time)"
+  },
+  {
+   "rank": 27,
+   "boardRatePerHour": 39959.56,
+   "id": "thieve:pickpocket_warrior",
+   "method": "Pickpocket warrior",
+   "kind": "thieving",
+   "inputs": "Thieving 25, food",
+   "boardPerHour": 39959.56,
+   "coinsPerHour": 39959.56,
+   "sellTo": "coins (loot at market)",
+   "scaling": "logins",
+   "worldUnitsPerHour": null,
+   "marketUnits": null,
+   "cap": "none: every target NPC serves any number of logins",
+   "conflict": "low: the coins earners (coins.md) use guards",
+   "basis": "estimated",
+   "notes": "94% success at 99, 18 a success; model x 0.65, the guards' measured/model ratio; loot coins 18 (128)"
+  },
+  {
+   "rank": 28,
+   "boardRatePerHour": 35990.53,
+   "id": "mine:runite_ore",
+   "method": "Mine runite ore, sell",
+   "kind": "mining",
+   "inputs": "Mining 85, pickaxe",
+   "boardPerHour": 35990.53,
+   "coinsPerHour": 24642.86,
+   "sellTo": "GE flow, 10000 net",
+   "scaling": "world clock",
+   "worldUnitsPerHour": 28.12,
+   "marketUnits": 414,
+   "cap": "5 rocks (best site 2), respawn 1560 ticks at 1400 players (base 2400), 7% a roll at 99: 28 an hour world-wide; market 414 units",
+   "conflict": "none known",
+   "basis": "estimated",
+   "notes": "40.4 ticks a unit + 40-tick bank trips"
+  },
+  {
+   "rank": 29,
+   "boardRatePerHour": 35550,
+   "id": "shopge:bloodrune",
+   "method": "Buy Blood runes at rune shops as they restock, sell",
+   "kind": "shop to GE",
+   "inputs": "coins; the shops: Magic Guild Store (2595,3087,1)",
+   "boardPerHour": 0,
+   "coinsPerHour": 35550,
+   "sellTo": "GE bid, 1235 net (depth at the best bid unverified)",
+   "scaling": "world clock",
+   "worldUnitsPerHour": 30,
+   "marketUnits": 12935,
+   "cap": "restock 30 an hour across 1 shops; one-off 997,750 coins buying full shelves down to the GE price",
+   "conflict": "high: the fleet camps the Magic Guild blood shelf (h88) for S16/S18",
+   "basis": "estimated",
+   "notes": "assumes base stock (shelves world-shared; a live read pending for Aubury and Betty, config only for the Magic Guild and Lundail); coins an hour at half shelves 28,050, at empty shelves 28,050, and the one-off is gone"
+  },
+  {
+   "rank": 30,
+   "boardRatePerHour": 34140,
+   "id": "shopge:naturerune",
+   "method": "Buy Nature runes at rune shops as they restock, sell",
+   "kind": "shop to GE",
+   "inputs": "coins; the shops: Magic Guild Store (2595,3087,1), Lundail's Arena-side Rune Shop (2534,4719)",
+   "boardPerHour": 0,
+   "coinsPerHour": 34140,
+   "sellTo": "GE flow, 589 net",
+   "scaling": "world clock",
+   "worldUnitsPerHour": 60,
+   "marketUnits": 22362,
+   "cap": "restock 60 an hour across 2 shops; GE flow 133 an hour; one-off 619,950 coins buying full shelves down to the GE price",
+   "conflict": "medium: S18 Superheat holds 518 nature runes",
+   "basis": "estimated",
+   "notes": "assumes base stock (shelves world-shared; a live read pending for Aubury and Betty, config only for the Magic Guild and Lundail); coins an hour at half shelves 28,890, at empty shelves 28,140, and the one-off is gone"
+  },
+  {
+   "rank": 31,
+   "boardRatePerHour": 30264.33,
+   "id": "mine:silver_ore",
+   "method": "Mine silver ore, bank",
+   "kind": "mining",
+   "inputs": "Mining 20, pickaxe",
+   "boardPerHour": 30264.33,
+   "coinsPerHour": 0,
+   "sellTo": "bank (no market)",
+   "scaling": "logins",
+   "worldUnitsPerHour": 2152.13,
+   "marketUnits": null,
+   "cap": "32 rocks (best site 6), respawn 130 ticks at 1400 players (base 200), 79% a roll at 99: 2152 an hour world-wide",
+   "conflict": "none known",
+   "basis": "estimated",
+   "notes": "3.8 ticks a unit + 40-tick bank trips"
+  },
+  {
+   "rank": 32,
+   "boardRatePerHour": 20082.64,
+   "id": "mine:limestone",
+   "method": "Mine limestone, bank",
+   "kind": "mining",
+   "inputs": "Mining 10, pickaxe",
+   "boardPerHour": 20082.64,
+   "coinsPerHour": 0,
+   "sellTo": "bank (no market)",
+   "scaling": "logins",
+   "worldUnitsPerHour": 15000,
+   "marketUnits": null,
+   "cap": "15 rocks (best site 8), respawn 6 ticks at 1400 players (base 10), 100% a roll at 99: 15000 an hour world-wide",
+   "conflict": "none known",
+   "basis": "estimated",
+   "notes": "3.0 ticks a unit + 40-tick bank trips"
+  },
+  {
+   "rank": 33,
+   "boardRatePerHour": 20082.64,
+   "id": "mine:limestone",
+   "method": "Mine limestone, bank",
+   "kind": "mining",
+   "inputs": "Mining 10, pickaxe",
+   "boardPerHour": 20082.64,
+   "coinsPerHour": 0,
+   "sellTo": "bank (no market)",
+   "scaling": "world clock",
+   "worldUnitsPerHour": 2250,
+   "marketUnits": null,
+   "cap": "4 rocks (best site 4), respawn 13 ticks at 1400 players (base 20), 100% a roll at 99: 2250 an hour world-wide",
+   "conflict": "none known",
+   "basis": "estimated",
+   "notes": "3.0 ticks a unit + 40-tick bank trips"
+  },
+  {
+   "rank": 34,
+   "boardRatePerHour": 20082.64,
+   "id": "mine:limestone",
+   "method": "Mine limestone, bank",
+   "kind": "mining",
+   "inputs": "Mining 10, pickaxe",
+   "boardPerHour": 20082.64,
+   "coinsPerHour": 0,
+   "sellTo": "bank (no market)",
+   "scaling": "world clock",
+   "worldUnitsPerHour": 2172.41,
+   "marketUnits": null,
+   "cap": "7 rocks (best site 7), respawn 26 ticks at 1400 players (base 40), 100% a roll at 99: 2172 an hour world-wide",
+   "conflict": "none known",
+   "basis": "estimated",
+   "notes": "3.0 ticks a unit + 40-tick bank trips"
+  },
+  {
+   "rank": 35,
+   "boardRatePerHour": 18234,
+   "id": "shop:cheapringshop:ruby_ring",
+   "method": "Buy Ruby ring from irksol, bank",
+   "kind": "shop",
+   "inputs": "coins (1012 each)",
+   "boardPerHour": 18234,
+   "coinsPerHour": -18216,
+   "sellTo": "bank",
+   "scaling": "world clock",
+   "worldUnitsPerHour": 18,
+   "marketUnits": null,
+   "cap": "5 base stock, +1 every 500 ticks (18 an hour); 5 more below cost once (+4862)",
+   "conflict": "none known",
+   "basis": "estimated",
+   "notes": "2025 board for 1012 coins (2.00 a coin) at 3247,9589; assumes base stock (config only); below base the price rises 10 per mille a unit, so the row is worth nothing once the shelf is 6 or more under base"
+  }
+ ],
+ "shopMultiplierAnomalies": [
+  {
+   "keeper": "tbwt_tiadeche_final",
+   "keeperDisplay": "Tiadeche",
+   "inv": "tbwt_tiadeche_final_inventory",
+   "sell": 550,
+   "buy": 450,
+   "delta": 10,
+   "title": "Tiadeche's Karambwan Stall",
+   "source": "npc",
+   "defaulted": false
+  },
+  {
+   "keeper": "noterazzo",
+   "keeperDisplay": "Noterazzo",
+   "inv": "taxfree",
+   "sell": 900,
+   "buy": 600,
+   "delta": 30,
+   "title": "Bandit Duty Free",
+   "source": "npc",
+   "defaulted": false
+  },
+  {
+   "keeper": "irksol",
+   "keeperDisplay": "Irksol",
+   "inv": "cheapringshop",
+   "sell": 500,
+   "buy": 300,
+   "delta": 10,
+   "title": "irksol",
+   "source": "npc",
+   "defaulted": false
+  }
+ ],
+ "shopsBelowCost": [
+  {
+   "shop": "tbwt_tiadeche_final_inventory",
+   "title": "Tiadeche's Karambwan Stall",
+   "keeper": "Tiadeche",
+   "at": "2781,3057",
+   "obj": "tbwt_raw_karambwan",
+   "display": "Raw karambwan",
+   "cost": 200,
+   "base": 10,
+   "rate": 10,
+   "restocks": true,
+   "price": 110,
+   "boardPerCoin": 1.82,
+   "unitsPerHour": 900,
+   "boardGainPerHour": 81000,
+   "oneOffUnits": 10,
+   "oneOffGain": 810
+  },
+  {
+   "shop": "tbwt_tiadeche_final_inventory",
+   "title": "Tiadeche's Karambwan Stall",
+   "keeper": "Tiadeche",
+   "at": "2781,3057",
+   "obj": "tbwt_karambwan_vessel",
+   "display": "Karambwan vessel",
+   "cost": 5,
+   "base": 2,
+   "rate": 100,
+   "restocks": true,
+   "price": 2,
+   "boardPerCoin": 2.5,
+   "unitsPerHour": 90,
+   "boardGainPerHour": 270,
+   "oneOffUnits": 2,
+   "oneOffGain": 6
+  },
+  {
+   "shop": "taxfree",
+   "title": "Bandit Duty Free",
+   "keeper": "Noterazzo",
+   "at": "3025,3701",
+   "obj": "bronze_axe",
+   "display": "Bronze axe",
+   "cost": 16,
+   "base": 10,
+   "rate": 100,
+   "restocks": true,
+   "price": 14,
+   "boardPerCoin": 1.14,
+   "unitsPerHour": 90,
+   "boardGainPerHour": 180,
+   "oneOffUnits": 4,
+   "oneOffGain": 6
+  },
+  {
+   "shop": "cheapringshop",
+   "title": "irksol",
+   "keeper": "Irksol",
+   "at": "3247,9589",
+   "obj": "ruby_ring",
+   "display": "Ruby ring",
+   "cost": 2025,
+   "base": 5,
+   "rate": 500,
+   "restocks": true,
+   "price": 1012,
+   "boardPerCoin": 2,
+   "unitsPerHour": 18,
+   "boardGainPerHour": 18234,
+   "oneOffUnits": 5,
+   "oneOffGain": 4862
+  }
+ ],
+ "shopArbitrage": [
+  {
+   "obj": "ruby_ring",
+   "display": "Ruby ring",
+   "cost": 2025,
+   "from": "irksol",
+   "fromAt": "3247,9589",
+   "buy": 1012,
+   "to": "Bandit Duty Free",
+   "toAt": "3025,3701",
+   "sell": 1215,
+   "margin": 203,
+   "unitsPerHour": 18,
+   "coinsPerHour": 3654,
+   "tiles": 5888
+  },
+  {
+   "obj": "ruby_ring",
+   "display": "Ruby ring",
+   "cost": 2025,
+   "from": "irksol",
+   "fromAt": "3247,9589",
+   "buy": 1012,
+   "to": "Grum's Gold Exchange.",
+   "toAt": "3013,3248",
+   "sell": 1417,
+   "margin": 405,
+   "unitsPerHour": 4.5,
+   "coinsPerHour": 1822.5,
+   "tiles": 6341
+  },
+  {
+   "obj": "ruby_ring",
+   "display": "Ruby ring",
+   "cost": 2025,
+   "from": "irksol",
+   "fromAt": "3247,9589",
+   "buy": 1012,
+   "to": "The Lighthouse Store",
+   "toAt": "2509,3639,1",
+   "sell": 1113,
+   "margin": 101,
+   "unitsPerHour": 18,
+   "coinsPerHour": 1818,
+   "tiles": 5950
+  },
+  {
+   "obj": "ruby_ring",
+   "display": "Ruby ring",
+   "cost": 2025,
+   "from": "irksol",
+   "fromAt": "3247,9589",
+   "buy": 1012,
+   "to": "Legends Guild General Store.",
+   "toAt": "2725,3378,1",
+   "sell": 1113,
+   "margin": 101,
+   "unitsPerHour": 18,
+   "coinsPerHour": 1818,
+   "tiles": 6211
+  },
+  {
+   "obj": "ruby_ring",
+   "display": "Ruby ring",
+   "cost": 2025,
+   "from": "irksol",
+   "fromAt": "3247,9589",
+   "buy": 1012,
+   "to": "West Ardougne General Store",
+   "toAt": "2464,3287",
+   "sell": 1113,
+   "margin": 101,
+   "unitsPerHour": 18,
+   "coinsPerHour": 1818,
+   "tiles": 6302
+  },
+  {
+   "obj": "tbwt_raw_karambwan",
+   "display": "Raw karambwan",
+   "cost": 200,
+   "from": "Tiadeche's Karambwan Stall",
+   "fromAt": "2781,3057",
+   "buy": 110,
+   "to": "Bandit Duty Free",
+   "toAt": "3025,3701",
+   "sell": 120,
+   "margin": 10,
+   "unitsPerHour": 90,
+   "coinsPerHour": 900,
+   "tiles": 644
+  },
+  {
+   "obj": "tbwt_karambwan_vessel",
+   "display": "Karambwan vessel",
+   "cost": 5,
+   "from": "Tiadeche's Karambwan Stall",
+   "fromAt": "2781,3057",
+   "buy": 2,
+   "to": "Bandit Duty Free",
+   "toAt": "3025,3701",
+   "sell": 3,
+   "margin": 1,
+   "unitsPerHour": 90,
+   "coinsPerHour": 90,
+   "tiles": 644
+  }
+ ],
+ "highAlchFromShops": {
+  "natureRune": 20,
+  "lines": [
+   {
+    "obj": "ruby_ring",
+    "display": "Ruby ring",
+    "cost": 2025,
+    "alch": 1215,
+    "shop": "irksol",
+    "price": 1012,
+    "profit": 183,
+    "unitsPerHour": 18,
+    "coinsPerHour": 3294
+   }
+  ]
+ },
+ "geAsksBelowCost": [
+  {
+   "id": 1181,
+   "display": "Mithril sq shield",
+   "cost": 1560,
+   "ask": 1248,
+   "meanAsk": 1248,
+   "depth": 10,
+   "boardPerCoin": 1.25,
+   "gainAtDepth": 3120
+  },
+  {
+   "id": 1095,
+   "display": "Leather chaps",
+   "cost": 20,
+   "ask": 14,
+   "meanAsk": 14,
+   "depth": 12,
+   "boardPerCoin": 1.43,
+   "gainAtDepth": 72
+  },
+  {
+   "id": 321,
+   "display": "Raw anchovies",
+   "cost": 15,
+   "ask": 2,
+   "meanAsk": 2,
+   "depth": 3,
+   "boardPerCoin": 7.5,
+   "gainAtDepth": 39
+  },
+  {
+   "id": 841,
+   "display": "Shortbow",
+   "cost": 50,
+   "ask": 15,
+   "meanAsk": 15,
+   "depth": 1,
+   "boardPerCoin": 3.33,
+   "gainAtDepth": 35
+  },
+  {
+   "id": 1237,
+   "display": "Bronze spear",
+   "cost": 26,
+   "ask": 21,
+   "meanAsk": 21,
+   "depth": 1,
+   "boardPerCoin": 1.24,
+   "gainAtDepth": 5
+  },
+  {
+   "id": 559,
+   "display": "Body rune",
+   "cost": 3,
+   "ask": 2,
+   "meanAsk": 2.5,
+   "depth": 4,
+   "boardPerCoin": 1.5,
+   "gainAtDepth": 2
+  },
+  {
+   "id": 877,
+   "display": "Bolts",
+   "cost": 3,
+   "ask": 2,
+   "meanAsk": 5.91,
+   "depth": 43,
+   "boardPerCoin": 1.5,
+   "gainAtDepth": -125
+  }
+ ],
+ "geBids": [
+  {
+   "id": 3140,
+   "obj": "dragon_chainbody",
+   "display": "Dragon chainbody",
+   "cost": 250000,
+   "bid": 175000000,
+   "meanBid": 175000000,
+   "depth": 1,
+   "committed": 175000000,
+   "net": 166250000,
+   "overCost": 665,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 150000
+  },
+  {
+   "id": 1631,
+   "obj": "uncut_dragonstone",
+   "display": "Uncut dragonstone",
+   "cost": 1000,
+   "bid": 1000000,
+   "meanBid": 1000000,
+   "depth": 100,
+   "committed": 100000000,
+   "net": 950000,
+   "overCost": 950,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 600
+  },
+  {
+   "id": 1987,
+   "obj": "grapes",
+   "display": "Grapes",
+   "cost": 1,
+   "bid": 1000,
+   "meanBid": 1000,
+   "depth": 97804,
+   "committed": 97804000,
+   "net": 950,
+   "overCost": 950,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 1
+  },
+  {
+   "id": 868,
+   "obj": "rune_knife",
+   "display": "Rune knife",
+   "cost": 167,
+   "bid": 2010,
+   "meanBid": 2010,
+   "depth": 43459,
+   "committed": 87352590,
+   "net": 1909,
+   "overCost": 11.43,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 100
+  },
+  {
+   "id": 453,
+   "obj": "coal",
+   "display": "Coal",
+   "cost": 45,
+   "bid": 80,
+   "meanBid": 12.44,
+   "depth": 6848105,
+   "committed": 85156934,
+   "net": 76,
+   "overCost": 1.69,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 31
+  },
+  {
+   "id": 2363,
+   "obj": "runite_bar",
+   "display": "Runite bar",
+   "cost": 5000,
+   "bid": 41005,
+   "meanBid": 41005,
+   "depth": 2017,
+   "committed": 82707085,
+   "net": 38954,
+   "overCost": 7.79,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 3000
+  },
+  {
+   "id": 440,
+   "obj": "iron_ore",
+   "display": "Iron ore",
+   "cost": 17,
+   "bid": 80,
+   "meanBid": 80,
+   "depth": 999283,
+   "committed": 79942640,
+   "net": 76,
+   "overCost": 4.47,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 11
+  },
+  {
+   "id": 2361,
+   "obj": "adamantite_bar",
+   "display": "Adamantite bar",
+   "cost": 640,
+   "bid": 1666,
+   "meanBid": 1666,
+   "depth": 24886,
+   "committed": 41460076,
+   "net": 1582,
+   "overCost": 2.47,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 384
+  },
+  {
+   "id": 1617,
+   "obj": "uncut_diamond",
+   "display": "Uncut diamond",
+   "cost": 200,
+   "bid": 3500,
+   "meanBid": 3500,
+   "depth": 9668,
+   "committed": 33838000,
+   "net": 3325,
+   "overCost": 16.63,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 140
+  },
+  {
+   "id": 1436,
+   "obj": "blankrune",
+   "display": "Rune essence",
+   "cost": 4,
+   "bid": 55,
+   "meanBid": 55,
+   "depth": 522738,
+   "committed": 28750590,
+   "net": 52,
+   "overCost": 13,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 2
+  },
+  {
+   "id": 1619,
+   "obj": "uncut_ruby",
+   "display": "Uncut ruby",
+   "cost": 100,
+   "bid": 2501,
+   "meanBid": 2500,
+   "depth": 9978,
+   "committed": 24945005,
+   "net": 2375,
+   "overCost": 23.75,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 70
+  },
+  {
+   "id": 1629,
+   "obj": "uncut_red_topaz",
+   "display": "Uncut red topaz",
+   "cost": 40,
+   "bid": 2501,
+   "meanBid": 2500,
+   "depth": 9873,
+   "committed": 24682505,
+   "net": 2375,
+   "overCost": 59.38,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 24
+  },
+  {
+   "id": 1621,
+   "obj": "uncut_emerald",
+   "display": "Uncut emerald",
+   "cost": 50,
+   "bid": 2500,
+   "meanBid": 2500,
+   "depth": 9423,
+   "committed": 23557500,
+   "net": 2375,
+   "overCost": 47.5,
+   "shopPrice": 50,
+   "shop": "Gem Trader. (3288,3212)",
+   "shopMargin": 2325,
+   "bestNonGe": 35
+  },
+  {
+   "id": 1623,
+   "obj": "uncut_sapphire",
+   "display": "Uncut sapphire",
+   "cost": 25,
+   "bid": 2500,
+   "meanBid": 2500,
+   "depth": 8499,
+   "committed": 21247500,
+   "net": 2375,
+   "overCost": 95,
+   "shopPrice": 25,
+   "shop": "Gem Trader. (3288,3212)",
+   "shopMargin": 2350,
+   "bestNonGe": 17
+  },
+  {
+   "id": 1704,
+   "obj": "amulet_of_glory",
+   "display": "Amulet of glory",
+   "cost": 17625,
+   "bid": 300000,
+   "meanBid": 300000,
+   "depth": 70,
+   "committed": 21000000,
+   "net": 285000,
+   "overCost": 16.17,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 10575
+  },
+  {
+   "id": 449,
+   "obj": "adamantite_ore",
+   "display": "Adamantite ore",
+   "cost": 400,
+   "bid": 1148,
+   "meanBid": 1148,
+   "depth": 18226,
+   "committed": 20923448,
+   "net": 1090,
+   "overCost": 2.73,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 240
+  },
+  {
+   "id": 2503,
+   "obj": "black_dragonhide_body",
+   "display": "Dragonhide body",
+   "cost": 13480,
+   "bid": 25000,
+   "meanBid": 20356.21,
+   "depth": 943,
+   "committed": 19195902,
+   "net": 23750,
+   "overCost": 1.76,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 8088
+  },
+  {
+   "id": 1627,
+   "obj": "uncut_jade",
+   "display": "Uncut jade",
+   "cost": 30,
+   "bid": 2500,
+   "meanBid": 2500,
+   "depth": 5540,
+   "committed": 13850000,
+   "net": 2375,
+   "overCost": 79.17,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 18
+  },
+  {
+   "id": 565,
+   "obj": "bloodrune",
+   "display": "Blood rune",
+   "cost": 50,
+   "bid": 1301,
+   "meanBid": 663.02,
+   "depth": 17916,
+   "committed": 11878585,
+   "net": 1235,
+   "overCost": 24.7,
+   "shopPrice": 50,
+   "shop": "Magic Guild Store (2595,3087,1)",
+   "shopMargin": 1185,
+   "bestNonGe": 30
+  },
+  {
+   "id": 1042,
+   "obj": "blue_partyhat",
+   "display": "Blue partyhat",
+   "cost": 1,
+   "bid": 10000000,
+   "meanBid": 3339999.67,
+   "depth": 3,
+   "committed": 10019999,
+   "net": 9500000,
+   "overCost": 9500000,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 1
+  },
+  {
+   "id": 1187,
+   "obj": "dragon_sq_shield",
+   "display": "Dragon sq shield",
+   "cost": 500000,
+   "bid": 10000000,
+   "meanBid": 10000000,
+   "depth": 1,
+   "committed": 10000000,
+   "net": 9500000,
+   "overCost": 19,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 300000
+  },
+  {
+   "id": 1249,
+   "obj": "dragon_spear",
+   "display": "Dragon spear",
+   "cost": 62400,
+   "bid": 2000000,
+   "meanBid": 2000000,
+   "depth": 5,
+   "committed": 10000000,
+   "net": 1900000,
+   "overCost": 30.45,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 37440
+  },
+  {
+   "id": 2351,
+   "obj": "iron_bar",
+   "display": "Iron bar",
+   "cost": 28,
+   "bid": 100,
+   "meanBid": 100,
+   "depth": 99412,
+   "committed": 9941200,
+   "net": 95,
+   "overCost": 3.39,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 19
+  },
+  {
+   "id": 536,
+   "obj": "dragon_bones",
+   "display": "Dragon bones",
+   "cost": 1,
+   "bid": 5001,
+   "meanBid": 5000,
+   "depth": 1257,
+   "committed": 6285003,
+   "net": 4750,
+   "overCost": 4750,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 1
+  },
+  {
+   "id": 2366,
+   "obj": "dragonshield_a",
+   "display": "Shield left half",
+   "cost": 110000,
+   "bid": 2000000,
+   "meanBid": 2000000,
+   "depth": 3,
+   "committed": 6000000,
+   "net": 1900000,
+   "overCost": 17.27,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 66000
+  },
+  {
+   "id": 267,
+   "obj": "dwarf_weed",
+   "display": "Dwarf weed",
+   "cost": 70,
+   "bid": 7000,
+   "meanBid": 7000,
+   "depth": 839,
+   "committed": 5873000,
+   "net": 6650,
+   "overCost": 95,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 42
+  },
+  {
+   "id": 1625,
+   "obj": "uncut_opal",
+   "display": "Uncut opal",
+   "cost": 20,
+   "bid": 2500,
+   "meanBid": 2500,
+   "depth": 2342,
+   "committed": 5855000,
+   "net": 2375,
+   "overCost": 118.75,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 12
+  },
+  {
+   "id": 2577,
+   "obj": "boots_ranger",
+   "display": "Ranger boots",
+   "cost": 200,
+   "bid": 5000000,
+   "meanBid": 5000000,
+   "depth": 1,
+   "committed": 5000000,
+   "net": 4750000,
+   "overCost": 23750,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 120
+  },
+  {
+   "id": 2579,
+   "obj": "boots_wizard",
+   "display": "Wizard's boots",
+   "cost": 200,
+   "bid": 5000000,
+   "meanBid": 5000000,
+   "depth": 1,
+   "committed": 5000000,
+   "net": 4750000,
+   "overCost": 23750,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 120
+  },
+  {
+   "id": 532,
+   "obj": "big_bones",
+   "display": "Big bones",
+   "cost": 1,
+   "bid": 1000,
+   "meanBid": 1000,
+   "depth": 4990,
+   "committed": 4990000,
+   "net": 950,
+   "overCost": 950,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 1
+  },
+  {
+   "id": 1474,
+   "obj": "black_bead",
+   "display": "Black bead",
+   "cost": 4,
+   "bid": 1000,
+   "meanBid": 1000,
+   "depth": 4694,
+   "committed": 4694000,
+   "net": 950,
+   "overCost": 237.5,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 2
+  },
+  {
+   "id": 1470,
+   "obj": "red_bead",
+   "display": "Red bead",
+   "cost": 4,
+   "bid": 1000,
+   "meanBid": 1000,
+   "depth": 4666,
+   "committed": 4666000,
+   "net": 950,
+   "overCost": 237.5,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 2
+  },
+  {
+   "id": 1476,
+   "obj": "white_bead",
+   "display": "White bead",
+   "cost": 4,
+   "bid": 1000,
+   "meanBid": 1000,
+   "depth": 4663,
+   "committed": 4663000,
+   "net": 950,
+   "overCost": 237.5,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 2
+  },
+  {
+   "id": 1359,
+   "obj": "rune_axe",
+   "display": "Rune axe",
+   "cost": 12800,
+   "bid": 150000,
+   "meanBid": 101162.79,
+   "depth": 43,
+   "committed": 4350000,
+   "net": 142500,
+   "overCost": 11.13,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 7680
+  },
+  {
+   "id": 1472,
+   "obj": "yellow_bead",
+   "display": "Yellow bead",
+   "cost": 4,
+   "bid": 5000,
+   "meanBid": 5000,
+   "depth": 690,
+   "committed": 3450000,
+   "net": 4750,
+   "overCost": 1187.5,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 2
+  },
+  {
+   "id": 1777,
+   "obj": "bow_string",
+   "display": "Bow string",
+   "cost": 10,
+   "bid": 1,
+   "meanBid": 1,
+   "depth": 1418258,
+   "committed": 1418258,
+   "net": 0,
+   "overCost": 0,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 6
+  },
+  {
+   "id": 1747,
+   "obj": "dragonhide_black",
+   "display": "Dragonhide",
+   "cost": 80,
+   "bid": 6000,
+   "meanBid": 6000,
+   "depth": 201,
+   "committed": 1206000,
+   "net": 5700,
+   "overCost": 71.25,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 48
+  },
+  {
+   "id": 1731,
+   "obj": "amulet_of_power",
+   "display": "Amulet of power",
+   "cost": 3525,
+   "bid": 10000,
+   "meanBid": 9945.54,
+   "depth": 101,
+   "committed": 1004500,
+   "net": 9500,
+   "overCost": 2.7,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 3172
+  },
+  {
+   "id": 2497,
+   "obj": "black_dragonhide_chaps",
+   "display": "Dragonhide chaps",
+   "cost": 6220,
+   "bid": 15000,
+   "meanBid": 14948.28,
+   "depth": 58,
+   "committed": 867000,
+   "net": 14250,
+   "overCost": 2.29,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 3732
+  },
+  {
+   "id": 2353,
+   "obj": "steel_bar",
+   "display": "Steel bar",
+   "cost": 100,
+   "bid": 89,
+   "meanBid": 89,
+   "depth": 9650,
+   "committed": 858850,
+   "net": 84,
+   "overCost": 0.84,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 60
+  },
+  {
+   "id": 2491,
+   "obj": "black_dragon_vambraces",
+   "display": "Dragon vambraces",
+   "cost": 4320,
+   "bid": 10000,
+   "meanBid": 10000,
+   "depth": 68,
+   "committed": 680000,
+   "net": 9500,
+   "overCost": 2.2,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 2592
+  },
+  {
+   "id": 1725,
+   "obj": "amulet_of_strength",
+   "display": "Amulet of strength",
+   "cost": 2025,
+   "bid": 5500,
+   "meanBid": 5500,
+   "depth": 101,
+   "committed": 555500,
+   "net": 5225,
+   "overCost": 2.58,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 1822
+  },
+  {
+   "id": 115,
+   "obj": "3dose1strength",
+   "display": "Strength potion(3)",
+   "cost": 13,
+   "bid": 550,
+   "meanBid": 550,
+   "depth": 1001,
+   "committed": 550550,
+   "net": 522,
+   "overCost": 40.15,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 7
+  },
+  {
+   "id": 169,
+   "obj": "3doserangerspotion",
+   "display": "Ranging potion(3)",
+   "cost": 288,
+   "bid": 5500,
+   "meanBid": 5500,
+   "depth": 100,
+   "committed": 550000,
+   "net": 5225,
+   "overCost": 18.14,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 172
+  },
+  {
+   "id": 563,
+   "obj": "lawrune",
+   "display": "Law rune",
+   "cost": 40,
+   "bid": 101,
+   "meanBid": 100,
+   "depth": 5055,
+   "committed": 505520,
+   "net": 95,
+   "overCost": 2.38,
+   "shopPrice": 40,
+   "shop": "Ifaba's General Store (2757,2770)",
+   "shopMargin": 55,
+   "bestNonGe": 24
+  },
+  {
+   "id": 145,
+   "obj": "3dose2attack",
+   "display": "Super attack(3)",
+   "cost": 180,
+   "bid": 5000,
+   "meanBid": 5000,
+   "depth": 100,
+   "committed": 500000,
+   "net": 4750,
+   "overCost": 26.39,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 108
+  },
+  {
+   "id": 157,
+   "obj": "3dose2strength",
+   "display": "Super strength(3)",
+   "cost": 220,
+   "bid": 5000,
+   "meanBid": 5000,
+   "depth": 100,
+   "committed": 500000,
+   "net": 4750,
+   "overCost": 21.59,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 132
+  },
+  {
+   "id": 2550,
+   "obj": "ring_of_recoil",
+   "display": "Ring of recoil",
+   "cost": 900,
+   "bid": 5000,
+   "meanBid": 5000,
+   "depth": 100,
+   "committed": 500000,
+   "net": 4750,
+   "overCost": 5.28,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 540
+  },
+  {
+   "id": 526,
+   "obj": "bones",
+   "display": "Bones",
+   "cost": 1,
+   "bid": 101,
+   "meanBid": 101,
+   "depth": 4946,
+   "committed": 499546,
+   "net": 95,
+   "overCost": 95,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 1
+  },
+  {
+   "id": 139,
+   "obj": "3doseprayerrestore",
+   "display": "Prayer potion(3)",
+   "cost": 152,
+   "bid": 4500,
+   "meanBid": 4500,
+   "depth": 100,
+   "committed": 450000,
+   "net": 4275,
+   "overCost": 28.13,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 91
+  },
+  {
+   "id": 163,
+   "obj": "3dose2defense",
+   "display": "Super defence(3)",
+   "cost": 264,
+   "bid": 4500,
+   "meanBid": 4500,
+   "depth": 100,
+   "committed": 450000,
+   "net": 4275,
+   "overCost": 16.19,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 158
+  },
+  {
+   "id": 556,
+   "obj": "airrune",
+   "display": "Air rune",
+   "cost": 4,
+   "bid": 4,
+   "meanBid": 4,
+   "depth": 99281,
+   "committed": 397121,
+   "net": 3,
+   "overCost": 0.75,
+   "shopPrice": 4,
+   "shop": "Ifaba's General Store (2757,2770)",
+   "shopMargin": -1,
+   "bestNonGe": 2
+  },
+  {
+   "id": 121,
+   "obj": "3dose1attack",
+   "display": "Attack potion(3)",
+   "cost": 12,
+   "bid": 350,
+   "meanBid": 350,
+   "depth": 1001,
+   "committed": 350350,
+   "net": 332,
+   "overCost": 27.67,
+   "shopPrice": 18,
+   "shop": "Legends Guild General Store. (2725,3378,1)",
+   "shopMargin": 314,
+   "bestNonGe": 7
+  },
+  {
+   "id": 1231,
+   "obj": "dragon_dagger_p",
+   "display": "Dragon dagger(p)",
+   "cost": 24000,
+   "bid": 35000,
+   "meanBid": 35000,
+   "depth": 10,
+   "committed": 350000,
+   "net": 33250,
+   "overCost": 1.39,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 14400
+  },
+  {
+   "id": 181,
+   "obj": "3dose2antipoison",
+   "display": "Superantipoison(3)",
+   "cost": 288,
+   "bid": 2400,
+   "meanBid": 2400,
+   "depth": 101,
+   "committed": 242400,
+   "net": 2280,
+   "overCost": 7.92,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 172
+  },
+  {
+   "id": 175,
+   "obj": "3doseantipoison",
+   "display": "Antipoison(3)",
+   "cost": 288,
+   "bid": 1200,
+   "meanBid": 1200,
+   "depth": 101,
+   "committed": 121200,
+   "net": 1140,
+   "overCost": 3.96,
+   "shopPrice": 432,
+   "shop": "Jiminua's Jungle Store. (2767,3122)",
+   "shopMargin": 708,
+   "bestNonGe": 172
+  },
+  {
+   "id": 1462,
+   "obj": "nature_talisman",
+   "display": "Nature talisman",
+   "cost": 4,
+   "bid": 50000,
+   "meanBid": 33333.33,
+   "depth": 3,
+   "committed": 100000,
+   "net": 47500,
+   "overCost": 11875,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 2
+  },
+  {
+   "id": 2434,
+   "obj": "4doseprayerrestore",
+   "display": "Prayer potion(4)",
+   "cost": 190,
+   "bid": 9000,
+   "meanBid": 5444.44,
+   "depth": 18,
+   "committed": 98000,
+   "net": 8550,
+   "overCost": 45,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 114
+  },
+  {
+   "id": 1333,
+   "obj": "rune_scimitar",
+   "display": "Rune scimitar",
+   "cost": 25600,
+   "bid": 47250,
+   "meanBid": 46125,
+   "depth": 2,
+   "committed": 92250,
+   "net": 44887,
+   "overCost": 1.75,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 15360
+  },
+  {
+   "id": 1163,
+   "obj": "rune_full_helm",
+   "display": "Rune full helm",
+   "cost": 35200,
+   "bid": 70000,
+   "meanBid": 70000,
+   "depth": 1,
+   "committed": 70000,
+   "net": 66500,
+   "overCost": 1.89,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 21120
+  },
+  {
+   "id": 1099,
+   "obj": "dragonhide_chaps",
+   "display": "Dragonhide chaps",
+   "cost": 3900,
+   "bid": 1500,
+   "meanBid": 1205.77,
+   "depth": 52,
+   "committed": 62700,
+   "net": 1425,
+   "overCost": 0.37,
+   "shopPrice": 3900,
+   "shop": "Scavvo's Rune Store. (3191,3351,1)",
+   "shopMargin": -2475,
+   "bestNonGe": 2340
+  },
+  {
+   "id": 1113,
+   "obj": "rune_chainbody",
+   "display": "Rune chainbody",
+   "cost": 50000,
+   "bid": 52500,
+   "meanBid": 52500,
+   "depth": 1,
+   "committed": 52500,
+   "net": 49875,
+   "overCost": 1,
+   "shopPrice": 50000,
+   "shop": "Scavvo's Rune Store. (3191,3351,1)",
+   "shopMargin": -125,
+   "bestNonGe": 30000
+  },
+  {
+   "id": 1601,
+   "obj": "diamond",
+   "display": "Diamond",
+   "cost": 2000,
+   "bid": 4500,
+   "meanBid": 4500,
+   "depth": 11,
+   "committed": 49500,
+   "net": 4275,
+   "overCost": 2.14,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 1600
+  },
+  {
+   "id": 2444,
+   "obj": "4doserangerspotion",
+   "display": "Ranging potion(4)",
+   "cost": 360,
+   "bid": 6000,
+   "meanBid": 5375,
+   "depth": 8,
+   "committed": 43000,
+   "net": 5700,
+   "overCost": 15.83,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 216
+  },
+  {
+   "id": 1540,
+   "obj": "antidragonbreathshield",
+   "display": "Dragonfire shield",
+   "cost": 20,
+   "bid": 15000,
+   "meanBid": 247.52,
+   "depth": 101,
+   "committed": 25000,
+   "net": 14250,
+   "overCost": 712.5,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 12
+  },
+  {
+   "id": 2440,
+   "obj": "4dose2strength",
+   "display": "Super strength(4)",
+   "cost": 275,
+   "bid": 4000,
+   "meanBid": 3583.33,
+   "depth": 6,
+   "committed": 21500,
+   "net": 3800,
+   "overCost": 13.82,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 165
+  },
+  {
+   "id": 39,
+   "obj": "bronze_arrowheads",
+   "display": "Bronze arrowtips",
+   "cost": 1,
+   "bid": 12,
+   "meanBid": 12,
+   "depth": 1650,
+   "committed": 19800,
+   "net": 11,
+   "overCost": 11,
+   "shopPrice": 1,
+   "shop": "Dargaud's Bow and Arrows. (2673,3434)",
+   "shopMargin": 10,
+   "bestNonGe": 1
+  },
+  {
+   "id": 2436,
+   "obj": "4dose2attack",
+   "display": "Super attack(4)",
+   "cost": 225,
+   "bid": 3500,
+   "meanBid": 3083.33,
+   "depth": 6,
+   "committed": 18500,
+   "net": 3325,
+   "overCost": 14.78,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 135
+  },
+  {
+   "id": 558,
+   "obj": "mindrune",
+   "display": "Mind rune",
+   "cost": 3,
+   "bid": 6,
+   "meanBid": 6,
+   "depth": 1988,
+   "committed": 11928,
+   "net": 5,
+   "overCost": 1.67,
+   "shopPrice": 3,
+   "shop": "Magic Guild Store (2595,3087,1)",
+   "shopMargin": 2,
+   "bestNonGe": 1
+  },
+  {
+   "id": 2325,
+   "obj": "redberry_pie",
+   "display": "Redberry pie",
+   "cost": 12,
+   "bid": 10000,
+   "meanBid": 10000,
+   "depth": 1,
+   "committed": 10000,
+   "net": 9500,
+   "overCost": 791.67,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 7
+  },
+  {
+   "id": 2442,
+   "obj": "4dose2defense",
+   "display": "Super defence(4)",
+   "cost": 330,
+   "bid": 5000,
+   "meanBid": 5000,
+   "depth": 2,
+   "committed": 10000,
+   "net": 4750,
+   "overCost": 14.39,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 198
+  },
+  {
+   "id": 2359,
+   "obj": "mithril_bar",
+   "display": "Mithril bar",
+   "cost": 300,
+   "bid": 360,
+   "meanBid": 360,
+   "depth": 25,
+   "committed": 9000,
+   "net": 342,
+   "overCost": 1.14,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 180
+  },
+  {
+   "id": 451,
+   "obj": "runite_ore",
+   "display": "Runite ore",
+   "cost": 3200,
+   "bid": 5320,
+   "meanBid": 5320,
+   "depth": 1,
+   "committed": 5320,
+   "net": 5054,
+   "overCost": 1.58,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 1920
+  },
+  {
+   "id": 1329,
+   "obj": "mithril_scimitar",
+   "display": "Mithril scimitar",
+   "cost": 1040,
+   "bid": 2356,
+   "meanBid": 1514.33,
+   "depth": 3,
+   "committed": 4543,
+   "net": 2238,
+   "overCost": 2.15,
+   "shopPrice": 1040,
+   "shop": "Daga's Scimitar Smithy (2759,2775)",
+   "shopMargin": 1198,
+   "bestNonGe": 624
+  },
+  {
+   "id": 379,
+   "obj": "lobster",
+   "display": "Lobster",
+   "cost": 150,
+   "bid": 120,
+   "meanBid": 105.56,
+   "depth": 43,
+   "committed": 4539,
+   "net": 114,
+   "overCost": 0.76,
+   "shopPrice": 195,
+   "shop": "The Shrimp and Parrot (2793,3188)",
+   "shopMargin": -81,
+   "bestNonGe": 112
+  },
+  {
+   "id": 2446,
+   "obj": "4doseantipoison",
+   "display": "Antipoison(4)",
+   "cost": 360,
+   "bid": 2000,
+   "meanBid": 2000,
+   "depth": 2,
+   "committed": 4000,
+   "net": 1900,
+   "overCost": 5.28,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 216
+  },
+  {
+   "id": 2448,
+   "obj": "4dose2antipoison",
+   "display": "Superantipoison(4)",
+   "cost": 360,
+   "bid": 2000,
+   "meanBid": 2000,
+   "depth": 2,
+   "committed": 4000,
+   "net": 1900,
+   "overCost": 5.28,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 216
+  },
+  {
+   "id": 1271,
+   "obj": "adamant_pickaxe",
+   "display": "Adamant pickaxe",
+   "cost": 3200,
+   "bid": 3600,
+   "meanBid": 1800.5,
+   "depth": 2,
+   "committed": 3601,
+   "net": 3420,
+   "overCost": 1.07,
+   "shopPrice": 3200,
+   "shop": "Nurmof's Pickaxe Shop. (2998,9844)",
+   "shopMargin": 220,
+   "bestNonGe": 1920
+  },
+  {
+   "id": 2357,
+   "obj": "gold_bar",
+   "display": "Gold bar",
+   "cost": 300,
+   "bid": 1200,
+   "meanBid": 1200,
+   "depth": 3,
+   "committed": 3600,
+   "net": 1140,
+   "overCost": 3.8,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 210
+  },
+  {
+   "id": 555,
+   "obj": "waterrune",
+   "display": "Water rune",
+   "cost": 4,
+   "bid": 10,
+   "meanBid": 10,
+   "depth": 300,
+   "committed": 3000,
+   "net": 9,
+   "overCost": 2.25,
+   "shopPrice": 4,
+   "shop": "Ifaba's General Store (2757,2770)",
+   "shopMargin": 5,
+   "bestNonGe": 2
+  },
+  {
+   "id": 892,
+   "obj": "rune_arrow",
+   "display": "Rune arrow",
+   "cost": 400,
+   "bid": 400,
+   "meanBid": 400,
+   "depth": 6,
+   "committed": 2400,
+   "net": 380,
+   "overCost": 0.95,
+   "shopPrice": 400,
+   "shop": "Dargaud's Bow and Arrows. (2673,3434)",
+   "shopMargin": -20,
+   "bestNonGe": 240
+  },
+  {
+   "id": 1539,
+   "obj": "nails",
+   "display": "Nails",
+   "cost": 3,
+   "bid": 200,
+   "meanBid": 200,
+   "depth": 12,
+   "committed": 2400,
+   "net": 190,
+   "overCost": 63.33,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 1
+  },
+  {
+   "id": 3032,
+   "obj": "4dose1agility",
+   "display": "Agility potion(4)",
+   "cost": 200,
+   "bid": 2000,
+   "meanBid": 2000,
+   "depth": 1,
+   "committed": 2000,
+   "net": 1900,
+   "overCost": 9.5,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 120
+  },
+  {
+   "id": 3040,
+   "obj": "4dose1magic",
+   "display": "Magic potion(4)",
+   "cost": 300,
+   "bid": 2000,
+   "meanBid": 2000,
+   "depth": 1,
+   "committed": 2000,
+   "net": 1900,
+   "overCost": 6.33,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 180
+  },
+  {
+   "id": 960,
+   "obj": "woodplank",
+   "display": "Plank",
+   "cost": 1,
+   "bid": 450,
+   "meanBid": 450,
+   "depth": 3,
+   "committed": 1350,
+   "net": 427,
+   "overCost": 427,
+   "shopPrice": 1,
+   "shop": "Razmire Builders Merchants. (quests/quest_mortton/scripts/razmire_keelgan.rs2)",
+   "shopMargin": 426,
+   "bestNonGe": 1
+  },
+  {
+   "id": 72,
+   "obj": "unstrung_magic_shortbow",
+   "display": "Magic shortbow",
+   "cost": 800,
+   "bid": 1040,
+   "meanBid": 1040,
+   "depth": 1,
+   "committed": 1040,
+   "net": 988,
+   "overCost": 1.24,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 480
+  },
+  {
+   "id": 564,
+   "obj": "cosmicrune",
+   "display": "Cosmic rune",
+   "cost": 15,
+   "bid": 1000,
+   "meanBid": 1000,
+   "depth": 1,
+   "committed": 1000,
+   "net": 950,
+   "overCost": 63.33,
+   "shopPrice": 15,
+   "shop": "Lundail's Arena-side Rune Shop. (2534,4719)",
+   "shopMargin": 935,
+   "bestNonGe": 9
+  },
+  {
+   "id": 1949,
+   "obj": "chefs_hat",
+   "display": "Chef's hat",
+   "cost": 2,
+   "bid": 300,
+   "meanBid": 33.33,
+   "depth": 21,
+   "committed": 700,
+   "net": 285,
+   "overCost": 142.5,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 1
+  },
+  {
+   "id": 438,
+   "obj": "tin_ore",
+   "display": "Tin ore",
+   "cost": 3,
+   "bid": 100,
+   "meanBid": 100,
+   "depth": 6,
+   "committed": 600,
+   "net": 95,
+   "overCost": 31.67,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 2
+  },
+  {
+   "id": 315,
+   "obj": "shrimp",
+   "display": "Shrimps",
+   "cost": 5,
+   "bid": 2,
+   "meanBid": 2,
+   "depth": 100,
+   "committed": 200,
+   "net": 1,
+   "overCost": 0.2,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 3
+  },
+  {
+   "id": 1050,
+   "obj": "santa_hat",
+   "display": "Santa hat",
+   "cost": 160,
+   "bid": 193,
+   "meanBid": 193,
+   "depth": 1,
+   "committed": 193,
+   "net": 183,
+   "overCost": 1.14,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 96
+  },
+  {
+   "id": 1440,
+   "obj": "earth_talisman",
+   "display": "Earth talisman",
+   "cost": 4,
+   "bid": 54,
+   "meanBid": 54,
+   "depth": 1,
+   "committed": 54,
+   "net": 51,
+   "overCost": 12.75,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 2
+  },
+  {
+   "id": 323,
+   "obj": "burntfish1",
+   "display": "Burnt fish",
+   "cost": 1,
+   "bid": 1,
+   "meanBid": 1,
+   "depth": 11,
+   "committed": 11,
+   "net": 0,
+   "overCost": 0,
+   "shopPrice": null,
+   "shop": null,
+   "shopMargin": null,
+   "bestNonGe": 1
+  }
+ ],
+ "recipesByBoardValuePerTick": [
+  {
+   "skill": "crafting",
+   "row": "dragonstone_cutting",
+   "level": 55,
+   "inputs": [
+    {
+     "obj": "uncut_dragonstone",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "dragonstone",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 1000,
+   "outputCost": 10000,
+   "addedPerAction": 9000,
+   "addedPerTick": 30000,
+   "cycle": {
+    "ticks": 0.3,
+    "basis": "measured",
+    "source": "crafting.md: 0.2 ticks per cut, 27 gems per 8.2 ticks with the bank cycle"
+   }
+  },
+  {
+   "skill": "crafting",
+   "row": "fire_orb",
+   "level": 62,
+   "inputs": [
+    {
+     "obj": "fire_orb",
+     "n": 1
+    },
+    {
+     "obj": "battlestaff",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "fire_battlestaff",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 7300,
+   "outputCost": 15500,
+   "addedPerAction": 8200,
+   "addedPerTick": 28275.86,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "estimated",
+    "source": "use-item-on-item; herblore cycle assumed"
+   }
+  },
+  {
+   "skill": "crafting",
+   "row": "water_orb",
+   "level": 54,
+   "inputs": [
+    {
+     "obj": "water_orb",
+     "n": 1
+    },
+    {
+     "obj": "battlestaff",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "water_battlestaff",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 7300,
+   "outputCost": 15500,
+   "addedPerAction": 8200,
+   "addedPerTick": 28275.86,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "estimated",
+    "source": "use-item-on-item; herblore cycle assumed"
+   }
+  },
+  {
+   "skill": "crafting",
+   "row": "air_orb",
+   "level": 66,
+   "inputs": [
+    {
+     "obj": "air_orb",
+     "n": 1
+    },
+    {
+     "obj": "battlestaff",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "air_battlestaff",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 7300,
+   "outputCost": 15500,
+   "addedPerAction": 8200,
+   "addedPerTick": 28275.86,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "estimated",
+    "source": "use-item-on-item; herblore cycle assumed"
+   }
+  },
+  {
+   "skill": "crafting",
+   "row": "earth_orb",
+   "level": 58,
+   "inputs": [
+    {
+     "obj": "earth_orb",
+     "n": 1
+    },
+    {
+     "obj": "battlestaff",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "earth_battlestaff",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 7300,
+   "outputCost": 15500,
+   "addedPerAction": 8200,
+   "addedPerTick": 28275.86,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "estimated",
+    "source": "use-item-on-item; herblore cycle assumed"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "fletching_rune_arrow",
+   "level": 75,
+   "inputs": [
+    {
+     "obj": "rune_arrowheads",
+     "n": 15
+    },
+    {
+     "obj": "headless_arrow",
+     "n": 15
+    }
+   ],
+   "output": {
+    "obj": "rune_arrow",
+    "n": 15
+   },
+   "success": 1,
+   "inputCost": 3015,
+   "outputCost": 6000,
+   "addedPerAction": 2985,
+   "addedPerTick": 14925,
+   "cycle": {
+    "ticks": 0.2,
+    "basis": "measured",
+    "source": "fletching.md: 5 delay-free actions per tick, 15 arrows each"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "fletching_rune_dart",
+   "level": 81,
+   "inputs": [
+    {
+     "obj": "rune_dart_tip",
+     "n": 10
+    },
+    {
+     "obj": "feather",
+     "n": 10
+    }
+   ],
+   "output": {
+    "obj": "rune_dart",
+    "n": 10
+   },
+   "success": 1,
+   "inputCost": 1770,
+   "outputCost": 3500,
+   "addedPerAction": 1730,
+   "addedPerTick": 8650,
+   "cycle": {
+    "ticks": 0.2,
+    "basis": "measured",
+    "source": "fletching.md: 5 delay-free actions per tick, 15 arrows each"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "rune_2h_sword",
+   "level": 99,
+   "inputs": [
+    {
+     "obj": "runite_bar",
+     "n": 3
+    }
+   ],
+   "output": {
+    "obj": "rune_2h_sword",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 15000,
+   "outputCost": 64000,
+   "addedPerAction": 49000,
+   "addedPerTick": 6125,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "rune_platelegs",
+   "level": 99,
+   "inputs": [
+    {
+     "obj": "runite_bar",
+     "n": 3
+    }
+   ],
+   "output": {
+    "obj": "rune_platelegs",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 15000,
+   "outputCost": 64000,
+   "addedPerAction": 49000,
+   "addedPerTick": 6125,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "rune_plateskirt",
+   "level": 99,
+   "inputs": [
+    {
+     "obj": "runite_bar",
+     "n": 3
+    }
+   ],
+   "output": {
+    "obj": "rune_plateskirt",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 15000,
+   "outputCost": 64000,
+   "addedPerAction": 49000,
+   "addedPerTick": 6125,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "crafting",
+   "row": "diamond_cutting",
+   "level": 43,
+   "inputs": [
+    {
+     "obj": "uncut_diamond",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "diamond",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 200,
+   "outputCost": 2000,
+   "addedPerAction": 1800,
+   "addedPerTick": 6000,
+   "cycle": {
+    "ticks": 0.3,
+    "basis": "measured",
+    "source": "crafting.md: 0.2 ticks per cut, 27 gems per 8.2 ticks with the bank cycle"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "rune_platebody",
+   "level": 99,
+   "inputs": [
+    {
+     "obj": "runite_bar",
+     "n": 5
+    }
+   ],
+   "output": {
+    "obj": "rune_platebody",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 25000,
+   "outputCost": 65000,
+   "addedPerAction": 40000,
+   "addedPerTick": 5000,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "rune_kiteshield",
+   "level": 97,
+   "inputs": [
+    {
+     "obj": "runite_bar",
+     "n": 3
+    }
+   ],
+   "output": {
+    "obj": "rune_kiteshield",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 15000,
+   "outputCost": 54400,
+   "addedPerAction": 39400,
+   "addedPerTick": 4925,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "stringing_magic_longbow",
+   "level": 85,
+   "inputs": [
+    {
+     "obj": "unstrung_magic_longbow",
+     "n": 1
+    },
+    {
+     "obj": "bow_string",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "magic_longbow",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 1290,
+   "outputCost": 2560,
+   "addedPerAction": 1270,
+   "addedPerTick": 4379.31,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "estimated",
+    "source": "fletching.md: delay-free like herblore; 14 per inventory with bank"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "rune_chainbody",
+   "level": 96,
+   "inputs": [
+    {
+     "obj": "runite_bar",
+     "n": 3
+    }
+   ],
+   "output": {
+    "obj": "rune_chainbody",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 15000,
+   "outputCost": 50000,
+   "addedPerAction": 35000,
+   "addedPerTick": 4375,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "rune_sq_shield",
+   "level": 93,
+   "inputs": [
+    {
+     "obj": "runite_bar",
+     "n": 2
+    }
+   ],
+   "output": {
+    "obj": "rune_sq_shield",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 10000,
+   "outputCost": 38400,
+   "addedPerAction": 28400,
+   "addedPerTick": 3550,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "fletching_barb_bolts",
+   "level": 51,
+   "inputs": [
+    {
+     "obj": "barbed_bolttips",
+     "n": 10
+    },
+    {
+     "obj": "bolt",
+     "n": 10
+    }
+   ],
+   "output": {
+    "obj": "barbed_bolt",
+    "n": 10
+   },
+   "success": 1,
+   "inputCost": 980,
+   "outputCost": 2000,
+   "addedPerAction": 1020,
+   "addedPerTick": 3400,
+   "cycle": {
+    "ticks": 0.3,
+    "basis": "estimated",
+    "source": "gem-cutting cycle assumed (chisel on gem)"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "rune_battleaxe",
+   "level": 95,
+   "inputs": [
+    {
+     "obj": "runite_bar",
+     "n": 3
+    }
+   ],
+   "output": {
+    "obj": "rune_battleaxe",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 15000,
+   "outputCost": 41600,
+   "addedPerAction": 26600,
+   "addedPerTick": 3325,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "rune_warhammer",
+   "level": 94,
+   "inputs": [
+    {
+     "obj": "runite_bar",
+     "n": 3
+    }
+   ],
+   "output": {
+    "obj": "rune_warhammer",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 15000,
+   "outputCost": 41500,
+   "addedPerAction": 26500,
+   "addedPerTick": 3312.5,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "rune_full_helm",
+   "level": 92,
+   "inputs": [
+    {
+     "obj": "runite_bar",
+     "n": 2
+    }
+   ],
+   "output": {
+    "obj": "rune_full_helm",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 10000,
+   "outputCost": 35200,
+   "addedPerAction": 25200,
+   "addedPerTick": 3150,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "crafting",
+   "row": "ruby_cutting",
+   "level": 34,
+   "inputs": [
+    {
+     "obj": "uncut_ruby",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "ruby",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 100,
+   "outputCost": 1000,
+   "addedPerAction": 900,
+   "addedPerTick": 3000,
+   "cycle": {
+    "ticks": 0.3,
+    "basis": "measured",
+    "source": "crafting.md: 0.2 ticks per cut, 27 gems per 8.2 ticks with the bank cycle"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "fletching_adamant_arrow",
+   "level": 60,
+   "inputs": [
+    {
+     "obj": "adamant_arrowheads",
+     "n": 15
+    },
+    {
+     "obj": "headless_arrow",
+     "n": 15
+    }
+   ],
+   "output": {
+    "obj": "adamant_arrow",
+    "n": 15
+   },
+   "success": 1,
+   "inputCost": 615,
+   "outputCost": 1200,
+   "addedPerAction": 585,
+   "addedPerTick": 2925,
+   "cycle": {
+    "ticks": 0.2,
+    "basis": "measured",
+    "source": "fletching.md: 5 delay-free actions per tick, 15 arrows each"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "rune_longsword",
+   "level": 91,
+   "inputs": [
+    {
+     "obj": "runite_bar",
+     "n": 2
+    }
+   ],
+   "output": {
+    "obj": "rune_longsword",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 10000,
+   "outputCost": 32000,
+   "addedPerAction": 22000,
+   "addedPerTick": 2750,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "stringing_magic_shortbow",
+   "level": 80,
+   "inputs": [
+    {
+     "obj": "unstrung_magic_shortbow",
+     "n": 1
+    },
+    {
+     "obj": "bow_string",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "magic_shortbow",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 810,
+   "outputCost": 1600,
+   "addedPerAction": 790,
+   "addedPerTick": 2724.14,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "estimated",
+    "source": "fletching.md: delay-free like herblore; 14 per inventory with bank"
+   }
+  },
+  {
+   "skill": "crafting",
+   "row": "dragonstone_necklace",
+   "level": 72,
+   "inputs": [
+    {
+     "obj": "gold_bar",
+     "n": 1
+    },
+    {
+     "obj": "dragonstone",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "dragonstone_necklace",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 10300,
+   "outputCost": 18375,
+   "addedPerAction": 8075,
+   "addedPerTick": 2691.67,
+   "cycle": {
+    "ticks": 3,
+    "basis": "estimated",
+    "source": "crafting.md: queued, 2-3 ticks per item, unmeasured"
+   }
+  },
+  {
+   "skill": "crafting",
+   "row": "dragonstone_ring",
+   "level": 55,
+   "inputs": [
+    {
+     "obj": "gold_bar",
+     "n": 1
+    },
+    {
+     "obj": "dragonstone",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "dragonstone_ring",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 10300,
+   "outputCost": 17625,
+   "addedPerAction": 7325,
+   "addedPerTick": 2441.67,
+   "cycle": {
+    "ticks": 3,
+    "basis": "estimated",
+    "source": "crafting.md: queued, 2-3 ticks per item, unmeasured"
+   }
+  },
+  {
+   "skill": "crafting",
+   "row": "unstrung_dragonstone_amulet",
+   "level": 80,
+   "inputs": [
+    {
+     "obj": "gold_bar",
+     "n": 1
+    },
+    {
+     "obj": "dragonstone",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "unstrung_dragonstone_amulet",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 10300,
+   "outputCost": 17625,
+   "addedPerAction": 7325,
+   "addedPerTick": 2441.67,
+   "cycle": {
+    "ticks": 3,
+    "basis": "estimated",
+    "source": "crafting.md: queued, 2-3 ticks per item, unmeasured"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "stringing_yew_longbow",
+   "level": 70,
+   "inputs": [
+    {
+     "obj": "unstrung_yew_longbow",
+     "n": 1
+    },
+    {
+     "obj": "bow_string",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "yew_longbow",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 650,
+   "outputCost": 1280,
+   "addedPerAction": 630,
+   "addedPerTick": 2172.41,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "estimated",
+    "source": "fletching.md: delay-free like herblore; 14 per inventory with bank"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "rune_sword",
+   "level": 89,
+   "inputs": [
+    {
+     "obj": "runite_bar",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "rune_sword",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 5000,
+   "outputCost": 20800,
+   "addedPerAction": 15800,
+   "addedPerTick": 1975,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "rune_scimitar",
+   "level": 90,
+   "inputs": [
+    {
+     "obj": "runite_bar",
+     "n": 2
+    }
+   ],
+   "output": {
+    "obj": "rune_scimitar",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 10000,
+   "outputCost": 25600,
+   "addedPerAction": 15600,
+   "addedPerTick": 1950,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "rune_med_helm",
+   "level": 88,
+   "inputs": [
+    {
+     "obj": "runite_bar",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "rune_med_helm",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 5000,
+   "outputCost": 19200,
+   "addedPerAction": 14200,
+   "addedPerTick": 1775,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "fletching_pearl_bolts",
+   "level": 41,
+   "inputs": [
+    {
+     "obj": "pearl_bolttips",
+     "n": 10
+    },
+    {
+     "obj": "bolt",
+     "n": 10
+    }
+   ],
+   "output": {
+    "obj": "pearl_bolt",
+    "n": 10
+   },
+   "success": 1,
+   "inputCost": 590,
+   "outputCost": 1100,
+   "addedPerAction": 510,
+   "addedPerTick": 1700,
+   "cycle": {
+    "ticks": 0.3,
+    "basis": "estimated",
+    "source": "gem-cutting cycle assumed (chisel on gem)"
+   }
+  },
+  {
+   "skill": "crafting",
+   "row": "emerald_cutting",
+   "level": 27,
+   "inputs": [
+    {
+     "obj": "uncut_emerald",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "emerald",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 50,
+   "outputCost": 500,
+   "addedPerAction": 450,
+   "addedPerTick": 1500,
+   "cycle": {
+    "ticks": 0.3,
+    "basis": "measured",
+    "source": "crafting.md: 0.2 ticks per cut, 27 gems per 8.2 ticks with the bank cycle"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "fletching_adamant_dart",
+   "level": 67,
+   "inputs": [
+    {
+     "obj": "adamant_dart_tip",
+     "n": 10
+    },
+    {
+     "obj": "feather",
+     "n": 10
+    }
+   ],
+   "output": {
+    "obj": "adamant_dart",
+    "n": 10
+   },
+   "success": 1,
+   "inputCost": 380,
+   "outputCost": 650,
+   "addedPerAction": 270,
+   "addedPerTick": 1350,
+   "cycle": {
+    "ticks": 0.2,
+    "basis": "measured",
+    "source": "fletching.md: 5 delay-free actions per tick, 15 arrows each"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "stringing_yew_shortbow",
+   "level": 65,
+   "inputs": [
+    {
+     "obj": "unstrung_yew_shortbow",
+     "n": 1
+    },
+    {
+     "obj": "bow_string",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "yew_shortbow",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 410,
+   "outputCost": 800,
+   "addedPerAction": 390,
+   "addedPerTick": 1344.83,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "estimated",
+    "source": "fletching.md: delay-free like herblore; 14 per inventory with bank"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "adamant_platebody",
+   "level": 88,
+   "inputs": [
+    {
+     "obj": "adamantite_bar",
+     "n": 5
+    }
+   ],
+   "output": {
+    "obj": "adamant_platebody",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 3200,
+   "outputCost": 12800,
+   "addedPerAction": 9600,
+   "addedPerTick": 1200,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "rune_mace",
+   "level": 87,
+   "inputs": [
+    {
+     "obj": "runite_bar",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "rune_mace",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 5000,
+   "outputCost": 14400,
+   "addedPerAction": 9400,
+   "addedPerTick": 1175,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "fletching_mithril_arrow",
+   "level": 45,
+   "inputs": [
+    {
+     "obj": "mithril_arrowheads",
+     "n": 15
+    },
+    {
+     "obj": "headless_arrow",
+     "n": 15
+    }
+   ],
+   "output": {
+    "obj": "mithril_arrow",
+    "n": 15
+   },
+   "success": 1,
+   "inputCost": 255,
+   "outputCost": 480,
+   "addedPerAction": 225,
+   "addedPerTick": 1125,
+   "cycle": {
+    "ticks": 0.2,
+    "basis": "measured",
+    "source": "fletching.md: 5 delay-free actions per tick, 15 arrows each"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "stringing_maple_longbow",
+   "level": 55,
+   "inputs": [
+    {
+     "obj": "unstrung_maple_longbow",
+     "n": 1
+    },
+    {
+     "obj": "bow_string",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "maple_longbow",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 330,
+   "outputCost": 640,
+   "addedPerAction": 310,
+   "addedPerTick": 1068.97,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "estimated",
+    "source": "fletching.md: delay-free like herblore; 14 per inventory with bank"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "rune_axe",
+   "level": 86,
+   "inputs": [
+    {
+     "obj": "runite_bar",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "rune_axe",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 5000,
+   "outputCost": 12800,
+   "addedPerAction": 7800,
+   "addedPerTick": 975,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "herblore",
+   "row": "3doseantipoison",
+   "level": 5,
+   "inputs": [
+    {
+     "obj": "unicorn_horn_dust",
+     "n": 1
+    },
+    {
+     "obj": "marrentillvial",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "3doseantipoison",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 25,
+   "outputCost": 288,
+   "addedPerAction": 263,
+   "addedPerTick": 906.9,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "measured",
+    "source": "herblore.md: 0.2 per mix, 4 ticks per 14-potion bank cycle"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "fletching_opal_bolts",
+   "level": 11,
+   "inputs": [
+    {
+     "obj": "opal_bolttips",
+     "n": 10
+    },
+    {
+     "obj": "bolt",
+     "n": 10
+    }
+   ],
+   "output": {
+    "obj": "opal_bolt",
+    "n": 10
+   },
+   "success": 1,
+   "inputCost": 330,
+   "outputCost": 600,
+   "addedPerAction": 270,
+   "addedPerTick": 900,
+   "cycle": {
+    "ticks": 0.3,
+    "basis": "estimated",
+    "source": "gem-cutting cycle assumed (chisel on gem)"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "fletching_opal_tips",
+   "level": 11,
+   "inputs": [
+    {
+     "obj": "opal",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "opal_bolttips",
+    "n": 12
+   },
+   "success": 1,
+   "inputCost": 100,
+   "outputCost": 360,
+   "addedPerAction": 260,
+   "addedPerTick": 866.67,
+   "cycle": {
+    "ticks": 0.3,
+    "basis": "estimated",
+    "source": "gem-cutting cycle assumed (chisel on gem)"
+   }
+  },
+  {
+   "skill": "herblore",
+   "row": "3dose2antipoison",
+   "level": 48,
+   "inputs": [
+    {
+     "obj": "unicorn_horn_dust",
+     "n": 1
+    },
+    {
+     "obj": "iritvial",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "3dose2antipoison",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 60,
+   "outputCost": 288,
+   "addedPerAction": 228,
+   "addedPerTick": 786.21,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "measured",
+    "source": "herblore.md: 0.2 per mix, 4 ticks per 14-potion bank cycle"
+   }
+  },
+  {
+   "skill": "crafting",
+   "row": "sapphire_cutting",
+   "level": 20,
+   "inputs": [
+    {
+     "obj": "uncut_sapphire",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "sapphire",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 25,
+   "outputCost": 250,
+   "addedPerAction": 225,
+   "addedPerTick": 750,
+   "cycle": {
+    "ticks": 0.3,
+    "basis": "measured",
+    "source": "crafting.md: 0.2 ticks per cut, 27 gems per 8.2 ticks with the bank cycle"
+   }
+  },
+  {
+   "skill": "herblore",
+   "row": "3doserangerspotion",
+   "level": 72,
+   "inputs": [
+    {
+     "obj": "wine_of_zamorak",
+     "n": 1
+    },
+    {
+     "obj": "dwarfweedvial",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "3doserangerspotion",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 71,
+   "outputCost": 288,
+   "addedPerAction": 217,
+   "addedPerTick": 748.28,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "measured",
+    "source": "herblore.md: 0.2 per mix, 4 ticks per 14-potion bank cycle"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "fletching_oyster_pearl_tips",
+   "level": 41,
+   "inputs": [
+    {
+     "obj": "smalloysterpearls",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "pearl_bolttips",
+    "n": 6
+   },
+   "success": 1,
+   "inputCost": 112,
+   "outputCost": 336,
+   "addedPerAction": 224,
+   "addedPerTick": 746.67,
+   "cycle": {
+    "ticks": 0.3,
+    "basis": "estimated",
+    "source": "gem-cutting cycle assumed (chisel on gem)"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "stringing_maple_shortbow",
+   "level": 50,
+   "inputs": [
+    {
+     "obj": "unstrung_maple_shortbow",
+     "n": 1
+    },
+    {
+     "obj": "bow_string",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "maple_shortbow",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 210,
+   "outputCost": 400,
+   "addedPerAction": 190,
+   "addedPerTick": 655.17,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "estimated",
+    "source": "fletching.md: delay-free like herblore; 14 per inventory with bank"
+   }
+  },
+  {
+   "skill": "herblore",
+   "row": "3dose2defense",
+   "level": 66,
+   "inputs": [
+    {
+     "obj": "white_berries",
+     "n": 1
+    },
+    {
+     "obj": "cadantinevial",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "3dose2defense",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 75,
+   "outputCost": 264,
+   "addedPerAction": 189,
+   "addedPerTick": 651.72,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "measured",
+    "source": "herblore.md: 0.2 per mix, 4 ticks per 14-potion bank cycle"
+   }
+  },
+  {
+   "skill": "herblore",
+   "row": "3dose2energy",
+   "level": 52,
+   "inputs": [
+    {
+     "obj": "mortmyremushroom",
+     "n": 1
+    },
+    {
+     "obj": "avantoevial",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "3dose2energy",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 49,
+   "outputCost": 230,
+   "addedPerAction": 181,
+   "addedPerTick": 624.14,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "measured",
+    "source": "herblore.md: 0.2 per mix, 4 ticks per 14-potion bank cycle"
+   }
+  },
+  {
+   "skill": "herblore",
+   "row": "3dose1magic",
+   "level": 76,
+   "inputs": [
+    {
+     "obj": "cactus_potato",
+     "n": 1
+    },
+    {
+     "obj": "lantadymevial",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "3dose1magic",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 69,
+   "outputCost": 250,
+   "addedPerAction": 181,
+   "addedPerTick": 624.14,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "measured",
+    "source": "herblore.md: 0.2 per mix, 4 ticks per 14-potion bank cycle"
+   }
+  },
+  {
+   "skill": "herblore",
+   "row": "3dose2restore",
+   "level": 63,
+   "inputs": [
+    {
+     "obj": "red_spiders_eggs",
+     "n": 1
+    },
+    {
+     "obj": "snapdragonvial",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "3dose2restore",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 66,
+   "outputCost": 240,
+   "addedPerAction": 174,
+   "addedPerTick": 600,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "measured",
+    "source": "herblore.md: 0.2 per mix, 4 ticks per 14-potion bank cycle"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "adamant_2h_sword",
+   "level": 84,
+   "inputs": [
+    {
+     "obj": "adamantite_bar",
+     "n": 3
+    }
+   ],
+   "output": {
+    "obj": "adamant_2h_sword",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 1920,
+   "outputCost": 6400,
+   "addedPerAction": 4480,
+   "addedPerTick": 560,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "adamant_platelegs",
+   "level": 86,
+   "inputs": [
+    {
+     "obj": "adamantite_bar",
+     "n": 3
+    }
+   ],
+   "output": {
+    "obj": "adamant_platelegs",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 1920,
+   "outputCost": 6400,
+   "addedPerAction": 4480,
+   "addedPerTick": 560,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "smithing",
+   "row": "adamant_plateskirt",
+   "level": 86,
+   "inputs": [
+    {
+     "obj": "adamantite_bar",
+     "n": 3
+    }
+   ],
+   "output": {
+    "obj": "adamant_plateskirt",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 1920,
+   "outputCost": 6400,
+   "addedPerAction": 4480,
+   "addedPerTick": 560,
+   "cycle": {
+    "ticks": 8,
+    "basis": "estimated",
+    "source": "smithing.md: 5 ticks per item on make-5 plus a 15-18 tick bank restock per 5-item inventory"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "fletching_mithril_dart",
+   "level": 52,
+   "inputs": [
+    {
+     "obj": "mithril_dart_tip",
+     "n": 10
+    },
+    {
+     "obj": "feather",
+     "n": 10
+    }
+   ],
+   "output": {
+    "obj": "mithril_dart",
+    "n": 10
+   },
+   "success": 1,
+   "inputCost": 140,
+   "outputCost": 250,
+   "addedPerAction": 110,
+   "addedPerTick": 550,
+   "cycle": {
+    "ticks": 0.2,
+    "basis": "measured",
+    "source": "fletching.md: 5 delay-free actions per tick, 15 arrows each"
+   }
+  },
+  {
+   "skill": "herblore",
+   "row": "3dose2strength",
+   "level": 55,
+   "inputs": [
+    {
+     "obj": "limpwurt_root",
+     "n": 1
+    },
+    {
+     "obj": "kwuarmvial",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "3dose2strength",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 61,
+   "outputCost": 220,
+   "addedPerAction": 159,
+   "addedPerTick": 548.28,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "measured",
+    "source": "herblore.md: 0.2 per mix, 4 ticks per 14-potion bank cycle"
+   }
+  },
+  {
+   "skill": "fletching",
+   "row": "stringing_willow_longbow",
+   "level": 40,
+   "inputs": [
+    {
+     "obj": "unstrung_willow_longbow",
+     "n": 1
+    },
+    {
+     "obj": "bow_string",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "willow_longbow",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 170,
+   "outputCost": 320,
+   "addedPerAction": 150,
+   "addedPerTick": 517.24,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "estimated",
+    "source": "fletching.md: delay-free like herblore; 14 per inventory with bank"
+   }
+  },
+  {
+   "skill": "crafting",
+   "row": "red_topaz_cutting",
+   "level": 16,
+   "inputs": [
+    {
+     "obj": "uncut_red_topaz",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "red_topaz",
+    "n": 1
+   },
+   "success": 0.96,
+   "inputCost": 40,
+   "outputCost": 192.19,
+   "addedPerAction": 152.19,
+   "addedPerTick": 507.29,
+   "cycle": {
+    "ticks": 0.3,
+    "basis": "measured",
+    "source": "crafting.md: 0.2 ticks per cut, 27 gems per 8.2 ticks with the bank cycle"
+   }
+  },
+  {
+   "skill": "herblore",
+   "row": "3dose1antidragon",
+   "level": 69,
+   "inputs": [
+    {
+     "obj": "dragon_scale_dust",
+     "n": 1
+    },
+    {
+     "obj": "lantadymevial",
+     "n": 1
+    }
+   ],
+   "output": {
+    "obj": "3dose1antidragon",
+    "n": 1
+   },
+   "success": 1,
+   "inputCost": 120,
+   "outputCost": 264,
+   "addedPerAction": 144,
+   "addedPerTick": 496.55,
+   "cycle": {
+    "ticks": 0.29,
+    "basis": "measured",
+    "source": "herblore.md: 0.2 per mix, 4 ticks per 14-potion bank cycle"
+   }
+  }
+ ],
+ "groundSpawns": [
+  {
+   "obj": "blue_dragon_scale",
+   "display": "Blue dragon scale",
+   "cost": 50,
+   "spawns": 5,
+   "units": 5,
+   "respawn": 30,
+   "square": "45_153",
+   "at": "2902,9806",
+   "boardPerHour": 75000
+  },
+  {
+   "obj": "steel_longsword",
+   "display": "Steel longsword",
+   "cost": 500,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 100,
+   "square": "43_71",
+   "at": "2812,4566",
+   "boardPerHour": 45000
+  },
+  {
+   "obj": "steel_pickaxe",
+   "display": "Steel pickaxe",
+   "cost": 500,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 100,
+   "square": "43_71",
+   "at": "2812,4571",
+   "boardPerHour": 45000
+  },
+  {
+   "obj": "bronze_sq_shield",
+   "display": "Bronze sq shield",
+   "cost": 48,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 10,
+   "square": "51_61",
+   "at": "3294,3935,1",
+   "boardPerHour": 43200
+  },
+  {
+   "obj": "gold_necklace",
+   "display": "Gold necklace",
+   "cost": 450,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 100,
+   "square": "47_60",
+   "at": "3065,3864",
+   "boardPerHour": 40500
+  },
+  {
+   "obj": "gold_necklace",
+   "display": "Gold necklace",
+   "cost": 450,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 100,
+   "square": "49_153",
+   "at": "3192,9821",
+   "boardPerHour": 40500
+  },
+  {
+   "obj": "iron_pickaxe",
+   "display": "Iron pickaxe",
+   "cost": 140,
+   "spawns": 3,
+   "units": 3,
+   "respawn": 100,
+   "square": "52_152",
+   "at": "3348,9754",
+   "boardPerHour": 37800
+  },
+  {
+   "obj": "iron_pickaxe",
+   "display": "Iron pickaxe",
+   "cost": 140,
+   "spawns": 3,
+   "units": 3,
+   "respawn": 100,
+   "square": "52_153",
+   "at": "3348,9818",
+   "boardPerHour": 37800
+  },
+  {
+   "obj": "ruby_ring",
+   "display": "Ruby ring",
+   "cost": 2025,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 500,
+   "square": "49_153",
+   "at": "3196,9822",
+   "boardPerHour": 36450
+  },
+  {
+   "obj": "1doseantipoison",
+   "display": "Antipoison(1)",
+   "cost": 144,
+   "spawns": 2,
+   "units": 2,
+   "respawn": 100,
+   "square": "38_49",
+   "at": "2437,3164",
+   "boardPerHour": 25920
+  },
+  {
+   "obj": "iron_platelegs",
+   "display": "Iron platelegs",
+   "cost": 280,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 100,
+   "square": "50_53",
+   "at": "3254,3452",
+   "boardPerHour": 25200
+  },
+  {
+   "obj": "iron_kiteshield",
+   "display": "Iron kiteshield",
+   "cost": 238,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 100,
+   "square": "50_59",
+   "at": "3247,3795",
+   "boardPerHour": 21420
+  },
+  {
+   "obj": "coins",
+   "display": "Coins",
+   "cost": 1,
+   "spawns": 7,
+   "units": 232,
+   "respawn": 100,
+   "square": "49_153",
+   "at": "3188,9819",
+   "boardPerHour": 20880
+  },
+  {
+   "obj": "white_berries",
+   "display": "White berries",
+   "cost": 10,
+   "spawns": 2,
+   "units": 2,
+   "respawn": 10,
+   "square": "50_59",
+   "at": "3214,3809",
+   "boardPerHour": 18000
+  },
+  {
+   "obj": "gold_ore",
+   "display": "Gold ore",
+   "cost": 150,
+   "spawns": 5,
+   "units": 5,
+   "respawn": 500,
+   "square": "51_61",
+   "at": "3289,3926",
+   "boardPerHour": 13500
+  },
+  {
+   "obj": "iron_pickaxe",
+   "display": "Iron pickaxe",
+   "cost": 140,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 100,
+   "square": "41_58",
+   "at": "2672,3728",
+   "boardPerHour": 12600
+  },
+  {
+   "obj": "iron_pickaxe",
+   "display": "Iron pickaxe",
+   "cost": 140,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 100,
+   "square": "43_70",
+   "at": "2770,4515",
+   "boardPerHour": 12600
+  },
+  {
+   "obj": "bowl_empty_filliman",
+   "display": "Washing bowl",
+   "cost": 4,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 3,
+   "square": "53_52",
+   "at": "3437,3337",
+   "boardPerHour": 12000
+  },
+  {
+   "obj": "macro_broken_adamant_pickaxe",
+   "display": "Broken pickaxe",
+   "cost": 107,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 100,
+   "square": "43_43",
+   "at": "2800,2797",
+   "boardPerHour": 9630
+  },
+  {
+   "obj": "steel_platebody",
+   "display": "Steel platebody",
+   "cost": 2000,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 2000,
+   "square": "48_60",
+   "at": "3085,3859",
+   "boardPerHour": 9000
+  },
+  {
+   "obj": "white_berries",
+   "display": "White berries",
+   "cost": 10,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 10,
+   "square": "35_49",
+   "at": "2262,3168",
+   "boardPerHour": 9000
+  },
+  {
+   "obj": "snape_grass",
+   "display": "Snape grass",
+   "cost": 10,
+   "spawns": 3,
+   "units": 3,
+   "respawn": 30,
+   "square": "45_51",
+   "at": "2906,3297",
+   "boardPerHour": 9000
+  },
+  {
+   "obj": "staff_of_earth",
+   "display": "Staff of earth",
+   "cost": 1500,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 2000,
+   "square": "48_60",
+   "at": "3100,3862",
+   "boardPerHour": 6750
+  },
+  {
+   "obj": "bloodrune",
+   "display": "Blood rune",
+   "cost": 50,
+   "spawns": 3,
+   "units": 3,
+   "respawn": 200,
+   "square": "51_59",
+   "at": "3283,3819",
+   "boardPerHour": 6750
+  },
+  {
+   "obj": "gold_ring",
+   "display": "Gold ring",
+   "cost": 350,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 500,
+   "square": "42_153",
+   "at": "2715,9820",
+   "boardPerHour": 6300
+  },
+  {
+   "obj": "naturerune",
+   "display": "Nature rune",
+   "cost": 20,
+   "spawns": 2,
+   "units": 7,
+   "respawn": 200,
+   "square": "51_60",
+   "at": "3307,3859",
+   "boardPerHour": 6300
+  },
+  {
+   "obj": "rope",
+   "display": "Rope",
+   "cost": 18,
+   "spawns": 3,
+   "units": 3,
+   "respawn": 100,
+   "square": "43_51",
+   "at": "2785,3279",
+   "boardPerHour": 4860
+  },
+  {
+   "obj": "black_scimitar",
+   "display": "Black scimitar",
+   "cost": 768,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 1500,
+   "square": "40_51",
+   "at": "2572,3284,1",
+   "boardPerHour": 4608
+  },
+  {
+   "obj": "steel_platelegs",
+   "display": "Steel platelegs",
+   "cost": 1000,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 2000,
+   "square": "49_58",
+   "at": "3184,3733",
+   "boardPerHour": 4500
+  },
+  {
+   "obj": "egg",
+   "display": "Egg",
+   "cost": 4,
+   "spawns": 3,
+   "units": 3,
+   "respawn": 25,
+   "square": "44_52",
+   "at": "2851,3372",
+   "boardPerHour": 4320
+  },
+  {
+   "obj": "coins",
+   "display": "Coins",
+   "cost": 1,
+   "spawns": 2,
+   "units": 46,
+   "respawn": 100,
+   "square": "48_60",
+   "at": "3076,3845",
+   "boardPerHour": 4140
+  },
+  {
+   "obj": "bodyrune",
+   "display": "Body rune",
+   "cost": 3,
+   "spawns": 1,
+   "units": 15,
+   "respawn": 100,
+   "square": "48_60",
+   "at": "3091,3865",
+   "boardPerHour": 4050
+  },
+  {
+   "obj": "chaosrune",
+   "display": "Chaos rune",
+   "cost": 15,
+   "spawns": 6,
+   "units": 6,
+   "respawn": 200,
+   "square": "49_59",
+   "at": "3137,3833",
+   "boardPerHour": 4050
+  },
+  {
+   "obj": "red_spiders_eggs",
+   "display": "Red spiders' eggs",
+   "cost": 7,
+   "spawns": 6,
+   "units": 6,
+   "respawn": 100,
+   "square": "36_51",
+   "at": "2336,3316",
+   "boardPerHour": 3780
+  },
+  {
+   "obj": "red_spiders_eggs",
+   "display": "Red spiders' eggs",
+   "cost": 7,
+   "spawns": 6,
+   "units": 6,
+   "respawn": 100,
+   "square": "48_155",
+   "at": "3117,9951",
+   "boardPerHour": 3780
+  },
+  {
+   "obj": "longbow",
+   "display": "Longbow",
+   "cost": 80,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 200,
+   "square": "41_53",
+   "at": "2678,3427",
+   "boardPerHour": 3600
+  },
+  {
+   "obj": "monkrobetop",
+   "display": "Monk's robe",
+   "cost": 40,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 100,
+   "square": "47_54",
+   "at": "3059,3487,1",
+   "boardPerHour": 3600
+  },
+  {
+   "obj": "naturerune",
+   "display": "Nature rune",
+   "cost": 20,
+   "spawns": 2,
+   "units": 4,
+   "respawn": 200,
+   "square": "41_58",
+   "at": "2671,3737",
+   "boardPerHour": 3600
+  },
+  {
+   "obj": "chaosrune",
+   "display": "Chaos rune",
+   "cost": 15,
+   "spawns": 1,
+   "units": 5,
+   "respawn": 200,
+   "square": "47_56",
+   "at": "3021,3640",
+   "boardPerHour": 3375
+  },
+  {
+   "obj": "iron_platebody",
+   "display": "Iron platebody",
+   "cost": 560,
+   "spawns": 1,
+   "units": 1,
+   "respawn": 1500,
+   "square": "50_53",
+   "at": "3254,3453",
+   "boardPerHour": 3360
+  }
+ ],
+ "thieving": [
+  {
+   "kind": "pickpocket",
+   "row": "pickpocket_knight_of_ardougne",
+   "targets": "knight_of_ardougne knight_of_ardougne2",
+   "level": 55,
+   "success": 0.94,
+   "valuePerSuccess": 50,
+   "coinsPerSuccess": 50,
+   "valuePerTick": 19.07,
+   "loot": "coins 50 (128)"
+  },
+  {
+   "kind": "pickpocket",
+   "row": "pickpocket_viking",
+   "targets": "viking_man viking_man2 viking_man3 viking_man4 viking_man5 viking_woman viking_woman2 viking_woman3 viking_woman4 viking_woman_indoors",
+   "level": 45,
+   "success": 0.94,
+   "valuePerSuccess": 40,
+   "coinsPerSuccess": 40,
+   "valuePerTick": 15.25,
+   "loot": "coins 40 (128)"
+  },
+  {
+   "kind": "pickpocket",
+   "row": "pickpocket_rogue",
+   "targets": "rogue",
+   "level": 32,
+   "success": 0.94,
+   "valuePerSuccess": 35.82,
+   "coinsPerSuccess": 32.5,
+   "valuePerTick": 13.66,
+   "loot": "coins 25-40 (108), airrune 8 (8), jug_wine 1 (6), lockpick 1 (5), iron_dagger_p 1 (1)"
+  },
+  {
+   "kind": "pickpocket",
+   "row": "pickpocket_hero",
+   "targets": "hero",
+   "level": 80,
+   "success": 0.39,
+   "valuePerSuccess": 278,
+   "coinsPerSuccess": 250,
+   "valuePerTick": 13.62,
+   "loot": "coins 200-300 (105), deathrune 2 (8), jug_wine 1 (6), bloodrune 1 (5), fire_orb 1 (2), diamond 1 (1), gold_ore 1 (1)"
+  },
+  {
+   "kind": "pickpocket",
+   "row": "pickpocket_paladin",
+   "targets": "paladin",
+   "level": 70,
+   "success": 0.59,
+   "valuePerSuccess": 110,
+   "coinsPerSuccess": 80,
+   "valuePerTick": 12.29,
+   "loot": "coins 80 (128), chaosrune 2 (128)"
+  },
+  {
+   "kind": "pickpocket",
+   "row": "pickpocket_guard",
+   "targets": "guard1 guard2 ardougne_guard",
+   "level": 40,
+   "success": 0.94,
+   "valuePerSuccess": 30,
+   "coinsPerSuccess": 30,
+   "valuePerTick": 11.44,
+   "loot": "coins 30 (128)"
+  },
+  {
+   "kind": "pickpocket",
+   "row": "pickpocket_gnome",
+   "targets": "gnome browclothedgnome darkskinned_gnome gnomechildgreen gnomechildblue gnomechild gnomefemale gnomefemale_dskinned",
+   "level": 75,
+   "success": 0.47,
+   "valuePerSuccess": 123.14,
+   "coinsPerSuccess": 105.88,
+   "valuePerTick": 9.36,
+   "loot": "king_worm 1 (55), coins 300 (30), swamp_toad 1 (28), gold_ore 1 (8), earthrune 1 (5), fire_orb 1 (2)"
+  },
+  {
+   "kind": "pickpocket",
+   "row": "pickpocket_watchman",
+   "targets": "yanille_watchman",
+   "level": 65,
+   "success": 0.63,
+   "valuePerSuccess": 72,
+   "coinsPerSuccess": 60,
+   "valuePerTick": 9.11,
+   "loot": "coins 60 (128), bread 1 (128)"
+  },
+  {
+   "kind": "pickpocket",
+   "row": "pickpocket_warrior",
+   "targets": "warrior_woman al_kharid_warrior",
+   "level": 25,
+   "success": 0.94,
+   "valuePerSuccess": 18,
+   "coinsPerSuccess": 18,
+   "valuePerTick": 6.86,
+   "loot": "coins 18 (128)"
+  },
+  {
+   "kind": "stall",
+   "row": "stealing_bakery_stall",
+   "targets": "bakers_stall_stealing",
+   "level": 5,
+   "success": 1,
+   "valuePerSuccess": 38.5,
+   "coinsPerSuccess": 0,
+   "valuePerTick": 4.81,
+   "loot": "cake (13/20), bread (5/20), chocolate_slice (2/20)"
+  },
+  {
+   "kind": "pickpocket",
+   "row": "pickpocket_farmer",
+   "targets": "farmer1",
+   "level": 10,
+   "success": 0.94,
+   "valuePerSuccess": 8.65,
+   "coinsPerSuccess": 8.65,
+   "valuePerTick": 3.3,
+   "loot": "coins 9 (123)"
+  },
+  {
+   "kind": "stall",
+   "row": "stealing_viking_fish_stall",
+   "targets": "viking_fish_market",
+   "level": 42,
+   "success": 1,
+   "valuePerSuccess": 67.5,
+   "coinsPerSuccess": 0,
+   "valuePerTick": 2.11,
+   "loot": "raw_lobster (1/20), raw_tuna (5/20), raw_salmon (14/20)"
+  },
+  {
+   "kind": "stall",
+   "row": "stealing_misc_fish_market",
+   "targets": "misc_fish_market",
+   "level": 42,
+   "success": 1,
+   "valuePerSuccess": 67.5,
+   "coinsPerSuccess": 0,
+   "valuePerTick": 2.11,
+   "loot": "raw_salmon (14/20), raw_tuna (5/20), raw_lobster (1/20)"
+  },
+  {
+   "kind": "stall",
+   "row": "stealing_etc_fish_market",
+   "targets": "etc_fish_market",
+   "level": 42,
+   "success": 1,
+   "valuePerSuccess": 67.5,
+   "coinsPerSuccess": 0,
+   "valuePerTick": 2.11,
+   "loot": "raw_salmon (14/20), raw_tuna (5/20), raw_lobster (1/20)"
+  },
+  {
+   "kind": "stall",
+   "row": "stealing_silk_stall",
+   "targets": "silk_stall_stealing",
+   "level": 20,
+   "success": 1,
+   "valuePerSuccess": 30,
+   "coinsPerSuccess": 0,
+   "valuePerTick": 1.88,
+   "loot": "silk (128/128)"
+  },
+  {
+   "kind": "stall",
+   "row": "stealing_fur_stall",
+   "targets": "fur_stall_stealing",
+   "level": 35,
+   "success": 1,
+   "valuePerSuccess": 50,
+   "coinsPerSuccess": 0,
+   "valuePerTick": 1.56,
+   "loot": "grey_wolf_fur (128/128)"
+  },
+  {
+   "kind": "stall",
+   "row": "stealing_viking_fur_stall",
+   "targets": "viking_fur_market",
+   "level": 35,
+   "success": 1,
+   "valuePerSuccess": 50,
+   "coinsPerSuccess": 0,
+   "valuePerTick": 1.56,
+   "loot": "grey_wolf_fur (128/128)"
+  },
+  {
+   "kind": "stall",
+   "row": "stealing_spice_stall",
+   "targets": "spice_stall_stealing",
+   "level": 65,
+   "success": 1,
+   "valuePerSuccess": 230,
+   "coinsPerSuccess": 0,
+   "valuePerTick": 1.39,
+   "loot": "spicespot (128/128)"
+  },
+  {
+   "kind": "pickpocket",
+   "row": "pickpocket_man",
+   "targets": "man man2 man3 al_kharid_man ardougnian_male1",
+   "level": 1,
+   "success": 0.94,
+   "valuePerSuccess": 3,
+   "coinsPerSuccess": 3,
+   "valuePerTick": 1.14,
+   "loot": "coins 3 (128)"
+  },
+  {
+   "kind": "pickpocket",
+   "row": "pickpocket_woman",
+   "targets": "woman woman2 woman3 ardougnian_female1",
+   "level": 1,
+   "success": 0.94,
+   "valuePerSuccess": 3,
+   "coinsPerSuccess": 3,
+   "valuePerTick": 1.14,
+   "loot": "coins 3 (128)"
+  },
+  {
+   "kind": "stall",
+   "row": "stealing_silver_stall",
+   "targets": "silver_stall_stealing",
+   "level": 50,
+   "success": 1,
+   "valuePerSuccess": 75,
+   "coinsPerSuccess": 0,
+   "valuePerTick": 0.75,
+   "loot": "silver_ore (128/128)"
+  },
+  {
+   "kind": "stall",
+   "row": "stealing_tea_stall",
+   "targets": "tea_stall",
+   "level": 5,
+   "success": 1,
+   "valuePerSuccess": 10,
+   "coinsPerSuccess": 0,
+   "valuePerTick": 0.63,
+   "loot": "cup_of_tea (128/128)"
+  },
+  {
+   "kind": "stall",
+   "row": "stealing_misc_veg_market",
+   "targets": "misc_veg_market",
+   "level": 2,
+   "success": 1,
+   "valuePerSuccess": 2.2,
+   "coinsPerSuccess": 0,
+   "valuePerTick": 0.44,
+   "loot": "potato (9/30), cabbage (6/30), onion (6/30), tomato (6/30), garlic (3/30)"
+  },
+  {
+   "kind": "stall",
+   "row": "stealing_etc_veg_market",
+   "targets": "etc_veg_market",
+   "level": 2,
+   "success": 1,
+   "valuePerSuccess": 2.2,
+   "coinsPerSuccess": 0,
+   "valuePerTick": 0.44,
+   "loot": "potato (9/30), cabbage (6/30), onion (6/30), tomato (6/30), garlic (3/30)"
+  },
+  {
+   "kind": "stall",
+   "row": "stealing_gem_stall",
+   "targets": "gem_stall_stealing",
+   "level": 75,
+   "success": 1,
+   "valuePerSuccess": 32.62,
+   "coinsPerSuccess": 0,
+   "valuePerTick": 0.05,
+   "loot": "uncut_sapphire (105/128), uncut_emerald (17/128), uncut_ruby (5/128), uncut_diamond (1/128)"
+  }
+ ],
+ "mines": [
+  {
+   "row": "rune_essence_table",
+   "rocks": [
+    "blankrunestone"
+   ],
+   "output": "blankrune",
+   "level": 1,
+   "chance": [
+    256,
+    256
+   ],
+   "respawn": 0,
+   "count": 4,
+   "sites": {
+    "45_75": 4
+   }
+  },
+  {
+   "row": "clay_rock_table",
+   "rocks": [
+    "clayrock1",
+    "clayrock2",
+    "macro_clayrock1",
+    "macro_clayrock2",
+    "loc_4994",
+    "loc_4995",
+    "loc_4996"
+   ],
+   "output": "clay",
+   "level": 1,
+   "chance": [
+    128,
+    400
+   ],
+   "respawn": 6,
+   "count": 33,
+   "sites": {
+    "41_57": 4,
+    "47_153": 5,
+    "45_51": 6,
+    "49_52": 3,
+    "38_154": 9,
+    "46_50": 2,
+    "41_49": 4
+   }
+  },
+  {
+   "row": "copper_rock_table",
+   "rocks": [
+    "copperrock1",
+    "copperrock2",
+    "macro_copperrock1",
+    "macro_copperrock2",
+    "loc_4976",
+    "loc_4977",
+    "loc_4978"
+   ],
+   "output": "copper_ore",
+   "level": 1,
+   "chance": [
+    128,
+    400
+   ],
+   "respawn": 10,
+   "count": 70,
+   "sites": {
+    "51_47": 4,
+    "51_52": 9,
+    "51_51": 3,
+    "47_153": 7,
+    "47_152": 4,
+    "42_70": 7,
+    "38_50": 3,
+    "45_52": 2,
+    "53_150": 7,
+    "46_50": 5,
+    "43_71": 3,
+    "49_154": 2,
+    "41_49": 4,
+    "51_147": 10
+   }
+  },
+  {
+   "row": "tin_rock_table",
+   "rocks": [
+    "tinrock1",
+    "tinrock2",
+    "macro_tinrock1",
+    "macro_tinrock2",
+    "loc_4979",
+    "loc_4980",
+    "loc_4981"
+   ],
+   "output": "tin_ore",
+   "level": 1,
+   "chance": [
+    128,
+    400
+   ],
+   "respawn": 10,
+   "count": 85,
+   "sites": {
+    "51_47": 4,
+    "51_52": 6,
+    "51_51": 1,
+    "47_153": 5,
+    "47_152": 5,
+    "42_70": 10,
+    "38_50": 1,
+    "49_52": 8,
+    "45_52": 6,
+    "53_150": 5,
+    "48_154": 1,
+    "46_50": 2,
+    "48_53": 5,
+    "43_71": 8,
+    "49_154": 1,
+    "41_49": 9,
+    "51_147": 8
+   }
+  },
+  {
+   "row": "iron_rock_table",
+   "rocks": [
+    "ironrock1",
+    "ironrock2",
+    "macro_ironrock1",
+    "macro_ironrock2",
+    "loc_4982",
+    "loc_4983",
+    "loc_4984"
+   ],
+   "output": "iron_ore",
+   "level": 15,
+   "chance": [
+    96,
+    350
+   ],
+   "respawn": 20,
+   "count": 124,
+   "sites": {
+    "51_47": 3,
+    "51_52": 4,
+    "48_58": 16,
+    "51_51": 9,
+    "47_153": 4,
+    "47_152": 5,
+    "49_52": 3,
+    "45_52": 3,
+    "42_57": 9,
+    "42_69": 9,
+    "40_50": 13,
+    "47_61": 1,
+    "38_154": 8,
+    "42_52": 11,
+    "46_50": 6,
+    "48_55": 2,
+    "44_47": 1,
+    "41_151": 5,
+    "49_154": 3,
+    "41_49": 9
+   }
+  },
+  {
+   "row": "coal_rock_table",
+   "rocks": [
+    "coalrock1",
+    "coalrock2",
+    "macro_coalrock1",
+    "macro_coalrock2",
+    "misc_dummy_coalrock1",
+    "loc_4985",
+    "loc_4986",
+    "loc_4987"
+   ],
+   "output": "coal",
+   "level": 30,
+   "chance": [
+    16,
+    100
+   ],
+   "respawn": 100,
+   "count": 262,
+   "sites": {
+    "39_60": 8,
+    "43_69": 10,
+    "45_154": 11,
+    "51_47": 4,
+    "41_57": 7,
+    "48_58": 32,
+    "51_51": 3,
+    "50_49": 7,
+    "47_153": 3,
+    "47_152": 45,
+    "45_52": 2,
+    "47_56": 34,
+    "42_69": 8,
+    "40_50": 4,
+    "47_61": 4,
+    "40_54": 18,
+    "38_154": 11,
+    "42_52": 13,
+    "48_154": 3,
+    "48_55": 3,
+    "44_47": 1,
+    "41_151": 5,
+    "48_53": 4,
+    "43_71": 8,
+    "44_50": 3,
+    "49_154": 3,
+    "41_48": 1,
+    "44_51": 7
+   }
+  },
+  {
+   "row": "gold_rock_table",
+   "rocks": [
+    "goldrock1",
+    "goldrock2",
+    "macro_goldrock1",
+    "macro_goldrock2"
+   ],
+   "output": "gold_ore",
+   "level": 40,
+   "chance": [
+    7,
+    75
+   ],
+   "respawn": 200,
+   "count": 44,
+   "sites": {
+    "51_51": 2,
+    "42_49": 6,
+    "47_152": 2,
+    "45_51": 7,
+    "38_154": 4,
+    "42_50": 10,
+    "42_151": 4,
+    "46_50": 2,
+    "44_149": 4,
+    "44_51": 3
+   }
+  },
+  {
+   "row": "silver_rock_table",
+   "rocks": [
+    "silverrock1",
+    "silverrock2",
+    "macro_silverrock1",
+    "macro_silverrock2"
+   ],
+   "output": "silver_ore",
+   "level": 20,
+   "chance": [
+    25,
+    200
+   ],
+   "respawn": 200,
+   "count": 32,
+   "sites": {
+    "51_51": 5,
+    "45_51": 6,
+    "49_52": 3,
+    "52_152": 5,
+    "38_154": 4,
+    "52_153": 5,
+    "44_47": 1,
+    "49_154": 3
+   }
+  },
+  {
+   "row": "mithril_rock_table",
+   "rocks": [
+    "mithrilrock1",
+    "mithrilrock2",
+    "macro_mithrilrock1",
+    "macro_mithrilrock2",
+    "loc_4988",
+    "loc_4989",
+    "loc_4990"
+   ],
+   "output": "mithril_ore",
+   "level": 55,
+   "chance": [
+    5,
+    50
+   ],
+   "respawn": 400,
+   "count": 79,
+   "sites": {
+    "43_69": 8,
+    "45_154": 2,
+    "48_58": 19,
+    "51_51": 2,
+    "50_49": 5,
+    "47_152": 7,
+    "42_57": 2,
+    "47_61": 4,
+    "38_154": 4,
+    "48_154": 1,
+    "44_47": 2,
+    "43_71": 5,
+    "44_50": 7,
+    "41_49": 4,
+    "51_147": 6,
+    "44_51": 1
+   }
+  },
+  {
+   "row": "adamantite_rock_table",
+   "rocks": [
+    "adamantiterock1",
+    "adamantiterock2",
+    "macro_adamantiterock1",
+    "macro_adamantiterock2",
+    "loc_4991",
+    "loc_4992",
+    "loc_4993"
+   ],
+   "output": "adamantite_ore",
+   "level": 70,
+   "chance": [
+    2,
+    25
+   ],
+   "respawn": 800,
+   "count": 55,
+   "sites": {
+    "43_69": 13,
+    "35_49": 4,
+    "45_154": 2,
+    "48_58": 7,
+    "51_51": 2,
+    "50_49": 2,
+    "47_152": 3,
+    "47_61": 1,
+    "38_154": 3,
+    "44_47": 2,
+    "43_71": 5,
+    "44_50": 3,
+    "49_154": 2,
+    "51_147": 6
+   }
+  },
+  {
+   "row": "runite_rock_table",
+   "rocks": [
+    "runiterock1",
+    "runiterock2",
+    "macro_runiterock1",
+    "macro_runiterock2"
+   ],
+   "output": "runite_ore",
+   "level": 85,
+   "chance": [
+    1,
+    18
+   ],
+   "respawn": 2400,
+   "count": 5,
+   "sites": {
+    "45_154": 2,
+    "47_60": 2,
+    "47_160": 1
+   }
+  },
+  {
+   "row": "blurite_rock",
+   "rocks": [
+    "bluriterock",
+    "macro_bluriterock"
+   ],
+   "output": "blurite_ore",
+   "level": 10,
+   "chance": [
+    95,
+    350
+   ],
+   "respawn": 80,
+   "count": 4,
+   "sites": {
+    "47_149": 4
+   }
+  },
+  {
+   "row": "gem_rock",
+   "rocks": [
+    "gemrock",
+    "macro_gemrock"
+   ],
+   "output": null,
+   "level": 40,
+   "chance": [
+    28,
+    70
+   ],
+   "respawn": 200,
+   "count": 7,
+   "sites": {
+    "44_46": 7
+   }
+  },
+  {
+   "row": "desertrescue_rock",
+   "rocks": [
+    "punishrocks"
+   ],
+   "output": "thpunishrock",
+   "level": 1,
+   "chance": [
+    128,
+    400
+   ],
+   "respawn": 30,
+   "count": 63,
+   "sites": {
+    "51_147": 63
+   }
+  },
+  {
+   "row": "limestone_rock3",
+   "rocks": [
+    "loc_4027"
+   ],
+   "output": "limestone",
+   "level": 10,
+   "chance": [
+    95,
+    310
+   ],
+   "respawn": 10,
+   "count": 15,
+   "sites": {
+    "36_51": 7,
+    "52_54": 8
+   }
+  },
+  {
+   "row": "limestone_rock2",
+   "rocks": [
+    "loc_4028"
+   ],
+   "output": "limestone",
+   "level": 10,
+   "chance": [
+    95,
+    310
+   ],
+   "respawn": 20,
+   "count": 4,
+   "sites": {
+    "36_51": 4
+   }
+  },
+  {
+   "row": "limestone_rock1",
+   "rocks": [
+    "loc_4029"
+   ],
+   "output": "limestone",
+   "level": 10,
+   "chance": [
+    95,
+    310
+   ],
+   "respawn": 40,
+   "count": 7,
+   "sites": {
+    "36_51": 7
+   }
+  }
+ ]
+}
