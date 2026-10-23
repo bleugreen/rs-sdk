@@ -8,12 +8,13 @@
 // this file in it; to run it inside a lab you started yourself:
 //
 //   bun film/capture.ts <bot> --script=<path> [--setup=<setup.json>] [--opts=<options.json>]
-//       [--args=a,b] [--out=DIR] [--seconds=N] [--fps=25] [--area=128] [--crf=26]
+//       [--args=a,b] [--out=DIR] [--seconds=N] [--fps=25] [--area=192] [--crf=26] [--codec=libx264]
 //
 // --clip names a clip spec, {script, opts | args, setup, seconds, fps, area, crf}; the other flags
 // override its fields. A script that exports `steps(options)` (a step module) runs under
 // film/run-steps.ts with `opts`; any other script runs as `bun <script> <bot> <args...>`, the lab's
-// convention. Writes to DIR (default film/out/<clip>-<time>): clip.mp4, trace.jsonl, feed.jsonl,
+// convention. Writes to DIR (default film/out/<clip>-<time>): clip.mp4 (clip.webm where ffmpeg has
+// no H.264 encoder), trace.jsonl, feed.jsonl,
 // meta.json, and the script's own output (script.out.log, script.err.log, steps.jsonl).
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -36,7 +37,7 @@ const { BotSDK } = await import('../sdk/index');
 const { launchLabBrowser } = await import('../speedrun/lab/browser');
 const session = await import('../speedrun/lib/session');
 const { recordFeed } = await import('./feed-recorder');
-const { encodeClip, jpegSize, startScreencast } = await import('./screencast');
+const { encodeClip, ffmpegEncoders, jpegSize, pickEncoder, startScreencast } = await import('./screencast');
 const { applySetup, parseSetup } = await import('./setup');
 const { feedTicks, frameStats, mergeTrace, serverTickAt, spread, StateDiff, tickGaps, xpGained } = await import('./trace');
 type Observed = import('./trace').Observed;
@@ -75,6 +76,7 @@ const fps = num(flag('fps') ?? clip.fps, 25, 5, 60, '--fps');
 const areaSize = num(flag('area') ?? clip.area, 192, 64, 384, '--area');
 const crf = num(flag('crf') ?? clip.crf, 26, 0, 51, '--crf');
 const setup = parseSetup(clip.setup);
+const encoder = pickEncoder(ffmpegEncoders(), flag('codec'));
 const script = relative(ROOT, resolve(clip.script));
 if (!existsSync(join(ROOT, script))) throw new Error(`no script at ${script}`);
 const stepModule = /export\s+(async\s+)?function\s+steps\s*\(|export\s+const\s+steps\s*=/.test(readFileSync(join(ROOT, script), 'utf8'));
@@ -98,7 +100,10 @@ try {
     const env = session.loadBotEnv(bot); // launchLabBrowser wrote CLIENT_URL
     const page = (await chrome.browser.pages())[0] ?? (await chrome.browser.newPage());
     page.on('pageerror', e => say(`page error: ${e instanceof Error ? e.message : String(e)}`));
-    await page.goto(session.browserUrl(env, { insecureQueryLogin: true }), { waitUntil: 'domcontentloaded' });
+    // ?minimal is the page with no panels, its canvas filling the viewport; a viewport of the client's
+    // own 765 x 503 makes that 1:1, so the video holds the client's pixels unscaled.
+    await page.setViewport({ width: 765, height: 503 });
+    await page.goto(`${session.browserUrl(env, { insecureQueryLogin: true })}&minimal`, { waitUntil: 'domcontentloaded' });
     for (let i = 0; !(await page.evaluate(() => Boolean((window as unknown as { gameClient?: { ingame?: boolean } }).gameClient?.ingame))); i++) {
         if (i > 600) throw new Error('the browser client never reached the game');
         await Bun.sleep(200);
@@ -168,9 +173,9 @@ try {
     const img = jpegSize(await Bun.file(frames[0]!.file).bytes());
     const scale = img.width / box.vw;
     const crop = { x: Math.round(box.x * scale), y: Math.round(box.y * scale), w: Math.floor(box.w * scale) & ~1, h: Math.floor(box.h * scale) & ~1 };
-    const clipFile = join(out, 'clip.mp4');
-    const encoded = await encodeClip(frames, { fps, t0, t1, crop, out: clipFile, crf });
-    say(`clip.mp4: ${encoded.frames} frames at ${fps} fps, ${crop.w}x${crop.h}, ${(statSync(clipFile).size / 1e6).toFixed(2)} MB`);
+    const clipFile = join(out, encoder.file);
+    const encoded = await encodeClip(frames, { fps, t0, t1, crop, out: clipFile, encoder, crf });
+    say(`${encoder.file} (${encoder.name}): ${encoded.frames} frames at ${fps} fps, ${crop.w}x${crop.h}, ${(statSync(clipFile).size / 1e6).toFixed(2)} MB`);
 
     // --------------------------------------------------------------- the trace
     const actions = readFileSync(actionsFile, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l) as RawAction);
@@ -206,13 +211,15 @@ try {
         levels,
         startSkills: start?.kind === 'start' ? start.skills : null,
         video: {
-            file: 'clip.mp4',
+            file: encoder.file,
+            encoder: encoder.name,
+            crf,
             bytes: statSync(clipFile).size,
             fps,
             width: crop.w,
             height: crop.h,
             frames: encoded.frames,
-            method: 'Chrome DevTools Page.startScreencast (JPEG q90, chrome-headless-shell), each frame stamped with its compositor time, re-timed to a constant rate (latest frame at each output frame), H.264 yuv420p via ffmpeg',
+            method: `Chrome DevTools Page.startScreencast (JPEG q90, chrome-headless-shell, the bot page's ?minimal canvas at 765x503), each frame stamped with its compositor time, re-timed to a constant rate (the latest frame at each output frame), encoded by ffmpeg ${encoder.name}`,
             captured: frames.length,
             ...frameStats(frames.map(f => f.ms), fps, t0, t1),
             receiveLagMs: spread(frames.map(f => f.rxMs - f.ms)),

@@ -73,20 +73,51 @@ export interface Crop {
     h: number;
 }
 
+export interface Encoder {
+    /** ffmpeg's encoder name. */
+    name: string;
+    /** The clip's file name: clip.mp4 or clip.webm. */
+    file: string;
+    args(crf: number): string[];
+}
+
 /**
- * Encode `frames` as a constant-rate H.264 clip from `t0` to `t1` (epoch ms), cropped (even width
- * and height, as yuv420p needs). Output frame i starts at t0 + i / fps and shows the latest frame
- * captured by then.
+ * The encoders this film tool can use, best first: libx264 (H.264 MP4, plays everywhere), then
+ * libopenh264 (the H.264 encoder distributions without x264 ship, Fedora's among them; bitrate-driven,
+ * as it has no quality scale), then VP9 WebM.
  */
-export async function encodeClip(frames: readonly CapturedFrame[], o: { fps: number; t0: number; t1: number; crop: Crop; out: string; crf?: number }): Promise<{ frames: number }> {
+export const ENCODERS: readonly Encoder[] = [
+    { name: 'libx264', file: 'clip.mp4', args: crf => ['-c:v', 'libx264', '-preset', 'medium', '-crf', String(crf), '-pix_fmt', 'yuv420p', '-movflags', '+faststart'] },
+    { name: 'libopenh264', file: 'clip.mp4', args: crf => ['-c:v', 'libopenh264', '-b:v', `${Math.round(2400 * Math.pow(0.85, crf - 20))}k`, '-pix_fmt', 'yuv420p', '-movflags', '+faststart'] },
+    { name: 'libvpx-vp9', file: 'clip.webm', args: crf => ['-c:v', 'libvpx-vp9', '-crf', String(crf + 6), '-b:v', '0', '-row-mt', '1', '-pix_fmt', 'yuv420p'] }
+];
+
+/** The best encoder this machine's ffmpeg has (or the one named). */
+export function pickEncoder(available: string, want?: string): Encoder {
+    const has = (n: string) => new RegExp(`^\\s*V\\S*\\s+${n.replace(/[-]/g, '\\-')}\\s`, 'm').test(available);
+    const list = want ? ENCODERS.filter(e => e.name === want) : ENCODERS;
+    const e = list.find(x => has(x.name));
+    if (!e) throw new Error(`ffmpeg has none of ${list.map(x => x.name).join(', ')}`);
+    return e;
+}
+
+export function ffmpegEncoders(): string {
+    return Bun.spawnSync(['ffmpeg', '-hide_banner', '-encoders']).stdout.toString();
+}
+
+/**
+ * Encode `frames` as a constant-rate clip from `t0` to `t1` (epoch ms), cropped (even width and
+ * height, as yuv420p needs). Output frame i starts at t0 + i / fps and shows the latest frame
+ * captured by then. `crf` is the quality (x264's scale; lower is better and bigger).
+ */
+export async function encodeClip(frames: readonly CapturedFrame[], o: { fps: number; t0: number; t1: number; crop: Crop; out: string; encoder: Encoder; crf?: number }): Promise<{ frames: number }> {
     const idx = schedule(frames.map(f => f.ms), o.fps, o.t0, o.t1);
     const { x, y } = o.crop;
     const w = o.crop.w & ~1;
     const h = o.crop.h & ~1;
     const ff = Bun.spawn(
         ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', '-f', 'image2pipe', '-framerate', String(o.fps), '-c:v', 'mjpeg', '-i', '-',
-            '-vf', `crop=${w}:${h}:${x}:${y}`, '-c:v', 'libx264', '-preset', 'medium', '-crf', String(o.crf ?? 26), '-pix_fmt', 'yuv420p',
-            '-movflags', '+faststart', '-r', String(o.fps), o.out],
+            '-vf', `crop=${w}:${h}:${x}:${y}`, ...o.encoder.args(o.crf ?? 26), '-r', String(o.fps), o.out],
         { stdin: 'pipe', stdout: 'ignore', stderr: 'pipe' }
     );
     const stderr = new Response(ff.stderr).text();
