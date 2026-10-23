@@ -19,7 +19,8 @@
 //   topup    S18's helper top-ups at the scored run's stats: --mode=idle|restart --helper=<bot>
 //            (HELPER=<bot> in tickprog-lab.sh) [--thieving=57 --hp=97 --sharks=2 --below=2
 //            --load=1 --to=99]. The helper is a lite stand-in that stays beside the account by
-//            ::tele and answers the account's request with one shark offer.
+//            ::tele and answers the account's request with one shark offer. Both accounts leave
+//            Tutorial Island through S00's skip first.
 //   pack     S18 with the stun pack (rs/324): the account at post-Monkey Madness stats with Load 0
 //            (stun-pack.md section 6), steps({ topUp, stunPack }) on the knights band, and the
 //            helper stand-in as the courier: it brings dragon bones to fill, sharks back to 2, and
@@ -34,12 +35,19 @@
 //            headless arrows and 1,485 mithril tips in Load 0, 2,220 adamant and 570 rune with the
 //            courier, in place of the lab's rune-heavy 3,600 / 225 / 495 / 2,595; the summary's
 //            `tiers` gives the tick each tier was first held and the stuns before it
+// Both trade modes trace every request on the account's clock: the program's requests (its
+// `stun:topup*` counters rising), the account's own trade lines, and the giver's 'wishes to trade',
+// which the giver sees on its own tick and the trace moves onto the account's by the clocks' sampled
+// offset (`clock` in the summary: the offset histogram, which is one value and its neighbours while
+// no tick is dropped).
 // Staging is outside the measured steps. Every step row and every pickpocket end status is
 // printed as a RESULT line; the end statuses carry the gap histograms, skippedTicks, frames,
 // publish, react and loops. Every run also samples the account each tick, and a leg run prints
 // its sub-legs (`RESULT leg <name>`): ticks, tiles, ticks at 2, 1 and 0 steps, energy, weight.
 
 import { hostname, loadavg } from 'os';
+import { ChatHistory } from '../../sdk/chat-history';
+import { FreshMessages } from '../../server/webclient/src/bot/programs/util';
 import type { BotWorldState } from '../../sdk/types';
 import type { ProgramStatus } from '../lib/programs';
 import { programStatus } from '../lib/programs';
@@ -202,10 +210,68 @@ const sharkGiver = (load: number): GiverPolicy => ({
     }
 });
 
+/** A giver event on both clocks: `own` is the giver's tick, `tick` the account's (giver tick less the clock offset). */
+export interface GiverEvent { tick: number; own: number; ev: string }
+
+/**
+ * Each client counts the server ticks it decoded since it started, so the giver's tick and the
+ * account's differ by a fixed offset while neither drops a tick. `skew` samples it from both
+ * sides: on a giver update (giver tick less the account's latest) and on an account update (the
+ * giver's latest less the account tick). The side whose state arrived second reads the other's
+ * current tick and the first reads the other's previous one, so the samples are the offset and
+ * one either side of it, and the offset is the value both sides see most. It is taken from the
+ * samples near each event, so a client that drops a tick moves it there and not run-wide.
+ */
+function clockOffset(skew: ReadonlyArray<{ own: number; d: number }>, own: number, near = 50): number | null {
+    const counts = new Map<number, number>();
+    for (const s of skew) if (Math.abs(s.own - own) <= near) counts.set(s.d, (counts.get(s.d) ?? 0) + 1);
+    if (counts.size === 0) return skew.length && near < Infinity ? clockOffset(skew, own, Infinity) : null;
+    return [...counts].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]![0];
+}
+
+/**
+ * The giver session's clock against the account's: samples `skew` on both sessions' updates (the
+ * doc above) and moves a giver's events, stamped on its own ticks, onto the account's. One for the
+ * lab stand-in and the run's courier alike.
+ */
+function giverClock(h: Session) {
+    const skew: Array<{ own: number; d: number }> = [];
+    let lastAccountTick = -1, lastGiverTick = -1;
+    const unAccount = sdk.onStateUpdate(s => {
+        if (!s?.inGame || s.tick === lastAccountTick) return;
+        lastAccountTick = s.tick;
+        const g = h.sdk.getState();
+        if (g?.inGame) skew.push({ own: g.tick, d: g.tick - s.tick });
+    });
+    const unGiver = h.sdk.onStateUpdate(hs => {
+        if (!hs?.inGame || hs.tick === lastGiverTick) return;
+        lastGiverTick = hs.tick;
+        const s = sdk.getState();
+        if (s?.inGame) skew.push({ own: hs.tick, d: hs.tick - s.tick });
+    });
+    const onAccount = (own: number) => {
+        const off = clockOffset(skew, own);
+        return off === null ? null : own - off;
+    };
+    return {
+        map: (raw: ReadonlyArray<{ tick: number; ev: string }>): GiverEvent[] => raw.flatMap(e => {
+            const tick = onAccount(e.tick);
+            return tick === null ? [] : [{ tick, own: e.tick, ev: e.ev }];
+        }),
+        summary: (raw: ReadonlyArray<{ tick: number; ev: string }>) => {
+            const offsets: Record<number, number> = {};
+            for (const k of skew) offsets[k.d] = (offsets[k.d] ?? 0) + 1;
+            return { offsets, samples: skew.length, unmapped: raw.filter(e => onAccount(e.tick) === null).length };
+        },
+        stop: () => { unAccount(); unGiver(); }
+    };
+}
+
 function runGiver(h: Session, policy: GiverPolicy): { stop: () => void; teles: number; events: Array<{ tick: number; ev: string }> } {
     let gctx: GiverCtx | null = null, plan: OfferEntry[] = [], lastTick = -1, lastTele = -100, lastStock = -100;
     let answer: { rc: ClickCtx; until: number } | null = null;
-    const seen = new Set<string>();
+    const chat = new ChatHistory();
+    chat.record(h.sdk.getState()?.gameMessages ?? []);
     const out = { teles: 0, stop: () => {}, events: [] as Array<{ tick: number; ev: string }> };
     const ev = (tick: number, e: string) => out.events.push({ tick, ev: e });
     const burst = () => { for (const e of plan) for (const a of e.amounts) void h.sdk.sendOfferItem(e.slot, a); void h.sdk.sendAcceptTrade(); };
@@ -222,12 +288,7 @@ function runGiver(h: Session, policy: GiverPolicy): { stop: () => void; teles: n
         lastTick = hs.tick;
         const s = sdk.getState();
         const account = s?.player?.name ?? bot;
-        const fresh = (hs.gameMessages ?? []).filter(m => {
-            const key = m.observationId !== undefined ? `o${m.observationId}` : `${m.tick}|${m.text}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
+        const fresh = chat.record(hs.gameMessages ?? []);
         for (const m of fresh) if (/wishes to trade|busy at the moment|^sending trade offer/i.test(m.text)) ev(hs.tick, m.text.replace(/^.*(wishes to trade|busy|sending trade offer).*$/i, '$1').toLowerCase());
         if (gctx) {
             const d = decideGiver(hs, gctx);
@@ -286,9 +347,10 @@ function runGiver(h: Session, policy: GiverPolicy): { stop: () => void; teles: n
  * The account's side of the top-up lab, from its own published state: every failure and roll by
  * its game message, the trade's open and close ticks, the food count, and whether the giver was
  * within 1 tile on each failure's +2 (the program's `player` action needs it). It also records
- * the tick of every trade request the module sends (the restart path's `openTrade` clicks; the
- * idle path's request goes out from the page program and is not seen here) and every server
- * op rejection (UNSET_MAP_FLAG, which OpPlayerHandler sends for a click from a delayed player).
+ * the tick of every trade request (the restart path's `openTrade` clicks; the idle path's go out
+ * from the page program and show as its `stun:topup*` counters rising, on the first state that
+ * carries the rise) and every server op rejection (UNSET_MAP_FLAG, which OpPlayerHandler sends for
+ * a click from a delayed player). `giverEventsNow` is the giver's side on the account's clock.
  *
  * With `stock` (the pack) a stun is also due when the account holds fewer of what the pack tops
  * up (bones, or ore with superheat), and `topUpLog` is one row per due stun: the giver's tile
@@ -303,7 +365,7 @@ function runGiver(h: Session, policy: GiverPolicy): { stop: () => void; teles: n
  * from the failure; and the slip, superheat stuns' mean failure-to-next less the dry and bury
  * stuns' (stun-pack.md section 16).
  */
-function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ tick: number; ev: string }>, stock?: { of: (s: BotWorldState) => number; below: number }) {
+function trackTopUps(giver: string, below: number, giverEventsNow: () => ReadonlyArray<GiverEvent>, stock?: { of: (s: BotWorldState) => number; below: number }) {
     const fails: number[] = [], rolls: number[] = [], opens: number[] = [], closes: number[] = [];
     const clicks: number[] = [], rejects: number[] = [];
     const send = sdk.sendTradeRequest.bind(sdk);
@@ -312,12 +374,21 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
         return send(...a);
     };
     let rejected = sdk.getState()?.opFeedback?.opRejectedCount ?? 0;
-    /** The account's trade lines (requests, refusals, sends) by tick. */
-    const tradeLines: Array<{ tick: number; text: string }> = [];
+    /**
+     * The account's trade lines (requests, refusals, sends) by tick, with the publication that first
+     * carried each (`id`, its observationId), how many messages that publication brought (`of`) and
+     * the line's place among them (`at`, from 0): a reader that keys on observationId alone keeps
+     * only the first message of each publication.
+     */
+    const tradeLines: Array<{ tick: number; text: string; id: number | null; of: number; at: number; program: boolean; before: string[] }> = [];
     const dueFails: number[] = [], adjacentAt2: Record<number, boolean> = {};
     /** The giver's tile less the account's on each failure's +2: an op on a player reaches it only from a side, not a corner. */
     const offsetAt2: Record<number, [number, number]> = {};
-    const seen = new Set<string>();
+    const chat = new ChatHistory();
+    chat.record(sdk.getState()?.gameMessages ?? []);
+    // The program's own reader beside the trace's, on the same states: `program` on a trade line
+    // says whether the pickpocket program's FreshMessages surfaced it too.
+    const programReader = new FreshMessages(sdk.getState() as never);
     let last = -1, wasOpen = false, food = Infinity;
     const bonesOf = (s: BotWorldState) => s.inventory.filter(i => /bones$/i.test(i.name)).reduce((a, i) => a + i.count, 0);
     const oreOf = (s: BotWorldState) => s.inventory.filter(i => /^(iron|copper|tin) ore$/i.test(i.name)).length;
@@ -357,13 +428,16 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
             if (st.runId !== reqRun) { reqRun = st.runId; reqSeen = 0; }
             for (; reqSeen < n; reqSeen++) requests.push(s.tick);
         }
-        for (const m of s.gameMessages ?? []) {
-            const key = m.observationId !== undefined ? `o${m.observationId}` : `${m.tick}|${m.text}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
+        const fresh = chat.record(s.gameMessages ?? []);
+        const programFresh = programReader.take(s as never);
+        for (const m of fresh) {
             if (/You fail to pick/i.test(m.text)) { fails.push(s.tick); rolls.push(s.tick); if (food < below) dueFails.push(s.tick); }
             else if (/^You pick the/i.test(m.text)) rolls.push(s.tick);
-            else if (/trade|busy/i.test(m.text)) tradeLines.push({ tick: s.tick, text: m.text.slice(0, 60) });
+            else if (/trade|busy/i.test(m.text)) {
+                const pub = fresh.filter(o => o.observationId === m.observationId);
+                const program = programFresh.some(o => o.observationId === m.observationId && o.text === m.text);
+                tradeLines.push({ tick: s.tick, text: m.text.slice(0, 60), id: m.observationId ?? null, of: pub.length, at: pub.indexOf(m), program, before: pub.slice(0, pub.indexOf(m)).map(o => o.text.slice(0, 40)) });
+            }
         }
         food = s.inventory.filter(i => /^shark$/i.test(i.name)).length;
         const r = s.opFeedback?.opRejectedCount ?? rejected;
@@ -397,29 +471,64 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
         const stat = (rs: typeof rows) => {
             const hist: Record<number, number> = {};
             for (const r of rs) hist[r.gap!] = (hist[r.gap!] ?? 0) + 1;
-            return { stuns: rs.length, meanGap: rs.length ? +(rs.reduce((a, r) => a + r.gap!, 0) / rs.length).toFixed(2) : null, hist };
+            const mean = rs.length ? rs.reduce((a, r) => a + r.gap!, 0) / rs.length : null;
+            const sd = mean !== null && rs.length > 1 ? Math.sqrt(rs.reduce((a, r) => a + (r.gap! - mean) ** 2, 0) / (rs.length - 1)) : null;
+            return { stuns: rs.length, meanGap: mean === null ? null : +mean.toFixed(2), sdGap: sd === null ? null : +sd.toFixed(2), hist };
         };
         const top = rows.filter(r => r.open !== null);
-        const other = stat(rows.filter(r => r.open === null));
+        const other = stat(rows.filter(r => r.open === null && !dueFails.includes(r.f)));
         const topStat = stat(top);
+        // a stun's window: its failure to +12, cut at the next failure so two stuns never share a tick
+        const inStun = (t: number, f: number) => {
+            const next = fails.find(x => x > f);
+            return t >= f && t <= f + 12 && (next === undefined || t < next);
+        };
+        const giverEvents = giverEventsNow();
+        const wishes = giverEvents.filter(e => e.ev === 'wishes to trade').map(e => e.tick);
+        const sentLines = tradeLines.filter(l => /^sending trade offer/i.test(l.text)).map(l => l.tick);
+        // per due failure: the request (the program's or the module's click), what the engine ran, and the trade
+        const perDue = dueFails.map(f => ({
+            f,
+            requested: [...requests, ...clicks].some(t => inStun(t, f)),
+            wishes: wishes.filter(t => inStun(t, f)).length,
+            sent: sentLines.filter(t => inStun(t, f)).length,
+            opened: opens.some(o => inStun(o, f)),
+            gap: rows.find(r => r.f === f)?.gap ?? null
+        }));
+        const missed = rows.filter(r => r.open === null && dueFails.includes(r.f));
+        const missedStat = stat(missed);
         return {
-            topUpStuns: topStat, otherStuns: other,
+            allStuns: stat(rows), topUpStuns: topStat, otherStuns: other, missedDueStuns: missedStat,
             costPerTopUp: topStat.meanGap !== null && other.meanGap !== null ? +(topStat.meanGap - other.meanGap).toFixed(2) : null,
+            costPerMissedStun: missedStat.meanGap !== null && other.meanGap !== null ? +(missedStat.meanGap - other.meanGap).toFixed(2) : null,
             topUps: top.map(r => ({ f: r.f, open: r.open, close: r.close, gap: r.gap, buried: r.buried })),
             topUpStunsBurying: top.filter(r => r.buried > 0).length,
             bonesPerTopUpStun: top.length ? +(top.reduce((a, r) => a + r.buried, 0) / top.length).toFixed(2) : null,
+            programRequests: requests.length, giverWishes: wishes.length, accountSent: sentLines.length,
+            // the account's "Sending trade offer..." lines that a reader keying on observationId alone would drop
+            accountSentShared: tradeLines.filter(l => /^sending trade offer/i.test(l.text) && l.at > 0).length,
+            // the same lines as the pickpocket program's FreshMessages surfaced them, on the same states
+            programSent: tradeLines.filter(l => /^sending trade offer/i.test(l.text) && l.program).length,
+            dueRequested: perDue.filter(d => d.requested).length,
+            dueLanded: perDue.filter(d => d.opened).length,
+            // a stun whose partner saw 'wishes to trade' twice, or whose account the engine answered twice
+            doubleRequests: perDue.filter(d => d.wishes > 1 || d.sent > 1).length,
+            // every 'wishes to trade' outside a due stun's window (a request the trace did not expect)
+            strayWishes: wishes.filter(t => !dueFails.some(f => inStun(t, f))).length,
             dueFails: dueFails.length,
             dueNotAdjacent: dueFails.filter(f => adjacentAt2[f] === false).length,
             dueDiagonal: dueFails.filter(f => offsetAt2[f] && offsetAt2[f]![0] !== 0 && offsetAt2[f]![1] !== 0).length,
             // per due failure, both sides' trade lines at their offset from it (the next 12 ticks)
             requestClicks: clicks.length,
-            trace: dueFails.slice(0, 40).map(f => ({
+            trace: dueFails.slice(0, 60).map(f => ({
                 f,
                 giverAt2: offsetAt2[f]?.join(',') ?? null,
+                requests: requests.filter(t => inStun(t, f)).map(t => `+${t - f}`),
+                gap: rows.find(r => r.f === f)?.gap ?? null,
                 clicks: clicks.filter(t => t >= f && t <= f + 12).map(t => `+${t - f}`),
                 rejected: rejects.filter(t => t >= f && t <= f + 12).map(t => `+${t - f}`),
-                account: tradeLines.filter(l => l.tick >= f && l.tick <= f + 12).map(l => `+${l.tick - f} ${l.text}`),
-                giver: giverEvents.filter(e => e.tick >= f && e.tick <= f + 12).map(e => `+${e.tick - f} ${e.ev}`),
+                account: tradeLines.filter(l => inStun(l.tick, f)).map(l => `+${l.tick - f} ${l.text} [o${l.id ?? '-'} ${l.at + 1}/${l.of}${l.program ? '' : ' unseen by program'}${l.before.length ? ` after: ${l.before.join(' | ')}` : ''}]`),
+                giver: giverEvents.filter(e => inStun(e.tick, f)).map(e => `+${e.tick - f} ${e.ev}`),
                 opened: opens.find(o => o >= f && o <= f + 12) ?? null
             }))
         };
@@ -438,6 +547,7 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
     };
     /** rs/158's per-top-up record (the doc above): one row per due stun, and the counts by giver tile. */
     const topUpLog = () => {
+        const giverEvents = giverEventsNow();
         const tile = (o: [number, number] | undefined) => {
             if (!o) return 'unseen';
             const [dx, dz] = o.map(Math.abs) as [number, number];
@@ -602,12 +712,12 @@ function courierRole(h: Session, helperBot: string, scored: string, standing: bo
     new CueWriter(dir, scored, scope).write({ beacons: [{ tick: s0.tick, ms: Date.now() }], turns: [] });
     const events: Array<{ tick: number; ev: string }> = [];
     const tick = () => h.sdk.getState()?.tick ?? -1;
-    const seen = new Set<string>();
+    // ChatHistory, as runGiver's reader: messages first seen on one tick share an observationId, so a
+    // reader keyed on the id alone keeps only the first of them (rs/352, rs/356)
+    const chat = new ChatHistory();
+    chat.record(h.sdk.getState()?.gameMessages ?? []);
     const unMsg = h.sdk.onStateUpdate(hs => {
-        for (const m of hs.gameMessages ?? []) {
-            const key = m.observationId !== undefined ? `o${m.observationId}` : `${m.tick}|${m.text}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
+        for (const m of chat.record(hs.gameMessages ?? [])) {
             if (/wishes to trade|busy at the moment|^sending trade offer/i.test(m.text)) events.push({ tick: hs.tick, ev: m.text.replace(/^.*(wishes to trade|busy|sending trade offer).*$/i, '$1').toLowerCase() });
         }
     });
@@ -679,8 +789,9 @@ switch (mode) {
         const tuMode = arg('mode', 'idle') as 'idle' | 'restart';
         const below = Number(arg('below', '2'));
         const load = Number(arg('load', '1'));
+        await leaveTutorial(session);
         const helper = await openSession(helperBot, { launch: true, pathfinding: false });
-        await helper.bot.skipTutorial().catch(() => {});
+        await leaveTutorial(helper);
         await helper.sdk.sendSay('::~clearinv inv');
         await helper.sdk.sendSay(`::give shark ${load * 8}`);
         await say(`setstat thieving ${arg('thieving', '57')}`);
@@ -691,17 +802,22 @@ switch (mode) {
         const giver = helper.sdk.getState()?.player?.name ?? helperBot;
         const g = runGiver(helper, sharkGiver(load));
         await waitUntil(sdk, s => s.nearbyPlayers.some(p => sameName(p.name, giver) && p.distance <= 1), { maxTicks: 30 });
-        const track = trackTopUps(giver, below, g.events);
+        const clk = giverClock(helper);
+        const track = trackTopUps(giver, below, () => clk.map(g.events));
+        const clock = () => ({ clock: clk.summary(g.events) });
         result('topup', { ...where(), mode: tuMode, giver, below, load, hp: sdk.getState()!.player!.hp, thieving: arg('thieving', '57'), to: arg('to', '99') });
         try {
             const rows = await runList(steps({ ...opts(), food: 'shark', topUp: { giver, below, mode: tuMode } }).filter(s => s.name === 'thieving:knights'));
             const band = rows.find(r => r.step === 'thieving:knights');
-            result(`topup ${tuMode} summary`, { bandTicks: band?.ticks ?? null, helperTeles: g.teles, ...track.summary() });
+            // the module's receiver: a trade that closed without the food arriving is a closed trade
+            const trades = ((rows.find(r => r.step === 'thieving:knights:detail')?.meta as { topUp?: { trades?: Array<{ ok: boolean; reason?: string }> } } | undefined)?.topUp?.trades) ?? [];
+            result(`topup ${tuMode} summary`, { bandTicks: band?.ticks ?? null, helperTeles: g.teles, trades: trades.length, closedTrades: trades.filter(t => !t.ok).map(t => t.reason ?? 'closed'), ...clock(), ...track.rollStats(), ...track.summary() });
         } catch (e) {
             // a band that ran out of food still reports what its top-ups did
-            result(`topup ${tuMode} summary`, { bandTicks: null, error: String(e), helperTeles: g.teles, ...track.summary() });
+            result(`topup ${tuMode} summary`, { bandTicks: null, error: String(e), helperTeles: g.teles, ...clock(), ...track.rollStats(), ...track.summary() });
         } finally {
             track.stop();
+            clk.stop();
             g.stop();
             await closeSession(helper);
         }
@@ -724,7 +840,7 @@ switch (mode) {
         const tips = stock === 'scored' ? SCORED_TIPS : LAB_TIPS;
         if (asRole && casts) throw new Error("pack --courier=role --superheat: the run's courier carries no ore yet (rs/41 stages it), so this lab runs with the stand-in only");
         const helper = await openSession(helperBot, { launch: true, pathfinding: asRole });
-        await helper.bot.skipTutorial().catch(() => {});
+        await leaveTutorial(helper);
         await helper.sdk.sendSay('::~clearinv inv');
         // staging, off the clock: SCORED after Monkey Madness and the Mage Arena (stun-pack.md section 3)
         await leaveTutorial(session);
@@ -750,7 +866,8 @@ switch (mode) {
         const g = asRole ? courierRole(helper, helperBot, sdk.getState()!.player!.name, standing, tips) : runGiver(helper, courier(tips, casts ? { casts, oreBelow: casts } : undefined));
         await waitUntil(sdk, s => s.nearbyPlayers.some(p => sameName(p.name, giver) && Math.abs(p.x - s.player!.worldX) + Math.abs(p.z - s.player!.worldZ) === 1), { maxTicks: asRole ? 200 : 40 });
         const oreHeldNow = (s: BotWorldState) => s.inventory.filter(i => /^(iron|copper) ore$/i.test(i.name)).length;
-        const track = trackTopUps(giver, below, g.events, casts ? { of: oreHeldNow, below: casts } : { of: s => s.inventory.filter(i => /bones$/i.test(i.name)).reduce((a, i) => a + i.count, 0), below: bonesBelow });
+        const clk = giverClock(helper);
+        const track = trackTopUps(giver, below, () => clk.map(g.events), casts ? { of: oreHeldNow, below: casts } : { of: s => s.inventory.filter(i => /bones$/i.test(i.name)).reduce((a, i) => a + i.count, 0), below: bonesBelow });
         const s0 = sdk.getState()!;
         const bloodOf = (s: BotWorldState | null) => (s?.inventory ?? []).filter(i => /^blood runes?$/i.test(i.name)).reduce((a, i) => a + i.count, 0);
         const levels = (s: BotWorldState | null) => Object.fromEntries(['magic', 'fletching', 'smithing', 'thieving'].map(k => [k, s?.skills.find(x => x.name.toLowerCase() === k)?.baseLevel ?? null]));
@@ -764,17 +881,18 @@ switch (mode) {
             const programTicks = (detail?.runs ?? []).reduce((a, r) => a + ((r.endedTick ?? r.startedTick) - r.startedTick), 0);
             const programDeferred = endedPrograms.reduce((a, st) => a + (st.deferred ?? 0), 0);
             const end = sdk.getState();
-            result(`pack ${tuMode} summary`, { bandTicks: band?.ticks ?? null, ok: band?.ok ?? false, programTicks, programDeferred, end: levels(end), bloodUsed: blood0 - bloodOf(end), tiers: track.tierArrivals(), ...track.rollStats(), pack: detail?.pack ?? null, topUpTrades: (detail as { topUp?: unknown } | undefined)?.topUp ?? null, helperTeles: g.teles, ...track.summary() });
+            result(`pack ${tuMode} summary`, { bandTicks: band?.ticks ?? null, ok: band?.ok ?? false, programTicks, programDeferred, end: levels(end), bloodUsed: blood0 - bloodOf(end), tiers: track.tierArrivals(), ...track.rollStats(), pack: detail?.pack ?? null, topUpTrades: (detail as { topUp?: unknown } | undefined)?.topUp ?? null, helperTeles: g.teles, clock: clk.summary(g.events), ...track.summary() });
             result(`pack ${tuMode} topups`, track.topUpLog());
             result(`pack ${tuMode} stuns`, track.stunStats());
         } catch (e) {
-            result(`pack ${tuMode} summary`, { bandTicks: null, error: String(e), end: levels(sdk.getState()), bloodUsed: blood0 - bloodOf(sdk.getState()), tiers: track.tierArrivals(), helperTeles: g.teles, ...track.rollStats(), ...track.summary() });
+            result(`pack ${tuMode} summary`, { bandTicks: null, error: String(e), end: levels(sdk.getState()), bloodUsed: blood0 - bloodOf(sdk.getState()), tiers: track.tierArrivals(), helperTeles: g.teles, clock: clk.summary(g.events), ...track.rollStats(), ...track.summary() });
             result(`pack ${tuMode} topups`, track.topUpLog());
             result(`pack ${tuMode} stuns`, track.stunStats());
         } finally {
             // the giver's own ticks (its client counts from its login, not the account's)
             result(`pack ${tuMode} giver`, { accountTick: sdk.getState()?.tick, giverTick: helper.sdk.getState()?.tick, events: g.events.slice(-40) });
             track.stop();
+            clk.stop();
             await g.stop();
             if (asRole) result(`pack ${tuMode} courier`, { events: g.events.filter(e => !/^(wishes to trade|busy|sending trade offer)$/.test(e.ev)).slice(-150) });
             await closeSession(helper);

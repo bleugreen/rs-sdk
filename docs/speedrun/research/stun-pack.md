@@ -187,6 +187,60 @@ cannot bury while the trade is open. Capacity is therefore (failures - top-ups) 
   `planOffers` uses for every item. Any helper trade of an unstackable item in a count that is not
   1, 5, 10 or All is exposed to it (cairn://p/rs/136; this lab works around it in its own copy).
 
+### Why a request draws no answer (read and probed, rs/454)
+
+This answers the open question in section 18 (rs/352): 4 of 166 requests drew neither 'Sending trade
+offer...' nor a 'wishes to trade', and the re-send did not help.
+
+**The rule (read).** The partner sees a request only if `[opplayer4]` (trade.rs2) runs. The engine
+runs it only from a tile that reaches the partner: `Player.tryInteract` needs `inOperableDistance`,
+which for a player is rsmod's rectangle reach (`GameMap.reachedEntity`). Probed on the engine's own
+pathfinder, a 1x1 account reaches the partner from a side tile on open ground, and also when the
+partner stands on a blocking stall tile. It does not reach from a corner, from two tiles away, or
+from a side tile with a wall edge between the two. A free account would step to the partner. A
+stunned one cannot. The failure arms `[walktrigger,stunned]` (movecheck.rs2), and
+`Player.processInteraction` runs it before the op and again once the op has a path. Its
+`p_walk(coord)` replaces the path with the path from the tile to itself, which is empty (probed).
+With no step and no path, the engine prints "I can't reach that!" and clears the interaction on
+the request's own tick. No `UnsetMapFlag` is sent, the partner sees nothing, and no line matches
+the lab trace's `trade|busy` filter. So the request is dropped once, on the tick it runs, by
+reach. No queue or delay refuses it, and nothing refuses ops after a request: `[opplayer4]` has
+no delay. A re-send in the same stun meets the same tiles and the same stun (a knight stuns for 8
+ticks, so `%stunned` holds until the failure + 10). It can land only if the partner has moved to a
+reachable tile first.
+
+**What the unanswered stuns fit (inferred).** All four had the stand-in on (1, 0) on +2. That is
+the side tile it tries first, and it picks the tile by NPC occupancy alone. The lab starts at
+(2670, 3305). The walkable column x = 2672 has a wall on its east edge at z 3299-3303 and
+3306-3310 (`sdk/collision-data.json`). An account there, with the stand-in teleported to its
+east, has the giver on a side tile that it cannot reach. The stand-in counts as adjacent and
+never re-teleports, so the re-send fails the same way (0 of 3). The trace keeps only the giver's
+offset, not the tiles, so this is not confirmed.
+
+**The +7 and +8 'op rejections' are the pack's bury, not a refusal window (read).** After the hold
+(+3 to +5) the program resumes the pack at +6. The bury's `p_stopaction` writes an `UnsetMapFlag`,
+the knight click behind it in that tick is refused, and the +7 click lands on the bury's
+`p_delay(0)` tick and is refused too. `StateCollector` counts every `UnsetMapFlag` sent while the
+account stands still, and those land at +7 and +8. Every stocked stun does the same at k = 3 to
+8 (section 13). Answered top-up stuns show none, because the trade is open and the program idles.
+The +8 click is accepted, and the next attempt is on time.
+
+| Engine rule | Where | What happens to the op | When in a stun |
+|---|---|---|---|
+| Player delayed | `OpPlayerHandler`, `OpNpcHandler`, `MoveClickHandler` (`handle`); `World.processClientsIn` | refused, `UnsetMapFlag` | sent at +0 and +1 (the failure's two `p_delay(0)` ticks); a bury's tick and the tick after |
+| A later op in the same tick | `OpHeldHandler` and every op handler (`clearPendingAction`) | replaced, silently | any; the pack gives a request its own tick |
+| No reach and no step | `Player.processInteraction` with `[walktrigger,stunned]` | "I can't reach that!", cleared | any op that needs a step, until the failure + 10 |
+| Still stunned | `[label,attempt_pick_pocket]` (pickpocket.rs2) | accepted; returns without a roll | knight clicks before the failure + 10 |
+
+**Cost and fix (inferred).** An unanswered request costs no Thieving tick: fail to next was 12, 12
+and 15 against about 12, and no click timing recovers a tick. It defers the top-up by one stun and
+spends the hold's pack actions (one bury and three delay-free actions). The fix is the partner's
+tile, not the timing. The partner should stand on a side tile the account reaches, with no wall
+edge between. The stand-in should check that, and so should the program before it sends: the
+program today accepts any player at Chebyshev distance 1, corners included. Rate: 4 of 166 in
+rs/352 (2.4%, Wilson 95% 0.9-6.0%), or 6 of 191 with rs/290's two (3.1%, 1.4-6.7%). All were in
+pack arms (4 of 109, against 0 of 57 in topup arms), too few to separate the arms.
+
 ## 6. Inventory and supply plan
 
 Slots outside the bones: blood runes, air runes, headless arrows, the arrowhead tiers held, the
@@ -800,3 +854,145 @@ comes to +83 normalised, against +118 for cairnsp335c and +166 for cairnsp335d. 
 difference is knight wander, which section 14 already identified as the row's main source of
 noise. Nothing in the reader fix can move it, because the program's inputs did not change. The
 row S18 uses stays as section 14 left it.
+
+## 18. A crowd on the knight: simultaneous pickpockets and the browser's frame cost (rs/479)
+
+The question (cairn://p/rs/479, for rs/158): rs/453's census found a rival fleet (42 Thieving-99
+accounts, 37 in one East Ardougne square) that looks like it is camping the knights S18 pickpockets.
+When several players pickpocket the same knight in the same tick, does each roll independently, or
+does the knight lock, refuse or delay? Does a crowd in view cost the browser tab frames or next-tick
+reactions? And how does rs/480's opt-in `prefer: 'uncrowded'` knight choice compare? Labels as above:
+m measured, r read, i inferred.
+
+Driver: [`speedrun/lab/crowded-knight.ts`](../../../speedrun/lab/crowded-knight.ts). Lite bots at
+Thieving 99 click Pickpocket on one knight every tick. A browser stand-in for SCORED (Thieving 80, HP
+97, sharks) runs the in-page `pickpocket` program with the knights band's parameters from
+`skills/thieving.ts`, with no top-up and no stun pack, bounded by `maxTicks: 200` in place of
+`untilLevel`. Each phase first runs the 60-trial in-page probe from the band's anchor (2670,3305),
+then the program for 200 observed ticks. A bot's rolls are moved onto the stand-in's tick clock by
+the median offset between the two clients' publications of the same server tick. The phases are
+`base` (no bots), `crowd` (the stand-in beside the crowded knight), `away` (the bots logged in but
+teleported out of view: the host-load control), and `prefer` (the bots on the anchor's nearest
+knight, the stand-in on the anchor with rs/480's `prefer` list from its `chooseKnight`).
+
+Setup: fedora (it answers `uname -n` as `bginf-halo`, 32 cores; every result row records it),
+`NODE_TICKRATE=400` (the demo's rate), block 37, chrome-headless-shell (`HEADLESS=shell`: full
+headless Chrome crashes at launch in fedora's batch sandbox, and Chrome needs `HOME` pointed at
+scratch), and rs/480's `pickpocket.ts` and `thieving.ts` (b34af438) overlaid for the run only.
+
+```sh
+HOME=$TMPDIR/chome PUPPETEER_CACHE_DIR=~/.cache/puppeteer LAB_BLOCK=37 NODE_TICKRATE=400 HEADLESS=shell \
+  bash docs/speedrun/scripts/tickprog-lab.sh ck479s speedrun/lab/crowded-knight.ts:--crowd=40:--ticks=200:--trials=60:--phases=base1,crowd1,away1,base2,crowd2,prefer,away2,base3,crowd3,base4
+```
+
+Data: [`data/crowded-knight/`](data/crowded-knight/), `results.txt` (one RESULT row per phase), the
+full JSON (every roll, every knight's tile per tick) and the tab's render samples per run. Run 1 had
+10 bots and three clean phases. Run 3 had 40 bots and three phases; it is used only where marked,
+because its base2 had 17 bots that failed to log out. Run 4 had 40 bots and all ten phases, with
+the logout retry and a 15-tick settle after every login or logout burst.
+
+### What the source predicts (read)
+
+- **No lock.** `OpNpcHandler` refuses an OPNPC only when the player is delayed, the NPC is gone or
+  `npc.delayed`, or the NPC is not visible to the client. No pickpocket script (`pickpocket.rs2`,
+  `thieving.rs2`) delays the knight. The failure's `npc_setmode(playerface)` and
+  `npc_setmode(null)` turn the knight's face and anim but gate nobody's op.
+- **Independent rolls.** Each thief's script runs its own `stat_random(thieving, 50, 240)`. The stun
+  is the thief's own `%stunned` and `%action_delay` varps, and the damage is `~damage_self`. A
+  failure stuns only the thief who failed.
+- **What a crowd can change.** Players never block players (rs/147), so occupied side tiles don't
+  hinder reach. NPCs are blocked by players (`Npc.ts`), so a crowd pins the knight: it stops
+  wandering. On the client, a crowd adds the cost of rendering the extra players.
+
+### Picks, failures and stuns (measured, 400 ms, the stand-in at Thieving 80)
+
+| Phase (bots) | Windows / ticks | S / F (rate) | Success gap: mean, share at 2 | Stun-to-next: mean, share at 11 | Per 100 rolls at p = 0.80 | 'I can't reach that!' per 100 ticks | Knight's tile moves per window |
+|---|---|---|---|---|---|---|---|
+| base, bots out (run 4 x4, run 3 x1, run 1 x1) | 6 / 1,212 | 237 / 54 (0.814) | 2.23, 84% | 12.21, 58% | 423 | 17.1 | wanders |
+| **crowd, 40 bots** (run 4 x3, run 3 x1) | 4 / 808 | 173 / 41 (0.808) | **2.03, 99%** | **11.00, 100% (41 of 41)** | **382** | **0** | **0** |
+| crowd, 10 bots (run 1) | 1 / 202 | 44 / 10 (0.815) | 2.05, 98% | 11.00, 100% | 384 | 2.0 | 4 |
+| away, 40 bots out of view (run 4) | 2 / 404 | 91 / 14 (0.867) | 2.43, 81% | 12.14, 57% | 437 | 15.3 | wanders |
+| prefer, 10 bots (run 1) | 1 / 202 | 64 / 6 (0.914) | 2.03, 97% | 11.00, 100% | 383 | 5.9 | 17 (the chosen knight) |
+
+"Per 100 rolls at p = 0.80" is 100 x (0.8 x success gap + 0.2 x stun-to-next). It sets every row at
+the same success rate, because a 200-tick window holds only 40-70 rolls and its failure count is
+mostly luck (ticks per success ran 3.2 to 8.8 across the base windows alone).
+
+- **Independent rolls (m).** Up to 39 players rolled on one knight in the same tick (run 4's
+  prefer, the bots' own knight), and 10-27 a tick were usual in the 40-bot crowds. The stand-in's
+  success rate was 0.808 in the crowd and 0.814 bots-out. The formula gives about 0.81 at the
+  Thieving 80-83 a window spans (203/256 at 80, 207/256 at 82). The bots hit 0.938-0.949 against
+  the formula's 0.941 at 99, over 3,175-3,290 rolls a window. Stuns equalled failures for every
+  account (the stand-in 41 of 41 in the crowds).
+- **No refusal (m).** In 12,000+ crowd rolls no line said busy, refused or queued, and the program
+  counted 0 retargets and 0 no-target ticks. The stand-in's op rejections (the clicks it sends
+  during the stun's delay ticks) were 140-164 a window in every phase. The lines that do vary are
+  'I can't reach that!' (the knight walking off) and the repeated 'You're stunned!' of clicks sent
+  during the stun.
+- **The crowd saves ticks (m).** A knight with 40 players beside it never moved in any crowd window.
+  The stand-in then hit the floor on every roll: 2 after a success (169 of 170) and 11 after a
+  stun (41 of 41). Bots-out, the knight wanders, and the gaps carry the walk: 2.23 and 12.21. That
+  is **about 40 ticks per 100 rolls, roughly 10%** in this lab. The away control (2.43 and 12.14)
+  shows that the difference is the pinning, not host load.
+
+### Frame cost and the in-page probe (measured)
+
+| Phase (run 4) | Probes | On the next tick | Probe tick interval max (ms) | Render loops/s (mean, min) during the program | Reaction p50 / p90 / max (ms) | Packets a tick | Decoded-frame max (ms), catch-ups |
+|---|---|---|---|---|---|---|---|
+| base, bots out | 4 | **240 / 240** | 408-439 | 73.1-74.2, 0-72 (0: base4's stall) | 1 / 2-6 / 7.5-25.5 | 1.98-2.02 | 415-2,360, 3 (base4) |
+| **crowd, 40 in view** | 3 | **180 / 180** | 407-414 | 74.1-74.2, 71-73 | 1-2 / 2 / 8.7-13.8 | 2.01-2.02 | 420-473, 0 |
+| away, bots logged in, out of view | 2 | 120 / 120 | 408-435 | 74.1-74.2, 70-72 | 1 / 2 / 9.8-25.5 | 2.01 | 416-419, 0 |
+| prefer | 1 | 60 / 60 | 408 | 74.1, 73 | 2 / 2 / 9.6 | 2.01 | 420, 0 |
+
+- **The hit rate holds (m): 600 of 600 next-tick reactions in run 4, 180 of 180 with the 40-bot
+  crowd in view.** Every miss in the earlier runs had a lab cause. Run 1's crowd probe lost one
+  trial (59 of 60) because it ran beside the knight: once the probe's direction is proven, a pinned
+  knight standing on the probe's home tile loses every later trial. That is why the probe now runs
+  from the anchor. Run 3's crowd1 (59 of 60, one at 2 ticks) ran straight after the 40-bot login,
+  with no settle, in a 1.0 s tab stall. Run 3's base2 (58 of 60) had 17 bots stuck in the world and
+  load 11.
+- **Rendering the crowd costs nothing measurable (m).** The tab drew 74 loops a second with and
+  without the crowd, and the program's per-tick work (packets a tick, reaction) was unchanged. The
+  2.3-2.7 s stalls in the series fell on host-load events, not on the crowd. Run 1's base1 had no
+  bots at all; run 3's crowd1 came right after the bots logged in; run 4's base4 came after 40
+  logouts, at load 9.6. This was chrome-headless-shell on a 32-core host. The client draws the scene
+  to a canvas in its own code, so the per-player draw cost is in the measurement, but a smaller
+  machine was not tried (i).
+
+### rs/480's `prefer: 'uncrowded'` (measured, one clean window)
+
+In run 1, `chooseKnight` scored the anchor's two nearest knights at 10 players beside the crowded
+one and 1 beside the other, and chose the uncrowded one. The program clicked it for all 200 ticks
+(the `target` gauge never changed, 0 retargets), at a success gap of 2.03 and stun-to-next of 11.00
+in 6 of 6. **A retarget to the other knight was not exercised**: nothing took the chosen knight out
+of reach. rs/480's unit tests cover that order. In run 4 the choice tick found no knight in sight
+from the anchor (the crowd had walked its knight out of view), so `chooseKnight` returned an empty
+list and the program fell back to the nearest knight: 2.08 and 11.67, with 23 'I can't reach that!'
+lines. The uncrowded knight is no faster than the crowded one, which is already at the floor
+(2.00 and 11.00).
+
+### Verdict for rs/158 and rs/480
+
+**The crowded knight costs no ticks (m).** Against the bots-out baseline it was faster: about
+40 ticks per 100 rolls, because the crowd pins the knight and the stand-in never walks. Rolls are
+independent and nothing is refused. The in-page hit rate with 40 players in view was 180 of 180,
+against 240 of 240 bots-out. `prefer: 'uncrowded'` has nothing to recover, and on the measured
+window it was no faster than the crowd. Under main's rule, rs/480 closes unmerged.
+
+What it could mean for S18 (i): over 57-99's ~449 successes and ~85 failures, a knight that never
+wanders is worth up to ~0.2 x 449 + 1.2 x 85, about 190 ticks at this lab's wander. The S18 rows'
+measured wander tail was 83-166 ticks normalised (section 17), so a rival crowd on the eastern
+knights is, if anything, a small gain. Not measured: rivals on the demo who do more than pickpocket
+(attack the knight, follow SCORED); a full 57-99 band beside a crowd; and a host smaller than
+fedora.
+
+### Lab lessons
+
+- **Fresh bot names for each login round.** A name logged in again in the same process first reads
+  the gateway's last published state from its previous session, whose tick is ahead of the new
+  client's, and the next `waitTicks` fails with 'tick clock went back'.
+- **Logging 40 lite bots out at once** left 17 in the world at `logoutClean`'s 24 s bound. With a
+  40 s bound and up to three tries, all 40 left in every round.
+- **Dismiss a level-up page before a staff `::tele`.** The browser tab types the command into chat,
+  and an open page swallows it.
+- **Don't run the probe beside an NPC that can stop on the probe's home tile** (above).

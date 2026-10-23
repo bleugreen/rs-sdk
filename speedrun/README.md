@@ -17,7 +17,8 @@ speedrun/
     wait.ts       tick-keyed waits shared by every module
     items.ts      item matching and the 1/5/10/All/X button planner
     bank.ts       depositAll, depositMatching, withdrawMany (+ pure planners)
-    trade.ts      give / giveAll (giver), receiveFrom (receiver) (+ pure per-tick decisions)
+    trade.ts      give / giveAll (giver), receiveFrom (receiver), swap (both ways in one trade)
+                  (+ pure per-tick decisions)
     dialogue.ts   classifyPage, clickOption, clickContinue, advance, continueBurst
     converse.ts   whole conversations, choice queues, the shape-driven burst mode, unsolicited-page
                   interrupts, dialogueRuns and burstTicks
@@ -50,17 +51,26 @@ speedrun/
     fence.ts      Fence: an abandoned step attempt cannot send or hear state; patchMethod
     example-bank.ts  'bank everything at Varrock west', end to end
     stub.ts       a stand-in skill module (chop to a level, or idle N ticks) for exercising rehearse.ts
+    handoff.ts    the one hand-off Step builder, driven by STEP-MANIFEST.md's hand-off rows (H1, H13, ...)
   skills/         the run's step modules: `skill` and `steps({to, ...})` returning runner Steps
     start.ts      S00, the tutorial skip on a brand-new account's first login
     agility.ts    Gnome course to 52, the lever to the Wilderness course, 52 -> to, final logout
+    firemaking.ts S03: lights the logs a helper drops, one chained roll per log; log bands are measure rows
     fishing.ts    S22 fly fishing under the gated knife loop, and the from-1 net and walk bands
-    woodcutting.ts  S07: normal trees, oaks and willows at Taverley under the in-page gate
+    mining.ts     S09 iron at the Ardougne zoo under the gated knife-mine loop, and the from-1 bands;
+                  `kitGiver`/`dropAtExit` are the scored run's slot steps (H4p in, the kit out)
+    woodcutting.ts  S07: normal trees, oaks and willows under the in-page gate; `route` picks the
+                  stands (Taverley, the scored run's; or Rimmington oaks + Draynor-west willows)
+    thieving.ts   S18, pickpocketing from any level (men, the ship to Ardougne, a bank stop,
+                  warrior women, guards, knights) with the in-page pickpocket program
+    smithing.ts   S25a: hammers at the Varrock west anvil, one trade swap() with the anvil helper per inventory
   quests/         the quest step modules: `quest`, `stepId`, `steps(opts)`, one Step per segment
     segments.ts   the shared scaffold: questSteps, QuestOptions, talkShape, kitSegment, checks
   rehearse.ts     one single-skill rehearsal attempt end to end (gate, S00, kit, steps, logout, hiscore)
   lab/            local lab: never imported by lib/
     lab.sh        engine + gateway + lite runners on port block 9300
-    setup.ts      staff fixtures: tele/mustTele, give/ensureItem, setStats, setvar/getvar, clearInventory
+    setup.ts      staff fixtures: leaveTutorial, tele/mustTele, give/ensureItem, setStats, setvar/getvar,
+                  clearInventory
     record.ts     Recorder segments, stats, trace and RESULT output for quest measurements
     quests/run.ts the quest modules' lab runner: segment fixtures, --from/--until/--runs/
                   --dialogue/--trace/--launch, per-segment tick tables
@@ -77,6 +87,16 @@ speedrun/
                          tickprog-lab.sh's tab (docs/speedrun/skills/mining.md section 7)
   tools/          tab-login.ts (log an account's browser tab in with a one-time token over
                   CDP; see "Logging the browser tab in");
+                  rc-solo.ts (a rehearse.ts skill module, rehearsal-only: one account crafting
+                  air runes alone, Duke Horacio's talisman, then trips on altar-room.ts's Falador
+                  east restock and ruins entry; docs/speedrun/rehearsals/runecraft.md);
+                  relog-probe.ts (relog timing through session.ts login/logoutClean, navigating
+                  the tab or in the page: click to confirmed out and its signal, out to in
+                  world, the new session's first tick and, with --bank, its first action; see
+                  "Relogging the browser tab in place");
+                  tab-logout.ts (log a browser tab out and confirm it through the page over CDP
+                  before Chrome is closed; the host runbooks' interim, now that `logoutClean`
+                  itself confirms a browser logout through the page);
                   kit-return.ts (hand a rehearsal account's kit back to its giver and log out:
                   runs only within 30 tiles of the giver's --at tile, else casts a teleport
                   landing there if it can, else refuses without moving (exit 3; this content
@@ -358,7 +378,9 @@ in `lab/`, which `lib/` never imports.
   tick, leaving quest dialogue untouched. `settled` instead checks animation
   quiet and includes its quiet tail in the successful tick.
 - `lab/setup` provides bounded staff fixtures. `tele` returns a boolean;
-  `mustTele` throws if the landing was not observed. `getvar` accepts only a
+  `mustTele` throws if the landing was not observed. Both refuse (throw) on
+  Tutorial Island: stage a fresh account through `leaveTutorial` (S00's
+  `tutorialSkip`) first (docs/speedrun/LAB.md, "Staging a fresh account"). `getvar` accepts only a
   fresh exact engine reply, not a previous request's reply on the same tick.
 - `lab/record` records segments with explicit effect marks, dialogue shape,
   interactions and walked tiles. `Recorder.report()` emits SEG lines, a table
@@ -876,6 +898,32 @@ that names the level reached.
 
 ## skills/mining.ts
 
+STEP-MANIFEST.md entry 4 (S09) as level-driven steps that run from any start level:
+`mining.prep` (drops only tutorial.rs2's starter items, and only on an account below 15),
+`mining.copper` (1-15 at Rimmington, an SDK loop), the `mining.travel: ...` legs (Port Sarim,
+Karamja, Brimhaven, the customs ship to Ardougne, the zoo; `travel: 'none'` keeps only the zoo
+walk), `mining.iron-15` (15-63) and `mining.iron-63` (63 to the target). Each band reads the
+level from state and is a no-op once passed, so the scored run, already in Ardougne at Mining
+64, runs the zoo walk and the last band.
+
+```ts
+import { steps } from '../skills/mining';
+await runSteps(session, steps({ to: 99, respawn: 'auto', technique: 'auto' }), { log, c: {} });
+```
+
+The iron bands run `knife-mine` through `lib/gated-program.ts` `runGatedProgram` (the
+`deps` export is the seam the tests replace). Below 63 the program runs with `success: 'iron'`
+(a failed roll whose swing was seen is planned from like a success) and `rate` from the held
+pickaxes (`rateTable`: rune 41, adamant 31, mithril 21, steel 6, bronze). The respawn comes
+from /playercount (`respawnFor`, player_count.rs2's scale; `scheduledRespawn` plans for 150
+players fewer) at each band start and every 100 ticks, and a watch on the rotation's rocks logs
+each observed respawn and restarts the band when one is longer than the schedule. The lap is
+the one with the lowest modelled ticks per ore at that respawn (`lapModel`, `rotationFor`: a
+knife lap of n rocks holds 3 ticks per ore while 3n >= D). A rock counts as live only with its
+Mine option and an id outside 450-453 (depleted iron keeps Mine; the same set as knife-mine's
+`EMPTY_ROCKS`). Lab runs: `tickprog-measure.ts mine` (one program run, with `--success`,
+`--pickaxes`, `--rotation`, `--gated`) and `mineband` (the module's iron bands in the page).
+
 Slots (STEP-MANIFEST.md's inventory ledger, rows H4p to H7). Each iron band refuses to start
 without `FREE_SLOTS` (4) free, ores counted as free since the band drops them first. Two steps
 are the scored run's and off by default, since a rehearsal brings its kit from Lumbridge and keeps
@@ -1099,6 +1147,54 @@ executed and reached ticks, the guard's re-sends, and the last state.
 | S00 step row, first published state to Lumbridge with the kit | **3** (3 of 3): question page +1, choice page +2, landed +3 |
 | Stock `bot.skipTutorial()` (manifest entry 34, `travel-walk-enchant.ts`) | 6 |
 
+## skills/thieving.ts (S18)
+
+Pickpocketing from any level to `to`, STEP-MANIFEST.md entry 6, with the in-page `pickpocket`
+program. `steps({to, food, restock, topUp})` returns `thieving:men` (1-25, Lumbridge men at the
+tutorial exit, or Ardougne market men for an account already there), `thieving:to-ardougne`,
+`thieving:provision`, `thieving:warrior-women` (25-40), `thieving:guards` (40-55),
+`thieving:knights-55` (55-57) and `thieving:knights` (57-`to`). Bands are data (`BANDS`: NPC
+regex, spawn anchors read from the map files, stun damage). Each band reads the base level and
+is a no-op at or past its end, so the scored run, which arrives from Fight Arena at 57 with its
+food, runs only `thieving:knights`; the 55-57 split gives a rehearsal's 57-99 row the run's shape.
+Every band has `done`/`inProgress` from the level and is `logoutSafe`.
+
+- **Eating** (`eatPolicy(maxHp, heal, stunDamage)`): forced at the stun damage (one failure from
+  death), in a success window once a whole bite fits under the cap. At 10 HP that is 6/1 for
+  cake on men and 4/3 for shark on knights; at 40 HP shark on knights, 20/3. Each band passes
+  `stopWhenFoodBelow: 1`, so the program ends with `reason: 'food'` when the last bite is gone
+  and an eat is due; the band then restocks (default: the East Ardougne south bank, booths at
+  (2656,3283)/(2656,3286)) and starts the program again. Each band also passes
+  `retargetTicks: 12`, so a nearest target the player cannot reach is given up.
+- **The leg** is the ship route only: Port Sarim, Musa Point, the Karamja path, the Brimhaven
+  customs officer (60 gp in fares). Overland killed a 10 HP lab account on White Wolf Mountain.
+- **The bank stop** deposits everything but coins (the starter kit and the food's banknotes) and
+  fills the free slots with the food, unnoted. It is a no-op when edible food is held and no
+  notes are.
+- **Helper top-ups** (`topUp: { giver, below, mode }`, the scored run's path). The program clicks
+  every tick and a click closes a trade, so the trade must own the account while it is open.
+  `mode: 'idle'` (default): the program sends the request as a `player` stun action on the
+  stun's +2 once fewer than `below` food items are left (`topUpAction`), and with
+  `idleOnInterface` sends nothing while the trade is open; the module's `TopUpReceiver` accepts
+  the offer and confirm screens (`lib/trade.ts` `decideReceiver`) and sends nothing otherwise.
+  `mode: 'restart'` (fallback): the module stops the program on the first failure with food
+  below `below` (`topUpDue`), runs `receiveFrom`, and starts it again by `TOPUP_RESTART_BY` (9)
+  ticks after the failure, whose click lands on the next attempt's tick. Both log to the band's
+  detail row (`topUp.trades` or `topUp.restarts`).
+- **Technique** is accepted and ignored: the program clicks blindly every tick, so there is no
+  knife or plain cadence and no in-band probe. A band with work left fails its precondition on
+  the lite client (the page publishes `program`; the lite client does not).
+- **The stun pack is a seam** (`stunPack` throws; main keeps it out of the rehearsal row): the
+  program side is rs/132's `stunActions`, and the pack's entries (bury, Charge, arrows) go after
+  `topUpAction` in the same list, with the courier's supplies arriving through the same top-up
+  trade. Its preconditions: base Magic 80 and Mage Arena stage 8 for Charge, the giver next to
+  the account when the request goes out.
+
+Each band appends a 0-tick `<band>:detail` row (anchor, policy, program runs, restock trips,
+top-ups), and the leg a `thieving:to-ardougne:detail` row (HP lost, coins); the harness logs the
+program status rows. Lab passes: `lab/measure-thieving.ts` through `tickprog-lab.sh`; results in
+`docs/speedrun/rehearsals/thieving.md`.
+
 ## rehearse.ts
 
 One single-skill attempt for the per-skill fastest-99 rehearsals (cairn://p/rs/147), a thin layer
@@ -1112,7 +1208,16 @@ bun speedrun/rehearse.ts --skill=<name|module.ts> --bot=<env name> [--to=99] [--
     [--gate-probe-trials=60] [--probe-trials=0]
     [--force-gate] [--from=<step name or index>] [--log=<file>] [--lab] [--insecure-query-login]
     [--host-reservation=<file>] [--claim-owner=<rs/NNN>] [--kind=measurement|record]
+    [--no-gate-read] [--dry-run]
 ```
+
+`--no-gate-read` (measurement only) runs with no gate account and no direct read. The missing
+read refuses nothing, while `/playercount` and every other check still apply, and a
+`(gate) no read` row records it. It is for a step with no next-tick reaction, run where a gate
+account would spend a login (the solo Runecraft row from bbs). `--dry-run` prints the argv as
+the shell delivered it, the parsed arguments, every login in order, the gate and the steps, then
+exits 0 before any network or login. Main's rule is to dry-run a demo launch line on its host
+first.
 
 1. **Gate, off the clock.** `/playercount`; the direct read on a separate gate account
    (off a local world, `cairn_twin`, the twin's gate account, unless `--gate-bot` names another or
@@ -1241,7 +1346,16 @@ step acts. Options (strings are accepted, as `--skill-opt` passes them):
   `maxPauses` (3);
 - `drop`: a pattern of items to drop before the walk to the Gnome course (a
   fresh account's 18-slot starter kit leaves 10 free; the rehearsal drops the 16
-  that are not food).
+  that are not food);
+- `eatAt` (`land` by default, passed to the program): an eat that falls due on
+  the walk to an obstacle waits for the next click tick, because its inventory
+  click would cancel the obstacle, unless HP is within one skeleton hit of
+  death; `any` eats on the tick it falls due;
+- rehearsal only: `topUpGiver` / `topUpWant` (`shark:16`), a food trade at the
+  start, after `drop`; and `restockGiver` / `restockWant` (`shark:20`) /
+  `restockBelow` (4), one mid-band restock per band, which leaves the course by
+  its gate, trades on the ridge gate's south side and crosses back (a failed
+  trade logs out and throws `no-food`).
 
 What each Wilderness end does: a pause (`pauseFor` fired) logs out at once,
 writes an `agility:pause` row and throws `AgilityStop('paused-for-player')`;
@@ -1254,7 +1368,8 @@ allows, and throws `retreat`. A death logs out at the respawn and throws
 `died`. No food at the line logs out and throws `no-food`. Walks eat at the
 same line and open a gate the pathfinder cannot route through. Ledger rows
 (zero ticks): `agility:pause`, `agility:retreat`, `agility:death`,
-`agility:final-logout`, `agility:walk-wilderness:legs`; the program results and
+`agility:final-logout`, `agility:walk-wilderness:legs`, `agility:top-up`,
+`agility:restock`; the program results and
 the level ticks are `rehearse.ts`'s `(program)` and `(reach)` rows.
 
 ## Lab

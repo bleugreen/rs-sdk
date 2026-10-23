@@ -86,6 +86,34 @@ skeleton damage, not the falls or the lap.
   bot.walkTo's own door opener had clicked the gate and opened the scene). The
   scored run's S11a arrives by spirit tree; S15's walked zoo return meets this
   gate once.
+- **bot.walkTo opens any "door" next to where its path goes, obstacles included.**
+  `sdk/actions.ts` walkTo lists as doors every static-collision door on or
+  cardinally beside a path waypoint (`sdk/pathfinding.ts` findDoorsAlongPath),
+  the path's last tile included. Once the player is within 15 tiles of such a
+  waypoint it clicks the loc's Open op (actions-helpers.ts `openDoorAt`). After
+  3 `cant_reach` results it blocks the loc for a while and re-routes. It never
+  asks what the Open op does. When the "door" is an obstacle whose Open op
+  moves the player (an agility gate, a scripted one-way gate), a walk that only
+  ends beside it sets the obstacle off mid-walk, then walks on from wherever the
+  script left the player. The case found is loc 2309, the Wilderness course's
+  ridge gate (rs/494). A walk that must end near such a loc should end two or
+  more tiles from it, and the step should click the loc itself.
+- **The ridge gate is the ridge.** Loc 2309's only op, Open, runs the ridge
+  crossing (`wilderness_course.rs2`): the player is forcemoved north up the
+  one-tile corridor (x 2998, z 3917-3930) into the course, or dropped into the
+  wolf pit east of it. So the old route's last walk, to the gate's south tile
+  (2998,3916), clicked the ridge mid-walk. bot.walkTo then walked on from inside
+  the course and came back down through the course gate. In the lab (executor
+  fedora, host bginf-halo, 400 ms, browser client, rs/494) that walk took
+  100 ticks for 9 tiles with two fall rolls in one run, and ended "Stuck at"
+  after 146 ticks in another. rs/310's session D stopped in the corridor at
+  (2998,3918) this way. The unfixed module from that tile is a race: it failed
+  1 of 2 lab runs. Walks now end on `RIDGE_GATE.stage` (2998,3914). `crossRidge`
+  clicks the gate from there or from the corridor; a click from inside the
+  corridor crosses too, in 16 ticks, 4 of 4 lab runs. From the wolf pit it walks
+  back to the stage first (28 ticks, 2 of 2). `speedrun/lab/ridge-gate.ts`
+  holds the cases. The scored run reaches the course from the south by T27-17
+  and never takes this route.
 - **Monkey bars** rejected as planned (level-6 Wilderness spiders and earth
   warriors against a 10 HP account).
 
@@ -138,6 +166,7 @@ lab bot (unit-tested on the fake SDK only).
 Not a record attempt: section 6 prices the plan below stunagile's row. Under
 main's ruling (addendum 18 as amended 19:56 PDT), cairn_jumps runs to 99 as a
 measurement once rs/147 grants it, with protect off and the kit in section 6.4.
+The run itself, in its sessions, is section 7.
 
 ## 6. Prayer 43 and Protect from Melee (rs/241)
 
@@ -464,3 +493,268 @@ So 66 is this engine's floor for the Wilderness lap, and stunagile's implied ave
 over 52 -> 99 can't come from a faster clean lap. Its 6,772 sits at our distribution's 21st percentile
 (section 6.7): a run with fewer falls explains it. The cairn_jumps attempt's per-lap log will show
 the demo's own spread of fall loops.
+
+## 7. Demo run: cairn_jumps (rs/295, rs/310)
+
+One account, `cairn_jumps`, across five sessions; the hiscore is the authority on the total.
+Sessions A-C ran on the twin (HOST.md; `uname -n` rs-ashburn-rehearsal in the harness's probe
+line), browser client on the xrdp display `:10`, Chrome 156, page served from the attempt's
+worktree, gateway from `~/rs-sdk`. Sessions D-E ran on the run host (7.6). The two machines' tick
+logs are one series, committed together as
+[`agility-evidence.jsonl`](agility-evidence.jsonl) (228 rows; the one other player's name is
+replaced by `player-1`). Module defaults throughout: `eatAt: 'land'`,
+`eatGap: 3`, `pauseFor: 'threat'`, `playerRadius: 15`, `maxPauses: 3`, protect off. Every figure
+is measured (m) from the tick log, the harness log and its summary, unless labelled.
+
+### 7.1 Session A: creation to the Gnome south gate (rs/295, 2026-10-22 06:08-06:14Z)
+
+Worktree `~/rs-295` at 82cadf6d; `--kit-from=cairn_mule2 --kit=knife:1,cake:7,shark:2`, the
+top-up `topUpWant=cake:18` from `cairn_mule2`, and a drop of the starter items.
+
+| Row | Result |
+|---|---|
+| `(gate) players` | 1,791 online |
+| `(gate) direct` (cairn_twin, 06:08:38Z) | (a) 59/60, (c) 0 catch-ups/min, tick p90 481.5 ms (over the 400 report line); vantage edge iad, TCP connect p50 1.9 ms |
+| `(gate) in-page before` (cairn_twin's tab) | (a) 58/60, (c) 0/min, loop p10 72.8/s, tick p90 503 ms |
+| `(gate) recording` | `~/recordings/rs295-agility-20261022T060833Z.mkv` on `:10` |
+| `(gate) live frame` | PASS: cairn_jumps's tab the only window, maximised, in front; frame difference 2.2 |
+| S00 tutorial skip | **4 ticks** (2-6) |
+| S01 kit | **8 ticks** (6-14) |
+| `agility:top-up` | settled on tick 24 (the trade 6 ticks), inside walk-gnome |
+| `agility:walk-gnome` | **561 ticks** (14-575), **failed at the gate**: `No path to (2461, 3386) from (2461, 3382)` |
+| Logout | click on tick 575, confirmed by the page; session 576 ticks |
+| `(players) end` | 1,790 |
+| TICKMON | 0 glued ticks in every minute; tick period 327-368 ms |
+
+One cake was eaten on the walk (rs/295's report). The player reached the gate tile (2461,3382)
+about tick 570. The gate click opened Femi's first-visit scene ('Hello there.', tick 571), the
+browser client's dialogue was not continued, and the retried walk met the closed gate (rs/309's
+fault 1).
+
+### 7.2 Session B: the first resume (rs/295, 06:24Z)
+
+Worktree `~/rs-295` at e67edee1 (any failed leg tries the gate). The gate came from a direct read
+taken just before (cairn_twin, 06:22:33Z: (a) 58/60, (c) 0/min, tick p90 475.6 ms; 1,795 online),
+with no gate tab (`--gate-probe-trials=0`). The same recording was still running, and the live
+frame passed (difference 2.3).
+
+The harness resumed at `agility:walk-gnome` (S00 and the kit already done). The session started
+under 'Loading - please wait': the old gate pass clicked the gate before the region was built and
+returned success without the player moving (rs/309's fault 2), the walk failed again at (2461,3382),
+and the step failed on tick 10. Logout click on tick 10; session 11 ticks; 1,793 online at the end.
+
+### 7.3 Totals after rs/295
+
+| | Ticks |
+|---|---|
+| Steps | S00 4, kit 8, walk-gnome 561 + 9 = 570; 582 in all |
+| Sessions | 576 + 11 = 587 |
+| Playtime by the log (each session's last tick + 1) | **589** |
+| Hiscore Overall | **576**: session A's 577 less 1; session B's 12 don't show, because the row moves only on a level gain (HARNESS.md, "Relogs") |
+| Agility | 1 (no hiscore row under 15) |
+
+The model's fixed part to the Gnome course start is 25 (S00, kit, top-up) + 595 (Lumbridge to the
+course start, the lab's 571-592 to the gate plus the pass, section 1) = 620. Session A was on that
+pace to the gate (14 + 561 to arrive about tick 570, against the lab's 571-592).
+
+### 7.4 Session C: the resume, Gnome 1 -> 52 (rs/310, 20:47-20:57Z)
+
+Worktree `~/rs-310` at b1436d00 (rs/147's mission branch, carrying rs/309's #321 c4e2a681,
+aa3f012c's auto-retaliate off and main's floor dd225788), page served from it. Served-page check
+before login: `eatAt` 4 hits, rs/309's `sceneReady` 1 hit, served `client.js` byte-identical to
+the worktree's build; `GNOME_STRONGHOLD_GATE` is Bun-side (in the worktree's `travel.ts` and
+`agility.ts`). Launch: session B's line with the cairn_twin gate tab back (2 logins),
+`--claim-owner=rs/310`, `SPEEDRUN_TICK_MS=400` (the harness's wall-clock bounds) and the same
+`--log`. The Chrome profile was new (cold on-demand cache). Demo: **400 ms ticks** (worldfeed
+hello `tickMs 400`), process token `mvjz3zys` at the start; 38 of our accounts online before the
+claim. The claim kept the twin's gate timer off its :00/:30 reads from 20:46Z to 21:08Z.
+
+| Row | Result |
+|---|---|
+| `(gate) players` | 1,237 online |
+| `(gate) direct` (cairn_twin, 20:47:09Z) | (a) 60/60, (c) 0 catch-ups/min, tick p90 480.7 ms (report line 400 is a 300 ms calibration); edge iad, TCP connect p50 2.1 ms |
+| `(gate) in-page before` | (a) 60/60, (c) 0/min, loop p10 72.5/s, tick p90 450 ms |
+| `(gate) recording` | `~/recordings/rs310-agility-20261022T204646Z.mkv` on `:10` (1,108 s) |
+| `(gate) live frame` | PASS: cairn_jumps's tab the only window, maximised, in front; difference 2.3 |
+| Inventory | knife, 2 sharks, 24 cakes and 1 empty slot (the 25th cake eaten in session A), read from the recording at 20:56:55Z; the band ate nothing, so it is also the login inventory. S01 skipped |
+| `agility:gate` north | **14 ticks, 2 clicks, 1 dialogue** (Femi's first visit cleared), ended north: rs/309's helper |
+| `agility:walk-gnome` | **49 ticks** (4-53), from the gate to the course |
+| `agility:gnome` 1 -> 52 | **1,043 ticks** (53-1096), 17 laps, 124 obstacles; clean laps 59 (one 60); 0 falls, 0 eats; program frames p50 400, p90 480 ms, 0 catch-ups |
+| `agility:gate` south | 6 ticks, 1 click, 0 dialogues |
+| `agility:walk-wilderness` | **failed** at tick 1191 after 95 ticks: `walk to (2561,3311): Stuck at (2537, 3351)` |
+| Logout | click on tick 1191, confirmed by the page; session 1,194 ticks |
+| `(gate) in-page after` | (a) 60/60, (c) 0/min, loop p10 72.8/s |
+| `(players) end` | 1,260 |
+| TICKMON | 0 glued ticks in every minute; period 399-400 ms |
+
+**Why the walk failed** (measured on the recording, read in the code). The leg to (2539,3351)
+arrived at 20:57:09Z, and `bot.walkTo(2561,3311)` started while the browser client was rebuilding
+the scene: the frame at about 20:57:09.4Z shows 'Loading - please wait.' over the player. Both
+tries returned `Stuck at` within about 1.6 s, and no walk toward the lever was sent. The map there
+is open ground (the only door on the path is the lever house's at (2564,3310)). The chain: since
+#321 a world click while `state.sceneReady` is false returns `scene_loading`, not success
+(`sdk/index.ts`, `sendAction`); `walkStepToward` (`sdk/actions-helpers.ts`) turns any failed
+dispatch into 'stuck' at once; and `walkTo` (`sdk/actions.ts`) turns three of those, with no
+door nearby, into `Stuck at` within milliseconds. So on the browser client a walk leg that starts
+during a rebuild fails outright: region crossings, and every teleport, lever or spirit-tree
+landing or relog followed by a walk. The lab's lite client builds within the tick and never shows
+it. The fix is rs/485 (walkStepToward waits for `sceneReady`, then judges movement and re-sends
+once).
+
+### 7.5 Totals after session C
+
+| | Ticks |
+|---|---|
+| Sessions | 576 + 11 + 1,194 = 1,781 |
+| Playtime by the log | **1,784** (each session's last tick + 1) |
+| Agility 52 reached | playtime **1,685** by the log; hiscore **1,682** (Agility and Overall, at 400 ms/tick), 3 under the log |
+| Model to 52 (section 6.7's fixed parts) | 25 + 595 + 1,042 = 1,662 |
+| Divergence at 52 | **+23** by the log (+20 by the hiscore), all in the walk to the Gnome course: 561 + 9 + 49 = 619 against 595. That is the gate stall: session A's failed tries at the gate, session B's 11 ticks, and the relog and gate pass in session C. Gnome 1 -> 52 itself ran 1,043 against 1,042 |
+| Lost to the walk-wilderness failure | the logout's 3 ticks, plus the next session's relog cost (about 20, HARNESS.md "Relogs"); the 95 ticks walked still count, since the resume starts from (2538,3350) |
+
+The resume from (2538,3350) runs on `~/rs-310` at b1436d00 with rs/485's `sdk/actions-helpers.ts`
+overlaid byte-identical (main's approval). The overlay came from rs/485's tested 6ebb7fad,
+blob 41d82e3b. The same blob is in rs/485's rebased 8521efc7 and in main's merge of it,
+c7eae140 (#398), so the resume's SDK is main's. The sdk runs outside the page, so the bundle is
+unchanged. The worktree lacks two other main commits: 4eb6b94b (`speedrun/lib/act.ts`'s
+ClickGuard fight and page rules, and a `world.ts` type widening) and #396 (Grand Tree). Neither
+is on the resume's path. `act.ts` is reached from the agility module only through `passGate`,
+and both Gnome gates are already behind the account. The walk to the lever, the Wilderness course
+and the ridge gate use the SDK's `walkTo`, raw loc clicks and `runProgram`. The no-login dry run
+on the twin passed: rs/485's test and the existing walk tests (5 of 5) against the overlaid file,
+and the launch options build walk-gnome, gnome, walk-wilderness and wilderness. That twin staging
+was never run: the resume moved to the run host (7.6), where the copy was the branch tip itself,
+whose runtime is main's c7eae140, so the two exclusions above don't apply to sessions D and E.
+
+### 7.6 Sessions D and E: the walk to the Wilderness and 52 -> 99 (rs/310, 21:50-22:33Z)
+
+**Machine.** The run host, rs-ashburn-run (`uname -n` read in every batch, and in the harness's
+probe line), by the operator's decision at 14:44 PDT, a deliberate departure from 'never the run
+host' that the operator confirmed. Host's rules: a standalone `~/rs-310`, not a worktree off the
+run checkout (whose HEAD stayed c7eae140 = `~/run-commit` throughout); the env files under it;
+own ports (gateway 17780, page 18899, DevTools 19222), own tmux socket, own Chrome profile; never
+`~/rs-run`, `~/recordings`, `:10`, 8899/9222/7780 or the run host's gate account. The batches were
+issued from the Mac (`uname -n` bbl.local) over ssh.
+
+**Code.** `~/rs-310` was a `git archive` of the branch tip eedeff81, whose `sdk`, `server`,
+`speedrun/lib`, `speedrun/skills`, `speedrun/runner` and `rehearse.ts` equal main's c7eae140
+(`sdk/actions-helpers.ts` blob 41d82e3b, rs/485's fix). The bundle was built there (`eatAt` 4,
+`sceneReady` 1; the served `client.js` byte-identical to the build). No-login dry run: 113 of
+113 tests (rs/485's, the walk tests, agility's and rehearse's), and the launch's options and
+chain, as in 7.5.
+
+**Display.** The run host has no Xvfb, so Chrome ran headless (`--headless=new`, 1920x1080) with
+no DISPLAY. **There is no recording and no live frame for sessions D and E**: the harness recorded
+`(gate) recording` as unknown and the live frame as UNVERIFIED, as warnings. A logged-out smoke
+test under the restage claim showed that headless Chrome stages, maximises and screenshots a tab.
+The gate tab was the twin's gate account, `cairn_twin`, never the run host's.
+
+**Demo.** Token `mvjz3zys` and worldfeed `tickMs 400` at the start (21:50:45Z) and the end
+(22:35:48Z), unchanged, so the rows stand.
+
+| Row | Session D (21:50:56Z) | Session E (21:57:45Z) |
+|---|---|---|
+| `(gate) players` | 1,266 | 1,365 |
+| `(gate) direct` (cairn_twin) | (a) 60/60, (c) 0/min, tick p90 482.8 ms; edge iad, TCP p50 2.3 ms | (a) **56/60, under the record floor of 58**, (c) 0/min, tick p90 497.4 ms, max 811 ms. A measurement refuses on (c) only, so it ran |
+| `(gate) in-page before` | (a) 60/60, (c) 0/min, loop p10 73/s | (a) 59/60, (c) 0/min, loop p10 72.8/s |
+| `(gate) in-page after` | not run: the logout was not confirmed (below) | (a) 60/60, (c) 0/min, loop p10 72.5/s, tick p90 506 ms |
+| `agility:walk-wilderness` | **failed** after 242 ticks (3-245): `walk to the ridge gate: Walk timed out after 30000ms: at (2998, 3918), destination (2998, 3916)` | **15 ticks** (2-17), ridge gate on the first try, 0 slashes, no players at the keep |
+| `agility:wilderness` 52 -> 99 | | **4,886 ticks** (17-4903): 66 whole laps and a part, 56 of the 66 exactly 66 ticks |
+| Session | 305 ticks by the log, playtime 306 | 4,903 ticks, playtime 4,904; final logout confirmed by the page |
+| `(players) end` | 1,364 | 1,342 (highest read 1,419) |
+| TICKMON | 0 glued ticks in every minute, period 399-401 ms | the same, 33 minutes |
+
+**The direct probes** (the harness log's summary lines; the lite client on `cairn_twin`, no tab;
+both `probe (direct) from rs-ashburn-run`). For both probes, the only page was `cairn_jumps`'s
+logged-out tab in headless Chrome: 7 s after Chrome's start in D, and 2 minutes after the
+Wilderness logout in E. There was no recording in either, and the load average was 0.00 at
+21:45:42Z:
+
+| | D, 21:50:56-21:52:23Z | E, 21:57:46-21:59:18Z |
+|---|---|---|
+| Latency in ticks | 1:60 | 1:56, 2:4 |
+| Consecutive trials agree | 100% | 86% |
+| Tick intervals, p10 / p50 / p90 / max ms | 317.8 / 405 / 482.8 / 652.4 | 298.3 / 392.9 / 497.4 / 811.3 |
+| 50 ms histogram | 200:2 250:10 300:22 350:40 400:40 450:26 500:10 650:1 | 150:1 200:4 250:12 300:20 350:45 400:33 450:21 500:4 550:5 600:3 650:1 800:1 |
+| Catch-ups | 0 | 0 |
+
+The raw files with the per-trial rows (landed tick, send offset) and the tick arrivals, which rs/83
+needs to explain E's 56/60, are lost: the harness wrote them to `/tmp/speedrun` on the run host,
+and the teardown removed them. The harness now keeps that file beside the tick log (HARNESS.md).
+
+**rs/485's wait held.** All three walk legs of session D that went out while the client was
+loading an area logged `sent while the region loaded (scene_loading); sceneReady after 1 ticks,
+already moving: not re-sent`, and the leg that failed in session C (to the lever house) went
+through. The lever, the keep and the walk west took the rest of session D's 242 ticks.
+
+**Why session D failed at the ridge gate** (the harness log; the cause is rs/494's, lab-tested
+there). The walk from (3057,3949) towards (3006,3911) took the ridge gate, loc 2309 at
+(2998,3917), from its north side. `walkTo`'s door opener got `cant_reach` three times there and
+re-routed, and the next leg's two-tile arrival at the south approach (2998,3916) accepted (2998,3918),
+north of the gate. `crossRidge` then had no walk through the closed gate to the approach, and timed
+out. rs/494 fixes the module (the walks end on (2998,3914), and `crossRidge` clicks from there or
+from the corridor). The harness's own logout was **not confirmed**, so `cairn_jumps` stood in the
+Wilderness until `tab-logout.ts` logged it out at 21:55:51Z (the page confirmed it). It ended on
+the approach tile (2998,3916), so session E's walk started there and crossed at once.
+
+**The band** (session E's program row):
+
+| | Measured | Model (6.7) |
+|---|---|---|
+| 52 -> 99, with the first lap's entry | **4,886** | 4,935 + 47 = 4,982 (sd 160) |
+| 75 -> 85 | 974 | 1,051 (sd 80) |
+| 85 -> 99 | 3,016 | 3,128 (sd 109) |
+| Laps | 66 whole and a part | 67.2 |
+| Clean lap | 66 (56 laps), the floor of 6.8 | 66 |
+| Falls | 13: stones 8, rope swing 3, log 2 | 11.5 |
+| First lap | 129, the ridge to the course plus a lap; 113 expected | |
+| Mean step ticks | pipe 17.01, rope swing 7, stones 18.57, log 17, rocks 9.96 | 17, 7, 15, 17, 10 clean |
+| Eats | 11; fall damage 31, NPC damage 45, player damage 0 | |
+| Pauses | 0. One sighting: a level-126 player (`player-1` in the evidence) within 4 tiles over 62 ticks, never able to attack; `wouldPause` threat 0, any 1 | |
+| Program frames | p50 400, p90 490, max 1,135 ms; 3 catch-ups (0.09/min); loop p10 72.4/s | |
+
+The band ran 96 ticks under the model's mean, inside one sd, with more falls than expected: the
+model's mean carries longer fall stalls than these 13 cost.
+
+### 7.7 Totals: Agility 99
+
+| | Ticks |
+|---|---|
+| Playtime by the logs | 1,784 (A-C) + 306 (D) + 4,904 (E) = **6,994** (each session's last tick + 1) |
+| Hiscore, Agility 99 and Overall | **7,111** at 400 ms/tick: **#2**; stunagile's 6,772 is 339 under |
+| Hiscore over the logs | **+117**: about the 124 ticks `cairn_jumps` stood in the world after session D's unconfirmed logout (tab-logout's click on its tick 429 against the log's last tick 305), less the 3 the hiscore was under the log at 52 (7.5). Inferred from the two clocks; no row holds those ticks |
+| Model, no restock (6.7) | 6,906 |
+| Divergence | **+205** by the hiscore |
+
+The divergence by part, by the logs unless labelled:
+
+| Part | Measured | Model | Difference | Cause |
+|---|---|---|---|---|
+| Creation to 52 | 1,685 | 1,662 | +23 | the Gnome gate stall (7.5) |
+| 52 to the band's start | 99 (C) + 306 (D) + 17 (E) = 422 | 262 | +160 | the two walk failures: session C's scene load (rs/485) and session D's ridge gate (rs/494), each with its logout and relog |
+| The band | 4,886 | 4,982 | -96 | inside one sd |
+| Unlogged | +117 (hiscore) | 0 | +117 | session D's unconfirmed logout |
+| Total | 7,111 | 6,906 | +205 | |
+
+Without the gate stall and the two walk failures (and so the unlogged tail), this account's run
+would have been about 7,111 - 23 - 160 - 117 = 6,811, still about 40 over stunagile's 6,772: the
+band would have had to run about 136 ticks under the model's mean (this one ran 96 under), most of
+one sd, to take #1.
+
+**Artifacts.** The tick logs are committed as `agility-evidence.jsonl`. Host archived the
+recordings of sessions A-C on the Mac in `~/rs-archive/agility-recordings/`:
+`rs295-agility-20261022T060833Z.mkv` (sha256 c11a0729ecd4...) and
+`rs310-agility-20261022T204646Z.mkv` (683ca5efb4bb...). The sha256s match the twin's copies.
+Sessions D-E have no recording. The harness logs, live-frame screenshots and the gateway, page and
+Chrome logs were in the twin's `~/rs-310/artifacts`, removed with it (22:44:49-22:44:50Z, under a
+no-login claim, together with `~/rs-sdk/bots/cairn_jumps`). Their figures are quoted in this
+section.
+
+**Teardown of the run host** (22:35-22:38Z, before the release at 22:37:44Z): both accounts
+confirmed out (`cairn_jumps` by its final logout, the page out of game; `cairn_twin` after the
+after-probe); my tmux socket and Chrome stopped; `~/rs-310` removed with both env files (no
+`cairn_jumps` or `cairn_twin` env file left on the host); my two gate reads and two browser logs
+removed from `/tmp/speedrun`. Checks after: `~/rs-sdk` HEAD c7eae140 = `~/run-commit`, its
+worktree list unchanged, nothing of rs/310 in `~/rs-run` or `~/recordings`, ports 17780, 18899
+and 19222 closed, no bun, Chrome, ffmpeg or Xvfb of mine, `rs-gate-read.service` inactive, and
+the claim free. The claim kept the run host's gate reads at 22:00 and 22:30Z from firing.

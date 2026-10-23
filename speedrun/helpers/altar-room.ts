@@ -187,6 +187,24 @@ export interface RestockOptions {
      * from then on is a real one (labStock instead conjures each load at the bank).
      */
     labSeed?: { essence: number; items?: { obj: string; n: number }[] };
+    /**
+     * bank only: when the bank can't make the load and neither a supply trade (`acceptFrom`) nor lab
+     * stock can fill it, throw BankShort instead of waiting for essence that nobody is bringing (a
+     * solo crafter, speedrun/tools/rc-solo.ts). Default: wait and retry, as a giver does.
+     */
+    refuseShort?: boolean;
+}
+
+/** The bank can't make the load and nothing will refill it (RestockOptions.refuseShort). */
+export class BankShort extends Error {
+    constructor(
+        readonly short: { essence: number; talisman: boolean },
+        /** Rune essence left in the bank after the visit's withdrawal. */
+        readonly banked: number
+    ) {
+        super(`bank short: ${short.essence > 0 ? `${short.essence} essence` : ''}${short.essence > 0 && short.talisman ? ' and ' : ''}${short.talisman ? 'the talisman' : ''} missing from the load; the bank holds ${banked} rune essence`);
+        this.name = 'BankShort';
+    }
 }
 
 /** Accounts this process has seeded (RestockOptions.labSeed): once each. */
@@ -309,11 +327,15 @@ export async function restock(ctx: RoleContext, altar: Altar, o: RestockOptions,
             const w = await withdrawMany(ctx.sdk, specs);
             if (!w.ok) ctx.log('withdraw incomplete', { reason: w.reason });
         }
-        ctx.reportBank({ items: ctx.sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })) });
+        const bankItems = ctx.sdk.getBankItems();
+        ctx.reportBank({ items: bankItems.map(i => ({ id: i.id, name: i.name, count: i.count })) });
         await closeBank(ctx);
         if (loaded()) break;
 
         const short = { essence: o.essence - count(s(), ESSENCE), talisman: count(s(), altar.talisman) < 1 };
+        if (o.refuseShort && !o.acceptFrom && !(o.labStock && isLocalServer())) {
+            throw new BankShort(short, bankItems.filter(i => ESSENCE.test(i.name)).reduce((n, i) => n + i.count, 0));
+        }
         if (o.labStock && isLocalServer()) {
             if (short.talisman) await cheat(ctx, `give ${altar.talismanObj} 1`);
             if (short.essence > 0) await cheat(ctx, `give blankrune ${short.essence}`);

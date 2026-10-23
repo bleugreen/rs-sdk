@@ -4,7 +4,8 @@
 ahead of jackalopefm4's 3m 31s (706), on 2026-10-22 03:43-03:47Z (20:43-20:47 PDT; rs/269). The lab
 gate had predicted 669 at the median line with P(#1) = 95.7%. The 21 ticks over the median were an
 early login (+18, the launch was timed in 300 ms wall ticks while the demo ran 0.34-0.37 s a tick),
-roll luck (+4) and one parked tick fewer (-1). See "Demo attempt" below.
+roll luck (+4) and one parked tick fewer (-1). See "Demo attempt" below. jackalopefma later took #1 at
+673 ticks (3m 21s at 300 ms). Re-raced by cairn_ashes at 664 ticks, #1 again (rs/439, below).
 
 Labels: **m** measured in the retained lab output ([firemaking-evidence.json](firemaking-evidence.json));
 **r** read from code or content; **i** inferred.
@@ -168,6 +169,105 @@ here, at 0.37 s ticks and about 1,700 players (m, r; rs/269).
 - The twin was claimed by rs/196 between the leftover check and the stack's launch. The stack's
   `tmux new-session` calls failed as duplicate sessions, so nothing of rs/269's started. The claim
   was taken at 03:36:51Z, when rs/196 released.
+
+## Re-race on the current floor (rs/439)
+
+**Status: done. cairn_ashes reached Firemaking 99 at 664 ticks on its hiscore page (4m 25s; the tick log
+has 665 playtime) on 2026-10-22 20:36-20:40Z**, under jackalopefma's 673 (#1 since that morning) and
+cairn_burns's 690. The model put P(beating 673) at 65%, below the 90% gate, so it was run and labelled
+as a **measurement** of S03 on the current floor (rs/364's message reader, rs/309's ClickGuard),
+not a record attempt. The board listed it #1 at 20:44:42Z, ahead of jackalopefma 673 and cairn_burns 690.
+Labels: **m** measured, **r** read, **i** inferred.
+
+**The change: no parked claim, login on the cue.** cairn_burns was claimed and parked in advance
+(7 ticks of playtime), then logged in about 20 ticks before log 0 turned public. A fresh name's first
+login is now the attempt: S00 runs on the clock, and the harness is launched on the droppers'
+observed ticks so the account arrives as log 0 turns public.
+
+### Lab, no claim (m)
+
+bgsrv-mac, scratch copy of main 827cc66a, 300 ms, lite client; `firemaking-assisted.ts` with a
+`--claim=0` option (scratch only: it skips the claim), the six held droppers armed before the cue,
+the harness launched at T0 + 101. Playtime at 99 **678** = line 668 (10 failed rolls against 7.58
+expected) + **10 overhead** (4 login frames, S00 3 plus its boundary, 3 to the first roll). 157/157
+lit; 156 lights at R+2; 0 slips, lost logs or resends.
+
+### Model (i)
+
+The failure count F is computed exactly (a convolution of `rollChance` over the 157 logs; 12 can
+fail, E[F] = 7.58). Total = 4 x (157 + F) + overhead, so totals move in steps of 4. P(F <= 7) = 56.6%,
+P(F <= 8) = 65.1%, P(F <= 13) = 90.1%.
+
+| Overhead | Median | P(672 or under: beats 673) | P(705 or under) |
+|---|---|---|---|
+| 9 (expected: 2 login + 4 S00 + 3) | 665 | 65.1% | 96.7% |
+| 10 (lab) | 666 | 65.1% | 95.7% |
+| 13 (measured on the demo) | 669 | 56.6% | 95.7% |
+
+rs/158: nothing else in the row beats it structurally. The log count and the 4-tick cadence are
+server rules, and the first roll is already the floor; what's left is F below level 43.
+
+### Demo attempt (m)
+
+| | |
+|---|---|
+| Account | cairn_ashes, fresh (operator's name), first login = the attempt |
+| Code | harness from main 2ec58839 on the twin (S03 path identical to floor 069a8690 and to the lab's 827cc66a); droppers fleet 7da08916 (fm-row.ts blob 850fc7e7) |
+| When | cue 20:35:33Z (tick 1909); harness launched 20:36:02Z at T0 + 74 observed ticks; 99 and logout at tick 665, 20:40:35Z |
+| **Hiscore row (category 12)** | **664 ticks** ('normalized to 400 ms per tick'), against the log's 665. The harness's automatic check couldn't parse the new hover format, so it was read by hand |
+| Demo | **400 ms ticks** since the 19:56Z restart (TICKMON 150-151 a minute, period 397-401 ms); restart ~20:08Z, token mvjz3zys unchanged through the run; 1,255-1,258 online |
+| Gate (direct, cairn_twin, 20:32:40Z) | (a) 57/60, one under the record line of 58; (b) tick p90 482 ms (the 400 report line predates 400 ms ticks); (c) 0/min. Measurement rule: (c) only, so it passes |
+| Gate (in-page, gate-tab.ts, 60 trials) | 57/60, (c) 0/min, loop p10 73/s; logout confirmed, cairn_ashes staged, gate window closed |
+| Live frame | PASS: cairn_ashes's app window the only window, maximised and in front of :10 |
+| Recording | 1,362.6 s, 1920x1080 yuv420p, 40,879 frames, 0 dropped |
+| Player count / per address | ~1,182 online and 45 cairn* accounts across all addresses at 20:23Z; bbs at most 43 with the droppers (rs/41); the twin a separate address |
+
+**Where the ticks went.** 665 = 2 (login to the first step) + 6 (S00, ticks 2-8, including turning
+run on) + 4 (`nolog`: arrived before log 0 turned public) + 1 (to the first light) + **652** (the
+line: 157 logs, 6 failed rolls). The start overhead was **13**, against 10 in the lab and 9 in the
+model: S00 took 6 (lab 3; 4 on the demo earlier) and the login landed 4 ticks early, since the ~8 s
+launch-to-login is about 18 ticks at 400 ms, not 20.
+
+Per band (ticks / fires / failures): fm-01-15 12 / 2 / 5; fm-15-30 20 / 4 / 1; fm-30-45 28 / 7 / 0;
+fm-45-60 52 / 13 / 0; fm-60-75 96 / 24 / 0; fm-75-99 428 / 107 / 0. 154 gaps at exactly 4 ticks,
+one 8 and one 12 (the failures). Every light from the second on was sent on the success message and
+landed at R+2; 0 slips, lost logs, resends or refused tiles; 64 level-up pages dismissed. The
+droppers placed the cue on their observed period (399.8 ms; rs/274's `cuePeriod`). All 157 logs
+were dropped and lit, none lost.
+
+**The 400 ms tick changed nothing per tick.** 4.00 ticks a log held from level 30 to 99. Wall
+time is 4/3 of a 300 ms run (about 4.5 min). The harness and droppers ran with
+`SPEEDRUN_TICK_MS=400`, so `waitUntil`'s tick guards and fm-row's nominal period match the server.
+
+### The first launch spent a name (cairn_embers)
+
+The first launch, cairn_embers at 20:27Z, logged in on time to an **empty row** and stood there
+about a minute (159 ticks of playtime, no Firemaking row). There were two faults in the launch path,
+not in the code under test:
+- **The droppers' go file was not JSON.** It was written with `echo` through three layers of shell
+  quoting, which stripped its double quotes (`{v:1,ms:...}`). fm-row's reader rejected it, so no
+  dropper started, but tick-wait only checks that the file exists, so the launch fired anyway.
+- **The lap string was unquoted** in the harness's tmux command, so the shell split it at the first
+  `;` (one 5-tile run, no `--log`, no log file).
+Nothing was dropped, so no logs were lost and the six packs served cairn_ashes unchanged. Fixed in
+the procedure: the cue is written by a script that writes and re-reads the JSON (no cue counts
+until it parses), the lap is passed from a file as one quoted argument, and the exact launch line is
+**dry-run on the twin with no login** (printing its parsed argv) before every attempt.
+
+### Procedure deltas from rs/269's (steps 5-7)
+
+- **Loading** (rs/41's approval): woodcutters to cairn_mule2 at Draynor, mule2's `kits` giver with
+  labelled kit ids (`cairn_d0N+rs439`), each dropper's `kits` `load` receiver one at a time (kits.md,
+  'Loading full packs'). mule2's bank was read by id before and after (identical apart from the
+  logs). One receiver failed on a client state stall before any trade, and its retry was clean.
+- **The cue-to-launch hop** runs from a twin ssh session opened in advance and armed on stdin, fired
+  the moment tick-wait on bbs prints T0 + N: about 40 ms bbs to twin, 77-139 ms round-trip guard
+  (abort over 250). A fresh ssh connect costs 1.1-1.9 s (3-6 ticks), so it is never used for the
+  launch. Ssh to the twin and bbs goes through `local` only; nothing timed runs there.
+- **Launch offset:** T0 + 74 observed ticks at 400 ms landed the login 4 ticks early. Use **T0 + 78**
+  at 400 ms (i), and a later offset rather than an earlier one: late costs no playtime, early does.
+- **S00 on the clock** took 6 ticks here, not 3-4. Its run toggle (`S00:run`) is one of them (r: the
+  note row at tick 8).
 
 ## Demo procedure
 

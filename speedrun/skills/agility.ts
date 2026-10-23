@@ -63,8 +63,20 @@ export const WILD_AREA: Box = [2990, 3931, 3012, 3965];
 export const WILD_PIT: Box = [2985, 10330, 3025, 10390];
 /** The pipe's start tile: outside the armed skeletons' spawn + wander + hunt reach (x <= 3002) and the wolves' (z <= 3931). */
 export const SAFE_TILE: [number, number] = [3004, 3937];
-/** The ridge gate (loc 2309), entered from its south side. */
-export const RIDGE_GATE = { id: 2309, x: 2998, z: 3917, approach: [2998, 3916] as [number, number] };
+/**
+ * The ridge gate (loc 2309), entered from its south side. Its only op, Open, is the ridge itself: it
+ * forcemoves the player north up the corridor into the course, or drops them in the wolf pit.
+ * Walks end on `stage`, never beside the gate: the SDK's walkTo counts a door beside its path's
+ * last tile as one to open, so a walk to `approach` clicks Open on the ridge mid-walk and keeps
+ * walking from inside the course (the lab: 100 ticks for 9 tiles; rs/310 left in the corridor).
+ */
+export const RIDGE_GATE = { id: 2309, x: 2998, z: 3917, approach: [2998, 3916] as [number, number], stage: [2998, 3914] as [number, number] };
+/** The one-tile corridor between the ridge gate and the course gate, where the ridge's forcemoves run. */
+export const RIDGE_CORRIDOR: Box = [2998, 3917, 2998, 3930];
+/** North of the ridge gate's line and outside the course: the corridor, and the wolf pit and ridge beside it. */
+export const RIDGE_NORTH: Box = [2985, 3917, 3015, 3930];
+/** Within this many tiles of RIDGE_GATE.stage, south of the gate's line, the gate is clicked from where the player stands. */
+export const RIDGE_CLICK_RANGE = 2;
 /** The course gate's right half (loc 2307, m46_61.jm2): from inside it leads over the ridge to RIDGE_GATE.approach. */
 export const COURSE_GATE = { id: 2307, x: 2998, z: 3931 };
 /** The Deserted Keep's only exit, the web in its north wall (mage_arena.md). */
@@ -86,8 +98,8 @@ export const ROUTES = {
     ],
     // 59 tiles to the gate, 142 on to the lever
     gnomeToLever: [[2464, 3434], [2461, 3386], [2461, 3380], [2495, 3359], [2539, 3351], [2561, 3311]],
-    // the keep web to the ridge gate's south side: 165 tiles
-    keepToRidge: [[3158, 3953], [3111, 3955], [3057, 3949], [3006, 3911], RIDGE_GATE.approach]
+    // the keep web to the ridge gate's stage tile, 3 south of it: 165 tiles
+    keepToRidge: [[3158, 3953], [3111, 3955], [3057, 3949], [3006, 3911], RIDGE_GATE.stage]
 } satisfies Record<string, Array<[number, number] | readonly [number, number]>>;
 
 // ------------------------------------------------------------------ options
@@ -246,6 +258,25 @@ export function inWildCourse(s: BotWorldState | null | undefined): boolean {
 }
 
 const atCourse = (course: Band['course'], s: BotWorldState | null | undefined) => (course === 'gnome' ? nearGnome(s) : inWildCourse(s));
+
+/**
+ * Where the player stands against the ridge gate: in the course; in the corridor (a gate click
+ * from there crosses too: the server steps the player onto the gate tile and runs the ridge);
+ * elsewhere north of the gate's line (the wolf pit), where only a walk round to the stage leads
+ * back; at the gate (south of its line, within RIDGE_CLICK_RANGE of the stage); or away from it.
+ */
+export type RidgeSide = 'course' | 'corridor' | 'north' | 'gate' | 'away';
+
+export function ridgeSide(s: BotWorldState | null | undefined): RidgeSide {
+    const p = s?.player;
+    if (!p) return 'away';
+    if (inWildCourse(s)) return 'course';
+    if (p.level !== 0) return 'away';
+    if (inBox(RIDGE_CORRIDOR, p.worldX, p.worldZ)) return 'corridor';
+    if (inBox(RIDGE_NORTH, p.worldX, p.worldZ)) return 'north';
+    if (p.worldZ < RIDGE_GATE.z && cheb(p.worldX, p.worldZ, RIDGE_GATE.stage[0], RIDGE_GATE.stage[1]) <= RIDGE_CLICK_RANGE) return 'gate';
+    return 'away';
+}
 
 /**
  * On the course partway through a lap: the course zone under the player (agility-courses.ts) names a
@@ -734,15 +765,22 @@ async function leaveKeep(ctx: StepContext<unknown>): Promise<number> {
     return tries;
 }
 
-/** The ridge gate (52) into the course; a fail drops into the wolf pit beside it, so walk back and retry. */
+/**
+ * The ridge gate (52) into the course; a fail drops into the wolf pit beside it, so walk back and
+ * retry. The gate is clicked from the corridor or within reach of the stage, and the server walks
+ * the last tiles; any other start walks to the stage first (never to a tile beside the gate).
+ * Returns the clicks it took: 0 when the player is already in the course.
+ */
 async function crossRidge(ctx: StepContext<unknown>): Promise<number> {
     const sdk = ctx.sdk;
     for (let tries = 1; tries <= 6; tries++) {
-        const s = sdk.getState()!;
-        const p = s.player!;
-        if (cheb(p.worldX, p.worldZ, RIDGE_GATE.approach[0], RIDGE_GATE.approach[1]) > 1) {
-            const r = await ctx.bot.walkTo(RIDGE_GATE.approach[0], RIDGE_GATE.approach[1], 1, { timeout: 100 * tickMs() });
-            if (!r.success) throw new Error(`walk to the ridge gate: ${r.message}`);
+        let s = sdk.getState()!;
+        const side = ridgeSide(s);
+        if (side === 'course') return tries - 1;
+        if (side === 'north' || side === 'away') {
+            const r = await ctx.bot.walkTo(RIDGE_GATE.stage[0], RIDGE_GATE.stage[1], RIDGE_CLICK_RANGE, { timeout: 100 * tickMs() });
+            s = sdk.getState()!;
+            if (!r.success || ridgeSide(s) !== 'gate') throw new Error(`walk to the ridge gate: ${r.message} (at ${s.player?.worldX},${s.player?.worldZ})`);
         }
         void sdk.sendInteractLoc(RIDGE_GATE.x, RIDGE_GATE.z, RIDGE_GATE.id, 1);
         const r = await waitUntil(sdk, st => inWildCourse(st) || st.gameMessages.some(m => /wolf pit/i.test(m.text) && m.tick > s.tick), { maxTicks: 30 });
@@ -768,9 +806,12 @@ const walkWilderness = (o: AgilityOptions): Step => ({
         const inKeep = (ctx.sdk.getState()?.player?.worldX ?? 0) > 3140;
         const slashes = inKeep ? await leaveKeep(ctx) : 0;
         const seen = (ctx.sdk.getState()?.nearbyPlayers ?? []).map(q => ({ name: q.name, combatLevel: q.combatLevel, distance: q.distance }));
-        await walkRoute(ctx, ROUTES.keepToRidge, o);
+        // At the gate, or north of its line (the corridor, the wolf pit), crossRidge goes from where
+        // the player stands: a route leg from there would path through the gate.
+        const ridgeFrom = ridgeSide(ctx.sdk.getState());
+        if (ridgeFrom === 'away') await walkRoute(ctx, ROUTES.keepToRidge, o);
         const ridge = await crossRidge(ctx);
-        row(ctx, 'agility:walk-wilderness:legs', ctx.sdk.getState()?.tick ?? -1, { ticks: (ctx.sdk.getState()?.tick ?? t0) - t0, slashes, ridgeTries: ridge, playersAtKeep: seen });
+        row(ctx, 'agility:walk-wilderness:legs', ctx.sdk.getState()?.tick ?? -1, { ticks: (ctx.sdk.getState()?.tick ?? t0) - t0, slashes, ridgeFrom, ridgeTries: ridge, playersAtKeep: seen });
     },
     postconditions: s => (inWildCourse(s) || agilityLevel(s) >= o.to ? true : 'not in the Wilderness course'),
     logoutSafe: true

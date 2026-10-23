@@ -1,0 +1,16 @@
+2026-10-22T19:34:31.566Z .. 2026-10-22T20:34:31.566Z: 24 position samples, 1397 names online in the window
+moved (tile changed between samples): 1097
+arrived: no sample before the window, so arrivals are unknown
+new level stamps between censuses 2026-10-22T20:15:07.895Z and 2026-10-22T20:25:47.186Z: 11 rows on 10 accounts
+  dotsbot82 Quest Points 56@2834858 -> 60@3146067
+  dotsbot91 Hitpoints 94@3089410 -> 97@3179915
+  dotsbot91 Quest Points 78@3135564 -> 82@3180431
+  qu3st Quest Points 79@590676 -> 83@593518
+  dotsbot57 Agility 34@3096031 -> 35@3211217
+  dotsbot53 Quest Points 103@3160025 -> 104@3163028
+  hoodpoet Quest Points 1@2449 -> 2@6689
+  lordcopycat Quest Points 24@396035 -> 28@402252
+  ashgrove Quest Points 5@27847 -> 7@31067
+  dotsbot71 Quest Points 72@3033312 -> 76@3078148
+  dotsbot75 Quest Points 79@3150273 -> 81@3225900
+ACCOUNTS ACTIVE in the last 60 min (moved or new stamp): 1107
