@@ -525,6 +525,9 @@ that each machine serves what it built from that commit. A bundle built from an 
 never served to SCORED's tab, even when the page server is already up (it serves `out/bot` with
 `no-store`, so the rebuild needs no restart of it). Main names the final commit by 12:00Z (12:30Z
 absolute), leaving this rebuild its 20 minutes before the 13:00Z freeze (RUN-ORDER.md section 1).
+**Slid for rs/598** (main 04:15 PDT via rs/158; fold-in 37): the run commit is re-named by 14:00Z
+with the runner-side delivery-session binding in it, and the freeze is 15:00Z; any miss postpones
+attempt 1.
 
 **The floor check, a hard stop** (main's ruling, relayed by rs/158 at 09:24 PDT 2026-10-22;
 STEP-MANIFEST.md entry 0). The floor is read from entry 0's line on origin/main, "`RUN_COMMIT` at
@@ -547,7 +550,7 @@ and to the Monkey Madness kit gate (RUN-ORDER.md R37):
 |---|---|---|
 | by ~03:00Z | 20:00 on the 22nd | the overnight lab pass, only if the rehearsal chunks are green by then |
 | by ~09:00Z | 02:00 | the run-eve loads done |
-| 13:00Z | 06:00 | the floor freeze (below), 2 h before the gate series |
+| 13:00Z | 06:00 | the floor freeze (below), 2 h before the gate series; **slid to 15:00Z (08:00 PDT)** for rs/598, the run commit re-named by 14:00Z (main 04:15 PDT; fold-in 37) |
 | from ~15:00Z | 08:00 | the gate series (step 5a), the start on the first pass |
 
 **The run-eve freeze** (main's ruling; STEP-MANIFEST.md entry 0). The last floor is named at least
@@ -586,6 +589,12 @@ was missing on both at 11:0xZ; the gate timer uses a different path). Never name
 
 **The cannon serve file, before SCORED logs in** (rs/41's wording via rs/158, main 04:15 PDT; fold-in 36).
 Before SCORED logs in, <run dir>/cannon-serve.json holds exactly host's bytes, sha256 f0e57ad6107d2621d0c12306a5cec6ee70fe73db1a2c39e5d2a28cbfca96a7c6 (the JSON plus one trailing newline); run.ts's preflight gate "cannon serve" (run.ts:286-294) must read "H11, H23 served as the ledger rows want"; a missing file or any drift is a refusal.
+
+**The delivery run id, before the start is called** (main 04:15 PDT via rs/158; fold-in 37; it comes
+with rs/598, the runner-side delivery-session binding). `delivery.run` in the run config equals every
+mule carrier's launcher `deliveryRun`; `mule-ledger --check` verifies it, and any mismatch is a
+refusal. `delivery.run` changes per attempt (a1-20261023 for attempt 1, then a2-..., a3-...), like
+h92's serve ids below.
 
 **h92 on the run commit, and its serve ids per attempt** (rs/41's wording via rs/158; fold-in 36).
 h92 is applied on bbs on the run commit: fleet role cannon, serve.id a1-H11 at the Ardougne landing (2658,3301), returnTile the same, fallback (2659,3301) per SUPPLIES H11 (still pending rs/198's two-bot check), then a1-H23 on the same tile.
@@ -1252,7 +1261,10 @@ the tick length T on main since #385 (a4456c73, rs/471; fold-in 31; step 6, line
 4. **On the chosen machine, the start order** (rs/41's wording, main ruled and applied 22:4x via
    rs/158; fold-in 34). rs/41's start sequence:
    1. the gate minute (line 1): the gate account and S06's 7 air-altar givers on **both** machines;
-   2. after the choice, on SCORED's machine, rs/117's launcher logs in the **17 roster accounts** (4 + 6 + 3 + 4; fold-in 36, rs/41's correction of 16):
+   2. after the choice, on SCORED's machine, first (main 04:30 PDT via rs/158, rs/186's wording; fold-in 37; it comes
+      with rs/598, its line citations from rs/186's branch at rs/598, re-checked against the run commit main names):
+      **Hold each delivery carrier before starting the helper launcher.** Run `<rs/598's hold command>` (**pending rs/598**) for every carrier in the generated carrier config. The hold must be written before the carrier starts: a running carrier with no control file selects and stages its first row at once (helpers/mule.ts:1240, :1314-1323, :1478), and a hold written after that leaves a staged carrier whose readiness check `heldFor` never passes (helpers/mule-readiness.ts:159). `holdMule` also refuses a hold after a prepare in the same attempt (helpers/mule-readiness.ts:303). If this step is skipped, the run still works through run.ts's per-row prepare and readiness gate, but the carrier pre-stages its first row.
+      Then rs/117's launcher logs in the **17 roster accounts** (4 + 6 + 3 + 4; fold-in 36, rs/41's correction of 16):
       mule1, mule2, h55, h03, the 6 S03 droppers, the 3 S04 ring givers (h81-h83) and the 4 S07 bone
       givers (b01-b04), about 2.5-3 minutes;
    3. wait for the launcher's `helpersReady`, then **load reading (i)** (step 6, "The load ceiling"),
@@ -2230,6 +2242,13 @@ RUN-ORDER.md's comparisons. **A rehearsal is always partial.** The approved subs
 teleport xp; S07 on babydragon bones (no Prayer 99); S11a to 25, with H8 dropping the agility potion.
 No scored or runner change comes with it.
 
+**The rehearsal of 2026-10-23** (rs/496: the twin, 075c1763 = 38902b56 + lab and docs, 400 ms, the
+browser on the loopback gateway; main via rs/158; fold-in 37; notes only, no re-price): the run
+reached only H1, refused after 31 ticks, mule2 having no delivery prepare: the runner-side
+delivery-session binding missing at 38902b56 (RUN-ORDER.md section 1, R52; the fix rs/598). **No
+S01-S14 timings exist from this rehearsal.** S00's skip took 6 ticks (STEP-MANIFEST.md entry 34);
+its tick monitor is in "Measured: the twin rehearsal's tick monitor" below.
+
 ## Measured: gate (d) on this host, 2026-10-21, before the address change
 
 **Taken before the run host's address change on 2026-10-21 23:11Z** ("The host"), so
@@ -2414,3 +2433,11 @@ p50 11 / p90 15 ticks, with 37 of 57 frames glued** (m, rs/197, on bbs, ~04:16Z 
 observation, dated). The run machines use the loopback gateway (step 3's env check), so this does
 not touch SCORED. It is recorded so that nobody runs a helper on the relay expecting tick-exact
 timing: the tick-exact helpers run on SCORED's machine, on the launcher's loopback gateway (step 4).
+
+## Measured: the twin rehearsal's tick monitor, 2026-10-23
+
+**First minute on SCORED's stand-in, the twin** (m, rs/496's rehearsal: 075c1763 = 38902b56 + lab and
+docs, 400 ms, the browser on the loopback gateway; relayed by main via rs/158, fold-in 37; a dated
+twin reading, not a gate): `ticks=37 late=5 p50=24 p90=154 max=493 gaps=0 periodMs=399`. The rehearsal
+stopped at H1 after 31 ticks ("Twin rehearsal with substitute supplies"), so this is its only minute
+reported, and no S01-S14 timings exist from it.
