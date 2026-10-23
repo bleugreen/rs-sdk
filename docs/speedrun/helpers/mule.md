@@ -461,9 +461,11 @@ assume an empty pack or discard retained quest items. The mule role only serves:
 not implement the off-atoll staging trip.
 
 
-In the fleet: one mule account is enough; a second (`cairn_mule2`) helps only for
-back-to-back hand-offs or while the first is at the GE. The module exports `role`
-(mule), `courier` and `roles`. The fleet loads a role by name from
+Banked mule assignments come from the canonical generated delivery manifest
+(`docs/speedrun/research/mule-delivery-production.json`) and its route/readiness
+contract in `docs/speedrun/helpers/mule-delivery.md`, not a fixed fleet-size assumption.
+The carried atoll entry above is separate; it does not establish banked route capacity.
+The module exports `role` (mule), `courier` and `roles`. The fleet loads a role by name from
 `speedrun/helpers/<name>.ts`, so `speedrun/helpers/courier.ts` re-exports the courier
 as its `role`: `fleetctl assign <account> courier --options '{"mule":...,"items":[...]}'`.
 A courier trip ends when the trip is done: `run` returns, so the fleet does not start
