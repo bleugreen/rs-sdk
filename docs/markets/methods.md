@@ -52,13 +52,13 @@ m = measured in the lab, i = inferred (named model or arithmetic on measured par
 | **Knights of Ardougne**, East Ardougne market, 70 HP, 4 sharks a trip | Thieving 55 (99 here), food | **133,900** | **142,000** (coins) | 4 | 130,100-139,200, sd 4,300 | m, fedora | with logins; 4 knights in the market, crowded on the demo (157 accounts stood in the market at 22:4xZ, candidates.md) | **the scored run's S18 pickpockets these knights**: keep off them on run day; sharks (27/h) |
 | Knights, 10 HP, a full pack of sharks | Thieving 55 (99 here) | 104,400 | 149,000 (coins) | 3 | 88,100-116,500 | m, fedora | with logins | 149 sharks/h eaten (a 10 HP account eats on every failure) |
 | Knights from 57, 10 HP, full pack | Thieving 57 | 73,900 | 126,100 (coins) | 4 | 3,400-99,300 (the first trip at 57-80) | m, fedora | | as above; the level reaches 99 within ~2,000 ticks at 25x xp |
-| Knights 99, 99 HP, full pack | | *rerun pending* | | | | m, fedora | | |
-| Knights from 70 / from 85, 70 HP, full pack | | *rerun pending* | | | | m, fedora | | |
+| Knights 99, 99 HP, full pack (banks at 50,000 carried) | Thieving 99 | 134,000 | 142,100 (coins) | 2 | 127,900-140,600 | m, fedora (7,500 ticks) | as above | 27 sharks/h |
+| Knights from 70 / from 85, 70 HP, full pack | Thieving 70 / 85 | 134,500 / 138,300 | 142,600 / 146,200 (coins) | 2 / 2 | 127,300-142,200 / 135,800-140,900 | m, fedora (7,500 ticks) | as above | both at 99 before their first bank visit |
 | **Guards**, Varrock (fleet earner `speedrun/helpers/coins.ts`), 10 HP, kebabs from Al-Kharid | Thieving 40 (99 here), 300 coins | 62,900 | 62,900 (coins) | 17 | 23,300-90,600, mean 71,800 | m, fedora | with logins | fleet logins; Al-Kharid kebab shop and toll |
 | Al-Kharid warriors (coins.ts), 10 HP | Thieving 25 (99 here) | 46,200 | 46,200 (coins) | 12 | -4,200 (a death) to 62,700 | m, fedora | with logins | as guards |
 | Paladins, East Ardougne market, 70 HP, 4 sharks a trip | Thieving 70 (99 here) | 56,400 | 58,400 (coins) + 1,459 chaos runes (no bid; board 15 each) | 13 | 23,200-94,500, sd 19,800 | m, fedora | 2 paladins in the market | 80 sharks/h |
-| Paladins 99, 99 HP, full pack | | *rerun pending* | | | | m, fedora | | |
-| Heroes, East Ardougne market, 99 HP, full pack | Thieving 80 (99 here) | *rerun pending* | | | | m, fedora | 3 heroes | |
+| Paladins 99, 99 HP, full pack | Thieving 70 (99 here) | 65,200 | 65,900 (coins) + 1,750 chaos runes | 2 | 54,000-75,300 | m, fedora (7,500 ticks) | 2 paladins in the market | 90 sharks/h |
+| **Heroes**, East Ardougne market, 99 HP, full pack | Thieving 80 (99 here), food | 84,300 | 106,200 (coins) + ~9,000 blood runes (14.7/h, mean bid 663) + 4 diamonds/h (bid 4,500, 11 deep) + 42.7 death runes, 4 fire orbs, 28 jugs of wine | 3 | 80,600-90,600, sd 5,500 | m, fedora (7,500 ticks); success 0.431 against the model's 0.395 (860 rolls) | 3 heroes, spread across the market (the loop walks their spawns) | 112 sharks/h: food is a third of the gross |
 | Men, farmers, watchmen (model) | Thieving 1 / 10 / 65 | men 4,100 at 1, 10,100 at 99; farmers 8,900 at 10, 29,000 at 99; watchmen 39,000 at 65 | same, coins | | | i: `value.ts` `pickpocketPerTick`, no walking | | worth nothing beside guards and knights, which a fresh account reaches in minutes at 25x xp |
 | **Rune essence**, Varrock east mine (fleet `speedrun/helpers/essence.ts`) | Mining 1 (99 here), Rune Mysteries, pickaxe | 6,200 | **81,100** (bid 55, 471,638 deep: ~300 login-hours) | 18 | 5,860-6,420, sd 162 | m, fedora (3,000 ticks) | with logins until the bid is filled | the run's essence (63,674) is already held; logins |
 | **Swordfish and tuna**, Catherby, harpoon | Fishing 50 (99 here), harpoon | **74,300** | ~27,000 (High Alchemy, the cast time charged) | 12 | 54,500-103,700, sd 13,700 | m, fedora | with logins; 2 harpoon spots | logins |
@@ -77,7 +77,10 @@ m = measured in the lab, i = inferred (named model or arithmetic on measured par
 ## What the table says
 
 - **Knights of Ardougne at Thieving 99 lead both units**: ~134,000 board and ~142,000 coins an
-  hour per login, with nothing needed but a few sharks. A fresh account reaches 99 in about
+  hour per login, with nothing needed but a few sharks. Two runs with different food plans (70 HP
+  with 4 sharks a trip, 99 HP with a full pack) agree to 0.1% over six trips, and runs started at
+  70 and 85 land on the same rate. Heroes earn fewer coins (106,000 plus ~26,000 of loot at the
+  bids) and eat four times the sharks; paladins earn half. A fresh account reaches 99 in about
   2,800 ticks (thieving.md) at the server's 25x xp, so the low rows are transient. The model
   (`value.ts`, no walking) gives 167,600 coins an hour at 99; the measured loop keeps 85% of it
   after walking to the knights, wandering targets and the bank trips. Food is the lever on board
