@@ -16,8 +16,8 @@
 // 'order', the fallback to asking by cue); each also records the step it feeds, the first S row
 // after it (H12 before S15).
 //
-//   bun speedrun/helpers/mule-ledger.ts [--form ask|fixed] [--rows H1,H12] [--on-request H4e] [--manifest PATH] [--cue-root DIR]
-//       prints the mule's run-day options { serveMode: 'request', cueDir, packages } (default
+//   bun speedrun/helpers/mule-ledger.ts [--form ask|fixed] [--rows H1,H12] [--on-request H4e] [--manifest PATH] [--cue-root DIR] --delivery-run TOKEN --serve RECEIVER
+//       prints complete run-day delivery options with explicit at/bank tiles and planes (default
 //       MULE1_ORDER, then MULE1_ON_REQUEST); cueDir is muleCueDir, <cue root>/mule, the mule's own
 //   ... --check FILE [--account cairn_mule1] [--cue-root DIR]   drift of FILE's packages and cue
 //       directory (mule options, a packages list, fleet.json or a launcher config) against the
@@ -32,9 +32,11 @@ import type { BankItem } from '../../sdk/types';
 import { namesNote, objIdsNamed, refLabel, refMatches, untradeable, type ItemRef } from '../lib/items';
 import { noteLink, type ObjPack } from '../lib/obj-pack';
 import { gameName, GIVEN_REASONS, planHandOff } from '../runner/handoff';
-import { cueDir } from './altar-cue';
+import { canonName, cueDir } from './altar-cue';
 import { itemLabel, MANIFEST, parseLedger, type InEntry, type LedgerRow } from '../tools/slot-ledger';
-import { isStackableName, isTopUp, packageOf, planPackage, type Package, type PackageItem } from './mule';
+import { isStackableName, isTopUp, muleOptions, packageOf, planPackage, type Package, type PackageItem } from './mule';
+import { assertMuleTopology, muleItinerary, type ItineraryOptions } from './mule-itinerary';
+import { deliverySession, sameWorldTile, worldTile, type WorldTile } from './mule-readiness';
 
 /**
  * cairn_mule1's trades in run order (rs/158's list, 2026-10-22: SUPPLIES.md's trade-giver rows
@@ -80,8 +82,10 @@ export interface LedgerPackage {
     topUps: { item: string; to: number }[];
     /** The mule's inventory slots the package fills (a top-up at its `to`). */
     slots: number;
+    /** Conservative incoming-slot bound including module placeholders; null when any return count is unbounded. */
+    takeBackSlots: number | null;
     /** What the scored account gives back in the same trade; `label` as the ledger writes it, `ref` null for a family. */
-    takesBack: { label: string; ref: ItemRef | null; count: number | 'all' }[];
+    takesBack: { label: string; displayName: string; ref: ItemRef | null; count: number | 'all' }[];
     /** The row's `<NAME>` entries: the module's own, not in this trade. */
     moduleLines: string[];
 }
@@ -136,8 +140,9 @@ export function packageFromRow(rows: readonly LedgerRow[], index: number, form: 
     // A `drop` is left on SCORED's tile, never handed to the mule.
     const takesBack = row.out
         .filter(o => !o.placeholder && GIVEN_REASONS.includes(o.reason))
-        .map(o => ({ label: `${itemLabel(o)} ${o.count === 'all' ? 'all' : `x${o.count}`}`, ref: o.family ? null : refOf(o), count: o.count ?? 'all' }));
-    return { row: row.row, onRequest: fallback, line: row.line, step, package: pkg, topUps, slots, takesBack, moduleLines: plan.placeholders };
+        .map(o => ({ label: `${itemLabel(o)} ${o.count === 'all' ? 'all' : `x${o.count}`}`, displayName: capitalise(gameName(o.name)), ref: o.family ? null : refOf(o), count: o.count ?? 'all' }));
+    const takeBackSlots = row.out.some(o => typeof o.count !== 'number') ? null : row.out.reduce((sum, o) => sum + (o.count as number), 0);
+    return { row: row.row, onRequest: fallback, line: row.line, step, package: pkg, topUps, slots, takeBackSlots, takesBack, moduleLines: plan.placeholders };
 }
 
 /**
@@ -265,8 +270,8 @@ export function configPackages(config: unknown, account = 'cairn_mule1'): unknow
  * line is compared by identity (obj id, or name), count or top-up max, and noted; a top-up package
  * by its scope. With `o.cueDir`, the config's cue directory (configCueDir) must be that one.
  */
-export function muleDrift(config: unknown, ledger: readonly LedgerPackage[], o: { account?: string; pack?: ObjPack; cueDir?: string } = {}): string[] {
-    const out: string[] = [];
+export function muleDrift(config: unknown, ledger: readonly LedgerPackage[], o: { account?: string; pack?: ObjPack; cueDir?: string; delivery?: DeliveryOptions } = {}): string[] {
+    const out: string[] = deliveryDrift(config, ledger, o.account, o.delivery);
     if (o.cueDir !== undefined) {
         const have = configCueDir(config, o.account);
         const bare = (d: string) => d.replace(/\/+$/, '');
@@ -290,7 +295,8 @@ export function muleDrift(config: unknown, ledger: readonly LedgerPackage[], o: 
     const ledgerOrder = expected.filter(n => orderedNames.has(n) && names.includes(n));
     if (common.join() !== ledgerOrder.join()) out.push(`order: the packages run ${common.join(', ')}; the ledger's order is ${ledgerOrder.join(', ')}`);
     for (const l of ledger) {
-        const want = l.package;
+        const runtime = configOptions(config, o.account).deliveryRun !== undefined;
+        const want = runtime ? materializeDeliveryPackage(l.package, pack) : l.package;
         const got = configured.filter(p => p.name === want.name);
         if (!got.length) {
             out.push(`${l.row}: no package ${want.name}`);
@@ -327,6 +333,35 @@ export function muleCueDir(cueRoot: string = cueDir()): string {
     return join(cueRoot, 'mule');
 }
 
+export interface DeliveryOptions {
+    /** A unique token per attempt, supplied by the launcher; never reuse across scored runs. */
+    deliveryRun: string;
+    serve: string;
+    itinerary?: ItineraryOptions;
+}
+
+export type DeliveryPackage = Package & { at: WorldTile; bank: WorldTile };
+
+export interface MuleRunOptions {
+    serveMode: 'request';
+    cueDir: string;
+    deliveryRun: string;
+    serve: string;
+    packages: DeliveryPackage[];
+}
+
+/** The tightly timed Doric-to-trees pair carries its next kit, only when assigned consecutively. */
+function carryMetadata(ledger: readonly LedgerPackage[], row: string): Pick<Package, 'carryNext' | 'takeBackSlots'> {
+    const ordered = ledger.filter(l => !l.onRequest);
+    const h4 = ordered.findIndex(l => l.row === 'H4');
+    if (h4 < 0 || ordered[h4 + 1]?.row !== 'H4k' || (row !== 'H4' && row !== 'H4k')) return {};
+    const entry = ordered[h4 + (row === 'H4k' ? 1 : 0)]!;
+    if (entry.takeBackSlots === null || !Number.isInteger(entry.takeBackSlots) || entry.takeBackSlots < 0 || entry.takeBackSlots > INVENTORY_SLOTS) {
+        throw new Error(`${row}: carry delivery requires a bounded ledger return-slot count`);
+    }
+    return row === 'H4' ? { carryNext: true, takeBackSlots: entry.takeBackSlots } : entry.takeBackSlots ? { takeBackSlots: entry.takeBackSlots } : {};
+}
+
 /** Resolve against content, never whichever same-named variant happens to be in a bank. */
 function deliveryRef(ref: ItemRef, where: string, pack?: ObjPack): ItemRef {
     if (ref.id !== undefined) {
@@ -348,9 +383,99 @@ export function materializeDeliveryPackage(pkg: Package, pack?: ObjPack): Packag
     })) }, pack);
 }
 
-/** The mule's run-day options from the ledger, less `serve` (the scored account, from the run host's private config). */
-export function muleRunOptions(ledger: readonly LedgerPackage[], cueRoot?: string): { serveMode: 'request'; cueDir: string; packages: Package[] } {
-    return { serveMode: 'request', cueDir: muleCueDir(cueRoot), packages: packagesOf(ledger) };
+/** Complete banked delivery options; item quantities remain exclusively the supplied ledger's. */
+export function muleRunOptions(ledger: readonly LedgerPackage[], cueRoot: string | undefined, delivery: DeliveryOptions): MuleRunOptions {
+    if (!delivery) throw new Error('Explicit deliveryRun and serve are required');
+    deliverySession(delivery.deliveryRun, 'validate');
+    if (typeof delivery.serve !== 'string' || !delivery.serve.trim()) throw new Error('Delivery requires serve');
+    const itinerary = muleItinerary(ledger.map(l => l.row), delivery.itinerary);
+    assertMuleTopology(itinerary.map((p, i) => ({ ...p, onRequest: ledger[i]!.onRequest })));
+    const packages = ledger.map((l, i): DeliveryPackage => {
+        if (l.package.scope?.step !== l.row || l.package.scope.family !== 'mule') throw new Error(`${l.row}: package scope does not match delivery row`);
+        const { carryNext, takeBackSlots, ...base } = materializeDeliveryPackage(l.package);
+        return { ...base, ...carryMetadata(ledger, l.row), at: itinerary[i]!.at, bank: itinerary[i]!.bank };
+    });
+    const options: MuleRunOptions = { serveMode: 'request', cueDir: muleCueDir(cueRoot), deliveryRun: delivery.deliveryRun, serve: delivery.serve, packages };
+    muleOptions({ ...options });
+    return options;
+}
+
+/**
+ * A planner-supplied row/account assignment, not an authorization or a default roster.
+ * The ledger still determines each account's ordered and on-request packages.
+ */
+export function muleRunOptionsByAccount(
+    ledger: readonly LedgerPackage[],
+    cueRoot: string | undefined,
+    delivery: DeliveryOptions & { accounts: Readonly<Record<string, string>> },
+): { account: string; options: MuleRunOptions }[] {
+    if (!delivery?.accounts || typeof delivery.accounts !== 'object' || Array.isArray(delivery.accounts)) throw new Error('Explicit row-to-account bindings are required');
+    const rows = new Set(ledger.map(l => l.row));
+    if (!rows.size || rows.size !== ledger.length) throw new Error('Assignment requires nonempty unique ledger rows');
+    const extra = Object.keys(delivery.accounts).filter(row => !rows.has(row));
+    if (extra.length) throw new Error(`Account bindings name unselected rows: ${extra.join(', ')}`);
+    const assigned = new Map<string, LedgerPackage[]>();
+    for (const l of ledger) {
+        const account = Object.hasOwn(delivery.accounts, l.row) ? delivery.accounts[l.row] : undefined;
+        if (typeof account !== 'string' || !account.trim()) throw new Error(`${l.row}: explicit account binding is required`);
+        // Login and display-name spellings must not split one carrier into two safe-looking routes.
+        const key = canonName(account);
+        assigned.set(key, [...(assigned.get(key) ?? []), l]);
+    }
+    return [...assigned].map(([account, rows]) => ({ account, options: muleRunOptions(rows, cueRoot, delivery) }));
+}
+
+/** Unwrap the runtime options, preserving the separate launcher's cueDir handling above. */
+function configOptions(config: unknown, account = 'cairn_mule1'): Record<string, unknown> {
+    if (!config || typeof config !== 'object' || Array.isArray(config)) return {};
+    const c = config as Record<string, unknown>;
+    if (Array.isArray(c.accounts)) {
+        const entry = (c.accounts as Record<string, unknown>[]).find(a => a.account === account);
+        if (!entry) throw new Error(`the fleet config has no entry for ${account}`);
+        const options = configOptions(entry.options ?? {}, account);
+        return entry.final === true ? { ...options, final: true } : options;
+    }
+    return c;
+}
+
+/** Validate actual runtime configurations as well as their ledger quantities. Bare lists are stock-only. */
+function deliveryDrift(config: unknown, ledger: readonly LedgerPackage[], account: string | undefined, delivery?: DeliveryOptions): string[] {
+    const raw = configOptions(config, account);
+    if (!delivery && !('deliveryRun' in raw || 'serve' in raw || 'serveMode' in raw)) return [];
+    const out: string[] = [];
+    try {
+        deliverySession(raw.deliveryRun as string, 'validate');
+        if (typeof raw.serve !== 'string' || !raw.serve.trim()) throw new Error('Delivery requires serve');
+        if (raw.serveMode !== 'request') throw new Error('Delivery requires serveMode request');
+        if (raw.final === true) throw new Error('Delivery must not set final:true');
+        muleOptions(raw);
+    } catch (error) {
+        out.push(`delivery: ${(error as Error).message}`);
+    }
+    if (delivery && raw.deliveryRun !== delivery.deliveryRun) out.push(`deliveryRun differs from the expected run ${delivery.deliveryRun}`);
+    if (delivery && raw.serve !== delivery.serve) out.push('serve differs from the expected receiver');
+    try {
+        const itinerary = muleItinerary(ledger.map(l => l.row), delivery?.itinerary);
+        assertMuleTopology(itinerary.map((p, i) => ({ ...p, onRequest: ledger[i]!.onRequest })));
+        const packages = configPackages(config, account);
+        for (const binding of itinerary) {
+            const matches = packages.filter(p => p && typeof p === 'object' && (p as Package).name === ledger.find(l => l.row === binding.row)!.package.name);
+            for (const pkg of matches) {
+                const p = pkg as Record<string, unknown>;
+                for (const field of ['at', 'bank'] as const) {
+                    if (!sameWorldTile(p[field], binding[field])) out.push(`${binding.row}: ${field} differs from canonical ${JSON.stringify(binding[field])}`);
+                }
+                const carry = carryMetadata(ledger, binding.row);
+                for (const field of ['carryNext', 'takeBackSlots'] as const) {
+                    if (p[field] !== carry[field]) out.push(`${binding.row}: ${field} differs from canonical carry plan`);
+                }
+                if (p.final === true) out.push(`${binding.row}: delivery must not set final:true`);
+            }
+        }
+    } catch (error) {
+        out.push(`itinerary: ${(error as Error).message}`);
+    }
+    return out;
 }
 
 /** The cue directory a config gives the account's mule: a launcher entry's own cueDir, else its options'; null for none (the shared default). */
@@ -378,7 +503,7 @@ export function stockWalk(ledger: readonly LedgerPackage[], bank: readonly BankI
     const out: string[] = [];
     const held: BankItem[] = bank.map(b => ({ ...b }));
     for (const l of ledger) {
-        const plan = planPackage(l.package, held.filter(b => b.count > 0), undefined, pack);
+        const plan = planPackage(materializeDeliveryPackage(l.package, pack), held.filter(b => b.count > 0), undefined, pack);
         for (const m of plan.missing) out.push(`${l.row}: ${m.item} wanted ${m.wanted}, the bank holds ${m.have}`);
         for (const a of plan.ambiguous) out.push(`${l.row}: ${a.item} matches ids ${a.ids.join(', ')}`);
         for (const t of plan.topUpShort) out.push(`${l.row}: top-up ${t.item} stages ${t.staged} of ${t.max}`);
@@ -386,10 +511,10 @@ export function stockWalk(ledger: readonly LedgerPackage[], bank: readonly BankI
         for (const w of plan.withdrawals) w.bankItem.count -= w.amount;
         for (const b of l.takesBack) {
             if (!b.ref || b.count === 'all') continue;
-            const ref = b.ref;
+            const ref = deliveryRef(b.ref, `${l.row} take-back ${b.label}`, pack);
             const into = held.find(h => refMatches(ref, h, pack));
             if (into) into.count += b.count;
-            else held.push({ slot: held.length, id: ref.id !== undefined ? noteLink(ref.id, pack).item : -1 - held.length, name: ref.item ?? refLabel(ref), count: b.count });
+            else held.push({ slot: held.length, id: ref.id !== undefined ? noteLink(ref.id, pack).item : -1 - held.length, name: b.displayName, count: b.count });
         }
     }
     return out;
@@ -433,10 +558,21 @@ export function main(argv: readonly string[]): number {
     const check = arg(argv, '--check');
     const bankFile = arg(argv, '--bank');
     const cueRoot = arg(argv, '--cue-root');
+    const delivery = (): DeliveryOptions => {
+        const deliveryRun = arg(argv, '--delivery-run');
+        const serve = arg(argv, '--serve');
+        if (!deliveryRun || deliveryRun.startsWith('--')) throw new Error('--delivery-run is required (unique per attempt)');
+        if (!serve || serve.startsWith('--')) throw new Error('--serve is required');
+        const firemakingEnd = arg(argv, '--rehearsal-firemaking-end');
+        const itinerary = firemakingEnd === undefined ? undefined : {
+            rehearsal: { firemakingEnd: worldTile(JSON.parse(firemakingEnd), '--rehearsal-firemaking-end') },
+        };
+        return { deliveryRun, serve, itinerary };
+    };
     if (check) {
         const config: unknown = JSON.parse(readFileSync(check === '-' ? 0 : check, 'utf8'));
         // A bare packages list carries no cue directory to compare.
-        const drift = muleDrift(config, ledger, { account, ...(Array.isArray(config) ? {} : { cueDir: muleCueDir(cueRoot) }) });
+        const drift = muleDrift(config, ledger, { account, ...(Array.isArray(config) ? {} : { cueDir: muleCueDir(cueRoot), delivery: delivery() }) });
         console.log(drift.length ? drift.join('\n') : `no drift: ${ledger.map(l => l.row).join(', ')} (${form} form)`);
         return drift.length ? 1 : 0;
     }
@@ -448,7 +584,7 @@ export function main(argv: readonly string[]): number {
         console.log(`${account}'s bank as of ${entry.asOf}, the packages served back to back: ${short.length ? `\n${short.join('\n')}` : 'every package stages in full'}`);
         return short.length ? 1 : 0;
     }
-    console.log(JSON.stringify(muleRunOptions(ledger, cueRoot), null, 2));
+    console.log(JSON.stringify(muleRunOptions(ledger, cueRoot, delivery()), null, 2));
     if (!onRequest && !rows) for (const id of onRequestGaps(manifest)) console.error(`${id}: served on request, but the ledger has no ${id} row, so it has no package`);
     for (const l of ledger) {
         const notes = [`${l.slots} slots`, l.takesBack.length ? `takes back ${l.takesBack.map(b => b.label).join('; ')}` : 'takes nothing back', ...(l.moduleLines.length ? [`the module's: ${l.moduleLines.join(', ')}`] : [])];

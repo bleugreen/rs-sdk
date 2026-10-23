@@ -198,11 +198,122 @@ describe('the respawn check refuses', () => {
     });
 });
 
+// A tool only held for a leg: the knife T26-27's keep web needs (runner/legs.ts, `hopNeeds`). The row
+// is named T26-27 so the check reads the runner's own leg (its teleport runes, the webs, food 2).
+const HELD = `
+| row | in | out | equip | needAtStart | source |
+|---|---|---|---|---|---|
+| S1 | - | - | - | 0 | fixture (r) |
+| H1 | law rune x4 [s]; water rune x4 [s]; shark x4 [u]; knife x1 [u] | - | - | 4 | fixture (r) |
+| T26-27 | - | law rune x2 (consume); water rune x2 (consume) | - | 0 | fixture (r) |
+| S2 | - | shark x2 (consume) | - | 0 | fixture (r) |
+| S3 | - | - | - | 0 | fixture (r) |
+`;
+const KNIFE = 8;
+const HELD_OBJS = objTable([o('law_rune', 'Law rune', 10, 2), o('shark', 'Shark', 300, 3), o('knife', 'Knife', 6, KNIFE), o('water_rune', 'Water rune', 4, 9)]);
+const KEEP: R8Phase = { id: 'K', what: 'test', deaths: [{ row: 'H1' }], replay: ['T26-27'], resume: 'S2', to: 'S3', hp: 1, cannonBy: 'none' };
+const held = (p: Partial<R8Phase> = {}, untradeableId?: number) => r8Package({ ...KEEP, ...p }, { manifest: HELD, objs: HELD_OBJS, keep: 0, untradeable: id => id === untradeableId });
+
+describe('a tool a leg only holds (the knife for the webs)', () => {
+    test('needed where the recovery replays the leg: in both forms, not under notNeeded', () => {
+        const p = held();
+        expect(p.lines.find(l => l.item === 'knife')).toMatchObject({ id: KNIFE, need: 1, give: 1 });
+        expect(p.lines.find(l => l.item === 'knife')!.why).toContain("held for T26-27's hops");
+        expect(p.byId).toContainEqual({ id: KNIFE, amount: 1 });
+        expect(p.topUp).toContainEqual({ id: KNIFE, topUp: { max: 1 } });
+        expect(p.notNeeded).not.toContain('knife x1');
+        expect(p.refusals).toEqual([]);
+    });
+    test('needed where the walk runs the leg from the ledger after the resume', () => {
+        const p = held({ replay: [], resume: 'T26-27' });
+        expect(p.byId).toContainEqual({ id: KNIFE, amount: 1 });
+        expect(p.refusals).toEqual([]);
+    });
+    test('not needed where no leg the phase runs holds it: left out, under notNeeded', () => {
+        const p = held({ deaths: [{ row: 'S2' }], replay: [], resume: 'S3', to: 'S3' });
+        expect(p.lines.some(l => l.item === 'knife')).toBe(false);
+        expect(p.notNeeded).toContain('knife x1');
+        expect(p.package).not.toBeNull();
+    });
+    test("the leg's food comes on top of the heal eaten before it", () => {
+        // Resuming at S3 after a replayed T26-27: no later row eats the 2 sharks held, so the 3 eaten
+        // from 1 HP to 61 are all the package would bring, and T26-27 wants 2 held after them.
+        const p = held({ deaths: [{ row: 'S2' }], resume: 'S3', to: 'S3', hp: 61 });
+        expect(p.lines.find(l => l.item === 'shark')).toMatchObject({ need: 5, why: '3 eaten from 1 HP to 61; 2 food held for T26-27 (replayed)' });
+        expect(p.byId).toContainEqual({ id: KNIFE, amount: 1 });
+        expect(p.refusals).toEqual([]);
+    });
+});
+
+describe('a kit missing what a leg holds fails closed', () => {
+    const rows = parseLedger(HELD).rows;
+    const base = { phase: KEEP, kept: [], cannon: [], heal: 0, target: { inv: [], worn: [] }, lost: [] };
+    const give = (knife: number, shark: number) => [
+        { item: 'law rune', kind: 's' as const, count: 2 },
+        { item: 'water rune', kind: 's' as const, count: 2 },
+        { item: 'shark', kind: 'u' as const, count: shark },
+        ...(knife ? [{ item: 'knife', kind: 'u' as const, count: knife }] : []),
+    ];
+    test('with the knife and the food every row passes', () => {
+        expect(respawnCheck(rows, { ...base, give: give(1, 4) }).map(e => e.verdict)).toEqual(['pass', 'pass', 'pass', 'pass']);
+    });
+    test('without the knife the runner refuses the replayed leg: the walk errors at T26-27', () => {
+        const t = respawnCheck(rows, { ...base, give: give(0, 4) }).find(e => e.row.row === 'T26-27')!;
+        expect(t.verdict).toBe('ERROR');
+        expect(t.notes.join()).toContain('the runner refuses the leg: T26-27: a knife is needed for the webs');
+    });
+    test('with too little food the runner refuses it too', () => {
+        const t = respawnCheck(rows, { ...base, give: give(1, 1) }).find(e => e.row.row === 'T26-27')!;
+        expect(t.verdict).toBe('ERROR');
+        expect(t.notes.join()).toContain('1 food held, 2 needed');
+    });
+    test('a knife no trade can restore: unrecoverable, both forms refused, never stageable', () => {
+        const p = held({}, KNIFE);
+        expect(p.unrecoverable.map(u => [u.item, u.death, u.count])).toEqual([['knife', 'H1', 1]]);
+        expect(p.package).toBeNull();
+        expect(p.topUpPackage).toBeNull();
+        expect(p.refusals.some(r => r.includes('a knife is needed for the webs'))).toBe(true);
+    });
+});
+
+/**
+ * Phases with no stageable form on the current ledger, and why: a known supply gap (rs/579, reported
+ * to rs/41), asserted rather than skipped so a ruling that fits the kit has to replace it.
+ */
+const UNFITTED: Readonly<Record<string, string>> = {
+    R8d1: 'with the knife the kit is 26 slots against the 25 the kept cannon parts leave at H23 and in S27 packed',
+};
+
 describe("R8's phases on STEP-MANIFEST.md", () => {
+    const phase = (id: string) => R8_PHASES.find(ph => ph.id === id)!;
+    test('Knife (946) goes where the replayed leg crosses a web (T13-14, T15-16, T26-27), and nowhere else', () => {
+        for (const id of ['R8a', 'R8c', 'R8d1', 'R8d2']) {
+            const p = r8Package(phase(id));
+            expect(p.byId).toContainEqual({ id: 946, amount: 1 });
+            expect(p.notNeeded).not.toContain('knife x1');
+        }
+        const b = r8Package(phase('R8b'));
+        expect(b.byId.some(l => l.id === 946)).toBe(false);
+        expect(b.notNeeded).toContain('knife x1');
+    });
+    test("R8c: T15-16's 2 food on top of the 3 sharks the heal eats", () => {
+        expect(r8Package(phase('R8c')).byId).toContainEqual({ id: 385, amount: 5 });
+    });
+    test(`R8d1 has no stageable form: ${UNFITTED.R8d1}`, () => {
+        const p = r8Package(phase('R8d1'));
+        expect(p.slots).toBe(26);
+        expect(p.package).toBeNull();
+        expect(p.topUpPackage).toBeNull();
+        expect(p.unrecoverable).toEqual([]);
+        const short = p.walks.filter(w => !w.death.deployed);
+        expect(short).toHaveLength(4);
+        for (const w of short) expect(w.entries.find(e => e.row.row === 'H94 R8d1')!.verdict).toBe('SHORT');
+        for (const w of p.walks.filter(w => w.death.deployed)) expect(w.entries.every(e => e.verdict === 'pass')).toBe(true);
+    });
     for (const phase of R8_PHASES) {
         test(`${phase.id}: a form passes the respawn check at every death point; no cannon, every line by id`, () => {
             const p = r8Package(phase);
-            expect(p.package !== null || p.topUpPackage !== null).toBe(true);
+            expect(p.package !== null || p.topUpPackage !== null).toBe(!UNFITTED[phase.id]);
             expect(p.lines.every(l => l.id !== undefined)).toBe(true);
             expect(p.lines.some(l => (CANNON as readonly string[]).includes(l.item))).toBe(false);
             expect(p.slots).toBeLessThanOrEqual(28);

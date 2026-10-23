@@ -41,14 +41,22 @@
 // Run standalone (lite client already running for the account):
 //   ROLE_OPTIONS='{...}' bun speedrun/helpers/mule.ts <account>            # mule
 //   ROLE_OPTIONS='{...}' bun speedrun/helpers/mule.ts <account> courier    # courier
+import { existsSync } from 'node:fs';
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
+import { findDoorsAlongPath, initPathfinding } from '../../sdk/pathfinding';
+import { reached } from '../../server/vendor/rsmod-pathfinder';
 import type { BankItem, BotWorldState, GameMessage, InventoryItem, NearbyNpc, TradeItem, TradeItemSpec } from '../../sdk/types';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import { fight } from '../lib/combat';
-import { itemRef, namesNote, refLabel, refMatches, type ItemRef, type NamedRef } from '../lib/items';
+import { itemRef, namesNote, noteOf, refLabel, refMatches, untradeable, type ItemRef, type NamedRef } from '../lib/items';
 import type { ObjPack } from '../lib/obj-pack';
+import { westOfTaverley } from '../lib/kandarin';
+import { crossingsBetween } from '../lib/passages';
+import { crossForDelivery } from './delivery-cross';
 import { travelTo } from '../lib/toll-gate';
+import { inArea, runTo } from '../lib/travel';
+import { deliverySession, muleCanReady, muleHealthy, mulePreparationPath, readMulePreparation, sameWorldTile, worldTile, writeMuleReady, type MuleHold, type WorldTile } from './mule-readiness';
 import { ANY_OFFER, clickBack, decideTradeClick, DROPPED_TICKS, give, newClickCtx, offerSatisfies, openTrade, sameName, sendTradeClick, type ClickCtx } from '../lib/trade';
 import { tickMs, waitUntil, type StateSource } from '../lib/wait';
 import { awaitAsk, cueAddresses, cueDir, CueWriter, nameHash, readCue, scopeOption, type AwaitAskOptions, type Cue, type CueScope, type TopUpAsk } from './altar-cue';
@@ -131,13 +139,20 @@ export interface Package {
     scope?: CueScope;
     /** Served only when asked for by name (a fallback such as H4e): never a step of order mode. */
     onRequest?: true;
-    /** Carried mode only: the tile the package is served from (carriedStand). */
+    /** Meeting tile. Location-aware banked delivery requires an explicit plane. */
     at?: Tile;
+    /** Reachable staging bank for this delivery, on an explicit plane. */
+    bank?: WorldTile;
+    /** Stage the next ordered delivery with this one; keep it aboard through this trade. */
+    carryNext?: true;
+    /** Maximum occupied slots returned by the receiver during this delivery (default zero in a carry group). */
+    takeBackSlots?: number;
 }
 
 export interface Tile {
     x: number;
     z: number;
+    level?: number;
 }
 
 /**
@@ -228,8 +243,8 @@ export function planPackage(pkg: Package, bank: BankItem[], stackable: (name: st
  */
 export function isStackableName(name: string): boolean {
     // Throwing knives (`Rune knife`) stack; the plain `Knife` tool does not. Thread and nails stack
-    // (crafting.obj, smithing configs: stackable=yes); mule-ledger.ts refuses a ledger [s] line this misses.
-    return /^coins$| rune$|arrows?$|arrowtips$|arrowheads$|bolts$|darts?$|dart tips?$|^feathers?$|\S knife$|cannonballs?$|^thread$|^nails$/i.test(name);
+    // Needles and swamp paste also stack (crafting.obj and cooking.obj). The ledger rejects mismatches.
+    return /^coins$| rune$|arrows?$|arrowtips$|arrowheads$|bolts$|darts?$|dart tips?$|^feathers?$|\S knife$|cannonballs?$|^thread$|^nails$|^needle$|^swamp paste$/i.test(name);
 }
 
 /** Aggregate an inventory or offer into id -> count. */
@@ -342,12 +357,92 @@ export const PRE_REQUEST_TILES = 12;
  * trade is open or our last click's result is pending; a click with no reply re-sent after
  * DROPPED_TICKS, a standing request after RESEND_TICKS, in observed ticks). `send` is the player index to click, when a click may go out.
  */
-export function decidePreRequest(s: BotWorldState, click: ClickCtx, serve: string, ready: boolean): { next: ClickCtx; send?: number } {
-    if (!ready || s.trade?.isOpen) return { next: click };
+/** Entity interaction must already reach the partner; an overlapping click can auto-step either trader. */
+export function deliveryTradeReach(s: BotWorldState | null, serve: string): boolean {
+    const p = s?.player;
+    const target = s?.nearbyPlayers.find(p => sameName(p.name, serve));
+    if (!p || !target || target.reachable === false
+        || ![p.worldX, p.worldZ, p.level, target.x, target.z].every(Number.isInteger)
+        || Math.abs(p.worldX - target.x) + Math.abs(p.worldZ - target.z) !== 1) return false;
+    initPathfinding();
+    // The walking snapshot masks doors. Do not infer an immediately operable side beside one.
+    if (findDoorsAlongPath([{ x: p.worldX, z: p.worldZ, level: p.level }, { x: target.x, z: target.z, level: p.level }]).length) return false;
+    return reached(p.level, p.worldX, p.worldZ, target.x, target.z, 1, 1, 1, 0, -2, 0);
+}
+
+export function decidePreRequest(s: BotWorldState, click: ClickCtx, serve: string, ready: boolean, delivery = false): { next: ClickCtx; send?: number } {
+    if (!ready || s.trade?.isOpen || (delivery && !deliveryTradeReach(s, serve))) return { next: click };
     const target = s.nearbyPlayers.find(p => sameName(p.name, serve) && p.distance <= PRE_REQUEST_TILES);
     if (!target) return { next: click };
     const d = decideTradeClick(s, click, { noReplyTicks: DROPPED_TICKS });
     return d.action === 'send' ? { next: d.next, send: target.index } : { next: d.next };
+}
+
+/** The explicit consecutive delivery group starting at the selected row. */
+export function deliveryGroup(ordered: readonly Package[], first: Package): Package[] {
+    const group = [first];
+    let index = ordered.indexOf(first);
+    while (group.at(-1)!.carryNext) {
+        const next = ordered[++index];
+        if (!next) throw new Error('carryNext requires a next ordered delivery');
+        group.push(next);
+    }
+    return group;
+}
+
+/** Freeze full top-up maxima as well as fixed counts before any member becomes ready. */
+function fullDeliveryPackage(pkg: Package): Package {
+    return { ...pkg, items: pkg.items.map(i => {
+        if (!isTopUp(i)) return i;
+        const { topUp, ...ref } = i;
+        return { ...ref, amount: topUp.max };
+    }) };
+}
+
+/** Bank-derived reservations and worst-case occupied slots through every trade in a group. */
+export function planCarryGroup(group: readonly Package[], bank: BankItem[]): { withdrawals: Withdrawal[]; held: Map<Package, Map<number, number>>; inventory: Map<number, number>; peakSlots: number } {
+    const stock = bank.map(b => ({ ...b }));
+    const withdrawals: Withdrawal[] = [];
+    const held = new Map<Package, Map<number, number>>();
+    const inventory = new Map<number, number>();
+    const oneSlot = new Set<number>();
+    const plans: Array<{ pkg: Package; fixed: Map<number, number> }> = [];
+    for (const pkg of group) {
+        if (pkg.items.some(i => !isTopUp(i) && i.amount === -1)) throw new Error('carry groups require bounded counts');
+        // Resolve each line separately so repeated ids cannot spend the same bank stock twice.
+        const counts = new Map<number, number>();
+        const fixed = new Map<number, number>();
+        for (const item of pkg.items) {
+            const full = isTopUp(item) ? { ...item, amount: item.topUp.max } : item;
+            const { topUp: _, ...spec } = full as PackageItem & { topUp?: unknown };
+            const plan = planPackage({ name: pkg.name, items: [spec as PackageItem] }, stock);
+            if (plan.missing.length || plan.ambiguous.length || !plan.withdrawals.length) throw new Error(`carry group short or ambiguous: ${pkg.name} ${refLabel(item)}`);
+            const w = plan.withdrawals[0]!;
+            const id = w.noted ? noteOf(w.bankItem.id) : w.bankItem.id;
+            if (id === undefined) throw new Error(`No banknote for ${w.bankItem.name}`);
+            if (counts.has(id)) throw new Error(`Package ${pkg.name}: duplicate carry item ${id}`);
+            counts.set(id, w.amount);
+            if (!isTopUp(item)) fixed.set(id, w.amount);
+            inventory.set(id, (inventory.get(id) ?? 0) + w.amount);
+            if (w.noted || isStackableName(w.bankItem.name)) oneSlot.add(id);
+            stock.find(b => b.id === w.bankItem.id)!.count -= w.amount;
+            withdrawals.push(w);
+        }
+        held.set(pkg, counts);
+        plans.push({ pkg, fixed });
+    }
+    const remaining = new Map(inventory);
+    const slots = () => [...remaining].reduce((n, [id, count]) => n + (count > 0 ? oneSlot.has(id) ? 1 : count : 0), 0);
+    let peakSlots = slots();
+    let returned = 0;
+    for (const { pkg, fixed } of plans) {
+        // A top-up can ask for zero, so none of its slots are assumed to be freed.
+        for (const [id, count] of fixed) remaining.set(id, remaining.get(id)! - count);
+        returned += pkg.takeBackSlots ?? 0;
+        peakSlots = Math.max(peakSlots, slots() + returned);
+    }
+    if (peakSlots > 28) throw new Error(`carry group needs ${peakSlots} slots (maximum 28)`);
+    return { withdrawals, held, inventory, peakSlots };
 }
 
 // ============ Carried packages (unit tested in mule.test.ts) ============
@@ -645,6 +740,8 @@ export interface GiveResult {
     ticks: number;
     gave: TradeItem[];
     received: TradeItem[];
+    /** Confirmation may have committed without an observed outcome; never restock/replay automatically. */
+    uncertain?: true;
 }
 
 function diffItems(before: InventoryItem[], after: InventoryItem[]): { gained: TradeItem[]; lost: TradeItem[] } {
@@ -687,7 +784,8 @@ export async function giveOpenTrade(
     items: InventoryItem[],
     mode: GiverMode = 'burst',
     timeoutMs = 60_000,
-    amounts?: ReadonlyMap<number, number>
+    amounts?: ReadonlyMap<number, number>,
+    stopIf?: (s: BotWorldState) => string | null
 ): Promise<GiveResult> {
     const startTick = tick(sdk);
     const invBefore = sdk.getInventory();
@@ -716,10 +814,23 @@ export async function giveOpenTrade(
     }
 
     const specs = offered.map(i => ({ item: i.id, n: count(i.id) }));
-    const r = await give(sdk, partner, specs, { expectTheirs: ANY_OFFER, maxTicks: Math.ceil(timeoutMs / tickMs()), openMaxTicks: 17 });
+    // Settlement is the giver's to observe. The receiver closes its cue on its own completion frame,
+    // so once the confirm screen was seen, the completion frames (the trade closed, or the confirm
+    // screen's offers emptied while the server exchanges) are settlement, not a cancellation:
+    // lib/trade.ts's give() declines on any stop, so the stop is withheld there and give() reads the
+    // outcome. A stop on any other frame declines as before. A trade that fails after the confirm
+    // screen was seen is uncertain: reconciled, never replayed.
+    let confirmSeen = false;
+    const settlingStop = stopIf && ((s: BotWorldState) => {
+        const t = s.trade;
+        if (t?.isOpen && t.screen === 'confirm' && t.myOffer.length > 0) confirmSeen = true;
+        const completing = confirmSeen && (!t?.isOpen || (t.screen === 'confirm' && t.myOffer.length === 0));
+        return completing ? null : stopIf(s);
+    });
+    const r = await give(sdk, partner, specs, { expectTheirs: ANY_OFFER, maxTicks: Math.ceil(timeoutMs / tickMs()), openMaxTicks: 17, ...(settlingStop ? { stopIf: settlingStop } : {}) });
     const { gained } = diffItems(invBefore, sdk.getInventory());
     const message = r.ok ? `Gave package to ${partner}${r.reason ? ` (${r.reason})` : ''}` : `Not given: ${r.reason ?? 'unknown'}`;
-    return { success: r.ok, message, ticks: r.ticks, gave: r.gave, received: gained };
+    return { success: r.ok, message, ticks: r.ticks, gave: r.gave, received: gained, ...(!r.ok && confirmSeen ? { uncertain: true as const } : {}) };
 }
 
 export interface ServeOptions {
@@ -737,6 +848,7 @@ export interface ServeOptions {
      * packages too). A top-up line's count still comes from the ask.
      */
     exact?: boolean;
+    stopIf?: (s: BotWorldState) => string | null;
 }
 
 export interface ServeResult extends GiveResult {
@@ -768,7 +880,7 @@ export async function serveStaged(sdk: BotSDK, bot: BotActions, o: ServeOptions)
     const mode = o.mode ?? 'burst';
     const timeoutMs = o.timeoutMs ?? 60_000;
     const fixed = o.exact ? new Map(o.held) : undefined;
-    if (!o.pkg.items.some(isTopUp)) return { ...(await giveOpenTrade(sdk, bot, o.partner, items, mode, timeoutMs, fixed)), topUps: [], ask: null };
+    if (!o.pkg.items.some(isTopUp)) return { ...(await giveOpenTrade(sdk, bot, o.partner, items, mode, timeoutMs, fixed, o.stopIf)), topUps: [], ask: null };
     if (!o.pkg.scope || !o.ask) throw new Error(`Package ${o.pkg.name} has a top-up: it needs a scope and the ask's options`);
     const ask = await awaitAsk(sdk, { ...o.ask, scope: o.pkg.scope });
     const topUps = topUpCounts(o.pkg, items, ask);
@@ -776,7 +888,7 @@ export async function serveStaged(sdk: BotSDK, bot: BotActions, o: ServeOptions)
     if (!ask) o.log?.('top-up: no usable ask; offering none of the top-up lines', { package: o.pkg.name, scope: o.pkg.scope, waitedTicks: o.ask.maxTicks });
     else if (unserved.length) o.log?.('top-up: short of the ask', { package: o.pkg.name, lines: unserved });
     const amounts = new Map([...(fixed ?? []), ...topUps.flatMap(t => (t.id === null ? [] : [[t.id, t.n] as const]))]);
-    return { ...(await giveOpenTrade(sdk, bot, o.partner, items, mode, timeoutMs, amounts)), topUps, ask };
+    return { ...(await giveOpenTrade(sdk, bot, o.partner, items, mode, timeoutMs, amounts, o.stopIf)), topUps, ask };
 }
 
 // ============ Receiver (the scored account's side) ============
@@ -904,6 +1016,8 @@ export interface MuleOptions {
     cueDir?: string;
     /** The packages are in the inventory from login, served where each package's `at` says; no bank, no GE. */
     carried?: boolean;
+    /** Unique run identity for automatic ledger-order staging and session-bound delivery readiness. */
+    deliveryRun?: string;
     /** NPC name RegExp sources to kill within `clearTiles` before a trade, with any NPC that hits the mule. Default DEFAULT_WILDLIFE when carried, else none ([] turns it off). */
     wildlife?: string | string[];
     /** Chebyshev tiles from the mule a named NPC is cleared within. Default 1 (the atoll wildlife's hunt range). */
@@ -978,26 +1092,32 @@ export function packageOf(raw: unknown, pack?: ObjPack): Package {
     if (p.onRequest !== undefined && typeof p.onRequest !== 'boolean') throw new Error(`Package ${name}: onRequest must be true or false`);
     const onRequest = p.onRequest === true ? { onRequest: true as const } : {};
     const at = p.at === undefined ? {} : { at: tileOption(p.at, `Package ${name} at`) };
+    const bank = p.bank === undefined ? {} : { bank: worldTile(p.bank, `Package ${name} bank`) };
+    if (p.carryNext !== undefined && p.carryNext !== true) throw new Error(`Package ${name}: carryNext must be true`);
+    if (p.takeBackSlots !== undefined && (typeof p.takeBackSlots !== 'number' || !Number.isInteger(p.takeBackSlots) || p.takeBackSlots < 0 || p.takeBackSlots > 28)) throw new Error(`Package ${name}: takeBackSlots must be an integer from 0 to 28`);
+    const carry = { ...(p.carryNext === true ? { carryNext: true as const } : {}), ...(p.takeBackSlots === undefined ? {} : { takeBackSlots: p.takeBackSlots as number }) };
     if (!items.some(isTopUp)) {
         // The scope keys the package for a cue (its hand-off id); a fixed package may go without.
         const scope = p.scope === undefined ? {} : { scope: scopeOption(p.scope, ['mule'], `Package ${name} scope`) };
-        return { name, items, ...scope, ...onRequest, ...at };
+        return { name, items, ...scope, ...onRequest, ...at, ...bank, ...carry };
     }
     const labels = items.map(i => refLabel(i).toLowerCase());
     for (const t of items.filter(isTopUp)) {
         const l = refLabel(t).toLowerCase();
         if (labels.filter(x => x === l).length > 1) throw new Error(`Package ${name}: ${refLabel(t)} is a top-up line and another line too`);
     }
-    return { name, items, scope: scopeOption(p.scope, ['mule'], `Package ${name} scope`), ...onRequest, ...at };
+    return { name, items, scope: scopeOption(p.scope, ['mule'], `Package ${name} scope`), ...onRequest, ...at, ...bank, ...carry };
 }
 
 /** A tile from options: `{ x, z }`, whole numbers. */
 export function tileOption(raw: unknown, where: string): Tile {
     const t = (raw ?? {}) as Record<string, unknown>;
-    const x = Number(t.x);
-    const z = Number(t.z);
-    if (!Number.isInteger(x) || !Number.isInteger(z) || x < 0 || z < 0) throw new Error(`${where} must be { x, z } in whole tiles (got ${JSON.stringify(raw)})`);
-    return { x, z };
+    const x = t.x;
+    const z = t.z;
+    if (typeof x !== 'number' || typeof z !== 'number' || !Number.isSafeInteger(x) || !Number.isSafeInteger(z) || x < 0 || z < 0) throw new Error(`${where} must be { x, z } in whole tiles (got ${JSON.stringify(raw)})`);
+    const level = t.level;
+    if (level !== undefined && (!Number.isInteger(level) || Number(level) < 0 || Number(level) > 3)) throw new Error(`${where}: invalid plane`);
+    return { x, z, ...(level === undefined ? {} : { level: Number(level) }) };
 }
 
 export function muleOptions(raw: Record<string, unknown>, env: Record<string, string | undefined> = process.env): Required<Omit<MuleOptions, 'serve' | 'ge'>> & Pick<MuleOptions, 'serve' | 'ge'> {
@@ -1008,27 +1128,58 @@ export function muleOptions(raw: Record<string, unknown>, env: Record<string, st
     if (!Number.isInteger(askWaitTicks) || askWaitTicks < 0) throw new Error(`askWaitTicks must be a whole number (got ${o.askWaitTicks})`);
     if (o.carried !== undefined && typeof o.carried !== 'boolean') throw new Error('carried must be true or false');
     const carried = o.carried === true;
-    const tiled = packages.filter(p => p.at).map(p => p.name);
-    if (!carried && tiled.length) throw new Error(`Package tiles (at) are for carried packages only (${tiled.join(', ')}): a banked package is served at stand`);
+    const deliveryRun = o.deliveryRun ?? '';
+    if (o.deliveryRun !== undefined) {
+        deliverySession(deliveryRun, 'validate');
+        if (carried || o.ge) throw new Error('deliveryRun is banked delivery; carried packages and GE use their own lifecycle');
+        if (o.giver && o.giver !== 'burst') throw new Error('deliveryRun requires the observable burst trade protocol');
+        if (!o.serve?.trim()) throw new Error('deliveryRun requires serve');
+        if (!packages.length) throw new Error('deliveryRun requires a nonempty itinerary');
+        const rows = new Set<string>();
+        for (const p of packages) {
+            if (!p.scope || p.scope.family !== 'mule') throw new Error(`Package ${p.name}: delivery requires mule scope`);
+            deliverySession(deliveryRun, p.scope.step);
+            if (rows.has(p.scope.step)) throw new Error(`Duplicate delivery row ${p.scope.step}`);
+            rows.add(p.scope.step);
+            worldTile(p.at, `Package ${p.name} at`);
+            worldTile(p.bank, `Package ${p.name} bank`);
+            for (const item of p.items) {
+                if (item.id === undefined) throw new Error(`Package ${p.name}: delivery requires a canonical object id`);
+                if (untradeable(item.id)) throw new Error(`Package ${p.name}: obj ${item.id} is untradeable`);
+            }
+        }
+    }
+    const ordered = packages.filter(p => !p.onRequest);
+    for (const p of packages) {
+        if ((p.carryNext || p.takeBackSlots !== undefined) && !deliveryRun) throw new Error(`Package ${p.name}: carry metadata requires deliveryRun`);
+        if (!p.carryNext) continue;
+        if (p.onRequest || !ordered[ordered.indexOf(p) + 1]) throw new Error(`Package ${p.name}: carryNext requires a next ordered delivery`);
+        for (const member of deliveryGroup(ordered, p)) {
+            if (member.items.some(i => !isTopUp(i) && i.amount === -1)) throw new Error(`Package ${member.name}: carry groups require bounded counts`);
+        }
+    }
+    const tiled = packages.filter(p => p.at || p.bank).map(p => p.name);
+    if (!carried && !deliveryRun && tiled.length) throw new Error(`Package tiles are for carried packages only unless deliveryRun binds explicit banked delivery (${tiled.join(', ')})`);
     if (carried && o.ge) throw new Error('A carried mule has no bank, so no GE orders');
-    const keepAliveMinutes = Number(o.keepAliveMinutes ?? (carried ? 5 : 0));
+    const keepAliveMinutes = Number(o.keepAliveMinutes ?? (carried || deliveryRun ? 5 : 0));
     if (!Number.isFinite(keepAliveMinutes) || keepAliveMinutes < 0) throw new Error(`keepAliveMinutes must be 0 or more (got ${o.keepAliveMinutes})`);
     const clearTiles = Number(o.clearTiles ?? 1);
     if (!Number.isInteger(clearTiles) || clearTiles < 0) throw new Error(`clearTiles must be a whole number (got ${o.clearTiles})`);
     return {
         carried,
+        deliveryRun,
         wildlife: o.wildlife ?? (carried ? DEFAULT_WILDLIFE : []),
         clearTiles,
         keepAliveMinutes,
         askWaitTicks,
         cueDir: typeof o.cueDir === 'string' ? o.cueDir : cueDir(env),
         serve: o.serve,
-        couriers: o.couriers ?? DEFAULT_COURIERS,
+        couriers: o.couriers ?? (deliveryRun ? [] : DEFAULT_COURIERS),
         packages,
         serveMode: o.serveMode ?? 'order',
         giver: o.giver ?? 'burst',
         preRequest: o.preRequest ?? true,
-        stand: o.stand ?? MULE_STAND,
+        stand: o.stand ?? (deliveryRun ? packages[0]!.at! : MULE_STAND),
         ge: o.ge
     };
 }
@@ -1047,6 +1198,8 @@ class Mule {
     private nextIndex = 0;
     /** Ids/counts of the pending package while it sits in the inventory. */
     private held: Map<number, number> | null = null;
+    /** Full frozen carry inventory, including only confirmed incoming trade items. */
+    private carryStage: ReturnType<typeof planCarryGroup> | null = null;
     private shortSince = 0;
     private needsBank = true;
     private lastPreRequest = 0;
@@ -1069,6 +1222,240 @@ class Mule {
     /** Date.now() of the mule's last input (a walk, a click, a fight): the keep-alive's clock. */
     private lastInputMs = Date.now();
     private keepAlives = 0;
+    private travelling = false;
+    private deliveryFault = false;
+    private deliveryPaused = false;
+    private preparationSeq = 0;
+    private consumedPreparation = 0;
+    private observedTick = -1;
+    private observedMs = 0;
+    private settledAfterTick = -1;
+    /** The served hand-off whose receiving cue has not yet been closed; the helper keeps its stand meanwhile. */
+    private awaitingStop: { session: string; row: string } | null = null;
+    /** That session's cue ended with a final stop: service is over and the helper never moves again. */
+    private finalStopped = false;
+
+    private controlAllowsDelivery(): boolean {
+        const control = readMulePreparation(this.o.cueDir, this.ctx.account);
+        if (!control) return !existsSync(mulePreparationPath(this.o.cueDir, this.ctx.account));
+        if (control.op !== 'prepare') return false;
+        const pkg = this.o.packages.find(p => p.scope?.step === control.row);
+        return control.runId === this.o.deliveryRun && !!pkg
+            && control.receiverHash === nameHash(this.o.serve!) && sameWorldTile(control.at, pkg.at);
+    }
+
+    /** This run's matching initial hold: logged in and stationary, never banking, walking or trading. */
+    private heldControl(): MuleHold | null {
+        if (!this.o.deliveryRun) return null;
+        const control = readMulePreparation(this.o.cueDir, this.ctx.account);
+        if (control?.op !== 'hold' || control.runId !== this.o.deliveryRun) return null;
+        const pkg = this.o.packages.find(p => p.scope?.step === control.row);
+        return pkg && control.receiverHash === nameHash(this.o.serve!) && sameWorldTile(control.at, pkg.at)
+            && !this.deliveryWasServed(pkg) ? control : null;
+    }
+
+    private async syncPreparation(): Promise<void> {
+        if (!this.o.deliveryRun) return;
+        const control = readMulePreparation(this.o.cueDir, this.ctx.account);
+        this.deliveryPaused = !this.controlAllowsDelivery();
+        const hold = this.heldControl();
+        if (hold && hold.seq > this.consumedPreparation) {
+            // Held status needs a new frame after this point; only this run's prepare releases it.
+            this.consumedPreparation = hold.seq;
+            this.preparationSeq = hold.seq;
+            this.settledAfterTick = this.observedTick;
+            this.ctx.log('delivery held', { row: hold.row, seq: hold.seq, attempt: hold.attempt });
+            this.publishDelivery();
+            return;
+        }
+        if (!control || this.deliveryPaused || control.op !== 'prepare' || control.seq <= this.consumedPreparation) return;
+        const pkg = this.o.packages.find(p => p.scope?.step === control.row);
+        if (!pkg || control.receiverHash !== nameHash(this.o.serve!) || !sameWorldTile(control.at, pkg.at)) {
+            this.deliveryPaused = true;
+            this.ctx.log('delivery preparation refused', { row: control.row, seq: control.seq });
+            return;
+        }
+        // A future preparation may arrive while the previous receiving step still owns its cue.
+        const active = readCue(this.o.cueDir);
+        if (pkg !== this.pending && (this.ctx.sdk.getTradeState().isOpen
+            || (active && !active.stop && active.session === this.pendingSession))) return;
+        this.consumedPreparation = control.seq;
+        this.preparationSeq = control.seq;
+        this.settledAfterTick = this.observedTick;
+        if (this.deliveryWasServed(pkg)) {
+            this.ctx.log('delivery already served', { row: control.row, session: control.session });
+            this.publishDelivery();
+            return;
+        }
+        if (pkg !== this.pending) {
+            this.carryStage = null;
+            this.pending = pkg;
+            this.pendingSession = control.session;
+            const index = this.ordered.indexOf(pkg);
+            if (index >= 0) this.nextIndex = index;
+            this.held = null;
+            this.shortSince = 0;
+            this.needsBank = true;
+            this.click = newClickCtx();
+        }
+        await this.ctx.state.set('mule-delivery-selection', { runId: this.o.deliveryRun, row: control.row, nextIndex: this.nextIndex });
+        this.ctx.log('delivery preparation selected', { row: control.row, seq: control.seq, at: pkg.at });
+        this.publishDelivery();
+    }
+
+    private deliveryEntries(): CarriedServed[] {
+        return carriedServedEntries(this.ctx.state.get('mule-delivery-served'));
+    }
+
+    private deliveryWasServed(p: Package): boolean {
+        return this.deliveryEntries().some(e => e.pkg === p.name && e.session === deliverySession(this.o.deliveryRun, p.scope!.step));
+    }
+
+    private selectNextDelivery(): void {
+        while (this.ordered[this.nextIndex] && this.deliveryWasServed(this.ordered[this.nextIndex]!)) this.nextIndex++;
+        this.pending = this.ordered[this.nextIndex] ?? null;
+        this.preparationSeq = 0;
+        this.pendingSession = this.pending ? deliverySession(this.o.deliveryRun, this.pending.scope!.step) : 'order';
+        this.held = this.pending ? this.carryStage?.held.get(this.pending) ?? null : null;
+        if (!this.held) this.carryStage = null;
+        this.shortSince = 0;
+        this.needsBank = !this.held;
+        this.click = newClickCtx();
+    }
+
+    private async finishDelivery(pkg: Package): Promise<void> {
+        const session = deliverySession(this.o.deliveryRun, pkg.scope!.step);
+        if (!this.deliveryWasServed(pkg)) await this.ctx.state.set('mule-delivery-served', [...this.deliveryEntries(), { pkg: pkg.name, session, ms: Date.now() }]);
+        await this.ctx.state.set('mule-delivery-attempt', undefined);
+        this.awaitingStop = { session, row: pkg.scope!.step };
+        if (!pkg.onRequest) this.nextIndex = this.ordered.indexOf(pkg) + 1;
+        this.selectNextDelivery();
+        await this.ctx.state.set('mule-delivery-selection', { runId: this.o.deliveryRun, row: this.pending?.scope?.step ?? null, nextIndex: this.nextIndex });
+    }
+
+    /**
+     * After a served hand-off the helper keeps its stand until the receiver closes that session's
+     * cue. A final stop ends service where it stands (its launcher then logs it out); a plain stop,
+     * a newer cue, or this run's prepare for another row releases it to bank or travel. Leaving
+     * earlier races the final stop: a walk already sent keeps moving after the role is aborted.
+     */
+    private keepsStandAfterServe(): boolean {
+        if (this.finalStopped) return true;
+        if (!this.awaitingStop) return false;
+        const cue = readCue(this.o.cueDir);
+        const control = readMulePreparation(this.o.cueDir, this.ctx.account);
+        const moved = control?.runId === this.o.deliveryRun && control.op === 'prepare' && control.row !== this.awaitingStop.row;
+        if (!moved && cue?.session === this.awaitingStop.session && cue.scope?.family === 'mule') {
+            if (!cue.stop) return true;
+            if (cue.final) {
+                this.finalStopped = true;
+                this.ctx.log('delivery final stop: service ends on the stand', { row: this.awaitingStop.row, session: cue.session, seq: cue.seq });
+                return true;
+            }
+        }
+        this.awaitingStop = null;
+        return false;
+    }
+
+    private deliveryAt(): boolean {
+        return !!this.pending?.at && inArea(this.ctx.sdk.getState(), { ...this.pending.at, tol: 0 });
+    }
+
+    /** Preparation alone never authorizes a trade. Only the receiving step's live cue does. */
+    private deliveryAuthorized(): boolean {
+        if (!this.pending || this.deliveryFault || this.deliveryPaused || !this.controlAllowsDelivery()
+            || !this.observedMs || Date.now() - this.observedMs > 3000 || this.observedTick <= this.settledAfterTick) return false;
+        const cue = readCue(this.o.cueDir);
+        return !!cue && !cue.stop && cue.session === this.pendingSession
+            && cue.scope.family === 'mule' && cue.scope.step === this.pending.scope!.step
+            && cue.receiver.sha256 === nameHash(this.o.serve!)
+            && cue.ms <= Date.now() && Date.now() - cue.ms <= STALE_CUE_MS;
+    }
+
+    private publishDelivery(off = false): void {
+        if (!this.o.deliveryRun) return;
+        const s = this.ctx.sdk.getState();
+        const hold = off ? null : this.heldControl();
+        if (hold) {
+            const healthy = hold.seq === this.consumedPreparation && this.observedMs > 0
+                && this.observedTick > this.settledAfterTick && Date.now() - this.observedMs <= 3000
+                && muleHealthy(s);
+            writeMuleReady(this.o.cueDir, {
+                runId: this.o.deliveryRun, account: this.ctx.account, row: hold.row, preparationSeq: hold.seq,
+                session: hold.session, receiverHash: hold.receiverHash, phase: healthy ? 'held' : 'off',
+                tile: s?.player ? { x: s.player.worldX, z: s.player.worldZ, level: s.player.level } : null,
+                staged: false, tick: Math.max(0, s?.tick ?? 0), ms: healthy ? this.observedMs : Date.now()
+            });
+            return;
+        }
+        const p = this.pending ?? this.ordered.at(-1) ?? this.o.packages[0]!;
+        const staged = !!this.pending && this.packageReady() && stagedExactly(this.ctx.sdk.getInventory(), this.carryStage?.inventory ?? this.held).exact;
+        const ready = !off && !this.deliveryFault && !this.deliveryPaused && this.controlAllowsDelivery()
+            && this.observedMs > 0 && this.observedTick > this.settledAfterTick && Date.now() - this.observedMs <= 3000
+            && !this.needsBank && !!this.pending
+            && muleCanReady(s, worldTile(p.at), staged, this.travelling);
+        writeMuleReady(this.o.cueDir, {
+            runId: this.o.deliveryRun, account: this.ctx.account, row: p.scope!.step, preparationSeq: this.preparationSeq,
+            session: deliverySession(this.o.deliveryRun, p.scope!.step), receiverHash: nameHash(this.o.serve!),
+            phase: off || !this.pending || this.deliveryPaused || !this.controlAllowsDelivery() ? 'off' : this.deliveryFault ? 'fault' : s?.trade?.isOpen ? 'trading' : this.travelling ? 'travel' : ready ? 'ready' : 'staging',
+            tile: s?.player ? { x: s.player.worldX, z: s.player.worldZ, level: s.player.level } : null,
+            staged, tick: Math.max(0, s?.tick ?? 0), ms: ready ? this.observedMs : Date.now()
+        });
+    }
+
+    private async deliveryWalk(to: WorldTile, purpose: 'bank' | 'meeting'): Promise<boolean> {
+        if (this.deliveryFault || this.deliveryPaused || !this.controlAllowsDelivery() || this.ctx.signal.aborted) return false;
+        const player = this.ctx.sdk.getState()?.player;
+        if (!player) return false;
+        const from = { x: player.worldX, z: player.worldZ };
+        if (westOfTaverley(from) !== westOfTaverley(to)) {
+            this.deliveryFault = true;
+            this.ctx.log('delivery unsafe crossing refused', { row: this.pending?.scope?.step, purpose, from, to });
+            this.publishDelivery();
+            return false;
+        }
+        if (inArea(this.ctx.sdk.getState(), { ...to, tol: 0 })) return true;
+        this.travelling = true;
+        this.publishDelivery();
+        const started = tick(this.ctx.sdk);
+        let tiles = 0;
+        let ok = false;
+        let reason: string | undefined;
+        const stopReason = (s = this.ctx.sdk.getState()): string | null =>
+            this.ctx.signal.aborted || this.deliveryFault || this.deliveryPaused || !this.controlAllowsDelivery() ? 'delivery aborted'
+                : !s?.player || s.player.isDead || s.player.hp <= 0 ? 'delivery helper died' : null;
+        const walk = async (destination: WorldTile): Promise<void> => {
+            const stopped = stopReason();
+            if (stopped) throw new Error(stopped);
+            const r = await runTo(this.ctx.sdk, { ...destination, tol: 0 }, { bot: this.ctx.bot, stopIf: stopReason });
+            tiles += r.tiles;
+            if (!r.ok || !inArea(this.ctx.sdk.getState(), { ...destination, tol: 0 })) throw new Error(r.reason ?? 'delivery walk did not arrive');
+            const after = stopReason();
+            if (after) throw new Error(after);
+        };
+        try {
+            const crossings = player.level === 0 && to.level === 0 ? crossingsBetween(from, to) ?? [] : [];
+            for (const crossing of crossings) {
+                await crossForDelivery({
+                    sdk: this.ctx.sdk, log: this.ctx.log, stopped: () => stopReason() !== null,
+                    walk: destination => walk({ ...destination, level: 0 })
+                }, crossing);
+                tiles += Math.max(Math.abs(crossing.to.x - crossing.from.x), Math.abs(crossing.to.z - crossing.from.z));
+            }
+            await walk(to);
+            ok = true;
+            return true;
+        } catch (e) {
+            reason = e instanceof Error ? e.message : String(e);
+            return false;
+        } finally {
+            this.ctx.log('delivery travel', { row: this.pending?.scope?.step, purpose, to, ok, ticks: tick(this.ctx.sdk) - started, tiles, reason });
+            this.travelling = false;
+            this.settledAfterTick = this.observedTick;
+            this.touch();
+            this.publishDelivery();
+        }
+    }
 
     /** What the mule is doing: idle, consolidate (taking courier stock in), serve (preparing or giving a package), ge. */
     private phase(to: 'idle' | 'consolidate' | 'serve' | 'ge'): void {
@@ -1084,6 +1471,22 @@ class Mule {
         this.ordered = this.o.packages.filter(p => !p.onRequest);
         if (this.o.serveMode === 'order') this.pending = this.ordered[0] ?? null;
         this.wildlife = toRegExps(this.o.wildlife);
+        if (this.o.deliveryRun) {
+            const selection = this.ctx.state.get('mule-delivery-selection') as { runId?: string; row?: string; nextIndex?: number } | undefined;
+            if (selection?.runId === this.o.deliveryRun && Number.isInteger(selection.nextIndex)
+                && selection.nextIndex! >= 0 && selection.nextIndex! <= this.ordered.length) this.nextIndex = selection.nextIndex!;
+            this.selectNextDelivery();
+            const selected = selection?.runId === this.o.deliveryRun ? this.o.packages.find(p => p.scope?.step === selection.row) : null;
+            if (selected && !this.deliveryWasServed(selected)) {
+                this.pending = selected;
+                this.pendingSession = deliverySession(this.o.deliveryRun, selected.scope!.step);
+            }
+            // An interrupted acceptance has an ambiguous outcome. Never replay it automatically.
+            const attempt = this.ctx.state.get('mule-delivery-attempt') as { runId?: string; pkg?: string; session?: string } | undefined;
+            if (attempt?.runId === this.o.deliveryRun && !this.deliveryEntries().some(e => e.pkg === attempt.pkg && e.session === attempt.session)) this.deliveryFault = true;
+            const fault = this.ctx.state.get('mule-delivery-fault') as { runId?: string } | undefined;
+            if (fault?.runId === this.o.deliveryRun) this.deliveryFault = true;
+        }
         if (this.o.carried) {
             // No bank to visit; and what this login already served (a restarted role) stays served.
             this.needsBank = false;
@@ -1117,6 +1520,7 @@ class Mule {
 
     /** Where the mule stands: `stand`, or in carried mode the tile of the package it serves next. */
     private standTile(): Tile {
+        if (this.o.deliveryRun) return this.pending?.at ?? this.o.stand;
         return this.o.carried ? carriedStand(this.o.packages, this.pending, this.done, this.o.stand) : this.o.stand;
     }
 
@@ -1145,7 +1549,7 @@ class Mule {
         const stand = this.standTile();
         const from = ctx.sdk.getState()?.player;
         const t0 = tick(ctx.sdk);
-        await walkNear(ctx, stand.x, stand.z, this.standTolerance());
+        if (!this.o.deliveryRun) await walkNear(ctx, stand.x, stand.z, this.standTolerance());
         this.lastStand = stand;
         this.touch();
         if (this.o.carried) {
@@ -1159,25 +1563,36 @@ class Mule {
                 walk: { from: from ? { x: from.worldX, z: from.worldZ } : null, ticks: tick(ctx.sdk) - t0 }
             });
         }
-        ctx.log('mule ready', { serve: this.o.serve, packages: this.o.packages.map(p => p.name), giver: this.o.giver, serveMode: this.o.serveMode, ...(this.o.carried ? { carried: true } : {}) });
+        ctx.log(this.o.deliveryRun ? 'mule delivery started' : 'mule ready', { serve: this.o.serve, packages: this.o.packages.map(p => p.name), giver: this.o.giver, serveMode: this.o.serveMode, ...(this.o.carried ? { carried: true } : {}) });
 
+        this.observedTick = tick(ctx.sdk);
+        this.publishDelivery();
         let wasOpen = false;
         const unsubOpen = ctx.sdk.onStateUpdate(st => {
             const open = !!st.trade?.isOpen;
             if (open && !wasOpen) this.openSeenMs = Date.now();
             wasOpen = open;
+            if (st.tick > this.observedTick) {
+                this.observedTick = st.tick;
+                this.observedMs = Date.now();
+            }
+            if (this.o.deliveryRun && open && (!this.controlAllowsDelivery() || ctx.signal.aborted)) void ctx.bot.declineTrade();
+            this.publishDelivery();
         });
         try {
             while (!ctx.signal.aborted) {
                 try {
                     await this.cycle();
                 } catch (e) {
+                    if (this.o.deliveryRun && this.ctx.state.get('mule-delivery-attempt')) this.deliveryFault = true;
+                    this.publishDelivery();
                     ctx.log('cycle error', { error: String(e) });
                     await ctx.sdk.waitForTicks(5).catch(() => {});
                 }
             }
         } finally {
             unsubOpen();
+            this.publishDelivery(true);
         }
         if (ctx.sdk.getTradeState().isOpen) await ctx.bot.declineTrade();
         await closeBank(ctx);
@@ -1190,7 +1605,8 @@ class Mule {
         // 1. Package requests: a new mule cue in the cue directory, scoped to one of our packages.
         const cue = readCue(this.o.cueDir);
         const action = cue?.scope?.family === 'mule' ? muleCueAction(cue, this.lastCue, this.startMs) : 'none';
-        if (cue && action !== 'none') {
+        await this.syncPreparation();
+        if (!this.o.deliveryRun && cue && action !== 'none') {
             const last = this.lastCue;
             this.lastCue = { session: cue.session, seq: cue.seq };
             const pkg = packageForCue(cue, this.o.packages, this.o.serve);
@@ -1213,6 +1629,14 @@ class Mule {
             if (action === 'stop' && pkg && this.o.carried) await this.passCarried(pkg, cue.session);
         }
 
+        if (this.deliveryFault || this.deliveryPaused) {
+            this.publishDelivery();
+            if (sdk.getTradeState().isOpen) await ctx.bot.declineTrade();
+            else if (!this.deliveryFault) await this.heldKeepAlive();
+            await nextTick(sdk);
+            return;
+        }
+
         // 2. Trade requests: the scored account first, then couriers; anyone else is ignored.
         const requesters = [...new Set(this.requests.next().map(m => m.sender))];
         requesters.sort((a, b) => Number(this.isServe(b)) - Number(this.isServe(a)));
@@ -1229,13 +1653,21 @@ class Mule {
             else await ctx.bot.declineTrade();
         }
 
+        if (this.o.deliveryRun && this.keepsStandAfterServe()) {
+            this.publishDelivery();
+            await this.stationaryKeepAlive({ served: this.awaitingStop?.row ?? null, finalStopped: this.finalStopped });
+            await nextTick(sdk);
+            return;
+        }
+
         // 3. Housekeeping between trades.
         if (!this.o.carried && (this.needsBank || this.wantsPackage())) await this.bankCycle();
         if (this.o.ge && Date.now() - this.lastGeCollect > (this.o.ge.collectEveryMin ?? 10) * 60_000) await this.geCycle();
         // Wildlife first: a hit on either trader closes the trade the pre-request would open.
         if (this.wildlife.length) await this.clearWildlife();
-        this.preRequest();
         await this.keepStand();
+        this.publishDelivery();
+        this.preRequest();
         await this.keepAlive();
         this.phase('idle');
         await nextTick(sdk);
@@ -1250,6 +1682,10 @@ class Mule {
         const { ctx } = this;
         const { sdk } = ctx;
         if (sdk.getTradeState().isOpen) return;
+        if (this.o.deliveryRun) {
+            if (this.pending && this.packageReady() && !this.needsBank) await this.deliveryWalk(worldTile(this.pending.at), 'meeting');
+            return;
+        }
         const stand = this.standTile();
         const tolerance = this.standTolerance();
         if (this.lastStand && (stand.x !== this.lastStand.x || stand.z !== this.lastStand.z)) {
@@ -1284,7 +1720,28 @@ class Mule {
         }
     }
 
-    /** A keep-alive step when the mule has sent nothing for keepAliveMinutes, never during a trade or with the served account near. */
+    /** A held helper keeps the same stationary client activity as a ready one, and nothing else. */
+    private async heldKeepAlive(): Promise<void> {
+        const hold = this.heldControl();
+        if (!hold || hold.seq !== this.consumedPreparation) return;
+        await this.stationaryKeepAlive({ held: true });
+    }
+
+    /** A wait in place on a healthy fresh frame: client activity that never moves the helper. */
+    private async stationaryKeepAlive(reason: Record<string, unknown>): Promise<void> {
+        const { ctx } = this;
+        const { sdk } = ctx;
+        if (ctx.signal.aborted || !keepAliveDue(Date.now(), this.lastInputMs, this.o.keepAliveMinutes * 60_000)) return;
+        const s = sdk.getState();
+        if (!muleHealthy(s) || sdk.isBankOpen()
+            || !this.observedMs || Date.now() - this.observedMs > 3000 || this.observedTick <= this.settledAfterTick) return;
+        const idleMs = Date.now() - this.lastInputMs;
+        const result = await sdk.sendWait(1);
+        this.touch();
+        ctx.log('keep-alive', { stationary: true, ...reason, success: result.success, idleMs, tick: s.tick });
+    }
+
+    /** Keep the client active without interrupting a trade or moving a delivery off its exact stand. */
     private async keepAlive(): Promise<void> {
         const { ctx } = this;
         const { sdk } = ctx;
@@ -1292,6 +1749,20 @@ class Mule {
         if (!keepAliveDue(Date.now(), this.lastInputMs, this.o.keepAliveMinutes * 60_000)) return;
         const s = sdk.getState();
         if (!s?.player || s.trade?.isOpen || sdk.isBankOpen()) return;
+        if (this.o.deliveryRun) {
+            if (ctx.signal.aborted || !this.pending || this.deliveryFault || this.deliveryPaused
+                || !this.controlAllowsDelivery() || this.needsBank || !this.observedMs
+                || Date.now() - this.observedMs > 3000 || this.observedTick <= this.settledAfterTick
+                || !muleCanReady(s, worldTile(this.pending.at), this.packageReady()
+                    && stagedExactly(sdk.getInventory(), this.carryStage?.inventory ?? this.held).exact, this.travelling)) return;
+            // Browser SDK actions reset its AFK timer. A wait changes no world
+            // state; lite already sends NO_TIMEOUT independently. Neither an
+            // acknowledgement nor this activity renews observation freshness.
+            const result = await sdk.sendWait(1);
+            this.touch();
+            ctx.log('keep-alive', { stationary: true, success: result.success, idleMs, tick: s.tick });
+            return;
+        }
         if (this.o.serve && s.nearbyPlayers.some(p => sameName(p.name, this.o.serve) && p.distance <= PRE_REQUEST_TILES)) return;
         const at = { x: s.player.worldX, z: s.player.worldZ };
         const r = await keepAliveStep(sdk, at, this.keepAlives++);
@@ -1315,8 +1786,9 @@ class Mule {
         const s = sdk.getState();
         if (!s || !this.o.preRequest || !this.o.serve) return;
         // A carried package shares the inventory with the others, so only a banked one must be staged exactly.
-        const ready = this.packageReady() && (this.o.carried || stagedExactly(sdk.getInventory(), this.held).exact);
-        const d = decidePreRequest(s, this.click, this.o.serve, ready);
+        const ready = this.packageReady() && (this.o.carried || stagedExactly(sdk.getInventory(), this.carryStage?.inventory ?? this.held).exact)
+            && (!this.o.deliveryRun || (this.deliveryAt() && this.deliveryAuthorized() && !this.needsBank && !this.travelling));
+        const d = decidePreRequest(s, this.click, this.o.serve, ready && !this.ctx.signal.aborted, !!this.o.deliveryRun);
         this.click = d.next;
         if (d.send === undefined) return;
         this.lastPreRequest = Date.now();
@@ -1328,32 +1800,57 @@ class Mule {
 
     /** Deposit everything that is not the held package, report the bank, and withdraw the pending package. */
     private async bankCycle(): Promise<void> {
+        // A staged group is immutable until served or explicitly replaced by preparation.
+        if (this.carryStage) return;
         const { ctx } = this;
         const { sdk, bot } = ctx;
         this.phase(this.wantsPackage() ? 'serve' : 'consolidate');
         if (sdk.getTradeState().isOpen) return;
+        if (this.o.deliveryRun) {
+            const bank = this.pending?.bank ?? this.o.packages.at(-1)!.bank!;
+            if (!(await this.deliveryWalk(bank, 'bank'))) return;
+        }
         if (!(await openBank(ctx))) return;
         const keep = this.packageReady() ? this.held! : new Map<number, number>();
         const deposited = await depositAllExcept(sdk, keep);
         if (!deposited) ctx.log('deposit incomplete', { inventory: sdk.getInventory().map(i => `${i.name} x${i.count}`) });
         if (!this.packageReady()) this.held = null;
 
+        if (this.pending?.carryNext && !this.held && deposited) {
+            await this.stageCarryGroup(this.pending);
+            ctx.reportBank(bankSnapshot(sdk));
+            this.needsBank = false;
+            await closeBank(ctx);
+            return;
+        }
         // A package is staged only into an otherwise empty inventory, so `held` is the package alone.
         if (this.pending && !this.held && deposited) {
             const plan = planPackage(this.pending, sdk.getBankItems());
-            if (plan.missing.length || plan.ambiguous.length || plan.slots > 28 || plan.withdrawals.length === 0) {
+            if (plan.missing.length || plan.ambiguous.length || plan.slots > 28 || plan.withdrawals.length === 0 || (this.o.deliveryRun && plan.topUpShort.length)) {
                 if (this.shortSince === 0) ctx.log('package short', { package: this.pending.name, missing: plan.missing, ambiguous: plan.ambiguous, slots: plan.slots, topUpShort: plan.topUpShort });
                 this.shortSince = Date.now();
             } else {
                 if (plan.topUpShort.length) ctx.log('package: top-up staged below its max', { package: this.pending.name, topUpShort: plan.topUpShort });
                 let ok = true;
                 for (const w of plan.withdrawals) {
-                    const r = await bot.withdrawItem(w.bankItem, w.amount, { asNote: w.noted });
+                    // Bank slots compact as preceding stacks are emptied.
+                    const live = sdk.getBankItems().find(i => i.id === w.bankItem.id);
+                    const r = live ? await bot.withdrawItem(live, w.amount, { asNote: w.noted }) : { success: false, message: 'bank item disappeared' };
                     if (!r.success) {
                         ok = false;
                         ctx.log('withdraw failed', { item: w.bankItem.name, amount: w.amount, result: r.message });
                         break;
                     }
+                }
+                if (ok && this.o.deliveryRun) {
+                    const expected = new Map<number, number>();
+                    for (const w of plan.withdrawals) {
+                        const id = w.noted ? noteOf(w.bankItem.id) : w.bankItem.id;
+                        if (id === undefined) { ok = false; break; }
+                        expected.set(id, (expected.get(id) ?? 0) + w.amount);
+                    }
+                    ok = ok && sameItems(expected, countById(sdk.getInventory()));
+                    if (!ok) ctx.log('delivery staging inventory mismatch', { package: this.pending.name, expected: Object.fromEntries(expected), observed: Object.fromEntries(countById(sdk.getInventory())) });
                 }
                 if (ok) {
                     this.held = countById(sdk.getInventory());
@@ -1370,13 +1867,42 @@ class Mule {
         await closeBank(ctx);
     }
 
+    private async stageCarryGroup(first: Package): Promise<void> {
+        const { sdk, bot } = this.ctx;
+        const group = deliveryGroup(this.ordered, first);
+        try {
+            if (group.some(p => this.deliveryWasServed(p))) throw new Error('carry group contains an already served delivery');
+            const stage = planCarryGroup(group, sdk.getBankItems());
+            for (const w of stage.withdrawals) {
+                if (!this.controlAllowsDelivery() || this.ctx.signal.aborted) throw new Error('delivery staging aborted');
+                const live = sdk.getBankItems().find(b => b.id === w.bankItem.id);
+                if (!live || !(await bot.withdrawItem(live, w.amount, { asNote: w.noted })).success) throw new Error(`carry withdrawal failed: ${w.bankItem.name}`);
+            }
+            if (!stagedExactly(sdk.getInventory(), stage.inventory).exact) throw new Error('carry staged inventory differs from bank plan');
+            for (const pkg of group) {
+                const needs = carriedNeeds(fullDeliveryPackage(pkg), sdk.getInventory());
+                if (!carriedReady(needs) || !sameItems(needs.held, stage.held.get(pkg)!)) throw new Error(`carry reservation mismatch: ${pkg.name}`);
+            }
+            this.carryStage = stage;
+            this.held = stage.held.get(first)!;
+            this.shortSince = 0;
+            this.ctx.log('carry group ready', { packages: group.map(p => p.name), peakSlots: stage.peakSlots, inventory: Object.fromEntries(stage.inventory) });
+        } catch (e) {
+            this.shortSince = Date.now();
+            this.ctx.log('carry group refused', { package: first.name, reason: String(e) });
+        }
+    }
+
     private async openTradeWith(name: string): Promise<boolean> {
         const { sdk, bot } = this.ctx;
         const t = sdk.getTradeState();
         if (t.isOpen && canonName(t.partner ?? '') === canonName(name)) return true;
         await closeBank(this.ctx);
         // About 15 s of ticks at 400 ms; the default backstop only gives up.
-        const r = await openTrade(sdk, name, { maxTicks: 38 });
+        const r = await openTrade(sdk, name, {
+            maxTicks: 38,
+            ...(this.o.deliveryRun ? { stopped: (s: BotWorldState) => !this.deliveryAuthorized() || !this.deliveryAt() || this.ctx.signal.aborted || !deliveryTradeReach(s, name) } : {})
+        });
         if (!r.ok) this.ctx.log('trade open failed', { with: name, result: r.reason });
         return r.ok;
     }
@@ -1385,6 +1911,11 @@ class Mule {
         const { ctx } = this;
         const { sdk, bot } = ctx;
         this.phase(this.packageReady() ? 'serve' : 'consolidate');
+        if (this.o.deliveryRun && (!this.deliveryAuthorized() || !this.deliveryAt() || !this.packageReady() || this.needsBank || this.travelling)) {
+            if (sdk.getTradeState().isOpen) await bot.declineTrade();
+            ctx.log('delivery trade refused', { row: this.pending?.scope?.step });
+            return;
+        }
         if (!this.packageReady()) {
             // Nothing to give: take what the scored account hands back.
             await this.receiveFrom(name);
@@ -1396,18 +1927,45 @@ class Mule {
             if (this.wildlife.length && !sdk.getTradeState().isOpen) await this.clearWildlife();
             this.held = carriedNeeds(this.pending!, sdk.getInventory()).held;
         } else {
-            const staged = stagedExactly(sdk.getInventory(), this.held);
+            const staged = stagedExactly(sdk.getInventory(), this.carryStage?.inventory ?? this.held);
             if (!staged.exact) {
                 ctx.log('serve refused: the inventory is not exactly the package; re-staging', { package: this.pending?.name, extra: staged.extra, short: staged.short });
                 if (sdk.getTradeState().isOpen) await bot.declineTrade();
-                this.held = null;
-                this.needsBank = true;
+                if (this.carryStage) this.deliveryFault = true;
+                else {
+                    this.held = null;
+                    this.needsBank = true;
+                }
                 return;
             }
         }
         if (!(await this.openTradeWith(name))) return;
         const pkg = this.pending!;
+        if (this.o.deliveryRun) await this.ctx.state.set('mule-delivery-attempt', { runId: this.o.deliveryRun, pkg: pkg.name, session: this.pendingSession });
+        this.publishDelivery();
         const session = this.pendingSession;
+        const stage = this.carryStage;
+        let confirmed: { gave: TradeItem[]; received: TradeItem[] } | null = null;
+        const topUpIds = new Set(sdk.getInventory().filter(i => pkg.items.some(spec => isTopUp(spec) && refMatches(spec, i))).map(i => i.id));
+        const deliveryStop = (s: BotWorldState): string | null => {
+            if (!this.deliveryAuthorized() || ctx.signal.aborted) return 'delivery authorization withdrawn';
+            if (!stage || !s.trade?.isOpen) return null;
+            const incomingSlots = s.trade.theirOffer.reduce((n, i) => {
+                let noted = false;
+                try { noted = namesNote({ id: i.id }); } catch { /* Unknown ids are conservatively unstackable. */ }
+                return n + (noted || isStackableName(i.name) ? 1 : i.count);
+            }, 0);
+            if (incomingSlots > (pkg.takeBackSlots ?? 0)) return 'carry take-back slot limit exceeded';
+            const offered = countById(s.trade.myOffer);
+            const validOffer = offered.size > 0 && holds(this.held!, offered)
+                && [...this.held!].every(([id, count]) => topUpIds.has(id) || offered.get(id) === count);
+            // Completion can publish empty confirm lists and inventory changes before the close.
+            // Preserve the real confirm snapshot; intermediate inventory is not a stable boundary.
+            if (!confirmed && s.trade.screen === 'confirm' && sameName(s.trade.partner ?? '', this.o.serve!) && validOffer) {
+                confirmed = { gave: s.trade.myOffer.map(i => ({ ...i })), received: s.trade.theirOffer.map(i => ({ ...i })) };
+            }
+            return null;
+        };
         // 30 s, not 60: a pre-request can open a trade the scored account did not ask for
         // yet (it accepts a stale request of theirs), and that screen must not linger.
         const r = await serveStaged(sdk, bot, {
@@ -1418,7 +1976,8 @@ class Mule {
             timeoutMs: 30_000,
             ask: { dir: this.o.cueDir, openMs: this.openSeenMs || Date.now(), lastServedMs: this.lastAskMs, maxTicks: this.o.askWaitTicks, signal: ctx.signal },
             log: ctx.log,
-            exact: this.o.carried
+            exact: this.o.carried || !!stage,
+            ...(this.o.deliveryRun ? { stopIf: deliveryStop } : {})
         });
         this.touch();
         if (r.ask) this.lastAskMs = r.ask.ms;
@@ -1434,21 +1993,52 @@ class Mule {
             ...(r.topUps.length ? { asked: r.ask?.items ?? null, topUps: r.topUps.map(t => ({ item: t.item, asked: t.asked, n: t.n })) } : {})
         });
         if (r.success) {
+            if (stage) {
+                // Only the proved trade's confirmed offers may change the frozen inventory.
+                const outcome = confirmed as { gave: TradeItem[]; received: TradeItem[] } | null;
+                const expected = new Map(stage.inventory);
+                if (outcome) {
+                    for (const i of outcome.gave) expected.set(i.id, (expected.get(i.id) ?? 0) - i.count);
+                    for (const i of outcome.received) expected.set(i.id, (expected.get(i.id) ?? 0) + i.count);
+                    for (const [id, count] of expected) if (count === 0) expected.delete(id);
+                }
+                if (!outcome || !stagedExactly(sdk.getInventory(), expected).exact) {
+                    this.deliveryFault = true;
+                    await ctx.state.set('mule-delivery-fault', {
+                        runId: this.o.deliveryRun, pkg: pkg.name, session, reason: 'carry trade inventory mismatch',
+                        expected: Object.fromEntries(expected), observed: Object.fromEntries(countById(sdk.getInventory()))
+                    });
+                    ctx.log('carry trade inventory mismatch: reconciliation required', { package: pkg.name });
+                } else stage.inventory = expected;
+                stage.held.delete(pkg);
+            }
             this.held = null;
             if (this.o.carried) {
                 // On disk before anything else: a restart must find it served (role.ts RoleState).
                 await this.ctx.state.set(CARRIED_SERVED_KEY, [...this.servedEntries(), { pkg: pkg.name, session, ms: Date.now() } satisfies CarriedServed]);
                 this.done.add(pkg.name);
             }
-            if (this.o.serveMode === 'order') {
+            if (this.o.deliveryRun) {
+                await this.finishDelivery(pkg);
+            } else if (this.o.serveMode === 'order') {
                 ({ nextIndex: this.nextIndex, pending: this.pending } = afterServe(this.ordered, this.nextIndex, pkg));
             } else {
                 this.pending = null;
             }
-            this.pendingSession = 'order';
+            if (!this.o.deliveryRun) this.pendingSession = 'order';
             if (this.o.carried) ctx.log('carried: left', { inventory: sdk.getInventory().length, short: carriedShort(this.o.packages.filter(p => !this.done.has(p.name)), sdk.getInventory()) });
         }
-        this.needsBank = !this.o.carried;
+        if (this.o.deliveryRun && !r.success) {
+            if (sdk.getTradeState().isOpen) await bot.declineTrade();
+            if (r.uncertain) {
+                this.deliveryFault = true;
+                ctx.log('delivery outcome uncertain: reconciliation required', { row: pkg.scope!.step, session });
+            } else {
+                await this.ctx.state.set('mule-delivery-attempt', undefined);
+            }
+        }
+        if (!this.o.deliveryRun) this.needsBank = !this.o.carried;
+        this.publishDelivery();
     }
 
     private async courierTrade(name: string): Promise<void> {

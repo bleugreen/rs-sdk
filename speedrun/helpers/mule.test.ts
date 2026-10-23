@@ -6,6 +6,8 @@ import { join } from 'node:path';
 
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
+import { initPathfinding } from '../../sdk/pathfinding';
+import { allocateIfAbsent, __set, CollisionFlag } from '../../server/vendor/rsmod-pathfinder';
 import type { BankItem, BotWorldState, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
 import type { CombatEvent, NearbyNpc, PlayerState } from '../../sdk/types';
 import { baseState, drive, FakeSdk, flush, simulateWalking } from '../lib/fake-sdk';
@@ -32,6 +34,7 @@ import {
     courierPicks,
     cueEpoch,
     decidePreRequest,
+    deliveryTradeReach,
     depositAllExcept,
     firstSlotPerId,
     giveOpenTrade,
@@ -212,7 +215,7 @@ describe('packages', () => {
     });
 
     test('stackable guess covers coins, runes and ammunition but not plain items', () => {
-        for (const n of ['Coins', 'Law rune', 'Rune arrows', 'Mithril dart tips', 'Feather', 'Rune arrowtips', 'Thread', 'Nails']) expect(isStackableName(n)).toBe(true);
+        for (const n of ['Coins', 'Law rune', 'Rune arrows', 'Mithril dart tips', 'Feather', 'Rune arrowtips', 'Thread', 'Nails', 'Needle', 'Swamp paste']) expect(isStackableName(n)).toBe(true);
         for (const n of ['Rune essence', 'Logs', 'Shark', 'Rune platebody', 'Knife']) expect(isStackableName(n)).toBe(false);
         expect(isStackableName('Rune knife')).toBe(true);
     });
@@ -344,6 +347,51 @@ describe('pre-request (lib/trade.ts decideTradeClick)', () => {
         expect(run([f(11), f(12), f(30)], true, pending)).toEqual([]);
         expect(run([f(10), f(11)], false)).toEqual([]);
         expect(run([f(10, { nearbyPlayers: [{ ...SCORED, distance: 13 }] } as Partial<BotWorldState>)])).toEqual([]);
+    });
+});
+
+describe('delivery trade clicks stay on the meeting tile', () => {
+    const state = (dx: number, dz: number) => baseState({
+        player: { worldX: 10000, worldZ: 10000, level: 3 } as PlayerState,
+        nearbyPlayers: [{ kind: 'player', index: 9, name: 'Cairn Scored', combatLevel: 3, x: 10000 + dx, z: 10000 + dz, distance: Math.max(Math.abs(dx), Math.abs(dz)) }]
+    });
+    const clear = () => {
+        initPathfinding();
+        for (let x = 9999; x <= 10001; x++) for (let z = 9999; z <= 10001; z++) {
+            allocateIfAbsent(x, z, 3);
+            __set(x, z, 3, CollisionFlag.OPEN);
+        }
+    };
+    test('overlap, diagonal and a distant partner cannot cause helper approach; legacy pre-request is unchanged', () => {
+        clear();
+        for (const [dx, dz] of [[0, 0], [1, 1], [12, 0]]) {
+            const s = state(dx!, dz!);
+            expect(deliveryTradeReach(s, 'cairn_scored')).toBe(false);
+            expect(decidePreRequest(s, newClickCtx(), 'cairn_scored', true, true).send).toBeUndefined();
+            expect(decidePreRequest(s, newClickCtx(), 'cairn_scored', true).send).toBe(9);
+        }
+    });
+    test('all clear cardinal sides may request, but withheld authorization never requests', () => {
+        clear();
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const s = state(dx!, dz!);
+            expect(deliveryTradeReach(s, 'cairn_scored')).toBe(true);
+            expect(decidePreRequest(s, newClickCtx(), 'cairn_scored', true, true).send).toBe(9);
+            expect(decidePreRequest(s, newClickCtx(), 'cairn_scored', false, true).send).toBeUndefined();
+        }
+    });
+    test('the canonical entity side predicate refuses a blocking wall and live unreachable observations', () => {
+        clear();
+        const s = state(1, 0);
+        __set(10000, 10000, 3, CollisionFlag.WALL_EAST);
+        __set(10001, 10000, 3, CollisionFlag.WALL_WEST);
+        try {
+            expect(deliveryTradeReach(s, 'cairn_scored')).toBe(false);
+            expect(decidePreRequest(s, newClickCtx(), 'cairn_scored', true, true).send).toBeUndefined();
+        } finally { clear(); }
+        s.nearbyPlayers[0]!.reachable = false;
+        expect(deliveryTradeReach(s, 'cairn_scored')).toBe(false);
+        expect(deliveryTradeReach(null, 'cairn_scored')).toBe(false);
     });
 });
 
