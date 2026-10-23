@@ -140,6 +140,15 @@ async function stageScored(f: MuleDeliveryFixture) {
     await mustTele(scored.sdk, a.x, a.z, a.level ?? 0);
 }
 
+/** The checkout's commit, or a scratch copy's LAB_COMMIT (a `git archive` tree has no repository). */
+function revision(): string {
+    try {
+        return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    } catch {
+        try { return readFileSync(join(ROOT, 'LAB_COMMIT'), 'utf8').trim(); } catch { return 'unknown'; }
+    }
+}
+
 const rowsOut: Record<string, unknown>[] = [];
 const muleLines: Record<string, unknown>[] = [];
 let pass = false;
@@ -148,7 +157,7 @@ let roleError: unknown;
 const stop = new AbortController();
 
 try {
-    emit('start', { host: hostname(), revision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim(), tickRate: process.env.NODE_TICKRATE, client, hold, runId, root, rows: ROWS });
+    emit('start', { host: hostname(), revision: revision(), tickRate: process.env.NODE_TICKRATE, client, hold, runId, root, rows: ROWS });
     if (client === 'browser') secure = await openSecureLabSession(scoredName);
     scored = secure?.session ?? await openSession(scoredName, { client, launch: true });
     mule = await openSession(muleName);
