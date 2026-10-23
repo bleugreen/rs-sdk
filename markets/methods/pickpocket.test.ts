@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { nextErrand, shouldEat } from './pickpocket';
+import { nextErrand, roamTo, shouldEat } from './pickpocket';
 
 describe('shouldEat', () => {
     const base = { maxHp: 70, heal: 20, damage: 3, window: true, ticksSinceEat: 10 };
@@ -25,5 +25,15 @@ describe('nextErrand', () => {
         expect(nextErrand({ food: 5, coins: 50000, bankAt: 50000, atStation: true })).toBe('bank');
         expect(nextErrand({ food: 5, coins: 10, bankAt: 50000, atStation: false })).toBe('go');
         expect(nextErrand({ food: 5, coins: 10, bankAt: 50000, atStation: true })).toBe('thieve');
+    });
+});
+
+describe('roamTo', () => {
+    const spawns = [{ x: 0, z: 0 }, { x: 10, z: 0 }, { x: 30, z: 0 }];
+    test('nearest untried spawn, then the round restarts', () => {
+        expect(roamTo(spawns, { x: 12, z: 0 }, new Set())).toBe(1);
+        expect(roamTo(spawns, { x: 12, z: 0 }, new Set([1]))).toBe(0);
+        expect(roamTo(spawns, { x: 12, z: 0 }, new Set([0, 1]))).toBe(2);
+        expect(roamTo(spawns, { x: 12, z: 0 }, new Set([0, 1, 2]))).toBe(1);
     });
 });
