@@ -64,6 +64,12 @@ const STAGE_TRIES = 3;
 /** Sessions that end in an error within this long of their login count towards giving the account up. */
 const SHORT_SESSION_MS = 120_000;
 const READINGS_KEEP_MS = 3 * 3_600_000;
+/**
+ * A knights login counts as working for the ramp only at this Thieving level: the rate climbs with the level (55 to
+ * 99 within ~2,000 ticks at 25x xp), so a hold that began below it would set a low first-step reference and hide a
+ * later step's crowding loss. The lab run's step 1 was measured mid-climb and its 8 logins ran 14% under step 2's.
+ */
+const RAMP_THIEVING = 99;
 
 interface Reading {
     at: number;
@@ -93,6 +99,7 @@ class Worker {
     saleDue: { item: { id: number; name: string }; floor: number } | null = null;
     lastSaleAt = Date.now();
     shortSessions = 0;
+    thieving = 1;
     logout: Record<string, unknown> | null = null;
     /** First tick of this session and when it was seen: the session's observed ms a tick. */
     private tick0: { tick: number; at: number } | null = null;
@@ -447,7 +454,7 @@ export class Runner {
             this.event(w, 'admitted to the knights', { step: r.stepNumber }, true);
         }
         if (r.phase === 'admitting') {
-            const working = admitted.filter(w => w.stage === 'method' && w.readings.length > 0).length;
+            const working = admitted.filter(w => w.stage === 'method' && w.readings.length > 0 && w.thieving >= RAMP_THIEVING).length;
             if (r.update(now, admitted.length >= r.admitted() && working === admitted.length)) {
                 this.ledger({ kind: 'ramp-hold', step: r.stepNumber, logins: admitted.length, working, holdMinutes: this.plan.ramp!.holdMinutes });
                 this.event(null, 'ramp hold', { step: r.stepNumber, logins: admitted.length, working }, true);
@@ -504,6 +511,7 @@ export class Runner {
             w.bank = stacks(s.bank.items);
             w.bankTick = s.tick;
         }
+        w.thieving = s.skills.find(k => k.name === 'Thieving')?.baseLevel ?? w.thieving;
         const msPerTick = w.msPerTick(s);
         if (w.nextLedgerTick >= 0 && s.tick < w.nextLedgerTick) return;
         w.nextLedgerTick = s.tick + this.plan.ledger.everyTicks;
