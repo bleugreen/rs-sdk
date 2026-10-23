@@ -264,11 +264,11 @@ if (helper) await closeSession(helper);
 
 if (h13Runs.length) {
     console.log(`\nH13 in Kolodion's cellar (m, lab, T=${process.env.NODE_TICKRATE ?? '?'}; A from the arrival tile, the swap from SCORED's first trade click):`);
-    console.log('| run | A ticks | swap ticks | open ticks | unequipped | free before | free after | entry check | staff worn | in arena |');
-    console.log('|---|---|---|---|---|---|---|---|---|---|');
+    console.log('| run | A ticks | swap ticks | open ticks | unequipped | dropped | free before | free after | entry check | staff worn | in arena |');
+    console.log('|---|---|---|---|---|---|---|---|---|---|---|');
     for (const r of h13Runs) {
         const sw = r.swap as HandOffReport | null;
-        console.log(`| ${r.run} | ${r.aTicks} | ${sw?.ticks ?? '-'} | ${sw?.openTicks ?? '-'} | ${sw?.unequipped.length ?? '-'} | ${r.freeBefore} | ${r.freeAfter} | ${r.entryRefusal ?? 'clean'} | ${r.staffWorn} | ${r.inArena} |`);
+        console.log(`| ${r.run} | ${r.aTicks} | ${sw?.ticks ?? '-'} | ${sw?.openTicks ?? '-'} | ${sw?.unequipped.length ?? '-'} | ${sw?.dropped.join(', ') || '-'} | ${r.freeBefore} | ${r.freeAfter} | ${r.entryRefusal ?? 'clean'} | ${r.staffWorn} | ${r.inArena} |`);
     }
     result('S16_h13_summary', { pass: h13Runs.every(r => r.aOk && r.entryRefusal === null && r.staffWorn), runs: h13Runs });
 }

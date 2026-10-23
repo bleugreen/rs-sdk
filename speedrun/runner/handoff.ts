@@ -159,8 +159,10 @@ export function planHandOff(row: LedgerRow): HandOffPlan {
         if (e.count === null) throw new Error(`${at}: in ${itemLabel(e)} x? has no count, so the trade cannot check the offer`);
         return { ...matchOf(e, at, e.kind === 'n'), count: e.count, kind: e.kind, topUp: e.topUp === true };
     });
-    const both = [...give, ...drop].filter(g => receive.some(r => overlaps(g, r)));
-    if (both.length) throw new Error(`${at}: ${both.map(g => g.name).join(', ')} both out and received`);
+    const both = give.filter(g => receive.some(r => overlaps(g, r)));
+    if (both.length) throw new Error(`${at}: ${both.map(g => g.name).join(', ')} both given and received`);
+    const dropIn = drop.filter(g => receive.some(r => overlaps(g, r)));
+    if (dropIn.length) throw new Error(`${at}: ${dropIn.map(g => g.name).join(', ')} both dropped and received`);
     if (!give.length && !receive.length && !placeholders.length) throw new Error(`${at}: nothing given and nothing received`);
     const worn = (on: boolean) => row.equip.filter(e => e.on === on).map(e => ({ name: e.name, pattern: itemPattern(e.name), perObj: false }));
     return { id: row.row, line: row.line, receive, give, drop, wield: worn(true), unwield: worn(false), placeholders };

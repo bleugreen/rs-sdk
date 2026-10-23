@@ -4,11 +4,11 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
 import { baseState, drive, FakeSdk, FakeTradePartner } from '../lib/fake-sdk';
-import { noteOf } from '../lib/items';
+import { noteOf, untradeable } from '../lib/items';
 import { TickLog } from '../lib/ticks';
 import { MANIFEST, parseLedger } from '../tools/slot-ledger';
 import {
-    giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffStep, itemPattern, loadHandOff, planHandOff, runHandOff, toUnequip, tradeKind, tradeLanded,
+    giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffStep, itemPattern, loadHandOff, planHandOff, runHandOff, slotPlan, toUnequip, tradeKind, tradeLanded,
     type HandOffPlan, type HandOffReport,
 } from './handoff';
 import { Observation, resolveResume } from './resume';
@@ -28,6 +28,10 @@ const TABLE = `
 | T01-02 | - | bronze axe x1 (drop) | - | 0 | fixture (r) |
 | H99 | - | bronze axe x1 (drop) | - | 0 | fixture (r) |
 | H98 | tree items x? [u] | - | - | 0 | fixture (r) |
+| H96 | staff of fire x1 [u] | magic shortbow x1 (swap); khazard helmet x1 (drop: unworn first) | +staff of fire | 1 | fixture (r) |
+| H95 | staff of fire x1 [u] | khazard helmet x1 (swap: unworn first) | - | 1 | fixture (r) |
+| H94 | staff of fire x1 [u] | khazard armour @75 x1 (trade) | - | 1 | fixture (r) |
+| H93 | staff of fire x1 [u] | magic shortbow x1 (swap); khazard helmet x1 (drop: unworn first); khazard armour x1 (drop: unworn first) | +staff of fire | 1 | fixture (r) |
 `;
 
 const plan = (id: string) => handOffFrom(TABLE, id);
@@ -38,7 +42,7 @@ const PARTNER = 'Helper';
 const IDS: Record<string, number> = {
     'Staff of water': 1383, 'Cosmic rune': 564, 'Air rune': 556, 'Law rune': 563, 'Staff of fire': 1387, Knife: 946, 'Blood rune': 565,
     'Prayer potion(4)': 2434, 'Magic shortbow': 861, 'Cannon base': 6, Cannonball: 2, 'Mithril scimitar': 1329, Logs: 1511, Coins: 995,
-    Shark: 385, Tinderbox: 590, 'Bronze axe': 1351,
+    Shark: 385, Tinderbox: 590, 'Bronze axe': 1351, 'Khazard helmet': 74, 'Khazard armour': 75,
 };
 const STACKS = /rune$|^coins$|^cannonball$/i;
 /** Banknotes stack whatever their name (obj.pack: cert_guamvial, cert_iritvial). */
@@ -101,6 +105,7 @@ describe('planHandOff: a ledger row as a hand-off', () => {
         expect(tradeKind(h13)).toBe('swap');
         expect(h13.give.map(g => [g.name, g.count])).toEqual([['magic shortbow', 1]]);
         expect(h13.wield.map(w => w.name)).toEqual(['staff of fire']);
+        expect(h13.drop).toEqual([]);
         const h11r = plan('H11r');
         expect(tradeKind(h11r)).toBe('swap');
         expect(h11r.receive).toEqual([]);
@@ -120,9 +125,21 @@ describe('planHandOff: a ledger row as a hand-off', () => {
 
     test('refuses a row the trade cannot carry out', () => {
         expect(() => plan('T01-02')).toThrow(/not a hand-off row/);
-        expect(() => plan('H99')).toThrow(/bronze axe \(drop\) is not given in the trade/);
+        // A drop alone is no trade.
+        expect(() => plan('H99')).toThrow(/^H99 \(line \d+\): nothing given and nothing received$/);
         expect(() => plan('H98')).toThrow(/tree items x\? has no count/);
         expect(() => plan('H77')).toThrow(/no ledger row H77/);
+        expect(() => handOffFrom(TABLE.replace('(drop: unworn first) | +staff', '(consume) | +staff'), 'H96')).toThrow(/out khazard helmet \(consume\) is neither given in the trade nor dropped on the tile/);
+    });
+
+    test('drop entries are never given; a swap or trade of an untradeable obj is refused when the row is planned, by name or by id', () => {
+        expect([untradeable(74), untradeable(75), untradeable(IDS['Magic shortbow']!), untradeable(IDS.Knife!)]).toEqual([true, true, false, false]);
+        const h96 = plan('H96');
+        expect(tradeKind(h96)).toBe('swap');
+        expect(h96.give.map(g => g.name)).toEqual(['magic shortbow']);
+        expect(h96.drop.map(g => [g.name, g.count])).toEqual([['khazard helmet', 1]]);
+        expect(() => plan('H95')).toThrow(/^H95 \(line \d+\): out khazard helmet \(swap\): the engine refuses it in a trade \(obj 74 untradeable in the content's obj config; trade\.rs2\), so the row must drop it$/);
+        expect(() => plan('H94')).toThrow(/^H94 \(line \d+\): out khazard armour.*\(trade\): the engine refuses it in a trade \(obj 75 /);
         expect(() => handOffFrom('no table here', 'H1')).toThrow(/does not parse/);
         const both = parseLedger('| row | in | out | equip | needAtStart | source |\n| H5 | knife x1 [u] | knife x1 (swap) | - | 0 | x (r) |').rows[0]!;
         expect(() => planHandOff(both)).toThrow(/knife both given and received/);
@@ -204,8 +221,10 @@ describe('run: the trade through lib/trade.ts', () => {
     test('give-and-receive (H13): one swap, the bow out, the staff and knife in, the staff wielded', async () => {
         const sdk = new TradeServer(state([...filler(5), item(5, 'Magic shortbow')]), tradeItems([['Staff of fire'], ['Knife'], ['Blood rune', 70], ['Prayer potion(4)'], ['Prayer potion(4)']]));
         const { step, reports } = await runStep(sdk, plan('H13'));
-        expect(reports[0]).toMatchObject({ trade: 'swap', ok: true, gave: ['Magic shortbow x1'] });
+        expect(reports[0]).toMatchObject({ trade: 'swap', ok: true, gave: ['Magic shortbow x1'], dropped: [] });
         expect(sdk.tradeClicks).toHaveLength(1);
+        // A row with no drop sends none: the trade's packets are as they were.
+        expect(sdk.sent.some(a => a.method === 'sendDropItem')).toBe(false);
         expect(sdk.state!.equipment.map(e => e.name)).toEqual(['Staff of fire']);
         expect(step.postconditions(sdk.state!, {})).toBe(true);
     });
@@ -226,6 +245,54 @@ describe('run: the trade through lib/trade.ts', () => {
         expect(sdk.state!.equipment.map(e => e.name)).toEqual(['Magic shortbow']);
         expect(sdk.state!.inventory.filter(i => i.name === 'Logs')).toHaveLength(2);
         expect(step.postconditions(sdk.state!, {})).toBe(true);
+    });
+
+    test('a drop row (H96): the worn helmet comes off and is dropped before the first trade click, never offered; the bow is traded', async () => {
+        const start = state([...filler(5), item(5, 'Magic shortbow')], [wornItem('Khazard helmet')]);
+        const before = slotPlan(start, plan('H96'));
+        const sdk = new TradeServer(start, tradeItems([['Staff of fire']]));
+        const { step, reports } = await runStep(sdk, plan('H96'));
+        expect(reports[0]).toMatchObject({ trade: 'swap', ok: true, gave: ['Magic shortbow x1'], unequipped: ['Khazard helmet'], dropped: ['Khazard helmet'] });
+        const methods = sdk.sent.map(a => a.method);
+        expect(methods.filter(m => m === 'sendDropItem')).toHaveLength(1);
+        expect(methods.indexOf('sendDropItem')).toBeLessThan(methods.indexOf('sendTradeRequest'));
+        // One offer, the bow's: the confirm never carries the helmet, and the engine never refused one.
+        expect(methods.filter(m => m === 'sendOfferItem')).toHaveLength(1);
+        expect(sdk.state!.gameMessages.some(m => /can't trade/.test(m.text))).toBe(false);
+        // Free slots: 22 before; the helmet's unequip takes one, the bow and the helmet free two, the staff
+        // takes one and its wield gives it back: 23 after, as the slot plan said.
+        expect(before).toMatchObject({ free: 22, freed: 2, adds: 1, after: 23 });
+        expect(before.off.map(i => i.name)).toEqual(['Khazard helmet']);
+        expect(28 - sdk.state!.inventory.length).toBe(23);
+        expect(sdk.state!.equipment.map(e => e.name)).toEqual(['Staff of fire']);
+        expect(step.postconditions(sdk.state!, {})).toBe(true);
+        expect(step.done!(new Observation(sdk.state!), {})).toBe(true);
+    });
+
+    test('a restart partway through the drops (H93): what is already gone is neither dropped again nor a refusal', async () => {
+        // The helmet was dropped before the restart; the armour is still worn.
+        const half = new TradeServer(state([...filler(5), item(5, 'Magic shortbow')], [wornItem('Khazard armour')]), tradeItems([['Staff of fire']]));
+        const first = await runStep(half, plan('H93'));
+        expect(first.reports[0]).toMatchObject({ ok: true, dropped: ['Khazard armour'], gave: ['Magic shortbow x1'] });
+        expect(half.sent.filter(a => a.method === 'sendDropItem')).toHaveLength(1);
+        expect(first.step.postconditions(half.state!, {})).toBe(true);
+        // Both gone before the restart: no drop is sent at all, and the trade runs.
+        const none = new TradeServer(state([...filler(5), item(5, 'Magic shortbow')]), tradeItems([['Staff of fire']]));
+        const second = await runStep(none, plan('H93'));
+        expect(second.reports[0]).toMatchObject({ ok: true, dropped: [], gave: ['Magic shortbow x1'] });
+        expect(none.sent.some(a => a.method === 'sendDropItem')).toBe(false);
+        // A drop of an item still held at a part count is refused like a part give.
+        expect(handOffPre(state([item(0, 'Magic shortbow')], [wornItem('Khazard armour')]), plan('H93'), PARTNER)).toBe(true);
+    });
+
+    test('an untradeable obj under a give (a hand-built plan): handOffPre refuses it, and the engine refuses its offer', async () => {
+        const h96 = plan('H96');
+        const bad: HandOffPlan = { ...h96, give: [...h96.give, ...h96.drop], drop: [] };
+        const s = state([...filler(5), item(5, 'Magic shortbow')], [wornItem('Khazard helmet')]);
+        expect(handOffPre(s, bad, PARTNER)).toBe('H96: gives khazard helmet, but the engine refuses Khazard helmet (obj 74) in a trade: the row must drop it');
+        const sdk = new TradeServer(s, tradeItems([['Staff of fire']]));
+        await expect(drive(sdk, runHandOff(sdk, bad, PARTNER, { maxTicks: 15 }), 200)).rejects.toThrow(/^H96 with Helper/);
+        expect(sdk.state!.gameMessages.some(m => m.text === "You can't trade this item.")).toBe(true);
     });
 
     test('receive-only opens on an observed-tick bound: a partner who never answers fails at openTicks, not on the wall clock', async () => {

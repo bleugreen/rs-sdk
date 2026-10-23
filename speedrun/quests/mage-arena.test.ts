@@ -530,17 +530,11 @@ const H13_OFFER = [
 
 const CELLAR: Options = { h13At: 'cellar', kitFrom: HELPER };
 
-/** The server and the helper (FakeTradePartner), with drops served from the sends. */
+/** The server and the helper (FakeTradePartner, which serves the drops and refuses untradeable offers). */
 function cellarSdk(s: BotWorldState) {
     const sdk = new FakeTradePartner(s, H13_OFFER, { partner: HELPER, stacks: t => /rune$|arrow$|^coins$/i.test(t.name), weapon: name => /staff|bow|greegree/i.test(name) });
-    let handled = 0;
-    const each = (st: BotWorldState): Partial<BotWorldState> => {
-        const drops = sdk.sent.filter(a => a.method === 'sendDropItem').slice(handled).map(a => a.args[0] as number);
-        handled += drops.length;
-        return drops.length ? { inventory: st.inventory.filter(i => !drops.includes(i.slot)) } : {};
-    };
     const ctx = { sdk, c: {}, log: TickLog.memory('t') } as unknown as StepContext<unknown>;
-    return { sdk, each, ctx };
+    return { sdk, ctx };
 }
 
 describe("h13At: the ledger's H13 row and the default", () => {
@@ -554,10 +548,11 @@ describe("h13At: the ledger's H13 row and the default", () => {
         const staffed = { ...s, equipment: [...s.equipment.filter(e => !/greegree/i.test(e.name)), wornAt('Staff of fire', ID.staffOfFire, 3)] };
         expect(seg('A').preconditions(staffed, {})).toMatch(/Kolodion's entry check.*Khazard helmet worn/);
     });
-    test('STEP-MANIFEST.md has the H13 row the cellar swap trades: the kit, the staff and the knife in; the bow, arrows and Khazard set out', () => {
+    test('STEP-MANIFEST.md has the H13 row the cellar swap trades: the kit, the staff and the knife in; the bow and arrows given; the Khazard set dropped (tradeable=no)', () => {
         const row = loadHandOff(H13_ROW);
         expect(row.receive.map(r => r.name)).toEqual(expect.arrayContaining(['blood rune', 'death rune', 'air rune', 'staff of fire', 'knife']));
-        expect(row.give.map(g => g.name)).toEqual(expect.arrayContaining(['magic shortbow', 'rune arrow', 'khazard helmet', 'khazard armour']));
+        expect(row.give.map(g => g.name)).toEqual(expect.arrayContaining(['magic shortbow', 'rune arrow']));
+        expect(row.drop.map(g => g.name)).toEqual(['khazard helmet', 'khazard armour']);
         expect(row.wield.map(w => w.name)).toEqual(['staff of fire']);
     });
 });
@@ -565,14 +560,15 @@ describe("h13At: the ledger's H13 row and the default", () => {
 describe("cellarPlan: the swap's give list is the row's out plus everything the entry check bars", () => {
     const row = loadHandOff(H13_ROW);
 
-    test('every item entryRefusal names is given, by obj id; the row does not name the bronze arrows, so they are added by id', () => {
+    test('every item entryRefusal names is given or dropped; the row does not name the bronze arrows, so they are added to the gives by id', () => {
         const s = cellarArrival();
         const barred = entryBarred(s);
         expect(barred.map(b => `${b.item.name} ${b.where}`)).toEqual(['Khazard helmet worn', 'Khazard armour worn', 'Rune arrow worn', 'Magic shortbow carried', 'Bronze arrow carried']);
         expect(entryRefusal(s)).toBe(`Kolodion's entry check (mage_arena.rs2:100-138) refuses: ${barred.map(b => `${b.item.name} ${b.where} (${b.why})`).join(', ')}`);
         const plan = cellarPlan(s, row);
-        for (const b of barred) expect(plan.give.some(g => matches(g, b.item))).toBe(true);
+        for (const b of barred) expect([...plan.give, ...plan.drop].some(g => matches(g, b.item))).toBe(true);
         expect(plan.give.slice(row.give.length).map(g => [g.name, g.ids, g.count])).toEqual([['bronze arrow', [CELLAR_ID.bronzeArrow], 'all']]);
+        expect(plan.drop).toEqual(row.drop);
         expect(plan.receive).toBe(row.receive);
     });
     test('nothing barred beyond the row: the row unchanged', () => {
@@ -613,14 +609,18 @@ describe("A in cellar mode: H13's one swap with kitFrom on the arrival tile", ()
 
     test('runs the swap, wields the staff, drops the gree-gree: entry-clean, staff worn, fight-ready', async () => {
         const reports: HandOffReport[] = [];
-        const { sdk, each, ctx } = cellarSdk(cellarArrival());
+        const { sdk, ctx } = cellarSdk(cellarArrival());
         const A = seg('A', { ...CELLAR, onH13: r => reports.push(r) });
-        await drive(sdk, A.run(ctx) as Promise<unknown>, 120, each);
+        await drive(sdk, A.run(ctx) as Promise<unknown>, 120);
         const end = sdk.getState()!;
         expect(reports).toHaveLength(1);
         expect(reports[0]).toMatchObject({ id: 'H13', partner: HELPER, trade: 'swap', ok: true });
         expect(reports[0]!.unequipped.sort()).toEqual(['Amulet of magic', 'Khazard armour', 'Khazard helmet', 'Rune arrow']);
-        expect(reports[0]!.gave).toEqual(expect.arrayContaining(['Bronze arrow x5', 'Rune arrow x31', 'Magic shortbow x1', 'Khazard helmet x1', 'Khazard armour x1']));
+        expect(reports[0]!.gave).toEqual(expect.arrayContaining(['Bronze arrow x5', 'Rune arrow x31', 'Magic shortbow x1']));
+        // The Khazard set is untradeable: dropped on the arrival tile, never offered, never refused.
+        expect(reports[0]!.gave.some(g => /khazard/i.test(g))).toBe(false);
+        expect([...reports[0]!.dropped].sort()).toEqual(['Khazard armour', 'Khazard helmet']);
+        expect(end.gameMessages.some(m => /can't trade/.test(m.text))).toBe(false);
         // One trade: a single request, one offer burst.
         expect(sdk.tradeClicks).toHaveLength(1);
         expect(entryRefusal(end)).toBeNull();
@@ -632,7 +632,7 @@ describe("A in cellar mode: H13's one swap with kitFrom on the arrival tile", ()
     test('a run resumed after the trade landed only wields and drops: no second trade', async () => {
         const first = cellarSdk(cellarArrival());
         const A = seg('A', CELLAR);
-        await drive(first.sdk, A.run(first.ctx) as Promise<unknown>, 120, first.each);
+        await drive(first.sdk, A.run(first.ctx) as Promise<unknown>, 120);
         // The trade landed, the staff never went on: the gree-gree is back on, the staff in the pack.
         const end = first.sdk.getState()!;
         const landed: BotWorldState = {
@@ -642,7 +642,7 @@ describe("A in cellar mode: H13's one swap with kitFrom on the arrival tile", ()
         };
         expect(pre(landed)).toBe(true);
         const again = cellarSdk(landed);
-        await drive(again.sdk, A.run(again.ctx) as Promise<unknown>, 60, again.each);
+        await drive(again.sdk, A.run(again.ctx) as Promise<unknown>, 60);
         expect(again.sdk.tradeClicks).toHaveLength(0);
         expect(post(again.sdk.getState()!)).toBe(true);
     });
