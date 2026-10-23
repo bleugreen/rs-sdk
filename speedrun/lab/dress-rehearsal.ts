@@ -158,12 +158,13 @@ export function staffSupplyStep(step: ChainStep, manifest: string, planOf?: (s: 
     const run = async (ctx: StepContext<unknown>) => {
         const sdk = ctx.sdk as unknown as HandOffSdk & Parameters<typeof dropMatching>[0];
         const plan = fixed ?? planOf!(sdk.getState()! as BotWorldState);
-        // A worn give (H13's helmet, armour and arrows: "swap: unworn first") comes off first, as the real trade takes it.
+        // A worn give or drop (H13's arrows, "swap: unworn first"; its helmet and armour, "drop: unworn first") comes off first, as the real hand-off takes it.
         await unequipGives(sdk, plan);
-        if (plan.give.length) await dropMatching(sdk, plan.give.flatMap((g): Parameters<typeof dropMatching>[1][number][] => (g.ids ? [...g.ids] : [g.pattern])));
+        const outs = [...plan.give, ...plan.drop];
+        if (outs.length) await dropMatching(sdk, outs.flatMap((g): Parameters<typeof dropMatching>[1][number][] => (g.ids ? [...g.ids] : [g.pattern])));
         for (const st of rows[0]!.stage) await give(sdk, st.obj, st.n);
         await applyEquip(sdk, plan);
-        noteRow(ctx, `${STAFF_SUPPLY_STEP} ${row}`, { row, gave: rows[0]!.stage, dropped: plan.give.map(g => g.name) });
+        noteRow(ctx, `${STAFF_SUPPLY_STEP} ${row}`, { row, gave: rows[0]!.stage, dropped: outs.map(g => g.name) });
     };
     return { id: step.id, kind: 'handoff', name: `${row} hand-off (${STAFF_SUPPLY_STEP})`, logoutSafe: true, preconditions: () => true, postconditions: () => true, run, resume: run };
 }

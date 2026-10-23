@@ -63,6 +63,18 @@ describe('packages from the ledger', () => {
         expect(pkg('H22').package.scope).toEqual({ step: 'H22', family: 'mule' });
     });
 
+    test("a drop is left on SCORED's tile: never among what the mule takes back", () => {
+        const md = [
+            '| row | in | out | equip | needAtStart | source |',
+            '|---|---|---|---|---|---|',
+            '| H13 | staff of fire x1 [u] | magic shortbow x1 (swap); khazard helmet x1 (drop: unworn first) | +staff of fire | 1 | fixture (r) |',
+            '| S16 | - | - | - | 0 | fixture (r) |',
+        ].join('\n');
+        const [h13] = muleFromLedger(md, { rows: ['H13'] });
+        expect(h13!.takesBack.map(b => b.label)).toEqual(['magic shortbow x1']);
+        expect(h13!.package.items).toEqual([{ item: 'Staff of fire', amount: 1 }]);
+    });
+
     test('fixed form: the top-up is a fixed `to`; the package keeps its hand-off scope', () => {
         const h12 = pkg('H12', fixed());
         expect(h12.package.items).toContainEqual({ item: 'Shark', amount: 15 });

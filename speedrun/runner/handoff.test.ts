@@ -3,13 +3,13 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
-import { baseState, drive, FakeSdk, type SentAction } from '../lib/fake-sdk';
-import { noteOf } from '../lib/items';
+import { baseState, drive, FakeSdk, FakeTradePartner } from '../lib/fake-sdk';
+import { noteOf, untradeable } from '../lib/items';
 import { TickLog } from '../lib/ticks';
 import { MANIFEST, parseLedger } from '../tools/slot-ledger';
 import { ASK_FILE, readTopUpAsk } from '../helpers/altar-cue';
 import {
-    askFor, giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffRoom, handOffStep, HandOffRecord, HANDOFFS_FILE, itemPattern, loadHandOff, planHandOff, runHandOff, runHandOffOnCue, toUnequip, tradeKind, tradeLanded,
+    askFor, giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffRoom, handOffStep, HandOffRecord, HANDOFFS_FILE, itemPattern, loadHandOff, planHandOff, runHandOff, runHandOffOnCue, slotPlan, toUnequip, tradeKind, tradeLanded,
     type HandOffPlan, type HandOffReport,
 } from './handoff';
 import { Observation, resolveResume } from './resume';
@@ -29,6 +29,10 @@ const TABLE = `
 | T01-02 | - | bronze axe x1 (drop) | - | 0 | fixture (r) |
 | H99 | - | bronze axe x1 (drop) | - | 0 | fixture (r) |
 | H98 | tree items x? [u] | - | - | 0 | fixture (r) |
+| H96 | staff of fire x1 [u] | magic shortbow x1 (swap); khazard helmet x1 (drop: unworn first) | +staff of fire | 1 | fixture (r) |
+| H95 | staff of fire x1 [u] | khazard helmet x1 (swap: unworn first) | - | 1 | fixture (r) |
+| H94 | staff of fire x1 [u] | khazard armour @75 x1 (trade) | - | 1 | fixture (r) |
+| H93 | staff of fire x1 [u] | magic shortbow x1 (swap); khazard helmet x1 (drop: unworn first); khazard armour x1 (drop: unworn first) | +staff of fire | 1 | fixture (r) |
 `;
 
 const plan = (id: string) => handOffFrom(TABLE, id);
@@ -39,7 +43,7 @@ const PARTNER = 'Helper';
 const IDS: Record<string, number> = {
     'Staff of water': 1383, 'Cosmic rune': 564, 'Air rune': 556, 'Law rune': 563, 'Staff of fire': 1387, Knife: 946, 'Blood rune': 565,
     'Prayer potion(4)': 2434, 'Magic shortbow': 861, 'Cannon base': 6, Cannonball: 2, 'Mithril scimitar': 1329, Logs: 1511, Coins: 995,
-    Shark: 385, Tinderbox: 590, 'Bronze axe': 1351,
+    Shark: 385, Tinderbox: 590, 'Bronze axe': 1351, 'Khazard helmet': 74, 'Khazard armour': 75,
 };
 const STACKS = /rune$|^coins$|^cannonball$/i;
 /** Banknotes stack whatever their name (obj.pack: cert_guamvial, cert_iritvial). */
@@ -71,117 +75,13 @@ function state(inventory: InventoryItem[], equipment: InventoryItem[] = [], o: P
 const tradeItems = (entries: Array<[string, number?]>): TradeItem[] =>
     entries.map(([name, n = 1]) => ({ slot: 0, id: IDS[name] ?? 9999, name, count: n }));
 
-/** Put items into the first free inventory slots, merging stacks. */
-function addTo(inv: InventoryItem[], items: readonly TradeItem[]): InventoryItem[] {
-    const out = [...inv];
-    const free = () => { for (let s = 0; ; s++) if (!out.some(i => i.slot === s)) return s; };
-    for (const t of items) {
-        const stack = stacks(t) ? out.find(i => i.id === t.id) : undefined;
-        if (stack) out[out.indexOf(stack)] = { ...stack, count: stack.count + t.count };
-        else if (stacks(t)) out.push({ ...item(free(), t.name, t.count), id: t.id });
-        else for (let k = 0; k < t.count; k++) out.push({ ...item(free(), t.name), id: t.id });
-    }
-    return out;
-}
-
 /**
- * The server and a partner whose request stands (the hand-off giver on its tile): our trade click
- * opens the screens with its offer up and accepted; an offer of ours resets both accepts and the
- * partner re-accepts two ticks later; the confirm accept swaps the items. Equip clicks land a tick
- * later, a wield displacing the worn weapon into the pack. `logoutAt`: the session drops on that
- * tick with the trade open, and the server refunds our offer.
+ * lib/fake-sdk.ts's trade partner under this file's item rules. `logoutAt`: the session drops on
+ * that tick with the trade open, and the server refunds our offer.
  */
-class TradeServer extends FakeSdk {
-    private queue: Array<{ due: number; fx: (s: BotWorldState) => Partial<BotWorldState> }> = [];
-    tradeClicks: number[] = [];
-    unequipTicks: number[] = [];
-
-    constructor(s: BotWorldState, private theirs: TradeItem[], private opts: { logoutAt?: number } = {}) {
-        super(s);
-        this.onSend = a => this.serve(a);
-    }
-
-    sendCloseModal() { return this.sendAction({ method: 'sendCloseModal', args: [] }); }
-
-    private later(fx: (s: BotWorldState) => Partial<BotWorldState>, d = 1) {
-        this.queue.push({ due: this.state!.tick + d, fx });
-    }
-
-    private serve(a: SentAction) {
-        const s = this.state!;
-        const toConfirm = (tr: NonNullable<BotWorldState['trade']>) => ({ trade: { ...tr, screen: 'confirm' as const, myAccepted: false, partnerAccepted: true } });
-        switch (a.method) {
-            case 'sendTradeRequest':
-                this.tradeClicks.push(s.tick);
-                this.later(cur => ({
-                    gameMessages: [...cur.gameMessages, { type: 0, text: 'Sending trade offer...', tick: cur.tick, sender: '', fromSelf: false }],
-                    trade: cur.trade?.isOpen ? undefined : { isOpen: true, screen: 'offer', partner: PARTNER, myOffer: [], theirOffer: this.theirs, myAccepted: false, partnerAccepted: true },
-                }));
-                break;
-            case 'sendOfferItem': {
-                const slot = a.args[0] as number;
-                this.later(cur => {
-                    const it = cur.inventory.find(i => i.slot === slot);
-                    if (!it || !cur.trade?.isOpen) return {};
-                    const moved = cur.inventory.filter(i => i.id === it.id).reduce((n, i) => n + i.count, 0);
-                    return { inventory: cur.inventory.filter(i => i.id !== it.id), trade: { ...cur.trade, myOffer: [...cur.trade.myOffer, { slot: 0, id: it.id, name: it.name, count: moved }], myAccepted: false, partnerAccepted: false } };
-                });
-                this.later(cur => {
-                    const tr = cur.trade;
-                    if (!tr?.isOpen || tr.screen !== 'offer') return {};
-                    return tr.myAccepted ? toConfirm(tr) : { trade: { ...tr, partnerAccepted: true } };
-                }, 2);
-                break;
-            }
-            case 'sendAcceptTrade':
-                this.later(cur => {
-                    const tr = cur.trade;
-                    if (!tr?.isOpen) return {};
-                    if (tr.screen === 'offer') return tr.partnerAccepted ? toConfirm(tr) : { trade: { ...tr, myAccepted: true } };
-                    return { trade: undefined, inventory: addTo(cur.inventory, tr.theirOffer), gameMessages: [...cur.gameMessages, { type: 0, text: 'Accepted trade.', tick: cur.tick, sender: '', fromSelf: false }] };
-                });
-                break;
-            case 'sendDeclineTrade':
-                this.later(cur => (cur.trade?.isOpen ? { trade: undefined, inventory: addTo(cur.inventory, cur.trade.myOffer) } : {}));
-                break;
-            case 'sendUseEquipmentItem': {
-                this.unequipTicks.push(s.tick);
-                const slot = a.args[0] as number;
-                this.later(cur => {
-                    const e = cur.equipment.find(x => x.slot === slot);
-                    return e ? { equipment: cur.equipment.filter(x => x !== e), inventory: addTo(cur.inventory, [{ slot: 0, id: e.id, name: e.name, count: 1 }]) } : {};
-                });
-                break;
-            }
-            case 'sendUseItem': {
-                const slot = a.args[0] as number;
-                this.later(cur => {
-                    const it = cur.inventory.find(i => i.slot === slot);
-                    if (!it) return {};
-                    const displaced = cur.equipment.filter(e => WEAPON.test(e.name) && WEAPON.test(it.name));
-                    const inventory = addTo(cur.inventory.filter(i => i !== it), displaced.map(e => ({ slot: 0, id: e.id, name: e.name, count: 1 })));
-                    return { inventory, equipment: [...cur.equipment.filter(e => !displaced.includes(e)), { ...wornItem(it.name), id: it.id }] };
-                });
-                break;
-            }
-        }
-    }
-
-    override tick(patch: Partial<BotWorldState> | ((s: BotWorldState) => Partial<BotWorldState>) = {}): BotWorldState {
-        return this.push(cur => {
-            let next: BotWorldState = { ...cur, tick: cur.tick + 1, ...(typeof patch === 'function' ? patch(cur) : patch) };
-            if (this.opts.logoutAt !== undefined && next.tick >= this.opts.logoutAt) {
-                // The session is gone: the server closes the trade and refunds our offer.
-                const refund = next.trade?.isOpen ? next.trade.myOffer : [];
-                this.queue = [];
-                return { ...next, trade: undefined, inventory: addTo(next.inventory, refund), inGame: false };
-            }
-            for (let i = 0; i < this.queue.length; ) {
-                if (this.queue[i]!.due <= next.tick) next = { ...next, ...this.queue.splice(i, 1)[0]!.fx(next) };
-                else i++;
-            }
-            return next;
-        });
+class TradeServer extends FakeTradePartner {
+    constructor(s: BotWorldState, theirs: TradeItem[], opts: { logoutAt?: number } = {}) {
+        super(s, theirs, { partner: PARTNER, stacks, weapon: name => WEAPON.test(name), ...opts });
     }
 }
 
@@ -206,6 +106,7 @@ describe('planHandOff: a ledger row as a hand-off', () => {
         expect(tradeKind(h13)).toBe('swap');
         expect(h13.give.map(g => [g.name, g.count])).toEqual([['magic shortbow', 1]]);
         expect(h13.wield.map(w => w.name)).toEqual(['staff of fire']);
+        expect(h13.drop).toEqual([]);
         const h11r = plan('H11r');
         expect(tradeKind(h11r)).toBe('swap');
         expect(h11r.receive).toEqual([]);
@@ -225,9 +126,21 @@ describe('planHandOff: a ledger row as a hand-off', () => {
 
     test('refuses a row the trade cannot carry out', () => {
         expect(() => plan('T01-02')).toThrow(/not a hand-off row/);
-        expect(() => plan('H99')).toThrow(/bronze axe \(drop\) is not given in the trade/);
+        // A drop alone is no trade.
+        expect(() => plan('H99')).toThrow(/^H99 \(line \d+\): nothing given and nothing received$/);
         expect(() => plan('H98')).toThrow(/tree items x\? has no count/);
         expect(() => plan('H77')).toThrow(/no ledger row H77/);
+        expect(() => handOffFrom(TABLE.replace('(drop: unworn first) | +staff', '(consume) | +staff'), 'H96')).toThrow(/out khazard helmet \(consume\) is neither given in the trade nor dropped on the tile/);
+    });
+
+    test('drop entries are never given; a swap or trade of an untradeable obj is refused when the row is planned, by name or by id', () => {
+        expect([untradeable(74), untradeable(75), untradeable(IDS['Magic shortbow']!), untradeable(IDS.Knife!)]).toEqual([true, true, false, false]);
+        const h96 = plan('H96');
+        expect(tradeKind(h96)).toBe('swap');
+        expect(h96.give.map(g => g.name)).toEqual(['magic shortbow']);
+        expect(h96.drop.map(g => [g.name, g.count])).toEqual([['khazard helmet', 1]]);
+        expect(() => plan('H95')).toThrow(/^H95 \(line \d+\): out khazard helmet \(swap\): the engine refuses it in a trade \(obj 74 untradeable in the content's obj config; trade\.rs2\), so the row must drop it$/);
+        expect(() => plan('H94')).toThrow(/^H94 \(line \d+\): out khazard armour.*\(trade\): the engine refuses it in a trade \(obj 75 /);
         expect(() => handOffFrom('no table here', 'H1')).toThrow(/does not parse/);
         const both = parseLedger('| row | in | out | equip | needAtStart | source |\n| H5 | knife x1 [u] | knife x1 (swap) | - | 0 | x (r) |').rows[0]!;
         expect(() => planHandOff(both)).toThrow(/knife both given and received/);
@@ -278,6 +191,72 @@ describe('handOffPre', () => {
         expect(handOffRoom(alone(full(24)), h13)).toMatch(/the trade adds 5, 1 short/);
         expect(handOffRoom(alone(filler(28), [wornItem('Mithril scimitar')]), plan('H12'))).toMatch(/taking off Mithril scimitar to give needs 1/);
     });
+
+    test("the split leaves handOffPre's verdicts as they were, and handOffRoom gives the same slot verdict with or without a partner", () => {
+        // Packs from roomy to full for three trade shapes: receive only (H1), a held give (H13), a worn give (H12).
+        const bow = (n: number) => [...filler(n), item(n, 'Magic shortbow')];
+        const sweep: Array<[string, BotWorldState, HandOffPlan]> = [
+            ...[22, 23, 24, 25, 26].map((n): [string, BotWorldState, HandOffPlan] => [`H1 filler ${n}`, state(filler(n)), plan('H1')]),
+            ...[20, 21, 22, 23, 24, 25, 26, 27].map((n): [string, BotWorldState, HandOffPlan] => [`H13 filler ${n} + bow`, state(bow(n)), plan('H13')]),
+            ...[24, 25, 26, 27, 28].map((n): [string, BotWorldState, HandOffPlan] => [`H12 filler ${n}, scimitar worn`, state(filler(n), [wornItem('Mithril scimitar')]), plan('H12')]),
+        ];
+        // handOffPre on the sweep before handOffRoom was split out of it (main's handoff.ts at ee75d700).
+        const PRE_SPLIT: Array<[string, true | string]> = [
+            ["H1 filler 22", true],
+            ["H1 filler 23", true],
+            ["H1 filler 24", true],
+            ["H1 filler 25", "H1: 3 free slots, 0 freed by what it gives: the trade adds 4, 1 short"],
+            ["H1 filler 26", "H1: 2 free slots, 0 freed by what it gives: the trade adds 4, 2 short"],
+            ["H13 filler 20 + bow", true],
+            ["H13 filler 21 + bow", true],
+            ["H13 filler 22 + bow", true],
+            ["H13 filler 23 + bow", true],
+            ["H13 filler 24 + bow", "H13: 3 free slots, 1 freed by what it gives: the trade adds 5, 1 short"],
+            ["H13 filler 25 + bow", "H13: 2 free slots, 1 freed by what it gives: the trade adds 5, 2 short"],
+            ["H13 filler 26 + bow", "H13: 1 free slots, 1 freed by what it gives: the trade adds 5, 3 short"],
+            ["H13 filler 27 + bow", "H13: 0 free slots, 1 freed by what it gives: the trade adds 5, 4 short"],
+            ["H12 filler 24, scimitar worn", true],
+            ["H12 filler 25, scimitar worn", true],
+            ["H12 filler 26, scimitar worn", "H12: 2 free slots, 1 freed by what it gives: the trade adds 3, 1 short"],
+            ["H12 filler 27, scimitar worn", "H12: 1 free slots, 1 freed by what it gives: the trade adds 3, 2 short"],
+            ["H12 filler 28, scimitar worn", "H12: 0 free slots, and taking off Mithril scimitar to give needs 1"],
+        ];
+        expect(sweep.map(([at, s, p]) => [at, handOffPre(s, p, PARTNER)])).toEqual(PRE_SPLIT);
+        expect(sweep.map(([at, s, p]) => [at, handOffRoom(s, p)])).toEqual(PRE_SPLIT);
+        expect(sweep.map(([at, s, p]) => [at, handOffRoom({ ...s, nearbyPlayers: [] }, p)])).toEqual(PRE_SPLIT);
+        // The sweep reaches a pass and both slot refusals it can: the trade short, and no room to take a worn give off.
+        const verdicts = PRE_SPLIT.map(([, v]) => v);
+        expect(verdicts).toContain(true);
+        expect(verdicts.some(v => typeof v === 'string' && / short$/.test(v))).toBe(true);
+        expect(verdicts.some(v => typeof v === 'string' && /to give needs 1$/.test(v))).toBe(true);
+        // The drop rows (H96 one worn drop, H93 two) have no pre-split verdict: handOffPre, handOffRoom with or
+        // without a partner, and the verdict read off slotPlan agree, over the H13 packs with the drops worn.
+        const slotVerdict = (s: BotWorldState, p: HandOffPlan): true | string => {
+            const { free, off, freed, adds, room, after } = slotPlan(s, p);
+            if (free < off.length) return `${p.id}: ${free} free slots, and taking off ${off.map(i => i.name).join(', ')} to give needs ${off.length}`;
+            if (room < adds) return `${p.id}: ${free} free slots, ${freed} freed by what it gives: the trade adds ${adds}, ${adds - room} short`;
+            if (after < 0) return `${p.id}: the equip changes after the trade need ${-after} more free slots`;
+            return true;
+        };
+        expect(sweep.map(([at, s, p]) => [at, slotVerdict(s, p)])).toEqual(PRE_SPLIT);
+        const helmet = wornItem('Khazard helmet');
+        const armour = { ...wornItem('Khazard armour'), slot: 4 };
+        const drops: Array<[string, BotWorldState, HandOffPlan]> = [
+            ...[20, 21, 22, 23, 24, 25, 26, 27].map((n): [string, BotWorldState, HandOffPlan] => [`H96 filler ${n} + bow, helmet worn`, state(bow(n), [helmet]), plan('H96')]),
+            ...[20, 21, 22, 23, 24, 25, 26, 27].map((n): [string, BotWorldState, HandOffPlan] => [`H93 filler ${n} + bow, helmet and armour worn`, state(bow(n), [helmet, armour]), plan('H93')]),
+        ];
+        const DROP_VERDICTS: Array<[string, true | string]> = [
+            ...[20, 21, 22, 23, 24, 25, 26].map((n): [string, true] => [`H96 filler ${n} + bow, helmet worn`, true]),
+            ["H96 filler 27 + bow, helmet worn", "H96: 0 free slots, and taking off Khazard helmet to give needs 1"],
+            ...[20, 21, 22, 23, 24, 25].map((n): [string, true] => [`H93 filler ${n} + bow, helmet and armour worn`, true]),
+            ["H93 filler 26 + bow, helmet and armour worn", "H93: 1 free slots, and taking off Khazard helmet, Khazard armour to give needs 2"],
+            ["H93 filler 27 + bow, helmet and armour worn", "H93: 0 free slots, and taking off Khazard helmet, Khazard armour to give needs 2"],
+        ];
+        expect(drops.map(([at, s, p]) => [at, slotVerdict(s, p)])).toEqual(DROP_VERDICTS);
+        expect(drops.map(([at, s, p]) => [at, handOffPre(s, p, PARTNER)])).toEqual(DROP_VERDICTS);
+        expect(drops.map(([at, s, p]) => [at, handOffRoom(s, p)])).toEqual(DROP_VERDICTS);
+        expect(drops.map(([at, s, p]) => [at, handOffRoom({ ...s, nearbyPlayers: [] }, p)])).toEqual(DROP_VERDICTS);
+    });
 });
 
 // ------------------------------------------------------------------ done and in progress
@@ -320,8 +299,10 @@ describe('run: the trade through lib/trade.ts', () => {
     test('give-and-receive (H13): one swap, the bow out, the staff and knife in, the staff wielded', async () => {
         const sdk = new TradeServer(state([...filler(5), item(5, 'Magic shortbow')]), tradeItems([['Staff of fire'], ['Knife'], ['Blood rune', 70], ['Prayer potion(4)'], ['Prayer potion(4)']]));
         const { step, reports } = await runStep(sdk, plan('H13'));
-        expect(reports[0]).toMatchObject({ trade: 'swap', ok: true, gave: ['Magic shortbow x1'] });
+        expect(reports[0]).toMatchObject({ trade: 'swap', ok: true, gave: ['Magic shortbow x1'], dropped: [] });
         expect(sdk.tradeClicks).toHaveLength(1);
+        // A row with no drop sends none: the trade's packets are as they were.
+        expect(sdk.sent.some(a => a.method === 'sendDropItem')).toBe(false);
         expect(sdk.state!.equipment.map(e => e.name)).toEqual(['Staff of fire']);
         expect(step.postconditions(sdk.state!, {})).toBe(true);
     });
@@ -342,6 +323,53 @@ describe('run: the trade through lib/trade.ts', () => {
         expect(sdk.state!.equipment.map(e => e.name)).toEqual(['Magic shortbow']);
         expect(sdk.state!.inventory.filter(i => i.name === 'Logs')).toHaveLength(2);
         expect(step.postconditions(sdk.state!, {})).toBe(true);
+    });
+
+    test('a drop row (H96): the worn helmet comes off and is dropped before the first trade click, never offered; the bow is traded', async () => {
+        const start = state([...filler(5), item(5, 'Magic shortbow')], [wornItem('Khazard helmet')]);
+        const before = slotPlan(start, plan('H96'));
+        const sdk = new TradeServer(start, tradeItems([['Staff of fire']]));
+        const { step, reports } = await runStep(sdk, plan('H96'));
+        expect(reports[0]).toMatchObject({ trade: 'swap', ok: true, gave: ['Magic shortbow x1'], unequipped: ['Khazard helmet'], dropped: ['Khazard helmet'] });
+        const methods = sdk.sent.map(a => a.method);
+        expect(methods.filter(m => m === 'sendDropItem')).toHaveLength(1);
+        expect(methods.indexOf('sendDropItem')).toBeLessThan(methods.indexOf('sendTradeRequest'));
+        // One offer, the bow's: the confirm never carries the helmet, and the engine never refused one.
+        expect(methods.filter(m => m === 'sendOfferItem')).toHaveLength(1);
+        expect(sdk.state!.gameMessages.some(m => /can't trade/.test(m.text))).toBe(false);
+        // Free slots: 22 before; the helmet's unequip takes one, the bow and the helmet free two, the staff
+        // takes one and its wield gives it back: 23 after, as the slot plan said.
+        expect(before).toMatchObject({ free: 22, freed: 2, adds: 1, after: 23 });
+        expect(before.off.map(i => i.name)).toEqual(['Khazard helmet']);
+        expect(28 - sdk.state!.inventory.length).toBe(23);
+        expect(sdk.state!.equipment.map(e => e.name)).toEqual(['Staff of fire']);
+        expect(step.postconditions(sdk.state!, {})).toBe(true);
+        expect(step.done!(new Observation(sdk.state!), {})).toBe(true);
+    });
+
+    test('a restart partway through the drops (H93): what is already gone is neither dropped again nor a refusal', async () => {
+        // The helmet was dropped before the restart; the armour is still worn.
+        const half = new TradeServer(state([...filler(5), item(5, 'Magic shortbow')], [wornItem('Khazard armour')]), tradeItems([['Staff of fire']]));
+        const first = await runStep(half, plan('H93'));
+        expect(first.reports[0]).toMatchObject({ ok: true, dropped: ['Khazard armour'], gave: ['Magic shortbow x1'] });
+        expect(half.sent.filter(a => a.method === 'sendDropItem')).toHaveLength(1);
+        expect(first.step.postconditions(half.state!, {})).toBe(true);
+        // Both gone before the restart: no drop is sent at all, and the trade runs.
+        const none = new TradeServer(state([...filler(5), item(5, 'Magic shortbow')]), tradeItems([['Staff of fire']]));
+        const second = await runStep(none, plan('H93'));
+        expect(second.reports[0]).toMatchObject({ ok: true, dropped: [], gave: ['Magic shortbow x1'] });
+        expect(none.sent.some(a => a.method === 'sendDropItem')).toBe(false);
+        expect(second.step.postconditions(none.state!, {})).toBe(true);
+    });
+
+    test('an untradeable obj under a give (a hand-built plan): handOffPre refuses it, and the engine refuses its offer', async () => {
+        const h96 = plan('H96');
+        const bad: HandOffPlan = { ...h96, give: [...h96.give, ...h96.drop], drop: [] };
+        const s = state([...filler(5), item(5, 'Magic shortbow')], [wornItem('Khazard helmet')]);
+        expect(handOffPre(s, bad, PARTNER)).toBe('H96: gives khazard helmet, but the engine refuses Khazard helmet (obj 74) in a trade: the row must drop it');
+        const sdk = new TradeServer(s, tradeItems([['Staff of fire']]));
+        await expect(drive(sdk, runHandOff(sdk, bad, PARTNER, { maxTicks: 15 }), 200)).rejects.toThrow(/^H96 with Helper/);
+        expect(sdk.state!.gameMessages.some(m => m.text === "You can't trade this item.")).toBe(true);
     });
 
     test('receive-only opens on an observed-tick bound: a partner who never answers fails at openTicks, not on the wall clock', async () => {
