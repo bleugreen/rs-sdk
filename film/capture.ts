@@ -206,7 +206,8 @@ try {
         ...(clipPath ? { clip: relative(ROOT, resolve(clipPath)) } : {}),
         setup,
         staged,
-        git: { commit: git(['rev-parse', 'HEAD']), dirty: git(['status', '--porcelain']).length > 0 },
+        // Dirty means the code differs from the commit; the clip being written (into film/samples, say) does not count.
+        git: { commit: git(['rev-parse', 'HEAD']), dirty: git(['status', '--porcelain', '--', '.', `:(exclude)${relative(ROOT, out) || '.'}`]).length > 0 },
         tickMs: { configured: Number(process.env.NODE_TICKRATE) || null, feedHello: hello.tickMs, observed: spread(tickGaps(ticks)) },
         start: { ms: t0, tick: serverTickAt(ticks, t0), clientTick: clientTickAt(t0) },
         end: { ms: t1, tick: serverTickAt(ticks, t1), clientTick: clientTickAt(t1) },
