@@ -34,6 +34,7 @@ import {
     loginSpanMs,
     preconditions,
     preLoginStep,
+    preLoginReady,
     preLoginWaitMs,
     S21_HAND_BACK,
     rcShared,
@@ -1100,6 +1101,55 @@ describe("S21's pre-login, SCORED's relog, then the first trade (rs/186)", () =>
         // The pre-login's session is never stopped; the band's program writes its own.
         expect(h.cues.filter(c => c.session === 's1').every(c => !c.fields.stop)).toBe(true);
         expect(new Set(h.cues.map(c => `${c.scope.step}/${c.scope.family}`))).toEqual(new Set(['S21/altar']));
+    });
+
+    test('the entire ready wait runs on world ticks with SCORED out and its state tick frozen', async () => {
+        const h = new Harness({ ...world({ inventory: [] }), inGame: false });
+        const frozen = h.sdk.state!.tick;
+        let worldTick = 2_000;
+        let closed = false;
+        h.statuses = [];
+        const o = opts(h, { deps: {
+            preLoginClock: () => ({
+                next: async after => {
+                    worldTick = Math.max(worldTick, after) + 1;
+                    h.now += 400;
+                    if (worldTick >= 2_009) h.statuses = [h.giver('lab_g1'), h.giver('lab_g2')];
+                    else if (worldTick >= 2_005) h.statuses = [h.giver('lab_g1')];
+                    return { tick: worldTick, ms: h.now };
+                },
+                close: () => { closed = true; }
+            })
+        } });
+        await preLoginStep(o).run(h.ctx());
+        expect(h.sdk.state!.tick).toBe(frozen);
+        expect(h.sdk.state!.inGame).toBe(false);
+        expect(closed).toBe(true);
+        expect(preLoginReady(o)).toBe(true);
+        // Readiness is the entire current set, never remembered from the completed wait.
+        h.statuses = [h.giver('lab_g1')];
+        expect(preLoginReady(o)).toContain('lab_g2');
+        expect(h.log.rows.find(r => r.step === 'S21 runecraft:pre-login')).toMatchObject({
+            ok: true, meta: { firstWorldTick: 2_001, worldTick: 2_009, ready: 2, waitedTicks: 8 }
+        });
+    });
+
+    test('an offline wait is bounded by observed world ticks, not SCORED ticks or elapsed readiness', async () => {
+        const h = new Harness({ ...world({ inventory: [] }), inGame: false });
+        let worldTick = 100;
+        let closed = false;
+        const o = opts(h, { preLoginTicks: 5, deps: {
+            preLoginClock: () => ({
+                next: async after => ({ tick: (worldTick = Math.max(worldTick, after) + 1), ms: h.now }),
+                close: () => { closed = true; }
+            })
+        } });
+        h.statuses = [h.giver('lab_g1')];
+        const frozen = h.sdk.state!.tick;
+        await expect(preLoginStep(o).run(h.ctx())).rejects.toThrow('1 of 2 givers ready after 5 ticks (not ready: lab_g2)');
+        expect(worldTick).toBe(109); // four beacons, five observed ready-wait ticks
+        expect(h.sdk.state!.tick).toBe(frozen);
+        expect(closed).toBe(true);
     });
 
     test('without the relog, SCORED logged in before every giver: all of them are fed robust', async () => {

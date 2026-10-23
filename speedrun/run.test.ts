@@ -6,7 +6,11 @@ import { TickLog } from './lib/ticks';
 import { MANIFEST } from './tools/slot-ledger';
 import { returnExtrasFromLedger } from './helpers/cannon-receiver';
 import { readFileSync } from 'fs';
-import { aliasAccount, cannonServeDrift, chainOrRefusal, type GateIO, LOG_ACCOUNT, loadRunConfig, parseArgs, startGates, TARGET_TOTAL, tickBeforeLogin, totalLevel, UsageError } from './run';
+import { aliasAccount, openRunSession, cannonServeDrift, chainOrRefusal, type GateIO, LOG_ACCOUNT, loadRunConfig, parseArgs, startGates, TARGET_TOTAL, tickBeforeLogin, totalLevel, UsageError } from './run';
+import type { OpenOptions, Session } from './lib/session';
+import { RelogBudget } from './runner/relog-budget';
+import { SCORED_LOGIN, SCORED_RELOG } from './runner/scored-relog';
+import type { ChainStep } from './runner/chain';
 import { tickPreflight, type FeedRead } from './lib/feed-hello';
 
 const feed400: FeedRead & { ok: true } = { ok: true, url: 'wss://rs-sdk-demo.fly.dev/worldfeed', hello: { tickMs: 400, players: 12, tick: 5000 }, wallMs: 80 };
@@ -178,5 +182,58 @@ describe('the log and the end', () => {
         const slots = [{ name: 'Stat18', level: 1, baseLevel: 1, experience: 0 }, { name: 'Stat19', level: 1, baseLevel: 1, experience: 0 }];
         expect(totalLevel({ skills: [...skills, ...slots] })).toBe(TARGET_TOTAL);
         expect(totalLevel({ skills: [...skills.slice(1), { name: 'x', level: 99, baseLevel: 98, experience: 0 }, ...slots] })).toBe(1880);
+    });
+});
+
+
+describe('startup during the planned S21 logout', () => {
+    function setup(status: 'open' | 'closed' | null) {
+        const relogs = new RelogBudget(mkdtempSync(join(tmpdir(), 'run-s21-')));
+        if (status) relogs.beginPlanned(SCORED_RELOG, 100);
+        if (status === 'closed') relogs.endPlanned(SCORED_RELOG, 'page');
+        const trace: string[] = [];
+        const session = { sdk: { getState: () => null }, bot: {}, name: 'lab', expectInWorld: false, watchdog: null } as unknown as Session;
+        const log = TickLog.memory('startup');
+        const ready: ChainStep = { id: 'S21', kind: 'step', preconditions: () => true, postconditions: () => true, logoutSafe: true, name: 'S21 runecraft:pre-login', run: async () => { expect(session.expectInWorld).toBe(false); trace.push('ready'); } };
+        const login: ChainStep = { id: 'S21', kind: 'step', preconditions: () => true, postconditions: () => true, logoutSafe: true, name: SCORED_LOGIN, run: async () => {
+            trace.push('login');
+            await session.beforeLogin?.();
+            relogs.endPlanned(SCORED_RELOG, 'page'); session.expectInWorld = true;
+        } };
+        const chain = [ready, login];
+        const deps = {
+            open: async (_bot: string, options: OpenOptions = {}) => {
+                trace.push(`open launch=${options.launch} awaitInWorld=${options.awaitInWorld}`);
+                return session;
+            },
+            close: async () => { trace.push('close'); },
+        };
+        return { relogs, trace, session, log, chain, deps };
+    }
+
+    test('an open entry attaches offline and waits for the givers before its login, without any SCORED state', async () => {
+        const t = setup('open');
+        await openRunSession('lab', { client: 'browser', chain: t.chain, relogs: t.relogs, log: t.log,
+            beforeLogin: async () => { t.trace.push('tick gate'); } }, t.deps);
+        expect(t.trace).toEqual(['open launch=false awaitInWorld=false', 'ready', 'login', 'tick gate']);
+        expect(t.relogs.planned(SCORED_RELOG)).toBe('closed');
+    });
+
+    test('before logout or after the completed login, normal launch skips both split halves', async () => {
+        for (const status of [null, 'closed'] as const) {
+            const t = setup(status);
+            await openRunSession('lab', { client: 'browser', chain: t.chain, relogs: t.relogs, log: t.log }, t.deps);
+            expect(t.trace).toEqual(['open launch=true awaitInWorld=undefined']);
+        }
+    });
+
+    test('a disabled or sliced login half refuses before opening; failed readiness never logs in', async () => {
+        const t = setup('open');
+        await expect(openRunSession('lab', { client: 'browser', chain: [], relogs: t.relogs, log: t.log }, t.deps)).rejects.toThrow('requires its giver wait and login half');
+        expect(t.trace).toEqual([]);
+        t.chain[0]!.run = async () => { throw new Error('givers absent'); };
+        await expect(openRunSession('lab', { client: 'browser', chain: t.chain, relogs: t.relogs, log: t.log }, t.deps)).rejects.toThrow('givers absent');
+        expect(t.trace).toEqual(['open launch=false awaitInWorld=false', 'close']);
+        expect(t.relogs.planned(SCORED_RELOG)).toBe('open');
     });
 });
