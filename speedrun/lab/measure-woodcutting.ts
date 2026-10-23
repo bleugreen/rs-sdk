@@ -33,7 +33,7 @@
 //   --server-wait=N is the module's serverWait. Prints each load's giver and ticks, and the givers' logs.
 //   --bone=<obj> the givers' bones (default dragon_bones; e.g. babydragon_bones, as rs/41 relaunched them).
 //   --session=<id> the S07 cue session (the module's boneSession), and --counted=<giver>:<n>,... the loads
-//   already given in it: the cue and those givers' statuses are written before the launcher starts, so the
+//   already given in it (cairn_b04=1,cairn_b01=1): the cue and those givers' statuses are written before the launcher starts, so the
 //   givers resume their counts (bone-giver.ts onCue) as after a stopped attempt.
 // --oak-logs=N oak logs in the kit (attempt 3's willow census carries one).
 // Every segment row and load row prints as it is written, with its UTC time.
@@ -355,7 +355,8 @@ await runScript(async ({ bot: actions, sdk }) => {
     const boneObj = flag('bone');
     const bone = boneObj ? { obj: boneObj, item: boneObj.charAt(0).toUpperCase() + boneObj.slice(1).replace(/_/g, ' ') } : null;
     const boneSession = flag('session');
-    const counted = (flag('counted') ?? '').split(',').filter(Boolean).map(e => e.split(':') as [string, string]);
+    // giver=n pairs: lab.sh splits a script's arguments on ':'
+    const counted = (flag('counted') ?? '').split(',').filter(Boolean).map(e => e.split('=') as [string, string]);
     if (counted.length && !boneSession) throw new Error('--counted needs --session');
     // A stopped attempt's S07 session: its cue, and each counted giver's status in it (restocking, its loads given).
     const prestage = boneSession
