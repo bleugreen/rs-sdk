@@ -6,7 +6,7 @@ import * as tgv from '../quests/tree-gnome-village';
 import { ROUTES } from '../skills/agility';
 import { BANKS } from './buyer';
 import { AGILITY_COURSES } from '../../server/webclient/src/bot/programs/agility-courses';
-import { AGILITY_TO, ARMOUR, freeSlots, gtPlan, kitBank, lapsDone, stepLoc, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, approachFirst, transientFault, inShipyardPocket, nextStoneMove, STONES, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
+import { AGILITY_TO, ARMOUR, freeSlots, gtPlan, kitBank, lapsDone, stepLoc, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, approachFirst, transientFault, roomDrops, SHARK_FLOOR, TWIG_SLOTS, inShipyardPocket, nextStoneMove, STONES, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
 import { applySubstitutes, LEG_PREFIX, withLegs } from '../lab/quests/demo-quest';
 import type { NearbyLoc } from '../../sdk/types';
 
@@ -246,5 +246,25 @@ describe('off the shipyard pocket by the stepping stones', () => {
     test('the stones run north to south, one tile apart, each a click from the one before', () => {
         expect(STONES.map(s => s.z)).toEqual([2950, 2949, 2948]);
         expect(new Set(STONES.map(s => s.x))).toEqual(new Set([2925]));
+    });
+});
+
+describe('roomDrops: room for the twigs from the helper\'s own surplus', () => {
+    const pack = (sharks: number, extra: string[]) => state({ inventory: [...extra.map(n => item(n)), ...Array.from({ length: sharks }, () => item('Shark'))] });
+    const quest = ['Hazelmere\'s scroll', 'Translation book', 'Glough\'s journal', 'Lumber order', 'Glough\'s key', 'Invasion plans', 'Coins'];
+    test('login 11\'s full pack: the axe, then three sharks', () => {
+        const s = pack(20, [...quest, 'Bronze axe']);
+        const r = roomDrops(s, TWIG_SLOTS);
+        expect(r.short).toBe(0);
+        expect(r.drop.map(i => i.name)).toEqual(['Bronze axe', 'Shark', 'Shark', 'Shark']);
+    });
+    test('nothing when the room is already free', () => {
+        expect(roomDrops(pack(10, quest), TWIG_SLOTS)).toEqual({ drop: [], short: 0 });
+    });
+    test('never a quest item, never below the shark floor', () => {
+        const s = pack(SHARK_FLOOR + 1, [...quest, ...Array.from({ length: 27 - quest.length - SHARK_FLOOR }, () => 'Daconia rock')]);
+        const r = roomDrops(s, TWIG_SLOTS);
+        expect(r.drop.map(i => i.name)).toEqual(['Shark']);
+        expect(r.short).toBe(TWIG_SLOTS - 1 - 1);
     });
 });

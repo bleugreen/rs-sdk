@@ -46,7 +46,7 @@
 // login, and it always ends with a confirmed logout.
 import { resolve } from 'node:path';
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
-import { act, actConverse, openDoor, talkTo, wield, type ActSdk } from '../lib/act';
+import { act, actConverse, dropItems, openDoor, talkTo, wield, type ActSdk } from '../lib/act';
 import { depositMatching, withdrawMany, type WithdrawSpec } from '../lib/bank';
 import { INVENTORY_SIZE, matchesAny } from '../lib/items';
 import { fight, type FightResult } from '../lib/combat';
@@ -471,6 +471,8 @@ export function gtPlan(): QuestPlan {
                 await go(ctx, BATTLEFIELD_TREE, 'to the battlefield spirit tree');
                 await tree(ctx, 'village');
             },
+            // L's twigs need four free slots, which SCORED's kit check at A keeps and the helper's A does not.
+            L: ctx => makeRoom(ctx, TWIG_SLOTS, 'leg:S11b:L:room'),
         },
     };
 }
@@ -513,6 +515,41 @@ export const PLANS = { tree: tgvPlan, grandtree: gtPlan, mm: mmPlan } as const;
 const KIT_LINES: readonly RegExp[] = [SHARK, WEAPON, ...ARMOUR, AXE, COINS, TGV_ITEM.logs];
 
 export const freeSlots = (s: BotWorldState): number => INVENTORY_SIZE - s.inventory.length;
+
+/** The Grand Tree's L hands over four twigs (SCORED keeps FREE_SLOTS for its quest items; the helper's pack is food). */
+export const TWIG_SLOTS = 4;
+/** Sharks kept through room-making: the black demon (N2) and Monkey Madness to G still to eat from. */
+export const SHARK_FLOOR = 12;
+
+/**
+ * What to drop for `need` free slots: only the helper's own surplus, never a quest item. The bronze axe
+ * first (Montai's logs are its only use), then sharks down to SHARK_FLOOR. `short` is what that leaves
+ * missing.
+ */
+export function roomDrops(s: BotWorldState, need: number): { drop: BotWorldState['inventory']; short: number } {
+    let missing = Math.max(0, need - freeSlots(s));
+    const drop: BotWorldState['inventory'] = [];
+    for (const i of s.inventory.filter(i => AXE.test(i.name))) {
+        if (missing === 0) break;
+        drop.push(i);
+        missing--;
+    }
+    const spare = Math.max(0, invCount(s, SHARK) - SHARK_FLOOR);
+    for (const i of s.inventory.filter(i => SHARK.test(i.name)).slice(0, Math.min(spare, missing))) drop.push(i);
+    missing -= Math.min(spare, missing);
+    return { drop, short: missing };
+}
+
+/** Make `need` free slots by dropping `roomDrops`' choice, as a note row; throws if the surplus cannot cover it. */
+async function makeRoom(ctx: StepContext<any>, need: number, step: string): Promise<void> {
+    const { drop, short } = roomDrops(st(ctx), need);
+    if (short > 0) throw new Error(`${step}: ${freeSlots(st(ctx))} free slots, needs ${need}, and only ${drop.length} surplus items to drop`);
+    if (!drop.length) return;
+    const slots = new Set(drop.map(i => i.slot));
+    const r = await dropItems(sdkOf(ctx), i => slots.has((i as BotWorldState['inventory'][number]).slot));
+    logNote(ctx.log, ctx.session, step, { dropped: drop.map(i => i.name), ok: r.ok, freeSlots: freeSlots(st(ctx)) });
+    if (freeSlots(st(ctx)) < need) throw new Error(`${step}: still ${freeSlots(st(ctx))} free slots after dropping ${drop.length}`);
+}
 
 const exactName = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 
