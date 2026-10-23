@@ -670,8 +670,11 @@ refusal. the carrier configs come from the generator and check below (fold-in 37
 3. **Merge** the three entries into `<R>/helpers.json` in login order; the run config gets
    `delivery: { run: "a1-20261023", launcherConfig: "<R>/helpers.json" }`, with `muleCueDir` =
    `<RC>/mule` if set.
-4. **mule-hold** for cairn_mule1, cairn_h55 and cairn_h03, before the launcher only, never on a
-   relaunch (step 5a.4).
+4. **mule-hold: NOT used for attempt 1** (main 13:15Z 2026-10-23): the carriers launch unheld in
+   the roster phase and self-stage their first rows. With the hold, run.ts's first-row prepare at
+   login leaves SCORED waiting ~160 ticks at H1 (the twin's live H1 with the hold measured 167 ticks
+   at H1, almost all waiting); rs/598's lab run 2 proved the unheld shape with ready wait 0. The
+   mule-hold text below is kept for reference only.
 5. **Report:** the host sends the hash line, the three exit codes and `sha256sum <R>/carriers.json
    <R>/helpers.json` to rs/41 and main before the launcher starts.
 
@@ -1366,7 +1369,7 @@ the tick length T on main since #385 (a4456c73, rs/471; fold-in 31; step 6, line
    1. the gate minute (line 1): the gate account and S06's 7 air-altar givers on **both** machines;
    2. after the choice, on SCORED's machine, first (main 04:30 PDT via rs/158, rs/186's wording; fold-in 37; it comes
       with rs/598, its line citations from rs/186's branch at rs/598, re-checked against the run commit main names):
-      **Hold each delivery carrier before starting the helper launcher.** Run `bun speedrun/tools/mule-hold.ts --config <launcher config json> --account <carrier>` for every carrier in the generated carrier config. The hold must be written before the carrier starts: a running carrier with no control file selects and stages its first row at once (helpers/mule.ts:1250-1257, :1480, :1828; re-cited at the run commit 233d0f34, where rs/186's :1240, :1314-1323 and :1478 had moved), and a hold written after that leaves a staged carrier whose readiness check `heldFor` never passes (helpers/mule-readiness.ts:159). `holdMule` also refuses a hold after a prepare in the same attempt (helpers/mule-readiness.ts:303). If this step is skipped, the run still works through run.ts's per-row prepare and readiness gate, but the carrier pre-stages its first row.
+      **NOT for attempt 1 (main 13:15Z): carriers launch unheld and self-stage their first rows; skip this hold (step 0, item 4).** Reference text: **Hold each delivery carrier before starting the helper launcher.** Run `bun speedrun/tools/mule-hold.ts --config <launcher config json> --account <carrier>` for every carrier in the generated carrier config. The hold must be written before the carrier starts: a running carrier with no control file selects and stages its first row at once (helpers/mule.ts:1250-1257, :1480, :1828; re-cited at the run commit 233d0f34, where rs/186's :1240, :1314-1323 and :1478 had moved), and a hold written after that leaves a staged carrier whose readiness check `heldFor` never passes (helpers/mule-readiness.ts:159). `holdMule` also refuses a hold after a prepare in the same attempt (helpers/mule-readiness.ts:303). If this step is skipped, the run still works through run.ts's per-row prepare and readiness gate, but the carrier pre-stages its first row.
       The hold command (rs/598, on main as #487, 233d0f34, the run commit: `speedrun/tools/mule-hold.ts`; `docs/speedrun/helpers/mule-delivery.md`, 'Run owner', lines 330-379 at 233d0f34; via rs/158): once per banked delivery carrier, for example `--config run-machine/<launcher>.json --account cairn_mule1`; the run id, serve, cue directory, first row and tile all come from the generated launcher entry. Exit 0 = held; 1 = refused (after this run's prepare, or over another run's live control); 2 = usage; an identical repeat is a no-op. After its gates, run.ts prepares each carrier's first row before SCORED logs in.
       Then rs/117's launcher logs in the **17 roster accounts** (4 + 6 + 3 + 4; fold-in 36, rs/41's correction of 16):
       mule1, mule2, h55, h03, the 6 S03 droppers, the 3 S04 ring givers (h81, h63, h66; fold-in 38,
@@ -1793,7 +1796,7 @@ any difference):
 
 1. place cannon-serve.json and rs/41's launcher json in the run dir and check cannon-serve's sha256
    (step 0, "The cannon serve file");
-2. run `mule-hold.ts` once per banked delivery carrier (step 5a.4, item 2: the hold);
+2. **no mule-hold for attempt 1** (main 13:15Z: carriers launch unheld and self-stage; a hold costs ~160 ticks at H1);
 3. start the helper launcher (step 4; step 5a.4, item 2);
 4. after the hand-over, start run.ts in the run's tmux on the chosen machine; its preflight then
    checks the floor, the delivery config and the cannon serve, prepares each carrier's first row, and
