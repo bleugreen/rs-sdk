@@ -1798,9 +1798,10 @@ The checks, in order, before re-running. Any one failing means **do not re-run: 
 5. **The host claim is still held and live**: run.ts releases it only on success (`run.ts:533`); an
    expired claim makes gate 2 refuse with an `rs-claim take ...` hint (`run.ts:252-261`), so retake it
    as step 0 does first.
-6. **The helpers**: a StepError logs out the failed step's helpers (the final stop). Before
-   re-running, confirm with the helper launcher that they are back in, or relaunch them (rs/41,
-   step 4).
+6. **The helpers**: a StepError writes a final stop to open helper cues, so the failed step's
+   helpers are logged out. Before re-running, confirm the failed step's helper family is logged
+   back in, or log it in by hand (step 4); re-arm-on-new-cue after a final stop is pending
+   rs/41 / rs/186.
 7. **The step is not on the non-admitting list**: RUN-ORDER.md section 7's margin ladder, its
    attempt-ending lines and the conditional note for A and B (until B merges, any step after H7;
    until A merges, S18 after its first stocked stun and S22 after its first catch). Some lines name an
