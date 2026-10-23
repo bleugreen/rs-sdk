@@ -1,0 +1,640 @@
+diff --git a/server/webclient/src/bot/programs/pickpocket.test.ts b/server/webclient/src/bot/programs/pickpocket.test.ts
+index 6aa06db..0e9c5fd 100644
+--- a/server/webclient/src/bot/programs/pickpocket.test.ts
++++ b/server/webclient/src/bot/programs/pickpocket.test.ts
+@@ -39,10 +39,12 @@
+  * next one (p_delay(0)); eating while not free adds 3 to the action delay; Charge and arrows
+  * have no delay.
+  *
+- * With a `helper` standing next to the account: a trade request landing on L opens the trade
+- * from L+2 (the helper answers on L+1) for `openTicks` states, then delivers `bones`. A click
+- * landing after the request in the same tick replaces it; any packet landing while the trade
+- * is open closes it with nothing delivered.
++ * With a `helper` standing next to the account: a trade request landing on L draws "Sending trade
++ * offer..." on L and opens the trade from L+2 (the helper answers on L+1) for `openTicks` states,
++ * then delivers `bones`. A click landing after the request in the same tick replaces it; any
++ * packet landing while the trade is open closes it with nothing delivered. `drop` makes the
++ * engine lose the nth request that reaches it (no message, nothing opens), and `late` holds the
++ * nth back that many ticks (a packet that missed its tick).
+  */
+ interface ThieveOpts {
+     ticks: number;
+@@ -60,7 +62,7 @@
+     params?: Record<string, unknown>;
+     kit?: Kit;
+     dialogAt?: (tick: number) => boolean;
+-    helper?: { openTicks?: number; bones: number };
++    helper?: { openTicks?: number; bones: number; drop?: (nth: number) => boolean; late?: (nth: number) => number };
+ }
+ 
+ function thieve(opts: ThieveOpts) {
+@@ -85,7 +87,7 @@
+     const failedAttempts: number[] = [];
+     const landings: Landing[] = [];
+     let attemptAt: number | null = null;
+-    const trade = { requests: 0, replaced: 0, opened: 0, done: 0, broken: 0, openFrom: -1, closeAt: -1, requestedOn: [] as number[], doneOn: [] as number[] };
++    const trade = { requests: 0, replaced: 0, opened: 0, done: 0, broken: 0, openFrom: -1, closeAt: -1, requestedOn: [] as number[], doneOn: [] as number[], arrived: 0, droppedOn: [] as number[] };
+     const tradeOpen = (t: number) => t >= trade.openFrom && t < trade.closeAt;
+     const inventory = () => [
+         ...Array.from({ length: kit.food }, () => ({ name: foodName, options: ['Eat', 'Drop'] })),
+@@ -115,7 +117,7 @@
+         });
+     };
+     h.start('pp', { maxTicks: opts.ticks, ...opts.params }, state());
+-    const pending: Array<{ at: number; sent: Sent; name?: string }> = [];
++    const pending: Array<{ at: number; sent: Sent; name?: string; nth?: number }> = [];
+     for (let i = 0; i < opts.ticks + 5 && h.status.phase === 'running'; i++) {
+         tick++;
+         // processPlayers of the last tick's attempt: the roll
+@@ -158,6 +160,17 @@
+                 trade.openFrom = -1;
+             }
+             if (a.type === 'interactPlayer' && opts.helper) {
++                const nth = p.nth ?? trade.arrived++;
++                const late = p.nth === undefined ? (opts.helper.late?.(nth) ?? 0) : 0;
++                if (late > 0) {
++                    pending.push({ ...p, at: tick + late, nth });
++                    continue;
++                }
++                if (opts.helper.drop?.(nth)) {
++                    trade.droppedOn.push(tick);
++                    continue;
++                }
++                msgs.push({ text: 'Sending trade offer...', tick, id: msgId++ });
+                 trade.requests++;
+                 trade.requestedOn.push(tick);
+                 requestedNow = true;
+@@ -525,6 +538,76 @@
+             expect(r.h.status.counters.retargets ?? 0).toBe(0);
+         });
+ 
++        describe('requestResend', () => {
++            const resend = (helper: ThieveOpts['helper'], requestResend?: number) =>
++                thieve({ ticks: 400, outcome: everyFifthFails, kit: { bones: 4, blood: 6000, air: 6000, food: 4 }, helper, params: { stunActions: [TOPUP, 'bury', 'charge'], idleOnInterface: true, ...(requestResend !== undefined ? { requestResend } : {}) } });
++            /** Per stun: the ticks (from the failed attempt) on which a request reached the engine and was run. */
++            const perStun = (r: ReturnType<typeof thieve>) => r.failedAttempts.map((f, i) => {
++                const next = r.failedAttempts[i + 1] ?? Infinity;
++                return {
++                    sent: r.landings.filter(l => l.type === 'interactPlayer' && l.tick > f && l.tick < next).map(l => l.tick - f),
++                    ran: r.trade.requestedOn.filter(t => t > f && t < next).map(t => t - f)
++                };
++            });
++
++            test('a dropped request goes out once more at +3 after it, and its trade opens without breaking', () => {
++                const r = resend({ bones: 12, drop: n => n % 2 === 0 }, 3);
++                const res = r.h.status.result as Result;
++                expect(r.trade.droppedOn.length).toBeGreaterThan(0);
++                expect(r.trade.broken).toBe(0);
++                expect(r.trade.replaced).toBe(0);
++                for (const s of perStun(r).filter(s => s.sent.length)) {
++                    // the request lands on T+4; a re-send, sent 3 ticks after it, on T+7
++                    expect(s.sent[0]).toBe(4);
++                    expect(s.sent.length).toBeLessThanOrEqual(2);
++                    if (s.sent.length === 2) expect(s.sent[1]).toBe(7);
++                    // never two requests the engine ran in one stun
++                    expect(s.ran.length).toBeLessThanOrEqual(1);
++                }
++                // every dropped request was re-sent, and every re-send was run (only even requests drop)
++                expect(res.stun!.resends).toBe(r.trade.droppedOn.length);
++                expect(r.h.status.counters.requestResends).toBe(r.trade.droppedOn.length);
++                expect(r.trade.requests).toBe(perStun(r).filter(s => s.sent.length).length);
++                expect(r.h.status.marks['topup:resend']!.count).toBe(res.stun!.resends!);
++                expect(r.h.status.marks.topup!.count).toBe(res.stun!.byAction.topup);
++            });
++
++            test('a request the engine ran is not re-sent, so a helper that drops nothing sees the same packets', () => {
++                const on = resend({ bones: 12 }, 3);
++                const off = resend({ bones: 12 });
++                expect(on.h.sent.map(s => `${s.tick} ${JSON.stringify(s.action)}`)).toEqual(off.h.sent.map(s => `${s.tick} ${JSON.stringify(s.action)}`));
++                expect((on.h.status.result as Result).stun!.resends).toBe(0);
++            });
++
++            test('a request that lands up to 2 ticks late draws its reply inside the hold and is not re-sent', () => {
++                // (2 late opens the trade after the hold, so the next click breaks it: with or without the option)
++                for (const late of [1, 2]) {
++                    const r = resend({ bones: 12, late: () => late }, 3);
++                    const off = resend({ bones: 12, late: () => late });
++                    expect((r.h.status.result as Result).stun!.resends).toBe(0);
++                    expect(r.h.sent).toEqual(off.h.sent);
++                    for (const s of perStun(r)) expect(s.ran.length).toBeLessThanOrEqual(1);
++                }
++            });
++
++            test('without it a dropped request is lost for the stun (the golden scenario topupIdleDropped)', () => {
++                const r = resend({ bones: 12, drop: n => n % 2 === 0 });
++                expect(r.trade.droppedOn.length).toBeGreaterThan(0);
++                for (const s of perStun(r)) expect(s.sent.length).toBeLessThanOrEqual(1);
++                expect((r.h.status.result as Result).stun!.resends).toBeUndefined();
++            });
++
++            test('rejects a re-send outside the hold or without a player action', () => {
++                const h = new Harness('pp', createPickpocket);
++                for (const params of [{ requestResend: 0 }, { requestResend: 4 }, { requestResend: 1.5 }, { requestResend: 'x' }, { requestResend: 3, stunActions: ['bury'] }, { requestResend: 3, stunActions: undefined }]) {
++                    const s = h.runtime.start('pp', { maxTicks: 10, stunActions: [TOPUP], ...params });
++                    expect(s.phase).toBe('fault');
++                    expect(s.fault).toMatch(/bad parameters/);
++                }
++                expect(h.runtime.start('pp', { maxTicks: 10, stunActions: [TOPUP], requestResend: 3 }).phase).toBe('running');
++            });
++        });
++
+         test('a trade still open on the attempt tick delays the attempt by its extra ticks', () => {
+             const r = run(true, 7);
+             const res = r.h.status.result as Result;
+@@ -549,7 +632,9 @@
+             forced: { ticks: 200, hp: 7, outcome: () => false, params: { eatBelow: 0 } },
+             stunPack: { ticks: 300, outcome: everyFifthFails, ...PACK },
+             dialog: { ticks: 60, outcome: n => n !== 1, ...PACK, dialogAt: t => t % 17 === 0 },
+-            topupIdle: { ticks: 260, outcome: everyFifthFails, kit: { bones: 4, blood: 6000, air: 6000, food: 4 }, helper: { bones: 12 }, params: { stunActions: [TOPUP, 'bury', 'charge'], idleOnInterface: true } }
++            topupIdle: { ticks: 260, outcome: everyFifthFails, kit: { bones: 4, blood: 6000, air: 6000, food: 4 }, helper: { bones: 12 }, params: { stunActions: [TOPUP, 'bury', 'charge'], idleOnInterface: true } },
++            // the engine loses every other request: without requestResend nothing more goes out
++            topupIdleDropped: { ticks: 400, outcome: everyFifthFails, kit: { bones: 4, blood: 6000, air: 6000, food: 4 }, helper: { bones: 12, drop: n => n % 2 === 0 }, params: { stunActions: [TOPUP, 'bury', 'charge'], idleOnInterface: true } }
+         };
+         // from the program at 75ce523c (rs/132's stun pack and #177's declarations, before these options)
+         const GOLDEN: Record<string, { packets: number; sha256: string }> = {
+@@ -560,7 +645,9 @@
+             forced: { packets: 210, sha256: '1c204154156119560acf57f9f615458e54bdb92a8d7601f7d3f4034a30b8d2ed' },
+             stunPack: { packets: 624, sha256: 'e0d40f331367b92820aacb4123c944df3ca5721a6fcdf5b0319ac23d9fdd9041' },
+             dialog: { packets: 77, sha256: '6916cf3211f73476a94289f932e7bb9c930c0552cf40a017173b8cb99225f210' },
+-            topupIdle: { packets: 370, sha256: 'de88150a3da15a304d1843221961b8b3bf4d97fd61abf3dd66f9b1e33a909d54' }
++            topupIdle: { packets: 370, sha256: 'de88150a3da15a304d1843221961b8b3bf4d97fd61abf3dd66f9b1e33a909d54' },
++            // from the program at fbd04cc9, before requestResend
++            topupIdleDropped: { packets: 553, sha256: '16de9edb07254354f7b40c8df1bdcd163da696170e8e5d99316c5dedb8734bbb' }
+         };
+         const trace = (o: ThieveOpts) => thieve(o).h.sent.map(s => `${s.tick} ${JSON.stringify(s.action)}`);
+ 
+diff --git a/server/webclient/src/bot/programs/pickpocket.ts b/server/webclient/src/bot/programs/pickpocket.ts
+index 83209db..905ce16 100644
+--- a/server/webclient/src/bot/programs/pickpocket.ts
++++ b/server/webclient/src/bot/programs/pickpocket.ts
+@@ -54,7 +54,11 @@
+ //   action, no click), resuming on the first tick it is closed. The step module only accepts
+ //   the offer and confirm screens. rs/106's trades requested at +2 completed at +7 or +8, so
+ //   the click sent on +9, which lands on T+11, keeps the next attempt on time; a trade still
+-//   open then delays the attempt by the ticks it stays open.
++//   open then delays the attempt by the ticks it stays open. `requestResend: n` (off by default)
++//   sends a request the engine never answered once more, n ticks after it and inside the hold
++//   (stun-actions.ts header).
++//   Every request and re-send is stamped in the status marks (the action's name, and
++//   `<name>:resend`), so a lab can line them up against the partner's 'wishes to trade'.
+ // - Stop and restart: the module stops the program before its own request and restarts it once
+ //   the trade is done, by +9 at the latest. The restarted program has not seen that failure,
+ //   so it sends no stun actions for the rest of that stun (a top-up stun buries nothing in
+@@ -71,7 +75,7 @@
+ /** How long a target given up by `retargetTicks` stays avoided. */
+ const AVOID_TICKS = 100;
+ 
+-createPickpocket.params = ['npc', 'option', 'rolls', 'untilLevel', 'maxTicks', 'every', 'eat', 'food', 'heal', 'forcedBelow', 'eatBelow', 'stopWhenFoodBelow', 'retargetTicks', 'idleOnInterface', 'stunActions', 'stunWindow', 'stunPerTick'] as const;
++createPickpocket.params = ['npc', 'option', 'rolls', 'untilLevel', 'maxTicks', 'every', 'eat', 'food', 'heal', 'forcedBelow', 'eatBelow', 'stopWhenFoodBelow', 'retargetTicks', 'idleOnInterface', 'stunActions', 'stunWindow', 'stunPerTick', 'requestResend'] as const;
+ export function createPickpocket(params: ProgramParams): TickProgram {
+     const npcRe = regex(params.npc, '^Knight of Ardougne$', 'npc');
+     const opRe = regex(params.option, '^pickpocket$', 'option');
+@@ -88,7 +92,8 @@
+     const stopBelow = num(params.stopWhenFoodBelow, 0, 'stopWhenFoodBelow');
+     const retargetTicks = num(params.retargetTicks, 0, 'retargetTicks');
+     const idleOnInterface = params.idleOnInterface === true;
+-    const stun = params.stunActions === undefined ? null : new StunPack({ actions: params.stunActions, window: params.stunWindow, perTick: params.stunPerTick });
++    if (params.requestResend !== undefined && params.stunActions === undefined) throw new Error('requestResend needs stunActions with a player action');
++    const stun = params.stunActions === undefined ? null : new StunPack({ actions: params.stunActions, window: params.stunWindow, perTick: params.stunPerTick, ...(params.requestResend !== undefined ? { resend: params.requestResend } : {}) });
+ 
+     const messages = new FreshMessages();
+     let started = false;
+@@ -235,7 +240,7 @@
+                     lastStunEnd = t + 8;
+                 } else if (/during combat/i.test(m.text)) {
+                     ctx.count('combatBlocks');
+-                }
++                } else stun?.heard(m.text);
+             }
+             if (picked) ctx.count('successes', picked);
+             if (rolls > rollsBefore) {
+@@ -253,7 +258,7 @@
+             if (t - startTick > maxTicks) return finish(ctx, 'maxTicks');
+             if (hp <= 0 || s.player.isDead) return ctx.fault('died', summary());
+ 
+-            if (stun?.holding(t, s)) {
++            if (stun?.hold(ctx)) {
+                 // a trade request waits for its trade: any packet would replace or close it
+                 ctx.count('requestHoldTicks');
+                 lastIdleTick = t;
+diff --git a/server/webclient/src/bot/programs/stun-actions.ts b/server/webclient/src/bot/programs/stun-actions.ts
+index 5efa9b1..84cf937 100644
+--- a/server/webclient/src/bot/programs/stun-actions.ts
++++ b/server/webclient/src/bot/programs/stun-actions.ts
+@@ -27,7 +27,12 @@
+ // packet back until the trade opens, for at most REQUEST_HOLD ticks (rs/106's account sent
+ // nothing between its request and the open trade; the helper answers on the next tick).
+ // If no trade has opened by then, the program carries on. It fires at most once per stun and
+-// only on a player standing next to the account (a stunned player cannot walk). Gate it with
++// only on a player standing next to the account (a stunned player cannot walk). With `resend: n`
++// (off by default; 1 <= n <= REQUEST_HOLD) a request that has drawn neither an open trade nor the
++// engine's "Sending trade offer..." n ticks after it goes out once more, inside the hold, and the
++// hold restarts from the re-send. The engine sends that line in the same script that shows the
++// partner 'wishes to trade', so without it the partner never saw the request (a dropped op), and
++// a trade still open, or a request still answered, never draws a second one. Gate it with
+ // `fewer` (e.g. fewer than 3 bones) so it goes out only when a top-up is due, and give it
+ // `window: [2, 4]`: rs/106's trades took 5-6 ticks from the request, so one sent later than +4
+ // is still open on the attempt tick and delays the attempt. The pickpocket
+@@ -309,6 +314,8 @@
+     window?: unknown;
+     /** Stun actions per tick, at most the budget less the knight click (default 4). */
+     perTick?: unknown;
++    /** Ticks after an unanswered `player` request at which it goes out once more (default off; see the header). */
++    resend?: unknown;
+ }
+ 
+ export interface StunSummary {
+@@ -326,11 +333,24 @@
+     modalTicks: number;
+     /** Ticks a `player` action owned (the knight click skipped). */
+     ownedTicks: number;
++    /** `player` requests sent once more (only with `resend`). */
++    resends?: number;
+ }
+ 
+ /** Ticks after a trade request in which the program sends nothing while it waits for the trade to open. */
+ export const REQUEST_HOLD = 3;
+ 
++/** The engine's reply to a trade request it ran (trade.rs2 [opplayer4]), in the script that tells the partner. */
++export const TRADE_SENT_RE = /^sending trade offer/i;
++
++/** A `player` request the program holds for: when it went out, and whether the engine answered it. */
++interface PendingRequest {
++    tick: number;
++    tpl: StunTemplate;
++    answered: boolean;
++    resent: boolean;
++}
++
+ /** A main modal (a trade, a bank) is open: an inventory op, a button or a click would close it. */
+ export function modalOpen(s: BotWorldState): boolean {
+     return !!(s.modalOpen || s.trade?.isOpen);
+@@ -353,11 +373,20 @@
+     private modalTicks = 0;
+     private ownedTicks = 0;
+     private playerSentThisStun = false;
+-    private requestTick: number | null = null;
++    private request: PendingRequest | null = null;
++    private readonly resend: number | null;
++    private resends = 0;
+     private readonly byAction: Record<string, number> = {};
+ 
+     constructor(opts: StunPackOptions) {
+         this.templates = parseStunActions(opts.actions);
++        if (opts.resend === undefined) this.resend = null;
++        else {
++            const n = num(opts.resend, 0, 'requestResend');
++            if (!Number.isInteger(n) || n < 1 || n > REQUEST_HOLD) throw new Error(`requestResend must be a whole number of ticks from 1 to ${REQUEST_HOLD} (inside the request hold)`);
++            if (!this.templates.some(t => t.kind === 'player')) throw new Error('requestResend needs a player action in stunActions');
++            this.resend = n;
++        }
+         const w = opts.window ?? [2, 7];
+         if (!Array.isArray(w) || w.length !== 2 || !w.every(v => Number.isInteger(v))) throw new Error('stunWindow must be [from, to], offsets from the failure tick');
+         [this.from, this.to] = w as [number, number];
+@@ -375,19 +404,49 @@
+         this.stuns++;
+     }
+ 
++    /** A game message the program saw: the engine's "Sending trade offer..." answers the pending request. */
++    heard(text: string): void {
++        if (this.request && TRADE_SENT_RE.test(text)) this.request.answered = true;
++    }
++
+     /**
+-     * True while a trade request waits for its trade to open: send nothing. Ends when a modal
+-     * opens (the caller's interface rule takes over) or REQUEST_HOLD ticks have passed.
++     * True while a trade request waits for its trade to open: send nothing but the one re-send
++     * `resend` allows. Ends when a modal opens (the caller's interface rule takes over) or
++     * REQUEST_HOLD ticks have passed since the last request.
+      */
+-    holding(t: number, s: BotWorldState): boolean {
+-        if (this.requestTick === null) return false;
+-        if (modalOpen(s) || t > this.requestTick + REQUEST_HOLD) {
+-            this.requestTick = null;
++    hold(ctx: ProgramContext): boolean {
++        const r = this.request;
++        if (!r) return false;
++        const t = ctx.tick;
++        const s = ctx.state;
++        if (modalOpen(s) || t > r.tick + REQUEST_HOLD) {
++            this.request = null;
+             return false;
+         }
+-        return t > this.requestTick;
++        if (t <= r.tick) return false;
++        if (this.resend !== null && !r.resent && !r.answered && t >= r.tick + this.resend) this.resendRequest(ctx, r);
++        return true;
+     }
+ 
++    /** Send an unanswered request once more, if its player is still next to the account and the action still due. */
++    private resendRequest(ctx: ProgramContext, r: PendingRequest): void {
++        r.resent = true;
++        const p = resolve(r.tpl, ctx.state, new Ledger(ctx.state.inventory));
++        if (!p) {
++            ctx.count('resendSkipped');
++            return;
++        }
++        if (!ctx.send(p.action, `${p.what} (re-send)`)) {
++            this.rejected++;
++            ctx.count('stunRejected');
++            return;
++        }
++        this.resends++;
++        ctx.count('requestResends');
++        ctx.mark(`${r.tpl.name}:resend`);
++        r.tick = ctx.tick;
++    }
++
+     /**
+      * Send this tick's stun actions; call it after any page resume or eat, before the knight
+      * click. True when a `player` action went out and owns the tick: send no click after it.
+@@ -453,7 +512,8 @@
+             }
+             if (p.t.kind === 'player') {
+                 this.playerSentThisStun = true;
+-                this.requestTick = t;
++                this.request = { tick: t, tpl: p.t, answered: false, resent: false };
++                ctx.mark(p.t.name);
+             }
+         }
+         if (owned) {
+@@ -481,7 +541,8 @@
+             firedPerStun: this.stuns ? Math.round((this.fired / this.stuns) * 100) / 100 : 0,
+             byAction: { ...this.byAction },
+             modalTicks: this.modalTicks,
+-            ownedTicks: this.ownedTicks
++            ownedTicks: this.ownedTicks,
++            ...(this.resend !== null ? { resends: this.resends } : {})
+         };
+     }
+ }
+diff --git a/speedrun/lab/measure-thieving.ts b/speedrun/lab/measure-thieving.ts
+index 585d724..eac8c76 100644
+--- a/speedrun/lab/measure-thieving.ts
++++ b/speedrun/lab/measure-thieving.ts
+@@ -18,8 +18,9 @@
+ //   leg      only thieving:to-ardougne, from wherever the account stands
+ //   topup    S18's helper top-ups at the scored run's stats: --mode=idle|restart --helper=<bot>
+ //            (HELPER=<bot> in tickprog-lab.sh) [--thieving=57 --hp=97 --sharks=2 --below=2
+-//            --load=1 --to=99]. The helper is a lite stand-in that stays beside the account by
+-//            ::tele and answers the account's request with one shark offer.
++//            --load=1 --to=99] [--resend=1: idle mode's topUp.resend]. The helper is a lite
++//            stand-in that stays beside the account by ::tele and answers the account's request
++//            with one shark offer. Both accounts leave Tutorial Island through S00's skip first.
+ //   pack     S18 with the stun pack (rs/324): the account at post-Monkey Madness stats with Load 0
+ //            (stun-pack.md section 6), steps({ topUp, stunPack }) on the knights band, and the
+ //            helper stand-in as the courier: it brings dragon bones to fill, sharks back to 2, and
+@@ -260,8 +261,9 @@
+  * its game message, the trade's open and close ticks, the food count, and whether the giver was
+  * within 1 tile on each failure's +2 (the program's `player` action needs it). It also records
+  * the tick of every trade request the module sends (the restart path's `openTrade` clicks; the
+- * idle path's request goes out from the page program and is not seen here) and every server
+- * op rejection (UNSET_MAP_FLAG, which OpPlayerHandler sends for a click from a delayed player).
++ * idle path's requests and re-sends come from the page program's status marks, `topup` and
++ * `topup:resend`, stamped on the tick the program sent them) and every server op rejection
++ * (UNSET_MAP_FLAG, which OpPlayerHandler sends for a click from a delayed player).
+  *
+  * With `bonesBelow` (the pack) a stun is also due when the account holds fewer bones, and
+  * `topUpLog` is one row per due stun: the giver's tile less the account's on +2 (the tick the
+@@ -272,6 +274,7 @@
+ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ tick: number; ev: string }>, bonesBelow?: number) {
+     const fails: number[] = [], rolls: number[] = [], opens: number[] = [], closes: number[] = [];
+     const clicks: number[] = [], rejects: number[] = [];
++    const requestMarks = new Set<number>(), resendMarks = new Set<number>();
+     const send = sdk.sendTradeRequest.bind(sdk);
+     sdk.sendTradeRequest = (...a: Parameters<typeof send>) => {
+         clicks.push(sdk.getState()?.tick ?? -1);
+@@ -293,6 +296,9 @@
+     const un = sdk.onStateUpdate((s: BotWorldState) => {
+         if (s.tick === last) return;
+         last = s.tick;
++        const marks = (programStatus(s) as ProgramStatus | null)?.marks;
++        for (const t of marks?.topup?.ticks ?? []) requestMarks.add(t);
++        for (const t of marks?.['topup:resend']?.ticks ?? []) resendMarks.add(t);
+         const st = programStatus(s);
+         if (st && st.name === 'pickpocket') {
+             const n = (st.counters['stun:topup'] ?? 0) + (st.counters['stun:topup:bones'] ?? 0);
+@@ -337,23 +343,55 @@
+         const stat = (rs: typeof rows) => {
+             const hist: Record<number, number> = {};
+             for (const r of rs) hist[r.gap!] = (hist[r.gap!] ?? 0) + 1;
+-            return { stuns: rs.length, meanGap: rs.length ? +(rs.reduce((a, r) => a + r.gap!, 0) / rs.length).toFixed(2) : null, hist };
++            const mean = rs.length ? rs.reduce((a, r) => a + r.gap!, 0) / rs.length : null;
++            const sd = mean !== null && rs.length > 1 ? Math.sqrt(rs.reduce((a, r) => a + (r.gap! - mean) ** 2, 0) / (rs.length - 1)) : null;
++            return { stuns: rs.length, meanGap: mean === null ? null : +mean.toFixed(2), sdGap: sd === null ? null : +sd.toFixed(2), hist };
+         };
+         const top = rows.filter(r => r.open !== null);
+-        const other = stat(rows.filter(r => r.open === null));
++        const other = stat(rows.filter(r => r.open === null && !dueFails.includes(r.f)));
+         const topStat = stat(top);
++        const inStun = (t: number, f: number) => t >= f && t <= f + 12;
++        const wishes = giverEvents.filter(e => e.ev === 'wishes to trade').map(e => e.tick);
++        const sentLines = tradeLines.filter(l => /^sending trade offer/i.test(l.text)).map(l => l.tick);
++        // per due failure: the program's request and re-send, what the engine ran, and the trade
++        const due = dueFails.map(f => ({
++            f,
++            requested: [...requestMarks].some(t => inStun(t, f)),
++            resent: [...resendMarks].some(t => inStun(t, f)),
++            wishes: wishes.filter(t => inStun(t, f)).length,
++            sent: sentLines.filter(t => inStun(t, f)).length,
++            opened: opens.some(o => inStun(o, f)),
++            gap: rows.find(r => r.f === f)?.gap ?? null
++        }));
++        const missed = rows.filter(r => r.open === null && dueFails.includes(r.f));
++        const missedStat = stat(missed);
++        const resentDue = due.filter(d => d.resent);
+         return {
+-            topUpStuns: topStat, otherStuns: other,
++            allStuns: stat(rows), topUpStuns: topStat, otherStuns: other, missedDueStuns: missedStat,
++            resentStuns: stat(rows.filter(r => resentDue.some(d => d.f === r.f))),
+             costPerTopUp: topStat.meanGap !== null && other.meanGap !== null ? +(topStat.meanGap - other.meanGap).toFixed(2) : null,
++            costPerMissedStun: missedStat.meanGap !== null && other.meanGap !== null ? +(missedStat.meanGap - other.meanGap).toFixed(2) : null,
+             topUps: top.map(r => ({ f: r.f, open: r.open, close: r.close, gap: r.gap })),
++            requestMarks: requestMarks.size, resendMarks: resendMarks.size, giverWishes: wishes.length, accountSent: sentLines.length,
++            dueRequested: due.filter(d => d.requested).length,
++            dueLanded: due.filter(d => d.opened).length,
++            dueResent: resentDue.length,
++            dueResentLanded: resentDue.filter(d => d.opened).length,
++            // a stun whose partner saw 'wishes to trade' twice, or whose account the engine answered twice
++            doubleRequests: due.filter(d => d.wishes > 1 || d.sent > 1).length,
++            // every 'wishes to trade' outside a due stun's window (a request the trace did not expect)
++            strayWishes: wishes.filter(t => !dueFails.some(f => inStun(t, f))).length,
+             dueFails: dueFails.length,
+             dueNotAdjacent: dueFails.filter(f => adjacentAt2[f] === false).length,
+             dueDiagonal: dueFails.filter(f => offsetAt2[f] && offsetAt2[f]![0] !== 0 && offsetAt2[f]![1] !== 0).length,
+             // per due failure, both sides' trade lines at their offset from it (the next 12 ticks)
+             requestClicks: clicks.length,
+-            trace: dueFails.slice(0, 40).map(f => ({
++            trace: dueFails.slice(0, 60).map(f => ({
+                 f,
+                 giverAt2: offsetAt2[f]?.join(',') ?? null,
++                requests: [...requestMarks].filter(t => inStun(t, f)).map(t => `+${t - f}`),
++                resends: [...resendMarks].filter(t => inStun(t, f)).map(t => `+${t - f}`),
++                gap: rows.find(r => r.f === f)?.gap ?? null,
+                 clicks: clicks.filter(t => t >= f && t <= f + 12).map(t => `+${t - f}`),
+                 rejected: rejects.filter(t => t >= f && t <= f + 12).map(t => `+${t - f}`),
+                 account: tradeLines.filter(l => l.tick >= f && l.tick <= f + 12).map(l => `+${l.tick - f} ${l.text}`),
+@@ -484,10 +522,12 @@
+         const helperBot = arg('helper', '');
+         if (!helperBot) throw new Error('topup needs --helper=<bot> (HELPER=<bot> in tickprog-lab.sh)');
+         const tuMode = arg('mode', 'idle') as 'idle' | 'restart';
++        const resend = arg('resend', '') === '1';
+         const below = Number(arg('below', '2'));
+         const load = Number(arg('load', '1'));
++        await leaveTutorial(session);
+         const helper = await openSession(helperBot, { launch: true, pathfinding: false });
+-        await helper.bot.skipTutorial().catch(() => {});
++        await leaveTutorial(helper);
+         await helper.sdk.sendSay('::~clearinv inv');
+         await helper.sdk.sendSay(`::give shark ${load * 8}`);
+         await say(`setstat thieving ${arg('thieving', '57')}`);
+@@ -499,14 +539,17 @@
+         const g = runGiver(helper, sharkGiver(load));
+         await waitUntil(sdk, s => s.nearbyPlayers.some(p => sameName(p.name, giver) && p.distance <= 1), { maxTicks: 30 });
+         const track = trackTopUps(giver, below, g.events);
+-        result('topup', { ...where(), mode: tuMode, giver, below, load, hp: sdk.getState()!.player!.hp, thieving: arg('thieving', '57'), to: arg('to', '99') });
++        const label = `${tuMode}${resend ? '+resend' : ''}`;
++        result('topup', { ...where(), mode: label, giver, below, load, hp: sdk.getState()!.player!.hp, thieving: arg('thieving', '57'), to: arg('to', '99') });
+         try {
+-            const rows = await runList(steps({ ...opts(), food: 'shark', topUp: { giver, below, mode: tuMode } }).filter(s => s.name === 'thieving:knights'));
++            const rows = await runList(steps({ ...opts(), food: 'shark', topUp: { giver, below, mode: tuMode, ...(resend ? { resend } : {}) } }).filter(s => s.name === 'thieving:knights'));
+             const band = rows.find(r => r.step === 'thieving:knights');
+-            result(`topup ${tuMode} summary`, { bandTicks: band?.ticks ?? null, helperTeles: g.teles, ...track.summary() });
++            // the module's receiver: a trade that closed without the food arriving is a closed trade
++            const trades = ((rows.find(r => r.step === 'thieving:knights:detail')?.meta as { topUp?: { trades?: Array<{ ok: boolean; reason?: string }> } } | undefined)?.topUp?.trades) ?? [];
++            result(`topup ${label} summary`, { bandTicks: band?.ticks ?? null, helperTeles: g.teles, trades: trades.length, closedTrades: trades.filter(t => !t.ok).map(t => t.reason ?? 'closed'), ...track.summary() });
+         } catch (e) {
+             // a band that ran out of food still reports what its top-ups did
+-            result(`topup ${tuMode} summary`, { bandTicks: null, error: String(e), helperTeles: g.teles, ...track.summary() });
++            result(`topup ${label} summary`, { bandTicks: null, error: String(e), helperTeles: g.teles, ...track.summary() });
+         } finally {
+             track.stop();
+             g.stop();
+diff --git a/speedrun/skills/thieving.test.ts b/speedrun/skills/thieving.test.ts
+index c92db4e..7a7df1c 100644
+--- a/speedrun/skills/thieving.test.ts
++++ b/speedrun/skills/thieving.test.ts
+@@ -7,10 +7,10 @@
+ import type { ProgramStatus } from '../lib/programs';
+ import { TickLog } from '../lib/ticks';
+ import type { Step, StepContext } from '../runner/step';
+-import { STUN_PRESETS } from '../../server/webclient/src/bot/programs/stun-actions';
++import { REQUEST_HOLD, STUN_PRESETS } from '../../server/webclient/src/bot/programs/stun-actions';
+ import {
+     ARDOUGNE_SOUTH_BANK, ARROWHEAD_TIERS, BANDS, bonesTopUpAction, eatPolicy, FOODS, foodPattern, packReport, RETALK_QUIET_TICKS, retalkDue, steps, STUN_PACK_ACTIONS, STUN_PACK_BONES_BELOW,
+-    stunPackCheck, TOPUP_RESTART_BY, topUpAction, topUpDue, TopUpReceiver
++    stunPackCheck, TOPUP_RESEND_TICKS, TOPUP_RESTART_BY, topUpAction, topUpDue, TopUpReceiver
+ } from './thieving';
+ 
+ describe('sail retalk', () => {
+@@ -343,6 +343,8 @@
+         const done = steps({ food: 'cake', topUp }).find(s => s.name === 'thieving:knights')!.run(ctx);
+         await settle(() => sdk.starts.length === 1);
+         expect(sdk.starts[0]!.params).toMatchObject({ idleOnInterface: true, stunActions: [topUpAction(topUp, FOODS.cake)], retargetTicks: 12 });
++        // off by default: no requestResend key at all, so the page runs today's program
++        expect(sdk.starts[0]!.params).not.toHaveProperty('requestResend');
+         const action = topUpAction(topUp, FOODS.cake) as { fewer: Array<{ item: string; than: number }> };
+         expect(action).toMatchObject({ name: 'topup', kind: 'player', player: '^cairn_mule2$', window: [2, 2] });
+         expect(action.fewer[0]!.than).toBe(4);
+@@ -363,6 +365,26 @@
+         expect(meta.topUp.trades.map(t => [t.ok, t.received])).toEqual([[true, 10]]);
+     });
+ 
++    test('idle mode with resend: requestResend at TOPUP_RESEND_TICKS, inside the hold, and every key declared', async () => {
++        const sdk = new ManualPageSdk(world({ level: 60, x: 2670, z: 3305, maxHp: 40, inventory: [cake(0), cake(1)] }));
++        const { ctx } = harness(sdk);
++        const done = steps({ food: 'cake', topUp: { giver: GIVER, below: 4, resend: true } }).find(s => s.name === 'thieving:knights')!.run(ctx);
++        await settle(() => sdk.starts.length === 1);
++        expect(sdk.starts[0]!.params).toMatchObject({ idleOnInterface: true, requestResend: TOPUP_RESEND_TICKS });
++        expect(TOPUP_RESEND_TICKS).toBeLessThanOrEqual(REQUEST_HOLD);
++        // the page refuses a key the program does not declare (#177)
++        const declared: readonly string[] = createPickpocket.params;
++        expect(Object.keys(sdk.starts[0]!.params).filter(k => !declared.includes(k))).toEqual([]);
++        sdk.publish({ phase: 'done', result: { reason: 'level' } }, { skills: [{ name: 'Thieving', level: 99, baseLevel: 99, experience: 0 }] as never });
++        await done;
++    });
++
++    test('resend is idle-only and boolean', () => {
++        expect(() => steps({ topUp: { giver: GIVER, below: 4, mode: 'restart', resend: true } })).toThrow(/idle mode/);
++        expect(() => steps({ topUp: { giver: GIVER, below: 4, resend: 3 as never } })).toThrow(/true or false/);
++        expect(() => steps({ topUp: { giver: GIVER, below: 4, mode: 'restart', resend: false } })).not.toThrow();
++    });
++
+     test('restart mode: stop at the failure, receive the trade, restart within TOPUP_RESTART_BY ticks', async () => {
+         const sdk = new ManualPageSdk({ ...world({ level: 60, x: 2670, z: 3305, maxHp: 40, inventory: [cake(0), cake(1)] }), nearbyPlayers: [{ index: 7, name: GIVER, distance: 1 }] } as never);
+         sdk.onSend = (a, s) => {
+@@ -610,6 +632,16 @@
+         expect(STUN_PACK_BONES_BELOW).toBe(3);
+     });
+ 
++    test('idle mode with resend and the pack: requestResend beside the pack actions, every key declared, and the program accepts it', async () => {
++        const topUp = { ...TOPUP, resend: true };
++        const params = await knightsParams({ food: 'shark', topUp, stunPack: PACK }, packWorld());
++        expect(params.stunActions).toEqual([topUpAction(topUp, FOODS.shark), bonesTopUpAction(topUp, 3), 'bury', 'charge', 'arrows']);
++        expect(params.requestResend).toBe(TOPUP_RESEND_TICKS);
++        const declared = new Set<string>(createPickpocket.params);
++        expect(Object.keys(params).filter(k => !declared.has(k))).toEqual([]);
++        expect(() => createPickpocket(params)).not.toThrow();
++    });
++
+     test('idle mode: the food top-up, the bones top-up, then bury, charge and arrows; every key one the program declares', async () => {
+         const params = await knightsParams({ food: 'shark', topUp: TOPUP, stunPack: PACK }, packWorld());
+         expect(params.stunActions).toEqual([topUpAction(TOPUP, FOODS.shark), bonesTopUpAction(TOPUP, 3), 'bury', 'charge', 'arrows']);
+diff --git a/speedrun/skills/thieving.ts b/speedrun/skills/thieving.ts
+index d9e60a5..a327a5f 100644
+--- a/speedrun/skills/thieving.ts
++++ b/speedrun/skills/thieving.ts
+@@ -20,7 +20,9 @@
+ // - `idle` (default): the program sends the trade request itself, as a `player` stun action
+ //   on the stun's +2 once fewer than `below` food items are left, and with
+ //   `idleOnInterface` sends nothing while the trade is open; this module's TopUpReceiver
+-//   accepts the offer and confirm screens (`lib/trade.ts` `decideReceiver`).
++//   accepts the offer and confirm screens (`lib/trade.ts` `decideReceiver`). `resend: true`
++//   (off by default) has the program send a request the engine never answered once more,
++//   TOPUP_RESEND_TICKS after it and inside the program's request hold.
+ // - `restart` (the fallback): the module stops the program on the first failure with food
+ //   below `below`, receives the trade (`receiveFrom`, re-sending a request the stun's delay
+ //   dropped), and starts the program again by TOPUP_RESTART_BY ticks after the failure, whose
+@@ -201,6 +203,8 @@
+     below: number;
+     /** See the header (default 'idle'). */
+     mode?: 'idle' | 'restart';
++    /** Idle mode only: re-send an unanswered request once, TOPUP_RESEND_TICKS after it (default off). */
++    resend?: boolean;
+ }
+ 
+ /** Ticks after the failure by which a stopped program must be running again (the header). */
+@@ -212,6 +216,14 @@
+  * (OpPlayerHandler): in the lab every one of 13 such requests vanished and no top-up landed.
+  */
+ export const TOPUP_NO_REPLY_TICKS = 2;
++/**
++ * Idle mode's `resend`: the program's `requestResend`, ticks after the +2 request. A request that
++ * has drawn neither a trade nor "Sending trade offer..." by then was dropped: in rs/279's
++ * side-tile lab, 1 of 10 requests never reached the giver. 3 is the last tick of the program's
++ * request hold (REQUEST_HOLD), so the re-send displaces no click, and a request that ran even
++ * 2 ticks late has already been answered.
++ */
++export const TOPUP_RESEND_TICKS = 3;
+ 
+ /** The `player` stun action that requests the top-up on a stun's +2. */
+ export function topUpAction(topUp: TopUp, food: Food): Record<string, unknown> {
+@@ -673,7 +685,8 @@
+             stopWhenFoodBelow: 1,
+             retargetTicks: 12,
+             ...(topUp && mode === 'idle' ? { idleOnInterface: true } : {}),
+-            ...(stunActions ? { stunActions } : {})
++            ...(stunActions ? { stunActions } : {}),
++            ...(topUp && mode === 'idle' && topUp.resend ? { requestResend: TOPUP_RESEND_TICKS } : {})
+         };
+     };
+     let policy = eatPolicy(s.player!.maxHp, heldFood(s, cfg.foods).heal, band.stunDamage);
+@@ -800,6 +813,8 @@
+     const foods = parseFoods(opts.food);
+     const topUp = opts.topUp;
+     if (topUp && (!topUp.giver || !(topUp.below >= 1) || !['idle', 'restart', undefined].includes(topUp.mode))) throw new Error(`topUp needs a giver, below >= 1 and mode idle or restart (got ${JSON.stringify(topUp)})`);
++    if (topUp?.resend !== undefined && typeof topUp.resend !== 'boolean') throw new Error(`topUp.resend must be true or false (got ${JSON.stringify(topUp.resend)})`);
++    if (topUp?.resend && topUp.mode === 'restart') throw new Error('topUp.resend is for idle mode; restart mode re-sends through receiveFrom');
+     const stunPack = parseStunPack(opts.stunPack, topUp);
+     const cfg: Config = { to: opts.to ?? 99, foods, restock: opts.restock ?? 'bank', ...(topUp ? { topUp } : {}), ...(stunPack ? { stunPack } : {}) };
+     const [men, ...ardougne] = BANDS;
