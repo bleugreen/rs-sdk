@@ -1,0 +1,17 @@
+{
+    "accounts": [
+        { "account": "acct01", "method": "shilo" },
+        { "account": "acct02", "method": "guards" },
+        { "account": "acct03", "method": "knights" },
+        { "account": "acct04", "method": "knights" },
+        { "account": "acct05", "method": "knights" },
+        { "account": "acct06", "method": "iron" }
+    ],
+    "loginSpacingMs": 2000,
+    "hp": 40,
+    "sharks": { "source": "bank", "perAccount": 200, "perLoginHour": 30, "hours": 72, "ceiling": 701, "minimum": 28 },
+    "ramp": { "steps": [8, 20, 43], "holdMinutes": 15, "dropPct": 10, "admitTimeoutMinutes": 30, "fallbackMix": { "iron": 12, "heroes": 8, "guards": 23 } },
+    "foodFallbackMix": { "iron": 12, "guards": 23 },
+    "ledger": { "everyTicks": 50, "bookMinutes": 15 },
+    "sell": { "enabled": false, "cap": 500, "everyMinutes": 120, "fillMinutes": 10, "floors": { "Iron ore": 80 } }
+}
