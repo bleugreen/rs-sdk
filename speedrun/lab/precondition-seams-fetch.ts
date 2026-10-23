@@ -5,9 +5,13 @@
 //
 //   bun speedrun/lab/precondition-seams-fetch.ts <dir>
 
-import { read } from '@cairn/sdk';
 import { createHash } from 'crypto';
 import { mkdirSync, writeFileSync } from 'fs';
+
+// @cairn/sdk is the Cairn host's module, not a repo dependency: loaded by a non-literal specifier so
+// the repo's typecheck does not compile the host's sources.
+const SDK = '@cairn/sdk';
+const { read } = (await import(SDK)) as { read: (uri: string) => Promise<unknown> };
 
 const SHA: Record<string, string> = {
     'run-config.json': '1468f907ec4afa131648385436525d82548b20d2b8ecea1f57e75d1a6c119c95',
