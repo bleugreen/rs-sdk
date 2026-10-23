@@ -516,6 +516,16 @@ the served bot bundle, so a bundle built before a4456c73 still judges (c) at 150
 rebuilds the bundle on each machine at a commit at or after a4456c73 (the floor contains it), and
 step 3's served = built check then runs within each machine as usual.
 
+**The served webclient is rebuilt from the run commit at every step 0** (main 21:3x via rs/158;
+fold-in 33). The final run commit carries an `sdk/` change (rs/186's walker fix for the browser's
+`walkTo`, 01304312, with fleet snapshot 11 moving the floor), and the SDK reaches the tab only
+through the served bot bundle. So whenever `~/run-commit` changes, the install and build above run
+again on both machines before anything is launched, and step 3's served = built check confirms
+that each machine serves what it built from that commit. A bundle built from an earlier commit is
+never served to SCORED's tab, even when the page server is already up (it serves `out/bot` with
+`no-store`, so the rebuild needs no restart of it). Main names the final commit by 12:00Z (12:30Z
+absolute), leaving this rebuild its 20 minutes before the 13:00Z freeze (RUN-ORDER.md section 1).
+
 **The floor check, a hard stop** (main's ruling, relayed by rs/158 at 09:24 PDT 2026-10-22;
 STEP-MANIFEST.md entry 0). The floor is read from entry 0's line on origin/main, "`RUN_COMMIT` at
 or after the run-commit floor, `<hash>`", its single source ("Credentials"). Set `N` to the floor
@@ -1730,7 +1740,50 @@ rs/529's API**, and are not written here until they exist):
 - A crash that never reached the abort path cancels nothing, so a crash-resume is unchanged.
 - The run-bound hold (generation 0) is its own state, never a cancel; S22's prepare advances it.
 
-**Once rs/547 is on the floor** (rs/511, under rs/186: built and unit-tested, and lab-measured
+**Re-running after a StepError** (main 21:5x via rs/158; rs/186 21:3x; fold-in 33). run.ts never
+re-invokes a step that throws (`runner/step.ts:281-282`; `resume.ts:337-344` retries only a link,
+session or page-reload failure), so a thrown step stops the run with a StepError and the only
+recovery is the operator re-running the command. SCORED stays in the world (`session.ts:1193-1196`),
+and on the re-run `resolveResume` walks the manifest against the game and enters the first step
+that is not `done` through its `resume`. The cost is a manual restart, **~150-450 ticks (i)**;
+rs/546 measures one kill-and-re-run (RUN-ORDER.md section 7, the ladder's general note).
+
+**Pending rs/186** (asked by rs/158; not written until rs/186 sends them): the run log's exact
+StepError line (its step and reason fields), the resume line `resolveResume` prints on entering the
+step, whether the re-run needs any flag or is the bare launch line, and the relog-lock check on a
+run commit without rs/547. The launch line itself is pending rs/186 (step 7). Until they arrive,
+read the fields named below by eye and treat any doubt as a refusal.
+
+The checks, in order, before re-running. Any one failing means **do not re-run: tell main**.
+
+1. **The StepError's step and reason**, read from the run log (format pending rs/186). Note both
+   for main and for the attempt's findings.
+2. **SCORED is still in the world**: the live view, and `tab.ts` `pageInGame` over the run tab's
+   DevTools (never the gateway's `inGame`; "The manual relog" above). If SCORED is out, this is a
+   dropped session, not a StepError: "The manual relog" applies first.
+3. **The relog lock is free**: nothing is relogging the tab. With rs/547 on the floor that is
+   `<run dir>/relog.lock` ("Once rs/547 is on the floor" below); on a run commit without it, no
+   manual relog is in progress (the check pending rs/186).
+4. **The helpers are not stopped**: the launcher's helper families for the steps ahead are
+   logged in or waiting for their cue (step 4), none stopped by the failed step's scope.
+5. **The step is not on the non-admitting list**: RUN-ORDER.md section 7's margin ladder, its
+   attempt-ending lines, including the conditional note for A and B (until B merges, any step after
+   H7; until A merges, S18 after its first stocked stun and S22 after its first catch). A step
+   there has a post-throw state its resume does not admit, so a re-run walks back or refuses, and
+   in S09-S22 it can destroy kit. The attempt ends there.
+
+Then re-run **the same command the attempt was launched with, unchanged** (step 7's launch line,
+pending rs/186). Never add `--from`: it overrides the first resume walk, a choice only main makes.
+Expect the resume line naming the step the walk entered and that it entered through `resume`
+(text pending rs/186): it should be the step the StepError named, or the next one if that step's
+`done` already holds. A refusal (a ResumeError, a precondition refusal, or a step other than
+expected) goes to main, and nothing is changed by hand. One known edge, asked of rs/186: until
+`resolveResume` (`resume.ts:77-99`) waits for a populated player state, a re-run started before
+the page publishes state sees S00 undone and refuses with 'not in game'; wait for the page's state
+to publish, then re-run once.
+
+**Once rs/547 is on the floor** (rs/547, rs/511's successor under rs/186, its PR due 01:00 PDT;
+the figures below were measured on rs/511's patch: built and unit-tested, and lab-measured
 on bgsrv-mac, the lab engine at 400 ms, the browser client, tree 1fccc5b7 + rs/511's patch,
 cairn://p/rs/511/comments/2; fold-in 32). **rs/511 is not a start condition** (main), so the
 manual relog above stays the procedure for a run commit without it, attempt 1's included. The
