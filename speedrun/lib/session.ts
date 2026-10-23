@@ -648,6 +648,10 @@ export interface LoginOptions {
      * without this option.
      */
     inPage?: boolean;
+    /** Refuse instead of navigating when the existing page cannot start this login. */
+    requireInPage?: boolean;
+    /** Re-read admission after async gates/token preparation; return its absolute freshness deadline. */
+    beforeDispatch?: () => number;
 }
 
 export interface LoginResult {
@@ -736,14 +740,16 @@ export async function login(session: Session, opts: LoginOptions = {}): Promise<
     const maxAttempts = opts.attempts ?? 6;
     const cdp = session.client === 'browser' && !session.insecureQueryLogin ? cdpUrl(session.env) : undefined;
     let inPage = opts.inPage === true && cdp !== undefined;
+    if ((opts.requireInPage || opts.beforeDispatch) && !inPage) throw new Error('guarded login requires an in-page browser login');
     for (let attempt = 1; ; attempt++) {
         const sinceTick = session.lastInWorldTick;
         const sinceAdvance = session.lastAdvanceAt;
         let via: LoginResult['via'] = 'launch';
         if (inPage) {
-            const start = await loginInPage(session, cdp!);
+            const start = await loginInPage(session, cdp!, opts);
             if (start.started) via = 'page';
             else {
+                if (opts.requireInPage || opts.beforeDispatch) throw new Error(`in-page login refused: ${start.reason}`);
                 // The page cannot log itself in, now or later: navigate from here on.
                 appendFileSync(session.logPath, `[speedrun] session ${session.sessionId}: in-page login unavailable (${start.reason}); navigating the tab\n`);
                 inPage = false;
@@ -766,7 +772,7 @@ export async function login(session: Session, opts: LoginOptions = {}): Promise<
         // An in-page login that ended without getting in is not tried in the page again: a page
         // whose client cannot log in twice (a bundle before rs/183's autoLogin fix) would fail every
         // attempt, and a navigation costs the same ticks, only some seconds more.
-        if (via === 'page') inPage = false;
+        if (via === 'page' && !opts.requireInPage && !opts.beforeDispatch) inPage = false;
         await sleep(backoffMs(attempt));
     }
 }
@@ -775,10 +781,19 @@ export async function login(session: Session, opts: LoginOptions = {}): Promise<
  * Start an in-page login with a fresh one-time token, and on success begin the new game session
  * (sessionId, launchedAt, tickBase) the way launchClient does for a launch.
  */
-async function loginInPage(session: Session, cdp: string): Promise<{ started: boolean; reason?: string }> {
+async function loginInPage(session: Session, cdp: string, opts: LoginOptions): Promise<{ started: boolean; reason?: string }> {
+    let token: string;
+    try { token = await mintLoginToken(session.env); }
+    catch (err) {
+        if (opts.requireInPage || opts.beforeDispatch) throw err;
+        return { started: false, reason: (err as Error).message };
+    }
+    // Admission refusals must not become an unavailable-page result and trigger navigation.
+    const validUntil = opts.beforeDispatch?.();
+    if (validUntil !== undefined && (!Number.isFinite(validUntil) || Date.now() >= validUntil)) throw new Error('login readiness expired');
     let start: PageLoginStart | null;
     try {
-        start = await pageLogin(cdp, session.name, await mintLoginToken(session.env));
+        start = await pageLogin(cdp, session.name, token, validUntil);
     } catch (err) {
         return { started: false, reason: (err as Error).message };
     }

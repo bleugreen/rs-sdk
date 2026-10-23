@@ -703,9 +703,12 @@ function preLoginCoverage(opts: RunecraftOptions, deps: RunecraftDeps, band: Ban
     const dir = opts.cueDir ?? deps.cueDir();
     const roster = opts.s21Givers ?? BODY_ROSTER_SIZE;
     const want = typeof roster === 'number' ? roster : roster.length;
-    const ready = giverFeed(deps.readStatuses(dir), deps.now(), () => 'robust', band.load ?? LOAD).map(e => e.name);
+    const statuses = deps.readStatuses(dir);
+    const ready = giverFeed(statuses, deps.now(), () => 'robust', band.load ?? LOAD).map(e => e.name);
     const missing = typeof roster === 'number' ? [] : roster.filter(g => !ready.some(r => canonName(r) === canonName(g)));
-    return { want, ready, missing, covered: typeof roster === 'number' ? ready.length >= want : missing.length === 0 };
+    const selected = typeof roster === 'number' ? ready.slice(0, want) : roster;
+    const validUntil = Math.min(...selected.map(name => Math.max(...statuses.filter(s => canonName(s.account) === canonName(name)).map(s => s.ms + STATUS_FRESH_MS))));
+    return { want, ready, missing, validUntil, covered: typeof roster === 'number' ? ready.length >= want : missing.length === 0 };
 }
 
 /** Re-read the entire roster immediately before login; a previous ready observation is not a lease. */
@@ -714,6 +717,15 @@ export function preLoginReady(opts: RunecraftOptions = {}): true | string {
     if (!band) return 'no S21 band';
     const status = preLoginCoverage(opts, { ...defaultDeps, ...opts.deps }, band);
     return status.covered ? true : `${status.ready.length} of ${status.want} S21 givers ready${status.missing.length ? ` (not ready: ${status.missing.join(', ')})` : ''}`;
+}
+
+/** A final fresh-roster read after login preparation; the page also enforces this deadline at dispatch. */
+export function preLoginDeadline(opts: RunecraftOptions = {}): number {
+    const band = bands(opts).find(b => b.id === 'S21');
+    if (!band) throw new Error('no S21 band');
+    const status = preLoginCoverage(opts, { ...defaultDeps, ...opts.deps }, band);
+    if (!status.covered || !Number.isFinite(status.validUntil)) throw new Error('S21 giver roster not ready at login dispatch');
+    return status.validUntil;
 }
 
 async function preLogin(ctx: StepContext<any>, band: Band, name: string, opts: RunecraftOptions): Promise<void> {

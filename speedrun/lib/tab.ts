@@ -127,7 +127,7 @@ export interface PageLoginStart {
  * ?token= page load does (GatewayConnection.ts redeemLoginToken), and hands the credentials
  * straight to the client's autoLogin, so they stay inside the page.
  */
-export function pageLoginExpression(botName: string, token: string): string {
+export function pageLoginExpression(botName: string, token: string, validUntil?: number): string {
     return `(async () => {
     const c = window.gameClient;
     const o = c && c.botOverlay;
@@ -146,6 +146,11 @@ export function pageLoginExpression(botName: string, token: string): string {
     if (!res.ok) return no('login token refused: HTTP ' + res.status);
     const body = await res.json();
     if (typeof body.bot !== 'string' || typeof body.password !== 'string') return no('the page server answered without credentials');
+    // Token redemption can outlive both the readiness observation and the page's idle state.
+    if (c.ingame) return no('already in game');
+    if (c.loginInProgress) return no('a login is already in progress');
+    const validUntil = ${JSON.stringify(validUntil ?? null)};
+    if (validUntil !== null && Date.now() >= validUntil) return no('login readiness expired');
     window.__rsPageLoginError = '';
     c.autoLogin(body.bot, body.password).catch(e => { window.__rsPageLoginError = String((e && e.stack) || e); });
     return { started: true, tickBase, gatewayConnected };
@@ -157,8 +162,9 @@ export function pageLoginExpression(botName: string, token: string): string {
  * logout, redeems `token` and runs its own login (see pageLoginExpression). The page, its game
  * cache and its gateway socket all stay as they are. Null when there is no tab for the bot.
  */
-export async function pageLogin(cdpOrigin: string, botName: string, token: string): Promise<PageLoginStart | null> {
-    const out = await evaluateInTab<PageLoginStart>(cdpOrigin, botName, pageLoginExpression(botName, token), 10_000);
+export async function pageLogin(cdpOrigin: string, botName: string, token: string, validUntil?: number): Promise<PageLoginStart | null> {
+    if (validUntil !== undefined && !Number.isFinite(validUntil)) throw new Error('invalid login readiness deadline');
+    const out = await evaluateInTab<PageLoginStart>(cdpOrigin, botName, pageLoginExpression(botName, token, validUntil), 10_000);
     return out ? out.value : null;
 }
 

@@ -127,6 +127,21 @@ describe("SCORED's split S21 relog", () => {
         } finally { if (lock.ok) lock.release(); }
     });
 
+
+    test('each planned login retry delegates the final guard; a failed guard keeps the same entry open', async () => {
+        const t = setup();
+        await scoredLogoutStep({ budget: t.budget, deps: t.deps }).run(t.ctx);
+        let checks = 0;
+        t.deps.login = async (_session, guard) => { guard!(); throw new Error('must not send login'); };
+        await expect(scoredLoginStep({ budget: t.budget, deps: t.deps, beforeLogin: t.beforeLogin,
+            beforeDispatch: () => { checks++; throw new Error('roster stale at dispatch'); },
+        }).run(t.ctx)).rejects.toThrow('roster stale at dispatch');
+        expect(checks).toBe(1);
+        expect(t.budget.planned(SCORED_RELOG)).toBe('open');
+        expect(t.budget.used()).toEqual({ planned: 1, unplanned: 0 });
+        expect(t.budget.holder()).toBeNull();
+    });
+
     test('title-screen replies retain their codes', () => {
         expect(loginReplyCode('This world is full.')).toBe(7);
         expect(loginReplyCode('Login server offline.')).toBe(8);

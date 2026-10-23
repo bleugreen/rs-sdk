@@ -531,6 +531,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
     };
     const s21Login = scoredLoginStep({
         budget: relogs,
+        beforeDispatch: () => runecraft.preLoginDeadline(s21Opts),
         beforeLogin: async ctx => {
             if (runecraft.preLoginReady(s21Opts) !== true) await preLogin.run(ctx);
             const ready = runecraft.preLoginReady(s21Opts);

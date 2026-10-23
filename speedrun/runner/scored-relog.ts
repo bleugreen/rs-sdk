@@ -32,7 +32,7 @@ export const WORLD_FULL_RETRIES = 15;
 export interface ScoredRelogDeps {
     logout(session: Session): Promise<LogoutResult>;
     confirmOut(session: Session): Promise<boolean>;
-    login(session: Session): Promise<LoginResult>;
+    login(session: Session, beforeDispatch?: () => number): Promise<LoginResult>;
     replyCode(session: Session): Promise<number | null>;
     sleep(ms: number): Promise<void>;
 }
@@ -44,7 +44,7 @@ export const defaultRelogDeps: ScoredRelogDeps = {
         const cdp = cdpUrl(s.env);
         return !!cdp && (await pageInGame(cdp, s.name)) === false;
     },
-    login: s => login(s, { inPage: true, attempts: 1 }),
+    login: (s, beforeDispatch) => login(s, { inPage: true, requireInPage: true, attempts: 1, beforeDispatch }),
     replyCode: async s => {
         const cdp = s.client === 'browser' ? cdpUrl(s.env) : undefined;
         if (!cdp) return null;
@@ -97,7 +97,7 @@ export function scoredLogoutStep(o: ScoredRelogOptions): Step<any> {
 }
 
 /** Every attempt rechecks the required givers, including after a world-full pause or a restart. */
-export function scoredLoginStep(o: ScoredRelogOptions & { beforeLogin(ctx: StepContext<any>): Promise<void> }): Step<any> {
+export function scoredLoginStep(o: ScoredRelogOptions & { beforeLogin(ctx: StepContext<any>): Promise<void>; beforeDispatch?: () => number }): Step<any> {
     const deps = { ...defaultRelogDeps, ...o.deps };
     const retries = o.worldFullRetries ?? WORLD_FULL_RETRIES;
     const run = async (ctx: StepContext<any>) => {
@@ -113,7 +113,7 @@ export function scoredLoginStep(o: ScoredRelogOptions & { beforeLogin(ctx: StepC
             for (;;) {
                 await o.beforeLogin(ctx);
                 try {
-                    got = await deps.login(session);
+                    got = await deps.login(session, o.beforeDispatch);
                     o.budget.endPlanned(SCORED_RELOG, got.via, { attempts: got.attempts, wallMs: got.wallMs, loggedInAt: session.launchedAt });
                     break;
                 } catch (e) {
