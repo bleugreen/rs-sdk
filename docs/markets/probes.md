@@ -266,7 +266,6 @@ probe-coal (fresh account, local; its totals line has the old configured `tickMs
 - **The eating cost** is the model stated above, not a measurement.
 - **The sold-out wait** at the Baker has not happened in the lab, since a lone lab account
   never empties the shop.
-- **Not covered by the project checks.** `markets/` is not in the root `tsconfig.json`
-  `include` or the `test` script yet. Run `bun test markets/methods` and a typecheck by hand.
-  Adding `markets/**` would also take in `markets/research/`, whose scripts do not pass the
-  strict typecheck today.
+- **Project checks.** The root `tsconfig.json` includes `markets/**/*.ts` and excludes
+  `markets/research/`, whose one-off lab scripts call engine internals; the root `test` script
+  runs `markets`. So `bun run typecheck` and `bun run test` cover the probes.
