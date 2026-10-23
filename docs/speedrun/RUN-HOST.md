@@ -1005,7 +1005,16 @@ run.ts write every step's cue; main's rule names exactly one writer for each hel
 - H12oM and H12oP {mule}: **the Monkey Madness module** (run.ts writes none; rs/201 exec 9,
   c5288dac; the other mule hand-offs stay with run.ts); cairn_h45 reads them on rs/483's carried
   mode and the launcher logs it in on H12oM's cue and out on H12oP's stop (fold-in 31);
-- S25a {anvil}: run.ts, unless smithing.ts writes its own (pending rs/186).
+- S25a {anvil}: run.ts, unless smithing.ts writes its own (pending rs/186);
+- S04 {ring}: **run.ts's chain, through `cueAround`** (r, rs/186 at the run commit 233d0f34: S04
+  built as `cueAround(s, FAMILY_CUES.S04, o.cues)`, `runner/chain.ts:678`, `FAMILY_CUES.S04`
+  `:316`, 'ring' in `CUE_FAMILIES`, `helpers/altar-cue.ts:68`; `cueAround` at `chain.ts:324-336`
+  opens the scope fresh when S04 starts, writes the final stop on success and a non-final, failed
+  stop on a throw). magic.ts writes no cue, and the three ring givers' launcher `stopOn {S04, ring}`
+  is the only reader. **Proven** (main 12:50Z via rs/158; fold-in 38): rs/607 ran the real chain from
+  a scratch tree of exactly 233d0f34, and the launcher logged 'final stop for S04/ring (seq 2):
+  stopping role mule and logging out now' 0.06 s after S04's row closed, all three givers 'out of
+  the run on its stop cue (logout: out)'.
 
 rs/393 adds a test that each helper step has exactly one writer. The run.ts writer is rs/186's and
 still pending (STEP-MANIFEST.md entry 33). **The fleet restarts once
@@ -1360,8 +1369,26 @@ the tick length T on main since #385 (a4456c73, rs/471; fold-in 31; step 6, line
       **Hold each delivery carrier before starting the helper launcher.** Run `bun speedrun/tools/mule-hold.ts --config <launcher config json> --account <carrier>` for every carrier in the generated carrier config. The hold must be written before the carrier starts: a running carrier with no control file selects and stages its first row at once (helpers/mule.ts:1250-1257, :1480, :1828; re-cited at the run commit 233d0f34, where rs/186's :1240, :1314-1323 and :1478 had moved), and a hold written after that leaves a staged carrier whose readiness check `heldFor` never passes (helpers/mule-readiness.ts:159). `holdMule` also refuses a hold after a prepare in the same attempt (helpers/mule-readiness.ts:303). If this step is skipped, the run still works through run.ts's per-row prepare and readiness gate, but the carrier pre-stages its first row.
       The hold command (rs/598, on main as #487, 233d0f34, the run commit: `speedrun/tools/mule-hold.ts`; `docs/speedrun/helpers/mule-delivery.md`, 'Run owner', lines 330-379 at 233d0f34; via rs/158): once per banked delivery carrier, for example `--config run-machine/<launcher>.json --account cairn_mule1`; the run id, serve, cue directory, first row and tile all come from the generated launcher entry. Exit 0 = held; 1 = refused (after this run's prepare, or over another run's live control); 2 = usage; an identical repeat is a no-op. After its gates, run.ts prepares each carrier's first row before SCORED logs in.
       Then rs/117's launcher logs in the **17 roster accounts** (4 + 6 + 3 + 4; fold-in 36, rs/41's correction of 16):
-      mule1, mule2, h55, h03, the 6 S03 droppers, the 3 S04 ring givers (h81-h83) and the 4 S07 bone
-      givers (b01-b04), about 2.5-3 minutes;
+      mule1, mule2, h55, h03, the 6 S03 droppers, the 3 S04 ring givers (h81, h63, h66; fold-in 38,
+      rs/41's names) and the 4 S07 bone givers (b01-b04), about 2.5-3 minutes.
+
+      **The S04 ring givers in the launcher** (rs/41's line, verbatim, via rs/158; fold-in 38; in place
+      of 'started by hand'): "The S04 ring givers (H3) run in the single launcher config
+      `<R>/helpers.json` as the `mule` role in carried mode, one entry each, logged in before SCORED:
+      `{account, role: 'mule', path: 'relay', stopOn: {step: 'S04', family: 'ring'}, options: {serveMode: 'order', carried: true, serve: <SCORED>, preRequest: false, stand: T_k, packages: [{name: 'ring<k>', at: T_k, items: <load k by id>}]}}`
+      with no deliveryRun, takeBackSlots or final. Load 1 = cairn_h81: sapphire ring 1637×12 +
+      emerald ring 1639×8. Load 2 = cairn_h63: 1639×19 + ruby ring 1641×1. Load 3 = cairn_h66:
+      1641×15 + diamond ring 1643×5. Each load is held unnoted in the giver's inventory with ≤ 8
+      other items. `T_k = giverTiles(3, ringerTile, firemakingTiles)[k]` (lab/ring-givers.ts,
+      lab/dress-rehearsal.ts:532) on the day's firemakingTiles, so load 1's giver is in view at S04's
+      start. The run config's `rings: { giver: 'cairn_h81', loads: [{rings: load1, giver:
+      'cairn_h81'}, {rings: load2, giver: 'cairn_h63'}, {rings: load3, giver: 'cairn_h66'}] }`.
+      SCORED's S04 trade-ops each giver at the last cast + 2 (magic.ts:146); each giver gives
+      exactly its load and takes back what SCORED offers (the previous 20 enchanted rings; mule.ts:830
+      ANY_OFFER), and the launcher logs all three out on S04's final stop. Proven by rs/607
+      (bgsrv-mac, 233d0f34, preRequest:false): 3/3 loads, take-backs 0/20/20, Magic 59 in 198
+      ticks." Every trade is SCORED-initiated. The count is unchanged: 17 helpers, 25 sessions at S01.
+      The {S04, ring} stop's one writer is run.ts ("One writer per helper step's cue", step 4).
    3. wait for the launcher's `helpersReady`, then **load reading (i)** (step 6, "The load ceiling"),
       before the tab starts;
    4. the run tab and the recording start; **load reading (ii)**, the decisive one, before SCORED's
@@ -1812,9 +1839,20 @@ Chrome's DevTools port did not answer: read again. It reads `0 0 0` because run.
 over CDP, not argv, and the page strips `token` from its URL (`server/webclient/src/bot/GatewayConnection.ts:48-51`).
 Tested login-free on the run host at 12:2xZ (no tab up): `0 0 no-cdp`, the expected reading.
 **Anything other than `0 0 0` is a stop for main before S01's first action; touch nothing on the
-display.** The proof is rs/496's twin re-run, which runs the line
-once right after its single login (ENV set to the throwaway's env path) and sends the reading to
-rs/600 and the host: **pending**, like the ladder note's proofs.
+display.** **Measured in world on the twin, 2026-10-23** (m, rs/496's step-7 rehearsal on
+`rs-ashburn-rehearsal`, relayed by rs/158; fold-in 38; the twin, not the run host): `handoff
+--no-login` PASS at 12:22:32Z, run.ts's single login at 12:23:16Z, in world at 12:23:24Z, and this
+one-liner (ENV set to the throwaway's env path) read **`secrets check: 0 0 0`** at 12:23:49Z. This
+discharges the secrets-check part of rs/496's proof; the ladder note's two proofs are separate.
+
+**Step 7's timing on the twin, 2026-10-23** (m, the same rehearsal; fold-in 38; a note, no priced
+line): from the tab up at the title screen to run.ts's login click took **44 s**, operator latency,
+and from the click to in world **8.2 s**. The 44 s comes before SCORED's login, so it is off
+SCORED's clock (the server's clock runs from the first login, RUN-ORDER.md's ladder note on the run
+clock). The 8.2 s is as observed; how much of it falls after the server accepts the login, and so
+counts, is inferred, not measured (counting starts at the login; all of it would be about 20 ticks at
+400 ms). It stays inside section 6's live-slowness allowance (RUN-ORDER.md, the 800), not a new
+line.
 
 **Before run.ts starts: `handoff` logged nobody in** (the host's line via rs/158; `handoff --no-login`,
 rs/601 merged as #485; the key is exactly `loggedIn`, the host confirmed, re-checked at the run commit 233d0f34,
@@ -2080,10 +2118,15 @@ stand down on a StepError or a first Ctrl-C, per family** (rs/574's retire rule,
 03:25 PDT; fold-in 36):
 
 - A failed step's own cue is stopped non-final too (`runner/chain.ts` `cueAround`). **Before
-  re-running after a failed step, relaunch that step's bone, anvil, fm-row or courier helpers (they
+  re-running after a failed step, relaunch that step's bone, anvil, fm-row, courier or S04 ring helpers (they
   exit on a non-final stop and are not restarted); altar and mule givers stand by and pick up the
-  re-run's fresh cue themselves (up to 25-26 at S21 on SCORED's address, rs/41); the ring givers
-  are started by hand** (the S04 ring givers have no launcher role). This is attempt 1's procedure:
+  re-run's fresh cue themselves (up to 25-26 at S21 on SCORED's address, rs/41)**. **A failed S04 means
+  the whole-launcher relaunch** (fold-in 38, rs/158; the S04 ring givers are carried-mode `mule`
+  entries in the launcher, step 5a.4). In the code at 233d0f34, a throw in S04 writes a non-final,
+  failed stop (`cueAround`, `runner/chain.ts:330`), and the launcher closes a `stopOn` scope only on
+  its final stop or the next scope's cue after its stop (`helpers/standalone.ts:418-430`). So after a
+  failed S04 the givers stay logged in with their roles parked, and the relaunch brings them back
+  fresh (rs/186). This is attempt 1's procedure:
   changing those roles to stand by is attempt-2 work (helper code, rs/41), and rs/595's live lab
   only confirms which families exit. The same holds after a first Ctrl-C (a graceful stop at the
   next logout-safe boundary, to resume later, exit 4), SIGHUP, a refused resume, a host reservation
@@ -2206,11 +2249,12 @@ The checks, in order, before re-running. Any one failing means **do not re-run: 
    as step 0 does first.
 6. **The helpers, per family** (#468, 4657eed8, rs/583 from rs/186 @43f03530; fold-in 36). The log
    reads `[run] cues closed non-final: a re-run re-arms the helpers`. If the failed step's bone,
-   anvil, fm-row or courier helpers must come back, restart the whole launcher before the re-run
+   anvil, fm-row, courier or S04 ring helpers must come back, restart the whole launcher before the re-run
    ("Relaunching after a failed step whose family exits", above: SIGINT after run.ts has exited and
    no carrier trading, every logout confirmed, no helper listed, the sessions counted (refuse above
    45), relaunch, helpersReady, never the
-   mule-hold command again; the altar and mule givers come back with it), and start the ring givers by hand if S04 failed; the altar and
+   mule-hold command again; the altar and mule givers come back with it); a failed S04 means the same
+   relaunch, the ring givers being launcher entries (fold-in 38); the altar and
    mule givers stand by logged in on SCORED's address (up to 25-26 at S21, rs/41), and the
    re-run's cue re-arms them (measured, rs/597; a mule row already delivered is not served again,
    the caveat above). If it reads `[run] cues closed final` (a SIGTERM or a second Ctrl-C was sent), the
@@ -2538,7 +2582,10 @@ browser on the loopback gateway; main via rs/158; fold-in 37; notes only, no re-
 reached only H1, refused after 31 ticks, mule2 having no delivery prepare: the runner-side
 delivery-session binding missing at 38902b56 (RUN-ORDER.md section 1, R52; the fix rs/598). **No
 S01-S14 timings exist from this rehearsal.** S00's skip took 6 ticks (STEP-MANIFEST.md entry 34);
-its tick monitor is in "Measured: the twin rehearsal's tick monitor" below.
+its tick monitor is in "Measured: the twin rehearsal's tick monitor" below. **Its step-7 rehearsal**
+(the same day, 12:22-12:23Z; fold-in 38): `handoff --no-login`, then run.ts's single login, then the
+post-login secrets check reading `0 0 0` in world, with the step's timing (step 7, "The secrets
+check runs twice").
 
 ## Measured: gate (d) on this host, 2026-10-21, before the address change
 
