@@ -8,8 +8,9 @@
 // or cue step leaves it where it is; any other step ends on a tile the chain does not fix, so the
 // steps after it are NOT EVALUATED until a leg fixes the position again.
 // The rest of the state is lab/boundary.ts boundaryAt at that index: RUN-ORDER's levels, the quests
-// before it, and the slot ledger's pack and worn set. nearby NPCs, locs and players are empty, so a
-// check on a live helper or loc refuses here and is a synthetic-state limit, not a seam.
+// before it, and the slot ledger's pack and worn set. A hand-off's partner is put in view; nearby NPCs
+// and locs are empty, so a check on a live NPC or loc refuses here and is a synthetic-state limit,
+// not a seam. A leg after a step is evaluated at its catalogue `start` (legs never check it).
 //
 //   bun speedrun/lab/precondition-seams.ts <run-config.json> <STEP-MANIFEST.md> <RUN-ORDER.md> [--json]
 
@@ -36,7 +37,7 @@ function items(list: readonly StagedItem[]): InventoryItem[] {
 }
 
 /** SCORED at `at` holding what `b` stages. */
-export function stateAt(at: Tile, b: Boundary): BotWorldState {
+export function stateAt(at: Tile, b: Boundary, near: readonly string[] = []): BotWorldState {
     const hp = b.levels.hitpoints.level;
     const quests = Object.fromEntries(b.quests.map(q => [q.key, isComplete(q.key, q.value) ? 'complete' : 'in_progress']));
     const varps = { option_run: 1, ...Object.fromEntries(b.quests.map(q => [q.varp, q.value])) };
@@ -51,6 +52,7 @@ export function stateAt(at: Tile, b: Boundary): BotWorldState {
         quests,
         questPoints: b.qp,
         varps,
+        nearbyPlayers: near.map((name, index) => ({ kind: 'player', index, name, combatLevel: 3, x: at.x, z: at.z, worldX: at.x, worldZ: at.z, distance: 1, reachable: true })),
     } as unknown as Partial<BotWorldState>);
 }
 
@@ -78,6 +80,12 @@ export function precondSeams(cfg: RunConfig, docs: { manifest: string; runOrder:
     let mover = '';
     chain.forEach((s: ChainStep, i) => {
         const row = (verdict: SeamRow['verdict'], why: string, unresolved: string[] = []): SeamRow => ({ i, id: s.id, kind: s.kind, name: s.name, at: here, from, verdict, why, unresolved });
+        if (here === null && s.kind === 'leg') {
+            // A leg never asks for its start tile; it is evaluated at its catalogue start (the earlier step's assumed end).
+            const a = (s as unknown as LegStep).def.start;
+            here = { x: a.x, z: a.z, level: a.level ?? 0, tol: a.tol ?? 0 };
+            from = `${s.id} start (assumed end of ${mover})`;
+        }
         if (s.id === 'S00') out.push(row('NOT EVALUATED', 'the account start'));
         else if (here === null) out.push(row('NOT EVALUATED', `follows ${mover}, whose end tile the chain does not fix`));
         else {
@@ -85,7 +93,8 @@ export function precondSeams(cfg: RunConfig, docs: { manifest: string; runOrder:
             let r: true | string;
             try {
                 b = boundaryAt(chain, i, docs);
-                r = s.preconditions(stateAt(here, b), {});
+                // A placed hand-off's partner stands on the tile (a live-world fact the synthetic state supplies).
+                r = s.preconditions(stateAt(here, b, s.kind === 'handoff' ? Object.values(cfg.partners) : []), {});
             } catch (e) {
                 r = `threw: ${e instanceof Error ? e.message : String(e)}`;
             }
