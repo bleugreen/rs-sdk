@@ -38,18 +38,22 @@ export interface PickSpot {
     /** pickpocket.dbrow stun_damage: fixed hitpoints lost per failure. */
     damage: number;
     level: number;
+    /** Map spawn tiles: walked in turn when no target is in view (a target can wander out of view range). */
+    spawns: readonly Tile[];
 }
 
 /** East Ardougne south bank, booths at (2656,3283) and (2656,3286) (speedrun/skills/thieving.ts). */
 export const ARDOUGNE_SOUTH_BANK: Tile = { x: 2654, z: 3285 };
 
 export const SPOTS: Record<'knight' | 'paladin' | 'hero', PickSpot> = {
-    // spawns (2669,3298), (2671,3313), (2653,3300), (2652,3318); the eastern two wander least
-    knight: { npc: /^knight of ardougne$/i, anchor: { x: 2667, z: 3306 }, radius: 16, bank: ARDOUGNE_SOUTH_BANK, damage: 3, level: 55 },
-    // spawns (2653,3315), (2657,3307)
-    paladin: { npc: /^paladin$/i, anchor: { x: 2655, z: 3311 }, radius: 12, bank: ARDOUGNE_SOUTH_BANK, damage: 3, level: 70 },
-    // spawns (2630,3288), (2647,3306), (2667,3316)
-    hero: { npc: /^hero$/i, anchor: { x: 2650, z: 3304 }, radius: 24, bank: ARDOUGNE_SOUTH_BANK, damage: 4, level: 80 }
+    // the eastern two spawns wander least
+    knight: {
+        npc: /^knight of ardougne$/i, anchor: { x: 2667, z: 3306 }, radius: 16, bank: ARDOUGNE_SOUTH_BANK, damage: 3, level: 55,
+        spawns: [{ x: 2669, z: 3298 }, { x: 2671, z: 3313 }, { x: 2653, z: 3300 }, { x: 2652, z: 3318 }]
+    },
+    paladin: { npc: /^paladin$/i, anchor: { x: 2655, z: 3311 }, radius: 12, bank: ARDOUGNE_SOUTH_BANK, damage: 3, level: 70, spawns: [{ x: 2653, z: 3315 }, { x: 2657, z: 3307 }] },
+    // spread across the market: none is in view from the bank, where a trip starts
+    hero: { npc: /^hero$/i, anchor: { x: 2650, z: 3304 }, radius: 24, bank: ARDOUGNE_SOUTH_BANK, damage: 4, level: 80, spawns: [{ x: 2647, z: 3306 }, { x: 2667, z: 3316 }, { x: 2630, z: 3288 }] }
 };
 
 /** Hitpoints per eat (consume_normal.dbrow), by inventory name. */
@@ -65,6 +69,16 @@ export function shouldEat(i: { hp: number; maxHp: number; heal: number; damage: 
     if (i.hp <= i.damage + 1) return i.ticksSinceEat >= 2;
     if (!i.window) return false;
     return i.hp <= Math.max(2 * i.damage + 1, i.maxHp - i.heal);
+}
+
+/**
+ * The spawn to walk to when no target is in view: the nearest one not yet tried since a target
+ * was last seen; once all are tried, the round starts again from the nearest.
+ */
+export function roamTo(spawns: readonly Tile[], from: Tile, tried: ReadonlySet<number>): number {
+    const d = (t: Tile) => Math.max(Math.abs(t.x - from.x), Math.abs(t.z - from.z));
+    const order = spawns.map((t, i) => i).sort((a, b) => d(spawns[a]!) - d(spawns[b]!));
+    return order.find(i => !tried.has(i)) ?? order[0]!;
 }
 
 export type Errand = 'bank' | 'go' | 'thieve';
@@ -107,6 +121,7 @@ export class Pickpocketer {
     hpLost = 0;
     deaths = 0;
     banks = 0;
+    roams = 0;
     private startTick = 0;
     private lastReport = 0;
 
@@ -174,6 +189,8 @@ export class Pickpocketer {
         let lastXp = xpOf(s), lastHp = s.player!.hp, lastStunEnd = -100, lastEat = -100, lastProgress = s.tick;
         let target: NearbyNpc | undefined;
         const skip = new Map<number, number>();
+        const tried = new Set<number>();
+        let unseenSince = s.tick;
         while (!this.ctx.signal.aborted) {
             s = await nextTick(sdk, s.tick);
             const t = s.tick, p = s.player!;
@@ -223,6 +240,18 @@ export class Pickpocketer {
                     .filter(n => Math.max(Math.abs((n.tileX ?? n.x) - this.spot.anchor.x), Math.abs((n.tileZ ?? n.z) - this.spot.anchor.z)) <= this.spot.radius)
                     .sort((a, b) => a.distance - b.distance)[0];
             } else target = s.nearbyNpcs.find(n => n.index === target!.index);
+            if (target) {
+                unseenSince = t;
+                tried.clear();
+            } else if (t - unseenSince >= 8) {
+                const i = roamTo(this.spot.spawns, { x: p.worldX, z: p.worldZ }, tried);
+                tried.add(i);
+                this.roams++;
+                await this.walk(this.spot.spawns[i]!);
+                s = this.s;
+                unseenSince = lastProgress = s.tick;
+                continue;
+            }
             const op = target?.optionsWithIndex.find(o => /pickpocket/i.test(o.text));
             if (target && op) await sdk.sendInteractNpc(target.index, op.opIndex);
         }
@@ -231,7 +260,7 @@ export class Pickpocketer {
     report(message: string): void {
         const s = this.ctx.sdk.getState();
         this.lastReport = s?.tick ?? 0;
-        this.ctx.log(message, { ticks: (s?.tick ?? 0) - this.startTick, successes: this.successes, failures: this.failures, eats: this.eats, hpLost: this.hpLost, deaths: this.deaths, banks: this.banks, carried: s ? coinsIn(s) : 0 });
+        this.ctx.log(message, { ticks: (s?.tick ?? 0) - this.startTick, successes: this.successes, failures: this.failures, eats: this.eats, hpLost: this.hpLost, deaths: this.deaths, banks: this.banks, roams: this.roams, carried: s ? coinsIn(s) : 0 });
     }
 }
 
