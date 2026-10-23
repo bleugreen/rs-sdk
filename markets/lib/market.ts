@@ -152,6 +152,13 @@ export function asksAtOrBelow(q: MarketQuote, price: number): number {
     return Math.max(0, q.sellQuantity - Math.floor(excess / (price + 1 - q.ask)));
 }
 
+/** Units the open bids certainly hold at or above `price`: `asksAtOrBelow` for the bid side. */
+export function bidsAtOrAbove(q: MarketQuote, price: number): number {
+    if (!q.buyQuantity || q.bid === null || price > q.bid) return 0;
+    const shortfall = q.buyQuantity * q.bid - q.buyValue;
+    return Math.max(0, q.buyQuantity - Math.floor(shortfall / (q.bid + 1 - price)));
+}
+
 export interface BidPool {
     /** Items with at least one open bid. */
     items: number;
