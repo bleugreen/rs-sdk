@@ -229,7 +229,8 @@ await runScript(async ({ bot: actions, sdk }) => {
     out('RESULT start', { host: hostname(), load: loadavg().map(l => +l.toFixed(1)), at: new Date().toISOString(), tickMs, ticks, options: m.options, stats: m.stats, pos: [p.worldX, p.worldZ], hp: p.maxHp });
 
     const snaps: BankSnap[] = m.baseline === 'stage' ? [staged] : [];
-    const inv = () => sdk.getState()!.inventory.map(i => ({ id: i.id, count: i.count }));
+    // pack and worn slots: a tool moving between them (wielded, or left unwielded) must not count as output
+    const inv = () => [...sdk.getState()!.inventory, ...(sdk.getState()!.equipment ?? [])].map(i => ({ id: i.id, count: i.count }));
     // Bank plus pack at each bank visit and at the stop: the whole-run rate (trips.ts holdings).
     const held: BankSnap[] = m.baseline === 'stage' ? [holdings(staged.tick, staged.items, inv())] : [];
     let lastBank = staged.items;
