@@ -194,7 +194,7 @@ covers the three small sets above (law 6, air 8, water 4, earth 1).
 | Rune axe | 1 | mule1 1, mule2 1 | 2 | h90's GE line, 2 more (approved to 300,000) |
 | Rune pickaxe | 1 | mule1 3, mule2 1 | 4 | - |
 | Mithril scimitar | 1 | mule1 2, h63 1 (bought 09:35; mule2's 1 is the contingency's) | 3 | Zeke (Al Kharid, ~1,050) |
-| Magic shortbow | **2** (both h92's: H11r and H23) | mule1 3, h92 3 | 3 once mule1's move to h92 (h92 alone: 1) | rs/346 fletched them; hedge: yew shortbow 2 on mule2, willow shortbows at the Ranging Guild via h91 |
+| Magic shortbow | **2** (both h92's: H11r and H23) | h92 4, mule1 2 (h68's 1 is R8's, not an attempt's) | 3 (h92's 4 cover attempts 1-2, mule1's 2 attempt 3) | rs/346 fletched them; hedge: yew shortbow 2 on mule2, willow shortbows at the Ranging Guild via h91 |
 | Staff of water | 1 | mule1 3 | 3 | Zaff (Varrock, 1,500, stock 2) |
 | Staff of fire | 1 | mule1 3 (+ h55, h56 casting) | 3 | Zaff |
 | Knife | 1 | mule1 3, h94 2 | 5 | Shantay, 6 gp |
@@ -202,12 +202,12 @@ covers the three small sets above (law 6, air 8, water 4, earth 1).
 | Clay 6, copper 4, iron 2 | 12 | clay 7 (h94) | 1 | rs/173's southwest set re-run |
 | Unfermented wine | 520 | 520 (h40) | 1 | 883 grapes and 501 jugs of water held: ~880 more from h40's `wine` role |
 | Cannon set | 1 | 2 (h92) | 2 | Nulodion, the cannon helper only (rs/41) |
-| Cannonballs | ~1,270 (1,300 out, ~30 back at H11r) | 1,416 | 1 | h92 makes them from steel bars (352 held, 4 a bar) |
+| Cannonballs | ~1,270 (1,300 out, ~30 back at H11r) | h92 2,616: 1,416 for attempt 1's H11 and H23, plus 1,200 made 02:20 UTC 23 Oct from main's R8 buy, held for R8's cannon recovery | 1 (and R8's 1,200) | h92 makes them from steel bars (4 a bar, ~10.5 ticks a bar; 300 bars took 27 minutes). The GE has never traded cannonballs |
 | Uncut diamond | 391 | 2 | 0 | the gem-table fallback, every attempt |
 | Adamantite bars | 365 | 354 | 0.97 | smelting; the mithril-platebody fallback (+425 mithril bars) for later attempts |
 | Blood runes | 570 | 0 | 0 | rs/347: GE (h90's #19732 at 725 for 200 rests) and the Magic Guild via h88 |
 | Bones (Prayer) | the S07/S09/S18 mix, ~1,645 bones on the forecast | dragon 172, babydragon 1,533, big 2,526 | 1 on the fast mix; later attempts fall back to big bones (rs/158 prices the ticks) |
-| Rune arrows | 200 | mule1 200 | 1 | h91's `rune-arrows` loop (target 200) is rebuying (attempt 2's) |
+| Rune arrows | 200 | h92 200 (attempt 1's, H11r); h91 rebuying attempt 2's (130 at 19:49 UTC); h68's 570 are R8's | 1 | h91's `rune-arrows` loop (target 200) |
 | Arrowtips, headless arrows | rune 570, adamant 2,070, mithril 1,485, headless 4,410, the rest small | exactly one attempt's (mule1) | 1 | h76 is back camping Hickton's toward its targets (attempt 2's) |
 | Potions (prayer 4, antipoison 2, agility 1, ranging 3, supers 4; magic 1 as insurance) | 14 (+1) | 0 | 0 | rs/348; resting GE bids from rs/331 (below) |
 | Sharks | ~52 | mule1 60; ~148 elsewhere outside mule2 | 3+ | GE ask ~557 |
@@ -306,6 +306,10 @@ fresh id `rs331-<donor>-mule1-1`. fleet.json backups are in `~/rs-dev/staging-33
 | 01:34-01:35 (23 Oct) | cairn_h68 (fleet) | census 38 public Cairn names (≤ 45); backup `fleet.json.bak-20261023T013448Z`; `buyer` on the GE: death rune 110 at 394 (43,340), air rune 550 at 21 (11,550), banked on h68 for the rehearsal's H7, no handover | `coins` {} |
 | 01:34-01:36 (23 Oct) | cairn_h03 (fleet) | handover `rs331-h03-mule1-feather-1`: Feather (obj 314) 90 → mule1, delivered 01:36:19Z; mule1's feathers 580 → 670 by id | `coins` {} |
 | 01:43-01:44 (23 Oct) | cairn_h68 (fleet) | main's bounded R8 buy (cap 1,496,300; rs/41 01:4x UTC): census 38; coins 1,682,978 before; backup `fleet.json.bak-20261023T014358Z`; `buyer` on the GE: **Steel bar (2353) 300 at 1,501 (450,300, #23365)**, **Rune arrow (892) 570 at 1,800 (1,026,000, #23368)**, **Magic shortbow (861) 1 at 20,000: unfilled, resting (#23366)**; spent 1,476,300; bank 01:44:48Z: coins 188,208, steel bar 300, rune arrow 570. Purchase and bank only: nothing to h92 or h94 | `coins` {} |
+| 01:51-02:21 (23 Oct) | cairn_h92 (cannon dev copy), cairn_h68 (fleet) | rs/41's production window: h92's cannon role stopped by SIGINT while idle (options byte-identical to the 15:09 save); `cannon.ts` production `{"sets":2,"balls":2616,"funders":["^cairn_h68$"],"steelMaxPrice":0}`; census 38, backup `fleet.json.bak-20261023T015257Z`, handover `rs331-h68-h92-steel-1`: steel bar 300 (noted) → h92, delivered 01:53:32Z; 11 trips, **cannonballs 1,416 → 2,616 at 02:20:03Z**, steel 0 | h92: its original cannon role (holding, not `serve`) restarted 02:21:25Z with ROLE_OPTIONS byte-identical; bank by id identical except balls +1,200. h68 `coins` {} |
+| 02:23-02:28 (23 Oct) | cairn_h68 (fleet) | main's exception for #23366. That offer was a bid on the **unstrung** magic shortbow (id 72): `buyer.ts` resolves an item name, and 72 shares the strung bow's name, so it could never fill. **Buy bows by id (861).** `assign coins --disable`, waited ~4 min for public absence (the server's removal queue), one launcher login running a one-off role: `cancelGEOffer(23366)`, then `collectGEOffer`: 0 items, 20,000 gp, banked. #21220 and #20799 untouched | backup `fleet.json.bak-20261023T022820Z`; entry restored to exactly `coins` {} at 02:28:20Z; net 0 logins |
+| 02:29-02:31 (23 Oct) | cairn_h68 (fleet) | `buyer` by id `{"item":861,"quantity":1,"source":"ge","maxPrice":20000}`: **Magic shortbow (861) 1 at 19,998 (#23537)**. The R8 buy is final at **1,496,298 of 1,496,300**: rune arrows 570 and the bow banked on h68 for R8, nothing to h94 yet | `coins` {} |
+| 02:36-03:38 (23 Oct) | cairn_h03 (fleet) | main's idle-hold measurement: the deployed `idle` role inside its live session (pid 1698813, logins 1) for 60 minutes, with a read-only monitor. **PASS:** same client, no relogin or role restart, position fixed, HP 69/69 (from the live session; no public current-HP feed), inventory unchanged. No stock moved | exact `coins` {} at 03:38Z |
 
 Re-running the same buyer list on h62 or h63 collects any fills and buys only the shortfall.
 Those offers, and h90's blood-rune line, are handed to rs/347 and rs/348, which own blood runes
