@@ -2655,14 +2655,27 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   S01's H1 at Lumbridge (3222,3222), the out-and-back rows H13, H16, H18, H22 and H23 (rs/318's
   rulings 5 to 7), and any later H row. `run.ts` puts one `handOff(id, {partner, supersededBy})`
   Step per row between the skill and quest steps.
-- **A walking carrier late to its tile throws the step** (rs/598's lab run 1, main 12:35Z via rs/158;
-  fold-in 37): the hand-off checks 'partner in view' before its bounded ready wait
-  (`runner/handoff.ts:284` at 38902b56, where a cue-served partner skips it, :582; rs/598's lab run
-  refused at H4k), so a carrier not yet in view makes the step refuse instead of waiting. Every
-  hand-off whose carrier walks to its tile is exposed; H4k's run-day margin is 39 ticks after H4's
-  stop. A refusal is a thrown step: a manual restart, ~11.7 ticks (m, rs/595) plus re-entry, not
-  attempt-ending (RUN-HOST.md, 'Re-running after a StepError'). It clears if rs/598 reorders the
-  check (main pre-approved); if that is in the named commit, this line reads 'fixed'.
+- **A walking carrier late to its tile throws the step** (rs/598's lab run 1, main 12:35Z; the
+  mechanics rs/186's, via rs/158; fold-in 37): `runner/handoff.ts:284` checks 'partner in view' on
+  the resume walker before the cue's bounded ready wait (at 38902b56 a cue-served partner skips it,
+  :582; rs/598's lab run refused at H4k), so a carrier not at its stand when SCORED reaches the row
+  makes the step refuse and run.ts end. A refusal is a thrown step: the re-run is RUN-HOST's
+  whole-launcher relaunch, one SCORED login, ~11.7 ticks (m, rs/595) plus re-entry, not
+  attempt-ending. Doric's H4 is not exposed: it waits inside its segment (302 measured). It clears if
+  rs/598 reorders the check (main pre-approved); if that is in the named commit, this line reads
+  'fixed'. **Exposure by row: the carrier's route against SCORED's chain since that carrier's previous
+  row, flagged when the route is at least half the chain** (i, rs/158's, the windows confirmed by
+  rs/186; routes from `docs/speedrun/helpers/mule-delivery.md`'s itinerary table, the chain from
+  RUN-ORDER.md's rows; unsummed notes):
+  - **flagged, H4k**, only after a whole-launcher relaunch landing between H4's serve and H4k (S05's
+    remainder through T06-07), which loses the carry-ahead: the bank-return route 132 against a chain
+    of ~210; with the carry-ahead, 44, it is clear, and a relaunch before H4's serve re-stages both
+    carriers with the full chain ahead. Priced as the cheap manual restart; RUN-HOST's relaunch step
+    waits for H4k's ready status in that case;
+  - **flagged, H16**: 172 (its one measured profile) against ~351, priced as exposed;
+  - **unmeasured route, priced as exposed until rs/41 times one route each**: H14 and H22;
+  - **unmeasured route (U)**: H15, H19 (after H18) and H20 (h03);
+  - **clear**: H6, H4p, H7, H8, H9, H10, H12, H18 and H21d.
 - **Parameters:** the row id and the partner's account name. The row is the data: its `in` is what
   SCORED receives, its `out` (reason `swap` or `trade`) what it gives, its `equip` what it wears
   afterwards. The module names no item; it reads the row through `speedrun/tools/slot-ledger.ts`'s

@@ -2069,26 +2069,44 @@ stand down on a StepError or a first Ctrl-C, per family** (rs/574's retire rule,
   inside the freeze, an attempt-2 lever, RUN-ORDER.md section 7) and `standalone.ts` has no per-role
   or per-account stop (its only stop is SIGINT or SIGTERM to the whole process,
   standalone.ts:929-930; a role that exits 0 is 'finished; not restarting it', :813-816, its account
-  logged in until the launcher stops). **The detail, rs/41's steps** (run dir `<R>`, config
-  `<R>/helpers.json`, tmux session `helpers`; as relayed by rs/158; file:line at 38902b56, re-checked
-  at the commit main names, the code winning): (0) SCORED is out, observed on `/playerpositions`
-  (run.ts logs it out on a throw; else the stays-in branch above); (1) no carrier mid-trade: no
-  `phase: 'trading'` in the `<R>/rc-cue/mule/` status files; (2) Ctrl-C the launcher in session
-  `helpers`, nothing else (HELPERS.md "Stopping"); (3) every account's `logout: out` in
-  `<R>/launcher.json`, and their display names (not login names, which read falsely absent) absent
-  from `/playerpositions`, budgeting minutes, since the server removes one player per tick world-wide
-  (HELPERS.md); helper accounts only, never SCORED or a gate account by name; (4) wait at least 10 s;
-  (5) **count sessions on SCORED's address before the relaunch; refuse to relaunch above 45** (main,
-  12:35Z, verbatim), then relaunch `<R>/helpers.json` and wait for helpersReady (run.ts's gate 5),
-  never the mule-hold command again (`holdMule` refuses after the run's prepare,
-  mule-readiness.ts:303); (6) re-run run.ts with the same command and the same `--run-dir`.
-  **rs/41's rules:** (a) never stop while any carrier's status shows phase 'trading': a carrier killed
-  mid-trade leaves a durable `mule-delivery-attempt` and faults on restart, refusing that row until
-  reconciled; (b) a restarted carrier resumes its selection from its journal but forgets a carry-ahead
-  kit in its inventory, so it pays one extra bank trip (mule.ts:1814-1817); (c) ungated families (the
-  bone givers, the ring givers, the mules) log in again at relaunch even if their step is done, worst
-  case ~33-40 sessions on SCORED's address (step 5's count); (d) the re-run reopens its step's cues
-  fresh by itself (`chain.ts` `withCue`), so nobody hand-writes cues. The altar givers and mules lose
+  logged in until the launcher stops). **The detail, rs/41's text verbatim** (12:3xZ via rs/158;
+  step 5's count is main's rule in place of rs/41's 'against 45'; the code at the commit main names
+  wins on any name):
+
+  '**The manual's re-run commands**, with `<R>` = the run dir and the single config
+  `<R>/helpers.json` (`runDir: <R>`), run in its own tmux window (`tmux new -d -s helpers`):
+  **Start:** `exec timeout --kill-after=30s 43200 bun speedrun/helpers/standalone.ts <R>/helpers.json`,
+  then wait for `<R>/launcher.json` helpersReady (run.ts gate 5 checks it).
+  **Re-run after a failed step:**
+
+  0. **Precheck:** no carrier mid-trade. No carrier's status in the mule cue dir may show `phase:
+     'trading'` (`<R>/rc-cue/mule/` status files), and no helper log may show an open trade. A carrier
+     killed mid-trade faults on restart until reconciled.
+  1. **Stop:** Ctrl-C in the helpers window, which SIGINTs the launcher only (never kill by name or
+     pattern; HELPERS.md:225). It logs every account out within `stopDeadlineMs` (25 s).
+  2. **Confirm:** `<R>/launcher.json` shows every account's `logout` = `out` (`queued` = wait). Every
+     helper's display name ('Cairn T01'.., 'Cairn Mule1', 'Cairn B01', ...) must be absent from
+     `https://rs-sdk-demo.fly.dev/playerpositions`. Use display names, not login names. Budget minutes
+     on a busy world: removal is one player per tick, world-wide (HELPERS.md:227).
+  3. **Wait** at least 10 s after the last absence.
+  4. **Relaunch:** the same start command, then wait for `<R>/launcher.json` helpersReady. **Do NOT
+     run `mule-hold.ts` again** (holdMule refuses after a prepare, mule-readiness.ts:303).
+  5. **Count before re-running run.ts:** ungated families (mules, ring givers, bone givers) log back
+     in even if their step is done. **Count sessions on SCORED's address before the relaunch; refuse
+     to relaunch above 45** (main, 12:35Z; worst case ~33-40).
+  6. **Re-run run.ts** with the same `--run-dir`. Its resume reopens the step's cues fresh, and gated
+     helpers (S21 givers, e15, a01, h45, the cue-start droppers) log in only on those new cues.
+
+  **Expected after a relaunch:** a carry-ahead carrier makes one extra bank trip, and carriers resume
+  from their served journal. **Unmeasured:** the relogin ramp's duration and a carrier's correct
+  next-row serve after a mid-run relaunch.'
+
+  Before all of it, SCORED is out, observed on `/playerpositions` (run.ts logs it out on a throw;
+  else the stays-in branch above); the absence check names helper accounts only, never SCORED or a
+  gate account. **A relaunch landing between H4's serve and H4k** (S05's remainder through T06-07;
+  rs/186 via rs/158): after the relaunch and before re-running run.ts, wait until the H4k carrier's
+  status file (the mule cue dir's `mule-<hash>.json`) shows phase 'ready' for H4k; if it does not
+  within ~3 minutes, re-run anyway and accept the late-carrier refusal (STEP-MANIFEST.md entry 33). The altar givers and mules lose
   their stand-by in this case and log in again with the rest. **Unmeasured** (main): the path where a
   carrier is restarted; the relogin ramp (~3.5-4 min, rs/496's measured roster login on the start)
   and a carrier's next-row serve after a mid-run relaunch. **Price:** one SCORED login, the ramp
