@@ -518,7 +518,7 @@ step 3's served = built check then runs within each machine as usual.
 
 **The served webclient is rebuilt from the run commit at every step 0** (main 21:3x via rs/158;
 fold-in 33). The final run commit carries an `sdk/` change (**rs/564**, the `sdk/` snapshot carrying rs/186's
-`walkTo` fix, 01304312; fleet snapshot 11 also moves the floor), and the SDK reaches the tab only
+`walkTo` fix, 01304312, on main as #459, a1ce2209, fold-in 35; fleet snapshot 11, #451, also moved the floor), and the SDK reaches the tab only
 through the served bot bundle. So whenever `~/run-commit` changes, the install and build above run
 again on both machines before anything is launched, and step 3's served = built check confirms
 that each machine serves what it built from that commit. A bundle built from an earlier commit is
@@ -977,7 +977,7 @@ preference, step 5a), but the gate still chooses (tenet 17), and the plan holds 
   executor demo logins run from them on run day (rs/41's map, via rs/158).
 - **Families log out when their step is done:** after S03, S04, S06 and S07, that step's helper
   family logs out when the step's scope closes (its final stop cue, or the next scope's cue). After
-  rs/491 (rs/41's c97bc1c5; pending in fleet snapshot 11) a plain stop only stands a helper down; the
+  rs/491 (rs/41's c97bc1c5; on main in fleet snapshot 11, #451, ee75d700) a plain stop only stands a helper down; the
   launcher logs it out on a stop carrying `final: true` (rs/490 writes it on each family's last stop
   and on abort) or on a later scope's cue.
 - **S21's body-altar givers log in inside SCORED's relog** (rs/186's ruling to rs/490; fold-in 31):
@@ -1748,7 +1748,9 @@ run on through it: they grab the display, not the game.
 At 22:15:50Z on 2026-10-22 about 116 players dropped world-wide, 29 of our 42 sessions on one
 address, with no restart and no stall (rs/83: the process token unchanged, the tick feed
 continuous), and the fleet relogged by itself; with the 2026-10-21 outage that is two demo-side
-events in 38 hours (RUN-ORDER.md R53). **What run.ts does today** (rs/186, code at a2adbc7a): the
+events in 38 hours (RUN-ORDER.md R53). **Since #466 (86e7aa37, rs/580; fold-in 35) run.ts relogs a
+dropped tab itself and relog-now is the operator's command (the socket-drop recovery, below); this
+manual procedure is the fallback** for a recovery that refuses or a budget that is spent. **What run.ts did before #466** (rs/186, code at a2adbc7a): the
 runner link sees inGame=false about 1 tick after a drop (or after 17 ticks with no in-world tick),
 aborts the step and waits up to 30 minutes for the link, then throws (`resume.ts:217, 343`). **It
 starts no relog**: the watchdog ignores inGame and acts only on stopped ticks or a dead or stale
@@ -1793,28 +1795,49 @@ rs/529's API**, and are not written here until they exist):
 - The run-bound hold (generation 0) is its own state, never a cancel; S22's prepare advances it.
 
 **Re-running after a StepError** (main 21:5x via rs/158; rs/186's code read at its mission tip,
-22:2x, run.ts living on rs/186 until the run-chain snapshot rs/563 merges; fold-in 33). run.ts
+22:2x; run.ts on main since the run-chain snapshot rs/563, #457, 41b2b7a9; fold-in 33). run.ts
 never re-invokes a step that throws: `runner/step.ts:262-289` raises `StepError(step, phase,
 detail)`, the phase `precondition`, `run` or `postcondition`, and `resume.ts:337-344` retries only
 a link, session or page-reload failure. `lib/attempt.ts:108-114` catches it in the world and run.ts
 stops with exit 1. The only recovery is the operator re-running the command, and where it enters is
 decided from game state, not from the log (`resolveResume`, `resume.ts:123-152`). A manual re-run
-costs **~150-450 ticks (i)**; rs/546 measures one kill-and-re-run (RUN-ORDER.md section 7, the
-ladder's general note).
+costs **~150-450 ticks (i)**; rs/574 (rs/546's successor) measures one kill-and-re-run (RUN-ORDER.md
+section 7, the ladder's general note).
+
+**A throw in combat: relaunch FIRST** (main 23:3x via rs/158; fold-in 35). If the run log's last
+state shows SCORED in combat (the logout refused, `[run] logout:` reporting it), re-run the same
+command **at once, in the live session**, and only then run the checks below that assume a parked
+character (2, 3 and 6). Never wait out the logout: the server refuses it while SCORED is in combat,
+and SCORED stands in the fight with nothing acting. This applies to any throw in combat; **S15 N is
+the measured case** (rs/201 exec 9, bgsrv-mac, 400 ms: a throw right after the trapdoor landing
+under the temple, the logout refused for 27.6 s of tries, ~69 ticks; the re-run resumed N in the
+live session and finished it in 50; waiting out the logout was a death in one lab attempt).
 
 **What the operator sees.** `[run] FAILED: <message>` (`attempt.ts:112`, `run.ts:526`), then
 `[run] logout: ...` (`run.ts:371, 397`): **run.ts logs SCORED out after a StepError**, and on the
 way out writes a FINAL stop to every open helper cue (`run.ts:404`, `cue-keeper.ts:158-164`), so
 the launcher logs the failed step's helper family out, and a relaunched launcher ignores cues
-written before it started (rs/41). So, **until rs/546's non-final stop lands, the failed step's
-launcher entries are relaunched BEFORE the re-run** (check 6). Once it lands, the StepError path
-writes a non-final stop: the stood-down helpers stay logged in on SCORED's address during the re-run
-(up to 25-26 at S21, rs/41) and the re-run's cue re-arms them (fold-in 34). Exit code 1 (the
-codes at `run.ts:45-46`). A hard kill, SIGTERM (it exits before the cue close, `run.ts:376-389`,
-being fixed by rs/546) or a throw before the chain starts (an uncaught stack trace,
-`run.ts:518, 548-553`, e.g. S21's relog refused at startup) leaves the cues armed instead, **and
-leaves SCORED in the world with nothing acting** (rs/186 22:3x; fold-in 34): only the StepError,
-refused-resume and pause paths log SCORED out (`run.ts:397`). The run tab's client logs itself out
+written before it started (rs/41). Exit code 1. **The helpers, in both forms** (rs/186 via
+rs/158; fold-in 35):
+
+- **Today** (main; `cueAround`'s final stop in `runner/chain.ts`): a StepError retires the failed
+  step's helpers, so **the failed step's launcher entries are relaunched BEFORE the re-run** (check 6).
+- **Once rs/574's retire rule is on the floor** (landed on rs/186's branch; its snapshot to main is
+  rs/583, held behind rs/580): helpers are retired (a final stop) **only** on a completed chain, a
+  second Ctrl-C or SIGTERM, which **end the attempt**. A first Ctrl-C (a graceful stop at the next
+  logout-safe boundary, to resume later, exit 4), SIGHUP, a StepError, a refused resume or a host
+  reservation leave the helpers stood down and **logged in** for the re-run (up to 25-26 at S21 on
+  SCORED's address, rs/41), and the re-run's cue re-arms them; relaunch none.
+
+**Never send SIGTERM or a second Ctrl-C unless the attempt is being ended.**
+
+**Signals** (run.ts's signal shutdown, rs/546, on main with #462, 11353fbe): a first Ctrl-C asks for
+a stop at the next logout-safe boundary; a second Ctrl-C (exit 130), SIGTERM or SIGHUP (exit 143)
+logs SCORED out now and then ends the chain, so the cleanup (the cue close, the helper launchers,
+Chrome, the token proxy, the report) runs before the exit, bounded at 60 s (`TERM_CLEANUP_MS`). A
+hard kill (SIGKILL, a host failure) or a throw before the chain starts (an uncaught stack trace,
+e.g. S21's relog refused at startup) still leaves the cues armed, **and leaves SCORED in the world
+with nothing acting** (rs/186 22:3x; fold-in 34). The run tab's client logs itself out
 after 10 minutes without input (`server/webclient/src/client/Client.ts:4926-4933`, the AFK logout
 that sends `IDLE_TIMER`), so **re-run within ~9 minutes, or log SCORED out cleanly first**: every
 tick in the world still counts, and an idle-out is an unplanned relog.
@@ -1826,7 +1849,8 @@ The checks, in order, before re-running. Any one failing means **do not re-run: 
    them for main and for the attempt's findings.
 2. **SCORED logged out cleanly**: the `[run] logout:` line, and the run tab on the title screen
    (`tab.ts` `pageInGame` false over the tab's DevTools, never the gateway's `inGame`). If the page
-   still reads in game or the log has no logout line after a StepError, ask main first. **After a
+   still reads in game or the log has no logout line after a StepError, ask main first, unless the
+   log shows the logout refused in combat: then the re-run has already gone first (above). **After a
    hard kill or a throw before the chain starts** SCORED is still in the world by design (above): re-run
    within ~9 minutes of it, or log SCORED out cleanly first; never leave it to the client's
    10-minute AFK logout (rs/186, fold-in 34).
@@ -1835,21 +1859,25 @@ The checks, in order, before re-running. Any one failing means **do not re-run: 
    is alive: then confirm that process is not a relog in progress (run.ts or `relog-now.ts`) before
    removing the lock, and ask main if unsure.
 4. **Nothing else is cleared.** Keep `<run dir>/relogs.json` (it holds S21's open entry, which the
-   re-run needs, `run.ts:436-460`), the cue dir and the run dir (cleared only on a fresh start,
-   `run.ts:507-509`, `cue-keeper.ts:24-38`).
+   re-run needs, `run.ts:436-460`), `<run dir>/handoffs.json` (the hand-offs this attempt completed:
+   without it a re-run inside a band walks back to the band's hand-off and refuses, rs/562), the cue dir and the run dir (cleared only on a fresh start,
+   `run.ts:507-509`, `cue-keeper.ts:24-38`). **Deleting `handoffs.json` makes a re-run inside S18, S22
+   or S16 walk back to the consumed hand-off (H14, H18, H13) and refuse** (`HandOffRecord`, on main
+   with #462; fold-in 35).
 5. **The host claim is still held and live**: run.ts releases it only on success (`run.ts:533`); an
    expired claim makes gate 2 refuse with an `rs-claim take ...` hint (`run.ts:252-261`), so retake it
    as step 0 does first.
 6. **The helpers: relaunch the failed step's launcher entries BEFORE the re-run** (fold-in 34;
-   until rs/546's non-final stop lands). A StepError writes a final stop to open helper cues, so
-   the failed step's helpers are logged out, and a relaunched launcher ignores cues written before
-   it started, so the relaunch comes first and the re-run's new cue reaches it (step 4; HELPERS.md).
-   Once rs/546's non-final stop is on the floor, the stood-down helpers stay logged in on SCORED's
-   address during the re-run (up to 25-26 at S21, rs/41) and the re-run's cue re-arms them: confirm
-   they are still in, and relaunch none.
-7. **The step is not on the non-admitting list**: RUN-ORDER.md section 7's margin ladder, its
-   attempt-ending lines and the conditional note for A and B (until B merges, any step after H7;
-   until A merges, S18 after its first stocked stun and S22 after its first catch). Some lines name an
+   today, until rs/574's retire rule is on the floor in rs/583). A StepError writes a final stop to
+   open helper cues, so the failed step's helpers are logged out, and a relaunched launcher ignores
+   cues written before it started, so the relaunch comes first and the re-run's new cue reaches it
+   (step 4; HELPERS.md). **Once rs/583 is on the floor**, a StepError, a refused resume, a first
+   Ctrl-C, SIGHUP or a host reservation leaves the stood-down helpers logged in on SCORED's address
+   during the re-run (up to 25-26 at S21, rs/41) and the re-run's cue re-arms them: confirm they are
+   still in, and relaunch none; this check's relaunch line then goes.
+7. **The step is not on the non-admitting list**: RUN-ORDER.md section 7's margin ladder and its
+   attempt-ending lines (A and B are on main, #462 and #453, so fold-in 33's conditional note after
+   H7 and in S18 and S22 mid-band is off; fold-in 35). Some lines name an
    operator fix before the re-run instead (S25a: walk SCORED to the anvil; S06 or S21: re-enter
    through the ruins; S21's relog logout half: log SCORED in by hand); the rest end the attempt.
 
@@ -1885,20 +1913,20 @@ segment (e.g. `S05:A-h4-swap`), and the tick log gets a `(resume)` row with the 
   and refuses 'not in game'. Until rs/562's bounded wait for a populated player state lands, on an
   account past the tutorial re-run once more.
 
-**Once rs/547 is on the floor** (rs/547, rs/511's successor under rs/186, its PR due 01:00 PDT;
+**The socket-drop recovery, on main** (#466, 86e7aa37: rs/511's work via rs/547, snapshotted as
+rs/580 from rs/186 @34d0ecf4, 16 files byte-identical, with `cueStop(S27)` above T27-17; fold-in 35;
 the figures below were measured on rs/511's patch: built and unit-tested, and lab-measured
 on bgsrv-mac, the lab engine at 400 ms, the browser client, tree 1fccc5b7 + rs/511's patch,
-cairn://p/rs/511/comments/2; fold-in 32). **rs/511 is not a start condition** (main), so the
-manual relog above stays the procedure for a run commit without it, attempt 1's included. The
-design is `docs/speedrun/RESILIENCE.md` section 4 in rs/511's patch (the race rule, the confirmed
-logout) and section 5 (the deep-Wilderness resume).
+cairn://p/rs/511/comments/2; fold-in 32). It is the current procedure, the manual relog above its
+fallback. The design is `docs/speedrun/RESILIENCE.md` (the drop relog and its race rule, relog-now,
+the confirmed logout, the deep-Wilderness resume).
 
 - **An unplanned drop, run.ts's side.** In the 22:15:50Z shape (the run tab on the title screen,
   the world feed live) run.ts asks the page (`tab.ts` `pageInGame`) and logs it back in inside the
   page (`session.ts` `login({inPage: true})`, never a client relaunch), then resumes the step. Drop
   to back in the world: **24-26 ticks (9.5-10.3 s)**, about 17 of them detection (a page whose
   socket died still reads in game for ~7 s); the in-page login itself takes 0.7-1.4 s (m, lab).
-  Without rs/511 nothing relogs and the operator does it by hand (above).
+  If run.ts's relog refuses or gives up, the operator relogs with relog-now (below), else by hand (above).
 - **The operator's side of the race rule.** If the run tab is on the title screen and run.ts hasn't
   relogged it, run from an ssh shell on the run host:
 
@@ -1907,7 +1935,8 @@ logout) and section 5 (the deep-Wilderness resume).
   ```
 
   `<bot>` is SCORED's bot directory, taken from the run's env and never written here. relog-now
-  uses the run tab's DevTools on 127.0.0.1:9222 (`--cdp=` overrides it). It takes the relog lock
+  uses the run tab's DevTools at the bot env's `CDP_URL`, else 127.0.0.1:9222 (`--cdp=` overrides
+  both; `--run-dir` defaults to run.ts's `RUN_DIR`; `speedrun/tools/relog-now.ts` on main). It takes the relog lock
   (`<run dir>/relog.lock`), logs the page in (an in-page login, the token URL as its fallback),
   **confirms only by the page's in-game flag with the tick advancing** (never the gateway's
   `inGame`), records a manual relog in the shared budget (`<run dir>/relogs.json`) and prints one
@@ -1934,9 +1963,8 @@ logout) and section 5 (the deep-Wilderness resume).
   T13-14 and T26-27 at the run to the spiders, T15-16 at the run to the Mage Bank webs). If that
   fails, the walk stops with a ResumeError: **the operator walks SCORED south to level 20 or below
   by hand** (over the tab's DevTools, as the manual relog's act) **and restarts run.ts**, which
-  resumes from the teleport. The cost is the walk back plus the teleport again. Without rs/511 a
-  deep-Wilderness drop goes straight to that ResumeError (above), and the operator does the same
-  after the manual relog.
+  resumes from the teleport. The cost is the walk back plus the teleport again. If the drop relog
+  itself fails, the operator does the same after relog-now or the manual relog.
 
 **After a player-kill: the recovery** (main 17:0x via rs/158; RUN-ORDER.md R8; fold-in 31). Logged-out
 time costs nothing, so a death is recoverable only if SCORED logs out at once after the respawn, R8's
@@ -1949,7 +1977,13 @@ at once from the run tab, over DevTools as the relog above, confirmed by `pageIn
 operator cues the spawn helper by writing its cue file, scope `{step: 'R8a'..'R8d', family: 'mule'}`
 for the phase (the launcher's gate `{step: 'R8', family: 'mule'}` logs it in); (4) once the helper
 stands beside the spawn, SCORED logs back in, takes the trade and the operator restarts the chain at
-the step whose preconditions hold. The packages are pending rs/526. Its minutes are wall clock, not
+the step whose preconditions hold. The packages are pending rs/526. **Two deaths have no automatic
+kit and are covered only by this manual recovery** (fold-in 35, rs/41 from rs/579's evidence via
+rs/158): **a death at H23** and **a death in S27 with the cannon packed** (R8d1 refuses, short:
+after a death H23 stays a done milestone, so the resume re-enters at T26-27b, which holds the web,
+and a forced H23 repeat would be 7 slots short). For both, **the operator stages a knife (946) from
+h68** (h68 holds 2) plus the kit by hand. Until rs/579 merges R8 is unstaged, and every manual
+S27-death recovery takes its knife from h68 the same way. Its minutes are wall clock, not
 ticks: R8's prices stay `r8-deaths.ts`'s, in ticks.
 
 **S21 relog: reconciliation when the run script refuses** (rs/186's identity and order matrix; code
@@ -1959,7 +1993,7 @@ real-browser lab; fold-in 31):
 | Case | State | What the script does | What the operator does |
 |---|---|---|---|
 | 1 | No open planned entry | a normal launch or resume | finish the T20-21 leg to its canonical arrival; never log out early |
-| 2 | Logout confirmed, entry OPEN, the page proven OUT with no login pending | attaches without launching, waits for the world feed and the full fresh giver roster while SCORED is out, then logs in inside the page; the single planned entry closes only on success | nothing |
+| 2 | Entry OPEN (written once `logoutClean` reports SCORED out, before the page-out check; rs/562), the page proven OUT with no login pending (the entry's timing once rs/583 is on the floor; on main today the entry opens only after the page-out confirmation, `scored-relog.ts`) | attaches without launching, waits for the world feed and the full fresh giver roster while SCORED is out, then logs in inside the page; the single planned entry closes only on success | nothing |
 | 3 | Entry OPEN, the page LIVE | refuses: no login, no navigation, no entry change (a live page does not prove which session set the processing order) | inspects the account and session and the givers' login order, and reconciles the budget by hand; nothing adopts the state automatically |
 | 4 | Entry OPEN, a login PENDING | refuses: no second dispatch or navigation | waits for the real outcome before reconciling; never erases the entry or restarts blindly |
 | 5 | Entry OPEN, CDP unreadable or missing, or the page unknown | refuses the same way | restores observation and establishes the actual state first |
@@ -1970,9 +2004,9 @@ real-browser lab; fold-in 31):
   accruing playtime, so the operator confirms the actual logout and state.
 - No case is a zero-tick or automatic recovery.
 - One shared lock and budget: one planned S21 relog plus three unplanned.
-- The socket-drop half is rs/511's, not on the floor (fold-in 32): lab-measured with an injected
-  drop, 24-26 ticks from the drop to back in the world (bgsrv-mac, 400 ms); 'Once rs/511 is on the
-  floor' above. Between the halves of the split relog no drop recovery runs and nothing is counted.
+- The socket-drop half is on main with #466 (86e7aa37, fold-in 35; rs/511's work via rs/547 and
+  rs/580): lab-measured with an injected drop, 24-26 ticks from the drop to back in the world
+  (bgsrv-mac, 400 ms); 'The socket-drop recovery, on main' above. Between the halves of the split relog no drop recovery runs and nothing is counted.
 
 **A tick-length change during the run** (main's ruling, 13:5x PDT 2026-10-22, via rs/158). **The run
 never stops for it**: the score is in ticks, the in-page loops read the observed period once rs/470
