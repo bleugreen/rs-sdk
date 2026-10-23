@@ -161,11 +161,20 @@ describe("R8's phases on STEP-MANIFEST.md", () => {
         expect(p.lines.find(l => l.item === "m'speak amulet")!.why).toStartWith('kept, nothing needed');
         expect(p.recoverable).toBe(true);
     });
-    test('R8a and R8b: the Khazard helmet and armour are kept at no death point, so unrecoverable by trade', () => {
+    test('R8a and R8b: the Khazard helmet and armour, kept at no death point, come back as the iron med helm and platebody, worn', () => {
+        const objs = contentObjs();
         for (const id of ['R8a', 'R8b']) {
             const p = r8Package(R8_PHASES.find(ph => ph.id === id)!);
-            expect(p.recoverable).toBe(false);
-            for (const d of p.phase.deaths) expect(p.unrecoverable.filter(u => u.death === d.row).map(u => u.id).sort()).toEqual([74, 75]);
+            for (const w of p.walks) expect(w.kept.some(k => /^khazard/.test(k.name))).toBe(false);
+            const subs = p.lines.filter(l => l.substituteFor);
+            expect(subs.map(l => l.why.split(' (')[0])).toEqual(['iron med helm for khazard helmet', 'iron platebody for khazard armour']);
+            for (const s of subs) {
+                expect(untradeable(objs, s.id!)).toBe(false);
+                expect(p.byId).toContainEqual({ id: s.id!, amount: 1 });
+                for (const w of p.walks) expect(w.entries.find(e => e.row.row === `H94 ${id}`)!.worn).toContain(s.item);
+            }
+            expect(p.unrecoverable).toEqual([]);
+            expect(p.recoverable).toBe(true);
         }
     });
 });
