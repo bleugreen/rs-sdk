@@ -1990,13 +1990,26 @@ detail)`, the phase `precondition`, `run` or `postcondition`, and `resume.ts:337
 a link, session or page-reload failure. `lib/attempt.ts:108-114` catches it in the world and run.ts
 stops with exit 1. The only recovery is the operator re-running the command, and where it enters is
 decided from game state, not from the log (`resolveResume`, `resume.ts:123-152`). A manual re-run
-costs **~150-450 ticks (i)**, unchanged; its measured component (rs/595, bgsrv-mac lab, 400 ms, browser, 3 of 3
+costs **~11.7 ticks (m) plus re-entering the interrupted step (unmeasured)** (main accepted 12:40Z via
+rs/158; fold-in 37): run.ts logs SCORED out, confirmed, before it exits on a throw
+(`lib/attempt.ts:111-116`, run.ts:527 at 9f2efb03; r, rs/186), so the operator's reaction and the
+relaunch are off the clock. **~150-450 ticks (i) only where SCORED stays in the world:** a crash
+before the chain, a SIGKILL, an unconfirmed logout (run.ts reports 'logout NOT confirmed'), and a
+failure in combat, where the server refuses the logout (the in-combat rule below). **Every re-run
+starts by observing SCORED's state on `/playerpositions`** (never naming it on this page); if SCORED
+is still in, take the stays-in branch. Its measured component (rs/595, bgsrv-mac lab, 400 ms, browser, 3 of 3
 SIGKILLs mid-T04-05 with an immediate re-run; fold-in 36): **kill to the resume point chosen ~11.7 ticks (m)**,
 relaunch to SCORED in the world ~2, the post-login checks ~9.6-9.9, the scene wait 0, the resume decision
 0; not included are the operator's reaction time (ticks count while SCORED stays logged in), run.ts's
 pre-login gates (the floor read, the reservation, the slot ledger, helpersReady) and the killed step's own
 resume (unmeasured); rs/589 (rs/546's, rs/574's and rs/585's successor) measures one kill-and-re-run (RUN-ORDER.md
-section 7, the ladder's general note).
+section 7, the ladder's general note). **The relog budget on a re-run** (r, run.ts at 38902b56;
+fold-in 37): run.ts's own login on a re-run is not a relog and does not spend 'S21 + 3': its launch
+(`openRunSession`) records nothing in `<run dir>/relogs.json`, where only S21's planned relog,
+`runner/drop-relog.ts`'s recoveries after a drop and the operator's relog-now are recorded
+(`runner/relog-budget.ts`). But run.ts's start gate 'relog budget' refuses a re-run once the
+unplanned relogs are spent (run.ts:284), and a re-run keeps the earlier sessions' entries: only a
+fresh run, with no earlier sessions and no `--from`, clears them (run.ts:629-631).
 
 **A throw in combat: relaunch FIRST** (main 23:3x via rs/158; fold-in 35). If the run log's last
 state shows SCORED in combat (the logout refused, `[run] logout:` reporting it), re-run the same
@@ -2046,40 +2059,40 @@ stand down on a StepError or a first Ctrl-C, per family** (rs/574's retire rule,
   0.2 s after the stop), but the launcher keeps both accounts logged in, so a relaunch must first stop
   the stale session (next item). The anvil, log-row and courier helpers stay code-reading until
   measured.
-- **Relaunching after a failed step whose family exits: the whole launcher** (rs/186's text and
-  rs/41's commands via rs/158, main 12:20Z-12:3xZ; fold-in 37; file:line from 38902b56 and rs/186's
-  9f2efb03, re-checked at the commit main names, the code winning). **Attempt 1 runs one helper
-  launcher**: run.ts's preflight reads helpersReady from one `<run dir>/launcher.json`, so a split
-  would need a run.ts change inside the freeze (an attempt-2 lever, RUN-ORDER.md section 7), and
-  `standalone.ts` has no per-role or per-account stop (its only stop is SIGINT or SIGTERM to the whole
-  process, standalone.ts:929-930; a role that exits 0 is 'finished; not restarting it', :813-816, its
-  account logged in until the launcher stops). So when the failed step's bone, anvil, log-row or
-  courier helpers must come back: (1) **after run.ts has exited**, SIGINT the whole launcher (Ctrl-C
-  in its terminal or `kill -INT <pid>` of its own bun process, never by name or pattern), every
-  logout confirmed (each account's `logout` in `<run dir>/launcher.json` reads `out`); (2) wait until
-  the demo's `/playerpositions` lists no helper account, by display name, not login name (a login
-  name reads falsely absent); the 10 s takeover rule is then met by construction; (3) relaunch the
-  same launcher config and wait for helpersReady; (4) re-run run.ts with the same command. **Do not
-  re-run the mule-hold command** on a relaunch (`holdMule` refuses after the run's prepare,
-  mule-readiness.ts:303). The absence check names helper accounts only, never SCORED or a gate
-  account. **rs/41's rules for it:** (a) **never stop while any carrier's status shows phase
-  'trading'**: a carrier killed mid-trade leaves a durable `mule-delivery-attempt` and faults on
-  restart, refusing that row until reconciled; (b) a restarted carrier resumes its selection from
-  its journal but forgets a carry-ahead kit in its inventory, so it pays one extra bank trip
-  (mule.ts:1814-1817); (c) ungated families (the bone givers, the ring givers, the mules) log in again
-  at relaunch even if their step is done, worst case ~33-40 sessions on SCORED's address against our
-  45: **count before re-running**; (d) the re-run reopens its step's cues fresh by itself (`chain.ts`
-  `withCue` writes a fresh session on resume), so nobody hand-writes cues. The altar givers and mules
-  lose their stand-by in this case and log in again with the rest. **Unmeasured:** the restarted-carrier
-  path and the relogin ramp (~3.5-4 min or more, rs/496's measured roster login on the start). **The
-  price on SCORED's clock: ~0 plus one login**: when a step throws, run.ts logs SCORED out before it
-  exits (`runAttempt` returns the failure, lib/attempt.ts:111-116; `if (session.expectInWorld &&
-  !sig.leaving()) await leave();`, run.ts:527, before the cues close non-final, :533-538; r, rs/186
-  at 9f2efb03), and a logout then a login adds no counted tick (`playtime-audit.md` rows 1c and 4d).
-  **The exceptions, where SCORED stays in and the ramp's ~550 ticks land on the score:** a crash
-  outside `runAttempt` (before the chain starts), a hard kill (SIGKILL), or a logout not confirmed
-  (run.ts reports 'logout NOT confirmed'); the operator checks SCORED is out (the page, run.ts's log)
-  before the relaunch.
+- **Relaunching after a failed step whose family exits** (main's line, 12:40Z via rs/158,
+  verbatim; fold-in 37): 'with SCORED out, stop the whole launcher, confirm every helper out via
+  /playerpositions, relaunch the same config, wait helpersReady, re-run run.ts; no mule-hold', **cost
+  one SCORED login**. The whole launcher because attempt 1 runs one helper launcher (run.ts's
+  preflight reads helpersReady from one `<run dir>/launcher.json`; a split needs a run.ts change
+  inside the freeze, an attempt-2 lever, RUN-ORDER.md section 7) and `standalone.ts` has no per-role
+  or per-account stop (its only stop is SIGINT or SIGTERM to the whole process,
+  standalone.ts:929-930; a role that exits 0 is 'finished; not restarting it', :813-816, its account
+  logged in until the launcher stops). **The detail, rs/41's steps** (run dir `<R>`, config
+  `<R>/helpers.json`, tmux session `helpers`; as relayed by rs/158; file:line at 38902b56, re-checked
+  at the commit main names, the code winning): (0) SCORED is out, observed on `/playerpositions`
+  (run.ts logs it out on a throw; else the stays-in branch above); (1) no carrier mid-trade: no
+  `phase: 'trading'` in the `<R>/rc-cue/mule/` status files; (2) Ctrl-C the launcher in session
+  `helpers`, nothing else (HELPERS.md "Stopping"); (3) every account's `logout: out` in
+  `<R>/launcher.json`, and their display names (not login names, which read falsely absent) absent
+  from `/playerpositions`, budgeting minutes, since the server removes one player per tick world-wide
+  (HELPERS.md); helper accounts only, never SCORED or a gate account by name; (4) wait at least 10 s;
+  (5) **count sessions on SCORED's address before the relaunch; refuse to relaunch above 45** (main,
+  12:35Z, verbatim), then relaunch `<R>/helpers.json` and wait for helpersReady (run.ts's gate 5),
+  never the mule-hold command again (`holdMule` refuses after the run's prepare,
+  mule-readiness.ts:303); (6) re-run run.ts with the same command and the same `--run-dir`.
+  **rs/41's rules:** (a) never stop while any carrier's status shows phase 'trading': a carrier killed
+  mid-trade leaves a durable `mule-delivery-attempt` and faults on restart, refusing that row until
+  reconciled; (b) a restarted carrier resumes its selection from its journal but forgets a carry-ahead
+  kit in its inventory, so it pays one extra bank trip (mule.ts:1814-1817); (c) ungated families (the
+  bone givers, the ring givers, the mules) log in again at relaunch even if their step is done, worst
+  case ~33-40 sessions on SCORED's address (step 5's count); (d) the re-run reopens its step's cues
+  fresh by itself (`chain.ts` `withCue`), so nobody hand-writes cues. The altar givers and mules lose
+  their stand-by in this case and log in again with the rest. **Unmeasured** (main): the path where a
+  carrier is restarted; the relogin ramp (~3.5-4 min, rs/496's measured roster login on the start)
+  and a carrier's next-row serve after a mid-run relaunch. **Price:** one SCORED login, the ramp
+  running while SCORED is out (`playtime-audit.md` rows 1c and 4d); in the stays-in exceptions (a
+  crash outside `runAttempt`, SIGKILL, an unconfirmed logout) the ramp's ~550 ticks land on the score
+  (RUN-ORDER.md section 7, an unsummed ladder line).
 - Helpers are **retired** (a final stop, `[run] cues closed final`) **only** on a completed whole
   run, SIGTERM or a second Ctrl-C, which **end the attempt**: a launcher never re-arms a retired
   scope (`helpers/standalone.ts`'s ScopeSessions), so a re-run after one finds no helpers.
@@ -2126,7 +2139,8 @@ The checks, in order, before re-running. Any one failing means **do not re-run: 
    reads `[run] cues closed non-final: a re-run re-arms the helpers`. If the failed step's bone,
    anvil, fm-row or courier helpers must come back, restart the whole launcher before the re-run
    ("Relaunching after a failed step whose family exits", above: SIGINT after run.ts has exited and
-   no carrier trading, every logout confirmed, no helper listed, relaunch, helpersReady, never the
+   no carrier trading, every logout confirmed, no helper listed, the sessions counted (refuse above
+   45), relaunch, helpersReady, never the
    mule-hold command again; the altar and mule givers come back with it), and start the ring givers by hand if S04 failed; the altar and
    mule givers stand by logged in on SCORED's address (up to 25-26 at S21, rs/41), and the
    re-run's cue re-arms them (measured, rs/597; a mule row already delivered is not served again,

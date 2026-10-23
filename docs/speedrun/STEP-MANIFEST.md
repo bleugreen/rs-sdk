@@ -2655,6 +2655,14 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   S01's H1 at Lumbridge (3222,3222), the out-and-back rows H13, H16, H18, H22 and H23 (rs/318's
   rulings 5 to 7), and any later H row. `run.ts` puts one `handOff(id, {partner, supersededBy})`
   Step per row between the skill and quest steps.
+- **A walking carrier late to its tile throws the step** (rs/598's lab run 1, main 12:35Z via rs/158;
+  fold-in 37): the hand-off checks 'partner in view' before its bounded ready wait
+  (`runner/handoff.ts:284` at 38902b56, where a cue-served partner skips it, :582; rs/598's lab run
+  refused at H4k), so a carrier not yet in view makes the step refuse instead of waiting. Every
+  hand-off whose carrier walks to its tile is exposed; H4k's run-day margin is 39 ticks after H4's
+  stop. A refusal is a thrown step: a manual restart, ~11.7 ticks (m, rs/595) plus re-entry, not
+  attempt-ending (RUN-HOST.md, 'Re-running after a StepError'). It clears if rs/598 reorders the
+  check (main pre-approved); if that is in the named commit, this line reads 'fixed'.
 - **Parameters:** the row id and the partner's account name. The row is the data: its `in` is what
   SCORED receives, its `out` (reason `swap` or `trade`) what it gives, its `equip` what it wears
   afterwards. The module names no item; it reads the row through `speedrun/tools/slot-ledger.ts`'s
