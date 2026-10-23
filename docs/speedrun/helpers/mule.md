@@ -347,11 +347,20 @@ needs Dragon Slayer) serves SCORED twice on Ape Atoll in one login, from the run
     { "name": "H12oM", "scope": { "step": "H12oM", "family": "mule" }, "at": { "x": 2763, "z": 2704 },
       "items": [{ "item": "Shark", "topUp": { "max": 13 } }] },
     { "name": "H12oP", "scope": { "step": "H12oP", "family": "mule" }, "at": { "x": 2803, "z": 2724 },
-      "items": [{ "item": "Shark", "amount": 9 }, { "item": "Superantipoison(4)", "amount": 1 }] } ] } }
+      "items": [{ "item": "Superantipoison(4)", "topUp": { "max": 1 } }, { "item": "Shark", "topUp": { "max": 9 } }] } ] } }
 ```
 
-The game names the potion `Superantipoison(4)` (obj 2448, `4dose2antipoison`), one word. h45 logs in
-carrying 22 sharks and the potion, 23 slots, and nothing else in the pack. Its own `cueDir` keeps
+This is the run-day config; `mule.test.ts` parses this block and checks it against the packages its
+carried-mode tests serve. Both packages are top-ups sized by SCORED's ask (rs/158): M up to 13 sharks,
+P up to 1 Superantipoison(4) and 9 sharks. The game names the potion `Superantipoison(4)` (obj 2448,
+`4dose2antipoison`), one word with no space. h45 logs in carrying the potion and 22 sharks (13 + 9,
+`carriedShort` sums the maxes), 23 slots, and nothing else in the pack.
+
+**Offer order.** In one trade the mule offers in the package's line order (`byPackageLine`), each id
+from its lowest slot, with any X count (anything but 1, 5, 10 or the whole stack) after the button
+presses (`lib/trade.ts` `planOffers`). H12oP's potion line comes first and is always a one-press All,
+so it is offered first for every ask, whatever slot it sits in; nothing in the staging has to hold it.
+The trade completes only when both sides confirm, so the order changes nothing SCORED receives. Its own `cueDir` keeps
 mule1's H12 cue apart; there H12oP's cue replaces H12oM's in the one `cue.json`. What `run.ts` writes
 (rs/393), with SCORED as the receiver:
 
@@ -361,10 +370,21 @@ mule1's H12 cue apart; there H12oP's cue replaces H12oM's in the one `cue.json`.
 2. **M's ask**, on the first frame showing the trade with h45 open:
    `writeTopUpAsk(dir, [{ item: '^shark$', count: n }], Date.now(), { step: 'H12oM', family: 'mule' })`,
    n = SCORED's free slots up to 13, `want` exactly n sharks. With n = 0 there's no trade: write H12oM's
-   **stop**, and the mule moves on to P (it does the same straight after M's trade).
+   **stop**, and the mule passes M (below) and moves on to P (it moves on straight after M's trade too).
 3. **H12oP opens** any time after M (a new cue session). h45 waits logged in on P's tile (2803,2724),
-   ~850 ticks; SCORED's trade there wants 9 Shark + 1 Superantipoison(4), with no ask.
-4. **H12oP stops** after P's trade: the launcher logs h45 out at once.
+   ~850 ticks. P is sized by SCORED on arrival (rs/158): the Superantipoison(4) plus min(9, free - 2)
+   sharks, keeping one slot free. On the first frame showing the trade open SCORED writes
+   `writeTopUpAsk(dir, [{ item: '^superantipoison\\(4\\)$', count: 1 }, { item: '^shark$', count: k }], Date.now(), { step: 'H12oP', family: 'mule' })`
+   and wants exactly what it asked. A line it needs none of is left out, since an ask's counts are at
+   least 1. h45 offers each line's ask clamped to its max and to what it holds: asked 1 + 5, the potion
+   and 5 sharks; asked 1 + 0, the potion alone.
+4. **Nothing to ask means no trade.** SCORED writes H12oP's **stop** in place of the trade. A carried
+   package whose cue stops before its trade is passed: the mule opens no trade and sends no more
+   requests, logs `carried: asked for nothing; passed without a trade`, and records the cue session in
+   RoleState (`carriedServed`) as a trade would be, so a restarted role never takes it up again.
+5. **H12oP's final stop** after P's trade, or in place of it (`final: true`, or the next scope's cue after a
+   plain stop): the launcher logs h45 out at once. H12oM's stop and H12oP's open between the two trades
+   leave it in.
 
 Measured end to end (`speedrun/lab/atoll-mule.ts`, rs/483, fedora lab, T=400, the launcher's relay
 path, a stand-in SCORED appearing on each tile as a ladder climb would put it):
@@ -378,7 +398,7 @@ path, a stand-in SCORED appearing on each tile as a ladder climb would put it):
 | M's trade, SCORED's clock (10 free slots, asked 10, given exactly 10 of 22) | 5 (mule's giver 3) |
 | The walk M -> P, starting straight after M | 23 |
 | The wait at P: 850 ticks (5.7 min), 0 hits, 1 keep-alive (after 300 s idle, a 2-tick step) | 850 |
-| P's trade, SCORED's clock (9 sharks + 1 potion) | 5 (mule's giver 4) |
+| P's trade, SCORED's clock (9 sharks + 1 potion, P's earlier fixed form; the lab script still plays it) | 5 (mule's giver 4) |
 | H12oP's stop to the launcher's logout | 2 |
 
 SCORED arrived 70 ticks after the open while the mule was still on its second spider; the
@@ -388,12 +408,13 @@ the ~100-tick lead in step 1 leaves room for the wildlife.
 **Where h45 waits, and the restock between attempts.** Staged at run eve, h45 parks **logged out on
 P's tile, loaded**. A relog lands on the same tile: the lab's login put it at (2803,2724), and it
 took no hits there in 850 ticks logged in (rs/463: 0 in 100-tick parks). After P's trade it holds
-22 - n - 9 sharks (n = M's count) and nothing else. Before the next attempt it must restock to 22
+what M and P didn't take: 22 - n - k sharks (n and k the counts asked at M and P), and the potion
+if P's ask left it out. Before the next attempt it must restock to 22
 sharks and the potion, and there is no bank on the atoll:
 
 1. Lumdo (at the landing, 2802,2707) to Crash Island, then Waydar's return to the Gnome Stronghold.
-2. Bank at the Grand Tree: deposit the leftover sharks, withdraw 22 Shark and 1 Superantipoison(4),
-   and keep the rune set worn and nothing else in the pack.
+2. Bank at the Grand Tree: deposit the leftover sharks and any potion, withdraw 1 Superantipoison(4)
+   and 22 Shark, and keep the rune set worn and nothing else in the pack.
 3. Back via Daero (the blindfold) to Waydar, Crash Island and Lumdo: 42 ticks (rs/463, m), then the
    ~10-tick walk from the landing to P's tile; log out there.
 

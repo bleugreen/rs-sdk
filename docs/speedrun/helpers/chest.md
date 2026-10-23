@@ -28,7 +28,7 @@ One account keeps both chests cycling: the walk back (measured 63 ticks, landing
 
 ## Measured (demo)
 
-First run: cairn_h47 (Thieving 99, combat 111), 2026-10-22, outside the fleet from a dev copy (`standalone.ts`, unit `rs-372-h47`). Varrock west bank to the tower door: 557 ticks. Door picked on the first try or two, ladder 1 click, search 13-16 ticks from the click (walk to the chest included), walk back from the landing to the next search 55-63 ticks.
+First run: cairn_h47 (Thieving 99, combat 111), 2026-10-22, outside the fleet from a dev copy (`standalone.ts`, unit `rs-372-h47`) until the demo's 16:41 UTC world restart; from 21:51 UTC it runs in the fleet. Varrock west bank to the tower door: 557 ticks. Door picked on the first try or two, ladder 1 click, search 13-16 ticks from the click (walk to the chest included), walk back from the landing to the next search 55-63 ticks.
 
 | Measure | Value |
 |---|---|
@@ -37,19 +37,22 @@ First run: cairn_h47 (Thieving 99, combat 111), 2026-10-22, outside the fleet fr
 | Steady state | 4 blood runes per ~81 s, **~175 per hour** (the role's own `bloodPerHour`, travel included: 142 after 17 minutes) |
 | Tick length | 0.31-0.34 s |
 | Bank detour (every 40 runes) | ~30 ticks |
+| First 4 hours (standalone, 12:22-16:40 UTC) | 171 per hour, 16.3 per 1,000 ticks at 0.34 s, 0 chests taken by others |
+| Evening (fleet, 23:00-23:30 UTC) | 110-126 per hour, 12-14 per 1,000 ticks at 0.40 s: fewer players, so a longer respawn |
 
 The rate follows the world's player count: at a quiet world the respawn is the full ~400 ticks, about 115 runes per hour.
 
 ## Stopping, and a delivery
 
-Never stop the role's process (or the launcher) while the account is below ground: the only way out of the basement is the trap's teleport, and the handover's walker has no route up the cellar ladder and through the locked door. The first delivery attempt failed that way (safely: no trade opened, nothing recorded under its id).
+Never stop the role's process or its launcher while the account is below ground, and never reassign it there. The only way out of the basement is the trap's teleport, and the handover's walker has no route up the cellar ladder and through the locked door. The first delivery attempt failed that way (safely: no trade opened, nothing recorded under its id). In the fleet, a `fleetctl assign` and `reload` that changes the account's role restarts it where it stands, so the same rule applies there.
 
-Ask for a stop instead: create the stop file, `<role-state dir>/<account>.chest-stop` (under the launcher, `run-machine/role-state/cairn_h47.chest-stop`; option `stopFile` overrides it), or set `target`. Below ground the role carries on until the next loot teleports it out (at most one respawn, about 2-4 minutes); on the surface it banks what it carries at the East Ardougne north bank, deletes the stop file, logs `finished` and returns. With `final: true` on its launcher entry the launcher then logs the account out.
+Ask for a stop instead: create the stop file `<role-state dir>/<account>.chest-stop` (option `stopFile` overrides it), or set `target`. Below ground the role carries on until the next loot teleports it out (at most one respawn, about 2-4 minutes). On the surface it banks what it carries at the East Ardougne north bank, deletes the stop file, logs `finished` and returns. The role-state dir is `ROLE_STATE_DIR` if set, else `<checkout>/fleet-run/role-state`, so in the fleet the file is `~/rs-fleet/fleet-run/role-state/cairn_h47.chest-stop`.
 
-A delivery is then three steps on bbs, from the dev copy:
+A delivery from the fleet:
 
-1. `touch run-machine/role-state/cairn_h47.chest-stop` and wait for the unit to end (`finished` in the role log).
-2. Run the `handover` role (`final: true`) with `bank: {x: 2617, z: 3333}` (East Ardougne north bank), `meet: {x: 3185, z: 3436}` (cairn_mule1 at Varrock west bank), a fresh `id`, and `items: [{item: 'Blood rune', n}]`. Varrock and back is about 4 minutes of walking each way; the handover walks back to the Ardougne bank when it is done.
-3. Start the chest launcher again.
+1. `touch ~/rs-fleet/fleet-run/role-state/cairn_h47.chest-stop`, then wait for `[chest] finished` in `fleetctl logs cairn_h47`. The account then stays logged in and idle on the surface.
+2. `fleetctl assign cairn_h47 handover --options '<json>' --return && fleetctl reload`, with `bank: {x: 2617, z: 3333}` (East Ardougne north bank), `meet: {x: 3185, z: 3436}` (cairn_mule1 at Varrock west bank), a fresh `id`, and `handovers: [{to: 'cairn_mule1', items: [{item: 'Blood rune', n}]}]`. Varrock and back is about 4 minutes of walking each way. The handover walks back to the Ardougne bank, and `--return` puts the account back on the chest with its options.
+
+**Standalone (`standalone.ts`): don't mark a chest entry `final`.** A final role's exit stops the launcher whatever its exit code, so an error that a non-final role would retry with backoff ends the farm instead. The first standalone run died that way at the 16:41 UTC world restart on 2026-10-22 and stayed down for five hours. Without `final`, a crash is retried, and a `finished` role leaves the account logged in until the unit is stopped. Stopping it then is safe, because the account is on the surface.
 
 Delivered so far: 184 on 2026-10-22 at 12:15 UTC (`rs372-mule1-blood-1`).
