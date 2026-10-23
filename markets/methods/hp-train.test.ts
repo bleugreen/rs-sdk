@@ -1,5 +1,19 @@
 import { describe, expect, test } from 'bun:test';
-import { parseOptions } from './hp-train';
+import { parseOptions, pastTheMountain, SITES } from './hp-train';
+import type { BotWorldState } from '../../sdk/types';
+
+const at = (x: number, z: number, level = 0) => ({ player: { worldX: x, worldZ: z, level } }) as unknown as BotWorldState;
+
+describe('which side of White Wolf Mountain', () => {
+    test("the crabs, Seers' and Catherby are past it; Lumbridge, the cows and Taverley are not", () => {
+        expect(pastTheMountain(at(SITES.crabs.centre.x, SITES.crabs.centre.z))).toBe(true);
+        expect(pastTheMountain(at(2725, 3491))).toBe(true);
+        expect(pastTheMountain(at(2690, 3735))).toBe(true);
+        expect(pastTheMountain(at(3253, 3285))).toBe(false);
+        expect(pastTheMountain(at(2880, 3410))).toBe(false);
+        expect(pastTheMountain(null)).toBe(false);
+    });
+});
 import { parseArgs } from './probe-sampler';
 
 describe('hp-train options', () => {
