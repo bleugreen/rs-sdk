@@ -327,10 +327,10 @@ section 1).
 3. **Budget item: the rune axe** in H4: held at 13:10 (rs/41). Without it Woodcutting would cost
    +388 (adamant) or +836 (mithril) with the knife.
 4. **Budget:** the expected total plus the fallback deltas in force is under 35,916 (RUN-ORDER.md's
-   headline scenario table: in force, the forecast at 2026-10-23 with the bones as staged, +445.7 and **35,738.4** expected;
-   today's stock, the conservative row, +564.7 and 35,857.4 on the same staged bones (283 dragon; the 21:20 UTC count's
-   booth case, history: +797.0 and 36,089.7). **On fold-in 33b's figures (S11a's lap to Agility 25 at rs/611's +54 in place of the +37 agility-potion fallback, and T02-03 at 52: +65.0 on the row in force), every quest at its burst figure but S15 at its fixed and S18 on Charge + Superheat in every stocked stun, the budget
-   condition holds** (blood runes complete for attempt 1; Superheat off, +58, 35,796.4; for attempts 2-3 it holds down to ~259 held and fails at 100, RUN-ORDER.md
+   headline scenario table: in force, the forecast at 2026-10-23 with the bones as staged, +445.7 and **35,818.4** expected;
+   today's stock, the conservative row, +564.7 and 35,937.4 on the same staged bones (283 dragon; the 21:20 UTC count's
+   booth case, history: +797.0 and 36,169.7). **On fold-in 33b's figures (S11a's lap to Agility 25 at rs/611's +54 in place of the +37 agility-potion fallback, T02-03 at 52, and S06's drained air giver, +80 i: +145.0 on the row in force), every quest at its burst figure but S15 at its fixed and S18 on Charge + Superheat in every stocked stun, the budget
+   condition holds** (blood runes complete for attempt 1; Superheat off, +58, 35,876.4; for attempts 2-3 it holds down to ~259 held and fails at 100, RUN-ORDER.md
    section 7); if burst dialogue fails on the night the quests not yet browser-confirmed revert to fixed (+32.0, S16 alone: S15 on its fixed basis and S08 browser-accepted off since fold-in 31, S19 and S26 since fold-in 24, S05, S23, S24, S10b and S13 since fold-in 25, S12 and S11b since fold-in 28, S20 since fold-in 30) and it
    still holds (35,700.1, 215.9 under), so each quest's browser-client burst acceptance (RUN-ORDER.md O51) is part
    of it.
