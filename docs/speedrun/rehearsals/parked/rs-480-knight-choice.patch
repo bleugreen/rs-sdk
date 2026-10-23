@@ -1,0 +1,491 @@
+diff --git a/docs/speedrun/skills/thieving.md b/docs/speedrun/skills/thieving.md
+index 946a718..62188d7 100644
+--- a/docs/speedrun/skills/thieving.md
++++ b/docs/speedrun/skills/thieving.md
+@@ -304,7 +304,13 @@
+   NPC; only `npc.delayed` is checked (`OpNpcHandler.ts:27-31`). Two bots on
+   the same knight both kept the 2-tick cadence: 146 of 163 and 164 of 175
+   success gaps were 2 (measured, 200 rolls each at 85). The market guards,
+-  paladins and heroes ignore pickpocketing.
++  paladins and heroes ignore pickpocketing. Even so, rs/158 asked S18 to
++  prefer a knight no other thiever stands next to: `thieving.ts`'s opt-in
++  `knight: { prefer: 'uncrowded' }` (off by default) scores the two nearest
++  knights by the other players on the 8 tiles around each and hands the
++  program both in that order (`pickpocket.ts` `prefer`), so the retarget is
++  the other knight. Whether a crowd costs picks or frame time is rs/479's
++  lab measurement, not this rule's.
+ - **Members world only** (`pickpocket.rs2:101-104`). The demo server is
+   members (`fly.toml:23`, `NODE_MEMBERS = "true"`).
+ - **The bot must click every tick, blindly.** The cadence needs a click to land
+diff --git a/server/webclient/src/bot/programs/pickpocket.test.ts b/server/webclient/src/bot/programs/pickpocket.test.ts
+index ea1558a..4411b74 100644
+--- a/server/webclient/src/bot/programs/pickpocket.test.ts
++++ b/server/webclient/src/bot/programs/pickpocket.test.ts
+@@ -359,9 +359,59 @@
+             const { h, clicks } = run({});
+             expect(h.status.counters.retargets).toBeUndefined();
+             expect(clicks.every(i => i === 12)).toBe(true);
++            expect(h.status.gauges.target).toBeUndefined();
+         });
+     });
+ 
++    describe('prefer', () => {
++        // 12 nearest and 14 next, neither reachable; 13 farthest and reachable
++        const npcs = [
++            { index: 13, name: 'Man', options: ['Talk-to', 'Pickpocket'], x: 3204, z: 3200 },
++            { index: 14, name: 'Man', options: ['Talk-to', 'Pickpocket'], x: 3202, z: 3200 },
++            { index: 12, name: 'Man', options: ['Talk-to', 'Pickpocket'], x: 3201, z: 3200 }
++        ];
++        const run = (params: Record<string, unknown>) => {
++            const h = new Harness('pp', createPickpocket);
++            h.start('pp', { rolls: 1, npc: '^Man$', retargetTicks: 12, ...params }, makeState({ tick: 1, npcs }));
++            const msgs: Array<{ text: string; id: number }> = [];
++            let pending: number | undefined;
++            const targets: number[] = [];
++            for (let t = 2; t < 40 && h.status.phase === 'running'; t++) {
++                if (pending === 13) msgs.push({ text: "You pick the man's pocket.", id: t });
++                const sent = h.step(makeState({ tick: t, npcs, messages: msgs }));
++                pending = (sent.find(s => s.action.type === 'interactNpc')?.action as { npcIndex?: number } | undefined)?.npcIndex;
++                const g = h.status.gauges.target;
++                if (g !== undefined && g !== targets[targets.length - 1]) targets.push(g);
++            }
++            return { h, targets, clicks: h.sent.filter(s => s.action.type === 'interactNpc').map(s => (s.action as { npcIndex: number }).npcIndex) };
++        };
++
++        test('the first listed index is the target, over a nearer one', () => {
++            const { h, clicks, targets } = run({ prefer: [13, 12] });
++            expect(h.status.phase).toBe('done');
++            expect(h.status.counters.retargets).toBeUndefined();
++            expect(clicks.every(i => i === 13)).toBe(true);
++            expect(targets).toEqual([13]);
++        });
++
++        test('a retarget goes to the next listed index, not the next nearest', () => {
++            const { h, clicks, targets } = run({ prefer: [12, 13] });
++            expect(h.status.phase).toBe('done');
++            expect(h.status.counters.retargets).toBe(1);
++            expect(clicks.slice(0, 13).every(i => i === 12)).toBe(true);
++            expect(clicks).not.toContain(14);
++            expect(clicks[clicks.length - 1]).toBe(13);
++            expect(targets).toEqual([12, 13]);
++        });
++
++        test('listed indices out of sight fall back to the nearest; a bad list is refused', () => {
++            const { clicks } = run({ prefer: [99], rolls: 1, maxTicks: 6 });
++            expect(clicks[0]).toBe(12);
++            expect(() => createPickpocket({ rolls: 1, prefer: [1.5] })).toThrow('prefer must be a list of npc indices');
++            expect(() => createPickpocket({ rolls: 1, prefer: 3 })).toThrow('prefer must be a list of npc indices');
++        });
++    });
++
+     test('a banknote of the food is not food', () => {
+         const h = new Harness('pp', createPickpocket);
+         const npcs = [{ index: 12, name: 'Knight of Ardougne', options: ['Talk-to', 'Pickpocket'] }];
+diff --git a/server/webclient/src/bot/programs/pickpocket.ts b/server/webclient/src/bot/programs/pickpocket.ts
+index 83209db..62ab752 100644
+--- a/server/webclient/src/bot/programs/pickpocket.ts
++++ b/server/webclient/src/bot/programs/pickpocket.ts
+@@ -35,6 +35,12 @@
+ // program avoids that target for AVOID_TICKS and takes the next nearest. A knight's
+ // longest follow is about 8 ticks, so 12 never fires on a reachable target.
+ //
++// `prefer: [npcIndex, ...]` (off by default): whenever the program takes a fresh target (its
++// first, one given up by `retargetTicks`, or one gone from sight) it takes the first listed
++// index that matches `npc`, is in sight and is not avoided, and only then the nearest. The step
++// module orders the list (thieving.ts `knight`), so a retarget off the first goes to the second.
++// With a list, the target's index is published as the `target` gauge.
++//
+ // Stun actions (`stunActions`, off by default): rs/106's stun pack. On the ticks of the window
+ // after a failure (`stunWindow`, offsets from the tick that shows it) the program sends actions
+ // resolved from the inventory, ahead of the knight click: bury, Charge, arrowheads on headless
+@@ -71,7 +77,7 @@
+ /** How long a target given up by `retargetTicks` stays avoided. */
+ const AVOID_TICKS = 100;
+ 
+-createPickpocket.params = ['npc', 'option', 'rolls', 'untilLevel', 'maxTicks', 'every', 'eat', 'food', 'heal', 'forcedBelow', 'eatBelow', 'stopWhenFoodBelow', 'retargetTicks', 'idleOnInterface', 'stunActions', 'stunWindow', 'stunPerTick'] as const;
++createPickpocket.params = ['npc', 'option', 'rolls', 'untilLevel', 'maxTicks', 'every', 'eat', 'food', 'heal', 'forcedBelow', 'eatBelow', 'stopWhenFoodBelow', 'retargetTicks', 'prefer', 'idleOnInterface', 'stunActions', 'stunWindow', 'stunPerTick'] as const;
+ export function createPickpocket(params: ProgramParams): TickProgram {
+     const npcRe = regex(params.npc, '^Knight of Ardougne$', 'npc');
+     const opRe = regex(params.option, '^pickpocket$', 'option');
+@@ -87,9 +93,15 @@
+     const eatBelowParam = params.eatBelow === undefined ? undefined : num(params.eatBelow, 0, 'eatBelow');
+     const stopBelow = num(params.stopWhenFoodBelow, 0, 'stopWhenFoodBelow');
+     const retargetTicks = num(params.retargetTicks, 0, 'retargetTicks');
++    const preferParam = params.prefer ?? [];
++    if (!Array.isArray(preferParam) || !preferParam.every(i => Number.isInteger(i) && i >= 0)) throw new Error('prefer must be a list of npc indices');
++    const prefer: readonly number[] = preferParam;
+     const idleOnInterface = params.idleOnInterface === true;
+     const stun = params.stunActions === undefined ? null : new StunPack({ actions: params.stunActions, window: params.stunWindow, perTick: params.stunPerTick });
+ 
++    const freshTarget = (candidates: NearbyNpc[]): NearbyNpc | undefined =>
++        prefer.map(i => candidates.find(n => n.index === i)).find(n => n !== undefined) ?? candidates.sort((a, b) => a.distance - b.distance)[0];
++
+     const messages = new FreshMessages();
+     let started = false;
+     let startTick = 0;
+@@ -299,8 +311,11 @@
+             const cur = target;
+             target = cur && s.nearbyNpcs.some(n => n.index === cur.index)
+                 ? s.nearbyNpcs.find(n => n.index === cur.index)
+-                : s.nearbyNpcs.filter(n => npcRe.test(n.name) && !((avoid.get(n.index) ?? 0) > t)).sort((a, b) => a.distance - b.distance)[0];
+-            if (target && target.index !== cur?.index) targetSince = t;
++                : freshTarget(s.nearbyNpcs.filter(n => npcRe.test(n.name) && !((avoid.get(n.index) ?? 0) > t)));
++            if (target && target.index !== cur?.index) {
++                targetSince = t;
++                if (prefer.length) ctx.gauge('target', target.index);
++            }
+             const op = target?.optionsWithIndex.find(o => opRe.test(o.text));
+             if ((t - startTick) % every !== 0) return;
+             if (target && op) {
+diff --git a/speedrun/skills/thieving.test.ts b/speedrun/skills/thieving.test.ts
+index 046f877..a6fd809 100644
+--- a/speedrun/skills/thieving.test.ts
++++ b/speedrun/skills/thieving.test.ts
+@@ -21,7 +21,7 @@
+ import { parseIn } from '../tools/slot-ledger';
+ import { xpForLevel } from '../lib/xp';
+ import {
+-    ARDOUGNE_SOUTH_BANK, ARROWHEAD_TIERS, BANDS, bonesTopUpAction, chargeSipPotion, type ChargeSip, DROP_BARS, eatPolicy, FOODS, foodPattern, oreTopUpAction, packReport, parseStunPack, RETALK_QUIET_TICKS, retalkDue, steps, STUN_PACK_ACTIONS, STUN_PACK_BONES_BELOW,
++    ARDOUGNE_SOUTH_BANK, ARROWHEAD_TIERS, BANDS, bonesTopUpAction, chargeSipPotion, type ChargeSip, chooseKnight, DROP_BARS, type KnightChoice, parseKnight, eatPolicy, FOODS, foodPattern, oreTopUpAction, packReport, parseStunPack, RETALK_QUIET_TICKS, retalkDue, steps, STUN_PACK_ACTIONS, STUN_PACK_BONES_BELOW,
+     stunActionsFor, stunPackCheck, SUPERHEAT_BRONZE_CASTS, SUPERHEAT_SPELL, superheatActions, superheatLoad, TOPUP_RESTART_BY, topUpAction, topUpAsk, TopUpAsker, topUpDue, TopUpReceiver
+ } from './thieving';
+ 
+@@ -1174,3 +1174,120 @@
+         expect(meta.pack).toMatchObject({ superheat: { casts: 2, oreBelow: 2 }, superheats: 140, barDrops: 139, clickSkips: 140, charges: 163, buried: 0, topUpRequests: 11, xp: { smithing: 41860 }, levels: { smithing: [1, 53] } });
+     });
+ });
++
++// ------------------------------------------------------------------ knight choice
++
++describe('thieving: the knight choice', () => {
++    // A is the nearer knight (2 tiles from the account), B the farther (4); the page lists B first
++    const A = { index: 21, x: 2669, z: 3303 };
++    const B = { index: 22, x: 2671, z: 3309 };
++    const KNIGHT = /^Knight of Ardougne$/i;
++    const cheb = (x: number, z: number) => Math.max(Math.abs(x - KNIGHTS_AT.x), Math.abs(z - KNIGHTS_AT.z));
++    const knight = (k: typeof A) => ({ kind: 'npc', index: k.index, name: 'Knight of Ardougne', x: k.x, z: k.z, distance: cheb(k.x, k.z), optionsWithIndex: [{ text: 'Pickpocket', opIndex: 3 }] });
++    function knightWorld(players: Array<[string, number, number]>, inventory: InventoryItem[] = [item(0, 'Shark'), item(1, 'Shark')]): BotWorldState {
++        const s = world({ level: 57, ...KNIGHTS_AT, maxHp: 40, inventory });
++        return {
++            ...s,
++            nearbyNpcs: [knight(B), knight(A)],
++            nearbyPlayers: players.map(([name, x, z], i) => ({ kind: 'player', index: 30 + i, name, combatLevel: 99, x, z, distance: cheb(x, z) }))
++        } as never as BotWorldState;
++    }
++    // two rivals next to A (one diagonal), one on A's own tile and one two tiles from B: neither of those counts
++    const CROWD_ON_A: Array<[string, number, number]> = [['zalpha', 2670, 3304], ['zbravo', 2668, 3303], ['zcharlie', 2669, 3303], ['zdelta', 2673, 3309]];
++    const UNCROWDED = { knight: { prefer: 'uncrowded' as const } };
++
++    test('off by default, and prefer nearest is off: no prefer param and no knight row', async () => {
++        const s = knightWorld(CROWD_ON_A);
++        const off = await knightsParams({ food: 'shark' }, s);
++        expect(off).not.toHaveProperty('prefer');
++        expect(await knightsParams({ food: 'shark', knight: { prefer: 'nearest' } }, s)).toEqual(off);
++        expect(await knightsParams({ food: 'shark', knight: {} }, s)).toEqual(off);
++
++        const sdk = new PageSdk(s);
++        sdk.ending = [levelTo(99)];
++        const { ctx } = harness(sdk);
++        await steps({ food: 'shark' }).find(x => x.name === 'thieving:knights')!.run(ctx);
++        expect(ctx.log.rows.find(r => r.step === 'thieving:knights:detail')!.meta).not.toHaveProperty('knight');
++    });
++
++    test('a crowded knight A and an empty knight B: B is chosen and A is the retarget', async () => {
++        expect(chooseKnight(knightWorld(CROWD_ON_A), KNIGHT, [])).toEqual({
++            candidates: [{ index: 21, x: 2669, z: 3303, distance: 2, players: 2 }, { index: 22, x: 2671, z: 3309, distance: 4, players: 0 }],
++            chosen: 22, retarget: 21
++        });
++        const sdk = new PageSdk(knightWorld(CROWD_ON_A));
++        sdk.ending = [levelTo(99)];
++        const { ctx } = harness(sdk);
++        await steps({ food: 'shark', ...UNCROWDED }).find(x => x.name === 'thieving:knights')!.run(ctx);
++        expect(sdk.starts[0]).toMatchObject({ prefer: [22, 21], retargetTicks: 12 });
++        const meta = ctx.log.rows.find(r => r.step === 'thieving:knights:detail')!.meta as { knight: { prefer: string; choices: KnightChoice[] } };
++        expect(meta.knight.prefer).toBe('uncrowded');
++        expect(meta.knight.choices).toEqual([{ tick: 100, why: 'start', candidates: chooseKnight(knightWorld(CROWD_ON_A), KNIGHT, []).candidates, chosen: 22, retarget: 21 }]);
++    });
++
++    test('ties keep the nearest; the account\'s courier and the account itself never count', () => {
++        // one rival next to each knight
++        expect(chooseKnight(knightWorld([['zalpha', 2670, 3304], ['zbravo', 2672, 3310]]), KNIGHT, [])).toMatchObject({ chosen: 21, retarget: 22 });
++        // nobody but the courier next to A, and a player named as the account next to A
++        const s = knightWorld([[GIVER, 2670, 3304], ['t', 2668, 3302]]);
++        expect(chooseKnight(s, KNIGHT, [GIVER])).toMatchObject({ chosen: 21, retarget: 22, candidates: [{ players: 0 }, { players: 0 }] });
++        // without the exclusion the courier would push the choice to B
++        expect(chooseKnight(s, KNIGHT, [])).toMatchObject({ chosen: 22 });
++    });
++
++    test('the band passes the courier as excluded: a courier next to A keeps A', async () => {
++        const s = knightWorld([[GIVER, 2670, 3304]], [item(0, 'Shark')]);
++        const params = await knightsParams({ food: 'shark', topUp: { giver: GIVER, below: 2 }, ...UNCROWDED }, s);
++        expect(params.prefer).toEqual([21, 22]);
++    });
++
++    test('one knight in sight is the only choice; none leaves the program its default', () => {
++        const one = { ...knightWorld(CROWD_ON_A), nearbyNpcs: [knight(A)] } as never as BotWorldState;
++        expect(chooseKnight(one, KNIGHT, [])).toMatchObject({ chosen: 21, retarget: null });
++        expect(chooseKnight({ ...one, nearbyNpcs: [] }, KNIGHT, [])).toEqual({ candidates: [], chosen: null, retarget: null });
++    });
++
++    test('the retarget the program publishes goes to the other knight and is recorded', async () => {
++        const sdk = new ManualPageSdk(knightWorld(CROWD_ON_A));
++        const { ctx } = harness(sdk);
++        const done = steps({ food: 'shark', ...UNCROWDED }).find(x => x.name === 'thieving:knights')!.run(ctx);
++        await settle(() => sdk.starts.length === 1);
++        expect(sdk.starts[0]!.params.prefer).toEqual([22, 21]);
++        const statuses: Array<Partial<ProgramStatus>> = [{ gauges: { target: 22 } }, { gauges: { target: 22 }, counters: { rolls: 4 } }, { gauges: { target: 21 }, counters: { retargets: 1 } }];
++        for (const p of statuses) {
++            await flush();
++            sdk.publish(p);
++        }
++        await flush();
++        sdk.publish({ phase: 'done', result: { reason: 'level' } }, { skills: [{ name: 'Thieving', level: 99, baseLevel: 99, experience: 0 }] as never });
++        await done;
++        const meta = ctx.log.rows.find(r => r.step === 'thieving:knights:detail')!.meta as { knight: { choices: KnightChoice[] } };
++        expect(meta.knight.choices.map(c => [c.why, c.chosen])).toEqual([['start', 22], ['retarget', 21]]);
++        expect(meta.knight.choices[1]!.candidates.map(c => [c.index, c.players])).toEqual([[21, 2], [22, 0]]);
++    });
++
++    test('a restock chooses again on the way back', async () => {
++        const sdk = new PageSdk(knightWorld(CROWD_ON_A, [item(0, 'Coins', { count: 900, eat: false })]));
++        sdk.state = { ...sdk.state!, bank: { isOpen: false, noteMode: false, items: [{ slot: 0, id: 501, name: 'Shark', count: 11 }] } } as BotWorldState;
++        sdk.onSend = (a, s) => {
++            // the crowd has moved to B by the time the account is back
++            if (a.method === 'sendBankWithdraw') s.tick(st => ({ inventory: [...st.inventory, ...Array.from({ length: 11 }, (_, i) => item(i + 1, 'Shark'))], nearbyPlayers: [{ kind: 'player', index: 40, name: 'zecho', combatLevel: 99, x: 2672, z: 3310, distance: 5 }] }) as never);
++        };
++        sdk.ending = [() => ({ status: { result: { reason: 'food' } } }), levelTo(99)];
++        const { ctx } = harness(sdk);
++        await steps({ food: 'shark', ...UNCROWDED }).find(x => x.name === 'thieving:knights')!.run(ctx);
++        expect(sdk.starts.map(p => p.prefer)).toEqual([[22, 21], [21, 22]]);
++        const meta = ctx.log.rows.find(r => r.step === 'thieving:knights:detail')!.meta as { knight: { choices: KnightChoice[] } };
++        expect(meta.knight.choices.map(c => [c.why, c.chosen])).toEqual([['start', 22], ['restock', 21]]);
++    });
++
++    test('parseKnight refuses what it does not know', () => {
++        expect(parseKnight(undefined)).toBeUndefined();
++        expect(parseKnight({ prefer: 'nearest' })).toBeUndefined();
++        expect(parseKnight({ prefer: 'uncrowded' })).toBe('uncrowded');
++        expect(() => parseKnight({ prefer: 'emptiest' })).toThrow("knight.prefer must be 'nearest' or 'uncrowded'");
++        expect(() => parseKnight({ prefer: 'uncrowded', radius: 2 })).toThrow("knight has no option 'radius'");
++        expect(() => parseKnight('uncrowded')).toThrow('knight must be');
++        expect(() => steps({ knight: { prefer: 'emptiest' as never } })).toThrow();
++    });
++});
+diff --git a/speedrun/skills/thieving.ts b/speedrun/skills/thieving.ts
+index a2c8bdd..9f7bc07 100644
+--- a/speedrun/skills/thieving.ts
++++ b/speedrun/skills/thieving.ts
+@@ -66,8 +66,19 @@
+ // runes (Charge then never fires); Superheat itself needs Magic 43 (boosted, as the engine checks
+ // it), nature runes, a staff of fire wielded or four fire runes a cast, and ore for a cast. The
+ // detail row adds the casts, the bars dropped, the skipped clicks and the Smithing gained.
++//
++// Knight choice (`knight: { prefer: 'uncrowded' }`, off by default: the program then clicks the
++// nearest knight and a retarget takes the next nearest, as before). Other players never block a
++// player or a pickpocket (Player.ts, OpNpcHandler.ts), but rs/158 asked S18 to prefer a knight no
++// other thiever stands next to, the other as the retarget. On the knight bands, at the band's start
++// and after each restock, the candidates are the two nearest knights in sight (the eastern pair
++// from the anchor); each is scored by the other players on the 8 tiles around it, never the account
++// or its courier, and the fewer wins, a tie keeping the nearest. The program gets both in that
++// order (pickpocket.ts `prefer`), so a retarget off the chosen knight goes to the other. A restart
++// mode top-up keeps the choice. The detail row's `knight.choices` records every choice and every
++// target change the program published, with the candidates and their counts at that tick.
+ 
+-import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
++import type { BotWorldState, InventoryItem, NearbyNpc, NearbyPlayer } from '../../sdk/types';
+ import { depositMatching, withdrawMany } from '../lib/bank';
+ import { act } from '../lib/act';
+ import { ARROW_TIERS } from '../lib/arrows';
+@@ -193,6 +204,8 @@
+     stunDamage: number;
+     /** The band `stunPack` runs on (S18, Thieving 57-99). */
+     stunPack?: true;
++    /** A knight band, where `knight` chooses the target (the header). */
++    knight?: true;
+ }
+ 
+ /** The route below 55 is thieving.md section 2's; spawns are read from the map files. */
+@@ -203,8 +216,8 @@
+     { name: 'thieving:warrior-women', from: 25, to: 40, npc: '^Warrior woman$', anchors: [{ x: 2630, z: 3297 }], stunDamage: 2 },
+     { name: 'thieving:guards', from: 40, to: 55, npc: '^Guard$', anchors: [{ x: 2661, z: 3306 }], stunDamage: 2 },
+     // the eastern knights wander least (thieving.md section 6)
+-    { name: 'thieving:knights-55', from: 55, to: 57, npc: '^Knight of Ardougne$', anchors: [{ x: 2670, z: 3305 }], stunDamage: 3 },
+-    { name: 'thieving:knights', from: 57, to: 99, npc: '^Knight of Ardougne$', anchors: [{ x: 2670, z: 3305 }], stunDamage: 3, stunPack: true }
++    { name: 'thieving:knights-55', from: 55, to: 57, npc: '^Knight of Ardougne$', anchors: [{ x: 2670, z: 3305 }], stunDamage: 3, knight: true },
++    { name: 'thieving:knights', from: 57, to: 99, npc: '^Knight of Ardougne$', anchors: [{ x: 2670, z: 3305 }], stunDamage: 3, stunPack: true, knight: true }
+ ];
+ 
+ export function thievingLevel(s: BotWorldState): number {
+@@ -756,6 +769,70 @@
+     };
+ }
+ 
++// ------------------------------------------------------------------ knight choice
++
++/** `knight` (the header). 'nearest' is the default: the program's own choice. */
++export interface KnightOptions {
++    prefer?: 'nearest' | 'uncrowded';
++}
++
++/** The knights scored: the chosen one and its retarget (the header). */
++export const KNIGHT_CANDIDATES = 2;
++
++export interface KnightCandidate {
++    index: number;
++    x: number;
++    z: number;
++    /** From the account, as the program sorts by it. */
++    distance: number;
++    /** Other players on the 8 tiles around the knight. */
++    players: number;
++}
++
++export interface KnightChoice {
++    tick: number;
++    /** A choice the module made ('start', 'restock'), or a target change the program published ('retarget'). */
++    why: 'start' | 'restock' | 'retarget';
++    candidates: KnightCandidate[];
++    /** The knight clicked from here on; null with no knight in sight. */
++    chosen: number | null;
++    /** The knight a retarget goes to (the module's choices only). */
++    retarget?: number | null;
++}
++
++/** Players on the 8 tiles around `at`, other than the account and anyone named in `exclude`. */
++export function playersAround(s: BotWorldState, at: { x: number; z: number }, exclude: readonly string[]): number {
++    const other = (q: NearbyPlayer) => !sameName(q.name, s.player?.name) && !exclude.some(n => sameName(q.name, n));
++    return s.nearbyPlayers.filter(q => other(q) && Math.max(Math.abs(q.x - at.x), Math.abs(q.z - at.z)) === 1).length;
++}
++
++/** The KNIGHT_CANDIDATES nearest `npc`s in sight, nearest first (the program's order), each with its crowd. */
++export function knightCandidates(s: BotWorldState, npc: RegExp, exclude: readonly string[]): KnightCandidate[] {
++    return s.nearbyNpcs
++        .filter(n => npc.test(n.name))
++        .sort((a, b) => a.distance - b.distance)
++        .slice(0, KNIGHT_CANDIDATES)
++        .map(n => ({ index: n.index, x: n.x, z: n.z, distance: n.distance, players: playersAround(s, n, exclude) }));
++}
++
++/** The uncrowded choice: the fewest players around, a tie keeping the nearer; the other is the retarget. */
++export function chooseKnight(s: BotWorldState, npc: RegExp, exclude: readonly string[]): Omit<KnightChoice, 'tick' | 'why'> & { retarget: number | null } {
++    const candidates = knightCandidates(s, npc, exclude);
++    // a stable sort: equal counts stay nearest first
++    const ranked = [...candidates].sort((a, b) => a.players - b.players);
++    return { candidates, chosen: ranked[0]?.index ?? null, retarget: ranked[1]?.index ?? null };
++}
++
++/** `knight` as given: off (the default, or 'nearest'), or 'uncrowded'. */
++export function parseKnight(value: unknown): 'uncrowded' | undefined {
++    if (value === undefined || value === false) return undefined;
++    if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`knight must be { prefer: 'nearest' | 'uncrowded' } (got ${JSON.stringify(value)})`);
++    for (const k of Object.keys(value)) if (k !== 'prefer') throw new Error(`knight has no option '${k}' (prefer)`);
++    const prefer = (value as KnightOptions).prefer ?? 'nearest';
++    if (prefer !== 'nearest' && prefer !== 'uncrowded') throw new Error(`knight.prefer must be 'nearest' or 'uncrowded' (got ${JSON.stringify(prefer)})`);
++    return prefer === 'uncrowded' ? prefer : undefined;
++}
++
+ export interface ThievingOptions {
+     to?: number;
+     /** Accepted for the module convention; Thieving has one technique (see the header). */
+@@ -772,6 +849,8 @@
+     topUp?: TopUp;
+     /** rs/106's stun pack on the 57-99 knights band (the header); needs `topUp`. Off unless passed. */
+     stunPack?: StunPackOptions | boolean;
++    /** Which knight the knight bands click (the header). Off unless `prefer: 'uncrowded'`. */
++    knight?: KnightOptions;
+     [k: string]: unknown;
+ }
+ 
+@@ -782,6 +861,7 @@
+     restock: Restock;
+     topUp?: TopUp;
+     stunPack?: StunPackConfig;
++    knight?: 'uncrowded';
+ }
+ 
+ // ------------------------------------------------------------------ movement
+@@ -996,6 +1076,13 @@
+     const sip = pack && chargeDue(state(ctx), pack) ? await sipForCharge(ctx, pack) : undefined;
+     const skills0 = packSkills(state(ctx));
+     const stunCounters: Record<string, number> = {};
++    const knightOn = !!band.knight && cfg.knight === 'uncrowded';
++    const npcRe = new RegExp(band.npc, 'i');
++    const crowdExclude = topUp ? [topUp.giver] : [];
++    const knightChoices: KnightChoice[] = [];
++    let prefer: number[] | undefined;
++    let knightWhy: 'start' | 'restock' | null = knightOn ? 'start' : null;
++    let publishedTarget: number | undefined;
+     const paramsFor = (food: Food) => {
+         const stunActions = stunActionsFor(topUp, food, pack, state(ctx).equipment.some(i => FIRE_STAFF.test(i.name)));
+         return {
+@@ -1007,6 +1094,7 @@
+             ...eatPolicy(state(ctx).player!.maxHp, food.heal, band.stunDamage),
+             stopWhenFoodBelow: 1,
+             retargetTicks: 12,
++            ...(prefer ? { prefer } : {}),
+             ...(topUp && mode === 'idle' ? { idleOnInterface: true } : {}),
+             ...(stunActions ? { stunActions } : {})
+         };
+@@ -1030,7 +1118,15 @@
+         for (;;) {
+             let failTick: number | null = null;
+             let seenFails = 0;
+-            const onProgress = topUp && mode === 'restart'
++            if (knightWhy) {
++                const s = state(ctx);
++                const c = chooseKnight(s, npcRe, crowdExclude);
++                knightChoices.push({ tick: s.tick, why: knightWhy, ...c });
++                prefer = [c.chosen, c.retarget].filter((i): i is number => i !== null);
++                publishedTarget = undefined;
++                knightWhy = null;
++            }
++            const onTopUp = topUp && mode === 'restart'
+                 ? (st: ProgramStatus) => {
+                     const s = ctx.sdk.getState();
+                     const stock = pack && s ? (pack.superheat ? { held: oreHeld(s), below: pack.superheat.oreBelow } : { held: bonesHeld(s), below: pack.bonesBelow }) : undefined;
+@@ -1041,6 +1137,17 @@
+                     seenFails = st.counters.fails ?? 0;
+                 }
+                 : undefined;
++            // the program's `target` gauge: a change after the first is a retarget (or the knight left sight)
++            const onTarget = knightOn
++                ? (st: ProgramStatus) => {
++                    const target = st.gauges?.target;
++                    if (target === undefined || target === publishedTarget) return;
++                    const s = ctx.sdk.getState();
++                    if (publishedTarget !== undefined && s) knightChoices.push({ tick: st.tick, why: 'retarget', candidates: knightCandidates(s, npcRe, crowdExclude), chosen: target });
++                    publishedTarget = target;
++                }
++                : undefined;
++            const onProgress = onTopUp && onTarget ? (st: ProgramStatus) => (onTopUp(st), onTarget(st)) : onTopUp ?? onTarget;
+             const food = heldFood(state(ctx), cfg.foods);
+             const params = paramsFor(food);
+             policy = { eatBelow: params.eatBelow, forcedBelow: params.forcedBelow };
+@@ -1063,6 +1170,7 @@
+             const t0 = currentTick(ctx.sdk);
+             await restock(ctx, cfg);
+             await walk(ctx, anchor, 3);
++            if (knightOn) knightWhy = 'restock';
+             restocks.push({ ticks: currentTick(ctx.sdk) - t0, food: edibleFood(state(ctx), heldFood(state(ctx), cfg.foods)).length, hp: state(ctx).player!.hp });
+         }
+     } finally {
+@@ -1078,7 +1186,8 @@
+         meta: {
+             anchor, policy, food: cfg.foods.map(f => f.bankName).join(','), runs, restocks,
+             ...(topUp ? { topUp: { mode, trades: receiver?.trades ?? [], restarts, asks: asker?.asks ?? [] } } : {}),
+-            ...(pack ? { pack: { ...packReport(stunCounters, skills0, packSkills(state(ctx)), pack), ...(sip ? { sip } : {}) } } : {})
++            ...(pack ? { pack: { ...packReport(stunCounters, skills0, packSkills(state(ctx)), pack), ...(sip ? { sip } : {}) } } : {}),
++            ...(knightOn ? { knight: { prefer: 'uncrowded', choices: knightChoices } } : {})
+         },
+         tickMs: tickMs(), at: new Date().toISOString()
+     });
+@@ -1139,7 +1248,8 @@
+     const topUp = opts.topUp;
+     if (topUp && (!topUp.giver || !(topUp.below >= 1) || !['idle', 'restart', undefined].includes(topUp.mode))) throw new Error(`topUp needs a giver, below >= 1 and mode idle or restart (got ${JSON.stringify(topUp)})`);
+     const stunPack = parseStunPack(opts.stunPack, topUp);
+-    const cfg: Config = { to: opts.to ?? 99, foods, restock: opts.restock ?? 'bank', ...(topUp ? { topUp } : {}), ...(stunPack ? { stunPack } : {}) };
++    const knight = parseKnight(opts.knight);
++    const cfg: Config = { to: opts.to ?? 99, foods, restock: opts.restock ?? 'bank', ...(topUp ? { topUp } : {}), ...(stunPack ? { stunPack } : {}), ...(knight ? { knight } : {}) };
+     const [men, ...ardougne] = BANDS;
+     return [bandStep(men!, cfg), legStep(cfg), provisionStep(cfg), ...ardougne.map(b => bandStep(b, cfg))];
+ }
