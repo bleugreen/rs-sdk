@@ -20,8 +20,11 @@ import { buildChain, KIT_PARTNER_ROWS, PLACEMENT, sliceUntil } from './runner/ch
 
 const cues = { open: async () => {}, stop: () => {} };
 const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id}`]));
-const cfg = { partners, firemakingTiles: '3240,3296', rings: { giver: 'r' }, bones: { giver: 'b' }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: '/tmp/x' };
+/** The castle lap's entry and next tile (rehearsals/firemaking.md), where T02-03 ends. */
+const cfg = { partners, firemakingTiles: '3222,3219;3221,3219', rings: { giver: 'r' }, bones: { giver: 'b' }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: '/tmp/x' };
 const full = buildChain(cfg, { cues });
+/** Attempt 1's seam: a row beside the coop, 77 tiles from where T02-03 ends. */
+const coopRow = buildChain({ ...cfg, firemakingTiles: '3240,3296' }, { cues });
 
 describe('parseArgs', () => {
     test('defaults: browser, the run dir, no slice; the log is stable in the run dir, so the same command again resumes into it', () => {
@@ -95,9 +98,18 @@ describe('startGates', () => {
     });
     const s04 = sliceUntil(full, 'S04');
 
-    test('all six pass on a clean --until=S04 slice', async () => {
+    test('all seven pass on a clean --until=S04 slice', async () => {
         const g = await startGates(s04, io());
-        expect(g.map(x => [x.gate, x.ok])).toEqual([['run-commit floor', true], ['demo tick rate', true], ['host reservation', true], ['slot ledger', true], ['no refusing step on the path', true], ['helpers ready', true]]);
+        expect(g.map(x => [x.gate, x.ok])).toEqual([['run-commit floor', true], ['demo tick rate', true], ['host reservation', true], ['slot ledger', true], ['no refusing step on the path', true], ['seams', true], ['helpers ready', true]]);
+        expect(g[5]!.detail).toBe('2 checked (S02, S03), 0 mismatches');
+    });
+
+    test("the seam gate refuses attempt 1's S03: the row's entry 77 tiles from T02-03's end, though no step refuses", async () => {
+        const g = await startGates(sliceUntil(coopRow, 'S04'), io());
+        expect(g.find(x => x.gate === 'no refusing step on the path')!.ok).toBe(true);
+        const seam = g.find(x => x.gate === 'seams')!;
+        expect(seam.ok).toBe(false);
+        expect(seam.detail).toMatch(/S03 firemaking: T02-03 ends at 3222,3219 tol 0, 77 tiles from 3240,3296; the step starts within 15 \(firemaking\.ts precheck/);
         expect(g[1]!.detail).toBe('feed 400 ms (12 players, tick 5000), freeze 400, tickMs() 400: agree');
     });
 
@@ -130,7 +142,7 @@ describe('startGates', () => {
     });
 
     test('each refuses on its own, and every gate is still evaluated', async () => {
-        const g = await startGates(full, io({
+        const g = await startGates(coopRow, io({
             floor: async () => ({ ok: false, reason: 'RUN_COMMIT abc does not include the run-commit floor df332771' }),
             reservation: () => ({ owner: 'rs/393', state: live('host'), path: '/h' }),
             slotLedger: async () => ({ code: 1, out: 'H12: 29 slots\n' }),
@@ -141,7 +153,8 @@ describe('startGates', () => {
         expect(g[1]!.detail).toContain("the freeze's tickMs is unknown");
         // The full path without h45's h12o block: its login trigger refuses.
         expect(g[4]!.detail).toContain('H12o h45 login trigger (H12o login: the run config has no h12o block');
-        expect(g[5]!.detail).toContain('no launcher.json');
+        expect(g[5]!.detail).toContain('S03 firemaking: T02-03 ends at 3222,3219');
+        expect(g[6]!.detail).toContain('no launcher.json');
     });
 
     test('the scored run needs its own claim: none named, or none live, refuses', async () => {
