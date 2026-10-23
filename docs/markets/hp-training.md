@@ -22,7 +22,7 @@ kit, food, bank trips, altar visits, deaths and coins), and always leaves throug
 
 | Target | Plain (the default) | Prayer-first | Basis |
 |---|---|---|---|
-| **HP 40** | **1,707 and 1,972 ticks (11.4 and 13.1 min)**, mean 1,840; Attack 30, Strength 52, Defence 1; 0 coins, no food bought, no deaths | **not reached by tick 2,533** with Prayer 31 the target (HP 30 at 1,655 against 859-1,028 plain); the Prayer phase alone took 4,236-7,079 ticks on the longer route (below) | m, 2 plain bots and 1 Prayer bot in parallel |
+| **HP 40** | **1,707 and 1,972 ticks (11.4 and 13.1 min)**, mean 1,840; Attack 30, Strength 52, Defence 1; 0 coins, no food bought, no deaths | **~2,720 ticks (18.1 min)** with Prayer 31: HP 40 at 2,634, Prayer 31 at 2,717 after 71 cow bones; 0 coins; one altar visit, 31 prayer points used | m, 2 plain bots and 1 Prayer bot in parallel |
 | HP 70 | **6,028 ticks (40.2 min)**, Attack 53, Strength 84; 32 kebabs, 1 bank trip; iron and steel only | 8,707 (Prayer 34), 10,507 (31), 11,798 (43) | m, 1 clean plain sample; 3 Prayer bots |
 | HP 80 | 9,855 ticks (65.7 min), Attack 61, Strength 94; 46 kebabs, 2 bank trips | not run | m, 1 sample |
 | HP 99 | not reached in this session (the plain bots were still climbing, past 80); **~24,400 ticks by the model** with the full kit, ~26,000 with iron and steel (i); the lab ran ~1.4x the model to 70 | not run | i |
@@ -109,8 +109,11 @@ on each crab bank trip. Every altar is 212 or more tiles from the crabs.
 
 These ran the crabs route (`--to 70`) beside the plain bots. Their kit was iron (Zeke's steel had gone), worth
 ~6% (i), not the 2,700-5,800 ticks they lost. They never needed an altar: each finished the cow phase with full
-points and spent them in its first crab trip, before any bank trip. To 40 on the short route the Prayer-31 bot is
-slower by the same mechanism (HP 30 at 1,655 against 859-1,028).
+points and spent them in its first crab trip, before any bank trip. To 40 on the short route (the cows, no shop)
+the Prayer-31 bot took ~2,720 ticks against 1,707-1,972 plain: HP 30 at 1,655 against 859-1,028, the bones
+costing ~10 ticks a kill to pick up and bury, and its prayers were on for one pool of points before the target.
+**Prayer 31 minimises the variant's time to 40 and to 70 (34 measured faster to 70, inside the spread of single
+runs); none of 31, 34 or 43 beats plain at any target.**
 
 ## 4. How it was measured
 
