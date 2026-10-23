@@ -672,7 +672,13 @@ login). Every env file is mode 600 (`chmod 600`): the page server refuses to log
 users can read. SCORED's env file has the same keys and mode. Its path is set on run night and
 written here only as `$SCORED_ENV`. It must be `~/rs-sdk/bots/<account>/bot.env`, with the directory
 named after `BOT_USERNAME` (`bots/*/` is gitignored, so it stays outside git): the page server and
-the run's session.ts both read accounts from `~/rs-sdk/bots`. **It is not put on the host until
+the run's session.ts both read accounts from `~/rs-sdk/bots`. **A precondition, by path shape only**
+(rs/158, fold-in 37): on the chosen machine `$SCORED_ENV` is the file itself at
+`<run checkout>/bots/<name>/bot.env`, never a copy kept elsewhere (a secrets directory, say), because
+run.ts's `--bot` takes the name derived from that path (step 7, "The run-start order";
+`loadBotEnv` reads `<repo>/bots/<name>/bot.env`, `lib/session.ts`) and a copy elsewhere would make
+the derived name point at a missing file. Check the shape beside step 3's env check; never print the
+name. **It is not put on the host until
 `~/rs-sdk` is at a `RUN_COMMIT` that includes #120.** Never use a fleet or helper account for the gate.
 SCORED's env file goes only on the machine step 5a chooses, after the choice. run-gate.ts enforces
 the shape for both: it refuses an env file that is not `bots/<BOT_USERNAME>/bot.env` in the
@@ -1720,11 +1726,13 @@ export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && bun speedrun/run.ts --bot="$(ba
 
 `--bot` takes the env name, the directory under `bots/` (run.ts's usage; `loadBotEnv` reads
 `bots/<name>/bot.env`, `lib/session.ts`), not the file's path, so the line derives it from
-`$SCORED_ENV` and never types it. The run dir must equal the helper launcher's `runDir`: both
+`$SCORED_ENV` and never types it; that works only with `$SCORED_ENV` at
+`<run checkout>/bots/<name>/bot.env` on the chosen machine (step 0's precondition). The run dir must equal the helper launcher's `runDir`: both
 default to `<checkout>/run-machine` (helpers/altar-cue.ts:587, helpers/standalone.ts:50), and
 cannon-serve.json defaults to `<run dir>/cannon-serve.json` (run.ts:142). Items 1-3 come before the
 tab, at step 5a.4 item 2; item 4 comes after `handoff`, which has already logged SCORED in. How
-run.ts takes over that session is the code's, at the commit main names. From
+run.ts takes over that session is the code's, at the commit main names (**pending rs/186**'s exact
+takeover step). From
 here the run scripts drive the tab through the gateway on 7780 (RUN-ORDER.md, STEP-MANIFEST.md).
 Nobody touches the window. Relaunches during the run go the same way: session.ts mints a fresh token
 from `CLIENT_URL` and re-navigates the tab over `CDP_URL`. The run's relogs use
