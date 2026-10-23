@@ -32,30 +32,54 @@ export function objName(id: number): string | undefined {
 /** The obj configs the packer reads: `[debugname]` blocks of `key=value` lines. */
 export const OBJ_CONFIGS = join(import.meta.dir, '../../server/content/scripts');
 
-let untradeables: Set<string> | null = null;
+let objConfigs: { untradeable: Set<number>; byName: Map<string, number[]> } | null = null;
 
-/**
- * Whether the engine refuses the obj in a trade ("You can't trade this item.", trade.rs2): its
- * config sets `tradeable` false (`no` or `false`, a config boolean) or makes it a dummy item
- * (ObjType.ts). A banknote is read as its item, whose flag it carries. Members objs are refused on a
- * free world too; the worlds the run uses are members.
- */
-export function untradeable(id: number): boolean {
-    if (!untradeables) {
-        untradeables = new Set();
-        for (const f of readdirSync(OBJ_CONFIGS, { recursive: true }) as string[]) {
-            if (!f.endsWith('.obj')) continue;
-            let name = '';
-            for (const raw of readFileSync(join(OBJ_CONFIGS, f), 'utf8').split('\n')) {
-                const line = raw.trim();
-                const header = line.match(/^\[(\S+)\]$/);
-                if (header) name = header[1]!;
-                else if (name && (/^tradeable=(no|false)$/.test(line) || line.startsWith('dummyitem='))) untradeables.add(name);
+/** Each obj's trade flag and game name, by id, from the files the packer reads (ObjConfig.ts). */
+function readObjConfigs() {
+    if (objConfigs) return objConfigs;
+    const untradeable = new Set<number>();
+    const byName = new Map<string, number[]>();
+    const ids = objPack().byName;
+    for (const f of readdirSync(OBJ_CONFIGS, { recursive: true }) as string[]) {
+        if (!f.endsWith('.obj')) continue;
+        let id: number | undefined;
+        for (const raw of readFileSync(join(OBJ_CONFIGS, f), 'utf8').split('\n')) {
+            const line = raw.trim();
+            const header = line.match(/^\[(\S+)\]$/);
+            if (header) {
+                id = ids.get(header[1]!);
+                continue;
+            }
+            if (id === undefined) continue;
+            // `tradeable` is a config boolean (`no` or `false`); a dummy item is never tradeable (ObjType.ts).
+            if (/^tradeable=(no|false)$/.test(line) || line.startsWith('dummyitem=')) untradeable.add(id);
+            else if (line.startsWith('name=')) {
+                const name = line.slice('name='.length).trim().toLowerCase();
+                byName.set(name, [...(byName.get(name) ?? []), id]);
             }
         }
     }
+    objConfigs = { untradeable, byName };
+    return objConfigs;
+}
+
+/**
+ * Whether the engine refuses the obj in a trade ("You can't trade this item.", trade.rs2): its
+ * config sets `tradeable` false or makes it a dummy item. A banknote is read as its item, whose flag
+ * it carries. Members objs are refused on a free world too; the worlds the run uses are members.
+ */
+export function untradeable(id: number): boolean {
     const name = objName(id);
-    return name !== undefined && untradeables.has(name.startsWith('cert_') ? name.slice('cert_'.length) : name);
+    if (name === undefined) return false;
+    const obj = name.startsWith('cert_') ? objPack().byName.get(name.slice('cert_'.length)) : id;
+    return obj !== undefined && readObjConfigs().untradeable.has(obj);
+}
+
+/** The objs whose game name (their config's `name=`, lower-cased) `pattern` matches. */
+export function objIdsNamed(pattern: RegExp): number[] {
+    const out: number[] = [];
+    for (const [name, ids] of readObjConfigs().byName) if (pattern.test(name)) out.push(...ids);
+    return out;
 }
 
 /**

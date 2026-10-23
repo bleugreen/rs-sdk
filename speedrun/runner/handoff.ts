@@ -13,9 +13,13 @@
 // The trade is lib/trade.ts: swap() when SCORED gives anything (with or without receiving),
 // receiveFrom() when it only receives. swap() offers only the inventory, so an item the row gives
 // while it is worn is unequipped first; the row's `+NAME` / `-NAME` are applied after the trade.
-// The engine refuses an untradeable obj in a trade (trade.rs2), so a given item that is one (H13's
-// Khazard helmet and platemail) is dropped on the tile instead, before the trade: either way it
-// leaves SCORED, which is all `out` says, and an untradeable drop is shown to no other player.
+//
+// An `out` of reason `drop` is dropped on the hand-off tile before the trade (unequipped first when
+// worn) and is never offered: the engine refuses an untradeable obj in a trade (trade.rs2), so the
+// ledger writes those as drops (H13's Khazard helmet and platemail), and an untradeable drop is shown
+// to no other player (InvOps.ts). A `swap` or `trade` of an obj the content marks untradeable is
+// refused when the row is planned, so a launch dry-run names it rather than the trade's confirm.
+// The drop is idempotent: what a restart finds already gone is not dropped again.
 //
 // The partner (an account name, fleet staging, rs/41's) stands on the hand-off tile before SCORED
 // arrives; the step does not wait for it or walk (the legs carry the travel). preconditions refuse
@@ -33,11 +37,11 @@
 import { readFileSync } from 'fs';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
-import { INVENTORY_SIZE, noteOf, objName, untradeable } from '../lib/items';
+import { INVENTORY_SIZE, noteOf, objIdsNamed, objName, untradeable } from '../lib/items';
 import { DROPPED_TICKS, receiveFrom, sameName, swap, type GiveSpec, type SwapSdk, type WantSpec } from '../lib/trade';
 import { waitOrThrow } from '../lib/wait';
 import { opIndex } from '../lib/world';
-import { itemLabel, MANIFEST, parseLedger, type InEntry, type ItemRef, type Kind, type LedgerRow } from '../tools/slot-ledger';
+import { itemLabel, MANIFEST, parseLedger, type InEntry, type ItemRef, type Kind, type LedgerRow, type Reason } from '../tools/slot-ledger';
 import type { ObservedCheck, Step } from './step';
 
 /**
@@ -108,7 +112,10 @@ export interface HandOffPlan {
     /** The row's line in the source file. */
     line: number;
     receive: Received[];
+    /** The `out` entries of reason `swap` or `trade`: offered in the trade. */
     give: Given[];
+    /** The `out` entries of reason `drop`: dropped on the tile before the trade, never offered. */
+    drop: Given[];
     /** `+NAME`: worn after the trade. */
     wield: Worn[];
     /** `-NAME`: not worn after the trade (displaced by a wield, or taken off). */
@@ -122,24 +129,41 @@ export type TradeKind = 'swap' | 'receive';
 /** swap() when SCORED gives anything; receiveFrom() when it only receives. */
 export const tradeKind = (p: HandOffPlan): TradeKind => (p.give.length ? 'swap' : 'receive');
 
+/** The `out` reasons a hand-off offers in its trade; `drop` is the one other it carries out. */
+export const GIVEN_REASONS: readonly Reason[] = ['swap', 'trade'];
+
+/** Why the trade can never offer what `m` names (every obj it can be is untradeable), or null. */
+export function untradeableGive(m: ItemMatch): string | null {
+    const ids = m.ids ?? objIdsNamed(m.pattern);
+    if (!ids.length || !ids.every(untradeable)) return null;
+    return `the engine refuses it in a trade (obj ${ids.join(', ')} untradeable in the content's obj config; trade.rs2)`;
+}
+
 /** A ledger row as a hand-off: refused when it is not a hand-off the trade can carry out. */
 export function planHandOff(row: LedgerRow): HandOffPlan {
     const at = `${row.row} (line ${row.line})`;
     if (!/^H/.test(row.row)) throw new Error(`${at} is not a hand-off row`);
     const placeholders = [...row.in, ...row.out].filter(e => e.placeholder).map(itemLabel);
-    const give = row.out.filter(e => !e.placeholder).map(e => {
-        if (e.reason !== 'swap' && e.reason !== 'trade') throw new Error(`${at}: out ${itemLabel(e)} (${e.reason}) is not given in the trade; a hand-off only gives (swap or trade)`);
-        return { ...matchOf(e, at), count: e.count ?? 'all' };
+    const outs = row.out.filter(e => !e.placeholder);
+    for (const e of outs) {
+        if (!GIVEN_REASONS.includes(e.reason) && e.reason !== 'drop') throw new Error(`${at}: out ${itemLabel(e)} (${e.reason}) is neither given in the trade nor dropped on the tile; a hand-off gives (swap or trade) or drops`);
+    }
+    const give = outs.filter(e => GIVEN_REASONS.includes(e.reason)).map(e => {
+        const m = matchOf(e, at);
+        const refused = untradeableGive(m);
+        if (refused) throw new Error(`${at}: out ${itemLabel(e)} (${e.reason}): ${refused}, so the row must drop it`);
+        return { ...m, count: e.count ?? 'all' };
     });
+    const drop = outs.filter(e => e.reason === 'drop').map(e => ({ ...matchOf(e, at), count: e.count ?? 'all' }));
     const receive = row.in.filter(e => !e.placeholder).map((e: InEntry) => {
         if (e.count === null) throw new Error(`${at}: in ${itemLabel(e)} x? has no count, so the trade cannot check the offer`);
         return { ...matchOf(e, at, e.kind === 'n'), count: e.count, kind: e.kind, topUp: e.topUp === true };
     });
-    const both = give.filter(g => receive.some(r => overlaps(g, r)));
-    if (both.length) throw new Error(`${at}: ${both.map(g => g.name).join(', ')} both given and received`);
+    const both = [...give, ...drop].filter(g => receive.some(r => overlaps(g, r)));
+    if (both.length) throw new Error(`${at}: ${both.map(g => g.name).join(', ')} both out and received`);
     if (!give.length && !receive.length && !placeholders.length) throw new Error(`${at}: nothing given and nothing received`);
     const worn = (on: boolean) => row.equip.filter(e => e.on === on).map(e => ({ name: e.name, pattern: itemPattern(e.name), perObj: false }));
-    return { id: row.row, line: row.line, receive, give, wield: worn(true), unwield: worn(false), placeholders };
+    return { id: row.row, line: row.line, receive, give, drop, wield: worn(true), unwield: worn(false), placeholders };
 }
 
 /** The row `id` of the inventory ledger in `markdown` (STEP-MANIFEST.md), as a hand-off. */
@@ -161,19 +185,16 @@ export function loadHandOff(id: string, file: string = MANIFEST): HandOffPlan {
 const total = (items: readonly InventoryItem[], m: ItemMatch) => items.reduce((a, i) => a + (matches(m, i) ? i.count : 0), 0);
 const held = (s: BotWorldState, m: ItemMatch) => total(s.inventory, m) + total(s.equipment, m);
 const isWorn = (s: BotWorldState, m: ItemMatch) => s.equipment.some(e => matches(m, e));
+/** Everything the row's `out` takes off SCORED: what the trade gives and what is dropped. */
+const leaving = (plan: HandOffPlan): Given[] => [...plan.give, ...plan.drop];
 
-/** Worn items the trade gives that must come off first: swap() offers only the inventory. */
+/** Worn items the row gives or drops that must come off first: swap() offers, and a drop takes, only the inventory. */
 export function toUnequip(s: BotWorldState, plan: HandOffPlan): InventoryItem[] {
-    return plan.give.flatMap(g => {
+    return leaving(plan).flatMap(g => {
         const inPack = total(s.inventory, g);
         if (g.count !== 'all' && inPack >= g.count) return [];
         return s.equipment.filter(e => matches(g, e));
     });
-}
-
-/** Items in the pack the trade gives that the engine refuses to trade (items.ts untradeable): dropped instead. */
-export function toDrop(s: BotWorldState, plan: HandOffPlan): InventoryItem[] {
-    return s.inventory.filter(i => untradeable(i.id) && plan.give.some(g => matches(g, i)));
 }
 
 /**
@@ -189,10 +210,10 @@ export function giveSpecs(s: BotWorldState, plan: HandOffPlan): GiveSpec[] {
     });
 }
 
-/** Inventory slots the given items free once offered (after the unequips, one slot each). */
+/** Inventory slots the given items free once offered and the dropped ones once gone (after the unequips, one slot each). */
 function slotsFreed(s: BotWorldState, plan: HandOffPlan, unequipped: readonly InventoryItem[]): number {
     const pack = [...s.inventory, ...unequipped];
-    return plan.give.reduce((a, g) => {
+    return leaving(plan).reduce((a, g) => {
         const slots = pack.filter(i => matches(g, i));
         if (g.count === 'all') return a + slots.length;
         const stacked = slots.length === 1 && slots[0]!.count > 1;
@@ -245,6 +266,14 @@ export function handOffPre(s: BotWorldState, plan: HandOffPlan, partner: string)
         if (g.count !== 'all' && h < g.count) return `${plan.id}: holds ${h} ${g.name}, gives ${g.count}`;
         // done reads a given item as gone; part of it left behind would never read done.
         if (g.count !== 'all' && h > g.count) return `${plan.id}: holds ${h} ${g.name} and gives ${g.count}; the row must give all of it`;
+        // planHandOff refused a name that is only ever untradeable; this is a held obj of a mixed name.
+        const refused = [...s.inventory, ...s.equipment].find(i => matches(g, i) && untradeable(i.id));
+        if (refused) return `${plan.id}: gives ${g.name}, but the engine refuses ${refused.name} (obj ${refused.id}) in a trade: the row must drop it`;
+    }
+    for (const g of plan.drop) {
+        // None held is a drop already made (a restart after it): nothing to do, not a refusal.
+        const h = held(s, g);
+        if (g.count !== 'all' && h > g.count) return `${plan.id}: holds ${h} ${g.name} and drops ${g.count}; the row must drop all of it`;
     }
     for (const w of plan.wield) {
         if (!plan.receive.some(r => r.name === w.name) && !held(s, w)) return `${plan.id}: +${w.name} is neither held nor received`;
@@ -267,14 +296,18 @@ export function handOffMissing(s: BotWorldState, plan: HandOffPlan): string[] {
         const h = held(s, g);
         if (h > 0) out.push(`${g.name} x${h} still held`);
     }
+    for (const g of plan.drop) {
+        const h = held(s, g);
+        if (h > 0) out.push(`${g.name} x${h} still held (dropped on the tile)`);
+    }
     for (const w of plan.wield) if (!isWorn(s, w)) out.push(`${w.name} not worn`);
     for (const w of plan.unwield) if (isWorn(s, w)) out.push(`${w.name} still worn`);
     return out;
 }
 
-/** The trade has landed: every `in` held, every given item gone (the equip changes may be pending). */
+/** The trade has landed: every `in` held, every given and dropped item gone (the equip changes may be pending). */
 export function tradeLanded(s: BotWorldState, plan: HandOffPlan): boolean {
-    return plan.receive.every(r => held(s, r) >= r.count) && plan.give.every(g => held(s, g) === 0);
+    return plan.receive.every(r => held(s, r) >= r.count) && leaving(plan).every(g => held(s, g) === 0);
 }
 
 // ------------------------------------------------------------------ the step
@@ -294,7 +327,7 @@ export interface HandOffReport {
     gave: string[];
     /** Items taken off to be given, before the trade. */
     unequipped: string[];
-    /** Given items the engine refuses to trade, dropped on the tile before the trade. */
+    /** The row's `drop` entries dropped on the tile before the trade (none already gone on a restart). */
     dropped: string[];
     reason?: string;
 }
@@ -315,7 +348,7 @@ export interface HandOffOptions<C> {
 
 const names = (xs: readonly TradeItem[]) => xs.map(i => `${i.name} x${i.count}`);
 
-/** Take off the worn items the trade gives, all in one tick, and wait until they are in the pack. */
+/** Take off the worn items the row gives or drops, all in one tick, and wait until they are in the pack. */
 async function unequipGives(sdk: HandOffSdk, plan: HandOffPlan): Promise<InventoryItem[]> {
     const off = toUnequip(sdk.getState()!, plan);
     if (!off.length) return off;
@@ -324,12 +357,12 @@ async function unequipGives(sdk: HandOffSdk, plan: HandOffPlan): Promise<Invento
     return off;
 }
 
-/** Drop the untradeable items the trade gives (toDrop), all in one tick, and wait until they are gone. */
-async function dropUntradeable(sdk: HandOffSdk, plan: HandOffPlan): Promise<InventoryItem[]> {
-    const drop = toDrop(sdk.getState()!, plan);
+/** Drop what the row's `drop` entries name that is still in the pack, all in one tick, and wait until it is gone. */
+async function dropOuts(sdk: HandOffSdk, plan: HandOffPlan): Promise<InventoryItem[]> {
+    const drop = sdk.getState()!.inventory.filter(i => plan.drop.some(g => matches(g, i)));
     if (!drop.length) return drop;
     for (const i of drop) void sdk.sendDropItem(i.slot);
-    await waitOrThrow(sdk, s => drop.every(d => !s.inventory.some(x => x.slot === d.slot && x.id === d.id)), 5, `${plan.id}: dropping ${drop.map(i => i.name).join(', ')} (untradeable)`);
+    await waitOrThrow(sdk, s => drop.every(d => !s.inventory.some(x => x.slot === d.slot && x.id === d.id)), 5, `${plan.id}: dropping ${drop.map(i => i.name).join(', ')}`);
     return drop;
 }
 
@@ -349,21 +382,20 @@ export async function applyEquip(sdk: HandOffSdk, plan: HandOffPlan): Promise<vo
     if (off.length) await waitOrThrow(sdk, x => plan.unwield.every(w => !isWorn(x, w)), 5, `${plan.id}: taking off ${off.map(e => e.name).join(', ')}`);
 }
 
-/** One hand-off: unequip what is given while worn, drop what of it is untradeable, trade the rest, then the equip changes. */
+/** One hand-off: unequip what is given or dropped while worn, drop the row's drops, trade, then the equip changes. */
 export async function runHandOff(sdk: HandOffSdk, plan: HandOffPlan, partner: string, o: Omit<HandOffOptions<unknown>, 'partner' | 'supersededBy'> = {}): Promise<HandOffReport> {
     const off = await unequipGives(sdk, plan);
-    const dropped = (await dropUntradeable(sdk, plan)).map(i => i.name);
+    // The drops are observed gone before the trade, so the slots they free are real when it counts them.
+    const dropped = (await dropOuts(sdk, plan)).map(i => i.name);
     const s0 = sdk.getState()!;
-    // What is left to give once the untradeable items are on the ground.
-    const trade = dropped.length ? { ...plan, give: plan.give.filter(g => held(s0, g) > 0) } : plan;
     const want: WantSpec[] = plan.receive.map(r => ({ item: r.ids ? r.ids[0]! : r.pattern, amount: wanted(s0, r) })).filter(w => w.amount > 0);
     const openTicks = o.openTicks ?? 30;
     let report: HandOffReport;
-    if (!want.length && !trade.give.length) {
-        // Every top-up already met and nothing (tradeable) to give: no trade.
+    if (!want.length && !plan.give.length) {
+        // Every top-up already met and nothing to give: no trade.
         report = { id: plan.id, partner, trade: 'receive', ok: true, ticks: 0, received: [], gave: [], unequipped: off.map(e => e.name), dropped };
-    } else if (tradeKind(trade) === 'swap') {
-        const give = giveSpecs(s0, trade);
+    } else if (tradeKind(plan) === 'swap') {
+        const give = giveSpecs(s0, plan);
         const r = await swap(sdk, partner, give, want, { closeModals: true, openTicks, maxTicks: o.maxTicks ?? 40 });
         report = { id: plan.id, partner, trade: 'swap', ok: r.ok, ticks: r.ticks, openTicks: r.openTicks, received: names(r.received), gave: names(r.gave), unequipped: off.map(e => e.name), dropped, ...(r.reason ? { reason: r.reason } : {}) };
     } else {

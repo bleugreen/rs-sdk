@@ -30,7 +30,7 @@ import { join } from 'node:path';
 import type { BankItem } from '../../sdk/types';
 import { namesNote, refLabel, refMatches, type ItemRef } from '../lib/items';
 import { noteLink, type ObjPack } from '../lib/obj-pack';
-import { gameName, planHandOff } from '../runner/handoff';
+import { gameName, GIVEN_REASONS, planHandOff } from '../runner/handoff';
 import { cueDir } from './altar-cue';
 import { itemLabel, MANIFEST, parseLedger, type InEntry, type LedgerRow } from '../tools/slot-ledger';
 import { isStackableName, isTopUp, packageOf, planPackage, type Package, type PackageItem } from './mule';
@@ -132,8 +132,9 @@ export function packageFromRow(rows: readonly LedgerRow[], index: number, form: 
     const pkg = packageOf(raw, pack);
     const slots = entries.reduce((n, e) => n + (e.kind === 'u' ? e.count! : 1), 0);
     if (slots > INVENTORY_SLOTS) throw new Error(`${at}: the package fills ${slots} slots, more than the mule's ${INVENTORY_SLOTS}`);
+    // A `drop` is left on SCORED's tile, never handed to the mule.
     const takesBack = row.out
-        .filter(o => !o.placeholder)
+        .filter(o => !o.placeholder && GIVEN_REASONS.includes(o.reason))
         .map(o => ({ label: `${itemLabel(o)} ${o.count === 'all' ? 'all' : `x${o.count}`}`, ref: o.family ? null : refOf(o), count: o.count ?? 'all' }));
     return { row: row.row, onRequest: fallback, line: row.line, step, package: pkg, topUps, slots, takesBack, moduleLines: plan.placeholders };
 }

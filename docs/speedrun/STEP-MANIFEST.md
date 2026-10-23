@@ -2970,7 +2970,12 @@ the next leg or trade.
 - `out`: entries `ITEM xCOUNT (REASON ...)` or `ITEM all (REASON ...)`; COUNT is an integer or `?`.
   REASON's first word is `drop`, `trade`, `swap`, `consume`, `hand-in` or `deposit`. `swap` means
   given in the same trade as the row's `in`, so it frees its slots before the need check
-  (`trade.rs2:161-190` counts offered items as freed). An `out` may name a worn item, which leaves
+  (`trade.rs2:161-190` counts offered items as freed). A hand-off row's `out` is `swap`, `trade` or
+  `drop`: `drop` is dropped on the hand-off tile before the trade (unequipped first when worn) and is
+  never offered, nor taken back by the helper; it frees its slots after the need check and before the
+  `in` must fit. An item the engine refuses in a trade (`tradeable=no` in its obj config,
+  `trade.rs2:338`) is always a `drop`: runner/handoff.ts refuses a `swap` or `trade` of one when it
+  plans the row. An `out` may name a worn item, which leaves
   the worn set at no slot cost. An `out` of an item that is neither held nor worn is an error.
 - **ITEM** is one of four forms (rs/365's grammar, on main with #305, inside the floor; `slot-ledger.ts`
   parses them and `runner/handoff.ts` trades by them):

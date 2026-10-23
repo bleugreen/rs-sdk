@@ -61,7 +61,10 @@ export function countsDiffer(want: Counts, now: Counts): string[] {
  * surplus (not its own items, not worn). Every line left out is named.
  */
 export function standInPlan(plan: HandOffPlan, s: BotWorldState, own: Counts): { plan: HandOffPlan; notExercised: string[] } {
-    const notExercised = [...plan.wield.map(w => `+${w.name} (equip; the stand-in never equips)`), ...plan.unwield.map(w => `-${w.name} (equip)`)];
+    const notExercised = [
+        ...plan.wield.map(w => `+${w.name} (equip; the stand-in never equips)`), ...plan.unwield.map(w => `-${w.name} (equip)`),
+        ...plan.drop.map(d => `drops ${d.name} (the stand-in never drops its items)`),
+    ];
     const give = plan.give.filter(g => {
         const held = s.inventory.filter(i => matches(g, i));
         if (s.equipment.some(e => matches(g, e))) notExercised.push(`gives ${g.name}: worn by the stand-in`);
@@ -70,7 +73,7 @@ export function standInPlan(plan: HandOffPlan, s: BotWorldState, own: Counts): {
         else return true;
         return false;
     });
-    return { plan: { ...plan, give, wield: [], unwield: [] }, notExercised };
+    return { plan: { ...plan, give, drop: [], wield: [], unwield: [] }, notExercised };
 }
 
 export interface RowResult {

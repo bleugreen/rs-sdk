@@ -432,17 +432,19 @@ export function fightReady(spell: KolodionSpell, spellRunes?: number): Check<any
 // ------------------------------------------------------------------ H13 in the cellar
 
 /**
- * H13 as the cellar swap trades it: the ledger row, its give list extended by every item the entry
- * check bars that the row does not already give, each by obj id and all of it (runHandOff takes a
- * worn one off first). The extras are read off the state the swap starts from.
+ * H13 as the cellar swap trades it: the ledger row, with every item the entry check bars that the row
+ * neither gives nor drops added by obj id and all of it (runHandOff takes a worn one off first): to
+ * its gives when tradeable, to its drops when the engine refuses it in a trade. The extras are read
+ * off the state the swap starts from.
  */
 export function cellarPlan(s: BotWorldState, row: HandOffPlan): HandOffPlan {
-    const extra: Given[] = [];
+    const give: Given[] = [];
+    const drop: Given[] = [];
     for (const { item } of entryBarred(s)) {
-        if (row.give.some(g => matches(g, item)) || extra.some(g => g.ids!.includes(item.id))) continue;
-        extra.push({ name: item.name.toLowerCase(), pattern: itemPattern(item.name), ids: [item.id], perObj: true, count: 'all' });
+        if ([...row.give, ...row.drop, ...give, ...drop].some(g => matches(g, item))) continue;
+        (untradeable(item.id) ? drop : give).push({ name: item.name.toLowerCase(), pattern: itemPattern(item.name), ids: [item.id], perObj: true, count: 'all' });
     }
-    return extra.length ? { ...row, give: [...row.give, ...extra] } : row;
+    return give.length || drop.length ? { ...row, give: [...row.give, ...give], drop: [...row.drop, ...drop] } : row;
 }
 
 /** The fight's kit lines the swap leaves short: held now plus what the row's `in` adds. */
