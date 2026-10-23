@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { analyzeAccount, diffPlayers, parseBank, parseBoard, parseOutfit, parsePlayer, type PlayerRow, TickRateNeeded, titleTicks, withServerRate } from './hiscore-scrape.ts';
+import { analyzeAccount, diffPlayers, hasSave, parseBank, parseBoard, parseOutfit, parsePlayer, type PlayerRow, TickRateNeeded, titleTicks, withServerRate } from './hiscore-scrape.ts';
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, 'fixtures', name), 'utf8');
 
@@ -141,6 +141,29 @@ describe('parsePlayer', () => {
             expect(burns.find(r => r.skill === 'Firemaking')).toMatchObject({ category: 12, level: 99, ticks: 690, tickMs });
         }
         expect(() => parsePlayer(fixture('hiscore/player-cairn_chops-2026-10-22.html'))).toThrow(TickRateNeeded);
+    });
+
+    test('mid-level rows and the Runecraft category on the 400 ms pages (demo, 2026-10-22 22:42-22:47Z)', () => {
+        const runes = parsePlayer(fixture('hiscore/player-cairn_runes-2026-10-22-400ms.html'))!;
+        expect(runes).toHaveLength(21);
+        // The page links Runecraft as category 21 (stat index 20 + 1).
+        expect(runes.find(r => r.skill === 'Runecraft')).toEqual({ category: 21, skill: 'Runecraft', rank: 1_529, level: 70, ticks: 4_543, tickMs: 400 });
+        expect(runes[0]).toEqual({ category: 0, skill: 'Overall', rank: 18_200, level: 97, ticks: 4_543, tickMs: 400 });
+        expect(parsePlayer(fixture('hiscore/player-cairn_jumps-2026-10-22-400ms.html'))!.find(r => r.skill === 'Agility')).toMatchObject({ category: 17, level: 99, ticks: 7_111 });
+        expect(parsePlayer(fixture('hiscore/player-cairn_ashes-2026-10-22-400ms.html'))!.find(r => r.skill === 'Firemaking')).toMatchObject({ category: 12, level: 99, ticks: 664 });
+    });
+
+    test('hasSave: Overall is stamped from the first save, even with every skill under 15; blank before it', () => {
+        const sub15 = parsePlayer(fixture('hiscore/player-cairn_h90-2026-10-22-400ms.html'))!;
+        expect(sub15.filter(r => r.level !== null).map(r => r.skill)).toEqual(['Overall']);
+        expect(sub15[0]).toMatchObject({ level: 28, ticks: 59_252, tickMs: 400 });
+        expect(hasSave(sub15)).toBe(true);
+        // An account that has logged in but never saved: the page exists with every row blank.
+        const unsaved = parsePlayer(fixture('hiscore/player-acquiredl13-unsaved-2026-10-22.html'))!;
+        expect(unsaved).toHaveLength(21);
+        expect(unsaved.every(r => r.level === null && r.ticks === null)).toBe(true);
+        expect(hasSave(unsaved)).toBe(false);
+        expect(hasSave(parsePlayer(fixture('hiscore/player-cairn_runes-2026-10-22-400ms.html'))!)).toBe(true);
     });
 
     test('a seconds title off the rate grid fails the page instead of mis-reporting a stamp', () => {

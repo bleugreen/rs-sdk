@@ -194,8 +194,17 @@ export interface PlayerRow {
     tickMs?: number;
 }
 
-/** A row that exists on the page: a level and a stamp (skills under level 15 have neither). */
+/** The lowest level a skill row is written at; Overall is written at every save whatever the levels (LoginServer.ts updateHiscores). */
+export const ROW_MIN_LEVEL = 15;
+
+/** A row that exists on the page: a level and a stamp (skills under ROW_MIN_LEVEL have neither). */
 export const isStamped = (r: PlayerRow): boolean => r.level !== null && r.ticks !== null;
+
+/**
+ * Whether the page shows any save. A player page exists from the account's first login, but its rows come
+ * only from saves, and every save stamps Overall: a page whose Overall is blank was read before the first save.
+ */
+export const hasSave = (rows: readonly PlayerRow[]): boolean => rows.some(r => r.category === OVERALL && isStamped(r));
 
 /**
  * Every row of a player page (Overall, each skill, Quest Points), in page order; null for a missing player.

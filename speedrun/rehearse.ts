@@ -82,7 +82,7 @@ import { receiveFrom, type WantSpec } from './lib/trade';
 import { tickMs, waitUntil } from './lib/wait';
 import { DROP_STEP, type Link, RESUME_STEP, type ResumeEvent, runResumable, sessionLink } from './runner/resume';
 import { BOUNDARY_STEP, type Step } from './runner/step';
-import { parsePlayer, type PlayerRow, playerPath, PoliteFetcher, withServerRate } from './tools/hiscore-scrape';
+import { hasSave, parsePlayer, type PlayerRow, playerPath, PoliteFetcher, ROW_MIN_LEVEL, withServerRate } from './tools/hiscore-scrape';
 
 // ------------------------------------------------------------------ arguments
 
@@ -944,6 +944,24 @@ function check(row: string, hiscore: number, expected: number | null, basis: str
     return { row, hiscore, expected, diff, ok: diff === null ? null : Math.abs(diff) <= HISCORE_TOLERANCE, basis, ...(tickMs === undefined ? {} : { tickMs }) };
 }
 
+/** The log's latest level gained in `skill`, with the playtime it was reached at. */
+const lastReach = (s: Summary, skill: string): Summary['reach'][number] | undefined => [...s.reach].reverse().find(r => r.skill === skill.toLowerCase());
+
+/**
+ * Whether a player page shows this attempt's logout save, so that compareHiscore reads the rows the
+ * log should match. Rows are written only by a save (docs/speedrun/research/competitors/hiscore-timestamps.md),
+ * and the save lands when the player leaves the world, which a logout that wasn't confirmed can delay. Until
+ * then the page is blank (no save yet: hasSave) or, on a resumed attempt, shows the earlier session's rows,
+ * with the skill below the log's last level of it.
+ */
+export function hiscoreSettled(s: Summary, rows: readonly PlayerRow[] | null, skill: string): boolean {
+    if (!rows || !hasSave(rows)) return false;
+    const reached = lastReach(s, skill);
+    if (!reached || reached.level < ROW_MIN_LEVEL) return true;
+    const target = rows.find(r => r.skill.toLowerCase() === skill.toLowerCase());
+    return target?.level != null && target.level >= reached.level;
+}
+
 /**
  * The public rows against the log (docs/speedrun/research/competitors/hiscore-timestamps.md): a
  * skill row carries the playtime its current level was reached at; Overall carries the largest
@@ -951,11 +969,14 @@ function check(row: string, hiscore: number, expected: number | null, basis: str
  */
 export function compareHiscore(s: Summary, rows: readonly PlayerRow[] | null, skill: string): HiscoreCheck[] {
     if (!rows) return [{ row: 'player', hiscore: null, expected: null, diff: null, ok: null, basis: 'no player page (nothing written yet?)' }];
+    if (!hasSave(rows)) return [{ row: 'player', hiscore: null, expected: null, diff: null, ok: null, basis: 'no rows saved yet (read before the logout save landed)' }];
     const out: HiscoreCheck[] = [];
     const target = rows.find(r => r.skill.toLowerCase() === skill.toLowerCase());
     if (target) {
         if (target.level === null || target.ticks === null) {
-            out.push({ row: target.skill, hiscore: null, expected: null, diff: null, ok: null, basis: 'no row (under level 15)' });
+            const reached = lastReach(s, skill);
+            const basis = reached && reached.level >= ROW_MIN_LEVEL ? `no row, though the log reached level ${reached.level} (read before this attempt's save landed)` : `no row (under level ${ROW_MIN_LEVEL})`;
+            out.push({ row: target.skill, hiscore: null, expected: null, diff: null, ok: null, basis });
         } else {
             const at = [...s.reach].reverse().find(r => r.skill === skill.toLowerCase() && r.level === target.level);
             out.push(check(`${target.skill} ${target.level}`, target.ticks, at?.playtime ?? null, at ? `level ${target.level} reached in the log` : `level ${target.level} not reached in this log`, target.tickMs));
@@ -986,7 +1007,7 @@ export function formatSummary(
         `  steps ${s.stepTicks}; boundaries ${s.boundaryTicks} over ${s.boundaries}; resume walk ${s.runnerTicks}; outside the runner ${s.outsideTicks} ` +
             `(login to the first step, the end to the logout click); overhead ${s.overhead}${s.overheadPerBoundary === null ? '' : ` = ${s.overheadPerBoundary} per boundary`}`
     );
-    const target = [...s.reach].reverse().find(r => r.skill === o.skill.toLowerCase());
+    const target = lastReach(s, o.skill);
     if (target) lines.push(`reach: ${o.skill} ${target.level} at playtime ${target.playtime}`);
     lines.push(...formatPlayers(s.players));
     for (const p of s.pauses) {
@@ -1475,7 +1496,15 @@ function gateLine(r: { label: string; verdict: DirectVerdict | null; error?: str
     return `${r.label}: ${r.verdict ? verdictText(r.verdict) : `no verdict (${r.error ?? 'unknown'})`}`;
 }
 
-async function readHiscore(account: string, origin: string, runId: string): Promise<PlayerRow[] | null> {
+/**
+ * Page reads, 5 s apart, before the check takes the page as it stands. Rows show about 3 s after a clean
+ * logout (hiscore-timestamps.md), but only once the player has left the world: a logout that wasn't
+ * confirmed can keep it there longer, and the read costs wall time only.
+ */
+const HISCORE_READS = 24;
+
+/** The player page once `settled` accepts it (hiscoreSettled), else the last page read. */
+async function readHiscore(account: string, origin: string, runId: string, settled: (rows: PlayerRow[] | null) => boolean): Promise<PlayerRow[] | null> {
     // A lab engine serves hiscores only when its web server is up; don't spend the fetcher's backoff on nothing.
     try {
         await fetch(origin, { signal: AbortSignal.timeout(5_000) });
@@ -1483,19 +1512,21 @@ async function readHiscore(account: string, origin: string, runId: string): Prom
         console.error(`[hiscore] ${origin} does not answer; skipped`);
         return null;
     }
-    // Rows are written at the clean logout and show about 3 s later (hiscore-timestamps.md).
-    for (let attempt = 1; attempt <= 6; attempt++) {
+    let last: PlayerRow[] | null = null;
+    for (let attempt = 1; attempt <= HISCORE_READS; attempt++) {
         await Bun.sleep(5_000);
         const fetcher = new PoliteFetcher(join(ROOT, 'speedrun', 'runs', 'hiscore-cache', `rehearse-${runId}-${attempt}`), new Date(), origin);
         try {
             const html = await fetcher.get(playerPath(account));
             const rows = await withServerRate(origin, tickMs => parsePlayer(html, tickMs));
-            if (rows) return rows;
+            if (rows) last = rows;
+            if (settled(rows)) return rows;
         } catch (e) {
             console.error(`[hiscore] ${e instanceof Error ? e.message : e}`);
         }
     }
-    return null;
+    if (last) console.error(`[hiscore] the page did not show this attempt's save in ${HISCORE_READS} reads; checking the last read as it stands`);
+    return last;
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -1725,7 +1756,7 @@ async function main(argv: string[]): Promise<number> {
     let checks: HiscoreCheck[] | null = null;
     const hiscoreOrigin = local ? (process.env.HISCORES_WEB_PORT ? `http://localhost:${process.env.HISCORES_WEB_PORT}` : null) : origin;
     if (hiscoreOrigin && !session.expectInWorld) {
-        checks = compareHiscore(summary, await readHiscore(account, hiscoreOrigin, runId), skillName);
+        checks = compareHiscore(summary, await readHiscore(account, hiscoreOrigin, runId, rows => hiscoreSettled(summary, rows, skillName)), skillName);
         for (const c of checks) log.append(annotation(log, account, 'hiscore', `(hiscore) ${c.row}`, { ...(c.ok === false ? { ok: false } : {}), meta: { ...c } }));
     }
     console.log('\n' + formatSummary(summary, { account, skill: skillName, ...(a.claim ? {} : { to: a.to }), outcome, gate, hiscore: checks, ...(hiscoreOrigin ? { hiscoreUrl: `${hiscoreOrigin}${playerPath(account)}` } : {}) }));

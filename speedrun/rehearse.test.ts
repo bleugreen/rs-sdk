@@ -16,9 +16,9 @@ import {
     annotation, compareHiscore, DEFAULT_ATTEMPT_KIND, DEFAULT_GATE_BOT, kindGate, kindText, RECORD_LINE, recordLineAt, type DirectRead, EXIT_HOST_RESERVED, formatPlayers, formatSummary, GATE_PLAYERS_STEP, gateRefusal, type InPageRead, kitMissing, kitWant,
     parseArgs, parseDirectJson, parseKit, PAUSE_STEP, playerReads, playerSwing, ProgramTracker, ReachTracker, readReservation, reservationPath, reservationRefusal, ReservationWatch,
     runAttempt, SessionClock, summarize, UsageError, claimBin, claimOwner, claimToucher, type ClaimTouch, judgeReservation,
-    attemptFront, bracketAttempt, type FrontIO, frontLine, type FrontReport, gateTabProblems, gateTabRead, recordingProblems, type TabIO,
+    attemptFront, bracketAttempt, type FrontIO, frontLine, type FrontReport, gateTabProblems, gateTabRead, recordingProblems, type TabIO, hiscoreSettled,
 } from './rehearse';
-import type { PlayerRow } from './tools/hiscore-scrape';
+import { parsePlayer, type PlayerRow } from './tools/hiscore-scrape';
 
 describe('parseArgs', () => {
     test('defaults: browser, to 99, no probes on the rehearsal clock', () => {
@@ -398,6 +398,70 @@ describe('compareHiscore', () => {
         ]);
         const text = formatSummary(s, { account: 'a', skill: 'woodcutting', to: 15, outcome: 'chain done', gate: [], hiscore: checks });
         expect(text).toContain('hiscore Woodcutting 15: 42 at 400 ms/tick vs log 41 (+1) ok');
+    });
+});
+
+// Live demo player pages (speedrun/tools/fixtures/hiscore, fetched 2026-10-22 22:42-22:47Z in the
+// `N ticks normalized to 400 ms per tick` form; cairn_chops's from earlier that day, identical but for its rank).
+const livePage = (name: string): PlayerRow[] => parsePlayer(readFileSync(join(import.meta.dir, 'tools', 'fixtures', 'hiscore', name), 'utf8'))!;
+const runesPage = () => livePage('player-cairn_runes-2026-10-22-400ms.html');
+const sub15Page = () => livePage('player-cairn_h90-2026-10-22-400ms.html');
+const unsavedPage = () => livePage('player-acquiredl13-unsaved-2026-10-22.html');
+// rs/461's cairn_runes log: Runecraft 70 at playtime 4,544, logout click on session tick 4,604.
+const runesLog = () => summarize([reached('runecraft', 70, 4544), session(4604)]);
+
+describe('compareHiscore on live player pages', () => {
+    test('cairn_runes (rs/461): Runecraft 70 at 4,543, one tick under the log, not "under level 15"', () => {
+        expect(compareHiscore(runesLog(), runesPage(), 'runecraft')).toEqual([
+            { row: 'Runecraft 70', hiscore: 4543, expected: 4544, diff: -1, ok: true, basis: 'level 70 reached in the log', tickMs: 400 },
+            { row: 'Overall', hiscore: 4543, expected: 4544, diff: -1, ok: true, basis: 'the latest level gained in the log', tickMs: 400 },
+        ]);
+    });
+
+    test('the 99 rows: cairn_jumps Agility, cairn_ashes Firemaking, cairn_chops Woodcutting', () => {
+        for (const [file, skill, ticks] of [
+            ['player-cairn_jumps-2026-10-22-400ms.html', 'agility', 7111],
+            ['player-cairn_ashes-2026-10-22-400ms.html', 'firemaking', 664],
+            ['player-cairn_chops-2026-10-22-400ms.html', 'woodcutting', 3329],
+        ] as const) {
+            const s = summarize([reached(skill, 99, ticks), session(ticks + 5)]);
+            const checks = compareHiscore(s, livePage(file), skill);
+            expect(checks[0]).toMatchObject({ row: `${skill[0]!.toUpperCase()}${skill.slice(1)} 99`, hiscore: ticks, expected: ticks, diff: 0, ok: true, tickMs: 400 });
+            expect(checks[1]).toMatchObject({ row: 'Overall', hiscore: ticks, ok: true });
+        }
+    });
+
+    test('a real sub-15 row stays "under level 15": cairn_h90 (every skill under 15) and cairn_runes\'s Attack', () => {
+        const s = summarize([session(59251)]);
+        expect(compareHiscore(s, sub15Page(), 'woodcutting')).toEqual([
+            { row: 'Woodcutting', hiscore: null, expected: null, diff: null, ok: null, basis: 'no row (under level 15)' },
+            { row: 'Overall', hiscore: 59252, expected: 59252, diff: 0, ok: true, basis: 'logout playtime (no level gained)', tickMs: 400 },
+        ]);
+        expect(compareHiscore(runesLog(), runesPage(), 'attack')[0]).toEqual({ row: 'Attack', hiscore: null, expected: null, diff: null, ok: null, basis: 'no row (under level 15)' });
+    });
+
+    test('read before the save landed: an unsaved page says so, and a blank row the log took past 15 is not "under level 15"', () => {
+        // rs/461's case: the page parsed, but its first save had not landed, so every row was blank.
+        expect(compareHiscore(runesLog(), unsavedPage(), 'runecraft')).toEqual([
+            { row: 'player', hiscore: null, expected: null, diff: null, ok: null, basis: 'no rows saved yet (read before the logout save landed)' },
+        ]);
+        const s = summarize([reached('woodcutting', 20, 300), session(400)]);
+        expect(compareHiscore(s, sub15Page(), 'woodcutting')[0]!.basis).toBe('no row, though the log reached level 20 (read before this attempt\'s save landed)');
+    });
+});
+
+describe('hiscoreSettled', () => {
+    test('the page shows the attempt\'s save: Overall stamped and the skill at the log\'s last level', () => {
+        expect(hiscoreSettled(runesLog(), runesPage(), 'runecraft')).toBe(true);
+        expect(hiscoreSettled(summarize([session(10)]), sub15Page(), 'woodcutting')).toBe(true);
+        expect(hiscoreSettled(summarize([reached('woodcutting', 5, 4), session(10)]), sub15Page(), 'woodcutting')).toBe(true);
+    });
+
+    test('not yet: no page, no save (rs/461), or a page from before this attempt\'s save', () => {
+        expect(hiscoreSettled(runesLog(), null, 'runecraft')).toBe(false);
+        expect(hiscoreSettled(runesLog(), unsavedPage(), 'runecraft')).toBe(false);
+        expect(hiscoreSettled(summarize([reached('runecraft', 71, 4700), session(4800)]), runesPage(), 'runecraft')).toBe(false);
+        expect(hiscoreSettled(summarize([reached('woodcutting', 15, 300), session(400)]), sub15Page(), 'woodcutting')).toBe(false);
     });
 });
 
