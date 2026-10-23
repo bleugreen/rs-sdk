@@ -320,7 +320,7 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
     // The lines in both forms.
     const lines: R8Line[] = [...needs.values()].map(n => {
         const k = Math.min(n.count, keptAll.get(lc(n.item)) ?? 0);
-        const c = obj(n);
+        const c = obj({ name: n.item, ...(n.id !== undefined ? { id: n.id } : {}) });
         if (!c || c.id === undefined) refusals.push(`${phase.id}: no obj id for ${n.item}`);
         return { item: n.item, ...(c?.id !== undefined ? { id: c.id } : {}), kind: n.kind, need: n.count, kept: k, give: n.count - k, why: n.why.join('; ') };
     });
