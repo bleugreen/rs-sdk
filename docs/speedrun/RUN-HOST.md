@@ -1431,12 +1431,19 @@ the tick length T on main since #385 (a4456c73, rs/471; fold-in 31; step 6, line
       (bgsrv-mac, 233d0f34, preRequest:false): 3/3 loads, take-backs 0/20/20, Magic 59 in 198
       ticks." Every trade is SCORED-initiated. The count is unchanged: 17 helpers, 25 sessions at S01.
       The {S04, ring} stop's one writer is run.ts ("One writer per helper step's cue", step 4).
-   3. wait for the launcher's `helpersReady`, then **load reading (i)** (step 6, "The load ceiling"),
+   3. wait for the launcher's `helpersReady`, then **the S04 ring givers on their stands** (below), then **load reading (i)** (step 6, "The load ceiling"),
       before the tab starts;
    4. the run tab and the recording start; **load reading (ii)**, the decisive one, before SCORED's
       login;
    5. the hand-over (`handoff --no-login`, step 7), then SCORED's one login, run.ts's (step 7, "The
       run-start order"; main 12:10Z, fold-in 37).
+
+   **The S04 ring givers on their stands, before SCORED logs in** (fold-in 33b; main 11:40 PDT via rs/158;
+   not in Commit A). After `helpersReady`, read the three givers' positions on `/playerpositions` (by display
+   name) and confirm **h81 on (3217,3219), h63 on (3217,3218) and h66 on (3221,3220)**, the stands
+   `giverTiles` picks beside S03's end (3218,3219) on the castle row (rs/622's Commit A, #503). **If any one
+   is not on its stand, do not start.** `helpersReady` does not check position, and S03's fires on
+   x3218-3222 seal the pocket h81 and h63 stand in. Attempt 2's code fix: rs/620 (readiness checks position).
 
    The anvil helper a01 and the courier e15 are **not** in the start window: they log in on their
    cue gates (`loginOn` {S25a, anvil} and {S18, courier}). S21's 22 body-altar givers log in later,
@@ -2430,7 +2437,7 @@ from 38902b56, respawnCheck passing; main confirmed 04:40 PDT via rs/158; fold-i
 staged** on h68 (shark 17, law 2, water 2, knife 1, by item id), so a death on the Agility course is
 a priced recovery through its package and this knife line does not apply to it; **R8c is staged too** (rs/41, 12:12:09Z, by item id, the earmarks excluded, against the kits at 233d0f34, JSON sha256 5daf2997...f59b; main 12:15Z; before, not staged: air short 743, a Grand Exchange bid resting), so a death on T15-16 or in S16 is a priced recovery through its package;
 **R8a is not staged** (no amulet of magic in the fleet); **R8d1 is refused by design** (26 slots
-against 25). So **the manual recovery with a knife from h68 is attempt 1's procedure for R8a and the R8d1 deaths** (a death at H23, or in S27 with the cannon packed). h68's air 552 and death
+against 25). **The kits at the attempt-2 run commit 80f3ae28** (rs/41, fold-in 33b): JSON sha256 `7c10f28a85db602c8d56a026b7c6361c757261a52028ad3824e5ff46f613c148`, 39,055 bytes; against fed27b6f's `b46e30d4406136f595fa748ee174e3d66ba4a8a213d6a2813c8cdfc696eccf08` (39,055 bytes) no stageable line changed (R8c, R8d1 and R8d2 identical; R8a and R8b differ only in their `walks` trace, their byId and top-up lines identical), so R8c's and R8d2's staged lines stand and R8d1 stays REFUSED. So **the manual recovery with a knife from h68 is attempt 1's procedure for R8a and the R8d1 deaths** (a death at H23, or in S27 with the cannon packed). h68's air 552 and death
 110 are the rehearsal's H7 earmark and do not count toward R8. Its minutes are wall clock, not
 ticks: R8's prices stay `r8-deaths.ts`'s, in ticks.
 
