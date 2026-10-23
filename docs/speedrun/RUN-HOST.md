@@ -682,6 +682,11 @@ refusal. the carrier configs come from the generator and check below (fold-in 37
    row without re-banking (helpers/mule.ts:1283-1312, runner/delivery-owner.ts:89-96), and nothing in
    run.ts's preflight needs a hold file (rs/186). `mule-hold.ts` stays in the commit, unused. The
    mule-hold text below is kept for reference only.
+   **Carriers' parked sides (main 13:20Z 2026-10-23, from rs/41's code read):** before the launcher
+   starts, verify each carrier is parked on its side of the Taverley boundary: cairn_h55 WEST,
+   cairn_mule1 and cairn_h03 EAST. `deliveryWalk` refuses any walk across the boundary and sets
+   `deliveryFault`, which refuses every later row for that carrier (mule.ts:1419-1421 at 233d0f34).
+   A carrier on the wrong side is moved before the launcher starts, never after.
 5. **Report:** the host sends the hash line (no mule-hold exit codes for attempt 1) and `sha256sum <R>/carriers.json
    <R>/helpers.json` to rs/41 and main before the launcher starts.
 
