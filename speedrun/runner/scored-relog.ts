@@ -72,7 +72,13 @@ function locked(budget: RelogBudget) {
     return lock;
 }
 
-/** Opens the single planned entry only after both the logout and page-out confirmation. */
+/**
+ * Opens the single planned entry once logoutClean reports SCORED out, then confirms the page is out.
+ * The entry is written before that confirmation: an unconfirmed page after a logout that took would
+ * otherwise leave SCORED out with no entry, which neither half admits (the logout half needs it in
+ * game, the login half an open entry). With the entry open, a re-walk selects the login half, and a
+ * new process (run.ts openRunSession) reads the page itself and refuses a live one for the operator.
+ */
 export function scoredLogoutStep(o: ScoredRelogOptions): Step<any> {
     const deps = { ...defaultRelogDeps, ...o.deps };
     const run = async (ctx: StepContext<any>) => {
@@ -83,8 +89,8 @@ export function scoredLogoutStep(o: ScoredRelogOptions): Step<any> {
             if (allowed !== true) throw new Error(allowed);
             const out = await deps.logout(ctx.session as Session);
             if (!out.ok) throw new Error(`S21 relog: logout failed: ${out.reason}`);
-            if (!(await deps.confirmOut(ctx.session as Session))) throw new Error('S21 relog: page out not confirmed');
             o.budget.beginPlanned(SCORED_RELOG, out.clickTick, { ...out });
+            if (!(await deps.confirmOut(ctx.session as Session))) throw new Error('S21 relog: page out not confirmed (the planned entry is open: the login half resumes, and a new process checks the page first)');
         } finally { lock.release(); }
     };
     return {
