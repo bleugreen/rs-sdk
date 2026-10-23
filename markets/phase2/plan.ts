@@ -278,7 +278,10 @@ export function parsePlan(raw: unknown): Plan {
     };
     if (sell.enabled && Object.keys(floors).length === 0) problems.push('sell.enabled needs sell.floors: nothing is sold without a floor');
     if (sell.enabled) {
-        const methods = [...accounts.map(a => a.method), ...Object.keys(ramp?.fallbackMix ?? {}), ...Object.keys(foodFallbackMix)] as MethodId[];
+        // the fallback mixes take accounts only from the knights (the ramp) and the shark eaters (the food)
+        const knights = accounts.some(a => a.method === 'knights');
+        const eaters = accounts.some(a => NEEDS[a.method].sharks) || (knights && Object.keys(ramp?.fallbackMix ?? {}).some(m => NEEDS[m as MethodId].sharks));
+        const methods = [...accounts.map(a => a.method), ...(knights ? Object.keys(ramp?.fallbackMix ?? {}) : []), ...(eaters ? Object.keys(foodFallbackMix) : [])] as MethodId[];
         const away = [...new Set(methods)].filter(m => !SALE_ROUTE.includes(m));
         if (away.length) problems.push(`sell.enabled: ${away.join(', ')} accounts cannot reach the Exchange (no return trip from Ardougne or Shilo exists yet); enable sales in a plan without them`);
     }

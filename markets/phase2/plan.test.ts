@@ -68,8 +68,10 @@ describe('parsePlan', () => {
     test('sales run only from methods that can reach the Exchange', () => {
         const sell = { enabled: true, floors: { 'Iron ore': 80 } };
         const ps = problems({ accounts: accounts(2, 'iron'), sell });
-        expect(ps.some(p => /sell.enabled: iron, guards accounts cannot reach the Exchange/.test(p))).toBe(true);
-        expect(problems({ accounts: accounts(2, 'guards'), sell, foodFallbackMix: { guards: 1 }, ramp: null })).toEqual([]);
+        expect(ps.some(p => /sell.enabled: iron accounts cannot reach the Exchange/.test(p))).toBe(true);
+        expect(problems({ accounts: accounts(2, 'guards'), sell })).toEqual([]);
+        // knights bring the ramp's fallback mix in, and with it the heroes and iron
+        expect(problems({ accounts: [...accounts(1, 'guards'), ...accounts(1, 'knights', 'k')], sell }).some(p => /knights, iron, heroes accounts cannot/.test(p))).toBe(true);
     });
 
     test('refuses more accounts than one address holds, or than its sessions', () => {
