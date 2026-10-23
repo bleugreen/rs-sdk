@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { keepPriciest, objOf, objTable, type ObjInfo } from '../lib/death-keep';
+import { contentObjs, keepPriciest, objOf, objTable, untradeable, type ObjInfo } from '../lib/death-keep';
 import { parseLedger } from '../tools/slot-ledger';
 import { CANNON, r8Package, R8_PHASES, respawnCheck, type R8Phase } from './r8-package';
 
@@ -99,7 +99,8 @@ describe('a respawn package from the ledger', () => {
         const p = r8Package(PHASE, { manifest: TABLE, objs });
         expect(p.byId.some(l => l.id === 3)).toBe(false);
         expect(p.topUp.some(l => l.id === 3)).toBe(false);
-        expect(p.untradeable[0]).toContain('shark x6');
+        expect(p.unrecoverable).toEqual([{ item: 'shark', id: 3, death: 'H1', deployed: false, count: 6, needs: 'consume at S2; 1 eaten from 1 HP to 21', cost: 300, keptMin: 1000 }]);
+        expect(p.recoverable).toBe(false);
         expect(p.package).toBeNull();
         expect(p.refusals.some(r => r.includes('shark out (consume) but neither held nor worn'))).toBe(true);
     });
@@ -143,5 +144,28 @@ describe("R8's phases on STEP-MANIFEST.md", () => {
             expect(p.lines.some(l => (CANNON as readonly string[]).includes(l.item))).toBe(false);
             expect(p.slots).toBeLessThanOrEqual(28);
         });
+        test(`${phase.id}: no untradeable id in either form`, () => {
+            const p = r8Package(phase);
+            const objs = contentObjs();
+            for (const l of [...p.byId, ...p.topUp]) expect(untradeable(objs, l.id!)).toBe(false);
+        });
     }
+    test('the quest kit reads untradeable (quest_arena.obj, quest_mm.obj)', () => {
+        const objs = contentObjs();
+        for (const id of [74, 75, 4021]) expect(untradeable(objs, id)).toBe(true);
+        expect(untradeable(objs, 385)).toBe(false);
+    });
+    test("R8c: every death point keeps the m'speak amulet, so its line is 'kept, nothing needed'", () => {
+        const p = r8Package(R8_PHASES.find(ph => ph.id === 'R8c')!);
+        for (const w of p.walks) expect(w.kept.some(k => k.name === "m'speak amulet")).toBe(true);
+        expect(p.lines.find(l => l.item === "m'speak amulet")!.why).toStartWith('kept, nothing needed');
+        expect(p.recoverable).toBe(true);
+    });
+    test('R8a and R8b: the Khazard helmet and armour are kept at no death point, so unrecoverable by trade', () => {
+        for (const id of ['R8a', 'R8b']) {
+            const p = r8Package(R8_PHASES.find(ph => ph.id === id)!);
+            expect(p.recoverable).toBe(false);
+            for (const d of p.phase.deaths) expect(p.unrecoverable.filter(u => u.death === d.row).map(u => u.id).sort()).toEqual([74, 75]);
+        }
+    });
 });

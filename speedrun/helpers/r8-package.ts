@@ -15,8 +15,10 @@
 //      covers: a unit kept at one point and dropped at another stays in the package;
 //   5. the cannon set and its balls stay out (rs/41's ruling): a deployed cannon waits on the ground
 //      for its owner, a carried one lost comes from cairn_h92's repeat of its hand-off; an untradeable
-//      item (`tradeable=no`: the Khazard armour, the M'speak amulet) stays out too, since no helper
-//      can hand it over, and is reported (`untradeable`).
+//      item (`tradeable=no` or a dummy: the Khazard armour, the M'speak amulet) is never emitted in
+//      either form, since no helper can hand it over: kept at every death point it reads 'kept,
+//      nothing needed'; otherwise each death point that does not keep it gets an 'unrecoverable by
+//      trade' line (`unrecoverable`), and the phase is not fully recoverable.
 // In the fixed form SCORED drops, at the respawn tile, any kept unit beyond the need (a duplicate
 // of a package line), the fallback H10/H12/H22 use while no ask writer serves the top-up form.
 // Each package then has to pass `respawnCheck`: the slot ledger walked from the respawn state (the
@@ -33,7 +35,7 @@
 //       every phase's package, its kept units, its walks; exit 1 when a phase has neither form stageable
 import { readFileSync } from 'node:fs';
 
-import { contentObjs, keepPriciest, objOf, type HeroUnit, type ObjTable } from '../lib/death-keep';
+import { contentObjs, keepPriciest, objOf, untradeable as refusedInTrade, type HeroUnit, type ObjTable } from '../lib/death-keep';
 import { FAILING, MANIFEST, parseLedger, render, walk, type Held, type InEntry, type Kind, type LedgerEntry, type LedgerRow } from '../tools/slot-ledger';
 import { packageOf, type Package, type PackageItem } from './mule';
 
@@ -116,6 +118,20 @@ export interface R8Line {
 /** How the helper serves the package: fixed amounts (`byId`), or top-ups counting what SCORED holds. */
 export type R8Form = 'fixed' | 'topUp';
 
+export interface R8Unrecoverable {
+    item: string;
+    id?: number;
+    death: string;
+    deployed: boolean;
+    /** How many the ledger needs that this death point's keep does not hold. */
+    count: number;
+    /** Why the ledger needs it (the rows). */
+    needs: string;
+    /** Its oc_cost, against the cheapest unit this death point keeps (why it is not kept). */
+    cost: number;
+    keptMin: number | null;
+}
+
 export interface R8Walk {
     form: R8Form;
     death: R8Death;
@@ -139,8 +155,12 @@ export interface R8Package {
     kept: KeptUnit[];
     /** Held at the resume row but returned unused afterwards, so not carried. */
     notNeeded: string[];
-    /** Needed, not kept at every death point, and untradeable: SCORED goes on without what the keep lost. */
-    untradeable: string[];
+    /**
+     * Unrecoverable by trade: a needed untradeable item a death point does not keep, with the rows that
+     * need it. Never in either form; the phase is then not fully recoverable (`recoverable` false).
+     */
+    unrecoverable: R8Unrecoverable[];
+    recoverable: boolean;
     /** One respawn walk per form and death point. */
     walks: R8Walk[];
     /** Why a form is refused, each tagged with its form, or `both` for a fault in the package itself. */
@@ -357,11 +377,20 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
         const k = Math.min(n.count, keptAll.get(lc(n.item)) ?? 0);
         const c = obj({ name: n.item, ...(n.id !== undefined ? { id: n.id } : {}) });
         if (!c || c.id === undefined) refusals.push(`${phase.id}: no obj id for ${n.item}`);
-        const tradeable = c?.tradeable !== false;
-        return { item: n.item, ...(c?.id !== undefined ? { id: c.id } : {}), kind: n.kind, need: n.count, kept: k, give: tradeable ? n.count - k : 0, tradeable, why: n.why.join('; ') };
+        const tradeable = !(c?.id !== undefined && refusedInTrade(objs, c.id));
+        const why = n.why.join('; ');
+        const keptAlways = !tradeable && k >= n.count;
+        return { item: n.item, ...(c?.id !== undefined ? { id: c.id } : {}), kind: n.kind, need: n.count, kept: k, give: tradeable ? n.count - k : 0, tradeable, why: keptAlways ? `kept, nothing needed (${why})` : why };
     });
-    const untradeable = lines.filter(l => !l.tradeable && l.need > l.kept).map(l => `${l.item} x${l.need - l.kept} (${l.why})`);
-    const byId: PackageItem[] = lines.filter(l => l.give > 0 && l.id !== undefined).map(l => ({ id: l.id!, amount: l.give }));
+    // An untradeable need a death point's keep does not cover: no helper can restore it.
+    const unrecoverable: R8Unrecoverable[] = phase.deaths.flatMap((death, d) => {
+        const mine = tally(keptAt[d]!);
+        const keptMin = keptAt[d]!.length ? Math.min(...keptAt[d]!.map(k => k.cost)) : null;
+        return lines
+            .filter(l => !l.tradeable && l.need > (mine.get(lc(l.item)) ?? 0))
+            .map(l => ({ item: l.item, ...(l.id !== undefined ? { id: l.id } : {}), death: death.row, deployed: !!death.deployed, count: l.need - (mine.get(lc(l.item)) ?? 0), needs: l.why, cost: (l.id !== undefined ? objs.byId.get(l.id)?.cost : undefined) ?? 0, keptMin }));
+    });
+    const byId: PackageItem[] = lines.filter(l => l.tradeable && l.give > 0 && l.id !== undefined).map(l => ({ id: l.id!, amount: l.give }));
     const topUp: PackageItem[] = lines.filter(l => l.tradeable && l.need > 0 && l.id !== undefined).map(l => ({ id: l.id!, topUp: { max: l.need } }));
     const slots = slotsOf(lines.map(l => ({ kind: l.kind, count: l.give })));
     if (slots > INVENTORY_SLOTS) refusals.push(`both: ${phase.id}: the package fills ${slots} slots, more than the helper's ${INVENTORY_SLOTS}`);
@@ -396,7 +425,7 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
     const refused = (form: R8Form) => refusals.some(r => r.startsWith('both: ') || r.startsWith(`${form}: `));
     const pkg = refused('fixed') ? null : packageOf({ name: lc(phase.id), items: byId, scope });
     const topUpPackage = refused('topUp') ? null : packageOf({ name: lc(phase.id), items: topUp, scope });
-    return { phase, scope, lines, byId, topUp, slots, kept, notNeeded, untradeable, walks, refusals, package: pkg, topUpPackage };
+    return { phase, scope, lines, byId, topUp, slots, kept, notNeeded, unrecoverable, recoverable: unrecoverable.length === 0, walks, refusals, package: pkg, topUpPackage };
 }
 
 // ------------------------------------------------------------------ CLI
@@ -416,7 +445,7 @@ export function main(argv: readonly string[]): number {
     if (!phases.length) throw new Error(`no phase ${only} (${R8_PHASES.map(p => p.id).join(', ')})`);
     const out = phases.map(p => r8Package(p, o));
     if (argv.includes('--json')) {
-        console.log(JSON.stringify(out.map(p => ({ id: p.phase.id, scope: p.scope, byId: p.byId, topUp: p.topUp, slots: p.slots, lines: p.lines, kept: p.kept, notNeeded: p.notNeeded, untradeable: p.untradeable, ...(p.phase.note ? { note: p.phase.note } : {}), stageable: { fixed: p.package !== null, topUp: p.topUpPackage !== null }, walks: p.walks.map(w => ({ form: w.form, ...w.death, kept: w.kept, cannon: w.cannon, verdicts: w.entries.map(e => `${e.row.row} ${e.verdict} ${e.used}/${INVENTORY_SLOTS}`) })), refusals: p.refusals })), null, 2));
+        console.log(JSON.stringify(out.map(p => ({ id: p.phase.id, scope: p.scope, byId: p.byId, topUp: p.topUp, slots: p.slots, lines: p.lines, kept: p.kept, notNeeded: p.notNeeded, unrecoverable: p.unrecoverable, recoverable: p.recoverable, ...(p.phase.note ? { note: p.phase.note } : {}), stageable: { fixed: p.package !== null, topUp: p.topUpPackage !== null }, walks: p.walks.map(w => ({ form: w.form, ...w.death, kept: w.kept, cannon: w.cannon, verdicts: w.entries.map(e => `${e.row.row} ${e.verdict} ${e.used}/${INVENTORY_SLOTS}`) })), refusals: p.refusals })), null, 2));
     } else {
         for (const p of out) {
             console.log(`\n=== ${p.phase.id}: ${p.phase.what}; resume at ${p.phase.resume}${p.phase.replay.length ? ` after replaying ${p.phase.replay.join(', ')}` : ''}; walk to ${p.phase.to} ===`);
@@ -428,13 +457,13 @@ export function main(argv: readonly string[]): number {
             console.log(`package (${p.slots} slots), item: need - kept = give [why]`);
             for (const l of p.lines) console.log(`  ${l.item}${l.id !== undefined ? ` @${l.id}` : ''} [${l.kind}]: ${l.need} - ${l.kept} = ${l.give}  (${l.why})`);
             console.log(`not carried (returned unused): ${p.notNeeded.join(', ') || '-'}`);
-            if (p.untradeable.length) console.log(`needed but untradeable, not in the package (SCORED goes on without it): ${p.untradeable.join(', ')}`);
+            for (const u of p.unrecoverable) console.log(`UNRECOVERABLE BY TRADE: ${u.item}${u.id !== undefined ? ` @${u.id}` : ''} x${u.count} at the death at ${u.death}${u.deployed ? ' (deployed)' : ''}: untradeable, not kept (cost ${u.cost}; the cheapest kept unit ${u.keptMin ?? '-'}); needed: ${u.needs}`);
             if (p.phase.note) console.log(`note: ${p.phase.note}`);
             console.log(`by id: ${JSON.stringify(p.byId)}`);
             console.log(`top-up: ${JSON.stringify(p.topUp)}`);
             for (const w of p.walks) console.log(`\nrespawn walk, ${w.form} form, death at ${w.death.row}${w.death.deployed ? ' (deployed)' : ''}:\n${render(w.entries)}`);
             if (p.refusals.length) console.log(`\nrefusals:\n  ${p.refusals.join('\n  ')}`);
-            console.log(`\n${p.phase.id}: fixed form ${p.package ? 'stageable' : 'REFUSED'}; top-up form ${p.topUpPackage ? 'stageable' : 'REFUSED'}`);
+            console.log(`\n${p.phase.id}: fixed form ${p.package ? 'stageable' : 'REFUSED'}; top-up form ${p.topUpPackage ? 'stageable' : 'REFUSED'}; ${p.recoverable ? 'fully recoverable by trade' : 'NOT fully recoverable by trade'}`);
         }
     }
     // A phase with neither form stageable fails the run.
