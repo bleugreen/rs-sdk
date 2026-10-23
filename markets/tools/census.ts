@@ -64,7 +64,7 @@ async function main(): Promise<void> {
     const sources: Record<string, { name: string }[]> = { ...boards, bank, outfit, ...Object.fromEntries(Object.entries(searches).map(([q, rows]) => [`bank:${q}`, rows])) };
     for (const [period, rows] of Object.entries(runite)) sources[`runite:${period}`] = rows;
     const result = census(sources, positions);
-    const family = (rows: { name: string }[]) => rows.filter(r => familyOf(r.name));
+    const family = <T extends { name: string }>(rows: T[]): T[] => rows.filter(r => familyOf(r.name));
 
     mkdirSync(out, { recursive: true });
     const file = join(out, `census-${stamp(takenAt)}.json`);
