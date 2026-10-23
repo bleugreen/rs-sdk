@@ -53,6 +53,24 @@ Tests use recorded replies in `lib/fixtures/` (2026-10-22 ~22:1xZ) and never the
 
 All tools default to writing `docs/markets/data/`; pass `--out` to write elsewhere.
 
+## phase2/: the phase-2 runner
+
+The one package here that logs in: markets runs it on its own address after the scored run ends (never from an
+agent's batch against the demo). `run.ts <plan.json>` brings every account of a plan to its method and runs it;
+`docs/markets/phase2.md` 'Running' is its manual.
+
+| Module | Does |
+|---|---|
+| `plan.ts` | Parses and validates a plan; each method's setup sequence; the fallback split. Pure. |
+| `gate.ts` | The login gate: no retry before an answer, the session cap, spacing, holds by refusal code. Pure. |
+| `ramp.ts` | The knights ramp and its stop rule. Pure. |
+| `ledger.ts` | Per-account and totals lines (store and book value), rates from a ledger. Pure. |
+| `exchange.ts` | The sale and shark-purchase decisions on the book. Pure. |
+| `names.ts` | Aliases, the output scrub and the names-list check. Pure. |
+| `stages.ts` | Each stage's goal and how it runs, on the existing trainers, roles and steps. |
+| `errands.ts` | The shark purchase and the capped sale at the Exchange. |
+| `run.ts`, `report.ts`, `lab.ts` | The runner, the ledger summary, and the lab driver (lab SERVER only). |
+
 ### Keeping the poller running
 
 ```
