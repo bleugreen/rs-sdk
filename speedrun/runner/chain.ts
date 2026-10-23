@@ -138,8 +138,10 @@ export function muleCueDir(cfg: Pick<RunConfig, 'cueDir' | 'muleCueDir'>): strin
 export interface CueSink {
     /** Open `scope`'s cue (a fresh session when `fresh`, else only when another scope or none is open). */
     open(scope: CueScope, ctx: Pick<StepContext<unknown>, 'sdk'>, o: { fresh: boolean }): Promise<void>;
-    /** Write the stop of `scope`'s cue if it is the open one. */
-    stop(scope: CueScope, ctx: StepContext<unknown>, o?: { final?: boolean }): void;
+    /** Write the stop of `scope`'s cue if it is the open one (`failed`: the step threw). */
+    stop(scope: CueScope, ctx: StepContext<unknown>, o?: { final?: boolean; failed?: boolean }): void;
+    /** Rewrite `scope`'s open delivery cue now, just before its trade; record-only sinks may omit this. */
+    refresh?(scope: CueScope): boolean;
     /** Runtime ownership of a module's direct writer; record-only sinks may omit this. */
     writer?(scope: CueScope): runecraft.CueSink;
     /**
@@ -318,7 +320,7 @@ export function cueAround(step: ChainStep, scope: CueScope, cues: CueSink, stop:
         try {
             await f(ctx);
         } catch (e) {
-            cues.stop(scope, ctx, { final: false });
+            cues.stop(scope, ctx, { final: false, failed: true });
             throw e;
         }
         cues.stop(scope, ctx, stop);
