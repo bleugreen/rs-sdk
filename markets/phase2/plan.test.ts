@@ -19,7 +19,7 @@ describe('parsePlan', () => {
         const p = parsePlan({ accounts: accounts(3, 'knights') });
         expect(p.maxSessions).toBe(3);
         expect(p.hp).toBe(40);
-        expect(p.sharks).toEqual({ source: 'bank', perAccount: 200, perLoginHour: 30, hours: 72, ceiling: 701, minimum: 28, fillMinutes: 10 });
+        expect(p.sharks).toEqual({ source: 'bank', perAccount: 200, perLoginHour: 40, hours: 72, ceiling: 701, minimum: 28, fillMinutes: 10 });
         expect(p.ramp?.steps).toEqual([3]);
         expect(p.ramp?.dropPct).toBe(10);
         expect(p.ramp?.fallbackMix).toEqual({ iron: 12, heroes: 8, guards: 23 });
