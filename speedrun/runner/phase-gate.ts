@@ -6,7 +6,10 @@
 // Status files, one per account, each written by its role every 1-2 s (the heartbeat):
 //   giver-<acct>.json  altar givers (altar-giver.ts, S06 / S21): ready = phase 'ready' or 'armed', readyAt set
 //   bones-<acct>.json  bone givers (bone-giver.ts, S07 standing): ready = phase 'waiting', readyAt set, bones
-//                      held, standing on one of its sites' giver tiles
+//                      held, standing on one of its sites' giver tiles. The group rotates oak<->willow, so
+//                      at most moments one is walking: a 'travel' giver also passes when it is loaded,
+//                      has no bounces and no fault detail, and another of the group is waiting on a site.
+//                      Attempt 2's group (all travelling, looping on an unstandable tile) still refuses.
 //                      courier (bone-giver.ts on-request, S18): ready = loaded and within 2 tiles of sites[0],
 //                      the tile it waits on for the scored account (its idle loop publishes 'travel' there)
 //   anvil-<acct>.json  anvil helper (anvil.ts, S25a): ready = phase 'waiting'
@@ -52,11 +55,15 @@ type Tile = { x: number; z: number };
 const at = (t: Tile | null | undefined) => (t ? `(${t.x},${t.z})` : '(no tile)');
 const ago = (now: number, ms: number) => `${Math.round((now - ms) / 1000)} s`;
 
+/** The only detail a standing bone giver publishes with 'travel' (bone-giver.ts cycle); any other is a fault's. */
+const ROTATING_DETAIL = /^site \d+$/;
+
 /**
  * Whether one status file shows its helper ready for `family`'s step. `raw` is the parsed file
- * (null: none). Never throws: a malformed file is not ready.
+ * (null: none). `someWaiting` (bone only): another member of the group is ready waiting on a site in
+ * the same read, which lets a clean 'travel' giver pass. Never throws: a malformed file is not ready.
  */
-export function judgeStatus(family: CueFamily, raw: unknown, o: { now: number; sites?: readonly Site[] }): { ok: boolean; detail: string } {
+export function judgeStatus(family: CueFamily, raw: unknown, o: { now: number; sites?: readonly Site[]; someWaiting?: boolean }): { ok: boolean; detail: string } {
     const s = raw as Record<string, unknown> | null;
     if (!s || typeof s !== 'object') return { ok: false, detail: 'no status file' };
     const phase = String(s.phase ?? '?');
@@ -70,6 +77,12 @@ export function judgeStatus(family: CueFamily, raw: unknown, o: { now: number; s
     const sites = o.sites ?? S07_SITES;
     switch (family) {
         case 'bone': {
+            if (phase === 'travel') {
+                const bounces = s.bounces === undefined ? 0 : Number(s.bounces);
+                const faulted = typeof s.detail === 'string' && !!s.detail && !ROTATING_DETAIL.test(s.detail);
+                const why = !(held > 0) ? 'travel with no bones held' : bounces !== 0 ? `travel with ${String(s.bounces)} bounces, not a clean rotation` : faulted ? 'travel with a fault detail' : !o.someWaiting ? 'phase travel, not waiting, and no other group member waiting on a site' : null;
+                return why ? { ok: false, detail: `${why}${detail}` } : { ok: true, detail: `travel at ${at(tile)}, ${held} held, rotating while another group member waits on a site${detail}` };
+            }
             const site = tile ? sites.findIndex(x => x.giver.x === tile.x && x.giver.z === tile.z) : -1;
             const why = phase !== 'waiting' ? `phase ${phase}, not waiting` : readyAt === null ? 'waiting but readyAt is null' : !(held > 0) ? 'waiting with no bones held' : site < 0 ? `waiting at ${at(tile)}, not on a site's giver tile (${sites.map(x => at(x.giver)).join(', ')})` : null;
             return why ? { ok: false, detail: `${why}${detail}` } : { ok: true, detail: `waiting on site ${site} ${at(tile)}, ${held} held, ready ${ago(o.now, readyAt!)}` };
@@ -143,13 +156,21 @@ export function phaseGates(i: PhaseGateInput): PhaseLine[] {
             out.push({ gate: name, ok: !gated, detail: `no helper serves ${step}/${family} in ${i.source}${gated ? '' : ' (reported: not the next helper step)'}` });
             continue;
         }
-        for (const m of members) {
+        // Each member's file read once; a bone group is judged together, since a travelling giver passes
+        // only when another member (one judged alone, so waiting on a site) is ready in this same read.
+        const read = members.map(m => {
             const file = statusFileName(kind, m.account);
             const l = i.launcher?.find(a => canonName(a.account) === canonName(m.account));
             const awaiting = !!l && l.state !== 'online' && l.cue?.state === 'waiting';
-            const j = awaiting ? { ok: true, detail: 'logged out until its login cue opens (launcher.json): its phase is read at its login' } : judgeStatus(family, i.read(file), { now: i.now, ...(m.sites ? { sites: m.sites } : {}) });
+            const opts = { now: i.now, ...(m.sites ? { sites: m.sites } : {}) };
+            return { m, file, awaiting, raw: awaiting ? null : i.read(file), opts };
+        });
+        const waiting = read.map(r => family === 'bone' && !r.awaiting && judgeStatus('bone', r.raw, r.opts).ok);
+        read.forEach(({ m, file, awaiting, raw, opts }, k) => {
+            const someWaiting = family === 'bone' ? { someWaiting: waiting.some((w, other) => w && other !== k) } : {};
+            const j = awaiting ? { ok: true, detail: 'logged out until its login cue opens (launcher.json): its phase is read at its login' } : judgeStatus(family, raw, { ...opts, ...someWaiting });
             out.push({ gate: `${name} ${m.account}`, ok: gated ? j.ok : true, detail: `${file}: ${j.detail}${gated ? '' : j.ok ? ' (reported)' : ' (reported: not the next helper step, not refused)'}` });
-        }
+        });
     }
     if (i.path.includes('S15')) out.push({ gate: 'role phase H12o h45', ok: true, detail: 'no status file on the run machine: reported, not gated (RUN-HOST step 0 parks it)' });
     if (i.path.some(id => id === 'H11' || id === 'H23')) out.push({ gate: 'role phase cannon h92', ok: true, detail: 'no status file on the run machine: reported, not gated (the cannon serve gate checks its options)' });
