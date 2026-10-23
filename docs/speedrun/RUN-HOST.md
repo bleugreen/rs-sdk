@@ -2027,7 +2027,9 @@ stand down on a StepError or a first Ctrl-C, per family** (rs/574's retire rule,
   receiver-in-sight mode and reads no cue.
 - **Measured (lab): rs/597's stand-by lab** (bgsrv-mac, 400 ms, a scratch copy of 075c1763,
   04:18-04:32 PDT 2026-10-23, via rs/158; fold-in 37; no figure moves). **Altar and mule: relaunch
-  none**, now measured: after a non-final stop both stayed logged in for 10 minutes, the altar giver
+  none** when the failed step involves only altar or mule givers (a failed step whose bone, anvil,
+  log-row or courier family forces the whole-launcher restart, next item, takes them down too), now
+  measured: after a non-final stop both stayed logged in for 10 minutes, the altar giver
   served the fresh session and the mule's role stayed live. **The mule caveat:** after a plain stop
   the mule releases its stand and waits, logged in, at Draynor bank (3092,3245), and its served
   journal refuses a row it has already delivered ('delivery already served'), so a re-run of a step
@@ -2044,34 +2046,40 @@ stand down on a StepError or a first Ctrl-C, per family** (rs/574's retire rule,
   0.2 s after the stop), but the launcher keeps both accounts logged in, so a relaunch must first stop
   the stale session (next item). The anvil, log-row and courier helpers stay code-reading until
   measured.
-- **Relaunching an exited family** (main 12:20Z via rs/158; fold-in 37). For each account of the
-  failed step's bone, anvil, log-row and courier helpers: (1) stop the stale session, the launcher's
-  stop of that role with the logout confirmed; (2) wait at least 10 s; (3) then relaunch. **Why:** the
-  exited role's account stays logged in with no process behind it until the launcher stops it, and a
-  relaunch without the stop is a session takeover, refused under 10 s (`LoginServer.ts:573-601`),
-  and otherwise meets the gateway's ~19-20-tick duplicate-session stall (rs/174). **The constraint
-  (rs/41, from the code at 38902b56):** the run-machine launcher has **no per-role or per-account
-  stop or relaunch**: `standalone.ts` has no control channel, its only stop is SIGINT or SIGTERM to
-  the whole launcher process (standalone.ts:929-930; HELPERS.md "Stopping"), which stops every
-  account in that config at once, and a role that exits 0 is 'finished; not restarting it'
-  (standalone.ts:813-816), its account logged in until the launcher stops (`fleetctl` is the bbs
-  fleet's and does not apply). So the three steps work only if **each exiting family (the bone givers
-  b01-b04, the anvil a01, the fm-row droppers, the courier e15) runs in its own launcher config**,
-  apart from the carriers (mule1, mule2, h55, h03), the altar givers and h45, each config with its own
-  `gatewayPort` and `runDir` and every account's `cueDir` naming the run's cue directory. **That
-  layout is a run-host decision for rs/186 and main, pending**; with one launcher for everything the
-  only honest procedure is stopping the whole launcher, which costs every helper a relog and S21's
-  login order. **rs/41's procedure, per family, with its config `<F>.json`** (started as `bun
-  speedrun/helpers/standalone.ts <F>.json`): (1) stop: SIGINT to that launcher only, Ctrl-C in its
-  terminal or `kill -INT <pid>` of its own bun process, never by name or pattern; it logs each account
-  out (logout button, waiting out a combat timer) within `stopDeadlineMs` (25 s by default); (2)
-  confirm: each account's `logout` in `<F's runDir>/launcher.json` is `out` (`queued`: it leaves on
-  its turn, re-check; `unconfirmed` or `killed`: it can stay listed 2-4.5 min), then its display name
-  (not its login name, which reads falsely absent) is absent from the demo's `/playerpositions`; (3)
-  wait at least 10 s after the last absence; (4) relaunch with the same file; each first login waits
-  until the server no longer lists the account (standalone.ts :43-45), so a still-listed copy delays
-  the login rather than being refused, and the role re-reads its state from `<runDir>/role-state/`.
-  The exact command lines stay **pending rs/41** with the layout.
+- **Relaunching after a failed step whose family exits: the whole launcher** (rs/186's text and
+  rs/41's commands via rs/158, main 12:20Z-12:3xZ; fold-in 37; file:line from 38902b56 and rs/186's
+  9f2efb03, re-checked at the commit main names, the code winning). **Attempt 1 runs one helper
+  launcher**: run.ts's preflight reads helpersReady from one `<run dir>/launcher.json`, so a split
+  would need a run.ts change inside the freeze (an attempt-2 lever, RUN-ORDER.md section 7), and
+  `standalone.ts` has no per-role or per-account stop (its only stop is SIGINT or SIGTERM to the whole
+  process, standalone.ts:929-930; a role that exits 0 is 'finished; not restarting it', :813-816, its
+  account logged in until the launcher stops). So when the failed step's bone, anvil, log-row or
+  courier helpers must come back: (1) **after run.ts has exited**, SIGINT the whole launcher (Ctrl-C
+  in its terminal or `kill -INT <pid>` of its own bun process, never by name or pattern), every
+  logout confirmed (each account's `logout` in `<run dir>/launcher.json` reads `out`); (2) wait until
+  the demo's `/playerpositions` lists no helper account, by display name, not login name (a login
+  name reads falsely absent); the 10 s takeover rule is then met by construction; (3) relaunch the
+  same launcher config and wait for helpersReady; (4) re-run run.ts with the same command. **Do not
+  re-run the mule-hold command** on a relaunch (`holdMule` refuses after the run's prepare,
+  mule-readiness.ts:303). The absence check names helper accounts only, never SCORED or a gate
+  account. **rs/41's rules for it:** (a) **never stop while any carrier's status shows phase
+  'trading'**: a carrier killed mid-trade leaves a durable `mule-delivery-attempt` and faults on
+  restart, refusing that row until reconciled; (b) a restarted carrier resumes its selection from
+  its journal but forgets a carry-ahead kit in its inventory, so it pays one extra bank trip
+  (mule.ts:1814-1817); (c) ungated families (the bone givers, the ring givers, the mules) log in again
+  at relaunch even if their step is done, worst case ~33-40 sessions on SCORED's address against our
+  45: **count before re-running**; (d) the re-run reopens its step's cues fresh by itself (`chain.ts`
+  `withCue` writes a fresh session on resume), so nobody hand-writes cues. The altar givers and mules
+  lose their stand-by in this case and log in again with the rest. **Unmeasured:** the restarted-carrier
+  path and the relogin ramp (~3.5-4 min or more, rs/496's measured roster login on the start). **The
+  price on SCORED's clock: ~0 plus one login**: when a step throws, run.ts logs SCORED out before it
+  exits (`runAttempt` returns the failure, lib/attempt.ts:111-116; `if (session.expectInWorld &&
+  !sig.leaving()) await leave();`, run.ts:527, before the cues close non-final, :533-538; r, rs/186
+  at 9f2efb03), and a logout then a login adds no counted tick (`playtime-audit.md` rows 1c and 4d).
+  **The exceptions, where SCORED stays in and the ramp's ~550 ticks land on the score:** a crash
+  outside `runAttempt` (before the chain starts), a hard kill (SIGKILL), or a logout not confirmed
+  (run.ts reports 'logout NOT confirmed'); the operator checks SCORED is out (the page, run.ts's log)
+  before the relaunch.
 - Helpers are **retired** (a final stop, `[run] cues closed final`) **only** on a completed whole
   run, SIGTERM or a second Ctrl-C, which **end the attempt**: a launcher never re-arms a retired
   scope (`helpers/standalone.ts`'s ScopeSessions), so a re-run after one finds no helpers.
@@ -2115,10 +2123,11 @@ The checks, in order, before re-running. Any one failing means **do not re-run: 
    expired claim makes gate 2 refuse with an `rs-claim take ...` hint (`run.ts:252-261`), so retake it
    as step 0 does first.
 6. **The helpers, per family** (#468, 4657eed8, rs/583 from rs/186 @43f03530; fold-in 36). The log
-   reads `[run] cues closed non-final: a re-run re-arms the helpers`. For the failed step's bone,
-   anvil, fm-row or courier helpers, stop the stale session (logout confirmed), wait at least 10 s,
-   then relaunch, before the re-run ("Relaunching an exited family", above: main 12:20Z; per-family
-   launcher configs pending rs/186 and main, the commands pending rs/41), and start the ring givers by hand if S04 failed; the altar and
+   reads `[run] cues closed non-final: a re-run re-arms the helpers`. If the failed step's bone,
+   anvil, fm-row or courier helpers must come back, restart the whole launcher before the re-run
+   ("Relaunching after a failed step whose family exits", above: SIGINT after run.ts has exited and
+   no carrier trading, every logout confirmed, no helper listed, relaunch, helpersReady, never the
+   mule-hold command again; the altar and mule givers come back with it), and start the ring givers by hand if S04 failed; the altar and
    mule givers stand by logged in on SCORED's address (up to 25-26 at S21, rs/41), and the
    re-run's cue re-arms them (measured, rs/597; a mule row already delivered is not served again,
    the caveat above). If it reads `[run] cues closed final` (a SIGTERM or a second Ctrl-C was sent), the
