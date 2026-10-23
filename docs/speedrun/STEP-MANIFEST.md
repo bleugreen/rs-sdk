@@ -175,7 +175,7 @@ Runecraft and Smithing for rank 10, and Dwarf Cannon (1,130), which passes Smith
 
 The expected column sums to **31,599.4** (the steps, fold-in 34: S07's first bone load +1.5; 31,597.9 at fold-in 31; 31,283.8 written until then; 31,258.1 at fold-in 24, 31,212.5 at fold-in 23's final statement, 31,351.8 at its first statement, 31,391.8 at fold-in 22, 31,312.8 at fold-in 20, 31,250.8 at fold-in 18, 31,408 before fold-in 17, 32,287 before fold-in 14 moved every quest's expected to its burst figure) plus the legs' **2,283.3** (fold-in 33: the leg-row drops, +2 e on seven legs and +3 i on T01-02, rs/546; 2,266.3 at fold-in 31; 2,214.0 at fold-in 23's first statement, 2,223.6 at fold-in 22, 2,224.2 at fold-in 20, 2,209.5 before its T05-06 on its browser figure); RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **35,189.0** knife-on expected (32,663.9 best; fold-in 34, +1.5 / +1: S07's first bone load; fold-in 33, +15: the legs' +17 less T06-07's air-rune drop retired from the hand-offs), against the record of 35,916.
+retries, restarts) for its **35,188.4** knife-on expected (32,662.9 best; fold-in 36, -0.6 / -1: H13 at the pooled browser 8.7, best 8, its drop mode on main as #470; fold-in 34, +1.5 / +1: S07's first bone load; fold-in 33, +15: the legs' +17 less T06-07's air-rune drop retired from the hand-offs), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
