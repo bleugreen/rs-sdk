@@ -217,6 +217,84 @@ stage, measured first (m, bgsrv-ub, 402.7 ms), gave HP 20 at tick 437, 30 at 981
 (rs/502). Above ~52 HP the trainer goes over White Wolf Mountain to the rock crabs, which reached **70 in 6,028
 ticks** (m, 1 sample). Prayer-first (`--prayer 31 --pray`) is slower at every target: ~2,720 ticks to 40 (m).
 
+## Running
+
+`markets/phase2/run.ts` executes a plan: one process on the phase-2 address brings every account from a fresh login
+to its method and runs it until stopped, with a ledger of what each account holds.
+
+```sh
+bun markets/phase2/run.ts <plan.json> [--out DIR] [--minutes N] [--run-ended] [--placeholder-data]
+bun markets/phase2/report.ts DIR/ledger.jsonl     # rates per account and method, the ramp, redirects, logouts
+```
+
+**The plan** (`markets/phase2/plan.ts`; `plan.example.json` has placeholder names) lists each account with its
+method (`knights`, `heroes`, `guards`, `iron`, `shilo`; steel, runite and battlestaves are refused with the reason
+above) and optionally its own `hp` and role `options`. It names accounts, so it lives outside the checkout like the
+names list. Everything else has a default: `maxSessions` (the account count, at most 45), `loginSpacingMs` 2,000,
+`hp` 40, `sharks`, `ramp`, `foodFallbackMix`, `ledger`, `sell`. Parsing lists every problem at once.
+
+**Each account** logs in with its own in-process lite client (`speedrun/lib/direct.ts`, credentials from
+`bots/<account>/bot.env`; every account must share one SERVER), then works through its sequence. A stage whose goal
+already holds is skipped, and the runner recomputes the first unmet stage after anything that can undo one (a death
+in the market respawns in Lumbridge without the ship's coins, so the account earns them and sails again):
+
+| Method | Sequence (`sequenceFor`) |
+|---|---|
+| knights | tutorial, HP 40 (`hp-train.ts`), Thieving 55 (`coins.ts` auto: men, warriors, guards), admission (the ramp; Varrock guards meanwhile), [buy sharks], 100 coins, ship to Ardougne (`thieving.ts`'s leg), `pickpocket.ts` on the knights |
+| heroes | as knights to Thieving 80, no ramp |
+| guards | tutorial, HP 40, `coins.ts` auto from Thieving 1 |
+| iron | tutorial, 100 coins (Lumbridge men), Mining 15 (`mining.ts`'s copper steps), wield the pickaxe, ship to Ardougne, `mine.ts` at the zoo cluster |
+| shilo | staged by hand (no quest bot exists): the method only |
+
+A stage that fails three times in a row, or three sessions that end in an error within two minutes of login, give
+the account up; the rest carry on.
+
+**Logins** (`gate.ts`): never a second login for an account whose first has not answered (the demo's code 16 was a
+same-account retry, rs/519); a login that ended with no answer holds the account 60 s. Sessions, logins in flight
+included, never exceed `maxSessions`. Starts are spaced `loginSpacingMs` apart. A refusal holds the account by its
+code (16: 16 s, 5: 15 s, 7: 60 s for the whole address); five refusals in a row give it up.
+
+**The knights ramp** (`ramp.ts`, rs/495's condition on allocation A): knights logins are admitted in steps (default
+8, 20, 43). The ramp opens when the first knight reaches admission; a step holds `holdMinutes` (15) once every
+admitted login is pickpocketing, or `admitTimeoutMinutes` (30) after it opened, then takes the median gp a tick
+per login over the hold. A step more than `dropPct` (10%) below the first stops the ramp: the knights not yet
+admitted go to `ramp.fallbackMix` (plan B's 12 iron, 8 heroes, 23 guards, split in proportion), and the ledger
+says why. A hold with no login measured waits for the step again.
+
+**Sharks and the food fallback.** `sharks.source: 'bank'` (default): markets puts the sharks in each account's
+bank. `'buy'`: each shark eater buys `perAccount` at the Exchange during admission, a limit offer at the `ceiling`
+(701), paid from the bank's coins; sharks are a fleet input (docs/speedrun/SUPPLIES.md), so a buying plan refuses to
+start without `--run-ended`, and the errand refuses again without it. Before buying, `exchange.ts` bounds the
+plan's quantity on the ask side (`buyCost`: N units cost between N at the best ask and N at the mean ask). **The
+fallback food is no food:** an account whose bank has no sharks left, or whose purchase leaves fewer than
+`minimum` (28) banked, goes to `foodFallbackMix`, plan B's low-food methods: iron (never damaged) and guards (2 per
+failure, kebabs bought in Al-Kharid with its own coins). The heroes are refused there (four times the knights'
+sharks).
+
+**The ledger** (`DIR/ledger.jsonl`, `ledger.ts`): a line per account every 50 of its ticks (stage, coins carried
+and banked, the bank at store cost and at what it realises sold into the open bids less the 5% fee, the observed
+ms a tick), a totals line on the same cadence (book value merged across accounts so two accounts never count one
+bid twice), and the ramp's holds and decisions, admissions, redirects, purchases, sales and the logouts. The bank is
+only visible open, so `banked` is its count at the last visit. Accounts appear as aliases (`a01` for the plan's
+first, `names.ts`), every string is scrubbed of the plan's names before it is written, and the runner refuses to
+start without the names file (`lib/accounts.ts`) or, on real accounts, with any account missing from it.
+`--placeholder-data` is for lab accounts. `DIR/events.jsonl` has every stage change and role log line.
+
+**Sales into the bids** (`sell`, off by default): `errands.ts` reads the book, refuses below the item's floor,
+withdraws at most the cap (500, never above 5,000) as notes, reads again, offers at the floor (each unit fills at
+its bid's own price, best first), waits `fillMinutes`, cancels the rest and banks the proceeds. An offer whose
+placement outcome is unknown is never retried. The Exchange is at the Varrock west bank and nothing yet brings an
+account back from Ardougne or Shilo, so a plan may enable sales only when every account it can move works within
+walking distance (`SALE_ROUTE`: guards); iron ore and gems wait for that return trip.
+
+**Stopping:** SIGINT or SIGTERM stops every account at its next safe point and logs it out (`logoutDirect`
+re-clicks through the post-combat window); a second signal exits at once. `--minutes N` stops the same way. The
+exit code is 0 when every account logged out.
+
+### The lab run
+
+LAB_RESULTS_PLACEHOLDER
+
 ## Horizons
 
 Capital earned in the first 6, 24 and 72 hours of phase 2, setup subtracted, caps applied
