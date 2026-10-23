@@ -49,7 +49,7 @@ m = measured in the lab, i = inferred (named model or arithmetic on measured par
 
 | Method | Inputs | Board / h / login | Coins / h / login (outlet) | n trips | Spread (board / h by trip) | Basis | Scaling | Competes with the speedrun |
 |---|---|---|---|---|---|---|---|---|
-| **Knights of Ardougne**, East Ardougne market, 70 HP, 4 sharks a trip | Thieving 55 (99 here), food | **133,900** | **142,000** (coins) | 4 | 130,100-139,200, sd 4,300 | m, fedora | with logins; 4 knights in the market | logins only; sharks (27/h) from the bank |
+| **Knights of Ardougne**, East Ardougne market, 70 HP, 4 sharks a trip | Thieving 55 (99 here), food | **133,900** | **142,000** (coins) | 4 | 130,100-139,200, sd 4,300 | m, fedora | with logins; 4 knights in the market, crowded on the demo (157 accounts stood in the market at 22:4xZ, candidates.md) | **the scored run's S18 pickpockets these knights**: keep off them on run day; sharks (27/h) |
 | Knights, 10 HP, a full pack of sharks | Thieving 55 (99 here) | 104,400 | 149,000 (coins) | 3 | 88,100-116,500 | m, fedora | with logins | 149 sharks/h eaten (a 10 HP account eats on every failure) |
 | Knights from 57, 10 HP, full pack | Thieving 57 | 73,900 | 126,100 (coins) | 4 | 3,400-99,300 (the first trip at 57-80) | m, fedora | | as above; the level reaches 99 within ~2,000 ticks at 25x xp |
 | Knights 99, 99 HP, full pack | | *rerun pending* | | | | m, fedora | | |
