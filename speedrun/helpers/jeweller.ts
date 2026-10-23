@@ -688,6 +688,9 @@ class Jeweller {
         let waited = 0;
         while (got < target && this.s().inventory.length < 28 && waited < 1_200) {
             this.check();
+            // Gold trips are most of a run's wall time, so couriers deliver here at the rocks
+            // rather than waiting for the receive step that only comes once the bars are done.
+            await this.acceptCouriers();
             const rock = this.s().nearbyLocs.filter(l => GOLD_ROCKS.has(l.id)).sort((a, b) => a.distance - b.distance)[0];
             if (!rock) {
                 waited++;
