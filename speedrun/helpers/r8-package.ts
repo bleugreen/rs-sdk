@@ -252,7 +252,12 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
     // A name several objs share takes the id some row gives it (`NAME @ID`), as r8-deaths.ts does.
     const rowIds = new Map<string, number>();
     for (const r of rows) for (const e of [...r.in, ...r.out]) if (e.id !== undefined) rowIds.set(lc(e.name), e.id);
-    const obj = (h: { name: string; id?: number }) => objOf(objs, { name: h.name, id: h.id ?? rowIds.get(lc(h.name)) });
+    const worn = new Set<string>();
+    for (const e of entries) for (const w of e.stacks.worn) worn.add(lc(w.name));
+    const obj = (h: { name: string; id?: number }) => {
+        const id = h.id ?? rowIds.get(lc(h.name));
+        return objOf(objs, { name: h.name, ...(id !== undefined ? { id } : {}), worn: worn.has(lc(h.name)) });
+    };
 
     // 1. The target, 2. what of it the ledger still needs.
     const resume = at(phase.resume);
