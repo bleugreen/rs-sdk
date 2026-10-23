@@ -135,7 +135,7 @@ if (mode === 'diamond25') {
     await giveAll(scored, ['tinderbox 1', 'cosmicrune 60', 'airrune 81', 'firerune 80', 'earthrune 50'], 5);
     // --noted-held=N (rs/626): attempt 2's pack, a noted Emerald ring stack held at S04's start, which S04 must refuse.
     const notedHeld = Number(arg('noted-held', '0'));
-    if (notedHeld > 0) await giveAll(scored, [`cert_emerald_ring ${notedHeld}`], 1);
+    if (notedHeld > 0) await giveAll(scored, [`cert_emerald_ring ${notedHeld}`], (scored.sdk.getState()?.inventory.length ?? 0) + 1);
 
     // ---------------------------------------------------------------- the stand-in ring givers
     // One giver per load (rs/41: cairn_h81-h83), each staged with its load before the step: the
