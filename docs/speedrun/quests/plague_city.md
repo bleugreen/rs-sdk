@@ -276,6 +276,8 @@ the next click (U, V), and the sewer leg's measured run (I, J). Segment Z includ
 (the gas mask taken off, then the spade, the four buckets and the mask dropped at once: 3 ticks),
 which the slot ledger had on T08-09.
 
+**Segment C in the scored case** (rs/413's correction, fold-in 31): from a fresh boot, with both house doors shut as SCORED meets them, C is **9 on lite**; the 7.7 above had the doors open. The browser chains (rs/413, bgsrv-mac, T = 400 ms, rs/185's tip 86290d28: 390 / 398 / 393, mean 393.7, 402.7 with H6's 9) are S08's priced row since fold-in 31 (RUN-ORDER.md section 2).
+
 ## Scripts
 
 - `speedrun/quests/plague-city.ts` (the S08 step module) and `speedrun/lab/quests/plague-city.ts`

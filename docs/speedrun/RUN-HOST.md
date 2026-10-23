@@ -150,6 +150,10 @@ timer", below "The host"). Who takes one:
 - **anyone else** who needs a machine quiet (a measurement child, a probe, a check of these
   commands): for its time; released afterwards.
 
+**A claim keeps its gate evidence** (fold-in 31): an ad-hoc gate or probe run under a claim copies
+its JSON (per-trial rows, `tickArrivalsMs`) into its evidence before the claim's teardown, and no
+teardown deletes `~/gate-history` or `~/rs-run/gate-*` (step 9).
+
 **Leave nothing running on a machine without a claim.** The timer also skips while the machine is
 busy (a tmux server that answers, bun, ffmpeg, or a Chrome with its own profile), and a busy skip is
 not a reserved one: at 03:00Z on 2026-10-22 a load-check stack armed on the run host outside any
@@ -505,6 +509,13 @@ checked by commit hash: `git rev-parse HEAD` against `~/run-commit` on each, in 
 The page server serves `out/bot` per request with `no-store` (`server/webclient/proxy.ts`), so a
 rebuilt client bundle needs no restart of it (rs/410).
 
+**The bot bundle is rebuilt on both machines after a4456c73** (#385, rs/471; main 15:5x via rs/158,
+fold-in 31). #385 moves the gate's catch-up and p90 limits to fractions of the tick length T, and
+the page's half of that rule (`frames.ts`, with the program runtime's `tickMs` start parameter) is in
+the served bot bundle, so a bundle built before a4456c73 still judges (c) at 150 / 350 ms. host
+rebuilds the bundle on each machine at a commit at or after a4456c73 (the floor contains it), and
+step 3's served = built check then runs within each machine as usual.
+
 **The floor check, a hard stop** (main's ruling, relayed by rs/158 at 09:24 PDT 2026-10-22;
 STEP-MANIFEST.md entry 0). The floor is read from entry 0's line on origin/main, "`RUN_COMMIT` at
 or after the run-commit floor, `<hash>`", its single source ("Credentials"). Set `N` to the floor
@@ -856,6 +867,9 @@ run.ts write every step's cue; main's rule names exactly one writer for each hel
   `{step: 'S07', family: 'bone'}`;
 - S18 {courier}, the mule rows {Hx, mule} and the cannon {S14|S27, cannon}: run.ts, through
   `handoff.ts`;
+- H12oM and H12oP {mule}: **the Monkey Madness module** (run.ts writes none; rs/201 exec 9,
+  c5288dac; the other mule hand-offs stay with run.ts); cairn_h45 reads them on rs/483's carried
+  mode and the launcher logs it in on H12oM's cue and out on H12oP's stop (fold-in 31);
 - S25a {anvil}: run.ts, unless smithing.ts writes its own (pending rs/186).
 
 rs/393 adds a test that each helper step has exactly one writer. The run.ts writer is rs/186's and
@@ -941,12 +955,22 @@ preference, step 5a), but the gate still chooses (tenet 17), and the plan holds 
 - **The peak per address** (rs/41's map): **25 on SCORED's address at the start and 26 during S21's
   ramp**, inside SCORED's relog before S21. Both are under 45.
 - **The home address on run day, a run-day rule:** the home machines (bbs and every executor) carry
-  **29 fleet accounts plus the cannon helper**, and nothing else. No development sessions and no
+  **29 fleet accounts plus the cannon helper**, and nothing else, with **one named exception** (main 17:0x via rs/158, fold-in 31): **R8's spawn helper** (rs/526; a fleet spare, never named here), parked logged out beside the Lumbridge respawn tile, with 0 run-day logins, or 1 cued login on a player-kill, logged out after its trade. No development sessions and no
   executor demo logins run from them on run day (rs/41's map, via rs/158).
 - **Families log out when their step is done:** after S03, S04, S06 and S07, that step's helper
-  family logs out on the step's stop cue.
-- **S21's body-altar givers log in inside SCORED's relog.** SCORED makes its one in-page relog before
-  S21, and the 22 givers log in during it, not before SCORED's first login: about 3.5 wall minutes
+  family logs out when the step's scope closes (its final stop cue, or the next scope's cue). After
+  rs/491 (rs/41's c97bc1c5; pending in fleet snapshot 11) a plain stop only stands a helper down; the
+  launcher logs it out on a stop carrying `final: true` (rs/490 writes it on each family's last stop
+  and on abort) or on a later scope's cue.
+- **S21's body-altar givers log in inside SCORED's relog** (rs/186's ruling to rs/490; fold-in 31):
+  **SCORED logs out on arrival at S21, the givers log in and report ready with SCORED out, SCORED
+  logs back in in-page behind them, then the first trade. The ramp is off SCORED's clock.** The
+  relog is split into a logout half and a login half under one budget entry, and rs/511 counts the
+  logged-out window as planned, not a drop. **As built, run.ts does otherwise**: chain.ts:563 runs
+  runecraft's preLoginStep (it opens the {S21, altar} cue and waits for all 22 givers to report
+  ready) while SCORED is in game, then relogs, so SCORED would sit logged in through the ramp
+  (~500 ticks at 400 ms); the fix is rs/490's, a start condition until it is on the floor
+  (RUN-ORDER.md section 1). The 22 givers log in during it, not before SCORED's first login: about 3.5 wall minutes
   through the launcher's limiter (rs/41; 22 logins took 190 s, m, rs/214). SCORED's login closes the
   relog after the last of them, which re-appends it at its group's tail behind them, so they are
   handled first and the cycle stays at 7 (R12; the in-page relog is `login(session, {inPage: true})`,
@@ -956,10 +980,12 @@ preference, step 5a), but the gate still chooses (tenet 17), and the plan holds 
   roster table above). Their credentials go to SCORED's machine with the rest of the on-address
   roster (rs/41; "Credentials"). Anything this page prints names them by role, `courier` and `anvil`,
   never by account, as the gate accounts print only as `GATE-run` and `GATE-twin` (step 5a.3).
-- **The atoll helper, H12o,** is cued by run.ts at least 52 ticks before S15's segment P. H12o is a
-  lever under S15's risk line, with no ledger row until it is ruled in (RUN-ORDER.md R37).
-- **Triggers.** The family logouts, the late logins, SCORED's relog and H12o's cue are triggered by
-  run.ts and acted on by rs/41's schedule. run.ts is rs/186's and not on main (main has only
+- **The atoll helper, H12o** (cairn_h45, rs/483's carried mode), is cued by the Monkey Madness
+  module, not run.ts: H12oM's cue as M leaves Zooknock, ~300 ticks before the ladder top, and
+  H12oP's stop after P's leg; the launcher logs h45 in on H12oM's cue and out on H12oP's stop
+  (fold-in 31; SUPPLIES H12o-M and H12o-P; its two ledger rows since fold-in 28).
+- **Triggers.** The family logouts, the late logins and SCORED's relog are triggered by
+  run.ts (H12o's cues by the Monkey Madness module) and acted on by rs/41's schedule. run.ts is rs/186's and not on main (main has only
   `speedrun/lab/quests/run.ts`), and the schedule is rs/41's: **both pending**. On main nothing
   triggers them.
 
@@ -1112,10 +1138,10 @@ the feed, prints the `hello`'s `tickMs` and closes, with its own 10 s limit:
 bun -e 'const ws = new WebSocket("wss://rs-sdk-demo.fly.dev/worldfeed"); const t = setTimeout(() => { console.log("no hello within 10 s"); process.exit(1); }, 10000); ws.onmessage = e => { const m = JSON.parse(String(e.data)); if (m.t !== "hello") return; clearTimeout(t); console.log(new Date().toISOString().slice(0, 19) + "Z demo tickMs " + m.tickMs); ws.close(); process.exit(0); }; ws.onerror = () => { console.log("world feed refused the connection"); process.exit(1); };'
 ```
 
-It printed `demo tickMs 400` at 20:10Z on 2026-10-22 (m, rs/469, from fedora; "Measured: the
+It printed `demo tickMs 400` at 20:10Z on 2026-10-22 (m, rs/469, from fedora (bginf-halo); "Measured: the
 demo's tick period"). The demo has run 400 ms ticks since its 19:56:29Z restart that day (300 ms
-before it). Tenet 12's (a) is counted in ticks and is unaffected; (b) and (c) become fractions of
-the tick length with rs/471, pending (step 6, line 2).
+before it). Tenet 12's (a) is counted in ticks and is unaffected; (b) and (c) are fractions of
+the tick length T on main since #385 (a4456c73, rs/471; fold-in 31; step 6, line 2).
 
 1. **Gate both in the same minute: `gate`.** It runs step 6 on both machines in parallel, each on
    its own gate account, and refuses the same account twice (one account is in the world only once).
@@ -1268,14 +1294,19 @@ hard check, and the first that fails stops that machine:
    demo has ticked at 400 ms since 19:56Z that day). (a) is counted in ticks and stands as written.
    **(b)**: the publication p90 at most 4/3 T (400 ms at T=300), reported, not a pass line. **(c)**:
    a catch-up is an interval under T/2 right after one over 7/6 T (150 / 350 ms at T=300), at most 2
-   a minute (RUN-ORDER.md section 1). The change that carries them is **rs/471** (host's:
-   `speedrun/lib/hostgate-verdict.ts` and the in-page `server/webclient/src/bot/programs/frames.ts`
-   on one rule, with T=300 pinned in its tests), **pending**: its PR, #385, is open and not on main.
-   rs/449's #370 carries only the gate history's fields (uptime, fingerprint, `tickMs`, 60 s of
-   server intervals, T on each record), not these limits. **The code wins until rs/471 merges:** on
-   main the tool applies the 300 ms values at any T (`CATCH_UP = { underMs: 150, afterOverMs: 350 }`,
-   `DIRECT_RULE.maxTickP90Ms: 400`), so at the demo's 400 ms (c) still counts an interval under
-   150 ms after one over 350.
+   a minute (RUN-ORDER.md section 1). They are on main as **#385** (a4456c73, rs/471, inside the
+   run-commit floor since fold-in 31): one rule, `server/webclient/src/bot/programs/tick-rule.ts`,
+   which `speedrun/lib/hostgate-verdict.ts` imports and the page's `frames.ts` bundles. As the code
+   states them (`TICK_FRACTIONS`, r): **(c)** a catch-up is an interval under **1/2 T** right after
+   one over **7/6 T** (`isCatchUp`); **(b)**'s report line is **4/3 T** (`tickP90Report`). At
+   T = 400 that is under 200 ms after over 466.7 ms, and 533.3 ms; at T = 300, 150 after 350, and 400.
+   T is the command line's flag, else the feed hello's `tickMs`, else the median interval rounded to
+   50 ms (`resolveTickLength` in `hostgate.ts`; the page takes the driver's `tickMs` start parameter,
+   else its running median), and run-gate prints the T each of (b) and (c) was read at with its
+   limits in ms. #385 changes the served bot bundle, so a machine still serving a bundle built before
+   a4456c73 would judge (c) on the 300 ms values: step 0 rebuilds it on both machines. rs/449's #370
+   carries only the gate history's fields (uptime, fingerprint, `tickMs`, 60 s of server intervals,
+   T on each record).
 3. **(d)**, the tab's loop rate: it opens the gate account's tab (step 3's line, bound 15 min),
    checks the six flags, logs it in with tab-login, prints the three report-only lines (below) and runs the secrets
    check (`0 0 0`). Then it
@@ -1477,7 +1508,7 @@ output can be recorded beside the gate lines (step 5a.3) without SCORED's name:
 printf '<%s>\n' bun speedrun/tools/run-gate.ts handoff --machine=twin --scored-env="$SCORED_ENV" --claim=run | sed "s#$(basename "$(dirname "$SCORED_ENV")")#SCORED#g"
 ```
 
-Expect six lines, each argument whole (m, fedora, bash, a stand-in path, 2026-10-22):
+Expect six lines, each argument whole (m, fedora (bginf-halo), bash, a stand-in path, 2026-10-22):
 
 ```
 <bun>
@@ -1651,6 +1682,94 @@ resume row. Tell main if SCORED isn't back within reconnect's 30 minutes, or if 
 the operator (resume.ts then prints each candidate step's reason). The recording and the live view
 run on through it: they grab the display, not the game.
 
+**A dropped session with no restart** (main 15:3x-15:4x via rs/158; rs/83, rs/186, the host thread; fold-in 31).
+At 22:15:50Z on 2026-10-22 about 116 players dropped world-wide, 29 of our 42 sessions on one
+address, with no restart and no stall (rs/83: the process token unchanged, the tick feed
+continuous), and the fleet relogged by itself; with the 2026-10-21 outage that is two demo-side
+events in 38 hours (RUN-ORDER.md R53). **What run.ts does today** (rs/186, code at a2adbc7a): the
+runner link sees inGame=false about 1 tick after a drop (or after 17 ticks with no in-world tick),
+aborts the step and waits up to 30 minutes for the link, then throws (`resume.ts:217, 343`). **It
+starts no relog**: the watchdog ignores inGame and acts only on stopped ticks or a dead or stale
+gateway, so **with the feed live nothing relogs, and the operator must relog SCORED by hand within
+the 30 minutes.** When the watchdog does act it relaunches a new client, not in-page, which cuts
+the in-page programs, and its logout doesn't check for an open bank or trade. There is no relog cap
+or budget, and planned relogs aren't counted. On return the resume walk re-enters the latest step
+whose `inProgress` holds (through `resume`) or whose preconditions hold (through `run`, which
+restarts the step from its beginning); cooking (`splitStage`), the legs (by checkpoint) and the
+hand-offs (equip only if the trade landed) handle re-entry. Wrong re-entries: the S21 relog step can
+be re-picked (an extra relog); S03's dropper go cue and S14's and S27's cue stops can be re-written;
+and **a Wilderness leg deeper than level 20 cannot restart** (the teleport is refused), so it ends
+in a ResumeError.
+
+**The manual relog, today's run commit** (the host's facts, checked on both machines):
+
+1. **Who notices.** The operator, on the live view (3 fps MJPEG, view-only: the run host's
+   `/live.mjpg` on port 8090 over Tailscale; the twin's on 127.0.0.1:8090 through step 5's ssh
+   tunnel). A full-resolution still comes over the run tab's DevTools port (`speedrun/lib/tab.ts`
+   `screenshotTab`) and touches nothing on the display.
+2. **The act.** An ssh shell on the machine (keys and known_hosts per step 0), then the run tab's
+   DevTools at 127.0.0.1:9222 (loopback only). The relog is `speedrun/lib/session.ts`
+   `login(session, {inPage: true})`, or `login(session)` to re-navigate to a fresh one-time token
+   URL; `speedrun/tools/relog-probe.ts` already drives both over DevTools. **Confirm in or out by
+   `tab.ts` `pageInGame`, never the gateway's `inGame`**, which stays true with status `stale`
+   after a drop. Not offered: xdotool (absent, not to be installed); the overlay gateway on
+   127.0.0.1:7780, which cannot log a tab in; RDP is the last resort, since it cuts the recording
+   to ~23 fps (tenet 12, rs/134).
+3. **The recording** (ffmpeg on :10) keeps running through it; it grabs the display, not the game.
+4. **The relog budget:** the planned S21 relog plus 3 unplanned, inside tenet 25's count. A manual
+   relog is an unplanned one.
+
+**Once rs/511 is on the floor** (pending rs/511 on the floor; built and unit-tested, its lab
+acceptance at 400 ms to come; a floor candidate, deadline 09:00Z):
+
+- **Command:** `bun speedrun/tools/relog-now.ts $SCORED_ENV [--run-dir=<run.ts's --run-dir>]
+  [--cdp=http://127.0.0.1:9222]`, printing one line, `in` or `failed: <reason>`.
+- **How:** an in-page login (session.ts's `mintLoginToken`, then `tab.ts` `pageLogin`; the token
+  URL as fallback), confirmed by the page only, after which it waits for the tick to advance. It
+  opens no SDK session, so it never takes the gateway from run.ts.
+- **Lock:** `<run dir>/relog.lock`. relog-now refuses while run.ts holds it, and run.ts waits while
+  the operator holds it, then adopts the relog; run.ts never starts its own relog while one is in
+  flight.
+- **Budget:** `<run dir>/relogs.json`, the S21 relog plus 3 unplanned; manual relogs count as
+  unplanned. Past the budget run.ts stops (exit 4) with the reason.
+- **S21:** the planned relog's logged-out window is marked planned, so drop recovery ignores it.
+
+The block above it stays as written for a run commit without rs/511.
+
+**After a player-kill: the recovery** (main 17:0x via rs/158; RUN-ORDER.md R8; fold-in 31). Logged-out
+time costs nothing, so a death is recoverable only if SCORED logs out at once after the respawn, R8's
+spawn helper (rs/526) is parked at the Lumbridge spawn with the phase's package, and a one-shot trades
+the package and re-enters the chain; without all three the death is the attempt. **`recover-now`**
+(rs/186 scopes it; pending, not on main's 09:00Z list) does it like relog-now: it walks to the
+helper, receives the phase package (R8a-R8d) and re-enters the chain through the preconditions.
+**The manual fallback, until it is on the floor:** (1) the operator stops run.ts; (2) SCORED logs out
+at once from the run tab, over DevTools as the relog above, confirmed by `pageInGame`; (3) the
+operator cues the spawn helper by writing its cue file, scope `{step: 'R8a'..'R8d', family: 'mule'}`
+for the phase (the launcher's gate `{step: 'R8', family: 'mule'}` logs it in); (4) once the helper
+stands beside the spawn, SCORED logs back in, takes the trade and the operator restarts the chain at
+the step whose preconditions hold. The packages are pending rs/526. Its minutes are wall clock, not
+ticks: R8's prices stay `r8-deaths.ts`'s, in ticks.
+
+**S21 relog: reconciliation when the run script refuses** (rs/186's identity and order matrix; code
+at 1fccc5b7, pending browser lab acceptance (rs/490): unit tests and CDP mocks only, not a
+real-browser lab; fold-in 31):
+
+| Case | State | What the script does | What the operator does |
+|---|---|---|---|
+| 1 | No open planned entry | a normal launch or resume | finish the T20-21 leg to its canonical arrival; never log out early |
+| 2 | Logout confirmed, entry OPEN, the page proven OUT with no login pending | attaches without launching, waits for the world feed and the full fresh giver roster while SCORED is out, then logs in inside the page; the single planned entry closes only on success | nothing |
+| 3 | Entry OPEN, the page LIVE | refuses: no login, no navigation, no entry change (a live page does not prove which session set the processing order) | inspects the account and session and the givers' login order, and reconciles the budget by hand; nothing adopts the state automatically |
+| 4 | Entry OPEN, a login PENDING | refuses: no second dispatch or navigation | waits for the real outcome before reconciling; never erases the entry or restarts blindly |
+| 5 | Entry OPEN, CDP unreadable or missing, or the page unknown | refuses the same way | restores observation and establishes the actual state first |
+| 6 | A giver missing or stale after the feed gate or the token mint | no dispatch; if the login expires or the page flips live or pending during token redemption, the final page check refuses, with no fallback navigation, and the entry stays open | retries only from a proven-out state with a freshly checked full roster |
+| 7 | The planned entry completed | does not repeat the S21 relog; the ordinary scene and resume path applies; world-full retries recheck admission on every dispatch and never reuse a stale authorization | nothing |
+
+- A refusal closes the control SDK, not necessarily the game account. An account still live keeps
+  accruing playtime, so the operator confirms the actual logout and state.
+- No case is a zero-tick or automatic recovery.
+- One shared lock and budget: one planned S21 relog plus three unplanned.
+- The socket-drop half is pending rs/511's injected acceptance.
+
 **A tick-length change during the run** (main's ruling, 13:5x PDT 2026-10-22, via rs/158). **The run
 never stops for it**: the score is in ticks, the in-page loops read the observed period once rs/470
 lands (pending), and a stop burns the name. run.ts records the change (the world feed's `hello` at
@@ -1678,14 +1797,31 @@ only a count, and names nobody. Bound: 1 min. Expect `0 other accounts` on an un
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'ENV=SCORED_ENV; cd ~/rs-sdk && S="$(sed -n "s/^BOT_USERNAME=//p" "$ENV")" timeout --kill-after=30s 1m ~/.bun/bin/bun -e "const { ROTATIONS, parseSteps } = await import(\"./speedrun/skills/mining.ts\"); const { playerNameKey } = await import(\"./speedrun/lib/demo-status.ts\"); const stands = parseSteps(ROTATIONS.five.steps).map(s => s.stand); const me = playerNameKey(process.env.S ?? \"\"); const b = await (await fetch(\"https://rs-sdk-demo.fly.dev/playerpositions\", { signal: AbortSignal.timeout(10000) })).json(); const all = Array.isArray(b) ? b : b.players; const n = all.filter(p => p.level === 0 && stands.some(([x, z]) => Math.max(Math.abs(p.x - x), Math.abs(p.z - z)) <= 1) && playerNameKey(p.name) !== me && !playerNameKey(p.name).startsWith(\"cairn \")).length; console.log(new Date().toISOString().slice(0, 19) + \"Z zoo iron cluster: \" + n + \" other accounts within 1 tile of a lap stand, \" + all.length + \" online\");"'
 ```
 
+**Before S16 C, S10b K and S12 F: three boundary checks** (main 16:2x-16:3x via rs/158; rs/185's
+competition census, RUN-ORDER.md R54; fold-in 31). Before each of these three, the operator reads the
+region for other players and **holds until it is clear**: rs/83's feed gives every player's position
+every 4 s without a login, through **rs/489's `--live` command** (its invocation pending rs/489: it
+is not on main). The hold is priced as main ruled: SCORED logs out at the safe point before the
+boundary (0 ticks on its clock + ~2 for the relog) where the module resumes from there; otherwise it
+waits logged in, every tick counted. From the modules' segment flags and rs/186's resume walk:
+
+| Boundary | The safe point before it | The hold |
+|---|---|---|
+| S16 C, Kolodion's fight (entering Kolodion's cellar) | the end of A, the kit, in the cellar (`logoutSafe` true; B and C are not) | **logged out**, 0 + ~2; the walk re-enters at B |
+| S10b K, the warlord | the end of J (J and K are `logoutSafe`; M is not) | **logged out**, 0 + ~2; the walk re-enters at K |
+| S12 F, Jeremy and the arena (the logout-unsafe stretch F-I) | the end of E, the cell keys (`logoutSafe` true) | **logged out**, 0 + ~2; the walk re-enters at F |
+
+**No hold exists for the Wilderness PvP window on the landing tile.**
+
 **Before S18: the knights' square** (rs/147's lever (1), via rs/158 at 13:39 PDT 2026-10-22).
 rs/453's census found 37 of 42 rival accounts at Thieving 99 standing in one East Ardougne square,
 the square of S18's knights (RUN-ORDER.md, S18's crowded-knight-square risk line). Players don't
 block players, so a crowd doesn't stop SCORED or the courier, though it may pin a knight in place
 (rs/147's read, on rs/477). Before S18 starts, the operator reads the square once and logs the count
 in the run's record with the least-crowded knight, beside S09's reading. **It is informational:**
-nobody steps in, and S18's module picks its own knight, with rs/480's opt-in
-`knight: { prefer: 'uncrowded' }` (rs/147's lever (2); off by default, floor-pending).
+nobody steps in, and S18's module picks its own knight. rs/479 measured no cost from a crowd (up to 40
+bots on one knight ran faster; RUN-ORDER.md R49, closed), so rs/480's `prefer: 'uncrowded'` is off the
+pending list and the count is information only.
 
 The square here is the knights' wander area: their four spawns, (2653,3300), (2669,3298),
 (2671,3313) and (2652,3318), each with `wanderrange=15` (thieving.md), so x 2637-2686 and z
@@ -1704,7 +1840,7 @@ square. Run it on the chosen machine. Bound: 1 min:
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'ENV=SCORED_ENV; cd ~/rs-sdk && S="$(sed -n "s/^BOT_USERNAME=//p" "$ENV")" timeout --kill-after=30s 1m ~/.bun/bin/bun -e "const { playerNameKey } = await import(\"./speedrun/lib/demo-status.ts\"); const me = playerNameKey(process.env.S ?? \"\"); const q = { x: 2637, z: 3283, w: 50, h: 51 }; const inQ = p => p.level === 0 && p.x >= q.x && p.x < q.x + q.w && p.z >= q.z && p.z < q.z + q.h; const b = await (await fetch(\"https://rs-sdk-demo.fly.dev/playerpositions\", { signal: AbortSignal.timeout(10000) })).json(); const all = Array.isArray(b) ? b : b.players; const others = all.filter(p => inQ(p) && playerNameKey(p.name) !== me && !playerNameKey(p.name).startsWith(\"cairn \")); const ks = await new Promise((ok, no) => { const ws = new WebSocket(\"wss://rs-sdk-demo.fly.dev/worldfeed\"); const t = setTimeout(() => { ws.close(); no(new Error(\"no knights from the world feed within 15 s\")); }, 15000); ws.onmessage = e => { const m = JSON.parse(String(e.data)); if (m.t === \"hello\") ws.send(JSON.stringify({ t: \"sub\", ...q })); else if (m.t === \"tick\" && Array.isArray(m.n)) { clearTimeout(t); ws.close(); ok(m.n.filter(r => r.f === 1 && (r.t === 23 || r.t === 26) && r.l === 0)); } }; ws.onerror = () => { clearTimeout(t); no(new Error(\"the world feed refused the connection\")); }; }); const near = k => others.filter(p => Math.max(Math.abs(p.x - k.x), Math.abs(p.z - k.z)) === 1).length; const d = k => Math.max(Math.abs(k.x - 2670), Math.abs(k.z - 3305)); const rows = ks.map(k => ({ x: k.x, z: k.z, n: near(k) })).sort((a, c) => a.n - c.n || d(a) - d(c)); console.log(new Date().toISOString().slice(0, 19) + \"Z knight square: \" + others.length + \" other accounts, \" + all.length + \" online; knights (tile, others adjacent): \" + (rows.map(r => \"(\" + r.x + \",\" + r.z + \") \" + r.n).join(\", \") || \"none seen\") + \"; least crowded: \" + (rows[0] ? \"the knight at (\" + rows[0].x + \",\" + rows[0].z + \"), \" + rows[0].n + \" adjacent\" : \"none\"));"'
 ```
 
-Its remote part, run through `bash -c` on fedora without SCORED's name at 20:53Z on 2026-10-22, exit
+Its remote part, run through `bash -c` on fedora (bginf-halo) without SCORED's name at 20:53Z on 2026-10-22, exit
 0, read (m, a dated observation of the demo):
 
 ```
@@ -1734,7 +1870,7 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 Dry-run it first ("Rules for every launch"): the same line with `printf "<%s>\n"` placed inside the
 quotes immediately before `timeout`, so the machine's shell prints the words it would run, one per
 line, and nothing attaches or logs out. The `-e` script must come back as one word; the output names
-no account, since the directory goes in `B`, which `printf` doesn't print (m, fedora, the same form
+no account, since the directory goes in `B`, which `printf` doesn't print (m, fedora (bginf-halo), the same form
 on a stand-in path, 2026-10-22).
 
 Expect `logged out; the page is out of game`, and exit 0. On exit 1 (`not confirmed`, or no
@@ -1770,11 +1906,33 @@ The brackets keep the pattern from matching the ssh command's own shell, whose c
 it. Without them the check always found that shell and never printed `tab stack stopped` (m, 17:37
 UTC).
 
+**Gate evidence is kept, never deleted** (the host, 15:4x PDT 2026-10-22, after rs/310's teardown deleted
+`/tmp/speedrun/gate-*.json` and with it a 56/60 reading's per-trial rows): (1) teardown never deletes
+`~/gate-history` or `~/rs-run/gate-*`; they are the run's gate evidence and are copied off with the
+recording (the timer writes the gate's full JSON under `gate` in `~/gate-history/<UTC>.json`;
+run-gate's `gate` writes `~/rs-run/gate-<UTC>/verdict.json`); (2) any ad-hoc gate or probe run under a
+claim copies its JSON (per-trial rows, `tickArrivalsMs`) into its evidence before teardown; (3)
+recordings and other large artifacts go to the operator's Mac via host (`~/rs-archive/<topic>/`,
+sha256 checked), never deleted.
+
 Then run the leftover check ("Rules for every launch"). After a rehearsal, release its claim;
 after the run, run.ts releases the run's on the chosen machine, and the operator releases the run's
 claim on the other machine (`rs-claim release run`), after which rehearsals there may resume. On the twin, if it was not chosen, `~/rs-sdk` then goes back to main for the
 attempts (step 0, "Twin:"). The session itself stays: nobody logs out of
 XFCE. The recording stays on the host until its copy on the Mac is checked.
+
+## Twin rehearsal with substitute supplies (rs/496)
+
+`speedrun/lab/twin-rehearsal.ts` (rs/496's driver, on rs/496's branch, not on main; main 17:5x via
+rs/158, fold-in 31) runs the chain on the twin with named substitute supplies:
+`--substitute=<json>` names them, and `--until=H11r` or an earlier step stops it. It refuses the scored
+account and the fleet's logins, and any run or host claim owner; **every gate still applies** (the
+claim, the login cap, tenet 12's gate). Run it with `--dry-run` first and read its plan.
+
+**A substitute row is written as SUBSTITUTE**, and it is excluded from measured totals and from
+RUN-ORDER.md's comparisons. **A rehearsal is always partial.** The approved substitutes: S04 by
+teleport xp; S07 on babydragon bones (no Prayer 99); S11a to 25, with H8 dropping the agility potion.
+No scored or runner change comes with it.
 
 ## Measured: gate (d) on this host, 2026-10-21, before the address change
 
@@ -1845,6 +2003,13 @@ All m. It shows that the run-night configuration passes all four conditions on t
 minute. Under tenet 17 the twin is a run candidate, so this is its own baseline; it replaces neither
 machine's gate read before the start (step 5a) nor the gate history on either (tenet 13 kept the
 twin for rehearsals only; tenet 17 narrowed it).
+
+## Measured: the run host's gate in a rehearsal session, 2026-10-22
+
+In rs/310's session E (cairn_jumps' Agility rehearsal; `uname -n` rs-ashburn-run), the run host's
+gate read the direct probe at **56/60**, below tenet 12's 58/60 floor (m, a dated reading, not a
+verdict on the run's gate). Its per-trial rows were lost when `/tmp/speedrun/gate-*.json` was deleted
+at teardown, which is why step 9 now keeps every gate's JSON.
 
 ## Measured: the route after the address change
 
@@ -1940,10 +2105,11 @@ slow but steady demo reads `late=0` (step 7).
 the demo). Its spectator feed's `hello` reads `tickMs` 400, and the gate probe's publication p50
 went from 300 to 396 ms between the 19:30Z and 20:00Z pairs (m, the host thread, relayed by rs/158
 at 13:0x PDT); rs/83 measured p50 402 (relayed by rs/158 at 13:1x PDT). The feed still read 400 at
-20:10Z (m, rs/469, step 5a's command, from fedora). Rows and the score are in ticks, so nothing is
+20:10Z (m, rs/469, step 5a's command, from fedora (bginf-halo)). Rows and the score are in ticks, so nothing is
 re-priced here; wall clock is x4/3, about 3.9 h for our row ("Rules for every launch"). Tenet 12's
-(a) is in ticks and unaffected; (b) and (c) become fractions of T with rs/471, pending; until it
-merges they are fixed millisecond values set at 300 ms (step 6).
+(a) is in ticks and unaffected; (b) and (c) are fractions of T on main since #385 (a4456c73,
+rs/471; fold-in 31): at T = 400 a catch-up is under 200 ms after over 466.7 ms, and (b)'s report line
+533.3 ms (step 6).
 
 ## Measured: the demo relay holding SDK actions, 2026-10-22
 
