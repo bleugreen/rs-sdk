@@ -130,6 +130,8 @@ try {
     const hello = await Promise.race([feed.hello, Bun.sleep(10_000).then(() => null)]);
     if (!hello) throw new Error(`no hello from the world feed at ${feedUrl}: start the engine with WORLD_FEED=true (film.sh does)`);
     observer.onStateUpdate(s => observed.push(...diff.next(s, Date.now())));
+    // Film from a known server tick: the first tick frame follows the hello's sub by up to a tick.
+    for (let i = 0; i < 50 && !feed.ticks().length; i++) await Bun.sleep(100);
 
     const box = await page.evaluate(() => {
         const r = document.querySelector('canvas')!.getBoundingClientRect();

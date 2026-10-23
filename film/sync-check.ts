@@ -11,8 +11,9 @@
 //
 //   bun film/sync-check.ts <clip dir> [--n=12]
 //
-// Writes <clip dir>/sync.json and sync-sheet.jpg (for the first --n chat events: the frame before
-// videoMs and the first changed frame, side by side). Regions are in the 765 x 503 client's pixels.
+// Writes <clip dir>/sync.json, sync-sheet.jpg (for the first --n chat events: the frame before
+// videoMs and the first changed frame, side by side) and sync-regions.jpg (the regions measured,
+// outlined). Regions are in the 765 x 503 client's pixels.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -31,17 +32,23 @@ export const REGIONS = {
     inventory: { x: 560, y: 210, w: 176, h: 250 }
 } as const satisfies Record<string, Region>;
 
-/** Mean absolute difference between consecutive frames of a w x h gray stream (diff[0] = 0). */
+/** A pixel has changed when its grey level moves by more than this: above the encoder's ripple. */
+export const CHANGED_LEVELS = 24;
+
+/**
+ * How many pixels changed between consecutive frames of a w x h gray stream (diff[0] = 0). A count,
+ * not a mean: one inventory icon leaving moves a region's mean by less than the encoder's noise.
+ */
 export function frameDiffs(gray: Uint8Array, w: number, h: number): number[] {
     const size = w * h;
     const n = Math.floor(gray.length / size);
     const out = [0];
     for (let i = 1; i < n; i++) {
-        let sum = 0;
+        let count = 0;
         const a = (i - 1) * size;
         const b = i * size;
-        for (let j = 0; j < size; j++) sum += Math.abs(gray[b + j]! - gray[a + j]!);
-        out.push(sum / size);
+        for (let j = 0; j < size; j++) if (Math.abs(gray[b + j]! - gray[a + j]!) > CHANGED_LEVELS) count++;
+        out.push(count);
     }
     return out;
 }
@@ -58,10 +65,10 @@ export function firstChange(diffs: readonly number[], fps: number, from: number,
     return null;
 }
 
-/** A change threshold well above a region's resting noise. */
+/** A change threshold well above a region's resting noise: 4x its median count, at least 40 pixels. */
 export function threshold(diffs: readonly number[]): number {
     const v = [...diffs].sort((a, b) => a - b);
-    return Math.max(1, 4 * (v[Math.floor(v.length / 2)] ?? 0));
+    return Math.max(40, 4 * (v[Math.floor(v.length / 2)] ?? 0));
 }
 
 async function grayRegion(video: string, r: Region): Promise<Uint8Array> {
@@ -155,11 +162,14 @@ if (import.meta.main) {
         tickMs,
         fps,
         frameMs: +(1000 / fps).toFixed(1),
-        method: 'per-frame mean absolute difference of a gray crop of the decoded clip; the first frame above 4x the region\'s median difference (at least 1 grey level) inside the search window is the change',
+        method: `per frame of the decoded clip, the pixels of a gray crop that moved more than ${CHANGED_LEVELS} grey levels since the previous frame; the first frame inside the search window with more than 4x the region's median count (at least 40) is the change`,
         chat: { region: REGIONS.chat, window: [-800, 1200], threshold: chat.thr, events: chat.events, found: chat.found, offsetMs: summary(chat.offsets, tickMs), sample: chat.hits.slice(0, n) },
         action: { region: REGIONS.inventory, window: [-100, 2000], threshold: action.thr, events: action.events, found: action.found, offsetMs: summary(action.offsets, tickMs), sample: action.hits.slice(0, n) },
         feed: { followedSlot: slot, matched: feedOffsets.length, clientMinusFeedMs: summary(feedOffsets, tickMs) }
     };
+    // The regions measured, outlined on a frame mid-clip.
+    const box = (r: Region, c: string) => `drawbox=x=${r.x}:y=${r.y}:w=${r.w}:h=${r.h}:color=${c}:t=2`;
+    Bun.spawnSync(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', '-ss', String(Math.max(0, durationMs / 2000)), '-i', video, '-vf', `${box(REGIONS.chat, 'red')},${box(REGIONS.inventory, 'yellow')}`, '-frames:v', '1', '-q:v', '3', join(dir, 'sync-regions.jpg')]);
     writeFileSync(join(dir, 'sync.json'), JSON.stringify(report, null, 2) + '\n');
     console.log(`RESULT sync ${JSON.stringify({ chat: { found: `${chat.found}/${chat.events}`, ...report.chat.offsetMs }, action: { found: `${action.found}/${action.events}`, ...report.action.offsetMs }, feed: report.feed })}`);
 }
