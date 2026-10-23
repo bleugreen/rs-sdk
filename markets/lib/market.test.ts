@@ -97,7 +97,7 @@ describe('book depth', () => {
         expect(asksAtOrBelow(shark, 506)).toBe(0);
         // at the mean, the bound proves nothing: the whole side could sit just above it
         expect(asksAtOrBelow(shark, 701)).toBe(2_003_290 - Math.floor((1_403_983_415 - 2_003_290 * 507) / 195));
-        expect(asksAtOrBelow(shark, 701)).toBeLessThan(10_000);
+        expect(asksAtOrBelow(shark, 701)).toBe(11_930);
         // a book whose every unit is at the best ask
         expect(asksAtOrBelow({ ...shark, sellValue: 2_003_290 * 507 }, 507)).toBe(2_003_290);
         // far above the mean most of the side is provably there
