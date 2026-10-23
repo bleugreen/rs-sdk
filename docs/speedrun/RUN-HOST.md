@@ -152,7 +152,7 @@ timer", below "The host"). Who takes one:
 
 **A claim keeps its gate evidence** (fold-in 31): an ad-hoc gate or probe run under a claim copies
 its JSON (per-trial rows, `tickArrivalsMs`) into its evidence before the claim's teardown, and no
-teardown deletes `~/gate-history` or `~/rs-run/gate-*` (step 9).
+teardown deletes `~/gate-history`, `~/rs-run/gate-*` or `~/rs-run/<run>/load.log` (step 9).
 
 **Leave nothing running on a machine without a claim.** The timer also skips while the machine is
 busy (a tmux server that answers, bun, ffmpeg, or a Chrome with its own profile), and a busy skip is
@@ -515,6 +515,16 @@ the page's half of that rule (`frames.ts`, with the program runtime's `tickMs` s
 the served bot bundle, so a bundle built before a4456c73 still judges (c) at 150 / 350 ms. host
 rebuilds the bundle on each machine at a commit at or after a4456c73 (the floor contains it), and
 step 3's served = built check then runs within each machine as usual.
+
+**The served webclient is rebuilt from the run commit at every step 0** (main 21:3x via rs/158;
+fold-in 33). The final run commit carries an `sdk/` change (**rs/564**, the `sdk/` snapshot carrying rs/186's
+`walkTo` fix, 01304312; fleet snapshot 11 also moves the floor), and the SDK reaches the tab only
+through the served bot bundle. So whenever `~/run-commit` changes, the install and build above run
+again on both machines before anything is launched, and step 3's served = built check confirms
+that each machine serves what it built from that commit. A bundle built from an earlier commit is
+never served to SCORED's tab, even when the page server is already up (it serves `out/bot` with
+`no-store`, so the rebuild needs no restart of it). Main names the final commit by 12:00Z (12:30Z
+absolute), leaving this rebuild its 20 minutes before the 13:00Z freeze (RUN-ORDER.md section 1).
 
 **The floor check, a hard stop** (main's ruling, relayed by rs/158 at 09:24 PDT 2026-10-22;
 STEP-MANIFEST.md entry 0). The floor is read from entry 0's line on origin/main, "`RUN_COMMIT` at
@@ -1250,6 +1260,26 @@ has yet been seen going bad mid-run (the host thread, 16:15 PDT).
 
 ## 6. Quiesce check and the gate (`gate`)
 
+**The load ceiling** (main 22:3x via rs/158, from the host thread; fold-in 33). The chosen
+machine's 1-minute load average stays **under 4.0** (half its 8 vCPUs) for the whole run. The
+reason: a helper on a CPU-starved host fails readiness closed. Its held-status goes stale past 3 s
+against a 400 ms write cadence, so a healthy mule reads as not ready (main's delivery-engine proof:
+load 37 on 8 cores did it in 7 s).
+
+- **Pre-start.** Load under 4.0 when the gate passes is a start condition in the same class as
+  tenet 12's (d). If it is not met, the start waits and the gate is re-read.
+- **Mid-run.** At the hand-off (step 7) host starts an untracked sampler on the chosen machine,
+  writing every 30 s to `~/rs-run/<run>/load.log`: the UTC time, `/proc/loadavg`, and the CPU use
+  of chrome, ffmpeg and each helper process. A sample at or over 4.0 is logged and alerts the
+  operator's live view; **the run does not stop** (helpers fail closed and sit out rather than
+  misfire). Two consecutive samples at or over 4.0 also go to main, which decides whether to stop a
+  helper on the machine.
+- **sysstat.** Both machines sample sysstat every minute (the drop-in
+  `/etc/systemd/system/sysstat-collect.timer.d/every-minute.conf`, in place since 05:28Z 23 Oct);
+  teardown removes it after the run (step 9).
+- **Measured headroom, recording on, no helpers:** peak 2.18 on the run host, 2.27 on the twin (m).
+  The dress rehearsal (rs/496) is the first measurement with helpers on the machine: **pending**.
+
 **Quiesce.** Nothing runs on the machine but the session's desktop, the `run` tmux stack (gateway,
 page server, recording, live view), rs/117's launcher with its lite runners and roles, and system
 daemons. On the twin, no rehearsal process or Xvfb either (the leftover check, "Twin:"). The drained
@@ -1730,7 +1760,88 @@ rs/529's API**, and are not written here until they exist):
 - A crash that never reached the abort path cancels nothing, so a crash-resume is unchanged.
 - The run-bound hold (generation 0) is its own state, never a cancel; S22's prepare advances it.
 
-**Once rs/511 is on the floor** (rs/511, under rs/186: built and unit-tested, and lab-measured
+**Re-running after a StepError** (main 21:5x via rs/158; rs/186's code read at its mission tip,
+22:2x, run.ts living on rs/186 until the run-chain snapshot rs/563 merges; fold-in 33). run.ts
+never re-invokes a step that throws: `runner/step.ts:262-289` raises `StepError(step, phase,
+detail)`, the phase `precondition`, `run` or `postcondition`, and `resume.ts:337-344` retries only
+a link, session or page-reload failure. `lib/attempt.ts:108-114` catches it in the world and run.ts
+stops with exit 1. The only recovery is the operator re-running the command, and where it enters is
+decided from game state, not from the log (`resolveResume`, `resume.ts:123-152`). A manual re-run
+costs **~150-450 ticks (i)**; rs/546 measures one kill-and-re-run (RUN-ORDER.md section 7, the
+ladder's general note).
+
+**What the operator sees.** `[run] FAILED: <message>` (`attempt.ts:112`, `run.ts:526`), then
+`[run] logout: ...` (`run.ts:371, 397`): **run.ts logs SCORED out after a StepError**, and on the
+way out writes a FINAL stop to every open helper cue (`run.ts:404`, `cue-keeper.ts:158-164`), so
+the launcher logs the failed step's helper family out; the re-run opens a new cue session for the
+scope, and whether the launcher logs the family back in on it is unconfirmed (rs/186 has asked rs/41;
+rs/186 may make the StepError path a non-final stop, so helpers stand by for the re-run). Exit code 1 (the
+codes at `run.ts:45-46`). A hard kill, SIGTERM (it exits before the cue close, `run.ts:376-389`,
+being fixed by rs/546) or a throw before the chain starts (an uncaught stack trace,
+`run.ts:518, 548-553`, e.g. S21's relog refused at startup) leaves the cues armed instead.
+
+The checks, in order, before re-running. Any one failing means **do not re-run: tell main**.
+
+1. **The StepError's step, phase and reason**, from the `[run] FAILED:` line in the run log
+   (`<run dir>/run.jsonl` unless `--log` named another, `run.ts:134-137`), and exit code 1. Note
+   them for main and for the attempt's findings.
+2. **SCORED logged out cleanly**: the `[run] logout:` line, and the run tab on the title screen
+   (`tab.ts` `pageInGame` false over the tab's DevTools, never the gateway's `inGame`). If the page
+   still reads in game or the log has no logout line, ask main first.
+3. **The relog lock is free**: `<run dir>/relog.lock` (`runner/relog-budget.ts:172-182`). The next
+   taker removes a lock whose pid is dead, so it needs clearing by hand only when the pid it names
+   is alive: then confirm that process is not a relog in progress (run.ts or `relog-now.ts`) before
+   removing the lock, and ask main if unsure.
+4. **Nothing else is cleared.** Keep `<run dir>/relogs.json` (it holds S21's open entry, which the
+   re-run needs, `run.ts:436-460`), the cue dir and the run dir (cleared only on a fresh start,
+   `run.ts:507-509`, `cue-keeper.ts:24-38`).
+5. **The host claim is still held and live**: run.ts releases it only on success (`run.ts:533`); an
+   expired claim makes gate 2 refuse with an `rs-claim take ...` hint (`run.ts:252-261`), so retake it
+   as step 0 does first.
+6. **The helpers**: a StepError writes a final stop to open helper cues, so the failed step's
+   helpers are logged out. Before re-running, confirm the failed step's helper family is logged
+   back in, or log it in by hand (step 4); re-arm-on-new-cue after a final stop is pending
+   rs/41 / rs/186.
+7. **The step is not on the non-admitting list**: RUN-ORDER.md section 7's margin ladder, its
+   attempt-ending lines and the conditional note for A and B (until B merges, any step after H7;
+   until A merges, S18 after its first stocked stun and S22 after its first catch). Some lines name an
+   operator fix before the re-run instead (S25a: walk SCORED to the anvil; S06 or S21: re-enter
+   through the ruins; S21's relog logout half: log SCORED in by hand); the rest end the attempt.
+
+**The re-run is the bare launch command, unchanged**: `bun speedrun/run.ts` with the same
+arguments as the first launch (usage `run.ts:75-79`, parsing `run.ts:113-142`), the same `--run-dir`
+and `--log`; there is no resume flag (the launch line itself is pending with rs/563, step 7).
+**Never pass `--from` on a re-run**: it forces that step to run with no walk and no `done` check
+(`resume.ts:305-307`), so `--from` into a finished step runs it again.
+
+**The line to expect**, one per walk (`run.ts:395`):
+
+```
+[resume] {"kind":"resume","attempt":N,"point":{"index":I,"mode":"run|resume|finished","step":"<name>","lastDone":L,"firstUndone":F,"reason":"..."}}
+```
+
+The reason is `<step> is in progress` (mode `resume`), `<step> can start` (mode `run`) or
+`every milestone is done` (`finished`) (`resume.ts:141-148`); a quest's step name carries its
+segment (e.g. `S05:A-h4-swap`), and the tick log gets a `(resume)` row with the same fields
+(`resume.ts:313`). It should name the step the StepError named, or the next one if that step's
+`done` already holds. Any other step: stop and ask main.
+
+**A refusal goes to main**, nothing changed by hand:
+
+- a start gate, before anything logs in: `[gate] REFUSED <gate>: <detail>` and `[run] nothing was
+  logged in`, exit 3 (`run.ts:495-504`);
+- the walk: `[run] FAILED: no step can start from the observed state (last done milestone #L,
+  first undone #F): <step>: <why>; ...`, exit 1, SCORED logged out (`resume.ts:69-74, 151`);
+- the walk throwing while SCORED is not in the world: `[run] resume: run the same command again`,
+  exit 4 (`attempt.ts:111`, `run.ts:536`): re-run once; a second refusal means stop and escalate,
+  never loop;
+- **the S00 edge** (`resume.ts:296`, `start.ts:222`): `runResumable` waits only for any published
+  state, and S00's `done` needs a player, so a re-run whose first state has no player sees S00 undone
+  and refuses 'not in game'. Until rs/562's bounded wait for a populated player state lands, on an
+  account past the tutorial re-run once more.
+
+**Once rs/547 is on the floor** (rs/547, rs/511's successor under rs/186, its PR due 01:00 PDT;
+the figures below were measured on rs/511's patch: built and unit-tested, and lab-measured
 on bgsrv-mac, the lab engine at 400 ms, the browser client, tree 1fccc5b7 + rs/511's patch,
 cairn://p/rs/511/comments/2; fold-in 32). **rs/511 is not a start condition** (main), so the
 manual relog above stays the procedure for a run commit without it, attempt 1's included. The
@@ -1956,14 +2067,16 @@ UTC).
 
 **Gate evidence is kept, never deleted** (the host, 15:4x PDT 2026-10-22, after rs/310's teardown deleted
 `/tmp/speedrun/gate-*.json` and with it a 56/60 reading's per-trial rows): (1) teardown never deletes
-`~/gate-history` or `~/rs-run/gate-*`; they are the run's gate evidence and are copied off with the
+`~/gate-history`, `~/rs-run/gate-*` or `~/rs-run/<run>/load.log` (the load sampler's, step 6; fold-in 33); they are the run's gate evidence and are copied off with the
 recording (the timer writes the gate's full JSON under `gate` in `~/gate-history/<UTC>.json`;
 run-gate's `gate` writes `~/rs-run/gate-<UTC>/verdict.json`); (2) any ad-hoc gate or probe run under a
 claim copies its JSON (per-trial rows, `tickArrivalsMs`) into its evidence before teardown; (3)
 recordings and other large artifacts go to the operator's Mac via host (`~/rs-archive/<topic>/`,
 sha256 checked), never deleted.
 
-Then run the leftover check ("Rules for every launch"). After a rehearsal, release its claim;
+After the run, remove the every-minute sysstat drop-in
+(`/etc/systemd/system/sysstat-collect.timer.d/every-minute.conf`, then `systemctl daemon-reload`)
+on both machines (step 6, "The load ceiling"). Then run the leftover check ("Rules for every launch"). After a rehearsal, release its claim;
 after the run, run.ts releases the run's on the chosen machine, and the operator releases the run's
 claim on the other machine (`rs-claim release run`), after which rehearsals there may resume. On the twin, if it was not chosen, `~/rs-sdk` then goes back to main for the
 attempts (step 0, "Twin:"). The session itself stays: nobody logs out of
