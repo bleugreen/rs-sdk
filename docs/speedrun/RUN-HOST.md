@@ -1464,7 +1464,7 @@ rs/163) the start is ~90 with the gathering fleet's ~53 in and 37 without it, so
 unneeded fleet out first is mandatory**. Those counts have S21's givers in from SCORED's first
 login. Under the per-address plan they log in later, inside SCORED's relog before S21, on the chosen
 machine (step 4; RUN-ORDER.md O38 for the machine), so the start is lower: rs/41's map puts SCORED's
-address at 24 at the start (step 5a.4) and 26 during S21's ramp, and the home address at 29 fleet accounts plus
+address at 25 at the start (step 5a.4; 24 before fold-in 36's 17-account roster) and 26 during S21's ramp (worst case 29), and the home address at 29 fleet accounts plus
 the cannon helper. Do not log SCORED in over either cap. `handoff` re-checks it as a hard check: our accounts
 online, as `rs-claim status` counts them on `/playerpositions` (every host's), plus SCORED's 1, at
 most 80 (`--cap`); it refuses if the count can't be read. **The code counts a total, not an
