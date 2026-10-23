@@ -19,6 +19,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { executionContext } from '../../sdk/execution-context';
 import type { BotSDK } from '../../sdk/index';
+import { pointMarketAtServer } from '../../speedrun/helpers/mule';
 import { memoryRoleState } from '../../speedrun/helpers/role';
 import { cheat, leaveTutorial, mustTele } from '../../speedrun/lab/setup';
 import { depositMatching } from '../../speedrun/lib/bank';
@@ -70,6 +71,7 @@ async function withSession<T>(name: string, work: (sdk: BotSDK, bot: Awaited<Ret
     const env = loadBotEnv(name);
     const session = await openDirectSession({ host: server, username: env.BOT_USERNAME, password: env.PASSWORD, profanityFilter: false });
     const { sdk, bot } = await session.connectSdk({ showChat: false });
+    pointMarketAtServer(sdk, server);
     const ctl = new AbortController();
     try {
         return await executionContext.run({ signal: ctl.signal }, async () => {
