@@ -1,0 +1,13 @@
+// Fixture: two shops, one restocking and one not.
+[runeshop_fx]
+scope=shared
+restock=yes
+size=3
+stock1=bloodrune,1000,300
+stock2=airrune,3000,18
+stock3=cosmicrune,20
+
+[atollshop_fx]
+scope=shared
+size=1
+stock1=airrune,1000,10
