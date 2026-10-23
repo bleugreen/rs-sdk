@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { contentObjs, keepPriciest, objOf, objTable, untradeable, type ObjInfo } from '../lib/death-keep';
+import { keepPriciest, objOf, objTable, type ObjInfo } from '../lib/death-keep';
+import { untradeable } from '../lib/items';
 import { parseLedger } from '../tools/slot-ledger';
 import { CANNON, r8Package, R8_PHASES, respawnCheck, type R8Phase } from './r8-package';
 
@@ -95,8 +96,7 @@ describe('a respawn package from the ledger', () => {
         expect(topUp.entries[0]!.row.in.find(e => e.name === 'shark')!.count).toBe(5);
     });
     test('an untradeable need is in neither form; a row that uses it then refuses the package', () => {
-        const objs = objTable([...OBJS.byDebug.values()].map(v => (v.debug === 'shark' ? { ...v, tradeable: false } : v)));
-        const p = r8Package(PHASE, { manifest: TABLE, objs });
+        const p = r8Package(PHASE, { manifest: TABLE, objs: OBJS, untradeable: id => id === 3 });
         expect(p.byId.some(l => l.id === 3)).toBe(false);
         expect(p.topUp.some(l => l.id === 3)).toBe(false);
         expect(p.unrecoverable).toEqual([{ item: 'shark', id: 3, death: 'H1', deployed: false, count: 6, needs: 'consume at S2; 1 eaten from 1 HP to 21', cost: 300, keptMin: 1000 }]);
@@ -146,14 +146,12 @@ describe("R8's phases on STEP-MANIFEST.md", () => {
         });
         test(`${phase.id}: no untradeable id in either form`, () => {
             const p = r8Package(phase);
-            const objs = contentObjs();
-            for (const l of [...p.byId, ...p.topUp]) expect(untradeable(objs, l.id!)).toBe(false);
+            for (const l of [...p.byId, ...p.topUp]) expect(untradeable(l.id!)).toBe(false);
         });
     }
     test('the quest kit reads untradeable (quest_arena.obj, quest_mm.obj)', () => {
-        const objs = contentObjs();
-        for (const id of [74, 75, 4021]) expect(untradeable(objs, id)).toBe(true);
-        expect(untradeable(objs, 385)).toBe(false);
+        for (const id of [74, 75, 4021]) expect(untradeable(id)).toBe(true);
+        expect(untradeable(385)).toBe(false);
     });
     test("R8c: every death point keeps the m'speak amulet, so its line is 'kept at H13, S16, nothing needed'", () => {
         const p = r8Package(R8_PHASES.find(ph => ph.id === 'R8c')!);
@@ -162,14 +160,13 @@ describe("R8's phases on STEP-MANIFEST.md", () => {
         expect(p.recoverable).toBe(true);
     });
     test('R8a and R8b: the Khazard helmet and armour, kept at no death point, come back as the iron med helm and platebody, worn', () => {
-        const objs = contentObjs();
         for (const id of ['R8a', 'R8b']) {
             const p = r8Package(R8_PHASES.find(ph => ph.id === id)!);
             for (const w of p.walks) expect(w.kept.some(k => /^khazard/.test(k.name))).toBe(false);
             const subs = p.lines.filter(l => l.substituteFor);
             expect(subs.map(l => l.why.split(' (')[0])).toEqual(['iron med helm for khazard helmet', 'iron platebody for khazard armour']);
             for (const s of subs) {
-                expect(untradeable(objs, s.id!)).toBe(false);
+                expect(untradeable(s.id!)).toBe(false);
                 expect(p.byId).toContainEqual({ id: s.id!, amount: 1 });
                 for (const w of p.walks) expect(w.entries.find(e => e.row.row === `H94 ${id}`)!.worn).toContain(s.item);
             }

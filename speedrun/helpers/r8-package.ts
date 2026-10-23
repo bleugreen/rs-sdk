@@ -15,7 +15,7 @@
 //      covers: a unit kept at one point and dropped at another stays in the package;
 //   5. the cannon set and its balls stay out (rs/41's ruling): a deployed cannon waits on the ground
 //      for its owner, a carried one lost comes from cairn_h92's repeat of its hand-off; an untradeable
-//      item (`tradeable=no` or a dummy: the Khazard armour, the M'speak amulet) is never emitted in
+//      item (lib/items.ts `untradeable`: the Khazard armour, the M'speak amulet) is never emitted in
 //      either form, since no helper can hand it over: kept at every death point it reads 'kept at
 //      ..., nothing needed'; else its TRADE_SUBSTITUTES stand-in goes in by id (worn at the respawn
 //      where the original was worn); else each death point that does not keep it gets an
@@ -36,7 +36,8 @@
 //       every phase's package, its kept units, its walks; exit 1 when a phase has neither form stageable
 import { readFileSync } from 'node:fs';
 
-import { contentObjs, keepPriciest, objOf, untradeable as refusedInTrade, type HeroUnit, type ObjTable } from '../lib/death-keep';
+import { contentObjs, keepPriciest, objOf, type HeroUnit, type ObjTable } from '../lib/death-keep';
+import { untradeable } from '../lib/items';
 import { FAILING, MANIFEST, parseLedger, render, walk, type Held, type InEntry, type Kind, type LedgerEntry, type LedgerRow } from '../tools/slot-ledger';
 import { packageOf, type Package, type PackageItem } from './mule';
 
@@ -190,6 +191,8 @@ export interface R8Options {
     objs?: ObjTable;
     /** Units the engine keeps: 3, or 4 under Protect Item. */
     keep?: number;
+    /** Whether the engine refuses obj `id` in a trade: lib/items.ts `untradeable` (tests pass their own). */
+    untradeable?: (id: number) => boolean;
 }
 
 // ------------------------------------------------------------------ the ledger's later use of an item
@@ -307,6 +310,7 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
     if (errors.length) throw new Error(`the inventory ledger does not parse: ${errors.join('; ')}`);
     const objs = o.objs ?? contentObjs();
     const keep = o.keep ?? 3;
+    const refusedInTrade = o.untradeable ?? untradeable;
     const entries = walk(rows);
     const at = (id: string) => {
         const found = rows.map((r, i) => (r.row === id ? i : -1)).filter(i => i >= 0);
@@ -392,7 +396,7 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
         const k = Math.min(n.count, keptAll.get(lc(n.item)) ?? 0);
         const c = obj({ name: n.item, ...(n.id !== undefined ? { id: n.id } : {}) });
         if (!c || c.id === undefined) refusals.push(`${phase.id}: no obj id for ${n.item}`);
-        const tradeable = !(c?.id !== undefined && refusedInTrade(objs, c.id));
+        const tradeable = !(c?.id !== undefined && refusedInTrade(c.id));
         const why = n.why.join('; ');
         const keptAlways = !tradeable && k >= n.count;
         return { item: n.item, ...(c?.id !== undefined ? { id: c.id } : {}), kind: n.kind, need: n.count, kept: k, give: tradeable ? n.count - k : 0, tradeable, why: keptAlways ? `kept at ${phase.deaths.map(d => d.row).join(', ')}, nothing needed (${why})` : why };
@@ -406,7 +410,7 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
         if (!lost) continue;
         const c = obj({ name: sub });
         if (!c || c.id === undefined) refusals.push(`${phase.id}: no obj id for ${sub}`);
-        else if (refusedInTrade(objs, c.id)) refusals.push(`${phase.id}: ${sub}, the substitute for ${l.item}, is untradeable too`);
+        else if (refusedInTrade(c.id)) refusals.push(`${phase.id}: ${sub}, the substitute for ${l.item}, is untradeable too`);
         lines.push({ item: sub, ...(c?.id !== undefined ? { id: c.id } : {}), kind: l.kind, need: lost, kept: 0, give: l.need - l.kept, tradeable: true, substituteFor: l.item, why: `${sub} for ${l.item} (${l.why})` });
     }
     // An untradeable need a death point's keep does not cover and no substitute stands in for: no

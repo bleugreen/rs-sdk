@@ -24,11 +24,6 @@ export interface ObjInfo {
     destroy: boolean;
     /** Has a `wearpos=`: it can be worn. */
     wearable?: boolean;
-    /**
-     * false when the engine refuses it in a trade (trade.rs2): `tradeable=no|false` or a dummy item,
-     * rs/488's rule (its `untradeable(id)` in lib/items.ts, which replaces this once on the mission branch).
-     */
-    tradeable?: boolean;
     /** obj.pack's id for the debug name; undefined when the pack lacks it. */
     id?: number;
 }
@@ -72,7 +67,7 @@ export function contentObjs(dir = CONTENT_SCRIPTS, pack: ObjPack = objPack()): O
             const debug = b.match(/^\[([^\]]+)\]/)?.[1];
             const name = b.match(/^name=(.*)$/m)?.[1];
             if (!debug || !name || /^certtemplate=/m.test(b)) continue;
-            objs.push({ debug, name, cost: Number(b.match(/^cost=(\d+)$/m)?.[1] ?? 0), destroy: /^param=destroy_death,\^true$/m.test(b), wearable: /^wearpos=/m.test(b), tradeable: !/^(tradeable=(no|false)|dummyitem=.*)$/m.test(b), id: pack.ids.get(debug) });
+            objs.push({ debug, name, cost: Number(b.match(/^cost=(\d+)$/m)?.[1] ?? 0), destroy: /^param=destroy_death,\^true$/m.test(b), wearable: /^wearpos=/m.test(b), id: pack.ids.get(debug) });
         }
     }
     const table = objTable(objs);
@@ -93,11 +88,6 @@ export function objOf(table: ObjTable, item: { name: string; id?: number; worn?:
     if (exact) return exact;
     const pool = item.worn ? all.filter(o => o.wearable) : all;
     return pool.length === 1 ? pool[0] : undefined;
-}
-
-/** Whether the engine refuses obj `id` in a trade, by the table's configs; an id it lacks reads as tradeable. */
-export function untradeable(table: ObjTable, id: number): boolean {
-    return table.byId.get(id)?.tradeable === false;
 }
 
 /** A stack on the hero for the keep: `count` units of one obj, worn or carried. */
