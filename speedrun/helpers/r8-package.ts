@@ -9,8 +9,14 @@
 //      consumes or hands in, wields (+NAME), or wears through a step before it leaves; one whose first
 //      later appearance is a swap, trade, deposit or drop is returned unused and left out (the rule
 //      docs/speedrun/scripts/r8-deaths.ts classes lost items by);
+//      A row that is one of the runner's legs (runner/legs.ts, by id) also uses what its
+//      preconditions demand held, `legPreconditions`' own sources: `neededBy` (lib/travel.ts
+//      `hopNeeds`: the webs' knife, the talisman an altar takes) and its `food`. A tool merely held for
+//      a leg leaves no out or equip line in the ledger, so the ledger alone would call it unused;
 //   3. plus what the replayed legs consume (the teleport runes back from Lumbridge) and the sharks
-//      that heal 1 HP back to the phase's HP (a shark heals 20; r8-deaths.ts's figure);
+//      that heal 1 HP back to the phase's HP (a shark heals 20; r8-deaths.ts's figure); and what a
+//      replayed leg needs held at its start by the same rule, raised to rather than added (a held
+//      tool is not used up; food is, so a leg's food comes on top of the heal eaten before it);
 //   4. less the units the engine keeps (lib/death-keep.ts, death.rs2), at every death point the phase
 //      covers: a unit kept at one point and dropped at another stays in the package;
 //   5. the cannon set and its balls stay out (rs/41's ruling): a deployed cannon waits on the ground
@@ -25,8 +31,9 @@
 // of a package line), the fallback H10/H12/H22 use while no ask writer serves the top-up form.
 // Each package then has to pass `respawnCheck`: the slot ledger walked from the respawn state (the
 // kept units in the pack, the package traded in, the worn set put back on, the sharks eaten) through
-// the replayed legs, the cannon's re-supply and the phase's rows. A row short, over 28 slots, or
-// using something not held refuses that form: its package is then null, so it cannot be staged. The
+// the replayed legs, the cannon's re-supply and the phase's rows. A row short, over 28 slots, using
+// something not held, or a leg row the runner's `legPreconditions` refuses from the held set the walk
+// reaches it with (a missing knife, too little food) refuses that form: its package is then null, so it cannot be staged. The
 // check runs per death point and per form, since each death keeps its own units.
 //
 // The package comes in two forms: by id (`byId`, a fixed amount: the target less the kept units) and
@@ -37,8 +44,12 @@
 //       every phase's package, its kept units, its walks; exit 1 when a phase has neither form stageable
 import { readFileSync } from 'node:fs';
 
+import type { BotWorldState, InventoryItem, PlayerState } from '../../sdk/types';
 import { contentObjs, keepCost, keepPriciest, objOf, type HeroUnit, type ObjTable } from '../lib/death-keep';
+import { baseState } from '../lib/fake-sdk';
 import { untradeable } from '../lib/items';
+import { FOOD as RUNNER_FOOD, type Tile } from '../lib/travel';
+import { legPreconditions, legsFor, neededBy, TILES, type LegDef, type LegStep } from '../runner/legs';
 import { FAILING, MANIFEST, parseLedger, render, walk, type Held, type InEntry, type Kind, type LedgerEntry, type LedgerRow } from '../tools/slot-ledger';
 import { packageOf, type Package, type PackageItem } from './mule';
 
@@ -194,7 +205,12 @@ export interface R8Options {
     keep?: number;
     /** Whether the engine refuses obj `id` in a trade: lib/items.ts `untradeable` (tests pass their own). */
     untradeable?: (id: number) => boolean;
+    /** The runner's leg catalogue a ledger row id names a leg in (RUN_LEGS by default). */
+    legs?: readonly LegStep[];
 }
+
+/** The catalogue runner/chain.ts runs: section 2's legs with the body altar's T20-21 and T21-22. */
+export const RUN_LEGS: readonly LegStep[] = legsFor({ s21Altar: 'body' });
 
 // ------------------------------------------------------------------ the ledger's later use of an item
 
@@ -211,13 +227,33 @@ const isStep = (r: LedgerRow) => /^S\d/.test(r.row) && !NO_KIT_STEPS.includes(r.
 const isCannon = (name: string) => (CANNON as readonly string[]).includes(lc(name));
 const USES = new Set(['consume', 'hand-in']);
 
+/** The runner's leg a ledger row id names, or undefined (a step, a hand-off). */
+export const legOf = (legs: readonly LegStep[], row: string): LegDef | undefined => legs.find(l => l.def.id === row)?.def;
+
+/**
+ * How many of `item` leg `def` needs held at its start, and why, or null: the runner's own rule
+ * (`legPreconditions`), `neededBy` over its hops (lib/travel.ts `hopNeeds`) for a held tool, and its
+ * `food` for any food (lib/travel.ts FOOD). A tool counts 1: runes and coins are spent, so the
+ * ledger's consume lines size them, and the walk's precondition check holds them to the count.
+ */
+export function legNeed(def: LegDef, item: { name: string; id?: number }): { count: number; why: string } | null {
+    if (def.food && RUNNER_FOOD.test(item.name)) return { count: def.food, why: `${def.food} food held for ${def.id}` };
+    if (neededBy(def.hops, item.name, item.id)) return { count: 1, why: `held for ${def.id}'s hops (hopNeeds)` };
+    return null;
+}
+
 /** Why the ledger still needs `item` from row `from` on, or null when it is returned unused. */
-export function laterUse(rows: readonly LedgerRow[], entries: readonly LedgerEntry[], from: number, item: string): string | null {
+export function laterUse(rows: readonly LedgerRow[], entries: readonly LedgerEntry[], from: number, item: string, legs: readonly LegStep[] = RUN_LEGS): string | null {
     let wornThrough: string | null = null;
     for (let i = from; i < rows.length; i++) {
         const r = rows[i]!;
         const o = r.out.find(e => names(e.name, item));
         if (o && USES.has(o.reason)) return `${o.reason} at ${r.row}`;
+        // A leg's drops go only once no later hop needs them (runner/legs.ts dropsDue), so a held
+        // need comes before the same row's drop.
+        const leg = legOf(legs, r.row);
+        const need = leg && legNeed(leg, { name: item });
+        if (need) return need.why;
         if (o) return wornThrough ? `worn through ${wornThrough}` : null;
         if (r.equip.some(e => e.on && names(e.name, item))) return `wielded at ${r.row}`;
         if (!wornThrough && isStep(r) && entries[i]!.stacks.worn.some(w => names(item, w.name))) wornThrough = r.row;
@@ -251,6 +287,18 @@ export interface RespawnInput {
     target: { inv: readonly Held[]; worn: readonly Held[] };
     /** Names held on the way that the respawn lost and that are returned unused. */
     lost: readonly string[];
+    /** The runner's leg catalogue (RUN_LEGS by default). */
+    legs?: readonly LegStep[];
+}
+
+/** The ledger carries no levels, so the state a leg is checked from has Magic at 99: a kit check, not a level check. */
+const CHECK_MAGIC = 99;
+
+/** A runner state holding `held`, standing at `at`: what `legPreconditions` reads. */
+export function heldState(held: { inv: readonly Held[]; worn: readonly Held[] }, at: Tile | { x: number; z: number }): BotWorldState {
+    const item = (h: Held, slot: number): InventoryItem => ({ slot, id: h.id ?? -1, name: h.name, count: h.count ?? 0, optionsWithIndex: [] });
+    const player = { name: 'SCORED', combatLevel: 3, hp: 10, maxHp: 10, x: at.x, z: at.z, worldX: at.x, worldZ: at.z, level: 'level' in at ? at.level ?? 0 : 0, runEnergy: 100, runWeight: 0 } as PlayerState;
+    return baseState({ player, skills: [{ name: 'Magic', level: CHECK_MAGIC, baseLevel: CHECK_MAGIC, experience: 0 }], inventory: held.inv.map(item), equipment: held.worn.map(item) });
 }
 
 /**
@@ -258,7 +306,9 @@ export interface RespawnInput {
  * it must fit the slots the kept units leave), the worn set put back on, the sharks eaten, the
  * replayed legs, the cannon's re-supply, then the ledger's rows from `resume` to `to`. An out or
  * equip line for an item the respawn lost and the run returns unused is dropped (nobody holds it to
- * hand back); a consume or hand-in of something not held stays, and errors.
+ * hand back); a consume or hand-in of something not held stays, and errors. A row that is one of the
+ * runner's legs is also held to `legPreconditions` from the set the walk reaches it with, standing at
+ * the Lumbridge respawn for a replayed leg and at the leg's start otherwise: a refusal is an ERROR.
  */
 export function respawnCheck(rows: readonly LedgerRow[], r: RespawnInput): LedgerEntry[] {
     const at = (id: string) => {
@@ -295,7 +345,20 @@ export function respawnCheck(rows: readonly LedgerRow[], r: RespawnInput): Ledge
     walked.push(...later.map(strip));
     if (cannon.length) walked.push(row(`H ${r.phase.cannonBy}`, cannon.map(entry), [], [], slotsOf(cannon)));
     walked.push(...ledgerRows.map(strip));
-    return walk(walked, { inv, worn: [] });
+    const start = { inv, worn: [] };
+    const entries = walk(walked, start);
+    const legs = r.legs ?? RUN_LEGS;
+    const replayed = new Set(later);
+    entries.forEach((e, i) => {
+        const def = legOf(legs, e.row.row);
+        if (!def) return;
+        const held = i ? entries[i - 1]!.stacks : start;
+        const why = legPreconditions(def, heldState(held, replayed.has(e.row) || walked[i] !== e.row ? TILES.lumbridgeSpawn : def.start));
+        if (why === true) return;
+        e.verdict = 'ERROR';
+        e.notes.push(`the runner refuses the leg: ${why}`);
+    });
+    return entries;
 }
 
 // ------------------------------------------------------------------ the package
