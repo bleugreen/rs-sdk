@@ -11,7 +11,7 @@
 //                                          [--prefer=run|twin] [--minutes=5] [--rehearsal] [--claim=OWNER]
 //                                          [--rehearse=CASE]
 //   bun speedrun/tools/run-gate.ts handoff --machine=run|twin --scored-env=PATH [--max-gate-age=20]
-//                                          [--cap=80] [--rehearsal] [--claim=OWNER]
+//                                          [--cap=80] [--no-login] [--rehearsal] [--claim=OWNER]
 //
 //   common: [--remote-checkout=rs-sdk] (relative to the machine's $HOME) [--log-dir=DIR] [--display=:10]
 //
@@ -58,6 +58,13 @@
 // it prints, its frames and its logs as SCORED; `gate` relabels each gate account as GATE-run or
 // GATE-twin in its lines, its STOP lines, its JSON and the files it leaves in ~/rs-run/gate-*, and
 // the Mac relabels both again in what it prints, its log and choice.json.
+//
+// `handoff --no-login` (run day, main 12:05Z 2026-10-23: SCORED is logged in exactly once, by
+// run.ts): every step before the login runs as without it, then the served bundle is checked against
+// this checkout's build, and the hand-off passes with SCORED's tab up on the bare client page, not
+// logged in. No tab-login, no secrets check, no after-login window check or in-game frame; run.ts
+// logs SCORED in. handoff.json's `loggedIn` is false; without the flag it is true once the login
+// was started.
 //
 // --rehearsal: 30-minute bounds instead of the run's 9 h, `rehearsal-` recordings, and it requires
 // --claim with an owner other than host or run. --rehearse=unconfirmed-logout skips the gate tab's
@@ -209,6 +216,30 @@ export interface MachineGate {
 }
 
 export const startable = (s: GateStatus | undefined) => s === 'pass' || s === 'marginal';
+
+/** `handoff`'s steps on the machine, in order, after SCORED's env file is read. */
+export type HandoffStep =
+    | 'claim'
+    | 'preconditions'
+    | 'display'
+    | 'recording'
+    | 'login count'
+    | 'tab'
+    | 'chrome flags'
+    | 'one window'
+    | 'title frame'
+    | 'served bundle'
+    | 'login'
+    | 'secrets'
+    | 'one window after login'
+    | 'in-game frame';
+
+const BEFORE_LOGIN: readonly HandoffStep[] = ['claim', 'preconditions', 'display', 'recording', 'login count', 'tab', 'chrome flags', 'one window', 'title frame'];
+
+/** With `noLogin` the hand-off stops at SCORED's bare page, checked against the built bundle; run.ts logs SCORED in. */
+export function handoffSteps(opts: { noLogin: boolean }): HandoffStep[] {
+    return opts.noLogin ? [...BEFORE_LOGIN, 'served bundle'] : [...BEFORE_LOGIN, 'login', 'secrets', 'one window after login', 'in-game frame'];
+}
 
 /**
  * The machine's verdict on tenet 12's rule, through hostgate-verdict's directDecision with (d) as
@@ -565,6 +596,13 @@ const flags = (argv: readonly string[]) => {
     return { get, has };
 };
 
+/** The Mac's flags forwarded to `on-machine <cmd>`, beside the command's own. */
+export function forwarded(cmd: string | undefined, argv: readonly string[]): string[] {
+    const f = flags(argv);
+    const pass = ['display', 'claim'].flatMap(k => (f.get(k) ? [`--${k}=${f.get(k)}`] : [])).concat(f.has('rehearsal') ? ['--rehearsal'] : []);
+    return cmd === 'handoff' && f.has('no-login') ? [...pass, '--no-login'] : pass;
+}
+
 const utc = () => new Date().toISOString().replace(/\.\d+Z$/, 'Z');
 const stampOf = (d = new Date()) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
 
@@ -761,6 +799,25 @@ async function tabLogin(ctx: Ctx, name: string): Promise<void> {
     const code = await stream(['timeout', '--kill-after=30s', '3m', bun, 'speedrun/tools/tab-login.ts', name, `--bots-dir=${join(ROOT, 'bots')}`], l => ctx.say(`  ${l}`));
     if (code !== 0) throw new Stop(`tab-login exited ${code}: the tab is not in game`, 2);
     step(ctx, 'login', 'the tab is in game');
+}
+
+/** RUN-HOST.md "Served = built", in process: the page server serves exactly this checkout's bot bundle. */
+async function servedBundleCheck(ctx: Ctx) {
+    const builtPath = join(ROOT, 'server/webclient/out/bot/client.js');
+    if (!existsSync(builtPath)) throw new Stop('no built bundle at server/webclient/out/bot/client.js: build the webclient (RUN-HOST.md step 0)');
+    let served: ArrayBuffer;
+    try {
+        const r = await fetch(`${PAGE}/bot/client.js?v=check`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        served = await r.arrayBuffer();
+    } catch (e) {
+        throw new Stop(`the page server does not serve /bot/client.js: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    const md5 = (b: ArrayBuffer | Uint8Array) => new Bun.CryptoHasher('md5').update(b).digest('hex');
+    const s = md5(served);
+    const b = md5(readFileSync(builtPath));
+    if (s !== b) throw new Stop(`served bundle != built: the page server serves md5 ${s}, this checkout built ${b}`, 1);
+    step(ctx, 'served bundle', `served = built: md5 ${b}, commit ${(await capture(['git', 'rev-parse', 'HEAD'])).out.trim()}`);
 }
 
 /** RUN-HOST.md step 3's secrets check, in process: no password or token in ps, none in a tab URL. */
@@ -1044,8 +1101,9 @@ async function onHandoff(ctx: Ctx, argv: readonly string[]): Promise<number> {
     const envPath = f.get('scored-env');
     if (!envPath) throw new Stop('--scored-env=PATH is required');
     const cap = Number(f.get('cap') ?? '80');
+    const noLogin = f.has('no-login');
     let name: string | null = null;
-    const result = { ok: false, utc: '', reason: '' };
+    const result = { ok: false, utc: '', reason: '', loggedIn: false };
     try {
         const env = await envFile(resolve(envPath), 'SCORED');
         name = env.name;
@@ -1053,38 +1111,59 @@ async function onHandoff(ctx: Ctx, argv: readonly string[]): Promise<number> {
         const plain = ctx.say;
         ctx.say = s => relabel(plain(s), name, label);
 
-        await claimCheck(ctx);
-        // Ruling 2: after the gate's unconditional kill, nothing of the gate Chrome is left.
-        const left = await noChromeProblem(ctx.display);
-        if (left) throw new Stop(`step-7 precondition failed: ${left}`);
-        step(ctx, 'preconditions', `no tmux chrome session, no rs-run/chrome-profile process, no Bot Client window on ${ctx.display}`);
-        await displayCheck(ctx);
-        // Ruling 4's first half: the recording is already running before the login.
-        await recordingCheck(ctx);
-        const claim = await claimCheck(ctx);
-        if (claim.ours === null) throw new Stop('the login count is unavailable (rs-claim could not read /playerpositions): do not log SCORED in uncounted (tenet 16)');
-        if (claim.ours + 1 > cap) throw new Stop(`login count ${claim.ours} of ours online + SCORED's 1 is over ${cap} (tenet 16; log the unneeded fleet out first)`);
-        step(ctx, 'login count', `${claim.ours} of ours online + 1 = ${claim.ours + 1}, at most ${cap}`);
+        const steps: Record<HandoffStep, () => Promise<void>> = {
+            claim: async () => void (await claimCheck(ctx)),
+            // Ruling 2: after the gate's unconditional kill, nothing of the gate Chrome is left.
+            preconditions: async () => {
+                const left = await noChromeProblem(ctx.display);
+                if (left) throw new Stop(`step-7 precondition failed: ${left}`);
+                step(ctx, 'preconditions', `no tmux chrome session, no rs-run/chrome-profile process, no Bot Client window on ${ctx.display}`);
+            },
+            display: () => displayCheck(ctx),
+            // Ruling 4's first half: the recording is already running before the login.
+            recording: () => recordingCheck(ctx),
+            // With --no-login the 1 is run.ts's login, still counted here.
+            'login count': async () => {
+                const claim = await claimCheck(ctx);
+                if (claim.ours === null) throw new Stop('the login count is unavailable (rs-claim could not read /playerpositions): do not log SCORED in uncounted (tenet 16)');
+                if (claim.ours + 1 > cap) throw new Stop(`login count ${claim.ours} of ours online + SCORED's 1 is over ${cap} (tenet 16; log the unneeded fleet out first)`);
+                step(ctx, 'login count', `${claim.ours} of ours online + 1 = ${claim.ours + 1}, at most ${cap}`);
+            },
+            // From here a failure leaves SCORED's bare page up, not logged in, for the operator to read.
+            tab: () => launchTab(ctx, env.name, ctx.bound),
+            'chrome flags': () => chromeFlagsCheck(ctx),
+            // Ruling 3: exactly one Bot Client window, 1920 wide, before the login.
+            'one window': async () => {
+                const one = oneWindowProblem(await windowsOn(ctx.display));
+                if (one) throw new Stop(`window check before the login: ${one}`, 1);
+                step(ctx, 'one window', `exactly one Bot Client window on ${ctx.display}, ${RECORD_WIDTH} wide`);
+            },
+            // Rulings 4 and 5: the recording's live frame shows the run tab, in front, before the login.
+            'title frame': () => liveFrame(ctx, env.name, 'scored-title'),
+            'served bundle': () => servedBundleCheck(ctx),
+            login: async () => {
+                // Set before the login: a tab-login that fails part way may still have left SCORED in game.
+                result.loggedIn = true;
+                await tabLogin(ctx, env.name);
+            },
+            secrets: () => secretsCheck(ctx, env.password),
+            'one window after login': async () => {
+                await Bun.sleep(2_000);
+                const after = oneWindowProblem(await windowsOn(ctx.display));
+                if (after) throw new Stop(`window check after the login: ${after}; SCORED is in game: touch nothing on the display and tell main`, 1);
+            },
+            'in-game frame': () => liveFrame(ctx, env.name, 'scored-ingame'),
+        };
+        for (const s of handoffSteps({ noLogin })) await steps[s]();
 
-        // From here a failure leaves SCORED's bare page up, not logged in, for the operator to read.
-        await launchTab(ctx, env.name, ctx.bound);
-        await chromeFlagsCheck(ctx);
-        // Ruling 3: exactly one Bot Client window, 1920 wide, before the login.
-        const one = oneWindowProblem(await windowsOn(ctx.display));
-        if (one) throw new Stop(`window check before the login: ${one}`, 1);
-        step(ctx, 'one window', `exactly one Bot Client window on ${ctx.display}, ${RECORD_WIDTH} wide`);
-        // Rulings 4 and 5: the recording's live frame shows the run tab, in front, before the login.
-        await liveFrame(ctx, env.name, 'scored-title');
-
-        await tabLogin(ctx, env.name);
-        await secretsCheck(ctx, env.password);
-        await Bun.sleep(2_000);
-        const after = oneWindowProblem(await windowsOn(ctx.display));
-        if (after) throw new Stop(`window check after the login: ${after}; SCORED is in game: touch nothing on the display and tell main`, 1);
-        await liveFrame(ctx, env.name, 'scored-ingame');
         result.ok = true;
-        result.reason = 'SCORED is in game, alone and in front on the recorded display, with the recording showing it';
-        console.log(ctx.say(`[handoff] ${utc()} PASS: ${result.reason}. The run scripts take it from here; nothing else opens a window on ${ctx.display} until the run ends.`));
+        if (noLogin) {
+            result.reason = "SCORED's tab is up on the bare client page, alone and in front on the recorded display, recording running, served bundle = built; not logged in: run.ts logs SCORED in";
+            console.log(ctx.say(`[handoff] ${utc()} PASS: ${result.reason}. Nothing else opens a window on ${ctx.display} until the run ends.`));
+        } else {
+            result.reason = 'SCORED is in game, alone and in front on the recorded display, with the recording showing it';
+            console.log(ctx.say(`[handoff] ${utc()} PASS: ${result.reason}. The run scripts take it from here; nothing else opens a window on ${ctx.display} until the run ends.`));
+        }
         return 0;
     } catch (e) {
         if (!(e instanceof Stop)) throw e;
@@ -1172,7 +1251,7 @@ async function mac(argv: readonly string[]): Promise<number> {
     const stamp = stampOf();
     const log = join(logDir, `${cmd}-${stamp}.log`);
     const checkout = f.get('remote-checkout') ?? 'rs-sdk';
-    const pass = ['display', 'claim'].flatMap(k => (f.get(k) ? [`--${k}=${f.get(k)}`] : [])).concat(rehearsal ? ['--rehearsal'] : []);
+    const pass = forwarded(cmd, rest);
     const say = (s: string) => {
         console.log(s);
         appendFileSync(log, s + '\n');
@@ -1232,7 +1311,7 @@ async function mac(argv: readonly string[]): Promise<number> {
         if (age > maxAge) throw new Stop(`the gate is ${age.toFixed(0)} min old, over --max-gate-age=${maxAge}: gate again`);
         if (choice.rehearsal !== rehearsal) throw new Stop(`the gate was ${choice.rehearsal ? 'a rehearsal' : 'the run'}'s and this hand-off is ${rehearsal ? 'a rehearsal' : 'the run'}'s`);
         const extra = ['cap'].flatMap(k => (f.get(k) ? [`--${k}=${f.get(k)}`] : []));
-        say(`[run-gate] hand-off on ${m}, gate ${age.toFixed(1)} min old`);
+        say(`[run-gate] hand-off on ${m}, gate ${age.toFixed(1)} min old${f.has('no-login') ? '; --no-login: SCORED is not logged in, run.ts logs it in' : ''}`);
         const r = await remote(m, ['handoff', `--scored-env=${env}`, ...extra, ...pass], { checkout, stamp, bound: '12m', log });
         say(`[run-gate] hand-off on ${m}: ${r.code === 0 ? 'PASS' : `STOPPED (exit ${r.code})`}`);
         return r.code;
@@ -1243,7 +1322,7 @@ async function mac(argv: readonly string[]): Promise<number> {
         console.log(readFileSync(file, 'utf8'));
         return 0;
     }
-    throw new Stop(`usage: run-gate.ts up|gate|handoff (see the header), or on-machine up|gate|handoff on a machine; not ${cmd ?? '(nothing)'}`);
+    throw new Stop(`usage: run-gate.ts up|gate|handoff [--no-login] (see the header), or on-machine up|gate|handoff on a machine; not ${cmd ?? '(nothing)'}`);
 }
 
 if (import.meta.main) {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
-    botClientWindows, checkAccount, choiceLine, choose, DEFAULT_PREFER, gateLabel, gateRow, gateScrub, locsLine, loopsSummary, type Machine, type MachineGate,
+    botClientWindows, checkAccount, choiceLine, choose, DEFAULT_PREFER, forwarded, gateLabel, handoffSteps, gateRow, gateScrub, locsLine, loopsSummary, type Machine, type MachineGate,
     machineVerdict, oneWindowProblem, parseClaimStatus, parseDirectJson, parsePrefer, readLocs, relabel, remoteLine, type ScenePoll, sceneLine, shq, sshArgv,
     type StateLook, Stop, tileLine, tileRead, watchScene,
 } from './run-gate';
@@ -231,6 +231,22 @@ describe('names, quoting and the ssh line', () => {
         expect(l).toContain('tail --pid=$P -n +1 -f "$D"/steps.log; wait $P;');
         expect(() => remoteLine('/etc', 's', '1m', [])).toThrow(Stop);
         expect(() => remoteLine('../x', 's', '1m', [])).toThrow(Stop);
+    });
+});
+
+describe('handoff --no-login (SCORED is logged in once, by run.ts)', () => {
+    const argv = ['--machine=twin', '--scored-env=bots/x/bot.env', '--rehearsal', '--claim=rs/601', '--display=:11'];
+    test('the Mac forwards --no-login to the on-machine handoff, and only for handoff', () => {
+        expect(forwarded('handoff', [...argv, '--no-login'])).toEqual(['--display=:11', '--claim=rs/601', '--rehearsal', '--no-login']);
+        expect(forwarded('handoff', argv)).toEqual(['--display=:11', '--claim=rs/601', '--rehearsal']);
+        expect(forwarded('gate', [...argv, '--no-login'])).not.toContain('--no-login');
+        expect(forwarded('up', [...argv, '--no-login'])).not.toContain('--no-login');
+        expect(remoteLine('rs-sdk', 's', '12m', ['handoff', '--scored-env=e', ...forwarded('handoff', [...argv, '--no-login'])])).toContain("'--no-login'");
+    });
+    test('--no-login stops at the bare page and checks the served bundle; the default logs in', () => {
+        const before = ['claim', 'preconditions', 'display', 'recording', 'login count', 'tab', 'chrome flags', 'one window', 'title frame'];
+        expect(handoffSteps({ noLogin: true })).toEqual([...before, 'served bundle']);
+        expect(handoffSteps({ noLogin: false })).toEqual([...before, 'login', 'secrets', 'one window after login', 'in-game frame']);
     });
 });
 
