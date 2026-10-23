@@ -262,7 +262,8 @@ function ensure(seg: Letter, who: string, r: ConverseResult): ConverseResult {
 
 /** Record a conversation's shape against the expected one, for the lab report. */
 function noteShape(ctx: Ctx, seg: Letter, who: string, r: ConverseResult, extra: Record<string, unknown> = {}): void {
-    note(ctx, seg, { who, pages: r.pages, options: r.options, ...(r.shape ? { shape: r.shape.seen, expected: r.shape.expected, matches: r.shape.matches, bursts: r.shape.bursts, failedBursts: r.shape.failedBursts } : {}), ...extra });
+    const dialogueTicks = r.firstTick >= 0 && r.endTick >= 0 ? r.endTick - r.firstTick : null;
+    note(ctx, seg, { who, ticks: r.ticks, dialogueTicks, pages: r.pages, options: r.options, ...(r.shape ? { shape: r.shape.seen, expected: r.shape.expected, matches: r.shape.matches, bursts: r.shape.bursts, failedBursts: r.shape.failedBursts } : {}), ...extra });
 }
 
 // ------------------------------------------------------------------ segment runs
