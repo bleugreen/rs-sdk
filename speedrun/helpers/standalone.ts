@@ -536,6 +536,8 @@ export class CueGate {
             if (own) this.loginWatcher = watcher;
             if (s === this.stopScope) this.stopWatcher = watcher;
         }
+        // Settled by cues already on disk while the watchers started: the login folder is let go now.
+        if (this.loginWatcher && this.loginResult()) this.closeLoginFolder();
     }
 
     /**
@@ -560,7 +562,7 @@ export class CueGate {
             return;
         }
         // An open from the login folder counts only after the role folder is read: its close wins.
-        if (s === this.loginScope && this.loginWatcher && this.login === 'waiting') this.stopWatcher?.check();
+        if (s === this.loginScope && this.o.loginDir !== undefined && this.login === 'waiting') this.stopWatcher?.check();
         this.changed(s, s.own(cue), cue);
     }
 
