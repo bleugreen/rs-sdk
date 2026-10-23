@@ -31,6 +31,9 @@ export type Tile = { x: number; z: number; level?: number; tol?: number };
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+/** SEAM_LEVEL_FLOOR='{"agility":25}': a floor under boundaryAt's levels, to look past a level refusal to the checks behind it. */
+const FLOOR: Record<string, number> = JSON.parse(process.env.SEAM_LEVEL_FLOOR ?? '{}');
+
 function items(list: readonly StagedItem[]): InventoryItem[] {
     const ids = objPack().ids;
     return list.map((it, slot) => ({ slot, id: ids.get(it.obj) ?? -1, name: cap(it.name), count: it.n, optionsWithIndex: [] }) as unknown as InventoryItem);
@@ -46,7 +49,10 @@ export function stateAt(at: Tile, b: Boundary, near: readonly string[] = []): Bo
             name: 'SCORED', combatLevel: 3, hp, maxHp: hp, x: at.x, z: at.z, worldX: at.x, worldZ: at.z, level: at.level ?? 0,
             runEnergy: 100, runWeight: 0, animId: -1, spotanimId: -1, combat: { inCombat: false }, isDead: false, lifeId: 0,
         } as unknown as BotWorldState['player'],
-        skills: SKILLS.map(name => ({ name: cap(name), level: b.levels[name].level, baseLevel: b.levels[name].level, experience: 0 })),
+        skills: SKILLS.map(name => {
+            const level = Math.max(b.levels[name].level, FLOOR[name] ?? 0);
+            return { name: cap(name), level, baseLevel: level, experience: 0 };
+        }),
         inventory: items(b.inv),
         equipment: items(b.worn),
         quests,
