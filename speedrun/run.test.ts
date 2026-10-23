@@ -1,3 +1,4 @@
+import { fakeCdp } from './lib/fake-cdp';
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -207,6 +208,7 @@ describe('startup during the planned S21 logout', () => {
                 return session;
             },
             close: async () => { trace.push('close'); },
+            pageState: async () => ({ inGame: false, loginInProgress: false, message: '', error: '' }),
         };
         return { relogs, trace, session, log, chain, deps };
     }
@@ -235,5 +237,49 @@ describe('startup during the planned S21 logout', () => {
         await expect(openRunSession('lab', { client: 'browser', chain: t.chain, relogs: t.relogs, log: t.log }, t.deps)).rejects.toThrow('givers absent');
         expect(t.trace).toEqual(['open launch=false awaitInWorld=false', 'close']);
         expect(t.relogs.planned(SCORED_RELOG)).toBe('open');
+    });
+
+    test('open ledger reconciles the actual page before any ready cue: live, pending and unknown refuse unchanged', async () => {
+        for (const state of ['live', 'pending', 'unknown', 'out'] as const) {
+            const cdp = fakeCdp('lab');
+            try {
+                const t = setup('open');
+                Object.assign(t.session, { client: 'browser', env: { CDP_URL: cdp.origin } });
+                cdp.client.ingame = state === 'live';
+                cdp.client.loginInProgress = state === 'pending';
+                cdp.page.hasClient = state !== 'unknown';
+                const action = openRunSession('lab', { client: 'browser', chain: t.chain, relogs: t.relogs, log: t.log }, { open: t.deps.open, close: t.deps.close });
+                if (state === 'out') {
+                    await action;
+                    expect(t.trace).toContain('ready');
+                    expect(t.relogs.planned(SCORED_RELOG)).toBe('closed');
+                } else {
+                    await expect(action).rejects.toThrow('manual reconciliation');
+                    expect(t.trace).toEqual(['open launch=false awaitInWorld=false', 'close']);
+                    expect(t.relogs.planned(SCORED_RELOG)).toBe('open');
+                    expect(t.relogs.used()).toEqual({ planned: 1, unplanned: 0 });
+                    expect(t.log.rows).toHaveLength(1);
+                    expect(t.log.rows[0]!.account).toBe(LOG_ACCOUNT);
+                }
+                expect(cdp.page.autoLogins).toEqual([]);
+                expect(cdp.page.navigations).toEqual([]);
+            } finally { cdp.stop(); }
+        }
+    });
+
+    test('startup ready, login and delayed gate rows are anonymized before they reach the log', async () => {
+        const t = setup('open');
+        const note = (step: string) => t.log.append({
+            v: 1, runId: 'startup', account: t.session.name, sessionId: 1, step,
+            startTick: 0, endTick: 0, ticks: 0, wallMs: 0, ok: true, tickMs: 400, at: '',
+        });
+        for (const s of t.chain) {
+            const run = s.run;
+            s.run = async ctx => { note(s.name); await run(ctx); };
+        }
+        await openRunSession('lab', { client: 'browser', chain: t.chain, relogs: t.relogs, log: t.log,
+            beforeLogin: async () => { await Promise.resolve(); note('tick gate'); } }, t.deps);
+        expect(t.log.rows.map(r => r.step)).toEqual(['S21 runecraft:pre-login', SCORED_LOGIN, 'tick gate']);
+        expect(t.log.rows.map(r => r.account)).toEqual([LOG_ACCOUNT, LOG_ACCOUNT, LOG_ACCOUNT]);
     });
 });

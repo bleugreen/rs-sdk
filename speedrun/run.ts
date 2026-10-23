@@ -54,7 +54,8 @@ import { claimBin, claimOwner, EXIT_HOST_RESERVED, readReservation, ReservationW
 import { programStatus } from './lib/programs';
 import { describePreflight, feedUrl, readFeedHello, tickPreflight, type TickPreflight } from './lib/feed-hello';
 import { checkRunFloor, gitIn, type FloorCheck, type TickMsParse } from './lib/run-floor';
-import { type ClientKind, closeSession, loadBotEnv, logoutClean, type LogoutResult, openSession, pageWorld, ROOT, type Session, startWatchdog } from './lib/session';
+import { type ClientKind, cdpUrl, closeSession, loadBotEnv, logoutClean, type LogoutResult, openSession, pageWorld, ROOT, type Session, startWatchdog } from './lib/session';
+import { pageLoginState, type PageLoginState } from './lib/tab';
 import { tickMs } from './lib/wait';
 import { returnExtrasFromLedger, serveDrift, serveFromLedger } from './helpers/cannon-receiver';
 import { newRunId, parseLog, TickLog, type TickRow } from './lib/ticks';
@@ -425,24 +426,40 @@ async function releaseClaim(owner: string): Promise<string> {
 export async function openRunSession(bot: string, o: {
     client: ClientKind; chain: readonly ChainStep[]; relogs: RelogBudget; log: TickLog;
     beforeLogin?: () => Promise<void>;
-}, deps = { open: openSession, close: closeSession }): Promise<Session> {
+}, deps: { open?: typeof openSession; close?: typeof closeSession; pageState?: (s: Session) => Promise<PageLoginState | null> } = {}): Promise<Session> {
     const pending = o.relogs.planned(SCORED_RELOG) === 'open';
     const ready = pending ? o.chain.find(s => s.name === 'S21 runecraft:pre-login') : null;
     const loginHalf = pending ? o.chain.find(s => s.name === SCORED_LOGIN) : null;
     if (pending && (!ready || !loginHalf)) throw new Error('open S21 relog requires its giver wait and login half; do not disable or slice past it');
-    const session = await deps.open(bot, { client: o.client, launch: !pending, ...(pending ? { awaitInWorld: false as const } : {}) });
+    const session = await (deps.open ?? openSession)(bot, { client: o.client, launch: !pending, ...(pending ? { awaitInWorld: false as const } : {}) });
     session.beforeLogin = o.beforeLogin;
     if (!pending) return session;
-    session.expectInWorld = false;
-    session.watchdog?.pause();
+    const unalias = aliasAccount(o.log, session.name);
     try {
+        const state = await (deps.pageState ?? (async (s: Session) => {
+            const cdp = s.client === 'browser' ? cdpUrl(s.env) : undefined;
+            return cdp ? pageLoginState(cdp, s.name) : null;
+        }))(session).catch(() => null);
+        // The journal survived the process, not necessarily the browser's login completion.
+        // Neither a live page nor a pending login proves which login established its order.
+        if (!state || state.inGame || state.loginInProgress) {
+            const why = !state ? 'page state unproven' : state.inGame ? 'page already live' : 'login in progress';
+            throw new Error(`open S21 relog: ${why}; manual reconciliation required before resuming (no login sent)`);
+        }
+        session.expectInWorld = false;
+        session.watchdog?.pause();
         const ctx = { session, sdk: session.sdk, bot: session.bot, c: {}, log: o.log };
         await ready!.run(ctx);
         await loginHalf!.run(ctx);
         return session;
     } catch (e) {
-        await deps.close(session);
+        o.log.append(annotation(o.log, session.name, 'note', '(startup) S21 recovery refused', {
+            ok: false, error: e instanceof Error ? e.message : String(e),
+        }));
+        await (deps.close ?? closeSession)(session);
         throw e;
+    } finally {
+        unalias();
     }
 }
 
