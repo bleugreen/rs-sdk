@@ -40,7 +40,10 @@
 // set, each one stops the program and the band retries in place once the lap is whole again, up
 // to CONTEST_RETRIES in CONTEST_WINDOW ticks, then walks to the nearest other site in SITES that
 // the fallback allows and whose hunters leave this combat level alone (`nextSite`; `acceptHazards`
-// lifts that). Without `fallback` the band is the zoo-only band it was.
+// lifts that). At the zoo with no such site (combat below every `safeFrom`) the fallback is
+// unavailable: the band starts anyway and mines through contention like the zoo-only band (main's
+// ruling, 17:53 2026-10-22: the zoo is safe from combat 0). Without `fallback` the band is the
+// zoo-only band it was.
 
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import { demoOrigin, samplePlayerCount } from '../lib/demo-status';
