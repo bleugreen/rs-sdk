@@ -1625,8 +1625,13 @@ export function kitMissing(s: BotWorldState, bow: number): Array<[RegExp, number
     return h12Kit(bow).map(k => [k.name, k.n - carried(s, k)] as [RegExp, number]).filter(([, n]) => n > 0);
 }
 
-/** What SCORED hands back in the Grand Tree swap (rs/158 01:38): S14's staff of fire, scimitar and knife, and the coins. */
-export const GT_HANDBACK: readonly RegExp[] = [/^Staff of fire$/i, /^Mithril scimitar$/i, /^Knife$/i, /^Coins$/i];
+/**
+ * What SCORED hands back in the Grand Tree swap: the ledger's H12 row outs (STEP-MANIFEST.md, inventory ledger, H12),
+ * all seven: S14's staff of fire, H7's antipoison (any dose left; the anchor keeps Superantipoison(1) and (4), H12's
+ * own, out), the mithril scimitar, the knife, and all the coins, death runes and chaos runes. Holding any of them
+ * through the swap leaves SCORED over 28 slots, and the game closes a both-accepted trade that does not fit.
+ */
+export const GT_HANDBACK: readonly RegExp[] = [/^Staff of fire$/i, /^Antipoison\(\d\)$/i, /^Mithril scimitar$/i, /^Knife$/i, /^Coins$/i, /^Death rune$/i, /^Chaos rune$/i];
 
 /**
  * The Grand Tree swap's plan from the state: give back the GT_HANDBACK items held, want what H12 still lacks (kitMissing

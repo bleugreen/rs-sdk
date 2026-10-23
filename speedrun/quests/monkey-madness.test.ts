@@ -13,11 +13,14 @@ import { compactJournal } from '../lib/quests';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession } from '../runner/step';
 import {
-    BANANA_TREE_IDS, bananaRoomDrops, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, isWaydarIntroEnd, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
+    BANANA_TREE_IDS, bananaRoomDrops, h12Plan, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, isWaydarIntroEnd, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
     BELOW_30_EATING, cureWanted, eatBelowFor, sharksToDrop, GARKOR_WEST, isMonkeyChatter, CAGE, CAGE_NORTH_STRIP, CAGE_TILES, inCage, letOut, letOutPick, LET_OUT_ATTEMPTS, MINDER_REACH, nearestFire, sceneBuilt, tileIn, underTemple, scorpionsNear, SCORPION_CLOSE, SCORPION_REACH, sigilRoom, h12oLeg, legCue, pFinalStop, closeLeftTrade, DECLINE_TICKS, H12O_M_ROW, mTopUpCap, ASK_SHARK, ASK_SUPER_ANTIPOISON, H12O_SCOPE, onTradeOpen, P_TOPUP_MAX_SHARKS, pTopUpAsk, immunityWanted,
     ARCHER_REACH, AUNT_BOX, crateRoute, crateSteps, entersSleepingZone, SLEEPING_DETOURS, sleepingDetour, GUARD_REACH, legPrayerFor, M_TOPUP_TILE, mLegSize, mTopUpSharks, NO_DWELL, pathTiles, pLegSize, POSTED_ARCHERS, prayerRuns, receiveLeg, RELIGIOUS_GUARDS, SLEEPING_ZONE, tilePrayer, TOPUP_TRIES, TOPUP_WAIT, tradeIdle, type Receive, nextBananaTree, SUPER_IMMUNE_TICKS, offAtoll, patrolLeavesLane, SEGMENT_EATING, topUpWanted, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, steps, templeLeft, treeRouteRefusal, yRoom, type MmContext,
 } from './monkey-madness';
 import { slotNeed } from './segments';
+import { objPack } from '../lib/obj-pack';
+import { MANIFEST } from '../tools/slot-ledger';
+import { planMuleDeliveryFixtures, type FixtureItem } from '../lab/mule-delivery-fixtures';
 
 const item = (id: number, slot = 0): InventoryItem => ({ slot, id, name: `obj ${id}`, count: 1, optionsWithIndex: [] });
 
@@ -1115,5 +1118,50 @@ describe('the atoll top-ups (H12o)', () => {
         s = stub([okReceive]);
         expect(await drive(sdk, receiveLeg(sdk as never, 'Helper', 'M', mLegSize, { receive: s.receive }), 100)).toMatchObject({ ok: false, attempts: 0, reason: expect.stringMatching(/no free slot/) });
         expect(s.calls).toHaveLength(0);
+    });
+});
+
+describe("the Grand Tree swap's hand-back (GT_HANDBACK) against the ledger's H12 row", () => {
+    // H12's before-state and outs, walked from STEP-MANIFEST.md's inventory ledger. The overrides only resolve the
+    // row's `all` returns to the walked counts (a wrong count leaves the plan unresolved).
+    const concrete = (id: number, count: number) => ({ items: [{ id, count }], reason: 'the ledger walk' });
+    const plan = planMuleDeliveryFixtures({
+        manifest: readFileSync(MANIFEST, 'utf8'), rows: ['H12'], onRequest: [], pack: objPack(),
+        overrides: { H12: {
+            takeBacks: { 'coins @995': concrete(995, 1000), 'death rune': concrete(560, 49), 'chaos rune': concrete(562, 16) },
+        } },
+    });
+    const h12 = plan.fixtures[0]!;
+    const slots = (items: readonly FixtureItem[]) => items.reduce((n, i) => n + (i.kind === 'u' ? i.count : 1), 0);
+    const held = (items: readonly FixtureItem[]) => baseState({
+        inventory: items.flatMap(i => Array.from({ length: i.kind === 'u' ? i.count : 1 }, () => ({ id: i.id, name: i.name, count: i.kind === 'u' ? 1 : i.count, optionsWithIndex: [] }))).map((i, slot) => ({ ...i, slot })) as InventoryItem[],
+    });
+    const bow = 861;
+
+    test('the plan resolves from the ledger', () => {
+        expect(plan.unresolved).toEqual([]);
+        expect(plan.ok).toBe(true);
+    });
+
+    test("h12Plan gives back exactly the row's takebacks, each by one pattern", () => {
+        const give = h12Plan(held(h12.beforeInventory), { bow }).give.map(g => g.item as RegExp);
+        expect(give).toHaveLength(h12.takeBacks.length);
+        for (const t of h12.takeBacks) expect(give.filter(p => p.test(t.name)).map(String)).toHaveLength(1);
+        for (const p of give) expect(h12.takeBacks.some(t => p.test(t.name))).toBe(true);
+    });
+
+    test('with Superantipoison(1), Superantipoison(4) and Antipoison(3) held, only the Antipoison(3) goes back', () => {
+        const s = baseState({ inventory: ['Superantipoison(1)', 'Superantipoison(4)', 'Antipoison(3)'].map((name, slot) => ({ slot, id: 100 + slot, name, count: 1, optionsWithIndex: [] })) as InventoryItem[] });
+        const potions = h12Plan(s, { bow }).give.filter(g => s.inventory.some(i => (g.item as RegExp).test(i.name)));
+        expect(potions.flatMap(g => s.inventory.filter(i => (g.item as RegExp).test(i.name)).map(i => i.name))).toEqual(['Antipoison(3)']);
+    });
+
+    test('from the walked before-state the swap ends within 28 slots', () => {
+        const give = h12Plan(held(h12.beforeInventory), { bow }).give.map(g => g.item as RegExp);
+        const kept = h12.beforeInventory.filter(i => !give.some(p => p.test(i.name)));
+        // A received stack joins a held one of the same object (the runes) and takes no new slot.
+        const added = h12.receive.filter(r => r.kind === 'u' || !kept.some(k => k.id === r.id));
+        expect(slots(h12.beforeInventory)).toBe(19);
+        expect(slots(kept) + slots(added)).toBeLessThanOrEqual(28);
     });
 });
