@@ -53,7 +53,9 @@ for (const n of [muleName, scoredName]) if (!isLoopbackHost(loadBotEnv(n).SERVER
 
 const manifest = readFileSync(MANIFEST, 'utf8');
 const pack = objPack();
-const plan = planMuleDeliveryFixtures({ manifest, rows: [...ROWS], onRequest: [], pack });
+// The starter shortbow (S00's kit, obj 841) is SCORED's at H1; 'shortbow' alone also names the magic one.
+const overrides = { H1: { before: { shortbow: { items: [{ id: 841, count: 1 }], reason: 'S00 starter kit shortbow (tutorial.rs2), not the magic shortbow' } } } };
+const plan = planMuleDeliveryFixtures({ manifest, rows: [...ROWS], onRequest: [], pack, overrides });
 if (!plan.ok) {
     result('delivery-chain-unresolved', plan.unresolved);
     process.exit(1);
