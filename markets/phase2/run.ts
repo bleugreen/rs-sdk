@@ -67,7 +67,7 @@ const READINGS_KEEP_MS = 3 * 3_600_000;
 /**
  * A knights login counts as working for the ramp only at this Thieving level: the rate climbs with the level (55 to
  * 99 within ~2,000 ticks at 25x xp), so a hold that began below it would set a low first-step reference and hide a
- * later step's crowding loss. The lab run's step 1 was measured mid-climb and its 8 logins ran 14% under step 2's.
+ * later step's crowding loss. In the lab run, step 1 was measured mid-climb and its median came out 12% under step 2's.
  */
 const RAMP_THIEVING = 99;
 
