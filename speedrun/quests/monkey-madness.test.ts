@@ -7,14 +7,14 @@ import { findLongPath } from '../../sdk/pathfinding';
 import { nameHash, readCue, readTopUpAsk } from '../helpers/altar-cue';
 
 import type { BotWorldState, InventoryItem, PlayerState, QuestJournalState } from '../../sdk/types';
-import { baseState, drive, FakeSdk } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk, simulateWalking } from '../lib/fake-sdk';
 import type { ReceiveResult } from '../lib/trade';
 import { compactJournal } from '../lib/quests';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession } from '../runner/step';
 import {
     BANANA_TREE_IDS, bananaRoomDrops, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, isWaydarIntroEnd, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
-    BELOW_30_EATING, cureWanted, eatBelowFor, sharksToDrop, GARKOR_WEST, isMonkeyChatter, minderInReach, MINDER_REACH, scorpionsNear, SCORPION_CLOSE, SCORPION_REACH, sigilRoom, h12oLeg, legCue, H12O_M_ROW, mTopUpCap, ASK_SHARK, ASK_SUPER_ANTIPOISON, H12O_SCOPE, onTradeOpen, P_TOPUP_MAX_SHARKS, pTopUpAsk, immunityWanted,
+    BELOW_30_EATING, cureWanted, eatBelowFor, sharksToDrop, GARKOR_WEST, isMonkeyChatter, CAGE, CAGE_NORTH_STRIP, CAGE_TILES, inCage, letOut, letOutPick, LET_OUT_ATTEMPTS, MINDER_REACH, nearestFire, sceneBuilt, tileIn, underTemple, scorpionsNear, SCORPION_CLOSE, SCORPION_REACH, sigilRoom, h12oLeg, legCue, H12O_M_ROW, mTopUpCap, ASK_SHARK, ASK_SUPER_ANTIPOISON, H12O_SCOPE, onTradeOpen, P_TOPUP_MAX_SHARKS, pTopUpAsk, immunityWanted,
     ARCHER_REACH, AUNT_BOX, crateRoute, crateSteps, entersSleepingZone, SLEEPING_DETOURS, sleepingDetour, GUARD_REACH, legPrayerFor, M_TOPUP_TILE, mLegSize, mTopUpSharks, NO_DWELL, pathTiles, pLegSize, POSTED_ARCHERS, prayerRuns, receiveLeg, RELIGIOUS_GUARDS, SLEEPING_ZONE, tilePrayer, TOPUP_TRIES, TOPUP_WAIT, tradeIdle, type Receive, nextBananaTree, SUPER_IMMUNE_TICKS, offAtoll, patrolLeavesLane, SEGMENT_EATING, topUpWanted, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, steps, templeLeft, treeRouteRefusal, yRoom, type MmContext,
 } from './monkey-madness';
 import { slotNeed } from './segments';
@@ -238,7 +238,7 @@ describe('T: the zoo monkey', () => {
 });
 
 
-describe("the backpack monkey's chatter, and the minder in reach (T, U)", () => {
+describe("the backpack monkey's chatter, and the minder's let-out from the cage (T, U)", () => {
     const page = (...texts: string[]) => ({ allComponents: texts.map(text => ({ text })) }) as never;
 
     test('every page of the chatter is chatter, the snore\'s player page too; an NPC\'s page is not', () => {
@@ -250,13 +250,180 @@ describe("the backpack monkey's chatter, and the minder in reach (T, U)", () => 
     });
 
     const npc = (index: number, x: number, z: number) =>
-        ({ kind: 'npc', id: 1, index, name: 'Monkey Minder', combatLevel: 1, x, z, tileX: x, tileZ: z, size: 1, distance: 3, hp: null, maxHp: null, healthPercent: null, targetIndex: -1, inCombat: false, optionsWithIndex: [] }) as never;
-    const caged = (...n: never[]) => baseState({ player: { worldX: 2604, worldZ: 3280, level: 0, x: 2604, z: 3280, hp: 42 } as never, nearbyNpcs: n });
+        ({ kind: 'npc', id: 1, index, name: 'Monkey Minder', combatLevel: 1, x, z, tileX: x, tileZ: z, size: 1, distance: 3, hp: null, maxHp: null, healthPercent: null, targetIndex: -1, inCombat: false, optionsWithIndex: [{ text: 'Talk-to', opIndex: 1 }], options: ['Talk-to'] }) as never;
+    const me = (x: number, z: number) => ({ worldX: x, worldZ: z, level: 0, x, z, hp: 42, maxHp: 42 }) as never;
+    const at = (x: number, z: number, ...n: never[]) => baseState({ player: me(x, z), nearbyNpcs: n });
+    // What stands inside the railing (maps/m40_51.jm2): the trees' 2x2 footprints (jungletree1 at (2599,3277) and
+    // (2602,3276), jungletree2 at (2604,3278) and (2598,3275)), the walled post at (2602,3278), the bridge supports.
+    const BLOCKED = new Set([
+        '2599,3277', '2600,3277', '2599,3278', '2600,3278', '2602,3276', '2603,3276', '2602,3277', '2603,3277',
+        '2604,3278', '2605,3278', '2604,3279', '2605,3279', '2598,3275', '2599,3275', '2598,3276', '2599,3276',
+        '2602,3278', '2602,3281', '2605,3281',
+    ]);
+    const standable = (t: { x: number; z: number }) => !BLOCKED.has(`${t.x},${t.z}`);
 
-    test('the nearest minder within MINDER_REACH, else none (one farther is never clicked)', () => {
-        expect(minderInReach(caged(npc(1, 2595, 3277), npc(2, 2608, 3279)))?.index).toBe(2);
-        expect(minderInReach(caged(npc(1, 2604 + MINDER_REACH, 3280), npc(2, 2602, 3283)))?.index).toBe(2);
-        expect(minderInReach(caged(npc(1, 2604 + MINDER_REACH + 1, 3280), npc(2, 2597, 3277)))).toBeNull();
+    test('the cage tiles: the four zones the minder tests, each tile once (59)', () => {
+        expect(CAGE_TILES.length).toBe(59);
+        expect(new Set(CAGE_TILES.map(t => `${t.x},${t.z}`)).size).toBe(59);
+        expect(CAGE_TILES.every(t => CAGE.some(a => tileIn({ ...t, level: 0 }, a)))).toBe(true);
+        expect(CAGE_TILES.filter(t => tileIn({ ...t, level: 0 }, CAGE_NORTH_STRIP)).length).toBe(6);
+    });
+
+    test("from forced T run 2's tile, a minder the north strip reaches is asked from the strip", () => {
+        // Run 2 stood on (2603,3278) between the post, a tree and a trunk for all nine clicks.
+        const p = letOutPick(at(2603, 3278, npc(5987, 2608, 3279)), standable)!;
+        expect({ index: p.minder.index, stand: p.stand, distance: p.distance }).toEqual({ index: 5987, stand: { x: 2605, z: 3280 }, distance: 3 });
+        // North: the strip's nearest standable tiles, never the bridge support at (2605,3281).
+        const n = letOutPick(at(2603, 3278, npc(7, 2604, 3285)), standable)!;
+        expect(tileIn({ ...n.stand, level: 0 }, CAGE_NORTH_STRIP) && standable(n.stand) && n.distance).toBe(4);
+    });
+
+    test('a minder out of the strip\'s reach is asked from the nearest standable cage tile', () => {
+        const p = letOutPick(at(2604, 3281, npc(3, 2596, 3273)), standable)!;
+        expect({ stand: p.stand, distance: p.distance }).toEqual({ stand: { x: 2598, z: 3274 }, distance: 2 });
+        // The nearest tile when blocked is passed over: with (2598,3274) unstandable, the next nearest.
+        const q = letOutPick(at(2604, 3281, npc(3, 2596, 3273)), t => standable(t) && !(t.x === 2598 && t.z === 3274))!;
+        expect(q.stand).not.toEqual({ x: 2598, z: 3274 });
+        expect(q.distance).toBe(3);
+    });
+
+    test('the minder that refused is passed over; none in reach of any standable tile is no pick', () => {
+        const two = at(2603, 3278, npc(1, 2608, 3279), npc(2, 2604, 3285));
+        expect(letOutPick(two, standable)?.minder.index).toBe(1);
+        expect(letOutPick(two, standable, 1)?.minder.index).toBe(2);
+        expect(letOutPick(at(2603, 3278, npc(1, 2608, 3279)), standable, 1)).toBeNull();
+        expect(letOutPick(at(2603, 3278, npc(1, 2606 + MINDER_REACH + 1, 3279)), standable)).toBeNull();
+        expect(letOutPick(at(2603, 3278, npc(1, 2608, 3279)), () => false)).toBeNull();
+    });
+
+    /**
+     * The cage on a FakeSdk: the player runs between cage tiles, and a click on a minder in `answers` opens its page,
+     * whose continue lets the player out beside it (mm_monkey_minder.rs2:13-25); any other click opens nothing, as a
+     * minder with no line of sight.
+     */
+    function cage(o: { x: number; z: number; minders: never[]; answers: number[]; inv?: number[]; worn?: number[] }) {
+        const sdk = new FakeSdk(baseState({
+            tick: 1, player: me(o.x, o.z), nearbyNpcs: o.minders, inventory: (o.inv ?? []).map((id, i) => item(id, i)), equipment: (o.worn ?? []).map((id, i) => item(id, i)),
+        } as Partial<BotWorldState>));
+        sdk.pathTo = (x, z) => ({ success: true, waypoints: [{ x, z, level: 0 }], reachedDestination: standable({ x, z }) });
+        // The walk is the server's (it routes round the trees); the sim only moves the player there.
+        const walk = simulateWalking(sdk);
+        const asked: Array<{ index: number; from: { x: number; z: number }; tick: number }> = [];
+        let next: 'page' | 'out' | null = null;
+        const prev = sdk.onSend;
+        sdk.onSend = (a, f) => {
+            prev(a, f);
+            const p = f.state!.player!;
+            if (a.method === 'sendInteractNpc') {
+                asked.push({ index: a.args[0] as number, from: { x: p.worldX, z: p.worldZ }, tick: f.state!.tick });
+                if (o.answers.includes(a.args[0] as number)) next = 'page';
+            } else if (f.state!.dialog.isOpen && /^(sendClickDialog|clickDialogByText|sendClickComponent)$/.test(a.method)) next = 'out';
+        };
+        const each = (s: BotWorldState): Partial<BotWorldState> => {
+            const n = next;
+            next = null;
+            if (n === 'page') {
+                return { dialog: { isOpen: true, isWaiting: false, pageId: 'minder', options: [{ index: 1, text: 'Click here to continue', buttonType: 6, componentId: 10 }], allComponents: [{ text: 'Monkey Minder' }, { text: 'My word - what are you doing in there?' }, { text: 'Click here to continue' }] } as never };
+            }
+            if (n === 'out') {
+                walk.target = null;
+                return { dialog: { isOpen: false, options: [], isWaiting: false }, player: { ...s.player!, worldX: 2609, worldZ: 3281, x: 2609, z: 3281 } };
+            }
+            return {};
+        };
+        return { sdk, asked, each };
+    }
+
+    test('a refusal is recovered: the refusing minder is passed over, the next asked after a step to its tile', async () => {
+        const notes: string[] = [];
+        setStepNote(l => notes.push(l));
+        const { sdk, asked, each } = cage({ x: 2603, z: 3278, minders: [npc(1, 2608, 3279), npc(2, 2604, 3285)], answers: [2] });
+        await drive(sdk, letOut({ sdk } as never), 300, each);
+        expect(inCage(sdk.getState()!)).toBe(false);
+        const firstOf = (i: number) => asked.find(a => a.index === i)!;
+        expect(asked[0]!.index).toBe(1);
+        expect(firstOf(1).from).toEqual({ x: 2605, z: 3280 });
+        expect(firstOf(2).from).toEqual({ x: 2604, z: 3281 });
+        expect(firstOf(2).tick).toBeGreaterThan(firstOf(1).tick);
+        expect(notes.filter(l => /let-out \d: minder #\d at \d+,\d+, distance \d from \d+,\d+/.test(l)).length).toBe(2);
+        expect(notes.some(l => /let-out 1: minder #1 .*refused/.test(l))).toBe(true);
+        expect(notes.at(-1)).toMatch(/out after 2 attempts in \d+ ticks/);
+        setStepNote(() => {});
+    });
+
+    test('every minder refusing: at most LET_OUT_ATTEMPTS clicks, then the throw', async () => {
+        const { sdk, asked, each } = cage({ x: 2603, z: 3278, minders: [npc(1, 2608, 3279), npc(2, 2604, 3285)], answers: [] });
+        const err = await drive(sdk, letOut({ sdk } as never), 400, each).then(() => null, e => (e as Error).message);
+        expect(err).toMatch(/did not let the player out: 5 attempts/);
+        expect(asked.length).toBeLessThanOrEqual(LET_OUT_ATTEMPTS * 2); // ClickGuard may re-send an unanswered post-step click once
+        expect(new Set(asked.map(a => a.index))).toEqual(new Set([1, 2]));
+    });
+
+    test('U entered from the cage (a re-run after T threw there) lets the player out before anything else', async () => {
+        const { sdk, asked, each } = cage({
+            x: 2603, z: 3278, minders: [npc(2, 2604, 3285)], answers: [2], inv: [MM_OBJ.monkey, MM_OBJ.greegree], worn: [MM_OBJ.amulet],
+        });
+        const u = steps()[seg('U')]!;
+        expect(u.preconditions(sdk.getState()!, {} as MmContext)).toBe(true);
+        await drive(sdk, u.run({ sdk, bot: { walkTo: async () => ({ success: false, message: 'test' }) } } as never), 120, each).catch(() => undefined);
+        const firstAway = sdk.sent.findIndex(a => a.method === 'sendWalk' && !CAGE_TILES.some(t => t.x === a.args[0] && t.z === a.args[1]));
+        const firstAsk = sdk.sent.findIndex(a => a.method === 'sendInteractNpc');
+        expect(asked[0]?.index).toBe(2);
+        expect(firstAsk).toBeGreaterThanOrEqual(0);
+        if (firstAway >= 0) expect(firstAsk).toBeLessThan(firstAway);
+        expect(inCage(sdk.getState()!)).toBe(false);
+    });
+
+    test('the re-run after a throw in the cage enters U (the monkey held proves T done)', async () => {
+        const s = baseState({ quests: { mm: 'started' }, player: me(2603, 3278), inventory: [MM_OBJ.monkey, MM_OBJ.greegree].map((id, i) => item(id, i)), equipment: [item(MM_OBJ.amulet)] } as Partial<BotWorldState>);
+        const p = await resolveResume(steps(), new Observation(s, { [JOURNAL_PROBE]: async () => journal(AFTER_S) }, {} as RunnerSession), {} as MmContext);
+        expect({ step: p.step, mode: p.mode }).toEqual({ step: 'S15:U-return', mode: 'run' });
+    });
+});
+
+describe("N's start under the temple", () => {
+    const nStage = (x: number, z: number, worn: number[] = []) => baseState({
+        quests: { mm: 'started' }, player: { worldX: x, worldZ: z, level: 0, x, z, hp: 42 } as never,
+        inventory: [MM_OBJ.enchantedBar, MM_OBJ.amuletMould, MM_OBJ.ballOfWool].map((id, i) => item(id, i)), equipment: worn.map((id, i) => item(id, i)),
+    } as Partial<BotWorldState>);
+
+    test("N's preconditions admit the atoll's surface and the trapdoor's landing, and refuse the dungeon", () => {
+        const n = steps()[seg('N')]!;
+        expect(underTemple(nStage(2807, 9201))).toBe(true);
+        expect(n.preconditions(nStage(2807, 9201), {} as MmContext)).toBe(true);
+        expect(n.preconditions(nStage(2794, 2774), {} as MmContext)).toBe(true);
+        expect(n.preconditions(nStage(2763, 9103), {} as MmContext)).toMatch(/under the temple/);
+        expect(n.preconditions(nStage(2807, 9201, [MM_OBJ.greegree]), {} as MmContext)).toMatch(/gree-gree/);
+    });
+
+    test('the re-run after a throw under the temple, the bar still held, enters N', async () => {
+        const p = await resolveResume(steps(), new Observation(nStage(2807, 9201), { [JOURNAL_PROBE]: async () => journal(IN_L) }, {} as RunnerSession), {} as MmContext);
+        expect({ step: p.step, mode: p.mode }).toEqual({ step: 'S15:N-temple', mode: 'run' });
+    });
+});
+
+describe('landing frames on the browser client (a region rebuild: sceneReady false, no locs or NPCs)', () => {
+    const fire = { id: 4765, name: 'Wall of flame', x: 2811, z: 9208, level: 0, distance: 4, optionsWithIndex: [], options: [] } as never;
+    const landed = () => new FakeSdk(baseState({ tick: 1, sceneReady: false, nearbyLocs: [], player: { worldX: 2807, worldZ: 9201, level: 0, x: 2807, z: 9201, hp: 42 } as never } as Partial<BotWorldState>));
+
+    test("N's fire is found after the trapdoor's landing frame, not refused on it (rs/513's browser chains)", async () => {
+        const sdk = landed();
+        sdk.scanLocs = [];
+        let n = 0;
+        const f = await drive(sdk, nearestFire(sdk as never), 30, () => (++n < 3 ? {} : { sceneReady: true, nearbyLocs: [fire] }));
+        expect(f).toEqual({ x: 2811, z: 9208, id: 4765 });
+        expect(n).toBe(3);
+    });
+
+    test('the scene wait passes a built frame at once and holds an unbuilt one until it is built', async () => {
+        const ready = new FakeSdk(baseState({ tick: 1, sceneReady: true } as Partial<BotWorldState>));
+        await drive(ready, sceneBuilt(ready as never), 1);
+        expect(ready.getState()!.tick).toBe(1);
+        const sdk = landed();
+        let n = 0;
+        await drive(sdk, sceneBuilt(sdk as never), 30, () => (++n < 4 ? {} : { sceneReady: true }));
+        expect(sdk.getState()!.sceneReady).toBe(true);
+        expect(n).toBe(4);
     });
 });
 

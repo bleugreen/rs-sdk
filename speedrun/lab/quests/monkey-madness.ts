@@ -24,8 +24,12 @@
 // used) and the end a mean/max table. --trade=D tops up before D with ::give (the gnome-half helper trade):
 // prayer potions to --topPotions=N held (default 2), then sharks into the free slots less topUpReserve.
 // --stage=all also tops up before every later segment, so a chain survives to measure what it eats.
+// --throwAt=T|N (with --launch): the run throws at that point as a crash would (THROW_POINTS), then relogs and resumes
+// through the runner's resolveResume to --until, as a manual re-run does; mm_resume and mm_resumed report it.
+// --loadCap=L: a run due while the host's 1-minute load is L or more starts only after a minute under L (a shared lab host).
 
 import { readFileSync } from 'fs';
+import { hostname, loadavg } from 'os';
 import { join } from 'path';
 
 import type { BotSDK } from '../../../sdk/index';
@@ -35,9 +39,11 @@ import { closeSession, loadBotEnv, openSession, relog } from '../../lib/session'
 import { TickLog } from '../../lib/ticks';
 import { waitTicks } from '../../lib/wait';
 import { chebyshev, configId, pos } from '../../lib/world';
-import { BELOW_30_EATING, H12_POTIONS, H12_SHARKS, inCell, MM_OBJ, REWARD_ITEMS, SEGMENT_EATING, SEGMENTS, segmentName, steps, type EatPolicy, type MmContext, type TopUp } from '../../quests/monkey-madness';
+import { BELOW_30_EATING, H12_POTIONS, H12_SHARKS, inCage, inCell, JOURNAL_PROBE, MM_OBJ, underTemple, REWARD_ITEMS, SEGMENT_EATING, SEGMENTS, segmentName, steps, type EatPolicy, type MmContext, type TopUp } from '../../quests/monkey-madness';
 import { slotNeed } from '../../quests/segments';
 import { h45Env, launchH45, stageH45, type H45Launcher } from '../h45';
+import { journalProbe } from '../../lib/quests';
+import { Observation, resolveResume } from '../../runner/resume';
 import { BOUNDARY_STEP, runSteps, type Step } from '../../runner/step';
 import { launchLabBrowser } from '../browser';
 import { arg, botArg, result } from '../common';
@@ -508,6 +514,46 @@ function printCensus(cs: ReadonlyArray<{ boundaries: BoundaryCensus[]; uses: Arr
     }
 }
 
+/**
+ * Where --throwAt throws: the first send of a matching method in a matching state. T: the let-out's first click, caged
+ * with the monkey held (a re-run must enter U and let out there). N: the first click on the trapdoor's landing with the
+ * enchanted bar held (a re-run must re-enter N under the temple).
+ */
+const THROW_POINTS: Record<string, { method: RegExp; when: (s: BotWorldState) => boolean }> = {
+    T: { method: /^sendInteractNpc$/, when: s => inCage(s) && s.inventory.some(i => i.id === MM_OBJ.monkey) },
+    N: { method: /^send/, when: s => underTemple(s) && s.inventory.some(i => i.id === MM_OBJ.enchantedBar) },
+};
+
+/**
+ * Arm a throw on `sdk`'s send methods: the first send matching `point` rejects, as a crash at that click would, and every
+ * send after it rejects too, so nothing left of the thrown run acts, until the returned disarm restores the methods.
+ */
+function armThrow(sdk: BotSDK, letter: string, point: (typeof THROW_POINTS)[string], onThrow: (tick: number) => void): () => void {
+    const saved: Array<[string, unknown]> = [];
+    let thrown = false;
+    const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(sdk)).filter(n => n.startsWith('send') && typeof (sdk as never)[n] === 'function');
+    for (const name of methods) {
+        const orig = (sdk as unknown as Record<string, (...a: unknown[]) => unknown>)[name]!;
+        saved.push([name, Object.prototype.hasOwnProperty.call(sdk, name) ? orig : undefined]);
+        (sdk as unknown as Record<string, unknown>)[name] = (...a: unknown[]) => {
+            const st = sdk.getState();
+            if (!thrown && st && point.method.test(name) && point.when(st)) {
+                thrown = true;
+                onThrow(st.tick);
+                console.log(`lab: thrown at ${letter} on ${name}(${a.join(',')}), tick ${st.tick}, at ${JSON.stringify(pos(st))}`);
+            }
+            if (thrown) return Promise.reject(new Error(`lab: thrown at ${letter}`));
+            return orig.apply(sdk, a);
+        };
+    }
+    return () => {
+        for (const [name, own] of saved) {
+            if (own === undefined) delete (sdk as unknown as Record<string, unknown>)[name];
+            else (sdk as unknown as Record<string, unknown>)[name] = own;
+        }
+    };
+}
+
 async function main(): Promise<void> {
     const from = arg('from', 'H').toUpperCase();
     const until = arg('until', from).toUpperCase();
@@ -595,8 +641,58 @@ async function main(): Promise<void> {
     const predose = process.argv.includes('--predose');
     const spawn = arg('spawn', '');
     const spawnAt = arg('spawnAt', '');
+    const loadCap = Number(arg('loadCap', '0'));
+    const throwAt = arg('throwAt', '').toUpperCase();
+    const throwPoint = throwAt ? THROW_POINTS[throwAt] : undefined;
+    if (throwAt && !throwPoint) throw new Error(`--throwAt=${throwAt}: want ${Object.keys(THROW_POINTS).join(' or ')}`);
+    if (throwAt && !launch) throw new Error('--throwAt needs --launch (the relaunch is a relog)');
     const kitOpts: KitOptions = { bow, pinned, predose, ...(defence ? { defence: Number(defence) } : {}), ...(antipoison ? { antipoison: Number(antipoison) } : {}), ...(sharks ? { sharks: Number(sharks) } : {}), ...(potions ? { potions: Number(potions) } : {}) };
+    /** --throwAt's re-run: a relog, the resume walk over every segment, then the segments from its point to --until. */
+    async function relaunch(run: number, thrownTick: number): Promise<void> {
+        if (thrownTick < 0) {
+            result('mm_resume', { run, throwAt, thrown: false });
+            return;
+        }
+        const t0 = Date.now();
+        // The game refuses a logout in combat, or the client times out on it (N's landing among the zombie monkeys). Waiting it out there is a death
+        // (measured: nothing eats or prays for the thrown run), so the re-run then resumes at once in the live session.
+        let relogged = true;
+        try {
+            await relog(session);
+        } catch (e) {
+            if (!/logout (refused|failed)/.test(String(e))) throw e;
+            relogged = false;
+            console.log(`lab: relaunch without a relog: ${String(e)}`);
+        }
+        const obs = new Observation(sdk.getState()!, { [JOURNAL_PROBE]: journalProbe('mm') } as never, session);
+        const point = await resolveResume(all, obs, {} as MmContext);
+        const s0 = sdk.getState()!;
+        result('mm_resume', { run, throwAt, thrown: true, thrownTick, relogMs: Date.now() - t0, relogged, mode: point.mode, step: point.step, reason: point.reason, lastDone: point.lastDone, firstUndone: point.firstUndone, at: pos(s0), tick: s0.tick });
+        const log2 = TickLog.memory();
+        const untrace2 = traceEvery > 0 ? trace(sdk, traceEvery) : () => undefined;
+        let err: string | undefined;
+        try {
+            await runSteps(session, all.slice(0, i1 + 1), { log: log2, c: {} as MmContext, shouldStop: () => false, from: point.index, startMode: point.mode === 'resume' ? 'resume' : 'run', observed: obs });
+        } catch (e) {
+            err = e instanceof Error ? e.message : String(e);
+        } finally {
+            untrace2();
+        }
+        const s1 = sdk.getState()!;
+        result('mm_resumed', {
+            run, ok: !err, ...(err ? { error: err } : {}), ticks: Object.fromEntries(log2.rows.filter(r => r.step !== BOUNDARY_STEP).map(r => [r.step, r.ticks])),
+            boundary: log2.rows.filter(r => r.step === BOUNDARY_STEP).reduce((a, r) => a + r.ticks, 0), at: pos(s1), hp: s1.player?.hp,
+        });
+    }
     for (let run = 0; run < runs; run++) {
+        if (loadCap > 0 && loadavg()[0]! >= loadCap) {
+            const w0 = Date.now();
+            for (let under = 0; under < 6; ) {
+                under = loadavg()[0]! < loadCap ? under + 1 : 0;
+                if (under < 6) await Bun.sleep(10_000);
+            }
+            console.log(`run ${run}: held ${Math.round((Date.now() - w0) / 1000)} s for the load cap ${loadCap}`);
+        }
         // A relog has once come back somewhere else with an older pack (G run 2, 05:27: Lumbridge, then a death), and a
         // fixture once stalled on a client that stopped publishing: both are re-staged, at most three times.
         for (let attempt = 1; ; attempt++) {
@@ -629,7 +725,7 @@ async function main(): Promise<void> {
         const log = TickLog.memory();
         const s0 = sdk.getState()!;
         const def = s0.skills.find(k => k.name === 'Defence');
-        result('mm_staged', { run, defence: { level: def?.baseLevel, xp: def?.experience }, hp: s0.player?.hp, worn: s0.equipment.map(i => i.name) });
+        result('mm_staged', { run, host: hostname(), load1: Number(loadavg()[0]!.toFixed(2)), defence: { level: def?.baseLevel, xp: def?.experience }, hp: s0.player?.hp, worn: s0.equipment.map(i => i.name) });
         const hp0 = s0.player!.hp, pp0 = s0.prayers?.prayerPoints, doses0 = prayerDoses(s0);
         const sharks0 = s0.inventory.filter(i => i.name === 'Shark').length;
         const arrows0 = runeArrows(s0);
@@ -651,12 +747,15 @@ async function main(): Promise<void> {
             await launcher.stop();
         };
         let error: string | undefined;
+        let thrownTick = -1;
+        const disarm = throwPoint ? armThrow(sdk, throwAt, throwPoint, t => { thrownTick = t; }) : () => undefined;
         try {
             await runSteps(session, chain, { log, c: {} as MmContext, shouldStop: () => false });
             passes++;
         } catch (e) {
             error = e instanceof Error ? e.message : String(e);
         } finally {
+            disarm();
             await unstage();
             untrace();
             unuse();
@@ -666,6 +765,7 @@ async function main(): Promise<void> {
         censuses.push({ boundaries, uses });
         for (const row of log.rows) if (row.step !== BOUNDARY_STEP && row.step in table) table[row.step]!.push(row.ok ? row.ticks : `fail@${row.ticks}`);
         const boundary = log.rows.filter(r => r.step === BOUNDARY_STEP).reduce((a, r) => a + r.ticks, 0);
+        if (throwPoint) await relaunch(run, thrownTick);
         const s = sdk.getState()!;
         result('mm_run', {
             run, from, until, ok: !error, ...(error ? { error } : {}),

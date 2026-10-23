@@ -366,15 +366,73 @@ const ZOO_EAST = { x: 2610, z: 3279 };
 const CAGE_ENTRY = { x: 2604, z: 3281 };
 const MINDER = /^Monkey Minder$/i;
 /**
- * A caged player's talk reaches a minder through the bars only from within 5 tiles (mm_monkey_minder.rs2: p_aprange(5)),
- * and the client can't route out of the cage to a farther one, so the click is never answered (a gate chain's T: three
- * clicks on a far minder, no dialogue). Three minders wander by the cage.
+ * A caged player's talk reaches a minder only from within 5 tiles (mm_monkey_minder.rs2: p_aprange(5)), and only with a
+ * line of sight: the talk is an approach trigger, which the engine fires only while isApproached holds
+ * (PathingEntity.inApproachDistance, rsmod hasLineOfSight). The client can't route out of the cage, so every click is an
+ * unrouted ap-range send, and `reachable` is false for every minder outside it.
  */
 export const MINDER_REACH = 5;
-export function minderInReach(s: BotWorldState): BotWorldState['nearbyNpcs'][number] | null {
+
+/** Every tile of the cage's zones, once each. */
+export const CAGE_TILES: ReadonlyArray<{ x: number; z: number }> = (() => {
+    const tiles = new Map<string, { x: number; z: number }>();
+    for (const a of CAGE) for (let x = a.x0; x <= a.x1; x++) for (let z = a.z0; z <= a.z1; z++) tiles.set(`${x},${z}`, { x, z });
+    return [...tiles.values()];
+})();
+/**
+ * The cage's north strip. Every let-out that a minder answered at the first click was asked from here (8 of 8, lab
+ * 10-22): it looks through the railing (blockrange=no) and is clear of what stands inside the cage (maps/m40_51.jm2): a
+ * one-tile post box at (2602,3278) whose wood2 walls block a line of sight, and three 2x2 trees, at (2599,3277),
+ * (2602,3276) and (2604,3278). Forced T run 2 asked a minder 3-4 tiles away nine times from (2603,3278), between the
+ * post, a tree and a trunk, and was never answered.
+ */
+export const CAGE_NORTH_STRIP: Area = { x0: 2603, z0: 3280, x1: 2605, z1: 3281, level: 0 };
+/** The let-out's bounds: attempts, and the ticks in which a new attempt may start (rs/185 and main, 10-22). */
+export const LET_OUT_ATTEMPTS = 5;
+export const LET_OUT_TICKS = 150;
+/** The longest wait for a minder in reach (another one than the minder that just refused) before an attempt. */
+export const LET_OUT_WAIT = 40;
+/**
+ * Ticks for a minder's first page after the click. An answered talk opens on the tick the server takes the click (the
+ * approach trigger runs at once, and its first line is a chatnpc), so a click that opens nothing in this time was refused.
+ */
+export const LET_OUT_OPEN = 5;
+
+export interface LetOutPick {
+    minder: BotWorldState['nearbyNpcs'][number];
+    /** The cage tile to ask from. */
+    stand: { x: number; z: number };
+    /** The minder's distance from `stand`. */
+    distance: number;
+}
+
+/** Whether sort key `a` comes before `b`, element by element. */
+function keyBefore(a: readonly number[], b: readonly number[]): boolean {
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i]! < b[i]!;
+    return false;
+}
+
+/**
+ * The minder to ask and the cage tile to ask from. The SDK can't test a line of sight, so the pick asks from the north
+ * strip whenever a minder there is in reach, and otherwise from the standable cage tile nearest a minder; ties go to
+ * the shorter step from the player. `standable` says whether the player can stand on a tile (the SDK's pathfinder); the
+ * minder `exclude` (the one that just refused) is never picked.
+ */
+export function letOutPick(s: BotWorldState, standable: (t: { x: number; z: number }) => boolean, exclude: number | null = null): LetOutPick | null {
     const p = pos(s);
-    const d = (n: BotWorldState['nearbyNpcs'][number]) => chebyshev({ x: n.tileX ?? n.x, z: n.tileZ ?? n.z }, p);
-    return s.nearbyNpcs.filter(n => MINDER.test(n.name) && d(n) <= MINDER_REACH).sort((a, b) => d(a) - d(b))[0] ?? null;
+    const stands = CAGE_TILES.filter(standable);
+    let best: { pick: LetOutPick; key: number[] } | null = null;
+    for (const m of s.nearbyNpcs) {
+        if (!MINDER.test(m.name) || m.index === exclude) continue;
+        const mt = { x: m.tileX ?? m.x, z: m.tileZ ?? m.z };
+        for (const t of stands) {
+            const d = chebyshev(t, mt);
+            if (d < 1 || d > MINDER_REACH) continue;
+            const key = [tileIn(t, CAGE_NORTH_STRIP) ? 0 : 1, d, chebyshev(t, p)];
+            if (!best || keyBefore(key, best.key)) best = { pick: { minder: m, stand: t, distance: d }, key };
+        }
+    }
+    return best?.pick ?? null;
 }
 
 /**
@@ -952,6 +1010,15 @@ async function dismiss(sdk: Sdk): Promise<void> {
     await converse(sdk, [], { openTicks: 1, idle: 2, unmatched: 'first', maxTicks: 40 });
 }
 
+/**
+ * Wait out a region rebuild: while the browser client rebuilds after a teleport, a ladder or a trapdoor (sceneReady
+ * false), its NPC and loc lists are empty or the old region's. For a one-shot read on a landing frame; lib/world.ts
+ * findLoc waits the same way for locs.
+ */
+export async function sceneBuilt(sdk: Sdk): Promise<void> {
+    if (sdk.getState()?.sceneReady === false) await waitUntil(sdk, s => s.sceneReady !== false, { maxTicks: 60 });
+}
+
 async function go(ctx: Ctx, to: { x: number; z: number }, tol = 0): Promise<void> {
     const r = await walkTo(ctx.bot, ctx.sdk, to.x, to.z, tol);
     if (!r.ok) throw new Error(`walk to ${to.x},${to.z} failed at ${where(ctx.sdk)}: ${r.message}`);
@@ -1296,15 +1363,17 @@ async function talk(sdk: Sdk, npc: RegExp, choices: RegExp[], o: { near?: { x: n
 }
 
 /** In the dungeon under the temple (mapsquare 43_143, z 9152+). */
-const underTemple = (src: StateLike) => {
+export const underTemple = (src: StateLike) => {
     const p = pos(src);
     return p.z >= 9180 && p.x >= 2752 && p.x <= 2815;
 };
 
-/** The fire under the temple nearest the player (mm_iban_firewall_straight/diagonal, quest_mm.rs2 opu_mm_firewall). */
-async function nearestFire(sdk: Sdk): Promise<{ x: number; z: number; id: number }> {
-    const fires = (await sdk.scanNearbyLocs(15)).filter(l => /^Wall of flame$/i.test(l.name)).sort((a, b) => a.distance - b.distance);
-    const f = fires[0];
+/**
+ * The fire under the temple nearest the player (mm_iban_firewall_straight/diagonal, quest_mm.rs2 opu_mm_firewall). Looked
+ * up on the trapdoor's landing frame, so through findLoc, which waits out the browser client's region rebuild.
+ */
+export async function nearestFire(sdk: Sdk): Promise<{ x: number; z: number; id: number }> {
+    const f = await findLoc(sdk, { name: /^Wall of flame$/i, radius: 15 });
     if (!f) throw new Error(`no fire under the temple near ${where(sdk)}`);
     return { x: f.x, z: f.z, id: f.id };
 }
@@ -1707,6 +1776,66 @@ async function zooToDaero(ctx: Ctx): Promise<void> {
     }
     await intoTree(ctx, 1);
     if (chebyshev(pos(sdk), DAERO) > 3) await go(ctx, DAERO, 2);
+}
+
+/**
+ * Out of the zoo's cage as a human, beside the minder (mm_monkey_minder.rs2:13-25): T's end, and U's start when a re-run
+ * finds the player caged. Each attempt picks a minder and a cage tile (letOutPick), steps there and clicks once; a
+ * minder that opens nothing in LET_OUT_OPEN refused (no line of sight) and is passed over for the next pick, which
+ * waits up to LET_OUT_WAIT for another in reach, then takes the same minder again from wherever it now stands. At
+ * most LET_OUT_ATTEMPTS, started within LET_OUT_TICKS, then the throw. Every attempt is noted for rs/158's price.
+ */
+export async function letOut(ctx: Ctx): Promise<void> {
+    const { sdk } = ctx;
+    const st = () => sdk.getState()!;
+    await unwear(sdk, MM_OBJ.greegree);
+    const standable = (t: { x: number; z: number }) => {
+        const p = pos(st());
+        return (p.x === t.x && p.z === t.z) || sdk.findPath(t.x, t.z, 60).reachedDestination === true;
+    };
+    const t0 = st().tick;
+    let exclude: number | null = null;
+    let why = 'no minder within reach';
+    let attempts = 0;
+    while (attempts < LET_OUT_ATTEMPTS && inCage(sdk) && st().tick - t0 < LET_OUT_TICKS) {
+        attempts++;
+        const w0 = st().tick;
+        await waitUntil(sdk, s => !!letOutPick(s, standable, exclude), { maxTicks: Math.min(LET_OUT_WAIT, LET_OUT_TICKS - (w0 - t0)) });
+        let pick = letOutPick(st(), standable, exclude);
+        const again = !pick && exclude !== null;
+        if (again) pick = letOutPick(st(), standable, null);
+        const waited = st().tick - w0;
+        if (!pick) {
+            why = `no minder within ${MINDER_REACH} of a cage tile`;
+            stepNote(`S15:T let-out ${attempts}: no minder within ${MINDER_REACH} of a cage tile after ${waited} ticks`);
+            continue;
+        }
+        const stand = pick.stand;
+        const from = pos(st());
+        if (from.x !== stand.x || from.z !== stand.z) {
+            await act(sdk, () => sdk.sendWalk(stand.x, stand.z, true), s => pos(s).x === stand.x && pos(s).z === stand.z, { resendEvery: 3, maxTicks: 12 });
+        }
+        // The minder walks meanwhile: it is asked from wherever the step ended, if still in reach.
+        const m = st().nearbyNpcs.find(n => n.index === pick!.minder.index) ?? pick.minder;
+        const mt = { x: m.tileX ?? m.x, z: m.tileZ ?? m.z };
+        const at = pos(st());
+        const d = chebyshev(mt, at);
+        const head = `S15:T let-out ${attempts}: minder #${m.index} at ${mt.x},${mt.z}, distance ${d} from ${at.x},${at.z}` +
+            `${from.x !== at.x || from.z !== at.z ? ` (stepped from ${from.x},${from.z})` : ''}, waited ${waited} ticks${again ? ' (the minder that refused, again)' : ''}`;
+        if (d < 1 || d > MINDER_REACH) {
+            why = `the minder walked out of reach (${d})`;
+            stepNote(`${head}: walked out of reach, not asked`);
+            continue;
+        }
+        const c0 = st().tick;
+        const r = await talkTo(sdk, m, [], { attempts: 1, openTicks: LET_OUT_OPEN, maxTicks: 60, idle: 6, until: s => !inCage(s), interrupts: [MONKEY_CHATTER] });
+        why = r.reason ?? r.transcript.slice(-2).join(' / ');
+        stepNote(`${head}, ${r.clicks} click, ${st().tick - c0} ticks: ${inCage(sdk) ? `refused (${why})` : 'out'}`);
+        if (inCage(sdk)) exclude = m.index;
+    }
+    const ticks = st().tick - t0;
+    if (inCage(sdk)) throw new Error(`the minder did not let the player out: ${attempts} attempts in ${ticks} ticks, last: ${why} (at ${where(sdk)})`);
+    stepNote(`S15:T let-out: out after ${attempts} attempt${attempts === 1 ? '' : 's'} in ${ticks} ticks`);
 }
 
 const AUNT = /^The Monkey's Aunt$/;
@@ -2437,6 +2566,7 @@ export function scorpionsNear(s: BotWorldState): BotWorldState['nearbyNpcs'] {
 
 /** Shoot every scorpion that is a threat (scorpionsNear), under Protect from Melee; throws if one still is after 4 fights. */
 async function clearScorpions(sdk: Sdk, note: (line: string) => void): Promise<void> {
+    await sceneBuilt(sdk); // the glider's landing frame
     for (let i = 0; i < 4; i++) {
         const n = scorpionsNear(sdk.getState()!)[0];
         if (!n) return;
@@ -2577,7 +2707,7 @@ const BODIES: Partial<Record<string, Body>> = {
                 await talk(sdk, /^Daero$/i, [], { minPages: 10, idle: 4 });
                 await dismiss(sdk);
             }
-            const panel = (await sdk.scanNearbyLocs(20)).find(l => /reinitialisation panel/i.test(l.name));
+            const panel = await findLoc(sdk, { name: /reinitialisation panel/i, radius: 20 });
             if (!panel) throw new Error(`no Reinitialisation Panel near ${where(sdk)}`);
             const op = panel.optionsWithIndex.find(x => /operate/i.test(x.text))?.opIndex ?? 1;
             const open = await act(sdk, () => sdk.sendInteractLoc(panel.x, panel.z, panel.id, op), s => !!s.interface.inventories?.some(i => i.componentId === PUZZLE_COMPONENT), { resendEvery: 8, maxTicks: 40 });
@@ -2742,7 +2872,8 @@ const BODIES: Partial<Record<string, Body>> = {
         postconditions: holding(MM_OBJ.enchantedBar, MM_OBJ.amuletMould),
     },
     N: {
-        preconditions: all(onAtoll, human, holding(MM_OBJ.enchantedBar, MM_OBJ.amuletMould, MM_OBJ.ballOfWool)),
+        preconditions: all(s => inArea(s, AREAS.atoll) || underTemple(s) || `not on Ape Atoll's surface or under the temple (at ${JSON.stringify(pos(s))})`, human,
+            holding(MM_OBJ.enchantedBar, MM_OBJ.amuletMould, MM_OBJ.ballOfWool)),
         async run(ctx, o) {
             const { sdk } = ctx;
             await upkeep(sdk, async () => {
@@ -2912,33 +3043,13 @@ const BODIES: Partial<Record<string, Body>> = {
                     if (!inCage(sdk)) throw new Error(`the minder did not cage the monkey: ${r.reason ?? r.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
                 }
                 // 16 pages, no choice; the amulet is all it needs (mm_zoo_monkey.rs2:1-35).
+                await sceneBuilt(sdk); // the minder's telejump into the cage
                 const zooMonkey = talkableNpc(st(), /^Monkey$/, CAGE_ENTRY);
                 if (!zooMonkey) throw new Error(`no monkey to talk to in the cage (at ${where(sdk)})`);
                 const m = await talkTo(sdk, zooMonkey, [], { maxTicks: 120, idle: 3, until: s => holds(s, MM_OBJ.monkey) });
                 if (!holds(st(), MM_OBJ.monkey)) throw new Error(`no monkey in the backpack: ${m.reason ?? m.transcript.slice(-2).join(' / ')}`);
             }
-            if (inCage(sdk)) {
-                // A human in the cage is let out beside the minder (mm_monkey_minder.rs2:13-25).
-                await unwear(sdk, MM_OBJ.greegree);
-                let why = 'no minder within reach';
-                for (let i = 0; i < 3 && inCage(sdk); i++) {
-                    // Each attempt is noted (the minder, its distance, the wait for one in reach), for rs/158's price.
-                    const t0 = st().tick;
-                    const nearest = st().nearbyNpcs.filter(n => MINDER.test(n.name)).map(n => chebyshev({ x: n.tileX ?? n.x, z: n.tileZ ?? n.z }, pos(st()))).sort((a, b) => a - b)[0];
-                    await waitUntil(sdk, s => !!minderInReach(s), { maxTicks: 40 });
-                    const m = minderInReach(st());
-                    const waited = st().tick - t0;
-                    if (!m) {
-                        stepNote(`S15:T let-out ${i + 1}: no minder within ${MINDER_REACH} after ${waited} ticks (nearest ${nearest ?? 'none'})`);
-                        continue;
-                    }
-                    const d = chebyshev({ x: m.tileX ?? m.x, z: m.tileZ ?? m.z }, pos(st()));
-                    const r = await talkTo(sdk, m, [], { maxTicks: 120, idle: 6, until: s => !inCage(s), interrupts: [MONKEY_CHATTER] });
-                    why = r.reason ?? r.transcript.slice(-2).join(' / ');
-                    stepNote(`S15:T let-out ${i + 1}: minder #${m.index} at ${d} (nearest at the start ${nearest ?? 'none'}), waited ${waited} ticks, ${r.clicks} clicks, ${inCage(sdk) ? `still caged (${why})` : 'out'}`);
-                }
-                if (inCage(sdk)) throw new Error(`the minder did not let the player out: ${why} (at ${where(sdk)})`);
-            }
+            if (inCage(sdk)) await letOut(ctx);
             await dismiss(sdk);
         },
         postconditions: all(holding(MM_OBJ.monkey, MM_OBJ.greegree), s => !inCage(s) || 'still in the cage'),
@@ -2947,6 +3058,8 @@ const BODIES: Partial<Record<string, Body>> = {
         preconditions: all(holding(MM_OBJ.monkey, MM_OBJ.greegree), s => wearing(s, MM_OBJ.amulet) || 'the amulet is not worn'),
         async run(ctx) {
             const { sdk } = ctx;
+            // A re-run after T threw in the cage enters here: the monkey held proves T done (itemMilestone).
+            if (inCage(sdk)) await letOut(ctx);
             await hangarRoute(ctx, () => zooToDaero(ctx));
             await upkeep(sdk, async () => {
                 await asMonkey(sdk);
