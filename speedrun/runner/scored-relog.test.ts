@@ -79,13 +79,31 @@ describe("SCORED's split S21 relog", () => {
         expect(t.calls.filter(c => c === 'login')).toHaveLength(1);
     });
 
-    test('unconfirmed logout never opens the planned entry', async () => {
-        for (const deps of [{ logout: async () => ({ ok: false, reason: 'timeout' } as LogoutResult) }, { confirmOut: async () => false }]) {
-            const t = setup(deps);
-            await expect(scoredLogoutStep({ budget: t.budget, deps: t.deps }).run(t.ctx)).rejects.toThrow(/logout failed|page out not confirmed/);
-            expect(t.budget.planned(SCORED_RELOG)).toBeNull();
-            expect(t.budget.holder()).toBeNull();
-        }
+    test('a logout that failed never opens the planned entry', async () => {
+        const t = setup({ logout: async () => ({ ok: false, reason: 'timeout' } as LogoutResult) });
+        await expect(scoredLogoutStep({ budget: t.budget, deps: t.deps }).run(t.ctx)).rejects.toThrow(/logout failed/);
+        expect(t.budget.planned(SCORED_RELOG)).toBeNull();
+        expect(t.budget.holder()).toBeNull();
+    });
+
+    test('a logout that took but whose page-out is unconfirmed (rs/562 E): the entry is open, and the walk resumes at the login half', async () => {
+        const t = setup({ confirmOut: async () => (t.calls.push('page out?'), false) });
+        const opts = { budget: t.budget, deps: t.deps, beforeLogin: t.beforeLogin };
+        const logout = scoredLogoutStep(opts), login = scoredLoginStep(opts);
+        const ready: Step<any> = { name: 'ready', offline: true, preconditions: () => true, postconditions: () => true, run: async () => {}, logoutSafe: true };
+        const band: Step<any> = { name: 'trade', preconditions: s => s.inGame ? true : 'out', postconditions: () => true, done: () => false, run: async () => {}, logoutSafe: true };
+        const steps = [logout, ready, login, band];
+        await expect(logout.run(t.ctx)).rejects.toThrow(/page out not confirmed/);
+        expect(t.calls).toEqual(['logout', 'page out?']);
+        expect(new RelogBudget(t.budget.dir).planned(SCORED_RELOG)).toBe('open');
+        expect(t.budget.holder()).toBeNull();
+        // SCORED is out: before, both halves refused ('not in game before S21 logout', 'no open S21 relog').
+        expect(t.sdk.state!.inGame).toBe(false);
+        const p = await resolveResume(steps, new Observation(t.sdk.state!), {});
+        expect([p.step, p.mode]).toEqual([login.name, 'run']);
+        await login.run(t.ctx);
+        expect(t.budget.planned(SCORED_RELOG)).toBe('closed');
+        expect(t.budget.used()).toEqual({ planned: 1, unplanned: 0 });
     });
 
     test('world full retries only the login and rechecks all givers after its pause', async () => {

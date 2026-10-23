@@ -22,6 +22,7 @@ import {
     type Link,
 } from './resume';
 import type { RunnerSession, Step } from './step';
+import { tutorialSkip } from '../skills/start';
 
 const prevTick = process.env.SPEEDRUN_TICK_MS;
 beforeAll(() => { process.env.SPEEDRUN_TICK_MS = '5'; });
@@ -344,6 +345,40 @@ describe('runResumable', () => {
         // The walk would have said 'finished' (the journal reads complete); --from wins once.
         expect(c.trace).toEqual(['quest']);
         expect(r.points[0]?.reason).toBe('operator --from');
+    });
+
+    describe("S00 on a re-run whose first frame carries no player (rs/562 D)", () => {
+        const LUMBRIDGE = { name: 'lab', x: 3222, z: 3218, worldX: 3222, worldZ: 3218, level: 0 } as PlayerState;
+        const chain = (trace: string[]): Step<C>[] => [
+            tutorialSkip as Step<C>,
+            { name: 'next', logoutSafe: true, preconditions: s => (s.player ? true : 'no player'), postconditions: () => true, run: async () => void trace.push('next'), done: () => false },
+        ];
+
+        test('the walk waits for the player, then reads S00 done and starts after it', async () => {
+            const client = droppingClient({ tick: 0, inGame: true, player: null });
+            client.sdk.onStateUpdate(s => {
+                if (!s.player && s.tick >= 3) queueMicrotask(() => client.sdk.push({ player: LUMBRIDGE }));
+            });
+            const c: C = { trace: [], fenced: 0 };
+            const log = TickLog.memory('t');
+            const r = await runResumable(client.session, chain(c.trace), { log, c, link: client.link, shouldStop: () => false });
+            client.stop();
+            expect(r.points.map(p => [p.step, p.mode, p.lastDone])).toEqual([['next', 'run', 0]]);
+            expect(c.trace).toEqual(['next']);
+            const player = log.rows.find(row => row.step === RESUME_STEP)?.meta?.player as { ready: boolean; ticks: number };
+            expect(player.ready).toBe(true);
+            expect(player.ticks).toBeGreaterThanOrEqual(3);
+        });
+
+        test('a player that never comes: the wait ends at its bound in observed ticks and the walk observes anyway', async () => {
+            const client = droppingClient({ tick: 0, inGame: true, player: null });
+            const log = TickLog.memory('t');
+            const p = runResumable(client.session, chain([]), { log, c: { trace: [], fenced: 0 }, link: client.link, shouldStop: () => false, playerMaxTicks: 8 });
+            await expect(p).rejects.toThrow(ResumeError);
+            await expect(p).rejects.toThrow('S00 tutorial skip: not in game');
+            client.stop();
+            expect(client.sdk.getState()!.tick).toBeGreaterThan(8);
+        });
     });
 });
 

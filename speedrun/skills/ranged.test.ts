@@ -3,6 +3,7 @@ import type { BotWorldState, InventoryItem, NearbyLoc, NearbyNpc, PlayerState, S
 import { baseState, drive as settle, FakeSdk } from '../lib/fake-sdk';
 import { IF_RETALIATE_OFF, IF_RETALIATE_ON } from '../lib/session';
 import { TickLog } from '../lib/ticks';
+import { Observation, resolveResume } from '../runner/resume';
 import {
     cannonSessionStep, chooseConsume, combatFinishStep, FINISH, gearClick, IMMUNITY, noteConsume, noteSession, otherItems, phaseFor, pickTarget, resipAt, runSession,
     slotNeed, specFor, SPIDERS, type ConsumeMemory, type RangedSdk,
@@ -254,6 +255,21 @@ describe('steps: gates and resume', () => {
         expect(inProg(step, s14Ready({ player: player(42, 3200, 3700) }))).toBe(false);
     });
 
+    test('S14 at Ranged 50 with its cannon still placed (a pick-up that threw, rs/562 E): not done, in progress, and the walk resumes it', async () => {
+        const step = cannonSessionStep();
+        const lv: Levels = { Attack: 99, Prayer: 43, Hitpoints: 42, Ranged: 50 };
+        const leftPlaced = st(lv, { inventory: [item(4, 'Cannonball', 30)], equipment: [item(9, 'Mithril scimitar')], nearbyLocs: [cannonLoc()] });
+        expect(isDone(step, leftPlaced)).toBe(false);
+        expect(inProg(step, leftPlaced)).toBe(true);
+        const p = await resolveResume([step], new Observation(leftPlaced), {});
+        expect([p.step, p.mode]).toEqual(['S14 cannon session', 'resume']);
+        // Picked up: done. Away from the spiders: done whatever is placed. S27's cannon at the same site, after Monkey Madness: done.
+        expect(isDone(step, st(lv, { inventory: kit(30) }))).toBe(true);
+        expect(isDone(step, { ...leftPlaced, player: player(42, 3200, 3700) })).toBe(true);
+        expect(isDone(step, { ...leftPlaced, quests: { mcannon: 'complete', mm: 'complete' } })).toBe(true);
+        expect(isDone(cannonSessionStep({ pickUp: { s14: false } }), leftPlaced)).toBe(true);
+    });
+
     test('S27 preconditions: the bow and arrows below Ranged 99 only', () => {
         const step = combatFinishStep();
         const ready = (lv: Levels, inv: InventoryItem[]) => st(lv, { inventory: [...kit(1200), ...inv], equipment: [item(9, 'Mithril scimitar')] });
@@ -371,6 +387,24 @@ describe('runSession on the fake SDK', () => {
             }),
         );
     const consume = { eatBelow: 30, antipoison: 'first-poison' } as const;
+
+    test('a session re-entered past its last phase with its cannon placed picks the cannon up and ends (rs/562 E)', async () => {
+        const sdk = atCannon({ inventory: [item(4, 'Cannonball', 30)], nearbyNpcs: [] });
+        sdk.onSend = a => {
+            if (a.method !== 'sendInteractLoc' || a.args[3] !== 2) return;
+            queueMicrotask(() => sdk.tick(cur => ({ nearbyLocs: [], inventory: [...kit(30).slice(0, 4), { ...cur.inventory[0]!, slot: 4, count: 60 }] })));
+        };
+        const p = runSession(sdk as unknown as RangedSdk, { phaseOf: () => null, consume, maxTicks: 100 });
+        const res = (await drive(sdk, p, 10)) as Awaited<ReturnType<typeof runSession>>;
+        expect(sdk.sent.map(a => a.method)).toEqual(['sendInteractLoc']);
+        expect(res.end).toBe('done');
+        expect(res.phases).toEqual([]);
+        expect(cannonSessionStep().postconditions({ ...sdk.state!, skills: skills({ Attack: 99, Ranged: 50 }) }, {} as never)).toBe(true);
+        // Nothing placed: nothing sent.
+        const none = atCannon({ nearbyLocs: [] });
+        await drive(none, runSession(none as unknown as RangedSdk, { phaseOf: () => null, consume, maxTicks: 100 }), 2);
+        expect(none.sent).toEqual([]);
+    });
 
     test('a placed cannon is fired, the flick keeps one prayer, the attack goes behind each burst', async () => {
         const sdk = atCannon();

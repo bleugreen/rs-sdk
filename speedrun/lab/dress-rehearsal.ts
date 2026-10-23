@@ -626,7 +626,7 @@ async function main(argv: string[]): Promise<number> {
         }
         log.append(annotation(log, s.name, 'gate', '(gate) dress rehearsal', { meta: { until: a.until ?? null, from: a.from ?? null, standIns: lab.standIns, staffed: lab.staffed, stubRows: lab.stubRows, cueServed: lab.cueServed, ringGivers: ringNames, altarGivers: altarNames, droppers: needDroppers ? droppers : [], boneGivers: needBones ? boneGivers : [], host: process.env.HOSTNAME ?? null } }));
         chunkEnd = watchChunkEnd(s, lab.chain, log);
-        const ran = await runChainOnSession(s, { log, chain, reservation: new ReservationWatch(reservationPath(a['host-reservation']), { label: 'dress' }), cues: keeper, label: 'dress', tabMemory: { chunk: `${a.from ?? 'start'}..${a.until ?? 'end'}`, ...(secureBrowser?.chrome.browser.process()?.pid ? { chromePid: secureBrowser.chrome.browser.process()!.pid! } : {}) }, ...(from !== undefined ? { from } : {}) }).catch(e => {
+        const ran = await runChainOnSession(s, { log, chain, reservation: new ReservationWatch(reservationPath(a['host-reservation']), { label: 'dress' }), cues: keeper, wholeRun: a.until === undefined, label: 'dress', tabMemory: { chunk: `${a.from ?? 'start'}..${a.until ?? 'end'}`, ...(secureBrowser?.chrome.browser.process()?.pid ? { chromePid: secureBrowser.chrome.browser.process()!.pid! } : {}) }, ...(from !== undefined ? { from } : {}) }).catch(e => {
             // A signal: SCORED is out; the helpers, Chrome and the proxy stop below, then the exit.
             if (!(e instanceof Terminated)) throw e;
             term = e;

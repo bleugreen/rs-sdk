@@ -26,7 +26,7 @@ import type { BotWorldState, TradeItem } from '../../sdk/types';
 import { CANNON_PARTS } from '../lib/cannon';
 import { debugNameFor } from '../lib/ledger-objs';
 import { give, offerSatisfies, swap, type SwapSdk } from '../lib/trade';
-import { CueKeeper } from '../runner/cue-keeper';
+import { CueKeeper, exitStopIsFinal } from '../runner/cue-keeper';
 import { handOffFrom, handOffMissing, runHandOffOnCue, type HandOffPlan } from '../runner/handoff';
 import { MANIFEST } from '../tools/slot-ledger';
 import { cueDir, scopeOption, type CueScope } from './altar-cue';
@@ -240,7 +240,8 @@ export const role: Role = {
                 await sdk.waitForTicks(5);
             }
         } finally {
-            keeper.close();
+            // A failed receive stands the holder down, so a re-run's receiver is served.
+            keeper.close({ final: exitStopIsFinal({ completed: result.ok, signal: null }) });
             unsub();
             console.log(`RESULT cannon-receiver ${JSON.stringify(result)}`);
         }

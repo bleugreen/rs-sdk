@@ -3,6 +3,7 @@ import { mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CueWatcher, nameHash, readCue, writeJsonAtomicSync } from '../helpers/altar-cue';
+import { boneServer, readBoneStatuses } from '../helpers/bone-giver';
 import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
 import type { GatedOptions, GatedRun, GatedSegment, InPageGateOptions, SegmentTechnique } from '../lib/gated-program';
@@ -1288,6 +1289,39 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         expect((row.meta as { serverWait: number }).serverWait).toBeGreaterThanOrEqual(12);
         expect(row.ticks).toBe(0);
     });
+
+    // rs/147: a giver not running today leaves its bones-<account>.json behind; load 1 must not take it as the group's state.
+    const STALE = [
+        ['no session (a file from before sessions), loaded and waiting longest', { session: null }, 'cairn_b02'],
+        ["another run's session, loaded and waiting longest", { session: 'run-old.S07.bone' }, 'cairn_b02'],
+        ["another run's session that has given the group's every load", { session: 'run-old.S07.bone', trades: 42, loads: 42, final: true }, undefined],
+    ] as const;
+    for (const [what, stale, unfiltered] of STALE) {
+        test(`S07 load 1 with a stale giver status present (${what}): the band's awaitBoneServer ignores it and takes the giver that publishes in its cue's session`, async () => {
+            const dir = newDir();
+            const g = group(dir, { start: {} });
+            writeJsonAtomicSync(join(dir, 'bones-cairn_b02.json'), { v: 1, account: 'cairn_b02', phase: 'waiting', held: 23, n: 23, trades: 0, bounces: 0, tile: null, readyAt: 1, ms: Date.now(), ...stale });
+            // Read without a session, the stale file decides: it would be load 1's partner, or end the group.
+            expect<string | undefined>(boneServer(readBoneStatuses(dir), GROUP, Date.now())).toBe(unfiltered);
+            const h = harness(state({ level: 60 }), { bury: true, bones: { group: GROUP }, cueDir: dir, receive: g.fn }, buryRuns(0));
+            const t0 = h.sdk.getState()!.tick;
+            // b03 reads the step's cue and comes back loaded; b02 never runs, so its file is never rewritten.
+            h.sdk.onStateUpdate(s => {
+                if (s.tick === t0 + 12) g.publish('cairn_b03', 50);
+            });
+            const stop = ticking(h.sdk);
+            try {
+                await h.byName(OAKS).run(h.ctx);
+            } finally {
+                stop();
+            }
+            expect(g.receives.map(r => r.partner)).toEqual(['cairn_b03']);
+            expect(readBoneStatuses(dir).find(s => s.account === 'cairn_b02')!.session).not.toBe(readCue(dir)!.session);
+            const row = loadRows(h)[0]!;
+            expect(row.meta).toMatchObject({ load: 1, giver: 'cairn_b03', received: 23 });
+            expect((row.meta as { serverWait: number }).serverWait).toBeGreaterThanOrEqual(12);
+        });
+    }
 
     test('a load that finds no server within serverWait fails the band with a clear refusal, and no trade is clicked', async () => {
         const dir = newDir();

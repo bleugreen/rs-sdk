@@ -10,6 +10,7 @@ import { readFileSync } from 'fs';
 import { aliasAccount, attemptOf, openRunSession, cannonServeDrift, chainOrRefusal, type GateIO, LOG_ACCOUNT, loadRunConfig, parseArgs, signalShutdown, type SignalDeps, startGates, TARGET_TOTAL, Terminated, tickBeforeLogin, totalLevel, untilTerminated, UsageError } from './run';
 import type { OpenOptions, Session } from './lib/session';
 import { RelogBudget } from './runner/relog-budget';
+import { exitStopIsFinal } from './runner/cue-keeper';
 import { SCORED_LOGIN, SCORED_RELOG } from './runner/scored-relog';
 import type { ChainStep } from './runner/chain';
 import { tickPreflight, type FeedRead } from './lib/feed-hello';
@@ -393,6 +394,22 @@ describe('signals: a SIGTERM logs out, then the callers clean up once, then the 
         expect([e.exitCode, e.signal, leaves]).toEqual([130, 'SIGINT', 1]);
         e.disarm();
         sig.dispose();
+    });
+
+    test("the run end's cue stop by signal path: final on SIGTERM and a second Ctrl-C; plain on a first Ctrl-C (4), SIGHUP and no signal; final on a completed chain", async () => {
+        const signalOf = async (emit: string[]) => {
+            const f = fakeSignals();
+            const sig = signalShutdown('[t]', async () => {}, f.deps);
+            const p = untilTerminated(emit.length && !(emit.length === 1 && emit[0] === 'SIGINT') ? running() : Promise.resolve(4), sig).catch(e => e);
+            for (const s of emit) f.emit(s);
+            const out = await p;
+            if (out instanceof Terminated) out.disarm();
+            sig.dispose();
+            return sig.termination()?.signal ?? null;
+        };
+        const cases: [string[], boolean][] = [[['SIGTERM'], true], [['SIGINT', 'SIGINT'], true], [['SIGINT'], false], [['SIGHUP'], false], [[], false]];
+        for (const [emit, final] of cases) expect([emit.join('+'), exitStopIsFinal({ completed: false, signal: await signalOf(emit) })]).toEqual([emit.join('+'), final]);
+        expect(exitStopIsFinal({ completed: true, signal: null })).toBe(true);
     });
 
     test("with no signal the chain's own result and errors pass through", async () => {

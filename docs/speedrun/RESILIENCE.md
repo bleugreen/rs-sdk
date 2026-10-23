@@ -255,7 +255,32 @@ the manifest against the game on every start, operator restarts included:
    steps (legs, banking) whose effect is already in the state are skipped.
 3. If nothing qualifies, it stops for the operator with every candidate's reason.
 
-Every walk first turns the run toggle on (`lib/run-mode.ts`). The toggle is
+**A milestone must stay done.** Step 1 stops at the first undone milestone, so
+one that turns false later sends the walk back to a step whose preconditions
+then refuse. Two shapes keep `done` monotonic where the state alone moves on:
+
+- **Owed where it runs.** A step's exit work (mining.exit's drops, S25a's last
+  hand-back, S14's cannon pick-up) is owed only at the place it runs: off that
+  site the step is done at its level whatever the pack holds. A throw before the
+  exit work, still on the site, leaves the step undone and re-entered.
+- **Hand-offs: the attempt's completion record.** The band after a hand-off
+  consumes what it brought (S18's stuns and food after H14, S22's feathers after
+  H18), and the band's own `inProgress` already holds on arrival, before the
+  trade, so the state cannot tell "traded, then used" from "not yet traded". A
+  hand-off step marks `<run dir>/handoffs.json` (`runner/handoff.ts`
+  `HandOffRecord`, keyed by the attempt id run.ts shares across processes) once
+  its post-hand-off state shows, and reads as done from then on unless what it
+  gave is held again (a demo rollback across the swap). It also stays done once
+  the next milestone is (`supersededBy`).
+
+Every walk first waits, bounded in observed ticks (`PLAYER_MAX_TICKS`), for a
+state that carries the player: a relaunched or reloaded client can publish
+frames before it, and S00's `done` reads the player, so a walk on such a frame
+would see S00 undone and refuse 'not in game'. Past the bound the walk observes
+what it has (an account out on purpose, between S21's relog halves, publishes
+none); the `(resume)` row's `meta.player` records the wait.
+
+Every walk then turns the run toggle on (`lib/run-mode.ts`). The toggle is
 not saved, and a session brought back by a relaunch or a page reload never
 went through `login`, which does the same. A toggle that will not take is
 recorded in the `(resume)` row's `meta.run` and warned; the walk continues.
@@ -298,9 +323,13 @@ inventory now), and treats the old run's counters as gone.
 S21's planned relog is a login-order operation, not a save. The chain permits
 its logout milestone only after the canonical T20-21 arrival predicate holds;
 a restart before or during that leg must finish the approach first.
-`runner/scored-relog.ts` confirms logout and page-out before opening one
-persistent entry in `runner/relog-budget.ts`. The same entry closes after a
-successful login; the halves share the relog lock.
+`runner/scored-relog.ts` opens one persistent entry in `runner/relog-budget.ts`
+as soon as `logoutClean` reports SCORED out, and only then confirms the page is
+out. A page-out it cannot confirm throws with the entry open: SCORED is out
+with an open entry, which the walk resumes at the login half and a new process
+checks against the page first (below). Opening it after the confirmation would
+leave SCORED out with no entry, which neither half admits. The same entry
+closes after a successful login; the halves share the relog lock.
 
 Between the halves, `skills/runecraft.ts` publishes giver cues and waits on
 login-free observed world-feed ticks from `lib/feed-hello.ts`, not the paused

@@ -369,7 +369,13 @@ export async function runSession(sdk: RangedSdk, o: SessionOptions): Promise<Ses
         startTick: t0, fireTick: t0, endTick: t0, ticks: 0, setUpTicks: 0, pickUpTicks: 0, phases: [], prayer: { start: s0.prayers?.prayerPoints ?? 0, min: s0.prayers?.prayerPoints ?? 0, end: s0.prayers?.prayerPoints ?? 0 },
         damageTaken: 0, minHp: s0.player!.hp, consumes, attacks: 0, levelUps: 0, bursts: 0, restores: 0, reloads: 0, refires: 0, dryEvents: 0, ballsUsed: 0, arrowsUsed: 0, overBudget: 0, end: 'done',
     });
-    if (phase === null) return empty();
+    if (phase === null) {
+        // Nothing left to train, but the wrap-up is still owed: a session cut after its last phase
+        // (a pick-up that failed, a drop) is re-entered here with its cannon still on the ground.
+        const r = (o.pickUp ?? true) && placedCannon(s0) ? await pickUpCannon(sdk) : null;
+        if (r && !r.ok) throw new Error(`cannon pick-up: ${r.reason}`);
+        return { ...empty(), pickUpTicks: r?.ticks ?? 0, endTick: sdk.getState()!.tick, ticks: sdk.getState()!.tick - t0 };
+    }
     let spec = specFor(phase, o);
 
     // ---- set-up: protect prayer held and the weapon in hand while the cannon goes up
@@ -729,6 +735,9 @@ export function cannonSessionStep(opts: RangedOptions = {}): Step<any> {
     const minBalls = opts.minBalls?.s14 ?? 100;
     const prayers = specFor('cannon', opts).prayers;
     const done = (s: BotWorldState) => baseLevel(s, 'Ranged') >= to;
+    // The pick-up is owed where it runs: S14's own cannon still placed at the spiders, not yet held.
+    // S27 places a cannon at the same site at about the same Ranged, after Monkey Madness (S15).
+    const owesPickUp = (s: BotWorldState) => (opts.pickUp?.s14 ?? true) && !hasCannonSet(s) && placedCannon(s) !== null && nearSite(s, site) && !questDone('mm')(s);
     const run = async (ctx: StepContext<any>) => {
         noteSession(ctx, 'S14 cannon session', await runSession(ctx.sdk as RangedSdk, cannonSessionOptions(opts)));
     };
@@ -750,8 +759,8 @@ export function cannonSessionStep(opts: RangedOptions = {}): Step<any> {
             return true;
         },
         logoutSafe: false,
-        done: o => done(o.state),
-        inProgress: o => !done(o.state) && nearSite(o.state, site) && (assembledCannon(o.state) !== null || xpOf(o.state, 'Ranged') > 0),
+        done: o => done(o.state) && !owesPickUp(o.state),
+        inProgress: o => owesPickUp(o.state) || (!done(o.state) && nearSite(o.state, site) && (assembledCannon(o.state) !== null || xpOf(o.state, 'Ranged') > 0)),
     };
 }
 
