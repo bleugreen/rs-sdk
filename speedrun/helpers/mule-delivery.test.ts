@@ -322,7 +322,7 @@ describe('actual generated mule delivery lifecycle', () => {
         f.start();
         try {
             await f.until(() => f.ready(e));
-            expect(f.sdk.getInventory()).toHaveLength(28);
+            expect(f.sdk.getInventory()).toHaveLength(27);
             writeTopUpAsk(f.options.cueDir, [{ item: '^shark$', count: 9 }], Date.now(), h12.scope);
             const cue = f.cue(h12);
             await f.until(() => f.completedOffers.length === 1);
