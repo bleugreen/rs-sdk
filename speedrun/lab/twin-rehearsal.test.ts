@@ -6,7 +6,7 @@ import { RunCues, prepareCueDir } from '../runner/cue-keeper';
 import { readCue } from '../helpers/altar-cue';
 import { kitCheck as grandTreeKitCheck } from '../quests/grand-tree';
 import type { BotWorldState } from '../../sdk/types';
-import { buildChain, KIT_PARTNER_ROWS, PLACEMENT, sliceUntil, type CueSink, type RunConfig } from '../runner/chain';
+import { buildChain, KIT_PARTNER_ROWS, PLACEMENT, sliceUntil, type ChainStep, type CueSink, type RunConfig } from '../runner/chain';
 import { handOffFrom } from '../runner/handoff';
 import { MANIFEST } from '../tools/slot-ledger';
 import { baseToXp, levelForXp, xpForLevel } from '../lib/xp';
@@ -172,7 +172,7 @@ describe('runtime substitution boundaries', () => {
         const normal = buildChain(cfg, { cues, manifest }).find(s => s.name === 'woodcutting:willow-73-99')!;
         const item = (name: string, slot: number) => ({ id: 0, name, slot, count: 1, optionsWithIndex: [] });
         const state = withRunes(baseState({
-            skills: [{ name: 'Woodcutting', baseLevel: 99, boostedLevel: 99, experience: xpForLevel(99) }, { name: 'Prayer', baseLevel: 50, boostedLevel: 50, experience: xpForLevel(50) }] as BotWorldState['skills'],
+            skills: [{ name: 'Woodcutting', baseLevel: 99, level: 99, experience: xpForLevel(99) }, { name: 'Prayer', baseLevel: 50, level: 50, experience: xpForLevel(50) }] as BotWorldState['skills'],
             inventory: [item('Steel axe', 0), item('Knife', 1), item('Logs', 2)],
         }), { lawrune: 1, airrune: 5 });
         expect(willow.postconditions(state, {})).toBe(true);
