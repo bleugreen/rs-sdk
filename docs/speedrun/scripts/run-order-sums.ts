@@ -80,7 +80,7 @@ let s6legs = 0;
 for (const l of ro.slice(s6 + 2)) {
     const c = cells(l);
     if (c[0]!.startsWith('**Run-wide')) break;
-    for (const m of c[1]!.matchAll(new RegExp(`(${NUM}) [mir]\\b`, 'g'))) s6legs += num(m[1]!);
+    for (const m of c[1]!.matchAll(new RegExp(`(${NUM}) [mire]\\b`, 'g'))) s6legs += num(m[1]!);
 }
 console.log(`section 6: legs ${r1(s6legs)}`);
 eq(s6legs, le, 'section 6 legs against section 2');
