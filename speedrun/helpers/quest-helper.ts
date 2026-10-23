@@ -151,11 +151,16 @@ async function go(ctx: StepContext<any>, to: Area, what: string): Promise<void> 
     if (!inArea(sdk, to)) throw new Error(`${what}: run to ${to.x},${to.z} failed (${why}) at ${JSON.stringify(pos(sdk))}`);
 }
 
+/** The error `locOp` and `locTalk` throw when the loc with `op` is missing (`transientFault` reads it). */
+export function noLocError(what: string, q: LocQuery, op: RegExp, at: unknown): string {
+    return `${what}: no loc ${JSON.stringify({ ...q, op: String(op) })} near ${JSON.stringify(at)}`;
+}
+
 /** A loc op confirmed by `done`. */
 async function locOp(ctx: StepContext<any>, what: string, q: LocQuery, op: RegExp, done: Pred, maxTicks = 30): Promise<void> {
     const sdk = sdkOf(ctx);
     const l = await findLoc(sdk, { ...q, op });
-    if (!l) throw new Error(`${what}: no loc ${JSON.stringify({ ...q, op: String(op) })} near ${JSON.stringify(pos(sdk))}`);
+    if (!l) throw new Error(noLocError(what, q, op, pos(sdk)));
     const r = await act(sdk, () => sdk.sendInteractLoc(l.x, l.z, l.id, opIndex(l, op)!), done, { maxTicks, resendEvery: 5, interrupts: interrupts() });
     if (!r.ok) throw new Error(`${what}: ${op} on (${l.x},${l.z}) did not take within ${maxTicks} ticks at ${JSON.stringify(pos(sdk))}`);
 }
@@ -164,7 +169,7 @@ async function locOp(ctx: StepContext<any>, what: string, q: LocQuery, op: RegEx
 async function locTalk(ctx: StepContext<any>, what: string, q: LocQuery, op: RegExp, choices: RegExp[], done: Pred, maxTicks = 60): Promise<void> {
     const sdk = sdkOf(ctx);
     const l = await findLoc(sdk, { ...q, op });
-    if (!l) throw new Error(`${what}: no loc ${JSON.stringify({ ...q, op: String(op) })} near ${JSON.stringify(pos(sdk))}`);
+    if (!l) throw new Error(noLocError(what, q, op, pos(sdk)));
     const r = await actConverse(sdk, () => sdk.sendInteractLoc(l.x, l.z, l.id, opIndex(l, op)!), choices, {
         done, idle: 2, maxTicks, closeModals: true, unmatched: 'stop', interrupts: interrupts(), resendEvery: 5,
     });
@@ -282,7 +287,7 @@ const inKaramja = (s: BotWorldState) => {
 };
 const lvl = (l: number): Pred => s => pos(s).level === l;
 
-async function enterTree(ctx: StepContext<any>): Promise<void> {
+export async function enterTree(ctx: StepContext<any>): Promise<void> {
     if (inTree(st(ctx))) return;
     await go(ctx, { ...GT.doorOutside, tol: 1 }, 'to the Grand Tree door');
     await locOp(ctx, 'tree door in', GT.door, /^open$/i, s => pos(s).z >= 3493);
@@ -300,6 +305,63 @@ async function treeLadder(ctx: StepContext<any>, to: number): Promise<void> {
         const up = l < to;
         await locOp(ctx, `tree ladder ${l}->${up ? l + 1 : l - 1}`, GT.treeLadder, up ? /^climb-up$/i : /^climb-down$/i, lvl(up ? l + 1 : l - 1), 20);
     }
+}
+
+/** Glough's first floor (grand-tree.ts's own box, at level 1). */
+const onGloughFloor = (s: BotWorldState) => {
+    const p = pos(s);
+    return p.level === 1 && p.x >= 2470 && p.x <= 2495 && p.z >= 3455 && p.z <= 3472;
+};
+
+export type PillarMove = 'roots' | 'glough' | 'climb';
+
+/**
+ * Back to Glough's pillar platform from where a drop leaves the player, as grand-tree.ts's toPillars
+ * (private there) climbs: out of the roots by their ladder, up Glough's ladder, then the tree.
+ */
+export function pillarRoute(s: BotWorldState): PillarMove[] {
+    if (grandTree.onPlatform(s)) return [];
+    const out: PillarMove[] = [];
+    if (underground(s)) out.push('roots');
+    if (!onGloughFloor(s)) out.push('glough');
+    out.push('climb');
+    return out;
+}
+
+async function toPillars(ctx: StepContext<any>): Promise<PillarMove[]> {
+    const moves = pillarRoute(st(ctx));
+    for (const m of moves) {
+        if (m === 'roots') {
+            await go(ctx, { x: GT.rootsLadder.x, z: GT.rootsLadder.z - 1, tol: 1 }, 'to the roots ladder');
+            await locOp(ctx, 'roots ladder up', GT.rootsLadder, /^climb-up$/i, s => !underground(s), 20);
+        } else if (m === 'glough') {
+            await leaveTree(ctx);
+            await go(ctx, { ...GT.gloughLadderFoot, tol: 1 }, "to Glough's ladder");
+            await locOp(ctx, "Glough's ladder up", GT.gloughLadder, /^climb-up$/i, lvl(1), 20);
+        } else {
+            await grandTree.climbToPillars(ctx.sdk as unknown as Parameters<typeof grandTree.climbToPillars>[0]);
+        }
+    }
+    return moves;
+}
+
+/** Glough's trapdoor from the platform, without SCORED's Protect from Melee: the scene spawns the black demon. */
+async function trapdoorMelee(ctx: StepContext<any>): Promise<void> {
+    await locOp(ctx, 'trapdoor', GT.trapdoor, /^open$/i, underground, 20);
+    const scene = await converse(sdkOf(ctx), [], { idle: 2, openTicks: 20, maxTicks: 80, until: demonInSight, closeModals: true, unmatched: 'stop' });
+    if (!demonInSight(st(ctx))) throw new Error(`no black demon in sight after the trapdoor scene (${scene.reason ?? 'ended'})`);
+}
+
+/**
+ * N2's entry with no demon in sight: a drop deletes the demon, stage 130 stays, and the resume walk
+ * starts at N2 (N1 is not a milestone), so climb back to the pillars and replay the trapdoor, as
+ * grand-tree.ts's own N2 does. Null when the demon is already here.
+ */
+export async function demonReentry(ctx: StepContext<any>): Promise<{ climb: PillarMove[] } | null> {
+    if (demonInSight(st(ctx))) return null;
+    const climb = await toPillars(ctx);
+    await trapdoorMelee(ctx);
+    return { climb };
 }
 
 const BATTLEFIELD_TREE = { x: GT.battlefieldTree.x, z: GT.battlefieldTree.z, tol: 2 } as const;
@@ -423,9 +485,7 @@ export function gtPlan(): QuestPlan {
                     if (!loaded.ok) throw new Error('the scene did not load within 10 ticks');
                     // A demon already here (re-entry) must not be spawned twice: glough.rs2 adds one without checking.
                     if (demonInSight(st(ctx))) return;
-                    await locOp(ctx, 'trapdoor', GT.trapdoor, /^open$/i, underground, 20);
-                    const scene = await converse(sdk, [], { idle: 2, openTicks: 20, maxTicks: 80, until: demonInSight, closeModals: true, unmatched: 'stop' });
-                    if (!demonInSight(st(ctx))) throw new Error(`no black demon in sight after the trapdoor scene (${scene.reason ?? 'ended'})`);
+                    await trapdoorMelee(ctx);
                 },
             },
             N2: {
@@ -433,7 +493,8 @@ export function gtPlan(): QuestPlan {
                 run: async ctx => {
                     const loaded = await waitUntil(sdkOf(ctx), s => s.nearbyLocs.length > 0, { maxTicks: 10 });
                     if (!loaded.ok) throw new Error('the scene did not load within 10 ticks');
-                    if (!demonInSight(st(ctx))) throw new Error('no black demon in sight: a logout deletes it, so replay the trapdoor (stage 130) before N2');
+                    const reentry = await demonReentry(ctx);
+                    if (reentry) logNote(ctx.log, ctx.session, 'S11b:N2-demon[driver]', { reentry });
                     const f = await meleeFight(ctx, /^Black demon$/i);
                     logNote(ctx.log, ctx.session, 'S11b:N2-demon[driver]', { demon: fightNote(f) });
                     if (f.end !== 'killed') throw new Error(`the demon fight ended '${f.end}' (${JSON.stringify(fightNote(f))})`);
@@ -877,10 +938,12 @@ export const approachFirst = (s: BotWorldState, quest: QuestPhase): boolean => q
 /**
  * A step failure that another player causes and a short wait clears: the Grand Tree's doors stand open
  * (no Open option) for 6 ticks after anyone goes through (gnome_gate.rs2 @open_tree_door, loc_change 6),
- * and grand-tree.ts's door clicks do not wait for that. rs/185 owns the module fix.
+ * and neither grand-tree.ts's door clicks nor this driver's (enterTree, leaveTree) wait for that. Both
+ * error shapes: the module's `no loc with /^open$/i at ...` and `noLocError`'s JSON. rs/185 owns the
+ * module fix.
  */
 export function transientFault(error: string | undefined): boolean {
-    return !!error && /tree door (in|out): no loc with \/\^open\$\/i/.test(error);
+    return !!error && /tree door (in|out): no loc (with \/\^open\$\/i|\{[^}]*"op":"\/\^open\$\/i"\})/.test(error);
 }
 /** Tries per phase after a transient fault, each after a wait longer than the door's open form. */
 export const TRANSIENT_RETRIES = 3;
