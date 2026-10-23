@@ -226,7 +226,8 @@ describe('a served hand-off keeps the stand until its cue stop', () => {
                     }
                 } finally { await f.stop(); }
             }
-        });
+            // Two simulated passes of up to three rows: past bun's 5 s default on a loaded host.
+        }, 30_000);
     }
 });
 
