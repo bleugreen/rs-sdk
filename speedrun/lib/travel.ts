@@ -357,6 +357,57 @@ export interface TravelResult {
     reason?: string;
     /** Set when `stopIf` stopped the trip: its reason. */
     stopped?: string;
+    /** The first relocation a walked hop saw (a death's respawn, a forced teleport), whatever `onRelocated` chose. */
+    relocated?: Relocation;
+}
+
+// ------------------------------------------------------------------ relocation
+
+/**
+ * Where a death puts the player: player_death (player/scripts/death.rs2) p_teleports to
+ * map_findsquare(0_50_50_21_18, 0, 2), as the macro events' fallback does. The Lumbridge teleport
+ * lands on the same square.
+ */
+export const RESPAWN: Area = { x: 3221, z: 3218, tol: 2 };
+
+/**
+ * Tiles a published position may move in one tick while a hop walks before it counts as a relocation
+ * the hop did not cause. A run steps 2 tiles a tick, and the scripted moves a run meets (a door's
+ * forcemove, agility_walk's p_teleport steps) 1 to 3; a respawn or a forced teleport moves the player
+ * tens to hundreds (T06-07, rs/589: 258 tiles in 2 ticks). Each further tick between two published
+ * states allows 2 more tiles, the run's pace, so a client silence the run rides out is never one.
+ */
+export const RELOCATE_TILES = 15;
+
+/** A walked hop's player moved further than walking explains (RELOCATE_TILES), or respawned. */
+export interface Relocation {
+    hop: string;
+    from: Tile;
+    to: Tile;
+    fromTick: number;
+    tick: number;
+    tiles: number;
+    /** `to` is on the death respawn square (RESPAWN), or the client counted a respawn (`lifeId`, browser only). */
+    respawn: boolean;
+    /** Hitpoints on the last state before the jump, and the lowest the hop saw; null where the state has none. */
+    hp: number | null;
+    hpMin: number | null;
+    reason: string;
+}
+
+/** A published position a watched hop compares the next one with. */
+interface Seen {
+    tile: Tile;
+    tick: number;
+    hp: number | null;
+    life: number | null;
+}
+
+/** Null for a frame published mid-rebuild, which nothing in this file decides from (`sceneBuilt`). */
+function seenOf(s: BotWorldState | null): Seen | null {
+    const p = s?.player;
+    if (!s || !p || s.sceneReady === false) return null;
+    return { tile: pos(s), tick: s.tick, hp: p.hp ?? null, life: p.lifeId ?? null };
 }
 
 export interface EatOptions {
@@ -395,6 +446,12 @@ export interface TravelOptions {
      * what no remaining hop needs.
      */
     beforeHop?: (i: number) => Promise<string | null>;
+    /**
+     * Called when a run, click or webs hop sees the player relocated (`Relocation`): 'fail' ends the
+     * hop there with the relocation's reason; 'repath', and no handler, runs on from where the player
+     * stands, logged as a warning. The result's `relocated` carries the event either way.
+     */
+    onRelocated?: (r: Relocation) => 'fail' | 'repath';
 }
 
 interface HopOutcome {
@@ -414,10 +471,12 @@ class Trip {
     ate = 0;
     hpMin: number;
     fellBack?: string;
+    relocated?: Relocation;
     readonly doors: DoorSeen[] = [];
     readonly segments: Segment[] = [];
     private readonly counter;
     private readonly stopHp: () => void;
+    private watch: { hop: string; last: Seen | null; hpMin: number | null; event: Relocation | null } | null = null;
 
     constructor(private readonly sdk: StateSource) {
         this.startTick = currentTick(sdk);
@@ -426,7 +485,54 @@ class Trip {
         this.stopHp = sdk.onStateUpdate(s => {
             const hp = s.player?.hp;
             if (hp !== undefined && hp < this.hpMin) this.hpMin = hp;
+            this.see(s);
         });
+    }
+
+    /** Watch hop `hop`, which moves the player only by walking, for a relocation it did not cause. */
+    arm(hop: string): void {
+        const last = seenOf(this.sdk.getState());
+        this.watch = { hop, last, hpMin: last?.hp ?? null, event: null };
+    }
+
+    disarm(): void {
+        this.watch = null;
+    }
+
+    /** A relocation the watched hop has not yet decided on. */
+    get pending(): Relocation | null {
+        return this.watch?.event ?? null;
+    }
+
+    /** Hand the pending relocation to `onRelocated` (default: re-path, logged loudly), and return the choice. */
+    decide(opts: TravelOptions): 'fail' | 'repath' {
+        const ev = this.watch?.event;
+        if (!ev) return 'repath';
+        this.watch!.event = null;
+        this.relocated ??= ev;
+        const choice = opts.onRelocated?.(ev) ?? 'repath';
+        if (choice === 'repath') console.warn(`[travel] RELOCATED during ${ev.hop}: ${ev.reason}; re-pathing from ${fmtTile(ev.to)}${opts.onRelocated ? '' : ' (no onRelocated handler)'}`);
+        return choice;
+    }
+
+    private see(s: BotWorldState): void {
+        const w = this.watch;
+        const now = seenOf(s);
+        if (!w || !now) return;
+        const last = w.last;
+        const hpMin = w.hpMin;
+        w.last = now;
+        if (now.hp !== null) w.hpMin = hpMin === null ? now.hp : Math.min(hpMin, now.hp);
+        if (!last || w.event) return;
+        const ticks = Math.max(1, now.tick - last.tick);
+        const tiles = chebyshev(now.tile, last.tile);
+        const reborn = now.life !== null && last.life !== null && now.life > last.life;
+        if (tiles <= RELOCATE_TILES + 2 * (ticks - 1) && !reborn) return;
+        const respawn = reborn || inArea(s, RESPAWN);
+        const hp = (n: number | null) => (n === null ? 'unknown' : String(n));
+        const reason = `relocated from ${fmtTile(last.tile)} to ${fmtTile(now.tile)}: ${respawn ? 'respawn' : 'death or forced teleport'} `
+            + `(${tiles} tiles in ${ticks} tick${ticks === 1 ? '' : 's'}; hp ${hp(last.hp)} before it, lowest ${hp(hpMin)})`;
+        w.event = { hop: w.hop, from: last.tile, to: now.tile, fromTick: last.tick, tick: now.tick, tiles, respawn, hp: last.hp, hpMin, reason };
     }
 
     door(l: NearbyLoc, state: DoorSeen['state'], tick: number): void {
@@ -443,6 +549,7 @@ class Trip {
             ok, startTick: this.startTick, endTick, ticks: endTick - this.startTick, at: pos(this.sdk), segments: this.segments,
             clicks: this.clicks, tiles: this.counter.tiles, doors: this.doors, webTries: this.webTries, ate: this.ate, hpMin: this.hpMin,
             ...(this.fellBack ? { fellBack: this.fellBack } : {}), ...(reason ? { reason } : {}), ...(stopped ? { stopped } : {}),
+            ...(this.relocated ? { relocated: this.relocated } : {}),
         };
     }
 }
@@ -532,7 +639,22 @@ export function lumdoBoat(sdk: TravelSdk, to: LumdoStop, opts: TravelOptions = {
     return travel(sdk, [{ kind: 'lumdo', to }], opts);
 }
 
+/** The hops that move the player only by walking: a relocation while one runs is not the hop's own (Trip.see). */
+const WALKED: ReadonlySet<HopKind> = new Set<HopKind>(['run', 'click', 'webs']);
+
 async function runHop(sdk: TravelSdk, trip: Trip, h: Hop, opts: TravelOptions): Promise<HopOutcome> {
+    if (!WALKED.has(h.kind)) return hopOf(sdk, trip, h, opts);
+    trip.arm(hopLabel(h));
+    try {
+        const r = await hopOf(sdk, trip, h, opts);
+        const moved = trip.pending;
+        return moved && trip.decide(opts) === 'fail' ? { ok: false, reason: moved.reason } : r;
+    } finally {
+        trip.disarm();
+    }
+}
+
+async function hopOf(sdk: TravelSdk, trip: Trip, h: Hop, opts: TravelOptions): Promise<HopOutcome> {
     // Every hop starts from a settled position (act.ts `settle`): straight after a landing the
     // browser client is still rebuilding the region, its loc lists are empty and its collision maps
     // stale, so a lookup there finds nothing (the village spirit tree) and a walk click is misrouted.
@@ -786,6 +908,8 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
     for (;;) {
         const s = sdk.getState();
         if (!s) return { ok: false, reason: 'no state' };
+        const moved = trip.pending;
+        if (moved && trip.decide(opts) === 'fail') return { ok: false, reason: moved.reason };
         const halt = opts.stopIf?.(s);
         if (halt) {
             const here = pos(s);
