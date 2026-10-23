@@ -4,7 +4,7 @@
   "sourceRevision": "28d87cd298a6080dae33780300345478626a6818",
   "manifest": {
     "path": "docs/speedrun/research/mule-delivery-ledger.md",
-    "sha256": "bee04c57e1ba4e7a9a6d07c5c26337a2daad0fd4256fee2f88bdf14668877f25"
+    "sha256": "0ad26b2e5d9372518f647786c48389cf1af6f68f49f204f577f11bc5478c5cfa"
   },
   "deliveryRun": "rs529-production-lab-20261023",
   "receiver": {
@@ -1080,7 +1080,7 @@
   ],
   "provenance": {
     "path": "docs/speedrun/research/mule-delivery-ledger.provenance.json",
-    "sha256": "4755686410477580126006c1ec4c937b65ea228ca105b4646c17d32e92060a5e"
+    "sha256": "1c949552d4155287b000c6d513900121135e8ea93de0beac14cfcecdff108ee0"
   },
   "validation": {
     "configuration": "GENERATED_AND_DRIFT_CHECKED",
@@ -1089,8 +1089,8 @@
     "blockers": [
       {
         "id": "H13",
-        "status": "BLOCKED_UNTRADEABLE",
-        "reason": "Archived projection still returns untradeable Khazard helmet/armour. Full receiver fixture blocked until shared rs539 drop-mode import and owner projection refresh; helper package generation is not receiver acceptance."
+        "status": "PROJECTION_REFRESHED_PENDING_OWNER",
+        "reason": "Projection H13 now drops the untradeable Khazard helmet and armour on the tile, copied from the live STEP-MANIFEST H13 row once the shared drop-mode take-back filter (runner/handoff.ts GIVEN_REASONS) reached the base; rs158 to confirm the refresh. Helper package generation is not receiver acceptance."
       },
       {
         "id": "H20",
