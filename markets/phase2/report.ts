@@ -14,7 +14,8 @@ import { methodRates, type AccountLine } from './ledger.ts';
 
 export interface Report {
     rates: ReturnType<typeof methodRates>;
-    byMethod: Record<string, { n: number; median: number; min: number; max: number }>;
+    /** Coins an hour per login on each method, and the bank's store value an hour where the bank was seen at both ends. */
+    byMethod: Record<string, { n: number; median: number; min: number; max: number; boardMedian: number | null }>;
     ramp: Record<string, unknown>[];
     redirects: Record<string, unknown>[];
     errands: Record<string, unknown>[];
@@ -26,8 +27,10 @@ export function report(lines: readonly Record<string, unknown>[], tickMs: number
     const rates = methodRates(lines.filter(l => l.kind === 'account') as unknown as AccountLine[], tickMs);
     const byMethod: Report['byMethod'] = {};
     for (const m of new Set(rates.map(r => r.method))) {
-        const v = rates.filter(r => r.method === m).map(r => r.coinsPerHour);
-        byMethod[m] = { n: v.length, median: Math.round(median([...v])), min: Math.round(Math.min(...v)), max: Math.round(Math.max(...v)) };
+        const mine = rates.filter(r => r.method === m);
+        const v = mine.map(r => r.coinsPerHour);
+        const board = mine.flatMap(r => (r.boardPerHour === null ? [] : [r.boardPerHour]));
+        byMethod[m] = { n: v.length, median: Math.round(median([...v])), min: Math.round(Math.min(...v)), max: Math.round(Math.max(...v)), boardMedian: board.length ? Math.round(median(board)) : null };
     }
     return {
         rates,
@@ -51,7 +54,7 @@ if (import.meta.main) {
     const start = lines.find(l => l.kind === 'start');
     const r = report(lines, numberFlag(a, 'tick-ms', Number(start?.tickMs ?? 400), { min: 1 }));
     console.log('REPORT rates (coins an hour on the method, longest stretch in one session)');
-    for (const x of [...r.rates].sort((p, q) => p.account.localeCompare(q.account))) console.log(`  ${x.account} ${x.method.padEnd(8)} ${String(x.ticks).padStart(6)} ticks ${String(Math.round(x.coinsPerHour)).padStart(8)} coins/h`);
+    for (const x of [...r.rates].sort((p, q) => p.account.localeCompare(q.account))) console.log(`  ${x.account} ${x.method.padEnd(8)} ${String(x.ticks).padStart(6)} ticks ${String(Math.round(x.coinsPerHour)).padStart(8)} coins/h ${x.boardPerHour === null ? '       -' : String(Math.round(x.boardPerHour)).padStart(8)} bank store/h`);
     console.log(`REPORT by method ${JSON.stringify(r.byMethod)}`);
     for (const l of r.ramp) console.log(`REPORT ${l.kind} ${JSON.stringify(l)}`);
     for (const l of r.redirects) console.log(`REPORT redirect ${JSON.stringify(l)}`);
