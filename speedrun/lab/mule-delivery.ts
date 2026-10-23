@@ -16,7 +16,8 @@ import { getDoorAt, isTileWalkable, isZoneAllocated } from '../../sdk/pathfindin
 import { CueWriter, writeTopUpAsk } from '../helpers/altar-cue';
 import { isTopUp, role, type PackageItem } from '../helpers/mule';
 import { muleFromLedger, muleRunOptions } from '../helpers/mule-ledger';
-import { deliverySession, heldFor, holdMule, prepareMule, readMulePreparation, readMuleReady, readyFor, worldTile, type MuleHold } from '../helpers/mule-readiness';
+import { heldFor, readMulePreparation, readMuleReady, readyFor, worldTile, type MuleHold } from '../helpers/mule-readiness';
+import { DeliveryOwner, holdCarrier } from '../runner/delivery-owner';
 import { openRoleState } from '../helpers/role';
 import { CueGate } from '../helpers/standalone';
 import { depositAll } from '../lib/bank';
@@ -105,6 +106,8 @@ const ledger = muleFromLedger(manifest, { rows, onRequest, pack });
 // The planner binds only validated concrete identities, retaining canonical quantities.
 const options = muleRunOptions(fixturePlan?.fixtures.map(f => f.ledger) ?? ledger, root, { deliveryRun: runId, serve: botArg(), itinerary });
 const carriesNext = options.packages[0]?.carryNext === true;
+// The runner's run-owner sequence (prepare, readiness, the row's delivery session), not a lab copy.
+const owner = new DeliveryOwner(options.cueDir, runId, botArg(), selectedRows.map((row, i) => ({ row, account, at: options.packages[i]!.at })));
 writeFileSync(join(root, 'options.json'), JSON.stringify(options, null, 2));
 const maxTicks = Number(arg('max-ticks', '1200'));
 if (!Number.isInteger(maxTicks) || maxTicks < 1) throw new Error('Invalid --max-ticks');
@@ -471,10 +474,7 @@ async function prepareRecipient(fixture: MuleDeliveryFixture) {
     emit('recipient-reset', { row: fixture.row, snapshot: snapshot(scored.sdk.getState()) });
 }
 async function awaitReady(index: number) {
-    const p = options.packages[index]!;
-    const expected = { runId, account, row: selectedRows[index]!, receiver: botArg(), at: p.at };
-    const preparation = prepareMule(options.cueDir, expected);
-    const bound = { ...expected, preparationSeq: preparation.seq };
+    const bound = owner.prepare(selectedRows[index]!);
     expectedReady.set(index, bound);
     emit('prepare', { expected: bound });
     const begin = mule.sdk.getState()!.tick;
@@ -482,8 +482,8 @@ async function awaitReady(index: number) {
         if (roleError) throw roleError;
         const state = mule.sdk.getState()!;
         if (!state.inGame || !state.player || state.player.isDead || state.player.hp <= 0) throw new Error('Mule died or left game');
-        const ready = readMuleReady(options.cueDir, account);
-        if (readyFor(ready, bound)) {
+        const { ok, status: ready } = owner.ready(selectedRows[index]!);
+        if (ok) {
             const fixture = fixturePlan?.fixtures[index];
             if (fixture) assertItems(state.inventory, fixture.helperBeforeInventory, fixture.row + ' full staged helper inventory');
             const previous = selectedRows[index - 1];
@@ -596,7 +596,7 @@ try {
         return sendAction(action);
     };
     // As the runner preflight does, the hold exists before the helper's role starts.
-    const initialHold = holdMs > 0 ? holdMule(options.cueDir, { runId, account, row: selectedRows[0]!, receiver: botArg(), at: options.packages[0]!.at, attempt: 1 }) : null;
+    const initialHold = holdMs > 0 ? holdCarrier(options.cueDir, { runId, account, row: selectedRows[0]!, receiver: botArg(), at: options.packages[0]!.at, attempt: 1 }) : null;
     if (initialHold) emit('hold-written', { hold: initialHold });
     const state = await openRoleState(join(root, 'role-state.json'));
     if (stopOnRow) gate = new CueGate({ dir: options.cueDir, login: null, stop: { step: stopOnRow, family: 'mule' }, since: Date.now(),
@@ -679,7 +679,7 @@ try {
             await waitTicks(scored.sdk, 1);
             assertItems(scored.sdk.getInventory(), fixture.tradeInventory, row + ' trade inventory');
         }
-        if (!readyFor(readMuleReady(options.cueDir, account), expectedReady.get(i)!)) throw new Error('Readiness expired before cue for ' + row);
+        if (!owner.ready(row).ok) throw new Error('Readiness expired before cue for ' + row);
         if (fixture?.topUpAsk) {
             let written = false;
             removeAskListener = scored.sdk.onStateUpdate(s => {
@@ -689,7 +689,7 @@ try {
                 emit('top-up-ask', { row, ask: writeTopUpAsk(options.cueDir, ask.items, Date.now(), ask.scope) });
             });
         }
-        cue = new CueWriter(options.cueDir, botArg(), { step: row, family: 'mule' }, deliverySession(runId, row));
+        cue = owner.cueWriter(row);
         cue.write({ beacons: [{ tick: scored.sdk.getState()!.tick, ms: Date.now() }], turns: [] });
         const want = fixture?.want ?? p.items.map(line => ({ item: line.noted ? noteLink(itemId(line), pack).note! : itemId(line), amount: amount(line) }));
         const traded = await swap(scored.sdk, account, fixture?.give ?? (row === 'H4' ? [{ item: 2550, n: 20 }] : []), want, { closeModals: true });
