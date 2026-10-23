@@ -2018,10 +2018,13 @@ does not touch): the limits are fixed constants (`PLANNED_RELOGS = 1`, `UNPLANNE
 `runner/relog-budget.ts:22-24`), run.ts builds the budget with them (run.ts:615) and no flag or
 config sets them; the gate reads `<run dir>/relogs.json` fresh, every entry whose `kind` is not
 `planned` counting as unplanned, and the file is neither signed nor checked beyond parsing, so the
-only way past the gate is a hand edit of `relogs.json`, which no code or document sanctions. **A
-re-run past the budget is attempt-ending** until main rules otherwise. If main allows it, rs/186's
-safe edit: copy the file aside (`relogs.json.<UTC>.bak`), then remove only the unplanned and manual
-entries, **never the `planned` S21 entry**, whose `open` flag tells run.ts whether SCORED is between
+only way past the gate is a hand edit of `relogs.json`, which no code or document sanctions. **Main's
+ruling (13:20Z via rs/158, verbatim): 'past S21 + 3 unplanned relogs the start gate refuses; do not
+edit relogs.json unless main says so in the channel, with the margin stated; the planned S21 entry is
+never touched'.** By default a re-run past the budget is attempt-ending; main decides live against
+the remaining margin. **The procedure main would order** (rs/186's): copy the file aside
+(`relogs.json.<UTC>.bak`), then remove only the unplanned and manual entries, never the `planned`
+S21 entry, whose `open` flag tells run.ts whether SCORED is between
 S21's logout and login halves (relog-budget.ts:118-127; run.ts:569-586). No code change tonight.
 
 **A throw in combat: relaunch FIRST** (main 23:3x via rs/158; fold-in 35). If the run log's last
