@@ -504,26 +504,31 @@ export interface BoneStatus {
     ms: number;
 }
 
+/**
+ * Every status in `dir`, each from its own account's file only: a status counts when its file is
+ * `bones-<canonName(account)>.json`, the name its giver writes (statusPath). A renamed or copied file
+ * claiming another account is skipped, so no account counts twice and none is a phantom.
+ */
 export function readBoneStatuses(dir: string): BoneStatus[] {
     if (!existsSync(dir)) return [];
     return readdirSync(dir)
         .filter(f => /^bones-.+\.json$/.test(f))
-        .map(f => readJson<BoneStatus>(join(dir, f)))
-        .filter((s): s is BoneStatus => !!s && s.v === 1 && typeof s.account === 'string');
+        .map(f => ({ f, s: readJson<BoneStatus>(join(dir, f)) }))
+        .filter((x): x is { f: string; s: BoneStatus } => !!x.s && x.s.v === 1 && typeof x.s.account === 'string' && x.f === `bones-${canonName(x.s.account)}.json`)
+        .map(x => x.s);
 }
 
 /**
- * The group's statuses: with a `session`, those counted in it or in none, never another session's.
- * A file another run left (its own session, its trades counted) counts for nothing; a giver that has
- * ended counts. A status in no session is a giver yet to read this cue (a fresh process, its trades
- * 0) or one written before sessions existed: it counts, so a giver that has not republished since the
- * cue opened can still serve the first load. Without a `session`, every status of the group. The
- * scored step's `awaitBoneServer` passes its cue's session (woodcutting.ts BoneCue).
+ * The group's statuses: with a `session`, exactly those counted in it. A status in another
+ * session (a file another run left) or in none (a giver yet to read this cue, or a file from before
+ * sessions) contributes nothing: no trades, no final, no server. A giver publishes as soon as it reads
+ * a new cue session (BoneGiver.onCue), and the scored step's `awaitBoneServer` waits on observed ticks
+ * for that. Without a `session`, every status of the group (tests and the stand-in only).
  */
 function sessionStatuses(statuses: readonly BoneStatus[], group: readonly string[], session?: string): BoneStatus[] {
     const g = new Set(group.map(canonName));
     const mine = statuses.filter(s => g.has(canonName(s.account)));
-    return session === undefined ? mine : mine.filter(s => (s.session ?? null) === null || s.session === session);
+    return session === undefined ? mine : mine.filter(s => s.session === session);
 }
 
 /** The loads the group has given in the session: its givers' trades added up. */
@@ -636,14 +641,18 @@ export class BoneGiver {
 
     /** The first cue: a relaunch within the same scored session carries on from the trades its last process counted. */
     onCue(cue: Cue): void {
+        const fresh = this.cue?.session !== cue.session;
         this.cue = cue;
-        if (this.resumeChecked) return;
-        this.resumeChecked = true;
-        const p = this.prior;
-        if (p && p.session === cue.session && Number.isInteger(p.trades) && p.trades > this.trades) {
-            this.trades = p.trades;
-            this.ctx.log('resumed', { trades: p.trades, session: cue.session });
+        if (!this.resumeChecked) {
+            this.resumeChecked = true;
+            const p = this.prior;
+            if (p && p.session === cue.session && Number.isInteger(p.trades) && p.trades > this.trades) {
+                this.trades = p.trades;
+                this.ctx.log('resumed', { trades: p.trades, session: cue.session });
+            }
         }
+        // The receiver counts only statuses in its cue's session: show ours in it at once, not at the next heartbeat.
+        if (fresh) this.publish();
     }
 
     /** The group's statuses, ours as of now rather than as last written. */
@@ -652,9 +661,9 @@ export class BoneGiver {
         return [...readBoneStatuses(this.o.cueDir).filter(s => canonName(s.account) !== me), this.snapshot()];
     }
 
-    /** Loads given so far: the group's in this session with a group, else ours. */
+    /** Loads given so far: the group's in this cue's session with a group, else ours. Before any cue there is no session to count in: ours. */
     private loadsDone(): number {
-        return this.o.group.length ? groupLoadsDone(this.statuses(), this.o.group, this.cue?.session) : this.trades;
+        return this.o.group.length && this.cue ? groupLoadsDone(this.statuses(), this.o.group, this.cue.session) : this.trades;
     }
 
     /** No group, or this giver is the group's server now. */
@@ -663,8 +672,9 @@ export class BoneGiver {
         return canonName(this.server() ?? '') === canonName(this.ctx.account);
     }
 
+    /** The group's server in this cue's session; none before any cue. */
     private server(): string | undefined {
-        return boneServer(this.statuses(), this.o.group, Date.now(), this.cue?.session);
+        return this.cue ? boneServer(this.statuses(), this.o.group, Date.now(), this.cue.session) : undefined;
     }
 
     private get s(): BotWorldState | null {
