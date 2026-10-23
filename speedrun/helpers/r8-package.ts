@@ -14,7 +14,11 @@
 //   4. less the units the engine keeps (lib/death-keep.ts, death.rs2), at every death point the phase
 //      covers: a unit kept at one point and dropped at another stays in the package;
 //   5. the cannon set and its balls stay out (rs/41's ruling): a deployed cannon waits on the ground
-//      for its owner, a carried one lost comes from cairn_h92's repeat of its hand-off.
+//      for its owner, a carried one lost comes from cairn_h92's repeat of its hand-off; an untradeable
+//      item (`tradeable=no`: the Khazard armour, the M'speak amulet) stays out too, since no helper
+//      can hand it over, and is reported (`untradeable`).
+// In the fixed form SCORED drops, at the respawn tile, any kept unit beyond the need (a duplicate
+// of a package line), the fallback H10/H12/H22 use while no ask writer serves the top-up form.
 // Each package then has to pass `respawnCheck`: the slot ledger walked from the respawn state (the
 // kept units in the pack, the package traded in, the worn set put back on, the sharks eaten) through
 // the replayed legs, the cannon's re-supply and the phase's rows. A row short, over 28 slots, or
@@ -63,20 +67,23 @@ export interface R8Phase {
     hp: number;
     /** Who re-supplies a carried cannon the death lost, and where in the walk (after the replay). */
     cannonBy: string;
+    /** A standing caveat on the phase (rs/158's ruling), printed with it. */
+    note?: string;
 }
 
 /**
  * R8's phases (rs/158, 2026-10-22, from r8-deaths.ts's stretches at b6a49fa1). H11 and H13 are trades
  * at the Ardougne landing, so their kit is what T13-14's and T15-16's Wilderness legs carry. The end
  * stretch is two packages: a death on T26-27 or in S27 resumes at S27, one in S17 at S17. The ledger
- * has no T27-17 row, so R8d2 replays no leg (the trip back to the course is not in the ledger).
+ * has no T27-17 row (the run to the course carries nothing), so R8d2 gets back into the Wilderness
+ * by T26-27's route and its runes, then runs on to the course (rs/158).
  */
 export const R8_PHASES: readonly R8Phase[] = [
     { id: 'R8a', what: 'T13-14 with H11 (the Wilderness carry to the spiders) or in S14', deaths: [{ row: 'H11' }, { row: 'S14', deployed: true }], replay: ['T13-14'], resume: 'S14', to: 'H12', hp: 42, cannonBy: "cairn_h92's H11 repeat" },
     { id: 'R8b', what: 'T14-15 (the spiders to the Ardougne cast, the cannon packed)', deaths: [{ row: 'T14-15' }], replay: ['T14-15'], resume: 'H11r', to: 'H12', hp: 42, cannonBy: "cairn_h92's H11 repeat" },
     { id: 'R8c', what: 'T15-16 with H13 (the Wilderness carry to the arena) or in S16', deaths: [{ row: 'H13' }, { row: 'S16' }], replay: ['T15-16'], resume: 'S16', to: 'T16-18', hp: 42, cannonBy: 'none (no cannon)' },
-    { id: 'R8d1', what: 'T26-27 with H23 or in S27 (cannon deployed or packed)', deaths: [{ row: 'H23' }, { row: 'S27', deployed: true }, { row: 'S27' }], replay: ['T26-27'], resume: 'S27', to: 'S17', hp: 97, cannonBy: "cairn_h92's H23 repeat" },
-    { id: 'R8d2', what: 'S17 mid-course', deaths: [{ row: 'S17' }], replay: [], resume: 'S17', to: 'S17', hp: 97, cannonBy: 'none (not needed after S27)' },
+    { id: 'R8d1', what: 'T26-27 with H23 or in S27 (cannon deployed or packed)', deaths: [{ row: 'H23' }, { row: 'S27', deployed: true }, { row: 'S27' }], replay: ['T26-27'], resume: 'S27', to: 'S17', hp: 97, cannonBy: "cairn_h92's H23 repeat", note: "the check takes H23's 1,200 balls as re-supplied, but h92 holds ~140-216 spare: S27 resumes with h92's spare balls; any remainder is bow-only Ranged, unpriced (a known supply gap, rs/158)" },
+    { id: 'R8d2', what: 'S17 mid-course', deaths: [{ row: 'S17' }], replay: ['T26-27'], resume: 'S17', to: 'S17', hp: 97, cannonBy: 'none (not needed after S27)' },
 ];
 
 export interface KeptUnit {
@@ -99,8 +106,10 @@ export interface R8Line {
     need: number;
     /** Units kept at every death point. */
     kept: number;
-    /** need - kept: the fixed form's amount. */
+    /** need - kept: the fixed form's amount; 0 for an untradeable item, which no helper can give. */
     give: number;
+    /** false for `tradeable=no`: in neither form; the check walks without it (R8Package.untradeable). */
+    tradeable: boolean;
     why: string;
 }
 
@@ -130,6 +139,8 @@ export interface R8Package {
     kept: KeptUnit[];
     /** Held at the resume row but returned unused afterwards, so not carried. */
     notNeeded: string[];
+    /** Needed, not kept at every death point, and untradeable: SCORED goes on without what the keep lost. */
+    untradeable: string[];
     /** One respawn walk per form and death point. */
     walks: R8Walk[];
     /** Why a form is refused, each tagged with its form, or `both` for a fault in the package itself. */
@@ -191,6 +202,8 @@ export interface RespawnInput {
     kept: readonly KeptUnit[];
     /** The package traded in. */
     give: readonly { item: string; id?: number; kind: Kind; count: number }[];
+    /** Kept units SCORED drops at the respawn tile before the trade (the duplicates of a fixed package). */
+    drop?: readonly { item: string; count: number }[];
     /** The cannon items re-supplied after the replay. */
     cannon: readonly { item: string; id?: number; kind: Kind; count: number }[];
     /** Sharks eaten from 1 HP once traded. */
@@ -224,7 +237,10 @@ export function respawnCheck(rows: readonly LedgerRow[], r: RespawnInput): Ledge
     const give = r.give.filter(l => l.count > 0);
     const held = new Set([...r.kept.map(k => lc(k.name)), ...give.map(l => lc(l.item)), ...r.cannon.map(l => lc(l.item))]);
     const rewear = r.target.worn.filter(w => held.has(lc(w.name))).map(w => ({ name: w.name, on: true }));
-    const walked: LedgerRow[] = [row(`H94 ${r.phase.id}`, give.map(entry), [], rewear, slotsOf(give))];
+    const walked: LedgerRow[] = [];
+    const drop = (r.drop ?? []).filter(d => d.count > 0);
+    if (drop.length) walked.push(row(`${r.phase.id} drop`, [], drop.map(d => ({ name: d.item, count: d.count, reason: 'drop' as const })), [], 0));
+    walked.push(row(`H94 ${r.phase.id}`, give.map(entry), [], rewear, slotsOf(give)));
     if (r.heal > 0) walked.push(row(`${r.phase.id} eat`, [], [{ name: FOOD.name, count: r.heal, reason: 'consume' }], [], 0));
     const later = [...r.phase.replay.map(id => rows[at(id)]!)];
     const cannon = r.cannon.filter(l => l.count > 0);
@@ -341,29 +357,33 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
         const k = Math.min(n.count, keptAll.get(lc(n.item)) ?? 0);
         const c = obj({ name: n.item, ...(n.id !== undefined ? { id: n.id } : {}) });
         if (!c || c.id === undefined) refusals.push(`${phase.id}: no obj id for ${n.item}`);
-        return { item: n.item, ...(c?.id !== undefined ? { id: c.id } : {}), kind: n.kind, need: n.count, kept: k, give: n.count - k, why: n.why.join('; ') };
+        const tradeable = c?.tradeable !== false;
+        return { item: n.item, ...(c?.id !== undefined ? { id: c.id } : {}), kind: n.kind, need: n.count, kept: k, give: tradeable ? n.count - k : 0, tradeable, why: n.why.join('; ') };
     });
+    const untradeable = lines.filter(l => !l.tradeable && l.need > l.kept).map(l => `${l.item} x${l.need - l.kept} (${l.why})`);
     const byId: PackageItem[] = lines.filter(l => l.give > 0 && l.id !== undefined).map(l => ({ id: l.id!, amount: l.give }));
-    const topUp: PackageItem[] = lines.filter(l => l.need > 0 && l.id !== undefined).map(l => ({ id: l.id!, topUp: { max: l.need } }));
+    const topUp: PackageItem[] = lines.filter(l => l.tradeable && l.need > 0 && l.id !== undefined).map(l => ({ id: l.id!, topUp: { max: l.need } }));
     const slots = slotsOf(lines.map(l => ({ kind: l.kind, count: l.give })));
     if (slots > INVENTORY_SLOTS) refusals.push(`both: ${phase.id}: the package fills ${slots} slots, more than the helper's ${INVENTORY_SLOTS}`);
     for (let i = 0; i < refusals.length; i++) if (!/^both: /.test(refusals[i]!)) refusals[i] = `both: ${refusals[i]}`;
 
     // 5. The respawn check, per form and death point (each keeps its own units). The fixed form gives
-    // `give`, sized on the units every death point keeps; a top-up gives what this death's keep leaves.
+    // `give`, sized on the units every death point keeps, and SCORED first drops what its keep holds
+    // beyond the need (rs/158: the H10/H12/H22 fallback); a top-up gives what this death's keep leaves.
     const before = phase.replay.length ? entries[at(phase.replay[0]!) - 1]!.stacks : target;
     const walks: R8Walk[] = (['fixed', 'topUp'] as const).flatMap(form =>
         phase.deaths.map((death, d) => {
             const mine = tally(keptAt[d]!);
             const left = (item: string, n: number) => Math.max(0, n - (mine.get(lc(item)) ?? 0));
-            const give = lines.map(l => ({ item: l.item, ...(l.id !== undefined ? { id: l.id } : {}), kind: l.kind, count: form === 'fixed' ? l.give : left(l.item, l.need) }));
+            const give = lines.map(l => ({ item: l.item, ...(l.id !== undefined ? { id: l.id } : {}), kind: l.kind, count: !l.tradeable ? 0 : form === 'fixed' ? l.give : left(l.item, l.need) }));
+            const drop = form === 'fixed' ? lines.map(l => ({ item: l.item, count: Math.max(0, (mine.get(lc(l.item)) ?? 0) + l.give - l.need) })).filter(x => x.count > 0) : [];
             const cannon = cannonUsed ? cannonHeld.map(h => ({ item: h.name, ...(h.id !== undefined ? { id: h.id } : {}), kind: h.kind, count: left(h.name, h.count ?? 0) })) : [];
             const held = new Set([...keptAt[d]!.map(k => lc(k.name)), ...give.filter(l => l.count > 0).map(l => lc(l.item)), ...cannon.filter(c => c.count > 0).map(c => lc(c.item))]);
             const lost = [...new Set([...target.inv, ...target.worn, ...before.inv, ...before.worn].map(h => h.name))].filter(n => !held.has(lc(n)));
             const at = `${form}: ${phase.id} (death at ${death.row}${death.deployed ? ', deployed' : ''})`;
             let walked: LedgerEntry[] = [];
             try {
-                walked = respawnCheck(rows, { phase, kept: keptAt[d]!, give, cannon, heal, target, lost });
+                walked = respawnCheck(rows, { phase, kept: keptAt[d]!, give, drop, cannon, heal, target, lost });
             } catch (e) {
                 refusals.push(`${at}: ${(e as Error).message}`);
             }
@@ -376,7 +396,7 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
     const refused = (form: R8Form) => refusals.some(r => r.startsWith('both: ') || r.startsWith(`${form}: `));
     const pkg = refused('fixed') ? null : packageOf({ name: lc(phase.id), items: byId, scope });
     const topUpPackage = refused('topUp') ? null : packageOf({ name: lc(phase.id), items: topUp, scope });
-    return { phase, scope, lines, byId, topUp, slots, kept, notNeeded, walks, refusals, package: pkg, topUpPackage };
+    return { phase, scope, lines, byId, topUp, slots, kept, notNeeded, untradeable, walks, refusals, package: pkg, topUpPackage };
 }
 
 // ------------------------------------------------------------------ CLI
@@ -396,7 +416,7 @@ export function main(argv: readonly string[]): number {
     if (!phases.length) throw new Error(`no phase ${only} (${R8_PHASES.map(p => p.id).join(', ')})`);
     const out = phases.map(p => r8Package(p, o));
     if (argv.includes('--json')) {
-        console.log(JSON.stringify(out.map(p => ({ id: p.phase.id, scope: p.scope, byId: p.byId, topUp: p.topUp, slots: p.slots, lines: p.lines, kept: p.kept, notNeeded: p.notNeeded, stageable: { fixed: p.package !== null, topUp: p.topUpPackage !== null }, walks: p.walks.map(w => ({ form: w.form, ...w.death, kept: w.kept, cannon: w.cannon, verdicts: w.entries.map(e => `${e.row.row} ${e.verdict} ${e.used}/${INVENTORY_SLOTS}`) })), refusals: p.refusals })), null, 2));
+        console.log(JSON.stringify(out.map(p => ({ id: p.phase.id, scope: p.scope, byId: p.byId, topUp: p.topUp, slots: p.slots, lines: p.lines, kept: p.kept, notNeeded: p.notNeeded, untradeable: p.untradeable, ...(p.phase.note ? { note: p.phase.note } : {}), stageable: { fixed: p.package !== null, topUp: p.topUpPackage !== null }, walks: p.walks.map(w => ({ form: w.form, ...w.death, kept: w.kept, cannon: w.cannon, verdicts: w.entries.map(e => `${e.row.row} ${e.verdict} ${e.used}/${INVENTORY_SLOTS}`) })), refusals: p.refusals })), null, 2));
     } else {
         for (const p of out) {
             console.log(`\n=== ${p.phase.id}: ${p.phase.what}; resume at ${p.phase.resume}${p.phase.replay.length ? ` after replaying ${p.phase.replay.join(', ')}` : ''}; walk to ${p.phase.to} ===`);
@@ -408,6 +428,8 @@ export function main(argv: readonly string[]): number {
             console.log(`package (${p.slots} slots), item: need - kept = give [why]`);
             for (const l of p.lines) console.log(`  ${l.item}${l.id !== undefined ? ` @${l.id}` : ''} [${l.kind}]: ${l.need} - ${l.kept} = ${l.give}  (${l.why})`);
             console.log(`not carried (returned unused): ${p.notNeeded.join(', ') || '-'}`);
+            if (p.untradeable.length) console.log(`needed but untradeable, not in the package (SCORED goes on without it): ${p.untradeable.join(', ')}`);
+            if (p.phase.note) console.log(`note: ${p.phase.note}`);
             console.log(`by id: ${JSON.stringify(p.byId)}`);
             console.log(`top-up: ${JSON.stringify(p.topUp)}`);
             for (const w of p.walks) console.log(`\nrespawn walk, ${w.form} form, death at ${w.death.row}${w.death.deployed ? ' (deployed)' : ''}:\n${render(w.entries)}`);
