@@ -152,7 +152,7 @@ timer", below "The host"). Who takes one:
 
 **A claim keeps its gate evidence** (fold-in 31): an ad-hoc gate or probe run under a claim copies
 its JSON (per-trial rows, `tickArrivalsMs`) into its evidence before the claim's teardown, and no
-teardown deletes `~/gate-history` or `~/rs-run/gate-*` (step 9).
+teardown deletes `~/gate-history`, `~/rs-run/gate-*` or `~/rs-run/<run>/load.log` (step 9).
 
 **Leave nothing running on a machine without a claim.** The timer also skips while the machine is
 busy (a tmux server that answers, bun, ffmpeg, or a Chrome with its own profile), and a busy skip is
@@ -1260,6 +1260,26 @@ has yet been seen going bad mid-run (the host thread, 16:15 PDT).
 
 ## 6. Quiesce check and the gate (`gate`)
 
+**The load ceiling** (main 22:3x via rs/158, from the host thread; fold-in 33). The chosen
+machine's 1-minute load average stays **under 4.0** (half its 8 vCPUs) for the whole run. The
+reason: a helper on a CPU-starved host fails readiness closed. Its held-status goes stale past 3 s
+against a 400 ms write cadence, so a healthy mule reads as not ready (main's delivery-engine proof:
+load 37 on 8 cores did it in 7 s).
+
+- **Pre-start.** Load under 4.0 when the gate passes is a start condition in the same class as
+  tenet 12's (d). If it is not met, the start waits and the gate is re-read.
+- **Mid-run.** At the hand-off (step 7) host starts an untracked sampler on the chosen machine,
+  writing every 30 s to `~/rs-run/<run>/load.log`: the UTC time, `/proc/loadavg`, and the CPU use
+  of chrome, ffmpeg and each helper process. A sample at or over 4.0 is logged and alerts the
+  operator's live view; **the run does not stop** (helpers fail closed and sit out rather than
+  misfire). Two consecutive samples at or over 4.0 also go to main, which decides whether to stop a
+  helper on the machine.
+- **sysstat.** Both machines sample sysstat every minute (the drop-in
+  `/etc/systemd/system/sysstat-collect.timer.d/every-minute.conf`, in place since 05:28Z 23 Oct);
+  teardown removes it after the run (step 9).
+- **Measured headroom, recording on, no helpers:** peak 2.18 on the run host, 2.27 on the twin (m).
+  The dress rehearsal (rs/496) is the first measurement with helpers on the machine: **pending**.
+
 **Quiesce.** Nothing runs on the machine but the session's desktop, the `run` tmux stack (gateway,
 page server, recording, live view), rs/117's launcher with its lite runners and roles, and system
 daemons. On the twin, no rehearsal process or Xvfb either (the leftover check, "Twin:"). The drained
@@ -2044,14 +2064,16 @@ UTC).
 
 **Gate evidence is kept, never deleted** (the host, 15:4x PDT 2026-10-22, after rs/310's teardown deleted
 `/tmp/speedrun/gate-*.json` and with it a 56/60 reading's per-trial rows): (1) teardown never deletes
-`~/gate-history` or `~/rs-run/gate-*`; they are the run's gate evidence and are copied off with the
+`~/gate-history`, `~/rs-run/gate-*` or `~/rs-run/<run>/load.log` (the load sampler's, step 6; fold-in 33); they are the run's gate evidence and are copied off with the
 recording (the timer writes the gate's full JSON under `gate` in `~/gate-history/<UTC>.json`;
 run-gate's `gate` writes `~/rs-run/gate-<UTC>/verdict.json`); (2) any ad-hoc gate or probe run under a
 claim copies its JSON (per-trial rows, `tickArrivalsMs`) into its evidence before teardown; (3)
 recordings and other large artifacts go to the operator's Mac via host (`~/rs-archive/<topic>/`,
 sha256 checked), never deleted.
 
-Then run the leftover check ("Rules for every launch"). After a rehearsal, release its claim;
+After the run, remove the every-minute sysstat drop-in
+(`/etc/systemd/system/sysstat-collect.timer.d/every-minute.conf`, then `systemctl daemon-reload`)
+on both machines (step 6, "The load ceiling"). Then run the leftover check ("Rules for every launch"). After a rehearsal, release its claim;
 after the run, run.ts releases the run's on the chosen machine, and the operator releases the run's
 claim on the other machine (`rs-claim release run`), after which rehearsals there may resume. On the twin, if it was not chosen, `~/rs-sdk` then goes back to main for the
 attempts (step 0, "Twin:"). The session itself stays: nobody logs out of
