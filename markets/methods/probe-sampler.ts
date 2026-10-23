@@ -240,7 +240,7 @@ export class Sampler {
 
     /**
      * Wall ms per tick between the first and the last tick observed, to 0.1 ms; null until a tick
-     * has passed. Both ends are arrival times of published states, so delivery delay cancels out.
+     * has passed. Both ends are arrival times of published states, so a steady delivery delay cancels out.
      */
     observedMsPerTick(): number | null {
         const ticks = this.lastTick - this.startTick;
