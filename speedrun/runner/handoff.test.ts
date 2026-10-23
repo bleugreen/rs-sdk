@@ -277,7 +277,8 @@ describe('handOffPre', () => {
         expect(handOffRoom(alone(full(24)), h13)).toMatch(/the trade adds 5, 1 short/);
         expect(handOffRoom(alone(filler(28), [wornItem('Mithril scimitar')]), plan('H12'))).toMatch(/taking off Mithril scimitar to give needs 1/);
     });
-    test('GOLDEN-GEN', () => {
+
+    test("the split leaves handOffPre's verdicts as they were, and handOffRoom gives the same slot verdict with or without a partner", () => {
         // Packs from roomy to full for three trade shapes: receive only (H1), a held give (H13), a worn give (H12).
         const bow = (n: number) => [...filler(n), item(n, 'Magic shortbow')];
         const sweep: Array<[string, BotWorldState, HandOffPlan]> = [
@@ -285,7 +286,35 @@ describe('handOffPre', () => {
             ...[20, 21, 22, 23, 24, 25, 26, 27].map((n): [string, BotWorldState, HandOffPlan] => [`H13 filler ${n} + bow`, state(bow(n)), plan('H13')]),
             ...[24, 25, 26, 27, 28].map((n): [string, BotWorldState, HandOffPlan] => [`H12 filler ${n}, scimitar worn`, state(filler(n), [wornItem('Mithril scimitar')]), plan('H12')]),
         ];
-        console.log('GOLDEN=' + JSON.stringify(sweep.map(([at, s, p]) => [at, handOffPre(s, p, PARTNER)])));
+        // handOffPre on the sweep before handOffRoom was split out of it (main's handoff.ts at ee75d700).
+        const PRE_SPLIT: Array<[string, true | string]> = [
+            ["H1 filler 22", true],
+            ["H1 filler 23", true],
+            ["H1 filler 24", true],
+            ["H1 filler 25", "H1: 3 free slots, 0 freed by what it gives: the trade adds 4, 1 short"],
+            ["H1 filler 26", "H1: 2 free slots, 0 freed by what it gives: the trade adds 4, 2 short"],
+            ["H13 filler 20 + bow", true],
+            ["H13 filler 21 + bow", true],
+            ["H13 filler 22 + bow", true],
+            ["H13 filler 23 + bow", true],
+            ["H13 filler 24 + bow", "H13: 3 free slots, 1 freed by what it gives: the trade adds 5, 1 short"],
+            ["H13 filler 25 + bow", "H13: 2 free slots, 1 freed by what it gives: the trade adds 5, 2 short"],
+            ["H13 filler 26 + bow", "H13: 1 free slots, 1 freed by what it gives: the trade adds 5, 3 short"],
+            ["H13 filler 27 + bow", "H13: 0 free slots, 1 freed by what it gives: the trade adds 5, 4 short"],
+            ["H12 filler 24, scimitar worn", true],
+            ["H12 filler 25, scimitar worn", true],
+            ["H12 filler 26, scimitar worn", "H12: 2 free slots, 1 freed by what it gives: the trade adds 3, 1 short"],
+            ["H12 filler 27, scimitar worn", "H12: 1 free slots, 1 freed by what it gives: the trade adds 3, 2 short"],
+            ["H12 filler 28, scimitar worn", "H12: 0 free slots, and taking off Mithril scimitar to give needs 1"],
+        ];
+        expect(sweep.map(([at, s, p]) => [at, handOffPre(s, p, PARTNER)])).toEqual(PRE_SPLIT);
+        expect(sweep.map(([at, s, p]) => [at, handOffRoom(s, p)])).toEqual(PRE_SPLIT);
+        expect(sweep.map(([at, s, p]) => [at, handOffRoom({ ...s, nearbyPlayers: [] }, p)])).toEqual(PRE_SPLIT);
+        // The sweep reaches a pass and both slot refusals it can: the trade short, and no room to take a worn give off.
+        const verdicts = PRE_SPLIT.map(([, v]) => v);
+        expect(verdicts).toContain(true);
+        expect(verdicts.some(v => typeof v === 'string' && / short$/.test(v))).toBe(true);
+        expect(verdicts.some(v => typeof v === 'string' && /to give needs 1$/.test(v))).toBe(true);
     });
 });
 
