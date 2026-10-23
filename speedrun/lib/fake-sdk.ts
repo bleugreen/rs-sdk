@@ -3,6 +3,7 @@
 
 import type { ActionResult, BotWorldState, DialogState, GameMessage, InventoryItem, SkillState, TradeItem, TradeState } from '../../sdk/types';
 import { PLAYER_CHAT_TYPES } from '../../sdk/types';
+import { untradeable } from './items';
 import type { RuneName, RuneUse } from './travel';
 
 export interface SentAction {
