@@ -73,7 +73,8 @@ function pack(o: { quest?: Record<string, number>; uniform?: boolean; brewBought
 const fx = (letter: string, arenaquest: number, tile: QuestFixture['tile'], o: Parameters<typeof pack>[0] = {}, note?: string): QuestFixture => ({
     letter,
     levels: LEVELS,
-    vars: { arenaquest },
+    // option_nodef 1: auto-retaliate off (player_controls.varp), as the run plays (main's run-wide rule).
+    vars: { arenaquest, option_nodef: 1 },
     ...pack(o),
     tile,
     ...(note ? { note } : {}),
@@ -105,6 +106,7 @@ export const REFERENCE: Readonly<Record<string, number>> = { A: 25, B: 42, C: 58
 let taken = 0;
 let minHp = Infinity;
 let stopHp: (() => void) | null = null;
+let retaliate: boolean | undefined;
 
 const lab: LabQuest<Options> = {
     title: `Fight Arena (S12, SCORED's arrival levels: ${Object.entries(LEVELS).map(([k, v]) => `${k} ${v}`).join(', ')}; from the arrival tile 2566,3199)`,
@@ -128,13 +130,15 @@ const lab: LabQuest<Options> = {
             minHp = Math.min(minHp, hp);
         });
         const s = sdk.getState()!;
-        console.log(`fixture: ${28 - s.inventory.length} free slots; worn ${s.equipment.map(i => i.name).join(', ')}; prayer ${s.prayers?.prayerPoints}`);
+        retaliate = s.autoRetaliateEnabled;
+        console.log(`fixture: ${28 - s.inventory.length} free slots; worn ${s.equipment.map(i => i.name).join(', ')}; prayer ${s.prayers?.prayerPoints}; autoRetaliate ${retaliate === false ? 'off' : retaliate ? 'on' : 'unknown'}`);
     },
     check(_session, _fixture, rows: readonly TickRow[]) {
         stopHp?.();
         stopHp = null;
         const fights = rows.filter(r => r.kind === 'note' && r.step === `${stepId}:fight`).map(r => r.meta as { what: string; casts: number; taken: number });
         console.log(`damage: ${taken} taken, lowest HP ${minHp}; fights ${fights.map(f => `${f.what} ${f.casts} casts ${f.taken} taken`).join('; ')}`);
+        if (retaliate !== false) return `auto-retaliate was ${retaliate ? 'on' : 'unknown'} after the fixture; the run plays with it off`;
         return taken > 0 ? `SCORED took ${taken} damage (lowest HP ${minHp}); the acceptance wants 0` : undefined;
     },
 };
