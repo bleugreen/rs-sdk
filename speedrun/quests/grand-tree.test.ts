@@ -3,14 +3,14 @@ import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyLoc, NearbyNpc, PlayerState, QuestJournalState } from '../../sdk/types';
 import { PRAYER_INDICES } from '../../sdk/types';
 import { QUESTS } from '../data/quest-stages';
-import { baseState, FakeSdk, runeNeedProblems, type SentAction } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk, runeNeedProblems, type SentAction } from '../lib/fake-sdk';
 import { sumUse } from '../lib/travel';
 import { journalProbeName } from '../lib/quests';
 import { TickLog } from '../lib/ticks';
 import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import {
-    AGILITY_AFTER, ardougneTeleport, climbToPillars, DEMON_CASTS, DEMON_MAX_CASTS, entryCheck, exitCheck, FREE_SLOTS, gtStage, H8, ITEM, kitCheck, resolveOptions, ROOTS,
-    RUNE_NEED, RUNE_STAFF, RUNE_USE, searchRoot, steps, TILES,
+    AGILITY_AFTER, ardougneTeleport, climbToPillars, crossTreeDoor, DEMON_CASTS, DEMON_MAX_CASTS, entryCheck, exitCheck, FREE_SLOTS, gtStage, H8, ITEM, kitCheck, resolveOptions, ROOTS,
+    RUNE_NEED, RUNE_STAFF, RUNE_USE, searchRoot, steps, TILES, TREE_DOOR_CLICKS, TREE_DOOR_WAIT,
 } from './grand-tree';
 
 const prevTick = process.env.SPEEDRUN_TICK_MS;
@@ -127,12 +127,81 @@ describe('A: entry preconditions and the kit', () => {
     test('with no kitFrom, A only checks the kit', async () => {
         const { sdk, error } = await runA({});
         expect(sentOf(sdk, 'sendTradeRequest')).toHaveLength(0);
-        expect(error).toMatch(/tree door in: no loc/); // past the kit, at the door (no door in this fake world)
+        expect(error).toMatch(/tree door in: neither tree door/); // past the kit, at the door (no door in this fake world)
     });
     test('with a kitFrom and the kit already held, A does not trade', async () => {
         const { sdk, error } = await runA({ kitFrom: 'Ashburn' });
         expect(sentOf(sdk, 'sendTradeRequest')).toHaveLength(0);
         expect(error).toMatch(/tree door in/);
+    });
+});
+
+describe('the tree doors: another player has just opened one (gnome_gate.rs2 open_tree_door)', () => {
+    // Each door's open form (loc_change for 6 ticks) has no name and no ops.
+    const closedL = locAt('Tree Door', TILES.door.x, TILES.door.z, ['Open'], 1967);
+    const closedR = locAt('Tree Door', TILES.doorRight.x, TILES.doorRight.z, ['Open'], 1968);
+    const openL = locAt('null', TILES.door.x, TILES.door.z, [], 1969);
+    const openR = locAt('null', TILES.doorRight.x, TILES.doorRight.z, [], 1970);
+    const into = (s: BotWorldState) => s.player!.worldZ >= 3493;
+    const outOf = (s: BotWorldState) => s.player!.worldZ <= 3491;
+
+    /** A door click forcemoves SCORED two tiles across; `clicks` gets each click's tick and args. */
+    function doorway(x: number, z: number, locs: NearbyLoc[], opts: { pass?: boolean } = {}) {
+        const sdk = new FakeSdk(routeState({ player: player(x, z), nearbyLocs: locs }));
+        const clicks: Array<{ tick: number; args: unknown[] }> = [];
+        sdk.onSend = (a, f) => {
+            if (a.method !== 'sendInteractLoc') return;
+            clicks.push({ tick: f.state!.tick, args: a.args });
+            if (opts.pass !== false) f.tick(s => ({ player: player(s.player!.worldX, s.player!.worldZ + (s.player!.worldZ < 3492 ? 2 : -2)) }));
+        };
+        return { sdk, clicks };
+    }
+
+    test('going in with both doors open: waits for one to close, then clicks it', async () => {
+        const { sdk, clicks } = doorway(2465, 3491, [openL, openR]);
+        await drive(sdk, crossTreeDoor(asSdk(sdk), 'tree door in', into), 60, s => (s.tick >= 103 ? { nearbyLocs: [closedL, openR] } : {}));
+        expect(clicks).toHaveLength(1);
+        expect(clicks[0]!.args).toEqual([TILES.door.x, TILES.door.z, 1967, 1]);
+        expect(clicks[0]!.tick).toBeGreaterThanOrEqual(103);
+        expect(sdk.state!.player!.worldZ).toBe(3493);
+    });
+
+    test('going out with both doors open: the right door closes first and is the one clicked', async () => {
+        const { sdk, clicks } = doorway(2465, 3493, [openL, openR]);
+        await drive(sdk, crossTreeDoor(asSdk(sdk), 'tree door out', outOf), 60, s => (s.tick >= 105 ? { nearbyLocs: [openL, closedR] } : {}));
+        expect(clicks).toHaveLength(1);
+        expect(clicks[0]!.args).toEqual([TILES.doorRight.x, TILES.doorRight.z, 1968, 1]);
+        expect(clicks[0]!.tick).toBeGreaterThanOrEqual(105);
+        expect(sdk.state!.player!.worldZ).toBe(3491);
+    });
+
+    test('with only the left door open, the right one is clicked at once, no wait', async () => {
+        const { sdk, clicks } = doorway(2465, 3491, [openL, closedR]);
+        await drive(sdk, crossTreeDoor(asSdk(sdk), 'tree door in', into), 60);
+        expect(clicks).toHaveLength(1);
+        expect(clicks[0]!.args.slice(0, 3)).toEqual([TILES.doorRight.x, TILES.doorRight.z, 1968]);
+        expect(clicks[0]!.tick).toBe(100);
+    });
+
+    test('both doors closed: the nearer one, as before', async () => {
+        const { sdk, clicks } = doorway(2464, 3493, [closedL, closedR]);
+        await drive(sdk, crossTreeDoor(asSdk(sdk), 'tree door out', outOf), 60);
+        expect(clicks.map(c => c.args.slice(0, 2))).toEqual([[TILES.door.x, TILES.door.z]]);
+    });
+
+    test(`both doors held open past ${TREE_DOOR_WAIT} ticks: refuses with a reason and no click`, async () => {
+        const { sdk, clicks } = doorway(2465, 3491, [openL, openR]);
+        const err = await drive(sdk, crossTreeDoor(asSdk(sdk), 'tree door in', into).then(() => '', e => String(e)), 60);
+        expect(err).toMatch(new RegExp(`tree door in: neither tree door \\(2464,3492\\) nor \\(2466,3492\\) showed Open within ${TREE_DOOR_WAIT} ticks`));
+        expect(clicks).toHaveLength(0);
+        expect(sdk.state!.tick - 100).toBeLessThanOrEqual(TREE_DOOR_WAIT + 2);
+    });
+
+    test(`clicks that never cross stop after ${TREE_DOOR_CLICKS}`, async () => {
+        const { sdk, clicks } = doorway(2465, 3493, [closedL, closedR], { pass: false });
+        const err = await drive(sdk, crossTreeDoor(asSdk(sdk), 'tree door out', outOf).then(() => '', e => String(e)), 200);
+        expect(err).toMatch(new RegExp(`tree door out: ${TREE_DOOR_CLICKS} tree door clicks did not cross`));
+        expect(clicks.length).toBeGreaterThanOrEqual(TREE_DOOR_CLICKS);
     });
 });
 
