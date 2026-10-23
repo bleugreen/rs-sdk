@@ -120,6 +120,13 @@ export interface RunConfig {
      * segment M that login is written. With no lead the trigger refuses rather than assume one.
      */
     h12o?: { cueDir: string; loginDir: string; leadTicks?: number };
+    /**
+     * The banked delivery carriers' run (runner/delivery-owner.ts): `run` is the attempt's one
+     * delivery id (e.g. `a1-20261023`), the `--delivery-run` every carrier's config is generated with
+     * (helpers/mule-ledger.ts); `launcherConfig` is the helper launcher's config those carriers run
+     * from, which run.ts's preflight checks against it. Required when the path has a mule row.
+     */
+    delivery?: { run: string; launcherConfig: string };
 }
 
 /**

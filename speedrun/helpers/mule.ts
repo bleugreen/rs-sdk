@@ -1040,6 +1040,18 @@ export function cueEpoch(env: Record<string, string | undefined> = process.env, 
     return Number.isFinite(ms) && ms > 0 ? Math.min(now, ms) : now;
 }
 
+/**
+ * The cue half of a `deliveryRun` carrier's trade authorization (Mule.deliveryAuthorized): the live,
+ * unstopped {row, mule} cue under the row's delivery session, for `serve`, written within STALE_CUE_MS.
+ */
+export function deliveryCueAuthorizes(cue: Cue | null, o: { session: string; row: string; serve: string; now?: number }): boolean {
+    const now = o.now ?? Date.now();
+    return !!cue && !cue.stop && cue.session === o.session
+        && cue.scope?.family === 'mule' && cue.scope.step === o.row
+        && cue.receiver?.sha256 === nameHash(o.serve)
+        && cue.ms <= now && now - cue.ms <= STALE_CUE_MS;
+}
+
 /** A cue the mule has not acted on yet: a new session, or a later write of the last one. */
 export function newCue(cue: Pick<Cue, 'session' | 'seq' | 'ms'> | null, last: { session: string; seq: number } | null, startMs: number): boolean {
     if (!cue || cue.ms < startMs - STALE_CUE_MS) return false;
@@ -1365,11 +1377,7 @@ class Mule {
     private deliveryAuthorized(): boolean {
         if (!this.pending || this.deliveryFault || this.deliveryPaused || !this.controlAllowsDelivery()
             || !this.observedMs || Date.now() - this.observedMs > 3000 || this.observedTick <= this.settledAfterTick) return false;
-        const cue = readCue(this.o.cueDir);
-        return !!cue && !cue.stop && cue.session === this.pendingSession
-            && cue.scope.family === 'mule' && cue.scope.step === this.pending.scope!.step
-            && cue.receiver.sha256 === nameHash(this.o.serve!)
-            && cue.ms <= Date.now() && Date.now() - cue.ms <= STALE_CUE_MS;
+        return deliveryCueAuthorizes(readCue(this.o.cueDir), { session: this.pendingSession, row: this.pending.scope!.step, serve: this.o.serve! });
     }
 
     private publishDelivery(off = false): void {
