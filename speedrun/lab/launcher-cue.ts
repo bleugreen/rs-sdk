@@ -8,7 +8,13 @@
 //                                                plain stop, out when the next scope's cue opens
 //   lc05 relay   loginOn S21/altar                S21's final stop comes first: it never logs in
 //   lc06 direct  loginOn S99/ring, 0.25 min      no cue: its wait expires, it never logs in
-// helpersReady holds while lc04-lc06 wait logged out (ready-or-waiting). Before the launch an S06/altar
+//   lc07 relay   loginOn H12o/mule in its login   h45's shape, two folders, one writer each: H12o's open in the
+//                folder, stopOn H12oP/mule in    shared folder or in its role folder does nothing; its login
+//                its role folder                 folder's open logs it in, that folder's stop and final leave it
+//                                                in; the role folder's H12oP plain stop leaves it in, its final
+//                                                logs it out
+//   lc08 relay   as lc07, own folders            its role folder's H12oP final before its trigger: it never logs in
+// helpersReady holds while lc04-lc08 wait logged out (ready-or-waiting). Before the launch an S06/altar
 // final stop is left in cue.json, as an earlier attempt would: it must not keep lc02/lc03 out.
 // Prints RESULT lines (and FAIL lines for any check that does not hold). Through lab.sh, which starts the engine (its own lite runner and gateway are not used):
 //
@@ -34,6 +40,12 @@ const cueDir = join(base, 'cue');
 const S06: CueScope = { step: 'S06', family: 'altar' };
 const S21: CueScope = { step: 'S21', family: 'altar' };
 const H12O: CueScope = { step: 'H12o', family: 'mule' };
+const M: CueScope = { step: 'H12oM', family: 'mule' };
+const P: CueScope = { step: 'H12oP', family: 'mule' };
+const lc07Role = join(base, 'lc07-cue');
+const lc07Login = join(base, 'lc07-login');
+const lc08Role = join(base, 'lc08-cue');
+const lc08Login = join(base, 'lc08-login');
 
 const accounts: Record<string, unknown>[] = [
     { account: 'cairn_lc01', path: 'relay' },
@@ -41,7 +53,9 @@ const accounts: Record<string, unknown>[] = [
     { account: 'cairn_lc03', path: 'direct', stopOn: S06 },
     { account: 'cairn_lc04', path: 'relay', loginOn: H12O },
     { account: 'cairn_lc05', path: 'relay', loginOn: S21 },
-    { account: 'cairn_lc06', path: 'direct', loginOn: { step: 'S99', family: 'ring', waitMinutes: 0.25 } }
+    { account: 'cairn_lc06', path: 'direct', loginOn: { step: 'S99', family: 'ring', waitMinutes: 0.25 } },
+    { account: 'cairn_lc07', path: 'relay', cueDir: lc07Role, loginOn: { ...H12O, cueDir: lc07Login }, stopOn: P },
+    { account: 'cairn_lc08', path: 'relay', cueDir: lc08Role, loginOn: { ...H12O, cueDir: lc08Login }, stopOn: P }
 ];
 for (const a of accounts) {
     const name = String(a.account);
@@ -51,7 +65,7 @@ for (const a of accounts) {
 const configPath = join(base, 'launch.json');
 writeFileSync(
     configPath,
-    JSON.stringify({ gatewayPort: Number(process.env.CUE_LAB_GW_PORT ?? 8477), botsDir, runDir, loginSpacingMs: 1000, accounts: accounts.map(a => ({ ...a, role: 'idle', cueDir })) }, null, 2)
+    JSON.stringify({ gatewayPort: Number(process.env.CUE_LAB_GW_PORT ?? 8477), botsDir, runDir, loginSpacingMs: 1000, accounts: accounts.map(a => ({ cueDir, ...a, role: 'idle' })) }, null, 2)
 );
 console.log(`launcher-cue: files in ${base}`);
 
@@ -115,8 +129,8 @@ try {
     await until('helpersReady', () => status()?.helpersReady === true, 240_000);
     const atReady = status()!.accounts;
     check(
-        ['cairn_lc04', 'cairn_lc05'].every(n => atReady.find(a => a.account === n)?.cue?.state === 'waiting'),
-        `helpersReady with lc01-lc03 online and lc04-lc06 logged out waiting for their cues: ${atReady.map(a => `${a.account}=${a.state}/${a.cue?.state ?? '-'}`).join(' ')}`
+        ['cairn_lc04', 'cairn_lc05', 'cairn_lc07', 'cairn_lc08'].every(n => atReady.find(a => a.account === n)?.cue?.state === 'waiting'),
+        `helpersReady with lc01-lc03 online and lc04-lc08 logged out waiting for their cues: ${atReady.map(a => `${a.account}=${a.state}/${a.cue?.state ?? '-'}`).join(' ')}`
     );
     check(acct('cairn_lc02')?.state === 'online' && acct('cairn_lc03')?.state === 'online', 'the stop left from before the launch kept nobody out (lc02, lc03 online)');
 
@@ -205,10 +219,62 @@ try {
         `lc04 logged out when S07/bone opened after H12o's stop: reported ${outMs} ms after the write, unlisted ${goneMs} ms after it (logout: ${acct('cairn_lc04')?.logout})`
     );
 
+    // lc07, lc08: a login-only folder (loginOn.cueDir) beside the role folder, one writer each.
+    const out = async (name: string) => acct(name)?.state === 'awaiting-cue' && acct(name)?.logins === 0 && !(await listed(name));
+    check(await out('cairn_lc07'), `H12o/mule's open in the shared folder (lc04's trigger) did not log lc07 in (${acct('cairn_lc07')?.state})`);
+    new CueWriter(lc07Role, 'scored', H12O).write({ beacons: beacon(), turns: [] }); // the trigger's scope, in the role folder
+    await sleep(1500);
+    new CueWriter(lc07Role, 'scored', M).write({ beacons: beacon(), turns: [] }); // MM's M open before the trigger
+    await sleep(3000);
+    check(await out('cairn_lc07'), `H12o/mule and H12oM/mule in lc07's role folder did not log it in (${acct('cairn_lc07')?.state})`);
+
+    new CueWriter(lc08Role, 'scored', P).stop(beacon(), { final: true });
+    await until('lc08 never logs in', () => !!lineAt(/cairn_lc08: final stop for H12oP\/mule .* before its login: it never logs in/), 5000);
+    new CueWriter(lc08Login, 'scored', H12O).write({ beacons: beacon(), turns: [] });
+    await sleep(4000);
+    check(
+        acct('cairn_lc08')?.logins === 0 && acct('cairn_lc08')?.cue?.state === 'stopped' && !(await listed('cairn_lc08')),
+        `lc08: its role folder's H12oP final before the trigger kept it out, and the trigger after it did not log it in (${acct('cairn_lc08')?.state})`
+    );
+
+    const trigger = new CueWriter(lc07Login, 'scored', H12O);
+    const triggerAt = Date.now();
+    trigger.write({ beacons: beacon(), turns: [] });
+    const in07 = await until('lc07 in the world', () => acct('cairn_lc07')?.state === 'online', 120_000);
+    await until('lc07 listed', async () => (await listed('cairn_lc07')) === true, 10_000);
+    check(acct('cairn_lc07')?.logins === 1, `lc07 logged in on its login folder's H12o open: in the world ${in07} ms after the write (logins ${acct('cairn_lc07')?.logins})`);
+    check(lc08Role !== lc07Role && acct('cairn_lc07')?.cue?.state === 'opened', `lc08's H12oP final in its own role folder did not touch lc07 (gate ${acct('cairn_lc07')?.cue?.state})`);
+    trigger.stop(beacon());
+    await sleep(1000);
+    trigger.stop(beacon(), { final: true });
+    await sleep(5000);
+    check(
+        acct('cairn_lc07')?.state === 'online' && (await listed('cairn_lc07')) === true && !lineAt(/cairn_lc07: out of the run/),
+        `lc07 stayed in after its login folder's stop and final (${Date.now() - triggerAt} ms after the trigger; state ${acct('cairn_lc07')?.state})`
+    );
+    const mm = new CueWriter(lc07Role, 'scored', P);
+    mm.write({ beacons: beacon(), turns: [] });
+    await sleep(1500);
+    mm.stop(beacon());
+    await until('lc07 stood down', () => acct('cairn_lc07')?.cue?.state === 'stood-down', 10_000);
+    await sleep(3000);
+    check(acct('cairn_lc07')?.state === 'online' && (await listed('cairn_lc07')) === true, `lc07 stayed in on its role folder's H12oP plain stop (gate ${acct('cairn_lc07')?.cue?.state})`);
+    const finalAt = Date.now();
+    mm.stop(beacon(), { final: true });
+    const out07 = await until('lc07 out', () => !!lineAt(/cairn_lc07: out of the run on its stop cue/), 60_000);
+    const gone07 = await until('lc07 unlisted', async () => (await listed('cairn_lc07')) === false, 30_000).then(() => Date.now() - finalAt);
+    check(
+        acct('cairn_lc07')?.logout === 'out' && acct('cairn_lc07')?.cue?.state === 'stopped',
+        `lc07 logged out on its role folder's H12oP final: reported ${out07} ms after the write, unlisted ${gone07} ms after it (logout: ${acct('cairn_lc07')?.logout})`
+    );
+
     // No account restarts or logs back in after leaving.
     await sleep(5000);
     const logins = Object.fromEntries((status()?.accounts ?? []).map(a => [a.account, a.logins]));
-    check(logins.cairn_lc02 === 1 && logins.cairn_lc03 === 1 && logins.cairn_lc04 === 1, `no relogin after leaving: ${JSON.stringify(logins)}`);
+    check(
+        logins.cairn_lc02 === 1 && logins.cairn_lc03 === 1 && logins.cairn_lc04 === 1 && logins.cairn_lc07 === 1 && logins.cairn_lc08 === 0,
+        `no relogin after leaving: ${JSON.stringify(logins)}`
+    );
 } catch (e) {
     results.push(`FAIL launcher-cue: ${e instanceof Error ? e.message : String(e)}`);
 } finally {

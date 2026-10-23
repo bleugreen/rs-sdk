@@ -854,6 +854,7 @@ describe('a login-only folder (loginOn.cueDir): the login trigger apart from the
         t.role(P).stop(beacon, { final: true });
         const g = t.gate();
         expect(await g.waitForLogin(5000, never)).toMatchObject({ result: 'stop', closed: { why: 'final' } });
+        expect(g.watching).toEqual([t.roleDir]); // settled while starting: the login folder is let go
         g.close();
     });
 
