@@ -1929,9 +1929,7 @@ segment (e.g. `S05:A-h4-swap`), and the tick log gets a `(resume)` row with the 
 
 **The run-day watch list** (fold-in 36; main via rs/158):
 
-- **A death on a leg.** The walker does not catch it: a relocated SCORED is walked back to the route
-  and the leg reports ok (rs/589's T06-07 lab run, 502 tiles; rs/593, attempt 2). Watch the live view
-  and the run log for a respawn; the death procedure above is the only catch.
+- **A death on a leg** (main's wording, 03:15 PDT, via rs/158). A Lumbridge respawn mid-leg is a death. The leg re-walks from Lumbridge on its own (~205 ticks from T06-07; travel.ts re-paths in the same leg, no re-run needed: rs/589's 02:18 run reported ok). Check the kit-gap line on that leg's row (T06-07: none, the worn staff kept, the runes spent or dropped) before the next hand-off. A respawn mid-leg means a jump to Lumbridge's respawn tile (3221,3218) on a leg that does not home-teleport: that tile is also the home teleport's landing. The walker does not flag it (rs/593, green at 26fbcce9, waits until after attempt 1); watch the live view and the run log.
 - **The carry-ahead misread** (void once rs/551's settlement guard is on the floor, fleet snapshot 12).
   A carrier logs a failed hand-off that SCORED received: no action. The next row re-selects with a bank trip; watch that row's readiness, and expect SCORED to wait at it.
 
