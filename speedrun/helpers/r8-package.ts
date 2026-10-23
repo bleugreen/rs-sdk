@@ -16,9 +16,10 @@
 //   5. the cannon set and its balls stay out (rs/41's ruling): a deployed cannon waits on the ground
 //      for its owner, a carried one lost comes from cairn_h92's repeat of its hand-off; an untradeable
 //      item (`tradeable=no` or a dummy: the Khazard armour, the M'speak amulet) is never emitted in
-//      either form, since no helper can hand it over: kept at every death point it reads 'kept,
-//      nothing needed'; otherwise each death point that does not keep it gets an 'unrecoverable by
-//      trade' line (`unrecoverable`), and the phase is not fully recoverable.
+//      either form, since no helper can hand it over: kept at every death point it reads 'kept at
+//      ..., nothing needed'; else its TRADE_SUBSTITUTES stand-in goes in by id (worn at the respawn
+//      where the original was worn); else each death point that does not keep it gets an
+//      'unrecoverable by trade' line (`unrecoverable`), and the phase is not fully recoverable.
 // In the fixed form SCORED drops, at the respawn tile, any kept unit beyond the need (a duplicate
 // of a package line), the fallback H10/H12/H22 use while no ask writer serves the top-up form.
 // Each package then has to pass `respawnCheck`: the slot ledger walked from the respawn state (the
@@ -88,6 +89,16 @@ export const R8_PHASES: readonly R8Phase[] = [
     { id: 'R8d2', what: 'S17 mid-course', deaths: [{ row: 'S17' }], replay: ['T26-27'], resume: 'S17', to: 'S17', hp: 97, cannonBy: 'none (not needed after S27)' },
 ];
 
+/**
+ * The tradeable stand-in a package carries for an untradeable item the keep lost (rs/158's ruling from
+ * rs/201: the nearest pair at Defence 1 with an equal or better Defence bonus), worn at the respawn
+ * where the original was worn. An untradeable item not listed is unrecoverable by trade.
+ */
+export const TRADE_SUBSTITUTES: Readonly<Record<string, string>> = {
+    'khazard helmet': 'iron med helm',
+    'khazard armour': 'iron platebody',
+};
+
 export interface KeptUnit {
     name: string;
     id?: number;
@@ -110,8 +121,10 @@ export interface R8Line {
     kept: number;
     /** need - kept: the fixed form's amount; 0 for an untradeable item, which no helper can give. */
     give: number;
-    /** false for `tradeable=no`: in neither form; the check walks without it (R8Package.untradeable). */
+    /** false for an untradeable item: in neither form; a substitute line or an unrecoverable line stands for it. */
     tradeable: boolean;
+    /** On a substitute's line: the untradeable item it stands in for (TRADE_SUBSTITUTES). */
+    substituteFor?: string;
     why: string;
 }
 
@@ -224,6 +237,8 @@ export interface RespawnInput {
     give: readonly { item: string; id?: number; kind: Kind; count: number }[];
     /** Kept units SCORED drops at the respawn tile before the trade (the duplicates of a fixed package). */
     drop?: readonly { item: string; count: number }[];
+    /** Package items put on after the trade besides the target's worn set: substitutes for worn originals. */
+    wear?: readonly string[];
     /** The cannon items re-supplied after the replay. */
     cannon: readonly { item: string; id?: number; kind: Kind; count: number }[];
     /** Sharks eaten from 1 HP once traded. */
@@ -256,7 +271,7 @@ export function respawnCheck(rows: readonly LedgerRow[], r: RespawnInput): Ledge
     const entry = (l: RespawnInput['give'][number]): InEntry => ({ name: l.item, ...(l.id !== undefined ? { id: l.id } : {}), count: l.count, kind: l.kind });
     const give = r.give.filter(l => l.count > 0);
     const held = new Set([...r.kept.map(k => lc(k.name)), ...give.map(l => lc(l.item)), ...r.cannon.map(l => lc(l.item))]);
-    const rewear = r.target.worn.filter(w => held.has(lc(w.name))).map(w => ({ name: w.name, on: true }));
+    const rewear = [...r.target.worn.filter(w => held.has(lc(w.name))).map(w => w.name), ...(r.wear ?? []).filter(n => held.has(lc(n)))].map(name => ({ name, on: true }));
     const walked: LedgerRow[] = [];
     const drop = (r.drop ?? []).filter(d => d.count > 0);
     if (drop.length) walked.push(row(`${r.phase.id} drop`, [], drop.map(d => ({ name: d.item, count: d.count, reason: 'drop' as const })), [], 0));
@@ -380,14 +395,27 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
         const tradeable = !(c?.id !== undefined && refusedInTrade(objs, c.id));
         const why = n.why.join('; ');
         const keptAlways = !tradeable && k >= n.count;
-        return { item: n.item, ...(c?.id !== undefined ? { id: c.id } : {}), kind: n.kind, need: n.count, kept: k, give: tradeable ? n.count - k : 0, tradeable, why: keptAlways ? `kept, nothing needed (${why})` : why };
+        return { item: n.item, ...(c?.id !== undefined ? { id: c.id } : {}), kind: n.kind, need: n.count, kept: k, give: tradeable ? n.count - k : 0, tradeable, why: keptAlways ? `kept at ${phase.deaths.map(d => d.row).join(', ')}, nothing needed (${why})` : why };
     });
-    // An untradeable need a death point's keep does not cover: no helper can restore it.
+    // An untradeable need some death point's keep does not cover: its substitute, by id, where
+    // TRADE_SUBSTITUTES names one (sized on what every death point keeps of the original).
+    for (const l of [...lines]) {
+        const sub = TRADE_SUBSTITUTES[lc(l.item)];
+        if (l.tradeable || !sub) continue;
+        const lost = Math.max(0, ...phase.deaths.map((_, d) => l.need - (tally(keptAt[d]!).get(lc(l.item)) ?? 0)));
+        if (!lost) continue;
+        const c = obj({ name: sub });
+        if (!c || c.id === undefined) refusals.push(`${phase.id}: no obj id for ${sub}`);
+        else if (refusedInTrade(objs, c.id)) refusals.push(`${phase.id}: ${sub}, the substitute for ${l.item}, is untradeable too`);
+        lines.push({ item: sub, ...(c?.id !== undefined ? { id: c.id } : {}), kind: l.kind, need: lost, kept: 0, give: l.need - l.kept, tradeable: true, substituteFor: l.item, why: `${sub} for ${l.item} (${l.why})` });
+    }
+    // An untradeable need a death point's keep does not cover and no substitute stands in for: no
+    // helper can restore it.
     const unrecoverable: R8Unrecoverable[] = phase.deaths.flatMap((death, d) => {
         const mine = tally(keptAt[d]!);
         const keptMin = keptAt[d]!.length ? Math.min(...keptAt[d]!.map(k => k.cost)) : null;
         return lines
-            .filter(l => !l.tradeable && l.need > (mine.get(lc(l.item)) ?? 0))
+            .filter(l => !l.tradeable && !TRADE_SUBSTITUTES[lc(l.item)] && l.need > (mine.get(lc(l.item)) ?? 0))
             .map(l => ({ item: l.item, ...(l.id !== undefined ? { id: l.id } : {}), death: death.row, deployed: !!death.deployed, count: l.need - (mine.get(lc(l.item)) ?? 0), needs: l.why, cost: (l.id !== undefined ? objs.byId.get(l.id)?.cost : undefined) ?? 0, keptMin }));
     });
     const byId: PackageItem[] = lines.filter(l => l.tradeable && l.give > 0 && l.id !== undefined).map(l => ({ id: l.id!, amount: l.give }));
@@ -406,13 +434,16 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
             const left = (item: string, n: number) => Math.max(0, n - (mine.get(lc(item)) ?? 0));
             const give = lines.map(l => ({ item: l.item, ...(l.id !== undefined ? { id: l.id } : {}), kind: l.kind, count: !l.tradeable ? 0 : form === 'fixed' ? l.give : left(l.item, l.need) }));
             const drop = form === 'fixed' ? lines.map(l => ({ item: l.item, count: Math.max(0, (mine.get(lc(l.item)) ?? 0) + l.give - l.need) })).filter(x => x.count > 0) : [];
+            // A substitute goes on where its original was worn and this death did not keep it.
+            const wornNames = new Set(target.worn.map(w => lc(w.name)));
+            const wear = lines.filter(l => l.substituteFor && wornNames.has(lc(l.substituteFor)) && !(mine.get(lc(l.substituteFor)) ?? 0)).map(l => l.item);
             const cannon = cannonUsed ? cannonHeld.map(h => ({ item: h.name, ...(h.id !== undefined ? { id: h.id } : {}), kind: h.kind, count: left(h.name, h.count ?? 0) })) : [];
             const held = new Set([...keptAt[d]!.map(k => lc(k.name)), ...give.filter(l => l.count > 0).map(l => lc(l.item)), ...cannon.filter(c => c.count > 0).map(c => lc(c.item))]);
             const lost = [...new Set([...target.inv, ...target.worn, ...before.inv, ...before.worn].map(h => h.name))].filter(n => !held.has(lc(n)));
             const at = `${form}: ${phase.id} (death at ${death.row}${death.deployed ? ', deployed' : ''})`;
             let walked: LedgerEntry[] = [];
             try {
-                walked = respawnCheck(rows, { phase, kept: keptAt[d]!, give, drop, cannon, heal, target, lost });
+                walked = respawnCheck(rows, { phase, kept: keptAt[d]!, give, drop, wear, cannon, heal, target, lost });
             } catch (e) {
                 refusals.push(`${at}: ${(e as Error).message}`);
             }
