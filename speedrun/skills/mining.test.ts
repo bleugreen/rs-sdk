@@ -609,17 +609,17 @@ describe('contested iron bands', () => {
     test('auto at combat 3, contested past the switch count: one program run mines through every event at the zoo, no abort, no walk', async () => {
         gatedCalls.length = 0;
         const sdk = new MiningSdk(atSite('zoo', 70));
-        let aborted: boolean | null = null;
+        const aborted: boolean[] = [];
         gatedImpl = async (s, params, opts) => {
             for (let i = 0; i < m.CONTEST_RETRIES + 3; i++) passerBy(s, 'zoo');
-            aborted = opts.signal.aborted;
+            aborted.push(opts.signal.aborted);
             s.tick({ skills: xpSkills(params.untilLevel as number, 9e6) });
             return { segments: [], ended: 'done' };
         };
         const walks: string[] = [];
         const ctx = ctxWithWalk(sdk, walks);
         await band({ fallback: 'auto' }).run(ctx);
-        expect(aborted).toBe(false);
+        expect(aborted).toEqual([false]);
         expect(walks).toEqual([]);
         expect(gatedCalls.length).toBe(1);
         expect(bandRow(ctx).meta).toMatchObject({ site: 'zoo', restarts: [], contest: { foreign: m.CONTEST_RETRIES + 3, retries: 0, switches: [] } });
