@@ -981,7 +981,8 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
             let partner: string | null = giver && 'giver' in giver ? giver.giver : null;
             let wait: ServerWait | null = null;
             if (group) {
-                wait = await awaitBoneServer(sdk, group.cueDir, group.group, group.serverWait);
+                // The cue's session, as the givers count theirs: a status file another run left counts for nothing.
+                wait = await awaitBoneServer(sdk, group.cueDir, group.group, group.serverWait, cue?.session ?? undefined);
                 partner = wait.server ?? null;
             }
             const want = { want: [{ item: o.bonesRe, amount: giver!.lastLoad ?? giver!.load }], maxTicks: 60, openMaxTicks: 67 };

@@ -513,15 +513,17 @@ export function readBoneStatuses(dir: string): BoneStatus[] {
 }
 
 /**
- * The group's statuses: with a `session`, only those counted in it (a file another run left counts
- * for nothing; a giver that has ended counts). Without one, every status of the group, as before
- * sessions existed: the scored step's `awaitBoneServer` passes none yet. A status written without
- * `session` is in no session.
+ * The group's statuses: with a `session`, those counted in it or in none, never another session's.
+ * A file another run left (its own session, its trades counted) counts for nothing; a giver that has
+ * ended counts. A status in no session is a giver yet to read this cue (a fresh process, its trades
+ * 0) or one written before sessions existed: it counts, so a giver that has not republished since the
+ * cue opened can still serve the first load. Without a `session`, every status of the group. The
+ * scored step's `awaitBoneServer` passes its cue's session (woodcutting.ts BoneCue).
  */
 function sessionStatuses(statuses: readonly BoneStatus[], group: readonly string[], session?: string): BoneStatus[] {
     const g = new Set(group.map(canonName));
     const mine = statuses.filter(s => g.has(canonName(s.account)));
-    return session === undefined ? mine : mine.filter(s => (s.session ?? null) === session);
+    return session === undefined ? mine : mine.filter(s => (s.session ?? null) === null || s.session === session);
 }
 
 /** The loads the group has given in the session: its givers' trades added up. */
@@ -570,12 +572,13 @@ export interface ServerWait {
  * The scored side's half of the turn rule, before each load's receiveFrom: the group's server
  * (boneServer, read from the same status files the givers read), waiting on observed ticks while
  * none serves, for at most `maxTicks`. The S07 step (woodcutting.ts `bones.group`) and the
- * stand-in (bone-receiver `givers`) both take their partner from here.
+ * stand-in (bone-receiver `givers`) both take their partner from here. With `session` (the S07 cue's,
+ * which the givers record in their statuses) only that session's statuses count, as on the givers' side.
  */
-export async function awaitBoneServer(sdk: StateSource, dir: string, group: readonly string[], maxTicks: number = SERVER_WAIT_TICKS): Promise<ServerWait> {
+export async function awaitBoneServer(sdk: StateSource, dir: string, group: readonly string[], maxTicks: number = SERVER_WAIT_TICKS, session?: string): Promise<ServerWait> {
     const t0 = sdk.getState()?.tick ?? 0;
     let server: string | undefined;
-    const r = await waitUntil(sdk, () => (server = boneServer(readBoneStatuses(dir), group, Date.now())) !== undefined, { maxTicks });
+    const r = await waitUntil(sdk, () => (server = boneServer(readBoneStatuses(dir), group, Date.now(), session)) !== undefined, { maxTicks });
     return { server: r.ok ? server : undefined, waited: Math.max(0, r.tick - t0) };
 }
 

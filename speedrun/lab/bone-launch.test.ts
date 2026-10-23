@@ -6,7 +6,24 @@ import { boneGiverOptions, S07_SITES } from '../helpers/bone-giver';
 import { parseLaunchConfig } from '../helpers/standalone';
 import { buildChain, KIT_PARTNER_ROWS, PLACEMENT } from '../runner/chain';
 import { BONE_LOAD, CAMELOT_RUNES, S07_BONE_CUE, SITES, steps as woodcutting } from '../skills/woodcutting';
-import { boneGiverGaps, boneGiverLaunch, boneGiverReady, lastS07Step, runsS07, S07_BONE_GIVERS, S07_FINAL_EXTRAS, S07_LAB_LOADS, S07_LAST_LOAD, withBoneGivers } from './bone-launch';
+import {
+    assertS07RunBundle,
+    boneGiverGaps,
+    boneGiverLaunch,
+    boneGiverReady,
+    lastS07Step,
+    runsS07,
+    s07RunBones,
+    s07RunLaunch,
+    S07_BONE_GIVERS,
+    S07_BONE_PRIORITY,
+    S07_FINAL_EXTRAS,
+    S07_LAB_LOADS,
+    S07_LAST_LOAD,
+    S07_RUN_GIVERS,
+    S07_RUN_LOADS,
+    withBoneGivers,
+} from './bone-launch';
 
 const GIVERS = ['cairn_lb1', 'cairn_lb2', 'cairn_lb3', 'cairn_lb4'];
 const launch = () => boneGiverLaunch({ givers: GIVERS, botsDir: '/tmp/b', runDir: '/tmp/r', gatewayPort: 8307 });
@@ -115,5 +132,44 @@ describe('boneGiverReady', () => {
         // A status from before this launch is an earlier run's.
         expect(boneGiverReady(dir, now + 1)('cairn_lb1', now)).toBe(false);
         expect(ready('cairn_lb9', now)).toBe(false);
+    });
+});
+
+describe("S07's run-night bundle (bank restock, 42 loads)", () => {
+    const run = () => s07RunLaunch({ botsDir: '/r/bots', runDir: '/r/s07', gatewayPort: 7788 });
+
+    test("standalone.ts's and bone-giver.ts's own parsers: b01-b04 on the bank, dragon first, 42 loads each, the runes on cairn_b04 alone beside 21, no rehearsal return", () => {
+        const c = parseLaunchConfig(run());
+        expect(c.accounts.map(e => [e.account, e.role, e.receiver, e.final])).toEqual(S07_RUN_GIVERS.map(g => [g, 'bone-giver', false, false]));
+        const parsed = run().accounts.map(e => boneGiverOptions(e.options, {}));
+        for (const [i, o] of parsed.entries()) {
+            expect(o).toMatchObject({ mode: 'standing', items: [...S07_BONE_PRIORITY], n: BONE_LOAD, group: [...S07_RUN_GIVERS], trades: S07_RUN_LOADS, scope: S07_BONE_CUE, acceptReturn: false, sites: S07_SITES });
+            expect(o.restock.kind).toBe('bank');
+            expect(o.finalExtras.map(e => [e.item, e.count])).toEqual(i === 3 ? [['Law rune', 1], ['Air rune', 5]] : []);
+        }
+        expect(parsed[3]!.finalN).toBe(21);
+        expect((S07_RUN_LOADS - 1) * BONE_LOAD + S07_LAST_LOAD).toBe(964);
+        // The lab's default is unchanged.
+        expect(launch().accounts.every(e => e.options.restock.kind === 'cheat' && e.options.item === undefined && e.options.trades === S07_LAB_LOADS)).toBe(true);
+    });
+
+    test('assertS07RunBundle passes the generated pair and refuses any drift', () => {
+        expect(() => assertS07RunBundle(run(), s07RunBones())).not.toThrow();
+        const drift = (f: (c: ReturnType<typeof run>) => void) => {
+            const c = run();
+            f(c);
+            return () => assertS07RunBundle(c, s07RunBones());
+        };
+        expect(drift(c => (c.accounts[1]!.options.trades = 41))).toThrow(/cairn_b02: n 23, trades 41/);
+        expect(drift(c => (c.accounts[0]!.options.finalExtras = c.accounts[3]!.options.finalExtras))).toThrow(/cairn_b01: final extras/);
+        expect(drift(c => (c.accounts[2]!.options.item = ['Babydragon bones', 'Dragon bones']))).toThrow(/cairn_b03: bones Babydragon bones, Dragon bones/);
+        expect(drift(c => ((c.accounts[0]!.options as Record<string, unknown>).acceptReturn = true))).toThrow(/acceptReturn true/);
+        expect(() => assertS07RunBundle(run(), { group: [...S07_RUN_GIVERS].reverse(), lastLoad: 21 })).toThrow(/receiver bones/);
+        expect(() => assertS07RunBundle(launch(), withBoneGivers(GIVERS))).toThrow(/S07 run bundle refused/);
+    });
+
+    test("the receiver's bones builds the chain's S07", () => {
+        expect(s07RunBones()).toEqual({ group: [...S07_RUN_GIVERS], lastLoad: 21 });
+        expect(() => woodcutting({ bury: true, bones: s07RunBones(), dropAxe: true, prayerTo: 99 })).not.toThrow();
     });
 });

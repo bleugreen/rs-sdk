@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Subprocess } from 'bun';
 import { canonName, STATUS_FRESH_MS } from '../helpers/altar-cue';
-import { readBoneStatuses, type Extra } from '../helpers/bone-giver';
+import { boneGiverOptions, readBoneStatuses, type Extra } from '../helpers/bone-giver';
 import { ACCOUNT_NAME_RE, FORBIDDEN_ACCOUNTS } from '../helpers/fleet-config';
 import type { ChainStep } from '../runner/chain';
 import { STAND_IN_STEP } from '../runner/run-report';
@@ -47,11 +47,28 @@ export const S07_FINAL_EXTRAS: readonly Extra[] = [
 /** The last load's bones: the same free slots as every load, two of them the rune stacks (bone-giver.ts finalN's default). */
 export const S07_LAST_LOAD = BONE_LOAD - S07_FINAL_EXTRAS.length;
 
+/** The run's givers (SUPPLIES.md H4.1-H4.n), in login order: the last, cairn_b04, carries the runes (rs/158's ruling). */
+export const S07_RUN_GIVERS = ['cairn_b01', 'cairn_b02', 'cairn_b03', 'cairn_b04'] as const;
+
+/**
+ * The run's loads, every giver's `trades`: 41 of 23 and the last of 21 beside the runes, 964 bones
+ * (rs/158 and main, 2026-10-22 17:55 PDT: 283 dragon + 681 babydragon = 40,806 base, Prayer 99 is 39,938).
+ */
+export const S07_RUN_LOADS = 42;
+
+/** Each giver fills a load from its own bank, the first of these it still holds first (bone-giver.ts boneWithdrawals). */
+export const S07_BONE_PRIORITY = ['Dragon bones', 'Babydragon bones'] as const;
+
 export interface BoneLaunchOptions {
     /** The group, in login order; the last carries the runes and serves the last load. */
     givers: readonly string[];
-    /** The group's loads (default S07_LAB_LOADS). */
+    /** The group's loads (default S07_LAB_LOADS; S07_RUN_LOADS with the bank restock). */
     loads?: number;
+    /**
+     * 'lab' (default): ::give restock, every load dragon bones. 'bank': the run's, each giver's
+     * Falador west bank with S07_BONE_PRIORITY, the runes withdrawn by name.
+     */
+    restock?: 'lab' | 'bank';
     botsDir: string;
     /** launcher.json, logs/ and role-state/: a directory of this launch's own, never run-machine/ (the altar givers' launcher.json). */
     runDir: string;
@@ -62,18 +79,28 @@ export interface BoneLaunchOptions {
 export interface BoneLaunchEntry {
     account: string;
     role: 'bone-giver';
-    options: { restock: { kind: 'cheat' }; scope: typeof S07_BONE_CUE; group: string[]; trades: number; finalExtras?: Extra[] };
+    options: { restock: { kind: 'cheat' | 'bank' }; item?: string[]; scope: typeof S07_BONE_CUE; group: string[]; trades: number; finalExtras?: Extra[] };
 }
 
 /** standalone.ts's config file (its parseLaunchConfig input) for S07's givers. The sites are bone-giver.ts's own (S07_SITES, the Taverley stands). */
 export function boneGiverLaunch(o: BoneLaunchOptions): { gatewayPort: number; botsDir: string; runDir: string; loginSpacingMs: number; accounts: BoneLaunchEntry[] } {
     if (o.givers.length < 2) throw new Error(`S07's bone givers are a group of at least two (woodcutting.ts bones.group), got ${o.givers.length}`);
-    const loads = o.loads ?? S07_LAB_LOADS;
+    const bank = o.restock === 'bank';
+    const loads = o.loads ?? (bank ? S07_RUN_LOADS : S07_LAB_LOADS);
     const last = o.givers.length - 1;
+    // The bank restock withdraws the runes by name; `obj` is only the lab's staff give.
+    const extras = () => S07_FINAL_EXTRAS.map(e => (bank ? { item: e.item, count: e.count } : { ...e }));
     const accounts: BoneLaunchEntry[] = o.givers.map((account, i) => ({
         account,
         role: 'bone-giver',
-        options: { restock: { kind: 'cheat' }, scope: S07_BONE_CUE, group: [...o.givers], trades: loads, ...(i === last ? { finalExtras: S07_FINAL_EXTRAS.map(e => ({ ...e })) } : {}) },
+        options: {
+            restock: { kind: bank ? 'bank' : 'cheat' },
+            ...(bank ? { item: [...S07_BONE_PRIORITY] } : {}),
+            scope: S07_BONE_CUE,
+            group: [...o.givers],
+            trades: loads,
+            ...(i === last ? { finalExtras: extras() } : {}),
+        },
     }));
     return { gatewayPort: o.gatewayPort, botsDir: o.botsDir, runDir: o.runDir, loginSpacingMs: 2000, accounts };
 }
@@ -81,6 +108,43 @@ export function boneGiverLaunch(o: BoneLaunchOptions): { gatewayPort: number; bo
 /** The run config's `bones` for `givers` (the scored config's shape: the group, and the last load beside the runes). */
 export function withBoneGivers(givers: readonly string[]): BonesOptions {
     return { group: [...givers], lastLoad: S07_LAST_LOAD };
+}
+
+/** S07's run-night launcher config: S07_RUN_GIVERS on the bank restock, S07_RUN_LOADS loads. Check it with assertS07RunBundle. */
+export function s07RunLaunch(o: Pick<BoneLaunchOptions, 'botsDir' | 'runDir' | 'gatewayPort'>): ReturnType<typeof boneGiverLaunch> {
+    return boneGiverLaunch({ ...o, givers: S07_RUN_GIVERS, restock: 'bank' });
+}
+
+/** The run config's `bones` that goes with s07RunLaunch. */
+export function s07RunBones(): BonesOptions {
+    return withBoneGivers(S07_RUN_GIVERS);
+}
+
+/**
+ * Refuse a run-night S07 pair that drifted from the bundle: every entry through bone-giver.ts's own
+ * parser (standing mode, dragon first from its own bank, n 23, the same 42 loads, no rehearsal
+ * return, the {S07, bone} scope), the runes on the last giver alone beside 21 bones, and the
+ * receiver's `bones` naming the same group in the same order with the same last load.
+ */
+export function assertS07RunBundle(launch: { accounts: readonly { account: string; role: string; options?: Record<string, unknown> }[] }, bones: BonesOptions): void {
+    const givers = launch.accounts.map(e => e.account);
+    const bad: string[] = [];
+    if (givers.join() !== S07_RUN_GIVERS.join()) bad.push(`givers ${givers.join(', ')}, not ${S07_RUN_GIVERS.join(', ')}`);
+    for (const [i, e] of launch.accounts.entries()) {
+        if (e.role !== 'bone-giver') bad.push(`${e.account}: role ${e.role}`);
+        const o = boneGiverOptions(e.options ?? {}, {});
+        const final = i === launch.accounts.length - 1;
+        if (o.mode !== 'standing' || o.restock.kind !== 'bank' || o.acceptReturn) bad.push(`${e.account}: mode ${o.mode}, restock ${o.restock.kind}, acceptReturn ${o.acceptReturn}`);
+        if (o.items.join() !== S07_BONE_PRIORITY.join()) bad.push(`${e.account}: bones ${o.items.join(', ')}`);
+        if (o.n !== BONE_LOAD || o.trades !== S07_RUN_LOADS) bad.push(`${e.account}: n ${o.n}, trades ${o.trades}`);
+        if (o.scope.step !== S07_BONE_CUE.step || o.scope.family !== S07_BONE_CUE.family) bad.push(`${e.account}: scope ${o.scope.step}/${o.scope.family}`);
+        if (o.group.join() !== S07_RUN_GIVERS.join()) bad.push(`${e.account}: group ${o.group.join(', ')}`);
+        const runes = o.finalExtras.map(x => `${x.count} ${x.item}`).join(', ');
+        const want = final ? S07_FINAL_EXTRAS.map(x => `${x.count} ${x.item}`).join(', ') : '';
+        if (runes !== want || (final && o.finalN !== S07_LAST_LOAD)) bad.push(`${e.account}: final extras [${runes}], finalN ${o.finalN}`);
+    }
+    if ((bones.group ?? []).join() !== givers.join() || bones.lastLoad !== S07_LAST_LOAD) bad.push(`receiver bones ${JSON.stringify(bones)}`);
+    if (bad.length) throw new Error(`S07 run bundle refused: ${bad.join('; ')}`);
 }
 
 /** A bone giver is ready once its status (bones-<account>.json in the cue dir) is this launch's, fresh, and shows it loaded at or on its way to a site. */

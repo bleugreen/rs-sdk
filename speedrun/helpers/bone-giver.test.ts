@@ -74,8 +74,10 @@ describe('a group of bone givers takes turns (S07 b01-b04)', () => {
             const statuses = [bare('cairn_b02', 'waiting', 300), bare('cairn_b01', 'waiting', 100), bare('cairn_b03', 'restock', null)];
             expect(boneServer(statuses, GROUP, now)).toBe('cairn_b01');
             expect(groupLoadsDone(statuses, GROUP)).toBe(0);
-            // With a session asked for, a status in no session counts for nothing.
-            expect(boneServer(statuses, GROUP, now, 's1')).toBeUndefined();
+            // With a session asked for, a status in no session (a giver yet to read the cue) still counts;
+            // one in another session does not.
+            expect(boneServer(statuses, GROUP, now, 's1')).toBe('cairn_b01');
+            expect(boneServer(statuses.map(x => ({ ...x, session: 'old' })), GROUP, now, 's1')).toBeUndefined();
         });
 
         test('the last load goes to the final giver alone, even when another has waited longer', () => {
@@ -524,5 +526,28 @@ describe('S18 side tile: never across a wall edge from the scored account', () =
         expect(sideTiles(scored, scored, [{ x: 2671, z: 3300 }, { x: 2672, z: 3301 }, { x: 2672, z: 3299 }], ardougne)).toEqual([]);
         const boxed: FlagReader = (x, z, mask) => x === scored.x && z === scored.z && (mask & (2 | 8 | 32 | 128)) !== 0;
         expect(sideTiles(scored, scored, [], boxed)).toEqual([]);
+    });
+});
+
+describe('awaitBoneServer counts only the cue session it is given', () => {
+    test("a status another run left (41 loads given) makes the unscoped count the last load; with the cue's session the oldest ready giver serves", async () => {
+        const { awaitBoneServer } = await import('./bone-giver');
+        const { mkdtempSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const { join } = await import('node:path');
+        const dir = mkdtempSync(join(tmpdir(), 'bone-await-'));
+        const now = Date.now();
+        const G = ['cairn_b01', 'cairn_b02', 'cairn_b03', 'cairn_b04'];
+        const put = (account: string, s: Record<string, unknown>) =>
+            writeFileSync(join(dir, `bones-${account}.json`), JSON.stringify({ v: 1, account, phase: 'waiting', held: 23, n: 23, trades: 0, bounces: 0, tile: null, readyAt: now - 9_000, session: 's-now', final: false, loads: 42, ms: now, ...s }));
+        put('cairn_b01', { readyAt: now - 9_000 });
+        put('cairn_b02', { readyAt: now - 5_000 });
+        put('cairn_b03', { readyAt: now - 4_000 });
+        put('cairn_b04', { readyAt: now - 3_000, final: true });
+        // An earlier run's file for the same account name would be overwritten; a renamed copy stands in for a stale writer.
+        put('cairn_b02-old', { account: 'cairn_b02', trades: 41, session: 's-old', phase: 'off', readyAt: null });
+        const sdk = { getState: () => ({ tick: 7 }) } as never;
+        expect((await awaitBoneServer(sdk, dir, G, 5, 's-now')).server).toBe('cairn_b01');
+        expect((await awaitBoneServer(sdk, dir, G, 5)).server).toBe('cairn_b04');
     });
 });
