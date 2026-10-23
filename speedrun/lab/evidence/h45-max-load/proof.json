@@ -1,0 +1,5355 @@
+{
+  "provenance": {
+    "base": "649e4fcd12fa492b3f971e0ebe2a972d611d4494",
+    "labRevision": "23109737616ccd006db8f48db57031a9349183b6",
+    "patchSha256": "ffcbbfef12a92a23188951b7842ee650a98dff0c4b8b322bf57ce13ab46b3a25",
+    "adapterSha256": "d58ebb769f98716788d177abefe8af718f39e9cabb37231abd9ae60867eebe10",
+    "files": {
+      "speedrun/lab/atoll-mule.ts": "e2a86d3c6962787598d6f1fd0bd14ed7cfa7a5e0c1dabb95f23c54d349637f2f",
+      "speedrun/helpers/mule-ledger.ts": "436bc8a66276a86915d4f25143b529b861dd5fc6adad5ad3c5204f3c115a3210",
+      "speedrun/helpers/mule.ts": "13db32858f08935face6bee2396312c4c2e28ee31d574140ff5a3aad589faf3a",
+      "docs/speedrun/STEP-MANIFEST.md": "142141580c99743d47afade7ae42ee35a2c1215cc229a7995647e4d7fd8b4e6f"
+    }
+  },
+  "exitCode": 0,
+  "rawHashes": {
+    "atoll-proof.json": "b7dbcad5fbce7a8be21516c00868772685c8e7ed3fdce79799cc06dc9b69df09",
+    "output.log": "7925fa518e8826f27b237869be633ef30b072b9a4958a95d23089fe305117293",
+    "provenance.json": "5328f42035b593aa5296f1ba74f39d4e6c48b3baedb2fa6df159ae9a7b1c6585"
+  },
+  "observations": {
+    "scope": "PRIVATE ATOLL START ONLY; not Stronghold route, live inventory, or autonomous eating proof",
+    "generated": {
+      "account": "cairn_lab45",
+      "role": "mule",
+      "cueDir": "/Users/mitch/.cairn/build-slots/rs/.authority/slot-132/scratch/atoll-mule-8nCPgd/h45-cue",
+      "loginOn": {
+        "step": "H12oM",
+        "family": "mule"
+      },
+      "stopOn": {
+        "step": "H12oP",
+        "family": "mule"
+      },
+      "options": {
+        "serve": "lab537max",
+        "serveMode": "request",
+        "carried": true,
+        "packages": [
+          {
+            "name": "H12oM",
+            "items": [
+              {
+                "id": 385,
+                "topUp": {
+                  "max": 15
+                }
+              }
+            ],
+            "scope": {
+              "step": "H12oM",
+              "family": "mule"
+            },
+            "at": {
+              "x": 2763,
+              "z": 2704
+            }
+          },
+          {
+            "name": "H12oP",
+            "items": [
+              {
+                "id": 2448,
+                "topUp": {
+                  "max": 1
+                }
+              },
+              {
+                "id": 385,
+                "topUp": {
+                  "max": 9
+                }
+              }
+            ],
+            "scope": {
+              "step": "H12oP",
+              "family": "mule"
+            },
+            "at": {
+              "x": 2803,
+              "z": 2724
+            }
+          }
+        ]
+      }
+    },
+    "results": [
+      "RESULT max-load fixture: HP68/99, 27 sharks + potion2448, 28 slots",
+      "RESULT reported base skill profile",
+      "RESULT reported four adamant equipment pieces",
+      "RESULT h45 logged out until H12oM's cue (launcher state awaiting-cue)",
+      "RESULT h45 carried both packages at login: [{\"name\":\"H12oM\",\"at\":{\"x\":2763,\"z\":2704},\"held\":{\"385\":27}},{\"name\":\"H12oP\",\"at\":{\"x\":2803,\"z\":2724},\"held\":{\"385\":27,\"2448\":1}}]",
+      "RESULT H12oM open -> h45 in the world 2 ticks, at M ready 7 ticks (lead 70); the atoll-start readiness walk {\"from\":{\"x\":2763,\"z\":2704},\"ticks\":0}",
+      "RESULT wildlife at M before SCORED came (ticks after the open): [{\"tick\":36,\"t\":\"2026-10-23T01:56:10.975Z\",\"account\":\"cairn_lab45\",\"role\":\"mule\",\"message\":\"wildlife\",\"npc\":\"Jungle spider\",\"index\":8143,\"at\":{\"x\":2763,\"z\":2704},\"end\":\"killed\",\"ticks\":30,\"dealt\":35,\"taken\":3,\"hp\":[68,65]},{\"tick\":61,\"t\":\"2026-10-23T01:56:21.011Z\",\"account\":\"cairn_lab45\",\"role\":\"mule\",\"message\":\"wildlife\",\"npc\":\"Jungle spider\",\"index\":8144,\"at\":{\"x\":2763,\"z\":2704},\"end\":\"killed\",\"ticks\":25,\"dealt\":35,\"taken\":6,\"hp\":[65,59]}]",
+      "RESULT M: SCORED with 16 free slots asked 15 and received 15 sharks in 5 ticks on its clock (attempts [{\"ok\":true,\"ticks\":5,\"reason\":null,\"openTick\":129,\"askTick\":129}]); the mule: {\"t\":\"2026-10-23T01:56:28.223Z\",\"account\":\"cairn_lab45\",\"role\":\"mule\",\"message\":\"hand-off\",\"to\":\"Lab537max\",\"package\":\"H12oM\",\"success\":true,\"giverTicks\":4,\"stacks\":1,\"mode\":\"burst\",\"result\":\"Gave package to lab537max\",\"received\":[],\"asked\":[{\"item\":\"^shark$\",\"count\":15}],\"topUps\":[{\"item\":\"obj 385\",\"asked\":15,\"n\":15}]}",
+      "RESULT M -> P: {\"t\":\"2026-10-23T01:56:37.475Z\",\"account\":\"cairn_lab45\",\"role\":\"mule\",\"message\":\"carried: moved to the next package tile\",\"to\":{\"x\":2803,\"z\":2724},\"from\":{\"x\":2763,\"z\":2705},\"ok\":true,\"ticks\":23,\"next\":\"H12oP\"} (logged 20 ticks after M's trade)",
+      "RESULT the ~850-tick wait (850 ticks, 5.7 min): 1 keep-alive step(s): [{\"tick\":851,\"t\":\"2026-10-23T02:01:38.475Z\",\"account\":\"cairn_lab45\",\"role\":\"mule\",\"message\":\"keep-alive\",\"at\":{\"x\":2803,\"z\":2724},\"moved\":true,\"to\":{\"x\":2804,\"z\":2724},\"ticks\":2,\"idleMs\":300199}]",
+      "RESULT h45 still in the world after the wait (online)",
+      "RESULT continuous mule observation: frames=951, minHP=55, died=false, finalTick=952",
+      "RESULT P package still fulfillable after M and 850-tick idle",
+      "RESULT P arrival-sized request: 11 free minus potion and spare slot permits9 sharks",
+      "RESULT food accounting: own consumed=0, own remaining=3; auto-eating is not configured by the carried engine",
+      "RESULT P actual first nonempty offer is potion2448 before sharks",
+      "RESULT P exact receiver inventory: retained17 logs plus potion2448 and9 sharks385; one spare slot",
+      "RESULT P: SCORED received 9 sharks + 1 Superantipoison(4) in 5 ticks on its clock (attempts [{\"ok\":true,\"ticks\":5,\"reason\":null,\"openTick\":1012,\"askTick\":1012}]); the mule: {\"t\":\"2026-10-23T02:02:21.672Z\",\"account\":\"cairn_lab45\",\"role\":\"mule\",\"message\":\"hand-off\",\"to\":\"Lab537max\",\"package\":\"H12oP\",\"success\":true,\"giverTicks\":4,\"stacks\":2,\"mode\":\"burst\",\"result\":\"Gave package to lab537max\",\"received\":[],\"asked\":[{\"item\":\"^superantipoison\\\\(4\\\\)$\",\"count\":1},{\"item\":\"^shark$\",\"count\":9}],\"topUps\":[{\"item\":\"obj 2448\",\"asked\":1,\"n\":1},{\"item\":\"obj 385\",\"asked\":9,\"n\":9}]}",
+      "RESULT logout on H12oP's stop: reported 2 ticks after the write, unlisted 799 ms after it (logout out)",
+      "RESULT h45 after the trades: [{\"t\":\"2026-10-23T01:56:28.224Z\",\"account\":\"cairn_lab45\",\"role\":\"mule\",\"message\":\"carried: left\",\"inventory\":13,\"short\":[]},{\"t\":\"2026-10-23T02:02:21.692Z\",\"account\":\"cairn_lab45\",\"role\":\"mule\",\"message\":\"carried: left\",\"inventory\":3,\"short\":[]}]; logins 1"
+    ],
+    "snapshots": [
+      {
+        "label": "fixture-at-M-not-route-proof",
+        "observedAt": "2026-10-23T01:55:48.520Z",
+        "tick": 23,
+        "inGame": true,
+        "player": {
+          "name": "Cairn Lab45",
+          "combatLevel": 113,
+          "hp": 68,
+          "maxHp": 99,
+          "x": 6592,
+          "z": 6208,
+          "worldX": 2763,
+          "worldZ": 2704,
+          "level": 0,
+          "runEnergy": 100,
+          "runWeight": 40,
+          "animId": -1,
+          "spotanimId": -1,
+          "combat": {
+            "inCombat": false,
+            "targetIndex": -1,
+            "targetType": "none",
+            "lastDamageTick": -1
+          },
+          "isDead": false,
+          "lifeId": 1,
+          "respawnCount": 0,
+          "lastDeathTick": null,
+          "teleportTick": 19,
+          "teleportJump": true
+        },
+        "skills": [
+          {
+            "name": "Attack",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Defence",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Strength",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Hitpoints",
+            "level": 68,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Ranged",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Prayer",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Magic",
+            "level": 57,
+            "baseLevel": 57,
+            "experience": 53593
+          },
+          {
+            "name": "Cooking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Woodcutting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fletching",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fishing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Firemaking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Crafting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Smithing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Mining",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Herblore",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Agility",
+            "level": 76,
+            "baseLevel": 76,
+            "experience": 202317
+          },
+          {
+            "name": "Thieving",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat18",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat19",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Runecraft",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          }
+        ],
+        "inventory": [
+          {
+            "slot": 0,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 1,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 2,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 5,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 6,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 8,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 9,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 10,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 11,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 12,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 13,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 14,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 15,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 16,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 17,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 18,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 19,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 20,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 21,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 22,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 23,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 24,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 25,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 26,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 27,
+            "id": 2448,
+            "name": "Superantipoison(4)",
+            "count": 1
+          }
+        ],
+        "equipment": [
+          {
+            "slot": 0,
+            "id": 1161,
+            "name": "Adamant full helm",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 1301,
+            "name": "Adamant longsword",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 1111,
+            "name": "Adamant chainbody",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 1073,
+            "name": "Adamant platelegs",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "label": "mule-inventory-change",
+        "observedAt": "2026-10-23T01:55:57.751Z",
+        "tick": 2,
+        "inGame": true,
+        "player": {
+          "name": "Cairn Lab45",
+          "combatLevel": 113,
+          "hp": 68,
+          "maxHp": 99,
+          "x": 6592,
+          "z": 6208,
+          "worldX": 2763,
+          "worldZ": 2704,
+          "level": 0,
+          "runEnergy": 100,
+          "runWeight": 40,
+          "animId": 388,
+          "spotanimId": -1,
+          "combat": {
+            "inCombat": true,
+            "targetIndex": -1,
+            "targetType": "none",
+            "lastDamageTick": 2
+          },
+          "isDead": false,
+          "lifeId": 1,
+          "respawnCount": 0,
+          "lastDeathTick": null,
+          "teleportTick": 2,
+          "teleportJump": false
+        },
+        "skills": [
+          {
+            "name": "Attack",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Defence",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Strength",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Hitpoints",
+            "level": 68,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Ranged",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Prayer",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Magic",
+            "level": 57,
+            "baseLevel": 57,
+            "experience": 53593
+          },
+          {
+            "name": "Cooking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Woodcutting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fletching",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fishing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Firemaking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Crafting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Smithing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Mining",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Herblore",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Agility",
+            "level": 76,
+            "baseLevel": 76,
+            "experience": 202317
+          },
+          {
+            "name": "Thieving",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat18",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat19",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Runecraft",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          }
+        ],
+        "inventory": [
+          {
+            "slot": 0,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 1,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 2,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 5,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 6,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 8,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 9,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 10,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 11,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 12,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 13,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 14,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 15,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 16,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 17,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 18,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 19,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 20,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 21,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 22,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 23,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 24,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 25,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 26,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 27,
+            "id": 2448,
+            "name": "Superantipoison(4)",
+            "count": 1
+          }
+        ],
+        "equipment": [
+          {
+            "slot": 0,
+            "id": 1161,
+            "name": "Adamant full helm",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 1301,
+            "name": "Adamant longsword",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 1111,
+            "name": "Adamant chainbody",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 1073,
+            "name": "Adamant platelegs",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "label": "receiver-before-M",
+        "observedAt": "2026-10-23T01:56:26.218Z",
+        "tick": 128,
+        "inGame": true,
+        "player": {
+          "name": "Lab537max",
+          "combatLevel": 113,
+          "hp": 99,
+          "maxHp": 99,
+          "x": 6592,
+          "z": 6208,
+          "worldX": 2763,
+          "worldZ": 2704,
+          "level": 0,
+          "runEnergy": 100,
+          "runWeight": 24,
+          "animId": -1,
+          "spotanimId": -1,
+          "combat": {
+            "inCombat": false,
+            "targetIndex": -1,
+            "targetType": "none",
+            "lastDamageTick": -1
+          },
+          "isDead": false,
+          "lifeId": 1,
+          "respawnCount": 0,
+          "lastDeathTick": null,
+          "teleportTick": 125,
+          "teleportJump": true
+        },
+        "skills": [
+          {
+            "name": "Attack",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Defence",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Strength",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Hitpoints",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Ranged",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Prayer",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Magic",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Cooking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Woodcutting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fletching",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fishing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Firemaking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Crafting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Smithing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Mining",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Herblore",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Agility",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Thieving",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat18",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat19",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Runecraft",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          }
+        ],
+        "inventory": [
+          {
+            "slot": 0,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 1,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 2,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 5,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 6,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 8,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 9,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 10,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 11,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          }
+        ],
+        "equipment": []
+      },
+      {
+        "label": "mule-before-M",
+        "observedAt": "2026-10-23T01:56:26.218Z",
+        "tick": 72,
+        "inGame": true,
+        "player": {
+          "name": "Cairn Lab45",
+          "combatLevel": 113,
+          "hp": 58,
+          "maxHp": 99,
+          "x": 6592,
+          "z": 6336,
+          "worldX": 2763,
+          "worldZ": 2705,
+          "level": 0,
+          "runEnergy": 100,
+          "runWeight": 40,
+          "animId": -1,
+          "spotanimId": -1,
+          "combat": {
+            "inCombat": true,
+            "targetIndex": -1,
+            "targetType": "none",
+            "lastDamageTick": 62
+          },
+          "isDead": false,
+          "lifeId": 1,
+          "respawnCount": 0,
+          "lastDeathTick": null,
+          "teleportTick": 2,
+          "teleportJump": false
+        },
+        "skills": [
+          {
+            "name": "Attack",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 1005458
+          },
+          {
+            "name": "Defence",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Strength",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Hitpoints",
+            "level": 58,
+            "baseLevel": 99,
+            "experience": 1000775
+          },
+          {
+            "name": "Ranged",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Prayer",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Magic",
+            "level": 57,
+            "baseLevel": 57,
+            "experience": 53593
+          },
+          {
+            "name": "Cooking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Woodcutting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fletching",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fishing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Firemaking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Crafting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Smithing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Mining",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Herblore",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Agility",
+            "level": 76,
+            "baseLevel": 76,
+            "experience": 202317
+          },
+          {
+            "name": "Thieving",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat18",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat19",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Runecraft",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          }
+        ],
+        "inventory": [
+          {
+            "slot": 0,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 1,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 2,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 5,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 6,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 8,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 9,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 10,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 11,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 12,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 13,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 14,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 15,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 16,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 17,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 18,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 19,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 20,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 21,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 22,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 23,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 24,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 25,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 26,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 27,
+            "id": 2448,
+            "name": "Superantipoison(4)",
+            "count": 1
+          }
+        ],
+        "equipment": [
+          {
+            "slot": 0,
+            "id": 1161,
+            "name": "Adamant full helm",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 1301,
+            "name": "Adamant longsword",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 1111,
+            "name": "Adamant chainbody",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 1073,
+            "name": "Adamant platelegs",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "label": "mule-inventory-change",
+        "observedAt": "2026-10-23T01:56:27.423Z",
+        "tick": 76,
+        "inGame": true,
+        "player": {
+          "name": "Cairn Lab45",
+          "combatLevel": 113,
+          "hp": 58,
+          "maxHp": 99,
+          "x": 6592,
+          "z": 6336,
+          "worldX": 2763,
+          "worldZ": 2705,
+          "level": 0,
+          "runEnergy": 100,
+          "runWeight": 31,
+          "animId": -1,
+          "spotanimId": -1,
+          "combat": {
+            "inCombat": true,
+            "targetIndex": -1,
+            "targetType": "none",
+            "lastDamageTick": 62
+          },
+          "isDead": false,
+          "lifeId": 1,
+          "respawnCount": 0,
+          "lastDeathTick": null,
+          "teleportTick": 2,
+          "teleportJump": false
+        },
+        "skills": [
+          {
+            "name": "Attack",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 1005458
+          },
+          {
+            "name": "Defence",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Strength",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Hitpoints",
+            "level": 58,
+            "baseLevel": 99,
+            "experience": 1000775
+          },
+          {
+            "name": "Ranged",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Prayer",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Magic",
+            "level": 57,
+            "baseLevel": 57,
+            "experience": 53593
+          },
+          {
+            "name": "Cooking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Woodcutting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fletching",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fishing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Firemaking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Crafting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Smithing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Mining",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Herblore",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Agility",
+            "level": 76,
+            "baseLevel": 76,
+            "experience": 202317
+          },
+          {
+            "name": "Thieving",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat18",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat19",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Runecraft",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          }
+        ],
+        "inventory": [
+          {
+            "slot": 15,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 16,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 17,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 18,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 19,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 20,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 21,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 22,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 23,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 24,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 25,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 26,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 27,
+            "id": 2448,
+            "name": "Superantipoison(4)",
+            "count": 1
+          }
+        ],
+        "equipment": [
+          {
+            "slot": 0,
+            "id": 1161,
+            "name": "Adamant full helm",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 1301,
+            "name": "Adamant longsword",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 1111,
+            "name": "Adamant chainbody",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 1073,
+            "name": "Adamant platelegs",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "label": "receiver-after-M",
+        "observedAt": "2026-10-23T01:56:28.623Z",
+        "tick": 134,
+        "inGame": true,
+        "player": {
+          "name": "Lab537max",
+          "combatLevel": 113,
+          "hp": 99,
+          "maxHp": 99,
+          "x": 6592,
+          "z": 6208,
+          "worldX": 2763,
+          "worldZ": 2704,
+          "level": 0,
+          "runEnergy": 100,
+          "runWeight": 33,
+          "animId": -1,
+          "spotanimId": -1,
+          "combat": {
+            "inCombat": false,
+            "targetIndex": -1,
+            "targetType": "none",
+            "lastDamageTick": -1
+          },
+          "isDead": false,
+          "lifeId": 1,
+          "respawnCount": 0,
+          "lastDeathTick": null,
+          "teleportTick": 125,
+          "teleportJump": true
+        },
+        "skills": [
+          {
+            "name": "Attack",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Defence",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Strength",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Hitpoints",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Ranged",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Prayer",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Magic",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Cooking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Woodcutting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fletching",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fishing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Firemaking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Crafting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Smithing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Mining",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Herblore",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Agility",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Thieving",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat18",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat19",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Runecraft",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          }
+        ],
+        "inventory": [
+          {
+            "slot": 0,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 1,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 2,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 5,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 6,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 8,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 9,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 10,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 11,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 12,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 13,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 14,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 15,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 16,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 17,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 18,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 19,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 20,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 21,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 22,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 23,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 24,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 25,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 26,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          }
+        ],
+        "equipment": []
+      },
+      {
+        "label": "mule-after-M",
+        "observedAt": "2026-10-23T01:56:29.425Z",
+        "tick": 81,
+        "inGame": true,
+        "player": {
+          "name": "Cairn Lab45",
+          "combatLevel": 113,
+          "hp": 58,
+          "maxHp": 99,
+          "x": 7104,
+          "z": 6464,
+          "worldX": 2767,
+          "worldZ": 2706,
+          "level": 0,
+          "runEnergy": 100,
+          "runWeight": 31,
+          "animId": -1,
+          "spotanimId": -1,
+          "combat": {
+            "inCombat": true,
+            "targetIndex": -1,
+            "targetType": "none",
+            "lastDamageTick": 62
+          },
+          "isDead": false,
+          "lifeId": 1,
+          "respawnCount": 0,
+          "lastDeathTick": null,
+          "teleportTick": 2,
+          "teleportJump": false
+        },
+        "skills": [
+          {
+            "name": "Attack",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 1005458
+          },
+          {
+            "name": "Defence",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Strength",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Hitpoints",
+            "level": 58,
+            "baseLevel": 99,
+            "experience": 1000775
+          },
+          {
+            "name": "Ranged",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Prayer",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Magic",
+            "level": 57,
+            "baseLevel": 57,
+            "experience": 53593
+          },
+          {
+            "name": "Cooking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Woodcutting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fletching",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fishing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Firemaking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Crafting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Smithing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Mining",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Herblore",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Agility",
+            "level": 76,
+            "baseLevel": 76,
+            "experience": 202317
+          },
+          {
+            "name": "Thieving",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat18",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat19",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Runecraft",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          }
+        ],
+        "inventory": [
+          {
+            "slot": 15,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 16,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 17,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 18,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 19,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 20,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 21,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 22,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 23,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 24,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 25,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 26,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 27,
+            "id": 2448,
+            "name": "Superantipoison(4)",
+            "count": 1
+          }
+        ],
+        "equipment": [
+          {
+            "slot": 0,
+            "id": 1161,
+            "name": "Adamant full helm",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 1301,
+            "name": "Adamant longsword",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 1111,
+            "name": "Adamant chainbody",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 1073,
+            "name": "Adamant platelegs",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "label": "mule-arrived-P",
+        "observedAt": "2026-10-23T01:56:37.876Z",
+        "tick": 102,
+        "inGame": true,
+        "player": {
+          "name": "Cairn Lab45",
+          "combatLevel": 113,
+          "hp": 58,
+          "maxHp": 99,
+          "x": 6592,
+          "z": 6720,
+          "worldX": 2803,
+          "worldZ": 2724,
+          "level": 0,
+          "runEnergy": 100,
+          "runWeight": 31,
+          "animId": -1,
+          "spotanimId": -1,
+          "combat": {
+            "inCombat": true,
+            "targetIndex": -1,
+            "targetType": "none",
+            "lastDamageTick": 94
+          },
+          "isDead": false,
+          "lifeId": 1,
+          "respawnCount": 0,
+          "lastDeathTick": null,
+          "teleportTick": 2,
+          "teleportJump": false
+        },
+        "skills": [
+          {
+            "name": "Attack",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 1005458
+          },
+          {
+            "name": "Defence",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Strength",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Hitpoints",
+            "level": 58,
+            "baseLevel": 99,
+            "experience": 1000775
+          },
+          {
+            "name": "Ranged",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Prayer",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Magic",
+            "level": 57,
+            "baseLevel": 57,
+            "experience": 53593
+          },
+          {
+            "name": "Cooking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Woodcutting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fletching",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fishing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Firemaking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Crafting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Smithing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Mining",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Herblore",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Agility",
+            "level": 76,
+            "baseLevel": 76,
+            "experience": 202317
+          },
+          {
+            "name": "Thieving",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat18",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat19",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Runecraft",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          }
+        ],
+        "inventory": [
+          {
+            "slot": 15,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 16,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 17,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 18,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 19,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 20,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 21,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 22,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 23,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 24,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 25,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 26,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 27,
+            "id": 2448,
+            "name": "Superantipoison(4)",
+            "count": 1
+          }
+        ],
+        "equipment": [
+          {
+            "slot": 0,
+            "id": 1161,
+            "name": "Adamant full helm",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 1301,
+            "name": "Adamant longsword",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 1111,
+            "name": "Adamant chainbody",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 1073,
+            "name": "Adamant platelegs",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "label": "mule-after-P-idle",
+        "observedAt": "2026-10-23T02:02:18.088Z",
+        "tick": 952,
+        "inGame": true,
+        "player": {
+          "name": "Cairn Lab45",
+          "combatLevel": 113,
+          "hp": 63,
+          "maxHp": 99,
+          "x": 6592,
+          "z": 6720,
+          "worldX": 2803,
+          "worldZ": 2724,
+          "level": 0,
+          "runEnergy": 100,
+          "runWeight": 31,
+          "animId": -1,
+          "spotanimId": -1,
+          "combat": {
+            "inCombat": false,
+            "targetIndex": -1,
+            "targetType": "none",
+            "lastDamageTick": 182
+          },
+          "isDead": false,
+          "lifeId": 1,
+          "respawnCount": 0,
+          "lastDeathTick": null,
+          "teleportTick": 2,
+          "teleportJump": false
+        },
+        "skills": [
+          {
+            "name": "Attack",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 1005458
+          },
+          {
+            "name": "Defence",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Strength",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Hitpoints",
+            "level": 63,
+            "baseLevel": 99,
+            "experience": 1000775
+          },
+          {
+            "name": "Ranged",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Prayer",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Magic",
+            "level": 57,
+            "baseLevel": 57,
+            "experience": 53593
+          },
+          {
+            "name": "Cooking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Woodcutting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fletching",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fishing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Firemaking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Crafting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Smithing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Mining",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Herblore",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Agility",
+            "level": 76,
+            "baseLevel": 76,
+            "experience": 202317
+          },
+          {
+            "name": "Thieving",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat18",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat19",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Runecraft",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          }
+        ],
+        "inventory": [
+          {
+            "slot": 15,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 16,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 17,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 18,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 19,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 20,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 21,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 22,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 23,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 24,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 25,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 26,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 27,
+            "id": 2448,
+            "name": "Superantipoison(4)",
+            "count": 1
+          }
+        ],
+        "equipment": [
+          {
+            "slot": 0,
+            "id": 1161,
+            "name": "Adamant full helm",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 1301,
+            "name": "Adamant longsword",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 1111,
+            "name": "Adamant chainbody",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 1073,
+            "name": "Adamant platelegs",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "label": "receiver-before-P",
+        "observedAt": "2026-10-23T02:02:19.673Z",
+        "tick": 1011,
+        "inGame": true,
+        "player": {
+          "name": "Lab537max",
+          "combatLevel": 113,
+          "hp": 99,
+          "maxHp": 99,
+          "x": 6592,
+          "z": 6720,
+          "worldX": 2803,
+          "worldZ": 2724,
+          "level": 0,
+          "runEnergy": 100,
+          "runWeight": 34,
+          "animId": -1,
+          "spotanimId": -1,
+          "combat": {
+            "inCombat": false,
+            "targetIndex": -1,
+            "targetType": "none",
+            "lastDamageTick": -1
+          },
+          "isDead": false,
+          "lifeId": 1,
+          "respawnCount": 0,
+          "lastDeathTick": null,
+          "teleportTick": 1008,
+          "teleportJump": true
+        },
+        "skills": [
+          {
+            "name": "Attack",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Defence",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Strength",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Hitpoints",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Ranged",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Prayer",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Magic",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Cooking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Woodcutting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fletching",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fishing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Firemaking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Crafting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Smithing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Mining",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Herblore",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Agility",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Thieving",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat18",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat19",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Runecraft",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          }
+        ],
+        "inventory": [
+          {
+            "slot": 0,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 1,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 2,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 5,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 6,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 8,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 9,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 10,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 11,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 12,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 13,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 14,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 15,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 16,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          }
+        ],
+        "equipment": []
+      },
+      {
+        "label": "mule-inventory-change",
+        "observedAt": "2026-10-23T02:02:20.473Z",
+        "tick": 958,
+        "inGame": true,
+        "player": {
+          "name": "Cairn Lab45",
+          "combatLevel": 113,
+          "hp": 63,
+          "maxHp": 99,
+          "x": 6464,
+          "z": 6720,
+          "worldX": 2802,
+          "worldZ": 2724,
+          "level": 0,
+          "runEnergy": 100,
+          "runWeight": 31,
+          "animId": -1,
+          "spotanimId": -1,
+          "combat": {
+            "inCombat": false,
+            "targetIndex": -1,
+            "targetType": "none",
+            "lastDamageTick": 182
+          },
+          "isDead": false,
+          "lifeId": 1,
+          "respawnCount": 0,
+          "lastDeathTick": null,
+          "teleportTick": 2,
+          "teleportJump": false
+        },
+        "skills": [
+          {
+            "name": "Attack",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 1005458
+          },
+          {
+            "name": "Defence",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Strength",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Hitpoints",
+            "level": 63,
+            "baseLevel": 99,
+            "experience": 1000775
+          },
+          {
+            "name": "Ranged",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Prayer",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Magic",
+            "level": 57,
+            "baseLevel": 57,
+            "experience": 53593
+          },
+          {
+            "name": "Cooking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Woodcutting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fletching",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fishing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Firemaking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Crafting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Smithing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Mining",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Herblore",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Agility",
+            "level": 76,
+            "baseLevel": 76,
+            "experience": 202317
+          },
+          {
+            "name": "Thieving",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat18",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat19",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Runecraft",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          }
+        ],
+        "inventory": [
+          {
+            "slot": 15,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 16,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 17,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 18,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 19,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 20,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 21,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 22,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 23,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 24,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 25,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 26,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          }
+        ],
+        "equipment": [
+          {
+            "slot": 0,
+            "id": 1161,
+            "name": "Adamant full helm",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 1301,
+            "name": "Adamant longsword",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 1111,
+            "name": "Adamant chainbody",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 1073,
+            "name": "Adamant platelegs",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "label": "mule-inventory-change",
+        "observedAt": "2026-10-23T02:02:20.877Z",
+        "tick": 959,
+        "inGame": true,
+        "player": {
+          "name": "Cairn Lab45",
+          "combatLevel": 113,
+          "hp": 63,
+          "maxHp": 99,
+          "x": 6464,
+          "z": 6720,
+          "worldX": 2802,
+          "worldZ": 2724,
+          "level": 0,
+          "runEnergy": 100,
+          "runWeight": 25,
+          "animId": -1,
+          "spotanimId": -1,
+          "combat": {
+            "inCombat": false,
+            "targetIndex": -1,
+            "targetType": "none",
+            "lastDamageTick": 182
+          },
+          "isDead": false,
+          "lifeId": 1,
+          "respawnCount": 0,
+          "lastDeathTick": null,
+          "teleportTick": 2,
+          "teleportJump": false
+        },
+        "skills": [
+          {
+            "name": "Attack",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 1005458
+          },
+          {
+            "name": "Defence",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Strength",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Hitpoints",
+            "level": 63,
+            "baseLevel": 99,
+            "experience": 1000775
+          },
+          {
+            "name": "Ranged",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Prayer",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Magic",
+            "level": 57,
+            "baseLevel": 57,
+            "experience": 53593
+          },
+          {
+            "name": "Cooking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Woodcutting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fletching",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fishing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Firemaking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Crafting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Smithing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Mining",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Herblore",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Agility",
+            "level": 76,
+            "baseLevel": 76,
+            "experience": 202317
+          },
+          {
+            "name": "Thieving",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat18",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat19",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Runecraft",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          }
+        ],
+        "inventory": [
+          {
+            "slot": 24,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 25,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 26,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          }
+        ],
+        "equipment": [
+          {
+            "slot": 0,
+            "id": 1161,
+            "name": "Adamant full helm",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 1301,
+            "name": "Adamant longsword",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 1111,
+            "name": "Adamant chainbody",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 1073,
+            "name": "Adamant platelegs",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "label": "receiver-after-P",
+        "observedAt": "2026-10-23T02:02:22.077Z",
+        "tick": 1017,
+        "inGame": true,
+        "player": {
+          "name": "Lab537max",
+          "combatLevel": 113,
+          "hp": 99,
+          "maxHp": 99,
+          "x": 6592,
+          "z": 6720,
+          "worldX": 2803,
+          "worldZ": 2724,
+          "level": 0,
+          "runEnergy": 100,
+          "runWeight": 39,
+          "animId": -1,
+          "spotanimId": -1,
+          "combat": {
+            "inCombat": false,
+            "targetIndex": -1,
+            "targetType": "none",
+            "lastDamageTick": -1
+          },
+          "isDead": false,
+          "lifeId": 1,
+          "respawnCount": 0,
+          "lastDeathTick": null,
+          "teleportTick": 1008,
+          "teleportJump": true
+        },
+        "skills": [
+          {
+            "name": "Attack",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Defence",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Strength",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Hitpoints",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Ranged",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Prayer",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Magic",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Cooking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Woodcutting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fletching",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fishing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Firemaking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Crafting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Smithing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Mining",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Herblore",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Agility",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Thieving",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat18",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat19",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Runecraft",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          }
+        ],
+        "inventory": [
+          {
+            "slot": 0,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 1,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 2,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 5,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 6,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 8,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 9,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 10,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 11,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 12,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 13,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 14,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 15,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 16,
+            "id": 1511,
+            "name": "Logs",
+            "count": 1
+          },
+          {
+            "slot": 17,
+            "id": 2448,
+            "name": "Superantipoison(4)",
+            "count": 1
+          },
+          {
+            "slot": 18,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 19,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 20,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 21,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 22,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 23,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 24,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 25,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 26,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          }
+        ],
+        "equipment": []
+      },
+      {
+        "label": "mule-after-P",
+        "observedAt": "2026-10-23T02:02:22.874Z",
+        "tick": 964,
+        "inGame": true,
+        "player": {
+          "name": "Cairn Lab45",
+          "combatLevel": 113,
+          "hp": 63,
+          "maxHp": 99,
+          "x": 6464,
+          "z": 6720,
+          "worldX": 2802,
+          "worldZ": 2724,
+          "level": 0,
+          "runEnergy": 100,
+          "runWeight": 25,
+          "animId": -1,
+          "spotanimId": -1,
+          "combat": {
+            "inCombat": false,
+            "targetIndex": -1,
+            "targetType": "none",
+            "lastDamageTick": 182
+          },
+          "isDead": false,
+          "lifeId": 1,
+          "respawnCount": 0,
+          "lastDeathTick": null,
+          "teleportTick": 2,
+          "teleportJump": false
+        },
+        "skills": [
+          {
+            "name": "Attack",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 1005458
+          },
+          {
+            "name": "Defence",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Strength",
+            "level": 99,
+            "baseLevel": 99,
+            "experience": 998458
+          },
+          {
+            "name": "Hitpoints",
+            "level": 63,
+            "baseLevel": 99,
+            "experience": 1000775
+          },
+          {
+            "name": "Ranged",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Prayer",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Magic",
+            "level": 57,
+            "baseLevel": 57,
+            "experience": 53593
+          },
+          {
+            "name": "Cooking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Woodcutting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fletching",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Fishing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Firemaking",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Crafting",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Smithing",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Mining",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Herblore",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Agility",
+            "level": 76,
+            "baseLevel": 76,
+            "experience": 202317
+          },
+          {
+            "name": "Thieving",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat18",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Stat19",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          },
+          {
+            "name": "Runecraft",
+            "level": 1,
+            "baseLevel": 1,
+            "experience": 0
+          }
+        ],
+        "inventory": [
+          {
+            "slot": 24,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 25,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          },
+          {
+            "slot": 26,
+            "id": 385,
+            "name": "Shark",
+            "count": 1
+          }
+        ],
+        "equipment": [
+          {
+            "slot": 0,
+            "id": 1161,
+            "name": "Adamant full helm",
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 1301,
+            "name": "Adamant longsword",
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 1111,
+            "name": "Adamant chainbody",
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 1073,
+            "name": "Adamant platelegs",
+            "count": 1
+          }
+        ]
+      }
+    ],
+    "observedInventoryChanges": [
+      {
+        "tick": 2,
+        "hp": 68,
+        "inventory": [
+          {
+            "slot": 0,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 1,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 2,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 3,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 4,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 5,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 6,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 7,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 8,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 9,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 10,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 11,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 12,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 13,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 14,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 15,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 16,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 17,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 18,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 19,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 20,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 21,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 22,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 23,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 24,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 25,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 26,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 27,
+            "id": 2448,
+            "count": 1
+          }
+        ]
+      },
+      {
+        "tick": 76,
+        "hp": 58,
+        "inventory": [
+          {
+            "slot": 15,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 16,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 17,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 18,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 19,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 20,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 21,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 22,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 23,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 24,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 25,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 26,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 27,
+            "id": 2448,
+            "count": 1
+          }
+        ]
+      },
+      {
+        "tick": 958,
+        "hp": 63,
+        "inventory": [
+          {
+            "slot": 15,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 16,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 17,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 18,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 19,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 20,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 21,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 22,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 23,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 24,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 25,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 26,
+            "id": 385,
+            "count": 1
+          }
+        ]
+      },
+      {
+        "tick": 959,
+        "hp": 63,
+        "inventory": [
+          {
+            "slot": 24,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 25,
+            "id": 385,
+            "count": 1
+          },
+          {
+            "slot": 26,
+            "id": 385,
+            "count": 1
+          }
+        ]
+      }
+    ],
+    "observedFrames": 963,
+    "minHp": 55,
+    "died": false,
+    "healthChanges": [
+      {
+        "tick": 2,
+        "hp": 68
+      },
+      {
+        "tick": 20,
+        "hp": 66
+      },
+      {
+        "tick": 32,
+        "hp": 65
+      },
+      {
+        "tick": 46,
+        "hp": 63
+      },
+      {
+        "tick": 54,
+        "hp": 59
+      },
+      {
+        "tick": 62,
+        "hp": 58
+      },
+      {
+        "tick": 92,
+        "hp": 57
+      },
+      {
+        "tick": 101,
+        "hp": 58
+      },
+      {
+        "tick": 122,
+        "hp": 57
+      },
+      {
+        "tick": 152,
+        "hp": 56
+      },
+      {
+        "tick": 182,
+        "hp": 55
+      },
+      {
+        "tick": 201,
+        "hp": 56
+      },
+      {
+        "tick": 301,
+        "hp": 57
+      },
+      {
+        "tick": 401,
+        "hp": 58
+      },
+      {
+        "tick": 501,
+        "hp": 59
+      },
+      {
+        "tick": 601,
+        "hp": 60
+      },
+      {
+        "tick": 701,
+        "hp": 61
+      },
+      {
+        "tick": 801,
+        "hp": 62
+      },
+      {
+        "tick": 901,
+        "hp": 63
+      }
+    ],
+    "maxFrameGap": 1,
+    "roleLines": [
+      {
+        "tick": 60,
+        "message": "session state at tick 5 (passed over 3): inventory 28 stacks; Shark x1, Shark x1, Shark x1, Shark x1",
+        "data": {
+          "t": "2026-10-23T01:55:58.948Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "session state at tick 5 (passed over 3): inventory 28 stacks; Shark x1, Shark x1, Shark x1, Shark x1"
+        }
+      },
+      {
+        "tick": 60,
+        "message": "carried: loaded",
+        "data": {
+          "t": "2026-10-23T01:55:58.951Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "carried: loaded",
+          "short": [],
+          "done": [],
+          "packages": [
+            {
+              "name": "H12oM",
+              "at": {
+                "x": 2763,
+                "z": 2704
+              },
+              "held": {
+                "385": 27
+              }
+            },
+            {
+              "name": "H12oP",
+              "at": {
+                "x": 2803,
+                "z": 2724
+              },
+              "held": {
+                "385": 27,
+                "2448": 1
+              }
+            }
+          ],
+          "at": {
+            "x": 2763,
+            "z": 2704
+          },
+          "walk": {
+            "from": {
+              "x": 2763,
+              "z": 2704
+            },
+            "ticks": 0
+          }
+        }
+      },
+      {
+        "tick": 60,
+        "message": "mule ready",
+        "data": {
+          "t": "2026-10-23T01:55:58.951Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "mule ready",
+          "serve": "lab537max",
+          "packages": [
+            "H12oM",
+            "H12oP"
+          ],
+          "giver": "burst",
+          "serveMode": "request",
+          "carried": true
+        }
+      },
+      {
+        "tick": 60,
+        "message": "package request",
+        "data": {
+          "t": "2026-10-23T01:55:58.951Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "package request",
+          "step": "H12oM",
+          "session": "mvkbj6e3-a3270d",
+          "seq": 1,
+          "found": "H12oM",
+          "after": null
+        }
+      },
+      {
+        "tick": 90,
+        "message": "wildlife",
+        "data": {
+          "t": "2026-10-23T01:56:10.975Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "wildlife",
+          "npc": "Jungle spider",
+          "index": 8143,
+          "at": {
+            "x": 2763,
+            "z": 2704
+          },
+          "end": "killed",
+          "ticks": 30,
+          "dealt": 35,
+          "taken": 3,
+          "hp": [
+            68,
+            65
+          ]
+        }
+      },
+      {
+        "tick": 115,
+        "message": "wildlife",
+        "data": {
+          "t": "2026-10-23T01:56:21.011Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "wildlife",
+          "npc": "Jungle spider",
+          "index": 8144,
+          "at": {
+            "x": 2763,
+            "z": 2704
+          },
+          "end": "killed",
+          "ticks": 25,
+          "dealt": 35,
+          "taken": 6,
+          "hp": [
+            65,
+            59
+          ]
+        }
+      },
+      {
+        "tick": 115,
+        "message": "phase",
+        "data": {
+          "t": "2026-10-23T01:56:21.011Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "phase",
+          "from": "start",
+          "to": "idle"
+        }
+      },
+      {
+        "tick": 125,
+        "message": "pre-requested",
+        "data": {
+          "t": "2026-10-23T01:56:25.018Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "pre-requested",
+          "serve": "lab537max",
+          "package": "H12oM",
+          "sends": 1
+        }
+      },
+      {
+        "tick": 129,
+        "message": "phase",
+        "data": {
+          "t": "2026-10-23T01:56:26.622Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "phase",
+          "from": "idle",
+          "to": "serve"
+        }
+      },
+      {
+        "tick": 133,
+        "message": "hand-off",
+        "data": {
+          "t": "2026-10-23T01:56:28.223Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "hand-off",
+          "to": "Lab537max",
+          "package": "H12oM",
+          "success": true,
+          "giverTicks": 4,
+          "stacks": 1,
+          "mode": "burst",
+          "result": "Gave package to lab537max",
+          "received": [],
+          "asked": [
+            {
+              "item": "^shark$",
+              "count": 15
+            }
+          ],
+          "topUps": [
+            {
+              "item": "obj 385",
+              "asked": 15,
+              "n": 15
+            }
+          ]
+        }
+      },
+      {
+        "tick": 133,
+        "message": "carried: left",
+        "data": {
+          "t": "2026-10-23T01:56:28.224Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "carried: left",
+          "inventory": 13,
+          "short": []
+        }
+      },
+      {
+        "tick": 133,
+        "message": "walking",
+        "data": {
+          "t": "2026-10-23T01:56:28.224Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "walking",
+          "from": [
+            2763,
+            2705
+          ],
+          "to": [
+            2803,
+            2724
+          ]
+        }
+      },
+      {
+        "tick": 156,
+        "message": "carried: moved to the next package tile",
+        "data": {
+          "t": "2026-10-23T01:56:37.475Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "carried: moved to the next package tile",
+          "to": {
+            "x": 2803,
+            "z": 2724
+          },
+          "from": {
+            "x": 2763,
+            "z": 2705
+          },
+          "ok": true,
+          "ticks": 23,
+          "next": "H12oP"
+        }
+      },
+      {
+        "tick": 156,
+        "message": "phase",
+        "data": {
+          "t": "2026-10-23T01:56:37.475Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "phase",
+          "from": "serve",
+          "to": "idle"
+        }
+      },
+      {
+        "tick": 157,
+        "message": "package request",
+        "data": {
+          "t": "2026-10-23T01:56:37.875Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "package request",
+          "step": "H12oP",
+          "session": "mvkbjvrd-9bb2ab",
+          "seq": 1,
+          "found": "H12oP",
+          "after": {
+            "session": "mvkbj6e3-a3270d",
+            "seq": 1
+          }
+        }
+      },
+      {
+        "tick": 908,
+        "message": "keep-alive",
+        "data": {
+          "t": "2026-10-23T02:01:38.475Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "keep-alive",
+          "at": {
+            "x": 2803,
+            "z": 2724
+          },
+          "moved": true,
+          "to": {
+            "x": 2804,
+            "z": 2724
+          },
+          "ticks": 2,
+          "idleMs": 300199,
+          "tick": 851
+        }
+      },
+      {
+        "tick": 1008,
+        "message": "pre-requested",
+        "data": {
+          "t": "2026-10-23T02:02:18.474Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "pre-requested",
+          "serve": "lab537max",
+          "package": "H12oP",
+          "sends": 2
+        }
+      },
+      {
+        "tick": 1010,
+        "message": "pre-requested",
+        "data": {
+          "t": "2026-10-23T02:02:19.271Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "pre-requested",
+          "serve": "lab537max",
+          "package": "H12oP",
+          "sends": 3
+        }
+      },
+      {
+        "tick": 1012,
+        "message": "phase",
+        "data": {
+          "t": "2026-10-23T02:02:20.073Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "phase",
+          "from": "idle",
+          "to": "serve"
+        }
+      },
+      {
+        "tick": 1016,
+        "message": "hand-off",
+        "data": {
+          "t": "2026-10-23T02:02:21.672Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "hand-off",
+          "to": "Lab537max",
+          "package": "H12oP",
+          "success": true,
+          "giverTicks": 4,
+          "stacks": 2,
+          "mode": "burst",
+          "result": "Gave package to lab537max",
+          "received": [],
+          "asked": [
+            {
+              "item": "^superantipoison\\(4\\)$",
+              "count": 1
+            },
+            {
+              "item": "^shark$",
+              "count": 9
+            }
+          ],
+          "topUps": [
+            {
+              "item": "obj 2448",
+              "asked": 1,
+              "n": 1
+            },
+            {
+              "item": "obj 385",
+              "asked": 9,
+              "n": 9
+            }
+          ]
+        }
+      },
+      {
+        "tick": 1016,
+        "message": "carried: left",
+        "data": {
+          "t": "2026-10-23T02:02:21.692Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "carried: left",
+          "inventory": 3,
+          "short": []
+        }
+      },
+      {
+        "tick": 1016,
+        "message": "phase",
+        "data": {
+          "t": "2026-10-23T02:02:21.692Z",
+          "account": "cairn_lab45",
+          "role": "mule",
+          "message": "phase",
+          "from": "serve",
+          "to": "idle"
+        }
+      }
+    ],
+    "launcherLines": [
+      "2026-10-23T01:55:55.993Z [launcher] cairn_lab45: reading /Users/mitch/.cairn/build-slots/rs/.authority/slot-132/scratch/atoll-mule-8nCPgd/h45-cue; logs in when a cue for H12oM/mule opens; logs out when H12oP/mule closes (its final stop, or the next scope's cue after its stop)",
+      "2026-10-23T01:55:55.999Z [launcher] gateway started (pid 5035)",
+      "2026-10-23T01:55:56.251Z [launcher] gateway on 127.0.0.1:8731",
+      "2026-10-23T01:55:56.251Z [launcher] cairn_lab45: logged out until a cue for H12oM/mule opens (at most 600 min)",
+      "2026-10-23T01:55:56.252Z [launcher] all accounts started; helpersReady=true",
+      "2026-10-23T01:55:56.582Z [launcher] cairn_lab45: cue for H12oM/mule opened (session mvkbj6e3-a3270d, seq 1): logging in",
+      "2026-10-23T01:55:56.583Z [launcher] cairn_lab45: logging in to localhost:9730",
+      "2026-10-23T01:55:56.584Z [launcher] cairn_lab45: client started (pid 5075)",
+      "2026-10-23T01:55:57.342Z [launcher] cairn_lab45: in the world (login 1)",
+      "2026-10-23T01:55:57.343Z [launcher] cairn_lab45: role mule started (pid 5283)",
+      "2026-10-23T02:02:22.926Z [launcher] cairn_lab45: final stop for H12oP/mule (session mvkbjvrd-9bb2ab, seq 2): stopping role mule and logging out now",
+      "2026-10-23T02:02:23.344Z [launcher] cairn_lab45: logout: out of the world: server sent LOGOUT 964 tick(s) after the first click (1 click, 408 ms)",
+      "2026-10-23T02:02:23.344Z [launcher] cairn_lab45: stopped (logout: out)",
+      "2026-10-23T02:02:23.344Z [launcher] cairn_lab45: out of the run on its stop cue (logout: out)",
+      "2026-10-23T02:02:23.673Z [launcher] stopping: SIGTERM",
+      "2026-10-23T02:02:23.673Z [launcher] stop: 1 logged out"
+    ]
+  },
+  "tradeTranscripts": {
+    "M": {
+      "r": {
+        "ok": true,
+        "ticks": 5,
+        "received": [
+          {
+            "slot": -1,
+            "id": 385,
+            "name": "Shark",
+            "count": 15,
+            "amount": 15
+          }
+        ]
+      },
+      "attempts": [
+        {
+          "ok": true,
+          "ticks": 5,
+          "reason": null,
+          "openTick": 129,
+          "askTick": 129
+        }
+      ],
+      "offers": [
+        {
+          "tick": 129,
+          "screen": "offer",
+          "offer": []
+        },
+        {
+          "tick": 131,
+          "screen": "offer",
+          "offer": [
+            {
+              "slot": 0,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 1,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 2,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 3,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 4,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 5,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 6,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 7,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 8,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 9,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 10,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 11,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 12,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 13,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 14,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            }
+          ]
+        },
+        {
+          "tick": 132,
+          "screen": "confirm",
+          "offer": [
+            {
+              "slot": 0,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 1,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 2,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 3,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 4,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 5,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 6,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 7,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 8,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 9,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 10,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 11,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 12,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 13,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 14,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    "P": {
+      "r": {
+        "ok": true,
+        "ticks": 5,
+        "received": [
+          {
+            "slot": -1,
+            "id": 2448,
+            "name": "Superantipoison(4)",
+            "count": 1,
+            "amount": 1
+          },
+          {
+            "slot": -1,
+            "id": 385,
+            "name": "Shark",
+            "count": 9,
+            "amount": 9
+          }
+        ]
+      },
+      "attempts": [
+        {
+          "ok": true,
+          "ticks": 5,
+          "reason": null,
+          "openTick": 1012,
+          "askTick": 1012
+        }
+      ],
+      "offers": [
+        {
+          "tick": 1012,
+          "screen": "offer",
+          "offer": []
+        },
+        {
+          "tick": 1013,
+          "screen": "offer",
+          "offer": [
+            {
+              "slot": 0,
+              "id": 2448,
+              "name": "Superantipoison(4)",
+              "count": 1,
+              "amount": 1
+            }
+          ]
+        },
+        {
+          "tick": 1014,
+          "screen": "offer",
+          "offer": [
+            {
+              "slot": 0,
+              "id": 2448,
+              "name": "Superantipoison(4)",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 1,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 2,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 3,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 4,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 5,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 6,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 7,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 8,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 9,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            }
+          ]
+        },
+        {
+          "tick": 1015,
+          "screen": "confirm",
+          "offer": [
+            {
+              "slot": 0,
+              "id": 2448,
+              "name": "Superantipoison(4)",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 1,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 2,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 3,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 4,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 5,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 6,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 7,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 8,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            },
+            {
+              "slot": 9,
+              "id": 385,
+              "name": "Shark",
+              "count": 1,
+              "amount": 1
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
