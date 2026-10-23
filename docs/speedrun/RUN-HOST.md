@@ -1327,7 +1327,7 @@ the tick length T on main since #385 (a4456c73, rs/471; fold-in 31; step 6, line
    4. the run tab and the recording start; **load reading (ii)**, the decisive one, before SCORED's
       login;
    5. the hand-over (`handoff --no-login`, step 7), then SCORED's one login, run.ts's (step 7, "The
-      run-start order"; main 12:05Z, fold-in 37).
+      run-start order"; main 12:10Z, fold-in 37).
 
    The anvil helper a01 and the courier e15 are **not** in the start window: they log in on their
    cue gates (`loginOn` {S25a, anvil} and {S18, courier}). S21's 22 body-altar givers log in later,
@@ -1758,12 +1758,40 @@ after login (:499, :517).
 
 **The secrets check runs twice.** First `handoff`'s `secretsCheck` (`tools/run-gate.ts:767-779`),
 at the title screen, reading `0 0 0`. Then, **straight after run.ts reports in-game (S00 started),
-an operator step, not inside run.ts**: the host's secrets-only invocation of run-gate.ts (**command
-pending the host**), expected `0 0 0` (processes showing the password, processes showing `token=`,
-tab URLs showing either). It reads `0 0 0` because run.ts passes the token over CDP, not argv, and
-the page strips `token` from its URL (`GatewayConnection.ts:48-51`). **Anything other than `0 0 0`
-goes to main before S01's first action.** The proof is rs/496's twin re-run, which runs the check
-once after run.ts's login: **pending**, like the ladder note's proofs.
+an operator step, not inside run.ts**: the host's one-liner on the chosen machine (not a run-gate
+subcommand, so nothing new enters the run commit; the host, 12:2xZ; `SCORED_ENV` is the placeholder
+for `$SCORED_ENV`'s path, as in step 8; `RS_RUN_HOST` as the chosen machine's form, step 0):
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'ENV=SCORED_ENV; P=$(sed -n "s/^PASSWORD=//p" "$ENV"); [ -n "$P" ] || { echo "no PASSWORD in the env file"; exit 2; }; K=tok; K="${K}en="; a=$(pgrep -c -f -- "$P"); b=$(pgrep -c -f -- "$K"); L=$(curl -s -m 5 http://127.0.0.1:9222/json/list); if [ -z "$L" ]; then c=no-cdp; else c=$(printf "%s" "$L" | grep -c -F -f <(printf "%s\n%s\n" "$K" "$P")); fi; unset P; echo "secrets check: ${a:-0} ${b:-0} $c"'
+```
+
+Expect `secrets check: 0 0 0`: processes showing the password, processes showing the token key, and
+tab URLs (CDP `/json/list`) showing either, the same three counts as run-gate's `secretsCheck`
+(`run-gate.ts:767-779`). It never prints the password; the token key is built from two parts (`K`)
+so the check's own shell cannot match itself (an earlier draft read `0 1` from its own shell), and
+the password reaches grep through a file descriptor, never argv. `no-cdp` in the third place means
+Chrome's DevTools port did not answer: read again. It reads `0 0 0` because run.ts passes the token
+over CDP, not argv, and the page strips `token` from its URL (`GatewayConnection.ts:48-51`).
+Tested login-free on the run host at 12:2xZ (no tab up): `0 0 no-cdp`, the expected reading.
+**Anything other than `0 0 0` is a stop for main before S01's first action; touch nothing on the
+display.** The proof is rs/496's twin re-run, which runs the line
+once right after its single login (ENV set to the throwaway's env path) and sends the reading to
+rs/600 and the host: **pending**, like the ladder note's proofs.
+
+**Before run.ts starts: `handoff` logged nobody in** (the host's line via rs/158; rs/601's `handoff
+--no-login`; the key names rs/601's, re-checked at the commit main names, the code winning). The
+`handoff.json` of this gate pass, in the gate directory `handoff` printed (not the newest
+`~/rs-run/gate-*` by glob: UTC names sort, but a stale rehearsal directory could win), must show
+both `"ok": true` and `"loggedIn": false`. On the chosen machine:
+
+```sh
+grep -o -E '"(ok|loggedIn)": *(true|false)' ~/rs-run/gate-<UTC handoff printed>/handoff.json
+```
+
+If it shows `"loggedIn": true`, `handoff` took the old path: the fallback below applies (a confirmed
+clean logout, then at least 10 s) before run.ts. If rs/601 is not in the named commit, this line
+reads 'n/a; the fallback applies'.
 
 **Why** (main, 12:10Z): the server's clock runs from SCORED's first login and keeps counting on a
 dropped connection (`playtime-audit.md` rows 4b and 4d); a takeover under 10 s is refused by the
@@ -1772,8 +1800,8 @@ login server (`LoginServer.ts:573-601`); the gateway's duplicate-session stall i
 run.ts's `tickBase` (RUN-ORDER.md section 7).
 
 **Fallback, only if the host's `--no-login` flag misses 13:15Z** (main's wording): after handoff's
-verification, log SCORED out cleanly in the tab (confirmed on the page) before starting run.ts.
-Priced as `handoff`'s own logged-in ticks, inferred tens, a start-cost line beside the row, outside
+verification, log SCORED out cleanly in the tab (confirmed on the page) before starting run.ts, and
+wait at least 10 s after the confirmed logout. Priced as `handoff`'s own logged-in ticks, inferred tens, a start-cost line beside the row, outside
 the expected total (RUN-ORDER.md section 7's ladder). A logout not confirmed before run.ts starts
 runs into the login server's 10 s takeover refusal and the gateway's duplicate-session stall. From
 here the run scripts drive the tab through the gateway on 7780 (RUN-ORDER.md, STEP-MANIFEST.md).
@@ -2005,12 +2033,45 @@ stand down on a StepError or a first Ctrl-C, per family** (rs/574's retire rule,
   journal refuses a row it has already delivered ('delivery already served'), so a re-run of a step
   whose mule hand-off already landed gets nothing more from the mule. That is correct unless SCORED
   lost those items (a death, say), when the recovery is the respawn kit or the by-hand procedure
-  ("After a player-kill"), not the mule. A re-run where the mule's row was never served is untested:
-  unmeasured. **The bone givers:** their roles exit on a plain stop (measured: `bone-giver: finished`
-  0.2 s after the stop), but the launcher keeps both accounts logged in, so 'relaunch the bone
-  givers' means first stopping that launcher entry, so the old login does not stay in the world, and
-  only then relaunching. The anvil, log-row and courier helpers stay code-reading until measured;
-  the same 'stop the entry first' applies to them as a precaution.
+  ("After a player-kill"), not the mule. **A re-run of a step whose mule row was never served** (i, code reading, rs/186
+  at rs/598's fix via rs/158; file:line re-checked at the commit main names, the code winning): the
+  mule keeps its stand on that row and serves the re-run. It leaves its stand only after a serve
+  (`finishDelivery`, mule.ts:1326-1334; `keepsStandAfterServe` is false for an unserved row,
+  :1342-1344); a plain stop only pauses authorization while the stop is live (:1369); a failed
+  step's stop is plain, and on the re-run the run script reopens the same delivery session, which
+  the mule authorizes again (altar-cue.ts:676-687). The Draynor walk rs/597 saw is the served case
+  only. **The bone givers:** their roles exit on a plain stop (measured: `bone-giver: finished`
+  0.2 s after the stop), but the launcher keeps both accounts logged in, so a relaunch must first stop
+  the stale session (next item). The anvil, log-row and courier helpers stay code-reading until
+  measured.
+- **Relaunching an exited family** (main 12:20Z via rs/158; fold-in 37). For each account of the
+  failed step's bone, anvil, log-row and courier helpers: (1) stop the stale session, the launcher's
+  stop of that role with the logout confirmed; (2) wait at least 10 s; (3) then relaunch. **Why:** the
+  exited role's account stays logged in with no process behind it until the launcher stops it, and a
+  relaunch without the stop is a session takeover, refused under 10 s (`LoginServer.ts:573-601`),
+  and otherwise meets the gateway's ~19-20-tick duplicate-session stall (rs/174). **The constraint
+  (rs/41, from the code at 38902b56):** the run-machine launcher has **no per-role or per-account
+  stop or relaunch**: `standalone.ts` has no control channel, its only stop is SIGINT or SIGTERM to
+  the whole launcher process (standalone.ts:929-930; HELPERS.md "Stopping"), which stops every
+  account in that config at once, and a role that exits 0 is 'finished; not restarting it'
+  (standalone.ts:813-816), its account logged in until the launcher stops (`fleetctl` is the bbs
+  fleet's and does not apply). So the three steps work only if **each exiting family (the bone givers
+  b01-b04, the anvil a01, the fm-row droppers, the courier e15) runs in its own launcher config**,
+  apart from the carriers (mule1, mule2, h55, h03), the altar givers and h45, each config with its own
+  `gatewayPort` and `runDir` and every account's `cueDir` naming the run's cue directory. **That
+  layout is a run-host decision for rs/186 and main, pending**; with one launcher for everything the
+  only honest procedure is stopping the whole launcher, which costs every helper a relog and S21's
+  login order. **rs/41's procedure, per family, with its config `<F>.json`** (started as `bun
+  speedrun/helpers/standalone.ts <F>.json`): (1) stop: SIGINT to that launcher only, Ctrl-C in its
+  terminal or `kill -INT <pid>` of its own bun process, never by name or pattern; it logs each account
+  out (logout button, waiting out a combat timer) within `stopDeadlineMs` (25 s by default); (2)
+  confirm: each account's `logout` in `<F's runDir>/launcher.json` is `out` (`queued`: it leaves on
+  its turn, re-check; `unconfirmed` or `killed`: it can stay listed 2-4.5 min), then its display name
+  (not its login name, which reads falsely absent) is absent from the demo's `/playerpositions`; (3)
+  wait at least 10 s after the last absence; (4) relaunch with the same file; each first login waits
+  until the server no longer lists the account (standalone.ts :43-45), so a still-listed copy delays
+  the login rather than being refused, and the role re-reads its state from `<runDir>/role-state/`.
+  The exact command lines stay **pending rs/41** with the layout.
 - Helpers are **retired** (a final stop, `[run] cues closed final`) **only** on a completed whole
   run, SIGTERM or a second Ctrl-C, which **end the attempt**: a launcher never re-arms a retired
   scope (`helpers/standalone.ts`'s ScopeSessions), so a re-run after one finds no helpers.
@@ -2055,10 +2116,9 @@ The checks, in order, before re-running. Any one failing means **do not re-run: 
    as step 0 does first.
 6. **The helpers, per family** (#468, 4657eed8, rs/583 from rs/186 @43f03530; fold-in 36). The log
    reads `[run] cues closed non-final: a re-run re-arms the helpers`. For the failed step's bone,
-   anvil, fm-row or courier helpers, first stop their launcher entries, so the old logins do not stay
-   in the world, then relaunch them before the re-run (their roles exit on a non-final stop while the
-   launcher keeps the accounts logged in: measured for the bone givers, code-reading for the others,
-   rs/597; fold-in 37), and start the ring givers by hand if S04 failed; the altar and
+   anvil, fm-row or courier helpers, stop the stale session (logout confirmed), wait at least 10 s,
+   then relaunch, before the re-run ("Relaunching an exited family", above: main 12:20Z; per-family
+   launcher configs pending rs/186 and main, the commands pending rs/41), and start the ring givers by hand if S04 failed; the altar and
    mule givers stand by logged in on SCORED's address (up to 25-26 at S21, rs/41), and the
    re-run's cue re-arms them (measured, rs/597; a mule row already delivered is not served again,
    the caveat above). If it reads `[run] cues closed final` (a SIGTERM or a second Ctrl-C was sent), the
