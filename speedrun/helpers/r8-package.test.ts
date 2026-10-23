@@ -84,6 +84,25 @@ describe('a respawn package from the ledger', () => {
         expect(p.walks).toHaveLength(4); // two forms, two death points
         expect(p.package).not.toBeNull();
     });
+    test('the fixed form drops, at the respawn, what a death keeps beyond the need; the top-up form gives less instead', () => {
+        const p = x({ deaths: [{ row: 'H1' }, { row: 'S2', deployed: true }] });
+        const fixed = p.walks.find(w => w.form === 'fixed' && w.death.row === 'S2')!;
+        // S2's keep holds a shark the fixed package (6) also brings: it goes before the trade.
+        expect(fixed.entries[0]!.row.row).toBe('X drop');
+        expect(fixed.entries[0]!.row.out).toEqual([{ name: 'shark', count: 1, reason: 'drop' }]);
+        const topUp = p.walks.find(w => w.form === 'topUp' && w.death.row === 'S2')!;
+        expect(topUp.entries[0]!.row.row).toBe('H94 X');
+        expect(topUp.entries[0]!.row.in.find(e => e.name === 'shark')!.count).toBe(5);
+    });
+    test('an untradeable need is in neither form; a row that uses it then refuses the package', () => {
+        const objs = objTable([...OBJS.byDebug.values()].map(v => (v.debug === 'shark' ? { ...v, tradeable: false } : v)));
+        const p = r8Package(PHASE, { manifest: TABLE, objs });
+        expect(p.byId.some(l => l.id === 3)).toBe(false);
+        expect(p.topUp.some(l => l.id === 3)).toBe(false);
+        expect(p.untradeable[0]).toContain('shark x6');
+        expect(p.package).toBeNull();
+        expect(p.refusals.some(r => r.includes('shark out (consume) but neither held nor worn'))).toBe(true);
+    });
 });
 
 describe('the respawn check refuses', () => {
