@@ -11,8 +11,8 @@
 // The givers are lab.sh LAB_HELPERS (lite runners already up). Prints a `{"message":"ready"}` line once
 // every giver stands staged on its tile, then `RESULT ring-givers {...}`. Lab only (labRefusal).
 
-import { isTileWalkable } from '../../sdk/pathfinding';
-import { pathTiles } from '../lib/paths';
+import { findLongPath, getDoorAt, isTileWalkable, type DoorInfo } from '../../sdk/pathfinding';
+import { routeTiles } from '../lib/world';
 import { closeSession, openSession, type Session } from '../lib/session';
 import { ANY_OFFER, clickBack, decideTradeClick, give, newClickCtx, sameName, sendTradeClick, tradeOf } from '../lib/trade';
 import { nextTick, waitTicks, waitUntil } from '../lib/wait';
@@ -24,16 +24,34 @@ import { labRefusal } from './stand-ins';
 type Tier = keyof typeof ENCHANTS;
 const TIERS = Object.keys(ENCHANTS) as Tier[];
 
-/** Walkable tiles beside `at` a player there reaches in at most 2 steps (no fence between), nearest first, none in `avoid`. */
+/** Path tiles past which a stand is not "beside" SCORED (RING_CONTRACT: a tile or two; a corner may cost a few more). */
+export const GIVER_MAX_STEPS = 4;
+
+/**
+ * Walkable tiles near `at` that a player there walks onto in at most GIVER_MAX_STEPS steps, fewest
+ * steps first (then the fewest orthogonal tiles away), none in `avoid`. Every door near `at` counts
+ * as closed, as it does for a trade request's path: the SDK map opens them all, and the Lumbridge
+ * castle's large doors (3217,3218-3219) are a wall SCORED cannot pass (rehearsals/firemaking.md).
+ * The route must end on the tile itself, not beside it, so a tile across a wall never counts.
+ */
 export function giverTiles(n: number, at: { x: number; z: number }, avoid: ReadonlySet<string> = new Set()): Array<{ x: number; z: number }> {
+    const r = GIVER_MAX_STEPS;
+    const doors: DoorInfo[] = [];
+    for (let dx = -r - 1; dx <= r + 1; dx++) for (let dz = -r - 1; dz <= r + 1; dz++) {
+        const d = getDoorAt(0, at.x + dx, at.z + dz);
+        if (d) doors.push(d);
+    }
     const out: Array<{ x: number; z: number; d: number }> = [];
-    for (let dx = -2; dx <= 2; dx++) {
-        for (let dz = -2; dz <= 2; dz++) {
+    for (let dx = -r; dx <= r; dx++) {
+        for (let dz = -r; dz <= r; dz++) {
             if (!dx && !dz) continue;
             const t = { x: at.x + dx, z: at.z + dz };
             if (avoid.has(`${t.x},${t.z}`) || !isTileWalkable(0, t.x, t.z)) continue;
-            const p = pathTiles(0, at.x, at.z, t.x, t.z);
-            if (p.reached && p.tiles <= 2) out.push({ ...t, d: Math.max(Math.abs(dx), Math.abs(dz)) * 10 + p.tiles });
+            const wps = findLongPath(0, at.x, at.z, t.x, t.z, 500, doors);
+            const end = wps[wps.length - 1];
+            if (!end || end.x !== t.x || end.z !== t.z) continue;
+            const steps = routeTiles(at, wps);
+            if (steps <= r) out.push({ ...t, d: steps * 100 + Math.abs(dx) + Math.abs(dz) });
         }
     }
     out.sort((a, b) => a.d - b.d);

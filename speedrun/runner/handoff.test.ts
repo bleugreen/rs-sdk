@@ -513,6 +513,52 @@ describe("the mule's top-up ask: every `to N` entry asked on the trade's first o
     });
 });
 
+describe("H13's `shark to 2` (T15-16b's Wilderness food): the top-up counts what SCORED holds", () => {
+    const real = () => handOffFrom(readFileSync(MANIFEST, 'utf8'), 'H13');
+    // The top-up's trade shape on a minimal row: one give, one fixed receive, and the shark line.
+    const ROW = '| row | in | out | equip | needAtStart | source |\n|---|---|---|---|---|---|\n| H13 | knife x1 [u]; shark to 2 [u] | magic shortbow x1 (swap) | - | 3 | fixture (r) |\n';
+    const sharks = (s: BotWorldState) => s.inventory.filter(i => i.name === 'Shark').length;
+
+    test('the real row carries it: an unstackable top-up to 2, asked only for what is missing', () => {
+        const shark = real().receive.find(r => r.name === 'shark')!;
+        expect([shark.count, shark.topUp, shark.kind]).toEqual([2, true, 'u']);
+        const sharkAsk = { item: itemPattern('shark').source, count: 2 };
+        expect(askFor(state(pack(['Magic shortbow'])), real())).toContainEqual(sharkAsk);
+        expect(askFor(state(pack(['Shark'])), real())).toContainEqual({ ...sharkAsk, count: 1 });
+        expect(askFor(state(pack(['Shark', 2])), real()).some(a => a.item === sharkAsk.item)).toBe(false);
+    });
+
+    test('held 2: the partner offers no shark and the trade still lands (the shark wants 0, so it is not in the trade)', async () => {
+        const sdk = new TradeServer(state(pack(['Magic shortbow'], ['Shark', 2])), tradeItems([['Knife']]));
+        const { step, reports } = await runStep(sdk, handOffFrom(ROW, 'H13'));
+        expect(reports[0]).toMatchObject({ trade: 'swap', ok: true, gave: ['Magic shortbow x1'] });
+        expect(sharks(sdk.state!)).toBe(2);
+        expect(tradeLanded(sdk.state!, handOffFrom(ROW, 'H13'))).toBe(true);
+        expect(step.postconditions(sdk.state!, {})).toBe(true);
+    });
+
+    test('held 0: asks 2, the partner offers 2, the trade lands with 2 held', async () => {
+        const sdk = new TradeServer(state(pack(['Magic shortbow'])), tradeItems([['Knife'], ['Shark'], ['Shark']]));
+        const { step, reports } = await runStep(sdk, handOffFrom(ROW, 'H13'));
+        expect(reports[0]).toMatchObject({ trade: 'swap', ok: true });
+        expect(sharks(sdk.state!)).toBe(2);
+        expect(tradeLanded(sdk.state!, handOffFrom(ROW, 'H13'))).toBe(true);
+        expect(step.postconditions(sdk.state!, {})).toBe(true);
+    });
+
+    test("room: the real row fits SCORED's pack after T15-16 (slot-ledger.ts's held-after) with 0, 1 or 2 sharks held", () => {
+        const worn = ['Khazard helmet', 'Khazard armour', 'Rune arrow', "M'speak amulet", 'Monkey greegree'].map((n, k) => ({ ...wornItem(n), slot: k }));
+        const at = (n: number) => state(pack(
+            ...(n ? [['Shark', n] as [string, number]] : []),
+            ['Air rune', 237], ['Fire rune', 2], ['Law rune', 3], ['Water rune', 2], ['Prayer potion(4)', 2], ['Superantipoison(4)'],
+            ['Amulet of magic'], ['Magic shortbow'], ['Coins', 10_000], ['Diamond', 3],
+        ), worn);
+        for (const n of [0, 1, 2]) expect(handOffRoom(at(n), real())).toBe(true);
+        // The top-up adds only the sharks SCORED lacks: 2 slots at 0 held, none at 2.
+        expect(slotPlan(at(0), real()).adds - slotPlan(at(2), real()).adds).toBe(2);
+    });
+});
+
 // ------------------------------------------------------------------ item identity (rs/365)
 
 describe('item identity: NAME @ID by obj id, NAME(*) by any dose, <NAME> left to the module', () => {

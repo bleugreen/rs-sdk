@@ -252,7 +252,7 @@ export function withRingers(rings: RunConfig['rings'], ringers: readonly string[
     return { giver: ringers[0]!, loads: ringLoads(rings).map((r, i) => ({ rings: r, ...(ringers[i] ? { giver: ringers[i] } : {}) })) };
 }
 
-/** The tile S04's ring givers stand beside: S04's own, the start of the first leg after it (S04 never walks). */
+/** The tile S04's ring givers stand beside: S04's own, where S03 leaves SCORED, the start of the first leg after it (legs.ts TILES.s03End). */
 export function ringerTile(chain: readonly ChainStep[]): { x: number; z: number } {
     const i = chain.findIndex(s => s.id === 'S04');
     const leg = i < 0 ? undefined : chain.slice(i + 1).find(s => s.kind === 'leg');
