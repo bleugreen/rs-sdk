@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, setSystemTime, spyOn, test } from 'bun:test';
 import type { BotWorldState } from '../../sdk/types';
-import { baseState, FakeSdk, flush, runToggleServer } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk, flush, runToggleServer } from '../lib/fake-sdk';
 import { IF_RUN_ON, runIsOn } from '../lib/run-mode';
 import { TickLog } from '../lib/ticks';
 import { onTutorialIsland } from '../lib/world';
@@ -20,21 +20,35 @@ const choice = (yes: string) => ({ isOpen: true, isWaiting: false, pageId: 'p2',
 /**
  * A fresh account in the design screen, and a server that answers the way the content does.
  * `landAfterMs`: how long the tab stays silent after "Yes please." (the region rebuild) before it
- * publishes the landing as the next tick; null never lands.
+ * publishes the landing as the next tick; null never lands. Under `stepped` every reply lands on
+ * the next tick the test drives instead.
  */
 class TutorialSdk extends FakeSdk {
+    /** Set by `stepped`: replies wait for the next driven tick (`takeReplies`) instead of ticking on a timer. */
+    stepped = false;
+    private replies: Array<Partial<BotWorldState>> = [];
+
     /** `drop`: how many of the first talk / continue clicks the engine never answers. */
     constructor(private readonly offer: string, landAfterMs: number | null = 1, drop: { talk?: number; cont?: number } = {}) {
         super(baseState({ tick: 3, player: { worldX: 3094, worldZ: 3106 } as BotWorldState['player'], modalOpen: true, modalInterface: PLAYER_KIT, nearbyNpcs: [guide] as unknown as BotWorldState['nearbyNpcs'] }));
         let talks = drop.talk ?? 0;
         let conts = drop.cont ?? 0;
-        this.onSend = (a, sdk) => {
+        this.onSend = a => {
             if (a.method === 'sendInteractNpc' && talks-- > 0) return;
             if (a.method === 'sendClickDialog' && conts-- > 0) return;
-            if (a.method === 'sendInteractNpc') setTimeout(() => sdk.tick({ modalOpen: false, modalInterface: -1, dialog: cont as BotWorldState['dialog'] }), 1);
-            if (a.method === 'sendClickDialog') setTimeout(() => sdk.tick({ dialog: choice(this.offer) as BotWorldState['dialog'] }), 1);
-            if (a.method === 'clickDialogByText' && landAfterMs !== null) setTimeout(() => sdk.tick({ dialog: { isOpen: false, options: [], isWaiting: false }, player: { worldX: LUMBRIDGE_SPAWN.x, worldZ: LUMBRIDGE_SPAWN.z } as BotWorldState['player'], inventory: KIT as BotWorldState['inventory'] }), landAfterMs);
+            if (a.method === 'sendInteractNpc') this.answer({ modalOpen: false, modalInterface: -1, dialog: cont as BotWorldState['dialog'] }, 1);
+            if (a.method === 'sendClickDialog') this.answer({ dialog: choice(this.offer) as BotWorldState['dialog'] }, 1);
+            if (a.method === 'clickDialogByText' && landAfterMs !== null) this.answer({ dialog: { isOpen: false, options: [], isWaiting: false }, player: { worldX: LUMBRIDGE_SPAWN.x, worldZ: LUMBRIDGE_SPAWN.z } as BotWorldState['player'], inventory: KIT as BotWorldState['inventory'] }, landAfterMs);
         };
+    }
+    /** The server's reply to a click: on the next driven tick under `stepped`, else as a tick of its own after `ms`. */
+    private answer(patch: Partial<BotWorldState>, ms: number) {
+        if (this.stepped) this.replies.push(patch);
+        else setTimeout(() => this.tick(patch), ms);
+    }
+    /** The replies queued since the last driven tick, as one patch, oldest first. */
+    takeReplies(): Partial<BotWorldState> {
+        return Object.assign({}, ...this.replies.splice(0));
     }
     sendAcceptCharacterDesign() { return this.sendAction({ method: 'sendAcceptCharacterDesign', args: [] }); }
     sendInteractNpc(i: number, op: number) { return this.sendAction({ method: 'sendInteractNpc', args: [i, op] }); }
@@ -43,20 +57,38 @@ class TutorialSdk extends FakeSdk {
 
 const ctx = (sdk: FakeSdk, log = TickLog.memory('t')) => ({ sdk, bot: {}, session: { sdk }, c: {}, log }) as unknown as StepContext<unknown>;
 
-/** Run `p` with the server ticking every 2 ms, as it does while a dropped click goes unanswered. */
-async function ticking<T>(sdk: FakeSdk, p: () => Promise<T>): Promise<T> {
-    const ticker = setInterval(() => sdk.tick(), 2);
+/** Wall milliseconds per driven tick under `stepped`: the idle timers' 20 ticks are then 20 s of real time. */
+const STEP_MS = 1000;
+
+/**
+ * Run `p` against a server that keeps ticking, as it does while a dropped click goes unanswered,
+ * one tick at a time between the bot's moves: each step lets every queued callback run (the bot
+ * sends, or settles into a wait), then ticks the server with the replies sent since the last tick
+ * and moves the frozen wall clock on one tick length. Every tick number is then fixed: no timer
+ * races a reply, and S00's server clock (wall time over the tick length) reads exactly the ticks
+ * driven. The idle timers are the one real-time clock left, and STEP_MS puts them past any stall.
+ */
+async function stepped<T>(sdk: TutorialSdk, p: () => Promise<T>, maxTicks = 100): Promise<T> {
+    const prevMs = process.env.SPEEDRUN_TICK_MS;
+    process.env.SPEEDRUN_TICK_MS = String(STEP_MS);
+    let now = Date.now();
+    setSystemTime(now);
+    sdk.stepped = true;
     try {
-        return await p();
+        return await drive(sdk, p(), maxTicks, () => {
+            setSystemTime((now += STEP_MS));
+            return sdk.takeReplies();
+        });
     } finally {
-        clearInterval(ticker);
+        sdk.stepped = false;
+        setSystemTime();
+        process.env.SPEEDRUN_TICK_MS = prevMs;
     }
 }
 
 /**
  * Run `p` at a nominal tick length of `ms`. S00 puts a click's server tick at the later of the tick
- * the client executed it and the wall time since its first state over the tick length (serverClock);
- * at 50 ms the wall-time side never passes these fakes' 1-2 ms ticks, so the observed ticks decide.
+ * the client executed it and the wall time since its first state over the tick length (serverClock).
  */
 async function atTickMs<T>(ms: number, p: () => Promise<T>): Promise<T> {
     const prev = process.env.SPEEDRUN_TICK_MS;
@@ -162,7 +194,7 @@ describe('S00 tutorial skip', () => {
     test('a talk ClickGuard re-sent is logged as an S00:resend note with its counts', async () => {
         const sdk = new TutorialSdk('Yes please.', 1, { talk: 1 });
         const log = TickLog.memory('t');
-        await atTickMs(50, () => ticking(sdk, () => tutorialSkip.run(ctx(sdk, log))));
+        await stepped(sdk, () => tutorialSkip.run(ctx(sdk, log)));
         expect(sentMethods(sdk)).toEqual(['sendAcceptCharacterDesign', 'sendInteractNpc', 'sendInteractNpc', 'sendClickDialog', 'clickDialogByText']);
         expect(tutorialSkip.postconditions(sdk.getState()!, {})).toBe(true);
         expect(log.rows.filter(r => r.step === 'S00:resend').map(r => r.meta)).toEqual([{ click: 'talk', unansweredResends: 1 }]);
@@ -170,7 +202,7 @@ describe('S00 tutorial skip', () => {
 
     test('two dropped talks fail after TALK_TICKS with the send, the re-sends and the last state in the message', async () => {
         const sdk = new TutorialSdk('Yes please.', 1, { talk: 2 });
-        const err = await atTickMs(50, () => ticking(sdk, () => tutorialSkip.run(ctx(sdk)).then(() => null, (e: Error) => e)));
+        const err = await stepped(sdk, () => tutorialSkip.run(ctx(sdk)).then(() => null, (e: Error) => e));
         expect(sentMethods(sdk)).toEqual(['sendAcceptCharacterDesign', 'sendInteractNpc', 'sendInteractNpc']);
         expect(err?.message).toBe(
             `the guide did not answer within ${TALK_TICKS} ticks (talk sent at tick 3, re-sends {"unansweredResends":1}; ` +
@@ -180,7 +212,7 @@ describe('S00 tutorial skip', () => {
 
     test('a continue that draws no page fails CHOICE_TICKS after it reached the server, with its ticks in the message', async () => {
         const sdk = new TutorialSdk('Yes please.', 1, { cont: 1 });
-        const err = await atTickMs(50, () => ticking(sdk, () => tutorialSkip.run(ctx(sdk)).then(() => null, (e: Error) => e)));
+        const err = await stepped(sdk, () => tutorialSkip.run(ctx(sdk)).then(() => null, (e: Error) => e));
         expect(sentMethods(sdk)).toEqual(['sendAcceptCharacterDesign', 'sendInteractNpc', 'sendClickDialog']);
         expect(err?.message).toBe(
             `no choice page after the guide's question within ${CHOICE_TICKS} ticks of the continue reaching the server ` +
