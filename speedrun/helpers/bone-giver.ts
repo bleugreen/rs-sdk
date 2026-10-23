@@ -793,9 +793,16 @@ export class BoneGiver {
         // Already on the tile (a request that came to nothing, a turn waited out): keep our place in the group's order.
         if (p.x !== site.giver.x || p.z !== site.giver.z) {
             this.setPhase('travel', `site ${this.site}`);
-            if (process.env.HELPER_LAB_TELE === '1' && chebyshev(p, site.giver) > 150) await labTele(ctx, site.giver);
-            await walkNear(ctx, site.giver.x, site.giver.z, 2);
-            await standOn(ctx, site.giver);
+            try {
+                await this.travel(site);
+            } catch (e) {
+                // A site we cannot reach or stand on must not hold us: the next cycle tries the next site
+                // (attempt 2: an unstandable willow tile kept b01-b04 retrying it while SCORED waited at the oaks).
+                const from = this.site;
+                if (!ctx.signal.aborted) this.site = (this.site + 1) % o.sites.length;
+                ctx.log('travel fault: next site', { from, to: this.site, error: String(e).slice(0, 200) });
+                throw e;
+            }
         }
         if (this.trip) this.logTrip();
         this.setPhase('waiting', `site ${this.site}`);
@@ -837,6 +844,14 @@ export class BoneGiver {
         }
         if (r.ok && o.acceptReturn) await this.takeReturn(t.partner, r.gave);
         ctx.log('trade', { ok: r.ok, ticks: r.ticks, load, gave: r.gave.map(i => `${i.name} x${i.count}`), final: isFinalLoad(o, load), waited: req.waited, sends: req.sends, bounces: req.bounces, ...(r.reason ? { reason: r.reason } : {}) });
+    }
+
+    /** Onto `site`'s giver tile; throws when the walk cannot stand there (altar-room.ts standOn). */
+    private async travel(site: Site): Promise<void> {
+        const { ctx } = this;
+        if (process.env.HELPER_LAB_TELE === '1' && chebyshev(pos(this.s), site.giver) > 150) await labTele(ctx, site.giver);
+        await walkNear(ctx, site.giver.x, site.giver.z, 2);
+        await standOn(ctx, site.giver);
     }
 
     /** S18: stay on a side tile of the scored account, answer its request at once, give what its ask names. */

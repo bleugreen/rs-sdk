@@ -31,11 +31,11 @@ describe('stub-giver staging', () => {
         const stage = staged[0]!.stage;
         expect(stage).toHaveLength(plan.receive.length);
         plan.receive.forEach((r, i) => expect(stage[i]!.obj.startsWith('cert_')).toBe(r.kind === 'n'));
-        expect(stage).toContainEqual({ obj: 'cert_uncut_sapphire', n: 62 });
-        expect(stage).toContainEqual({ obj: 'cert_hard_leather', n: 954 });
+        expect(stage).toContainEqual({ obj: 'cert_uncut_sapphire', n: 51 });
+        expect(stage).toContainEqual({ obj: 'cert_hard_leather', n: 1049 });
         expect(stage).toContainEqual({ obj: 'cert_guamvial', n: 330 });
         expect(stage).toContainEqual({ obj: 'chisel', n: 1 });
-        expect(stage).toContainEqual({ obj: 'thread', n: 187 });
+        expect(stage).toContainEqual({ obj: 'thread', n: 206 });
     });
 
     test('every LEDGER_OBJS name is in obj.pack; an id entry resolves by id; an override wins', () => {

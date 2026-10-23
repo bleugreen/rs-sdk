@@ -16,7 +16,9 @@
 // 2. the host reservation is live and the run's own claim (--claim-owner / $SPEEDRUN_CLAIM_OWNER);
 // 3. the slot ledger (speedrun/tools/slot-ledger.ts) exits 0;
 // 4. no refusing step (a module not on main) on the path to --until;
-// 5. the helpers are in: <run dir>/launcher.json says helpersReady;
+// 5. the helpers are in: <run dir>/launcher.json says helpersReady, and the next helper step's helpers
+//    are ready by their roles' own phase in the cue dir, not merely online (runner/phase-gate.ts; one
+//    line per status file, every later family on the path reported);
 // 6. when the path reaches H11 or H23: the cannon holder's run-day serve options (--cannon-serve,
 //    default <run dir>/cannon-serve.json: `{ "H11": <serve>, "H23": <serve> }`, cannon.ts serve
 //    options as h92 runs them, written from fleet.json by rs/41) agree with the ledger rows SCORED
@@ -58,6 +60,7 @@ import { type ClientKind, cdpUrl, closeSession, loadBotEnv, logoutClean, type Lo
 import { pageInGame, pageLoginState, type PageLoginState } from './lib/tab';
 import { tickMs } from './lib/wait';
 import { returnExtrasFromLedger, serveDrift, serveFromLedger } from './helpers/cannon-receiver';
+import { membersFromLauncher, phaseGates, readStatusFile, type LauncherView, type PhaseLine, type PhaseMember } from './runner/phase-gate';
 import { newRunId, parseLog, TickLog, type TickRow } from './lib/ticks';
 import { startRunTabMemory, type TabMemorySetting } from './lib/tab-memory';
 import { formatRunReport, runReport } from './runner/run-report';
@@ -211,6 +214,8 @@ export interface GateIO {
     cannonServe(): { path: string; serve: CannonServeFile | null; error?: string };
     /** The run dir's relog budget (runner/relog-budget.ts): what earlier sessions of this run spent. */
     relogs?(): { room: true | string; used: string; path: string };
+    /** The role-phase gate's lines (runner/phase-gate.ts), one per helper status file on the path. */
+    phases?(): PhaseLine[];
 }
 
 /** cannon.ts serve options, per cannon row, as h92 runs them on the day. */
@@ -279,6 +284,8 @@ export async function startGates(chain: readonly ChainStep[], io: GateIO): Promi
     out.push({ gate: 'no refusing step on the path', ok: missing.length === 0, detail: missing.length ? missing.map(m => `#${m.index} ${m.name} (${m.owner})`).join('; ') : `${chain.length} steps, none refusing` });
     const ready = io.helpersReady();
     out.push({ gate: 'helpers ready', ok: ready === true, detail: ready === null ? 'no launcher.json in the run dir: start the helpers first' : ready ? 'launcher.json: helpersReady' : 'launcher.json: helpers not ready yet' });
+    // Online is not ready: the next helper step's helpers must be ready by their roles' own phase.
+    if (io.phases) out.push(...io.phases());
     if (io.relogs) {
         // Unplanned relogs left: none left refuses, since the next drop would stop the run anyway.
         const r = io.relogs();
@@ -297,7 +304,48 @@ export async function startGates(chain: readonly ChainStep[], io: GateIO): Promi
     return out;
 }
 
-export function hostGateIO(a: RunArgs, owner: string | undefined, relogs?: RelogBudget): GateIO {
+/** The helpers the run config itself names, by the scope each serves (the phase gate's fallback where no launcher config names one). */
+export function configMembers(cfg: Pick<RunConfig, 'bones' | 'courier' | 'anvil' | 's21Givers'>): PhaseMember[] {
+    const bones = cfg.bones.group ?? (cfg.bones.giver ? [cfg.bones.giver] : []);
+    return [
+        ...bones.map(account => ({ account, scope: { step: 'S07', family: 'bone' as const } })),
+        ...(cfg.courier?.giver ? [{ account: cfg.courier.giver, scope: { step: 'S18', family: 'courier' as const } }] : []),
+        ...(cfg.anvil?.giver ? [{ account: cfg.anvil.giver, scope: { step: 'S25a', family: 'anvil' as const } }] : []),
+        ...(cfg.s21Givers ?? []).map(account => ({ account, scope: { step: 'S21', family: 'altar' as const } })),
+    ];
+}
+
+/**
+ * The role-phase gate on the run machine: who serves each step from the launcher configs' entries
+ * (`helperLaunchers`, else `delivery.launcherConfig`; a scope none of them names falls back to the
+ * run config's accounts), statuses from the cue dir, logged-out-until-cued accounts from launcher.json.
+ */
+export function hostPhaseGates(cfg: RunConfig, path: readonly string[], runDir: string, now = Date.now()): PhaseLine[] {
+    const files = cfg.helperLaunchers ?? (cfg.delivery?.launcherConfig ? [cfg.delivery.launcherConfig] : []);
+    const members: PhaseMember[] = [];
+    const read: string[] = [];
+    for (const f of files) {
+        try {
+            members.push(...membersFromLauncher(JSON.parse(readFileSync(f, 'utf8'))));
+            read.push(f);
+        } catch (e) {
+            read.push(`${f} (unreadable: ${e instanceof Error ? e.message : e})`);
+        }
+    }
+    const named = new Set(members.map(m => `${m.scope.step}/${m.scope.family}`));
+    const fallback = configMembers(cfg).filter(m => !named.has(`${m.scope.step}/${m.scope.family}`));
+    members.push(...fallback);
+    let launcher: LauncherView[] | null = null;
+    try {
+        launcher = (JSON.parse(readFileSync(join(runDir, 'launcher.json'), 'utf8')) as { accounts?: LauncherView[] }).accounts ?? null;
+    } catch {
+        launcher = null;
+    }
+    const source = [...(read.length ? [read.join(', ')] : []), ...(fallback.length ? ['the run config'] : [])].join(' + ') || 'no launcher config';
+    return phaseGates({ path, members, read: readStatusFile(cfg.cueDir), launcher, now, source });
+}
+
+export function hostGateIO(a: RunArgs, owner: string | undefined, relogs?: RelogBudget, phases?: () => PhaseLine[]): GateIO {
     const git = gitIn(ROOT);
     const path = reservationPath(a.hostReservation);
     const world = pageWorld(loadBotEnv(a.bot));
@@ -325,6 +373,7 @@ export function hostGateIO(a: RunArgs, owner: string | undefined, relogs?: Relog
             }
         },
         ...(relogs ? { relogs: () => ({ room: relogs.check('unplanned'), used: relogs.describe(), path: relogs.file }) } : {}),
+        ...(phases ? { phases } : {}),
     };
 }
 
@@ -641,7 +690,7 @@ async function main(argv: string[]): Promise<number> {
     const fresh = earlier.length === 0 && from === undefined;
     // A fresh run's budget is whole: the last run's relogs and any stale lock go (prepareCueDir's rule).
     if (fresh && !a.dryRun) relogs.clear();
-    const io = hostGateIO(a, owner, relogs);
+    const io = hostGateIO(a, owner, relogs, () => hostPhaseGates(cfg, chain.slice(from ?? 0).map(s => s.id), a.runDir));
     const gates = await startGates(chain, io);
     for (const g of gates) console.log(`[gate] ${g.ok ? 'ok     ' : 'REFUSED'} ${g.gate}: ${g.detail}`);
     if (a.dryRun) {

@@ -132,6 +132,12 @@ export interface RunConfig {
      * from, which run.ts's preflight checks against it. Required when the path has a mule row.
      */
     delivery?: { run: string; launcherConfig: string };
+    /**
+     * The helper launcher configs the role-phase gate reads to learn who serves each step and each bone
+     * giver's sites (run.ts hostPhaseGates). Default: `delivery.launcherConfig` alone. Give every
+     * launcher file when the families are split across several.
+     */
+    helperLaunchers?: readonly string[];
 }
 
 /**

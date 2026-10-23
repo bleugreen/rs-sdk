@@ -4,7 +4,7 @@ import { baseState, drive, FakeSdk, type SentAction } from '../lib/fake-sdk';
 import { levelForXp, XP_RATE, xpForLevel } from '../lib/xp';
 import {
     castPicks, ENCHANTS, enchantedRingSpecs, enchantHeld, loadsDelivered, magicLevel, magicXp, newPageMemory, pagesAt, pageStep, resolveOptions, ROUTE_LOADS, s02Pre, s04Pre, s04Status,
-    simulatePlan, steps, strikeTarget, strikeTo, tierOf, wantFor, type MagicReport, type RingCounts,
+    simulatePlan, steps, strikeTarget, strikeTo, tierOf, wantFor, heldRings, heldRingCounts, notedRings, notedRingRefusal, wieldStaff, WIELD_SENDS, WIELD_WAIT_TICKS, type MagicReport, type RingCounts,
 } from './magic';
 
 // ------------------------------------------------------------------ fixtures
@@ -279,7 +279,7 @@ describe('the plan', () => {
         expect(castPicks(s, 7, 2)).toEqual([{ slot: 9, com: 1155, tier: 'sapphire' }, { slot: 12, com: 1155, tier: 'sapphire' }]);
         expect(castPicks(s, 27, 3).map(p => p.tier)).toEqual(['sapphire', 'sapphire', 'emerald']);
         expect(castPicks(state({ inventory: [item(5, 'Ruby ring')] }), 48)).toEqual([]);
-        expect(wantFor({ ruby: 15, diamond: 5 })).toEqual([{ item: /^Ruby ring$/i, amount: 15 }, { item: /^Diamond ring$/i, amount: 5 }]);
+        expect(wantFor({ ruby: 15, diamond: 5 })).toEqual([{ item: 1641, amount: 15 }, { item: 1643, amount: 5 }]);
     });
 
     test('page counts follow levelup_unlocks_magic.rs2', () => {
@@ -517,5 +517,78 @@ describe('S04 enchanting', () => {
         // Load 3's swap takes the 20 enchanted (the 10 held and the 10 cast first); its own stay.
         expect(sim.received.length).toBe(1);
         expect(sim.received[0]!.reduce((a, i) => a + i.count, 0)).toBe(20);
+    });
+});
+
+describe('noted rings are refused, never cast or counted (rs/626, attempt 2)', () => {
+    const o = resolveOptions({ giver: GIVER });
+    // Attempt 2 at tick 883: h63's load came noted (Emerald ring @1640 x19) beside one unnoted ruby, Magic 37, 13,300 xp.
+    const noted = (id: number, name: string, count: number, slot: number) => ({ slot, id, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
+    const attempt2 = () => state({ inventory: [...kit(), noted(1640, 'Emerald ring', 19, 5), item(6, 'Ruby ring')] }, 13_300);
+
+    test("heldRings and the counts take the unnoted id only: attempt 2's pack holds one castable ring", () => {
+        const s = attempt2();
+        expect(heldRings(s).map(r => [r.id, r.tier])).toEqual([[1641, 'ruby']]);
+        expect(heldRingCounts(s)).toEqual({ ruby: 1 });
+        expect(notedRings(s).map(i => [i.id, i.count])).toEqual([[1640, 19]]);
+    });
+
+    test("s04Pre refuses attempt 2's exact inventory with the reason, before any cast", () => {
+        expect(s04Pre(attempt2(), o)).toBe('noted rings held: Emerald ring @1640 x19 (unnoted is @1639); S04 enchants unnoted rings only, so the ring givers must stage them unnoted');
+        expect(notedRingRefusal(state())).toBeNull();
+    });
+
+    test('a noted stack is no delivered load: the resume count reads the unnoted rings only', () => {
+        const unnoted = state({ inventory: [...kit(), ...rings(5, { emerald: 19 })] }, 13_300);
+        const withNoted = state({ inventory: [...kit(), noted(1640, 'Emerald ring', 19, 5)] }, 13_300);
+        expect(heldRingCounts(withNoted)).toEqual({});
+        expect(s04Status(withNoted, o).held).toEqual({});
+        expect(s04Status(unnoted, o).held).toEqual({ emerald: 19 });
+    });
+
+    test('the S04 trade wants each tier by its unnoted obj id, so a noted offer never satisfies it', () => {
+        expect(wantFor({ sapphire: 12, emerald: 8 })).toEqual([{ item: 1637, amount: 12 }, { item: 1639, amount: 8 }]);
+        for (const t of ['sapphire', 'emerald', 'ruby', 'diamond'] as const) expect(ENCHANTS[t].ringId).toBe(IDS[ENCHANTS[t].ring]!);
+    });
+});
+
+describe("S04's staff of water wield is confirmed (rs/627)", () => {
+    const held = () => state({ equipment: [], inventory: [...kit(), item(5, 'Staff of water')] });
+    const wields = (sdk: FakeSdk) => sdk.sent.filter(a => a.method === 'sendUseItem');
+    /** The server equips the staff on the tick after a wield click, except the clicks listed as dropped (1-based). */
+    const server = (sdk: FakeSdk, dropped: number[]) => {
+        let n = 0;
+        sdk.onSend = (a: SentAction, f: FakeSdk) => {
+            if (a.method !== 'sendUseItem' || dropped.includes(++n)) return;
+            queueMicrotask(() => f.tick(s => ({ equipment: [item(3, 'Staff of water')], inventory: s.inventory.filter(i => i.name !== 'Staff of water') })));
+        };
+    };
+
+    test('a dropped first click is re-sent after the quiet ticks, and the wield is confirmed on the tick it shows worn', async () => {
+        const sdk = new Fake(held());
+        server(sdk, [1]);
+        const r = await drive(sdk, wieldStaff(sdk), 40);
+        expect(r).toEqual({ ok: true, tick: sdk.state!.tick, sends: 2 });
+        expect(wields(sdk).map(a => a.args)).toEqual([[5, 2], [5, 2]]);
+        // The quiet ticks after the dropped click, then the re-sent click's round trip.
+        expect(r.ok ? r.tick - 100 : -1).toBeLessThanOrEqual(WIELD_WAIT_TICKS + 2);
+    });
+
+    test('the first click landing: one send', async () => {
+        const sdk = new Fake(held());
+        server(sdk, []);
+        expect(await drive(sdk, wieldStaff(sdk), 40)).toMatchObject({ ok: true, sends: 1 });
+    });
+
+    test('already worn: no click; every click dropped: S04 refuses after the bound with the reason; no staff: refused', async () => {
+        const worn = new Fake(state());
+        expect(await drive(worn, wieldStaff(worn), 5)).toEqual({ ok: true, tick: 100, sends: 0 });
+        expect(wields(worn)).toEqual([]);
+        const deaf = new Fake(held());
+        server(deaf, [1, 2, 3, 4]);
+        expect(await drive(deaf, wieldStaff(deaf), 40)).toEqual({ ok: false, sends: WIELD_SENDS, reason: `staff of water not worn after ${WIELD_SENDS} wield clicks, ${WIELD_WAIT_TICKS} observed ticks each` });
+        expect(wields(deaf)).toHaveLength(WIELD_SENDS);
+        const none = new Fake(state({ equipment: [] }));
+        expect(await drive(none, wieldStaff(none), 5)).toEqual({ ok: false, sends: 0, reason: 'no staff of water held or worn' });
     });
 });

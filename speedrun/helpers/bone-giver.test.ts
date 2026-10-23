@@ -607,3 +607,34 @@ describe('the cue session binds the group count (rs/41 review)', () => {
         expect((await awaitBoneServer(sdk, dir, G, 5, cue.session)).server).toBe('cairn_b01');
     });
 });
+
+describe('a travel fault advances the site (attempt 2: b01-b04 looped on an unstandable willow tile)', () => {
+    test('each failed travel moves the giver to the next site, wrapping, and the error still surfaces as the fault', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'bone-fault-'));
+        const logs: Array<[string, unknown]> = [];
+        const state = baseState();
+        const g = new BoneGiver({
+            account: 'cairn_b01',
+            options: { cueDir: dir, scope: { step: 'S07', family: 'bone' } },
+            sdk: { getState: () => state },
+            signal: new AbortController().signal,
+            log: (m: string, d?: unknown) => logs.push([m, d])
+        } as unknown as RoleContext);
+        const priv = g as unknown as { site: number; cycle(): Promise<void>; held(): number; travel(s: unknown): Promise<void> };
+        priv.held = () => 23;
+        const tried: unknown[] = [];
+        priv.travel = async s => {
+            tried.push(s);
+            throw new Error('could not stand on 2920,3407');
+        };
+        await expect(priv.cycle()).rejects.toThrow('could not stand on 2920,3407');
+        expect(priv.site).toBe(1);
+        await expect(priv.cycle()).rejects.toThrow('could not stand on');
+        expect(priv.site).toBe(0);
+        expect(tried).toEqual([S07_SITES[0], S07_SITES[1]]);
+        expect(logs.filter(([m]) => m === 'travel fault: next site').map(([, d]) => d)).toEqual([
+            { from: 0, to: 1, error: 'Error: could not stand on 2920,3407' },
+            { from: 1, to: 0, error: 'Error: could not stand on 2920,3407' }
+        ]);
+    });
+});
