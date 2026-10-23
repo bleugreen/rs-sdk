@@ -1772,8 +1772,10 @@ ladder's general note).
 
 **What the operator sees.** `[run] FAILED: <message>` (`attempt.ts:112`, `run.ts:526`), then
 `[run] logout: ...` (`run.ts:371, 397`): **run.ts logs SCORED out after a StepError**, and on the
-way out writes a final stop to every open helper cue (`run.ts:404`, `cue-keeper.ts:158-164`), so
-those helpers stand down; whether they log out is rs/41's launcher's decision. Exit code 1 (the
+way out writes a FINAL stop to every open helper cue (`run.ts:404`, `cue-keeper.ts:158-164`), so
+the launcher logs the failed step's helper family out; the re-run opens a new cue session for the
+scope, and whether the launcher logs the family back in on it is unconfirmed (rs/186 has asked rs/41;
+rs/186 may make the StepError path a non-final stop, so helpers stand by for the re-run). Exit code 1 (the
 codes at `run.ts:45-46`). A hard kill, SIGTERM (it exits before the cue close, `run.ts:376-389`,
 being fixed by rs/546) or a throw before the chain starts (an uncaught stack trace,
 `run.ts:518, 548-553`, e.g. S21's relog refused at startup) leaves the cues armed instead.
@@ -1796,9 +1798,9 @@ The checks, in order, before re-running. Any one failing means **do not re-run: 
 5. **The host claim is still held and live**: run.ts releases it only on success (`run.ts:533`); an
    expired claim makes gate 2 refuse with an `rs-claim take ...` hint (`run.ts:252-261`), so retake it
    as step 0 does first.
-6. **The helpers for the steps ahead**: their cues got a final stop. run.ts writes a fresh cue
-   before each helper step, so a family still logged in re-arms on it; a family the launcher logged
-   out on the stop is logged back in first (rs/41, step 4).
+6. **The helpers**: a StepError logs out the failed step's helpers (the final stop). Before
+   re-running, confirm with the helper launcher that they are back in, or relaunch them (rs/41,
+   step 4).
 7. **The step is not on the non-admitting list**: RUN-ORDER.md section 7's margin ladder, its
    attempt-ending lines and the conditional note for A and B (until B merges, any step after H7;
    until A merges, S18 after its first stocked stun and S22 after its first catch). Some lines name an
