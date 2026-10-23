@@ -1,5 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import { arranged, brewOptions, brewsNeeded, dosesHeld, feasible, GRINDS, nextGrind, nextPour, plan, POTIONS, UNICORN_HORN, UNICORN_HORN_DUST } from './brew';
+import { arranged, assignLow, brewOptions, brewsNeeded, dosesHeld, feasible, GRINDS, nextDrink, nextGrind, nextPour, plan, POTIONS, settled, UNICORN_HORN, UNICORN_HORN_DUST, type Want } from './brew';
+
+/** Drink in a model of the engine: each sip takes a dose from the slot nextDrink names. */
+function drinkAll(start: number[], w: Want): number[] {
+    const inv = start.map((doses, slot) => ({ slot, doses }));
+    for (let i = 0; i < 50; i++) {
+        const slot = nextDrink(inv.filter(p => p.doses > 0), w);
+        if (slot === null) break;
+        inv[slot]!.doses--;
+    }
+    return inv.map(p => p.doses).filter(d => d > 0).sort((x, y) => y - x);
+}
 
 /** Decant in a model of the engine (decant_potion.rs2): the used slot gets min(4, a+b), the target the rest (0 = an empty vial). */
 function decantAll(start: number[], w: { four: number; three: number }): number[] {
@@ -58,6 +69,45 @@ describe('nextPour', () => {
     });
     test('nothing to do once arranged', () => {
         expect(nextPour([{ slot: 0, doses: 4 }, { slot: 1, doses: 2 }, { slot: 2, doses: 1 }], { four: 1, three: 0 })).toBeNull();
+    });
+});
+
+describe('(1) and (2) targets', () => {
+    test('options: doses 1 and 2 go to the low list, one entry per potion', () => {
+        const o = brewOptions({ targets: [{ potion: 'superantipoison', doses: 1, n: 2 }, { potion: 'superantipoison', doses: 4, n: 1 }, { potion: 'prayer', doses: 2, n: 1 }] });
+        expect(o.wants.superantipoison).toEqual({ four: 1, three: 0, low: [1, 1] });
+        expect(o.wants.prayer).toEqual({ four: 0, three: 0, low: [2] });
+        expect(() => brewOptions({ targets: [{ potion: 'prayer', doses: 5, n: 1 }] })).toThrow();
+    });
+    test('cairn_h84, 2026-10-22: a held Superantipoison(2) and one brew make two (1)s', () => {
+        const w: Want = { four: 0, three: 0, low: [1, 1] };
+        expect(brewsNeeded([2], w)).toBe(1);
+        expect(drinkAll([2, 3], w)).toEqual([1, 1]);
+    });
+    test('no pour splits a potion: one (4) cannot become two (1)s without a brew', () => {
+        expect(brewsNeeded([4], { four: 0, three: 0, low: [1, 1] })).toBe(1);
+        expect(brewsNeeded([1, 1], { four: 0, three: 0, low: [1, 1] })).toBe(0);
+        expect(brewsNeeded([], { four: 0, three: 0, low: [2] })).toBe(1);
+    });
+    test('the (4)s and (3)s asked for are never drunk; the smallest spare is', () => {
+        const w: Want = { four: 1, three: 1, low: [1] };
+        expect(drinkAll([4, 3, 4, 2], w)).toEqual([4, 4, 3, 1]);
+        expect(nextDrink([{ slot: 0, doses: 4 }, { slot: 1, doses: 3 }], w)).toBeNull(); // nothing spare: the planner brews one first
+        expect(brewsNeeded([4, 3], w)).toBe(1);
+    });
+    test('every brew count from nothing decants then drinks down to the target', () => {
+        for (let four = 0; four <= 3; four++) {
+            for (const low of [[1], [2], [1, 1], [2, 1], [1, 1, 1]]) {
+                const w: Want = { four, three: 0, low };
+                const out = drinkAll(settled(Array(brewsNeeded([], w)).fill(3), w), w);
+                expect(out.filter(d => d === 4).length).toBeGreaterThanOrEqual(four);
+                for (const d of [1, 2]) expect(out.filter(x => x === d).length).toBeGreaterThanOrEqual(low.filter(x => x === d).length);
+            }
+        }
+    });
+    test('drinking waits for the pours', () => {
+        expect(nextDrink([{ slot: 0, doses: 3 }, { slot: 1, doses: 3 }], { four: 1, three: 0, low: [1] })).toBeNull();
+        expect(assignLow([{ doses: 1 }], [2])).toBeNull();
     });
 });
 
@@ -133,7 +183,7 @@ describe('brewOptions', () => {
     test('rejects unknown potions and doses', () => {
         expect(() => brewOptions({})).toThrow();
         expect(() => brewOptions({ targets: [{ potion: 'ranging', doses: 4, n: 1 }] })).toThrow();
-        expect(() => brewOptions({ targets: [{ potion: 'prayer', doses: 2, n: 1 }] })).toThrow();
+        expect(() => brewOptions({ targets: [{ potion: 'prayer', doses: 0, n: 1 }] })).toThrow();
     });
 });
 

@@ -79,10 +79,14 @@ export const POTIONS: Readonly<Record<string, PotionSpec>> = {
 export const UNICORN_FIELD = { x1: 3074, z1: 3440, x2: 3100, z2: 3464 };
 const UNICORN_CENTRE: Tile = { x: 3087, z: 3452 };
 
-/** How many of a potion to hold: n (4)-dose, n (3)-dose. A (4) also serves where a (3) is asked. */
-export interface Want { four: number; three: number }
+/**
+ * How many of a potion to hold: n (4)-dose, n (3)-dose. A (4) also serves where a (3) is asked.
+ * `low` lists the (1)s and (2)s wanted, one entry per potion: no pour makes one (decant_potion.rs2
+ * only combines), so they are drunk down from potions the (4)s and (3)s leave spare.
+ */
+export interface Want { four: number; three: number; low?: number[] }
 
-export interface Target { potion: string; doses: 3 | 4; n: number }
+export interface Target { potion: string; doses: 1 | 2 | 3 | 4; n: number }
 
 export interface BrewOptions {
     targets: Target[];
@@ -104,7 +108,7 @@ export function brewOptions(raw: Record<string, unknown>): BrewOptions {
     const targets = list.map((t: Record<string, unknown>, i: number) => {
         const potion = String(t.potion ?? '');
         if (!POTIONS[potion]) throw new Error(`brew: targets[${i}].potion must be one of ${Object.keys(POTIONS).join(', ')} (got '${potion}')`);
-        if (t.doses !== 3 && t.doses !== 4) throw new Error(`brew: targets[${i}].doses must be 3 or 4`);
+        if (t.doses !== 1 && t.doses !== 2 && t.doses !== 3 && t.doses !== 4) throw new Error(`brew: targets[${i}].doses must be 1, 2, 3 or 4`);
         const n = Number(t.n);
         if (!Number.isInteger(n) || n < 1) throw new Error(`brew: targets[${i}].n must be a positive integer`);
         return { potion, doses: t.doses, n } as Target;
@@ -112,7 +116,9 @@ export function brewOptions(raw: Record<string, unknown>): BrewOptions {
     const wants: Record<string, Want> = {};
     for (const t of targets) {
         const w = (wants[t.potion] ??= { four: 0, three: 0 });
-        if (t.doses === 4) w.four += t.n; else w.three += t.n;
+        if (t.doses === 4) w.four += t.n;
+        else if (t.doses === 3) w.three += t.n;
+        else (w.low ??= []).push(...Array<number>(t.n).fill(t.doses));
     }
     const hornsPerTrip = typeof raw.hornsPerTrip === 'number' ? raw.hornsPerTrip : 27;
     const receiveFrom = raw.receiveFrom === undefined ? null : String(raw.receiveFrom);
@@ -156,8 +162,66 @@ export function feasible(held: readonly number[], w: Want): boolean {
 
 /** Brews (each a new 3-dose potion) still needed for the target. */
 export function brewsNeeded(held: readonly number[], w: Want): number {
-    for (let k = 0; k < 200; k++) if (feasible([...held, ...Array(k).fill(3)], w)) return k;
+    for (let k = 0; k < 200; k++) if (reachable([...held, ...Array(k).fill(3)], w)) return k;
     throw new Error('brew: target out of reach');
+}
+
+/** Whether decanting and then drinking down turn these potions into the target, (1)s and (2)s included. */
+export function reachable(held: readonly number[], w: Want): boolean {
+    if (!feasible(held, w)) return false;
+    if (!w.low?.length) return true;
+    const after = settled(held, w).map((doses, slot) => ({ slot, doses }));
+    return assignLow(spares(after, w), w.low) !== null;
+}
+
+/** The doses held once the role's pours for the (4)s and (3)s are done, in the engine's model (decant_potion.rs2). */
+export function settled(held: readonly number[], w: Want): number[] {
+    const inv = held.map((doses, slot) => ({ slot, doses }));
+    for (let i = 0; i < 60; i++) {
+        const pour = nextPour(inv.filter(p => p.doses > 0), w);
+        if (!pour) break;
+        const a = inv[pour[0]]!, b = inv[pour[1]]!;
+        const total = a.doses + b.doses;
+        a.doses = Math.min(4, total);
+        b.doses = total - a.doses;
+    }
+    return inv.map(p => p.doses).filter(d => d > 0);
+}
+
+/** The potions left once the (4)s and then the (3)s the target asks for are set aside (spare (4)s cover missing (3)s). */
+export function spares<P extends { doses: number }>(potions: readonly P[], w: Want): P[] {
+    const rest = [...potions];
+    const takeOne = (d: number) => { const i = rest.findIndex(p => p.doses === d); if (i < 0) return false; rest.splice(i, 1); return true; };
+    for (let k = 0; k < w.four; k++) takeOne(4);
+    for (let k = 0; k < w.three; k++) if (!takeOne(3)) takeOne(4);
+    return rest;
+}
+
+/**
+ * Which spare serves each (1) or (2) the target asks for: the smallest spare that holds enough,
+ * (2)s placed first. Null when the spares cannot cover them.
+ */
+export function assignLow<P extends { doses: number }>(spare: readonly P[], low: readonly number[]): { potion: P; doses: number }[] | null {
+    const pool = [...spare].sort((a, b) => a.doses - b.doses);
+    const out: { potion: P; doses: number }[] = [];
+    for (const d of [...low].sort((a, b) => b - a)) {
+        const i = pool.findIndex(p => p.doses >= d);
+        if (i < 0) return null;
+        out.push({ potion: pool[i]!, doses: d });
+        pool.splice(i, 1);
+    }
+    return out;
+}
+
+/**
+ * The next potion to drink a dose from, by slot: a spare assigned to a (1) or (2) that still holds
+ * more. Null while the (4)s and (3)s are not yet poured (decant first), and once every low
+ * target is met.
+ */
+export function nextDrink(potions: readonly { slot: number; doses: number }[], w: Want): number | null {
+    if (!w.low?.length || !arranged(potions.map(p => p.doses), w)) return null;
+    const a = assignLow(spares(potions, w), w.low);
+    return a?.find(x => x.potion.doses > x.doses)?.potion.slot ?? null;
 }
 
 /** True when the potions already meet the target with no decanting. */
@@ -383,9 +447,20 @@ class Brewer {
             this.ctx.log('decanted', { potion, held: dosesHeld(this.inv(), spec) });
             return null;
         }
+        // 7. Drink spares down to the (1)s and (2)s.
+        for (const [potion, w] of Object.entries(wants)) {
+            const spec = POTIONS[potion]!;
+            if (nextDrink(dosesHeld(this.holdings(), spec).map((doses, slot) => ({ slot, doses })), w) === null) continue;
+            for (const id of spec.ids) await this.take(id, 28 - this.inv().length);
+            await this.closeBank();
+            this.run.phase(`drink:${potion}`);
+            await this.drinkCarried(spec, w);
+            this.ctx.log('drank down', { potion, held: dosesHeld(this.inv(), spec) });
+            return null;
+        }
         await this.closeBank();
         if (full.blocked.length === 0) return 'done';
-        // 7. Everything the stock allows is made; the rest waits on inputs from a donor.
+        // 8. Everything the stock allows is made; the rest waits on inputs from a donor.
         this.ctx.log('short', { short: full.short, blocked: full.blocked, waitingFor: this.opt.receiveFrom });
         if (!this.opt.receiveFrom) return { attention: `brew: short of ${full.short.join('; ')}` };
         return (await this.receiveDonation(this.opt.receiveFrom)) ? null : { attention: `brew: no trade from ${this.opt.receiveFrom} in ${this.opt.receiveMinutes} min; short of ${full.short.join('; ')}` };
@@ -418,6 +493,21 @@ class Brewer {
             await this.run.sdk.sendUseItemOnItem(pour[0], pour[1]);
             const moved = await this.run.waitFor(s => JSON.stringify(s.inventory.filter(i => doses(i.id) > 0).map(i => ({ slot: i.slot, doses: doses(i.id) }))) !== before, 5);
             if (!moved) { this.ctx.log('decant: pour not seen', { pour }); return; }
+        }
+    }
+
+    async drinkCarried(spec: PotionSpec, w: Want): Promise<void> {
+        const doses = (id: number) => spec.ids.indexOf(id) + 1;
+        const held = () => this.inv().filter(i => doses(i.id) > 0).map(i => ({ slot: i.slot, doses: doses(i.id) }));
+        for (let sips = 0; sips < 40; sips++) {
+            const slot = nextDrink(held(), w);
+            if (slot === null) return;
+            const item = this.inv().find(i => i.slot === slot)!;
+            const op = item.optionsWithIndex.find(o => /^drink$/i.test(o.text))?.opIndex ?? 1;
+            const before = JSON.stringify(held());
+            await this.run.sdk.sendUseItem(slot, op);
+            const drank = await this.run.waitFor(s => JSON.stringify(s.inventory.filter(i => doses(i.id) > 0).map(i => ({ slot: i.slot, doses: doses(i.id) }))) !== before, 5);
+            if (!drank) { this.ctx.log('drink: dose not seen', { slot }); return; }
         }
     }
 
