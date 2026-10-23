@@ -1,0 +1,631 @@
+From b8fa9395d9a1a64f4c792d68904214c338519077 Mon Sep 17 00:00:00 2001
+From: bleugreen <mitchell5799@gmail.com>
+Date: Thu, 22 Oct 2026 15:59:23 -0700
+Subject: [PATCH 1/6] [Build] runner budget: book a routed click as two user
+ events
+
+meterDispatch books each action at the browser client's user-event cost
+(userEventsOf, shared with the in-page runtime): a routable click without
+route:false is MOVE_OPCLICK + op, two events; everything else one.
+USER_EVENTS_PER_TICK is unchanged. Tests at the 5-event edge and for the
+carry a 6-event tick leaves in the next window.
+---
+ speedrun/runner/budget.test.ts | 58 ++++++++++++++++++++++++++++++++++
+ speedrun/runner/budget.ts      | 35 ++++++++++++--------
+ 2 files changed, 79 insertions(+), 14 deletions(-)
+
+diff --git a/speedrun/runner/budget.test.ts b/speedrun/runner/budget.test.ts
+index 243843c68adce669c55b7f3d6a985367076d03a3..d766701ea6bbb451ccfc4fdf945720a645747467 100644
+--- a/speedrun/runner/budget.test.ts
++++ b/speedrun/runner/budget.test.ts
+@@ -66,6 +66,64 @@ describe('meterDispatch', () => {
+         expect(w.snapshot()).toMatchObject({ pending: 0, sent: 0 });
+     });
+ 
++    const dispatch = (sdk: FakeSdk, action: Record<string, unknown>) => (sdk as unknown as { sendAction(a: unknown): Promise<unknown> }).sendAction({ reason: 'x', ...action });
++    const npcClick = { type: 'interactNpc', npcIndex: 12, optionIndex: 3 };
++
++    test('a routed click books two user events, an unrouted one (route: false) one', async () => {
++        const sdk = new FakeSdk();
++        const w = new TickWindow(100, 0);
++        meterDispatch(sdk, w);
++        const routed = dispatch(sdk, npcClick);
++        expect(w.snapshot()).toMatchObject({ pending: 2, sent: 0, free: 3 });
++        await routed;
++        expect(w.snapshot()).toMatchObject({ pending: 0, sent: 2, free: 3 });
++        await dispatch(sdk, { ...npcClick, route: false });
++        await dispatch(sdk, { type: 'interactLoc', x: 1, z: 2, locId: 3, optionIndex: 1 });
++        await dispatch(sdk, { type: 'clickComponent', componentId: 1 });
++        expect(w.snapshot()).toMatchObject({ sent: 6, free: 0 });
++    });
++
++    test('four Charges and a routed click are six events: the window is spent and one carries', async () => {
++        const sdk = new FakeSdk();
++        const w = new TickWindow(100, 0);
++        meterDispatch(sdk, w);
++        for (let i = 0; i < 3; i++) await dispatch(sdk, { type: 'clickComponent', componentId: 1 });
++        await dispatch(sdk, npcClick);
++        // the 5-event edge: three Charges and a routed click fill the tick exactly
++        expect(w.snapshot()).toMatchObject({ sent: 5, carry: 0, free: 0 });
++        w.observe(101, 0);
++        expect(w.snapshot()).toMatchObject({ sent: 0, carry: 0, free: 5 });
++
++        for (let i = 0; i < 4; i++) await dispatch(sdk, { type: 'clickComponent', componentId: 1 });
++        await dispatch(sdk, npcClick);
++        expect(w.snapshot()).toMatchObject({ sent: 6, free: 0 });
++        // the server decodes 5 on its next tick; the click's op waits a tick and spends the next window
++        w.observe(102, 0);
++        expect(w.snapshot()).toMatchObject({ sent: 0, carry: 1, free: 4 });
++        w.observe(103, 0);
++        expect(w.snapshot()).toMatchObject({ carry: 0, free: 5 });
++    });
++
++    test('four Charges and an unrouted click are five events: nothing carries', async () => {
++        const sdk = new FakeSdk();
++        const w = new TickWindow(100, 0);
++        meterDispatch(sdk, w);
++        for (let i = 0; i < 4; i++) await dispatch(sdk, { type: 'clickComponent', componentId: 1 });
++        await dispatch(sdk, { ...npcClick, route: false });
++        expect(w.snapshot()).toMatchObject({ sent: 5, free: 0 });
++        w.observe(101, 0);
++        expect(w.snapshot()).toMatchObject({ carry: 0, free: 5 });
++    });
++
++    test('a routed click still pending spends both its events', () => {
++        const sdk = new FakeSdk();
++        const w = new TickWindow(100, 0);
++        meterDispatch(sdk, w);
++        for (let i = 0; i < 3; i++) void dispatch(sdk, { type: 'clickComponent', componentId: 1 });
++        void dispatch(sdk, npcClick);
++        expect(w.snapshot()).toMatchObject({ pending: 5, sent: 0, free: 0 });
++    });
++
+     test('an SDK without the dispatch point is refused, not silently uncounted', () => {
+         expect(() => meterDispatch({}, new TickWindow(0, 0))).toThrow('no sendAction');
+     });
+diff --git a/speedrun/runner/budget.ts b/speedrun/runner/budget.ts
+index 599764fd670517e1c6e879e0c6353da36367063a..97bd435f79a55d3ed8bd721d43f24b8d002d5c30 100644
+--- a/speedrun/runner/budget.ts
++++ b/speedrun/runner/budget.ts
+@@ -9,16 +9,22 @@
+ //
+ // - the window is the tick label of the latest published state; a packet sent
+ //   while tick N is the latest lands on the server's next tick;
+-// - `sent` counts actions acknowledged in this window;
+-// - `pending` counts actions dispatched and not yet acknowledged, which are on
+-//   their way out and spend this window's budget;
++// - `sent` counts the user events of actions acknowledged in this window;
++// - `pending` counts those of actions dispatched and not yet acknowledged, which
++//   are on their way out and spend this window's budget;
+ // - `carry` is what earlier windows sent beyond what the server has decoded since,
+ //   at 5 per elapsed tick.
+ //
+-// The count errs high: a packet the server refuses spends no user slot, and an
+-// action that is acknowledged a window late is booked to the later one. Erring
+-// high costs at most the one-tick wait the runner would otherwise have taken.
++// An action costs the user events the browser client writes for it (userEventsOf,
++// shared with the in-page runtime): a click the client routes is two, MOVE_OPCLICK
++// then the op, and one sent with `route: false` is the op alone.
++//
++// The count errs high: a packet the server refuses spends no user slot, an action
++// that is acknowledged a window late is booked to the later one, and a routed click
++// for which the client found no route goes out as the op alone but is booked as two.
++// Erring high costs at most the one-tick wait the runner would otherwise have taken.
+ 
++import { userEventsOf } from '../../server/webclient/src/bot/programs/runtime';
+ import { patchMethod } from './fence';
+ 
+ export const USER_EVENTS_PER_TICK = 5;
+@@ -58,13 +64,13 @@ export class TickWindow {
+         this.openedAt = now;
+     }
+ 
+-    dispatched(): void {
+-        this.pending++;
++    dispatched(events = 1): void {
++        this.pending += events;
+     }
+ 
+-    acknowledged(): void {
+-        this.pending = Math.max(0, this.pending - 1);
+-        this.sent++;
++    acknowledged(events = 1): void {
++        this.pending = Math.max(0, this.pending - events);
++        this.sent += events;
+     }
+ 
+     /** User events this window can still send that the server decodes on its next tick. */
+@@ -85,7 +91,7 @@ export class TickWindow {
+ type Dispatch = (action: unknown) => Promise<unknown>;
+ 
+ /**
+- * Book every action `sdk` dispatches into `window` until the returned function
++ * Book every action `sdk` dispatches into `window`, at its user events, until the returned function
+  * is called. Every SDK send, raw or through `BotActions`, goes through the one
+  * dispatch method BotSDK keeps private as `sendAction` (sdk/index.ts), so this
+  * wraps it on the instance; it throws if that method is missing rather than
+@@ -100,9 +106,10 @@ export function meterDispatch(sdk: object, window: TickWindow): () => void {
+     return patchMethod(sdk, 'sendAction', (send: Dispatch) => (action: unknown) => {
+         const type = (action as { type?: unknown } | null)?.type;
+         if (typeof type === 'string' && NO_PACKET.has(type)) return send(action);
+-        window.dispatched();
++        const events = typeof type === 'string' ? userEventsOf(action as { type: string; route?: boolean }) : 1;
++        window.dispatched(events);
+         const p = send(action);
+-        const settle = () => window.acknowledged();
++        const settle = () => window.acknowledged(events);
+         p.then(settle, settle);
+         return p;
+     });
+-- 
+2.50.1 (Apple Git-155)
+
+
+From 2fa589ac821b97b307471c1c68e4e2dafa904a86 Mon Sep 17 00:00:00 2001
+From: bleugreen <mitchell5799@gmail.com>
+Date: Thu, 22 Oct 2026 15:59:59 -0700
+Subject: [PATCH 2/6] [Build] pickpocket: unrouted knight click when beside the
+ knight
+
+The routed click is MOVE_OPCLICK + OPNPC, two user events, so a stun tick of
+4 Charges and the click made 6 and the click's op landed a tick late. Beside
+the knight's footprint the click now goes route:false (the OPNPC alone, one
+event); when the client refuses it (not_in_reach) the routed click goes out
+the same tick. Elsewhere it stays routed.
+
+pickpocket.test.ts: the fake answers as the browser client (a routed action
+reports its user events), the stun pack's biggest tick is pinned at 5 events
+with overBudget 0, and the default-identical golden hashes the trace without
+the route flag, pinned separately.
+---
+ .../src/bot/programs/pickpocket.test.ts       | 70 ++++++++++++++++++-
+ .../webclient/src/bot/programs/pickpocket.ts  | 27 ++++++-
+ 2 files changed, 93 insertions(+), 4 deletions(-)
+
+diff --git a/server/webclient/src/bot/programs/pickpocket.test.ts b/server/webclient/src/bot/programs/pickpocket.test.ts
+index ea1558ac0285c9868454a68f2f356ed6fb2233af..d9a7b33fcad987e54353104f0ed6f9c4f6cb7bd4 100644
+--- a/server/webclient/src/bot/programs/pickpocket.test.ts
++++ b/server/webclient/src/bot/programs/pickpocket.test.ts
+@@ -5,8 +5,10 @@ import '../../lite/test-support/browser-globals.js';
+ import { createHash } from 'crypto';
+ import { writeFileSync } from 'fs';
+ 
+-import { createPickpocket } from './pickpocket.js';
++import { besideNpc, createPickpocket } from './pickpocket.js';
++import { userEventsOf } from './runtime.js';
+ import { CHARGE_COMPONENT, type StunSummary } from './stun-actions.js';
++import type { BotAction } from '../types.js';
+ import { Harness, makeState, type Sent } from './testkit.js';
+ 
+ interface Kit {
+@@ -61,10 +63,19 @@ interface ThieveOpts {
+     kit?: Kit;
+     dialogAt?: (tick: number) => boolean;
+     helper?: { openTicks?: number; bones: number };
++    /** The knight's tile (default one tile east of the player: beside it). */
++    knight?: { x: number; z: number };
++    /** The client refuses every unrouted click (not_in_reach), as it does across a wall. */
++    refuseUnrouted?: boolean;
+ }
+ 
+ function thieve(opts: ThieveOpts) {
+     const h = new Harness('pp', createPickpocket);
++    // the browser client: a routed click reports its two user events, an unrouted one is one
++    h.respond = a => {
++        if ('route' in a && a.route === false) return opts.refuseUnrouted ? { success: false, message: 'not_in_reach', reason: 'not_in_reach' } : undefined;
++        return { success: true, message: 'ok', userEvents: userEventsOf(a) };
++    };
+     const kit = { food: 10, bones: 0, blood: 0, air: 0, headless: 0, magic: 80, fletching: 1, ...opts.kit, heads: { ...opts.kit?.heads } };
+     const maxHp = opts.maxHp ?? 40;
+     const foodName = opts.foodName ?? 'Shark';
+@@ -106,7 +117,7 @@ function thieve(opts: ThieveOpts) {
+                 Fletching: { xp: fletchXp, level: kit.fletching }
+             },
+             inventory: inv,
+-            npcs: [{ index: 12, name: 'Knight of Ardougne', options: ['Talk-to', 'Attack', 'Pickpocket'] }],
++            npcs: [{ index: 12, name: 'Knight of Ardougne', options: ['Talk-to', 'Attack', 'Pickpocket'], ...opts.knight }],
+             messages: msgs.slice(-20),
+             dialogOpen: opts.dialogAt?.(tick) ?? false,
+             tradeOpen: tradeOpen(tick),
+@@ -433,9 +444,49 @@ describe('pickpocket stun actions', () => {
+             const perK = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(k => h.sent.filter(s => s.tick === fail + k).length);
+             expect(perK).toEqual([1, 1, 5, 5, 5, 5, 5, 5, 1]);
+         }
++        // in user events too: beside the knight the click is unrouted, so the pack's biggest tick is 5, not 6
++        const events = new Map<number, number>();
++        for (const s of h.sent) events.set(s.tick, (events.get(s.tick) ?? 0) + userEventsOf(s.action));
++        expect(Math.max(...events.values())).toBe(5);
++        expect(h.sent.filter(s => s.action.type === 'interactNpc').every(s => 'route' in s.action && s.action.route === false)).toBe(true);
++        expect(h.status.counters.overBudget ?? 0).toBe(0);
+         expect(h.status.deferred).toBe(0);
+     });
+ 
++    test('the knight click is routed unless the player stands orthogonally beside the knight', () => {
++        const routes = (knight: { x: number; z: number }) => {
++            const { h } = thieve({ ticks: 30, outcome: everyFifthFails, knight });
++            return [...new Set(h.sent.filter(s => s.action.type === 'interactNpc').map(s => ('route' in s.action ? s.action.route : undefined)))];
++        };
++        // the player stands on 3200,3200
++        expect(routes({ x: 3200, z: 3201 })).toEqual([false]);
++        expect(routes({ x: 3199, z: 3200 })).toEqual([false]);
++        expect(routes({ x: 3202, z: 3200 })).toEqual([undefined]);
++        expect(routes({ x: 3201, z: 3201 })).toEqual([undefined]);
++    });
++
++    test('an unrouted click the client refuses goes out routed in the same tick', () => {
++        const { h } = thieve({ ticks: 60, outcome: everyFifthFails, refuseUnrouted: true, kit: { blood: 6000, air: 6000 }, params: { stunActions: ['charge'] } });
++        const clicks = h.sent.filter(s => s.action.type === 'interactNpc');
++        expect(new Set(clicks.map(s => s.tick)).size).toBe(clicks.length);
++        expect(clicks.length).toBeGreaterThan(55);
++        expect(clicks.every(s => !('route' in s.action) || s.action.route === undefined)).toBe(true);
++        expect(h.status.counters.unroutedRefused).toBe(clicks.length);
++        // the routed click on a stun tick is the sixth event: the runtime sees it
++        expect(h.status.counters.overBudget ?? 0).toBeGreaterThan(0);
++    });
++
++    test('besideNpc is the client reach rule for an NPC footprint: orthogonal neighbours, no corners', () => {
++        const knight = { tileX: 10, tileZ: 10, size: 1 };
++        const at = (worldX: number, worldZ: number) => besideNpc({ worldX, worldZ }, knight);
++        expect([at(9, 10), at(11, 10), at(10, 9), at(10, 11)]).toEqual([true, true, true, true]);
++        expect([at(9, 9), at(11, 11), at(10, 10), at(12, 10)]).toEqual([false, false, false, false]);
++        const giant = { tileX: 10, tileZ: 10, size: 2 };
++        expect(besideNpc({ worldX: 12, worldZ: 11 }, giant)).toBe(true);
++        expect(besideNpc({ worldX: 11, worldZ: 9 }, giant)).toBe(true);
++        expect(besideNpc({ worldX: 12, worldZ: 12 }, giant)).toBe(false);
++    });
++
+     test('resolves from the inventory: never more Charges than the runes allow', () => {
+         const { h } = thieve({ ticks: 200, outcome: everyFifthFails, kit: { blood: 10, air: 30 }, params: { stunActions: ['charge'] } });
+         const charges = h.sent.filter(s => s.action.type === 'clickComponent');
+@@ -561,7 +612,20 @@ describe('pickpocket stun actions', () => {
+             dialog: { packets: 77, sha256: '6916cf3211f73476a94289f932e7bb9c930c0552cf40a017173b8cb99225f210' },
+             topupIdle: { packets: 370, sha256: 'de88150a3da15a304d1843221961b8b3bf4d97fd61abf3dd66f9b1e33a909d54' }
+         };
+-        const trace = (o: ThieveOpts) => thieve(o).h.sent.map(s => `${s.tick} ${JSON.stringify(s.action)}`);
++        // The knight click's route flag is left out: it went unrouted (route: false) after the
++        // fingerprint, deliberately, and the next test pins that apart.
++        const trace = (o: ThieveOpts) => thieve(o).h.sent.map(s => {
++            const { route: _route, ...action } = s.action as BotAction & { route?: boolean };
++            return `${s.tick} ${JSON.stringify(action)}`;
++        });
++
++        test('every knight click in these scenarios goes out unrouted: the knight stands beside the player', () => {
++            for (const o of Object.values(SCENARIOS)) {
++                const clicks = thieve(o).h.sent.filter(s => s.action.type === 'interactNpc');
++                expect(clicks.length).toBeGreaterThan(0);
++                expect(clicks.every(s => 'route' in s.action && s.action.route === false)).toBe(true);
++            }
++        });
+ 
+         test('sends exactly the pre-option packets', () => {
+             const now = Object.fromEntries(Object.entries(SCENARIOS).map(([k, o]) => {
+diff --git a/server/webclient/src/bot/programs/pickpocket.ts b/server/webclient/src/bot/programs/pickpocket.ts
+index 83209db5296f448a45a766a852027c93db96a578..af315bbbe8cb6ac10c7424644eb1e210d6f09556 100644
+--- a/server/webclient/src/bot/programs/pickpocket.ts
++++ b/server/webclient/src/bot/programs/pickpocket.ts
+@@ -41,6 +41,13 @@
+ // arrows, or any item, item-on-item, spell-on-item or button template. Timing, costs and the
+ // template shape are in stun-actions.ts. The click still goes out every tick, last.
+ //
++// The knight click is a user event like the stun actions. Routed (MOVE_OPCLICK, then the OPNPC)
++// it is two, so 4 stun actions and the click would make 6, and the engine would decode the
++// click's op a tick late. Beside the knight's footprint the click goes unrouted (route: false):
++// the OPNPC alone, one event. The client checks reach again as it sends (a wall between, or a
++// knight that stepped since the state); when it refuses, the routed click goes out instead, in
++// the same tick. Anywhere else the click is routed.
++//
+ // Top-up trades (stun-pack.md section 5). The knight click goes out on every tick, stun ticks
+ // included, and a click closes an open trade, as do an inventory op and Charge's if_close; a
+ // click sent after a trade request in the same tick also replaces the request's interaction.
+@@ -71,6 +78,19 @@ export type PickpocketEnd = 'level' | 'rolls' | 'maxTicks' | 'food';
+ /** How long a target given up by `retargetTicks` stays avoided. */
+ const AVOID_TICKS = 100;
+ 
++/**
++ * The player stands orthogonally beside the NPC's footprint: the reach rule the client applies to
++ * an unrouted NPC op (Client.interactNpc, inReachFrom), less its wall test, which the client
++ * makes as it sends.
++ */
++export function besideNpc(p: { worldX: number; worldZ: number }, n: Pick<NearbyNpc, 'tileX' | 'tileZ' | 'size'>): boolean {
++    const size = n.size || 1;
++    const alongX = p.worldX >= n.tileX && p.worldX < n.tileX + size;
++    const alongZ = p.worldZ >= n.tileZ && p.worldZ < n.tileZ + size;
++    return (alongZ && (p.worldX === n.tileX - 1 || p.worldX === n.tileX + size))
++        || (alongX && (p.worldZ === n.tileZ - 1 || p.worldZ === n.tileZ + size));
++}
++
+ createPickpocket.params = ['npc', 'option', 'rolls', 'untilLevel', 'maxTicks', 'every', 'eat', 'food', 'heal', 'forcedBelow', 'eatBelow', 'stopWhenFoodBelow', 'retargetTicks', 'idleOnInterface', 'stunActions', 'stunWindow', 'stunPerTick'] as const;
+ export function createPickpocket(params: ProgramParams): TickProgram {
+     const npcRe = regex(params.npc, '^Knight of Ardougne$', 'npc');
+@@ -305,7 +325,12 @@ export function createPickpocket(params: ProgramParams): TickProgram {
+             if ((t - startTick) % every !== 0) return;
+             if (target && op) {
+                 noTargetRun = 0;
+-                ctx.send({ type: 'interactNpc', npcIndex: target.index, optionIndex: op.opIndex }, `pickpocket #${target.index}`);
++                const click = { type: 'interactNpc' as const, npcIndex: target.index, optionIndex: op.opIndex };
++                if (ctx.budget > 0 && besideNpc(s.player, target)) {
++                    if (ctx.send({ ...click, route: false }, `pickpocket #${target.index} (unrouted)`)) return;
++                    ctx.count('unroutedRefused');
++                }
++                ctx.send(click, `pickpocket #${target.index}`);
+             } else {
+                 ctx.count('noTarget');
+                 if (++noTargetRun >= 20) return ctx.fault('no target in sight for 20 ticks', summary());
+-- 
+2.50.1 (Apple Git-155)
+
+
+From b9eedc5f95232634e34568dd6dfbadfb8805df9e Mon Sep 17 00:00:00 2001
+From: bleugreen <mitchell5799@gmail.com>
+Date: Thu, 22 Oct 2026 16:03:58 -0700
+Subject: [PATCH 3/6] [Build] programs: userEventsOf in its own import-free
+ module
+
+The runner's budget books SDK sends by the same rule, and importing it from
+runtime.ts pulled ActionExecutor (and its #/ client aliases) into the root
+typecheck. ROUTING_ACTIONS, UNROUTABLE_ACTIONS and userEventsOf move
+unchanged to user-events.ts; item-cycle, the tests and budget.ts import it
+there.
+---
+ .../webclient/src/bot/programs/item-cycle.ts  |  2 +-
+ .../src/bot/programs/pickpocket.test.ts       |  2 +-
+ .../src/bot/programs/runtime.test.ts          |  3 ++-
+ server/webclient/src/bot/programs/runtime.ts  | 18 +-----------------
+ .../webclient/src/bot/programs/user-events.ts | 19 +++++++++++++++++++
+ speedrun/runner/budget.ts                     |  2 +-
+ 6 files changed, 25 insertions(+), 21 deletions(-)
+ create mode 100644 server/webclient/src/bot/programs/user-events.ts
+
+diff --git a/server/webclient/src/bot/programs/item-cycle.ts b/server/webclient/src/bot/programs/item-cycle.ts
+index b7b1cf451707fc307bc0c350a68e89e6d91234de..da1d2770b6fa5a0d5f25a7e9ed13ea0fab451607 100644
+--- a/server/webclient/src/bot/programs/item-cycle.ts
++++ b/server/webclient/src/bot/programs/item-cycle.ts
+@@ -41,7 +41,7 @@
+ // read on the visit's first tick stay valid for every packet of the visit.
+ 
+ import type { BankItem, BotWorldState, InventoryItem } from '../types.js';
+-import { userEventsOf } from './runtime.js';
++import { userEventsOf } from './user-events.js';
+ import type { ProgramAction, ProgramContext, ProgramParams, TickProgram } from './types.js';
+ import { baseLevel, num, oneOf, skillXp, XP_RATE } from './util.js';
+ 
+diff --git a/server/webclient/src/bot/programs/pickpocket.test.ts b/server/webclient/src/bot/programs/pickpocket.test.ts
+index d9a7b33fcad987e54353104f0ed6f9c4f6cb7bd4..989564ad5ab9756f57db95436f766c2970c2fa08 100644
+--- a/server/webclient/src/bot/programs/pickpocket.test.ts
++++ b/server/webclient/src/bot/programs/pickpocket.test.ts
+@@ -6,10 +6,10 @@ import { createHash } from 'crypto';
+ import { writeFileSync } from 'fs';
+ 
+ import { besideNpc, createPickpocket } from './pickpocket.js';
+-import { userEventsOf } from './runtime.js';
+ import { CHARGE_COMPONENT, type StunSummary } from './stun-actions.js';
+ import type { BotAction } from '../types.js';
+ import { Harness, makeState, type Sent } from './testkit.js';
++import { userEventsOf } from './user-events.js';
+ 
+ interface Kit {
+     food?: number;
+diff --git a/server/webclient/src/bot/programs/runtime.test.ts b/server/webclient/src/bot/programs/runtime.test.ts
+index 90512539399cd19bd6c817f1bd696324fbec3f8d..f5dee93813711c24f27b5abd7c0f8fd08255e5e4 100644
+--- a/server/webclient/src/bot/programs/runtime.test.ts
++++ b/server/webclient/src/bot/programs/runtime.test.ts
+@@ -2,9 +2,10 @@ import { describe, expect, test } from 'bun:test';
+ 
+ import '../../lite/test-support/browser-globals.js';
+ 
+-import { MARK_TAIL, parseProgramCommand, ProgramRuntime, userEventsOf } from './runtime.js';
++import { MARK_TAIL, parseProgramCommand, ProgramRuntime } from './runtime.js';
+ import { declared, Harness, makeState } from './testkit.js';
+ import type { TickProgram } from './types.js';
++import { userEventsOf } from './user-events.js';
+ 
+ const burst = (n: number): TickProgram => ({
+     onTick(ctx) {
+diff --git a/server/webclient/src/bot/programs/runtime.ts b/server/webclient/src/bot/programs/runtime.ts
+index 8a222db831205b62e8c03c9fbb00e1888fb0c156..118058cbf956ed2e90b979bcdca48cd75c5a0f46 100644
+--- a/server/webclient/src/bot/programs/runtime.ts
++++ b/server/webclient/src/bot/programs/runtime.ts
+@@ -15,7 +15,7 @@
+ // so a tick of 5 sends can be 6 events. The runtime counts the events the client reports
+ // (`packets`) and, in `counters.overBudget`, the ticks whose sixth and later events the
+ // engine deferred. A program that relies on the exact count budgets events itself
+-// (item-cycle, with userEventsOf).
++// (item-cycle, with userEventsOf from user-events.ts).
+ 
+ import type { ActionResult } from '../ActionExecutor.js';
+ import type { BotAction, BotWorldState } from '../types.js';
+@@ -25,22 +25,6 @@ import type { ProgramAction, ProgramCommand, ProgramContext, ProgramEnd, Program
+ 
+ export const USER_EVENTS_PER_TICK = 5;
+ 
+-/**
+- * Actions whose browser-client method routes first: on finding a route (including the
+- * zero-step route from a tile already in reach) it writes MOVE_OPCLICK, a user event, ahead
+- * of the op (Client.tryMove), so one send is two of the tick's five.
+- */
+-export const ROUTING_ACTIONS: ReadonlySet<string> = new Set(['interactLoc', 'useItemOnLoc', 'interactNpc', 'talkToNpc', 'interactPlayer', 'useItemOnNpc', 'spellOnNpc', 'spellOnPlayer', 'spellOnGroundItem', 'pickupItem', 'interactGroundItem']);
+-
+-/** Actions that take `route: false`: the op alone, refused by the client unless already in reach. */
+-export const UNROUTABLE_ACTIONS: ReadonlySet<string> = new Set(['interactLoc', 'interactNpc', 'interactGroundItem', 'pickupItem']);
+-
+-/** User events a send writes at most: 2 for an action that may route, 1 otherwise (an unrouted op is 1). */
+-export function userEventsOf(action: { type: string; route?: boolean }): number {
+-    if (action.route === false && UNROUTABLE_ACTIONS.has(action.type)) return 1;
+-    return ROUTING_ACTIONS.has(action.type) ? 2 : 1;
+-}
+-
+ /** Start parameters the runtime itself reads, accepted for every program. */
+ export const RUNTIME_PARAMS: readonly string[] = ['stallTicks', 'hold', 'tickMs'];
+ 
+diff --git a/server/webclient/src/bot/programs/user-events.ts b/server/webclient/src/bot/programs/user-events.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..9b3b51e27413d472657b23e2728ff6a66f0d3d0d
+--- /dev/null
++++ b/server/webclient/src/bot/programs/user-events.ts
+@@ -0,0 +1,19 @@
++// What one send costs of the tick's user-event budget (runtime.ts's header has the budget).
++// Kept free of imports: the speedrun runner books its SDK sends by the same rule
++// (speedrun/runner/budget.ts), and it typechecks without the client.
++
++/**
++ * Actions whose browser-client method routes first: on finding a route (including the
++ * zero-step route from a tile already in reach) it writes MOVE_OPCLICK, a user event, ahead
++ * of the op (Client.tryMove), so one send is two of the tick's five.
++ */
++export const ROUTING_ACTIONS: ReadonlySet<string> = new Set(['interactLoc', 'useItemOnLoc', 'interactNpc', 'talkToNpc', 'interactPlayer', 'useItemOnNpc', 'spellOnNpc', 'spellOnPlayer', 'spellOnGroundItem', 'pickupItem', 'interactGroundItem']);
++
++/** Actions that take `route: false`: the op alone, refused by the client unless already in reach. */
++export const UNROUTABLE_ACTIONS: ReadonlySet<string> = new Set(['interactLoc', 'interactNpc', 'interactGroundItem', 'pickupItem']);
++
++/** User events a send writes at most: 2 for an action that may route, 1 otherwise (an unrouted op is 1). */
++export function userEventsOf(action: { type: string; route?: boolean }): number {
++    if (action.route === false && UNROUTABLE_ACTIONS.has(action.type)) return 1;
++    return ROUTING_ACTIONS.has(action.type) ? 2 : 1;
++}
+diff --git a/speedrun/runner/budget.ts b/speedrun/runner/budget.ts
+index 97bd435f79a55d3ed8bd721d43f24b8d002d5c30..18d2a258d57b34f686fd6c2821448e70efa10865 100644
+--- a/speedrun/runner/budget.ts
++++ b/speedrun/runner/budget.ts
+@@ -24,7 +24,7 @@
+ // for which the client found no route goes out as the op alone but is booked as two.
+ // Erring high costs at most the one-tick wait the runner would otherwise have taken.
+ 
+-import { userEventsOf } from '../../server/webclient/src/bot/programs/runtime';
++import { userEventsOf } from '../../server/webclient/src/bot/programs/user-events';
+ import { patchMethod } from './fence';
+ 
+ export const USER_EVENTS_PER_TICK = 5;
+-- 
+2.50.1 (Apple Git-155)
+
+
+From 60049e686669346f3232440c4ff987eca4a0efd0 Mon Sep 17 00:00:00 2001
+From: bleugreen <mitchell5799@gmail.com>
+Date: Thu, 22 Oct 2026 16:04:26 -0700
+Subject: [PATCH 4/6] [Build] client test: an unrouted NPC op beside the NPC
+ across a wall is refused
+
+The case rs/454 found by the Ardougne knights (the x=2672 wall): pickpocket's
+besideNpc passes, the client's reach check refuses the route:false click
+(not_in_reach, nothing written), and the routed click still goes out.
+---
+ .../webclient/src/bot/ClientInteraction.test.ts   | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/server/webclient/src/bot/ClientInteraction.test.ts b/server/webclient/src/bot/ClientInteraction.test.ts
+index c43cb394871847d5185551131ad76368f937dc43..de9a128877824dbfa518076bf68047188c74b65c 100644
+--- a/server/webclient/src/bot/ClientInteraction.test.ts
++++ b/server/webclient/src/bot/ClientInteraction.test.ts
+@@ -9,6 +9,8 @@ import { MapFlag } from '#/dash3d/MapFlag.js';
+ import { ClientProt } from '#/io/ClientProt.js';
+ import { ServerProt } from '#/io/ServerProt.js';
+ 
++import { besideNpc } from './programs/pickpocket.js';
++
+ const { Client } = await import('../client/Client.js');
+ const { default: LocType } = await import('#/config/LocType.js');
+ const { default: ObjType } = await import('#/config/ObjType.js');
+@@ -1209,6 +1211,19 @@ describe('unrouted ops (route: false): the op alone, only from a tile already in
+         expect(far.bytes()).toEqual([]);
+     });
+ 
++    test('interactNpc, route false beside the NPC across a wall: refused, nothing written; the default still routes', () => {
++        // a wall on the east edge of (19,20), between the player and the NPC on (20,20), like the
++        // x=2672 wall by the Ardougne knights: pickpocket's state check passes, the client refuses
++        const walled = scene([19, 20]);
++        (walled.client.collision[0] as CollisionMap).addWall(19, 20, LocShape.WALL_STRAIGHT, LocAngle.EAST, false);
++        expect(besideNpc({ worldX: BASE.x + 19, worldZ: BASE.z + 20 }, { tileX: BASE.x + 20, tileZ: BASE.z + 20, size: 1 })).toBe(true);
++        expect(walled.client.interactNpc(7, 1, false)).toEqual({ success: false, reason: 'not_in_reach' });
++        expect(walled.bytes()).toEqual([]);
++        expect(walled.client.interactNpc(7, 1)).toMatchObject({ success: true });
++        expect(walled.bytes()[0]).toBe(ClientProt.MOVE_OPCLICK);
++        expect(walled.bytes().slice(-3)).toEqual([ClientProt.OPNPC1, ...p2(7)]);
++    });
++
+     test('ground items: routed by default; route false on or beside the tile sends the OPOBJ alone; refused out of reach', () => {
+         const take = [ClientProt.OPOBJ3, ...p2(BASE.x + 25), ...p2(BASE.z + 20), ...p2(995)];
+         const routed = scene([24, 20]);
+-- 
+2.50.1 (Apple Git-155)
+
+
+From d60b4c06a1a7cdcf6b81ea2c7614b91cd3540a72 Mon Sep 17 00:00:00 2001
+From: bleugreen <mitchell5799@gmail.com>
+Date: Thu, 22 Oct 2026 16:05:45 -0700
+Subject: [PATCH 5/6] [Build] client test: an unrouted NPC op beside the NPC
+ across a wall is refused
+
+The case rs/454 found by the Ardougne knights (the x=2672 wall): pickpocket's
+besideNpc passes, the client's reach check refuses the route:false click
+(not_in_reach, nothing written), and the routed click still goes out.
+---
+ server/webclient/src/bot/ClientInteraction.test.ts | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/server/webclient/src/bot/ClientInteraction.test.ts b/server/webclient/src/bot/ClientInteraction.test.ts
+index de9a128877824dbfa518076bf68047188c74b65c..fce329d76393c073fa86a17f57c6289d04423577 100644
+--- a/server/webclient/src/bot/ClientInteraction.test.ts
++++ b/server/webclient/src/bot/ClientInteraction.test.ts
+@@ -1165,7 +1165,7 @@ describe('unrouted ops (route: false): the op alone, only from a tile already in
+             // the booth is a centrepiece (shape 10, angle 0) on its tile
+             world: { wallType: () => 0, decorType: () => 0, sceneType: () => BOOTH << 14, gdType: () => 0, typeCode2: () => 10 }
+         });
+-        return { client, bytes: () => Array.from(out.data.subarray(0, out.pos)) };
++        return { client, collision, bytes: () => Array.from(out.data.subarray(0, out.pos)) };
+     }
+ 
+     const oploc = [ClientProt.OPLOC2, ...p2(BASE.x + 20), ...p2(BASE.z + 20), ...p2(BOOTH)];
+@@ -1215,7 +1215,7 @@ describe('unrouted ops (route: false): the op alone, only from a tile already in
+         // a wall on the east edge of (19,20), between the player and the NPC on (20,20), like the
+         // x=2672 wall by the Ardougne knights: pickpocket's state check passes, the client refuses
+         const walled = scene([19, 20]);
+-        (walled.client.collision[0] as CollisionMap).addWall(19, 20, LocShape.WALL_STRAIGHT, LocAngle.EAST, false);
++        walled.collision.addWall(19, 20, LocShape.WALL_STRAIGHT, LocAngle.EAST, false);
+         expect(besideNpc({ worldX: BASE.x + 19, worldZ: BASE.z + 20 }, { tileX: BASE.x + 20, tileZ: BASE.z + 20, size: 1 })).toBe(true);
+         expect(walled.client.interactNpc(7, 1, false)).toEqual({ success: false, reason: 'not_in_reach' });
+         expect(walled.bytes()).toEqual([]);
+-- 
+2.50.1 (Apple Git-155)
+
+
+From 227cc071577b61259a6cfc8c74368eb07024552e Mon Sep 17 00:00:00 2001
+From: bleugreen <mitchell5799@gmail.com>
+Date: Thu, 22 Oct 2026 16:24:10 -0700
+Subject: [PATCH 6/6] [Build] pickpocket: count routed knight clicks
+ (routedClicks)
+
+The lab's evidence for when the knight was not beside the player: each
+routed click is two user events, and on a full stun-pack tick the sixth.
+---
+ server/webclient/src/bot/programs/pickpocket.test.ts | 1 +
+ server/webclient/src/bot/programs/pickpocket.ts      | 2 +-
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/server/webclient/src/bot/programs/pickpocket.test.ts b/server/webclient/src/bot/programs/pickpocket.test.ts
+index 989564ad5ab9756f57db95436f766c2970c2fa08..b510dec06b1939b5d1732a9e31c6f417cb9b8ce6 100644
+--- a/server/webclient/src/bot/programs/pickpocket.test.ts
++++ b/server/webclient/src/bot/programs/pickpocket.test.ts
+@@ -472,6 +472,7 @@ describe('pickpocket stun actions', () => {
+         expect(clicks.length).toBeGreaterThan(55);
+         expect(clicks.every(s => !('route' in s.action) || s.action.route === undefined)).toBe(true);
+         expect(h.status.counters.unroutedRefused).toBe(clicks.length);
++        expect(h.status.counters.routedClicks).toBe(clicks.length);
+         // the routed click on a stun tick is the sixth event: the runtime sees it
+         expect(h.status.counters.overBudget ?? 0).toBeGreaterThan(0);
+     });
+diff --git a/server/webclient/src/bot/programs/pickpocket.ts b/server/webclient/src/bot/programs/pickpocket.ts
+index af315bbbe8cb6ac10c7424644eb1e210d6f09556..31136abdb1f85f29ca07e29a5349a20b11104653 100644
+--- a/server/webclient/src/bot/programs/pickpocket.ts
++++ b/server/webclient/src/bot/programs/pickpocket.ts
+@@ -330,7 +330,7 @@ export function createPickpocket(params: ProgramParams): TickProgram {
+                     if (ctx.send({ ...click, route: false }, `pickpocket #${target.index} (unrouted)`)) return;
+                     ctx.count('unroutedRefused');
+                 }
+-                ctx.send(click, `pickpocket #${target.index}`);
++                if (ctx.send(click, `pickpocket #${target.index}`)) ctx.count('routedClicks');
+             } else {
+                 ctx.count('noTarget');
+                 if (++noTargetRun >= 20) return ctx.fault('no target in sight for 20 ticks', summary());
+-- 
+2.50.1 (Apple Git-155)
+
