@@ -20,7 +20,7 @@ import { MANIFEST } from '../tools/slot-ledger';
 import * as cooking from '../skills/cooking';
 import * as mining from '../skills/mining';
 import {
-    ALTERNATIVES, anvilAnnounce, cueAround, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleScope, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
+    ALTERNATIVES, anvilAnnounce, CANNON_ROWS, cueAround, cueMuleRows, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleScope, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
     whenNeeded, withCue, h12oLogin, h12oLoginRefusal, H12O_LOGIN, type ChainStep, type CueSink, type RunConfig,
 } from './chain';
 import { CUE_BEACONS, CueKeeper, exitStopIsFinal, prepareCueDir, RunCues } from './cue-keeper';
@@ -674,6 +674,33 @@ describe('cues', () => {
                 }
             }
         });
+
+        test("a carrier's last mule row ends its session final on success, so the run-end close writes nothing more; a throw there stops plain and the close behaves as before", async () => {
+            const row = (fail: boolean) => tag('H22', 'handoff', { name: 'H22 hand-off', logoutSafe: true, preconditions: () => true, postconditions: () => true, run: async () => {
+                if (fail) throw new Error('trade failed');
+            } });
+            for (const [fail, final] of [[false, false], [false, true], [true, false], [true, true]] as const) {
+                const h = harness(muleScope('H22'));
+                try {
+                    const sdk = new FakeSdk(baseState({ tick: 1, inGame: true }));
+                    const keeper = h.keeper(sdk);
+                    const s = row(fail);
+                    const [last] = cueMuleRows([s], new Map([[s, 'H22']]), () => 'mule1', keeper);
+                    const ran = last!.run(ctxFor(sdk));
+                    if (fail) await expect(ran).rejects.toThrow('trade failed');
+                    else await ran;
+                    const stop = h.read();
+                    expect([stop.stop, stop.final ?? false]).toEqual([true, !fail]);
+                    expect(h.launcher.own(stop)).toBe(fail ? 'stood-down' : 'closed');
+                    keeper.close({ final });
+                    // Already final: nothing more. Plain after a throw: finalized by a final close only, as before.
+                    expect(h.read().seq).toBe(fail && final ? stop.seq + 1 : stop.seq);
+                    expect(h.read().final ?? false).toBe(!fail || final);
+                } finally {
+                    h.done();
+                }
+            }
+        });
     });
 
     test("every placed mule1 row gets a cue scoped to its own id ({row, mule}) before its hand-off; the cannon rows keep theirs", () => {
@@ -699,6 +726,76 @@ describe('cues', () => {
         expect(r.opened).toEqual([{ scope: muleScope('H9'), fresh: true }, { scope: muleScope('H12'), fresh: true }, { scope: muleScope('H12'), fresh: true }]);
         expect(r.stopped).toEqual([muleScope('H9'), muleScope('H12'), muleScope('H12')]);
         expect(r.finals).toEqual([false, false, false]);
+    });
+
+    test("each mule carrier's last row in the chain stops final, every other mule row plain; the cannon rows are not mule rows", () => {
+        const c = buildChain(CARRIER_CONFIG, { cues: recorder().cues });
+        expect(muleStops(c)).toEqual([
+            'H1:plain', 'H4:final', 'H4k:plain', 'H6:plain', 'H4p:plain', 'H7:plain', 'H8:plain', 'H9:plain', 'H10:plain',
+            'H13:plain', 'H14:final', 'H15:plain', 'H16:plain', 'H18:plain', 'H19:plain', 'H20:plain', 'H21d:final', 'H22:final',
+        ]);
+        // H4's final is on Doric's segment A, the kit segment that trades it.
+        expect(c.find(s => s.cue?.step === 'H4')!.name).toBe(KIT_SEGMENTS.H4!);
+        for (const id of ['H11', 'H11r', 'H23']) expect(c.find(s => s.id === id)!.cue?.family ?? null).not.toBe('mule');
+        // The fold-in 23 ledger (H12a + H12b, both inside S15) places the same rows.
+        expect(muleStops(buildChain(CARRIER_CONFIG, { cues: recorder().cues, manifest: FOLD_IN_23 }))).toEqual(muleStops(c));
+    });
+
+    test("'last' is over the rows in the ledger in force: without H22, mule1's last row is H13", () => {
+        const h22 = MANIFEST_TEXT.split('\n').find(l => l.startsWith('| H22 |'))!;
+        const c = buildChain(CARRIER_CONFIG, { cues: recorder().cues, manifest: MANIFEST_TEXT.replace(`${h22}\n`, '') });
+        expect(c.some(s => s.id === 'H22')).toBe(false);
+        expect(muleStops(c).filter(s => s.endsWith(':final'))).toEqual(['H4:final', 'H13:final', 'H14:final', 'H21d:final']);
+    });
+
+    test("cueMuleRows: a carrier's last row writes a final stop, its others plain; a throw on the last row stops plain and the resume's success final; a done-skipped last row writes nothing", async () => {
+        const r = recorder();
+        const ran: string[] = [];
+        const failOnce = new Set(['H14']);
+        const stub = (id: string): ChainStep => ({ id, kind: 'handoff', name: `${id} hand-off`, logoutSafe: true, preconditions: () => true, postconditions: () => true, run: async () => {
+            ran.push(id);
+            if (failOnce.delete(id)) throw new Error('trade failed');
+        } });
+        const ids = ['H1', 'H4k', 'S07', 'H4', 'H10', 'H14', 'H21d', 'H22', 'H20'];
+        const steps = ids.map(stub);
+        const rows = new Map(steps.filter(s => s.id !== 'S07').map(s => [s, s.id] as const));
+        const carrierOf = (row: string) => CARRIER_CONFIG.partners[row]!;
+        const c = cueMuleRows(steps, rows, carrierOf, r.cues);
+        expect(c.map(s => `${s.id}:${s.cue ? (s.finalStop ? 'final' : 'plain') : '-'}`)).toEqual(['H1:plain', 'H4k:plain', 'S07:-', 'H4:final', 'H10:plain', 'H14:final', 'H21d:plain', 'H22:final', 'H20:final']);
+        // A step outside `rows` is the same object, untouched.
+        expect(c[2]).toBe(steps[2]);
+        const ctx = ctxFor(new FakeSdk());
+        for (const s of c) {
+            // H20, h55's last row, is skipped as done: the runner never calls it.
+            if (s.id === 'H20') continue;
+            if (s.id === 'H14') {
+                await expect(s.run(ctx)).rejects.toThrow('trade failed');
+                await s.resume!(ctx);
+                continue;
+            }
+            await s.run(ctx);
+        }
+        expect(ran).toEqual(['H1', 'H4k', 'S07', 'H4', 'H10', 'H14', 'H14', 'H21d', 'H22']);
+        expect(r.stopped.map(s => s.step)).toEqual(['H1', 'H4k', 'H4', 'H10', 'H14', 'H14', 'H21d', 'H22']);
+        expect(r.finals).toEqual([false, false, true, false, false, true, false, true]);
+        expect(r.opened.map(o => o.scope.step)).toEqual(r.stopped.map(s => s.step));
+    });
+
+    test("H11r is neither a mule nor a cannon row: it trades on S14's open cannon scope, and S14's one cue stop comes after it", async () => {
+        expect(MULE_ROWS).not.toContain('H11r');
+        expect(Object.keys(CANNON_ROWS)).not.toContain('H11r');
+        const r = recorder();
+        const c = buildChain(CONFIG, { cues: r.cues });
+        const at = (pred: (s: ChainStep) => boolean) => c.findIndex(pred);
+        const h11r = c[at(s => s.id === 'H11r')]!;
+        expect([h11r.kind, h11r.cue, h11r.finalStop]).toEqual(['handoff', undefined, undefined]);
+        const band = c.findLastIndex(s => s.id === 'S14');
+        const stops = c.flatMap((s, i) => (s.id === 'S14 cue stop' ? [i] : []));
+        expect(stops).toHaveLength(1);
+        // Between S14's band and its stop: the leg's first part and H11r, neither opening nor stopping a cue.
+        expect(c.slice(band + 1, stops[0]).map(s => [s.id, s.cue ?? null])).toEqual([['T14-15a', null], ['H11r', null]]);
+        await c[stops[0]!]!.run(ctxFor(new FakeSdk()));
+        expect(r.stopped).toEqual([{ step: 'S14', family: 'cannon' }]);
     });
 
     test("S09 mines with the contested-rock fallback 'auto' and never acceptHazards: only sites whose hunters leave SCORED's combat alone", () => {
