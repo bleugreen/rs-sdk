@@ -31,7 +31,7 @@ describe('loading saved boards', () => {
     test('reads a scraper snapshot, a census file, and a poll file; skips files without the top board', () => {
         const snap = { takenAt: '2026-10-21T08:04:27.000Z', bank: { top: [{ rank: 1, name: 'a', gp: 7, items: [{ id: 995, count: 7, name: 'Coins', gp: 7 }] }], searches: {} } };
         expect(bankTops(snap, 'snapshot-2026-10-21T080427Z.json')).toEqual([
-            { at: '2026-10-21T08:04:27.000Z', source: 'snapshot-2026-10-21T080427Z.json', rows: [{ rank: 1, name: 'a', gp: 7, items: [{ id: 995, count: 7, name: 'Coins', gp: 7 }] }] }
+            { at: '2026-10-21T08:04:27.000Z', source: 'snapshot-2026-10-21T080427Z.json', rows: snap.bank.top }
         ]);
         expect(bankTops({ bank: [row(1, 'z', 3)] }, 'census-2026-10-22T230000Z.json')[0]!.at).toBe('2026-10-22T23:00:00.000Z');
         const polls: PollFile = { v: 1, source: 's', polls: [] };
