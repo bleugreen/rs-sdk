@@ -58,14 +58,17 @@ describe('KnightsRamp', () => {
         expect(r.holdStart).toBe(30 * MIN);
     });
 
-    test('a hold with nobody measured holds again', () => {
+    test('a hold with nobody measured waits for the step again, its timeout counted afresh', () => {
         const r = new KnightsRamp(cfg, 0);
-        r.update(0, true);
-        const d = r.evaluate([], 15 * MIN);
+        r.update(30 * MIN, false);
+        const d = r.evaluate([], 45 * MIN);
         expect(d.action).toBe('repeat');
-        expect(r.phase).toBe('holding');
-        expect(r.holdDue(15 * MIN)).toBe(false);
-        expect(r.holdDue(30 * MIN)).toBe(true);
+        expect(r.phase).toBe('admitting');
+        expect(r.stepNumber).toBe(1);
+        expect(r.holdDue(60 * MIN)).toBe(false);
+        expect(r.update(74 * MIN, false)).toBe(false);
+        expect(r.update(50 * MIN, true)).toBe(true);
+        expect(r.holdStart).toBe(50 * MIN);
     });
 
     test('one step only: done after its first hold', () => {

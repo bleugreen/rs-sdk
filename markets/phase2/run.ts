@@ -135,7 +135,9 @@ export interface RunOptions {
 
 export class Runner {
     readonly gate: LoginGate;
-    readonly ramp: KnightsRamp | null;
+    /** Whether knights logins wait for the ramp; the ramp itself opens when the first of them reaches admission. */
+    private readonly rampOn: boolean;
+    private ramp: KnightsRamp | null = null;
     stopping = false;
     private stopped: Promise<number> | null = null;
     private readonly rampFallback = new Map<MethodId, number>();
@@ -159,7 +161,7 @@ export class Runner {
     ) {
         this.gate = new LoginGate({ ...DEFAULT_POLICY, maxSessions: plan.maxSessions, spacingMs: plan.loginSpacingMs });
         const knights = workers.filter(w => w.method === 'knights').length;
-        this.ramp = plan.ramp && knights > 0 ? new KnightsRamp(plan.ramp, Date.now()) : null;
+        this.rampOn = !!plan.ramp && knights > 0;
         this.market = new DemoMarket(new Gentle({ server: o.host, minIntervalMs: 3_000 }));
         this.book = { item: id => this.market.item(id).then(q => (this.quotes.set(id, q), q)) };
         this.valuer = { cost: s => costOf(debugNameOf(s.id)), quote: id => this.quotes.get(id) };
@@ -331,7 +333,7 @@ export class Runner {
 
     private hooks(w: Worker, x: () => StageCtx): StageHooks {
         return {
-            admitted: () => !this.ramp || w.method !== 'knights' || w.admittedAt !== null,
+            admitted: () => !this.rampOn || w.method !== 'knights' || w.admittedAt !== null,
             foodOut: reason => this.foodOut(w, reason),
             buySharks: async () => {
                 const s = this.plan.sharks;
@@ -425,9 +427,15 @@ export class Runner {
     // ------------------------------------------------------------ the knights ramp
 
     private pumpRamp(now: number): void {
-        const r = this.ramp;
-        if (!r || r.phase === 'done' || r.phase === 'stopped') return;
+        if (!this.rampOn) return;
         const knights = this.workers.filter(w => w.method === 'knights' && !w.done && !w.redirect);
+        if (!this.ramp) {
+            if (!knights.some(w => w.arrivedAdmission !== null)) return;
+            this.ramp = new KnightsRamp(this.plan.ramp!, now);
+            this.ledger({ kind: 'ramp-open', steps: this.plan.ramp!.steps });
+        }
+        const r = this.ramp;
+        if (r.phase === 'done' || r.phase === 'stopped') return;
         const admitted = knights.filter(w => w.admittedAt !== null);
         let room = r.admitted() - admitted.length;
         const waiting = knights.filter(w => w.admittedAt === null && w.arrivedAdmission !== null).sort((a, b) => a.arrivedAdmission! - b.arrivedAdmission!);
