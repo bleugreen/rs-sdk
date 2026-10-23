@@ -2011,7 +2011,11 @@ fold-in 37): run.ts's own login on a re-run is not a relog and does not spend 'S
 `runner/drop-relog.ts`'s recoveries after a drop and the operator's relog-now are recorded
 (`runner/relog-budget.ts`). But run.ts's start gate 'relog budget' refuses a re-run once the
 unplanned relogs are spent (run.ts:284), and a re-run keeps the earlier sessions' entries: only a
-fresh run, with no earlier sessions and no `--from`, clears them (run.ts:629-631).
+fresh run, with no earlier sessions and no `--from`, clears them (run.ts:629-631). Plainly (main,
+13:00Z): **once the run's unplanned relogs are spent, run.ts's start gate (run.ts:284) refuses a
+re-run; the entries persist in the run dir.** Whether an operator override exists on today's code is
+**pending rs/186**; until then, **treat a re-run past the budget as attempt-ending**. No code change
+tonight.
 
 **A throw in combat: relaunch FIRST** (main 23:3x via rs/158; fold-in 35). If the run log's last
 state shows SCORED in combat (the logout refused, `[run] logout:` reporting it), re-run the same

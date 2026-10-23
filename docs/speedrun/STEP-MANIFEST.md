@@ -2673,8 +2673,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     carriers with the full chain ahead. Priced as the cheap manual restart; RUN-HOST's relaunch step
     waits for H4k's ready status in that case;
   - **flagged, H16**: 172 (its one measured profile) against ~351, priced as exposed;
-  - **unmeasured route, priced as exposed until rs/41 times one route each**: H14 and H22;
-  - **unmeasured route (U)**: H15, H19 (after H18) and H20 (h03);
+  - **unmeasured route, an exposed cliff until rs/41's measured bank-to-stand ticks arrive** (rs/551's
+    route proofs and its timing lab, by 14:30Z; main 13:00Z): H14, H15, H19 (after H18), H20 (h03)
+    and H22;
   - **clear**: H6, H4p, H7, H8, H9, H10, H12, H18 and H21d.
 - **Parameters:** the row id and the partner's account name. The row is the data: its `in` is what
   SCORED receives, its `out` (reason `swap` or `trade`) what it gives, its `equip` what it wears
