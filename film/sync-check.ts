@@ -154,8 +154,8 @@ if (import.meta.main) {
     if (nums.length) {
         const select = [...new Set(nums)].map(i => `eq(n\\,${i})`).join('+');
         const rows = Math.ceil(nums.length / 4);
-        const ff = Bun.spawnSync(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', '-i', video, '-vf', `select=${select},scale=iw/2:-2,tile=4x${rows}:padding=4`, '-frames:v', '1', '-q:v', '3', join(dir, 'sync-sheet.jpg')]);
-        if (ff.exitCode !== 0) console.error(`[sync] contact sheet: ${ff.stderr?.toString().trim() ?? ''}`);
+        const ff = Bun.spawnSync(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', '-i', video, '-vf', `select=${select},scale=iw/2:-2,tile=4x${rows}:padding=4`, '-frames:v', '1', '-q:v', '3', join(dir, 'sync-sheet.jpg')], { stdout: 'ignore', stderr: 'pipe' });
+        if (ff.exitCode !== 0) console.error(`[sync] contact sheet: ${ff.stderr.toString().trim()}`);
     }
 
     const report = {
