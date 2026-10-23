@@ -39,7 +39,7 @@
 
 import type { BotWorldState, PrayerName } from '../../sdk/types';
 import { act, actConverse, dropItems, openDoor, talkTo, type ActSdk } from '../lib/act';
-import { COMBAT_SPELLS, combatSpellUse, fight, prayerActive, setPrayer, type CombatSpell, type FightResult } from '../lib/combat';
+import { COMBAT_SPELLS, combatSpellUse, fight, prayerActive, setPrayer, type CombatSpell, type FightOptions, type FightResult } from '../lib/combat';
 import { converse, levelUpInterrupt, type ConverseResult, type ConverseSdk } from '../lib/converse';
 import { pageText, type OptionPattern } from '../lib/dialogue';
 import { matchesItem, type ItemPattern } from '../lib/items';
@@ -474,6 +474,13 @@ export interface WarlordReport {
     prayerOnTicks: number;
 }
 
+/**
+ * The warlord fight on a shared world. There is one warlord, a static spawn with respawnrate 300
+ * (gnome_battlefield.npc), in single-way combat. Arriving as another player starts on it costs their
+ * fight (about 114 ticks, rs/342's Fire Blast) plus the respawn and the 8-tick lock: 420 ticks.
+ */
+export const WARLORD_CONTENTION: Pick<FightOptions, 'adoptHitter' | 'contested'> = { adoptHitter: true, contested: { waitTicks: 420 } };
+
 /** Segment K's fight: Protect from Melee on (already, from the run), the spell until the kill, the orbs' page, the prayer off. */
 async function killWarlord(ctx: Ctx, opts: Options): Promise<WarlordReport> {
     const sdk = sdkOf(ctx);
@@ -482,6 +489,7 @@ async function killWarlord(ctx: Ctx, opts: Options): Promise<WarlordReport> {
     const runes0 = invCount(sdk, sp.rune);
     const prayerOnTicks = await pray(ctx, 'protect_from_melee', true);
     const f: FightResult = await fight(sdk, /^Khazard warlord$/i, {
+        ...WARLORD_CONTENTION,
         spell: sp.component, prayer: 'protect_from_melee', eatBelow: 6, food: ITEM.shark, maxTicks: 1500, findTicks: 15, onDialog: 'continue',
         done: s => holds(s, ITEM.orbs),
     });

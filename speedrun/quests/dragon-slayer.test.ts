@@ -5,7 +5,7 @@ import { baseState, runeNeedProblems } from '../lib/fake-sdk';
 import { configId } from '../lib/world';
 import { Observation, resolveResume } from '../runner/resume';
 import {
-    ARMOURLESS_COST, atLeast, ELVARG_PRAYERS, entryCheck, keyDropped, kitItems, LETTERS, mazeMove, questItems, onCrandor, PROBES, quest, restockWait, SCAVVO_RESTOCK,
+    ARMOURLESS_COST, atLeast, ELVARG_CONTENTION, ELVARG_PRAYERS, entryCheck, keyDropped, kitItems, LETTERS, mazeMove, questItems, onCrandor, PROBES, quest, restockWait, SCAVVO_RESTOCK,
     RUNE_NEED, RUNE_USE, stepId, steps, stockZeroChoice, TILES, usablePrayers, wornKitCheck,
 } from './dragon-slayer';
 import { kitWant, slotNeed } from './segments';
@@ -266,5 +266,12 @@ describe('rune pins: RUNE_USE and RUNE_NEED agree with the kit (tools/rune-pins.
     test('only Lumbridge (F) and Falador (G) are cast: no Varrock, so no fire', () => {
         expect(Object.keys(RUNE_USE)).toEqual(['F', 'G']);
         expect(RUNE_NEED.A!.firerune).toBeUndefined();
+    });
+});
+
+describe('Elvarg on a shared world (rs/520)', () => {
+    test('a refusal waits out another fight, the 15-tick respawn and the lock, inside the fight bound', () => {
+        expect(ELVARG_CONTENTION).toEqual({ adoptHitter: true, contested: { waitTicks: 180 } });
+        expect(ELVARG_CONTENTION.contested!.waitTicks + 135).toBeLessThan(900); // fightElvarg's maxTicks
     });
 });

@@ -96,6 +96,12 @@ describe('segment table', () => {
         expect(o.onDialog).toBeUndefined(); // a death hook's page ends the fight ('stop')
     });
 
+    test('the fights on a shared world: ours by its hit, a refusal waits at most 150 ticks (rs/520)', () => {
+        const o = fightOptions(undefined);
+        expect(o).toMatchObject({ adoptHitter: true, contested: { waitTicks: 150 } });
+        expect(o.contested!.waitTicks + 136).toBeLessThan(o.maxTicks!); // the wait plus the longest measured fight
+    });
+
     test('every conversation shape parses', async () => {
         const { parseShape } = await import('../lib/converse');
         for (const s of Object.values(SHAPES)) expect(() => parseShape(s)).not.toThrow();

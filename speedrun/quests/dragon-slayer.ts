@@ -45,7 +45,7 @@ import type { BotWorldState, NearbyLoc, PrayerName } from '../../sdk/types';
 import { measure } from '../lib/ticks';
 import * as pathfinding from '../../sdk/pathfinding';
 import { act, dropItems, pickup, talkTo, useOn, wield, type ActOptions } from '../lib/act';
-import { fight, PRAYER_LEVELS, prayerActive, setPrayer, type FightResult } from '../lib/combat';
+import { fight, PRAYER_LEVELS, prayerActive, setPrayer, type FightOptions, type FightResult } from '../lib/combat';
 import { converse, levelUpInterrupt, type ConverseResult } from '../lib/converse';
 import type { OptionPattern } from '../lib/dialogue';
 import type { ItemPattern } from '../lib/items';
@@ -824,6 +824,13 @@ async function prayers(sdk: Sdk, list: readonly PrayerName[], on: boolean): Prom
     if (todo.length) await Promise.all(todo.map(p => setPrayer(sdk, p, on)));
 }
 
+/**
+ * The Elvarg fight on a shared world. Elvarg is one static spawn with respawnrate 15
+ * (quest_dragon.npc), in a single-way lair. The wait covers another player's whole fight (120
+ * hitpoints at about 0.9 a tick, ~135 ticks), the respawn and the 8-tick lock: 180 ticks.
+ */
+export const ELVARG_CONTENTION: Pick<FightOptions, 'adoptHitter' | 'contested'> = { adoptHitter: true, contested: { waitTicks: 180 } };
+
 /** The fight from outside the gate (or inside the lair) to the kill; the quest completes on it (elvarg.rs2). */
 async function fightElvarg(where: string, ctx: Ctx, opts: Options): Promise<FightResult> {
     const sdk = ctx.sdk;
@@ -839,6 +846,7 @@ async function fightElvarg(where: string, ctx: Ctx, opts: Options): Promise<Figh
     await prayers(sdk, list, true);
     const died0 = sdk.getState()!.player?.respawnCount ?? 0;
     const f = await fight(sdk, ELVARG, {
+        ...ELVARG_CONTENTION,
         food: ITEM.shark,
         eatBelow: eatAt(sdk.getState()!, opts),
         ...(protect ? { prayer: protect } : {}),

@@ -367,8 +367,18 @@ async function watchHp<T>(sdk: StateSource, run: () => Promise<T>): Promise<{ va
     }
 }
 
+/**
+ * The arena fights on a shared world, in single-way combat. A release reuses a monster already
+ * within 14 tiles when it is idle, and adds a fresh one when that monster is out of its cage in
+ * another player's fight (npc_find, then %npc_lastcombat, quest_arena.rs2 and jeremy_servil.rs2):
+ * two same-name monsters, the other player's possibly nearer. The wait covers another player's
+ * whole fight with one (45-136 ticks measured, fight_arena.md) and the 8-tick lock: 150 ticks.
+ */
+export const ARENA_CONTENTION: Pick<FightOptions, 'adoptHitter' | 'contested'> = { adoptHitter: true, contested: { waitTicks: 150 } };
+
 export function fightOptions(opts: Options | undefined): FightOptions {
     return {
+        ...ARENA_CONTENTION,
         spell: FIRE_BLAST.component,
         prayer: 'protect_from_melee',
         drinkBelow: 8,
@@ -411,6 +421,7 @@ async function arenaFight(ctx: Ctx, opts: Options | undefined, target: RegExp, h
     note(ctx, `${stepId}:fight`, {
         what, end: last.end, ticks: sum('ticks'), engaged: fights[0]!.engaged, casts: runes0 - deathRunes(sdk.getState()), clicks: sum('attacks'), dealt: sum('dealt'),
         taken: sum('taken'), minHp: Math.min(...fights.map(f => f.minHp)), levelUps: sum('levelUps'), eats: sum('eats'), prayerUsed: sum('prayerUsed'), strayPages: stray,
+        target: last.targetIndex, switches: fights.reduce((a, f) => a + f.switches, 0), refused: fights.flatMap(f => f.refused), waited: fights.reduce((a, f) => a + f.waited, 0),
     });
     const hooked = last.end === 'dialog' && hook.test(pageText(sdk.getState()!.dialog));
     if (!last.ok || (last.end !== 'killed' && !hooked)) throw new Error(`${what}: the fight ended '${last.end}' (${JSON.stringify(last)})`);

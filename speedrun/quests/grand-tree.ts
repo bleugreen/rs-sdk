@@ -25,7 +25,7 @@
 
 import type { BotWorldState, NearbyLoc, PrayerName } from '../../sdk/types';
 import { act, actConverse, talkTo, useOn, type ActOptions } from '../lib/act';
-import { COMBAT_SPELLS, combatSpellUse, fight, prayerActive, setPrayer, type FightResult } from '../lib/combat';
+import { COMBAT_SPELLS, combatSpellUse, fight, prayerActive, setPrayer, type FightOptions, type FightResult } from '../lib/combat';
 import { converse, type ConverseResult } from '../lib/converse';
 import { pageText, type OptionPattern } from '../lib/dialogue';
 import { INVENTORY_SIZE, type ItemPattern } from '../lib/items';
@@ -603,6 +603,13 @@ function sumFights(fs: FightResult[]): Pick<DemonReport, 'ticks' | 'clicks' | 'd
 }
 
 /**
+ * The demon fight on a shared world. Each player's demon refuses everyone else for good ("It's not
+ * after you...", grandtree_black_demon.rs2), so another player's nearer demon is passed over and ours
+ * taken once it hits; waiting frees nothing, and 30 ticks only covers our own demon arriving.
+ */
+export const DEMON_CONTENTION: Pick<FightOptions, 'adoptHitter' | 'contested'> = { adoptHitter: true, contested: { waitTicks: 30 } };
+
+/**
  * Kill the demon by spell in place under Protect from Melee. Out of chaos runes with it alive
  * means carry on with Fire Blast (death runes, Magic 59).
  */
@@ -611,7 +618,7 @@ export async function killDemon(sdk: Sdk, opts: Options, reopened: boolean): Pro
     const castRunes = (s: BotWorldState) => invCount(s, SPELLS.fire_bolt.rune) + invCount(s, SPELLS.fire_blast.rune);
     const runes0 = castRunes(sdk.getState()!);
     const out = (sp: keyof typeof SPELLS): Pred => s => invCount(s, SPELLS[sp].rune) === 0 || invCount(s, ITEM.air) < SPELLS[sp].air;
-    const base = { prayer: 'protect_from_melee' as const, drinkBelow: 8, eatBelow: 14, maxTicks: 1500, findTicks: 10 };
+    const base = { ...DEMON_CONTENTION, prayer: 'protect_from_melee' as const, drinkBelow: 8, eatBelow: 14, maxTicks: 1500, findTicks: 10 };
     const fights = [await fight(sdk, DEMON, { ...base, spell: SPELLS[first].component, done: out(first) })];
     let fallback = false;
     if (fights[0]!.end === 'done' && first === 'fire_bolt' && demonInSight(sdk.getState()!)) {
@@ -620,7 +627,8 @@ export async function killDemon(sdk: Sdk, opts: Options, reopened: boolean): Pro
             throw new Error(`out of Fire Bolt runes with the demon alive, and Fire Blast needs Magic ${SPELLS.fire_blast.magic} with death and air runes`);
         }
         fallback = true;
-        const npc = findNpc(s, DEMON)!;
+        // The demon the first fight settled on, not the nearest: another player's may be nearer.
+        const npc = s.nearbyNpcs.find(n => n.index === fights[0]!.targetIndex) ?? findNpc(s, DEMON)!;
         fights.push(await fight(sdk, npc, { ...base, spell: SPELLS.fire_blast.component, done: out('fire_blast') }));
     }
     const last = fights[fights.length - 1]!;

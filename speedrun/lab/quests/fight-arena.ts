@@ -108,7 +108,7 @@ let minHp = Infinity;
 let stopHp: (() => void) | null = null;
 let retaliate: boolean | undefined;
 
-const lab: LabQuest<Options> = {
+export const lab: LabQuest<Options> = {
     title: `Fight Arena (S12, SCORED's arrival levels: ${Object.entries(LEVELS).map(([k, v]) => `${k} ${v}`).join(', ')}; from the arrival tile 2566,3199)`,
     stepId,
     steps: o => steps(o),

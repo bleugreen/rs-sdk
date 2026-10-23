@@ -14,7 +14,7 @@ import { parseLedger } from '../tools/slot-ledger';
 import { DEFAULT_DIALOGUE, slotNeed } from './segments';
 import {
     ARRIVAL, BOLREN, exitCheck, H7, h7Want, inVillage, JUMP_IN, kitCheck, LETTERS, MONTAI, observed, QUEST_ITEMS, quest, REWARD_ATTACK_XP, resolveOptions, RUNE_NEED, RUNE_STAFF, RUNE_USE,
-    stepId, steps, VILLAGE_TREE, WARLORD, WARLORD_CASTS, WARLORD_MAX_CASTS,
+    stepId, steps, VILLAGE_TREE, WARLORD, WARLORD_CASTS, WARLORD_CONTENTION, WARLORD_MAX_CASTS,
 } from './tree-gnome-village';
 
 const ORB = configId('obj', 'orb_of_protection');
@@ -390,5 +390,13 @@ describe('rune pins: RUNE_USE and RUNE_NEED agree with K (tools/rune-pins.ts)', 
         const s = startState('K').state;
         const staff = new RegExp(RUNE_STAFF, 'i');
         expect(byLetter('K').preconditions({ ...s, equipment: s.equipment.filter(i => !staff.test(i.name)) }, {})).toMatch(staff);
+    });
+});
+
+describe('the warlord on a shared world (rs/520)', () => {
+    test('ours by its hit; a refusal waits out another fight and the 300-tick respawn, inside the fight bound', () => {
+        expect(WARLORD_CONTENTION).toEqual({ adoptHitter: true, contested: { waitTicks: 420 } });
+        expect(WARLORD_CONTENTION.contested!.waitTicks).toBeGreaterThanOrEqual(300 + 8);
+        expect(WARLORD_CONTENTION.contested!.waitTicks + 114).toBeLessThan(1500); // killWarlord's maxTicks
     });
 });
