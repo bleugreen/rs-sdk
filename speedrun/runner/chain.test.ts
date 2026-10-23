@@ -59,6 +59,18 @@ function recorder() {
 
 const chain = buildChain(CONFIG, { cues: recorder().cues });
 
+/** Four mule carriers, each with several rows; the cannon rows stay h92's. Last rows: H4 (h03, a kit segment), H14 (mule2), H21d (h55), H22 (mule1). */
+const CARRIERS: Record<string, readonly string[]> = {
+    h03: ['H1', 'H4'],
+    mule1: ['H4k', 'H6', 'H9', 'H13', 'H22'],
+    mule2: ['H4p', 'H7', 'H8', 'H10', 'H14'],
+    h55: ['H15', 'H16', 'H18', 'H19', 'H20', 'H21d'],
+    h92: ['H11', 'H11r', 'H23'],
+};
+const CARRIER_CONFIG: RunConfig = { ...CONFIG, partners: Object.fromEntries(Object.entries(CARRIERS).flatMap(([who, rows]) => rows.map(r => [r, who]))) };
+/** Each mule-cued step of `c`: its row and whether a success stops it final. */
+const muleStops = (c: readonly ChainStep[]) => c.filter(s => s.cue?.family === 'mule').map(s => `${s.cue!.step}:${s.finalStop ? 'final' : 'plain'}`);
+
 describe('chainProbes', () => {
     test("every probe the chain's steps read, S25c's wineBank from cooking.ts's PROBES, none missing", () => {
         const p = chainProbes(chain);
