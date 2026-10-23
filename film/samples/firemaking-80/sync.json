@@ -1,5 +1,5 @@
 {
-  "tickMs": 401,
+  "tickMs": 400,
   "fps": 25,
   "frameMs": 40,
   "method": "per frame of the decoded clip, the pixels of a gray crop that moved more than 24 grey levels since the previous frame; the first frame inside the search window with more than 4x the region's median count (at least 40) is the change",
@@ -19,61 +19,61 @@
     "found": 36,
     "offsetMs": {
       "n": 36,
-      "median": 42.2,
-      "p95": 77.2,
-      "max": 77.2,
-      "min": 24.157958984375,
-      "p10": 33.157958984375,
-      "medianTicks": 0.11,
-      "maxAbsTicks": 0.19
+      "median": 41,
+      "p95": 61,
+      "max": 68,
+      "min": 22.009033203125,
+      "p10": 23.009033203125,
+      "medianTicks": 0.1,
+      "maxAbsTicks": 0.17
     },
     "sample": [
       {
-        "videoMs": 1989.842041015625,
-        "changeMs": 2040,
-        "offsetMs": 50.2,
+        "videoMs": 2411.990966796875,
+        "changeMs": 2480,
+        "offsetMs": 68,
         "what": "You attempt to light the logs."
       },
       {
-        "videoMs": 3605.842041015625,
-        "changeMs": 3680,
-        "offsetMs": 74.2,
+        "videoMs": 4019.990966796875,
+        "changeMs": 4080,
+        "offsetMs": 60,
         "what": "The fire catches and the logs begin to burn."
       },
       {
-        "videoMs": 5196.842041015625,
-        "changeMs": 5240,
-        "offsetMs": 43.2,
+        "videoMs": 5610.990966796875,
+        "changeMs": 5640,
+        "offsetMs": 29,
         "what": "The fire catches and the logs begin to burn."
       },
       {
-        "videoMs": 6802.842041015625,
-        "changeMs": 6880,
-        "offsetMs": 77.2,
+        "videoMs": 7219.990966796875,
+        "changeMs": 7280,
+        "offsetMs": 60,
         "what": "The fire catches and the logs begin to burn."
       },
       {
-        "videoMs": 6802.842041015625,
-        "changeMs": 6880,
-        "offsetMs": 77.2,
+        "videoMs": 7219.990966796875,
+        "changeMs": 7280,
+        "offsetMs": 60,
         "what": "Congratulations, you just advanced a fire making level."
       },
       {
-        "videoMs": 8403.842041015625,
-        "changeMs": 8440,
-        "offsetMs": 36.2,
+        "videoMs": 8818.990966796875,
+        "changeMs": 8880,
+        "offsetMs": 61,
         "what": "The fire catches and the logs begin to burn."
       },
       {
-        "videoMs": 10004.842041015625,
-        "changeMs": 10040,
-        "offsetMs": 35.2,
+        "videoMs": 10425.990966796875,
+        "changeMs": 10480,
+        "offsetMs": 54,
         "what": "The fire catches and the logs begin to burn."
       },
       {
-        "videoMs": 11606.842041015625,
-        "changeMs": 11640,
-        "offsetMs": 33.2,
+        "videoMs": 12030.990966796875,
+        "changeMs": 12080,
+        "offsetMs": 49,
         "what": "The fire catches and the logs begin to burn."
       }
     ]
@@ -94,61 +94,61 @@
     "found": 27,
     "offsetMs": {
       "n": 27,
-      "median": 439.2,
-      "p95": 459.2,
-      "max": 463.2,
-      "min": 413.157958984375,
-      "p10": 427.157958984375,
-      "medianTicks": 1.1,
-      "maxAbsTicks": 1.16
+      "median": 436,
+      "p95": 466,
+      "max": 481,
+      "min": 419.009033203125,
+      "p10": 423.009033203125,
+      "medianTicks": 1.09,
+      "maxAbsTicks": 1.2
     },
     "sample": [
       {
-        "videoMs": 1591.842041015625,
-        "changeMs": 2040,
-        "offsetMs": 448.2,
+        "videoMs": 1998.990966796875,
+        "changeMs": 2480,
+        "offsetMs": 481,
         "what": "useItemOnItem"
       },
       {
-        "videoMs": 3605.842041015625,
-        "changeMs": 4040,
-        "offsetMs": 434.2,
+        "videoMs": 4020.990966796875,
+        "changeMs": 4440,
+        "offsetMs": 419,
         "what": "useItemOnItem"
       },
       {
-        "videoMs": 5196.842041015625,
-        "changeMs": 5640,
-        "offsetMs": 443.2,
+        "videoMs": 5610.990966796875,
+        "changeMs": 6040,
+        "offsetMs": 429,
         "what": "useItemOnItem"
       },
       {
-        "videoMs": 6803.842041015625,
-        "changeMs": 7240,
-        "offsetMs": 436.2,
+        "videoMs": 7220.990966796875,
+        "changeMs": 7680,
+        "offsetMs": 459,
         "what": "useItemOnItem"
       },
       {
-        "videoMs": 8403.842041015625,
-        "changeMs": 8840,
-        "offsetMs": 436.2,
+        "videoMs": 8819.990966796875,
+        "changeMs": 9280,
+        "offsetMs": 460,
         "what": "useItemOnItem"
       },
       {
-        "videoMs": 10005.842041015625,
-        "changeMs": 10440,
-        "offsetMs": 434.2,
+        "videoMs": 10426.990966796875,
+        "changeMs": 10880,
+        "offsetMs": 453,
         "what": "useItemOnItem"
       },
       {
-        "videoMs": 11606.842041015625,
-        "changeMs": 12040,
-        "offsetMs": 433.2,
+        "videoMs": 12031.990966796875,
+        "changeMs": 12480,
+        "offsetMs": 448,
         "what": "useItemOnItem"
       },
       {
-        "videoMs": 13206.842041015625,
-        "changeMs": 13640,
-        "offsetMs": 433.2,
+        "videoMs": 13613.990966796875,
+        "changeMs": 14080,
+        "offsetMs": 466,
         "what": "useItemOnItem"
       }
     ]
@@ -159,12 +159,12 @@
     "clientMinusFeedMs": {
       "n": 28,
       "median": 1,
-      "p95": 3,
-      "max": 398,
-      "min": 0,
+      "p95": 8,
+      "max": 409,
+      "min": -1,
       "p10": 0,
       "medianTicks": 0,
-      "maxAbsTicks": 0.99
+      "maxAbsTicks": 1.02
     }
   }
 }
