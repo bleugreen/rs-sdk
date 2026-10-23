@@ -48,6 +48,8 @@ const scoredName = botArg();
 const muleName = arg('mule', '');
 const client = arg('client', 'browser') as 'browser' | 'lite';
 const hold = arg('hold', '') === '1';
+// --entry-wait=none: no staged entry wait before a hand-off step; the cue's ready gate waits for a late carrier.
+const entryWait = arg('entry-wait', 'all') !== 'none';
 if (!muleName || muleName === scoredName) throw new Error('--mule must name a separate fresh lab account');
 for (const n of [muleName, scoredName]) if (!isLoopbackHost(loadBotEnv(n).SERVER ?? '')) throw new Error('lab only: a non-loopback world is refused');
 
@@ -159,7 +161,7 @@ let roleError: unknown;
 const stop = new AbortController();
 
 try {
-    emit('start', { host: hostname(), revision: revision(), tickRate: process.env.NODE_TICKRATE, client, hold, runId, root, rows: ROWS });
+    emit('start', { host: hostname(), revision: revision(), tickRate: process.env.NODE_TICKRATE, client, hold, entryWait, runId, root, rows: ROWS });
     if (client === 'browser') secure = await openSecureLabSession(scoredName);
     scored = secure?.session ?? await openSession(scoredName, { client, launch: true });
     mule = await openSession(muleName);
@@ -222,7 +224,7 @@ try {
             // A hand-off step's precondition wants its carrier in view (on run day it was prepared rows
             // earlier): the staged entry waits for its readiness and sight, and the wait is reported.
             let entryWaitTicks: number | null = null;
-            if (step.kind === 'handoff') {
+            if (step.kind === 'handoff' && entryWait) {
                 const t0 = scored.sdk.getState()!.tick;
                 const inView = await waitUntil(scored.sdk, st => !!roleError || (owner.ready(row).ok && st.nearbyPlayers.some(p => p.name.toLowerCase() === muleName.toLowerCase())), { maxTicks: 900 });
                 if (roleError) throw roleError;
