@@ -340,7 +340,10 @@ export function sequenceFor(a: Pick<AccountPlan, 'method' | 'hp'>, plan: Pick<Pl
         out.push({ do: 'mining', to: Math.min(n.mining, 15) });
         out.push({ do: 'wield', item: 'pickaxe' });
     }
-    if (n.ardougne) out.push({ do: 'coins', n: SHIP_COINS }, { do: 'to-ardougne' });
+    if (n.ardougne) {
+        if (!n.mining) out.push({ do: 'coins', n: SHIP_COINS });
+        out.push({ do: 'to-ardougne' });
+    }
     out.push({ do: 'method', method: a.method });
     return out;
 }
