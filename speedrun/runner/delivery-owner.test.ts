@@ -178,7 +178,7 @@ describe('the run owner\'s per-row sequence', () => {
         try {
             await expect(owner.awaitReady('H1', sdk as never, { maxTicks: 20 })).rejects.toThrow(/H1: carrier cairn_mule1 was not ready within 20 ticks.*no readiness status/);
             const c = readMulePreparation(dir, MULE)!;
-            writeMuleReady(dir, { runId: RUN, account: MULE, row: 'H1', session: c.session, receiverHash: c.receiverHash, phase: 'fault', tile: null, staged: false, preparationSeq: c.seq, tick: 1, ms: Date.now() });
+            writeMuleReady(dir, { runId: RUN, account: MULE, row: 'H1', session: c.session, receiverHash: c.receiverHash, phase: 'fault', tile: { ...rows[0]!.at }, staged: false, preparationSeq: c.seq, tick: 1, ms: Date.now() });
             await expect(owner.awaitReady('H1', sdk as never, { maxTicks: 5000 })).rejects.toThrow(/delivery fault/);
         } finally {
             clearInterval(timer);
@@ -217,6 +217,8 @@ describe('re-runs', () => {
                 keeper.stop(muleScope('H1'), undefined, { final: false, failed: true });
                 // The carrier served H1 (mule.ts deliveryWasServed): it publishes 'off' for the row and never stages it again.
                 served.add('H1');
+                // Past readyFor's 3 s window for the ready status published before the serve.
+                await Bun.sleep(20);
                 await expect(new DeliveryOwner(r.dir, RUN, SCORED, rows).awaitReady('H1', r.sdk as never, { maxTicks: 20 })).rejects.toThrow(/H1 off, staged false/);
             } finally {
                 off();
