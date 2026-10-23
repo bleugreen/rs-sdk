@@ -574,8 +574,15 @@ fold-in 36). The run config's `partners` map (which rows each mule carrier serve
 fleet's `mule-delivery-production.json` binding: `runner/chain.ts` uses it to find each carrier's final
 row, after which #477 logs the carrier out, so a mismatch would log a carrier out before a later
 hand-off it owns, which that hand-off then cannot get. Check: partners map matches the fleet binding
-(generated, or a one-line diff check; **the command pending rs/41**). A mismatch is a stop: tell main
-and rs/41.
+(generated, or a one-line diff check; **the command pending rs/41**: the run commit's
+`mule-delivery-production.json` carries no `partners` map, which comes from the gitignored run config, so
+the two sources are compared). A mismatch is a stop: tell main and rs/41.
+
+**The gate account's bot.env is on both machines, before the 15:00Z gate series** (main 04:08 PDT via
+rs/158; fold-in 36). run-gate reads the gate account's settings from
+`~/rs-sdk/bots/<gate-account>/bot.env` (loopback GATEWAY_URL, CLIENT_URL, CDP_URL; file mode 600,
+directory 700, gitignored). Verify it is present on both machines before the 15:00Z gate series (it
+was missing on both at 11:0xZ; the gate timer uses a different path). Never name the gate account.
 
 **The inventory check, before the start is called.** On any checkout at `RUN_COMMIT` (it reads only
 the repository), run
@@ -1816,7 +1823,12 @@ detail)`, the phase `precondition`, `run` or `postcondition`, and `resume.ts:337
 a link, session or page-reload failure. `lib/attempt.ts:108-114` catches it in the world and run.ts
 stops with exit 1. The only recovery is the operator re-running the command, and where it enters is
 decided from game state, not from the log (`resolveResume`, `resume.ts:123-152`). A manual re-run
-costs **~150-450 ticks (i)**; rs/589 (rs/546's, rs/574's and rs/585's successor) measures one kill-and-re-run (RUN-ORDER.md
+costs **~150-450 ticks (i)**, unchanged; its measured component (rs/595, bgsrv-mac lab, 400 ms, browser, 3 of 3
+SIGKILLs mid-T04-05 with an immediate re-run; fold-in 36): **kill to the resume point chosen ~11.7 ticks (m)**,
+relaunch to SCORED in the world ~2, the post-login checks ~9.6-9.9, the scene wait 0, the resume decision
+0; not included are the operator's reaction time (ticks count while SCORED stays logged in), run.ts's
+pre-login gates (the floor read, the reservation, the slot ledger, helpersReady) and the killed step's own
+resume (unmeasured); rs/589 (rs/546's, rs/574's and rs/585's successor) measures one kill-and-re-run (RUN-ORDER.md
 section 7, the ladder's general note).
 
 **A throw in combat: relaunch FIRST** (main 23:3x via rs/158; fold-in 35). If the run log's last
@@ -1832,14 +1844,20 @@ live session and finished it in 50; waiting out the logout was a death in one la
 `[run] logout: ...` (`run.ts:513`): **run.ts logs SCORED out after a StepError**, and on the way
 out closes the helper cues **non-final**, printing `[run] cues closed non-final: a re-run re-arms the
 helpers` (`run.ts:534-538`, `runner/cue-keeper.ts` `exitStopIsFinal`). Exit code 1. **The helpers
-stand down on a StepError or a first Ctrl-C; a re-run re-arms them** (rs/574's retire rule, on main
-with #468, 4657eed8, rs/583 from rs/186 @43f03530; fold-in 36):
+stand down on a StepError or a first Ctrl-C, per family** (rs/574's retire rule, on main with #468,
+4657eed8, rs/583 from rs/186 @43f03530; the families rs/186's from rs/595's code reading, main
+03:25 PDT; fold-in 36):
 
-- A failed step's own cue is stopped non-final too (`runner/chain.ts` `cueAround`), so its helper
-  family stands down **logged in** for the re-run (up to 25-26 at S21 on SCORED's address, rs/41),
-  and the re-run's fresh cue re-arms them; **relaunch none**. The same holds for a first Ctrl-C (a
-  graceful stop at the next logout-safe boundary, to resume later, exit 4), SIGHUP, a refused resume,
-  a host reservation and a crash.
+- A failed step's own cue is stopped non-final too (`runner/chain.ts` `cueAround`). **Before
+  re-running after a failed step, relaunch that step's bone, anvil, fm-row or courier helpers (they
+  exit on a non-final stop and are not restarted); altar and mule givers stand by and pick up the
+  re-run's fresh cue themselves (up to 25-26 at S21 on SCORED's address, rs/41); the ring givers
+  are started by hand** (the S04 ring givers have no launcher role). This is attempt 1's procedure:
+  changing those roles to stand by is attempt-2 work (helper code, rs/41), and rs/595's live lab
+  only confirms which families exit. The same holds after a first Ctrl-C (a graceful stop at the
+  next logout-safe boundary, to resume later, exit 4), SIGHUP, a refused resume, a host reservation
+  and a crash exit. Cannon is out of scope: on run day h92 runs in bbs's fleet in
+  receiver-in-sight mode and reads no cue.
 - Helpers are **retired** (a final stop, `[run] cues closed final`) **only** on a completed whole
   run, SIGTERM or a second Ctrl-C, which **end the attempt**: a launcher never re-arms a retired
   scope (`helpers/standalone.ts`'s ScopeSessions), so a re-run after one finds no helpers.
@@ -1882,10 +1900,12 @@ The checks, in order, before re-running. Any one failing means **do not re-run: 
 5. **The host claim is still held and live**: run.ts releases it only on success (`run.ts:533`); an
    expired claim makes gate 2 refuse with an `rs-claim take ...` hint (`run.ts:252-261`), so retake it
    as step 0 does first.
-6. **The helpers: stood down and still logged in; relaunch none** (#468, 4657eed8, rs/583 from rs/186 @43f03530; fold-in 36).
-   The log reads `[run] cues closed non-final: a re-run re-arms the helpers`, and the failed
-   step's helpers are still in on SCORED's address (up to 25-26 at S21, rs/41); the re-run's cue
-   re-arms them. If it reads `[run] cues closed final` (a SIGTERM or a second Ctrl-C was sent), the
+6. **The helpers, per family** (#468, 4657eed8, rs/583 from rs/186 @43f03530; fold-in 36). The log
+   reads `[run] cues closed non-final: a re-run re-arms the helpers`. Relaunch the failed step's
+   bone, anvil, fm-row or courier helpers before the re-run (they exit on a non-final stop and the
+   launcher does not restart them), and start the ring givers by hand if S04 failed; the altar and
+   mule givers stand by logged in on SCORED's address (up to 25-26 at S21, rs/41), and the
+   re-run's cue re-arms them. If it reads `[run] cues closed final` (a SIGTERM or a second Ctrl-C was sent), the
    attempt has been ended and the helpers retired: do not re-run, tell main.
 7. **The step is not on the non-admitting list**: RUN-ORDER.md section 7's margin ladder and its
    attempt-ending lines (A and B are on main, #462 and #453, so fold-in 33's conditional note after
@@ -1930,8 +1950,6 @@ segment (e.g. `S05:A-h4-swap`), and the tick log gets a `(resume)` row with the 
 **The run-day watch list** (fold-in 36; main via rs/158):
 
 - **A death on a leg** (main's wording, 03:15 PDT, via rs/158). A Lumbridge respawn mid-leg is a death. The leg re-walks from Lumbridge on its own (~205 ticks from T06-07; travel.ts re-paths in the same leg, no re-run needed: rs/589's 02:18 run reported ok). Check the kit-gap line on that leg's row (T06-07: none, the worn staff kept, the runes spent or dropped) before the next hand-off. A respawn mid-leg means a jump to Lumbridge's respawn tile (3221,3218) on a leg that does not home-teleport: that tile is also the home teleport's landing. The walker does not flag it (rs/593, green at 26fbcce9, waits until after attempt 1); watch the live view and the run log.
-- **The carry-ahead misread** (void once rs/551's settlement guard is on the floor, fleet snapshot 12).
-  A carrier logs a failed hand-off that SCORED received: no action. The next row re-selects with a bank trip; watch that row's readiness, and expect SCORED to wait at it.
 
 **An attempt cut short before H11r: h92 and H23** (main's ruling via rs/158; fold-in 36). h92's H11r
 take-back waits without a bound at its return tile (`speedrun/helpers/cannon.ts:1545-1598`, `takeBack`'s
@@ -2010,10 +2028,11 @@ kit and are covered only by this manual recovery** (fold-in 35, rs/41 from rs/57
 rs/158): **a death at H23** and **a death in S27 with the cannon packed** (R8d1 refuses, short:
 after a death H23 stays a done milestone, so the resume re-enters at T26-27b, which holds the web,
 and a forced H23 repeat would be 7 slots short). For both, **the operator stages a knife (946) from
-h68** (h68 holds 2) plus the kit by hand. R8 is unstaged until rs/41 regenerates the kits from the named run commit
-and shows respawnCheck passing and every R8a, R8c and R8d2 line coverable from h68's holdings (its
-report before 13:00Z; rs/579's kit fix (#478, merged on rs/41's mission branch, reaching main in fleet snapshot 12, not yet on main: Knife @946 in R8a, R8c, R8d1 and R8d2, R8c's sharks 3 to 5, R8d1 refused at 26 slots against 25)). Until that report every R8 phase's manual recovery takes its knife from
-h68 the same way, and the two R8d1 cases always do (fold-in 36). Its minutes are wall clock, not
+h68** (h68 holds 2) plus the kit by hand. R8 stays unstaged (fold-in 36): rs/579's kit fix (#478) is on main in the
+run commit (#482), and this manual knife line (a knife from h68) **stands unless rs/41 reports R8
+staged before 13:00Z** (the kits regenerated from the run commit, respawnCheck passing, every R8a,
+R8c and R8d2 line coverable from h68's holdings); for R8d1's cases, a death at H23 or in S27 with
+the cannon packed, it stands permanently. Its minutes are wall clock, not
 ticks: R8's prices stay `r8-deaths.ts`'s, in ticks.
 
 **S21 relog: reconciliation when the run script refuses** (rs/186's identity and order matrix; code
