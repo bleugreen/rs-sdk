@@ -645,8 +645,38 @@ Before SCORED logs in, <run dir>/cannon-serve.json holds exactly host's bytes, s
 **The delivery run id, before the start is called** (main 04:15 PDT via rs/158; fold-in 37; it comes
 with rs/598, the runner-side delivery-session binding, on main as #487 (233d0f34, the run commit); `docs/speedrun/helpers/mule-delivery.md`, 'Run owner', lines 330-379 at 233d0f34). `delivery.run` in the run config equals every
 mule carrier's launcher `deliveryRun`; `mule-ledger --check` verifies it, and any mismatch is a
-refusal. **The exact command is pending rs/41**, due right after the naming and before ~14:15Z, with
-the carrier configs regenerated from the new hash. **run.ts's own guard** (rs/598, on main as #487, 233d0f34, the run commit; `docs/speedrun/helpers/mule-delivery.md`, 'Run owner', lines 330-379 at 233d0f34; the run config's `delivery` block is read by `runner/delivery-owner.ts:161-256`, its type `runner/chain.ts:129`; the code wins): run.ts's run
+refusal. the carrier configs come from the generator and check below (fold-in 37).
+
+**The carrier configs, generated and checked on the chosen machine before the launcher starts**
+(rs/41's step via rs/158, main 12:1xZ; fold-in 37; `<C>` the checkout at 233d0f34, `<R>` the run dir,
+`<RC>` the resolved cue dir; `S` is SCORED's login read from its env file, never typed:
+`S="$(sed -n 's/^BOT_USERNAME=//p' "$SCORED_ENV")"`):
+
+1. **Generate:** `cd <C> && CHECKOUT=<C> SCORED_NAME="$S" bun docs/speedrun/scripts/carriers-gen.ts <RC>
+   <R>/carriers.json`; it must print `serve nameHash
+   678f805eb8de77cc92987a80015556fff4f40d3247ae571953a76478639d6322`. The generator is rs/41's text,
+   committed verbatim (sha256 `e1424d2f9730d24f1815973c39574bf0b77b7f689d0a2c14387d33ee2fe0e9d2`): it reads `CHECKOUT`, `SCORED_NAME`,
+   `docs/speedrun/research/mule-delivery-production.json` and the checkout's STEP-MANIFEST ledger
+   (`slot-ledger.ts`'s `MANIFEST`), writes only its output file and prints only the serve nameHash,
+   never the name. Its `deliveryRun` is the literal `a1-20261023`, so attempt 2 changes it (rs/41
+   suggests a `DELIVERY_RUN` env with no default, so it cannot be silently reused).
+2. **Check:** each `bun speedrun/helpers/mule-ledger.ts --check <R>/carriers.json --account
+   <carrier> --rows <rows> --delivery-run a1-20261023 --serve "$S" --cue-root <RC>` exits 0 with its
+   `no drift:` line: cairn_mule1, rows H1,H4,H4k,H18,H19,H21d,H22 with `--on-request H4e` (`no drift:
+   H1, H4, H4k, H18, H19, H21d, H22, H4e (ask form)`); cairn_h55, rows
+   H6,H4p,H7,H8,H9,H10,H12,H13,H14,H15,H16 (`no drift: H6, H4p, H7, H8, H9, H10, H12, H13, H14, H15,
+   H16 (ask form)`); cairn_h03, row H20 (`no drift: H20 (ask form)`). Verified at 233d0f34 on
+   bgsrv-mac with a placeholder name: the generator exit 0, all three checks exit 0 with those lines.
+3. **Merge** the three entries into `<R>/helpers.json` in login order; the run config gets
+   `delivery: { run: "a1-20261023", launcherConfig: "<R>/helpers.json" }`, with `muleCueDir` =
+   `<RC>/mule` if set.
+4. **mule-hold** for cairn_mule1, cairn_h55 and cairn_h03, before the launcher only, never on a
+   relaunch (step 5a.4).
+5. **Report:** the host sends the hash line, the three exit codes and `sha256sum <R>/carriers.json
+   <R>/helpers.json` to rs/41 and main before the launcher starts.
+
+**The fleet on the run commit:** back at 29/29 on 233d0f34 at ~12:11Z, 27 while two stand-ins serve
+ rs/496's twin pass (rs/41 via rs/158; fold-in 37). **run.ts's own guard** (rs/598, on main as #487, 233d0f34, the run commit; `docs/speedrun/helpers/mule-delivery.md`, 'Run owner', lines 330-379 at 233d0f34; the run config's `delivery` block is read by `runner/delivery-owner.ts:161-256`, its type `runner/chain.ts:129`; the code wins): run.ts's run
 config carries `delivery: { run: "a1-20261023", launcherConfig: "<that launcher json>" }`, and its
 preflight refuses with exit 3, before any login, if that is missing or does not match every mule
 partner's launcher entry. That preflight is the code's own guard; rs/41's `mule-ledger --check` stays
@@ -2309,11 +2339,9 @@ and a forced H23 repeat would be 7 slots short). For both, **the operator stages
 h68** (h68 holds 2) plus the kit by hand. **R8's staging** (rs/41, 11:14Z, against kits regenerated
 from 38902b56, respawnCheck passing; main confirmed 04:40 PDT via rs/158; fold-in 37): **R8d2 is
 staged** on h68 (shark 17, law 2, water 2, knife 1, by item id), so a death on the Agility course is
-a priced recovery through its package and this knife line does not apply to it; **R8c is not
-staged** and counts only on a fresh rs/41 report (air short 743, a Grand Exchange bid resting);
+a priced recovery through its package and this knife line does not apply to it; **R8c is staged too** (rs/41, 12:12:09Z, by item id, the earmarks excluded, against the kits at 233d0f34, JSON sha256 5daf2997...f59b; main 12:15Z; before, not staged: air short 743, a Grand Exchange bid resting), so a death on T15-16 or in S16 is a priced recovery through its package;
 **R8a is not staged** (no amulet of magic in the fleet); **R8d1 is refused by design** (26 slots
-against 25). So **the manual recovery with a knife from h68 is attempt 1's procedure for R8a, R8c
-and the R8d1 deaths** (a death at H23, or in S27 with the cannon packed). h68's air 552 and death
+against 25). So **the manual recovery with a knife from h68 is attempt 1's procedure for R8a and the R8d1 deaths** (a death at H23, or in S27 with the cannon packed). h68's air 552 and death
 110 are the rehearsal's H7 earmark and do not count toward R8. Its minutes are wall clock, not
 ticks: R8's prices stay `r8-deaths.ts`'s, in ticks.
 
