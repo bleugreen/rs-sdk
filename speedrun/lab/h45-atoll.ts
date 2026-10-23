@@ -284,8 +284,10 @@ async function travelPhase(ctx: Ctx): Promise<void> {
     const t0 = currentTick(sdk);
     const hits = new Map<string, { tick: number; damage: number; npc: number; at: string }>();
     const unhit = sdk.onStateUpdate(s => {
+        // combatEvents is a rolling window: an event repeats on later updates, so its tile is taken on first sight only.
         for (const e of s.combatEvents ?? []) {
-            if (e.type === 'damage_taken' && e.sourceType === 'npc') hits.set(`${e.tick}:${e.sourceIndex}:${e.observationId ?? ''}`, { tick: e.tick, damage: e.damage, npc: e.sourceIndex, at: where(sdk) });
+            const key = `${e.tick}:${e.sourceIndex}:${e.observationId ?? ''}`;
+            if (e.type === 'damage_taken' && e.sourceType === 'npc' && !hits.has(key)) hits.set(key, { tick: e.tick, damage: e.damage, npc: e.sourceIndex, at: where(sdk) });
         }
     });
     const legs: Record<string, number> = {};
