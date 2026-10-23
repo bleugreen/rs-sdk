@@ -63,7 +63,7 @@ describe('writers fail closed (timeline.ts, offline)', () => {
         writeFileSync(join((Bun.spawnSync(['mkdir', '-p', data]), data), 'snapshot-2026-10-21T080427Z.json'), JSON.stringify(snapshot));
         const { MARKETS_ALLOW_NO_ACCOUNTS: _a, MARKETS_ACCOUNTS_FILE: _f, ...base } = process.env;
         const p = Bun.spawnSync(['bun', resolve(import.meta.dir, '../tools/timeline.ts'), `--dir=${data}`, ...args], { env: { ...base, ...env } });
-        return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() };
+        return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr?.toString() ?? '' };
     };
 
     test('refuses to start with no list file', () => {
