@@ -200,7 +200,7 @@ is only worth anything past the coin cap; phase 2 does not get near it. The cast
 
 | Method | Needs | Login-hours (one fresh account) | Basis |
 |---|---|---|---|
-| Knights | Thieving 55 (rates reach 99 within ~2,000 ticks of work), Hitpoints ~40 | **~0.3**: HP 40 on cows took **1,822 ticks** (m); Thieving 1-55 a few hundred more | m (`lab/hp-train.ts`), thieving.md |
+| Knights | Thieving 55 (rates reach 99 within ~2,000 ticks of work), Hitpoints ~40 | **~0.3**: HP 40 took **1,707-1,972 ticks** with `hp-train.ts` (m, 2 fresh bots; `bones.ts` 1,822); Thieving 1-55 a few hundred more | m (`hp-training.md`), thieving.md |
 | Heroes | Thieving 80, HP ~40 | ~0.35 | as above |
 | Guards | Thieving 40, HP ~40 | ~0.25 | as above |
 | Iron ore | Mining 15 (63 for every roll), a pickaxe | ~0.1: 15 to 63 is ~450 ticks (mining.md), plus coins for the pickaxe | i |
@@ -208,11 +208,14 @@ is only worth anything past the coin cap; phase 2 does not get near it. The cast
 | Shilo | Druidic Ritual, Jungle Potion, Shilo Village; Agility 32, Crafting 20, Mining 40, HP 15, Prayer 10, combat for the quest's undead | **~0.8** (quests ~3,500-4,500 ticks by legends.md's estimates, levels ~2,000 more); **no quest bot exists for Jungle Potion or Shilo Village** | i |
 | Runite | Mining 85, Smithing 85, Wilderness kit | several | i |
 
-The measured Hitpoints timeline (fresh account, `speedrun/helpers/bones.ts` training stage on the Lumbridge cows,
-m, bgsrv-ub, 402.7 ms): HP 20 at tick 437, 30 at 981, **40 at 1,822**, 45 at 2,450, 50 at 3,308, 55 at 4,371;
-levels then flatten, since a cow has 8 HP to give. **70 HP, as rs/553 proposed, is not worth training on cows**
-(about another 8,000 ticks at the 50-55 pace, i): a shark heals 20, and from ~30-40 HP no heal is wasted, so sharks
-an hour hardly change above that while 10 HP eats 149 an hour (rs/502).
+The Hitpoints trainer is `markets/methods/hp-train.ts` (rs/553, `hp-training.md`): `bun markets/methods/hp-train.ts
+<acct>` trains a fresh account to **40 HP in 1,707-1,972 ticks** (m, fedora, 400 ms, 2 bots; Attack 30, Strength 52,
+Defence 1) on the Lumbridge cows with the tutorial's bronze sword, spending nothing. The fleet's `bones.ts` cow
+stage, measured first (m, bgsrv-ub, 402.7 ms), gave HP 20 at tick 437, 30 at 981, 40 at 1,822, 50 at 3,308 and 55 at
+4,371, flattening because a cow has 8 HP to give. Higher targets are not worth it for the knights: a shark heals
+20, and from ~30-40 HP no heal is wasted, so sharks an hour hardly change above that while 10 HP eats 149 an hour
+(rs/502). Above ~52 HP the trainer goes over White Wolf Mountain to the rock crabs, which reached **70 in 6,028
+ticks** (m, 1 sample). Prayer-first (`--prayer 31 --pray`) is slower at every target: ~2,720 ticks to 40 (m).
 
 ## Horizons
 
@@ -292,7 +295,7 @@ restock, one login's worth for the whole world. Worth one login's errands after 
   bank visit against the same at the stop (`trips.ts` `holdings`, `span`), so a short run counts its unfinished last
   trip and charges only the food actually eaten.
 - **Loops:** `markets/methods/mine.ts` (mining with respawn tracking: Shilo, iron, runite), the fleet smelter's
-  smelt mode (steel), `pickpocket.ts` (knights, heroes), `lab/hp-train.ts` (Hitpoints).
+  smelt mode (steel), `pickpocket.ts` (knights, heroes), `hp-train.ts` (Hitpoints; measured by `lab/hp-run.ts`).
 - **Book:** `bun markets/methods/book.ts` (public reads, 3 s apart; `data/phase2-book-2026-10-23T084522Z.json`).
 - **Live:** markets' knights and coal probes (`data/knights-live-20261023T0253Z.jsonl`,
   `data/coal-live-20261023T0402Z.jsonl`); tick length from wallMs / ticks (400.4 and 400.2 ms), not the files'
@@ -304,9 +307,12 @@ LAB_LOG=$TMPDIR/k bash markets/methods/lab/crowd.sh M8 knight m8k 2400 "1 2 4 8"
 # mining at the demo's respawn: pin the player count, rebuild, then run
 bash markets/methods/lab/emulate-players.sh 1400
 LAB_LOG=$TMPDIR/g bash markets/methods/lab/crowd.sh M8 shilo m8g 2700 "1 2 4"
-# single runs: iron, steel, hitpoints
+# single runs: iron, steel
 . markets/methods/lab/block.sh M9 && LAB_HELPERS="b2" speedrun/lab/lab.sh b1 \
   'markets/methods/lab/parallel.ts:b1=iron,--ticks=900:b2=steel,--ticks=900'
+# hitpoints to 40, two fresh bots (hp-training.md)
+. markets/methods/lab/block.sh M10 && LAB_HELPERS="b2" speedrun/lab/lab.sh b1 \
+  'markets/methods/lab/hp-run.ts:--bots=b1,b2:--stagger=10:--out=/tmp/hp40'
 ```
 
 ## Not done, in the brief's order
