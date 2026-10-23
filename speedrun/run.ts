@@ -336,6 +336,115 @@ export interface ChainRunOptions {
     label?: string;
     /** A browser session's per-minute tab memory rows (lib/tab-memory.ts): the launched Chrome's pid, the chunk's label. */
     tabMemory?: TabMemorySetting;
+    /** The process's signals and exit (tests inject them). */
+    signals?: SignalDeps;
+}
+
+/** Longest the callers' cleanup may run after a signal before the process exits anyway. */
+export const TERM_CLEANUP_MS = 60_000;
+
+/**
+ * A signal ended the chain: SCORED is logged out, and the callers' cleanup is still to run. Each
+ * caller lets it through its `finally`, then exits with `exitCode` itself after `disarm()`; a
+ * cleanup that has not finished TERM_CLEANUP_MS after the signal is cut off by exiting anyway.
+ */
+export class Terminated extends Error {
+    constructor(readonly exitCode: number, readonly signal: string, private readonly hardExit: ReturnType<typeof setTimeout>) {
+        super(`${signal}: logged out; exit ${exitCode} once cleanup has run`);
+        this.name = 'Terminated';
+    }
+
+    /** Cleanup is done: cancel the bounded hard exit. */
+    disarm(): void {
+        clearTimeout(this.hardExit);
+    }
+}
+
+export interface SignalDeps {
+    on(signal: NodeJS.Signals, fn: () => void): void;
+    off(signal: NodeJS.Signals, fn: () => void): void;
+    exit(code: number): void;
+    cleanupMs?: number;
+    log?: (message: string) => void;
+}
+
+const PROCESS_SIGNALS: SignalDeps = { on: (s, f) => void process.on(s, f), off: (s, f) => void process.off(s, f), exit: c => process.exit(c) };
+
+export interface SignalShutdown {
+    stopAsked(): boolean;
+    /** The logout a signal started, or null. */
+    leaving(): Promise<unknown> | null;
+    /** The Terminated a signal produced, or null. */
+    termination(): Terminated | null;
+    /** Rejects with the Terminated once a signal's logout has finished; never settles otherwise. */
+    readonly terminated: Promise<never>;
+    dispose(): void;
+}
+
+/**
+ * The chain's signals. Ctrl-C asks for a stop at the next logout-safe boundary; a second Ctrl-C
+ * (exit 130), SIGTERM or SIGHUP (exit 143) logs out now and then ends the chain with Terminated,
+ * so the callers' cleanup (helper launchers, the browser, the token proxy) runs before the exit.
+ */
+export function signalShutdown(tag: string, leave: () => Promise<unknown>, deps: SignalDeps = PROCESS_SIGNALS): SignalShutdown {
+    const say = deps.log ?? ((m: string) => console.error(m));
+    let stopAsked = false;
+    let leaving: Promise<unknown> | null = null;
+    let term: Terminated | null = null;
+    let reject!: (e: Terminated) => void;
+    const terminated = new Promise<never>((_, r) => (reject = r));
+    terminated.catch(() => {});
+    const now = (code: number, signal: string) => {
+        if (leaving) return;
+        stopAsked = true;
+        say(`${tag} ${signal}: logging out now; cleanup, then exit ${code}`);
+        const ms = deps.cleanupMs ?? TERM_CLEANUP_MS;
+        const hard = setTimeout(() => {
+            say(`${tag} cleanup still running ${ms} ms after ${signal}: exiting ${code}`);
+            deps.exit(code);
+        }, ms);
+        const t = new Terminated(code, signal, hard);
+        term = t;
+        leaving = leave().catch(() => {}).finally(() => reject(t));
+    };
+    const onInt = () => {
+        if (stopAsked) return now(130, 'SIGINT');
+        stopAsked = true;
+        say(`${tag} stop requested: logging out at the next logout-safe boundary (Ctrl-C again to log out now)`);
+    };
+    const onTerm = () => now(143, 'SIGTERM');
+    const onHup = () => now(143, 'SIGHUP');
+    deps.on('SIGINT', onInt);
+    deps.on('SIGTERM', onTerm);
+    deps.on('SIGHUP', onHup);
+    return {
+        stopAsked: () => stopAsked,
+        leaving: () => leaving,
+        termination: () => term,
+        terminated,
+        dispose: () => {
+            deps.off('SIGINT', onInt);
+            deps.off('SIGTERM', onTerm);
+            deps.off('SIGHUP', onHup);
+        },
+    };
+}
+
+/** `p`, or the signal's Terminated once its logout is done when a signal ended the chain first (or made `p` fail). */
+export async function untilTerminated<T>(p: Promise<T>, sig: SignalShutdown): Promise<T> {
+    p.catch(() => {});
+    const out = await Promise.race([p, sig.terminated]).catch(async e => {
+        const t = sig.termination();
+        if (!t) throw e;
+        await sig.leaving();
+        throw t;
+    });
+    const t = sig.termination();
+    if (t) {
+        await sig.leaving();
+        throw t;
+    }
+    return out;
 }
 
 export interface ChainRunResult {
@@ -346,8 +455,9 @@ export interface ChainRunResult {
 
 /**
  * The chain on an open session: the session, reach and program rows (rehearse.ts's trackers), the
- * watchdog, Ctrl-C (stop at the next logout-safe boundary; twice: log out now), SIGTERM/SIGHUP
- * (log out now), runAttempt, then out of the world.
+ * watchdog, the signals (signalShutdown: Ctrl-C stops at the next logout-safe boundary; twice,
+ * SIGTERM or SIGHUP log out now and throw Terminated for the caller's cleanup), runAttempt, then
+ * out of the world.
  */
 export async function runChainOnSession(session: Session, o: ChainRunOptions): Promise<ChainRunResult> {
     // First, so a probe nothing provides throws before anything is watched or written.
@@ -376,30 +486,15 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
         console.log(`${tag} logout: ${r.ok ? `out after the click on tick ${r.clickTick}` : `NOT confirmed (${r.reason})`}`);
         return r;
     };
-    let stopAsked = false;
-    let leaving: Promise<unknown> | null = null;
-    const leaveNow = (exitCode: number) => {
-        if (leaving) return;
-        console.error(`${tag} logging out now`);
-        leaving = leave().finally(() => process.exit(exitCode));
-    };
-    const onSigint = () => {
-        if (stopAsked) return leaveNow(130);
-        stopAsked = true;
-        console.error(`${tag} stop requested: logging out at the next logout-safe boundary (Ctrl-C again to log out now)`);
-    };
-    const onTerm = () => leaveNow(143);
-    process.on('SIGINT', onSigint);
-    process.on('SIGTERM', onTerm);
-    process.on('SIGHUP', onTerm);
+    const sig = signalShutdown(tag, leave, o.signals);
     try {
-        const result = await runAttempt(session, o.chain, {
+        const result = await untilTerminated(runAttempt(session, o.chain, {
             log, account, link: sessionLink(session), reservation: o.reservation, probes,
-            stopAsked: () => stopAsked, gateStop: () => null, logout: () => leave(), label: o.label ?? 'run',
+            stopAsked: sig.stopAsked, gateStop: () => null, logout: () => leave(), label: o.label ?? 'run',
             ...(o.from !== undefined ? { from: o.from } : {}),
             onEvent: e => console.log(`[resume] ${JSON.stringify(e)}`),
-        });
-        if (session.expectInWorld && !leaving) await leave();
+        }), sig);
+        if (session.expectInWorld && !sig.leaving()) await leave();
         return { result, lastLogout, lastState };
     } finally {
         wd.stop();
@@ -409,9 +504,7 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
             o.cues?.close();
         } finally {
         unCues?.();
-        process.off('SIGINT', onSigint);
-        process.off('SIGTERM', onTerm);
-        process.off('SIGHUP', onTerm);
+        sig.dispose();
         for (const st of programs.flush()) log.append(programRow(log, account, session.sessionId, st));
         unsubscribe();
         const out = lastLogout as LogoutResult | null;
@@ -526,9 +619,22 @@ async function main(argv: string[]): Promise<number> {
     const unalias = aliasAccount(log, session.name);
     log.append(annotation(log, session.name, 'gate', '(gate) start', { meta: { gates, fresh, cueDir: cfg.cueDir, removed, until: a.until ?? null, steps: chain.length, s21Relog: a.s21Relog } }));
     console.log(`[run] ${LOG_ACCOUNT} on ${a.client}; ${chain.length} steps${a.until ? ` to ${a.until}` : ''}; log ${log.path}`);
-    let code: number;
+    let code = 1;
+    let term: Terminated | null = null;
     try {
-        const { result, lastState } = await runChainOnSession(session, { log, chain, reservation, cues: keeper, ...(from !== undefined ? { from } : {}) });
+        // A signal: SCORED is out, then closeSession still closes the browser before the exit.
+        const ran = await runChainOnSession(session, { log, chain, reservation, cues: keeper, ...(from !== undefined ? { from } : {}) }).catch(e => {
+            if (!(e instanceof Terminated)) throw e;
+            term = e;
+            return null;
+        });
+        if (!ran) {
+            const t = term as unknown as Terminated;
+            code = t.exitCode;
+            console.log(`[run] ${t.message}`);
+            return code;
+        }
+        const { result, lastState } = ran;
         code = result.code;
         console.log(`[run] ${result.outcome}`);
         if (code === 0 && a.until === undefined) {
@@ -544,6 +650,7 @@ async function main(argv: string[]): Promise<number> {
     } finally {
         unalias();
         await closeSession(session);
+        (term as Terminated | null)?.disarm();
     }
     console.log('\n' + formatRunReport(runReport([...earlier, ...log.rows], chain, readFileSync(join(ROOT, 'docs/speedrun/RUN-ORDER.md'), 'utf8'))));
     return code;

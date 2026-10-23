@@ -93,7 +93,7 @@ import { parseTiles } from '../skills/firemaking';
 import { resolveOptions as magicOptions, ROUTE_LOADS, type RingCounts } from '../skills/magic';
 import { bands as runecraftBands } from '../skills/runecraft';
 import { newRunId, parseLog, TickLog } from '../lib/ticks';
-import { attemptOf, loadRunConfig, runChainOnSession } from '../run';
+import { attemptOf, loadRunConfig, runChainOnSession, Terminated } from '../run';
 import type { BotWorldState } from '../../sdk/types';
 import { h4PlanOf } from '../quests/dorics-quest';
 import { buildChain, CANNON_ROWS, KIT_PARTNER_ROWS, KIT_SEGMENTS, muleCueDir, noteRow, PLACEMENT, sliceUntil, resolveFrom, STAND_IN_ROWS, type ChainStep, type RunConfig } from '../runner/chain';
@@ -474,6 +474,7 @@ async function main(argv: string[]): Promise<number> {
     // The `(chunk end)` row the seam check reads (lab/seam-check.ts), written once the chain stops.
     let chunkEnd: ChunkEndWatch | null = null;
     let code = 3;
+    let term: Terminated | null = null;
     try {
         if (stubEnv && lab.stubRows.length) {
             const dir = mkdtempSync(join(tmpdir(), 'dress-stub-'));
@@ -624,9 +625,19 @@ async function main(argv: string[]): Promise<number> {
         }
         log.append(annotation(log, s.name, 'gate', '(gate) dress rehearsal', { meta: { until: a.until ?? null, from: a.from ?? null, standIns: lab.standIns, staffed: lab.staffed, stubRows: lab.stubRows, cueServed: lab.cueServed, ringGivers: ringNames, altarGivers: altarNames, droppers: needDroppers ? droppers : [], boneGivers: needBones ? boneGivers : [], host: process.env.HOSTNAME ?? null } }));
         chunkEnd = watchChunkEnd(s, lab.chain, log);
-        const { result } = await runChainOnSession(s, { log, chain, reservation: new ReservationWatch(reservationPath(a['host-reservation']), { label: 'dress' }), cues: keeper, label: 'dress', tabMemory: { chunk: `${a.from ?? 'start'}..${a.until ?? 'end'}`, ...(secureBrowser?.chrome.browser.process()?.pid ? { chromePid: secureBrowser.chrome.browser.process()!.pid! } : {}) }, ...(from !== undefined ? { from } : {}) });
-        code = result.code;
-        console.log(`[dress] ${result.outcome}`);
+        const ran = await runChainOnSession(s, { log, chain, reservation: new ReservationWatch(reservationPath(a['host-reservation']), { label: 'dress' }), cues: keeper, label: 'dress', tabMemory: { chunk: `${a.from ?? 'start'}..${a.until ?? 'end'}`, ...(secureBrowser?.chrome.browser.process()?.pid ? { chromePid: secureBrowser.chrome.browser.process()!.pid! } : {}) }, ...(from !== undefined ? { from } : {}) }).catch(e => {
+            // A signal: SCORED is out; the helpers, Chrome and the proxy stop below, then the exit.
+            if (!(e instanceof Terminated)) throw e;
+            term = e;
+            return null;
+        });
+        if (ran) {
+            code = ran.result.code;
+            console.log(`[dress] ${ran.result.outcome}`);
+        } else {
+            code = (term as unknown as Terminated).exitCode;
+            console.log(`[dress] ${(term as unknown as Terminated).message}`);
+        }
     } finally {
         try {
         chunkEnd?.close(code);
@@ -649,6 +660,7 @@ async function main(argv: string[]): Promise<number> {
     const report = runReport(log.rows, lab.chain, runOrder);
     console.log('\n' + formatRunReport(report));
     console.log(`RESULT dress-rehearsal ${JSON.stringify({ code, ...report })}`);
+    (term as Terminated | null)?.disarm();
     return code;
 }
 
