@@ -33,6 +33,9 @@ import { receiveFrom } from '../lib/trade';
 import { GNOME_STRONGHOLD_GATE, passGate, runTo } from '../lib/travel';
 import { currentTick, waitTicks, waitUntil } from '../lib/wait';
 import { chebyshev, pos } from '../lib/world';
+import { fight } from '../lib/combat';
+import { DEFAULT_WILDLIFE, wildlifeThreat } from '../helpers/mule';
+import { crossTreeDoor } from '../quests/grand-tree';
 import { AREAS, CRASH_ISLAND, HANGAR, inArea, JOURNAL_MARKS, MONKEY_CHATTER } from '../quests/monkey-madness';
 import { arg, botArg, result } from './common';
 import { startLoopbackGateway } from './loopback-gateway';
@@ -114,6 +117,23 @@ export function packCensus(inv: ReadonlyArray<{ id: number; name: string; count:
 }
 
 /** What the bank phase deposits, by slot, or why it refuses: coins and the five Grand Tree items; package ids stay; anything else stops it. */
+/** The atoll's wildlife (mule.ts DEFAULT_WILDLIFE). */
+const WILDLIFE = DEFAULT_WILDLIFE.map(p => new RegExp(p, 'i'));
+/** Ticks with no damage before a logout: the game refuses one in combat (rs/185: 0 of 3 at M). */
+export const QUIET_TICKS = 10;
+
+/** Why h45 may not log out on P yet, or null: an NPC hit it lately or a hunter stands within a tile, or it took damage under QUIET_TICKS ago, or it is off the tile. */
+export function notSettled(s: BotWorldState): string | null {
+    const p = s.player;
+    if (!p) return 'no player';
+    const threat = wildlifeThreat(s, WILDLIFE, 1);
+    if (threat) return `threat: ${threat.name} #${threat.index}`;
+    const last = p.combat?.lastDamageTick ?? -1;
+    if (last >= 0 && s.tick - last < QUIET_TICKS) return `hit ${s.tick - last} ticks ago`;
+    if (p.worldX !== P_TILE.x || p.worldZ !== P_TILE.z || p.level !== P_TILE.level) return `off P's tile at ${p.worldX},${p.worldZ},${p.level}`;
+    return null;
+}
+
 export function bankPlan(inv: ReadonlyArray<{ id: number; name: string; slot: number }>, keep: ReadonlySet<number>): { deposit: number[]; unexpected: string[] } {
     const deposit: number[] = [];
     const unexpected: string[] = [];
@@ -156,8 +176,8 @@ async function intoTree(ctx: Ctx, level: number): Promise<void> {
     if (!inGrandTree(sdk)) {
         const r = await runTo(sdk, { ...TREE_DOOR_OUTSIDE, tol: 1 }, { bot: ctx.bot });
         if (!r.ok) throw new Error(`run to the Grand Tree's door stopped at ${where(sdk)}: ${r.reason}`);
-        const d = await opLoc(sdk, { ...TREE_DOOR, op: /^open$/i, radius: 6 }, /^open$/i, s => pos(s).z >= TREE_DOOR.z + 1, { resendEvery: 5, maxTicks: 20, ...CHATTER });
-        if (!d.ok) throw new Error(`the Grand Tree's door did not let the player in (at ${where(sdk)})`);
+        // grand-tree.ts's door handling, not intoTree's single opLoc: a door another player just used shows no Open (rs/465).
+        await crossTreeDoor(sdk, 'tree door in', s => pos(s).z >= TREE_DOOR.z + 1);
     }
     for (let i = 0; i < 4 && pos(sdk).level !== level; i++) {
         const up = pos(sdk).level < level;
@@ -232,10 +252,7 @@ async function outToGate(ctx: Ctx): Promise<void> {
         if (chebyshev(pos(sdk), TREE_LADDER) > 3) await go(ctx, TREE_LADDER, 2);
         await climb(sdk, TREE_LADDER, /^climb-down$/i);
     }
-    if (inGrandTree(sdk)) {
-        const d = await opLoc(sdk, { ...TREE_DOOR, op: /^open$/i, radius: 6 }, /^open$/i, s => pos(s).z <= TREE_DOOR.z - 1, { resendEvery: 5, maxTicks: 20, ...CHATTER });
-        if (!d.ok) throw new Error(`the Grand Tree's door did not let the player out (at ${where(sdk)})`);
-    }
+    if (inGrandTree(sdk)) await crossTreeDoor(sdk, 'tree door out', s => pos(s).z <= TREE_DOOR.z - 1);
     if (inStronghold(sdk)) {
         const g = await passGate(sdk, GNOME_STRONGHOLD_GATE, GNOME_STRONGHOLD_GATE.sides.south);
         if (!g.ok) throw new Error(`the Stronghold gate (out): ${g.reason} (at ${where(sdk)})`);
@@ -260,6 +277,12 @@ async function receivePhase(ctx: Ctx, donor: string, need: Map<number, number>):
 async function travelPhase(ctx: Ctx): Promise<void> {
     const { sdk } = ctx;
     const t0 = currentTick(sdk);
+    const hits = new Map<string, { tick: number; damage: number; npc: number; at: string }>();
+    const unhit = sdk.onStateUpdate(s => {
+        for (const e of s.combatEvents ?? []) {
+            if (e.type === 'damage_taken' && e.sourceType === 'npc') hits.set(`${e.tick}:${e.sourceIndex}:${e.observationId ?? ''}`, { tick: e.tick, damage: e.damage, npc: e.sourceIndex, at: where(sdk) });
+        }
+    });
     const legs: Record<string, number> = {};
     let mark = t0;
     const leg = (name: string) => {
@@ -282,11 +305,37 @@ async function travelPhase(ctx: Ctx): Promise<void> {
     leg('Daero, Waydar, Lumdo');
     if (!inArea(sdk, AREAS.atoll)) throw new Error(`not on the atoll after Lumdo (at ${where(sdk)})`);
     // Through M's tile without stopping: spiders there hit a waiting helper.
-    await go(ctx, M_TILE, 1);
-    leg('landing to M');
-    for (let i = 0; i < 3 && (pos(sdk).x !== P_TILE.x || pos(sdk).z !== P_TILE.z); i++) await go(ctx, P_TILE, 0);
-    leg('M to P');
-    result('h45_travel', { ticks: currentTick(sdk) - t0, legs, at: pos(sdk) });
+    try {
+        await go(ctx, M_TILE, 1);
+        leg('landing to M');
+        for (let i = 0; i < 3 && (pos(sdk).x !== P_TILE.x || pos(sdk).z !== P_TILE.z); i++) await go(ctx, P_TILE, 0);
+        leg('M to P');
+        await settleOnP(ctx);
+        leg('settle on P');
+    } finally {
+        unhit();
+        const s = sdk.getState()!;
+        result('h45_travel', { ticks: currentTick(sdk) - t0, legs, at: pos(sdk), hp: s.player?.hp ?? null, npcHits: [...hits.values()] });
+    }
+}
+
+/** On P: kill whatever hunts h45 (99 melee), wait out the combat window, step back onto the exact tile; then a logout is allowed. */
+async function settleOnP(ctx: Ctx): Promise<void> {
+    const { sdk } = ctx;
+    for (let round = 0; round < 6; round++) {
+        const why = notSettled(sdk.getState()!);
+        if (why === null) return;
+        console.log(`  on P, not settled: ${why}`);
+        const threat = wildlifeThreat(sdk.getState()!, WILDLIFE, 1);
+        if (threat) {
+            const f = await fight(sdk, threat, { maxTicks: 60 });
+            console.log(`  fought ${threat.name}: ${f.end}, taken ${f.taken}, min hp ${f.minHp}`);
+        }
+        await waitUntil(sdk, s => (s.player?.combat?.lastDamageTick ?? -1) < 0 || s.tick - s.player!.combat.lastDamageTick >= QUIET_TICKS || !!wildlifeThreat(s, WILDLIFE, 1), { maxTicks: QUIET_TICKS + 5 });
+        if (pos(sdk).x !== P_TILE.x || pos(sdk).z !== P_TILE.z) await go(ctx, P_TILE, 0);
+    }
+    const why = notSettled(sdk.getState()!);
+    if (why !== null) throw new Error(`could not settle on P: ${why}`);
 }
 
 function mustBeOnP(sdk: Sdk): void {
@@ -324,7 +373,9 @@ async function main(): Promise<void> {
             await journalPhase(sdk);
             await gate('bank', ctl, auto, sdk);
             phase = 'bank';
-            await bankPhase(ctx, keep);
+            const plan = bankPlan(sdk.getState()!.inventory, keep);
+            // A re-run after travel began (hangar, island, atoll) holds only the package: nothing to bank, no walk back.
+            if (plan.deposit.length || plan.unexpected.length) await bankPhase(ctx, keep);
             phase = 'receive';
             const held = new Map<number, number>();
             for (const i of sdk.getState()!.inventory) held.set(i.id, (held.get(i.id) ?? 0) + i.count);
@@ -344,6 +395,8 @@ async function main(): Promise<void> {
             await travelPhase(ctx);
             phase = 'park';
             mustBeOnP(sdk);
+            const unsettled = notSettled(sdk.getState()!);
+            if (unsettled) throw new Error(`not safe to log out on P: ${unsettled}`);
             await waitTicks(sdk, 1);
             const c2 = packCensus(sdk.getState()!.inventory, totals);
             result('h45_census_at_P', { at: pos(sdk), ...c2 });
