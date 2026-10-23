@@ -256,7 +256,8 @@ code (16: 16 s, 5: 15 s, 7: 60 s for the whole address); five refusals in a row 
 
 **The knights ramp** (`ramp.ts`, rs/495's condition on allocation A): knights logins are admitted in steps (default
 8, 20, 43). The ramp opens when the first knight reaches admission; a step holds `holdMinutes` (15) once every
-admitted login is pickpocketing, or `admitTimeoutMinutes` (30) after it opened, then takes the median gp a tick
+admitted login is pickpocketing at Thieving 99 (the rate climbs with the level, so a hold mid-climb would set a low
+reference), or `admitTimeoutMinutes` (30) after it opened, then takes the median gp a tick
 per login over the hold. A step more than `dropPct` (10%) below the first stops the ramp: the knights not yet
 admitted go to `ramp.fallbackMix` (plan B's 12 iron, 8 heroes, 23 guards, split in proportion), and the ledger
 says why. A hold with no login measured waits for the step again.
