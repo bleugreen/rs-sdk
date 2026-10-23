@@ -1748,7 +1748,9 @@ run on through it: they grab the display, not the game.
 At 22:15:50Z on 2026-10-22 about 116 players dropped world-wide, 29 of our 42 sessions on one
 address, with no restart and no stall (rs/83: the process token unchanged, the tick feed
 continuous), and the fleet relogged by itself; with the 2026-10-21 outage that is two demo-side
-events in 38 hours (RUN-ORDER.md R53). **What run.ts does today** (rs/186, code at a2adbc7a): the
+events in 38 hours (RUN-ORDER.md R53). **Since #466 (86e7aa37, rs/580; fold-in 35) run.ts relogs a
+dropped tab itself and relog-now is the operator's command (the socket-drop recovery, below); this
+manual procedure is the fallback** for a recovery that refuses or a budget that is spent. **What run.ts did before #466** (rs/186, code at a2adbc7a): the
 runner link sees inGame=false about 1 tick after a drop (or after 17 ticks with no in-world tick),
 aborts the step and waits up to 30 minutes for the link, then throws (`resume.ts:217, 343`). **It
 starts no relog**: the watchdog ignores inGame and acts only on stopped ticks or a dead or stale
@@ -1911,20 +1913,20 @@ segment (e.g. `S05:A-h4-swap`), and the tick log gets a `(resume)` row with the 
   and refuses 'not in game'. Until rs/562's bounded wait for a populated player state lands, on an
   account past the tutorial re-run once more.
 
-**Once rs/547 is on the floor** (rs/547, rs/511's successor under rs/186, reaching main as the snapshot rs/580, fold-in 35;
+**The socket-drop recovery, on main** (#466, 86e7aa37: rs/511's work via rs/547, snapshotted as
+rs/580 from rs/186 @34d0ecf4, 16 files byte-identical, with `cueStop(S27)` above T27-17; fold-in 35;
 the figures below were measured on rs/511's patch: built and unit-tested, and lab-measured
 on bgsrv-mac, the lab engine at 400 ms, the browser client, tree 1fccc5b7 + rs/511's patch,
-cairn://p/rs/511/comments/2; fold-in 32). **rs/511 is not a start condition** (main), so the
-manual relog above stays the procedure for a run commit without it, attempt 1's included. The
-design is `docs/speedrun/RESILIENCE.md` section 4 in rs/511's patch (the race rule, the confirmed
-logout) and section 5 (the deep-Wilderness resume).
+cairn://p/rs/511/comments/2; fold-in 32). It is the current procedure, the manual relog above its
+fallback. The design is `docs/speedrun/RESILIENCE.md` (the drop relog and its race rule, relog-now,
+the confirmed logout, the deep-Wilderness resume).
 
 - **An unplanned drop, run.ts's side.** In the 22:15:50Z shape (the run tab on the title screen,
   the world feed live) run.ts asks the page (`tab.ts` `pageInGame`) and logs it back in inside the
   page (`session.ts` `login({inPage: true})`, never a client relaunch), then resumes the step. Drop
   to back in the world: **24-26 ticks (9.5-10.3 s)**, about 17 of them detection (a page whose
   socket died still reads in game for ~7 s); the in-page login itself takes 0.7-1.4 s (m, lab).
-  Without rs/511 nothing relogs and the operator does it by hand (above).
+  If run.ts's relog refuses or gives up, the operator relogs with relog-now (below), else by hand (above).
 - **The operator's side of the race rule.** If the run tab is on the title screen and run.ts hasn't
   relogged it, run from an ssh shell on the run host:
 
@@ -1933,7 +1935,8 @@ logout) and section 5 (the deep-Wilderness resume).
   ```
 
   `<bot>` is SCORED's bot directory, taken from the run's env and never written here. relog-now
-  uses the run tab's DevTools on 127.0.0.1:9222 (`--cdp=` overrides it). It takes the relog lock
+  uses the run tab's DevTools at the bot env's `CDP_URL`, else 127.0.0.1:9222 (`--cdp=` overrides
+  both; `--run-dir` defaults to run.ts's `RUN_DIR`; `speedrun/tools/relog-now.ts` on main). It takes the relog lock
   (`<run dir>/relog.lock`), logs the page in (an in-page login, the token URL as its fallback),
   **confirms only by the page's in-game flag with the tick advancing** (never the gateway's
   `inGame`), records a manual relog in the shared budget (`<run dir>/relogs.json`) and prints one
@@ -1960,9 +1963,8 @@ logout) and section 5 (the deep-Wilderness resume).
   T13-14 and T26-27 at the run to the spiders, T15-16 at the run to the Mage Bank webs). If that
   fails, the walk stops with a ResumeError: **the operator walks SCORED south to level 20 or below
   by hand** (over the tab's DevTools, as the manual relog's act) **and restarts run.ts**, which
-  resumes from the teleport. The cost is the walk back plus the teleport again. Without rs/511 a
-  deep-Wilderness drop goes straight to that ResumeError (above), and the operator does the same
-  after the manual relog.
+  resumes from the teleport. The cost is the walk back plus the teleport again. If the drop relog
+  itself fails, the operator does the same after relog-now or the manual relog.
 
 **After a player-kill: the recovery** (main 17:0x via rs/158; RUN-ORDER.md R8; fold-in 31). Logged-out
 time costs nothing, so a death is recoverable only if SCORED logs out at once after the respawn, R8's
@@ -1975,7 +1977,9 @@ at once from the run tab, over DevTools as the relog above, confirmed by `pageIn
 operator cues the spawn helper by writing its cue file, scope `{step: 'R8a'..'R8d', family: 'mule'}`
 for the phase (the launcher's gate `{step: 'R8', family: 'mule'}` logs it in); (4) once the helper
 stands beside the spawn, SCORED logs back in, takes the trade and the operator restarts the chain at
-the step whose preconditions hold. The packages are pending rs/526. Its minutes are wall clock, not
+the step whose preconditions hold. The packages are pending rs/526. **Until rs/579 merges R8 is
+unstaged, and the manual recovery after an S27 death takes a knife (946) from h68** as well (h68
+keeps 2 for it; fold-in 35, rs/158), T26-27's web needing one on the way back. Its minutes are wall clock, not
 ticks: R8's prices stay `r8-deaths.ts`'s, in ticks.
 
 **S21 relog: reconciliation when the run script refuses** (rs/186's identity and order matrix; code
@@ -1996,9 +2000,9 @@ real-browser lab; fold-in 31):
   accruing playtime, so the operator confirms the actual logout and state.
 - No case is a zero-tick or automatic recovery.
 - One shared lock and budget: one planned S21 relog plus three unplanned.
-- The socket-drop half is rs/511's, not on the floor (fold-in 32): lab-measured with an injected
-  drop, 24-26 ticks from the drop to back in the world (bgsrv-mac, 400 ms); 'Once rs/511 is on the
-  floor' above. Between the halves of the split relog no drop recovery runs and nothing is counted.
+- The socket-drop half is on main with #466 (86e7aa37, fold-in 35; rs/511's work via rs/547 and
+  rs/580): lab-measured with an injected drop, 24-26 ticks from the drop to back in the world
+  (bgsrv-mac, 400 ms); 'The socket-drop recovery, on main' above. Between the halves of the split relog no drop recovery runs and nothing is counted.
 
 **A tick-length change during the run** (main's ruling, 13:5x PDT 2026-10-22, via rs/158). **The run
 never stops for it**: the score is in ticks, the in-page loops read the observed period once rs/470
