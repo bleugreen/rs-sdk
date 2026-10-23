@@ -219,8 +219,9 @@ const WEAPON_SLOT = 3;
 /**
  * The server and a partner whose request stands (the hand-off giver on its tile): our trade click
  * opens the screens with its offer up and accepted; an offer of ours resets both accepts and the
- * partner re-accepts two ticks later; the confirm accept swaps the items. Equip clicks land a tick
- * later, a wield displacing the worn weapon into the pack.
+ * partner re-accepts two ticks later; the confirm accept swaps the items. An offer of an untradeable
+ * obj (items.ts untradeable) is refused with the engine's message, as trade.rs2 does. Equip clicks
+ * and drops land a tick later, a wield displacing the worn weapon into the pack.
  */
 export class FakeTradePartner extends FakeSdk {
     private queue: Array<{ due: number; fx: (s: BotWorldState) => Partial<BotWorldState> }> = [];
@@ -267,6 +268,12 @@ export class FakeTradePartner extends FakeSdk {
                 break;
             case 'sendOfferItem': {
                 const slot = a.args[0] as number;
+                const offered = s.inventory.find(i => i.slot === slot);
+                if (offered && untradeable(offered.id)) {
+                    // trade.rs2: refused with a message, nothing moves and no accept is reset.
+                    this.later(cur => ({ gameMessages: [...cur.gameMessages, { type: 0, text: "You can't trade this item.", tick: cur.tick, sender: '', fromSelf: false }] }));
+                    break;
+                }
                 this.later(cur => {
                     const it = cur.inventory.find(i => i.slot === slot);
                     if (!it || !cur.trade?.isOpen) return {};
@@ -288,6 +295,11 @@ export class FakeTradePartner extends FakeSdk {
                     return { trade: undefined, inventory: this.addTo(cur.inventory, tr.theirOffer), gameMessages: [...cur.gameMessages, { type: 0, text: 'Accepted trade.', tick: cur.tick, sender: '', fromSelf: false }] };
                 });
                 break;
+            case 'sendDropItem': {
+                const slot = a.args[0] as number;
+                this.later(cur => ({ inventory: cur.inventory.filter(i => i.slot !== slot) }));
+                break;
+            }
             case 'sendDeclineTrade':
                 this.later(cur => (cur.trade?.isOpen ? { trade: undefined, inventory: this.addTo(cur.inventory, cur.trade.myOffer) } : {}));
                 break;

@@ -1,7 +1,7 @@
 // Item matching shared by the bank and trade planners.
 import { noteLink, type ObjPack } from './obj-pack';
 
-import { readFileSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 export type ItemPattern = string | RegExp | number;
@@ -27,6 +27,35 @@ function objPack() {
 /** The obj's debug name (`guamvial`), or undefined when obj.pack has no such id. */
 export function objName(id: number): string | undefined {
     return objPack().byId.get(id);
+}
+
+/** The obj configs the packer reads: `[debugname]` blocks of `key=value` lines. */
+export const OBJ_CONFIGS = join(import.meta.dir, '../../server/content/scripts');
+
+let untradeables: Set<string> | null = null;
+
+/**
+ * Whether the engine refuses the obj in a trade ("You can't trade this item.", trade.rs2): its
+ * config sets `tradeable` false (`no` or `false`, a config boolean) or makes it a dummy item
+ * (ObjType.ts). A banknote is read as its item, whose flag it carries. Members objs are refused on a
+ * free world too; the worlds the run uses are members.
+ */
+export function untradeable(id: number): boolean {
+    if (!untradeables) {
+        untradeables = new Set();
+        for (const f of readdirSync(OBJ_CONFIGS, { recursive: true }) as string[]) {
+            if (!f.endsWith('.obj')) continue;
+            let name = '';
+            for (const raw of readFileSync(join(OBJ_CONFIGS, f), 'utf8').split('\n')) {
+                const line = raw.trim();
+                const header = line.match(/^\[(\S+)\]$/);
+                if (header) name = header[1]!;
+                else if (name && (/^tradeable=(no|false)$/.test(line) || line.startsWith('dummyitem='))) untradeables.add(name);
+            }
+        }
+    }
+    const name = objName(id);
+    return name !== undefined && untradeables.has(name.startsWith('cert_') ? name.slice('cert_'.length) : name);
 }
 
 /**
