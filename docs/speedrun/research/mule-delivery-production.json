@@ -1,0 +1,1159 @@
+{
+  "purpose": "LAB_ONLY_NOT_LIVE_AUTHORIZATION",
+  "generatedBy": "muleFromLedger -> muleRunOptionsByAccount -> JSON round-trip -> muleDrift",
+  "sourceRevision": "28d87cd298a6080dae33780300345478626a6818",
+  "manifest": {
+    "path": "docs/speedrun/research/mule-delivery-ledger.md",
+    "sha256": "bee04c57e1ba4e7a9a6d07c5c26337a2daad0fd4256fee2f88bdf14668877f25"
+  },
+  "deliveryRun": "rs529-production-lab-20261023",
+  "receiver": {
+    "name": "mdr529production",
+    "kind": "anonymous lab receiver; not scored credentials"
+  },
+  "cueRoot": "/tmp/rs529-production-lab-20261023/cues",
+  "rows": [
+    "H1",
+    "H4",
+    "H4k",
+    "H6",
+    "H4p",
+    "H7",
+    "H8",
+    "H9",
+    "H10",
+    "H12",
+    "H13",
+    "H14",
+    "H15",
+    "H16",
+    "H18",
+    "H19",
+    "H20",
+    "H21d",
+    "H22"
+  ],
+  "onRequest": [
+    "H4e"
+  ],
+  "excluded": {
+    "H3": "Production three ring givers; not a mule delivery",
+    "H4m": "Attempt 1 stock-only overflow fix; retained in canonical conditional audit, no fabricated receiver"
+  },
+  "authorization": "Main 2026-10-22 19:19 PDT, relayed by rs529 parent: cairn_h03 approved CONFIG/LAB ONLY for H20 only. Original eastern mule1 retains every other row; western h55 unchanged. No public login, stock move, or staging authorized. Assignment is not measured route, readiness, idle-health or logout acceptance.",
+  "accounts": [
+    {
+      "account": "cairn_mule1",
+      "options": {
+        "serveMode": "request",
+        "cueDir": "/tmp/rs529-production-lab-20261023/cues/mule",
+        "deliveryRun": "rs529-production-lab-20261023",
+        "serve": "mdr529production",
+        "packages": [
+          {
+            "name": "h1",
+            "items": [
+              {
+                "id": 1383,
+                "amount": 1
+              },
+              {
+                "id": 564,
+                "amount": 60
+              },
+              {
+                "id": 556,
+                "amount": 81
+              },
+              {
+                "id": 554,
+                "amount": 80
+              },
+              {
+                "id": 557,
+                "amount": 50
+              },
+              {
+                "id": 563,
+                "amount": 1
+              }
+            ],
+            "scope": {
+              "step": "H1",
+              "family": "mule"
+            },
+            "at": {
+              "x": 3222,
+              "z": 3222,
+              "level": 0
+            },
+            "bank": {
+              "x": 3092,
+              "z": 3245,
+              "level": 0
+            }
+          },
+          {
+            "name": "h4",
+            "items": [
+              {
+                "id": 434,
+                "amount": 6
+              },
+              {
+                "id": 436,
+                "amount": 4
+              },
+              {
+                "id": 440,
+                "amount": 2
+              },
+              {
+                "id": 1438,
+                "amount": 1
+              },
+              {
+                "id": 563,
+                "amount": 2
+              },
+              {
+                "id": 556,
+                "amount": 6
+              }
+            ],
+            "scope": {
+              "step": "H4",
+              "family": "mule"
+            },
+            "carryNext": true,
+            "takeBackSlots": 20,
+            "at": {
+              "x": 2951,
+              "z": 3451,
+              "level": 0
+            },
+            "bank": {
+              "x": 2946,
+              "z": 3369,
+              "level": 0
+            }
+          },
+          {
+            "name": "h4k",
+            "items": [
+              {
+                "id": 1359,
+                "amount": 1
+              },
+              {
+                "id": 946,
+                "amount": 1
+              },
+              {
+                "id": 1511,
+                "amount": 1
+              }
+            ],
+            "scope": {
+              "step": "H4k",
+              "family": "mule"
+            },
+            "at": {
+              "x": 2911,
+              "z": 3494,
+              "level": 0
+            },
+            "bank": {
+              "x": 2946,
+              "z": 3369,
+              "level": 0
+            }
+          },
+          {
+            "name": "h18",
+            "items": [
+              {
+                "id": 309,
+                "amount": 1
+              },
+              {
+                "id": 314,
+                "amount": 580
+              },
+              {
+                "id": 1511,
+                "amount": 10
+              },
+              {
+                "id": 563,
+                "amount": 1
+              },
+              {
+                "id": 556,
+                "amount": 3
+              },
+              {
+                "id": 557,
+                "amount": 1
+              },
+              {
+                "id": 946,
+                "amount": 1
+              }
+            ],
+            "scope": {
+              "step": "H18",
+              "family": "mule"
+            },
+            "at": {
+              "x": 3241,
+              "z": 3248,
+              "level": 0
+            },
+            "bank": {
+              "x": 3092,
+              "z": 3245,
+              "level": 0
+            }
+          },
+          {
+            "name": "h19",
+            "items": [
+              {
+                "id": 1944,
+                "amount": 1
+              },
+              {
+                "id": 1927,
+                "amount": 1
+              },
+              {
+                "id": 1933,
+                "amount": 1
+              },
+              {
+                "id": 563,
+                "amount": 1
+              },
+              {
+                "id": 556,
+                "amount": 3
+              },
+              {
+                "id": 555,
+                "amount": 1
+              }
+            ],
+            "scope": {
+              "step": "H19",
+              "family": "mule"
+            },
+            "at": {
+              "x": 3209,
+              "z": 3215,
+              "level": 0
+            },
+            "bank": {
+              "x": 3092,
+              "z": 3245,
+              "level": 0
+            }
+          },
+          {
+            "name": "h21d",
+            "items": [
+              {
+                "id": 1755,
+                "amount": 1
+              },
+              {
+                "id": 1623,
+                "amount": 62,
+                "noted": true
+              },
+              {
+                "id": 1621,
+                "amount": 23,
+                "noted": true
+              },
+              {
+                "id": 1619,
+                "amount": 20,
+                "noted": true
+              },
+              {
+                "id": 1617,
+                "amount": 2,
+                "noted": true
+              },
+              {
+                "id": 1743,
+                "amount": 954,
+                "noted": true
+              },
+              {
+                "id": 1733,
+                "amount": 1
+              },
+              {
+                "id": 1734,
+                "amount": 187
+              },
+              {
+                "id": 91,
+                "amount": 358,
+                "noted": true
+              },
+              {
+                "id": 95,
+                "amount": 198,
+                "noted": true
+              },
+              {
+                "id": 99,
+                "amount": 128,
+                "noted": true
+              },
+              {
+                "id": 101,
+                "amount": 82,
+                "noted": true
+              },
+              {
+                "id": 103,
+                "amount": 60,
+                "noted": true
+              },
+              {
+                "id": 105,
+                "amount": 50,
+                "noted": true
+              },
+              {
+                "id": 221,
+                "amount": 481,
+                "noted": true
+              },
+              {
+                "id": 225,
+                "amount": 249,
+                "noted": true
+              },
+              {
+                "id": 231,
+                "amount": 206,
+                "noted": true
+              }
+            ],
+            "scope": {
+              "step": "H21d",
+              "family": "mule"
+            },
+            "at": {
+              "x": 3185,
+              "z": 3436,
+              "level": 0
+            },
+            "bank": {
+              "x": 3185,
+              "z": 3436,
+              "level": 0
+            }
+          },
+          {
+            "name": "h22",
+            "items": [
+              {
+                "id": 995,
+                "topUp": {
+                  "max": 126000
+                }
+              },
+              {
+                "id": 1907,
+                "amount": 1
+              },
+              {
+                "id": 950,
+                "amount": 1
+              },
+              {
+                "id": 301,
+                "amount": 1
+              },
+              {
+                "id": 1791,
+                "amount": 1
+              },
+              {
+                "id": 960,
+                "amount": 3
+              },
+              {
+                "id": 1539,
+                "amount": 12
+              },
+              {
+                "id": 1161,
+                "amount": 1
+              },
+              {
+                "id": 1725,
+                "amount": 1
+              },
+              {
+                "id": 385,
+                "topUp": {
+                  "max": 10
+                }
+              },
+              {
+                "id": 563,
+                "amount": 4
+              },
+              {
+                "id": 556,
+                "amount": 6
+              },
+              {
+                "id": 557,
+                "amount": 1
+              },
+              {
+                "id": 555,
+                "amount": 3
+              },
+              {
+                "id": 2347,
+                "amount": 1
+              },
+              {
+                "id": 1329,
+                "amount": 1
+              }
+            ],
+            "scope": {
+              "step": "H22",
+              "family": "mule"
+            },
+            "at": {
+              "x": 3191,
+              "z": 3363,
+              "level": 0
+            },
+            "bank": {
+              "x": 3185,
+              "z": 3436,
+              "level": 0
+            }
+          },
+          {
+            "name": "h4e",
+            "items": [
+              {
+                "id": 563,
+                "amount": 1
+              },
+              {
+                "id": 556,
+                "amount": 5
+              }
+            ],
+            "scope": {
+              "step": "H4e",
+              "family": "mule"
+            },
+            "onRequest": true,
+            "at": {
+              "x": 2920,
+              "z": 3406,
+              "level": 0
+            },
+            "bank": {
+              "x": 2946,
+              "z": 3369,
+              "level": 0
+            }
+          }
+        ]
+      },
+      "role": "mule"
+    },
+    {
+      "account": "cairn_h55",
+      "options": {
+        "serveMode": "request",
+        "cueDir": "/tmp/rs529-production-lab-20261023/cues/mule",
+        "deliveryRun": "rs529-production-lab-20261023",
+        "serve": "mdr529production",
+        "packages": [
+          {
+            "name": "h6",
+            "items": [
+              {
+                "id": 2126,
+                "amount": 1
+              },
+              {
+                "id": 1929,
+                "amount": 4
+              },
+              {
+                "id": 952,
+                "amount": 1
+              },
+              {
+                "id": 954,
+                "amount": 1
+              },
+              {
+                "id": 1975,
+                "amount": 1
+              },
+              {
+                "id": 1927,
+                "amount": 1
+              },
+              {
+                "id": 231,
+                "amount": 1
+              },
+              {
+                "id": 563,
+                "amount": 2
+              }
+            ],
+            "scope": {
+              "step": "H6",
+              "family": "mule"
+            },
+            "at": {
+              "x": 2568,
+              "z": 3334,
+              "level": 0
+            },
+            "bank": {
+              "x": 2615,
+              "z": 3333,
+              "level": 0
+            }
+          },
+          {
+            "name": "h4p",
+            "items": [
+              {
+                "id": 1275,
+                "amount": 1
+              },
+              {
+                "id": 1511,
+                "amount": 1
+              }
+            ],
+            "scope": {
+              "step": "H4p",
+              "family": "mule"
+            },
+            "at": {
+              "x": 2604,
+              "z": 3235,
+              "level": 0
+            },
+            "bank": {
+              "x": 2654,
+              "z": 3283,
+              "level": 0
+            }
+          },
+          {
+            "name": "h7",
+            "items": [
+              {
+                "id": 1511,
+                "amount": 6
+              },
+              {
+                "id": 1387,
+                "amount": 1
+              },
+              {
+                "id": 1727,
+                "amount": 1
+              },
+              {
+                "id": 175,
+                "amount": 1
+              },
+              {
+                "id": 385,
+                "amount": 2
+              },
+              {
+                "id": 560,
+                "amount": 110
+              },
+              {
+                "id": 562,
+                "amount": 40
+              },
+              {
+                "id": 556,
+                "amount": 550
+              }
+            ],
+            "scope": {
+              "step": "H7",
+              "family": "mule"
+            },
+            "at": {
+              "x": 2504,
+              "z": 3191,
+              "level": 0
+            },
+            "bank": {
+              "x": 2654,
+              "z": 3283,
+              "level": 0
+            }
+          },
+          {
+            "name": "h8",
+            "items": [
+              {
+                "id": 3034,
+                "amount": 1
+              },
+              {
+                "id": 563,
+                "amount": 7
+              },
+              {
+                "id": 556,
+                "amount": 3
+              },
+              {
+                "id": 554,
+                "amount": 1
+              },
+              {
+                "id": 555,
+                "amount": 6
+              }
+            ],
+            "scope": {
+              "step": "H8",
+              "family": "mule"
+            },
+            "at": {
+              "x": 2465,
+              "z": 3489,
+              "level": 0
+            },
+            "bank": {
+              "x": 2615,
+              "z": 3333,
+              "level": 0
+            }
+          },
+          {
+            "name": "h9",
+            "items": [
+              {
+                "id": 995,
+                "amount": 5
+              },
+              {
+                "id": 563,
+                "amount": 2
+              },
+              {
+                "id": 555,
+                "amount": 2
+              },
+              {
+                "id": 385,
+                "amount": 3
+              }
+            ],
+            "scope": {
+              "step": "H9",
+              "family": "mule"
+            },
+            "at": {
+              "x": 2658,
+              "z": 3301,
+              "level": 0
+            },
+            "bank": {
+              "x": 2654,
+              "z": 3283,
+              "level": 0
+            }
+          },
+          {
+            "name": "h10",
+            "items": [
+              {
+                "id": 563,
+                "amount": 5
+              },
+              {
+                "id": 555,
+                "amount": 5
+              },
+              {
+                "id": 556,
+                "amount": 3
+              },
+              {
+                "id": 385,
+                "topUp": {
+                  "max": 8
+                }
+              }
+            ],
+            "scope": {
+              "step": "H10",
+              "family": "mule"
+            },
+            "at": {
+              "x": 2658,
+              "z": 3301,
+              "level": 0
+            },
+            "bank": {
+              "x": 2654,
+              "z": 3283,
+              "level": 0
+            }
+          },
+          {
+            "name": "h12",
+            "items": [
+              {
+                "id": 2357,
+                "amount": 1
+              },
+              {
+                "id": 1759,
+                "amount": 1
+              },
+              {
+                "id": 3183,
+                "amount": 1
+              },
+              {
+                "id": 2434,
+                "amount": 4
+              },
+              {
+                "id": 2448,
+                "amount": 1
+              },
+              {
+                "id": 185,
+                "amount": 1
+              },
+              {
+                "id": 385,
+                "topUp": {
+                  "max": 15
+                }
+              },
+              {
+                "id": 563,
+                "amount": 6
+              },
+              {
+                "id": 556,
+                "amount": 6
+              },
+              {
+                "id": 554,
+                "amount": 2
+              },
+              {
+                "id": 555,
+                "amount": 4
+              }
+            ],
+            "scope": {
+              "step": "H12",
+              "family": "mule"
+            },
+            "at": {
+              "x": 2465,
+              "z": 3489,
+              "level": 0
+            },
+            "bank": {
+              "x": 2615,
+              "z": 3333,
+              "level": 0
+            }
+          },
+          {
+            "name": "h13",
+            "items": [
+              {
+                "id": 565,
+                "amount": 90
+              },
+              {
+                "id": 560,
+                "amount": 25
+              },
+              {
+                "id": 556,
+                "amount": 550
+              },
+              {
+                "id": 3040,
+                "amount": 1
+              },
+              {
+                "id": 2434,
+                "amount": 1
+              },
+              {
+                "id": 563,
+                "amount": 4
+              },
+              {
+                "id": 555,
+                "amount": 4
+              },
+              {
+                "id": 1387,
+                "amount": 1
+              },
+              {
+                "id": 946,
+                "amount": 1
+              }
+            ],
+            "scope": {
+              "step": "H13",
+              "family": "mule"
+            },
+            "at": {
+              "x": 2658,
+              "z": 3301,
+              "level": 0
+            },
+            "bank": {
+              "x": 2654,
+              "z": 3283,
+              "level": 0
+            }
+          },
+          {
+            "name": "h14",
+            "items": [
+              {
+                "id": 565,
+                "amount": 500
+              },
+              {
+                "id": 556,
+                "amount": 500
+              },
+              {
+                "id": 53,
+                "amount": 4560
+              },
+              {
+                "id": 39,
+                "amount": 60
+              },
+              {
+                "id": 40,
+                "amount": 90
+              },
+              {
+                "id": 41,
+                "amount": 135
+              },
+              {
+                "id": 42,
+                "amount": 1485
+              },
+              {
+                "id": 385,
+                "topUp": {
+                  "max": 2
+                }
+              },
+              {
+                "id": 561,
+                "amount": 180
+              },
+              {
+                "id": 436,
+                "amount": 7
+              },
+              {
+                "id": 438,
+                "amount": 7
+              }
+            ],
+            "scope": {
+              "step": "H14",
+              "family": "mule"
+            },
+            "at": {
+              "x": 2670,
+              "z": 3305,
+              "level": 0
+            },
+            "bank": {
+              "x": 2654,
+              "z": 3283,
+              "level": 0
+            }
+          },
+          {
+            "name": "h15",
+            "items": [
+              {
+                "id": 1941,
+                "amount": 1
+              },
+              {
+                "id": 596,
+                "amount": 1
+              },
+              {
+                "id": 563,
+                "amount": 1
+              }
+            ],
+            "scope": {
+              "step": "H15",
+              "family": "mule"
+            },
+            "at": {
+              "x": 2716,
+              "z": 3302,
+              "level": 0
+            },
+            "bank": {
+              "x": 2654,
+              "z": 3283,
+              "level": 0
+            }
+          },
+          {
+            "name": "h16",
+            "items": [
+              {
+                "id": 307,
+                "amount": 1
+              },
+              {
+                "id": 952,
+                "amount": 1
+              },
+              {
+                "id": 1550,
+                "amount": 1
+              },
+              {
+                "id": 995,
+                "amount": 5
+              },
+              {
+                "id": 563,
+                "amount": 4
+              },
+              {
+                "id": 556,
+                "amount": 18
+              },
+              {
+                "id": 555,
+                "amount": 1
+              },
+              {
+                "id": 1446,
+                "amount": 1
+              }
+            ],
+            "scope": {
+              "step": "H16",
+              "family": "mule"
+            },
+            "at": {
+              "x": 2820,
+              "z": 3486,
+              "level": 0
+            },
+            "bank": {
+              "x": 2725,
+              "z": 3491,
+              "level": 0
+            }
+          }
+        ]
+      },
+      "role": "mule"
+    },
+    {
+      "account": "cairn_h03",
+      "options": {
+        "serveMode": "request",
+        "cueDir": "/tmp/rs529-production-lab-20261023/cues/mule",
+        "deliveryRun": "rs529-production-lab-20261023",
+        "serve": "mdr529production",
+        "packages": [
+          {
+            "name": "h20",
+            "items": [
+              {
+                "id": 288,
+                "amount": 3
+              },
+              {
+                "id": 1769,
+                "amount": 1
+              },
+              {
+                "id": 1767,
+                "amount": 1
+              },
+              {
+                "id": 2134,
+                "amount": 1
+              },
+              {
+                "id": 2136,
+                "amount": 1
+              },
+              {
+                "id": 2132,
+                "amount": 1
+              },
+              {
+                "id": 2138,
+                "amount": 1
+              },
+              {
+                "id": 753,
+                "amount": 1
+              },
+              {
+                "id": 563,
+                "amount": 2
+              },
+              {
+                "id": 556,
+                "amount": 6
+              },
+              {
+                "id": 555,
+                "amount": 1
+              }
+            ],
+            "scope": {
+              "step": "H20",
+              "family": "mule"
+            },
+            "at": {
+              "x": 3045,
+              "z": 3257,
+              "level": 0
+            },
+            "bank": {
+              "x": 3092,
+              "z": 3245,
+              "level": 0
+            }
+          }
+        ]
+      },
+      "role": "mule",
+      "stopOn": {
+        "step": "H20",
+        "family": "mule"
+      }
+    }
+  ],
+  "provenance": {
+    "path": "docs/speedrun/research/mule-delivery-ledger.provenance.json",
+    "sha256": "4755686410477580126006c1ec4c937b65ea228ca105b4646c17d32e92060a5e"
+  },
+  "validation": {
+    "configuration": "GENERATED_AND_DRIFT_CHECKED",
+    "fullReceiverFixture": "BLOCKED",
+    "fullRoute": "BLOCKED",
+    "blockers": [
+      {
+        "id": "H13",
+        "status": "BLOCKED_UNTRADEABLE",
+        "reason": "Archived projection still returns untradeable Khazard helmet/armour. Full receiver fixture blocked until shared rs539 drop-mode import and owner projection refresh; helper package generation is not receiver acceptance."
+      },
+      {
+        "id": "H20",
+        "status": "UNPROVEN_INDEPENDENT_CARRIER",
+        "reason": "CONFIG/LAB-only h03 assignment. Actual-profile route and staging, >10-minute idle and health readiness, S22 preparation before scored gate, and H20 scope-stop logout remain unproven. No teleport/quest capability or live authorization inferred."
+      }
+    ],
+    "failedHistory": [
+      {
+        "id": "H19->H20",
+        "status": "FAILED_SAME_CARRIER",
+        "reason": "Original mule1 H19->H20 banked transition measured147ticks versus12tick S23 window before T23-24; even164tiles at2tiles/tick requires82. Failed history retained; H20-only h03 reassignment is not measured acceptance."
+      }
+    ]
+  },
+  "assignmentApproval": {
+    "scope": "CONFIG_LAB_ONLY",
+    "authority": "main 2026-10-22 19:19 PDT, relayed by cairn://p/rs/529/1/builder",
+    "account": "cairn_h03",
+    "rows": [
+      "H20"
+    ],
+    "observedProfile": {
+      "skills": {
+        "hitpoints": 69,
+        "attack": 85,
+        "thieving": 99,
+        "allOthers": 1
+      },
+      "equipment": [],
+      "inventory": [
+        {
+          "item": "Kebab",
+          "count": 9
+        },
+        {
+          "item": "Coins",
+          "count": 1940
+        }
+      ],
+      "at": {
+        "x": 3211,
+        "z": 3463,
+        "level": 0
+      },
+      "quests": "unknown"
+    },
+    "preparation": {
+      "phase": "S22",
+      "login": "before SCORED",
+      "idleDurationMinutes": ">10"
+    },
+    "loginBudget": {
+      "addedAtStart": 1,
+      "start": 25,
+      "s21Peak": 26,
+      "r8Reserve": 1
+    },
+    "gates": {
+      "profileRoute": "UNPROVEN",
+      "idleOverTenMinutes": "UNPROVEN",
+      "healthReadiness": "UNPROVEN",
+      "rowStopLogout": "UNPROVEN"
+    }
+  }
+}
