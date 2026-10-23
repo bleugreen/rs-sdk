@@ -16,8 +16,6 @@
 //
 // Setup uses staff cheats and is untimed; the timed span is the step's own TickLog row.
 
-import { isTileWalkable } from '../../sdk/pathfinding';
-import { pathTiles } from '../lib/paths';
 import { closeSession, openSession, type Session } from '../lib/session';
 import { formatReport, report } from '../lib/ticks';
 import { ANY_OFFER, clickBack, decideTradeClick, give, newClickCtx, sameName, sendTradeClick, swap, tradeOf, type WantSpec } from '../lib/trade';
@@ -28,6 +26,7 @@ import { ENCHANTS, enchantedRingSpecs, enchantHeld, magicLevel, magicXp, ROUTE_L
 import { onTutorialIsland } from '../lib/world';
 import { tutorialSkip } from '../skills/start';
 import { launchLabBrowser, type LabBrowser } from './browser';
+import { giverTiles as sharedGiverTiles, serveLoads, stageLoad } from './ring-givers';
 import { arg, botArg, labLog, result } from './common';
 import { cheat, mustTele } from './setup';
 
@@ -74,22 +73,7 @@ async function giveAll(s: Session, cmds: string[], slots: number): Promise<void>
     await waitTicks(s.sdk, 2);
 }
 
-/** Walkable tiles beside `at` that a player there reaches in at most 2 steps (no fence between), nearest first. */
-function giverTiles(n: number, at: { x: number; z: number } = ROW_END): Array<{ x: number; z: number }> {
-    const out: Array<{ x: number; z: number; d: number }> = [];
-    for (let dx = -2; dx <= 2; dx++) {
-        for (let dz = -2; dz <= 2; dz++) {
-            if (!dx && !dz) continue;
-            const t = { x: at.x + dx, z: at.z + dz };
-            if (!isTileWalkable(0, t.x, t.z)) continue;
-            const p = pathTiles(0, at.x, at.z, t.x, t.z);
-            if (p.reached && p.tiles <= 2) out.push({ ...t, d: Math.max(Math.abs(dx), Math.abs(dz)) * 10 + p.tiles });
-        }
-    }
-    out.sort((a, b) => a.d - b.d);
-    if (out.length < n) throw new Error(`only ${out.length} reachable giver tiles beside ${at.x},${at.z}`);
-    return out.slice(0, n).map(({ x, z }) => ({ x, z }));
-}
+const giverTiles = (n: number, at: { x: number; z: number } = ROW_END) => sharedGiverTiles(n, at);
 
 const stepTicks = (name: string) => log.rows.filter(r => r.step === name).map(r => ({ ticks: r.ticks, ok: r.ok, ...(r.error ? { error: r.error } : {}) }));
 const histogram = (xs: number[]) => xs.reduce<Record<number, number>>((h, x) => ((h[x] = (h[x] ?? 0) + 1), h), {});
@@ -155,39 +139,8 @@ if (mode === 'diamond25') {
     const scoredName = scored.sdk.getState()!.player!.name;
     const giverLog: Array<Record<string, unknown>> = [];
     let stopGiver = false;
-    for (const [i, l] of loads.entries()) {
-        const cmds = (Object.keys(ENCHANTS) as Array<keyof typeof ENCHANTS>).filter(t => (l[t] ?? 0) > 0).map(t => `${t}_ring ${l[t]}`);
-        await giveAll(givers[i]!, cmds, Object.values(l).reduce((a, n) => a + (n ?? 0), 0));
-    }
-    const serve = async (i: number): Promise<boolean> => {
-        const g = givers[i]!;
-        const load = loads[i]!;
-        // The standing-request rule (lib/trade.ts decideTradeClick): re-send only after a busy bounce
-        // or no reply, never once a request landed, since a request landing on an open trade closes it.
-        let req = newClickCtx();
-        while (!stopGiver) {
-            const st = await nextTick(g.sdk);
-            const t = tradeOf(st);
-            if (!t.isOpen) {
-                const p = st.nearbyPlayers.find(x => sameName(x.name, scoredName));
-                if (!p) continue;
-                const d = decideTradeClick(st, req, { noReplyTicks: 3, resendTicks: 100 });
-                req = d.next;
-                if (d.action === 'send') sendTradeClick(g.sdk, p.index, req.sentTick, (sent, tick) => (req = clickBack(req, sent, tick)));
-                continue;
-            }
-            req = newClickCtx();
-            if (!sameName(t.partner, scoredName)) { await g.sdk.sendDeclineTrade(); continue; }
-            const t0 = st.tick;
-            const r = await give(g.sdk, scoredName, (Object.keys(ENCHANTS) as Array<keyof typeof ENCHANTS>).filter(k => (load[k] ?? 0) > 0).map(k => ({ item: new RegExp(`^${ENCHANTS[k].ring}$`, 'i') })), { expectTheirs: ANY_OFFER, maxTicks: 40 });
-            giverLog.push({ load: i + 1, giver: giverNames[i], ok: r.ok, ticks: r.ticks, at: t0, ...(r.reason ? { reason: r.reason } : {}) });
-            if (r.ok) return true;
-        }
-        return false;
-    };
-    const giverLoop = (async () => {
-        for (let i = 0; i < loads.length; i++) if (!(await serve(i))) return;
-    })();
+    for (const [i, l] of loads.entries()) await stageLoad(givers[i]!, l);
+    const giverLoop = serveLoads(givers, scoredName, loads, () => stopGiver, s => giverLog.push({ ...s }));
     if (process.argv.includes('--trace')) {
         // Every side's trade screens and new game messages, per published state that changes them.
         for (const [who, s] of [['scored', scored], ...givers.map((g, i) => [`giver${i + 1}`, g] as const)] as const) {
