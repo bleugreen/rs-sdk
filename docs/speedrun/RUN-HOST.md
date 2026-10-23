@@ -1719,6 +1719,17 @@ in a ResumeError.
 4. **The relog budget:** the planned S21 relog plus 3 unplanned, run.ts's and the operator's
    together, inside tenet 25's count. A manual relog is an unplanned one.
 
+**Helper preparation by generation, the operator's side** (main 19:4x via rs/158; fold-in 32;
+the canon is RESILIENCE.md's; the command and API names are **pending rs/532, after rs/41 approves
+rs/529's API**, and are not written here until they exist):
+
+- An operator resume after an abort mints a new attempt generation in the same delivery run and
+  keeps the row sessions.
+- Helpers re-arm only on a strictly higher generation; a prepare for an aborted generation is
+  refused and logged.
+- A crash that never reached the abort path cancels nothing, so a crash-resume is unchanged.
+- The run-bound hold (generation 0) is its own state, never a cancel; S22's prepare advances it.
+
 **Once rs/511 is on the floor** (rs/511, under rs/186: built and unit-tested, and lab-measured
 on bgsrv-mac, the lab engine at 400 ms, the browser client, tree 1fccc5b7 + rs/511's patch,
 cairn://p/rs/511/comments/2; fold-in 32). **rs/511 is not a start condition** (main), so the
