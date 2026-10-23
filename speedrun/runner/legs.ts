@@ -429,8 +429,8 @@ export const LEGS: readonly LegStep[] = [
     }),
     leg('T11-12', T.narnodeRoots, T.ladyServil, [tele('ardougne'), run(T.ladyServil.x, T.ladyServil.z, T.ladyServil.tol)], {
         after: 'S11b', before: 'S12', method: 'Ardougne teleport + run', countedBy: 'S12',
-        // The Grand Tree's leftovers and segment M's agility potion, at whatever dose (6: two ticks of drops).
-        drops: [/^translation book$/i, /^hazelmere's scroll$/i, /^glough's journal$/i, /^lumber order$/i, /^glough's key$/i, /^agility potion\(\d\)$/i],
+        // The Grand Tree's leftovers (5: one tick of drops).
+        drops: [/^translation book$/i, /^hazelmere's scroll$/i, /^glough's journal$/i, /^lumber order$/i, /^glough's key$/i],
         expected: { ticks: 71, label: 'm', source: rt('L11') + ': 71, 71', net: -3 },
     }),
     leg('T12-13', T.ladyServil, T.lawgof, [tele('ardougne'), run(T.lawgof.x, T.lawgof.z, T.lawgof.tol)], {
