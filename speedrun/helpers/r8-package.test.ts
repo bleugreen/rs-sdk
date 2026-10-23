@@ -108,6 +108,44 @@ describe('a respawn package from the ledger', () => {
     });
 });
 
+describe('an untradeable need with no stand-in fails closed', () => {
+    const objs = objTable([o('staff', 'Staff', 1000, 1, { wearable: true })]);
+    const phase: R8Phase = { id: 'W', what: 'test', deaths: [{ row: 'H1' }], replay: [], resume: 'S2', to: 'S3', hp: 1, cannonBy: 'none' };
+    const run = (table: string) => r8Package(phase, { manifest: table, objs, keep: 0, untradeable: id => id === 1 });
+    test('worn through a step only: no row consumes or wields it, yet both forms are refused (rs/41 repro)', () => {
+        const p = run(`
+| row | in | out | equip | needAtStart | source |
+|---|---|---|---|---|---|
+| S1 | - | - | - | 0 | fixture (r) |
+| H1 | staff x1 [u] | - | +staff | 1 | fixture (r) |
+| S2 | - | - | - | 0 | fixture (r) |
+| S3 | - | - | - | 0 | fixture (r) |
+`);
+        expect(p.unrecoverable.map(u => [u.item, u.death, u.needs])).toEqual([['staff', 'H1', 'worn through S2']]);
+        expect(p.recoverable).toBe(false);
+        expect(p.package).toBeNull();
+        expect(p.topUpPackage).toBeNull();
+        expect(p.refusals).toContain('both: W: unrecoverable by trade at the death at H1: staff x1 (worn through S2)');
+    });
+    test('wielded by a later row: the walk errors on the wield rather than dropping it', () => {
+        const p = run(`
+| row | in | out | equip | needAtStart | source |
+|---|---|---|---|---|---|
+| S1 | - | - | - | 0 | fixture (r) |
+| H1 | staff x1 [u] | - | - | 1 | fixture (r) |
+| S2 | - | - | +staff | 0 | fixture (r) |
+| S3 | - | - | - | 0 | fixture (r) |
+`);
+        expect(p.package).toBeNull();
+        expect(p.topUpPackage).toBeNull();
+        for (const form of ['fixed', 'topUp'] as const) {
+            const s2 = p.walks.find(w => w.form === form)!.entries.find(e => e.row.row === 'S2')!;
+            expect(s2.verdict).toBe('ERROR');
+            expect(s2.notes.join()).toContain('+staff: not held');
+        }
+    });
+});
+
 describe('the respawn check refuses', () => {
     const rows = parseLedger(TABLE).rows;
     const p = x();

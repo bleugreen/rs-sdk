@@ -19,7 +19,8 @@
 //      either form, since no helper can hand it over: kept at every death point it reads 'kept at
 //      ..., nothing needed'; else its TRADE_SUBSTITUTES stand-in goes in by id (worn at the respawn
 //      where the original was worn); else each death point that does not keep it gets an
-//      'unrecoverable by trade' line (`unrecoverable`), and the phase is not fully recoverable.
+//      'unrecoverable by trade' line (`unrecoverable`), the phase is not fully recoverable, and both
+//      forms are refused (fail closed).
 // In the fixed form SCORED drops, at the respawn tile, any kept unit beyond the need (a duplicate
 // of a package line), the fallback H10/H12/H22 use while no ask writer serves the top-up form.
 // Each package then has to pass `respawnCheck`: the slot ledger walked from the respawn state (the
@@ -422,6 +423,9 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
             .filter(l => !l.tradeable && !TRADE_SUBSTITUTES[lc(l.item)] && l.need > (mine.get(lc(l.item)) ?? 0))
             .map(l => ({ item: l.item, ...(l.id !== undefined ? { id: l.id } : {}), death: death.row, deployed: !!death.deployed, count: l.need - (mine.get(lc(l.item)) ?? 0), needs: l.why, cost: (l.id !== undefined ? objs.byId.get(l.id)?.cost : undefined) ?? 0, keptMin }));
     });
+    // Fail closed: a need no trade can restore refuses both forms, whether or not a walked row would
+    // notice its absence (worn kit leaves no consume line to catch it).
+    for (const u of unrecoverable) refusals.push(`both: ${phase.id}: unrecoverable by trade at the death at ${u.death}${u.deployed ? ' (deployed)' : ''}: ${u.item} x${u.count} (${u.needs})`);
     const byId: PackageItem[] = lines.filter(l => l.tradeable && l.give > 0 && l.id !== undefined).map(l => ({ id: l.id!, amount: l.give }));
     const topUp: PackageItem[] = lines.filter(l => l.tradeable && l.need > 0 && l.id !== undefined).map(l => ({ id: l.id!, topUp: { max: l.need } }));
     const slots = slotsOf(lines.map(l => ({ kind: l.kind, count: l.give })));
@@ -443,7 +447,10 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
             const wear = lines.filter(l => l.substituteFor && wornNames.has(lc(l.substituteFor)) && !(mine.get(lc(l.substituteFor)) ?? 0)).map(l => l.item);
             const cannon = cannonUsed ? cannonHeld.map(h => ({ item: h.name, ...(h.id !== undefined ? { id: h.id } : {}), kind: h.kind, count: left(h.name, h.count ?? 0) })) : [];
             const held = new Set([...keptAt[d]!.map(k => lc(k.name)), ...give.filter(l => l.count > 0).map(l => lc(l.item)), ...cannon.filter(c => c.count > 0).map(c => lc(c.item))]);
-            const lost = [...new Set([...target.inv, ...target.worn, ...before.inv, ...before.worn].map(h => h.name))].filter(n => !held.has(lc(n)));
+            // An untradeable need with no stand-in is not 'lost and returned unused': its rows stay, so a
+            // later wield or out of it errors in the walk.
+            const unrestored = new Set(lines.filter(l => !l.tradeable && !TRADE_SUBSTITUTES[lc(l.item)]).map(l => lc(l.item)));
+            const lost = [...new Set([...target.inv, ...target.worn, ...before.inv, ...before.worn].map(h => h.name))].filter(n => !held.has(lc(n)) && !unrestored.has(lc(n)));
             const at = `${form}: ${phase.id} (death at ${death.row}${death.deployed ? ', deployed' : ''})`;
             let walked: LedgerEntry[] = [];
             try {
