@@ -32,8 +32,8 @@ Setup does not bind on one address: each fresh account trains its own levels in 
 falls inside the first two hours (section 'Horizons'), so the allocation is the same for 6, 24 and 72 hours; only
 the caps above change what each row is worth.
 
-**Live slot for the knights.** The knights row uses markets' live probe (cairn_y01's run is summarised in rs/495's
-message of 21:05 PDT; samples in `data/knights-live-20261023T0253Z.jsonl`): 124k an hour at the knights and
+**Live slot for the knights.** The knights row uses markets' live probe (summarised in rs/495's message of 21:05
+PDT; samples in `data/knights-live-20261023T0253Z.jsonl`): 124k an hour at the knights and
 118.5k with the food stops removed, less 26 sharks an hour at the Exchange's 533 ask, **104k net**. The lab's
 126-131k (crowding table below) is the upper bound if the gap to the lab turns out to be removable.
 
@@ -274,7 +274,7 @@ is a hedge (`markets/methods/shop-hedge.ts`; shelves from the 23:43Z live readin
 | Shop | Item | Shelf / base | Shop price | Exchange net (outlet) | Restock / h (world) | Coins / h | One-off | Note |
 |---|---|---|---|---|---|---|---|---|
 | Oziach | Dragonhide body | 2 / 2 (config) | 10,140 | 23,750 (bid) | 18 | 240,768 | 26,986 | needs Dragon Slayer |
-| Magic Guild | blood rune | 1,000 / 1,000 (config) | 50 | 1,236 (bid) | 30 | 35,580 | 998,750 | **after-run-only**; the fleet's h88 camps this shelf (SUPPLIES.md), so the config stock is not there |
+| Magic Guild | blood rune | 1,000 / 1,000 (config) | 50 | 1,236 (bid) | 30 | 35,580 | 998,750 | **after-run-only**; a fleet helper camps this shelf (SUPPLIES.md), so the config stock is not there |
 | Magic Guild, Lundail | death rune | config | 30 | 421 (flow) | 60 | 23,449 | 279k + 73k | **after-run-only** (H7) |
 | Magic Guild, Lundail | nature rune | config | 20 | 709 (flow) | 30 | 20,656 | 614k + 156k | **after-run-only** (S18e) |
 | Aubury, Betty | elemental runes | 0-12 of 1,000-2,000 (live) | 24 (drained) | 34-38 (bid) | 900 | ~10-20k | ~0 | drained by someone already |
