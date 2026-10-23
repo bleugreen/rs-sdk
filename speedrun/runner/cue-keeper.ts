@@ -11,7 +11,7 @@ import { chmodSync, existsSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { PLAN_FILE } from '../helpers/anvil';
 import { GO_FILE } from '../helpers/fm-row';
-import { ASK_FILE, assertUntracked, CUE_FILE, CueWriter, FrameLog, nameHash, readJson, type Cue, type CueScope } from '../helpers/altar-cue';
+import { ASK_FILE, assertUntracked, CUE_FILE, CueWriter, FrameLog, nameHash, readJson, type Beacon, type Cue, type CueScope } from '../helpers/altar-cue';
 import type { CueSink as RunecraftCueSink } from '../skills/runecraft';
 import { waitUntil, type StateSource } from '../lib/wait';
 import type { CueSink } from './chain';
@@ -42,9 +42,27 @@ const sameScope = (a: CueScope, b: CueScope) => a.step === b.step && a.family ==
 /** Frames a cue needs before it is written (as the stand-in receivers wait for). */
 export const CUE_BEACONS = 4;
 
+/**
+ * Whether the run's end closes the cues it still holds with a final stop. A final stop retires the
+ * scope for good: the launcher closes it and never re-arms its accounts (helpers/standalone.ts
+ * ScopeSessions). So only an end that nothing resumes is final: the whole chain done, or the operator
+ * ending the attempt (SIGTERM, or a second Ctrl-C, whose Terminated carries SIGINT). Every other end
+ * is recoverable and only stands the scope down, so the re-run's new session on it is served: a
+ * failed step (1), a refused resume, the first Ctrl-C's stop at a boundary (4), a host reservation
+ * (5), SIGHUP (usually a closed terminal), a crash.
+ */
+export function exitStopIsFinal(end: { completed: boolean; signal: string | null }): boolean {
+    return end.completed || end.signal === 'SIGTERM' || end.signal === 'SIGINT';
+}
+
 export class CueKeeper implements CueSink {
     private readonly frames = new FrameLog();
     private current: { scope: CueScope; writer: CueWriter } | null = null;
+    /**
+     * The session last ended by a plain stop, until another session starts. A final close still
+     * finalizes it: on SIGTERM the orphaned step's own non-final stop can land before the close.
+     */
+    private stood: { scope: CueScope; writer: CueWriter } | null = null;
 
     /** `receiver`: the account the givers trade (its name is hashed into the cue, never logged). */
     constructor(readonly dir: string, private readonly receiver: string) {}
@@ -71,6 +89,7 @@ export class CueKeeper implements CueSink {
         const writer = new CueWriter(this.dir, this.receiver, scope);
         writer.write({ beacons: this.frames.recent(), turns: [] });
         this.current = { scope, writer };
+        this.stood = null;
     }
 
     /** Give a module the canonical writer, retaining ownership when it emits a segment stop. */
@@ -78,6 +97,7 @@ export class CueKeeper implements CueSink {
         this.endCurrent(!this.current || !sameScope(this.current.scope, scope));
         const writer = new CueWriter(this.dir, this.receiver, scope);
         this.current = { scope, writer };
+        this.stood = null;
         return {
             session: writer.session,
             write: fields => {
@@ -104,14 +124,27 @@ export class CueKeeper implements CueSink {
     private endCurrent(final: boolean): void {
         if (!this.current) return;
         this.assertCurrent(this.current.writer);
-        const last = this.frames.recent(1);
-        this.current.writer.stop(last.length ? last : this.current.writer.current?.beacons ?? [{ tick: 0, ms: Date.now() }], { final });
+        this.current.writer.stop(this.lastBeacons(this.current.writer), { final });
+        this.stood = final ? null : this.current;
         this.current = null;
     }
 
-    /** Terminal stop on completion or abort, even after a module's nonfinal segment stop. */
-    close(): void {
-        this.endCurrent(true);
+    private lastBeacons(writer: CueWriter): Beacon[] {
+        const last = this.frames.recent(1);
+        return last.length ? last : writer.current?.beacons ?? [{ tick: 0, ms: Date.now() }];
+    }
+
+    /**
+     * The run's end (exitStopIsFinal decides `final`): the open session's stop, and a final close also
+     * finalizes a session already stood down (a module's segment stop, a failed step's stop).
+     */
+    close(o: { final: boolean }): void {
+        if (this.current) this.endCurrent(o.final);
+        else if (o.final && this.stood) {
+            this.assertCurrent(this.stood.writer);
+            this.stood.writer.stop(this.lastBeacons(this.stood.writer), { final: true });
+        }
+        this.stood = null;
     }
 }
 
@@ -155,11 +188,11 @@ export class RunCues implements CueSink {
         this.keeper(scope).stop(scope, _ctx, o);
     }
 
-    close(): void {
+    close(o: { final: boolean }): void {
         try {
-            this.mule.close();
+            this.mule.close(o);
         } finally {
-            this.main.close();
+            this.main.close(o);
         }
     }
 }

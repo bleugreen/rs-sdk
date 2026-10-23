@@ -284,15 +284,22 @@ export function muleCued(step: ChainStep, row: string, cues: CueSink): ChainStep
  */
 export const FAMILY_CUES = { S03: { step: 'S03', family: 'fmrow' }, S04: { step: 'S04', family: 'ring' } } as const satisfies Record<string, CueScope>;
 
-/** `step` with `scope`'s cue opened afresh before it and stopped after it, failed or not: the stop is the family's logout trigger. */
+/**
+ * `step` with `scope`'s cue opened afresh before it and stopped after it, failed or not: the stop is the
+ * family's logout trigger. A throw (a failed step, or one a drop cut that runResumable walks back into)
+ * stops it non-final, so the helpers stand down for the resumed step or the re-run instead of retiring
+ * (cue-keeper.ts exitStopIsFinal).
+ */
 export function cueAround(step: ChainStep, scope: CueScope, cues: CueSink, stop: { final?: boolean } = { final: true }): ChainStep {
     const wrap = (f: (ctx: StepContext<unknown>) => Promise<void>) => async (ctx: StepContext<unknown>) => {
         await cues.open(scope, ctx, { fresh: true });
         try {
             await f(ctx);
-        } finally {
-            cues.stop(scope, ctx, stop);
+        } catch (e) {
+            cues.stop(scope, ctx, { final: false });
+            throw e;
         }
+        cues.stop(scope, ctx, stop);
     };
     return { ...step, cue: scope, run: wrap(step.run), resume: wrap(step.resume ?? step.run) };
 }

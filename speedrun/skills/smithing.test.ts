@@ -443,6 +443,35 @@ describe('the cycle on a simulated anvil', () => {
         expect(log.rows.filter(r => r.step.startsWith('S25a') && r.ok).length).toBe(list.length);
     });
 
+    test('a hand-back that failed at the anvil (rs/562 E): a fresh process walks to the last inventory and hands the products back', async () => {
+        const xp = xpForLevel(90);
+        const plate = (slot: number): InventoryItem => ({ slot, id: idOf('Adamant platebody'), name: 'Adamant platebody', count: 1, optionsWithIndex: [] });
+        const left = [{ slot: 0, id: idOf('Hammer'), name: 'Hammer', count: 1, optionsWithIndex: [] }, plate(1), plate(2), plate(3), plate(4)];
+        const sdk = new AnvilFake(atAnvil(xp, left));
+        sdk.state = { ...sdk.state!, nearbyPlayers: [HELPER], nearbyLocs: [ANVIL_NEARBY] };
+        const sim = simulate(sdk, xp * 10);
+        // A new process: a fresh steps() whose Smithy never saw the step's entry.
+        const list = steps({ giver: 'anvilhelper', untilLevel: 90, announce: sim.announce });
+        const last = list.length - 1;
+        expect(list[last]!.done!(new Observation(sdk.state!), {})).toBe(false);
+        expect(list[last]!.postconditions(sdk.state!, {})).toBe('4 products still held after the last inventory');
+        const point = await resolveResume(list, new Observation(sdk.state!), {});
+        expect(point).toMatchObject({ index: last, mode: 'run', lastDone: last - 1 });
+        await drain(runSteps(session(sdk), list, { log: TickLog.memory(), c: {}, shouldStop: () => false, from: point.index }), sim.step);
+        expect(sim.received.at(-1)).toEqual(['Adamant platebody', 'Adamant platebody', 'Adamant platebody', 'Adamant platebody']);
+        expect(sim.announced.map(m => [m.collect ?? false, m.stop ?? false])).toEqual([[true, false], [false, true]]);
+        expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Hammer']);
+        expect(list[last]!.done!(new Observation(sdk.state!), {})).toBe(true);
+    });
+
+    test('the last inventory is done away from the anvil whatever the pack holds (a milestone stays done)', () => {
+        const list = steps({ giver: 'anvilhelper', untilLevel: 90 });
+        const plate: InventoryItem = { slot: 1, id: idOf('Adamant platebody'), name: 'Adamant platebody', count: 1, optionsWithIndex: [] };
+        const away = { ...atAnvil(xpForLevel(90), [plate]), player: { name: 'scored', worldX: 3191, worldZ: 3362, level: 0 } as BotWorldState['player'] };
+        expect(list.at(-1)!.done!(new Observation(away), {})).toBe(true);
+        expect(list.at(-1)!.done!(new Observation(atAnvil(xpForLevel(90), [])), {})).toBe(true);
+    });
+
     test('a resume holding bars makes them first, then opens a new helper session at seq 0', async () => {
         const xp0 = xpForLevel(70) + 100;
         const held = Array.from({ length: 10 }, (_, i) => ({ slot: i + 1, id: idOf('Mithril bar'), name: 'Mithril bar', count: 1, optionsWithIndex: [] }));

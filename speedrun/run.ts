@@ -63,7 +63,7 @@ import { startRunTabMemory, type TabMemorySetting } from './lib/tab-memory';
 import { formatRunReport, runReport } from './runner/run-report';
 import { patchMethod } from './runner/fence';
 import { buildChain, chainProbes, missingOnPath, muleCueDir, resolveFrom, sliceUntil, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
-import { prepareCueDir, RunCues } from './runner/cue-keeper';
+import { exitStopIsFinal, prepareCueDir, RunCues } from './runner/cue-keeper';
 import { dropRecover } from './runner/drop-relog';
 import { LOST_AFTER_TICKS, sessionLink } from './runner/resume';
 import { RelogBudget } from './runner/relog-budget';
@@ -345,6 +345,8 @@ export interface ChainRunOptions {
     reservation: Watch;
     from?: number;
     cues?: RunCues;
+    /** The chain runs to the run's end (no --until slice): only then is a code-0 finish a completed run, whose cue close is final. */
+    wholeRun?: boolean;
     /** Console tag (default 'run'). */
     label?: string;
     /** A browser session's per-minute tab memory rows (lib/tab-memory.ts): the launched Chrome's pid, the chunk's label. */
@@ -513,8 +515,9 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
     };
     const sig = signalShutdown(tag, leave, o.signals);
     const link = sessionLink(session, page ? { pageInGame: page } : {});
+    let result: AttemptResult | null = null;
     try {
-        const result = await untilTerminated(runAttempt(session, o.chain, {
+        result = await untilTerminated(runAttempt(session, o.chain, {
             log, account, link, reservation: o.reservation, probes,
             ...(o.relogs ? { recover: dropRecover(session, o.relogs, link, line => console.log(line)) } : {}),
             stopAsked: sig.stopAsked, gateStop: () => null, logout: () => leave(), label: o.label ?? 'run',
@@ -528,7 +531,12 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
         await tabMem?.stop();
         // A foreign cue is refused, but that must not leak subscriptions or signal handlers.
         try {
-            o.cues?.close();
+            if (o.cues) {
+                const signal = sig.termination()?.signal ?? null;
+                const final = exitStopIsFinal({ completed: o.wholeRun === true && (result as AttemptResult | null)?.code === 0, signal });
+                console.log(`${tag} cues closed ${final ? 'final' : 'non-final: a re-run re-arms the helpers'}`);
+                o.cues.close({ final });
+            }
         } finally {
         unCues?.();
         sig.dispose();
@@ -651,7 +659,7 @@ async function main(argv: string[]): Promise<number> {
     let term: Terminated | null = null;
     try {
         // A signal: SCORED is out, then closeSession still closes the browser before the exit.
-        const ran = await runChainOnSession(session, { log, chain, reservation, cues: keeper, relogs, ...(from !== undefined ? { from } : {}) }).catch(e => {
+        const ran = await runChainOnSession(session, { log, chain, reservation, cues: keeper, relogs, wholeRun: a.until === undefined, ...(from !== undefined ? { from } : {}) }).catch(e => {
             if (!(e instanceof Terminated)) throw e;
             term = e;
             return null;

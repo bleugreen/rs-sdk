@@ -23,7 +23,8 @@ import {
     ALTERNATIVES, anvilAnnounce, cueAround, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleScope, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
     whenNeeded, withCue, h12oLogin, h12oLoginRefusal, H12O_LOGIN, type ChainStep, type CueSink, type RunConfig,
 } from './chain';
-import { CueKeeper, prepareCueDir, RunCues } from './cue-keeper';
+import { CUE_BEACONS, CueKeeper, exitStopIsFinal, prepareCueDir, RunCues } from './cue-keeper';
+import { ScopeSessions } from '../helpers/standalone';
 import { FencedError } from './fence';
 import { legsFor, netTotal, type LegStep } from './legs';
 import { Observation, resolveResume, type Link } from './resume';
@@ -50,8 +51,10 @@ const CONFIG: RunConfig = {
 function recorder() {
     const opened: { scope: CueScope; fresh: boolean }[] = [];
     const stopped: CueScope[] = [];
-    const cues: CueSink = { open: async (scope, _ctx, o) => void opened.push({ scope, fresh: o.fresh }), stop: scope => void stopped.push(scope) };
-    return { cues, opened, stopped };
+    /** Each stop's `final` as the sink received it (undefined: the keeper's default, final). */
+    const finals: (boolean | undefined)[] = [];
+    const cues: CueSink = { open: async (scope, _ctx, o) => void opened.push({ scope, fresh: o.fresh }), stop: (scope, _ctx, o) => { stopped.push(scope); finals.push(o?.final); } };
+    return { cues, opened, stopped, finals };
 }
 
 const chain = buildChain(CONFIG, { cues: recorder().cues });
@@ -390,6 +393,8 @@ describe('cues', () => {
         expect(trace).toEqual(['opened 2, stopped 1', 'opened 3, stopped 2']);
         expect(r.opened.slice(1)).toEqual([{ scope: FAMILY_CUES.S04, fresh: true }, { scope: FAMILY_CUES.S04, fresh: true }]);
         expect(r.stopped.slice(1)).toEqual([FAMILY_CUES.S04, FAMILY_CUES.S04]);
+        // Done: final (the family's logout); the throw: non-final, so the resume's open re-arms the givers.
+        expect(r.finals).toEqual([true, false, true]);
     });
 
     test('courier and anvil stop at their actual family end, before any later scope opens', async () => {
@@ -484,7 +489,7 @@ describe('cues', () => {
         expect(altarSeen.length).toBe(before);
         expect(JSON.stringify(boneSeen[0])).not.toContain('Scored Name');
         // The final logout writes the open cue's stop.
-        keeper.close();
+        keeper.close({ final: true });
         const last = JSON.parse(readFileSync(join(dir, CUE_FILE), 'utf8')) as Cue;
         expect([last.scope.step, last.stop]).toEqual(['S07', true]);
         expect(keeper.open_).toBeNull();
@@ -512,10 +517,10 @@ describe('cues', () => {
             expect(() => prelogin.write(fields)).toThrow('no longer owned');
             expect(() => courier.write(fields)).toThrow('no longer owned');
             expect(read().scope).toEqual(scope);
-            cues.close();
+            cues.close({ final: true });
             expect(read()).toMatchObject({ scope, session: band.session, stop: true, final: true });
             const stopped = readFileSync(join(d, CUE_FILE), 'utf8');
-            cues.close();
+            cues.close({ final: true });
             cues.stop({ step: 'S18', family: 'courier' });
             expect(readFileSync(join(d, CUE_FILE), 'utf8')).toBe(stopped);
             expect(cues.isOpen(scope)).toBe(false);
@@ -533,11 +538,142 @@ describe('cues', () => {
             keeper.writer({ step: 'S21', family: 'altar' }).write(fields);
             new CueWriter(d, 'Other Receiver', { step: 'S21', family: 'altar' }).write(fields);
             const foreign = readFileSync(join(d, CUE_FILE), 'utf8');
-            expect(() => keeper.close()).toThrow('ownership changed');
+            expect(() => keeper.close({ final: true })).toThrow('ownership changed');
             expect(readFileSync(join(d, CUE_FILE), 'utf8')).toBe(foreign);
         } finally {
             rmSync(d, { recursive: true, force: true });
         }
+    });
+
+    describe("the run end's stop: final only on a completed chain or the operator's abort, so a recoverable exit's re-run is served", () => {
+        const S04 = FAMILY_CUES.S04;
+        const S07 = { step: 'S07', family: 'bone' } as const;
+        // The real keeper on a ticking FakeSdk, read back through the launcher's own view of the scope.
+        const harness = (scope: CueScope) => {
+            const d = mkdtempSync(join(tmpdir(), 'chain-exit-'));
+            const since = Date.now() - 1000;
+            const launcher = new ScopeSessions(scope, since);
+            const read = () => JSON.parse(readFileSync(join(d, CUE_FILE), 'utf8')) as Cue;
+            const keeper = (sdk: FakeSdk) => {
+                const k = new CueKeeper(d, 'Scored Name');
+                k.attach(sdk);
+                for (let i = 0; i < CUE_BEACONS; i++) sdk.tick();
+                return k;
+            };
+            return { d, launcher, read, keeper, done: () => rmSync(d, { recursive: true, force: true }) };
+        };
+        const failing = (seen: (c: Cue) => void, read: () => Cue) => tag('S04', 'step', { name: 'S04 magic', logoutSafe: true, preconditions: () => true, postconditions: () => true, run: async () => {
+            seen(read());
+            throw new Error('rings ran out');
+        } });
+
+        test('a throw through cueAround writes a plain stop on the same session; the failed run closes nothing more; the re-run opens a new session the launcher re-arms', async () => {
+            const h = harness(S04);
+            try {
+                const sdk = new FakeSdk(baseState({ tick: 1, inGame: true }));
+                const first = h.keeper(sdk);
+                let opened: Cue | null = null;
+                const events: (string | null)[] = [];
+                await expect(cueAround(failing(c => { opened = c; events.push(h.launcher.own(c)); }, h.read), S04, first).run(ctxFor(sdk))).rejects.toThrow('rings ran out');
+                const stop = h.read();
+                expect(stop).toMatchObject({ scope: S04, session: opened!.session, seq: opened!.seq + 1, stop: true });
+                expect(stop.final).toBeUndefined();
+                events.push(h.launcher.own(stop));
+                // runChainOnSession's close on a StepError (code 1): non-final, and it has nothing open.
+                first.close({ final: exitStopIsFinal({ completed: false, signal: null }) });
+                expect(h.read()).toEqual(stop);
+                // The re-run: a new process, its own keeper, the same scope opened afresh.
+                const rerun = h.keeper(sdk);
+                await rerun.open(S04, ctxFor(sdk), { fresh: true });
+                const again = h.read();
+                expect(again.session).not.toBe(opened!.session);
+                expect(again.stop ?? false).toBe(false);
+                events.push(h.launcher.own(again));
+                expect(events).toEqual(['open', 'stood-down', 'open']);
+            } finally {
+                h.done();
+            }
+        });
+
+        test("SIGTERM's race: the orphaned step's plain stop lands first, the close still finalizes that session, and a re-run's open is never re-armed", async () => {
+            const h = harness(S04);
+            try {
+                const sdk = new FakeSdk(baseState({ tick: 1, inGame: true }));
+                const keeper = h.keeper(sdk);
+                const events: (string | null)[] = [];
+                await expect(cueAround(failing(c => events.push(h.launcher.own(c)), h.read), S04, keeper).run(ctxFor(sdk))).rejects.toThrow();
+                const plain = h.read();
+                events.push(h.launcher.own(plain));
+                keeper.close({ final: exitStopIsFinal({ completed: false, signal: 'SIGTERM' }) });
+                const fin = h.read();
+                expect(fin).toMatchObject({ scope: S04, session: plain.session, seq: plain.seq + 1, stop: true, final: true });
+                events.push(h.launcher.own(fin));
+                // A second close (the caller's teardown) and a late stop change nothing.
+                keeper.close({ final: true });
+                keeper.stop(S04);
+                expect(h.read()).toEqual(fin);
+                const rerun = h.keeper(sdk);
+                await rerun.open(S04, ctxFor(sdk), { fresh: true });
+                events.push(h.launcher.own(h.read()));
+                expect(events).toEqual(['open', 'stood-down', 'closed', null]);
+            } finally {
+                h.done();
+            }
+        });
+
+        test("SIGTERM's other order: the close finalizes the open session first, the orphan's stop then writes nothing", async () => {
+            const h = harness(S07);
+            try {
+                const sdk = new FakeSdk(baseState({ tick: 1, inGame: true }));
+                const keeper = h.keeper(sdk);
+                await keeper.open(S07, ctxFor(sdk), { fresh: false });
+                const open = h.read();
+                keeper.close({ final: exitStopIsFinal({ completed: false, signal: 'SIGTERM' }) });
+                const fin = h.read();
+                expect(fin).toMatchObject({ scope: S07, session: open.session, seq: open.seq + 1, stop: true, final: true });
+                keeper.stop(S07, undefined, { final: false });
+                expect(h.read()).toEqual(fin);
+                expect([h.launcher.own(open), h.launcher.own(fin)]).toEqual(['open', 'closed']);
+            } finally {
+                h.done();
+            }
+        });
+
+        test('a band left open at a recoverable exit (pause 4, host reserved 5, SIGHUP, a crash) is closed with a plain stop; at completion with a final one', async () => {
+            for (const [end, final] of [[{ completed: false, signal: null }, false], [{ completed: false, signal: 'SIGHUP' }, false], [{ completed: true, signal: null }, true]] as const) {
+                const h = harness(S07);
+                try {
+                    const sdk = new FakeSdk(baseState({ tick: 1, inGame: true }));
+                    const keeper = h.keeper(sdk);
+                    await keeper.open(S07, ctxFor(sdk), { fresh: false });
+                    const open = h.read();
+                    keeper.close({ final: exitStopIsFinal(end) });
+                    const last = h.read();
+                    expect([last.session, last.stop, last.final ?? false]).toEqual([open.session, true, final]);
+                    expect([h.launcher.own(open), h.launcher.own(last)]).toEqual(['open', final ? 'closed' : 'stood-down']);
+                } finally {
+                    h.done();
+                }
+            }
+        });
+
+        test('a mule hand-off stood down by its own plain stop is finalized by a final close, left alone by a plain one', async () => {
+            for (const final of [false, true]) {
+                const h = harness(muleScope('H22'));
+                try {
+                    const sdk = new FakeSdk(baseState({ tick: 1, inGame: true }));
+                    const keeper = h.keeper(sdk);
+                    await muleCued(tag('H22', 'handoff', { name: 'H22 hand-off', logoutSafe: true, preconditions: () => true, postconditions: () => true, run: async () => {} }), 'H22', keeper).run(ctxFor(sdk));
+                    const plain = h.read();
+                    expect([plain.stop, plain.final ?? false]).toEqual([true, false]);
+                    keeper.close({ final });
+                    expect(h.read().final ?? false).toBe(final);
+                    expect(h.read().seq).toBe(final ? plain.seq + 1 : plain.seq);
+                } finally {
+                    h.done();
+                }
+            }
+        });
     });
 
     test("every placed mule1 row gets a cue scoped to its own id ({row, mule}) before its hand-off; the cannon rows keep theirs", () => {
@@ -562,6 +698,7 @@ describe('cues', () => {
         await muleCued(stub('H12'), 'H12', r.cues).resume!(ctx);
         expect(r.opened).toEqual([{ scope: muleScope('H9'), fresh: true }, { scope: muleScope('H12'), fresh: true }, { scope: muleScope('H12'), fresh: true }]);
         expect(r.stopped).toEqual([muleScope('H9'), muleScope('H12'), muleScope('H12')]);
+        expect(r.finals).toEqual([false, false, false]);
     });
 
     test("S09 mines with the contested-rock fallback 'auto' and never acceptHazards: only sites whose hunters leave SCORED's combat alone", () => {
