@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { h45LauncherEntry } from './mule-ledger';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,7 +10,7 @@ import type { BankItem, BotWorldState, InventoryItem, TradeItem, TradeState } fr
 import type { CombatEvent, NearbyNpc, PlayerState } from '../../sdk/types';
 import { baseState, drive, FakeSdk, flush, simulateWalking } from '../lib/fake-sdk';
 import { fakeClock, microtasks, tickEvery, useFakeTicks } from '../lib/fake-ticks';
-import { clickBack, newClickCtx, RESEND_TICKS, type ClickCtx } from '../lib/trade';
+import { clickBack, newClickCtx, receiveFrom, RESEND_TICKS, type ClickCtx } from '../lib/trade';
 import {
     accountMatches,
     afterServe,
@@ -550,19 +551,22 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
     const P: CueScope = { step: 'H12oP', family: 'mule' };
     const M_TILE = { x: 2763, z: 2704 };
     const P_TILE = { x: 2803, z: 2724 };
-    /** h45's run-day packages (mule.md, "H12o, the atoll helper"): M and P both sized by SCORED's ask (rs/158). */
-    const raw = [
-        { name: 'H12oM', scope: M, at: M_TILE, items: [{ item: 'Shark', topUp: { max: 13 } }] },
-        { name: 'H12oP', scope: P, at: P_TILE, items: [{ item: 'Superantipoison(4)', topUp: { max: 1 } }, { item: 'Shark', topUp: { max: 9 } }] }
-    ];
-    const opts = muleOptions({ serve: 'cairn_scored', serveMode: 'request', carried: true, packages: raw }, { RC_CUE_DIR: '/tmp/cue-h45' });
+    const entry = h45LauncherEntry();
+    const raw = entry.options.packages;
+    const opts = muleOptions({ ...entry.options, serve: 'cairn_scored' }, { RC_CUE_DIR: '/tmp/cue-h45' });
     const [hm, hp] = opts.packages as [Package, Package];
     const sharks = (n: number, from = 0): InventoryItem[] => Array.from({ length: n }, (_, i) => ({ slot: from + i, id: SHARK, name: 'Shark', count: 1, optionsWithIndex: [] }));
     const sapp = (slot: number): InventoryItem => ({ slot, id: SAPP, name: 'Superantipoison(4)', count: 1, optionsWithIndex: [] });
-    /** h45 at login, staged potion first: the Superantipoison(4) in slot 0, then 13 + 9 sharks; 23 slots. */
-    const loaded = () => [sapp(0), ...sharks(22, 1)];
-    /** At P after M gave 5: the potion and 17 sharks (slots 6-22). */
-    const afterM = () => [sapp(0), ...sharks(17, 6)];
+    // Synthetic retained kit, not an observation of h45's real post-quest inventory.
+    const retained = (): InventoryItem[] => [
+        { slot: 25, id: 995, name: 'Coins', count: 270, optionsWithIndex: [] },
+        { slot: 26, id: 159, name: "Glough's key", count: 1, optionsWithIndex: [] },
+        { slot: 27, id: 333, name: 'Trout', count: 1, optionsWithIndex: [] },
+    ];
+    /** Maximum delivery: potion + 15 + 9 sharks, with three unrelated slots untouched. */
+    const loaded = () => [sapp(0), ...sharks(24, 1), ...retained()];
+    /** At P after M gave 5: the potion and 19 sharks (slots 6-24), plus retained kit. */
+    const afterM = () => [sapp(0), ...sharks(19, 6), ...retained()];
     const POTION = '^superantipoison\\(4\\)$';
     const trade = (t: Partial<TradeState>): TradeState => ({ isOpen: true, screen: 'offer', partner: 'Cairn Scored', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false, ...t });
     const closed: TradeState = { isOpen: false, screen: null, partner: null, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false };
@@ -573,8 +577,8 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
 
     test('options: carried turns on the package tiles, wildlife and the 5-minute keep-alive; an existing (banked) config gets none of them', () => {
         expect(opts).toMatchObject({ carried: true, wildlife: DEFAULT_WILDLIFE, clearTiles: 1, keepAliveMinutes: 5, serveMode: 'request', cueDir: '/tmp/cue-h45' });
-        expect(hm).toEqual({ name: 'H12oM', scope: M, at: M_TILE, items: [{ item: 'Shark', topUp: { max: 13 } }] });
-        expect(hp).toEqual({ name: 'H12oP', scope: P, at: P_TILE, items: [{ item: 'Superantipoison(4)', topUp: { max: 1 } }, { item: 'Shark', topUp: { max: 9 } }] });
+        expect(hm).toEqual({ name: 'H12oM', scope: M, at: M_TILE, items: [{ id: SHARK, topUp: { max: 15 } }] });
+        expect(hp).toEqual({ name: 'H12oP', scope: P, at: P_TILE, items: [{ id: SAPP, topUp: { max: 1 } }, { id: SHARK, topUp: { max: 9 } }] });
         const banked = muleOptions({ packages: [{ name: 'wine', items: [{ item: 'Jug of wine', amount: 28 }] }] }, { RC_CUE_DIR: '/tmp/cue-x' });
         expect(banked).toMatchObject({ carried: false, wildlife: [], keepAliveMinutes: 0, stand: { x: 3185, z: 3436 } });
         expect(banked.packages).toEqual([{ name: 'wine', items: [{ item: 'Jug of wine', amount: 28 }] }]); // no `at` key
@@ -586,30 +590,31 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
         expect(muleOptions({ carried: true, wildlife: [], keepAliveMinutes: 0 })).toMatchObject({ wildlife: [], keepAliveMinutes: 0 });
     });
 
-    test('the run-day entry documented in mule.md ("H12o, the atoll helper") serves exactly these packages', () => {
+    test('the persisted review entry is generated, and the helper docs point to it', () => {
         const md = readFileSync(join(import.meta.dir, '../../docs/speedrun/helpers/mule.md'), 'utf8');
-        const block = [...md.matchAll(/```json\n([\s\S]*?)```/g)].map(m => m[1]!).find(b => b.includes('"cairn_h45"'));
-        const entry = JSON.parse(block!) as { options: Record<string, unknown> } & Record<string, unknown>;
+        const saved = JSON.parse(readFileSync(join(import.meta.dir, '../../docs/speedrun/scripts/h45-carried-packages.json'), 'utf8'));
+        expect(md).toContain('mule-ledger.ts --carried-h45');
+        expect(md).toContain('../scripts/h45-carried-packages.json');
+        expect(saved).toEqual(entry);
         expect(entry).toMatchObject({ account: 'cairn_h45', role: 'mule', cueDir: 'run-machine/h45-cue', loginOn: M, stopOn: P });
-        expect(entry.options).toMatchObject({ serveMode: 'request', carried: true });
         expect(muleOptions(entry.options, { RC_CUE_DIR: '/tmp/cue-h45' }).packages).toEqual(opts.packages);
     });
 
     test('carriedNeeds: each package found in the one inventory; the start-of-login check sums them', () => {
         const inv = loaded();
         const m = carriedNeeds(hm, inv);
-        expect([...m.held]).toEqual([[SHARK, 22]]); // the top-up line's whole holding; the trade clamps it to the ask and 13
+        expect([...m.held]).toEqual([[SHARK, 24]]); // the top-up line's whole holding; the trade clamps it to the ask and 15
         expect(carriedReady(m)).toBe(true);
         const p = carriedNeeds(hp, inv);
-        expect([...p.held]).toEqual([[SAPP, 1], [SHARK, 22]]); // P's two top-up lines, each its whole holding; the trade clamps
+        expect([...p.held]).toEqual([[SAPP, 1], [SHARK, 24]]); // P's two top-up lines, each its whole holding; the trade clamps
         expect(carriedReady(p)).toBe(true);
-        // The login check sums the maxes: 13 + 9 sharks and the potion, whatever M will take.
+        // The login check sums the maxes: 15 + 9 sharks and the potion, whatever M will take.
         expect(carriedShort([hm, hp], inv)).toEqual([]);
-        expect(carriedShort([hm, hp], [sapp(0), ...sharks(21, 1)])).toEqual([{ item: 'Shark', wanted: 22, have: 21 }]);
-        expect(carriedShort([hm, hp], sharks(22))).toEqual([{ item: 'Superantipoison(4)', wanted: 1, have: 0 }]);
-        // After M took its 13 or fewer, P finds its lines among M's leftovers.
-        expect([...carriedNeeds(hp, [sapp(0), ...sharks(9, 14)]).held]).toEqual([[SAPP, 1], [SHARK, 9]]);
-        expect([...carriedNeeds(hp, afterM()).held]).toEqual([[SAPP, 1], [SHARK, 17]]);
+        expect(carriedShort([hm, hp], [sapp(0), ...sharks(23, 1)])).toEqual([{ item: 'obj 385', wanted: 24, have: 23 }]);
+        expect(carriedShort([hm, hp], sharks(24))).toEqual([{ item: 'obj 2448', wanted: 1, have: 0 }]);
+        // After M took its 15 or fewer, P finds its lines among M's leftovers.
+        expect([...carriedNeeds(hp, [sapp(0), ...sharks(9, 16)]).held]).toEqual([[SAPP, 1], [SHARK, 9]]);
+        expect([...carriedNeeds(hp, afterM()).held]).toEqual([[SAPP, 1], [SHARK, 19]]);
         // A top-up line is never missing: P without its potion still serves sharks (the login check names the gap).
         const noPotion = carriedNeeds(hp, sharks(9));
         expect(noPotion.missing).toEqual([]);
@@ -618,8 +623,8 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
         expect(carriedReady(carriedNeeds(hm, [sapp(0)]))).toBe(false); // nothing of the top-up to offer
     });
 
-    test('M: offers exactly the asked count of its 22 sharks (never all of them), clamped to the max 13', async () => {
-        for (const [asked, n] of [[5, 5], [20, 13]] as const) {
+    test('M: offers exactly the asked count of its 24 sharks (never all of them), clamped to the max 15', async () => {
+        for (const [asked, n] of [[5, 5], [14, 14], [15, 15], [20, 15]] as const) {
             const dir = mkdtempSync(join(tmpdir(), 'h12o-ask-'));
             const inv = loaded();
             const openMs = Date.now();
@@ -629,15 +634,17 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
             await settle();
             expect(sends(sdk)).toEqual([['sendOfferItem', 1, n], ['sendAcceptTrade']]);
             const mine: TradeItem[] = [{ slot: 0, id: SHARK, name: 'Shark', count: n }];
-            sdk.tick({ inventory: [sapp(0), ...sharks(22 - n, 1 + n)], trade: trade({ myOffer: mine, myAccepted: true }) });
+            sdk.tick({ inventory: [sapp(0), ...sharks(24 - n, 1 + n), ...retained()], trade: trade({ myOffer: mine, myAccepted: true }) });
             sdk.tick({ trade: trade({ screen: 'confirm', myOffer: mine, partnerAccepted: true }) });
             await flush();
             expect(sends(sdk)).toEqual([['sendAcceptTrade']]);
             sdk.tick({ trade: closed });
             const r = await result;
             expect(r.success).toBe(true);
-            expect(r.topUps).toEqual([{ item: 'Shark', id: SHARK, max: 13, held: 22, asked, n }]);
+            expect(r.topUps).toEqual([{ item: 'obj 385', id: SHARK, max: 15, held: 24, asked, n }]);
             expect(r.gave.map(i => [i.id, i.count])).toEqual([[SHARK, n]]);
+            expect(carriedShort([hp], sdk.getInventory())).toEqual([]);
+            expect(sdk.getInventory().filter(i => i.slot >= 25)).toEqual(retained());
         }
     });
 
@@ -661,48 +668,101 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
         sdk.tick({ trade: closed });
     }
 
-    test('P asked 1 + 5: offers exactly Superantipoison(4) x1 and Shark x5 of its 17, the potion first', async () => {
+    test('P asked 1 + 5: offers exactly Superantipoison(4) x1 and Shark x5 of its 19, the potion first', async () => {
         const { sdk, result } = await serveP(afterM(), [{ item: POTION, count: 1 }, { item: '^shark$', count: 5 }]);
         expect(sends(sdk)).toEqual([['sendOfferItem', 0, -1], ['sendOfferItem', 6, 5], ['sendAcceptTrade']]);
-        await finish(sdk, [{ slot: 0, id: SAPP, name: 'Superantipoison(4)', count: 1 }, { slot: 1, id: SHARK, name: 'Shark', count: 5 }], sharks(12, 11));
+        await finish(sdk, [{ slot: 0, id: SAPP, name: 'Superantipoison(4)', count: 1 }, { slot: 1, id: SHARK, name: 'Shark', count: 5 }], [...sharks(14, 11), ...retained()]);
         const r = await result;
         expect(r.success).toBe(true);
         expect(r.topUps).toEqual([
-            { item: 'Superantipoison(4)', id: SAPP, max: 1, held: 1, asked: 1, n: 1 },
-            { item: 'Shark', id: SHARK, max: 9, held: 17, asked: 5, n: 5 }
+            { item: 'obj 2448', id: SAPP, max: 1, held: 1, asked: 1, n: 1 },
+            { item: 'obj 385', id: SHARK, max: 9, held: 19, asked: 5, n: 5 }
         ]);
         expect(r.gave.map(i => [i.id, i.count]).sort()).toEqual([[SAPP, 1], [SHARK, 5]].sort());
+        expect(sdk.getInventory().filter(i => i.slot >= 25)).toEqual(retained());
     });
 
     test('P asked 1 + 0: offers exactly the Superantipoison(4) and no shark (a met top-up is left out of the ask)', async () => {
         const { sdk, result } = await serveP(afterM(), [{ item: POTION, count: 1 }]);
         expect(sends(sdk)).toEqual([['sendOfferItem', 0, -1], ['sendAcceptTrade']]);
-        await finish(sdk, [{ slot: 0, id: SAPP, name: 'Superantipoison(4)', count: 1 }], sharks(17, 6));
+        await finish(sdk, [{ slot: 0, id: SAPP, name: 'Superantipoison(4)', count: 1 }], [...sharks(19, 6), ...retained()]);
         const r = await result;
         expect(r.success).toBe(true);
         expect(r.topUps).toEqual([
-            { item: 'Superantipoison(4)', id: SAPP, max: 1, held: 1, asked: 1, n: 1 },
-            { item: 'Shark', id: SHARK, max: 9, held: 17, asked: null, n: 0 }
+            { item: 'obj 2448', id: SAPP, max: 1, held: 1, asked: 1, n: 1 },
+            { item: 'obj 385', id: SHARK, max: 9, held: 19, asked: null, n: 0 }
         ]);
         expect(r.gave.map(i => [i.id, i.count])).toEqual([[SAPP, 1]]);
+    });
+
+    test('P potion depleted after loading: actual receiver want refuses sharks-only and giver cannot complete', async () => {
+        expect(carriedShort([hm, hp], loaded())).toEqual([]);
+        for (const screen of ['offer', 'confirm'] as const) {
+            const { sdk, result } = await serveP(sharks(9), [{ item: POTION, count: 1 }, { item: '^shark$', count: 9 }]);
+            expect(sends(sdk)).toEqual([['sendOfferItem', 0, -1], ['sendAcceptTrade']]);
+            const offered: TradeItem[] = [{ slot: 0, id: SHARK, name: 'Shark', count: 9 }];
+            const receiver = new FakeSdk(baseState({ tick: 1, inventory: [], trade: trade({
+                screen, partner: 'Cairn H45', theirOffer: offered, partnerAccepted: true,
+            }) }));
+            const received = receiveFrom(receiver as unknown as BotSDK, 'cairn_h45', {
+                want: [{ item: SAPP, amount: 1 }, { item: SHARK, amount: 9 }], maxTicks: 3,
+            });
+            await settle();
+            for (let i = 0; i < 8; i++) {
+                receiver.tick({});
+                await settle();
+            }
+            expect(receiver.sent.some(a => a.method === 'sendAcceptTrade')).toBe(false);
+            // An incomplete offer waits then times out; an incomplete confirm declines immediately.
+            expect(receiver.sent.some(a => a.method === 'sendDeclineTrade')).toBe(screen === 'confirm');
+            expect((await received).ok).toBe(false);
+            // Server closes and refunds the unaccepted offer: no inventory delta, no success.
+            for (let i = 0; i < 5; i++) {
+                sdk.tick({ trade: closed, inventory: sharks(9) });
+                await settle();
+            }
+            const given = await result;
+            expect(given.success).toBe(false);
+            expect(given.gave).toEqual([]);
+            expect(given.topUps[0]).toMatchObject({ item: 'obj 2448', asked: null, n: 0 });
+        }
+    });
+
+    test('three guard sharks can be depleted without spending delivery stock; a fourth cannot', () => {
+        for (const consumed of [0, 1, 2, 3]) {
+            const inv = [sapp(0), ...sharks(27 - consumed, 1)];
+            expect(carriedShort([hm, hp], inv)).toEqual([]);
+            expect(carriedShort([hp], [sapp(0), ...sharks(27 - consumed - 15, 16)])).toEqual([]);
+        }
+        expect(carriedShort([hm, hp], [sapp(0), ...sharks(23, 1)]))
+            .toEqual([{ item: 'obj 385', wanted: 24, have: 23 }]);
+        // This is stock accounting, not an automatic eating policy or a survival proof.
+    });
+
+    test('P full ask after M15 offers potion first and exactly nine, preserving three guard sharks', async () => {
+        const { sdk, result } = await serveP([sapp(0), ...sharks(12, 16)], [{ item: POTION, count: 1 }, { item: '^shark$', count: 9 }]);
+        expect(sends(sdk)).toEqual([['sendOfferItem', 0, -1], ['sendOfferItem', 16, 9], ['sendAcceptTrade']]);
+        await finish(sdk, [{ slot: 0, id: SAPP, name: 'Superantipoison(4)', count: 1 }, { slot: 1, id: SHARK, name: 'Shark', count: 9 }], sharks(3, 25));
+        expect((await result).success).toBe(true);
+        expect(sdk.getInventory()).toEqual(sharks(3, 25));
     });
 
     test('P\'s clamp: each line takes the ask within [0, max] and what h45 holds', () => {
         const n = (inv: InventoryItem[], ask: AskItem[]) => topUpCounts(hp, inv, { items: ask }).map(t => [t.asked, t.n]);
         expect(n(afterM(), [{ item: POTION, count: 3 }, { item: '^shark$', count: 20 }])).toEqual([[3, 1], [20, 9]]);
         expect(n(afterM(), [{ item: POTION, count: 'all' }, { item: '^shark$', count: 'all' }])).toEqual([['all', 1], ['all', 9]]);
-        expect(n([sapp(0), ...sharks(4, 1)], [{ item: POTION, count: 1 }, { item: '^shark$', count: 7 }])).toEqual([[1, 1], [7, 4]]); // M took more than 13
-        expect(n(sharks(9), [{ item: POTION, count: 1 }, { item: '^shark$', count: 9 }])).toEqual([[1, 0], [9, 9]]); // no potion held
+        expect(n([sapp(0), ...sharks(4, 1)], [{ item: POTION, count: 1 }, { item: '^shark$', count: 7 }])).toEqual([[1, 1], [7, 4]]); // understock: cannot offer food it does not hold
+        expect(n(sharks(9), [{ item: POTION, count: 1 }, { item: '^shark$', count: 9 }])).toEqual([[null, 0], [9, 9]]); // id-bound line has no observed name to match without a held potion
     });
 
     test('offer order is the package\'s line order whatever the slots (X counts last): the potion first for every ask', async () => {
         // Sharks staged before the potion: the potion's one-press All still goes first, Offer-5 (a button) next, an X count (7) last.
         for (const [count, expected] of [
-            [1, [['sendOfferItem', 22, -1], ['sendOfferItem', 0, 1], ['sendAcceptTrade']]],
-            [5, [['sendOfferItem', 22, -1], ['sendOfferItem', 0, 5], ['sendAcceptTrade']]],
-            [7, [['sendOfferItem', 22, -1], ['sendOfferItem', 0, 7], ['sendAcceptTrade']]]
+            [1, [['sendOfferItem', 24, -1], ['sendOfferItem', 0, 1], ['sendAcceptTrade']]],
+            [5, [['sendOfferItem', 24, -1], ['sendOfferItem', 0, 5], ['sendAcceptTrade']]],
+            [7, [['sendOfferItem', 24, -1], ['sendOfferItem', 0, 7], ['sendAcceptTrade']]]
         ] as const) {
-            const { sdk, result } = await serveP([...sharks(17), sapp(22)], [{ item: POTION, count: 1 }, { item: '^shark$', count }]);
+            const { sdk, result } = await serveP([...sharks(19), sapp(24)], [{ item: POTION, count: 1 }, { item: '^shark$', count }]);
             expect(sends(sdk)).toEqual(expected as unknown as unknown[][]);
             for (let i = 0; i < 4; i++) sdk.tick({ trade: closed });
             expect((await result).success).toBe(false);
