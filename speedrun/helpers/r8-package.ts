@@ -154,7 +154,12 @@ const lc = (s: string) => s.toLowerCase();
 const doseless = (s: string) => lc(s).replace(/\(\d\)$/, '');
 /** `name` (an entry's) names the stack `held`: the same name, or a dose family of it. */
 const names = (name: string, held: string) => lc(name) === lc(held) || doseless(name) === doseless(held);
-const isStep = (r: LedgerRow) => /^S\d/.test(r.row);
+/**
+ * Steps whose worn kit is not a use: S17's agility course, where the run ends (r8-deaths.ts: 'the run
+ * ends on the course', 'S17's course uses no kit'). Its sharks are still consumed.
+ */
+export const NO_KIT_STEPS: readonly string[] = ['S17'];
+const isStep = (r: LedgerRow) => /^S\d/.test(r.row) && !NO_KIT_STEPS.includes(r.row);
 const isCannon = (name: string) => (CANNON as readonly string[]).includes(lc(name));
 const USES = new Set(['consume', 'hand-in']);
 
