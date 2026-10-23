@@ -24,6 +24,8 @@ export interface ObjInfo {
     destroy: boolean;
     /** Has a `wearpos=`: it can be worn. */
     wearable?: boolean;
+    /** false for `tradeable=no` (quest kit such as the Khazard armour): no helper can hand it over. */
+    tradeable?: boolean;
     /** obj.pack's id for the debug name; undefined when the pack lacks it. */
     id?: number;
 }
@@ -67,7 +69,7 @@ export function contentObjs(dir = CONTENT_SCRIPTS, pack: ObjPack = objPack()): O
             const debug = b.match(/^\[([^\]]+)\]/)?.[1];
             const name = b.match(/^name=(.*)$/m)?.[1];
             if (!debug || !name || /^certtemplate=/m.test(b)) continue;
-            objs.push({ debug, name, cost: Number(b.match(/^cost=(\d+)$/m)?.[1] ?? 0), destroy: /^param=destroy_death,\^true$/m.test(b), wearable: /^wearpos=/m.test(b), id: pack.ids.get(debug) });
+            objs.push({ debug, name, cost: Number(b.match(/^cost=(\d+)$/m)?.[1] ?? 0), destroy: /^param=destroy_death,\^true$/m.test(b), wearable: /^wearpos=/m.test(b), tradeable: !/^tradeable=(no|false)$/m.test(b), id: pack.ids.get(debug) });
         }
     }
     const table = objTable(objs);
