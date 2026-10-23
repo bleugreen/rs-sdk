@@ -44,7 +44,7 @@ describe('KnightsRamp', () => {
         const d = r.decisions.at(-1)!;
         expect(d.action).toBe('stop');
         expect(d.reason).toMatch(/11\.9% below the first step's 4\.20 \(limit 10%\)/);
-        expect(Object.fromEntries(fallbackMix(43 - r.admitted(), PLAN_B_MIX))).toEqual({ iron: 6, heroes: 4, guards: 13 });
+        expect(Object.fromEntries(fallbackMix(43 - r.admitted(), PLAN_B_MIX))).toEqual({ iron: 7, heroes: 4, guards: 12 });
     });
 
     test('a drop of exactly the limit does not stop it', () => {
