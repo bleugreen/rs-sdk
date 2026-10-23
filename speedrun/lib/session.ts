@@ -270,6 +270,8 @@ export interface OpenOptions {
     client?: ClientKind;
     /** Launch the client (default false: attach to one that is already running). */
     launch?: boolean;
+    /** Attach to an intentionally logged-out client without waiting for player ticks. Cannot launch. */
+    awaitInWorld?: false;
     /** Warm the pathfinder before connecting (needed by bot.walkTo / bot.openBank). Default true. */
     pathfinding?: boolean;
     readyTimeoutMs?: number;
@@ -294,6 +296,7 @@ export interface OpenOptions {
  * normal events here.
  */
 export async function openSession(botName: string, opts: OpenOptions = {}): Promise<Session> {
+    if (opts.awaitInWorld === false && opts.launch) throw new Error('an offline attach cannot launch a client');
     const env = loadBotEnv(botName);
     const client = opts.client ?? 'lite';
     const gatewayUrl = sessionGateway(env, client === 'browser' ? pageWorld(env) : env.SERVER || 'localhost', { allowRelay: opts.allowRelay });
@@ -320,7 +323,7 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         sessionId: 0,
         tickBase: 0,
         launchId: 0,
-        expectInWorld: true,
+        expectInWorld: opts.awaitInWorld !== false,
         child: null,
         childExit: null,
         lastInWorldTick: -1,
@@ -335,6 +338,7 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
     if (opts.launch) await launchClient(session);
     try {
         await sdk.connect();
+        if (opts.awaitInWorld === false) return session;
         // On connect the gateway can hand back the bot's last published state, which
         // still reads inGame from the previous session. A freshly launched client
         // takes ~20 s on the demo to log in and advance past it, so give the advance

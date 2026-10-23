@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { describePreflight, feedUrl, parseHello, readFeedHello, tickPreflight, type FeedRead } from './feed-hello';
+import { describePreflight, feedUrl, parseHello, readFeedHello, tickPreflight, watchFeedTicks, type FeedRead } from './feed-hello';
 
 const hello = (tickMs: number) => JSON.stringify({ t: 'hello', v: 1, rev: 254, tick: 5000, tickMs, players: 12 });
 const read = (tickMs: number): FeedRead => ({ ok: true, url: 'wss://w/worldfeed', hello: { tickMs, players: 12, tick: 5000 }, wallMs: 50 });
@@ -85,5 +85,72 @@ describe('reading the hello', () => {
         expect(feedUrl('x', { SPEEDRUN_FEED_URL: 'ws://127.0.0.1:1/worldfeed', SPEEDRUN_FEED_TOKEN: 'a b' })).toBe('ws://127.0.0.1:1/worldfeed?token=a%20b');
         const r = await readFeedHello('wss://w/worldfeed?token=secret', { connect: () => fakeSocket({ error: true }) as never });
         expect(r.url).toBe('wss://w/worldfeed?token=***');
+    });
+});
+
+
+describe('the login-free observed world clock', () => {
+    function fixture(idleMs = 50) {
+        const socket = {
+            onopen: null as null | (() => void),
+            onmessage: null as null | ((e: { data: unknown }) => void),
+            onerror: null as null | ((e: unknown) => void),
+            onclose: null as null | ((e: { code?: number }) => void),
+            sent: [] as string[], closed: false,
+            send(data: string) { this.sent.push(data); },
+            close() { this.closed = true; }
+        };
+        const clock = watchFeedTicks('ws://world/worldfeed?token=secret', { connect: () => socket, idleMs });
+        socket.onopen!();
+        const emit = (m: unknown) => socket.onmessage!({ data: JSON.stringify(m) });
+        return { clock, socket, emit };
+    }
+
+    test('subscribes to a minimal rectangle; hello, junk and duplicate ticks never manufacture advances', async () => {
+        const f = fixture();
+        try {
+            expect(JSON.parse(f.socket.sent[0]!)).toEqual({ t: 'sub', x: 0, z: 0, w: 1, h: 1 });
+            const first = f.clock.next(-1);
+            f.emit({ t: 'hello', tick: 900, tickMs: 400 });
+            f.emit({ t: 'tick', k: '901' });
+            f.emit({ t: 'tick', k: 901 });
+            expect(await first).toMatchObject({ tick: 901, ms: expect.any(Number) });
+            let advanced = false;
+            const next = f.clock.next(901).then(b => (advanced = true, b));
+            f.emit({ t: 'tick', k: 901 });
+            await Promise.resolve();
+            expect(advanced).toBe(false);
+            f.emit({ t: 'tick', k: 905 });
+            expect((await next).tick).toBe(905);
+        } finally { f.clock.close(); }
+        expect(f.socket.closed).toBe(true);
+    });
+
+    test('a stopped feed fails closed without a single client state tick, hiding its token', async () => {
+        const f = fixture(10);
+        await expect(f.clock.next(-1)).rejects.toThrow('world feed stopped');
+        expect(f.socket.closed).toBe(true);
+        await expect(f.clock.next(-1)).rejects.not.toThrow('secret');
+    });
+
+    test('world tick rollback, connection errors and close reject outstanding waits', async () => {
+        for (const fail of ['rollback', 'error', 'close'] as const) {
+            const f = fixture();
+            f.emit({ t: 'tick', k: 20 });
+            const waiting = f.clock.next(20);
+            if (fail === 'rollback') f.emit({ t: 'tick', k: 19 });
+            else if (fail === 'error') f.socket.onerror!({});
+            else f.socket.onclose!({ code: 1006 });
+            await expect(waiting).rejects.toThrow('world feed');
+            expect(f.socket.closed).toBe(true);
+        }
+    });
+
+    test('explicit cleanup rejects a pending wait and closes the socket', async () => {
+        const f = fixture();
+        const waiting = f.clock.next(-1);
+        f.clock.close();
+        await expect(waiting).rejects.toThrow('world feed closed');
+        expect(f.socket.closed).toBe(true);
     });
 });

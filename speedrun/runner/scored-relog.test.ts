@@ -1,93 +1,138 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
-import type { LoginResult, RelogResult, Session } from '../lib/session';
+import type { LoginResult, LogoutResult, Session } from '../lib/session';
 import { TickLog } from '../lib/ticks';
-import { loginReplyCode, scoredRelogStep, WORLD_FULL, type ScoredRelogDeps } from './scored-relog';
-import type { StepContext } from './step';
+import { RelogBudget } from './relog-budget';
+import { Observation, resolveResume } from './resume';
+import { loginReplyCode, scoredLoginStep, scoredLogoutStep, SCORED_RELOG, WORLD_FULL, type ScoredRelogDeps } from './scored-relog';
+import { runSteps, type Step, type StepContext } from './step';
 
-const relogResult = (o: Partial<RelogResult> = {}): RelogResult => ({ logout: { ok: true } as RelogResult['logout'], loginTick: 5, tickBase: 0, via: 'page', loginWallMs: 1_200, attempts: 1, ...o });
-const loginResult = (o: Partial<LoginResult> = {}): LoginResult => ({ wallMs: 900, attempts: 1, via: 'page', tickBase: 0, run: {} as LoginResult['run'], retaliate: {} as LoginResult['retaliate'], ...o });
-
-function setup(deps: (calls: string[], session: Session) => Partial<ScoredRelogDeps>) {
+const loginResult = (): LoginResult => ({ wallMs: 900, attempts: 1, via: 'page', tickBase: 0, run: {} as LoginResult['run'], retaliate: {} as LoginResult['retaliate'] });
+function setup(over: Partial<ScoredRelogDeps> = {}) {
     const sdk = new FakeSdk(baseState({ tick: 50, inGame: true }));
     const session = { sdk, bot: {}, name: 'lab_scored', sessionId: 1, launchedAt: 1_000, client: 'browser', expectInWorld: true } as unknown as Session;
+    const budget = new RelogBudget(mkdtempSync(join(tmpdir(), 'scored-relog-')));
     const log = TickLog.memory('relog-test');
     const calls: string[] = [];
     const ctx = { session, sdk, bot: {}, c: {}, log } as unknown as StepContext<unknown>;
-    const sleep = async (ms: number) => void calls.push(`sleep ${ms}`);
-    return { session, log, calls, ctx, deps: { sleep, ...deps(calls, session) } };
+    const deps: ScoredRelogDeps = {
+        logout: async () => {
+            calls.push('logout'); sdk.state!.inGame = false; session.expectInWorld = false;
+            return { ok: true, clickTick: 50, lastInWorldTick: 50, latencyTicks: 0, wallMs: 20, confirmedBy: 'page' };
+        },
+        confirmOut: async () => (calls.push('page out'), true),
+        login: async () => {
+            calls.push('login'); sdk.state!.inGame = true; session.expectInWorld = true; session.launchedAt = 5_000;
+            return loginResult();
+        },
+        replyCode: async () => null,
+        sleep: async ms => { calls.push(`sleep ${ms}`); },
+        ...over
+    };
+    const beforeLogin = async () => { calls.push('recheck ready'); expect(session.expectInWorld).toBe(false); };
+    return { sdk, session, budget, log, calls, ctx, deps, beforeLogin };
 }
+const note = (log: TickLog) => log.rows.find(r => r.kind === 'note' && r.step === SCORED_RELOG);
 
-const note = (log: TickLog) => log.rows.find(r => r.kind === 'note' && r.step === 'S21 relog');
-
-describe("SCORED's relog before S21", () => {
-    test('one relog through lib/session.ts relog; its note carries how it got in and the login time giverSchedule reads', async () => {
-        const t = setup((calls, s) => ({
-            relog: async () => {
-                calls.push('relog');
-                s.launchedAt = 5_000;
-                return relogResult();
-            },
-            login: async () => { throw new Error('no login expected'); },
-            replyCode: async () => { throw new Error('no reply read expected'); },
-        }));
-        const step = scoredRelogStep({ deps: t.deps });
-        expect([step.name, step.logoutSafe]).toEqual(['S21 relog', true]);
-        await step.run(t.ctx);
-        expect(t.calls).toEqual(['relog']);
-        expect(note(t.log)).toMatchObject({ ok: true, ticks: 0, meta: { kind: 'scored-relog', via: 'page', attempts: 1, loginWallMs: 1_200, worldFull: 0, loggedInAt: 5_000 } });
+describe("SCORED's split S21 relog", () => {
+    test('confirmed logout -> ready wait while out -> in-page login -> first trade, with no SCORED ticks between halves', async () => {
+        const t = setup();
+        const opts = { budget: t.budget, deps: t.deps, beforeLogin: t.beforeLogin };
+        const ready: Step<any> = { name: 'ready', offline: true, logoutSafe: true, preconditions: () => true, postconditions: () => true, run: async () => {
+            expect(t.session.expectInWorld).toBe(false);
+            t.calls.push('ready while out');
+            // Longer than a state freshness window: the next boundary must not await a client tick.
+            await Bun.sleep(10);
+        } };
+        const login = scoredLoginStep(opts);
+        const band: Step<any> = { name: 'trade', logoutSafe: true, preconditions: () => true, postconditions: () => true, run: async () => { t.calls.push('first trade'); } };
+        // Run only through login: the next live step requires an actual fresh post-login tick.
+        await runSteps(t.session, [scoredLogoutStep(opts), ready, login], { log: t.log, c: {}, shouldStop: () => false, tickMonitor: false });
+        await band.run(t.ctx);
+        expect(t.calls).toEqual(['logout', 'page out', 'ready while out', 'recheck ready', 'login', 'first trade']);
+        expect(t.sdk.getState()!.tick).toBe(50);
+        expect(t.budget.used()).toEqual({ planned: 1, unplanned: 0 });
+        expect(t.budget.planned(SCORED_RELOG)).toBe('closed');
+        expect(note(t.log)).toMatchObject({ ok: true, ticks: 0, meta: { via: 'page', loggedInAt: 5_000, logout: { confirmedBy: 'page', clickTick: 50 } } });
     });
 
-    test("a code 7 reply (world full) waits backoff.ts's 60 s and logs in again; it is not a failure", async () => {
-        const t = setup((calls, s) => ({
-            relog: async () => {
-                calls.push('relog');
-                s.expectInWorld = false;
-                throw new Error('lab_scored: login failed after 6 attempt(s) (timeout, in page)');
-            },
-            login: async () => {
-                calls.push('login');
-                s.launchedAt = 7_000;
-                s.expectInWorld = true;
-                return loginResult({ attempts: 2, wallMs: 3_000 });
-            },
-            replyCode: async () => (calls.push('reply'), WORLD_FULL),
-        }));
-        await scoredRelogStep({ deps: t.deps }).run(t.ctx);
-        expect(t.calls).toEqual(['relog', 'reply', 'sleep 60000', 'login']);
-        expect(note(t.log)).toMatchObject({ ok: true, meta: { worldFull: 1, via: 'page', attempts: 2, loginWallMs: 3_000, loggedInAt: 7_000 } });
+    test('resume before logout runs all, between halves selects login, after login skips both', async () => {
+        const t = setup();
+        const opts = { budget: t.budget, deps: t.deps, beforeLogin: t.beforeLogin };
+        const logout = scoredLogoutStep(opts), login = scoredLoginStep(opts);
+        const ready: Step<any> = { name: 'ready', offline: true, preconditions: () => true, postconditions: () => true, run: async () => {}, logoutSafe: true };
+        const band: Step<any> = { name: 'trade', preconditions: s => s.inGame ? true : 'out', postconditions: () => true, done: () => false, run: async () => {}, logoutSafe: true };
+        const steps = [logout, ready, login, band];
+        expect((await resolveResume(steps, new Observation(t.sdk.state!), {})).step).toBe(logout.name);
+        await logout.run(t.ctx);
+        const reopened = new RelogBudget(t.budget.dir);
+        expect(reopened.planned(SCORED_RELOG)).toBe('open');
+        expect((await resolveResume(steps, new Observation(t.sdk.state!), {})).step).toBe(login.name);
+        await login.run(t.ctx);
+        expect((await resolveResume(steps, new Observation(t.sdk.state!), {})).step).toBe('trade');
+        await logout.run(t.ctx);
+        await login.run(t.ctx);
+        expect(t.calls.filter(c => c === 'logout')).toHaveLength(1);
+        expect(t.calls.filter(c => c === 'login')).toHaveLength(1);
     });
 
-    test('any other refusal fails at once with its code, an unreadable reply with the relog error; neither logs in again', async () => {
-        for (const [code, want] of [[9, 'login reply 9'], [null, 'login failed after 6 attempt(s)']] as const) {
-            const t = setup(calls => ({
-                relog: async () => { calls.push('relog'); throw new Error('lab_scored: login failed after 6 attempt(s) (exited, in page)'); },
-                login: async () => (calls.push('login'), loginResult()),
-                replyCode: async () => code,
-            }));
-            await expect(scoredRelogStep({ deps: t.deps }).run(t.ctx)).rejects.toThrow(want);
-            expect(t.calls).toEqual(['relog']);
-            expect(note(t.log)).toMatchObject({ ok: false, meta: { worldFull: 0 } });
+    test('unconfirmed logout never opens the planned entry', async () => {
+        for (const deps of [{ logout: async () => ({ ok: false, reason: 'timeout' } as LogoutResult) }, { confirmOut: async () => false }]) {
+            const t = setup(deps);
+            await expect(scoredLogoutStep({ budget: t.budget, deps: t.deps }).run(t.ctx)).rejects.toThrow(/logout failed|page out not confirmed/);
+            expect(t.budget.planned(SCORED_RELOG)).toBeNull();
+            expect(t.budget.holder()).toBeNull();
         }
     });
 
-    test('a world still full after the retries fails, naming how many', async () => {
-        const t = setup(calls => ({
-            relog: async () => { calls.push('relog'); throw new Error('full'); },
-            login: async () => { calls.push('login'); throw new Error('full'); },
-            replyCode: async () => WORLD_FULL,
-        }));
-        await expect(scoredRelogStep({ deps: t.deps, worldFullRetries: 2 }).run(t.ctx)).rejects.toThrow('the world was full on 3 logins in a row (retried 2 times)');
-        expect(t.calls).toEqual(['relog', 'sleep 60000', 'login', 'sleep 60000', 'login']);
+    test('world full retries only the login and rechecks all givers after its pause', async () => {
+        const t = setup();
+        const goodLogin = t.deps.login;
+        let attempts = 0;
+        t.deps.login = async s => {
+            if (++attempts === 1) { t.calls.push('full'); throw new Error('full'); }
+            return goodLogin(s);
+        };
+        t.deps.replyCode = async () => WORLD_FULL;
+        await scoredLogoutStep({ budget: t.budget, deps: t.deps }).run(t.ctx);
+        await scoredLoginStep({ budget: t.budget, deps: t.deps, beforeLogin: t.beforeLogin }).run(t.ctx);
+        expect(t.calls).toEqual(['logout', 'page out', 'recheck ready', 'full', 'sleep 60000', 'recheck ready', 'login']);
+        expect(note(t.log)).toMatchObject({ ok: true, meta: { worldFull: 1 } });
+        expect(t.budget.entries()).toHaveLength(1);
     });
 
-    test("the title screen's text names the reply (Client.ts's login messages)", () => {
-        expect(loginReplyCode('This world is full. Please use a different world.')).toBe(7);
-        expect(loginReplyCode('Unable to connect. Login server offline.')).toBe(8);
-        expect(loginReplyCode('Login limit exceeded. Too many connections from your address.')).toBe(9);
-        expect(loginReplyCode('The server is being updated. Please wait 1 minute and try again.')).toBe(14);
-        expect(loginReplyCode('Login attempts exceeded. Please wait 1 minute and try again.')).toBe(16);
-        expect(loginReplyCode('Connecting to server...')).toBeNull();
-        expect(loginReplyCode('')).toBeNull();
+    test('other refusals fail immediately; world-full exhaustion leaves the same planned entry open', async () => {
+        for (const code of [9, null, WORLD_FULL]) {
+            const t = setup({ login: async () => { throw new Error('login failed'); }, replyCode: async () => code });
+            await scoredLogoutStep({ budget: t.budget, deps: t.deps }).run(t.ctx);
+            await expect(scoredLoginStep({ budget: t.budget, deps: t.deps, beforeLogin: t.beforeLogin, worldFullRetries: 2 }).run(t.ctx)).rejects.toThrow(code === 9 ? 'login reply 9' : code === null ? 'login failed' : 'world was full on 3 logins');
+            expect(t.budget.planned(SCORED_RELOG)).toBe('open');
+            expect(t.budget.used()).toEqual({ planned: 1, unplanned: 0 });
+            expect(t.budget.holder()).toBeNull();
+        }
+    });
+
+    test('missing readiness never logs in, and an operator lock prevents either half racing it', async () => {
+        const t = setup();
+        await scoredLogoutStep({ budget: t.budget, deps: t.deps }).run(t.ctx);
+        await expect(scoredLoginStep({ budget: t.budget, deps: t.deps, beforeLogin: async () => { throw new Error('giver missing'); } }).run(t.ctx)).rejects.toThrow('giver missing');
+        expect(t.calls).not.toContain('login');
+        const lock = t.budget.tryLock('operator');
+        try {
+            await expect(scoredLoginStep({ budget: t.budget, deps: t.deps, beforeLogin: t.beforeLogin }).run(t.ctx)).rejects.toThrow('held by operator');
+            await expect(scoredLogoutStep({ budget: t.budget, deps: t.deps }).run(t.ctx)).rejects.toThrow('held by operator');
+        } finally { if (lock.ok) lock.release(); }
+    });
+
+    test('title-screen replies retain their codes', () => {
+        expect(loginReplyCode('This world is full.')).toBe(7);
+        expect(loginReplyCode('Login server offline.')).toBe(8);
+        expect(loginReplyCode('Login limit exceeded.')).toBe(9);
+        expect(loginReplyCode('The server is being updated.')).toBe(14);
+        expect(loginReplyCode('Login attempts exceeded.')).toBe(16);
+        expect(loginReplyCode('Connecting...')).toBeNull();
     });
 });

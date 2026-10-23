@@ -65,7 +65,8 @@ import { MANIFEST, parseLedger, type LedgerRow } from '../tools/slot-ledger';
 import { handOffFrom, handOffStep } from './handoff';
 import { legById, legsFor, splitLeg, type LegStep } from './legs';
 import { type Probe, stepProbes } from './resume';
-import { scoredRelogStep } from './scored-relog';
+import { scoredLoginStep, scoredLogoutStep } from './scored-relog';
+import { RelogBudget } from './relog-budget';
 import type { ObservedCheck, Step, StepContext } from './step';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -138,6 +139,7 @@ export interface ChainOptions {
     cues: CueSink;
     /** SCORED's relog between S21's pre-login and its band (run.ts --s21-relog; default on). */
     s21Relog?: boolean;
+    relogs?: RelogBudget;
 }
 
 // ------------------------------------------------------------------ hand-off placement
@@ -516,6 +518,17 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
     const boneCued = (ss: ChainStep[]) => (cfg.bones.group ? ss : cued({ step: 'S07', family: 'bone' }, ss));
     const s21Opts: runecraft.RunecraftOptions = { s21Altar: 'body', cueDir: cfg.cueDir, ...(cfg.s21Givers ? { s21Givers: cfg.s21Givers } : {}) };
     const runecraftS21 = pick('runecraft', runecraft.steps(s21Opts), ['S21 runecraft']);
+    const relogs = o.relogs ?? new RelogBudget(join(cfg.cueDir, '..'));
+    const preLogin = runecraft.preLoginStep(s21Opts);
+    const s21Login = scoredLoginStep({
+        budget: relogs,
+        beforeLogin: async ctx => {
+            if (runecraft.preLoginReady(s21Opts) !== true) await preLogin.run(ctx);
+            const ready = runecraft.preLoginReady(s21Opts);
+            if (ready !== true) throw new Error(ready);
+        }
+    });
+
 
     const entries: Entry[] = [
         ...steps('S00', start.steps()),
@@ -575,9 +588,8 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...before('S20'),
         ...steps('S20', fishingContest.steps()),
         L('T20-21'),
-        // The givers log in on the {S21, altar} cue the pre-login opens; SCORED relogs once every one is
-        // ready, so it is behind them all in the address's login order and each giver is fed tuned.
-        ...steps('S21', [runecraft.preLoginStep(s21Opts), ...(o.s21Relog === false ? [] : [scoredRelogStep()])]),
+        // SCORED stays out while the givers log in, then joins behind the entire ready roster.
+        ...steps('S21', o.s21Relog === false ? [preLogin] : [scoredLogoutStep({ budget: relogs }), preLogin, s21Login]),
         ...steps('S21', runecraftS21),
         L('T21-22'),
         ...before('S22'),

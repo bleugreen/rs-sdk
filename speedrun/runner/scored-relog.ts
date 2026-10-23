@@ -1,18 +1,12 @@
-// SCORED's in-page relog before S21 (rs/186's ruling). S21's body-altar givers log in on the open of
-// the {S21, altar} cue (skills/runecraft.ts preLoginStep) and report ready; SCORED then relogs, so the
-// server's per-address login order puts it behind every giver, and runecraft.ts's giverSchedule, which
-// reads SCORED's login time from session.launchedAt (set by the relog's login), grants each of them
-// the tuned 7-tick schedule. The relog is lib/session.ts relog, the one cooking.ts uses.
-//
-// A login refused with code 7 (world full) is retried after helpers/backoff.ts's pause for that code
-// and is not a failure; any other failed relog fails the step. Which reply the server gave is read off
-// the client's title screen (its login messages, server/webclient/src/client/Client.ts) over DevTools:
-// lib/session.ts login reports no reply code.
+// S21's planned relog spans a confirmed logout, the givers' login-free ready wait, and an
+// in-page login. The persistent budget is the checkpoint between the halves; one entry stays open
+// while SCORED is deliberately out and closes only after the login succeeds.
 
 import { loginFailurePolicy } from '../helpers/backoff';
-import { cdpUrl, login, relog, type LoginResult, type RelogResult, type Session } from '../lib/session';
-import { pageLoginState } from '../lib/tab';
+import { cdpUrl, login, logoutClean, type LoginResult, type LogoutResult, type Session } from '../lib/session';
+import { pageInGame, pageLoginState } from '../lib/tab';
 import { sleep, tickMs } from '../lib/wait';
+import { RelogBudget } from './relog-budget';
 import type { Step, StepContext } from './step';
 
 /** The title screen's text for the login replies the relog tells apart (Client.ts's loginMes1 and loginMes2). */
@@ -36,17 +30,21 @@ export const WORLD_FULL = 7;
 export const WORLD_FULL_RETRIES = 15;
 
 export interface ScoredRelogDeps {
-    relog(session: Session): Promise<RelogResult>;
-    /** A login after a refused one (the relog's logout is done). */
+    logout(session: Session): Promise<LogoutResult>;
+    confirmOut(session: Session): Promise<boolean>;
     login(session: Session): Promise<LoginResult>;
-    /** The login reply the client's title screen shows now; null when it is in game, shows none, or cannot be read. */
     replyCode(session: Session): Promise<number | null>;
     sleep(ms: number): Promise<void>;
 }
 
 export const defaultRelogDeps: ScoredRelogDeps = {
-    relog: s => relog(s),
-    login: s => login(s, { inPage: true }),
+    logout: s => logoutClean(s),
+    confirmOut: async s => {
+        if (s.client !== 'browser') return !s.sdk.getState()?.inGame || s.childExit !== null;
+        const cdp = cdpUrl(s.env);
+        return !!cdp && (await pageInGame(cdp, s.name)) === false;
+    },
+    login: s => login(s, { inPage: true, attempts: 1 }),
     replyCode: async s => {
         const cdp = s.client === 'browser' ? cdpUrl(s.env) : undefined;
         if (!cdp) return null;
@@ -57,70 +55,96 @@ export const defaultRelogDeps: ScoredRelogDeps = {
 };
 
 export const SCORED_RELOG = 'S21 relog';
+export const SCORED_LOGOUT = 'S21 relog:logout';
+export const SCORED_LOGIN = 'S21 relog:login';
 
 export interface ScoredRelogOptions {
-    name?: string;
-    /** World-full refusals retried before the step fails (default WORLD_FULL_RETRIES). */
+    budget: RelogBudget;
     worldFullRetries?: number;
     deps?: Partial<ScoredRelogDeps>;
 }
 
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const message = (e: unknown) => e instanceof Error ? e.message : String(e);
 
-/** SCORED's relog as a chain step, with one 0-tick note row: how it got in, the world-full retries, and the login time giverSchedule reads. */
-export function scoredRelogStep(o: ScoredRelogOptions = {}): Step<any> {
-    const name = o.name ?? SCORED_RELOG;
+function locked(budget: RelogBudget) {
+    const lock = budget.tryLock('run');
+    if (!lock.ok) throw new Error(`S21 relog: relog lock held by ${lock.holder.by} (pid ${lock.holder.pid})`);
+    return lock;
+}
+
+/** Opens the single planned entry only after both the logout and page-out confirmation. */
+export function scoredLogoutStep(o: ScoredRelogOptions): Step<any> {
+    const deps = { ...defaultRelogDeps, ...o.deps };
+    const run = async (ctx: StepContext<any>) => {
+        const lock = locked(o.budget);
+        try {
+            if (o.budget.planned(SCORED_RELOG)) return;
+            const allowed = o.budget.check('planned');
+            if (allowed !== true) throw new Error(allowed);
+            const out = await deps.logout(ctx.session as Session);
+            if (!out.ok) throw new Error(`S21 relog: logout failed: ${out.reason}`);
+            if (!(await deps.confirmOut(ctx.session as Session))) throw new Error('S21 relog: page out not confirmed');
+            o.budget.beginPlanned(SCORED_RELOG, out.clickTick, { ...out });
+        } finally { lock.release(); }
+    };
+    return {
+        name: SCORED_LOGOUT,
+        preconditions: s => s.inGame ? true : 'not in game before S21 logout',
+        postconditions: () => o.budget.planned(SCORED_RELOG) ? true : 'S21 logout not recorded',
+        done: () => o.budget.planned(SCORED_RELOG) !== null,
+        run, resume: run, logoutSafe: true,
+    };
+}
+
+/** Every attempt rechecks the required givers, including after a world-full pause or a restart. */
+export function scoredLoginStep(o: ScoredRelogOptions & { beforeLogin(ctx: StepContext<any>): Promise<void> }): Step<any> {
     const deps = { ...defaultRelogDeps, ...o.deps };
     const retries = o.worldFullRetries ?? WORLD_FULL_RETRIES;
     const run = async (ctx: StepContext<any>) => {
+        if (o.budget.hasPlanned(SCORED_RELOG)) return;
+        if (o.budget.planned(SCORED_RELOG) !== 'open') throw new Error('S21 relog: no confirmed logout to resume');
         const session = ctx.session as Session;
         const startTick = ctx.sdk.getState()?.tick ?? -1;
         let worldFull = 0;
-        let got: { via: string; attempts: number; loginWallMs: number } | null = null;
+        let got: LoginResult | null = null;
         let error: unknown = null;
+        const lock = locked(o.budget);
         try {
-            let next = async () => {
-                const r = await deps.relog(session);
-                return { via: r.via, attempts: r.attempts, loginWallMs: r.loginWallMs };
-            };
             for (;;) {
+                await o.beforeLogin(ctx);
                 try {
-                    got = await next();
+                    got = await deps.login(session);
+                    o.budget.endPlanned(SCORED_RELOG, got.via, { attempts: got.attempts, wallMs: got.wallMs, loggedInAt: session.launchedAt });
                     break;
                 } catch (e) {
                     const code = await deps.replyCode(session);
-                    if (code !== WORLD_FULL) throw new Error(`${name}: ${message(e)}${code !== null ? ` (login reply ${code})` : ''}`);
-                    if (++worldFull > retries) throw new Error(`${name}: the world was full on ${worldFull} logins in a row (retried ${retries} times): ${message(e)}`);
+                    if (code !== WORLD_FULL) throw new Error(`${SCORED_RELOG}: ${message(e)}${code !== null ? ` (login reply ${code})` : ''}`);
+                    if (++worldFull > retries) throw new Error(`${SCORED_RELOG}: the world was full on ${worldFull} logins in a row (retried ${retries} times): ${message(e)}`);
                     await deps.sleep(loginFailurePolicy(WORLD_FULL).accountDelayMs);
-                    next = async () => {
-                        const r = await deps.login(session);
-                        return { via: r.via, attempts: r.attempts, loginWallMs: r.wallMs };
-                    };
                 }
             }
         } catch (e) {
             error = e;
             throw e;
         } finally {
-            const endTick = ctx.sdk.getState()?.tick ?? startTick;
+            lock.release();
             ctx.log.append({
-                v: 1,
-                kind: 'note',
-                runId: ctx.log.runId,
-                account: session.name,
-                sessionId: session.sessionId,
-                step: name,
-                startTick,
-                endTick,
-                ticks: 0,
-                wallMs: 0,
-                ok: !error,
-                ...(error ? { error: message(error) } : {}),
-                meta: { kind: 'scored-relog', ...(got ?? {}), worldFull, loggedInAt: session.launchedAt },
-                tickMs: tickMs(),
-                at: new Date().toISOString(),
+                v: 1, kind: 'note', runId: ctx.log.runId, account: session.name,
+                sessionId: session.sessionId, step: SCORED_RELOG, startTick,
+                endTick: ctx.sdk.getState()?.tick ?? startTick, ticks: 0, wallMs: 0,
+                ok: !error, ...(error ? { error: message(error) } : {}),
+                meta: { kind: 'scored-relog', ...(got ? { via: got.via, attempts: got.attempts, loginWallMs: got.wallMs } : {}),
+                    logout: o.budget.entries().find(e => e.kind === 'planned' && e.step === SCORED_RELOG)?.meta?.logout,
+                    worldFull, loggedInAt: session.launchedAt },
+                tickMs: tickMs(), at: new Date().toISOString(),
             });
         }
     };
-    return { name, preconditions: s => (s.inGame ? true : 'not in game'), postconditions: s => (s.inGame ? true : 'not in game after the relog'), run, resume: run, logoutSafe: true };
+    return {
+        name: SCORED_LOGIN, offline: true,
+        preconditions: () => o.budget.planned(SCORED_RELOG) === 'open' ? true : 'no open S21 relog',
+        postconditions: s => o.budget.hasPlanned(SCORED_RELOG) && s.inGame ? true : 'not in game after S21 login',
+        done: () => o.budget.hasPlanned(SCORED_RELOG),
+        run, resume: run, logoutSafe: true,
+    };
 }

@@ -88,6 +88,9 @@ export interface Step<C = Record<string, never>> {
      * runs, and a step does not set this on run day. Default (absent): on.
      */
     running?: boolean;
+    /** Deliberately out of the world: no game-tick freshness/budget waits or run-toggle clicks.
+     * The step supplies its own independent wait bound; checks fail immediately while offline. */
+    offline?: true;
 
     // Resume protocol (runner/resume.ts). All optional: a step without `done` is
     // transient (travel, banking) and is never a checkpoint.
@@ -200,9 +203,10 @@ function closeBoundary(log: TickLog, session: RunnerSession, b: Boundary, to: st
 }
 
 /** Check the published state; on failure wait exactly one tick and check once more. */
-async function check<C>(sdk: StateSource, fn: Check<C>, c: C, b: Boundary, wait: BoundaryWait): Promise<true | string> {
+async function check<C>(sdk: StateSource, fn: Check<C>, c: C, b: Boundary, wait: BoundaryWait, offline = false): Promise<true | string> {
     const s = sdk.getState() ?? (await nextTick(sdk));
-    if (fn(s, c) === true) return true;
+    const result = fn(s, c);
+    if (result === true || offline) return result;
     b.waits.push(wait);
     return fn(await nextTick(sdk, s.tick), c);
 }
@@ -239,7 +243,7 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
             const ctx: StepContext<C> = { session, sdk, bot: session.bot, c: opts.c, log: opts.log, ...(resuming && opts.observed ? { observed: opts.observed } : {}) };
 
             let waited = false;
-            if (i > start) {
+            if (!step.offline && i > start) {
                 boundary.budget = window.snapshot();
                 if (boundary.budget.free < 1) {
                     boundary.waits.push('budget');
@@ -247,12 +251,12 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
                     waited = true;
                 }
             }
-            if (!waited && (!sdk.getState() || window.ageMs(Date.now()) >= periodMs(period))) {
+            if (!step.offline && !waited && (!sdk.getState() || window.ageMs(Date.now()) >= periodMs(period))) {
                 boundary.waits.push('stale');
                 await nextTick(sdk);
             }
             const wantRun = step.running !== false;
-            if (!wantRun || runSet === false) {
+            if (!step.offline && (!wantRun || runSet === false)) {
                 try {
                     await ensureRun(sdk, wantRun);
                 } catch (e) {
@@ -263,7 +267,7 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
                 runSet = wantRun;
             }
             if (!resuming) {
-                const pre = await check(sdk, step.preconditions, opts.c, boundary, 'pre-recheck');
+                const pre = await check(sdk, step.preconditions, opts.c, boundary, 'pre-recheck', step.offline);
                 if (pre !== true) {
                     failRow(opts.log, session, step.name, 'precondition', pre);
                     throw new StepError(step.name, 'precondition', pre);
@@ -279,7 +283,7 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
             }
 
             boundary = openBoundary(session, step.name);
-            const post = await check(sdk, step.postconditions, opts.c, boundary, 'post-recheck');
+            const post = await check(sdk, step.postconditions, opts.c, boundary, 'post-recheck', step.offline);
             if (post !== true) {
                 failRow(opts.log, session, step.name, 'postcondition', post);
                 throw new StepError(step.name, 'postcondition', post);

@@ -64,6 +64,8 @@ import { patchMethod } from './runner/fence';
 import { buildChain, chainProbes, missingOnPath, muleCueDir, resolveFrom, sliceUntil, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
 import { prepareCueDir, RunCues } from './runner/cue-keeper';
 import { sessionLink } from './runner/resume';
+import { RelogBudget } from './runner/relog-budget';
+import { SCORED_LOGIN, SCORED_RELOG } from './runner/scored-relog';
 
 export class UsageError extends Error {
     override name = 'UsageError';
@@ -160,7 +162,7 @@ export function loadRunConfig(path: string, runDir: string, env: Record<string, 
  * S05's H4 giver; a ledger row the chain does not cover; a probe a step reads that no module
  * exports): a start-gate refusal, never a crash.
  */
-export function chainOrRefusal(cfg: RunConfig, cues: CueSink, o: Pick<ChainOptions, 's21Relog'> = {}): { chain: ChainStep[] } | { refusal: string } {
+export function chainOrRefusal(cfg: RunConfig, cues: CueSink, o: Pick<ChainOptions, 's21Relog' | 'relogs'> = {}): { chain: ChainStep[] } | { refusal: string } {
     try {
         const chain = buildChain(cfg, { cues, ...o });
         chainProbes(chain);
@@ -416,6 +418,34 @@ async function releaseClaim(owner: string): Promise<string> {
     return code === 0 ? `claim released (${owner})` : `rs-claim release ${owner} exited ${code}: ${`${o}${e}`.trim()}`;
 }
 
+/**
+ * An open planned S21 relog must attach without launching SCORED. Recheck the givers and finish
+ * the login half before the normal in-world resume walk (which needs a scene and player ticks).
+ */
+export async function openRunSession(bot: string, o: {
+    client: ClientKind; chain: readonly ChainStep[]; relogs: RelogBudget; log: TickLog;
+    beforeLogin?: () => Promise<void>;
+}, deps = { open: openSession, close: closeSession }): Promise<Session> {
+    const pending = o.relogs.planned(SCORED_RELOG) === 'open';
+    const ready = pending ? o.chain.find(s => s.name === 'S21 runecraft:pre-login') : null;
+    const loginHalf = pending ? o.chain.find(s => s.name === SCORED_LOGIN) : null;
+    if (pending && (!ready || !loginHalf)) throw new Error('open S21 relog requires its giver wait and login half; do not disable or slice past it');
+    const session = await deps.open(bot, { client: o.client, launch: !pending, ...(pending ? { awaitInWorld: false as const } : {}) });
+    session.beforeLogin = o.beforeLogin;
+    if (!pending) return session;
+    session.expectInWorld = false;
+    session.watchdog?.pause();
+    try {
+        const ctx = { session, sdk: session.sdk, bot: session.bot, c: {}, log: o.log };
+        await ready!.run(ctx);
+        await loginHalf!.run(ctx);
+        return session;
+    } catch (e) {
+        await deps.close(session);
+        throw e;
+    }
+}
+
 async function main(argv: string[]): Promise<number> {
     const a = parseArgs(argv);
     const cfg = loadRunConfig(a.config, a.runDir);
@@ -426,7 +456,8 @@ async function main(argv: string[]): Promise<number> {
     }
     // The cues name the login (hashed), never the bot's env directory.
     const keeper = new RunCues({ main: cfg.cueDir, mule: muleCueDir(cfg) }, loadBotEnv(a.bot).BOT_USERNAME);
-    const built = chainOrRefusal(cfg, keeper, { s21Relog: a.s21Relog });
+    const relogs = new RelogBudget(a.runDir);
+    const built = chainOrRefusal(cfg, keeper, { s21Relog: a.s21Relog, relogs });
     if ('refusal' in built) {
         console.error(`[gate] REFUSED run config: ${built.refusal}`);
         console.error('[run] nothing was logged in');
@@ -451,16 +482,17 @@ async function main(argv: string[]): Promise<number> {
 
     const earlier = existsSync(a.log) ? parseLog(readFileSync(a.log, 'utf8')) : [];
     const fresh = earlier.length === 0 && from === undefined;
+    if (fresh) relogs.clear();
     const removed = [...prepareCueDir(cfg.cueDir, { fresh }), ...prepareCueDir(muleCueDir(cfg), { fresh }).map(f => `mule/${f}`)];
     const log = TickLog.open(`run-${newRunId()}`, a.log);
     const bin = owner ? claimBin() : null;
     const reservation = new ReservationWatch(reservationPath(a.hostReservation), { label: 'run', ...(owner ? { owner, touch: bin ? claimToucher(bin) : null } : {}) });
-    const session = await openSession(a.bot, { client: a.client, launch: true });
     const recorded = gates.find(g => g.gate === 'demo tick rate')!.meta!.recorded as TickMsParse;
-    session.beforeLogin = tickBeforeLogin(io, recorded, t => {
-        log.append(annotation(log, session.name, 'gate', '(gate) demo tick rate before login', { ok: t.ok, meta: { ...t } }));
+    const beforeLogin = tickBeforeLogin(io, recorded, t => {
+        log.append(annotation(log, loadBotEnv(a.bot).BOT_USERNAME, 'gate', '(gate) demo tick rate before login', { ok: t.ok, meta: { ...t } }));
         console.log(`[gate] ${t.ok ? 'ok     ' : 'REFUSED'} demo tick rate before login: ${describePreflight(t)}`);
     });
+    const session = await openRunSession(a.bot, { client: a.client, chain, relogs, log, beforeLogin });
     const unalias = aliasAccount(log, session.name);
     log.append(annotation(log, session.name, 'gate', '(gate) start', { meta: { gates, fresh, cueDir: cfg.cueDir, removed, until: a.until ?? null, steps: chain.length, s21Relog: a.s21Relog } }));
     console.log(`[run] ${LOG_ACCOUNT} on ${a.client}; ${chain.length} steps${a.until ? ` to ${a.until}` : ''}; log ${log.path}`);

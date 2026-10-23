@@ -5,8 +5,10 @@ import { join } from 'node:path';
 import type { BotWorldState, InventoryItem, NearbyLoc, PlayerState } from '../../sdk/types';
 import { cueAddresses, nameHash, readCue, writeStatus, type CueScope } from '../helpers/altar-cue';
 import { baseState, drive, FakeSdk, type SentAction } from '../lib/fake-sdk';
-import type { RelogResult, Session } from '../lib/session';
-import { scoredRelogStep } from '../runner/scored-relog';
+import type { LoginResult, Session } from '../lib/session';
+import type { FeedClock } from '../lib/feed-hello';
+import { RelogBudget } from '../runner/relog-budget';
+import { scoredLoginStep, scoredLogoutStep } from '../runner/scored-relog';
 import { ProgramError, rcCueFields, type ProgramStatus } from '../lib/programs';
 import { TickLog } from '../lib/ticks';
 import { DROPPED_TICKS } from '../lib/trade';
@@ -979,7 +981,27 @@ describe('S21 hand-back (SUPPLIES.md H17e)', () => {
 // ------------------------------------------------------------------ xp targets
 
 describe("S21's pre-login, SCORED's relog, then the first trade (rs/186)", () => {
-    const opts = (h: Harness, o: RunecraftOptions = {}) => h.opts({ untilLevel: 45, s21Altar: 'nature', s21Givers: ['lab_g1', 'lab_g2'], preLoginTicks: 40, ...o });
+    const opts = (h: Harness, o: RunecraftOptions = {}) => {
+        const clock = (): FeedClock => {
+            const offs = new Set<() => void>();
+            return {
+                next: after => {
+                    const current = h.sdk.getState()!;
+                    if (current.tick > after) return Promise.resolve({ tick: current.tick, ms: h.now });
+                    return new Promise(resolve => {
+                        const off = h.sdk.onStateUpdate(st => {
+                            if (st.tick <= after) return;
+                            off(); offs.delete(off);
+                            resolve({ tick: st.tick, ms: h.now });
+                        });
+                        offs.add(off);
+                    });
+                },
+                close: () => { for (const off of offs) off(); offs.clear(); }
+            };
+        };
+        return h.opts({ untilLevel: 45, s21Altar: 'nature', s21Givers: ['lab_g1', 'lab_g2'], preLoginTicks: 40, ...o, deps: { preLoginClock: clock, ...o.deps } });
+    };
 
     test("the bound: the launcher limiter's queue for the roster, one login and a refusal pause; 340 s for 22 givers", () => {
         // 3 back to back 4 s apart, then one every 10 s: the 22nd login's slot is 190 s after the first.
@@ -1000,7 +1022,8 @@ describe("S21's pre-login, SCORED's relog, then the first trade (rs/186)", () =>
             if (s.tick === t0 + 30) h.statuses = [h.giver('lab_g1'), h.giver('lab_g2')];
             return {};
         });
-        expect(h.cues.map(c => [c.session, c.scope, c.fields.turns, c.fields.stop ?? false])).toEqual([['s1', { step: 'S21', family: 'altar' }, [], false]]);
+        expect(h.cues.length).toBeGreaterThan(1);
+        expect(h.cues.every(c => c.session === 's1' && c.scope.step === 'S21' && c.scope.family === 'altar' && !c.fields.turns.length && !c.fields.stop)).toBe(true);
         expect(h.cues[0]!.fields.beacons.length).toBeGreaterThanOrEqual(4);
         expect(h.cues[0]!.receiver).toBe(SCORED);
         const row = h.log.rows.find(r => r.step === 'S21 runecraft:pre-login')!;
@@ -1034,13 +1057,24 @@ describe("S21's pre-login, SCORED's relog, then the first trade (rs/186)", () =>
             },
         });
         const ready = () => giverFeed(h.statuses, h.now, () => 'robust').map(g => g.name).join(',');
-        const relog = scoredRelogStep({
+        const budget = new RelogBudget(mkdtempSync(join(tmpdir(), 'rc-s21-split-')));
+        const logout = scoredLogoutStep({ budget, deps: {
+            logout: async () => {
+                events.push('logout');
+                h.sdk.state!.inGame = false;
+                return { ok: true, clickTick: h.sdk.state!.tick, lastInWorldTick: h.sdk.state!.tick, latencyTicks: 0, wallMs: 0, confirmedBy: 'page' };
+            },
+            confirmOut: async () => true,
+        } });
+        const relog = scoredLoginStep({
+            budget, beforeLogin: async () => { expect(h.sdk.state!.inGame).toBe(false); },
             deps: {
-                relog: async (s: Session) => {
-                    events.push(`relog (ready: ${ready()})`);
+                login: async (s: Session) => {
+                    events.push(`login (ready: ${ready()})`);
                     s.launchedAt = 3_000;
+                    h.sdk.state!.inGame = true;
                     h.statuses = [...h.statuses, h.giver('lab_g3', { readyAt: 3_500, loggedInAt: 4_000 })];
-                    return { logout: { ok: true }, loginTick: 120, tickBase: 0, via: 'page', loginWallMs: 1_000, attempts: 1 } as RelogResult;
+                    return { via: 'page', wallMs: 1_000, attempts: 1 } as LoginResult;
                 },
                 replyCode: async () => null,
             },
@@ -1051,11 +1085,12 @@ describe("S21's pre-login, SCORED's relog, then the first trade (rs/186)", () =>
         });
         const ctx = h.ctx();
         expect((ctx.session as Partial<Session>).launchedAt).toBe(1_000); // SCORED's first login, before every giver's
+        await logout.run(ctx);
         await drive(h.sdk, preLoginStep(o).run(ctx));
         events.push(`pre-login done (ready: ${ready()})`);
         await relog.run(ctx);
         await altarStep(nature44, o).run(ctx);
-        expect(events).toEqual(['pre-login done (ready: lab_g1,lab_g2)', 'relog (ready: lab_g1,lab_g2)', 'first trade']);
+        expect(events).toEqual(['logout', 'pre-login done (ready: lab_g1,lab_g2)', 'login (ready: lab_g1,lab_g2)', 'first trade']);
         expect(h.starts[0]!.givers).toEqual([
             { name: 'lab_g1', schedule: 'tuned', readyAt: 800 },
             { name: 'lab_g2', schedule: 'tuned', readyAt: 900 },

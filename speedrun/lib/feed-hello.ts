@@ -6,6 +6,7 @@
 // only the operator's --tick-override goes past it, logged with the reading.
 
 import type { TickMsParse } from './run-floor';
+import { idleBoundMs, TickPeriod } from './wait';
 
 export interface FeedHello {
     tickMs: number;
@@ -115,4 +116,88 @@ export function describePreflight(p: TickPreflight): string {
     const read = `feed ${r.feedTickMs ?? '?'} ms (${r.players ?? '?'} players, tick ${r.feedTick ?? '?'}), freeze ${r.recordedTickMs ?? '-'}, tickMs() ${r.localTickMs}`;
     if (!p.problems.length) return `${read}: agree`;
     return `${read}: ${p.overridden ? 'OVERRIDDEN by --tick-override: ' : ''}${p.problems.join('; ')}`;
+}
+
+
+export interface FeedBeacon {
+    tick: number;
+    /** Local receipt time, not an elapsed-time tick estimate. */
+    ms: number;
+}
+
+export interface FeedClock {
+    /** The next observed world tick after `after`; silence and a restarted world reject. */
+    next(after: number): Promise<FeedBeacon>;
+    close(): void;
+}
+
+type TickSocket = Socket & { send(data: string): void };
+
+/**
+ * A login-free clock for work done while the player is deliberately out of the world. Subscribe
+ * to one empty tile: tick frames still arrive, without carrying a world's worth of entities.
+ * Only the server's tick labels advance the clock. Wall time can detect silence, never readiness.
+ */
+export function watchFeedTicks(url: string, o: { connect?: (url: string) => TickSocket; idleMs?: number } = {}): FeedClock {
+    const period = new TickPeriod();
+    let latest: FeedBeacon | null = null;
+    let failure: Error | null = null;
+    const waiting = new Set<{ after: number; resolve(b: FeedBeacon): void; reject(e: Error): void }>();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let ping: ReturnType<typeof setInterval> | undefined;
+    const ws = (o.connect ?? (u => new WebSocket(u) as unknown as TickSocket))(url);
+    const stop = (reason: string) => {
+        if (failure) return;
+        failure = new Error(reason);
+        clearTimeout(timer);
+        clearInterval(ping);
+        ws.onclose = null;
+        try { ws.close(); } catch {}
+        for (const w of waiting) w.reject(failure);
+        waiting.clear();
+    };
+    const arm = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => stop('world feed stopped: no advancing observed tick'), o.idleMs ?? idleBoundMs({ ticks: 25, period }));
+    };
+    ws.onopen = () => {
+        try {
+            ws.send(JSON.stringify({ t: 'sub', x: 0, z: 0, w: 1, h: 1 }));
+            // The feed expires idle subscribers even while it is sending them frames.
+            ping = setInterval(() => {
+                try { ws.send(JSON.stringify({ t: 'ping' })); }
+                catch { stop('world feed connection error'); }
+            }, 10_000);
+        } catch { stop('world feed connection error'); }
+    };
+    ws.onmessage = e => {
+        let m: { t?: unknown; k?: unknown };
+        try { m = JSON.parse(String(e.data)); } catch { return; }
+        if (!m || m.t !== 'tick' || typeof m.k !== 'number' || !Number.isSafeInteger(m.k) || m.k < 0) return;
+        if (latest && m.k < latest.tick) {
+            stop('world feed tick went backwards: world restarted');
+            return;
+        }
+        if (failure || (latest && m.k === latest.tick)) return;
+        latest = { tick: m.k, ms: Date.now() };
+        period.see(latest.tick, latest.ms);
+        arm();
+        for (const w of waiting) {
+            if (latest.tick > w.after) {
+                waiting.delete(w);
+                w.resolve(latest);
+            }
+        }
+    };
+    ws.onerror = () => stop('world feed connection error');
+    ws.onclose = () => stop('world feed closed before the wait finished');
+    arm();
+    return {
+        next: after => {
+            if (failure) return Promise.reject(failure);
+            if (latest && latest.tick > after) return Promise.resolve(latest);
+            return new Promise((resolve, reject) => waiting.add({ after, resolve, reject }));
+        },
+        close: () => stop('world feed closed'),
+    };
 }

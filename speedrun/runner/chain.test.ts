@@ -389,12 +389,12 @@ describe('cues', () => {
         expect(r.stopped.slice(1)).toEqual([FAMILY_CUES.S04, FAMILY_CUES.S04]);
     });
 
-    test("S21 after its leg: the pre-login, SCORED's relog, then the band; --s21-relog=off drops only the relog", () => {
+    test("S21 after its leg: logout, giver ready wait, login, band; --s21-relog=off keeps a single session", () => {
         const s21 = (c: ChainStep[]) => c.filter(s => s.id === 'S21').map(s => s.name);
-        expect(s21(chain)).toEqual(['S21 runecraft:pre-login', 'S21 relog', 'S21 runecraft']);
+        expect(s21(chain)).toEqual(['S21 relog:logout', 'S21 runecraft:pre-login', 'S21 relog:login', 'S21 runecraft']);
         expect(chain[chain.findIndex(s => s.id === 'S21') - 1]!.id).toBe('T20-21');
         expect(s21(buildChain(CONFIG, { cues: recorder().cues, s21Relog: false }))).toEqual(['S21 runecraft:pre-login', 'S21 runecraft']);
-        expect(resolveFrom(chain, 'S21')).toBe(chain.findIndex(s => s.name === 'S21 runecraft:pre-login'));
+        expect(resolveFrom(chain, 'S21')).toBe(chain.findIndex(s => s.name === 'S21 relog:logout'));
     });
 
     test('withCue opens on run (kept when the scope is already open) and afresh on every resume', async () => {

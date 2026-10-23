@@ -2,6 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { parseLaunchConfig } from '../helpers/standalone';
+import { S21_HAND_BACK } from '../skills/runecraft';
+import { altarGiverLaunch } from './altar-launch';
+import { anvilLaunch } from './anvil-launch';
+import { boneGiverLaunch } from './bone-launch';
+import { cannonHolderLaunch } from './cannon-launch';
+import { LANDING_HELPER_TILE, S06_BAND } from './dress-rehearsal';
+import { dropperLaunch } from './fm-row-launch';
 import { lastRolePhase, roleLogEvents, stopLauncher, waitLauncherReady } from './helper-launch';
 
 const runDir = () => mkdtempSync(join(tmpdir(), 'helper-launch-'));
@@ -56,4 +64,30 @@ test('stopLauncher sends SIGINT and waits for the exit', async () => {
     const sent: string[] = [];
     await stopLauncher({ kill: (s?: number | NodeJS.Signals) => void sent.push(String(s)), exited: Promise.resolve(0) }, 1_000);
     expect(sent).toEqual(['SIGINT']);
+});
+
+describe('rehearsal launcher entries never stop the whole launcher on a role exit', () => {
+    const common = { botsDir: '/tmp/bots', runDir: '/tmp/run', gatewayPort: 8305 };
+    const names = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `cairn_${prefix}${i + 1}`);
+    const cases = [
+        { name: 'S03 log droppers', role: 'fm-row', accounts: names('drop', 6), make: () => dropperLaunch({ ...common, droppers: names('drop', 6), tiles: '3222-3218@3219;3218-3243@3218;3242-3223@3219', cueDir: '/tmp/cue' }) },
+        { name: 'S07 bone givers', role: 'bone-giver', accounts: names('bone', 4), make: () => boneGiverLaunch({ ...common, givers: names('bone', 4) }) },
+        { name: 'S25a anvil', role: 'anvil', accounts: ['cairn_anvil'], make: () => anvilLaunch({ ...common, account: 'cairn_anvil' }) },
+        { name: 'H23 cannon holder', role: 'cannon', accounts: ['cairn_holder'], make: () => cannonHolderLaunch({ ...common, account: 'cairn_holder', tile: LANDING_HELPER_TILE }) },
+        ...([undefined, 'relay', 'direct'] as const).flatMap(path => [
+            { name: `S06 altar (${path ?? 'default'})`, role: 'altar-giver', accounts: names('air', 7), make: () => altarGiverLaunch({ ...common, givers: names('air', 7), band: S06_BAND, ...(path ? { path } : {}) }) },
+            { name: `S21 altar with hand-back (${path ?? 'default'})`, role: 'altar-giver', accounts: [...names('body', 22), 'cairn_return'], make: () => altarGiverLaunch({ ...common, givers: names('body', 22), band: { id: 'S21', altar: 'body' }, handBack: { account: 'cairn_return', items: S21_HAND_BACK.items }, ...(path ? { path } : {}) }) },
+        ]),
+    ];
+
+    for (const c of cases) {
+        test(c.name, () => {
+            // The same JSON boundary as spawnLauncher, then the launcher's actual parser.
+            const raw = JSON.parse(JSON.stringify(c.make())) as { accounts: { account: string; final?: boolean }[] };
+            expect(raw.accounts.map(a => a.account)).toEqual(c.accounts);
+            expect(raw.accounts.filter(a => a.final === true)).toEqual([]);
+            const parsed = parseLaunchConfig(raw);
+            expect(parsed.accounts.map(a => [a.account, a.role, a.final])).toEqual(c.accounts.map(account => [account, c.role, false]));
+        });
+    }
 });
