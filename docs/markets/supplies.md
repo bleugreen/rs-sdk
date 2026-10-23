@@ -289,63 +289,63 @@ GE figures read 2026-10-22 22:25Z to 2026-10-22 22:36Z (public market API, read-
 | Item | Shopkeeper (inv) | Where; needs | Nearest bank, tiles | Fleet key | Base stock | 1st unit | Step/unit | Ceiling | Run's need from a full shelf | Restock | Live shelf |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | Blood rune | Magic Store owner (`magicguildshop`) | Magic Guild 1st floor, Yanille; Magic 66 (guild door) | yanille 18 + stairs | magicGuild | 1,000 | 50 | +0.5 | 300 after 500 | 108,250 | 1 per 300 t, 30/h | config only (no reader with Magic 66) |
-| Death rune | Betty (`magicshop`) | Betty's, Port Sarim | draynor 80 | betty | 1,000 | 30 | +0.3 | 180 after 500 | 5,049 | 1 per 150 t, 60/h | pending |
-| Death rune | Aubury (`runeshop`) | Aubury's, Varrock east | varrockEast 19 | aubury | 1,000 | 30 | +0.3 | 180 after 500 | 5,049 | 1 per 150 t, 60/h | pending |
+| Death rune | Betty (`magicshop`) | Betty's, Port Sarim | draynor 80 | betty | 1,000 | 30 | +0.3 | 180 after 500 | 5,049 | 1 per 150 t, 60/h | 0 at 180 (2026-10-22 23:48Z) |
+| Death rune | Aubury (`runeshop`) | Aubury's, Varrock east | varrockEast 19 | aubury | 1,000 | 30 | +0.3 | 180 after 500 | 5,049 | 1 per 150 t, 60/h | 1 at 180 (2026-10-22 23:45Z) |
 | Death rune | Magic Store owner (`magicguildshop`) | Magic Guild 1st floor, Yanille; Magic 66 (guild door) | yanille 18 + stairs | magicGuild | 1,000 | 30 | +0.3 | 180 after 500 | 5,049 | 1 per 150 t, 60/h | config only (no reader with Magic 66) |
 | Death rune | Lundail (`magearena_runeshop`) | Mage Arena cellar (Lundail); Wilderness ~53 via the Ardougne lever; three webs | - |  | 250 | 30 | +0.9 | 180 after 167 | 8,646 | 1 per 150 t, 60/h | config only (skipped: Wilderness death risk) |
-| Chaos rune | Betty (`magicshop`) | Betty's, Port Sarim | draynor 80 | betty | 1,000 | 15 | +0.15 | 90 after 500 | 698 | 1 per 100 t, 90/h | pending |
-| Chaos rune | Aubury (`runeshop`) | Aubury's, Varrock east | varrockEast 19 | aubury | 1,000 | 15 | +0.15 | 90 after 500 | 698 | 1 per 100 t, 90/h | pending |
+| Chaos rune | Betty (`magicshop`) | Betty's, Port Sarim | draynor 80 | betty | 1,000 | 15 | +0.15 | 90 after 500 | 698 | 1 per 100 t, 90/h | 1 at 90 (2026-10-22 23:48Z) |
+| Chaos rune | Aubury (`runeshop`) | Aubury's, Varrock east | varrockEast 19 | aubury | 1,000 | 15 | +0.15 | 90 after 500 | 698 | 1 per 100 t, 90/h | 2 at 90 (2026-10-22 23:45Z) |
 | Chaos rune | Magic Store owner (`magicguildshop`) | Magic Guild 1st floor, Yanille; Magic 66 (guild door) | yanille 18 + stairs | magicGuild | 1,000 | 15 | +0.15 | 90 after 500 | 698 | 1 per 100 t, 90/h | config only (no reader with Magic 66) |
 | Chaos rune | Lundail (`magearena_runeshop`) | Mage Arena cellar (Lundail); Wilderness ~53 via the Ardougne lever; three webs | - |  | 250 | 15 | +0.45 | 90 after 167 | 932 | 1 per 100 t, 90/h | config only (skipped: Wilderness death risk) |
 | Law rune | Magic Store owner (`magicguildshop`) | Magic Guild 1st floor, Yanille; Magic 66 (guild door) | yanille 18 + stairs | magicGuild | 1,000 | 40 | +0.4 | 240 after 500 | 2,772 | 1 per 300 t, 30/h | config only (no reader with Magic 66) |
 | Law rune | Tutab (`mm_magic_shop`) | Ape Atoll (Tutab); Monkey Madness, monkey greegree; never restocks | - |  | 250 | 40 | +0.4 | 240 (not reached; last unit 139) | 2,772 | never | pending |
 | Law rune | Lundail (`magearena_runeshop`) | Mage Arena cellar (Lundail); Wilderness ~53 via the Ardougne lever; three webs | - |  | 250 | 40 | +1.2 | 240 after 167 | 3,960 | 1 per 300 t, 30/h | config only (skipped: Wilderness death risk) |
 | Cosmic rune | Lundail (`magearena_runeshop`) | Mage Arena cellar (Lundail); Wilderness ~53 via the Ardougne lever; three webs | - |  | 20 | 15 | +0.45 | 90 (not reached; last unit 23) | 376 for 20 | 1 per 100 t, 90/h | config only (skipped: Wilderness death risk) |
-| Air rune | Aubury (`runeshop`) | Aubury's, Varrock east | varrockEast 19 | aubury | 2,000 | 4 | +0.04 | 24 after 500 | 34,350 | 1 per 10 t, 900/h | pending |
-| Air rune | Betty (`magicshop`) | Betty's, Port Sarim | draynor 80 | betty | 1,000 | 4 | +0.04 | 24 after 500 | 18,750 for 1,000 | 1 per 10 t, 900/h | pending |
+| Air rune | Aubury (`runeshop`) | Aubury's, Varrock east | varrockEast 19 | aubury | 2,000 | 4 | +0.04 | 24 after 500 | 34,350 | 1 per 10 t, 900/h | 10 at 24 (2026-10-22 23:45Z) |
+| Air rune | Betty (`magicshop`) | Betty's, Port Sarim | draynor 80 | betty | 1,000 | 4 | +0.04 | 24 after 500 | 18,750 for 1,000 | 1 per 10 t, 900/h | 1 at 24 (2026-10-22 23:48Z) |
 | Air rune | Magic Store owner (`magicguildshop`) | Magic Guild 1st floor, Yanille; Magic 66 (guild door) | yanille 18 + stairs | magicGuild | 3,000 | 4 | +0.04 | 24 after 500 | 34,350 | 1 per 18 t, 500/h | config only (no reader with Magic 66) |
 | Air rune | Tutab (`mm_magic_shop`) | Ape Atoll (Tutab); Monkey Madness, monkey greegree; never restocks | - |  | 1,000 | 4 | +0.04 | 24 after 500 | 18,750 for 1,000 | never | pending |
 | Air rune | Lundail (`magearena_runeshop`) | Mage Arena cellar (Lundail); Wilderness ~53 via the Ardougne lever; three webs | - |  | 200 | 4 | +0.12 | 24 after 167 | 3,043 for 200 | 1 per 50 t, 180/h | config only (skipped: Wilderness death risk) |
-| Fire rune | Aubury (`runeshop`) | Aubury's, Varrock east | varrockEast 19 | aubury | 2,000 | 4 | +0.04 | 24 after 500 | 445 | 1 per 10 t, 900/h | pending |
-| Fire rune | Betty (`magicshop`) | Betty's, Port Sarim | draynor 80 | betty | 1,000 | 4 | +0.04 | 24 after 500 | 445 | 1 per 10 t, 900/h | pending |
+| Fire rune | Aubury (`runeshop`) | Aubury's, Varrock east | varrockEast 19 | aubury | 2,000 | 4 | +0.04 | 24 after 500 | 445 | 1 per 10 t, 900/h | 12 at 24 (2026-10-22 23:45Z) |
+| Fire rune | Betty (`magicshop`) | Betty's, Port Sarim | draynor 80 | betty | 1,000 | 4 | +0.04 | 24 after 500 | 445 | 1 per 10 t, 900/h | 1 at 24 (2026-10-22 23:48Z) |
 | Fire rune | Magic Store owner (`magicguildshop`) | Magic Guild 1st floor, Yanille; Magic 66 (guild door) | yanille 18 + stairs | magicGuild | 3,000 | 4 | +0.04 | 24 after 500 | 445 | 1 per 18 t, 500/h | config only (no reader with Magic 66) |
 | Fire rune | Tutab (`mm_magic_shop`) | Ape Atoll (Tutab); Monkey Madness, monkey greegree; never restocks | - |  | 1,000 | 4 | +0.04 | 24 after 500 | 445 | never | pending |
 | Fire rune | Lundail (`magearena_runeshop`) | Mage Arena cellar (Lundail); Wilderness ~53 via the Ardougne lever; three webs | - |  | 200 | 4 | +0.12 | 24 after 167 | 728 | 1 per 50 t, 180/h | config only (skipped: Wilderness death risk) |
-| Water rune | Aubury (`runeshop`) | Aubury's, Varrock east | varrockEast 19 | aubury | 2,000 | 4 | +0.04 | 24 after 500 | 175 | 1 per 10 t, 900/h | pending |
-| Water rune | Betty (`magicshop`) | Betty's, Port Sarim | draynor 80 | betty | 1,000 | 4 | +0.04 | 24 after 500 | 175 | 1 per 10 t, 900/h | pending |
+| Water rune | Aubury (`runeshop`) | Aubury's, Varrock east | varrockEast 19 | aubury | 2,000 | 4 | +0.04 | 24 after 500 | 175 | 1 per 10 t, 900/h | 8 at 24 (2026-10-22 23:45Z) |
+| Water rune | Betty (`magicshop`) | Betty's, Port Sarim | draynor 80 | betty | 1,000 | 4 | +0.04 | 24 after 500 | 175 | 1 per 10 t, 900/h | 0 at 24 (2026-10-22 23:48Z) |
 | Water rune | Magic Store owner (`magicguildshop`) | Magic Guild 1st floor, Yanille; Magic 66 (guild door) | yanille 18 + stairs | magicGuild | 3,000 | 4 | +0.04 | 24 after 500 | 175 | 1 per 18 t, 500/h | config only (no reader with Magic 66) |
 | Water rune | Tutab (`mm_magic_shop`) | Ape Atoll (Tutab); Monkey Madness, monkey greegree; never restocks | - |  | 1,000 | 4 | +0.04 | 24 after 500 | 175 | never | pending |
 | Water rune | Lundail (`magearena_runeshop`) | Mage Arena cellar (Lundail); Wilderness ~53 via the Ardougne lever; three webs | - |  | 200 | 4 | +0.12 | 24 after 167 | 235 | 1 per 50 t, 180/h | config only (skipped: Wilderness death risk) |
-| Earth rune | Aubury (`runeshop`) | Aubury's, Varrock east | varrockEast 19 | aubury | 2,000 | 4 | +0.04 | 24 after 500 | 255 | 1 per 10 t, 900/h | pending |
-| Earth rune | Betty (`magicshop`) | Betty's, Port Sarim | draynor 80 | betty | 1,000 | 4 | +0.04 | 24 after 500 | 255 | 1 per 10 t, 900/h | pending |
+| Earth rune | Aubury (`runeshop`) | Aubury's, Varrock east | varrockEast 19 | aubury | 2,000 | 4 | +0.04 | 24 after 500 | 255 | 1 per 10 t, 900/h | 9 at 24 (2026-10-22 23:45Z) |
+| Earth rune | Betty (`magicshop`) | Betty's, Port Sarim | draynor 80 | betty | 1,000 | 4 | +0.04 | 24 after 500 | 255 | 1 per 10 t, 900/h | 1 at 24 (2026-10-22 23:48Z) |
 | Earth rune | Magic Store owner (`magicguildshop`) | Magic Guild 1st floor, Yanille; Magic 66 (guild door) | yanille 18 + stairs | magicGuild | 3,000 | 4 | +0.04 | 24 after 500 | 255 | 1 per 18 t, 500/h | config only (no reader with Magic 66) |
 | Earth rune | Tutab (`mm_magic_shop`) | Ape Atoll (Tutab); Monkey Madness, monkey greegree; never restocks | - |  | 1,000 | 4 | +0.04 | 24 after 500 | 255 | never | pending |
 | Earth rune | Lundail (`magearena_runeshop`) | Mage Arena cellar (Lundail); Wilderness ~53 via the Ardougne lever; three webs | - |  | 200 | 4 | +0.12 | 24 after 167 | 373 | 1 per 50 t, 180/h | config only (skipped: Wilderness death risk) |
-| Mind rune | Betty (`magicshop`) | Betty's, Port Sarim | draynor 80 | betty | 1,000 | 3 | +0.03 | 18 after 500 | - | 1 per 10 t, 900/h | pending |
-| Mind rune | Aubury (`runeshop`) | Aubury's, Varrock east | varrockEast 19 | aubury | 1,000 | 3 | +0.03 | 18 after 500 | - | 1 per 10 t, 900/h | pending |
+| Mind rune | Betty (`magicshop`) | Betty's, Port Sarim | draynor 80 | betty | 1,000 | 3 | +0.03 | 18 after 500 | - | 1 per 10 t, 900/h | 2 at 18 (2026-10-22 23:48Z) |
+| Mind rune | Aubury (`runeshop`) | Aubury's, Varrock east | varrockEast 19 | aubury | 1,000 | 3 | +0.03 | 18 after 500 | - | 1 per 10 t, 900/h | 10 at 18 (2026-10-22 23:45Z) |
 | Mind rune | Magic Store owner (`magicguildshop`) | Magic Guild 1st floor, Yanille; Magic 66 (guild door) | yanille 18 + stairs | magicGuild | 3,000 | 3 | +0.03 | 18 after 500 | - | 1 per 18 t, 500/h | config only (no reader with Magic 66) |
 | Mind rune | Lundail (`magearena_runeshop`) | Mage Arena cellar (Lundail); Wilderness ~53 via the Ardougne lever; three webs | - |  | 140 | 3 | +0.09 | 18 (not reached; last unit 15) | - | 1 per 50 t, 180/h | config only (skipped: Wilderness death risk) |
 | Nature rune | Magic Store owner (`magicguildshop`) | Magic Guild 1st floor, Yanille; Magic 66 (guild door) | yanille 18 + stairs | magicGuild | 1,000 | 20 | +0.2 | 120 after 500 | - | 1 per 300 t, 30/h | config only (no reader with Magic 66) |
 | Nature rune | Lundail (`magearena_runeshop`) | Mage Arena cellar (Lundail); Wilderness ~53 via the Ardougne lever; three webs | - |  | 250 | 20 | +0.6 | 120 after 167 | - | 1 per 300 t, 30/h | config only (skipped: Wilderness death risk) |
 | Rune arrow | Bow and Arrow salesman (`ranging_guild_bowshop`) | Ranging Guild, Kandarin; Ranged 40 (guild door) | seers 57 | dargaud | 400 | 400 | +4 | 2,400 (not reached; last unit 1,996) | 159,600 | 1 per 130 t, 69.2/h | config only (no reader with Ranged 40) |
-| Rune arrow | Hickton (`archeryshop2`) | Hickton's, Catherby | catherby 13 | hickton | 0 | 400 | +4 | 2,400 | - | none (player-sold) | pending |
-| Rune arrowtips | Hickton (`archeryshop2`) | Hickton's, Catherby | catherby 13 | hickton | 100 | 200 | +2 | 1,200 (not reached; last unit 398) | 29,900 for 100 | 1 per 40 t, 225/h | pending |
+| Rune arrow | Hickton (`archeryshop2`) | Hickton's, Catherby | catherby 13 | hickton | 0 | 400 | +4 | 2,400 | - | none (player-sold) | 0 at 400 (2026-10-22 23:51Z) |
+| Rune arrowtips | Hickton (`archeryshop2`) | Hickton's, Catherby | catherby 13 | hickton | 100 | 200 | +2 | 1,200 (not reached; last unit 398) | 29,900 for 100 | 1 per 40 t, 225/h | 100 at 200 (2026-10-22 23:51Z) |
 | Rune arrowtips | Bow and Arrow salesman (`ranging_guild_bowshop`) | Ranging Guild, Kandarin; Ranged 40 (guild door) | seers 57 | dargaud | 150 | 200 | +2 | 1,200 (not reached; last unit 498) | 52,350 for 150 | 1 per 60 t, 150/h | config only (no reader with Ranged 40) |
-| Adamant arrowtips | Hickton (`archeryshop2`) | Hickton's, Catherby | catherby 13 | hickton | 200 | 40 | +0.4 | 240 (not reached; last unit 119) | 15,880 for 200 | 1 per 40 t, 225/h | pending |
+| Adamant arrowtips | Hickton (`archeryshop2`) | Hickton's, Catherby | catherby 13 | hickton | 200 | 40 | +0.4 | 240 (not reached; last unit 119) | 15,880 for 200 | 1 per 40 t, 225/h | 196 at 41 (2026-10-22 23:51Z) |
 | Adamant arrowtips | Bow and Arrow salesman (`ranging_guild_bowshop`) | Ranging Guild, Kandarin; Ranged 40 (guild door) | seers 57 | dargaud | 200 | 40 | +0.4 | 240 (not reached; last unit 119) | 15,880 for 200 | 1 per 50 t, 180/h | config only (no reader with Ranged 40) |
-| Mithril arrowtips | Hickton (`archeryshop2`) | Hickton's, Catherby | catherby 13 | hickton | 400 | 16 | +0.16 | 96 (not reached; last unit 79) | 18,976 for 400 | 1 per 40 t, 225/h | pending |
+| Mithril arrowtips | Hickton (`archeryshop2`) | Hickton's, Catherby | catherby 13 | hickton | 400 | 16 | +0.16 | 96 (not reached; last unit 79) | 18,976 for 400 | 1 per 40 t, 225/h | 400 at 16 (2026-10-22 23:51Z) |
 | Mithril arrowtips | Gulluck (`gnomeshop_gulluck`) | Grand Tree 2nd floor, Gnome Stronghold | ardougneNorth 154 + stairs |  | 140 | 16 | +0.16 | 96 (not reached; last unit 38) | 3,730 for 140 | 1 per 80 t, 112.5/h | pending |
 | Mithril arrowtips | Bow and Arrow salesman (`ranging_guild_bowshop`) | Ranging Guild, Kandarin; Ranged 40 (guild door) | seers 57 | dargaud | 200 | 16 | +0.16 | 96 (not reached; last unit 47) | 6,288 for 200 | 1 per 40 t, 225/h | config only (no reader with Ranged 40) |
 | Mithril arrowtips | Shop keeper (`lathastrainingstore`) | Combat Training Camp, north of West Ardougne; Biohazard (camp gate) | ardougneNorth 101 |  | 800 | 24 | +0.16 | 104 after 500 | 62,920 for 800 | 1 per 80 t, 112.5/h | pending |
-| Steel arrowtips | Hickton (`archeryshop2`) | Hickton's, Catherby | catherby 13 | hickton | 600 | 6 | +0.06 | 36 after 500 | 1,287 | 1 per 40 t, 225/h | pending |
+| Steel arrowtips | Hickton (`archeryshop2`) | Hickton's, Catherby | catherby 13 | hickton | 600 | 6 | +0.06 | 36 after 500 | 1,287 | 1 per 40 t, 225/h | 600 at 6 (2026-10-22 23:51Z) |
 | Steel arrowtips | Gulluck (`gnomeshop_gulluck`) | Grand Tree 2nd floor, Gnome Stronghold | ardougneNorth 154 + stairs |  | 160 | 6 | +0.06 | 36 (not reached; last unit 15) | 1,287 | 1 per 40 t, 225/h | pending |
 | Steel arrowtips | Bow and Arrow salesman (`ranging_guild_bowshop`) | Ranging Guild, Kandarin; Ranged 40 (guild door) | seers 57 | dargaud | 300 | 6 | +0.06 | 36 (not reached; last unit 23) | 1,287 | 1 per 30 t, 300/h | config only (no reader with Ranged 40) |
 | Steel arrowtips | Shop keeper (`lathastrainingstore`) | Combat Training Camp, north of West Ardougne; Biohazard (camp gate) | ardougneNorth 101 |  | 800 | 9 | +0.06 | 39 after 500 | 1,692 | 1 per 40 t, 225/h | pending |
-| Iron arrowtips | Hickton (`archeryshop2`) | Hickton's, Catherby | catherby 13 | hickton | 800 | 2 | +0.02 | 12 after 500 | 220 | 1 per 20 t, 450/h | pending |
+| Iron arrowtips | Hickton (`archeryshop2`) | Hickton's, Catherby | catherby 13 | hickton | 800 | 2 | +0.02 | 12 after 500 | 220 | 1 per 20 t, 450/h | 800 at 2 (2026-10-22 23:51Z) |
 | Iron arrowtips | Gulluck (`gnomeshop_gulluck`) | Grand Tree 2nd floor, Gnome Stronghold | ardougneNorth 154 + stairs |  | 180 | 2 | +0.02 | 12 (not reached; last unit 5) | 220 | 1 per 20 t, 450/h | pending |
 | Iron arrowtips | Bow and Arrow salesman (`ranging_guild_bowshop`) | Ranging Guild, Kandarin; Ranged 40 (guild door) | seers 57 | dargaud | 400 | 2 | +0.02 | 12 (not reached; last unit 9) | 220 | 1 per 20 t, 450/h | config only (no reader with Ranged 40) |
 | Iron arrowtips | Shop keeper (`lathastrainingstore`) | Combat Training Camp, north of West Ardougne; Biohazard (camp gate) | ardougneNorth 101 |  | 800 | 3 | +0.02 | 13 after 500 | 310 | 1 per 20 t, 450/h | pending |
-| Bronze arrowtips | Hickton (`archeryshop2`) | Hickton's, Catherby | catherby 13 | hickton | 1,000 | 1 | +0.01 | 6 after 500 | 60 | 1 per 10 t, 900/h | pending |
+| Bronze arrowtips | Hickton (`archeryshop2`) | Hickton's, Catherby | catherby 13 | hickton | 1,000 | 1 | +0.01 | 6 after 500 | 60 | 1 per 10 t, 900/h | 1,000 at 1 (2026-10-22 23:51Z) |
 | Bronze arrowtips | Gulluck (`gnomeshop_gulluck`) | Grand Tree 2nd floor, Gnome Stronghold | ardougneNorth 154 + stairs |  | 200 | 1 | +0.01 | 6 (not reached; last unit 2) | 60 | 1 per 10 t, 900/h | pending |
 | Bronze arrowtips | Shop keeper (`lathastrainingstore`) | Combat Training Camp, north of West Ardougne; Biohazard (camp gate) | ardougneNorth 101 |  | 800 | 1 | +0.01 | 6 after 500 | 70 | 1 per 10 t, 900/h | pending |
 | Bronze arrowtips | Bow and Arrow salesman (`ranging_guild_bowshop`) | Ranging Guild, Kandarin; Ranged 40 (guild door) | seers 57 | dargaud | 500 | 1 | +0.01 | 6 after 500 | 60 | 1 per 10 t, 900/h | config only (no reader with Ranged 40) |
@@ -356,7 +356,7 @@ GE figures read 2026-10-22 22:25Z to 2026-10-22 22:36Z (public market API, read-
 | Feather | Fishmonger (`etc_fishmonger`) | Etceteria fishmonger; Fremennik Trials (ship) | - |  | 1,000 | 2 | +0.06 | 12 after 167 | 11,180 for 1,000 | 1 per 1 t, 9,000/h | pending |
 | Feather | Fishmonger (`misc_fishmonger`) | Miscellania fishmonger; Fremennik Trials (ship) | - |  | 1,000 | 2 | +0.06 | 12 after 167 | 11,180 for 1,000 | 1 per 1 t, 9,000/h | pending |
 | Feather | Shantay (`shantayshop`) | Shantay Pass; toll gate (10 gp) from Lumbridge | alKharid 44 | shantay | 500 | 2 | +0.02 | 12 after 500 | 3,250 for 500 | 1 per 50 t, 180/h | pending |
-| Antipoison(3) | Jiminua (`junglestore`) | Jiminua's, Karamja jungle; ship to Karamja (30 gp) | - | jiminua | 10 | 432 | +5.76 | 1,872 (not reached; last unit 483) | - | 1 per 150 t, 60/h | pending |
+| Antipoison(3) | Jiminua (`junglestore`) | Jiminua's, Karamja jungle; ship to Karamja (30 gp) | - | jiminua | 10 | 432 | +5.76 | 1,872 (not reached; last unit 483) | - | 1 per 150 t, 60/h | 10 at 432 (2026-10-22 23:49Z) |
 | Raw shark | Rufus (`werewolfstore1`) | Rufus's, Canifis; Priest in Peril | - |  | 1 | 390 | +9 | 1,890 (not reached; last unit 390) | - | 1 per 1,000 t, 9/h | pending |
 | Raw shark | Harry (`fishingshop2`) | Harry's, Catherby | catherby 25 |  | 0 | 300 | +3 | 1,800 | - | none (player-sold) | pending |
 | Raw shark | Fish monger (`viking_fishmonger`) | Rellekka fishmonger; Fremennik Trials | - |  | 0 | 390 | +9 | 1,890 | - | none (player-sold) | pending |
@@ -369,52 +369,52 @@ GE figures read 2026-10-22 22:25Z to 2026-10-22 22:36Z (public market API, read-
 | Lobster | Roachey (`fishingguild`) | Fishing Guild, Hemenster; Fishing 68 (guild door) | ardougneNorth 67 |  | 0 | 150 | +1.5 | 900 | - | none (player-sold) | pending |
 | Cooked karambwan | Alfonse the waiter (`karamja_fishrestaurant`) | Shrimp and Parrot, Brimhaven; ship to Brimhaven | - |  | 3 | 325 | +7.5 | 1,575 (not reached; last unit 340) | - | 1 per 900 t, 10/h | pending |
 | Cake | Baker (`bakery`) | Bakery stall, East Ardougne market | ardougneSouth 28 |  | 3 | 50 | +1 | 300 (not reached; last unit 52) | - | 1 per 800 t, 11.3/h | pending |
-| Sapphire ring | Grum (`goldshop`) | Grum's, Port Sarim | draynor 79 |  | 0 | 900 | +18 | 5,400 | - | none (player-sold) | pending |
-| Emerald ring | Grum (`goldshop`) | Grum's, Port Sarim | draynor 79 |  | 0 | 1,275 | +25.5 | 7,650 | - | none (player-sold) | pending |
+| Sapphire ring | Grum (`goldshop`) | Grum's, Port Sarim | draynor 79 |  | 0 | 900 | +18 | 5,400 | - | none (player-sold) | 0 at 900 (2026-10-22 23:48Z) |
+| Emerald ring | Grum (`goldshop`) | Grum's, Port Sarim | draynor 79 |  | 0 | 1,275 | +25.5 | 7,650 | - | none (player-sold) | 0 at 1,275 (2026-10-22 23:48Z) |
 | Ruby ring | Irksol (`cheapringshop`) | Irksol's, Zanaris; Lost City | - |  | 5 | 1,012 | +20.25 | 11,137 (not reached; last unit 1,093) | 5,263 for 5 | 1 per 500 t, 18/h | config only (no reader with Lost City) |
-| Ruby ring | Grum (`goldshop`) | Grum's, Port Sarim | draynor 79 |  | 0 | 2,025 | +40.5 | 12,150 | - | none (player-sold) | pending |
-| Diamond ring | Grum (`goldshop`) | Grum's, Port Sarim | draynor 79 |  | 0 | 3,525 | +70.5 | 21,150 | - | none (player-sold) | pending |
-| Amulet of magic | Davon (`amuletshop`) | Davon's, Brimhaven; ship to Brimhaven | - |  | 0 | 1,080 | +18 | 5,580 | - | none (player-sold) | pending |
-| Amulet of strength | Davon (`amuletshop`) | Davon's, Brimhaven; ship to Brimhaven | - |  | 0 | 2,430 | +40.5 | 12,555 | - | none (player-sold) | pending |
-| Gold bar | Drogo dwarf (`miningstore`) | Drogo's, Dwarven Mine; underground (Ice Mountain trapdoor) | edgeville 57 + ladder |  | 0 | 300 | +6 | 1,800 | - | none (player-sold) | pending |
-| Uncut diamond | Herquin (`gemshop`) | Herquin's, Falador | faladorWest 35 |  | 0 | 200 | +6 | 1,200 | - | none (player-sold) | pending |
-| Uncut diamond | Gem trader (`gemshop2`) | Gem trader, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 45 |  | 0 | 200 | +6 | 1,200 | - | none (player-sold) | pending |
-| Uncut ruby | Herquin (`gemshop`) | Herquin's, Falador | faladorWest 35 |  | 0 | 100 | +3 | 600 | - | none (player-sold) | pending |
-| Uncut ruby | Gem trader (`gemshop2`) | Gem trader, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 45 |  | 0 | 100 | +3 | 600 | - | none (player-sold) | pending |
-| Uncut emerald | Gem trader (`gemshop2`) | Gem trader, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 45 |  | 1 | 50 | +1.5 | 300 (not reached; last unit 50) | - | 1 per 40,000 t, 0.2/h | pending |
-| Uncut emerald | Herquin (`gemshop`) | Herquin's, Falador | faladorWest 35 |  | 0 | 50 | +1.5 | 300 | - | none (player-sold) | pending |
-| Uncut sapphire | Herquin (`gemshop`) | Herquin's, Falador | faladorWest 35 |  | 1 | 25 | +0.75 | 150 (not reached; last unit 25) | - | 1 per 25,000 t, 0.4/h | pending |
-| Uncut sapphire | Gem trader (`gemshop2`) | Gem trader, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 45 |  | 1 | 25 | +0.75 | 150 (not reached; last unit 25) | - | 1 per 25,000 t, 0.4/h | pending |
-| Diamond | Herquin (`gemshop`) | Herquin's, Falador | faladorWest 35 |  | 0 | 2,000 | +60 | 12,000 | - | none (player-sold) | pending |
-| Diamond | Gem trader (`gemshop2`) | Gem trader, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 45 |  | 0 | 2,000 | +60 | 12,000 | - | none (player-sold) | pending |
+| Ruby ring | Grum (`goldshop`) | Grum's, Port Sarim | draynor 79 |  | 0 | 2,025 | +40.5 | 12,150 | - | none (player-sold) | 0 at 2,025 (2026-10-22 23:48Z) |
+| Diamond ring | Grum (`goldshop`) | Grum's, Port Sarim | draynor 79 |  | 0 | 3,525 | +70.5 | 21,150 | - | none (player-sold) | 0 at 3,525 (2026-10-22 23:48Z) |
+| Amulet of magic | Davon (`amuletshop`) | Davon's, Brimhaven; ship to Brimhaven | - |  | 0 | 1,080 | +18 | 5,580 | - | none (player-sold) | 0 at 1,080 (2026-10-22 23:50Z) |
+| Amulet of strength | Davon (`amuletshop`) | Davon's, Brimhaven; ship to Brimhaven | - |  | 0 | 2,430 | +40.5 | 12,555 | - | none (player-sold) | 0 at 2,430 (2026-10-22 23:50Z) |
+| Gold bar | Drogo dwarf (`miningstore`) | Drogo's, Dwarven Mine; underground (Ice Mountain trapdoor) | edgeville 57 + ladder |  | 0 | 300 | +6 | 1,800 | - | none (player-sold) | 0 at 300 (2026-10-22 23:47Z) |
+| Uncut diamond | Herquin (`gemshop`) | Herquin's, Falador | faladorWest 35 |  | 0 | 200 | +6 | 1,200 | - | none (player-sold) | 0 at 200 (2026-10-22 23:47Z) |
+| Uncut diamond | Gem trader (`gemshop2`) | Gem trader, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 45 |  | 0 | 200 | +6 | 1,200 | - | none (player-sold) | 0 at 200 (2026-10-22 23:44Z) |
+| Uncut ruby | Herquin (`gemshop`) | Herquin's, Falador | faladorWest 35 |  | 0 | 100 | +3 | 600 | - | none (player-sold) | 0 at 100 (2026-10-22 23:47Z) |
+| Uncut ruby | Gem trader (`gemshop2`) | Gem trader, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 45 |  | 0 | 100 | +3 | 600 | - | none (player-sold) | 0 at 100 (2026-10-22 23:44Z) |
+| Uncut emerald | Gem trader (`gemshop2`) | Gem trader, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 45 |  | 1 | 50 | +1.5 | 300 (not reached; last unit 50) | - | 1 per 40,000 t, 0.2/h | 0 at 51 (2026-10-22 23:44Z) |
+| Uncut emerald | Herquin (`gemshop`) | Herquin's, Falador | faladorWest 35 |  | 0 | 50 | +1.5 | 300 | - | none (player-sold) | 0 at 50 (2026-10-22 23:47Z) |
+| Uncut sapphire | Herquin (`gemshop`) | Herquin's, Falador | faladorWest 35 |  | 1 | 25 | +0.75 | 150 (not reached; last unit 25) | - | 1 per 25,000 t, 0.4/h | 1 at 25 (2026-10-22 23:47Z) |
+| Uncut sapphire | Gem trader (`gemshop2`) | Gem trader, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 45 |  | 1 | 25 | +0.75 | 150 (not reached; last unit 25) | - | 1 per 25,000 t, 0.4/h | 1 at 25 (2026-10-22 23:44Z) |
+| Diamond | Herquin (`gemshop`) | Herquin's, Falador | faladorWest 35 |  | 0 | 2,000 | +60 | 12,000 | - | none (player-sold) | 0 at 2,000 (2026-10-22 23:47Z) |
+| Diamond | Gem trader (`gemshop2`) | Gem trader, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 45 |  | 0 | 2,000 | +60 | 12,000 | - | none (player-sold) | 0 at 2,000 (2026-10-22 23:44Z) |
 | Diamond | Gem merchant (`ardougnegemstall`) | Gem stall, East Ardougne market | ardougneSouth 20 |  | 0 | 3,000 | +60 | 13,000 | - | none (player-sold) | pending |
 | Ruby | Gem merchant (`ardougnegemstall`) | Gem stall, East Ardougne market | ardougneSouth 20 |  | 1 | 1,500 | +30 | 6,500 (not reached; last unit 1,500) | - | 1 per 60,000 t, 0.2/h | pending |
-| Ruby | Herquin (`gemshop`) | Herquin's, Falador | faladorWest 35 |  | 0 | 1,000 | +30 | 6,000 | - | none (player-sold) | pending |
-| Ruby | Gem trader (`gemshop2`) | Gem trader, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 45 |  | 0 | 1,000 | +30 | 6,000 | - | none (player-sold) | pending |
-| Emerald | Gem trader (`gemshop2`) | Gem trader, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 45 |  | 1 | 500 | +15 | 3,000 (not reached; last unit 500) | - | 1 per 35,000 t, 0.3/h | pending |
+| Ruby | Herquin (`gemshop`) | Herquin's, Falador | faladorWest 35 |  | 0 | 1,000 | +30 | 6,000 | - | none (player-sold) | 0 at 1,000 (2026-10-22 23:47Z) |
+| Ruby | Gem trader (`gemshop2`) | Gem trader, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 45 |  | 0 | 1,000 | +30 | 6,000 | - | none (player-sold) | 0 at 1,000 (2026-10-22 23:44Z) |
+| Emerald | Gem trader (`gemshop2`) | Gem trader, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 45 |  | 1 | 500 | +15 | 3,000 (not reached; last unit 500) | - | 1 per 35,000 t, 0.3/h | 0 at 515 (2026-10-22 23:44Z) |
 | Emerald | Gem merchant (`ardougnegemstall`) | Gem stall, East Ardougne market | ardougneSouth 20 |  | 1 | 750 | +15 | 3,250 (not reached; last unit 750) | - | 1 per 35,000 t, 0.3/h | pending |
-| Emerald | Herquin (`gemshop`) | Herquin's, Falador | faladorWest 35 |  | 0 | 500 | +15 | 3,000 | - | none (player-sold) | pending |
-| Sapphire | Herquin (`gemshop`) | Herquin's, Falador | faladorWest 35 |  | 1 | 250 | +7.5 | 1,500 (not reached; last unit 250) | - | 1 per 15,000 t, 0.6/h | pending |
-| Sapphire | Gem trader (`gemshop2`) | Gem trader, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 45 |  | 1 | 250 | +7.5 | 1,500 (not reached; last unit 250) | - | 1 per 15,000 t, 0.6/h | pending |
+| Emerald | Herquin (`gemshop`) | Herquin's, Falador | faladorWest 35 |  | 0 | 500 | +15 | 3,000 | - | none (player-sold) | 0 at 500 (2026-10-22 23:47Z) |
+| Sapphire | Herquin (`gemshop`) | Herquin's, Falador | faladorWest 35 |  | 1 | 250 | +7.5 | 1,500 (not reached; last unit 250) | - | 1 per 15,000 t, 0.6/h | 1 at 250 (2026-10-22 23:47Z) |
+| Sapphire | Gem trader (`gemshop2`) | Gem trader, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 45 |  | 1 | 250 | +7.5 | 1,500 (not reached; last unit 250) | - | 1 per 15,000 t, 0.6/h | 1 at 250 (2026-10-22 23:44Z) |
 | Sapphire | Gem merchant (`ardougnegemstall`) | Gem stall, East Ardougne market | ardougneSouth 20 |  | 2 | 375 | +7.5 | 1,625 (not reached; last unit 382) | - | 1 per 15,000 t, 0.6/h | pending |
-| Staff of water | zaff (`memberstaffshop`) | Zaff's, Varrock | varrockWest 18 | zaff | 2 | 1,500 | +30 | 9,000 (not reached; last unit 1,530) | 1,500 | 1 per 1,000 t, 9/h | pending |
+| Staff of water | zaff (`memberstaffshop`) | Zaff's, Varrock | varrockWest 18 | zaff | 2 | 1,500 | +30 | 9,000 (not reached; last unit 1,530) | 1,500 | 1 per 1,000 t, 9/h | 2 at 1,500 (2026-10-22 23:46Z) |
 | Staff of water | Magic Store owner (`magicguildshop`) | Magic Guild 1st floor, Yanille; Magic 66 (guild door) | yanille 18 + stairs | magicGuild | 2 | 1,500 | +15 | 9,000 (not reached; last unit 1,515) | 1,500 | 1 per 1,000 t, 9/h | config only (no reader with Magic 66) |
-| Staff of fire | zaff (`memberstaffshop`) | Zaff's, Varrock | varrockWest 18 | zaff | 2 | 1,500 | +30 | 9,000 (not reached; last unit 1,530) | 1,500 | 1 per 1,000 t, 9/h | pending |
+| Staff of fire | zaff (`memberstaffshop`) | Zaff's, Varrock | varrockWest 18 | zaff | 2 | 1,500 | +30 | 9,000 (not reached; last unit 1,530) | 1,500 | 1 per 1,000 t, 9/h | 2 at 1,500 (2026-10-22 23:46Z) |
 | Staff of fire | Magic Store owner (`magicguildshop`) | Magic Guild 1st floor, Yanille; Magic 66 (guild door) | yanille 18 + stairs | magicGuild | 2 | 1,500 | +15 | 9,000 (not reached; last unit 1,515) | 1,500 | 1 per 1,000 t, 9/h | config only (no reader with Magic 66) |
-| Staff of air | zaff (`memberstaffshop`) | Zaff's, Varrock | varrockWest 18 | zaff | 2 | 1,500 | +30 | 9,000 (not reached; last unit 1,530) | - | 1 per 1,000 t, 9/h | pending |
+| Staff of air | zaff (`memberstaffshop`) | Zaff's, Varrock | varrockWest 18 | zaff | 2 | 1,500 | +30 | 9,000 (not reached; last unit 1,530) | - | 1 per 1,000 t, 9/h | 2 at 1,500 (2026-10-22 23:46Z) |
 | Staff of air | Magic Store owner (`magicguildshop`) | Magic Guild 1st floor, Yanille; Magic 66 (guild door) | yanille 18 + stairs | magicGuild | 2 | 1,500 | +15 | 9,000 (not reached; last unit 1,515) | - | 1 per 1,000 t, 9/h | config only (no reader with Magic 66) |
-| Iron bar | Drogo dwarf (`miningstore`) | Drogo's, Dwarven Mine; underground (Ice Mountain trapdoor) | edgeville 57 + ladder |  | 0 | 28 | +0.56 | 168 | - | none (player-sold) | pending |
+| Iron bar | Drogo dwarf (`miningstore`) | Drogo's, Dwarven Mine; underground (Ice Mountain trapdoor) | edgeville 57 + ladder |  | 0 | 28 | +0.56 | 168 | - | none (player-sold) | 0 at 28 (2026-10-22 23:47Z) |
 | Bronze bar | Shantay (`shantayshop`) | Shantay Pass; toll gate (10 gp) from Lumbridge | alKharid 44 | shantay | 10 | 8 | +0.08 | 48 (not reached; last unit 8) | 80 for 10 | 1 per 500 t, 18/h | pending |
 | Bronze bar | Obli (`shilojunglestore`) | Obli's, Shilo Village; Shilo Village | - |  | 10 | 12 | +0.16 | 52 (not reached; last unit 13) | 123 for 10 | 1 per 500 t, 18/h | pending |
-| Bronze bar | Jiminua (`junglestore`) | Jiminua's, Karamja jungle; ship to Karamja (30 gp) | - | jiminua | 10 | 12 | +0.16 | 52 (not reached; last unit 13) | 123 for 10 | 1 per 500 t, 18/h | pending |
-| Bronze bar | Drogo dwarf (`miningstore`) | Drogo's, Dwarven Mine; underground (Ice Mountain trapdoor) | edgeville 57 + ladder |  | 0 | 8 | +0.16 | 48 | - | none (player-sold) | pending |
-| Iron ore | Drogo dwarf (`miningstore`) | Drogo's, Dwarven Mine; underground (Ice Mountain trapdoor) | edgeville 57 + ladder |  | 0 | 17 | +0.34 | 102 | - | none (player-sold) | pending |
-| Coal | Drogo dwarf (`miningstore`) | Drogo's, Dwarven Mine; underground (Ice Mountain trapdoor) | edgeville 57 + ladder |  | 0 | 45 | +0.9 | 270 | - | none (player-sold) | pending |
+| Bronze bar | Jiminua (`junglestore`) | Jiminua's, Karamja jungle; ship to Karamja (30 gp) | - | jiminua | 10 | 12 | +0.16 | 52 (not reached; last unit 13) | 123 for 10 | 1 per 500 t, 18/h | 10 at 12 (2026-10-22 23:49Z) |
+| Bronze bar | Drogo dwarf (`miningstore`) | Drogo's, Dwarven Mine; underground (Ice Mountain trapdoor) | edgeville 57 + ladder |  | 0 | 8 | +0.16 | 48 | - | none (player-sold) | 0 at 8 (2026-10-22 23:47Z) |
+| Iron ore | Drogo dwarf (`miningstore`) | Drogo's, Dwarven Mine; underground (Ice Mountain trapdoor) | edgeville 57 + ladder |  | 0 | 17 | +0.34 | 102 | - | none (player-sold) | 0 at 17 (2026-10-22 23:47Z) |
+| Coal | Drogo dwarf (`miningstore`) | Drogo's, Dwarven Mine; underground (Ice Mountain trapdoor) | edgeville 57 + ladder |  | 0 | 45 | +0.9 | 270 | - | none (player-sold) | 0 at 45 (2026-10-22 23:47Z) |
 | Jug of water | Shantay (`shantayshop`) | Shantay Pass; toll gate (10 gp) from Lumbridge | alKharid 44 | shantay | 10 | 1 | +0.01 | 6 (not reached; last unit 1) | 10 for 10 | 1 per 100 t, 90/h | pending |
 | Jug of water | Jossik (`lighthouseshop`) | Lighthouse (Jossik); Horror from the Deep | - |  | 5 | 1 | +0.03 | 6 (not reached; last unit 1) | 5 for 5 | 1 per 500 t, 18/h | pending |
 | Jug of water | Bedabin Nomad (`bedabincampshop`) | Bedabin Camp, Kharidian Desert; Shantay pass, desert heat | alKharid 125 |  | 5 | 1 | +0.03 | 6 (not reached; last unit 1) | 5 for 5 | 1 per 100 t, 90/h | pending |
 | Eye of newt | Jatix (`herbloreshop`) | Jatix's, Taverley | faladorWest 58 |  | 800 | 3 | +0.09 | 18 after 167 | 7,317 | 1 per 20 t, 450/h | pending |
-| Eye of newt | Betty (`magicshop`) | Betty's, Port Sarim | draynor 80 | betty | 300 | 3 | +0.03 | 18 (not reached; last unit 11) | 2,097 for 300 | 1 per 10 t, 900/h | pending |
+| Eye of newt | Betty (`magicshop`) | Betty's, Port Sarim | draynor 80 | betty | 300 | 3 | +0.03 | 18 (not reached; last unit 11) | 2,097 for 300 | 1 per 10 t, 900/h | 300 at 3 (2026-10-22 23:48Z) |
 | Eye of newt | Ogre merchant (`herbloreshopogre`) | Gu'Tanoth ogre merchant; Watchtower | yanille 85 |  | 50 | 3 | +0.09 | 18 (not reached; last unit 8) | 280 for 50 | 1 per 20 t, 450/h | pending |
 | Eye of newt | Frincos (`herbloreshop2`) | Frincos's, Entrana; ship to Entrana (no weapons or armour) | - |  | 50 | 3 | +0.06 | 18 (not reached; last unit 5) | 199 for 50 | 1 per 20 t, 450/h | pending |
 | Vial of water | Aemad / Kortan (`adventurershop`) | Aemad and Kortan's, East Ardougne | ardougneNorth 39 | aemad | 500 | 2 | +0.04 | 12 after 250 | - | 1 per 30 t, 300/h | pending |
@@ -422,7 +422,7 @@ GE figures read 2026-10-22 22:25Z to 2026-10-22 22:36Z (public market API, read-
 | Vial of water | Jossik (`lighthouseshop`) | Lighthouse (Jossik); Horror from the Deep | - |  | 100 | 2 | +0.06 | 12 (not reached; last unit 8) | - | 1 per 500 t, 18/h | pending |
 | Vial of water | Sigmund The Merchant (`viking_general_store`) | Rellekka general store; Fremennik Trials | - |  | 10 | 2 | +0.06 | 12 (not reached; last unit 3) | - | 1 per 200 t, 45/h | pending |
 | Vial of water | Obli (`shilojunglestore`) | Obli's, Shilo Village; Shilo Village | - |  | 50 | 3 | +0.04 | 13 (not reached; last unit 4) | - | 1 per 200 t, 45/h | pending |
-| Vial of water | Jiminua (`junglestore`) | Jiminua's, Karamja jungle; ship to Karamja (30 gp) | - | jiminua | 50 | 3 | +0.04 | 13 (not reached; last unit 4) | - | 1 per 200 t, 45/h | pending |
+| Vial of water | Jiminua (`junglestore`) | Jiminua's, Karamja jungle; ship to Karamja (30 gp) | - | jiminua | 50 | 3 | +0.04 | 13 (not reached; last unit 4) | - | 1 per 200 t, 45/h | 50 at 3 (2026-10-22 23:49Z) |
 | Rune pickaxe | Nurmof (`pickaxeshop`) | Nurmof's, Dwarven Mine; underground (Ice Mountain trapdoor) | faladorWest 75 + ladder | nurmof | 1 | 32,000 | +640 | 192,000 (not reached; last unit 32,000) | 32,000 | 1 per 700 t, 12.9/h | pending |
 | Mithril scimitar | Daga (`mm_scimitar_shop`) | Ape Atoll (Daga); Monkey Madness, monkey greegree; never restocks | - |  | 6 | 1,040 | +20.8 | 6,240 (not reached; last unit 1,144) | 1,040 | never | pending |
 | Mithril scimitar | Zeke (`scimitarshop`) | Zeke's, Al Kharid; toll gate (10 gp) from Lumbridge | alKharid 23 | zeke | 1 | 1,040 | +20.8 | 6,240 (not reached; last unit 1,040) | 1,040 | 1 per 4,000 t, 2.3/h | pending |
@@ -432,7 +432,7 @@ GE figures read 2026-10-22 22:25Z to 2026-10-22 22:36Z (public market API, read-
 | Knife | Jossik (`lighthouseshop`) | Lighthouse (Jossik); Horror from the Deep | - |  | 10 | 6 | +0.18 | 36 (not reached; last unit 8) | 6 | 1 per 500 t, 18/h | pending |
 | Knife | Shantay (`shantayshop`) | Shantay Pass; toll gate (10 gp) from Lumbridge | alKharid 44 | shantay | 10 | 6 | +0.06 | 36 (not reached; last unit 6) | 6 | 1 per 100 t, 90/h | pending |
 | Knife | Bedabin Nomad (`bedabincampshop`) | Bedabin Camp, Kharidian Desert; Shantay pass, desert heat | alKharid 125 |  | 5 | 7 | +0.18 | 37 (not reached; last unit 7) | 7 | 1 per 100 t, 90/h | pending |
-| Knife | Jiminua (`junglestore`) | Jiminua's, Karamja jungle; ship to Karamja (30 gp) | - | jiminua | 2 | 9 | +0.12 | 39 (not reached; last unit 9) | 9 | 1 per 100 t, 90/h | pending |
+| Knife | Jiminua (`junglestore`) | Jiminua's, Karamja jungle; ship to Karamja (30 gp) | - | jiminua | 2 | 9 | +0.12 | 39 (not reached; last unit 9) | 9 | 1 per 100 t, 90/h | 2 at 9 (2026-10-22 23:49Z) |
 | Fly fishing rod | Gerrant (`fishingshop`) | Gerrant's, Port Sarim | draynor 79 | gerrant | 5 | 5 | +0.05 | 30 (not reached; last unit 5) | 5 | 1 per 100 t, 90/h | pending |
 | Fly fishing rod | Fernahei (`shilofishingshop`) | Fernahei's, Shilo Village; Shilo Village | - |  | 5 | 5 | +0.1 | 30 (not reached; last unit 5) | 5 | 1 per 100 t, 90/h | pending |
 | Fly fishing rod | Fish monger (`viking_fishmonger`) | Rellekka fishmonger; Fremennik Trials | - |  | 5 | 6 | +0.15 | 31 (not reached; last unit 7) | 6 | 1 per 100 t, 90/h | pending |
@@ -450,20 +450,20 @@ GE figures read 2026-10-22 22:25Z to 2026-10-22 22:36Z (public market API, read-
 | Fishing bait | Fishmonger (`etc_fishmonger`) | Etceteria fishmonger; Fremennik Trials (ship) | - |  | 1,500 | 3 | +0.09 | 18 after 167 | 14 | 1 per 1 t, 9,000/h | pending |
 | Chisel | Wistan (`death_generalshop`) | Burthorpe general store | catherby 119 |  | 2 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | pending |
 | Chisel | Bolkoy (`gnomeshop`) | Bolkoy's, Tree Gnome Village | yanille 86 + stairs |  | 2 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | pending |
-| Chisel | Shop keeper / Shop assistant (`generalshop4`) | Falador general store | faladorWest 17 |  | 2 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | pending |
+| Chisel | Shop keeper / Shop assistant (`generalshop4`) | Falador general store | faladorWest 17 |  | 2 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | 2 at 1 (2026-10-22 23:47Z) |
 | Chisel | Arhein (`arheinstore`) | Arhein's, Catherby | catherby 9 |  | 2 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | pending |
 | Chisel | Shop keeper (`khazardshop`) | Port Khazard general store | yanille 79 | khazard | 2 | 1 | +0.01 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | pending |
-| Chisel | Shop keeper / Shop assistant (`generalshop1`) | Lumbridge general store | alKharid 80 | lumbridgeGeneral | 2 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | pending |
-| Chisel | Shop keeper / Shop assistant (`generalshop2`) | Varrock general store | varrockWest 33 | varrockGeneral | 2 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | pending |
-| Chisel | Jiminua (`junglestore`) | Jiminua's, Karamja jungle; ship to Karamja (30 gp) | - | jiminua | 10 | 1 | +0.02 | 6 (not reached; last unit 1) | 1 | 1 per 500 t, 18/h | pending |
+| Chisel | Shop keeper / Shop assistant (`generalshop1`) | Lumbridge general store | alKharid 80 | lumbridgeGeneral | 2 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | 2 at 1 (2026-10-22 23:44Z) |
+| Chisel | Shop keeper / Shop assistant (`generalshop2`) | Varrock general store | varrockWest 33 | varrockGeneral | 2 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | 2 at 1 (2026-10-22 23:46Z) |
+| Chisel | Jiminua (`junglestore`) | Jiminua's, Karamja jungle; ship to Karamja (30 gp) | - | jiminua | 10 | 1 | +0.02 | 6 (not reached; last unit 1) | 1 | 1 per 500 t, 18/h | 10 at 1 (2026-10-22 23:49Z) |
 | Hammer | Wistan (`death_generalshop`) | Burthorpe general store | catherby 119 |  | 5 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | pending |
 | Hammer | Bolkoy (`gnomeshop`) | Bolkoy's, Tree Gnome Village | yanille 86 + stairs |  | 5 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | pending |
-| Hammer | Shop keeper / Shop assistant (`generalshop4`) | Falador general store | faladorWest 17 |  | 5 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | pending |
+| Hammer | Shop keeper / Shop assistant (`generalshop4`) | Falador general store | faladorWest 17 |  | 5 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | 5 at 1 (2026-10-22 23:47Z) |
 | Hammer | Arhein (`arheinstore`) | Arhein's, Catherby | catherby 9 |  | 5 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | pending |
 | Hammer | Shop keeper (`khazardshop`) | Port Khazard general store | yanille 79 | khazard | 5 | 1 | +0.01 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | pending |
-| Hammer | Shop keeper / Shop assistant (`generalshop1`) | Lumbridge general store | alKharid 80 | lumbridgeGeneral | 5 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | pending |
-| Hammer | Shop keeper / Shop assistant (`generalshop2`) | Varrock general store | varrockWest 33 | varrockGeneral | 5 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | pending |
-| Hammer | Jiminua (`junglestore`) | Jiminua's, Karamja jungle; ship to Karamja (30 gp) | - | jiminua | 10 | 1 | +0.02 | 6 (not reached; last unit 1) | 1 | 1 per 500 t, 18/h | pending |
+| Hammer | Shop keeper / Shop assistant (`generalshop1`) | Lumbridge general store | alKharid 80 | lumbridgeGeneral | 5 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | 5 at 1 (2026-10-22 23:44Z) |
+| Hammer | Shop keeper / Shop assistant (`generalshop2`) | Varrock general store | varrockWest 33 | varrockGeneral | 5 | 1 | +0.03 | 6 (not reached; last unit 1) | 1 | 1 per 100 t, 90/h | 5 at 1 (2026-10-22 23:46Z) |
+| Hammer | Jiminua (`junglestore`) | Jiminua's, Karamja jungle; ship to Karamja (30 gp) | - | jiminua | 10 | 1 | +0.02 | 6 (not reached; last unit 1) | 1 | 1 per 500 t, 18/h | 10 at 1 (2026-10-22 23:49Z) |
 | Hammer | Shantay (`shantayshop`) | Shantay Pass; toll gate (10 gp) from Lumbridge | alKharid 44 | shantay | 10 | 1 | +0.01 | 6 (not reached; last unit 1) | 1 | 1 per 500 t, 18/h | pending |
 | Pot of flour | Frenita (`cookeryshop`) | Frenita's, Yanille | yanille 47 |  | 8 | 10 | +0.1 | 60 (not reached; last unit 10) | 10 | 1 per 100 t, 90/h | pending |
 | Pot of flour | Hudo (`gnomeshop_hudo`) | Grand Tree 1st floor (Hudo) | ardougneNorth 176 + stairs | hudo | 5 | 10 | +0.1 | 60 (not reached; last unit 10) | 10 | 1 per 200 t, 45/h | pending |
@@ -488,11 +488,11 @@ GE figures read 2026-10-22 22:25Z to 2026-10-22 22:36Z (public market API, read-
 | Rope | Aemad / Kortan (`adventurershop`) | Aemad and Kortan's, East Ardougne | ardougneNorth 39 | aemad | 20 | 23 | +0.36 | 113 (not reached; last unit 30) | 23 | 1 per 100 t, 90/h | pending |
 | Rope | Arhein (`arheinstore`) | Arhein's, Catherby | catherby 9 |  | 2 | 23 | +0.54 | 113 (not reached; last unit 23) | 23 | 1 per 300 t, 30/h | pending |
 | Rope | Shop keeper (`khazardshop`) | Port Khazard general store | yanille 79 | khazard | 30 | 25 | +0.18 | 115 (not reached; last unit 30) | 25 | 1 per 20 t, 450/h | pending |
-| Rope | Jiminua (`junglestore`) | Jiminua's, Karamja jungle; ship to Karamja (30 gp) | - | jiminua | 10 | 27 | +0.36 | 117 (not reached; last unit 30) | 27 | 1 per 200 t, 45/h | pending |
+| Rope | Jiminua (`junglestore`) | Jiminua's, Karamja jungle; ship to Karamja (30 gp) | - | jiminua | 10 | 27 | +0.36 | 117 (not reached; last unit 30) | 27 | 1 per 200 t, 45/h | 10 at 27 (2026-10-22 23:49Z) |
 | Spade | Sigmund The Merchant (`viking_general_store`) | Rellekka general store; Fremennik Trials | - |  | 10 | 3 | +0.09 | 18 (not reached; last unit 4) | 3 | 1 per 500 t, 18/h | pending |
 | Spade | Jossik (`lighthouseshop`) | Lighthouse (Jossik); Horror from the Deep | - |  | 10 | 3 | +0.09 | 18 (not reached; last unit 4) | 3 | 1 per 500 t, 18/h | pending |
 | Spade | Obli (`shilojunglestore`) | Obli's, Shilo Village; Shilo Village | - |  | 10 | 4 | +0.06 | 19 (not reached; last unit 5) | 4 | 1 per 500 t, 18/h | pending |
-| Spade | Jiminua (`junglestore`) | Jiminua's, Karamja jungle; ship to Karamja (30 gp) | - | jiminua | 10 | 4 | +0.06 | 19 (not reached; last unit 5) | 4 | 1 per 500 t, 18/h | pending |
+| Spade | Jiminua (`junglestore`) | Jiminua's, Karamja jungle; ship to Karamja (30 gp) | - | jiminua | 10 | 4 | +0.06 | 19 (not reached; last unit 5) | 4 | 1 per 500 t, 18/h | 10 at 4 (2026-10-22 23:49Z) |
 | Swamp paste | razmire_keelgan (`razmirebuildingstore`) | Razmire's builders' store, Mort'ton; Shades of Mort'ton | - |  | 1,000 | 31 | +1.2 | 181 after 125 | 31 | 1 per 10 t, 900/h | pending |
 | Swamp paste | Shop keeper (`khazardshop`) | Port Khazard general store | yanille 79 | khazard | 500 | 42 | +0.3 | 192 after 500 | 42 | 1 per 20 t, 450/h | pending |
 | Ball of wool | Aemad / Kortan (`adventurershop`) | Aemad and Kortan's, East Ardougne | ardougneNorth 39 | aemad | 30 | 2 | +0.04 | 12 (not reached; last unit 3) | 2 | 1 per 100 t, 90/h | pending |
@@ -504,11 +504,11 @@ GE figures read 2026-10-22 22:25Z to 2026-10-22 22:36Z (public market API, read-
 | Bucket | Arhein (`arheinstore`) | Arhein's, Catherby | catherby 9 |  | 10 | 2 | +0.06 | 12 (not reached; last unit 3) | 12 | 1 per 100 t, 90/h | pending |
 | Bucket | Wistan (`death_generalshop`) | Burthorpe general store | catherby 119 |  | 2 | 2 | +0.06 | 12 (not reached; last unit 2) | 4 for 2 | 1 per 100 t, 90/h | pending |
 | Bucket | Bolkoy (`gnomeshop`) | Bolkoy's, Tree Gnome Village | yanille 86 + stairs |  | 2 | 2 | +0.06 | 12 (not reached; last unit 2) | 4 for 2 | 1 per 100 t, 90/h | pending |
-| Bucket | Shop keeper / Shop assistant (`generalshop4`) | Falador general store | faladorWest 17 |  | 2 | 2 | +0.06 | 12 (not reached; last unit 2) | 4 for 2 | 1 per 100 t, 90/h | pending |
+| Bucket | Shop keeper / Shop assistant (`generalshop4`) | Falador general store | faladorWest 17 |  | 2 | 2 | +0.06 | 12 (not reached; last unit 2) | 4 for 2 | 1 per 100 t, 90/h | 2 at 2 (2026-10-22 23:47Z) |
 | Bucket | Chadwell (`upassgeneralshop`) | Chadwell's, Underground Pass entrance | ardougneNorth 151 |  | 2 | 2 | +0.04 | 12 (not reached; last unit 2) | 4 for 2 | 1 per 100 t, 90/h | pending |
 | Bucket | Shop keeper (`khazardshop`) | Port Khazard general store | yanille 79 | khazard | 2 | 2 | +0.02 | 12 (not reached; last unit 2) | 4 for 2 | 1 per 100 t, 90/h | pending |
-| Bucket | Shop keeper / Shop assistant (`generalshop1`) | Lumbridge general store | alKharid 80 | lumbridgeGeneral | 2 | 2 | +0.06 | 12 (not reached; last unit 2) | 4 for 2 | 1 per 100 t, 90/h | pending |
-| Bucket | Shop keeper / Shop assistant (`generalshop2`) | Varrock general store | varrockWest 33 | varrockGeneral | 2 | 2 | +0.06 | 12 (not reached; last unit 2) | 4 for 2 | 1 per 100 t, 90/h | pending |
+| Bucket | Shop keeper / Shop assistant (`generalshop1`) | Lumbridge general store | alKharid 80 | lumbridgeGeneral | 2 | 2 | +0.06 | 12 (not reached; last unit 2) | 4 for 2 | 1 per 100 t, 90/h | 2 at 2 (2026-10-22 23:44Z) |
+| Bucket | Shop keeper / Shop assistant (`generalshop2`) | Varrock general store | varrockWest 33 | varrockGeneral | 2 | 2 | +0.06 | 12 (not reached; last unit 2) | 4 for 2 | 1 per 100 t, 90/h | 2 at 2 (2026-10-22 23:46Z) |
 | Bucket | Shantay (`shantayshop`) | Shantay Pass; toll gate (10 gp) from Lumbridge | alKharid 44 | shantay | 0 | 2 | +0.02 | 12 | - | none (player-sold) | pending |
 
 At most 5 shops per item, cheapest stocked first, plus any the fleet buys at. Further shops, none cheaper at a full shelf, not listed: Feather 1, Knife 1, Fishing rod 1, Fishing bait 2, Chisel 16, Hammer 16, Rope 2, Bucket 12.
