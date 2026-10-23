@@ -106,3 +106,5 @@ Direct TypeScript checking initially caught the lab's `assertPrivate` parameter 
 ### Archive sanitization
 
 The structured `proof.json` replaces the executor's personal absolute worktree prefix with `<LAB_WORKTREE>` in the generated cue directory and its launcher-log entry. Raw artifact/source/patch hashes remain those of the originals; the sanitized archive has its own hash. Private fixture account labels are retained for trace correlation and are not observations of live accounts. No credential values or environment-file contents are archived.
+
+The final rebased code was independently checked at immutable revision `84fbb409bc577c6fbc543319d8e40044a96b4df6`: root `bun run typecheck` exited 0, exact carried-config check passed, and the same focused test command passed **71 tests / 385 assertions**. Dependencies were installed with frozen lockfiles at the root, webclient and engine before checking. Later edits only sanitize this archive and revise documentation; they do not change that verified source or generated configuration. Current lab-source SHA-256 after the type-only correction is `68ec2f1868438695bb73010932952f53b210d20983d43d0719491e618a941900`.
