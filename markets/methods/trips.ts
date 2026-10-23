@@ -65,6 +65,24 @@ export function trips(snaps: readonly BankSnap[], nameOf: NameOf = debugNameOf, 
 }
 
 /**
+ * Bank and pack together, as one snapshot: what an account holds outside its worn slots. A loop's
+ * last trip is usually unfinished when a run stops; comparing holdings at the first bank visit
+ * (taken after the withdrawal, so the food carried out is still counted) with holdings at the stop
+ * charges only what was actually consumed, so the whole run counts, not just the closed trips.
+ */
+export function holdings(tick: number, ...lists: readonly (readonly { id: number; count: number }[])[]): BankSnap {
+    const sum = new Map<number, number>();
+    for (const list of lists) for (const i of list) sum.set(i.id, (sum.get(i.id) ?? 0) + i.count);
+    return { tick, items: [...sum].map(([id, count]) => ({ id, count })) };
+}
+
+/** One span between two holdings snapshots, as a Trip (never merged, whatever its length). */
+export function span(a: BankSnap, b: BankSnap, nameOf: NameOf = debugNameOf, costs: ReadonlyMap<string, number> = objCosts()): Trip {
+    const delta = bankDelta(a, b, nameOf);
+    return { fromTick: a.tick, toTick: b.tick, ticks: b.tick - a.tick, delta, board: boardOf(delta, costs) };
+}
+
+/**
  * Coins per unit at the outlet: `sell` for what a loop produces (a shop's buy price, the alch value,
  * or a GE bid less tax), `buy` for what it consumes (food, runes). Coins are worth 1 either way.
  */
