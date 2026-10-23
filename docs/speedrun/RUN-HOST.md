@@ -1740,47 +1740,82 @@ rs/529's API**, and are not written here until they exist):
 - A crash that never reached the abort path cancels nothing, so a crash-resume is unchanged.
 - The run-bound hold (generation 0) is its own state, never a cancel; S22's prepare advances it.
 
-**Re-running after a StepError** (main 21:5x via rs/158; rs/186 21:3x; fold-in 33). run.ts never
-re-invokes a step that throws (`runner/step.ts:281-282`; `resume.ts:337-344` retries only a link,
-session or page-reload failure), so a thrown step stops the run with a StepError and the only
-recovery is the operator re-running the command. SCORED stays in the world (`session.ts:1193-1196`),
-and on the re-run `resolveResume` walks the manifest against the game and enters the first step
-that is not `done` through its `resume`. The cost is a manual restart, **~150-450 ticks (i)**;
-rs/546 measures one kill-and-re-run (RUN-ORDER.md section 7, the ladder's general note).
+**Re-running after a StepError** (main 21:5x via rs/158; rs/186's code read at its mission tip,
+22:2x, run.ts living on rs/186 until the run-chain snapshot rs/563 merges; fold-in 33). run.ts
+never re-invokes a step that throws: `runner/step.ts:262-289` raises `StepError(step, phase,
+detail)`, the phase `precondition`, `run` or `postcondition`, and `resume.ts:337-344` retries only
+a link, session or page-reload failure. `lib/attempt.ts:108-114` catches it in the world and run.ts
+stops with exit 1. The only recovery is the operator re-running the command, and where it enters is
+decided from game state, not from the log (`resolveResume`, `resume.ts:123-152`). A manual re-run
+costs **~150-450 ticks (i)**; rs/546 measures one kill-and-re-run (RUN-ORDER.md section 7, the
+ladder's general note).
 
-**Pending rs/186** (asked by rs/158; not written until rs/186 sends them): the run log's exact
-StepError line (its step and reason fields), the resume line `resolveResume` prints on entering the
-step, whether the re-run needs any flag or is the bare launch line, and the relog-lock check on a
-run commit without rs/547. The launch line itself is pending rs/186 (step 7). Until they arrive,
-read the fields named below by eye and treat any doubt as a refusal.
+**What the operator sees.** `[run] FAILED: <message>` (`attempt.ts:112`, `run.ts:526`), then
+`[run] logout: ...` (`run.ts:371, 397`): **run.ts logs SCORED out after a StepError**, and on the
+way out writes a final stop to every open helper cue (`run.ts:404`, `cue-keeper.ts:158-164`), so
+those helpers stand down; whether they log out is rs/41's launcher's decision. Exit code 1 (the
+codes at `run.ts:45-46`). A hard kill, SIGTERM (it exits before the cue close, `run.ts:376-389`,
+being fixed by rs/546) or a throw before the chain starts (an uncaught stack trace,
+`run.ts:518, 548-553`, e.g. S21's relog refused at startup) leaves the cues armed instead.
 
 The checks, in order, before re-running. Any one failing means **do not re-run: tell main**.
 
-1. **The StepError's step and reason**, read from the run log (format pending rs/186). Note both
-   for main and for the attempt's findings.
-2. **SCORED is still in the world**: the live view, and `tab.ts` `pageInGame` over the run tab's
-   DevTools (never the gateway's `inGame`; "The manual relog" above). If SCORED is out, this is a
-   dropped session, not a StepError: "The manual relog" applies first.
-3. **The relog lock is free**: nothing is relogging the tab. With rs/547 on the floor that is
-   `<run dir>/relog.lock` ("Once rs/547 is on the floor" below); on a run commit without it, no
-   manual relog is in progress (the check pending rs/186).
-4. **The helpers are not stopped**: the launcher's helper families for the steps ahead are
-   logged in or waiting for their cue (step 4), none stopped by the failed step's scope.
-5. **The step is not on the non-admitting list**: RUN-ORDER.md section 7's margin ladder, its
-   attempt-ending lines, including the conditional note for A and B (until B merges, any step after
-   H7; until A merges, S18 after its first stocked stun and S22 after its first catch). A step
-   there has a post-throw state its resume does not admit, so a re-run walks back or refuses, and
-   in S09-S22 it can destroy kit. The attempt ends there.
+1. **The StepError's step, phase and reason**, from the `[run] FAILED:` line in the run log
+   (`<run dir>/run.jsonl` unless `--log` named another, `run.ts:134-137`), and exit code 1. Note
+   them for main and for the attempt's findings.
+2. **SCORED logged out cleanly**: the `[run] logout:` line, and the run tab on the title screen
+   (`tab.ts` `pageInGame` false over the tab's DevTools, never the gateway's `inGame`). If the page
+   still reads in game or the log has no logout line, ask main first.
+3. **The relog lock is free**: `<run dir>/relog.lock` (`runner/relog-budget.ts:172-182`). The next
+   taker removes a lock whose pid is dead, so it needs clearing by hand only when the pid it names
+   is alive: then confirm that process is not a relog in progress (run.ts or `relog-now.ts`) before
+   removing the lock, and ask main if unsure.
+4. **Nothing else is cleared.** Keep `<run dir>/relogs.json` (it holds S21's open entry, which the
+   re-run needs, `run.ts:436-460`), the cue dir and the run dir (cleared only on a fresh start,
+   `run.ts:507-509`, `cue-keeper.ts:24-38`).
+5. **The host claim is still held and live**: run.ts releases it only on success (`run.ts:533`); an
+   expired claim makes gate 2 refuse with an `rs-claim take ...` hint (`run.ts:252-261`), so retake it
+   as step 0 does first.
+6. **The helpers for the steps ahead**: their cues got a final stop. run.ts writes a fresh cue
+   before each helper step, so a family still logged in re-arms on it; a family the launcher logged
+   out on the stop is logged back in first (rs/41, step 4).
+7. **The step is not on the non-admitting list**: RUN-ORDER.md section 7's margin ladder, its
+   attempt-ending lines and the conditional note for A and B (until B merges, any step after H7;
+   until A merges, S18 after its first stocked stun and S22 after its first catch). Some lines name an
+   operator fix before the re-run instead (S25a: walk SCORED to the anvil; S06 or S21: re-enter
+   through the ruins; S21's relog logout half: log SCORED in by hand); the rest end the attempt.
 
-Then re-run **the same command the attempt was launched with, unchanged** (step 7's launch line,
-pending rs/186). Never add `--from`: it overrides the first resume walk, a choice only main makes.
-Expect the resume line naming the step the walk entered and that it entered through `resume`
-(text pending rs/186): it should be the step the StepError named, or the next one if that step's
-`done` already holds. A refusal (a ResumeError, a precondition refusal, or a step other than
-expected) goes to main, and nothing is changed by hand. One known edge, asked of rs/186: until
-`resolveResume` (`resume.ts:77-99`) waits for a populated player state, a re-run started before
-the page publishes state sees S00 undone and refuses with 'not in game'; wait for the page's state
-to publish, then re-run once.
+**The re-run is the bare launch command, unchanged**: `bun speedrun/run.ts` with the same
+arguments as the first launch (usage `run.ts:75-79`, parsing `run.ts:113-142`), the same `--run-dir`
+and `--log`; there is no resume flag (the launch line itself is pending with rs/563, step 7).
+**Never pass `--from` on a re-run**: it forces that step to run with no walk and no `done` check
+(`resume.ts:305-307`), so `--from` into a finished step runs it again.
+
+**The line to expect**, one per walk (`run.ts:395`):
+
+```
+[resume] {"kind":"resume","attempt":N,"point":{"index":I,"mode":"run|resume|finished","step":"<name>","lastDone":L,"firstUndone":F,"reason":"..."}}
+```
+
+The reason is `<step> is in progress` (mode `resume`), `<step> can start` (mode `run`) or
+`every milestone is done` (`finished`) (`resume.ts:141-148`); a quest's step name carries its
+segment (e.g. `S05:A-h4-swap`), and the tick log gets a `(resume)` row with the same fields
+(`resume.ts:313`). It should name the step the StepError named, or the next one if that step's
+`done` already holds. Any other step: stop and ask main.
+
+**A refusal goes to main**, nothing changed by hand:
+
+- a start gate, before anything logs in: `[gate] REFUSED <gate>: <detail>` and `[run] nothing was
+  logged in`, exit 3 (`run.ts:495-504`);
+- the walk: `[run] FAILED: no step can start from the observed state (last done milestone #L,
+  first undone #F): <step>: <why>; ...`, exit 1, SCORED logged out (`resume.ts:69-74, 151`);
+- the walk throwing while SCORED is not in the world: `[run] resume: run the same command again`,
+  exit 4 (`attempt.ts:111`, `run.ts:536`): re-run once; a second refusal means stop and escalate,
+  never loop;
+- **the S00 edge** (`resume.ts:296`, `start.ts:222`): `runResumable` waits only for any published
+  state, and S00's `done` needs a player, so a re-run whose first state has no player sees S00 undone
+  and refuses 'not in game'. Until rs/562's bounded wait for a populated player state lands, on an
+  account past the tutorial re-run once more.
 
 **Once rs/547 is on the floor** (rs/547, rs/511's successor under rs/186, its PR due 01:00 PDT;
 the figures below were measured on rs/511's patch: built and unit-tested, and lab-measured
