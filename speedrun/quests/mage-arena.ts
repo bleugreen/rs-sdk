@@ -41,7 +41,7 @@ import { dropItems, opLoc, pickup, talkTo } from '../lib/act';
 import { fight, prayerActive, prayerDoses, setPrayer } from '../lib/combat';
 import { converse, levelUpInterrupt } from '../lib/converse';
 import { pageText } from '../lib/dialogue';
-import { matchesItem, type ItemPattern } from '../lib/items';
+import { matchesItem, untradeable, type ItemPattern } from '../lib/items';
 import { logNote } from '../lib/ticks';
 import { runTo, sumUse, type RuneName, type RuneUse, type RuneUseTable } from '../lib/travel';
 import { currentTick, waitTicks, waitUntil } from '../lib/wait';
