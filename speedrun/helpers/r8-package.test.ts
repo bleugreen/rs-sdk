@@ -155,10 +155,10 @@ describe("R8's phases on STEP-MANIFEST.md", () => {
         for (const id of [74, 75, 4021]) expect(untradeable(objs, id)).toBe(true);
         expect(untradeable(objs, 385)).toBe(false);
     });
-    test("R8c: every death point keeps the m'speak amulet, so its line is 'kept, nothing needed'", () => {
+    test("R8c: every death point keeps the m'speak amulet, so its line is 'kept at H13, S16, nothing needed'", () => {
         const p = r8Package(R8_PHASES.find(ph => ph.id === 'R8c')!);
         for (const w of p.walks) expect(w.kept.some(k => k.name === "m'speak amulet")).toBe(true);
-        expect(p.lines.find(l => l.item === "m'speak amulet")!.why).toStartWith('kept, nothing needed');
+        expect(p.lines.find(l => l.item === "m'speak amulet")!.why).toStartWith('kept at H13, S16, nothing needed');
         expect(p.recoverable).toBe(true);
     });
     test('R8a and R8b: the Khazard helmet and armour, kept at no death point, come back as the iron med helm and platebody, worn', () => {
