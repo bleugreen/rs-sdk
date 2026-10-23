@@ -90,7 +90,11 @@ from couriers, the GE, or the role's own random gems while it mines gold.
 ## Getting gems and coins to it
 
 The receive step accepts trades from `couriers` and gives nothing back, so any account
-that can walk to Varrock west bank can deliver. For exact amounts from a fleet account the
+that can walk to Varrock west bank can deliver. The gold step accepts them too, between
+rocks, so while the role is mining a courier can deliver at Rimmington's gold rocks
+(`meet` 2976,3235) instead of waiting for the bars to be finished. Deliver noted where you
+can: a trade lands in an inventory that is filling with ore, and notes take one slot
+each (the next bank visit unnotes them). For exact amounts from a fleet account the
 simplest route stays inside the fleet: assign it the `handover` role
 (`speedrun/helpers/handover.ts`, `{meet:{x:3185,z:3436}, handovers:[{to:"cairn_h80",
 items:[{item:"Uncut emerald",n:9}]}]}`) with `--return`, and the fleet gives it its role back when the handover finishes. For whole stacks or
