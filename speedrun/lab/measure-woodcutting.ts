@@ -31,6 +31,12 @@
 //   --final=L (needs rs/383's group last load in bone-giver.ts): the group gives L loads, the last giver
 //   carries finalExtras (law 1, air 5) and serves the L-th, and the module's lastLoad is 21.
 //   --server-wait=N is the module's serverWait. Prints each load's giver and ticks, and the givers' logs.
+//   --bone=<obj> the givers' bones (default dragon_bones; e.g. babydragon_bones, as rs/41 relaunched them).
+//   --session=<id> the S07 cue session (the module's boneSession), and --counted=<giver>:<n>,... the loads
+//   already given in it: the cue and those givers' statuses are written before the launcher starts, so the
+//   givers resume their counts (bone-giver.ts onCue) as after a stopped attempt.
+// --oak-logs=N oak logs in the kit (attempt 3's willow census carries one).
+// Every segment row and load row prints as it is written, with its UTC time.
 // --route=rimmington runs every case on the module's `rimmington` stands (the Rimmington oaks and
 // the Draynor-west willows); the default is the scored run's `taverley`.
 // Every walk and band step gets a telemetry line: tiles per tick (run 2, walk 1, still 0), run
@@ -47,7 +53,8 @@ import { closeSession, openSession, type Session } from '../lib/session';
 import { formatReport, report, TickLog } from '../lib/ticks';
 import { give as giveTrade } from '../lib/trade';
 import { runSteps, type Step } from '../runner/step';
-import { BANDS, ROUTES, type RouteName, S07_BONE_CUE, steps, type SubBandRow, type TechniqueFigures, type Tree, wcLevel, type WoodcuttingOptions } from '../skills/woodcutting';
+import { writeJsonAtomicSync } from '../helpers/altar-cue';
+import { BANDS, BoneCue, ROUTES, type RouteName, S07_BONE_CUE, steps, type SubBandRow, type TechniqueFigures, type Tree, wcLevel, type WoodcuttingOptions } from '../skills/woodcutting';
 import { give, leaveTutorial, setstat, tele } from './setup';
 
 const ROOT = join(import.meta.dir, '../..');
@@ -117,7 +124,7 @@ interface Group {
 }
 
 /** The bone giver group, one bone-giver role per account under the run-machine launcher, on this lab's engine. */
-async function startGroup(n: number, final: number | null, tree: 'oak' | 'willow', main: string): Promise<Group> {
+async function startGroup(n: number, final: number | null, tree: 'oak' | 'willow', main: string, bone: { item: string; obj: string } | null, prestage?: (cueDir: string) => void): Promise<Group> {
     const webPort = readFileSync(join(ROOT, 'bots', main, 'bot.env'), 'utf8').match(/^SERVER=localhost:(\d+)$/m)?.[1];
     if (!webPort) throw new Error(`--givers: bots/${main}/bot.env has no SERVER=localhost:<port>`);
     const base = mkdtempSync(join(tmpdir(), 'wc-givers-'));
@@ -139,6 +146,7 @@ async function startGroup(n: number, final: number | null, tree: 'oak' | 'willow
             sites: [{ giver: { x: gx, z: gz }, receiver: { x: sx, z: sz } }],
             scope: S07_BONE_CUE,
             group,
+            ...(bone ? { item: bone.item, obj: bone.obj } : {}),
             ...(final !== null ? { trades: final } : {}),
             ...(final !== null && i === n - 1 ? { finalExtras: runes } : {})
         }
@@ -146,6 +154,10 @@ async function startGroup(n: number, final: number | null, tree: 'oak' | 'willow
     const configPath = join(base, 'launch.json');
     writeFileSync(configPath, JSON.stringify({ gatewayPort: Number(process.env.BONE_GW_PORT ?? 8486), botsDir, runDir, loginSpacingMs: 2000, accounts }, null, 2));
     const cueDir = join(runDir, 'rc-cue');
+    if (prestage) {
+        mkdirSync(cueDir, { recursive: true });
+        prestage(cueDir);
+    }
     const child = Bun.spawn([process.execPath, 'speedrun/helpers/standalone.ts', configPath], {
         cwd: ROOT,
         env: { ...process.env, HELPER_LAB_TELE: '1', RC_CUE_DIR: cueDir },
@@ -186,7 +198,7 @@ await runScript(async ({ bot: actions, sdk }) => {
         await sdk.waitForTicks(2);
     };
     const kit = async () => {
-        await give(sdk, ['rune_axe', 'knife', ...Array(Number(flag('logs', '5'))).fill('logs')]);
+        await give(sdk, ['rune_axe', 'knife', ...Array(Number(flag('logs', '5'))).fill('logs'), ...Array(Number(flag('oak-logs', '0'))).fill('oak_logs')]);
         await sdk.waitForTicks(2);
     };
 
@@ -340,11 +352,52 @@ await runScript(async ({ bot: actions, sdk }) => {
         });
     }
 
-    if (nGivers) givers = await startGroup(nGivers, final, tree as 'oak' | 'willow', bot);
+    const boneObj = flag('bone');
+    const bone = boneObj ? { obj: boneObj, item: boneObj.charAt(0).toUpperCase() + boneObj.slice(1).replace(/_/g, ' ') } : null;
+    const boneSession = flag('session');
+    const counted = (flag('counted') ?? '').split(',').filter(Boolean).map(e => e.split(':') as [string, string]);
+    if (counted.length && !boneSession) throw new Error('--counted needs --session');
+    // A stopped attempt's S07 session: its cue, and each counted giver's status in it (restocking, its loads given).
+    const prestage = boneSession
+        ? (cueDir: string) => {
+              new BoneCue(cueDir, boneSession).write(sdk.getState(), bot);
+              for (const [account, n] of counted) {
+                  writeJsonAtomicSync(join(cueDir, `bones-${account}.json`), {
+                      v: 1, account, phase: 'restock', held: 0, n: load, trades: Number(n), bounces: 0, tile: null, readyAt: null, session: boneSession,
+                      final: final !== null && account === `cairn_b0${nGivers}`, loads: final, ms: Date.now()
+                  });
+              }
+              console.log(`  staged S07 session ${boneSession} in ${cueDir}: ${counted.map(([a, n]) => `${a} ${n}`).join(', ') || 'no loads'} counted`);
+          }
+        : undefined;
+    if (nGivers) givers = await startGroup(nGivers, final, tree as 'oak' | 'willow', bot, bone, prestage);
 
     const s0 = sdk.getState()!;
     console.log(`measure-woodcutting ${which}: Woodcutting ${wcLevel(s0)} at ${s0.player?.worldX},${s0.player?.worldZ}; ${where()}`);
     const log = TickLog.open(undefined, flag('log'));
+    // Live lines: each load and each segment as the band writes it.
+    const utc = () => new Date().toISOString().slice(11, 19) + 'Z';
+    const append = log.append.bind(log);
+    log.append = (row => {
+        append(row);
+        const m = (row.meta ?? {}) as Record<string, unknown>;
+        if (m.kind === 'wc-bones-load') {
+            console.log(`[${utc()}] T${row.endTick} load ${m.load} from ${m.giver ?? '-'} ${row.ok ? 'ok' : `FAILED (${m.reason})`}: click to bones ${m.ticks} t, step ${m.stepTicks} t (server wait ${m.serverWait ?? '-'}, re-picks ${m.repicks ?? '-'}), received ${m.received}; Prayer ${sdk.getState()?.skills.find(k => k.name === 'Prayer')?.baseLevel}, WC ${wcLevel(sdk.getState())}`);
+        } else if (m.kind === 'wc-segment') {
+            const c = (m.counters ?? {}) as Record<string, number>;
+            const r = (m.result ?? {}) as { histogram?: Record<string, number>; ticksPerExpectedRoll?: number; ticksPerSuccess?: number };
+            const f = (m.frames ?? {}) as { n?: number; overSevenSixthsT?: number; catchUps?: number };
+            const gaps = Object.entries(r.histogram ?? {}).map(([g, n]) => [Number(g), n] as const);
+            const all = gaps.reduce((a, [, n]) => a + n, 0);
+            const lattice = gaps.filter(([g]) => g % 3 === 0).reduce((a, [, n]) => a + n, 0);
+            console.log(
+                `[${utc()}] T${row.startTick}-${row.endTick} segment run ${m.runId} ${m.technique} ended ${m.reason} at WC ${m.level}: ${row.endTick - row.startTick} t, ${c.successes ?? 0} logs, ` +
+                    `${f2(r.ticksPerExpectedRoll)} t/expected roll, ${f2(r.ticksPerSuccess)} t/log, gaps on the 3-lattice ${lattice}/${all}; buried ${c.buried ?? 0} of ${c.burySent ?? 0} sent, ` +
+                    `no-bone cycles ${c.noBoneCycles ?? 0}; late clicks ${c.lateClicks ?? 0}, phase resyncs ${c.phaseResyncs ?? 0}, slips ${c.slips ?? 0}, resyncs ${c.resyncs ?? 0}, respawn waits ${c.respawnWaits ?? 0}; ` +
+                    `frames ${f.n ?? '-'}, over 7/6 T ${f.overSevenSixthsT ?? '-'} (on time ${f.n ? ((1 - (f.overSevenSixthsT ?? 0) / f.n) * 100).toFixed(1) : '-'}%), catch-ups ${f.catchUps ?? '-'}`
+            );
+        }
+    }) as typeof log.append;
     const opts: WoodcuttingOptions = {
         to: flag('to', which === 'band' ? String(BANDS.find(b => b.tree === tree)!.end) : '99'),
         technique: flag('technique', 'auto') as 'auto' | 'knife' | 'plain',
@@ -353,7 +406,7 @@ await runScript(async ({ bot: actions, sdk }) => {
         ...(has('bad-probe') ? { gate: { direct: { trials: 20, pass: 21, floor: 21 } } } : {}),
         ...(bury ? { bury: true, prayerTo: flag('prayer-to', '0') } : {}),
         ...(bury && helperName ? { bones: { giver: helper!.name, load } } : {}),
-        ...(givers ? { bones: { group: givers.group, load, ...(final !== null ? { lastLoad: load - 2 } : {}), ...(flag('server-wait') ? { serverWait: Number(flag('server-wait')) } : {}) }, cueDir: givers.cueDir } : {}),
+        ...(givers ? { bones: { group: givers.group, load, ...(final !== null ? { lastLoad: load - 2 } : {}), ...(flag('server-wait') ? { serverWait: Number(flag('server-wait')) } : {}) }, cueDir: givers.cueDir, ...(boneSession ? { boneSession } : {}) } : {}),
         route,
         ...(flag('hp-stop') ? { hpStop: flag('hp-stop') } : {}),
         ...(has('no-wait-respawn') ? { waitRespawn: false } : {}),
