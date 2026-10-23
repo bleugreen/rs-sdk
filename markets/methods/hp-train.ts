@@ -16,7 +16,7 @@
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
-import { crossingSettings, crossToKandarin, inKandarin, type Traveller } from '../../speedrun/lib/kandarin';
+import { crossingSettings, crossToKandarin, westOfTaverley, type Traveller } from '../../speedrun/lib/kandarin';
 import { startLevelUpWatcher } from '../../speedrun/lib/levelup';
 import { isEastOfTollGate, travelTo, type Tile } from '../../speedrun/lib/toll-gate';
 import { waitTicks, waitUntil } from '../../speedrun/lib/wait';
@@ -428,6 +428,13 @@ const countIn = (items: readonly { name: string; count: number }[], re: RegExp) 
 
 type Ctx = ProbeContext<HpOptions>;
 
+/**
+ * West of White Wolf Mountain, above ground: Seers', the crabs and everything between. Not kandarin.ts's
+ * inKandarin, a box round the towns that ends at z 3530: a bot standing north of it at the crabs read as
+ * 'on the Lumbridge side', walked back over the mountain to cross again, and died there.
+ */
+export const pastTheMountain = (s: BotWorldState | null): boolean => !!s?.player && s.player.level === 0 && westOfTaverley(here(s));
+
 /** Eat kebabs, one each 3 ticks (consume.rs2's eat delay), until current Hitpoints reach `to`. Returns the kebabs eaten. */
 async function eatUpTo(sdk: BotSDK, to: number): Promise<number> {
     let eaten = 0;
@@ -599,7 +606,7 @@ export const spec: ProbeSpec<HpOptions> = {
 
             // 1. The scimitars (one visit to Zeke) and, for a Kandarin site, the kebabs.
             sampler.phase = 'kit';
-            const kebabs = site.kandarin && !inKandarin(s0) ? (o.kebabs >= 0 ? o.kebabs : kebabsFor(Math.max(hpLevel(), o.switchHp), o.to)) : 0;
+            const kebabs = site.kandarin && !pastTheMountain(s0) ? (o.kebabs >= 0 ? o.kebabs : kebabsFor(Math.max(hpLevel(), o.switchHp), o.to)) : 0;
             ctx.totals.kebabsPlanned = kebabs;
             // The scimitars only where they repay the errand (hp-model shopPays), or when no weapon is carried.
             const shop = shopPays(o.to, site.id as SiteChoice) || ownedWeapons(s0).length === 0;
@@ -639,7 +646,7 @@ export const spec: ProbeSpec<HpOptions> = {
             const cowsTo = site.kandarin ? Math.min(o.switchHp, o.to) : o.to;
             const prayerLvl = (s: BotWorldState) => skill(s, 'prayer');
             const cowsDone = (s: BotWorldState) => reached(skill(s, 'hitpoints'), cowsTo) && prayerLvl(s) >= o.prayer;
-            while (!cowsDone(sdk.getState()!) && !inKandarin(sdk.getState())) {
+            while (!cowsDone(sdk.getState()!) && !pastTheMountain(sdk.getState())) {
                 ctx.signal.throwIfAborted();
                 sampler.phase = prayerLvl(sdk.getState()!) < o.prayer ? 'cows+bones' : 'cows';
                 await walkTo(ctx, SITES.cows.centre, 'the cows', 4);
@@ -671,7 +678,7 @@ export const spec: ProbeSpec<HpOptions> = {
             if (site.kandarin && !reached(hpLevel(), o.to)) {
                 while (!reached(hpLevel(), o.to)) {
                     ctx.signal.throwIfAborted();
-                    if (!inKandarin(sdk.getState()) && !inBox(site.area, here(sdk.getState()))) {
+                    if (!pastTheMountain(sdk.getState())) {
                         // On the Lumbridge side: the start, or after a death (the respawn is Lumbridge's).
                         sampler.phase = 'cross';
                         if (hpLevel() >= CROSSING_HP && sdk.getState()!.player!.hp < CROSSING_HP && !sdk.getState()!.inventory.some(i => KEBAB.test(i.name))) {
