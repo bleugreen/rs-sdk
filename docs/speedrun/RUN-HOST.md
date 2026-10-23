@@ -584,6 +584,16 @@ rs/158; fold-in 36). run-gate reads the gate account's settings from
 directory 700, gitignored). Verify it is present on both machines before the 15:00Z gate series (it
 was missing on both at 11:0xZ; the gate timer uses a different path). Never name the gate account.
 
+**The cannon serve file, before the run tab opens** (main 04:15 PDT via rs/41 and rs/158; fold-in 36).
+`<run dir>/cannon-serve.json` on the run host is byte-exact to rs/41's generated file (sha256
+f0e57ad6107d2621…; H11: 100 balls + mithril scimitar, law 4, water 4, returnExtras the magic shortbow
+and 200 rune arrows; H23: 1,200 balls + knife, Superantipoison(4), antipoison(4), super attack(3), super
+strength(3), shark 2, magic shortbow), placed by the host before SCORED logs in; check its sha256 before
+the run tab opens. A mismatch is a stop: tell main and rs/41.
+
+**h92's serve ids are per attempt** (main 04:15 PDT via rs/41; fold-in 36). h92's `serve.id` is per
+attempt (a1-H11, a1-H23 for attempt 1); attempt 2 needs a2-* ids, regenerated, before its start.
+
 **The inventory check, before the start is called.** On any checkout at `RUN_COMMIT` (it reads only
 the repository), run
 
