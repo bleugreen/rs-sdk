@@ -65,6 +65,8 @@ export const RUNE_NAMES: Record<Rune, string> = { cosmic: 'Cosmic rune', air: 'A
 export interface Enchant {
     /** The ring's in-game name (rings.obj). */
     ring: string;
+    /** The unnoted ring's obj id; its note is the next id, and S04 casts on, wants and counts this one only. */
+    ringId: number;
     /** The enchanted ring's name (enchanted_jewelry.obj; magic_spells.dbrow convertobj). */
     product: string;
     level: number;
@@ -77,10 +79,10 @@ export interface Enchant {
 
 /** magic_spells.dbrow: levelrequired, runesrequired, experience; components from sdk/spells.ts. */
 export const ENCHANTS: Record<Tier, Enchant> = {
-    sapphire: { ring: 'Sapphire ring', product: 'Ring of recoil', level: 7, com: 1155, base: 17.5, runes: { cosmic: 1 } },
-    emerald: { ring: 'Emerald ring', product: 'Ring of dueling(8)', level: 27, com: 1165, base: 37, runes: { cosmic: 1, air: 3 } },
-    ruby: { ring: 'Ruby ring', product: 'Ring of forging', level: 49, com: 1176, base: 59, runes: { cosmic: 1, fire: 5 } },
-    diamond: { ring: 'Diamond ring', product: 'Ring of life', level: 57, com: 1180, base: 67, runes: { cosmic: 1, earth: 10 } },
+    sapphire: { ring: 'Sapphire ring', ringId: 1637, product: 'Ring of recoil', level: 7, com: 1155, base: 17.5, runes: { cosmic: 1 } },
+    emerald: { ring: 'Emerald ring', ringId: 1639, product: 'Ring of dueling(8)', level: 27, com: 1165, base: 37, runes: { cosmic: 1, air: 3 } },
+    ruby: { ring: 'Ruby ring', ringId: 1641, product: 'Ring of forging', level: 49, com: 1176, base: 59, runes: { cosmic: 1, fire: 5 } },
+    diamond: { ring: 'Diamond ring', ringId: 1643, product: 'Ring of life', level: 57, com: 1180, base: 67, runes: { cosmic: 1, earth: 10 } },
 };
 
 const STAFF = /^staff of water$/i;
@@ -180,14 +182,34 @@ export function isProduct(name: string): boolean {
     return PRODUCTS.has(name.trim().toLowerCase());
 }
 
-/** Unenchanted rings held, lowest tier first, then by slot: the order they are cast in. */
+/**
+ * Unenchanted rings held, lowest tier first, then by slot: the order they are cast in. Unnoted only
+ * (by obj id): a noted stack shares the ring's name, but the spell refuses it ('This spell can only be
+ * cast on Emerald Amulets and Rings'), so it is no ring to cast or count (attempt 2: 1640 x19).
+ */
 export function heldRings(s: BotWorldState): Array<InventoryItem & { tier: Tier }> {
     const out: Array<InventoryItem & { tier: Tier }> = [];
     for (const i of s.inventory) {
         const tier = tierOf(i.name);
-        if (tier) out.push({ ...i, tier });
+        if (tier && i.id === ENCHANTS[tier].ringId) out.push({ ...i, tier });
     }
     return out.sort((a, b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier) || a.slot - b.slot);
+}
+
+/** Ring stacks held under a ring's name but not its unnoted id: noted rings, which S04 refuses. */
+export function notedRings(s: BotWorldState): InventoryItem[] {
+    return s.inventory.filter(i => {
+        const tier = tierOf(i.name);
+        return !!tier && i.id !== ENCHANTS[tier].ringId;
+    });
+}
+
+/** S04's refusal for noted rings held, or null. */
+export function notedRingRefusal(s: BotWorldState): string | null {
+    const noted = notedRings(s);
+    if (!noted.length) return null;
+    const what = noted.map(i => `${i.name} @${i.id} x${i.count} (unnoted is @${ENCHANTS[tierOf(i.name)!].ringId})`).join(', ');
+    return `noted rings held: ${what}; S04 enchants unnoted rings only, so the ring givers must stage them unnoted`;
 }
 
 export function heldRingCounts(s: BotWorldState): RingCounts {
@@ -488,7 +510,8 @@ export function enchantedRingSpecs(s: BotWorldState): GiveSpec[] {
 }
 
 export function wantFor(load: RingCounts): WantSpec[] {
-    return TIER_ORDER.filter(t => (load[t] ?? 0) > 0).map(t => ({ item: new RegExp(`^${ENCHANTS[t].ring}$`, 'i'), amount: load[t]! }));
+    // By the unnoted obj id: a name want would take the noted stack too (lib/trade.ts's want rule).
+    return TIER_ORDER.filter(t => (load[t] ?? 0) > 0).map(t => ({ item: ENCHANTS[t].ringId, amount: load[t]! }));
 }
 
 // ------------------------------------------------------------------ options
@@ -542,6 +565,8 @@ export type MagicReport =
           pagesSent: number;
           startTick: number;
           endTick: number;
+          /** The tick the staff of water showed worn, and the wield clicks it took (0: already worn). */
+          wield: { tick: number; sends: number };
       };
 
 export interface Resolved {
@@ -633,6 +658,8 @@ export function s04Pre(s: BotWorldState, o: Resolved): true | string {
     if (st.passed) return true;
     if (st.level < ENCHANTS.sapphire.level) return `Magic ${st.level}, below Lvl-1 Enchant's ${ENCHANTS.sapphire.level} (S02 first)`;
     if (!worn(s, STAFF) && !invCount(s, STAFF)) return 'no staff of water, worn or held (H1)';
+    const noted = notedRingRefusal(s);
+    if (noted) return noted;
     const plan = simulatePlan(magicXp(s), st.held, st.remaining.map(l => l.rings), o.untilLevel);
     if (!plan.ok) return `the ring loads cannot take Magic ${st.level} to ${o.untilLevel}: ${plan.reason}`;
     const runes = runesHeld(s);
@@ -660,11 +687,32 @@ function histogram(xs: readonly number[]): Record<number, number> {
 
 export type S04Sdk = EnchantSdk & SwapSdk;
 
-/** Wield the staff of water if it is held, not worn. The click goes out with the first cast; a Lvl-1 cast landing first would only spend a water rune. */
-function wieldStaff(sdk: S04Sdk, s: BotWorldState): void {
-    if (worn(s, STAFF)) return;
-    const staff = s.inventory.find(i => STAFF.test(i.name));
-    if (staff) void sdk.sendUseItem(staff.slot, opIndex(staff, /^(wield|wear)$/i) ?? 2);
+/** Wield sends before S04 refuses, and the observed ticks each waits for the staff to show worn. */
+export const WIELD_SENDS = 3;
+export const WIELD_WAIT_TICKS = 3;
+
+export type WieldResult = { ok: true; tick: number; sends: number } | { ok: false; sends: number; reason: string };
+
+/**
+ * The staff of water worn before S04's first cast, confirmed on observed ticks: send the wield,
+ * wait up to WIELD_WAIT_TICKS for it in the equipment, re-send, at most WIELD_SENDS times. The run
+ * reaches S04 on the tick S03's last fire moves SCORED, when a click can be dropped, with no water
+ * runes: every enchant then fails without the staff (rs/627).
+ */
+export async function wieldStaff(sdk: Pick<S04Sdk, 'sendUseItem'> & StateSource, o: { sends?: number; waitTicks?: number } = {}): Promise<WieldResult> {
+    const sends = o.sends ?? WIELD_SENDS;
+    const waitTicks = o.waitTicks ?? WIELD_WAIT_TICKS;
+    let sent = 0;
+    for (;;) {
+        const s = sdk.getState();
+        if (s && worn(s, STAFF)) return { ok: true, tick: s.tick, sends: sent };
+        const staff = s?.inventory.find(i => STAFF.test(i.name));
+        if (!staff) return { ok: false, sends: sent, reason: 'no staff of water held or worn' };
+        if (sent >= sends) return { ok: false, sends: sent, reason: `staff of water not worn after ${sent} wield clicks, ${waitTicks} observed ticks each` };
+        void sdk.sendUseItem(staff.slot, opIndex(staff, /^(wield|wear)$/i) ?? 2);
+        sent++;
+        await waitUntil(sdk, st => !!worn(st, STAFF), { maxTicks: waitTicks });
+    }
 }
 
 /** Resolve on the label `n` after `tick` (the trade click sent there lands as the cast's delay clears). */
@@ -681,7 +729,8 @@ async function runS04(ctx: StepContext<any>, o: Resolved): Promise<void> {
     const castTicks: number[][] = [];
     let casts = 0;
     let pagesSent = 0;
-    wieldStaff(sdk, s0);
+    const wield = await wieldStaff(sdk);
+    if (!wield.ok) throw new Error(`S04 refuses: ${wield.reason}`);
 
     const trade = async (load: number, giver: string, want: WantSpec[], afterTick: number): Promise<SwapResult> => {
         const give = enchantedRingSpecs(sdk.getState()!);
@@ -696,6 +745,9 @@ async function runS04(ctx: StepContext<any>, o: Resolved): Promise<void> {
     let lastCast = -1;
     let lastRose = false;
     for (;;) {
+        // A load that came noted is refused at once with its reason, never clicked until the cast times out.
+        const noted = notedRingRefusal(sdk.getState()!);
+        if (noted) throw new Error(`S04 refuses: ${noted}`);
         const run = await enchantHeld(sdk, { untilLevel: o.untilLevel, clicksPerTick: o.clicksPerTick });
         casts += run.casts;
         if (run.xpTicks.length) {
@@ -724,7 +776,7 @@ async function runS04(ctx: StepContext<any>, o: Resolved): Promise<void> {
 
     const inLoad = castTicks.flatMap(ts => ts.slice(1).map((t, i) => t - ts[i]!));
     const turnarounds = castTicks.slice(1).map((ts, i) => ts[0]! - castTicks[i]!.at(-1)!);
-    o.onReport?.({ step: 'S04', casts, gaps: histogram(inLoad), turnarounds, trades, pagesSent, startTick, endTick: sdk.getState()?.tick ?? startTick });
+    o.onReport?.({ step: 'S04', casts, gaps: histogram(inLoad), turnarounds, trades, pagesSent, startTick, endTick: sdk.getState()?.tick ?? startTick, wield: { tick: wield.tick, sends: wield.sends } });
 }
 
 // ------------------------------------------------------------------ steps
