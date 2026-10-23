@@ -1716,25 +1716,71 @@ in a ResumeError.
    127.0.0.1:7780, which cannot log a tab in; RDP is the last resort, since it cuts the recording
    to ~23 fps (tenet 12, rs/134).
 3. **The recording** (ffmpeg on :10) keeps running through it; it grabs the display, not the game.
-4. **The relog budget:** the planned S21 relog plus 3 unplanned, inside tenet 25's count. A manual
-   relog is an unplanned one.
+4. **The relog budget:** the planned S21 relog plus 3 unplanned, run.ts's and the operator's
+   together, inside tenet 25's count. A manual relog is an unplanned one.
 
-**Once rs/511 is on the floor** (pending rs/511 on the floor; built and unit-tested, its lab
-acceptance at 400 ms to come; a floor candidate, deadline 09:00Z):
+**Helper preparation by generation, the operator's side** (main 19:4x via rs/158; fold-in 32;
+the canon is RESILIENCE.md's; the command and API names are **pending rs/532, after rs/41 approves
+rs/529's API**, and are not written here until they exist):
 
-- **Command:** `bun speedrun/tools/relog-now.ts $SCORED_ENV [--run-dir=<run.ts's --run-dir>]
-  [--cdp=http://127.0.0.1:9222]`, printing one line, `in` or `failed: <reason>`.
-- **How:** an in-page login (session.ts's `mintLoginToken`, then `tab.ts` `pageLogin`; the token
-  URL as fallback), confirmed by the page only, after which it waits for the tick to advance. It
-  opens no SDK session, so it never takes the gateway from run.ts.
-- **Lock:** `<run dir>/relog.lock`. relog-now refuses while run.ts holds it, and run.ts waits while
-  the operator holds it, then adopts the relog; run.ts never starts its own relog while one is in
-  flight.
-- **Budget:** `<run dir>/relogs.json`, the S21 relog plus 3 unplanned; manual relogs count as
-  unplanned. Past the budget run.ts stops (exit 4) with the reason.
-- **S21:** the planned relog's logged-out window is marked planned, so drop recovery ignores it.
+- An operator resume after an abort mints a new attempt generation in the same delivery run and
+  keeps the row sessions.
+- Helpers re-arm only on a strictly higher generation; a prepare for an aborted generation is
+  refused and logged.
+- A crash that never reached the abort path cancels nothing, so a crash-resume is unchanged.
+- The run-bound hold (generation 0) is its own state, never a cancel; S22's prepare advances it.
 
-The block above it stays as written for a run commit without rs/511.
+**Once rs/511 is on the floor** (rs/511, under rs/186: built and unit-tested, and lab-measured
+on bgsrv-mac, the lab engine at 400 ms, the browser client, tree 1fccc5b7 + rs/511's patch,
+cairn://p/rs/511/comments/2; fold-in 32). **rs/511 is not a start condition** (main), so the
+manual relog above stays the procedure for a run commit without it, attempt 1's included. The
+design is `docs/speedrun/RESILIENCE.md` section 4 in rs/511's patch (the race rule, the confirmed
+logout) and section 5 (the deep-Wilderness resume).
+
+- **An unplanned drop, run.ts's side.** In the 22:15:50Z shape (the run tab on the title screen,
+  the world feed live) run.ts asks the page (`tab.ts` `pageInGame`) and logs it back in inside the
+  page (`session.ts` `login({inPage: true})`, never a client relaunch), then resumes the step. Drop
+  to back in the world: **24-26 ticks (9.5-10.3 s)**, about 17 of them detection (a page whose
+  socket died still reads in game for ~7 s); the in-page login itself takes 0.7-1.4 s (m, lab).
+  Without rs/511 nothing relogs and the operator does it by hand (above).
+- **The operator's side of the race rule.** If the run tab is on the title screen and run.ts hasn't
+  relogged it, run from an ssh shell on the run host:
+
+  ```
+  bun speedrun/tools/relog-now.ts <bot> [--run-dir=<run.ts's run dir>]
+  ```
+
+  `<bot>` is SCORED's bot directory, taken from the run's env and never written here. relog-now
+  uses the run tab's DevTools on 127.0.0.1:9222 (`--cdp=` overrides it). It takes the relog lock
+  (`<run dir>/relog.lock`), logs the page in (an in-page login, the token URL as its fallback),
+  **confirms only by the page's in-game flag with the tick advancing** (never the gateway's
+  `inGame`), records a manual relog in the shared budget (`<run dir>/relogs.json`) and prints one
+  line: `in: ...` (exit 0) or `failed: ...` (exit 1). It opens no SDK session, so it never takes
+  the gateway from run.ts.
+- **When it does nothing** (each prints `failed: ...; nothing done`): while run.ts holds the lock
+  (run.ts is relogging the tab itself; run relog-now again only if run.ts gives up), while S21's
+  planned relog is open (SCORED is out on purpose until its login half), and when the budget is
+  spent. A page already in the world prints `in: ... is already in the world ...; nothing done`.
+- **run.ts adopts the operator's session and never relogs over it**: it starts no relog while the
+  operator holds the lock, then finds the page in the world, adopts that session
+  (`session.ts` `adoptSession`) and resumes as after its own relog. A page it finds already back
+  in the world is recorded as a manual relog, against the same budget.
+- **The budget**: S21's planned relog plus 3 unplanned, **run.ts's and the operator's together**.
+  Past it run.ts stops with `relog budget spent` as its reason (`RelogBudgetSpent`).
+- **S21's planned logout** goes through `session.ts` `logoutClean`, which confirms the account out
+  within `LOGOUT_CONFIRM_TICKS` = 4 observed ticks or sends the logout again (m, lab: 21 of 21
+  browser logouts confirmed by the page, 0 ticks from the click to out, 1 send each). Between the
+  halves of the split relog the account is out on purpose: no drop recovery, nothing counted.
+- **A drop in the deep Wilderness** (unit-tested only, not lab-accepted: a fallback to budget, not
+  a measured row; RUN-ORDER.md R8 and R53). A drop at level 21 or deeper between the keep and the
+  spiders, off every checkpoint box, cannot restart from the leg's teleport (refused above level
+  20). run.ts resumes at the leg's last run hop above level 20 (`legs.ts` `deepWildernessHop`:
+  T13-14 and T26-27 at the run to the spiders, T15-16 at the run to the Mage Bank webs). If that
+  fails, the walk stops with a ResumeError: **the operator walks SCORED south to level 20 or below
+  by hand** (over the tab's DevTools, as the manual relog's act) **and restarts run.ts**, which
+  resumes from the teleport. The cost is the walk back plus the teleport again. Without rs/511 a
+  deep-Wilderness drop goes straight to that ResumeError (above), and the operator does the same
+  after the manual relog.
 
 **After a player-kill: the recovery** (main 17:0x via rs/158; RUN-ORDER.md R8; fold-in 31). Logged-out
 time costs nothing, so a death is recoverable only if SCORED logs out at once after the respawn, R8's
@@ -1768,7 +1814,9 @@ real-browser lab; fold-in 31):
   accruing playtime, so the operator confirms the actual logout and state.
 - No case is a zero-tick or automatic recovery.
 - One shared lock and budget: one planned S21 relog plus three unplanned.
-- The socket-drop half is pending rs/511's injected acceptance.
+- The socket-drop half is rs/511's, not on the floor (fold-in 32): lab-measured with an injected
+  drop, 24-26 ticks from the drop to back in the world (bgsrv-mac, 400 ms); 'Once rs/511 is on the
+  floor' above. Between the halves of the split relog no drop recovery runs and nothing is counted.
 
 **A tick-length change during the run** (main's ruling, 13:5x PDT 2026-10-22, via rs/158). **The run
 never stops for it**: the score is in ticks, the in-page loops read the observed period once rs/470
