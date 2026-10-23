@@ -69,7 +69,7 @@ describe('chunk boundaries (pinned: a change here is a change in the docs or the
         expect(b.ledgerAfter).toBe('S04');
         expect(items(b.inv)).toEqual(['tinderbox x1', 'airrune x21', 'earthrune x4', 'lawrune x1', 'ring_of_forging x15', 'ring_of_life x5']);
         expect(items(b.worn)).toEqual(['staff_of_water x1']);
-        expect(b.tile).toEqual({ x: 3240, z: 3296 });
+        expect(b.tile).toEqual({ x: 3218, z: 3219 });
         expect(b.unresolved).toEqual([]);
     });
 

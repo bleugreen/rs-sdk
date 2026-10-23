@@ -660,22 +660,25 @@ refusal. the carrier configs come from the generator and check below (fold-in 37
 `S="$(sed -n 's/^BOT_USERNAME=//p' "$SCORED_ENV")"`):
 
 1. **Generate:** `cd <C> && CHECKOUT=<C> SCORED_NAME="$S" bun docs/speedrun/scripts/carriers-gen.ts <RC>
-   <R>/carriers.json`; it must print `serve nameHash
-   678f805eb8de77cc92987a80015556fff4f40d3247ae571953a76478639d6322`. The generator is rs/41's text,
-   committed verbatim (sha256 `e1424d2f9730d24f1815973c39574bf0b77b7f689d0a2c14387d33ee2fe0e9d2`): it reads `CHECKOUT`, `SCORED_NAME`,
+   <R>/carriers.json`; it must print `serve nameHash <h>`, where `<h>` is the serve hash of the
+   run's scored account, computed at install (no literal here: a fresh account's hash isn't public).
+   The generator is rs/41's text,
+   committed verbatim (sha256 `873a26436df55c5b480de28d0486cc22c31f66b3246628efc6684ceabfa3c0ff`): it reads `CHECKOUT`, `SCORED_NAME`,
    `docs/speedrun/research/mule-delivery-production.json` and the checkout's STEP-MANIFEST ledger
    (`slot-ledger.ts`'s `MANIFEST`), writes only its output file and prints only the serve nameHash,
-   never the name. Its `deliveryRun` is the literal `a1-20261023`, so attempt 2 changes it (rs/41
-   suggests a `DELIVERY_RUN` env with no default, so it cannot be silently reused).
+   never the name. Its `deliveryRun` is the literal `a1b-20261023` (mule1 recorded H1 as served under
+   `a1-20261023` on the twin, and a carrier never re-serves a row within one delivery run), so the
+   next attempt changes it again (rs/41 suggests a `DELIVERY_RUN` env with no default, so it cannot
+   be silently reused).
 2. **Check:** each `bun speedrun/helpers/mule-ledger.ts --check <R>/carriers.json --account
-   <carrier> --rows <rows> --delivery-run a1-20261023 --serve "$S" --cue-root <RC>` exits 0 with its
+   <carrier> --rows <rows> --delivery-run a1b-20261023 --serve "$S" --cue-root <RC>` exits 0 with its
    `no drift:` line: cairn_mule1, rows H1,H4,H4k,H18,H19,H21d,H22 with `--on-request H4e` (`no drift:
    H1, H4, H4k, H18, H19, H21d, H22, H4e (ask form)`); cairn_h55, rows
    H6,H4p,H7,H8,H9,H10,H12,H13,H14,H15,H16 (`no drift: H6, H4p, H7, H8, H9, H10, H12, H13, H14, H15,
    H16 (ask form)`); cairn_h03, row H20 (`no drift: H20 (ask form)`). Verified at 233d0f34 on
    bgsrv-mac with a placeholder name: the generator exit 0, all three checks exit 0 with those lines.
 3. **Merge** the three entries into `<R>/helpers.json` in login order; the run config gets
-   `delivery: { run: "a1-20261023", launcherConfig: "<R>/helpers.json" }`, with `muleCueDir` =
+   `delivery: { run: "a1b-20261023", launcherConfig: "<R>/helpers.json" }`, with `muleCueDir` =
    `<RC>/mule` if set.
 4. **mule-hold: NOT used for attempt 1** (main 13:15Z 2026-10-23): the carriers launch unheld in
    the roster phase and self-stage their first rows. With the hold, run.ts's first-row prepare at
@@ -716,14 +719,14 @@ refusal. the carrier configs come from the generator and check below (fold-in 37
 
 **The fleet on the run commit:** back at 29/29 on 233d0f34 at ~12:11Z, 27 while two stand-ins serve
  rs/496's twin pass (rs/41 via rs/158; fold-in 37). **run.ts's own guard** (rs/598, on main as #487, 233d0f34, the run commit; `docs/speedrun/helpers/mule-delivery.md`, 'Run owner', lines 330-379 at 233d0f34; the run config's `delivery` block is read by `runner/delivery-owner.ts:161-256`, its type `runner/chain.ts:129`; the code wins): run.ts's run
-config carries `delivery: { run: "a1-20261023", launcherConfig: "<that launcher json>" }`, and its
+config carries `delivery: { run: "a1b-20261023", launcherConfig: "<that launcher json>" }`, and its
 preflight refuses with exit 3, before any login, if that is missing or does not match every mule
 partner's launcher entry. That preflight is the code's own guard; rs/41's `mule-ledger --check` stays
-as the operator's check. `delivery.run` changes per attempt (a1-20261023 for attempt 1, then a2-..., a3-...), like h92's serve ids below. **For attempt 1 (rs/158 at the naming, 12:05Z): the run config's `delivery.run` is exactly `a1-20261023` and matches every mule helper's `deliveryRun`**, checked before the start is called (the code's own check of the match, `runner/delivery-owner.ts:192`).
+as the operator's check. `delivery.run` changes per attempt (a1-20261023 for attempt 1, a1b-20261023 for attempt 1's restart, then a2-..., a3-...), like h92's serve ids below. **For attempt 1's restart (rs/158 at the naming, 12:05Z): the run config's `delivery.run` is exactly `a1b-20261023` and matches every mule helper's `deliveryRun`**, checked before the start is called (the code's own check of the match, `runner/delivery-owner.ts:192`).
 
 **h92 on the run commit, and its serve ids per attempt** (rs/41's wording via rs/158; fold-in 36).
-h92 is applied on bbs on the run commit: fleet role cannon, serve.id a1-H11 at the Ardougne landing (2658,3301), returnTile the same, fallback (2659,3301) per SUPPLIES H11 (still pending rs/198's two-bot check), then a1-H23 on the same tile.
-serve.id is per attempt: a2-H11 / a2-H23 for attempt 2, a3-* for 3; a completed a1-* record survives restarts and a reused id resumes as done and gives nothing, so rs/41 reassigns h92 between attempts.
+h92 is applied on bbs on the run commit: fleet role cannon, serve.id a1b-H11 at the Ardougne landing (2658,3301), returnTile the same, fallback (2659,3301) per SUPPLIES H11 (still pending rs/198's two-bot check), then a1b-H23 on the same tile.
+serve.id is per run and carries delivery.run's prefix: a1b-H11 / a1b-H23 for the restart after attempt 1's S03 failure (delivery.run a1b-20261023), a2-* for the next attempt, a3-* after; a completed record survives restarts and a reused id resumes as done and gives nothing, so rs/41 reassigns h92 between runs.
 
 **The inventory check, before the start is called.** On any checkout at `RUN_COMMIT` (it reads only
 the repository), run

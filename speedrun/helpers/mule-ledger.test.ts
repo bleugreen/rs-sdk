@@ -268,6 +268,12 @@ describe('the manifest', () => {
         if (shark) expect(h12.package.items).toContainEqual({ item: 'Shark', topUp: { max: shark.count! } });
         else expect(h12.package.items.some(i => 'topUp' in i)).toBe(false);
     });
+
+    test("H13's package, regenerated from the ledger, carries `shark to 2` as a top-up of 2 (T15-16b's food)", () => {
+        const h13 = muleFromLedger(readFileSync(MANIFEST, 'utf8'), { rows: ['H13'] })[0]!;
+        expect(h13.package.items).toContainEqual({ item: 'Shark', topUp: { max: 2 } });
+        expect(h13.topUps).toContainEqual({ item: expect.stringMatching(/^shark$/i), to: 2 });
+    });
 });
 
 

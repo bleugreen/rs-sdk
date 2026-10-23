@@ -3,10 +3,11 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { BotWorldState, InventoryItem, PlayerState } from '../../sdk/types';
 import { parseLedger, type OutEntry } from '../tools/slot-ledger';
+import { parseTiles, resolveOptions, routeLogs } from '../skills/firemaking';
 import { baseState, drive, FakeSdk, simulateWalking } from '../lib/fake-sdk';
 import { TickLog } from '../lib/ticks';
 import { inArea, SPELLS } from '../lib/travel';
-import { arrived, DROPS_PER_TICK, dropsDue, leg, legById, legPreconditions, LEGS, legsAfter, legsFor, neededBy, netTotal, resumeHop, runLeg, splitLeg, TILES, type LegStep } from './legs';
+import { arrived, DROPS_PER_TICK, dropsDue, entersWilderness, leg, legById, legPreconditions, LEGS, legsAfter, legsFor, neededBy, netTotal, resumeHop, runLeg, splitLeg, TILES, type LegStep } from './legs';
 import { Observation, resolveResume } from './resume';
 import type { RunnerSession, Step, StepContext } from './step';
 
@@ -57,7 +58,7 @@ describe('legs and the resume walk', () => {
     });
 
     test('a restart at the leg start (or anywhere before its first checkpoint) runs the whole leg', async () => {
-        const sdk = new FakeSdk(state(TILES.firemakingRow.x, TILES.firemakingRow.z, { inventory: FALADOR_RUNES }));
+        const sdk = new FakeSdk(state(TILES.s03End.x, TILES.s03End.z, { inventory: FALADOR_RUNES }));
         const p = await resolveResume(manifest(), new Observation(sdk.state!), undefined);
         expect([p.index, p.mode]).toEqual([1, 'run']);
         sdk.onSend = (a, f) => { if (a.method === 'sendClickComponent') queueMicrotask(() => f.tick({ player: player(2965, 3378) })); };
@@ -165,12 +166,31 @@ describe('the catalogue', () => {
         expect(unsafe).toEqual(['T13-14', 'T14-15', 'T15-16', 'T26-27', 'T27-17']);
     });
 
-    test('one leg per id, every RUN-ORDER.md section 2 leg, and the order total: 1,382 + T07a 12 + T16-18 8 = 1,402 ticks', () => {
+    test('one leg per id, every RUN-ORDER.md section 2 leg, and the order total: 1,382 + T07a 12 + T16-18 8 + T02-03 43 (5 to 48) = 1,445 ticks', () => {
         const ids = LEGS.map(l => l.def.id);
         expect(new Set(ids).size).toBe(ids.length);
         expect(ids).toContain('T07a');
         expect(ids.filter(i => i.startsWith('L24'))).toEqual(['L24a', 'L24b', 'L24c']);
-        expect(netTotal()).toBe(1402);
+        expect(netTotal()).toBe(1445);
+    });
+
+    test("T02-03 ends on S03's row entry and T04-05 leaves from where S03's 157th log leaves SCORED", () => {
+        // The measured castle lap (docs/speedrun/rehearsals/firemaking.md), the run config's firemakingTiles.
+        const row = parseTiles('3222-3218@3219;3218-3243@3218;3242-3223@3219');
+        expect(row).toHaveLength(51);
+        const t0203 = legById('T02-03').def;
+        expect([t0203.dest.x, t0203.dest.z, t0203.dest.tol]).toEqual([...resolveOptions({ tiles: row }).entry!, 0]);
+        expect(t0203.expected).toMatchObject({ ticks: 48, net: 48 });
+
+        // A lap (51 logs at 4 ticks) outlasts the longest fire (199 ticks), so no lap skips a tile:
+        // the last log lies on planned tile (n - 1) mod 51, and its success pushes SCORED west.
+        const logs = routeLogs(0, 99).length;
+        expect(logs).toBe(157);
+        expect(row.length * 4).toBeGreaterThan(199);
+        const [x, z] = row[(logs - 1) % row.length]!;
+        expect([x, z]).toEqual([3219, 3219]);
+        expect<{ x: number; z: number }>(TILES.s03End).toEqual({ x: x - 1, z });
+        expect(legById('T04-05').def.start).toEqual(TILES.s03End);
     });
 
     test("T07a: 58 m (run-transitions section 10), between woodcutting's own emitted band names", () => {
@@ -207,6 +227,26 @@ describe('splitLeg', () => {
         }
         // The landing is SUPPLIES' meeting spread, 2659-2663 x 3299-3303.
         expect(SPELLS.ardougne.landing).toEqual({ x: 2661, z: 3301, tol: 2 });
+    });
+
+    test('the food check goes only to the part that enters the Wilderness: a teleport part needs none (T15-16a runs before H13 brings the food)', () => {
+        for (const [id, after, first] of ARDOUGNE_SPLITS) {
+            const l = legById(id);
+            if (!l.def.food) continue;
+            for (const p of splitLeg(l, after, first ? { firstTicks: first } : {})) {
+                expect(p.def.food ?? 0).toBe(entersWilderness(p.def.hops, p.def.dest) ? l.def.food : 0);
+            }
+        }
+        const [a, b] = splitLeg(legById('T15-16'), 0);
+        expect(a.def.food).toBeUndefined();
+        expect(b.def.food).toBe(2);
+        const oneShark = (x: number, z: number) => state(x, z, { inventory: [...ARDOUGNE_RUNES, item(5, 'Shark'), item(6, 'Knife')] });
+        expect(legPreconditions(a.def, oneShark(TILES.daero.x, TILES.daero.z))).toBe(true);
+        expect(legPreconditions(b.def, oneShark(2661, 3301))).toBe('T15-16b: 1 food held, 2 needed');
+        // A leg out of the Wilderness keeps it on the part that is still in it (T14-15's run to level 20).
+        const [a1415, b1415] = splitLeg(legById('T14-15'), 1, { firstTicks: 70 });
+        expect([a1415.def.food, b1415.def.food]).toEqual([2, undefined]);
+        expect(entersWilderness([{ kind: 'teleport', spell: 'ardougne' }], SPELLS.ardougne.landing)).toBe(false);
     });
 
     test("T13-14: part a ends on the landing; b's checkpoints are the original's renumbered, so a restart in the keep resumes at the web", () => {
@@ -307,7 +347,7 @@ const kinds = (sdk: FakeSdk) => sdk.sent.map(a => a.method).filter((m, i, all) =
 
 describe('leg drops', () => {
     const T0405 = () => legById('T04-05');
-    const s04Exit = (more: InventoryItem[] = []) => state(TILES.firemakingRow.x, TILES.firemakingRow.z, { inventory: [...FALADOR_RUNES, item(3, 'Tinderbox'), item(4, 'Earth rune', 4), ...more] });
+    const s04Exit = (more: InventoryItem[] = []) => state(TILES.s03End.x, TILES.s03End.z, { inventory: [...FALADOR_RUNES, item(3, 'Tinderbox'), item(4, 'Earth rune', 4), ...more] });
 
     test("T04-05 drops S04's tinderbox and earth runes in one burst, confirmed, before the teleport click", async () => {
         const sdk = new FakeSdk(s04Exit());

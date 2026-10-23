@@ -160,8 +160,9 @@ describe('the real S04 and S06 givers', () => {
         expect(s04?.name).toBe('S04 magic');
     });
 
-    test("the ring givers stand beside S04's tile, the start of the leg after it (the Firemaking row tile T04-05 leaves from)", () => {
-        expect(ringerTile(chain)).toEqual({ x: TILES.firemakingRow.x, z: TILES.firemakingRow.z });
+    test("the ring givers stand beside S04's tile, the start of the leg after it (where S03 leaves SCORED, T04-05's start)", () => {
+        expect(ringerTile(chain)).toEqual({ x: 3218, z: 3219 });
+        expect(ringerTile(chain)).toEqual(TILES.s03End);
         expect(() => ringerTile(sliceUntil(chain, 'S04'))).toThrow('no leg after it');
     });
 

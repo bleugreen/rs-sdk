@@ -311,10 +311,20 @@ export const TILES = {
     lumbridgeSpawn: { x: 3222, z: 3222 },
     coop: { x: 3233, z: 3295, tol: 2 },
     /**
-     * S03's row start: "open ground beside the coop" (RUN-ORDER.md S03). No module fixes it yet;
-     * this tile is the leg's assumption, to be replaced by firemaking.ts's row start.
+     * S03's row entry: the first planned tile of the measured Lumbridge castle lap
+     * (docs/speedrun/rehearsals/firemaking.md, `3222-3218@3219;3218-3243@3218;3242-3223@3219`, the
+     * run config's firemakingTiles). firemaking.ts lights its first log here and walks here itself
+     * before the first fire when more than a tile off, so the leg ends on it.
      */
-    firemakingRow: { x: 3240, z: 3296, tol: 0 },
+    firemakingRow: { x: 3222, z: 3219, tol: 0 },
+    /**
+     * Where S03 leaves SCORED, so where S04 casts and its ring givers stand beside it. The 157 logs
+     * (firemaking.ts routeLogs, 1 to 99) are lit in planned order on the 51-tile lap; a lap takes 204
+     * ticks and a fire burns 100-199, so no lap skips a tile, and the 157th is tile 156 mod 51 = 3,
+     * (3219,3219). Its success pushes the player west first (firemaking.rs2: west, east, south,
+     * north; a fire is blockwalk=no), onto (3218,3219).
+     */
+    s03End: { x: 3218, z: 3219 },
     doric: { x: 2952, z: 3451, tol: 1 },
     airAltar: { x: 2841, z: 4830, tol: 3 },
     taverleyNormals: { x: 2912, z: 3495, tol: 1 },
@@ -383,10 +393,10 @@ export const LEGS: readonly LegStep[] = [
         expected: { ticks: 50, label: 'm', source: rt('L01') + ': 51, 49, 49', net: 50 },
     }),
     leg('T02-03', T.coop, T.firemakingRow, [run(T.firemakingRow.x, T.firemakingRow.z, T.firemakingRow.tol)], {
-        after: 'S02', before: 'S03', method: 'walk to the row beside the coop',
-        expected: { ticks: 5, label: 'i', source: 'run-transitions.md section 9: a row at the coop gate', net: 5 },
+        after: 'S02', before: 'S03', method: 'run to the castle row entry',
+        expected: { ticks: 48, label: 'm', source: "rs/496's live twin walk from (3240,3296), the old row placeholder by the coop, to (3222,3219): 48; 1-2 more from the coop", net: 48 },
     }),
-    leg('T04-05', T.firemakingRow, T.doric, [tele('falador'), run(T.doric.x, T.doric.z, T.doric.tol)], {
+    leg('T04-05', T.s03End, T.doric, [tele('falador'), run(T.doric.x, T.doric.z, T.doric.tol)], {
         after: 'S04', before: 'S05', method: 'Falador teleport + run', countedBy: 'S05',
         // S03's tinderbox and S04's leftover earth runes (S06's slot rule).
         drops: [/^tinderbox$/i, /^earth rune$/i],
@@ -598,12 +608,23 @@ export interface SplitOptions {
 
 const tenth = (n: number) => Math.round(n * 10) / 10;
 
+/** Whether `hops`, ending at `dest`, go into the Wilderness: a lever, or a tile they name (a run's, a click's, a web's, the end) above level 0. */
+export function entersWilderness(hops: readonly Hop[], dest: Area): boolean {
+    if (wildernessLevel(dest) > 0) return true;
+    return hops.some(h =>
+        h.kind === 'lever'
+        || ((h.kind === 'run' || h.kind === 'click') && wildernessLevel(h.to) > 0)
+        || (h.kind === 'webs' && h.goals.some(([x, z]) => wildernessLevel({ x, z }) > 0)));
+}
+
 /**
  * A leg cut in two after hop `afterHop`, so a hand-off can sit between the parts (the Ardougne
  * landing, SUPPLIES' meeting spread 2659-2663, 3299-3303). Part a (`<id>a`) runs hops 0..afterHop
  * and arrives in `meet`; part b (`<id>b`) runs the rest from there. No new travel: each part is an
  * ordinary leg whose checkpoints are the original's, renumbered. `expected` splits in proportion,
- * part a's ticks from `firstTicks`, and the two nets sum to the original's exactly.
+ * part a's ticks from `firstTicks`, and the two nets sum to the original's exactly. The food check
+ * goes only to a part that enters the Wilderness (entersWilderness): a teleport to the landing
+ * needs none, and the hand-off between the parts may be what brings the food.
  */
 export function splitLeg(l: LegStep, afterHop: number, o: SplitOptions = {}): [LegStep, LegStep] {
     const d = l.def;
@@ -617,22 +638,24 @@ export function splitLeg(l: LegStep, afterHop: number, o: SplitOptions = {}): [L
     const share = firstTicks / d.expected.ticks;
     const netA = tenth(d.expected.net * share);
     const cps = d.checkpoints ?? [];
+    const hopsA = d.hops.slice(0, afterHop + 1);
+    const hopsB = d.hops.slice(afterHop + 1);
     const a: LegOptions = {
         after: d.after, before: `${d.id}b`, method: `${d.method}, part a (to the landing)`,
-        ...(d.food ? { food: d.food } : {}),
+        ...(d.food && entersWilderness(hopsA, meet) ? { food: d.food } : {}),
         ...(cps.some(c => c.after < afterHop) ? { checkpoints: cps.filter(c => c.after < afterHop) } : {}),
         expected: { ticks: firstTicks, label: d.expected.label, source: o.firstSource ?? `${d.id} split after hop ${afterHop}: ${firstTicks} of ${d.expected.ticks} (${d.expected.source})`, net: netA },
     };
     const rest = cps.filter(c => c.after > afterHop).map(c => ({ after: c.after - afterHop - 1, in: c.in }));
     const b: LegOptions = {
         after: `${d.id}a`, before: d.before, method: `${d.method}, part b (from the landing)`,
-        ...(d.food ? { food: d.food } : {}),
+        ...(d.food && entersWilderness(hopsB, d.dest) ? { food: d.food } : {}),
         ...(d.nextStart ? { nextStart: d.nextStart } : {}),
         ...(d.countedBy ? { countedBy: d.countedBy } : {}),
         ...(rest.length ? { checkpoints: rest } : {}),
         expected: { ticks: tenth(d.expected.ticks - firstTicks), label: d.expected.label, source: `${d.id} split after hop ${afterHop}: the rest of ${d.expected.ticks} (${d.expected.source})`, net: tenth(d.expected.net - netA) },
     };
-    return [leg(`${d.id}a`, d.start, meet, d.hops.slice(0, afterHop + 1), a), leg(`${d.id}b`, meet, d.dest, d.hops.slice(afterHop + 1), b)];
+    return [leg(`${d.id}a`, d.start, meet, hopsA, a), leg(`${d.id}b`, meet, d.dest, hopsB, b)];
 }
 
 /** The step-module convention: every leg, or the ones named. */
