@@ -2260,13 +2260,13 @@ let mCap: number | null = null;
  * h45 in through the launcher's loginOn (M) and sends it to the leg's tile, clearing the wildlife there; a stop sends it
  * on from M, or logs it out after P (the launcher's stopOn). One cue.json per directory: P's open replaces M's cue.
  */
-export function legCue(sdk: Pick<Sdk, 'getState'>, dir: string, leg: TopUpLeg, action: 'open' | 'stop'): void {
+export function legCue(sdk: Pick<Sdk, 'getState'>, dir: string, leg: TopUpLeg, action: 'open' | 'stop', o: { final?: boolean } = {}): void {
     const s = sdk.getState()!;
     const w = new CueWriter(dir, s.player!.name, H12O_SCOPE[leg]);
     const beacons = [{ tick: s.tick, ms: Date.now() }];
     if (action === 'open') w.write({ beacons, turns: [] });
-    else w.stop(beacons);
-    stepNote(`S15:${leg} H12o cue ${action} (${H12O_SCOPE[leg].step}) at t=${s.tick}`);
+    else w.stop(beacons, o.final ? { final: true } : {});
+    stepNote(`S15:${leg} H12o cue ${action}${o.final ? ' final' : ''} (${H12O_SCOPE[leg].step}) at t=${s.tick}`);
 }
 export type TopUpLeg = keyof typeof H12O_SCOPE;
 
@@ -2365,6 +2365,26 @@ const receiveFromHelper: Receive = (sdk, partner, opts) => receiveFrom(sdk as ne
 const busyState = (s: BotWorldState) =>
     `dialog ${s.dialog.isOpen ? 'open' : 'closed'}, modal ${s.modalOpen}, trade ${tradeOf(s).isOpen ? 'open' : 'closed'}, anim ${s.player?.animId ?? '?'}, at ${s.player?.worldX},${s.player?.worldZ}`;
 
+/** Ticks a declined trade has to close before the window is closed outright. */
+export const DECLINE_TICKS = 3;
+
+/**
+ * A receive that ended with the trade window still open (a timeout: the helper never accepted) leaves both players held
+ * in it, the helper unable to go home and SCORED's next click refused. Decline it; if it is still open after
+ * DECLINE_TICKS, close the window.
+ */
+export async function closeLeftTrade(sdk: Sdk, label: TopUpLeg): Promise<void> {
+    if (!tradeOf(sdk.getState()!).isOpen) return;
+    const t0 = currentTick(sdk);
+    await sdk.sendDeclineTrade();
+    let w = await waitUntil(sdk, s => !tradeOf(s).isOpen, { maxTicks: DECLINE_TICKS });
+    if (!w.ok) {
+        await sdk.sendCloseModal();
+        w = await waitUntil(sdk, s => !tradeOf(s).isOpen, { maxTicks: DECLINE_TICKS });
+    }
+    stepNote(`S15:${label} top-up: the trade was left open; ${w.ok ? 'closed' : 'STILL OPEN'} after ${currentTick(sdk) - t0} ticks`);
+}
+
 /**
  * One H12o receive leg. Waits up to TOPUP_WAIT for the helper in view and up to IDLE_WAIT for SCORED to be idle
  * (tradeIdle), then sizes the leg and asks for the trade (receiveFrom, accepting the leg's want; DROPPED_TICKS beside
@@ -2407,6 +2427,7 @@ export async function receiveLeg(sdk: Sdk, from: string, label: TopUpLeg, size: 
             r = await receive(sdk, from, { want: sized.want, maxTicks: 60, openMaxTicks: 20, ...(beside ? { noReplyTicks: DROPPED_TICKS } : {}) });
         } finally {
             unask();
+            await closeLeftTrade(sdk, label);
             trading = false;
         }
         if (r.ok) {
@@ -2427,11 +2448,30 @@ export async function receiveLeg(sdk: Sdk, from: string, label: TopUpLeg, size: 
  */
 export async function h12oLeg(sdk: Sdk, t: TopUp, leg: TopUpLeg, receive?: Receive): Promise<LegResult> {
     const dir = t.cueDir ?? cueDir();
-    const r = await receiveLeg(sdk, t.from, leg, leg === 'M' ? mLegSize : pLegSize, { cueDir: dir, ...(receive ? { receive } : {}) });
-    if (leg === 'P' || !r.ok) legCue(sdk, dir, leg, 'stop');
-    if (leg === 'M' && t.p) legCue(sdk, dir, 'P', 'open');
+    const run = () => receiveLeg(sdk, t.from, leg, leg === 'M' ? mLegSize : pLegSize, { cueDir: dir, ...(receive ? { receive } : {}) });
+    if (leg === 'P') return pFinalStop(sdk, t, run);
+    const r = await run();
+    if (!r.ok) legCue(sdk, dir, leg, 'stop');
+    if (t.p) legCue(sdk, dir, 'P', 'open');
     return r;
 }
+
+/**
+ * Run `fn` with H12o-P's final stop (Cue.final: the scope is done, the launcher logs h45 out) written on its every exit,
+ * a throw included, and only once however many calls nest: P's leg and P's whole segment both wrap in it, so a segment
+ * that throws before the leg (a failed jump, a knockout) still sends h45 home.
+ */
+export async function pFinalStop<T>(sdk: Sdk, t: TopUp | undefined, fn: () => Promise<T>): Promise<T> {
+    if (!t?.p || pStopping) return fn();
+    pStopping = true;
+    try {
+        return await fn();
+    } finally {
+        pStopping = false;
+        legCue(sdk, t.cueDir ?? cueDir(), 'P', 'stop', { final: true });
+    }
+}
+let pStopping = false;
 
 // ------------------------------------------------------------------ segments
 
@@ -2850,7 +2890,7 @@ const BODIES: Partial<Record<string, Body>> = {
     },
     P: {
         preconditions: all(human, holding(MM_OBJ.talisman, MM_OBJ.monkeyBones), s => inArea(s, AREAS.atoll) || inArea(s, AREAS.dungeon) || 'not on the atoll or in its dungeon'),
-        run: (ctx, o) => withTopUps(() => toZooknock(ctx, o.topUpFrom)),
+        run: (ctx, o) => withTopUps(() => pFinalStop(ctx.sdk, o.topUpFrom, () => toZooknock(ctx, o.topUpFrom))),
         postconditions: atZooknock,
     },
     L: {

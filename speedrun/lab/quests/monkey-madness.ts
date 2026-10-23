@@ -26,22 +26,26 @@
 // --stage=all also tops up before every later segment, so a chain survives to measure what it eats.
 // --throwAt=T|N (with --launch): the run throws at that point as a crash would (THROW_POINTS), then relogs and resumes
 // through the runner's resolveResume to --until, as a manual re-run does; mm_resume and mm_resumed report it.
+// --neverAccept (P): H12o-P's helper is a second lab session on P's tile that opens SCORED's trade, offers the super
+// antipoison and never accepts; the run reports what it saw and the leg's last cue (P's final stop expected).
 // --loadCap=L: a run due while the host's 1-minute load is L or more starts only after a minute under L (a shared lab host).
 
-import { readFileSync } from 'fs';
-import { hostname, loadavg } from 'os';
+import { mkdtempSync, readFileSync } from 'fs';
+import { hostname, loadavg, tmpdir } from 'os';
 import { join } from 'path';
 
 import type { BotSDK } from '../../../sdk/index';
 import { PRAYER_NAMES, type BotWorldState } from '../../../sdk/types';
 import { wield } from '../../lib/act';
-import { closeSession, loadBotEnv, openSession, relog } from '../../lib/session';
+import { closeSession, loadBotEnv, logoutClean, openSession, relog, type Session } from '../../lib/session';
+import { isTradeRequest, openTrade, sameName, tradeOf } from '../../lib/trade';
+import { readCue } from '../../helpers/altar-cue';
 import { TickLog } from '../../lib/ticks';
 import { waitTicks } from '../../lib/wait';
 import { chebyshev, configId, pos } from '../../lib/world';
 import { BELOW_30_EATING, H12_POTIONS, H12_SHARKS, inCage, inCell, JOURNAL_PROBE, MM_OBJ, underTemple, REWARD_ITEMS, SEGMENT_EATING, SEGMENTS, segmentName, steps, type EatPolicy, type MmContext, type TopUp } from '../../quests/monkey-madness';
 import { slotNeed } from '../../quests/segments';
-import { h45Env, launchH45, stageH45, type H45Launcher } from '../h45';
+import { H45_BOT, h45Env, launchH45, stageH45, type H45Launcher } from '../h45';
 import { journalProbe } from '../../lib/quests';
 import { Observation, resolveResume } from '../../runner/resume';
 import { BOUNDARY_STEP, runSteps, type Step } from '../../runner/step';
@@ -554,6 +558,46 @@ function armThrow(sdk: BotSDK, letter: string, point: (typeof THROW_POINTS)[stri
     };
 }
 
+/**
+ * --neverAccept's helper: the h45 account, logged in on P's tile, requests a trade whenever SCORED stands within 3 tiles
+ * with none open (SCORED's own request then opens it), offers its super antipoison once per trade, and never accepts.
+ */
+function neverAcceptHelper(h: Session, scored: string): { stop: () => { requests: number; opened: number; offered: number } } {
+    let lastReq = -1;
+    let busy = false;
+    let offeredIn = false;
+    const seen = { requests: 0, opened: 0, offered: 0 };
+    const un = h.sdk.onStateUpdate(s => {
+        const t = tradeOf(s);
+        if (t.isOpen) {
+            if (!offeredIn && sameName(t.partner, scored)) {
+                offeredIn = true;
+                seen.opened++;
+                const anti = s.inventory.find(i => /^superantipoison\(4\)$/i.test(i.name));
+                if (anti) {
+                    seen.offered++;
+                    void h.sdk.sendOfferItem(anti.slot, 1);
+                }
+            }
+            return;
+        }
+        offeredIn = false;
+        for (const m of s.gameMessages) {
+            if (m.tick > lastReq && /trade/i.test(m.text)) {
+                lastReq = m.tick;
+                if (isTradeRequest(m)) seen.requests++;
+                console.log(`lab never-accept helper: t=${s.tick} msg type ${m.type}: ${m.text}`);
+            }
+        }
+        // Request back whenever SCORED stands close with no trade open: with SCORED's own request, that opens it.
+        const p = s.nearbyPlayers.find(x => sameName(x.name, scored));
+        if (busy || !p || chebyshev({ x: p.x, z: p.z }, pos(s)) > 3) return;
+        busy = true;
+        void openTrade(h.sdk as never, scored, { maxTicks: 20 }).finally(() => { busy = false; });
+    });
+    return { stop: () => { un(); return seen; } };
+}
+
 async function main(): Promise<void> {
     const from = arg('from', 'H').toUpperCase();
     const until = arg('until', from).toUpperCase();
@@ -599,7 +643,8 @@ async function main(): Promise<void> {
     const gw = Number(arg('gw', '8479'));
     const scoredAccount = loadBotEnv(botArg()).BOT_USERNAME!;
     // The cue directory is the launcher's, set per run below; steps() keeps this object, so the module reads it then.
-    const topUpFrom: TopUp | undefined = useH45 ? { from: h45Env().account, m: true, p: true, cueDir: '' } : undefined;
+    const neverAccept = process.argv.includes('--neverAccept');
+    const topUpFrom: TopUp | undefined = useH45 ? { from: h45Env().account, m: true, p: true, cueDir: '' } : neverAccept ? { from: h45Env().account, p: true, cueDir: '' } : undefined;
     const all = steps({ dialogue, note: line => console.log(line), bow: configId('obj', bow), eating, ...(topUpFrom ? { topUpFrom } : {}) });
     const chosen = all.slice(i0, i1 + 1);
     /** The gnome-half trade's boundary (a segment letter): a ::give top-up before it, as the helper's trade. */
@@ -735,12 +780,27 @@ async function main(): Promise<void> {
         uses = [];
         const unuse = sdk.onStateUpdate(s => use?.see(s));
         let launcher: H45Launcher | null = null;
-        if (topUpFrom) {
+        let never: { session: Session; helper: ReturnType<typeof neverAcceptHelper> } | null = null;
+        if (topUpFrom && neverAccept) {
+            await stageH45();
+            topUpFrom.cueDir = mkdtempSync(join(tmpdir(), 'mm-never-'));
+            const hs = await openSession(H45_BOT, { launch: true });
+            never = { session: hs, helper: neverAcceptHelper(hs, sdk.getState()!.player!.name) };
+        } else if (topUpFrom) {
             await stageH45();
             launcher = launchH45({ scoredAccount, gatewayPort: gw, tick: () => sdk.getState()?.tick ?? -1 });
             topUpFrom.cueDir = launcher.cueDir;
         }
         const unstage = async () => {
+            if (never) {
+                const seen = never.helper.stop();
+                const hs = never.session.sdk.getState();
+                const cue = readCue(topUpFrom!.cueDir!);
+                result('mm_never_accept', { run, ...seen, helperTradeOpen: hs ? tradeOf(hs).isOpen : null, scoredTradeOpen: tradeOf(sdk.getState()!).isOpen, cue: cue ? { step: cue.scope.step, stop: cue.stop ?? false, final: cue.final ?? false, seq: cue.seq } : null });
+                await logoutClean(never.session).catch(() => undefined);
+                await closeSession(never.session).catch(() => undefined);
+                never = null;
+            }
             if (!launcher) return;
             const hands = launcher.role(/^hand-off$/).map(l => l.data);
             result('mm_h45', { run, handOffs: hands, wildlife: launcher.role(/^wildlife$/).length, state: launcher.status()?.state ?? null });
