@@ -627,15 +627,18 @@ another computer and put an xmessage dialog on display :10; the gate tab never o
 browser login would have failed on run day. Fixed on both machines, after which the run host's gate
 re-run passed (scene t2, locs 116, at spawn).
 
-**The recorded display must not blank, permanent, both machines, every install** (the host, found
-11:44Z, via rs/158; fold-in 37). `DISPLAY=:10 xset q` shows `timeout: 0` under Screen Saver and DPMS
-disabled, and a one-frame grab of :10 is not black: `ffmpeg -f x11grab -video_size 1920x1080 -i
+**The recorded display must not blank, permanent, both machines, every install, beside the stale-lock
+check** (main's wording, 11:50Z via rs/158; the host found it 11:44Z; fold-in 37): '`DISPLAY=:10 xset q`
+shows screensaver timeout 0 and DPMS off; an x11grab test frame is not black'. Why: the run host's
+screensaver blanked :10 after 600 s idle, so the start would have been recorded black and `handoff`
+refused; fixed by an autostart entry on both machines. The details (the host): `xset q` shows
+`timeout: 0` under Screen Saver and DPMS disabled; the test frame, `ffmpeg -f x11grab -video_size 1920x1080 -i
 :10.0+0,0 -frames:v 1 /tmp/f.png` writes more than a few KB (a solid-black 1920x1080 PNG is about
 6 KB). Fix: `export DISPLAY=:10; xset s off; xset s noblank; xset -dpms` (an `export`, since
-`DISPLAY=:10 a; b; c` sets it for the first command only); the fix is also installed as an XFCE
-autostart, `~/.config/autostart/rs-noblank.desktop`, on both machines. Why: on 2026-10-23 the run
-host's :10 screensaver blanked at 600 s, the recording captured black after 10 idle minutes, and
-`handoff`'s scored-title live frame failed (difference 55.2); after the fix it passed at 3.6.
+`DISPLAY=:10 a; b; c` sets it for the first command only); the autostart entry is
+`~/.config/autostart/rs-noblank.desktop`. On 2026-10-23 the recording captured black after 10 idle
+minutes and `handoff`'s scored-title live frame failed (difference 55.2); after the fix it passed at
+3.6.
 
 **The cannon serve file, before SCORED logs in** (rs/41's wording via rs/158, main 04:15 PDT; fold-in 36).
 Before SCORED logs in, <run dir>/cannon-serve.json holds exactly host's bytes, sha256 f0e57ad6107d2621d0c12306a5cec6ee70fe73db1a2c39e5d2a28cbfca96a7c6 (the JSON plus one trailing newline); run.ts's preflight gate "cannon serve" (run.ts:286-294) must read "H11, H23 served as the ledger rows want"; a missing file or any drift is a refusal.
@@ -1716,7 +1719,7 @@ round. Then on the machine, in order, each a hard check:
 7. **the live-frame pass line** (step 5): the window in front is the run tab, and an x11grab frame
    of the display matches the page's own screenshot, at most 12/255;
 8. **it leaves the tab at the title screen and logs nobody in** (main's ruling, 12:10Z via rs/158;
-   fold-in 37; the host's `--no-login` flag): its pre-login checks are the live frame at the title
+   fold-in 37; `--no-login`, rs/601 merged as #485): its pre-login checks are the live frame at the title
    screen, the single window and the login count (items 2-7), and its `secretsCheck`
    (`tools/run-gate.ts:767-779`) still runs there, where it should read `0 0 0`. Before the ruling it
    logged SCORED in with tab-login, then ran the secrets check, the one-window check and the live
@@ -1789,8 +1792,8 @@ display.** The proof is rs/496's twin re-run, which runs the line
 once right after its single login (ENV set to the throwaway's env path) and sends the reading to
 rs/600 and the host: **pending**, like the ladder note's proofs.
 
-**Before run.ts starts: `handoff` logged nobody in** (the host's line via rs/158; rs/601's `handoff
---no-login`; the key is exactly `loggedIn`, the host confirmed, re-checked at the commit main names,
+**Before run.ts starts: `handoff` logged nobody in** (the host's line via rs/158; `handoff --no-login`,
+rs/601 merged as #485; the key is exactly `loggedIn`, the host confirmed, re-checked at the commit main names,
 the code winning). The
 `handoff.json` of this gate pass, in the gate directory `handoff` printed (not the newest
 `~/rs-run/gate-*` by glob: UTC names sort, but a stale rehearsal directory could win), must show
@@ -1801,8 +1804,8 @@ grep -o -E '"(ok|loggedIn)": *(true|false)' ~/rs-run/gate-<UTC handoff printed>/
 ```
 
 If it shows `"loggedIn": true`, `handoff` took the old path: the fallback below applies (a confirmed
-clean logout, then at least 10 s) before run.ts. If rs/601 is not in the named commit, this line
-reads 'n/a; the fallback applies'.
+clean logout, then at least 10 s) before run.ts. It stays the confirmation even with #485 in the
+named commit; if the named commit lacks #485, this line reads 'n/a; the fallback applies'.
 
 **Why** (main, 12:10Z): the server's clock runs from SCORED's first login and keeps counting on a
 dropped connection (`playtime-audit.md` rows 4b and 4d); a takeover under 10 s is refused by the
@@ -1810,11 +1813,11 @@ login server (`LoginServer.ts:573-601`); the gateway's duplicate-session stall i
 (rs/174). The run clock the ladder prices from is the server's first login of the account, not
 run.ts's `tickBase` (RUN-ORDER.md section 7).
 
-**Fallback, only if the host's `--no-login` flag misses 13:15Z** (main's wording): after handoff's
+**Fallback, only if the named commit lacks #485** (`handoff --no-login`, rs/601; main 11:50Z via
+rs/158; checked when main names the commit; main's wording): after handoff's
 verification, log SCORED out cleanly in the tab (confirmed on the page) before starting run.ts, and
 wait at least 10 s after the confirmed logout; the logout is also confirmed by observing SCORED's
-absence on `/playerpositions` (rs/186 via the host). The flag is the host's rs/601 (`run-gate.ts`
-and its test), merged ahead of rs/598's snapshot; the host says at once if the fallback applies. Priced as `handoff`'s own logged-in ticks, inferred tens, a start-cost line beside the row, outside
+absence on `/playerpositions` (rs/186 via the host). Priced as `handoff`'s own logged-in ticks, inferred tens, a start-cost line beside the row, outside
 the expected total (RUN-ORDER.md section 7's ladder). A logout not confirmed before run.ts starts
 runs into the login server's 10 s takeover refusal and the gateway's duplicate-session stall. From
 here the run scripts drive the tab through the gateway on 7780 (RUN-ORDER.md, STEP-MANIFEST.md).
