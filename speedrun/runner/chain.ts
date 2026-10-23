@@ -520,6 +520,15 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
     const runecraftS21 = pick('runecraft', runecraft.steps(s21Opts), ['S21 runecraft']);
     const relogs = o.relogs ?? new RelogBudget(join(cfg.cueDir, '..'));
     const preLogin = runecraft.preLoginStep(s21Opts);
+    const logout = scoredLogoutStep({ budget: relogs });
+    const s21Logout = {
+        ...logout,
+        // Resume considers this milestone before the preceding transient travel leg.
+        preconditions: (s: BotWorldState, c: unknown) => {
+            const live = logout.preconditions(s, c);
+            return live === true ? legById('T20-21', legs).postconditions(s, c) : live;
+        },
+    };
     const s21Login = scoredLoginStep({
         budget: relogs,
         beforeLogin: async ctx => {
@@ -589,7 +598,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...steps('S20', fishingContest.steps()),
         L('T20-21'),
         // SCORED stays out while the givers log in, then joins behind the entire ready roster.
-        ...steps('S21', o.s21Relog === false ? [preLogin] : [scoredLogoutStep({ budget: relogs }), preLogin, s21Login]),
+        ...steps('S21', o.s21Relog === false ? [preLogin] : [s21Logout, preLogin, s21Login]),
         ...steps('S21', runecraftS21),
         L('T21-22'),
         ...before('S22'),

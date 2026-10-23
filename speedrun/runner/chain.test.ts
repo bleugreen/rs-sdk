@@ -12,6 +12,9 @@ import { baseState, FakeSdk } from '../lib/fake-sdk';
 import { ReservationWatch } from '../lib/host-reservation';
 import type { Session } from '../lib/session';
 import { TickLog } from '../lib/ticks';
+import { RelogBudget } from './relog-budget';
+import { SCORED_RELOG, SCORED_LOGOUT, SCORED_LOGIN } from './scored-relog';
+import { SPELLS } from '../lib/travel';
 import { sleep, waitUntil } from '../lib/wait';
 import { MANIFEST } from '../tools/slot-ledger';
 import * as cooking from '../skills/cooking';
@@ -574,5 +577,38 @@ describe('cues', () => {
         expect(prepareCueDir(d, { fresh: true }).sort()).toEqual([PLAN_FILE, CUE_FILE, 'topup-ask.json', GO_FILE].sort());
         expect(existsSync(join(d, 'status-cairn_b01.json'))).toBe(true);
         expect(() => prepareCueDir(join(import.meta.dir, 'never-a-cue-dir'), { fresh: true })).toThrow();
+    });
+});
+
+describe('S21 arrival and the real resume chain', () => {
+    test('before logout resumes the approach until canonical arrival; open and closed halves retain their milestones', async () => {
+        const relogs = new RelogBudget(mkdtempSync(join(tmpdir(), 's21-arrival-')));
+        const full = buildChain(CONFIG, { cues: recorder().cues, relogs });
+        // Keep the real chain's predicates and leg; earlier completed quests are outside this slice.
+        const start = full.findIndex(s => s.id === 'T20-21');
+        const steps = full.slice(start, full.findIndex(s => s.id === 'T21-22'));
+        const leg = steps[0] as ChainStep & LegStep;
+        const state = (tile: { x: number; z: number; level?: number }, inGame = true) => baseState({
+            inGame, player: { x: tile.x, z: tile.z, worldX: tile.x, worldZ: tile.z, level: tile.level ?? 0 } as PlayerState,
+            skills: [{ name: 'Magic', level: 99, baseLevel: 99, experience: 0 }, { name: 'Runecraft', level: 44, baseLevel: 44, experience: 61_512 }],
+            inventory: [
+                { slot: 0, id: 0, name: 'Law rune', count: 1, optionsWithIndex: [] },
+                { slot: 1, id: 0, name: 'Air rune', count: 3, optionsWithIndex: [] },
+                { slot: 2, id: 0, name: 'Water rune', count: 1, optionsWithIndex: [] },
+                { slot: 3, id: 0, name: 'Body talisman', count: 1, optionsWithIndex: [] },
+            ],
+        });
+        const resolve = (s: BotWorldState) => resolveResume(steps, new Observation(s), {});
+        expect((await resolve(state(leg.def.start)))).toMatchObject({ step: leg.name, mode: 'run' });
+        const teleport = leg.def.hops[0]!;
+        if (teleport.kind !== 'teleport') throw new Error('expected canonical teleport');
+        expect((await resolve(state(SPELLS[teleport.spell].landing)))).toMatchObject({ step: leg.name, mode: 'resume' });
+        expect((await resolve(state(leg.def.dest)))).toMatchObject({ step: SCORED_LOGOUT, mode: 'run' });
+        relogs.beginPlanned(SCORED_RELOG, 100);
+        expect((await resolve(state(leg.def.dest, false)))).toMatchObject({ step: SCORED_LOGIN, mode: 'run' });
+        relogs.endPlanned(SCORED_RELOG, 'page');
+        const ready = state(leg.def.dest);
+        ready.inventory = [{ slot: 0, id: 0, name: 'Body talisman', count: 1, optionsWithIndex: [] }];
+        expect((await resolve(ready)).step).toBe('S21 runecraft');
     });
 });
