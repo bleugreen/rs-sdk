@@ -135,7 +135,7 @@ describe('phaseGates: the next helper step refuses, every later family is report
             expect(g[1]!.detail).toBe('bones-cairn_b02.json: travel with no bones held (site 1)');
         });
         test('a member waiting off its sites, or logged out awaiting its cue, does not count as waiting', () => {
-            const off = { tile: { x: 2920, z: 3407, level: 0 } };
+            const off = { tile: { x: 2930, z: 3450, level: 0 } };
             const by = { [statusFileName('bones', 'cairn_b01')]: bone({ account: 'cairn_b01', ...off }), [statusFileName('bones', 'cairn_b02')]: t('cairn_b02'), [statusFileName('bones', 'cairn_b03')]: t('cairn_b03'), [statusFileName('bones', 'cairn_b04')]: t('cairn_b04') };
             const g = phaseGates({ path, members, read: files(by), launcher: [{ account: 'cairn_b01', state: 'awaiting-cue', cue: { state: 'waiting' } }], now, source: 'x' }).filter(x => x.gate.startsWith('role phase S07'));
             expect(g.map(x => x.ok)).toEqual([true, false, false, false]);
