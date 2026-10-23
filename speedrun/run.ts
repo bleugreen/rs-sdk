@@ -66,6 +66,7 @@ import { buildChain, chainProbes, missingOnPath, muleCueDir, resolveFrom, sliceU
 import { prepareCueDir, RunCues } from './runner/cue-keeper';
 import { sessionLink } from './runner/resume';
 import { RelogBudget } from './runner/relog-budget';
+import { HandOffRecord } from './runner/handoff';
 import { SCORED_LOGIN, SCORED_RELOG } from './runner/scored-relog';
 
 export class UsageError extends Error {
@@ -171,7 +172,7 @@ export function attemptOf(earlier: readonly { runId?: string }[], runId: string)
  * S05's H4 giver; a ledger row the chain does not cover; a probe a step reads that no module
  * exports): a start-gate refusal, never a crash.
  */
-export function chainOrRefusal(cfg: RunConfig, cues: CueSink, o: Pick<ChainOptions, 's21Relog' | 'relogs' | 'attempt'> = {}): { chain: ChainStep[] } | { refusal: string } {
+export function chainOrRefusal(cfg: RunConfig, cues: CueSink, o: Pick<ChainOptions, 's21Relog' | 'relogs' | 'attempt' | 'handOffs'> = {}): { chain: ChainStep[] } | { refusal: string } {
     try {
         const chain = buildChain(cfg, { cues, ...o });
         chainProbes(chain);
@@ -581,7 +582,7 @@ async function main(argv: string[]): Promise<number> {
     const earlier = existsSync(a.log) ? parseLog(readFileSync(a.log, 'utf8')) : [];
     const runId = `run-${newRunId()}`;
     const attempt = attemptOf(earlier, runId);
-    const built = chainOrRefusal(cfg, keeper, { s21Relog: a.s21Relog, relogs, attempt });
+    const built = chainOrRefusal(cfg, keeper, { s21Relog: a.s21Relog, relogs, attempt, handOffs: new HandOffRecord(a.runDir, attempt) });
     if ('refusal' in built) {
         console.error(`[gate] REFUSED run config: ${built.refusal}`);
         console.error('[run] nothing was logged in');

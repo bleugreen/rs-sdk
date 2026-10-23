@@ -62,7 +62,7 @@ import * as start from '../skills/start';
 import * as thieving from '../skills/thieving';
 import * as woodcutting from '../skills/woodcutting';
 import { MANIFEST, parseLedger, type LedgerRow } from '../tools/slot-ledger';
-import { handOffFrom, handOffStep } from './handoff';
+import { handOffFrom, handOffStep, type HandOffRecord } from './handoff';
 import { legById, legsFor, splitLeg, type LegStep } from './legs';
 import { type Probe, stepProbes } from './resume';
 import { scoredLoginStep, scoredLogoutStep } from './scored-relog';
@@ -151,6 +151,12 @@ export interface ChainOptions {
     /** SCORED's relog between S21's pre-login and its band (run.ts --s21-relog; default on). */
     s21Relog?: boolean;
     relogs?: RelogBudget;
+    /**
+     * The attempt's hand-off completion record (run.ts: <run dir>/handoffs.json under `attempt`), which
+     * keeps a placed hand-off done once its band has eaten into what it brought (handoff.ts, Resume).
+     * Absent: a hand-off reads done from the state and the next milestone only.
+     */
+    handOffs?: HandOffRecord;
     /**
      * The attempt's id, the same in every process that resumes it (run.ts: the run id of its tick log's
      * first row). A cue whose givers count work per session takes its session from it (S07's bone cue,
@@ -702,7 +708,8 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...steps('S17', pick('agility', agility.steps({ to: 99 }), ['agility:wilderness'])),
     ];
 
-    // Hand-offs: each superseded by the next milestone's own `done` (ruling 3), computed here.
+    // Hand-offs: each superseded by the next milestone's own `done` (ruling 3), computed here, and
+    // done once the attempt's record has it (handoff.ts, Resume).
     const out: ChainStep[] = [];
     for (let i = entries.length - 1; i >= 0; i--) {
         const e = entries[i]!;
@@ -717,7 +724,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         // A row with a `to N` entry is served by a standing giver that sizes it from SCORED's ask (mule.ts, rs/429), scoped to the row.
         const ask = !scope && plan.receive.some(r => r.topUp) ? { scope: muleScope(e.row), ask: { dir: muleCueDir(cfg) } } : undefined;
         const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : ask;
-        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(cue ? { cue } : {}) }), cue ? { cue: cue.scope } : {});
+        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs } : {}), ...(cue ? { cue } : {}) }), cue ? { cue: cue.scope } : {});
         out.unshift(!scope && MULE_ROWS.includes(e.row) ? muleCued(s, e.row, o.cues) : s);
     }
     return out.map(censused);

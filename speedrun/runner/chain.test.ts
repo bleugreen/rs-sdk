@@ -6,7 +6,7 @@ import type { BotWorldState, PlayerState } from '../../sdk/types';
 import { CUE_FILE, CueWatcher, CueWriter, type Cue, type CueScope } from '../helpers/altar-cue';
 import { PLAN_FILE } from '../helpers/anvil';
 import { GO_FILE } from '../helpers/fm-row';
-import { handOffFrom } from './handoff';
+import { handOffFrom, HandOffRecord } from './handoff';
 import { runAttempt } from '../lib/attempt';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
 import { ReservationWatch } from '../lib/host-reservation';
@@ -684,6 +684,114 @@ describe('S21 arrival and the real resume chain', () => {
         const ready = state(leg.def.dest);
         ready.inventory = [{ slot: 0, id: 0, name: 'Body talisman', count: 1, optionsWithIndex: [] }];
         expect((await resolve(ready)).step).toBe('S21 runecraft');
+    });
+});
+
+describe('a placed hand-off stays done once the band after it consumes what it brought (rs/562 A)', () => {
+    const PLAYER = { name: 'Scored' };
+    type Held = [name: string, count: number, id?: number];
+    const items = (held: readonly Held[]) => held.map(([name, count, id], slot) => ({ slot, id: id ?? 20_000 + slot, name, count, optionsWithIndex: [] }));
+    const level = (name: string, n: number) => ({ name, level: n, baseLevel: n, experience: 0 });
+    const at = (x: number, z: number, o: { held: readonly Held[]; worn?: readonly Held[]; skills?: ReturnType<typeof level>[]; partner?: string; level?: number }) =>
+        baseState({
+            inGame: true,
+            player: { ...PLAYER, x, z, worldX: x, worldZ: z, level: o.level ?? 0 } as PlayerState,
+            inventory: items(o.held),
+            equipment: items(o.worn ?? []),
+            skills: o.skills ?? [],
+            nearbyPlayers: o.partner ? ([{ index: 9, name: o.partner, x, z, level: 3 }] as unknown as BotWorldState['nearbyPlayers']) : [],
+        });
+    /** The real chain with this attempt's record, sliced from leg `from` up to (not including) `to`. */
+    const sliceWith = (record: HandOffRecord | undefined, from: string, to: string) => {
+        const full = buildChain(CONFIG, { cues: recorder().cues, ...(record ? { handOffs: record } : {}) });
+        return full.slice(full.findIndex(s => s.id === from), full.findIndex(s => s.id === to));
+    };
+    const where = async (steps: readonly ChainStep[], s: BotWorldState): Promise<[string | null, string]> => {
+        try {
+            const p = await resolveResume(steps, new Observation(s), {});
+            return [p.step, p.mode];
+        } catch (e) {
+            return ['refused', (e as Error).message];
+        }
+    };
+    const marked = (row: string) => {
+        const r = new HandOffRecord(mkdtempSync(join(tmpdir(), 'chain-handoffs-')), 'attempt-1');
+        r.mark(row, 1000);
+        return r;
+    };
+    const unmarked = () => new HandOffRecord(mkdtempSync(join(tmpdir(), 'chain-handoffs-')), 'attempt-1');
+
+    // S18 at the knights' anchor (thieving.ts BANDS), Thieving inside the band, as on arrival from T16-18.
+    const KNIGHTS = { x: 2670, z: 3305 };
+    const THIEF = [level('Thieving', 57), level('Magic', 80), level('Fletching', 60)];
+    /** H14's package, received in full (the ledger's counts), less `used`. */
+    const h14Pack = (used: Record<string, number> = {}): Held[] =>
+        handOffFrom(MANIFEST_TEXT, 'H14').receive.map(r => [r.name, r.count - (used[r.name] ?? 0), r.ids?.[0]] as Held).filter(h => h[1] > 0);
+
+    test('S18 after one shark eaten: thieving:knights resumes; without the record the walk falls back to H14 and T16-18 (rs/147, measured)', async () => {
+        const oneShark = at(KNIGHTS.x, KNIGHTS.z, { held: h14Pack({ shark: 1 }), skills: THIEF });
+        expect(await where(sliceWith(marked('H14'), 'T16-18', 'T18-19'), oneShark)).toEqual(['thieving:knights', 'resume']);
+        expect(await where(sliceWith(unmarked(), 'T16-18', 'T18-19'), oneShark)).toEqual(['T16-18 Ardougne teleport from the chamber + run to the knights anchor', 'run']);
+    });
+
+    test('S18 after the first stocked Superheat (a copper and a tin ore, a nature rune): thieving:knights resumes', async () => {
+        const oneCast = at(KNIGHTS.x, KNIGHTS.z, { held: h14Pack({ 'copper ore': 1, 'tin ore': 1, 'nature rune': 1 }), skills: THIEF });
+        expect(await where(sliceWith(marked('H14'), 'T16-18', 'T18-19'), oneCast)).toEqual(['thieving:knights', 'resume']);
+    });
+
+    test('S18 on arrival, H14 not yet traded (Thieving 57 already reads in progress): H14 runs, record or no record', async () => {
+        const arrival = at(KNIGHTS.x, KNIGHTS.z, { held: [['Magic potion(3)', 1], ['Knife', 1, 946]], skills: THIEF, partner: 'p_h14' });
+        expect(await where(sliceWith(unmarked(), 'T16-18', 'T18-19'), arrival)).toEqual(['H14 hand-off', 'run']);
+        // Marked, but a rollback across the swap handed the potion and knife back: H14 again.
+        expect(await where(sliceWith(marked('H14'), 'T16-18', 'T18-19'), arrival)).toEqual(['H14 hand-off', 'run']);
+    });
+
+    // S22 at the river standing tile (fishing.ts RIVER), Fishing 78, as on arrival from T21-22.
+    const RIVER = { x: 3241, z: 3248 };
+    const FISHER = [level('Fishing', 78)];
+    const h18Pack = (used: Record<string, number> = {}): Held[] =>
+        handOffFrom(MANIFEST_TEXT, 'H18').receive.map(r => [r.name, r.count - (used[r.name] ?? 0), r.ids?.[0]] as Held).filter(h => h[1] > 0);
+
+    test('S22 after the first catch (feathers 609): fishing:fly-78-99 resumes; without the record it does not (rs/147)', async () => {
+        const firstCatch = at(RIVER.x, RIVER.z, { held: [...h18Pack({ feather: 1 }), ['Raw trout', 1]], skills: FISHER });
+        expect(await where(sliceWith(marked('H18'), 'T21-22', 'T22-23'), firstCatch)).toEqual(['fishing:fly-78-99', 'resume']);
+        expect(await where(sliceWith(unmarked(), 'T21-22', 'T22-23'), firstCatch)).toEqual(['T21-22 Lumbridge teleport from the body altar room + run', 'run']);
+    });
+
+    test('S22 after the knife cycle used its logs: fishing:fly-78-99 resumes', async () => {
+        const noLogs = at(RIVER.x, RIVER.z, { held: h18Pack({ feather: 300, logs: 10 }), skills: [level('Fishing', 90)] });
+        expect(await where(sliceWith(marked('H18'), 'T21-22', 'T22-23'), noLogs)).toEqual(['fishing:fly-78-99', 'resume']);
+    });
+
+    test('S22 on arrival, H18 not yet traded (at the river, Fishing 78, already in progress): H18 runs', async () => {
+        const arrival = at(RIVER.x, RIVER.z, { held: [['Law rune', 1]], skills: FISHER, partner: 'p_h18' });
+        expect(await where(sliceWith(unmarked(), 'T21-22', 'T22-23'), arrival)).toEqual(['H18 hand-off', 'run']);
+    });
+
+    test('S16 mid-fight, runes spent (the in-progress segment is C, not the milestone D): C-fight resumes', async () => {
+        const h13 = handOffFrom(MANIFEST_TEXT, 'H13');
+        const held: Held[] = h13.receive.filter(r => !h13.wield.some(w => w.name === r.name)).map(r => [r.name, /rune$/.test(r.name) ? Math.floor(r.count / 2) : r.count, r.ids?.[0]] as Held);
+        const worn: Held[] = h13.wield.map(w => [w.name, 1]);
+        const midFight = at(3105, 3935, { held, worn, skills: [level('Magic', 80)] });
+        const steps = sliceWith(marked('H13'), 'T15-16a', 'T16-18');
+        expect(await where(steps, midFight)).toEqual(['S16:C-fight', 'resume']);
+        expect((await where(sliceWith(unmarked(), 'T15-16a', 'T16-18'), midFight))[0]).not.toBe('S16:C-fight');
+    });
+
+    test('every placed hand-off: recorded in this attempt and nothing it gave held, done with its package spent; another attempt\'s record is not this one', () => {
+        const record = marked('none');
+        const other = new HandOffRecord(record.dir, 'attempt-0');
+        const full = buildChain(CONFIG, { cues: recorder().cues, handOffs: record });
+        const handOffs = full.filter(s => s.kind === 'handoff');
+        expect(handOffs.length).toBeGreaterThan(15);
+        const spent = new Observation(at(0, 0, { held: [] }));
+        for (const s of handOffs) {
+            const row = s.name.replace(/ hand-off$/, '');
+            other.mark(row, 1);
+            expect([row, s.done!(spent, {})]).toEqual([row, false]);
+            record.mark(row, 1);
+            expect([row, s.done!(spent, {})]).toEqual([row, true]);
+        }
     });
 });
 
