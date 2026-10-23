@@ -8,7 +8,10 @@
  * (or `admitTimeoutMinutes` after it opened), then is evaluated: the median gp a tick per login over the hold.
  * The first step's median is the reference. A later step whose median is more than `dropPct` below it stops the
  * ramp: no more knights logins, and the ones not yet admitted go to the fallback mix. A step with no login
- * measured holds again rather than deciding on nothing.
+ * measured goes back to admitting (its timeout counted afresh) rather than deciding on nothing.
+ *
+ * The runner opens the ramp when the first knights login reaches admission, not when the run starts: setup takes
+ * tens of minutes, and a timeout counted from the start would open the first hold before any knight arrived.
  */
 import { median } from '../lib/market.ts';
 import type { RampPlan } from './plan.ts';
@@ -80,8 +83,10 @@ export class KnightsRamp {
         const base = { kind: 'ramp' as const, step: this.stepNumber, logins: this.admitted(), rates: [...rates], median: m, holdStart: this.holdStart, holdEnd: now };
         let d: RampDecision;
         if (rates.length === 0) {
-            d = { ...base, firstMedian: this.first, ratio: null, action: 'repeat', reason: 'no login was measured over the whole hold; holding again' };
-            this.holdStart = now;
+            d = { ...base, firstMedian: this.first, ratio: null, action: 'repeat', reason: 'no login was measured over the whole hold; waiting for the step again' };
+            this.phase = 'admitting';
+            this.openedAt = now;
+            this.holdStart = null;
         } else {
             if (this.first === null) this.first = m;
             const ratio = this.first > 0 ? m / this.first : null;
