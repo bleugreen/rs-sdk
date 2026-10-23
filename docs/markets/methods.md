@@ -62,9 +62,9 @@ m = measured in the lab, i = inferred (named model or arithmetic on measured par
 | Men, farmers, watchmen (model) | Thieving 1 / 10 / 65 | men 4,100 at 1, 10,100 at 99; farmers 8,900 at 10, 29,000 at 99; watchmen 39,000 at 65 | same, coins | | | i: `value.ts` `pickpocketPerTick`, no walking | | worth nothing beside guards and knights, which a fresh account reaches in minutes at 25x xp |
 | **Rune essence**, Varrock east mine (fleet `speedrun/helpers/essence.ts`) | Mining 1 (99 here), Rune Mysteries, pickaxe | 6,200 | **81,100** (bid 55, 471,638 deep: ~300 login-hours) | 18 | 5,860-6,420, sd 162 | m, fedora (3,000 ticks) | with logins until the bid is filled | the run's essence (63,674) is already held; logins |
 | **Swordfish and tuna**, Catherby, harpoon | Fishing 50 (99 here), harpoon | **74,300** | ~27,000 (High Alchemy, the cast time charged) | 12 | 54,500-103,700, sd 13,700 | m, fedora | with logins; 2 harpoon spots | logins |
-| **Sharks**, Catherby, harpoon | Fishing 76 (99 here), harpoon | 59,400 | ~28,500 (High Alchemy: 180 less a nature, 11% of the hour casting) | 4 | 52,400-68,800, sd 7,800 | m, fedora | with logins; 3 net/harpoon spots | logins; the run's sharks come from helper stock, not this |
-| **Yew logs**, Seers' Village | Woodcutting 60 (99 here), rune axe | 57,900 | ~22,900 (High Alchemy 96 less a nature) | 8 | 49,600-66,600, sd 5,800 | m, fedora | with logins | logins; the run's 24 yew are staged |
-| Magic logs, Seers' Village | Woodcutting 75 (99 here), rune axe | 51,400 | ~25,300 (High Alchemy 192 less a nature) | 3 | 43,100-60,900 | m, fedora | with logins | logins |
+| **Sharks**, Catherby, harpoon | Fishing 76 (99 here), harpoon | 59,400 | ~28,500 (High Alchemy: 180 less a nature, 11% of the hour casting); up to ~100,000 cooked and sold at the GE's traded price (~506 net, before burns and cooking time), which trades ~548 an hour world-wide (candidates.md) | 4 | 52,400-68,800, sd 7,800 | m, fedora | with logins; 3 net/harpoon spots | logins; the run's sharks come from helper stock, not this |
+| **Yew logs**, Seers' Village | Woodcutting 60 (99 here), rune axe | 57,900 | **~137,000 at the GE's traded price** (~379 net; ~2,100 an hour trade world-wide, so ~6 logins' worth; candidates.md); ~22,900 alched | 8 | 49,600-66,600, sd 5,800 | m, fedora | with logins | logins; the run's 24 yew are staged |
+| Magic logs, Seers' Village | Woodcutting 75 (99 here), rune axe | 51,400 | ~25,300 alched; the GE pays ~2,137 net but trades only ~57 an hour world-wide (candidates.md), ~122,000 for the first login's 57 | 3 | 43,100-60,900 | m, fedora | with logins | logins |
 | Coal and mithril, Mining Guild | Mining 60 (99 here), rune pickaxe | 37,300 | 27,000-58,000: coal 471/h at 80 best / 12.4 mean, mithril alched, **6.1 uncut gems/h at 2,500** (14,500) | 14 | 22,500-45,000, sd 5,200 | m, fedora | coal bid 6.8M deep but mostly far below 80 | logins |
 | Adamantite and coal, north Dwarven Mine | Mining 70 (99 here), combat 65+ | 25,600 | 39,000-57,000: 33 adamantite/h at 1,148 (18,161 deep) + coal | 7 | 18,200-39,800 | m, fedora | 3 rocks shared with every miner | **yes: adamantite is the run's scarce bar input**; do not sell it |
 | Bass, Catherby, big net | Fishing 46 (99 here), big net | 22,500 (all of the catch banked) / 16,700 (bass, oysters and caskets only) | under 15,000 | 13 / 3 | 7,000-57,000 | m, fedora | | none |
@@ -84,8 +84,10 @@ m = measured in the lab, i = inferred (named model or arithmetic on measured par
   value: every shark eaten is 300 off the board, so a 10 HP account eating 149 sharks an hour
   banks 104,000 against the 70 HP account's 134,000 on the same coins.
 - **Fishing, woodcutting and paladins bank ~50,000-75,000 board an hour**, about half the
-  knights, and have no coin outlet but High Alchemy (no bids for raw fish or logs), which halves
-  them again in coins.
+  knights. Raw fish and logs have no standing bid; High Alchemy halves them again in coins, but
+  the GE's traded prices are far above cost (yew ~379, magic ~2,137, cooked shark ~506), so a
+  few logins can sell into the weekly flow for more coins than alching (yew ~137,000 an hour).
+  The sibling scan (`docs/markets/candidates.md`, rs/501, PR #432) ranks those flows and caps.
 - **For coins, the GE's standing bids beat everything except knights**: essence at 55 (cost 4)
   gives ~81,000 an hour from a level-1 skill, and iron ore at 80 (cost 17) about 115,000 (i).
   Both books are deep enough for hundreds of login-hours. These bids sit far above store cost; who
@@ -94,6 +96,11 @@ m = measured in the lab, i = inferred (named model or arithmetic on measured par
   above cost except Irksol (500) and Tiadeche (550), so alching shop stock loses coins too. The
   one positive loop, Irksol's rings resold to Grum or alched, is about 18 rings an hour for the
   whole world (`docs/markets/generator-content-shops.md` section 6 rules it out as a generator).
+- **Against the scan's recommendations** (`candidates.md` 'Recommended for lab measurement'):
+  this table measures its knights (#8; 142,000 coins here against its 111,000 estimate), heroes
+  (#9), yew (#7: 362 logs an hour) and sharks (#10, raw only; cooking and burns not measured).
+  Its #1 (charging water orbs into battlestaves), #2 (Shilo gem rocks), #3 (runite bars), #4
+  (steel bars), #5 (adamantite at the 13-rock site) and #6 (iron ore with its bank trip) remain.
 - **Rows not measured** and still worth a lab run, in order of value: iron ore (the deepest coin
   outlet), fire and water rune crafting into the shallow elemental bids, and gem mining (every
   uncut gem bids 2,500, ~43,000 units across the six; the Mining Guild run found 6.1 an hour
