@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Gentle } from './demo.ts';
-import { bidPool, bookDepth, DemoMarket, historyMoves, historyTotals, realisable, stackOverVolume, type Bucket } from './market.ts';
+import { asksAtOrBelow, bidPool, bookDepth, buyCost, DemoMarket, historyMoves, historyTotals, realisable, stackOverVolume, type Bucket } from './market.ts';
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, 'fixtures', name), 'utf8');
 const realFetch = globalThis.fetch;
@@ -78,6 +78,30 @@ describe('book depth', () => {
         expect(part.low).toBeCloseTo(4019.7, 0);
         expect(part.high).toBe(5000);
         expect(realisable({ ...air, buyQuantity: 0, buyValue: 0, bid: null }, 10)).toEqual({ units: 0, low: 0, high: 0, unsold: 10 });
+    });
+
+    // The shark book markets read at 2026-10-23 12:0xZ (rs/544): best ask 507, 2,003,290 listed, 1,403,983,415 asked.
+    const shark = { ...air, id: 385, name: 'Shark', ask: 507, sellQuantity: 2_003_290, sellValue: 1_403_983_415 };
+
+    test('buyCost bounds a partial fill between the best and the mean ask', () => {
+        const c = buyCost(shark, 80_000);
+        expect(c.units).toBe(80_000);
+        expect(c.short).toBe(0);
+        expect(c.low).toBe(80_000 * 507);
+        expect(c.high / 80_000).toBeCloseTo(700.84, 2);
+        expect(buyCost(shark, 3_000_000)).toEqual({ units: 2_003_290, low: 1_403_983_415, high: 1_403_983_415, short: 3_000_000 - 2_003_290 });
+        expect(buyCost({ ...shark, sellQuantity: 0, sellValue: 0, ask: null }, 5)).toEqual({ units: 0, low: 0, high: 0, short: 5 });
+    });
+
+    test('asksAtOrBelow is a lower bound from the totals', () => {
+        expect(asksAtOrBelow(shark, 506)).toBe(0);
+        // at the mean, the bound proves nothing: the whole side could sit just above it
+        expect(asksAtOrBelow(shark, 701)).toBe(2_003_290 - Math.floor((1_403_983_415 - 2_003_290 * 507) / 195));
+        expect(asksAtOrBelow(shark, 701)).toBeLessThan(10_000);
+        // a book whose every unit is at the best ask
+        expect(asksAtOrBelow({ ...shark, sellValue: 2_003_290 * 507 }, 507)).toBe(2_003_290);
+        // far above the mean most of the side is provably there
+        expect(asksAtOrBelow(shark, 5_000)).toBeGreaterThan(1_900_000);
     });
 });
 
