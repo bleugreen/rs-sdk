@@ -1,12 +1,13 @@
-import { describe, expect, test } from 'bun:test';
-import type { BotWorldState, InventoryItem } from '../../sdk/types';
-import { baseState } from '../lib/fake-sdk';
+import { afterEach, describe, expect, test } from 'bun:test';
+import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
+import { baseState, FakeSdk } from '../lib/fake-sdk';
+import type { StepContext } from '../runner/step';
 import * as grandTree from '../quests/grand-tree';
 import * as tgv from '../quests/tree-gnome-village';
 import { ROUTES } from '../skills/agility';
 import { BANKS } from './buyer';
 import { AGILITY_COURSES } from '../../server/webclient/src/bot/programs/agility-courses';
-import { AGILITY_TO, ARMOUR, freeSlots, gtPlan, kitBank, lapsDone, stepLoc, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, approachFirst, transientFault, roomDrops, SHARK_FLOOR, TWIG_SLOTS, inShipyardPocket, nextStoneMove, STONES, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
+import { AGILITY_TO, ARMOUR, freeSlots, gtPlan, kitBank, lapsDone, stepLoc, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, approachFirst, transientFault, noLocError, enterTree, demonReentry, pillarRoute, roomDrops, SHARK_FLOOR, TWIG_SLOTS, inShipyardPocket, nextStoneMove, STONES, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
 import { applySubstitutes, LEG_PREFIX, withLegs } from '../lab/quests/demo-quest';
 import type { NearbyLoc } from '../../sdk/types';
 
@@ -268,5 +269,62 @@ describe('roomDrops: room for the twigs from the helper\'s own surplus', () => {
         const r = roomDrops(s, TWIG_SLOTS);
         expect(r.drop.map(i => i.name)).toEqual(['Shark']);
         expect(r.short).toBe(TWIG_SLOTS - 1);
+    });
+});
+
+// ------------------------------------------------------------------ against a fake server
+
+let ticker: ReturnType<typeof setInterval> | null = null;
+afterEach(() => {
+    if (ticker) clearInterval(ticker);
+    ticker = null;
+});
+const fakeAt = (x: number, z: number, level: number, over: Partial<BotWorldState> = {}) => {
+    const fake = new FakeSdk(baseState({ player: at(x, z, level), ...over }));
+    ticker = setInterval(() => fake.tick(), 1);
+    return { fake, ctx: { sdk: fake, bot: {}, log: { rows: [] }, session: 1 } as unknown as StepContext<any> };
+};
+const GT = grandTree.TILES;
+const demon = { index: 7, name: 'Black demon', x: GT.trapdoor.x, z: GT.trapdoor.z + 6400, optionsWithIndex: [{ text: 'Attack', opIndex: 2 }] } as unknown as NearbyNpc;
+const trapdoorLoc = { x: GT.trapdoor.x, z: GT.trapdoor.z, id: 2446, name: 'Trapdoor', optionsWithIndex: [{ text: 'Open', opIndex: 1 }] } as unknown as NearbyLoc;
+
+describe('the transient door fault, on the errors the driver actually throws', () => {
+    test('enterTree at the door with the door in its open form (no Open loc) throws an error the retry takes', async () => {
+        const { ctx } = fakeAt(GT.doorOutside.x, GT.doorOutside.z, 0);
+        const err = await enterTree(ctx).then(() => null, (e: Error) => e.message);
+        expect(err).toBe(noLocError('tree door in', GT.door, /^open$/i, { x: GT.doorOutside.x, z: GT.doorOutside.z, level: 0 }));
+        expect(transientFault(err!)).toBe(true);
+        expect(transientFault(`step "S11b:A-narnode[driver]" run failed: ${err}`)).toBe(true);
+    });
+    test('other missing locs in the driver are not retried', () => {
+        expect(transientFault(noLocError('trapdoor', GT.trapdoor, /^open$/i, { x: 0, z: 0, level: 2 }))).toBe(false);
+        expect(transientFault(noLocError('tree door in', GT.door, /^close$/i, { x: 0, z: 0, level: 0 }))).toBe(false);
+    });
+});
+
+describe('N2 after a drop at stage 130 (the demon gone, the resume walk starting at N2)', () => {
+    test('pillarRoute: from the roots, the tree, Glough\'s floor or the platform', () => {
+        const s = (x: number, z: number, level: number) => state({ player: at(x, z, level) });
+        expect(pillarRoute(s(2487, 3466, 2))).toEqual([]);
+        expect(pillarRoute(s(2480, 3463, 1))).toEqual(['climb']);
+        expect(pillarRoute(s(2465, 3495, 0))).toEqual(['glough', 'climb']);
+        expect(pillarRoute(s(GT.narnodeRoots.x, GT.narnodeRoots.z, 0))).toEqual(['roots', 'glough', 'climb']);
+    });
+    test('on the platform with no demon: opens the trapdoor again and ends with the demon in sight', async () => {
+        const { fake, ctx } = fakeAt(2487, 3466, 2, { nearbyLocs: [trapdoorLoc] });
+        fake.onSend = (a, f) => {
+            if (a.method === 'sendInteractLoc' && a.args[0] === GT.trapdoor.x) setTimeout(() => f.tick({ player: at(GT.trapdoor.x, GT.trapdoor.z + 6400, 0), nearbyNpcs: [demon], nearbyLocs: [] }), 2);
+        };
+        expect(await demonReentry(ctx)).toEqual({ climb: [] });
+        expect(fake.sent.filter(a => a.method === 'sendInteractLoc').map(a => a.args.slice(0, 2))).toEqual([[GT.trapdoor.x, GT.trapdoor.z]]);
+        expect(grandTree.demonInSight(fake.state!)).toBe(true);
+    });
+    test('with the demon already here (no drop): nothing to replay', async () => {
+        const { fake, ctx } = fakeAt(GT.trapdoor.x, GT.trapdoor.z + 6400, 0, { nearbyNpcs: [demon] });
+        expect(await demonReentry(ctx)).toBeNull();
+        expect(fake.sent).toHaveLength(0);
+    });
+    test('the plan sends the stage-130 resume through demonReentry, not a throw', () => {
+        expect(gtPlan().substitute.N2!.run.toString()).toContain('demonReentry');
     });
 });
