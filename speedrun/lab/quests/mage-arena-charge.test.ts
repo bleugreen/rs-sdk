@@ -4,7 +4,7 @@ import { baseState, FakeSdk } from '../../lib/fake-sdk';
 import { hopNeeds, hopsDestination } from '../../lib/travel';
 import * as mageArena from '../../quests/mage-arena';
 import {
-    attackSeen, BLOOD_RUNES, CHARGE_COMPONENT, chargeProbe, DEATH_RUNES, inDragonRoom, inTaverleyDungeon, MAX_CASTS, parseDeliveries, probeRows, probeTicks, routeOut, TO_CELLAR, type ProbeSample,
+    attackSeen, BLOOD_RUNES, deliveryRequested, meetAt, CHARGE_COMPONENT, chargeProbe, DEATH_RUNES, inDragonRoom, inGuild, inTaverleyDungeon, MAX_CASTS, parseDeliveries, probeRows, probeTicks, routeOut, TAVERLEY_LADDER_UP, TO_CELLAR, type ProbeSample,
 } from './mage-arena-charge';
 
 const prevTick = process.env.SPEEDRUN_TICK_MS;
@@ -46,6 +46,24 @@ describe('parseDeliveries', () => {
     });
 });
 
+describe('meetAt', () => {
+    test('Varrock west (the couriers\' tile) or Yanille bank', () => {
+        expect(meetAt('varrock').tile).toEqual({ x: 3185, z: 3436 });
+        expect(meetAt('yanille').bank).toMatchObject({ x: 2613, z: 3092 });
+        expect(() => meetAt('lumbridge')).toThrow(/--meet/);
+    });
+});
+
+describe('deliveryRequested', () => {
+    const owed = [{ from: 'cairn_h02', item: 'Coins', n: 100000 }, { from: 'cairn_h84', item: 'Prayer potion(3)', n: 2 }];
+    test('answers only a giver that asked to trade, by its display name', () => {
+        expect(deliveryRequested(owed, [{ sender: 'Cairn H84' }])?.from).toBe('cairn_h84');
+        expect(deliveryRequested(owed, [{ sender: 'cairn_h02' }])?.from).toBe('cairn_h02');
+        expect(deliveryRequested(owed, [{ sender: 'Cairn H85' }])).toBeUndefined();
+        expect(deliveryRequested(owed, [])).toBeUndefined();
+    });
+});
+
 describe('attackSeen', () => {
     const at = (x: number, z: number, hp: number, players: string[] = []): BotWorldState =>
         baseState({ tick: 5, player: { worldX: x, worldZ: z, level: 0, hp } as never, nearbyPlayers: players.map((name, i) => ({ name, index: i, distance: 3 })) as never });
@@ -69,12 +87,33 @@ describe('routeOut', () => {
         expect(r.length).toBe(23);
         expect(inDragonRoom({ x: 2901, z: 9810 })).toBe(true);
         expect(inDragonRoom({ x: 2925, z: 9803 })).toBe(false);
+        // the ladder's foot is west of the door but outside the room
+        expect(inDragonRoom({ x: 2884, z: 9798 })).toBe(false);
         expect(inTaverleyDungeon({ x: 2884, z: 9798 })).toBe(true);
         expect(inTaverleyDungeon({ x: 2543, z: 4713 })).toBe(false);
     });
 
+    test('the ladder up is found near its foot and waits for the surface tile (both ends are level 0)', () => {
+        const up = TAVERLEY_LADDER_UP[1]!;
+        expect(up.kind).toBe('loc');
+        if (up.kind !== 'loc') return;
+        expect(up.loc.x).toBeUndefined();
+        expect(up.arrive).toMatchObject({ x: 2884, z: 3397 });
+        expect(inTaverleyDungeon(hopsDestination(TAVERLEY_LADDER_UP)!)).toBe(false);
+    });
+
     test('from part-way along it starts at the nearest route tile', () => {
         expect(routeOut({ x: 2912, z: 9808 })[0]).toEqual({ x: 2912, z: 9808 });
+    });
+});
+
+describe('inGuild', () => {
+    const at = (x: number, z: number, level: number) => baseState({ player: { worldX: x, worldZ: z, level } as never });
+    test('the ground floor and the store upstairs, not the street outside the east door', () => {
+        expect(inGuild(at(2596, 3088, 0))).toBe(true);
+        expect(inGuild(at(2594, 3087, 1))).toBe(true);
+        expect(inGuild(at(2598, 3088, 0))).toBe(false);
+        expect(inGuild(null)).toBe(false);
     });
 });
 

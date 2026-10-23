@@ -4,7 +4,7 @@
 // everything around it is this script's untimed staging.
 //
 //   bun speedrun/lab/quests/mage-arena-charge.ts <account> --fleet-account \
-//       [--receive=<json>] [--receive-minutes=40] [--casts=10] [--burst=5] [--trace=N] [--probe-only]
+//       [--receive=<json>] [--meet=varrock|yanille] [--receive-minutes=40] [--casts=10] [--burst=5] [--trace=N] [--probe-only]
 //
 // --probe-only: the arena is already done (a relaunch after it): only the probe, where the account
 // stands, then the logout.
@@ -30,18 +30,19 @@
 
 import type { BotWorldState } from '../../../sdk/types';
 import { wield } from '../../lib/act';
-import { crossToKandarin, type Traveller } from '../../lib/kandarin';
+import { crossFromKandarin, crossToKandarin, westOfTaverley, type Traveller } from '../../lib/kandarin';
 import { closeSession, loadBotEnv, openSession, type Session } from '../../lib/session';
 import { TickLog, type TickRow } from '../../lib/ticks';
 import { receiveFrom } from '../../lib/trade';
-import { FOOD, hopsDestination, teleport, travel, wildernessLevel, within, type Hop } from '../../lib/travel';
+import { FOOD, hopsDestination, runTo, teleport, travel, wildernessLevel, within, type Hop } from '../../lib/travel';
 import { nextTick, waitTicks, waitUntil } from '../../lib/wait';
 import { invCount, invItem, pos, skillLevel, skillXp, worn } from '../../lib/world';
 import * as mageArena from '../../quests/mage-arena';
-import { DUSTY_KEY_DOOR, TAVERLEY_DUNGEON_BOTTOM } from '../../helpers/bones';
+import { DUSTY_KEY_DOOR, TAVERLEY_DUNGEON_BOTTOM, TAVERLEY_DUNGEON_LADDER } from '../../helpers/bones';
 import { BANKS, Buyer, SHOPS } from '../../helpers/buyer';
-import { SAFE_ROUTE } from '../../helpers/dragons';
-import { MULE_STAND } from '../../helpers/mule';
+import { GUILD, SAFE_ROUTE } from '../../helpers/dragons';
+import { accountMatches, ChatCursor, MULE_STAND, playerPattern } from '../../helpers/mule';
+import { TRADE_REQUEST_CHAT_TYPE } from '../../../sdk/types';
 import { memoryRoleState, type RoleContext } from '../../helpers/role';
 import { arg, botArg, result } from '../common';
 import { startLoopbackGateway } from '../loopback-gateway';
@@ -122,6 +123,19 @@ export function probeRows(samples: readonly ProbeSample[], clicksAt: ReadonlyMap
     return rows;
 }
 
+/** Where the deliveries are taken: a bank and the tile beside it the givers walk to. */
+export interface Meet {
+    bank: typeof BANKS[keyof typeof BANKS];
+    tile: { x: number; z: number };
+}
+
+/** --meet: `varrock` (the couriers' tile, mule.ts MULE_STAND; default) or `yanille` (beside the Magic Guild). */
+export function meetAt(name: string): Meet {
+    if (name === 'varrock') return { bank: BANKS.varrockWest, tile: { ...MULE_STAND } };
+    if (name === 'yanille') return { bank: BANKS.yanille, tile: { x: BANKS.yanille.x, z: BANKS.yanille.z } };
+    throw new Error(`--meet=${name}: want varrock or yanille`);
+}
+
 export interface Delivery {
     from: string;
     item: string;
@@ -164,34 +178,65 @@ const state = (session: Session) => {
 function roleContext(session: Session, signal: AbortSignal): RoleContext {
     return {
         bot: session.bot, sdk: session.sdk, account: session.name, options: {}, signal, state: memoryRoleState(),
-        log: (m, d) => say(`buyer ${m}`, d), reportBank: snap => say('bank', { stacks: snap.items.length }),
+        log: (m, d) => say(`buyer ${m}`, d),
+        // Every bank visit's full contents, by id, for the coordinator's before/after bank lines.
+        reportBank: snap => say('bank', { stacks: snap.items.length, items: snap.items.map(i => `${i.id} ${i.name} ${i.count}`) }),
     };
 }
 
-/** Take each delivery from whichever giver comes into view next, at the couriers' tile. */
-async function receiveAll(session: Session, buyer: Buyer, deliveries: Delivery[], minutes: number): Promise<void> {
+/** The owed delivery whose giver sent one of these trade requests (handover.ts's give requests first). */
+export function deliveryRequested(owed: readonly Delivery[], requests: readonly { sender: string }[]): Delivery | undefined {
+    return owed.find(o => requests.some(m => accountMatches(m.sender, playerPattern(o.from))));
+}
+
+/**
+ * Take each delivery as its giver asks to trade, at the couriers' tile. Only a request answers: a
+ * giver merely in view may be parked there on another role (h84's mule stands on this tile).
+ */
+async function receiveAll(session: Session, buyer: Buyer, deliveries: Delivery[], minutes: number, meet: { x: number; z: number }): Promise<void> {
     const owed = deliveries.filter(d => buyer.held(d.item) < d.n);
     if (!owed.length) return;
-    if (!(await buyer.walk({ ...MULE_STAND }))) throw new Error('receive: could not reach Varrock west bank');
+    if (!(await buyer.walk({ ...meet }))) throw new Error(`receive: could not reach ${meet.x},${meet.z}`);
     say('waiting for deliveries', { owed });
+    const requests = new ChatCursor(session.sdk, [TRADE_REQUEST_CHAT_TYPE]);
     const deadline = Date.now() + minutes * 60_000;
     while (owed.length && Date.now() < deadline) {
-        const s = state(session);
-        const d = owed.find(o => s.nearbyPlayers.some(p => p.name.toLowerCase().replace(/ /g, '_') === o.from.toLowerCase()));
+        const d = deliveryRequested(owed, requests.next());
         if (!d) {
             await waitTicks(session.sdk, 2);
             continue;
         }
-        const r = await receiveFrom(session.sdk, d.from, { want: [{ item: new RegExp(`^${d.item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), amount: d.n }], maxTicks: 150 });
+        // Accept any part of a delivery: a giver may bring it in instalments (one potion as it is brewed).
+        const item = new RegExp(`^${d.item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+        const r = await receiveFrom(session.sdk, d.from, { want: [{ item, amount: 1 }], maxTicks: 150 });
+        const got = r.received.filter(i => item.test(i.name)).reduce((a, i) => a + i.count, 0);
         say('received', { from: d.from, ok: r.ok, ticks: r.ticks, received: r.received.map(i => `${i.name} x${i.count}`), ...(r.reason ? { reason: r.reason } : {}) });
-        if (r.ok) owed.splice(owed.indexOf(d), 1);
+        if (r.ok) {
+            d.n -= got;
+            if (d.n <= 0) owed.splice(owed.indexOf(d), 1);
+            else say('delivery part', { from: d.from, item: d.item, stillOwed: d.n });
+        }
     }
     if (owed.length) throw new Error(`receive: still owed after ${minutes} min: ${JSON.stringify(owed)}`);
 }
 
-/** Taverley dungeon (dragons.ts): the blue dragons' room lies west of the dusty-key door, its ladder up at the bottom. */
+/**
+ * Taverley dungeon (dragons.ts): the blue dragons' room lies west of the dusty-key door. The ladder's
+ * foot is west of the door too, but the corridor to it loops north round the room, so "in the room"
+ * is "beside SAFE_ROUTE" (the room's walkable band), not "west of the door".
+ */
 export const inTaverleyDungeon = (t: { x: number; z: number }) => t.z > 9700 && t.z < 9900 && t.x > 2840 && t.x < 2960;
-export const inDragonRoom = (t: { x: number; z: number }) => inTaverleyDungeon(t) && t.x < DUSTY_KEY_DOOR.x;
+export const inDragonRoom = (t: { x: number; z: number }) =>
+    inTaverleyDungeon(t) && t.x < DUSTY_KEY_DOOR.x && SAFE_ROUTE.some(r => Math.max(Math.abs(r.x - t.x), Math.abs(r.z - t.z)) <= 3);
+
+/**
+ * The ladder's foot to Taverley. The ladder is not on TAVERLEY_DUNGEON_BOTTOM itself (bones.ts climbs the
+ * nearest ladder to it), and both ends are level 0, so the hop waits for the surface tile, not a level change.
+ */
+export const TAVERLEY_LADDER_UP: readonly Hop[] = [
+    { kind: 'run', to: { ...TAVERLEY_DUNGEON_BOTTOM, tol: 2 } },
+    { kind: 'loc', loc: { name: /ladder/i, op: /^climb-up$/i, near: TAVERLEY_DUNGEON_BOTTOM, radius: 10 }, op: /^climb-up$/i, arrive: { ...TAVERLEY_DUNGEON_LADDER, tol: 4 }, label: 'Taverley dungeon ladder up' },
+];
 
 /** SAFE_ROUTE back to the door from the tile nearest the player, one tile per click (dragons.ts walkRoute). */
 export function routeOut(p: { x: number; z: number }): { x: number; z: number }[] {
@@ -223,20 +268,79 @@ async function leaveTaverleyDungeon(session: Session): Promise<void> {
         }
         if (pos(sdk).x < DUSTY_KEY_DOOR.x) throw new Error('dragon room: the dusty-key door did not let us out');
     }
-    const r = await travel(sdk, [
-        { kind: 'run', to: { ...TAVERLEY_DUNGEON_BOTTOM, tol: 2 } },
-        { kind: 'loc', loc: { x: TAVERLEY_DUNGEON_BOTTOM.x, z: TAVERLEY_DUNGEON_BOTTOM.z, name: /ladder/i }, op: /^climb-up$/i, label: 'Taverley dungeon ladder up' },
-    ], { bot: session.bot, log: true });
+    const r = await travel(sdk, TAVERLEY_LADDER_UP, { bot: session.bot, log: true });
     if (!r.ok || inTaverleyDungeon(pos(sdk))) throw new Error(`Taverley dungeon: not out (${r.reason ?? 'still underground'})`);
     say('out of Taverley dungeon', { at: pos(sdk), ticks: r.ticks });
 }
 
-/** Bury big bones from the bank until Prayer reaches `level`. */
-async function prayerTo(session: Session, buyer: Buyer, level: number): Promise<void> {
+/** The Magic Guild's ground floor or its store upstairs (dragons.ts inGuild). */
+export function inGuild(s: BotWorldState | null): boolean {
+    const p = s?.player;
+    const b = GUILD.box;
+    return !!p && p.worldX >= b.x1 && p.worldX <= b.x2 && p.worldZ >= b.z1 && p.worldZ <= b.z2 && (p.level === 0 || p.level === 1);
+}
+
+/** The stairs at `at` to `level` (dragons.ts climbTo). */
+async function climbStairs(session: Session, level: number, at: { x: number; z: number }): Promise<boolean> {
     const sdk = session.sdk;
-    while (prayerLevel(state(session)) < level) {
+    for (let attempt = 0; attempt < 4 && sdk.getState()?.player?.level !== level; attempt++) {
+        const option = level > (sdk.getState()?.player?.level ?? 0) ? /climb-up/i : /climb-down/i;
+        const p = pos(sdk);
+        if (Math.max(Math.abs(p.x - at.x), Math.abs(p.z - at.z)) > 2) await runTo(sdk, { x: at.x, z: at.z, level: p.level, tol: 1 }, { bot: session.bot });
+        const loc = (await sdk.scanNearbyLocs(6)).filter(l => /stair/i.test(l.name) && l.optionsWithIndex.some(o => option.test(o.text)))
+            .sort((a, b) => Math.hypot(a.x - at.x, a.z - at.z) - Math.hypot(b.x - at.x, b.z - at.z))[0];
+        if (!loc) {
+            await waitTicks(sdk, 2);
+            continue;
+        }
+        await session.bot.interactLoc(loc, option);
+        await waitUntil(sdk, s => s.player?.level === level, { maxTicks: 10 });
+    }
+    return sdk.getState()?.player?.level === level;
+}
+
+/** Through the guild's east door (Magic 66) and up to the store (dragons.ts enterGuild). */
+async function enterGuild(session: Session): Promise<void> {
+    const sdk = session.sdk;
+    if (!inGuild(sdk.getState())) {
+        const r = await runTo(sdk, { ...GUILD.outside, tol: 0 }, { bot: session.bot });
+        if (!r.ok) throw new Error(`guild: could not reach its door (${r.reason ?? 'unknown'})`);
+        for (let attempt = 0; attempt < 4 && !inGuild(sdk.getState()); attempt++) {
+            const door = (await sdk.scanNearbyLocs(3)).find(l => /door/i.test(l.name) && l.x === GUILD.door.x && Math.abs(l.z - GUILD.door.z) <= 1);
+            if (door) await session.bot.interactLoc(door, /open/i);
+            if ((await waitUntil(sdk, s => inGuild(s), { maxTicks: 6 })).ok) break;
+            void sdk.sendWalk(GUILD.inside.x, GUILD.inside.z, false);
+            await waitUntil(sdk, s => inGuild(s), { maxTicks: 4 });
+        }
+        if (!inGuild(sdk.getState())) throw new Error(`guild: the door did not let us in at ${JSON.stringify(pos(sdk))}`);
+    }
+    if (!(await climbStairs(session, 1, GUILD.stairsUp))) throw new Error('guild: could not climb to the store');
+}
+
+/** Down the stairs and out of the east door (dragons.ts leaveGuild). */
+async function leaveGuild(session: Session): Promise<void> {
+    const sdk = session.sdk;
+    if (sdk.getState()?.player?.level === 1 && !(await climbStairs(session, 0, GUILD.stairsDown))) throw new Error('guild: could not climb down');
+    for (let attempt = 0; attempt < 4 && inGuild(sdk.getState()); attempt++) {
+        await runTo(sdk, { ...GUILD.inside, tol: 0 }, { bot: session.bot });
+        const door = (await sdk.scanNearbyLocs(3)).find(l => /door/i.test(l.name) && l.x === GUILD.door.x && Math.abs(l.z - GUILD.door.z) <= 1);
+        if (door) await session.bot.interactLoc(door, /open/i);
+        if ((await waitUntil(sdk, s => !inGuild(s), { maxTicks: 6 })).ok) break;
+        void sdk.sendWalk(GUILD.outside.x, GUILD.outside.z, false);
+        await waitUntil(sdk, s => !inGuild(s), { maxTicks: 4 });
+    }
+    if (inGuild(sdk.getState())) throw new Error('guild: could not leave');
+}
+
+/** Bury big bones from the bank until Prayer reaches `level`. */
+async function prayerTo(session: Session, buyer: Buyer, level: number, bank: typeof BANKS[keyof typeof BANKS]): Promise<void> {
+    const sdk = session.sdk;
+    for (let clicks = 0; prayerLevel(state(session)) < level; clicks++) {
+        if (clicks > 120) throw new Error(`prayer: still ${prayerLevel(state(session))} after ${clicks} bury clicks`);
+        // A level-up page must not swallow the next click.
+        if (state(session).dialog.isOpen) await session.bot.dismissBlockingUI();
         if (!invItem(sdk, BIG_BONES) || invItem(sdk, BIG_BONES)!.optionsWithIndex.every(o => !/^bury$/i.test(o.text))) {
-            await buyer.atBank(BANKS.varrockWest, async () => {
+            await buyer.atBank(bank, async () => {
                 await buyer.depositAllBut([]);
                 const have = sdk.getBankItems().find(i => BIG_BONES.test(i.name))?.count ?? 0;
                 if (!have) throw new Error(`prayer: no big bones left at Prayer ${prayerLevel(state(session))}`);
@@ -264,8 +368,9 @@ async function unequipAll(session: Session): Promise<void> {
 /** The fight's kit and the probe's runes, the staff of fire wielded; the rest banked. */
 async function withdrawKit(session: Session, buyer: Buyer, bank: typeof BANKS[keyof typeof BANKS]): Promise<void> {
     const sdk = session.sdk;
+    // Before the bank opens: unequipItem dismisses blocking UI first, which would close the bank.
+    await unequipAll(session);
     await buyer.atBank(bank, async () => {
-        await unequipAll(session);
         await buyer.depositAllBut([]);
         const take = async (re: RegExp, n: number) => {
             const b = sdk.getBankItems().find(i => re.test(i.name));
@@ -298,23 +403,33 @@ const inCellarOrBeyond = (s: BotWorldState) => mageArena.inCellar(s) || mageAren
  * effect the state already shows is skipped (kit held, already in the cellar, arena or chamber).
  */
 async function toChargeTile(
-    session: Session, buyer: Buyer, traveller: Traveller, deliveries: Delivery[], minutes: number, log: TickLog, out: Record<string, unknown>, setRows: (rows: TickRow[]) => void
+    session: Session, buyer: Buyer, traveller: Traveller, deliveries: Delivery[], minutes: number, meet: Meet, log: TickLog, out: Record<string, unknown>, setRows: (rows: TickRow[]) => void
 ): Promise<void> {
     const s0 = state(session);
     if (!inCellarOrBeyond(s0) && !kitHeld(s0)) {
         await leaveTaverleyDungeon(session);
-        await buyer.atBank(BANKS.varrockWest, () => buyer.depositAllBut(['Coins']));
-        await receiveAll(session, buyer, deliveries, minutes);
-        await prayerTo(session, buyer, PRAYER_LEVEL);
-        // `quantity` is the target holding, bank included (buyer.md): the kit is withdrawn from the bank.
-        await buyer.atBank(BANKS.varrockWest, async () => {
-            await buyer.depositAllBut([]);
-            await buyer.setCoins(BUDGET);
-        });
-        say('bought', { ...(await buyer.buyAtGE({ item: 'Death rune', quantity: DEATH_RUNES, maxPrice: DEATH_MAX, source: 'ge' })) });
-        say('bought', { ...(await buyer.buyAtGE({ item: 'Knife', quantity: 1, maxPrice: KNIFE_MAX, source: 'ge' })) });
-        await crossToKandarin(traveller, SHOPS.magicGuild!.bank, 'Yanille');
-        say('bought', { ...(await buyer.buyAtShop({ item: 'Blood rune', quantity: BLOOD_RUNES, maxPrice: BLOOD_MAX, source: 'shop', shop: 'magicGuild', maxWaitTicks: 120 })) });
+        // Each staging step runs only while its result is short (buyer.held counts the bank), so a
+        // relaunch part-way picks up where the last login stopped, on either side of the mountain.
+        await buyer.atBank(meet.bank, () => buyer.depositAllBut(['Coins']));
+        await receiveAll(session, buyer, deliveries, minutes, meet.tile);
+        await prayerTo(session, buyer, PRAYER_LEVEL, meet.bank);
+        if (buyer.held('Death rune') < DEATH_RUNES || buyer.held('Knife') < 1) {
+            if (westOfTaverley(pos(session.sdk))) await crossFromKandarin(traveller, BANKS.varrockWest, 'Varrock west');
+            // `quantity` is the target holding, bank included (buyer.md): the kit is withdrawn from the bank.
+            await buyer.atBank(BANKS.varrockWest, async () => {
+                await buyer.depositAllBut([]);
+                await buyer.setCoins(BUDGET);
+            });
+            say('bought', { ...(await buyer.buyAtGE({ item: 'Death rune', quantity: DEATH_RUNES, maxPrice: DEATH_MAX, source: 'ge' })) });
+            say('bought', { ...(await buyer.buyAtGE({ item: 'Knife', quantity: 1, maxPrice: KNIFE_MAX, source: 'ge' })) });
+        }
+        if (!westOfTaverley(pos(session.sdk))) await crossToKandarin(traveller, SHOPS.magicGuild!.bank, 'Yanille');
+        if (buyer.held('Blood rune') < BLOOD_RUNES) {
+            // The store is upstairs behind the Magic-66 door, which the buyer's walk does not know.
+            await enterGuild(session);
+            say('bought', { ...(await buyer.buyAtShop({ item: 'Blood rune', quantity: BLOOD_RUNES, maxPrice: BLOOD_MAX, source: 'shop', shop: 'magicGuild', maxWaitTicks: 120 })) });
+            await leaveGuild(session);
+        }
         await withdrawKit(session, buyer, BANKS.yanille);
     }
     const sk = state(session);
@@ -394,6 +509,7 @@ async function main(): Promise<void> {
     const plan = probeTicks(Number(arg('casts', String(MAX_CASTS))), Number(arg('burst', '5')));
     const traceEvery = Number(arg('trace', '0'));
     const probeOnly = process.argv.includes('--probe-only');
+    const meet = meetAt(arg('meet', 'varrock'));
 
     const gateway = await startLoopbackGateway(account, 'mac');
     const out: Record<string, unknown> = { account, plan };
@@ -420,7 +536,7 @@ async function main(): Promise<void> {
             const s0 = state(session);
             out.start = { at: [s0.player!.worldX, s0.player!.worldZ, s0.player!.level], prayer: prayerLevel(s0), magic: skillLevel(s0, 'magic'), hp: s0.player!.hp };
             say('start', out.start as Record<string, unknown>);
-            if (!probeOnly) await toChargeTile(session, buyer, traveller, deliveries, minutes, log, out, r => (rows = r));
+            if (!probeOnly) await toChargeTile(session, buyer, traveller, deliveries, minutes, meet, log, out, r => (rows = r));
 
             const probe = await chargeProbe(session.sdk, plan);
             out.probe = probe;
