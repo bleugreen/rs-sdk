@@ -569,6 +569,14 @@ step 6) runs after the last one, so a later rebuild means running it again. A de
 last gate pass means gating again too: it invalidates the pass, not the cache (step 7, "The restart
 detector").
 
+**The partners map matches the fleet binding, before the start is called** (rs/41 via rs/158;
+fold-in 36). The run config's `partners` map (which rows each mule carrier serves) must agree with the
+fleet's `mule-delivery-production.json` binding: `runner/chain.ts` uses it to find each carrier's final
+row, after which #477 logs the carrier out, so a mismatch would log a carrier out before a later
+hand-off it owns, which that hand-off then cannot get. Check: partners map matches the fleet binding
+(generated, or a one-line diff check; **the command pending rs/41**). A mismatch is a stop: tell main
+and rs/41.
+
 **The inventory check, before the start is called.** On any checkout at `RUN_COMMIT` (it reads only
 the repository), run
 
@@ -955,7 +963,7 @@ opens** (the launcher's `helpersReady`), because login order decides the 7- or 8
 cycle. Every helper counts against the 80-login cap from its login until it logs out (step 7), and against
 its address's per-IP cap (below). With S21's altar givers in from the start, SCORED's run login was
 the peak (SUPPLIES.md, "Peak concurrent logins"); under the per-address plan below, rs/41's map puts
-SCORED's address at 25 at the start (24 helpers + SCORED, step 5a.4; fold-in 36: rs/41's correction, the roster being 17, 4 + 6 + 3 + 4; 24 written at fold-ins 34-35 on a count of 16) and 26 during S21's ramp (SCORED, mule1, mule2, a01 and the 22 S21 givers, h03 counted under main's 19:3x ruling; unchanged by the 17, rs/41; the worst case on today's runner 29: + h55, the carriers idle to the end, 27, + h45 if its P stop is plain, 28, + h94 on an R8 death, 29, all under 45). At the gate the 7 opening givers on **each** machine count, 14 in all. After a demo restart the helpers come back by relaunching rs/141's headless
+SCORED's address at 25 at the start (24 helpers + SCORED, step 5a.4; fold-in 36: rs/41's correction, the roster being 17, 4 + 6 + 3 + 4; 24 written at fold-ins 34-35 on a count of 16) and 26 during S21's ramp (SCORED, mule1, mule2, a01 and the 22 S21 givers, h03 counted under main's 19:3x ruling; unchanged by the 17, rs/41; the worst case 27, + h94 on an R8 death, all under 45; 29 before #477, e7e54a11, rs/590 snapshotted as rs/592: each mule carrier's last hand-off now stops its cue final, so no carrier idles logged in after its last row, and #472 made P's stop final). At the gate the 7 opening givers on **each** machine count, 14 in all. After a demo restart the helpers come back by relaunching rs/141's headless
 lite-runner child processes (`fleet.ts`, `standalone.ts`), not tabs: the OS closes the old child's
 gateway socket when it exits, so there is no gateway takeover (inferred from the code; owned by
 rs/41), and the earlier lite restart measurement read 3 in-world ticks after the relogin
@@ -971,7 +979,7 @@ preference, step 5a), but the gate still chooses (tenet 17), and the plan holds 
   PDT; it may rise). **Ours is 45 per address**, the working figure since main accepted rs/41's map.
   Tenet 16's 80, summed across every host, applies beside it (step 7).
 - **The peak per address** (rs/41's map): **25 on SCORED's address at the start (S01: the 7 air givers, the 17 roster logins and SCORED; rs/41's start order, main ruled; fold-in 36: rs/41's correction, the roster being 17, 4 + 6 + 3 + 4; 24 written at fold-ins 34-35 on a count of 16) and 26 during S21's
-  ramp**, inside SCORED's relog before S21 (the worst case 29 on today's runner: + h55, the carriers idle to the end, + h45 if its P stop is plain, + h94 on an R8 death; rs/41). All under 45.
+  ramp**, inside SCORED's relog before S21 (the worst case 27: + h94 on an R8 death; no carrier idles logged in after its last row since #477, e7e54a11, rs/590 snapshotted as rs/592, and P's stop is final since #472; rs/41). All under 45.
 - **The home address on run day, a run-day rule:** the home machines (bbs and every executor) carry
   **29 fleet accounts plus the cannon helper**, and nothing else, with **one named exception** (main 17:0x via rs/158, fold-in 31): **R8's spawn helper** (rs/526; a fleet spare, never named here), parked logged out beside the Lumbridge respawn tile, with 0 run-day logins, or 1 cued login on a player-kill, logged out after its trade. No development sessions and no
   executor demo logins run from them on run day (rs/41's map, via rs/158).
@@ -1464,7 +1472,7 @@ rs/163) the start is ~90 with the gathering fleet's ~53 in and 37 without it, so
 unneeded fleet out first is mandatory**. Those counts have S21's givers in from SCORED's first
 login. Under the per-address plan they log in later, inside SCORED's relog before S21, on the chosen
 machine (step 4; RUN-ORDER.md O38 for the machine), so the start is lower: rs/41's map puts SCORED's
-address at 25 at the start (step 5a.4; 24 before fold-in 36's 17-account roster) and 26 during S21's ramp (worst case 29), and the home address at 29 fleet accounts plus
+address at 25 at the start (step 5a.4; 24 before fold-in 36's 17-account roster) and 26 during S21's ramp (worst case 27), and the home address at 29 fleet accounts plus
 the cannon helper. Do not log SCORED in over either cap. `handoff` re-checks it as a hard check: our accounts
 online, as `rs-claim status` counts them on `/playerpositions` (every host's), plus SCORED's 1, at
 most 80 (`--cap`); it refuses if the count can't be read. **The code counts a total, not an
@@ -1919,6 +1927,14 @@ segment (e.g. `S05:A-h4-swap`), and the tick log gets a `(resume)` row with the 
   `PLAYER_MAX_TICKS`), so a re-run no longer sees S00 undone on an empty first state; past the bound
   the walk observes anyway, so a 'not in game' refusal after it goes to main.
 
+**The run-day watch list** (fold-in 36; main via rs/158):
+
+- **A death on a leg.** The walker does not catch it: a relocated SCORED is walked back to the route
+  and the leg reports ok (rs/589's T06-07 lab run, 502 tiles; rs/593, attempt 2). Watch the live view
+  and the run log for a respawn; the death procedure above is the only catch.
+- **The carry-ahead misread** (void once rs/551's settlement guard is on the floor, fleet snapshot 12).
+  A carrier logs a failed hand-off that SCORED received: no action. The next row re-selects with a bank trip; watch that row's readiness, and expect SCORED to wait at it.
+
 **An attempt cut short before H11r: h92 and H23** (main's ruling via rs/158; fold-in 36). h92's H11r
 take-back waits without a bound at its return tile (`speedrun/helpers/cannon.ts:1545-1598`, `takeBack`'s
 `for (;;)`, run through `retryUntil`, `:1375`, `:1394-1396`), and the fleet's `then` to the H23 serve fires
@@ -1996,8 +2012,10 @@ kit and are covered only by this manual recovery** (fold-in 35, rs/41 from rs/57
 rs/158): **a death at H23** and **a death in S27 with the cannon packed** (R8d1 refuses, short:
 after a death H23 stays a done milestone, so the resume re-enters at T26-27b, which holds the web,
 and a forced H23 repeat would be 7 slots short). For both, **the operator stages a knife (946) from
-h68** (h68 holds 2) plus the kit by hand. Until rs/579 merges R8 is unstaged, and every manual
-S27-death recovery takes its knife from h68 the same way. Its minutes are wall clock, not
+h68** (h68 holds 2) plus the kit by hand. R8 is unstaged until rs/41 regenerates the kits from the named run commit
+and shows respawnCheck passing and every R8a, R8c and R8d2 line coverable from h68's holdings (its
+report before 13:00Z; rs/579's kit fix (#478, merged on rs/41's mission branch, reaching main in fleet snapshot 12, not yet on main: Knife @946 in R8a, R8c, R8d1 and R8d2, R8c's sharks 3 to 5, R8d1 refused at 26 slots against 25)). Until that report every R8 phase's manual recovery takes its knife from
+h68 the same way, and the two R8d1 cases always do (fold-in 36). Its minutes are wall clock, not
 ticks: R8's prices stay `r8-deaths.ts`'s, in ticks.
 
 **S21 relog: reconciliation when the run script refuses** (rs/186's identity and order matrix; code
