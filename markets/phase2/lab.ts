@@ -60,7 +60,7 @@ function ensureBot(name: string): void {
     const env = join(ROOT, 'bots', name, 'bot.env');
     if (!existsSync(env)) {
         const r = Bun.spawnSync(['bun', 'bots/create-bot.ts', name, '--local', '--no-chat'], { cwd: ROOT });
-        if (r.exitCode !== 0) throw new Error(`create-bot ${name}: ${r.stderr.toString()}`);
+        if (r.exitCode !== 0) throw new Error(`create-bot ${name}: ${r.stderr?.toString() ?? ''}`);
     }
     const text = readFileSync(env, 'utf8').replace(/^SERVER=.*$/m, `SERVER=${server}`).replace(/^TELEMETRY=.*$/m, 'TELEMETRY=false');
     writeFileSync(env, text);
