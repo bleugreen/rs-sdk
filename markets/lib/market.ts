@@ -118,6 +118,40 @@ export function realisable(q: MarketQuote, quantity: number): Realisable {
     return { units, low: units * mean, high: units * (q.bid ?? mean), unsold: quantity - units };
 }
 
+export interface BuyCost {
+    /** Units the open asks supply now. */
+    units: number;
+    /**
+     * gp those units cost: exact when the whole ask side fills, else between `low` (every unit at the best ask) and
+     * `high` (the mean ask: asks fill cheapest first, so the cheapest `units` cost at most their share of the side).
+     */
+    low: number;
+    high: number;
+    /** Units the asks cannot supply. */
+    short: number;
+}
+
+/** What buying `quantity` from the open asks would cost at once: `realisable` for the ask side. */
+export function buyCost(q: MarketQuote, quantity: number): BuyCost {
+    const units = Math.max(0, Math.min(quantity, q.sellQuantity));
+    const short = quantity - units;
+    if (units === 0) return { units, low: 0, high: 0, short };
+    if (units === q.sellQuantity) return { units, low: q.sellValue, high: q.sellValue, short };
+    const mean = q.sellValue / q.sellQuantity;
+    return { units, low: units * (q.ask ?? mean), high: units * mean, short };
+}
+
+/**
+ * Units the open asks certainly hold at or below `price`. The API gives only the best ask and the side's totals,
+ * so this is a lower bound: every unit above `price` costs at least `price + 1`, so their count is at most the
+ * side's value above the best ask divided by `price + 1 - ask`.
+ */
+export function asksAtOrBelow(q: MarketQuote, price: number): number {
+    if (!q.sellQuantity || q.ask === null || price < q.ask) return 0;
+    const excess = q.sellValue - q.sellQuantity * q.ask;
+    return Math.max(0, q.sellQuantity - Math.floor(excess / (price + 1 - q.ask)));
+}
+
 export interface BidPool {
     /** Items with at least one open bid. */
     items: number;
