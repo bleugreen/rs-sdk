@@ -418,9 +418,10 @@ export const DEFAULT_TO = 40;
 /** Deaths the trainer recovers from before it gives up (a lab bot near the cows was killed by a random-event npc). */
 const MAX_DEATHS = 3;
 const KEBAB = /^kebab$/i;
+const COW_FOOD = /^(shrimps|bread|kebab|cooked meat|cooked chicken)$/i;
 const KARIM: Tile = { x: 3273, z: 3180 };
 /** What the trainer keeps in the pack at a bank: coins, its scimitars and the food. */
-const KEEP = /^(coins|kebab|(bronze|iron|steel|mithril) scimitar)$/i;
+const KEEP = /^(coins|kebab|shrimps|bread|bronze sword|wooden shield|(bronze|iron|steel|mithril) scimitar)$/i;
 
 const coinsHeld = (s: BotWorldState | null) => (s?.inventory ?? []).filter(i => COINS.test(i.name)).reduce((n, i) => n + i.count, 0);
 const countIn = (items: readonly { name: string; count: number }[], re: RegExp) => items.filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
@@ -645,6 +646,10 @@ export const spec: ProbeSpec<HpOptions> = {
                 const f = await fightFor(sdk, bot, SITES.cows, {
                     until: cowsDone,
                     onKill: kitTo(SITES.cows.target),
+                    // The cows chip ~0.05 hp a tick against 0.01 regenerated: eat the tutorial's shrimps and bread (and
+                    // any kebabs) only near the end, since a level-up adds a point too.
+                    food: COW_FOOD,
+                    eatAt: 4,
                     bones: s => prayerLvl(s) < o.prayer,
                     // Bury first; the prayers go on once the target Prayer level is reached (the training phase).
                     prayers: o.pray ? s => (prayerLvl(s) >= o.prayer ? prayersFor(prayerLvl(s), false) : []) : undefined,
