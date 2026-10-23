@@ -44,6 +44,8 @@ import { confirmedLogout } from './quests/aereck-burst';
 
 // monkey-madness.ts's places (233d0f34, :456-465), copied: they are not exported.
 const GNOME_GATE_SOUTH = { x: 2461, z: 3382 };
+/** Inside the gate's north band (travel.ts GNOME_STRONGHOLD_GATE.sides.north: x 2458-2465, z 3385-3440). */
+const GNOME_GATE_NORTH = { x: 2461, z: 3387 };
 const TREE_DOOR = { x: 2464, z: 3492 };
 const TREE_DOOR_OUTSIDE = { x: 2465, z: 3490 };
 const TREE_LADDER = { x: 2466, z: 3495 };
@@ -116,7 +118,6 @@ export function packCensus(inv: ReadonlyArray<{ id: number; name: string; count:
     return { ok: problems.length === 0, packageSlots, otherSlots, byId, problems };
 }
 
-/** What the bank phase deposits, by slot, or why it refuses: coins and the five Grand Tree items; package ids stay; anything else stops it. */
 /** The atoll's wildlife (mule.ts DEFAULT_WILDLIFE). */
 const WILDLIFE = DEFAULT_WILDLIFE.map(p => new RegExp(p, 'i'));
 /** Ticks with no damage before a logout: the game refuses one in combat (rs/185: 0 of 3 at M). */
@@ -134,6 +135,7 @@ export function notSettled(s: BotWorldState): string | null {
     return null;
 }
 
+/** What the bank phase deposits, by slot, or why it refuses: coins and the five Grand Tree items; package ids stay; anything else stops it. */
 export function bankPlan(inv: ReadonlyArray<{ id: number; name: string; slot: number }>, keep: ReadonlySet<number>): { deposit: number[]; unexpected: string[] } {
     const deposit: number[] = [];
     const unexpected: string[] = [];
@@ -254,6 +256,9 @@ async function outToGate(ctx: Ctx): Promise<void> {
     }
     if (inGrandTree(sdk)) await crossTreeDoor(sdk, 'tree door out', s => pos(s).z <= TREE_DOOR.z - 1);
     if (inStronghold(sdk)) {
+        // passGate needs the gate in view: run to its north side first (zooToDaero's run to GNOME_GATE_SOUTH, mirrored).
+        const n = await runTo(sdk, { ...GNOME_GATE_NORTH, tol: 2 }, { bot: ctx.bot });
+        if (!n.ok) throw new Error(`run to the gate's north side stopped at ${where(sdk)}: ${n.reason}`);
         const g = await passGate(sdk, GNOME_STRONGHOLD_GATE, GNOME_STRONGHOLD_GATE.sides.south);
         if (!g.ok) throw new Error(`the Stronghold gate (out): ${g.reason} (at ${where(sdk)})`);
     }
@@ -411,7 +416,13 @@ async function main(): Promise<void> {
                 const lo = await confirmedLogout(session, { timeoutMs: 120_000 });
                 result('h45_logout_frame', { ...(last ? frame(last) : {}), confirmedBy: lo.confirmedBy, latencyTicks: lo.latencyTicks });
             } catch (e) {
-                result('h45_logout_failed', { reason: e instanceof Error ? e.message : String(e), ...(last ? frame(last) : {}) });
+                const s = sdk.getState();
+                const inCombat = !!s && (s.player?.combat?.lastDamageTick ?? -1) >= 0 && s.tick - s.player!.combat.lastDamageTick < QUIET_TICKS;
+                result('h45_logout_failed', {
+                    reason: e instanceof Error ? e.message : String(e),
+                    note: inCombat ? `in combat${phase === 'park' ? ' at P' : ''}: still logged in, finish the logout by hand once the fight ends` : 'still logged in',
+                    ...(last ? frame(last) : {}),
+                });
                 exit = 2;
             }
             await closeSession(session);
