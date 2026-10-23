@@ -49,7 +49,7 @@ const muleName = arg('mule', '');
 const client = arg('client', 'browser') as 'browser' | 'lite';
 const hold = arg('hold', '') === '1';
 if (!muleName || muleName === scoredName) throw new Error('--mule must name a separate fresh lab account');
-for (const n of [muleName, scoredName]) if (!isLoopbackHost(loadBotEnv(n).SERVER)) throw new Error('lab only: a non-loopback world is refused');
+for (const n of [muleName, scoredName]) if (!isLoopbackHost(loadBotEnv(n).SERVER ?? '')) throw new Error('lab only: a non-loopback world is refused');
 
 const manifest = readFileSync(MANIFEST, 'utf8');
 const pack = objPack();
