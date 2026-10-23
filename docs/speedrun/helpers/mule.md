@@ -365,8 +365,22 @@ The existing carried engine logs shortage; it does not certify full-duty readine
 Its wildlife fight currently has no automatic eating policy. Carrying guard sharks alone
 therefore does not establish that the helper will use them to survive.
 
-**Actual capacity and staging gate.** Parent-supplied rs/465 report at 2026-10-23 01:30Z,
-from the 01:28Z logout frame: h45 is disabled and logged out at **(2465,3490,0)** outside
+**Staged on P (rs/613, 2026-10-23 15:28Z).** `speedrun/lab/h45-atoll.ts` is the off-atoll
+staging trip: one login from the Grand Tree, with the journal's 'Chapter 2:' line checked by id
+first. It banks the coins and the five Grand Tree items at the Stronghold bank. It then takes
+the package's shortfall by id in one trade from a donor at the Stronghold gate's south tile
+(2461,3382), and runs a pack census by id. Only after an operator gate does it travel: Daero,
+the hangar route, and the landing to M to P. It settles on P, runs the census again, and
+confirms the logout. The real run's logout frame (tick 727): h45 on **(2803,2724,0)**, hp
+70/99, adamant worn, with **385 x24 and 2448 x1 by id, 25 slots, nothing else** in the pack.
+Travel from the gate to settled on P took 186 ticks (to Daero 81; Daero, Waydar and Lumdo 44;
+landing to M 22; M to P 30; settle 9). Wildlife hit h45 five times on P (8 damage in all)
+before the quiet window let it log out. **It holds no guard reserve:** all 24 sharks are the
+delivery allocation. The capacity failure below was resolved by banking the coins and quest
+items, not by dropping them.
+
+**Before staging (historical).** Parent-supplied rs/465 report at 2026-10-23 01:30Z,
+from the 01:28Z logout frame: h45 was disabled and logged out at **(2465,3490,0)** outside
 the Grand Tree, **not at the atoll**. HP **68/99**, Prayer **1**, melee stats **99**,
 Magic **57**, Agility **76**. Worn: adamant full helm, adamant longsword, adamant
 chainbody and adamant platelegs, not the previously assumed rune set. Inventory is
@@ -450,8 +464,9 @@ the ~100-tick lead in step 1 leaves room for the wildlife.
 
 **Where h45 must wait, and restock between attempts.** The intended staged state is
 logged out on P's tile, with the full generated package and a separately justified guard
-reserve. That is not the observed state above. The earlier lab relog landed on P and took
-no hits there for 850 ticks; it is historical lab evidence, not an actual staging receipt.
+reserve. The 15:28Z staging above meets the first two of these but carries no guard reserve.
+The earlier lab relog landed on P and took no hits there for 850 ticks. The real staging was
+hit on P within its first few ticks there, so the wildlife on P is not reliably quiet.
 
 After successful asks n at M and k at P, the delivery allocation left is 24 - n - k sharks,
 plus the potion if P did not ask for it; guard consumption must be accounted separately.
