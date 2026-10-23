@@ -344,17 +344,16 @@ describe('leg drops', () => {
         expect(sdk.sent.some(a => a.method !== 'sendDropItem')).toBe(false);
     });
 
-    test('more than DROPS_PER_TICK drops span ticks (T11-12: the Grand Tree leftovers and the agility potion), all before the cast', async () => {
+    test('T11-12 drops the five Grand Tree leftovers in one tick before the cast and keeps an agility potion (no longer a leg drop)', async () => {
         const left = ['Translation book', "Hazelmere's scroll", "Glough's journal", 'Lumber order', "Glough's key", 'Agility potion(2)'];
         const sdk = new FakeSdk(state(TILES.narnodeRoots.x, TILES.narnodeRoots.z, { inventory: [...ARDOUGNE_RUNES, ...left.map((n, i) => item(2 + i, n))] }));
         const drops = serveDrops(sdk);
         const held = serveTeleport(sdk, SPELLS.ardougne.landing);
         simulateWalking(sdk);
         await drive(sdk, legById('T11-12').run(ctxFor(sdk)));
-        expect(drops.map(d => d.slot)).toEqual([2, 3, 4, 5, 6, 7]);
+        expect(drops.map(d => d.slot)).toEqual([2, 3, 4, 5, 6]);
         expect(new Set(drops.slice(0, DROPS_PER_TICK).map(d => d.tick)).size).toBe(1);
-        expect(drops[5]!.tick).toBeGreaterThan(drops[0]!.tick);
-        expect(held[0]).toEqual(['Water rune', 'Law rune']);
+        expect(held[0]).toEqual(['Water rune', 'Law rune', 'Agility potion(2)']);
         expect(inArea(sdk.state!, TILES.ladyServil)).toBe(true);
     });
 
@@ -450,11 +449,5 @@ describe('leg drops: the STEP-MANIFEST ledger contract', () => {
     test('the module-exit and pending lists name real ledger drops', () => {
         const real = new Set(legRows.flatMap(r => dropsOn(r.row).map(o => `${r.row} ${o.name}`)));
         expect([...Object.keys(MODULE_EXIT_DROPS), ...Object.keys(PENDING_DROPS)].filter(k => !real.has(k))).toEqual([]);
-    });
-
-    test("the agility potion matches at any dose; a dose-family entry's pattern is not pinned to one dose", () => {
-        const p = legById('T11-12').def.drops!.find(x => x.test('Agility potion(2)'))!;
-        expect(['Agility potion(1)', 'Agility potion(3)', 'Agility potion(4)'].every(n => p.test(n))).toBe(true);
-        expect(p.test('Agility potion')).toBe(false);
     });
 });
