@@ -140,6 +140,6 @@ NODE_TICKRATE=400 WEB_PORT=9920 WEB_MANAGEMENT_PORT=9921 HISCORES_WEB_PORT=9922 
 ```
 
 `rate.ts --method=` takes knight, paladin, hero, guard, warrior, essence, shark, swordfish,
-lobster, bass, yew, magic, coal, adamant and alch, with `--thieving`, `--hp`, `--foodPerTrip`,
+lobster, bass, yew, magic, coal, adamant, alch, and (rs/543) shilo, iron, runite and steel, with `--thieving`, `--hp`, `--foodPerTrip`,
 `--keep` (fishing) and `--spell` (alchemy). Each bot prints `RESULT trips` and `RESULT summary`
 lines; a fresh build slot needs the four `bun install`s and the engine build first.
