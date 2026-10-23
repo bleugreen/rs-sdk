@@ -20,7 +20,7 @@
 // Expected figures are not copied here: the report reads them from RUN-ORDER.md section 2
 // (parseStepTable), the one source, at report time.
 
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
 import type { BotWorldState } from '../../sdk/types';
 import { writeAnvilPlan } from '../helpers/anvil';
@@ -140,7 +140,10 @@ export interface CueSink {
     stop(scope: CueScope, ctx: StepContext<unknown>, o?: { final?: boolean }): void;
     /** Runtime ownership of a module's direct writer; record-only sinks may omit this. */
     writer?(scope: CueScope): runecraft.CueSink;
-    /** True until the owned scope ends, including between Runecraft segment sessions. */
+    /**
+     * True until the owned scope ends, including between Runecraft segment sessions: a cue stop is
+     * `done` once its scope is no longer open. Without it the stop has no `done`.
+     */
     isOpen?(scope: CueScope): boolean;
 }
 
@@ -410,14 +413,22 @@ export function withCue(step: ChainStep, scope: CueScope, cues: CueSink): ChainS
  * 16): written at S01, the run's first login, so log 0's 100-tick private window runs while SCORED
  * trades H1, walks to the coop and strikes S02. The droppers count from the tick they see it
  * (`cueAt: 'seen'`), so the file's ms is a record, not a clock.
+ *
+ * Written once per run: `done` is the file's presence (prepareCueDir removes it at a fresh start
+ * only), so a resume walks past it, and a run never rewrites it, which would restart the droppers.
  */
 export function dropperGoCue(cueDir: string): ChainStep {
+    const file = join(cueDir, GO_FILE);
     const run = async (ctx: StepContext<unknown>) => {
+        if (existsSync(file)) return noteRow(ctx, 'S03 dropper go cue', { file: GO_FILE, kept: true });
         const cue: GoCue = { v: 1, ms: Date.now() };
-        writeJsonAtomicSync(join(cueDir, GO_FILE), cue);
+        writeJsonAtomicSync(file, cue);
         noteRow(ctx, 'S03 dropper go cue', { file: GO_FILE });
     };
-    return { id: 'S03 go cue', kind: 'cue', name: 'S03 dropper go cue', logoutSafe: true, preconditions: () => true, postconditions: () => true, run, resume: run };
+    return {
+        id: 'S03 go cue', kind: 'cue', name: 'S03 dropper go cue', logoutSafe: true, marker: true,
+        preconditions: () => true, postconditions: () => true, run, resume: run, done: () => existsSync(file),
+    };
 }
 
 /** The one scope h45's login-only folder carries. */
@@ -452,10 +463,18 @@ export function h12oLogin(cfg: Pick<RunConfig, 'cueDir' | 'muleCueDir' | 'h12o'>
     return { id: 'H12o login', kind: 'cue', name: 'H12o h45 login trigger', logoutSafe: true, preconditions: () => true, postconditions: () => true, run, resume: run };
 }
 
-/** A 0-tick step that writes the stop of `scope`'s cue. */
+/**
+ * A 0-tick step that writes the stop of `scope`'s cue. `done` once that cue is no longer open (the
+ * sink's isOpen), so a resume after the stop never writes a late one
+ * into a helper's newer session; a marker, so a resume before it finishes the step before it first.
+ */
 export function cueStop(scope: CueScope, cues: CueSink): ChainStep {
     const run = async (ctx: StepContext<unknown>) => cues.stop(scope, ctx);
-    return { id: `${scope.step} cue stop`, kind: 'cue', name: `${scope.step} ${scope.family} cue stop`, logoutSafe: true, preconditions: () => true, postconditions: () => true, run, resume: run };
+    return {
+        id: `${scope.step} cue stop`, kind: 'cue', name: `${scope.step} ${scope.family} cue stop`, logoutSafe: true, marker: true,
+        preconditions: () => true, postconditions: () => true, run, resume: run,
+        ...(cues.isOpen ? { done: () => !cues.isOpen!(scope) } : {}),
+    };
 }
 
 /** A cueStop step; `of` narrows it to the stop that ends that step's band. */
@@ -703,8 +722,10 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...steps('S26', dragonSlayer.steps()),
         ...legWith('T26-27'),
         ...cued(s27, steps('S27', ranged.steps({ which: 'combatFinish' }))),
-        L('T27-17'),
+        // A cue stop's `done` is the sink's, and a fresh process has no scope open: a done-less leg
+        // between the band and its stop would be walked past on a crash-restart.
         cueStop(s27, o.cues),
+        L('T27-17'),
         ...steps('S17', pick('agility', agility.steps({ to: 99 }), ['agility:wilderness'])),
     ];
 
@@ -717,7 +738,8 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
             out.unshift(e);
             continue;
         }
-        const next = out.find(s => s.done);
+        // A marker's `done` says nothing about the game (a cue file), so it never supersedes a trade.
+        const next = out.find(s => s.done && !s.marker);
         const supersededBy: ObservedCheck<unknown> | undefined = next?.done ? (ob, c) => next.done!(ob, c) : undefined;
         const plan = handOffFrom(manifest, e.row);
         const scope = CANNON_ROWS[e.row];

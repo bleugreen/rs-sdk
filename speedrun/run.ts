@@ -55,7 +55,7 @@ import { programStatus } from './lib/programs';
 import { describePreflight, feedUrl, readFeedHello, tickPreflight, type TickPreflight } from './lib/feed-hello';
 import { checkRunFloor, gitIn, type FloorCheck, type TickMsParse } from './lib/run-floor';
 import { type ClientKind, cdpUrl, closeSession, loadBotEnv, logoutClean, type LogoutResult, openSession, pageWorld, ROOT, type Session, startWatchdog } from './lib/session';
-import { pageLoginState, type PageLoginState } from './lib/tab';
+import { pageInGame, pageLoginState, type PageLoginState } from './lib/tab';
 import { tickMs } from './lib/wait';
 import { returnExtrasFromLedger, serveDrift, serveFromLedger } from './helpers/cannon-receiver';
 import { newRunId, parseLog, TickLog, type TickRow } from './lib/ticks';
@@ -64,10 +64,14 @@ import { formatRunReport, runReport } from './runner/run-report';
 import { patchMethod } from './runner/fence';
 import { buildChain, chainProbes, missingOnPath, muleCueDir, resolveFrom, sliceUntil, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
 import { prepareCueDir, RunCues } from './runner/cue-keeper';
-import { sessionLink } from './runner/resume';
+import { dropRecover } from './runner/drop-relog';
+import { LOST_AFTER_TICKS, sessionLink } from './runner/resume';
 import { RelogBudget } from './runner/relog-budget';
 import { HandOffRecord } from './runner/handoff';
 import { SCORED_LOGIN, SCORED_RELOG } from './runner/scored-relog';
+
+/** Ticks past the link's stale bound before the watchdog acts, with the drop recovery on. */
+export const WATCHDOG_AFTER_LINK_TICKS = 10;
 
 export class UsageError extends Error {
     override name = 'UsageError';
@@ -204,6 +208,8 @@ export interface GateIO {
     helpersReady(): boolean | null;
     /** The cannon holder's run-day serve options by ledger row, or why they cannot be read. */
     cannonServe(): { path: string; serve: CannonServeFile | null; error?: string };
+    /** The run dir's relog budget (runner/relog-budget.ts): what earlier sessions of this run spent. */
+    relogs?(): { room: true | string; used: string; path: string };
 }
 
 /** cannon.ts serve options, per cannon row, as h92 runs them on the day. */
@@ -272,6 +278,11 @@ export async function startGates(chain: readonly ChainStep[], io: GateIO): Promi
     out.push({ gate: 'no refusing step on the path', ok: missing.length === 0, detail: missing.length ? missing.map(m => `#${m.index} ${m.name} (${m.owner})`).join('; ') : `${chain.length} steps, none refusing` });
     const ready = io.helpersReady();
     out.push({ gate: 'helpers ready', ok: ready === true, detail: ready === null ? 'no launcher.json in the run dir: start the helpers first' : ready ? 'launcher.json: helpersReady' : 'launcher.json: helpers not ready yet' });
+    if (io.relogs) {
+        // Unplanned relogs left: none left refuses, since the next drop would stop the run anyway.
+        const r = io.relogs();
+        out.push({ gate: 'relog budget', ok: r.room === true, detail: r.room === true ? `${r.used} (${r.path})` : `${r.room} (${r.path})` });
+    }
     const cannonRows = (['H11', 'H23'] as const).filter(r => chain.some(s => s.id === r));
     if (cannonRows.length) {
         const c = io.cannonServe();
@@ -285,7 +296,7 @@ export async function startGates(chain: readonly ChainStep[], io: GateIO): Promi
     return out;
 }
 
-export function hostGateIO(a: RunArgs, owner: string | undefined): GateIO {
+export function hostGateIO(a: RunArgs, owner: string | undefined, relogs?: RelogBudget): GateIO {
     const git = gitIn(ROOT);
     const path = reservationPath(a.hostReservation);
     const world = pageWorld(loadBotEnv(a.bot));
@@ -312,6 +323,7 @@ export function hostGateIO(a: RunArgs, owner: string | undefined): GateIO {
                 return { path: a.cannonServe, serve: null, error: e instanceof Error ? e.message : String(e) };
             }
         },
+        ...(relogs ? { relogs: () => ({ room: relogs.check('unplanned'), used: relogs.describe(), path: relogs.file }) } : {}),
     };
 }
 
@@ -337,6 +349,8 @@ export interface ChainRunOptions {
     label?: string;
     /** A browser session's per-minute tab memory rows (lib/tab-memory.ts): the launched Chrome's pid, the chunk's label. */
     tabMemory?: TabMemorySetting;
+    /** The run's relog budget: with it a drop is recovered by runner/drop-relog.ts (an in-page relog, the race rule). */
+    relogs?: RelogBudget;
     /** The process's signals and exit (tests inject them). */
     signals?: SignalDeps;
 }
@@ -477,7 +491,17 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
         for (const st of programs.observe(programStatus(s))) log.append(programRow(log, account, session.sessionId, st));
     });
     const unCues = o.cues?.attach(session.sdk);
-    const wd = startWatchdog(session, { onEvent: e => console.log(`[watchdog] ${e.verdict}: ${e.reason}`) });
+    // With the drop recovery on, a browser page's own in-game flag decides a drop: the link asks it
+    // (a dropped page publishes nothing) and the watchdog stands down for it (drop-relog relogs in page).
+    const cdp = o.relogs && session.client === 'browser' ? cdpUrl(session.env) : undefined;
+    const page = cdp ? () => pageInGame(cdp, session.name).catch(() => null) : undefined;
+    const wd = startWatchdog(session, {
+        onEvent: e => console.log(`[watchdog] ${e.verdict}: ${e.reason}`),
+        // The link (LOST_AFTER_TICKS) sees a stale tick first and drop-relog pauses the watchdog; at the
+        // same bound the watchdog's logout and relaunch won the race on the lab (rs/511).
+        ...(o.relogs ? { staleTicks: LOST_AFTER_TICKS + WATCHDOG_AFTER_LINK_TICKS } : {}),
+        ...(page ? { standDown: async () => ((await page()) === false ? 'the page is out of the world: run.ts relogs it in page' : null) } : {}),
+    });
     const tabMem = startRunTabMemory(session, log, o.tabMemory);
 
     let lastLogout: LogoutResult | null = null;
@@ -488,9 +512,11 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
         return r;
     };
     const sig = signalShutdown(tag, leave, o.signals);
+    const link = sessionLink(session, page ? { pageInGame: page } : {});
     try {
         const result = await untilTerminated(runAttempt(session, o.chain, {
-            log, account, link: sessionLink(session), reservation: o.reservation, probes,
+            log, account, link, reservation: o.reservation, probes,
+            ...(o.relogs ? { recover: dropRecover(session, o.relogs, link, line => console.log(line)) } : {}),
             stopAsked: sig.stopAsked, gateStop: () => null, logout: () => leave(), label: o.label ?? 'run',
             ...(o.from !== undefined ? { from: o.from } : {}),
             onEvent: e => console.log(`[resume] ${JSON.stringify(e)}`),
@@ -592,7 +618,10 @@ async function main(argv: string[]): Promise<number> {
     const chain = sliceUntil(full, a.until);
     const from = resolveFrom(chain, a.from);
 
-    const io = hostGateIO(a, owner);
+    const fresh = earlier.length === 0 && from === undefined;
+    // A fresh run's budget is whole: the last run's relogs and any stale lock go (prepareCueDir's rule).
+    if (fresh && !a.dryRun) relogs.clear();
+    const io = hostGateIO(a, owner, relogs);
     const gates = await startGates(chain, io);
     for (const g of gates) console.log(`[gate] ${g.ok ? 'ok     ' : 'REFUSED'} ${g.gate}: ${g.detail}`);
     if (a.dryRun) {
@@ -605,8 +634,6 @@ async function main(argv: string[]): Promise<number> {
         return EXIT_REFUSED;
     }
 
-    const fresh = earlier.length === 0 && from === undefined;
-    if (fresh) relogs.clear();
     const removed = [...prepareCueDir(cfg.cueDir, { fresh }), ...prepareCueDir(muleCueDir(cfg), { fresh }).map(f => `mule/${f}`)];
     const log = TickLog.open(runId, a.log);
     const bin = owner ? claimBin() : null;
@@ -624,7 +651,7 @@ async function main(argv: string[]): Promise<number> {
     let term: Terminated | null = null;
     try {
         // A signal: SCORED is out, then closeSession still closes the browser before the exit.
-        const ran = await runChainOnSession(session, { log, chain, reservation, cues: keeper, ...(from !== undefined ? { from } : {}) }).catch(e => {
+        const ran = await runChainOnSession(session, { log, chain, reservation, cues: keeper, relogs, ...(from !== undefined ? { from } : {}) }).catch(e => {
             if (!(e instanceof Terminated)) throw e;
             term = e;
             return null;

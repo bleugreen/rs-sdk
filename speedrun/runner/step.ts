@@ -107,6 +107,12 @@ export interface Step<C = Record<string, never>> {
     resume?(ctx: StepContext<C>): Promise<void>;
     /** Probes (names in the resumable runner's `probes`) that `done` / `inProgress` read. */
     probes?: readonly string[];
+    /**
+     * A 0-tick step with no game effect (a cue write, a cue stop): its preconditions always hold, so
+     * on its own it would win the resume walk over the unfinished step before it. The walk enters a
+     * marker only where the step before it finished or the step after it can start (runner/resume.ts).
+     */
+    marker?: true;
 }
 
 export class StepError extends Error {

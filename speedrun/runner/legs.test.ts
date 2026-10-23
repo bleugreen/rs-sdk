@@ -120,9 +120,24 @@ describe('leg preconditions', () => {
         expect(pre('T13-14', s)).toBe('T13-14: a knife is needed for the webs');
     });
 
-    test('Wilderness level at most 20 when the leg opens with a spell', () => {
+    test('Wilderness level at most 20 when the leg opens with a spell and has no deep-Wilderness run to resume by', () => {
         const s = state(3200, 3712, { inventory: [...ARDOUGNE_RUNES, item(4, 'Knife'), item(5, 'Shark'), item(6, 'Shark')] }); // level 25
-        expect(pre('T13-14', s)).toBe('T13-14: Wilderness level 25 is above 20 for the ardougne teleport');
+        expect(pre('T12-13', s)).toBe('T12-13: Wilderness level 25 is above 20 for the ardougne teleport');
+    });
+
+    test('deep in the Wilderness off every checkpoint, a leg past its lever resumes by its run to the spiders, not the refused teleport (rs/511)', () => {
+        const t1314 = legById('T13-14').def;
+        const s = state(3200, 3712, { inventory: [...ARDOUGNE_RUNES, item(4, 'Knife'), item(5, 'Shark'), item(6, 'Shark')] }); // level 25, south of the north-of-keep box
+        expect(resumeHop(t1314, s)).toBe(4);
+        expect(t1314.hops[4]).toMatchObject({ kind: 'run', to: { x: TILES.spiders.x, z: TILES.spiders.z } });
+        expect(pre('T13-14', s)).toBe(true);
+        expect(legById('T13-14').inProgress!({ state: s, probed: {} }, undefined)).toBe(true);
+        // T26-27 is the same route; T15-16 resumes at its run to the Mage Bank webs.
+        expect(resumeHop(legById('T26-27').def, s)).toBe(4);
+        expect(legById('T15-16').def.hops[resumeHop(legById('T15-16').def, state(3110, 3700))]).toMatchObject({ kind: 'run', to: { x: 3097, z: 3957 } });
+        // At level 20 or below, or outside the Wilderness, nothing changes: hop 0.
+        expect(resumeHop(t1314, state(3200, 3672))).toBe(0);
+        expect(resumeHop(t1314, state(TILES.lawgof.x, TILES.lawgof.z))).toBe(0);
     });
 
     test('30 coins for the ship and the talisman for the altar', () => {
