@@ -7,8 +7,9 @@ import { baseState, drive, FakeSdk, type SentAction } from '../lib/fake-sdk';
 import { noteOf } from '../lib/items';
 import { TickLog } from '../lib/ticks';
 import { MANIFEST, parseLedger } from '../tools/slot-ledger';
+import { ASK_FILE, readTopUpAsk } from '../helpers/altar-cue';
 import {
-    giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffRoom, handOffStep, itemPattern, loadHandOff, planHandOff, runHandOff, toUnequip, tradeKind, tradeLanded,
+    askFor, giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffRoom, handOffStep, itemPattern, loadHandOff, planHandOff, runHandOff, runHandOffOnCue, toUnequip, tradeKind, tradeLanded,
     type HandOffPlan, type HandOffReport,
 } from './handoff';
 import { Observation, resolveResume } from './resume';
@@ -459,6 +460,70 @@ describe('a top-up row: top up to N counting what is held', () => {
     });
 });
 
+describe("the mule's top-up ask: every `to N` entry asked on the trade's first open frame (rs/429's format)", () => {
+    const ledger = readFileSync(MANIFEST, 'utf8');
+    const row = (id: string) => handOffFrom(ledger, id);
+    const shark = itemPattern('shark').source;
+    const coins = itemPattern('coins').source;
+
+    test('H10 `shark to 8`: holding 3, asks 5', () => {
+        expect(askFor(state(pack(['Shark', 3])), row('H10'))).toEqual([{ item: shark, count: 5 }]);
+    });
+
+    test('H12 `shark to 15`: holding 6, asks 9', () => {
+        expect(askFor(state(pack(['Shark', 6])), row('H12'))).toEqual([{ item: shark, count: 9 }]);
+    });
+
+    test('H22 `coins to 126000` and `shark to 10`: both entries in one ask, in the row\'s order', () => {
+        expect(askFor(state([item(0, 'Coins', 100_000), ...pack(['Shark', 2]).map((i, k) => ({ ...i, slot: 1 + k }))]), row('H22'))).toEqual([{ item: coins, count: 26_000 }, { item: shark, count: 8 }]);
+    });
+
+    test('an entry already met is not asked (H22 holding the coins)', () => {
+        expect(askFor(state([item(0, 'Coins', 126_000), ...pack(['Shark', 2]).map((i, k) => ({ ...i, slot: 1 + k }))]), row('H22'))).toEqual([{ item: shark, count: 8 }]);
+    });
+
+    test('every entry met: no ask (H10 holding 8)', () => {
+        expect(askFor(state(pack(['Shark', 8])), row('H10'))).toEqual([]);
+    });
+
+    const TOPUPS = '| row | in | out | equip | needAtStart | source |\n|---|---|---|---|---|---|\n| H10 | shark to 8 [u]; law rune to 4 [s] | - | - | 6 | x (r) |\n';
+    const scope = { step: 'S13', family: 'mule' as const };
+
+    test('end to end: the scoped ask is on disk on the first frame showing the trade open, and the trade wants exactly it', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'handoff-ask-'));
+        const p = handOffFrom(TOPUPS, 'H10');
+        const sdk = new TradeServer(state([...pack(['Shark', 3]), item(3, 'Law rune', 1)]), tradeItems([['Shark', 5], ['Law rune', 3]]));
+        const reports: HandOffReport[] = [];
+        const run = runHandOff(sdk, p, PARTNER, { cue: { scope, ask: { dir } }, onReport: r => reports.push(r) });
+        let onOpen = null as boolean | null;
+        sdk.onStateUpdate(st => {
+            if (onOpen === null && st.trade?.isOpen) queueMicrotask(() => (onOpen = existsSync(join(dir, ASK_FILE))));
+        });
+        await drive(sdk, run, 60);
+        expect(onOpen).toBe(true);
+        const ask = readTopUpAsk(dir)!;
+        expect(ask.scope).toEqual(scope);
+        expect(ask.items).toEqual([{ item: shark, count: 5 }, { item: itemPattern('law rune').source, count: 3 }]);
+        expect(reports[0]).toMatchObject({ ok: true, asked: ask.items });
+        expect(sdk.state!.inventory.filter(i => i.name === 'Shark')).toHaveLength(8);
+    });
+
+    test('every top-up met: no ask written and no trade', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'handoff-ask-'));
+        const sdk = new TradeServer(state([...pack(['Shark', 8]), item(8, 'Law rune', 4)]), []);
+        const reports: HandOffReport[] = [];
+        await drive(sdk, runHandOff(sdk, handOffFrom(TOPUPS, 'H10'), PARTNER, { cue: { scope, ask: { dir } }, onReport: r => reports.push(r) }), 20);
+        expect(sdk.sent).toEqual([]);
+        expect(existsSync(join(dir, ASK_FILE))).toBe(false);
+        expect(reports[0]).toMatchObject({ ok: true, ticks: 0 });
+    });
+
+    test('a standing partner (an ask, no cue to open) must be in view, as any placed giver', () => {
+        const step = handOffStep(handOffFrom(TOPUPS, 'H10'), { partner: PARTNER, cue: { scope, ask: { dir: '/tmp/x' } } });
+        expect(step.preconditions(state(pack(['Shark', 3]), [], { nearbyPlayers: [] }), {})).toMatch(/not in view/);
+    });
+});
+
 // ------------------------------------------------------------------ item identity (rs/365)
 
 describe('item identity: NAME @ID by obj id, NAME(*) by any dose, <NAME> left to the module', () => {
@@ -639,5 +704,55 @@ const hasLedger = parseLedger(manifest).rows.length > 0;
 describe('the manifest rows this module owns', () => {
     test.if(hasLedger)('each plans as a hand-off', () => {
         for (const id of OWNED) expect(() => handOffFrom(manifest, id)).not.toThrow();
+    });
+});
+
+describe('a cue-served hand-off (the cannon holder): the cue, the partner in sight, its request, the whole row', () => {
+    const CANNON = `
+| row | in | out | equip | needAtStart | source |
+|---|---|---|---|---|---|
+| H11 | cannon base x1 [u]; cannonball x100 [s]; mithril scimitar x1 [u] | - | - | 3 | fixture (r) |
+`;
+    const h11 = handOffFrom(CANNON, 'H11');
+    const row = tradeItems([['Cannon base'], ['Cannonball', 100], ['Mithril scimitar']]);
+    const request = (tick: number) => ({ type: 4, text: 'Helper wishes to trade with you.', tick, sender: PARTNER, fromSelf: false });
+    const arrive = (at: number) => (s: BotWorldState): Partial<BotWorldState> => (s.tick === at ? { nearbyPlayers: partnerInView, gameMessages: [...s.gameMessages, request(at)] } : {});
+
+    test('the partner need not be in view at arrival; the cue opens first, the row arrives whole', async () => {
+        const sdk = new TradeServer(state([], [], { tick: 10, nearbyPlayers: [] }), row);
+        const opened: string[] = [];
+        const reports: HandOffReport[] = [];
+        const step = handOffStep<Record<string, never>>(h11, {
+            partner: PARTNER, onReport: r => reports.push(r),
+            cue: { scope: { step: 'S14', family: 'cannon' }, open: async () => void opened.push(`open@${sdk.state!.tick}`), waitTicks: 50 },
+        });
+        expect(step.preconditions(sdk.state!, {})).toBe(true);
+        expect(handOffPre(sdk.state!, h11, PARTNER)).toContain('not in view');
+        await drive(sdk, step.run(ctxOf(sdk)), 300, arrive(16));
+        expect(opened).toEqual(['open@10']);
+        expect(sdk.tradeClicks[0]).toBeGreaterThanOrEqual(16);
+        expect(handOffMissing(sdk.state!, h11)).toEqual([]);
+        expect(reports[0]?.received.sort()).toEqual(['Cannon base x1', 'Cannonball x100', 'Mithril scimitar x1']);
+    });
+
+    test('runHandOffOnCue reports the request standing at the click and the ticks to arrival', async () => {
+        const sdk = new TradeServer(state([], [], { tick: 10, nearbyPlayers: [] }), row);
+        const r = await drive(sdk, runHandOffOnCue(ctxOf(sdk), h11, PARTNER, { scope: { step: 'S14', family: 'cannon' }, open: async () => {}, waitTicks: 50 }), 300, arrive(14));
+        // drive's patch at tick 14 lands in tick 15's state: the cue at 10, the partner in sight at 15.
+        expect([r.ok, r.standingAtClick, r.arriveTicks]).toEqual([true, true, 5]);
+    });
+
+    test("a holder offering the set and balls without the row's extras is never accepted", async () => {
+        const sdk = new TradeServer(state([], [], { tick: 10, nearbyPlayers: [] }), tradeItems([['Cannon base'], ['Cannonball', 100]]));
+        const step = handOffStep<Record<string, never>>(h11, { partner: PARTNER, maxTicks: 20, cue: { scope: { step: 'S14', family: 'cannon' }, open: async () => {}, waitTicks: 50 } });
+        await expect(drive(sdk, step.run(ctxOf(sdk)), 400, arrive(12))).rejects.toThrow('H11 with Helper');
+        expect(handOffMissing(sdk.state!, h11)).toContain('mithril scimitar 0 of 1');
+    });
+
+    test('a partner that never comes: refused with the reason after the give-up bound', async () => {
+        const sdk = new TradeServer(state([], [], { tick: 10, nearbyPlayers: [] }), row);
+        const step = handOffStep<Record<string, never>>(h11, { partner: PARTNER, cue: { scope: { step: 'S27', family: 'cannon' }, open: async () => {}, waitTicks: 8 } });
+        await expect(drive(sdk, step.run(ctxOf(sdk)), 100)).rejects.toThrow('did not come into sight within 8 ticks of the S27/cannon cue');
+        expect(sdk.tradeClicks).toEqual([]);
     });
 });
