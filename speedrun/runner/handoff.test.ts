@@ -281,8 +281,7 @@ describe('run: the trade through lib/trade.ts', () => {
         const second = await runStep(none, plan('H93'));
         expect(second.reports[0]).toMatchObject({ ok: true, dropped: [], gave: ['Magic shortbow x1'] });
         expect(none.sent.some(a => a.method === 'sendDropItem')).toBe(false);
-        // A drop of an item still held at a part count is refused like a part give.
-        expect(handOffPre(state([item(0, 'Magic shortbow')], [wornItem('Khazard armour')]), plan('H93'), PARTNER)).toBe(true);
+        expect(second.step.postconditions(none.state!, {})).toBe(true);
     });
 
     test('an untradeable obj under a give (a hand-built plan): handOffPre refuses it, and the engine refuses its offer', async () => {

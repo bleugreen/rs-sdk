@@ -81,7 +81,7 @@ describe('walk', () => {
         // 2 free at the need check; the drops make it 4, so the trade's 3 fit; the staff's wield frees 1.
         expect(byRow(entries, 'H13')).toMatchObject({ free: 2, used: 26, verdict: 'pass', held: expect.not.stringContaining('khazard') });
         expect(byRow(entries, 'H13').worn).toBe('staff of fire x1');
-        // The same drops given as other outs of the row still free their slots before the in.
+        // Without the junk's drop the trade's 3 slots do not fit: the drops are what make the room.
         const short = run(table(rows[0]!, rows[1]!.replace('junk x2 (drop); ', '')));
         expect(byRow(short, 'H13')).toMatchObject({ verdict: 'SHORT' });
         expect(byRow(short, 'H13').notes.join('; ')).toMatch(/the trade adds 3 slots, 2 free/);
