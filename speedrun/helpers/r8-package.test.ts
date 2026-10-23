@@ -30,7 +30,9 @@ const OBJS = objTable([
 
 // A death carrying the kit H1 hands over, re-entering at S2 by replaying T1-2's cast.
 const PHASE: R8Phase = { id: 'X', what: 'test', deaths: [{ row: 'H1' }], replay: ['T1-2'], resume: 'S2', to: 'S3', hp: 21, cannonBy: 'the cannon helper' };
-const x = (p: Partial<R8Phase> = {}, keep = 3) => r8Package({ ...PHASE, ...p }, { manifest: TABLE, objs: OBJS, keep });
+// The fixture's ids are its own, not obj.pack's, so the trade flag is the fixture's too: all tradeable.
+const tradeable = () => false;
+const x = (p: Partial<R8Phase> = {}, keep = 3) => r8Package({ ...PHASE, ...p }, { manifest: TABLE, objs: OBJS, keep, untradeable: tradeable });
 
 describe('the engine keep (death.rs2)', () => {
     const u = (name: string, cost: number, worn = false, count = 1) => ({ name, cost, worn, count });
