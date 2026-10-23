@@ -258,7 +258,7 @@ runes, from 3,000 to 567k coins): nothing refills them, and other sellers are al
 |---|---|---|---|---|---|
 | Iron ore | 993,853 at 80 mean (best 110) | 79.5M | 5,430 (~530/h) | iron | 1,208/h a login |
 | Coal | 6,844,263 at 12.4 mean (best 80; at most ~1.06M units can sit at 80+) | 84.8M | 3,842 | none at our rates | |
-| Uncut gems (5 types at 2,500, diamond 3,500) | 49,971 | 134.4M | 3,010, of which jade 1,772 | Shilo | ~117 of the 233 gems/h |
+| Uncut gems (5 types at 2,500, diamond 3,500) | 49,971 | 134.4M | 3,010, of which jade 1,772 | Shilo | ~124 of the 233 gems/h (68 of 128 rolls) |
 | Runite bar | 1,884 at 41,005 | 77.3M | 133 | (runite) | |
 | Blood rune | 17,120 at 633 mean (best 1,301) | 10.8M | 796 | heroes | ~15/h a login |
 | Rune essence | ~471k at 55 (rs/502's read) | ~26M | not re-read | (essence: 81k/h, rs/502) | |
@@ -273,7 +273,7 @@ is a hedge (`markets/methods/shop-hedge.ts`; shelves from the 23:43Z live readin
 
 | Shop | Item | Shelf / base | Shop price | Exchange net (outlet) | Restock / h (world) | Coins / h | One-off | Note |
 |---|---|---|---|---|---|---|---|---|
-| Oziach | green d'hide body | 2 / 2 (config) | 10,140 | 23,750 (bid) | 18 | 240,768 | 26,986 | needs Dragon Slayer |
+| Oziach | Dragonhide body | 2 / 2 (config) | 10,140 | 23,750 (bid) | 18 | 240,768 | 26,986 | needs Dragon Slayer |
 | Magic Guild | blood rune | 1,000 / 1,000 (config) | 50 | 1,236 (bid) | 30 | 35,580 | 998,750 | **after-run-only**; the fleet's h88 camps this shelf (SUPPLIES.md), so the config stock is not there |
 | Magic Guild, Lundail | death rune | config | 30 | 421 (flow) | 60 | 23,449 | 279k + 73k | **after-run-only** (H7) |
 | Magic Guild, Lundail | nature rune | config | 20 | 709 (flow) | 30 | 20,656 | 614k + 156k | **after-run-only** (S18e) |
