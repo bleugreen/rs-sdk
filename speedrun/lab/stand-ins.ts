@@ -64,51 +64,8 @@ export interface StandIn {
     notes?: string;
 }
 
-const QS = 'speedrun/data/quest-stages.ts';
-const MAN = 'docs/speedrun/STEP-MANIFEST.md';
-const RO = 'docs/speedrun/RUN-ORDER.md';
-const LEGS = 'speedrun/runner/legs.ts TILES';
-
-export const STAND_INS: readonly StandIn[] = [
-    {
-        stepId: 'S15', name: 'Monkey Madness', owner: 'rs/185', quest: 'mm',
-        varps: [{ name: 'mm_main', value: 9, source: `${QS} mm: varp 365, complete >= 9 (10, Daero's training, inferred at Z)` }],
-        xp: [
-            { skill: 'strength', base: 35_000, source: `${RO} S15: measured reward +35,000 Strength` },
-            { skill: 'hitpoints', base: 35_000, source: `${RO} S15: +35,000 Hitpoints (HP 42 to 97)` },
-            { skill: 'attack', base: 20_000, source: `${RO} S15: +20,000 Attack` },
-            { skill: 'defence', base: 20_000, source: `${RO} S15: +20,000 Defence` },
-        ],
-        qp: { add: 3, source: `${QS} mm` },
-        give: [
-            { obj: 'mm_amulet_of_monkey_speak', n: 1, source: `${MAN} ledger S15 in` },
-            { obj: 'mm_monkey_greegree_for_normal_monkey', n: 1, source: `${MAN} ledger S15 in` },
-            { obj: 'coins', n: 10_000, source: `${MAN} ledger S15 Y in: Narnode's reward` },
-            { obj: 'diamond', n: 3, source: `${MAN} ledger S15 Y in: Narnode's reward` },
-        ],
-        take: [
-            { item: /^gold bar$/i, source: `${MAN} ledger S15 out (hand-in)` },
-            { item: /^ball of wool$/i, source: `${MAN} ledger S15 out` },
-            { item: 3183, source: `${MAN} ledger S15 out: monkey bones @3183` },
-            { item: /^banana$/i, source: `${MAN} ledger S15 out (hand-in)` },
-        ],
-        consume: [
-            { item: /^superantipoison\(1\)$/i, n: 1, ledger: 'superantipoison(1)', source: `${MAN} ledger S15 out: drunk at A's start, the vial dropped` },
-            { item: /^shark$/i, n: 14, ledger: 'shark', source: `${MAN} ledger S15 out: eaten (1 held at the exit)` },
-            { item: /^prayer potion\(4\)$/i, n: 2, ledger: 'prayer potion(4)', source: `${MAN} ledger S15 out: drunk, the vials dropped` },
-            { item: /^law rune$/i, n: 3, ledger: 'law rune', obj: 'lawrune', source: `${MAN} ledger S15 out: Ardougne at T, Varrock at Y` },
-            { item: /^water rune$/i, n: 2, ledger: 'water rune', obj: 'waterrune', source: `${MAN} ledger S15 out` },
-            { item: /^air rune$/i, n: 3, ledger: 'air rune', obj: 'airrune', source: `${MAN} ledger S15 out` },
-            { item: /^fire rune$/i, n: 1, ledger: 'fire rune', obj: 'firerune', source: `${MAN} ledger S15 out` },
-        ],
-        wear: [
-            { item: /^m'speak amulet$/i, source: `${MAN} ledger S15 equip +m'speak amulet` },
-            { item: /^monkey greegree$/i, source: `${MAN} ledger S15 equip +monkey greegree` },
-        ],
-        unwear: [{ item: /^magic shortbow$/i, source: `${MAN} ledger S15 equip -magic shortbow` }],
-        end: { x: 2484, z: 3486, level: 1, source: `${LEGS}.daero (T15-16's start)` },
-    },
-];
+/** Monkey Madness's (S15) went when the module joined the chain; a new row goes here only for a step the chain builds as missing. */
+export const STAND_INS: readonly StandIn[] = [];
 
 export function standInFor(stepId: string): StandIn | undefined {
     return STAND_INS.find(s => s.stepId === stepId);

@@ -24,7 +24,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
 import type { BotWorldState } from '../../sdk/types';
 import { writeAnvilPlan } from '../helpers/anvil';
-import { CueWriter, writeJsonAtomicSync, type CueScope } from '../helpers/altar-cue';
+import { CueWriter, writeJsonAtomicSync, writeTopUpAsk, type CueScope } from '../helpers/altar-cue';
 import { GO_FILE, type GoCue } from '../helpers/fm-row';
 import { INVENTORY_SIZE } from '../lib/items';
 import { questDone, type QuestKey } from '../lib/quests';
@@ -42,6 +42,7 @@ import * as fightArena from '../quests/fight-arena';
 import * as fishingContest from '../quests/fishing-contest';
 import * as grandTree from '../quests/grand-tree';
 import * as mageArena from '../quests/mage-arena';
+import * as monkeyMadness from '../quests/monkey-madness';
 import * as plagueCity from '../quests/plague-city';
 import * as seaSlug from '../quests/sea-slug';
 import * as treeGnomeVillage from '../quests/tree-gnome-village';
@@ -62,7 +63,7 @@ import * as start from '../skills/start';
 import * as thieving from '../skills/thieving';
 import * as woodcutting from '../skills/woodcutting';
 import { MANIFEST, parseLedger, type LedgerRow } from '../tools/slot-ledger';
-import { handOffFrom, handOffStep, type HandOffRecord } from './handoff';
+import { askFor, handOffFrom, handOffStep, type HandOffPlan, type HandOffRecord } from './handoff';
 import { legById, legsFor, splitLeg, type LegStep } from './legs';
 import { type Probe, stepProbes } from './resume';
 import { scoredLoginStep, scoredLogoutStep } from './scored-relog';
@@ -80,6 +81,8 @@ export type ChainStep = AnyStep & {
     kind: ChainKind;
     /** kind 'missing': who builds it. */
     owner?: string;
+    /** A step this run config cannot run, and why (the H12o login with an incomplete h12o block): it refuses on the path. */
+    refuses?: string;
     /** withCue: the helper cue opened before it runs. */
     cue?: CueScope;
     /** cueAround: whether a success ends the cue with a final stop (a throw's stop is never final). */
@@ -114,12 +117,14 @@ export interface RunConfig {
     /** mule1's own cue directory, where its package cues and top-up asks go (default muleCueDir: <cueDir>/mule). */
     muleCueDir?: string;
     /**
-     * H12o's helper (h45, SUPPLIES.md H12o). `cueDir` is its role folder, which Monkey Madness's module
+     * H12o's helper (h45, SUPPLIES.md H12o). `account` is its login name, the partner of both receive
+     * legs (Monkey Madness's topUpFrom); `cueDir` is its role folder, which Monkey Madness's module
      * alone writes (H12oM and H12oP, opens and stops); `loginDir` is the launcher's login-only folder
-     * (its entry's `loginOn.cueDir`), which h12oLogin alone writes, once; `leadTicks` is how long before
-     * segment M that login is written. With no lead the trigger refuses rather than assume one.
+     * (its entry's `loginOn.cueDir`), which h12oLogin alone writes, once, at segment M's start (rs/185),
+     * ahead of M's travel to the H12o-M leg; `leadTicks` is the staging lead h45 needs before M, checked
+     * and never assumed. Absent or incomplete: the top-ups are off and the login step refuses.
      */
-    h12o?: { cueDir: string; loginDir: string; leadTicks?: number };
+    h12o?: { account?: string; cueDir: string; loginDir: string; leadTicks?: number };
     /**
      * The banked delivery carriers' run (runner/delivery-owner.ts): `run` is the attempt's one
      * delivery id (e.g. `a1-20261023`), the `--delivery-run` every carrier's config is generated with
@@ -220,8 +225,12 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
     H23: { leg: 'T26-27', afterHop: 0 },
 };
 
-/** Rows a module trades itself whose partner the run config names (kitFrom): S05's H4, the quests' kits. */
-export const KIT_PARTNER_ROWS = ['H4'] as const;
+/**
+ * Rows a module trades itself whose partner the run config names (kitFrom): S05's H4 and S15's H12
+ * (or H12a + H12b, both traded in Monkey Madness's one gtSwap, so one partner for both), each
+ * required when the ledger in force carries it.
+ */
+export const KIT_PARTNER_ROWS = ['H4', 'H12', 'H12a', 'H12b'] as const;
 
 /** Exactly one group of each set is in the ledger in force (the ledger is the switch). */
 export const ALTERNATIVES: readonly (readonly (readonly string[])[])[] = [[['H12'], ['H12a', 'H12b']]];
@@ -236,7 +245,7 @@ export const INTERNAL: Readonly<Record<string, string>> = {
     H4: "S05 Doric's Quest, segment A (the ledger row through handoff.ts; rs/416)",
     'H4.x': 'S07 woodcutting (bone loads)',
     H5: 'S06 runecraft (cue-driven essence)',
-    // Placed before S15 once Monkey Madness exports h12Plan (rs/201; rs/186's ruling (b)).
+    // Traded in S15's segment A (gtSwap by h12Plan with kitFrom, on its {H12, mule} cue: KIT_SEGMENTS).
     H12: 'S15 monkey-madness (gtSwap at King Narnode)',
     H12a: 'S15 monkey-madness (gtSwap at King Narnode)',
     H12b: 'S15 monkey-madness (gtSwap at King Narnode)',
@@ -264,17 +273,19 @@ export const CANNON_ROWS: Readonly<Record<string, CueScope>> = { H11: { step: 'S
 /**
  * mule1's rows (rs/443; SUPPLIES.md's helper column), H3 being h81-h83's. Its request mode serves
  * exactly the package its {<row>, mule} cue names. H4 is cued around Doric's segment A, the trade
- * that runs it (KIT_SEGMENTS); the other quest kit rows are placed hand-offs at their quest's arrival.
- * H12 (or H12a + H12b) waits on Monkey Madness's h12Plan; H4e and H4m are cued only on their fallbacks.
+ * that runs it (KIT_SEGMENTS), and H12 around Monkey Madness's segment A, whose gtSwap trades it by
+ * h12Plan; the other quest kit rows are placed hand-offs at their quest's arrival. The split H12a +
+ * H12b (one swap, two packages) is not cued. H4e and H4m are cued only on their fallbacks.
  */
 export const MULE_ROWS: readonly string[] = ['H1', 'H4', 'H4k', 'H6', 'H4p', 'H7', 'H8', 'H9', 'H10', 'H12', 'H12a', 'H12b', 'H13', 'H14', 'H15', 'H16', 'H18', 'H19', 'H20', 'H21d', 'H22'];
 
 /**
  * The kit rows a module trades itself, by the name of the segment step that trades them: mule1's
  * {row, mule} cue is opened around that segment (muleCued), and the lab staff-supplies the row just
- * before it (lab/dress-rehearsal.ts labChain). H4 is Doric's segment A (quests/dorics-quest.ts h4Plan).
+ * before it (lab/dress-rehearsal.ts labChain). H4 is Doric's segment A (quests/dorics-quest.ts h4Plan),
+ * H12 Monkey Madness's (quests/monkey-madness.ts gtSwap).
  */
-export const KIT_SEGMENTS: Readonly<Record<string, string>> = { H4: 'S05:A-h4-swap' };
+export const KIT_SEGMENTS: Readonly<Record<string, string>> = { H4: 'S05:A-h4-swap', H12: 'S15:A-narnode' };
 
 /** A mule package's scope: for family 'mule' the step is the hand-off id (rs/158, rs/186), every other family keeps the step id. */
 export const muleScope = (row: string): CueScope => ({ step: row, family: 'mule' });
@@ -363,6 +374,26 @@ export function ledgerCoverage(rows: readonly LedgerRow[]): string[] {
 }
 
 // ------------------------------------------------------------------ wrappers
+
+/**
+ * `step`, a module's own trade with a standing mule partner (S15's gtSwap for H12), with the row's
+ * top-up ask written on the first frame showing that trade open, as handoff.ts writes a placed row's:
+ * mule.ts offers a top-up line (H12's `shark to 15`) only on SCORED's ask. Sized from the state the
+ * step starts in; nothing is written when every top-up is met.
+ */
+export function askedOnTrade(step: ChainStep, plan: HandOffPlan, partner: string, dir: string): ChainStep {
+    const wrap = (f: (ctx: StepContext<unknown>) => Promise<void>) => async (ctx: StepContext<unknown>) => {
+        const s = ctx.sdk.getState();
+        const items = s ? askFor(s, plan) : [];
+        const off = items.length ? monkeyMadness.onTradeOpen(ctx.sdk, partner, () => void writeTopUpAsk(dir, items, Date.now(), muleScope(plan.id))) : () => {};
+        try {
+            await f(ctx);
+        } finally {
+            off();
+        }
+    };
+    return { ...step, run: wrap(step.run), resume: wrap(step.resume ?? step.run) };
+}
 
 /** A copy of `s` whose methods stay bound to `s`, so it survives the runner's object spreads. */
 function bound(s: AnyStep): AnyStep {
@@ -476,6 +507,7 @@ export const H12O_LOGIN: CueScope = { step: 'H12o', family: 'mule' };
 export function h12oLoginRefusal(cfg: Pick<RunConfig, 'cueDir' | 'muleCueDir' | 'h12o'>): string | null {
     const h = cfg.h12o;
     if (!h) return 'H12o login: the run config has no h12o block (h45\'s role and login folders)';
+    if (typeof h.account !== 'string' || !h.account) return 'H12o login: the run config gives no h12o.account, h45\'s login name, the partner of both top-up legs';
     if (h.leadTicks === undefined) return 'H12o login: the run config gives no h12o.leadTicks, the lead before segment M; none is assumed';
     if (!Number.isSafeInteger(h.leadTicks) || h.leadTicks <= 0) return `H12o login: h12o.leadTicks ${h.leadTicks} is not a positive whole number of ticks`;
     const roles = [cfg.cueDir, muleCueDir(cfg), h.cueDir].map(d => resolve(d));
@@ -483,10 +515,19 @@ export function h12oLoginRefusal(cfg: Pick<RunConfig, 'cueDir' | 'muleCueDir' | 
     return null;
 }
 
+/** Monkey Madness's top-ups (both H12o legs) from the run config's h12o block, or none while it refuses. */
+export function h12oTopUp(cfg: Pick<RunConfig, 'cueDir' | 'muleCueDir' | 'h12o'>): monkeyMadness.TopUp | undefined {
+    return h12oLoginRefusal(cfg) === null ? { from: cfg.h12o!.account!, m: true, p: true, cueDir: cfg.h12o!.cueDir } : undefined;
+}
+
 /**
  * h45's login trigger: one H12o/mule cue in its login-only folder. It only logs h45 in; the launcher
- * stops reading the folder once the login settles, and refuses it once h45's role folder has closed
- * H12oP. There is one, before M; P has none.
+ * stops reading the folder once the login settles (helpers/standalone.ts CueGate), and refuses it once
+ * h45's role folder has closed H12oP. There is one, at segment M's start; P has none.
+ *
+ * `done` is Monkey Madness past M, so a resume into N..Z does not write it again. Not past P: a
+ * second trigger after h45's session dropped would never log it back in, the launcher no longer
+ * reading the folder, so a resume into N..P costs P's top-up (the leg's bounded wait, then on).
  */
 export function h12oLogin(cfg: Pick<RunConfig, 'cueDir' | 'muleCueDir' | 'h12o'>): ChainStep {
     const run = async (ctx: StepContext<unknown>) => {
@@ -498,7 +539,11 @@ export function h12oLogin(cfg: Pick<RunConfig, 'cueDir' | 'muleCueDir' | 'h12o'>
         new CueWriter(cfg.h12o!.loginDir, receiver, H12O_LOGIN).write({ beacons: [{ tick: st.tick, ms: Date.now() }], turns: [] });
         noteRow(ctx, 'H12o login', { dir: cfg.h12o!.loginDir, leadTicks: cfg.h12o!.leadTicks });
     };
-    return { id: 'H12o login', kind: 'cue', name: 'H12o h45 login trigger', logoutSafe: true, preconditions: () => true, postconditions: () => true, run, resume: run };
+    const refuses = h12oLoginRefusal(cfg);
+    return {
+        id: 'H12o login', kind: 'cue', name: 'H12o h45 login trigger', logoutSafe: true, preconditions: () => true, postconditions: () => true, run, resume: run,
+        done: monkeyMadness.doneAt('M'), probes: [monkeyMadness.JOURNAL_PROBE], ...(refuses ? { refuses } : {}),
+    };
 }
 
 /**
@@ -589,7 +634,7 @@ type Entry = ChainStep | PendingHandOff;
 /** Every step module the chain is built from, for the probes they export (chainProbes). */
 const MODULES = [
     cooksAssistant, doricsQuest, dragonSlayer, druidicRitual, goblinDiplomacy, romeoJuliet, dwarfCannon, fightArena, fishingContest, grandTree, mageArena,
-    plagueCity, treeGnomeVillage, agility, cooking, crafting, firemaking, fletching, fishing, herblore, magic, mining, prayer, ranged, runecraft, smithing,
+    monkeyMadness, plagueCity, treeGnomeVillage, agility, cooking, crafting, firemaking, fletching, fishing, herblore, magic, mining, prayer, ranged, runecraft, smithing,
     start, thieving, woodcutting,
 ] as const;
 
@@ -605,7 +650,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
     const coverage = ledgerCoverage(rows);
     if (coverage.length) throw new Error(`ledger coverage: ${coverage.join('; ')}`);
     const placed = Object.keys(PLACEMENT).filter(id => inLedger.has(id));
-    const missingPartners = [...placed, ...KIT_PARTNER_ROWS].filter(id => !cfg.partners[id]);
+    const missingPartners = [...placed, ...KIT_PARTNER_ROWS.filter(id => inLedger.has(id))].filter(id => !cfg.partners[id]);
     if (missingPartners.length) throw new Error(`the run config names no partner for ${missingPartners.join(', ')}`);
     const partner = (id: string) => cfg.partners[id]!;
     const kitFrom = (id: string) => ({ kitFrom: partner(id) });
@@ -646,6 +691,20 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
     const s21Opts: runecraft.RunecraftOptions = { s21Altar: 'body', cueDir: cfg.cueDir, deps: rcDeps, ...(cfg.s21Givers ? { s21Givers: cfg.s21Givers } : {}) };
     const runecraftS21 = pick('runecraft', runecraft.steps(s21Opts), ['S21 runecraft']);
     const relogs = o.relogs ?? new RelogBudget(join(cfg.cueDir, '..'));
+    // S15 (rs/185's options): fixed dialogue, the ruled per-segment eating, the H12 kit from its partner
+    // (segment A's gtSwap, on its {H12, mule} cue with its shark ask), and both H12o legs from h45;
+    // h45's login trigger goes in at segment M's start.
+    const h12Rows = ALTERNATIVES[0]!.find(g => g.every(id => inLedger.has(id))) ?? [];
+    const h12Givers = [...new Set(h12Rows.map(partner))];
+    if (h12Givers.length > 1) throw new Error(`S15's gtSwap trades ${h12Rows.join(' + ')} in one swap: the run config names ${h12Givers.join(', ')}, not one partner for both`);
+    const s15 = steps('S15', monkeyMadness.steps({
+        dialogue: 'fixed',
+        eating: monkeyMadness.SEGMENT_EATING,
+        ...(h12Givers.length ? { kitFrom: h12Givers[0]! } : {}),
+        ...(h12oTopUp(cfg) ? { topUpFrom: h12oTopUp(cfg)! } : {}),
+    })).map(s => (s.name === KIT_SEGMENTS.H12 && inLedger.has('H12') ? mule(askedOnTrade(s, handOffFrom(manifest, 'H12'), partner('H12'), muleCueDir(cfg)), 'H12') : s));
+    const atM = s15.findIndex(s => s.name.startsWith('S15:M-'));
+    if (atM < 0) throw new Error('monkey-madness: emits no segment M step for the H12o login trigger');
     const preLogin = runecraft.preLoginStep(s21Opts);
     const logout = scoredLogoutStep({ budget: relogs });
     const s21Logout = {
@@ -699,7 +758,8 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...before('S10b'),
         ...steps('S10b', treeGnomeVillage.steps()),
         L('T10-11'),
-        ...steps('S11a', pick('agility', agility.steps({ to: 22 }), ['agility:gnome'])),
+        // To 25: the Grand Tree's climb to Glough's pillars needs it, and no Agility potion is carried (grand-tree.ts kitCheck).
+        ...steps('S11a', pick('agility', agility.steps({ to: 25 }), ['agility:gnome'])),
         L('T11a'),
         ...before('S11b'),
         ...steps('S11b', grandTree.steps()),
@@ -711,7 +771,9 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...cued(s14, steps('S14', ranged.steps({ which: 'cannonSession' }))),
         ...legWith('T14-15', [cueStop(s14, o.cues)]),
         ...before('S15'),
-        missingStep('S15', 'S15 Monkey Madness', 'rs/185', 'mm'),
+        ...s15.slice(0, atM),
+        h12oLogin(cfg),
+        ...s15.slice(atM),
         ...legWith('T15-16'),
         ...steps('S16', mageArena.steps()),
         L('T16-18'),
@@ -822,9 +884,12 @@ export function resolveFrom(chain: readonly ChainStep[], from: string | undefine
     return i;
 }
 
-/** The refusing steps on the chain (the modules not on main), in order. */
+/** The refusing steps on the chain, in order: the modules not on main (`owner` builds them) and the steps this run config cannot run (`owner` is why). */
 export function missingOnPath(chain: readonly ChainStep[]): { index: number; id: string; name: string; owner: string }[] {
-    return chain.flatMap((s, index) => (s.owner && s.kind === 'missing' ? [{ index, id: s.id, name: s.name, owner: s.owner }] : []));
+    return chain.flatMap((s, index) => {
+        const why = s.kind === 'missing' ? s.owner : s.refuses;
+        return why ? [{ index, id: s.id, name: s.name, owner: why }] : [];
+    });
 }
 
 // ------------------------------------------------------------------ RUN-ORDER.md section 2

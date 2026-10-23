@@ -28,6 +28,7 @@ import * as fishingContest from '../quests/fishing-contest';
 import * as goblinDiplomacy from '../quests/goblin-diplomacy';
 import * as grandTree from '../quests/grand-tree';
 import * as mageArena from '../quests/mage-arena';
+import * as monkeyMadness from '../quests/monkey-madness';
 import * as plagueCity from '../quests/plague-city';
 import * as romeoJuliet from '../quests/romeo-juliet';
 import * as seaSlug from '../quests/sea-slug';
@@ -90,7 +91,7 @@ export const STAGED: Readonly<Partial<Record<QuestKey, { stage: string; source: 
 
 /** The route quests' steps, from the modules (and the lab stand-ins for the steps not on main). */
 export const QUEST_STEPS: readonly { quest: QuestKey; stepId: string }[] = [
-    ...[doricsQuest, plagueCity, treeGnomeVillage, grandTree, fightArena, dwarfCannon, mageArena, seaSlug, fishingContest, cooksAssistant, goblinDiplomacy, druidicRitual, romeoJuliet, dragonSlayer].map(m => ({ quest: m.quest as QuestKey, stepId: m.stepId })),
+    ...[doricsQuest, plagueCity, treeGnomeVillage, grandTree, fightArena, dwarfCannon, monkeyMadness, mageArena, seaSlug, fishingContest, cooksAssistant, goblinDiplomacy, druidicRitual, romeoJuliet, dragonSlayer].map(m => ({ quest: m.quest as QuestKey, stepId: m.stepId })),
     ...STAND_INS.map(s => ({ quest: s.quest, stepId: s.stepId })),
 ];
 

@@ -1,13 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'fs';
-import { join } from 'path';
-import { matchesItem } from '../lib/items';
-import { parseLedger } from '../tools/slot-ledger';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
 import { OBJ_PACK } from '../lib/items';
-import { xpForLevel } from '../lib/xp';
 import { buildChain, KIT_PARTNER_ROWS, PLACEMENT } from '../runner/chain';
-import { applyStandIn, labRefusal, STAND_INS, standInFor, standInLevels, type LabWorld } from './stand-ins';
+import { applyStandIn, labRefusal, STAND_INS, type LabWorld, type StandIn } from './stand-ins';
 
 const LAB: LabWorld = { staffLevel: '4', server: 'localhost', gateway: 'ws://localhost:8300/gateway' };
 const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id}`]));
@@ -36,7 +32,8 @@ describe('the guard: stand-ins run on a lab only', () => {
     });
     test('the applier refuses off a lab before sending anything', async () => {
         const sdk = new FakeSdk(baseState({ inGame: true }));
-        await expect(applyStandIn({ sdk: sdk as never }, standInFor('S15')!, { ...LAB, server: 'rs-sdk-demo.fly.dev' })).rejects.toThrow('STAND-IN S15');
+        const si: StandIn = { stepId: 'S99', name: 'fixture', owner: 'test', quest: 'mm', varps: [], xp: [], qp: { add: 0, source: 'a fixture' }, give: [], take: [], end: { x: 0, z: 0, source: 'a fixture' } };
+        await expect(applyStandIn({ sdk: sdk as never }, si, { ...LAB, server: 'rs-sdk-demo.fly.dev' })).rejects.toThrow('STAND-IN S99');
         expect(sdk.sent).toEqual([]);
     });
 });
@@ -57,21 +54,4 @@ describe('the table', () => {
         }
     });
 
-    test("S15's counted consumption is the ledger row's consume entries, count for count (what `take` drops whole aside)", () => {
-        const row = parseLedger(readFileSync(join(import.meta.dir, '../../docs/speedrun/STEP-MANIFEST.md'), 'utf8')).rows.find(r => r.row === 'S15')!;
-        const mm = standInFor('S15')!;
-        const as = (name: string, id = -1) => ({ name, id });
-        const whole = (e: { name: string; id?: number }) => mm.take.some(t => matchesItem(as(e.name, e.id), t.item));
-        const want = row.out.filter(e => e.reason === 'consume' && !whole(e)).map(e => `${e.name} x${e.count}`).sort();
-        expect(mm.consume!.map(c => `${c.ledger} x${c.n}`).sort()).toEqual(want);
-        for (const c of mm.consume!) expect(`${c.ledger} ${matchesItem(as(c.ledger), c.item)}`).toBe(`${c.ledger} true`);
-        for (const c of mm.consume!) expect(c.source.length).toBeGreaterThan(5);
-    });
-
-    test("xp is base xp: Monkey Madness's +35,000 Hitpoints takes HP 42 to 97", () => {
-        const mm = standInFor('S15')!;
-        const at = (skill: string, level: number) => ({ name: skill[0]!.toUpperCase() + skill.slice(1), level, baseLevel: level, experience: xpForLevel(level) });
-        const s = baseState({ skills: [at('hitpoints', 42), at('strength', 1), at('attack', 99), at('defence', 1)] });
-        expect(standInLevels(s, mm).hitpoints).toBe(97);
-    });
 });

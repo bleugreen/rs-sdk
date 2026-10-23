@@ -139,7 +139,8 @@ describe('startGates', () => {
         expect(g.every(x => !x.ok)).toBe(true);
         expect(g.map(x => x.detail).join('\n')).toContain("live, but host's, not ours");
         expect(g[1]!.detail).toContain("the freeze's tickMs is unknown");
-        expect(g[4]!.detail).toContain('S15 Monkey Madness');
+        // The full path without h45's h12o block: its login trigger refuses.
+        expect(g[4]!.detail).toContain('H12o h45 login trigger (H12o login: the run config has no h12o block');
         expect(g[5]!.detail).toContain('no launcher.json');
     });
 

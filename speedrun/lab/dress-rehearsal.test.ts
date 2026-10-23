@@ -17,10 +17,10 @@ const cues = { open: async () => {}, stop: () => {} };
 const tileOf = (lab: ReturnType<typeof labChain>, row: string) => lab.stubRows.find(r => r.row === row)!.tile;
 
 describe('labChain', () => {
-    test('each missing group becomes one STAND-IN step, and nothing refuses', () => {
+    test('no group is missing (S15 is Monkey Madness\'s own steps), so there is no STAND-IN step, and nothing refuses as unbuilt', () => {
         const lab = labChain(buildChain(cfg('lab_stub'), { cues }), { manifest, stub: 'lab_stub', world });
-        expect(lab.standIns).toEqual(['S15']);
-        expect(lab.chain.filter(s => s.name.startsWith(STAND_IN_STEP)).map(s => s.id)).toEqual(['S15']);
+        expect(lab.standIns).toEqual([]);
+        expect(lab.chain.filter(s => s.name.startsWith(STAND_IN_STEP)).map(s => s.id)).toEqual([]);
         expect(lab.chain.filter(s => /^L24/.test(s.id)).map(s => s.id)).toEqual(['L24a', 'L24b', 'L24c']);
         expect(lab.chain.some(s => s.kind === 'missing')).toBe(false);
         expect(lab.chain.filter(s => s.preconditions.toString().includes('not built')).length).toBe(0);
@@ -29,7 +29,7 @@ describe('labChain', () => {
     test('with a stub giver: every placed row but the cannon rows is the stub\'s, at its meeting tile; the cannon rows are staff-supplied', () => {
         const chain = buildChain(cfg('lab_stub'), { cues });
         const lab = labChain(chain, { manifest, stub: 'lab_stub', world });
-        // H12 is Monkey Madness's own trade, so the S15 stand-in's staff supply brings it.
+        // H12 is Monkey Madness's own trade, staff-supplied just before its segment A (KIT_SEGMENTS), S15's first step.
         expect(lab.staffed).toEqual(['H4', 'H11', 'H12', 'H23']);
         expect(lab.chain.map(s => s.id).indexOf('H12') + 1).toBe(lab.chain.map(s => s.id).indexOf('S15'));
         expect(lab.stubRows.map(r => r.row)).toEqual(['H1', 'H4k', 'H6', 'H4p', 'H7', 'H8', 'H9', 'H10', 'H11r', 'H13', 'H14', 'H15', 'H16', 'H18', 'H19', 'H20', 'H21d', 'H22']);
