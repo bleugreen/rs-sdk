@@ -32,8 +32,8 @@ describe('the plans name real segments, exactly the ruled ones', () => {
         check(tgvPlan(), tgv.stepId, tgv.steps({ dialogue: 'fixed' }).map(s => s.name), ['A', 'B', 'H', 'K'], []);
     });
 
-    test('The Grand Tree: A, I, N1, N2 substituted; legs before B, C and J', () => {
-        check(gtPlan(), grandTree.stepId, grandTree.steps({ dialogue: 'fixed' }).map(s => s.name), ['A', 'I', 'N1', 'N2'], ['B', 'C', 'J']);
+    test('The Grand Tree: A, I, N1, N2 substituted; legs before B, C, J and L', () => {
+        check(gtPlan(), grandTree.stepId, grandTree.steps({ dialogue: 'fixed' }).map(s => s.name), ['A', 'I', 'N1', 'N2'], ['B', 'C', 'J', 'L']);
     });
 
     test('Monkey Madness: only A', () => {
@@ -262,9 +262,11 @@ describe('roomDrops: room for the twigs from the helper\'s own surplus', () => {
         expect(roomDrops(pack(10, quest), TWIG_SLOTS)).toEqual({ drop: [], short: 0 });
     });
     test('never a quest item, never below the shark floor', () => {
+        // A full pack: the quest items, filler and one shark over the floor.
         const s = pack(SHARK_FLOOR + 1, [...quest, ...Array.from({ length: 27 - quest.length - SHARK_FLOOR }, () => 'Daconia rock')]);
+        expect(s.inventory).toHaveLength(28);
         const r = roomDrops(s, TWIG_SLOTS);
         expect(r.drop.map(i => i.name)).toEqual(['Shark']);
-        expect(r.short).toBe(TWIG_SLOTS - 1 - 1);
+        expect(r.short).toBe(TWIG_SLOTS - 1);
     });
 });
