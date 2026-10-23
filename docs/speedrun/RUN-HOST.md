@@ -531,7 +531,7 @@ attempt 1. **Main's schedule ruling** (04:45 PDT via rs/158; fold-in 37): naming
 lab 3 of 3 by 13:15Z, merged 13:45Z, the twin re-run by 14:45Z), the freeze 15:00Z, the gate series
 from 17:00Z, the start ~17:15Z (10:15 PDT) on the machine that passes, the run ending ~21:10Z;
 claims released 14:30Z; rs/83's 20:35Z sweep skipped. Naming at 14:00Z is 3 h before the series,
-so the run-eve freeze rule below holds as written.
+so the run-eve freeze rule below holds as written. **Superseded by main's final set** (12:08Z via rs/158): the run commit named 12:05Z (233d0f34), the freeze 14:00Z, the gate series from 16:00Z, the start ~16:15Z (09:15 PDT), the run ending ~20:10Z, the 20:35Z sweep skipped; named nearly 4 h before the series. The host's input check on 233d0f34 (both machines, 12:03Z): no bundle input changed, so no rebuild; step 0 running.
 
 **The floor check, a hard stop** (main's ruling, relayed by rs/158 at 09:24 PDT 2026-10-22;
 STEP-MANIFEST.md entry 0). The floor is read from entry 0's line on origin/main, "`RUN_COMMIT` at
@@ -555,24 +555,23 @@ and to the Monkey Madness kit gate (RUN-ORDER.md R37):
 | by ~03:00Z | 20:00 on the 22nd | the overnight lab pass, only if the rehearsal chunks are green by then |
 | by ~09:00Z | 02:00 | the run-eve loads done |
 | 13:00Z, slid | 06:00 | the floor freeze as first set; slid to 15:00Z for rs/598 (main 04:15 PDT; fold-in 37) |
-| 13:15Z / 13:45Z | 06:15 / 06:45 | rs/598's runner-driven lab 3 of 3; rs/598 merged (main 04:45 PDT; fold-in 37, as are the rows below) |
-| 14:00Z | 07:00 | main names the run commit |
-| 14:30Z | 07:30 | claims released |
-| 14:45Z | 07:45 | the twin re-run done |
-| before 15:00Z | before 08:00 | the early warm-up on both machines, after the final install (below) |
-| 15:00Z | 08:00 | the floor freeze (below), 2 h before the gate series and 3 h after the naming |
-| from 17:00Z | 10:00 | the gate series (step 5a); ~15:00Z before main's 04:45 PDT ruling |
-| ~17:15Z | 10:15 | the start, on the machine that passes |
-| 20:35Z | 13:35 | rs/83's daily delay sweep: skipped on run day |
-| ~21:10Z | 14:10 | the run ends |
+| 12:02Z | 05:02 | rs/598 on main as #487, 233d0f34 (fold-in 37, as are the rows below; main's final set, 12:08Z, superseding its 04:45 PDT set of 15:00Z / 17:00Z) |
+| 12:03Z | 05:03 | the host's input check on 233d0f34, both machines: no bundle input changed, so no rebuild; step 0 running |
+| 12:05Z | 05:05 | main names the run commit, 233d0f34 |
+| before 14:00Z | before 07:00 | the early warm-up on both machines, after the final install (below) |
+| 14:00Z | 07:00 | the floor freeze (below), 2 h before the gate series and nearly 4 h after the naming |
+| 14:45Z | 07:45 | the twin re-run through H4k due (the ladder note's proof) |
+| from 16:00Z | 09:00 | the gate series (step 5a) |
+| ~16:15Z | 09:15 | the start, on the machine that passes |
+| ~20:10Z | 13:10 | the run ends (~3.9 h at 400 ms) |
+| 20:35Z | 13:35 | rs/83's daily delay sweep: skipped today |
 
 **The run-eve freeze** (main's ruling; STEP-MANIFEST.md entry 0). The last floor is named at least
 2 h before the gate series starts; after that no merge moves the floor without the line's update in
 the same window.
 
 **The early warm-up, a standing pre-freeze step** (the host's text, main ruled 11:55Z via rs/158;
-fold-in 37; `up` and `gate` take `--rehearsal` and `--claim` in `run-gate.ts` at 38902b56, re-checked
-at the commit main names). After the final install on both machines and before the freeze, run
+fold-in 37; `up` and `gate` take `--rehearsal` and `--claim` in `run-gate.ts` at 38902b56, re-checked at the run commit 233d0f34). After the final install on both machines and before the freeze, run
 `run-gate.ts up --rehearsal --claim=<owner, not host/run>` then `gate --rehearsal` on both machines,
 each under its own claim, with run-gate's bot.env present. Pass lines: the served bundle's md5 equals
 the built one (`curl -s http://127.0.0.1:8899/bot/client.js?v=check | md5sum` against `md5sum
@@ -606,14 +605,14 @@ hand-off it owns, which that hand-off then cannot get. Check: partners map match
 `mule-delivery-production.json` carries no `partners` map, which comes from the gitignored run config, so
 the two sources are compared). A mismatch is a stop: tell main and rs/41.
 
-**The gate account's bot.env is on both machines, before the 17:00Z gate series** (15:00Z before main's 04:45 PDT ruling; main 04:08 PDT via
+**The gate account's bot.env is on both machines, before the 16:00Z gate series** (main's final set, 12:08Z; 17:00Z, then 15:00Z, before it; main 04:08 PDT via
 rs/158; fold-in 36; keys from the host thread, 11:1x-11:27Z via rs/158, fold-in 37).
 `~/rs-sdk/bots/<gate account>/bot.env` present on both machines (directory 700, file 600,
 gitignored), holding BOT_USERNAME, PASSWORD, SERVER (the demo), GATEWAY_URL (loopback 7780),
 CLIENT_URL (loopback 8899 /bot, with the demo server and the loopback gateway), CDP_URL (loopback
 9222) and TELEMETRY=false. It is the same parked account as the gate timer's bot.env (rs/441's
 Lumbridge probe); run-gate's `gate` reads it by the name it is given. Verify it is present on both
-machines before the 17:00Z gate series (it was missing on both at 11:0xZ; the gate timer reads its
+machines before the 16:00Z gate series (it was missing on both at 11:0xZ; the gate timer reads its
 own copy at a different path). Never name the gate account, and never print the file's values.
 
 **No stale Chrome lock on the run profile, permanent, every install** (the host's text, main ruled
@@ -644,19 +643,14 @@ minutes and `handoff`'s scored-title live frame failed (difference 55.2); after 
 Before SCORED logs in, <run dir>/cannon-serve.json holds exactly host's bytes, sha256 f0e57ad6107d2621d0c12306a5cec6ee70fe73db1a2c39e5d2a28cbfca96a7c6 (the JSON plus one trailing newline); run.ts's preflight gate "cannon serve" (run.ts:286-294) must read "H11, H23 served as the ledger rows want"; a missing file or any drift is a refusal.
 
 **The delivery run id, before the start is called** (main 04:15 PDT via rs/158; fold-in 37; it comes
-with rs/598, the runner-side delivery-session binding, reaching main as rs/604;
-`docs/speedrun/helpers/mule-delivery.md`, 'Run owner', its line numbers checked at the commit main
-names). `delivery.run` in the run config equals every
+with rs/598, the runner-side delivery-session binding, on main as #487 (233d0f34, the run commit); `docs/speedrun/helpers/mule-delivery.md`, 'Run owner', lines 330-379 at 233d0f34). `delivery.run` in the run config equals every
 mule carrier's launcher `deliveryRun`; `mule-ledger --check` verifies it, and any mismatch is a
 refusal. **The exact command is pending rs/41**, due right after the naming and before ~14:15Z, with
-the carrier configs regenerated from the new hash. **run.ts's own guard** (rs/598, final at 623d565a on rs/186's branch and reaching main as rs/604;
-`docs/speedrun/helpers/mule-delivery.md`, 'Run owner'; not on
-main yet; names re-checked at the commit main names, the code winning if they differ): run.ts's run
+the carrier configs regenerated from the new hash. **run.ts's own guard** (rs/598, on main as #487, 233d0f34, the run commit; `docs/speedrun/helpers/mule-delivery.md`, 'Run owner', lines 330-379 at 233d0f34; the run config's `delivery` block is read by `runner/delivery-owner.ts:161-256`, its type `runner/chain.ts:129`; the code wins): run.ts's run
 config carries `delivery: { run: "a1-20261023", launcherConfig: "<that launcher json>" }`, and its
 preflight refuses with exit 3, before any login, if that is missing or does not match every mule
 partner's launcher entry. That preflight is the code's own guard; rs/41's `mule-ledger --check` stays
-as the operator's check. `delivery.run` changes per attempt (a1-20261023 for attempt 1, then a2-..., a3-...), like
-h92's serve ids below.
+as the operator's check. `delivery.run` changes per attempt (a1-20261023 for attempt 1, then a2-..., a3-...), like h92's serve ids below. **For attempt 1 (rs/158 at the naming, 12:05Z): the run config's `delivery.run` is exactly `a1-20261023` and matches every mule helper's `deliveryRun`**, checked before the start is called (the code's own check of the match, `runner/delivery-owner.ts:192`).
 
 **h92 on the run commit, and its serve ids per attempt** (rs/41's wording via rs/158; fold-in 36).
 h92 is applied on bbs on the run commit: fleet role cannon, serve.id a1-H11 at the Ardougne landing (2658,3301), returnTile the same, fallback (2659,3301) per SUPPLIES H11 (still pending rs/198's two-bot check), then a1-H23 on the same tile.
@@ -1333,8 +1327,8 @@ the tick length T on main since #385 (a4456c73, rs/471; fold-in 31; step 6, line
    1. the gate minute (line 1): the gate account and S06's 7 air-altar givers on **both** machines;
    2. after the choice, on SCORED's machine, first (main 04:30 PDT via rs/158, rs/186's wording; fold-in 37; it comes
       with rs/598, its line citations from rs/186's branch at rs/598, re-checked against the run commit main names):
-      **Hold each delivery carrier before starting the helper launcher.** Run `bun speedrun/tools/mule-hold.ts --config <launcher config json> --account <carrier>` for every carrier in the generated carrier config. The hold must be written before the carrier starts: a running carrier with no control file selects and stages its first row at once (helpers/mule.ts:1240, :1314-1323, :1478), and a hold written after that leaves a staged carrier whose readiness check `heldFor` never passes (helpers/mule-readiness.ts:159). `holdMule` also refuses a hold after a prepare in the same attempt (helpers/mule-readiness.ts:303). If this step is skipped, the run still works through run.ts's per-row prepare and readiness gate, but the carrier pre-stages its first row.
-      The hold command, final (rs/598 at 623d565a on rs/186's branch, reaching main as rs/604, not on main yet; `docs/speedrun/helpers/mule-delivery.md`, 'Run owner', its line numbers checked at the commit main names; via rs/158): once per banked delivery carrier, for example `--config run-machine/<launcher>.json --account cairn_mule1`; the run id, serve, cue directory, first row and tile all come from the generated launcher entry. Exit 0 = held; 1 = refused (after this run's prepare, or over another run's live control); 2 = usage; an identical repeat is a no-op. After its gates, run.ts prepares each carrier's first row before SCORED logs in.
+      **Hold each delivery carrier before starting the helper launcher.** Run `bun speedrun/tools/mule-hold.ts --config <launcher config json> --account <carrier>` for every carrier in the generated carrier config. The hold must be written before the carrier starts: a running carrier with no control file selects and stages its first row at once (helpers/mule.ts:1250-1257, :1480, :1828; re-cited at the run commit 233d0f34, where rs/186's :1240, :1314-1323 and :1478 had moved), and a hold written after that leaves a staged carrier whose readiness check `heldFor` never passes (helpers/mule-readiness.ts:159). `holdMule` also refuses a hold after a prepare in the same attempt (helpers/mule-readiness.ts:303). If this step is skipped, the run still works through run.ts's per-row prepare and readiness gate, but the carrier pre-stages its first row.
+      The hold command (rs/598, on main as #487, 233d0f34, the run commit: `speedrun/tools/mule-hold.ts`; `docs/speedrun/helpers/mule-delivery.md`, 'Run owner', lines 330-379 at 233d0f34; via rs/158): once per banked delivery carrier, for example `--config run-machine/<launcher>.json --account cairn_mule1`; the run id, serve, cue directory, first row and tile all come from the generated launcher entry. Exit 0 = held; 1 = refused (after this run's prepare, or over another run's live control); 2 = usage; an identical repeat is a no-op. After its gates, run.ts prepares each carrier's first row before SCORED logs in.
       Then rs/117's launcher logs in the **17 roster accounts** (4 + 6 + 3 + 4; fold-in 36, rs/41's correction of 16):
       mule1, mule2, h55, h03, the 6 S03 droppers, the 3 S04 ring givers (h81-h83) and the 4 S07 bone
       givers (b01-b04), about 2.5-3 minutes;
@@ -1685,8 +1679,7 @@ printf '<%s>\n' bun speedrun/tools/run-gate.ts handoff --machine=twin --scored-e
 ```
 
 Expect seven lines, each argument whole (m with six, fedora (bginf-halo), bash, a stand-in path,
-2026-10-22; `--no-login` added by main's 12:10Z ruling, fold-in 37, its exact name the code's at the
-commit main names):
+2026-10-22; `--no-login` added by main's 12:10Z ruling, fold-in 37, its exact name the code's at the run commit 233d0f34):
 
 ```
 <bun>
@@ -1724,20 +1717,19 @@ round. Then on the machine, in order, each a hard check:
 8. **it leaves the tab at the title screen and logs nobody in** (main's ruling, 12:10Z via rs/158;
    fold-in 37; `--no-login`, rs/601 merged as #485): its pre-login checks are the live frame at the title
    screen, the single window and the login count (items 2-7), and its `secretsCheck`
-   (`tools/run-gate.ts:767-779`) still runs there, where it should read `0 0 0`. Before the ruling it
+   (`tools/run-gate.ts:824-836`) still runs there, where it should read `0 0 0`. Before the ruling it
    logged SCORED in with tab-login, then ran the secrets check, the one-window check and the live
    frame in game.
 
 Without `--no-login` it ends `PASS: SCORED is in game, alone and in front on the recorded display,
-with the recording showing it` and exits 0; with it, its pass line is the code's at the commit main
-names. SCORED's name is never printed: every line, frame and result says SCORED. A
+with the recording showing it` and exits 0; with it, its pass line is the code's at the run commit 233d0f34. SCORED's name is never printed: every line, frame and result says SCORED. A
 stop before the login leaves SCORED's bare page up and not logged in, for the operator to read in
 the live view. A stop after it leaves SCORED in game: touch nothing on the display, and tell main.
 
 run.ts checks that step 0's claim is live and the run's own, and refuses to start otherwise. Its
 start is a launch for SCORED, dry-run first like `handoff` (above). **The run-start order, written
 once** (rs/186 via rs/158; fold-in 37; run.ts has been on main since #457, so its line is no longer
-pending; the flags are run.ts's at 38902b56, re-checked at the commit main names, the code winning on
+pending; the flags are run.ts's at 38902b56, re-checked at the run commit 233d0f34, the code winning on
 any difference):
 
 1. place cannon-serve.json and rs/41's launcher json in the run dir and check cannon-serve's sha256
@@ -1758,21 +1750,20 @@ export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && bun speedrun/run.ts --bot="$(ba
 `$SCORED_ENV` and never types it; that works only with `$SCORED_ENV` at
 `<run checkout>/bots/<name>/bot.env` on the chosen machine (step 0's precondition). The run dir must equal the helper launcher's `runDir`: both
 default to `<checkout>/run-machine` (helpers/altar-cue.ts:587, helpers/standalone.ts:50), and
-cannon-serve.json defaults to `<run dir>/cannon-serve.json` (run.ts:142). Items 1-3 come before the
+cannon-serve.json defaults to `<run dir>/cannon-serve.json` (run.ts:143). Items 1-3 come before the
 tab, at step 5a.4 item 2; items 4 and 5 after `handoff --no-login`. The command above is item 4's.
 
 **SCORED is logged in exactly once, by run.ts** (main's ruling, 12:10Z via rs/158, superseding the
 12:05Z summary; fold-in 37). `handoff` runs its pre-login checks (the live frame at the title screen,
-the single window, the login count) and leaves the tab at the title screen, with the host's
-`--no-login` flag (its exact name the code's at the commit main names). run.ts performs the only
+the single window, the login count) and leaves the tab at the title screen, with `--no-login` (#485, in the run commit 233d0f34; `run-gate.ts`'s usage line 14). run.ts performs the only
 login. **No run.ts change is needed** (r, rs/186 at 9f2efb03; every file:line re-checked at the
-named commit, the code winning): run.ts:573 always mints a token and navigates the one
-`bot=<SCORED>` tab (`lib/tab.ts:206-218`), then waits for in-world ticks (`lib/session.ts:347`),
+named commit, the code winning): run.ts:574 always mints a token and navigates the one
+`bot=<SCORED>` tab (`lib/tab.ts:206-218`), then waits for in-world ticks (`lib/session.ts:346`),
 the same from the title screen; its only reads of the page's in-game state are the S21 relog resume
-(run.ts:578-586, which refuses a live page, so a title-screen tab is what it wants) and the watchdog
-after login (:499, :517).
+(run.ts:579-587, which refuses a live page, so a title-screen tab is what it wants) and the watchdog
+after login.
 
-**The secrets check runs twice.** First `handoff`'s `secretsCheck` (`tools/run-gate.ts:767-779`),
+**The secrets check runs twice.** First `handoff`'s `secretsCheck` (`tools/run-gate.ts:824-836`),
 at the title screen, reading `0 0 0`. Then, **straight after run.ts reports in-game (S00 started),
 an operator step, not inside run.ts**: the host's one-liner on the chosen machine (not a run-gate
 subcommand, so nothing new enters the run commit; the host, 12:2xZ; `SCORED_ENV` is the placeholder
@@ -1784,11 +1775,11 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 
 Expect `secrets check: 0 0 0`: processes showing the password, processes showing the token key, and
 tab URLs (CDP `/json/list`) showing either, the same three counts as run-gate's `secretsCheck`
-(`run-gate.ts:767-779`). It never prints the password; the token key is built from two parts (`K`)
+(`run-gate.ts:824-836`). It never prints the password; the token key is built from two parts (`K`)
 so the check's own shell cannot match itself (an earlier draft read `0 1` from its own shell), and
 the password reaches grep through a file descriptor, never argv. `no-cdp` in the third place means
 Chrome's DevTools port did not answer: read again. It reads `0 0 0` because run.ts passes the token
-over CDP, not argv, and the page strips `token` from its URL (`GatewayConnection.ts:48-51`).
+over CDP, not argv, and the page strips `token` from its URL (`server/webclient/src/bot/GatewayConnection.ts:48-51`).
 Tested login-free on the run host at 12:2xZ (no tab up): `0 0 no-cdp`, the expected reading.
 **Anything other than `0 0 0` is a stop for main before S01's first action; touch nothing on the
 display.** The proof is rs/496's twin re-run, which runs the line
@@ -1796,7 +1787,7 @@ once right after its single login (ENV set to the throwaway's env path) and send
 rs/600 and the host: **pending**, like the ladder note's proofs.
 
 **Before run.ts starts: `handoff` logged nobody in** (the host's line via rs/158; `handoff --no-login`,
-rs/601 merged as #485; the key is exactly `loggedIn`, the host confirmed, re-checked at the commit main names,
+rs/601 merged as #485; the key is exactly `loggedIn`, the host confirmed, re-checked at the run commit 233d0f34,
 the code winning). The
 `handoff.json` of this gate pass, in the gate directory `handoff` printed (not the newest
 `~/rs-run/gate-*` by glob: UTC names sort, but a stale rehearsal directory could win), must show
@@ -1807,8 +1798,7 @@ grep -o -E '"(ok|loggedIn)": *(true|false)' ~/rs-run/gate-<UTC handoff printed>/
 ```
 
 If it shows `"loggedIn": true`, `handoff` took the old path: the fallback below applies (a confirmed
-clean logout, then at least 10 s) before run.ts. It stays the confirmation even with #485 in the
-named commit; if the named commit lacks #485, this line reads 'n/a; the fallback applies'.
+clean logout, then at least 10 s) before run.ts. It is the confirmation; #485 is in the run commit 233d0f34.
 
 **Why** (main, 12:10Z): the server's clock runs from SCORED's first login and keeps counting on a
 dropped connection (`playtime-audit.md` rows 4b and 4d); a takeover under 10 s is refused by the
@@ -1816,8 +1806,7 @@ login server (`LoginServer.ts:573-601`); the gateway's duplicate-session stall i
 (rs/174). The run clock the ladder prices from is the server's first login of the account, not
 run.ts's `tickBase` (RUN-ORDER.md section 7).
 
-**Fallback, only if the named commit lacks #485** (`handoff --no-login`, rs/601; main 11:50Z via
-rs/158; checked when main names the commit; main's wording): after handoff's
+**History, moot since #485 is in the run commit 233d0f34** (the fallback main ruled, 11:50Z, for a commit without `handoff --no-login`; main's wording): after handoff's
 verification, log SCORED out cleanly in the tab (confirmed on the page) before starting run.ts, and
 wait at least 10 s after the confirmed logout; the logout is also confirmed by observing SCORED's
 absence on `/playerpositions` (rs/186 via the host). Priced as `handoff`'s own logged-in ticks, inferred tens, a start-cost line beside the row, outside
@@ -2011,7 +2000,7 @@ stops with exit 1. The only recovery is the operator re-running the command, and
 decided from game state, not from the log (`resolveResume`, `resume.ts:123-152`). A manual re-run
 costs **~11.7 ticks (m) plus re-entering the interrupted step (unmeasured)** (main accepted 12:40Z via
 rs/158; fold-in 37): run.ts logs SCORED out, confirmed, before it exits on a throw
-(`lib/attempt.ts:111-116`, run.ts:527 at 9f2efb03; r, rs/186), so the operator's reaction and the
+(`lib/attempt.ts:111-116`, run.ts:528 at 9f2efb03; r, rs/186), so the operator's reaction and the
 relaunch are off the clock. **~150-450 ticks (i) only where SCORED stays in the world:** a crash
 before the chain, a SIGKILL, an unconfirmed logout (run.ts reports 'logout NOT confirmed'), and a
 failure in combat, where the server refuses the logout (the in-combat rule below). **Every re-run
@@ -2022,17 +2011,16 @@ relaunch to SCORED in the world ~2, the post-login checks ~9.6-9.9, the scene wa
 0; not included are the operator's reaction time (ticks count while SCORED stays logged in), run.ts's
 pre-login gates (the floor read, the reservation, the slot ledger, helpersReady) and the killed step's own
 resume (unmeasured); rs/589 (rs/546's, rs/574's and rs/585's successor) measures one kill-and-re-run (RUN-ORDER.md
-section 7, the ladder's general note). **The relog budget on a re-run** (r, run.ts at 38902b56;
-fold-in 37): run.ts's own login on a re-run is not a relog and does not spend 'S21 + 3': its launch
+section 7, the ladder's general note). **The relog budget on a re-run** (r, run.ts at 233d0f34; fold-in 37): run.ts's own login on a re-run is not a relog and does not spend 'S21 + 3': its launch
 (`openRunSession`) records nothing in `<run dir>/relogs.json`, where only S21's planned relog,
 `runner/drop-relog.ts`'s recoveries after a drop and the operator's relog-now are recorded
 (`runner/relog-budget.ts`). But run.ts's start gate 'relog budget' refuses a re-run once the
-unplanned relogs are spent (run.ts:284), and a re-run keeps the earlier sessions' entries: only a
-fresh run, with no earlier sessions and no `--from`, clears them (run.ts:629-631). Plainly (main,
-13:00Z): **once the run's unplanned relogs are spent, run.ts's start gate (run.ts:284) refuses a
+unplanned relogs are spent (run.ts:285), and a re-run keeps the earlier sessions' entries: only a
+fresh run, with no earlier sessions and no `--from`, clears them (run.ts:641-643). Plainly (main,
+13:00Z): **once the run's unplanned relogs are spent, run.ts's start gate (run.ts:285) refuses a
 re-run; the entries persist in the run dir.** **There is no operator override** (r, rs/186 at 9f2efb03, which rs/598
 does not touch): the limits are fixed constants (`PLANNED_RELOGS = 1`, `UNPLANNED_RELOGS = 3`,
-`runner/relog-budget.ts:22-24`), run.ts builds the budget with them (run.ts:615) and no flag or
+`runner/relog-budget.ts:22-24`), run.ts builds the budget with them (run.ts:616) and no flag or
 config sets them; the gate reads `<run dir>/relogs.json` fresh, every entry whose `kind` is not
 `planned` counting as unplanned, and the file is neither signed nor checked beyond parsing, so the
 only way past the gate is a hand edit of `relogs.json`, which no code or document sanctions. **Main's
@@ -2042,7 +2030,7 @@ never touched'.** By default a re-run past the budget is attempt-ending; main de
 the remaining margin. **The procedure main would order** (rs/186's): copy the file aside
 (`relogs.json.<UTC>.bak`), then remove only the unplanned and manual entries, never the `planned`
 S21 entry, whose `open` flag tells run.ts whether SCORED is between
-S21's logout and login halves (relog-budget.ts:118-127; run.ts:569-586). No code change tonight.
+S21's logout and login halves (relog-budget.ts:118-127; run.ts:570-587). No code change tonight.
 
 **A throw in combat: relaunch FIRST** (main 23:3x via rs/158; fold-in 35). If the run log's last
 state shows SCORED in combat (the logout refused, `[run] logout:` reporting it), re-run the same
@@ -2082,10 +2070,10 @@ stand down on a StepError or a first Ctrl-C, per family** (rs/574's retire rule,
   whose mule hand-off already landed gets nothing more from the mule. That is correct unless SCORED
   lost those items (a death, say), when the recovery is the respawn kit or the by-hand procedure
   ("After a player-kill"), not the mule. **A re-run of a step whose mule row was never served** (i, code reading, rs/186
-  at rs/598's fix via rs/158; file:line re-checked at the commit main names, the code winning): the
+  at rs/598's fix via rs/158; file:line re-checked at the run commit 233d0f34, the code winning): the
   mule keeps its stand on that row and serves the re-run. It leaves its stand only after a serve
-  (`finishDelivery`, mule.ts:1326-1334; `keepsStandAfterServe` is false for an unserved row,
-  :1342-1344); a plain stop only pauses authorization while the stop is live (:1369); a failed
+  (`finishDelivery`, mule.ts:1338-1346; `keepsStandAfterServe` is false for an unserved row,
+  :1354-1356); a plain stop only pauses authorization while the stop is live (:1250-1257, :1272); a failed
   step's stop is plain, and on the re-run the run script reopens the same delivery session, which
   the mule authorizes again (altar-cue.ts:676-687). The Draynor walk rs/597 saw is the served case
   only. **The bone givers:** their roles exit on a plain stop (measured: `bone-giver: finished`
@@ -2101,7 +2089,7 @@ stand down on a StepError or a first Ctrl-C, per family** (rs/574's retire rule,
   or per-account stop (its only stop is SIGINT or SIGTERM to the whole process,
   standalone.ts:929-930; a role that exits 0 is 'finished; not restarting it', :813-816, its account
   logged in until the launcher stops). **The detail, rs/41's text verbatim** (12:3xZ via rs/158;
-  step 5's count is main's rule in place of rs/41's 'against 45'; the code at the commit main names
+  step 5's count is main's rule in place of rs/41's 'against 45'; the code at the run commit 233d0f34
   wins on any name):
 
   '**The manual's re-run commands**, with `<R>` = the run dir and the single config
