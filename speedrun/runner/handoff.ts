@@ -21,13 +21,23 @@
 // server counts offered items as freed, trade.rs2) and the slot each unequip takes first.
 //
 // Resume: `done` is the post-hand-off state (every `in` held at its count, every given item gone,
-// the equip changes in place), so a restart after the trade skips it. Later steps consume what a
-// hand-off brought, so `done` also takes `supersededBy`, the next milestone's own `done`, which
-// run.ts passes in: the resume walk needs every done milestone to stay done. A logout after the
-// trade landed but before the equip changes leaves `inProgress`, entered through `resume`, which
-// applies the equip only. A logout mid-trade refunds both sides, and the step runs again.
+// the equip changes in place), so a restart after the trade skips it. The resume walk needs every
+// done milestone to stay done, and the steps after a hand-off consume what it brought, so `done`
+// also holds when:
+// - `supersededBy`, the next milestone's own `done` (chain.ts passes it in), holds; or
+// - the hand-off is in `record` (HandOffRecord: run and resume mark it once the post-hand-off
+//   state shows) and nothing it gave is held again. Between the hand-off and the next milestone a
+//   band eats into the items (S18's first stun, S22's first catch), and the state alone cannot
+//   tell that from a hand-off not yet traded: the band's own `inProgress` already holds on arrival
+//   (Thieving 57 at the knights, Fishing 78 at the river). A demo rollback across a swap hands its
+//   given items back, which the second clause sees; across a receive-only trade it leaves the next
+//   step's own kit check to refuse.
+// A logout after the trade landed but before the equip changes leaves `inProgress`, entered
+// through `resume`, which applies the equip only. A logout mid-trade refunds both sides, and the
+// step runs again.
 
-import { readFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
 import { INVENTORY_SIZE, noteOf, objName } from '../lib/items';
@@ -271,6 +281,60 @@ export function tradeLanded(s: BotWorldState, plan: HandOffPlan): boolean {
     return plan.receive.every(r => held(s, r) >= r.count) && plan.give.every(g => held(s, g) === 0);
 }
 
+/** Nothing the row gives is held: false once a rollback across the swap hands it back. */
+export const givenGone = (s: BotWorldState, plan: HandOffPlan): boolean => plan.give.every(g => held(s, g) === 0);
+
+// ------------------------------------------------------------------ the completion record
+
+export const HANDOFFS_FILE = 'handoffs.json';
+
+export interface HandOffEntry {
+    /** The attempt (run.ts attemptOf: the run id of its tick log's first row, the same in every process that resumes it). */
+    attempt: string;
+    /** The ledger row (H14). */
+    row: string;
+    /** The client tick the post-hand-off state showed at (-1: none). */
+    tick: number;
+    at: string;
+}
+
+/**
+ * The hand-offs found complete in an attempt: <run dir>/handoffs.json, beside relogs.json, read from
+ * disk on every `has` so a resumed process sees what an earlier one marked. Keyed by the attempt, so
+ * a fresh attempt starts with none and nothing has to clear the file.
+ */
+export class HandOffRecord {
+    readonly file: string;
+
+    constructor(readonly dir: string, readonly attempt: string, private readonly pid: number = process.pid) {
+        this.file = join(dir, HANDOFFS_FILE);
+    }
+
+    entries(): HandOffEntry[] {
+        if (!existsSync(this.file)) return [];
+        try {
+            const f = JSON.parse(readFileSync(this.file, 'utf8')) as { entries?: unknown };
+            return Array.isArray(f.entries) ? (f.entries as HandOffEntry[]) : [];
+        } catch {
+            throw new Error(`${this.file} does not parse: fix or remove it before the run goes on`);
+        }
+    }
+
+    has(row: string): boolean {
+        return this.entries().some(e => e.attempt === this.attempt && e.row === row);
+    }
+
+    /** Record `row` complete in this attempt (once). */
+    mark(row: string, tick: number): void {
+        if (this.has(row)) return;
+        const entries = [...this.entries(), { attempt: this.attempt, row, tick, at: new Date().toISOString() }];
+        mkdirSync(this.dir, { recursive: true });
+        const tmp = `${this.file}.${this.pid}.tmp`;
+        writeFileSync(tmp, JSON.stringify({ v: 1, entries }, null, 2) + '\n', { mode: 0o600 });
+        renameSync(tmp, this.file);
+    }
+}
+
 // ------------------------------------------------------------------ the step
 
 export type HandOffSdk = SwapSdk & Pick<BotSDK, 'sendUseItem' | 'sendUseEquipmentItem'>;
@@ -298,6 +362,8 @@ export interface HandOffOptions<C> {
     partner: string | ((c: C) => string);
     /** The next milestone's `done`: once it holds, this hand-off counts as done whatever the inventory shows. */
     supersededBy?: ObservedCheck<C>;
+    /** The attempt's completion record (run.ts's): marked once the post-hand-off state shows, read by `done`. */
+    record?: HandOffRecord;
     /** Observed ticks to get the screens open (default 30): swap()'s openTicks, receiveFrom()'s openMaxTicks. */
     openTicks?: number;
     /** Observed ticks from the screens opening to the outcome (default 40). */
@@ -346,7 +412,7 @@ const requestFrom = (partner: string, since: number) => (s: BotWorldState) =>
  * sight, give its standing request a moment, then the row's own trade (runHandOff), so every `in`
  * of the row, the extras with the set, is wanted and checked.
  */
-export async function runHandOffOnCue(ctx: Pick<StepContext<unknown>, 'sdk'>, plan: HandOffPlan, partner: string, cue: HandOffCue, o: Omit<HandOffOptions<unknown>, 'partner' | 'supersededBy' | 'cue'> = {}): Promise<CueHandOffReport> {
+export async function runHandOffOnCue(ctx: Pick<StepContext<unknown>, 'sdk'>, plan: HandOffPlan, partner: string, cue: HandOffCue, o: Omit<HandOffOptions<unknown>, 'partner' | 'supersededBy' | 'cue' | 'record'> = {}): Promise<CueHandOffReport> {
     const sdk = ctx.sdk as unknown as HandOffSdk;
     if (!cue.open) throw new Error(`${plan.id}: runHandOffOnCue needs a cue to open`);
     await cue.open(ctx);
@@ -389,7 +455,7 @@ export async function applyEquip(sdk: HandOffSdk, plan: HandOffPlan): Promise<vo
 }
 
 /** One hand-off: unequip what is given while worn, trade, then the equip changes. */
-export async function runHandOff(sdk: HandOffSdk, plan: HandOffPlan, partner: string, o: Omit<HandOffOptions<unknown>, 'partner' | 'supersededBy'> = {}): Promise<HandOffReport> {
+export async function runHandOff(sdk: HandOffSdk, plan: HandOffPlan, partner: string, o: Omit<HandOffOptions<unknown>, 'partner' | 'supersededBy' | 'record'> = {}): Promise<HandOffReport> {
     const off = await unequipGives(sdk, plan);
     const s0 = sdk.getState()!;
     const want: WantSpec[] = plan.receive.map(r => ({ item: r.ids ? r.ids[0]! : r.pattern, amount: wanted(s0, r) })).filter(w => w.amount > 0);
@@ -432,6 +498,12 @@ export async function runHandOff(sdk: HandOffSdk, plan: HandOffPlan, partner: st
 export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step<C> {
     const partner = (c: C) => (typeof opts.partner === 'function' ? opts.partner(c) : opts.partner);
     const sdkOf = (sdk: unknown) => sdk as HandOffSdk;
+    const { record, supersededBy, ...trade } = opts;
+    /** Marked only once the post-hand-off state shows: a mark with the equip pending would skip it. */
+    const mark = (sdk: unknown) => {
+        const s = sdkOf(sdk).getState();
+        if (record && s && handOffMissing(s, plan).length === 0) record.mark(plan.id, s.tick);
+    };
     return {
         name: `${plan.id} hand-off`,
         logoutSafe: true,
@@ -441,14 +513,16 @@ export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step
             const missing = handOffMissing(s, plan);
             return missing.length ? `${plan.id} after the trade: ${missing.join('; ')}` : true;
         },
-        done: (o, c) => handOffMissing(o.state, plan).length === 0 || !!opts.supersededBy?.(o, c),
+        done: (o, c) => handOffMissing(o.state, plan).length === 0 || !!supersededBy?.(o, c) || (!!record?.has(plan.id) && givenGone(o.state, plan)),
         inProgress: o => tradeLanded(o.state, plan) && handOffMissing(o.state, plan).length > 0,
         async run(ctx) {
-            if (opts.cue?.open) await runHandOffOnCue(ctx, plan, partner(ctx.c), opts.cue, opts);
-            else await runHandOff(sdkOf(ctx.sdk), plan, partner(ctx.c), opts);
+            if (trade.cue?.open) await runHandOffOnCue(ctx, plan, partner(ctx.c), trade.cue, trade);
+            else await runHandOff(sdkOf(ctx.sdk), plan, partner(ctx.c), trade);
+            mark(ctx.sdk);
         },
         async resume(ctx) {
             await applyEquip(sdkOf(ctx.sdk), plan);
+            mark(ctx.sdk);
         },
     };
 }

@@ -9,7 +9,7 @@ import { TickLog } from '../lib/ticks';
 import { MANIFEST, parseLedger } from '../tools/slot-ledger';
 import { ASK_FILE, readTopUpAsk } from '../helpers/altar-cue';
 import {
-    askFor, giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffRoom, handOffStep, itemPattern, loadHandOff, planHandOff, runHandOff, runHandOffOnCue, toUnequip, tradeKind, tradeLanded,
+    askFor, giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffRoom, handOffStep, HandOffRecord, HANDOFFS_FILE, itemPattern, loadHandOff, planHandOff, runHandOff, runHandOffOnCue, toUnequip, tradeKind, tradeLanded,
     type HandOffPlan, type HandOffReport,
 } from './handoff';
 import { Observation, resolveResume } from './resume';
@@ -651,6 +651,64 @@ describe('resume after a mid-trade logout', () => {
         const later = state(filler(3), [], { skills: [BOW_XP] });
         expect(steps[1]!.done!(new Observation(later), {})).toBe(true);
         expect(await where(later)).toEqual([null, 'finished']);
+    });
+});
+
+describe('the completion record: done once marked, whatever the band after it consumed (rs/562)', () => {
+    const h13 = plan('H13');
+    const recordIn = (attempt = 'a1') => new HandOffRecord(mkdtempSync(join(tmpdir(), 'handoffs-')), attempt);
+    const PACKAGE = tradeItems([['Staff of fire'], ['Knife'], ['Blood rune', 70], ['Prayer potion(4)'], ['Prayer potion(4)']]);
+    /** Past the trade, the band has spent blood runes and a prayer potion: the post-hand-off state no longer shows. */
+    const spent = state(pack(['Knife'], ['Blood rune', 12], ['Prayer potion(4)']), [wornItem('Staff of fire')]);
+
+    test('per attempt, on disk, marked once: a new process reads it, another attempt does not', () => {
+        const r = recordIn();
+        expect(r.has('H13')).toBe(false);
+        r.mark('H13', 120);
+        r.mark('H13', 130);
+        const again = new HandOffRecord(r.dir, 'a1');
+        expect(again.has('H13')).toBe(true);
+        expect(again.entries().map(e => [e.attempt, e.row, e.tick])).toEqual([['a1', 'H13', 120]]);
+        expect(new HandOffRecord(r.dir, 'a2').has('H13')).toBe(false);
+        expect(existsSync(join(r.dir, HANDOFFS_FILE))).toBe(true);
+    });
+
+    test('run marks it once the post-hand-off state shows; then done holds after the band consumes', async () => {
+        const r = recordIn();
+        const step = handOffStep<Record<string, never>>(h13, { partner: PARTNER, record: r });
+        const sdk = new TradeServer(state([...filler(5), item(5, 'Magic shortbow')]), PACKAGE);
+        expect(step.done!(new Observation(spent), {})).toBe(false);
+        await drive(sdk, step.run(ctxOf(sdk)), 200);
+        expect(r.has('H13')).toBe(true);
+        expect(step.done!(new Observation(spent), {})).toBe(true);
+    });
+
+    test('a failed trade marks nothing', async () => {
+        const r = recordIn();
+        const step = handOffStep<Record<string, never>>(h13, { partner: PARTNER, record: r, maxTicks: 10 });
+        const sdk = new TradeServer(state([...filler(5), item(5, 'Magic shortbow')]), tradeItems([['Knife']]));
+        await expect(drive(sdk, step.run(ctxOf(sdk)), 200)).rejects.toThrow(/^H13 with Helper: /);
+        expect(r.has('H13')).toBe(false);
+    });
+
+    test('resume marks it once the pending wield is on', async () => {
+        const r = recordIn();
+        const step = handOffStep<Record<string, never>>(h13, { partner: PARTNER, record: r });
+        const landed = state(pack(['Staff of fire'], ['Knife'], ['Blood rune', 70], ['Prayer potion(4)', 2]));
+        expect(step.inProgress!(new Observation(landed), {})).toBe(true);
+        const sdk = new TradeServer(landed, []);
+        await drive(sdk, step.resume!(ctxOf(sdk)), 20);
+        expect(r.has('H13')).toBe(true);
+    });
+
+    test('marked, but what it gave is held again (a rollback across the swap): not done, and the walk runs it again', async () => {
+        const r = recordIn();
+        r.mark('H13', 120);
+        const step = handOffStep<Record<string, never>>(h13, { partner: PARTNER, record: r });
+        const rolledBack = state(pack(['Magic shortbow'], ['Blood rune', 3]));
+        expect(step.done!(new Observation(rolledBack), {})).toBe(false);
+        const p = await resolveResume([step], new Observation(rolledBack), {});
+        expect([p.step, p.mode]).toEqual(['H13 hand-off', 'run']);
     });
 });
 
