@@ -63,8 +63,9 @@ export function hedgeRow(l: ShopLine, ge: GeSide, tickMs: number): HedgeRow | nu
     const price = Math.max(1, shopUnitPrice(l.cost, l.sell, l.stock, l.base, l.delta));
     const r = restockPerHour(l.rate, tickMs);
     const outletPerHour = viaBid ? ge.bidQuantity / 24 : ge.volume7d / 168;
-    // restocked units sell at the price one unit under base stock is bought at, the shelf being kept drained
-    const restockPrice = Math.max(1, shopUnitPrice(l.cost, l.sell, Math.max(0, l.base - 1), l.base, l.delta));
+    // a restocked unit is bought at the shelf level it lands on: one under base when the buyer keeps the shelf just
+    // short of full, or the current level when the shelf is already drained below that (by anyone)
+    const restockPrice = Math.max(1, shopUnitPrice(l.cost, l.sell, Math.min(l.stock, Math.max(0, l.base - 1)), l.base, l.delta));
     const coinsPerHour = Math.max(0, geNet - restockPrice) * Math.min(r, outletPerHour);
     let oneOff = 0;
     for (let s = l.stock; s > 0; s--) {
