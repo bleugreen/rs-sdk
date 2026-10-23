@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Gentle } from './demo.ts';
-import { asksAtOrBelow, bidPool, bookDepth, buyCost, DemoMarket, historyMoves, historyTotals, realisable, stackOverVolume, type Bucket } from './market.ts';
+import { asksAtOrBelow, bidPool, bidsAtOrAbove, bookDepth, buyCost, DemoMarket, historyMoves, historyTotals, realisable, stackOverVolume, type Bucket } from './market.ts';
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, 'fixtures', name), 'utf8');
 const realFetch = globalThis.fetch;
@@ -102,6 +102,15 @@ describe('book depth', () => {
         expect(asksAtOrBelow({ ...shark, sellValue: 2_003_290 * 507 }, 507)).toBe(2_003_290);
         // far above the mean most of the side is provably there
         expect(asksAtOrBelow(shark, 5_000)).toBeGreaterThan(1_900_000);
+    });
+
+    test('bidsAtOrAbove is the bid side mirror', () => {
+        // the iron ore bid at 08:45Z: 993,853 deep at a mean of 80, best 110
+        const iron = { ...air, bid: 110, buyQuantity: 993_853, buyValue: 79_508_240 };
+        expect(bidsAtOrAbove(iron, 111)).toBe(0);
+        expect(bidsAtOrAbove(iron, 1)).toBe(993_853 - Math.floor((993_853 * 110 - 79_508_240) / 110));
+        expect(bidsAtOrAbove({ ...iron, buyValue: 993_853 * 110 }, 110)).toBe(993_853);
+        expect(bidsAtOrAbove({ ...iron, buyQuantity: 0, buyValue: 0, bid: null }, 1)).toBe(0);
     });
 });
 
