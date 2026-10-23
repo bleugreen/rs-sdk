@@ -1,0 +1,121 @@
+{
+  "tickMs": 401,
+  "fps": 25,
+  "frameMs": 40,
+  "method": "per-frame mean absolute difference of a gray crop of the decoded clip; the first frame above 4x the region's median difference (at least 1 grey level) inside the search window is the change",
+  "chat": {
+    "region": {
+      "x": 22,
+      "y": 360,
+      "w": 470,
+      "h": 80
+    },
+    "window": [
+      -800,
+      1200
+    ],
+    "threshold": 1,
+    "events": 36,
+    "found": 36,
+    "offsetMs": {
+      "n": 36,
+      "median": 49.3,
+      "p95": 68.3,
+      "max": 71.3,
+      "min": 29.2568359375,
+      "p10": 30.2568359375,
+      "medianTicks": 0.12,
+      "maxAbsTicks": 0.18
+    },
+    "sample": [
+      {
+        "videoMs": 1982.7431640625,
+        "changeMs": 2040,
+        "offsetMs": 57.3,
+        "what": "You attempt to light the logs."
+      },
+      {
+        "videoMs": 3590.7431640625,
+        "changeMs": 3640,
+        "offsetMs": 49.3,
+        "what": "The fire catches and the logs begin to burn."
+      },
+      {
+        "videoMs": 5195.7431640625,
+        "changeMs": 5240,
+        "offsetMs": 44.3,
+        "what": "The fire catches and the logs begin to burn."
+      },
+      {
+        "videoMs": 6790.7431640625,
+        "changeMs": 6840,
+        "offsetMs": 49.3,
+        "what": "The fire catches and the logs begin to burn."
+      },
+      {
+        "videoMs": 6790.7431640625,
+        "changeMs": 6840,
+        "offsetMs": 49.3,
+        "what": "Congratulations, you just advanced a fire making level."
+      },
+      {
+        "videoMs": 8391.7431640625,
+        "changeMs": 8440,
+        "offsetMs": 48.3,
+        "what": "The fire catches and the logs begin to burn."
+      },
+      {
+        "videoMs": 9995.7431640625,
+        "changeMs": 10040,
+        "offsetMs": 44.3,
+        "what": "The fire catches and the logs begin to burn."
+      },
+      {
+        "videoMs": 11597.7431640625,
+        "changeMs": 11640,
+        "offsetMs": 42.3,
+        "what": "The fire catches and the logs begin to burn."
+      }
+    ]
+  },
+  "action": {
+    "region": {
+      "x": 560,
+      "y": 210,
+      "w": 176,
+      "h": 250
+    },
+    "window": [
+      -100,
+      2000
+    ],
+    "threshold": 1,
+    "events": 27,
+    "found": 0,
+    "offsetMs": {
+      "n": 0,
+      "median": 0,
+      "p95": 0,
+      "max": 0,
+      "min": null,
+      "p10": null,
+      "medianTicks": 0,
+      "maxAbsTicks": 0
+    },
+    "sample": []
+  },
+  "feed": {
+    "followedSlot": 1,
+    "matched": 28,
+    "clientMinusFeedMs": {
+      "n": 28,
+      "median": 1,
+      "p95": 4,
+      "max": 400,
+      "min": 0,
+      "p10": 0,
+      "medianTicks": 0,
+      "maxAbsTicks": 1
+    }
+  }
+}
