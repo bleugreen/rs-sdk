@@ -1977,9 +1977,13 @@ at once from the run tab, over DevTools as the relog above, confirmed by `pageIn
 operator cues the spawn helper by writing its cue file, scope `{step: 'R8a'..'R8d', family: 'mule'}`
 for the phase (the launcher's gate `{step: 'R8', family: 'mule'}` logs it in); (4) once the helper
 stands beside the spawn, SCORED logs back in, takes the trade and the operator restarts the chain at
-the step whose preconditions hold. The packages are pending rs/526. **Until rs/579 merges R8 is
-unstaged, and the manual recovery after an S27 death takes a knife (946) from h68** as well (h68
-keeps 2 for it; fold-in 35, rs/158), T26-27's web needing one on the way back. Its minutes are wall clock, not
+the step whose preconditions hold. The packages are pending rs/526. **Two deaths have no automatic
+kit and are covered only by this manual recovery** (fold-in 35, rs/41 from rs/579's evidence via
+rs/158): **a death at H23** and **a death in S27 with the cannon packed** (R8d1 refuses, short:
+after a death H23 stays a done milestone, so the resume re-enters at T26-27b, which holds the web,
+and a forced H23 repeat would be 7 slots short). For both, **the operator stages a knife (946) from
+h68** (h68 holds 2) plus the kit by hand. Until rs/579 merges R8 is unstaged, and every manual
+S27-death recovery takes its knife from h68 the same way. Its minutes are wall clock, not
 ticks: R8's prices stay `r8-deaths.ts`'s, in ticks.
 
 **S21 relog: reconciliation when the run script refuses** (rs/186's identity and order matrix; code
