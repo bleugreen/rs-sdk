@@ -11,7 +11,8 @@ what each method yields per login, and what speedrun supplies gold can buy. The 
 
 `phase2.md` (rs/543) is the phase-2 answer: how 45 logins on one address split across methods, what they earn over
 6, 24 and 72 hours, and which shared limit binds first. Other children of rs/495 own their own `docs/markets/<file>.md`; `scaling-limits.md` (rs/519) holds every limit on
-logins per address, login rate, registration and world population.
+logins per address, login rate, registration and world population; `hp-training.md` (rs/553) is the fresh-account
+Hitpoints trainer, phase 2's setup step.
 
 ## Rules
 
@@ -38,6 +39,9 @@ Labs run on fedora or bgsrv-ub with `NODE_TICKRATE=400`. Check all ports with `l
 | M7 | login-limit lab (rs/519; LOGIN 43960, LOGGER 43961) | 9960 / 9961 / 9962 | 44960 | 7960 | 45960 |
 | M8 | phase-2 measurements (rs/543; LOGIN 43970, LOGGER 43971) | 9970 / 9971 / 9972 | 44970 | 7970 | 45970 |
 | M9 | second phase-2 lab (rs/543; LOGIN 43980, LOGGER 43981) | 9980 / 9981 / 9982 | 44980 | 7980 | 45980 |
+| M10 | Hitpoints trainer (rs/553; LOGIN 43990, LOGGER 43991) | 9990 / 9991 / 9992 | 44990 | 7990 | 45990 |
 
-`. markets/methods/lab/block.sh M8` (or M9) exports a block's ports and refuses if any is listening. The next free
-block for follow-ups starts at 9990 (NODE 44990); check the AGENT, FRIEND, LOGIN and LOGGER ports first.
+`. markets/methods/lab/block.sh M8` (or M9, M10) exports a block's ports and refuses if any is listening. The next
+free block for follow-ups starts at 10000 (NODE 45000); check the AGENT, FRIEND, LOGIN and LOGGER ports first. A
+long lab on fedora runs from a copy outside the build slot (`/tmp/<name>-lab`, kept between batches so the content
+pack is built once) inside a named tmux server; `hp-training.md` gives the commands.
