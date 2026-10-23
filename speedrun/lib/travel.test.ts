@@ -552,7 +552,7 @@ describe('a walked hop relocated by something it did not do', () => {
         const seen: Relocation[] = [];
         const r = await drive(sdk, runTo(sdk as never, { x: 2920, z: 3413 }, { onRelocated: ev => (seen.push(ev), 'fail') }), 600, death);
         expect(r.ok).toBe(false);
-        expect(r.reason).toMatch(/^run to 2920,3413: relocated from 2952,3413 to 3222,3216: respawn \(270 tiles in 1 tick; hp 0 before it, lowest 0\)$/);
+        expect(r.reason).toMatch(/^run to 2920,3413: relocated from 2954,3413 to 3222,3216: respawn \(268 tiles in 1 tick; hp 0 before it, lowest 0\)$/);
         expect(r.relocated).toMatchObject({ respawn: true, from: { x: 2954, z: 3413 }, to: { x: 3222, z: 3216 }, tick: 106, hp: 0, hpMin: 0 });
         expect(seen).toHaveLength(1);
         // No click from Lumbridge: the run ended on the respawn's own tick, and did not re-path.
