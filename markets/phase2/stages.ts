@@ -106,6 +106,13 @@ export const ROLES: Readonly<Record<MethodId, Role>> = {
     shilo: mineRole
 };
 
+/**
+ * thieving.ts's ship leg to East Ardougne. The leg counts itself done once Thieving reaches the steps' `to`, so it is
+ * asked for a level no account reaches: a knight at Thieving 99 that died in the market (it respawns in Lumbridge)
+ * must still sail back, and with `to: 99` the leg returned at once and the account was given up.
+ */
+const ARDOUGNE_LEG = pickSteps(thievingSteps({ to: Number.POSITIVE_INFINITY }), ['thieving:to-ardougne'])[0]!;
+
 const stepSession = (x: StageCtx): RunnerSession => ({ sdk: x.sdk, bot: x.bot, name: x.account, sessionId: x.sessionId });
 
 /** Run one stage on the account. Throws when it fails; returns early (aborted) when `x.signal` aborts. */
@@ -138,7 +145,7 @@ export async function runStage(st: Stage, x: StageCtx, method: MethodId): Promis
             return x.hooks.buySharks();
         case 'to-ardougne':
             await leaveAlKharid(x);
-            await driveSteps(stepSession(x), pickSteps(thievingSteps({ to: 99 }), ['thieving:to-ardougne']), { c: {} as never, signal: x.signal });
+            await driveSteps(stepSession(x), [ARDOUGNE_LEG], { c: {} as never, signal: x.signal });
             return;
         case 'method':
             return runMethod(x, method);
