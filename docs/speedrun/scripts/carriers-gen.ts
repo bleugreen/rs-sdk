@@ -12,6 +12,6 @@ const accounts: Record<string, string> = {};
 for (const a of prod.accounts) for (const p of a.options.packages) if (p.scope?.family === 'mule') accounts[p.scope.step] = a.account;
 const rows = prod.rows.filter((r: string) => accounts[r]);
 const ledger = muleFromLedger(readFileSync(MANIFEST, 'utf8'), { form: 'ask', rows, onRequest: prod.onRequest });
-const byAcc = muleRunOptionsByAccount(ledger, cueRoot, { deliveryRun: 'a1b-20261023', serve, accounts } as any) as any[];
+const byAcc = muleRunOptionsByAccount(ledger, cueRoot, { deliveryRun: 'a3-20261023', serve, accounts } as any) as any[];
 writeFileSync(out, JSON.stringify({ accounts: byAcc.map(p => ({ account: p.account, role: 'mule', cueDir: p.options.cueDir, options: p.options })) }, null, 2) + '\n');
 console.log('serve nameHash', nameHash(serve));
