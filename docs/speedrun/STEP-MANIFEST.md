@@ -2665,8 +2665,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   rs/598 reorders the check (main pre-approved); if that is in the named commit, this line reads
   'fixed'. **Exposure by row: the carrier's route against SCORED's chain since that carrier's previous
   row, flagged when the route is at least half the chain** (i, rs/158's, the windows confirmed by
-  rs/186; routes from `docs/speedrun/helpers/mule-delivery.md`'s itinerary table, the chain from
-  RUN-ORDER.md's rows; unsummed notes):
+  rs/186; routes from the run commit's audit table, `docs/speedrun/helpers/mule-delivery.md:183-206`
+  at 38902b56, rs/41's per-row figures matching; the chain from RUN-ORDER.md's rows; unsummed notes):
   - **flagged, H4k**, only after a whole-launcher relaunch landing between H4's serve and H4k (S05's
     remainder through T06-07), which loses the carry-ahead: the bank-return route 132 against a chain
     of ~210; with the carry-ahead, 44, it is clear, and a relaunch before H4's serve re-stages both
@@ -2674,9 +2674,11 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     waits for H4k's ready status in that case;
   - **flagged, H16**: 172 (its one measured profile) against ~351, priced as exposed;
   - **unmeasured route, an exposed cliff until rs/41's measured bank-to-stand ticks arrive** (rs/551's
-    route proofs and its timing lab, by 14:30Z; main 13:00Z): H14, H15, H19 (after H18), H20 (h03)
-    and H22;
-  - **clear**: H6, H4p, H7, H8, H9, H10, H12, H18 and H21d.
+    route proofs and its timing lab, by 14:30Z; main 13:00Z): H14, H15, H19 (only its initial
+    bank-to-ready, 110, is measured; the H18-to-H19 transition is not), H20 (h03) and H22;
+  - **unmeasured, window long, likely clear (i)**: H13 (after H12, through S15's ~4,790) and H18 (from
+    H4k through S21);
+  - **clear**: H6, H4p, H7, H8, H9, H10, H12 and H21d.
 - **Parameters:** the row id and the partner's account name. The row is the data: its `in` is what
   SCORED receives, its `out` (reason `swap` or `trade`) what it gives, its `equip` what it wears
   afterwards. The module names no item; it reads the row through `speedrun/tools/slot-ledger.ts`'s

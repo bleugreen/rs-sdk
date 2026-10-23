@@ -2013,9 +2013,16 @@ fold-in 37): run.ts's own login on a re-run is not a relog and does not spend 'S
 unplanned relogs are spent (run.ts:284), and a re-run keeps the earlier sessions' entries: only a
 fresh run, with no earlier sessions and no `--from`, clears them (run.ts:629-631). Plainly (main,
 13:00Z): **once the run's unplanned relogs are spent, run.ts's start gate (run.ts:284) refuses a
-re-run; the entries persist in the run dir.** Whether an operator override exists on today's code is
-**pending rs/186**; until then, **treat a re-run past the budget as attempt-ending**. No code change
-tonight.
+re-run; the entries persist in the run dir.** **There is no operator override** (r, rs/186 at 9f2efb03, which rs/598
+does not touch): the limits are fixed constants (`PLANNED_RELOGS = 1`, `UNPLANNED_RELOGS = 3`,
+`runner/relog-budget.ts:22-24`), run.ts builds the budget with them (run.ts:615) and no flag or
+config sets them; the gate reads `<run dir>/relogs.json` fresh, every entry whose `kind` is not
+`planned` counting as unplanned, and the file is neither signed nor checked beyond parsing, so the
+only way past the gate is a hand edit of `relogs.json`, which no code or document sanctions. **A
+re-run past the budget is attempt-ending** until main rules otherwise. If main allows it, rs/186's
+safe edit: copy the file aside (`relogs.json.<UTC>.bak`), then remove only the unplanned and manual
+entries, **never the `planned` S21 entry**, whose `open` flag tells run.ts whether SCORED is between
+S21's logout and login halves (relog-budget.ts:118-127; run.ts:569-586). No code change tonight.
 
 **A throw in combat: relaunch FIRST** (main 23:3x via rs/158; fold-in 35). If the run log's last
 state shows SCORED in combat (the logout refused, `[run] logout:` reporting it), re-run the same
