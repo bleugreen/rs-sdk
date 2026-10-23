@@ -598,6 +598,15 @@ describe('loc, npc and item helpers', () => {
         expect(await p).toMatchObject({ ok: true, ticks: 1 });
     });
 
+    test("wield takes a held item by its Hold op (a gree-gree's only wear op)", async () => {
+        const gree = { slot: 3, id: 4031, name: 'Monkey greegree', count: 1, optionsWithIndex: [{ text: 'Hold', opIndex: 2 }, { text: 'Drop', opIndex: 5 }] };
+        const sdk = new FakeSdk(baseState({ tick: 1, inventory: [gree] }));
+        const w = wield(sdk as never, 4031);
+        await ticks(sdk, 1, () => ({ inventory: [], equipment: [gree] }));
+        expect(await w).toMatchObject({ ok: true });
+        expect(sdk.sent[0]).toEqual({ method: 'sendUseItem', args: [3, 2] });
+    });
+
     test('castTeleport waits for the jump', async () => {
         const sdk = new FakeSdk(baseState({ tick: 1, player: player(3000, 3000) }));
         const p = castTeleport(sdk as never, 'varrock');
