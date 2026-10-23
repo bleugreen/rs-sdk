@@ -282,7 +282,7 @@ export function isProduct(item: { name: string }): boolean {
 }
 
 /** What SCORED holds that is not the step's own to hand back: everything but the products. */
-export function entryBaseline(s: BotWorldState): Counts {
+export function entryBaseline(s: BotWorldState): Map<number, number> {
     return countsOf(s.inventory.filter(i => !isProduct(i)));
 }
 
