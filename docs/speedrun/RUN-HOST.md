@@ -1730,7 +1730,7 @@ rs/529's API**, and are not written here until they exist):
 - A crash that never reached the abort path cancels nothing, so a crash-resume is unchanged.
 - The run-bound hold (generation 0) is its own state, never a cancel; S22's prepare advances it.
 
-**Once rs/511 is on the floor** (rs/511, under rs/186: built and unit-tested, and lab-measured
+**Once rs/547 is on the floor** (rs/511, under rs/186: built and unit-tested, and lab-measured
 on bgsrv-mac, the lab engine at 400 ms, the browser client, tree 1fccc5b7 + rs/511's patch,
 cairn://p/rs/511/comments/2; fold-in 32). **rs/511 is not a start condition** (main), so the
 manual relog above stays the procedure for a run commit without it, attempt 1's included. The
