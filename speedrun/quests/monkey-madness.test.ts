@@ -14,7 +14,7 @@ import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession } from '../runner/step';
 import {
     BANANA_TREE_IDS, bananaRoomDrops, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, isWaydarIntroEnd, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
-    BELOW_30_EATING, cureWanted, eatBelowFor, sharksToDrop, GARKOR_WEST, isMonkeyChatter, CAGE, CAGE_NORTH_STRIP, CAGE_TILES, inCage, letOut, letOutPick, LET_OUT_ATTEMPTS, MINDER_REACH, nearestFire, sceneBuilt, tileIn, underTemple, scorpionsNear, SCORPION_CLOSE, SCORPION_REACH, sigilRoom, h12oLeg, legCue, H12O_M_ROW, mTopUpCap, ASK_SHARK, ASK_SUPER_ANTIPOISON, H12O_SCOPE, onTradeOpen, P_TOPUP_MAX_SHARKS, pTopUpAsk, immunityWanted,
+    BELOW_30_EATING, cureWanted, eatBelowFor, sharksToDrop, GARKOR_WEST, isMonkeyChatter, CAGE, CAGE_NORTH_STRIP, CAGE_TILES, inCage, letOut, letOutPick, LET_OUT_ATTEMPTS, MINDER_REACH, nearestFire, sceneBuilt, tileIn, underTemple, scorpionsNear, SCORPION_CLOSE, SCORPION_REACH, sigilRoom, h12oLeg, legCue, pFinalStop, closeLeftTrade, DECLINE_TICKS, H12O_M_ROW, mTopUpCap, ASK_SHARK, ASK_SUPER_ANTIPOISON, H12O_SCOPE, onTradeOpen, P_TOPUP_MAX_SHARKS, pTopUpAsk, immunityWanted,
     ARCHER_REACH, AUNT_BOX, crateRoute, crateSteps, entersSleepingZone, SLEEPING_DETOURS, sleepingDetour, GUARD_REACH, legPrayerFor, M_TOPUP_TILE, mLegSize, mTopUpSharks, NO_DWELL, pathTiles, pLegSize, POSTED_ARCHERS, prayerRuns, receiveLeg, RELIGIOUS_GUARDS, SLEEPING_ZONE, tilePrayer, TOPUP_TRIES, TOPUP_WAIT, tradeIdle, type Receive, nextBananaTree, SUPER_IMMUNE_TICKS, offAtoll, patrolLeavesLane, SEGMENT_EATING, topUpWanted, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, steps, templeLeft, treeRouteRefusal, yRoom, type MmContext,
 } from './monkey-madness';
 import { slotNeed } from './segments';
@@ -960,7 +960,62 @@ describe('the atoll top-ups (H12o)', () => {
         expect(at0.ask).toBeNull();
         expect(at0.r).toMatchObject({ ok: false, attempts: 0 });
         expect(at0.cue).toMatchObject({ scope: { step: 'H12oP', family: 'mule' }, stop: true });
-        expect(at7.cue).toMatchObject({ scope: { step: 'H12oP', family: 'mule' }, stop: true });
+        expect(at7.cue).toMatchObject({ scope: { step: 'H12oP', family: 'mule' }, stop: true, final: true });
+        expect(at0.cue).toMatchObject({ final: true });
+    });
+
+    test("P's final stop on every exit, once: a throw before the leg, and the leg nested in the segment's wrap", async () => {
+        const writes: string[] = [];
+        setStepNote(l => {
+            const m = /H12o cue (open|stop)( final)? \((H12o[MP])\)/.exec(l);
+            if (m) writes.push(`${m[3]} ${m[1]}${m[2] ?? ''}`);
+        });
+        const dir = mkdtempSync(join(tmpdir(), 'mm-pfin-'));
+        const t = { from: 'Helper', p: true, cueDir: dir };
+        const sdk = new FakeSdk(baseState({ tick: 1, player: me(-1), nearbyPlayers: [helper], inventory: Array.from({ length: 21 }, (_, i) => item(MM_OBJ.shark, i)) } as Partial<BotWorldState>));
+        // The segment throws before the leg (the bridge jump failed): the stop still goes out, final.
+        const err = await pFinalStop(sdk as never, t, async () => { throw new Error('the bridge jump did not land'); }).then(() => null, e => (e as Error).message);
+        expect(err).toMatch(/bridge jump/);
+        expect(writes).toEqual(['H12oP stop final']);
+        expect(readCue(dir)).toMatchObject({ scope: { step: 'H12oP', family: 'mule' }, stop: true, final: true });
+        // The leg inside the segment's wrap: one final stop, not two.
+        writes.length = 0;
+        const receive: Receive = async () => okReceive;
+        await drive(sdk, pFinalStop(sdk as never, t, () => h12oLeg(sdk as never, t, 'P', receive)), 100);
+        expect(writes).toEqual(['H12oP stop final']);
+        // No P leg configured: nothing written.
+        writes.length = 0;
+        await pFinalStop(sdk as never, { from: 'Helper', m: true, cueDir: dir }, async () => undefined);
+        expect(writes).toEqual([]);
+        setStepNote(() => {});
+    });
+
+    test('a receive that times out with the trade open declines it, and the leg moves on without the top-up', async () => {
+        const notes: string[] = [];
+        setStepNote(l => notes.push(l));
+        const sdk = new FakeSdk(baseState({ tick: 1, player: me(-1), nearbyPlayers: [helper], inventory: Array.from({ length: 21 }, (_, i) => item(MM_OBJ.shark, i)) } as Partial<BotWorldState>));
+        const open = { trade: { isOpen: true, screen: 'offer', partner: 'Helper', myOffer: [], theirOffer: [], myAccepted: true, partnerAccepted: false } } as Partial<BotWorldState>;
+        const closed = { trade: { isOpen: false, screen: null, partner: null, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false } } as Partial<BotWorldState>;
+        let declined = false;
+        sdk.onSend = a => { if (a.method === 'sendDeclineTrade') declined = true; };
+        // The helper opened the trade and never accepted: receiveFrom's window ran out with it open.
+        const receive: Receive = async s => {
+            (s as unknown as FakeSdk).tick(open);
+            return { ok: false, ticks: 60, received: [], reason: 'timeout' } as ReceiveResult;
+        };
+        const r = await drive(sdk, receiveLeg(sdk as never, 'Helper', 'P', pLegSize, { receive, cueDir: mkdtempSync(join(tmpdir(), 'mm-dec-')) }), 200, () => (declined ? closed : {}));
+        expect(r).toMatchObject({ ok: false, attempts: 2, reason: 'timeout' });
+        expect(sdk.sent.filter(a => a.method === 'sendDeclineTrade').length).toBe(2);
+        expect(sdk.getState()!.trade?.isOpen).toBe(false);
+        expect(notes.filter(l => /the trade was left open; closed/.test(l)).length).toBe(2);
+        // A decline the server ignores: the window is closed outright after DECLINE_TICKS.
+        const stuck = new FakeSdk(baseState({ tick: 1, player: me(-1), ...open } as Partial<BotWorldState>));
+        let shut = false;
+        stuck.onSend = a => { if (a.method === 'sendCloseModal') shut = true; };
+        await drive(stuck, closeLeftTrade(stuck as never, 'P'), 20, () => (shut ? closed : {}));
+        expect(stuck.sent.map(a => a.method)).toEqual(['sendDeclineTrade', 'sendCloseModal']);
+        expect(stuck.getState()!.tick).toBeGreaterThanOrEqual(1 + DECLINE_TICKS);
+        setStepNote(() => {});
     });
 
     test("M: after a trade no stop, then P's open; with no trade M's stop, then P's open; legCue opens without a stop", async () => {
