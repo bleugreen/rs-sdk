@@ -311,7 +311,7 @@ through a 4-then-8 ramp with 5-minute holds to check the fixes below.
 | Rates over run 2 (`report.ts`) | knights **140.6k coins an hour** a login (130.6-146.5k, 15 logins, 11,750-18,950 ticks each); guards 53.6k (51.9-56.8k, 5); iron 12.2k of bank store value (~720 ore, 2) |
 | Knights' food and risk | **40 sharks an hour** at HP 40 (median; 28-44), no deaths, 6.3-7.7% failures |
 | Stopping | SIGINT: 22 accounts out within 8 s (run 2) and 14 s (run 1), every account `out`, exit 0 |
-| Exchange errands, on the lab's own book | a sale with an 80 floor above nothing: refused at a 150 floor; at 80, 500 iron ore (the cap) sold into a 100 bid for 47,500 coins after the fee; the shark purchase at a 701 ceiling filled 120 at the 600 ask and banked 120 |
+| Exchange errands, on the lab's own book | a sale with a 150 floor was refused (best bid 100); at an 80 floor, 500 iron ore (the cap) sold into a 100 bid for 47,500 coins after the fee; the shark purchase at a 701 ceiling filled 120 at the 600 ask and banked 120 |
 
 Against `methods.md`: the knights' 140.6k sits with the lab's 126-131k at 1-8 bots (Thieving 99, HP 99) and 133.9k
 at HP 70, now at 16 bots on the 4 knights. The guards' 53.6k is under the 62.9k measured at Thieving 99 because
