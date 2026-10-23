@@ -1464,3 +1464,104 @@ in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scr
 
 Corrected: an earlier draft ruled out long server ticks as a cause. They are a cause, through the
 engine's catch-up scheduling (sections 2 and 3).
+
+## 12. Wilderness occupancy from the spectator feed
+
+rs/489, for rs/158's Wilderness risk row (the S16 stretch: Ardougne lever to the Deserted Keep,
+through the webs, west to the mage bank, and the Mage Arena fight). The question: is anyone
+actually in the part of the Wilderness the route crosses, at what hours, and at what combat level?
+
+**Method.** [`wilderness-roster.ts`](../scripts/wilderness-roster.ts) holds one login-free
+connection to the demo's public spectator feed (`/worldfeed`, `server/engine/src/web/worldfeed.ts`),
+which sends every online player's tile, plane and combat level every 10 ticks. On each UTC minute it
+snapshots the latest roster and writes one line of counts to an append-only file on a home machine,
+where it runs as a systemd user service. Counts only: no names, slots or per-player rows are
+written or logged (tenet 20). Our own accounts (`cairn_*` and a local exclude list) are left out of
+every rectangle and counted separately; 0-61 were online, and at most 2 were ever in the
+Wilderness. For each rectangle a line records the count `n`, a combat histogram (<30, 30-59,
+60-89, 90-109, 110+), the maximum combat level, and how many players moved (on a different tile
+than a minute earlier) or are new to the rectangle. Data:
+[`data/wilderness-roster/`](data/wilderness-roster/), one file per UTC date.
+
+**Rectangles** (plane 0, inclusive). Each route rectangle is the route's tiles from
+[`mage_arena.md`](../quests/mage_arena.md) (walkthrough steps 3-7) widened by about 15 tiles. They
+overlap, so one player can count in several.
+
+| id | area | x | z |
+|---|---|---|---|
+| wild | whole Wilderness | 2944-3391 | 3520-3967 |
+| deep | deep Wilderness | 2944-3391 | 3900-3967 |
+| keep | Deserted Keep and the lever's landing (3154,3924) to the north-wall web | 3125-3185 | 3895-3966 |
+| webs | the keep's web west to the mage bank webs (3093-3095,3957) | 3080-3180 | 3925-3980 |
+| bank | mage bank ladder (3091,3957) and its approach | 3065-3130 | 3930-3980 |
+| arena | Mage Arena around the fight's start (3105,3934) | 3078-3132 | 3907-3961 |
+
+**First 22.5 hours** (22 October 21:45Z to 23 October 20:12Z, 1,346 good samples of 1,348, two
+single-minute gaps at feed reconnects, 400 ms ticks throughout). Per hour: mean / max `n` per
+rectangle; the highest combat level seen; and the moving share (moving player-minutes over all
+player-minutes, summed over the route rectangles in the last column).
+
+| hour (UTC) | samples ok/all | online mean | wild mean / max | deep mean / max | keep mean / max | webs mean / max | bank mean / max | arena mean / max | combat max (wild / deep / route) | moving share (wild / deep / route) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 10-22 21:00 | 15/15 | 1333 | 21.33 / 23 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 126 / 0 / 0 | 42% / - / - |
+| 10-22 22:00 | 60/60 | 1377 | 20.68 / 24 | 0.03 / 1 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 126 / 126 / 0 | 41% / 100% / - |
+| 10-22 23:00 | 60/60 | 1369 | 20.97 / 24 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 126 / 0 / 0 | 34% / - / - |
+| 10-23 00:00 | 60/60 | 1444 | 21.53 / 25 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 126 / 0 / 0 | 32% / - / - |
+| 10-23 01:00 | 60/60 | 1408 | 21.28 / 24 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 126 / 0 / 0 | 31% / - / - |
+| 10-23 02:00 | 60/60 | 1392 | 20.57 / 24 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 126 / 0 / 0 | 28% / - / - |
+| 10-23 03:00 | 60/60 | 1328 | 21.25 / 25 | 0.08 / 2 | 0.03 / 1 | 0.02 / 1 | 0.00 / 0 | 0.00 / 0 | 126 / 126 / 119 | 31% / 100% / 100% |
+| 10-23 04:00 | 59/60 | 1290 | 20.98 / 25 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 126 / 0 / 0 | 31% / - / - |
+| 10-23 05:00 | 60/60 | 1331 | 21.67 / 25 | 0.03 / 1 | 0.02 / 1 | 0.03 / 1 | 0.02 / 1 | 0.02 / 1 | 126 / 75 / 75 | 33% / 100% / 100% |
+| 10-23 06:00 | 60/60 | 1341 | 21.38 / 26 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 126 / 0 / 0 | 32% / - / - |
+| 10-23 07:00 | 60/60 | 1352 | 20.57 / 25 | 0.35 / 2 | 0.02 / 1 | 0.03 / 1 | 0.02 / 1 | 0.02 / 1 | 126 / 126 / 56 | 29% / 86% / 100% |
+| 10-23 08:00 | 60/60 | 1256 | 20.55 / 25 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 126 / 0 / 0 | 30% / - / - |
+| 10-23 09:00 | 60/60 | 1224 | 34.17 / 70 | 11.62 / 50 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 126 / 126 / 0 | 40% / 48% / - |
+| 10-23 10:00 | 60/60 | 1247 | 20.60 / 23 | 0.43 / 2 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 126 / 126 / 0 | 29% / 85% / - |
+| 10-23 11:00 | 60/60 | 1246 | 20.60 / 23 | 0.07 / 1 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 126 / 121 / 0 | 28% / 100% / - |
+| 10-23 12:00 | 60/60 | 1242 | 20.57 / 24 | 0.50 / 2 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 126 / 126 / 0 | 30% / 70% / - |
+| 10-23 13:00 | 60/60 | 1312 | 20.40 / 24 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 126 / 0 / 0 | 27% / - / - |
+| 10-23 14:00 | 59/60 | 1156 | 19.19 / 23 | 0.15 / 1 | 0.02 / 1 | 0.02 / 1 | 0.00 / 0 | 0.00 / 0 | 126 / 30 / 30 | 30% / 100% / 100% |
+| 10-23 15:00 | 60/60 | 1275 | 20.22 / 24 | 0.07 / 2 | 0.02 / 1 | 0.05 / 2 | 0.03 / 2 | 0.03 / 2 | 126 / 126 / 126 | 31% / 100% / 100% |
+| 10-23 16:00 | 60/60 | 1267 | 20.25 / 24 | 0.15 / 2 | 0.02 / 1 | 0.03 / 1 | 0.02 / 1 | 0.02 / 1 | 126 / 126 / 126 | 28% / 100% / 100% |
+| 10-23 17:00 | 60/60 | 1292 | 21.57 / 25 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 0.00 / 0 | 126 / 0 / 0 | 35% / - / - |
+| 10-23 18:00 | 60/60 | 1269 | 22.40 / 26 | 0.42 / 3 | 0.03 / 2 | 0.02 / 1 | 0.02 / 1 | 0.02 / 1 | 126 / 126 / 126 | 37% / 84% / 100% |
+| 10-23 19:00 | 60/60 | 1276 | 22.15 / 26 | 0.03 / 1 | 0.02 / 1 | 0.03 / 1 | 0.02 / 1 | 0.02 / 1 | 126 / 27 / 27 | 32% / 100% / 100% |
+| 10-23 20:00 | 13/13 | 1223 | 22.23 / 26 | 0.15 / 1 | 0.00 / 0 | 0.15 / 1 | 0.15 / 1 | 0.15 / 1 | 126 / 126 / 126 | 31% / 100% / 100% |
+
+What the samples show (measured):
+
+- **The route is almost always empty.** At least one route rectangle was occupied in 17 of 1,346
+  minutes (1.3%). Those minutes form 13 separate visits (runs of consecutive occupied minutes),
+  each lasting 1-2 minutes, with at most 2 players at once. Every player seen in a route
+  rectangle was moving; none was seen standing still.
+- **Visitors' combat levels range widely:** 27, 30, 40, 56, 75 (twice) and 119, and 126 in five of
+  the 13 visits (15:53Z, 16:54Z, 16:58Z, 18:06Z, 20:02Z).
+- **When:** the visits fell between 03:56Z and 20:03Z. None came in the six hours from 21:45Z to
+  03:55Z (the Pacific afternoon and evening), but that is one day of data.
+- **The ~21 players always in the Wilderness are elsewhere.** The `wild` count holds at 19-26
+  around the clock, two thirds of them at combat 90-109 and a quarter at 110+, with about 30% moving
+  each minute. Almost none reach the deep strip (`deep` mean 0-0.5 outside 09:00Z), so they are in
+  the shallower Wilderness, away from the route.
+- **One group event.** At 09:16Z about 50 players, all at combat 110+, appeared in the deep strip in
+  the same minute (all new and all moving) and stayed about 15 minutes. None entered a route
+  rectangle. Fifty arrivals in one minute look like one coordinated group (inferred).
+
+What that implies (inferred): a once-a-minute snapshot estimates the share of time someone is
+there (1.3%) without bias, but it misses visitors who cross a rectangle in under a minute. At
+running speed the webs rectangle takes about 20-30 seconds to cross, so the true number of
+visitors may be 2-3 times the 13 seen, about 0.6-1.7 an hour. If the S16 stretch keeps us in these
+rectangles for about 5 minutes, someone else is likely to be there at some point in it about 5-15%
+of the time. A level-126 player is likely in about a third of those cases. Presence is not an
+attack: no samples were taken of what visitors did.
+
+The service keeps sampling until the scored run. To extend the data, run the export on the home
+machine that holds the samples, from a checkout of this branch, and commit the dated files (export
+rewrites each file whole, so it is safe to rerun). `summary` prints this table for any range:
+
+```sh
+bun docs/speedrun/scripts/wilderness-roster.ts export
+bun docs/speedrun/scripts/wilderness-roster.ts summary --from=2026-10-23T20
+```
+
+Stop and remove the service with `uninstall`; the script's header gives the commands, including
+the `systemd-run` form for a sandboxed Cairn batch.
