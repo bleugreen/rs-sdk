@@ -1,4 +1,8 @@
 {
+  "sanitization": {
+    "personalPath": "The executor's absolute home/worktree prefix was replaced with <LAB_WORKTREE> in generated.cueDir and its launcher-log entry.",
+    "sourceIntegrity": "rawHashes and source/patch hashes describe the original unredacted local artifacts; all numeric observations and private fixture account labels are unchanged."
+  },
   "provenance": {
     "base": "649e4fcd12fa492b3f971e0ebe2a972d611d4494",
     "labRevision": "23109737616ccd006db8f48db57031a9349183b6",
@@ -22,7 +26,7 @@
     "generated": {
       "account": "cairn_lab45",
       "role": "mule",
-      "cueDir": "/Users/mitch/.cairn/build-slots/rs/.authority/slot-132/scratch/atoll-mule-8nCPgd/h45-cue",
+      "cueDir": "<LAB_WORKTREE>/scratch/atoll-mule-8nCPgd/h45-cue",
       "loginOn": {
         "step": "H12oM",
         "family": "mule"
@@ -4876,7 +4880,7 @@
       }
     ],
     "launcherLines": [
-      "2026-10-23T01:55:55.993Z [launcher] cairn_lab45: reading /Users/mitch/.cairn/build-slots/rs/.authority/slot-132/scratch/atoll-mule-8nCPgd/h45-cue; logs in when a cue for H12oM/mule opens; logs out when H12oP/mule closes (its final stop, or the next scope's cue after its stop)",
+      "2026-10-23T01:55:55.993Z [launcher] cairn_lab45: reading <LAB_WORKTREE>/scratch/atoll-mule-8nCPgd/h45-cue; logs in when a cue for H12oM/mule opens; logs out when H12oP/mule closes (its final stop, or the next scope's cue after its stop)",
       "2026-10-23T01:55:55.999Z [launcher] gateway started (pid 5035)",
       "2026-10-23T01:55:56.251Z [launcher] gateway on 127.0.0.1:8731",
       "2026-10-23T01:55:56.251Z [launcher] cairn_lab45: logged out until a cue for H12oM/mule opens (at most 600 min)",

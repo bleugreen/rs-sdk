@@ -102,3 +102,7 @@ Exact config check passed; **71 tests passed, 0 failed, 385 assertions**. This i
 The headless verdict is separate from the pinned composite private-engine trial above. `cairn check run typecheck` could not produce a project-check verdict: this revision declares no configured checks. It is not a passing typecheck/build/lint claim.
 
 Direct TypeScript checking initially caught the lab's `assertPrivate` parameter being narrower than `BotEnv`. The current source widens that type annotation to `Record<string, string | undefined>`; its runtime logic is unchanged. The archived patch preserves the exact source actually executed by the private lab, not this subsequent type-only correction.
+
+### Archive sanitization
+
+The structured `proof.json` replaces the executor's personal absolute worktree prefix with `<LAB_WORKTREE>` in the generated cue directory and its launcher-log entry. Raw artifact/source/patch hashes remain those of the originals; the sanitized archive has its own hash. Private fixture account labels are retained for trace correlation and are not observations of live accounts. No credential values or environment-file contents are archived.
