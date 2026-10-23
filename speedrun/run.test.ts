@@ -7,7 +7,7 @@ import { TickLog } from './lib/ticks';
 import { MANIFEST } from './tools/slot-ledger';
 import { returnExtrasFromLedger } from './helpers/cannon-receiver';
 import { readFileSync } from 'fs';
-import { aliasAccount, attemptOf, openRunSession, cannonServeDrift, chainOrRefusal, type GateIO, LOG_ACCOUNT, loadRunConfig, parseArgs, startGates, TARGET_TOTAL, tickBeforeLogin, totalLevel, UsageError } from './run';
+import { aliasAccount, attemptOf, openRunSession, cannonServeDrift, chainOrRefusal, type GateIO, LOG_ACCOUNT, loadRunConfig, parseArgs, signalShutdown, type SignalDeps, startGates, TARGET_TOTAL, Terminated, tickBeforeLogin, totalLevel, untilTerminated, UsageError } from './run';
 import type { OpenOptions, Session } from './lib/session';
 import { RelogBudget } from './runner/relog-budget';
 import { SCORED_LOGIN, SCORED_RELOG } from './runner/scored-relog';
@@ -300,5 +300,106 @@ describe('startup during the planned S21 logout', () => {
             beforeLogin: async () => { await Promise.resolve(); note('tick gate'); } }, t.deps);
         expect(t.log.rows.map(r => r.step)).toEqual(['S21 runecraft:pre-login', SCORED_LOGIN, 'tick gate']);
         expect(t.log.rows.map(r => r.account)).toEqual([LOG_ACCOUNT, LOG_ACCOUNT, LOG_ACCOUNT]);
+    });
+});
+
+describe('signals: a SIGTERM logs out, then the callers clean up once, then the exit', () => {
+    const fakeSignals = (cleanupMs = 10_000) => {
+        const handlers = new Map<string, () => void>();
+        const exits: number[] = [];
+        const deps: SignalDeps = {
+            on: (s, f) => void handlers.set(s, f),
+            off: (s, f) => { if (handlers.get(s) === f) handlers.delete(s); },
+            exit: c => void exits.push(c),
+            cleanupMs,
+            log: () => {},
+        };
+        return { deps, exits, handlers, emit: (s: string) => handlers.get(s)?.() };
+    };
+    const running = () => new Promise<never>(() => {});
+
+    test('mid-chunk: one logout, Terminated(143) after it, every cleanup once, then no hard exit once disarmed', async () => {
+        const f = fakeSignals(30);
+        const trace: string[] = [];
+        let leaves = 0;
+        const sig = signalShutdown('[t]', async () => { leaves++; await Bun.sleep(5); trace.push('logged out'); }, f.deps);
+        const cleanups = { bones: 0, altar: 0, chrome: 0, proxy: 0 };
+        // dress-rehearsal's shape: the chain inside try, Terminated caught, the teardown in finally.
+        const caller = (async () => {
+            let code = 0;
+            let term: Terminated | null = null;
+            try {
+                await untilTerminated(running(), sig);
+            } catch (e) {
+                if (!(e instanceof Terminated)) throw e;
+                term = e;
+                code = e.exitCode;
+                trace.push('terminated');
+            } finally {
+                cleanups.bones++; cleanups.altar++; cleanups.chrome++; cleanups.proxy++;
+                trace.push('cleanup');
+                sig.dispose();
+            }
+            (term as Terminated | null)?.disarm();
+            return code;
+        })();
+        f.emit('SIGTERM');
+        f.emit('SIGTERM');
+        f.emit('SIGHUP');
+        expect(await caller).toBe(143);
+        expect(leaves).toBe(1);
+        expect(trace).toEqual(['logged out', 'terminated', 'cleanup']);
+        expect(cleanups).toEqual({ bones: 1, altar: 1, chrome: 1, proxy: 1 });
+        await Bun.sleep(60);
+        expect(f.exits).toEqual([]);
+        expect(f.handlers.size).toBe(0);
+    });
+
+    test('a step that fails because of the logout still ends in Terminated, after the logout', async () => {
+        const f = fakeSignals();
+        let fail!: (e: Error) => void;
+        const chunk = new Promise<never>((_, r) => (fail = r));
+        let out = false;
+        const sig = signalShutdown('[t]', async () => { fail(new Error('not in game')); await Bun.sleep(5); out = true; }, f.deps);
+        const p = untilTerminated(chunk, sig).catch(e => e);
+        f.emit('SIGTERM');
+        const e = await p;
+        expect(e).toBeInstanceOf(Terminated);
+        expect([(e as Terminated).exitCode, (e as Terminated).signal, out]).toEqual([143, 'SIGTERM', true]);
+        (e as Terminated).disarm();
+        sig.dispose();
+    });
+
+    test('a cleanup that hangs is cut off: the hard exit fires with the code after cleanupMs', async () => {
+        const f = fakeSignals(20);
+        const sig = signalShutdown('[t]', async () => {}, f.deps);
+        const p = untilTerminated(running(), sig).catch(e => e);
+        f.emit('SIGTERM');
+        expect(await p).toBeInstanceOf(Terminated);
+        await Bun.sleep(50); // never disarmed: the cleanup never finished
+        expect(f.exits).toEqual([143]);
+        sig.dispose();
+    });
+
+    test('Ctrl-C once asks for a stop and logs nothing out; a second logs out now and ends with 130', async () => {
+        const f = fakeSignals();
+        let leaves = 0;
+        const sig = signalShutdown('[t]', async () => { leaves++; }, f.deps);
+        f.emit('SIGINT');
+        expect([sig.stopAsked(), leaves, sig.termination()]).toEqual([true, 0, null]);
+        const p = untilTerminated(running(), sig).catch(e => e);
+        f.emit('SIGINT');
+        const e = (await p) as Terminated;
+        expect([e.exitCode, e.signal, leaves]).toEqual([130, 'SIGINT', 1]);
+        e.disarm();
+        sig.dispose();
+    });
+
+    test("with no signal the chain's own result and errors pass through", async () => {
+        const f = fakeSignals();
+        const sig = signalShutdown('[t]', async () => {}, f.deps);
+        expect(await untilTerminated(Promise.resolve(7), sig)).toBe(7);
+        await expect(untilTerminated(Promise.reject(new Error('step failed')), sig)).rejects.toThrow('step failed');
+        sig.dispose();
     });
 });
