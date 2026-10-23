@@ -103,3 +103,12 @@ test('methodRates: per account, its longest stretch on the method in one session
         { account: 'b', method: 'knights', ticks: 9_000, coins: 1_000_000, bankStore: 900_000, coinsPerHour: 1_000_000, boardPerHour: 900_000 }
     ]);
 });
+
+test('methodRates: a stretch starts where the bank was first seen', () => {
+    const line = (tick: number, carried: number, banked: number | null): AccountLine =>
+        ({ kind: 'account', account: 'i', method: 'iron', stage: 'method', session: 1, tick, coins: { carried, banked, total: carried + (banked ?? 0) }, bank: { store: banked === null ? null : banked + 1_700 } }) as AccountLine;
+    // 5,000 coins banked before the method show up at the first bank visit: they are not earnings
+    const [r] = methodRates([line(0, 100, null), line(500, 100, 5_000), line(1_400, 0, 5_100)], 400);
+    expect(r).toMatchObject({ ticks: 900, coins: 0, bankStore: 100 });
+    expect(r!.boardPerHour).toBe(1_000);
+});

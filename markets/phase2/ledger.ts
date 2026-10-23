@@ -193,6 +193,8 @@ export interface MethodRate {
 /**
  * Each account's rate on its method: from its first to its last ledger line in stage 'method' within one session
  * (the longest such stretch), coins (carried plus banked) and bank store value gained, per hour at `tickMs`.
+ * Banked coins count only once the bank has been seen, so a stretch is measured from its first line with the bank
+ * seen when it has one: from an earlier line, savings banked before the method would count as earnings.
  */
 export function methodRates(lines: readonly AccountLine[], tickMs: number): MethodRate[] {
     const by = new Map<string, AccountLine[]>();
@@ -205,7 +207,7 @@ export function methodRates(lines: readonly AccountLine[], tickMs: number): Meth
     }
     const best = new Map<string, MethodRate>();
     for (const list of by.values()) {
-        const a = list[0]!;
+        const a = list.find(l => l.bank.store !== null) ?? list[0]!;
         const b = list.at(-1)!;
         const ticks = b.tick - a.tick;
         if (ticks <= 0) continue;
