@@ -65,8 +65,8 @@ export function respawnTicks(base: number, players: number): number {
  * The rock to mine next: a live site rock, preferring one with no other player beside it (a player
  * already swinging usually wins it), then the nearest. Null when none is live.
  */
-export function chooseRock(locs: readonly Pick<NearbyLoc, 'id' | 'x' | 'z' | 'distance' | 'reachable'>[], site: Pick<MineSite, 'rocks' | 'box'>, others: readonly Tile[]): (typeof locs)[number] | null {
-    let best: (typeof locs)[number] | null = null;
+export function chooseRock<L extends Pick<NearbyLoc, 'id' | 'x' | 'z' | 'distance' | 'reachable'>>(locs: readonly L[], site: Pick<MineSite, 'rocks' | 'box'>, others: readonly Tile[]): L | null {
+    let best: L | null = null;
     let bestScore = Infinity;
     for (const l of locs) {
         if (!site.rocks.includes(l.id) || !inBox(site.box, l.x, l.z) || l.reachable === false) continue;
