@@ -18,14 +18,15 @@
 // Each package then has to pass `respawnCheck`: the slot ledger walked from the respawn state (the
 // kept units in the pack, the package traded in, the worn set put back on, the sharks eaten) through
 // the replayed legs, the cannon's re-supply and the phase's rows. A row short, over 28 slots, or
-// using something not held refuses the package: `package` is then null, so it cannot be staged.
+// using something not held refuses that form: its package is then null, so it cannot be staged. The
+// check runs per death point and per form, since each death keeps its own units.
 //
 // The package comes in two forms: by id (`byId`, a fixed amount: the target less the kept units) and
 // top-up (`topUp`, `to N` counting what SCORED holds, as the ledger's top-up lines, which stays right
 // whatever the engine kept).
 //
 //   bun speedrun/helpers/r8-package.ts [--phase R8a] [--json] [--manifest PATH] [--protect-item]
-//       every phase's package, its kept units, its walk; exit 1 when any is refused
+//       every phase's package, its kept units, its walks; exit 1 when a phase has neither form stageable
 import { readFileSync } from 'node:fs';
 
 import { contentObjs, keepPriciest, objOf, type HeroUnit, type ObjTable } from '../lib/death-keep';
@@ -103,7 +104,11 @@ export interface R8Line {
     why: string;
 }
 
+/** How the helper serves the package: fixed amounts (`byId`), or top-ups counting what SCORED holds. */
+export type R8Form = 'fixed' | 'topUp';
+
 export interface R8Walk {
+    form: R8Form;
     death: R8Death;
     kept: KeptUnit[];
     /** Cannon items the check takes as re-supplied (deployed, or cannonBy), less any kept. */
@@ -125,10 +130,14 @@ export interface R8Package {
     kept: KeptUnit[];
     /** Held at the resume row but returned unused afterwards, so not carried. */
     notNeeded: string[];
+    /** One respawn walk per form and death point. */
     walks: R8Walk[];
+    /** Why a form is refused, each tagged with its form, or `both` for a fault in the package itself. */
     refusals: string[];
-    /** The fixed form as a mule package (mule.ts packageOf), scoped; null when refused. */
+    /** The fixed form as a mule package (mule.ts packageOf), scoped; null when it is refused. */
     package: Package | null;
+    /** The top-up form as a mule package, read from SCORED's ask in `scope`; null when it is refused. */
+    topUpPackage: Package | null;
 }
 
 export interface R8Options {
@@ -332,30 +341,37 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
     const byId: PackageItem[] = lines.filter(l => l.give > 0 && l.id !== undefined).map(l => ({ id: l.id!, amount: l.give }));
     const topUp: PackageItem[] = lines.filter(l => l.need > 0 && l.id !== undefined).map(l => ({ id: l.id!, topUp: { max: l.need } }));
     const slots = slotsOf(lines.map(l => ({ kind: l.kind, count: l.give })));
-    if (slots > INVENTORY_SLOTS) refusals.push(`${phase.id}: the package fills ${slots} slots, more than the helper's ${INVENTORY_SLOTS}`);
+    if (slots > INVENTORY_SLOTS) refusals.push(`both: ${phase.id}: the package fills ${slots} slots, more than the helper's ${INVENTORY_SLOTS}`);
+    for (let i = 0; i < refusals.length; i++) if (!/^both: /.test(refusals[i]!)) refusals[i] = `both: ${refusals[i]}`;
 
-    // 5. The respawn check, once per death point (each keeps its own units).
-    const walks: R8Walk[] = phase.deaths.map((death, d) => {
-        const mine = tally(keptAt[d]!);
-        const cannon = cannonUsed
-            ? cannonHeld.map(h => ({ item: h.name, ...(h.id !== undefined ? { id: h.id } : {}), kind: h.kind, count: Math.max(0, (h.count ?? 0) - (mine.get(lc(h.name)) ?? 0)) }))
-            : [];
-        const held = new Set([...keptAt[d]!.map(k => lc(k.name)), ...lines.filter(l => l.give > 0).map(l => lc(l.item)), ...cannon.filter(c => c.count > 0).map(c => lc(c.item))]);
-        const before = phase.replay.length ? entries[at(phase.replay[0]!) - 1]!.stacks : target;
-        const lost = [...new Set([...target.inv, ...target.worn, ...before.inv, ...before.worn].map(h => h.name))].filter(n => !held.has(lc(n)));
-        let walked: LedgerEntry[] = [];
-        try {
-            walked = respawnCheck(rows, { phase, kept: keptAt[d]!, give: lines.map(l => ({ item: l.item, ...(l.id !== undefined ? { id: l.id } : {}), kind: l.kind, count: l.give })), cannon, heal, target, lost });
-        } catch (e) {
-            refusals.push(`${phase.id} (death at ${death.row}): ${(e as Error).message}`);
-        }
-        for (const e of walked) if (FAILING.includes(e.verdict) || e.verdict === 'unknown') refusals.push(`${phase.id} (death at ${death.row}${death.deployed ? ', deployed' : ''}): ${e.row.row}: ${e.verdict}: ${e.notes.join('; ')}`);
-        return { death, kept: keptAt[d]!, cannon: cannon.filter(c => c.count > 0).map(c => ({ item: c.item, count: c.count })), entries: walked };
-    });
+    // 5. The respawn check, per form and death point (each keeps its own units). The fixed form gives
+    // `give`, sized on the units every death point keeps; a top-up gives what this death's keep leaves.
+    const before = phase.replay.length ? entries[at(phase.replay[0]!) - 1]!.stacks : target;
+    const walks: R8Walk[] = (['fixed', 'topUp'] as const).flatMap(form =>
+        phase.deaths.map((death, d) => {
+            const mine = tally(keptAt[d]!);
+            const left = (item: string, n: number) => Math.max(0, n - (mine.get(lc(item)) ?? 0));
+            const give = lines.map(l => ({ item: l.item, ...(l.id !== undefined ? { id: l.id } : {}), kind: l.kind, count: form === 'fixed' ? l.give : left(l.item, l.need) }));
+            const cannon = cannonUsed ? cannonHeld.map(h => ({ item: h.name, ...(h.id !== undefined ? { id: h.id } : {}), kind: h.kind, count: left(h.name, h.count ?? 0) })) : [];
+            const held = new Set([...keptAt[d]!.map(k => lc(k.name)), ...give.filter(l => l.count > 0).map(l => lc(l.item)), ...cannon.filter(c => c.count > 0).map(c => lc(c.item))]);
+            const lost = [...new Set([...target.inv, ...target.worn, ...before.inv, ...before.worn].map(h => h.name))].filter(n => !held.has(lc(n)));
+            const at = `${form}: ${phase.id} (death at ${death.row}${death.deployed ? ', deployed' : ''})`;
+            let walked: LedgerEntry[] = [];
+            try {
+                walked = respawnCheck(rows, { phase, kept: keptAt[d]!, give, cannon, heal, target, lost });
+            } catch (e) {
+                refusals.push(`${at}: ${(e as Error).message}`);
+            }
+            for (const e of walked) if (FAILING.includes(e.verdict) || e.verdict === 'unknown') refusals.push(`${at}: ${e.row.row}: ${e.verdict}: ${e.notes.join('; ')}`);
+            return { form, death, kept: keptAt[d]!, cannon: cannon.filter(c => c.count > 0).map(c => ({ item: c.item, count: c.count })), entries: walked };
+        }),
+    );
 
     const scope = { step: phase.id, family: 'mule' as const };
-    const pkg = refusals.length ? null : packageOf({ name: lc(phase.id), items: byId, scope });
-    return { phase, scope, lines, byId, topUp, slots, kept, notNeeded, walks, refusals, package: pkg };
+    const refused = (form: R8Form) => refusals.some(r => r.startsWith('both: ') || r.startsWith(`${form}: `));
+    const pkg = refused('fixed') ? null : packageOf({ name: lc(phase.id), items: byId, scope });
+    const topUpPackage = refused('topUp') ? null : packageOf({ name: lc(phase.id), items: topUp, scope });
+    return { phase, scope, lines, byId, topUp, slots, kept, notNeeded, walks, refusals, package: pkg, topUpPackage };
 }
 
 // ------------------------------------------------------------------ CLI
@@ -375,7 +391,7 @@ export function main(argv: readonly string[]): number {
     if (!phases.length) throw new Error(`no phase ${only} (${R8_PHASES.map(p => p.id).join(', ')})`);
     const out = phases.map(p => r8Package(p, o));
     if (argv.includes('--json')) {
-        console.log(JSON.stringify(out.map(p => ({ id: p.phase.id, scope: p.scope, byId: p.byId, topUp: p.topUp, slots: p.slots, lines: p.lines, kept: p.kept, notNeeded: p.notNeeded, deaths: p.walks.map(w => ({ ...w.death, kept: w.kept, cannon: w.cannon, verdicts: w.entries.map(e => `${e.row.row} ${e.verdict} ${e.used}/${INVENTORY_SLOTS}`) })), refusals: p.refusals })), null, 2));
+        console.log(JSON.stringify(out.map(p => ({ id: p.phase.id, scope: p.scope, byId: p.byId, topUp: p.topUp, slots: p.slots, lines: p.lines, kept: p.kept, notNeeded: p.notNeeded, stageable: { fixed: p.package !== null, topUp: p.topUpPackage !== null }, walks: p.walks.map(w => ({ form: w.form, ...w.death, kept: w.kept, cannon: w.cannon, verdicts: w.entries.map(e => `${e.row.row} ${e.verdict} ${e.used}/${INVENTORY_SLOTS}`) })), refusals: p.refusals })), null, 2));
     } else {
         for (const p of out) {
             console.log(`\n=== ${p.phase.id}: ${p.phase.what}; resume at ${p.phase.resume}${p.phase.replay.length ? ` after replaying ${p.phase.replay.join(', ')}` : ''}; walk to ${p.phase.to} ===`);
@@ -388,11 +404,14 @@ export function main(argv: readonly string[]): number {
             for (const l of p.lines) console.log(`  ${l.item}${l.id !== undefined ? ` @${l.id}` : ''} [${l.kind}]: ${l.need} - ${l.kept} = ${l.give}  (${l.why})`);
             console.log(`not carried (returned unused): ${p.notNeeded.join(', ') || '-'}`);
             console.log(`by id: ${JSON.stringify(p.byId)}`);
-            for (const w of p.walks) console.log(`\nrespawn walk, death at ${w.death.row}${w.death.deployed ? ' (deployed)' : ''}:\n${render(w.entries)}`);
-            console.log(p.refusals.length ? `\nREFUSED:\n  ${p.refusals.join('\n  ')}` : `\n${p.phase.id}: stageable`);
+            console.log(`top-up: ${JSON.stringify(p.topUp)}`);
+            for (const w of p.walks) console.log(`\nrespawn walk, ${w.form} form, death at ${w.death.row}${w.death.deployed ? ' (deployed)' : ''}:\n${render(w.entries)}`);
+            if (p.refusals.length) console.log(`\nrefusals:\n  ${p.refusals.join('\n  ')}`);
+            console.log(`\n${p.phase.id}: fixed form ${p.package ? 'stageable' : 'REFUSED'}; top-up form ${p.topUpPackage ? 'stageable' : 'REFUSED'}`);
         }
     }
-    return out.some(p => p.refusals.length) ? 1 : 0;
+    // A phase with neither form stageable fails the run.
+    return out.some(p => !p.package && !p.topUpPackage) ? 1 : 0;
 }
 
 if (import.meta.main) process.exit(main(process.argv.slice(2)));
