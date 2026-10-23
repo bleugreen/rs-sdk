@@ -8,7 +8,8 @@ case "$1" in
     M8) b=0 ;;
     M9) b=10 ;;
     M10) b=20 ;;
-    *) echo "block.sh: unknown block $1 (M8, M9 or M10)"; return 1 ;;
+    M11) b=30 ;;
+    *) echo "block.sh: unknown block $1 (M8, M9, M10 or M11)"; return 1 ;;
 esac
 export NODE_TICKRATE=400
 export WEB_PORT=$((9970 + b)) WEB_MANAGEMENT_PORT=$((9971 + b)) HISCORES_WEB_PORT=$((9972 + b)) NODE_PORT=$((44970 + b))
