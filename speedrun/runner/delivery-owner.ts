@@ -13,8 +13,10 @@
 // no control file stages at once, and a later hold never passes heldFor), so it is `holdCarrier`,
 // run by the run host before the launcher (speedrun/tools/mule-hold.ts), never by run.ts.
 
+import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { canonName, CueWriter, nameHash } from '../helpers/altar-cue';
+import { canonName, CueWriter, nameHash, type CueScope } from '../helpers/altar-cue';
+import { muleDelivery } from '../helpers/mule-itinerary';
 import {
     deliverySession, holdMule, prepareMule, readMulePreparation, readMuleReady, readyFor, resumeMuleAttempt, sameWorldTile,
     type MuleHold, type MuleReady, type MuleReadyExpected, type WorldTile,
@@ -207,4 +209,54 @@ export function deliveryAttempts(dir: string, runId: string, accounts: readonly 
         return { refusal: (e as Error).message };
     }
     return { attempts };
+}
+
+/** The delivery rows on `chain` (the steps carrying a {row, mule} cue), in chain order, each with its partner and canonical meeting tile. */
+export function deliveryRows(chain: readonly { cue?: CueScope }[], partners: Readonly<Record<string, string>>): DeliveryRow[] {
+    const rows: DeliveryRow[] = [];
+    for (const s of chain) {
+        if (s.cue?.family !== 'mule' || rows.some(r => r.row === s.cue!.step)) continue;
+        const row = s.cue.step;
+        const account = partners[row];
+        if (!account) throw new Error(`${row}: the run config names no partner for the delivery row`);
+        rows.push({ row, account, at: muleDelivery(row).at });
+    }
+    return rows;
+}
+
+/**
+ * run.ts's delivery preflight: the run owner for `chain`'s delivery rows, null with none, or why the
+ * run refuses (deliveryRefusal, an unreadable launcher config, a carrier attempt this run aborted).
+ */
+export function deliveryOwnerFor(o: {
+    delivery: { run?: unknown; launcherConfig?: unknown } | undefined;
+    partners: Readonly<Record<string, string>>;
+    chain: readonly { cue?: CueScope }[];
+    receiver: string;
+    dir: string;
+    readFile?: (path: string) => string;
+}): { owner: DeliveryOwner | null } | { refusal: string } {
+    let rows: DeliveryRow[];
+    try {
+        rows = deliveryRows(o.chain, o.partners);
+    } catch (e) {
+        return { refusal: (e as Error).message };
+    }
+    if (!rows.length) return { owner: null };
+    const path = o.delivery?.launcherConfig;
+    let launcher: unknown;
+    if (typeof path !== 'string' || !path) launcher = new Error('the run config gives no delivery.launcherConfig to check the carriers against');
+    else {
+        try {
+            launcher = JSON.parse((o.readFile ?? (p => readFileSync(p, 'utf8')))(path));
+        } catch (e) {
+            launcher = new Error(`${path}: ${(e as Error).message}`);
+        }
+    }
+    const refusal = deliveryRefusal({ run: o.delivery?.run, rows, receiver: o.receiver, dir: o.dir, launcher });
+    if (refusal) return { refusal };
+    const run = o.delivery!.run as string;
+    const attempts = deliveryAttempts(o.dir, run, rows.map(r => r.account));
+    if ('refusal' in attempts) return attempts;
+    return { owner: new DeliveryOwner(o.dir, run, o.receiver, rows, attempts.attempts) };
 }

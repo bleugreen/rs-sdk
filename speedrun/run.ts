@@ -64,6 +64,7 @@ import { formatRunReport, runReport } from './runner/run-report';
 import { patchMethod } from './runner/fence';
 import { buildChain, chainProbes, missingOnPath, muleCueDir, resolveFrom, sliceUntil, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
 import { exitStopIsFinal, prepareCueDir, RunCues } from './runner/cue-keeper';
+import { deliveryOwnerFor } from './runner/delivery-owner';
 import { dropRecover } from './runner/drop-relog';
 import { LOST_AFTER_TICKS, sessionLink } from './runner/resume';
 import { RelogBudget } from './runner/relog-budget';
@@ -625,6 +626,17 @@ async function main(argv: string[]): Promise<number> {
     const full = built.chain;
     const chain = sliceUntil(full, a.until);
     const from = resolveFrom(chain, a.from);
+    // The delivery carriers authorize only their row's session under the run config's delivery.run.
+    const delivery = deliveryOwnerFor({ delivery: cfg.delivery, partners: cfg.partners, chain, receiver: loadBotEnv(a.bot).BOT_USERNAME, dir: muleCueDir(cfg) });
+    if ('refusal' in delivery) {
+        console.error(`[gate] REFUSED delivery: ${delivery.refusal}`);
+        console.error('[run] nothing was logged in');
+        return EXIT_REFUSED;
+    }
+    if (delivery.owner) {
+        keeper.bindDelivery(delivery.owner);
+        console.log(`[gate] ok      delivery: run ${delivery.owner.runId}, rows ${chain.filter(s => s.cue?.family === 'mule').map(s => s.cue!.step).join(', ')}`);
+    }
 
     const fresh = earlier.length === 0 && from === undefined;
     // A fresh run's budget is whole: the last run's relogs and any stale lock go (prepareCueDir's rule).
@@ -643,6 +655,14 @@ async function main(argv: string[]): Promise<number> {
     }
 
     const removed = [...prepareCueDir(cfg.cueDir, { fresh }), ...prepareCueDir(muleCueDir(cfg), { fresh }).map(f => `mule/${f}`)];
+    if (delivery.owner) {
+        // Each carrier's first row still ahead is prepared before SCORED logs in (its route to ready is long).
+        const ahead = chain.slice(from ?? 0).flatMap(s => (s.cue?.family === 'mule' ? [s.cue.step] : []));
+        for (const r of delivery.owner.firstRows(ahead)) {
+            const b = delivery.owner.prepare(r.row);
+            console.log(`[run] delivery: prepared ${r.row} on ${r.account} (seq ${b.preparationSeq})`);
+        }
+    }
     const log = TickLog.open(runId, a.log);
     const bin = owner ? claimBin() : null;
     const reservation = new ReservationWatch(reservationPath(a.hostReservation), { label: 'run', ...(owner ? { owner, touch: bin ? claimToucher(bin) : null } : {}) });
