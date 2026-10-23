@@ -2,6 +2,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test
 import type { BotWorldState } from '../../sdk/types';
 import { baseState, drive, FakeSdk } from '../lib/fake-sdk';
 import { TickLog } from '../lib/ticks';
+import { Observation, resolveResume } from '../runner/resume';
+import type { Step } from '../runner/step';
 import * as m from './mining';
 
 // runGatedProgram is the page's loop; here it records what the band asks of it and levels up.
@@ -805,5 +807,55 @@ describe('the slot ledger (rs/158 specs 3 and 4)', () => {
         }
         expect(sdk.sent.length).toBe(7);
         expect(names(sdk.state!)).toEqual(['Knife']);
+    });
+});
+
+describe('mining.exit stays done after S09 (rs/558; runner/step.ts: a done milestone stays done for the rest of the run)', () => {
+    /** rs/186's chain.ts S09_MINING, and its pick of iron-63 and the exit. */
+    const s09 = () => m.steps({ travel: 'none', dropAtExit: true, fallback: 'auto' }).filter(s => ['mining.iron-63', 'mining.exit'].includes(s.name));
+    const exit = () => s09().find(s => s.name === 'mining.exit')!;
+    const at = (x: number, z: number, inv: string[], level = 99): BotWorldState => ({ ...atZoo(level, inv), player: { worldX: x, worldZ: z, level: 0 } as BotWorldState['player'] });
+    const ELKOY = [2504, 3191] as const;
+    /** Past H7 (STEP-MANIFEST.md's ledger): S07's knife, H7's 6 logs, antipoison and sharks. */
+    const PAST_H7 = ['Knife', ...Array<string>(6).fill('Logs'), 'Antipoison(3)', 'Shark', 'Shark'];
+    const logs = (s: BotWorldState) => s.inventory.filter(i => /^logs$/i.test(i.name)).length;
+
+    test('past H7 (Mining 99, 6 logs, at Elkoy) the exit is done, and at every later position that holds EXIT_DROPS', () => {
+        expect(exit().done!(obs(at(...ELKOY, PAST_H7)), {})).toBe(true);
+        // S18 at the knights with the courier's ore, S22's fly spots with H18's logs, S25's booth with H21d's gems
+        expect(exit().done!(obs(at(2670, 3305, ['Knife', ...Array<string>(14).fill('Iron ore')])), {})).toBe(true);
+        expect(exit().done!(obs(at(3241, 3248, Array<string>(10).fill('Logs'))), {})).toBe(true);
+        expect(exit().done!(obs(at(3185, 3436, ['Chisel', 'Uncut sapphire', 'Uncut diamond'])), {})).toBe(true);
+        expect(exit().done!(obs(at(...ELKOY, PAST_H7, 98)), {})).toBe(false);
+    });
+
+    test('at an S09 site a crash before the drop leaves it not done, so the re-run still drops; every stand the exit can run on is inside its site', () => {
+        expect(exit().done!(obs(atZoo(99, ['Rune pickaxe', 'Knife'])), {})).toBe(false);
+        expect(exit().done!(obs(atZoo(99, ['Knife', 'Iron ore'])), {})).toBe(false);
+        expect(exit().done!(obs(atZoo(99, ['Knife'])), {})).toBe(true);
+        for (const [name, site] of Object.entries(m.SITES)) {
+            for (const r of Object.values(site.rotations)) {
+                for (const { stand } of m.parseSteps(r.steps)) expect([name, stand, exit().done!(obs(at(stand[0], stand[1], ['Rune pickaxe', 'Knife'])), {})]).toEqual([name, stand, false]);
+            }
+        }
+    });
+
+    test('resolveResume on a stand-in of the chain from S09 to S10b: past H7 it resumes at S10b, never re-entering mining.exit; before the drop it resumes at mining.exit', async () => {
+        const leg: Step<any> = { name: 'T09-10 run the zoo to Elkoy', preconditions: () => true, run: async () => {}, postconditions: () => true, logoutSafe: true };
+        const s10b: Step<any> = { name: 'S10b', preconditions: s => (logs(s) >= 6 ? true : 'no logs for Montai'), run: async () => {}, postconditions: () => true, logoutSafe: true, done: () => false };
+        // chain.ts's hand-offs: done when the row's items are held, or when the next milestone is (supersededBy)
+        const h7: Step<any> = {
+            name: 'H7', preconditions: () => 'the H7 giver is not in view', run: async () => {}, postconditions: () => true, logoutSafe: true,
+            done: (o, c) => logs(o.state) >= 6 || !!s10b.done!(o, c),
+        };
+        const slice = [...s09(), leg, h7, s10b];
+        const walk = (s: BotWorldState) => resolveResume(slice, new Observation(s), {});
+
+        const past = await walk(at(...ELKOY, PAST_H7));
+        expect([past.step, past.mode, past.lastDone]).toEqual(['S10b', 'run', 3]);
+        expect(slice.slice(past.index).map(s => s.name)).not.toContain('mining.exit');
+
+        const before = await walk(atZoo(99, ['Rune pickaxe', 'Knife', 'Logs', 'Iron ore']));
+        expect([before.step, before.mode]).toEqual(['mining.exit', 'run']);
     });
 });
