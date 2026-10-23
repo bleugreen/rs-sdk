@@ -519,7 +519,9 @@ export class Runner {
         w.latest = snap;
         const line = accountLine(snap, this.valuer, new Date());
         this.ledger(line as unknown as Record<string, unknown>);
-        if (w.stage === 'method') {
+        // A ramp reading needs the bank: its coins count as 0 until it is first seen, and a hold that took in that
+        // first sighting would book everything banked before the method as earnings. No reading, no 'working'.
+        if (w.stage === 'method' && w.bank !== null) {
             const now = Date.now();
             w.readings.push({ at: now, session: w.sessionNo, tick: s.tick, coins: line.coins.total });
             while (w.readings.length && w.readings[0]!.at < now - READINGS_KEEP_MS) w.readings.shift();
