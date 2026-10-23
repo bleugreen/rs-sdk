@@ -13,7 +13,8 @@
 //   S00's tutorialSkip lands it on S01's tile (Lumbridge, 3222,3222), where the partner already
 //   stands with the row's `in` and a standing request, and the step runs at once. One run per
 //   invocation, since only a first login is fresh.
-// H13 and other rows: <scored> holds what the row gives (a weapon worn, so it comes off first) and
+// H13 and other rows: <scored> holds what the row gives and drops (a weapon, the arrows and every
+//   drop worn, as T15-16 leaves H13's Khazard set and quiver, so they come off first) and
 //   arrives by ::tele beside the partner, already on its tile (--tile, default the Ardougne teleport
 //   landing), and the step runs at once; `--n` runs. A `NAME(*)` give names no one obj to stage:
 //   `--hold=OBJ,OBJ,...` puts those objs (debug names, one each) in SCORED's pack instead, e.g.
@@ -118,15 +119,16 @@ for (let n = 0; n < runs; n++) {
     await waitTicks(scored.sdk, 3);
 }
 
-/** What the row gives, in SCORED's pack, with a weapon worn so the step takes it off first. */
+/** What the row gives and drops, in SCORED's pack, with a weapon, the arrows and the drops worn so the step takes them off first. */
 async function stageGives(s: Session, p: HandOffPlan): Promise<void> {
-    // The levels SCORED has by the out-and-back rows (the magic shortbow is Ranged 50; the scimitar Attack 20).
+    // The levels SCORED has by the out-and-back rows (the magic shortbow is Ranged 50, rune arrows 40; the scimitar Attack 20).
     await setStats(s.sdk, { ranged: 50, attack: 20 });
     // A family's doses come from --hold.
-    const named = p.give.filter(g => !g.perObj || g.ids);
+    const out = [...p.give, ...p.drop];
+    const named = out.filter(g => !g.perObj || g.ids);
     await stage(s, [...named.map(g => ({ obj: objFor(g), count: g.count === 'all' ? 1 : g.count, kind: 'u' })), ...hold.map(obj => ({ obj, count: 1, kind: 'u' }))]);
-    for (const g of p.give) {
-        if (!/bow|staff|scimitar|sword|knife|axe/i.test(g.name)) continue;
+    for (const g of out) {
+        if (!p.drop.includes(g) && !/bow|staff|scimitar|sword|knife|axe|arrow/i.test(g.name)) continue;
         const w = await wield(s.sdk, g.pattern);
         if (!w.ok) throw new Error(`staging: wielding ${g.name}: ${w.reason ?? 'failed'}`);
     }

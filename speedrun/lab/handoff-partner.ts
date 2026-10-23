@@ -14,7 +14,7 @@ import { cheat } from './setup';
 
 // ::give takes an obj's debug name. Most are the ledger name with underscores or without spaces;
 // these are not (a dose suffix is looked up without it).
-const DEBUG_NAMES: Readonly<Record<string, string>> = { 'prayer potion': '4doseprayerrestore', 'magic potion': '4dose1magic', 'normal logs': 'logs' };
+const DEBUG_NAMES: Readonly<Record<string, string>> = { 'prayer potion': '4doseprayerrestore', 'magic potion': '4dose1magic', 'normal logs': 'logs', 'khazard armour': 'khazard_platemail' };
 
 export function debugName(name: string): string {
     const objs = configIds('obj');
