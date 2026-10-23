@@ -236,9 +236,11 @@ describe('a tool a leg only holds (the knife for the webs)', () => {
         expect(p.package).not.toBeNull();
     });
     test("the leg's food comes on top of the heal eaten before it", () => {
-        // hp 61: 3 sharks eaten from 1 HP, then T26-27 wants 2 held; S2's 2 are among them.
-        const p = held({ hp: 61 });
-        expect(p.lines.find(l => l.item === 'shark')!.need).toBe(5);
+        // Resuming at S3 after a replayed T26-27: no later row eats the 2 sharks held, so the 3 eaten
+        // from 1 HP to 61 are all the package would bring, and T26-27 wants 2 held after them.
+        const p = held({ deaths: [{ row: 'S2' }], resume: 'S3', to: 'S3', hp: 61 });
+        expect(p.lines.find(l => l.item === 'shark')).toMatchObject({ need: 5, why: '3 eaten from 1 HP to 61; 2 food held for T26-27 (replayed)' });
+        expect(p.byId).toContainEqual({ id: KNIFE, amount: 1 });
         expect(p.refusals).toEqual([]);
     });
 });
