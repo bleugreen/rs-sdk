@@ -64,8 +64,11 @@ async function runChild(mode: string) {
     let finishedAt = NaN;
     const readStdout = async () => {
         const decoder = new TextDecoder();
-        for await (const chunk of child.stdout) {
-            stdout += decoder.decode(chunk, { stream: true });
+        const reader = child.stdout.getReader();
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            stdout += decoder.decode(value, { stream: true });
             const finished = Number.isNaN(finishedAt) && stdout.match(/^FINISHED_AT:(\d+)$/m);
             if (finished) {
                 finishedAt = Number(finished[1]);
