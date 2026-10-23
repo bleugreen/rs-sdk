@@ -775,7 +775,7 @@ describe('cues', () => {
         const c = cueMuleRows(steps, rows, carrierOf, r.cues);
         expect(c.map(s => `${s.id}:${s.cue ? (s.finalStop ? 'final' : 'plain') : '-'}`)).toEqual(['H1:plain', 'H4k:plain', 'S07:-', 'H4:final', 'H10:plain', 'H14:final', 'H21d:plain', 'H22:final', 'H20:final']);
         // A step outside `rows` is the same object, untouched.
-        expect(c[2]).toBe(steps[2]);
+        expect(c[2]).toBe(steps[2]!);
         const ctx = ctxFor(new FakeSdk());
         for (const s of c) {
             // H20, h55's last row, is skipped as done: the runner never calls it.
