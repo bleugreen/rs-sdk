@@ -26,9 +26,10 @@
 //       bank in stockpile.json (stockWalk): missing, ambiguous, top-ups short
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import type { BankItem } from '../../sdk/types';
-import { namesNote, refLabel, refMatches, type ItemRef } from '../lib/items';
+import { namesNote, objIdsNamed, refLabel, refMatches, untradeable, type ItemRef } from '../lib/items';
 import { noteLink, type ObjPack } from '../lib/obj-pack';
 import { gameName, planHandOff } from '../runner/handoff';
 import { cueDir } from './altar-cue';
@@ -193,6 +194,44 @@ export function onRequestGaps(manifest: string = readFileSync(MANIFEST, 'utf8'))
 /** The mule options' `packages` for these ledger packages. */
 export const packagesOf = (lp: readonly LedgerPackage[]): Package[] => lp.map(p => p.package);
 
+/** Carried atoll rows use the existing MM cue scopes, without the ledger's hyphen. */
+const H45_STOPS = [
+    { row: 'H12o-M', step: 'H12oM', at: { x: 2763, z: 2704 } },
+    { row: 'H12o-P', step: 'H12oP', at: { x: 2803, z: 2724 } },
+] as const;
+
+/**
+ * Both atoll legs are arrival-sized asks. P's ledger uses fixed syntax to record caps,
+ * not a fixed offer: adapt only these rows, retaining their quantities and line order.
+ */
+export function h45FromLedger(manifest: string = readFileSync(MANIFEST, 'utf8')): LedgerPackage[] {
+    const ledger = muleFromLedger(manifest, { rows: H45_STOPS.map(s => s.row), form: 'ask' });
+    const slots = ledger.reduce((n, l) => n + l.slots, 0);
+    if (slots > INVENTORY_SLOTS) throw new Error(`h45 packages alone need ${slots} slots; capacity refused`);
+    return ledger.map((l, i) => {
+        const stop = H45_STOPS[i]!;
+        const items = l.package.items.map((spec): PackageItem => {
+            if (isTopUp(spec)) return spec;
+            const { amount, ...ref } = spec;
+            if (amount < 1) throw new Error(`${l.row}: carried cap must be positive`);
+            return { ...ref, topUp: { max: amount } };
+        });
+        return { ...l, package: materializeDeliveryPackage({
+            ...l.package, name: stop.step, scope: { step: stop.step, family: 'mule' }, at: stop.at, items,
+        }) };
+    });
+}
+
+/** Sanitized review entry, not staging evidence or authorization to launch an account. */
+export function h45LauncherEntry(manifest?: string) {
+    const ledger = h45FromLedger(manifest);
+    return {
+        account: 'cairn_h45', role: 'mule', cueDir: 'run-machine/h45-cue',
+        loginOn: ledger[0]!.package.scope!, stopOn: ledger[1]!.package.scope!,
+        options: { serve: '<SCORED>', serveMode: 'request', carried: true, packages: packagesOf(ledger) },
+    };
+}
+
 // ------------------------------------------------------------------ drift
 
 const normName = (x: string) => x.toLowerCase().replace(/[\s_]+/g, ' ').trim();
@@ -287,6 +326,27 @@ export function muleCueDir(cueRoot: string = cueDir()): string {
     return join(cueRoot, 'mule');
 }
 
+/** Resolve against content, never whichever same-named variant happens to be in a bank. */
+function deliveryRef(ref: ItemRef, where: string, pack?: ObjPack): ItemRef {
+    if (ref.id !== undefined) {
+        noteLink(ref.id, pack);
+        if (untradeable(ref.id)) throw new Error(`${where}: obj ${ref.id} is untradeable`);
+        return { id: ref.id };
+    }
+    const literal = normName(ref.item).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const candidates = [...new Set(objIdsNamed(new RegExp(`^${literal}$`, 'i'))
+        .filter(id => !untradeable(id)).map(id => noteLink(id, pack).item))];
+    if (candidates.length !== 1) throw new Error(`${where}: ${ref.item} resolves to ${candidates.length} tradeable object ids (${candidates.join(', ')}); require explicit ledger @ID`);
+    return { id: candidates[0]! };
+}
+
+/** The one materialization boundary for runtime configuration and bank-stock validation. */
+export function materializeDeliveryPackage(pkg: Package, pack?: ObjPack): Package {
+    return packageOf({ ...pkg, items: pkg.items.map(({ item, id, ...count }) => ({
+        ...deliveryRef(id === undefined ? { item: item! } : { id }, `Package ${pkg.name}`, pack), ...count,
+    })) }, pack);
+}
+
 /** The mule's run-day options from the ledger, less `serve` (the scored account, from the run host's private config). */
 export function muleRunOptions(ledger: readonly LedgerPackage[], cueRoot?: string): { serveMode: 'request'; cueDir: string; packages: Package[] } {
     return { serveMode: 'request', cueDir: muleCueDir(cueRoot), packages: packagesOf(ledger) };
@@ -342,6 +402,25 @@ function arg(argv: readonly string[], name: string): string | undefined {
 }
 
 export function main(argv: readonly string[]): number {
+    if (argv.includes('--carried-h45')) {
+        const allowed = new Set(['--carried-h45', '--manifest', '--check']);
+        for (let i = 0; i < argv.length; i++) {
+            const flag = argv[i]!;
+            if (!allowed.has(flag)) throw new Error(`--carried-h45 does not accept ${flag}`);
+            if (flag !== '--carried-h45' && (!argv[++i] || argv[i]!.startsWith('--'))) throw new Error(`${flag} needs a file`);
+        }
+        const file = arg(argv, '--manifest');
+        const entry = h45LauncherEntry(file ? readFileSync(file, 'utf8') : undefined);
+        const check = arg(argv, '--check');
+        if (check) {
+            const config = JSON.parse(readFileSync(check, 'utf8'));
+            const matches = isDeepStrictEqual(config, entry);
+            console.log(matches ? 'no drift: carried H12o-M/P' : 'carried H12o-M/P config differs from the generated entry');
+            return matches ? 0 : 1;
+        }
+        console.log(JSON.stringify(entry, null, 2));
+        return 0;
+    }
     const form = (arg(argv, '--form') ?? 'ask') as TopUpForm;
     if (form !== 'ask' && form !== 'fixed') throw new Error(`--form must be ask or fixed (got ${form})`);
     const list = (name: string) => arg(argv, name)?.split(',').map(s => s.trim()).filter(Boolean);

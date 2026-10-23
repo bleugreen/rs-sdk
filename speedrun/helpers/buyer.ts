@@ -119,6 +119,10 @@ export const SHOPS: Record<string, ShopSpec> = {
     dargaud: { npc: /^bow and arrow salesman$/i, stand: { x: 2672, z: 3434 }, bank: BANKS.seers },
     /** Zaff's Superior Staffs, Varrock (staffshop: 2 staffs of fire and of air). */
     zaff: { npc: /^zaff$/i, stand: { x: 3203, z: 3432 }, bank: BANKS.varrockWest },
+    /** Varrock Swordshop (wiki/shops/varrock-swordshop.md): swords and longswords to adamant. */
+    varrockSwords: { npc: /^shop (keeper|assistant)$/i, stand: { x: 3204, z: 3398 }, bank: BANKS.varrockWest },
+    /** Bob's Brilliant Axes, Lumbridge (wiki/shops/bobs-brilliant-axes.md): bronze axe 16 gp, stock 10. */
+    bob: { npc: /^bob$/i, stand: { x: 3231, z: 3203 }, bank: BANKS.draynor },
     /**
      * Magic Guild store, Yanille (magicguildshop: every elemental, mind, chaos, death and law rune,
      * staffs of fire). Upstairs behind a Magic-66 door, so it has no ladder: the caller climbs to it

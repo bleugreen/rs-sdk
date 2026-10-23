@@ -20,6 +20,12 @@ Labels as in herbs.md: **read** (content or engine), **measured** (lab at 300 ms
   (4)s cost ceil(4n/3) brews, and a target asks for each potion as `doses: 3` or `doses: 4`. A (4)
   also counts toward a (3) target. rs/158 rules which ledger rows take (3)s: where a step drinks at
   most 2 doses and the slot is not binding.
+- **No pour splits a potion** (read, `decant_potion.rs2` only combines two partials of a kind;
+  an empty vial takes nothing), so a (1) or (2) target (H12's superantipoison pre-dose) is
+  **drunk down** from a potion the (4)s and (3)s leave spare, the smallest spare that holds
+  enough. The (4)s and (3)s a target asks for are never drunk, but any other potion of that kind
+  the account holds is a spare: list it as a target to keep it. One (4) cannot become two (1)s,
+  so the planner brews where the spares are too few (a held (2) and one brew make two (1)s).
 - **Brewing, grinding and decanting carry no delay** (read, `herblore.rs2`), so the uses go out
   back to back, as the herb gatherer's mixing does.
 - **Every unfinished potion is named "Unfinished potion"**, so every bank and inventory item is
@@ -46,7 +52,8 @@ inventory (`plan()`), so a restart resumes and potions already held count:
 5. **Brew**, up to 14 a bank visit.
 6. **Decant**: pour the two fullest partials together until the (4)s are made, keeping the (3)s a
    target asks for.
-7. **Inputs it cannot get itself** (unfinished potions, snape grass, eyes of newt, limpwurt root)
+7. **Drink down** the spares assigned to (1) and (2) targets, a dose at a time.
+8. **Inputs it cannot get itself** (unfinished potions, snape grass, eyes of newt, limpwurt root)
    block only the potions that need them: everything else is made first. Then, with `receiveFrom`
    set, it waits at the bank for that account's trade (a `handover` donor), takes it and carries
    on; without one, or after `receiveMinutes`, it stops with `attention` naming what is short.
@@ -56,7 +63,7 @@ inventory (`plan()`), so a restart resumes and potions already held count:
 
 | Option | Default | Meaning |
 |---|---|---|
-| `targets` | required | `[{potion, doses: 3 or 4, n}]`; potions: `prayer`, `antipoison`, `superantipoison`, `superattack`, `superstrength` |
+| `targets` | required | `[{potion, doses: 1 to 4, n}]` ((1)s and (2)s are drunk down, see above); potions: `prayer`, `antipoison`, `superantipoison`, `superattack`, `superstrength` |
 | `receiveFrom` | none | A `cairn_` account that will trade the missing inputs |
 | `receiveMinutes` | 45 | How long to wait for it |
 | `hornsPerTrip` | 27 | Horns gathered per trip |

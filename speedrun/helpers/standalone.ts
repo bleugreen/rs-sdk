@@ -55,18 +55,23 @@
 //                    final:    when this role exits, stop everything
 //                    after:    'ready': log in only once every earlier altar-giver reports ready
 //                    path:     'relay' (default): lite runner + loopback gateway; 'direct': the role's own client
-//                    stopOn:   { step, family }: when a cue addressed to it says stop, stop the role and log
-//                              the account out at once (a stop before its login: it never logs in)
-//                    loginOn:  { step, family, waitMinutes? }: stay logged out until a cue addressed to it
-//                              opens, then log in and start the role; its scope is also the stop scope
-//                              unless stopOn names another. Waits at most waitMinutes (default 600)
+//                    stopOn:   { step, family }: when the scope closes (its final stop, or the next scope's
+//                              cue after its stop), stop the role and log the account out at once; a
+//                              plain stop (one session of several) leaves it in (closed before its
+//                              login: it never logs in)
+//                    loginOn:  { step, family, waitMinutes?, cueDir? }: stay logged out until a cue addressed
+//                              to it opens, then log in and start the role; its scope is also the stop scope
+//                              unless stopOn names another. Waits at most waitMinutes (default 600).
+//                              cueDir: a login-only folder with its own writer, read for the login alone
+//                              and only until the login settles; the role and stopOn stay on the account's
+//                              cueDir (which must then be named, with stopOn, and no final)
 //                    cueDir:   the cue directory of this account's role and cue gate (default RC_CUE_DIR,
 //                              else <runDir>/rc-cue; the role's options.cueDir, when set, is the same)
 //
 // The cue gate (stopOn, loginOn; CueGate) reads cue.json with altar-cue.ts's CueWatcher, the one
 // cue reader, and counts only cues written since the launcher started: cue.json outlives a launch,
 // and an earlier attempt's stop must not log this one's helpers out. Docs: HELPERS.md, "The cue gate".
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Subprocess } from 'bun';
 import { BotSDK } from '../../sdk/index';
@@ -75,11 +80,17 @@ import { type DirectLogoutResult, directLogoutText, type LogoutOutcome, logoutOu
 import { COMBAT_LOGOUT_TICKS, LOGOUT_BUTTON } from '../lib/session';
 import { parseBotEnv } from './accounts';
 import { assertUntracked, type Cue, type CueScope, CueWatcher, readStatuses, scopeError, writeJsonAtomicSync } from './altar-cue';
-import { Backoff, LoginLimiter, loginFailurePolicy } from './backoff';
+import { Backoff, LoginLimiter, type LoginLimitPolicy, loginFailurePolicy } from './backoff';
 import { ACCOUNT_NAME_RE, FORBIDDEN_ACCOUNTS, ROLE_NAME_RE } from './fleet-config';
 import { DIRECT_IN_WORLD_RE, DIRECT_LOGOUT_RE, DIRECT_REFUSED_RE } from './role';
 
 const ROOT = resolve(import.meta.dir, '..', '..');
+
+/**
+ * The launcher's login limiter: every login it makes (config order, cue-triggered, relogins) queues
+ * on it. A burst of 3 back to back, then 6 a minute, never two within 4 s.
+ */
+export const LAUNCHER_LOGIN_POLICY: Readonly<LoginLimitPolicy> = { perMinute: 6, burst: 3, minSpacingMs: 4_000 };
 
 export interface LaunchEntry {
     account: string;
@@ -90,7 +101,7 @@ export interface LaunchEntry {
     final: boolean;
     after: 'login' | 'ready';
     path: 'relay' | 'direct';
-    /** Log out at once on a stop addressed to this scope; loginOn's scope when not set. */
+    /** Log out at once when this scope closes (CueGate); loginOn's scope when not set. */
     stopOn: CueScope | null;
     /** Stay logged out until a cue addressed to this scope opens. */
     loginOn: LoginOn | null;
@@ -101,6 +112,12 @@ export interface LaunchEntry {
 export interface LoginOn extends CueScope {
     /** How long the account waits logged out for its cue before it gives up (never logs in). */
     waitMs: number;
+    /**
+     * A login-only folder, absolute: the login scope is read there and nowhere else, and only until
+     * the login settles; the role and the stop scope stay on the account's cueDir. Null: the login
+     * scope is read in the account's cueDir with the stop scope.
+     */
+    cueDir: string | null;
 }
 
 /** loginOn's default bound: longer than the whole run (9 h), so only a cue that never comes ends it. */
@@ -154,13 +171,27 @@ export function parseLaunchConfig(raw: unknown, root = ROOT): LaunchConfig {
             const minutes = Number(l.waitMinutes ?? DEFAULT_LOGIN_WAIT_MINUTES);
             if (!Number.isFinite(minutes) || minutes <= 0) throw new Error(`accounts[${i}].loginOn: waitMinutes must be a positive number (got ${JSON.stringify(l.waitMinutes)})`);
             if (after === 'ready') throw new Error(`accounts[${i}]: loginOn and after: 'ready' are alternatives`);
-            loginOn = { ...scopeField(l, `accounts[${i}].loginOn`), waitMs: minutes * 60_000 };
+            if (l.cueDir !== undefined && (typeof l.cueDir !== 'string' || !l.cueDir.trim())) {
+                throw new Error(`accounts[${i}].loginOn.cueDir: a folder path is required (got ${JSON.stringify(l.cueDir)})`);
+            }
+            const loginDir = typeof l.cueDir === 'string' ? resolve(root, l.cueDir) : null;
+            loginOn = { ...scopeField(l, `accounts[${i}].loginOn`), waitMs: minutes * 60_000, cueDir: loginDir };
         }
         const stopOn = a.stopOn === undefined ? (loginOn ? { step: loginOn.step, family: loginOn.family } : null) : scopeField(a.stopOn, `accounts[${i}].stopOn`);
         // The gate must read the directory the role reads: options.cueDir, when given, is that directory.
         const own = a.cueDir === undefined ? null : resolve(root, String(a.cueDir));
         const roles = typeof options.cueDir === 'string' ? resolve(root, options.cueDir) : null;
         if (own && roles && own !== roles) throw new Error(`accounts[${i}]: cueDir ${own} and options.cueDir ${roles} differ`);
+        if (loginOn?.cueDir) {
+            // One writer per folder: the login trigger's writer owns the login folder, the role's cue writer the role's.
+            const at = `accounts[${i}].loginOn.cueDir`;
+            const roleDir = own ?? roles;
+            if (!roleDir) throw new Error(`${at}: a login-only folder needs the role's own cue folder named too (cueDir)`);
+            if (loginOn.cueDir === roleDir) throw new Error(`${at}: ${roleDir} is the role's cue folder; the login folder must be another (one writer per folder)`);
+            if (a.stopOn === undefined) throw new Error(`${at}: a login-only folder needs stopOn, the role folder's scope whose close logs the account out`);
+            if (scopeText(stopOn!) === scopeText(loginOn)) throw new Error(`${at}: stopOn must be another scope than the login trigger's ${scopeText(loginOn)}`);
+            if (a.final === true) throw new Error(`${at}: an account logged in on a login folder leaves on its stop scope; final would stop the whole launcher when its role exits`);
+        }
         return {
             account,
             role,
@@ -201,6 +232,24 @@ export function checkBotEnv(env: Record<string, string>, account: string, gatewa
  */
 export function directLogoutBudgetMs(stopDeadlineMs: number): number {
     return Math.max(2000, stopDeadlineMs - GATEWAY_STOP_RESERVE_MS - 3000);
+}
+
+/** The same directory: the same path, or (both existing) the same device and inode, as through a symlink. */
+export function sameCueDir(a: string, b: string): boolean {
+    if (resolve(a) === resolve(b)) return true;
+    try {
+        const x = statSync(a);
+        const y = statSync(b);
+        return x.dev === y.dev && x.ino === y.ino;
+    } catch {
+        return false;
+    }
+}
+
+/** Create a role folder and a login folder, refusing them as one directory: each folder has one writer. */
+export function assertDistinctCueDirs(roleDir: string, loginDir: string): void {
+    for (const d of [roleDir, loginDir]) mkdirSync(d, { recursive: true, mode: 0o700 });
+    if (sameCueDir(roleDir, loginDir)) throw new Error(`login folder ${loginDir} is the role's cue folder ${roleDir}; one writer per folder`);
 }
 
 /** An account's cue directory: its own (cueDir), else RC_CUE_DIR, else <runDir>/rc-cue. */
@@ -298,10 +347,12 @@ export async function waitWhileListed(
 
 /**
  * Where an account's cue gate stands. waiting: logged out until its login cue opens; opened: it opened
- * (the account logs in, or is in); watching: in the run until its stop; stopped: its stop came (logged
- * out at once, or never logged in); expired: no login cue within loginOn's wait (never logged in).
+ * (the account logs in, or is in); watching: in the run until its scope closes; stood-down: its scope's
+ * session stopped without closing the scope (a program segment), so it stays in the world for the next
+ * session; stopped: its scope closed (logged out at once, or never logged in); expired: no login cue
+ * within loginOn's wait (never logged in).
  */
-export type GateState = 'waiting' | 'opened' | 'watching' | 'stopped' | 'expired';
+export type GateState = 'waiting' | 'opened' | 'watching' | 'stood-down' | 'stopped' | 'expired';
 
 export interface AccountCueStatus {
     /** loginOn's scope, as step/family. */
@@ -334,39 +385,111 @@ export interface LauncherStatus {
 }
 
 /**
- * Every helper the scored account's login waits for is online. A receiver doesn't count, nor does an
- * account that logs in only on a cue (loginOn, which the run writes later). One that left on its stop
- * cue has done its part and counts as ready, so the flag doesn't drop when a family logs out.
+ * A helper is where the run wants it: online, or logged out waiting for its login cue (a family the
+ * run logs in later), or out of the run on its gate (its scope closed, or its login cue never came),
+ * so the flag neither waits for a cued family nor drops when one logs out. Logging in after its cue
+ * opened, or relogging, is not ready.
  */
+export function helperReady(a: Pick<LauncherStatus['accounts'][number], 'state' | 'cue'>): boolean {
+    if (a.state === 'online') return true;
+    const gate = a.cue?.state;
+    return gate === 'waiting' || gate === 'stopped' || gate === 'expired';
+}
+
+/** Every helper is ready-or-waiting (helperReady); receivers, the scored side's stand-ins, don't count. */
 export function helpersReady(accounts: LauncherStatus['accounts']): boolean {
-    const helpers = accounts.filter(a => !a.receiver && !a.cue?.login);
-    return helpers.length > 0 && helpers.every(a => a.state === 'online' || a.cue?.state === 'stopped');
+    const helpers = accounts.filter(a => !a.receiver);
+    return helpers.length > 0 && helpers.every(helperReady);
 }
 
 // ------------------------------------------------------------------ the cue gate
 
 /**
- * What a cue addressed to a gate's scope means to the launcher: nothing when it was written before
- * `since` (the launcher's start: cue.json outlives a launch, and an earlier attempt's stop must not log
- * this one's accounts out), else a stop, or an open (any other write).
+ * What a cue means to the launcher: nothing when it was written before `since` (the launcher's start:
+ * cue.json outlives a launch, and an earlier attempt's stop must not log this one's accounts out),
+ * else a final stop (Cue.final), a stop, or an open (any other write).
  */
-export function gateEvent(cue: Pick<Cue, 'stop' | 'ms'>, since: number): 'open' | 'stop' | null {
+export function gateEvent(cue: Pick<Cue, 'stop' | 'final' | 'ms'>, since: number): 'open' | 'stop' | 'final' | null {
     if (!(cue.ms >= since)) return null;
-    return cue.stop ? 'stop' : 'open';
+    if (!cue.stop) return 'open';
+    return cue.final ? 'final' : 'stop';
 }
 
-export type LoginWait = { result: 'open'; cue: Cue } | { result: 'stop'; cue: Cue } | { result: 'expired' } | { result: 'stopped' };
+/** A scope that is over for the launcher: its final stop, or `cue`, the next scope's, after its stop `after`. */
+export type ScopeClosed = { scope: CueScope; cue: Cue } & ({ why: 'final' } | { why: 'next-scope'; after: Cue });
+
+export function closedText(c: ScopeClosed): string {
+    const at = (cue: Cue) => `session ${cue.session}, seq ${cue.seq}`;
+    if (c.why === 'final') return `final stop for ${scopeText(c.scope)} (${at(c.cue)})`;
+    return `cue for ${scopeText(c.cue.scope)} (${at(c.cue)}) after ${scopeText(c.scope)}'s stop (${at(c.after)})`;
+}
+
+/**
+ * One scope's sessions as the launcher sees them. A plain stop ends a session and stands the scope
+ * down: the step may open another (runecraft.ts's program segments, its stock rung and hand-back, a
+ * resumed step's reopen). The scope closes on a final stop, or on a cue for another scope written
+ * after its stop: cue.json holds one scope at a time, so the next scope's cue means this one is over.
+ * A cue from before `since` changes nothing. Each method returns the transition it made, if any.
+ */
+export class ScopeSessions {
+    state: 'none' | 'open' | 'stood-down' | 'closed' = 'none';
+    closed: ScopeClosed | null = null;
+    private lastStop: Cue | null = null;
+
+    constructor(
+        readonly scope: CueScope,
+        private readonly since: number
+    ) {}
+
+    /** A new cue addressed to the scope. */
+    own(cue: Cue): 'open' | 'stood-down' | 'closed' | null {
+        const ev = gateEvent(cue, this.since);
+        if (!ev || this.state === 'closed') return null;
+        if (ev === 'final') {
+            this.closed = { scope: this.scope, cue, why: 'final' };
+            this.state = 'closed';
+            return 'closed';
+        }
+        if (ev === 'stop') {
+            const was = this.state;
+            this.lastStop = cue;
+            this.state = 'stood-down';
+            return was === 'stood-down' ? null : 'stood-down';
+        }
+        if (this.state === 'open') return null;
+        this.state = 'open';
+        return 'open';
+    }
+
+    /** A new cue addressed to another scope. */
+    other(cue: Cue): 'closed' | null {
+        if (!gateEvent(cue, this.since) || this.state !== 'stood-down' || !this.lastStop) return null;
+        this.closed = { scope: this.scope, cue, why: 'next-scope', after: this.lastStop };
+        this.state = 'closed';
+        return 'closed';
+    }
+}
+
+export type LoginWait = { result: 'open'; cue: Cue } | { result: 'stop'; closed: ScopeClosed } | { result: 'expired' } | { result: 'stopped' };
 
 export interface CueGateOptions {
+    /** The role's cue folder: the stop scope's, and the login scope's unless `loginDir` is set. */
     dir: string;
-    /** loginOn's scope: its first open lets the account log in; a stop before that keeps it out. */
+    /**
+     * A login-only folder (loginOn.cueDir), never `dir`: the login scope is read there alone, and only
+     * until the login settles, so nothing written there afterwards reaches the account.
+     */
+    loginDir?: string;
+    /** loginOn's scope: its first open lets the account log in; its closing before that keeps it out. */
     login: CueScope | null;
-    /** stopOn's scope: its stop ends the account's run (onStop). */
+    /** stopOn's scope: its closing ends the account's run (onStop). */
     stop: CueScope | null;
     /** Cues written before this (Date.now()) are an earlier launch's. */
     since: number;
-    /** A stop addressed to `stop`, once; called outside the watcher's callback. */
-    onStop(cue: Cue): void;
+    /** `stop`'s scope closed, once; called outside the watcher's callback. */
+    onStop(closed: ScopeClosed): void;
+    /** `stop`'s scope opened a session, or stood down (a stop that does not close it); called outside the watcher's callback. */
+    onSession?(event: 'open' | 'stood-down', cue: Cue): void;
     /** CueWatcher's notes (cues for other scopes) and the gate's own. */
     log(line: string): void;
     /** CueWatcher's poll beside fs.watch (default 100 ms). */
@@ -375,43 +498,107 @@ export interface CueGateOptions {
 
 /**
  * One account's view of the cue directory for the launcher (stopOn, loginOn), through CueWatcher, the
- * one cue reader: its stop and its login trigger. Each is decided once: the first stop is the stop,
- * and the login is settled by the first open or stop addressed to the login scope, whichever comes first.
+ * one cue reader: its stop and its login trigger, each scope's sessions followed by ScopeSessions.
+ * Each is decided once: the stop scope's closing is the stop, and the login is settled by the login
+ * scope's first open or its closing (or the stop scope's), whichever comes first. With `loginDir` the
+ * login scope is read in that folder alone, and its watcher closes once the login is settled.
  */
 export class CueGate {
-    private login: 'waiting' | { result: 'open' | 'stop'; cue: Cue } = 'waiting';
-    private stopped: Cue | null = null;
-    private readonly watchers: CueWatcher[] = [];
+    private login: 'waiting' | { result: 'open'; cue: Cue } | { result: 'stop'; closed: ScopeClosed } = 'waiting';
+    private stopped: ScopeClosed | null = null;
+    private readonly loginScope: ScopeSessions | null;
+    private readonly stopScope: ScopeSessions | null;
+    private readonly watchers: { dir: string; watcher: CueWatcher }[] = [];
+    /** The login folder's watcher (loginDir), until the login settles. */
+    private loginWatcher: CueWatcher | null = null;
+    /** The stop scope's watcher, re-read before an open from the login folder counts (stopClosedNow). */
+    private stopWatcher: CueWatcher | null = null;
     private readonly wakes = new Set<() => void>();
     private early = false;
 
     constructor(private readonly o: CueGateOptions) {
         const log = (m: string, d?: Record<string, unknown>) => o.log(`${m} ${JSON.stringify(d ?? {})}`);
-        const opts = { log, pollMs: o.pollMs ?? 100 };
-        const same = !!o.login && !!o.stop && scopeText(o.login) === scopeText(o.stop);
-        if (o.login) this.watchers.push(new CueWatcher(o.dir, o.login, cue => this.onCue(cue, true, same), opts));
-        if (o.stop && !same) this.watchers.push(new CueWatcher(o.dir, o.stop, cue => this.onCue(cue, false, true), opts));
+        if (o.loginDir !== undefined) {
+            if (!o.login) throw new Error('CueGate: a login folder needs a login scope');
+            assertDistinctCueDirs(o.dir, o.loginDir);
+        }
+        const same = o.loginDir === undefined && !!o.login && !!o.stop && scopeText(o.login) === scopeText(o.stop);
+        this.loginScope = o.login ? new ScopeSessions(o.login, o.since) : null;
+        this.stopScope = same ? this.loginScope : o.stop ? new ScopeSessions(o.stop, o.since) : null;
+        // The role folder first: a login folder's open already on disk is read only after it (onCue).
+        const order = o.loginDir !== undefined ? [this.stopScope, this.loginScope] : [this.loginScope, this.stopScope];
+        for (const s of new Set(order)) {
+            if (!s) continue;
+            const own = s === this.loginScope && o.loginDir !== undefined;
+            const dir = own ? o.loginDir! : o.dir;
+            const watcher = new CueWatcher(dir, s.scope, cue => this.onCue(s, cue), { log, pollMs: o.pollMs ?? 100, onOther: cue => this.changed(s, s.other(cue), cue) });
+            this.watchers.push({ dir, watcher });
+            if (own) this.loginWatcher = watcher;
+            if (s === this.stopScope) this.stopWatcher = watcher;
+        }
+        // Settled by cues already on disk while the watchers started: the login folder is let go now.
+        if (this.loginWatcher && this.loginResult()) this.closeLoginFolder();
     }
 
-    private onCue(cue: Cue, forLogin: boolean, forStop: boolean): void {
-        const ev = gateEvent(cue, this.o.since);
-        if (!ev) {
+    /**
+     * The stop scope's close, re-reading the role folder now. With a login folder the two folders' writes
+     * have no common order, so a close already written there must win over a login about to happen
+     * however the watchers' polls fall; the launcher asks just before each login.
+     */
+    stopClosedNow(): ScopeClosed | null {
+        this.stopWatcher?.check();
+        return this.stopped;
+    }
+
+    /** The folders read now, one entry per watcher. */
+    get watching(): string[] {
+        return this.watchers.map(w => w.dir);
+    }
+
+    private onCue(s: ScopeSessions, cue: Cue): void {
+        if (!gateEvent(cue, this.o.since)) {
             if (!this.early) this.o.log(`cue for ${scopeText(cue.scope)} written before this launch ignored (session ${cue.session}, seq ${cue.seq})`);
             this.early = true;
             return;
         }
-        if (forLogin && this.login === 'waiting') this.login = { result: ev, cue };
-        if (forStop && ev === 'stop' && !this.stopped) {
-            this.stopped = cue;
-            queueMicrotask(() => this.o.onStop(cue));
+        // An open from the login folder counts only after the role folder is read: its close wins.
+        if (s === this.loginScope && this.o.loginDir !== undefined && this.login === 'waiting') this.stopWatcher?.check();
+        this.changed(s, s.own(cue), cue);
+    }
+
+    private changed(s: ScopeSessions, change: 'open' | 'stood-down' | 'closed' | null, cue: Cue): void {
+        if (!change) return;
+        if (s === this.loginScope && this.login === 'waiting') {
+            if (change === 'open') this.login = this.stopped ? { result: 'stop', closed: this.stopped } : { result: 'open', cue };
+            if (change === 'closed') this.login = { result: 'stop', closed: s.closed! };
         }
+        if (s === this.stopScope) {
+            if (change === 'closed' && !this.stopped) {
+                const closed = s.closed!;
+                this.stopped = closed;
+                queueMicrotask(() => this.o.onStop(closed));
+            } else if (change !== 'closed' && this.o.onSession) {
+                const onSession = this.o.onSession;
+                queueMicrotask(() => onSession(change, cue));
+            }
+        }
+        // The login folder triggers one login, never a stop: once the login is settled it is not read again.
+        if (this.loginWatcher && this.loginResult()) this.closeLoginFolder();
         for (const w of this.wakes) w();
     }
 
-    /** The login's outcome so far: open, or stop (the login scope's, or the stop scope's), or null while waiting. */
+    private closeLoginFolder(): void {
+        const w = this.loginWatcher!;
+        this.loginWatcher = null;
+        w.close();
+        const i = this.watchers.findIndex(x => x.watcher === w);
+        if (i >= 0) this.watchers.splice(i, 1);
+    }
+
+    /** The login's outcome so far: open, or stop (the login scope closed, or the stop scope did), or null while waiting. */
     private loginResult(): LoginWait | null {
-        if (this.login !== 'waiting') return { result: this.login.result, cue: this.login.cue };
-        if (this.stopped) return { result: 'stop', cue: this.stopped };
+        if (this.login !== 'waiting') return this.login;
+        if (this.stopped) return { result: 'stop', closed: this.stopped };
         return null;
     }
 
@@ -434,8 +621,10 @@ export class CueGate {
     }
 
     close(): void {
-        for (const w of this.watchers) w.close();
+        for (const w of this.watchers) w.watcher.close();
         this.watchers.length = 0;
+        this.loginWatcher = null;
+        this.stopWatcher = null;
     }
 }
 
@@ -671,7 +860,7 @@ class Launcher {
     private gateway: Subprocess<'ignore', 'pipe', 'pipe'> | null = null;
     private readonly accounts: AccountRun[];
     private readonly stopReq: StopRequest;
-    private readonly logins = new LoginLimiter({ perMinute: 6, burst: 3, minSpacingMs: 4000 });
+    private readonly logins = new LoginLimiter({ ...LAUNCHER_LOGIN_POLICY });
     readonly startedAt = Date.now();
     readonly logDir: string;
 
@@ -919,14 +1108,19 @@ class AccountRun implements Stoppable {
         this.cue = { login: loginOn ? scopeText(loginOn) : null, stop: stopOn ? scopeText(stopOn) : null, state: loginOn ? 'waiting' : 'watching', ms: Date.now() };
         this.gate = new CueGate({
             dir: this.cueDir,
+            ...(loginOn?.cueDir ? { loginDir: loginOn.cueDir } : {}),
             login: loginOn,
             stop: stopOn,
             since: this.L.startedAt,
-            onStop: cue => this.onStopCue(cue),
+            onStop: closed => this.onScopeClosed(closed),
+            onSession: (event, cue) => this.onStopScopeSession(event, cue),
             // Every account sees every other family's cues go by: those notes go to its own log.
             log: line => this.note('cue', line)
         });
-        this.L.log(`[launcher] ${account}: reading ${this.cueDir}${loginOn ? `; logs in when a cue for ${scopeText(loginOn)} opens` : ''}${stopOn ? `; logs out when one for ${scopeText(stopOn)} says stop` : ''}`);
+        const loginAt = loginOn?.cueDir ? ` in its login folder ${loginOn.cueDir} (read only until it logs in)` : '';
+        this.L.log(
+            `[launcher] ${account}: reading ${this.cueDir}${loginOn ? `; logs in when a cue for ${scopeText(loginOn)} opens${loginAt}` : ''}${stopOn ? `; logs out when ${scopeText(stopOn)} closes (its final stop, or the next scope's cue after its stop)` : ''}`
+        );
     }
 
     disarm(): void {
@@ -944,12 +1138,59 @@ class AccountRun implements Stoppable {
         this.L.writeStatus();
     }
 
-    /** A stop addressed to stopOn's scope: the account leaves the run now, without waiting for the launcher's stop. */
-    private onStopCue(cue: Cue): void {
+    /** Logged in (or logging in), as opposed to waiting its turn or its login cue. */
+    private get inRun(): boolean {
+        return this.state !== 'queued' && this.state !== 'awaiting-cue';
+    }
+
+    /**
+     * Just before a login: for an account with a login folder, its role folder is re-read now (CueGate
+     * stopClosedNow), so a stop scope's close already written wins over the login whatever the polls'
+     * timing; one never logged in stays out for good, and a relogin waits for the stop it is part of.
+     * One folder needs no re-read: cue.json orders its own writes.
+     */
+    private loginBlocked(): boolean {
+        if (this.halted) return true;
+        if (!this.entry.loginOn?.cueDir || !this.gate) return false;
+        const closed = this.gate.stopClosedNow();
+        if (!closed) return false;
+        if (this.retired === null && !this.inRun) {
+            const why = closedText(closed);
+            this.L.log(`[launcher] ${this.entry.account}: ${why} before its login: it never logs in`);
+            this.neverLogsIn(why, 'stopped');
+        }
+        return true;
+    }
+
+    /**
+     * stopOn's scope stopped a session without closing (a program segment: the step opens another), or
+     * opened one: the account stays in the world either way; its role stands down on the stop itself.
+     */
+    private onStopScopeSession(event: 'open' | 'stood-down', cue: Cue): void {
+        if (this.retired !== null || this.L.isStopping || !this.cue) return;
+        const { account } = this.entry;
+        const at = `${scopeText(cue.scope)} (session ${cue.session}, seq ${cue.seq})`;
+        if (event === 'stood-down') {
+            if (!this.inRun) {
+                this.L.log(`[launcher] ${account}: stop for ${at} does not close it: ${this.state === 'awaiting-cue' ? 'still waits for its open' : 'logs in on its turn'}`);
+                return;
+            }
+            this.setGate('stood-down');
+            this.L.log(`[launcher] ${account}: stop for ${at} does not close it: stood down, stays in the world until its final stop or the next scope's cue`);
+        } else {
+            if (this.cue.state !== 'stood-down') return;
+            this.setGate(this.entry.loginOn ? 'opened' : 'watching');
+            this.L.log(`[launcher] ${account}: new session for ${at}: watching it`);
+        }
+        this.L.writeStatus();
+    }
+
+    /** stopOn's scope closed: the account leaves the run now, without waiting for the launcher's stop. */
+    private onScopeClosed(closed: ScopeClosed): void {
         if (this.retired !== null || this.L.isStopping) return;
         const { account } = this.entry;
-        const why = `stop cue for ${scopeText(cue.scope)} (session ${cue.session}, seq ${cue.seq})`;
-        if (this.state === 'queued' || this.state === 'awaiting-cue') {
+        const why = closedText(closed);
+        if (!this.inRun) {
             this.L.log(`[launcher] ${account}: ${why} before its login: it never logs in`);
             this.neverLogsIn(why, 'stopped');
             return;
@@ -978,9 +1219,9 @@ class AccountRun implements Stoppable {
         const w = await this.gate.waitForLogin(on.waitMs, this.L.stopRequested);
         if (w.result === 'stopped' || this.L.isStopping) return;
         if (w.result === 'stop') {
-            // onStopCue has handled a stop on stopOn's scope; this is the login scope's, when stopOn names another.
+            // onScopeClosed has handled stopOn's scope closing; this is the login scope's, when stopOn names another.
             if (this.retired === null) {
-                const why = `stop cue for ${scopeText(w.cue.scope)} (session ${w.cue.session}, seq ${w.cue.seq})`;
+                const why = closedText(w.closed);
                 this.L.log(`[launcher] ${account}: ${why} before its login: it never logs in`);
                 this.neverLogsIn(why, 'stopped');
             }
@@ -1040,6 +1281,11 @@ class AccountRun implements Stoppable {
         const why = checkBotEnv(this.botEnv, this.entry.account, this.L.gatewayUrl);
         if (why) throw new Error(`${this.entry.account}: ${this.envPath}: ${why}`);
         if (this.entry.loginOn || this.entry.stopOn) assertUntracked(this.cueDir);
+        const loginDir = this.entry.loginOn?.cueDir;
+        if (loginDir) {
+            assertUntracked(loginDir);
+            assertDistinctCueDirs(this.cueDir, loginDir);
+        }
     }
 
     /** Log in (waiting for it), start the role, and keep both running in the background. */
@@ -1076,7 +1322,7 @@ class AccountRun implements Stoppable {
         await this.waitForEarlierCopy();
         if (this.halted) return;
         await this.L.takeLogin();
-        if (this.halted) return;
+        if (this.loginBlocked()) return;
         this.state = 'logging-in';
         this.logins++;
         this.L.log(`[launcher] ${this.entry.account}: logging in to ${this.botEnv.SERVER} (direct)`);
@@ -1089,7 +1335,7 @@ class AccountRun implements Stoppable {
             await this.waitForEarlierCopy();
             if (this.halted) return { ended: Promise.resolve({ code: null }) };
             await this.L.takeLogin();
-            if (this.halted) return { ended: Promise.resolve({ code: null }) };
+            if (this.loginBlocked()) return { ended: Promise.resolve({ code: null }) };
             this.state = 'logging-in';
             this.logins++;
             this.L.log(`[launcher] ${this.entry.account}: logging in to ${this.botEnv.SERVER}`);

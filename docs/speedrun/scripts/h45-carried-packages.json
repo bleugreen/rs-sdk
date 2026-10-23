@@ -1,0 +1,64 @@
+{
+  "account": "cairn_h45",
+  "role": "mule",
+  "cueDir": "run-machine/h45-cue",
+  "loginOn": {
+    "step": "H12oM",
+    "family": "mule"
+  },
+  "stopOn": {
+    "step": "H12oP",
+    "family": "mule"
+  },
+  "options": {
+    "serve": "<SCORED>",
+    "serveMode": "request",
+    "carried": true,
+    "packages": [
+      {
+        "name": "H12oM",
+        "items": [
+          {
+            "id": 385,
+            "topUp": {
+              "max": 15
+            }
+          }
+        ],
+        "scope": {
+          "step": "H12oM",
+          "family": "mule"
+        },
+        "at": {
+          "x": 2763,
+          "z": 2704
+        }
+      },
+      {
+        "name": "H12oP",
+        "items": [
+          {
+            "id": 2448,
+            "topUp": {
+              "max": 1
+            }
+          },
+          {
+            "id": 385,
+            "topUp": {
+              "max": 9
+            }
+          }
+        ],
+        "scope": {
+          "step": "H12oP",
+          "family": "mule"
+        },
+        "at": {
+          "x": 2803,
+          "z": 2724
+        }
+      }
+    ]
+  }
+}

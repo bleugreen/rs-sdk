@@ -335,23 +335,64 @@ no courier trades and no GE. Two guards, on by default only in carried mode:
   client sends keepalive packets, and its AFK `IDLE_TIMER` is the browser client's); this guards
   against the demo's unpublished one (rs/433).
 
-**H12o, the atoll helper.** cairn_h45 (99 Attack, Strength, Defence and Hitpoints, wearing the best
-melee armour it can buy: rune full helm, chainbody, platelegs, kiteshield, scimitar; the platebody
-needs Dragon Slayer) serves SCORED twice on Ape Atoll in one login, from the run-machine launcher:
+**H12o, the atoll helper.** cairn_h45 serves SCORED twice on Ape Atoll in one login.
+The launcher entry is generated, never hand-maintained:
 
-```json
-{ "account": "cairn_h45", "role": "mule", "cueDir": "run-machine/h45-cue",
-  "loginOn": { "step": "H12oM", "family": "mule" },
-  "stopOn":  { "step": "H12oP", "family": "mule" },
-  "options": { "serve": "<SCORED>", "serveMode": "request", "carried": true, "packages": [
-    { "name": "H12oM", "scope": { "step": "H12oM", "family": "mule" }, "at": { "x": 2763, "z": 2704 },
-      "items": [{ "item": "Shark", "topUp": { "max": 13 } }] },
-    { "name": "H12oP", "scope": { "step": "H12oP", "family": "mule" }, "at": { "x": 2803, "z": 2724 },
-      "items": [{ "item": "Shark", "amount": 9 }, { "item": "Superantipoison(4)", "amount": 1 }] } ] } }
+```sh
+bun speedrun/helpers/mule-ledger.ts --carried-h45 > docs/speedrun/scripts/h45-carried-packages.json
+bun speedrun/helpers/mule-ledger.ts --carried-h45 --check docs/speedrun/scripts/h45-carried-packages.json
 ```
 
-The game names the potion `Superantipoison(4)` (obj 2448, `4dose2antipoison`), one word. h45 logs in
-carrying 22 sharks and the potion, 23 slots, and nothing else in the pack. Its own `cueDir` keeps
+The [persisted sanitized entry](../scripts/h45-carried-packages.json) is a review artifact,
+not a deployment or staging authorization. Replace its `<SCORED>` placeholder only in the
+run host's private configuration. The launcher and role share `run-machine/h45-cue`.
+The exact-config check includes line order, tiles, cue scopes and launcher gates.
+
+`mule-ledger.ts` derives both packages from the current STEP-MANIFEST rows, through
+`muleFromLedger` and the shared `materializeDeliveryPackage` identity/tradeability boundary.
+The carried adapter maps ledger **H12o-M/P** to existing cue scopes **H12oM/P**.
+Both are dynamic asks: M's ledger top-up stays a top-up; P's fixed-count syntax records
+arrival-sized **caps**, so only this adapter converts its lines to top-ups. It preserves
+the ledger's potion-first order and id 2448, with sharks resolved to their tradeable id.
+No scored receive logic or trade engine is replaced.
+
+Current maximum delivery is **15 sharks at M, then 1 Superantipoison(4) and 9 sharks at P**:
+24 sharks plus the potion, **25 unstacked slots**. That leaves at most **3 slots** for
+all retained quest/travel items and the helper's own guard food together. Worn equipment
+uses equipment slots, but anything that must be unwielded or carried counts against that
+margin. A 25-slot package alone is **not** proof that h45 can carry or safely deliver it.
+The existing carried engine logs shortage; it does not certify full-duty readiness.
+Its wildlife fight currently has no automatic eating policy. Carrying guard sharks alone
+therefore does not establish that the helper will use them to survive.
+
+**Actual capacity and staging gate.** Parent-supplied rs/465 report at 2026-10-23 01:30Z,
+from the 01:28Z logout frame: h45 is disabled and logged out at **(2465,3490,0)** outside
+the Grand Tree, **not at the atoll**. HP **68/99**, Prayer **1**, melee stats **99**,
+Magic **57**, Agility **76**. Worn: adamant full helm, adamant longsword, adamant
+chainbody and adamant platelegs, not the previously assumed rune set. Inventory is
+**17/28 slots**: Coins 270, 11 sharks, Hazelmere's scroll, Translation book, Glough's
+journal, Lumber order and Glough's key. These are observed **names**, not an item-id census.
+
+Current pack capacity **FAILS**: even assigning all 11 existing sharks to delivery,
+the complete 25-slot package plus six non-package occupied slots requires **31 slots**.
+Those sharks cannot simultaneously count as guard food. rs/465 reports the five quest
+items as completed-Grand-Tree leftovers; that does not authorize dropping or banking them.
+Tree Gnome Village and Grand Tree are complete and MM segment G passed its postconditions;
+the underlying MM quest variables after the return flight were not directly observed.
+
+**Fail closed for launch.** Post-cleanup capacity, stock allocation, guard-food sufficiency,
+Stronghold-to-atoll travel and actual atoll staging remain **UNKNOWN**, pending parent/rs331
+observations and authorization. Do not lower the ledger caps, discard quest items, or
+spend the delivery stock on survival to make a theoretical pack fit. The owner must record
+a fresh item-id/slot census, required retained items, worn gear, guard-food reserve and
+full stock at the intended tile before approving duty. A private atoll-start fixture can
+test the M-to-P duty, but cannot establish that live staging or the outbound route is safe.
+
+**Offer order.** In one trade the mule offers in the package's line order (`byPackageLine`), each id
+from its lowest slot, with any X count (anything but 1, 5, 10 or the whole stack) after the button
+presses (`lib/trade.ts` `planOffers`). H12oP's potion line comes first and is always a one-press All,
+so it is offered first for every ask, whatever slot it sits in; nothing in the staging has to hold it.
+The trade completes only when both sides confirm, so the order changes nothing SCORED receives. Its own `cueDir` keeps
 mule1's H12 cue apart; there H12oP's cue replaces H12oM's in the one `cue.json`. What `run.ts` writes
 (rs/393), with SCORED as the receiver:
 
@@ -360,13 +401,35 @@ mule1's H12 cue apart; there H12oP's cue replaces H12oM's in the one `cue.json`.
    the same cue as M's request: it walks from P's tile to M's and clears the wildlife there.
 2. **M's ask**, on the first frame showing the trade with h45 open:
    `writeTopUpAsk(dir, [{ item: '^shark$', count: n }], Date.now(), { step: 'H12oM', family: 'mule' })`,
-   n = SCORED's free slots up to 13, `want` exactly n sharks. With n = 0 there's no trade: write H12oM's
-   **stop**, and the mule moves on to P (it does the same straight after M's trade).
+   n = min(15, SCORED's free slots - 1), `want` exactly n sharks. With n = 0 there's no trade: write H12oM's
+   **stop**, and the mule passes M (below) and moves on to P (it moves on straight after M's trade too).
 3. **H12oP opens** any time after M (a new cue session). h45 waits logged in on P's tile (2803,2724),
-   ~850 ticks; SCORED's trade there wants 9 Shark + 1 Superantipoison(4), with no ask.
-4. **H12oP stops** after P's trade: the launcher logs h45 out at once.
+   ~850 ticks. P is sized by SCORED on arrival (rs/158): the Superantipoison(4) plus min(9, free - 2)
+   sharks, keeping one slot free. On the first frame showing the trade open SCORED writes
+   `writeTopUpAsk(dir, [{ item: '^superantipoison\\(4\\)$', count: 1 }, { item: '^shark$', count: k }], Date.now(), { step: 'H12oP', family: 'mule' })`
+   and wants exactly what it asked. A line it needs none of is left out, since an ask's counts are at
+   least 1. h45 offers each line's ask clamped to its max and to what it holds: asked 1 + 5, the potion
+   and 5 sharks; asked 1 + 0, the potion alone.
+4. **Nothing to ask means no trade.** SCORED writes H12oP's **stop** in place of the trade. A carried
+   package whose cue stops before its trade is passed: the mule opens no trade and sends no more
+   requests, logs `carried: asked for nothing; passed without a trade`, and records the cue session in
+   RoleState (`carriedServed`) as a trade would be, so a restarted role never takes it up again.
+5. **H12oP's final stop** after P's trade, or in place of it (`final: true`, or the next scope's cue after a
+   plain stop): the launcher logs h45 out at once. H12oM's stop and H12oP's open between the two trades
+   leave it in.
 
-Measured end to end (`speedrun/lab/atoll-mule.ts`, rs/483, fedora lab, T=400, the launcher's relay
+**Current full-capacity private proof.** The [archived max-load duty](../../../speedrun/lab/evidence/h45-max-load/README.md)
+uses the same carried engine and generated packages with the reported h45 stats/adamant
+gear, HP 68/99, and a synthetic 28-slot load of 27 sharks plus potion 2448. It delivered
+M's full 15, walked from M's combat-offset tile to P in 23 ticks, waited 850 ticks with
+an observed keepalive, then offered the potion first and delivered P's full 9 sharks.
+Both receiver layouts preserved the canonical spare slot. Minimum HP was 55, final HP
+63; no food was consumed and all three reserve sharks remained. The final cue logged
+it out after one session. Exact source, patch hashes, inventory snapshots and trade
+frames are archived. This is one natural-duty trial, not worst-case survival or proof
+of autonomous eating, live capacity, or the Stronghold-to-atoll route.
+
+Historical lighter-load measurement (`speedrun/lab/atoll-mule.ts`, rs/483, fedora lab, T=400, the launcher's relay
 path, a stand-in SCORED appearing on each tile as a ladder climb would put it):
 
 | Leg | Ticks |
@@ -378,32 +441,31 @@ path, a stand-in SCORED appearing on each tile as a ladder climb would put it):
 | M's trade, SCORED's clock (10 free slots, asked 10, given exactly 10 of 22) | 5 (mule's giver 3) |
 | The walk M -> P, starting straight after M | 23 |
 | The wait at P: 850 ticks (5.7 min), 0 hits, 1 keep-alive (after 300 s idle, a 2-tick step) | 850 |
-| P's trade, SCORED's clock (9 sharks + 1 potion) | 5 (mule's giver 4) |
+| P's trade, SCORED's clock (9 sharks + 1 potion, P's earlier fixed form in that historical run) | 5 (mule's giver 4) |
 | H12oP's stop to the launcher's logout | 2 |
 
 SCORED arrived 70 ticks after the open while the mule was still on its second spider; the
 pre-request waited for the kill, which cost SCORED a few ticks. The login and walk took 30 ticks, so
 the ~100-tick lead in step 1 leaves room for the wildlife.
 
-**Where h45 waits, and the restock between attempts.** Staged at run eve, h45 parks **logged out on
-P's tile, loaded**. A relog lands on the same tile: the lab's login put it at (2803,2724), and it
-took no hits there in 850 ticks logged in (rs/463: 0 in 100-tick parks). After P's trade it holds
-22 - n - 9 sharks (n = M's count) and nothing else. Before the next attempt it must restock to 22
-sharks and the potion, and there is no bank on the atoll:
+**Where h45 must wait, and restock between attempts.** The intended staged state is
+logged out on P's tile, with the full generated package and a separately justified guard
+reserve. That is not the observed state above. The earlier lab relog landed on P and took
+no hits there for 850 ticks; it is historical lab evidence, not an actual staging receipt.
 
-1. Lumdo (at the landing, 2802,2707) to Crash Island, then Waydar's return to the Gnome Stronghold.
-2. Bank at the Grand Tree: deposit the leftover sharks, withdraw 22 Shark and 1 Superantipoison(4),
-   and keep the rune set worn and nothing else in the pack.
-3. Back via Daero (the blindfold) to Waydar, Crash Island and Lumdo: 42 ticks (rs/463, m), then the
-   ~10-tick walk from the landing to P's tile; log out there.
+After successful asks n at M and k at P, the delivery allocation left is 24 - n - k sharks,
+plus the potion if P did not ask for it; guard consumption must be accounted separately.
+There is no bank on the atoll. Any future restock/cleanup or return via Lumdo, Waydar and
+the Grand Tree requires parent authorization and a fresh inventory/route check. Never
+assume an empty pack or discard retained quest items. The mule role only serves: it does
+not implement the off-atoll staging trip.
 
-The outward leg and the bank visit aren't measured (a few hundred ticks, i). The trip runs on h45's
-clock, between attempts, and costs SCORED nothing. Running it is a staging step, not the role's: the
-mule role only serves, and the restock is done by hand or by a staging script that doesn't exist yet.
 
-In the fleet: one mule account is enough; a second (`cairn_mule2`) helps only for
-back-to-back hand-offs or while the first is at the GE. The module exports `role`
-(mule), `courier` and `roles`. The fleet loads a role by name from
+Banked mule assignments come from the canonical generated delivery manifest
+(`docs/speedrun/research/mule-delivery-production.json`) and its route/readiness
+contract in `docs/speedrun/helpers/mule-delivery.md`, not a fixed fleet-size assumption.
+The carried atoll entry above is separate; it does not establish banked route capacity.
+The module exports `role` (mule), `courier` and `roles`. The fleet loads a role by name from
 `speedrun/helpers/<name>.ts`, so `speedrun/helpers/courier.ts` re-exports the courier
 as its `role`: `fleetctl assign <account> courier --options '{"mule":...,"items":[...]}'`.
 A courier trip ends when the trip is done: `run` returns, so the fleet does not start

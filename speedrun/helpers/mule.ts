@@ -32,7 +32,8 @@
 // package may name the tile it is served from (`at`); the mule stands on the pending package's tile,
 // else on the first one not yet served or withdrawn (carriedStand), and walks there as soon as that
 // changes. What it served is kept in RoleState by cue session, so a restarted role never serves a
-// package twice. Two guards keep it alive between trades: it kills any NPC that hit it, or any named
+// package twice. A package whose cue stops before its trade (SCORED asked for none of it: every
+// top-up met, so no trade) is passed and recorded the same way (passCarried). Two guards keep it alive between trades: it kills any NPC that hit it, or any named
 // aggressive species within `clearTiles` (wildlifeThreat; any NPC hit on either trader closes the
 // trade for both), and every `keepAliveMinutes` while idle it steps one tile out and back
 // (keepAliveStep). Both are on by default only in carried mode.
@@ -702,7 +703,9 @@ export async function giveOpenTrade(
     }
 
     const count = (id: number): number | 'all' => amounts?.get(id) ?? 'all';
-    const offered = firstSlotPerId(items).filter(i => count(i.id) !== 0);
+    // Each id from its lowest slot, offered in the order the ids first appear in `items` (X counts still go last, planOffers).
+    const first = new Map(firstSlotPerId(items).map(i => [i.id, i]));
+    const offered = [...new Set(items.map(i => i.id))].map(id => first.get(id)!).filter(i => count(i.id) !== 0);
     if (mode === 'stock') {
         const names = offered.map(i => {
             const n = count(i.id);
@@ -744,12 +747,24 @@ export interface ServeResult extends GiveResult {
 }
 
 /**
+ * `items` in the package's line order (then by slot), so the offers follow the lines whatever slot each
+ * sits in: H12oP's Superantipoison(4), a one-press All, goes before its sharks for every ask.
+ */
+export function byPackageLine(pkg: Pick<Package, 'items'>, items: readonly InventoryItem[], pack?: ObjPack): InventoryItem[] {
+    const line = (i: InventoryItem) => {
+        const n = pkg.items.findIndex(spec => refMatches(spec, i, pack));
+        return n < 0 ? pkg.items.length : n;
+    };
+    return [...items].sort((a, b) => line(a) - line(b) || a.slot - b.slot);
+}
+
+/**
  * Give the staged package in the trade open with `partner`. A fixed package is all of each
  * staged id, as ever. A package with a top-up first waits for the scored account's ask (altar-cue.ts
  * awaitAsk, scoped to the package) and offers each top-up line's topUpCounts count.
  */
 export async function serveStaged(sdk: BotSDK, bot: BotActions, o: ServeOptions): Promise<ServeResult> {
-    const items = sdk.getInventory().filter(i => o.held.has(i.id));
+    const items = byPackageLine(o.pkg, sdk.getInventory().filter(i => o.held.has(i.id)));
     const mode = o.mode ?? 'burst';
     const timeoutMs = o.timeoutMs ?? 60_000;
     const fixed = o.exact ? new Map(o.held) : undefined;
@@ -1081,6 +1096,18 @@ class Mule {
         return carriedServedEntries(this.ctx.state.get(CARRIED_SERVED_KEY));
     }
 
+    /**
+     * A carried package's cue stopped: the mule moves on to the next tile. Stopped before its trade, the
+     * scored account asked for none of it (every top-up met, so it made no trade) or skipped the hand-off;
+     * that is recorded as served for the cue session, as a trade is, so a restarted role never takes it up.
+     */
+    private async passCarried(pkg: Package, session: string): Promise<void> {
+        this.done.add(pkg.name);
+        if (this.servedEntries().some(e => e.pkg === pkg.name && e.session === session)) return;
+        await this.ctx.state.set(CARRIED_SERVED_KEY, [...this.servedEntries(), { pkg: pkg.name, session, ms: Date.now() } satisfies CarriedServed]);
+        this.ctx.log('carried: asked for nothing; passed without a trade', { package: pkg.name, session });
+    }
+
     /** Order mode past a carried package served before a restart: the next one not done. */
     private afterCarried(served: Package): { nextIndex: number; pending: Package | null } {
         let r = afterServe(this.ordered, this.nextIndex, served);
@@ -1183,8 +1210,7 @@ class Mule {
                 this.held = null;
                 this.needsBank = !this.o.carried;
             }
-            // A carried package withdrawn (its hand-off skipped) is passed: the mule moves on to the next tile.
-            if (action === 'stop' && pkg && this.o.carried) this.done.add(pkg.name);
+            if (action === 'stop' && pkg && this.o.carried) await this.passCarried(pkg, cue.session);
         }
 
         // 2. Trade requests: the scored account first, then couriers; anyone else is ignored.
