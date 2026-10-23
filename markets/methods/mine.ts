@@ -92,7 +92,7 @@ export class RespawnTracker {
     /** Depletions seen (any player's). */
     depletions = 0;
 
-    update(tick: number, live: ReadonlySet<string>, visible: ReadonlySet<string>): void {
+    update(tick: number, live: ReadonlySet<string>, inView: (tile: string) => boolean): void {
         for (const t of live) {
             this.known.add(t);
             const since = this.deadSince.get(t);
@@ -101,7 +101,7 @@ export class RespawnTracker {
         }
         for (const t of this.known) {
             if (live.has(t)) continue;
-            if (!visible.has(t)) {
+            if (!inView(t)) {
                 // out of view: the interval's start or end would be a guess
                 this.deadSince.set(t, -1);
                 continue;
@@ -156,20 +156,13 @@ export class Miner {
 
     private observe(s: BotWorldState): void {
         const live = new Set<string>();
-        const visible = new Set<string>();
-        for (const l of s.nearbyLocs) {
-            if (!inBox(this.site.box, l.x, l.z)) continue;
-            visible.add(tileKey(l.x, l.z));
-            if (this.site.rocks.includes(l.id)) live.add(tileKey(l.x, l.z));
-        }
-        // a depleted rock is another loc on the same tile, so a tracked tile in view with no live rock is depleted
-        const near = (t: string) => {
+        for (const l of s.nearbyLocs) if (inBox(this.site.box, l.x, l.z) && this.site.rocks.includes(l.id)) live.add(tileKey(l.x, l.z));
+        // a depleted rock is another loc on the same tile: a known tile in view with no live rock is depleted
+        const me = { x: s.player!.worldX, z: s.player!.worldZ };
+        this.respawns.update(s.tick, live, t => {
             const [x, z] = t.split(',').map(Number);
-            return cheb({ x: x!, z: z! }, { x: s.player!.worldX, z: s.player!.worldZ }) <= 14;
-        };
-        for (const t of live) visible.add(t);
-        const seen = new Set([...visible].filter(near));
-        this.respawns.update(s.tick, live, seen);
+            return cheb({ x: x!, z: z! }, me) <= 12;
+        });
     }
 
     async run(): Promise<void> {
