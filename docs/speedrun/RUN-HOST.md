@@ -1801,7 +1801,7 @@ detail)`, the phase `precondition`, `run` or `postcondition`, and `resume.ts:337
 a link, session or page-reload failure. `lib/attempt.ts:108-114` catches it in the world and run.ts
 stops with exit 1. The only recovery is the operator re-running the command, and where it enters is
 decided from game state, not from the log (`resolveResume`, `resume.ts:123-152`). A manual re-run
-costs **~150-450 ticks (i)**; rs/574 (rs/546's successor) measures one kill-and-re-run (RUN-ORDER.md
+costs **~150-450 ticks (i)**; rs/589 (rs/546's, rs/574's and rs/585's successor) measures one kill-and-re-run (RUN-ORDER.md
 section 7, the ladder's general note).
 
 **A throw in combat: relaunch FIRST** (main 23:3x via rs/158; fold-in 35). If the run log's last
@@ -1813,21 +1813,21 @@ the measured case** (rs/201 exec 9, bgsrv-mac, 400 ms: a throw right after the t
 under the temple, the logout refused for 27.6 s of tries, ~69 ticks; the re-run resumed N in the
 live session and finished it in 50; waiting out the logout was a death in one lab attempt).
 
-**What the operator sees.** `[run] FAILED: <message>` (`attempt.ts:112`, `run.ts:526`), then
-`[run] logout: ...` (`run.ts:371, 397`): **run.ts logs SCORED out after a StepError**, and on the
-way out writes a FINAL stop to every open helper cue (`run.ts:404`, `cue-keeper.ts:158-164`), so
-the launcher logs the failed step's helper family out, and a relaunched launcher ignores cues
-written before it started (rs/41). Exit code 1. **The helpers, in both forms** (rs/186 via
-rs/158; fold-in 35):
+**What the operator sees.** `[run] FAILED: <message>` (`lib/attempt.ts:114`), then
+`[run] logout: ...` (`run.ts:513`): **run.ts logs SCORED out after a StepError**, and on the way
+out closes the helper cues **non-final**, printing `[run] cues closed non-final: a re-run re-arms the
+helpers` (`run.ts:534-538`, `runner/cue-keeper.ts` `exitStopIsFinal`). Exit code 1. **The helpers
+stand down on a StepError or a first Ctrl-C; a re-run re-arms them** (rs/574's retire rule, on main
+with #468, 4657eed8, rs/583 from rs/186 @43f03530; fold-in 36):
 
-- **Today** (main; `cueAround`'s final stop in `runner/chain.ts`): a StepError retires the failed
-  step's helpers, so **the failed step's launcher entries are relaunched BEFORE the re-run** (check 6).
-- **Once rs/574's retire rule is on the floor** (landed on rs/186's branch; its snapshot to main is
-  rs/583, held behind rs/580): helpers are retired (a final stop) **only** on a completed chain, a
-  second Ctrl-C or SIGTERM, which **end the attempt**. A first Ctrl-C (a graceful stop at the next
-  logout-safe boundary, to resume later, exit 4), SIGHUP, a StepError, a refused resume or a host
-  reservation leave the helpers stood down and **logged in** for the re-run (up to 25-26 at S21 on
-  SCORED's address, rs/41), and the re-run's cue re-arms them; relaunch none.
+- A failed step's own cue is stopped non-final too (`runner/chain.ts` `cueAround`), so its helper
+  family stands down **logged in** for the re-run (up to 25-26 at S21 on SCORED's address, rs/41),
+  and the re-run's fresh cue re-arms them; **relaunch none**. The same holds for a first Ctrl-C (a
+  graceful stop at the next logout-safe boundary, to resume later, exit 4), SIGHUP, a refused resume,
+  a host reservation and a crash.
+- Helpers are **retired** (a final stop, `[run] cues closed final`) **only** on a completed whole
+  run, SIGTERM or a second Ctrl-C, which **end the attempt**: a launcher never re-arms a retired
+  scope (`helpers/standalone.ts`'s ScopeSessions), so a re-run after one finds no helpers.
 
 **Never send SIGTERM or a second Ctrl-C unless the attempt is being ended.**
 
@@ -1867,19 +1867,18 @@ The checks, in order, before re-running. Any one failing means **do not re-run: 
 5. **The host claim is still held and live**: run.ts releases it only on success (`run.ts:533`); an
    expired claim makes gate 2 refuse with an `rs-claim take ...` hint (`run.ts:252-261`), so retake it
    as step 0 does first.
-6. **The helpers: relaunch the failed step's launcher entries BEFORE the re-run** (fold-in 34;
-   today, until rs/574's retire rule is on the floor in rs/583). A StepError writes a final stop to
-   open helper cues, so the failed step's helpers are logged out, and a relaunched launcher ignores
-   cues written before it started, so the relaunch comes first and the re-run's new cue reaches it
-   (step 4; HELPERS.md). **Once rs/583 is on the floor**, a StepError, a refused resume, a first
-   Ctrl-C, SIGHUP or a host reservation leaves the stood-down helpers logged in on SCORED's address
-   during the re-run (up to 25-26 at S21, rs/41) and the re-run's cue re-arms them: confirm they are
-   still in, and relaunch none; this check's relaunch line then goes.
+6. **The helpers: stood down and still logged in; relaunch none** (#468, 4657eed8, rs/583 from rs/186 @43f03530; fold-in 36).
+   The log reads `[run] cues closed non-final: a re-run re-arms the helpers`, and the failed
+   step's helpers are still in on SCORED's address (up to 25-26 at S21, rs/41); the re-run's cue
+   re-arms them. If it reads `[run] cues closed final` (a SIGTERM or a second Ctrl-C was sent), the
+   attempt has been ended and the helpers retired: do not re-run, tell main.
 7. **The step is not on the non-admitting list**: RUN-ORDER.md section 7's margin ladder and its
    attempt-ending lines (A and B are on main, #462 and #453, so fold-in 33's conditional note after
    H7 and in S18 and S22 mid-band is off; fold-in 35). Some lines name an
    operator fix before the re-run instead (S25a: walk SCORED to the anvil; S06 or S21: re-enter
-   through the ruins; S21's relog logout half: log SCORED in by hand); the rest end the attempt.
+   through the ruins; S21's relog logout half needs none since #468, which opens S21's entry once `logoutClean` reports
+   SCORED out and before the page check, so an unconfirmed page leaves the entry open and the re-run
+   takes the login half); the rest end the attempt.
 
 **The re-run is the bare launch command, unchanged**: `bun speedrun/run.ts` with the same
 arguments as the first launch (usage `run.ts:75-79`, parsing `run.ts:113-142`), the same `--run-dir`
@@ -1908,10 +1907,10 @@ segment (e.g. `S05:A-h4-swap`), and the tick log gets a `(resume)` row with the 
 - the walk throwing while SCORED is not in the world: `[run] resume: run the same command again`,
   exit 4 (`attempt.ts:111`, `run.ts:536`): re-run once; a second refusal means stop and escalate,
   never loop;
-- **the S00 edge** (`resume.ts:296`, `start.ts:222`): `runResumable` waits only for any published
-  state, and S00's `done` needs a player, so a re-run whose first state has no player sees S00 undone
-  and refuses 'not in game'. Until rs/562's bounded wait for a populated player state lands, on an
-  account past the tutorial re-run once more.
+- **the S00 edge, closed** (#468, 4657eed8, rs/583 from rs/186 @43f03530, rs/562's D; fold-in 36): each walk first waits up to
+  30 observed ticks for a published state that carries the player (`runner/resume.ts` `awaitPlayer`,
+  `PLAYER_MAX_TICKS`), so a re-run no longer sees S00 undone on an empty first state; past the bound
+  the walk observes anyway, so a 'not in game' refusal after it goes to main.
 
 **The socket-drop recovery, on main** (#466, 86e7aa37: rs/511's work via rs/547, snapshotted as
 rs/580 from rs/186 @34d0ecf4, 16 files byte-identical, with `cueStop(S27)` above T27-17; fold-in 35;
@@ -1993,7 +1992,7 @@ real-browser lab; fold-in 31):
 | Case | State | What the script does | What the operator does |
 |---|---|---|---|
 | 1 | No open planned entry | a normal launch or resume | finish the T20-21 leg to its canonical arrival; never log out early |
-| 2 | Entry OPEN (written once `logoutClean` reports SCORED out, before the page-out check; rs/562), the page proven OUT with no login pending (the entry's timing once rs/583 is on the floor; on main today the entry opens only after the page-out confirmation, `scored-relog.ts`) | attaches without launching, waits for the world feed and the full fresh giver roster while SCORED is out, then logs in inside the page; the single planned entry closes only on success | nothing |
+| 2 | Entry OPEN (written once `logoutClean` reports SCORED out, before the page-out check; rs/562), the page proven OUT with no login pending (the entry's timing on main since #468, 4657eed8: `scored-relog.ts` opens the entry once `logoutClean` reports SCORED out, before the page confirmation; fold-in 36) | attaches without launching, waits for the world feed and the full fresh giver roster while SCORED is out, then logs in inside the page; the single planned entry closes only on success | nothing |
 | 3 | Entry OPEN, the page LIVE | refuses: no login, no navigation, no entry change (a live page does not prove which session set the processing order) | inspects the account and session and the givers' login order, and reconciles the budget by hand; nothing adopts the state automatically |
 | 4 | Entry OPEN, a login PENDING | refuses: no second dispatch or navigation | waits for the real outcome before reconciling; never erases the entry or restarts blindly |
 | 5 | Entry OPEN, CDP unreadable or missing, or the page unknown | refuses the same way | restores observation and establishes the actual state first |
