@@ -1379,6 +1379,25 @@ in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scr
   `gate`, as {k0, t0EpochMs, k, ms, at} (ticks counted from k0, the engine's `ms`, arrivals in ms
   after t0): about 20-40 KB for a read, enough to redo the alignment from the record alone.
 
+  `earlyTicks`, after `tickP90Ms`, counts the probe's early ticks: tick intervals (between
+  consecutive `gate.result.tickArrivalsMs`) under 0.75 T, with T the record's top-level `T`. It
+  holds {thresholdMs, count, perMinute, minIntervalMs}, where `perMinute` is over the arrivals'
+  span (a window under a minute counts as one, as for (c)) and `minIntervalMs` is the shortest
+  interval, early or not. The journal line carries it beside (b)'s p90 as `early=N/min`. Like
+  `pathCheck` it is report-only: the verdict, (a)-(d), `status` and every skip are unchanged, (c)
+  still counts only catch-ups (under T/2 right after over 7/6 T), and it is null on skips, on reads
+  that aren't `ok`, and when T or the arrivals are missing. `host-gate-feed.ts --earlyticks` computes
+  it from the record the wrapper has just written, so it reads older records the same way. It
+  exists because of the 00:30Z reads on 23 October: both machines failed (a), at 50/60 and 45/60,
+  with (c) at 0. That minute ran 850-880 ms ticks followed by 250-300 ms ones (interval p10 about
+  295, p50 about 382 at T = 400), and reactions missed in bursts at the same points on both
+  machines. Those early ticks are over T/2, so (c) did not count them and the record had no field
+  that showed why (a) failed. Read back, the 00:30Z records count 17 and 16 early ticks (16.98
+  and 15.9 a minute), every one between 200 and 300 ms and only 2 or 3 of them straight after a
+  late tick. The 00:00Z pair, which passed (a) at 60/60 and 59/60, count 10 each: 8 between 200
+  and 300 ms and 2 under T/2, the catch-ups (c) counted at 1.99 a minute. A passing minute
+  already carries about ten, so the count is context beside (b), not a threshold.
+
   A skip writes `status: skip` and its reason in `note`. A broken read (`error`, `timeout`,
   `not-probed`) puts its first error line in `note` and the last 40 lines of the probe's output in
   `outputTail`, with the account name and password redacted. The journal keeps one line per
