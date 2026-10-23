@@ -2675,7 +2675,17 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   - **flagged, H16**: 172 (its one measured profile) against ~351, priced as exposed;
   - **unmeasured route, an exposed cliff until rs/41's measured bank-to-stand ticks arrive** (rs/551's
     route proofs and its timing lab, by 14:30Z; main 13:00Z): H14, H15, H19 (only its initial
-    bank-to-ready, 110, is measured; the H18-to-H19 transition is not), H20 (h03) and H22;
+    bank-to-ready, 110, is measured; the H18-to-H19 transition is not) and H22;
+  - **prepared before the leg, not a cliff by timing: H20 (h03)** (rs/41's correction and rs/186's
+    code read via rs/158): run.ts prepares each carrier's first row still ahead at the start, after
+    its gates and before SCORED logs in (`run.ts:659-663`, `runner/delivery-owner.ts:79-80`, at
+    rs/598's branch head 936d2e2e, not in 38902b56; re-checked at the commit main names), and each later
+    row at its previous row's stop (`served()`, delivery-owner.ts:131). H20 is h03's only row, so it
+    is prepared at the start, its lead over SCORED reaching T23-24 being everything from S00 through
+    S23, against h03's **214 ticks** from the prepare to ready at the H20 stand (3045,3257) (m, rs/551's
+    3.2 h proof, bgsrv-mac, 3c8524df, the h03-observed profile; repeated by re-run 1 at ed2124a6). The
+    cost: h03 stands ready there for most of the run (keep-alive, on a helper's clock, not SCORED's).
+    The old chained design's '147 against 12' is retired;
   - **unmeasured, window long, likely clear (i)**: H13 (after H12, through S15's ~4,790) and H18 (from
     H4k through S21);
   - **clear**: H6, H4p, H7, H8, H9, H10, H12 and H21d.
