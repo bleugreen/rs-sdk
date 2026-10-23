@@ -644,10 +644,13 @@ minutes and `handoff`'s scored-title live frame failed (difference 55.2); after 
 Before SCORED logs in, <run dir>/cannon-serve.json holds exactly host's bytes, sha256 f0e57ad6107d2621d0c12306a5cec6ee70fe73db1a2c39e5d2a28cbfca96a7c6 (the JSON plus one trailing newline); run.ts's preflight gate "cannon serve" (run.ts:286-294) must read "H11, H23 served as the ledger rows want"; a missing file or any drift is a refusal.
 
 **The delivery run id, before the start is called** (main 04:15 PDT via rs/158; fold-in 37; it comes
-with rs/598, the runner-side delivery-session binding). `delivery.run` in the run config equals every
+with rs/598, the runner-side delivery-session binding, reaching main as rs/604;
+`docs/speedrun/helpers/mule-delivery.md`, 'Run owner', its line numbers checked at the commit main
+names). `delivery.run` in the run config equals every
 mule carrier's launcher `deliveryRun`; `mule-ledger --check` verifies it, and any mismatch is a
 refusal. **The exact command is pending rs/41**, due right after the naming and before ~14:15Z, with
-the carrier configs regenerated from the new hash. **run.ts's own guard** (rs/598 at b800cdb8, not on
+the carrier configs regenerated from the new hash. **run.ts's own guard** (rs/598, final at 623d565a on rs/186's branch and reaching main as rs/604;
+`docs/speedrun/helpers/mule-delivery.md`, 'Run owner'; not on
 main yet; names re-checked at the commit main names, the code winning if they differ): run.ts's run
 config carries `delivery: { run: "a1-20261023", launcherConfig: "<that launcher json>" }`, and its
 preflight refuses with exit 3, before any login, if that is missing or does not match every mule
@@ -1331,7 +1334,7 @@ the tick length T on main since #385 (a4456c73, rs/471; fold-in 31; step 6, line
    2. after the choice, on SCORED's machine, first (main 04:30 PDT via rs/158, rs/186's wording; fold-in 37; it comes
       with rs/598, its line citations from rs/186's branch at rs/598, re-checked against the run commit main names):
       **Hold each delivery carrier before starting the helper launcher.** Run `bun speedrun/tools/mule-hold.ts --config <launcher config json> --account <carrier>` for every carrier in the generated carrier config. The hold must be written before the carrier starts: a running carrier with no control file selects and stages its first row at once (helpers/mule.ts:1240, :1314-1323, :1478), and a hold written after that leaves a staged carrier whose readiness check `heldFor` never passes (helpers/mule-readiness.ts:159). `holdMule` also refuses a hold after a prepare in the same attempt (helpers/mule-readiness.ts:303). If this step is skipped, the run still works through run.ts's per-row prepare and readiness gate, but the carrier pre-stages its first row.
-      The hold command (rs/598 at b800cdb8, not on main yet; via rs/158): once per banked delivery carrier, for example `--config run-machine/<launcher>.json --account cairn_mule1`; the run id, serve, cue directory, first row and tile all come from the generated launcher entry. Exit 0 = held; 1 = refused (after this run's prepare, or over another run's live control); 2 = usage; an identical repeat is a no-op. After its gates, run.ts prepares each carrier's first row before SCORED logs in.
+      The hold command, final (rs/598 at 623d565a on rs/186's branch, reaching main as rs/604, not on main yet; `docs/speedrun/helpers/mule-delivery.md`, 'Run owner', its line numbers checked at the commit main names; via rs/158): once per banked delivery carrier, for example `--config run-machine/<launcher>.json --account cairn_mule1`; the run id, serve, cue directory, first row and tile all come from the generated launcher entry. Exit 0 = held; 1 = refused (after this run's prepare, or over another run's live control); 2 = usage; an identical repeat is a no-op. After its gates, run.ts prepares each carrier's first row before SCORED logs in.
       Then rs/117's launcher logs in the **17 roster accounts** (4 + 6 + 3 + 4; fold-in 36, rs/41's correction of 16):
       mule1, mule2, h55, h03, the 6 S03 droppers, the 3 S04 ring givers (h81-h83) and the 4 S07 bone
       givers (b01-b04), about 2.5-3 minutes;
