@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
 import type { StepContext } from '../runner/step';
+import { TickLog } from '../lib/ticks';
 import * as grandTree from '../quests/grand-tree';
 import * as tgv from '../quests/tree-gnome-village';
 import { ROUTES } from '../skills/agility';
@@ -282,7 +283,8 @@ afterEach(() => {
 const fakeAt = (x: number, z: number, level: number, over: Partial<BotWorldState> = {}) => {
     const fake = new FakeSdk(baseState({ player: at(x, z, level), ...over }));
     ticker = setInterval(() => fake.tick(), 1);
-    return { fake, ctx: { sdk: fake, bot: {}, log: { rows: [] }, session: 1 } as unknown as StepContext<any> };
+    const log = TickLog.memory('quest-helper-test');
+    return { fake, log, ctx: { sdk: fake, bot: {}, log, session: { sdk: fake, name: 'h', sessionId: 1 } } as unknown as StepContext<any> };
 };
 const GT = grandTree.TILES;
 const demon = { index: 7, name: 'Black demon', x: GT.trapdoor.x, z: GT.trapdoor.z + 6400, optionsWithIndex: [{ text: 'Attack', opIndex: 2 }] } as unknown as NearbyNpc;
@@ -325,7 +327,7 @@ describe('N2 after a drop at stage 130 (the demon gone, the resume walk starting
         expect(fake.sent).toHaveLength(0);
     });
     test('the N2 substitute itself, entered on the platform with no demon: replays the trapdoor, then kills', async () => {
-        const { fake, ctx } = fakeAt(2487, 3466, 2, { nearbyLocs: [trapdoorLoc] });
+        const { fake, ctx, log } = fakeAt(2487, 3466, 2, { nearbyLocs: [trapdoorLoc] });
         const live = { ...demon, hp: 120, maxHp: 120 } as NearbyNpc;
         fake.onSend = (a, f) => {
             if (a.method === 'sendInteractLoc' && a.args[0] === GT.trapdoor.x) setTimeout(() => f.tick({ player: at(GT.trapdoor.x, GT.trapdoor.z + 6400, 0), nearbyNpcs: [live], nearbyLocs: [] }), 2);
@@ -336,5 +338,8 @@ describe('N2 after a drop at stage 130 (the demon gone, the resume walk starting
         const sends = fake.sent.map(a => a.method).filter(m => m === 'sendInteractLoc' || m === 'sendInteractNpc');
         expect(sends[0]).toBe('sendInteractLoc');
         expect(sends).toContain('sendInteractNpc');
+        const notes = log.rows.filter(r => r.step === 'S11b:N2-demon[driver]').map(r => r.meta);
+        expect(notes[0]).toEqual({ reentry: { climb: [] } });
+        expect((notes[1] as { demon: { end: string } }).demon.end).toBe('killed');
     });
 });
