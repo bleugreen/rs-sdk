@@ -1392,8 +1392,11 @@ in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scr
   with (c) at 0. That minute ran 850-880 ms ticks followed by 250-300 ms ones (interval p10 about
   295, p50 about 382 at T = 400), and reactions missed in bursts at the same points on both
   machines. Those early ticks are over T/2, so (c) did not count them and the record had no field
-  that showed why (a) failed. Read back, those two records count EARLY_RUN and EARLY_TWIN early ticks a
-  minute, against EARLY_00 at 00:00Z, when (a) passed.
+  that showed why (a) failed. Read back, the 00:30Z records count 17 and 16 early ticks (16.98
+  and 15.9 a minute), every one between 200 and 300 ms and only 2 or 3 of them straight after a
+  late tick. The 00:00Z pair, which passed (a) at 60/60 and 59/60, count 10 each: 8 between 200
+  and 300 ms and 2 under T/2, the catch-ups (c) counted at 1.99 a minute. A passing minute
+  already carries about ten, so the count is context beside (b), not a threshold.
 
   A skip writes `status: skip` and its reason in `note`. A broken read (`error`, `timeout`,
   `not-probed`) puts its first error line in `note` and the last 40 lines of the probe's output in

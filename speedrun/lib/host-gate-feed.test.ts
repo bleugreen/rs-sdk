@@ -206,7 +206,8 @@ describe('earlyTicks', () => {
         iv.splice(40, 3, 870, 260, 280);
         iv.splice(100, 3, 850, 250, 299.9);
         const r = earlyTicks(arrivalsOf(iv), T)!;
-        expect(r).toEqual({ thresholdMs: 300, count: 4, perMinute: 4, minIntervalMs: 250 });
+        // the overruns stretch the span to 60,410 ms
+        expect(r).toEqual({ thresholdMs: 300, count: 4, perMinute: 3.97, minIntervalMs: 250 });
         // under T/2 is not needed, under 3/4 T is; exactly 3/4 T is not early
         iv[110] = 300;
         expect(earlyTicks(arrivalsOf(iv), T)!.count).toBe(4);
