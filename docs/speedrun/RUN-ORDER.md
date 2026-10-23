@@ -876,6 +876,15 @@ Madness measured; S10b -74 and S20 +142 in fold-in 22; S20 +4.3, S15's G -62, S1
 re-estimate, e) is the next largest decrease. The largest
 measured change is Prayer, -555 (BP; rs/141; -605 before fold-in 23's Superheat moved ~210 bones from the stuns to S07).
 
+**Changes since 3795e5d1 (fold-in 37, rs/600; on main with snapshot 28, #489, rs/605, merge 7bd9a5b2; 35,185.4 / 32,674.9 knife on; 37,840.4 / 35,788.9 knife off in force; 38,634.4 / 36,612.9 without rs/162, history).** Fold-in 38 (rs/608), the pre-freeze follow-up: step 7's post-login secrets check measured in world on the twin, and step 7's timing as a note; **no total moves**, the row in force staying **35,668.1 / 33,122.0, 247.9 under the record**; the floor line unchanged at 233d0f34 with `tickMs=400`:
+
+| Change | Line (tally id) | Expected | Best | Source |
+|---|---|---|---|---|
+| **1. Step 7's post-login secrets check, measured in world** (m, rs/496's step-7 rehearsal on the twin, 2026-10-23, relayed by rs/158; no totals): `handoff --no-login` PASS 12:22:32Z, run.ts's single login 12:23:16Z, in world 12:23:24Z, the host's one-liner reading `secrets check: 0 0 0` at 12:23:49Z; in RUN-HOST step 7 ('The secrets check runs twice') in place of fold-in 37's 'pending', labelled the twin, not the run host; the secrets-check part of rs/496's proof discharged | - | 0 | 0 | rs/496 via rs/158 |
+| **2. Step 7's timing, a dated note** (m, the same rehearsal; no priced line): the tab up to the login click 44 s, operator latency, before SCORED's login and so off its clock; the click to in world 8.2 s as observed, how much of it counts on the server's logged-in clock inferred (counting starts at the login), kept inside section 6's 800-tick live-slowness allowance (line 57), not a new line; beside RUN-HOST step 7 | - | 0 | 0 | rs/496 via rs/158 |
+| **3. Still pending, as fold-in 37 has them** (no totals): the ladder note's two proofs, **rs/598's three runner-driven lab runs** and **the twin re-run through H4k**; **rs/41's lab timings for the H14 and H22 helper routes** (each leaves the exposed-hand-off list only if under SCORED's chain, about 382 ticks for H14 and 535 for H22) | - | 0 | 0 | rs/598, rs/496, rs/41 via rs/158 |
+| **4. The statement** (by `run-order-sums.ts`, EXPECT fold-in 36's six totals): unchanged, knife on 35,185.4 / 32,674.9, knife off in force 37,840.4 / 35,788.9, history 38,634.4 / 36,612.9; the row in force 35,668.1 / 33,122.0, 247.9 under | - | 0 | 0 | rs/158 |
+
 **Changes since 11fa1f93 (fold-in 36, rs/588; on main with snapshot 27, #484, rs/599, merge e47e7852; 35,185.4 / 32,674.9 knife on; 37,840.4 / 35,788.9 knife off in force; 38,634.4 / 36,612.9 without rs/162, history).** Fold-in 37 (rs/600), on main at 233d0f34, the run commit: the start-condition list corrected after the rehearsal on the twin found H1 refused, the item met by #487, the clock slid for the fix (rs/598), and RUN-HOST's delivery-run check, pre-launcher hold and twin tick reading; **no total moves**, the row in force staying **35,668.1 / 33,122.0, 247.9 under the record**:
 
 | Change | Line (tally id) | Expected | Best | Source |

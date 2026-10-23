@@ -1812,9 +1812,20 @@ Chrome's DevTools port did not answer: read again. It reads `0 0 0` because run.
 over CDP, not argv, and the page strips `token` from its URL (`server/webclient/src/bot/GatewayConnection.ts:48-51`).
 Tested login-free on the run host at 12:2xZ (no tab up): `0 0 no-cdp`, the expected reading.
 **Anything other than `0 0 0` is a stop for main before S01's first action; touch nothing on the
-display.** The proof is rs/496's twin re-run, which runs the line
-once right after its single login (ENV set to the throwaway's env path) and sends the reading to
-rs/600 and the host: **pending**, like the ladder note's proofs.
+display.** **Measured in world on the twin, 2026-10-23** (m, rs/496's step-7 rehearsal on
+`rs-ashburn-rehearsal`, relayed by rs/158; fold-in 38; the twin, not the run host): `handoff
+--no-login` PASS at 12:22:32Z, run.ts's single login at 12:23:16Z, in world at 12:23:24Z, and this
+one-liner (ENV set to the throwaway's env path) read **`secrets check: 0 0 0`** at 12:23:49Z. This
+discharges the secrets-check part of rs/496's proof; the ladder note's two proofs are separate.
+
+**Step 7's timing on the twin, 2026-10-23** (m, the same rehearsal; fold-in 38; a note, no priced
+line): from the tab up at the title screen to run.ts's login click took **44 s**, operator latency,
+and from the click to in world **8.2 s**. The 44 s comes before SCORED's login, so it is off
+SCORED's clock (the server's clock runs from the first login, RUN-ORDER.md's ladder note on the run
+clock). The 8.2 s is as observed; how much of it falls after the server accepts the login, and so
+counts, is inferred, not measured (counting starts at the login; all of it would be about 20 ticks at
+400 ms). It stays inside section 6's live-slowness allowance (RUN-ORDER.md, the 800), not a new
+line.
 
 **Before run.ts starts: `handoff` logged nobody in** (the host's line via rs/158; `handoff --no-login`,
 rs/601 merged as #485; the key is exactly `loggedIn`, the host confirmed, re-checked at the run commit 233d0f34,
@@ -2538,7 +2549,10 @@ browser on the loopback gateway; main via rs/158; fold-in 37; notes only, no re-
 reached only H1, refused after 31 ticks, mule2 having no delivery prepare: the runner-side
 delivery-session binding missing at 38902b56 (RUN-ORDER.md section 1, R52; the fix rs/598). **No
 S01-S14 timings exist from this rehearsal.** S00's skip took 6 ticks (STEP-MANIFEST.md entry 34);
-its tick monitor is in "Measured: the twin rehearsal's tick monitor" below.
+its tick monitor is in "Measured: the twin rehearsal's tick monitor" below. **Its step-7 rehearsal**
+(the same day, 12:22-12:23Z; fold-in 38): `handoff --no-login`, then run.ts's single login, then the
+post-login secrets check reading `0 0 0` in world, with the step's timing (step 7, "The secrets
+check runs twice").
 
 ## Measured: gate (d) on this host, 2026-10-21, before the address change
 
