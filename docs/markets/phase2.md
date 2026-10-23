@@ -294,7 +294,64 @@ exit code is 0 when every account logged out.
 
 ### The lab run
 
-LAB_RESULTS_PLACEHOLDER
+fedora, `NODE_TICKRATE=400` (observed 400.0 ms a tick, 95th percentile 400.3), block M11, one runner process.
+`markets/phase2/lab.ts` ran 22 lab accounts: 16 knights (15 left Tutorial Island through S00's skip and got 400 sharks
+banked by `::give`; one stayed fresh with no sharks), 4 guards and 2 iron, the rest fresh. Every level was earned by
+the runner's own stages. Ramp steps 8 and 16, 10-minute holds. It ran as run 1 (36 minutes, stopped by SIGINT to
+fix the ramp's clock) and run 2 (150 minutes) on the saved accounts; runs 3 and 4 put 8 of the trained knights
+through a 4-then-8 ramp with 5-minute holds to check the fixes below.
+
+| What | Measured |
+|---|---|
+| Logins | 22, 2 s apart, answered in 27-1,038 ms; run 2 had no refusal, failed stage or session error |
+| Fresh account to its method | iron 3.5-4 min (tutorial, coins, Mining 15, ship); guards 24-41 min; knights 60-108 min |
+| Ramp step 1 (run 2) | 8 knights, held 10 min once all 8 pickpocketed: median 15.05 gp a tick, **135.5k an hour** a login |
+| Ramp step 2 (run 2) | 16 admitted, 15 measured (the 16th had gone to the food fallback): median 17.14, **154.2k**, 1.14 times step 1: done. **No loss from 8 to 16 knights** |
+| Food fallback | the fresh knight found no sharks at its first bank visit and went to the guards (a `redirect` line) |
+| Rates over run 2 (`report.ts`) | knights **140.6k coins an hour** a login (130.6-146.5k, 15 logins, 11,750-18,950 ticks each); guards 53.6k (51.9-56.8k, 5); iron 12.2k of bank store value (~720 ore, 2) |
+| Knights' food and risk | **40 sharks an hour** at HP 40 (median; 28-44), no deaths, 6.3-7.7% failures |
+| Stopping | SIGINT: 22 accounts out within 8 s (run 2) and 14 s (run 1), every account `out`, exit 0 |
+| Exchange errands, on the lab's own book | a sale with an 80 floor above nothing: refused at a 150 floor; at 80, 500 iron ore (the cap) sold into a 100 bid for 47,500 coins after the fee; the shark purchase at a 701 ceiling filled 120 at the 600 ask and banked 120 |
+
+Against `methods.md`: the knights' 140.6k sits with the lab's 126-131k at 1-8 bots (Thieving 99, HP 99) and 133.9k
+at HP 70, now at 16 bots on the 4 knights. The guards' 53.6k is under the 62.9k measured at Thieving 99 because
+these climbed from Thieving 1 inside the stretch. Iron is under the 1,208 ore an hour at Mining 99 because it mined
+from 15. The knights' bank store rises slower than their coins (109k an hour) because a knight carries up to 50,000
+between bank trips: coins are the measure for a carrying method.
+
+**What it means for the plan:**
+
+- **The cow pen is the setup bottleneck.** `hp-train.ts` has one low-level site, the Lumbridge pen. With 20 accounts
+  on it at once the first two reached HP 40 at 3,389 and 4,430 ticks (rs/553: 1,707-1,972 with 2), and most were
+  still under 30 after 5,300 ticks: each bot counted ~150 kills, mostly shared. The knights reached the market
+  60-108 minutes after logging in, not the ~18 minutes (0.3 login-hours) of the setup table above, and 43 at once
+  would be slower still. More low-level sites in `hp-train.ts`, or a cap on how many accounts train at once, is the
+  fix; neither is built.
+- **Sharks: 40 an hour a knight at HP 40, not 30.** 43 knights over 72 hours eat ~124k, which is what the supply
+  check (`sharks.perLoginHour`, now 40 by default) bounds against the asks.
+
+**What the lab fixed in the runner**, each found by these runs:
+
+- The ramp's admission timeout counted from the start, so step 1 opened its hold at 30 minutes with no knight
+  admitted. The ramp now opens when the first knight reaches admission, and a hold with nothing measured goes back
+  to waiting for its step.
+- Run 2's step 1 was measured while its knights' Thieving still climbed from 55 (12% under step 2), a low reference
+  that would hide a later step's loss. A knight now counts as working only at Thieving 99.
+- `thieving.ts`'s ship leg counts itself done at its `to` level: run 3's trained knights (Thieving 99) never sailed
+  and were given up after three tries. A knight dying in the market after 99 would have been lost the same way. The
+  runner now asks the leg for a level no account reaches.
+- An account's banked coins count as 0 until it sees its bank, and run 3's knights (250k banked from run 2) first
+  saw theirs inside a hold. Ramp readings now start only once the bank has been seen; run 4 confirmed every measured
+  knight's first sighting came before its hold (step 1 13.7 gp a tick, step 2 17.5: done).
+- The shark purchase read the bank after closing it and reported 0 banked, which would have sent every buying
+  knight to the food fallback (the Exchange check, before run 1).
+
+```sh
+# block M11 on fedora, from a copy outside the build slot, in a tmux server
+. markets/methods/lab/block.sh M11 && LAB_RUNNERS=0 LAB_TIMEOUT=12000 speedrun/lab/lab.sh p2f00 \
+  'markets/phase2/lab.ts:--prefix=p2f:--knights=16:--hungry=1:--guards=4:--iron=2:--steps=8,16:--hold=10:--sigint=150:--out=/tmp/rs544-run2'
+bun markets/phase2/report.ts /tmp/rs544-run2/ledger.jsonl
+```
 
 ## Horizons
 
