@@ -2,7 +2,7 @@ import { afterEach, describe, expect, setSystemTime, test } from 'bun:test';
 import { mkdtempSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { CUE_FILE, nameHash, readCue, type Cue } from '../helpers/altar-cue';
+import { CUE_FILE, nameHash, readCue, type Cue, type CueScope } from '../helpers/altar-cue';
 import { deliveryCueAuthorizes, STALE_CUE_MS } from '../helpers/mule';
 import { cancelMulePreparation, holdMule, readMulePreparation, writeMuleReady, type WorldTile } from '../helpers/mule-readiness';
 import { muleDelivery } from '../helpers/mule-itinerary';
@@ -178,7 +178,7 @@ describe('the run owner\'s per-row sequence', () => {
         try {
             await expect(owner.awaitReady('H1', sdk as never, { maxTicks: 20 })).rejects.toThrow(/H1: carrier cairn_mule1 was not ready within 20 ticks.*no readiness status/);
             const c = readMulePreparation(dir, MULE)!;
-            writeMuleReady(dir, { runId: RUN, account: MULE, row: 'H1', session: c.session, receiverHash: c.receiverHash, phase: 'fault', tile: { ...rows[0]!.at }, staged: false, preparationSeq: c.seq, tick: 1, ms: Date.now() });
+            writeMuleReady(dir, { runId: RUN, account: MULE, row: 'H1', session: c.session!, receiverHash: c.receiverHash!, phase: 'fault', tile: { ...rows[0]!.at }, staged: false, preparationSeq: c.seq, tick: 1, ms: Date.now() });
             await expect(owner.awaitReady('H1', sdk as never, { maxTicks: 5000 })).rejects.toThrow(/delivery fault/);
         } finally {
             clearInterval(timer);
@@ -261,7 +261,8 @@ describe('other families and runs without a run owner', () => {
 });
 
 describe('run.ts delivery preflight (deliveryOwnerFor)', () => {
-    const chain = [{ cue: muleScope('H1') }, { cue: { step: 'S03', family: 'fmrow' } }, { cue: muleScope('H4') }, {}, { cue: muleScope('H4k') }];
+    const fmrow: CueScope = { step: 'S03', family: 'fmrow' };
+    const chain: { cue?: CueScope }[] = [{ cue: muleScope('H1') }, { cue: fmrow }, { cue: muleScope('H4') }, {}, { cue: muleScope('H4k') }];
     const partners = { H1: MULE, H4: MULE, H4k: MULE };
     const pkg = (row: string, at: WorldTile = muleDelivery(row).at) => ({ name: row, at, scope: { step: row, family: 'mule' }, items: [] });
     const launcher = (dir: string, o: Record<string, unknown> = {}) => JSON.stringify({
@@ -282,7 +283,7 @@ describe('run.ts delivery preflight (deliveryOwnerFor)', () => {
     });
 
     test('no mule row on the path: no owner and nothing required', () => {
-        expect(pre(dirOf('pre-none'), undefined, () => { throw new Error('not read'); }, [{ cue: { step: 'S03', family: 'fmrow' } }])).toEqual({ owner: null });
+        expect(pre(dirOf('pre-none'), undefined, () => { throw new Error('not read'); }, [{ cue: fmrow }])).toEqual({ owner: null });
     });
 
     test('refusals: no delivery.run, a malformed one, no launcher config, an unreadable one', () => {
