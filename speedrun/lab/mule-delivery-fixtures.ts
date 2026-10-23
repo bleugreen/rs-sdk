@@ -325,6 +325,8 @@ export function planMuleDeliveryFixtures(o: MuleDeliveryFixtureOptions): MuleDel
             const ledger = capture(() => packageFromRow(rows, index, 'ask', o.pack, onRequest), null);
             const delivery = capture(() => muleDelivery(rowId, o.itinerary), null);
             const takeBacks = merge(row.out.flatMap(e => capture(() => {
+                // A `drop` is left on SCORED's tile, never handed back to the helper.
+                if (e.reason === 'drop') return [];
                 if (e.count === null) fail(itemLabel(e) + ' x?: unknown canonical return quantity');
                 if (e.reason !== 'swap' && e.reason !== 'trade') fail(itemLabel(e) + ': not a trade return');
                 const chosen = overrides.takeBacks?.[itemLabel(e)] ?? authorizedRecoil(rowId, e, e.count, o.pack);
