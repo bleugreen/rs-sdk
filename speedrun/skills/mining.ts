@@ -560,7 +560,12 @@ function exitStep(to: number): Step<any> {
             return left.length ? `still held at the exit: ${left.map(i => i.name).join(', ')}` : true;
         },
         logoutSafe: true,
-        done: ob => miningLevel(ob.state) >= to && dead(ob.state).length === 0,
+        // A milestone's `done` must hold for every later state of the run (runner/step.ts:81-86), and
+        // past S09 the scored run holds logs, ore and uncut gems again (H7, H14, H18, H21d). The drops
+        // are owed only where the exit runs, at an S09 site; off every site Mining at `to` is done
+        // whatever the pack holds. rs/558 checked every later chain position holding EXIT_DROPS: none
+        // is inside a site's SITE_RADIUS.
+        done: ob => miningLevel(ob.state) >= to && (dead(ob.state).length === 0 || !siteAt(here(ob.state), Object.keys(SITES))),
     };
 }
 
