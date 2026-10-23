@@ -427,9 +427,16 @@ class Pack {
     }
 }
 
-/** Walk the rows in order from an empty pack and nothing worn. */
-export function walk(rows: readonly LedgerRow[]): LedgerEntry[] {
+/**
+ * Walk the rows in order from an empty pack and nothing worn, or from `start` (copied): a walk that
+ * picks up mid-run, such as SCORED after a respawn (helpers/r8-package.ts).
+ */
+export function walk(rows: readonly LedgerRow[], start?: { inv: readonly Held[]; worn: readonly Held[] }): LedgerEntry[] {
     const pack = new Pack();
+    if (start) {
+        pack.inv = start.inv.map(h => ({ ...h }));
+        pack.worn = start.worn.map(h => ({ ...h }));
+    }
     return rows.map(row => {
         const notes: string[] = [];
         let verdict: Verdict = 'pass';
