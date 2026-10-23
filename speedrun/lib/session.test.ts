@@ -652,6 +652,38 @@ describe('login with inPage: the tab logs back in where it is', () => {
         }
     });
 
+
+    test('strict in-page login refuses a page that becomes live or pending during token redemption', async () => {
+        for (const state of ['live', 'pending'] as const) {
+            const cdp = fakeCdp('srtest', PASSWORD);
+            const { session } = pageSession(cdp);
+            const originalFetch = globalThis.fetch;
+            let flipped = false;
+            const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(Object.assign(async (...args: Parameters<typeof fetch>) => {
+                const response = await originalFetch(...args);
+                if (new URL(String(args[0])).pathname === '/bot/login') {
+                    expect(cdp.client.ingame).toBe(false);
+                    expect(cdp.client.loginInProgress).toBe(false);
+                    expect(cdp.page.redeemed).toHaveLength(1);
+                    await Promise.resolve();
+                    cdp.client.ingame = state === 'live';
+                    cdp.client.loginInProgress = state === 'pending';
+                    flipped = true;
+                }
+                return response;
+            }, { preconnect: originalFetch.preconnect }));
+            try {
+                await expect(login(session, { inPage: true, requireInPage: true, attempts: 1,
+                    beforeDispatch: () => Date.now() + 5_000,
+                })).rejects.toThrow(state === 'live' ? 'already in game' : 'a login is already in progress');
+                expect(flipped).toBe(true);
+                expect(cdp.page.autoLogins).toEqual([]);
+                expect(cdp.page.navigations).toEqual([]);
+                expect(session.sessionId).toBe(1);
+            } finally { fetchSpy.mockRestore(); cdp.stop(); }
+        }
+    });
+
     test('strict in-page login cannot navigate a live, pending or missing client', async () => {
         for (const state of ['live', 'pending', 'missing'] as const) {
             const cdp = fakeCdp('srtest', PASSWORD);

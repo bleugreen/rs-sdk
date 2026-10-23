@@ -272,7 +272,7 @@ The run-day schedule (cue shapes agreed between rs/41 and rs/393, rs/186's rulin
 | S04 ring givers | `stopOn: { step: 'S04', family: 'ring' }` | `run.ts` |
 | S06 air givers (`altar-giver`) | `stopOn: { step: 'S06', family: 'altar' }` | `runecraft.ts` (its stop after the last craft) |
 | S07 bone givers (`bone-giver`) | `stopOn: { step: 'S07', family: 'bone' }` | `run.ts` |
-| S21 body givers (`altar-giver`) | `loginOn: { step: 'S21', family: 'altar' }` | `runecraft.ts`'s pre-login step opens S21's cue before SCORED's relog and waits for every giver to be ready |
+| S21 body givers (`altar-giver`) | `loginOn: { step: 'S21', family: 'altar' }` | After canonical altar arrival, SCORED logs out; `runecraft.ts`'s pre-login step opens the cue and waits for the entire giver roster while SCORED stays out, then the guarded in-page login runs (see [RESILIENCE](RESILIENCE.md)) |
 | S18 stun-pack courier (`bone-giver` on request, cairn_e15) | `loginOn: { step: 'S18', family: 'courier' }` | `run.ts`: opened before S18 as the login trigger, stopped after S18 |
 | H12o atoll helper (`mule` carried mode, cairn_h45, `cueDir: run-machine/h45-cue`) | `loginOn: { step: 'H12oM', family: 'mule' }`, `stopOn: { step: 'H12oP', family: 'mule' }` | `run.ts`: H12oM's open at least ~100 ticks before Monkey Madness segment M's ladder top (its login and M's request); H12oP's open after M's trade; H12oP's stop after P's trade (helpers/mule.md, "H12o, the atoll helper") |
 | H21a anvil giver (`anvil`, cairn_a01) | `loginOn: { step: 'S25a', family: 'anvil' }` | `run.ts`: opened before S25a, stopped after it |
