@@ -118,6 +118,16 @@ m = measured in the lab, i = inferred (named model or arithmetic on measured par
   without a glory). Big bones (bid 1,000, 4,989 deep) and the beads (1,000-5,000, ~14,600 deep)
   are combat drops no loop here covers. Master farmers pay seeds worth little on the board.
 
+## Setup costs
+
+The time to bring a fresh account to a method's levels, measured from a new account with nothing staged but coins.
+
+| Setup | Time from a fresh account | Inputs | Basis |
+|---|---|---|---|
+| **Hitpoints 40** (phase 2's knights and heroes), `hp-train.ts` default | **1,707-1,972 ticks (11.4-13.1 min at 400 ms)**; Attack 30, Strength 52, Defence 1 | none (the tutorial's bronze sword; the cows) | m, 2 bots, fedora (`hp-training.md`) |
+| Hitpoints 70, `--to 70` (the crabs route) | 6,028 ticks (40.2 min); Attack 53, Strength 84 | ~1,600 coins (scimitars 1,552, toll 20, kebabs 34), 32 kebabs eaten | m, 1 sample |
+| Prayer-first to 40, `--prayer 31 --pray` | ~2,720 ticks; Prayer 31 from 71 cow bones | none | m, 1 bot: slower than plain at every target |
+
 ## Live probes requested
 
 No account here logs in to the demo (tenet 28). rs/495 trimmed and forwarded four probes to
