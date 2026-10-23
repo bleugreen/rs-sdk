@@ -27,7 +27,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { BotWorldState } from '../../sdk/types';
 import { opLoc, talkTo, walkTo } from '../lib/act';
-import { compactJournal, journalText, readQuestStage } from '../lib/quests';
+import { compactJournal, readQuestStage } from '../lib/quests';
 import { closeSession, loadBotEnv, openSession, type Session } from '../lib/session';
 import { receiveFrom } from '../lib/trade';
 import { GNOME_STRONGHOLD_GATE, passGate, runTo } from '../lib/travel';
@@ -200,11 +200,11 @@ export const CHAPTER_2 = JOURNAL_MARKS.find(([letter, phrase]) => letter === 'G'
 
 async function journalPhase(sdk: Sdk): Promise<string> {
     const read = await readQuestStage(sdk, 'mm', { force: true });
-    const text = journalText({ state: sdk.getState()!, probed: { 'journal:mm': read.journal } } as never, 'mm') ?? (read.journal ? compactJournal(read.journal.lines.join('')) : null);
-    if (!read.journal || text === null) throw new Error(`the Monkey Madness journal did not open (reading ${JSON.stringify(read.reading)})`);
+    if (!read.journal) throw new Error(`the Monkey Madness journal did not open (reading ${JSON.stringify(read.reading)})`);
+    const text = compactJournal(read.journal.lines.join(''));
     const found = text.includes(compactJournal(CHAPTER_2));
     const line = read.journal.lines.find(l => compactJournal(l).includes(compactJournal(CHAPTER_2))) ?? null;
-    result('h45_journal', { found, line, stage: read.reading?.stage ?? null, lines: read.journal.lines.length });
+    result('h45_journal', { title: read.journal.title, found, line, reading: read.reading, lines: read.journal.lines.length });
     if (!found) throw new Error(`'${CHAPTER_2}' is not in the Monkey Madness journal: mm_main is not past G`);
     return line ?? CHAPTER_2;
 }
