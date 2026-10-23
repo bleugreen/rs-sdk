@@ -48,7 +48,7 @@ import type { BotWorldState, InventoryItem, PlayerState } from '../../sdk/types'
 import { contentObjs, keepCost, keepPriciest, objOf, type HeroUnit, type ObjTable } from '../lib/death-keep';
 import { baseState } from '../lib/fake-sdk';
 import { untradeable } from '../lib/items';
-import { FOOD as RUNNER_FOOD, type Tile } from '../lib/travel';
+import { FOOD as RUNNER_FOOD } from '../lib/travel';
 import { legPreconditions, legsFor, neededBy, TILES, type LegDef, type LegStep } from '../runner/legs';
 import { FAILING, MANIFEST, parseLedger, render, walk, type Held, type InEntry, type Kind, type LedgerEntry, type LedgerRow } from '../tools/slot-ledger';
 import { packageOf, type Package, type PackageItem } from './mule';
@@ -295,9 +295,9 @@ export interface RespawnInput {
 const CHECK_MAGIC = 99;
 
 /** A runner state holding `held`, standing at `at`: what `legPreconditions` reads. */
-export function heldState(held: { inv: readonly Held[]; worn: readonly Held[] }, at: Tile | { x: number; z: number }): BotWorldState {
+export function heldState(held: { inv: readonly Held[]; worn: readonly Held[] }, at: { x: number; z: number; level?: number }): BotWorldState {
     const item = (h: Held, slot: number): InventoryItem => ({ slot, id: h.id ?? -1, name: h.name, count: h.count ?? 0, optionsWithIndex: [] });
-    const player = { name: 'SCORED', combatLevel: 3, hp: 10, maxHp: 10, x: at.x, z: at.z, worldX: at.x, worldZ: at.z, level: 'level' in at ? at.level ?? 0 : 0, runEnergy: 100, runWeight: 0 } as PlayerState;
+    const player = { name: 'SCORED', combatLevel: 3, hp: 10, maxHp: 10, x: at.x, z: at.z, worldX: at.x, worldZ: at.z, level: at.level ?? 0, runEnergy: 100, runWeight: 0 } as PlayerState;
     return baseState({ player, skills: [{ name: 'Magic', level: CHECK_MAGIC, baseLevel: CHECK_MAGIC, experience: 0 }], inventory: held.inv.map(item), equipment: held.worn.map(item) });
 }
 
@@ -342,18 +342,19 @@ export function respawnCheck(rows: readonly LedgerRow[], r: RespawnInput): Ledge
         for (const e of x.in) for (const l of [...lost]) if (names(e.name, l)) lost.delete(l);
         return kept;
     };
+    const replayFrom = walked.length;
     walked.push(...later.map(strip));
+    const replayTo = walked.length;
     if (cannon.length) walked.push(row(`H ${r.phase.cannonBy}`, cannon.map(entry), [], [], slotsOf(cannon)));
     walked.push(...ledgerRows.map(strip));
     const start = { inv, worn: [] };
     const entries = walk(walked, start);
     const legs = r.legs ?? RUN_LEGS;
-    const replayed = new Set(later);
     entries.forEach((e, i) => {
         const def = legOf(legs, e.row.row);
         if (!def) return;
         const held = i ? entries[i - 1]!.stacks : start;
-        const why = legPreconditions(def, heldState(held, replayed.has(e.row) || walked[i] !== e.row ? TILES.lumbridgeSpawn : def.start));
+        const why = legPreconditions(def, heldState(held, i >= replayFrom && i < replayTo ? TILES.lumbridgeSpawn : def.start));
         if (why === true) return;
         e.verdict = 'ERROR';
         e.notes.push(`the runner refuses the leg: ${why}`);
@@ -375,6 +376,7 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
     const objs = o.objs ?? contentObjs();
     const keep = o.keep ?? 3;
     const refusedInTrade = o.untradeable ?? untradeable;
+    const legs = o.legs ?? RUN_LEGS;
     const entries = walk(rows);
     const at = (id: string) => {
         const found = rows.map((r, i) => (r.row === id ? i : -1)).filter(i => i >= 0);
@@ -404,20 +406,20 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
         cur.why.push(why);
         needs.set(k, cur);
     };
-    const notNeeded: string[] = [];
+    const unused: Held[] = [];
     const cannonHeld: Held[] = [];
     let cannonUsed = false;
     for (const h of [...target.inv, ...target.worn]) {
-        const use = laterUse(rows, entries, resume, h.name);
+        const use = laterUse(rows, entries, resume, h.name, legs);
         if (h.count === null) refusals.push(`${phase.id}: ${h.name} is held at an unknown count at ${phase.resume}`);
         if (isCannon(h.name)) {
             cannonHeld.push(h);
             cannonUsed ||= use !== null;
         } else if (use) add(h, h.count ?? 0, `${use}`);
-        else notNeeded.push(`${h.name} x${h.count ?? '?'}`);
+        else unused.push(h);
     }
     // The ledger has no deploy reason: the set is used where its balls are consumed, and goes as a set.
-    if (!cannonUsed) notNeeded.push(...cannonHeld.map(h => `${h.name} x${h.count ?? '?'}`));
+    if (!cannonUsed) unused.push(...cannonHeld);
 
     // 3. The replayed legs' consumption, and the heal.
     for (const id of phase.replay) {
@@ -434,6 +436,31 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
     }
     const heal = heals(phase.hp);
     if (heal) add(FOOD, heal, `${heal} eaten from 1 HP to ${phase.hp}`);
+
+    // What each replayed leg needs held at its start (legNeed, the runner's rule), of what the run
+    // holds around it (the held set before its row and the target: H23's knife comes mid-leg) and the
+    // package's food: raised to the need plus what the heal and earlier replayed rows use up first.
+    const spent = new Map<string, number>(heal ? [[lc(FOOD.name), heal]] : []);
+    for (const id of phase.replay) {
+        const i = at(id);
+        const def = legOf(legs, id);
+        if (def) {
+            const before = i ? entries[i - 1]!.stacks : { inv: [], worn: [] };
+            const seen = new Set<string>();
+            for (const h of [...before.inv, ...before.worn, ...target.inv, ...target.worn, { ...FOOD, count: 0 }]) {
+                const k = lc(h.name);
+                if (seen.has(k) || isCannon(h.name)) continue;
+                seen.add(k);
+                // The package heals with FOOD alone, so the leg's food comes as FOOD.
+                if (RUNNER_FOOD.test(h.name) && k !== lc(FOOD.name)) continue;
+                const need = legNeed(def, h);
+                const short = need ? need.count + (spent.get(k) ?? 0) - (needs.get(k)?.count ?? 0) : 0;
+                if (need && short > 0) add(h, short, `${need.why} (replayed)`);
+            }
+        }
+        for (const e of rows[i]!.out) if (USES.has(e.reason) && typeof e.count === 'number') spent.set(lc(e.name), (spent.get(lc(e.name)) ?? 0) + e.count);
+    }
+    const notNeeded = unused.filter(h => !needs.has(lc(h.name))).map(h => `${h.name} x${h.count ?? '?'}`);
 
     // 4. The keep at each death point, and what every one of them keeps.
     const keptAt = phase.deaths.map(d => {
@@ -517,7 +544,7 @@ export function r8Package(phase: R8Phase, o: R8Options = {}): R8Package {
             const at = `${form}: ${phase.id} (death at ${death.row}${death.deployed ? ', deployed' : ''})`;
             let walked: LedgerEntry[] = [];
             try {
-                walked = respawnCheck(rows, { phase, kept: keptAt[d]!, give, drop, wear, cannon, heal, target, lost });
+                walked = respawnCheck(rows, { phase, kept: keptAt[d]!, give, drop, wear, cannon, heal, target, lost, legs });
             } catch (e) {
                 refusals.push(`${at}: ${(e as Error).message}`);
             }
