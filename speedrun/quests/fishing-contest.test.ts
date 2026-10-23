@@ -250,6 +250,48 @@ describe('resume from each segment start', () => {
     });
 });
 
+describe('M re-run at the Camelot landing with its last cast spent', () => {
+    const CAMELOT = [2757, 3478] as const;
+    /** M's start state at `at`, the trophy held, with no Camelot cast's runes left. */
+    function spent(at: readonly [number, number]): Observed {
+        const o = startOf('M');
+        o.state.player = player(at[0], at[1]);
+        o.state.inventory = o.state.inventory.filter(i => !/^(air|law) rune$/i.test(i.name));
+        return o;
+    }
+    const walk = async (o: Observed) => {
+        const obs = new Observation(o.state);
+        Object.assign(obs.probed, o.probed);
+        return resolveResume(list, obs, {});
+    };
+
+    /** M's run on the fake world (which goes nowhere): its spell clicks, and its error. */
+    async function runM(o: Observed): Promise<{ clicks: number; error: string }> {
+        const sdk = new FakeSdk(o.state);
+        const session = { sdk, bot: {}, name: 'lab', sessionId: 0 } as unknown as RunnerSession;
+        const ctx = { session, sdk, bot: session.bot, c: {}, log: TickLog.memory('t') } as unknown as StepContext<unknown>;
+        const error = await drive(sdk, byLetter('M').run(ctx) as Promise<unknown>, 60).then(() => '', (e: unknown) => (e instanceof Error ? e.message : String(e)));
+        return { clicks: sdk.sent.filter(a => a.method === 'sendClickComponent').length, error };
+    }
+
+    for (const [label, at] of [['on the landing', CAMELOT], ['partway to the tunnel', [2790, 3482]]] as const) {
+        test(`${label}: the walk starts M through run, and M casts nothing and heads for the tunnel`, async () => {
+            const o = spent(at);
+            const point = await walk(o);
+            expect(point.step).toBe('S20:M-to-dwarf');
+            expect(point.mode).toBe('run');
+            const r = await runM(o);
+            expect(r.clicks).toBe(0);
+            expect(r.error).not.toMatch(/teleport/i);
+        });
+    }
+    test('the normal path is unchanged: M from the pipe casts; no cast left there still refuses', async () => {
+        expect(byLetter('M').preconditions(startOf('M').state, {})).toBe(true);
+        expect((await runM(startOf('M'))).clicks).toBeGreaterThan(0);
+        await expect(walk(spent([2641, 3440]))).rejects.toThrow(/runes short|Law|Air/i);
+    });
+});
+
 describe('N: the exit state and its drops (the slot ledger T20-21 drops, moved into the step)', () => {
     const post = (s: BotWorldState) => byLetter('N').postconditions(s, {});
     test('the pass and the raw shrimps are dead at the exit, and so is the spade; the rod, coins, runes and talisman are not', () => {

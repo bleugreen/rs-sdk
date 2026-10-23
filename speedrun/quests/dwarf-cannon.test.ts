@@ -456,6 +456,70 @@ describe('L: the exit state', () => {
     });
 });
 
+describe('K and L re-run after their teleport landed: no second cast', () => {
+    const FALADOR = [2965, 3378] as const;
+    const ARDOUGNE = [2661, 3301] as const;
+    const ctxOf = (sdk: FakeSdk) => {
+        const session = { sdk, bot: {}, name: 'lab', sessionId: 0 } as unknown as RunnerSession;
+        return { session, sdk, bot: session.bot, c: {}, log: TickLog.memory('t') } as unknown as StepContext<unknown>;
+    };
+    /**
+     * The step's spell clicks over `ticks` ticks, and its error: the fake world never moves the
+     * player, so the step ends in an error or is still pending; what matters is which.
+     */
+    async function casts(o: Observed, letter: string, ticks: number): Promise<{ clicks: number; error: string }> {
+        const sdk = new FakeSdk(o.state);
+        const error = await drive(sdk, byLetter(letter).run(ctxOf(sdk)) as Promise<unknown>, ticks).then(() => '', (e: unknown) => (e instanceof Error ? e.message : String(e)));
+        return { clicks: sdk.sent.filter(a => a.method === 'sendClickComponent').length, error };
+    }
+    /** `letter`'s start state, at `at`, with only `left` of the three casts' runes. */
+    function landed(letter: string, at: readonly [number, number], left: InventoryItem[]): Observed {
+        const o = startOf(letter);
+        o.state.player = player(at[0], at[1]);
+        o.state.inventory = [...o.state.inventory.filter(i => !/ rune$/.test(i.name)), ...left];
+        return o;
+    }
+    const resumeAt = async (o: Observed) => {
+        const obs = new Observation(o.state);
+        Object.assign(obs.probed, o.probed);
+        return resolveResume(list, obs, {});
+    };
+
+    // On the route SCORED reaches S13 with Fight Arena's 217-257 air (STEP-MANIFEST entry 16's exit
+    // census), so a second Falador cast is affordable and would leave L one law rune short.
+    test('K, at the Falador landing on the route\'s runes: the walk resumes K and K casts nothing', async () => {
+        const o = landed('K', FALADOR, [item('Water rune', 2), item('Law rune', 2), item('Air rune', 217)]);
+        const point = await resumeAt(o);
+        expect(point.step).toBe('S13:K-nulodion');
+        expect(point.mode).toBe('run');
+        const r = await casts(o, 'K', 40);
+        expect(r.clicks).toBe(0);
+        expect(r.error).not.toMatch(/teleport/);
+    });
+    test('K, partway from the Falador landing to the Black Guard base on the route\'s runes: K casts nothing', async () => {
+        const o = landed('K', [2990, 3415], [item('Water rune', 2), item('Law rune', 2), item('Air rune', 217)]);
+        const point = await resumeAt(o);
+        expect(point.step).toBe('S13:K-nulodion');
+        expect(point.mode).toBe('run');
+        const r = await casts(o, 'K', 40);
+        expect(r.clicks).toBe(0);
+        expect(r.error).not.toMatch(/teleport/);
+    });
+    test('L, at the Ardougne landing with no runes left: the walk resumes L and L casts nothing', async () => {
+        const o = landed('L', ARDOUGNE, []);
+        const point = await resumeAt(o);
+        expect(point.step).toBe('S13:L-lawgof-complete');
+        expect(point.mode).toBe('run');
+        const r = await casts(o, 'L', 40);
+        expect(r.clicks).toBe(0);
+        expect(r.error).not.toMatch(/teleport/);
+    });
+    test('the normal path is unchanged: K from the camp and L from the Black Guard base each cast', async () => {
+        expect((await casts(startOf('K'), 'K', 80)).clicks).toBeGreaterThan(0);
+        expect((await casts(startOf('L'), 'L', 80)).clicks).toBeGreaterThan(0);
+    });
+});
+
 describe('A: the food precondition reads the total held (H10 tops up to 8)', () => {
     test('3 sharks carried in plus 5 from H10 pass; 7 in all fail', () => {
         const s = arrival();

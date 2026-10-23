@@ -245,10 +245,21 @@ async function go(ctx: Ctx, to: Area, what: string): Promise<void> {
     if (!inArea(sdk, to)) throw new Error(`${what}: run to ${to.x},${to.z} failed (${why}) at ${JSON.stringify(pos(sdk))}`);
 }
 
-/** Cast `spell` and confirm the landing; a refusal is final, a lost tick is re-cast only if the player has not landed. */
+/**
+ * Within this many tiles of a teleport's landing, a re-run segment's cast has already landed. K's walk
+ * from the Falador landing to the Black Guard base stays within ~82 of it; the segments start ~400
+ * (K, the camp) and ~350 (L, the base) tiles from their landings, so a fresh segment always casts.
+ */
+const LANDED_WITHIN = 90;
+
+/**
+ * Cast `spell` and confirm the landing; a refusal is final, a lost tick is re-cast only if the player has not landed.
+ * Near the landing (a segment re-run after its cast landed, on the landing or partway on from it) it casts nothing: the runes are spent.
+ */
 async function cast(ctx: Ctx, spell: Spell): Promise<void> {
     const sdk = sdkOf(ctx);
     const landing = SPELLS[spell].landing;
+    if (chebyshev(pos(sdk), landing) <= LANDED_WITHIN) return;
     let why = '';
     for (let i = 0; i < 2; i++) {
         const r = await teleport(sdk, spell, { walkOnRefusal: false });

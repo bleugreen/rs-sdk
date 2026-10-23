@@ -7,9 +7,11 @@ import { baseState, drive, FakeSdk, runeNeedProblems, type SentAction } from '..
 import { sumUse } from '../lib/travel';
 import { journalProbeName } from '../lib/quests';
 import { TickLog } from '../lib/ticks';
+import { configId } from '../lib/world';
+import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import {
-    AGILITY_AFTER, ardougneTeleport, climbToPillars, crossTreeDoor, DEMON_CASTS, DEMON_MAX_CASTS, entryCheck, exitCheck, FREE_SLOTS, gtStage, H8, ITEM, kitCheck, resolveOptions, ROOTS,
+    AGILITY_AFTER, ardougneTeleport, climbToPillars, crossTreeDoor, DEMON_CASTS, DEMON_MAX_CASTS, entryCheck, exitCheck, FREE_SLOTS, gtStage, H8, ITEM, kitCheck, PILLARS, resolveOptions, ROOTS,
     RUNE_NEED, RUNE_STAFF, RUNE_USE, searchRoot, steps, TILES, TREE_DOOR_CLICKS, TREE_DOOR_WAIT,
 } from './grand-tree';
 
@@ -282,6 +284,49 @@ describe('M: the climb', () => {
             stop();
         }
         expect(sentOf(sdk, 'sendInteractLoc')).toHaveLength(0);
+    });
+});
+
+describe('M re-run after some pillars took their twigs', () => {
+    const PLATFORM = { x: 2486, z: 3465 };
+    const journal: QuestJournalState = { title: 'The Grand Tree', lines: [QUESTS.grandtree.stages.find(s => s.value === 120)!.journal!], open: false, tick: 100 };
+    /** Stage 120 on the pillar platform holding the twigs of `held` (PILLARS indices), with the route's Agility potion. */
+    function platform(held: readonly number[]): Observed {
+        const s = routeState({ player: player(PLATFORM.x, PLATFORM.z, 2), quests: { tree: 'complete', elena: 'complete', grandtree: 'started' } as BotWorldState['quests'] });
+        s.inventory.push(item('Lumber order'), ...held.map(i => ({ ...item('Twigs'), id: configId('obj', PILLARS[i]!.twig) })));
+        s.nearbyLocs = PILLARS.map((p, i) => locAt('Pillar', p.x, p.z, [], 50 + i));
+        return { state: s, probed: { [journalProbeName('grandtree')]: journal } };
+    }
+    const resumeAt = async (o: Observed) => {
+        const obs = new Observation(o.state);
+        Object.assign(obs.probed, o.probed);
+        return resolveResume(steps(), obs, {});
+    };
+
+    for (const held of [[3], [1, 3], [0, 2, 3]] as const) {
+        test(`${held.length} of 4 twigs held: the walk resumes M`, async () => {
+            const point = await resumeAt(platform(held));
+            expect(point.step).toBe('S11b:M-pillars');
+            expect(point.mode).toBe('resume');
+        });
+    }
+    test('the normal path is unchanged: all 4 held starts M through run', async () => {
+        const point = await resumeAt(platform([0, 1, 2, 3]));
+        expect(point.step).toBe('S11b:M-pillars');
+        expect(point.mode).toBe('run');
+    });
+    test('resumed with 2 twigs on the platform, M uses only those two on their own pillars and ends with none', async () => {
+        const o = platform([1, 3]);
+        const sdk = new FakeSdk(o.state);
+        sdk.onSend = (a, f) => {
+            if (a.method !== 'sendUseItemOnLoc') return;
+            const slot = a.args[0] as number;
+            f.tick(s => ({ inventory: s.inventory.filter(i => i.slot !== slot) }));
+        };
+        const m = steps().find(s => s.name === 'S11b:M-pillars')!;
+        await drive(sdk, m.run(ctxFor(sdk)) as Promise<unknown>, 120);
+        expect(sentOf(sdk, 'sendUseItemOnLoc').map(a => [a.args[1], a.args[2]])).toEqual([[PILLARS[1].x, PILLARS[1].z], [PILLARS[3].x, PILLARS[3].z]]);
+        expect(m.postconditions(sdk.getState()!, {})).toBe(true);
     });
 });
 
