@@ -13,11 +13,10 @@ import { sleep, waitUntil } from './lib/wait';
 import type { Link } from './runner/resume';
 import { BOUNDARY_STEP, type Step } from './runner/step';
 import {
-    annotation, compareHiscore, DEFAULT_ATTEMPT_KIND, DEFAULT_GATE_BOT, kindGate, kindText, RECORD_LINE, recordLineAt, type DirectRead, EXIT_HOST_RESERVED, formatPlayers, formatSummary, GATE_PLAYERS_STEP, gateRefusal, type InPageRead, kitMissing, kitWant,
-    parseArgs, parseDirectJson, parseKit, PAUSE_STEP, playerReads, playerSwing, ProgramTracker, ReachTracker, readReservation, reservationPath, reservationRefusal, ReservationWatch,
-    runAttempt, SessionClock, summarize, UsageError, claimBin, claimOwner, claimToucher, type ClaimTouch, judgeReservation,
-    attemptFront, bracketAttempt, type FrontIO, frontLine, type FrontReport, gateTabProblems, gateTabRead, recordingProblems, type TabIO, hiscoreSettled,
+    compareHiscore, DEFAULT_ATTEMPT_KIND, DEFAULT_GATE_BOT, kindGate, kindText, RECORD_LINE, recordLineAt, type DirectRead, formatPlayers, formatSummary, GATE_PLAYERS_STEP, gateRefusal, type InPageRead, kitMissing, kitWant, parseArgs, parseDirectJson, parseKit, playerReads, playerSwing,  summarize, UsageError, attemptProbes, attemptFront, bracketAttempt, type FrontIO, frontLine, type FrontReport, gateTabProblems, gateTabRead, recordingProblems, type TabIO, hiscoreSettled,
 } from './rehearse';
+import { annotation, PAUSE_STEP, ProgramTracker, ReachTracker, reachRow, runAttempt, SessionClock } from './lib/attempt';
+import { EXIT_HOST_RESERVED, readReservation, reservationPath, reservationRefusal, ReservationWatch, claimBin, claimOwner, claimToucher, type ClaimTouch, judgeReservation } from './lib/host-reservation';
 import { parsePlayer, type PlayerRow } from './tools/hiscore-scrape';
 
 describe('parseArgs', () => {
@@ -472,7 +471,32 @@ describe('trackers', () => {
         c.observe(1, { tick: 9, inGame: true });
         c.observe(1, { tick: 2, inGame: false });
         c.observe(2, { tick: 1, inGame: true });
-        expect([...c.sessions]).toEqual([[1, { first: 3, last: 9 }], [2, { first: 1, last: 1 }]]);
+        expect([...c.sessions]).toEqual([[1, { first: 3, last: 9, base: 0 }], [2, { first: 1, last: 1, base: 0 }]]);
+    });
+
+    test("SessionClock.track: an in-page session's row starts at its tick base and ends as a relog; a relaunch ends as one", () => {
+        const c = new SessionClock();
+        const tlog = TickLog.memory('s');
+        const s = { sessionId: 1, launchId: 1, tickBase: 0 };
+        const seen = (tick: number) => c.track(tlog, 'a', s, { tick, inGame: true });
+        seen(5);
+        seen(139);
+        Object.assign(s, { sessionId: 2, tickBase: 140 }); // in page: same launch
+        expect(seen(141)).toMatchObject({ sessionId: 1, ticks: 139, meta: { ended: 'relog' } });
+        tlog.append(reachRow(tlog, 'a', s, { skill: 'cooking', level: 99, tick: 200 }));
+        seen(212);
+        Object.assign(s, { sessionId: 3, launchId: 2, tickBase: 0 }); // the client relaunched
+        seen(1);
+        c.close(tlog, 'a', 3, 'logout', 9);
+        const rows = tlog.rows.filter(r => r.kind === 'session');
+        expect(rows.map(r => [r.sessionId, r.startTick, r.endTick, r.ticks, r.meta?.ended])).toEqual([[1, 0, 139, 139, 'relog'], [2, 140, 212, 72, 'relaunch'], [3, 0, 9, 9, 'logout']]);
+
+        // The summary counts each session's own ticks: 140 + 73 + 10 of playtime, not the page's 213 again.
+        const sum = summarize(tlog.rows);
+        expect(sum.sessionTicks).toBe(139 + 72 + 9);
+        expect(sum.playtime).toBe(140 + 73 + 10);
+        expect(sum.reach).toEqual([{ skill: 'cooking', level: 99, playtime: 140 + 60 }]);
+        expect(sum.sessions.map(x => x.lowerBound)).toEqual([false, true, false]);
     });
 
     test('ReachTracker reports each level gained after the first state', () => {
@@ -800,6 +824,54 @@ describe('host reservation: in flight (runAttempt)', () => {
         await wd.check();
         expect(calls).toEqual([]);
         wd.stop();
+    });
+
+    test("a module exporting PROBES resumes with them (without, the walk fails: S25c's 'needs probe wineBank')", async () => {
+        let reads = 0;
+        const mod = { PROBES: { wineBank: async () => (reads++, { wine: 3 }) } };
+        const milestones = (ran: string[]): Step<any>[] => {
+            const [one, two, three] = chain(ran);
+            return [{ ...one!, done: o => o.probed.wineBank != null, probes: ['wineBank'] }, { ...two!, done: () => false }, three!];
+        };
+        const attempt = async (probes?: Record<string, unknown>) => {
+            const client = liteClient();
+            const ran: string[] = [];
+            const steps = milestones(ran);
+            const r = await runAttempt(client.session, steps, {
+                log: TickLog.memory('probes'), account: 'srtest', link: client.link,
+                reservation: new ReservationWatch(join(dir, 'probes.json')), stopAsked: () => false, gateStop: () => null,
+                logout: () => logoutClean(client.session), ...(probes ? { probes: probes as never } : {}),
+            });
+            client.stop();
+            return { r, ran, steps };
+        };
+
+        const before = await attempt();
+        expect(before.r.code).toBe(1);
+        expect(before.r.outcome).toContain('step needs probe "wineBank"');
+
+        const after = await attempt(attemptProbes(milestones([]), mod));
+        expect(after.r).toMatchObject({ code: 0, outcome: 'chain done' });
+        expect(reads).toBe(1);
+        expect(after.ran).toEqual(['two', 'three']);
+    });
+
+    test('a module without PROBES runs as before; a step reading one it lacks refuses before any login', async () => {
+        const plain = chain([]);
+        expect(attemptProbes(plain, {})).toEqual({});
+        expect(attemptProbes(plain, null)).toEqual({});
+        expect(() => attemptProbes([{ ...plain[0]!, probes: ['wineBank'] }], {})).toThrow(UsageError);
+
+        const client = liteClient();
+        const ran: string[] = [];
+        const r = await runAttempt(client.session, chain(ran), {
+            log: TickLog.memory('plain'), account: 'srtest', link: client.link, from: 0, probes: attemptProbes(chain([]), {}),
+            reservation: new ReservationWatch(join(dir, 'plain.json')), stopAsked: () => false, gateStop: () => null,
+            logout: () => logoutClean(client.session),
+        });
+        client.stop();
+        expect(r.code).toBe(0);
+        expect(ran).toEqual(['one', 'two', 'three']);
     });
 
     test('a reservation that is already expired mid-run is ignored: the chain finishes', async () => {
