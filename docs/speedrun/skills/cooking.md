@@ -131,8 +131,10 @@ ticks. With any kebab supply at all, kebabs replace the fish.
 | Heroes' Quest | 2,825 (`quest_hero.rs2:35`); also needs Cooking 53 for the lava eel | no (`legends.md`) |
 
 Cook's Assistant is now on the route as Dragon Slayer filler, so the on-route start is **30**
-(300 base, inferred from the server's xp table, `Player.ts`) if the wine login falls after it,
-and 1 before it. Quest xp cannot matter for the wine route in any case: one firing covers
+(300 base = 7,500 game xp; `lib/xp.ts` puts level 30 at 7,345 and 31 at 7,952) if the wine
+login falls after it, and 1 before it. The S25c lab was staged at 30. No wine count or step
+logic depends on the start (section 4: the rolls use the current level, and the plan reaches 99
+from 1). Quest xp cannot matter for the wine route in any case: one firing covers
 1 -> 99, and the re-arming make's Cooking 35 is reached by the first firing either way.
 
 ## 4. Mechanics
