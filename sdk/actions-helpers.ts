@@ -56,6 +56,27 @@ export const NO_RUNES_REFUSALS = [
  */
 export const SCENE_READY_TICKS = 200;
 
+/**
+ * Walk refusals that come from the client's own route search (the browser ActionExecutor's answers
+ * when Client.walkTo emitted no MOVE packet): a nearer tile may still route where the waypoint didn't.
+ */
+const CLIENT_ROUTE_REFUSALS: ReadonlySet<string> = new Set(['client_rejected', 'out_of_range']);
+
+/**
+ * Tiles on the straight (diagonal-then-straight) line from `from` toward `to`, excluding both ends:
+ * one step short of `to`, then halving the distance from `from` down to 1 tile (12 tiles away:
+ * 11, 5, 2, 1), so a long leg reaches a near tile in a handful of tries.
+ */
+export function tilesToward(from: { x: number; z: number }, to: { x: number; z: number }): Array<{ x: number; z: number }> {
+    const n = Math.max(Math.abs(to.x - from.x), Math.abs(to.z - from.z));
+    const tiles: Array<{ x: number; z: number }> = [];
+    for (let k = n - 1; k >= 1; k = Math.floor(k / 2)) {
+        const step = (a: number, b: number) => a + Math.sign(b - a) * Math.min(k, Math.abs(b - a));
+        tiles.push({ x: step(from.x, to.x), z: step(from.z, to.z) });
+    }
+    return tiles;
+}
+
 export class ActionHelpers {
     /**
      * Set when a scene wait ran out its bound, cleared by the next walk dispatched with the region
@@ -399,15 +420,22 @@ export class ActionHelpers {
         lastPos: { x: number; z: number }
     ): Promise<{ status: 'arrived' | 'progress' | 'stuck'; pos: { x: number; z: number } }> {
         const from = this.sdk.getState()?.player;
+        const startPos = from ? { x: from.worldX, z: from.worldZ } : lastPos;
         const dispatch = await this.sdk.sendWalk(targetX, targetZ, true);
-        if (dispatch.reason === 'scene_loading') {
-            const startPos = from ? { x: from.worldX, z: from.worldZ } : lastPos;
+        // Where this step actually walks: the waypoint, or a nearer tile toward it after refusals.
+        let walkTo: { x: number; z: number } | null = { x: targetX, z: targetZ };
+        if (dispatch.reason === 'scene_loading' || (!dispatch.success && this.sdk.getState()?.sceneReady === false)) {
+            // A walk the client refused while it rebuilds the region (routed against the previous
+            // build's collision) is the same case as one it sent then: wait for the build.
             if (!await this.walkOnceSceneReady(targetX, targetZ, startPos)) return { status: 'stuck', pos: lastPos };
+        } else if (!dispatch.success) {
+            this.sceneWaitTimedOut = false;
+            walkTo = await this.walkAfterRefusal(targetX, targetZ, dispatch.reason);
+            if (!walkTo) return { status: 'stuck', pos: this.playerPos() ?? lastPos };
         } else {
             this.sceneWaitTimedOut = false;
-            if (!dispatch.success) return { status: 'stuck', pos: lastPos };
         }
-        const moveResult = await this.waitForMovementComplete(targetX, targetZ, tolerance);
+        const moveResult = await this.waitForMovementComplete(walkTo.x, walkTo.z, walkTo.x === targetX && walkTo.z === targetZ ? tolerance : 0);
 
         const pos = this.sdk.getState()?.player;
         if (!pos) {
@@ -431,6 +459,48 @@ export class ActionHelpers {
         }
 
         return { status: 'progress', pos: currentPos };
+    }
+
+    private playerPos(): { x: number; z: number } | null {
+        const p = this.sdk.getState()?.player;
+        return p ? { x: p.worldX, z: p.worldZ } : null;
+    }
+
+    /**
+     * A walk the client refused (a browser client routes the walk over its own collision map and
+     * sends nothing when it finds no route) answers at once, inside the tick it was sent in. Treating
+     * that as 'stuck' let walkTo burn every waypoint and re-plan in a single tick (Monkey Madness K,
+     * rs/548). Wait for the next observed tick first: a region that started rebuilding is waited out,
+     * then the waypoint is re-sent once; if the client refuses its own route again, try nearer tiles on
+     * the straight line toward it (each a different tile, each refused one costing no packet). The
+     * tile walked to, or null when nothing was accepted (one tick has then passed).
+     */
+    private async walkAfterRefusal(targetX: number, targetZ: number, reason: string | undefined): Promise<{ x: number; z: number } | null> {
+        const what = `walk to (${targetX}, ${targetZ}) refused (${reason ?? 'no reason'})`;
+        await this.sdk.waitForTicks(1);
+        const here = this.playerPos();
+        if (this.sdk.getState()?.sceneReady === false) {
+            console.log(`[walkTo] ${what}; the region is rebuilding: waiting for sceneReady`);
+            return here && await this.walkOnceSceneReady(targetX, targetZ, here) ? { x: targetX, z: targetZ } : null;
+        }
+        const again = await this.sdk.sendWalk(targetX, targetZ, true);
+        if (again.success) {
+            console.log(`[walkTo] ${what}; re-sent once a tick later: accepted`);
+            return { x: targetX, z: targetZ };
+        }
+        if (again.reason === 'scene_loading') {
+            return here && await this.walkOnceSceneReady(targetX, targetZ, here) ? { x: targetX, z: targetZ } : null;
+        }
+        if (!here || !CLIENT_ROUTE_REFUSALS.has(again.reason ?? '')) return null;
+        for (const tile of tilesToward(here, { x: targetX, z: targetZ })) {
+            const r = await this.sdk.sendWalk(tile.x, tile.z, true);
+            if (r.success) {
+                console.log(`[walkTo] ${what} twice; walking to the nearer tile (${tile.x}, ${tile.z}) instead`);
+                return tile;
+            }
+        }
+        console.warn(`[walkTo] ${what} twice, and no nearer tile toward it was accepted`);
+        return null;
     }
 
     /**
