@@ -527,7 +527,11 @@ never served to SCORED's tab, even when the page server is already up (it serves
 absolute), leaving this rebuild its 20 minutes before the 13:00Z freeze (RUN-ORDER.md section 1).
 **Slid for rs/598** (main 04:15 PDT via rs/158; fold-in 37): the run commit is re-named by 14:00Z
 with the runner-side delivery-session binding in it, and the freeze is 15:00Z; any miss postpones
-attempt 1.
+attempt 1. **Main's schedule ruling** (04:45 PDT via rs/158; fold-in 37): naming by 14:00Z (rs/598's
+lab 3 of 3 by 13:15Z, merged 13:45Z, the twin re-run by 14:45Z), the freeze 15:00Z, the gate series
+from 17:00Z, the start ~17:15Z (10:15 PDT) on the machine that passes, the run ending ~21:10Z;
+claims released 14:30Z; rs/83's 20:35Z sweep skipped. Naming at 14:00Z is 3 h before the series,
+so the run-eve freeze rule below holds as written.
 
 **The floor check, a hard stop** (main's ruling, relayed by rs/158 at 09:24 PDT 2026-10-22;
 STEP-MANIFEST.md entry 0). The floor is read from entry 0's line on origin/main, "`RUN_COMMIT` at
@@ -550,8 +554,16 @@ and to the Monkey Madness kit gate (RUN-ORDER.md R37):
 |---|---|---|
 | by ~03:00Z | 20:00 on the 22nd | the overnight lab pass, only if the rehearsal chunks are green by then |
 | by ~09:00Z | 02:00 | the run-eve loads done |
-| 13:00Z | 06:00 | the floor freeze (below), 2 h before the gate series; **slid to 15:00Z (08:00 PDT)** for rs/598, the run commit re-named by 14:00Z (main 04:15 PDT; fold-in 37) |
-| from ~15:00Z | 08:00 | the gate series (step 5a), the start on the first pass |
+| 13:00Z, slid | 06:00 | the floor freeze as first set; slid to 15:00Z for rs/598 (main 04:15 PDT; fold-in 37) |
+| 13:15Z / 13:45Z | 06:15 / 06:45 | rs/598's runner-driven lab 3 of 3; rs/598 merged (main 04:45 PDT; fold-in 37, as are the rows below) |
+| 14:00Z | 07:00 | main names the run commit |
+| 14:30Z | 07:30 | claims released |
+| 14:45Z | 07:45 | the twin re-run done |
+| 15:00Z | 08:00 | the floor freeze (below), 2 h before the gate series and 3 h after the naming |
+| from 17:00Z | 10:00 | the gate series (step 5a); ~15:00Z before main's 04:45 PDT ruling |
+| ~17:15Z | 10:15 | the start, on the machine that passes |
+| 20:35Z | 13:35 | rs/83's daily delay sweep: skipped on run day |
+| ~21:10Z | 14:10 | the run ends |
 
 **The run-eve freeze** (main's ruling; STEP-MANIFEST.md entry 0). The last floor is named at least
 2 h before the gate series starts; after that no merge moves the floor without the line's update in
@@ -581,10 +593,10 @@ hand-off it owns, which that hand-off then cannot get. Check: partners map match
 `mule-delivery-production.json` carries no `partners` map, which comes from the gitignored run config, so
 the two sources are compared). A mismatch is a stop: tell main and rs/41.
 
-**The gate account's bot.env is on both machines, before the 15:00Z gate series** (main 04:08 PDT via
+**The gate account's bot.env is on both machines, before the 17:00Z gate series** (15:00Z before main's 04:45 PDT ruling; main 04:08 PDT via
 rs/158; fold-in 36). run-gate reads the gate account's settings from
 `~/rs-sdk/bots/<gate-account>/bot.env` (loopback GATEWAY_URL, CLIENT_URL, CDP_URL; file mode 600,
-directory 700, gitignored). Verify it is present on both machines before the 15:00Z gate series (it
+directory 700, gitignored). Verify it is present on both machines before the 17:00Z gate series (it
 was missing on both at 11:0xZ; the gate timer uses a different path). Never name the gate account.
 
 **The cannon serve file, before SCORED logs in** (rs/41's wording via rs/158, main 04:15 PDT; fold-in 36).
@@ -594,7 +606,12 @@ Before SCORED logs in, <run dir>/cannon-serve.json holds exactly host's bytes, s
 with rs/598, the runner-side delivery-session binding). `delivery.run` in the run config equals every
 mule carrier's launcher `deliveryRun`; `mule-ledger --check` verifies it, and any mismatch is a
 refusal. **The exact command is pending rs/41**, due right after the naming and before ~14:15Z, with
-the carrier configs regenerated from the new hash. `delivery.run` changes per attempt (a1-20261023 for attempt 1, then a2-..., a3-...), like
+the carrier configs regenerated from the new hash. **run.ts's own guard** (rs/598 at b800cdb8, not on
+main yet; names re-checked at the commit main names, the code winning if they differ): run.ts's run
+config carries `delivery: { run: "a1-20261023", launcherConfig: "<that launcher json>" }`, and its
+preflight refuses with exit 3, before any login, if that is missing or does not match every mule
+partner's launcher entry. That preflight is the code's own guard; rs/41's `mule-ledger --check` stays
+as the operator's check. `delivery.run` changes per attempt (a1-20261023 for attempt 1, then a2-..., a3-...), like
 h92's serve ids below.
 
 **h92 on the run commit, and its serve ids per attempt** (rs/41's wording via rs/158; fold-in 36).
@@ -1264,7 +1281,8 @@ the tick length T on main since #385 (a4456c73, rs/471; fold-in 31; step 6, line
    1. the gate minute (line 1): the gate account and S06's 7 air-altar givers on **both** machines;
    2. after the choice, on SCORED's machine, first (main 04:30 PDT via rs/158, rs/186's wording; fold-in 37; it comes
       with rs/598, its line citations from rs/186's branch at rs/598, re-checked against the run commit main names):
-      **Hold each delivery carrier before starting the helper launcher.** Run `<rs/598's hold command>` (**pending rs/598**) for every carrier in the generated carrier config. The hold must be written before the carrier starts: a running carrier with no control file selects and stages its first row at once (helpers/mule.ts:1240, :1314-1323, :1478), and a hold written after that leaves a staged carrier whose readiness check `heldFor` never passes (helpers/mule-readiness.ts:159). `holdMule` also refuses a hold after a prepare in the same attempt (helpers/mule-readiness.ts:303). If this step is skipped, the run still works through run.ts's per-row prepare and readiness gate, but the carrier pre-stages its first row.
+      **Hold each delivery carrier before starting the helper launcher.** Run `bun speedrun/tools/mule-hold.ts --config <launcher config json> --account <carrier>` for every carrier in the generated carrier config. The hold must be written before the carrier starts: a running carrier with no control file selects and stages its first row at once (helpers/mule.ts:1240, :1314-1323, :1478), and a hold written after that leaves a staged carrier whose readiness check `heldFor` never passes (helpers/mule-readiness.ts:159). `holdMule` also refuses a hold after a prepare in the same attempt (helpers/mule-readiness.ts:303). If this step is skipped, the run still works through run.ts's per-row prepare and readiness gate, but the carrier pre-stages its first row.
+      The hold command (rs/598 at b800cdb8, not on main yet; via rs/158): once per banked delivery carrier, for example `--config run-machine/<launcher>.json --account cairn_mule1`; the run id, serve, cue directory, first row and tile all come from the generated launcher entry. Exit 0 = held; 1 = refused (after this run's prepare, or over another run's live control); 2 = usage; an identical repeat is a no-op. After its gates, run.ts prepares each carrier's first row before SCORED logs in.
       Then rs/117's launcher logs in the **17 roster accounts** (4 + 6 + 3 + 4; fold-in 36, rs/41's correction of 16):
       mule1, mule2, h55, h03, the 6 S03 droppers, the 3 S04 ring givers (h81-h83) and the 4 S07 bone
       givers (b01-b04), about 2.5-3 minutes;
