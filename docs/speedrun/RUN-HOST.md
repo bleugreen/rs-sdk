@@ -243,7 +243,7 @@ has not yet sent from the twin's run-capable install (its window opened at 00:26
 | Name | **rs-ashburn-run**, also its hostname ("Hostnames", below); instance id **pending (rs/host)** | **`rs-ashburn-rehearsal`**, the twin (rs/147's; launched 2026-10-21 12:57 PDT by rs/149) | r: the host thread, 16:12 PDT; HOST.md |
 | Machine | AWS us-east-1c, c7i.2xlarge: 8 vCPU (Xeon Platinum 8488C), 16 GB, 60 GB gp3, **no GPU**, Ubuntu 24.04 | AWS us-east-1c, c7i.2xlarge, same AMI as rs-ashburn-run, on the run host's subnet: 8 vCPU (Xeon Platinum 8488C), 15 GB as read on the machine, 60 GB gp3, no GPU; the run host's AMI, Ubuntu 24.04.5 | run host r: main on cairn://p/rs/103, 08:45 and 08:53 PDT, CPU model m (`/proc/cpuinfo`); twin m, HOST.md |
 | Address | addresses: cairn://p/rs/host. The run host is **rs-ashburn-run**; its public address is an Elastic IP, changed at 23:11Z on 2026-10-21, and the earlier address is released. Commands use `$RS_RUN_HOST` | an Elastic IP, so it survives a stop. Commands use `$RS_TWIN_HOST` | r: the host thread, 16:12 PDT; HOST.md |
-| The engine's processing group (the address's last octet & 7; step 4) | **1**, as of 2026-10-21 | **0**, as of 2026-10-21 | m: the host thread and main, 16:25-16:33 PDT (the demo sees each machine's public address, flyio-debug `ra`). Groups change when an address changes; the current one is in cairn://p/rs/host |
+| The engine's processing group (the address's last octet & 7; step 4) | **3** (current address; re-read after any address change) | **4** (current address; re-read after any address change) | m: the host thread, 2026-10-23, via rs/158 (fold-in 34; the addresses live only in the host thread). The 1 and 0 before were the 2026-10-21 addresses (the host thread and main, 16:25-16:33 PDT; the demo sees each machine's public address, flyio-debug `ra`). The lower group is processed first, so the run host's players precede the twin's. **It no longer decides placement for attempt 1**: helpers on the other machine are off (step 4) |
 | Ingress | SSH and RDP admit only the operator's address | the same: a copy of the run host's security group | r |
 | Tailscale | its tailnet address (`$RS_RUN_TAILNET`) is unchanged by the address change | **not on the tailnet**: RDP goes to the public address and the live view through an ssh tunnel (step 5) | r: the host thread; HOST.md |
 | SSH key, known_hosts | `~/.rs-fleet/id_ed25519_ashburn`, `known_hosts_ashburn`, on `local`, bgsrv-mac and bgsrv-ub | `~/.rs-fleet/id_ed25519_rehearsal`, `known_hosts_rehearsal`, on `local` and bgsrv-ub only: two different keys with the same file name, one made on each machine | r |
@@ -917,13 +917,16 @@ scope is not in force, and rs/393's writer is pending likewise.
 observation): a browser tab on bbs had 0 locs and 16 npcs from the demo world after 65 ticks, in 3
 tries. So any browser demo or rehearsal that clicks locs runs on the Ashburn machines, never on bbs.
 
-**The lower-bucket machine is an alternative, not the plan.** Givers on a machine whose bucket is
-below SCORED's would precede SCORED whatever their login time: with the dated table above, SCORED
-on the run host and the givers on the twin, both machines passing the gate. It needs a
-cross-machine cue (rs/196 to scope), rs/196's auto rule keyed to "handled before SCORED" rather than
-login order (STEP-MANIFEST.md entry 9), and, if those givers ran the relay path, rs/225's relaunch
-fix: a relay giver misses 3 turns per crash until it lands (m, lab, rs/163), against 1 on the direct
-path. The table's buckets are as of 2026-10-21; a re-address supersedes them.
+**Helpers on the other machine are off for attempt 1** (main 23:1x via rs/158; fold-in 34). The cue
+protocol is local-filesystem IPC: a cue and a status are files on the machine that writes them, so a
+giver on the other machine cannot read SCORED's cue, and a relay would need `RUN_COMMIT` code. The
+R12 rule stands: tick-exact givers on SCORED's machine, logged in before SCORED. So the group table
+above no longer decides placement. The earlier alternative, givers on a lower-group machine preceding
+SCORED whatever their login time (on the current addresses, the run host's group 3 before the twin's
+4), needed a cross-machine cue (rs/196 to scope), rs/196's auto rule keyed to "handled before
+SCORED" rather than login order (STEP-MANIFEST.md entry 9), and, on the relay path, rs/225's relaunch
+fix (a relay giver misses 3 turns per crash until it lands, m, lab, rs/163, against 1 on the direct
+path); it stays off unless main reopens it after attempt 1.
 
 **Load and logins.** The chosen machine carries SCORED and ~35 helpers on the body plan (7 air, 22
 body, 4 bone, 2 trade givers), plus the courier and the anvil helper for their steps, never all at
@@ -942,12 +945,17 @@ PDT; "~20 a machine" was an observation, not a cap). The demo's bound is 50 an a
 machine through rs/117's launcher, `speedrun/helpers/standalone.ts`, from this same checkout, on their
 own loopback gateway (7795 by default). How to configure, start and stop them is
 [HELPERS.md](HELPERS.md), "Helpers on the run machine" (cairn://p/rs/117); this page doesn't repeat
-it. The one ordering rule that touches this runbook: **the helpers are logged in before SCORED's tab
+it. **Every run-day helper runs a headless client** (fold-in 34; rs/186's confirmed wording, 22:3x):
+lite, or the direct path's in-process client, never the browser client. The browser client sends
+`IDLE_TIMER` after 10 minutes without input (`server/webclient/src/client/Client.ts:4926-4933`, its
+AFK logout), which idles a helper out during a stand-down. The connection paths are unchanged (the
+S06 and S21 altar givers on the direct path); rs/41 is confirming that the in-process client never
+sends `IDLE_TIMER` either. The one ordering rule that touches this runbook: **the helpers are logged in before SCORED's tab
 opens** (the launcher's `helpersReady`), because login order decides the 7- or 8-tick Runecraft
 cycle. Every helper counts against the 80-login cap from its login until it logs out (step 7), and against
 its address's per-IP cap (below). With S21's altar givers in from the start, SCORED's run login was
 the peak (SUPPLIES.md, "Peak concurrent logins"); under the per-address plan below, rs/41's map puts
-SCORED's address at 25 at the start and 26 during S21's ramp. At the gate the 7 opening givers on **each** machine count, 14 in all. After a demo restart the helpers come back by relaunching rs/141's headless
+SCORED's address at 24 at the start (23 helpers + SCORED, step 5a.4; 25 before fold-in 34) and 26 during S21's ramp. At the gate the 7 opening givers on **each** machine count, 14 in all. After a demo restart the helpers come back by relaunching rs/141's headless
 lite-runner child processes (`fleet.ts`, `standalone.ts`), not tabs: the OS closes the old child's
 gateway socket when it exits, so there is no gateway takeover (inferred from the code; owned by
 rs/41), and the earlier lite restart measurement read 3 in-world ticks after the relogin
@@ -962,7 +970,7 @@ preference, step 5a), but the gate still chooses (tenet 17), and the plan holds 
 - **The cap.** The demo's operator caps simultaneous logins at **50 per IP** (public Discord, 13:2x
   PDT; it may rise). **Ours is 45 per address**, the working figure since main accepted rs/41's map.
   Tenet 16's 80, summed across every host, applies beside it (step 7).
-- **The peak per address** (rs/41's map): **25 on SCORED's address at the start and 26 during S21's
+- **The peak per address** (rs/41's map): **24 on SCORED's address at the start (S01: the 7 air givers, the 16 roster logins and SCORED; rs/41's start order, main ruled, fold-in 34; 25 before) and 26 during S21's
   ramp**, inside SCORED's relog before S21. Both are under 45.
 - **The home address on run day, a run-day rule:** the home machines (bbs and every executor) carry
   **29 fleet accounts plus the cannon helper**, and nothing else, with **one named exception** (main 17:0x via rs/158, fold-in 31): **R8's spawn helper** (rs/526; a fleet spare, never named here), parked logged out beside the Lumbridge respawn tile, with 0 run-day logins, or 1 cued login on a player-kill, logged out after its trade. No development sessions and no
@@ -1219,12 +1227,29 @@ the tick length T on main since #385 (a4456c73, rs/471; fold-in 31; step 6, line
    account in every line, `STOP:` line, JSON file and `GATE-RESULT` (from the `--role` the Mac
    passes), and the Mac relabels both in everything streamed back, its log and `choice.json`. Run on
    a machine by hand without `--role`, the label is plain `GATE`.
-4. **On the chosen machine:** the 4 bone and 2 trade givers log in through rs/117's launcher before
-   SCORED. S21's 22 body-altar givers log in later, inside SCORED's relog before S21 (step 4, "The
-   per-address login plan"; about 3.5 wall minutes through the launcher's limiter, rs/41; 22 logins
-   took 190 s, m, rs/214 on the run host, 00:35-00:39Z on 2026-10-22), and the courier and the anvil
-   helper only for S18 and S25a. Then step 7's login count (`handoff` re-checks it), then the launch
-   dry run and `handoff` (step 7), within 20 minutes of the gate (`--max-gate-age`).
+4. **On the chosen machine, the start order** (rs/41's wording, main ruled and applied 22:4x via
+   rs/158; fold-in 34). rs/41's start sequence:
+   1. the gate minute (line 1): the gate account and S06's 7 air-altar givers on **both** machines;
+   2. after the choice, on SCORED's machine, rs/117's launcher logs in the **16 roster accounts**:
+      mule1, mule2, h55, h03, the 6 S03 droppers, the 3 S04 ring givers (h81-h83) and the 4 S07 bone
+      givers (b01-b04), about 2.5-3 minutes;
+   3. wait for the launcher's `helpersReady`, then **load reading (i)** (step 6, "The load ceiling"),
+      before the tab starts;
+   4. the run tab and the recording start; **load reading (ii)**, the decisive one, before SCORED's
+      login;
+   5. SCORED's login (`handoff`, step 7).
+
+   The anvil helper a01 and the courier e15 are **not** in the start window: they log in on their
+   cue gates (`loginOn` {S25a, anvil} and {S18, courier}). S21's 22 body-altar givers log in later,
+   inside SCORED's relog before S21 (step 4, "The per-address login plan"; about 3.5 wall minutes
+   through the launcher's limiter, rs/41; 22 logins took 190 s, m, rs/214 on the run host,
+   00:35-00:39Z on 2026-10-22). **The start-window count on SCORED's address is 24 at S01**: 23
+   helpers (the 7 air givers and the 16) and SCORED. Before `handoff`: step 7's login count
+   (`handoff` re-checks it), the demo's `tickMs` and bundle token re-read and the launch dry run,
+   within 20 minutes of the gate (`--max-gate-age`). **Where the code differs** (r, run-gate.ts at
+   this fold-in's base): `handoff` opens the run tab and logs SCORED in as one command and reads no
+   load, so reading (ii) is the host's own read on the chosen machine while the tab is up and before
+   the login; how it is taken inside `handoff` is the host thread's (pending).
 5. **On the other machine,** before SCORED's first login: its 7 opening givers log out cleanly
    (HELPERS.md teardown; send their stop at least 5 minutes before they must be out of the world,
    since the server logs out at most one player per tick world-wide: HELPERS.md, "Stopping", rs/267)
@@ -1266,8 +1291,8 @@ reason: a helper on a CPU-starved host fails readiness closed. Its held-status g
 against a 400 ms write cadence, so a healthy mule reads as not ready (main's delivery-engine proof:
 load 37 on 8 cores did it in 7 s).
 
-- **Pre-start.** Load under 4.0 when the gate passes is a start condition in the same class as
-  tenet 12's (d). If it is not met, the start waits and the gate is re-read.
+- **Pre-start** (main 23:0x via rs/158, the host thread's wording; fold-in 34). The pre-start load condition is TWO readings. Each is a settled 1-minute load average, taken after 60 s with no new login. (i) After helpersReady and before the tab starts (rs/41's start-sequence step 3). (ii) After the tab and the recording have started and before SCORED's login (step 4); this is the decisive one. Both must be under 4.0, or the start waits and the reading is taken again. The reading at the gate pass, with the machine quiesced, is logged but is not a condition. The
+  start order is step 5a.4's.
 - **Mid-run.** At the hand-off (step 7) host starts an untracked sampler on the chosen machine,
   writing every 30 s to `~/rs-run/<run>/load.log`: the UTC time, `/proc/loadavg`, and the CPU use
   of chrome, ffmpeg and each helper process. A sample at or over 4.0 is logged and alerts the
@@ -1279,6 +1304,11 @@ load 37 on 8 cores did it in 7 s).
   teardown removes it after the run (step 9).
 - **Measured headroom, recording on, no helpers:** peak 2.18 on the run host, 2.27 on the twin (m).
   The dress rehearsal (rs/496) is the first measurement with helpers on the machine: **pending**.
+- **Attempt-1 load levers** (main 23:1x via rs/158; fold-in 34): the roster's early logins (step
+  5a.4), the anvil helper and the courier cue-gated out of the start window, and possibly
+  `path: 'direct'` for the helpers after the rehearsal. The exact wording is the host thread's and
+  rs/41's: **pending**. **The recording preset stays `veryfast`** (m, the host thread via rs/158: a
+  lighter preset saves at most ~0.24 cores, under main's 0.5-core bar).
 
 **Quiesce.** Nothing runs on the machine but the session's desktop, the `run` tmux stack (gateway,
 page server, recording, live view), rs/117's launcher with its lite runners and roles, and system
@@ -1427,7 +1457,7 @@ rs/163) the start is ~90 with the gathering fleet's ~53 in and 37 without it, so
 unneeded fleet out first is mandatory**. Those counts have S21's givers in from SCORED's first
 login. Under the per-address plan they log in later, inside SCORED's relog before S21, on the chosen
 machine (step 4; RUN-ORDER.md O38 for the machine), so the start is lower: rs/41's map puts SCORED's
-address at 25 at the start and 26 during S21's ramp, and the home address at 29 fleet accounts plus
+address at 24 at the start (step 5a.4) and 26 during S21's ramp, and the home address at 29 fleet accounts plus
 the cannon helper. Do not log SCORED in over either cap. `handoff` re-checks it as a hard check: our accounts
 online, as `rs-claim status` counts them on `/playerpositions` (every host's), plus SCORED's 1, at
 most 80 (`--cap`); it refuses if the count can't be read. **The code counts a total, not an
@@ -1515,7 +1545,9 @@ logs each gate account in through the run's profile and address (the verificatio
 renews the choice for `handoff`'s 20-minute limit.
 
 **The hand-off.** Right before it, on the Mac, read the demo's tick length (step 5a's command) and
-the bundle token (above) again and record both. **A tick length different from step 5a's reading
+the bundle token (above) again and record both. Load reading (i) is in hand by then (after
+`helpersReady`, before the tab starts); reading (ii), the decisive one, follows once the tab and the
+recording are up and before SCORED's login (step 5a.4; step 6, "The load ceiling"). **A tick length different from step 5a's reading
 is a stop**: no start; tell main (main kept this stop-on-change for the reads before the start,
 13:5x PDT). A different token means `gate` again first (above). Then, on the chosen machine, with
 the machine chosen (step 5a), the start's roster in (step 4; S21's givers come inside SCORED's relog before S21), the recording running (step 5), the gate's Chrome gone, the profile warm and the login
@@ -1773,12 +1805,19 @@ ladder's general note).
 **What the operator sees.** `[run] FAILED: <message>` (`attempt.ts:112`, `run.ts:526`), then
 `[run] logout: ...` (`run.ts:371, 397`): **run.ts logs SCORED out after a StepError**, and on the
 way out writes a FINAL stop to every open helper cue (`run.ts:404`, `cue-keeper.ts:158-164`), so
-the launcher logs the failed step's helper family out; the re-run opens a new cue session for the
-scope, and whether the launcher logs the family back in on it is unconfirmed (rs/186 has asked rs/41;
-rs/186 may make the StepError path a non-final stop, so helpers stand by for the re-run). Exit code 1 (the
+the launcher logs the failed step's helper family out, and a relaunched launcher ignores cues
+written before it started (rs/41). So, **until rs/546's non-final stop lands, the failed step's
+launcher entries are relaunched BEFORE the re-run** (check 6). Once it lands, the StepError path
+writes a non-final stop: the stood-down helpers stay logged in on SCORED's address during the re-run
+(up to 25-26 at S21, rs/41) and the re-run's cue re-arms them (fold-in 34). Exit code 1 (the
 codes at `run.ts:45-46`). A hard kill, SIGTERM (it exits before the cue close, `run.ts:376-389`,
 being fixed by rs/546) or a throw before the chain starts (an uncaught stack trace,
-`run.ts:518, 548-553`, e.g. S21's relog refused at startup) leaves the cues armed instead.
+`run.ts:518, 548-553`, e.g. S21's relog refused at startup) leaves the cues armed instead, **and
+leaves SCORED in the world with nothing acting** (rs/186 22:3x; fold-in 34): only the StepError,
+refused-resume and pause paths log SCORED out (`run.ts:397`). The run tab's client logs itself out
+after 10 minutes without input (`server/webclient/src/client/Client.ts:4926-4933`, the AFK logout
+that sends `IDLE_TIMER`), so **re-run within ~9 minutes, or log SCORED out cleanly first**: every
+tick in the world still counts, and an idle-out is an unplanned relog.
 
 The checks, in order, before re-running. Any one failing means **do not re-run: tell main**.
 
@@ -1787,7 +1826,10 @@ The checks, in order, before re-running. Any one failing means **do not re-run: 
    them for main and for the attempt's findings.
 2. **SCORED logged out cleanly**: the `[run] logout:` line, and the run tab on the title screen
    (`tab.ts` `pageInGame` false over the tab's DevTools, never the gateway's `inGame`). If the page
-   still reads in game or the log has no logout line, ask main first.
+   still reads in game or the log has no logout line after a StepError, ask main first. **After a
+   hard kill or a throw before the chain starts** SCORED is still in the world by design (above): re-run
+   within ~9 minutes of it, or log SCORED out cleanly first; never leave it to the client's
+   10-minute AFK logout (rs/186, fold-in 34).
 3. **The relog lock is free**: `<run dir>/relog.lock` (`runner/relog-budget.ts:172-182`). The next
    taker removes a lock whose pid is dead, so it needs clearing by hand only when the pid it names
    is alive: then confirm that process is not a relog in progress (run.ts or `relog-now.ts`) before
@@ -1798,10 +1840,13 @@ The checks, in order, before re-running. Any one failing means **do not re-run: 
 5. **The host claim is still held and live**: run.ts releases it only on success (`run.ts:533`); an
    expired claim makes gate 2 refuse with an `rs-claim take ...` hint (`run.ts:252-261`), so retake it
    as step 0 does first.
-6. **The helpers**: a StepError writes a final stop to open helper cues, so the failed step's
-   helpers are logged out. Before re-running, confirm the failed step's helper family is logged
-   back in, or log it in by hand (step 4); re-arm-on-new-cue after a final stop is pending
-   rs/41 / rs/186.
+6. **The helpers: relaunch the failed step's launcher entries BEFORE the re-run** (fold-in 34;
+   until rs/546's non-final stop lands). A StepError writes a final stop to open helper cues, so
+   the failed step's helpers are logged out, and a relaunched launcher ignores cues written before
+   it started, so the relaunch comes first and the re-run's new cue reaches it (step 4; HELPERS.md).
+   Once rs/546's non-final stop is on the floor, the stood-down helpers stay logged in on SCORED's
+   address during the re-run (up to 25-26 at S21, rs/41) and the re-run's cue re-arms them: confirm
+   they are still in, and relaunch none.
 7. **The step is not on the non-admitting list**: RUN-ORDER.md section 7's margin ladder, its
    attempt-ending lines and the conditional note for A and B (until B merges, any step after H7;
    until A merges, S18 after its first stocked stun and S22 after its first catch). Some lines name an

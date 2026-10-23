@@ -628,7 +628,32 @@ export function readStatuses(dir: string): GiverStatus[] {
         .filter((s): s is GiverStatus => !!s && s.v === CUE_VERSION);
 }
 
-/** The scored side's handle on cue.json. One writer per session, for one scope. */
+/** Validate persisted data before it becomes authority for a resumed writer. */
+function resumableCue(value: unknown): value is Cue {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const c = value as Cue;
+    const integer = (n: unknown): n is number => typeof n === 'number' && Number.isSafeInteger(n);
+    const schedule = (s: unknown) => s === 'tuned' || s === 'robust';
+    return c.v === CUE_VERSION && scopeError(c.scope) === null
+        && typeof c.session === 'string' && c.session.length > 0
+        && integer(c.seq) && c.seq >= 1
+        && typeof c.receiver?.sha256 === 'string' && /^[a-f0-9]{64}$/.test(c.receiver.sha256)
+        && integer(c.ms) && c.ms >= 0 && integer(c.open) && schedule(c.schedule)
+        && (c.stop === undefined || typeof c.stop === 'boolean')
+        && (c.final === undefined || typeof c.final === 'boolean') && (!c.final || c.stop === true)
+        && Array.isArray(c.beacons) && c.beacons.length > 0
+        && c.beacons.every(b => b && integer(b.tick) && integer(b.ms) && b.ms >= 0)
+        && Array.isArray(c.turns) && c.turns.every(t => t && typeof t.giver === 'string' && t.giver.length > 0
+            && integer(t.T) && (t.schedule === undefined || schedule(t.schedule) || t.schedule === 'stock')
+            && (t.items === undefined || (Array.isArray(t.items) && t.items.every(i =>
+                i && typeof i.item === 'string' && i.item.length > 0 && integer(i.n) && i.n > 0))));
+}
+
+/**
+ * One active writer per session/scope. Passing an explicit `session` that matches cue.json adopts its
+ * seq and turns (a resumed step reopening its own session); that adoption is not a lock against a
+ * second, concurrent writer.
+ */
 export class CueWriter {
     readonly session: string;
     readonly scope: CueScope;
@@ -639,19 +664,37 @@ export class CueWriter {
         readonly dir: string,
         private readonly receiverName: string,
         scope: CueScope,
-        session = `${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`
+        session?: string
     ) {
         const err = scopeError(scope);
         if (err) throw new Error(`CueWriter: ${err}`);
         assertUntracked(dir);
         this.scope = { step: scope.step, family: scope.family };
-        this.session = session;
+        this.session = session ?? `${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`;
+        if (!this.session.trim()) throw new Error('CueWriter: session must be nonempty');
+        // Only an explicitly supplied identity may adopt persisted sequence/turns.
+        if (session !== undefined && existsSync(join(dir, CUE_FILE))) {
+            const previous = readJson<unknown>(join(dir, CUE_FILE));
+            if (!previous || typeof previous !== 'object' || Array.isArray(previous))
+                throw new Error('CueWriter: malformed persisted cue');
+            if ((previous as { session?: unknown }).session === session) {
+                if (!resumableCue(previous)) throw new Error('CueWriter: invalid persisted session');
+                if (!cueAddresses(previous, scope.step, scope.family) || previous.receiver.sha256 !== nameHash(receiverName))
+                    throw new Error('CueWriter: persisted session identity mismatch');
+                if (previous.final) throw new Error('CueWriter: final session cannot reopen');
+                this.seq = previous.seq;
+                this.cue = previous;
+            }
+        }
     }
 
     /** Write the cue with `turns` replaced (pass the full list) and fresh beacons. */
     write(fields: { beacons: Beacon[]; turns: Turn[]; schedule?: Schedule; open?: number; stop?: boolean; final?: boolean }): Cue {
         if (fields.beacons.length === 0) throw new Error('a cue needs at least one beacon');
         if (fields.final && !fields.stop) throw new Error('a final cue is a stop: final needs stop');
+        if (this.cue?.final && (!fields.stop || fields.final === false)) throw new Error('CueWriter: final session cannot reopen');
+        if (!Number.isSafeInteger(this.seq + 1)) throw new Error('CueWriter: sequence exhausted');
+        const final = fields.final || this.cue?.final;
         this.cue = {
             v: CUE_VERSION,
             scope: this.scope,
@@ -663,7 +706,7 @@ export class CueWriter {
             open: fields.open ?? this.cue?.open ?? DEFAULT_OPEN,
             turns: fields.turns,
             ...(fields.stop ? { stop: true } : {}),
-            ...(fields.final ? { final: true } : {}),
+            ...(final ? { final: true } : {}),
             ms: Date.now()
         };
         writeJsonAtomicSync(join(this.dir, CUE_FILE), this.cue);

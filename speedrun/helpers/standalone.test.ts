@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { type Cue, type CueScope, CueWriter, readCue } from './altar-cue';
+import { type Cue, CUE_FILE, type CueScope, CueWriter, readCue } from './altar-cue';
 import { cueEpoch, muleCueAction, muleOptions } from './mule';
 import { DIRECT_IN_WORLD, DIRECT_IN_WORLD_RE, DIRECT_LOGOUT_RE, DIRECT_REFUSED_RE } from './role';
 import {
@@ -899,9 +899,17 @@ describe('a login-only folder (loginOn.cueDir): the login trigger apart from the
         const trigger = base.login().write(open);
         await sleep(30);
         expect(settled).toMatchObject({ result: 'open', cue: { session: trigger.session } });
-        earlierP.write(open); // the earlier writer's session going on in this launch: counts by its write time
+        // The earlier writer's session going on in this launch: counts by its write time. CueWriter refuses
+        // to reopen a final session, so the stale writer's cues are put on disk directly, as a misbehaving
+        // process would leave them.
+        const staleWrite = (fields: Partial<Cue>) => {
+            const prev = readCue(base.roleDir)!;
+            const { stop: _stop, final: _final, ...rest } = prev;
+            writeFileSync(join(base.roleDir, CUE_FILE), JSON.stringify({ ...rest, ...fields, seq: prev.seq + 1, ms: Date.now() }));
+        };
+        staleWrite({});
         await sleep(20);
-        earlierP.stop(beacon, { final: true });
+        staleWrite({ stop: true, final: true });
         await sleep(30);
         expect(stops.map(c => [c.why, c.cue.session])).toEqual([['final', earlierP.session]]);
         g.close();

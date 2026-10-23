@@ -389,6 +389,12 @@ export interface TravelOptions {
      * with `stopIf` never falls back to bot.walkTo, which cannot be stopped part way.
      */
     stopIf?: (s: BotWorldState) => string | null;
+    /**
+     * Awaited before each hop's first click, with the hop's index (also the hop a refused teleport
+     * falls back to): a reason stops the trip there, as `stopIf`'s does. runner/legs.ts drops here
+     * what no remaining hop needs.
+     */
+    beforeHop?: (i: number) => Promise<string | null>;
 }
 
 interface HopOutcome {
@@ -456,6 +462,8 @@ export async function travel(sdk: TravelSdk, hops: readonly Hop[], opts: TravelO
             const s0 = sdk.getState();
             const halt = s0 ? opts.stopIf?.(s0) : null;
             if (halt) return trip.finish(false, `stopped before ${hopLabel(h)}: ${halt}`, halt);
+            const held = await opts.beforeHop?.(i);
+            if (held) return trip.finish(false, `stopped before ${hopLabel(h)}: ${held}`, held);
             const t0 = currentTick(sdk);
             const r = await runHop(sdk, trip, h, opts);
             const note = r.note ?? r.refused ?? r.reason;

@@ -504,24 +504,31 @@ export interface BoneStatus {
     ms: number;
 }
 
+/**
+ * Every status in `dir`, each from its own account's file only: a status counts when its file is
+ * `bones-<canonName(account)>.json`, the name its giver writes (statusPath). A renamed or copied file
+ * claiming another account is skipped, so no account counts twice and none is a phantom.
+ */
 export function readBoneStatuses(dir: string): BoneStatus[] {
     if (!existsSync(dir)) return [];
     return readdirSync(dir)
         .filter(f => /^bones-.+\.json$/.test(f))
-        .map(f => readJson<BoneStatus>(join(dir, f)))
-        .filter((s): s is BoneStatus => !!s && s.v === 1 && typeof s.account === 'string');
+        .map(f => ({ f, s: readJson<BoneStatus>(join(dir, f)) }))
+        .filter((x): x is { f: string; s: BoneStatus } => !!x.s && x.s.v === 1 && typeof x.s.account === 'string' && x.f === `bones-${canonName(x.s.account)}.json`)
+        .map(x => x.s);
 }
 
 /**
- * The group's statuses: with a `session`, only those counted in it (a file another run left counts
- * for nothing; a giver that has ended counts). Without one, every status of the group, as before
- * sessions existed: the scored step's `awaitBoneServer` passes none yet. A status written without
- * `session` is in no session.
+ * The group's statuses: with a `session`, exactly those counted in it. A status in another
+ * session (a file another run left) or in none (a giver yet to read this cue, or a file from before
+ * sessions) contributes nothing: no trades, no final, no server. A giver publishes as soon as it reads
+ * a new cue session (BoneGiver.onCue), and the scored step's `awaitBoneServer` waits on observed ticks
+ * for that. Without a `session`, every status of the group (tests and the stand-in only).
  */
 function sessionStatuses(statuses: readonly BoneStatus[], group: readonly string[], session?: string): BoneStatus[] {
     const g = new Set(group.map(canonName));
     const mine = statuses.filter(s => g.has(canonName(s.account)));
-    return session === undefined ? mine : mine.filter(s => (s.session ?? null) === session);
+    return session === undefined ? mine : mine.filter(s => s.session === session);
 }
 
 /** The loads the group has given in the session: its givers' trades added up. */
@@ -570,12 +577,13 @@ export interface ServerWait {
  * The scored side's half of the turn rule, before each load's receiveFrom: the group's server
  * (boneServer, read from the same status files the givers read), waiting on observed ticks while
  * none serves, for at most `maxTicks`. The S07 step (woodcutting.ts `bones.group`) and the
- * stand-in (bone-receiver `givers`) both take their partner from here.
+ * stand-in (bone-receiver `givers`) both take their partner from here. With `session` (the S07 cue's,
+ * which the givers record in their statuses) only that session's statuses count, as on the givers' side.
  */
-export async function awaitBoneServer(sdk: StateSource, dir: string, group: readonly string[], maxTicks: number = SERVER_WAIT_TICKS): Promise<ServerWait> {
+export async function awaitBoneServer(sdk: StateSource, dir: string, group: readonly string[], maxTicks: number = SERVER_WAIT_TICKS, session?: string): Promise<ServerWait> {
     const t0 = sdk.getState()?.tick ?? 0;
     let server: string | undefined;
-    const r = await waitUntil(sdk, () => (server = boneServer(readBoneStatuses(dir), group, Date.now())) !== undefined, { maxTicks });
+    const r = await waitUntil(sdk, () => (server = boneServer(readBoneStatuses(dir), group, Date.now(), session)) !== undefined, { maxTicks });
     return { server: r.ok ? server : undefined, waited: Math.max(0, r.tick - t0) };
 }
 
@@ -633,14 +641,18 @@ export class BoneGiver {
 
     /** The first cue: a relaunch within the same scored session carries on from the trades its last process counted. */
     onCue(cue: Cue): void {
+        const fresh = this.cue?.session !== cue.session;
         this.cue = cue;
-        if (this.resumeChecked) return;
-        this.resumeChecked = true;
-        const p = this.prior;
-        if (p && p.session === cue.session && Number.isInteger(p.trades) && p.trades > this.trades) {
-            this.trades = p.trades;
-            this.ctx.log('resumed', { trades: p.trades, session: cue.session });
+        if (!this.resumeChecked) {
+            this.resumeChecked = true;
+            const p = this.prior;
+            if (p && p.session === cue.session && Number.isInteger(p.trades) && p.trades > this.trades) {
+                this.trades = p.trades;
+                this.ctx.log('resumed', { trades: p.trades, session: cue.session });
+            }
         }
+        // The receiver counts only statuses in its cue's session: show ours in it at once, not at the next heartbeat.
+        if (fresh) this.publish();
     }
 
     /** The group's statuses, ours as of now rather than as last written. */
@@ -649,9 +661,9 @@ export class BoneGiver {
         return [...readBoneStatuses(this.o.cueDir).filter(s => canonName(s.account) !== me), this.snapshot()];
     }
 
-    /** Loads given so far: the group's in this session with a group, else ours. */
+    /** Loads given so far: the group's in this cue's session with a group, else ours. Before any cue there is no session to count in: ours. */
     private loadsDone(): number {
-        return this.o.group.length ? groupLoadsDone(this.statuses(), this.o.group, this.cue?.session) : this.trades;
+        return this.o.group.length && this.cue ? groupLoadsDone(this.statuses(), this.o.group, this.cue.session) : this.trades;
     }
 
     /** No group, or this giver is the group's server now. */
@@ -660,8 +672,9 @@ export class BoneGiver {
         return canonName(this.server() ?? '') === canonName(this.ctx.account);
     }
 
+    /** The group's server in this cue's session; none before any cue. */
     private server(): string | undefined {
-        return boneServer(this.statuses(), this.o.group, Date.now(), this.cue?.session);
+        return this.cue ? boneServer(this.statuses(), this.o.group, Date.now(), this.cue.session) : undefined;
     }
 
     private get s(): BotWorldState | null {

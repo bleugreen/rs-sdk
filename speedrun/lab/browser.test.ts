@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { readdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
-import { labBotEnv } from './browser';
+import { labBotEnv, openSecureLabSession } from './browser';
 
 const LAB = import.meta.dir;
 const sources = (readdirSync(LAB, { recursive: true }) as string[]).filter(f => /\.tsx?$/.test(f) && !f.endsWith('.test.ts')).map(f => join(LAB, f));
@@ -39,4 +40,69 @@ describe('labBotEnv', () => {
     test('adds CLIENT_URL to an env without one', () => {
         expect(labBotEnv('BOT_USERNAME=a\nPASSWORD=p', 'u')).toBe('BOT_USERNAME=a\nPASSWORD=p\nCLIENT_URL=u\n');
     });
+});
+
+describe('secure lab session ownership', () => {
+    for (const failure of ['none', 'ready', 'browser', 'session', 'close'] as const) {
+        test(`token proxy and every acquired handle are cleaned up: ${failure}`, async () => {
+            const root = mkdtempSync(join(tmpdir(), 'lab-browser-test-'));
+            const botDir = join(root, 'bots', 'lab_test');
+            mkdirSync(botDir, { recursive: true });
+            writeFileSync(join(botDir, 'bot.env'), 'BOT_USERNAME=lab_test\nPASSWORD=secret\nSERVER=localhost:9740\n');
+            const events: string[] = [];
+            let scratch = '';
+            const result = openSecureLabSession('lab_test', { root, webPort: 9740, agentPort: 8740 }, {
+                spawn: (args, dir) => {
+                    events.push('proxy'); scratch = dir;
+                    expect(args).toEqual(['bun', 'proxy.ts', '--world=http://127.0.0.1:9740', '--port=9746', '--gateway=ws://127.0.0.1:8740', `--bots-dir=${join(dir, 'bots')}`]);
+                    const env = join(dir, 'bots', 'lab_test', 'bot.env');
+                    expect(statSync(env).mode & 0o777).toBe(0o600);
+                    expect(readFileSync(env, 'utf8')).toContain('PASSWORD=secret');
+                    return {} as never;
+                },
+                ready: async (_proxy, url) => {
+                    events.push('ready');
+                    expect(new URL(url).searchParams.get('server')).toBe('localhost:9740');
+                    if (failure === 'ready') throw new Error('ready failed');
+                },
+                launch: async (_bot, opts) => {
+                    events.push('browser');
+                    expect(opts?.cdpPort).toBe(9745);
+                    const url = new URL(opts!.clientUrl!);
+                    expect(url.origin).toBe('http://127.0.0.1:9746');
+                    expect(url.searchParams.get('gateway')).toBe('ws://127.0.0.1:8740');
+                    expect(url.searchParams.has('password')).toBe(false);
+                    if (failure === 'browser') throw new Error('browser failed');
+                    return { browser: {} as never, kill: async () => { events.push('kill browser'); } };
+                },
+                open: async (_bot, opts) => {
+                    events.push('session');
+                    expect(opts).toEqual({ client: 'browser', launch: true, insecureQueryLogin: false });
+                    if (failure === 'session') throw new Error('session failed');
+                    return {} as never;
+                },
+                close: async () => {
+                    events.push('close session');
+                    if (failure === 'close') throw new Error('close failed');
+                },
+                stopProxy: async () => { events.push('kill proxy'); },
+            });
+            try {
+                if (failure === 'none' || failure === 'close') {
+                    const live = await result;
+                    const closed = live.close();
+                    expect(live.close()).toBe(closed);
+                    if (failure === 'close') await expect(closed).rejects.toThrow('close failed');
+                    else await closed;
+                } else await expect(result).rejects.toThrow(`${failure} failed`);
+                expect(events.at(-1)).toBe('kill proxy');
+                expect(events.filter(e => e === 'kill proxy')).toHaveLength(1);
+                expect(events.includes('kill browser')).toBe(!['ready', 'browser'].includes(failure));
+                expect(events.includes('close session')).toBe(['none', 'close'].includes(failure));
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+                if (scratch) rmSync(scratch, { recursive: true, force: true });
+            }
+        });
+    }
 });

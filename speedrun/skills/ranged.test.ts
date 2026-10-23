@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, NearbyLoc, NearbyNpc, PlayerState, SkillState } from '../../sdk/types';
-import { baseState, FakeSdk, flush } from '../lib/fake-sdk';
+import { baseState, drive as settle, FakeSdk } from '../lib/fake-sdk';
+import { IF_RETALIATE_OFF, IF_RETALIATE_ON } from '../lib/session';
+import { TickLog } from '../lib/ticks';
 import {
-    cannonSessionStep, chooseConsume, combatFinishStep, FINISH, gearClick, IMMUNITY, noteConsume, otherItems, phaseFor, pickTarget, resipAt, RETALIATE_OFF, RETALIATE_ON, runSession,
+    cannonSessionStep, chooseConsume, combatFinishStep, FINISH, gearClick, IMMUNITY, noteConsume, noteSession, otherItems, phaseFor, pickTarget, resipAt, runSession,
     slotNeed, specFor, SPIDERS, type ConsumeMemory, type RangedSdk,
 } from './ranged';
 
@@ -176,7 +178,7 @@ describe('gearClick', () => {
     const arrows = item(6, 'Rune arrow', 600, ['Wield']);
     const scim = item(7, 'Mithril scimitar', 1, ['Wield']);
 
-    test('the bow, then the arrows, then the style, then retaliate', () => {
+    test('the bow, then the arrows, then the style', () => {
         const bowSpec = specFor('bow');
         const g1 = gearClick(st(ALL99, { inventory: [bow, arrows], equipment: [scim], autoRetaliateEnabled: false }), bowSpec);
         expect(g1).toEqual({ kind: 'wield', item: bow, op: 1 });
@@ -184,14 +186,12 @@ describe('gearClick', () => {
         expect(g2).toMatchObject({ kind: 'wield', item: arrows });
         const worn = { inventory: [scim], equipment: [bow, arrows] };
         expect(gearClick(st(ALL99, { ...worn, combatStyle: styles(0), autoRetaliateEnabled: false }), bowSpec)).toEqual({ kind: 'style', index: 1 });
-        expect(gearClick(st(ALL99, { ...worn, combatStyle: styles(1), autoRetaliateEnabled: false }), bowSpec)).toEqual({ kind: 'retaliate', on: true });
-        expect(gearClick(st(ALL99, { ...worn, combatStyle: styles(1), autoRetaliateEnabled: true }), bowSpec)).toBeNull();
+        expect(gearClick(st(ALL99, { ...worn, combatStyle: styles(1), autoRetaliateEnabled: false }), bowSpec)).toBeNull();
     });
 
-    test('S14 turns auto-retaliate off and leaves the style alone', () => {
+    test('S14 leaves the style alone, and auto-retaliate is never a gear click (runSession sets it through setAutoRetaliate)', () => {
         const s = st(ALL99, { equipment: [scim], combatStyle: styles(0), autoRetaliateEnabled: true });
-        expect(gearClick(s, specFor('cannon'))).toEqual({ kind: 'retaliate', on: false });
-        expect(RETALIATE_OFF).not.toBe(RETALIATE_ON);
+        expect(gearClick(s, specFor('cannon'))).toBeNull();
     });
 
     test('the melee phase asks for Defensive once the scimitar is in hand', () => {
@@ -316,23 +316,65 @@ describe('steps: the free-slot preconditions', () => {
     });
 });
 
-describe('runSession on the fake SDK', () => {
-    async function drive(sdk: FakeSdk, p: Promise<unknown>, ticks: number, each: (s: BotWorldState, i: number) => Partial<BotWorldState> = () => ({})) {
-        for (let i = 0; i < ticks; i++) {
-            await flush();
-            sdk.tick(s => each(s, i));
-        }
-        await flush();
-        return p;
-    }
+describe('noteSession: the session result in the tick log', () => {
+    const result = {
+        startTick: 1911, fireTick: 1937, endTick: 2048, ticks: 137, setUpTicks: 26, pickUpTicks: 1, phases: [], prayer: { start: 99, min: 90, end: 92 },
+        damageTaken: 3, minHp: 90, consumes: {}, attacks: 0, levelUps: 49, bursts: 0, restores: 0, reloads: 2, refires: 0, dryEvents: 0, ballsUsed: 68, arrowsUsed: 0, overBudget: 0, end: 'done' as const,
+    };
 
-    test('a placed cannon is fired, the flick keeps one prayer, the attack goes behind each burst', async () => {
-        const sdk = new FakeSdk(
+    test("one `(session)` note row with the result and the firing ticks between set-up and pick-up", () => {
+        const log = TickLog.memory('r');
+        noteSession({ log, session: { name: 'acct', sessionId: 2 } as never }, 'S14 cannon session', result);
+        expect(log.rows.length).toBe(1);
+        const r = log.rows[0]!;
+        expect([r.kind, r.step, r.startTick, r.endTick, r.ticks, r.ok]).toEqual(['note', 'S14 cannon session (session)', 1911, 2048, 0, true]);
+        expect(r.meta).toMatchObject({ setUpTicks: 26, pickUpTicks: 1, reloads: 2, ballsUsed: 68, firingTicks: 110 });
+    });
+
+    test('a caller with no tick log gets no row and no error', () => {
+        expect(() => noteSession({}, 'S14 cannon session', result)).not.toThrow();
+    });
+});
+
+type Press = typeof IF_RETALIATE_ON | typeof IF_RETALIATE_OFF;
+
+/**
+ * The server's controls:com_2 / com_3 (player_controls.rs2): a press publishes autoRetaliateEnabled
+ * on the next tick. Returns the presses sent, in order; any other component click fails the test.
+ */
+function serveRetaliate(sdk: FakeSdk): Press[] {
+    const presses: Press[] = [];
+    let pending: boolean | undefined;
+    sdk.onSend = a => {
+        if (a.method !== 'sendClickComponent') return;
+        expect([IF_RETALIATE_ON, IF_RETALIATE_OFF]).toContain(a.args[0] as number);
+        presses.push(a.args[0] as Press);
+        pending = a.args[0] === IF_RETALIATE_ON;
+    };
+    const tick = sdk.tick.bind(sdk);
+    sdk.tick = patch => {
+        const on = pending;
+        pending = undefined;
+        return tick(s => ({ ...(typeof patch === 'function' ? patch(s) : patch), ...(on !== undefined ? { autoRetaliateEnabled: on } : {}) }));
+    };
+    return presses;
+}
+
+describe('runSession on the fake SDK', () => {
+    /** Tick until the session settles (its phaseOf, stop or maxTicks ends it). */
+    const drive = <T>(sdk: FakeSdk, p: Promise<T>, ticks: number) => settle(sdk, p, ticks + 20);
+    const atCannon = (patch: Partial<BotWorldState> = {}) =>
+        new FakeSdk(
             st({ ...ALL99, Defence: 98 }, {
                 inventory: kit(500), equipment: [item(9, 'Mithril scimitar')], nearbyLocs: [cannonLoc()], nearbyNpcs: [spider(4, { inCombat: true })],
-                prayers: { activePrayers: [], prayerPoints: 99, prayerLevel: 99 },
+                prayers: { activePrayers: [], prayerPoints: 99, prayerLevel: 99 }, autoRetaliateEnabled: false, ...patch,
             }),
         );
+    const consume = { eatBelow: 30, antipoison: 'first-poison' } as const;
+
+    test('a placed cannon is fired, the flick keeps one prayer, the attack goes behind each burst', async () => {
+        const sdk = atCannon();
+        serveRetaliate(sdk);
         const t0 = sdk.state!.tick;
         const p = runSession(sdk as unknown as RangedSdk, {
             phaseOf: s => (s.tick - t0 >= 10 ? null : 'bow'),
@@ -355,13 +397,9 @@ describe('runSession on the fake SDK', () => {
         expect(res.bursts).toBeGreaterThanOrEqual(2);
     });
 
-    test('a phase change re-plans the prayers and closes a row', async () => {
-        const sdk = new FakeSdk(
-            st({ ...ALL99, Defence: 98 }, {
-                inventory: kit(500), equipment: [item(9, 'Mithril scimitar')], nearbyLocs: [cannonLoc()], nearbyNpcs: [spider(4, { inCombat: true })],
-                prayers: { activePrayers: [], prayerPoints: 99, prayerLevel: 99 },
-            }),
-        );
+    test('a phase change re-plans the prayers and closes a row; auto-retaliate stays on between two phases that want it', async () => {
+        const sdk = atCannon();
+        const presses = serveRetaliate(sdk);
         const t0 = sdk.state!.tick;
         const p = runSession(sdk as unknown as RangedSdk, {
             phaseOf: s => (s.tick - t0 >= 12 ? null : s.tick - t0 >= 6 ? 'bow' : 'melee'),
@@ -374,6 +412,54 @@ describe('runSession on the fake SDK', () => {
         expect(res.phases[0]!.endTick).toBe(res.phases[1]!.startTick);
         const toggled = new Set(sdk.sent.filter(x => x.method === 'sendTogglePrayer').map(a => a.args[0]));
         expect(toggled).toEqual(new Set(['protect_from_melee', 'ultimate_strength', 'incredible_reflexes']));
+        expect(presses).toEqual([IF_RETALIATE_ON, IF_RETALIATE_OFF]);
+    });
+
+    test('a phase that wants auto-retaliate turns it on at its start and off at its end; the only clicks are setAutoRetaliate presses', async () => {
+        const sdk = atCannon();
+        const presses = serveRetaliate(sdk);
+        const t0 = sdk.state!.tick;
+        const p = runSession(sdk as unknown as RangedSdk, { phaseOf: s => (s.tick - t0 >= 10 ? null : 'bow'), consume, pickUp: false, maxTicks: 100 });
+        const res = await drive(sdk, p, 10);
+        expect(res.end).toBe('done');
+        expect(presses).toEqual([IF_RETALIATE_ON, IF_RETALIATE_OFF]);
+        const methods = sdk.sent.map(a => (a.method === 'sendClickComponent' ? `press ${a.args[0]}` : a.method));
+        expect(methods.indexOf(`press ${IF_RETALIATE_ON}`)).toBeLessThan(methods.lastIndexOf('sendInteractNpc'));
+        expect(methods.lastIndexOf('sendInteractNpc')).toBeLessThan(methods.indexOf(`press ${IF_RETALIATE_OFF}`));
+        expect(sdk.getState()!.autoRetaliateEnabled).toBe(false);
+    });
+
+    test('a throw inside the phase still puts auto-retaliate back off', async () => {
+        const sdk = atCannon();
+        const presses = serveRetaliate(sdk);
+        const p = runSession(sdk as unknown as RangedSdk, { phaseOf: () => 'bow', consume, pickUp: false, maxTicks: 8 });
+        const err = await drive(sdk, p.then(() => null, (e: unknown) => e), 10);
+        expect(String(err)).toContain('over 8 ticks');
+        expect(presses).toEqual([IF_RETALIATE_ON, IF_RETALIATE_OFF]);
+        expect(sdk.getState()!.autoRetaliateEnabled).toBe(false);
+    });
+
+    test('a stop puts it back off too', async () => {
+        const sdk = atCannon();
+        const presses = serveRetaliate(sdk);
+        const p = runSession(sdk as unknown as RangedSdk, { phaseOf: () => 'melee', stop: (s, fire) => s.tick - fire >= 8, consume, pickUp: false, maxTicks: 100 });
+        const res = await drive(sdk, p, 10);
+        expect(res.end).toBe('stopped');
+        expect(presses).toEqual([IF_RETALIATE_ON, IF_RETALIATE_OFF]);
+        expect(sdk.getState()!.autoRetaliateEnabled).toBe(false);
+    });
+
+    test('S14 (off): no click when login left it off; one press off when something left it on, and none at the end', async () => {
+        for (const [was, want] of [[false, []], [true, [IF_RETALIATE_OFF]]] as const) {
+            const sdk = atCannon({ autoRetaliateEnabled: was });
+            const presses = serveRetaliate(sdk);
+            const t0 = sdk.state!.tick;
+            const res = await drive(sdk, runSession(sdk as unknown as RangedSdk, { phaseOf: s => (s.tick - t0 >= 10 ? null : 'cannon'), consume, pickUp: false, maxTicks: 100 }), 10);
+            expect(res.end).toBe('done');
+            expect(presses).toEqual([...want]);
+            expect(sdk.sent.filter(a => a.method === 'sendClickComponent')).toHaveLength(want.length);
+            expect(sdk.getState()!.autoRetaliateEnabled).toBe(false);
+        }
     });
 
     test('nothing to do: no sends', async () => {

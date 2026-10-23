@@ -29,28 +29,43 @@ export function botTabs(targets: readonly CdpTarget[], botName: string): CdpTarg
     });
 }
 
-/** Send one CDP command on a target's websocket and wait for its reply. */
-function cdpCommand(wsUrl: string, method: string, params: Record<string, unknown>, timeoutMs = 5_000): Promise<unknown> {
+/**
+ * Send CDP commands in order on one connection to a target's websocket, each after the last one's
+ * reply, and return the replies. One connection matters where a domain is enabled first: what
+ * `enable` turns on lasts only as long as the connection that sent it. `timeoutMs` bounds them all.
+ */
+export function cdpCommands(wsUrl: string, cmds: readonly { method: string; params?: Record<string, unknown> }[], timeoutMs = 5_000): Promise<unknown[]> {
     return new Promise((resolve, reject) => {
         const ws = new WebSocket(wsUrl);
-        const timer = setTimeout(() => {
+        const out: unknown[] = [];
+        let done = false;
+        const method = () => cmds[out.length]?.method ?? cmds[cmds.length - 1]?.method;
+        const finish = (err?: Error) => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
             ws.close();
-            reject(new Error(`CDP ${method}: no reply in ${timeoutMs} ms`));
-        }, timeoutMs);
-        ws.onopen = () => ws.send(JSON.stringify({ id: 1, method, params }));
+            if (err) reject(err);
+            else resolve(out);
+        };
+        const timer = setTimeout(() => finish(new Error(`CDP ${method()}: no reply in ${timeoutMs} ms`)), timeoutMs);
+        const send = () => ws.send(JSON.stringify({ id: out.length + 1, method: cmds[out.length]!.method, params: cmds[out.length]!.params ?? {} }));
+        ws.onopen = () => (cmds.length ? send() : finish());
         ws.onmessage = ev => {
             const msg = JSON.parse(String(ev.data)) as { id?: number; result?: unknown; error?: { message: string } };
-            if (msg.id !== 1) return;
-            clearTimeout(timer);
-            ws.close();
-            if (msg.error) reject(new Error(`CDP ${method}: ${msg.error.message}`));
-            else resolve(msg.result);
+            if (done || msg.id !== out.length + 1) return;
+            if (msg.error) return finish(new Error(`CDP ${method()}: ${msg.error.message}`));
+            out.push(msg.result);
+            if (out.length === cmds.length) finish();
+            else send();
         };
-        ws.onerror = () => {
-            clearTimeout(timer);
-            reject(new Error(`CDP ${method}: websocket error`));
-        };
+        ws.onerror = () => finish(new Error(`CDP ${method()}: websocket error`));
     });
+}
+
+/** Send one CDP command on a target's websocket and wait for its reply. */
+async function cdpCommand(wsUrl: string, method: string, params: Record<string, unknown>, timeoutMs = 5_000): Promise<unknown> {
+    return (await cdpCommands(wsUrl, [{ method, params }], timeoutMs))[0];
 }
 
 /**
@@ -112,7 +127,7 @@ export interface PageLoginStart {
  * ?token= page load does (GatewayConnection.ts redeemLoginToken), and hands the credentials
  * straight to the client's autoLogin, so they stay inside the page.
  */
-export function pageLoginExpression(botName: string, token: string): string {
+export function pageLoginExpression(botName: string, token: string, validUntil?: number): string {
     return `(async () => {
     const c = window.gameClient;
     const o = c && c.botOverlay;
@@ -131,6 +146,11 @@ export function pageLoginExpression(botName: string, token: string): string {
     if (!res.ok) return no('login token refused: HTTP ' + res.status);
     const body = await res.json();
     if (typeof body.bot !== 'string' || typeof body.password !== 'string') return no('the page server answered without credentials');
+    // Token redemption can outlive both the readiness observation and the page's idle state.
+    if (c.ingame) return no('already in game');
+    if (c.loginInProgress) return no('a login is already in progress');
+    const validUntil = ${JSON.stringify(validUntil ?? null)};
+    if (validUntil !== null && Date.now() >= validUntil) return no('login readiness expired');
     window.__rsPageLoginError = '';
     c.autoLogin(body.bot, body.password).catch(e => { window.__rsPageLoginError = String((e && e.stack) || e); });
     return { started: true, tickBase, gatewayConnected };
@@ -142,8 +162,9 @@ export function pageLoginExpression(botName: string, token: string): string {
  * logout, redeems `token` and runs its own login (see pageLoginExpression). The page, its game
  * cache and its gateway socket all stay as they are. Null when there is no tab for the bot.
  */
-export async function pageLogin(cdpOrigin: string, botName: string, token: string): Promise<PageLoginStart | null> {
-    const out = await evaluateInTab<PageLoginStart>(cdpOrigin, botName, pageLoginExpression(botName, token), 10_000);
+export async function pageLogin(cdpOrigin: string, botName: string, token: string, validUntil?: number): Promise<PageLoginStart | null> {
+    if (validUntil !== undefined && !Number.isFinite(validUntil)) throw new Error('invalid login readiness deadline');
+    const out = await evaluateInTab<PageLoginStart>(cdpOrigin, botName, pageLoginExpression(botName, token, validUntil), 10_000);
     return out ? out.value : null;
 }
 
