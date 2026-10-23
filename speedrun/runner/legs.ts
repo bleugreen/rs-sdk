@@ -98,14 +98,33 @@ export function checkpoints(def: LegDef): Checkpoint[] {
     return out.sort((a, b) => a.after - b.after);
 }
 
-/** The first hop the player is not yet past: one after the latest checkpoint the player stands in, else 0. */
+/**
+ * The first hop the player is not yet past: one after the latest checkpoint the player stands in,
+ * else the deep-Wilderness resume (deepWildernessHop), else 0.
+ */
 export function resumeHop(def: LegDef, s: BotWorldState): number {
     const cps = checkpoints(def);
     for (let i = cps.length - 1; i >= 0; i--) {
         const c = cps[i]!;
         if (c.in.some(r => inRegion(s, r))) return c.after + 1;
     }
-    return 0;
+    return deepWildernessHop(def, s) ?? 0;
+}
+
+/**
+ * A player above Wilderness level 20 outside every checkpoint (a drop mid-run between the keep and
+ * the spiders, off the checkpoint boxes) cannot restart a leg that opens with a teleport: the spell
+ * is refused there. It is past that teleport and the lever, so the leg resumes by walking: at its
+ * last run whose target is itself above level 20, the run across the deep Wilderness (rs/511).
+ * Null for a leg with no such run, or a player at level 20 or below.
+ */
+export function deepWildernessHop(def: LegDef, s: BotWorldState): number | null {
+    if (def.hops[0]?.kind !== 'teleport' || !s.player || wildernessLevel(pos(s)) <= 20) return null;
+    for (let i = def.hops.length - 1; i > 0; i--) {
+        const h = def.hops[i]!;
+        if (h.kind === 'run' && wildernessLevel(h.to) > 20) return i;
+    }
+    return null;
 }
 
 export function foodHeld(s: BotWorldState): number {

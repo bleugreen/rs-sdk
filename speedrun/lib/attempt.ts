@@ -46,6 +46,8 @@ export interface AttemptOptions {
     gateStop: () => string | null;
     /** Leave the world: logoutClean, page-confirmed. Clearing `expectInWorld` keeps the watchdog from relaunching. */
     logout: () => Promise<LogoutResult>;
+    /** runResumable's recover after a drop (run.ts: runner/drop-relog.ts); default the link's own restore. */
+    recover?: (reason: string, at: { step: string | null; tick: number }) => Promise<void>;
     onEvent?: (e: ResumeEvent) => void;
     /** The caller's tag on its console lines (default 'rehearse'). */
     label?: string;
@@ -80,6 +82,7 @@ export async function runAttempt(session: Session, chain: ReadonlyArray<Step<any
                 held.logout = await o.logout();
             },
             ...(o.from !== undefined ? { from: o.from } : {}),
+            ...(o.recover ? { recover: o.recover } : {}),
             ...(o.probes ? { probes: o.probes } : {}),
             ...(o.onEvent ? { onEvent: o.onEvent } : {}),
         });

@@ -96,8 +96,10 @@ is progress since the last checkpoint, and that is worth **0 ticks** to the scor
 (section 2): playtime rolls back with it. Even counted as wall time, the demo's
 checkpoint is seconds old. So:
 
-- **No milestone justifies a deliberate save relog.** The relog plan keeps its two
-  planned relogs, both in the wine step (accepted by main, 08:55).
+- **No milestone justifies a deliberate save relog.** The wine step's planned
+  fermentation relogs remain separate from S21's planned login-order relog:
+  SCORED leaves while the altar givers join, then logs in behind them. Neither
+  operation is a milestone save; S21's split recovery is described in section 5.
 - **A severe tick-overrun burst** (at least ~10 catch-ups a minute for 2 minutes;
   21-26 a minute ran for 4 minutes before the 06:14 restart, n=1) is exposed as
   `restartLikely` (`demo-status.ts`, both thresholds parameters). The run's
@@ -153,6 +155,63 @@ outage):
   10 s until one is accepted (the demo refuses with code 8 for 1.5-2.5 min), so it
   is in at most one retry interval after logins open. `beforeLogin` is the
   login-order gate: tick-exact helpers in before SCORED (rs/117).
+
+### A page that fell out of a live world (`runner/drop-relog.ts`, rs/511)
+
+The watchdog's verdict reads only the tick and the gateway, and its fallback is
+a client relaunch. The 22:15:50Z drop (about 116 players world-wide, no restart,
+the tick feed live) is a different case: the scored tab is on the title screen
+while the world goes on. With `run.ts`'s relog budget on, the browser session
+handles it itself:
+
+- **Seen.** The link asks the page (`window.gameClient.ingame` over DevTools,
+  `tab.ts` `pageInGame`) once the tick has stood 3 ticks; an out page is lost at
+  once. A page whose socket died says it is in game for about 17 more ticks (7 s)
+  before it notices, so the drop is usually seen at the stale bound; the
+  watchdog acts 10 ticks after the link and stands down while the page is out.
+- **Relogged in page.** `recoverDrop` gives a page still claiming in-game 40
+  ticks to settle (it reconnects itself: adopted; it falls to the title screen:
+  relogged), then logs it in with `session.ts` `login({ inPage: true })`, the
+  path planned relogs take, never a relaunch. A world that is down, or no page
+  to ask, goes to the watchdog's path unchanged.
+- **Budgeted.** Every relog is a row in `<run dir>/relogs.json`
+  (`runner/relog-budget.ts`) with its step and tick: the planned S21 relog plus 3
+  unplanned, run.ts's and the operator's together. The start gate reads it; past
+  it the recovery throws `RelogBudgetSpent` and the run stops with that reason.
+  Between the halves of S21's split relog the account is out on purpose: no
+  relog, nothing counted.
+- **Measured** (bgsrv-mac, 400 ms, the 22:15 shape injected into a knife loop, a
+  bank burst and a leg): drop to back in the world 24-26 ticks (9.5-10.3 s), the
+  login itself 0.7-1.4 s; every step resumed and finished.
+
+**The race rule: a manual relog is adopted, never fought.** The operator's
+`bun speedrun/tools/relog-now.ts <bot>` (from an ssh shell on the run host,
+against the tab's DevTools on loopback 9222) and run.ts share one lock,
+`<run dir>/relog.lock`, created exclusively; a holder whose pid is gone is
+broken by the next taker. relog-now confirms only by the page's own in-game flag
+with its tick advancing, never by the gateway's `inGame`, and does not open an
+SDK session (a second controller would take the gateway from run.ts).
+
+- run.ts never starts a relog while the operator holds the lock; it waits for
+  it to go, finds the page in the world, adopts that session
+  (`session.ts` `adoptSession`) and resumes exactly as after its own relog.
+- A page already back in the world when run.ts looks is adopted and recorded as
+  a manual relog, the same budget.
+- relog-now refuses while run.ts holds the lock, while S21's planned relog is
+  open, and when the budget is spent, and does nothing in each case.
+
+### Confirmed logout (`session.ts` `logoutClean`)
+
+A logout click is confirmed by the account being out (the page's flag, the
+lite child's exit, the gateway, or for a lite client with nothing else the
+world's own `/playerpositions` list) within `LOGOUT_CONFIRM_TICKS` (4) observed
+ticks, or the click is sent again, up to `LOGOUT_WAIT_TICKS` after the first.
+The bound is twice the demo's 2-tick figure (0 ticks in 42 of 42 lab relogs,
+rs/164); rs/310's unconfirmed tab logout left the account in the world for 117
+ticks. Each result carries `sends` and `confirmTicks` (click to out); S21's
+logout half goes through it. The watchdog's own logout is held while a bank or
+trade is open, for at most `INTERFACE_HOLD_TICKS` (100), then acts as before: a
+click would close the interface under the step.
 
 ### The two clients
 
@@ -216,10 +275,74 @@ failure. Ledger rows: `(resume)` (where and why, probes used) and `(drop)` (the
 step running, the reason, recover wall time, the new session's ticks before the
 resume).
 
+**Markers.** A 0-tick step with no game effect (the S03 dropper go cue, the S14
+and S27 cue stops) is a `marker`: its preconditions always hold, so on its own
+it would win the walk over the unfinished step before it. The walk enters a
+marker only where the step before it finished or the step after it can start.
+The go cue is `done` once its file exists (a rewrite would restart the
+droppers); a cue stop once its scope is no longer open (`CueSink.isOpen`), so a
+late stop never closes a helper's newer session.
+
+**Deep Wilderness.** A leg that opens with a teleport cannot restart above
+Wilderness level 20 (the spell is refused there). A player off every checkpoint
+there resumes at the leg's last run whose target is itself above level 20
+(`legs.ts` `deepWildernessHop`): unit-tested, not lab-run.
+
 **In-page programs (rs/97)** resynchronise from observed state, never from their
 counters: a reload restarts the page's runtime, so the resumed step starts the
 program again with parameters computed from the state (target level or xp, the
 inventory now), and treats the old run's counters as gone.
+
+### S21's split login-order relog
+
+S21's planned relog is a login-order operation, not a save. The chain permits
+its logout milestone only after the canonical T20-21 arrival predicate holds;
+a restart before or during that leg must finish the approach first.
+`runner/scored-relog.ts` confirms logout and page-out before opening one
+persistent entry in `runner/relog-budget.ts`. The same entry closes after a
+successful login; the halves share the relog lock.
+
+Between the halves, `skills/runecraft.ts` publishes giver cues and waits on
+login-free observed world-feed ticks from `lib/feed-hello.ts`, not the paused
+player state. Advancing server tick labels bound the ready wait; silence and a
+world-tick rollback fail closed. Offline steps in `runner/step.ts` skip player
+tick freshness, packet-budget waits and run-toggle clicks.
+
+Every login attempt rechecks the complete fresh giver roster. The final
+`beforeDispatch` check runs after the asynchronous tick preflight and token
+minting. It supplies a freshness deadline that `lib/tab.ts` checks again after
+token redemption, immediately before the page dispatches login. The controller
+and browser share the run host's wall clock for status freshness; elapsed wall
+time never proves giver readiness. S21 requires the token-backed in-page path:
+a refusal, expired admission, missing client, live page or pending login must
+not fall back to navigating the tab. World-full retries repeat the checks.
+
+On startup, `run.ts` attaches without launching when the entry is open, then
+reads the actual browser page before opening a giver cue. A proven idle,
+logged-out page can repeat the ready wait and complete the login half. A live,
+login-in-progress or unreadable page instead refuses with the entry unchanged
+and no new login or navigation. A page being live alone cannot establish which
+login set its processing order. **Automatic adoption after a crash between
+accepted login and ledger close is not implemented.** An already closed
+entry skips both halves during the resume walk. Startup recovery and gate rows
+are anonymized to `SCORED` before being appended.
+
+A refusal only disconnects the control SDK; it does **not** log out a player
+that may still be live. Stop automated retries, inspect that account's actual
+page and the retained relog entry, and have the operator confirm its state and
+the intended reconciliation before continuing. Do not clear the ledger or
+launch another login merely to bypass the refusal. The live player may still
+accumulate playtime; refusal is not a zero-tick recovery.
+
+The local dress-rehearsal harness still needs its browser wired through the
+existing `server/webclient/proxy.ts` token endpoints. The canonical setup uses
+the local engine as `--world`, its loopback gateway, a dedicated proxy port and
+the scratch bots directory, then passes the proxy's `/bot` URL as
+`launchLabBrowser`'s `clientUrl` and opens the session with
+`insecureQueryLogin: false`. The proxy and browser must be owned and cleaned
+up by the harness on every failure path. The engine's query-password page is
+not a substitute for this path. Until that wiring is implemented and exercised,
+mock-CDP tests do not establish S15–S21 or full-chain browser acceptance.
 
 ### Resume-from lines for STEP-MANIFEST.md
 
