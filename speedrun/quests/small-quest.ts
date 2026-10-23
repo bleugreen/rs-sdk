@@ -11,7 +11,7 @@ import type { OptionPattern } from '../lib/dialogue';
 import { questStatus, type QuestKey } from '../lib/quests';
 import { logNote } from '../lib/ticks';
 import { inArea, runTo, type Area, type TravelSdk } from '../lib/travel';
-import { currentTick, waitOrThrow, waitUntil, type Pred } from '../lib/wait';
+import { currentTick, waitOrThrow, type Pred } from '../lib/wait';
 import { messagesSince, pos, type LocQuery } from '../lib/world';
 import type { StepContext } from '../runner/step';
 import { talkShape, type QuestOptions } from './segments';
@@ -122,20 +122,23 @@ export function questMoves(stepId: string): QuestMoves {
             const sdk = sdkOf(ctx);
             const t0 = currentTick(sdk);
             await waitOrThrow(sdk, (s: BotWorldState) => questStatus(s, key) === 'complete', 10, `${stepId}:${seg} quest complete`);
-            // The reward's level-up pages (stat_advance's [advancestat], one or two ticks after the
-            // completion) and the quest scroll (a modal). TEMPORARY until rs/185's shared converse
-            // fix: the page is waited for here rather than by converse's openTicks, because as an
-            // `interrupts` page it does not count as the conversation opening (converse.ts, the
-            // interruptKey rule) and converse waits out the window after answering it (m: +4).
-            const open = (s: BotWorldState) => s.dialog.isOpen || s.modalOpen;
-            const answered = (s: BotWorldState) => messagesSince(s, since, LEVEL_UP).length > 0 && !open(s);
-            if (levelUp && !open(sdk.getState()!) && !answered(sdk.getState()!)) await waitUntil(sdk, s => open(s) || answered(s), { maxTicks: COMPLETION_PAGE_TICKS });
-            const r = await converse(sdk, [], { openTicks: 0, idle: 1, closeModals: true });
+            // A scroll can precede the queued stat_advance page; it is not evidence that the
+            // reward was answered. A closed chat plus the reward message lets a preceding talk
+            // own the dismissal without imposing another opening window here.
+            const s = sdk.getState()!;
+            const answered = messagesSince(s, since, LEVEL_UP).length > 0 && !s.dialog.isOpen;
+            const r = await converse(sdk, [], {
+                expect: 'interrupt', interrupts: interrupts(),
+                openTicks: levelUp && !answered ? COMPLETION_PAGE_TICKS : 0,
+                idle: 1, closeModals: true,
+            });
+            if (!r.ok) fail(seg, `completion: ${r.reason}`, sdk);
+            // With no target page, converse's opening deadline can precede modal closure.
             if (sdk.getState()?.modalOpen) {
                 await sdk.sendCloseModal();
-                await waitUntil(sdk, s => !s.modalOpen, { maxTicks: 3 });
+                await waitOrThrow(sdk, s => !s.modalOpen, 3, `${stepId}:${seg} quest scroll closed`);
             }
-            note(ctx, seg, { completion: true, levelUps: r.levelUps, pages: r.pages, ticks: currentTick(sdk) - t0 });
+            note(ctx, seg, { completion: true, levelUps: r.levelUps + (r.interrupts ?? 0), pages: r.pages, ticks: currentTick(sdk) - t0 });
         },
     };
 }
