@@ -425,7 +425,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     RUN-ORDER.md R1's bound); that case is historical on any `RUN_COMMIT` at or after c2d9eada.
     The final logout is still checked on the host (`RUN-HOST.md` step 8). A precondition, not a
     line in the totals;
-  - **`RUN_COMMIT` at or after the run-commit floor, `d4a75da9`**; demo tick at the freeze: `tickMs=400` (#404, rs/487; main 16:3x, fold-in 30, superseding c7eae140, 4eb6b94b, 36edbf1d, aa3f012c, dd225788, a8e31d61, 5f08dc03, 069a8690, d35ec6e3, 54f6767e,
+  - **`RUN_COMMIT` at or after the run-commit floor, `8aafca21`**; demo tick at the freeze: `tickMs=400` (#428, rs/524, full hash 8aafca216f11d96096aa2c1990b2a1b353fb4022, the 400 ms timing snapshot; main 17:5x, floor-line snapshot 21; then #404, rs/487, fold-in 30, superseding d4a75da9, c7eae140, 4eb6b94b, 36edbf1d, aa3f012c, dd225788, a8e31d61, 5f08dc03, 069a8690, d35ec6e3, 54f6767e,
     7da08916, 23f93a66, bf3e7ce3, 7315c6d7, f659c074, bfbac17f, 3daddf0c, f71978ca, c4e2a681 and 881fa6a4). **This line is the floor's
     single source** (main's ruling, fold-in 23): (1) main names each floor in its messages at the merge;
     this line on main is written by the next docs snapshot to main, a fold-in of rs/158's if one lands
