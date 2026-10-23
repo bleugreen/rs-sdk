@@ -159,7 +159,7 @@ not proof of mining, but the names repeat across the hour.
 | Site | Rocks | Accounts present (min-max) | Reads with anyone | Regulars |
 |---|---|---|---|---|
 | Shilo gem rocks | 7 | 0-2 | 10 of 13 | Croesus (9 reads), Dotsbot29 (2) |
-| runite, map square 47_60 | 2 | 12-15 | 13 of 13 | the same 12 every read, up to 3 more |
+| runite, map square 47_60 | 2 | 12-15 | 13 of 13 | the same 11 in every read, up to 4 more |
 | runite, map square 45_154 | 2 | 1-3 | 13 of 13 | Tygem020, Tygem050, U238 |
 | runite, map square 47_160 | 1 | 0 | 0 of 13 | none |
 
@@ -172,7 +172,11 @@ What it changes in the table:
   two-rock site; at 47_60 a newcomer is the thirteenth account on two rocks and earns close to
   nothing, and at 45_154 the fourth of four. The **lone rock at 47_160 is free**: one rock at the
   1,560-tick respawn (1,400 players) gives about 5.6 ore an hour, about **220k coins an hour** as
-  bars, before travel. The lab should measure that rock, not a two-rock site.
+  bars, before travel, which drops runite below steel bars (#4) and adamantite ore (#5). The lab
+  should measure that rock, not a two-rock site.
+
+The table and `data/scan-2026-10-22.json` keep the scanner's uncontested figures; the
+headcount adjustments above are in the rows' cap text.
 
 ## The scan sections
 
