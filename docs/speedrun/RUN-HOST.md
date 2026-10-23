@@ -569,6 +569,28 @@ step 6) runs after the last one, so a later rebuild means running it again. A de
 last gate pass means gating again too: it invalidates the pass, not the cache (step 7, "The restart
 detector").
 
+**The partners map matches the fleet binding, before the start is called** (rs/41 via rs/158;
+fold-in 36). The run config's `partners` map (which rows each mule carrier serves) must agree with the
+fleet's `mule-delivery-production.json` binding: `runner/chain.ts` uses it to find each carrier's final
+row, after which #477 logs the carrier out, so a mismatch would log a carrier out before a later
+hand-off it owns, which that hand-off then cannot get. Check: partners map matches the fleet binding
+(generated, or a one-line diff check; **the command pending rs/41**: the run commit's
+`mule-delivery-production.json` carries no `partners` map, which comes from the gitignored run config, so
+the two sources are compared). A mismatch is a stop: tell main and rs/41.
+
+**The gate account's bot.env is on both machines, before the 15:00Z gate series** (main 04:08 PDT via
+rs/158; fold-in 36). run-gate reads the gate account's settings from
+`~/rs-sdk/bots/<gate-account>/bot.env` (loopback GATEWAY_URL, CLIENT_URL, CDP_URL; file mode 600,
+directory 700, gitignored). Verify it is present on both machines before the 15:00Z gate series (it
+was missing on both at 11:0xZ; the gate timer uses a different path). Never name the gate account.
+
+**The cannon serve file, before SCORED logs in** (rs/41's wording via rs/158, main 04:15 PDT; fold-in 36).
+Before SCORED logs in, <run dir>/cannon-serve.json holds exactly host's bytes, sha256 f0e57ad6107d2621d0c12306a5cec6ee70fe73db1a2c39e5d2a28cbfca96a7c6 (the JSON plus one trailing newline); run.ts's preflight gate "cannon serve" (run.ts:286-294) must read "H11, H23 served as the ledger rows want"; a missing file or any drift is a refusal.
+
+**h92 on the run commit, and its serve ids per attempt** (rs/41's wording via rs/158; fold-in 36).
+h92 is applied on bbs on the run commit: fleet role cannon, serve.id a1-H11 at the Ardougne landing (2658,3301), returnTile the same, fallback (2659,3301) per SUPPLIES H11 (still pending rs/198's two-bot check), then a1-H23 on the same tile.
+serve.id is per attempt: a2-H11 / a2-H23 for attempt 2, a3-* for 3; a completed a1-* record survives restarts and a reused id resumes as done and gives nothing, so rs/41 reassigns h92 between attempts.
+
 **The inventory check, before the start is called.** On any checkout at `RUN_COMMIT` (it reads only
 the repository), run
 
@@ -955,7 +977,7 @@ opens** (the launcher's `helpersReady`), because login order decides the 7- or 8
 cycle. Every helper counts against the 80-login cap from its login until it logs out (step 7), and against
 its address's per-IP cap (below). With S21's altar givers in from the start, SCORED's run login was
 the peak (SUPPLIES.md, "Peak concurrent logins"); under the per-address plan below, rs/41's map puts
-SCORED's address at 24 at the start (23 helpers + SCORED, step 5a.4; 25 before fold-in 34) and 26 during S21's ramp. At the gate the 7 opening givers on **each** machine count, 14 in all. After a demo restart the helpers come back by relaunching rs/141's headless
+SCORED's address at 25 at the start (24 helpers + SCORED, step 5a.4; fold-in 36: rs/41's correction, the roster being 17, 4 + 6 + 3 + 4; 24 written at fold-ins 34-35 on a count of 16) and 26 during S21's ramp (SCORED, mule1, mule2, a01 and the 22 S21 givers, h03 counted under main's 19:3x ruling; unchanged by the 17, rs/41; the worst case 27, + h94 on an R8 death, all under 45; 29 before #477, e7e54a11, rs/590 snapshotted as rs/592: each mule carrier's last hand-off now stops its cue final, so no carrier idles logged in after its last row, and #472 made P's stop final). At the gate the 7 opening givers on **each** machine count, 14 in all. After a demo restart the helpers come back by relaunching rs/141's headless
 lite-runner child processes (`fleet.ts`, `standalone.ts`), not tabs: the OS closes the old child's
 gateway socket when it exits, so there is no gateway takeover (inferred from the code; owned by
 rs/41), and the earlier lite restart measurement read 3 in-world ticks after the relogin
@@ -970,8 +992,8 @@ preference, step 5a), but the gate still chooses (tenet 17), and the plan holds 
 - **The cap.** The demo's operator caps simultaneous logins at **50 per IP** (public Discord, 13:2x
   PDT; it may rise). **Ours is 45 per address**, the working figure since main accepted rs/41's map.
   Tenet 16's 80, summed across every host, applies beside it (step 7).
-- **The peak per address** (rs/41's map): **24 on SCORED's address at the start (S01: the 7 air givers, the 16 roster logins and SCORED; rs/41's start order, main ruled, fold-in 34; 25 before) and 26 during S21's
-  ramp**, inside SCORED's relog before S21. Both are under 45.
+- **The peak per address** (rs/41's map): **25 on SCORED's address at the start (S01: the 7 air givers, the 17 roster logins and SCORED; rs/41's start order, main ruled; fold-in 36: rs/41's correction, the roster being 17, 4 + 6 + 3 + 4; 24 written at fold-ins 34-35 on a count of 16) and 26 during S21's
+  ramp**, inside SCORED's relog before S21 (the worst case 27: + h94 on an R8 death; no carrier idles logged in after its last row since #477, e7e54a11, rs/590 snapshotted as rs/592, and P's stop is final since #472; rs/41). All under 45.
 - **The home address on run day, a run-day rule:** the home machines (bbs and every executor) carry
   **29 fleet accounts plus the cannon helper**, and nothing else, with **one named exception** (main 17:0x via rs/158, fold-in 31): **R8's spawn helper** (rs/526; a fleet spare, never named here), parked logged out beside the Lumbridge respawn tile, with 0 run-day logins, or 1 cued login on a player-kill, logged out after its trade. No development sessions and no
   executor demo logins run from them on run day (rs/41's map, via rs/158).
@@ -1230,7 +1252,7 @@ the tick length T on main since #385 (a4456c73, rs/471; fold-in 31; step 6, line
 4. **On the chosen machine, the start order** (rs/41's wording, main ruled and applied 22:4x via
    rs/158; fold-in 34). rs/41's start sequence:
    1. the gate minute (line 1): the gate account and S06's 7 air-altar givers on **both** machines;
-   2. after the choice, on SCORED's machine, rs/117's launcher logs in the **16 roster accounts**:
+   2. after the choice, on SCORED's machine, rs/117's launcher logs in the **17 roster accounts** (4 + 6 + 3 + 4; fold-in 36, rs/41's correction of 16):
       mule1, mule2, h55, h03, the 6 S03 droppers, the 3 S04 ring givers (h81-h83) and the 4 S07 bone
       givers (b01-b04), about 2.5-3 minutes;
    3. wait for the launcher's `helpersReady`, then **load reading (i)** (step 6, "The load ceiling"),
@@ -1243,8 +1265,8 @@ the tick length T on main since #385 (a4456c73, rs/471; fold-in 31; step 6, line
    cue gates (`loginOn` {S25a, anvil} and {S18, courier}). S21's 22 body-altar givers log in later,
    inside SCORED's relog before S21 (step 4, "The per-address login plan"; about 3.5 wall minutes
    through the launcher's limiter, rs/41; 22 logins took 190 s, m, rs/214 on the run host,
-   00:35-00:39Z on 2026-10-22). **The start-window count on SCORED's address is 24 at S01**: 23
-   helpers (the 7 air givers and the 16) and SCORED. Before `handoff`: step 7's login count
+   00:35-00:39Z on 2026-10-22). **The start-window count on SCORED's address is 25 at S01**: 24
+   helpers (the 7 air givers and the 17) and SCORED (fold-in 36: rs/41's correction, the roster being 17, 4 + 6 + 3 + 4; 24 written at fold-ins 34-35 on a count of 16). Before `handoff`: step 7's login count
    (`handoff` re-checks it), the demo's `tickMs` and bundle token re-read and the launch dry run,
    within 20 minutes of the gate (`--max-gate-age`). **Where the code differs** (r, run-gate.ts at
    this fold-in's base): `handoff` opens the run tab and logs SCORED in as one command and reads no
@@ -1293,12 +1315,19 @@ load 37 on 8 cores did it in 7 s).
 
 - **Pre-start** (main 23:0x via rs/158, the host thread's wording; fold-in 34). The pre-start load condition is TWO readings. Each is a settled 1-minute load average, taken after 60 s with no new login. (i) After helpersReady and before the tab starts (rs/41's start-sequence step 3). (ii) After the tab and the recording have started and before SCORED's login (step 4); this is the decisive one. Both must be under 4.0, or the start waits and the reading is taken again. The reading at the gate pass, with the machine quiesced, is logged but is not a condition. The
   start order is step 5a.4's.
-- **Mid-run.** At the hand-off (step 7) host starts an untracked sampler on the chosen machine,
-  writing every 30 s to `~/rs-run/<run>/load.log`: the UTC time, `/proc/loadavg`, and the CPU use
-  of chrome, ffmpeg and each helper process. A sample at or over 4.0 is logged and alerts the
-  operator's live view; **the run does not stop** (helpers fail closed and sit out rather than
-  misfire). Two consecutive samples at or over 4.0 also go to main, which decides whether to stop a
-  helper on the machine.
+- **Mid-run** (main ruled 02:2x via rs/158; fold-in 36). At the hand-off (step 7) host starts the
+  sampler on the chosen machine, `~/.local/bin/rs-loadlog OUT [SECONDS]` (untracked host tooling,
+  installed on both machines, its sha256 beginning 2348a022), under `timeout`, with no tmux, writing
+  every 30 s to `~/rs-run/<run>/load.log`, which stays on the never-deleted list (step 9). Each line
+  has the UTC time, load1 / load5 and the per-process CPU of chrome, ffmpeg and each helper (bun, by
+  role and account). `bun_total` is every bun process (helpers, run.ts and the gateway); the
+  per-helper figures are the `bun:<role>:<account>` entries; SCORED and the gate accounts never
+  appear by name. rs-loadlog names an account only for a helper role process (a script under
+  `speedrun/helpers/`); every other bun process is logged by its script name alone (`bun:run`, for
+  example), and Chrome only as the aggregate `chrome`, never its command line or URLs (host's test on
+  the run host, 08:53-08:54Z: a stand-in name passed to run.ts appeared 0 times). A sample at or
+  over 4.0 is logged. Load alerts reach the operator as MESSAGES, never on the display: host tails ~/rs-run/<run>/load.log on the chosen machine and, on an ALERT sample (>= 4.0), messages main and the operator's channel within about a minute; ALERT2 (two consecutive) goes to main, who decides whether to stop a helper; the run does not stop. Nothing is drawn on :10, because the recording and the live view grab the same display. Helpers fail
+  closed and sit out rather than misfire.
 - **sysstat.** Both machines sample sysstat every minute (the drop-in
   `/etc/systemd/system/sysstat-collect.timer.d/every-minute.conf`, in place since 05:28Z 23 Oct);
   teardown removes it after the run (step 9).
@@ -1457,7 +1486,7 @@ rs/163) the start is ~90 with the gathering fleet's ~53 in and 37 without it, so
 unneeded fleet out first is mandatory**. Those counts have S21's givers in from SCORED's first
 login. Under the per-address plan they log in later, inside SCORED's relog before S21, on the chosen
 machine (step 4; RUN-ORDER.md O38 for the machine), so the start is lower: rs/41's map puts SCORED's
-address at 24 at the start (step 5a.4) and 26 during S21's ramp, and the home address at 29 fleet accounts plus
+address at 25 at the start (step 5a.4; 24 before fold-in 36's 17-account roster) and 26 during S21's ramp (worst case 27), and the home address at 29 fleet accounts plus
 the cannon helper. Do not log SCORED in over either cap. `handoff` re-checks it as a hard check: our accounts
 online, as `rs-claim status` counts them on `/playerpositions` (every host's), plus SCORED's 1, at
 most 80 (`--cap`); it refuses if the count can't be read. **The code counts a total, not an
@@ -1801,7 +1830,12 @@ detail)`, the phase `precondition`, `run` or `postcondition`, and `resume.ts:337
 a link, session or page-reload failure. `lib/attempt.ts:108-114` catches it in the world and run.ts
 stops with exit 1. The only recovery is the operator re-running the command, and where it enters is
 decided from game state, not from the log (`resolveResume`, `resume.ts:123-152`). A manual re-run
-costs **~150-450 ticks (i)**; rs/574 (rs/546's successor) measures one kill-and-re-run (RUN-ORDER.md
+costs **~150-450 ticks (i)**, unchanged; its measured component (rs/595, bgsrv-mac lab, 400 ms, browser, 3 of 3
+SIGKILLs mid-T04-05 with an immediate re-run; fold-in 36): **kill to the resume point chosen ~11.7 ticks (m)**,
+relaunch to SCORED in the world ~2, the post-login checks ~9.6-9.9, the scene wait 0, the resume decision
+0; not included are the operator's reaction time (ticks count while SCORED stays logged in), run.ts's
+pre-login gates (the floor read, the reservation, the slot ledger, helpersReady) and the killed step's own
+resume (unmeasured); rs/589 (rs/546's, rs/574's and rs/585's successor) measures one kill-and-re-run (RUN-ORDER.md
 section 7, the ladder's general note).
 
 **A throw in combat: relaunch FIRST** (main 23:3x via rs/158; fold-in 35). If the run log's last
@@ -1813,21 +1847,27 @@ the measured case** (rs/201 exec 9, bgsrv-mac, 400 ms: a throw right after the t
 under the temple, the logout refused for 27.6 s of tries, ~69 ticks; the re-run resumed N in the
 live session and finished it in 50; waiting out the logout was a death in one lab attempt).
 
-**What the operator sees.** `[run] FAILED: <message>` (`attempt.ts:112`, `run.ts:526`), then
-`[run] logout: ...` (`run.ts:371, 397`): **run.ts logs SCORED out after a StepError**, and on the
-way out writes a FINAL stop to every open helper cue (`run.ts:404`, `cue-keeper.ts:158-164`), so
-the launcher logs the failed step's helper family out, and a relaunched launcher ignores cues
-written before it started (rs/41). Exit code 1. **The helpers, in both forms** (rs/186 via
-rs/158; fold-in 35):
+**What the operator sees.** `[run] FAILED: <message>` (`lib/attempt.ts:114`), then
+`[run] logout: ...` (`run.ts:513`): **run.ts logs SCORED out after a StepError**, and on the way
+out closes the helper cues **non-final**, printing `[run] cues closed non-final: a re-run re-arms the
+helpers` (`run.ts:534-538`, `runner/cue-keeper.ts` `exitStopIsFinal`). Exit code 1. **The helpers
+stand down on a StepError or a first Ctrl-C, per family** (rs/574's retire rule, on main with #468,
+4657eed8, rs/583 from rs/186 @43f03530; the families rs/186's from rs/595's code reading, main
+03:25 PDT; fold-in 36):
 
-- **Today** (main; `cueAround`'s final stop in `runner/chain.ts`): a StepError retires the failed
-  step's helpers, so **the failed step's launcher entries are relaunched BEFORE the re-run** (check 6).
-- **Once rs/574's retire rule is on the floor** (landed on rs/186's branch; its snapshot to main is
-  rs/583, held behind rs/580): helpers are retired (a final stop) **only** on a completed chain, a
-  second Ctrl-C or SIGTERM, which **end the attempt**. A first Ctrl-C (a graceful stop at the next
-  logout-safe boundary, to resume later, exit 4), SIGHUP, a StepError, a refused resume or a host
-  reservation leave the helpers stood down and **logged in** for the re-run (up to 25-26 at S21 on
-  SCORED's address, rs/41), and the re-run's cue re-arms them; relaunch none.
+- A failed step's own cue is stopped non-final too (`runner/chain.ts` `cueAround`). **Before
+  re-running after a failed step, relaunch that step's bone, anvil, fm-row or courier helpers (they
+  exit on a non-final stop and are not restarted); altar and mule givers stand by and pick up the
+  re-run's fresh cue themselves (up to 25-26 at S21 on SCORED's address, rs/41); the ring givers
+  are started by hand** (the S04 ring givers have no launcher role). This is attempt 1's procedure:
+  changing those roles to stand by is attempt-2 work (helper code, rs/41), and rs/595's live lab
+  only confirms which families exit. The same holds after a first Ctrl-C (a graceful stop at the
+  next logout-safe boundary, to resume later, exit 4), SIGHUP, a refused resume, a host reservation
+  and a crash exit. Cannon is out of scope: on run day h92 runs in bbs's fleet in
+  receiver-in-sight mode and reads no cue.
+- Helpers are **retired** (a final stop, `[run] cues closed final`) **only** on a completed whole
+  run, SIGTERM or a second Ctrl-C, which **end the attempt**: a launcher never re-arms a retired
+  scope (`helpers/standalone.ts`'s ScopeSessions), so a re-run after one finds no helpers.
 
 **Never send SIGTERM or a second Ctrl-C unless the attempt is being ended.**
 
@@ -1867,19 +1907,20 @@ The checks, in order, before re-running. Any one failing means **do not re-run: 
 5. **The host claim is still held and live**: run.ts releases it only on success (`run.ts:533`); an
    expired claim makes gate 2 refuse with an `rs-claim take ...` hint (`run.ts:252-261`), so retake it
    as step 0 does first.
-6. **The helpers: relaunch the failed step's launcher entries BEFORE the re-run** (fold-in 34;
-   today, until rs/574's retire rule is on the floor in rs/583). A StepError writes a final stop to
-   open helper cues, so the failed step's helpers are logged out, and a relaunched launcher ignores
-   cues written before it started, so the relaunch comes first and the re-run's new cue reaches it
-   (step 4; HELPERS.md). **Once rs/583 is on the floor**, a StepError, a refused resume, a first
-   Ctrl-C, SIGHUP or a host reservation leaves the stood-down helpers logged in on SCORED's address
-   during the re-run (up to 25-26 at S21, rs/41) and the re-run's cue re-arms them: confirm they are
-   still in, and relaunch none; this check's relaunch line then goes.
+6. **The helpers, per family** (#468, 4657eed8, rs/583 from rs/186 @43f03530; fold-in 36). The log
+   reads `[run] cues closed non-final: a re-run re-arms the helpers`. Relaunch the failed step's
+   bone, anvil, fm-row or courier helpers before the re-run (they exit on a non-final stop and the
+   launcher does not restart them), and start the ring givers by hand if S04 failed; the altar and
+   mule givers stand by logged in on SCORED's address (up to 25-26 at S21, rs/41), and the
+   re-run's cue re-arms them. If it reads `[run] cues closed final` (a SIGTERM or a second Ctrl-C was sent), the
+   attempt has been ended and the helpers retired: do not re-run, tell main.
 7. **The step is not on the non-admitting list**: RUN-ORDER.md section 7's margin ladder and its
    attempt-ending lines (A and B are on main, #462 and #453, so fold-in 33's conditional note after
    H7 and in S18 and S22 mid-band is off; fold-in 35). Some lines name an
    operator fix before the re-run instead (S25a: walk SCORED to the anvil; S06 or S21: re-enter
-   through the ruins; S21's relog logout half: log SCORED in by hand); the rest end the attempt.
+   through the ruins; S21's relog logout half needs none since #468, which opens S21's entry once `logoutClean` reports
+   SCORED out and before the page check, so an unconfirmed page leaves the entry open and the re-run
+   takes the login half); the rest end the attempt.
 
 **The re-run is the bare launch command, unchanged**: `bun speedrun/run.ts` with the same
 arguments as the first launch (usage `run.ts:75-79`, parsing `run.ts:113-142`), the same `--run-dir`
@@ -1908,10 +1949,22 @@ segment (e.g. `S05:A-h4-swap`), and the tick log gets a `(resume)` row with the 
 - the walk throwing while SCORED is not in the world: `[run] resume: run the same command again`,
   exit 4 (`attempt.ts:111`, `run.ts:536`): re-run once; a second refusal means stop and escalate,
   never loop;
-- **the S00 edge** (`resume.ts:296`, `start.ts:222`): `runResumable` waits only for any published
-  state, and S00's `done` needs a player, so a re-run whose first state has no player sees S00 undone
-  and refuses 'not in game'. Until rs/562's bounded wait for a populated player state lands, on an
-  account past the tutorial re-run once more.
+- **the S00 edge, closed** (#468, 4657eed8, rs/583 from rs/186 @43f03530, rs/562's D; fold-in 36): each walk first waits up to
+  30 observed ticks for a published state that carries the player (`runner/resume.ts` `awaitPlayer`,
+  `PLAYER_MAX_TICKS`), so a re-run no longer sees S00 undone on an empty first state; past the bound
+  the walk observes anyway, so a 'not in game' refusal after it goes to main.
+
+**The run-day watch list** (fold-in 36; main via rs/158):
+
+- **A death on a leg** (main's wording, 03:15 PDT, via rs/158). A Lumbridge respawn mid-leg is a death. The leg re-walks from Lumbridge on its own (~205 ticks from T06-07; travel.ts re-paths in the same leg, no re-run needed: rs/589's 02:18 run reported ok). Check the kit-gap line on that leg's row (T06-07: none, the worn staff kept, the runes spent or dropped) before the next hand-off. A respawn mid-leg means a jump to Lumbridge's respawn tile (3221,3218) on a leg that does not home-teleport: that tile is also the home teleport's landing. The walker does not flag it (rs/593, green at 26fbcce9, waits until after attempt 1); watch the live view and the run log.
+
+**An attempt cut short before H11r: h92 and H23** (main's ruling via rs/158; fold-in 36). h92's H11r
+take-back waits without a bound at its return tile (`speedrun/helpers/cannon.ts:1545-1598`, `takeBack`'s
+`for (;;)`, run through `retryUntil`, `:1375`, `:1394-1396`), and the fleet's `then` to the H23 serve fires
+only when the H11 serve finishes. So if S14 aborts before H11r, or the run ends before T14-15, h92
+waits there and H23 is never served until the operator reassigns it: `fleetctl assign cairn_h92 cannon
+--options <H23 serve>` and a reload, a role change with no relogin, before H23. The unbounded wait is
+deliberate, not a defect: it is what makes an operator re-run of S14 safe for H11r.
 
 **The socket-drop recovery, on main** (#466, 86e7aa37: rs/511's work via rs/547, snapshotted as
 rs/580 from rs/186 @34d0ecf4, 16 files byte-identical, with `cueStop(S27)` above T27-17; fold-in 35;
@@ -1982,8 +2035,11 @@ kit and are covered only by this manual recovery** (fold-in 35, rs/41 from rs/57
 rs/158): **a death at H23** and **a death in S27 with the cannon packed** (R8d1 refuses, short:
 after a death H23 stays a done milestone, so the resume re-enters at T26-27b, which holds the web,
 and a forced H23 repeat would be 7 slots short). For both, **the operator stages a knife (946) from
-h68** (h68 holds 2) plus the kit by hand. Until rs/579 merges R8 is unstaged, and every manual
-S27-death recovery takes its knife from h68 the same way. Its minutes are wall clock, not
+h68** (h68 holds 2) plus the kit by hand. R8 stays unstaged (fold-in 36): rs/579's kit fix (#478) is on main in the
+run commit (#482), and this manual knife line (a knife from h68) **stands unless rs/41 reports R8
+staged before 13:00Z** (the kits regenerated from the run commit, respawnCheck passing, every R8a,
+R8c and R8d2 line coverable from h68's holdings); for R8d1's cases, a death at H23 or in S27 with
+the cannon packed, it stands permanently. Its minutes are wall clock, not
 ticks: R8's prices stay `r8-deaths.ts`'s, in ticks.
 
 **S21 relog: reconciliation when the run script refuses** (rs/186's identity and order matrix; code
@@ -1993,7 +2049,7 @@ real-browser lab; fold-in 31):
 | Case | State | What the script does | What the operator does |
 |---|---|---|---|
 | 1 | No open planned entry | a normal launch or resume | finish the T20-21 leg to its canonical arrival; never log out early |
-| 2 | Entry OPEN (written once `logoutClean` reports SCORED out, before the page-out check; rs/562), the page proven OUT with no login pending (the entry's timing once rs/583 is on the floor; on main today the entry opens only after the page-out confirmation, `scored-relog.ts`) | attaches without launching, waits for the world feed and the full fresh giver roster while SCORED is out, then logs in inside the page; the single planned entry closes only on success | nothing |
+| 2 | Entry OPEN (written once `logoutClean` reports SCORED out, before the page-out check; rs/562), the page proven OUT with no login pending (the entry's timing on main since #468, 4657eed8: `scored-relog.ts` opens the entry once `logoutClean` reports SCORED out, before the page confirmation; fold-in 36) | attaches without launching, waits for the world feed and the full fresh giver roster while SCORED is out, then logs in inside the page; the single planned entry closes only on success | nothing |
 | 3 | Entry OPEN, the page LIVE | refuses: no login, no navigation, no entry change (a live page does not prove which session set the processing order) | inspects the account and session and the givers' login order, and reconciles the budget by hand; nothing adopts the state automatically |
 | 4 | Entry OPEN, a login PENDING | refuses: no second dispatch or navigation | waits for the real outcome before reconciling; never erases the entry or restarts blindly |
 | 5 | Entry OPEN, CDP unreadable or missing, or the page unknown | refuses the same way | restores observation and establishes the actual state first |
