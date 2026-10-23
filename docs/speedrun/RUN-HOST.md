@@ -593,7 +593,8 @@ Before SCORED logs in, <run dir>/cannon-serve.json holds exactly host's bytes, s
 **The delivery run id, before the start is called** (main 04:15 PDT via rs/158; fold-in 37; it comes
 with rs/598, the runner-side delivery-session binding). `delivery.run` in the run config equals every
 mule carrier's launcher `deliveryRun`; `mule-ledger --check` verifies it, and any mismatch is a
-refusal. `delivery.run` changes per attempt (a1-20261023 for attempt 1, then a2-..., a3-...), like
+refusal. **The exact command is pending rs/41**, due right after the naming and before ~14:15Z, with
+the carrier configs regenerated from the new hash. `delivery.run` changes per attempt (a1-20261023 for attempt 1, then a2-..., a3-...), like
 h92's serve ids below.
 
 **h92 on the run commit, and its serve ids per attempt** (rs/41's wording via rs/158; fold-in 36).
@@ -2047,11 +2048,15 @@ kit and are covered only by this manual recovery** (fold-in 35, rs/41 from rs/57
 rs/158): **a death at H23** and **a death in S27 with the cannon packed** (R8d1 refuses, short:
 after a death H23 stays a done milestone, so the resume re-enters at T26-27b, which holds the web,
 and a forced H23 repeat would be 7 slots short). For both, **the operator stages a knife (946) from
-h68** (h68 holds 2) plus the kit by hand. R8 stays unstaged (fold-in 36): rs/579's kit fix (#478) is on main in the
-run commit (#482), and this manual knife line (a knife from h68) **stands unless rs/41 reports R8
-staged before 13:00Z** (the kits regenerated from the run commit, respawnCheck passing, every R8a,
-R8c and R8d2 line coverable from h68's holdings); for R8d1's cases, a death at H23 or in S27 with
-the cannon packed, it stands permanently. Its minutes are wall clock, not
+h68** (h68 holds 2) plus the kit by hand. **R8's staging** (rs/41, 11:14Z, against kits regenerated
+from 38902b56, respawnCheck passing; main confirmed 04:40 PDT via rs/158; fold-in 37): **R8d2 is
+staged** on h68 (shark 17, law 2, water 2, knife 1, by item id), so a death on the Agility course is
+a priced recovery through its package and this knife line does not apply to it; **R8c is not
+staged** and counts only on a fresh rs/41 report (air short 743, a Grand Exchange bid resting);
+**R8a is not staged** (no amulet of magic in the fleet); **R8d1 is refused by design** (26 slots
+against 25). So **the manual recovery with a knife from h68 is attempt 1's procedure for R8a, R8c
+and the R8d1 deaths** (a death at H23, or in S27 with the cannon packed). h68's air 552 and death
+110 are the rehearsal's H7 earmark and do not count toward R8. Its minutes are wall clock, not
 ticks: R8's prices stay `r8-deaths.ts`'s, in ticks.
 
 **S21 relog: reconciliation when the run script refuses** (rs/186's identity and order matrix; code
