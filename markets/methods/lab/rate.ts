@@ -20,6 +20,7 @@ import { cheat, clearInventory, give, leaveTutorial, mustTele, setStats, setvar 
 import { holdings, span, summarize, trips, type BankSnap } from '../trips';
 import { ARDOUGNE_SOUTH_BANK, SPOTS } from '../pickpocket';
 import { CATHERBY_BANK } from '../fish';
+import { MINE_SITES } from '../mine';
 
 interface Tile {
     x: number;
@@ -92,7 +93,37 @@ const woodcut = (tree: string): Method => ({
     baseline: 'stage'
 });
 
+// markets/methods/mine.ts at one site: --mining (default 99), --pickaxe (debug name), --hp, --bankEvery
+const mineAt = (site: 'shilo' | 'iron' | 'runite', varps?: Record<string, number>): Method => {
+    const s = MINE_SITES[site];
+    return {
+        role: async () => (await import('../mine')).role,
+        options: { site, bankEvery: num('bankEvery', site === 'runite' ? 0 : 28) },
+        stats: { attack: num('combat', 70), strength: num('combat', 70), defence: num('combat', 70), hitpoints: num('hp', 70), mining: num('mining', 99) },
+        varps,
+        inv: [[arg('pickaxe', 'rune_pickaxe'), 1]],
+        wear: [/pickaxe$/i],
+        bank: s.bank,
+        at: s.stand,
+        baseline: 'stage'
+    };
+};
+
 const METHODS: Record<string, () => Method> = {
+    // Shilo Village complete (%zombiequeen 17, quest.constant ^zombiequeen_complete 15)
+    shilo: () => mineAt('shilo', { zombiequeen: 17 }),
+    iron: () => mineAt('iron'),
+    runite: () => mineAt('runite'),
+    // speedrun/helpers/smelter.ts smelt mode: steel bars from banked iron ore and coal, Falador west bank and furnace
+    steel: () => ({
+        role: async () => (await import('../../../speedrun/helpers/smelter')).role,
+        options: { mode: 'smelt', steel: 1_000_000, buyOre: false, pickaxe: false },
+        stats: { smithing: num('smithing', 99) },
+        seed: [['cert_iron_ore', 3000], ['cert_coal', 6000]],
+        bank: { x: 2946, z: 3369 },
+        at: { x: 2946, z: 3369 },
+        baseline: 'stage'
+    }),
     knight: () => pickpocket('knight'),
     paladin: () => pickpocket('paladin'),
     hero: () => pickpocket('hero'),
