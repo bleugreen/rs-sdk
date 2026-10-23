@@ -924,6 +924,8 @@ export function steps(input: Options = {}): Step<any>[] {
             postconditions: s => (invCount(s, ITEM.twigs) === 0 ? (onPlatform(s) ? true : 'not on the pillar platform') : `${invCount(s, ITEM.twigs)} twigs still held`),
             logoutSafe: true,
             done: atStage(130),
+            // Some pillars took their twigs (the loop skips those), so the 4-twig precondition no longer holds.
+            inProgress: o => { const n = invCount(o.state, ITEM.twigs); return n > 0 && n < 4; },
             probes: PROBES,
         },
         {

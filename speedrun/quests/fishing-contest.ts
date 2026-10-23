@@ -48,7 +48,7 @@ import { journalProbeName, questDone, questStatus, requireQuestStage, type Quest
 import { logNote } from '../lib/ticks';
 import { inArea, missingRunes, runTo, runeUseOf, spellUse, SPELLS, teleport, type Area, type RuneUseTable, type TravelSdk } from '../lib/travel';
 import { currentTick, waitOrThrow, waitUntil } from '../lib/wait';
-import { invCount, invItem, opIndex, pos, skillLevel, waitForNpc } from '../lib/world';
+import { chebyshev, invCount, invItem, opIndex, pos, skillLevel, waitForNpc } from '../lib/world';
 import type { Check, Observed, StepContext } from '../runner/step';
 import { allOf, baseLevels, inBox, kitSegment, kitWant, questSteps, slotsCover, talkShape, within, type Box, type KitItem, type QuestItem, type QuestOptions, type Segment } from './segments';
 
@@ -418,6 +418,11 @@ const notStarted: Check<any> = s => requireQuestStage(s, quest, 'not_started');
 const atArrival = within({ x0: ARRIVAL.x - 1, z0: ARRIVAL.z - 1, x1: ARRIVAL.x + 1, z1: ARRIVAL.z + 1 }, 'the arrival tile beside the tunnel stairs');
 const hasItem = (item: ItemPattern, what: string): Check<any> => s => need(what, invCount(s, item) > 0, 'not held');
 const nearTunnel = within(TUNNEL, 'the tunnel stairs');
+/**
+ * M re-run after its Camelot cast landed: the walk from the landing to the tunnel stays within ~70
+ * tiles of it, and M's start by the contest pipe is 120 away, so a fresh M always casts.
+ */
+const nearCamelot = (s: BotWorldState) => chebyshev(pos(s), SPELLS.camelot.landing) <= 90;
 const kitHeld: Check<any> = s => {
     const want = kitWant(s, KIT);
     return want.length ? `kit missing: ${want.map(w => `${w.amount} x ${String(w.item)}`).join(', ')}` : true;
@@ -526,10 +531,10 @@ export function steps(opts?: Options) {
         },
         {
             letter: 'M', label: 'to-dwarf', logoutSafe: true,
-            preconditions: allOf(hasItem(ITEM.trophy, 'the fishing trophy'), s => (inBox(s, TUNNEL) ? true : allOf(magicForCamelot, oneCast)(s, undefined))),
+            preconditions: allOf(hasItem(ITEM.trophy, 'the fishing trophy'), s => (inBox(s, TUNNEL) || nearCamelot(s) ? true : allOf(magicForCamelot, oneCast)(s, undefined))),
             run: async ctx => {
                 if (inBox(ctx.sdk.getState()!, TUNNEL)) return;
-                await camelot(ctx, 'M');
+                if (!nearCamelot(ctx.sdk.getState()!)) await camelot(ctx, 'M');
                 await go(ctx, 'M', ARRIVAL, 'the tunnel stairs');
             },
             postconditions: nearTunnel,
