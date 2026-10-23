@@ -531,7 +531,7 @@ attempt 1. **Main's schedule ruling** (04:45 PDT via rs/158; fold-in 37): naming
 lab 3 of 3 by 13:15Z, merged 13:45Z, the twin re-run by 14:45Z), the freeze 15:00Z, the gate series
 from 17:00Z, the start ~17:15Z (10:15 PDT) on the machine that passes, the run ending ~21:10Z;
 claims released 14:30Z; rs/83's 20:35Z sweep skipped. Naming at 14:00Z is 3 h before the series,
-so the run-eve freeze rule below holds as written. **Superseded by main's final set** (12:08Z via rs/158): the run commit named 12:05Z (233d0f34), the freeze 14:00Z, the gate series from 16:00Z, the start ~16:15Z (09:15 PDT), the run ending ~20:10Z, the 20:35Z sweep skipped; named nearly 4 h before the series. The host's input check on 233d0f34 (both machines, 12:03Z): no bundle input changed, so no rebuild; step 0 running.
+so the run-eve freeze rule below holds as written. **Superseded by main's final set** (12:08Z via rs/158): the run commit named 12:05Z (233d0f34), the freeze 14:00Z, the gate series from 16:00Z, the start ~16:15Z (09:15 PDT), the run ending ~20:10Z, the 20:35Z sweep skipped; named nearly 4 h before the series. The host's input check on 233d0f34 (both machines, 12:03Z): no bundle input changed, so no rebuild; step 0 running. **Moved again (fold-in 39; main 13:27Z via rs/158), superseding the 12:08Z set's 14:00Z / 16:00Z / 16:15Z:** the new run commit named ~14:50Z, the freeze no earlier than 15:30Z, the gate series 17:30Z, the start ~17:45Z (10:45 PDT) on the machine that passes, the run ending about 21:40Z (the start + the run's ~3.9 h); 233d0f34 superseded as the run commit because chain.ts:714 at 233d0f34 never wired S15 (`missingStep('S15', ...)`: run.ts refused the full path; rs/186's runner-only fix). Named at ~14:50Z, 2 h 40 min before the 17:30Z series, so the run-eve freeze rule below holds as written. The new commit changes `~/run-commit`, so the install and build above run again on both machines.
 
 **The floor check, a hard stop** (main's ruling, relayed by rs/158 at 09:24 PDT 2026-10-22;
 STEP-MANIFEST.md entry 0). The floor is read from entry 0's line on origin/main, "`RUN_COMMIT` at
@@ -547,7 +547,8 @@ note**: tell main. Expect `floor ok`:
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'N=FLOOR_MAIN_NAMED; cd ~/rs-sdk && C=$(cat $HOME/run-commit) || exit 1; git fetch -q origin main && git show origin/main:docs/speedrun/STEP-MANIFEST.md >$HOME/rs-run/manifest-main.md || { echo "STOP: cannot read STEP-MANIFEST.md on origin/main"; exit 1; }; L=$(sed -n -E "s/.*RUN_COMMIT. at or after the run-commit floor, .([0-9a-f]{7,40}).*/\1/p" $HOME/rs-run/manifest-main.md); case "$L" in ""|*[!0-9a-f]*) echo "STOP: entry 0 does not give exactly one floor"; exit 1;; esac; F=$(git rev-parse -q --verify "$L^{commit}") || { echo "STOP: the floor $L is not in this clone"; exit 1; }; [ "$F" = "$(git rev-parse -q --verify "$N^{commit}")" ] || { echo "STOP: entry 0 names $L, main last named $N"; exit 1; }; git merge-base --is-ancestor "$F" "$C" || { echo "STOP: RUN_COMMIT is before the floor $L"; exit 1; }; git merge-base --is-ancestor d02c094f "$C" || { echo "STOP: RUN_COMMIT lacks run-gate.ts as of #350"; exit 1; }; echo "floor ok: $L, RUN_COMMIT at or after it, run-gate.ts in it"'
 ```
 
-**The schedule for 2026-10-23** (main, 13:3x PDT 2026-10-22). All of it is subject to the operator
+**The schedule for 2026-10-23** (main, 13:3x PDT 2026-10-22; **the times in force are fold-in 39's**, main 13:27Z 2026-10-23, the rows marked
+'fold-in 39'; the 12:08Z set's rows are kept, marked superseded). All of it is subject to the operator
 and to the Monkey Madness kit gate (RUN-ORDER.md R37):
 
 | When (UTC) | PDT | What |
@@ -558,12 +559,18 @@ and to the Monkey Madness kit gate (RUN-ORDER.md R37):
 | 12:02Z | 05:02 | rs/598 on main as #487, 233d0f34 (fold-in 37, as are the rows below; main's final set, 12:08Z, superseding its 04:45 PDT set of 15:00Z / 17:00Z) |
 | 12:03Z | 05:03 | the host's input check on 233d0f34, both machines: no bundle input changed, so no rebuild; step 0 running |
 | 12:05Z | 05:05 | main names the run commit, 233d0f34 |
-| before 14:00Z | before 07:00 | the early warm-up on both machines, after the final install (below) |
-| 14:00Z | 07:00 | the floor freeze (below), 2 h before the gate series and nearly 4 h after the naming |
+| before 14:00Z, superseded | before 07:00 | the early warm-up on both machines, after the final install (12:08Z set; fold-in 39: after the new commit's install, before the 15:30Z freeze) |
+| 14:00Z, superseded | 07:00 | the floor freeze in the 12:08Z set |
 | 14:45Z | 07:45 | the twin re-run through H4k due (the ladder note's proof) |
-| from 16:00Z | 09:00 | the gate series (step 5a) |
-| ~16:15Z | 09:15 | the start, on the machine that passes |
-| ~20:10Z | 13:10 | the run ends (~3.9 h at 400 ms) |
+| ~14:50Z | 07:50 | **fold-in 39:** main names the new run commit, with rs/186's S15 wiring fix in it (233d0f34 superseded as the run commit because chain.ts:714 at 233d0f34 never wired S15 (`missingStep('S15', ...)`: run.ts refused the full path; rs/186's runner-only fix)) |
+| by 15:00Z | 08:00 | **fold-in 39:** the per-carrier stock walk at zero shortfall (rs/41 staging by handover; step 0's pre-launcher checks, below) |
+| 15:20-15:40Z | 08:20-08:40 | **fold-in 39:** h45 staged on segment P's tile (rs/41's builder; a start condition that fails closed, step 0's pre-launcher checks) |
+| no earlier than 15:30Z | 08:30 | **fold-in 39:** the floor freeze (below), 2 h before the gate series and 2 h 40 min after the naming |
+| from 16:00Z, superseded | 09:00 | the gate series in the 12:08Z set |
+| ~16:15Z, superseded | 09:15 | the start in the 12:08Z set |
+| 17:30Z | 10:30 | **fold-in 39:** the gate series (step 5a) |
+| ~17:45Z | 10:45 | **fold-in 39:** the start, on the machine that passes |
+| ~21:40Z | 14:40 | **fold-in 39:** the run ends (the start + ~3.9 h at 400 ms; ~20:10Z in the 12:08Z set) |
 | 20:35Z | 13:35 | rs/83's daily delay sweep: skipped today |
 
 **The run-eve freeze** (main's ruling; STEP-MANIFEST.md entry 0). The last floor is named at least
@@ -605,14 +612,14 @@ hand-off it owns, which that hand-off then cannot get. Check: partners map match
 `mule-delivery-production.json` carries no `partners` map, which comes from the gitignored run config, so
 the two sources are compared). A mismatch is a stop: tell main and rs/41.
 
-**The gate account's bot.env is on both machines, before the 16:00Z gate series** (main's final set, 12:08Z; 17:00Z, then 15:00Z, before it; main 04:08 PDT via
+**The gate account's bot.env is on both machines, before the 17:30Z gate series** (fold-in 39, main 13:27Z; 16:00Z in main's 12:08Z set, 17:00Z, then 15:00Z, before it; main 04:08 PDT via
 rs/158; fold-in 36; keys from the host thread, 11:1x-11:27Z via rs/158, fold-in 37).
 `~/rs-sdk/bots/<gate account>/bot.env` present on both machines (directory 700, file 600,
 gitignored), holding BOT_USERNAME, PASSWORD, SERVER (the demo), GATEWAY_URL (loopback 7780),
 CLIENT_URL (loopback 8899 /bot, with the demo server and the loopback gateway), CDP_URL (loopback
 9222) and TELEMETRY=false. It is the same parked account as the gate timer's bot.env (rs/441's
 Lumbridge probe); run-gate's `gate` reads it by the name it is given. Verify it is present on both
-machines before the 16:00Z gate series (it was missing on both at 11:0xZ; the gate timer reads its
+machines before the 17:30Z gate series (it was missing on both at 11:0xZ; the gate timer reads its
 own copy at a different path). Never name the gate account, and never print the file's values.
 
 **No stale Chrome lock on the run profile, permanent, every install** (the host's text, main ruled
@@ -682,12 +689,29 @@ refusal. the carrier configs come from the generator and check below (fold-in 37
    row without re-banking (helpers/mule.ts:1283-1312, runner/delivery-owner.ts:89-96), and nothing in
    run.ts's preflight needs a hold file (rs/186). `mule-hold.ts` stays in the commit, unused. The
    mule-hold text below is kept for reference only.
-   **Carriers' parked sides (main 13:20Z 2026-10-23, from rs/41's code read):** before the launcher
-   starts, verify each carrier is parked on its side of the Taverley boundary: cairn_h55 WEST,
-   cairn_mule1 and cairn_h03 EAST. `deliveryWalk` refuses any walk across the boundary and sets
-   `deliveryFault`, which refuses every later row for that carrier (mule.ts:1419-1421 at 233d0f34).
-   A carrier on the wrong side is moved before the launcher starts, never after.
-5. **Report:** the host sends the hash line (no mule-hold exit codes for attempt 1) and `sha256sum <R>/carriers.json
+5. **Pre-launcher carrier checks, before the helper launcher starts** (fold-in 39; each a stop, reported with step 6's report):
+   - **Per-carrier stock walk to zero shortfall** (main's wording, 13:27Z: 'per-carrier stock walk (`mule-ledger.ts --bank
+     --account --rows` at RUN_COMMIT) to zero shortfall, h55 re-parked west after any transfer'; rs/41's command, main 13:26Z via
+     rs/158): 'Before the helper launcher starts, each delivery carrier's bank must stage its rows in full: from `<C>` at the run
+     commit, `bun speedrun/helpers/mule-ledger.ts --bank <stockpile.json> --account cairn_mule1 --rows H1,H4,H4k,H18,H19,H21d,H22`
+     (then cairn_h55 `--rows H6,H4p,H7,H8,H9,H10,H12,H13,H14,H15,H16`, cairn_h03 `--rows H20`) must print "every package stages
+     in full" for each, against the fleet ledger read after the last staging move.' Why: h55's and h03's banks held almost none
+     of their rows (the stock was on mule1); rs/41 stages by handover, the walk at zero shortfall by 15:00Z. The code
+     (`speedrun/helpers/mule-ledger.ts:579-585` at 55a490aa; the tool is under `speedrun/helpers/`, not `speedrun/tools/`): `--bank`
+     takes a JSON file `{ accounts: { <account>: { asOf, bank: [{ slot, id, name, count }] } } }`, walks the `--rows` packages back
+     to back against that account's bank (`--account` defaults to cairn_mule1), and exits 0 on that line, else prints each
+     shortfall and exits 1. H13 walks only with the ledger's `magic shortbow @861` (fold-in 39: the bare name resolves to objs
+     72 and 861 and the walk threw).
+   - **Parked sides** (main 13:20Z, from rs/41's code read; rs/41's wording 13:26Z): 'the carriers' parked sides: h55 WEST,
+     mule1 and h03 EAST (`westOfTaverley`, kandarin.ts:78; deliveryWalk refuses a crossing and faults the carrier,
+     mule.ts:1419-1421).' The fault (`deliveryFault`) refuses every later row for that carrier. A carrier on the wrong side is
+     moved before the launcher starts, never after, and **h55 is re-parked west after any transfer** (main's clause: a
+     handover can leave it east).
+   - **h45 parked for H12o, a start condition** (main 13:52Z and 14:13Z via rs/158; owner rs/41, open until rs/41 reports it
+     staged; RUN-ORDER.md section 1): 'h45 parked logged out on segment P's tile (2803,2724,0) with its 25-slot H12o package (M's up-to-15 sharks; P's Superantipoison(4) and up-to-9 sharks) and a passing pack census.' h45 reaches P by the quest's own route: Daero's blindfold to the hangar, Waydar's glider to Crash Island, Lumdo's boat to the landing, then the walk to P via M without waiting at M; about 110-130 ticks plus dialogue (rs/185: 42 + 22 + 23 measured; the Stronghold walk inferred). Prerequisites: the journal past 'Chapter 2:', the Grand Tree items banked, the 25-slot package by item id, the census passing. Staged by a dedicated rs/41 builder, ETA 15:20-15:40Z. It fails closed: run.ts refuses if h45 is not configured,
+     and h45 not staged means attempt 1 is postponed. `docs/speedrun/helpers/mule.md:368-389` records h45 logged out at
+     (2465,3490,0) outside the Grand Tree (01:28Z), so the line requires the move.
+6. **Report:** the host sends the hash line (no mule-hold exit codes for attempt 1) and `sha256sum <R>/carriers.json
    <R>/helpers.json` to rs/41 and main before the launcher starts.
 
 **The fleet on the run commit:** back at 29/29 on 233d0f34 at ~12:11Z, 27 while two stand-ins serve
