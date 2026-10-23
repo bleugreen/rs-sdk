@@ -693,9 +693,9 @@ refusal. the carrier configs come from the generator and check below (fold-in 37
    - **Per-carrier stock walk to zero shortfall** (main's wording, 13:27Z: 'per-carrier stock walk (`mule-ledger.ts --bank
      --account --rows` at RUN_COMMIT) to zero shortfall, h55 re-parked west after any transfer'; rs/41's command, main 13:26Z via
      rs/158): 'Before the helper launcher starts, each delivery carrier's bank must stage its rows in full: from `<C>` at the run
-     commit, `bun speedrun/helpers/mule-ledger.ts --bank <stockpile.json> --account cairn_mule1 --rows H1,H4,H4k,H18,H19,H21d,H22`
+     commit, `bun speedrun/helpers/mule-ledger.ts --bank <stockpile.json> --account cairn_mule1 --rows H1,H4,H4k,H18,H19,H21d,H22 --on-request H4e`
      (then cairn_h55 `--rows H6,H4p,H7,H8,H9,H10,H12,H13,H14,H15,H16`, cairn_h03 `--rows H20`) must print "every package stages
-     in full" for each, against the fleet ledger read after the last staging move.' Why: h55's and h03's banks held almost none
+     in full" for each, against the fleet ledger read after the last staging move.' `--on-request H4e` is rs/158's addition (H4e is a live fallback package mule1 must hold, matching the `--check` above; rs/41's walk with it passes at 233d0f34). Why: h55's and h03's banks held almost none
      of their rows (the stock was on mule1); rs/41 stages by handover, the walk at zero shortfall by 15:00Z. The code
      (`speedrun/helpers/mule-ledger.ts:579-585` at 55a490aa; the tool is under `speedrun/helpers/`, not `speedrun/tools/`): `--bank`
      takes a JSON file `{ accounts: { <account>: { asOf, bank: [{ slot, id, name, count }] } } }`, walks the `--rows` packages back
