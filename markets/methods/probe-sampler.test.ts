@@ -62,6 +62,24 @@ describe('sampler', () => {
         expect(smp.phaseTicks).toEqual({ start: 49, walk: 71 });
         expect(smp.lastTick - smp.startTick).toBe(120);
     });
+
+    test('ms per tick from its own clock, first to last observed tick, rounded to 0.1', () => {
+        let ms = 0;
+        const sdk = { getState: () => null, onStateUpdate: () => () => {} };
+        const smp = new Sampler(sdk as never, () => {}, 'p', {}, 50, () => new Date(ms));
+        expect(smp.observedMsPerTick()).toBeNull();
+        smp.see(state({ tick: 10 }));
+        smp.see(state({ tick: 10 }));
+        expect(smp.observedMsPerTick()).toBeNull();
+        for (const [tick, at] of [[11, 400], [12, 801], [13, 1201]] as const) {
+            ms = at;
+            smp.see(state({ tick }));
+        }
+        // a repeated state of the last tick, arriving later, does not stretch the window
+        ms = 5000;
+        smp.see(state({ tick: 13 }));
+        expect(smp.observedMsPerTick()).toBe(400.3);
+    });
 });
 
 // ------------------------------------------------------------------ lifecycle
@@ -71,6 +89,8 @@ function harness() {
     const calls: string[] = [];
     const handlers: Record<string, () => void> = {};
     let tick = 1000;
+    // the fake clock: 400 ms a tick, plus 5 s to log in and 3 s to log out, both outside any tick
+    let ms = Date.parse('2026-10-23T01:00:00Z');
     const listeners = new Set<(s: BotWorldState) => void>();
     const sdk = {
         getState: () => state({ tick }),
@@ -82,6 +102,7 @@ function harness() {
     const advance = (n: number) => {
         for (let i = 0; i < n; i++) {
             tick++;
+            ms += 400;
             for (const l of listeners) l(state({ tick }));
         }
     };
@@ -89,10 +110,12 @@ function harness() {
     const deps: ProbeDeps = {
         open: async () => {
             calls.push('open');
+            ms += 5000;
             return session;
         },
         logout: async () => {
             calls.push('logout');
+            ms += 3000;
             return { ok: true, latencyTicks: 0 };
         },
         close: async () => {
@@ -110,7 +133,7 @@ function harness() {
             calls.push(`record ${(r as { kind: string }).kind}`);
         },
         stderr: () => {},
-        tickMs: () => 400,
+        now: () => ms,
         withSignal: (_signal, work) => work(),
     };
     return { records, calls, handlers, advance, deps };
@@ -138,7 +161,11 @@ describe('runProbe', () => {
         );
         expect(code).toBe(0);
         const totals = h.records.at(-1)!;
-        expect(totals).toMatchObject({ kind: 'totals', probe: 'probe-test', account: 'acc', end: 'done', ticks: 120, tickMs: 400, widgets: 3, logout: { ok: true } });
+        expect(totals).toMatchObject({ kind: 'totals', probe: 'probe-test', account: 'acc', end: 'done', ticks: 120, widgets: 3, logout: { ok: true } });
+        // wallMs carries the login and logout; the measured rate does not
+        expect(totals.wallMs).toBe(5000 + 120 * 400 + 3000);
+        expect(totals.observedMsPerTick).toBe(400);
+        expect(totals).not.toHaveProperty('tickMs');
         expect(totals.phaseTicks).toEqual({ work: 120 });
         expect(h.records.filter(r => r.kind === 'totals')).toHaveLength(1);
         expect(h.records.filter(r => r.kind === 'sample').map(r => r.tick)).toEqual([1000, 1050, 1100]);
@@ -213,6 +240,21 @@ describe('runProbe', () => {
         expect(code).toBe(1);
         expect(h.calls).toContain('logout');
         expect(h.records.at(-1)).toMatchObject({ end: 'error', error: 'boom', partial: true });
+    });
+
+    test('no tick passed: ticks 0 and a null ms per tick', async () => {
+        const h = harness();
+        expect(await runProbe(spec(async () => {}), ['acc', '--minutes', '0'], h.deps)).toBe(0);
+        expect(h.records.at(-1)).toMatchObject({ kind: 'totals', ticks: 0, observedMsPerTick: null, wallMs: 8000 });
+    });
+
+    test('the session never opened: no sampler, a null ms per tick', async () => {
+        const h = harness();
+        h.deps.open = async () => {
+            throw new Error('no client');
+        };
+        expect(await runProbe(spec(async () => {}), ['acc', '--minutes', '1'], h.deps)).toBe(1);
+        expect(h.records.at(-1)).toMatchObject({ kind: 'totals', end: 'error', ticks: 0, observedMsPerTick: null, logout: null });
     });
 
     test('bad arguments: usage, exit 2, no session', async () => {
