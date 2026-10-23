@@ -28,10 +28,11 @@ section and the battlestaff row.
 
 ## Units, rates and how to regenerate
 
-Every per-hour figure is **per login, at 400 ms a tick (9,000 ticks an hour)**, as the brief
-asked. The demo is configured at 300 ms (`NODE_TICKRATE=300`, 12,000 ticks an hour; coins.md
-measured 302 ms), so rates bounded by a login or a world clock are **4/3 higher at 300 ms**. GE
-weekly-flow caps do not scale. Each rate is marked **measured** (a cycle measured in
+Every per-hour figure is **per login, at 400 ms a tick (9,000 ticks an hour)**, the demo's tick:
+public boards and rs/515 (`demo-revision.md`) show 400 ms ticks since 2026-10-22 19:56Z, and
+markets' live probes measured 400.2-400.4 ms. (History: when this scan was written the committed
+`fly.toml` said `NODE_TICKRATE=300` and coins.md had measured 302 ms; at 300 ms, rates bounded by a
+login or a world clock would be 4/3 higher.) GE weekly-flow caps do not scale with the tick. Each rate is marked **measured** (a cycle measured in
 `docs/speedrun/skills/*.md` or `helpers/coins.md`) or **estimated** (derived from content, a
 measured xp rate, or an assumed bank trip of 40 ticks per 27 items).
 
