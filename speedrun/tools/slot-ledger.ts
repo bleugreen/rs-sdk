@@ -22,7 +22,9 @@
 //           <NAME>      a category placeholder (<bars>, <gem ring>), supplied by the module the
 //                       row's source names; handoff.ts never trades it, the walk counts its slots
 //           REASON: drop, trade, swap, consume, hand-in, deposit; `swap` leaves in the same
-//           trade as the row's `in`, so it frees its slots before the need check
+//           trade as the row's `in`, so it frees its slots before the need check; in a hand-off
+//           only swap, trade and drop, a `drop` left on the tile before the trade (runner/handoff.ts),
+//           never offered, so an obj the engine will not trade is always a drop
 //   equip   +NAME (inventory to worn); -NAME (worn to inventory)
 //   needAtStart  free slots the row needs at its start, after its swap outs
 //   source  citations labelled (m), (r) or (i)
