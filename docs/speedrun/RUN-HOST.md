@@ -1801,7 +1801,9 @@ run.ts's `tickBase` (RUN-ORDER.md section 7).
 
 **Fallback, only if the host's `--no-login` flag misses 13:15Z** (main's wording): after handoff's
 verification, log SCORED out cleanly in the tab (confirmed on the page) before starting run.ts, and
-wait at least 10 s after the confirmed logout. Priced as `handoff`'s own logged-in ticks, inferred tens, a start-cost line beside the row, outside
+wait at least 10 s after the confirmed logout; the logout is also confirmed by observing SCORED's
+absence on `/playerpositions` (rs/186 via the host). The flag is the host's rs/601 (`run-gate.ts`
+and its test), merged ahead of rs/598's snapshot; the host says at once if the fallback applies. Priced as `handoff`'s own logged-in ticks, inferred tens, a start-cost line beside the row, outside
 the expected total (RUN-ORDER.md section 7's ladder). A logout not confirmed before run.ts starts
 runs into the login server's 10 s takeover refusal and the gateway's duplicate-session stall. From
 here the run scripts drive the tab through the gateway on 7780 (RUN-ORDER.md, STEP-MANIFEST.md).
