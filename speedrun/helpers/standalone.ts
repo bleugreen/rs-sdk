@@ -511,6 +511,8 @@ export class CueGate {
     private readonly watchers: { dir: string; watcher: CueWatcher }[] = [];
     /** The login folder's watcher (loginDir), until the login settles. */
     private loginWatcher: CueWatcher | null = null;
+    /** The stop scope's watcher, re-read before an open from the login folder counts (stopClosedNow). */
+    private stopWatcher: CueWatcher | null = null;
     private readonly wakes = new Set<() => void>();
     private early = false;
 
@@ -523,14 +525,27 @@ export class CueGate {
         const same = o.loginDir === undefined && !!o.login && !!o.stop && scopeText(o.login) === scopeText(o.stop);
         this.loginScope = o.login ? new ScopeSessions(o.login, o.since) : null;
         this.stopScope = same ? this.loginScope : o.stop ? new ScopeSessions(o.stop, o.since) : null;
-        for (const s of new Set([this.loginScope, this.stopScope])) {
+        // The role folder first: a login folder's open already on disk is read only after it (onCue).
+        const order = o.loginDir !== undefined ? [this.stopScope, this.loginScope] : [this.loginScope, this.stopScope];
+        for (const s of new Set(order)) {
             if (!s) continue;
             const own = s === this.loginScope && o.loginDir !== undefined;
             const dir = own ? o.loginDir! : o.dir;
             const watcher = new CueWatcher(dir, s.scope, cue => this.onCue(s, cue), { log, pollMs: o.pollMs ?? 100, onOther: cue => this.changed(s, s.other(cue), cue) });
             this.watchers.push({ dir, watcher });
             if (own) this.loginWatcher = watcher;
+            if (s === this.stopScope) this.stopWatcher = watcher;
         }
+    }
+
+    /**
+     * The stop scope's close, re-reading the role folder now. With a login folder the two folders' writes
+     * have no common order, so a close already written there must win over a login about to happen
+     * however the watchers' polls fall; the launcher asks just before each login.
+     */
+    stopClosedNow(): ScopeClosed | null {
+        this.stopWatcher?.check();
+        return this.stopped;
     }
 
     /** The folders read now, one entry per watcher. */
@@ -544,13 +559,15 @@ export class CueGate {
             this.early = true;
             return;
         }
+        // An open from the login folder counts only after the role folder is read: its close wins.
+        if (s === this.loginScope && this.loginWatcher && this.login === 'waiting') this.stopWatcher?.check();
         this.changed(s, s.own(cue), cue);
     }
 
     private changed(s: ScopeSessions, change: 'open' | 'stood-down' | 'closed' | null, cue: Cue): void {
         if (!change) return;
         if (s === this.loginScope && this.login === 'waiting') {
-            if (change === 'open') this.login = { result: 'open', cue };
+            if (change === 'open') this.login = this.stopped ? { result: 'stop', closed: this.stopped } : { result: 'open', cue };
             if (change === 'closed') this.login = { result: 'stop', closed: s.closed! };
         }
         if (s === this.stopScope) {
@@ -605,6 +622,7 @@ export class CueGate {
         for (const w of this.watchers) w.watcher.close();
         this.watchers.length = 0;
         this.loginWatcher = null;
+        this.stopWatcher = null;
     }
 }
 
@@ -1124,6 +1142,25 @@ class AccountRun implements Stoppable {
     }
 
     /**
+     * Just before a login: for an account with a login folder, its role folder is re-read now (CueGate
+     * stopClosedNow), so a stop scope's close already written wins over the login whatever the polls'
+     * timing; one never logged in stays out for good, and a relogin waits for the stop it is part of.
+     * One folder needs no re-read: cue.json orders its own writes.
+     */
+    private loginBlocked(): boolean {
+        if (this.halted) return true;
+        if (!this.entry.loginOn?.cueDir || !this.gate) return false;
+        const closed = this.gate.stopClosedNow();
+        if (!closed) return false;
+        if (this.retired === null && !this.inRun) {
+            const why = closedText(closed);
+            this.L.log(`[launcher] ${this.entry.account}: ${why} before its login: it never logs in`);
+            this.neverLogsIn(why, 'stopped');
+        }
+        return true;
+    }
+
+    /**
      * stopOn's scope stopped a session without closing (a program segment: the step opens another), or
      * opened one: the account stays in the world either way; its role stands down on the stop itself.
      */
@@ -1283,7 +1320,7 @@ class AccountRun implements Stoppable {
         await this.waitForEarlierCopy();
         if (this.halted) return;
         await this.L.takeLogin();
-        if (this.halted) return;
+        if (this.loginBlocked()) return;
         this.state = 'logging-in';
         this.logins++;
         this.L.log(`[launcher] ${this.entry.account}: logging in to ${this.botEnv.SERVER} (direct)`);
@@ -1296,7 +1333,7 @@ class AccountRun implements Stoppable {
             await this.waitForEarlierCopy();
             if (this.halted) return { ended: Promise.resolve({ code: null }) };
             await this.L.takeLogin();
-            if (this.halted) return { ended: Promise.resolve({ code: null }) };
+            if (this.loginBlocked()) return { ended: Promise.resolve({ code: null }) };
             this.state = 'logging-in';
             this.logins++;
             this.L.log(`[launcher] ${this.entry.account}: logging in to ${this.botEnv.SERVER}`);
