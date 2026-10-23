@@ -627,6 +627,16 @@ another computer and put an xmessage dialog on display :10; the gate tab never o
 browser login would have failed on run day. Fixed on both machines, after which the run host's gate
 re-run passed (scene t2, locs 116, at spawn).
 
+**The recorded display must not blank, permanent, both machines, every install** (the host, found
+11:44Z, via rs/158; fold-in 37). `DISPLAY=:10 xset q` shows `timeout: 0` under Screen Saver and DPMS
+disabled, and a one-frame grab of :10 is not black: `ffmpeg -f x11grab -video_size 1920x1080 -i
+:10.0+0,0 -frames:v 1 /tmp/f.png` writes more than a few KB (a solid-black 1920x1080 PNG is about
+6 KB). Fix: `export DISPLAY=:10; xset s off; xset s noblank; xset -dpms` (an `export`, since
+`DISPLAY=:10 a; b; c` sets it for the first command only); the fix is also installed as an XFCE
+autostart, `~/.config/autostart/rs-noblank.desktop`, on both machines. Why: on 2026-10-23 the run
+host's :10 screensaver blanked at 600 s, the recording captured black after 10 idle minutes, and
+`handoff`'s scored-title live frame failed (difference 55.2); after the fix it passed at 3.6.
+
 **The cannon serve file, before SCORED logs in** (rs/41's wording via rs/158, main 04:15 PDT; fold-in 36).
 Before SCORED logs in, <run dir>/cannon-serve.json holds exactly host's bytes, sha256 f0e57ad6107d2621d0c12306a5cec6ee70fe73db1a2c39e5d2a28cbfca96a7c6 (the JSON plus one trailing newline); run.ts's preflight gate "cannon serve" (run.ts:286-294) must read "H11, H23 served as the ledger rows want"; a missing file or any drift is a refusal.
 
@@ -1780,7 +1790,8 @@ once right after its single login (ENV set to the throwaway's env path) and send
 rs/600 and the host: **pending**, like the ladder note's proofs.
 
 **Before run.ts starts: `handoff` logged nobody in** (the host's line via rs/158; rs/601's `handoff
---no-login`; the key names rs/601's, re-checked at the commit main names, the code winning). The
+--no-login`; the key is exactly `loggedIn`, the host confirmed, re-checked at the commit main names,
+the code winning). The
 `handoff.json` of this gate pass, in the gate directory `handoff` printed (not the newest
 `~/rs-run/gate-*` by glob: UTC names sort, but a stale rehearsal directory could win), must show
 both `"ok": true` and `"loggedIn": false`. On the chosen machine:
