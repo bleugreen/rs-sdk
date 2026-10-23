@@ -418,6 +418,95 @@ Ashburn. The dominant offset is +1 tick at 78-79% from both places. Section 8 us
 **An in-page tick program should send on the frame's arrival, not on its own clock**: from Ashburn
 that lands 15 of 15 (sweep at +0) where the free-running clock lands 23%.
 
+### Decode cap: how many actions one tick applies (22 October)
+
+The engine reads a player's buffered input once per tick and stops at the first category to
+reach its limit: `userLimit < 5`, `clientLimit < 20`, `restrictedLimit < 2`
+(server/engine/src/engine/entity/NetworkPlayer.ts:69, limits in
+server/engine/src/network/game/client/ClientGameProtCategory.ts:5-8). Whatever is left stays in
+the socket buffer and is read at the start of the next tick. Only a USER_EVENT whose handler
+returns true counts as one; a failed one counts toward the client limit (NetworkPlayer.ts:141-147).
+A packet with no decoder, such as NO_TIMEOUT, counts toward nothing (NetworkPlayer.ts:136).
+
+`docs/speedrun/scripts/decode-cap-probe.ts` measures the cap instead of reading it. It logs in on
+the lite client's direct game socket (no gateway relay). On the frame of a settled tick it writes
+a whole burst as one websocket message, so the server reads every packet of it at the same input
+read. Then it reads the inventory frames tick by tick:
+
+- **user N**: N chained INV_BUTTOND drags (opcode 253, USER_EVENT per
+  server/engine/src/network/game/client/model/InvButtonD.ts:5) of one tracer item, an item held
+  once, slot p to p+1 to p+2 and so on. `[inv_buttond,inventory]` runs inline
+  (InvButtonDHandler.ts:49-52, then `inv_movetoslot` in player/scripts/inventory.rs2), so the
+  tracer's slot in a tick's frame is the number of drags applied by then.
+- **client K**: a drag, K EVENT_CAMERA_POSITION (opcode 193, CLIENT_EVENT, only recorded by
+  InputTracking), then a second drag. The second drag shares the first one's tick only if the
+  client limit was not reached first.
+- **failed K**: a drag, K drags out of an empty slot (InvButtonDHandler.ts:35-38 returns false),
+  then a second drag.
+- **ifbutton N** (lab only): N clicks of Charge, IF_BUTTON 1193 (opcode 86, USER_EVENT,
+  model/IfButton.ts:5), the click rs/466 sent. Casts are counted from the drop in the blood-rune
+  stack. `[if_button,magic:charge]` casts inline: `settimer`, runes and xp in one script, with
+  no queue (skill_magic/scripts/spells/charge.rs2:1-26).
+
+There were three repeats of each, and every one is in
+`docs/speedrun/research/data/decode-cap-20261022/` with the account name redacted. A cell gives
+the actions applied in the landing tick / the next tick / later.
+
+| Class | N (or K) | Lab (fedora, T = 300) | Demo (fedora, direct, T = 400) |
+| --- | --- | --- | --- |
+| user (drag) | 5 | 5 / 0 / 0 (3 of 3) | 5 / 0 / 0 (3 of 3) |
+| user (drag) | 6 | 5 / 1 / 0 (3 of 3) | 5 / 1 / 0 (3 of 3) |
+| user (drag) | 8 | 5 / 3 / 0 (3 of 3) | 5 / 3 / 0 (3 of 3) |
+| ifbutton (Charge) | 5 | 5 / 0 / 0 (3 of 3) | not run (no Charge on a throwaway) |
+| ifbutton (Charge) | 6 | 5 / 1 / 0 (3 of 3) | not run |
+| ifbutton (Charge) | 8 | 5 / 3 / 0 (3 of 3) | not run |
+| client: drag + K camera + drag | 5, 6, 8, 19 | 2 / 0 / 0 (3 of 3 each) | 2 / 0 / 0 (3 of 3 each) |
+| client: drag + K camera + drag | 20, 21 | 1 / 1 / 0 (3 of 3 each) | 1 / 1 / 0 (3 of 3 each) |
+| failed: drag + K failed drags + drag | 5, 8 | 2 / 0 / 0 (3 of 3 each) | 2 / 0 / 0 (3 of 3 each) |
+
+In the lab every burst went out 0.1-0.9 ms after the frame and landed on the next tick. The lab
+reproduces the fork's rule exactly, which validates the method. Charge behaves like the drag, so on
+our engine nothing in its script holds it to one cast per tick.
+
+The demo run was one session, 23:26:41-23:28:21Z on 22 October, from fedora (a home address) on
+the direct game socket. The page token was mvjz3zys before and after (no restart). Tick
+intervals ran p10 289, p50 400, p90 516 ms over 236 ticks. Every burst went out as one write
+0.2-0.8 ms after its frame (one at 5.9 ms). The account's inventory was empty, so the probe's
+`--bank` mode borrowed one item from its own bank at a Varrock west booth and deposited it back
+before a confirmed logout. Five of 33 repeats first showed on the second tick after the send
+instead of the first. That is path latency (the whole burst arrived after that tick's input
+read); the split within the landing tick was the same as in the others.
+
+**Rule, measured on the demo engine as of 22 October 23:27Z: at most 5 successful user events per
+tick and at most 20 client events (failed user events included). The rest carry over to the next
+tick, in order. Nothing is dropped.** The cap is the fork's, unchanged by the engine change of
+19:36Z.
+
+**On the demo, through the run's own path.** rs/396 re-ran rs/287's Father Aereck driver
+(`speedrun/lab/quests/aereck-burst.ts <acct> --launch --client=browser`) at 20:52:46-20:54:43Z on
+22 October. That was after the 19:36Z engine change, at T = 400, with demo token mvjz3zys. It ran on
+the browser client: headless Chrome on the run host through a loopback gateway.ts and proxy.ts,
+with served bundle client.js md5 9e1fe24a. Dialogue continue is RESUME_PAUSEBUTTON, a USER_EVENT
+(model/ResumePauseButton.ts:5), and the driver sends a burst's k continues in one volley
+(speedrun/lib/dialogue.ts:221). **All 24 bursts landed in their sending tick, 8 of them five-page
+bursts**, and every burst talk took 8.00 ticks, the floor. A deferred fifth page would read 9.00
+(rs/185's analysis, cairn://p/rs/185/1/coordinator/task/burst-cap/artifact). So the demo engine
+decoded five user events in one tick on the browser path. That is the measurement main's pricing
+ruling of 5 rests on.
+
+The browser row is a dialogue burst, not a drag burst. A drag-level browser row would need an
+in-page program that sends N drags on one tick. BotAction has no drag action, and
+`window.rsPrograms` starts only registered programs (server/webclient/src/bot/programs/host.ts
+`controls`), so that needs a webclient change. The in-page runtime also refuses a sixth send in a
+tick on its own (`USER_EVENTS_PER_TICK = 5`, server/webclient/src/bot/programs/runtime.ts), so a
+program can't probe past 5 there anyway.
+
+rs/466's Charge result (5 clicks via the gateway relay, 4 casts in the tick and the 5th 'a few
+ticks later') is not the decode cap. The demo applies 5 drags in one tick, and on the lab Charge
+behaves exactly like the drag. Of rs/83's candidates, (a), a lower cap, is out on the demo, and
+(c), a script queue, is out on our engine. That leaves (b), the relay delivering the five clicks
+across a tick boundary, or a demo-side change specific to spells, which a throwaway can't test.
+
 ## 7. The browser tab's sockets, and the route the run's input must take
 
 On the demo, the browser webclient opens two sockets:
@@ -965,6 +1054,10 @@ machine at its current address, and a new address is a fresh draw that needs a m
 before it is trusted. Run-host rows before 23:11 UTC in sections 7, 8 and 10 were measured on the
 held address, so their catch-up rates overstate the server's own overruns.
 
+Since rs/474 a single machine can tell the two apart: every gate read sets each of its late and
+catch-up ticks against the engine's own interval for that tick, from the world feed read beside the
+probe, and labels it the server's or the path's (`pathCheck`, section 10, 'Gate history timer').
+
 ### 22 October: a demo-side loss at 300 ms, operator restarts, then 400 ms ticks
 
 Every gate row in sections 9 and 10 above is at T = 300 ms. The demo's tick length changed at its
@@ -1200,7 +1293,8 @@ in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scr
 
   The account is a throwaway whose name and password exist only in the clone's `bots/gate/bot.env`
   (mode 600, on the host). The wrapper redacts the name and password from everything it keeps. A read takes
-  about 4 minutes: the pre-login check's 60 s world-feed read, then the gate. If it hangs, systemd
+  about 4 minutes: the pre-login check's 60 s world-feed read, then the gate, with the feed left
+  open beside it (see `pathCheck` below). If it hangs, systemd
   kills the unit's whole control group at 345 s (the wrapper's budget holds 75 s for the feed
   read on top of the probe's unchanged 200-240 s), so nothing is left running.
 - **Where the history lives.** Each firing writes one file, `~/gate-history/<UTC timestamp>.json`.
@@ -1249,7 +1343,43 @@ in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scr
   known engine change. The 20:08Z restart that day is the first one seen with the md5
   unchanged (`353760e9…` before and after). The published `server/Dockerfile` would have rebuilt
   the bundle, so the demo's engine is deployed some other way, and an unchanged md5 across a
-  restart says nothing about the engine. A skip writes `status: skip` and its reason in `note`. A broken read (`error`, `timeout`,
+  restart says nothing about the engine.
+
+  The feed isn't closed after those 60 s. It stays open beside the probe, logging every tick until
+  the probe exits (it pings every 60 s, inside the engine's 2-minute idle expiry), so the read takes
+  no longer. Then `pathCheck`, at the top level, says for each late or short tick of the probe
+  minute whether the server or the network path produced it. It is report-only: the verdict and
+  (a)-(d) don't change, and it's null whenever it can't be made. The probe prints its end time as
+  its last tick arrives, which puts its `tickArrivalsMs` on the feed log's clock, and each probe
+  frame then votes for the server tick it carries. `offsetMs` is the median of probe arrival minus
+  feed arrival for the same tick, `offsetSpreadMs` its median absolute deviation, `probeFirstTick`
+  the server tick of the probe's first frame, and `ticksMatched` how many probe frames had a feed
+  copy. With T the configured tick length, every late probe interval (over 7/6 T) and every
+  catch-up (under T/2 right after a late one) is listed in `anomalies` as {k, probeMs, serverMs,
+  heldMs, label} and counted:
+  - `serverSlow` and `serverCatchUp`: the engine's own `ms` for the same ticks shows the same
+    pattern, so the server produced it.
+  - `pathHeld`: the engine's `ms` stayed within 7/6 T, so the delay arose after the engine stamped
+    the tick, and the frame was held, then released late or glued to the next. `heldMs` says on
+    which connection. Hundreds of ms means the probe's frame arrived that much later than the
+    feed's copy of the same tick: the probe's connection alone was held. Near 0 means the feed's
+    copy was late as well: held for the whole address (on 21 October two accounts on the held
+    address received each tick together), or delayed in the rest of the server's tick after the
+    feed cycle, which the feed's `ms` can't see.
+  - `unmatched`: no feed frame for that tick.
+
+  A catch-up's late interval also counts on its own, so one server overrun reads 1 slow and 1
+  catch-up, and one frame glued to the next reads 2 path-held. The journal line carries the counts
+  as `path=slow:N,catchup:N,held:N,unmatched:N,offset:Xms,spread:Xms,matched:N`. The offset
+  includes the few ms between the probe's last frame and its printed end time, so read the spread
+  and the labels, not the offset's sign. A distant reader sees many path-held ticks: read from
+  California and from an off-site Linux machine on 22 October, the feed's own arrival gaps differed
+  from its `ms` by -26 to +22 ms (p10 to p90), with tails near 100 ms either way. The Ashburn
+  machines' first records set the baseline there. The feed's ticks are kept under `feedLog`, after
+  `gate`, as {k0, t0EpochMs, k, ms, at} (ticks counted from k0, the engine's `ms`, arrivals in ms
+  after t0): about 20-40 KB for a read, enough to redo the alignment from the record alone.
+
+  A skip writes `status: skip` and its reason in `note`. A broken read (`error`, `timeout`,
   `not-probed`) puts its first error line in `note` and the last 40 lines of the probe's output in
   `outputTail`, with the account name and password redacted. The journal keeps one line per
   firing: `journalctl --user -t rs-gate-read`. Use `-t`, not `-u`: `-u` can miss the summary line,
