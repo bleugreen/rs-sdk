@@ -235,6 +235,12 @@ export function journalProbe(key: QuestKey): (session: { sdk: JournalSdk }) => P
     return async session => (await readQuestStage(session.sdk, key)).journal;
 }
 
+/** The journal probe `name` registers when it is journalProbeName of a known quest, else null. */
+export function journalProbeNamed(name: string): ReturnType<typeof journalProbe> | null {
+    const key = name.startsWith('journal:') ? name.slice('journal:'.length) : null;
+    return key !== null && Object.hasOwn(QUESTS, key) ? journalProbe(key as QuestKey) : null;
+}
+
 /** Probes for every quest in `keys`, keyed by journalProbeName, for runResumable's `probes`. */
 export function journalProbes(keys: readonly QuestKey[]): Record<string, (session: { sdk: JournalSdk }) => Promise<QuestJournalState | null>> {
     return Object.fromEntries(keys.map(k => [journalProbeName(k), journalProbe(k)]));

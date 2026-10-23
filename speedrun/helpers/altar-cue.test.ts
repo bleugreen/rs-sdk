@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -384,5 +384,100 @@ describe('files', () => {
 
     test('the default run directory of this checkout is ignored', () => {
         expect(() => assertUntracked(join(import.meta.dir, '..', '..', 'run-machine', 'rc-cue'))).not.toThrow();
+    });
+});
+
+
+describe('deterministic cue writer resume', () => {
+    const scope: CueScope = { step: 'H4', family: 'mule' };
+    const beacons = [{ tick: 1, ms: 1 }];
+    const fresh = () => mkdtempSync(join(tmpdir(), 'cue-resume-'));
+    const file = (dir: string) => join(dir, 'cue.json');
+
+    test('explicit same identity resumes sequence, turns and schedule without storing receiver name', () => {
+        const dir = fresh();
+        const original = new CueWriter(dir, 'private_receiver', scope, 'run:H4');
+        original.write({ beacons, turns: [{ giver: 'helper', T: 4 }], schedule: 'robust', open: 7 });
+        original.stop(beacons);
+        const resumed = new CueWriter(dir, 'Private Receiver', scope, 'run:H4');
+        expect(resumed.current?.seq).toBe(2);
+        expect(resumed.addTurn({ giver: 'next_helper', T: 8 }, beacons)).toMatchObject({
+            seq: 3, schedule: 'robust', open: 7,
+            turns: [{ giver: 'helper', T: 4 }, { giver: 'next_helper', T: 8 }]
+        });
+        expect(readCue(dir)?.stop).toBeUndefined();
+        expect(readFileSync(file(dir), 'utf8')).not.toContain('private_receiver');
+        expect(readFileSync(file(dir), 'utf8')).not.toContain('Private Receiver');
+    });
+
+    test('a watcher observes a stable-session nonfinal stop and rearm at the next sequence', async () => {
+        const dir = fresh();
+        const seen: Cue[] = [];
+        const watcher = new CueWatcher(dir, scope, c => seen.push(c), { pollMs: 5 });
+        try {
+            const w = new CueWriter(dir, 'receiver', scope, 'run:H4');
+            w.write({ beacons, turns: [] });
+            await Bun.sleep(30);
+            w.stop(beacons);
+            await Bun.sleep(30);
+            new CueWriter(dir, 'receiver', scope, 'run:H4').write({ beacons, turns: [] });
+            await Bun.sleep(30);
+            expect(seen.map(c => [c.seq, !!c.stop])).toEqual([[1, false], [2, true], [3, false]]);
+        } finally { watcher.close(); }
+    });
+
+    test('same-session wrong scope or receiver refuses without overwriting', () => {
+        const dir = fresh();
+        new CueWriter(dir, 'receiver', scope, 'run:H4').write({ beacons, turns: [] });
+        const before = readFileSync(file(dir), 'utf8');
+        for (const [receiver, other] of [
+            ['other', scope], ['receiver', { step: 'H4k', family: 'mule' }],
+            ['receiver', { step: 'H4', family: 'bone' }]
+        ] as [string, CueScope][]) {
+            expect(() => new CueWriter(dir, receiver, other, 'run:H4')).toThrow('identity mismatch');
+            expect(readFileSync(file(dir), 'utf8')).toBe(before);
+        }
+    });
+
+    test('malformed or unsafe persisted sequence refuses rather than resetting', () => {
+        const dir = fresh();
+        const valid = new CueWriter(dir, 'receiver', scope, 'run:H4').write({ beacons, turns: [] });
+        for (const seq of [undefined, null, 0, -1, 1.5, '2', NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+            writeFileSync(file(dir), JSON.stringify({ ...valid, seq }));
+            const before = readFileSync(file(dir), 'utf8');
+            expect(() => new CueWriter(dir, 'receiver', scope, 'run:H4')).toThrow('invalid persisted');
+            expect(readFileSync(file(dir), 'utf8')).toBe(before);
+        }
+        writeFileSync(file(dir), '{');
+        expect(() => new CueWriter(dir, 'receiver', scope, 'run:H4')).toThrow('malformed persisted');
+    });
+
+    test('new session never inherits foreign turns or schedule', () => {
+        const dir = fresh();
+        new CueWriter(dir, 'first', scope, 'old').write({
+            beacons, turns: [{ giver: 'old_helper', T: 7 }], schedule: 'robust', open: 9
+        });
+        const next = new CueWriter(dir, 'second', { step: 'H4k', family: 'mule' }, 'new');
+        expect(next.current).toBeNull();
+        expect(next.write({ beacons, turns: [] })).toMatchObject({ seq: 1, turns: [], schedule: 'tuned', open: 5 });
+    });
+
+    test('final stops stay terminal, including after reconstruction and repeated cleanup stops', () => {
+        const dir = fresh();
+        const w = new CueWriter(dir, 'receiver', scope, 'run:H4');
+        w.stop(beacons, { final: true });
+        expect(() => new CueWriter(dir, 'receiver', scope, 'run:H4')).toThrow('final session');
+        expect(() => w.write({ beacons, turns: [] })).toThrow('final session');
+        expect(() => w.write({ beacons, turns: [], stop: true, final: false })).toThrow('final session');
+        expect(w.stop(beacons)).toMatchObject({ seq: 2, stop: true, final: true });
+    });
+
+    test('sequence exhaustion cannot write an unsafe value', () => {
+        const dir = fresh();
+        const valid = new CueWriter(dir, 'receiver', scope, 'run:H4').write({ beacons, turns: [] });
+        writeFileSync(file(dir), JSON.stringify({ ...valid, seq: Number.MAX_SAFE_INTEGER }));
+        const w = new CueWriter(dir, 'receiver', scope, 'run:H4');
+        expect(() => w.write({ beacons, turns: [] })).toThrow('sequence exhausted');
+        expect(readCue(dir)?.seq).toBe(Number.MAX_SAFE_INTEGER);
     });
 });

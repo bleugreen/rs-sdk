@@ -74,8 +74,10 @@ describe('a group of bone givers takes turns (S07 b01-b04)', () => {
             const statuses = [bare('cairn_b02', 'waiting', 300), bare('cairn_b01', 'waiting', 100), bare('cairn_b03', 'restock', null)];
             expect(boneServer(statuses, GROUP, now)).toBe('cairn_b01');
             expect(groupLoadsDone(statuses, GROUP)).toBe(0);
-            // With a session asked for, a status in no session counts for nothing.
+            // With a session asked for, a status in no session or another counts for nothing.
             expect(boneServer(statuses, GROUP, now, 's1')).toBeUndefined();
+            expect(boneServer(statuses.map(x => ({ ...x, session: 'old' })), GROUP, now, 's1')).toBeUndefined();
+            expect(groupLoadsDone(statuses.map(x => ({ ...x, trades: 41 })), GROUP, 's1')).toBe(0);
         });
 
         test('the last load goes to the final giver alone, even when another has waited longer', () => {
@@ -524,5 +526,84 @@ describe('S18 side tile: never across a wall edge from the scored account', () =
         expect(sideTiles(scored, scored, [{ x: 2671, z: 3300 }, { x: 2672, z: 3301 }, { x: 2672, z: 3299 }], ardougne)).toEqual([]);
         const boxed: FlagReader = (x, z, mask) => x === scored.x && z === scored.z && (mask & (2 | 8 | 32 | 128)) !== 0;
         expect(sideTiles(scored, scored, [], boxed)).toEqual([]);
+    });
+});
+
+describe('the cue session binds the group count (rs/41 review)', () => {
+    const G = ['cairn_b01', 'cairn_b02', 'cairn_b03', 'cairn_b04'];
+    const RUNES = [
+        { item: 'Law rune', count: 1 },
+        { item: 'Air rune', count: 5 }
+    ];
+    const status = (account: string, o: Record<string, unknown>) => ({ v: 1, account, phase: 'waiting', held: 23, n: 23, trades: 0, bounces: 0, tile: null, readyAt: Date.now() - 9_000, session: null, final: false, loads: 42, ms: Date.now(), ...o });
+    const put = (dir: string, file: string, s: Record<string, unknown>) => writeFileSync(join(dir, file), JSON.stringify(s));
+
+    test('a stale file with no session or another one (41 trades, the final, off or waiting) adds no trades, no final and is never the server', () => {
+        for (const stale of [{ session: null }, { session: 's-old' }]) {
+            for (const phase of ['off', 'waiting']) {
+                const dir = mkdtempSync(join(tmpdir(), 'bone-stale-'));
+                put(dir, 'bones-cairn_b02.json', status('cairn_b02', { ...stale, phase, trades: 41, final: true, readyAt: phase === 'waiting' ? 1 : null }));
+                put(dir, 'bones-cairn_b01.json', status('cairn_b01', { session: 's-now', readyAt: Date.now() - 5_000 }));
+                put(dir, 'bones-cairn_b04.json', status('cairn_b04', { session: 's-now', final: true, readyAt: Date.now() - 4_000 }));
+                const all = readBoneStatuses(dir);
+                expect(groupLoadsDone(all, G, 's-now')).toBe(0);
+                expect(boneServer(all, G, Date.now(), 's-now')).toBe('cairn_b01');
+                // Unscoped, the stale 41 would make the next load the last, and a waiting stale final could take it.
+                expect(groupLoadsDone(all, G)).toBe(41);
+                if (phase === 'waiting') expect(boneServer(all, G, Date.now())).toBe('cairn_b02');
+            }
+        }
+    });
+
+    test('a status counts only from its own account file: a renamed or copied file claiming another account is no phantom and no double count', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'bone-phantom-'));
+        put(dir, 'bones-cairn_b02.json', status('cairn_b02', { session: 's1', trades: 2 }));
+        put(dir, 'bones-cairn_b02-old.json', status('cairn_b02', { session: 's1', trades: 9, readyAt: 1 }));
+        put(dir, 'bones-cairn_b05.json', status('cairn_b02', { session: 's1', trades: 7, readyAt: 1 }));
+        put(dir, 'bones-cairn_b03.json', status('cairn_b03', { session: 's1', trades: 1 }));
+        const all = readBoneStatuses(dir);
+        expect(all.map(s => [s.account, s.trades]).sort()).toEqual([['cairn_b02', 2], ['cairn_b03', 1]]);
+        expect(groupLoadsDone(all, G, 's1')).toBe(3);
+    });
+
+    test('startup: givers publish before any cue, count only their own trades and pick no server; on reading the cue they republish in its session at once, and the receiver finds the oldest ready', async () => {
+        const { awaitBoneServer } = await import('./bone-giver');
+        const { CueWriter, readCue } = await import('./altar-cue');
+        const dir = mkdtempSync(join(tmpdir(), 'bone-startup-'));
+        // b02 is not running today: its file is an old run's, before sessions, 41 trades and the final.
+        put(dir, 'bones-cairn_b02.json', status('cairn_b02', { trades: 41, final: true, readyAt: 1 }));
+        const bones = Array.from({ length: 23 }, (_, i) => ({ slot: i, id: 536, name: 'Dragon bones', count: 1, optionsWithIndex: [] }));
+        const state = baseState({ inventory: bones });
+        const giver = (account: string) =>
+            new BoneGiver({
+                account,
+                options: { group: G, trades: 42, cueDir: dir, scope: { step: 'S07', family: 'bone' }, ...(account === 'cairn_b04' ? { finalExtras: RUNES } : {}) },
+                sdk: { getState: () => state },
+                log: () => {}
+            } as unknown as RoleContext);
+        const live = ['cairn_b01', 'cairn_b03', 'cairn_b04'].map(giver);
+        const priv = (g: BoneGiver) => g as unknown as { setPhase(p: string): void; loadsDone(): number; server(): string | undefined };
+        for (const g of live) {
+            priv(g).setPhase('waiting');
+            await Bun.sleep(3);
+        }
+        expect(readBoneStatuses(dir).filter(s => s.account !== 'cairn_b02').every(s => s.session === null)).toBe(true);
+        for (const g of live) {
+            expect(priv(g).loadsDone()).toBe(0);
+            expect(priv(g).server()).toBeUndefined();
+        }
+        const w = new CueWriter(dir, 'scored', { step: 'S07', family: 'bone' });
+        w.write({ beacons: [{ tick: 1, ms: Date.now() }], turns: [] });
+        const cue = readCue(dir)!;
+        // Before the givers read it, nothing is in the cue's session: the receiver waits.
+        expect(boneServer(readBoneStatuses(dir), G, Date.now(), cue.session)).toBeUndefined();
+        for (const g of live) g.onCue(cue);
+        const all = readBoneStatuses(dir);
+        expect(all.filter(s => s.session === cue.session).map(s => s.account).sort()).toEqual(['cairn_b01', 'cairn_b03', 'cairn_b04']);
+        expect(groupLoadsDone(all, G, cue.session)).toBe(0);
+        expect(priv(live[0]!).loadsDone()).toBe(0);
+        expect(priv(live[0]!).server()).toBe('cairn_b01');
+        const sdk = { getState: () => ({ tick: 7 }) } as never;
+        expect((await awaitBoneServer(sdk, dir, G, 5, cue.session)).server).toBe('cairn_b01');
     });
 });

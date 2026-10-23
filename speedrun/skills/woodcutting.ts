@@ -347,6 +347,12 @@ export interface WoodcuttingOptions {
     boneServerWait?: number | string;
     /** With a giver group: the cue directory (default altar-cue.ts cueDir(): RC_CUE_DIR or run-machine/rc-cue). */
     cueDir?: string;
+    /**
+     * With a giver group: the S07 bone cue's session, the same in every process of one attempt, so a
+     * resumed S07 continues the session the givers count their loads in (CueWriter adopts the persisted
+     * cue only when it is this session, scope and receiver). Default: a new session per process.
+     */
+    boneSession?: string;
     boneLoad?: number | string;
     boneLastLoad?: number | string;
     /** The last band's Prayer postcondition with `bury` (default 94; 0 checks nothing). */
@@ -392,7 +398,7 @@ interface Resolved {
     technique: GatedTechnique;
     bury: string | true | null;
     bonesRe: RegExp;
-    bones: { giver: string; load: number; lastLoad: number | null } | { group: string[]; serverWait: number; cueDir: string; load: number; lastLoad: number | null } | null;
+    bones: { giver: string; load: number; lastLoad: number | null } | { group: string[]; serverWait: number; cueDir: string; session?: string; load: number; lastLoad: number | null } | null;
     prayerTo: number;
     plainTicksPerRoll: number;
     route: RouteName;
@@ -454,6 +460,8 @@ function resolve(opts: WoodcuttingOptions): Resolved {
     const lastRaw = opts.bones?.lastLoad ?? opts.boneLastLoad;
     const lastLoad = lastRaw === undefined ? null : numberOpt(`last load (an integer from 1 to the load, ${load})`, lastRaw, n => Number.isInteger(n) && n >= 1 && n <= load, load);
     if (lastLoad !== null && !giver && !group) throw new Error('woodcutting: a last load without a bone giver');
+    if (opts.boneSession !== undefined && (typeof opts.boneSession !== 'string' || !opts.boneSession.trim())) throw new Error(`woodcutting: boneSession must be a nonempty string, got ${JSON.stringify(opts.boneSession)}`);
+    if (opts.boneSession !== undefined && !group) throw new Error('woodcutting: boneSession names the S07 cue a giver group reads, and there is no group');
     const route = opts.route ?? 'taverley';
     if (!Object.hasOwn(ROUTES, route)) throw new Error(`woodcutting: route must be ${Object.keys(ROUTES).join(' or ')}, got ${JSON.stringify(route)}`);
     const sitesIn = typeof opts.sites === 'string' ? (JSON.parse(opts.sites) as Partial<Sites>) : (opts.sites ?? {});
@@ -473,7 +481,7 @@ function resolve(opts: WoodcuttingOptions): Resolved {
         technique,
         bury,
         bonesRe: new RegExp(bury === null || bury === true ? DEFAULT_BONES : bury, 'i'),
-        bones: giver ? { giver: String(giver), load, lastLoad } : group ? { group, serverWait, cueDir: opts.cueDir ?? defaultCueDir(), load, lastLoad } : null,
+        bones: giver ? { giver: String(giver), load, lastLoad } : group ? { group, serverWait, cueDir: opts.cueDir ?? defaultCueDir(), ...(opts.boneSession !== undefined ? { session: opts.boneSession } : {}), load, lastLoad } : null,
         prayerTo: bury === null ? 0 : numberOpt('prayerTo', opts.prayerTo, n => Number.isInteger(n) && n >= 0 && n <= 99, PRAYER_TO),
         plainTicksPerRoll: numberOpt('plainTicksPerRoll', opts.plainTicksPerRoll, n => n > 0, CYCLE.plain),
         route: route as RouteName,
@@ -884,18 +892,20 @@ function walkStep(o: Resolved, name: string, goal: Tile, needed: (s: BotWorldSta
 
 /**
  * S07's bone cue for a giver group: one CueWriter, so one session, for the whole step. It names the
- * scored account (by hash) to the givers, which ignore every cue not scoped S07_BONE_CUE.
+ * scored account (by hash) to the givers, which ignore every cue not scoped S07_BONE_CUE. With
+ * `session` a resumed process carries on that session (its seq and open), so the givers' load count
+ * in it holds; without, each process starts its own.
  */
 export class BoneCue {
     private writer: CueWriter | null = null;
-    constructor(readonly dir: string) {}
+    constructor(readonly dir: string, private readonly sessionId?: string) {}
 
     private static beacons(s: BotWorldState | null): Beacon[] {
         return [{ tick: s?.tick ?? 0, ms: Date.now() }];
     }
 
     write(s: BotWorldState | null, receiver: string): void {
-        this.writer ??= new CueWriter(this.dir, receiver, S07_BONE_CUE);
+        this.writer ??= new CueWriter(this.dir, receiver, S07_BONE_CUE, this.sessionId);
         this.writer.write({ beacons: BoneCue.beacons(s), turns: [] });
     }
 
@@ -981,7 +991,8 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
             let partner: string | null = giver && 'giver' in giver ? giver.giver : null;
             let wait: ServerWait | null = null;
             if (group) {
-                wait = await awaitBoneServer(sdk, group.cueDir, group.group, group.serverWait);
+                // The cue's session, as the givers count theirs: a status file another run left counts for nothing.
+                wait = await awaitBoneServer(sdk, group.cueDir, group.group, group.serverWait, cue?.session ?? undefined);
                 partner = wait.server ?? null;
             }
             const want = { want: [{ item: o.bonesRe, amount: giver!.lastLoad ?? giver!.load }], maxTicks: 60, openMaxTicks: 67 };
@@ -1154,7 +1165,7 @@ export function steps(opts: WoodcuttingOptions = {}): Step[] {
     const oakEnd = bandEnd(o, oak);
     // the band the Prayer postcondition goes on (bury needs to > 15, so oak or willow)
     const willowLast = o.to > oak.end;
-    const cue = o.bones && 'group' in o.bones ? new BoneCue(o.bones.cueDir) : null;
+    const cue = o.bones && 'group' in o.bones ? new BoneCue(o.bones.cueDir, o.bones.session) : null;
     return [
         walkStep(o, 'woodcutting:walk-oaks', o.sites.oak.stand, s => wcLevel(s) < oakEnd, o.sites.approach),
         bandStep(o, normal, false, cue),

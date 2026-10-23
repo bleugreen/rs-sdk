@@ -25,6 +25,8 @@
 import { join } from 'node:path';
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import { canonName, cueDir, CueWriter, readJson, readStatuses, RUN_DIR, type CueScope, type GiverStatus, type HandBackItem, type Schedule, type Turn } from '../helpers/altar-cue';
+import { LoginLimiter, type LoginLimitPolicy } from '../helpers/backoff';
+import { BODY_ROSTER_SIZE } from '../helpers/roster';
 import type { LauncherStatus } from '../helpers/standalone';
 import { classifyPage } from '../lib/dialogue';
 import { levelUpStep, newWatcherMemory, type WatcherMemory } from '../lib/levelup';
@@ -43,7 +45,8 @@ import {
     type RcSchedule,
     type RcShared
 } from '../lib/programs';
-import type { Session } from '../lib/session';
+import { pageWorld, type Session } from '../lib/session';
+import { feedUrl, watchFeedTicks, type FeedClock } from '../lib/feed-hello';
 import type { TickLog } from '../lib/ticks';
 import { DROPPED_TICKS, receiveFrom } from '../lib/trade';
 import { tickMs, waitUntil } from '../lib/wait';
@@ -228,6 +231,8 @@ export interface RunecraftDeps {
     cueDir(): string;
     receiveFrom(sdk: Sdk, partner: string, opts: { want?: { item: string | RegExp; amount?: number }[]; maxTicks?: number; openMaxTicks?: number; openTimeoutMs?: number; noReplyTicks?: number }): Promise<{ ok: boolean; ticks?: number; reason?: string }>;
     now(): number;
+    /** Login-free observed world ticks; never SCORED's paused state stream. */
+    preLoginClock(session: RunnerSession): FeedClock;
 }
 
 /** <runDir>/launcher.json (written by standalone.ts), or null when it is missing or malformed. */
@@ -247,7 +252,8 @@ export const defaultDeps: RunecraftDeps = {
     readLauncher: readLauncherFile,
     cueDir: () => cueDir(),
     receiveFrom,
-    now: () => Date.now()
+    now: () => Date.now(),
+    preLoginClock: session => watchFeedTicks(feedUrl(pageWorld((session as Session).env)))
 };
 
 // ------------------------------------------------------------------ state readers
@@ -579,6 +585,10 @@ export interface RunecraftOptions {
     s21HandBack?: HandBack | false;
     /** Hand-back trades tried before the step fails (default HAND_BACK_TRIES). */
     handBackTries?: number;
+    /** S21's pre-login (preLoginStep): the giver roster's login names, or how many (default helpers/roster.ts BODY_ROSTER_SIZE). */
+    s21Givers?: number | readonly string[];
+    /** S21's pre-login wait in observed ticks (default preLoginWaitMs for the roster at the run's tick length). */
+    preLoginTicks?: number;
     deps?: Partial<RunecraftDeps>;
 }
 
@@ -640,6 +650,134 @@ export function altarStep(band: Band, opts: RunecraftOptions = {}): Step<any> {
 /** The step-module convention (`skill`, `steps()`): S06 air 1-44, S21 nature (or body) 44-99. */
 export function steps(opts: RunecraftOptions = {}): Step<any>[] {
     return bands(opts).map(b => altarStep(b, opts));
+}
+
+// ------------------------------------------------------------------ S21's pre-login
+
+/**
+ * The helper launcher's login limiter (helpers/standalone.ts, its LoginLimiter): 3 logins back to
+ * back, then 6 a minute, never two within 4 s. Every helper login from the run's address queues on it.
+ */
+export const LAUNCHER_LOGIN_POLICY: Readonly<LoginLimitPolicy> = { perMinute: 6, burst: 3, minSpacingMs: 4_000 };
+
+/** Wall ms from the first of `n` logins queued together to the last one's slot (helpers/backoff.ts LoginLimiter on a still clock). */
+export function loginSpanMs(n: number, policy: Readonly<LoginLimitPolicy> = LAUNCHER_LOGIN_POLICY): number {
+    const limiter = new LoginLimiter({ ...policy }, () => 0);
+    let last = 0;
+    for (let i = 0; i < n; i++) last = limiter.reserve();
+    return last;
+}
+
+/** The last giver's login to its ready report, at most: the launcher's login timeout (standalone.ts LOGIN_TIMEOUT_MS). */
+export const GIVER_LOGIN_MS = 90_000;
+/** Beyond the queue and the last login: one fleet-wide refusal pause (helpers/backoff.ts loginFailurePolicy: 60 s for codes 7, 8, 13 and 14). */
+export const PRE_LOGIN_MARGIN_MS = 60_000;
+
+/** The pre-login's wall bound for `n` givers: for S21's 22, 190 s of login queue + 90 s + 60 s = 340 s. */
+export function preLoginWaitMs(n: number): number {
+    return loginSpanMs(n) + GIVER_LOGIN_MS + PRE_LOGIN_MARGIN_MS;
+}
+
+/** Frames the pre-login's cue carries (runner/cue-keeper.ts CUE_BEACONS waits for as many). */
+const PRE_LOGIN_BEACONS = 4;
+
+/**
+ * S21's pre-login, between SCORED's confirmed logout and its login: open the band's
+ * {S21, altar} cue, on whose open the helper launcher logs the givers in, and wait until every giver
+ * of the roster reports ready (the givers giverFeed would offer the page: loaded, in the room, a
+ * fresh status). The relog after it puts SCORED behind every giver in the address's login order,
+ * so giverSchedule grants each of them tuned. The cue carries no turns and is not stopped here: a
+ * stop is the givers' logout trigger, and the band writes its own sessions under the same scope.
+ * The wait is bounded by login-free world-feed ticks: preLoginWaitMs at the run's tick length.
+ * Neither the beacons nor the ready wait needs SCORED to publish a state.
+ */
+export function preLoginStep(opts: RunecraftOptions = {}): Step<any> {
+    const band = bands(opts).find(b => b.id === 'S21');
+    if (!band) throw new Error(`preLoginStep: no S21 band (untilLevel ${opts.untilLevel} ends the run's Runecraft at S06)`);
+    const name = `${stepName(band)}:pre-login`;
+    const run = (ctx: StepContext<any>) => preLogin(ctx, band, name, opts);
+    return { name, offline: true, preconditions: () => true, postconditions: () => true, run, resume: run, logoutSafe: true };
+}
+
+function preLoginCoverage(opts: RunecraftOptions, deps: RunecraftDeps, band: Band) {
+    const dir = opts.cueDir ?? deps.cueDir();
+    const roster = opts.s21Givers ?? BODY_ROSTER_SIZE;
+    const want = typeof roster === 'number' ? roster : roster.length;
+    const statuses = deps.readStatuses(dir);
+    const ready = giverFeed(statuses, deps.now(), () => 'robust', band.load ?? LOAD).map(e => e.name);
+    const missing = typeof roster === 'number' ? [] : roster.filter(g => !ready.some(r => canonName(r) === canonName(g)));
+    const selected = typeof roster === 'number' ? ready.slice(0, want) : roster;
+    const validUntil = Math.min(...selected.map(name => Math.max(...statuses.filter(s => canonName(s.account) === canonName(name)).map(s => s.ms + STATUS_FRESH_MS))));
+    return { want, ready, missing, validUntil, covered: typeof roster === 'number' ? ready.length >= want : missing.length === 0 };
+}
+
+/** Re-read the entire roster immediately before login; a previous ready observation is not a lease. */
+export function preLoginReady(opts: RunecraftOptions = {}): true | string {
+    const band = bands(opts).find(b => b.id === 'S21');
+    if (!band) return 'no S21 band';
+    const status = preLoginCoverage(opts, { ...defaultDeps, ...opts.deps }, band);
+    return status.covered ? true : `${status.ready.length} of ${status.want} S21 givers ready${status.missing.length ? ` (not ready: ${status.missing.join(', ')})` : ''}`;
+}
+
+/** A final fresh-roster read after login preparation; the page also enforces this deadline at dispatch. */
+export function preLoginDeadline(opts: RunecraftOptions = {}): number {
+    const band = bands(opts).find(b => b.id === 'S21');
+    if (!band) throw new Error('no S21 band');
+    const status = preLoginCoverage(opts, { ...defaultDeps, ...opts.deps }, band);
+    if (!status.covered || !Number.isFinite(status.validUntil)) throw new Error('S21 giver roster not ready at login dispatch');
+    return status.validUntil;
+}
+
+async function preLogin(ctx: StepContext<any>, band: Band, name: string, opts: RunecraftOptions): Promise<void> {
+    const deps = { ...defaultDeps, ...opts.deps };
+    const dir = opts.cueDir ?? deps.cueDir();
+    let status = preLoginCoverage(opts, deps, band);
+    const bound = opts.preLoginTicks ?? Math.ceil(preLoginWaitMs(status.want) / tickMs());
+    const beacons: { tick: number; ms: number }[] = [];
+    const startTick = ctx.sdk.getState()?.tick ?? -1;
+    let firstWorldTick = -1;
+    let worldTick = -1;
+    let session: string | null = null;
+    let ok = false;
+    let clock: FeedClock | null = null;
+    try {
+        clock = deps.preLoginClock(ctx.session);
+        const seeNext = async () => {
+            const beacon = await clock!.next(worldTick);
+            if (firstWorldTick < 0) firstWorldTick = beacon.tick;
+            worldTick = beacon.tick;
+            beacons.push(beacon);
+            if (beacons.length > 8) beacons.shift();
+        };
+        while (beacons.length < PRE_LOGIN_BEACONS) {
+            await seeNext();
+            if (worldTick - firstWorldTick > 10) throw new Error(`${name}: fewer than four world feed beacons within 10 ticks`);
+        }
+        const sink = deps.openCue(dir, ctx.session.name, { step: band.id, family: 'altar' });
+        const publish = () => sink.write({ beacons: [...beacons], turns: [] });
+        publish();
+        session = sink.session;
+        const readyStart = worldTick;
+        for (;;) {
+            status = preLoginCoverage(opts, deps, band);
+            if (status.covered) { ok = true; break; }
+            if (worldTick - readyStart >= bound) break;
+            await seeNext();
+            publish();
+        }
+    } finally {
+        clock?.close();
+        ctx.log.append({
+            v: 1, kind: 'note', runId: ctx.log.runId, account: ctx.session.name,
+            sessionId: ctx.session.sessionId, step: name, startTick,
+            endTick: ctx.sdk.getState()?.tick ?? startTick, ticks: 0, wallMs: 0, ok,
+            meta: { kind: 'rc-pre-login', band: band.id, want: status.want, ready: status.ready.length,
+                missing: status.missing, boundTicks: bound, waitedTicks: Math.max(0, worldTick - firstWorldTick),
+                firstWorldTick, worldTick, cueSession: session },
+            tickMs: tickMs(), at: new Date().toISOString()
+        });
+    }
+    if (!ok) throw new Error(`${name}: ${status.ready.length} of ${status.want} givers ready after ${bound} ticks${status.missing.length ? ` (not ready: ${status.missing.join(', ')})` : ''}; the launcher logs them in on the {${band.id}, altar} cue's open (launcher.json, the status files in ${dir})`);
 }
 
 // ------------------------------------------------------------------ driver

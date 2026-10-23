@@ -1,4 +1,4 @@
-// S25c, Cooking 30-99 by wine at the Varrock west booth, with uncut gems cut in the waits
+// S25c, Cooking 30 (after Cook's Assistant; any start works) to 99 by wine at the Varrock west booth, with uncut gems cut in the waits
 // (STEP-MANIFEST.md entry 29; docs/speedrun/skills/cooking.md; research/wine-window.md section
 // 5 B; helpers/wine.md "Default sequence for the scored account").
 //

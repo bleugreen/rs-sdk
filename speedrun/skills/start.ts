@@ -11,7 +11,8 @@
 // page with a guarded click the tick it shows. The guard is the content's own: the page must ask
 // about skipping, and the choice must offer "Yes please.". When the skip is not offered
 // (map_live) the step fails: the full tutorial costs far more than any fallback would save.
-// On landing it turns run on (lib/run-mode.ts), which no login can do on the island.
+// On landing it turns run on (lib/run-mode.ts) and auto-retaliate off (lib/session.ts
+// setAutoRetaliate), which no login can do on the island.
 //
 // The talk goes through lib/act.ts's ClickGuard, which re-sends it once when it draws no reply.
 // The guide refuses about one talk in thirty with "I can't reach that!": it wanders, and when it
@@ -33,6 +34,7 @@ import type { BotWorldState, NearbyNpc } from '../../sdk/types';
 import { ClickGuard, settle } from '../lib/act';
 import { classifyPage } from '../lib/dialogue';
 import { ensureRunOn } from '../lib/run-mode';
+import { setAutoRetaliate } from '../lib/session';
 import { logNote } from '../lib/ticks';
 import { feedTickPeriod, idleBoundMs, serverClock, TickPeriod, waitUntil, type IdleBound } from '../lib/wait';
 import { onTutorialIsland } from '../lib/world';
@@ -196,6 +198,9 @@ async function skipObserved({ sdk, session, log }: StepContext<unknown>, landing
     // The login could not turn run on (the controls tab is hidden on the island); tutorial_complete opened it.
     // Recorded, never fatal: see lib/run-mode.ts.
     logNote(log, session, 'S00:run', { ...(await ensureRunOn(sdk)) });
+    // Nor turn auto-retaliate off, which a new account starts with on (option_nodef 0): the same
+    // first-landing gap, closed with the setting every later login applies (lib/session.ts).
+    logNote(log, session, 'S00:retaliate', { ...(await setAutoRetaliate(sdk, false)) });
 }
 
 /** S00 as a step: precondition Tutorial Island, postcondition Lumbridge spawn with the starter kit. */
