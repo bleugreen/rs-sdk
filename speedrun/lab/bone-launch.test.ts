@@ -164,6 +164,10 @@ describe("S07's run-night bundle (bank restock, 42 loads)", () => {
         expect(drift(c => (c.accounts[0]!.options.finalExtras = c.accounts[3]!.options.finalExtras))).toThrow(/cairn_b01: final extras/);
         expect(drift(c => (c.accounts[2]!.options.item = ['Babydragon bones', 'Dragon bones']))).toThrow(/cairn_b03: bones Babydragon bones, Dragon bones/);
         expect(drift(c => ((c.accounts[0]!.options as Record<string, unknown>).acceptReturn = true))).toThrow(/acceptReturn true/);
+        // No entry may be final (a final role's end would log every helper out), whatever its value says.
+        expect(drift(c => ((c.accounts[3] as unknown as Record<string, unknown>).final = true))).toThrow(/cairn_b04: final true \(no run helper entry is final\)/);
+        expect(drift(c => ((c.accounts[1] as unknown as Record<string, unknown>).final = 'yes'))).toThrow(/cairn_b02: final "yes"/);
+        expect(drift(c => ((c.accounts[0] as unknown as Record<string, unknown>).final = false))).not.toThrow();
         expect(() => assertS07RunBundle(run(), { group: [...S07_RUN_GIVERS].reverse(), lastLoad: 21 })).toThrow(/receiver bones/);
         expect(() => assertS07RunBundle(launch(), withBoneGivers(GIVERS))).toThrow(/S07 run bundle refused/);
     });

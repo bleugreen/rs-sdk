@@ -124,14 +124,16 @@ export function s07RunBones(): BonesOptions {
  * Refuse a run-night S07 pair that drifted from the bundle: every entry through bone-giver.ts's own
  * parser (standing mode, dragon first from its own bank, n 23, the same 42 loads, no rehearsal
  * return, the {S07, bone} scope), the runes on the last giver alone beside 21 bones, and the
- * receiver's `bones` naming the same group in the same order with the same last load.
+ * receiver's `bones` naming the same group in the same order with the same last load. No entry may be
+ * `final`: a final role's end stops the launcher and logs every helper out, so the run sets none.
  */
-export function assertS07RunBundle(launch: { accounts: readonly { account: string; role: string; options?: Record<string, unknown> }[] }, bones: BonesOptions): void {
+export function assertS07RunBundle(launch: { accounts: readonly { account: string; role: string; final?: unknown; options?: Record<string, unknown> }[] }, bones: BonesOptions): void {
     const givers = launch.accounts.map(e => e.account);
     const bad: string[] = [];
     if (givers.join() !== S07_RUN_GIVERS.join()) bad.push(`givers ${givers.join(', ')}, not ${S07_RUN_GIVERS.join(', ')}`);
     for (const [i, e] of launch.accounts.entries()) {
         if (e.role !== 'bone-giver') bad.push(`${e.account}: role ${e.role}`);
+        if (e.final !== undefined && e.final !== false) bad.push(`${e.account}: final ${JSON.stringify(e.final)} (no run helper entry is final)`);
         const o = boneGiverOptions(e.options ?? {}, {});
         const final = i === launch.accounts.length - 1;
         if (o.mode !== 'standing' || o.restock.kind !== 'bank' || o.acceptReturn) bad.push(`${e.account}: mode ${o.mode}, restock ${o.restock.kind}, acceptReturn ${o.acceptReturn}`);
