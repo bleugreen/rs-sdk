@@ -1740,15 +1740,17 @@ an S21 relog is pending, whose browser launch mints a fresh login token and `Pag
 one tab to it (`lib/session.ts` `openBrowserClient`, `lib/tab.ts` `reloadOrOpenTab`), so the game
 session `handoff` made is dropped by the navigation **without a logout** and the page logs SCORED in
 again. run.ts's tick clock is per launch (`launchId` and `tickBase` reset in `launchClient`), so
-`handoff`'s ticks are not on run.ts's clock, which starts at its own login. **Operator wording, while
-main keeps the sequence as built:** "After `handoff` passes, start run.ts at once. run.ts re-navigates
-the tab and logs SCORED in again; this is expected. Do not touch the tab. run.ts's clock starts at
-its own login." **Open, unmeasured:** the navigated-away session leaves a player the server may still
-list when the second login arrives; elsewhere a dropped account's next login waited until
-`/playerpositions` dropped it, up to minutes (HELPERS.md, "Stopping"); no rehearsal has run `handoff`
-then run.ts. **Also open:** whether `handoff`'s logged-in ticks count on SCORED's server-side
-playtime, the score (`playtime-audit.md`), is not established here. rs/186 has put the double login to
-main as a start-sequence decision, and this wording may change with its ruling. From
+`handoff`'s ticks are not on run.ts's clock, which starts at its own login. **What the code at
+rs/598's commit does today, pending main's start-sequence ruling; not the procedure** (rs/186's
+wording): "After `handoff` passes, start run.ts at once. run.ts re-navigates the tab and logs SCORED
+in again; this is expected. Do not touch the tab. run.ts's clock starts at its own login." **The
+double login is a start-cost line, priced at nothing and unmeasured** (rs/158 to main; fold-in 37):
+SCORED's server-side clock starts at `handoff`'s login, so the gap from that login to run.ts's counts
+on the score (`playtime-audit.md`); the navigated-away session leaves a player the server may still
+list when the second login arrives (elsewhere a dropped account's next login waited until
+`/playerpositions` dropped it, up to minutes, HELPERS.md "Stopping"); and the second login may hit
+rs/174's duplicate-session stall, about 19-20 ticks (i). No rehearsal has run `handoff` then run.ts.
+rs/158 has recommended a single-login start to main; this paragraph changes with main's ruling. From
 here the run scripts drive the tab through the gateway on 7780 (RUN-ORDER.md, STEP-MANIFEST.md).
 Nobody touches the window. Relaunches during the run go the same way: session.ts mints a fresh token
 from `CLIENT_URL` and re-navigates the tab over `CDP_URL`. The run's relogs use
