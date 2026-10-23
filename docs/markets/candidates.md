@@ -78,8 +78,8 @@ together), **GE bid depth** or **GE weekly flow** (the market absorbs a fixed am
 | # | Method | Inputs | board/h | coins/h | Sell to | Scaling and cap | Speedrun conflict | Basis |
 |---|---|---|---|---|---|---|---|---|
 | 1 | Buy battlestaves, attach charged water orbs, bank | Crafting 54, Magic 56 (Charge Water Orb at the obelisk), 7,000 coins a staff, unpowered orbs, cosmic + water runes | **1.56M** | 0 (no market) | bank | world clock: battlestaff restock 190/h (Zaff 5 per 100 ticks, Magic Guild 5 per 90); orb casting time unmeasured. **Assumes base stock**: 1.51M at half shelves, 1.47M at empty | low | estimated |
-| 2 | Mine Shilo gem rocks, sell uncut gems into their bids | Mining 40, Shilo Village, pickaxe | 16k | **1.08M** | GE bids ~2,500 (diamond 3,500) | world clock: 7 rocks at one site, 447 gems/h world-wide; bids 37,663 gems (opal's 2,342 fill first). Shared with whoever mines there (see the headcount) | medium: S25c's gems | estimated |
-| 3 | Mine runite ore + 8 coal, smelt runite bars, sell | Mining 85, Smithing 85 | 56k | **438k** | GE bid 41,005 (38,954 net), 2,017 deep | world clock: 5 rocks, best site 2, 28 ore/h world-wide; the Lava Maze rocks are camped (12-13 accounts in the square) | none | estimated |
+| 2 | Mine Shilo gem rocks, sell uncut gems into their bids | Mining 40, Shilo Village, pickaxe | 16k | **1.08M** | GE bids ~2,500 (diamond 3,500) | world clock: 7 rocks at one site, 447 gems/h world-wide; bids 37,663 gems (opal's 2,342 fill first). Shared with whoever mines there: one regular in the headcount, so about 540k a new login | medium: S25c's gems | estimated |
+| 3 | Mine runite ore + 8 coal, smelt runite bars, sell | Mining 85, Smithing 85 | 56k | **438k** | GE bid 41,005 (38,954 net), 2,017 deep | world clock: 5 rocks, best site 2, 28 ore/h world-wide; two sites camped (12-15 and 1-3 accounts in the headcount); the lone rock at 47_160 was empty all hour, about 220k from it alone | none | estimated |
 | 4 | Mine iron + 2 coal, smelt steel bars, sell | Mining 30, Smithing 30 | 33k | **423k** | GE flow ~1,369 (1,300 net) | GE weekly flow: 73,672 a week (438/h world-wide); 321 bars/h a login | none known (S27's cannonballs) | estimated |
 | 5 | Mine adamantite ore, sell | Mining 70 | 85k | **232k** | GE bid 1,148 (1,090 net) | GE bid depth 18,226 ore; 55 rocks, best site 13, 901/h world-wide | none | estimated |
 | 6 | Mine iron ore, sell | Mining 15 | 34k | **205k** | GE flow ~108 (102 net); bid 80 for 999,283 | GE weekly flow 552,355 a week (3,288/h) | low | measured cycle (3.0 ticks an ore, demo); bank trip estimated |
@@ -120,8 +120,9 @@ In order. Each says what the estimate rests on, which is what the lab should mea
 3. **Steel bars from mined iron and coal** (#4). Measure ticks per bar at the best
    iron-and-coal site with a furnace and bank (for example the Mining Guild and the Falador
    furnace). The 28 ticks a bar is built from three estimates.
-4. **Runite bars** (#3). Measure runite plus coal plus smelt at the two-rock sites; the rate is
-   respawn-bound, so the lab answers the cycle and the demo answers the contention.
+4. **Runite bars** (#3). Measure runite plus coal plus smelt at the uncontested single rock in
+   map square 47_160 (the headcount found the two-rock sites camped); the rate is respawn-bound,
+   so the lab answers the cycle and travel, and the demo answers the contention.
 5. **Adamantite ore at the 13-rock site** (#5, #7). Measure ore an hour at map square 43_69.
 6. **Iron ore with bank trips** (#6). The roll is measured (3.0 ticks); measure the bank trip.
 7. **Yew logs** (#8). Measure logs an hour with a rune axe at 99, banking.
@@ -150,7 +151,28 @@ Agreed at 22:4xZ, carried out by markets' own live readers. The doc ships withou
 
 ## Shilo gem rocks: who is there
 
-(Filled in when the hour-long headcount finishes: `data/headcount-*.json`.)
+Thirteen reads of the public `/playerpositions` list, five minutes apart, 22:47Z to 23:47Z
+2026-10-22, with 1,258 to 1,424 players online (`data/headcount-2026-10-22T2247Z.json`,
+`markets/scan/headcount.ts`). Each box is a few tiles round the site's rocks; standing in it is
+not proof of mining, but the names repeat across the hour.
+
+| Site | Rocks | Accounts present (min-max) | Reads with anyone | Regulars |
+|---|---|---|---|---|
+| Shilo gem rocks | 7 | 0-2 | 10 of 13 | Croesus (9 reads), Dotsbot29 (2) |
+| runite, map square 47_60 | 2 | 12-15 | 13 of 13 | the same 12 every read, up to 3 more |
+| runite, map square 45_154 | 2 | 1-3 | 13 of 13 | Tygem020, Tygem050, U238 |
+| runite, map square 47_160 | 1 | 0 | 0 of 13 | none |
+
+What it changes in the table:
+
+- **Shilo (#2)** is held by about one account. Sharing 7 rocks with one steady miner leaves a
+  new login roughly half the world's 447 gems an hour: about **540k coins an hour**, not 1.08M,
+  and less if Croesus clicks faster. Still the second-best row, and the best in coins.
+- **Runite (#3)** is camped at two of its three sites. The 438k row assumed a login owns a
+  two-rock site; at 47_60 a newcomer is the thirteenth account on two rocks and earns close to
+  nothing, and at 45_154 the fourth of four. The **lone rock at 47_160 is free**: one rock at the
+  1,560-tick respawn (1,400 players) gives about 5.6 ore an hour, about **220k coins an hour** as
+  bars, before travel. The lab should measure that rock, not a two-rock site.
 
 ## The scan sections
 
