@@ -17,7 +17,7 @@ import { memoryRoleState } from '../../../speedrun/helpers/role';
 import { depositAll } from '../../../speedrun/lib/bank';
 import { waitTicks, waitUntil } from '../../../speedrun/lib/wait';
 import { cheat, clearInventory, give, leaveTutorial, mustTele, setStats, setvar } from '../../../speedrun/lab/setup';
-import { summarize, trips, type BankSnap } from '../trips';
+import { holdings, span, summarize, trips, type BankSnap } from '../trips';
 import { ARDOUGNE_SOUTH_BANK, SPOTS } from '../pickpocket';
 import { CATHERBY_BANK } from '../fish';
 
@@ -198,6 +198,10 @@ await runScript(async ({ bot: actions, sdk }) => {
     out('RESULT start', { host: hostname(), load: loadavg().map(l => +l.toFixed(1)), at: new Date().toISOString(), tickMs, ticks, options: m.options, stats: m.stats, pos: [p.worldX, p.worldZ], hp: p.maxHp });
 
     const snaps: BankSnap[] = m.baseline === 'stage' ? [staged] : [];
+    const inv = () => sdk.getState()!.inventory.map(i => ({ id: i.id, count: i.count }));
+    // Bank plus pack at each bank visit and at the stop: the whole-run rate (trips.ts holdings).
+    const held: BankSnap[] = m.baseline === 'stage' ? [holdings(staged.tick, staged.items, inv())] : [];
+    let lastBank = staged.items;
     const role = await m.role();
     const controller = new AbortController();
     const t0 = sdk.getState()!.tick, w0 = Date.now();
@@ -213,6 +217,8 @@ await runScript(async ({ bot: actions, sdk }) => {
         reportBank: (b: BankSnapshot) => {
             const snap = { tick: sdk.getState()!.tick, items: b.items.map(i => ({ id: i.id, count: i.count })) };
             snaps.push(snap);
+            lastBank = snap.items;
+            held.push(holdings(snap.tick, snap.items, inv()));
             out('SNAP', snap);
         },
         signal: controller.signal,
@@ -224,5 +230,9 @@ await runScript(async ({ bot: actions, sdk }) => {
     const list = trips(snaps);
     out('RESULT trips', list.map(t => ({ ticks: t.ticks, board: t.board, delta: Object.fromEntries(t.delta) })));
     out('RESULT summary', { ranTicks: t1 - t0, msPerTick: +((w1 - w0) / Math.max(1, t1 - t0)).toFixed(1), ...summarize(list, tickMs) });
+    if (held.length) {
+        const run = span(held[0]!, holdings(t1, lastBank, inv()));
+        out('RESULT run', { ...summarize([run], tickMs), fromTick: run.fromTick, toTick: run.toTick, delta: Object.fromEntries(run.delta), load: loadavg().map(l => +l.toFixed(1)) });
+    }
 }, { printState: false, onDisconnect: 'wait', reconnectTimeout: 120_000 });
 process.exit(0);
