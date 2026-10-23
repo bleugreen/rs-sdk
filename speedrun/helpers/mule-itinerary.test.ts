@@ -3,7 +3,8 @@ import { BANKS } from './questitems';
 import { isTileWalkable } from '../../sdk/pathfinding';
 import { TILES } from '../runner/legs';
 import { MULE1_ORDER, MULE1_ON_REQUEST } from './mule-ledger';
-import { assertMuleTopology, crossForDelivery, muleDelivery, muleItinerary, muleTopologyConflicts, type ItineraryOptions } from './mule-itinerary';
+import { assertMuleTopology, muleDelivery, muleItinerary, muleTopologyConflicts, type ItineraryOptions } from './mule-itinerary';
+import { crossForDelivery } from './delivery-cross';
 import type { NearbyLoc } from '../../sdk/types';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
 import { crossingsBetween, PASSAGES, type Tile } from '../lib/passages';
@@ -186,4 +187,16 @@ describe('delivery topology', () => {
         const farWest = { rehearsal: { firemakingEnd: { x: 2600, z: 3300, level: 0 } } };
         expect(muleTopologyConflicts(muleItinerary(['H3'], farWest))[0]?.kind).toBe('staging');
     });
+});
+
+describe('module load order', () => {
+    for (const order of [['./questitems', './mule-itinerary'], ['./mule-itinerary', './questitems'], ['./questitems', './mule']]) {
+        test(order.join(' then ') + ' both load in a fresh process', () => {
+            const code = order.map(m => `await import(${JSON.stringify(new URL(m + '.ts', import.meta.url).pathname)});`).join(' ') + " console.log('LOADED');";
+            const r = Bun.spawnSync([process.execPath, '-e', code], { stdout: 'pipe', stderr: 'pipe' });
+            expect(r.stderr.toString()).not.toContain('before initialization');
+            expect(r.exitCode).toBe(0);
+            expect(r.stdout.toString()).toContain('LOADED');
+        });
+    }
 });

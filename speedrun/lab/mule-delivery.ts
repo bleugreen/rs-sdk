@@ -25,7 +25,7 @@ import { closeSession, isLoopbackHost, loadBotEnv, logoutClean, openSession, typ
 import { swap } from '../lib/trade';
 import { runTo, type Area } from '../lib/travel';
 import { crossingsBetween } from '../lib/passages';
-import { crossForDelivery } from '../helpers/mule-itinerary';
+import { crossForDelivery } from '../helpers/delivery-cross';
 import { nextTick, waitTicks, waitUntil } from '../lib/wait';
 import { TILES } from '../runner/legs';
 import { opIndex } from '../lib/world';

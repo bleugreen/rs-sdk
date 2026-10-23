@@ -53,7 +53,7 @@ import { itemRef, namesNote, noteOf, refLabel, refMatches, untradeable, type Ite
 import type { ObjPack } from '../lib/obj-pack';
 import { westOfTaverley } from '../lib/kandarin';
 import { crossingsBetween } from '../lib/passages';
-import { crossForDelivery } from './mule-itinerary';
+import { crossForDelivery } from './delivery-cross';
 import { travelTo } from '../lib/toll-gate';
 import { inArea, runTo } from '../lib/travel';
 import { deliverySession, muleCanReady, muleHealthy, mulePreparationPath, readMulePreparation, sameWorldTile, worldTile, writeMuleReady, type MuleHold, type WorldTile } from './mule-readiness';
