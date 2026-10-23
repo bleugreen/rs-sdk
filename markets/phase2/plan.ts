@@ -66,6 +66,8 @@ export interface SharkPlan {
     ceiling: number;
     /** Fewer sharks than this after a purchase (or none left in the bank) sends the account to the food fallback. */
     minimum: number;
+    /** Minutes the buy offer waits for its fill before the remainder is cancelled. */
+    fillMinutes: number;
 }
 
 export interface RampPlan {
@@ -110,13 +112,16 @@ export interface Plan {
     options: Partial<Record<MethodId, Record<string, unknown>>>;
 }
 
+/** Methods worked within walking distance of the Exchange (Varrock west bank): the only ones a sale can run from. */
+export const SALE_ROUTE: readonly MethodId[] = ['guards'];
+
 export const PLAN_B_MIX: Mix = { iron: 12, heroes: 8, guards: 23 };
 export const LOW_FOOD_MIX: Mix = { iron: 12, guards: 23 };
 
 export const DEFAULTS = {
     loginSpacingMs: 2_000,
     hp: 40,
-    sharks: { source: 'bank', perAccount: 200, perLoginHour: 30, hours: 72, ceiling: 701, minimum: 28 } satisfies SharkPlan,
+    sharks: { source: 'bank', perAccount: 200, perLoginHour: 30, hours: 72, ceiling: 701, minimum: 28, fillMinutes: 10 } satisfies SharkPlan,
     ramp: { steps: [8, 20, 43], holdMinutes: 15, dropPct: 10, admitTimeoutMinutes: 30, fallbackMix: PLAN_B_MIX } satisfies RampPlan,
     ledger: { everyTicks: 50, bookMinutes: 15 },
     sell: { enabled: false, cap: 500, everyMinutes: 120, floors: {}, fillMinutes: 10 } satisfies SellPlan
@@ -219,7 +224,8 @@ export function parsePlan(raw: unknown): Plan {
         perLoginHour: num('sharks.perLoginHour', s.perLoginHour, DEFAULTS.sharks.perLoginHour, { min: 0 }),
         hours: num('sharks.hours', s.hours, DEFAULTS.sharks.hours, { min: 0 }),
         ceiling: num('sharks.ceiling', s.ceiling, DEFAULTS.sharks.ceiling, { min: 1, integer: true }),
-        minimum: num('sharks.minimum', s.minimum, DEFAULTS.sharks.minimum, { min: 1, integer: true })
+        minimum: num('sharks.minimum', s.minimum, DEFAULTS.sharks.minimum, { min: 1, integer: true }),
+        fillMinutes: num('sharks.fillMinutes', s.fillMinutes, DEFAULTS.sharks.fillMinutes, { min: 0, max: 30 })
     };
 
     // ramp: null turns it off (every knights login is admitted at once)
@@ -271,6 +277,11 @@ export function parsePlan(raw: unknown): Plan {
         fillMinutes: num('sell.fillMinutes', sl.fillMinutes, DEFAULTS.sell.fillMinutes, { min: 0, max: 30 })
     };
     if (sell.enabled && Object.keys(floors).length === 0) problems.push('sell.enabled needs sell.floors: nothing is sold without a floor');
+    if (sell.enabled) {
+        const methods = [...accounts.map(a => a.method), ...Object.keys(ramp?.fallbackMix ?? {}), ...Object.keys(foodFallbackMix)] as MethodId[];
+        const away = [...new Set(methods)].filter(m => !SALE_ROUTE.includes(m));
+        if (away.length) problems.push(`sell.enabled: ${away.join(', ')} accounts cannot reach the Exchange (no return trip from Ardougne or Shilo exists yet); enable sales in a plan without them`);
+    }
 
     const options: Plan['options'] = {};
     if (raw.options !== undefined) {
