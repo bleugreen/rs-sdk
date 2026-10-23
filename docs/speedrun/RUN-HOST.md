@@ -673,7 +673,11 @@ refusal. the carrier configs come from the generator and check below (fold-in 37
 4. **mule-hold: NOT used for attempt 1** (main 13:15Z 2026-10-23): the carriers launch unheld in
    the roster phase and self-stage their first rows. With the hold, run.ts's first-row prepare at
    login leaves SCORED waiting ~160 ticks at H1 (the twin's live H1 with the hold measured 167 ticks
-   at H1, almost all waiting); rs/598's lab run 2 proved the unheld shape with ready wait 0. The
+   at H1, almost all waiting); rs/598's lab run 2 proved the unheld shape with ready wait 0. **Condition for
+   ready wait 0 at H1: the helper launcher starts at least ~72 s (about 180 ticks, mule2's measured
+   prepare-to-stand) before SCORED's login**; run.ts's first-row prepare then reuses the self-staged
+   row without re-banking (helpers/mule.ts:1283-1312, runner/delivery-owner.ts:89-96), and nothing in
+   run.ts's preflight needs a hold file (rs/186). `mule-hold.ts` stays in the commit, unused. The
    mule-hold text below is kept for reference only.
 5. **Report:** the host sends the hash line, the three exit codes and `sha256sum <R>/carriers.json
    <R>/helpers.json` to rs/41 and main before the launcher starts.
