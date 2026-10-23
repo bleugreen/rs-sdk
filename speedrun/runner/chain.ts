@@ -783,8 +783,10 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         // A row with a `to N` entry is served by a standing giver that sizes it from SCORED's ask (mule.ts, rs/429), scoped to the row.
         const ask = !scope && plan.receive.some(r => r.topUp) ? { scope: muleScope(e.row), ask: { dir: muleCueDir(cfg) } } : undefined;
         const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : ask;
-        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs } : {}), ...(cue ? { cue } : {}) }), cue ? { cue: cue.scope } : {});
-        out.unshift(!scope && MULE_ROWS.includes(e.row) ? mule(s, e.row) : s);
+        const muleRow = !scope && MULE_ROWS.includes(e.row);
+        const beforeTrade = muleRow ? { beforeTrade: () => { o.cues.refresh?.(muleScope(e.row)); } } : {};
+        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs } : {}), ...(cue ? { cue } : {}), ...beforeTrade }), cue ? { cue: cue.scope } : {});
+        out.unshift(muleRow ? mule(s, e.row) : s);
     }
     return cueMuleRows(out, muleRows, partner, o.cues).map(censused);
 }
