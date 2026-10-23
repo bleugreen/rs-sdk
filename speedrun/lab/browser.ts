@@ -3,11 +3,12 @@
 // one), with the bot's page pointed at the lab's engine and gateway (or the page the script names), for
 // openSession(bot, {client: 'browser', launch: true, ...}). The page must be this checkout's bundle
 // (`bun run build` in server/webclient first).
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Browser } from 'puppeteer';
-import { ROOT } from '../lib/session';
+import type { Subprocess } from 'bun';
+import { closeSession, openSession, ROOT, type Session } from '../lib/session';
 
 export interface LabBrowser {
     /** The Chrome itself, for a script that drives a page directly (a mid-run reload). */
@@ -72,4 +73,99 @@ export async function launchLabBrowser(bot: string, opts: LabBrowserOptions = {}
             browser.process()?.kill('SIGKILL');
         }
     };
+}
+
+type ProxyProcess = Pick<Subprocess, 'exitCode' | 'exited' | 'kill'>;
+
+export interface SecureLabSession {
+    session: Session;
+    chrome: LabBrowser;
+    /** Retained private credentials and proxy logs, outside the checkout. */
+    scratch: string;
+    close(): Promise<void>;
+}
+
+interface SecureLabDeps {
+    spawn(args: string[], scratch: string): ProxyProcess;
+    ready(proxy: ProxyProcess, url: string): Promise<void>;
+    launch: typeof launchLabBrowser;
+    open: typeof openSession;
+    close: typeof closeSession;
+    stopProxy(proxy: ProxyProcess): Promise<void>;
+}
+
+const secureLabDeps: SecureLabDeps = {
+    spawn: (args, scratch) => Bun.spawn(args, {
+        cwd: join(ROOT, 'server', 'webclient'),
+        stdout: Bun.file(join(scratch, 'proxy.log')),
+        stderr: Bun.file(join(scratch, 'proxy.err')),
+    }),
+    ready: async (proxy, url) => {
+        for (let n = 0; n < 50; n++) {
+            if (proxy.exitCode !== null) throw new Error(`lab token proxy exited ${proxy.exitCode}`);
+            const ready = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(1_000) })
+                .then(r => r.ok, () => false);
+            if (ready) return;
+            await Bun.sleep(200);
+        }
+        throw new Error('lab token proxy did not become ready');
+    },
+    launch: launchLabBrowser,
+    open: openSession,
+    close: closeSession,
+    stopProxy: async proxy => {
+        if (proxy.exitCode !== null) return;
+        proxy.kill('SIGTERM');
+        await Promise.race([proxy.exited, Bun.sleep(5_000)]);
+        if (proxy.exitCode === null) proxy.kill('SIGKILL');
+    },
+};
+
+/**
+ * The production token path against a private lab world. Own every acquired handle before the
+ * next await, including a proxy whose browser launch fails. No query-password login is enabled.
+ */
+export async function openSecureLabSession(
+    bot: string,
+    options: { root?: string; webPort?: number; agentPort?: number } = {},
+    overrides: Partial<SecureLabDeps> = {},
+): Promise<SecureLabSession> {
+    if (!/^[a-zA-Z0-9_-]+$/.test(bot)) throw new Error('invalid lab bot directory');
+    const webPort = options.webPort ?? Number(process.env.WEB_PORT ?? 9300);
+    const agentPort = options.agentPort ?? Number(process.env.AGENT_PORT ?? 8300);
+    if (![webPort, agentPort].every(p => Number.isSafeInteger(p) && p > 0 && p <= 65529)) throw new Error('invalid lab ports');
+    const deps = { ...secureLabDeps, ...overrides };
+    const scratch = mkdtempSync(join(tmpdir(), 'lab-token-'));
+    const botsDir = join(scratch, 'bots');
+    const botDir = join(botsDir, bot);
+    mkdirSync(botDir, { recursive: true, mode: 0o700 });
+    writeFileSync(join(botDir, 'bot.env'), readFileSync(join(options.root ?? ROOT, 'bots', bot, 'bot.env')), { mode: 0o600 });
+    const pagePort = webPort + 6;
+    const origin = `http://127.0.0.1:${pagePort}`;
+    const clientUrl = `${origin}/bot?server=localhost:${webPort}&gateway=${encodeURIComponent(`ws://127.0.0.1:${agentPort}`)}`;
+    let proxy: ProxyProcess | null = null;
+    let chrome: LabBrowser | null = null;
+    let session: Session | null = null;
+    let closing: Promise<void> | null = null;
+    const close = (): Promise<void> => closing ??= (async () => {
+        try {
+            if (session) await deps.close(session);
+        } finally {
+            try {
+                await chrome?.kill();
+            } finally {
+                if (proxy) await deps.stopProxy(proxy);
+            }
+        }
+    })();
+    try {
+        proxy = deps.spawn(['bun', 'proxy.ts', `--world=http://127.0.0.1:${webPort}`, `--port=${pagePort}`, `--gateway=ws://127.0.0.1:${agentPort}`, `--bots-dir=${botsDir}`], scratch);
+        await deps.ready(proxy, clientUrl);
+        chrome = await deps.launch(bot, { cdpPort: webPort + 5, clientUrl });
+        session = await deps.open(bot, { client: 'browser', launch: true, insecureQueryLogin: false });
+        return { session, chrome, scratch, close };
+    } catch (error) {
+        await close().catch(() => {});
+        throw error;
+    }
 }

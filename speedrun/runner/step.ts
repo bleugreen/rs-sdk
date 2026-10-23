@@ -25,18 +25,32 @@ import type { BotWorldState } from '../../sdk/types';
 import type { Session } from '../lib/session';
 import { startRunTickMonitor, type TickMonitorSetting } from '../lib/tick-monitor';
 import { ensureRun } from '../lib/run-mode';
-import { measure, tickSpan, type TickLog } from '../lib/ticks';
-import { currentTick, feedTickPeriod, nextTick, periodMs, TickPeriod, tickMs, type StateSource } from '../lib/wait';
+import {
+    measure,
+    tickCounter,
+    tickSpan,
+    type TickLog,
+} from '../lib/ticks';
+import {
+    currentTick,
+    feedTickPeriod,
+    nextTick,
+    periodMs,
+    TickPeriod,
+    tickMs,
+    type StateSource,
+} from '../lib/wait';
 import { meterDispatch, TickWindow, type WindowSnapshot } from './budget';
 
 export type Check<C> = (s: BotWorldState, c: C) => true | string;
 
 /**
- * `tickBase` (optional so test fakes need not carry it; a real Session always does): the tick
- * the current login's count starts from, which a resumed step that times a login-armed
- * deadline reads (skills/cooking.ts).
+ * `tickBase` and `launchId` are optional so test fakes need not carry them; a real Session always
+ * does. `tickBase` is the tick the current login's count starts from, which a resumed step that
+ * times a login-armed deadline reads (skills/cooking.ts); `launchId` tells a step row spanning an
+ * in-page relog (one count) from one spanning a relaunch (lib/ticks.ts tickCounter).
  */
-export type RunnerSession = Pick<Session, 'sdk' | 'bot' | 'name' | 'sessionId'> & Partial<Pick<Session, 'tickBase'>>;
+export type RunnerSession = Pick<Session, 'sdk' | 'bot' | 'name' | 'sessionId'> & Partial<Pick<Session, 'tickBase' | 'launchId'>>;
 
 /**
  * What the resume walk (runner/resume.ts) knows about the game: the published
@@ -74,6 +88,9 @@ export interface Step<C = Record<string, never>> {
      * runs, and a step does not set this on run day. Default (absent): on.
      */
     running?: boolean;
+    /** Deliberately out of the world: no game-tick freshness/budget waits or run-toggle clicks.
+     * The step supplies its own independent wait bound; checks fail immediately while offline. */
+    offline?: true;
 
     // Resume protocol (runner/resume.ts). All optional: a step without `done` is
     // transient (travel, banking) and is never a checkpoint.
@@ -163,19 +180,19 @@ export type BoundaryWait = 'post-recheck' | 'budget' | 'stale' | 'pre-recheck';
 interface Boundary {
     from: string;
     startTick: number;
-    startSession: number;
+    startCounter: number;
     t0: number;
     waits: BoundaryWait[];
     budget?: WindowSnapshot;
 }
 
 function openBoundary(session: RunnerSession, from: string): Boundary {
-    return { from, startTick: currentTick(session.sdk), startSession: session.sessionId, t0: Date.now(), waits: [] };
+    return { from, startTick: currentTick(session.sdk), startCounter: tickCounter(session), t0: Date.now(), waits: [] };
 }
 
 function closeBoundary(log: TickLog, session: RunnerSession, b: Boundary, to: string, index: number): void {
     const endTick = currentTick(session.sdk);
-    const span = tickSpan(b.startTick, endTick, b.startSession, session.sessionId);
+    const span = tickSpan(b.startTick, endTick, b.startCounter, tickCounter(session));
     log.append({
         v: 1, runId: log.runId, account: session.name, sessionId: session.sessionId, step: BOUNDARY_STEP,
         startTick: b.startTick, endTick, ticks: span.ticks, wallMs: Date.now() - b.t0, ok: true,
@@ -186,9 +203,10 @@ function closeBoundary(log: TickLog, session: RunnerSession, b: Boundary, to: st
 }
 
 /** Check the published state; on failure wait exactly one tick and check once more. */
-async function check<C>(sdk: StateSource, fn: Check<C>, c: C, b: Boundary, wait: BoundaryWait): Promise<true | string> {
+async function check<C>(sdk: StateSource, fn: Check<C>, c: C, b: Boundary, wait: BoundaryWait, offline = false): Promise<true | string> {
     const s = sdk.getState() ?? (await nextTick(sdk));
-    if (fn(s, c) === true) return true;
+    const result = fn(s, c);
+    if (result === true || offline) return result;
     b.waits.push(wait);
     return fn(await nextTick(sdk, s.tick), c);
 }
@@ -225,7 +243,7 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
             const ctx: StepContext<C> = { session, sdk, bot: session.bot, c: opts.c, log: opts.log, ...(resuming && opts.observed ? { observed: opts.observed } : {}) };
 
             let waited = false;
-            if (i > start) {
+            if (!step.offline && i > start) {
                 boundary.budget = window.snapshot();
                 if (boundary.budget.free < 1) {
                     boundary.waits.push('budget');
@@ -233,12 +251,12 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
                     waited = true;
                 }
             }
-            if (!waited && (!sdk.getState() || window.ageMs(Date.now()) >= periodMs(period))) {
+            if (!step.offline && !waited && (!sdk.getState() || window.ageMs(Date.now()) >= periodMs(period))) {
                 boundary.waits.push('stale');
                 await nextTick(sdk);
             }
             const wantRun = step.running !== false;
-            if (!wantRun || runSet === false) {
+            if (!step.offline && (!wantRun || runSet === false)) {
                 try {
                     await ensureRun(sdk, wantRun);
                 } catch (e) {
@@ -249,7 +267,7 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
                 runSet = wantRun;
             }
             if (!resuming) {
-                const pre = await check(sdk, step.preconditions, opts.c, boundary, 'pre-recheck');
+                const pre = await check(sdk, step.preconditions, opts.c, boundary, 'pre-recheck', step.offline);
                 if (pre !== true) {
                     failRow(opts.log, session, step.name, 'precondition', pre);
                     throw new StepError(step.name, 'precondition', pre);
@@ -265,7 +283,7 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
             }
 
             boundary = openBoundary(session, step.name);
-            const post = await check(sdk, step.postconditions, opts.c, boundary, 'post-recheck');
+            const post = await check(sdk, step.postconditions, opts.c, boundary, 'post-recheck', step.offline);
             if (post !== true) {
                 failRow(opts.log, session, step.name, 'postcondition', post);
                 throw new StepError(step.name, 'postcondition', post);
