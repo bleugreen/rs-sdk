@@ -281,6 +281,11 @@ export function isProduct(item: { name: string }): boolean {
     return PRODUCTS.some(p => nameRe(p.name).test(item.name));
 }
 
+/** What SCORED holds that is not the step's own to hand back: everything but the products. */
+export function entryBaseline(s: BotWorldState): Counts {
+    return countsOf(s.inventory.filter(i => !isProduct(i)));
+}
+
 export function heldBars(s: BotWorldState): Partial<Record<Bar, number>> {
     const out: Partial<Record<Bar, number>> = {};
     for (const i of s.inventory) {
@@ -706,9 +711,13 @@ export class Smithy {
         return this.givenBack ? [] : this.o.giveBack;
     }
 
-    /** The baseline, or this state's inventory when the chain has not started (nothing made yet). */
+    /**
+     * The baseline, or, in a process that has not entered the step, this state's inventory less any
+     * product: SCORED arrives at S25a holding none (the ledger's T24-25 pack), so a product held then is
+     * the step's own, made before a restart, and is owed back (each next trade, or the last hand-back).
+     */
     baselineFor(s: BotWorldState): Counts {
-        return this.baseline ?? countsOf(s.inventory);
+        return this.baseline ?? entryBaseline(s);
     }
 
     /** A new entry (a resume after a restart): start a new helper session from the live state. */
@@ -739,7 +748,7 @@ export class Smithy {
     async until(ctx: Ctx, mark: number, last: boolean): Promise<void> {
         if (this.o.supply === 'helper' && !this.o.giver) throw new Error('supply helper needs a giver');
         const target = xpForLevel(this.o.plan.untilLevel);
-        this.baseline ??= countsOf(this.state(ctx).inventory);
+        this.baseline ??= entryBaseline(this.state(ctx));
         const reached = () => smithingXp(this.state(ctx)) >= Math.min(mark, target);
         if (!reached()) await this.toTile(ctx);
         while (!reached()) await this.inventory(ctx);
@@ -1010,6 +1019,10 @@ export function steps(opts: SmithingOptions = {}): Step<any>[] {
         const mark = marks[k]!;
         const last = k === n - 1;
         const passed = (s: BotWorldState) => smithingXp(s) >= Math.min(mark, target);
+        // The last inventory's hand-back is owed where it runs, at the anvil: a hand-back trade that
+        // failed leaves the products held there, and the step is not done until they go. Away from the
+        // anvil the step is done at its xp whatever the pack holds, as a milestone must stay done.
+        const owedBack = (s: BotWorldState) => last && o.returnLast && nearAnvil(s) && handBack(s.inventory, {}, smithy.baselineFor(s)).length > 0;
         return {
             name: `S25a smithing ${String(k + 1).padStart(2, '0')}/${n} ${describe(inv)}`,
             preconditions: s => {
@@ -1032,7 +1045,7 @@ export function steps(opts: SmithingOptions = {}): Step<any>[] {
                 return true;
             },
             logoutSafe: true,
-            done: ({ state }) => passed(state),
+            done: ({ state }) => passed(state) && !owedBack(state),
             inProgress: ({ state }) => !passed(state) && nearAnvil(state) && (smithingXp(state) > 0 || Object.keys(heldBars(state)).length > 0),
         };
     });
