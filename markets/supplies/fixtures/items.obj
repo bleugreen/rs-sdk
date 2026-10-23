@@ -1,0 +1,15 @@
+[bloodrune]
+name=Blood rune
+cost=50
+members=yes
+
+[airrune]
+name=Air rune
+cost=4
+
+[cosmicrune]
+name=Cosmic rune
+cost=15
+
+[cert_airrune]
+name=Air rune
