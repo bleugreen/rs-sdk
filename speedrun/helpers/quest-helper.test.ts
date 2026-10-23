@@ -324,7 +324,17 @@ describe('N2 after a drop at stage 130 (the demon gone, the resume walk starting
         expect(await demonReentry(ctx)).toBeNull();
         expect(fake.sent).toHaveLength(0);
     });
-    test('the plan sends the stage-130 resume through demonReentry, not a throw', () => {
-        expect(gtPlan().substitute.N2!.run.toString()).toContain('demonReentry');
+    test('the N2 substitute itself, entered on the platform with no demon: replays the trapdoor, then kills', async () => {
+        const { fake, ctx } = fakeAt(2487, 3466, 2, { nearbyLocs: [trapdoorLoc] });
+        const live = { ...demon, hp: 120, maxHp: 120 } as NearbyNpc;
+        fake.onSend = (a, f) => {
+            if (a.method === 'sendInteractLoc' && a.args[0] === GT.trapdoor.x) setTimeout(() => f.tick({ player: at(GT.trapdoor.x, GT.trapdoor.z + 6400, 0), nearbyNpcs: [live], nearbyLocs: [] }), 2);
+            if (a.method === 'sendInteractNpc') setTimeout(() => f.tick({ nearbyNpcs: [{ ...live, hp: 0 } as NearbyNpc] }), 2);
+        };
+        // The old substitute threw 'no black demon in sight' here, the reviewer's stage-130 repro.
+        await gtPlan().substitute.N2!.run(ctx);
+        const sends = fake.sent.map(a => a.method).filter(m => m === 'sendInteractLoc' || m === 'sendInteractNpc');
+        expect(sends[0]).toBe('sendInteractLoc');
+        expect(sends).toContain('sendInteractNpc');
     });
 });
