@@ -357,7 +357,7 @@ describe('deliverable runtime configurations', () => {
         }
         expect(artifact.validation.fullReceiverFixture).toBe('BLOCKED');
         expect(artifact.validation.fullRoute).toBe('BLOCKED');
-        expect(artifact.validation.blockers).toContainEqual(expect.objectContaining({ id: 'H13', status: 'BLOCKED_UNTRADEABLE' }));
+        expect(artifact.validation.blockers).toContainEqual(expect.objectContaining({ id: 'H13', status: 'PROJECTION_REFRESHED_PENDING_OWNER' }));
         expect(artifact.validation.failedHistory).toContainEqual(expect.objectContaining({ id: 'H19->H20', status: 'FAILED_SAME_CARRIER' }));
         expect(artifact.validation.blockers).toContainEqual(expect.objectContaining({ id: 'H20', status: 'UNPROVEN_INDEPENDENT_CARRIER' }));
     });

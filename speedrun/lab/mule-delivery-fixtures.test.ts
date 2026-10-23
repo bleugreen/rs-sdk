@@ -17,6 +17,8 @@ const plan = (manifest: string, rows: string[], extra: Partial<MuleDeliveryFixtu
     planMuleDeliveryFixtures({ manifest, rows, pack, catalog, ...extra });
 const counts = (items: readonly { id: number; count: number }[]) => Object.fromEntries(items.map(i => [i.id, i.count]));
 const override = (id: number, count: number) => ({ items: [{ id, count }], reason: 'Explicit test fixture authority' });
+const KHAZARD_DROPS = 'khazard helmet x1 (drop: unworn first, on the tile; tradeable=no, quest_arena.obj); khazard armour x1 (drop: unworn first, on the tile; tradeable=no)';
+const KHAZARD_SWAPS = 'khazard helmet x1 (swap: unworn first); khazard armour x1 (swap: unworn first)';
 
 // Explicit caller choices, not a planner fallback or a second package quantity map.
 // rs158: ordinary logs/coins/flour; quest configs: strung wearable amulet.
@@ -374,9 +376,15 @@ describe('ledger-derived mule delivery fixtures', () => {
         expect(p.fixtures.length + p.unresolved.length).toBe(21);
         // H21d's live row no longer carries a placeholder platebody return, so with explicit fixtures it resolves;
         // retired H4m has no row at all.
-        expect(p.unresolved.map(r => r.row)).toEqual(['H13', 'H4m']);
-        expect(p.unresolved[0]!.reasons.join()).toContain('untradeable');
-        expect(p.unresolved[1]!.reasons).toEqual(['H4m: expected exactly one ledger row, found 0']);
+        // and H13 now drops its untradeable Khazard helmet and armour on the tile (live STEP-MANIFEST H13).
+        expect(p.unresolved.map(r => r.row)).toEqual(['H4m']);
+        expect(p.unresolved[0]!.reasons).toEqual(['H4m: expected exactly one ledger row, found 0']);
+        // The untradeable blocker stands: the same live row with those drops written as swaps is refused.
+        expect(manifest).toContain(KHAZARD_DROPS);
+        const swapped = manifest.replace(KHAZARD_DROPS, KHAZARD_SWAPS);
+        const s = plan(swapped, ['H13']);
+        expect(s.unresolved.map(r => r.row)).toEqual(['H13']);
+        expect(s.unresolved[0]!.reasons.join()).toContain('untradeable');
         expect(p.fixtures.find(f => f.row === 'H21d')!.takeBacks.map(i => i.name)).toEqual(['Hammer']);
         expect(p.fixtures.find(f => f.row === 'H15')!.takeBacks.find(i => i.id === 995)!.count).toBe(22450);
         expect(p.fixtures.find(f => f.row === 'H14')!.receivingArea).toMatchObject({ x: 2670, z: 3305 });
@@ -397,15 +405,17 @@ describe('ledger-derived mule delivery fixtures', () => {
             const expected = ({ logs: 1511, coins: 995, 'pot of flour': 1933 } as Record<string, number>)[item.name];
             if (expected !== undefined) expect(item.id).toBe(expected);
         }
+        // The projection's H13 was refreshed to the live drop of the untradeable Khazard pieces.
+        expect(projected).toContain(KHAZARD_DROPS);
         const p = plan(projected, [...MULE1_ORDER], { onRequest: MULE1_ON_REQUEST, overrides: fullRouteOverrides(projected) });
-        expect(p.unresolved.map(r => r.row)).toEqual(['H13']);
-        expect(p.unresolved[0]!.reasons.join()).toContain('untradeable');
-        expect(p.fixtures).toHaveLength(20);
+        expect(p.unresolved).toEqual([]);
+        expect(p.fixtures).toHaveLength(21);
+        const blocked = plan(projected.replace(KHAZARD_DROPS, KHAZARD_SWAPS), ['H13']);
+        expect(blocked.unresolved[0]!.reasons.join()).toContain('untradeable');
         const f = p.fixtures.find(f => f.row === 'H21d')!;
         expect(f.beforeInventory.map(i => i.id)).toEqual([2347]);
         expect(f.takeBacks.map(i => i.id)).toEqual([2347]);
         expect(f.slots.afterSwap).toBe(17);
-        expect(p.bankSeed).toBeNull();
         console.log('PROJECTED_FULL_ROUTE_FIXTURE_AUDIT', JSON.stringify({
             resolved: p.fixtures.map(f => ({ row: f.row, slots: f.slots })),
             unresolved: p.unresolved,
