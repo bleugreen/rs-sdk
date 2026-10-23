@@ -74,6 +74,22 @@ describe('a mule cue opened by the run CueKeeper passes the carrier\'s own autho
         }
     });
 
+    test('a malformed cue (no scope, no receiver) refuses rather than throwing', async () => {
+        const r = rig('malformed');
+        try {
+            await r.keeper.open(muleScope('H1'), r.ctx, { fresh: true });
+            const { scope: _scope, ...noScope } = cueIn(r.dir);
+            const { receiver: _receiver, ...noReceiver } = cueIn(r.dir);
+            const o = { session: `${RUN}:H1`, row: 'H1', serve: SCORED };
+            expect(deliveryCueAuthorizes(cueIn(r.dir), o)).toBe(true);
+            expect(deliveryCueAuthorizes(noScope as Cue, o)).toBe(false);
+            expect(deliveryCueAuthorizes(noReceiver as Cue, o)).toBe(false);
+            expect(deliveryCueAuthorizes(null, o)).toBe(false);
+        } finally {
+            r.done();
+        }
+    });
+
     test('a cue older than STALE_CUE_MS refuses', async () => {
         const r = rig('stale');
         try {
