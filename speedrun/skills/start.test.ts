@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import type { BotWorldState } from '../../sdk/types';
 import { baseState, FakeSdk, flush, runToggleServer } from '../lib/fake-sdk';
 import { IF_RUN_ON, runIsOn } from '../lib/run-mode';
+import { IF_RETALIATE_OFF } from '../lib/session';
 import { TickLog } from '../lib/ticks';
 import { onTutorialIsland } from '../lib/world';
 import type { StepContext } from '../runner/step';
@@ -25,7 +26,7 @@ const choice = (yes: string) => ({ isOpen: true, isWaiting: false, pageId: 'p2',
 class TutorialSdk extends FakeSdk {
     /** `drop`: how many of the first talk / continue clicks the engine never answers. */
     constructor(private readonly offer: string, landAfterMs: number | null = 1, drop: { talk?: number; cont?: number } = {}) {
-        super(baseState({ tick: 3, player: { worldX: 3094, worldZ: 3106 } as BotWorldState['player'], modalOpen: true, modalInterface: PLAYER_KIT, nearbyNpcs: [guide] as unknown as BotWorldState['nearbyNpcs'] }));
+        super(baseState({ tick: 3, autoRetaliateEnabled: false, player: { worldX: 3094, worldZ: 3106 } as BotWorldState['player'], modalOpen: true, modalInterface: PLAYER_KIT, nearbyNpcs: [guide] as unknown as BotWorldState['nearbyNpcs'] }));
         let talks = drop.talk ?? 0;
         let conts = drop.cont ?? 0;
         this.onSend = (a, sdk) => {
@@ -112,6 +113,21 @@ describe('S00 tutorial skip', () => {
         expect(runIsOn(sdk.getState())).toBe(true);
         expect(tutorialSkip.postconditions(sdk.getState()!, {})).toBe(true);
         expect(log.rows.filter(r => r.step === 'S00:run').map(r => r.meta)).toEqual([{ on: true, presses: 1 }]);
+    });
+
+    test('turns auto-retaliate off once it lands: a new account starts with it on, and no login could', async () => {
+        const sdk = new TutorialSdk('Yes please.');
+        sdk.push({ autoRetaliateEnabled: true });
+        const content = sdk.onSend;
+        sdk.onSend = (a, s) => {
+            content(a, s);
+            if (a.method === 'sendClickComponent' && a.args[0] === IF_RETALIATE_OFF) setTimeout(() => s.tick({ autoRetaliateEnabled: false }), 1);
+        };
+        const log = TickLog.memory('t');
+        await tutorialSkip.run(ctx(sdk, log));
+        expect(sdk.sent.filter(a => a.method === 'sendClickComponent').map(a => a.args[0])).toEqual([IF_RETALIATE_OFF]);
+        expect(sdk.getState()!.autoRetaliateEnabled).toBe(false);
+        expect(log.rows.filter(r => r.step === 'S00:retaliate').map(r => r.meta)).toEqual([{ on: false, presses: 1 }]);
     });
 
     test('a run toggle that will not take is logged and warned, and the skip still succeeds', async () => {

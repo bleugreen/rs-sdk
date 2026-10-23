@@ -26,7 +26,17 @@ import type { BotActions } from '../../sdk/actions';
 import type { BotStatus, BotWorldState } from '../../sdk/types';
 import { ensureRunOn, RUN_CONFIRM_TICKS, RUN_PRESSES, type EnsureRunResult, type RunSdk } from './run-mode';
 import { pageInGame, pageLogin, pageLoginState, type PageLoginStart } from './tab';
-import { idleBoundMs, sleep, STALLED, TickPeriod, tickMs, waitUntil } from './wait';
+import {
+    awaitScene,
+    idleBoundMs,
+    SCENE_READY_MAX_TICKS,
+    type SceneWait,
+    sleep,
+    STALLED,
+    TickPeriod,
+    tickMs,
+    waitUntil,
+} from './wait';
 import { onTutorialIsland } from './world';
 
 export const ROOT = join(import.meta.dir, '..', '..');
@@ -227,6 +237,11 @@ export interface Session {
      * the one a freshly launched client would publish (1 on its first in-world tick).
      */
     tickBase: number;
+    /**
+     * Bumps on each client launch only: which tick count `state.tick` belongs to (lib/ticks.ts
+     * tickCounter). An in-page login keeps it, since the page goes on counting.
+     */
+    launchId: number;
     /** Whether the account should be in the world (false around an intended logout). */
     expectInWorld: boolean;
     child: Subprocess | null;
@@ -242,6 +257,13 @@ export interface Session {
     ticksSinceProgress: number;
     watchdog: Watchdog | null;
     logPath: string;
+    /** The last launch's wait for the client's scene (settleScene); absent when none was waited for. */
+    scene?: SceneWait;
+    /**
+     * Run before every login() (relog, the watchdog's login, the outage reconnect; not the first,
+     * which openSession makes): run.ts's tick preflight. A throw refuses the login.
+     */
+    beforeLogin?: () => Promise<void>;
 }
 
 export interface OpenOptions {
@@ -297,6 +319,7 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         bot: new BotActions(sdk),
         sessionId: 0,
         tickBase: 0,
+        launchId: 0,
         expectInWorld: true,
         child: null,
         childExit: null,
@@ -322,6 +345,9 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         // relaunch by another process); every login leaves run off.
         await ensureRunOn(sdk);
         await setAutoRetaliate(sdk, false);
+        // A launched browser tab returns here seconds before its scene is built (rs/41's probe:
+        // first locs ~7 s later), so a step acting at once could see an empty scene.
+        if (client === 'browser' && opts.launch) await settleScene(session);
     } catch (err) {
         // The client we launched may be in the world even though this process never
         // saw it advance; left running it would hold the player there indefinitely.
@@ -330,6 +356,17 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         throw err;
     }
     return session;
+}
+
+/**
+ * Wait for the session's scene (lib/wait.ts awaitScene, the wait the resume walk uses too), record it
+ * as `session.scene`, and warn on a timeout. Never throws: past the bound the caller goes on.
+ */
+export async function settleScene(session: Pick<Session, 'sdk' | 'name'> & { scene?: SceneWait }, maxTicks = SCENE_READY_MAX_TICKS): Promise<SceneWait> {
+    const r = await awaitScene(session.sdk, maxTicks);
+    session.scene = r;
+    if (!r.ready) console.warn(`[session] ${session.name}: the scene was not ready after ${r.ticks} ticks; going on`);
+    return r;
 }
 
 /** Tell the watchdog the bot is still making progress (see progressStaleTicks). */
@@ -363,9 +400,10 @@ function waitFor(sdk: BotSDK, pred: (s: BotWorldState) => boolean, ms: number): 
     return sdk.waitForCondition(pred, ms).catch(() => null);
 }
 
-/** Start the game client: a lite runner child, or the browser tab. Bumps sessionId. */
+/** Start the game client: a lite runner child, or the browser tab. Bumps sessionId and launchId. */
 export async function launchClient(session: Session): Promise<void> {
     session.sessionId++;
+    session.launchId++;
     session.tickBase = 0;
     session.childExit = null;
     session.launchedAt = Date.now();
@@ -688,6 +726,7 @@ export async function setAutoRetaliate(sdk: RunSdk, on: boolean, warn: (msg: str
  * outage reconnect all come through here.
  */
 export async function login(session: Session, opts: LoginOptions = {}): Promise<LoginResult> {
+    if (session.beforeLogin) await session.beforeLogin();
     const t0 = Date.now();
     const deadline = t0 + (opts.timeoutMs ?? 90_000);
     const maxAttempts = opts.attempts ?? 6;

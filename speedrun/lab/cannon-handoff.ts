@@ -16,22 +16,32 @@
 // magic shortbow and 200 rune arrows (serve.returnExtras) and gives them in the same trade as
 // the set comes back; the receiver expects them (expectBack), so it is one two-way trade.
 //
-// Options: --quest=N (default 11), --balls=N (default 100), --setup=0 to skip Set-up, --mm=1
+// The holder serves the whole H11 row of the inventory ledger (helpers/cannon-receiver.ts
+// serveFromLedger: the set, the balls, the scimitar, the runes, the sharks), because the receiver
+// takes the row as SCORED's step does; the receiver starts with an empty pack, so each top-up is
+// served at its full `to` count.
+//
+// Options: --quest=N (default 11), --setup=0 to skip Set-up, --mm=1
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { returnExtrasFromLedger } from '../helpers/cannon-receiver';
+import { labServeLoad } from './cannon-launch';
 
 const ROOT = resolve(import.meta.dir, '..', '..');
 const arg = (k: string, d: string) => process.argv.find(a => a.startsWith(`--${k}=`))?.split('=')[1] ?? d;
 const quest = Number(arg('quest', '11'));
-const balls = Number(arg('balls', '100'));
+const { balls, extras } = labServeLoad('H11');
 const setUp = arg('setup', '1') !== '0';
 const mm = arg('mm', '0') === '1';
-const MM = [
-    { item: 'Magic shortbow', count: 1, obj: 'magic_shortbow' },
-    { item: 'Rune arrow', count: 200, obj: 'rune_arrow' }
-];
+// H11r's two-way form (Monkey Madness's bow and arrows back with the set) from the ledger row itself,
+// so the lab cannot drift from it: while the row is give-only there is nothing to return.
+const MM = returnExtrasFromLedger();
+if (mm && MM.length === 0) {
+    console.error('cannon-handoff: --mm=1 needs the H11r ledger row two-way (in: magic shortbow, rune arrows); the row in force is give-only');
+    process.exit(2);
+}
 const webPort = process.env.WEB_PORT ?? '9300';
 
 // Inside the Lumbridge cow pen (lib/kandarin.ts COW_PEN): open grass, outside every
@@ -59,8 +69,8 @@ const config = {
     runDir,
     loginSpacingMs: 2000,
     accounts: [
-        { account: giver, role: 'cannon', options: { serve: { tile: GIVER_TILE, balls, labStock: true, returnTile: GIVER_TILE, ...(mm ? { returnExtras: MM } : {}), scope: { step: 'S14', family: 'cannon' } } } },
-        { account: receiver, role: 'cannon-receiver', receiver: true, final: true, options: { giver, tile: RECEIVER_TILE, balls, questVarp: quest, setUp, giveBack: true, ...(mm ? { expectBack: MM.map(({ item, count }) => ({ item, count })) } : {}), waitTicks: 1500, scope: { step: 'S14', family: 'cannon' } } }
+        { account: giver, role: 'cannon', options: { serve: { tile: GIVER_TILE, balls, extras, labStock: true, returnTile: GIVER_TILE, ...(mm ? { returnExtras: MM } : {}), scope: { step: 'S14', family: 'cannon' } } } },
+        { account: receiver, role: 'cannon-receiver', receiver: true, final: true, options: { giver, tile: RECEIVER_TILE, questVarp: quest, setUp, giveBack: true, ...(mm ? { expectBack: MM.map(({ item, count }) => ({ item, count })) } : {}), waitTicks: 1500, scope: { step: 'S14', family: 'cannon' } } }
     ]
 };
 const configPath = join(base, 'launch.json');

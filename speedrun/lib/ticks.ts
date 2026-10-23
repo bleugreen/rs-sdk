@@ -5,7 +5,9 @@
 // The scored quantity is in-world ticks, read from `state.tick`. The client
 // counter resets when the client relaunches, so a step that spans a relaunch
 // is flagged `crossedSession` and its tick count is a lower bound (a dropped
-// connection keeps the player in the world for ticks nobody observed).
+// connection keeps the player in the world for ticks nobody observed). An
+// in-page login (session.ts) starts a new game session on the same count, so a
+// step spanning one is still its plain end minus start.
 
 import { appendFileSync, mkdirSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
@@ -20,11 +22,11 @@ import { tickMs } from './wait';
  * /playercount read during the attempt), `tickmon` (one minute of the in-run tick-cadence monitor,
  * tick-monitor.ts; its `ticks` are the tick arrivals it read), `note` (figures a step records about
  * its own run, such as a fight's cast count, written with `logNote`), `travel` (a transition leg's per-hop breakdown, runner/legs.ts,
- * overlapping that leg's step row). `report` lists them
+ * overlapping that leg's step row), `tabmem` (one minute of the browser tab's memory, tab-memory.ts). `report` lists them
  * apart and never sums them into the total. A row without a kind is a step, boundary or runner
  * row, and the step and boundary rows together cover the run.
  */
-export type RowKind = 'session' | 'program' | 'gate' | 'reach' | 'hiscore' | 'players' | 'tickmon' | 'note' | 'travel';
+export type RowKind = 'session' | 'program' | 'gate' | 'reach' | 'hiscore' | 'players' | 'tickmon' | 'note' | 'travel' | 'tabmem';
 
 export interface TickRow {
     v: 1;
@@ -76,19 +78,30 @@ export function newRunId(date: Date = new Date()): string {
 
 /**
  * What `measure` reads its clock from: a bare SDK, or a session (session.ts)
- * whose `sessionId` bumps on every relaunch.
+ * whose `sessionId` bumps on every game session and `launchId` on every client
+ * launch (the count's restart).
  */
-export type MeasureTarget = StateSource | { sdk: StateSource; name?: string; sessionId?: number };
+export type MeasureTarget = StateSource | { sdk: StateSource; name?: string; sessionId?: number; launchId?: number };
 
-function resolveTarget(t: MeasureTarget): { sdk: StateSource; account: () => string; sessionId: () => number } {
+/**
+ * Which tick count a source's `state.tick` belongs to: its `launchId`, since only a client launch
+ * restarts the count. A source without one (a test fake, a lab script's bare session) falls back to
+ * its `sessionId`, so every new session reads as a restart there.
+ */
+export function tickCounter(t: { sessionId?: number; launchId?: number }): number {
+    return t.launchId ?? t.sessionId ?? 0;
+}
+
+function resolveTarget(t: MeasureTarget): { sdk: StateSource; account: () => string; sessionId: () => number; counter: () => number } {
     if ('sdk' in t) {
         return {
             sdk: t.sdk,
             account: () => t.name ?? t.sdk.getState()?.player?.name ?? '?',
             sessionId: () => t.sessionId ?? 0,
+            counter: () => tickCounter(t),
         };
     }
-    return { sdk: t, account: () => t.getState()?.player?.name ?? '?', sessionId: () => 0 };
+    return { sdk: t, account: () => t.getState()?.player?.name ?? '?', sessionId: () => 0, counter: () => 0 };
 }
 
 /**
@@ -105,7 +118,7 @@ export async function measure<T>(
 ): Promise<T> {
     const t = resolveTarget(target);
     const startTick = t.sdk.getState()?.tick ?? -1;
-    const startSession = t.sessionId();
+    const startCounter = t.counter();
     const account = t.account();
     const t0 = Date.now();
     let ok = true;
@@ -125,7 +138,7 @@ export async function measure<T>(
         throw e;
     } finally {
         const endTick = t.sdk.getState()?.tick ?? -1;
-        const span = tickSpan(startTick, endTick, startSession, t.sessionId());
+        const span = tickSpan(startTick, endTick, startCounter, t.counter());
         log.append({
             v: 1,
             runId: log.runId,
@@ -157,11 +170,12 @@ export function logNote(log: TickLog, target: MeasureTarget, step: string, meta:
 }
 
 /**
- * Ticks between two observations. Across a relaunch the counter restarts near
- * zero, so the best we know is the ticks observed in the new session.
+ * Ticks between two observations, each tagged with its tick count (`tickCounter`). Across a
+ * relaunch the counter restarts near zero, so the best we know is the ticks observed in the new
+ * count; on one count (in-page logins included) it is the plain difference.
  */
-export function tickSpan(startTick: number, endTick: number, startSession: number, endSession: number): { ticks: number; crossedSession: boolean } {
-    const crossedSession = startSession !== endSession || endTick < startTick;
+export function tickSpan(startTick: number, endTick: number, startCounter: number, endCounter: number): { ticks: number; crossedSession: boolean } {
+    const crossedSession = startCounter !== endCounter || endTick < startTick;
     if (!crossedSession) return { ticks: Math.max(0, endTick - startTick), crossedSession };
     return { ticks: Math.max(0, endTick), crossedSession };
 }
