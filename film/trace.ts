@@ -130,14 +130,21 @@ export function serverTickAt(ticks: readonly FeedTick[], ms: number): number | n
     return best < 0 ? null : ticks[best]!.k;
 }
 
-/** The feed ticks in a recorder's feed.jsonl text (`{"rx":ms,"frame":{...}}` lines). */
+/** The feed ticks in a recorder's feed.jsonl text (`{"recv":ms,"frame":{...}}` lines). */
 export function feedTicks(jsonl: string): FeedTick[] {
     const out: FeedTick[] = [];
     for (const line of jsonl.split('\n')) {
         if (!line.includes('"t":"tick"')) continue;
-        const r = JSON.parse(line) as { rx: number; frame?: { t?: string; k?: number } };
-        if (r.frame?.t === 'tick' && typeof r.frame.k === 'number') out.push({ rx: r.rx, k: r.frame.k });
+        const r = JSON.parse(line) as { recv: number; frame?: { t?: string; k?: number } };
+        if (r.frame?.t === 'tick' && typeof r.frame.k === 'number') out.push({ rx: r.recv, k: r.frame.k });
     }
+    return out;
+}
+
+/** Receive-time gaps between consecutive feed ticks (k then k + 1): the observed tick length. */
+export function tickGaps(ticks: readonly FeedTick[]): number[] {
+    const out: number[] = [];
+    for (let i = 1; i < ticks.length; i++) if (ticks[i]!.k === ticks[i - 1]!.k + 1) out.push(ticks[i]!.rx - ticks[i - 1]!.rx);
     return out;
 }
 

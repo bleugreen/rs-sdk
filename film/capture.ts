@@ -35,10 +35,10 @@ if (process.env.FILM_NO_INSTALL !== '1') {
 const { BotSDK } = await import('../sdk/index');
 const { launchLabBrowser } = await import('../speedrun/lab/browser');
 const session = await import('../speedrun/lib/session');
-const { areaAround, recordFeed } = await import('./feed-recorder');
+const { recordFeed } = await import('./feed-recorder');
 const { encodeClip, jpegSize, startScreencast } = await import('./screencast');
 const { applySetup, parseSetup } = await import('./setup');
-const { feedTicks, frameStats, mergeTrace, serverTickAt, spread, StateDiff, xpGained } = await import('./trace');
+const { feedTicks, frameStats, mergeTrace, serverTickAt, spread, StateDiff, tickGaps, xpGained } = await import('./trace');
 type Observed = import('./trace').Observed;
 type RawAction = import('./trace').RawAction;
 
@@ -72,7 +72,7 @@ const num = (v: unknown, def: number, lo: number, hi: number, what: string) => {
 };
 const seconds = num(flag('seconds') ?? clip.seconds, 60, 5, 900, '--seconds');
 const fps = num(flag('fps') ?? clip.fps, 25, 5, 60, '--fps');
-const areaSize = num(flag('area') ?? clip.area, 128, 32, 384, '--area');
+const areaSize = num(flag('area') ?? clip.area, 192, 64, 384, '--area');
 const crf = num(flag('crf') ?? clip.crf, 26, 0, 51, '--crf');
 const setup = parseSetup(clip.setup);
 const script = relative(ROOT, resolve(clip.script));
@@ -120,21 +120,11 @@ try {
     const diff = new StateDiff();
     const observed: Observed[] = [];
     const feedUrl = `ws://${server}/worldfeed`;
-    const feed = recordFeed({ url: feedUrl, out: join(out, 'feed.jsonl'), area: areaAround(at.worldX, at.worldZ, areaSize) });
-    const areas = [feed.area];
+    // The area follows the bot by its roster position, as the live recorder follows the scored account.
+    const feed = recordFeed({ url: feedUrl, out: join(out, 'feed.jsonl'), centre: { x: at.worldX, z: at.worldZ }, size: areaSize, follow: env.BOT_USERNAME, log: m => say(`feed: ${m}`) });
     const hello = await Promise.race([feed.hello, Bun.sleep(10_000).then(() => null)]);
     if (!hello) throw new Error(`no hello from the world feed at ${feedUrl}: start the engine with WORLD_FEED=true (film.sh does)`);
-    // The feed area follows the player: re-centred when it comes within a quarter of the edge.
-    observer.onStateUpdate(s => {
-        const ms = Date.now();
-        observed.push(...diff.next(s, ms));
-        const p = s.player;
-        const a = feed.area;
-        if (p && a && (Math.abs(p.worldX - (a.x + a.w / 2)) > a.w / 4 || Math.abs(p.worldZ - (a.z + a.h / 2)) > a.h / 4)) {
-            feed.setArea(areaAround(p.worldX, p.worldZ, areaSize));
-            areas.push(feed.area);
-        }
-    });
+    observer.onStateUpdate(s => observed.push(...diff.next(s, Date.now())));
 
     const box = await page.evaluate(() => {
         const r = document.querySelector('canvas')!.getBoundingClientRect();
@@ -197,7 +187,6 @@ try {
     const levels: Record<string, [number, number]> = {};
     for (const e of inClip) if (e.kind === 'level') levels[e.skill] = [levels[e.skill]?.[0] ?? e.from, e.to];
     const clientTickAt = (ms: number) => [...observed].reverse().find(e => e.ms <= ms)?.clientTick ?? observed[0]?.clientTick ?? null;
-    const tickGaps = ticks.slice(1).filter((t, i) => t.k === ticks[i]!.k + 1).map((t, i) => t.rx - ticks.filter((u, j) => j < ticks.length - 1 && ticks[j + 1]!.k === u.k + 1)[i]!.rx);
     const meta = {
         bot,
         script,
@@ -208,7 +197,7 @@ try {
         setup,
         staged,
         git: { commit: git(['rev-parse', 'HEAD']), dirty: git(['status', '--porcelain']).length > 0 },
-        tickMs: { configured: Number(process.env.NODE_TICKRATE) || null, feedHello: hello.tickMs, observed: spread(tickGaps) },
+        tickMs: { configured: Number(process.env.NODE_TICKRATE) || null, feedHello: hello.tickMs, observed: spread(tickGaps(ticks)) },
         start: { ms: t0, tick: serverTickAt(ticks, t0), clientTick: clientTickAt(t0) },
         end: { ms: t1, tick: serverTickAt(ticks, t1), clientTick: clientTickAt(t1) },
         durationMs: Math.round(t1 - t0),
@@ -229,7 +218,7 @@ try {
             receiveLagMs: spread(frames.map(f => f.rxMs - f.ms)),
             crop
         },
-        feed: { file: 'feed.jsonl', url: feedUrl, protocol: hello.v, frames: feed.frames, ticks: ticks.length, areas },
+        feed: { file: 'feed.jsonl', url: feedUrl, protocol: hello.v, frames: feed.frames, ticks: ticks.length, areas: feed.areas, followedSlot: feed.followedSlot },
         trace: { file: 'trace.jsonl', ...kinds },
         clock: 'ms fields are wall-clock epoch ms on the lab machine; videoMs = ms - start.ms; tick is the server tick from the feed, clientTick the browser client\'s own tick count'
     };
