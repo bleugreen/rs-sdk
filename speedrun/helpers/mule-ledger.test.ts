@@ -492,7 +492,8 @@ describe('deliverable runtime configurations', () => {
         writeFileSync(path, JSON.stringify(options));
         expect(cli(checkArgs).exitCode).toBe(1);
         expect(cli(['--rows', 'H99', '--delivery-run', 'cli-attempt', '--serve', 'receiver']).exitCode).not.toBe(0);
-    });
+        // Eight sequential CLI spawns: about 2.7 s each on a loaded host, far past bun's 5 s default.
+    }, 60_000);
 });
 
 
