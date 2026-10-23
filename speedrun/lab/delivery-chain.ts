@@ -219,6 +219,17 @@ try {
             const f = plan.fixtures[i]!;
             const step = steps[i]!;
             await stageScored(f);
+            // A hand-off step's precondition wants its carrier in view (on run day it was prepared rows
+            // earlier): the staged entry waits for its readiness and sight, and the wait is reported.
+            let entryWaitTicks: number | null = null;
+            if (step.kind === 'handoff') {
+                const t0 = scored.sdk.getState()!.tick;
+                const inView = await waitUntil(scored.sdk, st => !!roleError || (owner.ready(row).ok && st.nearbyPlayers.some(p => p.name.toLowerCase() === muleName.toLowerCase())), { maxTicks: 900 });
+                if (roleError) throw roleError;
+                entryWaitTicks = scored.sdk.getState()!.tick - t0;
+                emit('entry-wait', { row, ok: inView.ok, entryWaitTicks, status: readMuleReady(options.cueDir, muleName) });
+                if (!inView.ok) throw new Error(`${row}: the carrier was not ready and in view within 900 ticks`);
+            }
             const pre = step.preconditions(scored.sdk.getState()!, {} as never);
             emit('row-start', { row, step: step.name, preconditions: pre, control: readMulePreparation(options.cueDir, muleName), status: readMuleReady(options.cueDir, muleName) });
             if (pre !== true) throw new Error(`${row}: ${step.name} preconditions: ${pre}`);
@@ -229,7 +240,7 @@ try {
             const post = step.postconditions(s, {} as never);
             const w = waits.get(row);
             const out = {
-                row, step: step.name, ok: post === true, post, stepTicks: s.tick - startTick, stepMs: Date.now() - startMs,
+                row, step: step.name, ok: post === true, post, entryWaitTicks, stepTicks: s.tick - startTick, stepMs: Date.now() - startMs,
                 readyWaitTicks: w?.readyTick !== undefined ? w.readyTick - w.openTick : null,
                 cueToEndTicks: w?.readyTick !== undefined ? s.tick - w.readyTick : null,
                 cue: (c => c && { session: c.session, seq: c.seq, stop: !!c.stop, final: !!c.final })(readCue(options.cueDir)),
