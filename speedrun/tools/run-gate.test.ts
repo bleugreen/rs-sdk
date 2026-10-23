@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
-    botClientWindows, checkAccount, choiceLine, choose, DEFAULT_PREFER, forwarded, gateLabel, handoffSteps, gateRow, gateScrub, locsLine, loopsSummary, type Machine, type MachineGate,
+    botClientWindows, checkAccount, choiceLine, choose, DEFAULT_PREFER, forwarded, gateLabel, type HandoffStep, handoffSteps, gateRow, gateScrub, locsLine, loopsSummary, type Machine, type MachineGate,
     machineVerdict, oneWindowProblem, parseClaimStatus, parseDirectJson, parsePrefer, readLocs, relabel, remoteLine, type ScenePoll, sceneLine, shq, sshArgv,
     type StateLook, Stop, tileLine, tileRead, watchScene,
 } from './run-gate';
@@ -244,7 +244,7 @@ describe('handoff --no-login (SCORED is logged in once, by run.ts)', () => {
         expect(remoteLine('rs-sdk', 's', '12m', ['handoff', '--scored-env=e', ...forwarded('handoff', [...argv, '--no-login'])])).toContain("'--no-login'");
     });
     test('--no-login stops at the bare page and checks the served bundle; the default logs in', () => {
-        const before = ['claim', 'preconditions', 'display', 'recording', 'login count', 'tab', 'chrome flags', 'one window', 'title frame'];
+        const before: HandoffStep[] = ['claim', 'preconditions', 'display', 'recording', 'login count', 'tab', 'chrome flags', 'one window', 'title frame'];
         expect(handoffSteps({ noLogin: true })).toEqual([...before, 'served bundle']);
         expect(handoffSteps({ noLogin: false })).toEqual([...before, 'login', 'secrets', 'one window after login', 'in-game frame']);
     });
