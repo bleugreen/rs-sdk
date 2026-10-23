@@ -20,6 +20,9 @@
 //
 // Each walk starts by turning run on (lib/run-mode.ts), however the session
 // came back: a relaunched client or reloaded page logged in without login().
+// It first waits, bounded in observed ticks, for a state that carries the player (awaitPlayer): a
+// reloaded or relaunched client can publish frames before it, and S00's `done` (skills/start.ts)
+// reads the player, so a walk on such a frame sees S00 undone and refuses 'not in game'.
 // It then waits for the client's own scene-ready signal (lib/wait.ts awaitScene,
 // the one wait the launch path uses too) before it observes: a fresh login shows
 // "Loading - please wait." for tens of ticks on the browser client, and its
@@ -47,6 +50,7 @@ import {
     periodMs,
     sleep,
     tickMs,
+    waitUntil,
 } from '../lib/wait';
 import { Fence } from './fence';
 import { journalProbeNamed } from '../lib/quests';
@@ -259,6 +263,22 @@ export interface ResumableOptions<C> extends Omit<RunStepsOptions<C>, 'from' | '
     onEvent?: (e: ResumeEvent) => void;
     /** Bound on each walk's scene wait (default lib/wait.ts SCENE_READY_MAX_TICKS); past it the walk observes anyway. */
     sceneMaxTicks?: number;
+    /** Bound on each walk's wait for a state with the player (default PLAYER_MAX_TICKS); past it the walk observes anyway. */
+    playerMaxTicks?: number;
+}
+
+/**
+ * Observed ticks a walk waits for a state with the player. A login publishes it within a few ticks;
+ * an account out on purpose (S21's open relog, whose login half the walk must reach) publishes none,
+ * and costs the walk this bound or the idle bound once.
+ */
+export const PLAYER_MAX_TICKS = 30;
+
+/** Wait, bounded in observed ticks, for a published state with the player. Never a fault: past the bound the caller observes what it has. */
+export async function awaitPlayer(sdk: RunnerSession['sdk'], maxTicks = PLAYER_MAX_TICKS): Promise<{ ready: boolean; ticks: number }> {
+    const t0 = currentTick(sdk);
+    const r = await waitUntil(sdk, s => !!s.player, { maxTicks });
+    return { ready: r.ok, ticks: currentTick(sdk) - t0 };
 }
 
 export interface ResumableResult extends RunStepsResult {
@@ -294,6 +314,7 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             const startTick = currentTick(session.sdk);
             const startCounter = tickCounter(session);
             if (!session.sdk.getState()) await nextTick(session.sdk);
+            const player = await awaitPlayer(session.sdk, opts.playerMaxTicks);
             // Whatever brought the session back (the watchdog's login or relaunch, a
             // reloaded page) left a fresh login, and a fresh login walks.
             const runMode = await ensureRunOn(session.sdk);
@@ -310,7 +331,7 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             }
             const { observed: _o, ...summary } = point;
             points.push(summary);
-            row(opts.log, session, RESUME_STEP, startTick, startCounter, t0, { attempt, ...summary, probes: Object.keys(obs.probed), run: runMode, scene });
+            row(opts.log, session, RESUME_STEP, startTick, startCounter, t0, { attempt, ...summary, probes: Object.keys(obs.probed), run: runMode, scene, player });
             opts.onEvent?.({ kind: 'resume', attempt, point: summary });
             if (point.mode === 'finished') return { completed: 0, drops, points };
 
