@@ -230,7 +230,10 @@ display until the attempt ends. In order (`rehearse.ts` `bracketAttempt`):
 2. **The recording.** Right before the attempt's login, the harness checks that an ffmpeg x11grab
    of `DISPLAY` writing a file is running (`lib/display.ts` `recordingState`). The operator's live
    view is another x11grab of the display, but it serves HTTP (`-listen`), so it doesn't count. With
-   no recording, the attempt is refused (exit 3). A `(gate) recording` row records the result.
+   no recording on the display, the attempt is refused (exit 3). With no `DISPLAY` at all (headless
+   Chrome, as on the run host in agility.md 7.6) the state is unknown, and the attempt is not
+   refused: there is no recording and the live frame below is UNVERIFIED. A `(gate) recording` row
+   records the result.
 3. **The login, then the live-frame pass line.** The attempt account logs in by re-navigating its
    staged window. Once it is in the world, alongside its first steps (so the attempt's clock pays
    nothing), the harness:
@@ -249,6 +252,9 @@ display until the attempt ends. In order (`rehearse.ts` `bracketAttempt`):
    and its window is maximised. When the window on top or the frame shows something else, it
    raises the tab once (minimise, restore, maximise, over CDP) and looks again. The result is a
    `(gate) live frame` row, ok only on a pass, with the frame PNGs kept beside the log as evidence.
+   The direct read's own file, `<log>-<runId>-gate.json` (its per-trial rows and tick arrivals,
+   which are what explain a short on-time count), is kept beside the log too, so copying the log's
+   directory off before teardown keeps the gate's raw evidence.
    The summary also gets a `gate: live frame: PASS|FAIL|UNVERIFIED` line. A failure prints a
    `[gate] WARNING` line and never stops the attempt. A frame of a near-flat page, such as a black
    loading screen, is inconclusive, and that reports as unverified.

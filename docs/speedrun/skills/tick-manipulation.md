@@ -353,6 +353,14 @@ trial in the page); the rules live in
 [`speedrun/lib/hostgate-verdict.ts`](../../../speedrun/lib/hostgate-verdict.ts), which imports
 nothing, so the page or the SDK side can call them on the page's numbers.
 
+**The in-page loop under the gate.** [`speedrun/lib/gated-program.ts`](../../../speedrun/lib/gated-program.ts)
+(cairn://p/rs/156) is the one loop the knife steps use. `inPageGate` is a `HostGate` whose
+probe is `probeInPage` (`GateOptions.probeWith`), 20 trials, judged by the direct rule
+scaled to 19 of 20. `runGatedProgram` stops and restarts the program on each decision: a
+slip, a re-probe while plain, the measured switch-off (in ticks per expected roll), and the
+in-run pause rule on the knife run's catch-ups. The knife programs' own reaction and lock
+recovery are untouched.
+
 **Direct-path go/no-go** (cairn://p/rs/tenets/11, with main's ruling of 2026-10-21 on the
 defaults), measured on the run machine itself, just before the run, at the real player count:
 

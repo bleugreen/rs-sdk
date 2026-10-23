@@ -252,5 +252,7 @@ difference is chop luck and one more slip, not movement.
   reaped when the batch exits (m, rs/261's first two chains, 20:16 PDT).
 - **Claims race.** rs/196 took the twin's claim between a `status` and a `take` (03:32Z), and
   rs/261 claimed when it was released (03:51Z).
-- **Still owed:** the rune axe back to cairn_mule2, on a later cairn_chops login under its own
-  claim (rs/237 keeps mule2's `returns`). The knife and logs stay with cairn_chops.
+- **Rune axe returned** to cairn_mule2 at Lumbridge on 2026-10-22 06:57Z (rs/296, twin claim
+  06:52-07:00Z): one cairn_chops login with `speedrun/tools/kit-return.ts`, one 7-tick trade,
+  exit 0, logout confirmed by the page; mule2 banked it (rs/237). The knife and logs stay with
+  cairn_chops.
