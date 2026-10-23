@@ -100,7 +100,8 @@ function state(tick: number, o: { x?: number; xp?: number; level?: number; msgs?
         inGame: true,
         player: { worldX: o.x ?? 3000, worldZ: 3300, level: 0, animId: -1 },
         skills: [{ name: 'Firemaking', level: o.level ?? 80, baseLevel: o.level ?? 80, experience: o.xp ?? 1000 }],
-        gameMessages: (o.msgs ?? []).map(text => ({ type: 0, text, sender: '', tick, fromSelf: false }))
+        // A message keeps the tick it arrived on; these all arrived on tick 1.
+        gameMessages: (o.msgs ?? []).map(text => ({ type: 0, text, sender: '', tick: 1, fromSelf: false }))
     } as unknown as BotWorldState;
 }
 

@@ -56,6 +56,7 @@ describe('recording a feed', () => {
         expect(got.map(m => JSON.parse(m).t)).toEqual(['roster', 'sub']);
         const tick = '{"t":"tick","k":42,"ms":400,"p":[{"i":3,"x":3001,"z":3300,"l":0,"m":[4]}]}';
         client!.send(tick);
+        await until(() => rec.ticks().length === 1);
         // Too close to move the area, then far enough but too soon, then far enough and late enough.
         clock += 20_000;
         client!.send(JSON.stringify({ t: 'roster', k: 50, p: [[3, 'film bot', 3040, 3300, 0, 3]], npcs: 9 }));
