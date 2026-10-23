@@ -51,19 +51,18 @@ describe('sharkSupply', () => {
         expect(s.feedLogins).toBe(43);
         expect(s.fallbackLogins).toBe(0);
     });
-    test('above the ceiling only the asks provably under it count; the rest fall back', () => {
+    test('above the ceiling it logs the bound and leaves the cut to each limit buy', () => {
         const s = sharkSupply(shark, { ...plan, ceiling: 650 });
         expect(s.withinCeiling).toBe(false);
         expect(s.atCeiling).toBe(0);
-        expect(s.feedLogins).toBe(0);
-        expect(s.fallbackLogins).toBe(43);
-        expect(s.reason).toMatch(/above the 650 ceiling/);
+        expect(s.feedLogins).toBe(43);
+        expect(s.reason).toMatch(/above the 650 ceiling: every buy is a limit at 650/);
         // With the mean above the ceiling the totals prove at most ~1/(ceiling + 1 - ask) of the side under it:
         // a mean of 590.5 against a 590 ceiling proves 5,495 of a million, two logins' worth.
         const t = sharkSupply(book({ ask: 500, sellQuantity: 1_000_000, sellValue: 590_500_000 }), { ...plan, ceiling: 590 });
         expect(t.withinCeiling).toBe(false);
         expect(t.atCeiling).toBe(1_000_000 - Math.floor(90_500_000 / 91));
-        expect(t.feedLogins).toBe(2);
+        expect(t.atCeiling).toBe(5_495);
     });
     test('a thin book feeds what it holds', () => {
         const s = sharkSupply(book({ ask: 500, sellQuantity: 5_000, sellValue: 2_600_000 }), plan);

@@ -9,9 +9,9 @@
  *
  * Sharks (plan `sharks.source: 'buy'`): a fleet input on docs/speedrun/SUPPLIES.md, so nothing is bought until
  * main has announced the scored run's end (`--run-ended`). The planned quantity is bounded on the ask side
- * (`buyCost`); when the bound per shark is above the ceiling, only the asks provably at or below it count
- * (`asksAtOrBelow`), and the knights logins those cannot feed go to the low-food fallback. Each account's buy is
- * a limit offer at the ceiling, so no shark ever costs more.
+ * (`buyCost`) and logged against the ceiling; logins a thin book cannot feed go to the low-food fallback at once.
+ * Each account's buy is a limit offer at the ceiling, so no shark ever costs more, and an account whose fill
+ * comes short of the plan's minimum goes to the fallback then.
  */
 import { asksAtOrBelow, bidsAtOrAbove, buyCost, type MarketQuote } from '../lib/market.ts';
 import { netOfFee } from './ledger.ts';
@@ -85,14 +85,15 @@ export function sharkSupply(q: MarketQuote | null, i: SupplyInput): SharkSupply 
     const perUnitHigh = cost.units ? cost.high / cost.units : null;
     const withinCeiling = perUnitHigh !== null && perUnitHigh <= i.ceiling;
     const atCeiling = asksAtOrBelow(q, i.ceiling);
-    // Within the ceiling every unit the asks supply counts; above it, only those provably at or below it.
-    const usable = withinCeiling ? cost.units : Math.min(cost.units, atCeiling);
-    const feedLogins = Math.min(i.logins, perLogin > 0 ? Math.floor(usable / perLogin) : i.logins);
+    // A book too thin for the plan feeds the logins its depth covers. Above the ceiling the totals prove almost
+    // nothing under it (at most ~1/(ceiling + 1 - ask) of the side once the mean is past it), so the logins are
+    // not cut here: each buys with a limit at the ceiling, and one whose fill comes short of the minimum falls back.
+    const feedLogins = Math.min(i.logins, perLogin > 0 ? Math.floor(cost.units / perLogin) : i.logins);
+    const bound = `${wanted} sharks cost ${Math.round(cost.low)}-${Math.round(cost.high)} (at most ${perUnitHigh!.toFixed(1)} each)`;
+    const thin = cost.short > 0 ? `; the asks hold ${cost.units} of them: ${feedLogins} of ${i.logins} logins fed` : '';
     const reason = withinCeiling
-        ? cost.short > 0
-            ? `the asks hold ${cost.units} of ${wanted}: ${feedLogins} logins fed`
-            : `${wanted} sharks cost ${Math.round(cost.low)}-${Math.round(cost.high)} (at most ${perUnitHigh!.toFixed(1)} each, ceiling ${i.ceiling})`
-        : `the bound is ${perUnitHigh?.toFixed(1)} a shark, above the ${i.ceiling} ceiling: buying only at or below it, ${atCeiling} provably there, ${feedLogins} of ${i.logins} logins fed`;
+        ? `${bound}, within the ${i.ceiling} ceiling${thin}`
+        : `${bound}, above the ${i.ceiling} ceiling: every buy is a limit at ${i.ceiling}, ${atCeiling} provably offered at or below it; a login whose buy fills short of the minimum falls back${thin}`;
     return { allowed: true, reason, wanted, cost, perUnitHigh, withinCeiling, atCeiling, feedLogins, fallbackLogins: i.logins - feedLogins };
 }
 
