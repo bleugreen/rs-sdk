@@ -19,7 +19,7 @@ describe('parsePlan', () => {
         const p = parsePlan({ accounts: accounts(3, 'knights') });
         expect(p.maxSessions).toBe(3);
         expect(p.hp).toBe(40);
-        expect(p.sharks).toEqual({ source: 'bank', perAccount: 200, perLoginHour: 30, hours: 72, ceiling: 701, minimum: 28 });
+        expect(p.sharks).toEqual({ source: 'bank', perAccount: 200, perLoginHour: 30, hours: 72, ceiling: 701, minimum: 28, fillMinutes: 10 });
         expect(p.ramp?.steps).toEqual([3]);
         expect(p.ramp?.dropPct).toBe(10);
         expect(p.ramp?.fallbackMix).toEqual({ iron: 12, heroes: 8, guards: 23 });
@@ -63,6 +63,13 @@ describe('parsePlan', () => {
         expect(ps).toContain('ramp.steps must rise');
         expect(ps).toContain('sell.cap must be at most 5000');
         expect(ps).toContain('sell.enabled needs sell.floors: nothing is sold without a floor');
+    });
+
+    test('sales run only from methods that can reach the Exchange', () => {
+        const sell = { enabled: true, floors: { 'Iron ore': 80 } };
+        const ps = problems({ accounts: accounts(2, 'iron'), sell });
+        expect(ps.some(p => /sell.enabled: iron, guards accounts cannot reach the Exchange/.test(p))).toBe(true);
+        expect(problems({ accounts: accounts(2, 'guards'), sell, foodFallbackMix: { guards: 1 }, ramp: null })).toEqual([]);
     });
 
     test('refuses more accounts than one address holds, or than its sessions', () => {
