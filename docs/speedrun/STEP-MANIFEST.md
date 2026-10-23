@@ -1350,7 +1350,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   HP, at least 4 ticks after a stun, in a success window), `forcedBelow` (6 HP, inside a stun),
   `stunActions` (the plan above; at most 4 packets per tick), `idleOnInterface: true`, and the top-up as
   a `player` stun action placed first in `stunActions` and gated with `fewer` (request at k = 2, or k = 4 if
-  the giver is not adjacent; when fewer than 3 bones are held; early, at 6, when the giver is far).
+  the giver is not adjacent; when fewer than 3 bones are held; early, at 6, when the giver is far). **Fold-in 39 (rs/158's ruling, main accepted 13:27Z; config only):** the S18 courier top-up threshold `topUp.below` = 2: a top-up is due once SCORED holds fewer than 2 sharks (skills/thieving.ts:226-227); the rows top sharks to 2, so below equals the target (higher fires every stun, 1 lets SCORED reach 0); applied in rs/496's run-config.json, sha256 af909ec6f7f3db0f2b0c4b561454c805abad28a46930561fb0b68a6ecd891aa3 (helpers.json unchanged cd4faa74; rs/496 comment 45).
   **The top-up contract** (accepted by main, 19:28 PDT; rs/243 built it in `thieving.ts`, Thieving
   part 2). **By default the program idles on the trade interface:** the `player` stun action sends
   the request at stun + 2 and owns that tick, the program sends nothing until the trade opens, and
