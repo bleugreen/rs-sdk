@@ -246,6 +246,41 @@ export function prayerBoost(active: readonly MeleePrayer[]): Prayers {
     return { attack: pct('attack'), strength: pct('strength') };
 }
 
+/**
+ * Ticks the crabs route spends beyond its training (m, rs/553's lab runs): over White Wolf Mountain ~390, Seers'
+ * to the crabs ~150, Karim's kebabs ~200, and a ~320-tick bank trip per ~1,900 ticks at the crabs.
+ */
+export const CRAB_ROUTE_TICKS = 740;
+export const CRAB_BANK_TRIP_SHARE = 320 / 1900;
+/** The scimitar errand (Lumbridge, Draynor bank for coins, the toll, Zeke, the cows): ~430 ticks against ~40 straight to the cows (m). */
+export const SHOP_ERRAND_TICKS = 390;
+
+export type SiteChoice = 'cows' | 'crabs';
+
+/**
+ * The site for a target Hitpoints level, by the model: the Lumbridge cows the whole way, or the cows to 30 then
+ * the rock crabs (CRAB_ROUTE_TICKS of travel and food runs). The crabs pay above ~52 HP.
+ */
+export function chooseSite(to: number): SiteChoice {
+    if (to <= 30) return 'cows';
+    const at = (rows: ModelRow[], hp: number) => rows.find(r => r.hp >= hp)!.ticks;
+    const cows = modelTicks(TARGETS.cow, to);
+    const crabs = modelTicks(TARGETS.crab, to);
+    const crabTicks = at(crabs, to) - at(crabs, 30);
+    const route = at(cows, 30) + CRAB_ROUTE_TICKS + crabTicks * (1 + CRAB_BANK_TRIP_SHARE);
+    return route < at(cows, to) ? 'crabs' : 'cows';
+}
+
+/**
+ * Whether the scimitars repay Zeke's errand on the cows to `to`, against the tutorial's bronze sword (a fresh
+ * account carries it). The crabs route always shops: its kebabs are bought next door.
+ */
+export function shopPays(to: number, site: SiteChoice): boolean {
+    if (site === 'crabs') return true;
+    const last = (rows: ModelRow[]) => rows.at(-1)!.ticks;
+    return last(modelTicks(TARGETS.cow, to, [BRONZE_SWORD])) - last(modelTicks(TARGETS.cow, to)) > SHOP_ERRAND_TICKS;
+}
+
 /** Hitpoints levels the trainer stamps on the way (the docs' table), up to and including `to`. */
 export function marksFor(to: number): number[] {
     return [...new Set([30, 40, 50, 60, 70, 80, 90, 99, to])].filter(l => l <= to).sort((a, b) => a - b);
