@@ -1,5 +1,5 @@
-// Preloaded into the filmed script's own process by capture.ts (`bun --preload film/hook.ts`); never
-// imported. It wraps BotSDK's one dispatch point, `sendAction`, which every `send*` call and every
+// Preloaded into the filmed script's process by capture.ts (BUN_OPTIONS=--preload=film/hook.ts, so any
+// Bun process the script starts loads it too); never imported. It wraps BotSDK's one dispatch point, `sendAction`, which every `send*` call and every
 // BotActions helper goes through, and appends each action with the stack that issued it to
 // $FILM_ACTIONS (JSONL, film/trace.ts RawAction). With FILM_ACTIONS unset it does nothing. The SDK's
 // source is unchanged, so a script run any other way (the run, the lab, the rehearsal) carries none
@@ -14,7 +14,9 @@ import { BotSDK } from '../sdk/index';
 import { isPlumbing, parseStack, pickSite } from './trace';
 
 const out = process.env.FILM_ACTIONS;
-if (out) {
+const hooked = globalThis as { __filmHook?: true };
+if (out && !hooked.__filmHook) {
+    hooked.__filmHook = true;
     // A step loop under runSteps sits ~15 frames deep; the default limit (10) would cut the script off.
     Error.stackTraceLimit = Math.max(Error.stackTraceLimit ?? 10, 64);
     const root = resolve(import.meta.dir, '..');

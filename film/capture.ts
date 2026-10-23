@@ -149,9 +149,12 @@ try {
     if (clip.opts) writeFileSync(join(work, 'opts.json'), JSON.stringify(clip.opts));
     say(`running ${stepModule ? `step module ${script}` : script} for up to ${seconds} s`);
     const scriptStart = Date.now();
-    const child = Bun.spawn([process.execPath, '--no-install', '--preload', join(ROOT, 'film', 'hook.ts'), ...entry], {
+    // The hook rides in BUN_OPTIONS rather than --preload so that any Bun process the script starts (a
+    // lab script's helper roles) loads it too and appends its own bot's actions to the same log.
+    const bunOptions = [process.env.BUN_OPTIONS, `--preload=${join(ROOT, 'film', 'hook.ts')}`].filter(Boolean).join(' ');
+    const child = Bun.spawn([process.execPath, '--no-install', ...entry], {
         cwd: ROOT,
-        env: { ...process.env, FILM_ACTIONS: actionsFile, FILM_SCRIPT: script },
+        env: { ...process.env, BUN_OPTIONS: bunOptions, FILM_ACTIONS: actionsFile, FILM_SCRIPT: script },
         stdout: Bun.file(join(out, 'script.out.log')),
         stderr: Bun.file(join(out, 'script.err.log'))
     });
@@ -208,7 +211,7 @@ try {
         start: { ms: t0, tick: serverTickAt(ticks, t0), clientTick: clientTickAt(t0) },
         end: { ms: t1, tick: serverTickAt(ticks, t1), clientTick: clientTickAt(t1) },
         durationMs: Math.round(t1 - t0),
-        script_: { startVideoMs: Math.round(scriptStart - t0), end: scriptEnd },
+        run: { startVideoMs: Math.round(scriptStart - t0), end: scriptEnd },
         xpGained: xpGained(inClip),
         levels,
         startSkills: start?.kind === 'start' ? start.skills : null,
