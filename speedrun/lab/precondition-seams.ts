@@ -23,6 +23,7 @@ import { isComplete } from '../lib/quests';
 import { buildChain, type ChainStep, type CueSink, type RunConfig } from '../runner/chain';
 import type { LegStep } from '../runner/legs';
 import { RelogBudget } from '../runner/relog-budget';
+import { loadRunConfig } from '../run';
 import { boundaryAt, SKILLS, type Boundary, type StagedItem } from './boundary';
 
 export type Tile = { x: number; z: number; level?: number; tol?: number };
@@ -105,7 +106,8 @@ export function precondSeams(cfg: RunConfig, docs: { manifest: string; runOrder:
 if (import.meta.main) {
     const [cfgPath, manifestPath, runOrderPath] = process.argv.slice(2);
     if (!cfgPath || !manifestPath || !runOrderPath) throw new Error('usage: precondition-seams.ts <run-config.json> <STEP-MANIFEST.md> <RUN-ORDER.md> [--json]');
-    const cfg = JSON.parse(readFileSync(cfgPath, 'utf8')) as RunConfig;
+    // As run.ts loads it (cueDir resolved under a scratch run dir; RC_CUE_DIR left alone).
+    const cfg = loadRunConfig(cfgPath, mkdtempSync(join(tmpdir(), 'seam-run-')), {}, false);
     const res = precondSeams(cfg, { manifest: readFileSync(manifestPath, 'utf8'), runOrder: readFileSync(runOrderPath, 'utf8') });
     if (process.argv.includes('--json')) console.log(JSON.stringify(res, null, 1));
     else for (const r of res) console.log([r.i, r.id, r.kind, r.name, r.at ? `${r.at.x},${r.at.z},${r.at.level ?? 0} tol ${r.at.tol ?? 0}` : '-', r.from, r.verdict, r.why].join(' | '));
