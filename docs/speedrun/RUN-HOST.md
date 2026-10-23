@@ -559,6 +559,7 @@ and to the Monkey Madness kit gate (RUN-ORDER.md R37):
 | 14:00Z | 07:00 | main names the run commit |
 | 14:30Z | 07:30 | claims released |
 | 14:45Z | 07:45 | the twin re-run done |
+| before 15:00Z | before 08:00 | the early warm-up on both machines, after the final install (below) |
 | 15:00Z | 08:00 | the floor freeze (below), 2 h before the gate series and 3 h after the naming |
 | from 17:00Z | 10:00 | the gate series (step 5a); ~15:00Z before main's 04:45 PDT ruling |
 | ~17:15Z | 10:15 | the start, on the machine that passes |
@@ -568,6 +569,18 @@ and to the Monkey Madness kit gate (RUN-ORDER.md R37):
 **The run-eve freeze** (main's ruling; STEP-MANIFEST.md entry 0). The last floor is named at least
 2 h before the gate series starts; after that no merge moves the floor without the line's update in
 the same window.
+
+**The early warm-up, a standing pre-freeze step** (the host's text, main ruled 11:55Z via rs/158;
+fold-in 37; `up` and `gate` take `--rehearsal` and `--claim` in `run-gate.ts` at 38902b56, re-checked
+at the commit main names). After the final install on both machines and before the freeze, run
+`run-gate.ts up --rehearsal --claim=<owner, not host/run>` then `gate --rehearsal` on both machines,
+each under its own claim, with run-gate's bot.env present. Pass lines: the served bundle's md5 equals
+the built one (`curl -s http://127.0.0.1:8899/bot/client.js?v=check | md5sum` against `md5sum
+~/rs-sdk/server/webclient/out/bot/client.js`); (d) measured (p10 >= 50); the scene report-only line
+read (warm = sceneState 2 within a few ticks); the gate logout confirmed. Then tear down: recording
+stopped with q, `tmux -L run kill-server`, ports 8899, 7780, 8090 and 9222 free, the claim released.
+It warms each run profile on the final bundle and finds browser-side faults hours before the start
+(today it found the stale lock, 11:16Z). Re-run it on a machine after any later rebuild there.
 
 **Run eve** (the host thread, 10:4x PDT 2026-10-22, as written). At the floor freeze (at least 2 h
 before the start), host switches both machines' timers to `install.sh --every 15` and takes the twin
@@ -594,10 +607,25 @@ hand-off it owns, which that hand-off then cannot get. Check: partners map match
 the two sources are compared). A mismatch is a stop: tell main and rs/41.
 
 **The gate account's bot.env is on both machines, before the 17:00Z gate series** (15:00Z before main's 04:45 PDT ruling; main 04:08 PDT via
-rs/158; fold-in 36). run-gate reads the gate account's settings from
-`~/rs-sdk/bots/<gate-account>/bot.env` (loopback GATEWAY_URL, CLIENT_URL, CDP_URL; file mode 600,
-directory 700, gitignored). Verify it is present on both machines before the 17:00Z gate series (it
-was missing on both at 11:0xZ; the gate timer uses a different path). Never name the gate account.
+rs/158; fold-in 36; keys from the host thread, 11:1x-11:27Z via rs/158, fold-in 37).
+`~/rs-sdk/bots/<gate account>/bot.env` present on both machines (directory 700, file 600,
+gitignored), holding BOT_USERNAME, PASSWORD, SERVER (the demo), GATEWAY_URL (loopback 7780),
+CLIENT_URL (loopback 8899 /bot, with the demo server and the loopback gateway), CDP_URL (loopback
+9222) and TELEMETRY=false. It is the same parked account as the gate timer's bot.env (rs/441's
+Lumbridge probe); run-gate's `gate` reads it by the name it is given. Verify it is present on both
+machines before the 17:00Z gate series (it was missing on both at 11:0xZ; the gate timer reads its
+own copy at a different path). Never name the gate account, and never print the file's values.
+
+**No stale Chrome lock on the run profile, permanent, every install** (the host's text, main ruled
+11:55Z via rs/158; fold-in 37). With no Chrome on the profile (`pgrep -f
+user-data-dir=$HOME/rs-run/chrome-profile` empty), the run profile holds no SingletonLock,
+SingletonCookie or SingletonSocket, or the lock names the machine's current hostname (`readlink
+~/rs-run/chrome-profile/SingletonLock` = `$(hostname)-<pid>`). Otherwise delete all three. Also after
+any hostname change or profile copy. Why (run-ending, main): on 2026-10-23 at 11:16Z the run host's
+profile held a lock naming its pre-rename hostname, so Chrome refused the profile as in use by
+another computer and put an xmessage dialog on display :10; the gate tab never opened, and every
+browser login would have failed on run day. Fixed on both machines, after which the run host's gate
+re-run passed (scene t2, locs 116, at spawn).
 
 **The cannon serve file, before SCORED logs in** (rs/41's wording via rs/158, main 04:15 PDT; fold-in 36).
 Before SCORED logs in, <run dir>/cannon-serve.json holds exactly host's bytes, sha256 f0e57ad6107d2621d0c12306a5cec6ee70fe73db1a2c39e5d2a28cbfca96a7c6 (the JSON plus one trailing newline); run.ts's preflight gate "cannon serve" (run.ts:286-294) must read "H11, H23 served as the ledger rows want"; a missing file or any drift is a refusal.
@@ -1673,8 +1701,30 @@ stop before the login leaves SCORED's bare page up and not logged in, for the op
 the live view. A stop after it leaves SCORED in game: touch nothing on the display, and tell main.
 
 run.ts checks that step 0's claim is live and the run's own, and refuses to start otherwise. Its
-start is a launch for SCORED, dry-run first like `handoff` (above); run.ts is rs/186's and not on
-main, so its line is pending. From
+start is a launch for SCORED, dry-run first like `handoff` (above). **The run-start order, written
+once** (rs/186 via rs/158; fold-in 37; run.ts has been on main since #457, so its line is no longer
+pending; the flags are run.ts's at 38902b56, re-checked at the commit main names, the code winning on
+any difference):
+
+1. place cannon-serve.json and rs/41's launcher json in the run dir and check cannon-serve's sha256
+   (step 0, "The cannon serve file");
+2. run `mule-hold.ts` once per banked delivery carrier (step 5a.4, item 2: the hold);
+3. start the helper launcher (step 4; step 5a.4, item 2);
+4. after the hand-over, start run.ts in the run's tmux on the chosen machine; its preflight then
+   checks the floor, the delivery config and the cannon serve, prepares each carrier's first row, and
+   logs SCORED in:
+
+```sh
+export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && bun speedrun/run.ts --bot="$(basename "$(dirname "$SCORED_ENV")")" --config=<run config json> --run-dir=$HOME/rs-sdk/run-machine --run-commit=$(cat ~/run-commit)
+```
+
+`--bot` takes the env name, the directory under `bots/` (run.ts's usage; `loadBotEnv` reads
+`bots/<name>/bot.env`, `lib/session.ts`), not the file's path, so the line derives it from
+`$SCORED_ENV` and never types it. The run dir must equal the helper launcher's `runDir`: both
+default to `<checkout>/run-machine` (helpers/altar-cue.ts:587, helpers/standalone.ts:50), and
+cannon-serve.json defaults to `<run dir>/cannon-serve.json` (run.ts:142). Items 1-3 come before the
+tab, at step 5a.4 item 2; item 4 comes after `handoff`, which has already logged SCORED in. How
+run.ts takes over that session is the code's, at the commit main names. From
 here the run scripts drive the tab through the gateway on 7780 (RUN-ORDER.md, STEP-MANIFEST.md).
 Nobody touches the window. Relaunches during the run go the same way: session.ts mints a fresh token
 from `CLIENT_URL` and re-navigates the tab over `CDP_URL`. The run's relogs use
