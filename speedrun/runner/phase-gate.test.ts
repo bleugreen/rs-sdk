@@ -16,9 +16,19 @@ describe('judgeStatus: ready by role phase, not by being online', () => {
     test('a bone giver waiting loaded on a site giver tile passes', () => {
         expect(judgeStatus('bone', bone(), { now })).toEqual({ ok: true, detail: 'waiting on site 0 (2913,3494), 23 held, ready 5 s' });
     });
-    test("attempt 2's bone givers: 'travel' between sites refuses, whatever the launcher says", () => {
+    test("a 'travel' giver judged alone (no group member waiting) refuses, whatever the launcher says", () => {
         const j = judgeStatus('bone', bone({ phase: 'travel', readyAt: null, detail: 'site 1', tile: { x: 2919, z: 3407, level: 0 } }), { now });
-        expect(j).toEqual({ ok: false, detail: 'phase travel, not waiting (site 1)' });
+        expect(j).toEqual({ ok: false, detail: 'phase travel, not waiting, and no other group member waiting on a site (site 1)' });
+    });
+    test("a clean 'travel' giver passes when another group member waits; bounces, a fault detail, no bones or a stale file refuse", () => {
+        const t = (o: Record<string, unknown> = {}) => bone({ phase: 'travel', readyAt: null, detail: 'site 1', tile: { x: 2919, z: 3407, level: 0 }, ...o });
+        expect(judgeStatus('bone', t(), { now, someWaiting: true })).toEqual({ ok: true, detail: 'travel at (2919,3407), 23 held, rotating while another group member waits on a site (site 1)' });
+        expect(judgeStatus('bone', t({ detail: undefined, bounces: undefined }), { now, someWaiting: true }).ok).toBe(true);
+        expect(judgeStatus('bone', t({ bounces: 3 }), { now, someWaiting: true })).toEqual({ ok: false, detail: 'travel with 3 bounces, not a clean rotation (site 1)' });
+        expect(judgeStatus('bone', t({ detail: 'Error: could not stand on 2920,3407' }), { now, someWaiting: true })).toEqual({ ok: false, detail: 'travel with a fault detail (Error: could not stand on 2920,3407)' });
+        expect(judgeStatus('bone', t({ held: 0 }), { now, someWaiting: true })).toEqual({ ok: false, detail: 'travel with no bones held (site 1)' });
+        expect(judgeStatus('bone', t({ ms: now - STALE_MS - 1000 }), { now, someWaiting: true }).detail).toBe('stale: last written 31 s ago, phase travel (site 1)');
+        for (const phase of ['fault', 'restock', 'start', 'off']) expect(judgeStatus('bone', t({ phase }), { now, someWaiting: true }).ok).toBe(false);
     });
     test('a fault refuses, with its reason', () => {
         expect(judgeStatus('bone', bone({ phase: 'fault', readyAt: null, detail: 'Error: could not stand on 2920,3407' }), { now })).toEqual({ ok: false, detail: 'phase fault, not waiting (Error: could not stand on 2920,3407)' });
@@ -75,19 +85,62 @@ describe('phaseGates: the next helper step refuses, every later family is report
         expect(g.find(x => x.gate === 'role phase S18/courier cairn_c')!.detail).toBe('bones-cairn_c.json: no status file (reported: not the next helper step, not refused)');
         expect(g.find(x => x.gate === 'role phase S25a/anvil cairn_a')!.ok).toBe(true);
     });
-    test('one giver travelling, one stale, one faulted: each refuses on its own line', () => {
-        const by = { ...allWaiting, [statusFileName('bones', 'cairn_b02')]: bone({ account: 'cairn_b02', phase: 'travel', readyAt: null }), [statusFileName('bones', 'cairn_b03')]: bone({ account: 'cairn_b03', ms: now - 120_000 }), [statusFileName('bones', 'cairn_b04')]: bone({ account: 'cairn_b04', phase: 'fault', readyAt: null }) };
+    test('one giver bouncing in travel, one stale, one faulted: each refuses on its own line', () => {
+        const by = { ...allWaiting, [statusFileName('bones', 'cairn_b02')]: bone({ account: 'cairn_b02', phase: 'travel', readyAt: null, bounces: 2 }), [statusFileName('bones', 'cairn_b03')]: bone({ account: 'cairn_b03', ms: now - 120_000 }), [statusFileName('bones', 'cairn_b04')]: bone({ account: 'cairn_b04', phase: 'fault', readyAt: null }) };
         const g = phaseGates({ path, members, read: files(by), launcher: null, now, source: 'helpers.json' }).filter(x => x.gate.startsWith('role phase S07'));
         expect(g.map(x => x.ok)).toEqual([true, false, false, false]);
-        expect(g[1]!.detail).toBe('bones-cairn_b02.json: phase travel, not waiting');
+        expect(g[1]!.detail).toBe('bones-cairn_b02.json: travel with 2 bounces, not a clean rotation');
         expect(g[2]!.detail).toStartWith('bones-cairn_b03.json: stale: last written 120 s ago');
     });
     test('online in the launcher does not pass a travelling giver; logged out awaiting its login cue does', () => {
-        const by = { ...allWaiting, [statusFileName('bones', 'cairn_b01')]: bone({ phase: 'travel', readyAt: null }) };
+        const by = { ...allWaiting, [statusFileName('bones', 'cairn_b01')]: bone({ phase: 'travel', readyAt: null, bounces: 1 }) };
         const online = phaseGates({ path, members, read: files(by), launcher: [{ account: 'cairn_b01', state: 'online', cue: null }], now, source: 'x' });
         expect(online.find(x => x.gate.endsWith('cairn_b01'))!.ok).toBe(false);
         const cued = phaseGates({ path, members, read: files(by), launcher: [{ account: 'Cairn B01', state: 'awaiting-cue', cue: { state: 'waiting' } }], now, source: 'x' });
         expect(cued.find(x => x.gate.endsWith('cairn_b01'))).toMatchObject({ ok: true, detail: expect.stringContaining('logged out until its login cue opens') });
+    });
+    describe('S07 rotation: a travelling giver passes only beside one waiting on a site', () => {
+        const t = (account: string, o: Record<string, unknown> = {}) => bone({ account, phase: 'travel', readyAt: null, detail: 'site 1', tile: { x: 2919, z: 3407, level: 0 }, ...o });
+        const s07 = (by: Record<string, unknown>) => phaseGates({ path, members, read: files(by), launcher: null, now, source: 'helpers.json' }).filter(x => x.gate.startsWith('role phase S07'));
+        const fourTravelling = (o: Record<string, unknown>) => Object.fromEntries(group.map(a => [statusFileName('bones', a), t(a, o)]));
+        test('three waiting on sites and one travelling (23 held, no bounces, fresh): all pass', () => {
+            const g = s07({ ...allWaiting, [statusFileName('bones', 'cairn_b03')]: t('cairn_b03') });
+            expect(g.map(x => x.ok)).toEqual([true, true, true, true]);
+            expect(g[2]!.detail).toBe('bones-cairn_b03.json: travel at (2919,3407), 23 held, rotating while another group member waits on a site (site 1)');
+        });
+        test("attempt 2: all four travelling, looping on an unstandable tile with bounces rising: all refuse", () => {
+            const g = s07(fourTravelling({ bounces: 7 }));
+            expect(g.map(x => x.ok)).toEqual([false, false, false, false]);
+            expect(g[0]!.detail).toBe('bones-cairn_b01.json: travel with 7 bounces, not a clean rotation (site 1)');
+        });
+        test('all four travelling cleanly, none waiting: all refuse', () => {
+            const g = s07(fourTravelling({ bounces: 0 }));
+            expect(g.map(x => x.ok)).toEqual([false, false, false, false]);
+            expect(g[3]!.detail).toBe('bones-cairn_b04.json: phase travel, not waiting, and no other group member waiting on a site (site 1)');
+        });
+        test("a travelling giver with a fault detail, or in phase 'fault', refuses beside waiting ones", () => {
+            const g = s07({ ...allWaiting, [statusFileName('bones', 'cairn_b02')]: t('cairn_b02', { detail: 'Error: could not stand on 2920,3407' }), [statusFileName('bones', 'cairn_b04')]: t('cairn_b04', { phase: 'fault', detail: 'Error: could not stand on 2920,3407' }) });
+            expect(g.map(x => x.ok)).toEqual([true, false, true, false]);
+            expect(g[1]!.detail).toBe('bones-cairn_b02.json: travel with a fault detail (Error: could not stand on 2920,3407)');
+            expect(g[3]!.detail).toBe('bones-cairn_b04.json: phase fault, not waiting (Error: could not stand on 2920,3407)');
+        });
+        test('a stale travelling giver refuses beside waiting ones', () => {
+            const g = s07({ ...allWaiting, [statusFileName('bones', 'cairn_b02')]: t('cairn_b02', { ms: now - 45_000 }) });
+            expect(g.map(x => x.ok)).toEqual([true, false, true, true]);
+            expect(g[1]!.detail).toBe('bones-cairn_b02.json: stale: last written 45 s ago, phase travel (site 1)');
+        });
+        test('a travelling giver holding no bones refuses beside waiting ones', () => {
+            const g = s07({ ...allWaiting, [statusFileName('bones', 'cairn_b02')]: t('cairn_b02', { held: 0 }) });
+            expect(g.map(x => x.ok)).toEqual([true, false, true, true]);
+            expect(g[1]!.detail).toBe('bones-cairn_b02.json: travel with no bones held (site 1)');
+        });
+        test('a member waiting off its sites, or logged out awaiting its cue, does not count as waiting', () => {
+            const off = { tile: { x: 2920, z: 3407, level: 0 } };
+            const by = { [statusFileName('bones', 'cairn_b01')]: bone({ account: 'cairn_b01', ...off }), [statusFileName('bones', 'cairn_b02')]: t('cairn_b02'), [statusFileName('bones', 'cairn_b03')]: t('cairn_b03'), [statusFileName('bones', 'cairn_b04')]: t('cairn_b04') };
+            const g = phaseGates({ path, members, read: files(by), launcher: [{ account: 'cairn_b01', state: 'awaiting-cue', cue: { state: 'waiting' } }], now, source: 'x' }).filter(x => x.gate.startsWith('role phase S07'));
+            expect(g.map(x => x.ok)).toEqual([true, false, false, false]);
+            expect(s07(by).map(x => x.ok)).toEqual([false, false, false, false]);
+        });
     });
     test('a next helper step no launcher entry serves refuses; a later one is reported', () => {
         const g = phaseGates({ path: ['S06', 'S07'], members, read: files(allWaiting), launcher: null, now, source: 'helpers.json' });
@@ -133,7 +186,7 @@ describe('who serves each step, and the gate on the run machine', () => {
         const cfg = { bones: { group: ['cairn_b01', 'cairn_b02'] }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir, helperLaunchers: [launcher] } as never;
         const lines = hostPhaseGates(cfg, ['S07'], dir);
         // b02 is only in the run config, but the launcher config names S07/bone, so it is not added.
-        expect(lines.map(l => [l.gate, l.ok, l.detail])).toEqual([['role phase S07/bone cairn_b01', false, 'bones-cairn_b01.json: phase travel, not waiting']]);
+        expect(lines.map(l => [l.gate, l.ok, l.detail])).toEqual([['role phase S07/bone cairn_b01', false, 'bones-cairn_b01.json: phase travel, not waiting, and no other group member waiting on a site']]);
         writeFileSync(join(cueDir, 'bones-cairn_b01.json'), JSON.stringify(bone({ ms: Date.now(), readyAt: Date.now() - 1000 })));
         expect(hostPhaseGates(cfg, ['S07'], dir)[0]!.ok).toBe(true);
         const io: GateIO = {
