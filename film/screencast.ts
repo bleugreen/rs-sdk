@@ -89,18 +89,25 @@ export async function encodeClip(frames: readonly CapturedFrame[], o: { fps: num
             '-movflags', '+faststart', '-r', String(o.fps), o.out],
         { stdin: 'pipe', stdout: 'ignore', stderr: 'pipe' }
     );
+    const stderr = new Response(ff.stderr).text();
     let last = -1;
     let buf: Uint8Array = new Uint8Array();
-    for (const i of idx) {
-        if (i !== last) {
-            buf = await Bun.file(frames[i]!.file).bytes();
-            last = i;
+    try {
+        for (const i of idx) {
+            if (i !== last) {
+                buf = await Bun.file(frames[i]!.file).bytes();
+                last = i;
+            }
+            ff.stdin.write(buf);
+            await ff.stdin.flush();
         }
-        ff.stdin.write(buf);
-        await ff.stdin.flush();
+        await ff.stdin.end();
+    } catch (e) {
+        // ffmpeg stopped reading: its own message says why.
+        ff.kill();
+        throw new Error(`ffmpeg encode (crop ${w}x${h}+${x}+${y}): ${(await stderr).trim() || (e instanceof Error ? e.message : String(e))}`);
     }
-    await ff.stdin.end();
-    const [code, err] = await Promise.all([ff.exited, new Response(ff.stderr).text()]);
-    if (code !== 0) throw new Error(`ffmpeg encode: exit ${code}: ${err.trim()}`);
+    const [code, err] = await Promise.all([ff.exited, stderr]);
+    if (code !== 0) throw new Error(`ffmpeg encode (crop ${w}x${h}+${x}+${y}): exit ${code}: ${err.trim()}`);
     return { frames: idx.length };
 }

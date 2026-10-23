@@ -226,9 +226,10 @@ try {
     console.log(`RESULT film ${JSON.stringify({ out: relative(ROOT, out), durationMs: meta.durationMs, xpGained: meta.xpGained, trace: kinds, video: { mb: +(meta.video.bytes / 1e6).toFixed(2), captureFps: meta.video.captureFps, intervalMs: meta.video.intervalMs, staleMs: meta.video.staleMs, receiveLagMs: meta.video.receiveLagMs }, tickMs: meta.tickMs, script: scriptEnd })}`);
 } catch (e) {
     console.error(`[film] ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
+    console.error(`[film] captured frames and the raw action log are kept in ${work}`);
     exitCode = 1;
 } finally {
     await chrome.kill();
-    rmSync(work, { recursive: true, force: true });
+    if (exitCode === 0) rmSync(work, { recursive: true, force: true });
 }
 process.exit(exitCode);
