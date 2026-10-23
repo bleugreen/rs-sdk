@@ -30,7 +30,7 @@ import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
 import type { BotActions } from '../../sdk/actions';
 import { dropsDue, legById, legsFor, runLeg, TILES, type LegDrops, type LegStep, type S21Altar } from '../runner/legs';
-import { APE_ATOLL_ROOFS, glide, hopNeeds, lumdoBoat, pullLever, sail, travel, type TravelResult, type TravelSdk } from '../lib/travel';
+import { APE_ATOLL_ROOFS, glide, hopNeeds, lumdoBoat, pullLever, sail, travel, type Rune, type Runes, type TravelResult, type TravelSdk } from '../lib/travel';
 import { closeSession, logoutClean, openSession, type ClientKind } from '../lib/session';
 import { TickLog } from '../lib/ticks';
 import { waitTicks, waitUntil } from '../lib/wait';
@@ -123,10 +123,19 @@ export function legSetup(l: LegStep, drops?: DropsMode): Setup {
     return { at: [d.start.x, d.start.z, d.start.level ?? 0], stats: STATS[d.id] ?? LATE, vars: VARS, items };
 }
 
-/** The held items the leg drops somewhere along it (before any hop, or on arrival). */
+/**
+ * The held items the leg drops somewhere along it (before any hop, or on arrival). Judged from the
+ * start inventory, so a rune stack no larger than the leg's hops spend is not a drop: the teleport
+ * has used it up before the arrival drop would see it.
+ */
 function droppable(l: LegStep, s: BotWorldState): string[] {
+    const spend: Runes = hopNeeds(l.def.hops).runes;
     const seen = new Map<number, string>();
-    for (let at = 0; at <= l.def.hops.length; at++) for (const i of dropsDue(l.def, s, at)) seen.set(i.slot, i.name);
+    for (let at = 0; at <= l.def.hops.length; at++) for (const i of dropsDue(l.def, s, at)) {
+        const rune = /^(\w+) rune$/i.exec(i.name)?.[1]?.toLowerCase() as Rune | undefined;
+        if (rune && i.count <= (spend[rune] ?? 0)) continue;
+        seen.set(i.slot, i.name);
+    }
     return [...seen.values()];
 }
 
