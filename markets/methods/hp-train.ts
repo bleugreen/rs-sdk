@@ -20,7 +20,7 @@ import { crossingSettings, crossToKandarin, inKandarin, type Traveller } from '.
 import { startLevelUpWatcher } from '../../speedrun/lib/levelup';
 import { isEastOfTollGate, travelTo, type Tile } from '../../speedrun/lib/toll-gate';
 import { waitTicks, waitUntil } from '../../speedrun/lib/wait';
-import { BRONZE_SWORD, chooseStyle, kebabsFor, marksFor, MELEE_PRAYERS, prayersFor, reached, SCIMITARS, TARGETS, weaponPlan, type MeleePrayer, type Target, type Train, type Weapon } from './hp-model';
+import { BRONZE_SWORD, chooseSite, chooseStyle, kebabsFor, shopPays, type SiteChoice, marksFor, MELEE_PRAYERS, prayersFor, reached, SCIMITARS, TARGETS, weaponPlan, type MeleePrayer, type Target, type Train, type Weapon } from './hp-model';
 import { cheb, commonOptions, here, numberFlag, runProbe, type Args, type CommonOptions, type ProbeContext, type ProbeSpec } from './probe-sampler';
 
 interface Box {
@@ -374,7 +374,8 @@ export async function applyKit(sdk: BotSDK, bot: BotActions, target: Target, log
 
 export interface HpOptions extends CommonOptions {
     to: number;
-    site: SiteId;
+    /** 'auto': hp-model's chooseSite (the cows to ~52 HP, the crabs route above). */
+    site: SiteId | 'auto';
     /** Coins to take from the bank: the scimitars that fit, the toll and the kebabs. */
     coins: number;
     /** Hitpoints trained on the cows before the crossing to a Kandarin site. */
@@ -390,17 +391,17 @@ export interface HpOptions extends CommonOptions {
 }
 
 const USAGE =
-    'usage: bun markets/methods/hp-train.ts <account> --to <HP level> [--site crabs|cows] [--coins 1700] [--switch-hp 30] [--kebabs -1] [--food-per-trip 20] [--prayer 0|31|34|43] [--pray] [--out FILE]';
+    'usage: bun markets/methods/hp-train.ts <account> [--to 40] [--site auto|cows|crabs] [--coins 1700] [--switch-hp 30] [--kebabs -1] [--food-per-trip 20] [--prayer 0|31|34|43] [--pray] [--out FILE]';
 
 export function parseOptions(a: Args): HpOptions {
     const c = commonOptions({ ...a, flags: { ...a.flags, minutes: a.flags.minutes ?? '0' } }, ['to', 'site', 'coins', 'switch-hp', 'kebabs', 'food-per-trip', 'prayer', 'pray']);
     if (a.flags.pray !== undefined && a.flags.pray !== 'true' && a.flags.pray !== 'false') throw new Error('--pray takes no value');
-    if (a.flags.to === undefined) throw new Error('--to <HP level> is required');
-    const site = (a.flags.site ?? 'crabs') as SiteId;
-    if (!(site in SITES)) throw new Error(`--site must be ${Object.keys(SITES).join(' or ')}`);
+    const site = (a.flags.site ?? 'auto') as SiteId | 'auto';
+    if (site !== 'auto' && !(site in SITES)) throw new Error(`--site must be auto, ${Object.keys(SITES).join(' or ')}`);
     return {
         ...c,
-        to: numberFlag(a, 'to', 70, { min: 11, max: 99, integer: true }),
+        // 40 by default: phase 2's knights stop wasting heals from ~30-40 HP (docs/markets/phase2.md 'Setup').
+        to: numberFlag(a, 'to', DEFAULT_TO, { min: 11, max: 99, integer: true }),
         site,
         coins: numberFlag(a, 'coins', 1700, { min: 0, integer: true }),
         switchHp: numberFlag(a, 'switch-hp', CROSSING_HP, { min: 10, max: 99, integer: true }),
@@ -413,6 +414,7 @@ export function parseOptions(a: Args): HpOptions {
 
 /** speedrun/lib/kandarin.ts CROSSING_HITPOINTS: 12 of 14 crossings arrived at 30, 0 of 4 at 10. */
 const CROSSING_HP = 30;
+export const DEFAULT_TO = 40;
 /** Deaths the trainer recovers from before it gives up (a lab bot near the cows was killed by a random-event npc). */
 const MAX_DEATHS = 3;
 const KEBAB = /^kebab$/i;
@@ -549,7 +551,8 @@ export const spec: ProbeSpec<HpOptions> = {
     items: { kebabs: KEBAB, scimitars: /scimitar$/i },
     async run(ctx) {
         const { sdk, bot, options: o, sampler } = ctx;
-        const site: Site = SITES[o.site];
+        const site: Site = SITES[o.site === 'auto' ? chooseSite(o.to) : o.site];
+        ctx.totals.site = site.id;
         const t: Traveller = { bot, sdk, log: (m, d) => ctx.event(m, d), checkSignal: () => ctx.signal.throwIfAborted() };
         const tick = () => sdk.getState()?.tick ?? 0;
         const hpLevel = () => skill(sdk.getState()!, 'hitpoints');
@@ -597,7 +600,9 @@ export const spec: ProbeSpec<HpOptions> = {
             sampler.phase = 'kit';
             const kebabs = site.kandarin && !inKandarin(s0) ? (o.kebabs >= 0 ? o.kebabs : kebabsFor(Math.max(hpLevel(), o.switchHp), o.to)) : 0;
             ctx.totals.kebabsPlanned = kebabs;
-            const plan = weaponPlan(o.coins - kebabs, TOLL_RESERVE).filter(w => !ownedWeapons(sdk.getState()!).some(x => x.name === w.name));
+            // The scimitars only where they repay the errand (hp-model shopPays), or when no weapon is carried.
+            const shop = shopPays(o.to, site.id as SiteChoice) || ownedWeapons(s0).length === 0;
+            const plan = shop ? weaponPlan(o.coins - kebabs, TOLL_RESERVE).filter(w => !ownedWeapons(sdk.getState()!).some(x => x.name === w.name)) : [];
             if (plan.length || kebabs) {
                 const need = plan.reduce((n, w) => n + w.cost, 0) * 2 + TOLL_RESERVE + kebabs;
                 // Withdraw at Al Kharid when the toll can be paid, else at Draynor first.
@@ -608,8 +613,8 @@ export const spec: ProbeSpec<HpOptions> = {
             const c0 = coinsHeld(sdk.getState());
             if (plan.length) {
                 await walkTo(ctx, ZEKE, 'Zeke', 2);
-                const shop = await bot.openShop(/^zeke$/i);
-                if (!shop.success) throw new Error(`Zeke's shop: ${shop.message}`);
+                const opened = await bot.openShop(/^zeke$/i);
+                if (!opened.success) throw new Error(`Zeke's shop: ${opened.message}`);
                 for (const w of plan) {
                     const before = coinsHeld(sdk.getState());
                     const b = await bot.buyFromShop(new RegExp(`^${w.name}$`, 'i'), 1);
