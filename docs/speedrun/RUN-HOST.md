@@ -1835,7 +1835,8 @@ The checks, in order, before re-running. Any one failing means **do not re-run: 
    is alive: then confirm that process is not a relog in progress (run.ts or `relog-now.ts`) before
    removing the lock, and ask main if unsure.
 4. **Nothing else is cleared.** Keep `<run dir>/relogs.json` (it holds S21's open entry, which the
-   re-run needs, `run.ts:436-460`), the cue dir and the run dir (cleared only on a fresh start,
+   re-run needs, `run.ts:436-460`), `<run dir>/handoffs.json` (the hand-offs this attempt completed:
+   without it a re-run inside a band walks back to the band's hand-off and refuses, rs/562), the cue dir and the run dir (cleared only on a fresh start,
    `run.ts:507-509`, `cue-keeper.ts:24-38`).
 5. **The host claim is still held and live**: run.ts releases it only on success (`run.ts:533`); an
    expired claim makes gate 2 refuse with an `rs-claim take ...` hint (`run.ts:252-261`), so retake it
@@ -1959,7 +1960,7 @@ real-browser lab; fold-in 31):
 | Case | State | What the script does | What the operator does |
 |---|---|---|---|
 | 1 | No open planned entry | a normal launch or resume | finish the T20-21 leg to its canonical arrival; never log out early |
-| 2 | Logout confirmed, entry OPEN, the page proven OUT with no login pending | attaches without launching, waits for the world feed and the full fresh giver roster while SCORED is out, then logs in inside the page; the single planned entry closes only on success | nothing |
+| 2 | Entry OPEN (written once `logoutClean` reports SCORED out, before the page-out check; rs/562), the page proven OUT with no login pending | attaches without launching, waits for the world feed and the full fresh giver roster while SCORED is out, then logs in inside the page; the single planned entry closes only on success | nothing |
 | 3 | Entry OPEN, the page LIVE | refuses: no login, no navigation, no entry change (a live page does not prove which session set the processing order) | inspects the account and session and the givers' login order, and reconciles the budget by hand; nothing adopts the state automatically |
 | 4 | Entry OPEN, a login PENDING | refuses: no second dispatch or navigation | waits for the real outcome before reconciling; never erases the entry or restarts blindly |
 | 5 | Entry OPEN, CDP unreadable or missing, or the page unknown | refuses the same way | restores observation and establishes the actual state first |
