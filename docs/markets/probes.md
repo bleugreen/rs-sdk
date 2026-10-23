@@ -71,9 +71,17 @@ One JSON object per line, labelled by `kind`:
   (`food` for knights; `coal` and `ore` for coal). `playersNear` counts the other players within
   5 tiles (Chebyshev).
 - **`event`**: what the probe did (a withdrawal, a restock, a bank visit, the sale), with its tick.
-- **`totals`**, once, last: `wallMs`, `ticks`, `tickMs`, `end` (`done`, `signal` or `error`),
-  `phaseTicks` (game ticks spent in each phase, counted by the sampler on every state), the
-  `logout` outcome, and the probe's own totals below.
+- **`totals`**, once, last: `wallMs`, `ticks`, `observedMsPerTick`, `end` (`done`, `signal` or
+  `error`), `phaseTicks` (game ticks spent in each phase, counted by the sampler on every state),
+  the `logout` outcome, and the probe's own totals below. `observedMsPerTick` is measured, not
+  configured: the wall time between the first and the last tick the sampler observed, divided
+  by the ticks between them (the same window as `ticks`), to 0.1 ms, or `null` when no tick
+  passed. That window runs from the first state after login to the last tick of the logout, so
+  it leaves out the session opening and closing that `wallMs` includes.
+
+Convert ticks to hours with the measured `observedMsPerTick`, never an assumed tick length.
+The demo runs at 400 ms, the lab at whatever `NODE_TICKRATE` says, and the probe's machine knows
+neither.
 
 ## probe-knights
 
@@ -231,13 +239,15 @@ Short excerpts, the account names replaced by placeholders. probe-knights (stall
 {"kind":"sample","probe":"probe-knights","t":"2026-10-22T23:34:11.446Z","tick":161,"phase":"knights","x":2669,"z":3314,"level":0,"hp":7,"coins":{"inventory":50,"bank":null},"items":{"food":{"inventory":3,"bank":null}},"playersNear":0}
 ```
 
-probe-knights totals (the 4-minute run from Lumbridge, fedora):
+probe-knights totals (the 4-minute run from Lumbridge, fedora). This and the probe-coal totals
+below were written before the totals measured ms per tick: their `tickMs` is the configured value
+the probe used to copy, not a measurement, and today's totals carry `observedMsPerTick` instead.
 
 ```jsonl
 {"kind":"totals","probe":"probe-knights","account":"acct01","t":"2026-10-22T23:11:01.325Z","startedAt":"2026-10-22T23:04:38.903Z","wallMs":382422,"startTick":35,"endTick":987,"ticks":952,"tickMs":400,"end":"done","phaseTicks":{"travel":299,"bank":6,"food":40,"knights":584,"logout":23},"logout":{"ok":true,"latencyTicks":0},"successes":62,"failures":31,"coinsGained":3100,"xpGained":130665,"arrivedTick":364,"ticksAtKnights":600,"foodEaten":20,"eatsFree":6,"eatsForced":14,"eatTicks":42,"restocks":2,"foodBought":19,"coinsOnFood":332,"stallSteals":0,"foodStolen":0,"bankVisits":1,"coinsBanked":0,"deaths":0,"stopReason":"minutes"}
 ```
 
-probe-coal (fresh account, local):
+probe-coal (fresh account, local; its totals line has the old configured `tickMs`):
 
 ```jsonl
 {"kind":"sample","probe":"probe-coal","t":"2026-10-22T23:33:31.049Z","tick":60,"phase":"start","x":3094,"z":3106,"level":0,"hp":10,"coins":{"inventory":0,"bank":null},"items":{"coal":{"inventory":0,"bank":null},"ore":{"inventory":0,"bank":null}},"playersNear":0}
