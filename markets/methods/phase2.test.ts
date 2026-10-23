@@ -3,6 +3,27 @@ import { holdings, span } from './trips';
 import { chooseRock, RespawnTracker, respawnTicks } from './mine';
 import { drifted, priceDrift } from './book';
 import { hedgeRow, rankHedge } from './shop-hedge';
+import { capHours, crossover, horizonCapital } from './phase2-plan';
+
+describe('phase-2 horizon arithmetic', () => {
+    const row = { method: 'x', logins: 2, perLogin: 100, setupHours: 1 };
+    test('setup hours earn nothing', () => {
+        expect(horizonCapital(row, 0.5)).toBe(0);
+        expect(horizonCapital(row, 6)).toBe(2 * 100 * 5);
+    });
+    test('a shared cap switches the logins to the fallback rate', () => {
+        const capped = { ...row, capCoins: 600, afterCap: 10 };
+        expect(capHours(capped)).toBe(4); // 1 h setup + 600 / 200
+        expect(horizonCapital(capped, 4)).toBe(600);
+        expect(horizonCapital(capped, 6)).toBe(600 + 2 * 10 * 2);
+        expect(capHours(row)).toBe(Infinity);
+    });
+    test('crossover: a faster method with a longer setup overtakes after a few hours', () => {
+        // 300/h after 1 h of setup against 100/h after 0.1 h: 300(H-1) = 100(H-0.1) at H = 1.45
+        expect(crossover({ perLogin: 300, setupHours: 1 }, { perLogin: 100, setupHours: 0.1 })).toBeCloseTo(1.45, 6);
+        expect(crossover({ perLogin: 100, setupHours: 0 }, { perLogin: 100, setupHours: 1 })).toBeNull();
+    });
+});
 
 const names = (id: number) => ({ 1: 'coins', 2: 'shark', 3: 'rune_pickaxe' })[id] ?? `obj_${id}`;
 const costs = new Map([['coins', 1], ['shark', 300], ['rune_pickaxe', 32000]]);
