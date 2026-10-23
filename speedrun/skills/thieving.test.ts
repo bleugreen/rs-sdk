@@ -379,7 +379,7 @@ describe('thieving helper top-ups', () => {
         expect(readTopUpAsk(CUE)!.items).toEqual(ask);
     });
 
-    test('topUpAsk with the pack: bones to fill, food back to 2, the next courier tier once at one tier held, one slot for arrows', () => {
+    test('topUpAsk with the pack: bones to fill, food back to 2, the first courier tier at one tier held, the next on the following top-up, one slot for arrows', () => {
         const skills = (fletching: number) => [{ name: 'Thieving', level: 60, baseLevel: 60, experience: 0 }, { name: 'Fletching', level: fletching, baseLevel: fletching, experience: 0 }] as never;
         const pack = (tiers: string[], o: { fletching?: number; coins?: boolean; sharks?: number } = {}) => {
             const names = ['Blood rune', 'Air rune', 'Headless arrow', ...tiers.map(t => `${t} arrowtips`), 'Mithril arrow', ...(o.coins === false ? [] : ['Coins']), 'Babydragon bones', 'Babydragon bones'];
@@ -390,11 +390,15 @@ describe('thieving helper top-ups', () => {
         const mem = { tiers: new Set<string>() };
         // 9 slots held, coins among them: 19 free; 1 shark back, the adamant tier's slot, one for a new arrow stack: 16 bones
         expect(topUpAsk(pack(['Mithril']), FOODS.shark, true, mem)).toEqual([{ item: 'bones$', count: 16 }, { item: '^(Shark)$', count: 1 }, { item: '^adamant arrow(head|tip)s$', count: 'all' }]);
-        // two tiers held: no tier; the adamant one was asked for once
-        expect(topUpAsk(pack(['Mithril', 'Adamant'], { sharks: 2 }), FOODS.shark, true, mem)).toEqual([{ item: 'bones$', count: 16 }]);
-        // down to adamant: rune, then nothing more
-        expect(topUpAsk(pack(['Adamant'], { sharks: 2 }), FOODS.shark, true, mem).at(-1)).toEqual({ item: '^rune arrow(head|tip)s$', count: 'all' });
+        // the next top-up, two tiers held: rune all the same (the best tier held goes first, so one tier
+        // comes back only once the adamant is gone); its slot comes out of the bones: 17 free, 15 bones
+        expect(topUpAsk(pack(['Mithril', 'Adamant'], { sharks: 2 }), FOODS.shark, true, mem)).toEqual([{ item: 'bones$', count: 15 }, { item: '^rune arrow(head|tip)s$', count: 'all' }]);
+        // each tier once: nothing more, whatever is held
+        expect(topUpAsk(pack(['Mithril', 'Adamant', 'Rune'], { sharks: 2 }), FOODS.shark, true, mem)).toEqual([{ item: 'bones$', count: 15 }]);
+        expect(topUpAsk(pack(['Adamant'], { sharks: 2 }), FOODS.shark, true, mem).map(a => a.item)).toEqual(['bones$']);
         expect(topUpAsk(pack(['Rune'], { sharks: 2 }), FOODS.shark, true, mem).map(a => a.item)).toEqual(['bones$']);
+        // down to adamant with the rune not yet asked: rune
+        expect(topUpAsk(pack(['Adamant'], { sharks: 2 }), FOODS.shark, true, { tiers: new Set() }).at(-1)).toEqual({ item: '^rune arrow(head|tip)s$', count: 'all' });
         // no coins yet: one slot stays for the loot; Fletching 99: no tier and no arrow slot
         expect(topUpAsk(pack(['Mithril'], { coins: false }), FOODS.shark, true, { tiers: new Set() })[0]).toEqual({ item: 'bones$', count: 16 });
         expect(topUpAsk(pack(['Mithril'], { fletching: 99, sharks: 2 }), FOODS.shark, true, { tiers: new Set() })).toEqual([{ item: 'bones$', count: 18 }]);
@@ -1154,6 +1158,33 @@ describe('thieving: the superheat top-up', () => {
         expect(parseIn('copper ore to 4 [u]; tin ore to 4 [u]; iron ore to 8 [u]')).toEqual([
             { name: 'copper ore', count: 4, kind: 'u', topUp: true }, { name: 'tin ore', count: 4, kind: 'u', topUp: true }, { name: 'iron ore', count: 8, kind: 'u', topUp: true }
         ]);
+    });
+
+    test('the courier tiers on the scored stock: adamant once down to mithril, rune on the next top-up with both still held', () => {
+        const sh = { casts: 2, oreBelow: 2 };
+        // SCORED mid-band, Smithing past iron: the pack's stacks, the tips and arrows named, 2 iron ore left
+        const at = (fletching: number, stacks: Array<[string, number]>) => {
+            const names: Array<[string, number]> = [['Shark', 1], ['Shark', 1], ['Blood rune', 50], ['Air rune', 50], ['Nature rune', 90], ['Headless arrow', 3000], ['Coins', 4000], ...stacks, ['Iron ore', 1], ['Iron ore', 1]];
+            const s = shWorld({ smithing: 30, ore: [] });
+            return { ...s, inventory: names.map(([n, c], i) => named(i, n, c, n === 'Shark' ? ['Eat'] : undefined)), skills: [...s.skills.filter(k => k.name !== 'Fletching'), { name: 'Fletching', level: fletching, baseLevel: fletching, experience: xpForLevel(fletching) }] } as BotWorldState;
+        };
+        const asker = new TopUpAsker(GIVER, mkdtempSync(join(tmpdir(), 'tiers-')), [FOODS.shark], true, sh);
+        const trade = (s: BotWorldState) => {
+            expect(asker.step({ ...s, trade: CLOSED as never })).toBeNull();
+            return asker.step({ ...s, trade: screen('offer') as never, tick: s.tick + 1 })!;
+        };
+        const tiers = (items: ReturnType<typeof topUpAsk>) => items.filter(a => /arrow\(head/.test(a.item)).map(a => a.item);
+        // Fletching 50 on mithril alone (bronze to steel used up): 11 held, 17 free, the tier and the arrow slot out: 15 iron
+        const first = trade(at(50, [['Mithril arrowheads', 1200], ['Mithril arrow', 285]]));
+        expect(tiers(first)).toEqual(['^adamant arrow(head|tip)s$']);
+        expect(first).toEqual([{ item: '^iron ore$', count: 15 }, { item: '^adamant arrow(head|tip)s$', count: 'all' }]);
+        // the next top-up: Fletching 62, the best tier held in use, so mithril and adamant are both held; rune goes out here
+        const second = trade(at(62, [['Mithril arrowheads', 900], ['Mithril arrow', 585], ['Adamant arrowheads', 2000], ['Adamant arrow', 220]]));
+        expect(tiers(second)).toEqual(['^rune arrow(head|tip)s$']);
+        // the adamant tips and arrows now hold 2 more slots, and the rune tips' slot comes out of the ore: 13 iron
+        expect(second).toEqual([{ item: '^iron ore$', count: 13 }, { item: '^rune arrow(head|tip)s$', count: 'all' }]);
+        // every later top-up asks no tier, a short band's included (the stand-in for 60-68 Superheat stuns: mithril still held)
+        for (const f of [64, 66, 68]) expect(tiers(trade(at(f, [['Mithril arrowheads', 600], ['Mithril arrow', 885], ['Adamant arrowheads', 1700], ['Adamant arrow', 520], ['Rune arrowheads', 570]])))).toEqual([]);
     });
 
     test('restart mode stops for a top-up on ore below the bar', () => {
