@@ -1054,6 +1054,10 @@ machine at its current address, and a new address is a fresh draw that needs a m
 before it is trusted. Run-host rows before 23:11 UTC in sections 7, 8 and 10 were measured on the
 held address, so their catch-up rates overstate the server's own overruns.
 
+Since rs/474 a single machine can tell the two apart: every gate read sets each of its late and
+catch-up ticks against the engine's own interval for that tick, from the world feed read beside the
+probe, and labels it the server's or the path's (`pathCheck`, section 10, 'Gate history timer').
+
 ### 22 October: a demo-side loss at 300 ms, operator restarts, then 400 ms ticks
 
 Every gate row in sections 9 and 10 above is at T = 300 ms. The demo's tick length changed at its
@@ -1289,7 +1293,8 @@ in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scr
 
   The account is a throwaway whose name and password exist only in the clone's `bots/gate/bot.env`
   (mode 600, on the host). The wrapper redacts the name and password from everything it keeps. A read takes
-  about 4 minutes: the pre-login check's 60 s world-feed read, then the gate. If it hangs, systemd
+  about 4 minutes: the pre-login check's 60 s world-feed read, then the gate, with the feed left
+  open beside it (see `pathCheck` below). If it hangs, systemd
   kills the unit's whole control group at 345 s (the wrapper's budget holds 75 s for the feed
   read on top of the probe's unchanged 200-240 s), so nothing is left running.
 - **Where the history lives.** Each firing writes one file, `~/gate-history/<UTC timestamp>.json`.
@@ -1338,7 +1343,43 @@ in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scr
   known engine change. The 20:08Z restart that day is the first one seen with the md5
   unchanged (`353760e9…` before and after). The published `server/Dockerfile` would have rebuilt
   the bundle, so the demo's engine is deployed some other way, and an unchanged md5 across a
-  restart says nothing about the engine. A skip writes `status: skip` and its reason in `note`. A broken read (`error`, `timeout`,
+  restart says nothing about the engine.
+
+  The feed isn't closed after those 60 s. It stays open beside the probe, logging every tick until
+  the probe exits (it pings every 60 s, inside the engine's 2-minute idle expiry), so the read takes
+  no longer. Then `pathCheck`, at the top level, says for each late or short tick of the probe
+  minute whether the server or the network path produced it. It is report-only: the verdict and
+  (a)-(d) don't change, and it's null whenever it can't be made. The probe prints its end time as
+  its last tick arrives, which puts its `tickArrivalsMs` on the feed log's clock, and each probe
+  frame then votes for the server tick it carries. `offsetMs` is the median of probe arrival minus
+  feed arrival for the same tick, `offsetSpreadMs` its median absolute deviation, `probeFirstTick`
+  the server tick of the probe's first frame, and `ticksMatched` how many probe frames had a feed
+  copy. With T the configured tick length, every late probe interval (over 7/6 T) and every
+  catch-up (under T/2 right after a late one) is listed in `anomalies` as {k, probeMs, serverMs,
+  heldMs, label} and counted:
+  - `serverSlow` and `serverCatchUp`: the engine's own `ms` for the same ticks shows the same
+    pattern, so the server produced it.
+  - `pathHeld`: the engine's `ms` stayed within 7/6 T, so the delay arose after the engine stamped
+    the tick, and the frame was held, then released late or glued to the next. `heldMs` says on
+    which connection. Hundreds of ms means the probe's frame arrived that much later than the
+    feed's copy of the same tick: the probe's connection alone was held. Near 0 means the feed's
+    copy was late as well: held for the whole address (on 21 October two accounts on the held
+    address received each tick together), or delayed in the rest of the server's tick after the
+    feed cycle, which the feed's `ms` can't see.
+  - `unmatched`: no feed frame for that tick.
+
+  A catch-up's late interval also counts on its own, so one server overrun reads 1 slow and 1
+  catch-up, and one frame glued to the next reads 2 path-held. The journal line carries the counts
+  as `path=slow:N,catchup:N,held:N,unmatched:N,offset:Xms,spread:Xms,matched:N`. The offset
+  includes the few ms between the probe's last frame and its printed end time, so read the spread
+  and the labels, not the offset's sign. A distant reader sees many path-held ticks: read from
+  California and from an off-site Linux machine on 22 October, the feed's own arrival gaps differed
+  from its `ms` by -26 to +22 ms (p10 to p90), with tails near 100 ms either way. The Ashburn
+  machines' first records set the baseline there. The feed's ticks are kept under `feedLog`, after
+  `gate`, as {k0, t0EpochMs, k, ms, at} (ticks counted from k0, the engine's `ms`, arrivals in ms
+  after t0): about 20-40 KB for a read, enough to redo the alignment from the record alone.
+
+  A skip writes `status: skip` and its reason in `note`. A broken read (`error`, `timeout`,
   `not-probed`) puts its first error line in `note` and the last 40 lines of the probe's output in
   `outputTail`, with the account name and password redacted. The journal keeps one line per
   firing: `journalctl --user -t rs-gate-read`. Use `-t`, not `-u`: `-u` can miss the summary line,
