@@ -14,7 +14,7 @@ import type { GEOffer } from '../../sdk/ge-types';
 import type { BotWorldState } from '../../sdk/types';
 import { walkTo } from '../../speedrun/lib/act';
 import { depositMatching } from '../../speedrun/lib/bank';
-import { waitUntil } from '../../speedrun/lib/wait';
+import { waitTicks, waitUntil } from '../../speedrun/lib/wait';
 import type { MarketQuote } from '../lib/market.ts';
 import { buyDecision, saleDecision, SHARK_ID } from './exchange.ts';
 import { SHARKS_KEY, carriedCoins, type StageCtx } from './stages.ts';
@@ -45,12 +45,8 @@ async function atBank(x: ErrandCtx): Promise<void> {
     if (!opened.success) throw new Error(`openBank: ${opened.message}`);
 }
 
-function reportBank(x: ErrandCtx): void {
-    x.reportBank(x.sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })));
-}
-
-/** Bank everything matching `items`, and the coins above KEEP_COINS. */
-async function bankProceeds(x: ErrandCtx, items: RegExp): Promise<void> {
+/** Bank everything matching `items`, and the coins above KEEP_COINS. Returns the bank as it stood before closing. */
+async function bankProceeds(x: ErrandCtx, items: RegExp): Promise<{ id: number; name: string; count: number }[]> {
     await atBank(x);
     const d = await depositMatching(x.sdk, [items]);
     if (!d.ok) x.event('deposit incomplete', { reason: d.reason });
@@ -59,8 +55,12 @@ async function bankProceeds(x: ErrandCtx, items: RegExp): Promise<void> {
         const r = await x.bot.depositItem(coins, coins.count - KEEP_COINS);
         if (!r.success) x.event('coins deposit failed', { message: r.message });
     }
-    reportBank(x);
+    await waitTicks(x.sdk, 1);
+    // read before closing: a closed bank publishes no items
+    const bank = x.sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count }));
+    x.reportBank(bank);
     await x.bot.closeBank();
+    return bank;
 }
 
 /** Watch an offer until it fills or `minutes` pass. */
@@ -136,8 +136,7 @@ export async function buySharks(x: ErrandCtx, cfg: SharkConfig, book: BookReader
     if (!d.buy) {
         rec.result = 'refused';
         rec.reason = d.reason;
-        await bankProceeds(x, /^shark$/i);
-        return finish(held);
+        return finish(countIn(await bankProceeds(x, /^shark$/i), /^shark$/i));
     }
     const opened = await x.bot.openGE();
     if (!opened.success) throw new Error(`openGE: ${opened.message}`);
@@ -146,8 +145,7 @@ export async function buySharks(x: ErrandCtx, cfg: SharkConfig, book: BookReader
         rec.result = placed.outcome === 'unknown' ? 'unknown' : 'not placed';
         rec.reason = `${placed.reason}: ${placed.message}`;
         await x.bot.closeInterface().catch(() => undefined);
-        await bankProceeds(x, /^shark$/i);
-        return finish(held);
+        return finish(countIn(await bankProceeds(x, /^shark$/i), /^shark$/i));
     }
     rec.offerId = placed.offer.id;
     rec.quantity = d.quantity;
@@ -155,8 +153,7 @@ export async function buySharks(x: ErrandCtx, cfg: SharkConfig, book: BookReader
     rec.filled = offer.filled;
     await settle(x, offer, rec);
     rec.result = offer.filled === d.quantity ? 'filled' : offer.filled > 0 ? 'partial' : 'unfilled';
-    await bankProceeds(x, /^shark$/i);
-    return finish(countIn(x.sdk.getBankItems(), /^shark$/i));
+    return finish(countIn(await bankProceeds(x, /^shark$/i), /^shark$/i));
 }
 
 export interface SaleConfig {
