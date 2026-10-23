@@ -75,21 +75,22 @@
 // each burying band's start and stops it when S07's last band reaches `to`, in one session for the
 // whole step so the group counts its loads across both bands. Nothing else writes it: Runecraft's
 // S06 cue is scoped to S06's altar givers. Before each load the partner is the group's server
-// (bone-giver.ts awaitBoneServer: boneServer over the givers' status files, waiting on observed
-// ticks while none serves), and a load that finds none within `serverWait` fails the band. The want
+// (bone-giver.ts boneServer over the givers' status files) once SCORED sees it (awaitServerInSight),
+// waiting on observed ticks while none serves here; a trade that fails before any item can have moved
+// re-picks, and a load with no server in sight within `serverWait` fails the band. The want
 // is the same whichever giver serves, so `lastLoad` holds for the group as for one giver: which
 // giver carries the runes is the helpers' choice (bone-giver.ts finalExtras).
 
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { canonName, CueWriter, cueDir as defaultCueDir, type Beacon, type CueScope } from '../helpers/altar-cue';
-import { awaitBoneServer, SERVER_WAIT_TICKS, type ServerWait } from '../helpers/bone-giver';
+import { boneServer, readBoneStatuses, SERVER_WAIT_TICKS, type ServerWait } from '../helpers/bone-giver';
 import { GATED_PROGRAMS, type GatedSegment, type GatedTechnique, inPageGate, type InPageGateOptions, runGatedProgram, type SegmentTechnique } from '../lib/gated-program';
 import type { HostGate } from '../lib/hostgate';
 import { withLevelUpDismissal } from '../lib/levelup';
 import type { ProgramStatus } from '../lib/programs';
 import type { TickLog } from '../lib/ticks';
-import { type GiveSpec, receiveFrom, type ReceiveResult, swap, type WantSpec } from '../lib/trade';
-import { tickMs } from '../lib/wait';
+import { type GiveSpec, receiveFrom, type ReceiveResult, swap, tradeOf, type WantSpec } from '../lib/trade';
+import { type StateSource, tickMs, waitUntil } from '../lib/wait';
 import type { RunnerSession, Step, StepContext } from '../runner/step';
 
 export const skill = 'woodcutting';
@@ -918,6 +919,28 @@ export class BoneCue {
     }
 }
 
+/**
+ * The group's server once SCORED sees it: boneServer's choice (the rule and status files the givers
+ * read, so both sides name the same giver), taken only on a frame whose nearbyPlayers shows it. The
+ * choice is site-blind: a giver waiting loaded at the other site can be the oldest ready (attempt 3,
+ * S07 load 2: the server waited at the willows while SCORED chopped oaks, and the trade click failed
+ * player_not_found). That giver never sees SCORED, leaves its site after siteWaitTicks and drops out
+ * of the order (bone-giver.ts cycle), and the choice moves on to a giver here, already queued, which
+ * requests once it is the server. Re-reads the statuses each frame, at most `maxTicks` observed ticks;
+ * with `after`, only frames past that tick count.
+ */
+export async function awaitServerInSight(sdk: StateSource, dir: string, group: readonly string[], maxTicks: number, session?: string, after?: number): Promise<ServerWait> {
+    const from = after ?? sdk.getState()?.tick ?? 0;
+    let server: string | undefined;
+    const seen = (s: BotWorldState) => {
+        server = boneServer(readBoneStatuses(dir), group, Date.now(), session);
+        const name = server === undefined ? null : canonName(server);
+        return name !== null && s.nearbyPlayers.some(p => canonName(p.name) === name);
+    };
+    const r = await waitUntil(sdk, seen, { maxTicks, ...(after !== undefined ? { after } : {}) });
+    return { server: r.ok ? server : undefined, waited: Math.max(0, r.tick - from) };
+}
+
 function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Step {
     const end = bandEnd(o, b);
     const site = o.sites[b.tree];
@@ -987,22 +1010,58 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
         const topUp = async () => {
             const t0 = sdk.getState()?.tick ?? 0;
             const before = bonesHeld(sdk.getState()!);
-            // A group's load comes from its server, whoever that is now.
-            let partner: string | null = giver && 'giver' in giver ? giver.giver : null;
-            let wait: ServerWait | null = null;
-            if (group) {
-                // The cue's session, as the givers count theirs: a status file another run left counts for nothing.
-                wait = await awaitBoneServer(sdk, group.cueDir, group.group, group.serverWait, cue?.session ?? undefined);
-                partner = wait.server ?? null;
-            }
             const want = { want: [{ item: o.bonesRe, amount: giver!.lastLoad ?? giver!.load }], maxTicks: 60, openMaxTicks: 67 };
-            const r: ReceiveResult = partner !== null ? await o.receive(sdk, partner, want) : { ok: false, ticks: 0, received: [], reason: `no giver of the group served within ${group!.serverWait} observed ticks` };
+            let partner: string | null = giver && 'giver' in giver ? giver.giver : null;
+            let r: ReceiveResult;
+            let pick: { waited: number; repicks: number; tried: string[] } | null = null;
+            if (!group) r = await o.receive(sdk, partner!, want);
+            else {
+                // A group's load comes from its server, whoever that is now, once it is here. One budget of
+                // `serverWait` observed ticks covers the waits and the trades: while it lasts, a trade that
+                // failed before any item could move re-picks rather than failing the band.
+                pick = { waited: 0, repicks: 0, tried: [] };
+                const refusal = `no giver of the group served within ${group.serverWait} observed ticks`;
+                let after: number | undefined;
+                let failed: ReceiveResult | null = null;
+                for (;;) {
+                    const left = group.serverWait - ((sdk.getState()?.tick ?? t0) - t0);
+                    if (failed && left > 0) {
+                        pick.repicks++;
+                        o.log(`${b.name}: bone load ${loads + 1} from ${partner} failed before any item moved (${failed.reason ?? 'no reason'}): re-picking the server, ${left} ticks of serverWait left`);
+                    }
+                    // The cue's session, as the givers count theirs: a status file another run left counts for nothing.
+                    const w = left > 0 ? await awaitServerInSight(sdk, group.cueDir, group.group, left, cue?.session ?? undefined, after) : { server: undefined, waited: 0 };
+                    pick.waited += w.waited;
+                    if (w.server === undefined) {
+                        r = failed && left <= 0 ? failed : { ok: false, ticks: 0, received: [], reason: failed ? `${refusal} (after ${failed.reason ?? 'a failed trade'})` : refusal };
+                        if (!failed) partner = null;
+                        break;
+                    }
+                    partner = w.server;
+                    pick.tried.push(partner);
+                    // Items move only once SCORED has accepted the confirm screen: before that a failed trade is safe to retry.
+                    let confirmed = false;
+                    const unwatch = sdk.onStateUpdate(s => {
+                        const t = tradeOf(s);
+                        if (t.isOpen && t.screen === 'confirm' && t.myAccepted) confirmed = true;
+                    });
+                    try {
+                        r = await o.receive(sdk, partner, want);
+                    } finally {
+                        unwatch();
+                    }
+                    if (r.ok || confirmed || r.received.length > 0 || bonesHeld(sdk.getState()!) !== before) break;
+                    failed = r;
+                    // The next pick reads a later frame: the statuses and who is in sight have had a tick to change.
+                    after = sdk.getState()?.tick ?? t0;
+                }
+            }
             const t1 = sdk.getState()?.tick ?? t0;
             const got = bonesHeld(sdk.getState()!) - before;
             loads++;
             annotation(log, session, 'woodcutting:bones-load', t0, t1, r.ok, {
                 kind: 'wc-bones-load', band: b.name, load: loads, ticks: r.ticks, stepTicks: t1 - t0, received: got, ...(r.reason ? { reason: r.reason } : {}),
-                ...(wait ? { giver: partner, serverWait: wait.waited } : {})
+                ...(pick ? { giver: partner, serverWait: pick.waited, repicks: pick.repicks, tried: pick.tried } : {})
             });
             if (!r.ok) throw new Error(`${b.name}: bone load ${loads} from ${partner ?? `the group (${group!.group.join(', ')})`} failed: ${r.reason}`);
             ledger.bonesLoad();
