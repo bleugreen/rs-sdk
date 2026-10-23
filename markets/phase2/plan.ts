@@ -59,7 +59,10 @@ export interface SharkPlan {
     source: 'bank' | 'buy';
     /** Sharks one account buys before it travels (source 'buy'). */
     perAccount: number;
-    /** Planning figures for the whole-plan bound: sharks a login eats an hour, over how many hours. */
+    /**
+     * Planning figures for the whole-plan bound: sharks a login eats an hour, over how many hours. The default 40 is
+     * the lab's median at HP 40 (rs/544: 15 knights, 28-44 an hour), not the 30 first assumed.
+     */
     perLoginHour: number;
     hours: number;
     /** The most a shark may cost: the buy offer's limit price and the bound the book is checked against. */
@@ -121,7 +124,7 @@ export const LOW_FOOD_MIX: Mix = { iron: 12, guards: 23 };
 export const DEFAULTS = {
     loginSpacingMs: 2_000,
     hp: 40,
-    sharks: { source: 'bank', perAccount: 200, perLoginHour: 30, hours: 72, ceiling: 701, minimum: 28, fillMinutes: 10 } satisfies SharkPlan,
+    sharks: { source: 'bank', perAccount: 200, perLoginHour: 40, hours: 72, ceiling: 701, minimum: 28, fillMinutes: 10 } satisfies SharkPlan,
     ramp: { steps: [8, 20, 43], holdMinutes: 15, dropPct: 10, admitTimeoutMinutes: 30, fallbackMix: PLAN_B_MIX } satisfies RampPlan,
     ledger: { everyTicks: 50, bookMinutes: 15 },
     sell: { enabled: false, cap: 500, everyMinutes: 120, floors: {}, fillMinutes: 10 } satisfies SellPlan
