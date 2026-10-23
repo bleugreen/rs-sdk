@@ -193,6 +193,15 @@ export interface ChainOptions {
 /** S07's bone cue session for an attempt. */
 export const boneSession = (attempt: string): string => `${attempt}.S07.bone`;
 
+/**
+ * S07's woodcutting options: burying from the oaks to 99 (so the oak and willow bands run the knife,
+ * woodcutting.ts bandTechnique), Prayer 99, the axe dropped at the end, and the attempt's bone cue
+ * session for a giver group.
+ */
+export function s07Woodcutting(cfg: Pick<RunConfig, 'bones'>, attempt?: string): woodcutting.WoodcuttingOptions {
+    return { bury: true, bones: cfg.bones, dropAxe: true, prayerTo: 99, ...(attempt && cfg.bones.group ? { boneSession: boneSession(attempt) } : {}) };
+}
+
 // ------------------------------------------------------------------ hand-off placement
 
 export type Placement =
@@ -687,7 +696,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         return s;
     };
 
-    const woodcuttingAll = woodcutting.steps({ bury: true, bones: cfg.bones, dropAxe: true, prayerTo: 99, ...(o.attempt && cfg.bones.group ? { boneSession: boneSession(o.attempt) } : {}) });
+    const woodcuttingAll = woodcutting.steps(s07Woodcutting(cfg, o.attempt));
     const wc = (n: string) => pick('woodcutting', woodcuttingAll, [n]);
     // S07's {bone} cue has one writer: woodcutting.ts for a giver group (BoneCue, one session across
     // both bands), the chain for one giver, for which woodcutting.ts writes none. Both writing the group's

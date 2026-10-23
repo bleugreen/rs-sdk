@@ -12,9 +12,11 @@
 //   woodcutting:normal-1-15      knife-cycle `tree`, plain: the band is about 3 logs, so a
 //                                20-trial probe would cost more than the band, and the in-page
 //                                knife on normal trees (7.24 per log) is slower than plain
-//   woodcutting:oak-15-73        knife-cycle `oak` under rs/156's gated loop, own gate
+//   woodcutting:oak-15-73        knife-cycle `oak` under rs/156's gated loop, own gate (the
+//                                knife, ungated, when burying: see Bones)
 //   woodcutting:walk-willows     the oak-to-willow leg, kept out of the band rows
-//   woodcutting:willow-73-99     knife-cycle `willow`, gated, to `to`
+//   woodcutting:willow-73-99     knife-cycle `willow`, gated, to `to` (burying: the knife, and on
+//                                past `to` while Prayer is owed: see Prayer at the end)
 //
 // The gate's reference is plain ticks per expected roll (4: the plain loop's 4-tick cycle), and
 // each log is weighted by the rolls it stands for at the current level (1 / success chance), so
@@ -32,12 +34,17 @@
 // a stop and a re-probe. And each band's probe walks only to the stand's free neighbours
 // (`freeDirs`, from the trees' footprints), since every blocked one costs the probe 9 ticks.
 //
-// Bones (S25b; lab only until the run): with `bury`, knife segments carry knife-cycle's `bury`
-// and `trees`. The giver asks to trade while the account holds 2 bones; the account takes the
-// trade on the roll label after its last bury (2 ticks after the pack shows none: the bury
-// lands on R+1, the cycle's click rolls on R+3), by stopping the gated run, `receiveFrom`, and
-// starting it again with the same gate. Plain segments never carry `bury`: knife-cycle has no
-// plain loop with a bury, so while the gate holds plain the bones wait in the pack.
+// Bones (S07): with `bury`, the oak and willow bands run the knife throughout, with no gate and
+// no probe, and their segments carry knife-cycle's `bury` and `trees`. Only a knife segment buries
+// here and only a knife segment asks for a load, so a gated band whose probe read a ragged server
+// ran plain and neither buried nor loaded (attempt 3: the willow band's first probe read 15/20, and
+// it could never reach its Prayer). knife-cycle's own plain + bury loop is not used. The giver asks
+// to trade while the account holds 2 bones; the account takes the trade on the roll label after its
+// last bury (2 ticks after the pack shows none: the bury lands on R+1, the cycle's click rolls on
+// R+3), by stopping the run, `receiveFrom`, and starting it again. A load's number in its row is
+// the S07 session's: with a group, the loads its status files count before the band, plus the
+// band's own. The bones a burying band holds count as free slots in its 2-slot precondition: its
+// first cycles bury them.
 //
 // Routes: `route` picks the stands as data (ROUTES). `taverley` (SITES) is the scored run's;
 // `rimmington` (the Rimmington oaks and the Draynor-west willows) walks about 130 ticks less
@@ -70,6 +77,15 @@
 // since the axe chops to the last level, after the last load. Once the runes are in, that load was
 // the last: the band asks for no other, and the knife cycle chops on without bones to the band end.
 //
+// Prayer at the end: the last burying band ends on the Woodcutting level and on the Prayer it owes.
+// At `to` with Prayer under `prayerTo` and something left to bury (bones held, or a load the givers
+// are known to hold: `lastLoad`'s still to come, or fewer loads given than the group's status files
+// publish as its `loads`), the band runs the knife cycle on, bounded by Prayer instead of the level
+// (PRAYER_RUN_TICKS per run), taking loads as before, the runes' load still last. It closes once
+// Prayer reaches `prayerTo` or nothing is left, and only then may its Prayer postcondition fail.
+// `done` and `inProgress` read the same, so a resume at `to` that still owes Prayer re-enters the
+// band, and the willow walk takes it back to the stand.
+//
 // The giver group (`bones.group`, S07's b01-b04 taking turns; bone-giver.md "Taking turns"): the
 // module writes the cue the givers read, scoped { step: 'S07', family: 'bone' } (S07_BONE_CUE), at
 // each burying band's start and stops it when S07's last band reaches `to`, in one session for the
@@ -83,7 +99,7 @@
 
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { canonName, CueWriter, cueDir as defaultCueDir, type Beacon, type CueScope } from '../helpers/altar-cue';
-import { boneServer, readBoneStatuses, SERVER_WAIT_TICKS, type ServerWait } from '../helpers/bone-giver';
+import { boneServer, groupLoads, groupLoadsDone, readBoneStatuses, SERVER_WAIT_TICKS, type ServerWait } from '../helpers/bone-giver';
 import { GATED_PROGRAMS, type GatedSegment, type GatedTechnique, inPageGate, type InPageGateOptions, runGatedProgram, type SegmentTechnique } from '../lib/gated-program';
 import type { HostGate } from '../lib/hostgate';
 import { withLevelUpDismissal } from '../lib/levelup';
@@ -246,6 +262,11 @@ export const SUB_BANDS: Record<Tree, ReadonlyArray<readonly [number, number]>> =
 export const NEAR = 8;
 /** Ticks after the pack shows no bones before the top-up: the last bury cycle's roll label (header). */
 export const BONES_SETTLE = 2;
+/**
+ * A Prayer run's bound in ticks (Prayer at the end): a load buries in about 70, one bone per 3-tick
+ * cycle, so a run that reaches it has stopped burying.
+ */
+export const PRAYER_RUN_TICKS = 600;
 /** The run's bone loads (Ashburn helpers, rs/117). */
 export const BONE_LOAD = 23;
 /** S25b's Prayer target. */
@@ -278,6 +299,10 @@ function levelOf(s: BotWorldState | null, name: string): number {
 
 export function wcLevel(s: BotWorldState | null): number {
     return levelOf(s, 'woodcutting');
+}
+
+function xpOf(s: BotWorldState | null, name: string): number {
+    return s?.skills.find(x => x.name.toLowerCase() === name)?.experience ?? 0;
 }
 
 function count(items: readonly InventoryItem[], re: RegExp): number {
@@ -448,7 +473,7 @@ function resolve(opts: WoodcuttingOptions): Resolved {
     const b = opts.bury;
     const bury = b === undefined || b === false || b === 'false' ? null : b === true || b === 'true' ? true : String(b);
     if (bury !== null && to <= BANDS[0]!.end) throw new Error(`woodcutting: bury needs an oak or willow band, and to=${to} ends on normal trees`);
-    if (bury !== null && technique === 'plain') throw new Error('woodcutting: bury needs the knife (knife-cycle has no plain loop with a bury)');
+    if (bury !== null && technique === 'plain') throw new Error('woodcutting: bury runs the knife (a burying band never runs plain)');
     const giver = opts.bones?.giver ?? opts.boneGiver;
     const groupRaw = opts.bones?.group ?? opts.boneGroup;
     const group = groupRaw === undefined ? null : groupOpt(groupRaw);
@@ -512,9 +537,17 @@ export function bandFor(s: BotWorldState, opts: WoodcuttingOptions = {}): Band['
     return BANDS.find(b => l < bandEnd(o, b))?.name ?? null;
 }
 
-/** The technique a band runs: normal trees take plain unless the knife is forced. */
-export function bandTechnique(tree: Tree, technique: GatedTechnique): GatedTechnique {
-    return tree === 'normal' && technique === 'auto' ? 'plain' : technique;
+/**
+ * The technique a band runs: a burying band (oak or willow with `bury`) the knife, since only knife
+ * segments bury and load (see Bones); normal trees plain unless the knife is forced; else the option.
+ */
+export function bandTechnique(opts: WoodcuttingOptions, tree: Tree): GatedTechnique {
+    return techniqueOf(resolve(opts), tree);
+}
+
+function techniqueOf(o: Resolved, tree: Tree): GatedTechnique {
+    if (tree !== 'normal' && o.bury !== null) return 'knife';
+    return tree === 'normal' && o.technique === 'auto' ? 'plain' : o.technique;
 }
 
 /**
@@ -527,13 +560,14 @@ export function bandParams(opts: WoodcuttingOptions, tree: Tree, untilLevel: num
     return paramsOf(resolve(opts), tree, untilLevel);
 }
 
-function paramsOf(o: Resolved, tree: Tree, untilLevel: number): (technique: SegmentTechnique) => Record<string, unknown> {
+/** With `untilLevel` null, a Prayer run's (Prayer at the end): bounded by PRAYER_RUN_TICKS, stopped by the band. */
+function paramsOf(o: Resolved, tree: Tree, untilLevel: number | null): (technique: SegmentTechnique) => Record<string, unknown> {
     const trees = o.sites[tree].trees;
     const bury = tree !== 'normal' && o.bury !== null ? o.bury : null;
     return technique => ({
         method: PRESET[tree],
         ...(trees ? { trees: trees.map(t => [t[0], t[1]]) } : {}),
-        untilLevel,
+        ...(untilLevel === null ? { maxTicks: PRAYER_RUN_TICKS } : { untilLevel }),
         reanchor: 'xp',
         dismiss: 'now',
         ...(technique === 'knife' ? { ...(bury !== null ? { bury } : {}), ...(o.waitRespawn && tree !== 'normal' ? { waitRespawn: true } : {}) } : { dropEach: true }),
@@ -941,22 +975,59 @@ export async function awaitServerInSight(sdk: StateSource, dir: string, group: r
     return { server: r.ok ? server : undefined, waited: Math.max(0, r.tick - from) };
 }
 
+const bonesIn = (o: Resolved, s: BotWorldState) => s.inventory.filter(i => o.bonesRe.test(i.name)).length;
+
+/**
+ * Whether the givers hold another S07 load: false once the last load came (`lastLoad`'s, with the
+ * runes) or, for a group, once its status files in the cue's session count every load given (the
+ * givers' `loads`); true while the last load is still to come; null when nothing says (one giver
+ * without `lastLoad`, or a group whose session or count is not yet published).
+ */
+function loadsLeftOf(o: Resolved, cue: BoneCue | null): (s: BotWorldState | null) => boolean | null {
+    const giver = o.bones;
+    return s => {
+        if (!giver || (s && giver.lastLoad !== null && runesHeld(s))) return false;
+        if ('group' in giver) {
+            const session = giver.session ?? cue?.session ?? undefined;
+            if (session !== undefined) {
+                const statuses = readBoneStatuses(giver.cueDir);
+                const total = groupLoads(statuses, giver.group, session);
+                if (total !== null) return groupLoadsDone(statuses, giver.group, session) < total;
+            }
+        }
+        return giver.lastLoad !== null ? true : null;
+    };
+}
+
+/**
+ * The last burying band past its end, still owing Prayer and with something to bury toward it:
+ * bones held, or a load the givers are known to hold (Prayer at the end). Never for another band.
+ */
+function prayerOwedOf(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): (s: BotWorldState) => boolean {
+    if (!last || b.tree === 'normal' || o.bury === null || !o.prayerTo) return () => false;
+    const end = bandEnd(o, b);
+    const left = loadsLeftOf(o, cue);
+    return s => wcLevel(s) >= end && levelOf(s, 'prayer') < o.prayerTo && (bonesIn(o, s) > 0 || left(s) === true);
+}
+
 function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Step {
     const end = bandEnd(o, b);
     const site = o.sites[b.tree];
-    const technique = bandTechnique(b.tree, o.technique);
+    const technique = techniqueOf(o, b.tree);
     const knifeCapable = technique !== 'plain';
     const burying = o.bury !== null && b.tree !== 'normal';
     const giver = burying ? o.bones : null;
     const group = giver && 'group' in giver ? giver : null;
     const passed = (s: BotWorldState) => wcLevel(s) >= end;
-    const bonesHeld = (s: BotWorldState) => s.inventory.filter(i => o.bonesRe.test(i.name)).length;
-    /** The last load (lastLoad's, with the runes) came: no other follows. */
-    const lastCame = (s: BotWorldState | null) => !!s && giver?.lastLoad != null && runesHeld(s);
+    const bonesHeld = (s: BotWorldState) => bonesIn(o, s);
+    const loadsLeft = loadsLeftOf(o, cue);
+    const owesPrayer = prayerOwedOf(o, b, last, cue);
+    const bandDone = (s: BotWorldState) => passed(s) && !owesPrayer(s);
     const params = paramsOf(o, b.tree, end);
+    const prayerParams = paramsOf(o, b.tree, null);
 
     const pre = (s: BotWorldState): true | string => {
-        if (passed(s)) return true;
+        if (bandDone(s)) return true;
         const l = wcLevel(s);
         const axe = axeOf(s);
         if (!axe) return 'no axe worn or carried';
@@ -966,10 +1037,11 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
         if (knifeCapable && !s.skills.some(k => k.name.toLowerCase() === 'fletching' && k.baseLevel >= 1)) return 'technique needs Fletching 1';
         // the logs this band drops at its start count as free
         const free = 28 - s.inventory.length + (b.tree === 'normal' ? 0 : extraLogs(s, o.keepProducts).length);
-        if (free < 2) return `${free} free inventory slots, 2 needed`;
+        // a burying band's first cycles bury the bones it holds, each a slot freed for the log
+        const held = burying ? bonesHeld(s) : 0;
+        if (free + held < 2) return `${free} free inventory slots${burying ? ` and ${held} bones to bury` : ''}, 2 needed`;
         if (!near(s, site.stand, NEAR)) return `not within ${NEAR} tiles of ${site.stand[0]},${site.stand[1]}`;
         if (burying) {
-            const held = bonesHeld(s);
             if (!held && !giver) return 'bury needs bones in the pack or a bone giver';
             if (giver && giver.lastLoad === null && free + held < giver.load + 1) return `${free} free slots and ${held} bones: no room for a ${giver.load}-bone load and the log`;
             if (giver && giver.lastLoad !== null && !runesHeld(s)) {
@@ -983,7 +1055,7 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
     const run = async (ctx: StepContext<Record<string, never>>) => {
         const { sdk, bot, session, log } = ctx;
         const s0 = sdk.getState();
-        if (!s0 || passed(s0)) return;
+        if (!s0 || bandDone(s0)) return;
         if (b.tree !== 'normal') {
             // a drop keeps the walk queue, and it lands before the first load's trade completes
             const extra = extraLogs(s0, o.keepProducts);
@@ -998,11 +1070,16 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
         }
         const startTick = sdk.getState()?.tick ?? s0.tick;
         const startLevel = wcLevel(s0);
+        const startPrayer = levelOf(s0, 'prayer');
         // A fresh gate per band: its first probe and its measured stretch are the band's own.
         const dirs = o.probeDirs && site.trees && b.tree !== 'normal' ? freeDirs(site.stand, site.trees, FOOTPRINT[b.tree]) : [];
         const gate = technique === 'auto' ? o.makeGate(sdk, { plainTicksPerRoll: o.plainTicksPerRoll, measureDrops: MEASURE_DROPS, log: o.log, ...(dirs.length ? { dirs } : {}), ...o.gate }) : undefined;
         const ledger = new BandLedger(b.tree, startTick, startLevel);
         const segments: GatedSegment[] = [];
+        // The group finds the scored account by the cue: written before the first load, every band.
+        if (group && cue) cue.write(sdk.getState(), session.name);
+        // The loads the group gave in this session before the band (the oak band's, or a stopped process's): row numbers carry on from them.
+        const loadsBefore = group && cue?.session ? groupLoadsDone(readBoneStatuses(group.cueDir), group.group, cue.session) : 0;
         let loads = 0;
         let current: AbortController | null = null;
         const guard = new HitGuard(o, ctx, b.name, () => current?.abort());
@@ -1027,7 +1104,7 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
                     const left = group.serverWait - ((sdk.getState()?.tick ?? t0) - t0);
                     if (failed && left > 0) {
                         pick.repicks++;
-                        o.log(`${b.name}: bone load ${loads + 1} from ${partner} failed before any item moved (${failed.reason ?? 'no reason'}): re-picking the server, ${left} ticks of serverWait left`);
+                        o.log(`${b.name}: bone load ${loadsBefore + loads + 1} from ${partner} failed before any item moved (${failed.reason ?? 'no reason'}): re-picking the server, ${left} ticks of serverWait left`);
                     }
                     // The cue's session, as the givers count theirs: a status file another run left counts for nothing.
                     const w = left > 0 ? await awaitServerInSight(sdk, group.cueDir, group.group, left, cue?.session ?? undefined, after) : { server: undefined, waited: 0 };
@@ -1060,28 +1137,46 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
             const got = bonesHeld(sdk.getState()!) - before;
             loads++;
             annotation(log, session, 'woodcutting:bones-load', t0, t1, r.ok, {
-                kind: 'wc-bones-load', band: b.name, load: loads, ticks: r.ticks, stepTicks: t1 - t0, received: got, ...(r.reason ? { reason: r.reason } : {}),
+                kind: 'wc-bones-load', band: b.name, load: loadsBefore + loads, ticks: r.ticks, stepTicks: t1 - t0, received: got, ...(r.reason ? { reason: r.reason } : {}),
                 ...(pick ? { giver: partner, serverWait: pick.waited, repicks: pick.repicks, tried: pick.tried } : {})
             });
-            if (!r.ok) throw new Error(`${b.name}: bone load ${loads} from ${partner ?? `the group (${group!.group.join(', ')})`} failed: ${r.reason}`);
+            if (!r.ok) throw new Error(`${b.name}: bone load ${loadsBefore + loads} from ${partner ?? `the group (${group!.group.join(', ')})`} failed: ${r.reason}`);
             ledger.bonesLoad();
         };
 
         let ended = 'stopped';
         // a load before the first start when the pack is empty, and after each stop for one
-        let needLoad = !!giver && knifeCapable && bonesHeld(s0) === 0 && !lastCame(s0);
-        // The group finds the scored account by the cue: written before the first load, every band.
-        if (group && cue) cue.write(sdk.getState(), session.name);
+        let needLoad = !!giver && knifeCapable && bonesHeld(s0) === 0 && loadsLeft(s0) !== false;
+        // Once no load is left none comes back: the status files are not read again.
+        let spent = false;
+        const left = (s: BotWorldState | null): boolean | null => {
+            if (spent) return false;
+            const l = loadsLeft(s);
+            spent = l === false;
+            return l;
+        };
         try {
             for (;;) {
                 if (guard.hit) break;
+                const here = sdk.getState()!;
+                // Past the band's end only the Prayer it owes keeps it: a run bounded by Prayer, not the level.
+                const owing = passed(here);
+                if (owing) {
+                    if (!owesPrayer(here)) {
+                        ended = 'done';
+                        break;
+                    }
+                    if (!bonesHeld(here)) needLoad = true;
+                    o.log(`${b.name}: Woodcutting ${wcLevel(here)}, Prayer ${levelOf(here, 'prayer')} of ${o.prayerTo}: burying on, ${bonesHeld(here)} bones held`);
+                }
                 if (needLoad) await topUp();
                 needLoad = false;
+                const prayerXp = xpOf(sdk.getState(), 'prayer');
                 const stop = new AbortController();
                 current = stop;
                 let wantBones = false;
                 let noneSince: number | null = null;
-                const result = await o.runGated(sdk, 'knife-cycle', params, {
+                const result = await o.runGated(sdk, 'knife-cycle', owing ? prayerParams : params, {
                     technique,
                     ...(gate ? { gate } : {}),
                     rollsPerDrop: s => 1 / successChance(b.tree, wcLevel(s)),
@@ -1089,16 +1184,24 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
                     log: o.log,
                     onProgress: (st, tech) => {
                         ledger.observe(st, tech, wcLevel(sdk.getState()));
-                        if (!giver || tech !== 'knife' || stop.signal.aborted || lastCame(sdk.getState())) return;
+                        if (stop.signal.aborted || tech !== 'knife') return;
+                        const now = sdk.getState();
+                        if (owing && levelOf(now, 'prayer') >= o.prayerTo) {
+                            stop.abort();
+                            return;
+                        }
+                        if (!giver && !owing) return;
                         if (st.gauges.bonesLeft !== 0) {
                             noneSince = null;
                             return;
                         }
                         noneSince ??= st.tick;
-                        if (st.tick - noneSince >= BONES_SETTLE) {
-                            wantBones = true;
-                            stop.abort();
-                        }
+                        if (st.tick - noneSince < BONES_SETTLE) return;
+                        // Before the end a load is asked for unless none is left; past it, only one the givers are known to hold.
+                        const l = left(now);
+                        if (owing ? l === true : l !== false) wantBones = true;
+                        else if (!owing) return;
+                        stop.abort();
                     },
                     onSegment: seg => {
                         ledger.observe(seg.status, seg.technique, wcLevel(sdk.getState()));
@@ -1111,10 +1214,21 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
                     }
                 });
                 ended = result.ended;
-                if (result.ended === 'aborted' && wantBones && !guard.hit) {
+                if (guard.hit) break;
+                if (result.ended === 'aborted' && wantBones) {
                     needLoad = true;
                     continue;
                 }
+                // The band's end: the loop's top decides whether Prayer keeps it.
+                if (result.ended === 'done' && !owing && passed(sdk.getState()!)) continue;
+                if (owing && result.ended === 'aborted') {
+                    // Prayer reached, or nothing left to bury: the top closes. A run that buried nothing closes it here.
+                    if (xpOf(sdk.getState(), 'prayer') > prayerXp) continue;
+                    o.log(`${b.name}: a Prayer run buried nothing: closing at Prayer ${levelOf(sdk.getState(), 'prayer')}`);
+                    ended = 'done';
+                    break;
+                }
+                if (owing && result.ended === 'done') ended = `the ${PRAYER_RUN_TICKS}-tick bound of a Prayer run`;
                 break;
             }
         } finally {
@@ -1126,6 +1240,7 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
         ledger.finish(endTick);
         annotation(log, session, `${b.name}:summary`, startTick, endTick, ended === 'done', {
             kind: 'wc-band', ended, technique, route: o.route, stand: [site.stand[0], site.stand[1]], hpStop: o.hpStop, startLevel, endLevel: wcLevel(endState), bonesLoads: loads,
+            ...(burying ? { startPrayer, endPrayer: levelOf(endState, 'prayer') } : {}),
             ...summarizeBand(ledger, segments),
             ...(gate ? { gate: gateMeta(gate) } : {}),
             ...(guard.hit ? { stoppedBy: guard.hit } : {})
@@ -1150,8 +1265,8 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
             return true;
         },
         logoutSafe: true,
-        done: ({ state }) => passed(state),
-        inProgress: ({ state }) => !passed(state) && wcLevel(state) >= TREE_LEVEL[b.tree] && near(state, site.stand, NEAR)
+        done: ({ state }) => bandDone(state),
+        inProgress: ({ state }) => !bandDone(state) && wcLevel(state) >= TREE_LEVEL[b.tree] && near(state, site.stand, NEAR)
     };
 }
 
@@ -1225,11 +1340,12 @@ export function steps(opts: WoodcuttingOptions = {}): Step[] {
     // the band the Prayer postcondition goes on (bury needs to > 15, so oak or willow)
     const willowLast = o.to > oak.end;
     const cue = o.bones && 'group' in o.bones ? new BoneCue(o.bones.cueDir, o.bones.session) : null;
+    const willowOwes = prayerOwedOf(o, willow, willowLast, cue);
     return [
         walkStep(o, 'woodcutting:walk-oaks', o.sites.oak.stand, s => wcLevel(s) < oakEnd, o.sites.approach),
         bandStep(o, normal, false, cue),
         bandStep(o, oak, !willowLast, cue),
-        walkStep(o, 'woodcutting:walk-willows', o.sites.willow.stand, s => wcLevel(s) >= oakEnd && wcLevel(s) < o.to, []),
+        walkStep(o, 'woodcutting:walk-willows', o.sites.willow.stand, s => (wcLevel(s) >= oakEnd && wcLevel(s) < o.to) || willowOwes(s), []),
         bandStep(o, willow, willowLast, cue),
         ...(o.handBack !== null ? [handBackStep(o, o.handBack)] : []),
         ...(o.dropAxe ? [dropAxeStep(o)] : [])
