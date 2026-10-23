@@ -814,23 +814,10 @@ export async function giveOpenTrade(
     }
 
     const specs = offered.map(i => ({ item: i.id, n: count(i.id) }));
-    // Settlement is the giver's to observe. The receiver closes its cue on its own completion frame,
-    // so once the confirm screen was seen, the completion frames (the trade closed, or the confirm
-    // screen's offers emptied while the server exchanges) are settlement, not a cancellation:
-    // lib/trade.ts's give() declines on any stop, so the stop is withheld there and give() reads the
-    // outcome. A stop on any other frame declines as before. A trade that fails after the confirm
-    // screen was seen is uncertain: reconciled, never replayed.
-    let confirmSeen = false;
-    const settlingStop = stopIf && ((s: BotWorldState) => {
-        const t = s.trade;
-        if (t?.isOpen && t.screen === 'confirm' && t.myOffer.length > 0) confirmSeen = true;
-        const completing = confirmSeen && (!t?.isOpen || (t.screen === 'confirm' && t.myOffer.length === 0));
-        return completing ? null : stopIf(s);
-    });
-    const r = await give(sdk, partner, specs, { expectTheirs: ANY_OFFER, maxTicks: Math.ceil(timeoutMs / tickMs()), openMaxTicks: 17, ...(settlingStop ? { stopIf: settlingStop } : {}) });
+    const r = await give(sdk, partner, specs, { expectTheirs: ANY_OFFER, maxTicks: Math.ceil(timeoutMs / tickMs()), openMaxTicks: 17, ...(stopIf ? { stopIf } : {}) });
     const { gained } = diffItems(invBefore, sdk.getInventory());
     const message = r.ok ? `Gave package to ${partner}${r.reason ? ` (${r.reason})` : ''}` : `Not given: ${r.reason ?? 'unknown'}`;
-    return { success: r.ok, message, ticks: r.ticks, gave: r.gave, received: gained, ...(!r.ok && confirmSeen ? { uncertain: true as const } : {}) };
+    return { success: r.ok, message, ticks: r.ticks, gave: r.gave, received: gained };
 }
 
 export interface ServeOptions {
