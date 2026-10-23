@@ -33,7 +33,6 @@ import { readFileSync } from 'fs';
 import { hostname, loadavg } from 'os';
 import { join } from 'path';
 import type { BotWorldState } from '../../sdk/types';
-import { giveWine } from '../helpers/wine';
 import { ITEM as WINE } from '../helpers/wine-common';
 import { openBankThroughPages, type ReceiverSdk } from '../helpers/wine-receive';
 import { pageText } from '../lib/dialogue';
@@ -44,11 +43,12 @@ import { waitTicks, waitUntil } from '../lib/wait';
 import { levelForXp, xpForLevel } from '../lib/xp';
 import { Observation, resolveResume } from '../runner/resume';
 import { runSteps, type RunnerSession } from '../runner/step';
-import { CHISEL, GIVER_TILE, PROBES, STEP_NAME, steps, type CookingOptions } from '../skills/cooking';
+import { CHISEL, PROBES, STEP_NAME, steps, type CookingOptions } from '../skills/cooking';
 import { craftingHandoffXp, loadStagedGems } from '../skills/crafting';
 import { boothFor, SCORED_TILE, VARROCK_WEST } from '../skills/herblore';
 import { launchLabBrowser, type LabBrowser } from './browser';
 import { cheat, leaveTutorial, mustTele } from './setup';
+import { serveWine, stageWineGiver } from './wine-giver';
 
 const [receiver, giverName, which] = process.argv.slice(2);
 const flag = (name: string, def: string) => process.argv.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? def;
@@ -162,9 +162,7 @@ async function stage(o: { cooking: number; crafting: number; gems: Record<string
     await bankEverything(o.chisel === 'held');
     // the giver: beside SCORED's stand with the 520 notes, nothing else
     if (!giver) return;
-    await cheat(giver.sdk, '~clearinv inv', 1);
-    await mustTele(giver.sdk, GIVER_TILE.x, GIVER_TILE.z);
-    await cheat(giver.sdk, `give cert_jug_unfermented_wine 520`, 2);
+    await stageWineGiver(giver);
     // 16 ticks quiet before relog 1 (the precondition's combat rule; nothing hits here)
     await waitTicks(sdk, 2);
 }
@@ -236,7 +234,7 @@ console.log(`cooking-accept ${which} ${variant}: ${where()}`);
 /** The giver's afterRelog hand-off, started once staging has given it the notes. */
 const startGiver = () => (async () => {
     if (!giver) return null;
-    const g = await giveWine({ sdk: giver.sdk, bot: giver.bot, log: (m: string, d?: Record<string, unknown>) => console.log(`  giver: ${m} ${JSON.stringify(d ?? {})}`) }, receiver, -1, 120_000, { afterRelog: true, cueTimeoutMs: 20 * 60_000 });
+    const g = await serveWine(giver, receiver, { log: (m, d) => console.log(`  giver: ${m} ${JSON.stringify(d ?? {})}`), cueTimeoutMs: 20 * 60_000 });
     console.log(`  giver: ${JSON.stringify(g)}`);
     return g;
 })();
