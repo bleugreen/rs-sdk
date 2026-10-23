@@ -96,8 +96,10 @@ is progress since the last checkpoint, and that is worth **0 ticks** to the scor
 (section 2): playtime rolls back with it. Even counted as wall time, the demo's
 checkpoint is seconds old. So:
 
-- **No milestone justifies a deliberate save relog.** The relog plan keeps its two
-  planned relogs, both in the wine step (accepted by main, 08:55).
+- **No milestone justifies a deliberate save relog.** The wine step's planned
+  fermentation relogs remain separate from S21's planned login-order relog:
+  SCORED leaves while the altar givers join, then logs in behind them. Neither
+  operation is a milestone save; S21's split recovery is described in section 5.
 - **A severe tick-overrun burst** (at least ~10 catch-ups a minute for 2 minutes;
   21-26 a minute ran for 4 minutes before the 06:14 restart, n=1) is exposed as
   `restartLikely` (`demo-status.ts`, both thresholds parameters). The run's
@@ -220,6 +222,57 @@ resume).
 counters: a reload restarts the page's runtime, so the resumed step starts the
 program again with parameters computed from the state (target level or xp, the
 inventory now), and treats the old run's counters as gone.
+
+### S21's split login-order relog
+
+S21's planned relog is a login-order operation, not a save. The chain permits
+its logout milestone only after the canonical T20-21 arrival predicate holds;
+a restart before or during that leg must finish the approach first.
+`runner/scored-relog.ts` confirms logout and page-out before opening one
+persistent entry in `runner/relog-budget.ts`. The same entry closes after a
+successful login; the halves share the relog lock.
+
+Between the halves, `skills/runecraft.ts` publishes giver cues and waits on
+login-free observed world-feed ticks from `lib/feed-hello.ts`, not the paused
+player state. Advancing server tick labels bound the ready wait; silence and a
+world-tick rollback fail closed. Offline steps in `runner/step.ts` skip player
+tick freshness, packet-budget waits and run-toggle clicks.
+
+Every login attempt rechecks the complete fresh giver roster. The final
+`beforeDispatch` check runs after the asynchronous tick preflight and token
+minting. It supplies a freshness deadline that `lib/tab.ts` checks again after
+token redemption, immediately before the page dispatches login. The controller
+and browser share the run host's wall clock for status freshness; elapsed wall
+time never proves giver readiness. S21 requires the token-backed in-page path:
+a refusal, expired admission, missing client, live page or pending login must
+not fall back to navigating the tab. World-full retries repeat the checks.
+
+On startup, `run.ts` attaches without launching when the entry is open, then
+reads the actual browser page before opening a giver cue. A proven idle,
+logged-out page can repeat the ready wait and complete the login half. A live,
+login-in-progress or unreadable page instead refuses with the entry unchanged
+and no new login or navigation. A page being live alone cannot establish which
+login set its processing order. **Automatic adoption after a crash between
+accepted login and ledger close is not implemented.** An already closed
+entry skips both halves during the resume walk. Startup recovery and gate rows
+are anonymized to `SCORED` before being appended.
+
+A refusal only disconnects the control SDK; it does **not** log out a player
+that may still be live. Stop automated retries, inspect that account's actual
+page and the retained relog entry, and have the operator confirm its state and
+the intended reconciliation before continuing. Do not clear the ledger or
+launch another login merely to bypass the refusal. The live player may still
+accumulate playtime; refusal is not a zero-tick recovery.
+
+The local dress-rehearsal harness still needs its browser wired through the
+existing `server/webclient/proxy.ts` token endpoints. The canonical setup uses
+the local engine as `--world`, its loopback gateway, a dedicated proxy port and
+the scratch bots directory, then passes the proxy's `/bot` URL as
+`launchLabBrowser`'s `clientUrl` and opens the session with
+`insecureQueryLogin: false`. The proxy and browser must be owned and cleaned
+up by the harness on every failure path. The engine's query-password page is
+not a substitute for this path. Until that wiring is implemented and exercised,
+mock-CDP tests do not establish S15–S21 or full-chain browser acceptance.
 
 ### Resume-from lines for STEP-MANIFEST.md
 
