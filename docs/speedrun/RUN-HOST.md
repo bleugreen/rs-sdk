@@ -655,7 +655,7 @@ mule carrier's launcher `deliveryRun`; `mule-ledger --check` verifies it, and an
 refusal. the carrier configs come from the generator and check below (fold-in 37).
 
 **The carrier configs, generated and checked on the chosen machine before the launcher starts**
-(rs/41's step via rs/158, main 12:1xZ; fold-in 37; `<C>` the checkout at 233d0f34, `<R>` the run dir,
+(rs/41's step via rs/158, main 12:1xZ; fold-in 37; `<C>` the checkout at the RUN_COMMIT, `<R>` the run dir,
 `<RC>` the resolved cue dir; `S` is SCORED's login read from its env file, never typed:
 `S="$(sed -n 's/^BOT_USERNAME=//p' "$SCORED_ENV")"`):
 
