@@ -622,7 +622,10 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
     const s27: CueScope = { step: 'S27', family: 'cannon' };
     /** The steps mule1's {row, mule} cue goes around, cued by cueMuleRows once the chain is built. */
     const muleRows = new Map<ChainStep, string>();
-    const mule = (s: ChainStep, row: string): ChainStep => (muleRows.set(s, row), s);
+    const mule = (s: ChainStep, row: string): ChainStep => {
+        muleRows.set(s, row);
+        return s;
+    };
 
     const woodcuttingAll = woodcutting.steps({ bury: true, bones: cfg.bones, dropAxe: true, prayerTo: 99, ...(o.attempt && cfg.bones.group ? { boneSession: boneSession(o.attempt) } : {}) });
     const wc = (n: string) => pick('woodcutting', woodcuttingAll, [n]);
