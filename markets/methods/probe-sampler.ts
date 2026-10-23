@@ -8,7 +8,8 @@
 //           and the bank's count when the bank interface is open, else null), the probe's item
 //           counts the same way, and the other players within NEAR_RADIUS tiles
 //   event   something the probe did (a bank visit, a sale, a restock), with the tick
-//   totals  once, last: the probe's own totals, ticks per phase, wall time and the logout outcome
+//   totals  once, last: the probe's own totals, ticks per phase, wall time, the measured ms per
+//           tick, and the logout outcome
 //
 // The probe attaches to the account's lite client (cd server/webclient && bun src/lite/runner.ts
 // <account>) through a loopback gateway, as speedrun/helpers/coins.ts does: the demo's public
@@ -121,7 +122,13 @@ export interface TotalsRecord {
     startTick: number;
     endTick: number;
     ticks: number;
-    tickMs: number;
+    /**
+     * Wall milliseconds per game tick, measured by the sampler between the first and the last tick
+     * it observed (the same window as `ticks`), rounded to 0.1; null when it observed no tick pass.
+     * The window starts after login and ends with the last tick of the logout, so it excludes the
+     * time `wallMs` spends opening and closing the session.
+     */
+    observedMsPerTick: number | null;
     /** 'done', 'signal' (SIGINT/SIGTERM), or 'error'. */
     end: 'done' | 'signal' | 'error';
     error?: string;
@@ -191,6 +198,9 @@ export class Sampler {
     readonly phaseTicks: Record<string, number> = {};
     startTick = -1;
     lastTick = -1;
+    /** Wall-clock epoch ms at which startTick and lastTick were observed. */
+    private startAt = -1;
+    private lastAt = -1;
     private nextSampleTick = -1;
     private off: (() => void) | null = null;
 
@@ -212,13 +222,30 @@ export class Sampler {
     /** Called for each published state (start() subscribes it). */
     see(s: BotWorldState): void {
         if (!s.inGame || !s.player) return;
-        if (this.startTick < 0) this.startTick = s.tick;
+        const now = this.now();
+        if (this.startTick < 0) {
+            this.startTick = s.tick;
+            this.startAt = now.getTime();
+        }
         if (this.lastTick >= 0 && s.tick > this.lastTick) this.phaseTicks[this.phase] = (this.phaseTicks[this.phase] ?? 0) + (s.tick - this.lastTick);
-        if (s.tick > this.lastTick) this.lastTick = s.tick;
+        if (s.tick > this.lastTick) {
+            this.lastTick = s.tick;
+            this.lastAt = now.getTime();
+        }
         if (this.nextSampleTick < 0 || s.tick >= this.nextSampleTick) {
-            this.sink(sampleRecord(s, this.probe, this.phase, this.items, this.now()));
+            this.sink(sampleRecord(s, this.probe, this.phase, this.items, now));
             this.nextSampleTick = s.tick + this.every;
         }
+    }
+
+    /**
+     * Wall ms per tick between the first and the last tick observed, to 0.1 ms; null until a tick
+     * has passed. Both ends are arrival times of published states, so delivery delay cancels out.
+     */
+    observedMsPerTick(): number | null {
+        const ticks = this.lastTick - this.startTick;
+        if (this.startTick < 0 || ticks <= 0) return null;
+        return Math.round(((this.lastAt - this.startAt) / ticks) * 10) / 10;
     }
 
     stop(): void {
@@ -279,7 +306,8 @@ export interface ProbeDeps {
     forceExit(code: number): void;
     sink(out: string | null): Sink;
     stderr(line: string): void;
-    tickMs(): number;
+    /** Wall-clock epoch ms: the totals' times and the sampler's tick timing. */
+    now(): number;
     /** Run `work` with `signal` as the SDK's execution signal. */
     withSignal<T>(signal: AbortSignal, work: () => Promise<T>): Promise<T>;
 }
@@ -305,7 +333,7 @@ export const defaultDeps: ProbeDeps = {
     },
     sink: jsonlSink,
     stderr: line => process.stderr.write(line + '\n'),
-    tickMs: () => Number(process.env.SPEEDRUN_TICK_MS || process.env.NODE_TICKRATE) || 300,
+    now: () => Date.now(),
     async withSignal(signal, work) {
         const { executionContext } = await import('../../sdk/execution-context');
         return executionContext.run({ signal }, work);
@@ -340,8 +368,8 @@ export async function runProbe<O extends CommonOptions>(spec: ProbeSpec<O>, argv
         controller.abort(new Error(name));
     };
     const offs = [deps.onSignal('SIGINT', onSignal('SIGINT')), deps.onSignal('SIGTERM', onSignal('SIGTERM'))];
-    const startedAt = new Date();
-    const t0 = Date.now();
+    const t0 = deps.now();
+    const startedAt = new Date(t0);
     let session: ProbeSession | null = null;
     let sampler: Sampler | null = null;
     let end: TotalsRecord['end'] = 'done';
@@ -351,11 +379,11 @@ export async function runProbe<O extends CommonOptions>(spec: ProbeSpec<O>, argv
     try {
         session = await deps.open(options.account);
         const { sdk, bot } = session;
-        sampler = new Sampler(sdk, sink, spec.name, spec.items);
+        sampler = new Sampler(sdk, sink, spec.name, spec.items, SAMPLE_EVERY_TICKS, () => new Date(deps.now()));
         sampler.start();
         const s = sampler;
         const event = (message: string, data: Record<string, unknown> = {}) => {
-            const rec = { kind: 'event', probe: spec.name, t: new Date().toISOString(), tick: sdk.getState()?.tick ?? -1, phase: s.phase, message, ...data };
+            const rec = { kind: 'event', probe: spec.name, t: new Date(deps.now()).toISOString(), tick: sdk.getState()?.tick ?? -1, phase: s.phase, message, ...data };
             sink(rec);
             if (options.out) deps.stderr(JSON.stringify(rec));
         };
@@ -381,17 +409,18 @@ export async function runProbe<O extends CommonOptions>(spec: ProbeSpec<O>, argv
         }
     }
     sampler?.stop();
+    const t1 = deps.now();
     const totals: TotalsRecord = {
         kind: 'totals',
         probe: spec.name,
         account: options.account,
-        t: new Date().toISOString(),
+        t: new Date(t1).toISOString(),
         startedAt: startedAt.toISOString(),
-        wallMs: Date.now() - t0,
+        wallMs: t1 - t0,
         startTick: sampler?.startTick ?? -1,
         endTick: sampler?.lastTick ?? -1,
         ticks: sampler && sampler.startTick >= 0 ? sampler.lastTick - sampler.startTick : 0,
-        tickMs: deps.tickMs(),
+        observedMsPerTick: sampler?.observedMsPerTick() ?? null,
         end,
         ...(error ? { error } : {}),
         phaseTicks: { ...(sampler?.phaseTicks ?? {}) },
