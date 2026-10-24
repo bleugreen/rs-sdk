@@ -12,8 +12,14 @@
 //   LAB_RUNNERS=0 LAB_HELPERS=<carrier> NODE_TICKRATE=400 speedrun/lab/lab.sh <scored> \
 //     'speedrun/lab/s15-chain.ts:--mule=<carrier>:--gw=<h45 launcher gateway port>'
 //
+// --untilA stops after S15:A. --arrive-poisoned: ::~poison 4 then ::~1hp once the carrier is in view (rs/756's joint
+// lab). --carried-poison=SEV: attempt 4's shape, a poison carried across a fresh login: %poison reset, ::~poison SEV,
+// one hit taken, then a relog (a new client, so the published tick restarts and no hit of the poison is in view) and
+// the chain at once; --hp=N lowers HP to N before the relog. Every damage_taken (hitmark, sourceIndex), antipoison dose
+// and trade open/close is logged (lab/poison-watch.ts).
+//
 // One JSON line per event; `checkpoint` lines are (1) sharks after A, (2) the login trigger and h45's entry,
-// (3) each H12o trade, (4) P's final stop and h45's logout. Exit 0 when the slice ran to Z, 1 otherwise.
+// (3) each H12o trade, (4) P's final stop and h45's logout. Exit 0 when the slice ran to Z (or A), 1 otherwise.
 
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
@@ -30,7 +36,7 @@ import { ReservationWatch, reservationPath } from '../lib/host-reservation';
 import { objPack } from '../lib/obj-pack';
 import { closeSession, isLoopbackHost, loadBotEnv, openSession, relog, ROOT, type Session } from '../lib/session';
 import { TickLog } from '../lib/ticks';
-import { waitUntil } from '../lib/wait';
+import { waitTicks, waitUntil } from '../lib/wait';
 import { opIndex } from '../lib/world';
 import { buildChain, KIT_PARTNER_ROWS, muleCueDir, PLACEMENT, type RunConfig } from '../runner/chain';
 import { RunCues } from '../runner/cue-keeper';
@@ -41,24 +47,27 @@ import { MANIFEST } from '../tools/slot-ledger';
 import { arg, botArg, result } from './common';
 import { H45_BOT, h45Env, stageH45 } from './h45';
 import { planMuleDeliveryFixtures, type FixtureItem } from './mule-delivery-fixtures';
+import { watchPoison, type PoisonWatch } from './poison-watch';
 import { MM_VARS, PREREQ_VARS, ROUTE_LEVELS } from './quests/monkey-madness';
 import { cheat, clearInventory, leaveTutorial, mustTele, setStats, setVars } from './setup';
 
 const scoredName = botArg();
 const muleName = arg('mule', '');
 const gw = Number(arg('gw', '8479'));
+const carriedPoison = Number(arg('carried-poison', '0'));
+const hpTo = arg('hp', '');
 if (!muleName || muleName === scoredName) throw new Error('--mule must name a separate fresh lab account');
 for (const n of [muleName, scoredName]) if (!isLoopbackHost(loadBotEnv(n).SERVER ?? '')) throw new Error('lab only: a non-loopback world is refused');
 const scoredAccount = loadBotEnv(scoredName).BOT_USERNAME!;
 
 const manifest = readFileSync(MANIFEST, 'utf8');
 // H12's before-state as the ledger walks it, with the swap's returns at the walked counts (Fight Arena's 1,000 coins;
-// the runes S12's Fire Blasts leave).
+// the runes S12's Fire Blasts leave) and H7's antipoison as an Antipoison(3), as monkey-madness.test.ts has it.
 const concrete = (id: number, count: number, reason: string) => ({ items: [{ id, count }], reason });
 const plan = planMuleDeliveryFixtures({
     manifest, rows: ['H12'], onRequest: [], pack: objPack(),
     overrides: { H12: {
-        takeBacks: { 'coins @995': concrete(995, 1000, 'the ledger walk'), 'death rune': concrete(560, 49, 'the ledger walk'), 'chaos rune': concrete(562, 16, 'the ledger walk') },
+        takeBacks: { 'antipoison(*)': concrete(175, 1, "H7's Antipoison(3)"), 'coins @995': concrete(995, 1000, 'the ledger walk'), 'death rune': concrete(560, 49, 'the ledger walk'), 'chaos rune': concrete(562, 16, 'the ledger walk') },
     } },
 });
 if (!plan.ok) {
@@ -92,6 +101,7 @@ const entryDiff: string[] = [
 
 const partners: Record<string, string> = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `lab_${id.toLowerCase()}`]));
 partners.H12 = muleName;
+partners.H4m ??= 'lab_h4m';
 const cfg: RunConfig = {
     partners, firemakingTiles: '3240,3296;3239,3296;3238,3296', rings: { giver: 'lab_ring' }, bones: { giver: 'lab_bone' },
     courier: { giver: 'lab_courier', below: 3 }, anvil: { giver: 'lab_anvil' },
@@ -103,6 +113,7 @@ const full = buildChain(cfg, { cues, manifest, attempt: runId, record: new Attem
 const i0 = full.findIndex(s => s.id === 'S15');
 const i1 = full.map(s => s.id).lastIndexOf('S15');
 const slice = full.slice(i0, i1 + 1);
+const runSlice = process.argv.includes('--untilA') ? slice.slice(0, slice.findIndex(s => /A-narnode/.test(s.name)) + 1) : slice;
 
 let scored!: Session;
 let mule!: Session;
@@ -145,6 +156,30 @@ async function stageScored() {
     await relog(scored);
     const s = scored.sdk.getState()!;
     emit('scored-staged', { at: { x: s.player?.worldX, z: s.player?.worldZ, level: s.player?.level }, sharks: sharks(), worn: s.equipment.map(e => `${e.name} x${e.count}`), inventory: s.inventory.map(i => `${i.name} x${i.count}`) });
+}
+
+/**
+ * --carried-poison: SCORED poisoned at SEV with one hit taken, then logged out and in on a new client, as attempt 4
+ * arrived at A: %poison is perm and login restarts its timer at 30 (poison.rs2 set_poison_login), so the next hit lands
+ * up to 30 ticks into the new session, and the new client has seen none.
+ */
+async function carryPoisonAcrossLogin(sev: number) {
+    await cheat(scored.sdk, 'setvar poison 0', 2);
+    const t0 = tick();
+    await cheat(scored.sdk, `~poison ${sev}`);
+    const hit = (st: ReturnType<typeof scored.sdk.getState>) => (st?.combatEvents ?? []).find(e => e.type === 'damage_taken' && e.targetType === 'player' && e.hitmark === 2 && e.tick > t0);
+    if (!(await waitUntil(scored.sdk, st => !!hit(st), { maxTicks: 40 })).ok) throw new Error(`--carried-poison=${sev}: no poison hit within 40 ticks of t=${t0}`);
+    const first = hit(scored.sdk.getState())!;
+    if (hpTo) {
+        const hp = scored.sdk.getState()!.player!.hp;
+        if (hp > Number(hpTo)) await cheat(scored.sdk, `~hit ${hp - Number(hpTo)}`);
+        await waitUntil(scored.sdk, st => (st.player?.hp ?? 0) <= Number(hpTo), { maxTicks: 5 });
+    }
+    await waitTicks(scored.sdk, 2);
+    emit('poison-staged', { severity: sev, poisonedAt: t0, firstHitAt: first.tick, damage: first.damage, hp: scored.sdk.getState()!.player?.hp });
+    const r = await relog(scored);
+    const s = scored.sdk.getState()!;
+    emit('relogged', { loginTick: r.loginTick, tickBase: r.tickBase, via: r.via, loginWallMs: r.loginWallMs, tickNow: s.tick, hp: s.player?.hp, poisonInView: (s.combatEvents ?? []).filter(e => e.hitmark === 2).length });
 }
 
 async function seedCarrier() {
@@ -225,9 +260,10 @@ let roleError: unknown;
 const stop = new AbortController();
 let launcher: ReturnType<typeof launchH45> | null = null;
 const steps: Record<string, unknown>[] = [];
+let watch: PoisonWatch | null = null;
 
 try {
-    emit('start', { host: hostname(), revision: revision(), tickRate: process.env.NODE_TICKRATE, runId, root, slice: slice.map(s => `${s.id}|${s.name}`) });
+    emit('start', { host: hostname(), revision: revision(), tickRate: process.env.NODE_TICKRATE, runId, root, slice: runSlice.map(s => `${s.id}|${s.name}`) });
     emit('h45-entry', { entry: h45Entry, differsFromRunDay: entryDiff });
     if (entryDiff.some(k => !['account', 'cueDir', 'options.serve'].includes(k))) throw new Error(`h45's entry differs from run day's beyond account, cueDir and serve: ${entryDiff.join(', ')}`);
 
@@ -245,7 +281,7 @@ try {
         reportBank: () => {},
     }).then(() => { if (!stop.signal.aborted) roleError = new Error('the carrier role exited'); }, e => { roleError = e; emit('carrier-error', { error: String(e) }); });
 
-    const pre = deliveryOwnerFor({ delivery: cfg.delivery, partners: cfg.partners, chain: slice, receiver: scoredAccount, dir: muleCueDir(cfg) });
+    const pre = deliveryOwnerFor({ delivery: cfg.delivery, partners: cfg.partners, chain: runSlice, receiver: scoredAccount, dir: muleCueDir(cfg) });
     if ('refusal' in pre) throw new Error(`preflight refused: ${pre.refusal}`);
     const owner = pre.owner as DeliveryOwner;
     cues.bindDelivery(owner);
@@ -258,6 +294,14 @@ try {
     if (roleError) throw roleError;
     emit('entry-wait', { ok: inView.ok, waitTicks: tick() - t0, status: readMuleReady(options.cueDir, muleName) });
     if (!inView.ok) throw new Error('H12: the carrier was not ready and in view within 1500 ticks');
+    watch = watchPoison(scored.sdk, emit);
+    if (process.argv.includes('--arrive-poisoned')) {
+        await cheat(scored.sdk, '~poison 4', 2);
+        await cheat(scored.sdk, '~1hp', 2);
+        const st0 = scored.sdk.getState()!;
+        emit('arrival', { hp: st0.player?.hp, sharks: sharks(), poisonMessages: st0.gameMessages.filter(m => /poison/i.test(m.text)).map(m => m.text) });
+    }
+    if (carriedPoison > 0) await carryPoisonAcrossLogin(carriedPoison);
 
     // Checkpoints, from the run log's rows (one per finished step) and h45's launcher status and role log.
     const log = TickLog.memory(scoredAccount);
@@ -269,7 +313,7 @@ try {
     let handOffs = 0;
     let roleSeen = 0;
     let finalDone = false;
-    const watch = setInterval(() => {
+    const checkpoints = setInterval(() => {
         for (const row of log.rows.slice(seenRows)) {
             const r = { step: row.step, ok: row.ok, ticks: row.ticks, endTick: tick() };
             steps.push(r);
@@ -307,18 +351,19 @@ try {
         roleSeen = launcher?.roleLines.length ?? 0;
     }, 200);
     try {
-        const { result: res } = await runChainOnSession(scored, { log, chain: slice, reservation: new ReservationWatch(reservationPath(join(root, 'no-reservation.json')), { label: 's15' }), cues, label: 's15' });
+        const { result: res } = await runChainOnSession(scored, { log, chain: runSlice, reservation: new ReservationWatch(reservationPath(join(root, 'no-reservation.json')), { label: 's15' }), cues, label: 's15' });
         emit('chain-done', { code: res.code, res });
         pass = res.code === 0;
         // h45 logs out on P's final stop; give the launcher time to report it.
-        await new Promise(r => setTimeout(r, 20_000));
+        if (runSlice.length === slice.length) await new Promise(r => setTimeout(r, 20_000));
     } finally {
-        clearInterval(watch);
+        clearInterval(checkpoints);
     }
 } catch (e) {
     emit('failure', { error: e instanceof Error ? e.stack ?? e.message : String(e), carrier: readMuleReady(options.cueDir, muleName), h45Cue: readCue(h45Cue) });
 } finally {
     stop.abort();
+    watch?.stop();
     try { cues.close({ final: false }); } catch { /* nothing open */ }
     if (running) await Promise.race([running, new Promise<void>(r => setTimeout(r, 5000))]);
     const h45Final = launcher?.status() ?? null;
@@ -326,7 +371,7 @@ try {
     if (launcher) await launcher.stop();
     if (mule) await closeSession(mule).catch(() => {});
     if (scored) await closeSession(scored).catch(() => {});
-    const summary = { pass, host: hostname(), runId, tickRate: process.env.NODE_TICKRATE, steps, h45Final, h45HandOffs: h45Role.filter(l => /^hand-off/.test(String(l.message ?? ''))), root };
+    const summary = { pass, host: hostname(), runId, tickRate: process.env.NODE_TICKRATE, steps, poison: watch?.summary() ?? null, h45Final, h45HandOffs: h45Role.filter(l => /^hand-off/.test(String(l.message ?? ''))), root };
     writeFileSync(join(root, 'result.json'), JSON.stringify(summary, null, 2));
     result('s15-chain', summary);
 }

@@ -41,7 +41,7 @@ import { solveOnPanel } from '../lib/puzzle';
 import { currentTick, waitTicks, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, findLoc, invCount, messagesSince, pos, waitForNpc, type StateLike } from '../lib/world';
 import type { Check, Observed, Step, StepContext } from '../runner/step';
-import { ANTIPOISON, antipoisonDrunkAt, cureDose, curePoison, DRINK_RESEND_TICKS, drinkDelayOver, drinkPrayerTo, noteAntipoison, poisoned, poisonSeenAt, prayerCovers, slotNeed, slotsCover, talkShape, type DialogueMode, type QuestItem } from './segments';
+import { ANTIPOISON, antipoisonDrunkAt, cureDose, entryCure, DRINK_RESEND_TICKS, drinkDelayOver, drinkPrayerTo, noteAntipoison, poisoned, poisonSeenAt, prayerCovers, slotNeed, slotsCover, talkShape, type DialogueMode, type QuestItem } from './segments';
 import { CHILD_TALISMAN, CHILD_TALKS, childTalkNeed, lumdoRefuses, MM_SHAPES, narnodeComplete } from './monkey-madness-shapes';
 import { cueDir, CueWriter, writeTopUpAsk, type AskItem, type CueScope } from '../helpers/altar-cue';
 import { itemLabel, MANIFEST, parseLedger } from '../tools/slot-ledger';
@@ -1010,7 +1010,8 @@ export async function preDose(sdk: Sdk): Promise<void> {
     const lone = !!dose && !s.inventory.some(i => i.slot !== dose.slot && KIT_SUPER.test(i.name));
     if (!dose || lone) {
         if (lone) stepNote('S15 antipoison: no pre-dose, the one-dose super is the kit\'s only super');
-        if ((await curePoison(sdk, 'S15:A after the swap')) === 'cured') stepNote(`S15 antipoison: a Superantipoison dose at A after the swap, t=${antipoisonDrunkAt()}`);
+        const cure = await entryCure(sdk, 'S15:A after the swap');
+        if (cure === 'cured' || cure === 'blind') stepNote(`S15 antipoison: a Superantipoison dose at A after the swap${cure === 'blind' ? ' (a fresh session, no hit seen)' : ''}, t=${antipoisonDrunkAt()}`);
         return;
     }
     const at = currentTick(sdk);
@@ -1742,14 +1743,17 @@ export function h12Plan(s: BotWorldState, o: { bow: number; served?: boolean }):
  * dropped before returning: GT_HANDBACK takes none and A's pack is the kit's 27, read by the sizing next. Waits on the
  * inventory for both. A runs under upkeep, which cures on its own state too and can win the race while A's eat lands: a
  * dose noted in the last DRINK_RESEND_TICKS is waited out before the vial check, so its vial is not left for the sizing.
- * With nothing held it drinks nothing; preDose cures after the swap.
+ * On a fresh session (a resume or relog, poisonUnknown) one dose is drunk with no hit seen: a carried poison's first hit
+ * lands up to 30 ticks into the session, after the trade has opened (measured, rs/786). With nothing held it drinks
+ * nothing; preDose cures after the swap.
  */
 export async function cureBeforeSwap(sdk: Sdk): Promise<void> {
-    const cure = await curePoison(sdk, 'S15:A before the swap');
+    const cure = await entryCure(sdk, 'S15:A before the swap');
     if (cure === 'cured') stepNote(`S15 antipoison: cured before the Grand Tree swap, t=${antipoisonDrunkAt()}`);
+    if (cure === 'blind') stepNote(`S15 antipoison: a fresh session, a dose before the Grand Tree swap with no hit seen, t=${antipoisonDrunkAt()}`);
     const sent = antipoisonDrunkAt();
     const since = currentTick(sdk) - sent;
-    if (cure !== 'cured' && since >= 0 && since < DRINK_RESEND_TICKS) await waitUntil(sdk, s => s.tick - sent >= DRINK_RESEND_TICKS, { maxTicks: DRINK_RESEND_TICKS });
+    if (cure !== 'cured' && cure !== 'blind' && since >= 0 && since < DRINK_RESEND_TICKS) await waitUntil(sdk, s => s.tick - sent >= DRINK_RESEND_TICKS, { maxTicks: DRINK_RESEND_TICKS });
     const vial = () => sdk.getState()!.inventory.find(i => /^Vial$/i.test(i.name));
     for (let i = 0; i < 4 && vial(); i++) {
         if (!packClickAllowed(sdk.getState()!)) await waitUntil(sdk, packClickAllowed, { maxTicks: 10 });
@@ -1809,11 +1813,13 @@ const BACK_LATER = /^I'll be back later/;
  * A's talk with Narnode for the royal seal: the quest's start ('Yes'); with the quest started and the seal lost, the
  * spare from his menu (`inv_add` with no room check, so a full pack is a named refusal), then out of the menu; nothing
  * with the seal held. The menu holds only before Caranock is asked (mm_narnode.rs2:145): later, A is past re-running.
+ * The start gives the seal the same way, so it needs the free slot too: with none the talk ran to its 200-tick bound.
  */
 export function narnodeTalk(s: BotWorldState): { choices: RegExp[]; start: boolean } | null | string {
-    if ((questStatus(s, 'mm') ?? 'not_started') === 'not_started') return { choices: [/^Yes$/], start: true };
-    if (holds(s, MM_OBJ.royalSeal)) return null;
-    if (freeSlots(s) < 1) return `S15:A needs 1 free slot for Narnode's spare seal (${freeSlots(s)} free)`;
+    const started = (questStatus(s, 'mm') ?? 'not_started') !== 'not_started';
+    if (started && holds(s, MM_OBJ.royalSeal)) return null;
+    if (freeSlots(s) < 1) return `S15:A needs 1 free slot for Narnode's ${started ? 'spare ' : ''}seal (${freeSlots(s)} free)`;
+    if (!started) return { choices: [/^Yes$/], start: true };
     return { choices: [LOST_SEAL, BACK_LATER], start: false };
 }
 

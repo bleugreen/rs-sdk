@@ -293,6 +293,12 @@ export function poisonSeenAt(s: Pick<BotWorldState, 'combatEvents' | 'gameMessag
 let drunkAt = -Infinity;
 /** The highest client tick seen since the last restart. */
 let seenTick = -Infinity;
+/**
+ * The client tick this client session began at, as far as this process knows: the first tick it observes (a new run.ts
+ * process is a resume, attached to a page whose tick may have counted on for hours), 0 after a fall in the tick (a
+ * relaunched client counts from 0), or the tick noteSessionStart names (an in-page login, where the page counts on).
+ */
+let sessionStart = 0;
 
 /**
  * Watch the published tick: it is the client's own and restarts at a reload, so a tick below the highest seen means a new
@@ -301,8 +307,21 @@ let seenTick = -Infinity;
  */
 function observeTick(tick: number): void {
     if (!Number.isFinite(tick)) return;
-    if (tick < seenTick) drunkAt = -Infinity;
+    if (seenTick === -Infinity) sessionStart = tick;
+    else if (tick < seenTick) {
+        drunkAt = -Infinity;
+        sessionStart = 0;
+    }
     seenTick = tick;
+}
+
+/**
+ * A client session began at `tick` without the tick restarting (an in-page login on a page that counts on): from it,
+ * poisonUnknown reads the session as fresh for POISON_PERIOD ticks. A relaunch needs no call; its tick restarts.
+ */
+export function noteSessionStart(tick: number): void {
+    observeTick(tick);
+    sessionStart = tick;
 }
 
 /**
@@ -316,7 +335,10 @@ export function antipoisonDrunkAt(now = Infinity): number {
 
 /** Record a dose, in the tick its drink is sent: from then `poisoned` reads every earlier evidence as cured. -Infinity clears it. */
 export function noteAntipoison(tick: number): void {
-    if (tick === -Infinity) seenTick = -Infinity;
+    if (tick === -Infinity) {
+        seenTick = -Infinity;
+        sessionStart = 0;
+    }
     observeTick(tick);
     drunkAt = tick;
 }
@@ -334,6 +356,24 @@ export function poisoned(s: Pick<BotWorldState, 'tick' | 'combatEvents' | 'gameM
     const at = poisonSeenAt(s);
     const dose = since > s.tick ? -Infinity : since;
     return at > dose && s.tick - at <= POISON_WINDOW;
+}
+
+/**
+ * Whether a poison carried into this client session could be on with nothing to show it: the session is fresh (under
+ * POISON_PERIOD ticks old; login restarts the poison timer at 30, poison.rs2 set_poison_login, so a carried poison's
+ * first hit lands by then), no dose this session, no poison hitsplat or poisoned message this session, and a dose is
+ * held. Measured (rs/786, S15:A and S16:B after a relog): the first carried hit came 30 ticks into the session, after
+ * H12's trade had opened and after Kolodion's teleport. Once a hit shows, `poisoned` decides; a dose noted makes this
+ * false for every later caller in the session.
+ */
+export function poisonUnknown(s: Pick<BotWorldState, 'tick' | 'combatEvents' | 'gameMessages' | 'inventory'>): boolean {
+    observeTick(s.tick);
+    if (s.tick < sessionStart || s.tick - sessionStart >= POISON_PERIOD) return false;
+    if (drunkAt >= sessionStart && drunkAt <= s.tick) return false;
+    // Evidence this session, or recent enough to be in view from before it (a page's own hit): poisoned decides.
+    const seen = poisonSeenAt(s);
+    if (seen >= sessionStart || s.tick - seen <= POISON_WINDOW) return false;
+    return cureDose(s) !== null;
 }
 
 /** What a potion's drink prints once its p_delay is over (consume_effects.rs2 consume_effect_messages). */
@@ -369,13 +409,31 @@ export function cureDose(s: Pick<BotWorldState, 'inventory'>): InventoryItem | n
  * the tick it is sent. Throws when neither drink lands.
  */
 export async function curePoison(sdk: DrinkSdk, where: string): Promise<'clean' | 'cured' | 'none-held'> {
-    let s = sdk.getState();
+    const s = sdk.getState();
     if (!s) throw new Error(`${where}: no state`);
     if (!poisoned(s)) return 'clean';
+    return drinkDose(sdk, where, poisoned);
+}
+
+/**
+ * An entry cure for a step entered on a session that may be fresh (a resume or relog): curePoison, and when
+ * poisonUnknown, one dose at once (cureDose's order), 'blind'. Not fresh, or nothing held: curePoison exactly.
+ */
+export async function entryCure(sdk: DrinkSdk, where: string): Promise<'clean' | 'cured' | 'blind' | 'none-held'> {
+    const r = await curePoison(sdk, where);
+    if (r !== 'clean') return r;
+    const s = sdk.getState();
+    if (!s || !poisonUnknown(s)) return 'clean';
+    return (await drinkDose(sdk, where, poisonUnknown)) === 'cured' ? 'blind' : 'clean';
+}
+
+/** One dose for `where`, while `wanted` still holds once an open chat has had CURE_CHAT_TICKS to close. */
+async function drinkDose(sdk: DrinkSdk, where: string, wanted: (s: BotWorldState) => boolean): Promise<'clean' | 'cured' | 'none-held'> {
+    let s = sdk.getState()!;
     if (s.dialog?.isOpen) {
         await waitUntil(sdk, st => !st.dialog?.isOpen, { maxTicks: CURE_CHAT_TICKS });
         s = sdk.getState()!;
-        if (!poisoned(s)) return 'clean';
+        if (!wanted(s)) return 'clean';
     }
     const dose = cureDose(s);
     if (!dose) return 'none-held';
@@ -403,24 +461,29 @@ export function poisonCovered(where: string): Check<any> {
  * a poison carried in cured before the body (and a resume) runs. For a segment that can be entered poisoned, a fight or
  * the last safe point before one; clean, it costs nothing.
  */
-export function entryCured<C>(stepId: string, letters: readonly string[], segs: readonly Segment<C>[]): Segment<C>[] {
-    const missing = letters.filter(l => !segs.some(s => s.letter === l));
+export function entryCured<C>(stepId: string, letters: readonly string[], segs: readonly Segment<C>[], opts: { fresh?: readonly string[] } = {}): Segment<C>[] {
+    const missing = [...letters, ...(opts.fresh ?? [])].filter(l => !segs.some(s => s.letter === l));
     if (missing.length) throw new Error(`entryCured: ${stepId} has no segment ${missing.join(', ')}`);
+    const outside = (opts.fresh ?? []).filter(l => !letters.includes(l));
+    if (outside.length) throw new Error(`entryCured: ${stepId}'s fresh-session letters ${outside.join(', ')} are not entry-cured`);
     return segs.map(seg => {
         if (!letters.includes(seg.letter)) return seg;
         const where = `${stepId}:${seg.letter}`;
+        // `fresh` letters are the last safe point before an irreversible action: a resume or relog into one drinks a dose
+        // held without waiting for a carried poison's first hit (entryCure).
+        const cure = opts.fresh?.includes(seg.letter) ? (sdk: DrinkSdk) => entryCure(sdk, where) : (sdk: DrinkSdk) => curePoison(sdk, where);
         const cured: Segment<C> = {
             ...seg,
             preconditions: allOf(poisonCovered(where), seg.preconditions),
             run: async ctx => {
-                await curePoison(ctx.sdk, where);
+                await cure(ctx.sdk);
                 await seg.run(ctx);
             },
         };
         if (seg.resume) {
             const resume = seg.resume;
             cured.resume = async ctx => {
-                await curePoison(ctx.sdk, where);
+                await cure(ctx.sdk);
                 await resume(ctx);
             };
         }
