@@ -23,9 +23,15 @@
  *   needs every account on it. `--placeholder-data` is for lab accounts only.
  * - `--run-ended` confirms main has announced the scored run's end: without it a plan that buys sharks refuses to
  *   start (sharks are a fleet input, docs/speedrun/SUPPLIES.md).
+ * - Every stage reaches its start from wherever the account stands (stages.ts `reach`, lib/sea-route.ts): out through
+ *   the Gnome Stronghold's gate and the like, by ship between the land masses, fares fetched from this side's bank
+ *   when the pack is short. Each trip beyond a plain walk is a `trip` ledger line with its legs. A trip that cannot be
+ *   paid for parks the account (a `parked` line, reason 'unreachable <stage>') instead of retrying it.
  * - An account in its method stage whose coins (carried plus banked) have not moved for `--stall-minutes` (default 10,
  *   0 off) has its method aborted so its stages run again, at most `--stall-retries` (default 3) times while the coins
- *   stay put; then it is flagged once and left (stall.ts).
+ *   stay put; then it is flagged once and left. Any other stage with no progress (its skill's XP, the coins carried, a
+ *   move) for `--stage-stall-minutes` (default 10, 0 off) is aborted the same way, and after the same retries the
+ *   account is parked (stall.ts). Each abort is a `stall` ledger line.
  * - A full collection is forced every `--gc-seconds` (default 30, 0 off): without it the per-tick state garbage of a
  *   busy runner reached 1.3-1.6 GB before Bun collected it (docs/markets/phase2.md 'Memory').
  * - SIGINT or SIGTERM stops every account at its next safe point and logs it out; a second signal exits at once.
@@ -49,7 +55,8 @@ import { tickMs } from '../../speedrun/lib/wait';
 import { writerExclusion } from '../lib/accounts.ts';
 import { Gentle } from '../lib/demo.ts';
 import { DemoMarket, median, type MarketQuote } from '../lib/market.ts';
-import { role as coinsRole } from '../methods/coins-driver.ts';
+import { Unreachable, type Trip } from '../lib/sea-route.ts';
+import { role as coinsRole, standFor } from '../methods/coins-driver.ts';
 import { chooseSite } from '../methods/hp-model.ts';
 import { TargetClaims, type SiteId } from '../methods/hp-train.ts';
 import { ERRAND_LOG, role as pickpocketRole, TARGET_LOG } from '../methods/pickpocket.ts';
@@ -65,11 +72,11 @@ import { accountLine, COINS_ID, totalsLine, type AccountSnapshot, type Stack, ty
 import { aliasOf, nameScrubber, scrubRecord, unlistedAccounts } from './names.ts';
 import { EARNS_COINS, NEEDS, nextFallback, parsePlan, PlanError, planWarnings, roleOptions, SALE_ROUTE, sequenceFor, type AccountPlan, type MethodId, type Plan } from './plan.ts';
 import { holdRates, KnightsRamp } from './ramp.ts';
-import { afterAttempt, loadSharks, rebuyDecision, requestRebuy, retryDelayMs, SHARKS_KEY, shortfall, shortForVoyage, type SharkAttempt } from './sharks.ts';
-import { carriedCoins, runRoleUntil, runStage, stageDone, type StageCtx, type StageHooks } from './stages.ts';
-import { DEFAULT_STALL, StallWatch, type StallPolicy } from './stall.ts';
+import { afterAttempt, loadSharks, rebuyDecision, requestRebuy, retryDelayMs, SHARK_RETRY, SHARKS_KEY, shortfall, shortForVoyage, type SharkAttempt } from './sharks.ts';
+import { carriedCoins, reach, runRoleUntil, runStage, stageDone, type StageCtx, type StageHooks } from './stages.ts';
+import { DEFAULT_STALL, methodReading, policyFor, stageReading, StallWatch, type StallPolicy } from './stall.ts';
 
-const USAGE = 'usage: bun markets/phase2/run.ts <plan.json> [--out DIR] [--minutes N] [--stall-minutes N] [--stall-retries N] [--gc-seconds N] [--run-ended] [--placeholder-data]';
+const USAGE = 'usage: bun markets/phase2/run.ts <plan.json> [--out DIR] [--minutes N] [--stall-minutes N] [--stage-stall-minutes N] [--stall-retries N] [--gc-seconds N] [--run-ended] [--placeholder-data]';
 /** A forced full collection this often bounds the per-tick state garbage (memory.ts LoadMeter.collect). */
 const DEFAULT_GC_SECONDS = 30;
 const BOOLEAN_FLAGS = ['--run-ended', '--placeholder-data'];
@@ -158,6 +165,8 @@ class Worker {
     hpQueuedAt: number | null = null;
     hpLogged = false;
     readonly stall = new StallWatch();
+    /** Where the account stood at its last published state. */
+    at: { x: number; z: number } | null = null;
     /** When the account last reached its method (null off it): the ramp's warm-up counts from here. */
     methodAt: number | null = null;
     /** The npc the method works now, from the role's target line. */
@@ -208,7 +217,10 @@ export interface RunOptions {
     minutes: number;
     runEnded: boolean;
     placeholder: boolean;
+    /** The method stage's stall policy. */
     stall: StallPolicy;
+    /** Every other stage's (stall.ts policyFor). */
+    stageStall: StallPolicy;
     /** Force a full collection this often, 0 never (memory.ts LoadMeter.collect). */
     gcSeconds: number;
 }
@@ -452,7 +464,8 @@ export class Runner {
                 attempt = { record: r.record };
                 banked = r.banked;
             } catch (e) {
-                if (x.signal.aborted) throw e;
+                // a purchase it cannot travel to is no refusal of the book's: the stage loop parks it
+                if (x.signal.aborted || e instanceof Unreachable) throw e;
                 attempt = { error: e instanceof Error ? e.message : String(e) };
             }
             const next = afterAttempt(loadSharks(w.roleState.get(SHARKS_KEY)), attempt, new Date());
@@ -544,6 +557,8 @@ export class Runner {
                     w.bankTick = sdk.getState()?.tick ?? w.bankTick;
                 },
                 bank: w.bank,
+                bankCoins: () => (w.bank === null ? null : countOf(w.bank, /^coins$/i)),
+                trip: t => this.trip(w, t),
                 hooks: this.hooks(w, () => x)
             };
             const st = sequenceFor({ method: w.method, hp: w.plan.hp }, this.plan).find(s => !stageDone(s, sdk.getState()!, x.hooks, w.roleState))!;
@@ -571,6 +586,10 @@ export class Runner {
             } catch (e) {
                 if (e instanceof GiveUp) throw e;
                 if (signal.aborted) break;
+                if (e instanceof Unreachable) {
+                    this.park(w, `unreachable ${w.stage}`, { detail: e.message, at: w.at });
+                    break;
+                }
                 // a redirect or a sale aborted the stage: go round again
                 if (!stageCtl.signal.aborted) await fail(st.do, e instanceof Error ? e.message : String(e));
             } finally {
@@ -610,6 +629,7 @@ export class Runner {
             this.event(w, 'every Hitpoints site is full: earning until one has room', {}, true);
         }
         // the driver, not coins.ts directly: a queued account still has its fresh 10 Hitpoints, and coins.ts on the men has no exit but death
+        await reach(x, 'hp-queue', standFor(x.sdk.getState()!, { target: 'auto' }));
         await runRoleUntil(x, coinsRole, { target: 'auto' }, () => (this.hpSites.hasRoom() ? 'a Hitpoints site has room' : null));
     }
 
@@ -645,12 +665,21 @@ export class Runner {
      * but the voyage check comes straight after a bank visit (the method's bank errand, the purchase's), so what it
      * earned is banked; it walks nowhere to bank.
      */
-    private park(w: Worker, reason: string): void {
+    private park(w: Worker, reason: string, extra: Record<string, unknown> = {}): void {
         w.parked = reason;
         w.done = true;
-        this.ledger({ kind: 'parked', account: w.alias, method: w.method, reason });
-        this.event(w, `parked: ${reason}`, {}, true);
+        this.ledger({ kind: 'parked', account: w.alias, method: w.method, stage: w.stage, reason, ...extra });
+        this.event(w, `parked: ${reason}`, extra, true);
         w.ctl?.abort(new Error(`parked: ${reason}`));
+    }
+
+    // ------------------------------------------------------------ trips
+
+    /** A trip lib/sea-route.ts ran for the account: a `trip` ledger line when it took more than a plain walk. */
+    private trip(w: Worker, t: Trip): void {
+        if (t.legs.every(l => l.leg === 'walk')) return;
+        this.ledger({ kind: 'trip', account: w.alias, method: w.method, stage: w.stage, ...t });
+        this.event(w, 'trip', { dest: t.dest, to: t.to, ticks: t.ticks, fares: t.fares, legs: t.legs.map(l => l.leg) }, true);
     }
 
     // ------------------------------------------------------------ the knights ramp
@@ -731,17 +760,29 @@ export class Runner {
 
     // ------------------------------------------------------------ stalls
 
-    /** Abort the method of an account whose coins have stood still (stall.ts); the stage loop runs its stages again. */
+    /** The stall policy for a stage: the method's, or the stages' with the Exchange errands' fill waits added. */
+    private stallPolicy(stage: string): StallPolicy {
+        return policyFor(stage, this.o.stall, this.o.stageStall, { 'buy-sharks': this.plan.sharks.fillMinutes + SHARK_RETRY.maxMs / 60_000, sale: this.plan.sell.fillMinutes });
+    }
+
+    /**
+     * Abort the stage of an account that has made no progress in it (stall.ts); the stage loop runs its stages again,
+     * through travel. After the retries a method is flagged and left running, any other stage parks the account.
+     */
     private pumpStalls(now: number): void {
         for (const w of this.workers) {
-            if (w.stage !== 'method' || !w.stageCtl) continue;
-            const v = w.stall.check(now, this.o.stall);
+            if (!w.stageCtl || w.parked !== null) continue;
+            const p = this.stallPolicy(w.stage);
+            const v = w.stall.check(now, w.stage, p);
             if (!v) continue;
-            const data = { coins: v.coins, stalledMinutes: Math.round(v.stalledMs / 6_000) / 10, retry: v.retry, retries: this.o.stall.retries };
+            const progress = v.stage === 'method' ? { coins: v.marks[0] } : { xp: v.marks[0], carried: v.marks[1] };
+            const data = { stage: v.stage, at: w.at, stalledMinutes: Math.round(v.stalledMs / 6_000) / 10, retry: v.retry, retries: p.retries, ...progress };
+            this.ledger({ kind: 'stall', account: w.alias, method: w.method, action: v.action, ...data });
             if (v.action === 'abort') {
                 this.event(w, 'stalled', data, true);
                 w.stageCtl.abort(new Error('stalled'));
-            } else this.event(w, 'stalled: retries used up, leaving it running; look at it', data, true);
+            } else if (v.stage === 'method') this.event(w, 'stalled: retries used up, leaving it running; look at it', data, true);
+            else this.park(w, `stalled in ${v.stage}`, data);
         }
     }
 
@@ -764,6 +805,9 @@ export class Runner {
             w.bankTick = s.tick;
         }
         w.thieving = s.skills.find(k => k.name === 'Thieving')?.baseLevel ?? w.thieving;
+        w.at = { x: s.player.worldX, z: s.player.worldZ };
+        // the stall watch: every stage but the method on each state; the method on the ledger's cadence below
+        if (w.stageCtl && w.stage !== 'method') w.stall.observe(stageReading(w.stage, s), Date.now());
         w.firstTick ??= s.tick;
         if (w.hpStartAt !== null && !w.hpLogged) {
             const level = s.skills.find(k => k.name === 'Hitpoints')?.baseLevel ?? 0;
@@ -807,7 +851,7 @@ export class Runner {
         w.latest = snap;
         const line = accountLine(snap, this.valuer, new Date());
         this.ledger(line as unknown as Record<string, unknown>);
-        w.stall.observe(w.stage === 'method', line.coins.total, Date.now());
+        if (w.stage === 'method') w.stall.observe(methodReading(line.coins.total), Date.now());
         // A ramp reading needs the bank: its coins count as 0 until it is first seen, and a hold that took in that
         // first sighting would book everything banked before the method as earnings. No reading, no 'working'.
         if (w.stage === 'method' && w.bank !== null) {
@@ -851,7 +895,7 @@ async function main(argv: string[]): Promise<number> {
     // writerExclusion exits 2 without the names file, unless --placeholder-data
     const exclusion = writerExclusion(argv);
     const a = parseArgs(argv.filter(x => !BOOLEAN_FLAGS.includes(x)));
-    const unknown = Object.keys(a.flags).filter(k => !['out', 'minutes', 'stall-minutes', 'stall-retries', 'gc-seconds'].includes(k));
+    const unknown = Object.keys(a.flags).filter(k => !['out', 'minutes', 'stall-minutes', 'stage-stall-minutes', 'stall-retries', 'gc-seconds'].includes(k));
     if (unknown.length) fail(`unknown option ${unknown.map(k => `--${k}`).join(' ')}`);
     if (a.positional.length !== 1) fail('one plan file is required');
     let plan: Plan;
@@ -877,11 +921,12 @@ async function main(argv: string[]): Promise<number> {
     if (missing.length) fail(`no bots/<account>/bot.env for ${missing.join(', ')}`);
     const hosts = new Set(envs.map(e => e.SERVER));
     if (hosts.size !== 1 || !envs[0]!.SERVER) fail('every account must have the same SERVER in its bot.env: the plan is for one address on one world');
-    const [minutes, stallMinutes, stallRetries, gcSeconds] = (() => {
+    const [minutes, stallMinutes, stageStallMinutes, stallRetries, gcSeconds] = (() => {
         try {
             return [
                 numberFlag(a, 'minutes', 0, { min: 0 }),
                 numberFlag(a, 'stall-minutes', DEFAULT_STALL.ms / 60_000, { min: 0 }),
+                numberFlag(a, 'stage-stall-minutes', DEFAULT_STALL.ms / 60_000, { min: 0 }),
                 numberFlag(a, 'stall-retries', DEFAULT_STALL.retries, { min: 0, integer: true }),
                 numberFlag(a, 'gc-seconds', DEFAULT_GC_SECONDS, { min: 0 })
             ];
@@ -896,7 +941,7 @@ async function main(argv: string[]): Promise<number> {
     await initPathfindingAndRelease();
     await shareLocIndex();
     const workers = await Promise.all(plan.accounts.map(async (p, i) => new Worker(i, aliasOf(i), p, envs[i]!, await openRoleState(join(out, 'role-state', `${aliasOf(i)}.json`)))));
-    const runner = new Runner(plan, workers, { host: envs[0]!.SERVER!, out, minutes, runEnded, placeholder: exclusion.source === null, stall: { ms: stallMinutes * 60_000, retries: stallRetries }, gcSeconds });
+    const runner = new Runner(plan, workers, { host: envs[0]!.SERVER!, out, minutes, runEnded, placeholder: exclusion.source === null, stall: { ms: stallMinutes * 60_000, retries: stallRetries }, stageStall: { ms: stageStallMinutes * 60_000, retries: stallRetries }, gcSeconds });
     process.stderr.write(`phase2: ${workers.length} accounts, up to ${plan.maxSessions} sessions; ledger in ${join(out, 'ledger.jsonl')}\n`);
 
     let signals = 0;
