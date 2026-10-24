@@ -81,6 +81,8 @@ export interface RendererReading {
     /** KiB. Pss where /proc has it, else RSS. */
     pssKb: number;
     rssKb: number;
+    /** The GPU process (compositing and raster in a headed Chrome); absent for a renderer. */
+    gpu?: true;
 }
 
 export interface GrowthSample {
@@ -126,13 +128,17 @@ export interface GrowthSummary {
     lastMB: number | null;
     mbPerMin: number | null;
     mbPerTick: number | null;
+    /** The GPU process's Pss over the same samples, when there is one. */
+    gpuFirstMB: number | null;
+    gpuLastMB: number | null;
+    gpuMbPerMin: number | null;
 }
 
 /** The tab renderer's growth over `samples`, skipping those in the first `skipMs` (the load and login settling). */
 export function summarize(variant: string, samples: readonly GrowthSample[], skipMs = 60_000): GrowthSummary {
-    const ok = samples.filter(s => s.renderers.length);
+    const ok = samples.filter(s => s.renderers.some(r => !r.gpu));
     const last = ok[ok.length - 1];
-    const pid = last ? [...last.renderers].sort((a, b) => b.pssKb - a.pssKb)[0]!.pid : null;
+    const pid = last ? [...last.renderers].filter(r => !r.gpu).sort((a, b) => b.pssKb - a.pssKb)[0]!.pid : null;
     const t0 = ok[0]?.at ?? 0;
     const series = ok
         .filter(s => s.at - t0 >= skipMs)
@@ -144,6 +150,12 @@ export function summarize(variant: string, samples: readonly GrowthSample[], ski
     const ticked = series.filter((p): p is typeof p & { tick: number } => p.tick !== null);
     const perTick = slope(ticked.map(p => ({ x: p.tick, y: p.mb })));
     const round = (x: number | null, d: number) => (x === null ? null : Number(x.toFixed(d)));
+    const gpu = ok
+        .filter(s => s.at - t0 >= skipMs)
+        .flatMap(s => {
+            const r = s.renderers.find(x => x.gpu);
+            return r ? [{ x: (s.at - t0) / 60_000, y: (r.pssKb * 1024) / 1e6 }] : [];
+        });
     return {
         variant,
         samples: series.length,
@@ -154,6 +166,9 @@ export function summarize(variant: string, samples: readonly GrowthSample[], ski
         lastMB: round(series[series.length - 1]?.mb ?? null, 1),
         mbPerMin: round(perMin, 2),
         mbPerTick: round(perTick, 4),
+        gpuFirstMB: round(gpu[0]?.y ?? null, 1),
+        gpuLastMB: round(gpu[gpu.length - 1]?.y ?? null, 1),
+        gpuMbPerMin: round(slope(gpu), 2),
     };
 }
 
@@ -186,9 +201,10 @@ async function readRenderers(chromePid: number): Promise<RendererReading[]> {
             try {
                 // Chrome rewrites its process title on Linux: a renderer's cmdline is one space-joined string, not NUL-separated args.
                 const args = readFileSync(`/proc/${pid}/cmdline`, 'utf8').split(/[\0\s]+/);
-                if (!args.includes('--type=renderer')) return [];
+                const gpu = args.includes('--type=gpu-process');
+                if (!gpu && !args.includes('--type=renderer')) return [];
                 const m = parseSmapsRollup(readFileSync(`/proc/${pid}/smaps_rollup`, 'utf8'));
-                return m ? [{ pid, ...m }] : [];
+                return m ? [{ pid, ...m, ...(gpu ? { gpu: true as const } : {}) }] : [];
             } catch {
                 return [];
             }
@@ -329,8 +345,10 @@ async function child(bot: string, name: string, v: Variant, minutes: number, cdp
             }
             samples.push(reading);
             appendFileSync(file, JSON.stringify(reading) + '\n');
-            const top = [...reading.renderers].sort((a, b) => b.pssKb - a.pssKb)[0];
-            say(`tick=${reading.tick} renderers=${reading.renderers.length} tabMB=${top ? ((top.pssKb * 1024) / 1e6).toFixed(1) : '-'}`);
+            const top = reading.renderers.filter(r => !r.gpu).sort((a, b) => b.pssKb - a.pssKb)[0];
+            const gpu = reading.renderers.find(r => r.gpu);
+            const mbOf = (r: RendererReading | undefined) => (r ? ((r.pssKb * 1024) / 1e6).toFixed(1) : '-');
+            say(`tick=${reading.tick} renderers=${reading.renderers.filter(r => !r.gpu).length} tabMB=${mbOf(top)} gpuMB=${mbOf(gpu)}`);
         };
         await sample();
         timers.push(setInterval(() => void sample(), 30_000));

@@ -33,6 +33,23 @@ describe('measure-tab-growth', () => {
         // 200 ticks per half minute: 100 MB/min is 0.25 MB/tick
         expect(s.mbPerTick).toBeCloseTo(0.25, 3);
         expect(s.ticks).toBe(800);
+        expect(s.gpuMbPerMin).toBeNull();
+    });
+
+    test('summarize never takes the GPU process for the tab, and gives its slope apart', () => {
+        const samples: GrowthSample[] = [0, 1, 2, 3].map(min => ({
+            variant: 'h',
+            at: min * 60_000,
+            tick: min * 400,
+            renderers: [
+                { pid: 7, pssKb: 1e6, rssKb: 0, gpu: true as const },
+                { pid: 2, pssKb: (300 * 1e6) / 1024, rssKb: 0 },
+            ].map(r => (r.gpu ? { ...r, pssKb: ((1000 + 50 * min) * 1e6) / 1024 } : r)),
+        }));
+        const s = summarize('h', samples, 0);
+        expect(s.pid).toBe(2);
+        expect(s.mbPerMin).toBeCloseTo(0, 5);
+        expect(s.gpuMbPerMin).toBeCloseTo(50, 3);
     });
 
     test('throttleExpression drops all but every nth state send, passing other sends', () => {
