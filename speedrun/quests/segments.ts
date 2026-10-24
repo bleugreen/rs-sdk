@@ -15,12 +15,15 @@
 // Names are `<stepId>:<letter>-<label>` (S15:A-narnode): run.ts keys on the
 // step id, and `runSteps({from})` starts at any segment by its full name.
 
+import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
 import type { QuestKey, StageName } from '../data/quest-stages';
+import { prayerDoses } from '../lib/combat';
 import type { ConverseOptions } from '../lib/converse';
 import { matchesItem, type ItemPattern } from '../lib/items';
 import { requireQuestStage, type QuestView } from '../lib/quests';
 import { receiveFrom, type WantSpec } from '../lib/trade';
+import { waitUntil, type StateSource } from '../lib/wait';
 import type { Check, ObservedCheck, Step, StepContext } from '../runner/step';
 
 export type DialogueMode = 'burst' | 'fixed';
@@ -152,6 +155,65 @@ export function inBox(s: BotWorldState, b: Box): boolean {
 /** The player inside `b`, judged by coordinates (never by nearby locs or NPCs: after a reconnect the first state has none). */
 export function within(b: Box, what = 'the area'): Check<any> {
     return s => (inBox(s, b) ? true : `not in ${what} (${b.x0},${b.z0})-(${b.x1},${b.z1}) L${b.level ?? 0}: at ${s.player ? `${s.player.worldX},${s.player.worldZ} L${s.player.level}` : 'unknown'}`);
+}
+
+// ---------------------------------------------------------------- prayer points
+//
+// Prayer points are a consumable on the route: S07's bones leave the pool at the level (99), and
+// nothing but a carried potion or an altar refills it (rs/687's budget: S10b and S11b alone spend
+// 95). Each protect fight's first segment checks the pool against the stretch's measured drain, so a
+// short pool is named at the step boundary rather than found mid-fight.
+
+/** A Prayer potion dose restores 7 + 25% of the Prayer level (consume_effects.dbrow, prayer_potion_effect). */
+export function doseRestore(prayerLevel: number): number {
+    return 7 + Math.floor(prayerLevel / 4);
+}
+
+export function prayerLevelOf(s: BotWorldState): number {
+    return s.prayers?.prayerLevel || s.skills.find(k => k.name.toLowerCase() === 'prayer')?.baseLevel || 0;
+}
+
+export function prayerPointsOf(s: BotWorldState): number {
+    return s.prayers?.prayerPoints ?? 0;
+}
+
+/** Prayer points the pool can draw: the points now plus every held dose at its restore. */
+export function prayerReserve(s: BotWorldState): number {
+    return prayerPointsOf(s) + prayerDoses(s) * doseRestore(prayerLevelOf(s));
+}
+
+/** A precondition: the pool, counting held doses, covers `need` points for `what` (e.g. 'S12:G ... for G-J'). */
+export function prayerCovers(what: string, need: number): Check<any> {
+    return s => {
+        const reserve = prayerReserve(s);
+        if (reserve >= need) return true;
+        const doses = prayerDoses(s);
+        return `${what} needs ~${need} prayer points, has ${prayerPointsOf(s)}${doses ? ` and ${doses} potion doses (${reserve} in all)` : ' and no prayer potion'}`;
+    };
+}
+
+export type DrinkSdk = StateSource & Pick<BotSDK, 'sendUseItem'>;
+
+/**
+ * Drink held Prayer potion doses one at a time until the points reach `target` (at most the level)
+ * or no dose is left; each drink is confirmed by the points rising or a dose going before the next.
+ * Returns the doses drunk; throws when a drink does not land within `maxTicks`.
+ */
+export async function drinkPrayerTo(sdk: DrinkSdk, target: number, maxTicks = 6): Promise<number> {
+    let drunk = 0;
+    for (;;) {
+        const s = sdk.getState();
+        if (!s) throw new Error('drinkPrayerTo: no state');
+        const pts = prayerPointsOf(s);
+        if (pts >= Math.min(target, prayerLevelOf(s))) return drunk;
+        const pot = s.inventory.find(i => /^Prayer potion\(\d\)$/i.test(i.name));
+        if (!pot) return drunk;
+        const doses = prayerDoses(s);
+        void sdk.sendUseItem(pot.slot, pot.optionsWithIndex.find(o => /^drink$/i.test(o.text))?.opIndex ?? 1);
+        const r = await waitUntil(sdk, st => prayerPointsOf(st) > pts || prayerDoses(st) < doses, { maxTicks });
+        if (!r.ok) throw new Error(`a Prayer potion drink did not land in ${maxTicks} ticks (${pts} points, ${doses} doses)`);
+        drunk++;
+    }
 }
 
 // ---------------------------------------------------------------- inventory need
