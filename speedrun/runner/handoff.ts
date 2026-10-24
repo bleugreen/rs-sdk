@@ -68,6 +68,7 @@ import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
 import { INVENTORY_SIZE, noteOf, objIdsNamed, objName, untradeable } from '../lib/items';
 import { DROPPED_TICKS, receiveFrom, sameName, swap, tradeOf, type GiveSpec, type SwapSdk, type WantSpec } from '../lib/trade';
 import { waitOrThrow, waitUntil } from '../lib/wait';
+import { guardWait } from './wait-guard';
 import { writeTopUpAsk, type AskItem, type CueScope, type TopUpAsk } from '../helpers/altar-cue';
 import type { WorldTile } from '../helpers/mule-readiness';
 import { opIndex } from '../lib/world';
@@ -666,11 +667,15 @@ export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step
         done: (o, c) => handOffMissing(o.state, plan).length === 0 || !!supersededBy?.(o, c) || (!!record?.has(plan.id) && !rolledBack(o.state)),
         inProgress: o => tradeLanded(o.state, plan) && handOffMissing(o.state, plan).length > 0,
         async run(ctx) {
-            if (trade.cue?.open) await runHandOffOnCue(ctx, plan, partner(ctx.c), trade.cue, trade);
-            else {
-                if (opts.meeting) await partnerInSight(sdkOf(ctx.sdk), plan, partner(ctx.c), opts.meeting);
-                await runHandOff(sdkOf(ctx.sdk), plan, partner(ctx.c), trade);
-            }
+            // The waits for the partner (its cue, in sight, its request) and the trade, under the wait guard:
+            // a death ends them, and SCORED eats and cures while it stands (never with the trade open).
+            await guardWait(ctx, `on the ${plan.id} hand-off`, async () => {
+                if (trade.cue?.open) await runHandOffOnCue(ctx, plan, partner(ctx.c), trade.cue, trade);
+                else {
+                    if (opts.meeting) await partnerInSight(sdkOf(ctx.sdk), plan, partner(ctx.c), opts.meeting);
+                    await runHandOff(sdkOf(ctx.sdk), plan, partner(ctx.c), trade);
+                }
+            });
             mark(ctx.sdk);
         },
         async resume(ctx) {

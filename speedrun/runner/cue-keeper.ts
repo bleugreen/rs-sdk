@@ -200,6 +200,15 @@ export class CueKeeper implements CueSink {
         }
     }
 
+    /**
+     * `scope`'s cue is skipped (chain.ts kitCued: served this attempt, or nothing wanted): nothing is
+     * written and nothing waited for; a delivery row's carrier is prepared for its next row, as its stop would.
+     */
+    skip(scope: CueScope): void {
+        const owner = this.ownerOf(scope);
+        if (owner) owner.served(scope.step);
+    }
+
     /** A delivery row's stop after its step succeeded (not `failed`) prepares its carrier's next row. */
     stop(scope: CueScope, _ctx?: StepContext<unknown>, o: { final?: boolean; failed?: boolean } = {}): void {
         if (!this.current || !sameScope(this.current.scope, scope)) return;
@@ -292,6 +301,10 @@ export class RunCues implements CueSink {
 
     isOpen(scope: CueScope): boolean {
         return this.keeper(scope).isOpen(scope);
+    }
+
+    skip(scope: CueScope): void {
+        this.keeper(scope).skip(scope);
     }
 
     writer(scope: CueScope): RunecraftCueSink {
