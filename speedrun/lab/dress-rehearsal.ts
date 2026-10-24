@@ -548,11 +548,22 @@ async function main(argv: string[]): Promise<number> {
     const altarNames = needAltar ? altarGivers : [];
     if (ringers.length && !needRings) console.log('[dress] --ringers unused: this slice does not run S04');
     if (altarGivers.length && !needAltar) console.log('[dress] --altar-givers unused: this slice does not run S06');
-    console.log(`[dress] ${env.BOT_USERNAME}: ${lab.chain.length} steps${a.until ? ` to ${a.until}` : ''}; stand-ins ${lab.standIns.join(', ') || 'none'}; staff supply ${lab.staffed.join(', ') || 'none'}; stub rows ${lab.stubRows.map(r => r.row).join(', ') || 'none'}; cue-served ${lab.cueServed.join(', ') || 'none'}; ring givers ${ringNames.join(', ') || 'none'}; altar givers ${altarNames.join(', ') || 'none'}`);
+    console.log(`[dress] ${env.BOT_USERNAME}: ${lab.chain.length} steps${a.until ? ` to ${a.until}` : ''}; stand-ins ${lab.standIns.join(', ') || 'none'}; staff supply ${lab.staffed.join(', ') || 'none'}; stub rows ${lab.stubRows.map(r => r.row).join(', ') || 'none'}; cue-served ${lab.cueServed.join(', ') || 'none'}; carrier rows ${needCarriers ? sliceCarrierRows.join(', ') : 'none'}; ring givers ${ringNames.join(', ') || 'none'}; altar givers ${altarNames.join(', ') || 'none'}`);
 
     const log = TickLog.open(runId, a.log);
     prepareCueDir(cfg.cueDir, { fresh: from === undefined || boundary !== null });
     prepareCueDir(muleCueDir(cfg), { fresh: from === undefined || boundary !== null });
+    if (needH12o) for (const d of [cfg.h12o!.cueDir, cfg.h12o!.loginDir]) prepareCueDir(d, { fresh: from === undefined || boundary !== null });
+    if (needCarriers) {
+        // run.ts's delivery preflight: the carriers' launch.json against this run's rows, SCORED and token.
+        const d = deliveryOwnerFor({ delivery: cfg.delivery, partners: chainPartners(cfg, toRun), chain: toRun, receiver: env.BOT_USERNAME, dir: muleCueDir(cfg) });
+        if ('refusal' in d) {
+            console.error(`[dress] REFUSED: delivery: ${d.refusal}`);
+            return 3;
+        }
+        if (d.owner) keeper.bindDelivery(d.owner);
+        console.log(`[dress] delivery: run ${deliveryRun}, carriers ${carrierEntries.map(e => `${e.account} (${carrierRoles[e.account]}) ${e.options.packages.map(p => p.scope!.step).join('/')}`).join('; ')}`);
+    }
     let stub: ReturnType<typeof Bun.spawn> | null = null;
     const ringSessions: Session[] = [];
     let ringStop = false;
@@ -574,6 +585,18 @@ async function main(argv: string[]): Promise<number> {
     let boneStop: Promise<void> | null = null;
     const stopBones = (): Promise<void> => (boneStop ??= boneLauncher ? stopBoneGivers(boneLauncher).then(() => console.log('[dress] S07 bone givers stopped')) : Promise.resolve());
     const stopAltar = (): Promise<void> => (altarStop ??= altar ? stopAltarGivers(altar).then(() => console.log('[dress] altar givers stopped')) : Promise.resolve());
+    let carrierLauncher: Subprocess | null = null;
+    let carrierStop: Promise<void> | null = null;
+    const stopCarrierFleet = (): Promise<void> => (carrierStop ??= carrierLauncher ? stopCarriers(carrierLauncher).then(() => console.log('[dress] carriers stopped')) : Promise.resolve());
+    let s21Launcher: Subprocess | null = null;
+    let s21Stop: Promise<void> | null = null;
+    const stopS21 = (): Promise<void> => (s21Stop ??= s21Launcher ? stopS21Givers(s21Launcher).then(() => console.log('[dress] S21 givers stopped')) : Promise.resolve());
+    let courierLauncher: Subprocess | null = null;
+    let courierStop: Promise<void> | null = null;
+    const stopS18 = (): Promise<void> => (courierStop ??= courierLauncher ? stopCourier(courierLauncher).then(() => console.log('[dress] S18 courier stopped')) : Promise.resolve());
+    let h12oLauncher: Subprocess | null = null;
+    let h12oStop: Promise<void> | null = null;
+    const stopAtoll = (): Promise<void> => (h12oStop ??= h12oLauncher ? stopH12o(h12oLauncher).then(() => console.log('[dress] H12o helper stopped')) : Promise.resolve());
     const client = (a.client ?? 'browser') as 'browser' | 'lite';
     let secureBrowser: SecureLabSession | null = null;
     let session: Session | null = null;
