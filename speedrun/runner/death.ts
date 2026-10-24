@@ -225,11 +225,6 @@ export async function raceDeath<T>(stretch: DeathStretch, fn: () => Promise<T>):
     }
 }
 
-/** `fn` under a DeathWatch (watchFrames, raceDeath): a death ends it at once, on `session.died`, failing with its reason ('SCORED died <during>: ...'). */
-export function watchDeath<T>(sdk: Frames, session: { died?: Death } | undefined, during: string, fn: () => Promise<T>): Promise<T> {
-    return raceDeath(watchFrames(sdk, session, during), fn);
-}
-
 // ------------------------------------------------------------------ acting on it
 
 export const DEATH_STEP = '(death)';
