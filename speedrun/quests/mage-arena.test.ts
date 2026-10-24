@@ -461,24 +461,26 @@ describe('exit drops (the ledger T16-18 row, done in F)', () => {
     test('F drinks the held prayer doses toward full before the exit drops, for Elvarg (rs/687 R3)', async () => {
         const s = withInv(at(without(arrival({}, { points: 40 }), /greegree/i), CHAMBER_AT), item('Cape of saradomin', ID.saradominCape), item('Staff of saradomin', ID.saradominStaff));
         const { sdk, each, ctx } = chamberSdk(s);
-        await drive(sdk, seg('F').run(ctx) as Promise<unknown>, 30, each);
+        const F = seg('F');
+        await drive(sdk, F.run(ctx) as Promise<unknown>, 30, each);
         const end = sdk.getState()!;
         // 40 + 30 + 30 reaches the level, 94: two doses, the rest left for H14 to take back.
         expect(end.prayers.prayerPoints).toBe(94);
         expect(sdk.sent.filter(a => a.method === 'sendUseItem').length).toBe(2);
         expect(end.inventory.filter(i => /^prayer potion/i.test(i.name)).map(i => i.name).sort()).toEqual(['Prayer potion(2)', 'Prayer potion(4)', 'Prayer potion(4)', 'Prayer potion(4)']);
-        expect(seg('F').postconditions(end, {})).toBe(true);
+        expect(F.postconditions(end, {})).toBe(true);
     });
 
     test('the last dose drunk leaves a vial, which goes with the exit drops', async () => {
         const base = without(without(arrival({}, { points: 60 }), /greegree/i), /prayer potion/i);
         const s = withInv(at(base, CHAMBER_AT), item('Prayer potion(1)', ID.prayerPotion, 1, ['Drink']), item('Cape of saradomin', ID.saradominCape), item('Staff of saradomin', ID.saradominStaff));
         const { sdk, each, ctx } = chamberSdk(s);
-        await drive(sdk, seg('F').run(ctx) as Promise<unknown>, 30, each);
+        const F = seg('F');
+        await drive(sdk, F.run(ctx) as Promise<unknown>, 30, each);
         const end = sdk.getState()!;
         expect(end.prayers.prayerPoints).toBe(90);
         expect(end.inventory.some(i => /^vial$/i.test(i.name) || /^prayer potion/i.test(i.name))).toBe(false);
-        expect(seg('F').postconditions(end, {})).toBe(true);
+        expect(F.postconditions(end, {})).toBe(true);
         expect(exitClean()(withInv(end, item('Vial', 229)), undefined)).toMatch(/still holding .*vial/i);
     });
 
