@@ -11,7 +11,7 @@
 // for combat 43; knife and S07's log), its arrival tile, the five-rock control before it, and one
 // override, S09_MINING's respawn 13 for 'auto': the lab's /playercount answers its two bots, and the
 // engine's respawn is pinned to 13 in the scratch tree (player_count.rs2, never committed). --level
-// defaults to the level from which Mining 99 comes about 7 loads in, so the last loads are taken at 99
+// defaults to the level from which Mining 99 comes about 4 loads in, so the last load is taken at 99
 // and buried by hand at the zoo: the fallback stop.
 //
 //   GIVERS=<carrier> LAB_BLOCK=<n> NODE_TICKRATE=400 LAB_LOG=<dir> bash docs/speedrun/scripts/tickprog-lab.sh <scored> \
@@ -49,8 +49,8 @@ const manifestFile = arg('manifest', '');
 const runId = arg('run', '');
 const cueRoot = arg('cue-root', '');
 const CONTROL_ORES = Number(arg('control-ores', '150'));
-/** Ores to Mining 99 from the start: ~5 ores a bone, so 700 is about 7 loads on the lap. */
-const LAP_ORES = Number(arg('lap-ores', '700'));
+/** Ores to Mining 99 from the start: ~5 ores a bone, so 430 is about 4 loads of 20 on the lap, the 5th taken at 99. */
+const LAP_ORES = Number(arg('lap-ores', '430'));
 const LEVEL = Number(arg('level', String(levelForXp(xpForLevel(99) - LAP_ORES * 35 * XP_RATE))));
 const PRAYER = 98;
 if (!carrier || carrier === scoredName || !manifestFile || !runId || !cueRoot) throw new Error('--carrier, --manifest, --run and --cue-root are required');
