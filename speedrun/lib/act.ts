@@ -588,7 +588,9 @@ export interface TalkOptions extends ConverseOptions {
  * cant_reach (lite) and opened nothing means the NPC is behind something (a
  * door shut behind it): before the next click the talk opens the doors toward
  * its live tile and runs to within 1 of it (approach.ts approachNpc, within
- * `refinds` finds), then clicks the NPC as found there.
+ * `refinds` finds), then clicks the NPC as found there. A talk with `until`
+ * whose chat closes mid-talk (a poison tick's if_close) is re-engaged with the
+ * same click (converse.ts `reopen`).
  */
 export async function talkTo(sdk: ActSdk & ConverseSdk, npc: NamePattern | NearbyNpc, choices: OptionPattern[] = [], opts: TalkOptions = {}): Promise<ConverseResult & JumpCounts & { npc: NearbyNpc; clicks: number; approachFinds?: number }> {
     let n = typeof npc === 'object' && 'index' in npc ? npc : await waitForNpc(sdk, npc, opts.findTicks ?? 10, opts.near);
@@ -607,7 +609,8 @@ export async function talkTo(sdk: ActSdk & ConverseSdk, npc: NamePattern | Nearb
         const target = n;
         let unrouted = false;
         const guard = new ClickGuard(sdk, () => sdk.sendInteractNpc(target.index, op).then(res => { if (unroutedReply(res)) unrouted = true; return res; }), undefined, { npc: target.name, interrupts: opts.interrupts });
-        const conv = converse(sdk, remaining, opts);
+        // A talk cut short (a poison tick's if_close) is re-engaged with this same click (converse `reopen`).
+        const conv = converse(sdk, remaining, { ...opts, reopen: () => guard.send() });
         const stop = sdk.onStateUpdate(s => void guard.step(s));
         await guard.send();
         const r = await conv.finally(stop);
