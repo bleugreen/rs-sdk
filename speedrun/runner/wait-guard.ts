@@ -56,7 +56,12 @@ export interface UpkeepAct {
 export interface UpkeepOptions {
     /** The eat rule's options (default: travel's, FOOD under EAT_BELOW). */
     eat?: EatOptions;
-    cure?: Cure;
+    /**
+     * The cure the upkeep drinks through (default SEGMENT_CURE), or null for none on frames: a caller that
+     * clicks between frames cures where it can wait out the drink's delay (segments.ts curePoison), as a
+     * leg does before each hop, since a click inside the delay is dropped.
+     */
+    cure?: Cure | null;
     /** Also send nothing while a dialogue is open (the resume stretch: a page a walk or step may need). */
     holdInDialog?: boolean;
     /**
@@ -101,8 +106,8 @@ export class WaitUpkeep {
 
     constructor(private readonly sdk: UpkeepSdk, private readonly o: UpkeepOptions = {}) {}
 
-    private get cure(): Cure {
-        return this.o.cure ?? SEGMENT_CURE;
+    private get cure(): Cure | null {
+        return this.o.cure === null ? null : (this.o.cure ?? SEGMENT_CURE);
     }
 
     see(s: BotWorldState): void {
@@ -165,15 +170,15 @@ export class WaitUpkeep {
         if (!d || d.landed || s.inventory.some(i => i.slot === d.slot && i.id === d.id && i.name === d.name)) return;
         d.landed = true;
         this.delaying = true;
-        void (this.cure.drinkDelayOver ?? drinkDelayOver)(this.sdk, d.tick).finally(() => {
+        void (this.cure?.drinkDelayOver ?? drinkDelayOver)(this.sdk, d.tick).finally(() => {
             if (this.drink === d) this.delaying = false;
         });
     }
 
     /** The dose to drink now: none in CURE_SPACING ticks, and poisoned (or, with unknownPoisonDose, the poison unknown). */
     private doseDue(s: BotWorldState): InventoryItem | null {
-        if (this.drink && s.tick - this.drink.tick < CURE_SPACING) return null;
         const cure = this.cure;
+        if (!cure || (this.drink && s.tick - this.drink.tick < CURE_SPACING)) return null;
         const want = cure.poisoned(s) || (!!this.o.unknownPoisonDose && !!cure.poisonUnknown?.(s));
         return want ? cure.cureDose(s) : null;
     }
@@ -181,7 +186,7 @@ export class WaitUpkeep {
     private drinkNow(s: BotWorldState, dose: InventoryItem, fresh: boolean): void {
         if (fresh) this.cures++;
         this.drink = { tick: s.tick, slot: dose.slot, id: dose.id, name: dose.name, landed: false };
-        this.cure.noteAntipoison(s.tick);
+        (this.cure ?? SEGMENT_CURE).noteAntipoison(s.tick);
         this.act('cure', s, dose, /^drink$/i);
     }
 
