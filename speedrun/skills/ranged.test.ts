@@ -1,12 +1,18 @@
 import { describe, expect, test } from 'bun:test';
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 import type { BotWorldState, InventoryItem, NearbyLoc, NearbyNpc, PlayerState, SkillState } from '../../sdk/types';
-import { baseState, drive as settle, FakeSdk } from '../lib/fake-sdk';
+import { baseState, drive as settle, FakeSdk, simulateWalking } from '../lib/fake-sdk';
+import { chebyshev, pos } from '../lib/world';
+import { legById, SPIDERS_SOUTH } from '../runner/legs';
+import { RETREAT_MAX_TICKS } from '../runner/retreat';
 import { IF_RETALIATE_OFF, IF_RETALIATE_ON } from '../lib/session';
 import { TickLog } from '../lib/ticks';
 import { Observation, resolveResume } from '../runner/resume';
 import {
     cannonSessionStep, chooseConsume, combatFinishStep, FINISH, gearClick, IMMUNITY, noteConsume, noteSession, otherItems, phaseFor, pickTarget, resipAt, runSession,
     slotNeed, specFor, SPIDERS, type ConsumeMemory, type RangedSdk,
+    inSpiderReach, SITE_RADIUS, SPIDER_REACH, SPIDER_REACH_AREA, SPIDER_SPAWNS, spiderRetreat,
 } from './ranged';
 
 const SKILLS = ['Attack', 'Defence', 'Strength', 'Hitpoints', 'Ranged', 'Prayer'] as const;
@@ -508,5 +514,94 @@ describe('runSession on the fake SDK', () => {
         const res = await runSession(sdk as unknown as RangedSdk, { phaseOf: () => null, consume: { eatBelow: 30, antipoison: 'proactive' }, maxTicks: 10 });
         expect(res.ticks).toBe(0);
         expect(sdk.sent).toEqual([]);
+    });
+});
+
+/** Spawns of `npc` on level 0 in the map squares around the cannon spot, from the game's own maps (`level x z: id`). */
+function spawnsOf(npc: number): { x: number; z: number }[] {
+    const out: { x: number; z: number }[] = [];
+    for (const mx of [50, 51, 52]) for (const mz of [58, 59, 60]) {
+        const file = join(import.meta.dir, `../../server/content/maps/m${mx}_${mz}.jm2`);
+        if (!existsSync(file)) continue;
+        const section = readFileSync(file, 'utf8').split('==== NPC ====')[1]?.split('====')[0] ?? '';
+        for (const line of section.split('\n')) {
+            const m = /^0 (\d+) (\d+): (\d+)$/.exec(line.trim());
+            if (m && Number(m[3]) === npc) out.push({ x: mx * 64 + Number(m[1]), z: mz * 64 + Number(m[2]) });
+        }
+    }
+    return out;
+}
+
+const POISON_SPIDER = 134;
+const AGGRESSIVE_BLACK_KNIGHT = 179;
+
+describe("the cannon steps' retreat out of the spiders' reach (rs/725)", () => {
+    test('SPIDER_SPAWNS is the box of every poison spider spawn in the maps around the spot, and the reach is maxrange + 1', () => {
+        const spawns = spawnsOf(POISON_SPIDER);
+        expect(spawns.length).toBe(62);
+        const xs = spawns.map(s => s.x);
+        const zs = spawns.map(s => s.z);
+        expect([Math.min(...xs), Math.max(...xs)]).toEqual([...SPIDER_SPAWNS.x]);
+        expect([Math.min(...zs), Math.max(...zs)]).toEqual([...SPIDER_SPAWNS.z]);
+        // poisonspider (all.npc): wanderrange=10 and no maxrange, so maxrange is 12 (NpcType.postDecode) and the reach 13.
+        const npc = readFileSync(join(import.meta.dir, '../../server/content/scripts/_unpack/225/all.npc'), 'utf8').split('[poisonspider]')[1]!.split('\n[')[0]!;
+        expect(npc).toMatch(/^wanderrange=10$/m);
+        expect(npc).toMatch(/^huntrange=1$/m);
+        expect(npc).not.toMatch(/^maxrange=/m);
+        expect(SPIDER_REACH).toBe(10 + 2 + 1);
+        // The spot and every tile the steps start on are in reach.
+        expect(inSpiderReach(baseState({ player: player(99, SPIDERS.x, SPIDERS.z) }))).toBe(true);
+    });
+
+    test("the retreat's route is T14-15's first hop, the leg out of S14", () => {
+        expect(legById('T14-15').def.hops[0]).toBe(SPIDERS_SOUTH);
+        expect(SPIDERS_SOUTH).toEqual({ kind: 'run', to: { x: 3288, z: 3660 }, wildernessAtMost: 20 });
+        expect(cannonSessionStep().retreat).toBe(spiderRetreat);
+        expect(combatFinishStep().retreat).toBe(spiderRetreat);
+    });
+
+    // The host's S14 deaths failed on the spot itself (3288,3810); the steps start anywhere within SITE_RADIUS of it.
+    const starts: [number, number][] = [
+        [SPIDERS.x, SPIDERS.z],
+        [SPIDERS.x + SITE_RADIUS, SPIDERS.z + SITE_RADIUS],
+        [SPIDERS.x - SITE_RADIUS, SPIDERS.z - SITE_RADIUS],
+        [SPIDERS.x - SITE_RADIUS, SPIDERS.z + SITE_RADIUS],
+        [SPIDERS.x + SITE_RADIUS, SPIDERS.z - SITE_RADIUS],
+    ];
+    for (const [step, make] of [['S14', cannonSessionStep], ['S27', combatFinishStep]] as const) {
+        test(`${step}'s retreat starts in the spider area and ends on the first tiles out of every spider's reach, clear of the black knights`, async () => {
+            const spiders = spawnsOf(POISON_SPIDER);
+            const knights = spawnsOf(AGGRESSIVE_BLACK_KNIGHT);
+            expect(knights).toEqual([{ x: 3310, z: 3769 }, { x: 3313, z: 3769 }]);
+            for (const [x, z] of starts) {
+                const sdk = new FakeSdk(baseState({ tick: 235, player: player(25, x, z) }));
+                simulateWalking(sdk);
+                expect(inSpiderReach(sdk.state!)).toBe(true);
+                const t0 = sdk.state!.tick;
+                await settle(sdk, make().retreat!({ sdk, bot: {} } as never), 200);
+                const end = pos(sdk.state!);
+                expect([x, z, inSpiderReach(sdk.state!)]).toEqual([x, z, false]);
+                // South down T14-15's line, stopped on the first tile out of reach: (3288,3768).
+                expect([x, z, end]).toEqual([x, z, { x: 3288, z: SPIDER_REACH_AREA.z[0] - 1, level: 0 }]);
+                for (const s of spiders) expect(chebyshev(end, s)).toBeGreaterThan(SPIDER_REACH);
+                // aggressive_black_knight: wanderrange 10, huntrange 5.
+                for (const k of knights) expect(chebyshev(end, k)).toBeGreaterThan(10 + 5);
+                expect(sdk.state!.tick - t0).toBeLessThanOrEqual(RETREAT_MAX_TICKS);
+                // Only walk clicks: nothing picked up, the cannon left.
+                expect([...new Set(sdk.sent.map(a => a.method))]).toEqual(['sendWalk']);
+            }
+        });
+    }
+
+    test('out of reach already: the retreat sends nothing', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 300, player: player(25, 3288, 3700) }));
+        await spiderRetreat({ sdk, bot: {} } as never);
+        expect(sdk.sent).toEqual([]);
+    });
+
+    test('a walk that cannot leave the reach throws, naming the tile it ended on', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 300, player: player(25, SPIDERS.x, SPIDERS.z) }));
+        simulateWalking(sdk, { blocked: (_x, z) => z < 3800 });
+        await expect(settle(sdk, spiderRetreat({ sdk, bot: {} } as never), 1200)).rejects.toThrow(/^the retreat ended at 3288,3800, still in the spiders' reach: /);
     });
 });
