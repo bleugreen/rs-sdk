@@ -539,9 +539,6 @@ export const LEGS: readonly LegStep[] = [
     }),
     leg('T07-08', T.taverleyWillows, T.edmond, [tele('camelot'), run(T.edmond.x, T.edmond.z, T.edmond.tol)], {
         after: 'S07', before: 'S08', method: 'Camelot teleport + run', countedBy: 'S08',
-        // The last load's unburied bones: S07 closes by count at Prayer 99 before burying them, and
-        // H6's trade needs their slots. Dragon, babydragon or any other; never the Camelot runes.
-        drops: [/bones$/i],
         expected: { ticks: 131, label: 'm', source: rt('L07') + ': 134, 128', net: 2 },
     }),
     leg('T08-09', T.edmond, T.zooIron, [tele('ardougne'), run(T.zooIron.x, T.zooIron.z, T.zooIron.tol)], {
