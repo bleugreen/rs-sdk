@@ -2071,10 +2071,9 @@ describe("woodcutting: a burying band switches between knife + bury and plain + 
 
     describe('the meter', () => {
         test('at or above the break-even the knife stays: 44/50 and 45/50 windows, thousands of Burys, no switch', () => {
-            for (const lateEvery of [25 / 3, 10]) {
+            // 3 late in every 25 is exactly 17.6/20; 1 in 10 is 18/20
+            for (const late of [(i: number) => [8, 16, 24].includes(i % 25), (i: number) => i % 10 === 9]) {
                 const m = new OnTimeMeter();
-                // 3 late in every 25 is exactly 17.6/20; 1 in 10 is 18/20
-                const late = (i: number) => Math.floor((i + 1) / lateEvery) !== Math.floor(i / lateEvery);
                 expect(feed(m, 5000, i => !late(i))).toEqual([]);
                 expect(m.technique).toBe('knife');
                 expect(m.windows.length).toBe(100);
@@ -2105,7 +2104,8 @@ describe("woodcutting: a burying band switches between knife + bury and plain + 
         test('both ways in one band: ragged, then clean, then ragged again', () => {
             const m = new OnTimeMeter();
             const rate = (i: number) => (i < 300 || i >= 600 ? i % 10 < 7 : true);
-            expect(feed(m, 900, rate)).toEqual(['knife>plain@28', 'plain>knife@328', 'knife>plain@628']);
+            // plain's windows close on Burys 78, 128, ...: the first wholly clean one on 378
+            expect(feed(m, 900, rate)).toEqual(['knife>plain@28', 'plain>knife@378', 'knife>plain@628']);
         });
 
         test('no flapping near the break-even: steady rates from 0.84 to 0.92 switch at most once in 5000 Burys', () => {
