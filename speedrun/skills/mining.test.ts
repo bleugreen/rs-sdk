@@ -1033,7 +1033,8 @@ describe('bones on the stay2 lap (`bury`, H4m)', () => {
         };
         const o = { ...opts, fallback: 'auto' };
         const low = new MiningSdk(at(70, 20));
-        expect(m.combatLevel(low.state!)).toBeLessThan(43);
+        // Prayer 98 alone: combat 15, below every fallback site's safeFrom
+        expect(m.combatLevel(low.state!)).toBe(15);
         const lowCtx = ctxFor(low);
         expect(stepOf('mining.bury: load 1', o).preconditions(low.state!, {})).toBe(true);
         await stepOf('mining.bury: load 1', o).run(lowCtx);
