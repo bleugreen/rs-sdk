@@ -833,12 +833,17 @@ async function main(): Promise<void> {
             launcher = launchH45({ scoredAccount, gatewayPort: gw, tick: () => sdk.getState()?.tick ?? -1 });
             topUpFrom.cueDir = launcher.cueDir;
             if (letters.includes('P') && !letters.includes('M')) {
-                // h45 logs in on M's open (loginOn); 60 ticks covers its login and the walk to M's tile.
+                // The cue gate counts only cues written after the launcher started, so M's open waits for it to stand
+                // at awaiting-cue; h45 logs in on that open (loginOn), and M's stop then sends it on to P.
+                const state = () => launcher!.status()?.state ?? null;
+                const until = async (want: string, ticks: number) => { for (let i = 0; i < ticks && state() !== want; i++) await waitTicks(sdk, 1); return state() === want; };
+                const armed = await until('awaiting-cue', 150);
                 legCue(sdk, launcher.cueDir, 'M', 'open');
-                await waitTicks(sdk, 60);
+                const online = await until('online', 150);
+                await waitTicks(sdk, 10);
                 legCue(sdk, launcher.cueDir, 'M', 'stop');
                 legCue(sdk, launcher.cueDir, 'P', 'open');
-                result('mm_h45_prelude', { run, state: launcher.status()?.state ?? null, tick: sdk.getState()!.tick });
+                result('mm_h45_prelude', { run, armed, online, state: state(), tick: sdk.getState()!.tick });
             }
         }
         const unknock = knockout ? stagedKnockout(sdk, Number(knockout), run) : () => undefined;
