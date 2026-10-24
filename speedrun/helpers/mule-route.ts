@@ -40,15 +40,17 @@ export function groundPath(a: Tile, b: Tile): Tile[] {
 }
 
 /**
- * Waypoints for a ground walk from `from` to `to`: JAIL_DETOUR, in walking order, when the walk crosses from
- * one side of the jail to the other and `path` (the ground route it would take) comes within
- * JAIL_GUARD_CLEARANCE of a guard; otherwise none.
+ * Waypoints for a ground walk from `from` to `to`: the JAIL_DETOUR waypoints still ahead, in walking order,
+ * when the walk is headed past the jail and `path` (the ground route it would take) comes within
+ * JAIL_GUARD_CLEARANCE of a guard; otherwise none. A walk retried from inside the lane, after a failed
+ * stretch, so goes on along the lane rather than down to the road.
  */
 export function deliveryVia(from: Tile, to: Tile, path: (a: Tile, b: Tile) => readonly Tile[] = groundPath): WorldTile[] {
     const west = JAIL_DETOUR[0]!;
     const east = JAIL_DETOUR.at(-1)!;
-    const eastward = from.x < west.x && to.x > east.x;
-    const westward = from.x > east.x && to.x < west.x;
+    const eastward = from.x < east.x && to.x > east.x;
+    const westward = from.x > west.x && to.x < west.x;
     if ((!eastward && !westward) || !path(from, to).some(nearJailGuards)) return [];
-    return (eastward ? JAIL_DETOUR : [...JAIL_DETOUR].reverse()).map(t => ({ ...t }));
+    const ahead = eastward ? JAIL_DETOUR.filter(w => w.x > from.x) : [...JAIL_DETOUR].reverse().filter(w => w.x < from.x);
+    return ahead.map(t => ({ ...t }));
 }
