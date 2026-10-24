@@ -29,7 +29,12 @@
 //   right (the button stops the attack and, beside a Fire or a top-up walk,
 //   cancels it), and put back off when the session ends, by a throw or a stop
 //   too, before the cannon is picked up: with it on, a hit during a click
-//   turns the player to fight back and the click is lost.
+//   turns the player to fight back and the click is lost;
+// - S27 (`resetAt`, CANNON_RESET_AT) picks its cannon up and sets it again
+//   before the cannon's decay (DECAY_TICKS from the furnace click; firing never
+//   extends it, and a decayed cannon leaves %ownedmcannon set, so no new one can
+//   go up until Nulodion replaces it). S14 ends far inside the decay and never
+//   re-sets.
 // combat.ts's `fight` follows one NPC to its end and owns the tick its attack
 // goes on; a cannon session fights whatever comes, retargets on every kill, and
 // shares its ticks with the flick and the cannon, so it is its own loop.
@@ -41,7 +46,7 @@
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyNpc, PrayerName } from '../../sdk/types';
 import {
-    assembledCannon, ballsHeld, besideCannon, CANNON_PART_OBJS, CANNON_PARTS, CANNONBALL, CANNONBALL_OBJ, CannonKeeper, cannonCentre, freeSlots, hasCannonSet, MessageCursor,
+    assembledCannon, ballsHeld, besideCannon, CANNON_PART_OBJS, CANNON_PARTS, CANNONBALL, CANNONBALL_OBJ, CannonKeeper, cannonCentre, DECAY_TICKS, freeSlots, hasCannonSet, MessageCursor,
     PICKUP_FREE_SLOTS, pickUpCannon, placedCannon, setUpCannon, setupTiles,
 } from '../lib/cannon';
 import { prayerActive } from '../lib/combat';
@@ -135,6 +140,13 @@ const PRAYER_LEVEL: Partial<Record<PrayerName, number>> = { protect_from_melee: 
 export const IMMUNITY = { superAntipoison: 570, antipoison: 120 } as const;
 
 /** The cannon holder's hand-off, as data (H11 / H11r / H23; agreed with rs/189 through rs/41). */
+/**
+ * S27 re-sets its cannon once it has stood this long. The decay check runs every 5 ticks and the
+ * loc itself expires at DECAY_TICKS, so this leaves room for the wait on a free tick, the pick-up
+ * and the four set-up clicks (about 20 ticks) many times over.
+ */
+export const CANNON_RESET_AT = DECAY_TICKS - 150;
+
 export const CANNON_HANDOFF = {
     S14: { in: { parts: CANNON_PART_OBJS, cannonballs: 100 }, out: 'the set and the unfired balls, back to the holder after the step (H11r); the same trade brings Monkey Madness\'s magic shortbow and 200 rune arrows the other way, so runner/handoff.ts runs H11r as swap() from its ledger row' },
     // Measured use: S14 65-72 balls; S27 ~1,110 (0.6 a tick meleeing, 0.5-0.6 with the bow), +~90 margin.
@@ -343,6 +355,11 @@ export interface SessionOptions extends SpecOptions {
     stallTicks?: number;
     /** Pick the cannon up at the end (default true). */
     pickUp?: boolean;
+    /**
+     * Pick the cannon up and set it again once it has stood this many ticks, and set one of unknown
+     * age (placed before this session) again at the start. Undefined: never (S14).
+     */
+    resetAt?: number;
     maxTicks: number;
     log?: (line: string, data?: Record<string, unknown>) => void;
 }
@@ -354,6 +371,20 @@ export interface PhaseRow {
     ticks: number;
     /** Base xp gained (game xp / 25). */
     xp: Record<'Ranged' | 'Defence' | 'Hitpoints' | 'Attack' | 'Strength', number>;
+}
+
+/** One pick-up and set-up of the cannon inside a session. */
+export interface CannonReset {
+    /** 'age': it reached `resetAt`. 'restart': it was standing when the session began, age unknown. */
+    why: 'age' | 'restart';
+    /** The tick the re-set began. */
+    tick: number;
+    /** The cannon's age then (null: unknown). */
+    age: number | null;
+    /** Begin to the new Fire click. */
+    ticks: number;
+    pickUpTicks: number;
+    setUpTicks: number;
 }
 
 export interface SessionResult {
@@ -381,6 +412,7 @@ export interface SessionResult {
     arrowsUsed: number;
     /** Ticks with more than 5 packets sent (the server decodes the excess a tick late). */
     overBudget: number;
+    resets: CannonReset[];
     end: 'done' | 'stopped';
 }
 
@@ -412,7 +444,7 @@ export async function runSession(sdk: RangedSdk, o: SessionOptions): Promise<Ses
     const consumes: SessionResult['consumes'] = {};
     const empty = (): SessionResult => ({
         startTick: t0, fireTick: t0, endTick: t0, ticks: 0, setUpTicks: 0, pickUpTicks: 0, phases: [], prayer: { start: s0.prayers?.prayerPoints ?? 0, min: s0.prayers?.prayerPoints ?? 0, end: s0.prayers?.prayerPoints ?? 0 },
-        damageTaken: 0, minHp: s0.player!.hp, consumes, attacks: 0, levelUps: 0, bursts: 0, restores: 0, reloads: 0, refires: 0, dryEvents: 0, ballsUsed: 0, arrowsUsed: 0, overBudget: 0, end: 'done',
+        damageTaken: 0, minHp: s0.player!.hp, consumes, attacks: 0, levelUps: 0, bursts: 0, restores: 0, reloads: 0, refires: 0, dryEvents: 0, ballsUsed: 0, arrowsUsed: 0, overBudget: 0, resets: [], end: 'done',
     });
     if (phase === null) {
         // Nothing left to train, but the wrap-up is still owed: a session cut after its last phase
@@ -423,29 +455,47 @@ export async function runSession(sdk: RangedSdk, o: SessionOptions): Promise<Ses
     }
     let spec = specFor(phase, o);
 
+    const resets: CannonReset[] = [];
+    const ballsAtStart = ballsHeld(s0);
+    const arrowsAtStart = arrows(s0);
+    let sIn = s0;
+    let restart: { tick: number; pickUpTicks: number } | null = null;
+    if (spec.cannon && o.resetAt !== undefined && assembledCannon(s0)) {
+        // Standing since before this session (a resume): its decay clock is unknown, so it goes up again now.
+        const r = await pickUpCannon(sdk);
+        sIn = sdk.getState()!;
+        if (r.ok) restart = { tick: s0.tick, pickUpTicks: r.ticks };
+        else log('cannon re-set: the restart pick-up failed, firing the standing cannon', { reason: r.reason });
+    }
+
     // ---- set-up: protect prayer held and the weapon in hand while the cannon goes up
     let setUpTicks = 0;
     let assembledTick: number | undefined;
-    const ballsAtStart = ballsHeld(s0);
-    const arrowsAtStart = arrows(s0);
-    if (spec.cannon && !assembledCannon(s0)) {
-        if (spec.prayers[0] && !prayerActive(s0, spec.prayers[0])) void sdk.sendTogglePrayer(spec.prayers[0]);
-        const g = gearClick(s0, spec);
+    if (spec.cannon && !assembledCannon(sIn)) {
+        if (spec.prayers[0] && !prayerActive(sIn, spec.prayers[0])) void sdk.sendTogglePrayer(spec.prayers[0]);
+        const g = gearClick(sIn, spec);
         if (g?.kind === 'wield') void sdk.sendUseItem(g.item.slot, g.op);
         const r = await setUpCannon(sdk, { tiles: setupTiles(site) });
         if (!r.ok) throw new Error(`cannon set-up: ${r.reason}`);
         setUpTicks = r.ticks;
         assembledTick = r.assembledTick;
         log('cannon set up', { ticks: r.ticks, refused: r.refused, at: r.cannon ? cannonCentre(r.cannon) : null });
+        if (restart) {
+            const row: CannonReset = { why: 'restart', tick: restart.tick, age: null, ticks: sdk.getState()!.tick - restart.tick, pickUpTicks: restart.pickUpTicks, setUpTicks: r.ticks };
+            resets.push(row);
+            log('cannon re-set', { ...row });
+        }
     } else if (spec.cannon) {
         // A cannon already here (a restart): Fire it; "already firing" is harmless and "out of ammo" the keeper answers.
-        const c = assembledCannon(s0)!;
+        const c = assembledCannon(sIn)!;
         void sdk.sendInteractLoc(c.x, c.z, c.id, opIndex(c, /^fire$/i) ?? 1);
     }
 
     let s = sdk.getState()!;
     const fireTick = s.tick;
-    const keeper = new CannonKeeper(s, { ...(o.reloadEvery !== undefined ? { reloadEvery: o.reloadEvery } : {}), ...(assembledTick !== undefined ? { assembledTick } : {}) });
+    const newKeeper = (st: BotWorldState, assembled: number | undefined) =>
+        new CannonKeeper(st, { ...(o.reloadEvery !== undefined ? { reloadEvery: o.reloadEvery } : {}), ...(assembled !== undefined ? { assembledTick: assembled } : {}) });
+    let keeper = newKeeper(s, assembledTick);
     const flick = new FlickScheduler({ prayers: spec.prayers, period: o.flickEvery ?? MAX_PERIOD });
     const chat = new MessageCursor(s);
     const levelUp = levelUpChain();
@@ -457,6 +507,7 @@ export async function runSession(sdk: RangedSdk, o: SessionOptions): Promise<Ses
     const res = empty();
     res.fireTick = fireTick;
     res.setUpTicks = setUpTicks;
+    res.resets = resets;
     res.prayer.start = res.prayer.min = s.prayers?.prayerPoints ?? 0;
     let rowStart = s;
     const closeRow = (st: BotWorldState) => {
@@ -473,6 +524,7 @@ export async function runSession(sdk: RangedSdk, o: SessionOptions): Promise<Ses
     let target: number | null = null;
     let lastHp = s.player!.hp;
     let pickUpSent = -Infinity;
+    let nextResetTry = -Infinity;
     const seenHits = new Set<string>();
     /** The auto-retaliate setting last asked of setAutoRetaliate (null: none yet; login left it off). */
     let retaliate: boolean | null = null;
@@ -525,9 +577,40 @@ export async function runSession(sdk: RangedSdk, o: SessionOptions): Promise<Ses
             res.minHp = Math.min(res.minHp, p.hp);
             const pts = s.prayers?.prayerPoints ?? 0;
             res.prayer.min = Math.min(res.prayer.min, pts);
+            const cannon = assembledCannon(s);
+
+            // ---- the cannon re-set, before it decays: on a tick with nothing in flight (no top-up, no
+            // consume's delay to drop the click, no page open) and no flick toggle, which would clear it.
+            const age = keeper.age(s);
+            if (o.resetAt !== undefined && spec.cannon && cannon && age !== null && age >= o.resetAt && t >= nextResetTry && !keeper.holding(s) && t > lastConsume + 2 && !s.dialog.isOpen) {
+                if (retaliate === true) await setRetaliate(false); // a hit would turn us to fight back and lose a click
+                const up = await pickUpCannon(sdk);
+                s = sdk.getState()!;
+                if (!up.ok) {
+                    if (!assembledCannon(s)) throw new Error(`cannon re-set: the pick-up failed and no cannon stands (${up.reason})`);
+                    // Short of slots it will not go better on a retry: fire on and hope the session ends first.
+                    nextResetTry = freeSlots(s) < PICKUP_FREE_SLOTS ? Infinity : s.tick + 10;
+                    log('cannon re-set: the pick-up failed', { tick: t, age, reason: up.reason, retryAt: nextResetTry });
+                    continue;
+                }
+                const r = await setUpCannon(sdk, { tiles: setupTiles(site) });
+                if (!r.ok) throw new Error(`cannon re-set: ${r.reason}`);
+                s = sdk.getState()!;
+                // The old cannon's 5-tick decay check survives the pick-up, and if it fires between the new
+                // base and the new furnace it prints "Your cannon has decayed!" (cannon_setup.rs2). The new
+                // keeper's cursor starts past every message already shown, that one included.
+                const next = newKeeper(s, r.assembledTick);
+                Object.assign(next, { reloads: keeper.reloads, refires: keeper.refires, dryEvents: keeper.dryEvents, loadedBalls: keeper.loadedBalls });
+                keeper = next;
+                const row: CannonReset = { why: 'age', tick: t, age, ticks: s.tick - t, pickUpTicks: up.ticks, setUpTicks: r.ticks };
+                resets.push(row);
+                log('cannon re-set', { ...row });
+                target = null;
+                lastDealt = s.tick;
+                continue;
+            }
 
             let packets = 0;
-            const cannon = assembledCannon(s);
             // A top-up walking back to the cannon: every button and attack would cancel it, the flick included.
             const walking = keeper.holding(s) && !!cannon && !besideCannon(s, cannon);
             const plan = walking ? null : flick.plan(s);
@@ -756,6 +839,8 @@ export function combatFinishOptions(opts: RangedOptions = {}): SessionOptions {
         site: opts.site ?? SPIDERS,
         consume: { eatBelow: opts.eatBelow?.s27 ?? 30, antipoison: 'proactive' },
         pickUp: opts.pickUp?.s27 ?? true,
+        // Run 1 of rs/764 ran S27 2,525 ticks against 1,972 expected and lost the cannon to its decay.
+        resetAt: CANNON_RESET_AT,
         maxTicks: 4000,
     };
 }
