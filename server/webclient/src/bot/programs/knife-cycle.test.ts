@@ -48,10 +48,12 @@ function serverRun(opts: {
     miss?: (roll: number) => boolean;
     /** Each success puts this product in the first free slot; a landed drop empties its slot. */
     catches?: string;
+    /** The runtime's draw for `hold` (default Math.random). */
+    random?: () => number;
 }) {
     const m = typeof opts.method === 'string' ? CYCLE_METHODS[opts.method]! : opts.method;
     const skill = m.skill === 'fishing' ? 'Fishing' : 'Woodcutting';
-    const h = new Harness('cycle', createKnifeCycle);
+    const h = new Harness('cycle', createKnifeCycle, opts.random ? { random: opts.random } : {});
     let tick = 1000;
     let xp = 0;
     let nextRoll: number | null = null;
@@ -827,6 +829,96 @@ describe('knife cycle: default stream', () => {
                 : serverRun({ method: m, ticks: 400, axe: 'Rune axe', fellEvery: 8, allDownFor: 30, params: { waitRespawn: false } });
             expect(streamDigest(off.h)).toBe(streamDigest(base.h));
         }
+    });
+});
+
+/** S07's two bury loops as the burying bands run them (trees, waitRespawn, falls, a level-up, the bones running out, skipped labels). */
+const TREES = [[3201, 3204], [3202, 3204]];
+const BURY_RUNS: Record<string, (params?: Record<string, unknown>) => ReturnType<typeof serverRun>> = {
+    knifeBuryOak: (p = {}) => serverRun({ method: 'oak', ticks: 300, level: 60, axe: 'Rune axe', bones: 40, fellEvery: 8, fellLag: 1, params: { bury: true, waitRespawn: true, trees: TREES, ...p } }),
+    knifeBuryWillow: (p = {}) => serverRun({ method: 'willow', ticks: 400, level: 85, axe: 'Rune axe', bones: 60, fellEvery: 8, allDownFor: 30, dialogAt: 1100, params: { bury: true, waitRespawn: true, trees: TREES, ...p } }),
+    knifeBuryMerged: (p = {}) => serverRun({ method: 'oak', ticks: 300, bones: 60, inventory: ['Knife', 'Logs', 'Oak logs'], merged: t => t % 37 === 0, params: { bury: true, ...p } }),
+    plainBuryOak: (p = {}) => serverRun({ method: 'oak', technique: 'plain', ticks: 300, level: 60, axe: 'Rune axe', inventory: ['Oak logs'], bones: 60, fellEvery: 8, fellLag: 1, allDownFor: 2, params: { bury: true, trees: TREES, ...p } }),
+    plainBuryWillow: (p = {}) => serverRun({ method: 'willow', technique: 'plain', ticks: 400, level: 85, axe: 'Rune axe', inventory: ['Willow logs'], bones: 30, fellEvery: 8, dialogAt: 1101, params: { bury: true, trees: TREES, ...p } }),
+    plainBuryMerged: (p = {}) => serverRun({ method: 'oak', technique: 'plain', ticks: 300, inventory: ['Rune axe', 'Oak logs'], bones: 60, merged: t => t % 37 === 0, params: { bury: true, ...p } })
+};
+
+/** BURY_RUNS' digests with knife-cycle.ts as of f6ecd96f (before the on-time counters and the bury cycles' hold marks). */
+const BURY_GOLDEN: Record<string, string> = {
+    knifeBuryOak: 'baa52a7f', knifeBuryWillow: '593785dc', knifeBuryMerged: '6b20c200', plainBuryOak: 'eac0e18c', plainBuryWillow: '669084d8', plainBuryMerged: '787d9e69'
+};
+
+describe('knife cycle: the bury streams', () => {
+    test('knife + bury and plain + bury send every packet as before, with hold unset and with hold 0 (golden digests from f6ecd96f)', () => {
+        const got = Object.fromEntries(Object.entries(BURY_RUNS).map(([k, run]) => [k, streamDigest(run().h)]));
+        expect(got).toEqual(BURY_GOLDEN);
+        const zero = Object.fromEntries(Object.entries(BURY_RUNS).map(([k, run]) => [k, streamDigest(run({ hold: 0 }).h)]));
+        expect(zero).toEqual(BURY_GOLDEN);
+    });
+});
+
+describe('knife cycle: each Bury on time or late (S+2)', () => {
+    type Counts = { burySent: number; buryOnTime: number; buryLate: number; buried: number };
+    const counts = (h: ReturnType<typeof serverRun>['h']): Counts => {
+        const c = h.status.counters;
+        return { burySent: c.burySent ?? 0, buryOnTime: c.buryOnTime ?? 0, buryLate: c.buryLate ?? 0, buried: c.buried ?? 0 };
+    };
+    /** A draw that holds every `every`-th send the runtime asks about (hold 0.5: 0 holds, 1 does not). */
+    const everyNth = (every: number) => {
+        let d = 0;
+        return () => (++d % every === 0 ? 0 : 1);
+    };
+
+    for (const k of ['knifeBuryOak', 'plainBuryOak'] as const)
+        test(`${k}: on a server that takes every send on its tick, every Bury judged is on time`, () => {
+            const { h } = BURY_RUNS[k]!();
+            const c = counts(h);
+            expect(c.burySent).toBeGreaterThan(30);
+            expect(c.buryLate).toBe(0);
+            // the last one may still be out when the run ends
+            expect(c.burySent - c.buryOnTime).toBeLessThanOrEqual(1);
+            expect(h.status.result).toMatchObject({ buryOnTime: c.buryOnTime, buryLate: 0 });
+        });
+
+    test('knife + bury: a held roll-label bundle lands its Bury a tick late and is counted late; its cycle loses the roll', () => {
+        const clean = BURY_RUNS.knifeBuryOak!();
+        const { h } = serverRun({ method: 'oak', ticks: 300, level: 60, axe: 'Rune axe', bones: 40, fellEvery: 8, fellLag: 1, random: everyNth(7), params: { bury: true, waitRespawn: true, trees: TREES, hold: 0.5 } });
+        const c = counts(h);
+        expect(h.status.counters.held).toBeGreaterThan(0);
+        expect(c.buryLate).toBeGreaterThan(0);
+        expect(c.buryOnTime).toBeGreaterThan(c.buryLate);
+        expect(c.burySent - c.buryOnTime - c.buryLate).toBeLessThanOrEqual(1);
+        // a late Bury's p_delay rejects the cycle's click, so held cycles cost rolls
+        expect(h.status.counters.successes!).toBeLessThan(clean.h.status.counters.successes!);
+    });
+
+    test('plain + bury: hold reaches its bury and R+3 click; hold 1 makes every Bury late', () => {
+        const { h } = serverRun({ method: 'oak', technique: 'plain', ticks: 300, inventory: ['Rune axe', 'Oak logs'], bones: 60, random: () => 0, params: { bury: true, hold: 1 } });
+        const c = counts(h);
+        expect(c.burySent).toBeGreaterThan(5);
+        expect(c.buryOnTime).toBe(0);
+        expect(c.burySent - c.buryLate).toBeLessThanOrEqual(1);
+        // every bury went out a label after the one the cycle sent it on
+        const buries = h.sent.filter(s => s.action.type === 'useInventoryItem');
+        expect(buries.length).toBe(c.burySent);
+        expect(h.logs.some(l => /hold: starter bundle held/.test(l))).toBe(true);
+    });
+
+    test('a run whose S+2 label is decoded with the next counts that Bury neither way', () => {
+        const base = serverRun({ method: 'oak', ticks: 150, inventory: ['Knife', 'Logs', 'Oak logs'], bones: 60, params: { bury: true } });
+        const bury = base.h.sent.filter(s => s.action.type === 'useInventoryItem')[10]!.tick;
+        const { h } = serverRun({ method: 'oak', ticks: 150, inventory: ['Knife', 'Logs', 'Oak logs'], bones: 60, params: { bury: true }, merged: t => t === bury + 2 });
+        const c = counts(h);
+        expect(c.buryLate).toBe(0);
+        expect(c.burySent - c.buryOnTime).toBeGreaterThanOrEqual(1);
+        expect(c.burySent - c.buryOnTime).toBeLessThanOrEqual(2);
+    });
+
+    test('no bury, no counters', () => {
+        const { h } = serverRun({ method: 'oak', ticks: 100 });
+        expect(h.status.counters.buryOnTime).toBeUndefined();
+        expect(h.status.counters.buryLate).toBeUndefined();
+        expect(h.status.result).not.toHaveProperty('buryOnTime');
     });
 });
 
