@@ -48,10 +48,12 @@ function serverRun(opts: {
     miss?: (roll: number) => boolean;
     /** Each success puts this product in the first free slot; a landed drop empties its slot. */
     catches?: string;
+    /** The runtime's draw for `hold` (default Math.random). */
+    random?: () => number;
 }) {
     const m = typeof opts.method === 'string' ? CYCLE_METHODS[opts.method]! : opts.method;
     const skill = m.skill === 'fishing' ? 'Fishing' : 'Woodcutting';
-    const h = new Harness('cycle', createKnifeCycle);
+    const h = new Harness('cycle', createKnifeCycle, opts.random ? { random: opts.random } : {});
     let tick = 1000;
     let xp = 0;
     let nextRoll: number | null = null;
@@ -827,6 +829,31 @@ describe('knife cycle: default stream', () => {
                 : serverRun({ method: m, ticks: 400, axe: 'Rune axe', fellEvery: 8, allDownFor: 30, params: { waitRespawn: false } });
             expect(streamDigest(off.h)).toBe(streamDigest(base.h));
         }
+    });
+});
+
+/** S07's two bury loops as the burying bands run them (trees, waitRespawn, falls, a level-up, the bones running out, skipped labels). */
+const TREES = [[3201, 3204], [3202, 3204]];
+const BURY_RUNS: Record<string, (params?: Record<string, unknown>) => ReturnType<typeof serverRun>> = {
+    knifeBuryOak: (p = {}) => serverRun({ method: 'oak', ticks: 300, level: 60, axe: 'Rune axe', bones: 40, fellEvery: 8, fellLag: 1, params: { bury: true, waitRespawn: true, trees: TREES, ...p } }),
+    knifeBuryWillow: (p = {}) => serverRun({ method: 'willow', ticks: 400, level: 85, axe: 'Rune axe', bones: 60, fellEvery: 8, allDownFor: 30, dialogAt: 1100, params: { bury: true, waitRespawn: true, trees: TREES, ...p } }),
+    knifeBuryMerged: (p = {}) => serverRun({ method: 'oak', ticks: 300, bones: 60, inventory: ['Knife', 'Logs', 'Oak logs'], merged: t => t % 37 === 0, params: { bury: true, ...p } }),
+    plainBuryOak: (p = {}) => serverRun({ method: 'oak', technique: 'plain', ticks: 300, level: 60, axe: 'Rune axe', inventory: ['Oak logs'], bones: 60, fellEvery: 8, fellLag: 1, allDownFor: 2, params: { bury: true, trees: TREES, ...p } }),
+    plainBuryWillow: (p = {}) => serverRun({ method: 'willow', technique: 'plain', ticks: 400, level: 85, axe: 'Rune axe', inventory: ['Willow logs'], bones: 30, fellEvery: 8, dialogAt: 1101, params: { bury: true, trees: TREES, ...p } }),
+    plainBuryMerged: (p = {}) => serverRun({ method: 'oak', technique: 'plain', ticks: 300, inventory: ['Rune axe', 'Oak logs'], bones: 60, merged: t => t % 37 === 0, params: { bury: true, ...p } })
+};
+
+/** BURY_RUNS' digests with knife-cycle.ts as of f6ecd96f (before the on-time counters and the bury cycles' hold marks). */
+const BURY_GOLDEN: Record<string, string> = {
+    knifeBuryOak: '', knifeBuryWillow: '', knifeBuryMerged: '', plainBuryOak: '', plainBuryWillow: '', plainBuryMerged: ''
+};
+
+describe('knife cycle: the bury streams', () => {
+    test('knife + bury and plain + bury send every packet as before, with hold unset and with hold 0 (golden digests from f6ecd96f)', () => {
+        const got = Object.fromEntries(Object.entries(BURY_RUNS).map(([k, run]) => [k, streamDigest(run().h)]));
+        expect(got).toEqual(BURY_GOLDEN);
+        const zero = Object.fromEntries(Object.entries(BURY_RUNS).map(([k, run]) => [k, streamDigest(run({ hold: 0 }).h)]));
+        expect(zero).toEqual(BURY_GOLDEN);
     });
 });
 
