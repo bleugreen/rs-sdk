@@ -32,7 +32,10 @@ import { invItem, skillXp } from '../../lib/world';
 import { exitMagic, FALLBACK_RUNES, newTally, quest, SPELL_RUNES, stepId, steps, type FightTally, type KolodionSpell, type Options } from '../../quests/mage-arena';
 import { arg, result } from '../common';
 import { cheat, dropMatching, give, setvar } from '../setup';
-import { waitTicks } from '../../lib/wait';
+import { waitTicks, waitUntil } from '../../lib/wait';
+import { relog, type Session } from '../../lib/session';
+import { inArena } from '../../quests/mage-arena';
+import { watchPoison, type PoisonWatch } from '../poison-watch';
 import { labMain, type LabQuest, type QuestFixture } from './run';
 
 const SPELL = arg('spell', 'fire_wave') as KolodionSpell;
@@ -43,6 +46,14 @@ const PRAYER_AT = Number(arg('prayer', '40'));
 const POTION = arg('potion', '1') !== '0';
 const FROM = arg('from', 'A');
 const PRAYER_POTS = arg('prayerpots', '4,4,4,4').split(',').map(Number);
+/** --superanti=N: H12's Superantipoison at N doses in the pack, as H13's row keeps it to H14. */
+const SUPER_ANTI = arg('superanti', '');
+/**
+ * --poison=SEV (with --launch): a poison carried across a fresh login, attempt 4's shape: %poison reset, ::~poison SEV,
+ * one hit taken, then a relog on a new client (the published tick restarts, no hit in view) and the segments at once.
+ * Every damage_taken (hitmark, sourceIndex), antipoison dose and the first arena tick are logged (lab/poison-watch.ts).
+ */
+const POISON = Number(arg('poison', '0'));
 if (PRAYER_POTS.some(d => !(d >= 1 && d <= 4))) throw new Error(`--prayerpots=${PRAYER_POTS}: doses 1-4`);
 const prayerPots = PRAYER_POTS.reduce<Record<string, number>>((m, d) => ({ ...m, [`${d}doseprayerrestore`]: (m[`${d}doseprayerrestore`] ?? 0) + 1 }), {});
 
@@ -56,6 +67,7 @@ const PACK: Record<string, number> = {
     staff_of_fire: 1, mm_amulet_of_monkey_speak: 1,
     waterrune: 8, lawrune: 7, airrune: 756,
     ...prayerPots, ...(POTION ? { '4dose1magic': 1 } : {}), shark: 9, knife: 1,
+    ...(SUPER_ANTI ? { [`${SUPER_ANTI}dose2antipoison`]: 1 } : {}),
 };
 const SPELL_RUNE_OBJ: Record<KolodionSpell, string> = { fire_wave: 'bloodrune', fire_blast: 'deathrune' };
 /** Fire Blast's pricing carries death runes well past any fight, so the count is the measurement, not the kit. */
@@ -164,6 +176,7 @@ const lab: LabQuest<Options> = {
         await waitTicks(sdk, 2);
         const s1 = sdk.getState()!;
         console.log(`ARRIVAL magic xp ${(skill(s1, 'magic')?.experience ?? 0) / 25} base (level ${MAGIC} floor ${xpForLevel(MAGIC) / 25}), prayer ${s1.prayers?.prayerPoints}/${s1.prayers?.prayerLevel}, doses ${prayerDoses(s1)}, hp ${s1.player?.hp}, free ${28 - s1.inventory.length}`);
+        if (POISON > 0) await carryPoison(session);
     },
     check(session) {
         const s = session.sdk.getState()!;
@@ -180,9 +193,33 @@ const lab: LabQuest<Options> = {
 
 const skill = (s: BotWorldState, name: string) => s.skills.find(k => k.name.toLowerCase() === name);
 
+const poisonEmit = (event: string, fields: Record<string, unknown>) => console.log(`POISONLAB ${JSON.stringify({ event, ...fields })}`);
+let poisonWatch: PoisonWatch | null = null;
+
+/** --poison: SEV, one hit, a relog on a new client; the observer runs from before the poisoning to the script's end. */
+async function carryPoison(session: Session): Promise<void> {
+    const sdk = session.sdk;
+    if (!session.child) throw new Error('--poison needs this script to own the client (LAB_RUNNERS=0 and --launch) for its relog');
+    poisonWatch ??= watchPoison(sdk, poisonEmit, { arena: inArena });
+    await cheat(sdk, 'setvar poison 0', 2);
+    const t0 = sdk.getState()!.tick;
+    await cheat(sdk, `~poison ${POISON}`);
+    const hit = (s: BotWorldState | null) => (s?.combatEvents ?? []).find(e => e.type === 'damage_taken' && e.targetType === 'player' && e.hitmark === 2 && e.tick > t0);
+    if (!(await waitUntil(sdk, s => !!hit(s), { maxTicks: 40 })).ok) throw new Error(`--poison=${POISON}: no poison hit within 40 ticks of t=${t0}`);
+    await waitTicks(sdk, 2);
+    poisonEmit('poison-staged', { severity: POISON, poisonedAt: t0, firstHitAt: hit(sdk.getState())!.tick, hp: sdk.getState()!.player?.hp });
+    const r = await relog(session);
+    const s = sdk.getState()!;
+    poisonEmit('relogged', { loginTick: r.loginTick, tickNow: s.tick, hp: s.player?.hp, poisonInView: (s.combatEvents ?? []).filter(e => e.hitmark === 2).length });
+}
+
 const stat = (xs: number[]) => (xs.length ? { mean: +(xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(1), min: Math.min(...xs), max: Math.max(...xs) } : null);
 
 await labMain(lab);
+if (poisonWatch) {
+    poisonWatch.stop();
+    result('S16_poison', poisonWatch.summary());
+}
 
 if (fights.length) {
     const base = (xp: number) => +(xp / 25).toFixed(1);
