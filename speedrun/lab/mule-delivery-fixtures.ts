@@ -187,8 +187,9 @@ function same(a: readonly FixtureItem[], b: readonly FixtureItem[]): boolean {
 function matches(ref: ItemRef, item: FixtureItem): boolean {
     return ref.id !== undefined ? ref.id === item.bankId : itemPattern(ref.name).test(item.name);
 }
-function overridden(o: ConcreteFixtureOverride, pack: ObjPack, catalog: FixtureCatalog): FixtureItem[] {
-    if (!o.reason?.trim() || !o.items.length) fail('Concrete override needs items and an authority reason');
+/** `emptyOk`: an `any` return, whose override may confirm that nothing is held (an earlier step used the stock up). */
+function overridden(o: ConcreteFixtureOverride, pack: ObjPack, catalog: FixtureCatalog, emptyOk = false): FixtureItem[] {
+    if (!o.reason?.trim() || (!o.items.length && !emptyOk)) fail('Concrete override needs items and an authority reason');
     return merge(o.items.map(i => concrete(i.id, i.count, pack, catalog)));
 }
 function resolve(h: Held, o: ConcreteFixtureOverride | undefined, pack: ObjPack, catalog: FixtureCatalog): FixtureItem[] {
@@ -338,7 +339,7 @@ export function planMuleDeliveryFixtures(o: MuleDeliveryFixtureOptions): MuleDel
                 if (e.reason !== 'swap' && e.reason !== 'trade') fail(itemLabel(e) + ': not a trade return');
                 const chosen = overrides.takeBacks?.[itemLabel(e)] ?? authorizedRecoil(rowId, e, e.count, o.pack);
                 if ((e.placeholder || e.family || e.count === 'all' || e.count === 'any') && !chosen) fail(itemLabel(e) + ': all/any/family/placeholder return requires explicit concrete fixture override');
-                const items = chosen ? overridden(chosen, o.pack, catalog) : [...beforeInventory, ...beforeEquipment].filter(i => matches(e, i));
+                const items = chosen ? overridden(chosen, o.pack, catalog, e.count === 'any') : [...beforeInventory, ...beforeEquipment].filter(i => matches(e, i));
                 const expected = e.placeholder ? materialized.get(itemLabel(e)) ?? [] : [...beforeInventory, ...beforeEquipment].filter(i => matches(e, i));
                 if (!same(items, expected)) fail(itemLabel(e) + ': return override differs from the intended before-state');
                 // `any` may return nothing (stock an earlier step used up)
