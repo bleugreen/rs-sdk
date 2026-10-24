@@ -75,6 +75,34 @@ export interface FakeCdp {
     stop(): void;
 }
 
+/** A world's player list, GET /playerpositions as the engine serves it (lib/demo-status.ts listedInWorld). */
+export interface FakeWorld {
+    /** The world's host:port, as a page's ?server= names it. */
+    host: string;
+    /** Names in the world. */
+    players: Set<string>;
+    /** List reads served. */
+    reads: number;
+    /** True: the list answers 503. */
+    down: boolean;
+    stop(): void;
+}
+
+export function fakeWorld(): FakeWorld {
+    const world: Omit<FakeWorld, 'host' | 'stop'> = { players: new Set(), reads: 0, down: false };
+    const server = Bun.serve({
+        port: 0,
+        hostname: '127.0.0.1',
+        fetch(req) {
+            if (new URL(req.url).pathname !== '/playerpositions') return new Response('not found', { status: 404 });
+            world.reads++;
+            if (world.down) return new Response('down', { status: 503 });
+            return Response.json({ players: [...world.players].map(name => ({ name, x: 3222, z: 3218, level: 0 })) });
+        },
+    });
+    return Object.assign(world, { host: `127.0.0.1:${server.port}`, stop: () => server.stop(true) });
+}
+
 export function fakeCdp(bot: string, password = 'x'): FakeCdp {
     const hooks: FakeCdp['hooks'] = { onAutoLogin: () => {}, onNavigate: () => {}, onClickComponent: () => {} };
     const page: FakeCdp['page'] = {

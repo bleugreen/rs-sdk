@@ -762,7 +762,7 @@ export async function abandonTab(session: Session, opts: AbandonOptions = {}): P
         }
         // A page logging in (its own retry, or our takeover) is waited for.
         if (Date.now() >= deadline) return done(false, why || 'timed out');
-        await sleep(ENDED_POLL_MS);
+        await sleep(Math.min(ENDED_POLL_MS, tickMs()));
     }
 }
 
