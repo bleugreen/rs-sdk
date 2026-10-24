@@ -33,7 +33,7 @@ export function summarise(bot: string, recs: readonly Rec[]): Row {
     const totals = recs.filter(r => r.kind === 'totals').at(-1);
     const marks: Row['marks'] = {};
     for (const m of ev('mark')) marks[m.hp as number] = { tick: m.tick as number, minutes: Math.round(((m.wallMs as number) / 60000) * 10) / 10, attack: m.attack as number, strength: m.strength as number };
-    const cows = ev('cows trip');
+    const cows = ev('low trip');
     const reachedAt = cows.find(c => (c.prayer as number) > 1 && c.end === 'until');
     const bones = cows.reduce((n, c) => n + Number(c.bonesBuried ?? 0), 0);
     const buys = recs.filter(r => r.kind === 'event' && typeof r.item === 'string' && 'price' in r);

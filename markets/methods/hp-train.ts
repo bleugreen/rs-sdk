@@ -366,7 +366,7 @@ export async function fightFor(sdk: BotSDK, bot: BotActions, site: Site, o: Figh
                 cur = undefined;
             }
             // a claim that lapsed (a stall past its ttl) and went to another bot: leave the npc to it
-            if (cur && claims && !claims.table.claim(cur.index, claims.owner)) {
+            if (cur && claims && !attackers.some(a => a.index === cur!.index) && !claims.table.claim(cur.index, claims.owner)) {
                 o.log?.('lost claim', { index: cur.index });
                 target = null;
                 cur = undefined;
@@ -712,7 +712,10 @@ export const spec: ProbeSpec<HpOptions> = {
     async run(ctx) {
         const { sdk, bot, options: o, sampler } = ctx;
         const site: Site = SITES[o.site === 'auto' ? chooseSite(o.to) : o.site];
+        // where the climb starts: the site itself when it is a low one, else the Lumbridge pen up to the crossing
+        const low: Site = site.kandarin ? SITES.cows : site;
         ctx.totals.site = site.id;
+        ctx.totals.lowSite = low.id;
         const t: Traveller = { bot, sdk, log: (m, d) => ctx.event(m, d), checkSignal: () => ctx.signal.throwIfAborted() };
         const tick = () => sdk.getState()?.tick ?? 0;
         const hpLevel = () => skill(sdk.getState()!, 'hitpoints');
@@ -760,7 +763,7 @@ export const spec: ProbeSpec<HpOptions> = {
             const kebabs = site.kandarin && !pastTheMountain(s0) ? (o.kebabs >= 0 ? o.kebabs : kebabsFor(Math.max(hpLevel(), o.switchHp), o.to)) : 0;
             ctx.totals.kebabsPlanned = kebabs;
             // The scimitars only where they repay the errand (hp-model shopPays), or when no weapon is carried.
-            const shop = shopPays(o.to, site.id as SiteChoice) || ownedWeapons(s0).length === 0;
+            const shop = shopPays(o.to, site.kandarin ? 'crabs' : 'cows') || ownedWeapons(s0).length === 0;
             const plan = shop ? weaponPlan(o.coins - kebabs, TOLL_RESERVE).filter(w => !ownedWeapons(sdk.getState()!).some(x => x.name === w.name)) : [];
             if (plan.length || kebabs) {
                 const need = plan.reduce((n, w) => n + w.cost, 0) * 2 + TOLL_RESERVE + kebabs;
@@ -792,17 +795,18 @@ export const spec: ProbeSpec<HpOptions> = {
                 ctx.totals.coinsKebabs = bought; // 1 coin each (kebab_seller.rs2)
             }
 
-            // 2. The cows, to the target or to the crossing's Hitpoints.
+            // 2. The low site, to the target or to the crossing's Hitpoints.
             const cowsTo = site.kandarin ? Math.min(o.switchHp, o.to) : o.to;
             const prayerLvl = (s: BotWorldState) => skill(s, 'prayer');
             const cowsDone = (s: BotWorldState) => reached(skill(s, 'hitpoints'), cowsTo) && prayerLvl(s) >= o.prayer;
             while (!cowsDone(sdk.getState()!) && !pastTheMountain(sdk.getState())) {
                 ctx.signal.throwIfAborted();
-                sampler.phase = prayerLvl(sdk.getState()!) < o.prayer ? 'cows+bones' : 'cows';
-                await walkTo(ctx, SITES.cows.centre, 'the cows', 4);
-                const f = await fightFor(sdk, bot, SITES.cows, {
+                sampler.phase = prayerLvl(sdk.getState()!) < o.prayer ? `${low.id}+bones` : low.id;
+                await walkTo(ctx, low.centre, low.id, 4);
+                const f = await fightFor(sdk, bot, low, {
                     until: cowsDone,
-                    onKill: kitTo(SITES.cows.target),
+                    onKill: kitTo(low.target),
+                    claims: o.claims,
                     // The cows chip ~0.05 hp a tick against 0.01 regenerated: eat the tutorial's shrimps and bread (and
                     // any kebabs) only near the end, since a level-up adds a point too.
                     food: COW_FOOD,
@@ -815,12 +819,12 @@ export const spec: ProbeSpec<HpOptions> = {
                     log: t.log
                 });
                 fights.push(f);
-                ctx.event('cows trip', { ...f, prayer: prayerLvl(sdk.getState()!) });
+                ctx.event('low trip', { site: low.id, ...f, prayer: prayerLvl(sdk.getState()!) });
                 if (f.end === 'prayer') {
                     sampler.phase = 'altar';
                     await restorePrayer(ctx, LUMBRIDGE_ALTAR, 'Lumbridge church');
-                } else if (f.end === 'dead') await died('the cows');
-                else if (f.end !== 'until') throw new Error(`the cows ended: ${f.end}`);
+                } else if (f.end === 'dead') await died(low.id);
+                else if (f.end !== 'until') throw new Error(`the ${low.id} site ended: ${f.end}`);
             }
             if (o.prayer) ctx.totals.prayerPhase = { prayer: prayerLvl(sdk.getState()!), bonesBuried: fights.reduce((n, f) => n + f.bonesBuried, 0) };
 
@@ -866,6 +870,7 @@ export const spec: ProbeSpec<HpOptions> = {
                         eatAt: 8,
                         eatHalf: true,
                         leaveAt: hasFood ? 5 : 3,
+                        claims: o.claims,
                         signal: ctx.signal,
                         log: t.log
                     });
@@ -881,8 +886,10 @@ export const spec: ProbeSpec<HpOptions> = {
             }
 
             // 4. Bank and stop.
-            sampler.phase = 'bank';
-            await visitBank(ctx, site.bank ?? DRAYNOR_BANK, 'the final bank');
+            if (o.finalBank) {
+                sampler.phase = 'bank';
+                await visitBank(ctx, site.bank ?? DRAYNOR_BANK, 'the final bank');
+            }
         } finally {
             off();
             stamp();
