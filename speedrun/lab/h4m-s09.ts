@@ -110,7 +110,7 @@ const rowsOf = (pre: string) => log.rows.filter(r => r.step.startsWith(pre));
 const metaOf = (r: TickRow) => (r.meta ?? {}) as Record<string, unknown>;
 
 function measure(): Record<string, unknown> {
-    const buries = rowsOf('(bury) mining.bury: load ').map(r => ({ step: r.step.replace('(bury) ', ''), startTick: r.startTick, endTick: r.endTick, ...metaOf(r) }));
+    const buries: Array<Record<string, unknown> & { step: string; startTick: number; endTick: number }> = rowsOf('(bury) mining.bury: load ').map(r => ({ step: r.step.replace('(bury) ', ''), startTick: r.startTick, endTick: r.endTick, ...metaOf(r) }));
     const segs = rowsOf('(band) mining.bury: load ').flatMap(r => (metaOf(r).segments as Array<{ ticks: number; ores: number; buried?: number; technique: string }>) ?? []);
     const lap = segs.reduce((a, s) => ({ ticks: a.ticks + s.ticks, ores: a.ores + s.ores, buried: a.buried + (s.buried ?? 0) }), { ticks: 0, ores: 0, buried: 0 });
     const steps = log.rows.filter(r => slice.some(s => s.name === r.step) && r.kind !== 'program' && r.kind !== 'note').map(r => ({ step: r.step, startTick: r.startTick, endTick: r.endTick, ticks: r.ticks, ok: r.ok }));
