@@ -20,8 +20,8 @@
 //    arrives (runner/chain.ts chainSeams);
 // 4a. the rune census (runner/rune-census.ts): SCORED's runes, by obj id, against what the chain
 //    spends of each from the start step (--from, else the step the tick log's last census was taken
-//    before) up to the next row that brings that rune, a row this attempt's hand-off record has
-//    served not counted; a rune short refuses, naming it, the step that would run short and the
+//    before) up to the next row that brings that rune, a hand-off row this attempt's record
+//    (runner/attempt-record.ts) has served not counted; a rune short refuses, naming it, the step that would run short and the
 //    supply it waits for. Before login the pack is the tick log's last census (a fresh run has none);
 //    once SCORED is in the world the same census runs on its live pack, and a shortfall logs it out
 //    (exit 3) before any step runs;
@@ -91,7 +91,7 @@ import { formatCensus, lastCensus, runeCensus, runePlan, runesHeld, type RuneCen
 import { loadModules, runeLabel } from './tools/rune-pins';
 import { MANIFEST } from './tools/slot-ledger';
 import { RelogBudget } from './runner/relog-budget';
-import { HandOffRecord } from './runner/handoff';
+import { AttemptRecord } from './runner/attempt-record';
 import { SCORED_LOGIN, SCORED_RELOG } from './runner/scored-relog';
 import { ackRow, deathGate, deathRow, diedResult, operatorLine } from './runner/death';
 
@@ -204,7 +204,7 @@ export function attemptOf(earlier: readonly { runId?: string }[], runId: string)
  * S05's H4 giver; a ledger row the chain does not cover; a probe a step reads that no module
  * exports): a start-gate refusal, never a crash.
  */
-export function chainOrRefusal(cfg: RunConfig, cues: CueSink, o: Pick<ChainOptions, 's21Relog' | 'relogs' | 'attempt' | 'handOffs'> = {}): { chain: ChainStep[] } | { refusal: string } {
+export function chainOrRefusal(cfg: RunConfig, cues: CueSink, o: Pick<ChainOptions, 's21Relog' | 'relogs' | 'attempt' | 'record'> = {}): { chain: ChainStep[] } | { refusal: string } {
     try {
         const chain = buildChain(cfg, { cues, ...o });
         chainProbes(chain);
@@ -402,7 +402,7 @@ export async function liveRuneCheck(
     try {
         input = o.plan ? liveRuneCensus(state, o.plan, o.from, o.served) : { error: `the rune plan could not be built: ${o.planError ?? 'unknown'}` };
     } catch (e) {
-        // An unreadable hand-off record: refused like any other, with SCORED logged out.
+        // An unreadable attempt record: refused like any other, with SCORED logged out.
         input = { error: e instanceof Error ? e.message : String(e) };
     }
     const g = runeGate(input, `${RUNE_GATE}, live`);
@@ -515,6 +515,8 @@ export interface ChainRunOptions {
     tabMemory?: TabMemorySetting;
     /** The run's relog budget: with it a drop is recovered by runner/drop-relog.ts (an in-page relog, the race rule). */
     relogs?: RelogBudget;
+    /** The attempt's step record (AttemptRecord.steps): runSteps marks each step, the resume walk reads it. */
+    record?: StepRecord;
     /** The process's signals and exit (tests inject them). */
     signals?: SignalDeps;
 }
@@ -701,6 +703,7 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
     try {
         result = await untilTerminated(runAttempt(session, o.chain, {
             log, account, link, reservation: o.reservation, probes,
+            ...(o.record ? { record: o.record } : {}),
             // After a death the respawn is not a place to relog into and go on from.
             ...(recovery ? { recover: async (reason: string, at: { step: string | null; tick: number }) => {
                 if (session.died) throw new Error(`no drop recovery after a death: ${session.died.reason}`);
@@ -881,8 +884,8 @@ async function main(argv: string[]): Promise<number> {
     const earlier = existsSync(a.log) ? parseLog(readFileSync(a.log, 'utf8')) : [];
     const runId = `run-${newRunId()}`;
     const attempt = attemptOf(earlier, runId);
-    const handOffs = new HandOffRecord(a.runDir, attempt);
-    const built = chainOrRefusal(cfg, keeper, { s21Relog: a.s21Relog, relogs, attempt, handOffs });
+    const record = new AttemptRecord(a.runDir, attempt);
+    const built = chainOrRefusal(cfg, keeper, { s21Relog: a.s21Relog, relogs, attempt, record });
     if ('refusal' in built) {
         console.error(`[gate] REFUSED run config: ${built.refusal}`);
         console.error('[run] nothing was logged in');
@@ -922,7 +925,7 @@ async function main(argv: string[]): Promise<number> {
     } catch (e) {
         planError = e instanceof Error ? e.message : String(e);
     }
-    const served = (row: string) => handOffs.has(row);
+    const served = (row: string) => record.handOffs.has(row);
     const runes = (): RuneGateInput => {
         if (!plan) return { error: `the rune plan could not be built: ${planError}` };
         try {
@@ -985,7 +988,7 @@ async function main(argv: string[]): Promise<number> {
             log.append(annotation(log, session.name, 'gate', '(gate) start', { meta: { gates, fresh, cueDir: cfg.cueDir, removed, until: a.until ?? null, steps: chain.length, s21Relog: a.s21Relog } }));
             console.log(`[run] ${LOG_ACCOUNT} on ${a.client}; ${chain.length} steps${a.until ? ` to ${a.until}` : ''}; log ${log.path}`);
             // A signal: SCORED is out, then closeSession still closes the browser before the exit.
-            const ran = await runChainOnSession(session, { log, chain, reservation, cues: keeper, relogs, wholeRun: a.until === undefined, ...(from !== undefined ? { from } : {}) }).catch(e => {
+            const ran = await runChainOnSession(session, { log, chain, reservation, cues: keeper, relogs, record: record.steps, wholeRun: a.until === undefined, ...(from !== undefined ? { from } : {}) }).catch(e => {
                 if (!(e instanceof Terminated)) throw e;
                 term = e;
                 return null;

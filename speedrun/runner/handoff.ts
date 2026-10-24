@@ -37,8 +37,8 @@
 // done milestone to stay done, and the steps after a hand-off consume what it brought, so `done`
 // also holds when:
 // - `supersededBy`, the next milestone's own `done` (chain.ts passes it in), holds; or
-// - the hand-off is in `record` (HandOffRecord: run and resume mark it once the post-hand-off
-//   state shows) and nothing it gave is held again. Between the hand-off and the next milestone a
+// - the hand-off is in `record` (the attempt record's hand-off rows, runner/attempt-record.ts: run
+//   and resume mark it once the post-hand-off state shows) and nothing it gave is held again. Between the hand-off and the next milestone a
 //   band eats into the items (S18's first stun, S22's first catch), and the state alone cannot
 //   tell that from a hand-off not yet traded: the band's own `inProgress` already holds on arrival
 //   (Thieving 57 at the knights, Fishing 78 at the river). A demo rollback across a swap hands its
@@ -53,8 +53,7 @@
 // through `resume`, which applies the equip only. A logout mid-trade refunds both sides, and the
 // step runs again.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { readFileSync } from 'fs';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
 import { INVENTORY_SIZE, noteOf, objIdsNamed, objName, untradeable } from '../lib/items';
@@ -63,6 +62,7 @@ import { waitOrThrow, waitUntil } from '../lib/wait';
 import { writeTopUpAsk, type AskItem, type CueScope, type TopUpAsk } from '../helpers/altar-cue';
 import { opIndex } from '../lib/world';
 import { itemLabel, MANIFEST, parseLedger, type InEntry, type ItemRef, type Kind, type LedgerRow, type Reason } from '../tools/slot-ledger';
+import type { Marks } from './attempt-record';
 import type { ObservedCheck, Step, StepContext } from './step';
 
 /**
@@ -392,57 +392,6 @@ export function rollbackWitnesses(plan: HandOffPlan, later: readonly LedgerRow[]
     });
 }
 
-// ------------------------------------------------------------------ the completion record
-
-export const HANDOFFS_FILE = 'handoffs.json';
-
-export interface HandOffEntry {
-    /** The attempt (run.ts attemptOf: the run id of its tick log's first row, the same in every process that resumes it). */
-    attempt: string;
-    /** The ledger row (H14). */
-    row: string;
-    /** The client tick the post-hand-off state showed at (-1: none). */
-    tick: number;
-    at: string;
-}
-
-/**
- * The hand-offs found complete in an attempt: <run dir>/handoffs.json, beside relogs.json, read from
- * disk on every `has` so a resumed process sees what an earlier one marked. Keyed by the attempt, so
- * a fresh attempt starts with none and nothing has to clear the file.
- */
-export class HandOffRecord {
-    readonly file: string;
-
-    constructor(readonly dir: string, readonly attempt: string, private readonly pid: number = process.pid) {
-        this.file = join(dir, HANDOFFS_FILE);
-    }
-
-    entries(): HandOffEntry[] {
-        if (!existsSync(this.file)) return [];
-        try {
-            const f = JSON.parse(readFileSync(this.file, 'utf8')) as { entries?: unknown };
-            return Array.isArray(f.entries) ? (f.entries as HandOffEntry[]) : [];
-        } catch {
-            throw new Error(`${this.file} does not parse: fix or remove it before the run goes on`);
-        }
-    }
-
-    has(row: string): boolean {
-        return this.entries().some(e => e.attempt === this.attempt && e.row === row);
-    }
-
-    /** Record `row` complete in this attempt (once). */
-    mark(row: string, tick: number): void {
-        if (this.has(row)) return;
-        const entries = [...this.entries(), { attempt: this.attempt, row, tick, at: new Date().toISOString() }];
-        mkdirSync(this.dir, { recursive: true });
-        const tmp = `${this.file}.${this.pid}.tmp`;
-        writeFileSync(tmp, JSON.stringify({ v: 1, entries }, null, 2) + '\n', { mode: 0o600 });
-        renameSync(tmp, this.file);
-    }
-}
-
 // ------------------------------------------------------------------ the step
 
 export type HandOffSdk = SwapSdk & Pick<BotSDK, 'sendUseItem' | 'sendUseEquipmentItem' | 'sendDropItem'>;
@@ -472,8 +421,8 @@ export interface HandOffOptions<C> {
     partner: string | ((c: C) => string);
     /** The next milestone's `done`: once it holds, this hand-off counts as done whatever the inventory shows. */
     supersededBy?: ObservedCheck<C>;
-    /** The attempt's completion record (run.ts's): marked once the post-hand-off state shows, read by `done`. */
-    record?: HandOffRecord;
+    /** The attempt record's hand-off rows (run.ts's AttemptRecord.handOffs): marked once the post-hand-off state shows, read by `done`. */
+    record?: Marks;
     /** What the record clause reads as a rollback (default: every give and drop, held at all): chain.ts's rollbackWitnesses. */
     witnesses?: readonly RollbackWitness[];
     /** Observed ticks to get the screens open (default 30): swap()'s openTicks, receiveFrom()'s openMaxTicks. */
