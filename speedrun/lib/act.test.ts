@@ -584,6 +584,38 @@ describe('loc, npc and item helpers', () => {
         expect(sdk.sent.filter(a => a.method === 'sendInteractNpc').map(a => a.args)).toEqual([[9, 1], [9, 1]]);
     });
 
+    test('talkTo re-engages the same NPC when a poison tick closes the chat after page 2 with until unmet', async () => {
+        const narnode = npc(7, 'King Narnode Shareen');
+        const pages = ['n1', 'n2', 'n3', 'n4', 'n5'].map(cont);
+        const you = (lastDamageTick: number) => ({ ...player(1, 1), combat: { inCombat: false, targetIndex: -1, targetType: 'none', lastDamageTick } }) as PlayerState;
+        const sdk = new FakeSdk(baseState({ tick: 1, player: you(-1), nearbyNpcs: [narnode] }));
+        // The page the next tick shows: an interact opens the first, each dialogue click moves one on.
+        let page = -1;
+        let cut = true;
+        let orders = false;
+        sdk.onSend = a => {
+            if (a.method === 'sendInteractNpc') page = 0;
+            else if (a.method === 'clickDialogByText') page++;
+        };
+        const p = talkTo(sdk as never, narnode, [], { idle: 3, maxTicks: 60, until: () => orders });
+        await ticks(sdk, 30, () => {
+            if (page === 2 && cut) {
+                cut = false;
+                page = -1;
+                return { dialog: closed, player: you(sdk.state!.tick + 1) }; // the hit's if_close drops the script
+            }
+            if (page >= pages.length) {
+                page = -1;
+                orders = true;
+            }
+            return { dialog: page >= 0 ? pages[page]! : closed };
+        });
+        const r = await p;
+        expect(r).toMatchObject({ ok: true, opened: true, clicks: 1, reengages: 1, pages: 2 + 5 });
+        expect(sdk.sent.filter(a => a.method === 'sendInteractNpc').map(a => a.args)).toEqual([[7, 1], [7, 1]]);
+        expect(r.transcript.some(l => /re-engage 1: chat closed at \d+ with until unmet \(hit at \d+\)/.test(l))).toBe(true);
+    });
+
     test('wield and pickup confirm on state', async () => {
         const sword = { slot: 4, id: 1, name: 'Rune scimitar', count: 1, optionsWithIndex: [{ text: 'Wield', opIndex: 2 }] };
         const sdk = new FakeSdk(baseState({ tick: 1, inventory: [sword] }));
