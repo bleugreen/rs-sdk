@@ -2,8 +2,8 @@
 // death pass unseen in: a logout's hold (lib/session.ts logoutClean, which puts what it saw on the
 // logout's result and on Session.died), a leg's travel (runner/legs.ts runLeg, the same on
 // Session.died, the leg failing), every other step's body (runner/step.ts deathWatched, through
-// watchFrames and raceDeath below) and the helper waits (runner/wait-guard.ts). run.ts then writes one `(death)` row, ends the attempt with
-// EXIT_DIED, and refuses any later run into the same log, a walk from game state and a --from alike,
+// watchFrames and raceDeath below) and the helper waits (runner/wait-guard.ts). run.ts then writes one
+// `(death)` row, ends the attempt with EXIT_DIED, and refuses any later run into the same log, a walk from game state and a --from alike,
 // until the operator names that death with --r8-recovered after R8's recovery: a resume from the
 // respawn would otherwise go on as if nothing had happened.
 
