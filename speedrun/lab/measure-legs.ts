@@ -34,7 +34,7 @@
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
 import type { BotActions } from '../../sdk/actions';
-import { dropsDue, legById, legsFor, runLeg, splitLeg, TILES, type LegDrops, type LegStep, type S21Altar } from '../runner/legs';
+import { dropsDue, legById, legsFor, runLeg, splitLeg, TILES, type LegDrops, type LegStart, type LegStep, type S21Altar } from '../runner/legs';
 import { PLACEMENT } from '../runner/chain';
 import { APE_ATOLL_ROOFS, glide, hopNeeds, lumdoBoat, pullLever, sail, travel, type Rune, type Runes, type TravelResult, type TravelSdk } from '../lib/travel';
 import { closeSession, logoutClean, openSession, type ClientKind } from '../lib/session';
@@ -285,7 +285,7 @@ async function main(sdk: BotSDK, bot: BotActions): Promise<void> {
                 const out = landingWait === null ? await runLeg(d, { sdk, bot, log: legLog, session: { name: botName, sessionId: 0 } as never }) : await runLegSplit(l, sdk, bot, landingWait);
                 trace.stop();
                 if (!out) throw new Error('already arrived at the start');
-                const travelMeta = legLog.rows.find(x => x.kind === 'travel')?.meta as { drops?: LegDrops[]; ate?: number; cured?: number } | undefined;
+                const travelMeta = legLog.rows.find(x => x.kind === 'travel')?.meta as { drops?: LegDrops[]; ate?: number; cured?: number; start?: LegStart } | undefined;
                 const bursts = travelMeta?.drops ?? [];
                 row.bursts.push(bursts.reduce((a, b) => a + b.ticks, 0));
                 const hops = hopRows(out.segments, trace.sends, trace.frames, out.endTick);
@@ -294,7 +294,7 @@ async function main(sdk: BotSDK, bot: BotActions): Promise<void> {
                 const post = l.postconditions(sdk.getState()!, undefined);
                 if (post !== true) throw new Error(`postcondition: ${post}`);
                 row.runs.push(out.ticks);
-                result('leg', { id: d.id, run: r, client, ok: true, ticks: out.ticks, ...(mode ? { drops: mode, bursts } : {}), expected: d.expected.ticks, segments: out.segments, doors: out.doors, clicks: out.clicks, tiles: out.tiles, webTries: out.webTries, ate: travelMeta?.ate ?? out.ate, ...(travelMeta?.cured ? { cured: travelMeta.cured } : {}), hpMin: out.hpMin, hpEnd: sdk.getState()?.player?.hp ?? null, ...(out.fellBack ? { fellBack: out.fellBack } : {}), at: out.at });
+                result('leg', { id: d.id, run: r, client, ok: true, ticks: out.ticks, ...(mode ? { drops: mode, bursts } : {}), expected: d.expected.ticks, segments: out.segments, doors: out.doors, clicks: out.clicks, tiles: out.tiles, webTries: out.webTries, ate: travelMeta?.ate ?? out.ate, ...(travelMeta?.cured ? { cured: travelMeta.cured } : {}), ...(travelMeta?.start ? { start: travelMeta.start } : {}), hpMin: out.hpMin, hpEnd: sdk.getState()?.player?.hp ?? null, ...(out.fellBack ? { fellBack: out.fellBack } : {}), at: out.at });
             } catch (e) {
                 trace?.stop();
                 if (trace?.frames.length) {
