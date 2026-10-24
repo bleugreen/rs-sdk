@@ -10,6 +10,8 @@ import {
 import { Observation, resolveResume } from '../runner/resume';
 import type { RunnerSession } from '../runner/step';
 import { prayerReserve } from './segments';
+import { readFileSync } from 'fs';
+import { MANIFEST, parseLedger, walk } from '../tools/slot-ledger';
 
 // Config ids from server/content/pack/obj.pack: entryRefusal reads the categories by id.
 const ID = {
@@ -558,17 +560,27 @@ describe('exit drops (the ledger T16-18 row, done in F)', () => {
         expect(F.done!(obs(end), {})).toBe(true);
     });
 
-    test('F drinks the held prayer doses toward full before the exit drops, for Elvarg (rs/687 R3)', async () => {
+    test('F drinks the held prayer doses toward full, then drops every potion the drink left (rs/687 R3; the ledger\'s S16 out)', async () => {
         const s = withInv(at(without(arrival({}, { points: 40 }), /greegree/i), CHAMBER_AT), item('Cape of saradomin', ID.saradominCape), item('Staff of saradomin', ID.saradominStaff));
         const { sdk, each, ctx } = chamberSdk(s);
         const F = seg('F');
         await drive(sdk, F.run(ctx) as Promise<unknown>, 30, each);
         const end = sdk.getState()!;
-        // 40 + 30 + 30 reaches the level, 94: two doses, the rest left for H14 to take back.
+        // 40 + 30 + 30 reaches the level, 94: two doses; the Prayer potion(2) and the three (4)s go down with the god items.
         expect(end.prayers.prayerPoints).toBe(94);
         expect(sdk.sent.filter(a => a.method === 'sendUseItem').length).toBe(2);
-        expect(end.inventory.filter(i => /^prayer potion/i.test(i.name)).map(i => i.name).sort()).toEqual(['Prayer potion(2)', 'Prayer potion(4)', 'Prayer potion(4)', 'Prayer potion(4)']);
+        expect(end.inventory.some(i => /^prayer potion|^vial$/i.test(i.name))).toBe(false);
+        expect(sdk.sent.filter(a => a.method === 'sendDropItem').length).toBe(2 + 4 + 9 - KEEP_SHARKS);
         expect(F.postconditions(end, {})).toBe(true);
+    });
+
+    test('a dose whose name the drink changed after an earlier read is still dropped: the exit reads the pack at the drop', () => {
+        const before = withInv(godItems(), item('Prayer potion(2)', ID.prayerPotion, 1, ['Drink']));
+        const pot = before.inventory.find(i => i.name === 'Prayer potion(2)')!;
+        // The sip turns the (2) into a (1) in the same slot, after `before` was read.
+        const after = { ...before, inventory: before.inventory.map(i => (i === pot ? { ...pot, name: 'Prayer potion(1)' } : i)) };
+        expect(exitDropItems(after).map(i => i.name)).toContain('Prayer potion(1)');
+        expect(exitClean(9)(without(after, /saradomin/i), undefined)).toMatch(/still holding .*prayer potion/i);
     });
 
     test('the last dose drunk leaves a vial, which goes with the exit drops', async () => {
@@ -582,6 +594,40 @@ describe('exit drops (the ledger T16-18 row, done in F)', () => {
         expect(end.inventory.some(i => /^vial$/i.test(i.name) || /^prayer potion/i.test(i.name))).toBe(false);
         expect(F.postconditions(end, {})).toBe(true);
         expect(exitClean()(withInv(end, item('Vial', 229)), undefined)).toMatch(/still holding .*vial/i);
+    });
+
+    /**
+     * rs/764 run 1 (F10): S16 entered with a Prayer potion(4) and a (2), C left (2) + (2), and the exit's drink stopped
+     * at full with a (1) left, which no drop named, so H14 found 1 slot short. The pack here is the ledger's own after
+     * S16's ins (its walk of STEP-MANIFEST.md), with rs/764's two potions in place of its prayer potions.
+     */
+    test("rs/764's two (2)s: the exit leaves the ledger's T16-18 pack, and H14 its 23 free against 22", async () => {
+        const entries = walk(parseLedger(readFileSync(MANIFEST, 'utf8')).rows);
+        const row = (id: string) => entries.find(e => e.row.row === id)!;
+        const gameName = (n: string) => ({ 'god staff': 'Staff of saradomin', 'god cape': 'Cape of saradomin' })[n] ?? n[0]!.toUpperCase() + n.slice(1);
+        const gameId = (n: string) => ({ 'god staff': ID.saradominStaff, 'god cape': ID.saradominCape, shark: ID.shark, knife: ID.knife, 'air rune': ID.air, 'law rune': ID.law, 'water rune': ID.water })[n] ?? 0;
+        const s16 = row('S16').stacks;
+        expect(s16.inv.some(h => /prayer potion|vial/i.test(h.name))).toBe(false);
+        nextSlot = 0;
+        const pack = s16.inv.flatMap(h => (h.kind === 's' ? [item(gameName(h.name), gameId(h.name), h.count ?? 1)] : Array.from({ length: h.count ?? 1 }, () => item(gameName(h.name), gameId(h.name), 1, h.name === 'shark' ? ['Eat'] : []))));
+        const potions = [item('Prayer potion(2)', ID.prayerPotion, 1, ['Drink']), item('Prayer potion(2)', ID.prayerPotion, 1, ['Drink'])];
+        const base = at(arrival({}, { points: 4 }), CHAMBER_AT);
+        const s = { ...base, inventory: [...pack, ...potions], equipment: s16.worn.map(h => item(gameName(h.name), h.name === "m'speak amulet" ? ID.amulet : ID.staffOfFire)) };
+        const { sdk, each, ctx } = chamberSdk(s);
+        await drive(sdk, seg('F').run(ctx) as Promise<unknown>, 30, each);
+        const end = sdk.getState()!;
+        // 4 + 3 x 30 reaches 94: three doses, so one (2) is a vial and the other a (1), and both go down.
+        expect(end.prayers.prayerPoints).toBe(94);
+        expect(sdk.sent.filter(a => a.method === 'sendUseItem').length).toBe(3);
+        expect(end.inventory.some(i => /^prayer potion|^vial$/i.test(i.name))).toBe(false);
+        const t1618 = row('T16-18');
+        expect(end.inventory.length).toBe(t1618.used);
+        expect([...new Set(end.inventory.map(i => i.name.toLowerCase()))].sort()).toEqual(t1618.stacks.inv.map(h => h.name).sort());
+        expect(end.equipment.map(i => i.name.toLowerCase()).sort()).toEqual(t1618.stacks.worn.map(h => h.name).sort());
+        // H14 swaps the knife out before its check: 28 - (6 - 1) = 23 free against its 22.
+        const h14 = row('H14');
+        expect([h14.free, h14.need]).toEqual([23, 22]);
+        expect(28 - (end.inventory.length - 1)).toBe(h14.free);
     });
 
     test('a second F attempt of the same steps() does not pass on the first one\'s staff: with none seen it goes to the guardian', async () => {
