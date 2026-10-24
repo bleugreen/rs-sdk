@@ -87,8 +87,10 @@ describe('the census', () => {
         const after = runeCensus(plan, at('T13-14b'), withLaw(4));
         expect(after.ok).toBe(true);
         expect(line(after, 'lawrune')).toMatchObject({ held: 4, needed: 2, margin: 2, supply: { row: 'H12', name: 'S15:A-narnode' } });
-        // The same pack one step earlier, at H11 itself: H11 is still ahead, so it is the supply.
-        expect(line(runeCensus(plan, at('H11'), withLaw(0)), 'lawrune')).toMatchObject({ needed: 0, supply: { row: 'H11' } });
+        // From H11 itself it is still ahead, so the walk stops there; and before the census of T13-14a
+        // with none held, it waits on H11.
+        expect(line(runeCensus(plan, at('H11'), withLaw(4)), 'lawrune')).toMatchObject({ held: 4, needed: 0, supply: { row: 'H11' } });
+        expect(line(runeCensus(plan, at('T13-14a'), withLaw(0)), 'lawrune')).toMatchObject({ needed: 2, supply: { row: 'H11' }, short: { name: 'T13-14a' } });
     });
 
     test('a supply this attempt has already served is not counted again: the walk goes past it', () => {
