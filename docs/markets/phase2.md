@@ -249,7 +249,6 @@ in the market respawns in Lumbridge without the ship's coins, so the account ear
 A stage that fails three times in a row, or three sessions that end in an error within two minutes of login, give
 the account up; the rest carry on.
 
-<<<<<<< ours
 **The pickaxe stage** (`pickaxe.ts`, rs/732) gives iron a pickaxe usable at its Mining level before anything needs
 one: from the bank when the runner last saw one there, else a bronze pickaxe (1 coin) from Bob in Lumbridge or Aemad
 in East Ardougne, whichever side of the sea the account is on. On the mainland an empty pack earns the coin on the
@@ -302,52 +301,6 @@ tick=267 at=2655,3283 banked {"successes":15,"roams":2}
 CHECK door recovery: PASS
 ```
 
-||||||| base
-=======
-**Stalls** (`stall.ts`). An account in its method stage whose coins (carried plus banked, from its ledger lines) have
-not moved for `--stall-minutes` (default 10; 0 turns it off) gets a `stalled` event and its method is aborted, so its
-stages run again from where it stands. An abort is not a stage failure. While the coins stay put it is aborted at most
-`--stall-retries` (default 3) times, one threshold apart; then a loud `stalled: retries used up` event, and it is left
-running for a person to look at. The method itself ends with an error after 10 errands fail in a row
-(`pickpocket.ts` `maxErrandFailures`), which is a stage failure: three of those give the account up.
-
-### Stuck behind a door
-
-On the demo at 06:55Z 2026-10-24 the knights followed a Knight of Ardougne into the market building at (2671,3315)
-and the door shut behind them. Three never got out: every bank walk failed ('No path to (2654,3285) from
-(2671,3315): no waypoints'), the method went on to `openBank` anyway, and it looped on 'No banker NPC or bank booth
-found nearby' every 3.6 s; a relog put them back in the same room.
-
-**Why walkTo cannot leave.** `bot.walkTo` plans on the SDK's precomputed long-path map (`sdk/collision-data.json`),
-which unmasks only the doors the engine's collision export lists, and that export keeps wall-layer locs only
-(`server/engine/src/web/pages/api.ts`). The building's west door at (2669,3316) is a diagonal door (loc shape 9,
-ground layer), so in the map its tile is solid whether it is open or shut. Its other door (2670,3320) leads into a
-dead-end corridor. From (2671,3315) the map reaches only the pocket x 2668-2674, z 3315-3323, so opening doors and
-walking again never helps (rs/739). The lite client's own router (`clickWalk`) searches the live collision, where an
-opened door is open.
-
-**The recovery** (`pickpocket.ts` `walkThroughDoors`, for the bank, station and roam walks): a walk that fails as
-unroutable ('stops N tiles short', 'no waypoints', 'Stuck at', 'Could not reach') opens the nearest shut door,
-click-walks up to 30 tiles toward the destination and walks again, then all of that once more after 5 ticks. A walk
-that still fails throws, so nothing runs from the wrong place. Target choice no longer follows a knight onto a tile
-the long-path map cannot route to from the anchor (`routable`, cached per tile).
-
-**Lab** (fedora, block M21, 400 ms a tick, `markets/methods/lab/door.ts`): the bot was teleported to (2671,3315)
-with both doors shut. In each phase a plain `walkTo` to the bank answered 'No path to (2654, 3285) from (2671,
-3315): no waypoints', and then the method ran:
-
-```
-tick=30  bank errand: pickpocket: start
-tick=67  at=2654,3287 walk unroutable: opened a door and clicked through {"attempt":1,"door":"opened","click":"arrived","clickAt":{"x":2654,"z":3287}}
-tick=72  at=2655,3286 banked {"banks":1}
-tick=110 at=2670,3310 stop {"successes":4}      (back at the station, thieving)
-tick=132 roam walk: pickpocket: start             (in again, carrying sharks: no reachable knight, so it roams)
-tick=165 at=2670,3300 walk unroutable: opened a door and clicked through {"to":{"x":2669,"z":3298},"door":"opened","click":"arrived"}
-tick=267 at=2655,3283 banked {"successes":15,"roams":2}
-CHECK door recovery: PASS
-```
-
->>>>>>> theirs
 **Hitpoints sites** (`hp-sites.ts`, rs/632). One site feeds only one or two bots at full pace (`hp-training.md`
 '2b'), so the HP stage spreads the accounts over the seven low sites: each account goes to the open site whose supply
 per bot stays highest with it added, and no site takes more than its `hpSites` cap (default: its supply over 0.25 hp a
