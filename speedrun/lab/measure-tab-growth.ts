@@ -396,6 +396,7 @@ async function child(bot: string, name: string, v: Variant, minutes: number, cdp
             await mustTele(s.sdk, SITES.willow.stand[0], SITES.willow.stand[1]);
             await waitTicks(s.sdk, 5);
         }
+        say(`audio: ${JSON.stringify((await evaluateInTab(cdp, bot, `window.audioContext ? window.audioContext.state : 'none'`).catch(e => ({ value: String(e) })))?.value)}`);
         if (v.throttle) say(`throttle: ${JSON.stringify((await evaluateInTab(cdp, bot, throttleExpression(v.throttle)))?.value)}`);
         const sample = async () => {
             const reading: GrowthSample = { variant: name, at: Date.now(), tick: s.sdk.getState()?.tick ?? null, renderers: [] };
