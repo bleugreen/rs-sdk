@@ -99,7 +99,7 @@ the host gate can select with the same parameters.
 | `knife-mine` | `tickmanip-mine.ts` | `steps` (stand>rock pairs), `respawn`, `ores`, `starter: 'knife' \| 'none'` | `starter: 'none'` (plain and adjacent-rock transitions) |
 | `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `successes` / `untilLevel` / `untilXp` (game xp) / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'`; with `bury`, plain + bury; opt-in `followSpot` (re-click a moved spot on the label that shows its new tile) and `dropEach` (drop the product on the label that shows it, with the re-click, both landing on R+1) |
 | `pickpocket` | `thieving-pickpocket.ts` (`--eat=auto`); `stunActions` from `stun-pack-thieve.ts` (rs/106) | `npc`, `rolls`, `food`, `eatBelow`, `forcedBelow`, `stunActions` (`bury`, `charge`, `arrows`, or action objects), `stunWindow`, `stunPerTick` | n/a: it clicks every tick |
-| `agility` | `agility-course.ts` | `course` (`gnome`, `barbarian`, `wilderness`, or an object; `agility-courses.ts`), `laps` / `maxTicks` / `untilLevel`, `startStep` (a name, or `auto`: from the tile), `food`, `eatBelow`; opt-in: `eatGap` (eats in any phase, at most once per `eatGap` ticks, and ends `no-food`) with `eatAt: 'land'` (an eat due during the walk to an obstacle waits for the next click tick, unless HP is within one skeleton hit of death), `restockBelow` (ends `low-food`), `protect` (`hold`, `near`, `flick`, with `protectRange`, `protectNpc`, `flickGap`), Wilderness watch: `pauseFor` (`none`, `threat`, `any`), `playerRadius`, `threatTargetRange`, `threatCloseTiles`, `threatCloseTicks` | `technique: 'plain'` waits `settleTicks` after each obstacle |
+| `agility` | `agility-course.ts` | `course` (`gnome`, `barbarian`, `wilderness`, or an object; `agility-courses.ts`), `laps` / `maxTicks` / `untilLevel`, `startStep` (a name, or `auto`: from the tile and plane, by the course's `zones`), `food`, `eatBelow`; opt-in: `untilLevelAt: 'lap'` (the level end waits for the lap's close on the ground; while finishing the lap a pipe another player holds sends the click to the other pipe), `eatGap` (eats in any phase, at most once per `eatGap` ticks, and ends `no-food`) with `eatAt: 'land'` (an eat due during the walk to an obstacle waits for the next click tick, unless HP is within one skeleton hit of death), `restockBelow` (ends `low-food`), `protect` (`hold`, `near`, `flick`, with `protectRange`, `protectNpc`, `flickGap`), Wilderness watch: `pauseFor` (`none`, `threat`, `any`), `playerRadius`, `threatTargetRange`, `threatCloseTiles`, `threatCloseTicks` | `technique: 'plain'` waits `settleTicks` after each obstacle |
 | `rc-cycle` | `runecraft-cycle.ts --mode=tuned/robust` (the scored half) | `untilLevel` / `untilXp`, `schedule` (default `robust`), `givers`, `open` (5), `lead` (3) | the stock 15-tick reacting cycle (SDK side) |
 
 ### The Runecraft hand-off (`rc-cycle`)
@@ -193,7 +193,16 @@ Notes that differ from the lite scripts:
 - `agility` ends with `result.ended` set to `laps`, `maxTicks`, `level`, `player`
   (the pause rule fired), `attacked` (a player's hit, with `pauseFor` given), `no-food` (with `eatGap`: HP at or below
   `eatBelow` with nothing to eat) or `low-food` (`restockBelow`), and faults `died` on a death or a `lifeId`
-  change. In the Wilderness it logs every player it sees (`sightings`, with
+  change. `level` fires on the level tick wherever the player stands, unless
+  `untilLevelAt: 'lap'` is given: then the run clicks the lap's remaining obstacles
+  and ends on the tick the lap's last step completes (or at once, when it starts at
+  the lap's start on the ground with the level reached), with `afterLevel` (`ticks`,
+  `obstacles`) saying what finishing the lap cost. A band the player leaves for a next
+  leg uses it (the Gnome band: T11a cannot leave from a platform); the run's last band
+  (S17, final logout, stamp at the level-up) does not. Every other end still fires
+  mid-lap. A lap joined partway (a start off the lap's first step) earns no lap bonus,
+  because the course's progress varp never saw its start, so its last obstacle is done
+  on that obstacle's own xp. In the Wilderness it logs every player it sees (`sightings`, with
   whether the attack rule of `pvp_combat.rs2` lets them attack us, and
   `wouldPause` counts for both rules), and splits the damage it takes into
   `fallDamage` (a fail message that tick), `playerDamage` and `npcDamage`. A
