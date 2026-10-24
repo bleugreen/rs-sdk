@@ -48,6 +48,12 @@ export interface UpkeepOptions {
     cure?: Cure;
     /** Also send nothing while a dialogue is open (the resume stretch: a page a walk or step may need). */
     holdInDialog?: boolean;
+    /**
+     * With holdInDialog, an eat still goes while a dialogue is open at or under this many hitpoints:
+     * an eat closes the chat (OpHeldHandler's clearPendingAction), but under it the next poison hit
+     * could take SCORED through the floor. The cure always waits for the dialogue to close.
+     */
+    urgentHp?: number;
     onAct?: (a: UpkeepAct) => void;
 }
 
@@ -66,7 +72,9 @@ export class WaitUpkeep {
 
     see(s: BotWorldState): void {
         if (!s.inGame || !s.player) return;
-        if (tradeOf(s).isOpen || (this.o.holdInDialog && s.dialog?.isOpen)) {
+        const inDialog = !!this.o.holdInDialog && !!s.dialog?.isOpen;
+        const urgent = this.o.urgentHp !== undefined && s.player.hp <= this.o.urgentHp;
+        if (tradeOf(s).isOpen || (inDialog && !urgent)) {
             this.held++;
             return;
         }
@@ -76,6 +84,10 @@ export class WaitUpkeep {
             this.lastEat = s.tick;
             this.eats++;
             this.act('eat', s, food, /^eat$/i);
+            return;
+        }
+        if (inDialog) {
+            this.held++;
             return;
         }
         const cure = this.o.cure ?? SEGMENT_CURE;
