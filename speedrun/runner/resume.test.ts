@@ -243,6 +243,7 @@ describe('runResumable', () => {
                 expectInWorld: () => true,
                 login: attempt('page'),
                 relaunch: attempt('launch'),
+                closeTab: async () => 'closed',
                 adopt: () => {},
                 restored: async () => {},
                 waitTicks: async n => {

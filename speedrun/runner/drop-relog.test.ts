@@ -5,7 +5,7 @@ import { join } from 'path';
 import { relogNow, type PageRead, type RelogNowIO } from '../tools/relog-now';
 import { ALREADY_LOGGED_IN, LoginRefused, LoginTimedOut } from '../lib/session';
 import { tickMs } from '../lib/wait';
-import { ADOPT_WAIT_TICKS, ALREADY_IN_BOUND_MS, ALREADY_IN_RETRY_MS, MAX_FALLS, RECHECK_TICKS, recoverDrop, type DropRelogDeps } from './drop-relog';
+import { ADOPT_WAIT_TICKS, ALREADY_IN_BOUND_MS, ALREADY_IN_RETRY_MS, CLOSE_SETTLE_MS, MAX_FALLS, RECHECK_TICKS, recoverDrop, type DropRelogDeps } from './drop-relog';
 import { NO_DATA_TIMEOUT_MS } from '../../server/webclient/src/client/NoDataTimeout';
 import { PAGE_HOLD_MARGIN_MS, pageHoldTicks } from './page-hold';
 import { RelogBudget, RelogBudgetSpent } from './relog-budget';
@@ -57,6 +57,11 @@ function world(
             page = true;
             expectIn = true;
             return { via: 'launch', wallMs: 20_000 };
+        },
+        closeTab: async () => {
+            calls.push(`close@${ticks}`);
+            page = null;
+            return '1 tab(s) closed and gone';
         },
         adopt: tb => {
             calls.push(`adopt ${tb ?? '-'}`);
@@ -140,6 +145,8 @@ test("out between the halves of S21's split planned relog is not a drop: no relo
 });
 
 const SETTLE_TICKS = pageHoldTicks();
+/** CLOSE_SETTLE_MS on the fake clock (400 ms a tick). */
+const CLOSE_TICKS = CLOSE_SETTLE_MS / 400;
 
 describe("a page that still says in game after the drop is given its hold window (page-hold.ts)", () => {
     test('it falls to the title screen 7 ticks later: relogged in page then, never relaunched', async () => {
@@ -157,15 +164,15 @@ describe("a page that still says in game after the drop is given its hold window
         expect(w.calls).toEqual(['pause watchdog', 'adopt -', 'restored']);
     });
 
-    test('neither within the window, the world and our gateway up (the zombie: in game by its word, no tick for the whole window): its tab relaunched, never adopted, one unplanned relog', async () => {
+    test('neither within the window, the world and our gateway up (the zombie: in game by its word, no tick for the whole window): its tab closed, then a fresh one, never adopted, one unplanned relog', async () => {
         const budget = new RelogBudget(dir());
         const w = world({ page: true, advanced: () => false, backAt: Infinity });
         const r = await recoverDrop(budget, w.deps, 'no tick for ~18 ticks', AT);
         expect(r.outcome).toBe('relogged');
-        // No in-page login on the zombie tab and no adopt of its claim: a fresh tab at the window's end.
-        expect(w.calls).toEqual(['pause watchdog', `relaunch@${SETTLE_TICKS}`]);
+        // No in-page login on the zombie tab and no adopt of its claim: closed at the window's end, a fresh tab 10 s later.
+        expect(w.calls).toEqual(['pause watchdog', `close@${SETTLE_TICKS}`, `relaunch@${SETTLE_TICKS + CLOSE_TICKS}`]);
         expect(budget.entries().map(e => [e.kind, e.by, e.via, e.step, e.tick])).toEqual([['unplanned', 'run', 'launch', AT.step, AT.tick]]);
-        expect(budget.entries()[0]!.meta).toMatchObject({ zombie: true, attempts: { tries: 1, freshTabs: 1, timeouts: 0 } });
+        expect(budget.entries()[0]!.meta).toMatchObject({ zombie: true, closedFirst: '1 tab(s) closed and gone', attempts: { tries: 1, freshTabs: 1, timeouts: 0 } });
         expect(budget.holder()).toBeNull();
     });
 });
@@ -462,30 +469,21 @@ describe('a login refused as already logged in is waited out (the 20 s socket ho
     });
 });
 
-describe("a relog never fails the run after one attempt (the host's run D: a 60 s socket block on the dead path)", () => {
-    const ticksOf = (ms: number) => Math.ceil(ms / tickMs());
-    const LOGIN_TIMEOUT_TICKS = ticksOf(90_000);
+describe("a relog never fails the run after one attempt (the host's runs D and E: a 60 s socket block on the dead path)", () => {
+    const reply5 = () => new LoginRefused(ALREADY_LOGGED_IN, 'Your account is already logged in. Try again in 60 secs...', 1, 'scored: fresh-tab login refused (reply 5)');
 
-    /**
-     * Run D's page: in game and silent until its no-data timeout, then out; the in-page login spends its
-     * 90 s and times out, leaving the page a zombie (in game by its word, 'Connecting to server...').
-     */
-    function runD(relaunch: (n: number) => Error | null) {
-        const timeout = ticksOf(NO_DATA_TIMEOUT_MS);
-        const w = world({ page: true, advanced: () => false, backAt: Infinity, onTick: n => n === timeout && w.setPage(false) });
+    /** D/E's page: in game by its word and silent throughout; no in-page login is ever made on it. `relaunch(n)` fails the n-th fresh tab. */
+    function deadPath(relaunch: (n: number) => Error | null) {
+        const w = world({ page: true, advanced: () => false, backAt: Infinity });
         const budget = new RelogBudget(dir());
-        const tries: { via: string; at: number; locked: boolean }[] = [];
+        const tries: { at: number; tick: number; locked: boolean }[] = [];
         w.deps.login = async () => {
-            tries.push({ via: 'page', at: w.deps.now(), locked: budget.holder()?.by === 'run' });
-            w.calls.push(`login-timeout@${w.ticks()}`);
-            await w.deps.waitTicks(LOGIN_TIMEOUT_TICKS);
-            w.setPage(true);
-            throw new LoginTimedOut('scored: login failed after 1 attempt(s) (timeout, in page)');
+            throw new Error('no in-page login on a page silent for its whole window');
         };
         const fresh = w.deps.relaunch;
         let n = 0;
         w.deps.relaunch = async () => {
-            tries.push({ via: 'launch', at: w.deps.now(), locked: budget.holder()?.by === 'run' });
+            tries.push({ at: w.deps.now(), tick: w.ticks(), locked: budget.holder()?.by === 'run' });
             const e = relaunch(++n);
             if (e) {
                 w.calls.push(`relaunch-failed@${w.ticks()}`);
@@ -493,40 +491,43 @@ describe("a relog never fails the run after one attempt (the host's run D: a 60 
             }
             return fresh();
         };
-        return { w, budget, tries, timeout };
+        return { w, budget, tries };
     }
 
-    test('silent for the whole window, the in-page login times out, the account absent: a fresh tab gets in inside the loop, one unplanned relog, never a throw', async () => {
-        const { w, budget, tries, timeout } = runD(() => null);
+    test("D/E: the window passes with the page claiming in game; the old tab closed BEFORE any login, 10 s, a fresh tab refused 'already logged in' once, retried 20 s later and in; one unplanned relog, never a throw", async () => {
+        const { w, budget, tries } = deadPath(n => (n === 1 ? reply5() : null));
         const r = await recoverDrop(budget, w.deps, 'no tick for ~18 ticks (6800 ms)', AT);
         expect(r.outcome).toBe('relogged');
-        expect(named(w.calls)).toEqual(['pause watchdog', 'login-timeout', 'relaunch']);
-        expect(Number(w.calls[1]!.split('@')[1])).toBe(timeout);
-        // The fresh tab one cadence after the timeout, under the lock, the watchdog never resumed.
-        expect(tries.map(t => [t.via, t.locked])).toEqual([['page', true], ['launch', true]]);
-        // The fake clock moves 400 ms a tick.
-        expect(tries[1]!.at - (tries[0]!.at + LOGIN_TIMEOUT_TICKS * 400)).toBeGreaterThanOrEqual(ALREADY_IN_RETRY_MS);
-        expect(tries[1]!.at - (tries[0]!.at + LOGIN_TIMEOUT_TICKS * 400)).toBeLessThan(ALREADY_IN_RETRY_MS + RECHECK_TICKS * 400);
+        const retry = ALREADY_IN_RETRY_MS / 400;
+        expect(w.calls).toEqual(['pause watchdog', `close@${SETTLE_TICKS}`, `relaunch-failed@${SETTLE_TICKS + CLOSE_TICKS}`, `relaunch@${SETTLE_TICKS + CLOSE_TICKS + retry}`]);
+        // In game the window (PAGE_HOLD_MS, 135 s), 10 s and one 20 s retry after the silence began.
+        expect(w.deps.now() - 1_000_000).toBe(PAGE_HOLD_MARGIN_MS + NO_DATA_TIMEOUT_MS + CLOSE_SETTLE_MS + ALREADY_IN_RETRY_MS + (SETTLE_TICKS * 400 - (NO_DATA_TIMEOUT_MS + PAGE_HOLD_MARGIN_MS)));
+        expect(tries.every(t => t.locked)).toBe(true);
         expect(w.calls).not.toContain('resume watchdog');
         expect(budget.entries().map(e => [e.kind, e.by, e.via, e.step, e.tick])).toEqual([['unplanned', 'run', 'launch', AT.step, AT.tick]]);
-        expect(budget.entries()[0]!.meta).toMatchObject({ attempts: { tries: 2, freshTabs: 1, timeouts: 1 } });
+        expect(budget.entries()[0]!.meta).toMatchObject({ zombie: true, alreadyLoggedIn: { refusals: 1 }, attempts: { tries: 2, freshTabs: 2, timeouts: 0 } });
         expect(budget.used()).toEqual({ planned: 0, unplanned: 1 });
         expect(budget.holder()).toBeNull();
     });
 
-    test('every fresh tab fails too: one every ALREADY_IN_RETRY_MS until the bound, then the recover throws, nothing charged, the lock let go', async () => {
+    test('a fresh tab that times out is retried the same way', async () => {
+        const { w, budget } = deadPath(n => (n === 1 ? new LoginTimedOut('scored: login failed after 1 attempt(s) (timeout, exit null)') : null));
+        expect((await recoverDrop(budget, w.deps, 'x', AT)).outcome).toBe('relogged');
+        expect(budget.entries()[0]!.meta).toMatchObject({ attempts: { tries: 2, timeouts: 1 } });
+        expect(budget.used()).toEqual({ planned: 0, unplanned: 1 });
+    });
+
+    test('every fresh tab fails: one every ALREADY_IN_RETRY_MS until the bound, then the recover throws, the tab closed once, nothing charged, the lock let go', async () => {
         const fail = () => new Error('scored: refusing launch L: the page is in game but none of its states reached our gateway for 10000 ms; nothing was sent to the account');
-        const { w, budget, tries } = runD(fail);
+        const { w, budget, tries } = deadPath(fail);
         const e = await recoverDrop(budget, w.deps, 'no tick for ~18 ticks', AT).catch(err => err);
         expect(e).toBeInstanceOf(Error);
-        expect((e as Error).message).toMatch(/^scored: refusing launch L: .*; \d+ relog attempt\(s\) failed over \d+ s after the drop at .* \(0 refused as already logged in, 1 timed out\), past the 8-min bound/);
-        expect(tries[0]!.via).toBe('page');
-        expect(tries.slice(1).every(t => t.via === 'launch' && t.locked)).toBe(true);
-        // Counted from the first failure, the in-page timeout's end.
-        const firstFail = tries[0]!.at + LOGIN_TIMEOUT_TICKS * 400;
-        expect(tries.at(-1)!.at - firstFail).toBeLessThanOrEqual(ALREADY_IN_BOUND_MS);
-        expect(tries.at(-1)!.at - firstFail + ALREADY_IN_RETRY_MS).toBeGreaterThan(ALREADY_IN_BOUND_MS);
-        expect(tries.length - 1).toBe(Math.floor(ALREADY_IN_BOUND_MS / ALREADY_IN_RETRY_MS));
+        expect((e as Error).message).toMatch(/^scored: refusing launch L: .*; \d+ relog attempt\(s\) failed over \d+ s after the drop at .* \(0 refused as already logged in, 0 timed out\), past the 8-min bound/);
+        expect(w.calls.filter(c => c.startsWith('close@'))).toHaveLength(1);
+        expect(tries.every(t => t.locked)).toBe(true);
+        expect(tries.at(-1)!.at - tries[0]!.at).toBeLessThanOrEqual(ALREADY_IN_BOUND_MS);
+        expect(tries.at(-1)!.at - tries[0]!.at + ALREADY_IN_RETRY_MS).toBeGreaterThan(ALREADY_IN_BOUND_MS);
+        expect(tries.length).toBe(Math.floor(ALREADY_IN_BOUND_MS / ALREADY_IN_RETRY_MS) + 1);
         expect(w.calls).not.toContain('resume watchdog');
         expect(budget.entries()).toEqual([]);
         expect(budget.used()).toEqual({ planned: 0, unplanned: 0 });
@@ -557,32 +558,30 @@ describe('a network hold: the page keeps its socket and says in game, and the re
         expect(budget.entries().every(e => e.via === 'adopted')).toBe(true);
     });
 
-    test('a 60 s outage read as 121.6 s of silence (61.6 s of TCP backoff after it, the host\'s run C): held and adopted, no relog, nothing charged', async () => {
+    test('a 60 s outage read as 121.6 s of silence (the host\'s run C): past the 120 s window, so the page times out and is closed and relogged on a fresh tab at the window: one unplanned relog (accepted)', async () => {
         const budget = new RelogBudget(dir());
         const resume = ticksOf(60_000 + 61_600);
         const timeout = ticksOf(NO_DATA_TIMEOUT_MS);
-        expect(resume).toBeLessThan(timeout);
+        expect(timeout).toBeLessThan(resume);
         // The page as it is: in game until its own no-data timeout, unless the ticks come back first.
         const w = world({ page: true, advanced: n => n >= resume, onTick: n => n >= timeout && w.setPage(false) });
         const r = await recoverDrop(budget, w.deps, 'no tick for ~18 ticks (6800 ms)', AT);
-        expect(r.outcome).toBe('adopted');
-        expect(w.calls).toEqual(['pause watchdog', 'adopt -', 'restored']);
-        expect(w.ticks()).toBeGreaterThanOrEqual(resume);
-        expect(w.ticks()).toBeLessThanOrEqual(resume + RECHECK_TICKS);
-        expect(budget.entries().every(e => e.via === 'adopted')).toBe(true);
-        expect(budget.used()).toEqual({ planned: 0, unplanned: 0 });
+        expect(r.outcome).toBe('relogged');
+        // Its own reconnect is not relied on: the old tab closed at the timeout, a fresh tab 10 s later.
+        expect(w.calls).toEqual(['pause watchdog', `close@${timeout}`, `relaunch@${timeout + CLOSE_TICKS}`]);
+        expect(budget.entries().map(e => [e.kind, e.by, e.via])).toEqual([['unplanned', 'run', 'launch']]);
+        expect(budget.used()).toEqual({ planned: 0, unplanned: 1 });
+        expect(budget.holder()).toBeNull();
     });
 
-    test('a 250 s hold: the page times out at its no-data timeout (lostCon, out of the world), then the usual in-page relog', async () => {
+    test('a 250 s hold: the page times out at its no-data timeout (lostCon, out of the world): closed first, then a fresh tab, never an in-page relog', async () => {
         const budget = new RelogBudget(dir());
         const timeout = ticksOf(NO_DATA_TIMEOUT_MS);
         expect(timeout).toBeLessThan(ticksOf(250_000));
         const w = world({ page: true, advanced: () => false, backAt: Infinity, onTick: n => n >= timeout && w.setPage(false) });
         const r = await recoverDrop(budget, w.deps, 'no tick for ~18 ticks', AT);
         expect(r.outcome).toBe('relogged');
-        expect(named(w.calls)).toEqual(['pause watchdog', 'login']);
-        const loginTick = Number(w.calls.find(c => c.startsWith('login@'))!.split('@')[1]);
-        expect(loginTick).toBe(timeout);
+        expect(w.calls).toEqual(['pause watchdog', `close@${timeout}`, `relaunch@${timeout + CLOSE_TICKS}`]);
         expect(budget.entries().map(e => e.kind)).toEqual(['unplanned']);
     });
 
