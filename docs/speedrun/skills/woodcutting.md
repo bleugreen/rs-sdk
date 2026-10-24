@@ -336,13 +336,15 @@ auto it runs one loop or the other on the on-time rate it measures in itself, wi
   the next counts that Bury neither way. Every bury cycle sends one Bury, so this rate is the server's
   on-time rate for that cycle's sends, in either loop.
 - **The switch (woodcutting.ts `OnTimeMeter`).** Tumbling windows of 50 judged Burys, one
-  technique per window. The knife goes to plain + bury as soon as a window has more than 6 late (it can
-  no longer reach 44 of 50, main's break-even of 17.6 of 20), without waiting for the window's end. Plain
-  + bury goes back to the knife on a window with 47 of 50 or more on time. A switch stops the run and
-  starts the other, the way a bone load does, and the loads go on in either loop. Every band and every
-  resume starts on the knife with an empty window. The deadband from 44 to 46 keeps either technique, so
-  noise near the break-even doesn't flap it. Simulated, that is at most one switch per ~200 Burys at
-  rates from 0.88 to 0.92, where the two loops cost nearly the same.
+  technique per window. The knife goes to plain + bury as soon as a window has more than 13 late (it can
+  no longer reach 37 of 50, the break-even of 14.5 of 20 that main ruled from the lab below), without
+  waiting for the window's end. Plain + bury goes back to the knife on a window with 41 of 50 or more on
+  time. A switch stops the run and starts the other, the way a bone load does, and the loads go on in
+  either loop. Every band and every resume starts on the knife with an empty window. The deadband from
+  37 to 40 keeps either technique (the return about 1.3 standard errors above the keep), so noise near
+  the break-even doesn't flap it. Simulated, that is at most about 5 switches per 1000 Burys at any
+  rate, and none at 0.6 or below or at 0.9 and above. The first design's 17.6 of 20 (44 and 47 of 50)
+  assumed plain + bury holds its clean ~3.87 ticks a roll on a ragged server, which the lab refuted.
 - **Forced techniques.** `technique: 'knife'` with `bury` is rs/642's forced knife. `'plain'` with
   `bury` is plain + bury throughout. Neither switches.
 - **The lab's forced lateness.** The runtime's `hold` (a share of sends held one label) reaches each bury
@@ -370,10 +372,12 @@ the knife then ran 3.13 ticks per landed roll to the end.
 
 What this says about the break-even: plain + bury is not a fixed ~3.87 on a ragged server. Its timed
 Bury loses rolls to late sends just as the knife's does, and faster. In this lab the knife was the
-faster loop at every rate down to about 14-15 of 20, where the two met (hold 0.25). The 17.6 of 20
-threshold assumed plain + bury's cost doesn't move. The samples are small, though: 37-66 logs a run, so
-about ±15% on each figure. And `hold` is a model of a slow server, not a recording of one. The threshold
-is one constant (`BURY_BREAK_EVEN`), priced by rs/158.
+faster loop at every rate down to about 14-15 of 20, where the two met (hold 0.25). Main set the
+threshold there, 14.5 of 20 (`BURY_BREAK_EVEN`, one constant, priced by rs/158). The samples are
+small, though: 37-66 logs a run, so about ±15% on each figure. And `hold` is a model of a slow
+server, not a recording of one. The switching band's figures above ran under the first design's 17.6
+of 20. Under 14.5 the same band would have stayed on the knife at 37 of 44, the rate where the knife
+was the faster loop.
 
 ### The giver group (S07's b01-b04 taking turns)
 

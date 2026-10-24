@@ -2072,7 +2072,7 @@ describe("woodcutting: a burying band switches between knife + bury and plain + 
     describe('the meter', () => {
         test('at or above the break-even the knife stays: 37/50, 44/50 and 45/50 windows, thousands of Burys, no switch', () => {
             // 13 late in every 50 is 37/50 (the keep); 3 in every 25 is 17.6/20; 1 in 10 is 18/20
-            for (const late of [(i: number) => i % 50 % 4 === 3 && i % 50 < 52, (i: number) => [8, 16, 24].includes(i % 25), (i: number) => i % 10 === 9]) {
+            for (const late of [(i: number) => (i % 50) % 4 === 3 || i % 50 === 49, (i: number) => [8, 16, 24].includes(i % 25), (i: number) => i % 10 === 9]) {
                 const m = new OnTimeMeter();
                 expect(feed(m, 5000, i => !late(i))).toEqual([]);
                 expect(m.technique).toBe('knife');
