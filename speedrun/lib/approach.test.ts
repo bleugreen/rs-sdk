@@ -254,7 +254,7 @@ describe('talkTo on an NPC its click cannot reach (rs/693)', () => {
         const prev = sdk.onSend;
         sdk.onSend = (a, f) => {
             prev(a, f);
-            if (a.method === 'sendClickDialog') setTimeout(() => sdk.tick({ dialog: shut }), 1);
+            if (f.state!.dialog.isOpen && !['sendInteractNpc', 'sendWalk', 'sendInteractLoc'].includes(a.method)) setTimeout(() => sdk.tick({ dialog: shut }), 1);
         };
         return { clicks: () => clicks };
     }
