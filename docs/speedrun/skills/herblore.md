@@ -351,7 +351,10 @@ preconditions are reason strings, never throws:
 their notes, its potions); `inProgress` is any xp past the post-ritual 6,250 short of it, or the
 target reached with those items still held. So after a mid-band logout the resume walk resumes
 the step and its first visit is a reset visit, and after a logout between the target and the
-stow it resumes into the stow alone. The postcondition names whatever the stow left held. `handOff` is H21e as data. The stock comes from seven helpers (rs/117's giver gathers
+stow it resumes into the stow alone. The postcondition names whatever the stow left held. Once
+the attempt's step record has S25e (its postconditions passed), `done` holds whatever a later step
+carries: the run drinks herb potions after S25e (H23's superantipoison(4) is obj 181, a 3-dose
+product, after one dose), and a live read alone would walk a resume back to the booth. `handOff` is H21e as data. The stock comes from seven helpers (rs/117's giver gathers
 it, rs/331 stages it), and the module assumes nothing about who gave it: it plays whatever is
 banked or held.
 
