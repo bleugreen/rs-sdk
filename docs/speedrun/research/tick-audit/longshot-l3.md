@@ -50,7 +50,7 @@ calibration band and the e terms.
 If #1, #2 and the Kaqemeex half of #3 are all taken, the sum is about **229 i** (90 + 124 + 15).
 They are independent: #1 is S00-S04, #2 is T06-07, S13 and S24, and #3's half is S24's first leg.
 
-## 2. Specs for the top three
+## 2. Specs for the top three (lab figures in section 2a)
 
 ### 2.1 Imp Catcher replaces the coop (S02) and half of S04
 
@@ -150,7 +150,10 @@ T06-07 by necklace is about **54 i**:
 - two hops ~3 e;
 - 72 tiles, 38.9 i.
 
-That is against 82.7 m. The Kaqemeex leg (from the Rusty Anchor today, or from the cook under
+That is against 82.7 m. **Measured in the lab: 55 / 52 / 52** (rub to landing 7, the two stairs
+6-9, the run 36-39), against the same host's T06-07 at 76 (79 / 74 / 75), both on the lite client
+without the drops: **-23 m (lab)**. The browser's T06-07 is 80.7 without drops, so the browser
+saving is probably a little larger (i). The Kaqemeex leg (from the Rusty Anchor today, or from the cook under
 2.2) is about **57 i** by necklace (8 + 5.5 + 81 tiles at 43.7) against 72 m.
 
 **Slot rules.** S06 holds exactly 26 free for essence. With the necklace held, a 25-essence load
@@ -163,6 +166,32 @@ before.
 S06 reaching Runecraft 44 in 7 crafts (the module's `lib/xp.ts` check).
 
 Under 2.2, T06-07 goes by Falador to the generals, and only the Kaqemeex half of this applies.
+
+## 2a. The lab probe
+
+This was one scratch script, not committed, run through `speedrun/lab/lab.sh`. Host bgsrv-mac
+(`uname -n`), local engine at 400 ms, lite client, 2026-10-24 02:35-03:02Z. Setup was untimed
+(`::setstat`, `::give`, `::tele`, `::setvar imp 0`). Each leg was timed from the first send to
+arrival, through `lib/travel.ts` exactly as `runner/legs.ts` uses it, with talks through
+`lib/dialogue.ts` `advance` (fixed dialogue, 1 page a tick). Runs on bginf-halo were void: the build
+slot had no engine packages.
+
+| Leg or part | Runs (ticks) | Mean | Note |
+|---|---|---|---|
+| T01-02 (baseline, `measure-legs.ts`) | 51, 49, 49 | 49.7 | its row 50 m |
+| T02-03 (baseline) | 50, 50, 50 | 50 | its row 48-52 m |
+| T06-07 (baseline) | 79, 74, 75 | 76 | its row 74 m (lite) |
+| Courtyard (3222,3222) to (3102,3160) beside the tower's staircase | 95, 95, 95 | 95 | 190 pathfinder tiles; one earlier walk arrived on 9 HP |
+| Tower staircase 0 to 1 | failed 3 of 3 | - | the click from (3102,3160) never climbed (41-tick timeout); open |
+| Mizgog: start talk + hand-in (from level 2) | 30, 30, 30 | 30 | fixed, 12 + 5 pages; Magic 44 (21,875 game xp) 3 of 3 |
+| Lumbridge teleport + run to (3222,3219) | 6, 6, 6 | 6 | teleport 4, run 2 |
+| Games necklace, air altar stand to the Taverley normal tree | 55, 52, 52 | 53 | rub to landing 7; stairs 5+4, 5+4, 2+4; run 39, 36, 39 |
+| Air altar stand, exit portal, run to the Rusty Anchor bartender | 47, 47, 47 | 47 | portal 4, run 43 |
+| Falador teleport, run to the generals | 78, 78, 78 | 78 | teleport 4, run 74, 4 door events |
+| Generals to the Taverley normal tree | 66, 61, 66 | 64.3 | 2 door events |
+
+The Imp Catcher leg is therefore measured except for its two stair hops, which carry an e and the
+one open question (the approach to the staircase).
 
 ## 3. The questions, answered
 
