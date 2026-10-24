@@ -164,9 +164,26 @@ describe('agility options and bands', () => {
         expect(defaultEatBelow('gnome', 10)).toBe(0);
     });
 
+    test("S17's survival floor: the Wilderness band refuses with 1 food held and starts with 2 or 12, by the band's food list; the Gnome band asks none", () => {
+        const band = step(steps(), 'agility:wilderness');
+        const shark = (slot: number) => ({ ...cake(slot), id: 385, name: 'Shark' });
+        const sharks = (n: number) => Array.from({ length: n }, (_, i) => shark(i));
+        const at = (inventory: BotWorldState['inventory']) => world({ agility: 75, x: 3004, z: 3940, inventory });
+        expect(band.preconditions(at(sharks(1)), {} as never)).toBe('agility:wilderness: 1 food held, at least 2 needed on the Wilderness course');
+        expect(band.preconditions(at([]), {} as never)).toMatch(/0 food held/);
+        expect(band.preconditions(at(sharks(2)), {} as never)).toBe(true);
+        expect(band.preconditions(at(sharks(12)), {} as never)).toBe(true);
+        expect(band.preconditions(at([shark(0), cake(1)]), {} as never)).toBe(true);
+        // The band's own food list decides what counts.
+        expect(step(steps({ food: '^shark$' }), 'agility:wilderness').preconditions(at([shark(0), cake(1)]), {} as never)).toMatch(/1 food held/);
+        // Done already (99): nothing to refuse; the Gnome band holds no floor.
+        expect(band.preconditions(world({ agility: 99, x: 3004, z: 3940 }), {} as never)).toBe(true);
+        expect(step(steps(), 'agility:gnome').preconditions(world({ agility: 1, x: 2476, z: 3430 }), {} as never)).toBe(true);
+    });
+
     test('S17 state (75, inside the course): only the Wilderness band has work', async () => {
         const all = steps();
-        const s = world({ agility: 75, x: 3004, z: 3940 });
+        const s = world({ agility: 75, x: 3004, z: 3940, inventory: [cake(0), cake(1)] });
         for (const st of all) expect(st.preconditions(s, {} as never)).toBe(true);
         expect(step(all, 'agility:gnome').done!({ state: s, probed: {} }, {} as never)).toBe(true);
         expect(step(all, 'agility:wilderness').done!({ state: s, probed: {} }, {} as never)).toBe(false);

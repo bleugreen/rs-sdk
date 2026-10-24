@@ -23,13 +23,15 @@ import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { dropItems, opLoc, type ActSdk } from '../lib/act';
 import { measure } from '../lib/ticks';
 import {
-    boxAround, FOOD, fmtTile, hopNeeds, hopsDestination, inArea, inRegion, missingRunes, SPELLS, travel, wildernessLevel,
+    boxAround, EAT_SPACING, eatAt, FOOD, FOOD_HEAL, fmtTile, healHeld, hopNeeds, hopsDestination, HP_FLOOR, inArea, inRegion, missingRunes, POISON_HIT_MAX, SPELLS, travel, wildernessLevel,
     type Area, type Hop, type Region, type TravelOptions, type TravelResult, type TravelSdk,
 } from '../lib/travel';
-import { currentTick } from '../lib/wait';
+import { currentTick, waitUntil } from '../lib/wait';
 import { invCount, invItem, pos, skillLevel, type LocQuery, type OpPattern } from '../lib/world';
 import type { Observed, Step, StepContext } from './step';
+import { curePoison, type DrinkSdk } from '../quests/segments';
 import { DeathWatch } from './death';
+import { SETTLE_TICKS, watchStretch, type Stretch, type UpkeepSdk } from './wait-guard';
 
 export const skill = 'legs';
 
@@ -64,6 +66,14 @@ export interface LegDef {
     hops: readonly Hop[];
     /** Food items to hold before the leg (aggressive NPCs took up to 31 of 42 HP, run-transitions.md section 2). */
     food?: number;
+    /**
+     * The leg's route passes aggressive NPCs (hostileLeg): it starts at its start floor (startFloor) and
+     * eats and cures on every frame of its travel, whatever the hop. Default: a leg with `food`, which
+     * the table gives exactly the routes past aggressive NPCs. splitLeg sets it on both parts of such a
+     * leg, so a part whose hops never enter the Wilderness (and so needs no food held) still eats a
+     * poison carried into it: T14-15b, past the Khazard battlefield.
+     */
+    hostile?: boolean;
     /** Also arrived when the player is here (the next step's own start, where it differs). */
     nextStart?: Area;
     /** Explicit resume checkpoints; a teleport followed by a run gets one for free. */
@@ -154,6 +164,8 @@ export function legPreconditions(def: LegDef, s: BotWorldState): true | string {
     const wild = wildernessLevel(pos(s));
     if (first?.kind === 'teleport' && wild > 20) return `${def.id}: Wilderness level ${wild} is above 20 for the ${first.spell} teleport`;
     if (def.food && foodHeld(s) < def.food) return `${def.id}: ${foodHeld(s)} food held, ${def.food} needed`;
+    const short = startFloorShort(def, s);
+    if (short) return short;
     if (need.coins > invCount(s, /^coins$/i)) return `${def.id}: ${need.coins} coins needed for the ship`;
     if (need.knife && !invItem(s, /^knife$/i)) return `${def.id}: a knife is needed for the webs`;
     for (const item of need.items) if (!invItem(s, item)) return `${def.id}: no ${String(item)}`;
@@ -327,13 +339,137 @@ export function legLogoutSafe(def: LegDef): boolean {
 
 // ------------------------------------------------------------------ the Step
 
-function logTravel(ctx: StepContext<unknown>, name: string, from: number, r: TravelResult, drops: readonly LegDrops[], stops: readonly LegStopRecord[]): void {
+/** A hostile leg's cures before its hops (legCure): doses drunk, and the reason of any drink that did not land. */
+interface LegCures {
+    cured: number;
+    failed: string[];
+}
+
+function logTravel(ctx: StepContext<unknown>, name: string, from: number, r: TravelResult, drops: readonly LegDrops[], stops: readonly LegStopRecord[], kept: Stretch | null, start: LegStart | null, cures: LegCures): void {
+    const ate = r.ate + (kept?.upkeep.eats ?? 0);
+    const { cured } = cures;
     ctx.log.append({
         v: 1, kind: 'travel', runId: ctx.log.runId, account: ctx.session.name, sessionId: ctx.session.sessionId, step: name,
         startTick: r.startTick, endTick: r.endTick, ticks: r.ticks, wallMs: 0, ok: r.ok, ...(r.reason ? { error: r.reason } : {}),
-        meta: { fromHop: from, segments: r.segments, doors: r.doors, clicks: r.clicks, tiles: r.tiles, webTries: r.webTries, ate: r.ate, hpMin: r.hpMin, ...(r.fellBack ? { fellBack: r.fellBack } : {}), ...(drops.length ? { drops } : {}), ...(stops.length ? { stops } : {}) },
+        meta: { fromHop: from, segments: r.segments, doors: r.doors, clicks: r.clicks, tiles: r.tiles, webTries: r.webTries, ate, ...(cured ? { cured } : {}), ...(cures.failed.length ? { cureFailed: cures.failed } : {}), hpMin: r.hpMin, ...(start ? { start } : {}), ...(r.fellBack ? { fellBack: r.fellBack } : {}), ...(drops.length ? { drops } : {}), ...(stops.length ? { stops } : {}) },
         tickMs: 0, at: new Date().toISOString(),
     });
+}
+
+/**
+ * The leg upkeep's dialogue rule: a pack click closes the open chat (OpHeldHandler's
+ * clearPendingAction), which would end a spirit tree's or a lever's talk part way, so the eat waits
+ * for the chat to close unless hitpoints are at or under this, where the next poison hit could cross
+ * HP_FLOOR. The antipoison always waits.
+ */
+export const LEG_URGENT_HP = HP_FLOOR + POISON_HIT_MAX;
+
+/** Whether `def`'s route passes aggressive NPCs: it starts at the start floor and travels under the leg upkeep. */
+export function hostileLeg(def: Pick<LegDef, 'hostile' | 'food'>): boolean {
+    return def.hostile ?? !!def.food;
+}
+
+/** The ids of `legs` whose routes pass aggressive NPCs (hostileLeg), in table order. */
+export function hostileLegIds(legs: readonly LegStep[]): string[] {
+    return legs.filter(l => hostileLeg(l.def)).map(l => l.def.id);
+}
+
+/**
+ * The hitpoints a hostile leg starts its first hop at or above (main, 19:1xZ: rs/764 started T14-15b
+ * at 12 of 42 with 7 sharks, ate nothing and died ~6 ticks after a tree ride): the eat line,
+ * eatAt(maxHp), so 25 at SCORED's 38-42, and never above the maximum.
+ */
+export function startFloor(maxHp: number): number {
+    return Math.min(maxHp, eatAt(maxHp));
+}
+
+/**
+ * Why hostile leg `def` cannot start at its floor, or null: hitpoints under startFloor and the food
+ * held, all of it eaten, heals short of it (FOOD_HEAL). A state without hitpoints is not judged.
+ */
+export function startFloorShort(def: LegDef, s: BotWorldState): string | null {
+    const p = s.player;
+    if (!hostileLeg(def) || !p || typeof p.hp !== 'number' || typeof p.maxHp !== 'number') return null;
+    const floor = startFloor(p.maxHp);
+    if (p.hp >= floor) return null;
+    const heal = healHeld(s);
+    if (p.hp + heal >= floor) return null;
+    return `${def.id}: ${p.hp} HP, and the ${foodHeld(s)} food held heals ${heal}, short of the leg's start floor of ${floor}`;
+}
+
+/** A hostile leg's start under its floor, on the travel row: hitpoints before and after the eating, and its ticks. */
+export interface LegStart {
+    hp: number;
+    floor: number;
+    reached: number;
+    ticks: number;
+}
+
+const MIN_HEAL = Math.min(...Object.values(FOOD_HEAL));
+
+/**
+ * A hostile leg's start: hitpoints up to startFloor before the first hop. The leg upkeep `kept` does
+ * the eating (it eats at or under eatAt on the frame it starts, then every EAT_SPACING); this waits
+ * for the heal to show. An eat holds the player in nothing (consume.rs2 sets only %eat_delay and
+ * %action_delay), so one shark costs the tick its heal takes to show, and a start at the floor costs
+ * 0 ticks. Refuses, by startFloorShort's reason, when the food held cannot reach the floor.
+ */
+async function reachFloor(sdk: UpkeepSdk, def: LegDef, kept: Stretch): Promise<LegStart | null> {
+    const s = sdk.getState();
+    const p = s?.player;
+    if (!s || !p || typeof p.hp !== 'number' || typeof p.maxHp !== 'number') return null;
+    const floor = startFloor(p.maxHp);
+    if (p.hp >= floor) return null;
+    const short = startFloorShort(def, s);
+    if (short) throw new Error(short);
+    const maxTicks = EAT_SPACING * Math.ceil((floor - p.hp) / MIN_HEAL) + SETTLE_TICKS;
+    const w = await waitUntil(sdk, st => !!kept.death() || (st.player?.hp ?? 0) >= floor, { maxTicks });
+    const end = sdk.getState() ?? s;
+    const reached = end.player?.hp ?? 0;
+    if (!kept.death() && !w.ok && reached < floor) throw new Error(`${def.id}: ${reached} HP after ${end.tick - s.tick} ticks of eating from ${p.hp}, under the leg's start floor of ${floor}`);
+    return { hp: p.hp, floor, reached, ticks: end.tick - s.tick };
+}
+
+/**
+ * The eating over a leg's whole travel: runner/wait-guard.ts's WaitUpkeep on every published frame,
+ * so on every hop alike (a run, a teleport's cast and landing, a spirit tree's walk and talk, a door,
+ * a stop), not only on a run hop's own ticks. It eats by the run's eat rule (lib/travel.ts eatDue: at
+ * or under eatAt(maxHp), 25 at SCORED's maximum here), never while a trade is open. It drinks nothing:
+ * a potion's p_delay drops the click a hop sends inside it, so the leg cures between hops (legCure).
+ * Its death watch has no session: runLeg's own DeathWatch records a death on the leg.
+ */
+export function legStretch(sdk: UpkeepSdk, def: LegDef): Stretch {
+    return watchStretch({ sdk }, `on ${def.id}`, { holdInDialog: true, urgentHp: LEG_URGENT_HP, cure: null });
+}
+
+/**
+ * A hostile leg's cure before hop `at`: quests/segments.ts curePoison, one dose when SCORED reads
+ * poisoned (a carried poison by its hitmark), confirmed, and its drink delay waited out before the
+ * hop's first click. A drink that does not land is recorded, not fatal: the eating holds the floor.
+ */
+async function legCure(sdk: DrinkSdk, def: LegDef, at: number, cures: LegCures): Promise<void> {
+    try {
+        if ((await curePoison(sdk, `${def.id} before hop ${at}`)) === 'cured') cures.cured++;
+    } catch (e) {
+        cures.failed.push(e instanceof Error ? e.message : String(e));
+    }
+}
+
+/** What an antipoison's last dose leaves in its slot (potions.obj next_obj_stage: vials.obj `vial_empty`). */
+const VIAL = /^vial$/i;
+
+/**
+ * The vials the leg's own cure emptied, dropped at the leg's end so the pack leaves the leg as the slot
+ * ledger has it (rs/185: S15:A runs at 27 of 28 slots, so one stray vial is attempt 4's willow log
+ * again). A vial in a slot that held one before the leg is not the cure's, and is kept.
+ */
+async function dropEmptied(sdk: ActSdk, def: LegDef, before: ReadonlySet<number>): Promise<string | null> {
+    try {
+        const r = await dropItems(sdk, i => VIAL.test(i.name) && !before.has((i as InventoryItem).slot), DROP_WATCH_TICKS);
+        return r.ok ? null : `${def.id}: the emptied vial is still held after ${r.ticks} ticks`;
+    } catch (e) {
+        return `${def.id}: dropping the emptied vial: ${e instanceof Error ? e.message : String(e)}`;
+    }
 }
 
 /** The leg's travel from where the player stands: nothing when arrived, else from the first hop not yet past. */
@@ -362,18 +498,42 @@ export async function runLeg(def: LegDef, ctx: Pick<StepContext<unknown>, 'sdk' 
         }
         return null;
     };
-    const beforeHop = async (at: number): Promise<string | null> => (def.drops?.length ? await dropAt(at) : null) ?? (await stopAt(at));
+    const hostile = hostileLeg(def);
+    const cures: LegCures = { cured: 0, failed: [] };
+    const beforeHop = async (at: number): Promise<string | null> => {
+        if (hostile) await legCure(ctx.sdk as unknown as DrinkSdk, def, at, cures);
+        return (def.drops?.length ? await dropAt(at) : null) ?? (await stopAt(at));
+    };
     const from = resumeHop(def, s);
     // A relocation travel sees fails the hop only as a death the watch corroborates; any other jump re-paths as before.
     const watch = new DeathWatch(s, `on ${def.id}`);
     const unwatch = ctx.sdk.onStateUpdate(st => watch.see(st));
     const onRelocated: TravelOptions['onRelocated'] = rel => (rel.respawn && watch.death() ? 'fail' : 'repath');
-    const r = await travel(ctx.sdk as unknown as TravelSdk, def.hops, { bot: ctx.bot, from, onRelocated, ...(def.food ? { eat: {} } : {}), ...(def.drops?.length || def.stops?.length ? { beforeHop } : {}) })
-        .finally(() => unwatch());
+    const vials = new Set(s.inventory.filter(i => VIAL.test(i.name)).map(i => i.slot));
+    const kept = hostile ? legStretch(ctx.sdk as unknown as UpkeepSdk, def) : null;
+    const done = () => {
+        unwatch();
+        kept?.stop();
+    };
+    let start: LegStart | null = null;
+    try {
+        if (kept) start = await reachFloor(ctx.sdk as unknown as UpkeepSdk, def, kept);
+    } catch (e) {
+        done();
+        throw e;
+    }
+    const early = watch.death();
+    if (early) {
+        done();
+        if (ctx.session) ctx.session.died ??= early;
+        throw new Error(`${def.id}: ${early.reason}`);
+    }
+    const r = await travel(ctx.sdk as unknown as TravelSdk, def.hops, { bot: ctx.bot, from, onRelocated, ...(hostile || def.drops?.length || def.stops?.length ? { beforeHop } : {}) }).finally(done);
     const death = watch.death();
     if (death && ctx.session) ctx.session.died ??= death;
-    const why = r.ok && !death ? await dropAt(def.hops.length) : null;
-    if (ctx.log && ctx.session) logTravel(ctx as StepContext<unknown>, name, from, r, drops, stops);
+    const emptied = r.ok && !death && cures.cured ? await dropEmptied(ctx.sdk as unknown as ActSdk, def, vials) : null;
+    const why = emptied ?? (r.ok && !death ? await dropAt(def.hops.length) : null);
+    if (ctx.log && ctx.session) logTravel(ctx as StepContext<unknown>, name, from, r, drops, stops, kept, start, cures);
     if (death) throw new Error(`${def.id}: ${death.reason}`);
     // Drops refused before a hop stop the trip; their reason (naming what is held) is the leg's.
     const refused = drops.find(d => !d.ok);
@@ -406,6 +566,7 @@ export function leg(id: string, from: Area, to: Area, method: readonly Hop[], op
         },
         logoutSafe: legLogoutSafe(def),
         inProgress: (o: Observed) => resumeHop(def, o.state) > 0 && !arrived(def, o.state),
+        watchesDeath: true,
     };
 }
 
@@ -795,9 +956,12 @@ export function splitLeg(l: LegStep, afterHop: number, o: SplitOptions = {}): [L
     // A stop before part b's first hop is made in part b, after whatever hand-off sits between.
     const stopsA = (d.stops ?? []).filter(st => st.before <= afterHop);
     const stopsB = (d.stops ?? []).filter(st => st.before > afterHop).map(st => ({ ...st, before: st.before - afterHop - 1 }));
+    // The food check goes only to a part that enters the Wilderness; hostility (the floor and the upkeep) to both.
+    const upkeep = hostileLeg(d) ? { hostile: true } : {};
     const a: LegOptions = {
         after: d.after, before: `${d.id}b`, method: `${d.method}, part a (to the landing)`,
         ...(d.food && entersWilderness(hopsA, meet) ? { food: d.food } : {}),
+        ...upkeep,
         ...(d.drops?.length ? { drops: d.drops, keepFor: [...hopsB, ...(d.keepFor ?? [])] } : {}),
         ...(stopsA.length ? { stops: stopsA } : {}),
         ...(cps.some(c => c.after < afterHop) ? { checkpoints: cps.filter(c => c.after < afterHop) } : {}),
@@ -807,6 +971,7 @@ export function splitLeg(l: LegStep, afterHop: number, o: SplitOptions = {}): [L
     const b: LegOptions = {
         after: `${d.id}a`, before: d.before, method: `${d.method}, part b (from the landing)`,
         ...(d.food && entersWilderness(hopsB, d.dest) ? { food: d.food } : {}),
+        ...upkeep,
         ...(d.nextStart ? { nextStart: d.nextStart } : {}),
         ...(d.countedBy ? { countedBy: d.countedBy } : {}),
         ...(d.keepFor?.length ? { keepFor: d.keepFor } : {}),
