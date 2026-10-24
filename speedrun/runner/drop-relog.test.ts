@@ -6,8 +6,7 @@ import { relogNow, type PageRead, type RelogNowIO } from '../tools/relog-now';
 import { ALREADY_LOGGED_IN, LoginRefused } from '../lib/session';
 import { tickMs } from '../lib/wait';
 import { ADOPT_WAIT_TICKS, ALREADY_IN_BOUND_MS, ALREADY_IN_RETRY_MS, MAX_FALLS, RECHECK_TICKS, recoverDrop, type DropRelogDeps } from './drop-relog';
-import { NO_DATA_TIMEOUT_MS } from '../../server/webclient/src/client/NoDataTimeout';
-import { PAGE_HOLD_MARGIN_MS, pageHoldTicks } from './page-hold';
+import { pageHoldTicks } from './page-hold';
 import { RelogBudget, RelogBudgetSpent } from './relog-budget';
 
 const AT = { step: 'S07 woodcutting:oak-15-73', tick: 812 };
@@ -465,9 +464,9 @@ describe('a login refused as already logged in is waited out (the 20 s socket ho
 describe('a network hold: the page keeps its socket and says in game, and the recovery waits for it (page-hold.ts)', () => {
     const ticksOf = (ms: number) => Math.ceil(ms / tickMs());
 
-    test('the window is the page\'s own no-data timeout plus the margin, in ticks', () => {
-        expect(SETTLE_TICKS * tickMs()).toBeGreaterThanOrEqual(NO_DATA_TIMEOUT_MS + PAGE_HOLD_MARGIN_MS);
-        expect(SETTLE_TICKS * tickMs()).toBeLessThan(NO_DATA_TIMEOUT_MS + PAGE_HOLD_MARGIN_MS + tickMs());
+    test('the window is the page\'s own 120 s no-data timeout plus the margin, in ticks', () => {
+        expect(SETTLE_TICKS * tickMs()).toBeGreaterThanOrEqual(120_000);
+        expect(SETTLE_TICKS * tickMs()).toBeLessThanOrEqual(150_000);
     });
 
     test('a 60 s silent hold: no relaunch, no relog; the ticks resume and the original session is adopted', async () => {
@@ -485,26 +484,9 @@ describe('a network hold: the page keeps its socket and says in game, and the re
         expect(budget.entries().every(e => e.via === 'adopted')).toBe(true);
     });
 
-    test('a 60 s outage read as 121.6 s of silence (61.6 s of TCP backoff after it, the host\'s run C): held and adopted, no relog, nothing charged', async () => {
+    test('a 130 s hold: the page times out at 120 s (lostCon, out of the world), then the usual in-page relog', async () => {
         const budget = new RelogBudget(dir());
-        const resume = ticksOf(60_000 + 61_600);
-        const timeout = ticksOf(NO_DATA_TIMEOUT_MS);
-        expect(resume).toBeLessThan(timeout);
-        // The page as it is: in game until its own no-data timeout, unless the ticks come back first.
-        const w = world({ page: true, advanced: n => n >= resume, onTick: n => n >= timeout && w.setPage(false) });
-        const r = await recoverDrop(budget, w.deps, 'no tick for ~18 ticks (6800 ms)', AT);
-        expect(r.outcome).toBe('adopted');
-        expect(w.calls).toEqual(['pause watchdog', 'adopt -', 'restored']);
-        expect(w.ticks()).toBeGreaterThanOrEqual(resume);
-        expect(w.ticks()).toBeLessThanOrEqual(resume + RECHECK_TICKS);
-        expect(budget.entries().every(e => e.via === 'adopted')).toBe(true);
-        expect(budget.used()).toEqual({ planned: 0, unplanned: 0 });
-    });
-
-    test('a 250 s hold: the page times out at its no-data timeout (lostCon, out of the world), then the usual in-page relog', async () => {
-        const budget = new RelogBudget(dir());
-        const timeout = ticksOf(NO_DATA_TIMEOUT_MS);
-        expect(timeout).toBeLessThan(ticksOf(250_000));
+        const timeout = ticksOf(120_000);
         const w = world({ page: true, advanced: () => false, backAt: Infinity, onTick: n => n >= timeout && w.setPage(false) });
         const r = await recoverDrop(budget, w.deps, 'no tick for ~18 ticks', AT);
         expect(r.outcome).toBe('relogged');

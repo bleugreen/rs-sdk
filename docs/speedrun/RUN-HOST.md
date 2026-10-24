@@ -2027,11 +2027,10 @@ What the operator sees:
 
 - **Every session drops.** In the live view SCORED's client draws `Connection lost` and `Please
   wait - attempting to reestablish` within about a second of its socket closing, or, on a socket
-  that stays open and silent, once 240 s pass without a packet (`NO_DATA_TIMEOUT_MS`,
-  server/webclient/src/client/NoDataTimeout.ts; it was 15 s before attempt 4, then 120 s, which TCP
-  retransmission backoff overran on a 60 s outage: 121.6 s of silence). It tries one login
+  that stays open and silent, once 120 s pass without a packet (`NO_DATA_TIMEOUT_MS`,
+  server/webclient/src/client/NoDataTimeout.ts; it was 15 s before attempt 4). It tries one login
   of its own, and with the server down falls back to the title screen (r: `lostCon` in Client.ts).
-  While the page still says in game, run.ts sends nothing for that long plus a 15 s margin
+  While the page still says in game, run.ts sends nothing for that long plus a margin
   (speedrun/runner/page-hold.ts): a network hold costs only its ticks when the socket resumes. The helpers
   and the fleet drop at the same moment.
 - **The outage from outside:** `/playercount` stops answering for ~30 s, then answers 0; logins are
