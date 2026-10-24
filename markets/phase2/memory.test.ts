@@ -27,7 +27,7 @@ describe('LoadMeter', () => {
             clock.t += 100 + late;
             m.tick();
         }
-        clock.cpu += 152_500; // 152.5 ms of CPU over 610 ms
+        clock.cpu += 201_250; // 201.25 ms of CPU over 805 ms
         expect(m.read()).toEqual({ cpuPct: 25, lagP50Ms: 0, lagP99Ms: 300, lagMaxMs: 300 });
     });
 
