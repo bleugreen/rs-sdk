@@ -504,8 +504,9 @@ describe("a relog never fails the run after one attempt (the host's run D: a 60 
         expect(Number(w.calls[1]!.split('@')[1])).toBe(timeout);
         // The fresh tab one cadence after the timeout, under the lock, the watchdog never resumed.
         expect(tries.map(t => [t.via, t.locked])).toEqual([['page', true], ['launch', true]]);
-        expect(tries[1]!.at - (tries[0]!.at + LOGIN_TIMEOUT_TICKS * tickMs())).toBeGreaterThanOrEqual(ALREADY_IN_RETRY_MS);
-        expect(tries[1]!.at - (tries[0]!.at + LOGIN_TIMEOUT_TICKS * tickMs())).toBeLessThan(ALREADY_IN_RETRY_MS + RECHECK_TICKS * tickMs());
+        // The fake clock moves 400 ms a tick.
+        expect(tries[1]!.at - (tries[0]!.at + LOGIN_TIMEOUT_TICKS * 400)).toBeGreaterThanOrEqual(ALREADY_IN_RETRY_MS);
+        expect(tries[1]!.at - (tries[0]!.at + LOGIN_TIMEOUT_TICKS * 400)).toBeLessThan(ALREADY_IN_RETRY_MS + RECHECK_TICKS * 400);
         expect(w.calls).not.toContain('resume watchdog');
         expect(budget.entries().map(e => [e.kind, e.by, e.via, e.step, e.tick])).toEqual([['unplanned', 'run', 'launch', AT.step, AT.tick]]);
         expect(budget.entries()[0]!.meta).toMatchObject({ attempts: { tries: 2, freshTabs: 1, timeouts: 1 } });
@@ -522,7 +523,7 @@ describe("a relog never fails the run after one attempt (the host's run D: a 60 
         expect(tries[0]!.via).toBe('page');
         expect(tries.slice(1).every(t => t.via === 'launch' && t.locked)).toBe(true);
         // Counted from the first failure, the in-page timeout's end.
-        const firstFail = tries[0]!.at + LOGIN_TIMEOUT_TICKS * tickMs();
+        const firstFail = tries[0]!.at + LOGIN_TIMEOUT_TICKS * 400;
         expect(tries.at(-1)!.at - firstFail).toBeLessThanOrEqual(ALREADY_IN_BOUND_MS);
         expect(tries.at(-1)!.at - firstFail + ALREADY_IN_RETRY_MS).toBeGreaterThan(ALREADY_IN_BOUND_MS);
         expect(tries.length - 1).toBe(Math.floor(ALREADY_IN_BOUND_MS / ALREADY_IN_RETRY_MS));
