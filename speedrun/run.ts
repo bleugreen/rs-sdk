@@ -41,6 +41,10 @@
 // The tick log defaults to <run dir>/run.jsonl, so running the same command again resumes into the
 // same log: the walk starts from game state, the run's cue files are kept, and the report covers
 // every session. A new run takes a new --log (or a cleared run dir).
+// --close-tab-on-stop is the planned tab reset (a renderer grown too large): one Ctrl-C stops at the
+// next logout-safe boundary as always; once SCORED is confirmed out and off the world's player list
+// its tab is closed (about:blank opened first when it is Chrome's last), and the exit line names the
+// --from to resume with. A second Ctrl-C is never part of it.
 // --dry-run evaluates every gate (the floor included) and lists the chain, every refusing step, the
 // seams and the rune census, and logs nothing in. No option skips or replaces a gate: --run-commit names the commit the floor
 // check judges (default HEAD), never the floor.
@@ -117,7 +121,8 @@ export const USAGE = `usage: bun speedrun/run.ts --bot=<env name> --config=<run 
     [--run-commit=<rev>] [--run-dir=<dir>] [--host-reservation=<file>] [--claim-owner=<rs/NNN>]
     [--s21-relog=on|off]  (SCORED's relog after S21's givers are ready; default on)
     [--tick-override]  (operator only: go past a tick preflight refusal, logged as overridden)
-    [--r8-recovered=<key>]  (operator only: R8's recovery is done for the death the log's (death) row records)`;
+    [--r8-recovered=<key>]  (operator only: R8's recovery is done for the death the log's (death) row records)
+    [--close-tab-on-stop]  (after a Ctrl-C stop or a pause: once SCORED is off the world's player list, close its tab)`;
 
 /** The account every log row carries. */
 export const LOG_ACCOUNT = 'SCORED';
@@ -148,10 +153,12 @@ export interface RunArgs {
     s21Relog: boolean;
     /** The death (runner/death.ts deathKey) R8's recovery was done for: the start's death gate lets the run in past it. */
     r8Recovered?: string;
+    /** The planned tab reset: a stop (exit 4) or pause (exit 5) closes SCORED's tab once it is off the world (closeTabAfterStop). */
+    closeTabOnStop: boolean;
 }
 
 const VALUE_FLAGS = new Set(['bot', 'config', 'client', 'from', 'until', 'log', 'run-commit', 'run-dir', 'host-reservation', 'claim-owner', 'cannon-serve', 's21-relog', 'r8-recovered']);
-const SWITCHES = new Set(['dry-run', 'tick-override']);
+const SWITCHES = new Set(['dry-run', 'tick-override', 'close-tab-on-stop']);
 
 export function parseArgs(argv: readonly string[]): RunArgs {
     const v: Record<string, string> = {};
@@ -176,7 +183,7 @@ export function parseArgs(argv: readonly string[]): RunArgs {
     if (relog !== 'on' && relog !== 'off') throw new UsageError(`--s21-relog must be on or off, not ${relog}`);
     const runDir = resolve(v['run-dir'] ?? RUN_DIR);
     return {
-        bot: v.bot, config: v.config, client, dryRun: on.has('dry-run'), tickOverride: on.has('tick-override'), s21Relog: relog === 'on', runDir,
+        bot: v.bot, config: v.config, client, dryRun: on.has('dry-run'), tickOverride: on.has('tick-override'), closeTabOnStop: on.has('close-tab-on-stop'), s21Relog: relog === 'on', runDir,
         log: resolve(v.log ?? join(runDir, 'run.jsonl')), cannonServe: resolve(v['cannon-serve'] ?? join(runDir, 'cannon-serve.json')),
         ...(v.from ? { from: v.from } : {}), ...(v.until ? { until: v.until } : {}),
         ...(v['run-commit'] ? { runCommit: v['run-commit'] } : {}), ...(v['host-reservation'] ? { hostReservation: v['host-reservation'] } : {}),
@@ -826,6 +833,56 @@ export async function abandonScored(session: Session, relogs: RelogBudget, log: 
     return a;
 }
 
+/** Longest closeTabAfterStop waits for the world's player list to drop SCORED after a confirmed logout. */
+export const TAB_RESET_WAIT_MS = 30_000;
+
+export interface TabResetDeps {
+    /** Whether the world lists the account (null: the list did not answer). */
+    listed(): Promise<boolean | null>;
+    close(): Promise<{ closed: number; left: string[] }>;
+    sleep(ms: number): Promise<void>;
+    now(): number;
+}
+
+/**
+ * The tab reset after a stop: close SCORED's tab only once SCORED is out (a closed tab with the body
+ * still in the world is a dropped client the server keeps for 500 ticks) and the world's player list
+ * no longer has it. Never throws: the line says what was done, or why the tab was left open.
+ */
+export async function closeTabAfterStop(session: Pick<Session, 'expectInWorld' | 'client'>, deps: TabResetDeps, waitMs = TAB_RESET_WAIT_MS): Promise<string> {
+    if (session.client !== 'browser') return 'tab reset: not a browser session, nothing to close';
+    if (session.expectInWorld) return 'tab reset: SCORED is not confirmed out, so its tab is left open';
+    const until = deps.now() + waitMs;
+    let listed: boolean | null = await deps.listed().catch(() => null);
+    while (listed !== false && deps.now() < until) {
+        await deps.sleep(1_000);
+        listed = await deps.listed().catch(() => null);
+    }
+    if (listed !== false) return `tab reset: the world's player list ${listed === null ? 'did not answer' : 'still lists SCORED'} ${Math.round(waitMs / 1000)} s after the logout, so its tab is left open`;
+    try {
+        const c = await deps.close();
+        return `tab reset: SCORED is off the world's player list; closed ${c.closed} tab(s), ${c.left.length} page(s) left`;
+    } catch (e) {
+        return `tab reset: closing the tab failed: ${e instanceof Error ? e.message : String(e)}`;
+    }
+}
+
+/** closeTabAfterStop's reads on the host: the world's /playerpositions and the bot's tab over CDP. */
+export function hostTabReset(session: Session): TabResetDeps {
+    return {
+        listed: async () => {
+            const { demoOrigin, listedInWorld } = await import('./lib/demo-status');
+            return listedInWorld(demoOrigin(pageWorld(session.env)), session.env.BOT_USERNAME ?? session.name);
+        },
+        close: async () => {
+            const { closeBotTabs } = await import('./lib/tab');
+            return closeBotTabs(cdpUrl(session.env), session.name, 5_000, { blankIfLast: true });
+        },
+        sleep: ms => Bun.sleep(ms),
+        now: () => Date.now(),
+    };
+}
+
 /**
  * Run `body` on a logged-in SCORED session, then close it. Whatever ends `body` with the account still
  * meant to be in the world (a throw before the chain starts, a crash inside it: anything no logout
@@ -1059,6 +1116,7 @@ async function main(argv: string[]): Promise<number> {
         unalias();
         (term as Terminated | null)?.disarm();
     }
+    if (a.closeTabOnStop && !term && (code === 4 || code === EXIT_HOST_RESERVED)) console.log(`[run] ${await closeTabAfterStop(session, hostTabReset(session))}`);
     if (term) return code;
     console.log('\n' + formatRunReport(runReport([...earlier, ...log.rows], chain, readFileSync(join(ROOT, 'docs/speedrun/RUN-ORDER.md'), 'utf8'))));
     return code;
