@@ -708,7 +708,7 @@ describe("H4m's loads: one fallback row, N ordered packages after H4p on its car
         const uncarried = structuredClone(entry!.options);
         delete uncarried.packages[1]!.carryNext;
         expect(muleDrift(uncarried, ledger, { delivery })).toContain('H4p: carryNext differs from canonical carry plan');
-        // The carry group the carrier stages from its bank: H4p's pickaxe and log, then 20 big bones.
+        // The carry group the carrier stages from its bank: H4p's pickaxe and 2 logs, then 20 big bones.
         const options = muleOptions({ ...entry!.options });
         const ordered = options.packages.filter(p => !p.onRequest);
         const group = deliveryGroup(ordered, ordered[1]!);
@@ -716,8 +716,8 @@ describe("H4m's loads: one fallback row, N ordered packages after H4p on its car
         const stage = planCarryGroup(group, [
             { slot: 0, id: 1275, name: 'Rune pickaxe', count: 1 }, { slot: 1, id: 1511, name: 'Logs', count: 7 }, { slot: 2, id: 532, name: 'Big bones', count: 200 },
         ]);
-        expect(stage.peakSlots).toBe(22);
-        expect(Object.fromEntries(stage.inventory)).toEqual({ 1275: 1, 1511: 1, 532: 20 });
+        expect(stage.peakSlots).toBe(23);
+        expect(Object.fromEntries(stage.inventory)).toEqual({ 1275: 1, 1511: 2, 532: 20 });
         // Two loads never fit: H4m.2 and later each take a bank trip.
         expect(() => planCarryGroup([...group, ordered[3]!], [{ slot: 0, id: 1275, name: 'Rune pickaxe', count: 1 }, { slot: 1, id: 1511, name: 'Logs', count: 7 }, { slot: 2, id: 532, name: 'Big bones', count: 200 }])).toThrow('42 slots');
     });
