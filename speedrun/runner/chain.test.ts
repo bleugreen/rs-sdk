@@ -24,6 +24,7 @@ import * as woodcutting from '../skills/woodcutting';
 import {
     ALTERNATIVES, anvilAnnounce, CANNON_ROWS, cueAround, cueMuleRows, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleScope, s07PrayerTo, S07_PRAYER_TO, s07Woodcutting, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
     whenNeeded, withCue, askedOnTrade, h12oLogin, h12oLoginRefusal, h12oTopUp, H12O_LOGIN, type ChainStep, type CueSink, type RunConfig,
+    BIG_BONE_BASE, chainPartners, H4M_MIN_PRAYER, H4M_ROW, H4M_TRADE_TILE, S09_PRAYER_TO, type ChainOptions,
 } from './chain';
 import { CUE_BEACONS, CueKeeper, exitStopIsFinal, prepareCueDir, RunCues } from './cue-keeper';
 import { ScopeSessions } from '../helpers/standalone';
@@ -1266,5 +1267,148 @@ describe('S11a: the gnome course to Agility 25', () => {
         const at = (level: number) => baseState({ tick: 1, inGame: true, skills: [{ name: 'Agility', level, baseLevel: level, experience: 0 }] } as never);
         expect(s11a[0]!.postconditions(at(24), {})).not.toBe(true);
         expect(s11a[0]!.postconditions(at(25), {})).toBe(true);
+    });
+});
+
+// rs/701: main's H4m lever. S07 closes at s07PrayerTo below 99 and S09 buries the rest from H4m's carrier
+// (the fallback table's H4m.1-H4m.N, rs/705's h4mLoadRows); at 99 the chain is today's.
+describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
+    const H4E = MANIFEST_TEXT.split('\n').find(l => l.startsWith('| H4e |'))!;
+    // rs/158's draft row (STEP-MANIFEST.md, 'H4m draft'): not in force, so put in by hand here
+    const H4M_LINE = '| H4m.1-H4m.10 | big bones @532 x20 [u] | - | - | 20 | fixture: rs/158\'s draft row |';
+    const WITH_H4M = MANIFEST_TEXT.replace(`${H4E}\n`, `${H4E}\n${H4M_LINE}\n`);
+    const H4M: RunConfig = { ...CONFIG, s07PrayerTo: 98, partners: { ...PARTNERS, H4m: 'p_h4m' } };
+    const record = () => new HandOffRecord(mkdtempSync(join(tmpdir(), 'chain-h4m-')), 'attempt-1');
+    const build = (cfg: RunConfig = H4M, o: Partial<ChainOptions> = {}) => buildChain(cfg, { cues: recorder().cues, manifest: WITH_H4M, handOffs: record(), ...o });
+    const s09 = (c: readonly ChainStep[]) => c.slice(c.findIndex(s => s.id === 'H4p'), c.findIndex(s => s.id === 'T09-10')).map(s => `${s.id}: ${s.name}`);
+    const shape = (c: readonly ChainStep[]) => c.map(s => [s.id, s.kind, s.name, s.cue ?? null, s.finalStop ?? null]);
+    const LOADS = Array.from({ length: 10 }, (_, i) => `H4m.${i + 1}`);
+
+    type Held = [name: string, count: number, id?: number];
+    const KIT: Held[] = [['Knife', 1, 946], ['Logs', 1, 1511], ['Rune pickaxe', 1, 1275], ['Logs', 1, 1511]];
+    const zoo = (o: { bones?: number; prayer?: number; mining?: number; extra?: number; partner?: boolean; x?: number; z?: number } = {}) => {
+        const held: Held[] = [...KIT, ...Array.from({ length: o.bones ?? 0 }, (): Held => ['Big bones', 1, 532]), ...Array.from({ length: o.extra ?? 0 }, (): Held => ['Shark', 1, 385])];
+        return baseState({
+            tick: 1,
+            inGame: true,
+            player: { name: 'Scored', x: o.x ?? 2604, z: o.z ?? 3235, worldX: o.x ?? 2604, worldZ: o.z ?? 3235, level: 0 } as PlayerState,
+            inventory: held.map(([name, count, id], slot) => ({ slot, id: id ?? 20_000 + slot, name, count, optionsWithIndex: [] })),
+            skills: [
+                { name: 'Mining', level: o.mining ?? 80, baseLevel: o.mining ?? 80, experience: 0 },
+                { name: 'Prayer', level: o.prayer ?? 98, baseLevel: o.prayer ?? 98, experience: 0 },
+                { name: 'Defence', level: 1, baseLevel: 1, experience: 0 }, { name: 'Hitpoints', level: 10, baseLevel: 10, experience: 0 }, { name: 'Magic', level: 59, baseLevel: 59, experience: 0 },
+            ],
+            nearbyPlayers: o.partner ? ([{ index: 9, name: 'p_h4m', x: 2606, z: 3234, level: 3 }] as unknown as BotWorldState['nearbyPlayers']) : [],
+        });
+    };
+
+    test('s07PrayerTo absent or 99: the chain is the same, with no H4m load and no bury step; a manifest carrying H4m refuses', () => {
+        const today = buildChain(CONFIG, { cues: recorder().cues });
+        expect(shape(buildChain({ ...CONFIG, s07PrayerTo: 99 }, { cues: recorder().cues }))).toEqual(shape(today));
+        expect(s09(today)).toEqual(['H4p: H4p hand-off', 'S09: mining.iron-63', 'S09: mining.exit']);
+        expect(today.filter(s => /H4m|mining\.bury/.test(`${s.id} ${s.name}`))).toEqual([]);
+        // the ledger in force carries no H4m row, so nothing changes until main rules it in (rs/158)
+        expect(MANIFEST_TEXT).not.toContain('| H4m.1-H4m.');
+        expect(() => buildChain(CONFIG, { cues: recorder().cues, manifest: WITH_H4M })).toThrow(/carry H4m \(10 loads for the carrier\), but the run config's s07PrayerTo is 99/);
+        expect(chainPartners(CONFIG, today)).toBe(CONFIG.partners);
+    });
+
+    test('s07PrayerTo 98: S07 closes at 98; at the zoo H4p, then each load and its bury step, then the band to 99 and the exit', () => {
+        const c = build();
+        expect(s09(c)).toEqual(['H4p: H4p hand-off', ...LOADS.flatMap((row, i) => [`${row}: ${row} hand-off`, `S09: mining.bury: load ${i + 1}`]), 'S09: mining.iron-63', 'S09: mining.exit']);
+        for (const row of LOADS) {
+            const s = c.find(x => x.id === row)!;
+            expect([s.kind, s.cue]).toEqual(['handoff', { step: row, family: 'mule' }]);
+        }
+        // one carrier: only its last row stops final, so it stands on between loads
+        expect(LOADS.map(row => c.find(x => x.id === row)!.finalStop)).toEqual([...Array(9).fill(false), true]);
+        // the delivery preflight's partners: every load is H4m's carrier
+        const partners = chainPartners(H4M, c);
+        expect(LOADS.map(row => partners[row])).toEqual(Array(10).fill('p_h4m'));
+        expect(partners.H4p).toBe(PARTNERS.H4p);
+        // S07's willow band closes at 98
+        const willow = c.find(s => s.id === 'S07' && s.name === 'woodcutting:willow-73-99')!;
+        const wc = (prayer: number) => baseState({
+            player: { worldX: 2920, worldZ: 3406 } as PlayerState,
+            skills: [{ name: 'Woodcutting', level: 99, baseLevel: 99, experience: 0 }, { name: 'Prayer', level: prayer, baseLevel: prayer, experience: 0 }],
+            inventory: ['Rune axe', 'Knife', 'Logs'].map((name, slot) => ({ slot, id: 100 + slot, name, count: 1, optionsWithIndex: [] })),
+        });
+        expect(willow.postconditions(wc(98), {})).toBe(true);
+        // the bury steps' lap and drop level
+        const all = mining.steps({ ...S09_MINING, bury: mining.BIG_BONES, buryLoads: 10, buryPrayerTo: 99 });
+        expect(all.filter(s => s.name.startsWith('mining.bury')).length).toBe(10);
+    });
+
+    test('the chain refuses: s07PrayerTo below 94, loads that cannot reach 99 from its floor, no H4m row, no carrier, no hand-off record', () => {
+        expect(() => build({ ...H4M, s07PrayerTo: 93 })).toThrow("s07PrayerTo 93 < 94: S09's combat 43 needs Prayer 94 (rs/360)");
+        // 10 x 20 x 15 = 3,000 base: 98's floor (37,263.00) to 99 (39,938.32) is 2,675.32, 179 bones; 97's needs 345
+        expect(H4M_MIN_PRAYER).toBe(94);
+        expect(() => build({ ...H4M, s07PrayerTo: 97 })).toThrow('H4m: 10 loads of 20 big bones bring 3000.00 base, and from Prayer 97\'s floor (34766.80 base) to 99 (39938.32) needs 5171.52: 345 bones');
+        expect(() => build({ ...H4M, s07PrayerTo: 94 })).toThrow(/needs 11701\.48: 781 bones/);
+        expect(() => build(H4M, { manifest: WITH_H4M.replace('H4m.1-H4m.10', 'H4m.1-H4m.8') })).toThrow(/8 loads of 20 big bones bring 2400\.00 base.*179 bones/);
+        expect(build(H4M, { manifest: WITH_H4M.replace('H4m.1-H4m.10', 'H4m.1-H4m.9') }).filter(s => s.name.startsWith('mining.bury')).length).toBe(9);
+        expect(() => build(H4M, { manifest: MANIFEST_TEXT })).toThrow("s07PrayerTo 98 leaves Prayer 99 to S09's H4m loads, and STEP-MANIFEST.md's fallback hand-offs have no H4m row");
+        expect(() => build({ ...H4M, partners: PARTNERS })).toThrow('names no partner for H4m');
+        expect(() => buildChain(H4M, { cues: recorder().cues, manifest: WITH_H4M })).toThrow(/hand-off record/);
+        expect(() => build(H4M, { manifest: WITH_H4M.replace('big bones @532 x20 [u]', 'babydragon bones @534 x20 [u]') })).toThrow(/must receive only big bones @532/);
+        expect([BIG_BONE_BASE, S09_PRAYER_TO, H4M_ROW]).toEqual([15, 99, 'H4m']);
+    });
+
+    test("a load: room for 20 is its precondition, not the carrier in view; it opens its own mule cue fresh (the carrier's readiness), walks onto the east stay, then waits for the carrier", async () => {
+        const r = recorder();
+        const c = buildChain(H4M, { cues: r.cues, manifest: WITH_H4M, handOffs: record() });
+        const load = c.find(s => s.id === 'H4m.1')!;
+        expect(load.preconditions(zoo(), {})).toBe(true);
+        // 24 free less 20 is S09's 4; with 5 more items held the load does not fit
+        expect(load.preconditions(zoo({ extra: 5 }), {})).toBe('H4m.1: 19 free slots, 0 freed by what it gives: the trade adds 20, 1 short');
+        const walks: Array<[number, number, number]> = [];
+        const sdk = new FakeSdk(zoo());
+        const ctx = { ...ctxFor(sdk), bot: { walkTo: async (x: number, z: number, tol: number) => (walks.push([x, z, tol]), sdk.push({ player: { ...sdk.state!.player!, worldX: x, worldZ: z } }), { success: true, message: '' }) } } as unknown as StepContext<unknown>;
+        await expect(load.run(ctx)).rejects.toThrow('did not come into sight');
+        expect(r.opened[0]).toEqual({ scope: { step: 'H4m.1', family: 'mule' }, fresh: true });
+        expect(walks).toEqual([[H4M_TRADE_TILE.x, H4M_TRADE_TILE.z, 0]]);
+        expect(H4M_TRADE_TILE).toEqual({ x: 2605, z: 3234 });
+        expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toEqual([]);
+        // a failed load's stop is not final: the carrier stays for the retry
+        expect(r.finals.at(-1)).toBe(false);
+        // already on the stay: no walk
+        walks.length = 0;
+        const there = new FakeSdk(zoo({ x: 2605, z: 3234 }));
+        await expect(load.run({ ...ctx, sdk: there, session: { ...ctx.session, sdk: there } } as StepContext<unknown>)).rejects.toThrow('did not come into sight');
+        expect(walks).toEqual([]);
+    });
+
+    test("the last bury step carries the chain's Prayer 99; the booth fallback stays behind it", () => {
+        const c = build();
+        const last = c.find(s => s.name === 'mining.bury: load 10')!;
+        expect(last.postconditions(zoo({ prayer: 99 }), {})).toBe(true);
+        expect(last.postconditions(zoo({ prayer: 98 }), {})).toBe("Prayer 98 < 99 after H4m's 10 loads (S07 closed at 98): the chain's Prayer 99");
+        expect(last.postconditions(zoo({ prayer: 99, bones: 3 }), {})).toBe('3 bones (^big bones$) still held');
+        // the points do not count: a drained Prayer 99 is 99
+        const drained = zoo({ prayer: 99 });
+        drained.skills = drained.skills.map(k => (k.name === 'Prayer' ? { ...k, level: 60 } : k));
+        expect(last.postconditions(drained, {})).toBe(true);
+        expect(c.find(s => s.name === 'mining.bury: load 9')!.postconditions(zoo({ prayer: 98 }), {})).toBe(true);
+        expect(c.filter(s => s.id === 'S25b-fallback').length).toBe(1);
+    });
+
+    test('resume: the record tells the load steps apart; Prayer 99 walks past the loads left', async () => {
+        const h = record();
+        for (const row of ['H4p', 'H4m.1', 'H4m.2', 'H4m.3']) h.mark(row, 100);
+        const full = buildChain(H4M, { cues: recorder().cues, manifest: WITH_H4M, handOffs: h });
+        const slice = full.slice(full.findIndex(s => s.id === 'H4p'), full.findIndex(s => s.id === 'T09-10'));
+        const where = async (s: BotWorldState) => {
+            const p = await resolveResume(slice, new Observation(s), {});
+            return [p.step, p.mode];
+        };
+        // load 3's bones half buried: its step resumes
+        expect(await where(zoo({ bones: 12 }))).toEqual(['mining.bury: load 3', 'resume']);
+        // load 3's buried, load 4 not yet traded: load 3's step runs (a 0-tick pass), then H4m.4
+        expect(await where(zoo())).toEqual(['mining.bury: load 3', 'run']);
+        // Prayer 99: every bury step is done, the loads left are superseded, the band resumes
+        expect(await where(zoo({ prayer: 99 }))).toEqual(['mining.iron-63', 'resume']);
+        // every load recorded and none held: the band resumes
+        for (const row of LOADS) h.mark(row, 200);
+        expect(await where(zoo())).toEqual(['mining.iron-63', 'resume']);
     });
 });
