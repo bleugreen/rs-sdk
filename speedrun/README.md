@@ -1326,6 +1326,11 @@ LOCAL_STAFF_LEVEL=4 NODE_TICKRATE=150 LAB_RUNNERS=0 speedrun/lab/lab.sh benchlab
   `--expected=N`.
 - One row per run goes to `speedrun/lab/autoresearch/results.tsv` (untracked): the
   checkout's commit, ticks, score, wall seconds, TICKMON, HP, food, the cheats used.
+  HP is two columns: `hp_entry`, as the counted span starts (a leg's poison shows here),
+  and `hp_min`, the lowest a change inside the span left. A file under an older header
+  is moved aside to `results.tsv.<hash>`, never appended to.
+- Staff supply tops a `to N` row up from what SCORED holds (H12's `shark to 15`), as
+  the real trade asks, so the pack after it is the run's (27/28 at S15:A).
 - A build slot's webclient bundle can predate the session's launch echo, and then every
   login refuses (`in-game states with no launch id`): `cd server/webclient && bun run build`.
 - The summary prints each counted segment's median and range over the passing runs (and
