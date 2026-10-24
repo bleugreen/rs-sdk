@@ -85,15 +85,13 @@ export function byMinute(stretch: readonly Sample[], minutes: number): (number |
 
 /**
  * The median across arrivals (every account's first stretch long enough to reach `minutes`) of the gp a tick in each
- * minute since arrival, with the cumulative share of a working rate lost: `lostMinutes[m]` is how many minutes'
- * earnings at `ref` the arrival is behind after m+1 minutes.
+ * minute since arrival.
  */
-export function warmupCurve(by: Map<string, Sample[]>, minutes: number, ref?: number): { minute: number; median: number | null; n: number }[] {
+export function warmupCurve(by: Map<string, Sample[]>, minutes: number): { minute: number; median: number | null; n: number }[] {
     const curves = [...by.values()].flatMap(s => {
         const first = stretches(s)[0];
         return first && first.at(-1)!.at - first[0]!.at >= minutes * 60_000 ? [byMinute(first, minutes)] : [];
     });
-    void ref;
     return Array.from({ length: minutes }, (_, m) => {
         const v = curves.flatMap(c => (c[m] === null || c[m] === undefined ? [] : [c[m]!]));
         return { minute: m, median: v.length ? median(v) : null, n: v.length };
