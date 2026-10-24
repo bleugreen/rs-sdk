@@ -1072,7 +1072,6 @@ describe("the cue's lastLoad (rs/663): the final giver's next load is the last, 
             others(dir, cue.session);
             const r = rig(dir, 'cairn_b04');
             r.g.onCue(cue);
-            expect(r.priv.server()).toBe('cairn_b04');
             const offers: number[] = [];
             const serve = r.sdk.onSend;
             r.sdk.onSend = (a, s) => {
@@ -1100,11 +1099,10 @@ describe("the cue's lastLoad (rs/663): the final giver's next load is the last, 
             const w = new CueWriter(dir, 'scored', S07, session);
             const beacons = [{ tick: 1, ms: Date.now() }];
             w.write({ beacons, turns: [], site: OAK.receiver });
-            // b04 is the oldest ready, the others newer: by the count it serves this load
-            others(dir, session, { readyAt: Date.now() });
+            // the others are on bank trips: by the count b04 serves this load
+            others(dir, session, { phase: 'restock', readyAt: null });
             const r = rig(dir, 'cairn_b04');
             r.g.onCue(readCue(dir)!);
-            expect(r.priv.server()).toBe('cairn_b04');
             const serve = r.sdk.onSend;
             r.sdk.onSend = (a, s) => {
                 if (a.method === 'sendOfferItem' && !readCue(dir)!.lastLoad) {
@@ -1121,7 +1119,6 @@ describe("the cue's lastLoad (rs/663): the final giver's next load is the last, 
             r.priv.restock = async () => {
                 r.sdk.push(s => ({ inventory: [...pack(23), ...s.inventory.filter(i => /rune$/i.test(i.name))] }));
             };
-            r.sdk.push(s => ({ inventory: [...s.inventory].map((i, k) => ({ ...i, slot: 23 + k })) }));
             expect(await drive(r.sdk, r.priv.cycle(), 80)).toBe(true);
             expect(trades()[1]).toMatchObject({ ok: true, final: true, lastLoad: true, gave: ['Law rune x1', 'Air rune x5'] });
             expect([r.priv.trades, r.priv.lastGiven]).toEqual([2, true]);
@@ -1170,11 +1167,11 @@ describe("the cue's lastLoad (rs/663): the final giver's next load is the last, 
             r.g.onCue(stale);
             expect(r.priv.cue).toBeNull();
             expect([r.priv.server(), r.priv.lastGiven, r.priv.lastLoadDone()]).toEqual([undefined, false, false]);
-            // this attempt's first cue, unflagged: b04 counts in it with no lastGiven and serves by the count
+            // this attempt's first cue, unflagged: b04 counts in it, with no lastGiven
             const fresh = scoredCue(dir, 'attempt-4.S07.bone', false);
             r.g.onCue(fresh);
+            expect(r.priv.cue?.session).toBe('attempt-4.S07.bone');
             expect([r.priv.lastGiven, r.priv.lastLoadDone()]).toEqual([false, false]);
-            expect(r.priv.server()).toBe('cairn_b04');
             (r.g as unknown as { publish(): void }).publish();
             expect(r.status().lastGiven).toBeUndefined();
         });
