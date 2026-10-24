@@ -161,7 +161,10 @@ describe('the count after a purchase', () => {
         // left on the Exchange after the collect's retry: counted, nothing to read again
         expect(needsReread({ bank: 0, pack: 0, uncollected: 46 }, 46)).toBe(false);
     });
-    test('bank, pack and uncollected all count toward the minimum', () => {
-        expect(heldAfter({ bank: 20, pack: 6, uncollected: 20 })).toBe(46);
+    test('only bank and pack can be eaten; sharks left on the Exchange are retried, not counted', () => {
+        expect(heldAfter({ bank: 20, pack: 6, uncollected: 20 })).toBe(26);
+        const a07 = { kind: 'buy', item: 385, ceiling: 701, held: 0, quantity: 46, filled: 46, collect: { success: true, coins: 46, items: 0, message: 'Collected 0 items and 46 gp. Any overflow remains in the exchange.' }, purchase: 'filled', result: 'uncollected', reason: '46 sharks left on the Exchange after the collect and its retry', banked: 0 };
+        expect(isTransient({ record: a07 })).toBe(true);
+        expect(afterAttempt(null, { record: a07 }, NOW)).toMatchObject({ status: 'retry', tries: 1 });
     });
 });

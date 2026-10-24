@@ -78,30 +78,86 @@ async function waitFill(x: ErrandCtx, id: number, minutes: number, first: GEOffe
     return offer;
 }
 
+const SHARK = /^shark$/i;
+/** What an errand keeps carried when it makes room: coins, and a pickaxe (the iron fallback wields the tutorial's). */
+const KEEP = /^coins$|pickaxe$/i;
+
 /**
- * Cancel what is left open, collect the rest (items as notes; one retry, reopening the Exchange, when the collect
- * fails), and close the Exchange. Returns the items the offer still holds uncollected, as last seen.
+ * Bank everything carried but coins and pickaxes, at a bank already open, so a collect has room: a note still takes a
+ * slot, and with none free the Exchange collects nothing and reports success (run-b3 a07: 'Collected 0 items and 46
+ * gp. Any overflow remains in the exchange.').
+ */
+async function makeRoom(x: ErrandCtx): Promise<void> {
+    const ids = [...new Set(state(x).inventory.filter(i => !KEEP.test(i.name)).map(i => i.id))];
+    if (!ids.length) return;
+    const d = await depositMatching(x.sdk, ids);
+    if (!d.ok) x.event('deposit incomplete', { reason: d.reason, remaining: d.remaining.map(i => i.name) });
+}
+
+const collectRecord = (c: { success: boolean; coins?: number; items?: number; message: string }) => ({ success: c.success, coins: c.coins ?? null, items: c.items ?? null, message: c.message });
+
+/**
+ * Collect a buy offer's items as notes, at an open Exchange. A collect that took fewer items than the offer held
+ * failed whatever its `success` says: make room at the bank, reopen the Exchange and collect once more. Returns the
+ * items still uncollected.
+ */
+async function collectBuy(x: ErrandCtx, offerId: number, rec: Record<string, unknown>, key: string): Promise<number> {
+    const claim = () => x.sdk.getGEState()?.offers.find(o => o.id === offerId)?.items ?? 0;
+    const before = claim();
+    const col = await x.bot.collectGEOffer(offerId, true);
+    rec[key] = collectRecord(col);
+    let left = x.sdk.getGEState() ? claim() : col.success ? Math.max(0, before - (col.items ?? 0)) : before;
+    if (left === 0) return 0;
+    await x.bot.closeInterface().catch(() => undefined);
+    const opened = await x.bot.openBank();
+    if (opened.success) {
+        await makeRoom(x);
+        await x.bot.closeBank();
+    }
+    const ge = await x.bot.openGE();
+    if (!ge.success) return left;
+    const again = await x.bot.collectGEOffer(offerId, true);
+    rec[`${key}Retry`] = collectRecord(again);
+    left = x.sdk.getGEState() ? claim() : again.success ? Math.max(0, left - (again.items ?? 0)) : left;
+    return left;
+}
+
+/**
+ * Cancel what is left open, collect the rest (a buy's items as notes, `collectBuy`), and close the Exchange. Returns
+ * the items the offer still holds uncollected.
  */
 async function settle(x: ErrandCtx, offer: GEOffer, rec: Record<string, unknown>): Promise<number> {
     if (offer.remaining > 0 && offer.state === 'open') {
         const c = await x.bot.cancelGEOffer(offer.id);
         rec.cancelled = c.success ? offer.remaining : `failed: ${c.message}`;
     }
-    let col = await x.bot.collectGEOffer(offer.id, true);
-    rec.collect = { success: col.success, coins: col.coins ?? null, items: col.items ?? null, message: col.message };
-    if (!col.success) {
-        await waitTicks(x.sdk, 2);
-        if (!x.sdk.getGEState()) await x.bot.openGE();
-        col = await x.bot.collectGEOffer(offer.id, true);
-        rec.collectRetry = { success: col.success, coins: col.coins ?? null, items: col.items ?? null, message: col.message };
-    }
-    const seen = x.sdk.getGEState()?.offers.find(o => o.id === offer.id);
-    const uncollected = seen ? seen.items : col.success ? 0 : offer.items;
+    let uncollected = 0;
+    if (offer.side === 'buy') uncollected = await collectBuy(x, offer.id, rec, 'collect');
+    else rec.collect = collectRecord(await x.bot.collectGEOffer(offer.id, true));
     await x.bot.closeInterface().catch(() => undefined);
     return uncollected;
 }
 
-const SHARK = /^shark$/i;
+/**
+ * Collect what earlier shark buys left on the Exchange (a collect with no room, an attempt stopped mid-errand), at an
+ * open Exchange. Only offers no longer open: an open one may still be filling. Returns the sharks collected and left.
+ */
+async function collectLeftovers(x: ErrandCtx, rec: Record<string, unknown>): Promise<{ collected: number; left: number }> {
+    const offers = (x.sdk.getGEState()?.offers ?? []).filter(o => o.item === SHARK_ID && o.side === 'buy' && o.state !== 'open' && o.items > 0);
+    let collected = 0;
+    let left = 0;
+    const out: Record<string, unknown>[] = [];
+    for (const o of offers) {
+        const r: Record<string, unknown> = { offerId: o.id, items: o.items };
+        const remaining = await collectBuy(x, o.id, r, 'collect');
+        collected += o.items - remaining;
+        left += remaining;
+        out.push(r);
+        if (!x.sdk.getGEState() && !(await x.bot.openGE()).success) break;
+    }
+    if (out.length) rec.leftovers = out;
+    return { collected, left };
+}
 
 /**
  * Sharks the account holds after the errand (a noted shark is also named 'Shark'): the bank, read again (after
@@ -128,17 +184,25 @@ export interface SharkConfig {
 }
 
 /**
- * Buy up to `perAccount` sharks less those banked, with a limit at the ceiling, paid from the bank's coins. Returns the
- * errand's record and the sharks held after it (`banked`: bank, pack and uncollected, `sharksAfter`; the parts are in
- * the record's `after`); the runner records the outcome (sharks.ts) and decides on a retry.
+ * Buy up to `perAccount` sharks less those banked, with a limit at the ceiling, paid from the bank's coins. The pack is
+ * emptied of all but coins and a pickaxe first, so the collect has room, and what earlier buys left on the Exchange is
+ * collected before the book is read. Returns the errand's record and the sharks it can eat after it (`banked`: bank
+ * and pack, `sharksAfter`; the parts, with what is still on the Exchange, in the record's `after`). Sharks left on the
+ * Exchange make the result 'uncollected', which the runner retries (sharks.ts). The runner records the outcome.
  */
 export async function buySharks(x: ErrandCtx, cfg: SharkConfig, book: BookReader): Promise<{ record: Record<string, unknown>; banked: number }> {
     const rec: Record<string, unknown> = { kind: 'buy', item: SHARK_ID, ceiling: cfg.ceiling };
+    let leftovers = 0;
     const finish = async (bank: readonly { name: string; count: number }[], uncollected = 0, bought = 0) => {
-        const after = await sharksAfter(x, bank, uncollected, ((rec.held as number | undefined) ?? 0) + bought);
+        const after = await sharksAfter(x, bank, uncollected, ((rec.held as number | undefined) ?? 0) + leftovers + bought);
         const banked = heldAfter(after);
         rec.after = after;
         rec.banked = banked;
+        if (after.uncollected > 0) {
+            rec.purchase = rec.result;
+            rec.result = 'uncollected';
+            rec.reason = `${after.uncollected} sharks left on the Exchange after the collect and its retry`;
+        }
         rec.at = new Date().toISOString();
         x.event('shark purchase', rec);
         return { record: rec, banked };
@@ -149,17 +213,31 @@ export async function buySharks(x: ErrandCtx, cfg: SharkConfig, book: BookReader
         return { record: rec, banked: 0 };
     }
     await atBank(x);
+    await makeRoom(x);
+    await waitTicks(x.sdk, 1);
     const bank = x.sdk.getBankItems();
-    const held = countIn(bank, /^shark$/i);
-    const want = cfg.perAccount - held;
+    const held = countIn(bank, SHARK);
     rec.held = held;
-    rec.want = want;
-    if (want <= 0) {
+    if (cfg.perAccount - held <= 0) {
         await x.bot.closeBank();
         rec.result = 'enough';
         return finish(bank);
     }
-    const coinStack = bank.find(i => /^coins$/i.test(i.name));
+    await x.bot.closeBank();
+    const ge0 = await x.bot.openGE();
+    if (!ge0.success) throw new Error(`openGE: ${ge0.message}`);
+    const left0 = await collectLeftovers(x, rec);
+    leftovers = left0.collected;
+    await x.bot.closeInterface().catch(() => undefined);
+    const want = cfg.perAccount - held - leftovers;
+    rec.want = want;
+    if (want <= 0) {
+        rec.result = 'enough';
+        return finish(await bankProceeds(x, SHARK), left0.left);
+    }
+    await atBank(x);
+    const bankNow = x.sdk.getBankItems();
+    const coinStack = bankNow.find(i => /^coins$/i.test(i.name));
     const need = want * cfg.ceiling - carriedCoins(state(x));
     if (coinStack && need > 0) {
         const w = await x.bot.withdrawItem(coinStack, Math.min(need, coinStack.count));
@@ -174,7 +252,7 @@ export async function buySharks(x: ErrandCtx, cfg: SharkConfig, book: BookReader
     if (!d.buy) {
         rec.result = 'refused';
         rec.reason = d.reason;
-        return finish(await bankProceeds(x, SHARK));
+        return finish(await bankProceeds(x, SHARK), left0.left);
     }
     const opened = await x.bot.openGE();
     if (!opened.success) throw new Error(`openGE: ${opened.message}`);
@@ -183,7 +261,7 @@ export async function buySharks(x: ErrandCtx, cfg: SharkConfig, book: BookReader
         rec.result = placed.outcome === 'unknown' ? 'unknown' : 'not placed';
         rec.reason = `${placed.reason}: ${placed.message}`;
         await x.bot.closeInterface().catch(() => undefined);
-        return finish(await bankProceeds(x, SHARK));
+        return finish(await bankProceeds(x, SHARK), left0.left);
     }
     rec.offerId = placed.offer.id;
     rec.quantity = d.quantity;
@@ -191,7 +269,7 @@ export async function buySharks(x: ErrandCtx, cfg: SharkConfig, book: BookReader
     rec.filled = offer.filled;
     const uncollected = await settle(x, offer, rec);
     rec.result = offer.filled === d.quantity ? 'filled' : offer.filled > 0 ? 'partial' : 'unfilled';
-    return finish(await bankProceeds(x, SHARK), uncollected, offer.filled);
+    return finish(await bankProceeds(x, SHARK), left0.left + uncollected, offer.filled);
 }
 
 export interface SaleConfig {

@@ -79,6 +79,8 @@ export function isTransient(a: SharkAttempt): boolean {
     if (r.result === 'unknown') return false;
     if (r.result === 'refused') return /coins do not cover/i.test(String(r.reason ?? '')) && isTransientMessage(r.withdraw);
     if (r.result === 'not placed') return isTransientMessage(r.reason);
+    // bought, but some still on the Exchange: the next attempt collects them first (errands.ts collectLeftovers)
+    if (r.result === 'uncollected') return true;
     return false;
 }
 
@@ -156,13 +158,18 @@ export interface SharksAfter {
     uncollected: number;
 }
 
-export const heldAfter = (a: SharksAfter): number => a.bank + a.pack + a.uncollected;
+/**
+ * Sharks the account can eat: bank and pack. What is still on the Exchange is not among them (a knight in Ardougne
+ * cannot collect it); the errand reports it as 'uncollected', a transient result, so it is collected on a retry.
+ */
+export const heldAfter = (a: SharksAfter): number => a.bank + a.pack;
 
 /**
- * Whether the errand reads the bank again before trusting its count: the total is below what it held before plus
- * what it bought (a bank list read before it refreshed), or the pack still holds sharks (a deposit that timed out).
+ * Whether the errand reads the bank again before trusting its count: everything it can account for is below what it
+ * held before plus what it bought (a bank list read before it refreshed), or the pack still holds sharks (a deposit
+ * that timed out).
  */
-export const needsReread = (a: SharksAfter, expected: number): boolean => heldAfter(a) < expected || a.pack > 0;
+export const needsReread = (a: SharksAfter, expected: number): boolean => a.bank + a.pack + a.uncollected < expected || a.pack > 0;
 
 /** The state that sends the account through buy-sharks again (a rebuy). */
 export function requestRebuy(prev: SharkState | null, now: Date, note: string): SharkState {
