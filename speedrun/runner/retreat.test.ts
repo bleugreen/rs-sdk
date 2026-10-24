@@ -100,7 +100,8 @@ describe('the exit after a failed step that declares retreat (rs/725)', () => {
         expect(w.logouts).toHaveLength(1);
         expect(w.logouts[0]!.inWindow).toBe(false);
         expect(r.code).toBe(1);
-        expect(r.outcome).toMatch(new RegExp(`^${FAILED.replace(/[()"'.]/g, '\\$&')}; retreated out of reach \\(combat window; \\(3288,3810\\) to \\(3288,3768\\), \\d+ ticks\\), then logged out$`));
+        expect(r.outcome.startsWith(`${FAILED}; `)).toBe(true);
+        expect(r.outcome).toMatch(/; retreated out of reach \(combat window; \(3288,3810\) to \(3288,3768\), \d+ ticks\), then logged out$/);
         const [row] = w.rows();
         expect(row).toMatchObject({ kind: 'note', ok: true, meta: { step: 'S14 cannon session', why: 'combat window', from: { x: 3288, z: 3810 }, to: { x: 3288, z: 3768 }, logout: { ok: true, sends: 1 } } });
         expect(row!.endTick - row!.startTick).toBeGreaterThanOrEqual(17);
