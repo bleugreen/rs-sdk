@@ -33,7 +33,7 @@ import { labLog } from './common';
 import { waitTicks, waitUntil } from '../lib/wait';
 import type { ChainStep } from '../runner/chain';
 import { launchLabBrowser } from './browser';
-import { leaveTutorial, mustTele, near } from './setup';
+import { leaveTutorial, mustTele, near, setStats, tele } from './setup';
 
 export interface Variant {
     chrome: 'attached' | 'detached';
@@ -42,6 +42,16 @@ export interface Variant {
     discard?: boolean;
     /** Publish every Nth gateway state. */
     throttle?: number;
+    /** Full Chrome with a window (needs a display: Xvfb) instead of chrome-headless-shell. */
+    headed?: boolean;
+    /** More Chrome switches. */
+    args?: readonly string[];
+    /**
+     * What the bot does: 'walk' back and forth across one courtyard (no new map region ever loads);
+     * 'tele' a staff teleport to a far town every 10 ticks (a new region each time); 'travel' the
+     * pathfinder's long walks between towns, as the legs run.
+     */
+    work?: 'walk' | 'tele' | 'travel';
 }
 
 export const VARIANTS: Record<string, Variant> = {
@@ -56,6 +66,14 @@ export const VARIANTS: Record<string, Variant> = {
     /** The host's control: the tab walked by the SDK, nothing of run.ts attached. */
     plain: { chrome: 'attached', tabmem: false, runTs: false },
     'plain-detached': { chrome: 'detached', tabmem: false, runTs: false },
+    /** Headed Chrome, a 1920x1080 window: a compositor, as the run machine's visible tab has. */
+    headed: { chrome: 'attached', tabmem: true, runTs: true, headed: true },
+    'headed-nogpu': { chrome: 'attached', tabmem: true, runTs: true, headed: true, args: ['--disable-gpu'] },
+    'headed-plain': { chrome: 'detached', tabmem: false, runTs: false, headed: true },
+    tele: { chrome: 'attached', tabmem: true, runTs: true, work: 'tele' },
+    'tele-plain': { chrome: 'detached', tabmem: false, runTs: false, work: 'tele' },
+    'headed-tele': { chrome: 'attached', tabmem: true, runTs: true, headed: true, work: 'tele' },
+    travel: { chrome: 'attached', tabmem: true, runTs: true, work: 'travel' },
 };
 
 export interface RendererReading {
@@ -225,6 +243,56 @@ async function walkLoop(sdk: Session['sdk'], end: number): Promise<number> {
     return walks;
 }
 
+/** Far apart, each in a region of its own, none in the Wilderness. */
+const TOWNS: readonly { x: number; z: number }[] = [
+    { x: 3222, z: 3218 }, // Lumbridge
+    { x: 3212, z: 3428 }, // Varrock
+    { x: 2965, z: 3380 }, // Falador
+    { x: 3093, z: 3245 }, // Draynor
+    { x: 3293, z: 3174 }, // Al Kharid
+    { x: 3094, z: 3491 }, // Edgeville
+    { x: 2757, z: 3477 }, // Camelot
+    { x: 2662, z: 3305 }, // Ardougne
+];
+
+/** A teleport to the next town every 10 ticks until `end`. */
+async function teleLoop(sdk: Session['sdk'], end: number): Promise<number> {
+    let n = 0;
+    while (Date.now() < end) {
+        const t = TOWNS[++n % TOWNS.length]!;
+        await tele(sdk, t.x, t.z);
+        await waitTicks(sdk, 10);
+    }
+    return n;
+}
+
+/** The pathfinder's walks Lumbridge -> Draynor -> Falador -> Barbarian Village -> Varrock -> Lumbridge until `end`; a failed walk teleports on. */
+const ROUTE: readonly { x: number; z: number }[] = [
+    { x: 3093, z: 3245 },
+    { x: 3013, z: 3355 },
+    { x: 3082, z: 3420 },
+    { x: 3185, z: 3436 },
+    { x: 3222, z: 3218 },
+];
+async function travelLoop(session: Pick<Session, 'sdk' | 'bot'>, end: number, say: (m: string) => void): Promise<number> {
+    let n = 0;
+    while (Date.now() < end) {
+        const t = ROUTE[n++ % ROUTE.length]!;
+        const r = await session.bot.walkTo(t.x, t.z, 3, { timeout: Math.max(1_000, Math.min(180_000, end - Date.now())) });
+        if (!r.success && Date.now() < end) {
+            say(`walk to ${t.x},${t.z} failed (${r.message}): teleporting there`);
+            await tele(session.sdk, t.x, t.z);
+        }
+    }
+    return n;
+}
+
+function work(v: Variant, session: Pick<Session, 'sdk' | 'bot'>, end: number, say: (m: string) => void): Promise<number> {
+    if (v.work === 'tele') return teleLoop(session.sdk, end);
+    if (v.work === 'travel') return travelLoop(session, end, say);
+    return walkLoop(session.sdk, end);
+}
+
 function flag(name: string, fallback: string): string {
     const hit = process.argv.find(a => a.startsWith(`--${name}=`));
     return hit ? hit.slice(name.length + 3) : fallback;
@@ -233,7 +301,7 @@ function flag(name: string, fallback: string): string {
 async function child(bot: string, name: string, v: Variant, minutes: number, cdpPort: number, out: string): Promise<void> {
     const file = join(out, `${name}.jsonl`);
     const say = (m: string) => console.log(`[${name}] ${m}`);
-    const chrome = await launchLabBrowser(bot, { cdpPort });
+    const chrome = await launchLabBrowser(bot, { cdpPort, ...(v.headed ? { headless: false, windowSize: [1920, 1080] as const } : {}), ...(v.args ? { extraArgs: v.args } : {}) });
     const chromePid = chrome.browser.process()?.pid;
     if (!chromePid) throw new Error('no Chrome pid');
     if (v.chrome === 'detached') {
@@ -248,6 +316,8 @@ async function child(bot: string, name: string, v: Variant, minutes: number, cdp
         session = await openSession(bot, { client: 'browser', launch: true, insecureQueryLogin: true, readyTimeoutMs: 180_000 });
         const s = session;
         await leaveTutorial(s);
+        // the far towns' NPCs must not kill a level-3 lab bot
+        await setStats(s.sdk, { hitpoints: 70, attack: 70, strength: 70, defence: 70 });
         await mustTele(s.sdk, A.x, A.z);
         if (v.throttle) say(`throttle: ${JSON.stringify((await evaluateInTab(cdp, bot, throttleExpression(v.throttle)))?.value)}`);
         const sample = async () => {
@@ -287,7 +357,7 @@ async function child(bot: string, name: string, v: Variant, minutes: number, cdp
                 logoutSafe: true,
                 preconditions: st => (st.inGame ? true : 'not in game'),
                 postconditions: () => true,
-                run: async ({ sdk }) => void (await walkLoop(sdk, end)),
+                run: async ctx => void (await work(v, ctx, end, say)),
             };
             const ran = await runChainOnSession(s, {
                 log: labLog(`tab-growth-${name}`),
@@ -298,7 +368,7 @@ async function child(bot: string, name: string, v: Variant, minutes: number, cdp
             });
             say(`chain: code ${ran.result.code}`);
         } else {
-            say(`walks: ${await walkLoop(s.sdk, end)}`);
+            say(`${v.work ?? 'walk'}s: ${await work(v, s, end, say)}`);
         }
         await sample();
     } finally {
