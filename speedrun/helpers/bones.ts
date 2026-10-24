@@ -789,6 +789,15 @@ export function parseOptions(o: Record<string, unknown>): Options {
 interface Target { npc: RegExp; area: Box; centre: Tile; loot: RegExp | null }
 type Outcome = 'killed' | 'lost' | 'flee' | 'none' | 'full';
 
+/**
+ * Whether an NPC faces this player. NearbyNpc.targetIndex is the NPC's face entity, 32768 + a slot
+ * when it faces a player; the SDK does not report this player's own slot, but every other visible
+ * player's is in nearbyPlayers, so a player slot that is none of theirs is this player's.
+ */
+export function facesMe(npc: Pick<NearbyNpc, 'targetIndex'>, others: readonly { index: number }[]): boolean {
+    return npc.targetIndex >= 32768 && !others.some(p => p.index === npc.targetIndex - 32768);
+}
+
 /** Ticks without a hitsplat on the target before the attack is sent again (two scimitar swings). */
 export const SWING_STALE_TICKS = 8;
 /** Ticks without any hitsplat on the target before the fight is given up. */
@@ -1214,9 +1223,11 @@ export class Run {
         const candidates = s.nearbyNpcs.filter(n =>
             t.npc.test(n.name) && n.hp !== 0 && inBox(t.area, n.x, n.z) &&
             n.optionsWithIndex.some(o => /attack/i.test(o.text)));
-        // An NPC already on us comes first (giants aggress); otherwise skip ones in someone else's fight.
+        // An NPC already on us comes first (giants and adult dragons aggress): in single combat the
+        // server refuses an attack on anything else while it hits us. Otherwise skip ones in someone
+        // else's fight.
         const combat = s.player!.combat;
-        const onMe = candidates.filter(n => n.inCombat && combat.inCombat && combat.targetType === 'npc' && combat.targetIndex === n.index);
+        const onMe = candidates.filter(n => n.inCombat && ((combat.inCombat && combat.targetType === 'npc' && combat.targetIndex === n.index) || facesMe(n, s.nearbyPlayers)));
         if (onMe.length) return onMe.sort((a, b) => a.distance - b.distance)[0] ?? null;
         const crowded = (n: NearbyNpc) => s.nearbyPlayers.filter(p =>
             Math.max(Math.abs((p.worldX ?? p.x) - n.x), Math.abs((p.worldZ ?? p.z) - n.z)) <= 1).length > this.opt.maxPlayersNearTarget;

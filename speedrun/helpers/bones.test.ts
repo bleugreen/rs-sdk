@@ -7,7 +7,7 @@ import { Run } from './bones';
 import { memoryRoleState } from './role';
 import { summarizeWindow } from '../../docs/speedrun/scripts/bones-dev/stats';
 import { carryReached, fishingHaul, foodOverCap, lootWanted, gearRank, healOf, inBabyBlueRoom, inDesert, isClutter, keepOnBank, parseOptions, patrolTour, SPOTS, tollWithdraw, UGTHANKI_SPAWNS } from './bones';
-import { ANTI_DRAGON_SHIELD, inAdultReach, roomFull, SWING_GIVE_UP_TICKS, SWING_STALE_TICKS, swingCheck } from './bones';
+import { ANTI_DRAGON_SHIELD, facesMe, inAdultReach, roomFull, SWING_GIVE_UP_TICKS, SWING_STALE_TICKS, swingCheck } from './bones';
 import { ROOM, SAFE_ROUTE, SAFE_TILE, TAVERLEY_ADULTS, TAVERLEY_BABIES } from './dragons';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -580,6 +580,30 @@ describe('blue_dragon spot', () => {
         expect(run.pickTarget(t)?.index).toBe(8);
         sdk.push({ nearbyNpcs: [npc(7, 'Baby blue dragon', baby.x, baby.z, 1, true), npc(9, 'Baby blue dragon', 2892, 9799, 2)] });
         expect(run.pickTarget(t)).toBeNull();
+    });
+
+    test('an adult already hitting the player is fought first, even when the player faces another', () => {
+        // Lab, 2026-10-24: the adult on the player was skipped as in combat, the player clicked another
+        // (refused in single combat) and ate 4 sharks a kill.
+        const { run, sdk } = harness();
+        const adult = (index: number, x: number, z: number, distance: number, targetIndex: number) => ({
+            index, name: 'Blue dragon', x, z, distance, inCombat: targetIndex !== -1, targetIndex, hp: 105, optionsWithIndex: [{ text: 'Attack', opIndex: 2 }]
+        } as NearbyNpc);
+        const t = { npc: spot.npc, area: spot.area, centre: spot.centre, loot: null };
+        sdk.push({
+            player: { ...sdk.state!.player!, worldX: 2901, worldZ: 9806, combat: { inCombat: true, targetType: 'npc', targetIndex: 3, lastDamageTick: 0 } },
+            nearbyPlayers: [{ index: 12, name: 'cairn_h55', x: 2901, z: 9810 } as never],
+            nearbyNpcs: [adult(3, 2897, 9797, 2, -1), adult(4, 2899, 9802, 3, 32768 + 40), adult(5, 2904, 9802, 1, 32768 + 12)]
+        });
+        expect(run.pickTarget(t)?.index).toBe(4); // faces slot 40, which no other visible player holds
+    });
+
+    test('facesMe: a player slot no other visible player holds', () => {
+        const others = [{ index: 12 }, { index: 30 }];
+        expect(facesMe({ targetIndex: 32768 + 40 }, others)).toBe(true);
+        expect(facesMe({ targetIndex: 32768 + 12 }, others)).toBe(false);
+        expect(facesMe({ targetIndex: 40 }, others)).toBe(false); // an npc slot
+        expect(facesMe({ targetIndex: -1 }, others)).toBe(false);
     });
 
     test('gear upgrades never take the shield slot from the anti-dragon shield', async () => {

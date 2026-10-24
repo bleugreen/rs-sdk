@@ -82,6 +82,7 @@ const trips: Record<string, unknown>[] = [];
 const bankBones: { tick: number; bones: number }[] = [];
 let refusalLogged = false;
 let kills = 0;
+const outcomes: Record<string, number> = {};
 const tick = () => sdk.getState()?.tick ?? 0;
 const ctx: RoleContext = {
     bot, sdk, account: session.name,
@@ -90,6 +91,7 @@ const ctx: RoleContext = {
     log: (message, data) => {
         if (/staying out of the spot|not entering without/.test(message)) refusalLogged = true;
         if (message === 'fight' && data?.out === 'killed') kills++;
+        if (message === 'fight') outcomes[String(data?.out)] = (outcomes[String(data?.out)] ?? 0) + 1;
         if (message === 'banked') {
             const t = data?.trip as Record<string, unknown> | null;
             if (t && Number(t.kills) > 0) {
@@ -128,7 +130,7 @@ const banked = bankBones.at(-1)?.bones ?? 0;
 const perHour = (n: number) => (spanTicks > 0 ? Math.round((n * 9000) / spanTicks) : 0);
 result('summary', {
     trips: trips.length, spanTicks, tickMs: Number(process.env.NODE_TICKRATE ?? 400),
-    kills: tripKills, fightsKilled: kills, eats: tripEats, eatsPerKill: tripKills ? Number((tripEats / tripKills).toFixed(2)) : null,
+    kills: tripKills, fightsKilled: kills, fightOutcomes: outcomes, eats: tripEats, eatsPerKill: tripKills ? Number((tripEats / tripKills).toFixed(2)) : null,
     dragonBonesBanked: banked, killsPerHour: perHour(tripKills), bonesPerHour: perHour(banked),
     dragonfire: fire, minHp, deaths, passedDoorUnshielded, wornAtEnd: wearingShield(),
     totalTicks: tick() - startTick
