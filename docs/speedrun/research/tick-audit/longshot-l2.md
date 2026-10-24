@@ -194,7 +194,8 @@ its per-skill reach ticks would turn this row into numbers. Until then nothing h
 
 Every top-10 name on every skill board was read (01:47:48Z). "Raw" is their 1-99 against our row;
 "like" adjusts for start level, trip and shared work. Names beginning `cairn_` are our own rehearsals,
-listed for reference.
+listed for reference. Our scored accounts appear by role label only (SCORED-a1, SCORED-a2, the rehearsal
+account (a3)), never by name.
 
 - **Attack**: stunattacker 4,728 m (Waterfall Strength 83 at 1,248, QP 4 by 3,427), stunhitpoint 8,498 m;
   nickstriker 10,193, lachatk001 12,073, nickattack 12,433, nickoverall 18,421, nickmax 18,580, deepseek
@@ -223,7 +224,8 @@ listed for reference.
   lachfish002 6,002, nickfisher1 8,247, lachfish001 8,668, nicklure 8,839, stunlord 11,433 (batch).
   Against S19 311 + S20 319 + S22 1,995 = 2,625, plus legs 123.5. No.
 - **Firemaking**: cairn_ashes 664 (ours, #1), jackalopefma 673 m (row 6), cairn_burns 690, jackalopefm4 706,
-  cairn_zezima 786, cairndotmd 805, stunfiremake 836, jackalopefm2 937, nickember 1,382, lachfire002
+  two of our own scored accounts at 786 and 805 (named by role only, SCORED-a1 / SCORED-a2 / the
+  rehearsal account (a3), never by account name), stunfiremake 836, jackalopefm2 937, nickember 1,382, lachfire002
   1,676. Parity at best.
 - **Crafting**: nickgemcut 197 m (row 2), crab26eba2 536, nickcrafti 580, nickcrafts 878, nickcrafty
   1,195, nickmax 2,037, nickoverall 2,698, nickcraft 2,995, edwardcraft 9,355, stunlord 13,997. Beyond
