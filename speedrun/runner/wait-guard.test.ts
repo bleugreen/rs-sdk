@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -7,7 +7,8 @@ import { muleDelivery } from '../helpers/mule-itinerary';
 import { baseState, drive, FakeSdk, flush } from '../lib/fake-sdk';
 import { TickLog } from '../lib/ticks';
 import { waitUntil } from '../lib/wait';
-import { loginUpkeep, LOGIN_STRETCH } from '../run';
+import { DRINK_DELAY_TICKS, drinkDelayOver, noteAntipoison } from '../quests/segments';
+import { loginUpkeep, LOGIN_STRETCH, poisonUnknownEntry } from '../run';
 import { muleScope, openGuarded } from './chain';
 import { CueKeeper } from './cue-keeper';
 import { DEATH_STEP, deathRow, diedResult, EXIT_DIED, type Death } from './death';
@@ -22,6 +23,12 @@ const shark = (slot: number): InventoryItem => ({ slot, id: 385, name: 'Shark', 
 const potion = (slot: number, doses: number, name = 'Superantipoison'): InventoryItem =>
     ({ slot, id: 2440 + doses, name: `${name}(${doses})`, count: 1, optionsWithIndex: [{ text: 'Drink', opIndex: 1 }] }) as unknown as InventoryItem;
 const state = (more: Partial<BotWorldState> = {}, p: Partial<PlayerState> = {}) => baseState({ tick: 1000, player: player(p), ...more });
+/** A poison hit on SCORED (^hitmark_poison), as poison.rs2 lands one every 30 ticks. */
+const poisonHit = (tick: number) => ({ tick, type: 'damage_taken' as const, damage: 2, sourceType: 'npc' as const, sourceIndex: -1, targetType: 'player' as const, targetIndex: -1, hitmark: 2 });
+const message = (tick: number, text: string) => ({ type: 0, text, tick, sender: '', fromSelf: false }) as unknown as BotWorldState['gameMessages'][number];
+
+// segments.ts keeps one dose record for the process: each test starts with none.
+beforeEach(() => noteAntipoison(-Infinity));
 
 function ctxFor(sdk: FakeSdk): StepContext<unknown> & { session: RunnerSession & { died?: Death } } {
     const session = { sdk, bot: {}, name: 'scored', sessionId: 1 } as unknown as RunnerSession & { died?: Death };
@@ -36,6 +43,7 @@ function flagCure(sdk: FakeSdk): Cure & { poison: boolean; noted: number[] } {
         poisoned: () => c.poison,
         cureDose: (s: BotWorldState) => s.inventory.find(i => /antipoison\(\d\)$/i.test(i.name)) ?? null,
         noteAntipoison: (t: number) => void c.noted.push(t),
+        drinkDelayOver,
     };
     void sdk;
     return c;
@@ -114,6 +122,53 @@ describe("the wait upkeep: the legs' eat rule and the shared antipoison, held wh
         const served = serve(sdk, { onDrink: () => void (cure.poison = false), drop: n => n === 1 });
         await drive(sdk, guardWait(ctxFor(sdk), 'waiting', never(sdk, 60), { cure }));
         expect(served.uses.map(u => u.tick)).toEqual([1000, 1000 + CURE_RESEND]);
+    });
+
+    test("with segments.ts's own helper, a drink that does not land is sent again, though the dose's note already clears poisoned()", async () => {
+        const sdk = new FakeSdk(state({ inventory: [potion(0, 3, 'Antipoison')], combatEvents: [poisonHit(999)] }, { hp: 30 }));
+        const served = serve(sdk, { drop: n => n === 1 });
+        await drive(sdk, guardWait(ctxFor(sdk), 'waiting', never(sdk, 60)));
+        expect(served.uses.map(u => u.tick)).toEqual([1000, 1000 + CURE_RESEND]);
+        expect(sdk.state!.inventory[0]!.name).toBe('Antipoison(2)');
+    });
+
+    test("a landed drink's p_delay holds the next click: to its doses-left message, else DRINK_DELAY_TICKS", async () => {
+        // The drink lands, then SCORED is hit under the eat threshold on the very next tick.
+        const run = async (says: boolean) => {
+            noteAntipoison(-Infinity);
+            const sdk = new FakeSdk(state({ inventory: [potion(0, 4), shark(1)] }, { hp: 30 }));
+            const cure = flagCure(sdk);
+            let landed = -1;
+            const served = serve(sdk, { onDrink: () => void ((cure.poison = false), (landed = sdk.state!.tick + 1)) });
+            await drive(sdk, guardWait(ctxFor(sdk), 'waiting', never(sdk, 20), { cure }), 40, s => {
+                if (landed < 0 || s.tick < landed + 1) return {};
+                return { player: { ...s.player!, hp: s.player!.hp > 20 ? 11 : s.player!.hp }, ...(says && s.tick === landed + 1 ? { gameMessages: [message(s.tick, 'You have 3 doses of potion left.')] } : {}) };
+            });
+            const [drink, eat] = served.uses;
+            expect(served.uses.map(u => u.slot)).toEqual([0, 1]);
+            return eat!.tick - drink!.tick;
+        };
+        const silent = await run(false);
+        const told = await run(true);
+        expect(silent).toBeGreaterThanOrEqual(DRINK_DELAY_TICKS);
+        expect(told).toBeLessThan(silent);
+        expect(told).toBeGreaterThanOrEqual(2);
+    });
+
+    test("a client reload (the published tick restarts lower) drops the old session's eat record: the next eat is not held", async () => {
+        const sdk = new FakeSdk(state({ inventory: [shark(0), shark(1)] }, { hp: 11 }));
+        const cure = { ...flagCure(sdk), poison: false };
+        const served = serve(sdk);
+        const p = guardWait(ctxFor(sdk), 'waiting', never(sdk, 30), { cure });
+        for (let i = 0; i < 4; i++) {
+            await flush();
+            sdk.tick();
+        }
+        expect(served.uses.map(u => u.slot)).toEqual([0]);
+        sdk.tick(s => ({ tick: 5, player: { ...s.player!, hp: 11 } }));
+        await drive(sdk, p);
+        expect(served.uses.map(u => u.slot)).toEqual([0, 1]);
+        expect(served.uses[1]!.tick).toBeLessThan(10);
     });
 
     test("hitpoints under the legs' threshold eat (travel's eatDue), once per landing", async () => {
@@ -222,6 +277,57 @@ describe('run.ts: the upkeep from login to the first step', () => {
         const [first] = enteringEnds(steps(() => void (atBody = served.uses.map(u => u.slot))), upkeep);
         await drive(sdk, first!.run(ctx), 20);
         expect(atBody).toEqual([0, 1]);
+    });
+
+    describe('the poison-unknown dose (main\'s ruling): entering at S15:A or S16:B, one dose from login for a poison not yet seen', () => {
+        /** A cure whose poisonUnknown reads as rs/786's: no dose since the session began, no poison seen, a dose held. */
+        const unknownCure = (sdk: FakeSdk) => {
+            const c = { ...flagCure(sdk), poison: false };
+            return { ...c, poisonUnknown: (s: BotWorldState) => c.noted.length === 0 && c.cureDose(s) !== null };
+        };
+        const login = async (entry: string, inventory: InventoryItem[]) => {
+            const sdk = new FakeSdk(state({ tick: 90_000, inventory }, { hp: 38 }));
+            const served = serve(sdk);
+            const cure = unknownCure(sdk);
+            const log = TickLog.memory('login');
+            const ctx = ctxFor(sdk);
+            const upkeep = loginUpkeep(ctx.session as never, log, () => {}, { entry, cure });
+            for (let i = 0; i < 40; i++) {
+                await flush();
+                sdk.tick();
+            }
+            let atBody = -1;
+            const [first] = enteringEnds(steps(() => void (atBody = served.uses.length)), upkeep);
+            await drive(sdk, first!.run(ctx), 20);
+            return { served, log, atBody, sdk };
+        };
+
+        test('scoped to the two entries', () => {
+            expect(poisonUnknownEntry('S15:A-narnode')).toBe(true);
+            expect(poisonUnknownEntry('S16:B-cellar')).toBe(true);
+            expect(poisonUnknownEntry('S15:B-karamja')).toBe(false);
+            expect(poisonUnknownEntry('S14:A-wilderness')).toBe(false);
+            expect(poisonUnknownEntry(undefined)).toBe(false);
+        });
+
+        test('a resume into S15:A with an antipoison held, no hit and no message, drinks once (cureDose: the plain one first), before the body', async () => {
+            const { served, log, atBody, sdk } = await login('S15:A-narnode', [potion(0, 4), potion(1, 3, 'Antipoison')]);
+            expect(served.uses.map(u => u.slot)).toEqual([1]);
+            expect(atBody).toBe(1);
+            expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Superantipoison(4)', 'Antipoison(2)']);
+            expect(log.rows.map(r => r.step)).toEqual([`(run) upkeep ${LOGIN_STRETCH}: cure`]);
+        });
+
+        test('entering anywhere else spends no dose on a poison not seen', async () => {
+            const { served } = await login('S14:A-wilderness', [potion(0, 3, 'Antipoison')]);
+            expect(served.uses).toEqual([]);
+        });
+
+        test('none held: nothing sent and nothing thrown (a refusal is poisonCovered\'s, on a poison seen)', async () => {
+            const { served, atBody } = await login('S16:B-cellar', [shark(0)]);
+            expect(served.uses).toEqual([]);
+            expect(atBody).toBe(0);
+        });
     });
 
     test('a death between login and the first step fails that step\'s entry with it before its body runs', async () => {
