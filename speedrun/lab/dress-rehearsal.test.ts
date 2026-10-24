@@ -6,7 +6,7 @@ import { resolveOptions as magicOptions, ROUTE_LOADS } from '../skills/magic';
 import { STAND_IN_STEP } from '../runner/run-report';
 import { MANIFEST } from '../tools/slot-ledger';
 import { baseState } from '../lib/fake-sdk';
-import { giverGaps, hooked, KIT_PLANS, LANDING_HELPER_TILE, labChain, meetingTile, ringerTile, ringLoads, STAFF, withRingers } from './dress-rehearsal';
+import { familyNeeds, giverGaps, hooked, KIT_PLANS, LANDING_HELPER_TILE, labChain, meetingTile, rehearsalPlan, ringerTile, ringLoads, STAFF, VitalsRecorder, withRingers } from './dress-rehearsal';
 import type { LabWorld } from './stand-ins';
 
 // without attempt 4's H4m row: these harnesses stage the chain before it
