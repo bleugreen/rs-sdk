@@ -44,6 +44,14 @@
 //   business (rules C and G), and what outlives the step fails at the next boundary row.
 // - in the walk but not live, on boundary rows: informational (eaten, drunk, consumed).
 //
+// Reading the table (rs/158 owns the allow-list and reads every FAIL). Each line is one item over an
+// unbroken run of census rows holding it: `rows` the first and last census of the run and how many
+// rows it spans, `live` and `walk` the counts, `first tick` the session tick of its first row, `class`
+// FAIL or allowed with its kind, `rule` the rule that allowed it. A FAIL row is an item that crossed
+// a step boundary unmodelled: the owner of the step that left it either drops it there or the
+// ledger row gains it, and a rule here only grows by rs/158's ruling. `--rows` gives the per-census
+// view behind a line: the walk point, live/walk slots, every finding of the row.
+//
 // Exit: 0 with no FAIL, or any without --strict; 1 under --strict with a FAIL; 2 when a log or the
 // ledger cannot be read.
 
