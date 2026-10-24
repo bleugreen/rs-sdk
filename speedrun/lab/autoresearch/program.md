@@ -57,7 +57,7 @@ LOCAL_STAFF_LEVEL=4 NODE_TICKRATE=150 LAB_RUNNERS=0 speedrun/lab/lab.sh benchlab
   json). The whole-step median hides small gains: on S12 at 150 ms (eight runs, fedora
   and bbs) the walk and dialogue segments A-F, J and K repeat within 1-3 ticks and carry
   ~286 ticks, while the three fights (G ogre, H scorpion, I bouncer) carry ~266 in 5-tick
-  attack cycles and hold all of the step's 59-81-tick spread. So a change to a
+  attack cycles and hold all of the step's spread (69 ticks over fedora's K=3, 59 over bbs's K=5). So a change to a
   non-fight segment is judged against that segment's own range (a saving larger than
   its range across both sides' runs is real); a change to a fight is judged by its
   median at a larger K (10 or more), or by its attack count. The oak band's spread
