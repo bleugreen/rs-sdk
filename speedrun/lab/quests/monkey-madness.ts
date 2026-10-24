@@ -33,6 +33,10 @@
 // --knockout=N (P): N ticks after SCORED first stands at the bridge jump's landing, a staged knockout (stagedKnockout).
 // --talismanDrain (O): rs/513 chain 1's failure staged: when the child's talisman page opens, prayer is drained to
 // DRINK_BELOW - 1, so upkeep's prayer drink falls due while the talk is open (mm_talisman_drain reports it).
+// --poison=SEV: SCORED is poisoned (::~poison, cheat_other.rs2) before the first segment and carries it in: the run starts
+// --poisonAge=N ticks (default 4) after the first poison hit, so 'You have been poisoned!' is over 32 ticks old and only the
+// hitsplat shows it, as at attempt 4's A. --hp=N lowers current HP to N (::~hit) after it. mm_run reports the poison hits
+// taken during the run and the antipoison doses before and after.
 // --h45 on a chain with P and not M: M's cues are written first (M's open, then its stop and P's open), as M leaves them
 // when it trades nothing, so h45 is logged in and serving P when P lands.
 
@@ -47,7 +51,7 @@ import { closeSession, loadBotEnv, logoutClean, openSession, relog, type Session
 import { isTradeRequest, openTrade, sameName, tradeOf } from '../../lib/trade';
 import { readCue } from '../../helpers/altar-cue';
 import { TickLog } from '../../lib/ticks';
-import { waitTicks } from '../../lib/wait';
+import { waitTicks, waitUntil } from '../../lib/wait';
 import { chebyshev, configId, pos } from '../../lib/world';
 import { BELOW_30_EATING, DRINK_BELOW, H12_POTIONS, H12_SHARKS, inCage, inCell, JOURNAL_PROBE, legCue, MM_OBJ, outsideTown, underTemple, REWARD_ITEMS, SEGMENT_EATING, SEGMENTS, segmentName, steps, type EatPolicy, type MmContext, type TopUp } from '../../quests/monkey-madness';
 import { slotNeed } from '../../quests/segments';
@@ -313,6 +317,9 @@ const runeArrows = (s: BotWorldState) => [...s.inventory, ...s.equipment].filter
 /** Prayer potion doses held: Prayer potion(4) is 4, and so on. */
 const prayerDoses = (s: BotWorldState) => s.inventory.reduce((n, i) => n + (Number(/^Prayer potion\((\d)\)/i.exec(i.name)?.[1] ?? 0) * i.count), 0);
 
+/** The poison hitsplats on the player after `tick` (hitmark 2, poison.rs2; inline so the lab drives older quest code too). */
+const poisonHitsAfter = (s: BotWorldState, tick: number) =>
+    (s.combatEvents ?? []).filter(e => e.type === 'damage_taken' && e.targetType === 'player' && e.hitmark === 2 && e.tick > tick);
 const antipoisonDoses = (s: BotWorldState) => s.inventory.reduce((n, i) => n + (Number(/antipoison\((\d)\)/i.exec(i.name)?.[1] ?? 0) * i.count), 0);
 const sharksHeld = (s: BotWorldState) => s.inventory.filter(i => i.name === 'Shark').length;
 const potionsHeld = (s: BotWorldState) => s.inventory.filter(i => /^Prayer potion\(\d\)/i.test(i.name)).length;
@@ -745,6 +752,9 @@ async function main(): Promise<void> {
     const predose = process.argv.includes('--predose');
     const spawn = arg('spawn', '');
     const spawnAt = arg('spawnAt', '');
+    const poisonSeverity = Number(arg('poison', '0'));
+    const poisonAge = Number(arg('poisonAge', '4'));
+    const hpTo = arg('hp', '');
     const loadCap = Number(arg('loadCap', '0'));
     const throwAt = arg('throwAt', '').toUpperCase();
     const throwPoint = throwAt ? THROW_POINTS[throwAt] : undefined;
@@ -826,6 +836,26 @@ async function main(): Promise<void> {
             await cheat(sdk, `npcadd ${spawn}`, 2);
             if (at) await mustTele(sdk, back.x, back.z, back.level);
         }
+        if (poisonSeverity > 0) {
+            const t0 = sdk.getState()!.tick;
+            await cheat(sdk, `~poison ${poisonSeverity}`);
+            const first = await waitUntil(sdk, s => poisonHitsAfter(s, t0).length > 0, { maxTicks: 40 });
+            if (!first.ok) throw new Error(`--poison=${poisonSeverity}: no poison hit within 40 ticks of t=${t0}`);
+            const firstHitAt = poisonHitsAfter(sdk.getState()!, t0)[0]!.tick;
+            await waitTicks(sdk, poisonAge);
+            result('mm_poison_staged', { run, severity: poisonSeverity, poisonedAt: t0, firstHitAt, startTick: sdk.getState()!.tick });
+        }
+        if (hpTo) {
+            const hp = sdk.getState()!.player!.hp;
+            if (hp > Number(hpTo)) await cheat(sdk, `~hit ${hp - Number(hpTo)}`);
+            await waitUntil(sdk, s => (s.player?.hp ?? 0) <= Number(hpTo), { maxTicks: 5 });
+        }
+        const runStart = sdk.getState()!.tick;
+        const poisonHits = new Map<number, number>();
+        const unpoison = sdk.onStateUpdate(s => {
+            for (const e of poisonHitsAfter(s, runStart)) poisonHits.set(e.tick, e.damage);
+        });
+        const antipoison0 = antipoisonDoses(sdk.getState()!);
         const log = TickLog.memory();
         const s0 = sdk.getState()!;
         const def = s0.skills.find(k => k.name === 'Defence');
@@ -892,6 +922,7 @@ async function main(): Promise<void> {
             error = e instanceof Error ? e.message : String(e);
         } finally {
             disarm();
+            unpoison();
             unknock();
             undrain();
             await unstage();
@@ -910,6 +941,7 @@ async function main(): Promise<void> {
             ticks: Object.fromEntries(log.rows.filter(r => r.step !== BOUNDARY_STEP && !r.step.startsWith('lab:')).map(r => [r.step, r.ticks])), boundary,
             hp: [hp0, s.player?.hp], sharks: [sharks0, s.inventory.filter(i => i.name === 'Shark').length],
             prayer: [pp0, s.prayers?.prayerPoints], potionDoses: [doses0, prayerDoses(s)], runeArrows: [arrows0, runeArrows(s)], at: pos(s),
+            antipoisonDoses: [antipoison0, antipoisonDoses(s)], poisonHits: [...poisonHits].map(([tick, damage]) => ({ tick, damage })),
         });
     }
     console.log(`\nMonkey Madness ${from}..${until}, ${passes}/${runs} clean (dialogue ${dialogue})`);
