@@ -897,13 +897,13 @@ describe('bones on the stay2 lap (`bury`, H4m)', () => {
         expect(load.inProgress!(obs(sdk.state!), {})).toBe(true);
         await load.run(ctx);
         expect(gatedCalls.length).toBe(1);
-        expect(gatedCalls[0]!.params).toMatchObject({ steps: m.BURY_LAP, bury: '^big bones$', respawn: 13, untilLevel: 99, selfStarter: true });
+        expect(gatedCalls[0]!.params).toMatchObject({ steps: m.BURY_LAP, bury: 'bones$', respawn: 13, untilLevel: 99, selfStarter: true });
         expect(gatedCalls[0]!.params.success).toBeUndefined();
         expect(held(sdk.state)).toBe(0);
         expect(heldCalls).toEqual([]);
         expect(rowOf(ctx, '(bury) mining.bury: load 1')!.meta).toMatchObject({ held: 20, onLap: 20, byHand: 0, dropped: 0, lapEnd: null });
         expect((rowOf(ctx, '(band) mining.bury: load 1')!.meta as { rotation: string; bury: unknown }).rotation).toBe('stay2');
-        expect((rowOf(ctx, '(band) mining.bury: load 1')!.meta as { bury: unknown }).bury).toEqual({ bones: '^big bones$', end: 'every bone buried' });
+        expect((rowOf(ctx, '(band) mining.bury: load 1')!.meta as { bury: unknown }).bury).toEqual({ bones: 'bones$', end: 'every bone buried' });
         expect(load.postconditions(sdk.state!, {})).toBe(true);
         expect(load.inProgress!(obs(sdk.state!), {})).toBe(false);
     });
@@ -959,7 +959,7 @@ describe('bones on the stay2 lap (`bury`, H4m)', () => {
         const all = m.steps(opts).filter(s => ['mining.bury: load 1', 'mining.bury: load 2', 'mining.bury: load 3', 'mining.iron-63', 'mining.exit'].includes(s.name));
         const band = all.find(s => s.name === 'mining.iron-63')!;
         expect(band.inProgress!(obs(at(80, 12)), {})).toBe(false);
-        expect(band.preconditions(at(80, 12), {})).toBe('12 bones (^big bones$) held: a bury step buries them before the band');
+        expect(band.preconditions(at(80, 12), {})).toBe('12 bones (bones$) held: a bury step buries them before the band');
         expect(band.inProgress!(obs(at(80, 0)), {})).toBe(true);
         // at buryPrayerTo the bones are not owed: the band takes them on to the exit's drop
         expect(band.inProgress!(obs(at(80, 12, 99)), {})).toBe(true);

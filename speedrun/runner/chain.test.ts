@@ -24,7 +24,7 @@ import * as woodcutting from '../skills/woodcutting';
 import {
     ALTERNATIVES, anvilAnnounce, CANNON_ROWS, cueAround, cueMuleRows, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleScope, s07PrayerTo, S07_PRAYER_TO, s07Woodcutting, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
     whenNeeded, withCue, askedOnTrade, h12oLogin, h12oLoginRefusal, h12oTopUp, H12O_LOGIN, type ChainStep, type CueSink, type RunConfig,
-    BIG_BONE_BASE, chainPartners, H4M_MIN_PRAYER, H4M_ROW, H4M_TRADE_TILE, S09_PRAYER_TO, type ChainOptions,
+    H4M_BONES, chainPartners, H4M_MIN_PRAYER, H4M_ROW, H4M_TRADE_TILE, S09_PRAYER_TO, type ChainOptions,
 } from './chain';
 import { CUE_BEACONS, CueKeeper, exitStopIsFinal, prepareCueDir, RunCues } from './cue-keeper';
 import { ScopeSessions } from '../helpers/standalone';
@@ -1275,19 +1275,19 @@ describe('S11a: the gnome course to Agility 25', () => {
 describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
     const H4E = MANIFEST_TEXT.split('\n').find(l => l.startsWith('| H4e |'))!;
     // rs/158's draft row (STEP-MANIFEST.md, 'H4m draft'): not in force, so put in by hand here
-    const H4M_LINE = '| H4m.1-H4m.10 | big bones @532 x20 [u] | - | - | 20 | fixture: rs/158\'s draft row |';
+    const H4M_LINE = '| H4m.1-H4m.5 | babydragon bones @534 x20 [u] | - | - | 20 | fixture: rs/158\'s row (main 06:5xZ) |';
     const WITH_H4M = MANIFEST_TEXT.replace(`${H4E}\n`, `${H4E}\n${H4M_LINE}\n`);
     const H4M: RunConfig = { ...CONFIG, s07PrayerTo: 98, partners: { ...PARTNERS, H4m: 'p_h4m' } };
     const record = () => new HandOffRecord(mkdtempSync(join(tmpdir(), 'chain-h4m-')), 'attempt-1');
     const build = (cfg: RunConfig = H4M, o: Partial<ChainOptions> = {}) => buildChain(cfg, { cues: recorder().cues, manifest: WITH_H4M, handOffs: record(), ...o });
     const s09 = (c: readonly ChainStep[]) => c.slice(c.findIndex(s => s.id === 'H4p'), c.findIndex(s => s.id === 'T09-10')).map(s => `${s.id}: ${s.name}`);
     const shape = (c: readonly ChainStep[]) => c.map(s => [s.id, s.kind, s.name, s.cue ?? null, s.finalStop ?? null]);
-    const LOADS = Array.from({ length: 10 }, (_, i) => `H4m.${i + 1}`);
+    const LOADS = Array.from({ length: 5 }, (_, i) => `H4m.${i + 1}`);
 
     type Held = [name: string, count: number, id?: number];
     const KIT: Held[] = [['Knife', 1, 946], ['Logs', 1, 1511], ['Rune pickaxe', 1, 1275], ['Logs', 1, 1511]];
     const zoo = (o: { bones?: number; prayer?: number; mining?: number; extra?: number; partner?: boolean; x?: number; z?: number } = {}) => {
-        const held: Held[] = [...KIT, ...Array.from({ length: o.bones ?? 0 }, (): Held => ['Big bones', 1, 532]), ...Array.from({ length: o.extra ?? 0 }, (): Held => ['Shark', 1, 385])];
+        const held: Held[] = [...KIT, ...Array.from({ length: o.bones ?? 0 }, (): Held => ['Babydragon bones', 1, 534]), ...Array.from({ length: o.extra ?? 0 }, (): Held => ['Shark', 1, 385])];
         return baseState({
             tick: 1,
             inGame: true,
@@ -1309,7 +1309,7 @@ describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
         expect(today.filter(s => /H4m|mining\.bury/.test(`${s.id} ${s.name}`))).toEqual([]);
         // the ledger in force carries no H4m row, so nothing changes until main rules it in (rs/158)
         expect(MANIFEST_TEXT).not.toContain('| H4m.1-H4m.');
-        expect(() => buildChain(CONFIG, { cues: recorder().cues, manifest: WITH_H4M })).toThrow(/carry H4m \(10 loads for the carrier\), but the run config's s07PrayerTo is 99/);
+        expect(() => buildChain(CONFIG, { cues: recorder().cues, manifest: WITH_H4M })).toThrow(/carry H4m \(5 loads for the carrier\), but the run config's s07PrayerTo is 99/);
         expect(chainPartners(CONFIG, today)).toBe(CONFIG.partners);
     });
 
@@ -1321,10 +1321,10 @@ describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
             expect([s.kind, s.cue]).toEqual(['handoff', { step: row, family: 'mule' }]);
         }
         // one carrier: only its last row stops final, so it stands on between loads
-        expect(LOADS.map(row => c.find(x => x.id === row)!.finalStop)).toEqual([...Array(9).fill(false), true]);
+        expect(LOADS.map(row => c.find(x => x.id === row)!.finalStop)).toEqual([...Array(4).fill(false), true]);
         // the delivery preflight's partners: every load is H4m's carrier
         const partners = chainPartners(H4M, c);
-        expect(LOADS.map(row => partners[row])).toEqual(Array(10).fill('p_h4m'));
+        expect(LOADS.map(row => partners[row])).toEqual(Array(5).fill('p_h4m'));
         expect(partners.H4p).toBe(PARTNERS.H4p!);
         // S07's willow band closes at 98
         const willow = c.find(s => s.id === 'S07' && s.name === 'woodcutting:willow-73-99')!;
@@ -1335,23 +1335,31 @@ describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
         });
         expect(willow.postconditions(wc(98), {})).toBe(true);
         // the bury steps' lap and drop level
-        const all = mining.steps({ ...S09_MINING, bury: mining.BIG_BONES, buryLoads: 10, buryPrayerTo: 99 });
-        expect(all.filter(s => s.name.startsWith('mining.bury')).length).toBe(10);
+        const all = mining.steps({ ...S09_MINING, bury: '^babydragon bones$', buryLoads: 5, buryPrayerTo: 99 });
+        expect(all.filter(s => s.name.startsWith('mining.bury')).length).toBe(5);
     });
 
     test('the chain refuses: s07PrayerTo below 94, loads that cannot reach 99 from its floor, no H4m row, no carrier, no hand-off record', () => {
         expect(() => build({ ...H4M, s07PrayerTo: 93 })).toThrow("s07PrayerTo 93 < 94: S09's combat 43 needs Prayer 94 (rs/360)");
-        // 10 x 20 x 15 = 3,000 base: 98's floor (37,263.00) to 99 (39,938.32) is 2,675.32, 179 bones; 97's needs 345
+        // 5 x 20 x 30 = 3,000 base: 98's floor (37,263.00) to 99 (39,938.32) is 2,675.32, 90 babydragon; 97's needs 173
         expect(H4M_MIN_PRAYER).toBe(94);
-        expect(() => build({ ...H4M, s07PrayerTo: 97 })).toThrow('H4m: 10 loads of 20 big bones bring 3000.00 base, and from Prayer 97\'s floor (34766.80 base) to 99 (39938.32) needs 5171.52: 345 bones');
-        expect(() => build({ ...H4M, s07PrayerTo: 94 })).toThrow(/needs 11701\.48: 781 bones/);
-        expect(() => build(H4M, { manifest: WITH_H4M.replace('H4m.1-H4m.10', 'H4m.1-H4m.8') })).toThrow(/8 loads of 20 big bones bring 2400\.00 base.*179 bones/);
-        expect(build(H4M, { manifest: WITH_H4M.replace('H4m.1-H4m.10', 'H4m.1-H4m.9') }).filter(s => s.name.startsWith('mining.bury')).length).toBe(9);
+        expect(() => build({ ...H4M, s07PrayerTo: 97 })).toThrow('H4m: 5 loads of 20 babydragon bones bring 3000.00 base, and from Prayer 97\'s floor (34766.80 base) to 99 (39938.32) needs 5171.52: 173 babydragon bones');
+        expect(() => build({ ...H4M, s07PrayerTo: 94 })).toThrow(/needs 11701\.48: 391 babydragon bones/);
+        // one load short: 4 x 20 x 30 = 2,400 < 2,675.32 (the by-hand stop buries only what was traded)
+        expect(() => build(H4M, { manifest: WITH_H4M.replace('H4m.1-H4m.5', 'H4m.1-H4m.4') })).toThrow('H4m: 4 loads of 20 babydragon bones bring 2400.00 base, and from Prayer 98\'s floor (37263.00 base) to 99 (39938.32) needs 2675.32: 90 babydragon bones');
+        // the table's other bones price at their own xp: 9 x 20 big bones (2,700) clear 98, 8 (2,400) do not
+        const big = (n: number) => WITH_H4M.replace('H4m.1-H4m.5 | babydragon bones @534', `H4m.1-H4m.${n} | big bones @532`);
+        const c9 = build(H4M, { manifest: big(9) });
+        expect(c9.filter(s => s.name.startsWith('mining.bury')).length).toBe(9);
+        expect(c9.find(s => s.name === 'mining.bury: load 9')!.postconditions(zoo({ prayer: 99 }), {})).toBe(true);
+        expect(() => build(H4M, { manifest: big(8) })).toThrow(/8 loads of 20 big bones bring 2400\.00 base.*179 big bones/);
         expect(() => build(H4M, { manifest: MANIFEST_TEXT })).toThrow("s07PrayerTo 98 leaves Prayer 99 to S09's H4m loads, and STEP-MANIFEST.md's fallback hand-offs have no H4m row");
         expect(() => build({ ...H4M, partners: PARTNERS })).toThrow('names no partner for H4m');
         expect(() => buildChain(H4M, { cues: recorder().cues, manifest: WITH_H4M })).toThrow(/hand-off record/);
-        expect(() => build(H4M, { manifest: WITH_H4M.replace('big bones @532 x20 [u]', 'babydragon bones @534 x20 [u]') })).toThrow(/must receive only big bones @532/);
-        expect([BIG_BONE_BASE, S09_PRAYER_TO, H4M_ROW]).toEqual([15, 99, 'H4m']);
+        expect(() => build(H4M, { manifest: WITH_H4M.replace('babydragon bones @534 x20 [u]', 'bones @526 x20 [u]') })).toThrow('must receive one bone by id, unnoted and a fixed count, of dragon_bones @536, babydragon_bones @534, big_bones @532');
+        expect(() => build(H4M, { manifest: WITH_H4M.replace('babydragon bones @534 x20 [u]', 'babydragon bones @534 x20 [n]') })).toThrow(/must receive one bone by id, unnoted/);
+        expect(H4M_BONES.map(b => [b.id, b.base])).toEqual([[536, 72], [534, 30], [532, 15]]);
+        expect([S09_PRAYER_TO, H4M_ROW]).toEqual([99, 'H4m']);
     });
 
     test("a load: room for 20 is its precondition, not the carrier in view; it opens its own mule cue fresh (the carrier's readiness), walks onto the east stay, then waits for the carrier", async () => {
@@ -1380,15 +1388,15 @@ describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
 
     test("the last bury step carries the chain's Prayer 99; the booth fallback stays behind it", () => {
         const c = build();
-        const last = c.find(s => s.name === 'mining.bury: load 10')!;
+        const last = c.find(s => s.name === 'mining.bury: load 5')!;
         expect(last.postconditions(zoo({ prayer: 99 }), {})).toBe(true);
-        expect(last.postconditions(zoo({ prayer: 98 }), {})).toBe("Prayer 98 < 99 after H4m's 10 loads (S07 closed at 98): the chain's Prayer 99");
-        expect(last.postconditions(zoo({ prayer: 99, bones: 3 }), {})).toBe('3 bones (^big bones$) still held');
+        expect(last.postconditions(zoo({ prayer: 98 }), {})).toBe("Prayer 98 < 99 after H4m's 5 loads (S07 closed at 98): the chain's Prayer 99");
+        expect(last.postconditions(zoo({ prayer: 99, bones: 3 }), {})).toBe('3 bones (^babydragon bones$) still held');
         // the points do not count: a drained Prayer 99 is 99
         const drained = zoo({ prayer: 99 });
         drained.skills = drained.skills.map(k => (k.name === 'Prayer' ? { ...k, level: 60 } : k));
         expect(last.postconditions(drained, {})).toBe(true);
-        expect(c.find(s => s.name === 'mining.bury: load 9')!.postconditions(zoo({ prayer: 98 }), {})).toBe(true);
+        expect(c.find(s => s.name === 'mining.bury: load 4')!.postconditions(zoo({ prayer: 98 }), {})).toBe(true);
         expect(c.filter(s => s.id === 'S25b-fallback').length).toBe(1);
     });
 
