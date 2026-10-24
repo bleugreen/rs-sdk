@@ -390,6 +390,17 @@ describe('ledger-derived mule delivery fixtures', () => {
         expect(p.fixtures.find(f => f.row === 'H14')!.receivingArea).toMatchObject({ x: 2670, z: 3305 });
     });
 
+    test('a greegree is held, never worn, at an off-atoll meeting (the engine unequips it leaving its zone)', () => {
+        const p = plan(manifest, ['H13'], { overrides: fullRouteOverrides(manifest) });
+        expect(p.unresolved).toEqual([]);
+        const f = p.fixtures[0]!;
+        expect(f.beforeEquipment.some(i => /greegree/i.test(i.name))).toBe(false);
+        expect(f.beforeInventory.some(i => /greegree/i.test(i.name))).toBe(true);
+        expect(f.afterEquipment.some(i => /greegree/i.test(i.name))).toBe(false);
+        expect(f.afterInventory.some(i => /greegree/i.test(i.name))).toBe(true);
+        expect(f.takeBacks.some(i => /greegree|khazard/i.test(i.name))).toBe(false);
+    });
+
     test('owner-authorized lab projection pins ordinary IDs and has no H21d platebody', () => {
         const projected = readFileSync(new URL('../../docs/speedrun/research/mule-delivery-ledger.md', import.meta.url), 'utf8');
         const provenance = JSON.parse(readFileSync(new URL('../../docs/speedrun/research/mule-delivery-ledger.provenance.json', import.meta.url), 'utf8'));
