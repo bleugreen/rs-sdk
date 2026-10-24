@@ -154,7 +154,7 @@ describe('the real S04 and S06 givers', () => {
         const all = { ringers: RINGERS, altarGivers: ALTAR, droppers: FD, boneGivers: BG, anvil: 'cairn_anv1', cannonHolder: 'cairn_h92', wineGiver: 'lab_wine', labHelpers: [...RINGERS, 'lab_wine'], ...LATE };
         expect(giverGaps(chain, all)).toEqual([]);
         expect(giverGaps(chain, { ...all, carriers: ['cairn_dm1', 'cairn_dw55', 'cairn_de03'] })).toEqual([]);
-        expect(giverGaps(chain, { ...all, carriers: ['cairn_dm1', 'cairn_dw55', 'cairn_anv1'] })).toEqual(['--carriers cairn_anv1 is also named by --anvil', 'S25a: cairn_anv1 is named by --anvil and by another giver flag'].slice(0, 1));
+        expect(giverGaps(chain, { ...all, carriers: ['cairn_dm1', 'cairn_dw55', 'cairn_anv1'] })).toEqual(['--carriers cairn_anv1 is also named by --anvil']);
     });
 
     test('a slice that runs S07 with no bone givers refuses, naming S07 and --bone-givers; a name another flag uses refuses too', () => {
