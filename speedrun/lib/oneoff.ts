@@ -162,6 +162,12 @@ export function usedSlots(items: readonly (InventoryItem | null | undefined)[] |
     return (items ?? []).filter(Boolean).length;
 }
 
+export const PACK_SLOTS = 28;
+
+export function freeSlots(items: readonly (InventoryItem | null | undefined)[] | undefined): number {
+    return PACK_SLOTS - usedSlots(items);
+}
+
 export interface PackChange {
     id: number;
     before: number;
@@ -242,6 +248,25 @@ export function listedIn(roster: readonly RosterEntry[], account: string): boole
 /** sha256 of the lowercased roster name, hex: how a courier is named in a command without its name. */
 export function nameHash(name: string): string {
     return createHash('sha256').update(name.toLowerCase()).digest('hex');
+}
+
+/** How far from the meet tile a courier may stand at preflight. */
+export const COURIER_WITHIN = 6;
+
+/**
+ * The courier named by `hash` (a prefix of nameHash, 6+ hex digits) on the player list: exactly one
+ * match, within COURIER_WITHIN tiles of `meet`; else why not. Every match is redacted to COURIER.
+ */
+export function findCourier(roster: readonly RosterEntry[], hash: string, meet: Tile, redact: Redactor): { name: string; line: Record<string, unknown> } | string {
+    const h = hash.toLowerCase();
+    if (!/^[0-9a-f]{6,64}$/.test(h)) return 'the courier hash must be 6 to 64 hex digits';
+    const matches = roster.filter(p => nameHash(p.name).startsWith(h));
+    for (const m of matches) redact.add(m.name, 'COURIER');
+    if (matches.length !== 1) return `${matches.length} listed players match the courier hash; need exactly 1`;
+    const m = matches[0]!;
+    const dist = chebyshev({ x: m.x, z: m.z, level: m.level }, meet);
+    if (dist > COURIER_WITHIN) return `the courier is ${Number.isFinite(dist) ? `${dist} tiles` : 'on another level'} from the meet tile (at most ${COURIER_WITHIN})`;
+    return { name: m.name, line: { courierMatches: 1, courier: { x: m.x, z: m.z, level: m.level, distFromMeet: dist } } };
 }
 
 /** `--name=value` from argv. */

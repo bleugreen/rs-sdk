@@ -7,11 +7,11 @@
 // --have is the count the pack must hold before anything is dropped; --at the tile SCORED must stand
 // within --within tiles of (Chebyshev, default 2) once in the world, since a drop is not undone. After:
 // the id must be gone and every other id unchanged (any other change is a `pack-other` line), and
-// --worn, when given, still worn.
+// --worn, when given, still worn, and --slots, when given, the pack's used slot count.
 
 import { byId, EXIT, intFlag, flag, packChanges, parseTile, runOneoff, usedSlots } from '../../lib/oneoff';
 
-const USAGE = 'usage: bun speedrun/tools/oneoff.ts drop --id=ID --have=N --at=X,Z[,LEVEL] [--within=2] [--worn=ID] [--go]';
+const USAGE = 'usage: bun speedrun/tools/oneoff.ts drop --id=ID --have=N --at=X,Z[,LEVEL] [--within=2] [--worn=ID] [--slots=N] [--go]';
 
 if (import.meta.main) {
     const argv = process.argv.slice(2);
@@ -20,7 +20,8 @@ if (import.meta.main) {
     const at = parseTile(flag(argv, 'at'));
     const within = intFlag(argv, 'within') ?? 2;
     const worn = intFlag(argv, 'worn');
-    if (id === undefined || Number.isNaN(id) || have === undefined || Number.isNaN(have) || have < 1 || !at || Number.isNaN(within) || Number.isNaN(worn ?? 0)) {
+    const slots = intFlag(argv, 'slots');
+    if (id === undefined || Number.isNaN(id) || have === undefined || Number.isNaN(have) || have < 1 || !at || Number.isNaN(within) || Number.isNaN(worn ?? 0) || Number.isNaN(slots ?? 0)) {
         console.log(USAGE);
         process.exit(EXIT.usage);
     }
@@ -49,8 +50,10 @@ if (import.meta.main) {
                 if (other.length) c.out('pack-other', other);
                 const wornOk = worn === undefined || (byId(s1.equipment)[worn] ?? 0) > 0;
                 if (worn !== undefined) c.out('worn', { id: worn, worn: wornOk });
-                const ok = r.success && changes.length === 0 && wornOk;
-                c.out(ok ? 'CHECK-OK' : 'CHECK-FAIL', { dropped: pre[id], changes, wornOk });
+                const used = usedSlots(s1.inventory);
+                const slotsOk = slots === undefined || used === slots;
+                const ok = r.success && changes.length === 0 && wornOk && slotsOk;
+                c.out(ok ? 'CHECK-OK' : 'CHECK-FAIL', { dropped: pre[id], changes, wornOk, ...(slots !== undefined ? { slots: used, slotsWanted: slots } : {}) });
                 return ok;
             },
         })
