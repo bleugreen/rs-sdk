@@ -4,7 +4,7 @@
 
 import { type Link, type Probe, type ResumeEvent, runResumable } from '../runner/resume';
 import { describeExit, leaveAfterFailure } from '../runner/retreat';
-import { StepError, type Step, type StepRecord } from '../runner/step';
+import { StepError, type RunnerSession, type Step, type StepRecord } from '../runner/step';
 import { EXIT_HOST_RESERVED, type HostReservation, type ReservationWatch, reservationText } from './host-reservation';
 import type { LogoutResult, Session } from './session';
 import type { BotWorldState } from '../../sdk/types';
@@ -257,6 +257,88 @@ export class ProgramTracker {
     }
 }
 
+/** Where a poison was seen: a game message matching /poison/i, or the state's `poisonSeenAt` tick. */
+export interface PoisonSighting {
+    tick: number;
+    source: 'message' | 'hitmark';
+    text?: string;
+}
+
+/** The poison note a row carries: the sightings between its start and end tick. */
+export interface PoisonNote {
+    seen: number;
+    firstTick: number;
+    lastTick: number;
+    /** 'hitmark' once any sighting in the row was one, else 'message'. */
+    source: PoisonSighting['source'];
+    /** The first message's text, when a message was seen. */
+    text?: string;
+}
+
+export const POISON_MESSAGE = /poison/i;
+
+/** Sightings kept: far more than any one row spans, so a row's note is never cut short by the bound. */
+const POISON_KEPT = 2_000;
+
+/**
+ * SCORED's hp and poison for the tick log: `stamp` adds `hp` and `maxHp` (from state.player at the
+ * row's end, which is when it is appended) and a `poison` note to a row's meta. The poison evidence
+ * is each new game message matching /poison/i, and a state's numeric `poisonSeenAt` (the tick a
+ * poison hitsplat was last seen) where the client publishes one; the hitmark wins where both are seen.
+ * A death is then diagnosable from the log alone: the hp series shows the fall, the notes the poison.
+ */
+export class VitalsTracker {
+    private sightings: PoisonSighting[] = [];
+    private messageKeys = new Set<string>();
+    private hitmarkAt: number | null = null;
+    private lastTick = -1;
+
+    observe(s: Pick<BotWorldState, 'tick' | 'gameMessages'>): void {
+        // A client relaunch restarts the tick count: sightings on the old count would land in new rows.
+        if (s.tick < this.lastTick) {
+            this.sightings = [];
+            this.messageKeys.clear();
+            this.hitmarkAt = null;
+        }
+        this.lastTick = s.tick;
+        const keys = new Set<string>();
+        for (const m of s.gameMessages ?? []) {
+            if (!POISON_MESSAGE.test(m.text)) continue;
+            const key = `${m.observationId ?? ''}|${m.tick}|${m.text}`;
+            keys.add(key);
+            if (!this.messageKeys.has(key)) this.sightings.push({ tick: m.tick, source: 'message', text: m.text });
+        }
+        // The messages are a rolling window: a key is new only against the window seen last.
+        this.messageKeys = keys;
+        const hit = (s as { poisonSeenAt?: unknown }).poisonSeenAt;
+        if (typeof hit === 'number' && Number.isFinite(hit) && hit !== this.hitmarkAt) {
+            this.hitmarkAt = hit;
+            this.sightings.push({ tick: hit, source: 'hitmark' });
+        }
+        if (this.sightings.length > POISON_KEPT) this.sightings = this.sightings.slice(-POISON_KEPT);
+    }
+
+    /** The poison note for ticks `start` to `end`, or null when none was seen. */
+    poisonDuring(start: number, end: number): PoisonNote | null {
+        if (start < 0) return null;
+        const seen = this.sightings.filter(x => x.tick >= start && x.tick <= Math.max(start, end));
+        if (!seen.length) return null;
+        const ticks = seen.map(x => x.tick);
+        const text = seen.find(x => x.text)?.text;
+        return { seen: seen.length, firstTick: Math.min(...ticks), lastTick: Math.max(...ticks), source: seen.some(x => x.source === 'hitmark') ? 'hitmark' : 'message', ...(text ? { text } : {}) };
+    }
+
+    /** `row` with `hp`, `maxHp` and `poison` in its meta; a key the row's meta already has is kept. */
+    stamp(row: TickRow, s: Pick<BotWorldState, 'player'> | null): TickRow {
+        const p = s?.player;
+        const poison = this.poisonDuring(row.startTick, row.endTick);
+        if (!p && !poison) return row;
+        const meta = row.meta ?? {};
+        const add: Record<string, unknown> = { ...(p ? { hp: p.hp, maxHp: p.maxHp } : {}), ...(poison ? { poison } : {}) };
+        for (const k of Object.keys(add)) if (k in meta) delete add[k];
+        return { ...row, meta: { ...meta, ...add } };
+    }
+}
 
 export function programRow(log: Pick<TickLog, 'runId'>, account: string, sessionId: number, st: ProgramStatus): TickRow {
     return annotation(log, account, 'program', `(program) ${st.name}`, {
