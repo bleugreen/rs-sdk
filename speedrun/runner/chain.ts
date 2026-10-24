@@ -94,6 +94,12 @@ export type ChainStep = AnyStep & {
     finalStop?: boolean;
     /** Where the step's preconditions require SCORED to start, as data (chainSeams reads it). */
     startTile?: StartTile;
+    /**
+     * The step takes nothing from its id's helpers (S07's axe drop): it is outside their cue, and the
+     * role-phase gate (runner/phase-gate.ts phasePath) does not judge them for it, so a run resumed
+     * at it is not refused by givers that have finished and publish phase 'off'.
+     */
+    helperFree?: true;
 };
 
 /**
@@ -186,6 +192,8 @@ export interface CueSink {
     stop(scope: CueScope, ctx: StepContext<unknown>, o?: { final?: boolean; failed?: boolean }): void;
     /** Rewrite `scope`'s open delivery cue now, just before its trade; record-only sinks may omit this. */
     refresh?(scope: CueScope): boolean;
+    /** A cued row the chain skips without opening it (CueKeeper.skip); record-only sinks may omit this. */
+    skip?(scope: CueScope, o: { final: boolean }): void;
     /** Runtime ownership of a module's direct writer; record-only sinks may omit this. */
     writer?(scope: CueScope): runecraft.CueSink;
     /**
@@ -517,14 +525,18 @@ export function ledgerCoverage(rows: readonly LedgerRow[]): string[] {
 /**
  * `step`, a module's own trade with a standing mule partner (S15's gtSwap for H12), with the row's
  * top-up ask written on the first frame showing that trade open, as handoff.ts writes a placed row's:
- * mule.ts offers a top-up line (H12's `shark to 15`) only on SCORED's ask. Sized from the state the
- * step starts in; nothing is written when every top-up is met.
+ * mule.ts offers a top-up line (H12's `shark to 15`) only on SCORED's ask. Sized on that open frame,
+ * not at the step's start: the step's upkeep may eat a kit line between the two (attempt 4's S15:A
+ * arrived at ~1 HP and ate a shark after a step-start ask of 12, so the kit closed at 14). So it
+ * always subscribes, and a pack met at the start but eaten below its count before the open still
+ * asks; nothing is written when every top-up is met on the open frame.
  */
 export function askedOnTrade(step: ChainStep, plan: HandOffPlan, partner: string, dir: string): ChainStep {
     const wrap = (f: (ctx: StepContext<unknown>) => Promise<void>) => async (ctx: StepContext<unknown>) => {
-        const s = ctx.sdk.getState();
-        const items = s ? askFor(s, plan) : [];
-        const off = items.length ? monkeyMadness.onTradeOpen(ctx.sdk, partner, () => void writeTopUpAsk(dir, items, Date.now(), muleScope(plan.id))) : () => {};
+        const off = monkeyMadness.onTradeOpen(ctx.sdk, partner, st => {
+            const items = askFor(st, plan);
+            if (items.length) writeTopUpAsk(dir, items, Date.now(), muleScope(plan.id));
+        });
         try {
             await f(ctx);
         } finally {
@@ -532,6 +544,33 @@ export function askedOnTrade(step: ChainStep, plan: HandOffPlan, partner: string
         }
     };
     return { ...step, run: wrap(step.run), resume: wrap(step.resume ?? step.run) };
+}
+
+/** Prayer's base level: the level, not the points (skillLevel reads the current, drained level). */
+const prayerAt = (st: BotWorldState) => st.skills.find(k => k.name.toLowerCase() === 'prayer')?.baseLevel ?? 0;
+/** H4m's loads have nothing left to do: Prayer is at S09_PRAYER_TO (S07 may reach it before its last band closes). */
+export const h4mPrayerMet: Met = st => prayerAt(st) >= S09_PRAYER_TO;
+
+/**
+ * An H4m load skipped when Prayer is already 99 at its cue (attempt 4: S07 reached 99 before
+ * Woodcutting 99, and all five loads were traded and dropped, ~360 ticks). No cue opens, no walk and no
+ * trade: the carrier keeps the load, and the cue sink moves its carry-ahead on, a last row stopping
+ * final as a served one does (CueKeeper.skip). Below 99 the load runs as built.
+ */
+export function skippedAtPrayer99(step: ChainStep, cues: CueSink): ChainStep {
+    const wrap = (f: (ctx: StepContext<unknown>) => Promise<void>) => async (ctx: StepContext<unknown>) => {
+        const st = ctx.sdk.getState();
+        if (!st || !h4mPrayerMet(st)) return f(ctx);
+        noteRow(ctx, `${step.name} (skipped)`, { id: step.id, why: `Prayer ${prayerAt(st)} at its cue: no trade, the carrier keeps the load` });
+        if (step.cue) cues.skip?.(step.cue, { final: step.finalStop ?? false });
+    };
+    return {
+        ...step,
+        preconditions: (st, c) => (h4mPrayerMet(st) ? true : step.preconditions(st, c)),
+        postconditions: (st, c) => (h4mPrayerMet(st) ? true : step.postconditions(st, c)),
+        run: wrap(step.run),
+        resume: wrap(step.resume ?? step.run),
+    };
 }
 
 /** Where SCORED takes each H4m load: the bone lap's east stay, the one tile beside the carrier's stand (rs/705's reach check). */
@@ -728,6 +767,19 @@ export function census(s: BotWorldState): { inventory: { name: string; count: nu
 
 export const CENSUS_STEP = '(census)';
 
+/** The `label` of the `(census)` row a stop writes at its logout boundary (censusAtStop). */
+export const STOP_CENSUS_LABEL = 'stop at the logout boundary';
+
+/**
+ * The `(census)` row for a stop at a logout-safe boundary, written before its logout: the pack the
+ * step after the boundary will start with, so the next start's pre-login rune census reads the
+ * true pack and not the one the last step started with (runner/rune-census.ts lastCensus).
+ */
+export function censusAtStop(ctx: Pick<StepContext<unknown>, 'log' | 'session' | 'sdk'>, next: { name: string; id?: string }): void {
+    const st = ctx.sdk.getState();
+    if (st) noteRow(ctx, CENSUS_STEP, { before: next.name, ...(next.id ? { id: next.id } : {}), label: STOP_CENSUS_LABEL, ...census(st) });
+}
+
 /** `step` with a 0-tick `(census)` note before it runs or resumes. */
 export function censused(step: ChainStep): ChainStep {
     const at = (ctx: StepContext<unknown>) => {
@@ -880,9 +932,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         // Without the record (a build that never resumes) a bury step is done at Prayer 99 only; run.ts always passes it.
         const record = o.record?.handOffs ?? { has: () => false };
         const bones = new RegExp(h.pattern, 'i');
-        // the level, not the points (skillLevel's current level)
-        const prayerAt = (st: BotWorldState) => st.skills.find(k => k.name.toLowerCase() === 'prayer')?.baseLevel ?? 0;
-        const reached = (st: BotWorldState) => prayerAt(st) >= S09_PRAYER_TO;
+        const reached = h4mPrayerMet;
         const out: Entry[] = [];
         h.rows.forEach((row, i) => {
             const last = i === h.rows.length - 1;
@@ -941,7 +991,10 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...before('S07'),
         ...boneCued(steps('S07', [...wc('woodcutting:walk-oaks'), ...wc('woodcutting:normal-1-15'), ...wc('woodcutting:oak-15-73')])),
         L('T07a'),
-        ...boneCued(steps('S07', [...wc('woodcutting:willow-73-99'), ...wc('woodcutting:drop-axe')])),
+        ...boneCued(steps('S07', wc('woodcutting:willow-73-99'))),
+        // The willow band's end is a logout-safe boundary, and the drop needs no giver: --from here passes
+        // the bone group's phase whatever it publishes once its loads are done.
+        tag('S07', 'step', wc('woodcutting:drop-axe')[0]!, { helperFree: true }),
         L('T07-08'),
         // The quests' kit rows are placed hand-offs at the arrival tile: each kit segment then only checks.
         ...before('S08'),
@@ -1061,7 +1114,8 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         out.unshift(muleRow ? mule(placed, e.row) : placed);
     }
     const tileOf = startTiles(cfg);
-    return cueMuleRows(out, muleRows, partner, o.cues).map(censused).map(s => {
+    const h4mLoads = new Set(h4m?.rows ?? []);
+    return cueMuleRows(out, muleRows, partner, o.cues).map(s => (s.kind === 'handoff' && h4mLoads.has(s.id) ? skippedAtPrayer99(s, o.cues) : s)).map(censused).map(s => {
         const t = tileOf(s.name);
         return t ? { ...s, startTile: t } : s;
     });

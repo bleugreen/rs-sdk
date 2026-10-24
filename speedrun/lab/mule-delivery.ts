@@ -11,7 +11,7 @@ import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import type { BotWorldState, NearbyNpc } from '../../sdk/types';
+import type { BotWorldState } from '../../sdk/types';
 import { getDoorAt, isTileWalkable, isZoneAllocated } from '../../sdk/pathfinding';
 import { CueWriter, writeTopUpAsk } from '../helpers/altar-cue';
 import { isTopUp, role, type PackageItem } from '../helpers/mule';
@@ -317,22 +317,6 @@ function snapshot(s: BotWorldState | null) {
         bankOpen: s.bank.isOpen, trade: s.trade, dialogOpen: s.dialog.isOpen
     };
 }
-/** Evidence for a carrier hitpoint loss: its tile, the hits with their source NPC, and every NPC within 2 tiles. */
-function hpDrop(s: BotWorldState, from: number) {
-    const p = s.player!;
-    const tile = (n: NearbyNpc) => ({ x: n.tileX ?? n.x, z: n.tileZ ?? n.z });
-    const reach = (n: NearbyNpc) => Math.max(Math.abs(tile(n).x - p.worldX), Math.abs(tile(n).z - p.worldZ));
-    const npc = (n: NearbyNpc) => ({ name: n.name, id: n.id, index: n.index, combatLevel: n.combatLevel, tile: tile(n), distance: reach(n), inCombat: n.inCombat, targetIndex: n.targetIndex });
-    const hits = s.combatEvents.filter(e => e.type === 'damage_taken' && e.tick >= s.tick - 3);
-    return {
-        tick: s.tick, at: { x: p.worldX, z: p.worldZ, level: p.level }, hp: { from, to: p.hp },
-        hits: hits.map(e => {
-            const source = e.sourceType === 'npc' ? s.nearbyNpcs.find(n => n.index === e.sourceIndex) : undefined;
-            return { ...e, source: source ? npc(source) : null };
-        }),
-        within2: s.nearbyNpcs.filter(n => reach(n) <= 2).map(npc),
-    };
-}
 function emit(event: string, fields: Record<string, unknown> = {}) {
     const record = { event, ms: Date.now(), muleTick: mule?.sdk.getState()?.tick ?? null, ...fields };
     evidence.push(record);
@@ -585,11 +569,8 @@ try {
     emit('measurement-start', { revision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), rows, options, helperProfile, profileStats, protectedInventory, idleMs, idleRow, holdMs, stopOnRow, recipientProfile, recipientStats, recipientProfileSource, itinerary: itinerary ?? null, tickRate: process.env.NODE_TICKRATE, mule: snapshot(mule.sdk.getState()), scored: snapshot(scored.sdk.getState()), root });
     if (traceTrades) for (const session of sessions) installTradeTrace(session);
     let lastPhase = '';
-    let lastHp = mule.sdk.getState()!.player!.hp;
     unsubscribe = mule.sdk.onStateUpdate(st => {
         minHp = Math.min(minHp, st.player?.hp ?? 0);
-        if (st.player && st.player.hp < lastHp) emit('hp-drop', hpDrop(st, lastHp));
-        if (st.player) lastHp = st.player.hp;
         maxInventorySlots = Math.max(maxInventorySlots, st.inventory.length);
         if (h4TradeTick !== null && h4kTradeTick === null && st.bank.isOpen) bankBetweenTrades = true;
         const ready = readMuleReady(options.cueDir, account);

@@ -377,6 +377,8 @@ export interface CombatEvent {
     type: 'damage_taken' | 'damage_dealt' | 'kill';
     /** Damage amount (for damage events) */
     damage: number;
+    /** The hitsplat's type on the player's own damage_taken events: 0 block, 1 damage, 2 poison (the server's hitmark.constant). Absent on other events. */
+    hitmark?: number;
     /** Source of damage/kill */
     sourceType: 'player' | 'npc' | 'other_player';
     /** Index of the source entity (-1 if unknown/self) */

@@ -484,7 +484,9 @@ describe('cues', () => {
             S15: 'H12/mule', H13: 'H13/mule', H14: 'H14/mule', S18: 'S18/courier', H15: 'H15/mule', H16: 'H16/mule', H18: 'H18/mule', H19: 'H19/mule', H20: 'H20/mule', S25a: 'S25a/anvil', H21d: 'H21d/mule', H22: 'H22/mule',
             H23: 'S27/cannon', S27: 'S27/cannon',
         });
-        expect(chain.filter(s => s.id === 'S07' && s.kind === 'step').every(s => s.cue?.family === 'bone')).toBe(true);
+        // The axe drop takes nothing from the givers, so it is the one S07 step outside their cue.
+        expect(chain.filter(s => s.id === 'S07' && s.kind === 'step' && !s.helperFree).every(s => s.cue?.family === 'bone')).toBe(true);
+        expect(chain.filter(s => s.id === 'S07' && s.helperFree).map(s => [s.name, s.cue])).toEqual([['woodcutting:drop-axe', undefined]]);
         // A giver group's S07 cue is woodcutting.ts's own (BoneCue): the chain opens none for it.
         const grouped = buildChain({ ...CONFIG, bones: { group: ['cairn_b01', 'cairn_b02', 'cairn_b03', 'cairn_b04'], lastLoad: 21 } }, { cues: recorder().cues });
         expect(grouped.filter(s => s.id === 'S07').map(s => s.name)).toEqual(chain.filter(s => s.id === 'S07').map(s => s.name));
@@ -1393,7 +1395,7 @@ describe('S15: Monkey Madness on the chain', () => {
         expect(() => buildChain({ ...COMPLETE, partners: Object.fromEntries(Object.entries(PARTNERS).filter(([r]) => r !== 'H12')) }, { cues: recorder().cues })).toThrow('names no partner for H12');
     });
 
-    test("H12's ask names exactly its row's `to N` entries at what SCORED lacks, written once on the trade's open frame; nothing is asked when they are met", async () => {
+    test("H12's ask names exactly its row's `to N` entries at what SCORED lacks on the trade's open frame, written once; nothing is asked when they are met there", async () => {
         const plan = handOffFrom(MANIFEST_TEXT, 'H12');
         const tops = plan.receive.filter(r => r.topUp);
         expect(tops.map(r => [r.pattern.source, r.count])).toEqual([[expect.stringMatching(/shark/i), 15]]);
@@ -1402,9 +1404,11 @@ describe('S15: Monkey Madness on the chain', () => {
             const sharks = (n: number) => inv([385, 'Shark', 1]).flatMap(() => Array.from({ length: n }, (_, slot) => ({ slot, id: 385, name: 'Shark', count: 1, optionsWithIndex: [] }))) as unknown as BotWorldState['inventory'];
             const trade = (isOpen: boolean, partner = 'p_h12') => ({ trade: { isOpen, partner } as unknown as BotWorldState['trade'] });
             const asks: TopUpAsk[] = [];
-            const step = (sdk: FakeSdk): ChainStep => tag('S15', 'step', {
+            // `eatTo`: the step's upkeep eats down to that many sharks after the step starts and before the trade opens.
+            const step = (sdk: FakeSdk, eatTo?: number): ChainStep => tag('S15', 'step', {
                 name: KIT_SEGMENTS.H12!, logoutSafe: true, preconditions: () => true, postconditions: () => true,
                 run: async () => {
+                    if (eatTo !== undefined) sdk.push({ inventory: sharks(eatTo) });
                     sdk.push(trade(true, 'someone else'));
                     expect(existsSync(join(d, ASK_FILE))).toBe(false);
                     for (let k = 0; k < 3; k++) {
@@ -1426,6 +1430,17 @@ describe('S15: Monkey Madness on the chain', () => {
             asks.length = 0;
             await askedOnTrade(step(met), plan, 'p_h12', d).run(ctxFor(met));
             expect(asks).toEqual([]);
+            // Sized on the open frame (attempt 4's S15:A): 4 held at the start, one eaten before the open, so 12, not 11.
+            const ate = new FakeSdk(st({ inventory: sharks(4) }));
+            await askedOnTrade(step(ate, 3), plan, 'p_h12', d).run(ctxFor(ate));
+            expect(asks.map(a => [a.items, a.scope])).toEqual([[[{ item: tops[0]!.pattern.source, count: 12 }], { step: 'H12', family: 'mule' }]]);
+            ate.push(trade(true));
+            expect(existsSync(join(d, ASK_FILE))).toBe(false);
+            // Met at the start, eaten below 15 before the open: it still asks, for the one eaten.
+            const metThenAte = new FakeSdk(st({ inventory: sharks(15) }));
+            asks.length = 0;
+            await askedOnTrade(step(metThenAte, 14), plan, 'p_h12', d).run(ctxFor(metThenAte));
+            expect(asks.map(a => [a.items, a.scope])).toEqual([[[{ item: tops[0]!.pattern.source, count: 1 }], { step: 'H12', family: 'mule' }]]);
         } finally {
             rmSync(d, { recursive: true, force: true });
         }
@@ -1628,6 +1643,36 @@ describe('H4m: S07 closes below 99 and S09 buries the rest', () => {
         const there = new FakeSdk(zoo({ x: 2605, z: 3234 }));
         await expect(load.run({ ...ctx, sdk: there, session: { ...ctx.session, sdk: there } } as unknown as StepContext<unknown>)).rejects.toThrow('did not come into sight');
         expect(walks).toEqual([]);
+    });
+
+    test('a load is skipped when Prayer is already 99 at its cue: no cue opened, no walk, no trade; the carrier\'s last load stops final through the sink (attempt 4: all five traded after S07 reached 99)', async () => {
+        const r = recorder();
+        const skipped: { scope: CueScope; final: boolean }[] = [];
+        const cues: CueSink = { ...r.cues, skip: (scope, o) => void skipped.push({ scope, final: o.final }) };
+        const c = buildChain(H4M, { cues, manifest: WITH_H4M, record: record() });
+        const at99 = zoo({ prayer: 99, x: 2620, z: 3234, extra: 5 });
+        const walks: unknown[] = [];
+        for (const row of LOADS) {
+            const load = c.find(s => s.id === row)!;
+            // Off the meeting and without room for 20: at 99 neither refuses, nor does the empty pack after.
+            expect([load.preconditions(at99, {}), load.postconditions(at99, {})]).toEqual([true, true]);
+            const sdk = new FakeSdk(at99);
+            const log = TickLog.memory('h4m-skip');
+            const ctx = { ...ctxFor(sdk, log), bot: { walkTo: async (...a: unknown[]) => void walks.push(a) } } as unknown as StepContext<unknown>;
+            await load.run(ctx);
+            expect(log.rows.filter(x => x.step !== CENSUS_STEP).map(x => [x.step, x.ticks, x.kind, x.meta])).toEqual([[`${row} hand-off (skipped)`, 0, 'note', { id: row, why: 'Prayer 99 at its cue: no trade, the carrier keeps the load' }]]);
+            expect(sdk.sent).toEqual([]);
+        }
+        expect([r.opened, r.stopped, walks]).toEqual([[], [], []]);
+        // one carrier for H4m only: its last load is its final stop
+        expect(skipped).toEqual(LOADS.map((row, i) => ({ scope: { step: row, family: 'mule' }, final: i === LOADS.length - 1 })));
+        // below 99 the load runs as built: its cue opens
+        const below = new FakeSdk(zoo());
+        await expect(c.find(s => s.id === 'H4m.1')!.run({ ...ctxFor(below), bot: { walkTo: async () => ({ success: true, message: '' }) } } as unknown as StepContext<unknown>)).rejects.toThrow('did not come into sight');
+        expect(r.opened).toEqual([{ scope: { step: 'H4m.1', family: 'mule' }, fresh: true }]);
+        // a sink without `skip` (record-only) still skips the trade
+        const plain = buildChain(H4M, { cues: recorder().cues, manifest: WITH_H4M, record: record() }).find(s => s.id === 'H4m.5')!;
+        await plain.run(ctxFor(new FakeSdk(at99)));
     });
 
     test("the last bury step carries the chain's Prayer 99; the booth fallback stays behind it", () => {

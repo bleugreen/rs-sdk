@@ -496,9 +496,23 @@ describe("T07-08 drops the last load's unburied bones before the Camelot telepor
         expect(inArea(sdk.state!, TILES.edmond)).toBe(true);
     });
 
-    test('the pattern takes every bone and nothing else SCORED holds at T07-08; no hop needs a bone', () => {
+    test("S07's real close holds its willow band's kept log: dropped before the teleport click (knife-mine takes a normal log only); the knife and runes kept", async () => {
+        const end = state(TILES.taverleyWillows.x, TILES.taverleyWillows.z, { inventory: [item(0, 'Law rune', 1), item(1, 'Air rune', 5), item(2, 'Knife'), item(3, 'Willow logs')] });
+        const sdk = new FakeSdk(end);
+        const drops = serveDrops(sdk);
+        const held = serveTeleport(sdk, SPELLS.camelot.landing);
+        simulateWalking(sdk);
+        await drive(sdk, T0708().run(ctxFor(sdk)));
+        expect(drops.map(d => d.slot)).toEqual([3]);
+        expect(kinds(sdk).slice(0, 2)).toEqual(['sendDropItem', 'sendClickComponent']);
+        expect(held).toEqual([['Law rune', 'Air rune', 'Knife']]);
+        expect(T0708().postconditions(sdk.state!, undefined)).toBe(true);
+    });
+
+    test('the patterns take every bone and the willow log, nothing else SCORED holds at T07-08; no hop needs either', () => {
         const { drops = [], hops } = T0708().def;
         const takes = (name: string) => drops.some(p => p.test(name));
+        expect([takes('Willow logs'), neededBy(hops, 'Willow logs')]).toEqual([true, false]);
         for (const b of ['Bones', 'Big bones', 'Babydragon bones', 'Dragon bones', 'babydragon bones']) {
             expect(takes(b)).toBe(true);
             expect(neededBy(hops, b)).toBe(false);
@@ -507,6 +521,50 @@ describe("T07-08 drops the last load's unburied bones before the Camelot telepor
         expect(neededBy(hops, 'Law rune')).toBe(true);
         expect(neededBy(hops, 'Air rune')).toBe(true);
         expect(dropsDue(T0708().def, s07End('Dragon bones', 21), 0).map(i => i.slot)).toEqual(Array.from({ length: 21 }, (_, i) => 4 + i));
+    });
+});
+
+describe("T22-23 drops S22's kit and its fly band's leftovers before the Lumbridge teleport (rs/764 F12)", () => {
+    const T2223 = () => legById('T22-23');
+    /** S22's close at the fly spots: the Lumbridge runes, the kit, then `more`. */
+    const s22End = (more: InventoryItem[]) => state(TILES.flySpots.x, TILES.flySpots.z, {
+        inventory: [item(0, 'Law rune', 1), item(1, 'Air rune', 3), item(2, 'Earth rune', 1), item(3, 'Fly fishing rod'), item(4, 'Feather', 90), item(5, 'Logs'), item(6, 'Knife'), ...more],
+    });
+    const travelRow = (ctx: StepContext<unknown>) => ctx.log.rows.find(r => r.kind === 'travel')!;
+
+    for (const fish of ['Raw salmon', 'Raw trout']) {
+        test(`the kit, 30 arrow shafts and a ${fish}: six drops, ${DROPS_PER_TICK} then 1, before the teleport click; only the runes are left to cast`, async () => {
+            const sdk = new FakeSdk(s22End([item(7, 'Arrow shaft', 30), item(8, fish)]));
+            const drops = serveDrops(sdk);
+            const held = serveTeleport(sdk, SPELLS.lumbridge.landing);
+            simulateWalking(sdk);
+            const ctx = ctxFor(sdk);
+            await drive(sdk, T2223().run(ctx));
+            expect(drops.map(d => d.slot)).toEqual([3, 4, 5, 6, 7, 8]);
+            expect([...new Set(drops.map(d => d.tick))].map(t => drops.filter(d => d.tick === t).length)).toEqual([5, 1]);
+            expect(kinds(sdk).slice(0, 2)).toEqual(['sendDropItem', 'sendClickComponent']);
+            expect(held).toEqual([['Law rune', 'Air rune', 'Earth rune']]);
+            expect(inArea(sdk.state!, TILES.cook)).toBe(true);
+            const [burst, ...more] = (travelRow(ctx).meta as { drops: { at: number; ok: boolean; dropped: string[]; batches: number }[] }).drops;
+            expect(more).toEqual([]);
+            expect(burst).toMatchObject({ at: 0, ok: true, batches: 2, dropped: ['Fly fishing rod', 'Feather', 'Logs', 'Knife', 'Arrow shaft', fish] });
+            expect(T2223().postconditions(sdk.state!, undefined)).toBe(true);
+        });
+    }
+
+    test('a pack still holding a shaft or a fish at the cook fails the postcondition, naming it', () => {
+        const atCook = state(TILES.cook.x, TILES.cook.z, { inventory: [item(0, 'Arrow shaft', 30), item(1, 'Raw salmon')] });
+        expect(T2223().postconditions(atCook, undefined)).toBe('T22-23: still holding Arrow shaft, Raw salmon, which the leg drops');
+    });
+
+    test('the patterns take the shafts and either fish and nothing else SCORED holds at T22-23; no hop needs them', () => {
+        const { drops = [], hops } = T2223().def;
+        const takes = (name: string) => drops.some(p => p.test(name));
+        for (const left of ['Arrow shaft', 'Raw salmon', 'Raw trout']) {
+            expect(takes(left)).toBe(true);
+            expect(neededBy(hops, left)).toBe(false);
+        }
+        for (const kept of ['Law rune', 'Air rune', 'Earth rune', 'Staff of water', 'Headless arrow', 'Bronze arrow', 'Salmon', 'Trout', 'Raw shrimps']) expect(takes(kept)).toBe(false);
     });
 });
 
@@ -539,15 +597,26 @@ describe('leg drops: the STEP-MANIFEST ledger contract', () => {
         );
     });
 
-    test("T07-08's row drops `<bones> any`, the backstop the leg's /bones$/i performs; S07's last load brings none (rs/663), so the walk drops nothing and leaves H6 its 12", () => {
-        expect(dropsOn('T07-08')).toEqual([{ name: 'bones', placeholder: true, count: 'any', reason: 'drop' }]);
-        expect(legById('T07-08').def.drops).toEqual([/bones$/i]);
+    test("T07-08's row drops `<bones> any` and `willow logs any`, the leg's /bones$/i and /^willow logs$/i; S07's last load brings no bone (rs/663), so the walk drops the willow log only, leaving the knife and H6 its 12", () => {
+        const drops = dropsOn('T07-08');
+        expect(drops[0]).toEqual({ name: 'bones', placeholder: true, count: 'any', reason: 'drop' });
+        expect(drops[1]).toMatchObject({ name: 'willow logs', count: 'any', reason: 'drop' });
+        expect(drops).toHaveLength(2);
+        expect(legById('T07-08').def.drops).toEqual([/bones$/i, /^willow logs$/i]);
         expect(rows.find(r => r.row === 'S07 last load')!.in.some(i => i.name === 'bones')).toBe(false);
         const entries = walk(rows);
         const at = (row: string) => entries.find(e => e.row.row === row)!;
         expect(at('S07 last load')).toMatchObject({ verdict: 'pass', used: 4 });
-        expect(at('T07-08')).toMatchObject({ verdict: 'pass', used: 2, held: 'knife x1, logs x1' });
+        expect(at('T07-08')).toMatchObject({ verdict: 'pass', used: 1, held: 'knife x1' });
         expect(at('H6')).toMatchObject({ verdict: 'pass', need: 12 });
+    });
+
+    test("T22-23's row drops S22's kit and its leftovers, `any` for the shafts and both fish (rs/764 F12); the walk holds none of the leftovers, so nothing changes T22-23's pass", () => {
+        expect(dropsOn('T22-23').map(o => `${o.name} ${o.count}`)).toEqual(['fly fishing rod 1', 'logs all', 'feather all', 'knife 1', 'arrow shaft any', 'raw salmon any', 'raw trout any']);
+        const entries = walk(rows);
+        const at = (row: string) => entries.find(e => e.row.row === row)!;
+        expect(at('T22-23')).toMatchObject({ verdict: 'pass' });
+        expect(at('S25d')).toMatchObject({ verdict: 'pass', need: 26 });
     });
 
     test('every drop on a leg row has exactly one performer: the leg, a named module exit, or a pending ruling', () => {

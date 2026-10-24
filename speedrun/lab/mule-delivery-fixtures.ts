@@ -184,17 +184,12 @@ function same(a: readonly FixtureItem[], b: readonly FixtureItem[]): boolean {
     const key = (items: readonly FixtureItem[]) => JSON.stringify(merge(items).map(i => [i.id, i.count]).sort((x, y) => x[0]! - y[0]!));
     return key(a) === key(b);
 }
-/**
- * A greegree can be wielded only inside its zone, and leaving the zone wrenches it into the pack
- * (server/content/scripts/quests/quest_mm/scripts/mm_greegree.rs2). Every delivery meeting is off
- * Ape Atoll, so a greegree the ledger walk still has worn is held there.
- */
-const heldOffZone = (item: FixtureItem) => /greegree/i.test(item.name);
 function matches(ref: ItemRef, item: FixtureItem): boolean {
     return ref.id !== undefined ? ref.id === item.bankId : itemPattern(ref.name).test(item.name);
 }
-function overridden(o: ConcreteFixtureOverride, pack: ObjPack, catalog: FixtureCatalog): FixtureItem[] {
-    if (!o.reason?.trim() || !o.items.length) fail('Concrete override needs items and an authority reason');
+/** `emptyOk`: an `any` return, whose override may confirm that nothing is held (an earlier step used the stock up). */
+function overridden(o: ConcreteFixtureOverride, pack: ObjPack, catalog: FixtureCatalog, emptyOk = false): FixtureItem[] {
+    if (!o.reason?.trim() || (!o.items.length && !emptyOk)) fail('Concrete override needs items and an authority reason');
     return merge(o.items.map(i => concrete(i.id, i.count, pack, catalog)));
 }
 function resolve(h: Held, o: ConcreteFixtureOverride | undefined, pack: ObjPack, catalog: FixtureCatalog): FixtureItem[] {
@@ -332,10 +327,8 @@ export function planMuleDeliveryFixtures(o: MuleDeliveryFixtureOptions): MuleDel
                 materialized.set(itemLabel(h), [...(materialized.get(itemLabel(h)) ?? []), ...items]);
                 return items;
             }, []);
-            const inv = before.inv.flatMap(held);
-            const worn = before.worn.flatMap(held);
-            const beforeInventory = merge([...inv, ...worn.filter(heldOffZone)]);
-            const beforeEquipment = merge(worn.filter(i => !heldOffZone(i)));
+            const beforeInventory = merge(before.inv.flatMap(held));
+            const beforeEquipment = merge(before.worn.flatMap(held));
             const canonicalPlan = capture(() => planHandOff(row), null);
             const ledger = load ?? capture(() => packageFromRow(rows, index, 'ask', o.pack, onRequest), null);
             const delivery = capture(() => muleDelivery(rowId, o.itinerary), null);
@@ -346,7 +339,7 @@ export function planMuleDeliveryFixtures(o: MuleDeliveryFixtureOptions): MuleDel
                 if (e.reason !== 'swap' && e.reason !== 'trade') fail(itemLabel(e) + ': not a trade return');
                 const chosen = overrides.takeBacks?.[itemLabel(e)] ?? authorizedRecoil(rowId, e, e.count, o.pack);
                 if ((e.placeholder || e.family || e.count === 'all' || e.count === 'any') && !chosen) fail(itemLabel(e) + ': all/any/family/placeholder return requires explicit concrete fixture override');
-                const items = chosen ? overridden(chosen, o.pack, catalog) : [...beforeInventory, ...beforeEquipment].filter(i => matches(e, i));
+                const items = chosen ? overridden(chosen, o.pack, catalog, e.count === 'any') : [...beforeInventory, ...beforeEquipment].filter(i => matches(e, i));
                 const expected = e.placeholder ? materialized.get(itemLabel(e)) ?? [] : [...beforeInventory, ...beforeEquipment].filter(i => matches(e, i));
                 if (!same(items, expected)) fail(itemLabel(e) + ': return override differs from the intended before-state');
                 // `any` may return nothing (stock an earlier step used up)
@@ -381,10 +374,7 @@ export function planMuleDeliveryFixtures(o: MuleDeliveryFixtureOptions): MuleDel
             let afterEquipment = subtract(beforeEquipment, off);
             for (const e of row.equip) {
                 const from = e.on ? afterInventory : afterEquipment;
-                const found = from.find(i => itemPattern(e.name).test(i.name));
-                // Unequipping a greegree the engine has already moved into the pack (heldOffZone).
-                if (!found && !e.on && afterInventory.some(i => heldOffZone(i) && itemPattern(e.name).test(i.name))) continue;
-                const item = found ?? fail('Equip ' + e.name + ': missing concrete item');
+                const item = from.find(i => itemPattern(e.name).test(i.name)) ?? fail('Equip ' + e.name + ': missing concrete item');
                 const moved = { ...item, count: item.kind === 'u' ? 1 : item.count };
                 if (e.on) { afterInventory = subtract(afterInventory, [moved]); afterEquipment = merge([...afterEquipment, moved]); }
                 else { afterEquipment = subtract(afterEquipment, [moved]); afterInventory = merge([...afterInventory, moved]); }

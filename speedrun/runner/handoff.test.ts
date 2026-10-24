@@ -345,7 +345,10 @@ describe("an `any` count gives or drops whatever is held, and none held is nothi
         const ANY_GIVES: Record<string, string[]> = {
             // a dose family (`antipoison(*)`) plans under its bare name
             H12: ['antipoison', 'coins', 'death rune', 'chaos rune'],
-            H13: ['coins', 'superantipoison', 'fire rune'],
+            H13: ['coins', 'fire rune'],
+            // H12's super stays with SCORED through S16 for its entry cure and leaves here (rs/755, rs/158's cells); H13's death
+            // runes come back here too, whatever S16 left (fold-in 43a, rs/764 F10)
+            H14: ['superantipoison', 'death rune'],
             H15: ['bronze arrow', 'iron arrow', 'steel arrow', 'mithril arrow', 'adamant arrow', 'coins', 'shark', 'blood rune', 'nature rune'],
         };
         const cap = (n: string) => n.charAt(0).toUpperCase() + n.slice(1);
@@ -551,8 +554,8 @@ describe("the mule's top-up ask: every `to N` entry asked on the trade's first o
     const shark = itemPattern('shark').source;
     const coins = itemPattern('coins').source;
 
-    test('H10 `shark to 8`: holding 3, asks 5', () => {
-        expect(askFor(state(pack(['Shark', 3])), row('H10'))).toEqual([{ item: shark, count: 5 }]);
+    test('H10 `shark to 10`: holding 3, asks 7', () => {
+        expect(askFor(state(pack(['Shark', 3])), row('H10'))).toEqual([{ item: shark, count: 7 }]);
     });
 
     test('H12 `shark to 15`: holding 6, asks 9', () => {
@@ -567,8 +570,8 @@ describe("the mule's top-up ask: every `to N` entry asked on the trade's first o
         expect(askFor(state([item(0, 'Coins', 126_000), ...pack(['Shark', 2]).map((i, k) => ({ ...i, slot: 1 + k }))]), row('H22'))).toEqual([{ item: shark, count: 8 }]);
     });
 
-    test('every entry met: no ask (H10 holding 8)', () => {
-        expect(askFor(state(pack(['Shark', 8])), row('H10'))).toEqual([]);
+    test('every entry met: no ask (H10 holding 10)', () => {
+        expect(askFor(state(pack(['Shark', 10])), row('H10'))).toEqual([]);
     });
 
     const TOPUPS = '| row | in | out | equip | needAtStart | source |\n|---|---|---|---|---|---|\n| H10 | shark to 8 [u]; law rune to 4 [s] | - | - | 6 | x (r) |\n';
@@ -1117,14 +1120,14 @@ describe('rollbackWitnesses: what the record clause reads as a rollback (rs/577)
     const placed = (row: string) => PLACEMENT[row] !== undefined;
     const witnesses = (id: string) => rollbackWitnesses(handOffFrom(text, id), later(id), placed).map(w => [w.give.name, w.until]);
 
-    test("H13: S18's rune arrows and coins are no evidence; H23's shortbow and superantipoison wait for H23; the rest always", () => {
+    test("H13: S18's rune arrows and coins are no evidence; H23's shortbow waits for H23; the rest always", () => {
         expect(witnesses('H13')).toEqual([
-            ['magic shortbow', ['H23']], ['amulet of magic', []], ['diamond', []], ['superantipoison', ['H23']], ['fire rune', []], ['khazard helmet', []], ['khazard armour', []],
+            ['magic shortbow', ['H23']], ['amulet of magic', []], ['diamond', []], ['fire rune', []], ['khazard helmet', []], ['khazard armour', []],
         ]);
     });
 
-    test("H14's knife waits for H18 and H23 (rs/562 A's rollback case); H11r's cannon for H23; with nothing after it, every give and drop", () => {
-        expect(witnesses('H14')).toEqual([['knife', ['H18', 'H23']]]);
+    test("H14's knife waits for H18 and H23 (rs/562 A's rollback case), its superantipoison for H23 (kept through S16, rs/755), its death runes always (no later row brings any); H11r's cannon for H23; with nothing after it, every give and drop", () => {
+        expect(witnesses('H14')).toEqual([['knife', ['H18', 'H23']], ['superantipoison', ['H23']], ['death rune', []]]);
         expect(witnesses('H11r').every(([, until]) => (until as string[]).join() === 'H23')).toBe(true);
         const h13 = handOffFrom(text, 'H13');
         expect(rollbackWitnesses(h13, [], placed).map(w => w.give.name)).toEqual([...h13.give, ...h13.drop].map(g => g.name));

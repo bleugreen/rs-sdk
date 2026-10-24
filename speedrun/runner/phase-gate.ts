@@ -125,6 +125,15 @@ export function membersFromLauncher(raw: unknown): PhaseMember[] {
     return out;
 }
 
+/**
+ * The step ids the gate reads, from chain step `start` (the run's --from, else where its walk picks
+ * up): a step marked helperFree takes nothing from its id's helpers, so it is left out. Without that,
+ * --from at S07's axe drop gated S07/bone, whose finished givers publish phase 'off'.
+ */
+export function phasePath(chain: readonly { id: string; helperFree?: true }[], start: number): string[] {
+    return chain.slice(start).filter(s => !s.helperFree).map(s => s.id);
+}
+
 export interface PhaseGateInput {
     /** The chain's step ids from the step the run starts at (its --from, else the first). */
     path: readonly string[];
