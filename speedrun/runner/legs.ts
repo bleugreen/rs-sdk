@@ -29,6 +29,7 @@ import {
 import { currentTick, waitUntil } from '../lib/wait';
 import { invCount, invItem, pos, skillLevel, type LocQuery, type OpPattern } from '../lib/world';
 import type { Observed, Step, StepContext } from './step';
+import { curePoison, type DrinkSdk } from '../quests/segments';
 import { DeathWatch } from './death';
 import { SETTLE_TICKS, watchStretch, type Stretch, type UpkeepSdk } from './wait-guard';
 
@@ -338,13 +339,19 @@ export function legLogoutSafe(def: LegDef): boolean {
 
 // ------------------------------------------------------------------ the Step
 
-function logTravel(ctx: StepContext<unknown>, name: string, from: number, r: TravelResult, drops: readonly LegDrops[], stops: readonly LegStopRecord[], kept: Stretch | null, start: LegStart | null): void {
+/** A hostile leg's cures before its hops (legCure): doses drunk, and the reason of any drink that did not land. */
+interface LegCures {
+    cured: number;
+    failed: string[];
+}
+
+function logTravel(ctx: StepContext<unknown>, name: string, from: number, r: TravelResult, drops: readonly LegDrops[], stops: readonly LegStopRecord[], kept: Stretch | null, start: LegStart | null, cures: LegCures): void {
     const ate = r.ate + (kept?.upkeep.eats ?? 0);
-    const cured = kept?.upkeep.cures ?? 0;
+    const { cured } = cures;
     ctx.log.append({
         v: 1, kind: 'travel', runId: ctx.log.runId, account: ctx.session.name, sessionId: ctx.session.sessionId, step: name,
         startTick: r.startTick, endTick: r.endTick, ticks: r.ticks, wallMs: 0, ok: r.ok, ...(r.reason ? { error: r.reason } : {}),
-        meta: { fromHop: from, segments: r.segments, doors: r.doors, clicks: r.clicks, tiles: r.tiles, webTries: r.webTries, ate, ...(cured ? { cured } : {}), hpMin: r.hpMin, ...(start ? { start } : {}), ...(r.fellBack ? { fellBack: r.fellBack } : {}), ...(drops.length ? { drops } : {}), ...(stops.length ? { stops } : {}) },
+        meta: { fromHop: from, segments: r.segments, doors: r.doors, clicks: r.clicks, tiles: r.tiles, webTries: r.webTries, ate, ...(cured ? { cured } : {}), ...(cures.failed.length ? { cureFailed: cures.failed } : {}), hpMin: r.hpMin, ...(start ? { start } : {}), ...(r.fellBack ? { fellBack: r.fellBack } : {}), ...(drops.length ? { drops } : {}), ...(stops.length ? { stops } : {}) },
         tickMs: 0, at: new Date().toISOString(),
     });
 }
@@ -424,15 +431,28 @@ async function reachFloor(sdk: UpkeepSdk, def: LegDef, kept: Stretch): Promise<L
 }
 
 /**
- * The upkeep over a leg's whole travel: runner/wait-guard.ts's WaitUpkeep on every published frame,
+ * The eating over a leg's whole travel: runner/wait-guard.ts's WaitUpkeep on every published frame,
  * so on every hop alike (a run, a teleport's cast and landing, a spirit tree's walk and talk, a door,
  * a stop), not only on a run hop's own ticks. It eats by the run's eat rule (lib/travel.ts eatDue: at
- * or under eatAt(maxHp), 25 at SCORED's maximum here) and drinks one antipoison dose when SCORED reads
- * poisoned (quests/segments.ts poisoned, cureDose, noteAntipoison), never while a trade is open. Its
- * death watch has no session: runLeg's own DeathWatch records a death on the leg.
+ * or under eatAt(maxHp), 25 at SCORED's maximum here), never while a trade is open. It drinks nothing:
+ * a potion's p_delay drops the click a hop sends inside it, so the leg cures between hops (legCure).
+ * Its death watch has no session: runLeg's own DeathWatch records a death on the leg.
  */
 export function legStretch(sdk: UpkeepSdk, def: LegDef): Stretch {
-    return watchStretch({ sdk }, `on ${def.id}`, { holdInDialog: true, urgentHp: LEG_URGENT_HP });
+    return watchStretch({ sdk }, `on ${def.id}`, { holdInDialog: true, urgentHp: LEG_URGENT_HP, cure: null });
+}
+
+/**
+ * A hostile leg's cure before hop `at`: quests/segments.ts curePoison, one dose when SCORED reads
+ * poisoned (a carried poison by its hitmark), confirmed, and its drink delay waited out before the
+ * hop's first click. A drink that does not land is recorded, not fatal: the eating holds the floor.
+ */
+async function legCure(sdk: DrinkSdk, def: LegDef, at: number, cures: LegCures): Promise<void> {
+    try {
+        if ((await curePoison(sdk, `${def.id} before hop ${at}`)) === 'cured') cures.cured++;
+    } catch (e) {
+        cures.failed.push(e instanceof Error ? e.message : String(e));
+    }
 }
 
 /** What an antipoison's last dose leaves in its slot (potions.obj next_obj_stage: vials.obj `vial_empty`). */
@@ -478,14 +498,19 @@ export async function runLeg(def: LegDef, ctx: Pick<StepContext<unknown>, 'sdk' 
         }
         return null;
     };
-    const beforeHop = async (at: number): Promise<string | null> => (def.drops?.length ? await dropAt(at) : null) ?? (await stopAt(at));
+    const hostile = hostileLeg(def);
+    const cures: LegCures = { cured: 0, failed: [] };
+    const beforeHop = async (at: number): Promise<string | null> => {
+        if (hostile) await legCure(ctx.sdk as unknown as DrinkSdk, def, at, cures);
+        return (def.drops?.length ? await dropAt(at) : null) ?? (await stopAt(at));
+    };
     const from = resumeHop(def, s);
     // A relocation travel sees fails the hop only as a death the watch corroborates; any other jump re-paths as before.
     const watch = new DeathWatch(s, `on ${def.id}`);
     const unwatch = ctx.sdk.onStateUpdate(st => watch.see(st));
     const onRelocated: TravelOptions['onRelocated'] = rel => (rel.respawn && watch.death() ? 'fail' : 'repath');
     const vials = new Set(s.inventory.filter(i => VIAL.test(i.name)).map(i => i.slot));
-    const kept = hostileLeg(def) ? legStretch(ctx.sdk as unknown as UpkeepSdk, def) : null;
+    const kept = hostile ? legStretch(ctx.sdk as unknown as UpkeepSdk, def) : null;
     const done = () => {
         unwatch();
         kept?.stop();
@@ -503,12 +528,12 @@ export async function runLeg(def: LegDef, ctx: Pick<StepContext<unknown>, 'sdk' 
         if (ctx.session) ctx.session.died ??= early;
         throw new Error(`${def.id}: ${early.reason}`);
     }
-    const r = await travel(ctx.sdk as unknown as TravelSdk, def.hops, { bot: ctx.bot, from, onRelocated, ...(def.drops?.length || def.stops?.length ? { beforeHop } : {}) }).finally(done);
+    const r = await travel(ctx.sdk as unknown as TravelSdk, def.hops, { bot: ctx.bot, from, onRelocated, ...(hostile || def.drops?.length || def.stops?.length ? { beforeHop } : {}) }).finally(done);
     const death = watch.death();
     if (death && ctx.session) ctx.session.died ??= death;
-    const emptied = r.ok && !death && kept?.upkeep.cures ? await dropEmptied(ctx.sdk as unknown as ActSdk, def, vials) : null;
+    const emptied = r.ok && !death && cures.cured ? await dropEmptied(ctx.sdk as unknown as ActSdk, def, vials) : null;
     const why = emptied ?? (r.ok && !death ? await dropAt(def.hops.length) : null);
-    if (ctx.log && ctx.session) logTravel(ctx as StepContext<unknown>, name, from, r, drops, stops, kept, start);
+    if (ctx.log && ctx.session) logTravel(ctx as StepContext<unknown>, name, from, r, drops, stops, kept, start, cures);
     if (death) throw new Error(`${def.id}: ${death.reason}`);
     // Drops refused before a hop stop the trip; their reason (naming what is held) is the leg's.
     const refused = drops.find(d => !d.ok);
