@@ -706,8 +706,10 @@ describe('a death while the logout after a refused step holds (rs/709, attempt 3
         expect(deaths[0]).toMatchObject({ ok: false, meta: { from: { x: 3288, z: 3810, level: 0 }, to: { x: 3222, z: 3218, level: 0 }, logout: { ok: true } } });
         // The refusal's own row carries SCORED's hp at its end: the fall starts from the log alone.
         const refusal = log.rows.find(r => r.step === 'S14 ranged:precondition')!;
-        expect(refusal.meta).toMatchObject({ hp: expect.any(Number), maxHp: 42 });
-        expect(refusal.meta!.hp as number).toBeLessThanOrEqual(12);
+        const hp = refusal.meta!.hp;
+        expect(typeof hp).toBe('number');
+        expect(hp as number).toBeLessThanOrEqual(12);
+        expect(refusal.meta!.maxHp).toBe(42);
         expect((deaths[0]!.meta as { logout: { held?: unknown } }).logout.held).toBeDefined();
         expect(session.died).toBe(ran.lastLogout!.death!);
 
