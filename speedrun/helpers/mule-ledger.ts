@@ -46,10 +46,10 @@ export const MULE1_ORDER = ['H1', 'H4', 'H4k', 'H6', 'H4p', 'H7', 'H8', 'H9', 'H
 
 /**
  * cairn_mule1's packages served only when asked for by name (mule.ts onRequest), never in the order:
- * H4e (the bone runes' fallback) and H4m (the bones past S07's capacity, on an overflowing stock).
- * Their rows are in the ledger's fallback table, which is not walked (FALLBACK_TABLE).
+ * H4e (the bone runes' fallback). Its row is in the ledger's fallback table, which is not walked
+ * (FALLBACK_TABLE). H4m's row is there too, but its loads are served in order (h4mLoadRows).
  */
-export const MULE1_ON_REQUEST = ['H4e', 'H4m'] as const;
+export const MULE1_ON_REQUEST = ['H4e'] as const;
 
 /** SUPPLIES.md rows whose giver is the trade giver that have no package of their own on cairn_mule1, and why. */
 export const MULE1_NO_PACKAGE: Readonly<Record<string, string>> = {
@@ -57,7 +57,7 @@ export const MULE1_NO_PACKAGE: Readonly<Record<string, string>> = {
     H21e: "one trade with H21d: its list is on H21d's ledger row",
     'H14.1-H14.13': "the S18 courier's top-ups, not mule1's (rs/158)",
     H21a: 'the anvil giver, cairn_a01 (rs/158)',
-    'H4m.1-H4m.4': 'the on-request package H4m',
+    'H4m.1-H4m.4': "retired (fold-in 31); H4m's loads are now the west carrier's, from the fallback row H4m.1-H4m.N (h4mLoadRows)",
 };
 
 /** The heading of the ledger's fallback hand-offs: rows in the ledger's columns that the walk leaves out. */
@@ -88,6 +88,8 @@ export interface LedgerPackage {
     takesBack: { label: string; displayName: string; ref: ItemRef | null; count: number | 'all' }[];
     /** The row's `<NAME>` entries: the module's own, not in this trade. */
     moduleLines: string[];
+    /** A load row (H4m.k): served by this row's carrier, in order right after it. */
+    anchor?: string;
 }
 
 const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -167,6 +169,52 @@ export interface FromLedgerOptions {
     pack?: ObjPack;
 }
 
+// ------------------------------------------------------------------ H4m's loads
+
+/** H4m's loads ride H4p's carrier: load 1 is staged with H4p and handed over straight after it. */
+export const H4M_ANCHOR = 'H4p';
+const H4M_NAMED = /^H4m(\.|$)/;
+const H4M_RANGE = /^H4m\.1-H4m\.([1-9]\d*)$/;
+
+/**
+ * The fallback table's H4m row, `H4m.1-H4m.N`: its `in` is one load, and N, in the id, the number
+ * of loads. Null when the table has none. The row's presence is the switch: without it no carrier
+ * serves H4m, and the generated carrier configs are what they were before H4m existed.
+ */
+function h4mRow(fallbacks: readonly LedgerRow[]): { index: number; rows: string[] } | null {
+    const named = fallbacks.flatMap((r, index) => (H4M_NAMED.test(r.row) ? [{ r, index }] : []));
+    if (!named.length) return null;
+    const m = named.length === 1 ? H4M_RANGE.exec(named[0]!.r.row) : null;
+    if (!m) throw new Error(`the fallback table's H4m row must be the one row H4m.1-H4m.N (N loads, its in one load); it has ${named.map(n => n.r.row).join(', ')}`);
+    return { index: named[0]!.index, rows: Array.from({ length: Number(m[1]) }, (_, k) => `H4m.${k + 1}`) };
+}
+
+/** H4m's load rows, H4m.1 to H4m.N, from the fallback table in `manifest`; none when it has no H4m row. */
+export function h4mLoadRows(manifest: string = readFileSync(MANIFEST, 'utf8')): string[] {
+    return h4mRow(parseFallbacks(manifest))?.rows ?? [];
+}
+
+/**
+ * `ordered` with H4m's loads after H4M_ANCHOR, when it is selected and the fallback table has the row.
+ * Each load is its own package from the one row, scoped to its own id (one cue, readiness gate and
+ * record each), feeding the anchor's step. A load is a fixed count with nothing taken back, so the
+ * carrier can stage load 1 with the anchor (carryMetadata).
+ */
+function withH4mLoads(ordered: LedgerPackage[], fallbacks: readonly LedgerRow[], form: TopUpForm, pack?: ObjPack): LedgerPackage[] {
+    const anchor = ordered.findIndex(p => p.row === H4M_ANCHOR);
+    const h4m = anchor < 0 ? null : h4mRow(fallbacks);
+    if (!h4m) return ordered;
+    const loads = h4m.rows.map((row): LedgerPackage => {
+        const load = packageFromRow(fallbacks, h4m.index, form, pack, true);
+        const at = `${load.row} (line ${load.line})`;
+        if (load.topUps.length) throw new Error(`${at}: a load is a fixed count, staged whole; not a top-up`);
+        if (load.takeBackSlots !== 0) throw new Error(`${at}: a load takes nothing back (load 1 is carried with ${H4M_ANCHOR})`);
+        const { onRequest: _, ...pkg } = load.package;
+        return { ...load, row, onRequest: false, step: ordered[anchor]!.step, anchor: H4M_ANCHOR, package: packageOf({ ...pkg, name: row.toLowerCase(), scope: { step: row, family: 'mule' } }, pack) };
+    });
+    return [...ordered.slice(0, anchor + 1), ...loads, ...ordered.slice(anchor + 1)];
+}
+
 function only(rows: readonly LedgerRow[], id: string, where: string): number {
     const at = rows.map((r, i) => (r.row === id ? i : -1)).filter(i => i >= 0);
     if (at.length !== 1) throw new Error(at.length ? `${at.length} ${where} rows named ${id}` : `no ${where} row ${id}`);
@@ -176,16 +224,21 @@ function only(rows: readonly LedgerRow[], id: string, where: string): number {
 /**
  * A mule's packages from the ledger in `manifest` (STEP-MANIFEST.md by default): the ordered ones in
  * ledger order (refused when `rows` lists them otherwise, since order mode serves them as listed),
- * then the on-request ones from the fallback table.
+ * with H4m's loads after H4p when the fallback table has their row (withH4mLoads), then the
+ * on-request ones from the fallback table.
  */
 export function muleFromLedger(manifest: string = readFileSync(MANIFEST, 'utf8'), o: FromLedgerOptions = {}): LedgerPackage[] {
     const { rows, errors } = parseLedger(manifest);
     if (errors.length) throw new Error(`the inventory ledger does not parse: ${errors.join('; ')}`);
     const form = o.form ?? 'ask';
-    const ordered = (o.rows ?? MULE1_ORDER).map(id => packageFromRow(rows, only(rows, id, 'ledger'), form, o.pack));
-    const late = ordered.findIndex((p, i) => i > 0 && p.line < ordered[i - 1]!.line);
-    if (late >= 0) throw new Error(`${ordered[late]!.row} is listed after ${ordered[late - 1]!.row}, but comes before it in the ledger`);
+    for (const id of [...(o.rows ?? []), ...(o.onRequest ?? [])]) {
+        if (H4M_NAMED.test(id)) throw new Error(`${id}: H4m's loads come with ${H4M_ANCHOR} from the fallback row; select ${H4M_ANCHOR}, never H4m by name`);
+    }
+    const listed = (o.rows ?? MULE1_ORDER).map(id => packageFromRow(rows, only(rows, id, 'ledger'), form, o.pack));
+    const late = listed.findIndex((p, i) => i > 0 && p.line < listed[i - 1]!.line);
+    if (late >= 0) throw new Error(`${listed[late]!.row} is listed after ${listed[late - 1]!.row}, but comes before it in the ledger`);
     const fallbacks = parseFallbacks(manifest);
+    const ordered = withH4mLoads(listed, fallbacks, form, o.pack);
     const wanted = o.onRequest ?? (o.rows ? [] : MULE1_ON_REQUEST.filter(id => fallbacks.some(r => r.row === id)));
     const onRequest = wanted.map(id => packageFromRow(fallbacks, only(fallbacks, id, 'fallback hand-off'), form, o.pack, true));
     return [...ordered, ...onRequest];
@@ -350,16 +403,24 @@ export interface MuleRunOptions {
     packages: DeliveryPackage[];
 }
 
-/** The tightly timed Doric-to-trees pair carries its next kit, only when assigned consecutively. */
+/**
+ * The pairs whose second package is staged with the first and carried through its trade: the tightly
+ * timed Doric-to-trees pair, and H4p with H4m's first load, which SCORED takes straight after H4p on
+ * the same lap (2 + 20 of 28 slots).
+ */
+const CARRY_PAIRS: readonly (readonly [string, string])[] = [['H4', 'H4k'], [H4M_ANCHOR, 'H4m.1']];
+
+/** A carry pair's metadata, only when assigned consecutively to one carrier. */
 function carryMetadata(ledger: readonly LedgerPackage[], row: string): Pick<Package, 'carryNext' | 'takeBackSlots'> {
     const ordered = ledger.filter(l => !l.onRequest);
-    const h4 = ordered.findIndex(l => l.row === 'H4');
-    if (h4 < 0 || ordered[h4 + 1]?.row !== 'H4k' || (row !== 'H4' && row !== 'H4k')) return {};
-    const entry = ordered[h4 + (row === 'H4k' ? 1 : 0)]!;
+    const pair = CARRY_PAIRS.find(p => p.includes(row));
+    const first = pair ? ordered.findIndex(l => l.row === pair[0]) : -1;
+    if (!pair || first < 0 || ordered[first + 1]?.row !== pair[1]) return {};
+    const entry = ordered[first + (row === pair[1] ? 1 : 0)]!;
     if (entry.takeBackSlots === null || !Number.isInteger(entry.takeBackSlots) || entry.takeBackSlots < 0 || entry.takeBackSlots > INVENTORY_SLOTS) {
         throw new Error(`${row}: carry delivery requires a bounded ledger return-slot count`);
     }
-    return row === 'H4' ? { carryNext: true, takeBackSlots: entry.takeBackSlots } : entry.takeBackSlots ? { takeBackSlots: entry.takeBackSlots } : {};
+    return row === pair[0] ? { carryNext: true, takeBackSlots: entry.takeBackSlots } : entry.takeBackSlots ? { takeBackSlots: entry.takeBackSlots } : {};
 }
 
 /** Resolve against content, never whichever same-named variant happens to be in a bank. */
@@ -402,7 +463,8 @@ export function muleRunOptions(ledger: readonly LedgerPackage[], cueRoot: string
 
 /**
  * A planner-supplied row/account assignment, not an authorization or a default roster.
- * The ledger still determines each account's ordered and on-request packages.
+ * The ledger still determines each account's ordered and on-request packages. A load row (H4m.k)
+ * goes to its anchor's account; a binding of its own must name the same carrier.
  */
 export function muleRunOptionsByAccount(
     ledger: readonly LedgerPackage[],
@@ -415,9 +477,12 @@ export function muleRunOptionsByAccount(
     const extra = Object.keys(delivery.accounts).filter(row => !rows.has(row));
     if (extra.length) throw new Error(`Account bindings name unselected rows: ${extra.join(', ')}`);
     const assigned = new Map<string, LedgerPackage[]>();
+    const bound = (row: string) => (Object.hasOwn(delivery.accounts, row) ? delivery.accounts[row] : undefined);
     for (const l of ledger) {
-        const account = Object.hasOwn(delivery.accounts, l.row) ? delivery.accounts[l.row] : undefined;
+        const own = bound(l.row);
+        const account = l.anchor === undefined ? own : bound(l.anchor);
         if (typeof account !== 'string' || !account.trim()) throw new Error(`${l.row}: explicit account binding is required`);
+        if (own !== undefined && (typeof own !== 'string' || canonName(own) !== canonName(account))) throw new Error(`${l.row}: a load rides ${l.anchor}'s carrier, ${account}`);
         // Login and display-name spellings must not split one carrier into two safe-looking routes.
         const key = canonName(account);
         assigned.set(key, [...(assigned.get(key) ?? []), l]);
