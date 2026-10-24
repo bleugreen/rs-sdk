@@ -18,15 +18,18 @@
 //
 // One RESULT line each: pass, the host, the bundle's sha256 and the git head, and the page's
 // transitions read over DevTools every 100 ms. For `cached`, `refusalToTakeoverTicks` is wall time over
-// tickMs() from the refusal (the page first read out, plus PAGE_ENDED_HOLD_MS, which is when
-// waitOwnLaunch refuses) to the page back in game on the takeover login.
+// tickMs() from the refusal to the page back in game on the takeover login. The refusal is timed by
+// the rule that made it: 'login ended' PAGE_ENDED_HOLD_MS after the page was first read out, 'none of
+// its states reached our gateway' GATEWAY_BACK_GRACE_TICKS after it was first read in game. On the
+// real client the second fires first: a page whose game socket is closed keeps `ingame` true until
+// its own read times out (about 15 s on fedora at 400 ms), and publishes nothing meanwhile.
 
 import { createHash } from 'crypto';
 import { mkdtempSync, readFileSync } from 'fs';
 import { hostname, tmpdir } from 'os';
 import { join } from 'path';
 import { demoOrigin, listedInWorld } from '../lib/demo-status';
-import { cdpUrl, closeSession, loadBotEnv, logoutClean, openSession, PAGE_ENDED_HOLD_MS, ROOT, type Session } from '../lib/session';
+import { cdpUrl, closeSession, GATEWAY_BACK_GRACE_TICKS, loadBotEnv, logoutClean, openSession, PAGE_ENDED_HOLD_MS, ROOT, type Session } from '../lib/session';
 import { evaluateInTab, pageLaunchState } from '../lib/tab';
 import { newRunId, TickLog } from '../lib/ticks';
 import { tickMs } from '../lib/wait';
@@ -156,15 +159,18 @@ try {
         const rejectAt = Date.now();
         await stopWatch();
         const listed = await listedInWorld(world, account);
-        const refusedAt = marks.outAt === null ? null : marks.outAt + PAGE_ENDED_HOLD_MS;
+        const rule = /none of its states reached our gateway/.test(err.message) ? 'silent' : /login ended/.test(err.message) ? 'ended' : null;
+        const refusedAt =
+            rule === 'silent' && marks.dropAt !== null ? marks.dropAt + GATEWAY_BACK_GRACE_TICKS * tickMs() : rule === 'ended' && marks.outAt !== null ? marks.outAt + PAGE_ENDED_HOLD_MS : null;
         Object.assign(out, {
             liteLogout, cachedStatus, cachedState: cachedState?.state ? { tick: cachedState.state.tick, inGame: cachedState.state.inGame, launch: cachedState.state.launch ?? null } : null,
-            error: err.message, marks: Object.fromEntries(Object.entries(marks).map(([k, v]) => [k, typeof v === 'number' ? at(v) : v])), refusedAt: at(refusedAt), rejectAt: at(rejectAt),
+            error: err.message, refusalRule: rule, marks: Object.fromEntries(Object.entries(marks).map(([k, v]) => [k, typeof v === 'number' ? at(v) : v])), refusedAt: at(refusedAt), rejectAt: at(rejectAt),
             refusalToTakeoverTicks: refusedAt !== null && marks.takeoverInAt !== null ? Math.round((marks.takeoverInAt - refusedAt) / tickMs()) : null,
             refusalToConfirmedOutTicks: refusedAt !== null ? Math.round((rejectAt - refusedAt) / tickMs()) : null,
             transitions, listedAfter: listed,
         });
-        pass = /refusing launch \w+: the page's login ended/.test(err.message) && /logged out, confirmed/.test(err.message) && listed === false;
+        // Refused on the page's own evidence (either page rule), then confirmed out by the page and the world.
+        pass = rule !== null && /refusing launch \w+: /.test(err.message) && /logged out, confirmed/.test(err.message) && listed === false;
     } else {
         const s = await openSession(bot, { client: 'browser', launch: true });
         session = s;
