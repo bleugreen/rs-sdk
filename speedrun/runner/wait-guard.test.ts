@@ -74,17 +74,10 @@ describe("SCORED's helper waits run under a DeathWatch (rs/761 (f))", () => {
         const off = keeper.attach(sdk);
         const ctx = ctxFor(sdk);
         const t0 = sdk.state!.tick;
-        const waited = openGuarded(muleScope('H12'), ctx, keeper, { fresh: true });
-        let died = false;
-        const rejected = waited.then(() => null, (e: Error) => e);
-        for (let i = 0; i < 40 && !died; i++) {
-            await flush();
-            // The poison takes the last hitpoints on the 6th tick: hp 0, dead.
-            sdk.tick(s => (s.tick - t0 >= 6 ? { player: { ...s.player!, hp: 0, isDead: true } } : {}));
-            died = (await Promise.race([rejected, flush().then(() => undefined)])) !== undefined;
-        }
+        const rejected = openGuarded(muleScope('H12'), ctx, keeper, { fresh: true }).then(() => null, (e: Error) => e);
+        // The poison takes the last hitpoints on the 6th tick: hp 0, dead.
+        const e = await drive(sdk, rejected, 40, s => (s.tick - t0 >= 5 ? { player: { ...s.player!, hp: 0, isDead: true } } : {}));
         off();
-        const e = await rejected;
         expect(e?.message).toStartWith('SCORED died waiting for the H12/mule cue:');
         // Long before READY_MAX_TICKS: the death ends the wait, not its bound.
         expect(sdk.state!.tick - t0).toBeLessThan(10);
