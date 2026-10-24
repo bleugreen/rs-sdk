@@ -32,8 +32,10 @@ const full = buildChain(cfg, { cues });
 /** Attempt 1's seam: a row beside the coop, 77 tiles from where T02-03 ends. */
 const coopRow = buildChain({ ...cfg, firemakingTiles: '3240,3296' }, { cues });
 
+const fullRunePlan = runePlan(full, ledgerRows(readFileSync(MANIFEST, 'utf8')), await loadModules());
+
 describe('the rune census gate (rs/699)', () => {
-    const plan = runePlan(full, ledgerRows(readFileSync(MANIFEST, 'utf8')), await loadModules());
+    const plan = fullRunePlan;
     const law = [...objPack().names].find(([, n]) => n === 'lawrune')![0];
     const water = [...objPack().names].find(([, n]) => n === 'waterrune')![0];
     const air = [...objPack().names].find(([, n]) => n === 'airrune')![0];
