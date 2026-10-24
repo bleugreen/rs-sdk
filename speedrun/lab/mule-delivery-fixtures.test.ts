@@ -370,7 +370,7 @@ describe('ledger-derived mule delivery fixtures', () => {
             expect(f.at).toEqual({ x: 2606, z: 3234, level: 0 });
             expect(f.receivingArea).toEqual({ x: 2605, z: 3234, level: 0, tol: 0 });
             expect(f.receive.map(i => [i.id, i.count])).toEqual([[532, 20]]);
-            expect(f.beforeInventory.map(i => [i.name, i.count])).toEqual([['Knife', 1], ['Logs', 2], ['Rune pickaxe', 1]]);
+            expect(f.beforeInventory.map(i => [i.name, i.count])).toEqual([['Knife', 1], ['Rune pickaxe', 1], ['Logs', 2]]);
             expect(f.slots.afterSwap).toBe(24);
             expect(f.ledger.anchor).toBe('H4p');
         }

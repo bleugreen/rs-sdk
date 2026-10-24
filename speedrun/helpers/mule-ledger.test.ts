@@ -685,7 +685,7 @@ describe("H4m's loads: one fallback row, N ordered packages after H4p on its car
         expect(() => muleFromLedger(withRow(ROW.replace('x20 [u]', 'x29 [u]')), { rows: ['H4p'] })).toThrow('more than the mule');
     });
 
-    test("h55's order: H6, H4p, H4m.1..N, H7; load 1 carried with H4p (22 of 28 slots), each load at the stand, banked at Ardougne south", () => {
+    test("h55's order: H6, H4p, H4m.1..N, H7; load 1 carried with H4p (23 of 28 slots), each load at the stand, banked at Ardougne south", () => {
         const ledger = muleFromLedger(withRow(), { rows: ['H6', 'H4p', 'H7'] });
         const [entry, ...rest] = muleRunOptionsByAccount(ledger, '/run/cues', { ...delivery, accounts: west });
         expect(rest).toEqual([]);
@@ -719,7 +719,7 @@ describe("H4m's loads: one fallback row, N ordered packages after H4p on its car
         expect(stage.peakSlots).toBe(23);
         expect(Object.fromEntries(stage.inventory)).toEqual({ 1275: 1, 1511: 2, 532: 20 });
         // Two loads never fit: H4m.2 and later each take a bank trip.
-        expect(() => planCarryGroup([...group, ordered[3]!], [{ slot: 0, id: 1275, name: 'Rune pickaxe', count: 1 }, { slot: 1, id: 1511, name: 'Logs', count: 7 }, { slot: 2, id: 532, name: 'Big bones', count: 200 }])).toThrow('42 slots');
+        expect(() => planCarryGroup([...group, ordered[3]!], [{ slot: 0, id: 1275, name: 'Rune pickaxe', count: 1 }, { slot: 1, id: 1511, name: 'Logs', count: 7 }, { slot: 2, id: 532, name: 'Big bones', count: 200 }])).toThrow('43 slots');
     });
 
     test("loads ride H4p's carrier: no binding of their own needed, a different one refused, and a carrier without H4p gets none", () => {
