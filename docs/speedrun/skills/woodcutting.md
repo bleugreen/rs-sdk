@@ -410,7 +410,29 @@ place of one `bones.giver`:
   (`finalExtras` on one giver, served on the group's last load by `boneServer`). Once the runes
   are in, that load was the last: the band asks for no other, and the knife cycle chops on without
   bones to the band end, as the bones run out well before 99.
+- **The early last load (rs/663).** The group's load count is padded above need, so it must not
+  decide when the band ends. When the last band is past `to` with Prayer at `prayerTo` (the run
+  sets 99 and 99), holds no bones, and still owes the runes, it writes `lastLoad` into the S07 cue
+  once (`BoneCue.markLastLoad`; a resumed process reads it back and never writes it twice). Its
+  next ask wants exactly `CAMELOT_RUNES`, from the group's final giver only, and the band closes on
+  that load without starting another run. If no final giver serves within `serverWait`, the band
+  fails by name and keeps the cue for the resume. The fallback for that case is the coordinator's
+  call; the code never closes without the runes. The flag's row is `woodcutting:last-load`, and the
+  band summary carries `bothTargetsTick` for measuring the close.
+- **No bones at the close.** On the scored run's path (`bones.lastLoad` set), the last band buries
+  every bone it holds before it closes, Prayer 99 or not, so T07-08 starts with the knife, a log and
+  the runes. The early last load brings no bones, and a count-driven last load (21 bones and the
+  runes) is buried in a Prayer run. A resume that finds bones held at both targets re-enters the
+  band to bury them.
 - `handBack: true` names one giver, so it is refused with a group (name the partner instead).
+
+The group's load failures and their recovery. In both cases the band fails, keeps the cue standing,
+and never closes without the runes.
+
+| Failure (the band's error) | Cause | Recovery |
+|---|---|---|
+| `bone load N from the group (...) failed: no giver of the group served within N observed ticks` | no giver loaded and in sight within `serverWait` (all away, faulted or logged out) | the operator relaunches the bone family's launcher and resumes `--from=S07`; the resume re-enters the band in the same cue session and the givers carry on their count |
+| `... the group's final giver did not serve the runes' load (the cue's lastLoad) within N observed ticks: relaunch the bone givers and resume --from=S07` | the cue says lastLoad, and b04 (the only giver that may serve it) is faulted, logged out or stale | the operator relaunches the bone family's launcher (a fresh launcher ignores stale cues) and resumes `--from=S07`. The resume re-enters the closing band, writes `lastLoad` once in the new session, and asks b04 again. Not `handBack`, a path no lab has exercised (rs/186's ruling) |
 
 **Measured** (local engine, `NODE_TICKRATE=300`, a headless Chrome tab on bgsrv-mac, load 2.2-5.2,
 2026-10-22 18:29-18:41Z, `speedrun/lab/measure-woodcutting.ts band --level=15 --bury --givers=4`:

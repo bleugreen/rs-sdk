@@ -140,7 +140,8 @@ export function packageFromRow(rows: readonly LedgerRow[], index: number, form: 
     // A `drop` is left on SCORED's tile, never handed to the mule.
     const takesBack = row.out
         .filter(o => !o.placeholder && GIVEN_REASONS.includes(o.reason))
-        .map(o => ({ label: `${itemLabel(o)} ${o.count === 'all' ? 'all' : `x${o.count}`}`, displayName: capitalise(gameName(o.name)), ref: o.family ? null : refOf(o), count: o.count ?? 'all' }));
+        // `any` takes back whatever comes, possibly nothing: for the stock walk it is `all` (never credited).
+        .map(o => ({ label: `${itemLabel(o)} ${o.count === 'all' || o.count === 'any' ? o.count : `x${o.count}`}`, displayName: capitalise(gameName(o.name)), ref: o.family ? null : refOf(o), count: o.count === 'any' ? 'all' : (o.count ?? 'all') }));
     const takeBackSlots = row.out.some(o => typeof o.count !== 'number') ? null : row.out.reduce((sum, o) => sum + (o.count as number), 0);
     return { row: row.row, onRequest: fallback, line: row.line, step, package: pkg, topUps, slots, takeBackSlots, takesBack, moduleLines: plan.placeholders };
 }

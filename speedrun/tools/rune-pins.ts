@@ -110,8 +110,8 @@ function ledgerUse(row: LedgerRow, before: readonly Held[]): { use: Counts; unkn
     for (const e of row.out) {
         const r = e.reason === 'consume' ? runeOf(e) : null;
         if (!r) continue;
-        if (e.count === null || (e.count === 'all' && held.unknown.has(r))) unknown.add(r);
-        else use[r] = (use[r] ?? 0) + (e.count === 'all' ? (held.counts[r] ?? 0) : e.count);
+        if (e.count === null || (typeof e.count !== 'number' && held.unknown.has(r))) unknown.add(r);
+        else use[r] = (use[r] ?? 0) + (typeof e.count !== 'number' ? (held.counts[r] ?? 0) : e.count);
     }
     return { use, unknown };
 }

@@ -183,7 +183,7 @@ async function stageGives(s: Session, p: HandOffPlan): Promise<void> {
     await setStats(s.sdk, { ranged: 50, attack: 20 });
     // A family's doses come from --hold.
     const named = p.give.filter(g => !g.perObj || g.ids);
-    await stage(s, [...named.map(g => ({ obj: objFor(g), count: g.count === 'all' ? 1 : g.count, kind: 'u' })), ...hold.map(obj => ({ obj, count: 1, kind: 'u' }))]);
+    await stage(s, [...named.map(g => ({ obj: objFor(g), count: typeof g.count === 'number' ? g.count : 1, kind: 'u' })), ...hold.map(obj => ({ obj, count: 1, kind: 'u' }))]);
     for (const g of p.give) {
         if (!/bow|staff|scimitar|sword|knife|axe/i.test(g.name)) continue;
         const w = await wield(s.sdk, g.pattern);
