@@ -579,7 +579,8 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
     const noteDeath = (): TickRow | null => {
         const d = session.died;
         if (!d || died) return died;
-        died = deathRow(log, account, session.sessionId, d, lastLogout ?? undefined);
+        const by = lastLogout as LogoutResult | null;
+        died = deathRow(log, account, session.sessionId, d, by?.death === d ? by : undefined);
         log.append(died);
         console.log(`${tag} DIED: ${d.reason}`);
         console.log(`${tag} operator: ${operatorLine(died)}`);
