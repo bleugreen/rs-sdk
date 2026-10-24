@@ -49,6 +49,9 @@
 //   (Thieving 57 at the knights, Fishing 78 at the river). A demo rollback across a swap hands its
 //   given items back, which the second clause sees; across a receive-only trade it leaves the next
 //   step's own kit check to refuse.
+// Without the record, such a state (S22 after its first catch) holds some of every item the row
+// brings, which no row's pack does before its trade, so preconditions refuse it and the walk goes
+// down past the hand-off instead of trading the row a second time.
 // A logout after the trade landed but before the equip changes leaves `inProgress`, entered
 // through `resume`, which applies the equip only. A logout mid-trade refunds both sides, and the
 // step runs again.
