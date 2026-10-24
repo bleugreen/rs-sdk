@@ -413,7 +413,7 @@ function seenOf(s: BotWorldState | null): Seen | null {
 export interface EatOptions {
     /** Default: any of the usual cooked fish. */
     food?: ItemPattern;
-    /** Eat below this many hitpoints (default 15). */
+    /** Eat below this many hitpoints (default: at or under eatAt(maxHp), the floor rule). */
     below?: number;
 }
 
@@ -777,20 +777,44 @@ function onRoute(s: BotWorldState, route: readonly XZ[], from: number, to: numbe
     return null;
 }
 
-/** Hitpoints under which the run's eat rule eats by default (EatOptions `below`). */
+/** Hitpoints under which the run's eat rule eats when the maximum is too small for the floor (eatAt). */
 export const EAT_BELOW = 15;
 /** Ticks after an eat before the rule eats again: an eat takes that long to land. */
 export const EAT_SPACING = 3;
+/** The hitpoints a walk must never fall under (main, attempt 4: T14-15b reached 1, poisoned, with 3 sharks held). */
+export const HP_FLOOR = 15;
+/**
+ * The most one poison hit takes on the route: [timer,poison] queues (%poison + 4) / 5 every 30 ticks
+ * (skill_combat/scripts/poison.rs2), and the poison spiders' severity 27 (all.npc) starts it at 6.
+ */
+export const POISON_HIT_MAX = 6;
+/** One NPC hit that can land between the frame an eat is decided on and the tick the food heals. */
+export const HIT_ALLOWANCE = 4;
+/** The rule never eats within this many hitpoints of the maximum: a shark heals 20, so at least half of it is used. */
+export const EAT_HEADROOM = 10;
 
 /**
- * The run's eat rule: the food to eat now, or null. Hitpoints under `o.below` (EAT_BELOW), no eat in
- * the EAT_SPACING ticks since `lastEat`, and a food held. A travel's `eat` follows it, and so does
- * the upkeep around SCORED's helper waits (runner/wait-guard.ts).
+ * The hitpoints at or under which the rule eats: the floor plus one poison hit and one NPC hit (25),
+ * so the frame the eat is decided on can lose both before the food lands and still end on HP_FLOOR.
+ * Held EAT_HEADROOM under a small maximum, and never under the old fixed rule (under EAT_BELOW).
+ * At SCORED's 38-42 through S13-S15 it is 25. Re-checked on every frame, and an eat that did not land
+ * (a delayed player drops it) goes again after EAT_SPACING.
+ */
+export function eatAt(maxHp: number): number {
+    return Math.max(EAT_BELOW - 1, Math.min(HP_FLOOR + POISON_HIT_MAX + HIT_ALLOWANCE, maxHp - EAT_HEADROOM));
+}
+
+/**
+ * The run's eat rule: the food to eat now, or null. Hitpoints at or under eatAt(maxHp) (or under
+ * `o.below` when given), no eat in the EAT_SPACING ticks since `lastEat`, and a food held. A travel's
+ * `eat` follows it, and so does the upkeep on the legs and around SCORED's helper waits
+ * (runner/wait-guard.ts).
  */
 export function eatDue(s: BotWorldState, o: EatOptions, lastEat: number): InventoryItem | null {
-    const hp = s.player?.hp ?? 99;
-    if (hp >= (o.below ?? EAT_BELOW) || s.tick - lastEat < EAT_SPACING) return null;
-    return invItem(s, o.food ?? FOOD);
+    const p = s.player;
+    if (!p || s.tick - lastEat < EAT_SPACING) return null;
+    const due = o.below !== undefined ? p.hp < o.below : p.hp <= eatAt(p.maxHp);
+    return due ? invItem(s, o.food ?? FOOD) : null;
 }
 
 function eater(sdk: TravelSdk, trip: Trip, o?: EatOptions): (s: BotWorldState) => Promise<void> {
