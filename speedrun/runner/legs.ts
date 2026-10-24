@@ -74,6 +74,11 @@ export interface LegDef {
      * pins each to its row). See dropsDue for when each goes.
      */
     drops?: readonly RegExp[];
+    /**
+     * Hops that follow this leg's own, whose needs its drops must leave held: splitLeg's part a
+     * keeps what part b needs, so the parts drop exactly what the whole leg would.
+     */
+    keepFor?: readonly Hop[];
     expected: Expected;
 }
 
@@ -172,6 +177,18 @@ export function neededBy(hops: readonly Hop[], name: string, id?: number): boole
 }
 
 /**
+ * The held names `hops` need that drop pattern `p` takes: a spell's runes, the webs' knife, a ship's
+ * coins, an item used on a loc (by its name, or a regex's literal `^name$`). Empty when none.
+ */
+export function dropTakesNeeded(p: RegExp, hops: readonly Hop[]): string[] {
+    const need = hopNeeds(hops);
+    const runes = Object.entries(need.runes).filter(([, n]) => (n ?? 0) > 0).map(([r]) => `${r[0]!.toUpperCase()}${r.slice(1)} rune`);
+    const items = need.items.flatMap(i => (typeof i === 'string' ? [i] : i instanceof RegExp ? (/^\^([\w' ]+)\$$/.exec(i.source)?.slice(1) ?? []) : []));
+    const names = [...runes, ...(need.knife ? ['Knife'] : []), ...(need.coins > 0 ? ['Coins'] : []), ...items];
+    return names.filter(n => p.test(n));
+}
+
+/**
  * The held items `def` drops before hop `at` (at = hops.length: on arrival): those its `drops` name
  * that no hop from `at` on needs. So most go in one burst before the first click, and a rune the
  * leg's own teleport spends goes on the standing tick after the landing, before the next click
@@ -180,7 +197,7 @@ export function neededBy(hops: readonly Hop[], name: string, id?: number): boole
  */
 export function dropsDue(def: LegDef, s: BotWorldState, at: number): InventoryItem[] {
     if (!def.drops?.length) return [];
-    const rest = def.hops.slice(at);
+    const rest = [...def.hops.slice(at), ...(def.keepFor ?? [])];
     return s.inventory.filter(i => i.count > 0 && def.drops!.some(p => p.test(i.name)) && !neededBy(rest, i.name, i.id));
 }
 
@@ -628,6 +645,10 @@ export function entersWilderness(hops: readonly Hop[], dest: Area): boolean {
  * part a's ticks from `firstTicks`, and the two nets sum to the original's exactly. The food check
  * goes only to a part that enters the Wilderness (entersWilderness): a teleport to the landing
  * needs none, and the hand-off between the parts may be what brings the food.
+ *
+ * Part a makes the whole leg's drops, keeping what part b's hops need (keepFor), and part b makes
+ * none, so nothing the hand-off between the parts brings is dropped. A drop that part b's hops
+ * need would then never be made by either part, so that split is refused.
  */
 export function splitLeg(l: LegStep, afterHop: number, o: SplitOptions = {}): [LegStep, LegStep] {
     const d = l.def;
@@ -643,9 +664,12 @@ export function splitLeg(l: LegStep, afterHop: number, o: SplitOptions = {}): [L
     const cps = d.checkpoints ?? [];
     const hopsA = d.hops.slice(0, afterHop + 1);
     const hopsB = d.hops.slice(afterHop + 1);
+    const late = (d.drops ?? []).flatMap(p => dropTakesNeeded(p, hopsB).map(n => `${p} takes the ${n} part b needs`));
+    if (late.length) throw new Error(`${d.id}: cannot split after hop ${afterHop}: ${late.join('; ')}`);
     const a: LegOptions = {
         after: d.after, before: `${d.id}b`, method: `${d.method}, part a (to the landing)`,
         ...(d.food && entersWilderness(hopsA, meet) ? { food: d.food } : {}),
+        ...(d.drops?.length ? { drops: d.drops, keepFor: [...hopsB, ...(d.keepFor ?? [])] } : {}),
         ...(cps.some(c => c.after < afterHop) ? { checkpoints: cps.filter(c => c.after < afterHop) } : {}),
         expected: { ticks: firstTicks, label: d.expected.label, source: o.firstSource ?? `${d.id} split after hop ${afterHop}: ${firstTicks} of ${d.expected.ticks} (${d.expected.source})`, net: netA },
     };
@@ -655,6 +679,7 @@ export function splitLeg(l: LegStep, afterHop: number, o: SplitOptions = {}): [L
         ...(d.food && entersWilderness(hopsB, d.dest) ? { food: d.food } : {}),
         ...(d.nextStart ? { nextStart: d.nextStart } : {}),
         ...(d.countedBy ? { countedBy: d.countedBy } : {}),
+        ...(d.keepFor?.length ? { keepFor: d.keepFor } : {}),
         ...(rest.length ? { checkpoints: rest } : {}),
         expected: { ticks: tenth(d.expected.ticks - firstTicks), label: d.expected.label, source: `${d.id} split after hop ${afterHop}: the rest of ${d.expected.ticks} (${d.expected.source})`, net: tenth(d.expected.net - netA) },
     };
