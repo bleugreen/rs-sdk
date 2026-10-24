@@ -1042,7 +1042,7 @@ describe('a delivery carrier that comes after SCORED: the meeting, the cue\'s re
             try {
                 expect(r.step.preconditions(r.sdk.state!, {})).toBe(true);
                 await drive(r.sdk, r.step.run(ctxOf(r.sdk)), 300);
-                return { actions: r.sdk.sent.map(a => [r.sdk.state && a.method, ...a.args]), clicks: r.sdk.tradeClicks, ok: r.reports[0]?.ok, end: r.sdk.state!.tick };
+                return { actions: r.sdk.sent.map(a => [a.method, ...a.args]), clicks: r.sdk.tradeClicks, ok: r.reports[0]?.ok, end: r.sdk.state!.tick };
             } finally {
                 r.done();
             }
