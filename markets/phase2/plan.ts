@@ -45,6 +45,9 @@ export const NEEDS: Readonly<Record<MethodId, MethodNeeds>> = {
     shilo: { mining: 40, hp: false, sharks: false, ardougne: false, staged: 'Shilo Village complete and the account at the Shilo gem rocks; no quest bot exists for Jungle Potion or Shilo Village' }
 };
 
+/** Methods whose earnings are coins. A food-redirected shark eater earns its rebuy only on one of these. */
+export const EARNS_COINS: Readonly<Record<MethodId, boolean>> = { knights: true, heroes: true, guards: true, iron: false, shilo: false };
+
 export type Mix = Partial<Record<MethodId, number>>;
 
 export interface AccountPlan {
@@ -339,6 +342,25 @@ export function parsePlan(raw: unknown): Plan {
         sell,
         options
     };
+}
+
+/**
+ * What a valid plan may still get wrong, for the runner to say loudly at startup. A buying plan whose food fallback
+ * includes a method that banks no coins (iron, shilo) strands the shark eaters sent there: they never reach the
+ * rebuy threshold, and nothing else would say why.
+ */
+export function planWarnings(plan: Pick<Plan, 'accounts' | 'sharks' | 'ramp' | 'foodFallbackMix'>): string[] {
+    const out: string[] = [];
+    const knights = plan.accounts.some(a => a.method === 'knights');
+    const eaters = plan.accounts.some(a => NEEDS[a.method].sharks) || (knights && Object.entries(plan.ramp?.fallbackMix ?? {}).some(([m, n]) => (n ?? 0) > 0 && NEEDS[m as MethodId].sharks));
+    if (plan.sharks.source === 'buy' && eaters) {
+        const dry = (Object.entries(plan.foodFallbackMix) as [MethodId, number][]).filter(([m, n]) => n > 0 && !EARNS_COINS[m]).map(([m]) => m);
+        if (dry.length)
+            out.push(
+                `foodFallbackMix sends shark eaters to ${dry.join(', ')}, which bank${dry.length === 1 ? 's' : ''} no coins: an account sent there never earns its rebuy and stays. For a buying plan use foodFallbackMix: { guards: 1 }`
+            );
+    }
+    return out;
 }
 
 /** The ramp's steps for `knights` logins: those below the count, then the count itself. */

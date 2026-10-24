@@ -57,7 +57,7 @@ import { DEFAULT_POLICY, LoginGate } from './gate.ts';
 import { HpSites } from './hp-sites.ts';
 import { accountLine, COINS_ID, totalsLine, type AccountSnapshot, type Stack, type Valuer } from './ledger.ts';
 import { aliasOf, nameScrubber, scrubRecord, unlistedAccounts } from './names.ts';
-import { NEEDS, nextFallback, parsePlan, PlanError, roleOptions, SALE_ROUTE, sequenceFor, type AccountPlan, type MethodId, type Plan } from './plan.ts';
+import { EARNS_COINS, NEEDS, nextFallback, parsePlan, PlanError, planWarnings, roleOptions, SALE_ROUTE, sequenceFor, type AccountPlan, type MethodId, type Plan } from './plan.ts';
 import { KnightsRamp, rateBetween } from './ramp.ts';
 import { afterAttempt, loadSharks, rebuyDecision, requestRebuy, retryDelayMs, SHARKS_KEY, shortfall, shortForVoyage, type SharkAttempt } from './sharks.ts';
 import { carriedCoins, runRoleUntil, runStage, stageDone, type StageCtx, type StageHooks } from './stages.ts';
@@ -239,6 +239,8 @@ export class Runner {
     // ------------------------------------------------------------ the loop
 
     start(): void {
+        const warnings = planWarnings(this.plan);
+        for (const m of warnings) this.event(null, `plan warning: ${m}`, {}, true);
         this.ledger({
             kind: 'start',
             placeholder: this.o.placeholder,
@@ -252,7 +254,8 @@ export class Runner {
             ledgerEveryTicks: this.plan.ledger.everyTicks,
             tickMs: this.tickMs,
             runEnded: this.o.runEnded,
-            minutes: this.o.minutes
+            minutes: this.o.minutes,
+            warnings
         });
         this.timer = setInterval(() => this.pump(), 500);
     }
@@ -561,8 +564,8 @@ export class Runner {
 
     // ------------------------------------------------------------ redirects
 
-    private redirectTo(w: Worker, method: MethodId, reason: string, kind: string): void {
-        this.ledger({ kind: 'redirect', account: w.alias, from: w.method, to: method, why: kind, reason });
+    private redirectTo(w: Worker, method: MethodId, reason: string, kind: string, extra: Record<string, unknown> = {}): void {
+        this.ledger({ kind: 'redirect', account: w.alias, from: w.method, to: method, why: kind, reason, ...extra });
         this.event(w, `redirect to ${method}`, { reason }, true);
         w.redirect = { method, reason };
         if (w.stageCtl) w.stageCtl.abort(new Error(`redirect to ${method}`));
@@ -582,7 +585,7 @@ export class Runner {
         if (!m) return;
         this.foodFallback.set(m, (this.foodFallback.get(m) ?? 0) + 1);
         w.foodFrom = w.method;
-        this.redirectTo(w, m, reason, 'food');
+        this.redirectTo(w, m, reason, 'food', this.plan.sharks.source === 'buy' && !EARNS_COINS[m] ? { rebuy: 'no rebuy: the fallback earns no coins' } : {});
     }
 
     // ------------------------------------------------------------ the knights ramp

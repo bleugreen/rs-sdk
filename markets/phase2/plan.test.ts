@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fallbackMix, nextFallback, parsePlan, PlanError, rampSteps, roleOptions, sequenceFor, type MethodId } from './plan.ts';
+import { fallbackMix, nextFallback, parsePlan, PlanError, planWarnings, rampSteps, roleOptions, sequenceFor, type MethodId } from './plan.ts';
 
 const accounts = (n: number, method: string, prefix = 'acct') => Array.from({ length: n }, (_, i) => ({ account: `${prefix}${String(i + 1).padStart(2, '0')}`, method }));
 const problems = (raw: unknown): string[] => {
@@ -106,6 +106,16 @@ describe('sequenceFor', () => {
         expect(problems({ accounts: one, sharks: { source: 'buy', perAccount: 160, rebuyMinSharks: 10 } })[0]).toMatch(/rebuyMinSharks 10 is below sharks.minimum 28/);
         // banked sharks never rebuy
         expect(problems({ accounts: one, sharks: { source: 'bank', perAccount: 10 } })).toEqual([]);
+    });
+    test('a buying plan whose food fallback earns no coins is warned about', () => {
+        const knights = accounts(2, 'knights');
+        expect(planWarnings(parsePlan({ accounts: knights, sharks: { source: 'buy' } }))).toEqual([
+            'foodFallbackMix sends shark eaters to iron, which banks no coins: an account sent there never earns its rebuy and stays. For a buying plan use foodFallbackMix: { guards: 1 }'
+        ]);
+        expect(planWarnings(parsePlan({ accounts: knights, sharks: { source: 'buy' }, foodFallbackMix: { guards: 1 } }))).toEqual([]);
+        // banked sharks never rebuy, and a plan with no shark eaters has none to strand
+        expect(planWarnings(parsePlan({ accounts: knights }))).toEqual([]);
+        expect(planWarnings(parsePlan({ accounts: accounts(2, 'guards'), sharks: { source: 'buy' } }))).toEqual([]);
     });
     test('a bought shark supply adds the purchase before the voyage', () => {
         const buy = parsePlan({ accounts: accounts(1, 'knights'), sharks: { source: 'buy' }, ramp: null });
