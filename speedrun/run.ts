@@ -590,8 +590,8 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
         lastLogout = r;
         const t = (x: { x: number; z: number }) => `(${x.x},${x.z})`;
         const held = r.held ? `; held ${r.held.ticks} ticks, ${r.held.inCombatTicks} in combat, hp ${r.held.hp.map(h => h.hp).join(' > ')}` : '';
-        const died = r.death ? `DIED before it landed, ${t(r.death.from)} to ${t(r.death.to)}; ` : '';
-        console.log(`${tag} logout: ${died}${r.ok ? `out after the click on tick ${r.clickTick}` : `NOT confirmed (${r.reason})`}${held}`);
+        const dead = r.death ? `DIED before it landed, ${t(r.death.from)} to ${t(r.death.to)}; ` : '';
+        console.log(`${tag} logout: ${dead}${r.ok ? `out after the click on tick ${r.clickTick}` : `NOT confirmed (${r.reason})`}${held}`);
         noteDeath();
         return r;
     };
