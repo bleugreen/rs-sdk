@@ -2769,16 +2769,20 @@ step below writes a ledger line:
 | Tool | Arguments (`--go` to log in) | Checks |
 |---|---|---|
 | `read` | none | none: records the tile, pack and worn items by id, and the vitals |
-| `drop` | `--id=ID --have=N --at=X,Z[,L] [--within=2] [--worn=ID]` | the pack holds exactly N of ID first; SCORED is within `--within` of `--at`; afterwards ID is gone, every other id is unchanged (`pack-other` otherwise), and `--worn` is still worn |
-| `receive` | `--id=ID [--amount=1] --have=N --courier-hash=HEX --meet=X,Z[,L]` | exactly one listed player's name hash starts with HEX, standing within 6 tiles of `--meet`; SCORED is within 10 tiles of `--meet` and holds N of ID; afterwards it holds N + amount and every other id is unchanged |
+| `drop` | `--id=ID --have=N --at=X,Z[,L] [--within=2] [--worn=ID] [--slots=N]` | the pack holds exactly N of ID first; SCORED is within `--within` of `--at`; afterwards ID is gone, every other id is unchanged (`pack-other` otherwise), `--worn` is still worn, and with `--slots` the pack uses exactly that many slots |
+| `receive` | `--id=ID [--amount=1] --have=N --courier-hash=HEX --meet=X,Z[,L] [--free=N]` | exactly one listed player's name hash starts with HEX, standing within 6 tiles of `--meet`; SCORED is within 10 tiles of `--meet` and holds N of ID; afterwards it holds N + amount, every other id is unchanged, and with `--free` exactly that many slots are free (the S15 kit needed one; a full 28/28 pack broke Narnode's seal) |
 | `walk` | `--to=X,Z[,L]` | the exact tile and level within 15 ticks of `walkTo` |
 
 The courier is named by a prefix (6 or more hex digits) of the sha256 of its name as the player
 list shows it (`_` shown as a space), lowercased: `printf '%s' 'cairn h61' | sha256sum | cut -c1-12`.
 So no name goes in a command, and its name is redacted to `COURIER`. Host's `rekit-a3.ts` (a
-receive with a want-list, an optional teleport and a walk) is not in the repo yet. A new kind of
-one-off becomes a file in `speedrun/tools/oneoff/` on `runOneoff`. The wrapper runs nothing else, and
-only a tool on the machine's `RUN_COMMIT` exists there.
+receive with a want-list, an optional teleport and a walk) is not in the repo yet; it is attempt 5's
+most likely one-off after a death. A new kind of one-off becomes a file in `speedrun/tools/oneoff/` on
+`runOneoff`. The wrapper runs nothing else, and only a tool on the machine's `RUN_COMMIT` exists
+there. Attempt 4 needed two tools written inside the hold window, so the flags above are meant to
+cover those cases without new code. Whether a run-night escape for an uncommitted tool is allowed
+(host's proposal: `--adhoc=<path>`, only under `<run dir>/oneoff-adhoc/`, with a loud `ADHOC` ledger
+line) is main's decision; until main allows it, there is none.
 
 **The ledger** is `<run dir>/oneoff-drop.jsonl` (`--run-dir`, by default run.ts's `run-machine`).
 It holds one JSON line per event, `{t, one_off, k, v}`, with SCORED's name replaced by `SCORED`. `k` is
