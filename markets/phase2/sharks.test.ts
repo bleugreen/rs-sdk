@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { afterAttempt, isTransient, loadSharks, rebuyDecision, requestRebuy, retryDelayMs, SHARK_RETRY, sharksSettled, shortfall, shortForVoyage, type RebuyInput, type SharkState } from './sharks.ts';
+import { afterAttempt, heldAfter, needsReread, isTransient, loadSharks, rebuyDecision, requestRebuy, retryDelayMs, SHARK_RETRY, sharksSettled, shortfall, shortForVoyage, type RebuyInput, type SharkState } from './sharks.ts';
 
 const NOW = new Date('2026-10-24T09:00:00Z');
 
@@ -149,5 +149,19 @@ describe('a short purchase', () => {
         expect(second.status).toBe('done');
         expect(shortfall(second.last, plan.minimum)).toBeNull();
         expect(shortForVoyage({ bankSharks: 160, carriedSharks: 0, sharks: second, minimum: plan.minimum })).toBeNull();
+    });
+});
+
+describe('the count after a purchase', () => {
+    test('a full fill that reads 0 is read again; so is a pack still holding sharks', () => {
+        // run-b3 a07: 46 bought, 0 seen in the bank
+        expect(needsReread({ bank: 0, pack: 0, uncollected: 0 }, 46)).toBe(true);
+        expect(needsReread({ bank: 0, pack: 46, uncollected: 0 }, 46)).toBe(true);
+        expect(needsReread({ bank: 46, pack: 0, uncollected: 0 }, 46)).toBe(false);
+        // left on the Exchange after the collect's retry: counted, nothing to read again
+        expect(needsReread({ bank: 0, pack: 0, uncollected: 46 }, 46)).toBe(false);
+    });
+    test('bank, pack and uncollected all count toward the minimum', () => {
+        expect(heldAfter({ bank: 20, pack: 6, uncollected: 20 })).toBe(46);
     });
 });

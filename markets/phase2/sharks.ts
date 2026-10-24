@@ -147,6 +147,23 @@ export function shortForVoyage(i: { bankSharks: number | null; carriedSharks: nu
     return `${have} sharks ${i.bankSharks === null ? 'recorded after the last purchase' : 'banked and carried'}, below the minimum of ${i.minimum}${why ? ` (${why})` : ''}: not sailing`;
 }
 
+/** Where an account's sharks are after a purchase errand. */
+export interface SharksAfter {
+    bank: number;
+    /** Carried, items and notes. */
+    pack: number;
+    /** Still on the Exchange: the offer's collectible items. */
+    uncollected: number;
+}
+
+export const heldAfter = (a: SharksAfter): number => a.bank + a.pack + a.uncollected;
+
+/**
+ * Whether the errand reads the bank again before trusting its count: the total is below what it held before plus
+ * what it bought (a bank list read before it refreshed), or the pack still holds sharks (a deposit that timed out).
+ */
+export const needsReread = (a: SharksAfter, expected: number): boolean => heldAfter(a) < expected || a.pack > 0;
+
 /** The state that sends the account through buy-sharks again (a rebuy). */
 export function requestRebuy(prev: SharkState | null, now: Date, note: string): SharkState {
     return { status: 'due', tries: 0, last: prev?.last ?? null, at: now.toISOString(), note };

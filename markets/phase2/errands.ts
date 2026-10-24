@@ -18,6 +18,7 @@ import { depositMatching } from '../../speedrun/lib/bank';
 import { waitTicks, waitUntil } from '../../speedrun/lib/wait';
 import type { MarketQuote } from '../lib/market.ts';
 import { buyDecision, saleDecision, SHARK_ID } from './exchange.ts';
+import { heldAfter, needsReread, type SharksAfter } from './sharks.ts';
 import { carriedCoins, type StageCtx } from './stages.ts';
 
 /** Stand inside the Varrock west bank; the Exchange table and teller are on its west side (sdk/MARKET.md). */
@@ -77,15 +78,46 @@ async function waitFill(x: ErrandCtx, id: number, minutes: number, first: GEOffe
     return offer;
 }
 
-/** Cancel what is left open, collect the rest (items as notes), and close the Exchange. */
-async function settle(x: ErrandCtx, offer: GEOffer, rec: Record<string, unknown>): Promise<void> {
+/**
+ * Cancel what is left open, collect the rest (items as notes; one retry, reopening the Exchange, when the collect
+ * fails), and close the Exchange. Returns the items the offer still holds uncollected, as last seen.
+ */
+async function settle(x: ErrandCtx, offer: GEOffer, rec: Record<string, unknown>): Promise<number> {
     if (offer.remaining > 0 && offer.state === 'open') {
         const c = await x.bot.cancelGEOffer(offer.id);
         rec.cancelled = c.success ? offer.remaining : `failed: ${c.message}`;
     }
-    const col = await x.bot.collectGEOffer(offer.id, true);
+    let col = await x.bot.collectGEOffer(offer.id, true);
     rec.collect = { success: col.success, coins: col.coins ?? null, items: col.items ?? null, message: col.message };
+    if (!col.success) {
+        await waitTicks(x.sdk, 2);
+        if (!x.sdk.getGEState()) await x.bot.openGE();
+        col = await x.bot.collectGEOffer(offer.id, true);
+        rec.collectRetry = { success: col.success, coins: col.coins ?? null, items: col.items ?? null, message: col.message };
+    }
+    const seen = x.sdk.getGEState()?.offers.find(o => o.id === offer.id);
+    const uncollected = seen ? seen.items : col.success ? 0 : offer.items;
     await x.bot.closeInterface().catch(() => undefined);
+    return uncollected;
+}
+
+const SHARK = /^shark$/i;
+
+/**
+ * Sharks the account holds after the errand (a noted shark is also named 'Shark'): the bank, read again (after
+ * depositing what the pack still holds) while the total is below `expected` or the pack is not empty, at most
+ * `reads` reads in all; the pack; and what the Exchange still holds uncollected.
+ */
+async function sharksAfter(x: ErrandCtx, bank0: readonly { name: string; count: number }[], uncollected: number, expected: number, reads = 3): Promise<SharksAfter & { reads: number }> {
+    let a: SharksAfter = { bank: countIn(bank0, SHARK), pack: countIn(state(x).inventory, SHARK), uncollected };
+    let n = 1;
+    while (needsReread(a, expected) && n < reads) {
+        await waitTicks(x.sdk, 2);
+        const bank = await bankProceeds(x, SHARK);
+        n++;
+        a = { bank: countIn(bank, SHARK), pack: countIn(state(x).inventory, SHARK), uncollected };
+    }
+    return { ...a, reads: n };
 }
 
 export interface SharkConfig {
@@ -97,11 +129,15 @@ export interface SharkConfig {
 
 /**
  * Buy up to `perAccount` sharks less those banked, with a limit at the ceiling, paid from the bank's coins. Returns the
- * errand's record and the sharks banked after it; the runner records the outcome (sharks.ts) and decides on a retry.
+ * errand's record and the sharks held after it (`banked`: bank, pack and uncollected, `sharksAfter`; the parts are in
+ * the record's `after`); the runner records the outcome (sharks.ts) and decides on a retry.
  */
 export async function buySharks(x: ErrandCtx, cfg: SharkConfig, book: BookReader): Promise<{ record: Record<string, unknown>; banked: number }> {
     const rec: Record<string, unknown> = { kind: 'buy', item: SHARK_ID, ceiling: cfg.ceiling };
-    const finish = async (banked: number) => {
+    const finish = async (bank: readonly { name: string; count: number }[], uncollected = 0, bought = 0) => {
+        const after = await sharksAfter(x, bank, uncollected, ((rec.held as number | undefined) ?? 0) + bought);
+        const banked = heldAfter(after);
+        rec.after = after;
         rec.banked = banked;
         rec.at = new Date().toISOString();
         x.event('shark purchase', rec);
@@ -121,7 +157,7 @@ export async function buySharks(x: ErrandCtx, cfg: SharkConfig, book: BookReader
     if (want <= 0) {
         await x.bot.closeBank();
         rec.result = 'enough';
-        return finish(held);
+        return finish(bank);
     }
     const coinStack = bank.find(i => /^coins$/i.test(i.name));
     const need = want * cfg.ceiling - carriedCoins(state(x));
@@ -138,7 +174,7 @@ export async function buySharks(x: ErrandCtx, cfg: SharkConfig, book: BookReader
     if (!d.buy) {
         rec.result = 'refused';
         rec.reason = d.reason;
-        return finish(countIn(await bankProceeds(x, /^shark$/i), /^shark$/i));
+        return finish(await bankProceeds(x, SHARK));
     }
     const opened = await x.bot.openGE();
     if (!opened.success) throw new Error(`openGE: ${opened.message}`);
@@ -147,15 +183,15 @@ export async function buySharks(x: ErrandCtx, cfg: SharkConfig, book: BookReader
         rec.result = placed.outcome === 'unknown' ? 'unknown' : 'not placed';
         rec.reason = `${placed.reason}: ${placed.message}`;
         await x.bot.closeInterface().catch(() => undefined);
-        return finish(countIn(await bankProceeds(x, /^shark$/i), /^shark$/i));
+        return finish(await bankProceeds(x, SHARK));
     }
     rec.offerId = placed.offer.id;
     rec.quantity = d.quantity;
     const offer = await waitFill(x, placed.offer.id, cfg.fillMinutes, placed.offer);
     rec.filled = offer.filled;
-    await settle(x, offer, rec);
+    const uncollected = await settle(x, offer, rec);
     rec.result = offer.filled === d.quantity ? 'filled' : offer.filled > 0 ? 'partial' : 'unfilled';
-    return finish(countIn(await bankProceeds(x, /^shark$/i), /^shark$/i));
+    return finish(await bankProceeds(x, SHARK), uncollected, offer.filled);
 }
 
 export interface SaleConfig {
