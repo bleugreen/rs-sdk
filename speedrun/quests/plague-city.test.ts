@@ -6,10 +6,11 @@ import { journalProbeName } from '../lib/quests';
 import { TickLog } from '../lib/ticks';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession, StepContext } from '../runner/step';
-import { DEFAULT_DIALOGUE, slotNeed } from './segments';
+import { loadHandOff } from '../runner/handoff';
+import { DEFAULT_DIALOGUE, kitWant, slotNeed } from './segments';
 import {
     ARRIVAL, bravekInReach, CLERK_STAND, DEAD_AT_EXIT, inBasement, inBravekRoom, inCell, inEast, inPlagueHouse, inRehnison, inSewer, inWest, inWestStreets,
-    ITEM, judgeScrollRead, LETTERS, observed, QUEST_ITEMS, quest, stepId, steps,
+    ITEM, judgeScrollRead, KIT, LETTERS, observed, QUEST_ITEMS, quest, stepId, steps,
 } from './plague-city';
 
 // ------------------------------------------------------------------ scripted state
@@ -23,7 +24,7 @@ const NAMES: Record<number, string> = {
 let nextSlot = 0;
 const item = (id: number, count = 1, name = NAMES[id] ?? `obj ${id}`): InventoryItem =>
     ({ slot: nextSlot++, id, name, count, optionsWithIndex: id === ITEM.scroll ? [{ text: 'Read', opIndex: 1 }] : [] }) as unknown as InventoryItem;
-const own = () => [item(946, 1, 'Knife'), item(1511, 1, 'Logs'), item(563, 2, 'Law rune'), item(555, 2, 'Water rune')];
+const own = () => [item(946, 1, 'Knife'), item(1511, 1, 'Logs'), item(563, 2, 'Law rune')];
 const H6 = () => [ITEM.dwellberries, ITEM.water, ITEM.water, ITEM.water, ITEM.water, ITEM.spade, ITEM.rope, ITEM.dust, ITEM.milk, ITEM.snape].map(id => item(id));
 const skill = (name: string, level: number) => ({ name, level, baseLevel: level, experience: 0 });
 const player = (x: number, z: number, level = 0): PlayerState => ({ name: 'lab', x, z, worldX: x, worldZ: z, level, hp: 10, maxHp: 10 }) as PlayerState;
@@ -192,12 +193,45 @@ describe('A: the entry preconditions', () => {
     });
 });
 
+describe("A: H6 as the ledger's row delivers it", () => {
+    const h6 = loadHandOff('H6');
+    /** SCORED after T07-08 (the knife and S07's log, the staff of water worn) with the row's `in` lines added. */
+    const delivered = (): BotWorldState => {
+        const s = arrival({ inventory: own().slice(0, 2) });
+        for (const r of h6.receive) {
+            const name = r.name.charAt(0).toUpperCase() + r.name.slice(1);
+            const id = r.ids?.[0] ?? -1;
+            if (r.kind === 'u') for (let n = 0; n < r.count; n++) s.inventory.push(item(id, 1, name));
+            else s.inventory.push(item(id, r.count, name));
+        }
+        return s;
+    };
+    test('the row brings 2 law runes and no water runes (T08-09 casts on the staff of water)', () => {
+        const runes = h6.receive.filter(r => / rune$/.test(r.name)).map(r => [r.name, r.count]);
+        expect(runes).toEqual([['law rune', 2]]);
+    });
+    test("A's kit check passes on it with the staff of water worn, so A needs no trade and no kitFrom", async () => {
+        const s = delivered();
+        expect(s.equipment.map(i => i.name)).toEqual(['Staff of water']);
+        expect(s.inventory.some(i => /^water rune$/i.test(i.name))).toBe(false);
+        expect(kitWant(s, KIT)).toEqual([]);
+        expect(byLetter('A').preconditions(s, {})).toBe(true);
+        expect(byLetter('A').postconditions(s, {})).toBe(true);
+        const sdk = new FakeSdk(s);
+        const session = { sdk, bot: {}, name: 'lab', sessionId: 0 } as unknown as RunnerSession;
+        const ctx = { session, sdk, bot: session.bot, c: {}, log: TickLog.memory('t') } as unknown as StepContext<unknown>;
+        // Before the fix: 'kit: missing 2 x /^water rune$/i and no kitFrom to receive it from'.
+        await byLetter('A').run(ctx);
+        expect(sdk.sent).toEqual([]);
+    });
+});
+
 describe('free slots (brief addendum 8)', () => {
     test('with H6 held the need peaks at 2, at D: the picture and the gas mask', () => {
         expect(slotNeed(arrival(), QUEST_ITEMS, LETTERS, 'A')).toEqual({ slots: 2, peak: 'D', items: ['1 Picture', '1 Gas mask'] });
     });
-    test("without H6 (SCORED's pack after T07-08: the knife and one log), A also needs the trade's 12 slots: 14 at D", () => {
-        expect(slotNeed(arrival({ inventory: own().slice(0, 2) }), QUEST_ITEMS, LETTERS, 'A').slots).toBe(14);
+    test("without H6 (SCORED's pack after T07-08: the knife and one log), A also needs the trade's 11 slots: 13 at D", () => {
+        expect(slotNeed(arrival({ inventory: own().slice(0, 2) }), QUEST_ITEMS, LETTERS, 'A').slots).toBe(13);
     });
     test("a resume into S peaks at Y, counted conservatively: Edmond's reward takes the papers and adds the scroll in one segment", () => {
         expect(slotNeed(startOf('S').state, QUEST_ITEMS, LETTERS, 'S')).toEqual({ slots: 2, peak: 'Y', items: ['1 Warrant', '1 A small key', '1 A magic scroll'] });
@@ -349,6 +383,6 @@ describe('Z: the exit drops (the slot ledger T08-09 drops, moved into the step; 
         expect(sdk.sent.map(a => a.method)).not.toContain('sendUseItem');
         expect(sdk.sent.filter(a => a.method === 'sendDropItem').map(a => a.args[0] as number).some(slot => keep.includes(slot))).toBe(false);
         expect(byLetter('Z').postconditions(sdk.getState()!, {})).toBe(true);
-        expect(sdk.getState()!.inventory.map(i => i.name).sort()).toEqual(['Knife', 'Law rune', 'Logs', 'Water rune']);
+        expect(sdk.getState()!.inventory.map(i => i.name).sort()).toEqual(['Knife', 'Law rune', 'Logs']);
     });
 });

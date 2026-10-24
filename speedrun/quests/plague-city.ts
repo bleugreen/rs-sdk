@@ -33,8 +33,8 @@
 // - Every var is scope=perm, and elena_pipe_used is a 6-tick pipe cooldown: logout-safe throughout.
 //
 // The exit drops (the slot ledger's T08-09 drops, moved into the step): the spade, the four empty
-// buckets and the gas mask (taken off first), and any other quest leftover. The H6 runes (2 law,
-// 2 water) stay for T08-09's Ardougne teleport.
+// buckets and the gas mask (taken off first), and any other quest leftover. H6's 2 law runes stay
+// for T08-09's Ardougne teleport, which takes its water from the worn staff of water.
 
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, QuestJournalState } from '../../sdk/types';
@@ -154,7 +154,6 @@ export const ITEM = {
     key: configId('obj', 'elenakey'),
     scroll: configId('obj', 'ardougnescroll'),
     law: /^law rune$/i,
-    waterRune: /^water rune$/i,
 } as const;
 
 /** Locs by config id (loc.pack). */
@@ -181,7 +180,9 @@ type Letter = (typeof LETTERS)[number];
 
 /**
  * H6 as this step uses it (SUPPLIES.md H6; the slot ledger's row H6): the quest's items and the
- * Ardougne runes for T08-09 (one cast, 2 law and 2 water), which come in the same trade. The
+ * law runes for T08-09's Ardougne cast (2), which come in the same trade. No water runes: SCORED
+ * wears H1's staff of water until H7, and the cast takes its water from it. The kit check counts
+ * held items only (segments.ts kitWant), so a line here is exactly what the trade delivers. The
  * Camelot runes are no longer in it: T07-08's come in H4e.
  */
 export const KIT: readonly KitItem[] = [
@@ -194,7 +195,6 @@ export const KIT: readonly KitItem[] = [
     { item: /^bucket of milk$/i },
     { item: /^snape grass$/i },
     { item: ITEM.law, n: 2 },
-    { item: ITEM.waterRune, n: 2 },
 ];
 
 /**
@@ -203,7 +203,7 @@ export const KIT: readonly KitItem[] = [
  * the chocolaty milk and then the hangover cure in place, which Bravek takes at S. Edmond's reward
  * (Y) takes the picture, note, warrant and key and adds the scroll, read at Z. The gas mask is worn
  * at K, which frees its slot, and comes off at Z to be dropped. Peak 2 with the kit held (the
- * picture and the gas mask at D); 14 without it.
+ * picture and the gas mask at D); 13 without it.
  */
 export const QUEST_ITEMS: readonly QuestItem[] = [
     // alrena.rs2:24
@@ -218,7 +218,6 @@ export const QUEST_ITEMS: readonly QuestItem[] = [
     { item: ITEM.snape, name: 'Snape grass', from: 'A', until: 'F' },
     { item: /^(bucket of milk|chocolaty milk|hangover cure)$/i, name: 'Bucket of milk (then the hangover cure)', from: 'A', until: 'S' },
     { item: ITEM.law, name: 'Law rune', stackable: true, from: 'A' },
-    { item: ITEM.waterRune, name: 'Water rune', stackable: true, from: 'A' },
     // quest_elena.rs2:6-10 takes these back at the completion (Y).
     { item: ITEM.picture, name: 'Picture', from: 'C', until: 'Y' },
     { item: ITEM.gasmask, name: 'Gas mask', from: 'D', until: 'K' },
