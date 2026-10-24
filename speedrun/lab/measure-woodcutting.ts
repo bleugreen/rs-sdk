@@ -79,7 +79,7 @@ const LUMBRIDGE = [3222, 3222] as const;
 const RUN_BUTTON = { off: 152, on: 153 } as const;
 const BONES = /^dragon bones$/i;
 /** The helper's tile beside each stand (STEP-MANIFEST.md entry 3; bones-wc.ts). */
-const HELPER_TILE: Record<'oak' | 'willow', readonly [number, number]> = { oak: [2913, 3494], willow: [2920, 3407] };
+const HELPER_TILE: Record<'oak' | 'willow', readonly [number, number]> = { oak: [2913, 3494], willow: [2920, 3405] };
 
 const f2 = (n: number | undefined) => (n === undefined || !Number.isFinite(n) ? '-' : n.toFixed(2));
 function techCols(t: TechniqueFigures | undefined): string {
