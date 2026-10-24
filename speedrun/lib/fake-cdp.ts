@@ -15,10 +15,17 @@ import { loginTokenProof } from '../../server/webclient/login-token';
 export interface FakeGameClient {
     ingame: boolean;
     loginInProgress: boolean;
+    /** The client finished loading; the title screen's auto-login waits for it. */
+    loadingComplete: boolean;
+    /** The title screen made its one auto-login (Client.botAutoLoginAttempted). */
+    botAutoLoginAttempted: boolean;
     loginMes1: string;
     loginMes2: string;
     botOverlay: { serverTick: number; gateway: { connected: boolean; preventReconnect?: boolean; disconnect?: () => void } } | null;
     autoLogin(username: string, password: string): Promise<void>;
+    /** Client.clickComponent: false out of game; else recorded in `page.clicks` and passed to `hooks.onClickComponent`. */
+    clickComponent(componentId: number): boolean;
+    flushNow(): void;
 }
 
 export interface FakeCdp {
@@ -34,6 +41,10 @@ export interface FakeCdp {
         minted: string[];
         redeemed: string[];
         autoLogins: { username: string; password: string }[];
+        /** Components the page's client clicked (clickComponent), in order. */
+        clicks: number[];
+        /** The tab's URL: the last navigation's, with the token taken out as the page does. */
+        url: string;
         /** Other page targets on the same Chrome, listed after the tab. */
         others: { id: string; url: string }[];
         /** Target ids closed through /json/close. */
@@ -56,7 +67,7 @@ export interface FakeCdp {
      * Test hooks. `onAutoLogin` runs when the client accepts an autoLogin, with loginInProgress
      * already set, as Client.autoLogin does before its first await; `onNavigate` on Page.navigate.
      */
-    hooks: { onAutoLogin: (username: string, password: string) => void; onNavigate: (url: string) => void };
+    hooks: { onAutoLogin: (username: string, password: string) => void; onNavigate: (url: string) => void; onClickComponent: (componentId: number) => void };
     /** Chrome's DevTools origin (CDP_URL). */
     origin: string;
     /** The page server's page URL (CLIENT_URL). */
@@ -65,7 +76,7 @@ export interface FakeCdp {
 }
 
 export function fakeCdp(bot: string, password = 'x'): FakeCdp {
-    const hooks: FakeCdp['hooks'] = { onAutoLogin: () => {}, onNavigate: () => {} };
+    const hooks: FakeCdp['hooks'] = { onAutoLogin: () => {}, onNavigate: () => {}, onClickComponent: () => {} };
     const page: FakeCdp['page'] = {
         tab: true,
         hasClient: true,
@@ -81,6 +92,13 @@ export function fakeCdp(bot: string, password = 'x'): FakeCdp {
         minted: [],
         redeemed: [],
         autoLogins: [],
+        clicks: [],
+        get url() {
+            return pageUrl;
+        },
+        set url(v: string) {
+            pageUrl = v;
+        },
         others: [],
         closed: [],
         methods: [],
@@ -94,6 +112,8 @@ export function fakeCdp(bot: string, password = 'x'): FakeCdp {
     const client: FakeGameClient = {
         ingame: true,
         loginInProgress: false,
+        loadingComplete: true,
+        botAutoLoginAttempted: true,
         loginMes1: '',
         loginMes2: '',
         botOverlay: {
@@ -113,6 +133,13 @@ export function fakeCdp(bot: string, password = 'x'): FakeCdp {
             client.loginMes2 = 'Connecting to server...';
             hooks.onAutoLogin(username, pw);
         },
+        clickComponent(componentId: number) {
+            if (!client.ingame) return false;
+            page.clicks.push(componentId);
+            hooks.onClickComponent(componentId);
+            return true;
+        },
+        flushNow() {},
     };
 
     let pageUrl = '';
@@ -215,6 +242,11 @@ export function fakeCdp(bot: string, password = 'x'): FakeCdp {
                 if (msg.method === 'Page.navigate') {
                     const url = String(msg.params?.url ?? '');
                     page.navigations.push(url);
+                    try {
+                        const u = new URL(url);
+                        u.searchParams.delete('token');
+                        pageUrl = u.toString();
+                    } catch {}
                     hooks.onNavigate(url);
                     ws.send(JSON.stringify({ id: msg.id, result: { frameId: 't1' } }));
                     return;
