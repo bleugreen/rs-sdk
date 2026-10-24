@@ -511,6 +511,12 @@ const NORTH_OF_KEEP: Region[] = [{ x: [3140, 3175], z: [3951, 3975] }, { x: [317
 const TO_SPIDERS: Hop[] = [...ARDOUGNE_TO_LEVER, ...LEVER_AND_KEEP_WEB, run(T.spiders.x, T.spiders.z, T.spiders.tol)];
 const TO_SPIDERS_CHECKPOINTS: Checkpoint[] = [{ after: 2, in: [KEEP] }, { after: 3, in: NORTH_OF_KEEP }];
 const WILD_FOOD = 2;
+/**
+ * T14-15's first hop, the leg out of S14: south from the spiders down the Wilderness toward the
+ * ditch, to level 20 for the Ardougne teleport. The cannon steps' retreat runs it too, stopping
+ * where the spiders' reach ends (skills/ranged.ts spiderRetreat).
+ */
+export const SPIDERS_SOUTH: Hop = { kind: 'run', to: { x: 3288, z: 3660 }, wildernessAtMost: 20 };
 
 export const LEGS: readonly LegStep[] = [
     leg('T01-02', T.lumbridgeSpawn, T.coop, [run(T.coop.x, T.coop.z, T.coop.tol)], {
@@ -585,7 +591,7 @@ export const LEGS: readonly LegStep[] = [
         expected: { ticks: 181.5, label: 'm', source: rt('L13L') + ': 182, 181', net: 181.5 },
     }),
     leg('T14-15', T.spiders, T.grandTreeDoor, [
-        { kind: 'run', to: { x: 3288, z: 3660 }, wildernessAtMost: 20 },
+        SPIDERS_SOUTH,
         tele('ardougne'),
         run(T.khazardTree.x, T.khazardTree.z, T.khazardTree.tol),
         { kind: 'tree', to: 'village' },

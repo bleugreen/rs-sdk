@@ -819,6 +819,9 @@ export function cdpUrl(env: BotEnv): string | undefined {
  */
 export type LogoutSignal = 'state' | 'child' | 'page' | 'gateway' | 'world';
 
+/** LogoutResult.reason when the server refused both clicks for combat (logout.rs2's "You can't log out until 10 seconds after the end of combat."). */
+export const LOGOUT_REFUSED_COMBAT = 'logout refused (combat)';
+
 export interface LogoutResult {
     ok: boolean;
     clickTick: number;
@@ -982,7 +985,7 @@ async function clickOut(session: Session, s: BotWorldState, t0: number, opts: { 
             sends,
             ...(ok
                 ? { confirmedBy: out, confirmTicks: w.ticks }
-                : { reason: out === 'refused' ? 'logout refused (combat)' : sends === 0 ? 'never sent: the gateway was unreachable' : 'still in game after timeout' }),
+                : { reason: out === 'refused' ? LOGOUT_REFUSED_COMBAT : sends === 0 ? 'never sent: the gateway was unreachable' : 'still in game after timeout' }),
         };
     }
     throw new Error('unreachable');

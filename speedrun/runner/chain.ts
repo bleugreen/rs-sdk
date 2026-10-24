@@ -451,6 +451,7 @@ function bound(s: AnyStep): AnyStep {
         ...(s.resume ? { resume: s.resume.bind(s) } : {}),
         ...(s.done ? { done: s.done.bind(s) } : {}),
         ...(s.inProgress ? { inProgress: s.inProgress.bind(s) } : {}),
+        ...(s.retreat ? { retreat: s.retreat.bind(s) } : {}),
     };
 }
 
