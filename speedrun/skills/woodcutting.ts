@@ -1187,7 +1187,8 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
     const site = o.sites[b.tree];
     const technique = techniqueOf(o, b.tree);
     const knifeCapable = technique !== 'plain';
-    const burying = o.bury !== null && b.tree !== 'normal';
+    const burying = buryingOf(o, b.tree);
+    const switching = switchesOf(o, b.tree);
     const giver = burying ? o.bones : null;
     const group = giver && 'group' in giver ? giver : null;
     const passed = (s: BotWorldState) => wcLevel(s) >= end;
@@ -1251,6 +1252,14 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
         const gate = technique === 'auto' ? o.makeGate(sdk, { plainTicksPerRoll: o.plainTicksPerRoll, measureDrops: MEASURE_DROPS, log: o.log, ...(dirs.length ? { dirs } : {}), ...o.gate }) : undefined;
         const ledger = new BandLedger(b.tree, startTick, startLevel);
         const segments: GatedSegment[] = [];
+        // A burying band's switch (see Bones): the band and a resume start on the knife, with an empty window.
+        const meter = switching ? new OnTimeMeter() : null;
+        const switched = (to: SegmentTechnique, tick: number) => {
+            const w = meter!.windows[meter!.windows.length - 1]!;
+            const why = to === 'plain' ? `${w.judged - w.onTime} of ${w.judged} late, past the ${SWITCH_WINDOW - KNIFE_KEEP} a ${SWITCH_WINDOW}-Bury window allows (${KNIFE_KEEP}/${SWITCH_WINDOW}, 17.6/20)` : `${w.onTime}/${w.judged} on time, at least ${KNIFE_BACK}/${SWITCH_WINDOW}`;
+            o.log(`${b.name}: T${tick} ${w.technique} + bury -> ${to} + bury: ${why}`);
+            annotation(log, session, `${b.name}:switch`, tick, tick, true, { kind: 'wc-switch', from: w.technique, to, onTime: w.onTime, judged: w.judged, level: wcLevel(sdk.getState()), prayer: levelOf(sdk.getState(), 'prayer') });
+        };
         // The group finds the scored account by the cue, and its site by the cue's: written before the first load, every band (a resume too).
         if (group && cue) cue.write(sdk.getState(), session.name, site.stand);
         // The loads the group gave in this session before the band (the oak band's, or a stopped process's): row numbers carry on from them.
@@ -1321,7 +1330,7 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
 
         let ended = 'stopped';
         // a load before the first start when the pack is empty, and after each stop for one
-        let needLoad = !!giver && knifeCapable && bonesHeld(s0) === 0 && loadsLeft(s0) !== false;
+        let needLoad = !!giver && bonesHeld(s0) === 0 && loadsLeft(s0) !== false;
         // Once no load is left none comes back: the status files are not read again.
         let spent = false;
         const left = (s: BotWorldState | null): boolean | null => {
@@ -1354,16 +1363,30 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
                 const stop = new AbortController();
                 current = stop;
                 let wantBones = false;
+                let switchTo: SegmentTechnique | null = null;
                 let noneSince: number | null = null;
-                const result = await o.runGated(sdk, 'knife-cycle', owing ? prayerParams : params, {
-                    technique,
+                const base = owing ? prayerParams : params;
+                // lab only (holdTicks): the forced-slip hold stops reaching runs once the band is that far in
+                const holdOver = o.holdTicks !== null && (sdk.getState()?.tick ?? startTick) - startTick >= o.holdTicks;
+                const runParams = holdOver ? (t: SegmentTechnique) => Object.fromEntries(Object.entries(base(t)).filter(([k]) => k !== 'hold')) : base;
+                const result = await o.runGated(sdk, 'knife-cycle', runParams, {
+                    technique: meter ? meter.technique : technique,
                     ...(gate ? { gate } : {}),
                     rollsPerDrop: s => 1 / successChance(b.tree, wcLevel(s)),
                     signal: stop.signal,
                     log: o.log,
                     onProgress: (st, tech) => {
                         ledger.observe(st, tech, wcLevel(sdk.getState()));
-                        if (stop.signal.aborted || tech !== 'knife') return;
+                        if (stop.signal.aborted) return;
+                        const to = meter?.observe(st, tech) ?? null;
+                        if (to) {
+                            switchTo = to;
+                            switched(to, st.tick);
+                            stop.abort();
+                            return;
+                        }
+                        // either bury loop buries and takes loads (see Bones)
+                        if (!burying) return;
                         const now = sdk.getState();
                         if (owing && !prayerShort(o, now) && !runesOwed(o, now)) {
                             stop.abort();
@@ -1384,6 +1407,14 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
                     },
                     onSegment: seg => {
                         ledger.observe(seg.status, seg.technique, wcLevel(sdk.getState()));
+                        // the run's last Burys judged after its last progress: the next run starts on the verdict
+                        if (!switchTo && !stop.signal.aborted) {
+                            const to = meter?.observe(seg.status, seg.technique) ?? null;
+                            if (to) {
+                                switchTo = to;
+                                switched(to, seg.status.endedTick ?? seg.status.tick);
+                            }
+                        } else meter?.observe(seg.status, seg.technique);
                         segments.push(seg);
                         const st = seg.status;
                         annotation(log, session, `${b.name}:segment`, st.startedTick, st.endedTick ?? st.tick, seg.reason !== 'fault', {
@@ -1394,8 +1425,9 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
                 });
                 ended = result.ended;
                 if (guard.hit) break;
-                if (result.ended === 'aborted' && wantBones) {
-                    needLoad = true;
+                if (result.ended === 'aborted' && (wantBones || switchTo)) {
+                    // a load, a switch, or both: the next run starts in the meter's technique
+                    if (wantBones) needLoad = true;
                     continue;
                 }
                 // The band's end: the loop's top decides whether Prayer keeps it.
@@ -1421,6 +1453,7 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
             kind: 'wc-band', ended, technique, route: o.route, stand: [site.stand[0], site.stand[1]], hpStop: o.hpStop, startLevel, endLevel: wcLevel(endState), bonesLoads: loads,
             ...(burying ? { startPrayer, endPrayer: levelOf(endState, 'prayer') } : {}),
             ...summarizeBand(ledger, segments),
+            ...(meter ? { onTimeSwitch: { finalTechnique: meter.technique, windows: meter.windows, open: { onTime: meter.onTime, judged: meter.onTime + meter.late } } } : {}),
             ...(gate ? { gate: gateMeta(gate) } : {}),
             ...(guard.hit ? { stoppedBy: guard.hit } : {})
         });
