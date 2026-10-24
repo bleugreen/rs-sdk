@@ -435,6 +435,23 @@ export function legStretch(sdk: UpkeepSdk, def: LegDef): Stretch {
     return watchStretch({ sdk }, `on ${def.id}`, { holdInDialog: true, urgentHp: LEG_URGENT_HP });
 }
 
+/** What an antipoison's last dose leaves in its slot (potions.obj next_obj_stage: vials.obj `vial_empty`). */
+const VIAL = /^vial$/i;
+
+/**
+ * The vials the leg's own cure emptied, dropped at the leg's end so the pack leaves the leg as the slot
+ * ledger has it (rs/185: S15:A runs at 27 of 28 slots, so one stray vial is attempt 4's willow log
+ * again). A vial in a slot that held one before the leg is not the cure's, and is kept.
+ */
+async function dropEmptied(sdk: ActSdk, def: LegDef, before: ReadonlySet<number>): Promise<string | null> {
+    try {
+        const r = await dropItems(sdk, i => VIAL.test(i.name) && !before.has((i as InventoryItem).slot), DROP_WATCH_TICKS);
+        return r.ok ? null : `${def.id}: the emptied vial is still held after ${r.ticks} ticks`;
+    } catch (e) {
+        return `${def.id}: dropping the emptied vial: ${e instanceof Error ? e.message : String(e)}`;
+    }
+}
+
 /** The leg's travel from where the player stands: nothing when arrived, else from the first hop not yet past. */
 export async function runLeg(def: LegDef, ctx: Pick<StepContext<unknown>, 'sdk' | 'bot'> & Partial<Pick<StepContext<unknown>, 'log' | 'session'>>, name = def.id): Promise<TravelResult | null> {
     const s = ctx.sdk.getState();
@@ -467,6 +484,7 @@ export async function runLeg(def: LegDef, ctx: Pick<StepContext<unknown>, 'sdk' 
     const watch = new DeathWatch(s, `on ${def.id}`);
     const unwatch = ctx.sdk.onStateUpdate(st => watch.see(st));
     const onRelocated: TravelOptions['onRelocated'] = rel => (rel.respawn && watch.death() ? 'fail' : 'repath');
+    const vials = new Set(s.inventory.filter(i => VIAL.test(i.name)).map(i => i.slot));
     const kept = hostileLeg(def) ? legStretch(ctx.sdk as unknown as UpkeepSdk, def) : null;
     const done = () => {
         unwatch();
@@ -488,7 +506,8 @@ export async function runLeg(def: LegDef, ctx: Pick<StepContext<unknown>, 'sdk' 
     const r = await travel(ctx.sdk as unknown as TravelSdk, def.hops, { bot: ctx.bot, from, onRelocated, ...(def.drops?.length || def.stops?.length ? { beforeHop } : {}) }).finally(done);
     const death = watch.death();
     if (death && ctx.session) ctx.session.died ??= death;
-    const why = r.ok && !death ? await dropAt(def.hops.length) : null;
+    const emptied = r.ok && !death && kept?.upkeep.cures ? await dropEmptied(ctx.sdk as unknown as ActSdk, def, vials) : null;
+    const why = emptied ?? (r.ok && !death ? await dropAt(def.hops.length) : null);
     if (ctx.log && ctx.session) logTravel(ctx as StepContext<unknown>, name, from, r, drops, stops, kept, start);
     if (death) throw new Error(`${def.id}: ${death.reason}`);
     // Drops refused before a hop stop the trip; their reason (naming what is held) is the leg's.

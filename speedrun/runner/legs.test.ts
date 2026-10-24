@@ -964,7 +964,8 @@ describe("the leg upkeep under poison (attempt 4: T14-15b reached hpMin 1 with 3
                 inventory = inventory.flatMap(i => {
                     if (i.slot !== slot) return [i];
                     const n = Number(/\((\d)\)$/.exec(i.name)![1]);
-                    return n > 1 ? [{ ...i, name: i.name.replace(/\(\d\)$/, `(${n - 1})`) }] : [];
+                    // The last dose leaves an empty vial in the slot (potions.obj next_obj_stage).
+                    return n > 1 ? [{ ...i, name: i.name.replace(/\(\d\)$/, `(${n - 1})`) }] : [{ ...i, id: 229, name: 'Vial', optionsWithIndex: [{ text: 'Drop', opIndex: 5 }] }];
                 });
                 severity = 0;
                 drink = null;
@@ -1101,6 +1102,23 @@ describe("the leg upkeep under poison (attempt 4: T14-15b reached hpMin 1 with 3
         expect(sdk.state!.inventory.map(i => i.name)).toContain('Superantipoison(3)');
         expect(travelRow(ctx).cured).toBe(1);
         expect(sim.hpMin).toBeGreaterThanOrEqual(HP_FLOOR);
+    });
+
+    test("a cure from a (1) leaves a vial, which the leg drops at its end; a vial held before the leg is kept (rs/185: S15:A's 27 of 28 slots)", async () => {
+        const b = T14_15B();
+        const landing = SPELLS.ardougne.landing;
+        const base = 400_000;
+        const oldVial = { slot: 9, id: 229, name: 'Vial', count: 1, optionsWithIndex: [{ text: 'Drop', opIndex: 5 }] } as unknown as InventoryItem;
+        const sdk = new FakeSdk(at(landing.x, landing.z, 35, { tick: base, inventory: [shark(3), shark(4), superAnti(5, 1), oldVial], nearbyLocs: [YOUNG_TREE] }));
+        const walk = simulateWalking(sdk);
+        const { sim, each } = poisonWorld(sdk, walk, { severity: 27, firstAt: base + 2 });
+        const ctx = ctxFor(sdk);
+        await drive(sdk, b.run(ctx), 400, each);
+        expect(arrived(b.def, sdk.state!)).toBe(true);
+        expect(sim.drinks).toHaveLength(1);
+        expect(sdk.sent.filter(a => a.method === 'sendDropItem').map(a => a.args[0])).toEqual([5]);
+        expect(sdk.state!.inventory.filter(i => /^vial$/i.test(i.name)).map(i => i.slot)).toEqual([9]);
+        expect(b.postconditions(sdk.state!, undefined)).toBe(true);
     });
 });
 
