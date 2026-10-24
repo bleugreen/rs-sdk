@@ -3,7 +3,8 @@
 // speedrun/run.ts.
 
 import { type Link, type Probe, type ResumeEvent, runResumable } from '../runner/resume';
-import type { Step } from '../runner/step';
+import { describeExit, leaveAfterFailure } from '../runner/retreat';
+import { StepError, type Step } from '../runner/step';
 import { EXIT_HOST_RESERVED, type HostReservation, type ReservationWatch, reservationText } from './host-reservation';
 import type { LogoutResult, Session } from './session';
 import type { BotWorldState } from '../../sdk/types';
@@ -111,9 +112,24 @@ export async function runAttempt(session: Session, chain: ReadonlyArray<Step<any
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         // A step that logged out on purpose (a PausedForPlayer pause) left the world itself.
-        const r = !session.expectInWorld ? { outcome: `paused by the step, already logged out: ${msg}`, code: 4 } : { outcome: `FAILED: ${msg}`, code: 1 };
+        const r = !session.expectInWorld ? { outcome: `paused by the step, already logged out: ${msg}`, code: 4 } : { outcome: `FAILED: ${msg}${await retreatedExit(session, chain, e, o)}`, code: 1 };
         console.error(`[${o.label ?? 'rehearse'}] ${r.outcome}`);
         return { ...r, paused: null };
+    }
+}
+
+/**
+ * The exit after a failed step that declares `retreat` (runner/retreat.ts): out of the aggressors'
+ * reach, then the logout, said as the outcome's tail. Empty for any other failure, whose logout the
+ * caller makes as it always has.
+ */
+async function retreatedExit(session: Session, chain: ReadonlyArray<Step<any>>, e: unknown, o: AttemptOptions): Promise<string> {
+    const failed = e instanceof StepError ? chain.find(s => s.name === e.step) : undefined;
+    if (!failed?.retreat) return '';
+    try {
+        return `; ${describeExit(await leaveAfterFailure(session, failed, { log: o.log, account: o.account, logout: o.logout }))}`;
+    } catch (err) {
+        return `; the exit after it failed too: ${err instanceof Error ? err.message : String(err)}`;
     }
 }
 
