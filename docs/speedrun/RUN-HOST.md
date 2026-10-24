@@ -2035,9 +2035,9 @@ What the operator sees:
   resumes inside it. Past it run.ts does not rely on the page's own reconnect: it closes SCORED's
   tab, waits 10 s for the server to drop the body, and logs in on a fresh tab (rs/744, the host's
   runs D and E: a 60 s block mostly left the page claiming in game on a socket that never resumed).
-  A ~60 s hold is not free: with close-first recovery SCORED was back ~163-167 s after the hold
-  began, ~410-417 ticks at 400 ms, the fresh tab's first login a 31.9 s takeover of the still-listed
-  body, and one unplanned relog entry (m, the host's 60 s rerun at 213e2fba, 09:21Z; RUN-ORDER R71).
+  A ~60 s hold is not free: SCORED is back ~163-167 s after the hold began, ~410-417 ticks at 400
+  ms, with one unplanned relog entry (m, the host's 60 s rerun on 213e2fba; the fresh-tab login can
+  be a 30 s takeover of the still-listed body; RUN-ORDER R71).
   Holds under ~50 s adopt uncharged at about the hold plus TCP backoff.
   The helpers and the fleet drop at the same moment.
 - **The outage from outside:** `/playercount` stops answering for ~30 s, then answers 0; logins are
