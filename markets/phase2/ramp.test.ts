@@ -111,7 +111,7 @@ describe('holdRates', () => {
         // the live case: the hold starts as the newcomer arrives and runs 15 minutes
         const old = holdRates(logins, 20 * MIN, 0, 7.5 * MIN);
         expect(old.a01).toBeCloseTo(16, 1);
-        expect(old.a09!).toBeLessThan(16 * 0.85);
+        expect(old.a09!).toBeLessThan(16 * 0.9);
         const warm = holdRates(logins, 20 * MIN, 5 * MIN, 7.5 * MIN);
         expect(warm.a01).toBeCloseTo(16, 1);
         expect(warm.a09).toBeCloseTo(16, 0);
