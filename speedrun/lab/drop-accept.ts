@@ -17,6 +17,12 @@
 // password is spoiled and its game socket closed, so its own reconnect (Client.ts lostCon) fails and it
 // falls to the title screen while the world goes on ticking: the 22:15:50Z drop's shape.
 //
+// A dead or hung renderer instead of a dropped socket (rs/752): --renderer=kill SIGKILLs the tab's
+// renderer process at the drop tick (an OOM kill's shape: the target stays listed, its evaluate
+// fails), --renderer=stop SIGSTOPs it (a hung renderer: its evaluate never answers, its socket stays
+// open) and SIGCONTs it once the drop recovery has recorded its relog. The renderer is the busiest of
+// Chrome's renderers by CPU time (SystemInfo.getProcessInfo): the game page renders every frame.
+//
 // One RESULT line: the step's ticks (in-world, every attempt), the drop and the recovery (wall ms and
 // those ms in ticks: the old player stays in the world until the new login takes it over, so they are
 // on the clock), the relog entries, and the host (`uname -n`): tick figures count only from bgsrv-mac.
@@ -37,7 +43,7 @@ import type { Subprocess } from 'bun';
 import type { BotWorldState } from '../../sdk/types';
 import { ReservationWatch, reservationPath } from '../lib/host-reservation';
 import { closeSession, cdpUrl, LOGOUT_BUTTON, openSession, ROOT, type Session } from '../lib/session';
-import { evaluateInTab, pageInGame } from '../lib/tab';
+import { cdpCommands, evaluateInTab, pageInGame } from '../lib/tab';
 import { newRunId, TickLog } from '../lib/ticks';
 import { tickMs, waitTicks, waitUntil } from '../lib/wait';
 import { runChainOnSession } from '../run';
@@ -82,6 +88,21 @@ export function dropExpression(shape: string): string {
 })()`;
 }
 const shape = flag('shape', 'title')!;
+const rendererSignal = flag('renderer');
+if (rendererSignal !== undefined && rendererSignal !== 'kill' && rendererSignal !== 'stop') {
+    console.error('--renderer is kill or stop');
+    process.exit(2);
+}
+
+/** The busiest of Chrome's renderer processes by CPU time, and how many there are. */
+async function busiestRenderer(cdp: string): Promise<{ pid: number; of: number }> {
+    const v = (await (await fetch(`${cdp.replace(/\/+$/, '')}/json/version`)).json()) as { webSocketDebuggerUrl?: string };
+    if (!v.webSocketDebuggerUrl) throw new Error('no browser websocket');
+    const [info] = (await cdpCommands(v.webSocketDebuggerUrl, [{ method: 'SystemInfo.getProcessInfo' }])) as [{ processInfo: { type: string; id: number; cpuTime: number }[] }];
+    const r = info.processInfo.filter(p => p.type === 'renderer').sort((a, b) => b.cpuTime - a.cpuTime);
+    if (!r[0]) throw new Error('no renderer process');
+    return { pid: r[0].id, of: r.length };
+}
 
 const RANGING_CAP: Record<string, number> = { harralandervial: 1, chocolate_dust: 1, ranarrvial: 8, iritvial: 10, eye_of_newt: 10, kwuarmvial: 17, limpwurt_root: 17, cadantinevial: 14, white_berries: 22, dwarfweedvial: 208, wine_of_zamorak: 208 };
 
@@ -172,6 +193,15 @@ try {
     let startTick: number | null = null;
     let drop: { tick: number; at: number; answer: string } | null = null;
     const cdp = cdpUrl(s.env)!;
+    const renderer: { signal?: string; pid?: number; of?: number; at?: string; contAt?: string } = {};
+    const cont = () => {
+        if (renderer.signal !== 'SIGSTOP' || renderer.contAt || renderer.pid === undefined) return;
+        renderer.contAt = new Date().toISOString();
+        try {
+            process.kill(renderer.pid, 'SIGCONT');
+        } catch {}
+        console.log(`[renderer] SIGCONT pid ${renderer.pid} at ${renderer.contAt}`);
+    };
 
     // Every logout click the run sends, and the one injected past the guard.
     const rawClick = s.sdk.sendClickComponent.bind(s.sdk);
@@ -263,10 +293,30 @@ try {
                     void takeDown().catch(e => console.error(`[outage] ${e}`));
                 }, (gatewayDownAfter - dropAfter) * tickMs());
             }
-            void evaluateInTab<string>(cdp, s.name, dropExpression(shape)).then(
-                r => (drop!.answer = r?.value ?? 'no tab'),
-                e => (drop!.answer = `threw ${e}`)
-            );
+            if (rendererSignal) {
+                const signal = rendererSignal === 'kill' ? 'SIGKILL' : 'SIGSTOP';
+                void busiestRenderer(cdp).then(
+                    ({ pid, of }) => {
+                        process.kill(pid, signal);
+                        Object.assign(renderer, { signal, pid, of, at: new Date().toISOString() });
+                        drop!.answer = `${signal} renderer pid ${pid} (the busiest of ${of})`;
+                        console.log(`[renderer] ${drop!.answer} at ${renderer.at}`);
+                        if (signal === 'SIGSTOP') {
+                            const poll = setInterval(() => {
+                                if (!relogs.entries().some(e => e.kind === 'unplanned')) return;
+                                clearInterval(poll);
+                                cont();
+                            }, 200);
+                        }
+                    },
+                    e => (drop!.answer = `threw ${e}`)
+                );
+            } else {
+                void evaluateInTab<string>(cdp, s.name, dropExpression(shape)).then(
+                    r => (drop!.answer = r?.value ?? 'no tab'),
+                    e => (drop!.answer = `threw ${e}`)
+                );
+            }
             console.log(`[drop] page dropped at tick ${st.tick} (${dropAfter} ticks into ${step.name})`);
             // What the page itself shows after the drop, sampled each tick for 40 ticks (changes only).
             void (async () => {
@@ -286,6 +336,7 @@ try {
     console.log(`[drop] ${scenario}: ${step.name}, preconditions ${pre === true ? 'pass' : pre}; drop ${dropAfter > 0 ? `${dropAfter} ticks in` : 'none (baseline)'}; host ${hostname()}; tick ${tickMs()} ms`);
     const { result } = await runChainOnSession(s, { log, chain, reservation: new ReservationWatch(reservationPath(join(base, 'no-reservation.json')), { label: 'drop' }), relogs, label: 'drop' });
     finished = true;
+    cont();
     code = result.code;
     xp.end = xpNow();
     // The run's own clean logout at the end is the last click; any before it was a logout of the stand-in mid-run.
@@ -298,7 +349,7 @@ try {
     const cut = drop && startTick !== null && rows.every(r => r.ok) ? (drop as { tick: number }).tick - startTick : 0;
     const stepTicks = rows.reduce((n, r) => n + r.ticks, 0) + cut;
     console.log(`RESULT drop-accept ${JSON.stringify({
-        scenario, shape, step: step.name, dropAfter, host: hostname(), tickMs: tickMs(), code, outcome: result.outcome,
+        scenario, shape: rendererSignal ? `renderer-${rendererSignal}` : shape, renderer, step: step.name, dropAfter, host: hostname(), tickMs: tickMs(), code, outcome: result.outcome,
         gatewayDownAfter, downS, proxyDown, outage, injected, logoutClicks, midRunLogouts: logoutClicks.length - 1,
         startTick, endTick, inWorldTicks: startTick !== null && endTick !== null ? endTick - startTick : null,
         stepTicks, rows: rows.map(r => ({ ticks: r.ticks, ok: r.ok, sessionId: r.sessionId })), cutTicks: cut,
