@@ -378,7 +378,7 @@ function platform(sdk: FakeSdk, o: { steal?: number; respawns?: Array<{ tick: nu
 }
 
 interface PickupNote { pickup: string; path: string; at: number[]; waited: number; ticks: number; lost?: number }
-const pickupNote = (log: TickLog) => log.rows.find(r => r.kind === 'note' && (r.meta as { pickup?: unknown }).pickup)?.meta as PickupNote;
+const pickupNote = (log: TickLog) => log.rows.find(r => r.kind === 'note' && (r.meta as { pickup?: unknown }).pickup)?.meta as unknown as PickupNote;
 const tiles = (sdk: FakeSdk, method: string) => sdk.sent.filter(a => a.method === method).map(a => `${a.args[0]},${a.args[1]}`);
 
 /** SCORED on the platform landing at E's start, both doors shut, the glass on the tiles `onGround`. */
@@ -433,7 +433,7 @@ describe('E: a broken glass another player may have taken', () => {
         const n = pickupNote(log);
         expect(n).toMatchObject({ path: 'respawn wait', at: [GLASS_AT.x, GLASS_AT.z] });
         expect(n.waited).toBeGreaterThan(60);
-        expect(n.waited).toBeLessThanOrEqual(95);
+        expect(n.waited).toBeLessThanOrEqual(GROUND_RESPAWN_TICKS); // back at t+95, seen within the 2-tick poll
         expect(E().postconditions(sdk.getState()!, {})).toBe(true);
     });
     test('both taken, the second back first: takes it through the store room door', async () => {
