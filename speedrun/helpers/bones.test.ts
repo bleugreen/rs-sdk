@@ -7,6 +7,8 @@ import { Run } from './bones';
 import { memoryRoleState } from './role';
 import { summarizeWindow } from '../../docs/speedrun/scripts/bones-dev/stats';
 import { carryReached, fishingHaul, foodOverCap, lootWanted, gearRank, healOf, inBabyBlueRoom, inDesert, isClutter, keepOnBank, parseOptions, patrolTour, SPOTS, tollWithdraw, UGTHANKI_SPAWNS } from './bones';
+import { ANTI_DRAGON_SHIELD, inAdultReach, roomFull } from './bones';
+import { ROOM, SAFE_ROUTE, SAFE_TILE, TAVERLEY_ADULTS, TAVERLEY_BABIES } from './dragons';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -423,6 +425,186 @@ describe('preferred spot recovery', () => {
     });
 });
 
+
+describe('blue_dragon spot', () => {
+    const spot = SPOTS.blue_dragon!;
+    const SHIELD = { id: 1540, name: 'Dragonfire shield' };
+
+    function harness(spotId = 'blue_dragon') {
+        const sdk = new FakeSdk(baseState({
+            player: { worldX: 2946, worldZ: 3368, level: 0, hp: 99, maxHp: 99, respawnCount: 0 } as BotWorldState['player'],
+            skills: ['Attack', 'Strength', 'Defence', 'Hitpoints'].map(name => ({ name, level: 99, baseLevel: 99, experience: 0 })),
+            bank: { isOpen: false, items: [], noteMode: false }
+        }));
+        const logs: Record<string, unknown>[] = [];
+        const equipped: string[] = [];
+        const extended = Object.assign(sdk, {
+            waitForTicks: async () => { sdk.tick(); },
+            getBankItems: () => sdk.state!.bank.items
+        });
+        const bot = {
+            openBank: async () => { sdk.push({ bank: { ...sdk.state!.bank, isOpen: true } }); return { success: true }; },
+            closeBank: async () => { sdk.push({ bank: { ...sdk.state!.bank, isOpen: false } }); },
+            depositItem: async (i: InventoryItem) => {
+                sdk.push({ inventory: sdk.state!.inventory.filter(v => v.id !== i.id),
+                    bank: { ...sdk.state!.bank, items: [...sdk.state!.bank.items, i] } });
+            },
+            withdrawItem: async (i: InventoryItem) => {
+                sdk.push({ inventory: [...sdk.state!.inventory, i],
+                    bank: { ...sdk.state!.bank, items: sdk.state!.bank.items.filter(v => v.id !== i.id) } });
+            },
+            equipItem: async (i: InventoryItem) => {
+                equipped.push(i.name);
+                sdk.push({ inventory: sdk.state!.inventory.filter(v => v !== i), equipment: [...sdk.state!.equipment, i] });
+                return { success: true };
+            }
+        };
+        const run = new Run({
+            sdk: extended as unknown as BotSDK, bot: bot as unknown as BotActions,
+            account: 'test', options: {}, signal: new AbortController().signal, state: memoryRoleState(),
+            log: (message, data) => logs.push({ message, ...data }), reportBank: () => {}
+        }, parseOptions({ spot: spotId }));
+        const item = (name: string, id: number, count = 1) => ({ name, id, count, slot: 0, optionsWithIndex: [] } as InventoryItem);
+        return { run, sdk, item, logs, equipped };
+    }
+
+    test('selected by id: sharks from the exchange, the dusty key carried, the anti-dragon shield worn, trained to 70', () => {
+        const o = parseOptions({ spot: 'blue_dragon' });
+        expect(o.spot).toBe(spot);
+        expect(o).toMatchObject({ food: 'ge', foodItem: 'Shark', train: 70 });
+        expect(parseOptions({ spot: 'blue_dragon', train: 99 }).train).toBe(99);
+        expect(parseOptions({ spot: 'baby_blue' }).train).toBe(50);
+        expect(spot.requires?.test('Dusty key')).toBe(true);
+        expect(spot.worn).toBe(ANTI_DRAGON_SHIELD);
+        // Item 1540 is "Dragonfire shield" in this revision (shields.obj antidragonbreathshield).
+        expect(ANTI_DRAGON_SHIELD).toMatchObject({ id: 1540, slot: 'shield' });
+        expect(ANTI_DRAGON_SHIELD.name.test('Dragonfire shield')).toBe(true);
+    });
+
+    test('targets adult blue dragons only, and its product is dragon bones by exact name', () => {
+        expect(spot.npc.test('Blue dragon')).toBe(true);
+        expect(spot.npc.test('Baby blue dragon')).toBe(false);
+        expect(spot.bones.test('Dragon bones')).toBe(true);
+        for (const n of ['Babydragon bones', 'Bones', 'Big bones', 'Dragon bones (noted)', 'Blue dragonhide']) expect(spot.bones.test(n)).toBe(false);
+    });
+
+    test('works the room from taverley-dragons: every adult spawn inside, the centre in the room west of the gate', () => {
+        expect(spot.area).toBe(ROOM);
+        const inArea = (p: { x: number; z: number }) => p.x >= ROOM.x1 && p.x <= ROOM.x2 && p.z >= ROOM.z1 && p.z <= ROOM.z2;
+        for (const a of TAVERLEY_ADULTS) expect(inArea(a)).toBe(true);
+        expect(inArea(spot.centre)).toBe(true);
+        expect(inBabyBlueRoom(spot.centre)).toBe(true);
+        expect(inAdultReach(spot.centre)).toBe(true);
+        expect(inAdultReach(spot.room!.wait)).toBe(false);
+    });
+
+    test('the room gate holds two players in the adults\' reach; the magic pair on its safe tile and route never count', () => {
+        const gate = spot.room!;
+        expect(gate.maxPlayers).toBe(2);
+        const melee = { x: 2901, z: 9806 };
+        expect(inAdultReach(melee)).toBe(true);
+        for (const t of [SAFE_TILE, ...SAFE_ROUTE]) expect(inAdultReach(t)).toBe(false);
+        expect(roomFull(gate, [])).toBe(false);
+        expect(roomFull(gate, [melee])).toBe(false); // h51 with h52
+        expect(roomFull(gate, [melee, { x: 2896, z: 9800 }])).toBe(true); // a third melee player
+        expect(roomFull(gate, [melee, SAFE_TILE, SAFE_ROUTE[3]!])).toBe(false); // h55/h56 casting
+        expect(roomFull(gate, [{ x: 0, z: 0, worldX: 2896, worldZ: 9800 }, melee])).toBe(true); // worldX/worldZ preferred
+    });
+
+    test('refuses to enter without 1540 worn: no walk to the ladder, no door', async () => {
+        const { run, sdk, logs } = harness();
+        const walked: number[][] = [];
+        run.walk = async (x, z) => { walked.push([x, z]); return false; };
+        expect(await spot.enter(run)).toBe(false);
+        expect(walked).toEqual([]);
+        expect(logs.some(l => /not entering without item 1540 worn/.test(String(l.message)))).toBe(true);
+        sdk.push({ equipment: [{ ...SHIELD, count: 1, slot: 5, optionsWithIndex: [] }] });
+        expect(await spot.enter(run)).toBe(false);
+        expect(walked[0]).toEqual([2884, 3398]); // the Taverley dungeon ladder
+    });
+
+    test('ensureWorn: equips a carried shield; takes a banked one out first; with none owned, stays out of the spot', async () => {
+        {
+            const { run, sdk, item, equipped } = harness();
+            sdk.push({ inventory: [item(SHIELD.name, SHIELD.id)] });
+            expect(await run.ensureWorn(spot)).toBe(true);
+            expect(equipped).toEqual(['Dragonfire shield']);
+            expect(run.wearing(ANTI_DRAGON_SHIELD)).toBe(true);
+        }
+        {
+            const { run, sdk, item } = harness();
+            sdk.push({ bank: { ...sdk.state!.bank, items: [item(SHIELD.name, SHIELD.id), item('Dusty key', 1590), item('Shark', 385, 50)] } });
+            expect(await run.ensureWorn(spot)).toBe(false);
+            expect(run.carrying(/^dragonfire shield$/i)).toBe(true);
+            expect(await run.ensureWorn(spot)).toBe(true);
+        }
+        {
+            const { run, logs } = harness();
+            expect(await run.ensureWorn(spot)).toBe(false);
+            expect(await run.ensureWorn(spot)).toBe(false);
+            expect(run.wearing(ANTI_DRAGON_SHIELD)).toBe(false);
+            expect(logs.filter(l => /not worn, carried or banked/.test(String(l.message)))).toHaveLength(1);
+        }
+    });
+
+    test('never targets a baby blue dragon, even the nearest one or one attacking the player', () => {
+        const { run, sdk } = harness();
+        const npc = (index: number, name: string, x: number, z: number, distance: number, inCombat = false) => ({
+            index, name, x, z, distance, inCombat, hp: 50, optionsWithIndex: [{ text: 'Attack', opIndex: 2 }]
+        } as NearbyNpc);
+        const t = { npc: spot.npc, area: spot.area, centre: spot.centre, loot: null };
+        const baby = TAVERLEY_BABIES[1]!;
+        const adult = TAVERLEY_ADULTS[1]!;
+        sdk.push({
+            player: { ...sdk.state!.player!, worldX: 2903, worldZ: 9800, combat: { inCombat: true, targetType: 'npc', targetIndex: 7, lastDamageTick: 0 } },
+            nearbyNpcs: [npc(7, 'Baby blue dragon', baby.x, baby.z, 1, true), npc(8, 'Blue dragon', adult.x, adult.z, 3)]
+        });
+        expect(run.pickTarget(t)?.index).toBe(8);
+        sdk.push({ nearbyNpcs: [npc(7, 'Baby blue dragon', baby.x, baby.z, 1, true), npc(9, 'Baby blue dragon', 2892, 9799, 2)] });
+        expect(run.pickTarget(t)).toBeNull();
+    });
+
+    test('gear upgrades never take the shield slot from the anti-dragon shield', async () => {
+        const { run, sdk, item, equipped } = harness();
+        sdk.push({
+            equipment: [{ ...SHIELD, count: 1, slot: 5, optionsWithIndex: [] }],
+            inventory: [item('Rune kiteshield', 1201), item('Adamant scimitar', 1331)]
+        });
+        await run.equipUpgrades();
+        expect(equipped).toEqual(['Adamant scimitar']);
+        expect(run.upgrade('Mithril kiteshield')).toBe(false); // a blue dragon drop
+        expect(run.upgrade('Adamant full helm')).toBe(true);
+    });
+
+    test('a bank visit takes banked melee upgrades out for this spot to wield, and only for this spot', async () => {
+        const banked = (h: ReturnType<typeof harness>) => h.sdk.push({
+            equipment: [{ ...SHIELD, count: 1, slot: 5, optionsWithIndex: [] }, { name: 'Iron scimitar', id: 1323, count: 1, slot: 3, optionsWithIndex: [] }],
+            bank: { ...h.sdk.state!.bank, items: [h.item('Adamant scimitar', 1331), h.item('Rune kiteshield', 1201), h.item('Dragon bones', 536, 40)] }
+        });
+        const h = harness();
+        banked(h);
+        expect(await h.run.bank('test', spot)).toBe(true);
+        expect(h.sdk.state!.inventory.map(i => i.name)).toEqual(['Adamant scimitar']);
+        await h.run.equipUpgrades();
+        expect(h.equipped).toEqual(['Adamant scimitar']);
+
+        const babies = harness('baby_blue');
+        banked(babies);
+        expect(await babies.run.bank('test', SPOTS.baby_blue!)).toBe(true);
+        expect(babies.sdk.state!.inventory).toEqual([]);
+    });
+
+    test('a bank visit keeps a carried shield and takes one out when it is not worn', async () => {
+        const { run, sdk, item } = harness();
+        sdk.push({ inventory: [item(SHIELD.name, SHIELD.id), item('Dragon bones', 536)] });
+        await run.bank('full', spot, run.tripKit());
+        expect(run.carrying(/^dragonfire shield$/i)).toBe(true);
+        expect(run.carrying(/^dragon bones$/i)).toBe(false);
+        expect(run.tripKit().some(k => k.re.test('Dragonfire shield'))).toBe(true);
+        sdk.push({ inventory: [], equipment: [{ ...SHIELD, count: 1, slot: 5, optionsWithIndex: [] }] });
+        expect(run.tripKit().some(k => k.re.test('Dragonfire shield'))).toBe(false);
+    });
+});
 
 describe('fixed-window bone measurements', () => {
     const from = '2026-10-21T10:00:00Z', until = '2026-10-21T11:00:00Z';
