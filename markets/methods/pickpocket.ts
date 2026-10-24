@@ -19,6 +19,8 @@
 //   hero     Hero                200-300 gp + rare loot    4 dmg  level 80  three in the market
 // The castle's paladins (17 spawns, 2571-2588, 3285-3308) are behind walls and not used.
 
+import type { BotActions } from '../../sdk/actions';
+import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
 import { depositAll, withdrawMany } from '../../speedrun/lib/bank';
 import { findLongPath } from '../../sdk/pathfinding';
@@ -186,6 +188,26 @@ export async function walkThroughDoors(d: DoorWalk, t: Tile, waitTicks = 5): Pro
     throw new WalkFailed(`walk to (${t.x},${t.z}) failed: ${r.message}`);
 }
 
+/**
+ * The live DoorWalk for a session: act.ts `walkTo`, the nearest shut door or gate (bot.openDoor() alone takes the
+ * nearest door by name, which may be an open one), and a click-walk up to CLICK_REACH toward the destination.
+ */
+export function liveDoorWalk(bot: BotActions, sdk: BotSDK, log: DoorWalk['log']): DoorWalk {
+    const shut = () => sdk.getNearbyLocs().filter(l => /door|gate/i.test(l.name) && l.optionsWithIndex.some(o => /^open$/i.test(o.text))).sort((a, b) => a.distance - b.distance)[0];
+    return {
+        walk: to => walkTo(bot, sdk, to.x, to.z, 2),
+        openDoor: () => bot.openDoor(shut()),
+        clickWalk: async to => {
+            const p = sdk.getState()!.player!;
+            const dest = toward({ x: p.worldX, z: p.worldZ }, to);
+            const r = await clickWalk(sdk, dest.x, dest.z, { tol: 2, maxTicks: 60 });
+            return { ok: r.ok, message: r.reason ?? '', at: r.at };
+        },
+        wait: async n => void (await waitTicks(sdk, n)),
+        log
+    };
+}
+
 type PathFinder = (from: Tile, to: Tile) => readonly Tile[];
 const longPath: PathFinder = (a, b) => findLongPath(0, a.x, a.z, b.x, b.z, 500);
 const routableCache = new Map<string, boolean>();
@@ -341,16 +363,7 @@ export class Pickpocketer {
 
     /** Throws WalkFailed when the walk fails, after a door retry if it was unroutable. */
     private walk(t: Tile): Promise<void> {
-        const { bot, sdk, log } = this.ctx;
-        // the nearest shut one: bot.openDoor() alone takes the nearest door by name, which may be an open one
-        const shut = () => sdk.getNearbyLocs().filter(l => /door|gate/i.test(l.name) && l.optionsWithIndex.some(o => /^open$/i.test(o.text))).sort((a, b) => a.distance - b.distance)[0];
-        const clickThrough = async (to: Tile) => {
-            const p = this.s.player!;
-            const dest = toward({ x: p.worldX, z: p.worldZ }, to);
-            const r = await clickWalk(sdk, dest.x, dest.z, { tol: 2, maxTicks: 60 });
-            return { ok: r.ok, message: r.reason ?? '', at: r.at };
-        };
-        return walkThroughDoors({ walk: to => walkTo(bot, sdk, to.x, to.z, 2), openDoor: () => bot.openDoor(shut()), clickWalk: clickThrough, wait: async n => void (await waitTicks(sdk, n)), log }, t);
+        return walkThroughDoors(liveDoorWalk(this.ctx.bot, this.ctx.sdk, this.ctx.log), t);
     }
 
     private async bank(): Promise<void> {
