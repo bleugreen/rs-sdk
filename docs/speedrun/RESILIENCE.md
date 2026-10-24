@@ -416,8 +416,7 @@ state of the two stretches where a death could otherwise pass unseen:
   gates and the resume walk. A death there fails the first step's entry before
   it sends anything.
 
-The one death race is `death.ts` `watchFrames` / `raceDeath` (`watchDeath` for a
-stretch with nothing else to do). The last two stretches also run the **wait
+The one death race is `death.ts` `watchFrames` / `raceDeath`. The last two stretches also run the **wait
 upkeep** (`WaitUpkeep`), because no step body looks after SCORED there. Attempt 4
 died in the `{H12, mule}` cue open's readiness wait, poisoned at about 1 HP, with
 nothing eating or curing. The upkeep eats by the legs' rule (`travel.ts` `eatDue`)

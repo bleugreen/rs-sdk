@@ -171,6 +171,13 @@ describe("the wait upkeep: the legs' eat rule and the shared antipoison, held wh
         expect(served.uses[1]!.tick).toBeLessThan(10);
     });
 
+    test('cure: null drinks nothing on frames, poisoned or not (the caller cures between its own clicks); the eat still goes', async () => {
+        const sdk = new FakeSdk(state({ inventory: [shark(0), potion(1, 3, 'Antipoison')], combatEvents: [poisonHit(999)] }, { hp: 11 }));
+        const served = serve(sdk);
+        await drive(sdk, guardWait(ctxFor(sdk), 'waiting', never(sdk, 20), { cure: null }));
+        expect(served.uses.map(u => u.slot)).toEqual([0]);
+    });
+
     test("hitpoints under the legs' threshold eat (travel's eatDue), once per landing", async () => {
         const sdk = new FakeSdk(state({ inventory: [shark(3), shark(4)] }, { hp: 11 }));
         const cure = flagCure(sdk, false);
