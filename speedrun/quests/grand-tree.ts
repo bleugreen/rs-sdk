@@ -676,15 +676,15 @@ export function steps(input: Options = {}): Step<any>[] {
     const mark = (ctx: Ctx, step: string, what: string) => {
         const s = ctx.sdk.getState()!;
         const npcs = s.nearbyNpcs.filter(n => n.distance <= 6).slice(0, 4).map(n => `${n.name}@${n.distance}${n.inCombat ? '!' : ''}`);
-        note(ctx, step, { mark: what, at: pos(ctx.sdk), energy: s.runEnergy, hp: skillLevel(s, 'hitpoints'), npcs });
+        note(ctx, step, { mark: what, at: pos(ctx.sdk), energy: s.player?.runEnergy, hp: skillLevel(s, 'hitpoints'), npcs });
     };
-    // Samples position, run energy and hitpoints every 10 ticks until stopped.
-    const trace = (ctx: Ctx, step: string): (() => void) => {
+    // Samples position, run energy and hitpoints every `every` ticks until stopped.
+    const trace = (ctx: Ctx, step: string, every = 10): (() => void) => {
         let last = -100;
         return ctx.sdk.onStateUpdate(s => {
-            if (s.tick - last < 10) return;
+            if (s.tick - last < every) return;
             last = s.tick;
-            note(ctx, step, { trace: s.tick, at: pos(s), energy: s.runEnergy, hp: s.skills.find(k => k.name.toLowerCase() === 'hitpoints')?.level, npcs: s.nearbyNpcs.filter(n => n.distance <= 6 && n.inCombat).map(n => n.name) });
+            note(ctx, step, { trace: s.tick, at: pos(s), energy: s.player?.runEnergy, hp: s.skills.find(k => k.name.toLowerCase() === 'hitpoints')?.level, npcs: s.nearbyNpcs.filter(n => n.distance <= 6 && n.inCombat).map(n => n.name) });
         });
     };
 
@@ -724,7 +724,9 @@ export function steps(input: Options = {}): Step<any>[] {
                     await go(ctx, TILES.hazelmereLadderFoot, 1);
                     stopTrace();
                     mark(ctx, name('B-hazelmere'), 'at the ladder foot');
+                    const stopLadder = trace(ctx, name('B-hazelmere'), 1);
                     await loc(sdk, "Hazelmere's ladder up", TILES.hazelmereLadder, /^climb-up$/i, lvl(1), { maxTicks: 20 });
+                    stopLadder();
                     mark(ctx, name('B-hazelmere'), 'up the ladder');
                 }
                 await talk(sdk, opts, /^Hazelmere$/i, { shape: '9c', until: s => invCount(s, ITEM.scroll) > 0 });
@@ -755,7 +757,9 @@ export function steps(input: Options = {}): Step<any>[] {
                 }
                 await villageToStronghold(sdk);
                 mark(ctx, name('C-translation'), 'in the stronghold');
+                const stopDoor = trace(ctx, name('C-translation'), 1);
                 await enterTree(sdk, ctx);
+                stopDoor();
                 mark(ctx, name('C-translation'), 'in the tree');
                 await talk(sdk, opts, NARNODE, {
                     choices: [/I think so/i, /None of the above/i, /None of the above/i, /King's seal/i, /gave the man Daconia/i, /kill the tree/i],
@@ -903,7 +907,9 @@ export function steps(input: Options = {}): Step<any>[] {
                 mark(ctx, name('J-charlie'), 'in the stronghold');
                 await enterTree(sdk, ctx);
                 mark(ctx, name('J-charlie'), 'in the tree');
+                const stopLadders = trace(ctx, name('J-charlie'), 1);
                 await treeLadder(sdk, 3);
+                stopLadders();
                 mark(ctx, name('J-charlie'), 'on level 3');
                 await talk(sdk, opts, /^Charlie$/i, { shape: '8c, state', expect: /I'll see what I can find/i });
             },
@@ -918,7 +924,9 @@ export function steps(input: Options = {}): Step<any>[] {
             run: async ctx => {
                 const { sdk } = ctx;
                 if (invCount(sdk, ITEM.key) === 0) {
+                    const stopLeave = trace(ctx, name('K-plans'), 1);
                     await leaveTree(sdk, ctx);
+                    stopLeave();
                     mark(ctx, name('K-plans'), 'out of the tree');
                     await go(ctx, TILES.anitaStairsFoot, 1);
                     mark(ctx, name('K-plans'), 'at the stairs');
