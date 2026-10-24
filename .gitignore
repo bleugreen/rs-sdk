@@ -52,5 +52,8 @@ server/engine/data/market.sqlite*
 # markets money account names (markets/lib/accounts.ts); never committed.
 markets/accounts.local.txt
 
+# The step benchmark's results log (speedrun/lab/bench-step.ts): per-experiment, never committed.
+speedrun/lab/autoresearch/results.tsv
+
 # film/ clips (video, frames, traces); only film/samples/ is committed
 film/out/

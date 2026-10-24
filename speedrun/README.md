@@ -1294,6 +1294,42 @@ LAB_HELPERS=srlab2 LAB_BOTS=srlab3 speedrun/lab/lab.sh srlab1 \
   speedrun/lab/measure-session.ts:--bot=srlab3
 ```
 
+### The step benchmark (`lab/bench-step.ts`)
+
+One step module evaluated K times on the lab, as a number a loop can optimise
+(`lab/autoresearch/program.md` is that loop's brief). Each run is
+`lab/dress-rehearsal.ts` on a fresh lab account: `--from=<the step's chunk>` stages
+the chunk's start boundary by staff commands (`lab/boundary.ts`), run.ts's chain runs
+through `--until=<the step>`, and the tick log plus the rehearsal's `--vitals` file
+give the step's ticks, pass or refusal, TICKMON's late / glued / gap counts over its
+minutes, its lowest HP and the food it ate. The bench never plans the chain itself:
+`dress-rehearsal.ts --plan-only=1 --plan-out=<file>` hands it the lab chain, the
+start index, the helper families the slice meets and its giver gaps.
+
+```
+LOCAL_STAFF_LEVEL=4 NODE_TICKRATE=150 LAB_RUNNERS=0 speedrun/lab/lab.sh benchlab \
+  'speedrun/lab/bench-step.ts:S12:--k=3:--tick-ms=150'
+```
+
+- The target is a RUN-ORDER id (`S12`), a range (`S10b..S12`), or one chain step's
+  name (`woodcutting:oak-15-73`; under `lab.sh` its colons arrive split and rejoin).
+  Staging is per chunk, so the leg in and the chunk's earlier steps run uncounted.
+- Launcher-family helpers (S03's droppers, S06's altar givers, S07's bone givers, S25a's
+  anvil, H23's cannon holder) get fresh `cairn_<tag><family><run><n>` names per run.
+  S04's ring givers and S25c's wine giver need `lab.sh` lite runners, so their flags
+  pass through. Hand-offs are staff-supplied unless `--stub` names a stub giver.
+- The score is the median over passing runs when all pass; a failure counts as its
+  ticks + RUN-ORDER's manual restart + the step's expected again, averaged in, so a
+  faster but flaky change loses. A band RUN-ORDER prices only inside its step takes
+  `--expected=N`.
+- One row per run goes to `speedrun/lab/autoresearch/results.tsv` (untracked): the
+  checkout's commit, ticks, score, wall seconds, TICKMON, HP, food, the cheats used.
+- A build slot's webclient bundle can predate the session's launch echo, and then every
+  login refuses (`in-game states with no launch id`): `cd server/webclient && bun run build`.
+- Noise at 150 ms (fedora, 2026-10-24): S12 537 / 606 / 554 (rs/764's chain run 533), the
+  spread all in the three fights' rolls; the S07 oak band 726 / 806 (rs/764: 726), the
+  spread in tree depletion on a near-empty world. Both 0 late, 0 glued, 0 gaps.
+
 `LOCAL_STAFF_LEVEL` (engine, `Environment.ts`) grants that staff level to
 every login on a world without a login server. Non-production worlds,
 including a public one run that way, take that path, so set it only on a
