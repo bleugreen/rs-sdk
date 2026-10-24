@@ -353,11 +353,12 @@ async function fareCoins(x: ErrandCtx, need: number): Promise<void> {
     if (!opened.success) throw new Error(`openBank: ${opened.message}`);
     await waitUntil(x.sdk, s => s.bank?.isOpen === true, { maxTicks: 5 });
     const stack = x.sdk.getBankItems().find(i => /^coins$/i.test(i.name));
-    const take = Math.min(stack?.count ?? 0, need - carriedCoins(state(x)));
+    const before = carriedCoins(state(x));
+    const take = Math.min(stack?.count ?? 0, need - before);
     if (stack && take > 0) {
         const w = await x.bot.withdrawItem(stack, take);
         if (!w.success) x.event('fare withdrawal failed', { message: w.message });
-        await waitUntil(x.sdk, s => carriedCoins(s) >= need || carriedCoins(s) > 0, { maxTicks: 5 });
+        await waitUntil(x.sdk, s => carriedCoins(s) >= before + take, { maxTicks: 5 });
     }
     x.reportBank(x.sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })));
     await x.bot.closeBank();
