@@ -95,6 +95,18 @@ export interface AccountSnapshot {
     bankTick: number | null;
     /** Wall ms per tick observed this session, if measured. */
     msPerTick?: number | null;
+    /** The account's tile. */
+    pos?: [x: number, z: number] | null;
+    /** The npc the method works now (pickpocket.ts's target) and its tile, when it is in view. */
+    target?: NpcAt | null;
+    /** Ticks of this session spent at the npcs (pickpocket.ts's thieve errand). */
+    workTicks?: number | null;
+}
+
+export interface NpcAt {
+    index: number;
+    x: number;
+    z: number;
 }
 
 export interface AccountLine {
@@ -109,6 +121,9 @@ export interface AccountLine {
     bank: { seenTick: number | null; store: number | null; book: { low: number; high: number } | null; unpriced: string[]; unknownCost: string[] };
     carriedStore: number;
     msPerTick: number | null;
+    pos: [x: number, z: number] | null;
+    target: NpcAt | null;
+    workTicks: number | null;
 }
 
 export function accountLine(s: AccountSnapshot, v: Valuer, now: Date): AccountLine {
@@ -127,7 +142,10 @@ export function accountLine(s: AccountSnapshot, v: Valuer, now: Date): AccountLi
         coins: { carried, banked, total: carried + (banked ?? 0) },
         bank: { seenTick: s.bankTick, store: store?.value ?? null, book: book ? { low: book.low, high: book.high } : null, unpriced: book?.unpriced ?? [], unknownCost: store?.unknown ?? [] },
         carriedStore: storeValue(s.carried, v.cost).value,
-        msPerTick: s.msPerTick ?? null
+        msPerTick: s.msPerTick ?? null,
+        pos: s.pos ?? null,
+        target: s.target ?? null,
+        workTicks: s.workTicks ?? null
     };
 }
 
