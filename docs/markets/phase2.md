@@ -863,6 +863,97 @@ final code): 14 sales, all filled, round trips 708-733 ticks, no stage failed, e
 bun markets/phase2/report.ts /tmp/rs732-r2/ledger.jsonl
 ```
 
+### Memory (rs/767)
+
+Live on 2026-10-24, three runners on markets' 3.8 GB VM held 709-841 MB each a minute after a restart (8, 14 and 16
+accounts) and grew ~100-150 MB an hour from there. Measured in the lab (fedora, Bun 1.3.13, block M24, trained knights
+on the method): **a runner's memory is almost all a fixed cost per process, the SDK pathfinder's, and it does not grow
+in the lab.**
+
+**The fixed cost.** Step by step after a full collection:
+
+| Step | RSS MB | JS heap MB | Objects |
+|---|---|---|---|
+| bare `bun` | 33 | 0.2 | 3k |
+| import `sdk/pathfinding.ts`, which imports `sdk/collision-data.json` (27.5 MB) as a module | 254 | 33 | 2.83M |
+| `initPathfinding()`: the rsmod WASM collision grid | 488 | 204 | 2.87M |
+| the rest of `run.ts`'s module graph | 481 | 205 | 2.89M |
+| the first long path: rsmod grows its WASM memory 180 MB for the 2048x2048 search grid; RSS takes in what searches touch, ~60 MB, at once | +60 | | |
+
+The parsed JSON (1,268,350 `[level, x, z, flags]` arrays) is read only by `initPathfinding`, but the module's default
+and named exports keep it alive for good: ~235 MB of RSS that nothing reads (rs/770). **Per account** the cost was
+~19 MB, ~14 MB of it a duplicate loc index: the lite session's `startSession` reads the 14.4 MB `LocIndex` disk cache
+into a fresh copy at every login (rs/771); a heap snapshot of the 8-account runner held 117 MB of `Int32Array`, eight
+copies.
+
+**The workarounds** (`markets/phase2/memory.ts`, called at the runner's start; both belong in sdk/ and the lite
+client, rs/770 and rs/771, and go when those land): `initPathfindingAndRelease` builds the grid and then empties the
+JSON's arrays in place (a module binding can't be reassigned, and replacing `default.tiles` frees nothing while the
+named export holds it); `shareLocIndex` makes `LocIndex.load` return one copy per versionlist CRC (the index is
+read-only). Pathfinding is unaffected; a process that only logs in and out 30 times holds 340-360 MB with them and
+470-565 MB without.
+
+| Runner, knights on the method | Before: RSS after a full GC | After |
+|---|---|---|
+| 2 accounts | 545-566 MB | 427-431 MB |
+| 8 accounts | 701-731 MB | AFTER8 |
+| 16 accounts | | 549-570 MB |
+| 32 accounts | | 604-636 MB |
+
+After the fix a runner is **~420 MB plus ~3-9 MB an account** (9.6 an account from 2 to 16, 2.7 from 16 to 32: the
+search grid's touched pages come in with the first few accounts' paths).
+
+**Growth.** In the lab nothing grows. Before the fix, the 2-account runner's RSS after a full collection moved -2 MB an
+hour over 76 minutes and the 8-account runner's held 701-731 MB from minute 15 to 55, with the object count flat at
+3.06M. Its heap snapshots at minutes 5 and 60 differ by -1.1 MB and -38k objects; the only steady addition is 400
+small `Packet` buffers (76 KB). After the fix: SLOPEAFTER. Ruled out as the live growth, each measured: the runner's
+own collections (the ramp's readings keep 3 hours, DeathWatch 100 ticks, the book one quote an item), 30 logins and
+logouts in one process (objects flat at 198k), Bun's TLS clients (a `wss://` socket taking 468 MB of frames and 18,000
+`https` fetches, RSS flat, as without TLS), and the search grid (it settles at once). What the lab lacks is the demo
+itself: its crowds, and markets' VM swapping. To see which it is, run a live runner with the probe and no snapshots:
+
+```sh
+PHASE2_HEAP_DIR=<out> PHASE2_HEAP_SNAPSHOTS= bun --preload ./markets/phase2/heap-probe.ts markets/phase2/run.ts <plan.json> --out <out> ...
+```
+
+It appends a line a minute to `<out>/memory.jsonl` (every 5th after a full collection). A post-collection object
+count that climbs is a JS leak, which the type counts in the line name; a flat count under a climbing RSS is the
+allocator or native memory. Leave snapshots off on the VM: writing one (86 MB) took the 8-account runner from 730 MB to
+1.6 GB for several minutes.
+
+**CPU and the event loop.** Every account's JS runs on the process's one thread, so CPU decides how many accounts one
+process can carry. After the fix, every account on the knights (58 of our bots on the market knights, about the
+live crowd), each over ~30 totals lines:
+
+| Runner | CPU, % of one fedora core | Event-loop lag p50 / p99 / max |
+|---|---|---|
+| 2 accounts | 13.8 | 1 / 4 / 79 ms |
+| 8 accounts | CPU8 | LAG8 |
+| 16 accounts | 56.3 | 1 / 32 / 59 ms |
+| 32 accounts | 84.1 | 1 / 66 / 86 ms |
+
+Before the fix, steady CPU was 13.1% for 2 accounts and 23.7% for 8: the release saves memory, not CPU. A tick is 400
+ms, so even 32 accounts react in time, but they use 84% of a core, and 40 would saturate it: past that every
+account's lag grows together. **For ~40 accounts run two processes of ~20** (~60% of a core and ~35 ms p99 each on
+fedora; markets' VM cores may be slower, which the live `load` field shows). Split them so the Hitpoints sites stay
+in one process, since the site caps (`HpSites`) and the npc claims (`TargetClaims`) are per process: every account
+that still has its HP stage (fresh accounts, guards, iron) in one, the trained knights in the other. A trained account
+keeps its levels through a death, so it never needs the sites again. The login gate's spacing and `maxSessions` are
+per process too; two processes on one address need their `maxSessions` to sum to at most 45. In memory two runners
+of 20 hold ~1.1 GB against today's three at ~2.4 GB.
+
+**Live.** Every totals line carries `memory` (`rssMb`, `heapUsedMb`, `externalMb`, `arrayBuffersMb`) and `load`
+(`cpuPct`, `lagP50Ms`, `lagP99Ms`, `lagMaxMs` since the last totals line, `LoadMeter`). Split a runner whose
+`cpuPct` stays above ~70 or whose `lagP99Ms` passes ~100.
+
+```sh
+# block M24 on fedora, from a copy of the checkout in /tmp (/tmp/rs767-lab), in a tmux server. One lab owns the engine;
+# more runners attach to it with LAB_EXTERNAL=1 and the same ports (--exchange=0 and their own --prefix)
+. markets/methods/lab/block.sh M24 && PHASE2_HEAP_SNAPSHOTS=5,60 LAB_RUNNERS=0 LAB_TIMEOUT=6300 speedrun/lab/lab.sh m24a00 \
+  'markets/phase2/lab.ts:--prefix=m24a:--knights=8:--hungry=0:--guards=0:--sharks=400:--coins=1000:--trained=1:--ramp=0:--exchange=0:--heap=1:--sigint=82:--out=/tmp/rs767-a8'
+bun markets/phase2/heap-diff.ts /tmp/rs767-a8/heap-5.heapsnapshot /tmp/rs767-a8/heap-60.heapsnapshot
+```
+
 ## Horizons
 
 Capital earned in the first 6, 24 and 72 hours of phase 2, setup subtracted, caps applied
