@@ -25,7 +25,7 @@
 // rune-pins' held check and the slot ledger already judge.
 
 import type { Hop, RuneName, RuneUse } from '../lib/travel';
-import { fmtCounts, isRune, legRow, legUse, runeLabel, runeOf, type Counts, type ModuleDecl } from '../tools/rune-pins';
+import { isRune, legRow, legUse, runeLabel, runeOf, type Counts, type ModuleDecl } from '../tools/rune-pins';
 import { walk, type ItemRef, type LedgerRow } from '../tools/slot-ledger';
 import { CENSUS_STEP, INTERNAL, KIT_SEGMENTS, type ChainStep } from './chain';
 
@@ -35,6 +35,7 @@ import { CENSUS_STEP, INTERNAL, KIT_SEGMENTS, type ChainStep } from './chain';
 export interface RuneStep {
     index: number;
     id: string;
+    /** The step's name; a leg's id (its name spells out every hop). */
     name: string;
     /** What the step spends. */
     use: Counts;
@@ -83,7 +84,7 @@ export function runePlan(chain: readonly ChainStep[], rows: readonly LedgerRow[]
         const i = at.get(row)!;
         return i > 0 ? walked[i - 1]!.stacks.worn : [];
     };
-    const steps: RuneStep[] = chain.map((s, index) => ({ index, id: s.id, name: s.name, use: {}, need: {}, unknown: [], supplies: [] }));
+    const steps: RuneStep[] = chain.map((s, index) => ({ index, id: s.id, name: s.kind === 'leg' ? s.id : s.name, use: {}, need: {}, unknown: [], supplies: [] }));
     const firstOf = (id: string) => chain.findIndex(s => s.id === id && isModuleStep(s));
     const lastOf = (id: string) => chain.findLastIndex(s => s.id === id && isModuleStep(s));
 
@@ -222,7 +223,7 @@ export function runeCensus(plan: RunePlan, from: number, held: Counts, o: Census
         }
         needed = Math.max(needed, spent);
         return { rune, held: have, needed, margin: have - needed, uses, supply, short, unknown };
-    });
+    }).filter(l => l.held > 0 || l.needed > 0 || l.unknown.length > 0);
     const shortLines = lines.filter(l => l.short);
     const refusal = shortLines.length
         ? `rune census from #${from} ${start}: ${shortLines.map(l => `${runeLabel(l.rune)} short by ${l.needed - l.held}: held ${l.held}, needed ${l.needed} ${until(l)}; #${l.short!.index} ${l.short!.name} would run short (needs ${l.short!.need}, ${l.short!.left} left)${spends(l)}`).join('; ')}`
@@ -276,4 +277,3 @@ export function lastCensus(rows: readonly { step: string; kind?: string; startTi
     return null;
 }
 
-export { fmtCounts };
