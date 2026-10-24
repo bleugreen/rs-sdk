@@ -358,7 +358,7 @@ describe('ledger-derived mule delivery fixtures', () => {
 
     test('full production enumeration accounts for every ordered and conditional row', () => {
         const p = plan(manifest, [...MULE1_ORDER], { onRequest: MULE1_ON_REQUEST });
-        expect(p.fixtures.length + p.unresolved.length).toBe(21);
+        expect(p.fixtures.length + p.unresolved.length).toBe(20);
         expect(new Set([...p.fixtures.map(f => f.row), ...p.unresolved.map(f => f.row)])).toEqual(new Set([...MULE1_ORDER, ...MULE1_ON_REQUEST]));
         console.log('FULL_ROUTE_FIXTURE_AUDIT', JSON.stringify({
             resolved: p.fixtures.map(f => ({ row: f.row, slots: f.slots })),
@@ -373,12 +373,11 @@ describe('ledger-derived mule delivery fixtures', () => {
             resolved: p.fixtures.map(f => ({ row: f.row, before: f.slots.before, afterSwap: f.slots.afterSwap, helperAfterSwap: f.slots.helperAfterSwap, ask: f.topUpAsk })),
             unresolved: p.unresolved,
         }));
-        expect(p.fixtures.length + p.unresolved.length).toBe(21);
-        // H21d's live row no longer carries a placeholder platebody return, so with explicit fixtures it resolves;
-        // retired H4m has no row at all.
+        expect(p.fixtures.length + p.unresolved.length).toBe(20);
+        // H21d's live row no longer carries a placeholder platebody return, so with explicit fixtures it resolves,
         // and H13 now drops its untradeable Khazard helmet and armour on the tile (live STEP-MANIFEST H13).
-        expect(p.unresolved.map(r => r.row)).toEqual(['H4m']);
-        expect(p.unresolved[0]!.reasons).toEqual(['H4m: expected exactly one ledger row, found 0']);
+        // The retired on-request H4m is no longer among mule1's on-request rows (H4m's loads are h55's, in order).
+        expect(p.unresolved).toEqual([]);
         // The untradeable blocker stands: the same live row with those drops written as swaps is refused.
         expect(manifest).toContain(KHAZARD_DROPS);
         const swapped = manifest.replace(KHAZARD_DROPS, KHAZARD_SWAPS);
@@ -409,7 +408,7 @@ describe('ledger-derived mule delivery fixtures', () => {
         expect(projected).toContain(KHAZARD_DROPS);
         const p = plan(projected, [...MULE1_ORDER], { onRequest: MULE1_ON_REQUEST, overrides: fullRouteOverrides(projected) });
         expect(p.unresolved).toEqual([]);
-        expect(p.fixtures).toHaveLength(21);
+        expect(p.fixtures).toHaveLength(20);
         const blocked = plan(projected.replace(KHAZARD_DROPS, KHAZARD_SWAPS), ['H13']);
         expect(blocked.unresolved[0]!.reasons.join()).toContain('untradeable');
         const f = p.fixtures.find(f => f.row === 'H21d')!;
