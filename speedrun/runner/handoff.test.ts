@@ -9,8 +9,8 @@ import { TickLog } from '../lib/ticks';
 import { MANIFEST, parseLedger } from '../tools/slot-ledger';
 import { ASK_FILE, readTopUpAsk } from '../helpers/altar-cue';
 import {
-    askFor, giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffRoom, handOffStep, HandOffRecord, HANDOFFS_FILE, itemPattern, loadHandOff, planHandOff, runHandOff, runHandOffOnCue, slotPlan, toUnequip, tradeKind, tradeLanded,
-    type HandOffPlan, type HandOffReport,
+    askFor, giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffRoom, handOffStep, HandOffRecord, HANDOFFS_FILE, itemPattern, loadHandOff, planHandOff, resolvePlan, runHandOff, runHandOffOnCue, slotPlan, toUnequip, tradeKind, tradeLanded,
+    type Given, type HandOffPlan, type HandOffReport,
 } from './handoff';
 import { Observation, resolveResume } from './resume';
 import type { Step, StepContext } from './step';
@@ -281,6 +281,87 @@ describe('the post-hand-off state', () => {
     test('a worn item the row gives is taken off; one it gives from the pack is not', () => {
         expect(toUnequip(state([], [wornItem('Mithril scimitar')]), plan('H12')).map(i => i.name)).toEqual(['Mithril scimitar']);
         expect(toUnequip(state(pack(['Magic shortbow'])), plan('H13'))).toEqual([]);
+    });
+});
+
+// ------------------------------------------------------------------ `any`: whatever is held, zero or more
+
+describe("an `any` count gives or drops whatever is held, and none held is nothing to give (main's ruling, rs/663)", () => {
+    const ANY = `
+| row | in | out | equip | needAtStart | source |
+|---|---|---|---|---|---|
+| H13 | knife x1 [u] | magic shortbow x1 (swap); blood rune any (swap: dead stock); shark any (drop: a backstop) | - | 1 | fixture (r) |
+| H15 | knife x1 [u] | blood rune any (swap) | - | 1 | fixture (r) |
+| H16 | knife x1 [u] | blood rune all (swap) | - | 1 | fixture (r) |
+`;
+    const p = (id: string) => handOffFrom(ANY, id);
+    const counts = (gs: readonly Given[]) => gs.map(g => [g.name, g.count]);
+
+    test('the plan keeps `any`; resolvePlan makes it `all` when some is held and drops the entry when none is', () => {
+        expect(counts(p('H13').give)).toEqual([['magic shortbow', 1], ['blood rune', 'any']]);
+        expect(counts(p('H13').drop)).toEqual([['shark', 'any']]);
+        const some = resolvePlan(state(pack(['Magic shortbow'], ['Blood rune', 12], ['Shark', 2])), p('H13'));
+        expect([counts(some.give), counts(some.drop)]).toEqual([[['magic shortbow', 1], ['blood rune', 'all']], [['shark', 'all']]]);
+        const none = resolvePlan(state(pack(['Magic shortbow'])), p('H13'));
+        expect([counts(none.give), counts(none.drop)]).toEqual([[['magic shortbow', 1]], []]);
+        // a row of `any` gives alone, none held, only receives
+        expect(tradeKind(p('H15'))).toBe('swap');
+        expect(tradeKind(resolvePlan(state(filler(2)), p('H15')))).toBe('receive');
+    });
+
+    test('handOffPre: an `any` give with none held is no refusal; `all` with none held still refuses, and a count still needs its count', () => {
+        expect(handOffPre(state(pack(['Magic shortbow'])), p('H13'), PARTNER)).toBe(true);
+        expect(handOffPre(state(filler(2)), p('H15'), PARTNER)).toBe(true);
+        expect(handOffPre(state(filler(2)), p('H16'), PARTNER)).toMatch(/H16: holds no blood rune to give/);
+        expect(handOffPre(state(pack(['Blood rune', 9])), p('H13'), PARTNER)).toMatch(/holds no magic shortbow to give/);
+    });
+
+    test('the slots: an `any` held frees its slots, none held frees none', () => {
+        expect(slotPlan(state(pack(['Magic shortbow'], ['Blood rune', 12], ['Shark', 2])), p('H13')).freed).toBe(4);
+        expect(slotPlan(state(pack(['Magic shortbow'])), p('H13')).freed).toBe(1);
+    });
+
+    test('the trade offers an `any` give that is held, all of it; with none held the row only receives', async () => {
+        const some = new TradeServer(state(pack(['Tinderbox'], ['Blood rune', 30])), tradeItems([['Knife']]));
+        const a = await runStep(some, p('H15'));
+        expect(a.reports[0]).toMatchObject({ id: 'H15', trade: 'swap', ok: true, gave: ['Blood rune x30'], received: ['Knife x1'] });
+        expect(giveSpecs(state(pack(['Blood rune', 30])), p('H15'))).toEqual([{ item: p('H15').give[0]!.pattern, n: 'all' }]);
+        expect(a.step.postconditions(some.state!, {})).toBe(true);
+
+        const none = new TradeServer(state(pack(['Tinderbox'])), tradeItems([['Knife']]));
+        const b = await runStep(none, p('H15'));
+        expect(b.reports[0]).toMatchObject({ id: 'H15', trade: 'receive', ok: true, gave: [], received: ['Knife x1'] });
+        expect(none.sent.some(x => x.method === 'sendOfferItem')).toBe(false);
+        expect(b.step.postconditions(none.state!, {})).toBe(true);
+    });
+
+    describe("the manifest's exhaustible gives (rs/158's classification): none held passes, held is given", () => {
+        const ANY_GIVES: Record<string, string[]> = {
+            H12: ['antipoison(*)', 'coins', 'death rune', 'chaos rune'],
+            H13: ['coins', 'superantipoison(*)', 'fire rune'],
+            H15: ['bronze arrow', 'iron arrow', 'steel arrow', 'mithril arrow', 'adamant arrow', 'coins', 'shark', 'blood rune', 'nature rune'],
+        };
+        const cap = (n: string) => n.charAt(0).toUpperCase() + n.slice(1);
+        /** One held item `g` matches: a family by one dose, an @id by its obj. */
+        const heldOf = (g: Given, slot: number, count: number): InventoryItem => {
+            const name = cap(g.name.replace('(*)', '(2)'));
+            return { slot, id: g.ids?.[0] ?? IDS[name] ?? 9999, name, count, optionsWithIndex: [] };
+        };
+        /** The row's other gives at their counts (`all` as one), slot by slot. */
+        const mustHave = (plan: HandOffPlan) => plan.give.filter(g => g.count !== 'any').flatMap(g => Array.from({ length: typeof g.count === 'number' ? g.count : 1 }, () => g));
+
+        for (const id of Object.keys(ANY_GIVES)) {
+            test(`${id}: the \`any\` gives are ${ANY_GIVES[id]!.join(', ')}; with none of them held the hand-off passes, with all held each is given`, () => {
+                const row = loadHandOff(id);
+                expect(row.give.filter(g => g.count === 'any').map(g => g.name)).toEqual(ANY_GIVES[id]!);
+                const kit = mustHave(row).map((g, slot) => heldOf(g, slot, 1));
+                const without = state(kit);
+                expect(handOffPre(without, row, PARTNER)).toBe(true);
+                expect(resolvePlan(without, row).give.map(g => g.name)).toEqual(row.give.filter(g => g.count !== 'any').map(g => g.name));
+                const exhaustible = row.give.filter(g => g.count === 'any').map((g, k) => heldOf(g, kit.length + k, 5));
+                expect(resolvePlan(state([...kit, ...exhaustible]), row).give.filter(g => ANY_GIVES[id]!.includes(g.name)).map(g => g.count)).toEqual(ANY_GIVES[id]!.map(() => 'all'));
+            });
+        }
     });
 });
 
