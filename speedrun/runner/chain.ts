@@ -839,7 +839,9 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         const all = mining.steps({ ...S09_MINING, bury: mining.BIG_BONES, buryLoads: h.rows.length, buryPrayerTo: S09_PRAYER_TO });
         const record = o.handOffs!;
         const bones = new RegExp(mining.BIG_BONES, 'i');
-        const reached = (st: BotWorldState) => skillLevel(st, 'prayer') >= S09_PRAYER_TO;
+        // the level, not the points (skillLevel's current level)
+        const prayerAt = (st: BotWorldState) => st.skills.find(k => k.name.toLowerCase() === 'prayer')?.baseLevel ?? 0;
+        const reached = (st: BotWorldState) => prayerAt(st) >= S09_PRAYER_TO;
         const out: Entry[] = [];
         h.rows.forEach((row, i) => {
             const last = i === h.rows.length - 1;
@@ -852,7 +854,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
                 postconditions: (st, c) => {
                     const held = bury.postconditions(st, c);
                     if (held !== true) return held;
-                    return reached(st) ? true : `Prayer ${skillLevel(st, 'prayer')} < ${S09_PRAYER_TO} after H4m's ${h.rows.length} loads (S07 closed at ${s07PrayerTo(cfg)}): the chain's Prayer ${S09_PRAYER_TO}`;
+                    return reached(st) ? true : `Prayer ${prayerAt(st)} < ${S09_PRAYER_TO} after H4m's ${h.rows.length} loads (S07 closed at ${s07PrayerTo(cfg)}): the chain's Prayer ${S09_PRAYER_TO}`;
                 },
             });
         });
