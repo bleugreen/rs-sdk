@@ -35,7 +35,7 @@ import { parseOptions as hpOptions, SITES, spec as hpTrain, type SiteId, type Ta
 import { role as mineRole } from '../methods/mine.ts';
 import { role as pickpocketRole } from '../methods/pickpocket.ts';
 import { parseArgs, Sampler } from '../methods/probe-sampler.ts';
-import { BANKS } from '../../speedrun/helpers/buyer';
+import { regionOf } from '../../speedrun/lib/ships';
 import { ARDOUGNE_LANDING, hereOf, needsTravel, openBankAt, travel, type Tile, type Trip } from '../lib/sea-route.ts';
 import type { Stack } from './ledger.ts';
 import { bestPickaxe, BRONZE_PICKAXE, hasPickaxe, PICKAXE_COINS, pickaxeSteps, type PickaxeStep } from './pickaxe.ts';
