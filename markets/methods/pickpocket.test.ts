@@ -1,5 +1,21 @@
 import { describe, expect, test } from 'bun:test';
-import { FailureRun, nextErrand, roamTo, routable, shouldEat, toward, unroutable, walkThroughDoors, WalkFailed, withdrawFood, type DoorWalk, type FoodWithdraw } from './pickpocket';
+import { FailureRun, foodToWithdraw, nextErrand, roamTo, routable, shouldEat, toward, unroutable, walkThroughDoors, WalkFailed, withdrawFood, type DoorWalk, type FoodWithdraw } from './pickpocket';
+
+describe('foodToWithdraw', () => {
+    test('leaves a slot for the coins', () => {
+        expect(foodToWithdraw(0, 0)).toBe(27);
+        expect(foodToWithdraw(2, 0)).toBe(25);
+        expect(foodToWithdraw(0, 10)).toBe(10);
+        expect(foodToWithdraw(20, 10)).toBe(7);
+        expect(foodToWithdraw(27, 0)).toBe(0);
+        expect(foodToWithdraw(28, 5)).toBe(0);
+    });
+    test("keeps a slot for each of the pocket's stacks: a stuck item counts against the room", () => {
+        expect(foodToWithdraw(0, 0, 3)).toBe(25);
+        expect(foodToWithdraw(1, 0, 3)).toBe(24);
+        expect(foodToWithdraw(0, 26, 3)).toBe(25);
+    });
+});
 
 /** A FoodWithdraw whose withdraws answer `results` in turn; `bank` and `carried` are what the state shows. */
 function fakeFood(results: Array<{ ok: boolean; reason?: 'bank_not_open' | 'missing' | 'timeout' }>, o: { bank: number | null; carried?: number; arriveAfter?: number }) {

@@ -46,10 +46,11 @@ import { loadBotEnv, type BotEnv } from '../../speedrun/lib/session';
 import { tickMs } from '../../speedrun/lib/wait';
 import { writerExclusion } from '../lib/accounts.ts';
 import { Gentle } from '../lib/demo.ts';
-import { DemoMarket, type MarketQuote } from '../lib/market.ts';
+import { DemoMarket, median, type MarketQuote } from '../lib/market.ts';
 import { role as coinsRole } from '../methods/coins-driver.ts';
 import { chooseSite } from '../methods/hp-model.ts';
 import { TargetClaims, type SiteId } from '../methods/hp-train.ts';
+import { ERRAND_LOG, role as pickpocketRole, TARGET_LOG } from '../methods/pickpocket.ts';
 import { numberFlag, parseArgs } from '../methods/probe-sampler.ts';
 import { debugNameOf } from '../methods/trips.ts';
 import { costOf } from '../methods/value.ts';
@@ -60,7 +61,7 @@ import { HpSites } from './hp-sites.ts';
 import { accountLine, COINS_ID, totalsLine, type AccountSnapshot, type Stack, type Valuer } from './ledger.ts';
 import { aliasOf, nameScrubber, scrubRecord, unlistedAccounts } from './names.ts';
 import { EARNS_COINS, NEEDS, nextFallback, parsePlan, PlanError, planWarnings, roleOptions, SALE_ROUTE, sequenceFor, type AccountPlan, type MethodId, type Plan } from './plan.ts';
-import { KnightsRamp, rateBetween } from './ramp.ts';
+import { holdRates, KnightsRamp } from './ramp.ts';
 import { afterAttempt, loadSharks, rebuyDecision, requestRebuy, retryDelayMs, SHARKS_KEY, shortfall, shortForVoyage, type SharkAttempt } from './sharks.ts';
 import { carriedCoins, runRoleUntil, runStage, stageDone, type StageCtx, type StageHooks } from './stages.ts';
 import { DEFAULT_STALL, StallWatch, type StallPolicy } from './stall.ts';
@@ -83,12 +84,17 @@ const READINGS_KEEP_MS = 3 * 3_600_000;
  * later step's crowding loss. In the lab run, step 1 was measured mid-climb and its median came out 12% under step 2's.
  */
 const RAMP_THIEVING = 99;
+/** pickpocket.ts's log lines on a change of target and of errand, as the role's events arrive here. */
+const TARGET_EVENT = `${pickpocketRole.name}: ${TARGET_LOG}`;
+const ERRAND_EVENT = `${pickpocketRole.name}: ${ERRAND_LOG}`;
 
 interface Reading {
     at: number;
     session: number;
     tick: number;
     coins: number;
+    /** The worker's workTicks then. */
+    work: number;
 }
 
 class GiveUp extends Error {}
@@ -138,7 +144,7 @@ class Worker {
     deaths = 0;
     watch = new DeathWatch();
     /** The pickpocket target the account's role last switched to (its 'phase' log line), for the death lines. */
-    target: string | null = null;
+    coinsTarget: string | null = null;
     /** The first login of this run and the first tick seen after it: the Hitpoints line counts from here. */
     firstLoginAt: number | null = null;
     firstTick: number | null = null;
@@ -147,6 +153,15 @@ class Worker {
     hpQueuedAt: number | null = null;
     hpLogged = false;
     readonly stall = new StallWatch();
+    /** When the account last reached its method (null off it): the ramp's warm-up counts from here. */
+    methodAt: number | null = null;
+    /** The npc the method works now, from the role's target line. */
+    targetIndex: number | null = null;
+    /** pickpocket.ts's errand now (bank, go, thieve, roam), from its errand line; null off the method. */
+    errand: string | null = null;
+    /** Ticks of this session spent in the thieve errand, and the last tick counted: the ramp's rate at the knights. */
+    workTicks = 0;
+    workTick: number | null = null;
     /** First tick of this session and when it was seen: the session's observed ms a tick. */
     private tick0: { tick: number; at: number } | null = null;
 
@@ -166,6 +181,8 @@ class Worker {
         this.tick0 = null;
         this.watch = new DeathWatch();
         this.stall.pause();
+        this.workTicks = 0;
+        this.workTick = null;
     }
 
     msPerTick(s: BotWorldState): number | null {
@@ -395,6 +412,9 @@ export class Runner {
         off();
         w.ctl = null;
         w.stage = 'out';
+        w.methodAt = null;
+        w.targetIndex = null;
+        w.errand = null;
         if (failure) throw failure;
     }
 
@@ -505,7 +525,9 @@ export class Runner {
                 roleState: w.roleState,
                 options: roleOptions({ ...w.plan, method: w.method }, this.plan),
                 event: (m, d) => {
-                    if (m.endsWith(': phase') && typeof d?.to === 'string') w.target = d.to;
+                    if (m.endsWith(': phase') && typeof d?.to === 'string') w.coinsTarget = d.to;
+                    if (m === TARGET_EVENT && typeof d?.index === 'number') w.targetIndex = d.index;
+                    if (m === ERRAND_EVENT && typeof d?.errand === 'string') w.errand = d.errand;
                     this.event(w, m, d);
                 },
                 reportBank: items => {
@@ -518,6 +540,11 @@ export class Runner {
             const st = sequenceFor({ method: w.method, hp: w.plan.hp }, this.plan).find(s => !stageDone(s, sdk.getState()!, x.hooks, w.roleState))!;
             const p = sdk.getState()?.player;
             if (st.do !== w.stage) this.event(w, 'stage', { to: st.do, ...('to' in st ? { level: st.to } : {}), hp: p?.hp, maxHp: p?.maxHp }, true);
+            if (st.do !== 'method') {
+                w.methodAt = null;
+                w.targetIndex = null;
+                w.errand = null;
+            } else if (w.stage !== 'method') w.methodAt = Date.now();
             w.stage = st.do;
             if (st.do === 'admission') w.arrivedAdmission ??= Date.now();
             w.stageCtl = stageCtl;
@@ -639,8 +666,9 @@ export class Runner {
             this.ledger({ kind: 'admit', account: w.alias, step: r.stepNumber, admitted: admitted.length });
             this.event(w, 'admitted to the knights', { step: r.stepNumber }, true);
         }
+        const warmupMs = this.plan.ramp!.warmupMinutes * 60_000;
         if (r.phase === 'admitting') {
-            const working = admitted.filter(w => w.stage === 'method' && w.readings.length > 0 && w.thieving >= RAMP_THIEVING).length;
+            const working = admitted.filter(w => w.stage === 'method' && w.readings.length > 0 && w.thieving >= RAMP_THIEVING && w.methodAt !== null && now - w.methodAt >= warmupMs).length;
             if (r.update(now, admitted.length >= r.admitted() && working === admitted.length)) {
                 this.ledger({ kind: 'ramp-hold', step: r.stepNumber, logins: admitted.length, working, holdMinutes: this.plan.ramp!.holdMinutes });
                 this.event(null, 'ramp hold', { step: r.stepNumber, logins: admitted.length, working }, true);
@@ -649,13 +677,16 @@ export class Runner {
         if (!r.holdDue(now)) return;
         const start = r.holdStart!;
         const measured = admitted.filter(w => w.admittedAt! <= start);
-        const rates = measured.flatMap(w => {
-            const v = rateBetween(w.readings.find(x => x.at >= start), w.readings.at(-1));
-            return v === null ? [] : [v];
-        });
-        const d = r.evaluate(rates, now);
-        this.ledger({ ...d, holdStart: new Date(d.holdStart).toISOString(), holdEnd: new Date(d.holdEnd).toISOString(), perHour: Math.round(d.median * (3_600_000 / this.tickMs)), loginsMeasured: rates.length });
-        this.event(null, `ramp step ${d.step}: ${d.action}`, { reason: d.reason, median: d.median, logins: d.logins, measured: rates.length }, true);
+        const holdLogins = measured.map(w => ({ alias: w.alias, methodAt: w.methodAt, readings: w.readings }));
+        const minSpanMs = (this.plan.ramp!.holdMinutes * 60_000) / 2;
+        const perLogin = holdRates(holdLogins, start, warmupMs, minSpanMs);
+        // the income figure beside the step rule's: over wall time, the bank trips in
+        const grossPerLogin = holdRates(holdLogins, start, warmupMs, minSpanMs, 'gross');
+        const grossMedian = median(Object.values(grossPerLogin));
+        const gross = { perLogin: grossPerLogin, median: grossMedian, perHour: Math.round(grossMedian * (3_600_000 / this.tickMs)) };
+        const d = r.evaluate(perLogin, now);
+        this.ledger({ ...d, holdStart: new Date(d.holdStart).toISOString(), holdEnd: new Date(d.holdEnd).toISOString(), perHour: Math.round(d.median * (3_600_000 / this.tickMs)), loginsMeasured: d.rates.length, gross });
+        this.event(null, `ramp step ${d.step}: ${d.action}`, { reason: d.reason, median: d.median, incumbents: d.incumbents, grossMedian, logins: d.logins, measured: d.rates.length }, true);
         if (d.action !== 'stop') return;
         for (const w of knights.filter(k => k.admittedAt === null)) {
             const m = nextFallback(this.rampFallback, this.plan.ramp!.fallbackMix);
@@ -710,8 +741,8 @@ export class Runner {
     /** A death: the ledger's `death` line (its cause, hits and Hitpoints trace, deaths.ts) and a loud event. */
     private died(w: Worker, d: DeathRecord): void {
         w.deaths++;
-        this.ledger({ kind: 'death', account: w.alias, method: w.method, stage: w.stage, target: w.target, session: w.sessionNo, deaths: w.deaths, ...d });
-        this.event(w, 'died', { cause: d.cause, damage: d.damage, target: w.target, thieving: d.thieving, maxHp: d.maxHp, at: d.at, carriedCoins: d.carriedCoins, food: d.food, deaths: w.deaths }, true);
+        this.ledger({ kind: 'death', account: w.alias, method: w.method, stage: w.stage, target: w.coinsTarget, session: w.sessionNo, deaths: w.deaths, ...d });
+        this.event(w, 'died', { cause: d.cause, damage: d.damage, target: w.coinsTarget, thieving: d.thieving, maxHp: d.maxHp, at: d.at, carriedCoins: d.carriedCoins, food: d.food, deaths: w.deaths }, true);
     }
 
     private observe(w: Worker, s: BotWorldState): void {
@@ -744,9 +775,26 @@ export class Runner {
             }
         }
         const msPerTick = w.msPerTick(s);
+        if (w.stage === 'method' && w.errand === 'thieve' && w.workTick !== null && s.tick > w.workTick) w.workTicks += s.tick - w.workTick;
+        w.workTick = s.tick;
         if (w.nextLedgerTick >= 0 && s.tick < w.nextLedgerTick) return;
         w.nextLedgerTick = s.tick + this.plan.ledger.everyTicks;
-        const snap: AccountSnapshot = { account: w.alias, method: w.method, stage: w.stage, session: w.sessionNo, tick: s.tick, carried: stacks(s.inventory), bank: w.bank, bankTick: w.bankTick, msPerTick, deaths: w.deaths };
+        const npc = w.stage === 'method' && w.targetIndex !== null ? s.nearbyNpcs.find(n => n.index === w.targetIndex) : undefined;
+        const snap: AccountSnapshot = {
+            account: w.alias,
+            method: w.method,
+            stage: w.stage,
+            session: w.sessionNo,
+            tick: s.tick,
+            carried: stacks(s.inventory),
+            bank: w.bank,
+            bankTick: w.bankTick,
+            msPerTick,
+            deaths: w.deaths,
+            pos: [s.player.worldX, s.player.worldZ],
+            workTicks: w.workTicks,
+            target: npc ? { index: npc.index, x: npc.tileX ?? npc.x, z: npc.tileZ ?? npc.z } : null
+        };
         w.latest = snap;
         const line = accountLine(snap, this.valuer, new Date());
         this.ledger(line as unknown as Record<string, unknown>);
@@ -755,7 +803,7 @@ export class Runner {
         // first sighting would book everything banked before the method as earnings. No reading, no 'working'.
         if (w.stage === 'method' && w.bank !== null) {
             const now = Date.now();
-            w.readings.push({ at: now, session: w.sessionNo, tick: s.tick, coins: line.coins.total });
+            w.readings.push({ at: now, session: w.sessionNo, tick: s.tick, coins: line.coins.total, work: w.workTicks });
             while (w.readings.length && w.readings[0]!.at < now - READINGS_KEEP_MS) w.readings.shift();
         }
     }

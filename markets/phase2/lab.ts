@@ -23,6 +23,10 @@
  * `--buy=1` makes the plan buy sharks (`--per-account`, `--minimum`, `--rebuy-min`, `--ceiling`) and passes
  * `--run-ended`; `--ramp=0` turns the ramp off; `--park=1` sets `foodFallback: 'park'`; `--restart=M` stops the runner after M minutes and starts it again. The Exchange check's maker leaves its shark ask open for the rebuy.
  *
+ * Knights crowding (docs/markets/phase2.md 'Knights crowding at 8, 16 and 24'): `--warmup=N` sets the ramp's
+ * `warmupMinutes` (0 measures each hold the way the runner did before it had one); `--drop-pct=N` its `dropPct`
+ * (default 10; a large one keeps the ramp going so every step is measured, its ratio still in the ledger).
+ *
  * `--fresh=1` stages nobody: every account starts on Tutorial Island and the runner's own stages do everything (the
  * Hitpoints-site lab). `--min-free-mb=N` (default 1200) stops the run with SIGINT when the host's available memory
  * falls below N MB, so a shared lab host keeps room for its other tenants; the memory is logged every 30 s.
@@ -87,6 +91,8 @@ const legacySharks = arg('legacy-sharks', '0') === '1';
 const buy = arg('buy', '0') === '1';
 const rampOn = arg('ramp', '1') === '1';
 const park = arg('park', '0') === '1';
+const warmup = arg('warmup', '');
+const dropPct = count('drop-pct', 10);
 
 const server = loadBotEnv(labBot).SERVER ?? '';
 if (!/^(localhost|127\.)/.test(server)) {
@@ -259,7 +265,7 @@ if (legacySharks)
 const plan = {
     accounts,
     loginSpacingMs: 2000,
-    ramp: rampOn ? { steps, holdMinutes: hold, dropPct: 10, admitTimeoutMinutes: 30 } : null,
+    ramp: rampOn ? { steps, holdMinutes: hold, dropPct, admitTimeoutMinutes: 30, ...(warmup !== '' ? { warmupMinutes: Number(warmup) } : {}) } : null,
     ledger: { everyTicks: 50, bookMinutes: 5 },
     ...(buy
         ? { sharks: { source: 'buy', perAccount: count('per-account', 20), minimum: count('minimum', 5), rebuyMinSharks: count('rebuy-min', 5), ceiling: count('ceiling', 650), fillMinutes: 1 }, foodFallbackMix: { guards: 1 } }

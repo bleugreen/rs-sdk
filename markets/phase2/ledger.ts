@@ -97,6 +97,18 @@ export interface AccountSnapshot {
     msPerTick?: number | null;
     /** Deaths over every session of the run (deaths.ts). */
     deaths: number;
+    /** The account's tile. */
+    pos?: [x: number, z: number] | null;
+    /** The npc the method works now (pickpocket.ts's target) and its tile, when it is in view. */
+    target?: NpcAt | null;
+    /** Ticks of this session spent at the npcs (pickpocket.ts's thieve errand). */
+    workTicks?: number | null;
+}
+
+export interface NpcAt {
+    index: number;
+    x: number;
+    z: number;
 }
 
 export interface AccountLine {
@@ -112,6 +124,9 @@ export interface AccountLine {
     carriedStore: number;
     msPerTick: number | null;
     deaths: number;
+    pos: [x: number, z: number] | null;
+    target: NpcAt | null;
+    workTicks: number | null;
 }
 
 export function accountLine(s: AccountSnapshot, v: Valuer, now: Date): AccountLine {
@@ -131,7 +146,10 @@ export function accountLine(s: AccountSnapshot, v: Valuer, now: Date): AccountLi
         bank: { seenTick: s.bankTick, store: store?.value ?? null, book: book ? { low: book.low, high: book.high } : null, unpriced: book?.unpriced ?? [], unknownCost: store?.unknown ?? [] },
         carriedStore: storeValue(s.carried, v.cost).value,
         msPerTick: s.msPerTick ?? null,
-        deaths: s.deaths
+        deaths: s.deaths,
+        pos: s.pos ?? null,
+        target: s.target ?? null,
+        workTicks: s.workTicks ?? null
     };
 }
 
