@@ -496,9 +496,23 @@ describe("T07-08 drops the last load's unburied bones before the Camelot telepor
         expect(inArea(sdk.state!, TILES.edmond)).toBe(true);
     });
 
-    test('the pattern takes every bone and nothing else SCORED holds at T07-08; no hop needs a bone', () => {
+    test("S07's real close holds its willow band's kept log: dropped before the teleport click (knife-mine takes a normal log only); the knife and runes kept", async () => {
+        const end = state(TILES.taverleyWillows.x, TILES.taverleyWillows.z, { inventory: [item(0, 'Law rune', 1), item(1, 'Air rune', 5), item(2, 'Knife'), item(3, 'Willow logs')] });
+        const sdk = new FakeSdk(end);
+        const drops = serveDrops(sdk);
+        const held = serveTeleport(sdk, SPELLS.camelot.landing);
+        simulateWalking(sdk);
+        await drive(sdk, T0708().run(ctxFor(sdk)));
+        expect(drops.map(d => d.slot)).toEqual([3]);
+        expect(kinds(sdk).slice(0, 2)).toEqual(['sendDropItem', 'sendClickComponent']);
+        expect(held).toEqual([['Law rune', 'Air rune', 'Knife']]);
+        expect(T0708().postconditions(sdk.state!, undefined)).toBe(true);
+    });
+
+    test('the patterns take every bone and the willow log, nothing else SCORED holds at T07-08; no hop needs either', () => {
         const { drops = [], hops } = T0708().def;
         const takes = (name: string) => drops.some(p => p.test(name));
+        expect([takes('Willow logs'), neededBy(hops, 'Willow logs')]).toEqual([true, false]);
         for (const b of ['Bones', 'Big bones', 'Babydragon bones', 'Dragon bones', 'babydragon bones']) {
             expect(takes(b)).toBe(true);
             expect(neededBy(hops, b)).toBe(false);
@@ -539,14 +553,17 @@ describe('leg drops: the STEP-MANIFEST ledger contract', () => {
         );
     });
 
-    test("T07-08's row drops `<bones> any`, the backstop the leg's /bones$/i performs; S07's last load brings none (rs/663), so the walk drops nothing and leaves H6 its 12", () => {
-        expect(dropsOn('T07-08')).toEqual([{ name: 'bones', placeholder: true, count: 'any', reason: 'drop' }]);
-        expect(legById('T07-08').def.drops).toEqual([/bones$/i]);
+    test("T07-08's row drops `<bones> any` and `willow logs any`, the leg's /bones$/i and /^willow logs$/i; S07's last load brings no bone (rs/663), so the walk drops the willow log only, leaving the knife and H6 its 12", () => {
+        const drops = dropsOn('T07-08');
+        expect(drops[0]).toEqual({ name: 'bones', placeholder: true, count: 'any', reason: 'drop' });
+        expect(drops[1]).toMatchObject({ name: 'willow logs', count: 'any', reason: 'drop' });
+        expect(drops).toHaveLength(2);
+        expect(legById('T07-08').def.drops).toEqual([/bones$/i, /^willow logs$/i]);
         expect(rows.find(r => r.row === 'S07 last load')!.in.some(i => i.name === 'bones')).toBe(false);
         const entries = walk(rows);
         const at = (row: string) => entries.find(e => e.row.row === row)!;
         expect(at('S07 last load')).toMatchObject({ verdict: 'pass', used: 4 });
-        expect(at('T07-08')).toMatchObject({ verdict: 'pass', used: 2, held: 'knife x1, logs x1' });
+        expect(at('T07-08')).toMatchObject({ verdict: 'pass', used: 1, held: 'knife x1' });
         expect(at('H6')).toMatchObject({ verdict: 'pass', need: 12 });
     });
 

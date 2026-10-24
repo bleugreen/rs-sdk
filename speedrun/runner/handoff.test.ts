@@ -551,8 +551,8 @@ describe("the mule's top-up ask: every `to N` entry asked on the trade's first o
     const shark = itemPattern('shark').source;
     const coins = itemPattern('coins').source;
 
-    test('H10 `shark to 8`: holding 3, asks 5', () => {
-        expect(askFor(state(pack(['Shark', 3])), row('H10'))).toEqual([{ item: shark, count: 5 }]);
+    test('H10 `shark to 10`: holding 3, asks 7', () => {
+        expect(askFor(state(pack(['Shark', 3])), row('H10'))).toEqual([{ item: shark, count: 7 }]);
     });
 
     test('H12 `shark to 15`: holding 6, asks 9', () => {
@@ -567,8 +567,8 @@ describe("the mule's top-up ask: every `to N` entry asked on the trade's first o
         expect(askFor(state([item(0, 'Coins', 126_000), ...pack(['Shark', 2]).map((i, k) => ({ ...i, slot: 1 + k }))]), row('H22'))).toEqual([{ item: shark, count: 8 }]);
     });
 
-    test('every entry met: no ask (H10 holding 8)', () => {
-        expect(askFor(state(pack(['Shark', 8])), row('H10'))).toEqual([]);
+    test('every entry met: no ask (H10 holding 10)', () => {
+        expect(askFor(state(pack(['Shark', 10])), row('H10'))).toEqual([]);
     });
 
     const TOPUPS = '| row | in | out | equip | needAtStart | source |\n|---|---|---|---|---|---|\n| H10 | shark to 8 [u]; law rune to 4 [s] | - | - | 6 | x (r) |\n';
