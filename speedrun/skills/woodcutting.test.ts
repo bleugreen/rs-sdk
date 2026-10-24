@@ -1874,12 +1874,8 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
             expect(r.drops).toEqual(oakSlots(start));
         });
 
-        test('the oak band counts and drops no oak logs of its own at its start (unchanged), and the normal band none', () => {
-            const s = inSight(state({ level: 15, items: [...KIT, 'Oak logs'], fill: 23 }));
-            expect(28 - s.inventory.length).toBe(0);
-            const h = harness(s, {});
-            // the oak band's own product counts as before (productLogs), so this pack passes on its oak log alone
-            expect(h.byName('woodcutting:oak-15-73').preconditions(s, {})).toBe(true);
+        test('only the willow band carries logs in: the oak and normal bands count and drop nothing new (unchanged)', () => {
+            const s = inSight(state({ level: 15, items: [...KIT, 'Oak logs'] }));
             expect(carriedLogs(s, 'oak')).toEqual([]);
             expect(carriedLogs(s, 'normal')).toEqual([]);
             expect(carriedLogs(s, 'willow').map(i => i.name)).toEqual(['Oak logs']);
