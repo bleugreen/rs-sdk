@@ -12,11 +12,11 @@
 //   woodcutting:normal-1-15      knife-cycle `tree`, plain: the band is about 3 logs, so a
 //                                20-trial probe would cost more than the band, and the in-page
 //                                knife on normal trees (7.24 per log) is slower than plain
-//   woodcutting:oak-15-73        knife-cycle `oak` under rs/156's gated loop, own gate (the
-//                                knife, ungated, when burying: see Bones)
+//   woodcutting:oak-15-73        knife-cycle `oak` under rs/156's gated loop, own gate (when
+//                                burying, no gate: the on-time switch, see Bones)
 //   woodcutting:walk-willows     the oak-to-willow leg, kept out of the band rows
-//   woodcutting:willow-73-99     knife-cycle `willow`, gated, to `to` (burying: the knife, and on
-//                                past `to` while Prayer or the runes are owed: see Prayer at the end)
+//   woodcutting:willow-73-99     knife-cycle `willow`, gated, to `to` (burying: the on-time switch,
+//                                and on past `to` while Prayer or the runes are owed: see Prayer at the end)
 //
 // The gate's reference is plain ticks per expected roll (4: the plain loop's 4-tick cycle), and
 // each log is weighted by the rolls it stands for at the current level (1 / success chance), so
@@ -34,17 +34,27 @@
 // a stop and a re-probe. And each band's probe walks only to the stand's free neighbours
 // (`freeDirs`, from the trees' footprints), since every blocked one costs the probe 9 ticks.
 //
-// Bones (S07): with `bury`, the oak and willow bands run the knife throughout, with no gate and
-// no probe, and their segments carry knife-cycle's `bury` and `trees`. Only a knife segment buries
-// here and only a knife segment asks for a load, so a gated band whose probe read a ragged server
-// ran plain and neither buried nor loaded (attempt 3: the willow band's first probe read 15/20, and
-// it could never reach its Prayer). knife-cycle's own plain + bury loop is not used. The giver asks
-// to trade while the account holds 2 bones; the account takes the trade on the roll label after its
-// last bury (2 ticks after the pack shows none: the bury lands on R+1, the cycle's click rolls on
-// R+3), by stopping the run, `receiveFrom`, and starting it again. A load's number in its row is
-// the S07 session's: with a group, the loads its status files count before the band, plus the
-// band's own. The bones a burying band holds count as free slots in its 2-slot precondition: its
-// first cycles bury them.
+// Bones (S07): with `bury`, the oak and willow bands run no gate and no probe, and every segment,
+// knife or plain, carries knife-cycle's `bury` and `trees`: knife-cycle has two bury loops, knife +
+// bury (a bone on the 3-tick lattice) and plain + bury (a bone in the plain 4-tick cycle's idle
+// ticks, #165), so a burying band never chops without burying, whichever it runs. Attempt 3's gated
+// willow band, whose probe read a ragged server (15/20), ran plain without `bury` and could never
+// reach its Prayer; rs/642's forced knife then lost a roll to every late bury-cycle send (a click
+// landing in the bury's p_delay is dropped, OpLocHandler.ts). So under `technique` auto a burying
+// band switches between the two loops on the on-time rate it measures in itself (OnTimeMeter):
+// knife-cycle judges each Bury on time or late on the label after it should have landed
+// (`buryOnTime`, `buryLate`). The band starts on the knife, every band and every resume, with an
+// empty window; it goes to plain + bury once a 50-Bury knife window can no longer reach the
+// break-even, 44 of 50 (17.6 of 20, where 3 / r^2 ticks per landed roll, both of the knife cycle's
+// sends on time, meets plain + bury's measured ~3.87), and back to the knife on a plain + bury window
+// of 47 of 50 or better (the switch section's comment says why). A forced `technique` knife or
+// plain runs that loop alone, still burying. The giver asks to trade while the account holds 2
+// bones; the account takes the trade on the roll label after its last bury (2 ticks after the pack
+// shows none: knife, the bury lands on R+1 and the cycle's click rolls on R+3; plain + bury, the
+// bury lands on R+2 and the click rolls on R+4), by stopping the run, `receiveFrom`, and starting it
+// again in the technique it ran. A load's number in its row is the S07 session's: with a group, the
+// loads its status files count before the band, plus the band's own. The bones a burying band holds
+// count as free slots in its 2-slot precondition: its first cycles bury them.
 //
 // Routes: `route` picks the stands as data (ROUTES). `taverley` (SITES) is the scored run's;
 // `rimmington` (the Rimmington oaks and the Draynor-west willows) walks about 130 ticks less
@@ -80,13 +90,13 @@
 // Prayer at the end: the last burying band ends on the Woodcutting level and on the Prayer it owes.
 // At `to` with Prayer under `prayerTo` and something left to bury (bones held, or a load the givers
 // are known to hold: `lastLoad`'s still to come, or fewer loads given than the group's status files
-// publish as its `loads`), the band runs the knife cycle on, bounded by Prayer instead of the level
+// publish as its `loads`), the band runs its bury loop on, bounded by Prayer instead of the level
 // (PRAYER_RUN_TICKS per run), taking loads as before, the runes' load still last. It closes once
 // Prayer reaches `prayerTo` or nothing is left, and only then may its Prayer postcondition fail.
 // With `lastLoad` it also stays while the runes' load is still to come and a load is known to be
 // left, even at `prayerTo`: T07-08's runes ride the group's last load, so a group whose `loads`
-// outlasts the Prayer still delivers them. What those loads bring is buried, since the knife cycle
-// buries a bone a roll at no cost to the chop. It closes once the runes are held, or with no load
+// outlasts the Prayer still delivers them. What those loads bring is buried, since either bury loop
+// buries a bone a roll at little cost to the chop. It closes once the runes are held, or with no load
 // left, which keeps the runes postcondition's failure. `done` and `inProgress` read the same, so a
 // resume at `to` that still owes Prayer or the runes re-enters the band, and the willow walk takes
 // it back to the stand.
@@ -427,6 +437,8 @@ export interface WoodcuttingOptions {
     params?: Record<string, unknown>;
     /** `params.hold`, flat for the CLI. */
     hold?: number | string;
+    /** Lab only: `hold` goes only on runs started within this many ticks of a band's start (a ragged stretch that ends). */
+    holdTicks?: number | string;
     /** knife-cycle's `waitRespawn` on oak and willow knife segments (default true; 'false' from the CLI turns it off). */
     waitRespawn?: boolean | string;
     /** Probe only the stand's free neighbours (default true; 'false' probes E, W, N, S as the page does). */
@@ -462,6 +474,7 @@ interface Resolved {
     hpStop: number;
     gate: Partial<InPageGateOptions>;
     params: Record<string, unknown>;
+    holdTicks: number | null;
     waitRespawn: boolean;
     probeDirs: boolean;
     keepProducts: number;
@@ -503,7 +516,6 @@ function resolve(opts: WoodcuttingOptions): Resolved {
     const b = opts.bury;
     const bury = b === undefined || b === false || b === 'false' ? null : b === true || b === 'true' ? true : String(b);
     if (bury !== null && to <= BANDS[0]!.end) throw new Error(`woodcutting: bury needs an oak or willow band, and to=${to} ends on normal trees`);
-    if (bury !== null && technique === 'plain') throw new Error('woodcutting: bury runs the knife (a burying band never runs plain)');
     const giver = opts.bones?.giver ?? opts.boneGiver;
     const groupRaw = opts.bones?.group ?? opts.boneGroup;
     const group = groupRaw === undefined ? null : groupOpt(groupRaw);
@@ -522,6 +534,8 @@ function resolve(opts: WoodcuttingOptions): Resolved {
     if (!Object.hasOwn(ROUTES, route)) throw new Error(`woodcutting: route must be ${Object.keys(ROUTES).join(' or ')}, got ${JSON.stringify(route)}`);
     const sitesIn = typeof opts.sites === 'string' ? (JSON.parse(opts.sites) as Partial<Sites>) : (opts.sites ?? {});
     const hold = opts.hold === undefined ? {} : { hold: numberOpt('hold', opts.hold, n => n >= 0 && n <= 1, 0) };
+    if (opts.holdTicks !== undefined && opts.hold === undefined) throw new Error('woodcutting: holdTicks bounds hold, and there is none');
+    const holdTicks = opts.holdTicks === undefined ? null : numberOpt('holdTicks (a whole number of ticks)', opts.holdTicks, n => Number.isInteger(n) && n >= 0, 0);
     const hb = opts.handBack;
     let handBack: string | null = null;
     if (hb === true || hb === 'true') {
@@ -545,6 +559,7 @@ function resolve(opts: WoodcuttingOptions): Resolved {
         hpStop: numberOpt('hpStop (an integer from 0 to 98)', opts.hpStop, n => Number.isInteger(n) && n >= 0 && n <= 98, 0),
         gate: opts.gate ?? {},
         params: { ...opts.params, ...hold },
+        holdTicks,
         waitRespawn: flag('waitRespawn', opts.waitRespawn, true),
         probeDirs: flag('probeDirs', opts.probeDirs, true),
         keepProducts: numberOpt('keepProducts (an integer from 0 to 27)', opts.keepProducts, n => Number.isInteger(n) && n >= 0 && n <= 27, NORMAL_KEEP),
@@ -568,23 +583,34 @@ export function bandFor(s: BotWorldState, opts: WoodcuttingOptions = {}): Band['
 }
 
 /**
- * The technique a band runs: a burying band (oak or willow with `bury`) the knife, since only knife
- * segments bury and load (see Bones); normal trees plain unless the knife is forced; else the option.
+ * The technique a band starts on: a burying band (oak or willow with `bury`) the knife, or plain
+ * when plain is forced (see Bones; under auto it then switches on its on-time rate, `bandSwitches`);
+ * normal trees plain unless the knife is forced; else the option ('auto': the gate).
  */
 export function bandTechnique(opts: WoodcuttingOptions, tree: Tree): GatedTechnique {
     return techniqueOf(resolve(opts), tree);
 }
 
+/** A burying band under `technique` auto: no gate, the on-time switch between knife + bury and plain + bury (see Bones). */
+export function bandSwitches(opts: WoodcuttingOptions, tree: Tree): boolean {
+    return switchesOf(resolve(opts), tree);
+}
+
+const buryingOf = (o: Resolved, tree: Tree) => tree !== 'normal' && o.bury !== null;
+const switchesOf = (o: Resolved, tree: Tree) => buryingOf(o, tree) && o.technique === 'auto';
+
 function techniqueOf(o: Resolved, tree: Tree): GatedTechnique {
-    if (tree !== 'normal' && o.bury !== null) return 'knife';
+    if (buryingOf(o, tree)) return o.technique === 'plain' ? 'plain' : 'knife';
     return tree === 'normal' && o.technique === 'auto' ? 'plain' : o.technique;
 }
 
 /**
- * knife-cycle's parameters for a band and technique. `bury` and `waitRespawn` go on knife segments
- * only (normal trees fall on every log, so they never wait for a respawn), and `dropEach` (rs/152:
- * drop on the label that shows the log, re-click on the same pass) on plain ones only. The normal
- * band passes `keepProducts` on both: its product is the knife's own log.
+ * knife-cycle's parameters for a band and technique. A burying band passes `bury` on both
+ * techniques (knife + bury and plain + bury, see Bones), and `waitRespawn` on knife segments only
+ * (normal trees fall on every log, so they never wait for a respawn). `dropEach` (rs/152: drop on
+ * the label that shows the log, re-click on the same pass) goes on plain segments that do not bury:
+ * plain + bury drops on its own roll label. The normal band passes `keepProducts` on both: its
+ * product is the knife's own log.
  */
 export function bandParams(opts: WoodcuttingOptions, tree: Tree, untilLevel: number): (technique: SegmentTechnique) => Record<string, unknown> {
     return paramsOf(resolve(opts), tree, untilLevel);
@@ -600,7 +626,8 @@ function paramsOf(o: Resolved, tree: Tree, untilLevel: number | null): (techniqu
         ...(untilLevel === null ? { maxTicks: PRAYER_RUN_TICKS } : { untilLevel }),
         reanchor: 'xp',
         dismiss: 'now',
-        ...(technique === 'knife' ? { ...(bury !== null ? { bury } : {}), ...(o.waitRespawn && tree !== 'normal' ? { waitRespawn: true } : {}) } : { dropEach: true }),
+        ...(bury !== null ? { bury } : {}),
+        ...(technique === 'knife' ? (o.waitRespawn && tree !== 'normal' ? { waitRespawn: true } : {}) : bury === null ? { dropEach: true } : {}),
         ...(tree === 'normal' ? { keepProducts: o.keepProducts } : {}),
         ...o.params
     });
