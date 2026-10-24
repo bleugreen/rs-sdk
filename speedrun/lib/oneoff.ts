@@ -317,6 +317,9 @@ export interface ActCtx {
     out(k: string, v: unknown): void;
     redact: Redactor;
     waitTicks(n: number): Promise<void>;
+    sleep(ms: number): Promise<void>;
+    /** The world's player list now (a courier that arrives after the login), or null. */
+    roster(): Promise<RosterEntry[] | null>;
     /** Ticks since the login line. */
     sinceLogin(): number;
 }
@@ -419,6 +422,8 @@ export async function runOneoff(spec: OneoffSpec, o: RunOneoffOptions = {}): Pro
                     out: (k, v) => ledger.out(k, v),
                     redact,
                     waitTicks: n => io.sleep(n * tickMs()),
+                    sleep: ms => io.sleep(ms),
+                    roster: () => io.roster(),
                     sinceLogin: () => (state()?.tick ?? loginTick) - loginTick,
                 });
                 if (!ok) code = EXIT.check;
