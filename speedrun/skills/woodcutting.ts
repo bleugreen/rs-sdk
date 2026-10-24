@@ -1363,7 +1363,8 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
                 const stop = new AbortController();
                 current = stop;
                 let wantBones = false;
-                let switchTo: SegmentTechnique | null = null;
+                // set from the closures, which TypeScript's narrowing does not follow
+                let switchTo = null as SegmentTechnique | null;
                 let noneSince: number | null = null;
                 const base = owing ? prayerParams : params;
                 // lab only (holdTicks): the forced-slip hold stops reaching runs once the band is that far in
@@ -1407,14 +1408,12 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
                     },
                     onSegment: seg => {
                         ledger.observe(seg.status, seg.technique, wcLevel(sdk.getState()));
-                        // the run's last Burys judged after its last progress: the next run starts on the verdict
-                        if (!switchTo && !stop.signal.aborted) {
-                            const to = meter?.observe(seg.status, seg.technique) ?? null;
-                            if (to) {
-                                switchTo = to;
-                                switched(to, seg.status.endedTick ?? seg.status.tick);
-                            }
-                        } else meter?.observe(seg.status, seg.technique);
+                        // the run's last Burys, judged after its last progress: the next run starts on their verdict
+                        const to = meter?.observe(seg.status, seg.technique) ?? null;
+                        if (to) {
+                            switchTo = to;
+                            switched(to, seg.status.endedTick ?? seg.status.tick);
+                        }
                         segments.push(seg);
                         const st = seg.status;
                         annotation(log, session, `${b.name}:segment`, st.startedTick, st.endedTick ?? st.tick, seg.reason !== 'fault', {
