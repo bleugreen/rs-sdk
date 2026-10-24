@@ -57,7 +57,7 @@ import { crossForDelivery } from './delivery-cross';
 import { travelTo } from '../lib/toll-gate';
 import { inArea, runTo } from '../lib/travel';
 import { deliveryVia } from './mule-route';
-import { deliverySession, muleCanReady, muleHealthy, mulePreparationPath, readMulePreparation, sameWorldTile, worldTile, writeMuleReady, type MuleHold, type WorldTile } from './mule-readiness';
+import { deliverySession, muleCanReady, muleHealthy, mulePreparationPath, PRE_REQUEST_TILES, readMulePreparation, sameWorldTile, worldTile, writeMuleReady, type MuleHold, type WorldTile } from './mule-readiness';
 import { ANY_OFFER, clickBack, decideTradeClick, DROPPED_TICKS, give, newClickCtx, offerSatisfies, openTrade, sameName, sendTradeClick, type ClickCtx } from '../lib/trade';
 import { tickMs, waitUntil, type StateSource } from '../lib/wait';
 import { awaitAsk, cueAddresses, cueDir, CueWriter, nameHash, readCue, scopeOption, type AwaitAskOptions, type Cue, type CueScope, type TopUpAsk } from './altar-cue';
@@ -348,9 +348,6 @@ export function topUpCounts(pkg: Pick<Package, 'items'>, inventory: readonly Inv
     }
     return out;
 }
-
-/** Within this many tiles the mule pre-requests the scored account. */
-export const PRE_REQUEST_TILES = 12;
 
 /**
  * The mule's pre-request: while a package is ready (`ready`) and `serve` is within
