@@ -221,8 +221,9 @@ export async function approachInRange(sdk: TravelSdk, target: NearbyNpc | NamePa
     let runs = 0;
     let finds = 0;
     const done = (ok: boolean, extra: Partial<InRangeResult>): InRangeResult => ({ ok, ticks: currentTick(sdk) - t0, finds, doors, runs, ...extra });
-    const byIndex = typeof target === 'object' ? target.index : null;
-    const name = typeof target === 'object' ? target.name : String(target);
+    const given = typeof target === 'object' && 'index' in target ? target : null;
+    const byIndex = given ? given.index : null;
+    const name = given ? given.name : String(target);
     const live = (): NearbyNpc | null => (byIndex !== null ? (sdk.getState()?.nearbyNpcs.find(n => n.index === byIndex) ?? null) : findNpc(sdk.getState(), target as NamePattern, opts.near));
     const what = range > 1 ? 'a cast' : 'an attack';
     try {
