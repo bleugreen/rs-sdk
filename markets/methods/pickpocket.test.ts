@@ -1,5 +1,81 @@
 import { describe, expect, test } from 'bun:test';
-import { nextErrand, roamTo, shouldEat } from './pickpocket';
+import { FailureRun, nextErrand, roamTo, shouldEat, unroutable, walkThroughDoors, WalkFailed, type DoorWalk } from './pickpocket';
+
+// the messages sdk/actions.ts walkTo returns; the first two are the demo's trapped knights' (2026-10-24)
+const SHORT = 'Path to (2653, 3300) stops 17 tiles short at (2669, 3317) - the rest is unroutable from here (locked door or separate room?)';
+const NO_WAY = 'No path to (2654, 3285) from (2671, 3315): no waypoints';
+
+describe('unroutable', () => {
+    test('a walk with no route out of the room', () => {
+        expect(unroutable(SHORT)).toBe(true);
+        expect(unroutable(NO_WAY)).toBe(true);
+        expect(unroutable('Stuck at (2671, 3315)')).toBe(true);
+        expect(unroutable('Could not reach (2654, 3285) - stopped at (2671, 3315)')).toBe(true);
+    });
+    test('not a door: death, timeout, a blocked destination, no state', () => {
+        expect(unroutable('Walk aborted: player died en route to (2654, 3285)')).toBe(false);
+        expect(unroutable('Walk timed out after 120000ms: at (2671, 3315), destination (2654, 3285)')).toBe(false);
+        expect(unroutable('No path to (2654, 3285) from (2671, 3315): destination tile is blocked')).toBe(false);
+        expect(unroutable('No in-game player state')).toBe(false);
+    });
+});
+
+/** A DoorWalk whose walks answer `walks` in turn, recording every call. */
+function fakeDoors(walks: string[]): DoorWalk & { calls: string[] } {
+    const calls: string[] = [];
+    return {
+        calls,
+        walk: async () => {
+            const m = walks.shift() ?? 'Arrived';
+            calls.push(`walk:${m === 'Arrived' ? 'ok' : 'fail'}`);
+            return { ok: m === 'Arrived', message: m };
+        },
+        openDoor: async () => (calls.push('door'), { success: true, message: 'Door opened' }),
+        wait: async n => void calls.push(`wait:${n}`),
+        log: () => undefined
+    };
+}
+
+describe('walkThroughDoors', () => {
+    const bank = { x: 2654, z: 3285 };
+    test('a walk that arrives opens nothing', async () => {
+        const d = fakeDoors(['Arrived']);
+        await walkThroughDoors(d, bank);
+        expect(d.calls).toEqual(['walk:ok']);
+    });
+    test('unroutable: open the door, walk again', async () => {
+        const d = fakeDoors([NO_WAY, 'Arrived']);
+        await walkThroughDoors(d, bank);
+        expect(d.calls).toEqual(['walk:fail', 'door', 'walk:ok']);
+    });
+    test('still shut: wait, open again, walk again', async () => {
+        const d = fakeDoors([SHORT, NO_WAY, 'Arrived']);
+        await walkThroughDoors(d, bank, 5);
+        expect(d.calls).toEqual(['walk:fail', 'door', 'walk:fail', 'wait:5', 'door', 'walk:ok']);
+    });
+    test('no way out after both tries: throws, so the bank is not opened from the room', async () => {
+        const d = fakeDoors([SHORT, NO_WAY, NO_WAY]);
+        await expect(walkThroughDoors(d, bank)).rejects.toBeInstanceOf(WalkFailed);
+        expect(d.calls).toEqual(['walk:fail', 'door', 'walk:fail', 'wait:5', 'door', 'walk:fail']);
+    });
+    test('any other failed walk throws without touching a door', async () => {
+        const d = fakeDoors(['Walk aborted: player died en route to (2654, 3285)']);
+        await expect(walkThroughDoors(d, bank)).rejects.toThrow(/died en route/);
+        expect(d.calls).toEqual(['walk:fail']);
+    });
+});
+
+describe('FailureRun', () => {
+    test('reaches its max only on failures in a row', () => {
+        const f = new FailureRun(3);
+        expect(f.fail()).toBe(false);
+        expect(f.fail()).toBe(false);
+        f.ok();
+        expect(f.fail()).toBe(false);
+        expect(f.fail()).toBe(false);
+        expect(f.fail()).toBe(true);
+    });
+});
 
 describe('shouldEat', () => {
     const base = { maxHp: 70, heal: 20, damage: 3, window: true, ticksSinceEat: 10 };
