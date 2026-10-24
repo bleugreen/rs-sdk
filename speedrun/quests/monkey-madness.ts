@@ -2880,7 +2880,8 @@ const BODIES: Partial<Record<string, Body>> = {
                 if (!holds(sdk.getState()!, MM_OBJ.royalSeal)) throw new Error(`no royal seal from Narnode: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
                 await dismiss(sdk);
             } else if (talk) {
-                const r = await talkTo(sdk, NARNODE_NPC, talk.choices, { maxTicks: 120, idle: 4, near: NARNODE, closeModals: true });
+                const r = await talkTo(sdk, NARNODE_NPC, talk.choices, { maxTicks: 120, idle: 4, near: NARNODE, closeModals: true, ...shaped(MM_SHAPES.narnodeSpareSeal) });
+                noteShape('A Narnode spare seal', r);
                 stepNote(`S15:A Narnode's spare seal: ${holds(sdk.getState()!, MM_OBJ.royalSeal) ? 'held' : 'NOT held'} after ${r.ticks} ticks, ${r.pages} pages`);
                 if (!holds(sdk.getState()!, MM_OBJ.royalSeal)) throw new Error(`no spare royal seal from Narnode: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
             }

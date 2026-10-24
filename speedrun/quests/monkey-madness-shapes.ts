@@ -24,6 +24,12 @@ export const MM_SHAPES = {
     // ---- the gnome half (A-G)
     /** A, Narnode at mm_main 0 (mm_narnode.rs2:70-74, 103-115): Yes (:125); 'Ok, I'll do it' gives the seal (:129-131); objbox and 2 (:132-134). */
     narnodeStart: '16c, opt, state, 3c',
+    /**
+     * A re-run, Narnode at given_seal with no seal held (mm_narnode.rs2:143-176): 'Welcome back' (:144), the 4-option menu
+     * (:152), 'I've lost my copy...' and his 2 (:164-166), the spare (:167), its objbox (:168), the 3-option menu (:175),
+     * and 'I'll be back later.' (:170).
+     */
+    narnodeSpareSeal: '1c, opt, 3c, state, 1c, opt, 1c',
     /** B, the shipyard gate's worker at started (shipyardworker.rs2:65-68, mm_caranock.rs2:46-57): 'Please step inside', then p_delay(5) and the gate (:57-59). */
     shipyardGate: '12c, state',
     /** B, G.L.O. Caranock (mm_caranock.rs2:23-43). */
