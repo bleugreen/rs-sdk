@@ -111,7 +111,14 @@ describe('the jail detour', () => {
         expect(deliveryVia({ x: 3092, z: 3245 }, { x: 3241, z: 3248 }, clear)).toEqual([]);
         expect(deliveryVia({ x: 3092, z: 3245 }, { x: 3080, z: 3250 }, near)).toEqual([]);
         expect(deliveryVia({ x: 3209, z: 3215 }, { x: 3241, z: 3248 }, near)).toEqual([]);
-        expect(deliveryVia({ x: 3120, z: 3230 }, { x: 3241, z: 3248 }, near)).toEqual([]);
+    });
+
+    test('a walk retried from inside the lane keeps to the waypoints still ahead', () => {
+        const near = () => [{ x: 3121, z: 3251 }];
+        expect(deliveryVia({ x: 3106, z: 3262 }, { x: 3241, z: 3248 }, near)).toEqual([JAIL_DETOUR[1]!]);
+        expect(deliveryVia({ x: 3120, z: 3264 }, { x: 3241, z: 3248 }, near)).toEqual([JAIL_DETOUR[1]!]);
+        expect(deliveryVia({ x: 3120, z: 3264 }, { x: 3092, z: 3245 }, near)).toEqual([JAIL_DETOUR[0]!]);
+        expect(deliveryVia({ x: 3134, z: 3266 }, { x: 3092, z: 3245 }, near)).toEqual([JAIL_DETOUR[0]!]);
     });
 
     const area = wanderArea();

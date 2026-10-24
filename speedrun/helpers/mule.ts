@@ -1454,7 +1454,11 @@ class Mule {
             }
             // One waypoint at a time, so each stretch is the pathfinder's own route between them.
             via = player.level === 0 && to.level === 0 && !crossings.length ? deliveryVia(from, to) : [];
-            for (const waypoint of via) await walk(waypoint);
+            for (const waypoint of via) {
+                await walk(waypoint).catch((e: unknown) => {
+                    throw new Error(`waypoint ${waypoint.x},${waypoint.z}: ${e instanceof Error ? e.message : String(e)}`);
+                });
+            }
             await walk(to);
             ok = true;
             return true;

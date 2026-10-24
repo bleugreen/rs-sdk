@@ -14,7 +14,7 @@ import { muleFromLedger, muleRunOptions } from './mule-ledger';
 import { cancelMulePreparation, deliverySession, heldFor, holdMule, muleReadyPath, prepareMule, readMuleReady, readyFor, type MuleHeldExpected, type MuleReadyExpected } from './mule-readiness';
 import { memoryRoleState, type RoleContext } from './role';
 import { CueGate } from './standalone';
-import { JAIL_DETOUR } from './mule-route';
+import { JAIL_DETOUR, nearJailGuards } from './mule-route';
 
 const manifest = readFileSync(MANIFEST, 'utf8');
 const catalog = loadFixtureCatalog(objPack());
@@ -46,7 +46,8 @@ function fixture(rows: string[], initialState: Record<string, unknown> = {}, con
     const logs: { message: string; data?: Record<string, unknown> }[] = [];
     const bankVisits: { x: number; z: number }[] = [];
     let walkBlocked = false;
-    const walk = simulateWalking(sdk, { speed: 32, blocked: () => walkBlocked });
+    let blockedAt: (x: number, z: number) => boolean = () => false;
+    const walk = simulateWalking(sdk, { speed: 32, blocked: (x, z) => walkBlocked || blockedAt(x, z) });
     const tidy = (items: InventoryItem[]) => items.map((i, slot) => ({ ...i, slot }));
     const put = (items: InventoryItem[], id: number, name: string, count: number) => {
         if (isStackableName(name)) {
@@ -164,6 +165,7 @@ function fixture(rows: string[], initialState: Record<string, unknown> = {}, con
     return {
         sdk, bank, state, logs, bankVisits, options, walk, pump, until, prepare, hold, ready, held, expected, completedOffers,
         block: (blocked = true) => { walkBlocked = blocked; },
+        blockTiles: (at: (x: number, z: number) => boolean) => { blockedAt = at; },
         shortWithdrawals: () => { shortWithdrawal = true; },
         emptyConfirmation: (onEmpty: () => void = () => {}) => { emptyConfirm = onEmpty; },
         corruptCompletion: () => { unexplained = [{ slot: 27, id: 99999, name: 'Unexplained item', count: 1, optionsWithIndex: [] }]; },
@@ -783,6 +785,28 @@ describe('the Draynor jail detour', () => {
             await f.until(() => f.bankVisits.length === 2);
             const back = f.logs.filter(l => l.message === 'delivery travel' && l.data?.purpose === 'bank').at(-1)!;
             expect(back.data).toMatchObject({ ok: true, via: [...JAIL_DETOUR].reverse() });
+        } finally { await f.stop(); }
+    }, 30_000);
+
+    test('a blocked waypoint fails the walk naming it, never takes the road, and the retry keeps to the lane', async () => {
+        const f = fixture(['H18']);
+        const pkg = f.options.packages[0]!;
+        const expected = f.prepare(pkg);
+        // The lane east of the first waypoint is impassable: the stretch to the second one stalls.
+        f.blockTiles((x, z) => x > 3110 && z >= 3258);
+        f.start();
+        try {
+            await f.until(() => f.logs.some(l => l.message === 'delivery travel' && l.data?.purpose === 'meeting' && l.data?.ok === false));
+            const failed = f.logs.find(l => l.message === 'delivery travel' && l.data?.purpose === 'meeting' && l.data?.ok === false)!;
+            expect(String(failed.data?.reason)).toStartWith('waypoint 3134,3266: ');
+            expect(f.ready(expected)).toBe(false);
+            expect(f.sdk.state!.player).toMatchObject({ worldX: 3106, worldZ: 3262 });
+            f.blockTiles(() => false);
+            await f.until(() => f.ready(expected));
+            expect(f.logs.filter(l => l.message === 'delivery travel' && l.data?.purpose === 'meeting' && l.data?.ok === true).at(-1)!.data?.via).toEqual([JAIL_DETOUR[1]]);
+            // No click, before or after the failure, ever sent the mule toward the guards.
+            expect(f.walk.clicks.filter(c => nearJailGuards(c))).toEqual([]);
+            expect(f.sdk.state!.player).toMatchObject({ worldX: pkg.at!.x, worldZ: pkg.at!.z });
         } finally { await f.stop(); }
     }, 30_000);
 });
