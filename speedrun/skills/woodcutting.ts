@@ -1398,7 +1398,14 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
                 const spare = productLogs(here, b.tree);
                 for (const i of spare.slice(0, 5)) void sdk.sendDropItem(i.slot);
                 if (spare.length) o.log(`${b.name}: dropped ${Math.min(5, spare.length)} ${b.tree} log(s) before the run`);
-                if (needLoad) await topUp();
+                if (needLoad) {
+                    await topUp();
+                    // The runes' load alone (the cue's lastLoad) leaves nothing to do: the band closes on it, no run started.
+                    if (owing && !endWork(sdk.getState()!)) {
+                        ended = 'done';
+                        break;
+                    }
+                }
                 needLoad = false;
                 const prayerXp = xpOf(sdk.getState(), 'prayer');
                 const stop = new AbortController();
