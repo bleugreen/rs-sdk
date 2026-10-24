@@ -9,7 +9,9 @@
 #
 # Runs from the operator's Mac (Cairn executor `local`) inside a checkout: it holds the keys and the
 # address files in ~/.rs-fleet, read there and never printed. Each machine logs in ONE throwaway per
-# start (run host cairn_r83rh, twin cairn_r83tw, minted at prep, auto-registered on first login). It
+# start (RS83_RH_BOT / RS83_TW_BOT, default cairn_r83rh / cairn_r83tw, minted at prep and auto-registered
+# on first login; prep mints a new password only when bots/NAME/bot.env is missing, so once a window's
+# bot.env files have been removed, the next window needs new names). It
 # touches nothing but ~/rs83: not ~/rs-sdk, its worktrees, the gate timers or their account. Ask host
 # for the window first, and send host the login count after.
 #
@@ -29,6 +31,7 @@ scrub() { sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<addr>/g'; }
 [ -f "$F/id_ed25519_ashburn" ] && [ -f "$F/id_ed25519_rehearsal" ] || { echo "no fleet keys on $(uname -n); run from executor local" >&2; exit 2; }
 
 REV="${RS83_REV:-$(git rev-parse --verify -q origin/main || git rev-parse main)}"
+RH_BOT="${RS83_RH_BOT:-cairn_r83rh}"; TW_BOT="${RS83_TW_BOT:-cairn_r83tw}"
 PATHS=(docs/speedrun/scripts/demo-latency-probe.ts speedrun/lib server/webclient package.json bun.lock tsconfig.json)
 
 # stdin = the tar; $1 = bot name.
@@ -49,14 +52,14 @@ start_cmd() {
 case "${1:-}" in
   prep)
     tar=$(mktemp); git archive --format=tar "$REV" "${PATHS[@]}" > "$tar"; echo "rev $REV"
-    rh bash -c "'$(printf %s "$prep_remote" | sed "s/'/'\\\\''/g")'" _ cairn_r83rh < "$tar" 2>&1 | scrub &
-    tw bash -c "'$(printf %s "$prep_remote" | sed "s/'/'\\\\''/g")'" _ cairn_r83tw < "$tar" 2>&1 | scrub &
+    rh bash -c "'$(printf %s "$prep_remote" | sed "s/'/'\\\\''/g")'" _ "$RH_BOT" < "$tar" 2>&1 | scrub &
+    tw bash -c "'$(printf %s "$prep_remote" | sed "s/'/'\\\\''/g")'" _ "$TW_BOT" < "$tar" 2>&1 | scrub &
     wait; rm -f "$tar" ;;
   start)
     delays="${2:-0,50,100,150,200,250,300,300,250,200,150,100,50,0}"; label="${RS83_LABEL:-pair}"
     for x in rh tw; do [ "$($x -n 'ps -C bun -o args= | grep -c rs83' || true)" = 0 ] || { echo "$x busy"; exit 1; }; done
     at=$(( ($(date +%s) / 60 + 1) * 60 )); [ $(( at - $(date +%s) )) -lt 25 ] && at=$(( at + 60 ))
-    rh -n "$(start_cmd "rh-$label" cairn_r83rh "$at" "$delays")" & tw -n "$(start_cmd "tw-$label" cairn_r83tw "$at" "$delays")" &
+    rh -n "$(start_cmd "rh-$label" "$RH_BOT" "$at" "$delays")" & tw -n "$(start_cmd "tw-$label" "$TW_BOT" "$at" "$delays")" &
     sleep 12; kill %1 %2 2>/dev/null || true
     echo "both start at $(date -u -r "$at" +%TZ); about 4.5 min for the default delays" ;;
   status)
