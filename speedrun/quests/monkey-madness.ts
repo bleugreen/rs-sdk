@@ -32,8 +32,8 @@ import type { BotWorldState, PrayerName } from '../../sdk/types';
 import type { QuestKey } from '../data/quest-stages';
 import { act, actConverse, dropItems, invOp, opLoc, pickup, slotOf, talkTo, useOn, walkTo, wield } from '../lib/act';
 import { fight, prayerActive, setPrayer, Upkeep } from '../lib/combat';
-import { converse, type Interrupt } from '../lib/converse';
-import { pageText } from '../lib/dialogue';
+import { converse, type ConverseResult, type Interrupt } from '../lib/converse';
+import { classifyPage, pageText, type PageKind } from '../lib/dialogue';
 import { compactJournal, journalProbeName, journalText, questStatus, type QuestView } from '../lib/quests';
 import { DROPPED_TICKS, receiveFrom, sameName, swap, tradeOf, type GiveSpec, type ReceiveResult, type WantSpec } from '../lib/trade';
 import { deletesFollowerItem, glide, GNOME_STRONGHOLD_GATE, passGate, runTo, SPIRIT_TREES, spiritTree, teleport, teleportRefusal, type Hop } from '../lib/travel';
@@ -41,7 +41,8 @@ import { solveOnPanel } from '../lib/puzzle';
 import { currentTick, waitTicks, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, findLoc, invCount, messagesSince, pos, waitForNpc, type StateLike } from '../lib/world';
 import type { Check, Observed, Step, StepContext } from '../runner/step';
-import { drinkPrayerTo, prayerCovers, slotNeed, slotsCover, type QuestItem } from './segments';
+import { drinkPrayerTo, prayerCovers, slotNeed, slotsCover, talkShape, type DialogueMode, type QuestItem } from './segments';
+import { CHILD_TALISMAN, CHILD_TALKS, childTalkNeed, lumdoRefuses, MM_SHAPES, narnodeComplete } from './monkey-madness-shapes';
 import { cueDir, CueWriter, writeTopUpAsk, type AskItem, type CueScope } from '../helpers/altar-cue';
 import { itemLabel, MANIFEST, parseLedger } from '../tools/slot-ledger';
 import { readFileSync } from 'fs';
@@ -50,8 +51,8 @@ export const quest: QuestKey = 'mm';
 export const stepId = 'S15';
 
 export interface Options {
-    /** Default 'fixed'. 'burst' needs rs/200's converse burst mode; until then it is refused. */
-    dialogue?: 'burst' | 'fixed';
+    /** Default 'fixed'. 'burst' clears each conversation's continue runs blind by its shape (monkey-madness-shapes.ts, segments.ts talkShape). */
+    dialogue?: DialogueMode;
     /** The H12 giver; absent: the kit must already be held. */
     kitFrom?: string;
     /** Default 'ladder' (rs/59's drop); a failed drop falls back to 'wait' inside segment N. */
@@ -834,6 +835,28 @@ export function topUpWanted(s: BotWorldState, topUpBelow: number): boolean {
 /** The running segment's eat thresholds, set by stepFor before each body runs. */
 let eating: { below: number; topUpBelow?: number } = { below: SEGMENT_EATING.otherwise };
 
+/** The running segment's dialogue mode, set by stepFor before each body runs. */
+let dialogue: DialogueMode = DEFAULT_OPTIONS.dialogue;
+
+/**
+ * Converse options for a conversation of `shape` (MM_SHAPES) in `mode`: talkShape's in burst; none in fixed, so a
+ * fixed run's converse calls carry exactly the options they had before burst existed.
+ */
+export function dialogueOptions(mode: DialogueMode, shape: string): ReturnType<typeof talkShape> | Record<string, never> {
+    return mode === 'burst' ? talkShape({ dialogue: mode }, shape) : {};
+}
+
+const shaped = (shape: string) => dialogueOptions(dialogue, shape);
+
+/** Note a burst conversation against its shape: the pages seen, whether they matched, and the bursts. */
+function noteShape(label: string, r: ConverseResult | undefined): void {
+    if (dialogue !== 'burst') return;
+    const s = r?.shape;
+    if (!r || !s) return stepNote(`S15 shape ${label}: no dialogue`);
+    const how = s.burst ? `bursts ${s.bursts}, failed ${s.failedBursts}, ${s.burstPages}/${r.pages} pages burst` : 'fixed';
+    stepNote(`S15 shape ${label}: ${s.matches ? 'match' : 'MISMATCH'} seen [${s.seen}] expected [${s.expected}], ${r.ticks} ticks, ${how}${s.stopped ? `, stopped ${s.stopped}` : ''}${r.ok ? '' : `, not ok: ${r.reason ?? 'unknown'}`}`);
+}
+
 /** Drink a prayer potion below this many points while a prayer is on (a dose restores 30 at Prayer 94). */
 export const DRINK_BELOW = 20;
 
@@ -1352,7 +1375,7 @@ async function locClick(sdk: Sdk, at: { x: number; z: number }, op: RegExp): Pro
  * before the choice, so the search is repeated until `got` holds; a knockout
  * into the cell ends it (the caller's jailSafe takes over).
  */
-async function searchCrate(sdk: Sdk, at: { x: number; z: number }, yes: RegExp, got: Pred, label: string, note: (line: string) => void = () => {}): Promise<void> {
+async function searchCrate(sdk: Sdk, at: { x: number; z: number }, yes: RegExp, got: Pred, label: string, shape: string, note: (line: string) => void = () => {}): Promise<void> {
     let reason = '';
     for (let i = 0; i < 6 && !inCell(sdk); i++) {
         // The crate's inv_add gives nothing into a full pack (quest_mm.rs2:924-942). H12 fills it (rs/158, 07:0x), and J and
@@ -1365,8 +1388,9 @@ async function searchCrate(sdk: Sdk, at: { x: number; z: number }, yes: RegExp, 
         }
         // The crate's script waits p_delay(2) before its choice (quest_mm.rs2:904-969), inside act's 5-tick re-send:
         // the click-to-dialogue ticks are noted for the shared re-send race (rs/309).
-        const r = await actConverse(sdk, await locClick(sdk, at, /search/i), [yes], { done: got, maxTicks: 25, idle: 3, resendEvery: 5 });
+        const r = await actConverse(sdk, await locClick(sdk, at, /search/i), [yes], { done: got, maxTicks: 25, idle: 3, resendEvery: 5, ...shaped(shape) });
         note(`S15 ${label}: dialogue at click+${r.dialogue && r.dialogue.firstTick >= 0 ? r.dialogue.firstTick - r.startTick : 'none'}, resends ${r.resends}`);
+        noteShape(label, r.dialogue);
         if (r.ok || got(sdk.getState()!)) return;
         reason = r.reason ?? '';
     }
@@ -1374,17 +1398,19 @@ async function searchCrate(sdk: Sdk, at: { x: number; z: number }, yes: RegExp, 
 }
 
 /** Use an inventory item on the NPC and answer what it says; done when `effect` holds. */
-async function useOnNpc(sdk: Sdk, item: number, npcName: RegExp, effect: Pred, idle = 3): Promise<void> {
+async function useOnNpc(sdk: Sdk, item: number, npcName: RegExp, effect: Pred, shape: string, idle = 3): Promise<void> {
     const npc = await waitForNpc(sdk, npcName, 10);
     if (!npc) throw new Error(`no ${npcName} near ${where(sdk)}`);
-    const r = await actConverse(sdk, () => sdk.sendUseItemOnNpc(slotOf(sdk, item), npc.index), [], { done: effect, maxTicks: 60, idle, resendEvery: 5 });
+    const r = await actConverse(sdk, () => sdk.sendUseItemOnNpc(slotOf(sdk, item), npc.index), [], { done: effect, maxTicks: 60, idle, resendEvery: 5, ...shaped(shape) });
+    noteShape(`use ${item} on ${npc.name}`, r.dialogue);
     if (!r.ok) throw new Error(`use ${item} on ${npc.name}: ${r.reason}`);
 }
 
 /** Talk to an NPC through a scripted conversation; throws on a choice the list does not answer, or when fewer than `minPages` pages were seen. */
-async function talk(sdk: Sdk, npc: RegExp, choices: RegExp[], o: { near?: { x: number; z: number }; minPages?: number; idle?: number } = {}): Promise<void> {
+async function talk(sdk: Sdk, npc: RegExp, choices: RegExp[], o: { shape: string; near?: { x: number; z: number }; minPages?: number; idle?: number }): Promise<void> {
     await topUp(sdk);
-    const r = await talkTo(sdk, npc, choices, { maxTicks: 900, idle: o.idle ?? 3, ...(o.near ? { near: o.near } : {}) });
+    const r = await talkTo(sdk, npc, choices, { maxTicks: 900, idle: o.idle ?? 3, ...(o.near ? { near: o.near } : {}), ...shaped(o.shape) });
+    noteShape(`talk ${npc.source}`, r);
     if (!r.ok || !r.opened) throw new Error(`talk to ${npc}: ${r.reason ?? 'no dialogue'}`);
     if (r.pages < (o.minPages ?? 0)) throw new Error(`talk to ${npc}: ${r.pages} pages, expected at least ${o.minPages}: ${r.transcript.slice(-3).join(' / ')}`);
 }
@@ -1568,16 +1594,17 @@ async function asMonkey(sdk: Sdk): Promise<void> {
  * A chapter cutscene (3 on level 0, 4 on level 1), already queued: the teleport into mapsquare 41_71, its pages
  * and fades, and the teleport back to the tile it was queued from (%mm_cutscene_coord), then the chapter card.
  */
-async function chapterCutscene(sdk: Sdk, level: 0 | 1, label: string): Promise<number> {
+async function chapterCutscene(sdk: Sdk, level: 0 | 1, label: string, shape: string): Promise<number> {
     const zone: Area = { ...CUTSCENE_ZONE, level };
     let entered = inArea(sdk, zone);
     const r = await converse(sdk, [], {
-        idle: 6, openTicks: 40, maxTicks: 400, unmatched: 'stop', closeModals: true,
+        idle: 6, openTicks: 40, maxTicks: 400, unmatched: 'stop', closeModals: true, ...shaped(shape),
         until: s => {
             if (tileIn(pos(s), zone)) entered = true;
             return entered && !tileIn(pos(s), zone);
         },
     });
+    noteShape(`the ${label} cutscene`, r);
     if (!entered || inArea(sdk, zone)) throw new Error(`the ${label} cutscene did not finish: ${r.reason ?? `${r.pages} pages`} (at ${where(sdk)})`);
     // The chapter card can open just after the teleport back.
     const card = await waitUntil(sdk, s => s.modalOpen, { maxTicks: 4 });
@@ -1728,18 +1755,19 @@ async function hangarRoute(ctx: Ctx, toDaero: () => Promise<void>): Promise<void
     const { sdk } = ctx;
     // The backpack monkey's chatter page after a talk click no longer counts as the click's answer (rs/411's page rules
     // in lib/act, rs/481), so each hop is one talk.
-    const hop = async (label: string, npc: RegExp, choices: RegExp[], arrived: (s: BotWorldState) => boolean, opts: Record<string, unknown>) => {
-        const r = await talkTo(sdk, npc, choices, { maxTicks: 120, ...opts, until: arrived, ...CHATTER });
+    const hop = async (label: string, npc: RegExp, choices: RegExp[], arrived: (s: BotWorldState) => boolean, opts: Record<string, unknown>, shape: string) => {
+        const r = await talkTo(sdk, npc, choices, { maxTicks: 120, ...opts, until: arrived, ...CHATTER, ...shaped(shape) });
+        noteShape(`hop ${npc.source}`, r);
         if (!arrived(sdk.getState()!)) throw new Error(`${label}: ${r.reason ?? r.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
     };
     if (!inArea(sdk, AREAS.atoll) && !inArea(sdk, HANGAR) && !inArea(sdk, CRASH_ISLAND)) {
         await toDaero();
         // Daero (mm_daero.rs2:218-238): Yes, the blindfold, a fade, the powered hangar.
-        await hop('Daero did not take the player to the hangar', /^Daero$/i, [/^Yes$/], s => inArea(s, HANGAR), { idle: 4, near: DAERO });
+        await hop('Daero did not take the player to the hangar', /^Daero$/i, [/^Yes$/], s => inArea(s, HANGAR), { idle: 4, near: DAERO }, MM_SHAPES.daeroReturn);
     }
     // "Shall we return to Crash Island?" (mm_waydar.rs2:5-19): Yes, the glider map, a p_delay(3), the island.
-    if (inArea(sdk, HANGAR)) await hop('Waydar did not fly to Crash Island', /^Waydar$/i, [/^Yes$/], s => inArea(s, CRASH_ISLAND), { idle: 4, closeModals: false });
-    if (inArea(sdk, CRASH_ISLAND)) await hop('Lumdo did not sail to the atoll', /^Lumdo$/i, [], s => inArea(s, AREAS.atoll), { idle: 2 });
+    if (inArea(sdk, HANGAR)) await hop('Waydar did not fly to Crash Island', /^Waydar$/i, [/^Yes$/], s => inArea(s, CRASH_ISLAND), { idle: 4, closeModals: false }, MM_SHAPES.waydarReturn);
+    if (inArea(sdk, CRASH_ISLAND)) await hop('Lumdo did not sail to the atoll', /^Lumdo$/i, [], s => inArea(s, AREAS.atoll), { idle: 2 }, MM_SHAPES.lumdoSail);
 }
 
 /** Varrock to the stronghold: Varrock's young spirit tree goes only to Tree Gnome Village (spirit_tree.rs2, loc_1317), whose tree goes on. */
@@ -1860,7 +1888,8 @@ export async function letOut(ctx: Ctx): Promise<void> {
             continue;
         }
         const c0 = st().tick;
-        const r = await talkTo(sdk, m, [], { attempts: 1, openTicks: LET_OUT_OPEN, maxTicks: 60, idle: 6, until: s => !inCage(s), interrupts: [MONKEY_CHATTER] });
+        const r = await talkTo(sdk, m, [], { attempts: 1, openTicks: LET_OUT_OPEN, maxTicks: 60, idle: 6, until: s => !inCage(s), interrupts: [MONKEY_CHATTER], ...shaped(MM_SHAPES.minderOut) });
+        noteShape(`T minder (out, attempt ${attempts})`, r);
         why = r.reason ?? r.transcript.slice(-2).join(' / ');
         stepNote(`${head}, ${r.clicks} click, ${st().tick - c0} ticks: ${inCage(sdk) ? `refused (${why})` : 'out'}`);
         if (inCage(sdk)) exclude = m.index;
@@ -1882,13 +1911,11 @@ async function childTalks(ctx: Ctx, note: (line: string) => void, progress: Chil
     const { sdk } = ctx;
     if (holds(sdk.getState()!, MM_OBJ.talisman)) return;
     const child = /^Monkey child$/i;
-    // Each talk: its choices and the house time it needs (fixed dialogue, with the walk in).
-    const talks: Array<{ name: string; choices: RegExp[]; need: number; pick?: true }> = [
-        { name: 'hello', choices: [], need: 12 },
-        { name: 'uncle', choices: [/monkey's uncle/i], need: 12 },
-        { name: 'bananas wanted', choices: [/How many bananas/i], need: 16 },
-        { name: 'bananas', choices: [], need: 16, pick: true },
-    ];
+    // Each talk: its choices, its shape and the house time it needs in this dialogue mode, with the walk in (CHILD_TALKS).
+    const choices: Record<string, RegExp[]> = { uncle: [/monkey's uncle/i], 'bananas wanted': [/How many bananas/i] };
+    const talks = CHILD_TALKS.map(t => ({ name: t.name, choices: choices[t.name] ?? [], shape: t.shape, need: childTalkNeed(t, dialogue), ...(t.name === 'bananas' ? { pick: true as const } : {}) }));
+    /** The aunt's loops the four talks used: each talk's `leftAt` (her last exit), counted once each. */
+    const loops = new Set<number>();
     let leftAt = -Infinity;
     let seenIn = false;
     const aunt = () => sdk.getState()!.nearbyNpcs.find(n => AUNT.test(n.name));
@@ -1961,8 +1988,9 @@ async function childTalks(ctx: Ctx, note: (line: string) => void, progress: Chil
                 const p = await searchBananas(sdk, BANANAS);
                 note(`S15:O bananas: ${p.searches} searches, ${p.ticks} ticks, aunt ${JSON.stringify(auntTile())}, ${JSON.stringify(left())}`);
             }
-            note(`S15:O talk '${t.name}' at t=${currentTick(sdk)}: aunt ${JSON.stringify(auntTile())}, ${JSON.stringify(left())}, left seen at ${leftAt}`);
-            await talk(sdk, child, t.choices, { near: CHILD });
+            note(`S15:O talk '${t.name}' at t=${currentTick(sdk)}: aunt ${JSON.stringify(auntTile())}, ${JSON.stringify(left())}, left seen at ${leftAt}, need ${t.need}`);
+            loops.add(leftAt);
+            await talk(sdk, child, t.choices, { near: CHILD, shape: t.shape });
             if (t.pick) {
                 if (invCount(sdk, MM_OBJ.banana) > 0) throw new Error('the child did not take the bananas');
                 progress.given = currentTick(sdk);
@@ -1971,16 +1999,18 @@ async function childTalks(ctx: Ctx, note: (line: string) => void, progress: Chil
             }
             progress.talks = i + 1;
         }
+        if (loops.size) note(`S15:O child talks: ${loops.size} aunt loop(s) for ${progress.talks === talks.length ? 'all four' : 'the talks run here'} (dialogue ${dialogue}; her exits at ${[...loops].map(t => (Number.isFinite(t) ? t : 'already out')).join(', ')})`);
         const given = progress.given ?? currentTick(sdk);
         // The toy's timer (mm_monkey_child.rs2:142, settimer 100) runs from the bananas; the aunt is back in long before it ends.
         await toWait();
         if (progress.setDown) await retakeSharks(sdk, progress, note);
         await waitUntil(sdk, s => s.tick - given >= 101, { maxTicks: 120 });
-        // Seven pages and the objbox, plus the 6-tile walk in: with 12 left, the aunt came back mid-talk once.
-        await window(20);
+        // Seven pages (the objbox the last), plus the 6-tile walk in: with 12 left, the aunt came back mid-talk once.
+        await window(childTalkNeed(CHILD_TALISMAN, dialogue));
         note(`S15:O talk 'talisman' at t=${currentTick(sdk)}: aunt ${JSON.stringify(auntTile())}, ${JSON.stringify(left())}, left seen at ${leftAt}`);
         await topUp(sdk);
-        const r = await talkTo(sdk, child, [], { maxTicks: 60, idle: 3, near: CHILD });
+        const r = await talkTo(sdk, child, [], { maxTicks: 60, idle: 3, near: CHILD, ...shaped(CHILD_TALISMAN.shape) });
+        noteShape('the child (talisman)', r);
         if (!holds(sdk.getState()!, MM_OBJ.talisman)) throw new Error(`no talisman from the child: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
         await dismiss(sdk);
         // Out before the aunt is back: both in the house is the one unsafe place. O ends here, Melee on.
@@ -2687,9 +2717,24 @@ async function clearScorpions(sdk: Sdk, note: (line: string) => void): Promise<v
     if (scorpionsNear(sdk.getState()!).length) throw new Error(`a scorpion still a threat on Crash Island after 4 fights (at ${where(sdk)})`);
 }
 
-/** Waydar's arrival intro on Crash Island ends on his "Of course." (mm_waydar.rs2:70); no later Waydar or cutscene page says it. */
-export function isWaydarIntroEnd(text: string): boolean {
-    return /\bOf course\.(?!\w)/.test(text);
+/**
+ * Waydar's first talk after the flight, watched beside it: a talk that opens on a continue page is his arrival intro
+ * (mm_waydar.rs2:65-70, four pages and no state page), over once its dialogue has closed; one that opens on the menu is
+ * the Lumdo talk, which this never ends. Judged by the opening page because a burst clears the intro's last page
+ * without the client publishing it.
+ */
+export function waydarIntroWatch(): { see(s: Pick<BotWorldState, 'dialog'>): void; readonly over: boolean } {
+    let opened: PageKind | null = null;
+    let over = false;
+    return {
+        see(s) {
+            if (s.dialog.isOpen) opened ??= classifyPage(s.dialog);
+            else if (opened === 'continue') over = true;
+        },
+        get over() {
+            return over;
+        },
+    };
 }
 
 /** Daero's option 1 grants 35,000 Strength xp (mm_daero.rs2:294-302: stat_advance(strength, 350000), tenths). */
@@ -2742,7 +2787,8 @@ const BODIES: Partial<Record<string, Body>> = {
             await preDose(sdk);
             await intoTree(ctx, 0);
             // "Start Monkey Madness?" Yes (mm_narnode.rs2:124-140): the story, the seal and its objbox, the chapter card.
-            const r = await talkTo(sdk, NARNODE_NPC, [/^Yes$/], { maxTicks: 200, idle: 4, near: NARNODE, closeModals: true, until: s => holds(s, MM_OBJ.royalSeal) });
+            const r = await talkTo(sdk, NARNODE_NPC, [/^Yes$/], { maxTicks: 200, idle: 4, near: NARNODE, closeModals: true, until: s => holds(s, MM_OBJ.royalSeal), ...shaped(MM_SHAPES.narnodeStart) });
+            noteShape('A Narnode', r);
             if (!holds(sdk.getState()!, MM_OBJ.royalSeal)) throw new Error(`no royal seal from Narnode: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
             await dismiss(sdk);
         },
@@ -2761,11 +2807,12 @@ const BODIES: Partial<Record<string, Body>> = {
             // lands south of the yard, east of the gate, so the gate is taken unless the player is already inside.
             if (!inShipyard(sdk)) {
                 await go(ctx, SHIPYARD_GATE_FOOT, 1);
-                const g = await actConverse(sdk, await locClick(sdk, SHIPYARD_GATE, /^open$/i), [], { done: s => pos(s).x >= SHIPYARD_GATE.x, maxTicks: 90, idle: 8, resendEvery: 10 });
+                const g = await actConverse(sdk, await locClick(sdk, SHIPYARD_GATE, /^open$/i), [], { done: s => pos(s).x >= SHIPYARD_GATE.x, maxTicks: 90, idle: 8, resendEvery: 10, ...shaped(MM_SHAPES.shipyardGate) });
+                noteShape('B shipyard gate', g.dialogue);
                 if (pos(sdk).x < SHIPYARD_GATE.x) throw new Error(`the shipyard gate did not open: ${g.reason} (at ${where(sdk)})`);
             }
             await go(ctx, CARANOCK, 1);
-            await talk(sdk, /Caranock$/i, [], { near: CARANOCK, minPages: 6 });
+            await talk(sdk, /Caranock$/i, [], { near: CARANOCK, minPages: 6, shape: MM_SHAPES.caranock });
             // The seal's last use was the gate: only the shipyard worker needs it (mm_caranock.rs2:50), and Lumdo's
             // no-seal branch at G ends the same way (mm_lumdo.rs2:39-47). Its slot goes to a shark from here on.
             await dropHeld(sdk, MM_OBJ.royalSeal);
@@ -2781,7 +2828,8 @@ const BODIES: Partial<Record<string, Body>> = {
             }
             await intoTree(ctx, 0);
             // The report; Narnode writes the orders behind a p_delay(3) (mm_narnode.rs2 p4-p6).
-            const r = await talkTo(sdk, NARNODE_NPC, [], { maxTicks: 200, idle: 6, near: NARNODE, closeModals: true, until: s => holds(s, MM_OBJ.orders) });
+            const r = await talkTo(sdk, NARNODE_NPC, [], { maxTicks: 200, idle: 6, near: NARNODE, closeModals: true, until: s => holds(s, MM_OBJ.orders), ...shaped(MM_SHAPES.narnodeOrders) });
+            noteShape('C Narnode', r);
             if (!holds(sdk.getState()!, MM_OBJ.orders)) throw new Error(`no orders from Narnode: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
             await dismiss(sdk);
         },
@@ -2796,8 +2844,9 @@ const BODIES: Partial<Record<string, Body>> = {
             if (chebyshev(pos(sdk), DAERO) > 3) await go(ctx, DAERO, 2);
             // The orders, the decode (p_delay 3), then "Leave" only after all three topics were opened (mm_daero.rs2:129-133).
             const r = await talkTo(sdk, /^Daero$/i, [/journey/i, /Return to previous/i, /10th squad/i, /Return to previous/i, /Caranock/i, /Return to previous/i, /^Leave/i, /Who is it/i], {
-                maxTicks: 300, idle: 8, near: DAERO, closeModals: true, until: s => inArea(s, OLD_HANGAR),
+                maxTicks: 300, idle: 8, near: DAERO, closeModals: true, until: s => inArea(s, OLD_HANGAR), ...shaped(MM_SHAPES.daeroOrders),
             });
+            noteShape('D Daero', r);
             if (!inArea(sdk, OLD_HANGAR)) throw new Error(`Daero did not take the player to the hangar: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
             await dismiss(sdk);
         },
@@ -2813,7 +2862,7 @@ const BODIES: Partial<Record<string, Body>> = {
             // answers with a menu instead, so the talk is skipped when the reinitialisation line is in the journal.
             const journal = journalText(sdk.getState()!, 'mm');
             if (!journal?.includes(REINIT_PENDING)) {
-                await talk(sdk, /^Daero$/i, [], { minPages: 10, idle: 4 });
+                await talk(sdk, /^Daero$/i, [], { minPages: 10, idle: 4, shape: MM_SHAPES.daeroWaydar });
                 await dismiss(sdk);
             }
             const panel = await findLoc(sdk, { name: /reinitialisation panel/i, radius: 20 });
@@ -2838,9 +2887,11 @@ const BODIES: Partial<Record<string, Body>> = {
             if (inArea(sdk, CRASH_ISLAND)) return;
             if (chebyshev(pos(sdk), DAERO_HANGAR) > 3) await go(ctx, DAERO_HANGAR, 1);
             // Daero at reinit_complete orders Waydar to fly (mm_daero.rs2:30-42): mm_daero to daero_complete.
-            const d = await talkTo(sdk, /^Daero$/i, [], { maxTicks: 120, idle: 4, near: DAERO_HANGAR });
+            const d = await talkTo(sdk, /^Daero$/i, [], { maxTicks: 120, idle: 4, near: DAERO_HANGAR, ...shaped(MM_SHAPES.daeroReinit) });
+            noteShape('F Daero', d);
             if (!d.ok) throw new Error(`Daero: ${d.reason}`);
-            const r = await talkTo(sdk, /^Waydar$/i, [/^Yes$/], { maxTicks: 120, idle: 4, closeModals: false, until: s => inArea(s, CRASH_ISLAND) });
+            const r = await talkTo(sdk, /^Waydar$/i, [/^Yes$/], { maxTicks: 120, idle: 4, closeModals: false, until: s => inArea(s, CRASH_ISLAND), ...shaped(MM_SHAPES.waydarFly) });
+            noteShape('F Waydar', r);
             if (!inArea(sdk, CRASH_ISLAND)) throw new Error(`Waydar did not fly to Crash Island: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
         },
         postconditions: s => inArea(s, CRASH_ISLAND) || 'not on Crash Island',
@@ -2852,28 +2903,43 @@ const BODIES: Partial<Record<string, Body>> = {
             if (inArea(sdk, AREAS.atoll)) return;
             // Lumdo (no choices): proof by the seal, then he won't take the player (mm_lumdo.rs2:32-75).
             await clearScorpions(sdk, o.note);
-            const l = await talkTo(sdk, /^Lumdo$/i, [], { maxTicks: 120, idle: 3 });
+            const l = await talkTo(sdk, /^Lumdo$/i, [], { maxTicks: 120, idle: 3, ...shaped(lumdoRefuses(holds(sdk.getState()!, MM_OBJ.royalSeal))) });
+            noteShape('G Lumdo', l);
             if (!l.ok) throw new Error(`Lumdo: ${l.reason}`);
             // Waydar orders Lumdo (within 10 tiles), then the chapter 2 cutscene, which ends on the atoll (mm_waydar.rs2:54-82).
             const onAtoll = (s: BotWorldState) => inArea(s, AREAS.atoll) && pos(s).level === 0;
             // The flight leaves mm_waydar at 0, so the first talk is his 4-page arrival intro (mm_waydar.rs2:65-70), which
             // sets it to arrived; only the next talk offers the Lumdo option. converse's `until` sees closed states only, so
-            // the intro's last page is watched beside the talk, and the talk ends as soon as that page has closed. A hit
-            // taken ends it too (a swing closed the chat): the scorpions are cleared and the talk is asked again.
+            // the intro is watched beside the talk (waydarIntroWatch), and the talk ends as soon as it has closed. A hit
+            // taken ends it too (a swing closed the chat): the scorpions are cleared and the talk is asked again. The talk's
+            // shape is the intro's until an intro has been seen to close, then the Lumdo order's.
+            // The order to Lumdo and the cutscene play only with Lumdo within 10 tiles of the player (mm_waydar.rs2:82);
+            // his distance when the menu shows is noted.
+            let introDone = false;
             for (let i = 0; i < 4 && !onAtoll(sdk.getState()!); i++) {
                 await clearScorpions(sdk, o.note);
-                let introOver = false;
+                const intro = waydarIntroWatch();
+                let menuSeen = false;
                 let struck = false;
                 const t0 = sdk.getState()!.tick;
                 const unwatch = sdk.onStateUpdate(s => {
-                    if (isWaydarIntroEnd(pageText(s.dialog))) introOver = true;
+                    intro.see(s);
                     if (s.combatEvents.some(e => e.type === 'damage_taken' && e.tick > t0)) struck = true;
+                    if (!menuSeen && classifyPage(s.dialog) === 'choice') {
+                        menuSeen = true;
+                        const lumdo = s.nearbyNpcs.find(n => /^Lumdo$/i.test(n.name));
+                        o.note(`S15:G Waydar's menu at t=${s.tick}: Lumdo ${lumdo ? `${chebyshev({ x: lumdo.tileX ?? lumdo.x, z: lumdo.tileZ ?? lumdo.z }, pos(s))} tiles away` : 'not in view'} (the cutscene needs 10 or less)`);
+                    }
                 });
                 try {
+                    // The arrival intro first, then the talk with the cutscene; on a resume past the intro the first talk
+                    // leaves the intro's shape at its opening choice and goes a page per tick.
                     const w = await talkTo(sdk, /^Waydar$/i, [/cannot convince Lumdo/i], {
-                        maxTicks: 400, idle: 3, closeModals: true, until: s => onAtoll(s) || introOver || struck,
+                        maxTicks: 400, idle: 3, closeModals: true, until: s => onAtoll(s) || intro.over || struck, ...shaped(introDone ? MM_SHAPES.waydarLumdo : MM_SHAPES.waydarIntro),
                     });
-                    o.note(`S15:G Waydar: ${w.pages} pages, ${w.ticks} ticks${introOver ? ' (arrival intro)' : ''}${struck ? ' (struck)' : ''}${onAtoll(sdk.getState()!) ? ', on the atoll' : ''}`);
+                    if (intro.over) introDone = true;
+                    noteShape(`G Waydar (talk ${i + 1})`, w);
+                    o.note(`S15:G Waydar: ${w.pages} pages, ${w.ticks} ticks${intro.over ? ' (arrival intro)' : ''}${struck ? ' (struck)' : ''}${onAtoll(sdk.getState()!) ? ', on the atoll' : ''}`);
                 } finally {
                     unwatch();
                 }
@@ -2897,7 +2963,7 @@ const BODIES: Partial<Record<string, Body>> = {
                 await toTown(ctx);
                 await townGo(ctx, GARKOR, 1, GARKOR_NORTH);
                 // 25 pages, no choice (mm_garkor.rs2:95-126): garkor 0 -> 2.
-                await talk(ctx.sdk, /garkor/i, [], { near: GARKOR, minPages: 20 });
+                await talk(ctx.sdk, /garkor/i, [], { near: GARKOR, minPages: 20, shape: MM_SHAPES.garkorFirst });
             }));
         },
     },
@@ -2927,19 +2993,19 @@ const BODIES: Partial<Record<string, Body>> = {
                     };
                     if (!holds(sdk.getState()!, MM_OBJ.dentures)) {
                         await toCrate(DENTURES_EAST);
-                        await searchCrate(sdk, DENTURE_CRATE, /^Yes$/, s => holds(s, MM_OBJ.dentures), 'denture crate', o.note);
+                        await searchCrate(sdk, DENTURE_CRATE, /^Yes$/, s => holds(s, MM_OBJ.dentures), 'denture crate', MM_SHAPES.dentureCrate, o.note);
                         zone.check();
                     }
                     if (!inArea(sdk, AREAS.cellar)) {
                         await toCrate({ x: HOLE_CRATE.x, z: HOLE_CRATE.z + 1 });
-                        await searchCrate(sdk, HOLE_CRATE, /Yes, I'm sure/, s => inArea(s, AREAS.cellar), 'crate over the hole', o.note);
+                        await searchCrate(sdk, HOLE_CRATE, /Yes, I'm sure/, s => inArea(s, AREAS.cellar), 'crate over the hole', MM_SHAPES.holeCrate, o.note);
                     }
                 } finally {
                     zone.stop();
                 }
                 if (!holds(sdk.getState()!, MM_OBJ.amuletMould)) {
                     await go(ctx, { x: MOULD_CRATE.x, z: MOULD_CRATE.z - 1 }, 1);
-                    await searchCrate(sdk, MOULD_CRATE, /^Yes$/, s => holds(s, MM_OBJ.amuletMould), 'mould crate', o.note);
+                    await searchCrate(sdk, MOULD_CRATE, /^Yes$/, s => holds(s, MM_OBJ.amuletMould), 'mould crate', MM_SHAPES.mouldCrate, o.note);
                 }
                 await go(ctx, { x: WEST_ROPE.x, z: WEST_ROPE.z + 1 }, 1);
                 await climb(sdk, WEST_ROPE);
@@ -2971,14 +3037,14 @@ const BODIES: Partial<Record<string, Body>> = {
             const { sdk } = ctx;
             if (chebyshev(pos(sdk), ZOOKNOCK) > 3) await upkeep(sdk, () => go(ctx, ZOOKNOCK, 2));
             // The story to need_items (mm_zooknock.rs2:28-37, 304-345), then the amulet's list and back out (259-280).
-            await talk(sdk, /zooknock/i, [/What do we need for the monkey amulet\?/, /I'll be back later/], { near: ZOOKNOCK, minPages: 4 });
+            await talk(sdk, /zooknock/i, [/What do we need for the monkey amulet\?/, /I'll be back later/], { near: ZOOKNOCK, minPages: 4, shape: MM_SHAPES.zooknockStory });
             const bar: Pred = s => holds(s, MM_OBJ.enchantedBar);
-            for (const id of [MM_OBJ.dentures, MM_OBJ.goldBar]) {
+            for (const [id, shape] of [[MM_OBJ.dentures, MM_SHAPES.zooknockDentures], [MM_OBJ.goldBar, MM_SHAPES.zooknockGoldBar]] as const) {
                 const n = invCount(sdk, id);
-                if (n > 0) await useOnNpc(sdk, id, /zooknock/i, s => invCount(s, id) < n || bar(s));
+                if (n > 0) await useOnNpc(sdk, id, /zooknock/i, s => invCount(s, id) < n || bar(s), shape);
             }
             // The last item completes the amulet check: four pages, a p_delay(4), then the enchanted bar and the mould back (mm_zooknock.rs2:186-197).
-            if (!bar(sdk.getState()!)) await useOnNpc(sdk, MM_OBJ.amuletMould, /zooknock/i, bar, 6);
+            if (!bar(sdk.getState()!)) await useOnNpc(sdk, MM_OBJ.amuletMould, /zooknock/i, bar, MM_SHAPES.zooknockMould, 6);
             await dismiss(sdk);
         },
         postconditions: holding(MM_OBJ.enchantedBar, MM_OBJ.amuletMould),
@@ -3065,20 +3131,20 @@ const BODIES: Partial<Record<string, Body>> = {
                     if (chebyshev(pos(sdk), ZOOKNOCK) > 3) await praying(sdk, 'protect_from_melee', () => go(ctx, ZOOKNOCK, 2));
                     // The talisman, then the bones, which complete the talisman check: one page, a p_delay(4), the
                     // gree-gree, an objbox and three pages, with the chapter 3 cutscene queued (mm_zooknock.rs2:203-228).
-                    for (const id of [MM_OBJ.talisman, MM_OBJ.monkeyBones]) {
+                    for (const [id, shape] of [[MM_OBJ.talisman, MM_SHAPES.zooknockTalisman], [MM_OBJ.monkeyBones, MM_SHAPES.zooknockBones]] as const) {
                         const n = invCount(sdk, id);
-                        if (n > 0 && !gree(sdk.getState()!)) await useOnNpc(sdk, id, /zooknock/i, s => invCount(s, id) < n || gree(s), 6);
+                        if (n > 0 && !gree(sdk.getState()!)) await useOnNpc(sdk, id, /zooknock/i, s => invCount(s, id) < n || gree(s), shape, 6);
                     }
                     const w = await waitUntil(sdk, gree, { maxTicks: 15 });
                     if (!w.ok) throw new Error('Zooknock gave no gree-gree for the talisman and bones');
                 }
                 if (!inArea(sdk, AREAS.dungeon) || sdk.getState()!.dialog.isOpen) {
-                    const pages = await chapterCutscene(sdk, 0, 'chapter 3');
+                    const pages = await chapterCutscene(sdk, 0, 'chapter 3', MM_SHAPES.chapter3);
                     o.note(`S15:Q chapter 3: ${pages} pages`);
                 } else {
                     // Still beside Zooknock with the gree-gree: the cutscene is queued behind the closing pages, or done.
                     const started = await waitUntil(sdk, s => s.dialog.isOpen || tileIn(pos(s), { ...CUTSCENE_ZONE, level: 0 }), { maxTicks: 8 });
-                    if (started.ok) o.note(`S15:Q chapter 3: ${await chapterCutscene(sdk, 0, 'chapter 3')} pages`);
+                    if (started.ok) o.note(`S15:Q chapter 3: ${await chapterCutscene(sdk, 0, 'chapter 3', MM_SHAPES.chapter3)} pages`);
                 }
             });
         },
@@ -3099,7 +3165,7 @@ const BODIES: Partial<Record<string, Body>> = {
                 if (outsideTown(sdk)) await throughWestGate(ctx);
                 await go(ctx, GARKOR_NORTH.points[0]!, 2);
                 // Garkor with the Karamja gree-gree worn: 3 pages, then seek_alliance's 2 (mm_garkor.rs2:61-74, 129-140).
-                await talk(sdk, /garkor/i, [], { near: GARKOR, minPages: 4 });
+                await talk(sdk, /garkor/i, [], { near: GARKOR, minPages: 4, shape: MM_SHAPES.garkorAlliance });
             });
         },
         postconditions: s => wearing(s, MM_OBJ.greegree) || 'not a monkey',
@@ -3112,17 +3178,19 @@ const BODIES: Partial<Record<string, Body>> = {
                 // Elder Guard 2 from his south side (5 pages; elder_guard 1), Kruk at the west gate (6 pages, then his
                 // escort to the throne room, mm_kruk.rs2:24-34), and Awowogei's mission (20 pages; awowogei 1).
                 await go(ctx, ELDER_GUARD_SOUTH, 0);
-                await talk(sdk, /^Elder Guard$/i, [], { near: ELDER_GUARD, minPages: 4 });
+                await talk(sdk, /^Elder Guard$/i, [], { near: ELDER_GUARD, minPages: 4, shape: MM_SHAPES.elderGuardFirst });
                 await go(ctx, WATCHTOWER_WEST, 1);
                 // Measured: the base ladder takes the player straight to the bridge (level 2).
                 for (let i = 0; i < 2 && pos(sdk).level < 2; i++) await climb(sdk, WATCHTOWER_WEST, /^climb-up$/i);
                 await go(ctx, BRIDGE_EAST_END, 0);
                 for (let i = 0; i < 2 && pos(sdk).level > 0; i++) await climb(sdk, WATCHTOWER_EAST, /^climb-down$/i);
                 const escorted = (s: BotWorldState) => chebyshev(pos(s), THRONE) <= 4;
-                const k = await talkTo(sdk, /^Kruk$/i, [], { maxTicks: 120, idle: 6, until: escorted, near: KRUK });
+                const k = await talkTo(sdk, /^Kruk$/i, [], { maxTicks: 120, idle: 6, until: escorted, near: KRUK, ...shaped(MM_SHAPES.kruk) });
+                noteShape('S Kruk', k);
                 if (!escorted(sdk.getState()!)) throw new Error(`Kruk did not escort the player: ${k.reason ?? k.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
                 await dismiss(sdk);
-                const r = await actConverse(sdk, await locClick(sdk, THRONE, /./), [], { maxTicks: 120, idle: 3, resendEvery: 6 });
+                const r = await actConverse(sdk, await locClick(sdk, THRONE, /./), [], { maxTicks: 120, idle: 3, resendEvery: 6, ...shaped(MM_SHAPES.awowogeiMission) });
+                noteShape('S Awowogei', r.dialogue);
                 if (!r.ok || (r.dialogue?.pages ?? 0) < 15) {
                     const d = r.dialogue;
                     throw new Error(`Awowogei: ${r.reason ?? `${d?.pages ?? 0} pages`} after ${r.ticks} ticks, ${r.resends} resends; dialogue ${d ? `opened ${d.opened}, ${d.pages} pages, ${d.transcript.slice(-3).join(' / ')}` : 'not run'} (at ${where(sdk)})`);
@@ -3151,14 +3219,16 @@ const BODIES: Partial<Record<string, Body>> = {
                 if (!inCage(sdk)) {
                     // As a Karamja monkey, the minder puts the player in the cage (mm_monkey_minder.rs2:28-50).
                     await asMonkey(sdk);
-                    const r = await talkTo(sdk, MINDER, [], { maxTicks: 120, idle: 6, until: inCage });
+                    const r = await talkTo(sdk, MINDER, [], { maxTicks: 120, idle: 6, until: inCage, ...shaped(MM_SHAPES.minderIn) });
+                    noteShape('T minder (in)', r);
                     if (!inCage(sdk)) throw new Error(`the minder did not cage the monkey: ${r.reason ?? r.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
                 }
-                // 16 pages, no choice; the amulet is all it needs (mm_zoo_monkey.rs2:1-35).
+                // 18 pages, no choice; the amulet is all it needs (mm_zoo_monkey.rs2:1-35).
                 await sceneBuilt(sdk); // the minder's telejump into the cage
                 const zooMonkey = talkableNpc(st(), /^Monkey$/, CAGE_ENTRY);
                 if (!zooMonkey) throw new Error(`no monkey to talk to in the cage (at ${where(sdk)})`);
-                const m = await talkTo(sdk, zooMonkey, [], { maxTicks: 120, idle: 3, until: s => holds(s, MM_OBJ.monkey) });
+                const m = await talkTo(sdk, zooMonkey, [], { maxTicks: 120, idle: 3, until: s => holds(s, MM_OBJ.monkey), ...shaped(MM_SHAPES.zooMonkey) });
+                noteShape('T zoo monkey', m);
                 if (!holds(st(), MM_OBJ.monkey)) throw new Error(`no monkey in the backpack: ${m.reason ?? m.transcript.slice(-2).join(' / ')}`);
             }
             if (inCage(sdk)) await letOut(ctx);
@@ -3188,11 +3258,13 @@ const BODIES: Partial<Record<string, Body>> = {
                 if (!inThroneRoom(sdk)) {
                     // Elder Guard 2 from his south side: at kruk_spoken he lets the player straight in (mm_elder_guard.rs2:27-40).
                     await go(ctx, ELDER_GUARD_SOUTH, 0);
-                    const g = await talkTo(sdk, /^Elder Guard$/i, [], { maxTicks: 60, idle: 3, near: ELDER_GUARD, until: inThroneRoom, ...CHATTER });
+                    const g = await talkTo(sdk, /^Elder Guard$/i, [], { maxTicks: 60, idle: 3, near: ELDER_GUARD, until: inThroneRoom, ...CHATTER, ...shaped(MM_SHAPES.elderGuardIn) });
+                    noteShape('V Elder Guard', g);
                     if (!inThroneRoom(sdk)) throw new Error(`the Elder Guard did not let the player in: ${g.reason ?? g.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
                 }
                 // "Have you brought with you a captive?" Yes: the monkey goes, then mm_awowogei_success's 7 pages (mm_awowogei.rs2:40-50, 105-116).
-                const r = await actConverse(sdk, await locClick(sdk, THRONE, /./), [], { maxTicks: 90, idle: 3, resendEvery: 6, ...CHATTER });
+                const r = await actConverse(sdk, await locClick(sdk, THRONE, /./), [], { maxTicks: 90, idle: 3, resendEvery: 6, ...CHATTER, ...shaped(MM_SHAPES.awowogeiCaptive) });
+                noteShape('V Awowogei', r.dialogue);
                 if (holds(sdk.getState()!, MM_OBJ.monkey)) throw new Error(`Awowogei did not take the monkey: ${r.reason ?? `${r.dialogue?.pages ?? 0} pages`} (at ${where(sdk)})`);
                 await dismiss(sdk);
             });
@@ -3210,7 +3282,8 @@ const BODIES: Partial<Record<string, Body>> = {
                     // deeper in the hall the server's approach to him stops two tiles short and no dialogue opens; from the
                     // doorway's inner tile, where his entry teleport lands, it opens at once.
                     if (chebyshev(pos(sdk), HALL_DOOR_IN) > 0) await click(sdk, HALL_DOOR_IN, 0);
-                    const g = await talkTo(sdk, /^Elder Guard$/i, [], { maxTicks: 60, idle: 3, near: ELDER_GUARD, until: s => !inThroneRoom(s) });
+                    const g = await talkTo(sdk, /^Elder Guard$/i, [], { maxTicks: 60, idle: 3, near: ELDER_GUARD, until: s => !inThroneRoom(s), ...shaped(MM_SHAPES.elderGuardOut) });
+                    noteShape('W Elder Guard', g);
                     if (inThroneRoom(sdk)) throw new Error(`the Elder Guard did not show the player out: ${g.reason ?? g.transcript.slice(-2).join(' / ')}`);
                 }
                 if (chebyshev(pos(sdk), GARKOR) > 2) {
@@ -3219,13 +3292,16 @@ const BODIES: Partial<Record<string, Body>> = {
                 // Garkor at awowogei_complete_mission: 6 pages, then the chapter 4 cutscene (mm_garkor.rs2:129-137,
                 // quest_mm.rs2:211); at learned_plan (the cutscene seen): the plan, then the sigil (mm_garkor.rs2:25-47).
                 const ch4 = (s: BotWorldState) => tileIn(pos(s), { ...CUTSCENE_ZONE, level: 1 });
-                const first = await talkTo(sdk, /garkor/i, [], { maxTicks: 120, idle: 3, near: GARKOR, until: s => ch4(s) || holds(s, MM_OBJ.sigil) });
+                // On a resume past the cutscene this first talk is the plan's, which leaves the lead-in's shape at its sixth page.
+                const first = await talkTo(sdk, /garkor/i, [], { maxTicks: 120, idle: 3, near: GARKOR, until: s => ch4(s) || holds(s, MM_OBJ.sigil), ...shaped(MM_SHAPES.garkorChapter4) });
+                noteShape('W Garkor (chapter 4)', first);
                 if (ch4(sdk.getState()!) || (!holds(sdk.getState()!, MM_OBJ.sigil) && (await waitUntil(sdk, ch4, { maxTicks: 8 })).ok)) {
-                    o.note(`S15:W chapter 4: ${await chapterCutscene(sdk, 1, 'chapter 4')} pages`);
+                    o.note(`S15:W chapter 4: ${await chapterCutscene(sdk, 1, 'chapter 4', MM_SHAPES.chapter4)} pages`);
                 } else if (!holds(sdk.getState()!, MM_OBJ.sigil)) {
                     throw new Error(`Garkor started neither the chapter 4 cutscene nor the plan: ${first.reason ?? first.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
                 }
-                const r = holds(sdk.getState()!, MM_OBJ.sigil) ? first : await talkTo(sdk, /garkor/i, [], { maxTicks: 120, idle: 3, near: GARKOR, until: s => holds(s, MM_OBJ.sigil) });
+                const r = holds(sdk.getState()!, MM_OBJ.sigil) ? first : await talkTo(sdk, /garkor/i, [], { maxTicks: 120, idle: 3, near: GARKOR, until: s => holds(s, MM_OBJ.sigil), ...shaped(MM_SHAPES.garkorSigil) });
+                if (r !== first) noteShape('W Garkor (sigil)', r);
                 if (!holds(sdk.getState()!, MM_OBJ.sigil)) throw new Error(`no sigil from Garkor: ${r.reason ?? r.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
                 await dismiss(sdk);
             });
@@ -3248,7 +3324,9 @@ const BODIES: Partial<Record<string, Body>> = {
                 if (!d.ok) throw new Error(`could not drop ${drop} sharks for Narnode's reward (at ${where(sdk)})`);
             }
             // The report (14 pages), the reward and its objbox, the quest-complete scroll, then Narnode's training pages.
-            const r = await talkTo(sdk, /^King Narnode( Shareen)?$/i, [], { maxTicks: 200, idle: 3, near: NARNODE, closeModals: true, until: s => questStatus(s, 'mm') === 'complete' });
+            const sigil = holds(sdk.getState()!, MM_OBJ.sigil) || wearing(sdk.getState()!, MM_OBJ.sigil);
+            const r = await talkTo(sdk, /^King Narnode( Shareen)?$/i, [], { maxTicks: 200, idle: 3, near: NARNODE, closeModals: true, until: s => questStatus(s, 'mm') === 'complete', ...shaped(narnodeComplete(sigil)) });
+            noteShape('Y Narnode', r);
             if (questStatus(sdk.getState()!, 'mm') !== 'complete') throw new Error(`Narnode did not complete the quest: ${r.reason ?? r.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
             await dismiss(sdk);
         },
@@ -3262,10 +3340,11 @@ const BODIES: Partial<Record<string, Body>> = {
             await intoTree(ctx, 1);
             if (chebyshev(pos(sdk), DAERO) > 3) await go(ctx, DAERO, 2);
             const xp0 = skillXp(sdk.getState()!, 'Strength');
-            // daero_training (mm_daero.rs2:240-312): 9 pages, option 1, "Several hours later...", then the xp.
+            // daero_training (mm_daero.rs2:240-312): 10 pages, option 1, "Several hours later...", then the xp.
             const r = await talkTo(sdk, /^Daero$/i, [/^Focus on increasing strength and stamina/], {
-                maxTicks: 150, idle: 4, near: DAERO, closeModals: true, until: s => skillXp(s, 'Strength') >= xp0 + DAERO_STRENGTH_XP,
+                maxTicks: 150, idle: 4, near: DAERO, closeModals: true, until: s => skillXp(s, 'Strength') >= xp0 + DAERO_STRENGTH_XP, ...shaped(MM_SHAPES.daeroTraining),
             });
+            noteShape('Z Daero', r);
             if (skillXp(sdk.getState()!, 'Strength') < xp0 + DAERO_STRENGTH_XP) throw new Error(`no training xp from Daero: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
             await dismiss(sdk);
             await dropDead(sdk);
@@ -3307,6 +3386,7 @@ export function stepFor(d: SegmentDef, o: Resolved): Step<MmContext> {
         // The gnome half (A-G) runs under the same upkeep as the atoll segments, which wrap their own bodies.
         run: body ? ctx => {
             stepNote = o.note;
+            dialogue = o.dialogue;
             eating = {
                 below: eatBelowFor(o.eating, d.letter),
                 ...(o.eating.topUpBelow !== undefined ? { topUpBelow: o.eating.topUpBelow } : {}),
@@ -3326,6 +3406,5 @@ export function stepFor(d: SegmentDef, o: Resolved): Step<MmContext> {
 /** The module's steps, one per segment A-Z. */
 export function steps(opts: Options = {}): Step<MmContext>[] {
     const o = resolveOptions(opts);
-    if (o.dialogue === 'burst') throw new Error("dialogue 'burst' needs rs/200's converse burst mode, which is not on this branch yet");
     return SEGMENTS.map(d => stepFor(d, o));
 }
