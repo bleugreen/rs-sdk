@@ -322,7 +322,8 @@ plan's quantity on the ask side (`buyCost`: N units cost between N at the best a
 fallback food is no food:** an account whose bank has no sharks left, or whose purchase leaves fewer than
 `minimum` (28) banked, goes to `foodFallbackMix`, plan B's low-food methods: iron (never damaged) and guards (2 per
 failure, kebabs bought in Al-Kharid with its own coins). The heroes are refused there (four times the knights'
-sharks).
+sharks). With bought sharks the fallback is not for good: the account goes back once its coins cover a rebuy, and a
+purchase refused for a transient reason is retried (section 'Shark resupply').
 
 **The ledger** (`DIR/ledger.jsonl`, `ledger.ts`): a line per account every 50 of its ticks (stage, coins carried
 and banked, the bank at store cost and at what it realises sold into the open bids less the 5% fee, the observed
@@ -343,6 +344,95 @@ walking distance (`SALE_ROUTE`: guards); iron ore and gems wait for that return 
 **Stopping:** SIGINT or SIGTERM stops every account at its next safe point and logs it out (`logoutDirect`
 re-clicks through the post-combat window); a second signal exits at once. `--minutes N` stops the same way. The
 exit code is 0 when every account logged out.
+
+### Shark resupply
+
+A knight at HP 40 eats ~40 sharks an hour, so a one-off purchase lasts a few hours, and a fresh account reaches
+buy-sharks at Thieving 55 with a few hundred coins. Before rs/743 both ended on the guards for good: the purchase was
+recorded once per account whatever its outcome, and the food redirect lived only in memory. Now (`sharks.ts`, wired in
+`run.ts`):
+
+- **The purchase's outcome is a state, not a flag.** RoleState's `phase2.sharks` holds `{status, tries, last, at,
+  short?}`. `done`: settled (filled, partial, unfilled, refused for the book or the coins). `retry`: refused for a
+  transient reason. `due`: a rebuy is wanted. The buy-sharks stage's goal holds only at `done`. A value the runner
+  wrote before this (the errand's bare record) loads as `done`, or as `retry` when it was a transient refusal.
+- **Transient refusals are retried**, after 15, 30, 60 s (cap 120 s), at most 4 attempts in a row, and then settle.
+  Transient means the SDK failed rather than the market: any 'Timeout waiting for ...' (a coins refusal counts only
+  when the coin withdrawal itself timed out, the demo's 'Timeout waiting for Coins to be withdrawn'), a bank or
+  Exchange that would not open, a closed or stale Exchange interface, a failed walk to the bank. Never transient: no
+  asks, the best ask above the ceiling, coins that really are short, full offer slots, and a placement whose outcome
+  is unknown (a second offer could double the trade). Every attempt is a `buy` ledger line with its `status` and
+  `tries`.
+- **A short purchase is named.** A settled purchase that leaves fewer than `minimum` banked gets `short`:
+  `insufficient coins` (none covered, or fewer than wanted), `the book`, or `short`. Then the food fallback.
+- **No voyage below the minimum.** Before `to-ardougne`, a shark eater on a buying plan with fewer than `minimum`
+  sharks between bank and pack goes to the food fallback instead of sailing. Before its first bank visit after a
+  restart, the recorded purchase's `banked` stands in for the bank, so a restarted runner does not sail a fresh
+  account with no sharks to Ardougne.
+- **Re-promotion at a bank visit.** The food fallback remembers which shark eater it took the account from. After
+  each bank errand of the method (the role logs `banked`, or the guards' `withdrew coins`, once the bank has closed),
+  `rebuyDecision` sends it back when its coins (banked plus carried) cover `sharks.rebuyMinSharks` (default
+  `perAccount`, at least `minimum`) at the ceiling. That is a `redirect` with `why: 'rebuy'`; the state goes to `due`,
+  so buy-sharks runs again (from Al-Kharid it crosses the toll gate first), then the ship, then the method. Only a
+  food redirect qualifies: a ramp redirect is not about food. A purchase the book refused (or an unknown placement)
+  holds the next rebuy for 30 minutes rather than walking into the same refusal at every bank visit; a refusal for
+  coins holds nothing, since the rebuy waits for the coins anyway.
+- **The fallback must earn coins.** Iron and shilo bank ore and gems, so a shark eater sent there never reaches the
+  threshold. The runner warns at startup when a buying plan's `foodFallbackMix` includes them (`planWarnings`: use
+  `foodFallbackMix: { guards: 1 }`), and such a food redirect carries `rebuy: 'no rebuy: the fallback earns no
+  coins'` in the ledger. The default mix (iron 12, guards 23) is unchanged.
+
+Not done: a top-up for an account already at Varrock for another reason; the re-promotion covers the only shark
+eaters that stand there. A re-promoted knight counts as admitted to the knights ramp again, so during a ramp it can
+put one more login on the knights than the step allows.
+
+**Lab** (fedora, block M22, 400 ms a tick, `markets/phase2/lab.ts`, one account, a lab Exchange whose maker sells
+sharks at 600; plan `perAccount` 20, `minimum` 5, `ceiling` 650). Run 1 was a knight that ran dry: Thieving 99, HP
+40, 3 sharks banked, and the role-state the runner left before SharkState. One runner process, no restart:
+
+```
+08:25:53 a01 stage {"to":"coins"}                    (the old record loaded as done: buy-sharks skipped)
+08:28:37 a01 stage {"to":"method"}                   (knights, after the ship)
+08:35:53 pickpocket: out of food in the bank
+08:35:53 redirect {"from":"knights","to":"guards","why":"food","reason":"the bank has no sharks left"}
+08:38:37 coins: withdrew coins {"take":200}          (kebab money; then the Al-Kharid warriors, then the guards)
+08:43:32 coins: banked {"target":"guard","banked":2806}
+08:43:32 rebuy check {"rebuy":true,"reason":"19073 coins cover 29 sharks at the 650 ceiling (at least 5)"}
+08:43:32 redirect {"from":"guards","to":"knights","why":"rebuy"}
+08:43:45 buy {"quantity":20,"filled":20,"result":"filled","banked":20,"status":"done","tries":0}
+08:45:55 a01 stage {"to":"method"}                   (pickpocket: start, on the knights again)
+08:48:16 stopping {"reason":"SIGINT"}; a01 logout {"outcome":"out"}
+```
+
+Run 2 was the fresh path: no sharks, 500 coins banked, nothing recorded, `rebuyMinSharks` 8, the runner restarted
+after 5 minutes on the same role-state (`--restart=5`):
+
+```
+08:51:26 buy {"want":20,"result":"refused","reason":"525 coins do not cover one shark at the ceiling of 650","banked":0,"status":"done","short":"insufficient coins"}
+08:51:26 redirect {"to":"guards","why":"food","reason":"0 sharks banked after the purchase, below the minimum of 5"}
+08:55:30 restarting the runner; a01 logout {"outcome":"out"}; runner exited {"code":0}
+08:55:33 a01 stage {"to":"to-ardougne"}
+08:55:33 redirect {"to":"guards","why":"food","reason":"0 sharks recorded after the last purchase, below the minimum of 5 (insufficient coins): not sailing"}
+08:57:09 rebuy check {"rebuy":false,"reason":"3350 coins, 5200 needed for 8 sharks at the 650 ceiling"}
+09:00:24 coins: banked {"target":"warrior","banked":5635}  (the Al-Kharid bank)
+09:00:24 rebuy check {"rebuy":true,"reason":"6160 coins cover 9 sharks at the 650 ceiling (at least 8)"}
+09:00:24 redirect {"from":"guards","to":"knights","why":"rebuy"}
+09:00:54 toll gate {"toEast":false,"ok":true}
+09:01:52 buy {"quantity":9,"filled":9,"result":"filled","banked":9,"status":"done"}
+09:04:00 a01 stage {"to":"method"}                   (pickpocket: start, on the knights)
+09:05:06 a01 logout {"outcome":"out"}; end {"clean":true}
+```
+
+The transient retry was not provoked in the lab (the lab's bank does not time out on demand); its classification
+is tested against the SDK's own messages in `sharks.test.ts`.
+
+```sh
+# block M22 on fedora, from a copy of the checkout in /tmp, in a tmux server
+. markets/methods/lab/block.sh M22 && LAB_RUNNERS=0 LAB_TIMEOUT=4200 speedrun/lab/lab.sh p2r00 \
+  'markets/phase2/lab.ts:--prefix=p2r:--knights=1:--hungry=0:--guards=0:--sharks=3:--trained=1:--legacy-sharks=1:--buy=1:--ramp=0:--sigint=55:--out=/tmp/rs743-r1'
+. markets/methods/lab/block.sh M22 && LAB_RUNNERS=0 LAB_TIMEOUT=4200 speedrun/lab/lab.sh p2s00 \
+  'markets/phase2/lab.ts:--prefix=p2s:--knights=1:--hungry=0:--guards=0:--sharks=0:--coins=500:--trained=1:--buy=1:--rebuy-min=8:--ramp=0:--restart=5:--sigint=40:--out=/tmp/rs743-r2'
+```
 
 ### The lab run
 

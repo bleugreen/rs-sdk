@@ -4,7 +4,8 @@
  *
  * Both read the book before anything leaves the bank, and again just before the offer, since a bank visit takes
  * seconds and the book can move. A placement whose outcome is unknown (an observation timeout after the click) is
- * recorded and never retried: a second offer could double the trade. An offer still open when the account is
+ * recorded and never retried: a second offer could double the trade. Other transient refusals of the shark purchase
+ * are retried by the runner (sharks.ts). An offer still open when the account is
  * stopped stays on the Exchange; the next errand's `collect` returns its assets.
  *
  * Sales need the account at the Exchange, so plan.ts allows them only for methods worked within walking distance of
