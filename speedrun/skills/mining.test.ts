@@ -970,7 +970,7 @@ describe('bones on the stay2 lap (`bury`, H4m)', () => {
         expect([none.mode, none.step]).toEqual(['resume', 'mining.iron-63']);
     });
 
-    test('the exit drops any big bones a resume walked past, with the pickaxe and logs; not without bury', async () => {
+    test('the exit drops any bones a resume walked past, with the pickaxe and logs; not without bury', async () => {
         const sdk = new MiningSdk(atZoo(99, ['Knife', 'Logs', 'Rune pickaxe', 'Big bones', 'Big bones']));
         await stepOf('mining.exit').run(ctxFor(sdk));
         expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Knife']);

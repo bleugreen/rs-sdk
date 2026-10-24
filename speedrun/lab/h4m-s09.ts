@@ -18,6 +18,7 @@
 //     'speedrun/lab/h4m-carrier.ts:--carrier=<carrier>:--delivery-run=<id>:--cue-root=<dir>:--manifest=<file>:--background' \
 //     'speedrun/lab/h4m-s09.ts:--carrier=<carrier>:--manifest=<file>:--run=<id>:--cue-root=<dir>'
 //
+// The loads are whatever the manifest's row carries (main's ruled form: babydragon bones @534, 5 x 20).
 // Exit 0 when every step held its postconditions (the last bury step's is the chain's Prayer 99),
 // at least 4 loads were buried on the lap and at least one by hand at Mining 99.
 

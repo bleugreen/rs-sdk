@@ -3212,21 +3212,23 @@ The rows below are named packages mule1 serves **on request only**, never in its
 
 rs/158's text for attempt 4's H4m variant (fold-in 42; rs/701 and rs/705). Main rules it in after rs/700's measured tail rate and rs/701's lab. Until then it stays out of the table above. The carrier generator (`mule-ledger.ts` `h4mLoadRows`) treats that row's presence as its switch, and the row would change carriers.json. When main says yes, a snapshot moves the row into the table, replaces the retired paragraph above it, and puts the two notes on S07's and S09's walked rows. rs/41 then regenerates.
 
-**The paragraph:** H4m, attempt 4's variant (main 04:5xZ; fold-in 42 prices it beside the no-H4m rows; it counts toward the start only lab-passed and on main). S07 closes at **Prayer >= 98** (`s07PrayerTo`, run config, rs/700) with the last big bones held back, and S09's iron band buries them on its `stay2` lap (rs/701). The chain derives the delivery rows H4m.1..H4m.N from the row below; N is in the row's id (`h4mLoadRows`), its one source. rs/41's helper side builds one package per H4m.k from it. History: retired in fold-in 31 (S07's 964 bones all fitted in its 42 loads; `babydragon bones xN [u]`, 7 on 258 dragon, 16 on 251).
+**The paragraph:** H4m, attempt 4's variant, in force (main 06:3xZ, on rs/701's lab pass; fold-in 42). S07's bands hold ~737-780 bones (in-band 0.247 bones a band tick m, demo; 0.260 m, lab; RUN-ORDER S07), short of attempt 4's mix. So S07 closes at **Prayer 98** (`s07PrayerTo` 98, run config; rs/700), and S09's iron band buries babydragon bones on its `stay2` lap, one a lap (rs/701), from H4m.1-H4m.N below. N is in the row's id, its one source (`mule-ledger.ts` `h4mLoadRows`, rs/705). The chain refuses a Prayer target below 99 without the row, a target of 99 with it, and an N short of the target's floor to 99. History: retired in fold-in 31 (S07's 964 bones all fitted; `babydragon bones xN [u]`, 7 on 258 dragon, 16 on 251).
 
-**The row, N = 10 loads (200 bones; 179 needed from Prayer 98's floor):** H4m.1-H4m.10, in `big bones @532 x20 [u]`, out -, equip -, needAtStart 20. Source:
+**The row (main ruled the babydragon form, 06:5xZ):** H4m.1-H4m.5, in `babydragon bones @534 x20 [u]`, out -, equip -, needAtStart 20. Source:
 
-- **Carrier:** cairn_h55 (rs/41; H6, H4p, H4m and H7 on one carrier), not mule1. It stands at (2606,3234), beside `stay2`'s east stay (2605,3234) and off the lap (STEP-MANIFEST entry 4's lap `2603,3233>2602,3233 2605,3234>2605,3235 2605,3234>2605,3233 2602,3235>2602,3234 2602,3235>2602,3236`). SCORED takes each load standing on the east stay.
-- **When:** served each time SCORED holds 0 big bones.
-- **Slots:** S09 holds the knife, 2 logs and the pickaxe, 24 free, so 20 leaves 4 = mining.ts FREE_SLOTS. 1 held + 20 would leave 3, and the next band refuses.
-- **Count:** **179 needed** from Prayer 98's floor (37,263.00) to 99 (39,938.32 base) at 15 a bone, so ~21 spare in 10 loads.
-- **Cost:** S09 buries 1 a lap (0.066/t, #159), **~15 ticks a load** (knife stop ~5 + trade ~8 + restart ~2, the restart waiting for the lap to be live, rs/207), **~+185 i** for the band.
-- **Fallback:** once Mining is 99, or iron respawns over 13 ticks, the band buries the held bones by hand (rs/700's buryHeld) and takes the remaining loads at the zoo, so Prayer 99 holds before T09-10. Bones held at Prayer 99 are dropped.
-- rs/701 (lab pending).
+- **Carrier:** cairn_h55 at (2606,3234), off the lap; SCORED stands on `stay2`'s east stay (2605,3234) (MAN entry 4's lap).
+- **Load 1:** carried on h55's H4p trip and served as its own trade straight after H4p at S09's start (no bank leg). Each later load is served when SCORED holds 0 babydragon bones; 1 held + 20 would leave 3, below FREE_SLOTS.
+- **Slots:** S09 holds the knife, 2 logs and the pickaxe, 24 free, so 20 leaves 4 = mining.ts FREE_SLOTS (r).
+- **Count:** Prayer 98 (37,263.00 base) to 99 (39,938.32) = 2,675.32 base = 90 babydragon bones at 30 (r, lib/xp.ts), 5 loads of 20, 10 spare. One spare load is staged on h55 by rs/41, outside this row.
+- **Cost:** ~15 ticks a load (knife stop + trade + restart, rs/186, rs/207), ~+75 i.
+- **Fallback:** once Mining is 99 or iron respawns over 13 ticks, the band buries the held bones by hand (prayer.ts buryHeld, rs/700) and takes the remaining loads at the zoo, so Prayer 99 holds before T09-10. Bones held at Prayer 99 are dropped.
+- rs/701 (lab), rs/705 (carrier).
 
-**S09's walked row, note to append:** '; with H4m (attempt 4's variant, below) the band buries big bones from H4m.1..H4m.N on `stay2` and they never sit in this walk (fallback table, not walked)'.
+**S07's walked row, note to append:** '; with H4m (attempt 4, the fallback table), S07 closes at Prayer 98 (`s07PrayerTo`), burying past WC 99 only if the band falls short of 98's 37,263 base (at most ~21 babydragon, i); the rest of 99 comes from H4m in S09'.
 
-**S07's row, note to append:** '; with H4m, S07 closes at Prayer >= 98 (`prayerTo`), the rest buried in S09'.
+**S09's walked row, note to append:** '; with H4m (attempt 4), the band buries babydragon bones from H4m.1-H4m.N on `stay2`. That row is in the fallback table, which isn't walked, so the bones never sit in this walk; `mining.exit` drops any still held at Prayer 99'.
+
+**Grammar (:3036-3037):** 'H4m.1-H4m.4' becomes 'H4m.1-H4m.N (N in the fallback row's id)'. **Entry 4 (:1190):** '(H4m.1-H4m.4, SUPPLIES.md)' becomes '(H4m.1-H4m.N, the fallback hand-offs table)'.
 
 ### R8 respawn packages (not walked)
 
