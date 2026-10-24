@@ -5,9 +5,10 @@
 // cached state to advance and walking away with the body still in the world.
 //
 // The real openSession and BotSDK run against a fake tab (fake-cdp.ts: the page scripts in tab.ts run
-// for real) and a fake world's player list, twice: once against a gateway that behaves as upstream's
-// does (it hands a new controller the cached state whether or not its client is still connected), and
-// once against our own gateway, which no longer does.
+// for real) and a fake world's player list, twice: once against a scripted gateway that hands the new
+// controller the cached state at once, and once against server/gateway/gateway.ts as a subprocess,
+// which keeps a gone client's state and lets the next client inherit it. The launch-id check has to
+// hold through both.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { join } from 'path';
@@ -24,7 +25,7 @@ const TEST_MS = 40_000;
 /** The lite one-off's last published state, as the gateway cached it: in game, placed, entities around. */
 const cachedLite: BotWorldState = { ...baseState(), tick: 5000, inGame: true };
 
-/** A gateway as upstream's answers sdk_connect: the cached state goes to the new controller at once. */
+/** A gateway that answers sdk_connect by handing the cached state to the new controller at once. */
 function upstreamGateway(cached: BotWorldState) {
     const server = Bun.serve({
         port: 0,
@@ -135,7 +136,7 @@ describe('the 04:2xZ start: a cached state, a page login, the page socket drops 
         world.stop();
     });
 
-    test("through upstream's gateway, which hands over the lite one-off's cached state: refused, then confirmed logged out", async () => {
+    test("through a gateway that hands over the lite one-off's cached state at connect: refused, then confirmed logged out", async () => {
         const gw = upstreamGateway(cachedLite);
         try {
             tab0420(cdp, world);
@@ -145,7 +146,7 @@ describe('the 04:2xZ start: a cached state, a page login, the page socket drops 
         }
     }, TEST_MS);
 
-    describe('through our gateway', () => {
+    describe('through server/gateway/gateway.ts, whose next client inherits the cached state', () => {
         const PORT = 20000 + Math.floor(Math.random() * 10000);
         const URL_ = `ws://127.0.0.1:${PORT}`;
         let gateway: ReturnType<typeof Bun.spawn> | null = null;

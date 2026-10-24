@@ -295,11 +295,11 @@ state to advance and exited with the body still in the world.
   after `openRunSession` runs inside `withScoredSession`, so any way out that
   leaves the account meant to be in the world (a throw before the chain, a
   crash inside it) ends in the abandon, logged as `(run) SCORED abandoned`.
-- **The gateway hands out no dead state** (`server/gateway/gateway.ts`). A
-  bot's state belongs to the client that published it. A connecting controller
-  is handed the cached state only while that client is still connected, and a
-  new client never inherits the last one's state. `GET /state` still shows the
-  last state, marked `dead`.
+
+The gateway itself (`server/gateway/gateway.ts`, upstream's code) still keeps a
+gone client's last state, hands it to the next controller, and lets the next
+client inherit it. The run no longer depends on that changing: the launch id
+refuses such a state through any gateway.
 
 ### The two clients
 
