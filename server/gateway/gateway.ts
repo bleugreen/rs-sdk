@@ -173,8 +173,12 @@ function outdatedClientMessage(username: string, outdated: OutdatedClient): stri
  * 1. Bot connects, sends 'connected' message with username
  * 2. Gateway creates/updates BotSession, notifies SDK clients
  * 3. Bot sends 'state' updates periodically (tracked for staleness)
- * 4. On disconnect: session.ws = null, SDKs notified, state preserved
- * 5. On reconnect: same username gets fresh session, state preserved
+ * 4. On disconnect: session.ws = null, SDKs notified. The last state stays
+ *    readable on GET /state (botStatus 'dead') but is never handed to an SDK
+ *    as current: a connecting SDK gets it only while its publisher is connected.
+ * 5. On reconnect: same username gets a fresh session with no state until its
+ *    client publishes one. A state belongs to the client that published it; a
+ *    new client (a relaunch, another tab, a lite one-off) never inherits it.
  */
 interface BotSession {
     ws: any;
@@ -356,8 +360,8 @@ const SyncModule = {
             ws,
             clientId,
             username,
-            lastState: preservedState?.lastState || null,
-            lastStateReceivedAt: preservedState?.lastStateReceivedAt || 0,
+            lastState: null,
+            lastStateReceivedAt: 0,
             currentActionId: null,
             pendingScreenshotId: null,
             connectedAt: now,
@@ -592,8 +596,9 @@ const SyncModule = {
                 maxMessageLength: botSessions.get(targetUsername)?.maxMessageLength
             });
 
+            // The cached state is current only while the client that published it is connected.
             const botSession = botSessions.get(targetUsername);
-            if (botSession?.lastState) {
+            if (botSession?.ws && botSession.lastState) {
                 this.sendToSDK(session, {
                     type: 'sdk_state',
                     state: botSession.lastState,
