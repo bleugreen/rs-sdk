@@ -10,6 +10,7 @@ Labels: m measured in the lab, i inferred (the model, or arithmetic on measured 
 
 ```sh
 bun markets/methods/hp-train.ts acct01 [--to 40] [--out FILE]      # the defaults: the cows, no shop, no coins
+bun markets/methods/hp-train.ts acct01 --site farm                  # any low site (section 2b)
 bun markets/methods/hp-train.ts acct01 --to 70                      # the crabs route (auto above ~52 HP)
 bun markets/methods/hp-train.ts acct01 --to 40 --prayer 31 --pray   # the Prayer-first variant (slower; see below)
 ```
@@ -92,6 +93,40 @@ a tick from a Defence-1 account (142 in 1,943 ticks, m).
 **Deaths.** A fresh lab bot was killed on the cows by something that was not a cow (a random-event npc, i).
 The trainer recovers from up to 3 deaths: the respawn keeps the three most valuable items (the scimitars), so it
 wields again and walks or crosses back.
+
+## 2b. Many fresh accounts at once: the low sites and npc claims (rs/632)
+
+One site cannot feed many bots. A site gives back only its spawns' hitpoints over their respawn times, and a bot at
+full pace on the cows deals ~0.6 a tick (1,085 damage from HP 10 to 40 at 25x xp, ~136 cow kills). The Lumbridge
+pen's 10 cows give 0.89 a tick, about 1.5 bots' worth: in rs/544's lab 20 accounts there took 3,389 ticks and more,
+and most were still under 30 after 5,300. So the trainer has seven low sites, each holding only targets with Attack
+and Strength 1 and negative bonuses (cows, goblins, chickens), which hit a Defence-1 account as seldom as the cows
+do (no food needed). `Site.supply` is Σ hitpoints / respawnrate over the site's map spawns:
+
+| Site (`--site`) | Spawns | Supply (hp a tick) | Default cap (accounts) |
+|---|---|---|---|
+| `cows`: the Lumbridge pen | 10 cows | 0.89 | 4 |
+| `goblins`: east of the Lumbridge river | 21 goblins | 0.75 | 3 |
+| `chickens`: the Lumbridge farm pen | 9 chickens | 0.54 | 2 |
+| `farm`: between Draynor and Falador | 7 cows, 6 chickens | 0.98 | 4 |
+| `champions`: south of the Champions' Guild | 7 cows | 0.62 | 2 |
+| `crafting`: south of the Crafting Guild | 10 cows | 0.89 | 4 |
+| `sarim`: west of Port Sarim | 12 goblins | 0.43 | 2 |
+
+Left out on purpose: giant rats (`cowardly` hunt mode attacks weaker players), men and women (the coins earner's
+thieving targets), ducks (on water), imps (they teleport). Every weak target within reach of Lumbridge totals only
+~5-11 hp a tick, so these seven sites are most of what exists for melee-only fresh accounts.
+
+**Claims.** Bots on one site pick the same idle npc in the same tick: live, markets saw three of ours click one cow
+within a second. `TargetClaims` (one per process, the phase-2 runner's) gives each npc to one bot: a bot never picks
+an npc another holds, an npc another bot holds no longer counts as hitting it, and a kill stays claimed for 5 s (the
+killer sees the death a tick before the others, and without the hold a second bot clicked the corpse 0.1-0.75 s
+later). A claim lapses after 20 s without renewal, so a stalled bot frees its npc. Each pick, drop, switch and
+end-of-fight release is an event, which `markets/phase2/report.ts` `hpCollisions` checks.
+
+The allocation of accounts to sites and the queue when every site is full are the runner's (`phase2.md` 'Running').
+Measured: 22 fresh accounts at once, all at HP 40 within 25 minutes of login (`phase2.md` 'Hitpoints sites in the
+lab').
 
 ## 3. The Prayer-first variant
 
