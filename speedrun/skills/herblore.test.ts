@@ -179,6 +179,16 @@ describe('steps', () => {
         expect(steps({ to: 70, recipes: ['attack'] })[0]!.done!(obs(70, [item(0, 115, 1, 'Strength potion(3)')]), {})).toBe(false);
         // an item that is not the cycle's does not
         expect(s!.done!(obs(70, [item(0, 2347, 1, 'Hammer')]), {})).toBe(true);
+        // the step record has S25e: done for the rest of the attempt, whatever herb potion a later step holds
+        const marked = { has: (n: string) => n === STEP_NAME };
+        const superantipoison3 = [item(0, 181, 1, 'Superantipoison(3)')];
+        const recordedObs = new Observation(world({ level: 70, inventory: superantipoison3 }), {}, undefined, marked);
+        expect(s!.done!(recordedObs, {})).toBe(true);
+        expect(s!.inProgress!(recordedObs, {})).toBe(false);
+        // not recorded (the stop reached, the close not yet passed): the leftovers keep it in progress
+        const unmarked = new Observation(world({ level: 70, inventory: LEFTOVERS }), {}, undefined, { has: () => false });
+        expect(s!.done!(unmarked, {})).toBe(false);
+        expect(s!.inProgress!(unmarked, {})).toBe(true);
         expect(s!.postconditions(world({ level: 69, inventory: [] }), {})).toBe('Herblore 69 < 70');
         expect(s!.postconditions(world({ level: 70, inventory: LEFTOVERS }), {})).toBe('the stow left Unfinished potion, Limpwurt root, Eye of newt, Snape grass, Strength potion(3) in the inventory');
         expect(s!.postconditions(world({ level: 70, inventory: [] }), {})).toBe(true);
@@ -193,6 +203,9 @@ describe('steps', () => {
         expect(await walk(61)).toEqual([STEP_NAME, 'resume']);
         expect((await resolveResume(steps(), new Observation(world({ level: 99, inventory: [] })), {})).mode).toBe('finished');
         expect(await walk(99, { inventory: LEFTOVERS })).toEqual([STEP_NAME, 'resume']);
+        // recorded: a later state holding a 3-dose herb potion walks past S25e
+        const later = new Observation(world({ level: 99, inventory: [item(0, 181, 1, 'Superantipoison(3)')] }), {}, undefined, { has: (n: string) => n === STEP_NAME });
+        expect((await resolveResume(steps(), later, {})).mode).toBe('finished');
     });
 });
 

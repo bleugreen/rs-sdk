@@ -216,7 +216,10 @@ export function herbloreStep(opts: HerbloreOptions = {}): Step<any> {
     const to = opts.to ?? 99;
     // every herb item, not only opts.recipes': the stow deposits all of them
     const held = (s: BotWorldState) => cycleItems(s);
-    const done = (s: BotWorldState) => reached(s, to) && held(s).length === 0;
+    const closed = (s: BotWorldState) => reached(s, to) && held(s).length === 0;
+    // Once the step record has S25e (its postconditions passed: the stow left nothing), it stays done:
+    // later steps hold herb potions (H23's superantipoison(4) is a 3-dose, obj 181, after one dose).
+    const recorded = (o: Observed) => !!o.record?.has(STEP_NAME);
     const entry = async (ctx: StepContext<any>) => {
         const s = ctx.sdk.getState();
         if (!s) throw new Error('no state');
@@ -245,10 +248,10 @@ export function herbloreStep(opts: HerbloreOptions = {}): Step<any> {
             return reached(s, to) || opts.maxActions !== undefined ? true : `Herblore ${herbloreLevel(s)} < ${to}`;
         },
         logoutSafe: true,
-        done: (o: Observed) => done(o.state),
+        done: (o: Observed) => recorded(o) || closed(o.state),
         inProgress: (o: Observed) => {
             const s = o.state;
-            if (!s.player || done(s)) return false;
+            if (!s.player || recorded(o) || closed(s)) return false;
             return reached(s, to) || (herbloreXp(s) > POST_RITUAL_XP && herbloreXp(s) < xpForLevel(to));
         }
     };
