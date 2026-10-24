@@ -221,6 +221,8 @@ const watched = poisonWatch as PoisonWatch | null;
 if (watched) {
     watched.stop();
     result('S16_poison', watched.summary());
+    // The relogged client's handles keep the process up past closeSession (measured: lab.sh ran to LAB_TIMEOUT).
+    process.exit(0);
 }
 
 if (fights.length) {
