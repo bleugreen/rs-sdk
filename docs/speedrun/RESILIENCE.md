@@ -423,7 +423,11 @@ nothing eating or curing. The upkeep eats by the legs' rule (`travel.ts` `eatDue
 and drinks an antipoison when SCORED reads poisoned, through `quests/segments.ts`
 (`poisoned`, `cureDose`, `noteAntipoison`, noted in the tick the drink is sent so
 no other caller drinks twice). It sends one click per frame, the eat first, and a
-drink that did not land is sent again after `CURE_RESEND` ticks. It sends nothing
+drink that did not land is sent again after `CURE_RESEND` ticks, judged by the
+dose still held as clicked, not by `poisoned`, which the dose's own note has
+already cleared. A drink that landed holds every click until its p_delay is
+over (`drinkDelayOver`), and a client reload (the published tick restarting
+lower) clears the upkeep's own eat and drink records. It sends nothing
 while a trade is open, because a pack click closes the trade screen. From login
 it also holds while a dialogue is open. The login stretch ends when the first
 step is entered (`enteringEnds`), where the step's own upkeep takes over. The

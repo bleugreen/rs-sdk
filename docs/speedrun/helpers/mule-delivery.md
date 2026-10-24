@@ -431,6 +431,10 @@ For each delivery row R on the path, in chain order:
    (`h4Wants`, `h12Wants`), there is no cue and no ready gate. One
    `(cue) <row> skipped` note row says which, the carrier is prepared for its
    next row as a stop would prepare it (`CueKeeper.skip`), and the segment runs.
+   A skipped carrier's last row is written as a final stop, which is the
+   launcher's logout trigger, unless that row's own session is already stopped
+   final on disk. A kit row served and stopped before a resume is left as it
+   is, because a final session never reopens.
    When the row is served and the plan still wants more, the step stops with
    that named before its body. A carrier serves a row once, so a reopened cue
    would only wait out the gate. The served mark is written when the server says
