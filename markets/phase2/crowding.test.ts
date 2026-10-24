@@ -82,7 +82,7 @@ describe('crowding', () => {
     test('a target older than 30 s does not count towards another login\'s load', () => {
         const by = samplesOf([...lines('a01', { from: 0, to: 1, gpTick: 10, target: 1 }), ...lines('a02', { from: 0, to: 5, gpTick: 10, target: 1 })]);
         const l = loads(by);
-        expect(l.get(`a02@${T0 + 0.5 * MIN}`)).toBe(2);
+        expect(l.get(`a02@${T0 + 40_000}`)).toBe(2);
         expect(l.get(`a02@${T0 + 3 * MIN}`)).toBe(1);
     });
 });
