@@ -50,8 +50,20 @@ async function shutDoors(sdk: BotSDK): Promise<void> {
     }
 }
 
+/** A teleport sent during a pickpocket delay or stun is dropped: wait it out and try again. */
+async function teleIn(sdk: BotSDK): Promise<void> {
+    for (let i = 0; ; i++) {
+        await waitTicks(sdk, 10);
+        try {
+            return await mustTele(sdk, INSIDE.x, INSIDE.z);
+        } catch (e) {
+            if (i >= 3) throw e;
+        }
+    }
+}
+
 async function trap(sdk: BotSDK, label: string): Promise<void> {
-    await mustTele(sdk, INSIDE.x, INSIDE.z);
+    await teleIn(sdk);
     await waitTicks(sdk, 3);
     await shutDoors(sdk);
     log(sdk, `${label}: inside`, { doors: doors(sdk) });
@@ -59,7 +71,7 @@ async function trap(sdk: BotSDK, label: string): Promise<void> {
     const plain = await walkTo(sdk_bot!, sdk, ARDOUGNE_SOUTH_BANK.x, ARDOUGNE_SOUTH_BANK.z, 2, 0);
     log(sdk, `${label}: plain walkTo to the bank`, { ok: plain.ok, message: plain.message });
     if (plain.ok) {
-        await mustTele(sdk, INSIDE.x, INSIDE.z);
+        await teleIn(sdk);
         await waitTicks(sdk, 3);
         await shutDoors(sdk);
         log(sdk, `${label}: back inside after the plain walk got out`, { doors: doors(sdk) });
