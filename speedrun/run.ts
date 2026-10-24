@@ -15,7 +15,9 @@
 //    on main (lib/run-floor.ts; no floor lives in code);
 // 2. the host reservation is live and the run's own claim (--claim-owner / $SPEEDRUN_CLAIM_OWNER);
 // 3. the slot ledger (speedrun/tools/slot-ledger.ts) exits 0;
-// 4. no refusing step (a module not on main) on the path to --until;
+// 4. no refusing step (a module not on main) on the path to --until, and no seam mismatch: every
+//    step whose preconditions ask for a start tile starts within it wherever the leg before it
+//    arrives (runner/chain.ts chainSeams);
 // 5. the helpers are in: <run dir>/launcher.json says helpersReady, and the next helper step's helpers
 //    are ready by their roles' own phase in the cue dir, not merely online (runner/phase-gate.ts; one
 //    line per status file, every later family on the path reported);
@@ -65,7 +67,7 @@ import { newRunId, parseLog, TickLog, type TickRow } from './lib/ticks';
 import { startRunTabMemory, type TabMemorySetting } from './lib/tab-memory';
 import { formatRunReport, runReport } from './runner/run-report';
 import { patchMethod } from './runner/fence';
-import { buildChain, chainProbes, missingOnPath, muleCueDir, resolveFrom, sliceUntil, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
+import { buildChain, chainProbes, chainSeams, missingOnPath, muleCueDir, resolveFrom, sliceUntil, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
 import { exitStopIsFinal, prepareCueDir, RunCues } from './runner/cue-keeper';
 import { deliveryOwnerFor } from './runner/delivery-owner';
 import { dropRecovery } from './runner/drop-relog';
@@ -282,6 +284,9 @@ export async function startGates(chain: readonly ChainStep[], io: GateIO): Promi
     out.push({ gate: 'slot ledger', ok: led.code === 0, detail: led.code === 0 ? 'exit 0' : `exit ${led.code}: ${led.out.trim().split('\n').slice(-3).join(' | ')}` });
     const missing = missingOnPath(chain);
     out.push({ gate: 'no refusing step on the path', ok: missing.length === 0, detail: missing.length ? missing.map(m => `#${m.index} ${m.name} (${m.owner})`).join('; ') : `${chain.length} steps, none refusing` });
+    const seams = chainSeams(chain);
+    const off = seams.filter(s => !s.ok);
+    out.push({ gate: 'seams', ok: off.length === 0, detail: off.length ? off.map(s => s.detail).join('; ') : `${seams.length} checked (${seams.map(s => s.id).join(', ')}), 0 mismatches` });
     const ready = io.helpersReady();
     out.push({ gate: 'helpers ready', ok: ready === true, detail: ready === null ? 'no launcher.json in the run dir: start the helpers first' : ready ? 'launcher.json: helpersReady' : 'launcher.json: helpers not ready yet' });
     // Online is not ready: the next helper step's helpers must be ready by their roles' own phase.
@@ -776,6 +781,9 @@ async function main(argv: string[]): Promise<number> {
     if (a.dryRun) {
         console.log(`\n${chain.length} steps${a.until ? ` (--until=${a.until})` : ''}:`);
         chain.forEach((s, i) => console.log(`${String(i).padStart(3)}  ${s.id.padEnd(14)} ${s.kind.padEnd(8)} ${s.name}${s.owner ?? s.refuses ? `  [refuses: ${s.owner ?? s.refuses}]` : ''}`));
+        const seams = chainSeams(chain);
+        console.log(`\n${seams.length} seams (a step's start tile against the leg before it), ${seams.filter(s => !s.ok).length} mismatches:`);
+        for (const s of seams) console.log(`  ${s.ok ? 'ok      ' : 'MISMATCH'} ${s.detail}`);
         return gates.every(g => g.ok) ? 0 : EXIT_REFUSED;
     }
     if (!gates.every(g => g.ok)) {
