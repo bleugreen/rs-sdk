@@ -32,7 +32,12 @@
 // runner/attempt-record.ts): the steps whose postconditions passed in this attempt,
 // in this process or an earlier one. A milestone whose effect leaves no lasting game
 // fact (S16's segments, whose cape and staff the exit drops) reads it in `done`;
-// runSteps marks each step there, so a step the walk enters is marked too.
+// runSteps marks each step there, so a step the walk enters is marked too. While the
+// observed state is out of the world (S21's relog split, a walk before a login lands),
+// a milestone the record has counts as done without reading the game: out of game
+// every quest stage and the player read empty, so nothing there can show or contradict
+// it, and the walk must reach the login half rather than stop at S00 (milestoneDone).
+// In the world each `done` decides, the record only where a module reads it.
 //
 // Each walk starts by turning run on (lib/run-mode.ts), however the session
 // came back: a relaunched client or reloaded page logged in without login().
@@ -169,8 +174,7 @@ export async function resolveResume<C>(steps: ReadonlyArray<Step<C>>, obs: Obser
     for (let i = 0; i < steps.length; i++) {
         const s = steps[i]!;
         if (!s.done) continue;
-        await obs.ensure(s.probes);
-        if (s.done(obs, c)) lastDone = i;
+        if (await milestoneDone(s, obs, c)) lastDone = i;
         else {
             firstUndone = i;
             break;
@@ -199,6 +203,16 @@ export async function resolveResume<C>(steps: ReadonlyArray<Step<C>>, obs: Obser
         why.push({ step: s.name, why: at });
     }
     throw new ResumeError(why, lastDone, firstUndone);
+}
+
+/**
+ * Milestone `s` is done: out of the world, once this attempt's record has it (its own `done` and
+ * probes are not read then: out of game they can only read empty); otherwise its own `done`.
+ */
+export async function milestoneDone<C>(s: Step<C>, obs: Observation, c: C): Promise<boolean> {
+    if (!obs.state.inGame && obs.record?.has(s.name)) return true;
+    await obs.ensure(s.probes);
+    return !!s.done?.(obs, c);
 }
 
 /**
