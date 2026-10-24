@@ -13,7 +13,7 @@ import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import { parseLedger } from '../tools/slot-ledger';
 import { DEFAULT_DIALOGUE, slotNeed } from './segments';
 import {
-    ARRIVAL, BOLREN, exitCheck, H7, h7Want, inVillage, JUMP_IN, kitCheck, LETTERS, MONTAI, observed, QUEST_ITEMS, quest, REWARD_ATTACK_XP, resolveOptions, RUNE_NEED, RUNE_STAFF, RUNE_USE,
+    ARRIVAL, BOLREN, exitCheck, H7, h7Want, inVillage, JUMP_IN, kitCheck, LETTERS, MONTAI, observed, PRAYER_B_TO_K, PRAYER_K, QUEST_ITEMS, quest, REWARD_ATTACK_XP, resolveOptions, RUNE_NEED, RUNE_STAFF, RUNE_USE,
     stepId, steps, VILLAGE_TREE, WARLORD, WARLORD_CASTS, WARLORD_MAX_CASTS,
 } from './tree-gnome-village';
 
@@ -390,5 +390,21 @@ describe('rune pins: RUNE_USE and RUNE_NEED agree with K (tools/rune-pins.ts)', 
         const s = startState('K').state;
         const staff = new RegExp(RUNE_STAFF, 'i');
         expect(byLetter('K').preconditions({ ...s, equipment: s.equipment.filter(i => !staff.test(i.name)) }, {})).toMatch(staff);
+    });
+});
+
+describe('the prayer points (rs/687): S10b carries no potion, so the pool is what S07 left', () => {
+    const withPoints = (letter: string, points: number) => {
+        const s = startState(letter).state;
+        return { ...s, prayers: { ...s.prayers, prayerPoints: points } };
+    };
+    test('B wants the maze, the stronghold and the warlord: ~75 (rs/342: 94 to ~25)', () => {
+        expect(PRAYER_B_TO_K).toBeGreaterThanOrEqual(20 + 6 + 43);
+        expect(byLetter('B').preconditions(withPoints('B', PRAYER_B_TO_K), {})).toBe(true);
+        expect(byLetter('B').preconditions(withPoints('B', 50), {})).toBe('S10b:B for B-K needs ~75 prayer points, has 50 and no prayer potion');
+    });
+    test('K wants its walk and the warlord: ~45', () => {
+        expect(byLetter('K').preconditions(withPoints('K', PRAYER_K), {})).toBe(true);
+        expect(byLetter('K').preconditions(withPoints('K', 20), {})).toBe('S10b:K for the walk and the warlord needs ~45 prayer points, has 20 and no prayer potion');
     });
 });
