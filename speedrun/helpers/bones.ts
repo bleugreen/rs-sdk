@@ -33,6 +33,7 @@ import { EatGuard } from './eat-guard';
 import { waitForFreshState } from '../lib/fresh-state';
 import { accountMatches, playerPattern } from './mule';
 import { isEastOfTollGate, TOLL_GP, travelTo } from '../lib/toll-gate';
+import { leashHolds, ROOM, TAVERLEY_ADULTS } from './taverley-dragons';
 
 interface Box { x1: number; z1: number; x2: number; z2: number }
 interface Tile { x: number; z: number }
@@ -103,6 +104,22 @@ export interface Spot {
     patrol?: Tile[];
     /** Carried items a bank visit leaves in the inventory (consumables the spot needs, like passes). */
     keep?: RegExp;
+    /** Item that must be worn to work this spot, matched by id; the helper never walks in without it. */
+    worn?: WornItem;
+    /** Crowding gate: with more than `maxPlayers` (this one included) where `holds`, the helper waits on `wait`. */
+    room?: RoomGate;
+    /** Attack, Strength and Defence trained on cows before the first trip when the options do not say (default 50). */
+    train?: number;
+    /** Bank visits take out melee gear better than what is worn (gearRank), which the next cycle wields. */
+    wieldBanked?: boolean;
+}
+
+export interface WornItem { id: number; name: RegExp; slot: string }
+export interface RoomGate { maxPlayers: number; holds(p: Tile): boolean; wait: Tile }
+
+/** Whether a room gate is full: this player plus the other players it holds exceed maxPlayers. */
+export function roomFull(gate: RoomGate, others: readonly { x: number; z: number; worldX?: number; worldZ?: number }[]): boolean {
+    return 1 + others.filter(p => gate.holds({ x: p.worldX ?? p.x, z: p.worldZ ?? p.z })).length > gate.maxPlayers;
 }
 
 /** Edgeville dungeon hill giants: 12 spawns around (3096-3120, 9816-9850), level 28, 35 hp, big bones. */
@@ -249,6 +266,32 @@ const BABY_BLUE_CENTRE: Tile = { x: 2898, z: 9775 };
  * way in loops north and east and comes back west through the dusty-key door (2924, 9803),
  * entered from (2925, 9803) with the key; it opens from inside without one.
  */
+/**
+ * Into the Taverley dragon room (see BABY_BLUE): down the ladder, round to the dusty-key door,
+ * through it with the key, on to the spot's centre. A spot with a `worn` requirement is refused
+ * before the first step while that item is not worn.
+ */
+async function enterDragonRoom(r: Run, spot: Spot): Promise<boolean> {
+    if (spot.worn && !r.wearing(spot.worn)) {
+        r.ctx.log(`${spot.id}: not entering without item ${spot.worn.id} worn`, { at: [r.pos().x, r.pos().z] });
+        return false;
+    }
+    if (!(await r.routeToSpot(spot))) return false;
+    if (!r.underground()) {
+        if (!(await r.walk(TAVERLEY_DUNGEON_LADDER.x, TAVERLEY_DUNGEON_LADDER.z + 1, 2, 300_000))) return false;
+        if (!(await r.climb(/ladder/i, /climb-down/i, true, TAVERLEY_DUNGEON_LADDER))) return false;
+    }
+    if (!inBabyBlueRoom(r.pos())) {
+        if (!(await r.walk(DUSTY_KEY_DOOR.x + 1, DUSTY_KEY_DOOR.z, 0, 180_000))) return false;
+        const door = (await r.sdk.scanNearbyLocs(4)).find(l => /door|gate/i.test(l.name) && l.x === DUSTY_KEY_DOOR.x && l.z === DUSTY_KEY_DOOR.z);
+        if (!door) { r.ctx.log(`${spot.id}: no dusty-key door`, { at: [r.pos().x, r.pos().z] }); return false; }
+        await r.bot.useItemOnLoc(DUSTY_KEY, door);
+        await r.waitFor(s => (s.player?.worldX ?? 9999) < DUSTY_KEY_DOOR.x, 10);
+        if (r.pos().x >= DUSTY_KEY_DOOR.x) return false;
+    }
+    return r.walk(spot.centre.x, spot.centre.z, 4, 90_000);
+}
+
 const BABY_BLUE: Spot = {
     id: 'baby_blue',
     npc: /^baby blue dragon$/i,
@@ -262,22 +305,7 @@ const BABY_BLUE: Spot = {
         const p = r.pos();
         return r.underground() && inBox(this.area, p.x, p.z) && inBabyBlueRoom(p);
     },
-    async enter(r) {
-        if (!(await r.routeToSpot(this))) return false;
-        if (!r.underground()) {
-            if (!(await r.walk(TAVERLEY_DUNGEON_LADDER.x, TAVERLEY_DUNGEON_LADDER.z + 1, 2, 300_000))) return false;
-            if (!(await r.climb(/ladder/i, /climb-down/i, true, TAVERLEY_DUNGEON_LADDER))) return false;
-        }
-        if (!inBabyBlueRoom(r.pos())) {
-            if (!(await r.walk(DUSTY_KEY_DOOR.x + 1, DUSTY_KEY_DOOR.z, 0, 180_000))) return false;
-            const door = (await r.sdk.scanNearbyLocs(4)).find(l => /door|gate/i.test(l.name) && l.x === DUSTY_KEY_DOOR.x && l.z === DUSTY_KEY_DOOR.z);
-            if (!door) { r.ctx.log('baby_blue: no dusty-key door', { at: [r.pos().x, r.pos().z] }); return false; }
-            await r.bot.useItemOnLoc(DUSTY_KEY, door);
-            await r.waitFor(s => (s.player?.worldX ?? 9999) < DUSTY_KEY_DOOR.x, 10);
-            if (r.pos().x >= DUSTY_KEY_DOOR.x) return false;
-        }
-        return r.walk(this.centre.x, this.centre.z, 4, 90_000);
-    },
+    enter(r) { return enterDragonRoom(r, this); },
     async leave(r) {
         if (r.underground()) {
             if (inVelrakCell(r.pos())) {
@@ -297,6 +325,49 @@ const BABY_BLUE: Spot = {
         }
         return r.walk(FALADOR_WEST_BANK.x, FALADOR_WEST_BANK.z, 3, 300_000);
     }
+};
+
+/** Item 1540, the anti-dragon shield. This revision names it "Dragonfire shield" (shields.obj antidragonbreathshield). */
+export const ANTI_DRAGON_SHIELD: WornItem = { id: 1540, name: /^dragonfire shield$/i, slot: 'shield' };
+
+/** Tiles an adult blue dragon can fight inside its leash. The magic killers' safe tile and route (dragons.ts) are outside all of them. */
+export const inAdultReach = (p: Tile): boolean => TAVERLEY_ADULTS.some(s => leashHolds(s, p));
+
+const mean = (ns: number[]) => ns.reduce((a, b) => a + b, 0) / ns.length;
+/** The middle of the three adults' footprints. */
+const ADULTS_CENTRE: Tile = {
+    x: Math.floor(mean(TAVERLEY_ADULTS.map(s => s.x + (s.size - 1) / 2))),
+    z: Math.floor(mean(TAVERLEY_ADULTS.map(s => s.z + (s.size - 1) / 2)))
+};
+
+/**
+ * Taverley dungeon adult blue dragons in melee: the 3 adults of the baby blues' room
+ * (taverley-dragons.ts), level 111, 105 hp, respawn 60 ticks, dragon bones on every kill
+ * (blue_dragon.rs2). One attack in four is dragonfire, up to 50 unshielded and 5 with the
+ * anti-dragon shield worn (dragon.rs2), so the spot is never entered without it. Babies share
+ * the room and are never targets. The magic killers (dragons.ts) work the same adults from
+ * outside every leash; the room gate counts only players inside an adult's leash, so it holds
+ * the melee helpers to two.
+ */
+const BLUE_DRAGON: Spot = {
+    id: 'blue_dragon',
+    npc: /^blue dragon$/i,
+    bones: /^dragon bones$/i,
+    area: ROOM,
+    centre: ADULTS_CENTRE,
+    food: 'ge',
+    train: 70,
+    requires: DUSTY_KEY,
+    acquire: fetchDustyKey,
+    worn: ANTI_DRAGON_SHIELD,
+    room: { maxPlayers: 2, holds: inAdultReach, wait: { x: DUSTY_KEY_DOOR.x - 1, z: DUSTY_KEY_DOOR.z } },
+    wieldBanked: true,
+    inside(r) {
+        const p = r.pos();
+        return r.underground() && inBox(this.area, p.x, p.z) && inBabyBlueRoom(p);
+    },
+    enter(r) { return enterDragonRoom(r, this); },
+    leave(r) { return BABY_BLUE.leave(r); }
 };
 
 /** Unidentified herbs are all named "Herb" in this revision (one item id per herb). */
@@ -494,6 +565,7 @@ const UGTHANKI: Spot = {
 export const SPOTS: Record<string, Spot> = {
     hill_giants: HILL_GIANTS,
     baby_blue: BABY_BLUE,
+    blue_dragon: BLUE_DRAGON,
     chaos_druids: CHAOS_DRUIDS,
     chaos_druids_taverley: CHAOS_DRUIDS_TAVERLEY,
     nature_hobgoblins: NATURE_HOBGOBLINS,
@@ -685,7 +757,7 @@ export function parseOptions(o: Record<string, unknown>): Options {
     if (!FOOD_SOURCES.includes(food)) throw new Error(`bones: unknown food '${String(o.food)}' (known: ${FOOD_SOURCES.join(', ')})`);
     return {
         spot,
-        train: num('train', 50),
+        train: num('train', spot.train ?? 50),
         food,
         foodItem: typeof o.foodItem === 'string' ? o.foodItem : 'Shark',
         foodPerTrip: num('foodPerTrip', 10),
@@ -716,6 +788,34 @@ export function parseOptions(o: Record<string, unknown>): Options {
 
 interface Target { npc: RegExp; area: Box; centre: Tile; loot: RegExp | null }
 type Outcome = 'killed' | 'lost' | 'flee' | 'none' | 'full';
+
+/**
+ * Whether an NPC faces this player. NearbyNpc.targetIndex is the NPC's face entity, 32768 + a slot
+ * when it faces a player; the SDK does not report this player's own slot, but every other visible
+ * player's is in nearbyPlayers, so a player slot that is none of theirs is this player's.
+ */
+export function facesMe(npc: Pick<NearbyNpc, 'targetIndex'>, others: readonly { index: number }[]): boolean {
+    return npc.targetIndex >= 32768 && !others.some(p => p.index === npc.targetIndex - 32768);
+}
+
+/** Ticks without a hitsplat on the target before the attack is sent again (two scimitar swings). */
+export const SWING_STALE_TICKS = 8;
+/** Ticks without any hitsplat on the target before the fight is given up. */
+export const SWING_GIVE_UP_TICKS = 60;
+
+/**
+ * Whether the player is still hitting a live target. Every swing shows as a hitsplat on the target,
+ * a miss as a 0 (NearbyNpc.lastCombatTick), so a target with none for SWING_STALE_TICKS since the
+ * fight began or the last attack click is not being hit: an eat cleared the attack, or the click
+ * was dropped, while the target keeps hitting back. Then attack again, and with no splat at all
+ * for SWING_GIVE_UP_TICKS give the fight up.
+ */
+export function swingCheck(t: { now: number; start: number; lastAttack: number; lastSplat: number | null }): 'ok' | 'reattack' | 'give_up' {
+    const hit = Math.max(t.lastSplat ?? -1, t.start);
+    if (t.now - hit > SWING_GIVE_UP_TICKS) return 'give_up';
+    if (t.now - Math.max(hit, t.lastAttack) > SWING_STALE_TICKS) return 'reattack';
+    return 'ok';
+}
 
 /** One account's live session; the dragons role (dragons.ts) reuses its walking, climbing, fighting and training. */
 export class Run {
@@ -753,6 +853,10 @@ export class Run {
     private trip: { at: number; food: number; eats: number; kills: number; inRoomAt: number | null } | null = null;
     /** Ticks from each attack to the target's death, this session. */
     private readonly killTicks: number[] = [];
+    /** The bank is looked in again for a missing `worn` item no earlier than this. */
+    private wornLookAt = 0;
+    /** When the spot's room gate was first found full (0: not full). */
+    private roomFullSince = 0;
 
     /** Log each stage change once: train, kit:net, kit:rod, kit:feathers, food:cook, food:fish, bones:<spot>. */
     phase(to: string): void {
@@ -793,6 +897,8 @@ export class Run {
     tripKit(): { re: RegExp; n: number }[] {
         const kit = [{ re: BRASS_KEY, n: 1 }];
         if (this.opt.spot.requires) kit.push({ re: this.opt.spot.requires, n: 1 });
+        const worn = this.opt.spot.worn;
+        if (worn && !this.wearing(worn)) kit.push({ re: worn.name, n: 1 });
         if (this.opt.food === 'ge') kit.push({ re: this.foodRe, n: this.opt.foodPerTrip });
         if (this.fishing()) kit.push({ re: ROD, n: 1 }, { re: FEATHER, n: 10_000 });
         return kit;
@@ -827,6 +933,8 @@ export class Run {
         return n;
     }
     owns(re: RegExp): boolean { return this.carrying(re) || this.banked(re) > 0; }
+    /** Whether `w` is equipped, by id (item names differ between revisions). */
+    wearing(w: WornItem): boolean { return this.sdk.getEquipment().some(e => e.id === w.id); }
     aborted(): boolean { return this.ctx.signal.aborted; }
 
     async waitFor(pred: (s: BotWorldState) => boolean, ticks: number): Promise<boolean> {
@@ -964,9 +1072,11 @@ export class Run {
             const r = gearRank(e.name);
             if (r) worn[r.slot] = Math.max(worn[r.slot] ?? -1, r.tier);
         }
+        // The slot of the spot's required item (the anti-dragon shield) is never given up.
+        const reserved = this.activeSpot.worn?.slot;
         for (const item of this.state().inventory) {
             const r = gearRank(item.name);
-            if (!r || r.tier <= (worn[r.slot] ?? -1)) continue;
+            if (!r || r.slot === reserved || r.tier <= (worn[r.slot] ?? -1)) continue;
             if (this.level(r.skill) < (METAL_REQ[r.metal] ?? 99)) continue;
             const res = await this.bot.equipItem(item);
             if (res.success) {
@@ -1051,6 +1161,7 @@ export class Run {
         const toll = tollWithdraw(this.pos());
         withdraw = [...withdraw, ...toll];
         const keep = (i: InventoryItem) => (this.opt.spot.keep?.test(i.name) ?? false) || (toll.length > 0 && COINS.test(i.name)) ||
+            i.id === this.opt.spot.worn?.id ||
             (keepOnBank(i.name, lv, this.opt.spot.requires) && !(FOOD.test(i.name) && !edible(i)) && (fishing || !fishingKit(i.name)));
         const seen = new Set<number>();
         for (const item of this.state().inventory) {
@@ -1066,6 +1177,14 @@ export class Run {
             const have = this.state().inventory.filter(i => w.re.test(i.name) && (!FOOD.test(i.name) || edible(i))).reduce((a, i) => a + i.count, 0);
             const item = this.sdk.getBankItems().find(b => w.re.test(b.name));
             if (item && have < w.n) await this.bot.withdrawItem(item, Math.min(item.count, w.n - have));
+        }
+        if (this.opt.spot.wieldBanked) {
+            for (const b of this.sdk.getBankItems()) {
+                if (this.freeSlots() === 0 || !this.upgrade(b.name)) continue;
+                await this.bot.withdrawItem(b, 1);
+                await this.waitFor(s => s.inventory.some(i => i.id === b.id), 3);
+                this.ctx.log('gear out of the bank', { item: b.name });
+            }
         }
         const items = this.sdk.getBankItems().map(b => ({ id: b.id, name: b.name, count: b.count }));
         this.bankView = new Map(items.map(i => [i.name, i.count]));
@@ -1104,9 +1223,11 @@ export class Run {
         const candidates = s.nearbyNpcs.filter(n =>
             t.npc.test(n.name) && n.hp !== 0 && inBox(t.area, n.x, n.z) &&
             n.optionsWithIndex.some(o => /attack/i.test(o.text)));
-        // An NPC already on us comes first (giants aggress); otherwise skip ones in someone else's fight.
+        // An NPC already on us comes first (giants and adult dragons aggress): in single combat the
+        // server refuses an attack on anything else while it hits us. Otherwise skip ones in someone
+        // else's fight.
         const combat = s.player!.combat;
-        const onMe = candidates.filter(n => n.inCombat && combat.inCombat && combat.targetType === 'npc' && combat.targetIndex === n.index);
+        const onMe = candidates.filter(n => n.inCombat && ((combat.inCombat && combat.targetType === 'npc' && combat.targetIndex === n.index) || facesMe(n, s.nearbyPlayers)));
         if (onMe.length) return onMe.sort((a, b) => a.distance - b.distance)[0] ?? null;
         const crowded = (n: NearbyNpc) => s.nearbyPlayers.filter(p =>
             Math.max(Math.abs((p.worldX ?? p.x) - n.x), Math.abs((p.worldZ ?? p.z) - n.z)) <= 1).length > this.opt.maxPlayersNearTarget;
@@ -1124,9 +1245,11 @@ export class Run {
         }
         let last: Tile = { x: target.x, z: target.z };
         const startTick = this.state().tick;
+        let lastAttack = startTick;
         const deadline = Date.now() + 120_000;
         let idleTicks = 0;
         let eatsSeen = this.guard.eats;
+        let dead = false;
         while (Date.now() < deadline && !this.aborted()) {
             await this.sdk.waitForTicks(1);
             const s = this.state();
@@ -1136,19 +1259,32 @@ export class Run {
                 // The guard ate, which clears the attack (OPHELD clears the interaction); re-engage.
                 eatsSeen = this.guard.eats;
                 const again = s.nearbyNpcs.find(n => n.index === target.index);
-                if (again && again.hp !== 0) await this.bot.attack(again);
+                if (again && again.hp !== 0) {
+                    await this.bot.attack(again);
+                    lastAttack = this.state().tick;
+                }
             }
-            const npc = this.state().nearbyNpcs.find(n => n.index === target.index);
-            if (!npc) break; // despawned: dead (or out of view)
+            const now = this.state();
+            const npc = now.nearbyNpcs.find(n => n.index === target.index);
+            if (!npc) { dead = true; break; } // despawned: dead (or out of view)
             last = { x: npc.x, z: npc.z };
             if (npc.hp === 0) {
                 await this.waitFor(st => !st.nearbyNpcs.some(n => n.index === target.index), 6);
+                dead = true;
                 break;
             }
-            if (!s.player!.combat.inCombat && !npc.inCombat) {
+            if (!now.player!.combat.inCombat && !npc.inCombat) {
                 if (++idleTicks > 8) return 'lost';
             } else idleTicks = 0;
+            const swing = swingCheck({ now: now.tick, start: startTick, lastAttack, lastSplat: npc.lastCombatTick });
+            if (swing === 'give_up') return 'lost';
+            if (swing === 'reattack') {
+                await this.bot.attack(npc);
+                lastAttack = this.state().tick;
+            }
         }
+        // Out of time (or stopped) with the target still standing: no kill, nothing to loot.
+        if (!dead) return 'lost';
         this.kills++;
         this.killTicks.push(this.state().tick - startTick);
         if (this.kills % 25 === 0) this.ctx.log('progress', this.summary());
@@ -1194,7 +1330,7 @@ export class Run {
 
     upgrade(name: string): boolean {
         const r = gearRank(name);
-        if (!r || this.level(r.skill) < (METAL_REQ[r.metal] ?? 99)) return false;
+        if (!r || r.slot === this.activeSpot.worn?.slot || this.level(r.skill) < (METAL_REQ[r.metal] ?? 99)) return false;
         let best = -1;
         for (const e of [...this.sdk.getEquipment(), ...this.state().inventory]) {
             const w = gearRank(e.name);
@@ -1573,6 +1709,32 @@ export class Run {
         return false;
     }
 
+    /**
+     * Wear the spot's `worn` item before any trip: equip it when carried, take it out when banked
+     * (the bank visit leaves the dungeon first), and with none owned wait at the bank, looking in
+     * it again every 5 minutes. False until it is worn; the spot is never entered without it.
+     */
+    async ensureWorn(spot: Spot): Promise<boolean> {
+        const w = spot.worn;
+        if (!w || this.wearing(w)) return true;
+        const held = this.state().inventory.find(i => i.id === w.id);
+        if (held) {
+            await this.bot.equipItem(held);
+            await this.waitFor(() => this.wearing(w), 3);
+            this.ctx.log('equipped', { item: held.name, worn: this.wearing(w) });
+            return this.wearing(w);
+        }
+        if (this.bankView === null || this.banked(w.name) > 0 || Date.now() >= this.wornLookAt) {
+            this.wornLookAt = Date.now() + 5 * 60_000;
+            await this.bank(`fetch item ${w.id}`, spot, this.tripKit());
+            if (!this.owns(w.name)) this.ctx.log(`${spot.id}: item ${w.id} is not worn, carried or banked; staying out of the spot`);
+            return false;
+        }
+        this.phase(`wait:item ${w.id}`);
+        await this.sdk.waitForTicks(10);
+        return false;
+    }
+
     /** Next stop on the spot's patrol loop. */
     patrolIndex = 0;
 
@@ -1658,6 +1820,7 @@ export class Run {
             return;
         }
         if (!(await this.ensureRequirement(spot))) return;
+        if (!(await this.ensureWorn(spot))) return;
 
         // 4. Food (GE food was handled above, before the requirement).
         if (fishing && this.carrying(RAW_FISH) && (this.food().length < this.opt.minFood || !this.underground())) {
@@ -1708,6 +1871,19 @@ export class Run {
             return;
         }
         if (this.trip && this.trip.inRoomAt === null) this.trip.inRoomAt = Date.now();
+        if (spot.room && roomFull(spot.room, this.state().nearbyPlayers)) {
+            // Full: stand back outside every target's reach and look again after a random pause,
+            // so two helpers that back off together do not come back together.
+            if (this.roomFullSince === 0) {
+                this.roomFullSince = Date.now();
+                this.ctx.log('room full; waiting', { spot: spot.id, players: this.state().nearbyPlayers.map(p => p.name) });
+            }
+            const w = spot.room.wait;
+            if (dist(this.pos(), w) > 1) await this.walk(w.x, w.z, 1, 60_000);
+            else await this.sdk.waitForTicks(15 + Math.floor(Math.random() * 20));
+            return;
+        }
+        this.roomFullSince = 0;
         await spot.upkeep?.(this);
         const tick0 = this.state().tick;
         const out = await this.fight({ npc: spot.npc, area: spot.area, centre: spot.centre, loot: new RegExp(`${spot.bones.source}|${this.opt.loot.source}`, 'i') });
