@@ -14,13 +14,40 @@
 //   without its givers refuses (giverGaps) before SCORED logs in;
 // - S03's log-row droppers, the real ones, run by this driver the same way (--droppers below);
 // - S07's bone givers, the real four, run by this driver the same way (--bone-givers below);
-// - the modules' other helpers (courier, anvil, wine giver) started by
-//   the operator in their lab modes, named in the lab run config.
+// - the delivery carriers (mule1, h55, h03 roles), S21's body-altar givers, S18's courier and H12o's
+//   atoll helper, the real roles, run by this driver the same way (--carriers, --s21-givers, --courier,
+//   --h12o below); the anvil and wine giver by theirs (--anvil, --wine-giver).
 //
 //   LOCAL_STAFF_LEVEL=4 bun speedrun/lab/dress-rehearsal.ts --bot=<fresh lab account env> --config=<lab run config>
 //       [--until=<id>] [--from=<id>] [--stage=0] [--stub=<stub giver env>] [--client=browser|lite] [--log=<file>]
 //       [--ringers=<g1>,<g2>,<g3>] [--altar-givers=<a1>,...,<a7>] [--droppers=<d1>,...,<d6>] [--bone-givers=<b1>,...,<b4>] [--staff-steps=<id>,...]
 //       [--anvil=<cairn_ name>] [--cannon-holder=<cairn_ name>] [--wine-giver=<lab.sh helper>]
+//       [--carriers=<mule1>,<h55>,<h03>] [--delivery-run=<token>] [--s21-givers=<t1>,...,<t22>] [--courier=<cairn_ name>] [--h12o=<cairn_ name>]
+//
+// --carriers: the delivery carriers, lab cairn_ names NOT on LAB_HELPERS taking the roles of
+// cairn_mule1, cairn_h55 and cairn_h03 in that order: lab/carrier-launch.ts generates the lab carriers
+// file with the run-day generator (the production binding of mule-delivery-production.json, the
+// ledger's rows with H4m.1-H4m.N on h55's while the row is in force, serve = this SCORED, the run's
+// mule cue dir, deliveryRun --delivery-run or a fresh lab token) for the rows this slice trades, seeds
+// each carrier's bank by ::give with exactly its packages' stock, and starts the real mule role through
+// one launcher (AGENT_PORT+12) whose launch.json is the run config's delivery.launcherConfig; each
+// stands staged on its first row (readyFor, i.e. muleCanReady) before SCORED logs in. The run config's
+// partners name them for their rows, and run.ts's delivery owner prepares, gates and cues each row.
+// Every carrier-held row trades with its carrier; a mule-cue row no carrier holds is staff-supplied
+// (the bound owner refuses an unknown mule row); a non-mule row still goes to --stub when given.
+// --s21-givers: S21's 22 body-altar givers (lab/s21-launch.ts: the production roster's entries, restock
+// by ::give, the hand-back giver's bank seeded with its trades' essence and runes), AGENT_PORT+13,
+// logged out awaiting {S21, altar} before SCORED logs in; runecraft.ts's pre-login opens it. The run
+// config's s21Givers becomes the list.
+// --courier: S18's courier (lab/courier-launch.ts: bone-giver on-request, iron ore, hold 14, the carry
+// list, its bank at Ardougne south seeded by labSeed), AGENT_PORT+14, awaiting {S18, courier}; the run
+// config's courier.giver becomes it.
+// --h12o: H12o's atoll helper (lab/h12o-launch.ts: the generated h45 entry, staged with its carried
+// load on H12oM's tile), AGENT_PORT+15, awaiting its trigger in h45-login; the run config's h12o block
+// names it with the run's h45-cue and h45-login folders.
+// Each of these logs out at its family's close (its stop cue, or this driver's stop once its last step
+// returns) or at the chain's end; a slice that needs S21's, S18's or H12o's helper without its flag
+// refuses before SCORED logs in.
 //
 // --anvil: S25a's anvil helper (SUPPLIES.md H21a), a cairn_ name NOT on LAB_HELPERS: lab/anvil-launch.ts
 // starts helpers/anvil.ts through the run machine's launcher (relay, bank restock with lab stock,
@@ -96,7 +123,12 @@ import { newRunId, parseLog, TickLog } from '../lib/ticks';
 import { attemptOf, loadRunConfig, runChainOnSession, Terminated } from '../run';
 import type { BotWorldState } from '../../sdk/types';
 import { h4PlanOf } from '../quests/dorics-quest';
-import { buildChain, CANNON_ROWS, KIT_PARTNER_ROWS, KIT_SEGMENTS, muleCueDir, noteRow, PLACEMENT, sliceUntil, resolveFrom, STAND_IN_ROWS, type ChainStep, type RunConfig } from '../runner/chain';
+import { buildChain, CANNON_ROWS, chainPartners, KIT_PARTNER_ROWS, KIT_SEGMENTS, muleCueDir, noteRow, PLACEMENT, sliceUntil, resolveFrom, STAND_IN_ROWS, type ChainStep, type RunConfig } from '../runner/chain';
+import { deliveryOwnerFor } from '../runner/delivery-owner';
+import { carrierBase, carrierGaps, carrierLaunch, carrierNames, carrierPartners, CARRIER_PORT_OFFSET, cueRootOf, labCarriersFile, launchCarriers, productionBinding, PRODUCTION_BINDING, stopCarriers, type CarrierEntry, type CarrierRole } from './carrier-launch';
+import { courierGaps, launchCourier, runsS18, stopCourier } from './courier-launch';
+import { h12oGaps, labH12o, launchH12o, runsH12o, stopH12o } from './h12o-launch';
+import { launchS21Givers, runsS21, s21GiverGaps, stopS21Givers } from './s21-launch';
 import { prepareCueDir, RunCues } from '../runner/cue-keeper';
 import { AttemptRecord } from '../runner/attempt-record';
 import { applyEquip, handOffFrom, unequipGives, type HandOffPlan, type HandOffSdk } from '../runner/handoff';
@@ -178,7 +210,12 @@ export interface LabChain {
     staffed: string[];
     /** Cannon rows run as SCORED's real cue-served hand-off against the lab holder. */
     cueServed: string[];
+    /** Rows the lab's real carriers serve (--carriers): SCORED's real delivery hand-off. */
+    carrierServed: string[];
 }
+
+/** The ledger row a hand-off step trades. */
+export const rowOf = (s: Pick<ChainStep, 'name'>): string => s.name.replace(/ hand-off.*$/, '');
 
 /**
  * run.ts's chain as the lab runs it: stand-ins for the missing groups, the stub giver's rows, the
@@ -188,12 +225,13 @@ export interface LabChain {
 /** The plan each module-traded kit row (runner/chain.ts KIT_SEGMENTS) runs, from the state and the ledger's text. */
 export const KIT_PLANS: Readonly<Record<string, (s: BotWorldState, manifest: string) => HandOffPlan>> = { H4: (s, manifest) => h4PlanOf(s, handOffFrom(manifest, 'H4')) };
 
-export function labChain(chain: readonly ChainStep[], o: { manifest: string; stub: string | null; world: () => LabWorld; cannonServed?: readonly string[]; kitServed?: readonly string[] }): LabChain {
+export function labChain(chain: readonly ChainStep[], o: { manifest: string; stub: string | null; world: () => LabWorld; cannonServed?: readonly string[]; kitServed?: readonly string[]; carrierRows?: ReadonlySet<string> }): LabChain {
     const out: ChainStep[] = [];
     const stubRows: StubRow[] = [];
     const standIns: string[] = [];
     const staffed: string[] = [];
     const cueServed: string[] = [];
+    const carrierServed: string[] = [];
     for (let i = 0; i < chain.length; i++) {
         const s = chain[i]!;
         if (s.kind === 'missing') {
@@ -226,7 +264,10 @@ export function labChain(chain: readonly ChainStep[], o: { manifest: string; stu
             if (CANNON_ROWS[row] && o.cannonServed?.includes(row)) {
                 cueServed.push(row);
                 out.push(s);
-            } else if (CANNON_ROWS[row] || !o.stub) {
+            } else if (!CANNON_ROWS[row] && o.carrierRows?.has(row)) {
+                carrierServed.push(row);
+                out.push(s);
+            } else if (CANNON_ROWS[row] || !o.stub || (o.carrierRows && s.cue?.family === 'mule')) {
                 out.push(staffSupplyStep(s, o.manifest));
                 staffed.push(row);
             } else {
@@ -237,7 +278,7 @@ export function labChain(chain: readonly ChainStep[], o: { manifest: string; stu
         }
         out.push(s);
     }
-    return { chain: out, stubRows, standIns, staffed, cueServed };
+    return { chain: out, stubRows, standIns, staffed, cueServed, carrierServed };
 }
 
 /** S06's band as the chain runs it (runner/chain.ts: runecraft.steps({ untilLevel: 44 })); its givers carry its `load`. */
@@ -279,6 +320,14 @@ export interface GiverSets {
     cannonHolder?: string;
     /** S25c's wine giver (--wine-giver), a LAB_HELPERS account. */
     wineGiver?: string;
+    /** The delivery carriers (--carriers), the mule1, h55 and h03 roles in order. */
+    carriers?: readonly string[];
+    /** S21's body-altar givers (--s21-givers). */
+    s21Givers?: readonly string[];
+    /** S18's courier (--courier). */
+    courier?: string;
+    /** H12o's atoll helper (--h12o). */
+    h12o?: string;
 }
 
 /**
@@ -309,6 +358,17 @@ export function giverGaps(all: readonly (Pick<ChainStep, 'id'> & { name?: string
         }
     }
     out.push(...boneGiverGaps(steps, { boneGivers: g.boneGivers ?? [], ...(g.labHelpers ? { labHelpers: g.labHelpers } : {}), others: { '--ringers': g.ringers, '--altar-givers': g.altarGivers, '--droppers': g.droppers ?? [], '--anvil': g.anvil ? [g.anvil] : [] } }));
+    const flags: Record<string, readonly string[]> = {
+        '--ringers': g.ringers, '--altar-givers': g.altarGivers, '--droppers': g.droppers ?? [], '--bone-givers': g.boneGivers ?? [],
+        '--anvil': g.anvil ? [g.anvil] : [], '--cannon-holder': g.cannonHolder ? [g.cannonHolder] : [], '--wine-giver': g.wineGiver ? [g.wineGiver] : [],
+        '--carriers': g.carriers ?? [], '--s21-givers': g.s21Givers ?? [], '--courier': g.courier ? [g.courier] : [], '--h12o': g.h12o ? [g.h12o] : [],
+    };
+    const others = (self: string) => Object.fromEntries(Object.entries(flags).filter(([f]) => f !== self));
+    const helpers = g.labHelpers ? { labHelpers: g.labHelpers } : {};
+    out.push(...carrierGaps({ carriers: g.carriers ?? [], ...helpers, others: others('--carriers') }));
+    out.push(...s21GiverGaps(steps, { givers: g.s21Givers ?? [], ...helpers, others: others('--s21-givers') }));
+    out.push(...courierGaps(steps, { ...(g.courier ? { courier: g.courier } : {}), ...helpers, others: others('--courier') }));
+    out.push(...h12oGaps(steps, { ...(g.h12o ? { h12o: g.h12o } : {}), ...helpers, others: others('--h12o') }));
     return out;
 }
 
