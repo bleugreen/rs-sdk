@@ -229,7 +229,7 @@ railing roll's slope is linear in level, `stat_random`). The cheapest sources, i
 1. Goblin Diplomacy moved early (#2): its travel nets out positive because T23-24 and L24b go away.
 2. 22 leather gloves (#4): blocked on S13's slots.
 3. Sheep Shearer (150 base, ~68 i, `quests/quest_sheep/scripts/quest_sheep.rs2:5`): Crafting 22,
-   which saves only ~79 tries x... about 79 i of railings for its ~68, so about +11. With #2 it
+   which saves about 79 i of railings (6.0 tries fewer x 13.1) for its ~68, so about +11. With #2 it
    adds only ~13 more (Crafting 25 to 31) for the same ~68.
 4. Opals or snelms: their sources are not on the route.
 
@@ -267,7 +267,7 @@ Off, and not plannable:
 - `NODE_RANDOM_EVENTS` defaults false (`server/engine/src/util/Environment.ts:53`), and fly.toml:25
   sets it false.
 - The 500-tick event timer is armed only when `map_random_events` is true
-  (`login/scripts/login.rs2:40-42`).
+  (`login_logout/login.rs2:40-42`).
 - Every spawn path checked calls `macro_event_allowed`, which returns false with the flag off
   (`macro events/scripts/macro_events.rs2:65-68`): the timer, `general_spawn`, login, each skill's
   event label, the flax and teleport `afk_event` branches (`pickables.rs2:61-62`,
