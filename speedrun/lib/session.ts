@@ -372,11 +372,13 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         await sdk.connect();
         if (opts.awaitInWorld === false) return session;
         // On connect the gateway can hand back the bot's last published state, which
-        // still reads inGame from the previous session. A freshly launched client
-        // takes ~20 s on the demo to log in and advance past it, so give the advance
+        // still reads inGame from the previous session. A launched tab is waited on by
+        // its own launch id (waitOwnLaunch), so that state never counts for it. A
+        // freshly launched client takes ~20 s on the demo to log in, so a launch gets
         // the whole budget rather than the short attach-time window.
         const ready = opts.readyTimeoutMs ?? 120_000;
-        await waitAdvancingTick(session, ready, opts.launch ? ready : undefined);
+        if (session.launchTag) await waitOwnLaunch(session, ready);
+        else await waitAdvancingTick(session, ready, opts.launch ? ready : undefined);
         // A client we attach to may have logged in on its own (lab runners, a
         // relaunch by another process); every login leaves run off.
         await ensureRunOn(sdk);
