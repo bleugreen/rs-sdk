@@ -673,7 +673,20 @@ export function steps(input: Options = {}): Step<any>[] {
     const opts = resolveOptions(input);
     const note = (ctx: Ctx, step: string, meta: Record<string, unknown>) => logNote(ctx.log, ctx.session, step, meta);
     // A zero-tick, tick-stamped probe row: where in a segment the ticks go.
-    const mark = (ctx: Ctx, step: string, what: string) => note(ctx, step, { mark: what, at: pos(ctx.sdk) });
+    const mark = (ctx: Ctx, step: string, what: string) => {
+        const s = ctx.sdk.getState()!;
+        const npcs = s.nearbyNpcs.filter(n => n.distance <= 6).slice(0, 4).map(n => `${n.name}@${n.distance}${n.inCombat ? '!' : ''}`);
+        note(ctx, step, { mark: what, at: pos(ctx.sdk), energy: s.runEnergy, hp: skillLevel(s, 'hitpoints'), npcs });
+    };
+    // Samples position, run energy and hitpoints every 10 ticks until stopped.
+    const trace = (ctx: Ctx, step: string): (() => void) => {
+        let last = -100;
+        return ctx.sdk.onStateUpdate(s => {
+            if (s.tick - last < 10) return;
+            last = s.tick;
+            note(ctx, step, { trace: s.tick, at: pos(s), energy: s.runEnergy, hp: s.skills.find(k => k.name.toLowerCase() === 'hitpoints')?.level, npcs: s.nearbyNpcs.filter(n => n.distance <= 6 && n.inCombat).map(n => n.name) });
+        });
+    };
 
     return [
         {
@@ -707,7 +720,9 @@ export function steps(input: Options = {}): Step<any>[] {
                 const { sdk } = ctx;
                 if (!(atHazelmere(sdk.getState()!) && pos(sdk).level === 1)) {
                     if (pos(sdk).x < 2600) note(ctx, name('B-hazelmere'), { teleport: await ardougneTeleport(sdk) });
+                    const stopTrace = trace(ctx, name('B-hazelmere'));
                     await go(ctx, TILES.hazelmereLadderFoot, 1);
+                    stopTrace();
                     mark(ctx, name('B-hazelmere'), 'at the ladder foot');
                     await loc(sdk, "Hazelmere's ladder up", TILES.hazelmereLadder, /^climb-up$/i, lvl(1), { maxTicks: 20 });
                     mark(ctx, name('B-hazelmere'), 'up the ladder');
@@ -731,7 +746,9 @@ export function steps(input: Options = {}): Step<any>[] {
                 const s = sdk.getState()!;
                 if (!inVillage(s) && !inStronghold(s)) {
                     mark(ctx, name('C-translation'), 'after the teleport');
+                    const stopTrace = trace(ctx, name('C-translation'));
                     await go(ctx, TILES.battlefieldTree, 2);
+                    stopTrace();
                     mark(ctx, name('C-translation'), 'at the battlefield tree');
                     await tree(sdk, 'village');
                     mark(ctx, name('C-translation'), 'in the village');
@@ -875,7 +892,9 @@ export function steps(input: Options = {}): Step<any>[] {
                 if (inKaramja(sdk.getState()!)) await varrockTeleport(sdk);
                 mark(ctx, name('J-charlie'), 'after the teleport');
                 if (nearVarrockTree(sdk.getState()!)) {
+                    const stopTrace = trace(ctx, name('J-charlie'));
                     await go(ctx, TILES.varrockTreeFoot, 1);
+                    stopTrace();
                     mark(ctx, name('J-charlie'), 'at the varrock tree');
                     await tree(sdk, 'village');
                     mark(ctx, name('J-charlie'), 'in the village');
