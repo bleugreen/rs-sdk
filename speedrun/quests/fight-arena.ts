@@ -465,7 +465,8 @@ async function arenaFight(ctx: Ctx, opts: Options | undefined, target: RegExp, h
     let rereleases = 0;
     if (caged && (await released(ctx, target, what))) rereleases++;
     for (;;) {
-        const r = await fight(sdk, target, { ...fightOptions(opts), approach: { bot: ctx.bot, interrupts: interrupts() } });
+        // Only the caged rounds (H, I) watch for a target nothing can reach; the ogre's fight (G) is the plain loop.
+        const r = await fight(sdk, target, { ...fightOptions(opts), ...(caged ? { unreachable: { approach: { bot: ctx.bot, interrupts: interrupts() } } } : {}) });
         fights.push(r);
         // A target nothing can reach: still caged, so the release runs again (bounded).
         if (r.end === 'unreachable' && caged && rereleases < MAX_RERELEASES) {
