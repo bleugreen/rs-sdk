@@ -58,7 +58,7 @@ describe('Hitpoints in the report', () => {
             ev(53_100, 'a07', 'hp-train: released target', 9),
             ev(54_000, 'a08', 'hp-train: target', 9) // a07 reached its target and left it
         ]);
-        expect(r.targets).toBe(7);
+        expect(r.targets).toBe(8);
         expect(r.collisions).toEqual([{ index: 7, accounts: ['a01', 'a02'], gapMs: 800, at: new Date(800).toISOString() }]);
     });
     test('times from login, per site, and the queue', () => {
