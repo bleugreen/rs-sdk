@@ -24,6 +24,10 @@ export interface LabBrowserOptions {
     cdpPort?: number;
     /** The page the tab opens (bot.env's CLIENT_URL), such as a proxy.ts page. Default: labClientUrl(). */
     clientUrl?: string;
+    /** The window, as [width, height]. Default 800x660. */
+    windowSize?: readonly [number, number];
+    /** More Chrome switches, after the launcher's own. */
+    extraArgs?: readonly string[];
 }
 
 /** The lab's own /bot page. The page publishes to the gateway named in its URL; without one it uses the default port, not the lab's. */
@@ -63,7 +67,7 @@ export async function launchLabBrowser(bot: string, opts: LabBrowserOptions = {}
         env: { ...process.env, XDG_CONFIG_HOME: home, XDG_CACHE_HOME: home },
         // --password-store=basic: with a keyring backend, the first navigation hangs on a host with no
         // D-Bus (Ashburn) or waits ~25 s for the keyring timeout (bbs).
-        args: ['--no-sandbox', '--password-store=basic', '--disable-crash-reporter', '--disable-breakpad', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`]
+        args: ['--no-sandbox', '--password-store=basic', '--disable-crash-reporter', '--disable-breakpad', `--window-size=${(opts.windowSize ?? [800, 660]).join(',')}`, '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`, ...(opts.extraArgs ?? [])]
     });
     process.env.SPEEDRUN_CDP_URL = `http://127.0.0.1:${cdpPort}`;
     return {

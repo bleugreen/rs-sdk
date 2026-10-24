@@ -45,6 +45,12 @@
 let waveGain;
 
 export async function playWave(data) {
+    // Only a running context ever plays a scheduled source. Until a user gesture (the autoplay
+    // policy) the context is suspended: a started source never ends, and the audio graph keeps it
+    // and its decoded buffer for good, outside the JS heap. A tab no one clicks (a bot's) stays so.
+    if (window.audioContext?.state !== 'running') {
+        return;
+    }
     try {
         const audioBuffer = await window.audioContext.decodeAudioData(new Uint8Array(data).buffer);
         let bufferSource = window.audioContext.createBufferSource();

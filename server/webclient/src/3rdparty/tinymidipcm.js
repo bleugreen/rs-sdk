@@ -185,6 +185,15 @@ class TinyMidiPCM {
             return;
         }
 
+        // A suspended context (no user gesture yet: the autoplay policy) never plays what is
+        // scheduled on it, so a started source never ends and the graph keeps it and its buffer
+        // for good, stopped or not: a song's whole PCM per song change, outside the JS heap.
+        // Drop the rendered samples instead; music resumes at the next flush once it runs.
+        if (window.audioContext.state !== 'running') {
+            samples = new Float32Array();
+            return;
+        }
+
         let bufferSource = window.audioContext.createBufferSource();
         // bufferSource.onended = function(event) {
         //     const timeSeconds = Math.floor(window.audioContext.currentTime);
