@@ -611,9 +611,9 @@ export function isCueStop(s: ChainStep, of?: string): boolean {
     return s.kind === 'cue' && (of === undefined ? s.id.endsWith(' cue stop') : s.id === `${of} cue stop`);
 }
 
-/** What the pack holds at a boundary. */
-export function census(s: BotWorldState): { inventory: { name: string; count: number }[]; free: number; worn: string[] } {
-    return { inventory: s.inventory.map(i => ({ name: i.name, count: i.count })), free: INVENTORY_SIZE - s.inventory.length, worn: s.equipment.map(e => e.name) };
+/** What the pack holds at a boundary, each item by obj id as well as name (runner/rune-census.ts reads the runes back by id). */
+export function census(s: BotWorldState): { inventory: { name: string; count: number; id: number }[]; free: number; worn: string[] } {
+    return { inventory: s.inventory.map(i => ({ name: i.name, count: i.count, id: i.id })), free: INVENTORY_SIZE - s.inventory.length, worn: s.equipment.map(e => e.name) };
 }
 
 export const CENSUS_STEP = '(census)';

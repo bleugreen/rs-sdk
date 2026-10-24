@@ -118,6 +118,14 @@ function ledgerUse(row: LedgerRow, before: readonly Held[]): { use: Counts; unkn
 
 const isRuneConsume = (e: LedgerRow['out'][number]) => e.reason === 'consume' && runeOf(e) !== null;
 
+/** A leg's runes: lib/travel.ts hopNeeds over its hops, less the element of any staff in `worn`. */
+export function legUse(hops: readonly Hop[], worn: readonly { name: string }[]): Counts {
+    const supplied = new Set(worn.map(h => staffElement(h.name)).filter((e): e is Rune => e !== null));
+    const use: Counts = {};
+    for (const [r, n] of Object.entries(hopNeeds(hops).runes) as [Rune, number][]) if (n && !supplied.has(r)) use[runeName(r)] = n;
+    return use;
+}
+
 // ------------------------------------------------------------------ consumers
 
 /** What the check needs of a leg (runner/legs.ts LegDef). */
@@ -281,11 +289,8 @@ export function analyze(rows: readonly LedgerRow[], input: Input, pending: reado
     const consumers: Consumer[] = [];
     let order = 0;
     for (const leg of input.legs) {
-        const raw = hopNeeds(leg.hops).runes;
         const row = legRow(leg, rowIds);
-        const supplied = new Set(row ? before(row).worn.map(h => staffElement(h.name)).filter((e): e is Rune => e !== null) : []);
-        const use: Counts = {};
-        for (const [r, n] of Object.entries(raw) as [Rune, number][]) if (n && !supplied.has(r)) use[runeName(r)] = n;
+        const use = legUse(leg.hops, row ? before(row).worn : []);
         if (!row) {
             if (entriesOf(use).length) findings.push({ kind: 'no-row', row: leg.id, who: `leg ${leg.id}`, text: `leg ${leg.id} casts (${fmtCounts(use)}) but the ledger has no row for it` });
             continue;
