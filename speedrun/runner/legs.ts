@@ -365,7 +365,8 @@ export const TILES = {
     romeo: { x: 3211, z: 3425, tol: 1 },
     westAnvil: { x: 3188, z: 3426, tol: 1 },
     westBooth: { x: 3185, z: 3436 },
-    championsGuild: { x: 3191, z: 3364, tol: 1 },
+    // Two rows north of the door (3191,3363): mule1's H22 trade refuses a partner on a door's neighbour.
+    championsGuild: { x: 3191, z: 3365, tol: 0 },
     elvargExit: { x: 2846, z: 9636 },
     ridgeSouth: { x: 2998, z: 3916, tol: 1 },
     wildernessPipe: { x: 3004, z: 3937, tol: 0 },

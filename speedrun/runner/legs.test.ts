@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { findDoorsAlongPath, getDoorAt } from '../../sdk/pathfinding';
 import type { BotWorldState, InventoryItem, PlayerState } from '../../sdk/types';
 import { parseLedger, walk, type OutEntry } from '../tools/slot-ledger';
 import { parseTiles, resolveOptions, routeLogs } from '../skills/firemaking';
@@ -295,6 +296,14 @@ describe('the catalogue, continued', () => {
         const s = state(TILES.contestDwarf.x, TILES.contestDwarf.z, { inventory: [...FALADOR_RUNES, item(4, 'Body talisman')] });
         expect(legPreconditions(t2021.def, s)).toBe(true);
         expect(legsFor({ s21Altar: 'nature' })).toEqual([...LEGS]);
+    });
+
+    test("T25-26 ends on exactly (3191,3365), with no door on it or beside it (the guild door is (3191,3363))", () => {
+        const t = legById('T25-26').def;
+        expect(t.dest).toEqual({ x: 3191, z: 3365, tol: 0 });
+        expect(t.hops.at(-1)).toEqual({ kind: 'run', to: { x: 3191, z: 3365, tol: 0, level: 0 } });
+        expect(getDoorAt(0, 3191, 3363)).toBeDefined();
+        expect(findDoorsAlongPath([{ x: t.dest.x, z: t.dest.z, level: 0 }])).toEqual([]);
     });
 
     test('legsAfter interleaves by step id', () => {
