@@ -33,13 +33,13 @@ export const COURIER_HOLD = 14;
 export const COURIER_TOP_UPS = 13;
 
 /** The carry list (bone-giver.ts `carry`): `obj` is the lab's staff give. */
-export const COURIER_CARRY = [
+export const COURIER_CARRY: readonly { item: string; count: number; obj: string; once?: true }[] = [
     { item: 'Shark', count: 2, obj: 'shark' },
     { item: 'Adamant arrowtips', count: 2220, obj: 'adamant_arrowheads', once: true },
     { item: 'Rune arrowtips', count: 570, obj: 'rune_arrowheads', once: true },
     { item: 'Copper ore', count: 5, obj: 'copper_ore', once: true },
     { item: 'Tin ore', count: 5, obj: 'tin_ore', once: true },
-] as const;
+];
 
 /** The bank's lab seed: every top-up's ore and sharks plus one more load, the once stacks once; noted where a stack would not fit. */
 export function courierSeed(): { obj: string; n: number }[] {
@@ -59,7 +59,7 @@ export interface CourierEntry {
 }
 
 /** standalone.ts's config for the one courier. */
-export function courierLaunch(o: { account: string; botsDir: string; runDir: string; gatewayPort: number }): LauncherConfig & { accounts: CourierEntry[] } {
+export function courierLaunch(o: { account: string; botsDir: string; runDir: string; gatewayPort: number }): Omit<LauncherConfig, 'accounts'> & { accounts: CourierEntry[] } {
     const options = {
         mode: 'on-request', item: 'Iron ore', obj: 'iron_ore', hold: COURIER_HOLD, refillBelow: COURIER_HOLD,
         scope: { ...COURIER_SCOPE }, sites: [{ giver: { ...COURIER_SITE.giver }, receiver: { ...COURIER_SITE.receiver } }],
