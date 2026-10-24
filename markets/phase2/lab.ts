@@ -24,7 +24,8 @@
  * `--run-ended`; `--ramp=0` turns the ramp off; `--park=1` sets `foodFallback: 'park'`; `--restart=M` stops the runner after M minutes and starts it again. The Exchange check's maker leaves its shark ask open for the rebuy.
  *
  * `--fresh=1` stages nobody: every account starts on Tutorial Island and the runner's own stages do everything (the
- * Hitpoints-site lab).
+ * Hitpoints-site lab). `--min-free-mb=N` (default 1200) stops the run with SIGINT when the host's available memory
+ * falls below N MB, so a shared lab host keeps room for its other tenants; the memory is logged every 30 s.
  *
  * The sale round trip and the pickaxe stage (rs/732): `--sell=1` enables sales of iron ore (floor `--iron-floor`,
  * default 80, into the Exchange check's iron bid, so keep `--exchange=1`) every `--sell-every` minutes (default 5).
@@ -32,9 +33,8 @@
  * spawn, and the next `--away` the same on the Ardougne side with 200 coins, as a knight sent to iron from the market
  * would be after a death; the rest stay fresh.
  *
- *   . markets/methods/lab/block.sh M20 && LAB_RUNNERS=0 LAB_TIMEOUT=3600 speedrun/lab/lab.sh p2s00 \
- *     'markets/phase2/lab.ts:--prefix=p2s:--knights=0:--guards=0:--iron=4:--bare=1:--away=1:--sell=1:--sigint=45:--out=/tmp/rs732' `--min-free-mb=N` (default 1200) stops the run with SIGINT when the host's available memory
- * falls below N MB, so a shared lab host keeps room for its other tenants; the memory is logged every 30 s.
+ *   . markets/methods/lab/block.sh M20 && LAB_RUNNERS=0 LAB_TIMEOUT=3600 speedrun/lab/lab.sh p2t00 \
+ *     'markets/phase2/lab.ts:--prefix=p2t:--knights=0:--guards=0:--iron=4:--bare=1:--away=1:--sell=1:--iron-bid=3000:--sigint=40:--out=/tmp/rs732'
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
