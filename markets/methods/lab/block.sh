@@ -8,8 +8,8 @@
 # AGENT, LOGIN and LOGGER ports sit 5 higher still: 8020, 44040, 44050, 8060, 44060, 8090 and 44090 belong to
 # other labs.
 case "$1" in
-    M8 | M9 | M10 | M11 | M12 | M13 | M14 | M15 | M16 | M17 | M18 | M19 | M20 | M21 | M22) b=$(( (${1#M} - 8) * 10 )) ;;
-    *) echo "block.sh: unknown block $1 (M8 to M22)"; return 1 ;;
+    M8 | M9 | M10 | M11 | M12 | M13 | M14 | M15 | M16 | M17 | M18 | M19 | M20 | M21 | M22 | M24) b=$(( (${1#M} - 8) * 10 )) ;;
+    *) echo "block.sh: unknown block $1 (M8 to M22, M24)"; return 1 ;;
 esac
 shift5=0
 [ "${1#M}" -ge 13 ] && shift5=5

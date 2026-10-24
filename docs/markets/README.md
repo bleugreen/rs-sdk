@@ -154,11 +154,12 @@ Labs run on fedora or bgsrv-ub with `NODE_TICKRATE=400`. Check all ports with `l
 | M20 | phase-2 sale round trip and pickaxe stage (rs/732; LOGIN 44095, LOGGER 44096) | 10090 / 10091 / 10092 | 45090 | 8095 | 46090 |
 | M21 | pickpocket door recovery (rs/736; LOGIN 44105, LOGGER 44106) | 10100 / 10101 / 10102 | 45100 | 8105 | 46100 |
 | M22 | phase-2 shark resupply (rs/743; LOGIN 44115, LOGGER 44116) | 10110 / 10111 / 10112 | 45110 | 8115 | 46110 |
+| M24 | phase-2 runner memory (rs/767; LOGIN 44135, LOGGER 44136) | 10130 / 10131 / 10132 | 45130 | 8135 | 46130 |
 
-`. markets/methods/lab/block.sh M8` (any of M8 to M22) exports a block's ports and refuses if any is listening; every
+`. markets/methods/lab/block.sh M8` (any listed block) exports a block's ports and refuses if any is listening; every
 port is M8's plus 10 a block, and from M13 the AGENT, LOGIN and LOGGER ports are 5 higher again (8020, 44040,
-44050, 8060 and 44060 belong to other labs). The next free block for follow-ups is M23 (WEB 10120, NODE 45120,
-AGENT 8125, FRIEND 46120, LOGIN 44125, LOGGER 44126); add it to `block.sh`'s list when you claim it, and check the
+44050, 8060 and 44060 belong to other labs). The next free block for follow-ups is M25 (WEB 10140, NODE 45140,
+AGENT 8145, FRIEND 46140, LOGIN 44145, LOGGER 44146); add it to `block.sh`'s list when you claim it, and check the
 AGENT, FRIEND, LOGIN and LOGGER ports first. A
 long lab on fedora runs from a copy outside the build slot (`/tmp/<name>-lab`, kept between batches so the content
 pack is built once) inside a named tmux server; `hp-training.md` gives the commands.

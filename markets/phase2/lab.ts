@@ -27,6 +27,9 @@
  * `warmupMinutes` (0 measures each hold the way the runner did before it had one); `--drop-pct=N` its `dropPct`
  * (default 10; a large one keeps the ramp going so every step is measured, its ratio still in the ledger).
  *
+ * Memory (docs/markets/phase2.md 'Memory'): `--heap=1` preloads `heap-probe.ts` into the runner, which samples its
+ * memory every minute into memory.jsonl in --out and writes heap snapshots at the minutes in PHASE2_HEAP_SNAPSHOTS.
+ *
  * `--fresh=1` stages nobody: every account starts on Tutorial Island and the runner's own stages do everything (the
  * Hitpoints-site lab). `--min-free-mb=N` (default 1200) stops the run with SIGINT when the host's available memory
  * falls below N MB, so a shared lab host keeps room for its other tenants; the memory is logged every 30 s.
@@ -275,7 +278,14 @@ const plan = {
 };
 const planPath = join(out, 'plan.json');
 writeFileSync(planPath, JSON.stringify(plan, null, 2));
-const spawnRunner = () => Bun.spawn(['bun', 'markets/phase2/run.ts', planPath, '--out', out, '--placeholder-data', ...(buy ? ['--run-ended'] : [])], { cwd: ROOT, stdout: 'inherit', stderr: 'inherit' });
+const heap = arg('heap', '0') === '1';
+const spawnRunner = () =>
+    Bun.spawn(['bun', ...(heap ? ['--preload', './markets/phase2/heap-probe.ts'] : []), 'markets/phase2/run.ts', planPath, '--out', out, '--placeholder-data', ...(buy ? ['--run-ended'] : [])], {
+        cwd: ROOT,
+        stdout: 'inherit',
+        stderr: 'inherit',
+        env: heap ? { ...process.env, PHASE2_HEAP_DIR: out } : process.env
+    });
 let child = spawnRunner();
 // --restart=M: stop the runner after M minutes and start it again on the same --out (its role-state), as markets does
 const restart = count('restart', 0);

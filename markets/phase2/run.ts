@@ -58,6 +58,7 @@ import { DeathWatch, type DeathRecord } from './deaths.ts';
 import { buySharks, sellAtExchange, sellByShip, type BookReader } from './errands.ts';
 import { DEFAULT_POLICY, LoginGate } from './gate.ts';
 import { HpSites } from './hp-sites.ts';
+import { memoryLine } from './memory.ts';
 import { accountLine, COINS_ID, totalsLine, type AccountSnapshot, type Stack, type Valuer } from './ledger.ts';
 import { aliasOf, nameScrubber, scrubRecord, unlistedAccounts } from './names.ts';
 import { EARNS_COINS, NEEDS, nextFallback, parsePlan, PlanError, planWarnings, roleOptions, SALE_ROUTE, sequenceFor, type AccountPlan, type MethodId, type Plan } from './plan.ts';
@@ -314,7 +315,7 @@ export class Runner {
 
     private totals(final: boolean): void {
         const latest = this.workers.flatMap(w => (w.latest ? [w.latest] : []));
-        this.ledger({ ...totalsLine(latest, this.valuer, this.gate.sessions(), new Date(), final), ramp: this.ramp ? { phase: this.ramp.phase, step: this.ramp.stepNumber, admitted: this.ramp.admitted() } : null });
+        this.ledger({ ...totalsLine(latest, this.valuer, this.gate.sessions(), new Date(), final), ramp: this.ramp ? { phase: this.ramp.phase, step: this.ramp.stepNumber, admitted: this.ramp.admitted() } : null, memory: memoryLine() });
     }
 
     /** The book for every item an account banks (and every item with a sale floor), one read every 3 s. */
