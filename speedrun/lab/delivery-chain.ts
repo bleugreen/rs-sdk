@@ -36,7 +36,7 @@ import { opIndex } from '../lib/world';
 import { buildChain, KIT_PARTNER_ROWS, muleCueDir, PLACEMENT, type ChainStep, type RunConfig } from '../runner/chain';
 import { RunCues } from '../runner/cue-keeper';
 import { deliveryOwnerFor, type DeliveryOwner } from '../runner/delivery-owner';
-import { HandOffRecord } from '../runner/handoff';
+import { AttemptRecord } from '../runner/attempt-record';
 import { MANIFEST } from '../tools/slot-ledger';
 import { openSecureLabSession, type SecureLabSession } from './browser';
 import { arg, botArg, result } from './common';
@@ -80,7 +80,7 @@ const cfg: RunConfig = {
     cueDir: cueRoot, muleCueDir: options.cueDir, delivery: { run: runId, launcherConfig: launcherPath },
 };
 const cues = new RunCues({ main: cfg.cueDir, mule: muleCueDir(cfg) }, scoredName);
-const full = buildChain(cfg, { cues, manifest, attempt: runId, handOffs: new HandOffRecord(root, runId) });
+const full = buildChain(cfg, { cues, manifest, attempt: runId, record: new AttemptRecord(root, runId) });
 const steps: ChainStep[] = ROWS.map(r => {
     const s = full.find(st => st.cue?.family === 'mule' && st.cue.step === r);
     if (!s) throw new Error(`the chain has no {${r}, mule} step`);

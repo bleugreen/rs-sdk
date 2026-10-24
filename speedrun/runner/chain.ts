@@ -63,7 +63,8 @@ import * as start from '../skills/start';
 import * as thieving from '../skills/thieving';
 import * as woodcutting from '../skills/woodcutting';
 import { MANIFEST, parseLedger, type LedgerRow } from '../tools/slot-ledger';
-import { askFor, handOffFrom, handOffStep, rollbackWitnesses, type HandOffPlan, type HandOffRecord } from './handoff';
+import type { AttemptRecord } from './attempt-record';
+import { askFor, handOffFrom, handOffStep, rollbackWitnesses, type HandOffPlan } from './handoff';
 import { legById, legsFor, splitLeg, type LegStep } from './legs';
 import { type Probe, stepProbes } from './resume';
 import { scoredLoginStep, scoredLogoutStep } from './scored-relog';
@@ -197,11 +198,11 @@ export interface ChainOptions {
     s21Relog?: boolean;
     relogs?: RelogBudget;
     /**
-     * The attempt's hand-off completion record (run.ts: <run dir>/handoffs.json under `attempt`), which
-     * keeps a placed hand-off done once its band has eaten into what it brought (handoff.ts, Resume).
+     * The attempt record (run.ts: <run dir>/attempt-record.json under `attempt`), whose hand-off rows
+     * keep a placed hand-off done once its band has eaten into what it brought (handoff.ts, Resume).
      * Absent: a hand-off reads done from the state and the next milestone only.
      */
-    handOffs?: HandOffRecord;
+    record?: AttemptRecord;
     /**
      * The attempt's id, the same in every process that resumes it (run.ts: the run id of its tick log's
      * first row). A cue whose givers count work per session takes its session from it (S07's bone cue,
@@ -904,7 +905,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         const muleRow = !scope && MULE_ROWS.includes(e.row);
         const beforeTrade = muleRow ? { beforeTrade: () => { o.cues.refresh?.(muleScope(e.row)); } } : {};
         const witnesses = rollbackWitnesses(plan, rows.slice(rows.findIndex(r => r.row === e.row) + 1), row => PLACEMENT[row] !== undefined);
-        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs, witnesses } : {}), ...(cue ? { cue } : {}), ...beforeTrade }), cue ? { cue: cue.scope } : {});
+        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.record ? { record: o.record.handOffs, witnesses } : {}), ...(cue ? { cue } : {}), ...beforeTrade }), cue ? { cue: cue.scope } : {});
         out.unshift(muleRow ? mule(s, e.row) : s);
     }
     const tileOf = startTiles(cfg);

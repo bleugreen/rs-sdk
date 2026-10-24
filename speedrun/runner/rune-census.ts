@@ -188,7 +188,7 @@ export interface RuneCensus {
 }
 
 export interface CensusOptions {
-    /** A supply row already served in this attempt (runner/handoff.ts HandOffRecord.has): not a supply ahead. */
+    /** A supply row already served in this attempt (runner/attempt-record.ts AttemptRecord.handOffs): not a supply ahead. */
     served?: (row: string) => boolean;
 }
 

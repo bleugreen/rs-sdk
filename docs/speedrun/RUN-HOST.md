@@ -2298,11 +2298,12 @@ The checks, in order, before re-running. Any one failing means **do not re-run: 
    is alive: then confirm that process is not a relog in progress (run.ts or `relog-now.ts`) before
    removing the lock, and ask main if unsure.
 4. **Nothing else is cleared.** Keep `<run dir>/relogs.json` (it holds S21's open entry, which the
-   re-run needs, `run.ts:436-460`), `<run dir>/handoffs.json` (the hand-offs this attempt completed:
-   without it a re-run inside a band walks back to the band's hand-off and refuses, rs/562), the cue dir and the run dir (cleared only on a fresh start,
-   `run.ts:507-509`, `cue-keeper.ts:24-38`). **Deleting `handoffs.json` makes a re-run inside S18, S22
-   or S16 walk back to the consumed hand-off (H14, H18, H13) and refuse** (`HandOffRecord`, on main
-   with #462; fold-in 35).
+   re-run needs, `run.ts:436-460`), `<run dir>/attempt-record.json` (the hand-offs and steps this attempt
+   completed: without it a re-run inside a band walks back to the band's hand-off and refuses, rs/562), the cue dir and the run dir (cleared only on a fresh start,
+   `run.ts:507-509`, `cue-keeper.ts:24-38`). **Deleting `attempt-record.json` makes a re-run inside S18,
+   S22 or S16 walk back to the consumed hand-off (H14, H18, H13) and refuse, and a re-run after S16
+   walk back into the Mage Arena** (`runner/attempt-record.ts` `AttemptRecord`; it replaced #462's
+   `handoffs.json`, rs/724).
 5. **The host claim is still held and live**: run.ts releases it only on success (`run.ts:533`); an
    expired claim makes gate 2 refuse with an `rs-claim take ...` hint (`run.ts:252-261`), so retake it
    as step 0 does first.
@@ -2336,8 +2337,8 @@ and `--log`; there is no resume flag (the launch line itself is pending with rs/
 seams; `speedrun/runner/rune-census.ts`). run.ts counts SCORED's runes by obj id against what the
 chain spends of each rune from where it will start (`--from`, else the step the tick log's last
 `(census)` row was taken before) up to the next row that brings that rune: a hand-off, a kit
-segment (H4, H12) or the module that trades it. A hand-off this attempt's `handoffs.json` already
-records is not counted again. The figures are the ones `tools/rune-pins.ts` holds to the ledger:
+segment (H4, H12) or the module that trades it. A hand-off this attempt's `attempt-record.json`
+already records is not counted again. The figures are the ones `tools/rune-pins.ts` holds to the ledger:
 the legs' teleports less a worn staff's element, the modules' `RUNE_USE` and `RUNE_NEED`, and the
 ledger rows of a module that declares none (Monkey Madness). Before login the pack is the tick log's
 last census (a fresh run has none, so the gate passes and says so); once SCORED is in the world the
