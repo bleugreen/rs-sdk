@@ -698,7 +698,9 @@ describe('converse re-engage (a chat closed mid-talk with until unmet)', () => {
         const p = talk(finished, { shape: '13c', burst: true, idle: 4, until: s => endedAt >= 0 && s.tick >= endedAt + 20 });
         const a = npcTalk(finished, conts('d', 13), { done: tick => { endedAt = tick; return { player: you(tick - 1) }; } });
         await a.run(40);
-        expect(await p).toMatchObject({ ok: true, reengages: undefined });
+        const r = await p;
+        expect(r).toMatchObject({ ok: true, endTick: 25 });
+        expect('reengages' in r).toBe(false);
         expect(a.interacts).toEqual([]);
 
         // Alrena (plague-city '3c, state, 3c', idle 1): if_close, p_delay(2) twice, the gas mask, more pages.
