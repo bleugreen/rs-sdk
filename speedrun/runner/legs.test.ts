@@ -1091,7 +1091,8 @@ describe("the leg upkeep under poison (attempt 4: T14-15b reached hpMin 1 with 3
         await drive(sdk, b.run(ctx), 400, each);
         expect(arrived(b.def, sdk.state!)).toBe(true);
         expect(sim.drinks).toHaveLength(1);
-        expect(sim.drinks[0]!).toBeGreaterThan(base + 2);
+        // On the frame the first poison hit shows.
+        expect(sim.drinks[0]!).toBe(base + 2);
         expect(sdk.state!.inventory.map(i => i.name)).toContain('Superantipoison(3)');
         expect(travelRow(ctx).cured).toBe(1);
         expect(sim.hpMin).toBeGreaterThanOrEqual(HP_FLOOR);
