@@ -3,13 +3,18 @@
  * Scans files for any name on the markets accounts list (markets/lib/accounts.ts): run it where the list exists
  * before committing data or opening a PR. Matches a listed name as a whole word, case-insensitive, with spaces
  * or underscores. Exits 1 and lists file and line for every hit; never prints the names list itself beyond hits.
+ * The whole names in ALWAYS_EXCLUDED are in the code by design and are not hits; names that merely share an
+ * always-excluded prefix still are.
  *
  *   bun markets/tools/check-excluded.ts [PATH...]   (default: docs/markets, markets)
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { loadExclusion } from '../lib/accounts.ts';
-import { readAccountsFile, ACCOUNTS_FILE_ENV, DEFAULT_ACCOUNTS_FILE } from '../lib/accounts.ts';
+import { readAccountsFile, ACCOUNTS_FILE_ENV, ALWAYS_EXCLUDED, DEFAULT_ACCOUNTS_FILE } from '../lib/accounts.ts';
+
+/** The list's names a scan looks for: all but the whole names the code itself excludes. */
+export const scannedNames = (names: string[]): string[] => names.filter(n => !(ALWAYS_EXCLUDED.names as readonly string[]).includes(n));
 
 const REPO = resolve(import.meta.dir, '../..');
 
@@ -34,7 +39,7 @@ export function findNames(text: string, names: string[]): [number, string][] {
 function main(): void {
     const path = process.env[ACCOUNTS_FILE_ENV] ?? DEFAULT_ACCOUNTS_FILE;
     loadExclusion();
-    const names = readAccountsFile(path) ?? [];
+    const names = scannedNames(readAccountsFile(path) ?? []);
     const targets = Bun.argv.slice(2).length ? Bun.argv.slice(2).map(p => resolve(p)) : [join(REPO, 'docs/markets'), join(REPO, 'markets')];
     let hits = 0;
     for (const t of targets) {

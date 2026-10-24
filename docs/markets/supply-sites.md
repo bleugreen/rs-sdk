@@ -25,7 +25,8 @@ Each figure is marked **M** (measured on the demo), **I** (inferred: arithmetic 
 - **Miners:** players standing next to any ordinary ore rock, per read, as counts only
   (`markets/research/rs686-miners.ts`, `data/sites-miners-2026-10-24.json`).
 - **Our accounts:** dropped from every file and recorded as a count per site (`markets/lib/accounts.ts`, which always
-  excludes `cairn_*`, `money_*` and `moneybags`). **Our count was 0 at every site in every read (M).**
+  excludes `cairn_*`, `money_*` and markets' main account, `ALWAYS_EXCLUDED`). **Our count was 0 at every site in
+  every read (M).**
 
 Combat levels below come from the hiscores through the 2004 formula (I).
 

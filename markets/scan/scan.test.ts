@@ -252,7 +252,7 @@ describe('headcount sites', () => {
     test('our accounts are counted, never named', () => {
         const positions = [
             { name: 'Tygem020', x: 2938, z: 9883, level: 0 },
-            { name: 'Money 03', x: 2939, z: 9883, level: 0 },
+            { name: 'Money Placeholder', x: 2939, z: 9883, level: 0 },
             { name: 'Placeholder One', x: 2940, z: 9884, level: 0 },
             { name: 'Elsewhere', x: 3200, z: 3200, level: 0 },
         ];
