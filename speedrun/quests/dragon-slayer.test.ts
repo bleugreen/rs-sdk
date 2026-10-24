@@ -5,7 +5,7 @@ import { baseState, runeNeedProblems } from '../lib/fake-sdk';
 import { configId } from '../lib/world';
 import { Observation, resolveResume } from '../runner/resume';
 import {
-    ARMOURLESS_COST, atLeast, ELVARG_PRAYERS, entryCheck, keyDropped, kitItems, LETTERS, mazeMove, questItems, onCrandor, PROBES, quest, restockWait, SCAVVO_RESTOCK,
+    ARMOURLESS_COST, atLeast, ELVARG_ALL_PRAYER, ELVARG_PRAYERS, ELVARG_PROTECT_PRAYER, elvargPrayerCheck, elvargPrayerList, entryCheck, keyDropped, kitItems, LETTERS, mazeMove, questItems, onCrandor, PROBES, quest, restockWait, SCAVVO_RESTOCK,
     RUNE_NEED, RUNE_USE, stepId, steps, stockZeroChoice, TILES, usablePrayers, wornKitCheck,
 } from './dragon-slayer';
 import { kitWant, slotNeed } from './segments';
@@ -23,7 +23,7 @@ const KIT = () => [
     ...Array.from({ length: 10 }, () => item('Shark')), item('Law rune', 2), item('Air rune', 6), item('Earth rune'), item('Water rune'),
 ];
 
-function world(o: { at?: [number, number, number?]; inv?: InventoryItem[]; worn?: InventoryItem[]; status?: 'started' | 'complete'; qp?: number; prayer?: number } = {}): BotWorldState {
+function world(o: { at?: [number, number, number?]; inv?: InventoryItem[]; worn?: InventoryItem[]; status?: 'started' | 'complete'; qp?: number; prayer?: number; points?: number } = {}): BotWorldState {
     const [x, z, level] = o.at ?? [TILES.arrival.x, TILES.arrival.z, 0];
     return baseState({
         inGame: true,
@@ -33,6 +33,7 @@ function world(o: { at?: [number, number, number?]; inv?: InventoryItem[]; worn?
         equipment: o.worn ?? WORN(),
         quests: o.status ? { [quest]: o.status } : {},
         questPoints: o.qp ?? 32,
+        prayers: { activePrayers: [], prayerPoints: o.points ?? o.prayer ?? LEVELS.Prayer, prayerLevel: o.prayer ?? LEVELS.Prayer },
     });
 }
 
@@ -230,6 +231,30 @@ describe('Elvarg', () => {
         expect(usablePrayers(world(), {})).toEqual([...ELVARG_PRAYERS]);
         expect(usablePrayers(world({ prayer: 40 }), {})).toEqual(['ultimate_strength', 'incredible_reflexes']);
         expect(usablePrayers(world(), { elvargPrayers: [] })).toEqual([]);
+    });
+});
+
+describe('Elvarg: prayer points (rs/687)', () => {
+    const lair = (o: { points?: number; inv?: InventoryItem[]; status?: 'started' | 'complete' } = {}) =>
+        world({ status: o.status ?? 'started', inv: o.inv ?? [item('Shark', 10)], worn: [...WORN(), ...armour(), shield()], at: [TILES.lairGateOutside.x, TILES.lairGateOutside.z], ...(o.points !== undefined ? { points: o.points } : {}) });
+
+    test('L refuses a pool that cannot carry Protect from Melee through the longest fight', () => {
+        expect(elvargPrayerCheck({})(lair())).toBe(true);
+        expect(elvargPrayerCheck({})(lair({ points: ELVARG_PROTECT_PRAYER }))).toBe(true);
+        expect(elvargPrayerCheck({})(lair({ points: 12 }))).toBe('S26:L for Elvarg needs ~30 prayer points, has 12 and no prayer potion');
+        expect(elvargPrayerCheck({})(lair({ points: 12, inv: [item('Prayer potion(1)')] }))).toBe(true);
+    });
+    test('no refusal once the quest is complete (the key-drop resume) or with no protect prayer in use', () => {
+        expect(elvargPrayerCheck({})(lair({ points: 0, status: 'complete' }))).toBe(true);
+        expect(elvargPrayerCheck({ elvargPrayers: [] })(lair({ points: 0 }))).toBe(true);
+        expect(elvargPrayerCheck({})(world({ status: 'started', prayer: 40, points: 0 }))).toBe(true);
+    });
+    test('all three prayers from 70 points; below that Protect from Melee alone, so it lasts the fight', () => {
+        expect(elvargPrayerList(lair({ points: 99 }), {})).toEqual([...ELVARG_PRAYERS]);
+        expect(elvargPrayerList(lair({ points: ELVARG_ALL_PRAYER }), {})).toEqual([...ELVARG_PRAYERS]);
+        expect(elvargPrayerList(lair({ points: ELVARG_ALL_PRAYER - 1 }), {})).toEqual(['protect_from_melee']);
+        expect(elvargPrayerList(lair({ points: 40, inv: [item('Prayer potion(1)')] }), {})).toEqual([...ELVARG_PRAYERS]);
+        expect(elvargPrayerList(world({ prayer: 40, points: 10 }), {})).toEqual(['ultimate_strength', 'incredible_reflexes']);
     });
 });
 

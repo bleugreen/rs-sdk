@@ -6,7 +6,7 @@ import { TickLog } from '../lib/ticks';
 import { Observation, resolveResume } from '../runner/resume';
 import type { RunnerSession, StepContext } from '../runner/step';
 import {
-    ARENA, ARRIVAL, castRunes, census, DEAD_AT_EXIT, entryCheck, exitCheck, fightOptions, LETTERS, MAX_CASTS, MIN_CASTS, observed, QUEST_ITEMS, quest, RUNE_NEED, RUNE_STAFF, RUNE_USE,
+    ARENA, ARENA_DRINK_BELOW, ARENA_PRAYER, ARRIVAL, castRunes, census, DEAD_AT_EXIT, entryCheck, exitCheck, fightOptions, LETTERS, MAX_CASTS, MIN_CASTS, observed, QUEST_ITEMS, quest, RUNE_NEED, RUNE_STAFF, RUNE_USE,
     SHAPES, stepId, steps, TILES,
 } from './fight-arena';
 import { DEFAULT_DIALOGUE, slotNeed } from './segments';
@@ -24,7 +24,7 @@ const h9Pack = (): InventoryItem[] => [
 const WORN = () => [item('Staff of fire'), item('Amulet of magic')];
 const UNIFORM = () => [item('Khazard helmet'), item('Khazard armour')];
 
-function world(o: { at?: { x: number; z: number }; inv?: InventoryItem[]; worn?: InventoryItem[]; status?: 'started' | 'complete'; thieving?: number } = {}): BotWorldState {
+function world(o: { at?: { x: number; z: number }; inv?: InventoryItem[]; worn?: InventoryItem[]; status?: 'started' | 'complete'; thieving?: number; points?: number } = {}): BotWorldState {
     nextSlot = 0;
     const at = o.at ?? ARRIVAL;
     return baseState({
@@ -35,6 +35,7 @@ function world(o: { at?: { x: number; z: number }; inv?: InventoryItem[]; worn?:
         inventory: o.inv ?? h9Pack(),
         equipment: o.worn ?? WORN(),
         quests: o.status ? ({ [quest]: o.status } as BotWorldState['quests']) : ({} as BotWorldState['quests']),
+        prayers: { activePrayers: [], prayerPoints: o.points ?? 94, prayerLevel: 94 },
     });
 }
 
@@ -254,5 +255,24 @@ describe('rune pins: RUNE_USE and RUNE_NEED agree with the entry check (tools/ru
         expect(MAX_CASTS).toBeLessThanOrEqual(MIN_CASTS);
         expect(RUNE_USE.G!.firerune).toBeUndefined();
         expect(castRunes(1)(world({ worn: [] }), {})).toMatch(new RegExp(RUNE_STAFF, 'i'));
+    });
+});
+
+describe('G-J: the prayer points (rs/687)', () => {
+    const inArena = { x: ARENA.x0 + 10, z: ARENA.z0 + 5 };
+    const g = (points: number, extra: InventoryItem[] = []) => byLetter('G').preconditions(world({ status: 'started', at: inArena, points, inv: [...h9Pack(), ...extra] }), {});
+
+    test('the stretch need covers the measured 32-38 for G-J, and the fights drink below 8', () => {
+        expect(ARENA_PRAYER).toBeGreaterThanOrEqual(38);
+        expect(fightOptions(undefined).drinkBelow).toBe(ARENA_DRINK_BELOW);
+    });
+    test('G refuses a pool that cannot carry the sealed stretch, naming it at the step boundary', () => {
+        expect(g(ARENA_PRAYER)).toBe(true);
+        // Attempt 3's rehearsal reached G with 4 points and no potion (host, 03:44Z).
+        expect(g(4)).toBe('S12:G for G-J needs ~45 prayer points, has 4 and no prayer potion');
+    });
+    test("H8's Prayer potion(4) covers it: 4 points + 4 doses at Prayer 94", () => {
+        expect(g(4, [{ ...item('Prayer potion(4)'), optionsWithIndex: [{ text: 'Drink', opIndex: 1 }] } as InventoryItem])).toBe(true);
+        expect(g(4, [item('Prayer potion(1)')])).toBe('S12:G for G-J needs ~45 prayer points, has 4 and 1 potion doses (34 in all)');
     });
 });

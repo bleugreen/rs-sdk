@@ -2,7 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, PlayerState } from '../../sdk/types';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
 import { resolveStart, type StepContext } from '../runner/step';
-import { allOf, baseLevels, DEFAULT_DIALOGUE, freeSlots, kitSegment, kitWant, questSteps, segmentName, slotNeed, slotsCover, stageAtLeast, stageDone, talkShape, within, type QuestItem, type Segment } from './segments';
+import {
+    allOf, baseLevels, DEFAULT_DIALOGUE, doseRestore, drinkPrayerTo, freeSlots, kitSegment, kitWant, prayerCovers, prayerReserve, questSteps, segmentName, slotNeed, slotsCover, stageAtLeast, stageDone,
+    talkShape, within, type QuestItem, type Segment,
+} from './segments';
 
 const item = (slot: number, name: string, count = 1) => ({ slot, id: slot, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
 const seg = (letter: string, label: string, extra: Partial<Segment> = {}): Segment => ({ letter, label, logoutSafe: true, run: async () => {}, ...extra });
@@ -174,5 +177,98 @@ describe('slotNeed and slotsCover', () => {
         expect(freeSlots(filled(22))).toBe(6);
         expect(check(filled(22), {})).toBe(true);
         expect(check(filled(24), {})).toBe('inventory: segment B needs 6 free slots (6 Railing), 4 free: 2 short');
+    });
+});
+
+describe('prayer points (rs/687)', () => {
+    const potion = (slot: number, doses: number) => ({ ...item(slot, `Prayer potion(${doses})`), optionsWithIndex: [{ text: 'Drink', opIndex: 1 }] }) as InventoryItem;
+    const at = (points: number, inv: InventoryItem[] = [], level = 99) =>
+        baseState({ tick: 10, prayers: { activePrayers: [], prayerPoints: points, prayerLevel: level }, inventory: inv });
+
+    /** The server's side of a drink: a dose's restore on the next tick, the potion one dose down, a vial after the last. */
+    function potionServer(sdk: FakeSdk, opts: { ignore?: number } = {}): void {
+        let ignore = opts.ignore ?? 0;
+        sdk.onSend = a => {
+            if (a.method !== 'sendUseItem' || ignore-- > 0) return;
+            setTimeout(() => sdk.tick(s => {
+                const it = s.inventory.find(i => i.slot === a.args[0])!;
+                const left = Number(/\((\d)\)/.exec(it.name)![1]) - 1;
+                const next = left ? { ...it, name: `Prayer potion(${left})` } : { ...it, name: 'Vial', optionsWithIndex: [] };
+                const p = s.prayers;
+                return { inventory: s.inventory.map(i => (i === it ? next : i)), prayers: { ...p, prayerPoints: Math.min(p.prayerLevel, p.prayerPoints + doseRestore(p.prayerLevel)) } };
+            }), 1);
+        };
+    }
+
+    test('a dose restores 7 + level/4: 31 at Prayer 99, 30 at 94 (consume_effects.dbrow)', () => {
+        expect(doseRestore(99)).toBe(31);
+        expect(doseRestore(94)).toBe(30);
+    });
+
+    test('the reserve is the points plus every held dose at its restore', () => {
+        expect(prayerReserve(at(4))).toBe(4);
+        expect(prayerReserve(at(4, [potion(0, 4)]))).toBe(4 + 124);
+        expect(prayerReserve(at(10, [potion(0, 2), potion(1, 1)], 94))).toBe(10 + 3 * 30);
+    });
+
+    test('prayerCovers refuses naming the need, the points and the doses', () => {
+        const g = prayerCovers('S12:G for G-J', 45);
+        expect(g(at(45), {})).toBe(true);
+        expect(g(at(4), {})).toBe('S12:G for G-J needs ~45 prayer points, has 4 and no prayer potion');
+        expect(g(at(4, [potion(0, 1)]), {})).toBe('S12:G for G-J needs ~45 prayer points, has 4 and 1 potion doses (35 in all)');
+        expect(g(at(4, [potion(0, 2)]), {})).toBe(true);
+    });
+
+    test('drinkPrayerTo drinks one dose at a time until the target, each confirmed before the next', async () => {
+        const sdk = new FakeSdk(at(4, [potion(0, 4)]));
+        potionServer(sdk);
+        expect(await drinkPrayerTo(sdk, 45)).toBe(2);
+        expect(sdk.state!.prayers.prayerPoints).toBe(66);
+        expect(sdk.state!.inventory[0]!.name).toBe('Prayer potion(2)');
+        expect(sdk.sent.filter(a => a.method === 'sendUseItem').map(a => a.args)).toEqual([[0, 1], [0, 1]]);
+    });
+
+    test('the target is capped at the level; it stops when the doses run out, leaving the vial', async () => {
+        const sdk = new FakeSdk(at(50, [potion(3, 1)]));
+        potionServer(sdk);
+        expect(await drinkPrayerTo(sdk, 500)).toBe(1);
+        expect(sdk.state!.prayers.prayerPoints).toBe(81);
+        expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Vial']);
+    });
+
+    test('no drink at or above the target, or with no potion held', async () => {
+        const full = new FakeSdk(at(99, [potion(0, 4)]));
+        expect(await drinkPrayerTo(full, 99)).toBe(0);
+        const none = new FakeSdk(at(0));
+        expect(await drinkPrayerTo(none, 8)).toBe(0);
+        expect([...full.sent, ...none.sent]).toEqual([]);
+    });
+
+    test('a drink dropped by a scene delay is re-sent after 3 ticks and lands', async () => {
+        const sdk = new FakeSdk(at(4, [potion(0, 4)]));
+        potionServer(sdk, { ignore: 1 });
+        const run = drinkPrayerTo(sdk, 8);
+        for (let i = 0; i < 4; i++) setTimeout(() => sdk.tick(), 2 + i);
+        expect(await run).toBe(1);
+        expect(sdk.state!.prayers.prayerPoints).toBe(35);
+        expect(sdk.sent.filter(a => a.method === 'sendUseItem')).toHaveLength(2);
+    });
+
+    test('never clicks while a chat page is open (a pack click closes it): waits, then gives up without a drink', async () => {
+        const s = at(4, [potion(0, 4)]);
+        const sdk = new FakeSdk({ ...s, dialog: { ...s.dialog, isOpen: true } });
+        potionServer(sdk);
+        const run = drinkPrayerTo(sdk, 8, 3);
+        for (let i = 0; i < 5; i++) setTimeout(() => sdk.tick(), 2 + i);
+        expect(await run).toBe(0);
+        expect(sdk.sent).toEqual([]);
+    });
+
+    test('a drink that never lands throws, naming the points and the doses', async () => {
+        const sdk = new FakeSdk(at(0, [potion(0, 4)]));
+        potionServer(sdk, { ignore: 1 });
+        const run = drinkPrayerTo(sdk, 8, 3);
+        for (let i = 0; i < 5; i++) setTimeout(() => sdk.tick(), 2 + i);
+        await expect(run).rejects.toThrow(/drink did not land in 3 ticks \(0 points, 4 doses\)/);
     });
 });

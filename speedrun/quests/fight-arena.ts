@@ -43,7 +43,7 @@ import { FOOD, inArea, missingRunes, runTo, spellUse, SPELLS as TELEPORTS, sumUs
 import { currentTick, waitUntil, type Pred, type StateSource } from '../lib/wait';
 import { configId, findLoc, findNpc, invCount, opIndex, pos, worn, type NamePattern } from '../lib/world';
 import type { Check, Observed, StepContext } from '../runner/step';
-import { allOf, baseLevels, inBox, questSteps, slotsCover, talkShape, within, type Box, type QuestItem, type QuestOptions, type Segment } from './segments';
+import { allOf, baseLevels, drinkPrayerTo, inBox, prayerCovers, questSteps, slotsCover, talkShape, within, type Box, type QuestItem, type QuestOptions, type Segment } from './segments';
 
 export const quest = 'arena' as const;
 export const stepId = 'S12';
@@ -367,11 +367,21 @@ async function watchHp<T>(sdk: StateSource, run: () => Promise<T>): Promise<{ va
     }
 }
 
+/**
+ * Prayer points G needs for the whole arena stretch, G to J, counting held doses: 32-38 measured
+ * (rs/379 lite, rs/401 browser) with margin (rs/687's budget). From G to J SCORED is in the sealed
+ * cell or the arena (quest_arena.rs2:62-64), so nothing can be brought in once G starts.
+ */
+export const ARENA_PRAYER = 45;
+
+/** The fights drink a dose below this; each arena segment drinks up to it first, so its prayer can go on. */
+export const ARENA_DRINK_BELOW = 8;
+
 export function fightOptions(opts: Options | undefined): FightOptions {
     return {
         spell: FIRE_BLAST.component,
         prayer: 'protect_from_melee',
-        drinkBelow: 8,
+        drinkBelow: ARENA_DRINK_BELOW,
         eatBelow: opts?.eatBelow ?? 15,
         food: opts?.food ?? FOOD,
         maxTicks: 1500,
@@ -485,6 +495,9 @@ async function keys(ctx: Ctx, opts: Options | undefined): Promise<void> {
 /** F: Jeremy with the keys, the walk into the arena (stage 6) and his plea; the ogre's cutscene follows. */
 async function jeremy(ctx: Ctx, opts: Options | undefined): Promise<void> {
     const sdk = sdkOf(ctx);
+    // The stretch's prayer drunk here, in the corridor: from Jeremy's plea on, the walk in and the
+    // ogre's entry scene drop item clicks, and a drink on one of its pages would close it.
+    await drinkPrayerTo(sdk, ARENA_PRAYER);
     await go(ctx, TILES.jeremy, 'to Jeremy', CORRIDOR_NORTH);
     const latch = pageSeen(sdk, PAGE.quick);
     try {
@@ -504,6 +517,7 @@ async function ogre(ctx: Ctx, opts: Options | undefined): Promise<void> {
 /** H: Hengrad, the escort into the arena, the scorpion (stage 10). The prayer goes on in the cell. */
 async function scorpion(ctx: Ctx, opts: Options | undefined): Promise<void> {
     const sdk = sdkOf(ctx);
+    await drinkPrayerTo(sdk, ARENA_DRINK_BELOW);
     const s = sdk.getState()!;
     if (inCell(s)) {
         if (!prayerActive(s, 'protect_from_melee')) note(ctx, seg('H'), { prayerOnTicks: await pray(sdk, true) });
@@ -521,6 +535,7 @@ async function scorpion(ctx: Ctx, opts: Options | undefined): Promise<void> {
 async function bouncer(ctx: Ctx, opts: Options | undefined): Promise<void> {
     const sdk = sdkOf(ctx);
     if (!findNpc(sdk, NPC.bouncer)) await pages(ctx, opts, SHAPES.scorpionDead, 'the scorpion\'s death', s => findNpc(s, NPC.bouncer) !== null, PAGE.bouncer, 60);
+    await drinkPrayerTo(sdk, ARENA_DRINK_BELOW);
     await arenaFight(ctx, opts, NPC.bouncer, DEATH_HOOK.bouncer, 'Bouncer');
     await pages(ctx, opts, SHAPES.bouncerDead, 'Bouncer\'s death', () => true, PAGE.killMyself, 60);
 }
@@ -676,7 +691,7 @@ export function steps(opts?: Options) {
         },
         {
             letter: 'G', label: 'ogre', logoutSafe: false,
-            preconditions: allOf(started, inArenaCheck),
+            preconditions: allOf(started, inArenaCheck, prayerCovers('S12:G for G-J', ARENA_PRAYER)),
             run: ctx => ogre(ctx, opts),
             postconditions: within(CELL, 'the cell'),
             done: o => complete(o) || atLeast(o, 'sent_jail'),
