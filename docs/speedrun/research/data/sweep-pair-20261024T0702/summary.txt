@@ -1,0 +1,40 @@
+Same-second react-delay sweep, run host (rs-ashburn-run) and twin (rs-ashburn-rehearsal), 24 Oct 2026.
+Probe: docs/speedrun/scripts/demo-latency-probe.ts at main a3282944, --phases=react --trials=10
+--react-delay=0,50,100,150,200,250,300,300,250,200,150,100,50,0 (up then down, 20 per delay),
+SPEEDRUN_TICK_MS=400, throwaways cairn_r83rh / cairn_r83tw, launched by ashburn-pair-sweep.sh from the Mac.
+Both clocks within 1 us of NTP (chrony). Feed token mvl1k1jw throughout (no restart).
+Raw JSON stays on each machine in ~/rs83/out (not committed: not yet scrubbed field by field).
+
+RUN HOST SOLO, 06:56:00-07:00:24Z (inside slow episode 12, 1,383-1,390 online)
+react: login 1333 ms, tick interval p10 292.1 p50 389.5 p90 479.7 max 864.6 (n=671)
++0 ms   {"1":20}
++50 ms  {"1":18,"2":2}
++100 ms {"1":15,"2":5}
++150 ms {"1":7,"2":13}
++200 ms {"1":1,"2":19}
++250 ms {"2":20}
++300 ms {"2":20}
+warm GET engine:443   ttfb p10 31.9 p50 210.6 p90 387.1 max 572.2 (n=41)
+warm GET gateway:7443 ttfb p10 2330.1 p50 3632.7 p90 4351.5 max 4553.1 (n=32)
+
+PAIR, both started 07:02:00Z; run host ended 07:06:23.951Z, twin 07:06:30.778Z (1,344-1,348 online;
+slow episode 12 cleared 07:03:58Z, episode 13 started 07:05:58Z)
+                 run host                 twin
+login            1163 ms                  1321 ms
+tick interval    p10 298.7 p50 391.9      p10 288.5 p50 389.7
+                 p90 490.8 max 913.9      p90 492.2 max 913.3
++0 ms            {"1":20}                 {"1":17,"2":3}
++50 ms           {"1":14,"2":6}           {"1":12,"2":8}
++100 ms          {"1":13,"2":7}           {"1":14,"2":6}
++150 ms          {"1":11,"2":9}          {"1":8,"2":12}
++200 ms          {"1":2,"2":18}           {"2":20}
++250 ms          {"2":20}                 {"1":1,"2":19}
++300 ms          {"2":20}                 {"1":1,"2":18,"3":1}
+reactMs p50 at +0  0.1                    0.3
+engine:443 ttfb  p10 32 p50 172.7         p10 34.9 p50 197.8
+                 p90 352.8 max 495.1      p90 414.8 max 665.8
+gateway:7443     p10 605.1 p50 1707.9     p10 1025.5 p50 1823.3
+                 p90 3770.2 max 4481.8    p90 4153.1 max 4781.7
+
+Compare 22 Oct 20:35Z, run host, 1,255-1,329 online (data/sweep-runhost-20261022T2035/):
++0..+100 20/20 each, +150 18/20, +200 13/20, +250 13/20.
