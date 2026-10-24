@@ -246,7 +246,7 @@ describe("startWatchdog with run.ts's page hold (runner/page-hold.ts)", () => {
     test('a 60 s silence with the page still in game: held, no logout and no relaunch', async () => {
         const { calls, events } = await check(60_000, true);
         expect(calls).toEqual([]);
-        expect(events.map(e => [e.verdict, e.reason.split(' (')[0]])).toEqual([['wait', 'logout held: the page still says in game: its socket may resume until its own 120 s no-data timeout']]);
+        expect(events.map(e => [e.verdict, e.reason.split(' (')[0]])).toEqual([['wait', 'logout held: the page still says in game: its socket may resume until its own 240 s no-data timeout']]);
     });
 
     test('past the window it acts as before', async () => {

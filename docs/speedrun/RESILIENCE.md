@@ -211,8 +211,10 @@ handles it itself:
   the engine's `TIMEOUT_NO_RESPONSE`, 1,000 ticks after its last packet, not the
   500-tick bound for a closed one, and every login meanwhile is refused with
   reply 5, "Your account is already logged in. Try again in 60 secs". A hold
-  under the page's own no-data timeout costs nothing but the hold (the page
-  stays in game and is adopted); a longer one sends the page to the title
+  under the page's own no-data timeout (240 s, `NO_DATA_TIMEOUT_MS`; run.ts
+  holds 15 s past it) costs nothing but the hold (the page stays in game and
+  is adopted). TCP retransmission backoff can nearly double an outage's
+  silence, so that covers outages up to ~100 s; a longer one sends the page to the title
   screen with its reconnect refused. `session.ts` matches the reply on the
   title screen in one place (`loginReplyCode`); the drop recovery's login asks
   for it (`stopOnReply`, `LoginRefused`) and, holding the relog lock, retries
