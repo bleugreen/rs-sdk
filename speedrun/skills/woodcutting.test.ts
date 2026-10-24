@@ -1822,7 +1822,7 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         const end = h.sdk.getState()!;
         expect(end.inventory.map(i => `${i.name} x${i.count}`).sort()).toEqual(['Air rune x5', 'Knife x1', 'Law rune x1', 'Logs x1', 'Rune axe x1']);
         expect(band.postconditions(end, {})).toBe(true);
-        const tail = summaryOf(h).buryTail as Record<string, number>;
+        const tail = summaryOf(h).buryTail as { ticks: number; ticksPerBone: number };
         expect(tail).toMatchObject({ fromTick: start.tick, buried: 69, sends: 69, resends: 0, passes: 3, loads: 3 });
         expect(tail.ticksPerBone).toBeCloseTo(tail.ticks / 69, 9);
         expect(tailRows(h).map(r => (r.meta as { buried: number; stop: string }).buried)).toEqual([23, 23, 23]);
