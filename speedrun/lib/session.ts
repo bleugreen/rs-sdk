@@ -37,7 +37,7 @@ import {
     tickMs,
     waitUntil,
 } from './wait';
-import { onTutorialIsland } from './world';
+import { chebyshev, messageCursor, messagesAfter, onTutorialIsland, pos, type Tile } from './world';
 
 export const ROOT = join(import.meta.dir, '..', '..');
 export const LOGOUT_BUTTON = 2458; // logout:try_logout
@@ -281,6 +281,11 @@ export interface Session {
      * which openSession makes): run.ts's tick preflight. A throw refuses the login.
      */
     beforeLogin?: () => Promise<void>;
+    /**
+     * The first death a logout of this session saw while it held (logoutClean's LogoutWatch). Once set,
+     * nothing logs the account back in on its own: the watchdog leaves it out and relog refuses.
+     */
+    died?: LogoutDeath;
 }
 
 export interface OpenOptions {
@@ -833,6 +838,167 @@ export interface LogoutResult {
      * the logout belongs to the old one, so it stopped and nothing more was sent. Not a failed logout.
      */
     superseded?: boolean;
+    /** Set when the logout waited before its click (the post-combat window, a refused click's retry): what the wait held. */
+    held?: HeldLogout;
+    /** Set when the account died while the logout held (LogoutWatch). `ok` still says only whether it got out. */
+    death?: LogoutDeath;
+}
+
+// ------------------------------------------------------------------ a death while a logout holds
+
+/**
+ * Where a death puts the player: player_death (server/content/scripts/player/scripts/death.rs2)
+ * p_teleports to map_findsquare(0_50_50_21_18, 0, 2, ...), a free square within 2 tiles of
+ * (3221,3218) on level 0, the Lumbridge spawn. The duel arena and Castle Wars have their own deaths;
+ * the run enters neither.
+ */
+export const RESPAWN = { x: 3221, z: 3218, level: 0, tol: 2 } as const;
+
+/** death.rs2's `mes("Oh dear you are dead!")`, as the client shows it: no comma. */
+export const DEATH_MESSAGE = /^Oh dear you are dead!$/;
+
+/**
+ * Tiles the player may move between two published states one tick apart while a logout holds
+ * before a landing on RESPAWN counts as the respawn. Nothing drives the account then, but a walk
+ * click sent before the logout may still be running, 2 tiles a tick; a respawn moves it hundreds
+ * (attempt 3's S14: (3288,3810) to (3222,3218)). Each further tick between two states allows 2 more.
+ */
+export const RESPAWN_JUMP_TILES = 15;
+
+/**
+ * What showed the death: the engine's message after the logout began, hitpoints at 0 (`isDead`),
+ * the client's own respawn count going up (`lifeId`, `respawnCount`), or a jump onto RESPAWN.
+ */
+export type DeathSign = 'message' | 'dead' | 'respawned' | 'respawn-tile';
+
+export interface LogoutDeath {
+    /** The tile before: the last one before the jump onto the respawn, else the logout's first state's. */
+    from: Tile;
+    fromTick: number;
+    /** The last in-world tile the logout saw. */
+    to: Tile;
+    toTick: number;
+    /** The tick of the first sign. */
+    tick: number;
+    signs: DeathSign[];
+    /** Hitpoints when the logout began, the lowest it saw, and the last; null where the state has none. */
+    hpBefore: number | null;
+    hpMin: number | null;
+    hpAfter: number | null;
+    reason: string;
+}
+
+/** What a logout's wait before its click held: the combat it waited out and the hitpoints through it. */
+export interface HeldLogout {
+    fromTick: number;
+    clickTick: number;
+    ticks: number;
+    /** Hitpoints when the logout began, then each change, with its tick. */
+    hp: { tick: number; hp: number }[];
+    /** Distinct ticks a published state said the player was in combat. */
+    inCombatTicks: number;
+    lastDamageTick: number;
+}
+
+interface SeenAt {
+    tile: Tile;
+    tick: number;
+    hp: number | null;
+}
+
+const seenAt = (s: BotWorldState): SeenAt => ({ tile: pos(s), tick: s.tick, hp: s.player?.hp ?? null });
+const onRespawn = (t: Tile) => t.level === RESPAWN.level && chebyshev(t, RESPAWN) <= RESPAWN.tol;
+
+/**
+ * Every in-world state a logout sees, from the last one before it (`entry`) until the account is
+ * out: whether it died meanwhile (any DeathSign), and the combat and hitpoints the wait held. A
+ * teleport elsewhere and a walk are not deaths. A Lumbridge Teleport lands on the respawn square
+ * too; nothing casts one while a logout holds, so a jump onto it then is read as the respawn.
+ */
+export class LogoutWatch {
+    private readonly cursor: number;
+    private readonly first: SeenAt;
+    private readonly life: number | null;
+    private readonly respawns: number | null;
+    private last: SeenAt;
+    private jumpFrom: SeenAt | null = null;
+    private readonly signs = new Set<DeathSign>();
+    private signTick: number | null = null;
+    private hpMin: number | null;
+    private readonly hp: { tick: number; hp: number }[] = [];
+    private readonly combat = new Set<number>();
+    private lastDamageTick: number;
+    /** The logout waited before its click. */
+    holding = false;
+
+    constructor(entry: BotWorldState) {
+        this.cursor = messageCursor(entry);
+        this.first = this.last = seenAt(entry);
+        // lifeId 0: the client has not seen this life begin, so a later 1 is no respawn.
+        this.life = entry.player?.lifeId ? entry.player.lifeId : null;
+        this.respawns = entry.player?.respawnCount ?? null;
+        this.hpMin = this.first.hp;
+        if (this.first.hp !== null) this.hp.push({ tick: entry.tick, hp: this.first.hp });
+        this.lastDamageTick = entry.player?.combat?.lastDamageTick ?? -1;
+        if (entry.player?.combat?.inCombat) this.combat.add(entry.tick);
+        this.signsOf(entry);
+    }
+
+    see(s: BotWorldState): void {
+        const p = s.player;
+        if (!s.inGame || !p) return;
+        const prev = this.last;
+        const now = seenAt(s);
+        this.last = now;
+        if (now.hp !== null) {
+            if (this.hp.at(-1)?.hp !== now.hp) this.hp.push({ tick: s.tick, hp: now.hp });
+            this.hpMin = this.hpMin === null ? now.hp : Math.min(this.hpMin, now.hp);
+        }
+        if (p.combat?.inCombat) this.combat.add(s.tick);
+        this.lastDamageTick = Math.max(this.lastDamageTick, p.combat?.lastDamageTick ?? -1);
+        const ticks = Math.max(1, now.tick - prev.tick);
+        if (!this.jumpFrom && onRespawn(now.tile) && chebyshev(prev.tile, now.tile) > RESPAWN_JUMP_TILES + 2 * (ticks - 1)) {
+            this.jumpFrom = prev;
+            this.sign('respawn-tile', s.tick);
+        }
+        this.signsOf(s);
+    }
+
+    private signsOf(s: BotWorldState): void {
+        const p = s.player;
+        if (!p) return;
+        if (p.isDead) this.sign('dead', s.tick);
+        const reborn = (this.life !== null && (p.lifeId ?? 0) > this.life) || (this.respawns !== null && (p.respawnCount ?? 0) > this.respawns);
+        if (reborn) this.sign('respawned', s.tick);
+        if (messagesAfter(s, this.cursor, DEATH_MESSAGE).length > 0) this.sign('message', s.tick);
+    }
+
+    private sign(k: DeathSign, tick: number): void {
+        this.signs.add(k);
+        this.signTick ??= tick;
+    }
+
+    death(): LogoutDeath | null {
+        if (this.signs.size === 0) return null;
+        const from = this.jumpFrom ?? this.first;
+        const to = this.last;
+        const signs = [...this.signs];
+        const t = (x: Tile) => `(${x.x},${x.z},${x.level})`;
+        const hp = (n: number | null) => (n === null ? '?' : String(n));
+        return {
+            from: from.tile, fromTick: from.tick, to: to.tile, toTick: to.tick, tick: this.signTick!, signs,
+            hpBefore: this.first.hp, hpMin: this.hpMin, hpAfter: to.hp,
+            reason: `SCORED died before the logout landed: ${t(from.tile)} on tick ${from.tick} to ${t(to.tile)} on tick ${to.tick} `
+                + `(${signs.join(', ')}; hp ${hp(this.first.hp)} at the logout, lowest ${hp(this.hpMin)}, ${hp(to.hp)} after)`,
+        };
+    }
+
+    held(clickTick: number): HeldLogout {
+        return {
+            fromTick: this.first.tick, clickTick, ticks: Math.max(0, clickTick - this.first.tick),
+            hp: [...this.hp], inCombatTicks: this.combat.size, lastDamageTick: this.lastDamageTick,
+        };
+    }
 }
 
 /** Whether the SDK's socket to the gateway is up (not reconnecting or closed). */
@@ -903,14 +1069,31 @@ export const ABANDON_TIMEOUT_MS = 90_000;
  *
  * The logout belongs to the game session it began in: once a newer one begins (an adopt, a launch,
  * an in-page login) it stops, sends nothing more, and reports `superseded`.
+ *
+ * Every state from the call to the account's leaving is watched (LogoutWatch): a death while the
+ * logout held rides on the result (`death`) and on `session.died`; a wait before the click on it as
+ * `held`. A logout with neither returns what it always did.
  */
 export async function logoutClean(session: Session, opts: { timeoutMs?: number } = {}): Promise<LogoutResult> {
-    const { sdk } = session;
-    const gen = session.sessionId;
     session.watchdog?.pause();
     const t0 = Date.now();
-    const s = sdk.getState();
+    const s = session.sdk.getState();
     if (!s?.inGame) return { ok: false, clickTick: -1, lastInWorldTick: session.lastInWorldTick, latencyTicks: 0, wallMs: 0, reason: 'not in game' };
+    const watch = new LogoutWatch(s);
+    const unwatch = session.sdk.onStateUpdate(st => watch.see(st));
+    try {
+        const r = await clickOut(session, s, t0, opts, watch);
+        const death = watch.death();
+        if (death) session.died ??= death;
+        return { ...r, ...(watch.holding ? { held: watch.held(r.clickTick) } : {}), ...(death ? { death } : {}) };
+    } finally {
+        unwatch();
+    }
+}
+
+async function clickOut(session: Session, s: BotWorldState, t0: number, opts: { timeoutMs?: number }, watch: LogoutWatch): Promise<LogoutResult> {
+    const { sdk } = session;
+    const gen = session.sessionId;
     const superseded = (clickTick: number, sends: number): LogoutResult => ({
         ok: false,
         clickTick,
@@ -926,6 +1109,7 @@ export async function logoutClean(session: Session, opts: { timeoutMs?: number }
     const lastHit = s.player?.combat?.lastDamageTick ?? -1;
     const combatTick = lastHit < 0 ? -Infinity : lastHit;
     if (s.player?.combat?.inCombat || s.tick - combatTick <= COMBAT_LOGOUT_TICKS) {
+        watch.holding = true;
         const until = Math.max(s.tick, combatTick) + COMBAT_LOGOUT_TICKS + 1;
         await waitUntil(sdk, st => st.tick >= until && !st.player?.combat?.inCombat, { maxTicks: COMBAT_LOGOUT_TICKS + 30 });
     }
@@ -940,6 +1124,7 @@ export async function logoutClean(session: Session, opts: { timeoutMs?: number }
         const out = w.out;
         if (out === 'superseded') return superseded(clickTick, sends);
         if (out === 'refused' && attempt === 0) {
+            watch.holding = true;
             await waitUntil(sdk, () => false, { maxTicks: COMBAT_LOGOUT_TICKS + 1 });
             continue;
         }
@@ -1267,6 +1452,8 @@ export interface RelogResult {
 export async function relog(session: Session, opts: { offlineMs?: number; loginTimeoutMs?: number; inPage?: boolean } = {}): Promise<RelogResult> {
     const logout = await logoutClean(session);
     if (!logout.ok) throw new Error(`${session.name}: logout failed: ${logout.reason}`);
+    // Logging back in would carry on from the respawn as if nothing happened.
+    if (logout.death) throw new Error(`${session.name}: no relog after a death: ${logout.death.reason}`);
     if (opts.offlineMs ?? 2_000) await sleep(opts.offlineMs ?? 2_000);
     const before = Date.now();
     let first: number | null = null;
@@ -1674,6 +1861,11 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
                 }
                 emit(verdict, `logged out: last in-world tick ${out.lastInWorldTick}, ${out.latencyTicks} tick(s) after the click`);
                 if (verdict === 'stop') return; // stay out, paused; the bot is not driving
+                if (out.death) {
+                    // A login now would carry the chain on from the respawn as if nothing happened.
+                    emit('stop', `${out.death.reason}: left out for R8's recovery`);
+                    return;
+                }
                 try {
                     await actions.login(session);
                     emit('relaunch', `logged back in (session ${session.sessionId})`);
