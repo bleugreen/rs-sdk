@@ -6,7 +6,8 @@ import { resolveOptions as magicOptions, ROUTE_LOADS } from '../skills/magic';
 import { STAND_IN_STEP } from '../runner/run-report';
 import { MANIFEST } from '../tools/slot-ledger';
 import { baseState } from '../lib/fake-sdk';
-import { familyNeeds, giverGaps, hooked, KIT_PLANS, LANDING_HELPER_TILE, labChain, meetingTile, rehearsalPlan, ringerTile, ringLoads, STAFF, VitalsRecorder, withRingers } from './dress-rehearsal';
+import { familyNeeds, giverGaps, hooked, KIT_PLANS, LANDING_HELPER_TILE, labChain, meetingTile, rehearsalPlan, ringerTile, ringLoads, STAFF, staffGives, VitalsRecorder, withRingers } from './dress-rehearsal';
+import { stageRows, stubPlanOf } from './stub-giver';
 import type { LabWorld } from './stand-ins';
 
 // without attempt 4's H4m row: these harnesses stage the chain before it
@@ -59,6 +60,21 @@ describe('labChain', () => {
         expect(lab.staffed).toEqual(['H1', 'H4', 'H4k']);
         expect(lab.chain.find(s => s.id === 'S01')!.name).toBe('H1 hand-off (supply: staff)');
         expect(lab.stubRows).toEqual([]);
+    });
+
+    test("staff supply tops a `to N` line up to N from what SCORED holds (H12's sharks: 7 held, 8 given; 15 held, none); other lines in full", () => {
+        const stage = stageRows(manifest, { rows: [{ row: 'H12', tile: { x: 0, z: 0 } }] }).rows[0]!.stage;
+        const receive = stubPlanOf(manifest, 'H12').receive;
+        const shark = receive.findIndex(r => r.name === 'shark');
+        expect(shark).toBeGreaterThanOrEqual(0);
+        expect(receive[shark]!.topUp).toBe(true);
+        const holding = (n: number) => baseState({ inventory: Array.from({ length: n }, (_, slot) => ({ slot, id: 385, name: 'Shark', count: 1, optionsWithIndex: [] })) } as never);
+        expect(staffGives(stage, receive, holding(7))[shark]!.n).toBe(8);
+        expect(staffGives(stage, receive, holding(15))[shark]!.n).toBe(0);
+        expect(staffGives(stage, receive, holding(0))[shark]!.n).toBe(15);
+        const plain = receive.findIndex(r => !r.topUp);
+        expect(staffGives(stage, receive, holding(7))[plain]!.n).toBe(stage[plain]!.n);
+        expect(() => staffGives(stage.slice(1), receive, holding(0))).toThrow('staged lines');
     });
 
     test("H4's lab plan reads the ledger text it is given (not a path) and gives back the rings held", () => {

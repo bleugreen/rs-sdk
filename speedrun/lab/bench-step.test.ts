@@ -121,7 +121,7 @@ describe('runMetrics', () => {
 
     test('the counted rows are the ticks; TICKMON is summed over the minutes overlapping them in their session; hp and food inside their ticks', () => {
         const m = runMetrics(rows, vitals, t, 0);
-        expect(m).toMatchObject({ ticks: 600, rows: 1, pass: true, refusal: null, late: 1, glued: 3, gaps: 1, minutes: 2, periodMs: 150.5, hpMin: 30, food: 1 });
+        expect(m).toMatchObject({ ticks: 600, rows: 1, pass: true, refusal: null, late: 1, glued: 3, gaps: 1, minutes: 2, periodMs: 150.5, hpEntry: 42, hpMin: 30, food: 1 });
         expect(m.cheats).toEqual(['stage S07 (1 unstaged)', 'supply: staff H4k']);
         expect(m.bySegment).toEqual({ 'woodcutting:oak-15-73': 600 });
     });
@@ -129,7 +129,13 @@ describe('runMetrics', () => {
     test("a failed phase is the step's (step.ts failRow `<name>:<phase>`): its ticks count and its error is the refusal", () => {
         const failed = [row('woodcutting:oak-15-73:postcondition', { ok: false, error: 'Woodcutting 70 < 73', startTick: 722, endTick: 722 }), row('woodcutting:oak-15-73', { ticks: 640, ok: false, error: 'knife gate' })];
         const m = runMetrics(failed, [], t, 1);
-        expect(m).toMatchObject({ ticks: 640, rows: 2, pass: false, refusal: 'woodcutting:oak-15-73:postcondition: Woodcutting 70 < 73', hpMin: null, food: null });
+        expect(m).toMatchObject({ ticks: 640, rows: 2, pass: false, refusal: 'woodcutting:oak-15-73:postcondition: Woodcutting 70 < 73', hpEntry: null, hpMin: null, food: null });
+    });
+
+    test("the leg in's damage is the entry HP, not the step's minimum; a span with no change has its entry HP as its minimum", () => {
+        const poisoned = [{ sid: 1, tick: 100, hp: 3, food: 8 }, { sid: 1, tick: 130, hp: 37, food: 7 }, { sid: 1, tick: 400, hp: 17, food: 7 }];
+        expect(runMetrics(rows, poisoned, t, 0)).toMatchObject({ hpEntry: 3, hpMin: 17, food: 1 });
+        expect(runMetrics(rows, [{ sid: 1, tick: 90, hp: 42, food: 5 }], t, 0)).toMatchObject({ hpEntry: 42, hpMin: 42, food: 0 });
     });
 
     test('a run that never reached the step has no counted rows, and its refusal says it failed before', () => {
@@ -211,7 +217,7 @@ describe('accounts and helpers', () => {
 
 describe('results.tsv', () => {
     test('one row per run in the column order, tabs and newlines in a refusal flattened', () => {
-        const line = tsvRow({ commit: 'abc', target: 'S12', tick_ms: 150, run: 1, account: 'benchk3x1', status: 'fail', ticks: 300, score: 843.9, secs: 210, late: 0, glued: 0, gaps: 0, hp_min: 12, food: 2, cheats: 'stage S12', notes: 'S12:B\tfailed\nhere', log: '/tmp/l', at: 'now' });
+        const line = tsvRow({ commit: 'abc', target: 'S12', tick_ms: 150, run: 1, account: 'benchk3x1', status: 'fail', ticks: 300, score: 843.9, secs: 210, late: 0, glued: 0, gaps: 0, hp_entry: 30, hp_min: 12, food: 2, cheats: 'stage S12', notes: 'S12:B\tfailed\nhere', log: '/tmp/l', at: 'now' });
         expect(line.split('\t')).toHaveLength(TSV_COLUMNS.length);
         expect(line).toContain('S12:B failed here');
         expect(line.endsWith('\n')).toBe(true);

@@ -110,7 +110,7 @@ import { h4PlanOf } from '../quests/dorics-quest';
 import { buildChain, CANNON_ROWS, KIT_PARTNER_ROWS, KIT_SEGMENTS, muleCueDir, noteRow, PLACEMENT, sliceUntil, resolveFrom, STAND_IN_ROWS, type ChainStep, type RunConfig } from '../runner/chain';
 import { prepareCueDir, RunCues } from '../runner/cue-keeper';
 import { AttemptRecord } from '../runner/attempt-record';
-import { applyEquip, handOffFrom, unequipGives, type HandOffPlan, type HandOffSdk } from '../runner/handoff';
+import { applyEquip, handOffFrom, unequipGives, wanted, type HandOffPlan, type HandOffSdk } from '../runner/handoff';
 import type { LegStep } from '../runner/legs';
 import { TILES } from '../runner/legs';
 import { formatRunReport, runReport, STAFF_SUPPLY_STEP, STAND_IN_STEP } from '../runner/run-report';
@@ -158,9 +158,21 @@ export function meetingTile(chain: readonly ChainStep[], index: number): StubRow
 }
 
 /**
- * A row the lab supplies with staff commands: the row's `in` given, its `out` dropped (every item id
- * an entry names), its equip applied. `planOf` reads the plan from the state at run time, for a row
- * whose `out` is a placeholder its module fills (H4's enchanted rings, KIT_PLANS).
+ * What staff supply gives for a row's staged lines (stageRows, one per `in` entry): a top-up line
+ * (`shark to 15`, H12) only what SCORED lacks of it, as the real trade asks (runner/handoff.ts wanted),
+ * so the pack after the row is the run's (H12: 27/28, not 28/28 with Narnode's seal overflowing); any
+ * other line in full.
+ */
+export function staffGives(stage: readonly { obj: string; n: number }[], receive: HandOffPlan['receive'], s: BotWorldState): { obj: string; n: number }[] {
+    if (stage.length !== receive.length) throw new Error(`staff supply: ${stage.length} staged lines for ${receive.length} received entries`);
+    return stage.map((st, i) => ({ obj: st.obj, n: wanted(s, receive[i]!) }));
+}
+
+/**
+ * A row the lab supplies with staff commands: the row's `in` given (a top-up to what SCORED lacks,
+ * staffGives), its `out` dropped (every item id an entry names), its equip applied. `planOf` reads the
+ * plan from the state at run time, for a row whose `out` is a placeholder its module fills (H4's
+ * enchanted rings, KIT_PLANS).
  */
 export function staffSupplyStep(step: ChainStep, manifest: string, planOf?: (s: BotWorldState) => HandOffPlan): ChainStep {
     const row = step.name.replace(/ hand-off.*$/, '');
@@ -168,6 +180,8 @@ export function staffSupplyStep(step: ChainStep, manifest: string, planOf?: (s: 
     const fixed = planOf ? null : stubPlanOf(manifest, row);
     const { rows, unresolved } = stageRows(manifest, { rows: [{ row, tile: { x: 0, z: 0 } }] });
     if (unresolved.length) throw new Error(`staff supply ${row}: no ::give name for ${unresolved.join(', ')}`);
+    // stageRows stages the ledger row's own `in`, so its top-up flags come from the same plan.
+    const receive = (fixed ?? stubPlanOf(manifest, row)).receive;
     const run = async (ctx: StepContext<unknown>) => {
         const sdk = ctx.sdk as unknown as HandOffSdk & Parameters<typeof dropMatching>[0];
         const plan = fixed ?? planOf!(sdk.getState()! as BotWorldState);
@@ -175,9 +189,11 @@ export function staffSupplyStep(step: ChainStep, manifest: string, planOf?: (s: 
         await unequipGives(sdk, plan);
         const outs = [...plan.give, ...plan.drop];
         if (outs.length) await dropMatching(sdk, outs.flatMap((g): Parameters<typeof dropMatching>[1][number][] => (g.ids ? [...g.ids] : [g.pattern])));
-        for (const st of rows[0]!.stage) await give(sdk, st.obj, st.n);
+        // Sized after the drops, from what SCORED then holds.
+        const gave = staffGives(rows[0]!.stage, receive, sdk.getState()! as BotWorldState);
+        for (const st of gave) if (st.n > 0) await give(sdk, st.obj, st.n);
         await applyEquip(sdk, plan);
-        noteRow(ctx, `${STAFF_SUPPLY_STEP} ${row}`, { row, gave: rows[0]!.stage, dropped: outs.map(g => g.name) });
+        noteRow(ctx, `${STAFF_SUPPLY_STEP} ${row}`, { row, gave, dropped: outs.map(g => g.name) });
     };
     return { id: step.id, kind: 'handoff', name: `${row} hand-off (${STAFF_SUPPLY_STEP})`, logoutSafe: true, preconditions: () => true, postconditions: () => true, run, resume: run };
 }

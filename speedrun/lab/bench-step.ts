@@ -194,6 +194,9 @@ export interface RunMetrics {
     minutes: number;
     /** The minutes' median measured tick period, ms. */
     periodMs: number | null;
+    /** HP as the counted span starts (the leg in's poison or damage shows here, not in hpMin). */
+    hpEntry: number | null;
+    /** The lowest HP a change inside the counted span left; the entry HP when nothing changed. */
     hpMin: number | null;
     food: number | null;
     cheats: string[];
@@ -226,6 +229,7 @@ export function runMetrics(rows: readonly TickRow[], vitals: readonly VitalsLine
     const num = (r: TickRow, k: string) => (typeof r.meta?.[k] === 'number' ? (r.meta[k] as number) : 0);
     const periods = mon.map(r => r.meta?.periodMs).filter((p): p is number => typeof p === 'number');
 
+    let hpEntry: number | null = null;
     let hpMin: number | null = null;
     let food: number | null = null;
     for (const s of spans) {
@@ -234,14 +238,15 @@ export function runMetrics(rows: readonly TickRow[], vitals: readonly VitalsLine
         const during = lines.filter(v => v.tick > s.start);
         let prev = before ?? during[0];
         if (!prev) continue;
-        hpMin = Math.min(hpMin ?? prev.hp, prev.hp);
+        hpEntry ??= prev.hp;
         food ??= 0;
         for (const v of during) {
-            hpMin = Math.min(hpMin, v.hp);
+            hpMin = Math.min(hpMin ?? v.hp, v.hp);
             if (v.food < prev.food) food += prev.food - v.food;
             prev = v;
         }
     }
+    hpMin ??= hpEntry;
 
     const cheats = new Set<string>();
     for (const r of rows) {
@@ -268,6 +273,7 @@ export function runMetrics(rows: readonly TickRow[], vitals: readonly VitalsLine
         gaps: mon.reduce((a, r) => a + num(r, 'gaps'), 0),
         minutes: mon.length,
         periodMs: periods.length ? median(periods) : null,
+        hpEntry,
         hpMin,
         food,
         cheats: [...cheats],
@@ -410,7 +416,7 @@ function writeBotEnv(name: string): string {
 // ------------------------------------------------------------------ results.tsv
 
 /** `secs`: the run's wall time, staging and helpers included, for sizing K against a loop's budget. */
-export const TSV_COLUMNS = ['commit', 'target', 'tick_ms', 'run', 'account', 'status', 'ticks', 'score', 'secs', 'late', 'glued', 'gaps', 'hp_min', 'food', 'cheats', 'notes', 'log', 'at'] as const;
+export const TSV_COLUMNS = ['commit', 'target', 'tick_ms', 'run', 'account', 'status', 'ticks', 'score', 'secs', 'late', 'glued', 'gaps', 'hp_entry', 'hp_min', 'food', 'cheats', 'notes', 'log', 'at'] as const;
 
 export function tsvRow(row: Readonly<Record<(typeof TSV_COLUMNS)[number], string | number | null>>): string {
     return TSV_COLUMNS.map(c => String(row[c] ?? '').replace(/[\t\r\n]+/g, ' ')).join('\t') + '\n';
@@ -594,8 +600,8 @@ async function main(argv: string[]): Promise<number> {
         const r: RunResult = { ...m, run, account: names.scored, refused, score, secs, notes, log };
         results.push(r);
         const status = refused ? 'refused' : m.pass ? 'pass' : 'fail';
-        appendResults(a.out, [tsvRow({ commit, target: a.target, tick_ms: labTick, run, account: names.scored, status, ticks: refused ? null : m.ticks, score, secs, late: m.late, glued: m.glued, gaps: m.gaps, hp_min: m.hpMin, food: m.food, cheats: m.cheats.join('; '), notes, log, at: new Date().toISOString() })]);
-        console.log(`[bench] run ${run}/${a.k} ${status}: ${refused ? '-' : m.ticks} ticks in ${secs} s; TICKMON ${m.minutes} min late ${m.late} glued ${m.glued} gaps ${m.gaps}; hp min ${m.hpMin ?? '-'}; food ${m.food ?? '-'}; cheats ${m.cheats.join(', ') || 'none'}${notes ? `; ${notes}` : ''}`);
+        appendResults(a.out, [tsvRow({ commit, target: a.target, tick_ms: labTick, run, account: names.scored, status, ticks: refused ? null : m.ticks, score, secs, late: m.late, glued: m.glued, gaps: m.gaps, hp_entry: m.hpEntry, hp_min: m.hpMin, food: m.food, cheats: m.cheats.join('; '), notes, log, at: new Date().toISOString() })]);
+        console.log(`[bench] run ${run}/${a.k} ${status}: ${refused ? '-' : m.ticks} ticks in ${secs} s; TICKMON ${m.minutes} min late ${m.late} glued ${m.glued} gaps ${m.gaps}; hp entry ${m.hpEntry ?? '-'} min ${m.hpMin ?? '-'}; food ${m.food ?? '-'}; cheats ${m.cheats.join(', ') || 'none'}${notes ? `; ${notes}` : ''}`);
     }
 
     const ran = results.filter(r => !r.refused);
@@ -608,7 +614,7 @@ async function main(argv: string[]): Promise<number> {
     const segments = segmentTable(target.names, passed.map(r => r.bySegment));
     if (segments.length) console.log(formatSegments(segments).join('\n'));
     console.log(`SCORE ${score ?? 'none'}`);
-    console.log(`RESULT bench-step ${JSON.stringify({ target: a.target, tickMs: labTick, k: a.k, commit, score, expected, best: cells.best, restart: restart.ticks, segments, runs: results.map(({ run, account, pass, refused, ticks, bySegment, score, secs, late, glued, gaps, minutes, hpMin, food, cheats, notes, log }) => ({ run, account, pass, refused, ticks, bySegment, score, secs, late, glued, gaps, minutes, hpMin, food, cheats, notes, log })) })}`);
+    console.log(`RESULT bench-step ${JSON.stringify({ target: a.target, tickMs: labTick, k: a.k, commit, score, expected, best: cells.best, restart: restart.ticks, segments, runs: results.map(({ run, account, pass, refused, ticks, bySegment, score, secs, late, glued, gaps, minutes, hpEntry, hpMin, food, cheats, notes, log }) => ({ run, account, pass, refused, ticks, bySegment, score, secs, late, glued, gaps, minutes, hpEntry, hpMin, food, cheats, notes, log })) })}`);
     console.log(`[bench] results appended to ${a.out}`);
     return ran.length ? 0 : 3;
 }
