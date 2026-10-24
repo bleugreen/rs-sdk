@@ -227,7 +227,9 @@ export class Pickpocketer {
     /** Throws WalkFailed when the walk fails, after a door retry if it was unroutable. */
     private walk(t: Tile): Promise<void> {
         const { bot, sdk, log } = this.ctx;
-        return walkThroughDoors({ walk: to => walkTo(bot, sdk, to.x, to.z, 2), openDoor: () => bot.openDoor(), wait: async n => void (await waitTicks(sdk, n)), log }, t);
+        // the nearest shut one: bot.openDoor() alone takes the nearest door by name, which may be an open one
+        const shut = () => sdk.getNearbyLocs().filter(l => /door|gate/i.test(l.name) && l.optionsWithIndex.some(o => /^open$/i.test(o.text))).sort((a, b) => a.distance - b.distance)[0];
+        return walkThroughDoors({ walk: to => walkTo(bot, sdk, to.x, to.z, 2), openDoor: () => bot.openDoor(shut()), wait: async n => void (await waitTicks(sdk, n)), log }, t);
     }
 
     private async bank(): Promise<void> {
