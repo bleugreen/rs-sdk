@@ -87,7 +87,21 @@ export type ChainStep = AnyStep & {
     cue?: CueScope;
     /** cueAround: whether a success ends the cue with a final stop (a throw's stop is never final). */
     finalStop?: boolean;
+    /** Where the step's preconditions require SCORED to start, as data (chainSeams reads it). */
+    startTile?: StartTile;
 };
+
+/**
+ * A step's required start position: within `within` tiles (Chebyshev, as every module's own check
+ * is) of (x,z) on `level` (default 0). `source` names the module check it mirrors.
+ */
+export interface StartTile {
+    x: number;
+    z: number;
+    level?: number;
+    within: number;
+    source: string;
+}
 
 // ------------------------------------------------------------------ the run config
 
@@ -580,9 +594,9 @@ export function isCueStop(s: ChainStep, of?: string): boolean {
     return s.kind === 'cue' && (of === undefined ? s.id.endsWith(' cue stop') : s.id === `${of} cue stop`);
 }
 
-/** What the pack holds at a boundary. */
-export function census(s: BotWorldState): { inventory: { name: string; count: number }[]; free: number; worn: string[] } {
-    return { inventory: s.inventory.map(i => ({ name: i.name, count: i.count })), free: INVENTORY_SIZE - s.inventory.length, worn: s.equipment.map(e => e.name) };
+/** What the pack holds at a boundary, each item by obj id as well as name (runner/rune-census.ts reads the runes back by id). */
+export function census(s: BotWorldState): { inventory: { name: string; count: number; id: number }[]; free: number; worn: string[] } {
+    return { inventory: s.inventory.map(i => ({ name: i.name, count: i.count, id: i.id })), free: INVENTORY_SIZE - s.inventory.length, worn: s.equipment.map(e => e.name) };
 }
 
 export const CENSUS_STEP = '(census)';
@@ -630,9 +644,12 @@ export function anvilAnnounce(cueDir: string): NonNullable<smithing.SmithingOpti
     return m => void writeAnvilPlan(cueDir, m);
 }
 
-/** H21a's swap-outs, from the ledger row smithing.ts takes them back by. */
+/**
+ * H21a's swap-outs, from the ledger row smithing.ts takes them back by. A ledger `any` is the spec's
+ * `all`: smithing's give-back gives nothing for a spec that matches nothing held (giveBackItems).
+ */
 export function h21aGiveBack(manifest: string): GiveSpec[] {
-    return handOffFrom(manifest, 'H21a').give.map(g => ({ item: g.ids ? g.ids[0]! : g.pattern, n: g.count }));
+    return handOffFrom(manifest, 'H21a').give.map(g => ({ item: g.ids ? g.ids[0]! : g.pattern, n: g.count === 'any' ? 'all' : g.count }));
 }
 
 // ------------------------------------------------------------------ the chain
@@ -869,10 +886,85 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : ask;
         const muleRow = !scope && MULE_ROWS.includes(e.row);
         const beforeTrade = muleRow ? { beforeTrade: () => { o.cues.refresh?.(muleScope(e.row)); } } : {};
-        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs } : {}), ...(cue ? { cue } : {}), ...beforeTrade }), cue ? { cue: cue.scope } : {});
+        const laterRows = rows.slice(rows.findIndex(r => r.row === e.row) + 1);
+        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs, laterRows } : {}), ...(cue ? { cue } : {}), ...beforeTrade }), cue ? { cue: cue.scope } : {});
         out.unshift(muleRow ? mule(s, e.row) : s);
     }
-    return cueMuleRows(out, muleRows, partner, o.cues).map(censused);
+    const tileOf = startTiles(cfg);
+    return cueMuleRows(out, muleRows, partner, o.cues).map(censused).map(s => {
+        const t = tileOf(s.name);
+        return t ? { ...s, startTile: t } : s;
+    });
+}
+
+// ------------------------------------------------------------------ the seam check
+
+/**
+ * The start tiles of the chain's steps whose preconditions ask for a position, read from the
+ * modules' own exports so the data and the check cannot drift apart: S02's coop radius, S03's row
+ * entry (the run config's firemakingTiles), S07's band stands (woodcutting.ts SITES, the default
+ * route), S22's river and S25a's anvil.
+ */
+export function startTiles(cfg: Pick<RunConfig, 'firemakingTiles'>): (name: string) => StartTile | undefined {
+    const fm = firemaking.resolveOptions({ tiles: cfg.firemakingTiles });
+    const byName = new Map<string, StartTile>();
+    byName.set(magic.S02_ID, { x: magic.COOP.x, z: magic.COOP.z, within: magic.COOP_RADIUS, source: 'magic.ts s02Pre (COOP, COOP_RADIUS)' });
+    if (fm.entry) byName.set(fm.id, { x: fm.entry[0], z: fm.entry[1], within: fm.near, source: "firemaking.ts precheck (the row's entry, near)" });
+    for (const b of woodcutting.BANDS) {
+        const [x, z] = woodcutting.SITES[b.tree].stand;
+        byName.set(b.name, { x, z, within: woodcutting.NEAR, source: `woodcutting.ts ${b.name} (SITES.${b.tree}.stand, NEAR)` });
+    }
+    byName.set('fishing:fly-78-99', { x: fishing.RIVER.x, z: fishing.RIVER.z, within: fishing.NEAR, source: 'fishing.ts bandStep (RIVER, NEAR)' });
+    const anvil: StartTile = { x: smithing.ANVIL.x, z: smithing.ANVIL.z, within: smithing.NEAR, source: 'smithing.ts nearAnvil (ANVIL, NEAR)' };
+    return name => byName.get(name) ?? (name.startsWith('S25a smithing') ? anvil : undefined);
+}
+
+/** One step with a start tile whose position a leg fixes: the leg's end against the tile. */
+export interface Seam {
+    index: number;
+    id: string;
+    name: string;
+    /** The leg that leaves SCORED there. */
+    leg: string;
+    /** Where the leg ends: its dest (and nextStart), with their tolerances. */
+    ends: Array<{ x: number; z: number; level: number; tol: number }>;
+    start: StartTile;
+    /** The farthest SCORED can stand from the start tile once the leg has arrived (Infinity: another level). */
+    distance: number;
+    ok: boolean;
+    detail: string;
+}
+
+/** Chain entries that leave SCORED where it stands: hand-offs, cue steps, markers. */
+const stays = (s: ChainStep) => s.kind === 'handoff' || s.kind === 'cue' || !!s.marker;
+
+/**
+ * The chain-build seam check: for every step with a start tile, the leg before it (past any
+ * hand-off or cue step) must leave SCORED within the tile's tolerance wherever its arrival allows,
+ * so the step's position check cannot refuse on a correct run. A step that follows another step
+ * (whose end the chain does not fix) has no seam to check. Pure: the chain's data only.
+ */
+export function chainSeams(chain: readonly ChainStep[]): Seam[] {
+    const out: Seam[] = [];
+    chain.forEach((s, index) => {
+        const start = s.startTile;
+        if (!start) return;
+        let j = index - 1;
+        while (j >= 0 && stays(chain[j]!)) j--;
+        const prev = chain[j];
+        if (!prev || prev.kind !== 'leg') return;
+        const def = (prev as unknown as LegStep).def;
+        const ends = [def.dest, ...(def.nextStart ? [def.nextStart] : [])].map(a => ({ x: a.x, z: a.z, level: a.level ?? 0, tol: a.tol ?? 0 }));
+        const level = start.level ?? 0;
+        const distance = Math.max(...ends.map(e => (e.level !== level ? Infinity : Math.max(Math.abs(e.x - start.x), Math.abs(e.z - start.z)) + e.tol)));
+        const ok = distance <= start.within;
+        const at = ends.map(e => `${e.x},${e.z}${e.level ? `,${e.level}` : ''} tol ${e.tol}`).join(' or ');
+        out.push({
+            index, id: s.id, name: s.name, leg: prev.id, ends, start, distance, ok,
+            detail: `#${index} ${s.name}: ${prev.id} ends at ${at}, ${distance} tiles from ${start.x},${start.z}${level ? `,${level}` : ''}; the step starts within ${start.within} (${start.source})`,
+        });
+    });
+    return out;
 }
 
 // ------------------------------------------------------------------ slicing

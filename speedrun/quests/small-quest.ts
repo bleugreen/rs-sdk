@@ -6,6 +6,7 @@
 
 import type { BotWorldState } from '../../sdk/types';
 import { opLoc, talkTo, type ActSdk } from '../lib/act';
+import { approachNpc } from '../lib/approach';
 import { converse, levelUpInterrupt, type ConverseResult, type ConverseSdk, type Interrupt } from '../lib/converse';
 import type { OptionPattern } from '../lib/dialogue';
 import { questStatus, type QuestKey } from '../lib/quests';
@@ -23,7 +24,11 @@ export interface TalkSpec {
     /** For failures and notes: 'Doric (start)'. */
     who: string;
     npc: RegExp;
-    /** Where the NPC stands (or wanders round): candidates are sorted by distance to it. */
+    /**
+     * Where the NPC stands (or wanders round): candidates are sorted by distance to it. The talk
+     * first opens the way to the chosen NPC's live tile when a closed door stands between
+     * (lib/approach.ts approachNpc); otherwise it sends nothing before the Talk-to click.
+     */
     near: { x: number; z: number };
     choices?: OptionPattern[];
     /** CONVENTIONS.md shape, read from the script: drives the burst and is checked against the pages. */
@@ -102,13 +107,20 @@ export function questMoves(stepId: string): QuestMoves {
         },
         async talk(ctx, seg, opts, t, extra = {}) {
             const sdk = sdkOf(ctx);
-            const r = await talkTo(sdk, t.npc, t.choices ?? [], {
+            // An NPC that wanders can be shut behind a door it walked through (rs/665: Edmond): open
+            // the way to its live tile first. Nothing is sent when nothing stands between.
+            const a = await approachNpc(sdk, t.npc, { near: t.near, bot: ctx.bot, interrupts: interrupts() });
+            if (!a.ok) fail(seg, `${t.who}: ${a.reason}`, sdk);
+            const approach = a.ticks || a.doors.length || a.runs || a.note
+                ? { approach: { ticks: a.ticks, finds: a.finds, doors: a.doors.map(d => `${d.x},${d.z}`), runs: a.runs, ...(a.note ? { note: a.note } : {}) } }
+                : {};
+            const r = await talkTo(sdk, a.npc ?? t.npc, t.choices ?? [], {
                 near: t.near, interrupts: interrupts(), unmatched: 'stop', idle: t.idle ?? 0, maxTicks: t.maxTicks ?? 120,
                 ...(t.until ? { until: t.until } : {}), ...talkShape(opts, t.shape),
             });
             if (!r.opened) fail(seg, `${t.who}: no dialogue opened`, sdk);
             if (!r.ok) fail(seg, `${t.who}: ${r.reason}`, sdk);
-            noteShape(ctx, seg, t.who, r, { clicks: r.clicks, ...(r.settleTicks ? { settleTicks: r.settleTicks } : {}), ...extra });
+            noteShape(ctx, seg, t.who, r, { clicks: r.clicks, ...(r.settleTicks ? { settleTicks: r.settleTicks } : {}), ...approach, ...extra });
             return r;
         },
         async locMove(ctx, seg, what, loc, arrived, maxTicks = 20, op = 1) {

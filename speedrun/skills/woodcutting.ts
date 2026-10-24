@@ -101,6 +101,13 @@
 // resume at `to` that still owes Prayer or the runes re-enters the band, and the willow walk takes
 // it back to the stand.
 //
+// The early last load (a group): the count is padded above need, so it must not decide the end. At
+// `to` and `prayerTo` with no bones held and the runes owed, the band writes the cue's lastLoad once
+// (BoneCue.markLastLoad), and its next ask is the runes alone from the group's final giver
+// (bone-giver.ts boneServer, loadOffer); it closes on that load. A final giver that never comes fails
+// the load within serverWait, by name. On the scored run's path (`lastLoad` set) the last band also
+// buries every bone it holds before it closes, Prayer 99 or not: T07-08 has no room for them.
+//
 // The giver group (`bones.group`, S07's b01-b04 taking turns; bone-giver.md "Taking turns"): the
 // module writes the cue the givers read, scoped { step: 'S07', family: 'bone' } (S07_BONE_CUE), at
 // each burying band's start and stops it when S07's last band reaches `to`, in one session for the
@@ -117,7 +124,7 @@
 
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { canonName, CueWriter, cueDir as defaultCueDir, type Beacon, type CueScope } from '../helpers/altar-cue';
-import { boneServer, groupLoads, groupLoadsDone, readBoneStatuses, SERVER_WAIT_TICKS, type ServerWait } from '../helpers/bone-giver';
+import { boneServer, groupLoads, groupLoadsDone, lastLoadGiven, readBoneStatuses, SERVER_WAIT_TICKS, type ServerWait } from '../helpers/bone-giver';
 import { GATED_PROGRAMS, type GatedSegment, type GatedTechnique, inPageGate, type InPageGateOptions, runGatedProgram, type SegmentTechnique } from '../lib/gated-program';
 import type { HostGate } from '../lib/hostgate';
 import { withLevelUpDismissal } from '../lib/levelup';
@@ -1112,12 +1119,27 @@ export class BoneCue {
         this.writer.write({ beacons: BoneCue.beacons(s), turns: [], site: { x: stand[0], z: stand[1] } });
     }
 
+    /**
+     * Cue.lastLoad: SCORED wants no more bones, only the runes' load, which the group's final giver
+     * serves next. The writer keeps it for the session, so a resumed process that carries the session
+     * on reads it back (`lastLoad`) and never writes it twice.
+     */
+    markLastLoad(s: BotWorldState | null, receiver: string, stand: Tile): void {
+        this.writer ??= new CueWriter(this.dir, receiver, S07_BONE_CUE, this.sessionId);
+        this.writer.write({ beacons: BoneCue.beacons(s), turns: [], site: { x: stand[0], z: stand[1] }, lastLoad: true });
+    }
+
     stop(s: BotWorldState | null): void {
         this.writer?.stop(BoneCue.beacons(s));
     }
 
     get session(): string | null {
         return this.writer?.session ?? null;
+    }
+
+    /** This session's cue says lastLoad (written by this process, or by the one it resumes). */
+    get lastLoad(): boolean {
+        return this.writer?.current?.lastLoad === true;
     }
 }
 
@@ -1129,13 +1151,14 @@ export class BoneCue {
  * player_not_found). That giver never sees SCORED, leaves its site after siteWaitTicks and drops out
  * of the order (bone-giver.ts cycle), and the choice moves on to a giver here, already queued, which
  * requests once it is the server. Re-reads the statuses each frame, at most `maxTicks` observed ticks;
- * with `after`, only frames past that tick count.
+ * with `after`, only frames past that tick count. `lastLoad`: the cue says it (BoneCue.lastLoad), so
+ * only the group's final giver serves.
  */
-export async function awaitServerInSight(sdk: StateSource, dir: string, group: readonly string[], maxTicks: number, session?: string, after?: number): Promise<ServerWait> {
+export async function awaitServerInSight(sdk: StateSource, dir: string, group: readonly string[], maxTicks: number, session?: string, after?: number, lastLoad = false): Promise<ServerWait> {
     const from = after ?? sdk.getState()?.tick ?? 0;
     let server: string | undefined;
     const seen = (s: BotWorldState) => {
-        server = boneServer(readBoneStatuses(dir), group, Date.now(), session);
+        server = boneServer(readBoneStatuses(dir), group, Date.now(), session, lastLoad);
         const name = server === undefined ? null : canonName(server);
         return name !== null && s.nearbyPlayers.some(p => canonName(p.name) === name);
     };
@@ -1148,8 +1171,8 @@ const bonesIn = (o: Resolved, s: BotWorldState) => s.inventory.filter(i => o.bon
 /**
  * Whether the givers hold another S07 load: false once the last load came (`lastLoad`'s, with the
  * runes) or, for a group, once its status files in the cue's session count every load given (the
- * givers' `loads`); true while the last load is still to come; null when nothing says (one giver
- * without `lastLoad`, or a group whose session or count is not yet published).
+ * givers' `loads`), or the cue's lastLoad was served; true while the last load is still to come; null
+ * when nothing says (one giver without `lastLoad`, or a group whose session or count is not yet published).
  */
 function loadsLeftOf(o: Resolved, cue: BoneCue | null): (s: BotWorldState | null) => boolean | null {
     const giver = o.bones;
@@ -1159,6 +1182,7 @@ function loadsLeftOf(o: Resolved, cue: BoneCue | null): (s: BotWorldState | null
             const session = giver.session ?? cue?.session ?? undefined;
             if (session !== undefined) {
                 const statuses = readBoneStatuses(giver.cueDir);
+                if (cue?.lastLoad && lastLoadGiven(statuses, giver.group, session)) return false;
                 const total = groupLoads(statuses, giver.group, session);
                 if (total !== null) return groupLoadsDone(statuses, giver.group, session) < total;
             }
@@ -1171,17 +1195,19 @@ function loadsLeftOf(o: Resolved, cue: BoneCue | null): (s: BotWorldState | null
 const prayerShort = (o: Resolved, s: BotWorldState | null) => o.prayerTo > 0 && levelOf(s, 'prayer') < o.prayerTo;
 /** The last load (`lastLoad`'s, with T07-08's runes) is still to come. */
 const runesOwed = (o: Resolved, s: BotWorldState | null) => !!s && o.bones?.lastLoad != null && !runesHeld(s);
+/** The scored run's path (`lastLoad`: T07-08 follows on the runes) and bones still held: S07 closes on none, T07-08 has no room for them. */
+const bonesToClear = (o: Resolved, s: BotWorldState | null) => !!s && o.bones?.lastLoad != null && bonesIn(o, s) > 0;
 
 /**
  * The last burying band past its end with work left (Prayer at the end): Prayer owed and something to
- * bury toward it (bones held, or a load the givers are known to hold), or the runes' load still to come
- * and a load known to be left. Never for another band.
+ * bury toward it (bones held, or a load the givers are known to hold), the runes' load still to come
+ * and a load known to be left, or, on the scored run's path, bones still held. Never for another band.
  */
 function endWorkOf(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): (s: BotWorldState) => boolean {
     if (!last || b.tree === 'normal' || o.bury === null) return () => false;
     const end = bandEnd(o, b);
     const left = loadsLeftOf(o, cue);
-    return s => wcLevel(s) >= end && ((prayerShort(o, s) && (bonesIn(o, s) > 0 || left(s) === true)) || (runesOwed(o, s) && left(s) === true));
+    return s => wcLevel(s) >= end && ((prayerShort(o, s) && (bonesIn(o, s) > 0 || left(s) === true)) || (runesOwed(o, s) && left(s) === true) || bonesToClear(o, s));
 }
 
 /** `next`: the burying band after this one (the willows after the oaks), whose site the cue names once this band is done. */
@@ -1274,7 +1300,9 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
         const topUp = async () => {
             const t0 = sdk.getState()?.tick ?? 0;
             const before = bonesHeld(sdk.getState()!);
-            const want = { want: [{ item: o.bonesRe, amount: giver!.lastLoad ?? giver!.load }], maxTicks: 60, openMaxTicks: 67 };
+            // On the cue's lastLoad the final giver's load is the runes alone, and that is all the ask wants.
+            const runesOnly = !!cue?.lastLoad;
+            const want = { want: runesOnly ? [...CAMELOT_RUNES] : [{ item: o.bonesRe, amount: giver!.lastLoad ?? giver!.load }], maxTicks: 60, openMaxTicks: 67 };
             let partner: string | null = giver && 'giver' in giver ? giver.giver : null;
             let r: ReceiveResult;
             let pick: { waited: number; repicks: number; tried: string[] } | null = null;
@@ -1284,7 +1312,9 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
                 // `serverWait` observed ticks covers the waits and the trades: while it lasts, a trade that
                 // failed before any item could move re-picks rather than failing the band.
                 pick = { waited: 0, repicks: 0, tried: [] };
-                const refusal = `no giver of the group served within ${group.serverWait} observed ticks`;
+                const refusal = runesOnly
+                    ? `the group's final giver did not serve the runes' load (the cue's lastLoad) within ${group.serverWait} observed ticks: relaunch the bone givers and resume --from=S07`
+                    : `no giver of the group served within ${group.serverWait} observed ticks`;
                 let after: number | undefined;
                 let failed: ReceiveResult | null = null;
                 for (;;) {
@@ -1294,7 +1324,7 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
                         o.log(`${b.name}: bone load ${loadsBefore + loads + 1} from ${partner} failed before any item moved (${failed.reason ?? 'no reason'}): re-picking the server, ${left} ticks of serverWait left`);
                     }
                     // The cue's session, as the givers count theirs: a status file another run left counts for nothing.
-                    const w = left > 0 ? await awaitServerInSight(sdk, group.cueDir, group.group, left, cue?.session ?? undefined, after) : { server: undefined, waited: 0 };
+                    const w = left > 0 ? await awaitServerInSight(sdk, group.cueDir, group.group, left, cue?.session ?? undefined, after, runesOnly) : { server: undefined, waited: 0 };
                     pick.waited += w.waited;
                     if (w.server === undefined) {
                         r = failed && left <= 0 ? failed : { ok: false, ticks: 0, received: [], reason: failed ? `${refusal} (after ${failed.reason ?? 'a failed trade'})` : refusal };
@@ -1324,7 +1354,7 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
             const got = bonesHeld(sdk.getState()!) - before;
             loads++;
             annotation(log, session, 'woodcutting:bones-load', t0, t1, r.ok, {
-                kind: 'wc-bones-load', band: b.name, load: loadsBefore + loads, ticks: r.ticks, stepTicks: t1 - t0, received: got, ...(r.reason ? { reason: r.reason } : {}),
+                kind: 'wc-bones-load', band: b.name, load: loadsBefore + loads, ticks: r.ticks, stepTicks: t1 - t0, received: got, ...(runesOnly ? { lastLoad: true, runes: runesHeld(sdk.getState()!) } : {}), ...(r.reason ? { reason: r.reason } : {}),
                 ...(pick ? { giver: partner, serverWait: pick.waited, repicks: pick.repicks, tried: pick.tried } : {})
             });
             if (!r.ok) throw new Error(`${b.name}: bone load ${loadsBefore + loads} from ${partner ?? `the group (${group!.group.join(', ')})`} failed: ${r.reason}`);
@@ -1332,6 +1362,11 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
         };
 
         let ended = 'stopped';
+        // The first frame past the band's end with Prayer at `prayerTo` (both targets): the lab's measure of the close.
+        let bothAt: number | null = null;
+        const noteBoth = (s: BotWorldState | null) => {
+            if (bothAt === null && s && last && burying && passed(s) && !prayerShort(o, s)) bothAt = s.tick;
+        };
         // a load before the first start when the pack is empty, and after each stop for one
         let needLoad = !!giver && bonesHeld(s0) === 0 && loadsLeft(s0) !== false;
         // Once no load is left none comes back: the status files are not read again.
@@ -1348,19 +1383,36 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
                 const here = sdk.getState()!;
                 // Past the band's end only the Prayer or the runes it owes keep it (endWorkOf): runs bounded by those, not the level.
                 const owing = passed(here);
+                noteBoth(here);
                 if (owing) {
                     if (!endWork(here)) {
                         ended = 'done';
                         break;
                     }
                     if (!bonesHeld(here)) needLoad = true;
+                    // Both targets reached and the held bones buried: the count no longer decides. The cue's
+                    // lastLoad sends the group's final giver with the runes alone, next (written once a session).
+                    if (group && cue && !cue.lastLoad && !bonesHeld(here) && !prayerShort(o, here) && runesOwed(o, here)) {
+                        cue.markLastLoad(here, session.name, site.stand);
+                        const given = cue.session ? groupLoadsDone(readBoneStatuses(group.cueDir), group.group, cue.session) : null;
+                        const total = cue.session ? groupLoads(readBoneStatuses(group.cueDir), group.group, cue.session) : null;
+                        o.log(`${b.name}: T${here.tick} Woodcutting ${wcLevel(here)} and Prayer ${levelOf(here, 'prayer')} with no bones held: the cue asks for the last load (the runes alone) now, at load ${given ?? '?'} of ${total ?? '?'}`);
+                        annotation(log, session, 'woodcutting:last-load', here.tick, here.tick, true, { kind: 'wc-last-load', band: b.name, bothAt, loadsGiven: given, loads: total, level: wcLevel(here), prayer: levelOf(here, 'prayer') });
+                    }
                     o.log(`${b.name}: Woodcutting ${wcLevel(here)}, Prayer ${levelOf(here, 'prayer')} of ${o.prayerTo}${runesOwed(o, here) ? ', the runes to come' : ''}: burying on, ${bonesHeld(here)} bones held`);
                 }
                 // the last run's log (productLogs): dropped before the load's trade and the run, both of which need its slot
                 const spare = productLogs(here, b.tree);
                 for (const i of spare.slice(0, 5)) void sdk.sendDropItem(i.slot);
                 if (spare.length) o.log(`${b.name}: dropped ${Math.min(5, spare.length)} ${b.tree} log(s) before the run`);
-                if (needLoad) await topUp();
+                if (needLoad) {
+                    await topUp();
+                    // The runes' load alone (the cue's lastLoad) leaves nothing to do: the band closes on it, no run started.
+                    if (owing && !endWork(sdk.getState()!)) {
+                        ended = 'done';
+                        break;
+                    }
+                }
                 needLoad = false;
                 const prayerXp = xpOf(sdk.getState(), 'prayer');
                 const stop = new AbortController();
@@ -1392,7 +1444,8 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
                         // either bury loop buries and takes loads (see Bones)
                         if (!burying) return;
                         const now = sdk.getState();
-                        if (owing && !prayerShort(o, now) && !runesOwed(o, now)) {
+                        noteBoth(now);
+                        if (owing && !prayerShort(o, now) && !runesOwed(o, now) && !bonesToClear(o, now)) {
                             stop.abort();
                             return;
                         }
@@ -1454,6 +1507,7 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
         annotation(log, session, `${b.name}:summary`, startTick, endTick, ended === 'done', {
             kind: 'wc-band', ended, technique, route: o.route, stand: [site.stand[0], site.stand[1]], hpStop: o.hpStop, startLevel, endLevel: wcLevel(endState), bonesLoads: loads,
             ...(burying ? { startPrayer, endPrayer: levelOf(endState, 'prayer') } : {}),
+            ...(bothAt !== null ? { bothTargetsTick: bothAt, ...(cue?.lastLoad ? { lastLoad: true } : {}) } : {}),
             ...summarizeBand(ledger, segments),
             ...(meter ? { onTimeSwitch: { finalTechnique: meter.technique, windows: meter.windows, open: { onTime: meter.onTime, judged: meter.onTime + meter.late } } } : {}),
             ...(gate ? { gate: gateMeta(gate) } : {}),

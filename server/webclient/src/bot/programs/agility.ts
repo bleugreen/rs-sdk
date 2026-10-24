@@ -6,14 +6,21 @@
 //
 // A step is done when an xp drop of at least its xp arrives (the lap bonus lands
 // with the last obstacle's), when a ladder step reaches its plane, or when an
-// `endZ` step arrives on that row. A fail message or a fall into a pit waits 4
+// `endZ` step arrives on that row. A lap the run joined partway (a start off the
+// lap's first step) earns no bonus, since the course's progress varp never saw its
+// start, so its last obstacle is done on that obstacle's own xp. A fail message or a fall into a pit waits 4
 // ticks for the fail script, climbs out of a pit, and resumes at the course's
 // resume step. The plain fallback (`technique: 'plain'`) waits `settleTicks`
 // after each completion before the next click, a stand-in for the relay's
 // reaction, for measuring what the in-page reaction is worth.
 //
 // The run ends after `laps`, `maxTicks`, or the tick the Agility base level
-// reaches `untilLevel`; the result's `ended` says which. In the Wilderness it
+// reaches `untilLevel`; the result's `ended` says which. With `untilLevelAt:
+// 'lap'` the level end waits for the lap: once the level is reached it clicks the
+// lap's remaining obstacles and ends on the tick the lap's last step completes, on
+// the ground where the next lap starts (or at once, when it starts there with the
+// level already reached), so the band never leaves the player on an obstacle or a
+// platform. Every other end still fires mid-lap. In the Wilderness it
 // also watches the other players and the hits it takes, on the tick:
 // - every player seen is logged as a sighting, with whether the Wilderness
 //   rule lets them attack us and whether the pause rules would have fired;
@@ -42,6 +49,9 @@ import { baseLevel, FreshMessages, invCount, invItem, itemOp, num, oneOf, regex,
 /** Every fail branch in the course scripts prints one of these (gnome_course.rs2 has none). */
 export const FAIL_RE = /slip and fall|lose your footing|lost your balance|missed a hand hold|missed the rope|were hit by|stumbled|stepped on a broken/i;
 const REFUSED_RE = /from here|from this side/i;
+/** gnome_course.rs2: each pipe's lock is world-shared, set for 12 ticks by whoever enters it. */
+const IN_USE_RE = /is being used/i;
+const IN_USE_TICKS = 13;
 const UNDERGROUND = 6400;
 /** Ticks after a fail message in which a hit counts as the fall's (the barbarian water bite comes a few ticks later). */
 const FALL_WINDOW = 6;
@@ -187,7 +197,7 @@ class FreshHits {
 
 type Phase =
     | { kind: 'click' }
-    | { kind: 'wait'; clickTick: number; x: number; z: number; level: number; arrivedAt?: number }
+    | { kind: 'wait'; clickTick: number; x: number; z: number; level: number; arrivedAt?: number; loc?: [number, number, number] }
     | { kind: 'settle'; until: number }
     | { kind: 'recover'; until: number }
     | { kind: 'climb'; since: number; tries: number };
@@ -196,7 +206,7 @@ createAgility.params = [
     'course', 'laps', 'maxTicks', 'technique', 'settleTicks', 'food', 'eatBelow', 'stepTimeout', 'startStep',
     // opt-in: absent, the program sends what it sent before each was added
     'untilLevel', 'eatGap', 'eatAt', 'restockBelow', 'protect', 'protectRange', 'protectNpc', 'flickGap',
-    'pauseFor', 'playerRadius', 'threatTargetRange', 'threatCloseTiles', 'threatCloseTicks'
+    'pauseFor', 'playerRadius', 'threatTargetRange', 'threatCloseTiles', 'threatCloseTicks', 'untilLevelAt'
 ] as const;
 export function createAgility(params: ProgramParams): TickProgram {
     const course = parseCourse(params.course);
@@ -204,6 +214,8 @@ export function createAgility(params: ProgramParams): TickProgram {
     const maxTicks = num(params.maxTicks, Infinity, 'maxTicks');
     const untilLevel = num(params.untilLevel, Infinity, 'untilLevel');
     if (laps === Infinity && maxTicks === Infinity && untilLevel === Infinity) throw new Error('give laps, maxTicks or untilLevel');
+    const untilLevelAt = oneOf(params.untilLevelAt, ['tick', 'lap'] as const, 'tick', 'untilLevelAt');
+    if (params.untilLevelAt !== undefined && untilLevel === Infinity) throw new Error('untilLevelAt needs untilLevel');
     const technique = oneOf(params.technique, ['react', 'plain'] as const, 'react', 'technique');
     const settleTicks = num(params.settleTicks, 1, 'settleTicks');
     const foodRe = regex(params.food, '^(shark|lobster|swordfish|monkfish|tuna|salmon|trout|cake|2/3 cake|slice of cake)$', 'food');
@@ -264,6 +276,11 @@ export function createAgility(params: ProgramParams): TickProgram {
     let lastDoneTick = 0;
     let stuck = 0;
     let gainSinceClick = 0;
+    // with untilLevelAt 'lap': the tick the level was reached and the obstacles finished after it
+    let levelAt: number | null = null;
+    let obstaclesAfterLevel = 0;
+    /** The current lap was joined partway: its last obstacle will pay no lap bonus. */
+    let partialLap = false;
     const lapTicks: number[] = [];
     const stepTicks: Record<string, number[]> = {};
     const fails: Record<string, number> = {};
@@ -276,6 +293,8 @@ export function createAgility(params: ProgramParams): TickProgram {
         lastDoneTick = t;
         stuck = 0;
         i++;
+        if (i % n === 0) partialLap = false;
+        if (levelAt !== null && t > levelAt) obstaclesAfterLevel++;
         ctx.count('obstacles');
         ctx.progress();
     };
@@ -344,6 +363,18 @@ export function createAgility(params: ProgramParams): TickProgram {
         };
     };
     const end = (ctx: ProgramContext, ended: AgilityEnd, extra?: Record<string, unknown>) => ctx.done(summary(ended, extra));
+    /** The level end under untilLevelAt 'lap', with what finishing the lap cost. */
+    const endAtLap = (ctx: ProgramContext) => end(ctx, 'level', { afterLevel: { ticks: ctx.tick - (levelAt ?? ctx.tick), obstacles: obstaclesAfterLevel } });
+    /** Under untilLevelAt 'lap', with the level reached: the lap's last step has just completed. */
+    const lapClosed = () => untilLevelAt === 'lap' && level >= untilLevel && i % n === 0;
+    /**
+     * Finishing the lap (untilLevelAt 'lap', the level reached): an obstacle another player holds
+     * ('The pipe is being used') is marked busy until its lock has surely lapsed, and the click goes
+     * to another of the step's locs at once, or back to the first to come free.
+     */
+    const finishing = () => untilLevelAt === 'lap' && levelAt !== null;
+    const busyUntil = new Map<string, number>();
+    const locKey = (c: readonly [number, number, number]) => `${c[0]}@${c[1]},${c[2]}`;
 
     /** Log every player seen; the first player the pause rule fires for, if any. */
     const watchPlayers = (ctx: ProgramContext, me: Me): { p: NearbyPlayer; why: 'any' | 'targeting' | 'closing' } | null => {
@@ -404,7 +435,8 @@ export function createAgility(params: ProgramParams): TickProgram {
                 prayerStart = s.prayers?.prayerPoints ?? -1;
                 messages.take(s);
                 hits.take(s);
-                if (params.startStep === 'auto') i = Math.max(0, course.steps.findIndex(st => st.name === stepFromPosition(course, p.worldX, p.worldZ)));
+                if (params.startStep === 'auto') i = Math.max(0, course.steps.findIndex(st => st.name === stepFromPosition(course, p.worldX, p.worldZ, p.level)));
+                partialLap = i % n !== 0;
                 if (p.worldZ > UNDERGROUND) phase = { kind: 'climb', since: t, tries: 0 };
             }
             if (p.isDead || (p.lifeId ?? 0) !== startLifeId) return ctx.fault('died', summary('died'));
@@ -436,9 +468,11 @@ export function createAgility(params: ProgramParams): TickProgram {
             }
             let failed = false;
             let refused = false;
+            let inUse = false;
             for (const m of messages.take(s)) {
                 if (FAIL_RE.test(m.text)) failed = true;
                 if (REFUSED_RE.test(m.text)) refused = true;
+                if (IN_USE_RE.test(m.text)) inUse = true;
             }
             if (failed) {
                 lastFailTick = t;
@@ -466,7 +500,12 @@ export function createAgility(params: ProgramParams): TickProgram {
 
             if (lapsDone >= laps) return end(ctx, 'laps');
             if (t - startTick > maxTicks) return end(ctx, 'maxTicks');
-            if (level >= untilLevel) return end(ctx, 'level');
+            if (level >= untilLevel) {
+                if (untilLevelAt === 'tick') return end(ctx, 'level');
+                levelAt ??= t;
+                // started (or resumed) at the lap's start on the ground: nothing left to finish
+                if (phase.kind === 'click' && i % n === 0 && p.level === 0 && p.worldZ < UNDERGROUND) return endAtLap(ctx);
+            }
 
             // food, in any phase (with eatGap); 'land' holds it through an obstacle wait
             const eatDue = () => eatAnyPhase && eatBelow > 0 && p.hp <= eatBelow && t - lastEatTick >= eatGap;
@@ -514,10 +553,14 @@ export function createAgility(params: ProgramParams): TickProgram {
                 const st = stepAt(i);
                 const w = phase;
                 if (w.z < UNDERGROUND && p.worldZ > UNDERGROUND) failed = true;
-                const gained = st.op === -1 ? p.level === st.plane : st.xp > 0 && gainSinceClick >= st.xp - 0.05;
+                // the lap's last obstacle without its bonus (0 for the Wilderness rocks, whose endZ covers a broken lap)
+                const own = st.xp - course.lapBonus;
+                const bonusless = partialLap && i % n === n - 1 && own > 0 && gainSinceClick >= own - 0.05;
+                const gained = st.op === -1 ? p.level === st.plane : st.xp > 0 && (gainSinceClick >= st.xp - 0.05 || bonusless);
                 const arrived = st.endZ !== undefined && p.worldZ === st.endZ && w.z !== st.endZ;
                 if (gained) {
                     finishStep(ctx, t);
+                    if (lapClosed()) return endAtLap(ctx);
                     phase = technique === 'plain' ? { kind: 'settle', until: t + settleTicks } : { kind: 'click' };
                 } else if (arrived) {
                     // a lap bonus would land on the same tick as the arrival; give it one more
@@ -526,6 +569,7 @@ export function createAgility(params: ProgramParams): TickProgram {
                         return;
                     }
                     finishStep(ctx, w.arrivedAt);
+                    if (lapClosed()) return endAtLap(ctx);
                     phase = { kind: 'click' };
                 } else if (failed) {
                     fails[st.name] = (fails[st.name] ?? 0) + 1;
@@ -533,6 +577,11 @@ export function createAgility(params: ProgramParams): TickProgram {
                     ctx.log(`fail at ${st.name}`);
                     phase = { kind: 'recover', until: t + 4 };
                     return;
+                } else if (inUse && w.loc && finishing()) {
+                    busyUntil.set(locKey(w.loc), t + IN_USE_TICKS);
+                    ctx.count('inUse');
+                    ctx.log(`${st.name} in use at (${w.loc[1]},${w.loc[2]})`);
+                    phase = { kind: 'click' };
                 } else if (t - w.clickTick > stepTimeout) {
                     ctx.count('stuck');
                     ctx.log(`no completion of ${st.name} after ${stepTimeout} ticks`);
@@ -590,10 +639,22 @@ export function createAgility(params: ProgramParams): TickProgram {
                 }
             }
             let sent: boolean;
+            let clicked: [number, number, number] | undefined;
             if (st.op === -1) sent = clickByOption(ctx, /climb-down/i);
             else {
-                const loc = nearestLoc(ctx, st.locs);
+                let cands = st.locs;
+                if (finishing() && busyUntil.size) {
+                    const free = cands.filter(c => (busyUntil.get(locKey(c)) ?? -Infinity) <= t);
+                    if (free.length) cands = free;
+                    else {
+                        // every loc held: click the first to come free when its lock lapses
+                        phase = { kind: 'settle', until: Math.min(...cands.map(c => busyUntil.get(locKey(c))!)) };
+                        return;
+                    }
+                }
+                const loc = nearestLoc(ctx, cands);
                 if (!loc) return ctx.fault(`step ${st.name} has no candidate loc`);
+                clicked = loc;
                 sent = ctx.send({ type: 'interactLoc', x: loc[1], z: loc[2], locId: loc[0], optionIndex: st.op ?? 1 }, st.name);
             }
             if (!sent) {
@@ -601,7 +662,7 @@ export function createAgility(params: ProgramParams): TickProgram {
                 return;
             }
             gainSinceClick = 0;
-            phase = { kind: 'wait', clickTick: t, x: p.worldX, z: p.worldZ, level: p.level };
+            phase = { kind: 'wait', clickTick: t, x: p.worldX, z: p.worldZ, level: p.level, ...(clicked ? { loc: clicked } : {}) };
         }
     };
 }

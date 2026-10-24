@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import type { BotWorldState, DialogState } from '../../sdk/types';
+import type { BotWorldState, DialogState, NearbyLoc, NearbyNpc, PlayerState } from '../../sdk/types';
 import { converse } from '../lib/converse';
-import { baseState, drive, FakeSdk, flush } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk, flush, simulateWalking } from '../lib/fake-sdk';
 import { TickLog } from '../lib/ticks';
 import type { StepContext } from '../runner/step';
 import { COMPLETION_PAGE_TICKS, questMoves } from './small-quest';
@@ -153,5 +153,76 @@ describe('small quest completion', () => {
         f.sdk.tick({ dialog: closed });
         expect(await next).toMatchObject({ ok: true, pages: 1, levelUps: 0 });
         expect(f.clicks.map(c => c.page)).toEqual(['reward', 'unlock', 'next-step']);
+    });
+});
+
+// ------------------------------------------------------------------ the talk's approach (lib/approach.ts)
+
+const who = (worldX: number, worldZ: number) => ({ name: 'lab', x: worldX, z: worldZ, worldX, worldZ, level: 0, hp: 10, maxHp: 10 }) as PlayerState;
+const doorLoc = (x: number, z: number, open: boolean): NearbyLoc => {
+    const ops = open ? ['Close'] : ['Open'];
+    return { id: open ? 1531 : 1530, name: 'Door', x, z, level: 0, distance: 1, optionsWithIndex: ops.map((text, i) => ({ text, opIndex: i + 1 })), options: ops };
+};
+const doric = (x: number, z: number, reachable: boolean): NearbyNpc =>
+    ({ kind: 'npc', id: 284, index: 7, name: 'Doric', x, z, tileX: x, tileZ: z, size: 1, distance: 1, reachable, optionsWithIndex: [{ text: 'Talk-to', opIndex: 1 }], options: ['Talk-to'] }) as unknown as NearbyNpc;
+
+/**
+ * Doric shut in: SCORED at (3200,3200), his door at (3203,3200) (`open` or not), Doric at (3206,3200).
+ * The door opens a tick after its Open click. A Talk-to opens his one page only while the client can
+ * route to him (the door open); a click on the page closes it.
+ */
+function talkWorld(o: { open: boolean; doricAt?: { x: number; z: number }; npcs?: boolean }) {
+    const at = o.doricAt ?? { x: 3206, z: 3200 };
+    let open = o.open;
+    const sdk = new FakeSdk(baseState({ tick: 100, player: who(3200, 3200), nearbyLocs: [doorLoc(3203, 3200, open)], nearbyNpcs: o.npcs === false ? [] : [doric(at.x, at.z, open)] }));
+    const log = TickLog.memory('talk');
+    const ctx = { sdk, bot: { walkTo: async () => ({ success: false, message: 'test' }) }, session: { sdk, name: 'lab', sessionId: 0 }, c: {}, log } as unknown as StepContext<unknown>;
+    simulateWalking(sdk, { blocked: x => !open && x > 3203 });
+    const prev = sdk.onSend;
+    let next: Partial<BotWorldState> | null = null;
+    sdk.onSend = (a, f) => {
+        prev(a, f);
+        if (a.method === 'sendInteractLoc' && !open) {
+            open = true;
+            next = { nearbyLocs: [doorLoc(3203, 3200, true)], nearbyNpcs: f.state!.nearbyNpcs.map(n => ({ ...n, reachable: true })) };
+        } else if (a.method === 'sendInteractNpc' && open) next = { dialog: page('doric-1', 'Hello, traveller.') };
+        else if (/ClickDialog|clickDialogByText/.test(a.method) && f.state!.dialog.isOpen) next = { dialog: closed };
+    };
+    const each = (): Partial<BotWorldState> => {
+        const n = next ?? {};
+        next = null;
+        return n;
+    };
+    const talk = () => moves.talk(ctx, 'B', undefined, { who: 'Doric (start)', npc: /^doric$/i, near: { x: 3206, z: 3200 }, shape: '1c', maxTicks: 30 });
+    return { sdk, log, each, talk };
+}
+
+describe('small quest talk: the way to the NPC first', () => {
+    test('the NPC in reach: the Talk-to is the first send, and the note carries no approach', async () => {
+        const f = talkWorld({ open: true });
+        const r = await drive(f.sdk, f.talk(), 60, f.each);
+        expect(r.opened).toBe(true);
+        expect(f.sdk.sent[0]?.method).toBe('sendInteractNpc');
+        expect(f.sdk.sent.some(a => a.method === 'sendInteractLoc' || a.method === 'sendWalk')).toBe(false);
+        expect(f.log.rows.at(-1)?.meta).not.toHaveProperty('approach');
+    });
+
+    test('shut behind his closed door: the door opened, the run to him, then the talk opens; the note says so', async () => {
+        const f = talkWorld({ open: false });
+        const r = await drive(f.sdk, f.talk(), 120, f.each);
+        expect(r.opened).toBe(true);
+        const methods = f.sdk.sent.map(a => a.method);
+        expect(methods[0]).toBe('sendInteractLoc');
+        const talkAt = methods.indexOf('sendInteractNpc');
+        expect(methods.slice(1, talkAt)).toContain('sendWalk');
+        expect(f.sdk.state!.player!.worldX).toBeGreaterThanOrEqual(3205);
+        expect(f.log.rows.at(-1)?.meta).toMatchObject({ who: 'Doric (start)', approach: { finds: 1, doors: ['3203,3200'], runs: 1 } });
+    });
+
+    test('the NPC never in sight: the talk refuses with the reason, and no Talk-to goes out', async () => {
+        const f = talkWorld({ open: true, npcs: false });
+        await expect(drive(f.sdk, f.talk(), 60, f.each)).rejects.toThrow(/S05:B: Doric \(start\): not in sight within 10 ticks/);
+        expect(f.sdk.sent).toEqual([]);
+        expect(f.log.rows).toEqual([]);
     });
 });

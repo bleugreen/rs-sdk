@@ -9,7 +9,7 @@ import type { ProgramStatus } from '../lib/programs';
 import { TickLog } from '../lib/ticks';
 import type { StepContext } from '../runner/step';
 import {
-    AgilityStop, COURSE_GATE, DEFAULT_FOOD, defaultEatBelow, engaged, finalLogout, parseOptions, parseWant, PAUSE_STEP, pausesTaken, planBands, retreat, RIDGE_GATE, routeStart, SAFE_TILE, skill, steps
+    AgilityStop, COURSE_GATE, DEFAULT_FOOD, defaultEatBelow, engaged, finalLogout, midLap, parseOptions, parseWant, PAUSE_STEP, pausesTaken, planBands, retreat, RIDGE_GATE, routeStart, SAFE_TILE, skill, steps
 } from './agility';
 
 function player(o: Partial<NonNullable<BotWorldState['player']>> & { x?: number; z?: number } = {}): BotWorldState['player'] {
@@ -62,6 +62,76 @@ function ctxFor(sdk: FakeSdk, log = TickLog.memory()): StepContext<unknown> {
 }
 
 const step = (list: ReturnType<typeof steps>, name: string) => list.find(s => s.name === name)!;
+
+/** The player moved to (x, z) on `plane`, for a state patch. */
+const tile = (sdk: FakeSdk, x: number, z: number, plane = 0) => ({ ...sdk.getState()!.player!, worldX: x, worldZ: z, level: plane });
+
+/** `world()` on a plane. */
+function onPlane(s: BotWorldState, plane: number): BotWorldState {
+    s.player!.level = plane;
+    return s;
+}
+
+describe('agility bands end at a lap boundary on the ground', () => {
+    test('midLap: a course zone other than the lap start', () => {
+        expect(midLap('gnome', onPlane(world({ x: 2483, z: 3420 }), 2))).toBe(true); // the rope's landing
+        expect(midLap('gnome', world({ x: 2487, z: 3420 }))).toBe(true); // down the tree, before the second net
+        expect(midLap('gnome', world({ x: 2484, z: 3437 }))).toBe(false); // the pipe's landing, T11a's start
+        expect(midLap('gnome', world({ x: 2487, z: 3437 }))).toBe(false); // the other pipe's
+        expect(midLap('gnome', world({ x: 2465, z: 3489 }))).toBe(false); // the Grand Tree door: off the course
+        expect(midLap('wilderness', world({ x: 2994, z: 3933 }))).toBe(false); // the rocks' landing
+        expect(midLap('wilderness', world({ x: 3004, z: 3937 }))).toBe(false); // the pipe
+        expect(midLap('wilderness', world({ x: 3005, z: 3958 }))).toBe(true);
+        expect(midLap('wilderness', world({ x: 3001, z: 10357 }))).toBe(true); // the pit
+    });
+
+    test('S11a resumed with 25 reached on the rope platform: in progress, not done; the band finishes the lap and ends on the ground', async () => {
+        const band = step(steps({ to: 25 }), 'agility:gnome');
+        const s = onPlane(world({ agility: 25, x: 2483, z: 3420 }), 2);
+        expect(band.done!({ state: s, probed: {} }, {} as never)).toBe(false);
+        expect(band.inProgress!({ state: s, probed: {} }, {} as never)).toBe(true);
+        expect(band.preconditions(s, {} as never)).toBe(true);
+        expect(band.postconditions(s, {} as never)).toMatch(/partway through a lap, at \(2483,3420\) plane 2/);
+        const sdk = new PageSdk(s);
+        const run = band.run(ctxFor(sdk) as never);
+        await flush();
+        expect(sdk.starts[0]!.params).toMatchObject({ course: 'gnome', untilLevel: 25, untilLevelAt: 'lap', startStep: 'auto' });
+        sdk.end({ ended: 'level', level: 25, afterLevel: { ticks: 40, obstacles: 3 } }, { player: tile(sdk, 2484, 3437) });
+        await run;
+        expect(sdk.starts.length).toBe(1);
+        const end = sdk.getState()!;
+        expect(band.postconditions(end, {} as never)).toBe(true);
+        expect(band.done!({ state: end, probed: {} }, {} as never)).toBe(true);
+        expect(band.inProgress!({ state: end, probed: {} }, {} as never)).toBe(false);
+    });
+
+    test('S11a reaching 25 on the rope platform with a program that ends on the level tick (an older bundle): the band runs it again to finish the lap', async () => {
+        const sdk = new PageSdk(world({ agility: 24, x: 2474, z: 3436 }));
+        const band = step(steps({ to: 25 }), 'agility:gnome');
+        const log = TickLog.memory();
+        const run = band.run(ctxFor(sdk, log) as never);
+        await flush();
+        sdk.end({ ended: 'level', level: 25 }, { skills: [{ name: 'Agility', level: 25, baseLevel: 25, experience: 0 }], player: tile(sdk, 2483, 3420, 2) });
+        for (let k = 0; k < 10 && sdk.starts.length < 2; k++) await flush();
+        expect(sdk.starts.length).toBe(2);
+        expect(sdk.starts[1]!.params).toMatchObject({ course: 'gnome', untilLevel: 25, untilLevelAt: 'lap', startStep: 'auto' });
+        sdk.end({ ended: 'level', level: 25, afterLevel: { ticks: 40, obstacles: 3 } }, { player: tile(sdk, 2484, 3437) });
+        await run;
+        expect(log.rows.map(r => r.step)).toEqual(['agility:finish-lap']);
+        expect(log.rows[0]!.meta).toMatchObject({ band: 'agility:gnome', ended: 'level', x: 2483, z: 3420, plane: 2 });
+        expect(band.done!({ state: sdk.getState()!, probed: {} }, {} as never)).toBe(true);
+    });
+
+    test('S11a with 25 reached at the lap start: done, and the band sends nothing', async () => {
+        const band = step(steps({ to: 25 }), 'agility:gnome');
+        const s = world({ agility: 25, x: 2484, z: 3437 });
+        expect(band.done!({ state: s, probed: {} }, {} as never)).toBe(true);
+        const sdk = new PageSdk(s);
+        await band.run(ctxFor(sdk) as never);
+        expect(sdk.starts).toEqual([]);
+        expect(sdk.sent).toEqual([]);
+    });
+});
 
 describe('agility options and bands', () => {
     test('defaults: to 99 with the final logout, react, no player pause', () => {
@@ -154,6 +224,8 @@ describe('agility Wilderness decisions', () => {
         const run = band.run(ctxFor(sdk, log) as never);
         await flush();
         expect(sdk.starts[0]!.params).toMatchObject({ course: 'wilderness', untilLevel: 99, startStep: 'auto', eatBelow: 6, eatGap: 3, eatAt: 'land', food: DEFAULT_FOOD, pauseFor: 'threat', playerRadius: 15 });
+        // S17 is the run's last band: it ends on the level tick, as before (LAP_END)
+        expect(sdk.starts[0]!.params).not.toHaveProperty('untilLevelAt');
         // the page faults on an undeclared key (ProgramRuntime), so every key the module sends must be declared
         const declared: readonly string[] = createAgility.params;
         expect(Object.keys(sdk.starts[0]!.params as object).filter(k => !declared.includes(k))).toEqual([]);
@@ -179,7 +251,8 @@ describe('agility Wilderness decisions', () => {
         await ack;
     });
 
-    test('reaching 99: the final logout runs, and the postcondition accepts the logged-out end', async () => {
+    test('reaching 99 partway round the lap: the final logout runs on the level tick, and the postcondition accepts the logged-out end', async () => {
+        // (3004,3940) is past the pipe, before the rope swing: S17 does not finish the lap
         const sdk = new PageSdk(world({ agility: 98, x: 3004, z: 3940 }));
         let logouts = 0;
         const band = step(steps({ logout: async () => void logouts++ }), 'agility:wilderness');
@@ -190,7 +263,12 @@ describe('agility Wilderness decisions', () => {
         await run;
         expect(logouts).toBe(1);
         expect(log.rows.map(r => r.step)).toEqual(['agility:final-logout']);
+        expect(sdk.starts.length).toBe(1);
         expect(band.postconditions(baseState({ inGame: false }), {} as never)).toBe(true);
+        // and a resume finding 99 mid-lap is done, as before
+        const mid = world({ agility: 99, x: 3005, z: 3958 });
+        expect(band.done!({ state: mid, probed: {} }, {} as never)).toBe(true);
+        expect(band.inProgress!({ state: mid, probed: {} }, {} as never)).toBe(false);
     });
 
     test('restock: low-food leaves by the course gate, trades with the courier, crosses back and laps on (once)', async () => {

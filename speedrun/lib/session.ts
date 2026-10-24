@@ -25,7 +25,7 @@ import { BotSDK, deriveGatewayUrl } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
 import type { BotStatus, BotWorldState } from '../../sdk/types';
 import { ensureRunOn, RUN_CONFIRM_TICKS, RUN_PRESSES, type EnsureRunResult, type RunSdk } from './run-mode';
-import { pageInGame, pageLogin, pageLoginState, type PageLoginStart } from './tab';
+import { pageClickComponent, pageInGame, pageLaunchState, pageLogin, pageLoginState, type PageLoginStart } from './tab';
 import {
     awaitScene,
     idleBoundMs,
@@ -38,6 +38,7 @@ import {
     waitUntil,
 } from './wait';
 import { onTutorialIsland } from './world';
+import { DeathWatch, type Death, type HeldLogout } from '../runner/death';
 
 export const ROOT = join(import.meta.dir, '..', '..');
 export const LOGOUT_BUTTON = 2458; // logout:try_logout
@@ -163,10 +164,11 @@ function withQuery(base: string, q: string): string {
  * The browser client URL for a bot. CLIENT_URL in the bot.env is the page, the
  * run client served by proxy.ts with ?server= and ?gateway= already on it; a
  * token login needs it, because the token is only good at the server that
- * minted it. The bot name stays in the URL: tab.ts finds the tab by it.
+ * minted it. The bot name stays in the URL: tab.ts finds the tab by it. `launch` is the launch id
+ * the page echoes in every state it publishes (Session.launchTag).
  */
-export function browserUrl(env: BotEnv, login: BrowserLogin): string {
-    const bot = `bot=${encodeURIComponent(env.BOT_USERNAME)}`;
+export function browserUrl(env: BotEnv, login: BrowserLogin, launch?: string): string {
+    const bot = `bot=${encodeURIComponent(env.BOT_USERNAME)}${launch ? `&launch=${encodeURIComponent(launch)}` : ''}`;
     if ('token' in login) {
         if (!env.CLIENT_URL) throw new Error(`${env.BOT_USERNAME}: a token login needs CLIENT_URL (the proxy.ts page) in bot.env`);
         return withQuery(env.CLIENT_URL, `${bot}&token=${encodeURIComponent(login.token)}`);
@@ -203,10 +205,10 @@ export async function mintLoginToken(env: BotEnv, fetchFn: (url: string, init: R
  * passes it on a command line. The query form opens the URL however it can,
  * and only for the local lab.
  */
-export async function openBrowserClient(env: BotEnv, opts: { cdp?: string; insecureQueryLogin?: boolean }): Promise<string> {
+export async function openBrowserClient(env: BotEnv, opts: { cdp?: string; insecureQueryLogin?: boolean; launch?: string }): Promise<string> {
     const { reloadOrOpenTab } = await import('./tab');
     if (opts.insecureQueryLogin) {
-        const url = browserUrl(env, { insecureQueryLogin: true });
+        const url = browserUrl(env, { insecureQueryLogin: true }, opts.launch);
         if (opts.cdp) return reloadOrOpenTab(opts.cdp, url, env.BOT_USERNAME);
         await (await import('open')).default(url);
         return 'opened';
@@ -217,7 +219,12 @@ export async function openBrowserClient(env: BotEnv, opts: { cdp?: string; insec
                 'or pass --insecure-query-login for the local lab'
         );
     }
-    return reloadOrOpenTab(opts.cdp, browserUrl(env, { token: await mintLoginToken(env) }), env.BOT_USERNAME);
+    return reloadOrOpenTab(opts.cdp, browserUrl(env, { token: await mintLoginToken(env) }, opts.launch), env.BOT_USERNAME);
+}
+
+/** A fresh launch id for a browser tab (Session.launchTag). */
+export function newLaunchTag(): string {
+    return crypto.randomUUID().replace(/-/g, '').slice(0, 12);
 }
 
 export interface Session {
@@ -246,6 +253,13 @@ export interface Session {
      * tickCounter). An in-page login keeps it, since the page goes on counting.
      */
     launchId: number;
+    /**
+     * Browser: the launch id the last launched tab was given in its URL (`?launch=`) and echoes in
+     * every state it publishes (BotWorldState.launch), so a state is known to be that tab's own and
+     * not a cached or foreign one (waitOwnLaunch). An in-page login keeps it, as the page is not
+     * reloaded. Null for the lite client and for a session that attached without launching.
+     */
+    launchTag: string | null;
     /** Whether the account should be in the world (false around an intended logout). */
     expectInWorld: boolean;
     child: Subprocess | null;
@@ -268,6 +282,12 @@ export interface Session {
      * which openSession makes): run.ts's tick preflight. A throw refuses the login.
      */
     beforeLogin?: () => Promise<void>;
+    /**
+     * The first death seen on this session: by a logout while it held (logoutClean), or by a leg
+     * (runner/legs.ts runLeg). Once set, nothing logs the account back in on its own: the watchdog
+     * leaves it out after its logout and relog refuses.
+     */
+    died?: Death;
 }
 
 export interface OpenOptions {
@@ -290,6 +310,10 @@ export interface OpenOptions {
      * Only for a probe that measures the relay itself: it warns, and its timings are not the run's.
      */
     allowRelay?: boolean;
+    /** The bot's env, instead of reading bots/<name>/bot.env. */
+    env?: BotEnv;
+    /** Asked before a failed launch's abandon logs a socketless body in to take it over (abandonTab). */
+    takeover?: TakeoverGate;
 }
 
 /**
@@ -298,10 +322,15 @@ export interface OpenOptions {
  * (lib/run-mode.ts; a press only when it reads off, which closes any open
  * modal). Unlike runScript, a disconnect is not fatal: logout and relaunch are
  * normal events here.
+ *
+ * A launched browser tab is judged by identity, not freshness: only states carrying its own launch
+ * id count (waitOwnLaunch), and anything else refuses the launch with a reason before anything is
+ * sent to the account. Every failure after a launch abandons the client (abandonClient: a
+ * confirmed logout), and the thrown error says how that went.
  */
 export async function openSession(botName: string, opts: OpenOptions = {}): Promise<Session> {
     if (opts.awaitInWorld === false && opts.launch) throw new Error('an offline attach cannot launch a client');
-    const env = loadBotEnv(botName);
+    const env = opts.env ?? loadBotEnv(botName);
     const client = opts.client ?? 'lite';
     const gatewayUrl = sessionGateway(env, client === 'browser' ? pageWorld(env) : env.SERVER || 'localhost', { allowRelay: opts.allowRelay });
     const { BotActions } = await import('../../sdk/actions');
@@ -316,6 +345,9 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         // nothing, and the SDK's 30 s default cap would leave the run blind for up to 75 ticks after
         // the gateway is back.
         reconnectMaxDelay: GATEWAY_RECONNECT_MAX_MS,
+        // connect() returns at the handshake: the waits below are this session's own, and the SDK's
+        // accepts any in-game state, a cached one included.
+        readyTimeout: 0,
         autoLaunchBrowser: false,
         showChat: env.SHOW_CHAT?.toLowerCase() !== 'false',
     });
@@ -331,6 +363,7 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         sessionId: 0,
         tickBase: 0,
         launchId: 0,
+        launchTag: null,
         expectInWorld: opts.awaitInWorld !== false,
         child: null,
         childExit: null,
@@ -348,11 +381,13 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         await sdk.connect();
         if (opts.awaitInWorld === false) return session;
         // On connect the gateway can hand back the bot's last published state, which
-        // still reads inGame from the previous session. A freshly launched client
-        // takes ~20 s on the demo to log in and advance past it, so give the advance
+        // still reads inGame from the previous session. A launched tab is waited on by
+        // its own launch id (waitOwnLaunch), so that state never counts for it. A
+        // freshly launched client takes ~20 s on the demo to log in, so a launch gets
         // the whole budget rather than the short attach-time window.
         const ready = opts.readyTimeoutMs ?? 120_000;
-        await waitAdvancingTick(session, ready, opts.launch ? ready : undefined);
+        if (session.launchTag) await waitOwnLaunch(session, ready);
+        else await waitAdvancingTick(session, ready, opts.launch ? ready : undefined);
         // A client we attach to may have logged in on its own (lab runners, a
         // relaunch by another process); every login leaves run off.
         await ensureRunOn(sdk);
@@ -363,11 +398,118 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
     } catch (err) {
         // The client we launched may be in the world even though this process never
         // saw it advance; left running it would hold the player there indefinitely.
-        if (opts.launch) await abandonClient(session);
+        let out = err;
+        if (opts.launch) {
+            const a = await abandonClient(session, undefined, { ...(opts.takeover ? { takeover: opts.takeover } : {}) }).catch((e: unknown) => abandonFailed(e));
+            if (a) {
+                const line = describeAbandon(a);
+                appendFileSync(session.logPath, `[speedrun] session ${session.sessionId}: start failed, ${line}\n`);
+                out = new Error(`${err instanceof Error ? err.message : String(err)}; ${line}`, { cause: err });
+            }
+        }
         await sdk.disconnect().catch(() => {});
-        throw err;
+        throw out;
     }
     return session;
+}
+
+/**
+ * Wall ms a launched page must read as ended (PageLaunchState: auto-login made, neither in game nor
+ * logging in) before its launch is refused. The page's own retry after a lost game socket reads that
+ * way for the moment the retry takes; a login that ended reads that way for good.
+ */
+export const PAGE_ENDED_HOLD_MS = 1_000;
+
+/**
+ * Wait for the launched tab's own session: two in-game states carrying `session.launchTag` with
+ * different ticks. Identity, not freshness: a state without this launch's id is never taken for
+ * it, however new, so the gateway's cached state from an earlier client (attempt 3's 04:2xZ start:
+ * a lite one-off's state, 210 s old) cannot stand in for the tab.
+ *
+ * Refused, with the reason, before anything is sent to the account:
+ * - in-game states from another launch, or with no launch id, advancing: another client drives the
+ *   account, or the page's bundle predates the launch echo;
+ * - the page (asked over CDP, and only once it shows this launch's URL) made its auto-login and is
+ *   neither in game nor logging in for PAGE_ENDED_HOLD_MS: its login ended, or it dropped out;
+ * - the page in game but publishing nothing of this launch's for GATEWAY_BACK_GRACE_TICKS: its
+ *   states do not reach our gateway;
+ * - nothing of this launch's within `timeoutMs`.
+ */
+export async function waitOwnLaunch(session: Session, timeoutMs: number): Promise<BotWorldState> {
+    const tag = session.launchTag;
+    if (!tag) throw new Error(`${session.name}: waitOwnLaunch needs a launched browser tab`);
+    const cdp = cdpUrl(session.env);
+    const refuse = (why: string) => new Error(`${session.name}: refusing launch ${tag}: ${why}; nothing was sent to the account`);
+    const seen = {
+        ownFirst: null as number | null,
+        lastOwnAt: 0,
+        ready: null as BotWorldState | null,
+        other: null as BotWorldState | null,
+        firstTick: new Map<string, number>(),
+        live: null as { launch: string; ticks: [number, number] } | null,
+    };
+    const see = (s: BotWorldState) => {
+        if (!s.inGame) return;
+        if (s.launch === tag) {
+            seen.lastOwnAt = Date.now();
+            if (seen.ownFirst === null) seen.ownFirst = s.tick;
+            else if (s.tick !== seen.ownFirst) seen.ready ??= s;
+            return;
+        }
+        seen.other ??= s;
+        const who = s.launch ?? 'none';
+        const first = seen.firstTick.get(who);
+        if (first === undefined) seen.firstTick.set(who, s.tick);
+        else if (first !== s.tick) seen.live ??= { launch: who, ticks: [first, s.tick] };
+    };
+    const current = session.sdk.getState();
+    if (current) see(current);
+    const unsubscribe = session.sdk.onStateUpdate(see);
+    try {
+        const deadline = Date.now() + timeoutMs;
+        let nextPage = 0;
+        let endedSince: number | null = null;
+        let inGameSince: number | null = null;
+        for (;;) {
+            if (seen.ready) return seen.ready;
+            if (seen.live) {
+                const { launch, ticks } = seen.live;
+                throw refuse(
+                    launch === 'none'
+                        ? `in-game states with no launch id are advancing (ticks ${ticks[0]} then ${ticks[1]}): another client is in the world as this account, or the page's bundle predates the launch echo (rebuild it: cd server/webclient && bun run build)`
+                        : `in-game states from launch ${launch} are advancing (ticks ${ticks[0]} then ${ticks[1]}): another tab or process drives this account`
+                );
+            }
+            const now = Date.now();
+            if (now >= deadline) {
+                const o = seen.other;
+                throw refuse(
+                    `no in-game state from this launch within ${timeoutMs} ms` +
+                        (o ? `; the only in-game state was not this launch's (tick ${o.tick}, launch ${o.launch ?? 'none'}): a cached or foreign state` : '')
+                );
+            }
+            if (cdp && now >= nextPage) {
+                nextPage = now + ENDED_POLL_MS;
+                const p = await pageLaunchState(cdp, session.name).catch(() => null);
+                // Until the tab shows this launch's URL it may still be the page it replaced.
+                if (p && p.launch === tag && p.hasClient) {
+                    const ended = p.loadingComplete && p.autoLoginAttempted && !p.inGame && !p.loginInProgress;
+                    endedSince = ended ? (endedSince ?? now) : null;
+                    if (endedSince !== null && now - endedSince >= PAGE_ENDED_HOLD_MS) {
+                        throw refuse(`the page's login ended without getting in, or it dropped out of the game (title screen: ${p.message || 'no message'})`);
+                    }
+                    inGameSince = p.inGame ? (inGameSince ?? now) : null;
+                    const silentMs = idleBoundMs({ ticks: GATEWAY_BACK_GRACE_TICKS, period: session.period });
+                    if (inGameSince !== null && now - Math.max(inGameSince, seen.lastOwnAt) >= silentMs) {
+                        throw refuse(`the page is in game but none of its states reached our gateway for ${silentMs} ms`);
+                    }
+                }
+            }
+            await sleep(50);
+        }
+    } finally {
+        unsubscribe();
+    }
 }
 
 /**
@@ -446,8 +588,9 @@ export async function launchClient(session: Session): Promise<void> {
         return;
     }
     // With CDP the one tab is re-navigated (lib/tab.ts) to a fresh token URL.
-    const how = await openBrowserClient(session.env, { cdp: cdpUrl(session.env), insecureQueryLogin: session.insecureQueryLogin });
-    appendFileSync(session.logPath, `[speedrun] session ${session.sessionId}: tab ${how} at ${new Date().toISOString()}\n`);
+    session.launchTag = newLaunchTag();
+    const how = await openBrowserClient(session.env, { cdp: cdpUrl(session.env), insecureQueryLogin: session.insecureQueryLogin, launch: session.launchTag });
+    appendFileSync(session.logPath, `[speedrun] session ${session.sessionId}: tab ${how} (launch ${session.launchTag}) at ${new Date().toISOString()}\n`);
 }
 
 /** Stop a lite child that is still running (recovery only; never a way to log out). */
@@ -458,20 +601,176 @@ async function killChild(session: Session): Promise<void> {
     await child.exited.catch(() => {});
 }
 
+/** How abandonClient left the account. */
+export interface AbandonResult {
+    /**
+     * Confirmed out of the world. Browser: the page out of game and the world's player list without
+     * the account. Lite: the runner exited on the server's LOGOUT.
+     */
+    ok: boolean;
+    /** Logout clicks sent. */
+    sends: number;
+    /** In-page logins made to take a socketless body over so that it could be logged out (browser). */
+    takeovers: number;
+    wallMs: number;
+    reason?: string;
+}
+
+/** One line for a log or an error: how abandonClient left the account. */
+export function describeAbandon(a: AbandonResult): string {
+    const how = `${a.sends} logout click(s)${a.takeovers ? `, ${a.takeovers} takeover login(s)` : ''}, ${a.wallMs} ms`;
+    return a.ok ? `logged out, confirmed (${how})` : `NOT confirmed logged out: ${a.reason ?? 'unknown'} (${how})`;
+}
+
 /**
- * Get a launched lite client's player out of the world when this process is
- * giving it up. The logout click removes an in-world player on the next tick
- * and the runner exits on the server's LOGOUT; if it has not exited within
- * `waitMs` (the click could not land), SIGKILL, which bounds the stay to the
- * 500-tick no-connection timeout instead of the indefinite stay of a live runner.
+ * Asked before abandonTab logs a socketless body in to take it over, a login the per-address order
+ * and the playtime both see: a function to call once that login has started or failed (a lock's
+ * release) to go ahead, or the reason not to. Without one the takeover goes ahead.
  */
-export async function abandonClient(session: Session, waitMs: number = Math.max(2_000, 10 * tickMs())): Promise<void> {
+export type TakeoverGate = () => Promise<(() => void) | string>;
+
+export interface AbandonOptions {
+    takeover?: TakeoverGate;
+    /** abandonTab's wall bound (default ABANDON_TIMEOUT_MS). */
+    timeoutMs?: number;
+}
+
+/** An AbandonResult for an abandon that threw. */
+export function abandonFailed(e: unknown): AbandonResult {
+    return { ok: false, sends: 0, takeovers: 0, wallMs: 0, reason: `the abandon threw: ${e instanceof Error ? e.message : String(e)}` };
+}
+
+/**
+ * Get a launched client's player out of the world when this process is giving it up.
+ *
+ * Lite: the logout click removes an in-world player on the next tick and the runner exits on the
+ * server's LOGOUT; if it has not exited within `waitMs` (the click could not land), SIGKILL, which
+ * bounds the stay to the 500-tick no-connection timeout instead of the indefinite stay of a live
+ * runner. Null when there is no running child.
+ *
+ * Browser: abandonTab, a logout through the page itself, confirmed by the page and the world.
+ */
+export async function abandonClient(session: Session, waitMs: number = Math.max(2_000, 10 * tickMs()), opts: AbandonOptions = {}): Promise<AbandonResult | null> {
+    if (session.client === 'browser') return abandonTab(session, opts);
     const child = session.child;
-    if (session.client !== 'lite' || !child || session.childExit !== null) return;
+    if (!child || session.childExit !== null) return null;
+    const t0 = Date.now();
     session.expectInWorld = false;
-    sendLogoutClick(session);
+    const sent = sendLogoutClick(session);
     const exited = await Promise.race([child.exited.then(() => true), sleep(waitMs).then(() => false)]);
     if (!exited) await killChild(session);
+    return {
+        ok: exited,
+        sends: sent ? 1 : 0,
+        takeovers: 0,
+        wallMs: Date.now() - t0,
+        ...(exited ? {} : { reason: `the runner did not exit within ${waitMs} ms of the click; killed (the account stays up to 500 ticks)` }),
+    };
+}
+
+/**
+ * Log a browser tab's account out through the page itself and confirm it, for a process giving the
+ * tab up (a failed start). Over CDP, so neither our gateway nor the page's gateway socket has to be
+ * up: the logout button is clicked inside the page (tab.ts pageClickComponent), straight down its
+ * game socket, and re-sent each LOGOUT_CONFIRM_TICKS it goes unconfirmed, up to ABANDON_SENDS. It is
+ * confirmed when the page is out of game and the world's player list (/playerpositions) no longer
+ * has the account; the page alone cannot say, since a page whose game socket dropped is out of game
+ * while its body stays in the world for 500 ticks.
+ *
+ * That socketless body (attempt 3's 04:2xZ start) cannot be clicked out: nothing is connected to it.
+ * Once the page has been out, with the world still listing the account, for longer than a removal
+ * takes to show, the page logs in again in place (a fresh token, login's in-page path), which the
+ * engine lets take the body over (World.ts "kick the existing session"); then the click logs it out.
+ * At most ABANDON_TAKEOVERS such logins, each one asked of `opts.takeover` first.
+ *
+ * A session that launched its tab acts only on that launch's page: a tab showing another launch is
+ * left alone. Each click carries the session generation it was issued under, as sendLogoutClick's
+ * do: once a newer session begins elsewhere (an adopt) nothing more is sent. Without DevTools only
+ * the gateway is left: one click through it, reported unconfirmed.
+ */
+export async function abandonTab(session: Session, opts: AbandonOptions = {}): Promise<AbandonResult> {
+    const t0 = Date.now();
+    session.expectInWorld = false;
+    session.watchdog?.pause();
+    let sends = 0;
+    let takeovers = 0;
+    const done = (ok: boolean, reason?: string): AbandonResult => ({ ok, sends, takeovers, wallMs: Date.now() - t0, ...(reason ? { reason } : {}) });
+    const cdp = cdpUrl(session.env);
+    if (!cdp) {
+        if (sendLogoutClick(session)) sends++;
+        return done(false, 'no DevTools port (CDP_URL), so no page to ask: one logout click sent through the gateway, unconfirmed');
+    }
+    const { demoOrigin, listedInWorld } = await import('./demo-status');
+    const origin = demoOrigin(pageWorld(session.env));
+    const account = session.env.BOT_USERNAME ?? session.name;
+    const resendMs = () => idleBoundMs({ ticks: LOGOUT_CONFIRM_TICKS, period: session.period });
+    // The world list is cached 1 s server side and read every WORLD_LIST_EVERY_MS: a removal under
+    // way shows within three reads.
+    const takeoverAfterMs = () => Math.max(3 * WORLD_LIST_EVERY_MS, resendMs());
+    const deadline = t0 + (opts.timeoutMs ?? ABANDON_TIMEOUT_MS);
+    let gen = session.sessionId;
+    let sentAt = -Infinity;
+    let outListedSince: number | null = null;
+    let world: boolean | null = null;
+    let nextWorld = 0;
+    let why = '';
+    for (;;) {
+        if (session.sessionId !== gen) return done(false, `superseded: session ${session.sessionId} began while the abandon of session ${gen} ran; nothing more sent`);
+        const now = Date.now();
+        if (now >= nextWorld) {
+            nextWorld = now + WORLD_LIST_EVERY_MS;
+            world = await listedInWorld(origin, account);
+        }
+        const page = await pageLaunchState(cdp, session.name).catch((e: unknown) => {
+            why = `DevTools did not answer (${e instanceof Error ? e.message : String(e)})`;
+            return undefined;
+        });
+        if (page && session.launchTag && page.launch !== session.launchTag) {
+            return done(false, `the bot's tab is not this session's launch ${session.launchTag} (it shows ${page.launch ?? 'none'}); left alone`);
+        }
+        if (page?.inGame) {
+            outListedSince = null;
+            if (now - sentAt >= resendMs()) {
+                if (sends >= ABANDON_SENDS) return done(false, `still in game after ${sends} logout clicks`);
+                if (session.sessionId === gen) {
+                    const click = await pageClickComponent(cdp, session.name, LOGOUT_BUTTON).catch(() => null);
+                    if (click?.sent) {
+                        sends++;
+                        sentAt = Date.now();
+                    } else why = `the page would not click logout (${click?.reason ?? 'no answer'})`;
+                }
+            }
+        } else if (page === null || (page && !page.loginInProgress)) {
+            // No tab, or a page out of game with no login under way: the world says where the body is.
+            if (world === false) return done(true);
+            if (world === null) why = `the world's player list (${origin}/playerpositions) did not answer`;
+            else if (page === null) why = 'the world lists the account and there is no tab for it';
+            else {
+                outListedSince ??= now;
+                why = 'the page is out of game and the world still lists the account';
+                if (now - outListedSince >= takeoverAfterMs()) {
+                    if (takeovers >= ABANDON_TAKEOVERS) why = `${why}, after ${takeovers} takeover login(s)`;
+                    else if (page.hasClient && page.loadingComplete) {
+                        const gate = opts.takeover ? await opts.takeover().catch((e: unknown) => `the takeover gate threw: ${e instanceof Error ? e.message : String(e)}`) : () => {};
+                        if (typeof gate === 'string') return done(false, `${why}; no takeover login: ${gate}`);
+                        takeovers++;
+                        appendFileSync(session.logPath, `[speedrun] session ${session.sessionId}: abandon: the page is out and the world lists the account; logging in in page to take that body over, then out\n`);
+                        try {
+                            const start = await loginInPage(session, cdp, {});
+                            if (start.started) gen = session.sessionId;
+                            else why = `the takeover login did not start (${start.reason})`;
+                        } finally {
+                            gate();
+                        }
+                        outListedSince = null;
+                    }
+                }
+            }
+        }
+        // A page logging in (its own retry, or our takeover) is waited for.
+        if (Date.now() >= deadline) return done(false, why || 'timed out');
+        await sleep(Math.min(ENDED_POLL_MS, tickMs()));
+    }
 }
 
 const launchedSessions = new Set<Session>();
@@ -541,6 +840,10 @@ export interface LogoutResult {
      * the logout belongs to the old one, so it stopped and nothing more was sent. Not a failed logout.
      */
     superseded?: boolean;
+    /** Set when the logout waited before its click (the post-combat window, a refused click's retry): what the wait held. */
+    held?: HeldLogout;
+    /** Set when the account died while the logout held (runner/death.ts DeathWatch). `ok` still says only whether it got out. */
+    death?: Death;
 }
 
 /** Whether the SDK's socket to the gateway is up (not reconnecting or closed). */
@@ -589,6 +892,16 @@ export const LOGOUT_CONFIRM_TICKS = 4;
  */
 const LOGOUT_WAIT_TICKS = 60;
 
+/** Most logout clicks abandonTab sends: one per LOGOUT_CONFIRM_TICKS over LOGOUT_WAIT_TICKS. */
+export const ABANDON_SENDS = Math.ceil(LOGOUT_WAIT_TICKS / LOGOUT_CONFIRM_TICKS);
+/** Most takeover logins abandonTab makes. */
+export const ABANDON_TAKEOVERS = 2;
+/**
+ * abandonTab's wall bound. Wall time, not ticks: the page it works on may be out of the world and
+ * publishing nothing. Room for the full re-send window at the demo's 600 ms and two takeover logins.
+ */
+export const ABANDON_TIMEOUT_MS = 90_000;
+
 /**
  * Log out with the logout button, verified. Waits out the post-combat window
  * first; if the server still refuses, waits the remaining ticks and retries
@@ -601,14 +914,31 @@ const LOGOUT_WAIT_TICKS = 60;
  *
  * The logout belongs to the game session it began in: once a newer one begins (an adopt, a launch,
  * an in-page login) it stops, sends nothing more, and reports `superseded`.
+ *
+ * Every state from the call to the account's leaving is watched (runner/death.ts DeathWatch): a
+ * death while the logout held rides on the result (`death`) and on `session.died`; a wait before the
+ * click on it as `held`. A logout with neither returns what it always did.
  */
 export async function logoutClean(session: Session, opts: { timeoutMs?: number } = {}): Promise<LogoutResult> {
-    const { sdk } = session;
-    const gen = session.sessionId;
     session.watchdog?.pause();
     const t0 = Date.now();
-    const s = sdk.getState();
+    const s = session.sdk.getState();
     if (!s?.inGame) return { ok: false, clickTick: -1, lastInWorldTick: session.lastInWorldTick, latencyTicks: 0, wallMs: 0, reason: 'not in game' };
+    const watch = new DeathWatch(s, 'before the logout landed');
+    const unwatch = session.sdk.onStateUpdate(st => watch.see(st));
+    try {
+        const r = await clickOut(session, s, t0, opts, watch);
+        const death = watch.death();
+        if (death) session.died ??= death;
+        return { ...r, ...(watch.holding ? { held: watch.held(r.clickTick) } : {}), ...(death ? { death } : {}) };
+    } finally {
+        unwatch();
+    }
+}
+
+async function clickOut(session: Session, s: BotWorldState, t0: number, opts: { timeoutMs?: number }, watch: DeathWatch): Promise<LogoutResult> {
+    const { sdk } = session;
+    const gen = session.sessionId;
     const superseded = (clickTick: number, sends: number): LogoutResult => ({
         ok: false,
         clickTick,
@@ -624,6 +954,7 @@ export async function logoutClean(session: Session, opts: { timeoutMs?: number }
     const lastHit = s.player?.combat?.lastDamageTick ?? -1;
     const combatTick = lastHit < 0 ? -Infinity : lastHit;
     if (s.player?.combat?.inCombat || s.tick - combatTick <= COMBAT_LOGOUT_TICKS) {
+        watch.holding = true;
         const until = Math.max(s.tick, combatTick) + COMBAT_LOGOUT_TICKS + 1;
         await waitUntil(sdk, st => st.tick >= until && !st.player?.combat?.inCombat, { maxTicks: COMBAT_LOGOUT_TICKS + 30 });
     }
@@ -638,6 +969,7 @@ export async function logoutClean(session: Session, opts: { timeoutMs?: number }
         const out = w.out;
         if (out === 'superseded') return superseded(clickTick, sends);
         if (out === 'refused' && attempt === 0) {
+            watch.holding = true;
             await waitUntil(sdk, () => false, { maxTicks: COMBAT_LOGOUT_TICKS + 1 });
             continue;
         }
@@ -965,6 +1297,8 @@ export interface RelogResult {
 export async function relog(session: Session, opts: { offlineMs?: number; loginTimeoutMs?: number; inPage?: boolean } = {}): Promise<RelogResult> {
     const logout = await logoutClean(session);
     if (!logout.ok) throw new Error(`${session.name}: logout failed: ${logout.reason}`);
+    // Logging back in would carry on from the respawn as if nothing happened.
+    if (logout.death) throw new Error(`${session.name}: no relog after a death: ${logout.death.reason}`);
     if (opts.offlineMs ?? 2_000) await sleep(opts.offlineMs ?? 2_000);
     const before = Date.now();
     let first: number | null = null;
@@ -1372,6 +1706,11 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
                 }
                 emit(verdict, `logged out: last in-world tick ${out.lastInWorldTick}, ${out.latencyTicks} tick(s) after the click`);
                 if (verdict === 'stop') return; // stay out, paused; the bot is not driving
+                if (out.death) {
+                    // A login now would carry the chain on from the respawn as if nothing happened.
+                    emit('stop', `${out.death.reason}: left out for R8's recovery`);
+                    return;
+                }
                 try {
                     await actions.login(session);
                     emit('relaunch', `logged back in (session ${session.sessionId})`);

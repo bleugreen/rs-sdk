@@ -1123,12 +1123,12 @@ describe('the atoll top-ups (H12o)', () => {
 
 describe("the Grand Tree swap's hand-back (GT_HANDBACK) against the ledger's H12 row", () => {
     // H12's before-state and outs, walked from STEP-MANIFEST.md's inventory ledger. The overrides only resolve the
-    // row's `all` returns to the walked counts (a wrong count leaves the plan unresolved).
+    // row's `any` returns to the walked counts (a wrong count leaves the plan unresolved); the antipoison is H7's Antipoison(3), obj 175.
     const concrete = (id: number, count: number) => ({ items: [{ id, count }], reason: 'the ledger walk' });
     const plan = planMuleDeliveryFixtures({
         manifest: readFileSync(MANIFEST, 'utf8'), rows: ['H12'], onRequest: [], pack: objPack(),
         overrides: { H12: {
-            takeBacks: { 'coins @995': concrete(995, 1000), 'death rune': concrete(560, 49), 'chaos rune': concrete(562, 16) },
+            takeBacks: { 'antipoison(*)': concrete(175, 1), 'coins @995': concrete(995, 1000), 'death rune': concrete(560, 49), 'chaos rune': concrete(562, 16) },
         } },
     });
     const h12 = plan.fixtures[0]!;

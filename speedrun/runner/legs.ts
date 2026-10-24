@@ -20,15 +20,16 @@
 // holds the leg's full measured figure; `net` is what it adds to RUN-ORDER.md's step totals.
 
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
-import { dropItems, type ActSdk } from '../lib/act';
+import { dropItems, opLoc, type ActSdk } from '../lib/act';
 import { measure } from '../lib/ticks';
 import {
     boxAround, FOOD, fmtTile, hopNeeds, hopsDestination, inArea, inRegion, missingRunes, SPELLS, travel, wildernessLevel,
-    type Area, type Hop, type Region, type TravelResult, type TravelSdk,
+    type Area, type Hop, type Region, type TravelOptions, type TravelResult, type TravelSdk,
 } from '../lib/travel';
 import { currentTick } from '../lib/wait';
-import { invCount, invItem, pos, skillLevel } from '../lib/world';
+import { invCount, invItem, pos, skillLevel, type LocQuery, type OpPattern } from '../lib/world';
 import type { Observed, Step, StepContext } from './step';
+import { DeathWatch } from './death';
 
 export const skill = 'legs';
 
@@ -74,6 +75,13 @@ export interface LegDef {
      * pins each to its row). See dropsDue for when each goes.
      */
     drops?: readonly RegExp[];
+    /**
+     * Hops that follow this leg's own, whose needs its drops must leave held: splitLeg's part a
+     * keeps what part b needs, so the parts drop exactly what the whole leg would.
+     */
+    keepFor?: readonly Hop[];
+    /** Stops made on the way only while they are wanted (LegStop): T14-15's church altar. */
+    stops?: readonly LegStop[];
     expected: Expected;
 }
 
@@ -172,6 +180,18 @@ export function neededBy(hops: readonly Hop[], name: string, id?: number): boole
 }
 
 /**
+ * The held names `hops` need that drop pattern `p` takes: a spell's runes, the webs' knife, a ship's
+ * coins, an item used on a loc (by its name, or a regex's literal `^name$`). Empty when none.
+ */
+export function dropTakesNeeded(p: RegExp, hops: readonly Hop[]): string[] {
+    const need = hopNeeds(hops);
+    const runes = Object.entries(need.runes).filter(([, n]) => (n ?? 0) > 0).map(([r]) => `${r[0]!.toUpperCase()}${r.slice(1)} rune`);
+    const items = need.items.flatMap(i => (typeof i === 'string' ? [i] : i instanceof RegExp ? (/^\^([\w' ]+)\$$/.exec(i.source)?.slice(1) ?? []) : []));
+    const names = [...runes, ...(need.knife ? ['Knife'] : []), ...(need.coins > 0 ? ['Coins'] : []), ...items];
+    return names.filter(n => p.test(n));
+}
+
+/**
  * The held items `def` drops before hop `at` (at = hops.length: on arrival): those its `drops` name
  * that no hop from `at` on needs. So most go in one burst before the first click, and a rune the
  * leg's own teleport spends goes on the standing tick after the landing, before the next click
@@ -180,7 +200,7 @@ export function neededBy(hops: readonly Hop[], name: string, id?: number): boole
  */
 export function dropsDue(def: LegDef, s: BotWorldState, at: number): InventoryItem[] {
     if (!def.drops?.length) return [];
-    const rest = def.hops.slice(at);
+    const rest = [...def.hops.slice(at), ...(def.keepFor ?? [])];
     return s.inventory.filter(i => i.count > 0 && def.drops!.some(p => p.test(i.name)) && !neededBy(rest, i.name, i.id));
 }
 
@@ -228,6 +248,73 @@ export async function dropDue(sdk: ActSdk, def: LegDef, at: number): Promise<Leg
     }
 }
 
+// ------------------------------------------------------------------ stops
+
+/**
+ * A stop on the way, made before hop `before` only while `wanted` holds: walk `hops` (travel, so a
+ * closed door on the route is opened), then operate `loc` with `op` until `wanted` no longer holds.
+ * When it does not hold at its hop, nothing is sent and the stop costs 0 ticks. The stop is not a
+ * hop, so the hop indices and the checkpoints that name them are the same with or without it, and a
+ * restart anywhere before its hop asks `wanted` again.
+ */
+export interface LegStop {
+    before: number;
+    label: string;
+    wanted: (s: BotWorldState) => boolean;
+    /** What the stop changes, for the travel row ('Prayer 20 of 99'). */
+    reading: (s: BotWorldState) => string;
+    hops: readonly Hop[];
+    loc: LocQuery;
+    op: OpPattern;
+}
+
+export interface LegStopRecord {
+    /** The hop the stop came before. */
+    at: number;
+    label: string;
+    /** False when it was not wanted: skipped, nothing sent. */
+    made: boolean;
+    ok: boolean;
+    ticks: number;
+    before: string;
+    after?: string;
+    doors?: TravelResult['doors'];
+    reason?: string;
+}
+
+/** Ticks a stop's op is watched for (act re-sends a dropped click every 6). */
+export const STOP_OP_TICKS = 20;
+
+/** Make `stop` before hop `at` if it is wanted. Never throws: a failure is the record's reason. */
+export async function makeStop(sdk: TravelSdk, stop: LegStop, at: number, bot?: TravelOptions['bot']): Promise<LegStopRecord> {
+    const s0 = sdk.getState();
+    const base = { at, label: stop.label, before: s0 ? stop.reading(s0) : 'no state' };
+    if (!s0 || !stop.wanted(s0)) return { ...base, made: false, ok: true, ticks: 0 };
+    const t0 = currentTick(sdk);
+    const end = (ok: boolean, more: Partial<LegStopRecord> = {}): LegStopRecord => {
+        const s = sdk.getState();
+        return { ...base, made: true, ok, ticks: currentTick(sdk) - t0, ...(s ? { after: stop.reading(s) } : {}), ...more };
+    };
+    const walk = await travel(sdk, stop.hops, bot ? { bot } : {});
+    const doors = walk.doors.length ? { doors: walk.doors } : {};
+    if (!walk.ok) return end(false, { ...doors, reason: `${stop.label}: ${walk.reason ?? 'the walk failed'} (at ${fmtTile(walk.at)})` });
+    try {
+        const r = await opLoc(sdk, stop.loc, stop.op, s => !stop.wanted(s), { maxTicks: STOP_OP_TICKS });
+        if (r.ok) return end(true, doors);
+        const s = sdk.getState();
+        return end(false, { ...doors, reason: `${stop.label}: ${r.loc.name} at ${r.loc.x},${r.loc.z} left ${s ? stop.reading(s) : '?'} after ${STOP_OP_TICKS} ticks` });
+    } catch (e) {
+        return end(false, { ...doors, reason: `${stop.label}: ${e instanceof Error ? e.message : String(e)}` });
+    }
+}
+
+/** Prayer points below the Prayer level (`prayers`, as combat.ts reads them). */
+export function prayerShort(s: BotWorldState): boolean {
+    return (s.prayers?.prayerPoints ?? 0) < (s.prayers?.prayerLevel ?? 0);
+}
+
+const prayerReading = (s: BotWorldState) => `Prayer ${s.prayers?.prayerPoints ?? '?'} of ${s.prayers?.prayerLevel ?? '?'}`;
+
 /** logoutSafe is false for legs inside or out of the Wilderness above level 20 (STEP-MANIFEST.md entry 11). */
 export function legLogoutSafe(def: LegDef): boolean {
     const places: { x: number; z: number }[] = [def.start, def.dest];
@@ -240,11 +327,11 @@ export function legLogoutSafe(def: LegDef): boolean {
 
 // ------------------------------------------------------------------ the Step
 
-function logTravel(ctx: StepContext<unknown>, name: string, from: number, r: TravelResult, drops: readonly LegDrops[]): void {
+function logTravel(ctx: StepContext<unknown>, name: string, from: number, r: TravelResult, drops: readonly LegDrops[], stops: readonly LegStopRecord[]): void {
     ctx.log.append({
         v: 1, kind: 'travel', runId: ctx.log.runId, account: ctx.session.name, sessionId: ctx.session.sessionId, step: name,
         startTick: r.startTick, endTick: r.endTick, ticks: r.ticks, wallMs: 0, ok: r.ok, ...(r.reason ? { error: r.reason } : {}),
-        meta: { fromHop: from, segments: r.segments, doors: r.doors, clicks: r.clicks, tiles: r.tiles, webTries: r.webTries, ate: r.ate, hpMin: r.hpMin, ...(r.fellBack ? { fellBack: r.fellBack } : {}), ...(drops.length ? { drops } : {}) },
+        meta: { fromHop: from, segments: r.segments, doors: r.doors, clicks: r.clicks, tiles: r.tiles, webTries: r.webTries, ate: r.ate, hpMin: r.hpMin, ...(r.fellBack ? { fellBack: r.fellBack } : {}), ...(drops.length ? { drops } : {}), ...(stops.length ? { stops } : {}) },
         tickMs: 0, at: new Date().toISOString(),
     });
 }
@@ -265,13 +352,34 @@ export async function runLeg(def: LegDef, ctx: Pick<StepContext<unknown>, 'sdk' 
         if (why) throw new Error(why);
         return null;
     }
+    const stops: LegStopRecord[] = [];
+    const stopAt = async (at: number): Promise<string | null> => {
+        for (const st of def.stops ?? []) {
+            if (st.before !== at) continue;
+            const rec = await makeStop(ctx.sdk as unknown as TravelSdk, st, at, ctx.bot);
+            stops.push(rec);
+            if (!rec.ok) return rec.reason!;
+        }
+        return null;
+    };
+    const beforeHop = async (at: number): Promise<string | null> => (def.drops?.length ? await dropAt(at) : null) ?? (await stopAt(at));
     const from = resumeHop(def, s);
-    const r = await travel(ctx.sdk as unknown as TravelSdk, def.hops, { bot: ctx.bot, from, ...(def.food ? { eat: {} } : {}), ...(def.drops?.length ? { beforeHop: dropAt } : {}) });
-    const why = r.ok ? await dropAt(def.hops.length) : null;
-    if (ctx.log && ctx.session) logTravel(ctx as StepContext<unknown>, name, from, r, drops);
+    // A relocation travel sees fails the hop only as a death the watch corroborates; any other jump re-paths as before.
+    const watch = new DeathWatch(s, `on ${def.id}`);
+    const unwatch = ctx.sdk.onStateUpdate(st => watch.see(st));
+    const onRelocated: TravelOptions['onRelocated'] = rel => (rel.respawn && watch.death() ? 'fail' : 'repath');
+    const r = await travel(ctx.sdk as unknown as TravelSdk, def.hops, { bot: ctx.bot, from, onRelocated, ...(def.food ? { eat: {} } : {}), ...(def.drops?.length || def.stops?.length ? { beforeHop } : {}) })
+        .finally(() => unwatch());
+    const death = watch.death();
+    if (death && ctx.session) ctx.session.died ??= death;
+    const why = r.ok && !death ? await dropAt(def.hops.length) : null;
+    if (ctx.log && ctx.session) logTravel(ctx as StepContext<unknown>, name, from, r, drops, stops);
+    if (death) throw new Error(`${def.id}: ${death.reason}`);
     // Drops refused before a hop stop the trip; their reason (naming what is held) is the leg's.
     const refused = drops.find(d => !d.ok);
     if (refused) throw new Error(refused.reason!);
+    const failed = stops.find(st => !st.ok);
+    if (failed) throw new Error(`${def.id}: ${failed.reason!}`);
     if (!r.ok) throw new Error(`${def.id}: ${r.reason ?? 'travel failed'} (at ${fmtTile(r.at)})`);
     if (why) throw new Error(why);
     return r;
@@ -279,6 +387,7 @@ export async function runLeg(def: LegDef, ctx: Pick<StepContext<unknown>, 'sdk' 
 
 /** A leg as a Step: `leg(id, from, to, method, opts)`. */
 export function leg(id: string, from: Area, to: Area, method: readonly Hop[], opts: LegOptions): LegStep {
+    for (const st of opts.stops ?? []) if (st.before < 0 || st.before >= method.length) throw new Error(`${id}: stop '${st.label}' comes before hop ${st.before} of ${method.length}`);
     const def: LegDef = { id, start: from, dest: to, hops: method, ...opts };
     const name = `${id} ${opts.method}`;
     const run = async (ctx: StepContext<unknown>) => {
@@ -365,13 +474,34 @@ export const TILES = {
     romeo: { x: 3211, z: 3425, tol: 1 },
     westAnvil: { x: 3188, z: 3426, tol: 1 },
     westBooth: { x: 3185, z: 3436 },
-    championsGuild: { x: 3191, z: 3364, tol: 1 },
+    // Two rows north of the door (3191,3363): mule1's H22 trade refuses a partner on a door's neighbour.
+    championsGuild: { x: 3191, z: 3365, tol: 0 },
     elvargExit: { x: 2846, z: 9636 },
     ridgeSouth: { x: 2998, z: 3916, tol: 1 },
     wildernessPipe: { x: 3004, z: 3937, tol: 0 },
+    /** The East Ardougne church altar's south face, at the head of the aisle (CHURCH_ALTAR). */
+    churchAltar: { x: 2617, z: 3308, tol: 1 },
+    khazardTree: { x: 2555, z: 3259, tol: 1 },
 } as const satisfies Record<string, Area>;
 
 const T = TILES;
+
+/**
+ * The East Ardougne church altar, loc 409 `altar` at (2617,3309), 2x1 (skill_prayer/configs/altars.loc:
+ * op1 Pray-at, category prayer_altar; server/content/maps/m40_51.jm2 `0 57 45: 409 10`). Its oploc1
+ * (skill_prayer/scripts/altar.rs2) sets Prayer points to the level in the click's tick with no delay,
+ * and at full points only says so. The nave (2613-2621, 3304-3310) is entered by the open doorway in
+ * its south wall at x 2615-2616 (timber pillars, no door loc); its aisle (2617-2618, 3304-3308) ends
+ * at the altar's south face. The doors 1530 and 1533 are the west vestries' and off the way.
+ */
+export const CHURCH_ALTAR: Omit<LegStop, 'before'> = {
+    label: 'East Ardougne church altar',
+    wanted: prayerShort,
+    reading: prayerReading,
+    hops: [run(T.churchAltar.x, T.churchAltar.z, T.churchAltar.tol)],
+    loc: { id: 409, x: 2617, z: 3309 },
+    op: /^pray-at$/i,
+};
 const ARDOUGNE_TO_LEVER: Hop[] = [tele('ardougne'), run(T.wildernessLever.x, T.wildernessLever.z, 1)];
 /** Into the Deserted Keep by the lever, out through its north web (3158,3951). */
 const LEVER_AND_KEEP_WEB: Hop[] = [{ kind: 'lever', lever: 'ardougne' }, { kind: 'webs', goals: [[3158, 3950], [3158, 3953]] }];
@@ -457,14 +587,17 @@ export const LEGS: readonly LegStep[] = [
     leg('T14-15', T.spiders, T.grandTreeDoor, [
         { kind: 'run', to: { x: 3288, z: 3660 }, wildernessAtMost: 20 },
         tele('ardougne'),
-        run(2555, 3259, 1),
+        run(T.khazardTree.x, T.khazardTree.z, T.khazardTree.tol),
         { kind: 'tree', to: 'village' },
         { kind: 'tree', to: 'stronghold' },
         run(T.grandTreeDoor.x, T.grandTreeDoor.z, T.grandTreeDoor.tol),
     ], {
-        after: 'S14', before: 'S15', method: 'run to Wilderness 20 + Ardougne teleport + Khazard young tree + two tree rides + run', food: WILD_FOOD,
+        after: 'S14', before: 'S15', method: 'run to Wilderness 20 + Ardougne teleport + the church altar when Prayer is short + Khazard young tree + two tree rides + run', food: WILD_FOOD,
+        // Monkey Madness's protect stretches start from full points (rs/687's budget; main's R2).
+        stops: [{ ...CHURCH_ALTAR, before: 2 }],
         checkpoints: [{ after: 3, in: [{ x: [2525, 2560], z: [3150, 3185] }] }, { after: 4, in: [{ x: [2440, 2490], z: [3420, 3500] }] }],
-        expected: { ticks: 173.5, label: 'i', source: 'run-transitions.md section 2: X14n 66 + L14a 105, 102 (4 + 103.5)', net: 173.5 },
+        // Prayer is short here on the run (S10b-S12's protect fights), so the figure is the drained one.
+        expected: { ticks: 185, label: 'm', source: "rs/689's leg lab (bgsrv-mac, lite, 400 ms, n = 1): drained to 20 of 99, 185 (the altar stop 30, then 44 to the Khazard tree); full, 175 (skipped, 65 to the tree); the altar +10", net: 185 },
     }),
     leg('T15-16', T.daero, T.kolodionCellar, [
         ...ARDOUGNE_TO_LEVER,
@@ -628,6 +761,10 @@ export function entersWilderness(hops: readonly Hop[], dest: Area): boolean {
  * part a's ticks from `firstTicks`, and the two nets sum to the original's exactly. The food check
  * goes only to a part that enters the Wilderness (entersWilderness): a teleport to the landing
  * needs none, and the hand-off between the parts may be what brings the food.
+ *
+ * Part a makes the whole leg's drops, keeping what part b's hops need (keepFor), and part b makes
+ * none, so nothing the hand-off between the parts brings is dropped. A drop that part b's hops
+ * need would then never be made by either part, so that split is refused.
  */
 export function splitLeg(l: LegStep, afterHop: number, o: SplitOptions = {}): [LegStep, LegStep] {
     const d = l.def;
@@ -643,9 +780,16 @@ export function splitLeg(l: LegStep, afterHop: number, o: SplitOptions = {}): [L
     const cps = d.checkpoints ?? [];
     const hopsA = d.hops.slice(0, afterHop + 1);
     const hopsB = d.hops.slice(afterHop + 1);
+    const late = (d.drops ?? []).flatMap(p => dropTakesNeeded(p, hopsB).map(n => `${p} takes the ${n} part b needs`));
+    if (late.length) throw new Error(`${d.id}: cannot split after hop ${afterHop}: ${late.join('; ')}`);
+    // A stop before part b's first hop is made in part b, after whatever hand-off sits between.
+    const stopsA = (d.stops ?? []).filter(st => st.before <= afterHop);
+    const stopsB = (d.stops ?? []).filter(st => st.before > afterHop).map(st => ({ ...st, before: st.before - afterHop - 1 }));
     const a: LegOptions = {
         after: d.after, before: `${d.id}b`, method: `${d.method}, part a (to the landing)`,
         ...(d.food && entersWilderness(hopsA, meet) ? { food: d.food } : {}),
+        ...(d.drops?.length ? { drops: d.drops, keepFor: [...hopsB, ...(d.keepFor ?? [])] } : {}),
+        ...(stopsA.length ? { stops: stopsA } : {}),
         ...(cps.some(c => c.after < afterHop) ? { checkpoints: cps.filter(c => c.after < afterHop) } : {}),
         expected: { ticks: firstTicks, label: d.expected.label, source: o.firstSource ?? `${d.id} split after hop ${afterHop}: ${firstTicks} of ${d.expected.ticks} (${d.expected.source})`, net: netA },
     };
@@ -655,6 +799,8 @@ export function splitLeg(l: LegStep, afterHop: number, o: SplitOptions = {}): [L
         ...(d.food && entersWilderness(hopsB, d.dest) ? { food: d.food } : {}),
         ...(d.nextStart ? { nextStart: d.nextStart } : {}),
         ...(d.countedBy ? { countedBy: d.countedBy } : {}),
+        ...(d.keepFor?.length ? { keepFor: d.keepFor } : {}),
+        ...(stopsB.length ? { stops: stopsB } : {}),
         ...(rest.length ? { checkpoints: rest } : {}),
         expected: { ticks: tenth(d.expected.ticks - firstTicks), label: d.expected.label, source: `${d.id} split after hop ${afterHop}: the rest of ${d.expected.ticks} (${d.expected.source})`, net: tenth(d.expected.net - netA) },
     };
