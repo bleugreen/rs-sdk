@@ -17,7 +17,7 @@
 
 import type { BotSDK } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
-import type { BotWorldState, NearbyLoc } from '../../sdk/types';
+import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
 import { act, actConverse, castTeleport, clickWalk, settle, slotOf, walkTo, TELEPORTS, type ActSdk, type JumpCounts } from './act';
 import { converse, type ConverseSdk } from './converse';
 import type { OptionPattern } from './dialogue';
@@ -413,7 +413,7 @@ function seenOf(s: BotWorldState | null): Seen | null {
 export interface EatOptions {
     /** Default: any of the usual cooked fish. */
     food?: ItemPattern;
-    /** Eat below this many hitpoints (default 15). */
+    /** Eat below this many hitpoints (default: at or under eatAt(maxHp), the floor rule). */
     below?: number;
 }
 
@@ -708,6 +708,17 @@ const doorKey = (l: { x: number; z: number }) => `${l.x},${l.z}`;
 /** The cooked fish `eat` takes by default (and legs.ts counts as food). */
 export const FOOD = /^(shark|swordfish|lobster|tuna|salmon|trout|bass|monkfish|pike)$/i;
 
+/**
+ * Hitpoints each FOOD heals (player/configs/consumption/consume_normal.dbrow, `stat_heal`). This
+ * content has no monkfish, so it is absent and heals 0 here.
+ */
+export const FOOD_HEAL: Readonly<Record<string, number>> = { shark: 20, swordfish: 14, bass: 13, lobster: 12, tuna: 10, salmon: 9, pike: 8, trout: 7 };
+
+/** Hitpoints the FOOD held would heal, all of it eaten (FOOD_HEAL; the maximum's cap not applied). */
+export function healHeld(s: BotWorldState): number {
+    return s.inventory.filter(i => FOOD.test(i.name)).reduce((n, i) => n + (FOOD_HEAL[i.name.toLowerCase()] ?? 0) * i.count, 0);
+}
+
 type XZ = { x: number; z: number };
 
 /** Tiles from `from` through each point in turn, one step at a time (straight or diagonal). */
@@ -777,13 +788,51 @@ function onRoute(s: BotWorldState, route: readonly XZ[], from: number, to: numbe
     return null;
 }
 
+/** Hitpoints under which the run's eat rule eats when the maximum is too small for the floor (eatAt). */
+export const EAT_BELOW = 15;
+/** Ticks after an eat before the rule eats again: an eat takes that long to land. */
+export const EAT_SPACING = 3;
+/** The hitpoints a walk must never fall under (main, attempt 4: T14-15b reached 1, poisoned, with 3 sharks held). */
+export const HP_FLOOR = 15;
+/**
+ * The most one poison hit takes on the route: [timer,poison] queues (%poison + 4) / 5 every 30 ticks
+ * (skill_combat/scripts/poison.rs2), and the poison spiders' severity 27 (all.npc) starts it at 6.
+ */
+export const POISON_HIT_MAX = 6;
+/** One NPC hit that can land between the frame an eat is decided on and the tick the food heals. */
+export const HIT_ALLOWANCE = 4;
+/** The rule never eats within this many hitpoints of the maximum: a shark heals 20, so at least half of it is used. */
+export const EAT_HEADROOM = 10;
+
+/**
+ * The hitpoints at or under which the rule eats: the floor plus one poison hit and one NPC hit (25),
+ * so the frame the eat is decided on can lose both before the food lands and still end on HP_FLOOR.
+ * Held EAT_HEADROOM under a small maximum, and never under the old fixed rule (under EAT_BELOW).
+ * At SCORED's 38-42 through S13-S15 it is 25. Re-checked on every frame, and an eat that did not land
+ * (a delayed player drops it) goes again after EAT_SPACING.
+ */
+export function eatAt(maxHp: number): number {
+    return Math.max(EAT_BELOW - 1, Math.min(HP_FLOOR + POISON_HIT_MAX + HIT_ALLOWANCE, maxHp - EAT_HEADROOM));
+}
+
+/**
+ * The run's eat rule: the food to eat now, or null. Hitpoints at or under eatAt(maxHp) (or under
+ * `o.below` when given), no eat in the EAT_SPACING ticks since `lastEat`, and a food held. A travel's
+ * `eat` follows it, and so does the upkeep on the legs and around SCORED's helper waits
+ * (runner/wait-guard.ts).
+ */
+export function eatDue(s: BotWorldState, o: EatOptions, lastEat: number): InventoryItem | null {
+    const p = s.player;
+    if (!p || s.tick - lastEat < EAT_SPACING) return null;
+    const due = o.below !== undefined ? p.hp < o.below : p.hp <= eatAt(p.maxHp);
+    return due ? invItem(s, o.food ?? FOOD) : null;
+}
+
 function eater(sdk: TravelSdk, trip: Trip, o?: EatOptions): (s: BotWorldState) => Promise<void> {
     if (!o) return async () => {};
     let last = -99;
     return async s => {
-        const hp = s.player?.hp ?? 99;
-        if (hp >= (o.below ?? 15) || s.tick - last < 3) return;
-        const f = invItem(s, o.food ?? FOOD);
+        const f = eatDue(s, o, last);
         if (!f) return;
         last = s.tick;
         trip.ate++;

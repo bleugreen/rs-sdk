@@ -1,8 +1,9 @@
 // SCORED's death, seen and acted on. DeathWatch watches the states of a stretch the run cannot let a
 // death pass unseen in: a logout's hold (lib/session.ts logoutClean, which puts what it saw on the
-// logout's result and on Session.died) and a leg's travel (runner/legs.ts runLeg, the same on
-// Session.died, the leg failing). run.ts then writes one `(death)` row, ends the attempt with
-// EXIT_DIED, and refuses any later run into the same log, a walk from game state and a --from alike,
+// logout's result and on Session.died), a leg's travel (runner/legs.ts runLeg, the same on
+// Session.died, the leg failing), every other step's body (runner/step.ts deathWatched, through
+// watchFrames and raceDeath below) and the helper waits (runner/wait-guard.ts). run.ts then writes one
+// `(death)` row, ends the attempt with EXIT_DIED, and refuses any later run into the same log, a walk from game state and a --from alike,
 // until the operator names that death with --r8-recovered after R8's recovery: a resume from the
 // respawn would otherwise go on as if nothing had happened.
 
@@ -155,6 +156,78 @@ export class DeathWatch {
             hp: [...this.hp], inCombatTicks: this.combat.size, lastDamageTick: this.lastDamageTick,
         };
     }
+}
+
+/** A stretch of frames under a DeathWatch (watchFrames). */
+export interface DeathStretch {
+    /** The death the stretch saw, or null. */
+    death(): Death | null;
+    /** Resolves on the first frame that shows a death. */
+    readonly died: Promise<Death>;
+    /** Stop watching (idempotent); returns the death seen, if any. */
+    stop(): Death | null;
+}
+
+type Frames = { getState(): BotWorldState | null; onStateUpdate(fn: (s: BotWorldState) => void): () => void };
+
+/**
+ * Watch `sdk`'s frames from now until `stop()`: a DeathWatch from the first in-game frame (the current
+ * one when it is), a death going on `session.died`. `alive` sees every frame before any death, the
+ * current one first: what a guard does on the player's frames (runner/wait-guard.ts's upkeep).
+ */
+export function watchFrames(sdk: Frames, session: { died?: Death } | undefined, during: string, alive?: (s: BotWorldState) => void): DeathStretch {
+    let watch: DeathWatch | null = null;
+    let seen: Death | null = null;
+    let stopped = false;
+    let resolve!: (d: Death) => void;
+    const died = new Promise<Death>(r => (resolve = r));
+    const see = (s: BotWorldState) => {
+        if (stopped || seen) return;
+        if (!watch) {
+            if (!s.inGame || !s.player) return;
+            watch = new DeathWatch(s, during);
+        } else watch.see(s);
+        const d = watch.death();
+        if (d) {
+            seen = d;
+            if (session) session.died ??= d;
+            resolve(d);
+            return;
+        }
+        alive?.(s);
+    };
+    const off = sdk.onStateUpdate(see);
+    const s0 = sdk.getState();
+    if (s0) see(s0);
+    return {
+        died,
+        death: () => seen,
+        stop: () => {
+            if (!stopped) {
+                stopped = true;
+                off();
+            }
+            return seen;
+        },
+    };
+}
+
+/** `fn` raced against `stretch`'s death: on a death, the death's reason at once, whatever `fn` still waits for; else `fn`'s result or throw. Stops the stretch. */
+export async function raceDeath<T>(stretch: DeathStretch, fn: () => Promise<T>): Promise<T> {
+    try {
+        const r = await Promise.race([fn().then(v => ({ v }), (e: unknown) => ({ e })), stretch.died.then(() => ({ dead: true as const }))]);
+        const death = stretch.death();
+        if (death) throw new Error(death.reason);
+        if ('e' in r) throw r.e;
+        return (r as { v: T }).v;
+    } finally {
+        stretch.stop();
+    }
+}
+
+/** `fn` under a DeathWatch (watchFrames, raceDeath): a death ends it at once, on `session.died`, failing with its reason ('SCORED died <during>: ...'). */
+export function watchDeath<T>(sdk: Frames, session: { died?: Death } | undefined, during: string, fn: () => Promise<T>): Promise<T> {
+    return raceDeath(watchFrames(sdk, session, during), fn);
 }
 
 // ------------------------------------------------------------------ acting on it

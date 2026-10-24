@@ -13,6 +13,14 @@
 //
 // --landing-wait=N (diagnostic, not the run's path): the leg's first hop, N ticks, then the rest.
 //
+// A split part is named by its id (T14-15b): the chain's PLACEMENT split (runner/chain.ts), its stats
+// the whole leg's. --hp=N (::~hit down to N), --poison=SEVERITY (::~poison, cheat_other.rs2) and
+// --sharks=N (in place of a food leg's 6) stage the leg's start after the setup, untimed: the leg
+// upkeep's lab (rs/762: T14-15b poisoned at 20 HP with 3 sharks, hpMin must stay >= 15).
+// --hitlog writes a RESULT hits row: every damage_taken on SCORED during the leg (tick from the leg's
+// start, damage, its hitmark when the client sends one, the source and the attacker's name when in
+// sight), each hitpoints change no event explains, with SCORED's tile and the poison reading (rs/158).
+//
 // --drops=without|with|pair (the leg-row drops, runner/legs.ts `drops`): `without` carries exactly the
 // runes the hops spend and nothing the leg drops; `with` adds the ledger's drop outs (LEDGER_DROPS);
 // `pair` runs both on each run, without first. The leg's clock (travel's) includes the burst, so
@@ -29,7 +37,9 @@
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
 import type { BotActions } from '../../sdk/actions';
-import { dropsDue, legById, legsFor, runLeg, TILES, type LegDrops, type LegStep, type S21Altar } from '../runner/legs';
+import { dropsDue, legById, legsFor, runLeg, splitLeg, TILES, type LegDrops, type LegStart, type LegStep, type S21Altar } from '../runner/legs';
+import { PLACEMENT } from '../runner/chain';
+import { poisoned } from '../quests/segments';
 import { APE_ATOLL_ROOFS, glide, hopNeeds, lumdoBoat, pullLever, sail, travel, type Rune, type Runes, type TravelResult, type TravelSdk } from '../lib/travel';
 import { closeSession, logoutClean, openSession, type ClientKind } from '../lib/session';
 import { TickLog } from '../lib/ticks';
@@ -110,7 +120,9 @@ export function legSetup(l: LegStep, drops?: DropsMode): Setup {
     // TELE_RUNES' surplus would itself be dropped on a leg whose drops name that rune.
     if (drops) items.push(...Object.entries(need.runes).filter(([, n]) => (n ?? 0) > 0).map(([r, n]) => [`${r}rune`, n!] as [string, number]));
     else if (need.magic) items.push(...TELE_RUNES);
-    if (d.food) items.push(['shark', 6]);
+    if (sharks !== null) {
+        if (sharks > 0) items.push(['shark', sharks]);
+    } else if (d.food) items.push(['shark', 6]);
     if (need.knife) items.push(['knife', 1]);
     if (need.coins) items.push(['coins', 100]);
     const t = d.id === 'T20-21' ? S21_TALISMAN[d.dest === TILES.bodyAltar ? 'body' : 'nature'] : TALISMANS[d.id];
@@ -120,7 +132,31 @@ export function legSetup(l: LegStep, drops?: DropsMode): Setup {
         if (!ledger) throw new Error(`--drops=with: ${d.id} has no ledger drops (the drop legs: ${Object.keys(LEDGER_DROPS).join(', ')})`);
         items.push(...ledger);
     }
-    return { at: [d.start.x, d.start.z, d.start.level ?? 0], stats: STATS[d.id] ?? LATE, vars: VARS, items };
+    return { at: [d.start.x, d.start.z, d.start.level ?? 0], stats: STATS[d.id] ?? STATS[d.id.replace(/[ab]$/, '')] ?? LATE, vars: VARS, items };
+}
+
+/** A catalogue leg by id, or a part of one the chain splits (T14-15b: PLACEMENT's split of T14-15). */
+function legOf(id: string, catalogue: readonly LegStep[]): LegStep {
+    const whole = catalogue.find(x => x.def.id === id);
+    if (whole) return whole;
+    const part = /^(.*)([ab])$/.exec(id);
+    const p = part ? Object.values(PLACEMENT).find(x => 'leg' in x && x.leg === part[1]) : undefined;
+    if (!part || !p || !('leg' in p)) return legById(id, catalogue);
+    const [a, b] = splitLeg(legById(part[1]!, catalogue), p.afterHop, { ...(p.firstTicks ? { firstTicks: p.firstTicks } : {}), ...(p.firstSource ? { firstSource: p.firstSource } : {}) });
+    return part[2] === 'a' ? a : b;
+}
+
+/** --hp and --poison: SCORED's hitpoints and a poison at the leg's start, after the setup. */
+async function stage(sdk: BotSDK): Promise<void> {
+    if (stageHp !== null) {
+        const hp = sdk.getState()?.player?.hp ?? 0;
+        if (hp > stageHp) await cheat(sdk, `~hit ${hp - stageHp}`);
+        await waitUntil(sdk, s => (s.player?.hp ?? 99) <= stageHp!, { maxTicks: 10 });
+    }
+    if (stagePoison !== null) {
+        await cheat(sdk, `~poison ${stagePoison}`);
+        await waitUntil(sdk, s => s.gameMessages.some(m => /you have been poisoned/i.test(m.text)), { maxTicks: 10 });
+    }
 }
 
 /**
@@ -177,7 +213,57 @@ const [which = 'all', runsArg, altarArg] = rest.filter(a => !a.startsWith('--'))
 const client = (rest.find(a => a.startsWith('--client='))?.slice('--client='.length) ?? 'lite') as ClientKind;
 if (client !== 'lite' && client !== 'browser') throw new Error('--client must be lite or browser');
 const catalogue = legsFor({ s21Altar: altarArg === 'body' ? 'body' : 'nature' });
-const legs = which === 'all' ? catalogue : which === 'transports' ? [] : which.split(',').map(id => legById(id, catalogue));
+const legs = which === 'all' ? catalogue : which === 'transports' ? [] : which.split(',').map(id => legOf(id, catalogue));
+const numFlag = (k: string): number | null => {
+    const v = rest.find(a => a.startsWith(`--${k}=`))?.slice(k.length + 3);
+    if (v === undefined) return null;
+    if (!/^\d+$/.test(v)) throw new Error(`--${k} takes a whole number`);
+    return Number(v);
+};
+const stageHp = numFlag('hp');
+const stagePoison = numFlag('poison');
+const sharks = numFlag('sharks');
+const hitlog = rest.includes('--hitlog');
+
+interface HitRow {
+    tick: number;
+    kind: 'hit' | 'hp';
+    hp: number;
+    at: string;
+    poisoned: boolean;
+    damage?: number;
+    hitmark?: number;
+    source?: string;
+    delta?: number;
+}
+
+/** --hitlog: SCORED's damage frame by frame from now until stop() (see the header). */
+function startHitLog(sdk: BotSDK): { stop(): HitRow[] } {
+    const rows: HitRow[] = [];
+    const seen = new Set<string>();
+    const t0 = sdk.getState()?.tick ?? 0;
+    let lastHp = sdk.getState()?.player?.hp ?? null;
+    const off = sdk.onStateUpdate((s: BotWorldState) => {
+        const p = s.player;
+        if (!s.inGame || !p) return;
+        const at = `${p.worldX},${p.worldZ},${p.level}`;
+        const base = { hp: p.hp, at, poisoned: poisoned(s) };
+        let explained = 0;
+        for (const e of s.combatEvents) {
+            if (e.type !== 'damage_taken' || e.targetType !== 'player' || e.tick < t0) continue;
+            const key = `${e.tick}:${e.damage}:${e.sourceType}:${e.sourceIndex}:${e.observationId ?? ''}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            explained += e.damage;
+            const npc = e.sourceType === 'npc' ? s.nearbyNpcs.find(n => n.index === e.sourceIndex) : undefined;
+            const hitmark = (e as { hitmark?: number }).hitmark;
+            rows.push({ tick: e.tick - t0, kind: 'hit', ...base, damage: e.damage, ...(hitmark !== undefined ? { hitmark } : {}), source: npc ? `${npc.name} (npc ${npc.id}, index ${e.sourceIndex})` : `${e.sourceType} ${e.sourceIndex}` });
+        }
+        if (lastHp !== null && p.hp !== lastHp && p.hp - lastHp !== -explained) rows.push({ tick: s.tick - t0, kind: 'hp', ...base, delta: p.hp - lastHp });
+        lastHp = p.hp;
+    });
+    return { stop: () => (off(), rows) };
+}
 const runs = Number(runsArg ?? 2);
 // Diagnostic, not the run's path: --landing-wait=N runs a leg's first hop, waits N ticks, then the
 // rest, to show whether a click right after the landing is what costs a client ticks.
@@ -230,6 +316,7 @@ async function main(sdk: BotSDK, bot: BotActions): Promise<void> {
             let trace: ReturnType<typeof startTrace> | null = null;
             try {
                 await setup(sdk, legSetup(l, mode));
+                await stage(sdk);
                 const pre = l.preconditions(sdk.getState()!, undefined);
                 if (pre !== true) throw new Error(`precondition: ${pre}`);
                 if (mode) {
@@ -239,11 +326,14 @@ async function main(sdk: BotSDK, bot: BotActions): Promise<void> {
                     if (held.length !== want) throw new Error(`--drops=${mode}: the leg would drop ${held.length} slot(s) (${held.join(', ') || 'none'}), not ${want}`);
                 }
                 trace = startTrace(sdk);
+                const hits = hitlog ? startHitLog(sdk) : null;
                 const legLog = TickLog.memory('measure-legs');
                 const out = landingWait === null ? await runLeg(d, { sdk, bot, log: legLog, session: { name: botName, sessionId: 0 } as never }) : await runLegSplit(l, sdk, bot, landingWait);
                 trace.stop();
+                if (hits) result('hits', { id: d.id, run: r, client, hits: hits.stop() });
                 if (!out) throw new Error('already arrived at the start');
-                const bursts = ((legLog.rows.find(x => x.kind === 'travel')?.meta as { drops?: LegDrops[] } | undefined)?.drops ?? []);
+                const travelMeta = legLog.rows.find(x => x.kind === 'travel')?.meta as { drops?: LegDrops[]; ate?: number; cured?: number; start?: LegStart } | undefined;
+                const bursts = travelMeta?.drops ?? [];
                 row.bursts.push(bursts.reduce((a, b) => a + b.ticks, 0));
                 const hops = hopRows(out.segments, trace.sends, trace.frames, out.endTick);
                 result('hops', { id: d.id, run: r, client, hops, sends: trace.sends.map(s => ({ ...s, tick: s.tick - out.startTick })) });
@@ -251,7 +341,7 @@ async function main(sdk: BotSDK, bot: BotActions): Promise<void> {
                 const post = l.postconditions(sdk.getState()!, undefined);
                 if (post !== true) throw new Error(`postcondition: ${post}`);
                 row.runs.push(out.ticks);
-                result('leg', { id: d.id, run: r, client, ok: true, ticks: out.ticks, ...(mode ? { drops: mode, bursts } : {}), expected: d.expected.ticks, segments: out.segments, doors: out.doors, clicks: out.clicks, tiles: out.tiles, webTries: out.webTries, ate: out.ate, hpMin: out.hpMin, ...(out.fellBack ? { fellBack: out.fellBack } : {}), at: out.at });
+                result('leg', { id: d.id, run: r, client, ok: true, ticks: out.ticks, ...(mode ? { drops: mode, bursts } : {}), expected: d.expected.ticks, segments: out.segments, doors: out.doors, clicks: out.clicks, tiles: out.tiles, webTries: out.webTries, ate: travelMeta?.ate ?? out.ate, ...(travelMeta?.cured ? { cured: travelMeta.cured } : {}), ...(travelMeta?.start ? { start: travelMeta.start } : {}), hpMin: out.hpMin, hpEnd: sdk.getState()?.player?.hp ?? null, ...(out.fellBack ? { fellBack: out.fellBack } : {}), at: out.at });
             } catch (e) {
                 trace?.stop();
                 if (trace?.frames.length) {
