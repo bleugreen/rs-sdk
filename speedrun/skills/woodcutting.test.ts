@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CueWatcher, nameHash, readCue, writeJsonAtomicSync } from '../helpers/altar-cue';
+import { CueWatcher, CueWriter, nameHash, readCue, writeJsonAtomicSync } from '../helpers/altar-cue';
 import { boneServer, groupLoadsDone, readBoneStatuses, type BonePhase, type BoneStatus } from '../helpers/bone-giver';
 import type { BotWorldState, InventoryItem, NearbyPlayer, TradeItem } from '../../sdk/types';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
@@ -1304,6 +1304,31 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         expect(g.receives.map(r => r.partner)).toEqual(['cairn_b02', 'cairn_b03', 'cairn_b01']);
     });
 
+    test("the cue names SCORED's site (rs/635): the oak stand through the oak band, the willows' from the oak band's end (SCORED sets off), and through the willow band", async () => {
+        const dir = newDir();
+        const g = group(dir);
+        const tile = (t: readonly [number, number]) => ({ x: t[0], z: t[1] });
+        // The cue each load is taken under, read as the givers read it.
+        const named: unknown[] = [];
+        const receive = ((sdk: FakeSdk, partner: string, opt: { want?: unknown }) => {
+            named.push(readCue(dir)?.site);
+            return (g.fn as unknown as (s: FakeSdk, p: string, o: { want?: unknown }) => Promise<ReceiveResult>)(sdk, partner, opt);
+        }) as unknown as WoodcuttingOptions['receive'];
+        const h = harness(inSight(state({ level: 60 })), { bury: true, bones: { group: GROUP }, cueDir: dir, receive }, buryRuns(1));
+        const unfollow = g.follow(h.sdk);
+        await h.byName(OAKS).run(h.ctx);
+        const atOaks = named.length;
+        expect(atOaks).toBeGreaterThan(0);
+        expect(readCue(dir)).toMatchObject({ site: tile(SITES.willow.stand) });
+        expect(readCue(dir)!.stop).toBeUndefined();
+        h.sdk.push({ player: { ...h.sdk.getState()!.player!, worldX: SITES.willow.stand[0], worldZ: SITES.willow.stand[1] } });
+        await h.byName(WILLOWS).run(h.ctx);
+        unfollow();
+        expect(named.length).toBeGreaterThan(atOaks);
+        expect(named).toEqual([...Array(atOaks).fill(tile(SITES.oak.stand)), ...Array(named.length - atOaks).fill(tile(SITES.willow.stand))]);
+        expect(readCue(dir)).toMatchObject({ stop: true, site: tile(SITES.willow.stand) });
+    });
+
     test('while no giver serves (all four away) the load waits on observed ticks, then takes the first giver back', async () => {
         const dir = newDir();
         const g = group(dir, { start: {} });
@@ -1546,7 +1571,9 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         const SESSION = 'run-20261023-213447.S07.bone';
         // The stopped process: its cue (seq 1), and the givers' statuses in its session. b04 served load 1 and went
         // to restock; b03, the oldest ready, waits at the willows; b01 and b02 wait at the oaks.
-        new BoneCue(dir, SESSION).write(baseState({ tick: 1312 }), 'cairn_test', SITES.oak.stand);
+        // Attempt 3's cue, written before cues named a site.
+        new CueWriter(dir, 'cairn_test', S07_BONE_CUE, SESSION).write({ beacons: [{ tick: 1312, ms: Date.now() }], turns: [] });
+        expect(readCue(dir)!.site).toBeUndefined();
         const status = (account: string, o: Partial<BoneStatus>) =>
             writeJsonAtomicSync(join(dir, `bones-${account}.json`), { v: 1, account, phase: 'waiting', held: 23, n: 23, trades: 0, bounces: 0, tile: null, readyAt: null, session: SESSION, final: account === 'cairn_b04', loads: 19, ms: Date.now(), ...o });
         status('cairn_b04', { phase: 'restock', held: 0, trades: 1 });
@@ -1576,7 +1603,10 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
             stop();
         }
         const cue = readCue(dir)!;
-        expect([cue.session, cue.seq]).toEqual([SESSION, 2]);
+        // seq 2: the resumed band's start, naming the oaks (the load is taken under it); seq 3: its end, naming the willows.
+        expect([cue.session, cue.seq]).toEqual([SESSION, 3]);
+        expect(named).toEqual([{ x: SITES.oak.stand[0], z: SITES.oak.stand[1] }]);
+        expect(cue.site).toEqual({ x: SITES.willow.stand[0], z: SITES.willow.stand[1] });
         expect(tried).toEqual(['cairn_b01']);
         // The row numbers the group's load: 2, counted on from the persisted session's statuses.
         expect(loadRows(h)[0]!.meta).toMatchObject({ load: 2, giver: 'cairn_b01', received: 23, repicks: 0 });
