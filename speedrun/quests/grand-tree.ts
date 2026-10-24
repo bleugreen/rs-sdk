@@ -672,6 +672,8 @@ const name = (letter: string) => `${stepId}:${letter}`;
 export function steps(input: Options = {}): Step<any>[] {
     const opts = resolveOptions(input);
     const note = (ctx: Ctx, step: string, meta: Record<string, unknown>) => logNote(ctx.log, ctx.session, step, meta);
+    // A zero-tick, tick-stamped probe row: where in a segment the ticks go.
+    const mark = (ctx: Ctx, step: string, what: string) => note(ctx, step, { mark: what, at: pos(ctx.sdk) });
 
     return [
         {
@@ -706,7 +708,9 @@ export function steps(input: Options = {}): Step<any>[] {
                 if (!(atHazelmere(sdk.getState()!) && pos(sdk).level === 1)) {
                     if (pos(sdk).x < 2600) note(ctx, name('B-hazelmere'), { teleport: await ardougneTeleport(sdk) });
                     await go(ctx, TILES.hazelmereLadderFoot, 1);
+                    mark(ctx, name('B-hazelmere'), 'at the ladder foot');
                     await loc(sdk, "Hazelmere's ladder up", TILES.hazelmereLadder, /^climb-up$/i, lvl(1), { maxTicks: 20 });
+                    mark(ctx, name('B-hazelmere'), 'up the ladder');
                 }
                 await talk(sdk, opts, /^Hazelmere$/i, { shape: '9c', until: s => invCount(s, ITEM.scroll) > 0 });
             },
