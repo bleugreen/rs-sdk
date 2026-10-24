@@ -537,6 +537,8 @@ export interface BotWorldState extends BotState {
     fastKbdPrayerOff?: { tick: number; prayerIndices: number[] };
     /** The in-page tick program running in the browser page, else the last one to run (bot/programs). */
     program?: ProgramStatus | null;
+    /** The page's ?launch= id (GatewayConnection getLaunchId); absent when it was opened without one. */
+    launch?: string;
     dialog: DialogState & {
         allComponents?: Array<{ id: number; type: number; buttonType: number; option: string; text: string }>;
     };
