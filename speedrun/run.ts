@@ -86,6 +86,7 @@ import { buildChain, chainPartners, chainProbes, chainSeams, ledgerRows, missing
 import { exitStopIsFinal, prepareCueDir, RunCues } from './runner/cue-keeper';
 import { deliveryOwnerFor } from './runner/delivery-owner';
 import { dropRecovery } from './runner/drop-relog';
+import { pageHoldStandDown } from './runner/page-hold';
 import { awaitPlayer, LOST_AFTER_TICKS, sessionLink } from './runner/resume';
 import type { StepRecord } from './runner/step';
 import { formatCensus, lastCensus, runeCensus, runePlan, runesHeld, type RuneCensus, type RunePlan } from './runner/rune-census';
@@ -96,7 +97,10 @@ import { AttemptRecord } from './runner/attempt-record';
 import { SCORED_LOGIN, SCORED_RELOG } from './runner/scored-relog';
 import { ackRow, deathGate, deathRow, diedResult, operatorLine } from './runner/death';
 
-/** Ticks past the link's stale bound before the watchdog acts, with the drop recovery on. */
+/**
+ * Ticks past the link's stale bound before the watchdog acts, with the drop recovery on; while the page
+ * still says in game the watchdog stands down for the hold window as well (runner/page-hold.ts).
+ */
 export const WATCHDOG_AFTER_LINK_TICKS = 10;
 
 export class UsageError extends Error {
@@ -670,8 +674,15 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
         // The link (LOST_AFTER_TICKS) sees a stale tick first and drop-relog pauses the watchdog; at the
         // same bound the watchdog's logout and relaunch won the race on the lab (rs/511).
         ...(o.relogs ? { staleTicks: LOST_AFTER_TICKS + WATCHDOG_AFTER_LINK_TICKS } : {}),
+        // A page that still says in game inside its hold window is never logged out or relaunched
+        // (runner/page-hold.ts): its original socket may resume.
         ...(page && recovery
-            ? { standDown: async () => (recovery.acting() && (await page()) === false ? 'the page is out of the world: the running drop recovery relogs it in page' : null) }
+            ? {
+                  standDown: async at => {
+                      if (recovery.acting() && (await page()) === false) return 'the page is out of the world: the running drop recovery relogs it in page';
+                      return pageHoldStandDown(at, page);
+                  },
+              }
             : {}),
     });
     const tabMem = startRunTabMemory(session, log, o.tabMemory);

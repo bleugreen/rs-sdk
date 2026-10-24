@@ -247,6 +247,8 @@ export interface Link {
  * The demo can go silent for ~2 s with nothing wrong (1,987 ms with no frames,
  * 07:50 PDT, rs/102), so silence alone counts only past ~5 s. A real drop is
  * seen sooner through the socket closing (the lite runner exits at once).
+ * Declaring the drop here cuts the step; it sends nothing. With the page still in game run.ts's drop
+ * recovery then waits out runner/page-hold.ts's window before anything logs in or relaunches.
  */
 export const LOST_AFTER_TICKS = 17;
 
@@ -514,7 +516,14 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             if (drops > (opts.maxDrops ?? 20)) throw new Error(`gave up after ${drops - 1} drops (last: ${reason})`);
             const r0 = Date.now();
             const dropCounter = tickCounter(session);
-            await (opts.recover ? opts.recover(reason, { step: current, tick: dropTick }) : opts.link.restored(opts.restoreTimeoutMs ?? 30 * 60_000));
+            // One (drop) row per drop, written whether the recovery brings the session back or throws.
+            try {
+                await (opts.recover ? opts.recover(reason, { step: current, tick: dropTick }) : opts.link.restored(opts.restoreTimeoutMs ?? 30 * 60_000));
+            } catch (e) {
+                const failed = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+                row(opts.log, session, DROP_STEP, dropTick, dropCounter, r0, { attempt, reason, step: current, recoverMs: Date.now() - r0, failed }, false);
+                throw e;
+            }
             row(opts.log, session, DROP_STEP, dropTick, dropCounter, r0, { attempt, reason, step: current, recoverMs: Date.now() - r0 }, false);
             opts.onEvent?.({ kind: 'restored', attempt, wallMs: Date.now() - r0 });
         }

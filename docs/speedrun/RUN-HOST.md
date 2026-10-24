@@ -2026,8 +2026,13 @@ rs/41**.
 What the operator sees:
 
 - **Every session drops.** In the live view SCORED's client draws `Connection lost` and `Please
-  wait - attempting to reestablish` once 15 s pass without a packet, tries one login of its own,
-  and with the server down falls back to the title screen (r: `lostCon` in Client.ts). The helpers
+  wait - attempting to reestablish` within about a second of its socket closing, or, on a socket
+  that stays open and silent, once 240 s pass without a packet (`NO_DATA_TIMEOUT_MS`,
+  server/webclient/src/client/NoDataTimeout.ts; it was 15 s before attempt 4, then 120 s, which TCP
+  retransmission backoff overran on a 60 s outage: 121.6 s of silence). It tries one login
+  of its own, and with the server down falls back to the title screen (r: `lostCon` in Client.ts).
+  While the page still says in game, run.ts sends nothing for that long plus a 15 s margin
+  (speedrun/runner/page-hold.ts): a network hold costs only its ticks when the socket resumes. The helpers
   and the fleet drop at the same moment.
 - **The outage from outside:** `/playercount` stops answering for ~30 s, then answers 0; logins are
   refused with code 8 for ~1.5-2.5 min; the count refills over ~10 min (r:
@@ -2148,8 +2153,9 @@ fresh run, with no earlier sessions and no `--from`, clears them (run.ts:641-643
 re-run; the entries persist in the run dir.** **There is no operator override** (r, rs/186 at 9f2efb03, which rs/598
 does not touch): the limits are fixed constants (`PLANNED_RELOGS = 1`, `UNPLANNED_RELOGS = 3`,
 `runner/relog-budget.ts:22-24`), run.ts builds the budget with them (run.ts:616) and no flag or
-config sets them; the gate reads `<run dir>/relogs.json` fresh, every entry whose `kind` is not
-`planned` counting as unplanned, and the file is neither signed nor checked beyond parsing, so the
+config sets them; the gate reads `<run dir>/relogs.json` fresh, every `unplanned` and `manual` entry
+counting as unplanned (`planned` is S21's; `adopt`, a session found back in the world with no login
+sent, is never counted), and the file is neither signed nor checked beyond parsing, so the
 only way past the gate is a hand edit of `relogs.json`, which no code or document sanctions. **Main's
 ruling (13:20Z via rs/158, verbatim): 'past S21 + 3 unplanned relogs the start gate refuses; do not
 edit relogs.json unless main says so in the channel, with the margin stated; the planned S21 entry is
@@ -2429,7 +2435,13 @@ the confirmed logout, the deep-Wilderness resume).
 - **run.ts adopts the operator's session and never relogs over it**: it starts no relog while the
   operator holds the lock, then finds the page in the world, adopts that session
   (`session.ts` `adoptSession`) and resumes as after its own relog. A page it finds already back
-  in the world is recorded as a manual relog, against the same budget.
+  in the world is recorded as an `adopt` entry, charged to no budget (no login was sent).
+- **'Your account is already logged in'**: after a network drop that left the socket silent, the
+  server holds SCORED's old player for up to 1,000 ticks and refuses every login. run.ts's drop
+  recovery holds the relog lock and retries every 65 s for up to 8 min, logging
+  `[relog] the server still holds SCORED in the world ...` each time; relog-now refuses meanwhile.
+  The login that lands is one unplanned relog. Past 8 min the run stops as for any failed relog,
+  with its `(drop)` row written.
 - **The budget**: S21's planned relog plus 3 unplanned, **run.ts's and the operator's together**.
   Past it run.ts stops with `relog budget spent` as its reason (`RelogBudgetSpent`).
 - **S21's planned logout** goes through `session.ts` `logoutClean`, which confirms the account out

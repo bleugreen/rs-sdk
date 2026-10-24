@@ -26,6 +26,8 @@ import type { BotWorldState } from '../../sdk/types';
 import { writeAnvilPlan } from '../helpers/anvil';
 import { CueWriter, writeJsonAtomicSync, writeTopUpAsk, type CueScope } from '../helpers/altar-cue';
 import { GO_FILE, type GoCue } from '../helpers/fm-row';
+import { muleDelivery } from '../helpers/mule-itinerary';
+import { PRE_REQUEST_TILES } from '../helpers/mule-readiness';
 import { INVENTORY_SIZE } from '../lib/items';
 import { questDone, type QuestKey } from '../lib/quests';
 import type { GiveSpec } from '../lib/trade';
@@ -65,9 +67,8 @@ import * as woodcutting from '../skills/woodcutting';
 import { MANIFEST, parseLedger, type LedgerRow } from '../tools/slot-ledger';
 import { h4mLoadRows, parseFallbacks } from '../helpers/mule-ledger';
 import { XP_RATE, xpForLevel } from '../lib/xp';
-import { READY_MAX_TICKS } from './delivery-owner';
 import type { AttemptRecord } from './attempt-record';
-import { askFor, handOffFrom, handOffStep, planHandOff, rollbackWitnesses, type HandOffCue, type HandOffPlan } from './handoff';
+import { askFor, handOffFrom, handOffStep, planHandOff, rollbackWitnesses, type HandOffPlan, type Meeting } from './handoff';
 import { legById, legsFor, splitLeg, type LegStep } from './legs';
 import { type Probe, stepProbes } from './resume';
 import { scoredLoginStep, scoredLogoutStep } from './scored-relog';
@@ -126,6 +127,7 @@ export interface RunConfig {
      * S07's close target, the Prayer level its last band closes at and its early last load fires at
      * (an integer from 1 to 99; absent: S07_PRAYER_TO). Below 99 it turns on H4m: S09's bury steps
      * bury the rest from H4m's carrier (`partners.H4m`) and carry the chain's Prayer 99 (h4mPlan).
+
      */
     s07PrayerTo?: number;
     /** S18's courier (H14.x) and the food count below which it tops up. */
@@ -416,6 +418,13 @@ export const MULE_ROWS: readonly string[] = ['H1', 'H4', 'H4k', 'H6', 'H4p', 'H7
  * H12 Monkey Madness's (quests/monkey-madness.ts gtSwap).
  */
 export const KIT_SEGMENTS: Readonly<Record<string, string>> = { H4: 'S05:A-h4-swap', H12: 'S15:A-narnode' };
+
+/**
+ * A placed mule row's meeting (handoff.ts Meeting): its carrier's stand (mule-itinerary.ts, the tile
+ * the carrier's package and readiness bind) and the carrier's own reach, PRE_REQUEST_TILES. Not the
+ * leg's arrival: H1 (S01) and H21d (after S25a) have no leg before them.
+ */
+export const muleMeeting = (row: string): Meeting => ({ tile: muleDelivery(row).at, within: PRE_REQUEST_TILES });
 
 /** A mule package's scope: for family 'mule' the step is the hand-off id (rs/158, rs/186), every other family keeps the step id. */
 export const muleScope = (row: string): CueScope => ({ step: row, family: 'mule' });
@@ -1022,12 +1031,6 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...steps('S17', pick('agility', agility.steps({ to: 99 }), ['agility:wilderness'])),
     ];
 
-    /**
-     * An H4m load's cue: the step's own mule cue (cueMuleRows opens it fresh around the step, CueKeeper
-     * waiting on the carrier's readiness), so the trade need not see the carrier at its precondition,
-     * only once the cue is open. SCORED sends the request (no standing one is waited for).
-     */
-    const h4mCue = (row: string): HandOffCue => ({ scope: muleScope(row), open: ctx => o.cues.open(muleScope(row), ctx, { fresh: false }), waitTicks: READY_MAX_TICKS, requestTicks: 0 });
     // Hand-offs: each superseded by the next milestone's own `done` (ruling 3), computed here, and
     // done once the attempt's record has it (handoff.ts, Resume).
     const out: ChainStep[] = [];
@@ -1044,13 +1047,16 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         const scope = CANNON_ROWS[e.row];
         // A row with a `to N` entry is served by a standing giver that sizes it from SCORED's ask (mule.ts, rs/429), scoped to the row.
         const ask = !scope && plan.receive.some(r => r.topUp) ? { scope: muleScope(e.row), ask: { dir: muleCueDir(cfg) } } : undefined;
-        const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : e.mule ? h4mCue(e.row) : ask;
+        const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : ask;
+        // H4m's loads are delivery rows too: rs/603's meeting places SCORED within reach of their stand
         const muleRow = !scope && (e.mule ?? MULE_ROWS.includes(e.row));
         const beforeTrade = muleRow ? { beforeTrade: () => { o.cues.refresh?.(muleScope(e.row)); } } : {};
         // H4m's loads (the fallback table) follow H4p in the walk
         const at = e.plan ? 'H4p' : e.row;
         const witnesses = rollbackWitnesses(plan, rows.slice(rows.findIndex(r => r.row === at) + 1), row => PLACEMENT[row] !== undefined);
-        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.record ? { record: o.record.handOffs, witnesses } : {}), ...(cue ? { cue } : {}), ...beforeTrade }), cue ? { cue: cue.scope } : {});
+        // A carrier may come after SCORED: its cue's ready gate waits for it, so the step asks only that SCORED be at the meeting.
+        const meeting = muleRow ? { meeting: muleMeeting(e.row) } : {};
+        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.record ? { record: o.record.handOffs, witnesses } : {}), ...(cue ? { cue } : {}), ...beforeTrade, ...meeting }), cue ? { cue: cue.scope } : {});
         const placed = e.mule ? walkedTo(s, H4M_TRADE_TILE) : s;
         out.unshift(muleRow ? mule(placed, e.row) : placed);
     }
