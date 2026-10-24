@@ -93,6 +93,32 @@ describe('runSteps', () => {
         expect(boundaries(log.rows).map(r => r.meta?.to)).toEqual(['a', 'b', '(logout)']);
     });
 
+    test('atStop runs at the stop boundary, still in the world, with the step it resumes at; a throw there still logs out', async () => {
+        for (const fail of [false, true]) {
+            const { session, stop } = fakeSession();
+            const log = TickLog.memory('t');
+            const c = { trace: [] as string[] };
+            const order: string[] = [];
+            const steps = [step('a', { logoutSafe: true }), step('b'), step('c')];
+            const r = await runSteps(session, steps, {
+                log, c, shouldStop: () => true,
+                atStop: (_s, next, index) => { order.push(`atStop ${next.name} #${index}`); if (fail) throw new Error('census failed'); },
+                logout: async () => { order.push('logout'); },
+            });
+            stop();
+            expect(r).toEqual({ completed: 1, resumeAt: 1 });
+            expect(order).toEqual(['atStop b #1', 'logout']);
+        }
+    });
+
+    test('atStop is not called when the run does not stop', async () => {
+        const { session, stop } = fakeSession();
+        let called = 0;
+        await runSteps(session, [step('a', { logoutSafe: true }), step('b')], { log: TickLog.memory(), c: { trace: [] }, shouldStop: () => false, atStop: () => { called++; } });
+        stop();
+        expect(called).toBe(0);
+    });
+
     test('from resumes at an index or a step name', async () => {
         expect(resolveStart([{ name: 'a' }, { name: 'b' }], 'b')).toBe(1);
         expect(resolveStart([{ name: 'a' }, { name: 'b' }], 1)).toBe(1);

@@ -162,6 +162,12 @@ export interface RunStepsOptions<C> {
     /** How to leave the world at a stop (default: logoutClean). */
     logout?: (session: RunnerSession) => Promise<unknown>;
     /**
+     * Called at a stop's logout-safe boundary, still in the world, just before the logout, with the
+     * step the stop resumes at (run.ts: the `(census)` row of the pack that step will start with). A
+     * throw is reported and the logout goes ahead.
+     */
+    atStop?: (session: RunnerSession, next: Step<C>, index: number) => void;
+    /**
      * 'resume' enters the first step through its `resume` handler (default
      * `run`) without its precondition check: the resume walk already found it in
      * progress, which its start preconditions need not admit.
@@ -335,6 +341,11 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
             if (opts.signal?.aborted) return { completed: i + 1 - start, resumeAt: i + 1, aborted: true };
             if (step.logoutSafe && i + 1 < steps.length && shouldStop()) {
                 closeBoundary(opts.log, session, boundary, '(logout)', i + 1);
+                try {
+                    opts.atStop?.(session, steps[i + 1]!, i + 1);
+                } catch (e) {
+                    console.error(`[runSteps] at the stop before ${steps[i + 1]!.name}: ${e instanceof Error ? e.message : String(e)}; logging out anyway`);
+                }
                 await logout(session);
                 return { completed: i + 1 - start, resumeAt: i + 1 };
             }

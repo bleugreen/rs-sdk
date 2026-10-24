@@ -484,7 +484,9 @@ describe('cues', () => {
             S15: 'H12/mule', H13: 'H13/mule', H14: 'H14/mule', S18: 'S18/courier', H15: 'H15/mule', H16: 'H16/mule', H18: 'H18/mule', H19: 'H19/mule', H20: 'H20/mule', S25a: 'S25a/anvil', H21d: 'H21d/mule', H22: 'H22/mule',
             H23: 'S27/cannon', S27: 'S27/cannon',
         });
-        expect(chain.filter(s => s.id === 'S07' && s.kind === 'step').every(s => s.cue?.family === 'bone')).toBe(true);
+        // The axe drop takes nothing from the givers, so it is the one S07 step outside their cue.
+        expect(chain.filter(s => s.id === 'S07' && s.kind === 'step' && !s.helperFree).every(s => s.cue?.family === 'bone')).toBe(true);
+        expect(chain.filter(s => s.id === 'S07' && s.helperFree).map(s => [s.name, s.cue])).toEqual([['woodcutting:drop-axe', undefined]]);
         // A giver group's S07 cue is woodcutting.ts's own (BoneCue): the chain opens none for it.
         const grouped = buildChain({ ...CONFIG, bones: { group: ['cairn_b01', 'cairn_b02', 'cairn_b03', 'cairn_b04'], lastLoad: 21 } }, { cues: recorder().cues });
         expect(grouped.filter(s => s.id === 'S07').map(s => s.name)).toEqual(chain.filter(s => s.id === 'S07').map(s => s.name));

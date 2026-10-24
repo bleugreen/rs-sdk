@@ -2361,6 +2361,32 @@ Rehearsal (b)'s re-run, which cast T12-13a's Ardougne teleport a second time, re
 [gate] REFUSED rune census: rune census from #109 S13:A-lawgof-start: law rune short by 2: held 3, needed 5 before H11 brings more (#122 H11 hand-off); #121 T13-14a would run short (needs 2, 0 left) [spent by #119 S13:K-nulodion 1, #120 S13:L-lawgof-complete 2, #121 T13-14a 2]
 ```
 
+The gate line names the row it read: `taken as that step started` (a step's own census, which misses
+what that step spent after it), `written at the stop's logout boundary`, or `labelled "..."` for a
+row the operator appended with its own `label`. The live census after login stays the one of record.
+
+**A planned stop and resume** (a first Ctrl-C, or a host-reservation pause; rs/753, from attempt 4's
+renderer reset). At the logout-safe boundary the stop writes a `(census)` row of the pack the next
+step will start with (`label: "stop at the logout boundary"`, `runner/chain.ts` `censusAtStop`),
+before its logout, so the next start's pre-login census reads the true pack: in attempt 4 the last
+row was the one before the willow band, with no runes, and `--from=23` was refused. The exit line
+names where it resumes: `[run] resume: run the same command again (the walk starts from game state),
+or with --from=N (#N <step>)`. N is the step after the boundary the stop logged out at, so here
+`--from` reruns nothing (unlike `--from` after a StepError, above). The role-phase gate's path starts
+where the census does (`--from`, else the stop's row), and it leaves out a step that takes nothing
+from its helpers (`helperFree`: S07's `woodcutting:drop-axe`, which is also outside the bone cue). A
+stop after the willow band therefore resumes into the axe drop without the finished bone givers'
+phase `off` refusing it, and no hand-written drop is needed. **The planned tab reset** is
+`--close-tab-on-stop` on the launch line plus one Ctrl-C. After that stop or pause (exit 4 or 5) with
+SCORED confirmed out, run.ts waits up to 30 s for the world's `/playerpositions` to drop SCORED, then
+closes its tab (about:blank opened first if it is Chrome's last window) and prints `[run] tab reset:
+...`, or why it left the tab open. Never send the second Ctrl-C.
+
+Every step, leg, hand-off, failure and `(census)` row in the tick log carries SCORED's `hp` and
+`maxHp` at the row's end, plus a `poison` note (`seen`, `firstTick`, `lastTick`, `source`, `text`)
+when a game message matching /poison/i, or a client's `poisonSeenAt` hitmark tick, fell inside it
+(`lib/attempt.ts` `VitalsTracker`). A death is then read from the log alone.
+
 `--dry-run` prints the whole census after the seam list, one line per rune held or needed (held,
 needed until its next supply, margin), so the host reads it before any `--from` without logging in.
 A refusal goes to main like any other: the plan already passes at every step of a planned run
