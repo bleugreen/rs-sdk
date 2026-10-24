@@ -6,7 +6,7 @@ import { IF_RUN_ON, runIsOn } from './run-mode';
 import { sleep, TickPeriod } from './wait';
 import { loginTokenProof } from '../../server/webclient/login-token';
 import type { BotWorldState, PlayerState } from '../../sdk/types';
-import type { Death } from '../runner/death';
+import type { Death, DeathSign } from '../runner/death';
 import { RESPAWN } from './travel';
 import {
     ABANDON_SENDS,
@@ -461,8 +461,8 @@ describe('logoutClean sees a death while the logout holds', () => {
                     const t = s.tick + 1;
                     return {
                         player: { ...s.player!, ...at(t, s.player!) },
-                        gameMessages: [...s.gameMessages, ...say(t).map(text => ({ type: 0, text, sender: '', tick: t }))],
-                    };
+                        gameMessages: [...s.gameMessages, ...say(t).map(text => ({ type: 0, text, sender: '', tick: t, fromSelf: false }))],
+                    } as Partial<BotWorldState>;
                 });
             }
             return r;
@@ -493,7 +493,7 @@ describe('logoutClean sees a death while the logout holds', () => {
     });
 
     test('any one sign alone is a death: the message, hp 0, the client counting a respawn, a jump onto the respawn square with hp restored', async () => {
-        const cases: [string, (t: number) => Partial<PlayerState>, (t: number) => string[]][] = [
+        const cases: [DeathSign, (t: number) => Partial<PlayerState>, (t: number) => string[]][] = [
             ['message', () => ({}), t => (t === 245 ? ['Oh dear you are dead!'] : [])],
             ['dead', t => (t === 240 ? { hp: 0, isDead: true } : {}), () => []],
             // A client without isDead: hp 0 of a maxHp is the same sign.

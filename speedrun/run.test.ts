@@ -2,7 +2,7 @@ import { fakeCdp, fakeWorld } from './lib/fake-cdp';
 import { baseState, FakeSdk } from './lib/fake-sdk';
 import { deathGate, deathKey, DEATH_STEP, EXIT_DIED, ackRow } from './runner/death';
 import type { ReservationWatch } from './lib/host-reservation';
-import type { PlayerState } from '../sdk/types';
+import type { BotWorldState, PlayerState } from '../sdk/types';
 import { TickPeriod } from './lib/wait';
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
@@ -558,16 +558,16 @@ describe('a death while the logout after a refused step holds (rs/709, attempt 3
         // Hit every tick once S14 has refused: down a hitpoint a tick, dead 4 ticks, then the Lumbridge respawn and the engine's message.
         let refused = false;
         let deadAt: number | null = null;
-        const script = (s: typeof sdk.state & {}) => {
+        const script = (s: BotWorldState): Partial<BotWorldState> => {
             const t = s.tick + 1;
             const p = s.player!;
             if (p.worldX === 3222) return {};
-            if (!refused || p.hp > 1) return { player: { ...p, hp: refused ? p.hp - 1 : p.hp, combat: { ...fighting, lastDamageTick: t } } };
+            if (!refused || p.hp > 1) return { player: { ...p, hp: refused ? p.hp - 1 : p.hp, combat: { ...p.combat, ...fighting, lastDamageTick: t } } as PlayerState };
             deadAt ??= t;
             if (t < deadAt + 4) return { player: { ...p, hp: 0, isDead: true } };
             return {
-                player: { ...p, worldX: 3222, worldZ: 3218, x: 3222, z: 3218, hp: 42, isDead: false, lifeId: 2, respawnCount: 1, combat: { ...fighting, inCombat: false, targetIndex: -1, targetType: 'none' } },
-                gameMessages: [...s.gameMessages, { type: 0, text: 'Oh dear you are dead!', sender: '', tick: t }],
+                player: { ...p, worldX: 3222, worldZ: 3218, x: 3222, z: 3218, hp: 42, isDead: false, lifeId: 2, respawnCount: 1, combat: { ...p.combat, inCombat: false, targetIndex: -1, targetType: 'none' } } as PlayerState,
+                gameMessages: [...s.gameMessages, { type: 0, text: 'Oh dear you are dead!', sender: '', tick: t, fromSelf: false }],
             };
         };
         const timer = setInterval(() => { if (!clicked) sdk.tick(script); }, 5);
