@@ -1,11 +1,15 @@
 import { preLoginDeadline, preLoginReady, type RunecraftOptions } from '../skills/runecraft';
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
-import { fakeCdp } from './fake-cdp';
+import { fakeCdp, fakeWorld } from './fake-cdp';
 import { FakeSdk, flush, runToggleServer } from './fake-sdk';
 import { IF_RUN_ON, runIsOn } from './run-mode';
 import { sleep, TickPeriod } from './wait';
 import { loginTokenProof } from '../../server/webclient/login-token';
 import {
+    ABANDON_SENDS,
+    describeAbandon,
+    PAGE_ENDED_HOLD_MS,
+    waitOwnLaunch,
     IF_RETALIATE_OFF,
     IF_RETALIATE_ON,
     GATEWAY_BACK_GRACE_TICKS,
@@ -1339,5 +1343,229 @@ describe("settleScene: a launched browser tab's scene, the same wait as the resu
         expect(s.scene?.ready).toBe(false);
         expect(warn.mock.calls.join(' ')).toContain('scene was not ready');
         warn.mockRestore();
+    });
+});
+
+describe('abandonClient on a browser tab: a logout through the page, confirmed by the page and the world (rs/668)', () => {
+    let prevTick: string | undefined;
+    beforeEach(() => {
+        prevTick = process.env.SPEEDRUN_TICK_MS;
+        process.env.SPEEDRUN_TICK_MS = '30';
+    });
+    afterEach(() => {
+        if (prevTick === undefined) delete process.env.SPEEDRUN_TICK_MS;
+        else process.env.SPEEDRUN_TICK_MS = prevTick;
+    });
+
+    /** A browser session on a fake tab whose world lists the account; the logout button takes it out of both. */
+    function tab(over: Partial<Session> = {}) {
+        const cdp = fakeCdp('srtest', 'x');
+        const world = fakeWorld();
+        const f = fakeSession({ client: 'browser', child: null, launchTag: null, ...over } as Partial<Session>);
+        (f.session as { env: Record<string, string> }).env = { BOT_USERNAME: 'srtest', PASSWORD: 'x', CDP_URL: cdp.origin, CLIENT_URL: `${cdp.origin}/bot?server=${world.host}` };
+        world.players.add('srtest');
+        cdp.hooks.onClickComponent = id => {
+            if (id !== LOGOUT_BUTTON) return;
+            cdp.client.ingame = false;
+            world.players.delete('srtest');
+        };
+        return { ...f, cdp, world, stop: () => (cdp.stop(), world.stop()) };
+    }
+
+    test('in game: one click inside the page, none through the gateway, confirmed once the world drops the account', async () => {
+        const t = tab();
+        try {
+            const r = await abandonClient(t.session);
+            expect(r).toMatchObject({ ok: true, sends: 1, takeovers: 0 });
+            expect(t.cdp.page.clicks).toEqual([LOGOUT_BUTTON]);
+            expect(t.sdk.sent).toEqual([]);
+            expect(t.session.expectInWorld).toBe(false);
+            expect(describeAbandon(r!)).toMatch(/^logged out, confirmed \(1 logout click/);
+        } finally {
+            t.stop();
+        }
+    });
+
+    test('a click that does not take is sent again each LOGOUT_CONFIRM_TICKS, at most ABANDON_SENDS times, then reported', async () => {
+        const t = tab();
+        t.cdp.hooks.onClickComponent = () => {};
+        try {
+            const r = await abandonClient(t.session, undefined, { timeoutMs: 30_000 });
+            expect(r).toMatchObject({ ok: false, sends: ABANDON_SENDS });
+            expect(r!.reason).toMatch(/still in game after 15 logout clicks/);
+            expect(t.cdp.page.clicks).toHaveLength(ABANDON_SENDS);
+            // Gave up one re-send window after the last click, not at the wall bound.
+            expect(r!.wallMs).toBeLessThan(15_000);
+        } finally {
+            t.stop();
+        }
+    });
+
+    test("the page out and its body still listed (04:2xZ): one gated takeover login in page, then the click logs it out", async () => {
+        const t = tab();
+        t.cdp.client.ingame = false;
+        t.cdp.hooks.onAutoLogin = () =>
+            void setTimeout(() => {
+                t.cdp.client.loginInProgress = false;
+                t.cdp.client.ingame = true;
+            }, 50);
+        const gate = { asked: 0, released: 0 };
+        try {
+            const r = await abandonClient(t.session, undefined, {
+                takeover: async () => {
+                    gate.asked++;
+                    return () => void gate.released++;
+                },
+            });
+            expect(r).toMatchObject({ ok: true, sends: 1, takeovers: 1 });
+            expect(gate).toEqual({ asked: 1, released: 1 });
+            expect(t.cdp.page.minted).toHaveLength(1);
+            expect(t.cdp.page.autoLogins).toHaveLength(1);
+            expect(t.cdp.page.clicks).toEqual([LOGOUT_BUTTON]);
+            expect(t.world.players.has('srtest')).toBe(false);
+            // The takeover began a session of its own; the click went out under it.
+            expect(t.session.sessionId).toBe(2);
+        } finally {
+            t.stop();
+        }
+    });
+
+    test('a takeover the gate refuses is not made: reported with its reason', async () => {
+        const t = tab();
+        t.cdp.client.ingame = false;
+        try {
+            const r = await abandonClient(t.session, undefined, { takeover: async () => 'relog budget spent: 3/3 unplanned relogs used' });
+            expect(r).toMatchObject({ ok: false, takeovers: 0, sends: 0 });
+            expect(r!.reason).toContain('no takeover login: relog budget spent');
+            expect(t.cdp.page.autoLogins).toEqual([]);
+        } finally {
+            t.stop();
+        }
+    });
+
+    test("a session that launched its tab leaves a tab on another launch alone", async () => {
+        const t = tab({ launchTag: 'mine' } as Partial<Session>);
+        t.cdp.page.url = `${t.cdp.origin}/bot?server=${t.world.host}&bot=srtest&launch=theirs`;
+        try {
+            const r = await abandonClient(t.session);
+            expect(r!.ok).toBe(false);
+            expect(r!.reason).toMatch(/not this session's launch mine \(it shows theirs\)/);
+            expect(t.cdp.page.clicks).toEqual([]);
+        } finally {
+            t.stop();
+        }
+    });
+
+    test('once a newer session begins (an adopt), nothing more is sent', async () => {
+        const t = tab();
+        t.cdp.hooks.onClickComponent = () => void t.session.sessionId++;
+        try {
+            const r = await abandonClient(t.session);
+            expect(r!.ok).toBe(false);
+            expect(r!.reason).toMatch(/^superseded/);
+            expect(t.cdp.page.clicks).toHaveLength(1);
+        } finally {
+            t.stop();
+        }
+    });
+
+    test("the page alone does not confirm: with the world's list down the abandon ends unconfirmed", async () => {
+        const t = tab();
+        t.cdp.client.ingame = false;
+        t.world.down = true;
+        try {
+            const r = await abandonClient(t.session, undefined, { timeoutMs: 500 });
+            expect(r!.ok).toBe(false);
+            expect(r!.reason).toMatch(/playerpositions\) did not answer/);
+            expect(t.cdp.page.autoLogins).toEqual([]);
+        } finally {
+            t.stop();
+        }
+    });
+});
+
+describe("waitOwnLaunch: a launched tab's session is known by its launch id, not by a fresh tick (rs/668)", () => {
+    let prevTick: string | undefined;
+    beforeEach(() => {
+        prevTick = process.env.SPEEDRUN_TICK_MS;
+        process.env.SPEEDRUN_TICK_MS = '30';
+    });
+    afterEach(() => {
+        if (prevTick === undefined) delete process.env.SPEEDRUN_TICK_MS;
+        else process.env.SPEEDRUN_TICK_MS = prevTick;
+    });
+
+    /** A session that launched tab L1, whose SDK was handed a lite one-off's cached state (tick 5000, no launch id). */
+    function launched(cdp?: ReturnType<typeof fakeCdp>) {
+        const f = fakeSession({ client: 'browser', child: null, launchTag: 'L1' } as Partial<Session>);
+        (f.session as { env: Record<string, string> }).env = { BOT_USERNAME: 'srtest', PASSWORD: 'x', ...(cdp ? { CDP_URL: cdp.origin } : {}) };
+        f.sdk.state = { ...f.sdk.state!, tick: 5000, inGame: true };
+        return f;
+    }
+
+    test("the cached state never counts; two of the launch's own ticks do", async () => {
+        const { session, sdk } = launched();
+        const p = waitOwnLaunch(session, 5_000);
+        sdk.push({}); // the cached frame handed over again (a reconnect) is still not this launch's
+        sdk.push({ tick: 1, launch: 'L1' });
+        sdk.push({ tick: 2, launch: 'L1' });
+        expect(await p).toMatchObject({ tick: 2, launch: 'L1' });
+    });
+
+    test('in-game states with no launch id advancing: refused at once, naming the other client or an old page bundle', async () => {
+        const { session, sdk } = launched();
+        const p = waitOwnLaunch(session, 5_000);
+        sdk.push({ tick: 5001 });
+        await expect(p).rejects.toThrow(/refusing launch L1: in-game states with no launch id are advancing \(ticks 5000 then 5001\).*bun run build.*nothing was sent/);
+    });
+
+    test('states from another launch advancing: refused', async () => {
+        const { session, sdk } = launched();
+        const p = waitOwnLaunch(session, 5_000);
+        sdk.push({ tick: 7, launch: 'L0' });
+        sdk.push({ tick: 8, launch: 'L0' });
+        await expect(p).rejects.toThrow(/in-game states from launch L0 are advancing/);
+    });
+
+    test('nothing of its own: the timeout names the cached state it would not take', async () => {
+        const { session } = launched();
+        await expect(waitOwnLaunch(session, 300)).rejects.toThrow(/no in-game state from this launch within 300 ms; the only in-game state was not this launch's \(tick 5000, launch none\)/);
+    });
+
+    test("the page's login ended: refused after PAGE_ENDED_HOLD_MS, but only once the tab shows this launch", async () => {
+        const cdp = fakeCdp('srtest', 'x');
+        try {
+            const { session } = launched(cdp);
+            // The replaced page (launch L0) reads as ended too; it is not this launch's.
+            cdp.page.url = `${cdp.origin}/bot?bot=srtest&launch=L0`;
+            cdp.client.ingame = false;
+            cdp.client.loginMes1 = 'Connection lost';
+            const t0 = Date.now();
+            setTimeout(() => (cdp.page.url = `${cdp.origin}/bot?bot=srtest&launch=L1`), 800);
+            await expect(waitOwnLaunch(session, 20_000)).rejects.toThrow(/refusing launch L1: the page's login ended without getting in, or it dropped out of the game \(title screen: Connection lost\)/);
+            expect(Date.now() - t0).toBeGreaterThanOrEqual(800 + PAGE_ENDED_HOLD_MS);
+            expect(Date.now() - t0).toBeLessThan(5_000);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('a page still logging in is waited for, not refused', async () => {
+        const cdp = fakeCdp('srtest', 'x');
+        try {
+            const { session, sdk } = launched(cdp);
+            cdp.page.url = `${cdp.origin}/bot?bot=srtest&launch=L1`;
+            cdp.client.ingame = false;
+            cdp.client.loginInProgress = true;
+            const p = waitOwnLaunch(session, 20_000);
+            await sleep(PAGE_ENDED_HOLD_MS + 500);
+            cdp.client.loginInProgress = false;
+            cdp.client.ingame = true;
+            sdk.push({ tick: 1, launch: 'L1' });
+            sdk.push({ tick: 2, launch: 'L1' });
+            expect((await p).tick).toBe(2);
+        } finally {
+            cdp.stop();
+        }
     });
 });
