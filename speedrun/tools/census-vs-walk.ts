@@ -40,6 +40,10 @@
 // - more of an unstackable than the walk holds: FAIL, a slot the walk does not count.
 // - LOOSE stacks (runes, coins, sharks, feathers, cannonballs, arrows and tips, nails, thread; rule A)
 //   compare by name and place only, and bones are allowed inside BONES_INSIDE (S07, S09).
+// - an in-flight drop (rule H, rs/158 15:0x PDT): an item failing at exactly one boundary census,
+//   taken straight after a 0-tick drop step whose own pattern matches it (IN_FLIGHT_DROPS), and absent
+//   from the next census, is allowed: the step sends its drops without waiting for them to publish.
+//   Still held at the next census, it fails.
 // - on a mid-step row nothing fails: a step's own withdrawals, quest items and products are its own
 //   business (rules C and G), and what outlives the step fails at the next boundary row.
 // - in the walk but not live, on boundary rows: informational (eaten, drunk, consumed).
@@ -60,6 +64,7 @@ import { readFileSync } from 'fs';
 import { basename, join } from 'path';
 import { noteOf } from '../lib/items';
 import { CENSUS_STEP, INTERNAL, PLACEMENT } from '../runner/chain';
+import { EXIT_DROPS } from '../skills/mining';
 import { itemLabel, MANIFEST, parseLedger, walk, type Held, type LedgerEntry, type LedgerRow } from './slot-ledger';
 
 // ------------------------------------------------------------------ the allow-list
@@ -81,6 +86,16 @@ export interface Allowance {
 export const WORN_IN_PACK_ALLOWED: readonly Allowance[] = [
     { item: 'staff of water', from: 'S01', to: 'S04', cite: "S01's note (cc931157): the walk wields it at S01, magic.ts inside S04" },
 ];
+
+/**
+ * Rule H's drop steps, each with what it drops: they send their drops and pass without waiting for
+ * them to publish, so the census straight after can still show the item. drop-axe's pattern is
+ * woodcutting.ts's AXE (not exported there); mining.exit's is its own EXIT_DROPS.
+ */
+export const IN_FLIGHT_DROPS: Readonly<Record<string, readonly RegExp[]>> = {
+    'woodcutting:drop-axe': [/^(bronze|iron|steel|black|mithril|adamant|rune) axe$/i],
+    'mining.exit': EXIT_DROPS,
+};
 
 /** What a `<NAME>` placeholder stands for in the game. */
 export const CATEGORIES: Readonly<Record<string, RegExp>> = {
@@ -112,6 +127,8 @@ export interface Census {
     label?: string;
     inventory: CensusItem[];
     worn: string[];
+    /** The step row logged last before the census: the step that just ran, and its ticks. */
+    after?: { step: string; ticks: number };
 }
 
 /** The `(census)` rows of a tick log, and the rows its dress-rehearsal gate says the lab supplied by staff commands. */
@@ -119,9 +136,10 @@ export function readCensus(text: string, log: string): { census: Census[]; staff
     const census: Census[] = [];
     const staffed = new Set<string>();
     let bad = 0;
+    let after: Census['after'];
     text.split('\n').forEach((line, i) => {
         if (!line.trim()) return;
-        let r: { step?: string; startTick?: number; at?: string; meta?: Record<string, unknown> };
+        let r: { kind?: string; step?: string; startTick?: number; ticks?: number; at?: string; meta?: Record<string, unknown> };
         try {
             r = JSON.parse(line);
         } catch {
@@ -130,6 +148,8 @@ export function readCensus(text: string, log: string): { census: Census[]; staff
         }
         const m = r.meta;
         if (m && Array.isArray(m.staffed)) for (const s of m.staffed) if (typeof s === 'string') staffed.add(s);
+        // A step's own row: no kind, not a boundary or other parenthesised note.
+        if (r.kind === undefined && typeof r.step === 'string' && !r.step.startsWith('(')) after = { step: r.step, ticks: r.ticks ?? 0 };
         if (r.step !== CENSUS_STEP || !m || typeof m.before !== 'string' || !Array.isArray(m.inventory)) return;
         const inventory = (m.inventory as CensusItem[]).filter(x => typeof x?.name === 'string' && typeof x.count === 'number');
         const worn = Array.isArray(m.worn) ? (m.worn as unknown[]).filter((x): x is string => typeof x === 'string') : [];
@@ -143,6 +163,7 @@ export function readCensus(text: string, log: string): { census: Census[]; staff
             ...(typeof m.label === 'string' && m.label ? { label: m.label } : {}),
             inventory,
             worn,
+            ...(after ? { after } : {}),
         });
     });
     return { census, staffed: [...staffed], bad };
@@ -260,8 +281,9 @@ export type FindingKind = 'not in walk' | 'worn in walk' | 'surplus';
 
 export interface Finding {
     placed: Placed;
-    /** The live names, dose kept. */
+    /** The live names, dose kept, joined. */
     item: string;
+    names: string[];
     where: 'pack' | 'worn';
     live: number;
     /** What the walk holds of it; null when unknown. */
@@ -269,7 +291,7 @@ export interface Finding {
     kind: FindingKind;
     verdict: 'FAIL' | 'allowed';
     /** The allow-list rule that allowed it. */
-    rule?: 'A' | 'C' | 'D';
+    rule?: 'A' | 'C' | 'D' | 'H';
     note?: string;
 }
 
@@ -354,7 +376,7 @@ export function compareRow(p: Placed, rows: readonly LedgerRow[], entries: reado
         } else if (!g.worn.length && !g.inv.length) f = { walk: 0, kind: 'not in walk' };
         if (!f) continue;
         const rule = f.rule ?? (mid ? ('C' as const) : undefined);
-        findings.push({ placed: p, item, where: g.where, live: g.live, ...f, verdict: rule ? 'allowed' : 'FAIL', ...(rule ? { rule } : {}), ...(mid && !f.rule ? { note: 'mid-step' } : {}) });
+        findings.push({ placed: p, item, names: [...g.names], where: g.where, live: g.live, ...f, verdict: rule ? 'allowed' : 'FAIL', ...(rule ? { rule } : {}), ...(mid && !f.rule ? { note: 'mid-step' } : {}) });
     }
 
     const missing: Missing[] = [];
@@ -476,6 +498,25 @@ export interface Report {
     failed: number;
 }
 
+/** Rule H on one log's rows (in log order): a FAIL straight after a 0-tick drop step that drops it, gone by the next census. */
+export function inFlight(results: readonly RowResult[], census: readonly Census[]): void {
+    for (const r of results) {
+        const c = r.placed.census;
+        const step = c.after;
+        const drops = step && step.ticks === 0 ? IN_FLIGHT_DROPS[step.step] : undefined;
+        if (!drops || r.placed.phase !== 'boundary') continue;
+        const next = census[census.indexOf(c) + 1];
+        const heldNext = (name: string) => !!next && [...next.inventory.map(i => i.name), ...next.worn].some(n => baseName(n) === baseName(name));
+        for (const f of r.findings) {
+            if (f.verdict !== 'FAIL' || f.kind !== 'not in walk' || !next) continue;
+            if (!f.names.every(n => drops.some(d => d.test(n)) && !heldNext(n))) continue;
+            f.verdict = 'allowed';
+            f.rule = 'H';
+            f.note = `in flight: ${step!.step} sent it, gone at tick ${next.tick}`;
+        }
+    }
+}
+
 /** Every census of `logs` against the walk of `rows`. */
 export function censusVsWalk(logs: readonly { name: string; text: string }[], rows: readonly LedgerRow[], o: CompareOptions & Pick<PlaceOptions, 'tradedIn' | 'placedInLeg'> = {}): Report {
     const entries = walk(rows);
@@ -485,7 +526,9 @@ export function censusVsWalk(logs: readonly { name: string; text: string }[], ro
         const { census, staffed } = readCensus(l.text, l.name);
         const p = place(census, rows, { ...o, staffed: new Set(staffed) });
         unplaced.push(...p.unplaced);
-        for (const x of p.placed) results.push(compareRow(x, rows, entries, o));
+        const mine = p.placed.map(x => compareRow(x, rows, entries, o));
+        inFlight(mine, census);
+        results.push(...mine);
     }
     const findings = groupOf(results.map(r => r.findings));
     const missing = groupOf(results.filter(r => r.placed.phase === 'boundary').map(r => r.missing.map(m => ({ ...m, kind: 'walk not live' as const }))));

@@ -119,6 +119,27 @@ describe('censusVsWalk: the allow-list', () => {
     });
 });
 
+describe('rule H: an in-flight drop', () => {
+    const step = (name: string, ticks: number) => JSON.stringify({ v: 1, step: name, startTick: 10, ticks, meta: {} });
+    const before = [census('S00 start', 'S00', 0, []), census('T01-02 run', 'T01-02', 5, [...KIT, ['Tinderbox', 1], ['Law rune', 2], ['Prayer potion(4)', 1]], ['Staff of water'])];
+    const rowsAt = (axeAtNext: boolean, ticks = 0) => [
+        ...before,
+        step('woodcutting:drop-axe', ticks),
+        census('S02:A-start', 'S02', 10, [...KIT, ['Law rune', 1], ['Prayer potion(4)', 1], ['Rune axe', 1]], ['Staff of water']),
+        census('S02:B-key', 'S02', 12, [...KIT, ['Law rune', 1], ['Prayer potion(4)', 1], ...(axeAtNext ? ([['Rune axe', 1]] as Item[]) : [])], ['Staff of water']),
+    ].join('\n');
+    const axe = (text: string) => censusVsWalk([{ name: 'run.jsonl', text }], rows, opts).findings.find(g => g.item === 'Rune axe' && g.first.before === 'S02:A-start')!;
+
+    test('allowed at the one census after a 0-tick drop step whose pattern takes it, gone at the next', () => {
+        expect(axe(rowsAt(false))).toMatchObject({ verdict: 'allowed', rule: 'H' });
+    });
+
+    test('still held at the next census, or after a step that took ticks: FAIL', () => {
+        expect(axe(rowsAt(true)).verdict).toBe('FAIL');
+        expect(axe(rowsAt(false, 3)).verdict).toBe('FAIL');
+    });
+});
+
 describe('main', () => {
     const dir = mkdtempSync(join(tmpdir(), 'census-vs-walk-'));
     const ledger = join(dir, 'ledger.md');
