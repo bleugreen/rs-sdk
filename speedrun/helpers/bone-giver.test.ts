@@ -1073,9 +1073,10 @@ describe("the cue's lastLoad (rs/663): the final giver's next load is the last, 
 
         test('b04 on the flagged cue: it is the server over three older givers, trades the runes alone, keeps its bones, and publishes lastGiven; the group is then done', async () => {
             const dir = mkdtempSync(join(tmpdir(), 'bone-lastload-b04-'));
+            // the giver starts first: a cue written before it started, in no session of its own, is no cue (rs/635)
+            const r = rig(dir, 'cairn_b04');
             const cue = scoredCue(dir, 'a4.S07.bone', true);
             others(dir, cue.session);
-            const r = rig(dir, 'cairn_b04');
             r.g.onCue(cue);
             const offers: number[] = [];
             const serve = r.sdk.onSend;
@@ -1101,12 +1102,12 @@ describe("the cue's lastLoad (rs/663): the final giver's next load is the last, 
         test('the flag landing mid-trade on a normal load: that trade finishes as the whole load it was, and the next one is the runes alone', async () => {
             const dir = mkdtempSync(join(tmpdir(), 'bone-lastload-midtrade-'));
             const session = 'a4.S07.bone';
+            const r = rig(dir, 'cairn_b04');
             const w = new CueWriter(dir, 'scored', S07, session);
             const beacons = [{ tick: 1, ms: Date.now() }];
             w.write({ beacons, turns: [], site: OAK.receiver });
             // the others are on bank trips: by the count b04 serves this load
             others(dir, session, { phase: 'restock', readyAt: null });
-            const r = rig(dir, 'cairn_b04');
             r.g.onCue(readCue(dir)!);
             const serve = r.sdk.onSend;
             r.sdk.onSend = (a, s) => {
@@ -1131,10 +1132,11 @@ describe("the cue's lastLoad (rs/663): the final giver's next load is the last, 
 
         test('a giver without the extras under the flag never requests: it waits queued behind b04, and stands down once b04 has served it', async () => {
             const dir = mkdtempSync(join(tmpdir(), 'bone-lastload-b01-'));
+            const r = rig(dir, 'cairn_b01');
             const cue = scoredCue(dir, 'a4.S07.bone', true);
             putStatus(dir, st('cairn_b04', 'waiting', Date.now(), { session: cue.session, ms: Date.now() }));
-            const r = rig(dir, 'cairn_b01');
             r.g.onCue(cue);
+            expect(r.priv.cue?.lastLoad).toBe(true);
             const c = r.priv.cycle();
             expect(await drive(r.sdk, c, 40)).toBe(false);
             expect(r.sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(0);
