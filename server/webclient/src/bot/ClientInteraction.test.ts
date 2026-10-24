@@ -1511,6 +1511,7 @@ describe("the published state carries the page's launch id (rs/668)", () => {
             client: {
                 chatModalId: -1,
                 isViewportInterfaceOpen: () => false,
+                getViewportInterface: () => -1,
                 isDialogOpen: () => false,
                 isWaitingForDialog: () => false,
                 isModalOpen: () => false,

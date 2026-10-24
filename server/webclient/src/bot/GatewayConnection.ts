@@ -40,7 +40,7 @@ export function getBotPassword(): string | null {
  * it in every published state, so a controller can tell this page's states from a gateway's cached
  * state or another client's.
  */
-export function getLaunchId(search: string | undefined = typeof window === 'undefined' ? undefined : window.location.search): string | null {
+export function getLaunchId(search: string | undefined = typeof window === 'undefined' ? undefined : window.location?.search): string | null {
     return search === undefined ? null : new URLSearchParams(search).get('launch') || null;
 }
 
