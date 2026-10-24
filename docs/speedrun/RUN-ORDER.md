@@ -963,7 +963,7 @@ measured change is Prayer, -555 (BP; rs/141; -605 before fold-in 23's Superheat 
 | The row in force (the forecast at 2026-10-23, the same bones) | +25 / +58.3 | 35,439.3 | 33,009.7 | 476.7 under | ~152 under |
 | Fold-in 42's row of record, without H4m (history) | +140.6 / +69.4 | 35,673.9 | 33,139.8 | 242.1 under | ~83 over |
 
-**The ladder's headline lines on a4's row** (by script; the generated ladder stands on the row in force): one Monkey Madness rope pin 35,819.6 (96.4 under), S13's railings at p90 35,708.3 (207.7 under), both 36,069.6 (153.6 over), and the bad row (every 'yes' line, 7 lines, +456.3, R67's overflow line closed by H4m) 36,014.6 (**98.6 over**).
+**The ladder's headline lines on a4's row** (by script; the generated ladder stands on the row in force): one Monkey Madness rope pin 35,819.6 (96.4 under), S13's railings at p90 35,708.3 (207.7 under), both 35,969.6 (53.6 over), and the bad row (every 'yes' line, 7 lines, +456.3, R67's overflow line closed by H4m) 36,014.6 (**98.6 over**).
 
 **H4m's bad case, a line, not summed** (R72): once Mining reaches 99 or iron respawns slower than 13 ticks before the last load, the band hand-buries the held bones at 2.000 ticks a bone (40 a load) and each later load waits ~42 ticks for readiness (h55's ~82-tick bank trip); Prayer 99 still holds before T09-10 (STEP-MANIFEST's H4m row).
 
