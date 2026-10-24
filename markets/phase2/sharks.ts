@@ -31,6 +31,8 @@ export interface SharkState {
     at: string;
     /** Why the status is 'due' or why a retry bound settled it. */
     note?: string;
+    /** Set when a settled purchase left fewer than the plan's minimum banked: why (`shortfall`). */
+    short?: string;
 }
 
 /** A purchase attempt as the runner saw it: the errand's record, or the message it threw. */
@@ -95,7 +97,8 @@ export function loadSharks(raw: unknown): SharkState | null {
             tries: typeof raw.tries === 'number' && raw.tries >= 0 ? raw.tries : 0,
             last: isObj(raw.last) ? raw.last : null,
             at: typeof raw.at === 'string' ? raw.at : new Date(0).toISOString(),
-            ...(typeof raw.note === 'string' ? { note: raw.note } : {})
+            ...(typeof raw.note === 'string' ? { note: raw.note } : {}),
+            ...(typeof raw.short === 'string' ? { short: raw.short } : {})
         };
     }
     const last = isObj(raw) ? raw : { value: raw };
@@ -114,6 +117,34 @@ export function afterAttempt(prev: SharkState | null, a: SharkAttempt, now: Date
     const tries = (prev?.status === 'retry' ? prev.tries : 0) + 1;
     if (tries < maxTries) return { status: 'retry', tries, last, at };
     return { status: 'done', tries, last, at, note: `${tries} transient refusals in a row: settled; a rebuy can follow from the food fallback` };
+}
+
+/**
+ * Why a settled purchase left fewer than `minimum` sharks banked, or null when it did not. 'insufficient coins': the
+ * coins covered none, or fewer than wanted (a fresh account reaches buy-sharks with a few hundred). It is not a
+ * reason to hold a rebuy: the rebuy waits only for the coins.
+ */
+export function shortfall(record: Record<string, unknown> | null, minimum: number): string | null {
+    if (!record || typeof record.banked !== 'number' || record.banked >= minimum) return null;
+    if (/coins do not cover/i.test(String(record.reason ?? ''))) return 'insufficient coins';
+    if (typeof record.quantity === 'number' && typeof record.want === 'number' && record.quantity < record.want && record.result !== 'unfilled') return 'insufficient coins';
+    if (bookRefused(record)) return 'the book';
+    return 'short';
+}
+
+/**
+ * Why a shark eater must not sail to its method, or null when it may: fewer than `minimum` sharks between its bank and
+ * its pack. The bank is the one last seen this run; before the first bank visit after a restart, the purchase's
+ * recorded `banked`. With neither known it may sail (its first bank visit there finds out).
+ */
+export function shortForVoyage(i: { bankSharks: number | null; carriedSharks: number; sharks: SharkState | null; minimum: number }): string | null {
+    const recorded = i.sharks?.last?.banked;
+    const bank = i.bankSharks ?? (typeof recorded === 'number' ? recorded : null);
+    if (bank === null) return null;
+    const have = bank + i.carriedSharks;
+    if (have >= i.minimum) return null;
+    const why = i.sharks?.short ?? shortfall(i.sharks?.last ?? null, i.minimum);
+    return `${have} sharks ${i.bankSharks === null ? 'recorded after the last purchase' : 'banked and carried'}, below the minimum of ${i.minimum}${why ? ` (${why})` : ''}: not sailing`;
 }
 
 /** The state that sends the account through buy-sharks again (a rebuy). */
@@ -143,7 +174,11 @@ export interface RebuyInput {
 
 export type RebuyDecision = { rebuy: true; reason: string } | { rebuy: false; reason: string };
 
-const bookRefused = (last: Record<string, unknown> | null): boolean =>
+function bookRefused(last: Record<string, unknown> | null): boolean {
+    return BOOK_REFUSED(last);
+}
+
+const BOOK_REFUSED = (last: Record<string, unknown> | null): boolean =>
     !!last && (last.result === 'unknown' || last.result === 'unfilled' || (last.result === 'refused' && /no asks|above the ceiling/i.test(String(last.reason ?? ''))));
 
 /**
