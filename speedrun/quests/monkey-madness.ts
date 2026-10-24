@@ -866,11 +866,30 @@ async function noRetaliate(sdk: Sdk, note: (line: string) => void = () => {}): P
 }
 
 /**
+ * The prayer points under which upkeep drinks even with a chat open. Only a stuck chat gets here: from DRINK_BELOW a
+ * protect prayer's drain (about a point per 5 ticks at no prayer bonus) takes some 70 ticks to reach it, and the longest
+ * chat open under a protect prayer in rs/513's five A-Z chains was 12 ticks.
+ */
+export const CHAT_DRINK_FLOOR = 5;
+
+/**
+ * Whether upkeep may click a pack item for a drink, an antipoison or a vial drop now. Every pack click closes the open chat
+ * (OpHeldHandler: clearPendingAction, closeModal), so one sent in the tick a talk's page opens ends the talk: rs/513
+ * chain 1's O lost the child's talisman talk that way, to a prayer potion drunk on its first page. Held while a chat is
+ * open; the drink goes on the first tick it is closed. A main modal (a chapter card) is not held for: the module closes
+ * those itself, so a drink that closes one costs nothing.
+ */
+export function packClickAllowed(s: Pick<BotWorldState, 'dialog'>): boolean {
+    return !s.dialog.isOpen;
+}
+
+/**
  * Upkeep while `fn` runs, on the atoll and on the gnome half alike: auto-retaliate off, a shark below the segment's eat threshold, the
  * antipoison on a poisoning and a prayer potion below DRINK_BELOW while a prayer is on. Measured: B's walk through the
- * Karamja jungle poisoned the player, and with no cure the poison killed a 42 HP player in E's hangar.
+ * Karamja jungle poisoned the player, and with no cure the poison killed a 42 HP player in E's hangar. The drinks and the
+ * vial drop wait out an open chat (packClickAllowed); the eat is the shared Upkeep's and does not.
  */
-async function upkeep<T>(sdk: Sdk, fn: () => Promise<T>): Promise<T> {
+export async function upkeep<T>(sdk: Sdk, fn: () => Promise<T>): Promise<T> {
     await noRetaliate(sdk);
     const u = new Upkeep(sdk, { eatBelow: eating.below, food: MM_OBJ.shark });
     let lastDrink = -Infinity;
@@ -887,7 +906,8 @@ async function upkeep<T>(sdk: Sdk, fn: () => Promise<T>): Promise<T> {
         const fresh = s.gameMessages.filter(m => obs(m) > seen);
         if (fresh.length) seen = Math.max(seen, ...fresh.map(obs));
         if (fresh.some(m => /you have been poisoned/i.test(m.text))) lastPoisoned = s.tick;
-        if (cureWanted({ tick: s.tick, lastPoisoned, lastDose: lastAntipoison })) {
+        const clickable = packClickAllowed(s);
+        if (clickable && cureWanted({ tick: s.tick, lastPoisoned, lastDose: lastAntipoison })) {
             const cure = s.inventory.find(i => ANTIPOISON.test(i.name));
             if (cure) {
                 lastAntipoison = s.tick;
@@ -897,13 +917,14 @@ async function upkeep<T>(sdk: Sdk, fn: () => Promise<T>): Promise<T> {
         }
         // A potion's last dose leaves an empty vial (potions.obj next_obj_stage); it would hold a slot to the end.
         const vial = s.inventory.find(i => /^Vial$/i.test(i.name));
-        if (vial && s.tick - lastVialDrop >= 2) {
+        if (vial && clickable && s.tick - lastVialDrop >= 2) {
             lastVialDrop = s.tick;
             void sdk.sendDropItem(vial.slot);
         }
         // Upkeep drinks only for a prayer it manages itself; the atoll's protect prayers come and go by stretch.
         const p = s.prayers;
         if (!p || p.prayerPoints >= DRINK_BELOW || !p.activePrayers.some(Boolean) || s.tick - lastDrink < 3) return;
+        if (!clickable && p.prayerPoints >= CHAT_DRINK_FLOOR) return;
         const pot = s.inventory.find(i => /^Prayer potion/i.test(i.name));
         if (!pot) return;
         lastDrink = s.tick;

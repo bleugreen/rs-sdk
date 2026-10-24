@@ -7,7 +7,7 @@ import { findLongPath } from '../../sdk/pathfinding';
 import { nameHash, readCue, readTopUpAsk } from '../helpers/altar-cue';
 
 import type { BotWorldState, InventoryItem, PlayerState, QuestJournalState } from '../../sdk/types';
-import { baseState, drive, FakeSdk, simulateWalking } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk, flush, simulateWalking } from '../lib/fake-sdk';
 import type { ReceiveResult } from '../lib/trade';
 import { compactJournal } from '../lib/quests';
 import { Observation, resolveResume } from '../runner/resume';
@@ -15,6 +15,10 @@ import type { Observed, RunnerSession } from '../runner/step';
 import {
     BANANA_TREE_IDS, bananaRoomDrops, h12Plan, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, isWaydarIntroEnd, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
     BELOW_30_EATING, cureWanted, eatBelowFor, sharksToDrop, GARKOR_WEST, isMonkeyChatter, CAGE, CAGE_NORTH_STRIP, CAGE_TILES, inCage, letOut, letOutPick, LET_OUT_ATTEMPTS, MINDER_REACH, nearestFire, sceneBuilt, tileIn, underTemple, scorpionsNear, SCORPION_CLOSE, SCORPION_REACH, sigilRoom, h12oLeg, legCue, pFinalStop, closeLeftTrade, DECLINE_TICKS, H12O_M_ROW, mTopUpCap, ASK_SHARK, ASK_SUPER_ANTIPOISON, H12O_SCOPE, onTradeOpen, P_TOPUP_MAX_SHARKS, pTopUpAsk, immunityWanted,
+<<<<<<< ours
+=======
+    AREAS, inArea, inCell, zooknockWay, type ZooknockLegs, CHAT_DRINK_FLOOR, DRINK_BELOW, packClickAllowed, upkeep,
+>>>>>>> theirs
     ARCHER_REACH, AUNT_BOX, crateRoute, crateSteps, entersSleepingZone, SLEEPING_DETOURS, sleepingDetour, GUARD_REACH, legPrayerFor, M_TOPUP_TILE, mLegSize, mTopUpSharks, NO_DWELL, pathTiles, pLegSize, POSTED_ARCHERS, prayerRuns, receiveLeg, RELIGIOUS_GUARDS, SLEEPING_ZONE, tilePrayer, TOPUP_TRIES, TOPUP_WAIT, tradeIdle, type Receive, nextBananaTree, SUPER_IMMUNE_TICKS, offAtoll, patrolLeavesLane, SEGMENT_EATING, topUpWanted, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, steps, templeLeft, treeRouteRefusal, yRoom, type MmContext,
 } from './monkey-madness';
 import { slotNeed } from './segments';
@@ -106,6 +110,82 @@ describe('antipoison cures', () => {
         expect(at({ lastDose: 1000 })).toBe(false); // cured this tick
         expect(at({ lastPoisoned: 900, lastDose: 950 })).toBe(false); // a later dose covered it
         expect(at({ lastPoisoned: 960 })).toBe(false); // 40 ticks old: not this poisoning's message
+    });
+});
+
+describe('upkeep holds its pack clicks while a chat is open (a pack click closes the talk)', () => {
+    const MELEE = 9; // protect_from_melee in PRAYER_NAMES order
+    const melee = () => Array.from({ length: 15 }, (_, i) => i === MELEE);
+    const drinkable = (slot: number, name: string): InventoryItem => ({ slot, id: 0, name, count: 1, optionsWithIndex: [{ text: 'Drink', opIndex: 1 }] });
+    const page = { isOpen: true, options: [], isWaiting: false, allComponents: [{ text: 'Has Aunty given you the toy yet?' }] } as unknown as BotWorldState['dialog'];
+    const closed = { isOpen: false, options: [], isWaiting: false } as BotWorldState['dialog'];
+    const pp = (n: number) => ({ activePrayers: melee(), prayerPoints: n, prayerLevel: 94 });
+
+    /** Upkeep running on scripted state from `tick`, `pp` points under Protect from Melee; `end` stops it. */
+    async function running(o: { tick: number; points: number; inventory: InventoryItem[] }) {
+        const sdk = new FakeSdk(baseState({ tick: o.tick, autoRetaliateEnabled: false, prayers: pp(o.points), inventory: o.inventory, player: { hp: 42 } as PlayerState }));
+        let end!: () => void;
+        const done = upkeep(sdk as never, () => new Promise<void>(r => (end = r)));
+        await flush();
+        const uses = () => sdk.sent.filter(a => a.method === 'sendUseItem' || a.method === 'sendDropItem');
+        return { sdk, uses, stop: async () => { end(); await done; } };
+    }
+
+    test('the gate: shut while a chat page is open', () => {
+        expect(packClickAllowed({ dialog: page })).toBe(false);
+        expect(packClickAllowed({ dialog: closed })).toBe(true);
+        expect(CHAT_DRINK_FLOOR).toBeLessThan(DRINK_BELOW);
+    });
+
+    test("rs/513 chain 1's O: the child's page opens as prayer falls to 19; no drink until the chat closes, then one", async () => {
+        const u = await running({ tick: 2134, points: 20, inventory: [drinkable(6, 'Prayer potion(3)')] });
+        u.sdk.tick({ prayers: pp(19), dialog: page }); // t=2135: the page and the crossing in one tick
+        await flush();
+        expect(u.uses()).toEqual([]);
+        u.sdk.tick({ dialog: page });
+        u.sdk.tick({ prayers: pp(18), dialog: page });
+        await flush();
+        expect(u.uses()).toEqual([]);
+        u.sdk.tick({ dialog: closed });
+        await flush();
+        expect(u.uses()).toEqual([{ method: 'sendUseItem', args: [6, 1] }]);
+        expect(u.sdk.state!.tick).toBe(2138);
+        await u.stop();
+    });
+
+    test('a chat still open at the floor gets the drink: only a stuck chat holds prayer that long', async () => {
+        const u = await running({ tick: 500, points: 20, inventory: [drinkable(3, 'Prayer potion(4)')] });
+        u.sdk.tick({ prayers: pp(CHAT_DRINK_FLOOR), dialog: page });
+        await flush();
+        expect(u.uses()).toEqual([]);
+        u.sdk.tick({ prayers: pp(CHAT_DRINK_FLOOR - 1), dialog: page });
+        await flush();
+        expect(u.uses()).toEqual([{ method: 'sendUseItem', args: [3, 1] }]);
+        await u.stop();
+    });
+
+    test('a poisoning during a chat: the antipoison waits for the chat to close, inside the cure window', async () => {
+        const u = await running({ tick: 10_000, points: 60, inventory: [drinkable(4, 'Superantipoison(3)')] });
+        u.sdk.tick(s => ({ dialog: page, gameMessages: [{ type: 0, text: 'You have been poisoned!', tick: s.tick + 1, sender: '', fromSelf: false }] }));
+        u.sdk.tick({ dialog: page });
+        await flush();
+        expect(u.uses()).toEqual([]);
+        u.sdk.tick({ dialog: closed });
+        await flush();
+        expect(u.uses()).toEqual([{ method: 'sendUseItem', args: [4, 1] }]);
+        await u.stop();
+    });
+
+    test('an empty vial is dropped only once the chat closes', async () => {
+        const u = await running({ tick: 700, points: 60, inventory: [{ slot: 8, id: 229, name: 'Vial', count: 1, optionsWithIndex: [] }] });
+        u.sdk.tick({ dialog: page });
+        u.sdk.tick({ dialog: page });
+        await flush();
+        expect(u.uses()).toEqual([]);
+        u.sdk.tick({ dialog: closed });
+        await flush();
+        expect(u.uses()).toEqual([{ method: 'sendDropItem', args: [8] }]);
+        await u.stop();
     });
 });
 
