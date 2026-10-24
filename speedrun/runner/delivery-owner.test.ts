@@ -171,6 +171,32 @@ describe('the run owner\'s per-row sequence', () => {
         }
     });
 
+    test('a skipped row (CueKeeper.skip) opens nothing and moves the carry-ahead on; the carrier\'s last row writes its session\'s final stop', async () => {
+        const r = rig('skip');
+        try {
+            await r.keeper.open(muleScope('H1'), r.ctx, { fresh: true });
+            r.keeper.stop(muleScope('H1'), undefined, { final: false });
+            const h4 = readMulePreparation(r.dir, MULE)!;
+            expect(h4.row).toBe('H4');
+            const before = cueIn(r.dir);
+            // H4 skipped: the cue file is untouched (H1's plain stop), H4k is prepared next
+            r.keeper.skip(muleScope('H4'), { final: false });
+            expect(cueIn(r.dir)).toEqual(before);
+            expect(r.keeper.isOpen(muleScope('H4'))).toBe(false);
+            expect([readMulePreparation(r.dir, MULE)!.row, readMulePreparation(r.dir, MULE)!.seq]).toEqual(['H4k', h4.seq + 1]);
+            // H4k, the carrier's last, skipped: its own session's final stop, nothing prepared after
+            r.keeper.skip(muleScope('H4k'), { final: true });
+            const last = cueIn(r.dir);
+            expect([last.session, last.scope, last.stop, last.final]).toEqual([`${RUN}:H4k`, muleScope('H4k'), true, true]);
+            expect(authorizes(r.dir, 'H4k')).toBe(false);
+            expect(readMulePreparation(r.dir, MULE)!.seq).toBe(h4.seq + 1);
+            // the run's final close does not trip on H1's stood-down session
+            expect(() => r.keeper.close({ final: true })).not.toThrow();
+        } finally {
+            r.done();
+        }
+    });
+
     test('a matching live prepare is reused, not re-written; a failed step\'s stop prepares no next row', async () => {
         const r = rig('reuse');
         try {
@@ -196,6 +222,29 @@ describe('the run owner\'s per-row sequence', () => {
             const c = readMulePreparation(dir, MULE)!;
             writeMuleReady(dir, { runId: RUN, account: MULE, row: 'H1', session: c.session!, receiverHash: c.receiverHash!, phase: 'fault', tile: { ...rows[0]!.at }, staged: false, preparationSeq: c.seq, tick: 1, ms: Date.now() });
             await expect(owner.awaitReady('H1', sdk as never, { maxTicks: 5000 })).rejects.toThrow(/delivery fault/);
+        } finally {
+            clearInterval(timer);
+        }
+    });
+
+    test('a carrier late past a minute: SCORED keeps its input alive while it waits, and sends nothing once refused (rs/648)', async () => {
+        const dir = dirOf('late');
+        const sdk = new FakeSdk(baseState({ tick: 1, inGame: true }));
+        const owner = new DeliveryOwner(dir, RUN, SCORED, rows);
+        const T0 = Date.now();
+        // 400 ms of wall time a tick, as the keep-input's clock (Date.now) reads it.
+        const timer = setInterval(() => {
+            setSystemTime(new Date(T0 + sdk.state!.tick * 400));
+            sdk.tick();
+        }, 1);
+        const waits = () => sdk.sent.filter(a => a.method === 'sendWait').length;
+        try {
+            await expect(owner.awaitReady('H1', sdk as never, { maxTicks: 400 })).rejects.toThrow(/H1: carrier cairn_mule1 was not ready within 400 ticks/);
+            // 400 ticks at 400 ms is 160 s: keep-inputs at about 60 s and 120 s.
+            expect(waits()).toBe(2);
+            const t = sdk.state!.tick;
+            while (sdk.state!.tick < t + 400) await Bun.sleep(5);
+            expect(waits()).toBe(2);
         } finally {
             clearInterval(timer);
         }

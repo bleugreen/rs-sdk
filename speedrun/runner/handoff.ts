@@ -26,9 +26,14 @@
 // held, nothing (dead stock a step before may have used up). resolvePlan turns each `any` into `all`
 // or no entry as the pack stands, so a row whose gives are all `any` and none held only receives.
 //
-// The partner (an account name, fleet staging, rs/41's) stands on the hand-off tile before SCORED
-// arrives; the step does not wait for it or walk (the legs carry the travel). preconditions refuse
-// with a reason when the partner is not in view, when SCORED does not hold what it gives, or when
+// Where the partner is: a standing partner (an account name, fleet staging, rs/41's) is on the
+// hand-off tile before SCORED arrives, and preconditions refuse when it is not in view. A delivery
+// carrier (a `meeting` row, every placed mule row) may still be on its way: its row's mule cue waits,
+// bounded, for its readiness before the step's body runs (chain.ts muleCued, delivery-owner.ts
+// awaitReady), so preconditions ask instead that SCORED stand within the carrier's reach of its stand
+// and not already hold everything the row brings (the trade has landed: see Resume), and the body
+// gives a ready carrier a few ticks to come into sight before the trade. The step never walks (the
+// legs carry the travel). preconditions also refuse when SCORED does not hold what it gives, or when
 // what it receives will not fit the free slots, counting the slots the given items free (the
 // server counts offered items as freed, trade.rs2) and the slot each unequip takes first.
 //
@@ -49,6 +54,10 @@
 //   clause reads the row's `witnesses` (rollbackWitnesses, chain.ts): an item a later band makes is
 //   no evidence, since the record cannot date the band; an item a later placed hand-off brings back
 //   is evidence until that hand-off is recorded (H14's knife until H18).
+// Without the record, a meeting row in such a state (S22 after its first catch) holds some of every
+// item the row brings, which no row's pack does before its trade, so preconditions refuse it and the
+// walk goes down past the hand-off instead of trading the row a second time; a standing partner's
+// row is refused there by the partner having left.
 // A logout after the trade landed but before the equip changes leaves `inProgress`, entered
 // through `resume`, which applies the equip only. A logout mid-trade refunds both sides, and the
 // step runs again.
@@ -60,6 +69,7 @@ import { INVENTORY_SIZE, noteOf, objIdsNamed, objName, untradeable } from '../li
 import { DROPPED_TICKS, receiveFrom, sameName, swap, tradeOf, type GiveSpec, type SwapSdk, type WantSpec } from '../lib/trade';
 import { waitOrThrow, waitUntil } from '../lib/wait';
 import { writeTopUpAsk, type AskItem, type CueScope, type TopUpAsk } from '../helpers/altar-cue';
+import type { WorldTile } from '../helpers/mule-readiness';
 import { opIndex } from '../lib/world';
 import { itemLabel, MANIFEST, parseLedger, type InEntry, type ItemRef, type Kind, type LedgerRow, type Reason } from '../tools/slot-ledger';
 import type { Marks } from './attempt-record';
@@ -301,9 +311,51 @@ export function slotPlan(s: BotWorldState, plan: HandOffPlan): SlotPlan {
     return { free, off, freed, adds, room, after: room - adds + plan.wield.length - plan.unwield.length };
 }
 
-export function handOffPre(s: BotWorldState, plan: HandOffPlan, partner: string, o: { partnerInView?: boolean } = {}): true | string {
+/**
+ * Where a partner that may arrive after SCORED meets it: a delivery carrier (helpers/mule.ts), whose
+ * readiness the row's mule cue waits for, bounded, before the step's body runs.
+ */
+export interface Meeting {
+    /** The carrier's stand (helpers/mule-itinerary.ts muleDelivery). */
+    tile: WorldTile;
+    /** Chebyshev tiles from the stand, on its level, within which SCORED is at the meeting. */
+    within: number;
+    /** Observed ticks, once the body runs (the carrier read ready), for it to come into sight before the trade (default SIGHT_TICKS). */
+    sightTicks?: number;
+}
+
+/** A ready carrier stands on its tile within SCORED's view; this bounds the frames before it shows. */
+export const SIGHT_TICKS = 10;
+
+/** Why SCORED is not at `m`, or null when it is. */
+export function awayFromMeeting(s: BotWorldState, id: string, m: Meeting): string | null {
+    const p = s.player;
+    if (!p) return `${id}: the state carries no player to place at the meeting`;
+    const off = p.level !== m.tile.level ? Infinity : Math.max(Math.abs(p.worldX - m.tile.x), Math.abs(p.worldZ - m.tile.z));
+    if (off <= m.within) return null;
+    return `${id}: SCORED at ${p.worldX},${p.worldZ},${p.level} is not within ${m.within} of the meeting tile ${m.tile.x},${m.tile.z},${m.tile.level}`;
+}
+
+/**
+ * The row's `in` entries, top-ups aside, when SCORED holds some of every one (the trade has landed,
+ * and a band may since have eaten into it), else null. Top-ups are left out: SCORED may hold some of
+ * those before the trade by design. No row's planned pack holds all of its other receives before its
+ * trade (chain.test checks it on the slot-ledger walk), so this never refuses a row still to trade.
+ */
+export function deliveryHeld(s: BotWorldState, plan: HandOffPlan): string[] | null {
+    const plain = plan.receive.filter(r => !r.topUp);
+    return plain.length && plain.every(r => held(s, r) > 0) ? plain.map(r => r.name) : null;
+}
+
+export function handOffPre(s: BotWorldState, plan: HandOffPlan, partner: string, o: { partnerInView?: boolean; meeting?: Meeting } = {}): true | string {
     if (!s.inGame) return 'not in game';
-    if (o.partnerInView !== false && !s.nearbyPlayers.some(p => sameName(p.name, partner))) return `${plan.id}: ${partner} is not in view (the partner stands on the hand-off tile before SCORED arrives)`;
+    if (o.meeting) {
+        const away = awayFromMeeting(s, plan.id, o.meeting);
+        if (away) return away;
+        // A standing partner in view says the row is still to trade; a carrier still on its way says nothing, so the pack does.
+        const brought = deliveryHeld(s, plan);
+        if (brought) return `${plan.id}: already holds some of everything the row brings (${brought.join(', ')}): its trade has landed`;
+    } else if (o.partnerInView !== false && !s.nearbyPlayers.some(p => sameName(p.name, partner))) return `${plan.id}: ${partner} is not in view (the partner stands on the hand-off tile before SCORED arrives)`;
     for (const g of plan.give) {
         const h = held(s, g);
         // `any` with none held gives nothing (resolvePlan): not a refusal. `all` and a count still need some.
@@ -436,6 +488,8 @@ export interface HandOffOptions<C> {
     beforeTrade?: () => void;
     /** A partner that serves on a cue (the cannon holder, cannon.ts serve mode: see runHandOffOnCue), or sizes its top-ups from SCORED's ask (`ask`). */
     cue?: HandOffCue;
+    /** A delivery carrier's meeting (chain.ts muleMeeting): preconditions place SCORED there instead of asking for the partner in view. */
+    meeting?: Meeting;
 }
 
 /**
@@ -464,6 +518,8 @@ export interface CueHandOffReport extends HandOffReport {
     standingAtClick: boolean;
     /** Observed ticks from the cue to the partner in sight. */
     arriveTicks: number;
+    /** Keep-inputs sent while SCORED waited for the partner (wait.ts keepInput): one a minute of wall time. */
+    keepInputs: number;
 }
 
 const requestFrom = (partner: string, since: number) => (s: BotWorldState) =>
@@ -481,13 +537,29 @@ export async function runHandOffOnCue(ctx: Pick<StepContext<unknown>, 'sdk'>, pl
     await cue.open(ctx);
     const since = sdk.getState()?.tick ?? 0;
     const near = (s: BotWorldState) => s.nearbyPlayers.some(p => sameName(p.name, partner));
-    const seen = await waitUntil(sdk, near, { maxTicks: cue.waitTicks ?? 6000 });
-    if (!seen.ok) throw new Error(`${plan.id}: ${partner} did not come into sight within ${cue.waitTicks ?? 6000} ticks of the ${cue.scope.step}/${cue.scope.family} cue`);
+    // A late partner can leave SCORED standing far past the client's idle logout: keep its input alive.
+    let keepInputs = 0;
+    const seen = await waitUntil(sdk, near, { maxTicks: cue.waitTicks ?? 6000, keepInput: { sdk: ctx.sdk, onInput: e => void (keepInputs = e.n) } });
+    if (!seen.ok) throw new Error(`${plan.id}: ${partner} did not come into sight within ${cue.waitTicks ?? 6000} ticks of the ${cue.scope.step}/${cue.scope.family} cue (${keepInputs} keep-inputs sent)`);
     const arriveTicks = seen.tick - since;
     await waitUntil(sdk, requestFrom(partner, since), { maxTicks: cue.requestTicks ?? 30 });
     const standingAtClick = requestFrom(partner, since)(sdk.getState()!);
     const report = await runHandOff(sdk, plan, partner, o);
-    return { ...report, standingAtClick, arriveTicks };
+    return { ...report, standingAtClick, arriveTicks, keepInputs };
+}
+
+/**
+ * A meeting row's partner in sight before its trade: at once when it already is (an on-time carrier,
+ * no frame spent), else a wait bounded by `m.sightTicks`. Returns the ticks waited.
+ */
+export async function partnerInSight(sdk: HandOffSdk, plan: HandOffPlan, partner: string, m: Meeting): Promise<number> {
+    const near = (s: BotWorldState) => s.nearbyPlayers.some(p => sameName(p.name, partner));
+    const s0 = sdk.getState();
+    if (s0 && near(s0)) return 0;
+    const ticks = m.sightTicks ?? SIGHT_TICKS;
+    const r = await waitUntil(sdk, near, { maxTicks: ticks });
+    if (!r.ok) throw new Error(`${plan.id}: ${partner} did not come into sight within ${ticks} ticks at the meeting tile ${m.tile.x},${m.tile.z},${m.tile.level}`);
+    return r.tick - (s0?.tick ?? r.tick);
 }
 
 const names = (xs: readonly TradeItem[]) => xs.map(i => `${i.name} x${i.count}`);
@@ -585,8 +657,8 @@ export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step
     return {
         name: `${plan.id} hand-off`,
         logoutSafe: true,
-        // A cue-served partner comes after the cue, so it need not be in view yet.
-        preconditions: (s, c) => handOffPre(s, plan, partner(c), { partnerInView: !opts.cue?.open }),
+        // A cue-served partner comes after the cue, and a delivery carrier after its ready gate, so neither need be in view yet.
+        preconditions: (s, c) => handOffPre(s, plan, partner(c), opts.meeting ? { meeting: opts.meeting } : { partnerInView: !opts.cue?.open }),
         postconditions: s => {
             const missing = handOffMissing(s, plan);
             return missing.length ? `${plan.id} after the trade: ${missing.join('; ')}` : true;
@@ -595,7 +667,10 @@ export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step
         inProgress: o => tradeLanded(o.state, plan) && handOffMissing(o.state, plan).length > 0,
         async run(ctx) {
             if (trade.cue?.open) await runHandOffOnCue(ctx, plan, partner(ctx.c), trade.cue, trade);
-            else await runHandOff(sdkOf(ctx.sdk), plan, partner(ctx.c), trade);
+            else {
+                if (opts.meeting) await partnerInSight(sdkOf(ctx.sdk), plan, partner(ctx.c), opts.meeting);
+                await runHandOff(sdkOf(ctx.sdk), plan, partner(ctx.c), trade);
+            }
             mark(ctx.sdk);
         },
         async resume(ctx) {

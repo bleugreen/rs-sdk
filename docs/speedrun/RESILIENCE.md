@@ -201,7 +201,54 @@ handles it itself:
   unplanned, run.ts's and the operator's together. The start gate reads it; past
   it the recovery throws `RelogBudgetSpent` and the run stops with that reason.
   Between the halves of S21's split relog the account is out on purpose: no
-  relog, nothing counted.
+  relog, nothing counted. **Only a login is charged**: an adopt (the page still
+  in the world and ticking again, no login sent) is a row of kind `adopt`,
+  counted against neither planned nor unplanned, so short holds never wear the
+  budget down. An adopt that later falls out and is relogged becomes that
+  relog's one unplanned entry.
+- **The server's hold on a silent socket.** A socket that goes quiet without
+  closing (a network drop with no FIN) keeps the old player in the world until
+  the engine's `TIMEOUT_NO_RESPONSE`, 1,000 ticks after its last packet, not the
+  500-tick bound for a closed one, and every login meanwhile is refused with
+  reply 5, "Your account is already logged in. Try again in 60 secs". A hold
+  whose ticks resume under the page's own no-data timeout (120 s,
+  `NO_DATA_TIMEOUT_MS`; run.ts holds 15 s past it) costs nothing but the hold
+  (the page stays in game and is adopted).
+- **Close first after the whole window (rs/744).** On the host's 60 s socket
+  blocks (runs D and E) the server's stream to us stuck in TCP backoff: the page
+  claimed in game throughout, its in-page login timed out, and closing the tab
+  removed the body within ~10 s. So a page silent for its whole hold window
+  (out at its own timeout, or in game by its word with no tick, the world and
+  our gateway up: its claim is then ignored) is not reconnected in place:
+  drop-relog.ts closes the old tab (lib/tab.ts `closeBotTabs`, CDP close,
+  confirmed gone from Chrome's targets), waits `CLOSE_SETTLE_MS` (10 s), and
+  logs in on a fresh tab (session.ts `relaunchOwnTab`: the watchdog's
+  `launchClient` on a new token URL, checked by rs/668's `waitOwnLaunch`). With
+  close-first the window is the whole cost, which is why it is 120 s and no
+  longer: it must still outlast the network hold, since a close sent while the
+  path is blocked is dropped and the body lingers. A hold whose first packet
+  comes back after it (TCP backoff read a 60 s outage as 121.6 s) is relogged,
+  one unplanned entry. A socket that closed (the page out at once) is still
+  relogged in page at once.
+- **The relog never fails after one attempt.** `session.ts` matches the reply
+  on the title screen in one place (`loginReplyCode`); the drop recovery's login
+  asks for it (`stopOnReply`, `LoginRefused`), and a login with no tick in its
+  time throws `LoginTimedOut`. Holding the relog lock, the recovery retries a
+  refusal as already logged in, a timeout, or a fresh tab that did not get in
+  every 20 s (`ALREADY_IN_RETRY_MS`) for up to 8 min from the first failure
+  (`ALREADY_IN_BOUND_MS`), every retry on a fresh tab, never another in-page
+  login on a tab that just failed. The login that lands is one unplanned entry
+  (`meta.alreadyLoggedIn` holds the refusals, `meta.attempts` the tries, fresh
+  tabs and timeouts, `meta.closedFirst` the close); past the bound the recovery
+  fails as before. The watchdog stays paused and stands down for the out page
+  throughout, as for any running recovery, and relog-now refuses while the lock
+  is held. Any other refusal (a bad password, a full world) is not retried
+  here. The short reply-5 refusal right after a logout
+  ("old session is mid-logout") is still ridden out by `login`'s own retries
+  for every other caller.
+- **Every drop has its `(drop)` row**, written when the recovery returns and
+  also when it throws (`meta.failed`), so a relog that fails past its bound is
+  on the record.
 - **Measured** (bgsrv-mac, 400 ms, the 22:15 shape injected into a knife loop, a
   bank burst and a leg): drop to back in the world 24-26 ticks (9.5-10.3 s), the
   login itself 0.7-1.4 s; every step resumed and finished.
@@ -225,9 +272,64 @@ SDK session (a second controller would take the gateway from run.ts).
   it to go, finds the page in the world, adopts that session
   (`session.ts` `adoptSession`) and resumes exactly as after its own relog.
 - A page already back in the world when run.ts looks is adopted and recorded as
-  a manual relog, the same budget.
+  an adopt, never charged; the operator's relog-now it finds done is the
+  operator's own (charged) entry.
 - relog-now refuses while run.ts holds the lock, while S21's planned relog is
   open, and when the budget is spent, and does nothing in each case.
+
+### The client's idle logout, and what keeps SCORED's input alive (rs/648)
+
+The engine never logs a connected player out for want of input. `World.ts`
+`processLogouts` removes one only on byte silence, after `TIMEOUT_NO_RESPONSE` (1,000 ticks
+with no bytes from the client; a live client sends `NO_TIMEOUT` every second), or on a lost
+socket, after `TIMEOUT_NO_CONNECTION` (500 ticks). Its AFK constants drive random events
+only. The one idle logout is the browser webclient's own: after **10 minutes of wall time
+with no input** (`Client.ts`, `now - idleTimer > 600_000`) the client sends `IDLE_TIMER`,
+and the engine's `IdleTimerHandler` requests the logout. An engine with `NODE_DEBUG` on
+(the lab's default) ignores the request.
+
+Only input resets that timer: the page's mouse and key handlers, and every gateway action
+as it arrives (`BotOverlay.onAction`). **In-page program clicks do not**, because the
+program host calls the action executor directly. So whenever the run itself sends no SDK
+action for 10 minutes, the client logs SCORED out, whether SCORED stands still waiting on a
+partner or runs a program band.
+
+`lib/wait.ts` `keepInput` is the one keep-input. While a wait stands, it sends
+`sendWait(1)` once 60 s of wall time (`KEEP_INPUT_MS`, a tenth of the logout) have passed
+with nothing sent, one in flight at a time, and nothing once the wait ends. A `wait` action
+sends no game packet: the overlay answers it itself after one client frame (~20 ms), so it
+moves nothing, opens nothing and leaves a pending trade request standing. Its one
+SDK-visible effect is that an SDK action sent in that same frame queues behind it. A wait
+under 60 s sends nothing, so no measured step's actions change. It runs in:
+
+- `runHandOffOnCue`'s wait for the partner in sight (H11 and H23's cannon holder, up to
+  6,000 ticks); the report's `keepInputs` counts what it sent;
+- `DeliveryOwner.awaitReady`, the mule rows' wait for the carrier's readiness (up to 600
+  ticks);
+- `lib/programs.ts` `awaitProgram`, so every in-page band (agility, rc-cycle, pickpocket,
+  the knife-cycle and knife-mine bands, item-cycle) is covered however long it runs.
+
+**The ceiling on an outage** (main's ruling for attempt 4). While our gateway is down, no
+SDK action reaches the page, so nothing resets the client's timer. Two waits can stand that
+long: the watchdog's `gateway_down` wait, which has no bound, and drop-relog's
+`RESTORE_WAIT_TICKS` (4,500 ticks, 30 min). An outage longer than 10 minutes therefore lets
+the client log SCORED out on its own. Recovery from it is a relog through the drop-relog
+path above, charged to the relog budget, not a resume in place. There is no in-page idle
+override.
+
+**Measured** (fedora, 400 ms, NODE_DEBUG=false, headless browser tabs, `lab/keep-input-accept.ts`;
+the controls ran with the keep-input disabled by an uncommitted lab patch):
+
+- **A held cannon-cue wait.** The page's idle timer was set 5 min back at the wait's start. The control
+  got `IDLE_TIMER` and an idle logout 310 s into the wait. With the keep-input, 6 were sent in 900
+  ticks, the client never went 60 s without input after the first one, and it stayed in the world.
+- **An 11-minute knife-cycle band with nothing else sent.** The control got `IDLE_TIMER` 610 s after
+  the program start. With the keep-input, 10 were sent, one every 150 ticks, and it stayed in.
+- **The knife's timing, on against off.** Two pairs on one account, in opposite orders: ticks per
+  expected roll 3.008 on against 3.097 off, and 3.083 off against 3.181 on. The differences are
+  roll luck at about 250 rolls a band and change sign with the order. The cadence itself was
+  identical: 243 starters in 759 ticks with and without, with no late clicks and no skipped or
+  deferred ticks.
 
 ### Confirmed logout (`session.ts` `logoutClean`)
 

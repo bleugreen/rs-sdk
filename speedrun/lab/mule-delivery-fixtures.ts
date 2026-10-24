@@ -1,8 +1,8 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AskItem, CueScope } from '../helpers/altar-cue';
-import { muleDelivery, type ItineraryOptions } from '../helpers/mule-itinerary';
-import { materializeDeliveryPackage, muleRunOptions, packageFromRow, parseFallbacks, type LedgerPackage } from '../helpers/mule-ledger';
+import { H4M_STAND, muleDelivery, type ItineraryOptions } from '../helpers/mule-itinerary';
+import { h4mFallbackRow, H4M_ANCHOR, materializeDeliveryPackage, muleFromLedger, muleRunOptions, packageFromRow, parseFallbacks, type LedgerPackage } from '../helpers/mule-ledger';
 import type { WorldTile } from '../helpers/mule-readiness';
 import { westOfTaverley } from '../lib/kandarin';
 import { OBJ_CONFIGS, objIdsNamed, objName, untradeable } from '../lib/items';
@@ -184,17 +184,12 @@ function same(a: readonly FixtureItem[], b: readonly FixtureItem[]): boolean {
     const key = (items: readonly FixtureItem[]) => JSON.stringify(merge(items).map(i => [i.id, i.count]).sort((x, y) => x[0]! - y[0]!));
     return key(a) === key(b);
 }
-/**
- * A greegree can be wielded only inside its zone, and leaving the zone wrenches it into the pack
- * (server/content/scripts/quests/quest_mm/scripts/mm_greegree.rs2). Every delivery meeting is off
- * Ape Atoll, so a greegree the ledger walk still has worn is held there.
- */
-const heldOffZone = (item: FixtureItem) => /greegree/i.test(item.name);
 function matches(ref: ItemRef, item: FixtureItem): boolean {
     return ref.id !== undefined ? ref.id === item.bankId : itemPattern(ref.name).test(item.name);
 }
-function overridden(o: ConcreteFixtureOverride, pack: ObjPack, catalog: FixtureCatalog): FixtureItem[] {
-    if (!o.reason?.trim() || !o.items.length) fail('Concrete override needs items and an authority reason');
+/** `emptyOk`: an `any` return, whose override may confirm that nothing is held (an earlier step used the stock up). */
+function overridden(o: ConcreteFixtureOverride, pack: ObjPack, catalog: FixtureCatalog, emptyOk = false): FixtureItem[] {
+    if (!o.reason?.trim() || (!o.items.length && !emptyOk)) fail('Concrete override needs items and an authority reason');
     return merge(o.items.map(i => concrete(i.id, i.count, pack, catalog)));
 }
 function resolve(h: Held, o: ConcreteFixtureOverride | undefined, pack: ObjPack, catalog: FixtureCatalog): FixtureItem[] {
@@ -244,7 +239,9 @@ function receivingArea(row: string, at: WorldTile, itinerary?: ItineraryOptions)
         H18: TILES.flySpots, H19: TILES.cook, H20: TILES.rustyAnchor,
         H21d: TILES.westBooth, H22: TILES.championsGuild,
     };
-    const area: Area | undefined = row === 'H3' ? itinerary?.rehearsal?.firemakingEnd : areas[row];
+    // H4m's loads: SCORED on the zoo lap's east stay, the one lap tile beside the stand.
+    const area: Area | undefined = row === 'H3' ? itinerary?.rehearsal?.firemakingEnd
+        : /^H4m\.\d+$/.test(row) ? { x: H4M_STAND.x - 1, z: H4M_STAND.z, tol: 0 } : areas[row];
     if (!area) fail('No canonical receiving area for ' + row);
     return { ...area, level: area.level ?? at.level, tol: area.tol ?? 0 };
 }
@@ -298,17 +295,22 @@ export function planMuleDeliveryFixtures(o: MuleDeliveryFixtureOptions): MuleDel
         };
         const fixture = capture((): MuleDeliveryFixture => {
             if (requestedRows.filter(id => id === rowId).length !== 1) fail('Duplicate selected row ' + rowId);
-            const onRequest = (o.onRequest ?? []).includes(rowId);
-            const rows = onRequest ? fallbacks : parsed.rows;
-            const indices = rows.flatMap((r, i) => r.row === rowId ? [i] : []);
+            // An H4m load is the canonical expansion of the fallback row H4m.1-H4m.N (mule-ledger.ts), right
+            // after H4p; its recipient is SCORED as H4p leaves it, the state before H4p's step.
+            const load = /^H4m\.\d+$/.test(rowId) ? muleFromLedger(o.manifest, { rows: [H4M_ANCHOR], pack: o.pack }).find(l => l.row === rowId) ?? fail(rowId + ': not one of the manifest\'s H4m loads') : null;
+            if (load && !(requestedRows[requestedRows.indexOf(rowId) - 1] === H4M_ANCHOR || /^H4m\.\d+$/.test(requestedRows[requestedRows.indexOf(rowId) - 1] ?? ''))) fail(rowId + ': an H4m load follows ' + H4M_ANCHOR + ' or another load');
+            const onRequest = !load && (o.onRequest ?? []).includes(rowId);
+            const rows = onRequest || load ? fallbacks : parsed.rows;
+            const loadSource = load ? h4mFallbackRow(fallbacks) : null;
+            const indices = rows.flatMap((r, i) => (loadSource ? r === loadSource : r.row === rowId) ? [i] : []);
             if (indices.length !== 1) fail(rowId + ': expected exactly one ledger row, found ' + indices.length);
             const index = indices[0]!;
-            if (!onRequest && index <= previousIndex) fail('Selected rows are not in ledger order');
-            if (!onRequest) previousIndex = index;
+            if (!onRequest && !load && index <= previousIndex) fail('Selected rows are not in ledger order');
+            if (!onRequest && !load) previousIndex = index;
             const row = rows[index]!;
             const overrides = o.overrides?.[rowId] ?? {};
-            const point = overrides.beforeRow ?? (onRequest ? ({ H4e: 'S07 last load', H4m: 'S09' } as Record<string, string>)[rowId] : rowId);
-            if (!onRequest && overrides.beforeRow && point !== rowId) fail('An ordered row cannot override its ledger insertion point');
+            const point = overrides.beforeRow ?? (load ? load.step! : onRequest ? ({ H4e: 'S07 last load', H4m: 'S09' } as Record<string, string>)[rowId] : rowId);
+            if (!onRequest && !load && overrides.beforeRow && point !== rowId) fail('An ordered row cannot override its ledger insertion point');
             const checkpoints = parsed.rows.flatMap((r, i) => r.row === point ? [i] : []);
             if (checkpoints.length !== 1) fail('Conditional fixture needs an unambiguous beforeRow checkpoint');
             const checkpoint = checkpoints[0]!;
@@ -325,12 +327,10 @@ export function planMuleDeliveryFixtures(o: MuleDeliveryFixtureOptions): MuleDel
                 materialized.set(itemLabel(h), [...(materialized.get(itemLabel(h)) ?? []), ...items]);
                 return items;
             }, []);
-            const inv = before.inv.flatMap(held);
-            const worn = before.worn.flatMap(held);
-            const beforeInventory = merge([...inv, ...worn.filter(heldOffZone)]);
-            const beforeEquipment = merge(worn.filter(i => !heldOffZone(i)));
+            const beforeInventory = merge(before.inv.flatMap(held));
+            const beforeEquipment = merge(before.worn.flatMap(held));
             const canonicalPlan = capture(() => planHandOff(row), null);
-            const ledger = capture(() => packageFromRow(rows, index, 'ask', o.pack, onRequest), null);
+            const ledger = load ?? capture(() => packageFromRow(rows, index, 'ask', o.pack, onRequest), null);
             const delivery = capture(() => muleDelivery(rowId, o.itinerary), null);
             const takeBacks = merge(row.out.flatMap(e => capture(() => {
                 // A `drop` is left on SCORED's tile, never handed back to the helper.
@@ -339,7 +339,7 @@ export function planMuleDeliveryFixtures(o: MuleDeliveryFixtureOptions): MuleDel
                 if (e.reason !== 'swap' && e.reason !== 'trade') fail(itemLabel(e) + ': not a trade return');
                 const chosen = overrides.takeBacks?.[itemLabel(e)] ?? authorizedRecoil(rowId, e, e.count, o.pack);
                 if ((e.placeholder || e.family || e.count === 'all' || e.count === 'any') && !chosen) fail(itemLabel(e) + ': all/any/family/placeholder return requires explicit concrete fixture override');
-                const items = chosen ? overridden(chosen, o.pack, catalog) : [...beforeInventory, ...beforeEquipment].filter(i => matches(e, i));
+                const items = chosen ? overridden(chosen, o.pack, catalog, e.count === 'any') : [...beforeInventory, ...beforeEquipment].filter(i => matches(e, i));
                 const expected = e.placeholder ? materialized.get(itemLabel(e)) ?? [] : [...beforeInventory, ...beforeEquipment].filter(i => matches(e, i));
                 if (!same(items, expected)) fail(itemLabel(e) + ': return override differs from the intended before-state');
                 // `any` may return nothing (stock an earlier step used up)
@@ -374,10 +374,7 @@ export function planMuleDeliveryFixtures(o: MuleDeliveryFixtureOptions): MuleDel
             let afterEquipment = subtract(beforeEquipment, off);
             for (const e of row.equip) {
                 const from = e.on ? afterInventory : afterEquipment;
-                const found = from.find(i => itemPattern(e.name).test(i.name));
-                // Unequipping a greegree the engine has already moved into the pack (heldOffZone).
-                if (!found && !e.on && afterInventory.some(i => heldOffZone(i) && itemPattern(e.name).test(i.name))) continue;
-                const item = found ?? fail('Equip ' + e.name + ': missing concrete item');
+                const item = from.find(i => itemPattern(e.name).test(i.name)) ?? fail('Equip ' + e.name + ': missing concrete item');
                 const moved = { ...item, count: item.kind === 'u' ? 1 : item.count };
                 if (e.on) { afterInventory = subtract(afterInventory, [moved]); afterEquipment = merge([...afterEquipment, moved]); }
                 else { afterEquipment = subtract(afterEquipment, [moved]); afterInventory = merge([...afterInventory, moved]); }

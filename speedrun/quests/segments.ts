@@ -16,7 +16,7 @@
 // step id, and `runSteps({from})` starts at any segment by its full name.
 
 import type { BotSDK } from '../../sdk/index';
-import type { BotWorldState } from '../../sdk/types';
+import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import type { QuestKey, StageName } from '../data/quest-stages';
 import { prayerDoses } from '../lib/combat';
 import type { ConverseOptions } from '../lib/converse';
@@ -90,7 +90,7 @@ export function segmentName(stepId: string, letter: string, label: string): stri
  * Prefer a game fact (a quest stage, items kept, a level) wherever one exists.
  */
 export function recorded(o: Observed, stepName: string): boolean {
-    return !!(o as Observed & { record?: { has(name: string): boolean } }).record?.has(stepName);
+    return !!o.record?.has(stepName);
 }
 
 const pass = () => true as const;
@@ -257,6 +257,174 @@ export async function drinkPrayerTo(sdk: DrinkSdk, target: number, maxTicks = 9)
         }
         drunk++;
     }
+}
+
+// ---------------------------------------------------------------- poison
+//
+// A poison is carried from step to step: %poison is a perm varp and login restarts its timer
+// (poison.rs2 set_poison_login), and nothing on the route cures it unless a step drinks. The client
+// is never sent %poison (all.varp: no transmit), so the published evidence is the poison's own
+// damage, a hitsplat of type HITMARK_POISON every POISON_PERIOD ticks while it lasts, and 'You have
+// been poisoned!', which comes only on a fresh poisoning (%poison 0 before, poison.rs2:13-15). A poison
+// tick also runs if_close (poison.rs2:36), closing an open trade or talk. One record of the last
+// dose, whoever drank it, keeps two cures from drinking for one poisoning.
+
+/** The server's hitmark type for poison damage (hitmark.constant ^hitmark_poison; poison.rs2 poison_damage). */
+export const HITMARK_POISON = 2;
+/** Ticks between poison hits (poison.rs2 set_poison_timer: settimer(poison, 30)). */
+export const POISON_PERIOD = 30;
+/** Evidence this recent means the poison is still on: while it lasts a hit lands every POISON_PERIOD. */
+export const POISON_WINDOW = POISON_PERIOD + 2;
+/** Any antipoison's doses by name: "Antipoison(3)" and "Superantipoison(4)" (no space). */
+export const ANTIPOISON = /antipoison\(\d\)$/i;
+const POISONED_MESSAGE = /you have been poisoned/i;
+/** Ticks an entry cure waits for an open chat to close before drinking through it: no talk of the step's own is open yet. */
+const CURE_CHAT_TICKS = 5;
+
+/** The tick of the newest poison evidence the state holds: a poison hitsplat on the player or the poisoned message; -Infinity if none. */
+export function poisonSeenAt(s: Pick<BotWorldState, 'combatEvents' | 'gameMessages'>): number {
+    let at = -Infinity;
+    for (const e of s.combatEvents ?? []) if (e.type === 'damage_taken' && e.targetType === 'player' && e.hitmark === HITMARK_POISON) at = Math.max(at, e.tick);
+    for (const m of s.gameMessages ?? []) if (POISONED_MESSAGE.test(m.text)) at = Math.max(at, m.tick);
+    return at;
+}
+
+let drunkAt = -Infinity;
+/** The highest client tick seen since the last restart. */
+let seenTick = -Infinity;
+
+/**
+ * Watch the published tick: it is the client's own and restarts at a reload, so a tick below the highest seen means a new
+ * session, and a dose recorded in the old one says nothing about a poison carried into it (measured in the S15:A lab: a
+ * stale record hid a carried poison until its next hit, HP 26 to 20).
+ */
+function observeTick(tick: number): void {
+    if (!Number.isFinite(tick)) return;
+    if (tick < seenTick) drunkAt = -Infinity;
+    seenTick = tick;
+}
+
+/**
+ * The tick of the run's last antipoison dose, by any caller; -Infinity after a restart, after a client reload seen at
+ * `now`, or when the record is ahead of `now`.
+ */
+export function antipoisonDrunkAt(now = Infinity): number {
+    observeTick(now);
+    return drunkAt > now ? -Infinity : drunkAt;
+}
+
+/** Record a dose, in the tick its drink is sent: from then `poisoned` reads every earlier evidence as cured. -Infinity clears it. */
+export function noteAntipoison(tick: number): void {
+    if (tick === -Infinity) seenTick = -Infinity;
+    observeTick(tick);
+    drunkAt = tick;
+}
+
+/**
+ * Whether the poison is on as far as the published state shows: evidence newer than `since` (the last dose) and within
+ * POISON_WINDOW of now. A poison that wore off reads as on for at most POISON_WINDOW past its last hit (a wasted dose at
+ * worst); after a client reload, a carried poison shows only at its next hit. A `since` ahead of the state's tick is a
+ * record from before a reload (the client's tick restarts) and counts as no dose: measured in the lab, it hid a carried
+ * poison until its next hit.
+ */
+export function poisoned(s: Pick<BotWorldState, 'tick' | 'combatEvents' | 'gameMessages'>, since?: number): boolean {
+    observeTick(s.tick);
+    since ??= drunkAt;
+    const at = poisonSeenAt(s);
+    const dose = since > s.tick ? -Infinity : since;
+    return at > dose && s.tick - at <= POISON_WINDOW;
+}
+
+/** What a potion's drink prints once its p_delay is over (consume_effects.rs2 consume_effect_messages). */
+const DRINK_DONE = /^You have (finished your potion|\d doses? of potion left)/i;
+/** The most ticks a potion's p_delay holds the player (its message_delay; the doses-left message came 2-3 ticks after the drink at 400 ms). */
+export const DRINK_DELAY_TICKS = 4;
+
+/**
+ * Until a potion drunk at `sent` has finished its p_delay (its doses-left message), at most DRINK_DELAY_TICKS. A click sent
+ * inside the delay is dropped with no message: measured at S15:A, Narnode's talk sent there opened 16 ticks late.
+ */
+export async function drinkDelayOver(sdk: StateSource, sent: number): Promise<void> {
+    await waitUntil(sdk, s => (s.gameMessages ?? []).some(m => m.tick >= sent && DRINK_DONE.test(m.text)), { maxTicks: DRINK_DELAY_TICKS });
+}
+
+const dosesOf = (name: string) => Number(/\((\d)\)$/.exec(name)?.[1] ?? 0);
+const isSuper = (name: string) => /^super/i.test(name);
+
+/**
+ * The antipoison dose to drink: a plain Antipoison(n) before any Superantipoison (the plain one is H7's, leaving in H12's
+ * swap; the super is a kit line), the fewest doses first within a kind; null if none is held.
+ */
+export function cureDose(s: Pick<BotWorldState, 'inventory'>): InventoryItem | null {
+    const held = s.inventory.filter(i => ANTIPOISON.test(i.name));
+    held.sort((a, b) => Number(isSuper(a.name)) - Number(isSuper(b.name)) || dosesOf(a.name) - dosesOf(b.name));
+    return held[0] ?? null;
+}
+
+/**
+ * Cure a poison that is on: one dose (cureDose), confirmed by the potion leaving its slot (a dose fewer, or the vial) and
+ * re-sent once after DRINK_RESEND_TICKS (a scene's delay drops item clicks), then the drink's own delay waited out
+ * (drinkDelayOver), so the caller's next click lands. An open chat gets CURE_CHAT_TICKS to close first. Notes the dose in
+ * the tick it is sent. Throws when neither drink lands.
+ */
+export async function curePoison(sdk: DrinkSdk, where: string): Promise<'clean' | 'cured' | 'none-held'> {
+    let s = sdk.getState();
+    if (!s) throw new Error(`${where}: no state`);
+    if (!poisoned(s)) return 'clean';
+    if (s.dialog?.isOpen) {
+        await waitUntil(sdk, st => !st.dialog?.isOpen, { maxTicks: CURE_CHAT_TICKS });
+        s = sdk.getState()!;
+        if (!poisoned(s)) return 'clean';
+    }
+    const dose = cureDose(s);
+    if (!dose) return 'none-held';
+    const { slot, name } = dose;
+    const gone = (st: BotWorldState) => st.inventory.find(i => i.slot === slot)?.name !== name;
+    for (let attempt = 0; attempt < 2; attempt++) {
+        const sent = sdk.getState()!.tick;
+        noteAntipoison(sent);
+        void sdk.sendUseItem(slot, dose.optionsWithIndex.find(o => /^drink$/i.test(o.text))?.opIndex ?? 1);
+        if ((await waitUntil(sdk, gone, { maxTicks: DRINK_RESEND_TICKS })).ok) {
+            await drinkDelayOver(sdk, sent);
+            return 'cured';
+        }
+    }
+    throw new Error(`${where}: the ${name} in slot ${slot} was not drunk in ${2 * DRINK_RESEND_TICKS} ticks`);
+}
+
+/** A precondition: not poisoned, or a dose is held to cure it; else the shortfall, named. */
+export function poisonCovered(where: string): Check<any> {
+    return s => !poisoned(s) || cureDose(s) !== null || `${where} entered poisoned with no antipoison held`;
+}
+
+/**
+ * `segs` with an entry cure on each of `letters`: the poison check first among the preconditions (poisonCovered), and
+ * a poison carried in cured before the body (and a resume) runs. For a segment that can be entered poisoned, a fight or
+ * the last safe point before one; clean, it costs nothing.
+ */
+export function entryCured<C>(stepId: string, letters: readonly string[], segs: readonly Segment<C>[]): Segment<C>[] {
+    const missing = letters.filter(l => !segs.some(s => s.letter === l));
+    if (missing.length) throw new Error(`entryCured: ${stepId} has no segment ${missing.join(', ')}`);
+    return segs.map(seg => {
+        if (!letters.includes(seg.letter)) return seg;
+        const where = `${stepId}:${seg.letter}`;
+        const cured: Segment<C> = {
+            ...seg,
+            preconditions: allOf(poisonCovered(where), seg.preconditions),
+            run: async ctx => {
+                await curePoison(ctx.sdk, where);
+                await seg.run(ctx);
+            },
+        };
+        if (seg.resume) {
+            const resume = seg.resume;
+            cured.resume = async ctx => {
+                await curePoison(ctx.sdk, where);
+                await resume(ctx);
+            };
+        }
+        return cured;
+    });
 }
 
 // ---------------------------------------------------------------- inventory need

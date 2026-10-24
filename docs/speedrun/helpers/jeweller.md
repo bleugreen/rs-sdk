@@ -90,11 +90,7 @@ from couriers, the GE, or the role's own random gems while it mines gold.
 ## Getting gems and coins to it
 
 The receive step accepts trades from `couriers` and gives nothing back, so any account
-that can walk to Varrock west bank can deliver. The gold step accepts them too, between
-rocks, so while the role is mining a courier can deliver at Rimmington's gold rocks
-(`meet` 2976,3235) instead of waiting for the bars to be finished. Deliver noted where you
-can: a trade lands in an inventory that is filling with ore, and notes take one slot
-each (the next bank visit unnotes them). For exact amounts from a fleet account the
+that can walk to Varrock west bank can deliver. For exact amounts from a fleet account the
 simplest route stays inside the fleet: assign it the `handover` role
 (`speedrun/helpers/handover.ts`, `{meet:{x:3185,z:3436}, handovers:[{to:"cairn_h80",
 items:[{item:"Uncut emerald",n:9}]}]}`) with `--return`, and the fleet gives it its role back when the handover finishes. For whole stacks or
@@ -131,11 +127,6 @@ cairn_h80 on rs-sdk-demo.fly.dev, 2026-10-21, through a loopback gateway on bbs
 | smith (to 40) | Smithing 29 to 40 in about 6 minutes of steel bars |
 | gold | 6 trips, 16:27-17:25 UTC: 67 gold ore (9-14 per trip, about 9.5 minutes each), smelted into 69 bars, Smithing 40 to 57. **About 70 bars per hour.** Every trip ended on its 1,200-tick budget for waiting on depleted rocks: Rimmington's two gold rocks had 7-16 other players in view |
 | train, cut, craft, string | 17:25-17:29 UTC, about 4 minutes in all: 7 gold rings (Crafting 6 to 20); cut 13 sapphires, 11 emeralds, 5 rubies, 3 diamonds (to 57); crafted 12 sapphire, 11 emerald, 5 ruby, 3 diamond rings and the sapphire amulet, strung it (to 65) |
-
-Again on 2026-10-23 for attempt 3 (cairn://p/rs/630), h80 at Crafting 80, Mining 81, Smithing 59,
-with gems handed over at the rocks during its gold trips: 53 bars in 5 trips, 20:13-21:06 UTC
-(14, 12, 9, 12 and 5 ore; 6-15 players in view, so **about 75 bars per hour**), then all 60
-gems cut and the 60 rings crafted in 5 minutes (Crafting 80 to 88).
 
 So a fresh account with the gems in hand takes about 2 h 30 min, nearly all of it
 Smithing and Mining training (about 75 minutes) and gold (about 60 minutes). An account

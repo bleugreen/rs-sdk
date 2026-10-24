@@ -14,13 +14,40 @@
 //   without its givers refuses (giverGaps) before SCORED logs in;
 // - S03's log-row droppers, the real ones, run by this driver the same way (--droppers below);
 // - S07's bone givers, the real four, run by this driver the same way (--bone-givers below);
-// - the modules' other helpers (courier, anvil, wine giver) started by
-//   the operator in their lab modes, named in the lab run config.
+// - the delivery carriers (mule1, h55, h03 roles), S21's body-altar givers, S18's courier and H12o's
+//   atoll helper, the real roles, run by this driver the same way (--carriers, --s21-givers, --courier,
+//   --h12o below); the anvil and wine giver by theirs (--anvil, --wine-giver).
 //
 //   LOCAL_STAFF_LEVEL=4 bun speedrun/lab/dress-rehearsal.ts --bot=<fresh lab account env> --config=<lab run config>
 //       [--until=<id>] [--from=<id>] [--stage=0] [--stub=<stub giver env>] [--client=browser|lite] [--log=<file>]
 //       [--ringers=<g1>,<g2>,<g3>] [--altar-givers=<a1>,...,<a7>] [--droppers=<d1>,...,<d6>] [--bone-givers=<b1>,...,<b4>] [--staff-steps=<id>,...]
 //       [--anvil=<cairn_ name>] [--cannon-holder=<cairn_ name>] [--wine-giver=<lab.sh helper>]
+//       [--carriers=<mule1>,<h55>,<h03>] [--delivery-run=<token>] [--s21-givers=<t1>,...,<t22>] [--courier=<cairn_ name>] [--h12o=<cairn_ name>]
+//
+// --carriers: the delivery carriers, lab cairn_ names NOT on LAB_HELPERS taking the roles of
+// cairn_mule1, cairn_h55 and cairn_h03 in that order: lab/carrier-launch.ts generates the lab carriers
+// file with the run-day generator (the production binding of mule-delivery-production.json, the
+// ledger's rows with H4m.1-H4m.N on h55's while the row is in force, serve = this SCORED, the run's
+// mule cue dir, deliveryRun --delivery-run or a fresh lab token) for the rows this slice trades, seeds
+// each carrier's bank by ::give with exactly its packages' stock, and starts the real mule role through
+// one launcher (AGENT_PORT+12) whose launch.json is the run config's delivery.launcherConfig; each
+// stands staged on its first row (readyFor, i.e. muleCanReady) before SCORED logs in. The run config's
+// partners name them for their rows, and run.ts's delivery owner prepares, gates and cues each row.
+// Every carrier-held row trades with its carrier; a mule-cue row no carrier holds is staff-supplied
+// (the bound owner refuses an unknown mule row); a non-mule row still goes to --stub when given.
+// --s21-givers: S21's 22 body-altar givers (lab/s21-launch.ts: the production roster's entries, restock
+// by ::give, the hand-back giver's bank seeded with its trades' essence and runes), AGENT_PORT+13,
+// logged out awaiting {S21, altar} before SCORED logs in; runecraft.ts's pre-login opens it. The run
+// config's s21Givers becomes the list.
+// --courier: S18's courier (lab/courier-launch.ts: bone-giver on-request, iron ore, hold 14, the carry
+// list, its bank at Ardougne south seeded by labSeed), AGENT_PORT+14, awaiting {S18, courier}; the run
+// config's courier.giver becomes it.
+// --h12o: H12o's atoll helper (lab/h12o-launch.ts: the generated h45 entry, staged with its carried
+// load on H12oM's tile), AGENT_PORT+15, awaiting its trigger in h45-login; the run config's h12o block
+// names it with the run's h45-cue and h45-login folders.
+// Each of these logs out at its family's close (its stop cue, or this driver's stop once its last step
+// returns) or at the chain's end; a slice that needs S21's, S18's or H12o's helper without its flag
+// refuses before SCORED logs in.
 //
 // --anvil: S25a's anvil helper (SUPPLIES.md H21a), a cairn_ name NOT on LAB_HELPERS: lab/anvil-launch.ts
 // starts helpers/anvil.ts through the run machine's launcher (relay, bank restock with lab stock,
@@ -96,7 +123,12 @@ import { newRunId, parseLog, TickLog } from '../lib/ticks';
 import { attemptOf, loadRunConfig, runChainOnSession, Terminated } from '../run';
 import type { BotWorldState } from '../../sdk/types';
 import { h4PlanOf } from '../quests/dorics-quest';
-import { buildChain, CANNON_ROWS, KIT_PARTNER_ROWS, KIT_SEGMENTS, muleCueDir, noteRow, PLACEMENT, sliceUntil, resolveFrom, STAND_IN_ROWS, type ChainStep, type RunConfig } from '../runner/chain';
+import { buildChain, CANNON_ROWS, chainPartners, KIT_PARTNER_ROWS, KIT_SEGMENTS, muleCueDir, noteRow, PLACEMENT, sliceUntil, resolveFrom, STAND_IN_ROWS, type ChainStep, type RunConfig } from '../runner/chain';
+import { deliveryOwnerFor } from '../runner/delivery-owner';
+import { carrierBase, carrierGaps, carrierLaunch, carrierNames, carrierPartners, CARRIER_PORT_OFFSET, cueRootOf, labCarriersFile, launchCarriers, productionBinding, PRODUCTION_BINDING, stopCarriers, type CarrierEntry, type CarrierRole } from './carrier-launch';
+import { courierGaps, launchCourier, runsS18, stopCourier } from './courier-launch';
+import { h12oGaps, labH12o, launchH12o, runsH12o, stopH12o } from './h12o-launch';
+import { launchS21Givers, runsS21, s21GiverGaps, stopS21Givers } from './s21-launch';
 import { prepareCueDir, RunCues } from '../runner/cue-keeper';
 import { AttemptRecord } from '../runner/attempt-record';
 import { applyEquip, handOffFrom, unequipGives, type HandOffPlan, type HandOffSdk } from '../runner/handoff';
@@ -178,7 +210,12 @@ export interface LabChain {
     staffed: string[];
     /** Cannon rows run as SCORED's real cue-served hand-off against the lab holder. */
     cueServed: string[];
+    /** Rows the lab's real carriers serve (--carriers): SCORED's real delivery hand-off. */
+    carrierServed: string[];
 }
+
+/** The ledger row a hand-off step trades. */
+export const rowOf = (s: Pick<ChainStep, 'name'>): string => s.name.replace(/ hand-off.*$/, '');
 
 /**
  * run.ts's chain as the lab runs it: stand-ins for the missing groups, the stub giver's rows, the
@@ -188,12 +225,13 @@ export interface LabChain {
 /** The plan each module-traded kit row (runner/chain.ts KIT_SEGMENTS) runs, from the state and the ledger's text. */
 export const KIT_PLANS: Readonly<Record<string, (s: BotWorldState, manifest: string) => HandOffPlan>> = { H4: (s, manifest) => h4PlanOf(s, handOffFrom(manifest, 'H4')) };
 
-export function labChain(chain: readonly ChainStep[], o: { manifest: string; stub: string | null; world: () => LabWorld; cannonServed?: readonly string[]; kitServed?: readonly string[] }): LabChain {
+export function labChain(chain: readonly ChainStep[], o: { manifest: string; stub: string | null; world: () => LabWorld; cannonServed?: readonly string[]; kitServed?: readonly string[]; carrierRows?: ReadonlySet<string> }): LabChain {
     const out: ChainStep[] = [];
     const stubRows: StubRow[] = [];
     const standIns: string[] = [];
     const staffed: string[] = [];
     const cueServed: string[] = [];
+    const carrierServed: string[] = [];
     for (let i = 0; i < chain.length; i++) {
         const s = chain[i]!;
         if (s.kind === 'missing') {
@@ -226,7 +264,10 @@ export function labChain(chain: readonly ChainStep[], o: { manifest: string; stu
             if (CANNON_ROWS[row] && o.cannonServed?.includes(row)) {
                 cueServed.push(row);
                 out.push(s);
-            } else if (CANNON_ROWS[row] || !o.stub) {
+            } else if (!CANNON_ROWS[row] && o.carrierRows?.has(row)) {
+                carrierServed.push(row);
+                out.push(s);
+            } else if (CANNON_ROWS[row] || !o.stub || (o.carrierRows && s.cue?.family === 'mule')) {
                 out.push(staffSupplyStep(s, o.manifest));
                 staffed.push(row);
             } else {
@@ -237,7 +278,7 @@ export function labChain(chain: readonly ChainStep[], o: { manifest: string; stu
         }
         out.push(s);
     }
-    return { chain: out, stubRows, standIns, staffed, cueServed };
+    return { chain: out, stubRows, standIns, staffed, cueServed, carrierServed };
 }
 
 /** S06's band as the chain runs it (runner/chain.ts: runecraft.steps({ untilLevel: 44 })); its givers carry its `load`. */
@@ -279,6 +320,14 @@ export interface GiverSets {
     cannonHolder?: string;
     /** S25c's wine giver (--wine-giver), a LAB_HELPERS account. */
     wineGiver?: string;
+    /** The delivery carriers (--carriers), the mule1, h55 and h03 roles in order. */
+    carriers?: readonly string[];
+    /** S21's body-altar givers (--s21-givers). */
+    s21Givers?: readonly string[];
+    /** S18's courier (--courier). */
+    courier?: string;
+    /** H12o's atoll helper (--h12o). */
+    h12o?: string;
 }
 
 /**
@@ -309,6 +358,17 @@ export function giverGaps(all: readonly (Pick<ChainStep, 'id'> & { name?: string
         }
     }
     out.push(...boneGiverGaps(steps, { boneGivers: g.boneGivers ?? [], ...(g.labHelpers ? { labHelpers: g.labHelpers } : {}), others: { '--ringers': g.ringers, '--altar-givers': g.altarGivers, '--droppers': g.droppers ?? [], '--anvil': g.anvil ? [g.anvil] : [] } }));
+    const flags: Record<string, readonly string[]> = {
+        '--ringers': g.ringers, '--altar-givers': g.altarGivers, '--droppers': g.droppers ?? [], '--bone-givers': g.boneGivers ?? [],
+        '--anvil': g.anvil ? [g.anvil] : [], '--cannon-holder': g.cannonHolder ? [g.cannonHolder] : [], '--wine-giver': g.wineGiver ? [g.wineGiver] : [],
+        '--carriers': g.carriers ?? [], '--s21-givers': g.s21Givers ?? [], '--courier': g.courier ? [g.courier] : [], '--h12o': g.h12o ? [g.h12o] : [],
+    };
+    const others = (self: string) => Object.fromEntries(Object.entries(flags).filter(([f]) => f !== self));
+    const helpers = g.labHelpers ? { labHelpers: g.labHelpers } : {};
+    out.push(...carrierGaps({ carriers: g.carriers ?? [], ...helpers, others: others('--carriers') }));
+    out.push(...s21GiverGaps(steps, { givers: g.s21Givers ?? [], ...helpers, others: others('--s21-givers') }));
+    out.push(...courierGaps(steps, { ...(g.courier ? { courier: g.courier } : {}), ...helpers, others: others('--courier') }));
+    out.push(...h12oGaps(steps, { ...(g.h12o ? { h12o: g.h12o } : {}), ...helpers, others: others('--h12o') }));
     return out;
 }
 
@@ -338,7 +398,7 @@ export function formatBoundary(b: Boundary): string {
 export function args(argv: readonly string[]): Record<string, string> {
     const out: Record<string, string> = {};
     argv.forEach((a, i) => {
-        const m = /^--([a-z-]+)=(.*)$/.exec(a);
+        const m = /^--([a-z0-9-]+)=(.*)$/.exec(a);
         if (m) out[m[1]!] = m[2]!;
         else if (i === 0 && !a.startsWith('-')) out.bot = a;
         else throw new Error(`unexpected argument ${a}`);
@@ -373,6 +433,13 @@ async function main(argv: string[]): Promise<number> {
     // H23's partner is the holder --cannon-holder launches, so H23 stays SCORED's real cue-served hand-off.
     if (cannonHolder) raw.partners = { ...raw.partners, H23: cannonHolder };
     const manifest = readFileSync(MANIFEST, 'utf8');
+    // The carriers' rows (the production binding under the lab names) are theirs before the chain is built.
+    const carriers = list(a.carriers);
+    const prod = carriers.length ? productionBinding(JSON.parse(readFileSync(PRODUCTION_BINDING, 'utf8'))) : null;
+    const carrierNamed = prod && carriers.length === 3 ? carrierNames(carriers) : null;
+    const carrierRowMap = carrierNamed ? carrierPartners(manifest, prod!, carrierNamed) : {};
+    const carrierRoles: Record<string, CarrierRole> = carrierNamed ? Object.fromEntries(Object.entries(carrierNamed).map(([r, n]) => [canonName(n), r as CarrierRole])) : {};
+    raw.partners = { ...raw.partners, ...carrierRowMap };
     // Every placed row's partner: the stub giver when there is one, else STAFF.
     const partners: Record<string, string> = { ...raw.partners };
     for (const row of Object.keys(PLACEMENT)) partners[row] ??= stubEnv?.BOT_USERNAME ?? STAFF;
@@ -388,6 +455,13 @@ async function main(argv: string[]): Promise<number> {
     // S25a trades the helper --anvil launches.
     if (anvil) cfg.anvil = { giver: anvil };
     if (wineGiver) cfg.wineGiver = wineGiver;
+    const s21Givers = list(a['s21-givers']);
+    const courier = a.courier;
+    const h12oName = a.h12o;
+    // S18's top-ups, S21's roster and H12o's two legs trade the helpers these flags launch.
+    if (courier) cfg.courier = { ...cfg.courier, giver: courier };
+    if (s21Givers.length) cfg.s21Givers = s21Givers;
+    if (h12oName) cfg.h12o = labH12o(h12oName, cfg);
     if (cfg.cueDir !== defaultCueDir()) {
         console.error(`[dress] REFUSED: cue dir ${cfg.cueDir} is not the one the helpers' writers use (${defaultCueDir()})`);
         return 3;
@@ -401,7 +475,7 @@ async function main(argv: string[]): Promise<number> {
     const full = buildChain(cfg, { cues: keeper, manifest, attempt, record: new AttemptRecord(RUN_DIR, attempt) });
     const sliced = sliceUntil(full, a.until);
     const kitServed = Object.keys(KIT_SEGMENTS).filter(r => raw.partners[r] && raw.partners[r] !== STAFF);
-    const lab = labChain(sliced, { manifest, stub: stubEnv?.BOT_USERNAME ?? null, world, cannonServed, kitServed });
+    const lab = labChain(sliced, { manifest, stub: stubEnv?.BOT_USERNAME ?? null, world, cannonServed, kitServed, ...(carrierNamed ? { carrierRows: new Set(Object.keys(carrierRowMap)) } : {}) });
     const runOrder = readFileSync(join(ROOT, 'docs/speedrun/RUN-ORDER.md'), 'utf8');
     // A helper-fed step no lab launch serves yet: staged past by staff and labelled (lab/boundary.ts staffJumps).
     const jumps = staffJumps(lab.chain, list(a['staff-steps']), { runOrder, manifest }, world);
@@ -423,11 +497,40 @@ async function main(argv: string[]): Promise<number> {
     const toRun = lab.chain.slice(from ?? 0);
     const loads = ringLoads(cfg.rings);
     const labHelpers = process.env.LAB_HELPERS !== undefined ? list(process.env.LAB_HELPERS) : undefined;
-    const gaps = giverGaps(toRun, { ringers, altarGivers, droppers, boneGivers, anvil, cannonHolder, wineGiver, loads: loads.length, ...(labHelpers ? { labHelpers } : {}) });
+    const gaps = giverGaps(toRun, { ringers, altarGivers, droppers, boneGivers, anvil, cannonHolder, wineGiver, carriers, s21Givers, ...(courier ? { courier } : {}), ...(h12oName ? { h12o: h12oName } : {}), loads: loads.length, ...(labHelpers ? { labHelpers } : {}) });
     if (gaps.length) {
         for (const g of gaps) console.error(`[dress] REFUSED: ${g}`);
         return 3;
     }
+    // The carriers file: the run-day generator for the carrier rows this slice trades (a hand-off, or a module's mule cue).
+    const sliceCarrierRows = [...new Set(toRun.flatMap(s => (s.cue?.family === 'mule' ? [s.cue.step] : s.kind === 'handoff' ? [rowOf(s)] : [])).filter(r => carrierRowMap[r]))];
+    const deliveryRun = a['delivery-run'] ?? `lab-${runId}`;
+    let carrierEntries: CarrierEntry[] = [];
+    let carrierSetup: { base: string; config: ReturnType<typeof carrierLaunch> } | null = null;
+    if (carrierNamed && sliceCarrierRows.length) {
+        try {
+            const file = labCarriersFile({ manifest, prod: prod!, names: carrierNamed, cueRoot: cueRootOf(muleCueDir(cfg)), serve: env.BOT_USERNAME, deliveryRun, rows: sliceCarrierRows });
+            const held = new Set(file.accounts.flatMap(e => e.options.packages.map(p => p.scope!.step)));
+            const missing = sliceCarrierRows.filter(r => !held.has(r));
+            if (missing.length) throw new Error(`rows ${missing.join(', ')} are on the slice but not in the generated carriers file (H4m's loads come only with H4p): start the slice at or before their anchor`);
+            carrierEntries = file.accounts;
+            const b = carrierBase(carrierEntries.map(e => e.account), env.SERVER || `localhost:${process.env.WEB_PORT ?? '9300'}`);
+            const config = carrierLaunch({ entries: carrierEntries, botsDir: b.botsDir, runDir: b.runDir, gatewayPort: Number(process.env.AGENT_PORT ?? 8300) + CARRIER_PORT_OFFSET });
+            writeFileSync(join(b.base, 'launch.json'), JSON.stringify(config, null, 2));
+            cfg.delivery = { run: deliveryRun, launcherConfig: join(b.base, 'launch.json') };
+            carrierSetup = { base: b.base, config };
+        } catch (e) {
+            console.error(`[dress] REFUSED: the lab carriers file: ${message(e)}`);
+            return 3;
+        }
+    } else if (carriers.length) console.log('[dress] --carriers unused: this slice trades no carrier row');
+    const needCarriers = carrierSetup !== null;
+    const needS21 = runsS21(toRun);
+    const needCourier = runsS18(toRun);
+    const needH12o = runsH12o(toRun);
+    if (s21Givers.length && !needS21) console.log('[dress] --s21-givers unused: this slice does not run S21');
+    if (courier && !needCourier) console.log('[dress] --courier unused: this slice does not run S18');
+    if (h12oName && !needH12o) console.log('[dress] --h12o unused: this slice does not reach H12o');
     const needRings = toRun.some(s => s.id === 'S04');
     const needAltar = toRun.some(s => s.id === 'S06');
     const needDroppers = runsS03(toRun);
@@ -445,11 +548,22 @@ async function main(argv: string[]): Promise<number> {
     const altarNames = needAltar ? altarGivers : [];
     if (ringers.length && !needRings) console.log('[dress] --ringers unused: this slice does not run S04');
     if (altarGivers.length && !needAltar) console.log('[dress] --altar-givers unused: this slice does not run S06');
-    console.log(`[dress] ${env.BOT_USERNAME}: ${lab.chain.length} steps${a.until ? ` to ${a.until}` : ''}; stand-ins ${lab.standIns.join(', ') || 'none'}; staff supply ${lab.staffed.join(', ') || 'none'}; stub rows ${lab.stubRows.map(r => r.row).join(', ') || 'none'}; cue-served ${lab.cueServed.join(', ') || 'none'}; ring givers ${ringNames.join(', ') || 'none'}; altar givers ${altarNames.join(', ') || 'none'}`);
+    console.log(`[dress] ${env.BOT_USERNAME}: ${lab.chain.length} steps${a.until ? ` to ${a.until}` : ''}; stand-ins ${lab.standIns.join(', ') || 'none'}; staff supply ${lab.staffed.join(', ') || 'none'}; stub rows ${lab.stubRows.map(r => r.row).join(', ') || 'none'}; cue-served ${lab.cueServed.join(', ') || 'none'}; carrier rows ${needCarriers ? sliceCarrierRows.join(', ') : 'none'}; ring givers ${ringNames.join(', ') || 'none'}; altar givers ${altarNames.join(', ') || 'none'}`);
 
     const log = TickLog.open(runId, a.log);
     prepareCueDir(cfg.cueDir, { fresh: from === undefined || boundary !== null });
     prepareCueDir(muleCueDir(cfg), { fresh: from === undefined || boundary !== null });
+    if (needH12o) for (const d of [cfg.h12o!.cueDir, cfg.h12o!.loginDir]) prepareCueDir(d, { fresh: from === undefined || boundary !== null });
+    if (needCarriers) {
+        // run.ts's delivery preflight: the carriers' launch.json against this run's rows, SCORED and token.
+        const d = deliveryOwnerFor({ delivery: cfg.delivery, partners: chainPartners(cfg, toRun), chain: toRun, receiver: env.BOT_USERNAME, dir: muleCueDir(cfg) });
+        if ('refusal' in d) {
+            console.error(`[dress] REFUSED: delivery: ${d.refusal}`);
+            return 3;
+        }
+        if (d.owner) keeper.bindDelivery(d.owner);
+        console.log(`[dress] delivery: run ${deliveryRun}, carriers ${carrierEntries.map(e => `${e.account} (${carrierRoles[e.account]}) ${e.options.packages.map(p => p.scope!.step).join('/')}`).join('; ')}`);
+    }
     let stub: ReturnType<typeof Bun.spawn> | null = null;
     const ringSessions: Session[] = [];
     let ringStop = false;
@@ -471,6 +585,18 @@ async function main(argv: string[]): Promise<number> {
     let boneStop: Promise<void> | null = null;
     const stopBones = (): Promise<void> => (boneStop ??= boneLauncher ? stopBoneGivers(boneLauncher).then(() => console.log('[dress] S07 bone givers stopped')) : Promise.resolve());
     const stopAltar = (): Promise<void> => (altarStop ??= altar ? stopAltarGivers(altar).then(() => console.log('[dress] altar givers stopped')) : Promise.resolve());
+    let carrierLauncher: Subprocess | null = null;
+    let carrierStop: Promise<void> | null = null;
+    const stopCarrierFleet = (): Promise<void> => (carrierStop ??= carrierLauncher ? stopCarriers(carrierLauncher).then(() => console.log('[dress] carriers stopped')) : Promise.resolve());
+    let s21Launcher: Subprocess | null = null;
+    let s21Stop: Promise<void> | null = null;
+    const stopS21 = (): Promise<void> => (s21Stop ??= s21Launcher ? stopS21Givers(s21Launcher).then(() => console.log('[dress] S21 givers stopped')) : Promise.resolve());
+    let courierLauncher: Subprocess | null = null;
+    let courierStop: Promise<void> | null = null;
+    const stopS18 = (): Promise<void> => (courierStop ??= courierLauncher ? stopCourier(courierLauncher).then(() => console.log('[dress] S18 courier stopped')) : Promise.resolve());
+    let h12oLauncher: Subprocess | null = null;
+    let h12oStop: Promise<void> | null = null;
+    const stopAtoll = (): Promise<void> => (h12oStop ??= h12oLauncher ? stopH12o(h12oLauncher).then(() => console.log('[dress] H12o helper stopped')) : Promise.resolve());
     const client = (a.client ?? 'browser') as 'browser' | 'lite';
     let secureBrowser: SecureLabSession | null = null;
     let session: Session | null = null;
@@ -570,6 +696,50 @@ async function main(argv: string[]): Promise<number> {
                 return 3;
             }
         }
+        const agentPort = Number(process.env.AGENT_PORT ?? 8300);
+        const server = env.SERVER || `localhost:${process.env.WEB_PORT ?? '9300'}`;
+        if (needCarriers) {
+            // Banks seeded, each staged on its first row (readyFor: mule.ts's muleCanReady), before SCORED logs in.
+            try {
+                const r = await launchCarriers({ root: ROOT, base: carrierSetup!.base, config: carrierSetup!.config, roles: carrierRoles, muleDir: muleCueDir(cfg), serve: env.BOT_USERNAME, deliveryRun, agentPort, log: l => console.log(`[dress] carriers: ${l}`) }, l => (carrierLauncher = l));
+                console.log(`[dress] carriers ready on their first rows after ${r.secs} s (launcher files in ${carrierSetup!.base})`);
+            } catch (e) {
+                console.error(`[dress] REFUSED: the carriers: ${message(e)}`);
+                return 3;
+            }
+        }
+        if (needS21) {
+            // Logged out awaiting {S21, altar}: runecraft.ts's pre-login opens it and waits for every giver.
+            try {
+                const r = await launchS21Givers({ root: ROOT, givers: s21Givers, cueDir: cfg.cueDir, server, agentPort }, l => (s21Launcher = l));
+                console.log(`[dress] S21 givers awaiting their cue after ${r.secs} s (launcher files in ${r.base})`);
+            } catch (e) {
+                console.error(`[dress] REFUSED: S21's givers: ${message(e)}`);
+                return 3;
+            }
+        }
+        if (needCourier) {
+            try {
+                const r = await launchCourier({ root: ROOT, account: courier!, cueDir: cfg.cueDir, server, agentPort }, l => (courierLauncher = l));
+                console.log(`[dress] S18 courier ${courier} awaiting its cue after ${r.secs} s (launcher files in ${r.base})`);
+            } catch (e) {
+                console.error(`[dress] REFUSED: S18's courier: ${message(e)}`);
+                return 3;
+            }
+        }
+        if (needH12o) {
+            try {
+                const r = await launchH12o({ root: ROOT, h12o: cfg.h12o!, serve: env.BOT_USERNAME, cueDir: cfg.cueDir, server, agentPort }, l => (h12oLauncher = l));
+                console.log(`[dress] H12o helper ${h12oName} parked on H12oM's tile, awaiting its trigger in ${cfg.h12o!.loginDir}, after ${r.secs} s (launcher files in ${r.base})`);
+            } catch (e) {
+                console.error(`[dress] REFUSED: H12o's helper: ${message(e)}`);
+                return 3;
+            }
+        }
+        const lastCarrier = needCarriers ? lab.chain.findLast(s => (s.cue?.family === 'mule' && sliceCarrierRows.includes(s.cue.step)) || (s.kind === 'handoff' && sliceCarrierRows.includes(rowOf(s)))) : undefined;
+        const lastS21 = lab.chain.findLast(s => s.id === 'S21');
+        const lastS18 = lab.chain.findLast(s => s.id === 'S18');
+        const lastS15 = lab.chain.findLast(s => s.id === 'S15');
         const anvilLast = lab.chain.findLast(s => s.id === 'S25a');
         const chain = lab.chain.map(s => {
             if (s.id === 'S04' && needRings) {
@@ -586,6 +756,10 @@ async function main(argv: string[]): Promise<number> {
             if (needBones && s === lastBones) return hooked(s, { done: () => void stopBones() });
             if (s === anvilLast && needAnvil) return hooked(s, { done: () => void stopAnvil() });
             if (s.id === 'H23' && needHolder) return hooked(s, { done: () => void stopHolder() });
+            if (s === lastCarrier) return hooked(s, { done: () => void stopCarrierFleet() });
+            if (s === lastS21 && needS21) return hooked(s, { done: () => void stopS21() });
+            if (s === lastS18 && needCourier) return hooked(s, { done: () => void stopS18() });
+            if (s === lastS15 && needH12o) return hooked(s, { done: () => void stopAtoll() });
             if (s.id === 'S25c' && needWine) {
                 return hooked(s, {
                     start: ctx => {
@@ -626,7 +800,7 @@ async function main(argv: string[]): Promise<number> {
             console.error(`[dress] REFUSED: auto-retaliate still on ${RETALIATE_OFF_TICKS} ticks after login (autoRetaliateEnabled ${s.sdk.getState()?.autoRetaliateEnabled})`);
             return 3;
         }
-        log.append(annotation(log, s.name, 'gate', '(gate) dress rehearsal', { meta: { until: a.until ?? null, from: a.from ?? null, standIns: lab.standIns, staffed: lab.staffed, stubRows: lab.stubRows, cueServed: lab.cueServed, ringGivers: ringNames, altarGivers: altarNames, droppers: needDroppers ? droppers : [], boneGivers: needBones ? boneGivers : [], host: process.env.HOSTNAME ?? null } }));
+        log.append(annotation(log, s.name, 'gate', '(gate) dress rehearsal', { meta: { until: a.until ?? null, from: a.from ?? null, standIns: lab.standIns, staffed: lab.staffed, stubRows: lab.stubRows, cueServed: lab.cueServed, ringGivers: ringNames, altarGivers: altarNames, droppers: needDroppers ? droppers : [], boneGivers: needBones ? boneGivers : [], carriers: needCarriers ? carrierEntries.map(e => ({ account: e.account, role: carrierRoles[e.account], rows: e.options.packages.map(p => p.scope!.step) })) : [], deliveryRun: needCarriers ? deliveryRun : null, s21Givers: needS21 ? s21Givers : [], courier: needCourier ? courier : null, h12o: needH12o ? h12oName : null, host: process.env.HOSTNAME ?? null } }));
         chunkEnd = watchChunkEnd(s, lab.chain, log);
         const ran = await runChainOnSession(s, { log, chain, reservation: new ReservationWatch(reservationPath(a['host-reservation']), { label: 'dress' }), cues: keeper, wholeRun: a.until === undefined, label: 'dress', tabMemory: { chunk: `${a.from ?? 'start'}..${a.until ?? 'end'}`, ...(secureBrowser?.chrome.browser.process()?.pid ? { chromePid: secureBrowser.chrome.browser.process()!.pid! } : {}) }, ...(from !== undefined ? { from } : {}) }).catch(e => {
             // A signal: SCORED is out; the helpers, Chrome and the proxy stop below, then the exit.
@@ -655,6 +829,10 @@ async function main(argv: string[]): Promise<number> {
         await stopBones();
         await stopAnvil();
         await stopHolder();
+        await stopCarrierFleet();
+        await stopS21();
+        await stopS18();
+        await stopAtoll();
         } finally {
             if (secureBrowser) await secureBrowser.close();
             else if (session) await closeSession(session);

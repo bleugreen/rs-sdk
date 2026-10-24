@@ -12,7 +12,7 @@ import { applyBoundary, boundaryAt, chunkStart, DOC_LEVELS, endOf, rowLevels, ST
 
 const manifest = readFileSync(MANIFEST, 'utf8');
 const runOrder = readFileSync(join(import.meta.dir, '../../docs/speedrun/RUN-ORDER.md'), 'utf8');
-const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, 'p']));
+const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, 'p']));
 const cfg: RunConfig = { partners, firemakingTiles: '3240,3296', rings: { giver: 'r' }, bones: { giver: 'b' }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: '/tmp/boundary-test' };
 const chain = buildChain(cfg, { cues: { open: async () => {}, stop: () => {} } });
 const at = (chunk: string): Boundary => boundaryAt(chain, chunkStart(chain, chunk), { runOrder, manifest });
@@ -91,7 +91,7 @@ describe('chunk boundaries (pinned: a change here is a change in the docs or the
         expect(b.quests.map(q => q.key)).toEqual(['doric', 'elena', 'tree', 'grandtree', 'arena', 'mcannon']);
         expect(b.qp).toBe(12);
         expect(b.ledgerAfter).toBe('S14');
-        expect(items(b.inv)).toEqual(['knife x1', '3doseantipoison x1', 'shark x8', 'deathrune x49', 'chaosrune x16', 'airrune x234', 'firerune x1', '4doseprayerrestore x1', 'coins x1000', 'twpart1 x1', 'twpart2 x1', 'twpart3 x1', 'twpart4 x1', 'mcannonball x30', 'lawrune x4', 'waterrune x4', 'staff_of_fire x1']);
+        expect(items(b.inv)).toEqual(['knife x1', '3doseantipoison x1', 'shark x10', 'deathrune x49', 'chaosrune x16', 'airrune x234', 'firerune x1', '4doseprayerrestore x1', 'coins x1000', 'twpart1 x1', 'twpart2 x1', 'twpart3 x1', 'twpart4 x1', 'mcannonball x30', 'lawrune x4', 'waterrune x4', 'staff_of_fire x1']);
         expect(items(b.worn)).toEqual(['amulet_of_magic x1', 'khazard_helmet x1', 'khazard_platemail x1', 'mithril_scimitar x1']);
         expect(b.tile).toEqual({ x: 3288, z: 3810 });
         expect(b.unresolved).toEqual([]);

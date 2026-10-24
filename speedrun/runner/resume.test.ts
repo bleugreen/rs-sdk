@@ -2,7 +2,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { BotWorldState, PlayerState } from '../../sdk/types';
 import { baseState, FakeSdk, runToggleServer } from '../lib/fake-sdk';
 import { IF_RUN_ON, runIsOn } from '../lib/run-mode';
-import type { Session } from '../lib/session';
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { ALREADY_LOGGED_IN, LoginRefused, LoginTimedOut, type Session } from '../lib/session';
+import { recoverDrop, type DropRelogDeps } from './drop-relog';
+import { RelogBudget } from './relog-budget';
 import { TickLog } from '../lib/ticks';
 import { sleep, TickPeriod, waitUntil } from '../lib/wait';
 import { FencedError } from './fence';
@@ -207,6 +212,104 @@ describe('runResumable', () => {
         const kinds = log.rows.map(row => row.step).filter(s => s === RESUME_STEP || s === DROP_STEP);
         expect(kinds).toEqual([RESUME_STEP, DROP_STEP, RESUME_STEP]);
         expect(log.rows.find(row => row.step === 'mine-to-5' && row.meta?.resumed)).toBeDefined();
+    });
+
+    describe('with the drop recovery, a login refused as already logged in (the server still holding the dropped player)', () => {
+        /**
+         * runResumable over droppingClient with recoverDrop as its recover: the page reads the
+         * client's own inGame, the first `refusals` logins are refused with reply 5, the next one
+         * restores the client at the checkpointed Mining level 2 (every try after the first a fresh
+         * tab). Waits advance a fake wall clock. `fail` is the failed tries' error (reply 5 by default).
+         */
+        async function dropAndRelog(refusals: number, fail: () => Error = () => new LoginRefused(ALREADY_LOGGED_IN, 'Your account is already logged in. Try again in 60 secs...', 1, 'lab: login refused after 1 attempt(s) (reply 5: Your account is already logged in. Try again in 60 secs...)')) {
+            const journal = { stage: 'not started' };
+            const client = droppingClient(world(1, 0, 0));
+            const budget = new RelogBudget(mkdtempSync(join(tmpdir(), 'resume-relog-')));
+            const log = TickLog.memory('t');
+            const c: C = { trace: [], fenced: 0 };
+            let clock = 0;
+            let logins = 0;
+            const tries: string[] = [];
+            const attempt = (via: 'page' | 'launch') => async () => {
+                tries.push(via);
+                if (++logins <= refusals) throw fail();
+                client.restore(2);
+                return { via, wallMs: 900 };
+            };
+            const deps: DropRelogDeps = {
+                pageInGame: async () => client.sdk.getState()?.inGame ?? null,
+                worldUp: async () => true,
+                gatewayUp: async () => true,
+                expectInWorld: () => true,
+                login: attempt('page'),
+                relaunch: attempt('launch'),
+                closeTab: async () => 'closed',
+                adopt: () => {},
+                restored: async () => {},
+                waitTicks: async n => {
+                    clock += n * 400;
+                    await Promise.resolve();
+                },
+                advanced: () => false,
+                pauseWatchdog: () => {},
+                resumeWatchdog: () => {},
+                now: () => clock,
+            };
+            let dropped = false;
+            client.sdk.onStateUpdate(s => {
+                if (!dropped && s.inGame && mining(s) >= 3) {
+                    dropped = true;
+                    queueMicrotask(() => client.drop());
+                }
+            });
+            const events: string[] = [];
+            const run = runResumable(client.session, manifest(journal), {
+                log, c, link: client.link, shouldStop: () => false,
+                probes: { journal: async () => journal.stage },
+                recover: async (reason, at) => void (await recoverDrop(budget, deps, reason, at)),
+                onEvent: e => events.push(e.kind === 'resume' ? `resume ${e.point.step} ${e.point.mode}` : e.kind),
+            }).then(r => ({ r }), (e: unknown) => ({ e }));
+            const out = await run;
+            await sleep(20);
+            client.stop();
+            return { out, events, c, budget, logins, tries, drops: log.rows.filter(row => row.step === DROP_STEP), client };
+        }
+
+        test('refused twice, then in: one unplanned relog, one (drop) row, and the step resumes', async () => {
+            const t = await dropAndRelog(2);
+            expect('r' in t.out && t.out.r.drops).toBe(1);
+            expect(t.events).toEqual(['resume walk-to-rocks run', 'drop', 'restored', 'resume mine-to-5 resume']);
+            expect(t.c.trace).toEqual(['walk', 'mine:run', 'mine:resume', 'bank', 'quest']);
+            expect(t.logins).toBe(3);
+            expect(t.tries).toEqual(['page', 'launch', 'launch']);
+            expect(t.budget.entries().map(e => [e.kind, e.by, e.via, e.step])).toEqual([['unplanned', 'run', 'launch', 'mine-to-5']]);
+            expect(t.budget.entries()[0]!.meta?.alreadyLoggedIn).toMatchObject({ refusals: 2 });
+            expect(t.drops).toHaveLength(1);
+            expect(t.drops[0]!.meta).toMatchObject({ step: 'mine-to-5', reason: 'client out of game' });
+            expect(t.drops[0]!.meta?.failed).toBeUndefined();
+        });
+
+        test('refused past the bound: the run fails as before, with its (drop) row on the record and no relog charged', async () => {
+            const t = await dropAndRelog(Infinity);
+            expect('e' in t.out && (t.out.e as Error).message).toMatch(/past the 8-min bound/);
+            expect(t.events).toEqual(['resume walk-to-rocks run', 'drop']);
+            expect(t.drops).toHaveLength(1);
+            expect(t.drops[0]!.ok).toBe(false);
+            expect(t.drops[0]!.meta).toMatchObject({ step: 'mine-to-5', reason: 'client out of game' });
+            expect(String(t.drops[0]!.meta?.failed)).toMatch(/^Error: lab: login refused .*past the 8-min bound/);
+            expect(t.budget.entries()).toEqual([]);
+        });
+
+        test("the host's run D: the in-page relog times out, a fresh tab gets in: the run goes on, one unplanned relog, one (drop) row", async () => {
+            const t = await dropAndRelog(1, () => new LoginTimedOut('lab: login failed after 1 attempt(s) (timeout, in page)'));
+            expect('r' in t.out && t.out.r.drops).toBe(1);
+            expect(t.events).toEqual(['resume walk-to-rocks run', 'drop', 'restored', 'resume mine-to-5 resume']);
+            expect(t.tries).toEqual(['page', 'launch']);
+            expect(t.budget.entries().map(e => [e.kind, e.by, e.via, e.step])).toEqual([['unplanned', 'run', 'launch', 'mine-to-5']]);
+            expect(t.budget.used()).toEqual({ planned: 0, unplanned: 1 });
+            expect(t.drops).toHaveLength(1);
+            expect(t.drops[0]!.meta?.failed).toBeUndefined();
+        });
     });
 
     test("a step that fails with rs/97's 'page reloaded' after the link is back resumes, it is not a failure", async () => {

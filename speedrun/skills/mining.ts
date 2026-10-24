@@ -10,11 +10,17 @@
 //   mining.travel: ...     Port Sarim, the ship to Karamja, Brimhaven, the customs ship to
 //                          Ardougne, the zoo; each leg a no-op once past (`travel: 'none'`
 //                          keeps only the zoo walk)
-//   mining.kit: H4p        with `kitGiver`: the rune pickaxe and a normal log by trade at the
-//                          zoo (STEP-MANIFEST.md's ledger, H4p; S07's kept log is the second);
-//                          rehearsals bring their kit
+//   mining.kit: H4p        with `kitGiver`: the rune pickaxe and 2 normal logs by trade at the
+//                          zoo (STEP-MANIFEST.md's ledger, H4p; knife-mine takes a normal log
+//                          only, so S07's kept willow log is no Mining log); rehearsals bring
+//                          their kit
 //   mining.iron-15         15-63: iron, knife-mine with `success: 'iron'` (failed rolls) and
 //                          the held pickaxes' rates
+//   mining.bury: load k    with `bury`: one per load (`buryLoads`), before the last band: bury
+//                          the bones held on the `stay2` lap (BURY_LAP, knife-mine's `bury`),
+//                          by hand where the lap cannot (Mining at `to`, iron respawn over
+//                          BURY_MAX_RESPAWN, a contested lap), and drop them past `buryPrayerTo`;
+//                          the chain trades each load in before its step (H4m.k)
 //   mining.iron-63         63-to: iron, knife-mine as measured (every roll succeeds)
 //   mining.exit            with `dropAtExit`: drops the pickaxes, the logs and the band's
 //                          leftovers at their last use, without waiting (the leg after keeps
@@ -41,6 +47,14 @@
 // to CONTEST_RETRIES in CONTEST_WINDOW ticks, then walks to the nearest other site in SITES that
 // the fallback allows and whose hunters leave this combat level alone (`nextSite`; `acceptHazards`
 // lifts that). Without `fallback` the band is the zoo-only band it was.
+//
+// Bones (`bury`, STEP-MANIFEST.md entry 4, "Bones on the stay2 lap"). knife-mine buries one bone
+// a lap on BURY_LAP's east stay, ~1 per 15 ticks, at no measured cost to the lap (rs/182, #159),
+// and only while the lap holds 3 ticks an ore (respawn 13 or less). A bury step runs the band on
+// that lap until the pack holds no bone, then hands what is left to prayer.ts buryHeld; it never
+// walks to another site with bones held, since the next load is traded at the zoo. Slots: S09
+// holds the knife, 2 logs and the pickaxe (24 free), so a load is at most 24 - FREE_SLOTS = 20,
+// taken with none held.
 
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import { demoOrigin, samplePlayerCount } from '../lib/demo-status';
@@ -53,11 +67,12 @@ import type { TickRow } from '../lib/ticks';
 import { receiveFrom, type WantSpec } from '../lib/trade';
 import { currentTick, nextTick, tickMs, waitUntil } from '../lib/wait';
 import type { Step, StepContext } from '../runner/step';
+import { buryHeld } from './prayer';
 
 export const skill = 'mining';
 
-/** The in-page loop the iron bands drive and the kit trade; a test replaces them (the page is not there). */
-export const deps = { runGatedProgram, inPageGate, receiveFrom };
+/** The in-page loop the iron bands drive, the kit trade and the by-hand bury; a test replaces them (the page is not there). */
+export const deps = { runGatedProgram, inPageGate, receiveFrom, buryHeld };
 
 export type Technique = 'auto' | 'knife' | 'plain';
 
@@ -86,8 +101,15 @@ export interface MiningOpts {
      * rehearsals that mean to walk into a site's hunters.
      */
     acceptHazards?: boolean | string;
-    /** rs/111's S07 fallback (bones on the stay2 lap): a seam, not built. */
-    bury?: unknown;
+    /**
+     * Bones to bury on the `stay2` lap (BURY_LAP, knife-mine's `bury`): true for any bones (BURY_BONES,
+     * as S07's), or a pattern. Adds `buryLoads` steps `mining.bury: load k` before the last iron band.
+     */
+    bury?: boolean | string;
+    /** Bury steps with `bury` (default 1): one per load the chain trades in before it. */
+    buryLoads?: number | string;
+    /** With `bury`: the Prayer level from which a bury step drops the bones it holds instead (default 99). */
+    buryPrayerTo?: number | string;
     /** The trade giver at the zoo that hands over H4p (H4P_KIT) before the iron bands; none by default. */
     kitGiver?: string;
     /** Drop EXIT_DROPS at `to` (default false: a rehearsal keeps its kit). */
@@ -134,6 +156,21 @@ export const ROTATIONS: Record<string, Rotation> = {
 
 /** The zoo cluster's centre, for "already there". */
 export const ZOO: P = [2604, 3235];
+
+/**
+ * The bone lap (rs/182, #159; STEP-MANIFEST.md entry 4): the five-rock lap's rocks with two stays,
+ * one bury a lap on the east stay at 2605,3234; 3.026-3.041 ticks an ore with the bury against the
+ * five-rock lap's 3.000-3.124 (m, lab, D=13). Not in ROTATIONS: respawn never chooses it, `bury` does.
+ */
+export const BURY_LAP = '2603,3233>2602,3233 2605,3234>2605,3235 2605,3234>2605,3233 2602,3235>2602,3234 2602,3235>2602,3236';
+/** The band's name for BURY_LAP in its rows. */
+export const BURY_ROTATION = 'stay2';
+/** BURY_LAP's east stay, where its bury lands: the one lap tile beside the H4m carrier's stand (2606,3234; rs/705). */
+export const BURY_TRADE_TILE: readonly [number, number] = [2605, 3234];
+/** knife-mine's stay takes its bone only while the lap holds 3 ticks an ore: iron respawn 13 or less (rs/182). */
+export const BURY_MAX_RESPAWN = 13;
+/** `bury: true`'s pattern: any bones, as knife-mine's and S07's default. The run passes its row's own (chain.ts h4mPlan). */
+export const BURY_BONES = 'bones$';
 
 /**
  * Plain (adjacent-rock) ticks per ore at respawn D, the gate's switch-off reference: measured at
@@ -400,14 +437,16 @@ export const STARTER_JUNK = [
 /** Free slots the bands want: ore, a gem, a stray fletch. */
 export const FREE_SLOTS = 4;
 /**
- * H4p (STEP-MANIFEST.md's ledger): the iron kit by trade at the zoo. One log, since S07's kept log
- * arrives too (rs/158's ruling); knife-mine loses none of them (rs/226, 1,050 ores).
+ * H4p (STEP-MANIFEST.md's ledger): the iron kit by trade at the zoo. Two normal logs: knife-mine's
+ * starter takes a normal log only (knife-mine.ts LOGS), and S07 closes holding its willow band's kept
+ * product, which T07-08 drops. The second is the spare a completed fletch would consume; knife-mine
+ * lost none over 1,050 ores (rs/226).
  */
-export const H4P_KIT: readonly WantSpec[] = [{ item: /^rune pickaxe$/i, amount: 1 }, { item: /^logs$/i, amount: 1 }];
-/** Slots H4p adds: the pickaxe and an unstackable log. */
-export const KIT_SLOTS = 2;
-/** Dead at S09's end: the pickaxes and the logs (the knife stays), and what an interrupted lap leaves. */
-export const EXIT_DROPS: readonly RegExp[] = [...PICKAXES.map(p => p.name), /^logs$/i, /ore$|^uncut /i, /^arrow shaft$/i];
+export const H4P_KIT: readonly WantSpec[] = [{ item: /^rune pickaxe$/i, amount: 1 }, { item: /^logs$/i, amount: 2 }];
+/** Slots H4p adds: the pickaxe and two unstackable logs. */
+export const KIT_SLOTS = 3;
+/** Dead at S09's end: the pickaxes and every log (the knife stays), and what an interrupted lap leaves. */
+export const EXIT_DROPS: readonly RegExp[] = [...PICKAXES.map(p => p.name), /(^| )logs$/i, /ore$|^uncut /i, /^arrow shaft$/i];
 
 // ------------------------------------------------------------------ state readers
 
@@ -434,17 +473,25 @@ const ORE = /^(iron|copper|tin) ore$/i;
  * stall (cairn_rocks on the demo: 5 such ores filled the pack at Mining 92).
  */
 export async function dropOres(sdk: StepContext<any>['sdk']): Promise<number> {
+    return dropMatching(sdk, ORE);
+}
+
+/** Drops every item matching `re`, 5 a tick (at most 40), and returns how many. */
+async function dropMatching(sdk: StepContext<any>['sdk'], re: RegExp): Promise<number> {
     let n = 0;
     for (let guard = 0; guard < 8; guard++) {
-        const ores = sdk.getState()!.inventory.filter(i => ORE.test(i.name)).slice(0, 5);
-        if (!ores.length) break;
-        await Promise.all(ores.map(i => sdk.sendDropItem(i.slot)));
-        n += ores.length;
+        const items = sdk.getState()!.inventory.filter(i => re.test(i.name)).slice(0, 5);
+        if (!items.length) break;
+        await Promise.all(items.map(i => sdk.sendDropItem(i.slot)));
+        n += items.length;
         await nextTick(sdk);
     }
     return n;
 }
 const freeSlots = (s: BotWorldState) => 28 - s.inventory.length;
+/** Bones matching `re` held (unnoted: what a bury takes). */
+export const bonesHeld = (s: BotWorldState, re: RegExp) => s.inventory.filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
+const prayerLevel = (s: BotWorldState) => s.skills.find(k => k.name.toLowerCase() === 'prayer')?.baseLevel ?? 1;
 /** Free slots once the band's ore drop has run. */
 const freeOfOre = (s: BotWorldState) => freeSlots(s) + s.inventory.filter(i => ORE.test(i.name)).length;
 
@@ -480,8 +527,39 @@ function flag(v: unknown, name: string): boolean {
     return v === true || v === 'true';
 }
 
+/** `bury` resolved: the bones' pattern (knife-mine's `bury` source, and SCORED's reader), the steps and the drop level. */
+export interface BuryOpts {
+    source: string;
+    re: RegExp;
+    loads: number;
+    prayerTo: number;
+}
+
+function buryOf(raw: MiningOpts): BuryOpts | null {
+    if (raw.bury === undefined || raw.bury === false || raw.bury === 'false') {
+        if (raw.buryLoads !== undefined || raw.buryPrayerTo !== undefined) throw new Error('mining: buryLoads and buryPrayerTo need bury');
+        return null;
+    }
+    const source = raw.bury === true || raw.bury === 'true' ? BURY_BONES : raw.bury;
+    if (typeof source !== 'string' || !source.trim()) throw new Error(`mining: bury must be true or a bone pattern, not ${JSON.stringify(raw.bury)}`);
+    let re: RegExp;
+    try {
+        re = new RegExp(source, 'i');
+    } catch (e) {
+        throw new Error(`mining: bury ${JSON.stringify(source)} is not a pattern: ${(e as Error).message}`);
+    }
+    const loads = toNumber(raw.buryLoads ?? 1, 'buryLoads');
+    if (!Number.isInteger(loads) || loads < 1) throw new Error(`mining: buryLoads must be a whole number of 1 or more, not ${raw.buryLoads}`);
+    const prayerTo = toNumber(raw.buryPrayerTo ?? 99, 'buryPrayerTo');
+    if (!Number.isInteger(prayerTo) || prayerTo < 1 || prayerTo > 99) throw new Error(`mining: buryPrayerTo must be a level from 1 to 99, not ${raw.buryPrayerTo}`);
+    return { source, re, loads, prayerTo };
+}
+
+/** The bury steps' names, load 1 to `loads`, for a caller that places a trade before each. */
+export const buryStepName = (k: number) => `mining.bury: load ${k}`;
+
 export function steps(raw: MiningOpts = {}): Step<any>[] {
-    if (raw.bury !== undefined) throw new Error("mining: the stay2 bones seam (rs/111's S07 fallback) is not built");
+    const bury = buryOf(raw);
     const to = Math.min(99, toNumber(raw.to ?? 99, 'to'));
     const technique = (raw.technique ?? 'auto') as Technique;
     if (!['auto', 'knife', 'plain'].includes(technique)) throw new Error(`mining: technique must be auto, knife or plain, not ${technique}`);
@@ -503,8 +581,9 @@ export function steps(raw: MiningOpts = {}): Step<any>[] {
     out.push(zooStep(to, o));
     if (raw.kitGiver !== undefined && to > 15) out.push(kitStep(to, raw.kitGiver));
     if (to > 15) out.push(ironStep('mining.iron-15', 15, Math.min(63, to), true, o, shared));
-    if (to > 63) out.push(ironStep('mining.iron-63', 63, to, false, o, shared));
-    if (dropAtExit) out.push(exitStep(to));
+    if (bury) for (let k = 1; k <= bury.loads; k++) out.push(buryStep(k, to, bury, o, shared));
+    if (to > 63) out.push(ironStep('mining.iron-63', 63, to, false, o, shared, bury));
+    if (dropAtExit) out.push(exitStep(to, bury ? [bury.re] : []));
     return out;
 }
 
@@ -518,7 +597,7 @@ function kitStep(to: number, giver: string): Step<any> {
         preconditions: s => {
             if (skip(s)) return true;
             const need = KIT_SLOTS + FREE_SLOTS;
-            return freeOfOre(s) >= need ? true : `${28 - freeOfOre(s)} other items: H4p's rune pickaxe and log and the band need ${need} free slots`;
+            return freeOfOre(s) >= need ? true : `${28 - freeOfOre(s)} other items: H4p's rune pickaxe and 2 logs and the band need ${need} free slots`;
         },
         run: async ctx => {
             const { sdk } = ctx;
@@ -529,15 +608,16 @@ function kitStep(to: number, giver: string): Step<any> {
             ctx.log.append({ ...row(ctx, 'mining.kit: H4p', { kind: 'mining-kit', ok: r.ok, ticks: r.ticks, received: r.received.map(i => `${i.name} x${i.count}`), ...(r.reason ? { reason: r.reason } : {}) }, t0), ticks: 0, ok: r.ok });
             if (!r.ok) throw new Error(`H4p from the trade giver failed: ${r.reason}`);
         },
-        postconditions: s => (skip(s) ? true : 'H4p did not arrive: no rune pickaxe or no log'),
+        postconditions: s => (skip(s) ? true : 'H4p did not arrive: no rune pickaxe or not 2 logs'),
         logoutSafe: true,
         done: ob => skip(ob.state),
     };
 }
 
-/** At `to`: drop EXIT_DROPS, 5 a tick, the last batch sent without waiting (as magic.ts's S02 exit). */
-function exitStep(to: number): Step<any> {
-    const dead = (s: BotWorldState) => s.inventory.filter(i => EXIT_DROPS.some(re => re.test(i.name)));
+/** At `to`: drop EXIT_DROPS (and `extra`: bones a resume walked past), 5 a tick, the last batch sent without waiting (as magic.ts's S02 exit). */
+function exitStep(to: number, extra: readonly RegExp[] = []): Step<any> {
+    const drops = [...EXIT_DROPS, ...extra];
+    const dead = (s: BotWorldState) => s.inventory.filter(i => drops.some(re => re.test(i.name)));
     const sent = new Set<number>();
     return {
         name: 'mining.exit',
@@ -873,18 +953,30 @@ export class ContestWatch {
     }
 }
 
-function ironStep(name: string, start: number, end: number, failures: boolean, o: IronOpts, shared: Shared): Step<any> {
+/** An iron band's start check at Mining `start` or more: a pickaxe, the band's slots, a safe site, standing at one. */
+function ironReady(s: BotWorldState, start: number, o: IronOpts): true | string {
+    if (miningLevel(s) < start) return `Mining ${miningLevel(s)} < ${start}`;
+    if (pickaxeRate(s.inventory, miningLevel(s)) === null) return 'no usable pickaxe';
+    if (freeOfOre(s) < FREE_SLOTS) return `${28 - freeOfOre(s)} other items: need ${FREE_SLOTS} free slots (ore, a gem, a stray fletch)`;
+    const gate = combatGate(s, o.fallback);
+    if (gate !== true) return gate;
+    return atIronSite(s, o.fallback);
+}
+
+/**
+ * With `bury`, a band neither starts nor is in progress while it holds bones a bury step owes
+ * (Prayer below `buryPrayerTo`): a resume enters the bury step that holds them. Past it they ride
+ * the band to the exit's drop.
+ */
+function ironStep(name: string, start: number, end: number, failures: boolean, o: IronOpts, shared: Shared, bury: BuryOpts | null = null): Step<any> {
     const inBand = (s: BotWorldState) => miningLevel(s) >= start && miningLevel(s) < end;
+    const owed = (s: BotWorldState) => (bury && prayerLevel(s) < bury.prayerTo ? bonesHeld(s, bury.re) : 0);
     return {
         name,
         preconditions: s => {
             if (miningLevel(s) >= end) return true;
-            if (miningLevel(s) < start) return `Mining ${miningLevel(s)} < ${start}`;
-            if (pickaxeRate(s.inventory, miningLevel(s)) === null) return 'no usable pickaxe';
-            if (freeOfOre(s) < FREE_SLOTS) return `${28 - freeOfOre(s)} other items: need ${FREE_SLOTS} free slots (ore, a gem, a stray fletch)`;
-            const gate = combatGate(s, o.fallback);
-            if (gate !== true) return gate;
-            return atIronSite(s, o.fallback);
+            if (owed(s)) return `${owed(s)} bones (${bury!.source}) held: a bury step buries them before the band`;
+            return ironReady(s, start, o);
         },
         run: async ctx => {
             if (!inBand(ctx.sdk.getState()!)) return;
@@ -893,8 +985,58 @@ function ironStep(name: string, start: number, end: number, failures: boolean, o
         postconditions: s => (miningLevel(s) >= end ? true : `Mining ${miningLevel(s)} < ${end}`),
         logoutSafe: true,
         done: ob => miningLevel(ob.state) >= end,
-        inProgress: ob => inBand(ob.state),
+        inProgress: ob => inBand(ob.state) && !owed(ob.state),
     };
+}
+
+/**
+ * Load k's bones: the band on BURY_LAP with knife-mine's `bury` until none is held (Mining below
+ * `to`, Prayer below `buryPrayerTo`), then by hand (prayer.ts buryHeld) what the lap left, then the
+ * drop of any held once Prayer is at `buryPrayerTo`. Holding none, it is a 0-tick pass. It has no
+ * `done` of its own: which load's step buries a bone does not matter, and the chain, which knows
+ * the loads traded, gives it one.
+ */
+function buryStep(k: number, to: number, b: BuryOpts, o: IronOpts, shared: Shared): Step<any> {
+    const name = buryStepName(k);
+    const mines = (s: BotWorldState) => bonesHeld(s, b.re) > 0 && prayerLevel(s) < b.prayerTo && miningLevel(s) < to;
+    return {
+        name,
+        preconditions: s => {
+            if (!s.inGame) return 'not in game';
+            return mines(s) ? ironReady(s, 15, o) : true;
+        },
+        run: async ctx => buryLoad(ctx, name, to, b, o, shared),
+        postconditions: s => {
+            const n = bonesHeld(s, b.re);
+            return n ? `${n} bones (${b.source}) still held` : true;
+        },
+        logoutSafe: true,
+        inProgress: ob => bonesHeld(ob.state, b.re) > 0,
+    };
+}
+
+async function buryLoad(ctx: StepContext<any>, name: string, to: number, b: BuryOpts, o: IronOpts, shared: Shared): Promise<void> {
+    const { sdk } = ctx;
+    const t0 = currentTick(sdk);
+    const s0 = sdk.getState()!;
+    const held = bonesHeld(s0, b.re);
+    if (!held) return;
+    const xp0 = s0.skills.find(k => k.name.toLowerCase() === 'prayer')?.experience ?? 0;
+    let lapEnd: string | null = null;
+    if (prayerLevel(s0) < b.prayerTo && miningLevel(s0) < to) lapEnd = await ironBand(ctx, name, to, miningLevel(s0) < 63, o, shared, b);
+    const afterLap = bonesHeld(sdk.getState()!, b.re);
+    let byHand: Awaited<ReturnType<typeof deps.buryHeld>> | null = null;
+    if (afterLap && prayerLevel(sdk.getState()!) < b.prayerTo) {
+        byHand = await deps.buryHeld(sdk as never, b.re, { untilLevel: b.prayerTo });
+        ctx.log.append(row(ctx, `(bury by hand) ${name}`, { kind: 'bury-held', why: lapEnd ?? `Mining ${miningLevel(s0)} at ${to}`, ...byHand }, byHand.startTick, byHand.endTick));
+    }
+    const left = bonesHeld(sdk.getState()!, b.re);
+    const dropped = left && prayerLevel(sdk.getState()!) >= b.prayerTo ? await dropMatching(sdk, b.re) : 0;
+    const s1 = sdk.getState()!;
+    ctx.log.append(row(ctx, `(bury) ${name}`, {
+        held, onLap: held - afterLap, byHand: afterLap - left, dropped, lapEnd, prayer: prayerLevel(s1),
+        prayerXp: (s1.skills.find(k => k.name.toLowerCase() === 'prayer')?.experience ?? 0) - xp0, mining: miningLevel(s1),
+    }, t0, currentTick(sdk)));
 }
 
 async function playersNow(ctx: StepContext<any>, origin: string | undefined): Promise<number | null> {
@@ -902,7 +1044,12 @@ async function playersNow(ctx: StepContext<any>, origin: string | undefined): Pr
     return (await samplePlayerCount(from)).players;
 }
 
-async function ironBand(ctx: StepContext<any>, name: string, end: number, failures: boolean, o: IronOpts, shared: Shared): Promise<void> {
+/**
+ * The band to `end`. With `bury` it runs BURY_LAP with knife-mine's `bury` and returns as soon as no
+ * bone is held, or with why the lap cannot bury (Prayer at `buryPrayerTo`, iron respawn over
+ * BURY_MAX_RESPAWN, a contested or other site: it never walks away holding bones); null otherwise.
+ */
+async function ironBand(ctx: StepContext<any>, name: string, end: number, failures: boolean, o: IronOpts, shared: Shared, bury: BuryOpts | null = null): Promise<string | null> {
     const { sdk } = ctx;
     const t0 = currentTick(sdk);
     const log = (line: string) => console.log(`[${name}] ${line}`);
@@ -929,13 +1076,16 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
         }
     };
     let faults = 0;
-    const lap = (d: number) => (site === 'zoo' ? o.rotation : undefined) ?? lapFor(site, d);
+    const lap = (d: number) => (bury ? BURY_ROTATION : ((site === 'zoo' ? o.rotation : undefined) ?? lapFor(site, d)));
     let rotation = lap(D);
     let abort = new AbortController();
     let abortWhy = '';
     let contestAbort = false;
+    let buryEnd: string | null = null;
+    let buriedOut = false;
     const rotations = () => SITES[site]!.rotations;
-    const rocks = (r: string) => [...new Map(parseSteps(rotations()[r]!.steps).map(st => [key(st.rock), st.rock])).values()];
+    const stepsOf = (r: string) => (r === BURY_ROTATION ? BURY_LAP : rotations()[r]!.steps);
+    const rocks = (r: string) => [...new Map(parseSteps(stepsOf(r)).map(st => [key(st.rock), st.rock])).values()];
     const siteRocks = () => [...new Map(Object.values(rotations()).flatMap(r => parseSteps(r.steps)).map(st => [key(st.rock), st.rock])).values()];
     const observedRespawn: Record<number, number> = {};
     const watchRespawn = () =>
@@ -994,6 +1144,24 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
         watch = watchRespawn();
         contest = watchContest();
     };
+    /** Why the bone lap cannot bury from here, or null. */
+    const buryBlocked = (s: BotWorldState): string | null => {
+        if (!bury) return null;
+        if (prayerLevel(s) >= bury.prayerTo) return `Prayer ${prayerLevel(s)} at ${bury.prayerTo}`;
+        if (D > BURY_MAX_RESPAWN) return `respawn ${D} > ${BURY_MAX_RESPAWN}: the lap's stays take no bone`;
+        if (site !== 'zoo') return `at ${site}: the bone lap is the zoo's`;
+        if (switching && contest.tripped(currentTick(sdk))) return `contested (${contest.recent(currentTick(sdk))} events in ${CONTEST_WINDOW} ticks): no walk with bones held`;
+        return null;
+    };
+    // the last bone gone: stop the lap now, so the next load's trade follows at once
+    const unBones = bury
+        ? sdk.onStateUpdate(st => {
+              if (bonesHeld(st, bury.re) > 0 || abort.signal.aborted) return;
+              buriedOut = true;
+              abortWhy = 'every bone buried';
+              abort.abort();
+          })
+        : () => {};
     let poll: ReturnType<typeof setInterval> | undefined;
     if (o.respawn === 'auto') {
         poll = setInterval(() => {
@@ -1014,6 +1182,11 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
         for (;;) {
             const s = sdk.getState()!;
             if (miningLevel(s) >= end) break;
+            if (bury && bonesHeld(s, bury.re) === 0) break;
+            if (bury) {
+                buryEnd = buryBlocked(s);
+                if (buryEnd) break;
+            }
             rotation = lap(D);
             if (switching && contest.tripped(currentTick(sdk))) {
                 await leave();
@@ -1040,13 +1213,15 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
             if (!canKnife && o.technique !== 'plain') log('no knife or no logs left: plain');
             if (technique === 'auto' && !shared.gate) shared.gate = deps.inPageGate(sdk as never, { plainTicksPerRoll: plainTicksPerOre(D), measureDrops: GATE_MEASURE_DROPS, log });
             const params: Record<string, unknown> = {
-                steps: rotations()[rotation]!.steps,
+                steps: stepsOf(rotation),
                 respawn: D,
                 untilLevel: end,
                 rate: rateTable(inv),
                 ...(failures ? { success: 'iron' } : {}),
                 // plain's timer trick on the next rock itself (inert under the knife)
                 selfStarter: true,
+                // one bone a lap on the east stay (inert under plain)
+                ...(bury ? { bury: bury.source } : {}),
             };
             log(`T${currentTick(sdk)} level ${miningLevel(sdk.getState())}: respawn ${D}${players !== null ? ` (${players} players)` : ''}, ${site === 'zoo' ? '' : `${site} `}rotation ${rotation}, ${technique}`);
             try {
@@ -1072,7 +1247,9 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
                     log,
                 });
                 if (r.ended === 'aborted') {
-                    if (contestAbort) {
+                    if (buriedOut) {
+                        // the loop's top ends the band
+                    } else if (contestAbort) {
                         // a retry in place (the loop waits for the lap), or the loop leaves
                         if (contest.tripped(currentTick(sdk))) log(`T${currentTick(sdk)} ${contest.recent(currentTick(sdk))} contest events in ${CONTEST_WINDOW} ticks: leaving ${site}`);
                         else log(`T${currentTick(sdk)} retry ${++retries}: ${abortWhy}`);
@@ -1097,14 +1274,21 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
     } finally {
         watch.stop();
         contest.stop();
+        unBones();
         merge();
         if (poll) clearInterval(poll);
         ctx.log.append(row(ctx, `(band) ${name}`, {
             players, respawn: D, rotation, restarts, restartWaits, oreDrops, faults, observedRespawn, gate: shared.gate?.summary() ?? null,
-            segments: segments.map(sg => ({ technique: sg.technique, reason: sg.reason, ticks: (sg.status.endedTick ?? sg.status.tick) - sg.status.startedTick, ores: sg.status.counters.ores ?? 0, slips: sg.status.counters.slips ?? 0, failed: sg.status.counters.failed ?? 0, result: sg.status.result })),
+            segments: segments.map(sg => ({
+                technique: sg.technique, reason: sg.reason, ticks: (sg.status.endedTick ?? sg.status.tick) - sg.status.startedTick, ores: sg.status.counters.ores ?? 0, slips: sg.status.counters.slips ?? 0, failed: sg.status.counters.failed ?? 0,
+                ...(bury ? { buried: (sg.status.result as { buried?: number } | undefined)?.buried ?? 0 } : {}),
+                result: sg.status.result,
+            })),
             site,
+            ...(bury ? { bury: { bones: bury.source, end: buryEnd ?? (buriedOut ? 'every bone buried' : null) } } : {}),
             contest: { fallback: o.fallback.sites, foreign: contestLog.length, own, retries, switches, events: contestLog.slice(0, 50) },
         }, t0, currentTick(sdk)));
     }
+    return buryEnd;
 }
 

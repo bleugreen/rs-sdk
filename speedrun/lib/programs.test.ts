@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { ActionResult } from '../../sdk/types';
 import { baseState, FakeSdk, flush, type SentAction } from './fake-sdk';
-import { awaitProgram, marksSince, overBudgetMeta, probeInPage, ProgramError, programCounters, type ProgramStatus, runProgram, startProgram } from './programs';
-import { peek } from './fake-ticks';
+import { awaitProgram, marksSince, overBudgetMeta, probeInPage, ProgramError, programCounters, type ProgramStatus, runProgram, sendProgramInput, startProgram, stopProgram } from './programs';
+import { microtasks, peek } from './fake-ticks';
 import { sleep, TickPeriod } from './wait';
 
 /** A FakeSdk with the relay the page answers: records program actions, replies like ProgramRuntime.command. */
@@ -157,5 +157,98 @@ describe('overBudgetMeta', () => {
         expect(overBudgetMeta({ counters: { overBudget: 0 } })).toEqual({});
         expect(overBudgetMeta(null)).toEqual({});
         expect(overBudgetMeta(undefined)).toEqual({});
+    });
+});
+
+describe('keep-input while a program runs: its clicks never reset the client idle timer (rs/648)', () => {
+    const waits = (sdk: FakeSdk) => sdk.sent.filter(a => a.method === 'sendWait').length;
+    /** `n` running states `ms` of wall time apart on the keep-input's clock, letting a sent wait settle between them. */
+    async function running(sdk: PageSdk, clock: { t: number }, ms: number, n: number): Promise<void> {
+        for (let i = 0; i < n; i++) {
+            clock.t += ms;
+            sdk.publish({});
+            await microtasks(3);
+        }
+    }
+
+    test('a run that ends within 60 s sends nothing but its start', async () => {
+        const sdk = new PageSdk(baseState());
+        const clock = { t: 0 };
+        const p = runProgram(sdk, 'agility', {}, { keepInput: { now: () => clock.t } });
+        await flush();
+        await running(sdk, clock, 400, 149);
+        clock.t += 400;
+        sdk.publish({ phase: 'done' });
+        expect((await p).phase).toBe('done');
+        expect(sdk.sent).toEqual([]);
+        expect(sdk.actions.map(a => a.op)).toEqual(['start']);
+    });
+
+    test('a 6.5-minute run sends floor(390 s / 60 s) = 6, one a minute, and none after awaitProgram has returned', async () => {
+        const sdk = new PageSdk(baseState());
+        const clock = { t: 0 };
+        const ticks: number[] = [];
+        const p = runProgram(sdk, 'knife-cycle', {}, { keepInput: { now: () => clock.t, onInput: e => ticks.push(e.tick) } });
+        await flush();
+        await running(sdk, clock, 400, 974);
+        clock.t += 400;
+        sdk.publish({ phase: 'done' });
+        expect((await p).phase).toBe('done');
+        expect(clock.t).toBe(390_000);
+        expect(waits(sdk)).toBe(Math.floor(clock.t / 60_000));
+        expect(ticks).toEqual([250, 400, 550, 700, 850, 1000]);
+        await running(sdk, clock, 400, 600);
+        expect(waits(sdk)).toBe(6);
+    });
+
+    for (const end of ['fault', 'stopped', 'replaced'] as const) {
+        test(`a run that ends by ${end === 'replaced' ? 'a newer run' : `phase ${end}`} stops it there`, async () => {
+            const sdk = new PageSdk(baseState());
+            const clock = { t: 0 };
+            const p = runProgram(sdk, 'pickpocket', {}, { keepInput: { now: () => clock.t } });
+            p.catch(() => {});
+            await flush();
+            await running(sdk, clock, 400, 200);
+            expect(waits(sdk)).toBe(1);
+            clock.t += 400;
+            if (end === 'replaced') {
+                sdk.runId = 2;
+                sdk.publish({ name: 'probe' });
+            } else sdk.publish({ phase: end, ...(end === 'fault' ? { fault: 'no target' } : {}) });
+            await p.then(() => {}, () => {});
+            await running(sdk, clock, 400, 600);
+            expect(waits(sdk)).toBe(1);
+        });
+    }
+
+    test('a program input and a stop sent while a keep-input is in flight still go out, in order, and the run ends stopped', async () => {
+        class Ordered extends PageSdk {
+            readonly order: string[] = [];
+            release: () => void = () => {};
+            override sendAction(a: SentAction | Record<string, unknown>): Promise<ActionResult> {
+                const p = a as { type?: string; op?: string; method?: string };
+                this.order.push(p.type === 'program' ? `program ${p.op}` : String(p.method));
+                return super.sendAction(a);
+            }
+            override sendWait(ticks = 1): Promise<ActionResult> {
+                void this.sendAction({ method: 'sendWait', args: [ticks] });
+                return new Promise(r => (this.release = () => r({ success: true, message: 'Wait complete' })));
+            }
+        }
+        const sdk = new Ordered(baseState());
+        const clock = { t: 0 };
+        const p = runProgram(sdk, 'knife-cycle', {}, { keepInput: { now: () => clock.t } });
+        await flush();
+        await running(sdk, clock, 400, 150);
+        expect(sdk.order).toEqual(['program start', 'sendWait']);
+        await sendProgramInput(sdk, { pause: true });
+        await stopProgram(sdk);
+        expect(sdk.order).toEqual(['program start', 'sendWait', 'program input', 'program stop']);
+        sdk.release();
+        clock.t += 400;
+        sdk.publish({ phase: 'stopped' });
+        expect((await p).phase).toBe('stopped');
+        await running(sdk, clock, 400, 600);
+        expect(sdk.order.filter(o => o === 'sendWait')).toHaveLength(1);
     });
 });

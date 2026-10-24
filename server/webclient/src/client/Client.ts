@@ -11,6 +11,7 @@ import GameShell from '#/client/GameShell.js';
 import { MiniMenuAction } from '#/client/MiniMenuAction.js';
 import MobileKeyboard from '#/client/MobileKeyboard.js';
 import MouseTracking from '#/client/MouseTracking.js';
+import { NO_DATA_TIMEOUT_MS } from '#/client/NoDataTimeout.js';
 import Skill from '#/client/Skill.js';
 import TitleFlames from '#/client/TitleFlames.js';
 
@@ -4760,8 +4761,8 @@ export class Client extends GameShell {
         this.locChangeDoQueue();
         await this.soundsDoQueue();
 
-        if (now - this.timeoutTimer > 15_000) {
-            // no packets received recently, connection lost
+        if (now - this.timeoutTimer > NO_DATA_TIMEOUT_MS) {
+            // no packets received for that long on a socket that is still open: connection lost
             await this.lostCon();
         }
 

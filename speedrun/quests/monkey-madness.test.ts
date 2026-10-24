@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -7,21 +7,26 @@ import { findLongPath } from '../../sdk/pathfinding';
 import { nameHash, readCue, readTopUpAsk } from '../helpers/altar-cue';
 
 import type { BotWorldState, InventoryItem, PlayerState, QuestJournalState } from '../../sdk/types';
-import { baseState, drive, FakeSdk, flush, simulateWalking } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk, FakeTradePartner, flush, simulateWalking } from '../lib/fake-sdk';
+import { askFor, handOffFrom } from '../runner/handoff';
 import type { ReceiveResult } from '../lib/trade';
 import { compactJournal } from '../lib/quests';
+import { wield } from '../lib/act';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession } from '../runner/step';
 import {
-    BANANA_TREE_IDS, bananaRoomDrops, h12Plan, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, waydarIntroWatch, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
+    BANANA_TREE_IDS, bananaRoomDrops, cureBeforeSwap, dropDead, preDose, gtSwap, h12Plan, h12Wants, kitMissing, LOST_SEAL, narnodeTalk, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, waydarIntroWatch, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
     BELOW_30_EATING, cureWanted, eatBelowFor, sharksToDrop, GARKOR_WEST, isMonkeyChatter, CAGE, CAGE_NORTH_STRIP, CAGE_TILES, inCage, letOut, letOutPick, LET_OUT_ATTEMPTS, MINDER_REACH, nearestFire, sceneBuilt, tileIn, underTemple, scorpionsNear, SCORPION_CLOSE, SCORPION_REACH, sigilRoom, h12oLeg, legCue, pFinalStop, closeLeftTrade, DECLINE_TICKS, H12O_M_ROW, mTopUpCap, ASK_SHARK, ASK_SUPER_ANTIPOISON, H12O_SCOPE, onTradeOpen, P_TOPUP_MAX_SHARKS, pTopUpAsk, immunityWanted,
     AREAS, inArea, inCell, zooknockWay, type ZooknockLegs, CHAT_DRINK_FLOOR, DRINK_BELOW, packClickAllowed, upkeep, X_PRAYER,
     ARCHER_REACH, AUNT_BOX, crateRoute, crateSteps, entersSleepingZone, SLEEPING_DETOURS, sleepingDetour, GUARD_REACH, legPrayerFor, M_TOPUP_TILE, mLegSize, mTopUpSharks, NO_DWELL, pathTiles, pLegSize, POSTED_ARCHERS, prayerRuns, receiveLeg, RELIGIOUS_GUARDS, SLEEPING_ZONE, tilePrayer, TOPUP_TRIES, TOPUP_WAIT, tradeIdle, type Receive, nextBananaTree, SUPER_IMMUNE_TICKS, offAtoll, patrolLeavesLane, SEGMENT_EATING, topUpWanted, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, steps, templeLeft, treeRouteRefusal, yRoom, type MmContext,
 } from './monkey-madness';
-import { slotNeed } from './segments';
+import { noteAntipoison, slotNeed } from './segments';
 import { objPack } from '../lib/obj-pack';
 import { MANIFEST } from '../tools/slot-ledger';
 import { planMuleDeliveryFixtures, type FixtureItem } from '../lab/mule-delivery-fixtures';
+
+// The run's antipoison record (segments.ts noteAntipoison) is module state: no test inherits another's dose.
+beforeEach(() => noteAntipoison(-Infinity));
 
 const item = (id: number, slot = 0): InventoryItem => ({ slot, id, name: `obj ${id}`, count: 1, optionsWithIndex: [] });
 
@@ -99,14 +104,22 @@ describe('the temple rope pin: the way back and the resume walk', () => {
     });
 });
 
-describe('antipoison cures', () => {
-    const at = (o: Partial<Parameters<typeof cureWanted>[0]>) => cureWanted({ tick: 1000, lastPoisoned: 1000, lastDose: -Infinity, ...o });
+/** A poison tick on the player, as the collector publishes it (hitmark 2). */
+const poisonHit = (tick: number) => ({ tick, type: 'damage_taken', damage: 2, hitmark: 2, sourceType: 'npc', sourceIndex: -1, targetType: 'player', targetIndex: -1 }) as BotWorldState['combatEvents'][number];
 
-    test('a fresh poisoning is cured once, in any segment', () => {
-        expect(at({})).toBe(true);
-        expect(at({ lastDose: 1000 })).toBe(false); // cured this tick
-        expect(at({ lastPoisoned: 900, lastDose: 950 })).toBe(false); // a later dose covered it
-        expect(at({ lastPoisoned: 960 })).toBe(false); // 40 ticks old: not this poisoning's message
+describe('antipoison cures', () => {
+    const at = (o: { tick?: number; hitAt?: number; lastDose?: number }) =>
+        cureWanted(baseState({ tick: o.tick ?? 1000, combatEvents: o.hitAt === undefined ? [] : [poisonHit(o.hitAt)] }), o.lastDose ?? -Infinity);
+
+    test('a poison that is on is cured once, in any segment, one carried into it included', () => {
+        expect(at({ hitAt: 1000 })).toBe(true);
+        expect(at({ hitAt: 975 })).toBe(true); // carried in: its last hit before upkeep's first look, no message
+        expect(at({ hitAt: 1000, lastDose: 1000 })).toBe(false); // cured this tick
+        expect(at({ hitAt: 900, lastDose: 950 })).toBe(false); // a later dose covered it
+        expect(at({ hitAt: 960 })).toBe(false); // 40 ticks without a hit: worn off
+        expect(at({ hitAt: 999, lastDose: 998 })).toBe(false); // never within 3 ticks of a dose
+        expect(at({})).toBe(false);
+        expect(at({ tick: 36, hitAt: 32, lastDose: 37 })).toBe(true); // a dose from before a client reload (the tick restarts at 0)
     });
 });
 
@@ -117,10 +130,11 @@ describe('upkeep holds its pack clicks while a chat is open (a pack click closes
     const page = { isOpen: true, options: [], isWaiting: false, allComponents: [{ text: 'Has Aunty given you the toy yet?' }] } as unknown as BotWorldState['dialog'];
     const closed = { isOpen: false, options: [], isWaiting: false } as BotWorldState['dialog'];
     const pp = (n: number) => ({ activePrayers: melee(), prayerPoints: n, prayerLevel: 94 });
+    beforeEach(() => noteAntipoison(-Infinity));
 
     /** Upkeep running on scripted state from `tick`, `pp` points under Protect from Melee; `end` stops it. */
-    async function running(o: { tick: number; points: number; inventory: InventoryItem[] }) {
-        const sdk = new FakeSdk(baseState({ tick: o.tick, autoRetaliateEnabled: false, prayers: pp(o.points), inventory: o.inventory, player: { hp: 42 } as PlayerState }));
+    async function running(o: { tick: number; points: number; inventory: InventoryItem[]; extra?: Partial<BotWorldState> }) {
+        const sdk = new FakeSdk(baseState({ tick: o.tick, autoRetaliateEnabled: false, prayers: pp(o.points), inventory: o.inventory, player: { hp: 42 } as PlayerState, ...o.extra }));
         let end!: () => void;
         const done = upkeep(sdk as never, () => new Promise<void>(r => (end = r)));
         await flush();
@@ -173,6 +187,28 @@ describe('upkeep holds its pack clicks while a chat is open (a pack click closes
         await u.stop();
     });
 
+    test('a poison carried in (its last hit before upkeep started, no message) is cured on the first state, once', async () => {
+        const u = await running({ tick: 3000, points: 60, inventory: [drinkable(5, 'Superantipoison(4)')], extra: { combatEvents: [poisonHit(2990)] } });
+        u.sdk.tick();
+        await flush();
+        u.sdk.tick();
+        u.sdk.tick();
+        await flush();
+        expect(u.uses()).toEqual([{ method: 'sendUseItem', args: [5, 1] }]);
+        await u.stop();
+    });
+
+    test('the first poison hitsplat in a clean stretch gets the dose (no message needed)', async () => {
+        const u = await running({ tick: 4000, points: 60, inventory: [drinkable(5, 'Superantipoison(4)')] });
+        u.sdk.tick();
+        await flush();
+        expect(u.uses()).toEqual([]);
+        u.sdk.tick(s => ({ combatEvents: [poisonHit(s.tick + 1)] }));
+        await flush();
+        expect(u.uses()).toEqual([{ method: 'sendUseItem', args: [5, 1] }]);
+        await u.stop();
+    });
+
     test('an empty vial is dropped only once the chat closes', async () => {
         const u = await running({ tick: 700, points: 60, inventory: [{ slot: 8, id: 229, name: 'Vial', count: 1, optionsWithIndex: [] }] });
         u.sdk.tick({ dialog: page });
@@ -205,6 +241,7 @@ describe('poison immunity before a dungeon pass', () => {
         expect(immunityWanted(1000, 500, true)).toBe(false);
         expect(immunityWanted(1041, 500, true)).toBe(true);
         expect(immunityWanted(5000, -Infinity, false)).toBe(false);
+        expect(immunityWanted(100, 500, true)).toBe(true); // a dose from before a client reload covers nothing
     });
 });
 
@@ -737,13 +774,68 @@ describe('exit', () => {
         expect([...EXIT_DROPS].sort()).toEqual([MM_OBJ.royalSeal, MM_OBJ.amuletMould, MM_OBJ.sigil].sort());
     });
 
-    test('the exit holds none of them, held or worn, and has the training xp', () => {
-        expect(exitState(state([MM_OBJ.amulet, MM_OBJ.greegree]), {} as never)).toBe(true);
+    test('the exit holds none of them, held or worn, has the training xp, and wears the M\'speak amulet', () => {
+        expect(exitState(state([MM_OBJ.greegree], [MM_OBJ.amulet]), {} as never)).toBe(true);
+        expect(exitState(state([MM_OBJ.amulet, MM_OBJ.greegree]), {} as never)).toMatch(/M'speak amulet is not worn/);
         for (const id of EXIT_DROPS) {
-            expect(exitState(state([id]), {} as never)).toMatch(/S15's exit drops/);
+            expect(exitState(state([id], [MM_OBJ.amulet]), {} as never)).toMatch(/S15's exit drops/);
             expect(exitState(state([], [id]), {} as never)).toMatch(/S15's exit drops/);
         }
-        expect(exitState(state([], [], 34_999), {} as never)).toMatch(/below Daero/);
+        expect(exitState(state([], [MM_OBJ.amulet], 34_999), {} as never)).toMatch(/below Daero/);
+    });
+
+    /**
+     * A neck slot as the engine has it for these two objs (quest_mm.obj: both wearpos=front): a wear swaps whatever is in
+     * the slot into the pack. Clicks land a tick later.
+     */
+    test("R's sigil pushes the M'speak amulet into the pack; Z drops the sigil and the amulet is worn at S15's exit", async () => {
+        const NECK = 2;
+        const neck = new Set<number>([MM_OBJ.amulet, MM_OBJ.sigil]);
+        const packed = (id: number, slot: number): InventoryItem => ({ slot, id, name: `obj ${id}`, count: 1, optionsWithIndex: [{ text: 'Wear', opIndex: 2 }] });
+        const worn = (id: number): InventoryItem => ({ slot: NECK, id, name: `obj ${id}`, count: 1, optionsWithIndex: [{ text: 'Remove', opIndex: 1 }] });
+        const freeSlot = (inv: readonly InventoryItem[]) => { for (let q = 0; ; q++) if (!inv.some(i => i.slot === q)) return q; };
+        const sdk = new FakeSdk(baseState({
+            tick: 1,
+            inventory: [packed(MM_OBJ.sigil, 0), ...Array.from({ length: 12 }, (_, i) => ({ ...item(MM_OBJ.shark, i + 1) }))],
+            equipment: [worn(MM_OBJ.amulet), { ...item(MM_OBJ.greegree, 3) }],
+            skills: [strength(35_000)],
+        } as Partial<BotWorldState>));
+        const pending: { method: string; args: unknown[] }[] = [];
+        sdk.onSend = a => pending.push(a);
+        const each = (st: BotWorldState): Partial<BotWorldState> => {
+            let inv = st.inventory;
+            let eq = st.equipment;
+            for (const a of pending.splice(0)) {
+                const slot = a.args[0] as number;
+                if (a.method === 'sendDropItem') inv = inv.filter(i => i.slot !== slot);
+                if (a.method === 'sendUseEquipmentItem') {
+                    const e = eq.find(x => x.slot === slot);
+                    if (e) { eq = eq.filter(x => x !== e); inv = [...inv, packed(e.id, freeSlot(inv))]; }
+                }
+                if (a.method === 'sendUseItem') {
+                    const it = inv.find(i => i.slot === slot);
+                    if (!it || !neck.has(it.id)) continue;
+                    const off = eq.filter(e => e.slot === NECK);
+                    inv = inv.filter(i => i !== it);
+                    for (const o of off) inv = [...inv, packed(o.id, freeSlot(inv))];
+                    eq = [...eq.filter(e => e.slot !== NECK), worn(it.id)];
+                }
+            }
+            return { inventory: inv, equipment: eq };
+        };
+        // R: the sigil goes on (demonFight's wield) and the amulet is in the pack.
+        expect((await drive(sdk, wield(sdk as never, MM_OBJ.sigil), 10, each)).ok).toBe(true);
+        const fought = sdk.getState()!;
+        expect(fought.equipment.some(e => e.id === MM_OBJ.sigil)).toBe(true);
+        expect(fought.inventory.some(i => i.id === MM_OBJ.amulet)).toBe(true);
+        expect(exitState(fought, {} as never)).toMatch(/S15's exit drops/);
+        // Z: the sigil off and dropped, then the amulet back on.
+        await drive(sdk, dropDead(sdk as never, () => {}), 30, each);
+        const end = sdk.getState()!;
+        expect(end.inventory.some(i => i.id === MM_OBJ.sigil || i.id === MM_OBJ.amulet)).toBe(false);
+        expect(end.equipment.map(e => e.id).sort()).toEqual([MM_OBJ.amulet, MM_OBJ.greegree].sort());
+        expect(end.inventory.length).toBe(12);
+        expect(exitState(end, {} as never)).toBe(true);
     });
 });
 
@@ -1357,7 +1449,8 @@ describe("the Grand Tree swap's hand-back (GT_HANDBACK) against the ledger's H12
         const kept = h12.beforeInventory.filter(i => !give.some(p => p.test(i.name)));
         // A received stack joins a held one of the same object (the runes) and takes no new slot.
         const added = h12.receive.filter(r => r.kind === 'u' || !kept.some(k => k.id === r.id));
-        expect(slots(h12.beforeInventory)).toBe(19);
+        // 21 since H10's shark top-up to 10 (fold-in 43a): 2 more sharks held at H12 than at to 8
+        expect(slots(h12.beforeInventory)).toBe(21);
         expect(slots(kept) + slots(added)).toBeLessThanOrEqual(28);
     });
 });
@@ -1377,5 +1470,332 @@ describe('X: the prayer points (rs/687)', () => {
     });
     test('held doses count: 10 points and two doses at 30 make 70', () => {
         expect(x().preconditions(atX(10, [named('Prayer potion(2)', 3)]), {} as MmContext)).toBe(true);
+    });
+});
+
+describe('S15:A cures a poison carried in from S14 (rs/755)', () => {
+    beforeEach(() => noteAntipoison(-Infinity));
+    const potion = (slot: number, name: string, id = 0): InventoryItem => ({ slot, id, name, count: 1, optionsWithIndex: [{ text: 'Drink', opIndex: 1 }] });
+    const page = { isOpen: true, options: [], isWaiting: false, allComponents: [{ text: 'Welcome to the Grand Tree.' }] } as unknown as BotWorldState['dialog'];
+    const closed = { isOpen: false, options: [], isWaiting: false } as BotWorldState['dialog'];
+    const sip = (name: string) => {
+        const m = /^(.*)\((\d)\)$/.exec(name)!;
+        return Number(m[2]) > 1 ? `${m[1]}(${Number(m[2]) - 1})` : 'Vial';
+    };
+    /** Drinks and drops take effect as the engine's would, seen on the next tick. */
+    function potionServer(sdk: FakeSdk) {
+        sdk.onSend = (a, f) => {
+            const slot = a.args[0] as number;
+            if (a.method === 'sendUseItem') f.state = { ...f.state!, inventory: f.state!.inventory.map(i => (i.slot === slot ? { ...i, name: sip(i.name) } : i)) };
+            if (a.method === 'sendDropItem') f.state = { ...f.state!, inventory: f.state!.inventory.filter(i => i.slot !== slot) };
+        };
+    }
+
+    test("poisoned with H7's Antipoison(1): it is drunk before the swap, its vial dropped, and the pack is the kit's 27 (rs/158)", async () => {
+        const kit = Array.from({ length: 27 }, (_, i): InventoryItem => ({ slot: i, id: 1000 + i, name: `Kit item ${i}`, count: 1, optionsWithIndex: [] }));
+        const sdk = new FakeSdk(baseState({ tick: 5000, inventory: [...kit, potion(27, 'Antipoison(1)')], combatEvents: [poisonHit(4985)] }));
+        potionServer(sdk);
+        await drive(sdk, cureBeforeSwap(sdk as never), 20);
+        expect(sdk.sent).toEqual([{ method: 'sendUseItem', args: [27, 1] }, { method: 'sendDropItem', args: [27] }]);
+        expect(sdk.state!.inventory).toHaveLength(27);
+        expect(sdk.state!.inventory.some(i => /vial|antipoison/i.test(i.name))).toBe(false);
+    });
+
+    test("poisoned holding H7's Antipoison(3) and a Superantipoison(4): the plain one is drunk before the swap", async () => {
+        const sdk = new FakeSdk(baseState({ tick: 5000, inventory: [potion(3, 'Superantipoison(4)', MM_OBJ.superAntipoison4), potion(8, 'Antipoison(3)')], combatEvents: [poisonHit(4990)] }));
+        potionServer(sdk);
+        await drive(sdk, cureBeforeSwap(sdk as never), 10);
+        expect(sdk.sent).toEqual([{ method: 'sendUseItem', args: [8, 1] }]);
+        expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Superantipoison(4)', 'Antipoison(2)']);
+    });
+
+    test('a cure upkeep sent a tick before (while A eats) is waited out: its vial is dropped before the swap sizes', async () => {
+        const kit = Array.from({ length: 27 }, (_, i): InventoryItem => ({ slot: i, id: 1000 + i, name: `Kit item ${i}`, count: 1, optionsWithIndex: [] }));
+        const sdk = new FakeSdk(baseState({ tick: 5000, inventory: [...kit, potion(27, 'Antipoison(1)')], combatEvents: [poisonHit(4985)] }));
+        potionServer(sdk);
+        noteAntipoison(4999);
+        let n = 0;
+        await drive(sdk, cureBeforeSwap(sdk as never), 20, s => (++n === 1 ? { inventory: s.inventory.map(i => (i.slot === 27 ? { ...i, name: 'Vial' } : i)) } : {}));
+        expect(sdk.sent).toEqual([{ method: 'sendDropItem', args: [27] }]);
+        expect(sdk.state!.inventory).toHaveLength(27);
+    });
+
+    test('a dose record ahead of the clock (another session) is not waited on: clean, the swap starts at once', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 5000, inventory: [potion(27, 'Antipoison(1)')] }));
+        noteAntipoison(9000);
+        await drive(sdk, cureBeforeSwap(sdk as never), 5);
+        expect(sdk.sent).toEqual([]);
+        expect(sdk.state!.tick).toBe(5000);
+    });
+
+    test('not poisoned: nothing is drunk before or after the swap', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 5000, inventory: [potion(3, 'Antipoison(3)'), potion(4, 'Superantipoison(4)', MM_OBJ.superAntipoison4)] }));
+        potionServer(sdk);
+        await drive(sdk, cureBeforeSwap(sdk as never), 5);
+        await drive(sdk, preDose(sdk as never), 5);
+        expect(sdk.sent).toEqual([]);
+    });
+
+    test("poisoned with no antipoison(*) before the swap: one dose of H12's Superantipoison(4) after it, before Narnode, never during a chat", async () => {
+        const sdk = new FakeSdk(baseState({ tick: 6000, combatEvents: [poisonHit(5992)] }));
+        potionServer(sdk);
+        await drive(sdk, cureBeforeSwap(sdk as never), 5);
+        expect(sdk.sent).toEqual([]);
+        // The swap has delivered the kit's super (no Superantipoison(1) this time); a page is up as preDose starts.
+        sdk.push({ inventory: [potion(3, 'Superantipoison(4)', MM_OBJ.superAntipoison4)], dialog: page });
+        const p = preDose(sdk as never);
+        await flush();
+        sdk.tick({ dialog: page });
+        await flush();
+        expect(sdk.sent).toEqual([]);
+        await drive(sdk, p, 10, () => ({ dialog: closed }));
+        expect(sdk.sent).toEqual([{ method: 'sendUseItem', args: [3, 1] }]);
+        expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Superantipoison(3)']);
+    });
+});
+
+describe("the Grand Tree swap leaves the kit complete, however low SCORED arrives (attempt 4: 3 held, 12 asked, one eaten in A's first ticks, 14 at the check)", () => {
+    const BOW = DEFAULT_OPTIONS.bow;
+    const SHARK = MM_OBJ.shark;
+    // H12's kit but its sharks, already held, so the trade moves only sharks; the bow and arrows worn from H11r.
+    const KIT = [
+        [2357, 'Gold bar', 1], [1759, 'Ball of wool', 1], [3183, 'Monkey bones', 1],
+        ...Array.from({ length: H12_POTIONS }, () => [2434, 'Prayer potion(4)', 1] as const), [2448, 'Superantipoison(4)', 1],
+        [563, 'Law rune', 6], [556, 'Air rune', 6], [554, 'Fire rune', 2], [555, 'Water rune', 4],
+        [946, 'Knife', 1], // a GT_HANDBACK item: SCORED gives as it takes, as on the route
+    ] as const;
+    const shark = (slot: number): InventoryItem => ({ slot, id: SHARK, name: 'Shark', count: 1, optionsWithIndex: [{ text: 'Eat', opIndex: 1 }] });
+    const pack = (sharks: number, without: string[] = []): InventoryItem[] => [
+        ...KIT.filter(([, name]) => !without.includes(name)).map(([id, name, count], slot) => ({ slot, id, name, count, optionsWithIndex: [] }) as InventoryItem),
+        ...Array.from({ length: sharks }, (_, i) => shark(KIT.length + i)),
+    ];
+    const worn = [
+        { slot: 3, id: BOW, name: 'Magic shortbow', count: 1, optionsWithIndex: [] },
+        { slot: 13, id: MM_OBJ.runeArrow, name: 'Rune arrow', count: 200, optionsWithIndex: [] },
+    ] as InventoryItem[];
+    const atDoor = (sharks: number, hp = 42, without: string[] = []) => baseState({
+        tick: 1675, inGame: true, autoRetaliateEnabled: false, inventory: pack(sharks, without), equipment: worn,
+        quests: { tree: 'complete', grandtree: 'complete' },
+        player: { name: 'scored', x: 2465, z: 3488, worldX: 2465, worldZ: 3488, level: 0, hp, maxHp: 42 } as PlayerState,
+    } as Partial<BotWorldState>);
+    /** `s` with every held `from` renamed `to`: a dose drunk from each. */
+    const dosed = (s: BotWorldState, from: string, to: string): BotWorldState => ({ ...s, inventory: s.inventory.map(i => (i.name === from ? { ...i, name: to } : i)) });
+    const H12 = handOffFrom(readFileSync(MANIFEST, 'utf8'), 'H12');
+    const sharksHeld = (s: BotWorldState) => s.inventory.filter(i => i.id === SHARK).length;
+    const h55 = { kind: 'player', index: 7, name: 'Helper', combatLevel: 90, x: 2466, z: 3488 } as BotWorldState['nearbyPlayers'][number];
+
+    /**
+     * SCORED at the tree door under A's upkeep, h55 standing on its request and in reach from tick `inView` (h55's approach:
+     * attempt 4's window). h55 offers the top-up ask's sharks: sized at the step's start (`asked: 'start'`, chain.ts before
+     * rs/763) or on the trade's open frame (`'open'`). `hits` lands poison damage by tick offset; an eat lands a tick after
+     * its click.
+     */
+    async function swapAt(o: { held: number; hp: number; asked: 'start' | 'open'; inView?: number; hits?: Record<number, number> }) {
+        const s0 = atDoor(o.held, o.hp);
+        const sharksAsked = (s: BotWorldState): number => {
+            const c = askFor(s, H12).find(a => new RegExp(a.item, 'i').test('Shark'))?.count;
+            return typeof c === 'number' ? c : 0;
+        };
+        const offer = [{ slot: 0, id: SHARK, name: 'Shark', count: sharksAsked(s0) }];
+        const sdk = new FakeTradePartner({ ...s0, nearbyPlayers: o.inView ? [] : [h55] }, offer, { partner: 'Helper', stacks: t => /rune|arrow/i.test(t.name), weapon: n => /bow$/i.test(n) });
+        const serve = sdk.onSend;
+        const eaten: number[] = [];
+        let bite: number | null = null;
+        sdk.onSend = (a, f) => {
+            const it = a.method === 'sendUseItem' ? sdk.state!.inventory.find(i => i.slot === a.args[0]) : undefined;
+            if (it?.id === SHARK) {
+                eaten.push(sdk.state!.tick);
+                bite = it.slot;
+                return;
+            }
+            if (a.method === 'sendTradeRequest' && o.asked === 'open') offer[0]!.count = sharksAsked(sdk.state!);
+            serve(a, f);
+        };
+        const each = (cur: BotWorldState): Partial<BotWorldState> => {
+            const at = cur.tick + 1 - s0.tick;
+            let hp = cur.player!.hp;
+            let inventory = cur.inventory;
+            if (bite !== null) {
+                inventory = inventory.filter(i => i.slot !== bite);
+                hp = Math.min(42, hp + 20);
+                bite = null;
+            }
+            hp = Math.max(0, hp - (o.hits?.[at] ?? 0));
+            return { player: { ...cur.player!, hp }, inventory, ...(o.inView && at >= o.inView ? { nearbyPlayers: [h55] } : {}) };
+        };
+        setStepNote(() => {});
+        const error = await drive(sdk, upkeep(sdk as never, () => gtSwap({ sdk } as never, { bow: BOW, kitFrom: 'Helper' })), 200, each).then(() => null, e => (e as Error).message);
+        return { error, end: sdk.state!, eaten, firstClick: sdk.tradeClicks[0] ?? null, asked: sharksAsked(s0) };
+    }
+
+    test('h12Wants: false with the kit complete (15 sharks), true one shark short or without any kit line', () => {
+        expect(h12Wants(atDoor(H12_SHARKS), { bow: BOW })).toBe(false);
+        expect(h12Wants(atDoor(H12_SHARKS + 1), { bow: BOW })).toBe(false);
+        expect(h12Wants(atDoor(H12_SHARKS - 1), { bow: BOW })).toBe(true);
+        expect(h12Wants(atDoor(H12_SHARKS, 42, ['Superantipoison(4)']), { bow: BOW })).toBe(true);
+        expect(h12Wants({ ...atDoor(H12_SHARKS), equipment: [] }, { bow: BOW })).toBe(true);
+        for (const n of [0, 3, 14, 15, 16]) expect(h12Wants(atDoor(n), { bow: BOW })).toBe(h12Plan(atDoor(n), { bow: BOW }).want.length > 0);
+    });
+
+    test("the potion lines count by potion at any dose: attempt 4's cure from the kit's only super leaves it at (3), and the kit is complete", () => {
+        const served = atDoor(H12_SHARKS);
+        expect(h12Wants(dosed(served, 'Superantipoison(4)', 'Superantipoison(3)'), { bow: BOW })).toBe(false);
+        expect(h12Wants(dosed(served, 'Superantipoison(4)', 'Superantipoison(1)'), { bow: BOW })).toBe(false);
+        expect(h12Wants(atDoor(H12_SHARKS, 42, ['Superantipoison(4)']), { bow: BOW })).toBe(true);
+        // H7's plain antipoison is a handback, never the kit's super.
+        expect(h12Wants(dosed(served, 'Superantipoison(4)', 'Antipoison(3)'), { bow: BOW })).toBe(true);
+        expect(h12Wants(dosed(served, 'Prayer potion(4)', 'Prayer potion(2)'), { bow: BOW })).toBe(false);
+        const three = { ...served, inventory: served.inventory.filter((i, k, all) => i.name !== 'Prayer potion(4)' || all.findIndex(j => j.name === i.name) !== k) };
+        expect(h12Wants(three, { bow: BOW })).toBe(true);
+    });
+
+    test("served (attempt 4's shape): a kit shark eaten and a super dose drunk after H12's serve never re-open the want; the bow, arrows and quest items still count", () => {
+        const after = dosed(atDoor(H12_SHARKS - 1), 'Superantipoison(4)', 'Superantipoison(3)');
+        expect(h12Wants(after, { bow: BOW, served: true })).toBe(false);
+        expect(h12Wants(atDoor(0, 42, ['Superantipoison(4)', 'Law rune']), { bow: BOW, served: true })).toBe(false);
+        expect(h12Wants(atDoor(H12_SHARKS - 1), { bow: BOW })).toBe(true);
+        expect(kitMissing(after, BOW, { served: true })).toEqual([]);
+        expect(h12Wants({ ...after, equipment: [] }, { bow: BOW, served: true })).toBe(true);
+        expect(kitMissing(atDoor(H12_SHARKS, 42, ['Gold bar']), BOW, { served: true })).toEqual([[/^Gold bar$/, 1]]);
+    });
+
+    test("served: A's precondition passes without a giver and gtSwap trades nothing, so A's body starts", async () => {
+        const after = dosed(atDoor(H12_SHARKS - 1), 'Superantipoison(4)', 'Superantipoison(3)');
+        const a = (o: Parameters<typeof steps>[0]) => steps(o)[seg('A')]!;
+        expect(a({ kitServed: () => true }).preconditions(after, {} as MmContext)).toBe(true);
+        expect(a({}).preconditions(after, {} as MmContext)).toMatch(/H12 kit short and no kitFrom: 1 \^Shark\$/);
+        expect(a({ kitFrom: 'Helper' }).preconditions(after, {} as MmContext)).toBe(true);
+        expect(a({ kitFrom: 'Helper', kitServed: () => true }).preconditions(atDoor(H12_SHARKS, 42, ['Gold bar']), {} as MmContext)).toMatch(/served this attempt: 1 \^Gold bar\$/);
+
+        const sdk = new FakeSdk(after);
+        await drive(sdk, gtSwap({ sdk } as never, { bow: BOW, kitFrom: 'Helper', kitServed: () => true }), 20);
+        expect(sdk.sent.map(a => a.method)).not.toContain('sendTradeRequest');
+        const short = new FakeSdk(atDoor(H12_SHARKS, 42, ['Gold bar']));
+        await expect(drive(short, gtSwap({ sdk: short } as never, { bow: BOW, kitFrom: 'Helper', kitServed: () => true }), 20)).rejects.toThrow(/H12 was served this attempt and the kit lacks 1 \^Gold bar\$/);
+        expect(short.sent.map(a => a.method)).not.toContain('sendTradeRequest');
+    });
+
+    describe("A after a lost royal seal: Narnode's menu re-issues it (mm_narnode.rs2:152-168)", () => {
+        const started = (s: BotWorldState): BotWorldState => ({ ...s, quests: { ...s.quests, mm: 'started' } });
+        const a = () => steps({ kitServed: () => true })[seg('A')]!;
+        const narnode = readFileSync(join(import.meta.dir, '..', '..', 'server', 'content', 'scripts', 'quests', 'quest_mm', 'scripts', 'mm_narnode.rs2'), 'utf8');
+        const menu = (fn: string) => [...narnode.split('\n').find(l => l.includes(`~${fn}("What am I meant to do?"`))!.matchAll(/"([^"]+)"/g)].map(m => m[1]!);
+
+        test("the talk's options are the script's own: the lost-seal option on the 4-option menu, then out by 'I'll be back later.' on the 3-option one", () => {
+            const talk = narnodeTalk(started(atDoor(13))) as { choices: RegExp[] };
+            expect(menu('p_choice4').filter(t => talk.choices[0]!.test(t))).toEqual(['I\'ve lost my copy of the Royal Seal...']);
+            expect(menu('p_choice3').filter(t => talk.choices[0]!.test(t))).toEqual([]);
+            expect(menu('p_choice3').filter(t => talk.choices[1]!.test(t))).toEqual(['I\'ll be back later.']);
+            expect(talk.choices[0]).toBe(LOST_SEAL);
+        });
+
+        test('started, no seal, 1 free slot: A is admitted and picks the lost-seal option', () => {
+            const s = started(atDoor(14));
+            expect(28 - s.inventory.length).toBe(1);
+            expect(narnodeTalk(s)).toEqual({ choices: [LOST_SEAL, expect.any(RegExp)], start: false });
+            expect(a().preconditions(s, {} as MmContext)).toBe(true);
+        });
+
+        test("started, no seal, 0 free: the named refusal, from A's precondition and from narnodeTalk (run's check after the swap)", () => {
+            const s = started(atDoor(15));
+            expect(narnodeTalk(s)).toBe("S15:A needs 1 free slot for Narnode's spare seal (0 free)");
+            expect(a().preconditions(s, {} as MmContext)).toBe("S15:A needs 1 free slot for Narnode's spare seal (0 free)");
+        });
+
+        test('not started: the start talk, unchanged; started with the seal held: no talk; past B (the orders held): refused', () => {
+            expect(narnodeTalk(atDoor(13))).toEqual({ choices: [/^Yes$/], start: true });
+            expect(a().preconditions(atDoor(13), {} as MmContext)).toBe(true);
+            const sealed = started(atDoor(12));
+            const withSeal = { ...sealed, inventory: [...sealed.inventory, { slot: 27, id: MM_OBJ.royalSeal, name: 'Royal seal', count: 1, optionsWithIndex: [] }] };
+            expect(narnodeTalk(withSeal)).toBeNull();
+            expect(a().preconditions(withSeal, {} as MmContext)).toBe(true);
+            const pastB = { ...sealed, inventory: [...sealed.inventory, { slot: 27, id: MM_OBJ.orders, name: 'Orders', count: 1, optionsWithIndex: [] }] };
+            expect(a().preconditions(pastB, {} as MmContext)).toBe('S15 is past B: Narnode no longer re-issues the royal seal');
+        });
+    });
+
+    test("14 held: the runner's ask and gtSwap's want are both 1 shark, the swap brings 1, and the kit is complete at 15", async () => {
+        const s = atDoor(14);
+        expect(askFor(s, H12)).toEqual([{ item: expect.stringMatching(/shark/i), count: 1 }]);
+        expect(h12Plan(s, { bow: BOW }).want).toEqual([{ item: /^Shark$/, amount: 1 }]);
+        const r = await swapAt({ held: 14, hp: 42, asked: 'start' });
+        expect(r.error).toBeNull();
+        expect(r.asked).toBe(1);
+        expect(sharksHeld(r.end)).toBe(H12_SHARKS);
+        expect(kitMissing(r.end, BOW)).toEqual([]);
+        expect(r.end.inventory.some(i => i.name === 'Knife')).toBe(false);
+    });
+
+    test("attempt 4: 3 held, 12 asked; poison takes HP under the eat threshold before h55 is in reach: no eat until the kit is checked, so it is complete at 15", async () => {
+        const r = await swapAt({ held: 3, hp: 35, asked: 'start', inView: 3, hits: { 1: 30 } });
+        expect(r.asked).toBe(12);
+        expect(r.error).toBeNull();
+        expect(r.eaten).toEqual([]);
+        expect(sharksHeld(r.end)).toBe(H12_SHARKS);
+        expect(kitMissing(r.end, BOW)).toEqual([]);
+    });
+
+    test("arriving at ~1 HP (attempt 4's T14-15b): upkeep's eat lands before the trade, the open-frame ask counts it, and the kit is complete at 15", async () => {
+        const r = await swapAt({ held: 3, hp: 1, asked: 'open' });
+        expect(r.error).toBeNull();
+        expect(r.eaten.length).toBeGreaterThan(0);
+        expect(r.eaten.every(t => r.firstClick !== null && t < r.firstClick)).toBe(true);
+        expect(r.end.player!.hp).toBeGreaterThanOrEqual(SEGMENT_EATING.otherwise);
+        expect(sharksHeld(r.end)).toBe(H12_SHARKS);
+        expect(kitMissing(r.end, BOW)).toEqual([]);
+    });
+
+    test('an ask sized before that eat (at the step start) cannot cover the want: the swap refuses inside the trade and never completes short', async () => {
+        const r = await swapAt({ held: 3, hp: 1, asked: 'start' });
+        expect(r.error).toMatch(/the Grand Tree swap with Helper failed/);
+        expect(sharksHeld(r.end)).toBeLessThan(H12_SHARKS);
+    });
+});
+
+describe('an H12o receive leg under upkeep: the eat lands before the leg is sized, and none lands between the sizing and the trade', () => {
+    const SHARK = MM_OBJ.shark;
+    const helper = { kind: 'player', index: 7, name: 'Helper', combatLevel: 60, x: 2802, z: 2724 } as BotWorldState['nearbyPlayers'][number];
+    const shark = (slot: number): InventoryItem => ({ slot, id: SHARK, name: 'Shark', count: 1, optionsWithIndex: [{ text: 'Eat', opIndex: 1 }] });
+
+    test('arriving at 1 HP with sharks held: every eat is clicked and landed before the sizing, and the trade sees the pack the leg was sized on', async () => {
+        const sdk = new FakeSdk(baseState({
+            tick: 1, autoRetaliateEnabled: false, nearbyPlayers: [helper], inventory: Array.from({ length: 5 }, (_, i) => shark(i)),
+            player: { name: 'scored', x: 2803, z: 2724, worldX: 2803, worldZ: 2724, level: 0, hp: 1, maxHp: 42, animId: -1 } as unknown as PlayerState,
+        } as Partial<BotWorldState>));
+        const eaten: number[] = [];
+        let bite: number | null = null;
+        sdk.onSend = a => {
+            const it = a.method === 'sendUseItem' ? sdk.state!.inventory.find(i => i.slot === a.args[0]) : undefined;
+            if (it?.id === SHARK) {
+                eaten.push(sdk.state!.tick);
+                bite = it.slot;
+            }
+        };
+        const each = (cur: BotWorldState): Partial<BotWorldState> => {
+            if (bite === null) return {};
+            const slot = bite;
+            bite = null;
+            return { inventory: cur.inventory.filter(i => i.slot !== slot), player: { ...cur.player!, hp: Math.min(42, cur.player!.hp + 20) } };
+        };
+        const sized: Array<{ tick: number; sharks: number }> = [];
+        const size: typeof mLegSize = s => {
+            sized.push({ tick: s.tick, sharks: s.inventory.filter(i => i.id === SHARK).length });
+            return mLegSize(s);
+        };
+        const calls: Array<{ tick: number; sharks: number }> = [];
+        const receive: Receive = async s => {
+            const st = s.getState()!;
+            calls.push({ tick: st.tick, sharks: st.inventory.filter(i => i.id === SHARK).length });
+            return { ok: true, ticks: 4, received: [{ slot: -1, id: SHARK, name: 'Shark', count: 9 }] } as ReceiveResult;
+        };
+        setStepNote(() => {});
+        const r = await drive(sdk, upkeep(sdk as never, () => receiveLeg(sdk as never, 'Helper', 'M', size, { receive, cueDir: mkdtempSync(join(tmpdir(), 'mm-eat-')) })), 100, each);
+        expect(r.ok).toBe(true);
+        expect(eaten.length).toBeGreaterThan(0);
+        expect(sized).toHaveLength(1);
+        // An eat lands a tick after its click: each one is in the pack the leg was sized on.
+        expect(eaten.every(t => t + 1 <= sized[0]!.tick)).toBe(true);
+        expect(calls).toEqual([{ tick: sized[0]!.tick, sharks: sized[0]!.sharks }]);
+        expect(sdk.state!.inventory.filter(i => i.id === SHARK)).toHaveLength(sized[0]!.sharks);
     });
 });

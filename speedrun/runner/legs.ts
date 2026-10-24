@@ -511,6 +511,12 @@ const NORTH_OF_KEEP: Region[] = [{ x: [3140, 3175], z: [3951, 3975] }, { x: [317
 const TO_SPIDERS: Hop[] = [...ARDOUGNE_TO_LEVER, ...LEVER_AND_KEEP_WEB, run(T.spiders.x, T.spiders.z, T.spiders.tol)];
 const TO_SPIDERS_CHECKPOINTS: Checkpoint[] = [{ after: 2, in: [KEEP] }, { after: 3, in: NORTH_OF_KEEP }];
 const WILD_FOOD = 2;
+/**
+ * T14-15's first hop, the leg out of S14: south from the spiders down the Wilderness toward the
+ * ditch, to level 20 for the Ardougne teleport. The cannon steps' retreat runs it too, stopping
+ * where the spiders' reach ends (skills/ranged.ts spiderRetreat).
+ */
+export const SPIDERS_SOUTH: Hop = { kind: 'run', to: { x: 3288, z: 3660 }, wildernessAtMost: 20 };
 
 export const LEGS: readonly LegStep[] = [
     leg('T01-02', T.lumbridgeSpawn, T.coop, [run(T.coop.x, T.coop.z, T.coop.tol)], {
@@ -550,7 +556,8 @@ export const LEGS: readonly LegStep[] = [
         after: 'S07', before: 'S08', method: 'Camelot teleport + run', countedBy: 'S08',
         // The last load's unburied bones: S07 closes by count at Prayer 99 before burying them, and
         // H6's trade needs their slots. Dragon, babydragon or any other; never the Camelot runes.
-        drops: [/bones$/i],
+        // And the willow band's kept log: S09's knife-mine takes a normal log only (H4p brings two).
+        drops: [/bones$/i, /^willow logs$/i],
         expected: { ticks: 131, label: 'm', source: rt('L07') + ': 134, 128', net: 2 },
     }),
     leg('T08-09', T.edmond, T.zooIron, [tele('ardougne'), run(T.zooIron.x, T.zooIron.z, T.zooIron.tol)], {
@@ -585,7 +592,7 @@ export const LEGS: readonly LegStep[] = [
         expected: { ticks: 181.5, label: 'm', source: rt('L13L') + ': 182, 181', net: 181.5 },
     }),
     leg('T14-15', T.spiders, T.grandTreeDoor, [
-        { kind: 'run', to: { x: 3288, z: 3660 }, wildernessAtMost: 20 },
+        SPIDERS_SOUTH,
         tele('ardougne'),
         run(T.khazardTree.x, T.khazardTree.z, T.khazardTree.tol),
         { kind: 'tree', to: 'village' },
@@ -640,7 +647,10 @@ export const LEGS: readonly LegStep[] = [
     leg('T22-23', T.flySpots, T.cook, [tele('lumbridge'), run(T.cook.x, T.cook.z, T.cook.tol)], {
         after: 'S22', before: 'S23', method: 'Lumbridge teleport + run', countedBy: 'S23',
         // S22's kit, its knife included: H23 hands a fresh knife back for T26-27's keep web (rs/158).
-        drops: [/^fly fishing rod$/i, /^logs$/i, /^feather$/i, /^knife$/i],
+        // Then the fly band's leftovers, which S25d's whole-pack need refuses (rs/764 F12): the shafts
+        // its knife loop fletches from the logs, and the catch still waiting for its drop when the
+        // band stops, trout or salmon. Each is `any` on the ledger row: nothing sent when none is held.
+        drops: [/^fly fishing rod$/i, /^logs$/i, /^feather$/i, /^knife$/i, /^arrow shaft$/i, /^raw (trout|salmon)$/i],
         expected: { ticks: 16.3, label: 'm', source: rt('L22t') + ': 20, 15, 14', net: 6.3 },
     }),
     leg('T23-24', T.cook, T.rustyAnchor, [tele('falador'), run(T.rustyAnchor.x, T.rustyAnchor.z, T.rustyAnchor.tol)], {

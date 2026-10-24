@@ -81,6 +81,19 @@ export async function stopLauncher(launcher: Pick<Subprocess, 'kill' | 'exited'>
     await Promise.race([launcher.exited, Bun.sleep(graceMs)]);
 }
 
+/**
+ * A login-on-cue helper's ready before SCORED logs in (standalone.ts loginOn): this launch's
+ * launcher.json lists it logged out (`awaiting-cue`) with its gate still waiting for its cue. A gate
+ * that already expired, stopped or opened is not ready: the cue it waits for has not been written yet.
+ */
+export function awaitingCue(runDir: string): (account: string) => boolean {
+    return account => {
+        const l = readLauncherFile(runDir) as unknown as { accounts?: { account: string; state?: string; cue?: { state?: string } | null }[] } | null;
+        const a = l?.accounts?.find(x => x.account === account);
+        return a?.state === 'awaiting-cue' && a.cue?.state === 'waiting';
+    };
+}
+
 /** The JSON lines of <runDir>/logs/<account>.role.log (role.ts runStandalone's `line`), oldest first; [] when absent. */
 export function roleLogEvents(runDir: string, account: string): Record<string, unknown>[] {
     let text: string;

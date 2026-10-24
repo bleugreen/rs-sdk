@@ -819,6 +819,9 @@ export function cdpUrl(env: BotEnv): string | undefined {
  */
 export type LogoutSignal = 'state' | 'child' | 'page' | 'gateway' | 'world';
 
+/** LogoutResult.reason when the server refused both clicks for combat (its "can't log out" message, CANT_LOGOUT). */
+export const LOGOUT_REFUSED_COMBAT = 'logout refused (combat)';
+
 export interface LogoutResult {
     ok: boolean;
     clickTick: number;
@@ -982,7 +985,7 @@ async function clickOut(session: Session, s: BotWorldState, t0: number, opts: { 
             sends,
             ...(ok
                 ? { confirmedBy: out, confirmTicks: w.ticks }
-                : { reason: out === 'refused' ? 'logout refused (combat)' : sends === 0 ? 'never sent: the gateway was unreachable' : 'still in game after timeout' }),
+                : { reason: out === 'refused' ? LOGOUT_REFUSED_COMBAT : sends === 0 ? 'never sent: the gateway was unreachable' : 'still in game after timeout' }),
         };
     }
     throw new Error('unreachable');
@@ -1080,6 +1083,61 @@ export async function waitLoggedOut(session: Session, ms: number): Promise<void>
     await sleep(ms);
 }
 
+/** The title screen's text for the login replies callers tell apart (Client.ts's loginMes1 and loginMes2). */
+const REPLY_TEXT: readonly (readonly [number, RegExp])[] = [
+    [5, /Your account is already logged in\./],
+    [7, /This world is full\./],
+    [8, /Login server offline\./],
+    [9, /Login limit exceeded\./],
+    [13, /Could not complete login\./],
+    [14, /The server is being updated\./],
+    [16, /Login attempts exceeded\./],
+];
+
+/** The login reply a title screen's message shows, or null for none told apart here. */
+export function loginReplyCode(message: string): number | null {
+    return REPLY_TEXT.find(([, re]) => re.test(message))?.[0] ?? null;
+}
+
+/**
+ * Reply 5, "Your account is already logged in. Try again in 60 secs". The world sends it while the
+ * account's old player is still there: briefly while a logout's save flushes (World.ts "old session
+ * is mid-logout", which login's own retries ride out), and for a dropped player whose socket went
+ * silent without closing until TIMEOUT_NO_RESPONSE, 1,000 ticks after its last packet.
+ */
+export const ALREADY_LOGGED_IN = 5;
+
+/** A login ended by a server reply the caller listed in LoginOptions.stopOnReply, read from the page's title screen. */
+export class LoginRefused extends Error {
+    override name = 'LoginRefused';
+    constructor(
+        readonly reply: number,
+        readonly pageMessage: string,
+        readonly attempts: number,
+        message: string
+    ) {
+        super(message);
+    }
+}
+
+/** Whether `e` is a login the server refused because the account is still logged in (ALREADY_LOGGED_IN). */
+export function alreadyLoggedIn(e: unknown): e is LoginRefused {
+    return e instanceof LoginRefused && e.reply === ALREADY_LOGGED_IN;
+}
+
+/**
+ * A login that saw no advancing in-world tick within its timeout. After a long silence the page can
+ * be left claiming in game on a socket that carries nothing (the host's run D: 'Connecting to
+ * server...', the account absent from the world), so runner/drop-relog.ts retries it on a fresh tab.
+ */
+export class LoginTimedOut extends Error {
+    override name = 'LoginTimedOut';
+}
+
+export function loginTimedOut(e: unknown): e is LoginTimedOut {
+    return e instanceof LoginTimedOut;
+}
+
 export interface LoginOptions {
     timeoutMs?: number;
     attempts?: number;
@@ -1095,6 +1153,12 @@ export interface LoginOptions {
     requireInPage?: boolean;
     /** Re-read admission after async gates/token preparation; return its absolute freshness deadline. */
     beforeDispatch?: () => number;
+    /**
+     * Login replies (loginReplyCode) that end the login at once with LoginRefused when an in-page
+     * attempt ends on one, instead of navigating and retrying: the caller keeps its own schedule
+     * for them (runner/drop-relog.ts waits out the server's hold on a dropped session).
+     */
+    stopOnReply?: readonly number[];
 }
 
 export interface LoginResult {
@@ -1199,7 +1263,16 @@ export async function login(session: Session, opts: LoginOptions = {}): Promise<
             }
         }
         if (via === 'launch') await launchClient(session);
-        const ended = via === 'page' ? () => pageLoginEnded(session, cdp!) : undefined;
+        let endedOn = '';
+        const ended =
+            via === 'page'
+                ? async () => {
+                      const message = await pageLoginEnded(session, cdp!);
+                      if (message === null) return false;
+                      endedOn = message;
+                      return true;
+                  }
+                : undefined;
         const outcome = await waitInWorldOrExit(session, sinceTick, sinceAdvance, Math.max(1_000, deadline - Date.now()), ended);
         if (outcome === 'in-world') {
             session.expectInWorld = true;
@@ -1209,8 +1282,12 @@ export async function login(session: Session, opts: LoginOptions = {}): Promise<
             const retaliate = await setAutoRetaliate(session.sdk, false);
             return { wallMs, attempts: attempt, via, tickBase: session.tickBase, run, retaliate };
         }
+        const reply = outcome === 'exited' && via === 'page' ? loginReplyCode(endedOn) : null;
+        if (reply !== null && opts.stopOnReply?.includes(reply)) {
+            throw new LoginRefused(reply, endedOn, attempt, `${session.name}: login refused after ${attempt} attempt(s) (reply ${reply}: ${endedOn})`);
+        }
         if (outcome === 'timeout' || attempt >= maxAttempts || session.childExit === 3) {
-            throw new Error(`${session.name}: login failed after ${attempt} attempt(s) (${outcome}, ${via === 'page' ? 'in page' : `exit ${session.childExit}`})`);
+            throw new (outcome === 'timeout' ? LoginTimedOut : Error)(`${session.name}: login failed after ${attempt} attempt(s) (${outcome}, ${via === 'page' ? 'in page' : `exit ${session.childExit}`})`);
         }
         // An in-page login that ended without getting in is not tried in the page again: a page
         // whose client cannot log in twice (a bundle before rs/183's autoLogin fix) would fail every
@@ -1218,6 +1295,39 @@ export async function login(session: Session, opts: LoginOptions = {}): Promise<
         if (via === 'page' && !opts.requireInPage && !opts.beforeDispatch) inPage = false;
         await sleep(backoffMs(attempt));
     }
+}
+
+/** How long relaunchOwnTab waits for its launch's own session (openSession's launch budget). */
+export const RELAUNCH_READY_MS = 120_000;
+
+/**
+ * Log SCORED's tab in afresh: the watchdog's relaunch (launchClient: the one tab re-navigated to a new
+ * token URL, a new launch tag) checked by its launch identity (waitOwnLaunch, rs/668), so a cached or
+ * foreign state never counts as this login. Never an in-page login: the tab it replaces may be a
+ * zombie that says in game on a dead socket. A launch whose page ends on a login reply the title
+ * screen tells apart (loginReplyCode) throws LoginRefused with that reply; any other failure throws
+ * waitOwnLaunch's refusal. Browser only.
+ */
+export async function relaunchOwnTab(session: Session, timeoutMs: number = RELAUNCH_READY_MS): Promise<LoginResult> {
+    if (session.client !== 'browser') throw new Error(`${session.name}: relaunchOwnTab relaunches a browser tab`);
+    if (session.beforeLogin) await session.beforeLogin();
+    const t0 = Date.now();
+    await launchClient(session);
+    try {
+        await waitOwnLaunch(session, timeoutMs);
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const reply = loginReplyCode(message);
+        if (reply !== null) throw new LoginRefused(reply, message, 1, `${session.name}: fresh-tab login refused (reply ${reply}): ${message}`);
+        throw err;
+    }
+    session.expectInWorld = true;
+    session.watchdog?.resume();
+    const wallMs = Date.now() - t0;
+    const run = await ensureRunOn(session.sdk);
+    const retaliate = await setAutoRetaliate(session.sdk, false);
+    await settleScene(session);
+    return { wallMs, attempts: 1, via: 'launch', tickBase: session.tickBase, run, retaliate };
 }
 
 /**
@@ -1255,14 +1365,14 @@ async function loginInPage(session: Session, cdp: string, opts: LoginOptions): P
 }
 
 /**
- * True once an in-page login has ended without getting in: the page is neither in game nor logging
- * in (it is back on the title screen, whose message says why). Unknown reads as not ended.
+ * The title screen's message once an in-page login has ended without getting in (the page neither
+ * in game nor logging in), else null. Unknown reads as not ended.
  */
-async function pageLoginEnded(session: Session, cdp: string): Promise<boolean> {
+async function pageLoginEnded(session: Session, cdp: string): Promise<string | null> {
     const st = await pageLoginState(cdp, session.name).catch(() => null);
-    if (!st || st.inGame || st.loginInProgress) return false;
+    if (!st || st.inGame || st.loginInProgress) return null;
     appendFileSync(session.logPath, `[speedrun] session ${session.sessionId}: in-page login ended on the title screen (${st.message || 'no message'}${st.error ? `; threw ${st.error}` : ''})\n`);
-    return true;
+    return st.message;
 }
 
 export interface RelogResult {
@@ -1538,9 +1648,11 @@ export interface WatchdogOptions {
     /**
      * Asked before a logout, relaunch or stop: a reason to stand down instead (run.ts: the page is
      * out of the world, which its drop recovery relogs in page; a logout and relaunch here would
-     * race it with a client relaunch). Null: act as usual.
+     * race it with a client relaunch; or the page still says in game inside its hold window,
+     * runner/page-hold.ts). `verdict` is the one about to be acted on, `msSinceAdvance` the silence
+     * behind it. Null: act as usual.
      */
-    standDown?: () => Promise<string | null>;
+    standDown?: (at: { verdict: WatchdogVerdict; msSinceAdvance: number }) => Promise<string | null>;
 }
 
 /**
@@ -1646,7 +1758,7 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
                 return;
             }
             if ((verdict === 'logout' || verdict === 'relaunch' || verdict === 'stop') && opts.standDown) {
-                const hold = await opts.standDown().catch(() => null);
+                const hold = await opts.standDown({ verdict, msSinceAdvance }).catch(() => null);
                 if (hold) {
                     if (lastWait !== hold) emit('wait', `${verdict} held: ${hold} (${why})`);
                     lastWait = hold;

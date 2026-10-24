@@ -131,6 +131,18 @@ export interface Step<C = Record<string, never>> {
      * through `run` while the account is in combat (runner/resume.ts MidStepError).
      */
     startsInCombat?: true;
+    /**
+     * A bounded walk out of the aggressors' reach, for a step that can fail among aggressive NPCs
+     * (S14 and S27 at the Wilderness poison spiders). The server refuses a logout while the account
+     * is in combat (lib/world.ts inCombatWindow), and logoutClean holds through that window being hit.
+     * After this step fails with SCORED in the window, or once a logout is refused for combat, the
+     * attempt runs `retreat` first and then logs out (runner/retreat.ts, from lib/attempt.ts's
+     * failure path). The runner bounds it in ticks, fences its sends past the bound, and watches it
+     * for a death. It picks nothing up and may start anywhere the step can fail, so it returns at once
+     * where there is nothing to walk out of; it throws when it ends still in reach. Absent: the logout
+     * after a failure is exactly what it was.
+     */
+    retreat?(ctx: StepContext<C>): Promise<void>;
 }
 
 export class StepError extends Error {
@@ -149,6 +161,12 @@ export interface RunStepsOptions<C> {
     shouldStop?: () => boolean;
     /** How to leave the world at a stop (default: logoutClean). */
     logout?: (session: RunnerSession) => Promise<unknown>;
+    /**
+     * Called at a stop's logout-safe boundary, still in the world, just before the logout, with the
+     * step the stop resumes at (run.ts: the `(census)` row of the pack that step will start with). A
+     * throw is reported and the logout goes ahead.
+     */
+    atStop?: (session: RunnerSession, next: Step<C>, index: number) => void;
     /**
      * 'resume' enters the first step through its `resume` handler (default
      * `run`) without its precondition check: the resume walk already found it in
@@ -323,6 +341,11 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
             if (opts.signal?.aborted) return { completed: i + 1 - start, resumeAt: i + 1, aborted: true };
             if (step.logoutSafe && i + 1 < steps.length && shouldStop()) {
                 closeBoundary(opts.log, session, boundary, '(logout)', i + 1);
+                try {
+                    opts.atStop?.(session, steps[i + 1]!, i + 1);
+                } catch (e) {
+                    console.error(`[runSteps] at the stop before ${steps[i + 1]!.name}: ${e instanceof Error ? e.message : String(e)}; logging out anyway`);
+                }
                 await logout(session);
                 return { completed: i + 1 - start, resumeAt: i + 1 };
             }

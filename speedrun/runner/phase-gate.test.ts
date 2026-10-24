@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildChain, KIT_PARTNER_ROWS, PLACEMENT } from './chain';
-import { judgeStatus, membersFromLauncher, PHASE_STEPS, phaseGates, STALE_MS, statusFileName, type PhaseMember } from './phase-gate';
+import { judgeStatus, membersFromLauncher, PHASE_STEPS, phaseGates, phasePath, STALE_MS, statusFileName, type PhaseMember } from './phase-gate';
 import { configMembers, hostPhaseGates, startGates, type GateIO } from '../run';
 import { S07_SITES } from '../helpers/bone-giver';
 import { tickPreflight } from '../lib/feed-hello';
@@ -151,6 +151,15 @@ describe('phaseGates: the next helper step refuses, every later family is report
         const g = phaseGates({ path: ['S15', 'H11', 'S14'], members: [], read: () => null, launcher: null, now, source: 'x' });
         expect(g.map(x => [x.gate, x.ok])).toEqual([['role phase H12o h45', true], ['role phase cannon h92', true]]);
     });
+    test("phasePath: from the start step on, a helper-free step left out, so the next helper step is the one after it", () => {
+        const chain = [{ id: 'S06' }, { id: 'S07' }, { id: 'S07', helperFree: true as const }, { id: 'T07-08' }, { id: 'S18' }];
+        expect(phasePath(chain, 0)).toEqual(['S06', 'S07', 'T07-08', 'S18']);
+        expect(phasePath(chain, 2)).toEqual(['T07-08', 'S18']);
+        const off = { [statusFileName('bones', 'cairn_b01')]: bone({ phase: 'off', readyAt: null }) };
+        const g = phaseGates({ path: phasePath(chain, 2), members, read: files(off), launcher: null, now, source: 'helpers.json' });
+        expect(g.some(x => x.gate.startsWith('role phase S07'))).toBe(false);
+        expect(g.find(x => x.gate === 'role phase S18/courier cairn_c')).toMatchObject({ ok: false, detail: 'bones-cairn_c.json: no status file' });
+    });
     test('a path past every phase step has no lines', () => {
         expect(phaseGates({ path: ['S26', 'S27'], members, read: () => null, launcher: null, now, source: 'x' })).toEqual([]);
     });
@@ -171,7 +180,7 @@ describe('who serves each step, and the gate on the run machine', () => {
         expect(configMembers({ bones: { group: ['b1', 'b2'] }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, s21Givers: ['s1'] }).map(m => `${m.account} ${m.scope.step}/${m.scope.family}`)).toEqual(['b1 S07/bone', 'b2 S07/bone', 'c S18/courier', 'a S25a/anvil', 's1 S21/altar']);
     });
     test('every phase step id is a step of the built chain', () => {
-        const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id}`]));
+        const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, `p_${id}`]));
         const chain = buildChain({ partners, firemakingTiles: '3240,3296', rings: { giver: 'r' }, bones: { giver: 'b' }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: '/tmp/x' }, { cues: { open: async () => {}, stop: () => {} } });
         const ids = new Set(chain.map(s => s.id));
         for (const id of [...Object.keys(PHASE_STEPS), 'S15']) expect(ids.has(id)).toBe(true);
