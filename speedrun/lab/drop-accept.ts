@@ -20,8 +20,9 @@
 // A dead or hung renderer instead of a dropped socket (rs/752): --renderer=kill SIGKILLs the tab's
 // renderer process at the drop tick (an OOM kill's shape: the target stays listed, its evaluate
 // fails), --renderer=stop SIGSTOPs it (a hung renderer: its evaluate never answers, its socket stays
-// open) and SIGCONTs it once the drop recovery has recorded its relog. The renderer is the busiest of
-// Chrome's renderers by CPU time (SystemInfo.getProcessInfo): the game page renders every frame.
+// open) and SIGCONTs it once the drop recovery has recorded its relog. The renderer is the busiest by
+// CPU time (SystemInfo.getProcessInfo: the game page renders every frame) of those descending from
+// this script's own Chrome, so another lab's Chrome on the same host is never signalled. Linux only.
 //
 // One RESULT line: the step's ticks (in-world, every attempt), the drop and the recovery (wall ms and
 // those ms in ticks: the old player stays in the world until the new login takes it over, so they are
@@ -94,13 +95,35 @@ if (rendererSignal !== undefined && rendererSignal !== 'kill' && rendererSignal 
     process.exit(2);
 }
 
-/** The busiest of Chrome's renderer processes by CPU time, and how many there are. */
-async function busiestRenderer(cdp: string): Promise<{ pid: number; of: number }> {
+/** The parent pid of `pid` (Linux /proc), or null once the chain ends or the process is gone. */
+function parentPid(pid: number): number | null {
+    try {
+        // The comm field is parenthesised and may hold spaces: the ppid is the second field after it.
+        const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+        const ppid = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]);
+        return ppid > 0 ? ppid : null;
+    } catch {
+        return null;
+    }
+}
+
+/** Whether `pid` descends from `ancestor`. Chrome's renderers are children of its zygote, not of the browser process. */
+function descendsFrom(pid: number, ancestor: number): boolean {
+    for (let p: number | null = parentPid(pid), n = 0; p !== null && n < 16; p = parentPid(p), n++) if (p === ancestor) return true;
+    return false;
+}
+
+/**
+ * The busiest renderer by CPU time of this script's own Chrome (the one on `cdp`, browser pid
+ * `chromePid`), and how many it has. A host may run other labs' Chromes: a renderer that does not
+ * descend from ours is never a candidate, and with none the case refuses rather than guess.
+ */
+async function busiestRenderer(cdp: string, chromePid: number): Promise<{ pid: number; of: number }> {
     const v = (await (await fetch(`${cdp.replace(/\/+$/, '')}/json/version`)).json()) as { webSocketDebuggerUrl?: string };
     if (!v.webSocketDebuggerUrl) throw new Error('no browser websocket');
     const [info] = (await cdpCommands(v.webSocketDebuggerUrl, [{ method: 'SystemInfo.getProcessInfo' }])) as [{ processInfo: { type: string; id: number; cpuTime: number }[] }];
-    const r = info.processInfo.filter(p => p.type === 'renderer').sort((a, b) => b.cpuTime - a.cpuTime);
-    if (!r[0]) throw new Error('no renderer process');
+    const r = info.processInfo.filter(p => p.type === 'renderer' && descendsFrom(p.id, chromePid)).sort((a, b) => b.cpuTime - a.cpuTime);
+    if (!r[0]) throw new Error(`no renderer descends from this script's Chrome (pid ${chromePid})`);
     return { pid: r[0].id, of: r.length };
 }
 
@@ -295,7 +318,8 @@ try {
             }
             if (rendererSignal) {
                 const signal = rendererSignal === 'kill' ? 'SIGKILL' : 'SIGSTOP';
-                void busiestRenderer(cdp).then(
+                const chromePid = browser.browser.process()?.pid;
+                void (chromePid ? busiestRenderer(cdp, chromePid) : Promise.reject(new Error('no Chrome pid'))).then(
                     ({ pid, of }) => {
                         process.kill(pid, signal);
                         Object.assign(renderer, { signal, pid, of, at: new Date().toISOString() });
