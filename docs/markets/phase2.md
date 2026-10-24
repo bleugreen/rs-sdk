@@ -320,8 +320,8 @@ ticks** (m, 1 sample). Prayer-first (`--prayer 31 --pray`) is slower at every ta
 to its method and runs it until stopped, with a ledger of what each account holds.
 
 ```sh
-bun markets/phase2/run.ts <plan.json> [--out DIR] [--minutes N] [--stall-minutes N] [--stall-retries N] [--run-ended] [--placeholder-data]
-bun markets/phase2/report.ts DIR/ledger.jsonl     # rates per account and method, the ramp, redirects, logouts
+bun markets/phase2/run.ts <plan.json> [--out DIR] [--minutes N] [--stall-minutes N] [--stage-stall-minutes N] [--stall-retries N] [--run-ended] [--placeholder-data]
+bun markets/phase2/report.ts DIR/ledger.jsonl     # rates per account and method, the ramp, redirects, stalls, trips, logouts
 ```
 
 **The plan** (`markets/phase2/plan.ts`; `plan.example.json` has placeholder names) lists each account with its
@@ -340,11 +340,12 @@ in the market respawns in Lumbridge without the ship's coins, so the account ear
 | knights | tutorial, HP 40 (`hp-train.ts`), Thieving 55 (`coins-driver.ts` over `coins.ts`: men, warriors, guards), admission (the ramp; Varrock guards meanwhile), [buy sharks], 100 coins, ship to Ardougne (`thieving.ts`'s leg), `pickpocket.ts` on the knights |
 | heroes | as knights to Thieving 80, no ramp |
 | guards | tutorial, HP 40, `coins-driver.ts` from Thieving 1: the men to 25, the Al-Kharid warriors to 55, the Varrock guards |
-| iron | tutorial, a pickaxe (`pickaxe.ts`), 100 coins (Lumbridge men; 220 when the plan sells), Mining 15 (`mining.ts`'s copper steps, after sailing back to the mainland if the account starts on the Ardougne side), wield the pickaxe, ship to Ardougne, `mine.ts` at the zoo cluster |
+| iron | tutorial, a pickaxe (`pickaxe.ts`), 100 coins (Lumbridge men; 220 when the plan sells), Mining 15 (`mining.ts`'s copper steps at Rimmington), wield the pickaxe, ship to Ardougne, `mine.ts` at the zoo cluster |
 | shilo | staged by hand (no quest bot exists): the method only |
 
-A stage that fails three times in a row, or three sessions that end in an error within two minutes of login, give
-the account up; the rest carry on.
+Whatever the stage, the account first gets to where it starts from wherever it stands, by ship and through the
+scripted passages when it has to ('Reaching a stage from anywhere' below). A stage that fails three times in a row,
+or three sessions that end in an error within two minutes of login, give the account up; the rest carry on.
 
 **The pickaxe stage** (`pickaxe.ts`, rs/732) gives iron a pickaxe usable at its Mining level before anything needs
 one: from the bank when the runner last saw one there, else a bronze pickaxe (1 coin) from Bob in Lumbridge or Aemad
@@ -356,12 +357,23 @@ four lab accounts died to the men in `coins.ts` (HP 10, no food) and lost one; t
 given-up account. The coins stage now runs through `coins-driver.ts`, which rests on the men at 3 Hitpoints
 ('Deaths' below).
 
-**Stalls** (`stall.ts`). An account in its method stage whose coins (carried plus banked, from its ledger lines) have
-not moved for `--stall-minutes` (default 10; 0 turns it off) gets a `stalled` event and its method is aborted, so its
-stages run again from where it stands. An abort is not a stage failure. While the coins stay put it is aborted at most
-`--stall-retries` (default 3) times, one threshold apart; then a loud `stalled: retries used up` event, and it is left
-running for a person to look at. The method itself ends with an error after 10 errands fail in a row
-(`pickpocket.ts` `maxErrandFailures`), which is a stage failure: three of those give the account up.
+**Stalls** (`stall.ts`), in every stage. An account in its method stage whose coins (carried plus banked, from its
+ledger lines) have not moved for `--stall-minutes` (default 10; 0 turns it off) gets a `stalled` event and its method
+is aborted, so its stages run again from where it stands. An abort is not a stage failure. While the coins stay put it
+is aborted at most `--stall-retries` (default 3) times, one threshold apart; then a loud `stalled: retries used up`
+event, and it is left running for a person to look at. The method itself ends with an error after 10 errands fail in a
+row (`pickpocket.ts` `maxErrandFailures`), which is a stage failure: three of those give the account up.
+
+Coins are the wrong signal outside the method (a walk to the men earns nothing), so every other stage has its own
+(`stageReading`): the XP of the skill it trains or earns with (Hitpoints; Thieving for the coins, thieving,
+admission and queue stages; Mining), the coins carried, or a move of more than 5 tiles from where its clock last
+restarted, read on every state; a change of stage restarts the clock. One with none of those for
+`--stage-stall-minutes` (default 10; 0 off) is aborted the same way, so it runs again through travel, and after
+`--stall-retries` aborts with no progress the account is parked loudly (`parked: stalled in <stage>`). The shark
+purchase and the sale stand still while an Exchange offer fills, so their threshold adds the plan's `fillMinutes`
+(and the purchase's longest retry backoff, 2 minutes). Retries count per stage and only progress in that stage
+resets them, so a method aborted, sent round its stages and back without earning still runs out. Every abort and
+leave is a `stall` ledger line with the stage and position; `report.ts` counts them, and the parks, by stage.
 
 ### Deaths
 
@@ -552,15 +564,101 @@ paid for. The knights and heroes have no sale route (they earn coins, and their 
 Shilo has none until something takes an account out through the Shilo gate.
 
 **The sea route** (`markets/lib/sea-route.ts`) plans a trip between any two tiles on the mainland, Karamja and the
-Ardougne side from the two ends alone (the voyages `speedrun/lib/ships.ts` chooses, then the walk), so its fares are
-known before it moves, and runs it with `ships.ts`'s `sail` and the toll-gate-aware `travelTo`. Its Karamja leg, the
-crossing between any Karamja tile and Port Sarim through Musa Point, is what a Shilo account would take from outside
-the gate with nothing else. The mining stage uses the same route to bring a knight sent to iron from the market back
-to the Rimmington copper.
+Ardougne side from the two ends alone (the passages and voyages, then the walk), so its fares are known before it
+moves, and runs it with `ships.ts`'s `sail`, `passages.ts`'s `cross` and the toll-gate-aware `travelTo`. Its Karamja
+leg, the crossing between any Karamja tile and Port Sarim through Musa Point, is what a Shilo account would take from
+outside the gate with nothing else. It is the runner's one router: the next section.
 
 **Stopping:** SIGINT or SIGTERM stops every account at its next safe point and logs it out (`logoutDirect`
 re-clicks through the post-combat window); a second signal exits at once. `--minutes N` stops the same way. The
 exit code is 0 when every account logged out.
+
+### Reaching a stage from anywhere
+
+On the demo on 2026-10-24 (the first run of 990adbf4) two accounts were stranded where the runner could not route,
+and nothing noticed. run3 a02 logged in inside the Gnome Stronghold, by the Grand Tree after a courier run, with no
+coins carried; its coins stage wanted the Lumbridge men and sat still for 35 minutes, since `walkTo` cannot cross the
+Stronghold's gate and the stall watchdog then covered only the method. run-b2 a12 was on Karamja: it retried its
+shark purchase's walk as a transient refusal, then was redirected to guards it could not reach. Markets freed both by
+hand with `ships.ts` and `passages.ts`. The runner now does that itself (rs/754).
+
+**One router** (`markets/lib/sea-route.ts`). `routeBetween(from, to)` plans, before each voyage, the passages out to
+its dock (`passages.ts` `crossingsBetween`, which asks the long-path map where a plain walk gets to), the voyage, then
+the passages from the last landing to the destination and the walk. `planTrip` counts the fares before anything
+moves: a pack that cannot pay stops first at this side's fare bank (`FARE_BANKS`: the Ardougne south bank, Draynor),
+and the trip is refused with its reason (`Unreachable`) when there is none on this side (Karamja) or the bank was
+last seen holding too little. A walk the long-path map cannot route falls back to `pickpocket.ts`'s door recovery
+('Stuck behind a door' above). The Exchange errands, the pickaxe errand's bank and shop, and the sale by ship all
+travel through it.
+
+**Every stage travels to its start first** (`stages.ts` `stageStart`, `reach`) when that start is on another land
+mass or behind a passage: the coins stage the Lumbridge men; thieving and admission the target the coins driver would
+pick; Hitpoints its site (the cows for a Kandarin site's first levels); mining the Rimmington copper; the shark
+purchase the Varrock west bank; the ship to Ardougne, from anywhere but the mainland, the Ardougne landing; the
+guards method the driver's target and the Ardougne methods the Ardougne side; the Hitpoints queue its earner. A
+redirect (the food fallback, a rebuy) recomputes the stage, so it routes the same way. The stage's own code (coins.ts,
+hp-train.ts, mining.ts, the methods) walks only on one land mass and takes over from there. A start nowhere near any
+known passage is left to the stage, and a pocket the router does not know (no long-path route out and no passage
+in `PASSAGES`) is what the stage stall watchdog catches. A trip it cannot pay for parks the account with a `parked`
+ledger line, reason `unreachable <stage>`, instead of retrying it forever. Every trip beyond a plain walk is a `trip`
+ledger line with its legs and their ticks; `report.ts` gives each leg's count and median.
+
+**Lab** (fedora, block M23, 400.1-400.3 ms a tick, `markets/phase2/lab.ts --at --carry`): three trained knights
+(Thieving 99, HP 40) with 3 sharks banked under a legacy purchase record and 500 coins banked, so the next stage was
+the coins and then the voyage check, which sends a knight short of sharks to the guards. The stage stall threshold
+was cut to 2 minutes and one retry so case (c) ends inside the run.
+
+(a) a01 left inside the Stronghold's wall by the Grand Tree (2465,3490) with no coins carried, its bank unseen. Out
+through the gate, 60 coins from the Ardougne south bank, both ships, the Lumbridge men; it earned the 100 coins in 35
+s and moved on:
+
+```
+16:28:59.754 a01 stage {"to":"coins"}   travel to the stage {"from":{"x":2465,"z":3490},"start":{"x":3231,"z":3218}}
+16:29:25.764 a01 passage {"name":"Gnome Stronghold gate","at":{"x":2461,"z":3383}}
+16:32:19.087 trip a01 coins Gnome Stronghold gate:65 fares:127 ardougne-brimhaven:45 musa-sarim:128 walk:133 (498 ticks, 60 coins)
+16:32:54.709 a01 stage {"to":"to-ardougne","hp":39,"maxHp":40}
+```
+
+(b) a02 left at Brimhaven with 150 coins carried, then redirected to guards on Karamja by the voyage check (3
+sharks, a minimum of 5): the walk across the island to Musa Point, the customs officer's ship, the Varrock guards.
+It earned there and was redirected back to the knights by a rebuy 97 s after arriving:
+
+```
+16:29:01.355 a02 redirect to guards {"reason":"3 sharks recorded after the last purchase, below the minimum of 5 (short): not sailing"}
+16:29:01.355 a02 stage {"to":"method"}   travel to the stage {"from":{"x":2772,"z":3232},"start":{"x":3210,"z":3462}}
+16:31:13.450 trip a02 method musa-sarim:142 walk:188 (330 ticks, 30 coins)   to {"x":3212,"z":3460}
+16:32:50.711 a02 redirect to knights {"reason":"3525 coins cover 5 sharks at the 650 ceiling (at least 5)"}
+```
+
+(c) a03 left in a fenced yard north-east of Varrock (3302,3498): walkable, but the long-path map has no route out
+(it ends at the fence, (3300,3493)) and no passage covers it, so the router does not travel and coins.ts's walk to the
+men fails in a loop, as a02's did. The stall watchdog aborted the coins stage at 2 minutes, it stalled again, and it
+was parked and logged out:
+
+```
+16:31:04.070 a03 stalled {"stage":"coins","at":{"x":3302,"z":3498},"stalledMinutes":2,"retry":1,"retries":1,"xp":998458,"carried":0}
+16:33:04.342 a03 parked: stalled in coins {"stage":"coins","at":{"x":3302,"z":3498},"stalledMinutes":2,"retry":1,"retries":1}
+16:33:04.717 a03 logout {"outcome":"out"}
+REPORT stalls 2 {"byStage":{"coins":2},"parkedByStage":{"coins":1}}
+REPORT trips 2 {"byLeg":{"musa-sarim":{"n":2,"medianTicks":135},"walk":{"n":2,"medianTicks":160.5},"Gnome Stronghold gate":{"n":1,"medianTicks":65},"fares":{"n":1,"medianTicks":127},"ardougne-brimhaven":{"n":1,"medianTicks":45}},"fares":90}
+```
+
+SIGINT then logged all three out (exit 0). Not run in the lab: the `unreachable` park, which needs an empty pack on
+Karamja or a bank seen short; it is unit-tested (`sea-route.test.ts` `planTrip`), and the runner's catch is the same
+one the stall park uses.
+
+A knight in Kandarin (the Stronghold) at its coins stage sails to the Lumbridge men and back, 120 coins in fares,
+though the Ardougne side is a walk away: the coins stage counts as done only with the coins carried or on the
+Ardougne side. Counting it done anywhere in Kandarin for a method that needs the coins only for the ship would save
+the round trip; it is left as it is, since the knight's earlier stages (admission, the shark purchase) are on the
+mainland anyway.
+
+```sh
+# block M23 on fedora, from a copy of the checkout in /tmp (/tmp/rs754-lab), in a tmux server
+. markets/methods/lab/block.sh M23 && LAB_RUNNERS=0 LAB_TIMEOUT=3000 speedrun/lab/lab.sh p2w00 \
+  'markets/phase2/lab.ts:--prefix=p2w:--exchange=0:--knights=3:--hungry=0:--guards=0:--sharks=3:--coins=500:--trained=1:--legacy-sharks=1:--buy=1:--ramp=0:--at=stronghold,karamja,pocket:--carry=0,150,0:--stage-stall=2:--stall-retries=1:--sigint=40:--out=/tmp/rs754'
+bun markets/phase2/report.ts /tmp/rs754/ledger.jsonl
+```
 
 ### Shark resupply
 

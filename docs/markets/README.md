@@ -154,6 +154,7 @@ Labs run on fedora or bgsrv-ub with `NODE_TICKRATE=400`. Check all ports with `l
 | M20 | phase-2 sale round trip and pickaxe stage (rs/732; LOGIN 44095, LOGGER 44096) | 10090 / 10091 / 10092 | 45090 | 8095 | 46090 |
 | M21 | pickpocket door recovery (rs/736; LOGIN 44105, LOGGER 44106) | 10100 / 10101 / 10102 | 45100 | 8105 | 46100 |
 | M22 | phase-2 shark resupply (rs/743; LOGIN 44115, LOGGER 44116) | 10110 / 10111 / 10112 | 45110 | 8115 | 46110 |
+| M23 | phase-2 stages reached from anywhere, stage stalls (rs/754; LOGIN 44125, LOGGER 44126) | 10120 / 10121 / 10122 | 45120 | 8125 | 46120 |
 | M24 | phase-2 runner memory (rs/767; LOGIN 44135, LOGGER 44136) | 10130 / 10131 / 10132 | 45130 | 8135 | 46130 |
 
 `. markets/methods/lab/block.sh M8` (any listed block) exports a block's ports and refuses if any is listening; every
