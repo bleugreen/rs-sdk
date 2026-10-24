@@ -41,13 +41,13 @@ calibration band and the e terms.
 
 | # | Candidate | Mechanism (file:line) | Rows it replaces or shortens | Ticks saved if it works | Plausibility | Cheapest probe (lab engine) | Owner |
 |---|---|---|---|---|---|---|---|
-| 1 | **Imp Catcher in place of S02, starting S04 at Magic 44** | `quests/quest_imp/scripts/quest_imp.rs2:4` `stat_advance(magic, 8750)` = 875 base (r), level 44 on the engine's curve (`server/engine/src/engine/entity/Player.ts:77-85`; 44 starts at 846.9 base, i); Mizgog at (3103,3163) level 2 (`maps/m48_49.jm2:6252`, npc 706, r); the hand-in `areas/area_wizard_tower/scripts/wizard_mizgog.rs2:6-19`; tower stairs `ladders+stairs/scripts/stairs.rs2:204,262`; Lumbridge teleport lands at the row (3221,3218) (`magic_spells.dbrow` tele_coord, r) | T01-02 (53), S02 (20.3), T02-03 (52) become one leg; S04 198 drops to ~106 | **~94 i** (range 80-105): S04 casts 31 enchants for 60, 29 x 3 (m, every in-load gap 3) + one ring load fewer (~5, i) = ~92; legs 125.3 against ~123 (i, below), ~2 | **high** (every step r; the walk is calibrated i; 4 beads to supply) | the new leg 3 times on the lab at S00's levels: courtyard to Mizgog to the row entry, beads in the pack, ~20 min; S04 re-run from Magic 44 with 31 rings (~10 min) | rs/185 (the quest module), rs/186 (legs, chain, `magic.ts` plan from 44), rs/41 (4 beads in H1; S04's ring loads) |
-| 2 | **Goblin Diplomacy split early: the bartender after S06, the generals on the way to Taverley** | the quest starts only at the Rusty Anchor bartender (`quests/quest_gobdip/scripts/quest_gobdip.rs2:13-19`; the generals have no stage-0 branch, `:72-79`, r); the air altar's exit portal lands at (2983,3288) (`skill_runecraft/configs/runecraft.dbrow` air `exit_coord`, r), 87 tiles from the bartender; 200 base Crafting (`quest_gobdip.rs2:62`) gives Crafting 25 at S13, and the railing roll is `stat_random(crafting, 60, 150)` (`quests/quest_mcannon/scripts/railings.rs2:78`) | T23-24 (98) and L24b (60) deleted; S13's railings (B) shorter; T06-07 longer | **~118 i** (range ~100-140): +158 m (T23-24 98 + L24b 60); +85 i (railings: 6 successes at 83/256 is 18.5 tries against 25.2, 6.7 x 12.75); -117 i (T06-07 lengthens, below); -6 e (H20's S24 items need their own trade) | **medium** (moves the parts of a lab-accepted module; two new door-bound legs; H20 splits) | the new T06-07 three times on the lab from the air altar room with H20a's items served at the Rusty Anchor (~25 min); a slot-ledger walk of the split H20 (minutes) | rs/185 (`goblin-diplomacy.ts` parts), rs/186 (legs, chain), rs/41 (H20a/H20b) |
-| 3 | **Games necklace for T06-07 (or, with #2, for the Kaqemeex leg)** | `general/scripts/enchanted_jewellry/necklace_of_minigames.rs2:6-20` lands at the games room (2207,4940); its two stairs (`ladders+stairs/scripts/stairs.rs2:474`, `:515`) put the player out at Burthorpe (2899,3564) (r). Made by Lvl-1 enchant of a sapphire necklace (`skill_magic/configs/magic_spells.dbrow:10`, r); no `tradeable=no` in its config (`enchanted_jewelry.obj:544-552`, i) | T06-07 82.7 to ~54; or L24a 72 (Rusty Anchor or cook to Kaqemeex) to ~57 | **~28 i** on T06-07 (range 22-33), **~15 i** on the Kaqemeex leg (range 10-20); with #2 taken, only the 15 | **high** (r; a slot to find in S06) | T06-07 by necklace 3 times on the lab (~10 min) | rs/186 (legs), rs/41 (one or two necklaces from a Magic-7 helper) |
+| 1 | **Imp Catcher in place of S02, starting S04 at Magic 44** | `quests/quest_imp/scripts/quest_imp.rs2:4` `stat_advance(magic, 8750)` = 875 base (r), level 44 on the engine's curve (`server/engine/src/engine/entity/Player.ts:77-85`; 44 starts at 846.9 base, i); Mizgog at (3103,3163) level 2 (`maps/m48_49.jm2:6252`, npc 706, r); the hand-in `areas/area_wizard_tower/scripts/wizard_mizgog.rs2:6-19`; tower stairs `ladders+stairs/scripts/stairs.rs2:204,262`; Lumbridge teleport lands at the row (3221,3218) (`magic_spells.dbrow` tele_coord, r) | T01-02 (53), S02 (20.3), T02-03 (52) become one leg; S04 198 drops to ~106 | **~90 i** (range 75-105): S04 casts 31 enchants for 60, 29 x 3 (m, every in-load gap 3) + one ring load fewer (~5, i) = ~92; the new leg ~119 against 116.7 for the old three rows on the same lab host, about -2 (m parts, section 2a) | **high** (Magic 44 from the quest measured in the lab, 3 of 3; the tower's ground-floor stair approach not yet solved; 4 beads to supply) | the tower's interior approach (~15 min: the staircase at (3103,3159) refused from (3102,3160), 3 of 3), then the whole leg 3 times; S04 from Magic 44 with 31 rings (~10 min) | rs/185 (the quest module), rs/186 (legs, chain, `magic.ts` plan from 44), rs/41 (4 beads in H1; S04's ring loads) |
+| 2 | **Goblin Diplomacy split early: the bartender after S06, the generals on the way to Taverley** | the quest starts only at the Rusty Anchor bartender (`quests/quest_gobdip/scripts/quest_gobdip.rs2:13-19`; the generals have no stage-0 branch, `:72-79`, r); the air altar's exit portal lands at (2983,3288) (`skill_runecraft/configs/runecraft.dbrow` air `exit_coord`, r), 87 tiles from the bartender; 200 base Crafting (`quest_gobdip.rs2:62`) gives Crafting 25 at S13, and the railing roll is `stat_random(crafting, 60, 150)` (`quests/quest_mcannon/scripts/railings.rs2:78`) | T23-24 (98) and L24b (60) deleted; S13's railings (B) shorter; T06-07 longer | **~124 i** (range ~105-135): +158 m (T23-24 98 + L24b 60); +85 i (railings: 6 successes at 83/256 is 18.5 tries against 25.2, 6.7 x 12.75); -113 m (lab: the new T06-07's travel 189.3 against T06-07's 76 on the same host, section 2a); -6 e (H20's S24 items need their own trade) | **medium** (the travel is measured; it moves the parts of a lab-accepted module; H20 splits) | the new T06-07 with the talks and H20a on the browser, 3 runs (~25 min); a slot-ledger walk of the split H20 (minutes) | rs/185 (`goblin-diplomacy.ts` parts), rs/186 (legs, chain), rs/41 (H20a/H20b) |
+| 3 | **Games necklace for T06-07 (or, with #2, for the Kaqemeex leg)** | `general/scripts/enchanted_jewellry/necklace_of_minigames.rs2:6-20` lands at the games room (2207,4940); its two stairs (`ladders+stairs/scripts/stairs.rs2:474`, `:515`) put the player out at Burthorpe (2899,3564) (r). Made by Lvl-1 enchant of a sapphire necklace (`skill_magic/configs/magic_spells.dbrow:10`, r); no `tradeable=no` in its config (`enchanted_jewelry.obj:544-552`, i) | T06-07 82.7 to ~54; or L24a 72 (Rusty Anchor or cook to Kaqemeex) to ~57 | **~23 m (lab)** on T06-07 (55 / 52 / 52 against the same host's T06-07 76, lite), **~15 i** on the Kaqemeex leg (range 10-20); with #2 taken, only the 15 | **high** (the leg measured 3 of 3; a slot to find in S06) | the same leg on the browser client, 3 runs (~10 min) | rs/186 (legs), rs/41 (one or two necklaces from a Magic-7 helper) |
 | 4 | Crafting 30 before S13 from 22 leather gloves (if #2 is not taken) | gloves 13.8 base each from Crafting 1 (`skill_crafting/configs/leather/leather.dbrow:1-8`); crafting is delay-free (m: 26 bodies in 7.0 ticks, S25d's row) | S13's railings | ~75-90 e (95 i railings less ~6 crafting and a trade) | **low**: S13 starts with 11 free slots after H10 and needs 6 (RUN-ORDER S13, rs/379), so 22 leather + needle + thread does not fit one load | slot-ledger walk with the gloves in H10 (minutes) | rs/185, rs/41 |
 | 5 | T14-15 by a PvP death at the spiders | death respawns at (3221,3218) (`player/scripts/death.rs2:50`), on 1 HP after a player kill (`:61-69`); the Wilderness above 20 blocks every teleport (`skill_magic/scripts/spells/teleport.rs2:17`) | T14-15's 66-tick walk to Wilderness 20 | **~26-35 i**, bad case negative: 66 m less the kill ~6 e, death 5 r, eat-back 0-9 i, the Khazard armour lost for good (+20 i at X, R8) | **low** (a combat-89-or-less 99-Strength helper logged in at Wilderness 37; PK exposure; R8b not staged) | one lab kill and respawn with R8b's package, ~20 min | rs/41 (killer + spawn helper), rs/186 (chain) |
 
-If #1, #2 and the Kaqemeex half of #3 are all taken, the sum is about **227 i** (94 + 118 + 15).
+If #1, #2 and the Kaqemeex half of #3 are all taken, the sum is about **229 i** (90 + 124 + 15).
 They are independent: #1 is S00-S04, #2 is T06-07, S13 and S24, and #3's half is S24's first leg.
 
 ## 2. Specs for the top three
@@ -69,13 +69,21 @@ two loads, not three.
   `tradeable=no` in `quest_imp.obj`, and cert ids exist in `pack/obj.pack:1471,1475` (i). H1 also
   carries one more law rune (Lumbridge teleport: law, 3 air, 1 earth).
 - The starter drops, 3 m, the same burst T01-02 does today.
-- The walk to the tower stairs: 190 tiles, 95 x 1.08 = **~103 i**. It passes 37 tiles from the
-  Draynor dark wizards at its closest (pathfinder waypoints).
-- Two stair hops, ~5 e (`stairs.rs2:204`, `:262`).
-- Mizgog's two talks in burst, ~6 i (about 19 pages and 2 choices at 5 pages a tick).
-- The Lumbridge teleport, 4 m, and ~1.5 i to the row entry (3222,3219).
+- The walk to the tower stairs: 190 tiles, **95 m (lab, 3 of 3)** to (3102,3160) beside the
+  ground-floor staircase. It passes 37 tiles from the Draynor dark wizards at its closest
+  (pathfinder waypoints); one of six lab walks arrived on 9 HP, from a hit not identified.
+- Two stair hops, ~8 e (`stairs.rs2:204`, `:262`; the games room's stairs measured 2-5 a hop).
+  **Not yet measured**: the lab's click on the staircase from (3102,3160) never climbed, 3 of 3,
+  so the interior approach (the tower's door or the far side of the stairs) is open and may add
+  ticks.
+- Mizgog's two talks: **30 m (lab, fixed dialogue, 17 pages, 3 of 3)**, ~7 i in burst (5 pages a
+  tick, 2 choices). Magic 44 at the second talk's end, 3 of 3 (m).
+- The Lumbridge teleport and the run to the row entry (3222,3219): **6 m (lab, 3 of 3)**.
 
-That totals **~123 i** against 125.3 today. S04 at ~106 i (198 less 87 less ~5) replaces 198.
+That totals **~119 i** in burst (104 of it m) against 116.7 for T01-02 + S02 + T02-03 on the
+same lab host (49.7 m + 3 m drops + 14 m + 50 m, lite). On the browser the old rows are 125.3,
+so the leg is about even either way. If burst fails, the fixed talks add ~23. S04 at ~106 i (198
+less 87 less ~5) replaces 198.
 
 **Side effects.** The bonus is +1 quest point, which closes R11 (exactly 32 QP at the Champions'
 Guild door). Mizgog adds an amulet of accuracy, which is dropped. The ring supply falls by 12
@@ -100,13 +108,12 @@ this quest alone. The new T06-07 does the quest on the way out of the air altar:
 | Part | New T06-07 | Ticks |
 |---|---|---|
 | drop the air runes | as today | 2 m |
-| room to the exit portal, out to (2983,3288) | `runecraft.rs2:1-9` | ~3 e |
-| run to the bartender (3045,3257) | 87 tiles | 47 i |
+| room to the exit portal, out to (2983,3288), and the run to the bartender (3045,3257) | `runecraft.rs2:1-9`; 87 tiles | **47 m (lab: portal 4 + run 43, 3 of 3)** |
 | G1 talk, H20a (3 goblin mail, orange and blue dye), G2 dyes | moved from S24 | (4.3 m + trade + 1 m, net 0) |
-| Falador teleport, run to the generals (2957,3511) | 133 tiles; 2 doors at (2958,3506) and (2958,3509), ~3 each closed (m, L24b) | 4 + 71.8 + 6 i |
+| Falador teleport, run to the generals (2957,3511) | 133 tiles; the doors at (2958,3506) and (2958,3509) | **78 m (lab: teleport 4 + run 74 with 4 door events, 3 of 3)** |
 | G3-G6 with Wartface | moved from S24 | (16 m, net 0) |
-| run to the Taverley normal tree (2912,3495), where H4k waits | 122 tiles | 65.9 i |
-| **New travel** | | **~200 i** against 82.7 m: **+117** |
+| run to the Taverley normal tree (2912,3495), where H4k waits | 122 tiles | **64.3 m (lab: 66 / 61 / 66, 2 doors)** |
+| **New travel** | | **189.3 m (lab, lite)** against the same host's T06-07, 76 m: **+113** |
 
 S24 then runs cook to Kaqemeex (Falador teleport, the same landing, so L24a's 72 m), Druidic
 Ritual, the Varrock teleport to Romeo (5.3 m), and R&J. T23-24 and L24b are gone. H20's other
