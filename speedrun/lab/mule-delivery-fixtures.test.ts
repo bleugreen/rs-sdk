@@ -49,7 +49,7 @@ function fullRouteOverrides(text: string): Record<string, RowFixtureOverrides> {
         for (const e of row.in) if (identities[e.name] !== undefined) {
             (config.receive as Record<string, unknown>)[itemLabel(e)] = { items: [heldItems(e)], reason: 'Explicit standard object identity; canonical incoming count/max' };
         }
-        for (const e of row.out) if (e.count === 'all' || e.family || (e.placeholder && row.row !== 'H4' && identities[e.name] !== undefined)) {
+        for (const e of row.out) if (e.count === 'all' || e.count === 'any' || e.family || (e.placeholder && row.row !== 'H4' && identities[e.name] !== undefined)) {
             const held = all.filter(h => e.placeholder ? h.placeholder && h.name === e.name : e.id !== undefined ? h.id === e.id : itemPattern(e.name).test(h.name));
             (config.takeBacks as Record<string, unknown>)[itemLabel(e)] = { items: held.map(heldItems), reason: 'Explicit confirmation of complete walked before-state for this mechanical fixture; not a measured exit census' };
         }
