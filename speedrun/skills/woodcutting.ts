@@ -329,6 +329,19 @@ export function extraLogs(s: BotWorldState, keep: number): InventoryItem[] {
     return s.inventory.filter(i => LOGS.test(i.name)).slice(keep);
 }
 
+/** knife-cycle presets' products on oak and willow (`^oak logs$`, `^willow logs$`). */
+const PRODUCT: Record<Exclude<Tree, 'normal'>, RegExp> = { oak: /^oak logs$/i, willow: /^willow logs$/i };
+
+/**
+ * The oak or willow logs a run left in the pack: knife-cycle ends on the label that shows a log without
+ * dropping it. A run anchors on the xp of its first chopped log before it buries or drops anything, so
+ * a run started on a full pack never chops and stalls (the lab's 23-bone pack at WC 99, rs/642): the
+ * band drops them before every run.
+ */
+export function productLogs(s: BotWorldState, tree: Tree): InventoryItem[] {
+    return tree === 'normal' ? [] : s.inventory.filter(i => PRODUCT[tree].test(i.name));
+}
+
 function near(s: BotWorldState, t: Tile, r: number): boolean {
     const p = s.player;
     return !!p && Math.max(Math.abs(p.worldX - t[0]), Math.abs(p.worldZ - t[1])) <= r;
@@ -1047,10 +1060,11 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
         if (knifeCapable && (!count(s.inventory, KNIFE) || !count(s.inventory, LOGS))) return `technique ${technique} needs a knife and a normal log`;
         if (knifeCapable && !s.skills.some(k => k.name.toLowerCase() === 'fletching' && k.baseLevel >= 1)) return 'technique needs Fletching 1';
         // the logs this band drops at its start count as free
-        const free = 28 - s.inventory.length + (b.tree === 'normal' ? 0 : extraLogs(s, o.keepProducts).length);
-        // a burying band's first cycles bury the bones it holds, each a slot freed for the log
+        const free = 28 - s.inventory.length + (b.tree === 'normal' ? 0 : extraLogs(s, o.keepProducts).length + productLogs(s, b.tree).length);
+        // a burying band's first cycles bury the bones it holds, each a slot freed for the log; the
+        // first log needs a free slot all the same, as a run buries only once it has anchored on one
         const held = burying ? bonesHeld(s) : 0;
-        if (free + held < 2) return `${free} free inventory slots${burying ? ` and ${held} bones to bury` : ''}, 2 needed`;
+        if (free < 1 || free + held < 2) return `${free} free inventory slots${burying ? ` and ${held} bones to bury` : ''}, 2 needed${free < 1 ? ', 1 of them free for the first log' : ''}`;
         if (!near(s, site.stand, NEAR)) return `not within ${NEAR} tiles of ${site.stand[0]},${site.stand[1]}`;
         if (burying) {
             if (!held && !giver) return 'bury needs bones in the pack or a bone giver';
@@ -1180,6 +1194,10 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Ste
                     if (!bonesHeld(here)) needLoad = true;
                     o.log(`${b.name}: Woodcutting ${wcLevel(here)}, Prayer ${levelOf(here, 'prayer')} of ${o.prayerTo}${runesOwed(o, here) ? ', the runes to come' : ''}: burying on, ${bonesHeld(here)} bones held`);
                 }
+                // the last run's log (productLogs): dropped before the load's trade and the run, both of which need its slot
+                const spare = productLogs(here, b.tree);
+                for (const i of spare.slice(0, 5)) void sdk.sendDropItem(i.slot);
+                if (spare.length) o.log(`${b.name}: dropped ${Math.min(5, spare.length)} ${b.tree} log(s) before the run`);
                 if (needLoad) await topUp();
                 needLoad = false;
                 const prayerXp = xpOf(sdk.getState(), 'prayer');

@@ -1763,6 +1763,51 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
     });
 
     // rs/186 23:4xZ: the givers relaunch babydragon-only; the resumed pack still holds 23 dragon bones.
+    // rs/642's lab (00:27Z): load 35 filled the pack, the run reached WC 99 on a log it left there, and the Prayer run restarted on 28 of 28 and stalled.
+    test("a run never starts on a full pack: the last run's willow log is dropped before every run, and the precondition wants one slot truly free", async () => {
+        const g = session({ loads: 56, trades: { cairn_b01: 40 }, final: true });
+        const full = inSight(state({ level: 99, prayer: 99, items: [...KIT, 'Oak logs', 'Willow logs'], bones: 23 }));
+        expect(full.inventory).toHaveLength(28);
+        const h = harness(full, s07(g.dir, g.receive, { lastLoad: 21 }), prayerRuns(0, []));
+        const band = h.byName(WILLOWS);
+        // the willow log counts as room: the band drops it
+        expect(band.preconditions(full, {})).toBe(true);
+        const noLog = inSight(state({ level: 99, prayer: 99, items: [...KIT, 'Oak logs', 'Pot'], bones: 23 }));
+        expect(band.preconditions(noLog, {})).toBe('0 free inventory slots and 23 bones to bury, 2 needed, 1 of them free for the first log');
+        const willowSlot = full.inventory.find(i => i.name === 'Willow logs')!.slot;
+        h.sdk.onStateUpdate(() => {});
+        const firstRun = new Promise<number[]>(resolve => {
+            const orig = h.calls.push.bind(h.calls);
+            h.calls.push = (...c) => {
+                resolve(drops_(h.sdk));
+                return orig(...c);
+            };
+        });
+        const stop = ticking(h.sdk);
+        try {
+            await band.run(h.ctx).catch(() => {});
+        } finally {
+            stop();
+        }
+        expect(await firstRun).toContain(willowSlot);
+    });
+
+    test('a trade mixing babydragon and big bones fills the bones want, and the knife cycle buries both', () => {
+        const s = state({ level: 99, prayer: 98, items: KIT });
+        const offer = [...Array.from({ length: 13 }, () => ({ slot: -1, id: 534, name: 'Babydragon bones', count: 1 })), ...Array.from({ length: 10 }, () => ({ slot: -1, id: 532, name: 'Big bones', count: 1 }))];
+        for (const screen of ['offer', 'confirm'] as const) {
+            expect(decideReceiver(
+                { ...s, trade: { isOpen: true, screen, partner: 'cairn_b01', myOffer: [], theirOffer: offer, myAccepted: false, partnerAccepted: true } },
+                newReceiverCtx('cairn_b01', s.inventory, [{ item: /bones$/i, amount: 23 }])
+            ).action).toBe('accept');
+        }
+        const re = bonesParam(bandParams({ bury: true }, 'willow', 99)('knife').bury)!;
+        const pack = { ...s, inventory: [...s.inventory, ...offer.map((o, k) => ({ ...o, slot: s.inventory.length + k, optionsWithIndex: [{ text: 'Bury', opIndex: 1 }] }))] };
+        expect(buryable(pack as unknown as Parameters<typeof buryable>[0], re).map(i => i.name).sort()).toEqual([...Array(10).fill('Big bones'), ...Array(13).fill('Babydragon bones')].sort());
+        const h = harness(pack, { bury: true, bones: { group: GROUP }, cueDir: newDir(), prayerTo: 99 });
+        expect(h.byName(WILLOWS).done!({ state: pack, probed: {} }, {})).toBe(false);
+    });
+
     test("the default bones pattern takes dragon and babydragon bones alike: the slot count, the program's bury, and the load's want", () => {
         const mixed = state({ level: 73, items: ['Rune axe', 'Knife', 'Logs', 'Oak logs', ...Array.from({ length: 3 }, () => 'Babydragon bones')], bones: 20, prayer: 53 });
         expect(28 - mixed.inventory.length).toBe(1);
