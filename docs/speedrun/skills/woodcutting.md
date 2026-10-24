@@ -419,10 +419,30 @@ place of one `bones.giver`:
   fails by name and keeps the cue for the resume. The fallback for that case is the coordinator's
   call; the code never closes without the runes. The flag's row is `woodcutting:last-load`, and the
   band summary carries `bothTargetsTick` for measuring the close.
+- **The pure-bury tail (rs/700).** Past `to` the last band never chops again: knife-cycle ends
+  on its `untilLevel`, and while Prayer, the runes or a clear pack are owed the band buries every
+  bone held with `prayer.ts` `buryHeld`, takes the next load, and repeats, the runes' load last.
+  Inside a band each bone rides a roll of the chop (0.26-0.28 bones a tick, rs/643); the knife loop
+  run on past 99 kept that rate (about 3.9 ticks a bone in attempt 4's rehearsal), with nothing left
+  to chop for. The bury's own rate is the engine's: `bury_bone.rs2` runs `p_delay(0)`, which
+  `PlayerOps.ts` makes a delay through the next tick; `OpHeldHandler` drops every click while the
+  player is delayed; and `World.ts` clears the delay only in `processPlayers`, after the tick's
+  client input, where the script deletes the bone. So one bone per two ticks at best, with nothing
+  to batch. `buryHeld` sends each Bury on the frame that shows the last bone gone, a frame on which
+  the delay has cleared, so no click lands in it; with a round trip inside a tick that is the 2-tick
+  floor, plus each load's trade. `done` and `inProgress` are unchanged, so a resume at `to` that
+  still owes Prayer or the runes re-enters the band and goes straight to the tail. A tail whose
+  Burys go unanswered (`BURY_STALL` in a row) fails the band by name and keeps the cue. The band
+  summary's `buryTail` and the `woodcutting:bury-tail` rows (one per pass) carry the tail's ticks,
+  bones, loads and resends.
+- **The close target.** `prayerTo` is the run config's `s07PrayerTo` (`chain.ts` `s07PrayerTo`,
+  default `S07_PRAYER_TO`, 99): the band closes, and the early last load fires, at that Prayer. A
+  value below 99 is for a run in which a later step buries the rest; the chain's Prayer-99 check
+  (S25b's fallback) does not move with it.
 - **No bones at the close.** On the scored run's path (`bones.lastLoad` set), the last band buries
   every bone it holds before it closes, Prayer 99 or not, so T07-08 starts with the knife, a log and
   the runes. The early last load brings no bones, and a count-driven last load (21 bones and the
-  runes) is buried in a Prayer run. A resume that finds bones held at both targets re-enters the
+  runes) is buried in the tail. A resume that finds bones held at both targets re-enters the
   band to bury them.
 - `handBack: true` names one giver, so it is refused with a group (name the partner instead).
 
@@ -432,6 +452,7 @@ and never closes without the runes.
 | Failure (the band's error) | Cause | Recovery |
 |---|---|---|
 | `bone load N from the group (...) failed: no giver of the group served within N observed ticks` | no giver loaded and in sight within `serverWait` (all away, faulted or logged out) | the operator relaunches the bone family's launcher and resumes `--from=S07`; the resume re-enters the band in the same cue session and the givers carry on their count |
+| `woodcutting:willow-73-99: the bury tail stalled: 5 Burys in a row buried nothing at ...` | the server answered none of the tail's Burys (a disconnect, a modal the Continue did not clear) | resume `--from=S07`: the band re-enters the tail with the bones still held |
 | `... the group's final giver did not serve the runes' load (the cue's lastLoad) within N observed ticks: relaunch the bone givers and resume --from=S07` | the cue says lastLoad, and b04 (the only giver that may serve it) is faulted, logged out or stale | the operator relaunches the bone family's launcher (a fresh launcher ignores stale cues) and resumes `--from=S07`. The resume re-enters the closing band, writes `lastLoad` once in the new session, and asks b04 again. Not `handBack`, a path no lab has exercised (rs/186's ruling) |
 
 **Measured** (local engine, `NODE_TICKRATE=300`, a headless Chrome tab on bgsrv-mac, load 2.2-5.2,
