@@ -48,6 +48,8 @@ const inRoom = (s: BotWorldState) => {
     return t.x >= ROOM.x0 && t.x <= ROOM.x1 && t.z >= ROOM.z0 && t.z <= ROOM.z1;
 };
 const doorShut = (s: BotWorldState) => s.nearbyLocs.some(l => l.x === WEST_DOOR.x && l.z === WEST_DOOR.z && /door/i.test(l.name) && opIndex(l, /^open$/i) !== undefined);
+/** The west door standing open: an opened door's loc can sit on a tile beside its doorway (m: none with Close at 2949,3450 once opened). */
+const openDoorLoc = (s: BotWorldState) => s.nearbyLocs.find(l => Math.max(Math.abs(l.x - WEST_DOOR.x), Math.abs(l.z - WEST_DOOR.z)) <= 1 && /door/i.test(l.name) && opIndex(l, /^close$/i) !== undefined);
 
 /** Doric inside his room, SCORED outside, the west door closed between them; retried while he wanders out. */
 async function shutDoricIn(session: Session): Promise<void> {
@@ -56,9 +58,8 @@ async function shutDoricIn(session: Session): Promise<void> {
         // Let him back in when he stands outside it.
         if (!inRoom(sdk.getState()!) && doorShut(sdk.getState()!)) await openDoor(sdk, WEST_DOOR.x, WEST_DOOR.z);
         await waitUntil(sdk, inRoom, { maxTicks: 40 });
-        if (!doorShut(sdk.getState()!)) {
-            await opLoc(sdk, { x: WEST_DOOR.x, z: WEST_DOOR.z, name: /door/i, op: /^close$/i }, /^close$/i, doorShut, { maxTicks: 15 });
-        }
+        const open = openDoorLoc(sdk.getState()!);
+        if (!doorShut(sdk.getState()!) && open) await opLoc(sdk, open, /^close$/i, doorShut, { maxTicks: 15 });
         const s = sdk.getState()!;
         if (inRoom(s) && doorShut(s) && pos(s).x <= WEST_DOOR.x) {
             const d = findNpc(s, DORIC, ARRIVAL)!;
