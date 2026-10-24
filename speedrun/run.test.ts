@@ -1,8 +1,11 @@
 import { fakeCdp, fakeWorld } from './lib/fake-cdp';
-import { baseState, FakeSdk } from './lib/fake-sdk';
+import { baseState, FakeSdk, simulateWalking } from './lib/fake-sdk';
+import { cannonSessionStep, inSpiderReach } from './skills/ranged';
+import { RETREAT_STEP } from './runner/retreat';
+import { inCombatWindow } from './lib/world';
 import { deathGate, deathKey, DEATH_STEP, EXIT_DIED, ackRow } from './runner/death';
 import type { ReservationWatch } from './lib/host-reservation';
-import type { BotWorldState, PlayerState } from '../sdk/types';
+import type { BotWorldState, InventoryItem, PlayerState } from '../sdk/types';
 import { TickPeriod } from './lib/wait';
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
@@ -25,7 +28,7 @@ import type { ChainStep } from './runner/chain';
 import { tickPreflight, type FeedRead } from './lib/feed-hello';
 
 const feed400: FeedRead & { ok: true } = { ok: true, url: 'wss://rs-sdk-demo.fly.dev/worldfeed', hello: { tickMs: 400, players: 12, tick: 5000 }, wallMs: 80 };
-import { buildChain, CENSUS_STEP, KIT_PARTNER_ROWS, ledgerRows, PLACEMENT, resolveFrom, sliceUntil } from './runner/chain';
+import { buildChain, CENSUS_STEP, KIT_PARTNER_ROWS, ledgerRows, PLACEMENT, resolveFrom, sliceUntil, tag } from './runner/chain';
 
 const cues = { open: async () => {}, stop: () => {} };
 const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id}`]));
@@ -707,5 +710,109 @@ describe('a death while the logout after a refused step holds (rs/709, attempt 3
         expect(deathGate(log.rows, key)).toEqual({ acknowledge: [key] });
         expect(deathGate([...log.rows, ackRow(log, LOG_ACCOUNT, [key])])).toEqual({ acknowledge: [] });
         expect(parseArgs(['--bot=b', '--config=c', `--r8-recovered=${key}`, '--from=S14']).r8Recovered).toBe(key);
+    });
+});
+
+describe('S14 fails among the spiders: the retreat before the logout (rs/725)', () => {
+    /**
+     * The host's second S14 death (run-20261024-062622): S14 refused on the spot (3288,3810) at tick
+     * 235, hp 25 of 38 after T13-14b, the spiders on SCORED. Here the real S14 (Dwarf Cannon not done)
+     * refuses at its precondition, the first death's shape. The spiders hit `damage` every
+     * `hitEvery` ticks while SCORED is in their reach (skills/ranged.ts inSpiderReach), from the
+     * refusal on; a Shark eaten heals 20; at 0 hp SCORED dies and respawns in Lumbridge.
+     */
+    function spiderRun(o: { hp: number; food: boolean; hitEvery: number; damage: number }) {
+        const fighting = { inCombat: true, targetIndex: 7, targetType: 'npc', lastDamageTick: 235 };
+        const p0 = { name: 'lab', worldX: 3288, worldZ: 3810, x: 3288, z: 3810, level: 0, hp: o.hp, maxHp: 38, isDead: false, lifeId: 1, respawnCount: 0, lastDeathTick: null, combat: fighting } as unknown as PlayerState;
+        const shark = { slot: 0, id: 385, name: 'Shark', count: 1, optionsWithIndex: [{ text: 'Eat', opIndex: 1 }] } as unknown as InventoryItem;
+        const sdk = Object.assign(new FakeSdk(baseState({ tick: 235, player: p0, inventory: o.food ? [shark] : [] })), { checkBotStatus: async () => ({ status: 'active', inGame: true }) });
+        let exit!: (code: number) => void;
+        const child = { exited: new Promise<number>(r => (exit = r)), kill: () => exit(137) };
+        const now = Date.now();
+        const session = {
+            name: 'lab', client: 'lite', env: { BOT_USERNAME: 'lab', PASSWORD: 'x' }, sdk, bot: {}, sessionId: 1, launchId: 1, tickBase: 0, expectInWorld: true,
+            child, childExit: null, lastInWorldTick: 235, lastAdvanceAt: now, period: new TickPeriod(), launchedAt: now - 60_000, ticksSinceProgress: 0, watchdog: null, logPath: '/dev/null',
+        } as unknown as Session;
+        void child.exited.then(c => { session.childExit = c; });
+        const seen = { click: null as null | { tick: number; inReach: boolean; inWindow: boolean }, eats: 0 };
+        let eat = false;
+        sdk.onSend = a => {
+            if (a.method === 'sendUseItem' && a.args[0] === 0) { seen.eats++; eat = true; }
+            if (a.method !== 'sendClickComponent' || a.args[0] !== LOGOUT_BUTTON) return;
+            const s = sdk.state!;
+            seen.click = { tick: s.tick, inReach: inSpiderReach(s), inWindow: inCombatWindow(s) };
+            exit(0);
+        };
+        const sim = simulateWalking(sdk);
+        let refused = false;
+        let deadAt: number | null = null;
+        const script = (s: BotWorldState): Partial<BotWorldState> => {
+            const t = s.tick + 1;
+            const p = s.player!;
+            if (p.worldX === 3222) return {};
+            if (deadAt !== null) {
+                sim.target = null;
+                return {
+                    player: { ...p, worldX: 3222, worldZ: 3218, x: 3222, z: 3218, hp: 38, isDead: false, lifeId: 2, respawnCount: 1, combat: { ...p.combat, inCombat: false, targetIndex: -1, targetType: 'none' } } as PlayerState,
+                    gameMessages: [...s.gameMessages, { type: 0, text: 'Oh dear you are dead!', sender: '', tick: t, fromSelf: false }],
+                };
+            }
+            const ate = eat && s.inventory.length > 0;
+            eat = false;
+            const healed = ate ? Math.min(p.maxHp, p.hp + 20) : p.hp;
+            if (!refused || !inSpiderReach(s)) {
+                return { player: { ...p, hp: healed, combat: { ...p.combat, inCombat: refused ? false : p.combat.inCombat, ...(refused ? { targetIndex: -1, targetType: 'none' } : {}) } } as PlayerState, ...(ate ? { inventory: [] } : {}) };
+            }
+            const hit = t % o.hitEvery === 0;
+            const hp = healed - (hit ? o.damage : 0);
+            if (hp <= 0) deadAt = t;
+            return {
+                player: { ...p, hp: Math.max(0, hp), isDead: hp <= 0, combat: { ...p.combat, ...fighting, lastDamageTick: hit ? t : p.combat.lastDamageTick } } as PlayerState,
+                ...(ate ? { inventory: [] } : {}),
+            };
+        };
+        const timer = setInterval(() => { if (!seen.click) sdk.tick(script); }, 5);
+        const log = TickLog.memory('rehearsal-3');
+        const real = tag('S14', 'step', cannonSessionStep());
+        const s14: ChainStep = { ...real, preconditions: s => ((refused = true), real.preconditions(s)) };
+        const handlers = { on: () => {}, off: () => {}, exit: () => {}, log: () => {} };
+        const run = async () => {
+            try {
+                return await runChainOnSession(session, { log, chain: [s14], reservation: { boundary: () => null, path: '' } as unknown as ReservationWatch, from: 0, signals: handlers });
+            } finally {
+                clearInterval(timer);
+            }
+        };
+        return { sdk, session, seen, log, run };
+    }
+
+    test('in combat on the spot: the retreat walks south out of reach eating on the way, the combat window ends, and the logout lands; the row and the outcome say it retreated', async () => {
+        const w = spiderRun({ hp: 25, food: true, hitEvery: 2, damage: 2 });
+        const ran = await w.run();
+        expect(ran.result.code).toBe(1);
+        expect(ran.result.outcome).toMatch(/^FAILED: step "S14 cannon session" precondition failed: Dwarf Cannon is not complete .*; retreated out of reach \(combat window; \(3288,3810\) to \(3288,3768\), \d+ ticks\), then logged out$/);
+        expect(ran.lastLogout).toMatchObject({ ok: true, sends: 1 });
+        expect(w.seen.click).toMatchObject({ inReach: false, inWindow: false });
+        expect(w.seen.eats).toBeGreaterThanOrEqual(1);
+        const rows = w.log.rows.filter(r => r.step === RETREAT_STEP);
+        expect(rows).toMatchObject([{ ok: true, meta: { step: 'S14 cannon session', why: 'combat window', from: { x: 3288, z: 3810 }, to: { x: 3288, z: 3768 }, logout: { ok: true } } }]);
+        expect(w.log.rows.filter(r => r.step === DEATH_STEP)).toEqual([]);
+        expect(w.session.died).toBeUndefined();
+        // Walks and the one Shark: nothing picked up, the cannon left.
+        expect(w.sdk.sent.filter(a => a.method !== 'sendWalk' && a.method !== 'sendUseItem' && a.method !== 'sendClickComponent')).toEqual([]);
+    });
+
+    test('SCORED dies during the retreat: DeathWatch sees it, the (death) row, DIED, exit 6', async () => {
+        const w = spiderRun({ hp: 6, food: false, hitEvery: 1, damage: 1 });
+        const ran = await w.run();
+        expect(ran.result.code).toBe(EXIT_DIED);
+        expect(ran.result.outcome).toMatch(/^DIED: SCORED died retreating after "S14 cannon session" failed: \(3288,\d+,0\) on tick \d+ to \(3222,3218,0\) on tick \d+ .*\(the chain had ended: FAILED: step "S14 cannon session" precondition failed: .*; DIED retreating \(/);
+        const deaths = w.log.rows.filter(r => r.step === DEATH_STEP);
+        expect(deaths).toHaveLength(1);
+        expect(w.session.died).toBeDefined();
+        expect(w.log.rows.filter(r => r.step === RETREAT_STEP)).toMatchObject([{ ok: false, meta: { died: expect.stringContaining('SCORED died retreating') } }]);
+        // Out of the world from the respawn; the next start refuses until --r8-recovered names the death.
+        expect(ran.lastLogout).toMatchObject({ ok: true });
+        expect(deathGate(w.log.rows)).toMatchObject({ refusal: expect.stringContaining(`--r8-recovered=${deathKey(deaths[0]!)}`) });
     });
 });
