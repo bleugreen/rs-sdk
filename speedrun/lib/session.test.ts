@@ -1506,7 +1506,7 @@ describe("waitOwnLaunch: a launched tab's session is known by its launch id, not
     test("the cached state never counts; two of the launch's own ticks do", async () => {
         const { session, sdk } = launched();
         const p = waitOwnLaunch(session, 5_000);
-        sdk.push({ tick: 5001 }); // a republished cached frame is still not this launch's
+        sdk.push({}); // the cached frame handed over again (a reconnect) is still not this launch's
         sdk.push({ tick: 1, launch: 'L1' });
         sdk.push({ tick: 2, launch: 'L1' });
         expect(await p).toMatchObject({ tick: 2, launch: 'L1' });
