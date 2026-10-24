@@ -93,13 +93,13 @@ const lab: LabQuest<Options> = {
         result(`${stepId}_taker_staged`, { run, take: TAKE, waitedForSpawns: back, scoredTickAtTake: takenAt });
     },
     async check(session: Session, _f, rows: readonly TickRow[]) {
-        const notes = rows.filter(r => r.kind === 'note').map(r => ({ step: r.step, ...(r.meta as Record<string, unknown>) }));
+        const notes: Array<Record<string, unknown> & { step: string }> = rows.filter(r => r.kind === 'note').map(r => ({ ...r.meta, step: r.step }));
         const pickup = notes.find(n => n.pickup === 'the broken glass');
         const seg = (l: string) => rows.find(r => !r.kind && r.step.startsWith(`${stepId}:${l}-`));
         const e = seg('E');
         result(`${stepId}_taker_run`, {
             run: run++, take: TAKE, expect: plan.path, pickup, eTicks: e?.ticks, fTicks: seg('F')?.ticks,
-            eStartTicksAfterTake: e && takenAt >= 0 ? e.tick - e.ticks - takenAt : null,
+            eStartTicksAfterTake: e && takenAt >= 0 ? e.startTick - takenAt : null,
         });
         const doors = notes.filter(n => n.bridgedDoor).map(n => ({ step: n.step, ...(n.bridgedDoor as DoorOutcome) }));
         const shutDoor = doors.find(d => d.after !== 'open');
