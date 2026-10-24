@@ -2,7 +2,7 @@
  * The phase-2 runner (docs/markets/phase2.md 'Running'): brings every account of a plan to its method and runs it,
  * from one process on one address, until stopped.
  *
- *   bun markets/phase2/run.ts <plan.json> [--out DIR] [--minutes N] [--run-ended] [--placeholder-data]
+ *   bun markets/phase2/run.ts <plan.json> [--out DIR] [--minutes N] [--gc-seconds N] [--run-ended] [--placeholder-data]
  *
  * Each account logs in with its own in-process lite client (speedrun/lib/direct.ts), credentials from
  * bots/<account>/bot.env, every account on the same SERVER. Then it works through its setup sequence (plan.ts
@@ -26,6 +26,8 @@
  * - An account in its method stage whose coins (carried plus banked) have not moved for `--stall-minutes` (default 10,
  *   0 off) has its method aborted so its stages run again, at most `--stall-retries` (default 3) times while the coins
  *   stay put; then it is flagged once and left (stall.ts).
+ * - A full collection is forced every `--gc-seconds` (default 30, 0 off): without it the per-tick state garbage of a
+ *   busy runner reached 1.3-1.6 GB before Bun collected it (docs/markets/phase2.md 'Memory').
  * - SIGINT or SIGTERM stops every account at its next safe point and logs it out; a second signal exits at once.
  *   `--minutes N` stops the same way after N minutes.
  *
@@ -67,7 +69,9 @@ import { afterAttempt, loadSharks, rebuyDecision, requestRebuy, retryDelayMs, SH
 import { carriedCoins, runRoleUntil, runStage, stageDone, type StageCtx, type StageHooks } from './stages.ts';
 import { DEFAULT_STALL, StallWatch, type StallPolicy } from './stall.ts';
 
-const USAGE = 'usage: bun markets/phase2/run.ts <plan.json> [--out DIR] [--minutes N] [--stall-minutes N] [--stall-retries N] [--run-ended] [--placeholder-data]';
+const USAGE = 'usage: bun markets/phase2/run.ts <plan.json> [--out DIR] [--minutes N] [--stall-minutes N] [--stall-retries N] [--gc-seconds N] [--run-ended] [--placeholder-data]';
+/** A forced full collection this often bounds the per-tick state garbage (memory.ts LoadMeter.collect). */
+const DEFAULT_GC_SECONDS = 30;
 const BOOLEAN_FLAGS = ['--run-ended', '--placeholder-data'];
 
 /** Wall-clock bound on one account's logout (direct.ts logoutDirect re-clicks through the post-combat window). */
@@ -879,7 +883,7 @@ async function main(argv: string[]): Promise<number> {
                 numberFlag(a, 'minutes', 0, { min: 0 }),
                 numberFlag(a, 'stall-minutes', DEFAULT_STALL.ms / 60_000, { min: 0 }),
                 numberFlag(a, 'stall-retries', DEFAULT_STALL.retries, { min: 0, integer: true }),
-                numberFlag(a, 'gc-seconds', 0, { min: 0 })
+                numberFlag(a, 'gc-seconds', DEFAULT_GC_SECONDS, { min: 0 })
             ];
         } catch (e) {
             fail(e instanceof Error ? e.message : String(e));

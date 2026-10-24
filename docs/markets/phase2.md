@@ -866,9 +866,14 @@ bun markets/phase2/report.ts /tmp/rs732-r2/ledger.jsonl
 ### Memory (rs/767)
 
 Live on 2026-10-24, three runners on markets' 3.8 GB VM held 709-841 MB each a minute after a restart (8, 14 and 16
-accounts) and grew ~100-150 MB an hour from there. Measured in the lab (fedora, Bun 1.3.13, block M24, trained knights
-on the method): **a runner's memory is almost all a fixed cost per process, the SDK pathfinder's, and it does not grow
-in the lab.**
+accounts), and the busiest, 16 knights that bank, eat, buy sharks and sail the most, climbed to markets' 1.1 GB
+watchdog within 15-55 minutes of each relaunch. Measured in the lab (fedora, Bun 1.3.13, block M24, trained knights):
+**a runner's memory is a fixed cost per process, the SDK pathfinder's, plus garbage that Bun lets pile up on the busy
+path. Nothing leaks.**
+
+**What a runner should hold after this change** (set the watchdog from it): 8 accounts ~510-540 MB, 16 accounts
+~560-650 MB (the 16 on the busy path inferred from the 8 on it and 16 idle), 32 ~610-640 MB idle. Before it, 8
+accounts held 701-731 MB idle and peaked at 1,336 MB on the busy path.
 
 **The fixed cost.** Step by step after a full collection:
 
@@ -883,8 +888,8 @@ in the lab.**
 The parsed JSON (1,268,350 `[level, x, z, flags]` arrays) is read only by `initPathfinding`, but the module's default
 and named exports keep it alive for good: ~235 MB of RSS that nothing reads (rs/770). **Per account** the cost was
 ~19 MB, ~14 MB of it a duplicate loc index: the lite session's `startSession` reads the 14.4 MB `LocIndex` disk cache
-into a fresh copy at every login (rs/771); a heap snapshot of the 8-account runner held 117 MB of `Int32Array`, eight
-copies.
+into a fresh copy at every login and relogin (rs/771); a heap snapshot of the 8-account runner held 117 MB of
+`Int32Array`, eight copies.
 
 **The workarounds** (`markets/phase2/memory.ts`, called at the runner's start; both belong in sdk/ and the lite
 client, rs/770 and rs/771, and go when those land): `initPathfindingAndRelease` builds the grid and then empties the
@@ -893,58 +898,82 @@ named export holds it); `shareLocIndex` makes `LocIndex.load` return one copy pe
 read-only). Pathfinding is unaffected; a process that only logs in and out 30 times holds 340-360 MB with them and
 470-565 MB without.
 
-| Runner, knights on the method | Before: RSS after a full GC | After |
+| Runner, knights on the method, idle path | Before: RSS after a full GC | After |
 |---|---|---|
-| 2 accounts | 545-566 MB | 427-431 MB |
-| 8 accounts | 701-731 MB | AFTER8 |
+| 2 accounts | 545-566 MB | 427-436 MB |
+| 8 accounts | 701-731 MB | 506-530 MB |
 | 16 accounts | | 549-570 MB |
-| 32 accounts | | 604-636 MB |
+| 32 accounts | | 603-636 MB |
 
 After the fix a runner is **~420 MB plus ~3-9 MB an account** (9.6 an account from 2 to 16, 2.7 from 16 to 32: the
 search grid's touched pages come in with the first few accounts' paths).
 
-**Growth.** In the lab nothing grows. Before the fix, the 2-account runner's RSS after a full collection moved -2 MB an
-hour over 76 minutes and the 8-account runner's held 701-731 MB from minute 15 to 55, with the object count flat at
-3.06M. Its heap snapshots at minutes 5 and 60 differ by -1.1 MB and -38k objects; the only steady addition is 400
-small `Packet` buffers (76 KB). After the fix: SLOPEAFTER. Ruled out as the live growth, each measured: the runner's
-own collections (the ramp's readings keep 3 hours, DeathWatch 100 ticks, the book one quote an item), 30 logins and
-logouts in one process (objects flat at 198k), Bun's TLS clients (a `wss://` socket taking 468 MB of frames and 18,000
-`https` fetches, RSS flat, as without TLS), and the search grid (it settles at once). What the lab lacks is the demo
-itself: its crowds, and markets' VM swapping. To see which it is, run a live runner with the probe and no snapshots:
+**Garbage on the busy path.** Every tick, each account's whole published state is serialised by the direct bridge
+(`speedrun/lib/direct.ts`) and parsed again by the SDK: thousands of objects, more with the bank open (its items are in
+the state) and more again right after each action (the bridge republishes). A knight banking every few minutes and
+buying sharks makes far more of it than one standing at the knights, and Bun's collector let it pile up: 16 such
+knights went from 8.5M to 26M heap objects (6.7M strings, 6.3M objects, 5M arrays, one SDK `skills` Proxy a state) and
+817 to 1,607 MB of RSS in three minutes before a collection, and the late collection stalled the event loop for 537
+ms, more than a tick. Eight knights on that path, `--bank-at=5000` (a bank trip every few minutes) and 15-shark
+purchases with rebuys, measured with no forced collection, as live:
+
+| 8 accounts, busy path | Peak RSS (9 min) | Worst loop lag | CPU |
+|---|---|---|---|
+| as before (`bun markets/phase2/run.ts`) | 1,336 MB (20M objects, then 634 after Bun's collection) | 537 ms | 37% |
+| `bun --smol` | 511 MB | 105 ms | 35% |
+| `--gc-seconds 30` (now the default) | 535 MB | 126 ms | 35% |
+
+So the runner now forces a full collection every 30 seconds (`--gc-seconds`, 0 turns it off; `LoadMeter.collect`),
+each ~30 ms over the ~300k live objects, counted on the load line. `bun --smol` does the same for a runner started
+before this change. Neither costs CPU.
+
+**No leak.** Across every run the object count after a full collection stays flat: before the fix the 2-account
+runner moved -2 MB an hour over 76 minutes, and the 8-account runner held 701-731 MB from minute 15 to 55 at 3.06M
+objects; its heap snapshots at minutes 5 and 60 differ by -1.1 MB and -38k objects (the only steady addition, 400
+small `Packet` buffers, is 76 KB). After the fix, over minutes 15-40: 2 accounts +10 MB an hour, 8 accounts -25, 32
+accounts +19. On the busy path the post-collection count held at 309-354k over the first 15 minutes of 16 knights' 16
+purchases and ~100 bank visits. Also measured and ruled out: the runner's own collections (the ramp's readings keep 3
+hours, DeathWatch 100 ticks, the book one quote an item), 30 logins and logouts in one process (objects flat at
+198k), Bun's TLS clients (a `wss://` socket taking 468 MB of frames and 18,000 `https` fetches, RSS flat, as without
+TLS), and the search grid (it settles at once). Not run long: the busy path past ~45 minutes, and its heap snapshots
+before and after many bank visits and purchases.
+
+To look at a live runner, preload the probe with its own collections and snapshots off:
 
 ```sh
-PHASE2_HEAP_DIR=<out> PHASE2_HEAP_SNAPSHOTS= bun --preload ./markets/phase2/heap-probe.ts markets/phase2/run.ts <plan.json> --out <out> ...
+PHASE2_HEAP_DIR=<out> PHASE2_HEAP_SNAPSHOTS= PHASE2_HEAP_GC_EVERY=0 bun --preload ./markets/phase2/heap-probe.ts markets/phase2/run.ts <plan.json> --out <out> ...
 ```
 
-It appends a line a minute to `<out>/memory.jsonl` (every 5th after a full collection). A post-collection object
-count that climbs is a JS leak, which the type counts in the line name; a flat count under a climbing RSS is the
-allocator or native memory. Leave snapshots off on the VM: writing one (86 MB) took the 8-account runner from 730 MB to
-1.6 GB for several minutes.
+It appends a line a minute to `<out>/memory.jsonl`. With `PHASE2_HEAP_GC_EVERY=5` every 5th line follows a full
+collection: a post-collection object count that climbs is a JS leak, which the type counts in the line name; a flat
+count under a climbing RSS is the allocator or native memory. Leave snapshots off on the VM: writing one (86 MB)
+took the 8-account runner from 730 MB to 1.6 GB for several minutes, and blocks the loop while it runs.
 
 **CPU and the event loop.** Every account's JS runs on the process's one thread, so CPU decides how many accounts one
-process can carry. After the fix, every account on the knights (58 of our bots on the market knights, about the
-live crowd), each over ~30 totals lines:
+process can carry. After the fix, every account on the knights (up to 58 of our bots on the market knights, about the
+live crowd):
 
-| Runner | CPU, % of one fedora core | Event-loop lag p50 / p99 / max |
+| Runner | CPU, % of one fedora core | Event-loop lag p50 / p99 (mean of totals lines) / p99 worst / max |
 |---|---|---|
-| 2 accounts | 13.8 | 1 / 4 / 79 ms |
-| 8 accounts | CPU8 | LAG8 |
-| 16 accounts | 56.3 | 1 / 32 / 59 ms |
-| 32 accounts | 84.1 | 1 / 66 / 86 ms |
+| 2 accounts (45 min) | 14.2 | 1 / 6 / 44 / 49 ms |
+| 8 accounts (45 min) | 29.0 (35-37 on the busy path) | 1 / 19 / 87 / 175 ms |
+| 16 accounts (30 min) | 56.3 (58.8 on the busy path) | 1 / 32 / 37 / 59 ms (busy: 1 / 69 / 162 ms) |
+| 32 accounts (45 min) | 83.4 | 1 / 93 / 312 / 342 ms |
 
-Before the fix, steady CPU was 13.1% for 2 accounts and 23.7% for 8: the release saves memory, not CPU. A tick is 400
-ms, so even 32 accounts react in time, but they use 84% of a core, and 40 would saturate it: past that every
-account's lag grows together. **For ~40 accounts run two processes of ~20** (~60% of a core and ~35 ms p99 each on
-fedora; markets' VM cores may be slower, which the live `load` field shows). Split them so the Hitpoints sites stay
-in one process, since the site caps (`HpSites`) and the npc claims (`TargetClaims`) are per process: every account
-that still has its HP stage (fresh accounts, guards, iron) in one, the trained knights in the other. A trained account
-keeps its levels through a death, so it never needs the sites again. The login gate's spacing and `maxSessions` are
-per process too; two processes on one address need their `maxSessions` to sum to at most 45. In memory two runners
-of 20 hold ~1.1 GB against today's three at ~2.4 GB.
+Before the fix, steady CPU was 13.1% for 2 accounts and 23.7% for 8: the release saves memory, not CPU; the CPU is
+the per-tick state round trip above. At 32 accounts the worst p99 reaches 312 ms of a 400 ms tick, so 32 is too many
+for one process even on fedora, and ~40 would saturate a core. **Keep runners at 16 accounts or fewer**: ~40
+accounts is three runners, which now fit in ~1.8 GB together. Two runners of ~20 would hold ~1.2 GB but sit near
+70% of a fedora core each, with p99 lag near 100 ms; try it only if each live runner's `load` shows `cpuPct` under
+~50 and `lagP99Ms` under ~60. Whatever the count, keep every account that still has its HP stage (fresh accounts,
+guards, iron) in one process: the site caps (`HpSites`) and npc claims (`TargetClaims`) are per process, so two
+processes training HP can overfill a site and put two of ours on one npc. A trained account keeps its levels through
+a death and never needs the sites again. The login gate's spacing and `maxSessions` are per process too, so the
+runners' `maxSessions` must sum to at most 45.
 
 **Live.** Every totals line carries `memory` (`rssMb`, `heapUsedMb`, `externalMb`, `arrayBuffersMb`) and `load`
-(`cpuPct`, `lagP50Ms`, `lagP99Ms`, `lagMaxMs` since the last totals line, `LoadMeter`). Split a runner whose
-`cpuPct` stays above ~70 or whose `lagP99Ms` passes ~100.
+(`cpuPct`, `lagP50Ms`, `lagP99Ms`, `lagMaxMs`, and with forced collections `gcs`, `gcMaxMs`, all since the last
+totals line; `LoadMeter`). Split a runner whose `cpuPct` stays above ~70 or whose `lagP99Ms` passes ~100.
 
 ```sh
 # block M24 on fedora, from a copy of the checkout in /tmp (/tmp/rs767-lab), in a tmux server. One lab owns the engine;
@@ -952,6 +981,9 @@ of 20 hold ~1.1 GB against today's three at ~2.4 GB.
 . markets/methods/lab/block.sh M24 && PHASE2_HEAP_SNAPSHOTS=5,60 LAB_RUNNERS=0 LAB_TIMEOUT=6300 speedrun/lab/lab.sh m24a00 \
   'markets/phase2/lab.ts:--prefix=m24a:--knights=8:--hungry=0:--guards=0:--sharks=400:--coins=1000:--trained=1:--ramp=0:--exchange=0:--heap=1:--sigint=82:--out=/tmp/rs767-a8'
 bun markets/phase2/heap-diff.ts /tmp/rs767-a8/heap-5.heapsnapshot /tmp/rs767-a8/heap-60.heapsnapshot
+# the busy path: the engine's lab places the 3,000-shark ask; attached runners share it (add :--smol=1 or :--gc-seconds=0 to compare)
+. markets/methods/lab/block.sh M24 && PHASE2_HEAP_SNAPSHOTS=10,70 LAB_RUNNERS=0 LAB_TIMEOUT=6800 speedrun/lab/lab.sh m24p00 \
+  'markets/phase2/lab.ts:--prefix=m24p:--knights=16:--hungry=0:--guards=0:--sharks=0:--coins=20000:--trained=1:--buy=1:--per-account=15:--minimum=5:--rebuy-min=5:--ceiling=650:--ramp=0:--exchange=1:--shark-ask=3000:--bank-at=5000:--heap=1:--sigint=88:--out=/tmp/rs767-p16'
 ```
 
 ## Horizons

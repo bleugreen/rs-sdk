@@ -31,7 +31,7 @@
  * memory every minute into memory.jsonl in --out and writes heap snapshots at the minutes in PHASE2_HEAP_SNAPSHOTS.
  * `--bank-at=N` sets the knights' `bankAt` (a bank trip every N coins carried) and `--shark-ask=N` the sharks the
  * Exchange check's maker offers (default 300), so a run can compress hours of banking, buying and sailing.
- * `--smol=1` runs the runner under `bun --smol`; `--gc-seconds=N` passes the runner's `--gc-seconds`.
+ * `--smol=1` runs the runner under `bun --smol`; `--gc-seconds=N` passes the runner's `--gc-seconds` (default 30, 0 off).
  *
  * `--fresh=1` stages nobody: every account starts on Tutorial Island and the runner's own stages do everything (the
  * Hitpoints-site lab). `--min-free-mb=N` (default 1200) stops the run with SIGINT when the host's available memory
