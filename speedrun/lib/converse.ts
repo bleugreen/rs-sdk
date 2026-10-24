@@ -15,14 +15,18 @@
 // run before a choice is not detectable (the extra continue is refused by the
 // engine at the choice and costs nothing); one that under-counts is.
 //
-// Re-engage: a chat closed mid-talk (a poison tick's or a hit's if_close, or
-// the eat that answers it) kills the NPC's script, since the engine drops a
-// script paused on a page whenever the chat closes (Player.closeModal), and
-// nothing reopens it. With `reopen` (talkTo passes the NPC click) and `until`,
-// a talk whose chat stays closed for `idle` ticks with `until` false and with
-// evidence it was cut short (a shape not yet finished, or a hit on the player
-// around the close) clicks again and answers the replay from its start, at
-// most `reopens` times, then fails with a named reason.
+// Re-engage: a chat closed mid-talk kills the NPC's script, since the engine
+// drops a script paused on a page whenever the chat closes (Player.closeModal),
+// and nothing reopens it. A poisoned player's closer is the eat that answers a
+// hit (OpHeld's clearPendingAction): the poison itself is a normal timer and
+// queue, held while a chat is open or the player is delayed (Player.canAccess).
+// With `reopen` (talkTo passes the NPC click) and `until`, a talk whose chat
+// stays closed for `idle` ticks with `until` false and with evidence it was cut
+// short clicks again and answers the replay from its start, at most `reopens`
+// times, then fails with a named reason. The evidence: with a shape followed,
+// the shape alone, unfinished and not just past a `state` page (where scripts
+// close the chat for a p_delay, a walk or a fade); otherwise a hit in the
+// HIT_CLOSE_TICKS before the close.
 
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
@@ -36,10 +40,10 @@ export type ConverseSdk = StateSource & Pick<BotSDK, 'sendClickDialog' | 'clickD
 export const STALL_TICKS = 4;
 
 /**
- * A hit on the player this many ticks before a chat closed (or one tick after, the hitsplat published a tick late)
- * marks the close as the hit's. A poison tick or a hit closes the chat in its own tick (poison.rs2 if_close), and the
- * upkeep's eat that answers it closes it too (OpHeld clearPendingAction), a few ticks later: 5 measured at 150 ms
- * (rs/791, the S15:C bench).
+ * A hit on the player at most this many ticks before a chat closed, and before its tick, marks the close as the
+ * hit's: the upkeep's eat that answers the hit closes the chat (OpHeld clearPendingAction) a tick or more later, 5 at
+ * 150 ms in the S15:C bench. A hit in the close's own tick or after is not one: a poison tick waits out an open chat
+ * or a p_delay (Player.canAccess) and lands as a talk ends naturally.
  */
 export const HIT_CLOSE_TICKS = 6;
 
@@ -107,10 +111,11 @@ export interface ConverseOptions {
     /**
      * The click that opened the conversation, sent again to re-engage a talk cut short (talkTo passes its NPC
      * click). Used only with `until`: once the chat has stayed closed for `idle` ticks, `until` is false, no answer
-     * is in flight, and the talk was evidently cut short (the shape, followed, is not finished; or the player was hit
-     * within HIT_CLOSE_TICKS of the close). The choices go back to the call's and the shape to its start (the
-     * engine killed the script, so the NPC replays the talk). A re-engage whose chat does not reopen within
-     * `openTicks` counts as spent. Without it a talk cut short waits out `maxTicks`.
+     * is in flight, and the talk was evidently cut short (with a shape followed: it is unfinished and the last page
+     * was not a `state` page; otherwise: the player was hit in the HIT_CLOSE_TICKS before the close). The choices go
+     * back to the call's and the shape to its start (the engine killed the script, so the NPC replays the talk). A
+     * re-engage whose chat does not reopen within `openTicks` counts as spent. `until` is still checked first on
+     * every tick, so an effect that lands late still ends the talk ok. Without it a talk cut short waits out `maxTicks`.
      */
     reopen?: () => Promise<unknown>;
     /** Re-engages before a talk cut short fails with a named reason (default REOPENS). */
@@ -278,6 +283,8 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
     if (opts.interrupts) res.interrupts = 0;
     // Position in the shape: the part the next page belongs to, and the pages of a continue run already answered.
     const cursor = { part: 0, used: 0 };
+    /** The last page answered was a `state` page: a scripted close (p_delay, walk, fade) may follow. */
+    let afterState = false;
     let following = plan !== null;
     let bursting = following && !!opts.burst;
     const expected = () => (plan && following ? plan[cursor.part] : undefined);
@@ -303,6 +310,7 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
     const consume = (tick: number, kind: 'continue' | 'opt', n = 1) => {
         const p = expected();
         if (!p) return;
+        afterState = kind === 'continue' && p.kind === 'state';
         if (kind === 'opt' || p.kind === 'state') {
             cursor.part++;
             cursor.used = 0;
@@ -459,11 +467,13 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
             for (const e of s.combatEvents ?? []) if (e.type === 'damage_taken' && e.targetType === 'player') hits.add(e.tick);
         };
 
-        /** Why the closed chat is a talk cut short, not one over: the shape is unfinished, or a hit came around the close. */
+        /** Why the closed chat is a talk cut short, not one over or in a scripted gap (see the header's evidence). */
         const cutShort = (): string | undefined => {
-            if (plan && following && cursor.part < plan.length) return `the shape was at part ${cursor.part + 1}, ${partText(plan[cursor.part], cursor.used)}`;
+            if (plan && following) {
+                return cursor.part < plan.length && !afterState ? `the shape was at part ${cursor.part + 1}, ${partText(plan[cursor.part], cursor.used)}` : undefined;
+            }
             let hit = -1;
-            for (const h of hits) if (h >= closedSince - HIT_CLOSE_TICKS && h <= closedSince + 1) hit = Math.max(hit, h);
+            for (const h of hits) if (h >= closedSince - HIT_CLOSE_TICKS && h < closedSince) hit = Math.max(hit, h);
             return hit >= 0 ? `hit at ${hit}` : undefined;
         };
 
@@ -485,6 +495,7 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
             queue.splice(0, queue.length, ...choices);
             cursor.part = 0;
             cursor.used = 0;
+            afterState = false;
             last = null;
             reopenedAt = s.tick;
             opts.reopen!().catch(fail);
