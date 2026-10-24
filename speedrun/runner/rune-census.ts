@@ -263,6 +263,11 @@ export interface LoggedCensus {
     inventory: { name: string; count: number; id?: number }[];
     /** Whether every item carried its obj id (rows written before ids were recorded carry names only). */
     byId: boolean;
+    /**
+     * Where the row came from, when it says: chain.ts STOP_CENSUS_LABEL for a stop's logout boundary,
+     * or an operator's own label on a row appended by hand. Absent: the census a step took as it started.
+     */
+    label?: string;
 }
 
 export function lastCensus(rows: readonly { step: string; kind?: string; startTick: number; at: string; meta?: Record<string, unknown> }[]): LoggedCensus | null {
@@ -272,7 +277,8 @@ export function lastCensus(rows: readonly { step: string; kind?: string; startTi
         const inv = r.meta.inventory;
         if (typeof r.meta.before !== 'string' || !Array.isArray(inv)) continue;
         const inventory = (inv as { name: string; count: number; id?: number }[]).filter(x => typeof x?.name === 'string' && typeof x.count === 'number');
-        return { before: r.meta.before, tick: r.startTick, at: r.at, inventory, byId: inventory.every(x => typeof x.id === 'number') };
+        const label = typeof r.meta.label === 'string' && r.meta.label ? { label: r.meta.label } : {};
+        return { before: r.meta.before, tick: r.startTick, at: r.at, inventory, byId: inventory.every(x => typeof x.id === 'number'), ...label };
     }
     return null;
 }
