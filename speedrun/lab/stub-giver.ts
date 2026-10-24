@@ -65,7 +65,7 @@ export function stageRows(manifest: string, plan: StubPlanFile): { rows: StagedR
             return [{ obj, n: x.count }];
         });
         const offer: GiveSpec[] = p.receive.map(x => ({ item: x.ids ? x.ids[0]! : x.pattern, n: x.count }));
-        const want: WantSpec[] = p.give.map(g => ({ item: g.ids ? g.ids[0]! : g.pattern, ...(g.count === 'all' ? {} : { amount: g.count }) }));
+        const want: WantSpec[] = p.give.map(g => ({ item: g.ids ? g.ids[0]! : g.pattern, ...(typeof g.count === 'number' ? { amount: g.count } : {}) }));
         return { row: r.row, tile: r.tile, stage, offer, want };
     });
     return { rows, unresolved };

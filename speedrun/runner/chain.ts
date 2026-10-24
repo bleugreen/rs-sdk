@@ -644,9 +644,12 @@ export function anvilAnnounce(cueDir: string): NonNullable<smithing.SmithingOpti
     return m => void writeAnvilPlan(cueDir, m);
 }
 
-/** H21a's swap-outs, from the ledger row smithing.ts takes them back by. */
+/**
+ * H21a's swap-outs, from the ledger row smithing.ts takes them back by. A ledger `any` is the spec's
+ * `all`: smithing's give-back gives nothing for a spec that matches nothing held (giveBackItems).
+ */
 export function h21aGiveBack(manifest: string): GiveSpec[] {
-    return handOffFrom(manifest, 'H21a').give.map(g => ({ item: g.ids ? g.ids[0]! : g.pattern, n: g.count }));
+    return handOffFrom(manifest, 'H21a').give.map(g => ({ item: g.ids ? g.ids[0]! : g.pattern, n: g.count === 'any' ? 'all' : g.count }));
 }
 
 // ------------------------------------------------------------------ the chain
