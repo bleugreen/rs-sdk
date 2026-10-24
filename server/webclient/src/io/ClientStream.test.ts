@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import '../lite/test-support/browser-globals.js';
+
 import ClientStream from './ClientStream.js';
 
 /** A socket the test drives: open until it says otherwise, sends recorded. */
