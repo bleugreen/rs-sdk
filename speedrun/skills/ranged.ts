@@ -52,7 +52,10 @@ import { questDone } from '../lib/quests';
 import { setAutoRetaliate } from '../lib/session';
 import { tickMs, waitUntil } from '../lib/wait';
 import { chebyshev, invCount, invItem, opIndex, pos, worn } from '../lib/world';
+import { fmtTile, inRegion, travel, type Region, type TravelSdk } from '../lib/travel';
 import { XP_RATE } from '../lib/xp';
+import { SPIDERS_SOUTH } from '../runner/legs';
+import { RETREAT_MAX_TICKS } from '../runner/retreat';
 import type { Step, StepContext } from '../runner/step';
 
 export const skill = 'ranged';
@@ -62,6 +65,48 @@ export const SPIDERS = { x: 3288, z: 3810, level: 0 } as const;
 /** The steps start within this many tiles of the spot (the legs child brings the player). */
 export const SITE_RADIUS = 12;
 export const SPIDER = /^poison spider$/i;
+
+/**
+ * Where the poison spiders spawn: every one of the area's (npc 134, poisonspider) is in map square
+ * m51_59 (server/content/maps/m51_59.jm2), inside this box; the squares around it hold none.
+ */
+export const SPIDER_SPAWNS: Region = { x: [3268, 3323], z: [3782, 3834] };
+/**
+ * How far from its spawn a spider stays on a target: maxrange + 1 tiles (the engine's
+ * Npc.targetWithinMaxRange for an op-triggered attack), maxrange defaulting to wanderrange 10 + 2
+ * (NpcType.postDecode). Further from every spawn no spider is on SCORED, and with huntrange 1 none
+ * takes it up again.
+ */
+export const SPIDER_REACH = 13;
+/** Every tile a spider can still be on SCORED from: SPIDER_SPAWNS grown by SPIDER_REACH. */
+export const SPIDER_REACH_AREA: Region = {
+    x: [SPIDER_SPAWNS.x[0] - SPIDER_REACH, SPIDER_SPAWNS.x[1] + SPIDER_REACH],
+    z: [SPIDER_SPAWNS.z[0] - SPIDER_REACH, SPIDER_SPAWNS.z[1] + SPIDER_REACH],
+};
+export const inSpiderReach = (s: BotWorldState): boolean => inRegion(s, SPIDER_REACH_AREA);
+
+/**
+ * S14's and S27's retreat (runner/step.ts Step.retreat): T14-15's first hop (runner/legs.ts
+ * SPIDERS_SOUTH, the leg out of S14, south toward the Wilderness ditch), stopped on the first tile
+ * out of every spider's reach, eating as the Wilderness legs do (lib/travel.ts `eat`). It is the
+ * ground every scored run crosses leaving S14, and it keeps west of the aggressive black knights
+ * east of it (spawns 3310,3769 and 3313,3769, wanderrange 10, huntrange 5). T27-17, the leg out of
+ * S27, runs north-west into the deeper Wilderness instead. The cannon stays placed. Nothing to do
+ * out of reach; throws when the walk ends still in it.
+ */
+export async function spiderRetreat(ctx: Pick<StepContext<unknown>, 'sdk' | 'bot'>): Promise<void> {
+    const s = ctx.sdk.getState();
+    if (!s?.player || !inSpiderReach(s)) return;
+    const r = await travel(ctx.sdk as unknown as TravelSdk, [SPIDERS_SOUTH], {
+        bot: ctx.bot,
+        eat: {},
+        maxTicks: RETREAT_MAX_TICKS,
+        stopIf: st => (inSpiderReach(st) ? null : "out of the spiders' reach"),
+        onRelocated: rel => (rel.respawn ? 'fail' : 'repath'),
+    });
+    const end = ctx.sdk.getState();
+    if (end && inSpiderReach(end)) throw new Error(`the retreat ended at ${fmtTile(pos(end))}, still in the spiders' reach: ${r.reason ?? 'no reason'}`);
+}
 
 export const SCIMITAR = /^mithril scimitar$/i;
 export const BOW = /^magic shortbow$/i;
@@ -766,6 +811,7 @@ export function cannonSessionStep(opts: RangedOptions = {}): Step<any> {
         },
         logoutSafe: false,
         startsInCombat: true,
+        retreat: spiderRetreat,
         done: o => done(o.state) && !owesPickUp(o.state),
         inProgress: o => owesPickUp(o.state) || (!done(o.state) && nearSite(o.state, site) && (assembledCannon(o.state) !== null || xpOf(o.state, 'Ranged') > 0)),
     };
@@ -804,6 +850,7 @@ export function combatFinishStep(opts: RangedOptions = {}): Step<any> {
         },
         logoutSafe: false,
         startsInCombat: true,
+        retreat: spiderRetreat,
         done: o => done(o.state),
         inProgress: o => !done(o.state) && (baseLevel(o.state, 'Ranged') >= S27_STARTED_RANGED || baseLevel(o.state, 'Defence') >= t.defence || (nearSite(o.state, site) && assembledCannon(o.state) !== null)),
     };
