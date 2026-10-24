@@ -11,7 +11,8 @@ import { fixtureSeedBatches, fixtureSlots, loadFixtureCatalog, planMuleDeliveryF
 
 const pack = objPack();
 const catalog = loadFixtureCatalog(pack);
-const manifest = readFileSync(MANIFEST, 'utf8');
+// without attempt 4's H4m row; the H4m test adds its own
+const manifest = readFileSync(MANIFEST, 'utf8').replace(/^\| H4m\.1-H4m\.\d+ \|.*\n/m, '');
 const table = (...rows: string[]) => '| row | in | out | equip | needAtStart | source |\n|---|---|---|---|---|---|\n' + rows.join('\n');
 const plan = (manifest: string, rows: string[], extra: Partial<MuleDeliveryFixtureOptions> = {}) =>
     planMuleDeliveryFixtures({ manifest, rows, pack, catalog, ...extra });
@@ -349,8 +350,8 @@ describe('ledger-derived mule delivery fixtures', () => {
         expect(p.unresolved).toEqual([]);
         expect(p.fixtures[0]!.takeBacks[0]!.name).toBe('Rune axe');
         expect(p.fixtures[0]!.scoredArrivalAccepted).toBe(false);
-        // STEP-MANIFEST: 'H4m is retired (fold-in 31)', its row gone; even an explicit fixture cannot revive it.
-        expect(manifest).toContain('**H4m is retired**');
+        // STEP-MANIFEST: the bare retired H4m row is gone (attempt 4's loads are H4m.1-H4m.N); even an explicit fixture cannot revive it.
+        expect(manifest).toContain("**H4m, attempt 4's variant, in force**");
         const retired = plan(manifest, [], { onRequest: ['H4m'], overrides: { H4m: { before: { logs: override(1511, 2) } } } });
         expect(retired.fixtures).toEqual([]);
         expect(retired.unresolved).toEqual([{ row: 'H4m', reasons: ['H4m: expected exactly one ledger row, found 0'] }]);

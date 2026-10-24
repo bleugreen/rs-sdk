@@ -17,7 +17,8 @@ import { tradeKind } from '../runner/handoff';
 import { cannonSessionStep } from '../skills/ranged';
 import { applyLedgerSubs, assertBoneDelivery, castXpTeleport, formatRehearsalReport, kitCheckWithout, labelSubstituteRows, observeFirstAirWalk, rehearsalReport, SUBSTITUTE, substitutedChain, substituteRefusal, strikeUpperBound, teleportFor, teleportPlan, TELEPORT_XP, type Substitutions } from './twin-rehearsal';
 
-const manifest = readFileSync(MANIFEST, 'utf8');
+// without attempt 4's H4m row: these harnesses stage the chain before it
+const manifest = readFileSync(MANIFEST, 'utf8').replace(/^\| H4m\.1-H4m\.\d+ \|.*\n/m, '');
 const cues: CueSink = { open: async () => {}, stop: () => {} };
 const partners: Record<string, string> = {};
 for (const r of [...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS]) partners[r] = 'cairn_mule2';

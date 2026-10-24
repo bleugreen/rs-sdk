@@ -251,7 +251,7 @@ describe('the manifest', () => {
     });
 
     test('every mule1 row builds in both forms, fits 28 slots, and shows no drift against itself', () => {
-        const manifest = readFileSync(MANIFEST, 'utf8');
+        const manifest = readFileSync(MANIFEST, 'utf8').replace(/^\| H4m\.1-H4m\.\d+ \|.*\n/m, '');
         for (const form of ['ask', 'fixed'] as const) {
             const lp = muleFromLedger(manifest, { form });
             const onRequest = MULE1_ON_REQUEST.filter(id => !onRequestGaps(manifest).includes(id));
@@ -262,7 +262,7 @@ describe('the manifest', () => {
     });
 
     test("H12's shark line takes its max from the row's `to`", () => {
-        const manifest = readFileSync(MANIFEST, 'utf8');
+        const manifest = readFileSync(MANIFEST, 'utf8').replace(/^\| H4m\.1-H4m\.\d+ \|.*\n/m, '');
         const row = parseLedger(manifest).rows.find(r => r.row === 'H12')!;
         const shark = row.in.find(e => e.name === 'shark' && e.topUp);
         const h12 = muleFromLedger(manifest, { rows: ['H12'] })[0]!;
@@ -271,7 +271,7 @@ describe('the manifest', () => {
     });
 
     test("H13's package, regenerated from the ledger, carries `shark to 2` as a top-up of 2 (T15-16b's food)", () => {
-        const h13 = muleFromLedger(readFileSync(MANIFEST, 'utf8'), { rows: ['H13'] })[0]!;
+        const h13 = muleFromLedger(readFileSync(MANIFEST, 'utf8').replace(/^\| H4m\.1-H4m\.\d+ \|.*\n/m, ''), { rows: ['H13'] })[0]!;
         expect(h13.package.items).toContainEqual({ item: 'Shark', topUp: { max: 2 } });
         expect(h13.topUps).toContainEqual({ item: expect.stringMatching(/^shark$/i), to: 2 });
     });
@@ -415,7 +415,7 @@ describe('deliverable runtime configurations', () => {
 
     test('raw H19 names its flour by id; the same row without the id refuses ambiguous flour rather than using the lab projection', () => {
         // STEP-MANIFEST H19 now reads `pot of flour @1933 x1 [u]`.
-        const live = readFileSync(MANIFEST, 'utf8');
+        const live = readFileSync(MANIFEST, 'utf8').replace(/^\| H4m\.1-H4m\.\d+ \|.*\n/m, '');
         expect(live).toContain('pot of flour @1933 x1 [u]');
         const ledger = muleFromLedger(undefined, { rows: ['H19'] });
         expect(ledger[0]!.package.items).toContainEqual({ id: 1933, amount: 1 });
@@ -628,7 +628,7 @@ describe('content-backed delivery materialization', () => {
 });
 
 describe("H4m's loads: one fallback row, N ordered packages after H4p on its carrier", () => {
-    const live = readFileSync(MANIFEST, 'utf8');
+    const live = readFileSync(MANIFEST, 'utf8').replace(/^\| H4m\.1-H4m\.\d+ \|.*\n/m, '');
     // rs/701's row (rs/158 writes it once main rules H4m in): one load per line, N loads in the id.
     const ROW = '| H4m.1-H4m.10 | big bones @532 x20 [u] | - | - | 20 | rs/701 fixture (r) |';
     const withRow = (row = ROW) => {
@@ -641,7 +641,8 @@ describe("H4m's loads: one fallback row, N ordered packages after H4p on its car
 
     test('the row is the switch: no H4m row on the run manifest, so no loads anywhere', () => {
         expect(parseFallbacks(live).some(r => /^H4m/.test(r.row))).toBe(false);
-        expect(h4mLoadRows()).toEqual([]);
+        // the run's own manifest carries the row in force since main's GO (attempt 4)
+        expect(h4mLoadRows()).toEqual(['H4m.1', 'H4m.2', 'H4m.3', 'H4m.4', 'H4m.5']);
         expect(muleFromLedger(live, { rows: ['H6', 'H4p', 'H7'] }).map(l => l.row)).toEqual(['H6', 'H4p', 'H7']);
         expect(h4mLoadRows(withRow())).toEqual(LOADS);
         expect(h4mLoadRows(withRow(ROW.replace('H4m.1-H4m.10', 'H4m.1-H4m.1')))).toEqual(['H4m.1']);
