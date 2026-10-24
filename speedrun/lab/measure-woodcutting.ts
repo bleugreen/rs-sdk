@@ -418,6 +418,8 @@ await runScript(async ({ bot: actions, sdk }) => {
         const m = (row.meta ?? {}) as Record<string, unknown>;
         if (m.kind === 'wc-switch') {
             console.log(`[${utc()}] T${row.endTick} SWITCH ${m.from} + bury -> ${m.to} + bury: ${m.onTime}/${m.judged} on time; WC ${m.level}, Prayer ${m.prayer}`);
+        } else if (m.kind === 'wc-bury-tail') {
+            console.log(`[${utc()}] T${row.startTick}-${row.endTick} BURY TAIL pass: buried ${m.buried} in ${row.endTick - row.startTick} t (${m.sends} Burys, ${m.resends} sent again), ${m.stop}; Prayer ${m.prayer}, ${m.held} bones held`);
         } else if (m.kind === 'wc-last-load') {
             console.log(`[${utc()}] T${row.endTick} LAST LOAD asked (the cue's lastLoad): WC ${m.level}, Prayer ${m.prayer}, both targets since T${m.bothAt ?? '-'}, ${m.loadsGiven ?? '?'} of ${m.loads ?? '?'} loads given`);
         } else if (m.kind === 'wc-bones-load') {
@@ -501,6 +503,28 @@ await runScript(async ({ bot: actions, sdk }) => {
                     `band closed T${r.endTick}: ${r.endTick - both} ticks from both targets to the close; bone loads after both targets ${spare.length}`
             );
         }
+        // rs/700: the pure-bury tail (first frame past `to` to the close) and the band's own bury rate before it.
+        for (const r of log.rows.filter(r => (r.meta as { kind?: string } | undefined)?.kind === 'wc-band')) {
+            const m = r.meta as { buryTail?: { fromTick: number; ticks: number; buried: number; buryTicks: number; sends: number; resends: number; passes: number; loads: number; ticksPerBone: number | null } };
+            // the summary row's step is `<band>:summary`; its segment and load rows name the band itself
+            const band = r.step.replace(/:summary$/, '');
+            const until = m.buryTail?.fromTick ?? r.endTick;
+            const segs = log.rows.filter(x => x.step === `${band}:segment` && x.startTick >= r.startTick && x.endTick <= until);
+            const inBand = segs.reduce((n, x) => n + (((x.meta as { counters?: Record<string, number> }).counters ?? {}).buried ?? 0), 0);
+            const runTicks = segs.reduce((n, x) => n + (x.endTick - x.startTick), 0);
+            const bandLoads = loadRows.filter(x => x.endTick >= r.startTick && x.endTick <= until && (x.meta as { band?: string }).band === band).length;
+            console.log(
+                `IN-BAND ${band}: buried ${inBand} in ${until - r.startTick} band ticks (trades and waits included) = ${until > r.startTick ? (inBand / (until - r.startTick)).toFixed(3) : '-'} bones/tick; ` +
+                    `in the knife-cycle runs alone ${runTicks} t = ${runTicks ? (inBand / runTicks).toFixed(3) : '-'} bones/tick; ${bandLoads} loads before the tail`
+            );
+            const t = m.buryTail;
+            if (t)
+                console.log(
+                    `TAIL ${r.step}: T${t.fromTick}-T${r.endTick}, ${t.ticks} ticks, ${t.buried} bones buried = ${t.ticksPerBone?.toFixed(3) ?? '-'} ticks/bone (bury passes alone ${t.buryTicks} t = ${t.buried ? (t.buryTicks / t.buried).toFixed(3) : '-'} t/bone); ` +
+                        `${t.passes} passes, ${t.loads} loads taken in the tail, ${t.sends} Burys sent, ${t.resends} sent again`
+                );
+        }
+        if (end) console.log(`end pack: ${end.inventory.map(i => `${i.name} x${i.count}`).join(', ')} (bones ${end.inventory.filter(i => BONES.test(i.name)).length})`);
         console.log(`log: ${log.path}`);
         if (helper) await closeSession(helper);
     }
