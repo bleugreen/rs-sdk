@@ -668,22 +668,22 @@ refusal. the carrier configs come from the generator and check below (fold-in 37
    <R>/carriers.json`; it must print `serve nameHash <h>`, where `<h>` is the serve hash of the
    run's scored account, computed at install (no literal here: a fresh account's hash isn't public).
    The generator is rs/41's text,
-   committed verbatim (sha256 `8c7f66ca6520d7345cbf4ae41d7ce6f618615d5a4d2df4320d0f7884cf95f40b`): it reads `CHECKOUT`, `SCORED_NAME`,
+   committed verbatim (sha256 `46288f6ed795ab8b6ae172bd94b6a47477f8d486b38fb1931163019b68c846b0`): it reads `CHECKOUT`, `SCORED_NAME`,
    `docs/speedrun/research/mule-delivery-production.json` and the checkout's STEP-MANIFEST ledger
    (`slot-ledger.ts`'s `MANIFEST`), writes only its output file and prints only the serve nameHash,
-   never the name. Its `deliveryRun` is the literal `a3-20261023` for attempt 3 (main 20:05Z 2026-10-23; a carrier
+   never the name. Its `deliveryRun` is the literal `a4-20261023` for attempt 4 (main 09:5xZ 2026-10-24; a carrier
    never re-serves a row within one delivery run, so each attempt takes a token not used before:
-   `a1-20261023` and `a1b-20261023` are spent), so the next attempt changes it again (rs/41 suggests a `DELIVERY_RUN` env with no default, so it cannot
+   `a1-20261023`, `a1b-20261023` and `a3-20261023` are spent), so the next attempt changes it again (rs/41 suggests a `DELIVERY_RUN` env with no default, so it cannot
    be silently reused).
 2. **Check:** each `bun speedrun/helpers/mule-ledger.ts --check <R>/carriers.json --account
-   <carrier> --rows <rows> --delivery-run a3-20261023 --serve "$S" --cue-root <RC>` exits 0 with its
+   <carrier> --rows <rows> --delivery-run a4-20261023 --serve "$S" --cue-root <RC>` exits 0 with its
    `no drift:` line: cairn_mule1, rows H1,H4,H4k,H18,H19,H21d,H22 with `--on-request H4e` (`no drift:
    H1, H4, H4k, H18, H19, H21d, H22, H4e (ask form)`); cairn_h55, rows
-   H6,H4p,H7,H8,H9,H10,H12,H13,H14,H15,H16 (`no drift: H6, H4p, H7, H8, H9, H10, H12, H13, H14, H15,
+   H6,H4p,H7,H8,H9,H10,H12,H13,H14,H15,H16 (`no drift: H6, H4p, H4m.1, H4m.2, H4m.3, H4m.4, H4m.5, H7, H8, H9, H10, H12, H13, H14, H15,
    H16 (ask form)`); cairn_h03, row H20 (`no drift: H20 (ask form)`). Verified at 233d0f34 on
-   bgsrv-mac with a placeholder name: the generator exit 0, all three checks exit 0 with those lines.
+   bgsrv-mac with a placeholder name: the generator exit 0, all three checks exit 0 with those lines. For attempt 4 the H4m.1-H4m.5 row is in force (main 2de13ee8), so h55 carries those five loads after H4p; rs/41's regeneration at the token commit prints them. `--rows` names H4p, never H4m: H4p selects the five loads, and `mule-ledger.ts` refuses an H4m row by name (exit 1), here and in the stock walk below.
 3. **Merge** the three entries into `<R>/helpers.json` in login order; the run config gets
-   `delivery: { run: "a3-20261023", launcherConfig: "<R>/helpers.json" }`, with `muleCueDir` =
+   `delivery: { run: "a4-20261023", launcherConfig: "<R>/helpers.json" }`, with `muleCueDir` =
    `<RC>/mule` if set.
 4. **mule-hold: NOT used for attempt 1** (main 13:15Z 2026-10-23): the carriers launch unheld in
    the roster phase and self-stage their first rows. With the hold, run.ts's first-row prepare at
@@ -724,14 +724,14 @@ refusal. the carrier configs come from the generator and check below (fold-in 37
 
 **The fleet on the run commit:** back at 29/29 on 233d0f34 at ~12:11Z, 27 while two stand-ins serve
  rs/496's twin pass (rs/41 via rs/158; fold-in 37). **run.ts's own guard** (rs/598, on main as #487, 233d0f34, the run commit; `docs/speedrun/helpers/mule-delivery.md`, 'Run owner', lines 330-379 at 233d0f34; the run config's `delivery` block is read by `runner/delivery-owner.ts:161-256`, its type `runner/chain.ts:129`; the code wins): run.ts's run
-config carries `delivery: { run: "a3-20261023", launcherConfig: "<that launcher json>" }`, and its
+config carries `delivery: { run: "a4-20261023", launcherConfig: "<that launcher json>" }`, and its
 preflight refuses with exit 3, before any login, if that is missing or does not match every mule
 partner's launcher entry. That preflight is the code's own guard; rs/41's `mule-ledger --check` stays
-as the operator's check. `delivery.run` changes per attempt (a1-20261023 for attempt 1, a1b-20261023 for attempt 1's restart, a3-20261023 for attempt 3; the date part stays 20261023 even after midnight UTC), like h92's serve ids below. **For attempt 3 (main 20:05Z 2026-10-23): the run config's `delivery.run` is exactly `a3-20261023` and matches every mule helper's `deliveryRun`**, checked before the start is called (the code's own check of the match, `runner/delivery-owner.ts:192`).
+as the operator's check. `delivery.run` changes per attempt (a1-20261023 for attempt 1, a1b-20261023 for attempt 1's restart, a3-20261023 for attempt 3, a4-20261023 for attempt 4; the date part stays 20261023 even after midnight UTC), like h92's serve ids below. **For attempt 4 (main 09:5xZ 2026-10-24): the run config's `delivery.run` is exactly `a4-20261023` and matches every mule helper's `deliveryRun`**, checked before the start is called (the code's own check of the match, `runner/delivery-owner.ts:192`).
 
 **h92 on the run commit, and its serve ids per attempt** (rs/41's wording via rs/158; fold-in 36).
-h92 is applied on bbs on the run commit: fleet role cannon, serve.id a3-H11 at the Ardougne landing (2658,3301), returnTile the same, fallback (2659,3301) per SUPPLIES H11 (still pending rs/198's two-bot check), then a3-H23 on the same tile.
-serve.id is per run and carries delivery.run's prefix: a3-H11 / a3-H23 for attempt 3 (delivery.run a3-20261023; a1b-H11 / a1b-H23 were the restart after attempt 1's S03 failure); a completed record survives restarts and a reused id resumes as done and gives nothing, so rs/41 reassigns h92 between runs.
+h92 is applied on bbs on the run commit: fleet role cannon, serve.id a4-H11 at the Ardougne landing (2658,3301), returnTile the same, fallback (2659,3301) per SUPPLIES H11 (still pending rs/198's two-bot check), then a4-H23 on the same tile.
+serve.id is per run and carries delivery.run's prefix: a4-H11 / a4-H23 for attempt 4 (delivery.run a4-20261023; a3-H11 / a3-H23 were attempt 3, a1b-H11 / a1b-H23 the restart after attempt 1's S03 failure); a completed record survives restarts and a reused id resumes as done and gives nothing, so rs/41 reassigns h92 between runs.
 
 **The inventory check, before the start is called.** On any checkout at `RUN_COMMIT` (it reads only
 the repository), run
@@ -2026,9 +2026,20 @@ rs/41**.
 What the operator sees:
 
 - **Every session drops.** In the live view SCORED's client draws `Connection lost` and `Please
-  wait - attempting to reestablish` once 15 s pass without a packet, tries one login of its own,
-  and with the server down falls back to the title screen (r: `lostCon` in Client.ts). The helpers
-  and the fleet drop at the same moment.
+  wait - attempting to reestablish` within about a second of its socket closing, or, on a socket
+  that stays open and silent, once 120 s pass without a packet (`NO_DATA_TIMEOUT_MS`,
+  server/webclient/src/client/NoDataTimeout.ts; 15 s before attempt 4, briefly 240 s). It tries one
+  login of its own, and with the server down falls back to the title screen (r: `lostCon` in
+  Client.ts). While the page still says in game, run.ts sends nothing for that long plus a 15 s
+  margin (speedrun/runner/page-hold.ts): a network hold costs only its ticks when the socket
+  resumes inside it. Past it run.ts does not rely on the page's own reconnect: it closes SCORED's
+  tab, waits 10 s for the server to drop the body, and logs in on a fresh tab (rs/744, the host's
+  runs D and E: a 60 s block mostly left the page claiming in game on a socket that never resumed).
+  A ~60 s hold is not free: SCORED is back ~163-167 s after the hold began, ~410-417 ticks at 400
+  ms, with one unplanned relog entry (m, the host's 60 s rerun on 213e2fba; the fresh-tab login can
+  be a 30 s takeover of the still-listed body; RUN-ORDER R71).
+  Holds under ~50 s adopt uncharged at about the hold plus TCP backoff.
+  The helpers and the fleet drop at the same moment.
 - **The outage from outside:** `/playercount` stops answering for ~30 s, then answers 0; logins are
   refused with code 8 for ~1.5-2.5 min; the count refills over ~10 min (r:
   `speedrun/lib/demo-status.ts`, rs/102). The bundle-token command (above) prints a new token.
@@ -2148,8 +2159,9 @@ fresh run, with no earlier sessions and no `--from`, clears them (run.ts:641-643
 re-run; the entries persist in the run dir.** **There is no operator override** (r, rs/186 at 9f2efb03, which rs/598
 does not touch): the limits are fixed constants (`PLANNED_RELOGS = 1`, `UNPLANNED_RELOGS = 3`,
 `runner/relog-budget.ts:22-24`), run.ts builds the budget with them (run.ts:616) and no flag or
-config sets them; the gate reads `<run dir>/relogs.json` fresh, every entry whose `kind` is not
-`planned` counting as unplanned, and the file is neither signed nor checked beyond parsing, so the
+config sets them; the gate reads `<run dir>/relogs.json` fresh, every `unplanned` and `manual` entry
+counting as unplanned (`planned` is S21's; `adopt`, a session found back in the world with no login
+sent, is never counted), and the file is neither signed nor checked beyond parsing, so the
 only way past the gate is a hand edit of `relogs.json`, which no code or document sanctions. **Main's
 ruling (13:20Z via rs/158, verbatim): 'past S21 + 3 unplanned relogs the start gate refuses; do not
 edit relogs.json unless main says so in the channel, with the margin stated; the planned S21 entry is
@@ -2429,7 +2441,15 @@ the confirmed logout, the deep-Wilderness resume).
 - **run.ts adopts the operator's session and never relogs over it**: it starts no relog while the
   operator holds the lock, then finds the page in the world, adopts that session
   (`session.ts` `adoptSession`) and resumes as after its own relog. A page it finds already back
-  in the world is recorded as a manual relog, against the same budget.
+  in the world is recorded as an `adopt` entry, charged to no budget (no login was sent).
+- **A relog never fails the run after one attempt**: after a silence of the whole hold window
+  (the page out at its 120 s timeout, or still claiming in game with no tick), run.ts's drop
+  recovery closes the old tab first (`[relog] closed the old tab first ...`), waits 10 s, and logs
+  in on a fresh tab. A login refused 'Your account is already logged in', one that times out, or a
+  fresh tab that does not get in is retried on another fresh tab every 20 s for up to 8 min, the
+  relog lock held (`[relog] attempt N ... failed ...; a fresh tab in 20 s`); relog-now refuses
+  meanwhile. The login that lands is one unplanned relog. Past 8 min the run stops as for any
+  failed relog, with its `(drop)` row written. A bad password or a full world stops it at once.
 - **The budget**: S21's planned relog plus 3 unplanned, **run.ts's and the operator's together**.
   Past it run.ts stops with `relog budget spent` as its reason (`RelogBudgetSpent`).
 - **S21's planned logout** goes through `session.ts` `logoutClean`, which confirms the account out

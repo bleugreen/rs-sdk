@@ -201,6 +201,29 @@ describe('the run owner\'s per-row sequence', () => {
         }
     });
 
+    test('a carrier late past a minute: SCORED keeps its input alive while it waits, and sends nothing once refused (rs/648)', async () => {
+        const dir = dirOf('late');
+        const sdk = new FakeSdk(baseState({ tick: 1, inGame: true }));
+        const owner = new DeliveryOwner(dir, RUN, SCORED, rows);
+        const T0 = Date.now();
+        // 400 ms of wall time a tick, as the keep-input's clock (Date.now) reads it.
+        const timer = setInterval(() => {
+            setSystemTime(new Date(T0 + sdk.state!.tick * 400));
+            sdk.tick();
+        }, 1);
+        const waits = () => sdk.sent.filter(a => a.method === 'sendWait').length;
+        try {
+            await expect(owner.awaitReady('H1', sdk as never, { maxTicks: 400 })).rejects.toThrow(/H1: carrier cairn_mule1 was not ready within 400 ticks/);
+            // 400 ticks at 400 ms is 160 s: keep-inputs at about 60 s and 120 s.
+            expect(waits()).toBe(2);
+            const t = sdk.state!.tick;
+            while (sdk.state!.tick < t + 400) await Bun.sleep(5);
+            expect(waits()).toBe(2);
+        } finally {
+            clearInterval(timer);
+        }
+    });
+
     test('the initial hold (before the carrier starts) is replaced by the run\'s prepare for that row', () => {
         const dir = dirOf('hold');
         holdMule(dir, { runId: RUN, account: MULE, row: 'H1', receiver: SCORED, at: rows[0]!.at, attempt: 1 });

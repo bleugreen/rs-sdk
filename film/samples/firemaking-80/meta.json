@@ -1,0 +1,226 @@
+{
+  "bot": "filmfm1",
+  "script": "speedrun/skills/firemaking.ts",
+  "kind": "step module (film/run-steps.ts)",
+  "opts": {
+    "supply": "trade",
+    "giver": "film_no_giver",
+    "tiles": "3019-2993@3362;2993-3019@3361",
+    "toLevel": 99
+  },
+  "clip": "film/clips/firemaking-80.json",
+  "setup": {
+    "clearInventory": true,
+    "stats": {
+      "firemaking": 80,
+      "hitpoints": 70,
+      "attack": 70,
+      "strength": 70,
+      "defence": 70
+    },
+    "give": {
+      "tinderbox": 1,
+      "magic_logs": 27
+    },
+    "tele": [
+      3019,
+      3362,
+      0
+    ]
+  },
+  "staged": [
+    "off Tutorial Island",
+    "inventory and worn cleared",
+    "stats {\"firemaking\":80,\"hitpoints\":70,\"attack\":70,\"strength\":70,\"defence\":70}",
+    "gave 1 tinderbox",
+    "gave 27 magic_logs",
+    "at 3019,3362,0"
+  ],
+  "git": {
+    "commit": "35462919aeaef13310378dec781e0679d1448ac4",
+    "dirty": false
+  },
+  "tickMs": {
+    "configured": 400,
+    "feedHello": 400,
+    "observed": {
+      "n": 121,
+      "median": 400,
+      "p95": 408,
+      "max": 415
+    }
+  },
+  "start": {
+    "ms": 1792792197615.009,
+    "tick": 54,
+    "clientTick": 20
+  },
+  "end": {
+    "ms": 1792792246309.3481,
+    "tick": 175,
+    "clientTick": 141
+  },
+  "durationMs": 48694,
+  "run": {
+    "startVideoMs": 998,
+    "end": "exited 1 after 46.7 s"
+  },
+  "xpGained": {
+    "Firemaking": 205065
+  },
+  "levels": {
+    "Firemaking": [
+      80,
+      88
+    ]
+  },
+  "startSkills": {
+    "Attack": {
+      "level": 70,
+      "xp": 133230
+    },
+    "Defence": {
+      "level": 70,
+      "xp": 133230
+    },
+    "Strength": {
+      "level": 70,
+      "xp": 133230
+    },
+    "Hitpoints": {
+      "level": 70,
+      "xp": 133230
+    },
+    "Ranged": {
+      "level": 1,
+      "xp": 0
+    },
+    "Prayer": {
+      "level": 1,
+      "xp": 0
+    },
+    "Magic": {
+      "level": 1,
+      "xp": 0
+    },
+    "Cooking": {
+      "level": 1,
+      "xp": 0
+    },
+    "Woodcutting": {
+      "level": 1,
+      "xp": 0
+    },
+    "Fletching": {
+      "level": 1,
+      "xp": 0
+    },
+    "Fishing": {
+      "level": 1,
+      "xp": 0
+    },
+    "Firemaking": {
+      "level": 80,
+      "xp": 267169
+    },
+    "Crafting": {
+      "level": 1,
+      "xp": 0
+    },
+    "Smithing": {
+      "level": 1,
+      "xp": 0
+    },
+    "Mining": {
+      "level": 1,
+      "xp": 0
+    },
+    "Herblore": {
+      "level": 1,
+      "xp": 0
+    },
+    "Agility": {
+      "level": 1,
+      "xp": 0
+    },
+    "Thieving": {
+      "level": 1,
+      "xp": 0
+    },
+    "Stat18": {
+      "level": 1,
+      "xp": 0
+    },
+    "Stat19": {
+      "level": 1,
+      "xp": 0
+    },
+    "Runecraft": {
+      "level": 1,
+      "xp": 0
+    }
+  },
+  "video": {
+    "file": "clip.mp4",
+    "encoder": "libopenh264",
+    "crf": 26,
+    "bytes": 4284241,
+    "fps": 25,
+    "width": 764,
+    "height": 502,
+    "frames": 1218,
+    "method": "Chrome DevTools Page.startScreencast (JPEG q90, chrome-headless-shell, the bot page's ?minimal canvas at 765x503), each frame stamped with its compositor time, re-timed to a constant rate (the latest frame at each output frame), encoded by ffmpeg libopenh264",
+    "captured": 2854,
+    "captureFps": 58.6,
+    "intervalMs": {
+      "n": 2853,
+      "median": 16.6,
+      "p95": 21.3,
+      "max": 63.6
+    },
+    "staleMs": {
+      "n": 1218,
+      "median": 8.5,
+      "p95": 16.8,
+      "max": 43.3
+    },
+    "receiveLagMs": {
+      "n": 2854,
+      "median": 6.7,
+      "p95": 9.7,
+      "max": 22.5
+    },
+    "crop": {
+      "x": 0,
+      "y": 0,
+      "w": 764,
+      "h": 502
+    }
+  },
+  "feed": {
+    "file": "feed.jsonl",
+    "url": "ws://localhost:9700/worldfeed",
+    "protocol": 1,
+    "frames": 135,
+    "ticks": 122,
+    "areas": [
+      {
+        "x": 2923,
+        "z": 3266,
+        "w": 192,
+        "h": 192
+      }
+    ],
+    "followedSlot": 1
+  },
+  "trace": {
+    "file": "trace.jsonl",
+    "start": 1,
+    "pos": 121,
+    "action": 35,
+    "chat": 36,
+    "xp": 27,
+    "level": 8
+  },
+  "clock": "ms fields are wall-clock epoch ms on the lab machine; videoMs = ms - start.ms; tick is the server tick from the feed, clientTick the browser client's own tick count"
+}

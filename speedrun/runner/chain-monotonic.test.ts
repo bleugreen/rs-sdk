@@ -39,9 +39,10 @@ import { Observation, resolveResume, ResumeError } from './resume';
 import { SCORED_LOGIN, SCORED_LOGOUT, SCORED_RELOG } from './scored-relog';
 
 const ATTEMPT = 'attempt-1';
-const MANIFEST_TEXT = readFileSync(MANIFEST, 'utf8');
+// The chain without H4m's loads and bury steps (STEP-MANIFEST's fallback row, not walked): its stacks come from the walk.
+const MANIFEST_TEXT = readFileSync(MANIFEST, 'utf8').replace(/^\| H4m\.1-H4m\.\d+ \|.*\n/m, '');
 const BASE = mkdtempSync(join(tmpdir(), 'chain-monotonic-'));
-const PARTNERS: Record<string, string> = { ...Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id.toLowerCase()}`])), H12a: 'p_h12', H12b: 'p_h12' };
+const PARTNERS: Record<string, string> = { ...Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, `p_${id.toLowerCase()}`])), H12a: 'p_h12', H12b: 'p_h12' };
 /** S07's run shape: the b01-b04 group with the runes' last load (rs/663). */
 const BONE_GROUP = ['cairn_b01', 'cairn_b02', 'cairn_b03', 'cairn_b04'] as const;
 const config = (dir: string): RunConfig => ({
@@ -72,7 +73,7 @@ afterAll(() => {
 });
 const noCues: CueSink = { open: async () => {}, stop: () => {}, isOpen: () => false };
 process.env.RC_CUE_DIR = join(BASE, 'ref', 'cue');
-const REF = buildChain(config(join(BASE, 'ref')), { cues: noCues, attempt: ATTEMPT });
+const REF = buildChain(config(join(BASE, 'ref')), { cues: noCues, attempt: ATTEMPT, manifest: MANIFEST_TEXT });
 const MILESTONES = REF.flatMap((s, i) => (s.done && !isQuest(s) ? [i] : []));
 const QUEST_END: Record<string, number> = {};
 REF.forEach((s, i) => {
@@ -223,7 +224,7 @@ function worldAt(k: number): World {
     const relogs = new RelogBudget(join(dir, 'relog'));
     if (k >= at(SCORED_LOGOUT)) relogs.beginPlanned(SCORED_RELOG, 100);
     if (k >= at(SCORED_LOGIN)) relogs.endPlanned(SCORED_RELOG, 'page');
-    const chain = buildChain(config(dir), { cues, record, relogs, attempt: ATTEMPT });
+    const chain = buildChain(config(dir), { cues, record, relogs, attempt: ATTEMPT, manifest: MANIFEST_TEXT });
     if (chain.length !== REF.length) throw new Error(`the chain at #${k} has ${chain.length} steps, the reference ${REF.length}`);
     const walked = chain.map((s, i): ChainStep => (isQuest(s) && s.done ? { ...s, done: () => i <= k, inProgress: undefined, preconditions: () => true } : s));
     const obs = new Observation(stateAt(k));

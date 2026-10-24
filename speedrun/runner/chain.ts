@@ -26,6 +26,8 @@ import type { BotWorldState } from '../../sdk/types';
 import { writeAnvilPlan } from '../helpers/anvil';
 import { CueWriter, writeJsonAtomicSync, writeTopUpAsk, type CueScope } from '../helpers/altar-cue';
 import { GO_FILE, type GoCue } from '../helpers/fm-row';
+import { muleDelivery } from '../helpers/mule-itinerary';
+import { PRE_REQUEST_TILES } from '../helpers/mule-readiness';
 import { INVENTORY_SIZE } from '../lib/items';
 import { questDone, type QuestKey } from '../lib/quests';
 import type { GiveSpec } from '../lib/trade';
@@ -63,8 +65,10 @@ import * as start from '../skills/start';
 import * as thieving from '../skills/thieving';
 import * as woodcutting from '../skills/woodcutting';
 import { MANIFEST, parseLedger, type LedgerRow } from '../tools/slot-ledger';
+import { h4mLoadRows, parseFallbacks } from '../helpers/mule-ledger';
+import { XP_RATE, xpForLevel } from '../lib/xp';
 import type { AttemptRecord } from './attempt-record';
-import { askFor, handOffFrom, handOffStep, rollbackWitnesses, type HandOffPlan } from './handoff';
+import { askFor, handOffFrom, handOffStep, planHandOff, rollbackWitnesses, type HandOffPlan, type Meeting } from './handoff';
 import { legById, legsFor, splitLeg, type LegStep } from './legs';
 import { type Probe, stepProbes } from './resume';
 import { scoredLoginStep, scoredLogoutStep } from './scored-relog';
@@ -121,8 +125,9 @@ export interface RunConfig {
     bones: woodcutting.BonesOptions;
     /**
      * S07's close target, the Prayer level its last band closes at and its early last load fires at
-     * (an integer from 1 to 99; absent: S07_PRAYER_TO). Below 99 only when a later step buries the
-     * rest: the chain's Prayer-99 check (S25b's fallback) stays where it is.
+     * (an integer from 1 to 99; absent: S07_PRAYER_TO). Below 99 it turns on H4m: S09's bury steps
+     * bury the rest from H4m's carrier (`partners.H4m`) and carry the chain's Prayer 99 (h4mPlan).
+
      */
     s07PrayerTo?: number;
     /** S18's courier (H14.x) and the food count below which it tops up. */
@@ -234,6 +239,86 @@ export function s07Woodcutting(cfg: Pick<RunConfig, 'bones' | 's07PrayerTo'>, at
     return { bury: true, bones: cfg.bones, dropAxe: true, prayerTo: s07PrayerTo(cfg), ...(attempt && cfg.bones.group ? { boneSession: boneSession(attempt) } : {}) };
 }
 
+// ------------------------------------------------------------------ H4m: the bones S09 buries
+
+/**
+ * H4m's partner key in the run config (its carrier). Its ledger row, in STEP-MANIFEST.md's fallback
+ * hand-offs (not walked), is `H4m.1-H4m.N`: one load's trade, and N in the id (mule-ledger.ts h4mLoadRows).
+ */
+export const H4M_ROW = 'H4m';
+/** S09's lowest Prayer: its combat 43 needs Prayer 94 (rs/360; mining.ts combatGate), and S09 starts before H4m's bones are in. */
+export const H4M_MIN_PRAYER = 94;
+/** Where S09's bury steps take Prayer: the chain's Prayer 99, once S07 closes below it. */
+export const S09_PRAYER_TO = 99;
+/**
+ * The bones an H4m row may carry, by obj id, with a bury's base xp (bones.obj bone_exp / 10): prayer.ts's
+ * BONE_TYPES (dragon 72, babydragon 30) and big bones (15). The row's bone sets the guard's price and the
+ * bury steps' pattern; a row with any other bone refuses.
+ */
+export const H4M_BONES: readonly prayer.BoneType[] = [...prayer.BONE_TYPES, { obj: 'big_bones', name: 'Big bones', id: 532, note: 533, base: 15 }];
+
+export interface H4mPlan {
+    /** The loads' hand-off ids, H4m.1 to H4m.N in order: each its own delivery row, since a carrier serves a delivery session once. */
+    rows: string[];
+    /** The ledger row's trade; each load's hand-off is it under the load's id. */
+    plan: HandOffPlan;
+    perLoad: number;
+    /** The row's bone, from H4M_BONES. */
+    bone: prayer.BoneType;
+    /** Its name as the bury steps' pattern (mining.ts `bury`). */
+    pattern: string;
+    /** S07's close target under H4m: the run config's `s07PrayerTo`, else the lowest level the loads lift to 99. */
+    closeAt: number;
+}
+
+/**
+ * The H4m variant, or null without the ledger's H4m row (today's chain, unchanged). The row is the
+ * switch, on this side as in the carrier generator: the loads are h4mLoadRows over it, so the chain
+ * and the carriers never disagree on N. S07 closes the first time Prayer reaches its target, so at
+ * worst at that level's floor, and the loads must carry the floor's distance to 99. With no
+ * `s07PrayerTo` the target is the lowest level from H4M_MIN_PRAYER they do carry; one the run config
+ * names is checked, 99 refused (S07 would bury every bone and the carrier's loads go untaken).
+ */
+export function h4mPlan(cfg: Pick<RunConfig, 's07PrayerTo' | 'partners'>, manifest: string): H4mPlan | null {
+    const named = cfg.s07PrayerTo === undefined ? null : s07PrayerTo(cfg);
+    const rows = h4mLoadRows(manifest);
+    if (!rows.length) {
+        if (named !== null && named < S07_PRAYER_TO) throw new Error(`run config: s07PrayerTo ${named} leaves Prayer ${S09_PRAYER_TO} to S09's H4m loads, and STEP-MANIFEST.md's fallback hand-offs have no ${H4M_ROW} row`);
+        return null;
+    }
+    if (named === S07_PRAYER_TO) throw new Error(`STEP-MANIFEST.md's fallback hand-offs carry ${H4M_ROW} (${rows.length} loads for the carrier), but the run config's s07PrayerTo is ${S07_PRAYER_TO}: S07 buries every bone and S09 would take none`);
+    if (named !== null && named < H4M_MIN_PRAYER) throw new Error(`run config: s07PrayerTo ${named} < ${H4M_MIN_PRAYER}: S09's combat 43 needs Prayer ${H4M_MIN_PRAYER} (rs/360), and S09 starts before H4m's bones are buried`);
+    if (!cfg.partners[H4M_ROW]) throw new Error(`the run config names no partner for ${H4M_ROW} (its carrier)`);
+    // h4mLoadRows has checked it is the one row H4m.1-H4m.N
+    const plan = planHandOff(parseFallbacks(manifest).find(r => r.row.startsWith(`${H4M_ROW}.`))!);
+    const bones = plan.receive[0];
+    const bone = H4M_BONES.find(b => bones?.ids?.length === 1 && bones.ids[0] === b.id);
+    if (plan.receive.length !== 1 || !bones || !bone || bones.kind !== 'u' || bones.topUp || plan.give.length || plan.drop.length || plan.wield.length || plan.unwield.length) {
+        throw new Error(`${H4M_ROW} (line ${plan.line}) must receive one bone by id, unnoted and a fixed count, of ${H4M_BONES.map(b => `${b.obj} @${b.id}`).join(', ')}: S09's bury steps and the Prayer check read nothing else`);
+    }
+    const name = bone.name.toLowerCase();
+    const brings = rows.length * bones.count * bone.base * XP_RATE;
+    const need = (p: number) => xpForLevel(S09_PRAYER_TO) - xpForLevel(p);
+    let p = named ?? H4M_MIN_PRAYER;
+    if (named === null) while (p < S07_PRAYER_TO - 1 && brings < need(p)) p++;
+    if (brings < need(p)) {
+        const base = (xp: number) => (xp / XP_RATE).toFixed(2);
+        throw new Error(`H4m: ${rows.length} loads of ${bones.count} ${name} bring ${base(brings)} base, and from Prayer ${p}'s floor (${base(xpForLevel(p))} base) to ${S09_PRAYER_TO} (${base(xpForLevel(S09_PRAYER_TO))}) needs ${base(need(p))}: ${Math.ceil(need(p) / (bone.base * XP_RATE))} ${name}`);
+    }
+    return { rows, plan, perLoad: bones.count, bone, pattern: `^${name}$`, closeAt: p };
+}
+
+/**
+ * The run config's partners with every H4m load's row (H4m.k, on `chain`'s mule cues) given H4m's
+ * carrier: the partners run.ts's delivery preflight reads.
+ */
+export function chainPartners(cfg: Pick<RunConfig, 'partners'>, chain: readonly { cue?: CueScope }[]): Readonly<Record<string, string>> {
+    const carrier = cfg.partners[H4M_ROW];
+    const loads = chain.flatMap(s => (s.cue?.family === 'mule' && s.cue.step.startsWith(`${H4M_ROW}.`) ? [s.cue.step] : []));
+    if (!carrier || !loads.length) return cfg.partners;
+    return { ...cfg.partners, ...Object.fromEntries(loads.map(row => [row, carrier])) };
+}
+
 // ------------------------------------------------------------------ hand-off placement
 
 export type Placement =
@@ -333,6 +418,13 @@ export const MULE_ROWS: readonly string[] = ['H1', 'H4', 'H4k', 'H6', 'H4p', 'H7
  * H12 Monkey Madness's (quests/monkey-madness.ts gtSwap).
  */
 export const KIT_SEGMENTS: Readonly<Record<string, string>> = { H4: 'S05:A-h4-swap', H12: 'S15:A-narnode' };
+
+/**
+ * A placed mule row's meeting (handoff.ts Meeting): its carrier's stand (mule-itinerary.ts, the tile
+ * the carrier's package and readiness bind) and the carrier's own reach, PRE_REQUEST_TILES. Not the
+ * leg's arrival: H1 (S01) and H21d (after S25a) have no leg before them.
+ */
+export const muleMeeting = (row: string): Meeting => ({ tile: muleDelivery(row).at, within: PRE_REQUEST_TILES });
 
 /** A mule package's scope: for family 'mule' the step is the hand-off id (rs/158, rs/186), every other family keeps the step id. */
 export const muleScope = (row: string): CueScope => ({ step: row, family: 'mule' });
@@ -442,6 +534,22 @@ export function askedOnTrade(step: ChainStep, plan: HandOffPlan, partner: string
     return { ...step, run: wrap(step.run), resume: wrap(step.resume ?? step.run) };
 }
 
+/** Where SCORED takes each H4m load: the bone lap's east stay, the one tile beside the carrier's stand (rs/705's reach check). */
+export const H4M_TRADE_TILE = { x: mining.BURY_TRADE_TILE[0], z: mining.BURY_TRADE_TILE[1] };
+
+/** `step` with SCORED walked onto `tile` first, 0 ticks when it stands there: a trade partner reachable only from that tile. */
+export function walkedTo(step: ChainStep, tile: { x: number; z: number }): ChainStep {
+    const wrap = (f: (ctx: StepContext<unknown>) => Promise<void>) => async (ctx: StepContext<unknown>) => {
+        const p = ctx.sdk.getState()?.player;
+        if (p?.worldX !== tile.x || p?.worldZ !== tile.z) {
+            const r = await ctx.bot.walkTo(tile.x, tile.z, 0);
+            if (!r.success) throw new Error(`${step.id}: the walk to ${tile.x},${tile.z} failed: ${r.message}`);
+        }
+        await f(ctx);
+    };
+    return { ...step, run: wrap(step.run), resume: wrap(step.resume ?? step.run) };
+}
+
 /** A copy of `s` whose methods stay bound to `s`, so it survives the runner's object spreads. */
 function bound(s: AnyStep): AnyStep {
     return {
@@ -452,6 +560,7 @@ function bound(s: AnyStep): AnyStep {
         ...(s.resume ? { resume: s.resume.bind(s) } : {}),
         ...(s.done ? { done: s.done.bind(s) } : {}),
         ...(s.inProgress ? { inProgress: s.inProgress.bind(s) } : {}),
+        ...(s.retreat ? { retreat: s.retreat.bind(s) } : {}),
     };
 }
 
@@ -676,6 +785,10 @@ interface PendingHandOff {
     kind: 'pending-handoff';
     row: string;
     id: string;
+    /** A row the walked ledger does not have (H4m.k, from the fallback table): its trade. */
+    plan?: HandOffPlan;
+    /** A carrier's delivery row outside MULE_ROWS (H4m.k). */
+    mule?: boolean;
 }
 
 type Entry = ChainStep | PendingHandOff;
@@ -702,7 +815,8 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
     const placed = Object.keys(PLACEMENT).filter(id => inLedger.has(id));
     const missingPartners = [...placed, ...KIT_PARTNER_ROWS.filter(id => inLedger.has(id))].filter(id => !cfg.partners[id]);
     if (missingPartners.length) throw new Error(`the run config names no partner for ${missingPartners.join(', ')}`);
-    const partner = (id: string) => cfg.partners[id]!;
+    const h4m = h4mPlan(cfg, manifest);
+    const partner = (id: string) => (h4m?.rows.includes(id) ? cfg.partners[H4M_ROW]! : cfg.partners[id]!);
     const kitFrom = (id: string) => ({ kitFrom: partner(id) });
 
     const legs = legsFor({ s21Altar: 'body' });
@@ -731,7 +845,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         return s;
     };
 
-    const woodcuttingAll = woodcutting.steps(s07Woodcutting(cfg, o.attempt));
+    const woodcuttingAll = woodcutting.steps(s07Woodcutting(h4m ? { ...cfg, s07PrayerTo: h4m.closeAt } : cfg, o.attempt));
     const wc = (n: string) => pick('woodcutting', woodcuttingAll, [n]);
     // S07's {bone} cue has one writer: woodcutting.ts for a giver group (BoneCue, one session across
     // both bands), the chain for one giver, for which woodcutting.ts writes none. Both writing the group's
@@ -755,6 +869,38 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
     })).map(s => (s.name === KIT_SEGMENTS.H12 && inLedger.has('H12') ? mule(askedOnTrade(s, handOffFrom(manifest, 'H12'), partner('H12'), muleCueDir(cfg)), 'H12') : s));
     const atM = s15.findIndex(s => s.name.startsWith('S15:M-'));
     if (atM < 0) throw new Error('monkey-madness: emits no segment M step for the H12o login trigger');
+    /**
+     * S09 under H4m: each load's hand-off from H4m's carrier, on the east stay beside its stand, then
+     * its bury step (mining.ts `bury`), then the band to 99 and the exit. A bury step is done once the
+     * next load is recorded (the last once its own is and no bone is held), or at S09_PRAYER_TO, which
+     * also supersedes the loads left; the last carries the chain's Prayer 99.
+     */
+    const s09WithH4m = (h: H4mPlan): Entry[] => {
+        const all = mining.steps({ ...S09_MINING, bury: h.pattern, buryLoads: h.rows.length, buryPrayerTo: S09_PRAYER_TO });
+        // Without the record (a build that never resumes) a bury step is done at Prayer 99 only; run.ts always passes it.
+        const record = o.record?.handOffs ?? { has: () => false };
+        const bones = new RegExp(h.pattern, 'i');
+        // the level, not the points (skillLevel's current level)
+        const prayerAt = (st: BotWorldState) => st.skills.find(k => k.name.toLowerCase() === 'prayer')?.baseLevel ?? 0;
+        const reached = (st: BotWorldState) => prayerAt(st) >= S09_PRAYER_TO;
+        const out: Entry[] = [];
+        h.rows.forEach((row, i) => {
+            const last = i === h.rows.length - 1;
+            const bury = tag('S09', 'step', pick('mining', all, [mining.buryStepName(i + 1)])[0]!, {
+                done: ob => reached(ob.state) || (last ? record.has(row) && mining.bonesHeld(ob.state, bones) === 0 : record.has(h.rows[i + 1]!)),
+            });
+            out.push({ kind: 'pending-handoff', row, id: row, plan: { ...h.plan, id: row }, mule: true });
+            out.push(!last ? bury : {
+                ...bury,
+                postconditions: (st, c) => {
+                    const held = bury.postconditions(st, c);
+                    if (held !== true) return held;
+                    return reached(st) ? true : `Prayer ${prayerAt(st)} < ${S09_PRAYER_TO} after H4m's ${h.rows.length} loads (S07 closed at ${h.closeAt}): the chain's Prayer ${S09_PRAYER_TO}`;
+                },
+            });
+        });
+        return [...out, ...steps('S09', pick('mining', all, ['mining.iron-63', 'mining.exit']))];
+    };
     const preLogin = runecraft.preLoginStep(s21Opts);
     const logout = scoredLogoutStep({ budget: relogs });
     const s21Logout = {
@@ -803,7 +949,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         L('T08-09'),
         // H4p, the run's only rune pickaxe, is a placed hand-off (no kitGiver: mining emits no kit step).
         ...before('S09'),
-        ...steps('S09', pick('mining', mining.steps(S09_MINING), ['mining.iron-63', 'mining.exit'])),
+        ...(h4m ? s09WithH4m(h4m) : steps('S09', pick('mining', mining.steps(S09_MINING), ['mining.iron-63', 'mining.exit']))),
         L('T09-10'),
         ...before('S10b'),
         ...steps('S10b', treeGnomeVillage.steps()),
@@ -871,7 +1017,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...steps('S25d', crafting.steps()),
         ...steps('S25e', herblore.steps()),
         // S25b's bones are buried inside S07 (fold-in 23); the booth runs only if Prayer is short.
-        ...prayer.steps().map(s => whenNeeded('S25b-fallback', s, at99('prayer'), 'Prayer 99 inside S07 (fold-in 23)')),
+        ...prayer.steps().map(s => whenNeeded('S25b-fallback', s, at99('prayer'), h4m ? "Prayer 99 in S09's H4m bury steps" : 'Prayer 99 inside S07 (fold-in 23)')),
         ...steps('S25c', cooking.steps(cfg.wineGiver ? { giver: cfg.wineGiver } : {})),
         L('T25-26'),
         ...before('S26'),
@@ -897,16 +1043,22 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         // A marker's `done` says nothing about the game (a cue file), so it never supersedes a trade.
         const next = out.find(s => s.done && !s.marker);
         const supersededBy: ObservedCheck<unknown> | undefined = next?.done ? (ob, c) => next.done!(ob, c) : undefined;
-        const plan = handOffFrom(manifest, e.row);
+        const plan = e.plan ?? handOffFrom(manifest, e.row);
         const scope = CANNON_ROWS[e.row];
         // A row with a `to N` entry is served by a standing giver that sizes it from SCORED's ask (mule.ts, rs/429), scoped to the row.
         const ask = !scope && plan.receive.some(r => r.topUp) ? { scope: muleScope(e.row), ask: { dir: muleCueDir(cfg) } } : undefined;
         const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : ask;
-        const muleRow = !scope && MULE_ROWS.includes(e.row);
+        // H4m's loads are delivery rows too: rs/603's meeting places SCORED within reach of their stand
+        const muleRow = !scope && (e.mule ?? MULE_ROWS.includes(e.row));
         const beforeTrade = muleRow ? { beforeTrade: () => { o.cues.refresh?.(muleScope(e.row)); } } : {};
-        const witnesses = rollbackWitnesses(plan, rows.slice(rows.findIndex(r => r.row === e.row) + 1), row => PLACEMENT[row] !== undefined);
-        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.record ? { record: o.record.handOffs, witnesses } : {}), ...(cue ? { cue } : {}), ...beforeTrade }), cue ? { cue: cue.scope } : {});
-        out.unshift(muleRow ? mule(s, e.row) : s);
+        // H4m's loads (the fallback table) follow H4p in the walk
+        const at = e.plan ? 'H4p' : e.row;
+        const witnesses = rollbackWitnesses(plan, rows.slice(rows.findIndex(r => r.row === at) + 1), row => PLACEMENT[row] !== undefined);
+        // A carrier may come after SCORED: its cue's ready gate waits for it, so the step asks only that SCORED be at the meeting.
+        const meeting = muleRow ? { meeting: muleMeeting(e.row) } : {};
+        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.record ? { record: o.record.handOffs, witnesses } : {}), ...(cue ? { cue } : {}), ...beforeTrade, ...meeting }), cue ? { cue: cue.scope } : {});
+        const placed = e.mule ? walkedTo(s, H4M_TRADE_TILE) : s;
+        out.unshift(muleRow ? mule(placed, e.row) : placed);
     }
     const tileOf = startTiles(cfg);
     return cueMuleRows(out, muleRows, partner, o.cues).map(censused).map(s => {

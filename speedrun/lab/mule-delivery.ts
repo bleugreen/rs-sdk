@@ -102,9 +102,8 @@ for (const name of [account, botArg()]) {
 }
 const root = mkdtempSync(join(tmpdir(), 'mule-delivery-'));
 const runId = `lab-${Date.now()}`;
-const ledger = muleFromLedger(manifest, { rows, onRequest, pack });
 // The planner binds only validated concrete identities, retaining canonical quantities.
-const options = muleRunOptions(fixturePlan?.fixtures.map(f => f.ledger) ?? ledger, root, { deliveryRun: runId, serve: botArg(), itinerary });
+const options = muleRunOptions(fixturePlan?.fixtures.map(f => f.ledger) ?? muleFromLedger(manifest, { rows, onRequest, pack }), root, { deliveryRun: runId, serve: botArg(), itinerary });
 const carriesNext = options.packages[0]?.carryNext === true;
 // The runner's run-owner sequence (prepare, readiness, the row's delivery session), not a lab copy.
 const owner = new DeliveryOwner(options.cueDir, runId, botArg(), selectedRows.map((row, i) => ({ row, account, at: options.packages[i]!.at })));
@@ -471,6 +470,14 @@ async function settleRecipient(row: string) {
     if (!settled.ok) throw new Error('Recipient did not settle at ' + row);
 }
 async function prepareRecipient(fixture: MuleDeliveryFixture) {
+    // Already in the row's before-state (H4m.1 straight after H4p): no bank reset, as on the run.
+    const now = scored.sdk.getState()!;
+    try {
+        assertItems(now.inventory, fixture.beforeInventory, 'current');
+        assertItems(now.equipment, fixture.beforeEquipment, 'current');
+        emit('recipient-reset', { row: fixture.row, skipped: 'already in the before-state', snapshot: snapshot(now) });
+        return;
+    } catch { /* reset through the bank below */ }
     const travel = await recipientTravel(fixture.bank, fixture.row, 'bank');
     emit('recipient-reset-travel', { row: fixture.row, travel });
     if (!travel.ok || !(await scored.bot.openBank()).success) throw new Error('Recipient cannot reach fixture bank');

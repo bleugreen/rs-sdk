@@ -15,7 +15,7 @@ import type { BotSDK } from '../../sdk/index';
 import type { ActionResult, BotWorldState } from '../../sdk/types';
 import type { FrameSummary } from '../../server/webclient/src/bot/programs/frames';
 import { type ProbeResult, summarizeProbe, type TickLength, tickSteadiness } from './hostgate';
-import { idleBoundMs, type TickPeriod } from './wait';
+import { idleBoundMs, keepInput, type KeepInputOptions, type TickPeriod } from './wait';
 
 /** The page's published program status (server/webclient/src/bot/programs/types.ts). */
 export interface ProgramStatus {
@@ -89,7 +89,7 @@ export function tickParam(tick: TickLength | null | undefined): { tickMs?: numbe
 
 export type ProgramName = 'probe' | 'knife-cycle' | 'knife-mine' | 'pickpocket' | 'agility' | 'rc-cycle' | 'item-cycle';
 
-export type ProgramSdk = Pick<BotSDK, 'getState' | 'onStateUpdate'>;
+export type ProgramSdk = Pick<BotSDK, 'getState' | 'onStateUpdate' | 'sendWait'>;
 
 export class ProgramError extends Error {
     constructor(message: string, readonly status: ProgramStatus | null) {
@@ -141,15 +141,22 @@ export interface AwaitOptions {
     period?: TickPeriod;
     /** Every published status of this run while it is running. */
     onProgress?: (status: ProgramStatus) => void;
+    /** The keep-input's clock and report (wait.ts keepInput); it runs whatever is given here. */
+    keepInput?: KeepInputOptions;
 }
 
 /**
  * Resolve when run `runId` ends with done, stopped or replaced; reject with a
  * ProgramError when it faults, when the page stops publishing, or when the run
  * disappears (the page reloaded, so its runtime and run ids restarted).
+ *
+ * The program's own clicks never reset the client's idle timer (wait.ts CLIENT_IDLE_LOGOUT_MS), so
+ * while the run goes this sends a keep-input every KEEP_INPUT_MS of wall time (wait.ts keepInput),
+ * and none once it has ended: a run shorter than that sends nothing.
  */
 export function awaitProgram(sdk: ProgramSdk, runId: number, opts: AwaitOptions = {}): Promise<ProgramStatus> {
     const staleMs = opts.staleMs ?? idleBoundMs({ ticks: 20, period: opts.period });
+    const keep = keepInput(sdk, opts.keepInput);
     return new Promise<ProgramStatus>((resolve, reject) => {
         let settled = false;
         let lastTick = sdk.getState()?.tick ?? -1;
@@ -163,6 +170,7 @@ export function awaitProgram(sdk: ProgramSdk, runId: number, opts: AwaitOptions 
         const finish = (fn: () => void) => {
             if (settled) return;
             settled = true;
+            keep.stop();
             clearTimeout(stale);
             clearTimeout(overall);
             unsubscribe();
@@ -193,6 +201,7 @@ export function awaitProgram(sdk: ProgramSdk, runId: number, opts: AwaitOptions 
         unsubscribe = sdk.onStateUpdate(s => {
             armStale();
             check(s);
+            if (!settled && s?.inGame) keep.see(s);
         });
         armStale();
         if (opts.timeoutMs !== undefined) overall = setTimeout(() => finish(() => reject(new ProgramError(`program run ${runId} still running after ${opts.timeoutMs} ms`, programStatus(sdk.getState())))), opts.timeoutMs);

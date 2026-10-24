@@ -3,27 +3,11 @@
 // while SCORED is deliberately out and closes only after the login succeeds.
 
 import { loginFailurePolicy } from '../helpers/backoff';
-import { cdpUrl, login, logoutClean, type LoginResult, type LogoutResult, type Session } from '../lib/session';
+import { cdpUrl, login, loginReplyCode, logoutClean, type LoginResult, type LogoutResult, type Session } from '../lib/session';
 import { pageInGame, pageLoginState } from '../lib/tab';
 import { sleep, tickMs } from '../lib/wait';
 import { RelogBudget } from './relog-budget';
 import type { Step, StepContext } from './step';
-
-/** The title screen's text for the login replies the relog tells apart (Client.ts's loginMes1 and loginMes2). */
-const REPLY_TEXT: readonly (readonly [number, RegExp])[] = [
-    [5, /Your account is already logged in\./],
-    [7, /This world is full\./],
-    [8, /Login server offline\./],
-    [9, /Login limit exceeded\./],
-    [13, /Could not complete login\./],
-    [14, /The server is being updated\./],
-    [16, /Login attempts exceeded\./],
-];
-
-/** The login reply a title screen's message shows, or null for none the relog tells apart. */
-export function loginReplyCode(message: string): number | null {
-    return REPLY_TEXT.find(([, re]) => re.test(message))?.[0] ?? null;
-}
 
 export const WORLD_FULL = 7;
 /** World-full refusals retried before the step gives up: about 15 minutes at backoff.ts's 60 s pause. */

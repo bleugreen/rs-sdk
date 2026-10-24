@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { LOST_AFTER_TICKS } from '../runner/resume';
 import { FakeSdk } from './fake-sdk';
-import { fakeClock as jest, peek, tickEvery, useFakeTicks } from './fake-ticks';
-import type { BotWorldState } from '../../sdk/types';
-import { DEMO_TICK_MS, failureReason, IDLE_PERIOD_MIN_SPAN_MS, IDLE_TICKS, idleBoundMs, nextTick, onStates, periodMs, serverClock, STALLED, TickPeriod, tickMs, waitOrThrow, waitTicks, waitUntil, type WaitResult } from './wait';
+import { fakeClock as jest, microtasks, peek, tickEvery, useFakeTicks } from './fake-ticks';
+import type { ActionResult, BotWorldState } from '../../sdk/types';
+import {
+    CLIENT_IDLE_LOGOUT_MS, DEMO_TICK_MS, failureReason, IDLE_PERIOD_MIN_SPAN_MS, IDLE_TICKS, idleBoundMs, KEEP_INPUT_MS, nextTick, onStates, periodMs, serverClock, STALLED, TickPeriod, tickMs, waitOrThrow, waitTicks, waitUntil,
+    type KeepInputEvent, type WaitResult,
+} from './wait';
 
 useFakeTicks();
 
@@ -236,4 +239,97 @@ describe('the tick length at 300 and 400 ms', () => {
             process.env.SPEEDRUN_TICK_MS = '300';
         });
     }
+});
+
+describe('keep-input through a long wait (the client idle logout, rs/648)', () => {
+    const waits = (sdk: FakeSdk) => sdk.sent.filter(a => a.method === 'sendWait');
+    /** `n` ticks `ms` of wall time apart on the clock the keep-input reads, letting a sent wait settle between them. */
+    async function hold(sdk: FakeSdk, clock: { t: number }, ms: number, n: number): Promise<void> {
+        for (let i = 0; i < n; i++) {
+            clock.t += ms;
+            sdk.tick();
+            await microtasks(3);
+        }
+    }
+
+    test('one keep-input a tenth of the way to the client idle logout', () => {
+        expect(CLIENT_IDLE_LOGOUT_MS).toBe(600_000);
+        expect(KEEP_INPUT_MS * 10).toBe(CLIENT_IDLE_LOGOUT_MS);
+    });
+
+    test('a wait that ends within 60 s of wall time sends nothing', async () => {
+        const sdk = new FakeSdk();
+        const clock = { t: 0 };
+        const p = waitUntil(sdk, s => s.tick === 249, { maxTicks: 10_000, keepInput: { sdk, now: () => clock.t } });
+        await hold(sdk, clock, 400, 149);
+        expect(clock.t).toBe(59_600);
+        expect(await p).toMatchObject({ ok: true, tick: 249 });
+        expect(sdk.sent).toEqual([]);
+    });
+
+    test('a 6.5-minute wait sends one a minute (6), each a single one-tick wait, and none once it has resolved', async () => {
+        const sdk = new FakeSdk();
+        const clock = { t: 0 };
+        const events: KeepInputEvent[] = [];
+        const p = waitUntil(sdk, s => s.tick === 100 + 975, { maxTicks: 10_000, keepInput: { sdk, now: () => clock.t, onInput: e => events.push(e) } });
+        await hold(sdk, clock, 400, 975);
+        expect(clock.t).toBe(390_000);
+        expect((await p).ok).toBe(true);
+        expect(waits(sdk)).toEqual(Array.from({ length: 6 }, () => ({ method: 'sendWait', args: [1] })));
+        expect(events.map(e => e.tick)).toEqual([250, 400, 550, 700, 850, 1000]);
+        expect(events.map(e => [e.n, e.idleMs])).toEqual([1, 2, 3, 4, 5, 6].map(n => [n, 60_000]));
+        await hold(sdk, clock, 400, 600);
+        expect(waits(sdk)).toHaveLength(6);
+    });
+
+    test('a wait that fails (maxTicks) stops sending at its failure', async () => {
+        const sdk = new FakeSdk();
+        const clock = { t: 0 };
+        const p = waitUntil(sdk, () => false, { maxTicks: 200, keepInput: { sdk, now: () => clock.t } });
+        await hold(sdk, clock, 400, 201);
+        expect(await p).toMatchObject({ ok: false, reason: 'maxTicks' });
+        expect(waits(sdk)).toHaveLength(1);
+        await hold(sdk, clock, 400, 600);
+        expect(waits(sdk)).toHaveLength(1);
+    });
+
+    test('one in flight at a time: a keep-input that has not settled holds the next back', async () => {
+        const sdk = new FakeSdk();
+        const clock = { t: 0 };
+        let calls = 0;
+        let release: (r: ActionResult) => void = () => {};
+        const keep = { sendWait: () => (calls++, new Promise<ActionResult>(r => (release = r))) };
+        const p = waitUntil(sdk, () => false, { maxTicks: 10_000, keepInput: { sdk: keep, now: () => clock.t } });
+        await hold(sdk, clock, 400, 750);
+        expect(calls).toBe(1);
+        release({ success: true, message: 'Wait complete' });
+        await microtasks(5);
+        await hold(sdk, clock, 400, 1);
+        expect(calls).toBe(2);
+        void p;
+    });
+
+    test('a keep-input that fails or throws does not stop the next', async () => {
+        const sdk = new FakeSdk();
+        const clock = { t: 0 };
+        let calls = 0;
+        const keep = {
+            sendWait: (): Promise<ActionResult> => {
+                calls++;
+                if (calls === 1) throw new Error('not connected');
+                return Promise.reject(new Error('timed out'));
+            },
+        };
+        void waitUntil(sdk, () => false, { maxTicks: 10_000, keepInput: { sdk: keep, now: () => clock.t } });
+        await hold(sdk, clock, 400, 450);
+        expect(calls).toBe(3);
+    });
+
+    test('a wait without keepInput sends nothing however long it stands', async () => {
+        const sdk = new FakeSdk();
+        const clock = { t: 0 };
+        void waitUntil(sdk, () => false, { maxTicks: 10_000 });
+        await hold(sdk, clock, 400, 2_000);
+        expect(sdk.sent).toEqual([]);
+    });
 });

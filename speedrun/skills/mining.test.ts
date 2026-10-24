@@ -138,8 +138,13 @@ describe('steps', () => {
         expect(names({ to: '40', travel: 'none' })).toContain('mining.iron-15');
         expect(names({ to: 40, travel: 'none' })).not.toContain('mining.iron-63');
     });
-    test('the bury seam is not built; bad options throw', () => {
-        expect(() => m.steps({ bury: 200 })).toThrow(/not built/);
+    test('bad options throw', () => {
+        expect(() => m.steps({ bury: 200 as never })).toThrow(/bury must be true or a bone pattern/);
+        expect(() => m.steps({ bury: '(' })).toThrow(/is not a pattern/);
+        expect(() => m.steps({ bury: true, buryLoads: 0 })).toThrow(/buryLoads must be a whole number/);
+        expect(() => m.steps({ bury: true, buryLoads: 2.5 })).toThrow(/buryLoads must be a whole number/);
+        expect(() => m.steps({ bury: true, buryPrayerTo: 100 })).toThrow(/buryPrayerTo must be a level/);
+        expect(() => m.steps({ buryLoads: 3 })).toThrow(/need bury/);
         expect(() => m.steps({ rotation: 'seven' })).toThrow();
         expect(() => m.steps({ technique: 'fast' as never })).toThrow();
         expect(() => m.steps({ respawn: 'soon' })).toThrow();
@@ -807,6 +812,171 @@ describe('the slot ledger (rs/158 specs 3 and 4)', () => {
         }
         expect(sdk.sent.length).toBe(7);
         expect(names(sdk.state!)).toEqual(['Knife']);
+    });
+});
+
+describe('bones on the stay2 lap (`bury`, H4m)', () => {
+    // S09's pack at the zoo after H4p: S07's knife and log, H4p's pickaxe and log (24 free)
+    const KIT = ['Knife', 'Logs', 'Rune pickaxe', 'Logs'];
+    const BONES = (n: number) => Array.from({ length: n }, () => 'Big bones');
+    const opts = { travel: 'none', respawn: 13, technique: 'knife', dropAtExit: true, bury: true, buryLoads: 3 } as const;
+    const stepOf = (name: string, o: Record<string, unknown> = opts) => m.steps(o).find(s => s.name === name)!;
+    const withPrayer = (s: BotWorldState, level: number): BotWorldState => ({ ...s, skills: [...s.skills, { name: 'Prayer', level, baseLevel: level, experience: 1000 }] });
+    const at = (mining: number, bones: number, prayer = 98) => withPrayer(atZoo(mining, [...KIT, ...BONES(bones)]), prayer);
+    const held = (s: BotWorldState | null) => s!.inventory.filter(i => i.name === 'Big bones').length;
+    const rowOf = (ctx: unknown, step: string) => (ctx as { log: TickLog }).log.rows.find(r => r.step === step);
+    /** buryHeld's stand-in: every big bone gone, two ticks a bone. */
+    const heldCalls: Array<{ re: RegExp; o: Record<string, unknown> }> = [];
+    const realBuryHeld = m.deps.buryHeld;
+    beforeAll(() => {
+        m.deps.buryHeld = (async (s: FakeSdk, re: RegExp, o: Record<string, unknown>) => {
+            heldCalls.push({ re, o });
+            const st = s.state!;
+            const n = st.inventory.filter(i => re.test(i.name)).length;
+            s.push({ tick: st.tick + 2 * n, inventory: st.inventory.filter(i => !re.test(i.name)) });
+            return { startTick: st.tick, endTick: st.tick + 2 * n, buried: n, sends: n, resends: 0, buryTicks: [], stop: 'none' };
+        }) as never;
+    });
+    afterAll(() => {
+        m.deps.buryHeld = realBuryHeld;
+    });
+    afterEach(() => {
+        gatedImpl = null;
+        heldCalls.length = 0;
+        gatedCalls.length = 0;
+    });
+    /** The page's lap with knife-mine's bury: a bone off each lap (15 ticks), until none or stopped; `levelAt` bones in, Mining reaches `to`. */
+    const lapBuries = (o: { levelAt?: number; to?: number } = {}) => {
+        gatedImpl = async (s, _params, g) => {
+            let buried = 0;
+            while (!g.signal.aborted && held(s.state) > 0) {
+                if (o.levelAt !== undefined && buried === o.levelAt) {
+                    s.tick({ skills: [...s.state!.skills.filter(k => k.name !== 'Mining'), ...skills(o.to ?? 99)] });
+                    return { segments: [], ended: 'done' };
+                }
+                const bone = s.state!.inventory.find(i => i.name === 'Big bones')!;
+                s.tick(st => ({ tick: st.tick + 15, inventory: st.inventory.filter(i => i.slot !== bone.slot) }));
+                buried++;
+            }
+            return { segments: [], ended: g.signal.aborted ? 'aborted' : 'done' };
+        };
+    };
+
+    test('the steps: one per load between the bands, the exit last; without bury the list is unchanged', () => {
+        expect(m.steps(opts).map(s => s.name)).toEqual(['mining.prep', 'mining.copper', 'mining.travel: zoo', 'mining.iron-15', 'mining.bury: load 1', 'mining.bury: load 2', 'mining.bury: load 3', 'mining.iron-63', 'mining.exit']);
+        expect(m.steps({ travel: 'none', bury: true }).map(s => s.name)).toContain('mining.bury: load 1');
+        expect(m.steps({ travel: 'none', bury: 'false' }).map(s => s.name)).toEqual(['mining.prep', 'mining.copper', 'mining.travel: zoo', 'mining.iron-15', 'mining.iron-63']);
+        expect(m.buryStepName(7)).toBe('mining.bury: load 7');
+    });
+
+    test("the lap: #159's stay2, 3 ticks an ore at D=13 on the five-rock lap's rocks, its east stay the trade tile; never chosen by respawn", () => {
+        expect(m.BURY_LAP).toBe('2603,3233>2602,3233 2605,3234>2605,3235 2605,3234>2605,3233 2602,3235>2602,3234 2602,3235>2602,3236');
+        expect(m.lapModel(m.BURY_LAP, 13)).toMatchObject({ ticksPerOre: 3, problems: [] });
+        const five = new Set(m.parseSteps(m.ROTATIONS.five!.steps).map(st => st.rock.join()));
+        expect(m.parseSteps(m.BURY_LAP).every(st => five.has(st.rock.join()))).toBe(true);
+        expect(m.parseSteps(m.BURY_LAP).filter(st => st.stand.join() === m.BURY_TRADE_TILE.join()).length).toBe(2);
+        expect(Object.values(m.ROTATIONS).map(r => r.steps)).not.toContain(m.BURY_LAP);
+        expect([10, 13, 15, 16, 19].map(m.rotationFor)).toEqual(['five', 'five', 'five', 'six', 'six']);
+        expect(m.BURY_MAX_RESPAWN).toBe(13);
+    });
+
+    test("slots: a load of 20 on S09's kit leaves the band's 4 free; one more bone and the step refuses", () => {
+        const load = stepOf('mining.bury: load 1');
+        expect(28 - at(64, 20).inventory.length).toBe(m.FREE_SLOTS);
+        expect(load.preconditions(at(64, 20), {})).toBe(true);
+        expect(load.preconditions(at(64, 21), {})).toBe('25 other items: need 4 free slots (ore, a gem, a stray fletch)');
+        // a load taken on 1 held bone: 21, the same refusal; 20 riding the band past Prayer 99 still leave its 4
+        expect(stepOf('mining.iron-63').preconditions(at(64, 20, 99), {})).toBe(true);
+    });
+
+    test('a load buries on the lap with knife-mine `bury` and the band stops on the last bone', async () => {
+        lapBuries();
+        const sdk = new MiningSdk(at(64, 20));
+        const ctx = ctxFor(sdk);
+        const load = stepOf('mining.bury: load 1');
+        expect(load.inProgress!(obs(sdk.state!), {})).toBe(true);
+        await load.run(ctx);
+        expect(gatedCalls.length).toBe(1);
+        expect(gatedCalls[0]!.params).toMatchObject({ steps: m.BURY_LAP, bury: 'bones$', respawn: 13, untilLevel: 99, selfStarter: true });
+        expect(gatedCalls[0]!.params.success).toBeUndefined();
+        expect(held(sdk.state)).toBe(0);
+        expect(heldCalls).toEqual([]);
+        expect(rowOf(ctx, '(bury) mining.bury: load 1')!.meta).toMatchObject({ held: 20, onLap: 20, byHand: 0, dropped: 0, lapEnd: null });
+        expect((rowOf(ctx, '(band) mining.bury: load 1')!.meta as { rotation: string; bury: unknown }).rotation).toBe('stay2');
+        expect((rowOf(ctx, '(band) mining.bury: load 1')!.meta as { bury: unknown }).bury).toEqual({ bones: 'bones$', end: 'every bone buried' });
+        expect(load.postconditions(sdk.state!, {})).toBe(true);
+        expect(load.inProgress!(obs(sdk.state!), {})).toBe(false);
+    });
+
+    test('Mining reaching 99 mid-load: the rest is buried by hand at the zoo (the fallback stop)', async () => {
+        lapBuries({ levelAt: 6 });
+        const sdk = new MiningSdk(at(98, 20));
+        const ctx = ctxFor(sdk);
+        await stepOf('mining.bury: load 1').run(ctx);
+        expect(heldCalls.length).toBe(1);
+        expect(heldCalls[0]!.re.test('Big bones')).toBe(true);
+        expect(heldCalls[0]!.o).toEqual({ untilLevel: 99 });
+        expect(held(sdk.state)).toBe(0);
+        expect(rowOf(ctx, '(bury) mining.bury: load 1')!.meta).toMatchObject({ held: 20, onLap: 6, byHand: 14, dropped: 0 });
+        // a load traded after Mining 99 is buried by hand alone
+        const later = new MiningSdk(at(99, 20));
+        await stepOf('mining.bury: load 2').run(ctxFor(later));
+        expect(gatedCalls.length).toBe(1);
+        expect(heldCalls.length).toBe(2);
+        expect(held(later.state)).toBe(0);
+    });
+
+    test('iron respawn over 13 ticks: the lap takes no bone, so the load is buried by hand and the band mines on later', async () => {
+        const sdk = new MiningSdk(at(70, 20));
+        const ctx = ctxFor(sdk);
+        await stepOf('mining.bury: load 1', { ...opts, respawn: 14 }).run(ctx);
+        expect(gatedCalls).toEqual([]);
+        expect(heldCalls.length).toBe(1);
+        expect(held(sdk.state)).toBe(0);
+        expect(m.miningLevel(sdk.state)).toBe(70);
+        const row = rowOf(ctx, '(bury) mining.bury: load 1')!.meta as { lapEnd: string; byHand: number };
+        expect(row.lapEnd).toMatch(/respawn 14 > 13/);
+        expect(row.byHand).toBe(20);
+    });
+
+    test('at buryPrayerTo the bones are dropped, not buried; with none held a load is a 0-tick pass', async () => {
+        const sdk = new DropTickSdk(at(70, 20, 99));
+        const ctx = ctxFor(sdk);
+        await stepOf('mining.bury: load 1').run(ctx);
+        expect(gatedCalls).toEqual([]);
+        expect(heldCalls).toEqual([]);
+        expect(sdk.sent.filter(a => a.method === 'sendDropItem').length).toBe(20);
+        expect(rowOf(ctx, '(bury) mining.bury: load 1')!.meta).toMatchObject({ held: 20, onLap: 0, byHand: 0, dropped: 20 });
+        const none = new MiningSdk(at(70, 0));
+        const ctx0 = ctxFor(none);
+        expect(stepOf('mining.bury: load 2').preconditions(none.state!, {})).toBe(true);
+        await stepOf('mining.bury: load 2').run(ctx0);
+        expect(none.sent).toEqual([]);
+        expect((ctx0 as unknown as { log: TickLog }).log.rows).toEqual([]);
+    });
+
+    test('resume: bones held put the walk in a load step, not the band; the band resumes once none is held', async () => {
+        const all = m.steps(opts).filter(s => ['mining.bury: load 1', 'mining.bury: load 2', 'mining.bury: load 3', 'mining.iron-63', 'mining.exit'].includes(s.name));
+        const band = all.find(s => s.name === 'mining.iron-63')!;
+        expect(band.inProgress!(obs(at(80, 12)), {})).toBe(false);
+        expect(band.preconditions(at(80, 12), {})).toBe('12 bones (bones$) held: a bury step buries them before the band');
+        expect(band.inProgress!(obs(at(80, 0)), {})).toBe(true);
+        // at buryPrayerTo the bones are not owed: the band takes them on to the exit's drop
+        expect(band.inProgress!(obs(at(80, 12, 99)), {})).toBe(true);
+        expect(band.preconditions(at(80, 12, 99), {})).toBe(true);
+        const holding = await resolveResume(all, new Observation(at(80, 12), {}), {});
+        expect([holding.mode, holding.step]).toEqual(['resume', 'mining.bury: load 3']);
+        const none = await resolveResume(all, new Observation(at(80, 0), {}), {});
+        expect([none.mode, none.step]).toEqual(['resume', 'mining.iron-63']);
+    });
+
+    test('the exit drops any bones a resume walked past, with the pickaxe and logs; not without bury', async () => {
+        const sdk = new MiningSdk(atZoo(99, ['Knife', 'Logs', 'Rune pickaxe', 'Big bones', 'Big bones']));
+        await stepOf('mining.exit').run(ctxFor(sdk));
+        expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Knife']);
+        const plain = new MiningSdk(atZoo(99, ['Knife', 'Logs', 'Big bones']));
+        await stepOf('mining.exit', { travel: 'none', dropAtExit: true }).run(ctxFor(plain));
+        expect(plain.state!.inventory.map(i => i.name)).toEqual(['Knife', 'Big bones']);
     });
 });
 

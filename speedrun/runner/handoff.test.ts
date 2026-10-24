@@ -1,8 +1,12 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setSystemTime, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
+import type { BotWorldState, InventoryItem, PlayerState, TradeItem } from '../../sdk/types';
+import { readMulePreparation, writeMuleReady } from '../helpers/mule-readiness';
+import { muleCued, tag } from './chain';
+import { CueKeeper } from './cue-keeper';
+import { DeliveryOwner, READY_MAX_TICKS } from './delivery-owner';
 import { baseState, drive, FakeSdk, FakeTradePartner } from '../lib/fake-sdk';
 import { noteOf, untradeable } from '../lib/items';
 import { TickLog } from '../lib/ticks';
@@ -10,7 +14,7 @@ import { MANIFEST, parseLedger } from '../tools/slot-ledger';
 import { ASK_FILE, readTopUpAsk } from '../helpers/altar-cue';
 import {
     askFor, giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffRoom, handOffStep, itemPattern, loadHandOff, planHandOff, resolvePlan, rollbackWitnesses, runHandOff, runHandOffOnCue, slotPlan, toUnequip, tradeKind, tradeLanded,
-    type Given, type HandOffPlan, type HandOffReport,
+    type Given, type HandOffPlan, type HandOffReport, type Meeting,
 } from './handoff';
 import { AttemptRecord, ATTEMPT_RECORD_FILE } from './attempt-record';
 import { PLACEMENT } from './chain';
@@ -940,6 +944,169 @@ describe('a cue-served hand-off (the cannon holder): the cue, the partner in sig
         const step = handOffStep<Record<string, never>>(h11, { partner: PARTNER, cue: { scope: { step: 'S27', family: 'cannon' }, open: async () => {}, waitTicks: 8 } });
         await expect(drive(sdk, step.run(ctxOf(sdk)), 100)).rejects.toThrow('did not come into sight within 8 ticks of the S27/cannon cue');
         expect(sdk.tradeClicks).toEqual([]);
+    });
+
+    describe('a late partner: SCORED keeps its input alive while it stands (rs/648)', () => {
+        const T0 = Date.UTC(2026, 9, 24, 6);
+        /** Wall time 400 ms a tick from the cue's tick 10, as the keep-input's default clock (Date.now) reads it. */
+        const at400 = (then: (s: BotWorldState) => Partial<BotWorldState> = () => ({})) => (s: BotWorldState) => {
+            setSystemTime(new Date(T0 + (s.tick + 1 - 10) * 400));
+            return then(s);
+        };
+        const sendWaits = (sdk: FakeSdk) => sdk.sent.map((a, i) => [a.method, i] as const).filter(([m]) => m === 'sendWait').map(([, i]) => i);
+
+        test('6.5 minutes late: one keep-input a minute, all before the trade, none after the partner is in sight', async () => {
+            setSystemTime(new Date(T0));
+            try {
+                const sdk = new TradeServer(state([], [], { tick: 10, nearbyPlayers: [] }), row);
+                const r = await drive(sdk, runHandOffOnCue(ctxOf(sdk), h11, PARTNER, { scope: { step: 'S14', family: 'cannon' }, open: async () => {} }), 1300, at400(arrive(985)));
+                expect([r.ok, r.standingAtClick, r.arriveTicks, r.keepInputs]).toEqual([true, true, 976, 6]);
+                const waits = sendWaits(sdk);
+                expect(waits).toHaveLength(6);
+                expect(waits.at(-1)!).toBeLessThan(sdk.sent.findIndex(a => a.method === 'sendTradeRequest'));
+                expect(handOffMissing(sdk.state!, h11)).toEqual([]);
+            } finally {
+                setSystemTime();
+            }
+        });
+
+        test('a partner that never comes: the refusal names the keep-inputs, and none is sent after it', async () => {
+            setSystemTime(new Date(T0));
+            try {
+                const sdk = new TradeServer(state([], [], { tick: 10, nearbyPlayers: [] }), row);
+                const p = runHandOffOnCue(ctxOf(sdk), h11, PARTNER, { scope: { step: 'S27', family: 'cannon' }, open: async () => {}, waitTicks: 900 });
+                await expect(drive(sdk, p, 1000, at400())).rejects.toThrow('did not come into sight within 900 ticks of the S27/cannon cue (6 keep-inputs sent)');
+                for (let i = 0; i < 400; i++) sdk.tick(at400());
+                await drive(sdk, Promise.resolve(), 1);
+                expect(sendWaits(sdk)).toHaveLength(6);
+                expect(sdk.tradeClicks).toEqual([]);
+            } finally {
+                setSystemTime();
+            }
+        });
+
+        test('a partner in sight within the minute: no keep-input at all', async () => {
+            setSystemTime(new Date(T0));
+            try {
+                const sdk = new TradeServer(state([], [], { tick: 10, nearbyPlayers: [] }), row);
+                const r = await drive(sdk, runHandOffOnCue(ctxOf(sdk), h11, PARTNER, { scope: { step: 'S14', family: 'cannon' }, open: async () => {} }), 400, at400(arrive(140)));
+                expect([r.ok, r.keepInputs]).toEqual([true, 0]);
+                expect(sendWaits(sdk)).toEqual([]);
+            } finally {
+                setSystemTime();
+            }
+        });
+    });
+});
+
+describe('a delivery carrier that comes after SCORED: the meeting, the cue\'s ready gate, then the trade (rs/603)', () => {
+    const TILE = { x: 3222, z: 3222, level: 0 };
+    const MEETING: Meeting = { tile: TILE, within: 12 };
+    const SCORED = 'Scored Name';
+    const RUN = 'a2-20261024';
+    const H1_ROW = tradeItems([['Staff of water'], ['Cosmic rune', 60], ['Air rune', 81], ['Law rune', 1]]);
+    const player = (x: number, z: number, level = 0) => ({ name: SCORED, x, z, worldX: x, worldZ: z, level }) as unknown as PlayerState;
+    const at = (inv: InventoryItem[] = pack(['Tinderbox']), x = TILE.x, z = TILE.z, level = 0) => state(inv, [], { tick: 10, player: player(x, z, level), nearbyPlayers: [] });
+
+    /** A carrier stand-in (mule.ts publishDelivery): travelling to the prepared stand until tick `readyAt`, then ready on it. */
+    function carrier(sdk: TradeServer, dir: string, readyAt: number): () => void {
+        return sdk.onStateUpdate(s => {
+            const c = readMulePreparation(dir, PARTNER);
+            if (c?.op !== 'prepare') return;
+            const ready = s.tick >= readyAt;
+            writeMuleReady(dir, {
+                runId: c.runId, account: PARTNER, row: c.row, session: c.session, receiverHash: c.receiverHash,
+                phase: ready ? 'ready' : 'travel', tile: { ...TILE }, staged: true, preparationSeq: c.seq, tick: s.tick, ms: Date.now(),
+            });
+        });
+    }
+
+    /** H1 as the chain runs a placed mule row: the hand-off inside its {H1, mule} cue, on the run's keeper bound to the run owner. */
+    function rig(o: { meeting: boolean; readyAt: number; inView?: boolean }) {
+        const dir = mkdtempSync(join(tmpdir(), 'handoff-meeting-'));
+        const sdk = new TradeServer({ ...at(), ...(o.inView ? { nearbyPlayers: partnerInView } : {}) }, H1_ROW);
+        const keeper = new CueKeeper(dir, SCORED, new DeliveryOwner(dir, RUN, SCORED, [{ row: 'H1', account: PARTNER, at: TILE }]));
+        const offs = [keeper.attach(sdk), carrier(sdk, dir, o.readyAt)];
+        const reports: HandOffReport[] = [];
+        const inner = handOffStep<Record<string, never>>(plan('H1'), { partner: PARTNER, onReport: r => reports.push(r), ...(o.meeting ? { meeting: MEETING } : {}) });
+        const step = muleCued(tag('S01', 'handoff', inner), 'H1', keeper);
+        return { sdk, step, reports, done: () => offs.forEach(f => f()) };
+    }
+    /** The carrier comes into SCORED's view on tick `tick` (drive's patch lands in the next tick's state). */
+    const arrives = (tick: number) => (s: BotWorldState): Partial<BotWorldState> => (s.tick >= tick - 1 && !s.nearbyPlayers.length ? { nearbyPlayers: partnerInView } : {});
+
+    test('preconditions: SCORED within reach of the stand on its level, and not already holding some of everything the row brings', () => {
+        const h1 = plan('H1');
+        const pre = (s: BotWorldState) => handOffPre(s, h1, PARTNER, { meeting: MEETING });
+        expect(pre(at())).toBe(true);
+        expect(pre(at(undefined, TILE.x + 12, TILE.z - 12))).toBe(true);
+        expect(pre(at(undefined, TILE.x + 13, TILE.z))).toBe('H1: SCORED at 3235,3222,0 is not within 12 of the meeting tile 3222,3222,0');
+        expect(pre(at(undefined, TILE.x, TILE.z, 1))).toBe('H1: SCORED at 3222,3222,1 is not within 12 of the meeting tile 3222,3222,0');
+        expect(pre({ ...at(), player: null })).toBe('H1: the state carries no player to place at the meeting');
+        // Some of what the row brings, held before it (runes left from an earlier step), is no refusal; some of all of it is.
+        expect(pre(at(pack(['Tinderbox'], ['Air rune', 25])))).toBe(true);
+        expect(pre(at(pack(['Staff of water'], ['Cosmic rune', 59], ['Air rune', 81], ['Law rune', 1])))).toBe('H1: already holds some of everything the row brings (staff of water, cosmic rune, air rune, law rune): its trade has landed');
+        // The partner-in-view rule is unchanged for a row without a meeting.
+        expect(handOffPre(at(), h1, PARTNER)).toContain('Helper is not in view');
+    });
+
+    test('a carrier 60 ticks late: the step starts at the meeting with nobody in view, the cue waits for its readiness, then the row is served', async () => {
+        const r = rig({ meeting: true, readyAt: 70 });
+        try {
+            expect(r.step.preconditions(r.sdk.state!, {})).toBe(true);
+            // Today's rule refused here and ended the attempt.
+            expect(handOffPre(r.sdk.state!, plan('H1'), PARTNER)).toContain('not in view');
+            await drive(r.sdk, r.step.run(ctxOf(r.sdk)), READY_MAX_TICKS, arrives(70));
+            expect(r.sdk.tradeClicks).toHaveLength(1);
+            expect(r.sdk.tradeClicks[0]!).toBeGreaterThanOrEqual(70);
+            expect(r.sdk.tradeClicks[0]!).toBeLessThan(80);
+            expect(r.reports[0]).toMatchObject({ id: 'H1', trade: 'receive', ok: true });
+            expect(handOffMissing(r.sdk.state!, plan('H1'))).toEqual([]);
+        } finally {
+            r.done();
+        }
+    });
+
+    test('a carrier that never readies: refused at the gate\'s bound with its status line, nothing clicked', async () => {
+        const r = rig({ meeting: true, readyAt: Infinity });
+        try {
+            expect(r.step.preconditions(r.sdk.state!, {})).toBe(true);
+            await expect(drive(r.sdk, r.step.run(ctxOf(r.sdk)), READY_MAX_TICKS + 50)).rejects.toThrow(
+                new RegExp(`^H1: carrier Helper was not ready within ${READY_MAX_TICKS} ticks \\(maxTicks\\): H1 travel, staged true, preparation \\d+ of \\d+$`),
+            );
+            expect(r.sdk.tradeClicks).toEqual([]);
+            expect(r.sdk.sent.some(a => a.method === 'sendTradeRequest')).toBe(false);
+        } finally {
+            r.done();
+        }
+    });
+
+    test('a ready carrier that does not show: refused after the sight bound, nothing clicked', async () => {
+        const r = rig({ meeting: true, readyAt: 0 });
+        try {
+            await expect(drive(r.sdk, r.step.run(ctxOf(r.sdk)), 100)).rejects.toThrow('H1: Helper did not come into sight within 10 ticks at the meeting tile 3222,3222,0');
+            expect(r.sdk.tradeClicks).toEqual([]);
+        } finally {
+            r.done();
+        }
+    });
+
+    test('an on-time carrier: the meeting row sends exactly the actions, at the same ticks, that the partner-in-view row sends', async () => {
+        const run = async (meeting: boolean) => {
+            const r = rig({ meeting, readyAt: 0, inView: true });
+            try {
+                expect(r.step.preconditions(r.sdk.state!, {})).toBe(true);
+                await drive(r.sdk, r.step.run(ctxOf(r.sdk)), 300);
+                return { actions: r.sdk.sent.map(a => [a.method, ...a.args]), clicks: r.sdk.tradeClicks, ok: r.reports[0]?.ok, end: r.sdk.state!.tick };
+            } finally {
+                r.done();
+            }
+        };
+        const today = await run(false);
+        const now = await run(true);
+        expect(today.ok).toBe(true);
+        expect(today.actions.length).toBeGreaterThan(0);
+        expect(now).toEqual(today);
     });
 });
 

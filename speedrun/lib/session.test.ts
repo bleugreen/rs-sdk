@@ -8,8 +8,12 @@ import { loginTokenProof } from '../../server/webclient/login-token';
 import type { BotWorldState, PlayerState } from '../../sdk/types';
 import type { Death, DeathSign } from '../runner/death';
 import { RESPAWN } from './travel';
+import { PAGE_HOLD_MS, pageHoldStandDown } from '../runner/page-hold';
 import {
     ABANDON_SENDS,
+    ALREADY_LOGGED_IN,
+    alreadyLoggedIn,
+    loginReplyCode,
     describeAbandon,
     PAGE_ENDED_HOLD_MS,
     waitOwnLaunch,
@@ -222,6 +226,41 @@ function recorder(logoutOk: boolean) {
         },
     };
 }
+
+describe("startWatchdog with run.ts's page hold (runner/page-hold.ts)", () => {
+    // run.ts's bound with the drop recovery on: LOST_AFTER_TICKS + WATCHDOG_AFTER_LINK_TICKS.
+    const staleTicks = 27;
+    const check = async (silentMs: number, page: boolean | null, over: Partial<Session> = {}, progressStaleTicks?: number) => {
+        const { session } = fakeSession({ lastAdvanceAt: Date.now() - silentMs, ...over });
+        const rec = recorder(true);
+        const events: WatchdogEvent[] = [];
+        const wd = startWatchdog(session, {
+            timer: false, staleTicks, actions: rec.actions, onEvent: e => events.push(e),
+            ...(progressStaleTicks !== undefined ? { progressStaleTicks } : {}),
+            standDown: at => pageHoldStandDown(at, async () => page),
+        });
+        await wd.check();
+        return { calls: rec.calls, events };
+    };
+
+    test('a 60 s silence with the page still in game: held, no logout and no relaunch', async () => {
+        const { calls, events } = await check(60_000, true);
+        expect(calls).toEqual([]);
+        expect(events.map(e => [e.verdict, e.reason.split(' (')[0]])).toEqual([['wait', 'logout held: the page still says in game: its socket may resume until its own 120 s no-data timeout']]);
+    });
+
+    test('past the window it acts as before', async () => {
+        expect((await check(PAGE_HOLD_MS + 2_000, true)).calls).toEqual(['logout', 'login']);
+    });
+
+    test('a page out of the world (a closed socket) inside the window is not held', async () => {
+        expect((await check(20_000, false)).calls).toEqual(['logout', 'login']);
+    });
+
+    test('a progress stop (the tick advancing) is never held for the page', async () => {
+        expect((await check(0, true, { ticksSinceProgress: 500 } as Partial<Session>, 100)).calls).toEqual(['logout']);
+    });
+});
 
 describe('startWatchdog response', () => {
     test('wedged client: clean logout, then log back in; the running client is never killed', async () => {
@@ -1276,6 +1315,52 @@ describe('login with inPage: the tab logs back in where it is', () => {
         } finally {
             cdp.stop();
         }
+    });
+
+    /** The page's in-page login ends on the title screen with `mes1`/`mes2`; a navigation gets in. */
+    function refusedInPage(cdp: ReturnType<typeof fakeCdp>, sdk: FakeSdk, mes1: string, mes2 = '') {
+        cdp.hooks.onAutoLogin = () => {
+            setTimeout(() => {
+                cdp.client.loginInProgress = false;
+                cdp.client.loginMes1 = mes1;
+                cdp.client.loginMes2 = mes2;
+            }, 30);
+        };
+        cdp.hooks.onNavigate = () => getsIn(cdp, sdk, 1);
+    }
+
+    test('stopOnReply: an in-page login refused as already logged in throws LoginRefused at once, never navigating', async () => {
+        const cdp = fakeCdp('srtest', PASSWORD);
+        try {
+            const { session, sdk } = pageSession(cdp);
+            refusedInPage(cdp, sdk, 'Your account is already logged in.', 'Try again in 60 secs...');
+            const e = await login(session, { inPage: true, timeoutMs: 5_000, stopOnReply: [ALREADY_LOGGED_IN] }).catch(err => err);
+            expect(alreadyLoggedIn(e)).toBe(true);
+            expect(e).toMatchObject({ name: 'LoginRefused', reply: 5, attempts: 1, pageMessage: 'Your account is already logged in. Try again in 60 secs...' });
+            expect((e as Error).message).toBe('srtest: login refused after 1 attempt(s) (reply 5: Your account is already logged in. Try again in 60 secs...)');
+            expect(cdp.page.autoLogins).toHaveLength(1);
+            expect(cdp.page.navigations).toEqual([]);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('stopOnReply leaves every other reply to the usual retries: a full world is navigated past as before', async () => {
+        const cdp = fakeCdp('srtest', PASSWORD);
+        try {
+            const { session, sdk } = pageSession(cdp);
+            refusedInPage(cdp, sdk, 'This world is full.', 'Please use a different world.');
+            const r = await login(session, { inPage: true, timeoutMs: 5_000, stopOnReply: [ALREADY_LOGGED_IN] });
+            expect(r).toMatchObject({ via: 'launch', attempts: 2 });
+            expect(cdp.page.navigations).toHaveLength(1);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('loginReplyCode reads the title screen: already logged in is reply 5, an unknown message none', () => {
+        expect(loginReplyCode('Your account is already logged in. Try again in 60 secs...')).toBe(ALREADY_LOGGED_IN);
+        expect(loginReplyCode('Invalid username or password.')).toBeNull();
     });
 
     test('a page that cannot log itself in is navigated instead, and the fresh client counts from 0', async () => {

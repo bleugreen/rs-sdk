@@ -21,7 +21,7 @@ import {
     deliverySession, holdMule, prepareMule, readMulePreparation, readMuleReady, readyFor, resumeMuleAttempt, sameWorldTile,
     type MuleHold, type MuleReady, type MuleReadyExpected, type WorldTile,
 } from '../helpers/mule-readiness';
-import { waitUntil, type StateSource } from '../lib/wait';
+import { waitUntil, type KeepInputSdk, type StateSource } from '../lib/wait';
 
 /** One delivery row on the run's path: who carries it and where it meets SCORED (mule-itinerary.ts). */
 export interface DeliveryRow {
@@ -111,8 +111,11 @@ export class DeliveryOwner {
         return { ok: !!bound && readyFor(status, bound, now), status };
     }
 
-    /** Prepare `row` (or reuse its prepare) and wait, over `sdk`'s observed ticks, for its carrier's readiness. */
-    async awaitReady(row: string, sdk: StateSource, o: { maxTicks?: number } = {}): Promise<MuleReady> {
+    /**
+     * Prepare `row` (or reuse its prepare) and wait, over `sdk`'s observed ticks, for its carrier's
+     * readiness, keeping SCORED's input alive while it stands (wait.ts keepInput).
+     */
+    async awaitReady(row: string, sdk: StateSource & KeepInputSdk, o: { maxTicks?: number } = {}): Promise<MuleReady> {
         const bound = this.prepare(row);
         const maxTicks = o.maxTicks ?? READY_MAX_TICKS;
         let fault = false;
@@ -120,7 +123,7 @@ export class DeliveryOwner {
             const { ok, status } = this.ready(row);
             fault = status?.phase === 'fault' && status.row === row;
             return ok || fault;
-        }, { maxTicks });
+        }, { maxTicks, keepInput: { sdk } });
         const { ok, status } = this.ready(row);
         if (ok) return status!;
         const seen = status ? `${status.row} ${status.phase}, staged ${status.staged}, preparation ${status.preparationSeq} of ${bound.preparationSeq}` : 'no readiness status';

@@ -400,7 +400,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 | The Grand Tree's tree-door crossing around the 6-tick open race (rs/536, rs/521 dfae255a63), its test and lab driver | 8 (S11b) | **on main, 36d29bf9 (#436)**, inside the run-commit floor (fold-in 36) | a start condition, met (fold-in 35) |
 | Docs snapshot 25: fold-in 34's documents (rs/573, rs/158's 32ef05d6) | - | on main, merge e64c864e (#461) | docs only, not a floor move (fold-in 36) |
 | rs/560's resume-gap fixes (rs/572, via rs/185 be4f9a60): Dwarf Cannon's cast() landing radius (K), the Grand Tree's M inProgress, Fishing Contest's M Camelot radius, `lab/quests/resume-gap.ts` | 12 (S13), 8 (S11b), 23 (S20) | **on main, 4ec69af6 (#463)**, inside the run-commit floor (fold-in 36) | each window now a manual restart (fold-in 35) |
-| A: a placed hand-off's `done` stays true once the band after it consumes what it brought (rs/562 A, rs/576), with rs/546's run.ts signal shutdown; 7 files from rs/186 @8289e389 | 33 (every hand-off), 0 (run.ts) | **on main, 11353fbe (#462)**, inside the run-commit floor (fold-in 36) | a start condition, met (fold-in 35); `HandOffRecord` and `handoffs.json` with it |
+| A: a placed hand-off's `done` stays true once the band after it consumes what it brought (rs/562 A, rs/576), with rs/546's run.ts signal shutdown; 7 files from rs/186 @8289e389 | 33 (every hand-off), 0 (run.ts) | **on main, 11353fbe (#462)**, inside the run-commit floor (fold-in 36) | a start condition, met (fold-in 35); the record it kept is now `AttemptRecord` in `<run dir>/attempt-record.json` (`runner/attempt-record.ts`, #597, ee12f778, rs/728), which replaced `HandOffRecord` and `handoffs.json` |
 | The socket-drop recovery (rs/511 via rs/547, rs/580) and `cueStop(S27)` above T27-17 (rs/562 C), with `tools/relog-now.ts`; 16 files from rs/186 @34d0ecf4 | 0 (every drop and relog), 7 (S27), 11 (T27-17) | **on main, 86e7aa37 (#466)**, inside the run-commit floor (fold-in 36) | floor items, met (fold-in 35); the ~24-25-tick dropped-session line current |
 | Monkey Madness follow-ups (c) and (d) (rs/575, rs/185 f9ce39fa, byte-identical): T's minder re-pick and cage let-out, U and N's resume, the browser landing-frame scans | 2 (S15) | **on main, ee2d92b6 (#467)**, inside the run-commit floor (fold-in 36) | the S15 module condition fully met; T ~+9 / ~+28 and N's landing ~+120 priced (fold-in 35) |
 | H13's drop mode and the plan-time untradeable refusal (#441's bcf83f52) re-derived on main ee2d92b6, `slotPlan` inside `handOffRoom` (rs/567), with this manifest's H13 `drop` rows and `out` grammar sentence | 33 (H13), 19 (S16's kit) | **on main, fb8265e5 (#470)**, inside the run-commit floor (fold-in 36) | the last code start condition, met; R51 closed; H13 at 8.7 m (rs/567's lab, bgsrv-mac, 400 ms, 3 of 3, 8 / 8 / 8 on both clients) |
@@ -1187,7 +1187,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   each, the five-rock lap 3.000 / 3.124 / 3.015 (1 slip in 600) against `stay2` + bury 3.041 / 3.026
   / 3.041 (0 slips), so at most **+0.021 an ore** (the upper figure, p = 0.11 one-sided, not
   significant; 0.010 faster with the slip counted); 0.066 bones a tick, ~205 over S09; the trades
-  ~0.21 ticks a bone (H4m.1-H4m.4, SUPPLIES.md). Limits: `stay2` only; only while iron respawns in
+  ~0.21 ticks a bone (H4m.1-H4m.N, the fallback hand-offs table). Limits: `stay2` only; only while iron respawns in
   13 ticks or less (a quieter world skips the bone), so in the six-rock band the bones go to the
   booth (+1.75 each) unless a six-rock lap with a short-entry stay is measured; inert under the
   plain technique, so a gate-off stretch of S09 leaves its bones for the bank.
@@ -2667,25 +2667,35 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   S01's H1 at Lumbridge (3222,3222), the out-and-back rows H13, H16, H18, H22 and H23 (rs/318's
   rulings 5 to 7), and any later H row. `run.ts` puts one `handOff(id, {partner, supersededBy})`
   Step per row between the skill and quest steps.
-- **A walking carrier late to its tile throws the step** (rs/598's lab run 1, main 12:35Z; the
-  mechanics rs/186's, via rs/158; fold-in 37): `runner/handoff.ts:284` checks 'partner in view' on
-  the resume walker before the cue's bounded ready wait (at the run commit 233d0f34, not reordered by #487, which adds only a `beforeTrade` hook; a
-  cue-served partner skips it, :585-586; rs/598's lab run refused at H4k), so a carrier not at its stand when SCORED reaches the row
-  makes the step refuse and run.ts end. A refusal is a thrown step: the re-run is RUN-HOST's
-  whole-launcher relaunch, one SCORED login, ~11.7 ticks (m, rs/595) plus re-entry, not
-  attempt-ending. Doric's H4 is not exposed: it waits inside its segment (302 measured). rs/598's reorder (main pre-approved) is not in the run commit, so the cliff stands for attempt 1. **Exposure by row: the carrier's route against SCORED's chain since that carrier's previous
-  row, flagged when the route is at least half the chain** (i, rs/158's, the windows confirmed by
-  rs/186; routes from the run commit's audit table, `docs/speedrun/helpers/mule-delivery.md:183-206`
-  at 38902b56, rs/41's per-row figures matching; the chain from RUN-ORDER.md's rows; unsummed notes):
-  - **flagged, H4k**, only after a whole-launcher relaunch landing between H4's serve and H4k (S05's
-    remainder through T06-07), which loses the carry-ahead: the bank-return route 132 against a chain
-    of ~210; with the carry-ahead, 44, it is clear, and a relaunch before H4's serve re-stages both
-    carriers with the full chain ahead. Priced as the cheap manual restart; RUN-HOST's relaunch step
-    waits for H4k's ready status in that case;
-  - **flagged, H16**: 172 (its one measured profile) against ~351, priced as exposed;
-  - **unmeasured route, an exposed cliff until rs/41's measured bank-to-stand ticks arrive** (rs/551's
-    route proofs and its timing lab, by 14:30Z; main 13:00Z): H14, H15, H19 (only its initial
-    bank-to-ready, 110, is measured; the H18-to-H19 transition is not) and H22;
+- **A late carrier is waited for, bounded; past the bound it throws the step** (rs/603 on main as
+  498f5fb0, #604, rs/738; fold-in 42b; before it, rs/598's lab run 1 refused at H4k on 'partner in
+  view', main 12:35Z, fold-in 37). A mule row's preconditions no longer ask for the carrier in view:
+  SCORED must stand within `PRE_REQUEST_TILES` = 12 tiles (Chebyshev, on its level) of the row's fixed
+  stand (`helpers/mule-readiness.ts`; the stand from `helpers/mule-itinerary.ts` `muleDelivery`, never
+  the carrier's live position; `runner/handoff.ts` `Meeting.within`). Inside the run, run.ts then waits
+  up to `READY_MAX_TICKS` = 600 observed ticks for the carrier to read ready (`runner/delivery-owner.ts`
+  `awaitReady`) and, once it is ready, up to `SIGHT_TICKS` = 10 for it to come into sight at the stand
+  (`handoff.ts` `partnerInSight`). Either expiry throws out of the step's run (a `StepError`, phase
+  'run'): not ready names the carrier and its status line, with no cue written; ready but not in sight
+  writes the row's stop non-final, `failed`, so the carrier stands down. The re-run re-enters the same
+  row (nothing traded, so not done) and waits again; only if SCORED has left the 12-tile radius does
+  the walk go down to the leg before it. **The 600-tick bound is never reached on measured routes:**
+  every measured carrier is ready before SCORED arrives, and after a relaunch a late carrier costs at
+  most ~330 ticks, a login (~10) plus its whole move from the previous stand (rs/41). A standing
+  partner (an account name) keeps 'partner in view'. **H18's stand is S22's fishing tile**: a resume
+  tells 'waiting for H18' from 'already fishing' by H18's delivered items being held. **The possible
+  waits by row: the carrier's move against SCORED's chain since that carrier's previous row** (rs/658's
+  moves via rs/41, lab engine, 400 ms, every trade exact by id; routes from
+  `docs/speedrun/helpers/mule-delivery.md`; the chain from RUN-ORDER.md's rows; unsummed notes):
+  - **H4k**, only after a whole-launcher relaunch landing between H4's serve and H4k (S05's remainder
+    through T06-07), which loses the carry-ahead: the bank-return route 132 against a chain of ~210,
+    a wait of 0 with ~78 to spare; mule1 makes H4k inside H4's measured move (308 / 264), so a relaunch
+    costs at most that; with the carry-ahead, 44, it is clear;
+  - **H16**: 172 (3 runs) against ~351, margin ~173, the tightest;
+  - **measured, ready before SCORED arrives**: H14 81 (margin 270), H22 68 after H21d (margin 467,
+    mule1 on (3191,3366), the trade opening 9-10 ticks after SCORED's arrival);
+  - **unmeasured, inside the bound by rs/41's ~330 worst case**: H15 and H19's H18-to-H19 transition
+    (H19's initial bank-to-ready, 110, is measured);
   - **prepared before the leg, not a cliff by timing: H20 (h03)** (rs/41's correction and rs/186's
     code read via rs/158): run.ts prepares each carrier's first row still ahead at the start, after
     its gates and before SCORED logs in (`run.ts:659-664`, `runner/delivery-owner.ts:80`, at the run commit 233d0f34 (#487)), and each later
@@ -2695,8 +2705,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     3.2 h proof, bgsrv-mac, 3c8524df, the h03-observed profile; repeated by re-run 1 at ed2124a6). The
     cost: h03 stands ready there for most of the run (keep-alive, on a helper's clock, not SCORED's).
     The old chained design's '147 against 12' is retired;
-  - **unmeasured, window long, likely clear (i)**: H13 (after H12, through S15's ~4,790) and H18 (from
-    H4k through S21);
+  - **long windows, measured**: H13 (after H12, through S15's ~4,790; its move 245, margin thousands)
+    and H18 (from H4k through S21; H4k to Draynor bank to H18, 318);
   - **clear**: H6, H4p, H7, H8, H9, H10, H12 and H21d.
 - **Parameters:** the row id and the partner's account name. The row is the data: its `in` is what
   SCORED receives, its `out` (reason `swap` or `trade`) what it gives, its `equip` what it wears
@@ -2707,8 +2717,10 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   receives. Both open on an observed-tick bound and re-send a dropped click after `DROPPED_TICKS`,
   since the partner stands beside SCORED. `swap()` offers only the inventory, so a worn item the
   row gives is taken off first.
-- **Preconditions:** the partner in view (it is on the tile before SCORED arrives, rs/41's rule for
-  every helper); SCORED holds exactly what it gives; what it receives fits the free slots, counting
+- **Preconditions:** for a standing partner, the partner in view (it is on the tile before SCORED
+  arrives, rs/41's rule); for a mule row, SCORED within 12 tiles of the row's fixed stand, the
+  carrier's readiness (600 ticks) and sight (10) then waited for inside the run (the late-carrier
+  bullet above; rs/603, 498f5fb0); SCORED holds exactly what it gives; what it receives fits the free slots, counting
   the slots the given items free (the server counts an offered item as freed, `trade.rs2`) and the
   slot each unequip takes first. A received stack takes a slot only when none is in the pack.
 - **Postconditions and `done`:** the post-hand-off state: every `in` at its count, every given item
@@ -3034,7 +3046,7 @@ the next leg or trade.
 - The table's header line is exactly `| row | in | out | equip | needAtStart | source |`; the table
   ends at the first line that does not start with `|`. `-` is an empty cell.
 - `row`: the RUN-ORDER.md id (`S04`, `T04-05`, `H4`, `H4k`), with `H4.x`, `H4m.x` and `H14.x` for
-  one load of H4.1-H4.n, H4m.1-H4m.4 and H14.1-H14.13.
+  one load of H4.1-H4.n, H4m.1-H4m.N (N in the fallback row's id) and H14.1-H14.13.
 - `in`: entries separated by `; `, each `ITEM xCOUNT [K]`. K is `s` (stackable: one slot per stack,
   merging with a held stack), `u` (unstackable: COUNT slots) or `n` (noted: one slot per stack,
   merging). COUNT is an integer or `?`. Text in parentheses after `[K]` is a note. A top-up is
@@ -3125,7 +3137,7 @@ S10b) or fire (S10b to S14, and H13 to H22, fold-in 25) supplies its element.
 | T06-07 | - | law rune x1 (consume: Falador teleport); air rune x3 (consume); air rune all (drop: S06's air runes) | - | 0 | RUN-ORDER T06-07 (r) |
 | H4k | rune axe x1 [u]; knife x1 [u]; logs @1511 x1 [u] | - | - | 3 | SUPPLIES H4k (r); rs/318 ruling 1, bones-placement.md's assumption (r); the pickaxe and the Mining log moved to H4p (rs/319, d60cee33, m); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
 | H4.x | <bones> x23 [u] (dragon bones @536 / babydragon bones @534 only, dragon first per giver; served by `bone-giver.ts`, not runHandOff; the final b04 load `<bones> x21 [u]` + law rune x1 [s] + air rune x5 [s], the S07 last-load sub-row; rs/158's ruling, fold-in 31) (one load of n: **42 on the proven stock, 283 dragon + 681 babydragon** (fold-in 31, rs/41 01:09Z); 25 on the 2026-10-23 forecast, 16 with every line held, **42 as staged on 251 dragon** (fold-in 25, rs/383: 964 bones, dragon first from each giver's bank), 43 on the 21:20 UTC stock) | - | - | 24 | SUPPLIES H4.1-H4.n (r); `woodcutting.ts` preconditions: free + held bones >= load + 1, the 1 for the chopped log (r); 25 free, with `keepProducts: 1` on the normal band and every oak and willow band starting by dropping logs past 1, 0 ticks (rs/319, d60cee33, m, lab); the rune axe carried, not wielded, at Attack 1 (r) |
-| S07 | - | <bones> x23 (consume: buried in the knife loop, S25b) | - | 2 | MAN entry 3 (r); `woodcutting.ts`: 2 free (r); products past 1 normal log dropped (rs/319, d60cee33, m); T07a and S25b are inside S07 |
+| S07 | - | <bones> x23 (consume: buried in the knife loop, S25b) | - | 2 | MAN entry 3 (r); `woodcutting.ts`: 2 free (r); products past 1 normal log dropped (rs/319, d60cee33, m); T07a and S25b are inside S07; with H4m (attempt 4, the fallback table), S07 closes at Prayer 98 (`s07PrayerTo`), burying past WC 99 only if the band falls short of 98's 37,263 base (on rs/41's final table 369 dragon + 357 babydragon = 726 bones against S07's ~737-780, so none expected, i); the rest of 99 comes from H4m in S09 |
 | S07 last load | law rune x1 [s]; air rune x5 [s] (T07-08's Camelot teleport) | rune axe x1 (drop: `dropAxe` at S07's end, 0 ticks) | - | 2 | S07 closes with no bones on both paths (rs/663): flagged, at WC 99 and Prayer 99 with the held bones buried, the cue's `lastLoad` makes b04's next load the Camelot runes alone; count, the last band buries every bone it holds before it closes. End pack: rune axe, knife, 1 log, law 1, air 5 (the axe then dropped by `dropAxe`); the 0-tick path (fold-in 22): rs/329's `finalExtras` / `finalN` on main with fleet snapshot 4 (#310), rs/333's `bones.lastLoad` with #293 (r); the last load is 21 bones + law 1 + air 5, the same 23 stacks (r); a sub-row, not a hand-off, so `runner/handoff.ts` makes no trade; the runes from cairn_b04's bank, b04 serving the group's last load (rs/383, 86ea3e16; fold-in 25), and until rs/329's giver code and rs/436 are on main the fallback below is in force; the fallback, H4e's swap at S07's end (the axe back, 4 ticks on SCORED's clock, rs/319, d60cee33, m, lab, +5 i); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
 | T07-08 | - | law rune x1 (consume: Camelot teleport); air rune x5 (consume); <bones> any (drop: the backstop for a bone still held at S07's end; 0 ticks and nothing to drop when none is held, which is S07's close since rs/663; a held bone would make H6 refuse) | - | 0 | S07 closes with no bones since rs/663; this drop stays as the backstop (main 05:1xZ), 0 when none held; RUN-ORDER T07-08 (r); Camelot is 1 law and 5 air (r); the runes from S07's last load (fold-in 22; H4e's swap the fallback); the pack after it, the knife and 1 log, 26 free (2 of 28 used; fold-in 40, the walk's own count; "24 free" before, rs/158 01:39 PDT, r) |
 | H6 | dwellberries x1 [u]; bucket of water @1929 x4 [u] (obj `bucket_water`; the game has three objs of that name); spade x1 [u]; rope x1 [u]; chocolate dust x1 [u]; bucket of milk x1 [u]; snape grass x1 [u]; law rune x2 [s] (Ardougne, T08-09; no water: T08-09 casts on the staff of water, so H6's 2 water runes, never spent, are dropped, rs/451's rune pins, fold-in 25) | - | - | 12 | SUPPLIES H6 (r); the Camelot runes moved to H4e (rs/318 ruling 2; rs/158 01:12 PDT, r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
@@ -3133,7 +3145,7 @@ S10b) or fire (S10b to S14, and H13 to H22, fold-in 25) supplies its element.
 | S08 exit | - | spade x1 (drop: Z's exit, inside S08's figure); bucket all (drop: the 4 empties); gas mask x1 (drop: taken off at Z) | - | 0 | rs/400 (fold-in 23: Z takes the gas mask off, then drops the spade, the 4 empty buckets and the mask, 3 ticks, m, r); a sub-row, because a row gives before it receives (r) |
 | T08-09 | - | law rune x2 (consume: Ardougne teleport; the staff of water covers the water) | - | 0 | RUN-ORDER T08-09 (r); rs/318 ruling 3, P1 (r); Plague City's exit drops moved into S08 (rs/400, fold-in 23, r) |
 | H4p | rune pickaxe x1 [u]; logs @1511 x1 [u] (with S07's kept log, the 2 Mining logs) | - | - | 2 | rs/318 ruling 1 (r); rs/319, d60cee33: `mining.ts` receives at S09's start, its precondition 6 free (the 2 kit slots and the band's 4), 3 ticks on the giver's clock (m, lab), priced +5 i on S09; 0 logs lost over 1,050 ores (rs/226, m); stands alone at S09 on the forecast stock; staging rs/331, `helpers/staging.md` ba7303c5 (r) |
-| S09 | - | rune pickaxe x1 (drop: `mining.exit` at 99); logs @1511 all (drop: `mining.exit`) | - | 4 | MAN entry 4 (r); `mining.ts` FREE_SLOTS 4: ore, a gem, a stray fletch (r); `mining.exit` drops every pickaxe, log and leftover ore, gem or arrow shaft at 99, never the knife, 0 ticks (rs/319, d60cee33, m, lab) |
+| S09 | - | rune pickaxe x1 (drop: `mining.exit` at 99); logs @1511 all (drop: `mining.exit`) | - | 4 | MAN entry 4 (r); `mining.ts` FREE_SLOTS 4: ore, a gem, a stray fletch (r); `mining.exit` drops every pickaxe, log and leftover ore, gem or arrow shaft at 99, never the knife, 0 ticks (rs/319, d60cee33, m, lab); with H4m (attempt 4), the band buries babydragon bones from H4m.1-H4m.N on `stay2`. That row is in the fallback table, which isn't walked, so the bones never sit in this walk; `mining.exit` drops any still held at Prayer 99 |
 | S10a | - | - | - | 0 | retired: Prayer comes from S07, RUN-ORDER S10a (r) |
 | H7 | logs @1511 x6 [u]; staff of fire x1 [u]; amulet of magic x1 [u]; antipoison(3) @175 x1 [u] (obj `3doseantipoison`); shark x2 [u]; death rune x110 [s]; chaos rune x40 [s]; air rune x550 [s] | - | +staff of fire; -staff of water; +amulet of magic | 14 | SUPPLIES H7 (r); 14, the staff of water back into the pack (rs/158 01:12 PDT, r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
 | S10b | gnome amulet x1 [u] (the reward, `quest_tree.rs2:97`) | logs @1511 x6 (hand-in: Montai, `commander_montai.rs2:32`); death rune x26 (consume: ~26 Fire Blasts, the measured count logged per run); air rune x104 (consume: S10b needs 35 casts' runes held at K, death 35 and air 140, `WARLORD_CASTS = 35`, `tree-gnome-village.ts:196, :667`, Fire Blast the warlord's default spell, `:62-69`, with the staff of fire worn; it spends no chaos; rs/185, fold-in 25); staff of water x1 (drop: segment A, dead since H7) | - | 1 | `quest_tree` (r): Bolren takes both orbs of protection back (`king_bolren.rs2:73,98`), so the amulet alone stays; the need, one orb held at a time (r); MAN entry 14 (r); the cast count ~26 (i); the staff's drop at A (rs/342, m; fold-in 22) |
@@ -3212,11 +3224,12 @@ S10b) or fire (S10b to S14, and H13 to H22, fold-in 25) supplies its element.
 The rows below are named packages mule1 serves **on request only**, never in its ordered list (rs/158, fold-in 25). They share the ledger's columns, so `speedrun/helpers/mule-ledger.ts` (rs/41's branch) can read them as named packages, but **`slot-ledger.ts` does not walk them**: its parser takes the first table with the ledger's header in this section and stops at the first line that does not start with `|` (`parseLedger`), so this table, below a heading, is outside its walk (checked: 94 rows before and after it was added). Each row's slot check is stated beside it.
 
 
-**H4m is retired** (fold-in 31): S07's bones are staged with the stock and the persisted config proven (rs/383, rs/41, 01:09Z: 283 dragon + 681 babydragon, all 964 in S07's 42 loads), so nothing overflows to S09's `stay2` lap; its row here and the ledger's H4m.x row are gone (history: `babydragon bones xN [u]`, N set at staging, 7 on 258 dragon, 16 on 251).
+**H4m, attempt 4's variant, in force** (main 06:3xZ, on rs/701's lab pass; fold-in 42). S07's bands hold ~737-780 bones (in-band 0.247 bones a band tick m, demo; 0.260 m, lab; RUN-ORDER S07), short of attempt 4's mix. So S07 closes at **Prayer 98** (`s07PrayerTo` 98, run config; rs/700), and S09's iron band buries babydragon bones on its `stay2` lap, one a lap (rs/701), from H4m.1-H4m.N below. N is in the row's id, its one source (`mule-ledger.ts` `h4mLoadRows`, rs/705). The chain refuses a Prayer target below 99 without the row, a target of 99 with it, and an N short of the target's floor to 99. History: retired in fold-in 31 (S07's 964 bones all fitted; `babydragon bones xN [u]`, 7 on 258 dragon, 16 on 251).
 
 | row | in | out | equip | needAtStart | source |
 |---|---|---|---|---|---|
 | H4e | law rune x1 [s]; air rune x5 [s] | rune axe x1 (swap) | - | 0 | S07's end, used only if the last bone load's runes fail (cairn_b04's `finalExtras`); the axe back in a `swap()`, 4 ticks on SCORED's clock (rs/319, d60cee33, m, lab), +5 i; SUPPLIES H4e (r); the two rune stacks join the slot the axe frees, so 0 more slots (r) |
+| H4m.1-H4m.5 | babydragon bones @534 x20 [u] | - | - | 20 | attempt 4's H4m (main 06:3xZ / 06:5xZ); carrier cairn_h55 at (2606,3234), off the lap, SCORED on stay2's east stay (2605,3234) (MAN entry 4's lap); H4m.1 carried on h55's H4p trip and served as its own trade straight after H4p at S09's start (no bank leg), each later load when SCORED holds 0 babydragon bones (1 held + 20 would leave 3, below FREE_SLOTS); slots: S09 holds the knife, 2 logs and the pickaxe, 24 free, so 20 leaves 4 = mining.ts FREE_SLOTS (r); count: Prayer 98 (37,263.00 base) to 99 (39,938.32) = 2,675.32 base = 90 babydragon bones at 30 (r, lib/xp.ts), 5 loads of 20, 10 spare; one spare load staged on h55 by rs/41, outside this row; cost ~+95 i over the 5 loads (rs/701's lab, m: trades 5 ticks each, H4m.1 11 after H4p's 9; 14 ticks from a load's last bone to the next ore; the lap 3.064 ticks an ore against 3.000-3.006 while bones are held, ~+0.055 an ore); fallback: once Mining is 99 or iron respawns over 13 ticks, the band buries the held bones by hand (prayer.ts buryHeld, rs/700) and takes the remaining loads at the zoo, so Prayer 99 holds before T09-10; bones held at Prayer 99 dropped; rs/701 (lab), rs/705 (carrier) |
 
 ### R8 respawn packages (not walked)
 

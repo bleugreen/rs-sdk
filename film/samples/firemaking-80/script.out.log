@@ -1,0 +1,6 @@
+Pathfinding initialized in 356ms (136704 zones + 297 mainland fill, 1268350 tiles, 2691 doors masked, 5 one-way doors blocked)
+[BotSDK] Waiting for game state to be ready...
+[BotSDK] Game state ready!
+[BotSDK] Connected and game state ready
+TICKMON minute=0 at=2026-10-23T21:50:00Z secs=45 ticks=114 glued=0 late=0 p50=-1 p90=8 max=22 gaps=0 lateMs=120 periodMs=401
+RESULT film-steps {"error":"step \"S03 firemaking\" run failed: firemaking: refill 0 from the trade giver failed: player_not_found"}

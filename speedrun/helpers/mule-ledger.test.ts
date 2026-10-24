@@ -6,11 +6,12 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { muleOptions, packageForCue, planPackage, requestPackage } from './mule';
-import { muleDelivery } from './mule-itinerary';
+import { deliveryGroup, muleOptions, packageForCue, planCarryGroup, planPackage, requestPackage } from './mule';
+import { H4M_STAND, muleDelivery } from './mule-itinerary';
 import { parseLaunchConfig } from './standalone';
 import { cueDir } from './altar-cue';
-import { configPackages, materializeDeliveryPackage, MULE1_NO_PACKAGE, MULE1_ON_REQUEST, MULE1_ORDER, muleCueDir, muleDrift, muleFromLedger, muleRunOptions, muleRunOptionsByAccount, onRequestGaps, packagesOf, parseFallbacks, stepAfter, stockWalk } from './mule-ledger';
+import { configPackages, h4mLoadRows, H4M_ANCHOR, materializeDeliveryPackage, MULE1_NO_PACKAGE, MULE1_ON_REQUEST, MULE1_ORDER, muleCueDir, muleDrift, muleFromLedger, muleRunOptions, muleRunOptionsByAccount, onRequestGaps, packagesOf, parseFallbacks, stepAfter, stockWalk } from './mule-ledger';
+import { cpSync, mkdirSync, symlinkSync } from 'node:fs';
 
 // Rows in the inventory ledger's grammar (STEP-MANIFEST.md); the items are the test's own.
 const TABLE = `
@@ -32,7 +33,7 @@ const TABLE = `
 | row | in | out | equip | needAtStart | source |
 |---|---|---|---|---|---|
 | H4e | law rune x1 [s]; air rune x5 [s] | rune axe x1 (swap) | - | 1 | fixture (r) |
-| H4m | babydragon bones x16 [u] | - | - | 16 | fixture (r) |
+| H4m.1-H4m.3 | big bones @532 x20 [u] | - | - | 20 | fixture (r) |
 `;
 const ROWS = ['H1', 'H12', 'H21d', 'H22'];
 const ask = () => muleFromLedger(TABLE, { rows: ROWS });
@@ -87,7 +88,7 @@ describe('packages from the ledger', () => {
 
     test('the fallback table: its rows, their lines as in the file; none without the heading', () => {
         const fb = parseFallbacks(TABLE);
-        expect(fb.map(r => r.row)).toEqual(['H4e', 'H4m']);
+        expect(fb.map(r => r.row)).toEqual(['H4e', 'H4m.1-H4m.3']);
         expect(TABLE.split('\n')[fb[0]!.line - 1]).toStartWith('| H4e |');
         expect(parseFallbacks(TABLE.replace('### Fallback hand-offs (not walked)', ''))).toEqual([]);
         // The walk never reads it.
@@ -228,7 +229,7 @@ describe('stockWalk', () => {
 describe('the manifest', () => {
     test("MULE1_ORDER is rs/158's list of cairn_mule1's trades in run order; H4e is served on request", () => {
         expect([...MULE1_ORDER]).toEqual(['H1', 'H4', 'H4k', 'H6', 'H4p', 'H7', 'H8', 'H9', 'H10', 'H12', 'H13', 'H14', 'H15', 'H16', 'H18', 'H19', 'H20', 'H21d', 'H22']);
-        expect([...MULE1_ON_REQUEST]).toEqual(['H4e', 'H4m']);
+        expect([...MULE1_ON_REQUEST]).toEqual(['H4e']);
     });
 
     test("every SUPPLIES.md hand-off the trade giver serves is mule1's package, on-request package, or named as having none", () => {
@@ -251,17 +252,20 @@ describe('the manifest', () => {
 
     test('every mule1 row builds in both forms, fits 28 slots, and shows no drift against itself', () => {
         const manifest = readFileSync(MANIFEST, 'utf8');
+        // H4m's loads follow H4p when the ledger carries the row (rs/41)
+        const order: string[] = [...MULE1_ORDER];
+        order.splice(order.indexOf('H4p') + 1, 0, ...h4mLoadRows(manifest));
         for (const form of ['ask', 'fixed'] as const) {
             const lp = muleFromLedger(manifest, { form });
             const onRequest = MULE1_ON_REQUEST.filter(id => !onRequestGaps(manifest).includes(id));
-            expect(lp.map(p => p.row)).toEqual([...MULE1_ORDER, ...onRequest]);
+            expect(lp.map(p => p.row)).toEqual([...order, ...onRequest]);
             for (const p of lp) expect(p.slots).toBeLessThanOrEqual(28);
             expect(muleDrift(packagesOf(lp), lp)).toEqual([]);
         }
     });
 
     test("H12's shark line takes its max from the row's `to`", () => {
-        const manifest = readFileSync(MANIFEST, 'utf8');
+        const manifest = readFileSync(MANIFEST, 'utf8').replace(/^\| H4m\.1-H4m\.\d+ \|.*\n/m, '');
         const row = parseLedger(manifest).rows.find(r => r.row === 'H12')!;
         const shark = row.in.find(e => e.name === 'shark' && e.topUp);
         const h12 = muleFromLedger(manifest, { rows: ['H12'] })[0]!;
@@ -270,7 +274,7 @@ describe('the manifest', () => {
     });
 
     test("H13's package, regenerated from the ledger, carries `shark to 2` as a top-up of 2 (T15-16b's food)", () => {
-        const h13 = muleFromLedger(readFileSync(MANIFEST, 'utf8'), { rows: ['H13'] })[0]!;
+        const h13 = muleFromLedger(readFileSync(MANIFEST, 'utf8').replace(/^\| H4m\.1-H4m\.\d+ \|.*\n/m, ''), { rows: ['H13'] })[0]!;
         expect(h13.package.items).toContainEqual({ item: 'Shark', topUp: { max: 2 } });
         expect(h13.topUps).toContainEqual({ item: expect.stringMatching(/^shark$/i), to: 2 });
     });
@@ -414,7 +418,7 @@ describe('deliverable runtime configurations', () => {
 
     test('raw H19 names its flour by id; the same row without the id refuses ambiguous flour rather than using the lab projection', () => {
         // STEP-MANIFEST H19 now reads `pot of flour @1933 x1 [u]`.
-        const live = readFileSync(MANIFEST, 'utf8');
+        const live = readFileSync(MANIFEST, 'utf8').replace(/^\| H4m\.1-H4m\.\d+ \|.*\n/m, '');
         expect(live).toContain('pot of flour @1933 x1 [u]');
         const ledger = muleFromLedger(undefined, { rows: ['H19'] });
         expect(ledger[0]!.package.items).toContainEqual({ id: 1933, amount: 1 });
@@ -624,4 +628,176 @@ describe('content-backed delivery materialization', () => {
         expect(stockWalk(muleFromLedger(undefined, { rows: ['H9'] }), [{ id: 617, name: 'Coins', slot: 0, count: 5 }]))
             .toContain('H9: obj 995 wanted 5, the bank holds 0');
     });
+});
+
+describe("H4m's loads: one fallback row, N ordered packages after H4p on its carrier", () => {
+    const live = readFileSync(MANIFEST, 'utf8').replace(/^\| H4m\.1-H4m\.\d+ \|.*\n/m, '');
+    // rs/701's row (rs/158 writes it once main rules H4m in): one load per line, N loads in the id.
+    const ROW = '| H4m.1-H4m.10 | big bones @532 x20 [u] | - | - | 20 | rs/701 fixture (r) |';
+    const withRow = (row = ROW) => {
+        expect(live).toContain('| H4e |');
+        return live.replace(/^\| H4e \|/m, `${row}\n| H4e |`);
+    };
+    const LOADS = Array.from({ length: 10 }, (_, k) => `H4m.${k + 1}`);
+    const delivery = { deliveryRun: 'h4m-test', serve: 'receiver' };
+    const west = { H6: 'cairn_h55', H4p: 'cairn_h55', H7: 'cairn_h55' };
+
+    test('the row is the switch: no H4m row on the run manifest, so no loads anywhere', () => {
+        expect(parseFallbacks(live).some(r => /^H4m/.test(r.row))).toBe(false);
+        // the run's own manifest carries the row in force since main's GO (attempt 4)
+        expect(h4mLoadRows()).toEqual(['H4m.1', 'H4m.2', 'H4m.3', 'H4m.4', 'H4m.5']);
+        expect(muleFromLedger(live, { rows: ['H6', 'H4p', 'H7'] }).map(l => l.row)).toEqual(['H6', 'H4p', 'H7']);
+        expect(h4mLoadRows(withRow())).toEqual(LOADS);
+        expect(h4mLoadRows(withRow(ROW.replace('H4m.1-H4m.10', 'H4m.1-H4m.1')))).toEqual(['H4m.1']);
+    });
+
+    test('the row expands into N packages right after H4p, each its own scope, the one load, feeding S09', () => {
+        const ledger = muleFromLedger(withRow(), { rows: ['H6', 'H4p', 'H7'] });
+        expect(ledger.map(l => l.row)).toEqual(['H6', 'H4p', ...LOADS, 'H7']);
+        const loads = ledger.filter(l => l.anchor !== undefined);
+        expect(loads.map(l => l.row)).toEqual(LOADS);
+        for (const [k, l] of loads.entries()) {
+            expect(l.package).toEqual({ name: `h4m.${k + 1}`, items: [{ id: 532, amount: 20 }], scope: { step: `H4m.${k + 1}`, family: 'mule' } });
+            expect(l).toMatchObject({ onRequest: false, step: 'S09', anchor: H4M_ANCHOR, slots: 20, takeBackSlots: 0, takesBack: [], topUps: [] });
+        }
+        expect(ledger.find(l => l.row === 'H4p')!.step).toBe('S09');
+        // Each load is a separate object: changing one cannot change another.
+        loads[0]!.package.items[0] = { id: 532, amount: 1 };
+        expect(loads[1]!.package.items).toEqual([{ id: 532, amount: 20 }]);
+        // The rows around them are exactly what they are without the row.
+        expect(ledger.filter(l => l.anchor === undefined)).toEqual(muleFromLedger(live, { rows: ['H6', 'H4p', 'H7'] }));
+        for (const form of ['ask', 'fixed'] as const) expect(muleFromLedger(withRow(), { form }).map(l => l.row)).toEqual([...MULE1_ORDER.slice(0, 5), ...LOADS, ...MULE1_ORDER.slice(5), 'H4e']);
+    });
+
+    test('no H4p selected, no loads; never selected or requested by name; one well-formed row, a fixed load with nothing back', () => {
+        expect(muleFromLedger(withRow(), { rows: ['H6', 'H7'] }).map(l => l.row)).toEqual(['H6', 'H7']);
+        expect(() => muleFromLedger(withRow(), { rows: ['H4p', 'H4m.1'] })).toThrow("H4m.1: H4m's loads come with H4p");
+        expect(() => muleFromLedger(withRow(), { rows: ['H4p'], onRequest: ['H4m'] })).toThrow("H4m: H4m's loads come with H4p");
+        for (const bad of ['H4m.1-H4m.0', 'H4m.2-H4m.10', 'H4m.x', 'H4m.1-H4m.10x']) {
+            expect(() => muleFromLedger(withRow(ROW.replace('H4m.1-H4m.10', bad)), { rows: ['H4p'] })).toThrow('must be the one row H4m.1-H4m.N');
+        }
+        // A bare H4m row is attempt 1's retired on-request package: not the switch.
+        expect(muleFromLedger(withRow(ROW.replace('H4m.1-H4m.10', 'H4m')), { rows: ['H4p'] }).map(l => l.row)).toEqual(['H4p']);
+        expect(h4mLoadRows(withRow(ROW.replace('H4m.1-H4m.10', 'H4m')))).toEqual([]);
+        expect(() => muleFromLedger(withRow(`${ROW}\n${ROW}`), { rows: ['H4p'] })).toThrow('must be the one row');
+        expect(() => muleFromLedger(withRow(ROW.replace('big bones @532 x20 [u]', 'big bones @532 to 20 [u]')), { rows: ['H4p'] })).toThrow('a load is a fixed count');
+        expect(() => muleFromLedger(withRow(ROW.replace('| - | - | 20 |', '| bones x1 (swap) | - | 20 |')), { rows: ['H4p'] })).toThrow('a load takes nothing back');
+        expect(() => muleFromLedger(withRow(ROW.replace('x20 [u]', 'x29 [u]')), { rows: ['H4p'] })).toThrow('more than the mule');
+    });
+
+    test("h55's order: H6, H4p, H4m.1..N, H7; load 1 carried with H4p (22 of 28 slots), each load at the stand, banked at Ardougne south", () => {
+        const ledger = muleFromLedger(withRow(), { rows: ['H6', 'H4p', 'H7'] });
+        const [entry, ...rest] = muleRunOptionsByAccount(ledger, '/run/cues', { ...delivery, accounts: west });
+        expect(rest).toEqual([]);
+        expect(entry!.account).toBe('cairn_h55');
+        const packages = entry!.options.packages;
+        expect(packages.map(p => p.scope!.step)).toEqual(['H6', 'H4p', ...LOADS, 'H7']);
+        const h4p = packages[1]!;
+        expect(h4p.carryNext).toBe(true);
+        expect(h4p.takeBackSlots).toBe(0);
+        for (const p of packages.slice(2)) {
+            expect(p.carryNext).toBeUndefined();
+            expect(p.takeBackSlots).toBeUndefined();
+        }
+        for (const p of packages.slice(2, 12)) {
+            expect(p.at).toEqual(H4M_STAND);
+            expect(p.bank).toEqual({ x: 2654, z: 3283, level: 0 });
+            expect(p.items).toEqual([{ id: 532, amount: 20 }]);
+        }
+        expect(muleDrift(entry!.options, ledger, { delivery })).toEqual([]);
+        const uncarried = structuredClone(entry!.options);
+        delete uncarried.packages[1]!.carryNext;
+        expect(muleDrift(uncarried, ledger, { delivery })).toContain('H4p: carryNext differs from canonical carry plan');
+        // The carry group the carrier stages from its bank: H4p's pickaxe and log, then 20 big bones.
+        const options = muleOptions({ ...entry!.options });
+        const ordered = options.packages.filter(p => !p.onRequest);
+        const group = deliveryGroup(ordered, ordered[1]!);
+        expect(group.map(p => p.name)).toEqual(['h4p', 'h4m.1']);
+        const stage = planCarryGroup(group, [
+            { slot: 0, id: 1275, name: 'Rune pickaxe', count: 1 }, { slot: 1, id: 1511, name: 'Logs', count: 7 }, { slot: 2, id: 532, name: 'Big bones', count: 200 },
+        ]);
+        expect(stage.peakSlots).toBe(22);
+        expect(Object.fromEntries(stage.inventory)).toEqual({ 1275: 1, 1511: 1, 532: 20 });
+        // Two loads never fit: H4m.2 and later each take a bank trip.
+        expect(() => planCarryGroup([...group, ordered[3]!], [{ slot: 0, id: 1275, name: 'Rune pickaxe', count: 1 }, { slot: 1, id: 1511, name: 'Logs', count: 7 }, { slot: 2, id: 532, name: 'Big bones', count: 200 }])).toThrow('42 slots');
+    });
+
+    test("loads ride H4p's carrier: no binding of their own needed, a different one refused, and a carrier without H4p gets none", () => {
+        const ledger = muleFromLedger(withRow(), { rows: ['H6', 'H4p', 'H7'] });
+        expect(muleRunOptionsByAccount(ledger, undefined, { ...delivery, accounts: { ...west, 'H4m.3': 'Cairn H55' } })[0]!.options.packages).toHaveLength(13);
+        expect(() => muleRunOptionsByAccount(ledger, undefined, { ...delivery, accounts: { ...west, 'H4m.3': 'cairn_mule2' } })).toThrow("H4m.3: a load rides H4p's carrier, cairn_h55");
+        expect(() => muleRunOptionsByAccount(ledger, undefined, { ...delivery, accounts: { H6: 'cairn_h55', H7: 'cairn_h55' } })).toThrow('H4p: explicit account binding');
+        // H4p and H4m.1 on different carriers: no carry.
+        const split = muleRunOptionsByAccount(ledger.filter(l => l.row !== 'H6' && l.row !== 'H7'), undefined, { ...delivery, accounts: { H4p: 'west_a' } });
+        expect(split[0]!.options.packages[0]!.carryNext).toBe(true);
+        const alone = muleRunOptions(ledger.filter(l => l.row === 'H4p'), undefined, delivery);
+        expect(alone.packages[0]!.carryNext).toBeUndefined();
+    });
+
+    test("the production binding puts every load on h55 between H4p and H7; mule1's and h03's configs are unchanged", () => {
+        const prod = JSON.parse(readFileSync(join(import.meta.dir, '../../docs/speedrun/research/mule-delivery-production.json'), 'utf8')) as {
+            rows: string[]; onRequest: string[]; accounts: { account: string; options: { packages: { scope?: { step: string; family: string } }[] } }[];
+        };
+        // carriers-gen.ts's own reading of the binding.
+        const accounts: Record<string, string> = {};
+        for (const a of prod.accounts) for (const p of a.options.packages) if (p.scope?.family === 'mule') accounts[p.scope.step] = a.account;
+        const rows = prod.rows.filter(r => accounts[r]);
+        const gen = (manifest: string) => muleRunOptionsByAccount(muleFromLedger(manifest, { form: 'ask', rows, onRequest: prod.onRequest }), '/run/cues', { ...delivery, accounts });
+        const before = gen(live);
+        const after = gen(withRow());
+        expect(after.map(a => a.account)).toEqual(before.map(a => a.account));
+        const steps = (e: (typeof after)[number]) => e.options.packages.map(p => p.scope!.step);
+        expect(steps(before.find(a => a.account === 'cairn_h55')!)).toEqual(['H6', 'H4p', 'H7', 'H8', 'H9', 'H10', 'H12', 'H13', 'H14', 'H15', 'H16']);
+        expect(steps(after.find(a => a.account === 'cairn_h55')!)).toEqual(['H6', 'H4p', ...LOADS, 'H7', 'H8', 'H9', 'H10', 'H12', 'H13', 'H14', 'H15', 'H16']);
+        for (const account of ['cairn_mule1', 'cairn_h03']) expect(after.find(a => a.account === account)).toEqual(before.find(a => a.account === account)!);
+    });
+
+    test('carriers-gen.ts at this commit: byte-identical output without the row; with it, only h55 gains the loads and the H4p carry', () => {
+        const root = join(import.meta.dir, '../..');
+        // A scratch checkout: speedrun copied (MANIFEST is resolved from slot-ledger.ts's own directory),
+        // the STEP-MANIFEST given or not the row, everything else linked.
+        const checkout = (manifest: string) => {
+            const c = mkdtempSync(join(tmpdir(), 'h4m-carriers-'));
+            cpSync(join(root, 'speedrun'), join(c, 'speedrun'), { recursive: true });
+            for (const f of ['sdk', 'server', 'node_modules', 'package.json', 'tsconfig.json', 'bunfig.toml']) symlinkSync(join(root, f), join(c, f));
+            mkdirSync(join(c, 'docs/speedrun/research'), { recursive: true });
+            writeFileSync(join(c, 'docs/speedrun/STEP-MANIFEST.md'), manifest);
+            cpSync(join(root, 'docs/speedrun/research/mule-delivery-production.json'), join(c, 'docs/speedrun/research/mule-delivery-production.json'));
+            return c;
+        };
+        const run = (c: string) => {
+            const out = join(mkdtempSync(join(tmpdir(), 'h4m-carriers-out-')), 'carriers.json');
+            const r = Bun.spawnSync([process.execPath, join(root, 'docs/speedrun/scripts/carriers-gen.ts'), '/run/rc-cue', out], { env: { ...process.env, CHECKOUT: c, SCORED_NAME: 'lab_scored' }, stdout: 'pipe', stderr: 'pipe' });
+            expect(r.stderr.toString()).toBe('');
+            expect(r.exitCode).toBe(0);
+            return readFileSync(out, 'utf8');
+        };
+        const today = run(root);
+        const absent = run(checkout(live));
+        const present = run(checkout(withRow()));
+        expect(absent).not.toContain('h4m');
+        // The checkout's own ledger carries the row in force (attempt 4): its output is the row-less one plus exactly the loads and the H4p carry.
+        {
+            type Pkgs = { accounts: { account: string; options: { packages: { name: string; carryNext?: true; takeBackSlots?: number }[] } }[] };
+            const inForce = JSON.parse(today) as Pkgs;
+            const o = inForce.accounts.find(a => a.account === 'cairn_h55')!.options;
+            expect(o.packages.filter(p => p.name.startsWith('h4m.')).map(p => p.name)).toEqual(h4mLoadRows(readFileSync(MANIFEST, 'utf8')).map(r => r.toLowerCase()));
+            o.packages = o.packages.filter(p => !p.name.startsWith('h4m.'));
+            delete o.packages.find(p => p.name === 'h4p')!.carryNext;
+            delete o.packages.find(p => p.name === 'h4p')!.takeBackSlots;
+            expect(JSON.stringify(inForce, null, 2) + '\n').toBe(absent);
+        }
+        type Out = { accounts: { account: string; options: { packages: { name: string; carryNext?: true; takeBackSlots?: number }[] } }[] };
+        const without = JSON.parse(absent) as Out;
+        const withLoads = JSON.parse(present) as Out;
+        const h55 = withLoads.accounts.find(a => a.account === 'cairn_h55')!.options;
+        expect(h55.packages.filter(p => p.name.startsWith('h4m.')).map(p => p.name)).toEqual(LOADS.map(r => r.toLowerCase()));
+        expect(h55.packages.find(p => p.name === 'h4p')).toMatchObject({ carryNext: true, takeBackSlots: 0 });
+        // Strip what the row adds; the rest is today's output byte for byte.
+        h55.packages = h55.packages.filter(p => !p.name.startsWith('h4m.'));
+        delete h55.packages.find(p => p.name === 'h4p')!.carryNext;
+        delete h55.packages.find(p => p.name === 'h4p')!.takeBackSlots;
+        expect(JSON.stringify(withLoads, null, 2) + '\n').toBe(JSON.stringify(without, null, 2) + '\n');
+        expect(JSON.stringify(without, null, 2) + '\n').toBe(absent);
+    }, 120_000);
 });

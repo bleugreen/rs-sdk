@@ -6,7 +6,7 @@ import { buildChain, KIT_PARTNER_ROWS, PLACEMENT } from '../runner/chain';
 import { applyStandIn, labRefusal, STAND_INS, type LabWorld, type StandIn } from './stand-ins';
 
 const LAB: LabWorld = { staffLevel: '4', server: 'localhost', gateway: 'ws://localhost:8300/gateway' };
-const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id}`]));
+const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, `p_${id}`]));
 const chain = buildChain({ partners, firemakingTiles: '3240,3296', rings: { giver: 'r' }, bones: { giver: 'b' }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: '/tmp/x' }, { cues: { open: async () => {}, stop: () => {} } });
 
 describe('the guard: stand-ins run on a lab only', () => {
