@@ -12,11 +12,11 @@
 //   woodcutting:normal-1-15      knife-cycle `tree`, plain: the band is about 3 logs, so a
 //                                20-trial probe would cost more than the band, and the in-page
 //                                knife on normal trees (7.24 per log) is slower than plain
-//   woodcutting:oak-15-73        knife-cycle `oak` under rs/156's gated loop, own gate (the
-//                                knife, ungated, when burying: see Bones)
+//   woodcutting:oak-15-73        knife-cycle `oak` under rs/156's gated loop, own gate (when
+//                                burying, no gate: the on-time switch, see Bones)
 //   woodcutting:walk-willows     the oak-to-willow leg, kept out of the band rows
-//   woodcutting:willow-73-99     knife-cycle `willow`, gated, to `to` (burying: the knife, and on
-//                                past `to` while Prayer or the runes are owed: see Prayer at the end)
+//   woodcutting:willow-73-99     knife-cycle `willow`, gated, to `to` (burying: the on-time switch,
+//                                and on past `to` while Prayer or the runes are owed: see Prayer at the end)
 //
 // The gate's reference is plain ticks per expected roll (4: the plain loop's 4-tick cycle), and
 // each log is weighted by the rolls it stands for at the current level (1 / success chance), so
@@ -34,17 +34,27 @@
 // a stop and a re-probe. And each band's probe walks only to the stand's free neighbours
 // (`freeDirs`, from the trees' footprints), since every blocked one costs the probe 9 ticks.
 //
-// Bones (S07): with `bury`, the oak and willow bands run the knife throughout, with no gate and
-// no probe, and their segments carry knife-cycle's `bury` and `trees`. Only a knife segment buries
-// here and only a knife segment asks for a load, so a gated band whose probe read a ragged server
-// ran plain and neither buried nor loaded (attempt 3: the willow band's first probe read 15/20, and
-// it could never reach its Prayer). knife-cycle's own plain + bury loop is not used. The giver asks
-// to trade while the account holds 2 bones; the account takes the trade on the roll label after its
-// last bury (2 ticks after the pack shows none: the bury lands on R+1, the cycle's click rolls on
-// R+3), by stopping the run, `receiveFrom`, and starting it again. A load's number in its row is
-// the S07 session's: with a group, the loads its status files count before the band, plus the
-// band's own. The bones a burying band holds count as free slots in its 2-slot precondition: its
-// first cycles bury them.
+// Bones (S07): with `bury`, the oak and willow bands run no gate and no probe, and every segment,
+// knife or plain, carries knife-cycle's `bury` and `trees`: knife-cycle has two bury loops, knife +
+// bury (a bone on the 3-tick lattice) and plain + bury (a bone in the plain 4-tick cycle's idle
+// ticks, #165), so a burying band never chops without burying, whichever it runs. Attempt 3's gated
+// willow band, whose probe read a ragged server (15/20), ran plain without `bury` and could never
+// reach its Prayer; rs/642's forced knife then lost a roll to every late bury-cycle send (a click
+// landing in the bury's p_delay is dropped, OpLocHandler.ts). So under `technique` auto a burying
+// band switches between the two loops on the on-time rate it measures in itself (OnTimeMeter):
+// knife-cycle judges each Bury on time or late on the label after it should have landed
+// (`buryOnTime`, `buryLate`). The band starts on the knife, every band and every resume, with an
+// empty window; it goes to plain + bury once a 50-Bury knife window can no longer reach the
+// break-even, 37 of 50 (14.5 of 20, where the two loops met in rs/643's lab: a late Bury drops its
+// cycle's click in plain + bury too), and back to the knife on a plain + bury window of 41 of 50 or
+// better (the switch section's comment says why). A forced `technique` knife or
+// plain runs that loop alone, still burying. The giver asks to trade while the account holds 2
+// bones; the account takes the trade on the roll label after its last bury (2 ticks after the pack
+// shows none: knife, the bury lands on R+1 and the cycle's click rolls on R+3; plain + bury, the
+// bury lands on R+2 and the click rolls on R+4), by stopping the run, `receiveFrom`, and starting it
+// again in the technique it ran. A load's number in its row is the S07 session's: with a group, the
+// loads its status files count before the band, plus the band's own. The bones a burying band holds
+// count as free slots in its 2-slot precondition: its first cycles bury them.
 //
 // Routes: `route` picks the stands as data (ROUTES). `taverley` (SITES) is the scored run's;
 // `rimmington` (the Rimmington oaks and the Draynor-west willows) walks about 130 ticks less
@@ -80,13 +90,13 @@
 // Prayer at the end: the last burying band ends on the Woodcutting level and on the Prayer it owes.
 // At `to` with Prayer under `prayerTo` and something left to bury (bones held, or a load the givers
 // are known to hold: `lastLoad`'s still to come, or fewer loads given than the group's status files
-// publish as its `loads`), the band runs the knife cycle on, bounded by Prayer instead of the level
+// publish as its `loads`), the band runs its bury loop on, bounded by Prayer instead of the level
 // (PRAYER_RUN_TICKS per run), taking loads as before, the runes' load still last. It closes once
 // Prayer reaches `prayerTo` or nothing is left, and only then may its Prayer postcondition fail.
 // With `lastLoad` it also stays while the runes' load is still to come and a load is known to be
 // left, even at `prayerTo`: T07-08's runes ride the group's last load, so a group whose `loads`
-// outlasts the Prayer still delivers them. What those loads bring is buried, since the knife cycle
-// buries a bone a roll at no cost to the chop. It closes once the runes are held, or with no load
+// outlasts the Prayer still delivers them. What those loads bring is buried, since either bury loop
+// buries a bone a roll at little cost to the chop. It closes once the runes are held, or with no load
 // left, which keeps the runes postcondition's failure. `done` and `inProgress` read the same, so a
 // resume at `to` that still owes Prayer or the runes re-enters the band, and the willow walk takes
 // it back to the stand.
@@ -427,6 +437,8 @@ export interface WoodcuttingOptions {
     params?: Record<string, unknown>;
     /** `params.hold`, flat for the CLI. */
     hold?: number | string;
+    /** Lab only: `hold` goes only on runs started within this many ticks of a band's start (a ragged stretch that ends). */
+    holdTicks?: number | string;
     /** knife-cycle's `waitRespawn` on oak and willow knife segments (default true; 'false' from the CLI turns it off). */
     waitRespawn?: boolean | string;
     /** Probe only the stand's free neighbours (default true; 'false' probes E, W, N, S as the page does). */
@@ -462,6 +474,7 @@ interface Resolved {
     hpStop: number;
     gate: Partial<InPageGateOptions>;
     params: Record<string, unknown>;
+    holdTicks: number | null;
     waitRespawn: boolean;
     probeDirs: boolean;
     keepProducts: number;
@@ -503,7 +516,6 @@ function resolve(opts: WoodcuttingOptions): Resolved {
     const b = opts.bury;
     const bury = b === undefined || b === false || b === 'false' ? null : b === true || b === 'true' ? true : String(b);
     if (bury !== null && to <= BANDS[0]!.end) throw new Error(`woodcutting: bury needs an oak or willow band, and to=${to} ends on normal trees`);
-    if (bury !== null && technique === 'plain') throw new Error('woodcutting: bury runs the knife (a burying band never runs plain)');
     const giver = opts.bones?.giver ?? opts.boneGiver;
     const groupRaw = opts.bones?.group ?? opts.boneGroup;
     const group = groupRaw === undefined ? null : groupOpt(groupRaw);
@@ -522,6 +534,8 @@ function resolve(opts: WoodcuttingOptions): Resolved {
     if (!Object.hasOwn(ROUTES, route)) throw new Error(`woodcutting: route must be ${Object.keys(ROUTES).join(' or ')}, got ${JSON.stringify(route)}`);
     const sitesIn = typeof opts.sites === 'string' ? (JSON.parse(opts.sites) as Partial<Sites>) : (opts.sites ?? {});
     const hold = opts.hold === undefined ? {} : { hold: numberOpt('hold', opts.hold, n => n >= 0 && n <= 1, 0) };
+    if (opts.holdTicks !== undefined && opts.hold === undefined) throw new Error('woodcutting: holdTicks bounds hold, and there is none');
+    const holdTicks = opts.holdTicks === undefined ? null : numberOpt('holdTicks (a whole number of ticks)', opts.holdTicks, n => Number.isInteger(n) && n >= 0, 0);
     const hb = opts.handBack;
     let handBack: string | null = null;
     if (hb === true || hb === 'true') {
@@ -545,6 +559,7 @@ function resolve(opts: WoodcuttingOptions): Resolved {
         hpStop: numberOpt('hpStop (an integer from 0 to 98)', opts.hpStop, n => Number.isInteger(n) && n >= 0 && n <= 98, 0),
         gate: opts.gate ?? {},
         params: { ...opts.params, ...hold },
+        holdTicks,
         waitRespawn: flag('waitRespawn', opts.waitRespawn, true),
         probeDirs: flag('probeDirs', opts.probeDirs, true),
         keepProducts: numberOpt('keepProducts (an integer from 0 to 27)', opts.keepProducts, n => Number.isInteger(n) && n >= 0 && n <= 27, NORMAL_KEEP),
@@ -568,23 +583,34 @@ export function bandFor(s: BotWorldState, opts: WoodcuttingOptions = {}): Band['
 }
 
 /**
- * The technique a band runs: a burying band (oak or willow with `bury`) the knife, since only knife
- * segments bury and load (see Bones); normal trees plain unless the knife is forced; else the option.
+ * The technique a band starts on: a burying band (oak or willow with `bury`) the knife, or plain
+ * when plain is forced (see Bones; under auto it then switches on its on-time rate, `bandSwitches`);
+ * normal trees plain unless the knife is forced; else the option ('auto': the gate).
  */
 export function bandTechnique(opts: WoodcuttingOptions, tree: Tree): GatedTechnique {
     return techniqueOf(resolve(opts), tree);
 }
 
+/** A burying band under `technique` auto: no gate, the on-time switch between knife + bury and plain + bury (see Bones). */
+export function bandSwitches(opts: WoodcuttingOptions, tree: Tree): boolean {
+    return switchesOf(resolve(opts), tree);
+}
+
+const buryingOf = (o: Resolved, tree: Tree) => tree !== 'normal' && o.bury !== null;
+const switchesOf = (o: Resolved, tree: Tree) => buryingOf(o, tree) && o.technique === 'auto';
+
 function techniqueOf(o: Resolved, tree: Tree): GatedTechnique {
-    if (tree !== 'normal' && o.bury !== null) return 'knife';
+    if (buryingOf(o, tree)) return o.technique === 'plain' ? 'plain' : 'knife';
     return tree === 'normal' && o.technique === 'auto' ? 'plain' : o.technique;
 }
 
 /**
- * knife-cycle's parameters for a band and technique. `bury` and `waitRespawn` go on knife segments
- * only (normal trees fall on every log, so they never wait for a respawn), and `dropEach` (rs/152:
- * drop on the label that shows the log, re-click on the same pass) on plain ones only. The normal
- * band passes `keepProducts` on both: its product is the knife's own log.
+ * knife-cycle's parameters for a band and technique. A burying band passes `bury` on both
+ * techniques (knife + bury and plain + bury, see Bones), and `waitRespawn` on knife segments only
+ * (normal trees fall on every log, so they never wait for a respawn). `dropEach` (rs/152: drop on
+ * the label that shows the log, re-click on the same pass) goes on plain segments that do not bury:
+ * plain + bury drops on its own roll label. The normal band passes `keepProducts` on both: its
+ * product is the knife's own log.
  */
 export function bandParams(opts: WoodcuttingOptions, tree: Tree, untilLevel: number): (technique: SegmentTechnique) => Record<string, unknown> {
     return paramsOf(resolve(opts), tree, untilLevel);
@@ -600,7 +626,8 @@ function paramsOf(o: Resolved, tree: Tree, untilLevel: number | null): (techniqu
         ...(untilLevel === null ? { maxTicks: PRAYER_RUN_TICKS } : { untilLevel }),
         reanchor: 'xp',
         dismiss: 'now',
-        ...(technique === 'knife' ? { ...(bury !== null ? { bury } : {}), ...(o.waitRespawn && tree !== 'normal' ? { waitRespawn: true } : {}) } : { dropEach: true }),
+        ...(bury !== null ? { bury } : {}),
+        ...(technique === 'knife' ? (o.waitRespawn && tree !== 'normal' ? { waitRespawn: true } : {}) : bury === null ? { dropEach: true } : {}),
         ...(tree === 'normal' ? { keepProducts: o.keepProducts } : {}),
         ...o.params
     });
@@ -754,11 +781,13 @@ export interface BandSummary extends SubBandRow {
     segments: Array<{ technique: SegmentTechnique; reason: string; runId: number; ticks: number; logs: number }>;
     /** `knife->plain (measured)` style list of the segment ends that switched technique. */
     switches: string[];
+    /** A burying band's buries and Burys judged on time and late (knife-cycle), by technique: the per-mode bones a tick and on-time rate. */
+    bury?: Partial<Record<SegmentTechnique, { buried: number; onTime: number; late: number }>>;
 }
 
 const r3 = (n: number) => (Number.isFinite(n) ? Math.round(n * 1000) / 1000 : Number.NaN);
 
-const COUNTERS = ['phaseResyncs', 'resyncs', 'slips', 'switches', 'noTarget', 'levelUps', 'held', 'starters', 'fellBack', 'buried', 'burySent', 'noBoneCycles', 'lateClicks', 'prayerLevelUps', 'overBudget'] as const;
+const COUNTERS = ['phaseResyncs', 'resyncs', 'slips', 'switches', 'noTarget', 'levelUps', 'held', 'starters', 'fellBack', 'buried', 'burySent', 'buryOnTime', 'buryLate', 'noBoneCycles', 'lateClicks', 'prayerLevelUps', 'overBudget'] as const;
 
 function addCell(a: Cell, b: Cell): void {
     a.ticks += b.ticks;
@@ -824,8 +853,15 @@ export function summarizeBand(ledger: BandLedger, segments: readonly GatedSegmen
     const counters: Record<string, number> = {};
     let deferred = 0;
     let skippedTicks = 0;
+    const bury: NonNullable<BandSummary['bury']> = {};
     for (const seg of segments) {
         const st = seg.status;
+        if (st.counters.burySent) {
+            const b = (bury[seg.technique] ??= { buried: 0, onTime: 0, late: 0 });
+            b.buried += st.counters.buried ?? 0;
+            b.onTime += st.counters.buryOnTime ?? 0;
+            b.late += st.counters.buryLate ?? 0;
+        }
         const h = ((st.result as { histogram?: Record<string, number> } | undefined)?.histogram ?? {}) as Record<string, number>;
         const into = (histogram[seg.technique] ??= {});
         for (const [gap, n] of Object.entries(h)) into[Number(gap)] = (into[Number(gap)] ?? 0) + n;
@@ -843,8 +879,109 @@ export function summarizeBand(ledger: BandLedger, segments: readonly GatedSegmen
         deferred,
         skippedTicks,
         segments: segs,
-        switches: segs.slice(0, -1).flatMap((s, i) => (segs[i + 1]!.technique !== s.technique ? [`${s.technique}->${segs[i + 1]!.technique} (${s.reason})`] : []))
+        switches: segs.slice(0, -1).flatMap((s, i) => (segs[i + 1]!.technique !== s.technique ? [`${s.technique}->${segs[i + 1]!.technique} (${s.reason})`] : [])),
+        ...(Object.keys(bury).length ? { bury } : {})
     };
+}
+
+// ------------------------------------------------------------------ the on-time switch (burying bands)
+
+/**
+ * The on-time share at which knife + bury and plain + bury cost the same per landed roll: 14.5 of 20
+ * (main's ruling on rs/643's lab). Both loops lose a roll to a late Bury (its p_delay drops the
+ * cycle's click), and plain + bury lost them faster: at 400 ms with forced lateness, knife 3.95 ticks
+ * per landed roll at 18.5/20 against plain + bury's 6.41 at 17.5/20, and about even at hold 0.25
+ * (knife 7.56 at 13.9/20, plain + bury 7.06 at 16.1/20). The first design's 17.6/20 assumed plain +
+ * bury held its clean ~3.87 (rs/206).
+ */
+export const BURY_BREAK_EVEN = 14.5 / 20;
+/** Burys judged per window. A window holds one technique's Burys only: a switch starts a new one. */
+export const SWITCH_WINDOW = 50;
+/** On time in a knife window, at least, to keep the knife: the break-even, 37 of 50 (36.25 rounded up). */
+export const KNIFE_KEEP = Math.ceil(BURY_BREAK_EVEN * SWITCH_WINDOW - 1e-9);
+/** On time in a plain + bury window, at least, to go back to the knife: 41 of 50 (16.4 of 20). */
+export const KNIFE_BACK = 41;
+
+export interface RateWindow {
+    /** The tick of the status that closed it. */
+    tick: number;
+    technique: SegmentTechnique;
+    onTime: number;
+    judged: number;
+    /** The technique it switched to, or null when it kept the one it ran. */
+    to: SegmentTechnique | null;
+}
+
+/**
+ * A burying band's switch between knife + bury and plain + bury on the on-time rate it measures in
+ * itself, with no probe. It reads knife-cycle's `buryOnTime` and `buryLate` from every status of the
+ * technique it holds, into tumbling windows of SWITCH_WINDOW Burys:
+ *
+ * - knife: once more than SWITCH_WINDOW - KNIFE_KEEP (13) of the window are late it can no longer
+ *   reach the break-even, and the band switches to plain + bury then, not at the window's end: on a
+ *   ragged server each late send costs a roll, so the early switch is the window's own verdict, sooner.
+ * - plain + bury: a full window of KNIFE_BACK (41) or more on time switches back to the knife.
+ *
+ * Why a minimum window and a deadband (37 to 40 keeps either technique), not a bare threshold: the
+ * on-time share over 50 Burys has a standard error of about 0.063 (3.2 Burys) near the break-even,
+ * so a bare threshold re-switches on chop-to-chop noise, and each switch stops and restarts the
+ * program (a re-anchor, a few ticks). The return sits about 1.3 standard errors above the keep.
+ * Simulated on the meter alone: at most ~5 switches per 1000 Burys at any rate (most near 0.75),
+ * none at 0.6 or below or at 0.9 and above; the knife holds 83% of the Burys at 0.80 and 99% at
+ * 0.85, where it is the faster loop. A return at 40 switched up to 6.4 per 1000; one at 42 held the
+ * knife only 75% of the time at 0.80. A ragged start switches after about 36 Burys at 0.6 on time
+ * (the 14th late), 29 at 0.5. The meter lives for one band's run: a resume starts on the knife with
+ * an empty window, since a rate measured before the stop says nothing sure about the server now,
+ * and the early switch bounds a ragged start at 14 late Burys.
+ */
+export class OnTimeMeter {
+    technique: SegmentTechnique = 'knife';
+    /** The open window's counts. */
+    onTime = 0;
+    late = 0;
+    readonly windows: RateWindow[] = [];
+    private runId = Number.NaN;
+    private seenOnTime = 0;
+    private seenLate = 0;
+
+    /** One status of a run of `technique`; returns the technique to switch to now, or null. */
+    observe(st: ProgramStatus, technique: SegmentTechnique): SegmentTechnique | null {
+        if (st.runId !== this.runId) {
+            this.runId = st.runId;
+            this.seenOnTime = 0;
+            this.seenLate = 0;
+        }
+        const on = st.counters.buryOnTime ?? 0;
+        const late = st.counters.buryLate ?? 0;
+        const dOn = Math.max(0, on - this.seenOnTime);
+        const dLate = Math.max(0, late - this.seenLate);
+        this.seenOnTime = on;
+        this.seenLate = late;
+        // a stopped run's last statuses, after the switch away from it, are not the new technique's
+        if (technique !== this.technique) return null;
+        this.onTime += dOn;
+        this.late += dLate;
+        return this.judge(st.tick);
+    }
+
+    private judge(tick: number): SegmentTechnique | null {
+        const judged = this.onTime + this.late;
+        if (this.technique === 'knife') {
+            if (this.late > SWITCH_WINDOW - KNIFE_KEEP) return this.close(tick, 'plain');
+            if (judged >= SWITCH_WINDOW) this.close(tick, null);
+            return null;
+        }
+        if (judged < SWITCH_WINDOW) return null;
+        return this.close(tick, this.onTime >= KNIFE_BACK ? 'knife' : null);
+    }
+
+    private close(tick: number, to: SegmentTechnique | null): SegmentTechnique | null {
+        this.windows.push({ tick, technique: this.technique, onTime: this.onTime, judged: this.onTime + this.late, to });
+        this.onTime = 0;
+        this.late = 0;
+        if (to) this.technique = to;
+        return to;
+    }
 }
 
 // ------------------------------------------------------------------ steps
@@ -1053,7 +1190,8 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
     const site = o.sites[b.tree];
     const technique = techniqueOf(o, b.tree);
     const knifeCapable = technique !== 'plain';
-    const burying = o.bury !== null && b.tree !== 'normal';
+    const burying = buryingOf(o, b.tree);
+    const switching = switchesOf(o, b.tree);
     const giver = burying ? o.bones : null;
     const group = giver && 'group' in giver ? giver : null;
     const passed = (s: BotWorldState) => wcLevel(s) >= end;
@@ -1117,6 +1255,14 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
         const gate = technique === 'auto' ? o.makeGate(sdk, { plainTicksPerRoll: o.plainTicksPerRoll, measureDrops: MEASURE_DROPS, log: o.log, ...(dirs.length ? { dirs } : {}), ...o.gate }) : undefined;
         const ledger = new BandLedger(b.tree, startTick, startLevel);
         const segments: GatedSegment[] = [];
+        // A burying band's switch (see Bones): the band and a resume start on the knife, with an empty window.
+        const meter = switching ? new OnTimeMeter() : null;
+        const switched = (to: SegmentTechnique, tick: number) => {
+            const w = meter!.windows[meter!.windows.length - 1]!;
+            const why = to === 'plain' ? `${w.judged - w.onTime} of ${w.judged} late, past the ${SWITCH_WINDOW - KNIFE_KEEP} a ${SWITCH_WINDOW}-Bury window allows (${KNIFE_KEEP}/${SWITCH_WINDOW}, ${(BURY_BREAK_EVEN * 20).toFixed(1)}/20)` : `${w.onTime}/${w.judged} on time, at least ${KNIFE_BACK}/${SWITCH_WINDOW}`;
+            o.log(`${b.name}: T${tick} ${w.technique} + bury -> ${to} + bury: ${why}`);
+            annotation(log, session, `${b.name}:switch`, tick, tick, true, { kind: 'wc-switch', from: w.technique, to, onTime: w.onTime, judged: w.judged, level: wcLevel(sdk.getState()), prayer: levelOf(sdk.getState(), 'prayer') });
+        };
         // The group finds the scored account by the cue, and its site by the cue's: written before the first load, every band (a resume too).
         if (group && cue) cue.write(sdk.getState(), session.name, site.stand);
         // The loads the group gave in this session before the band (the oak band's, or a stopped process's): row numbers carry on from them.
@@ -1187,7 +1333,7 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
 
         let ended = 'stopped';
         // a load before the first start when the pack is empty, and after each stop for one
-        let needLoad = !!giver && knifeCapable && bonesHeld(s0) === 0 && loadsLeft(s0) !== false;
+        let needLoad = !!giver && bonesHeld(s0) === 0 && loadsLeft(s0) !== false;
         // Once no load is left none comes back: the status files are not read again.
         let spent = false;
         const left = (s: BotWorldState | null): boolean | null => {
@@ -1220,16 +1366,31 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
                 const stop = new AbortController();
                 current = stop;
                 let wantBones = false;
+                // set from the closures, which TypeScript's narrowing does not follow
+                let switchTo = null as SegmentTechnique | null;
                 let noneSince: number | null = null;
-                const result = await o.runGated(sdk, 'knife-cycle', owing ? prayerParams : params, {
-                    technique,
+                const base = owing ? prayerParams : params;
+                // lab only (holdTicks): the forced-slip hold stops reaching runs once the band is that far in
+                const holdOver = o.holdTicks !== null && (sdk.getState()?.tick ?? startTick) - startTick >= o.holdTicks;
+                const runParams = holdOver ? (t: SegmentTechnique) => Object.fromEntries(Object.entries(base(t)).filter(([k]) => k !== 'hold')) : base;
+                const result = await o.runGated(sdk, 'knife-cycle', runParams, {
+                    technique: meter ? meter.technique : technique,
                     ...(gate ? { gate } : {}),
                     rollsPerDrop: s => 1 / successChance(b.tree, wcLevel(s)),
                     signal: stop.signal,
                     log: o.log,
                     onProgress: (st, tech) => {
                         ledger.observe(st, tech, wcLevel(sdk.getState()));
-                        if (stop.signal.aborted || tech !== 'knife') return;
+                        if (stop.signal.aborted) return;
+                        const to = meter?.observe(st, tech) ?? null;
+                        if (to) {
+                            switchTo = to;
+                            switched(to, st.tick);
+                            stop.abort();
+                            return;
+                        }
+                        // either bury loop buries and takes loads (see Bones)
+                        if (!burying) return;
                         const now = sdk.getState();
                         if (owing && !prayerShort(o, now) && !runesOwed(o, now)) {
                             stop.abort();
@@ -1250,6 +1411,12 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
                     },
                     onSegment: seg => {
                         ledger.observe(seg.status, seg.technique, wcLevel(sdk.getState()));
+                        // the run's last Burys, judged after its last progress: the next run starts on their verdict
+                        const to = meter?.observe(seg.status, seg.technique) ?? null;
+                        if (to) {
+                            switchTo = to;
+                            switched(to, seg.status.endedTick ?? seg.status.tick);
+                        }
                         segments.push(seg);
                         const st = seg.status;
                         annotation(log, session, `${b.name}:segment`, st.startedTick, st.endedTick ?? st.tick, seg.reason !== 'fault', {
@@ -1260,8 +1427,9 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
                 });
                 ended = result.ended;
                 if (guard.hit) break;
-                if (result.ended === 'aborted' && wantBones) {
-                    needLoad = true;
+                if (result.ended === 'aborted' && (wantBones || switchTo)) {
+                    // a load, a switch, or both: the next run starts in the meter's technique
+                    if (wantBones) needLoad = true;
                     continue;
                 }
                 // The band's end: the loop's top decides whether Prayer keeps it.
@@ -1287,6 +1455,7 @@ function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null, next
             kind: 'wc-band', ended, technique, route: o.route, stand: [site.stand[0], site.stand[1]], hpStop: o.hpStop, startLevel, endLevel: wcLevel(endState), bonesLoads: loads,
             ...(burying ? { startPrayer, endPrayer: levelOf(endState, 'prayer') } : {}),
             ...summarizeBand(ledger, segments),
+            ...(meter ? { onTimeSwitch: { finalTechnique: meter.technique, windows: meter.windows, open: { onTime: meter.onTime, judged: meter.onTime + meter.late } } } : {}),
             ...(gate ? { gate: gateMeta(gate) } : {}),
             ...(guard.hit ? { stoppedBy: guard.hit } : {})
         });

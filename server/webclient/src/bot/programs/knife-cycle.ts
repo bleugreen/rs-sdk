@@ -74,6 +74,17 @@
 // fallen (seen gone after R) the cycle sends no bone, clicks a live tree as early as the bury
 // allows (its first roll is r0 after it lands) and re-anchors on that roll's xp.
 //
+// On time (`bury`, both loops): the engine deletes a buried bone and gives its xp on the tick after
+// the Bury lands (bury_bone.rs2), so a Bury sent on label S that lands on S+1, its tick, shows the
+// bone gone on label S+2. Each Bury sent is counted on S+2 as `buryOnTime` (one bone fewer than
+// when it went out) or `buryLate` (landed late, or never). A run whose S+2 label the page never
+// saw on its own counts neither. Every bury cycle sends one Bury, so the share on time is the
+// server's on-time rate for that cycle's sends, measured in the loop itself with no probe
+// (woodcutting.ts switches its burying bands between the two loops on it). The runtime's
+// lab-only `hold` reaches each bury cycle's timed sends: the roll label's bundle and the lone
+// click in the knife loop, the bury and the R+3 click in plain + bury. With `hold` unset or 0
+// nothing is drawn or held, and the packets are as before (knife-cycle.test.ts BURY_GOLDEN).
+//
 // Report: a roll is one swing of the cadence (every 3 ticks locked, `plainCycle` plain), and
 // it succeeds with the method's catch chance. `successes` counts the xp drops, one log or
 // fish each, and `ticksPerSuccess` is the mean gap between them, so it sits above the cadence
@@ -264,6 +275,10 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
     let buried = 0;
     let noBoneCycles = 0;
     let lateClicks = 0;
+    // On time (header): the label the last Bury went out on and the bones held then, until S+2 judges it.
+    let buryCheck: { at: number; bones: number } | null = null;
+    let buryOnTime = 0;
+    let buryLate = 0;
     // waitRespawn: the first label of the current all-down wait, the last label that showed every
     // tree down (the lock window starts there), and each finished wait's length.
     let downSince: number | null = null;
@@ -333,10 +348,27 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
     };
     const bones = (s: BotWorldState): InventoryItem[] => (bonesRe ? buryable(s, bonesRe) : []);
     const buryOne = (ctx: ProgramContext): boolean => {
-        if (!bonesRe || !buryBone(ctx, bonesRe)) return false;
+        if (!bonesRe) return false;
+        const held = bones(ctx.state).length;
+        if (!buryBone(ctx, bonesRe)) return false;
         burySent++;
         ctx.count('burySent');
+        buryCheck = { at: lastTick, bones: held };
         return true;
+    };
+    /** Judge the last Bury on its S+2 label (header); a later label first means S+2 was never seen alone. */
+    const judgeBury = (ctx: ProgramContext, t: number) => {
+        if (!buryCheck || t < buryCheck.at + 2) return;
+        if (t === buryCheck.at + 2) {
+            if (bones(ctx.state).length < buryCheck.bones) {
+                buryOnTime++;
+                ctx.count('buryOnTime');
+            } else {
+                buryLate++;
+                ctx.count('buryLate');
+            }
+        }
+        buryCheck = null;
     };
     const breakAt = (t: number) => successes.break(t);
     /** Answer an open dialog once, and again if it is still open 3 labels on. */
@@ -377,6 +409,8 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                 ctx.count('lateClicks');
                 ctx.log('bury click label skipped: re-click');
             }
+            // the cycle's timed click, on its label: the lab's `hold` may hold it (header)
+            if (t === clickDue) ctx.starter();
             clickDue = null;
             click(ctx); // also closes a level-up page (OpLocHandler)
             if (targetGone) treeFell();
@@ -422,6 +456,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                 click(ctx);
                 return;
             }
+            if (bones(s).length) ctx.starter(); // the cycle's timed bury: the lab's `hold` may hold it (header)
             if (buryOne(ctx)) {
                 clickDue = t + 2;
                 return;
@@ -476,7 +511,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
             phase: curPhase,
             switches,
             ...(bonesRe
-                ? { buried, burySent, buriesPerTick: lastTick > startTick ? Math.round((buried / (lastTick - startTick)) * 1000) / 1000 : 0, noBoneCycles, lateClicks, prayerLevelUps }
+                ? { buried, burySent, buriesPerTick: lastTick > startTick ? Math.round((buried / (lastTick - startTick)) * 1000) / 1000 : 0, noBoneCycles, lateClicks, prayerLevelUps, buryOnTime, buryLate }
                 : {}),
             ...(waitRespawn ? { respawnWaits: [...respawnWaits] } : {}),
             ...(fellBack ? { fellBack } : {})
@@ -545,6 +580,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                 }
                 ctx.gauge('bonesLeft', bones(s).length);
                 ctx.gauge('buriesPerTick', t > startTick ? Math.round((buried / (t - startTick)) * 1000) / 1000 : 0);
+                judgeBury(ctx, t);
             }
             const lvl = baseLevel(s, method.skill);
             if (lvl > lastLevel) {
@@ -761,6 +797,8 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                 }
                 if (!method.clickOnRoll) click(ctx);
             } else if (clickDue === t || (k === 2 && method.clickOnRoll)) {
+                // the bury cycle's timed click: the lab's `hold` may hold it (header)
+                if (clickDue === t) ctx.starter();
                 clickDue = null;
                 click(ctx);
             } else if (switchTree && clickDue === null) {

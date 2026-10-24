@@ -14,7 +14,7 @@ import { decideReceiver, newReceiverCtx, type GiveSpec, type ReceiveResult, type
 import { Observation, resolveResume } from '../runner/resume';
 import type { StepContext } from '../runner/step';
 import {
-    BandLedger, bandFor, bandParams, bandTechnique, BANDS, BoneCue, CAMELOT_RUNES, carriedLogs, erlangB, expectedRolls, FOOTPRINT, freeDirs, handBackSpecs, hitBetween, MEASURE_DROPS, modelTicksPerLog, NORMAL_KEEP, PRAYER_RUN_TICKS, PROBE_DIRS, respawnTicks, routeFrom, ROUTES,
+    BandLedger, bandFor, bandParams, bandSwitches, bandTechnique, BANDS, BoneCue, BURY_BREAK_EVEN, KNIFE_BACK, KNIFE_KEEP, OnTimeMeter, SWITCH_WINDOW, CAMELOT_RUNES, carriedLogs, erlangB, expectedRolls, FOOTPRINT, freeDirs, handBackSpecs, hitBetween, MEASURE_DROPS, modelTicksPerLog, NORMAL_KEEP, PRAYER_RUN_TICKS, PROBE_DIRS, respawnTicks, routeFrom, ROUTES,
     S07_BONE_CUE, SITES, skill, steps, successChance, summarizeBand, type WoodcuttingOptions
 } from './woodcutting';
 import { createKnifeCycle, CYCLE_METHODS } from '../../server/webclient/src/bot/programs/knife-cycle';
@@ -231,7 +231,10 @@ describe('woodcutting: bands from state', () => {
         expect(() => steps({ to: 100 })).toThrow(/to/);
         expect(() => steps({ technique: 'fast' as never })).toThrow(/technique/);
         expect(() => steps({ bury: true, to: 15 })).toThrow(/oak or willow/);
-        expect(() => steps({ bury: true, technique: 'plain' })).toThrow(/knife/);
+        expect(() => steps({ bury: true, technique: 'plain' })).not.toThrow();
+        expect(() => steps({ bury: true, hold: '0.3', holdTicks: '600' })).not.toThrow();
+        expect(() => steps({ bury: true, holdTicks: 600 })).toThrow(/holdTicks bounds hold/);
+        expect(() => steps({ bury: true, hold: 0.3, holdTicks: -1 })).toThrow(/holdTicks/);
         expect(() => steps({ boneGiver: 'giver' })).toThrow(/without bury/);
         expect(() => steps({ plainTicksPerRoll: '0' })).toThrow(/plainTicksPerRoll/);
         expect(() => steps({ sites: JSON.stringify({ willow: { stand: [3058, 3253], trees: [[3057, 3251]] } }) })).not.toThrow();
@@ -337,11 +340,14 @@ describe('woodcutting: program parameters per band and technique', () => {
         expect(bandParams({}, 'normal', 15)('plain').method).toBe('tree');
     });
 
-    test('bury runs the knife on oak and willow (no gate, no plain), the normal band keeps its own technique', async () => {
+    test('bury starts oak and willow on the knife with no gate, switching under auto (rs/643); the normal band keeps its own technique', async () => {
         expect(bandTechnique({ bury: true }, 'oak')).toBe('knife');
         expect(bandTechnique({ bury: true, technique: 'knife' }, 'willow')).toBe('knife');
+        expect(bandTechnique({ bury: true, technique: 'plain' }, 'willow')).toBe('plain');
         expect(bandTechnique({ bury: true }, 'normal')).toBe('plain');
         expect(bandTechnique({}, 'willow')).toBe('auto');
+        expect([bandSwitches({ bury: true }, 'oak'), bandSwitches({ bury: true }, 'willow'), bandSwitches({ bury: true }, 'normal')]).toEqual([true, true, false]);
+        expect([bandSwitches({ bury: true, technique: 'knife' }, 'oak'), bandSwitches({ bury: true, technique: 'plain' }, 'oak'), bandSwitches({}, 'oak')]).toEqual([false, false, false]);
         const h = harness(state({ level: 1 }), { bury: true, bones: { giver: 'g' }, prayerTo: 0 });
         await h.byName('woodcutting:normal-1-15').run(h.ctx);
         await h.byName('woodcutting:oak-15-73').run(h.ctx);
@@ -351,12 +357,16 @@ describe('woodcutting: program parameters per band and technique', () => {
         expect(h.calls.map(c => [c.opts.technique, c.params('knife').bury ?? null])).toEqual([['plain', null], ['knife', true], ['knife', true]]);
     });
 
-    test('bury on knife segments only, dropEach on plain only, never bury on normal trees', () => {
+    test('a burying band buries on both techniques (plain + bury, never plain alone); dropEach only on plain that does not bury; never bury on normal trees', () => {
         const oak = bandParams({ bury: true }, 'oak', 73);
         expect(oak('knife').bury).toBe(true);
         expect(oak('knife')).not.toHaveProperty('dropEach');
-        expect(oak('plain').dropEach).toBe(true);
-        expect(oak('plain')).not.toHaveProperty('bury');
+        expect(oak('plain').bury).toBe(true);
+        expect(oak('plain')).not.toHaveProperty('dropEach');
+        expect(oak('plain')).not.toHaveProperty('waitRespawn');
+        expect(oak('plain').trees).toEqual(oak('knife').trees);
+        expect(bandParams({}, 'oak', 73)('plain').dropEach).toBe(true);
+        expect(bandParams({}, 'oak', 73)('plain')).not.toHaveProperty('bury');
         expect(bandParams({ bury: 'dragon bones$' }, 'willow', 99)('knife').bury).toBe('dragon bones$');
         expect(bandParams({ bury: true }, 'normal', 15)('knife')).not.toHaveProperty('bury');
         expect(bandParams({}, 'oak', 73)('knife')).not.toHaveProperty('bury');
@@ -2028,5 +2038,277 @@ describe('woodcutting: the S07 bone cue session across a resume', () => {
         expect(() => steps({ bury: true, bones: { giver: 'b01' }, boneSession: 'run-a.S07.bone' })).toThrow('there is no group');
         expect(() => steps({ bury: true, bones: { group: ['b01', 'b02'] }, boneSession: ' ' })).toThrow('nonempty');
         expect(steps({ bury: true, bones: { group: ['b01', 'b02'] }, boneSession: 'run-a.S07.bone' }).length).toBeGreaterThan(0);
+    });
+});
+
+describe("woodcutting: a burying band switches between knife + bury and plain + bury on its measured on-time rate (rs/643)", () => {
+    const st = (runId: number, tick: number, onTime: number, late: number) => status({ runId, tick, counters: { buryOnTime: onTime, buryLate: late } });
+    /** Feed `n` Burys, on time by `onTime(i)`, one status per Bury, restarting the run on each switch as the band does; the switches as `from>to@i`. */
+    const feed = (m: OnTimeMeter, n: number, onTime: (i: number) => boolean) => {
+        const out: string[] = [];
+        let run = 1;
+        let on = 0;
+        let late = 0;
+        for (let i = 0; i < n; i++) {
+            if (onTime(i)) on++;
+            else late++;
+            const from = m.technique;
+            const to = m.observe(st(run, 1000 + i, on, late), from);
+            if (to) {
+                out.push(`${from}>${to}@${i + 1}`);
+                run++;
+                on = 0;
+                late = 0;
+            }
+        }
+        return out;
+    };
+
+    test("the thresholds (main's ruling): 14.5 of 20 is 37 of a 50-Bury window (36.25 up), back to the knife at 41", () => {
+        expect(BURY_BREAK_EVEN).toBeCloseTo(0.725, 9);
+        expect([SWITCH_WINDOW, KNIFE_KEEP, KNIFE_BACK]).toEqual([50, 37, 41]);
+    });
+
+    describe('the meter', () => {
+        test('at or above the break-even the knife stays: 37/50, 44/50 and 45/50 windows, thousands of Burys, no switch', () => {
+            // 13 late in every 50 is 37/50 (the keep); 3 in every 25 is 17.6/20; 1 in 10 is 18/20
+            for (const late of [(i: number) => (i % 50) % 4 === 3 || i % 50 === 49, (i: number) => [8, 16, 24].includes(i % 25), (i: number) => i % 10 === 9]) {
+                const m = new OnTimeMeter();
+                expect(feed(m, 5000, i => !late(i))).toEqual([]);
+                expect(m.technique).toBe('knife');
+                expect(m.windows.length).toBe(100);
+                expect(m.windows.every(w => w.technique === 'knife' && w.to === null && w.onTime >= KNIFE_KEEP)).toBe(true);
+            }
+        });
+
+        test('below it the knife goes to plain + bury on the 14th late Bury of a window, not at its end', () => {
+            const m = new OnTimeMeter();
+            // 7 of 10 on time: the lates are Burys 8-10, 18-20, 28-30, 38-40, 48, 49
+            expect(feed(m, 49, i => i % 10 < 7)).toEqual(['knife>plain@49']);
+            expect(m.windows).toEqual([{ tick: 1048, technique: 'knife', onTime: 35, judged: 49, to: 'plain' }]);
+            // 36 of 50, the late ones last: the window can still reach 37 until the 14th late
+            const n = new OnTimeMeter();
+            expect(feed(n, 50, i => i < 36)).toEqual(['knife>plain@50']);
+        });
+
+        test('plain + bury goes back to the knife on a full window of 41 or more on time, and stays on 40', () => {
+            const back = new OnTimeMeter();
+            back.technique = 'plain';
+            expect(feed(back, 50, i => i >= 9)).toEqual(['plain>knife@50']);
+            const stay = new OnTimeMeter();
+            stay.technique = 'plain';
+            expect(feed(stay, 500, i => i % 50 >= 10)).toEqual([]);
+            expect(stay.windows.every(w => w.onTime === 40 && w.to === null)).toBe(true);
+        });
+
+        test('both ways in one band: ragged, then clean, then ragged again', () => {
+            const m = new OnTimeMeter();
+            const rate = (i: number) => (i < 300 || i >= 600 ? i % 10 < 7 : true);
+            // plain's windows close on Burys 99, 149, ...: the first clean enough one (49/50) on 349
+            expect(feed(m, 900, rate)).toEqual(['knife>plain@49', 'plain>knife@349', 'knife>plain@649']);
+        });
+
+        test('no flapping near the break-even: steady rates from 0.70 to 0.78 switch at most once in 5000 Burys', () => {
+            for (const per50 of [35, 36, 37, 38, 39]) {
+                const m = new OnTimeMeter();
+                // the late ones spread through each 50
+                const switches = feed(m, 5000, i => Math.floor(((i % 50) * (50 - per50)) / 50) === Math.floor((((i % 50) + 1) * (50 - per50)) / 50));
+                expect(switches.length).toBeLessThanOrEqual(1);
+                expect(switches).toEqual(per50 < KNIFE_KEEP ? [switches[0]!] : []);
+            }
+            // a rate that wanders across the break-even window by window: one switch down, never back
+            const m = new OnTimeMeter();
+            expect(feed(m, 5000, i => (Math.floor(i / 50) % 2 ? i % 50 >= 11 : i % 50 >= 16)).length).toBe(1);
+        });
+
+        test('no flapping near the break-even, by chance: a seeded 0.725 server switches at most once per ~150 Burys', () => {
+            let seed = 643;
+            const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+            const m = new OnTimeMeter();
+            const n = 20000;
+            const switches = feed(m, n, () => rnd() < 0.725);
+            expect(switches.length).toBeGreaterThan(0);
+            expect(switches.length).toBeLessThan(n / 150);
+            // they alternate: every switch is answered by the other
+            expect(switches.every((s, i) => s.startsWith(i % 2 ? 'plain' : 'knife'))).toBe(true);
+        });
+
+        test("a stopped run's last statuses after the switch away from it count for nothing; a new run's counters start from 0", () => {
+            const m = new OnTimeMeter();
+            expect(m.observe(st(1, 1000, 10, 14), 'knife')).toBe('plain');
+            // the knife run's final status, two more judged
+            expect(m.observe(st(1, 1003, 12, 14), 'knife')).toBeNull();
+            expect([m.onTime, m.late]).toEqual([0, 0]);
+            expect(m.observe(st(2, 1010, 3, 1), 'plain')).toBeNull();
+            expect([m.onTime, m.late]).toEqual([3, 1]);
+            expect(m.observe(st(3, 1020, 2, 0), 'plain')).toBeNull();
+            expect([m.onTime, m.late]).toEqual([5, 1]);
+        });
+    });
+
+    describe('the band', () => {
+        const BONES = /bones$/i;
+        type Run = { technique: SegmentTechnique; params: Record<string, unknown>; burys: number; onTime: number; late: number; ended: string; loadsBefore: number };
+        /**
+         * A scripted bury loop: each run buries one held bone a cycle (3 ticks knife, 4 plain) and knife-cycle
+         * judges it on time by `onTime(n)`, n counting Burys over the whole test; the band ends on Bury `endAt`.
+         * At Bury `stopAt` the run ends `stopped`, as a process stop leaves a band.
+         */
+        function buryLoop(onTime: (n: number) => boolean, endAt: number, stopAt?: number) {
+            let n = 0;
+            let stop = stopAt;
+            const runs: Run[] = [];
+            let h: ReturnType<typeof harness> | null = null;
+            const script: Script = async (sdk, call, k) => {
+                const technique = call.opts.technique as SegmentTechnique;
+                const s0 = sdk.getState()!;
+                let t = s0.tick;
+                let on = 0;
+                let late = 0;
+                let buried = 0;
+                const run: Run = { technique, params: call.params(technique), burys: 0, onTime: 0, late: 0, ended: '', loadsBefore: h!.receives.length };
+                runs.push(run);
+                const now = (phase: ProgramStatus['phase']) =>
+                    status({ runId: k, phase, startedTick: s0.tick, tick: t, ...(phase === 'running' ? {} : { endedTick: t }), counters: { burySent: buried, buried, buryOnTime: on, buryLate: late, successes: buried }, gauges: { bonesLeft: sdk.getState()!.inventory.filter(i => BONES.test(i.name)).length } });
+                const finish = (ended: 'done' | 'aborted' | 'stopped'): GatedRun => {
+                    Object.assign(run, { burys: buried, onTime: on, late, ended });
+                    const seg: GatedSegment = { technique, reason: ended, status: now(ended === 'done' ? 'done' : 'stopped') };
+                    call.opts.onSegment?.(seg);
+                    return { segments: [seg], ended };
+                };
+                for (;;) {
+                    if (stop !== undefined && n >= stop) {
+                        stop = undefined;
+                        return finish('stopped');
+                    }
+                    t += technique === 'knife' ? 3 : 4;
+                    const inv = sdk.getState()!.inventory;
+                    const bone = inv.findIndex(i => BONES.test(i.name));
+                    if (bone >= 0) {
+                        buried++;
+                        if (onTime(n++)) on++;
+                        else late++;
+                    }
+                    const inventory = bone >= 0 ? inv.filter((_, i) => i !== bone) : inv;
+                    if (n >= endAt) {
+                        setLevel(sdk, call.params(technique).untilLevel as number, { tick: t, inventory });
+                        return finish('done');
+                    }
+                    sdk.push({ tick: t, inventory });
+                    call.opts.onProgress?.(now('running'), technique);
+                    if (call.signal?.aborted) return finish('aborted');
+                }
+            };
+            return {
+                runs,
+                band: (opts: Partial<WoodcuttingOptions> = {}) => (h = harness(state({ level: 60 }), { bury: true, bones: { giver: 'cairn_giver' }, ...opts }, script)),
+                get n() {
+                    return n;
+                }
+            };
+        }
+        const OAK_BAND = 'woodcutting:oak-15-73';
+        const switchRows = (h: ReturnType<typeof harness>) => h.log.rows.filter(r => r.step === `${OAK_BAND}:switch`).map(r => r.meta as { from: string; to: string; onTime: number; judged: number });
+        const summary = (h: ReturnType<typeof harness>) => h.log.rows.filter(r => r.step === `${OAK_BAND}:summary`).map(r => r.meta as Record<string, any>);
+
+        test('above the break-even (18/20) the band keeps the knife throughout, taking its loads', async () => {
+            const loop = buryLoop(n => n % 10 !== 9, 400);
+            const h = loop.band();
+            await h.byName(OAK_BAND).run(h.ctx);
+            expect(new Set(loop.runs.map(r => r.technique))).toEqual(new Set(['knife']));
+            expect(h.gates).toHaveLength(0);
+            expect(switchRows(h)).toEqual([]);
+            expect(h.receives.length).toBeGreaterThanOrEqual(17);
+            const [s] = summary(h);
+            expect(s!.onTimeSwitch.finalTechnique).toBe('knife');
+            expect(s!.bury).toMatchObject({ knife: { buried: 400, onTime: 360, late: 40 } });
+            expect(s!.bury.plain).toBeUndefined();
+        });
+
+        test('below it (14/20) the band switches to plain + bury and keeps burying and loading in plain', async () => {
+            const loop = buryLoop(n => n % 10 < 7, 300);
+            const h = loop.band();
+            await h.byName(OAK_BAND).run(h.ctx);
+            expect(switchRows(h)).toEqual([expect.objectContaining({ from: 'knife', to: 'plain', onTime: 35, judged: 49 })]);
+            const at = loop.runs.findIndex(r => r.technique === 'plain');
+            expect(loop.runs.slice(0, at).every(r => r.technique === 'knife')).toBe(true);
+            const plain = loop.runs.slice(at);
+            expect(plain.every(r => r.technique === 'plain' && r.params.bury === true && !('dropEach' in r.params))).toBe(true);
+            expect(plain.reduce((a, r) => a + r.burys, 0)).toBe(300 - 49);
+            // the loads go on in plain: one per 23 bones, asked on the empty pack as in the knife
+            expect(plain[plain.length - 1]!.loadsBefore - plain[0]!.loadsBefore).toBeGreaterThanOrEqual(10);
+            expect(h.lines.some(l => /T\d+ knife \+ bury -> plain \+ bury: 14 of 49 late, past the 13 a 50-Bury window allows \(37\/50, 14\.5\/20\)/.test(l))).toBe(true);
+            const [s] = summary(h);
+            expect(s!.ended).toBe('done');
+            expect(s!.onTimeSwitch.finalTechnique).toBe('plain');
+            expect(s!.bury.plain.buried).toBe(251);
+            expect(s!.plain.ticks).toBeGreaterThan(0);
+        });
+
+        test('the switch back: ragged for 300 Burys, then clean: plain + bury, then the knife again on the first clean window', async () => {
+            const loop = buryLoop(n => (n < 300 ? n % 10 < 7 : true), 600);
+            const h = loop.band();
+            await h.byName(OAK_BAND).run(h.ctx);
+            // plain's window 299-348 holds Bury 299, the last ragged one: 49/50
+            expect(switchRows(h).map(r => [r.from, r.to, r.onTime, r.judged])).toEqual([['knife', 'plain', 35, 49], ['plain', 'knife', 49, 50]]);
+            const last = loop.runs[loop.runs.length - 1]!;
+            expect(last.technique).toBe('knife');
+            expect(last.params.bury).toBe(true);
+            expect(summary(h)[0]!.onTimeSwitch.finalTechnique).toBe('knife');
+        });
+
+        test('a resume after the band went to plain + bury starts on the knife with an empty window, and goes to plain + bury again on a ragged server', async () => {
+            const loop = buryLoop(n => n % 10 < 7, 300, 120);
+            const h = loop.band();
+            const step = h.byName(OAK_BAND);
+            await expect(step.run(h.ctx)).rejects.toThrow(/knife-cycle ended stopped/);
+            expect(loop.runs[loop.runs.length - 1]!.technique).toBe('plain');
+            const before = loop.runs.length;
+            await step.resume!(h.ctx);
+            const resumed = loop.runs.slice(before);
+            expect(resumed[0]!.technique).toBe('knife');
+            expect(resumed.some(r => r.technique === 'plain')).toBe(true);
+            expect(switchRows(h).map(r => `${r.from}>${r.to}`)).toEqual(['knife>plain', 'knife>plain']);
+            expect(summary(h).map(s => s.ended)).toEqual(['stopped', 'done']);
+            expect(loop.n).toBe(300);
+        });
+
+        test('a resume after the band went to plain + bury on a server since recovered stays on the knife; a resume in the knife stays on the knife', async () => {
+            // ragged until the stop, clean after it
+            const loop = buryLoop(n => (n < 120 ? n % 10 < 7 : true), 300, 120);
+            const h = loop.band();
+            const step = h.byName(OAK_BAND);
+            await expect(step.run(h.ctx)).rejects.toThrow(/stopped/);
+            const before = loop.runs.length;
+            await step.resume!(h.ctx);
+            expect(new Set(loop.runs.slice(before).map(r => r.technique))).toEqual(new Set(['knife']));
+            const clean = buryLoop(() => true, 300, 100);
+            const k = clean.band();
+            await expect(k.byName(OAK_BAND).run(k.ctx)).rejects.toThrow(/stopped/);
+            await k.byName(OAK_BAND).resume!(k.ctx);
+            expect(new Set(clean.runs.map(r => r.technique))).toEqual(new Set(['knife']));
+            expect(switchRows(k)).toEqual([]);
+        });
+
+        test('forced techniques do not switch: knife stays knife on a ragged server (rs/642), plain stays plain + bury on a clean one', async () => {
+            const ragged = buryLoop(n => n % 10 < 7, 200);
+            const k = ragged.band({ technique: 'knife' });
+            await k.byName(OAK_BAND).run(k.ctx);
+            expect(new Set(ragged.runs.map(r => r.technique))).toEqual(new Set(['knife']));
+            expect(summary(k)[0]).not.toHaveProperty('onTimeSwitch');
+            const clean = buryLoop(() => true, 200);
+            const p = clean.band({ technique: 'plain' });
+            await p.byName(OAK_BAND).run(p.ctx);
+            expect(clean.runs.every(r => r.technique === 'plain' && r.params.bury === true)).toBe(true);
+            expect(p.receives.length).toBeGreaterThanOrEqual(8);
+        });
+
+        test("the lab's holdTicks: hold rides the runs started inside the band's first holdTicks ticks, none after", async () => {
+            const loop = buryLoop(() => true, 200);
+            const h = loop.band({ hold: 0.3, holdTicks: 100 });
+            await h.byName(OAK_BAND).run(h.ctx);
+            expect(loop.runs[0]!.params.hold).toBe(0.3);
+            expect(loop.runs[loop.runs.length - 1]!.params).not.toHaveProperty('hold');
+        });
     });
 });
