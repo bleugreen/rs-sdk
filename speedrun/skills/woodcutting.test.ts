@@ -79,7 +79,20 @@ function harness(start: BotWorldState, opts: Partial<WoodcuttingOptions> = {}, s
         if (scripted) return scripted;
         const s = sdk.getState()!;
         const technique: SegmentTechnique = o.technique === 'plain' ? 'plain' : 'knife';
-        const end = params(technique).untilLevel as number;
+        const end = params(technique).untilLevel as number | undefined;
+        if (end === undefined) {
+            // A Prayer run (no level bound): it buries the pack, then publishes none left until the band stops it.
+            let t = s.tick;
+            sdk.push(cur => ({ tick: ++t, inventory: cur.inventory.filter(i => !/bones$/i.test(i.name)), skills: cur.skills.map(k => (k.name === 'Prayer' ? { ...k, experience: k.experience + 1000 } : k)) }));
+            for (let k = 0; k < 4 && !o.signal?.aborted; k++) {
+                sdk.push({ tick: ++t });
+                o.onProgress?.(status({ runId: calls.length, startedTick: s.tick, tick: t, gauges: { bonesLeft: 0 } }), technique);
+            }
+            const aborted = !!o.signal?.aborted;
+            const seg: GatedSegment = { technique, reason: aborted ? 'aborted' : 'done', status: status({ runId: calls.length, phase: aborted ? 'stopped' : 'done', startedTick: s.tick, tick: t, endedTick: t }) };
+            o.onSegment?.(seg);
+            return { segments: [seg], ended: aborted ? 'aborted' : 'done' };
+        }
         setLevel(sdk, end, { tick: s.tick + 300 });
         const seg: GatedSegment = { technique, reason: 'done', status: status({ runId: calls.length, phase: 'done', startedTick: s.tick, tick: s.tick + 300, endedTick: s.tick + 300, counters: { successes: 60 }, result: { histogram: { 3: 50, 6: 10 } } }) };
         o.onSegment?.(seg);
@@ -1070,7 +1083,7 @@ describe("woodcutting: S07's last bone load carries T07-08's runes, (load - 2) b
     const scored = { bury: true, bones: { giver: 'cairn_b02', lastLoad: 21 } } satisfies Partial<WoodcuttingOptions>;
     const held = (s: BotWorldState) => s.inventory.map(i => `${i.name} x${i.count}`);
 
-    test('the last receive takes 21 bones, law 1 and air 5 after a full load; the runes ride to the band end, 2 slots left for the chopped log', async () => {
+    test('the last receive takes 21 bones, law 1 and air 5 after a full load; the runes ride to the band end, which buries the 21 before it closes (rs/663)', async () => {
         const g = giver([FULL, LAST]);
         const h = harness(pack(97, KIT), { ...scored, receive: g.fn }, buryThenLoad);
         const band = h.byName(WILLOWS);
@@ -1081,9 +1094,11 @@ describe("woodcutting: S07's last bone load carries T07-08's runes, (load - 2) b
         expect(loads.map(r => [r.ok, (r.meta as { received: number }).received])).toEqual([[true, 23], [true, 21]]);
         const s = h.sdk.getState()!;
         expect(held(s).filter(n => !/bones/.test(n))).toEqual(['Rune axe x1', 'Knife x1', 'Logs x1', 'Law rune x1', 'Air rune x5']);
-        expect(s.inventory.filter(i => /bones$/i.test(i.name))).toHaveLength(21);
-        // the ledger's last load: 25 free at the willows hold 21 bones and the two rune stacks, the chopped log the 24th
-        expect(28 - s.inventory.length).toBe(2);
+        // the band at 99 held the last load's 21 bones: it buried them in a Prayer run before closing, so T07-08 has its slots
+        expect(s.inventory.filter(i => /bones$/i.test(i.name))).toHaveLength(0);
+        expect(h.calls).toHaveLength(3);
+        expect(h.calls[2]!.params('knife')).toMatchObject({ maxTicks: PRAYER_RUN_TICKS, bury: true });
+        expect(28 - s.inventory.length).toBe(23);
         expect(band.postconditions(s, {})).toBe(true);
     });
 
@@ -1100,8 +1115,9 @@ describe("woodcutting: S07's last bone load carries T07-08's runes, (load - 2) b
         expect(held(s).filter(n => !/bones/.test(n))).toEqual(['Rune axe x1', 'Knife x1', 'Logs x1', 'Law rune x1', 'Air rune x5']);
         expect(band.postconditions(s, {})).toBe(true);
         expect(band.postconditions(pack(99, KIT), {})).toMatch(/Camelot runes \(1 and 5\) are not held/);
-        // but it fills the pack: 25 free at the willows hold 23 bones and the two rune stacks, none left for the chopped log
-        expect(28 - s.inventory.length).toBe(0);
+        // the 23 bones it brought are buried before the close (rs/663)
+        expect(28 - s.inventory.length).toBe(23);
+        // but it fills the pack on arrival: 25 free at the willows hold 23 bones and the two rune stacks, none left for the chopped log
         expect(band.preconditions(pack(97, KIT), {})).toBe("25 free slots and 0 bones: no room for a 23-bone load, or the last load's 23 bones and 2 rune stacks, and the log");
         // once the runes are in, that load came: a resume needs no room for another
         expect(band.preconditions(pack(98, [...KIT, 'Law rune', 'Air rune'], { bones: 10 }), {})).toBe(true);
@@ -1636,7 +1652,7 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
      * The S07 session as the givers' status files leave it: the cue (written by the stopped process), each
      * giver loaded and waiting (b01 longest), the group's `loads`, and the trades each has given. A trade
      * counts on the giver's status and sends it to restock; the group's last load, from the `final` giver,
-     * is 21 bones and the runes.
+     * is 21 bones and the runes, or, once the cue says lastLoad, the runes alone (and b04 publishes lastGiven).
      */
     const session = (o: { loads: number; trades?: Record<string, number>; final?: boolean; bone?: string }) => {
         const dir = newDir();
@@ -1654,13 +1670,15 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         const receive = (async (sdk: FakeSdk, partner: string, opt: { want?: unknown }) => {
             const all = readBoneStatuses(dir);
             const st = all.find(x => x.account === partner)!;
-            const last = st.final && groupLoadsDone(all, GROUP, A4) === o.loads - 1;
+            const flagged = readCue(dir)?.lastLoad === true;
+            const last = st.final && (flagged || groupLoadsDone(all, GROUP, A4) === o.loads - 1);
+            const runesOnly = flagged && last;
             served.push({ partner, want: opt.want });
-            put(partner, { phase: 'restock', held: 0, readyAt: null, trades: st.trades + 1 });
+            put(partner, { phase: 'restock', held: 0, readyAt: null, trades: st.trades + 1, ...(runesOnly ? { lastGiven: true } : {}) });
             if (away) put(away, { trades: all.find(x => x.account === away)!.trades, readyAt: ++clock });
             away = partner;
             const s = sdk.getState()!;
-            const add = [...Array.from({ length: last ? 21 : 23 }, () => o.bone ?? 'Dragon bones'), ...(last ? ['Law rune', 'Air rune'] : [])];
+            const add = runesOnly ? ['Law rune', 'Air rune'] : [...Array.from({ length: last ? 21 : 23 }, () => o.bone ?? 'Dragon bones'), ...(last ? ['Law rune', 'Air rune'] : [])];
             sdk.push({ tick: s.tick + 4, inventory: [...s.inventory, ...add.map((n, k) => item(s.inventory.length + k, n, n === 'Air rune' ? 5 : 1))] });
             return { ok: true, ticks: 4, received: [] };
         }) as unknown as WoodcuttingOptions['receive'];
@@ -1761,6 +1779,8 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         const summary = h.log.rows.find(r => r.step === `${WILLOWS}:summary`)!;
         expect(summary.meta).toMatchObject({ ended: 'done', bonesLoads: 3, startPrayer: 90, endPrayer: 99 });
         expect(readCue(g.dir)!.stop).toBe(true);
+        // no runes owed (no lastLoad): the count closes it, and the cue never says lastLoad
+        expect(readCue(g.dir)!.lastLoad).toBeUndefined();
     });
 
     test('loads spent with Prayer short: the band is done at once, or buries what it holds and closes; the postcondition fails on Prayer as before', async () => {
@@ -1804,6 +1824,9 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         expect(band.done!({ state: end, probed: {} }, {})).toBe(true);
         expect(band.postconditions(end, {})).toBe('Prayer 92, below 99');
         expect(readCue(g.dir)!.stop).toBe(true);
+        // rs/663, flag absent: Prayer was never reached, so the count closed it as before, and the last load's bones were buried
+        expect(readCue(g.dir)!.lastLoad).toBeUndefined();
+        expect(end.inventory.filter(i => /bones$/i.test(i.name))).toHaveLength(0);
     });
 
     // rs/186 23:4xZ: the givers relaunch babydragon-only; the resumed pack still holds 23 dragon bones.
@@ -1947,8 +1970,8 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         expect(groupLoadsDone(readBoneStatuses(g.dir), GROUP, A4)).toBe(10);
     });
 
-    // rs/186 (e) addition: the runes ride the group's last load, which may come after Prayer 99.
-    test('Prayer 99 at load 50 of 56: the band takes loads 51-56, burying them, and ends holding the runes', async () => {
+    // rs/663 (1): the count padded to 56, both targets at load 50. Before rs/663 the band took loads 51-56 and buried them.
+    test("Prayer 99 at load 50 of 56: the cue's lastLoad is written once, b04 serves the runes alone as load 51, the band closes on it holding the runes and no bones, and loads 52-56 are never taken", async () => {
         const g = session({ loads: 56, trades: { cairn_b01: 48 }, final: true });
         const start = inSight(state({ level: 99, prayer: 97 }));
         const h = harness(start, s07(g.dir, g.receive, { lastLoad: 21 }), prayerRuns(1, []));
@@ -1959,18 +1982,210 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         } finally {
             stop();
         }
-        const rows = loadRows(h).map(r => [(r.meta as { load: number }).load, (r.meta as { received: number }).received, (r.meta as { giver: string }).giver]);
-        expect(rows.map(r => r[0])).toEqual([49, 50, 51, 52, 53, 54, 55, 56]);
-        expect(rows.at(-1)).toEqual([56, 21, 'cairn_b04']);
+        const rows = loadRows(h).map(r => [(r.meta as { load: number }).load, (r.meta as { received: number }).received, (r.meta as { lastLoad?: boolean }).lastLoad ?? false]);
+        expect(rows).toEqual([[49, 23, false], [50, 23, false], [51, 0, true]]);
+        expect((loadRows(h).at(-1)!.meta as { giver: string }).giver).toBe('cairn_b04');
+        expect(g.served).toHaveLength(3);
+        expect((g.served.at(-1)!.want as WantSpec[]).map(w => [String(w.item), w.amount])).toEqual(CAMELOT_RUNES.map(w => [String(w.item), w.amount]));
+        expect((g.served[0]!.want as WantSpec[]).map(w => [String(w.item), w.amount])).toEqual([['/bones$/i', 21]]);
+        // written once, in the attempt's session, and kept through the stop
+        const marks = h.log.rows.filter(r => r.step === 'woodcutting:last-load');
+        expect(marks).toHaveLength(1);
+        expect(marks[0]!.meta).toMatchObject({ kind: 'wc-last-load', loadsGiven: 50, loads: 56, level: 99, prayer: 99 });
+        expect(readCue(g.dir)!).toMatchObject({ session: A4, lastLoad: true, stop: true });
+        // two runs, no third: the band closed on the runes' load
+        expect(h.calls).toHaveLength(2);
         const end = h.sdk.getState()!;
+        // S07's end pack as STEP-MANIFEST rows 3118-3119 expect it: the kit and the Camelot runes, no bones
+        expect(end.inventory.map(i => `${i.name} x${i.count}`).sort()).toEqual(['Air rune x5', 'Knife x1', 'Law rune x1', 'Logs x1', 'Rune axe x1']);
         expect(end.skills.find(k => k.name === 'Prayer')!.baseLevel).toBe(99);
-        expect(end.inventory.filter(i => /rune$/i.test(i.name)).map(i => `${i.name} x${i.count}`)).toEqual(['Law rune x1', 'Air rune x5']);
-        // every load past Prayer 99 was buried, the last one's bones too
-        expect(end.inventory.filter(i => /bones$/i.test(i.name))).toHaveLength(0);
         expect(band.postconditions(end, {})).toBe(true);
         expect(band.done!({ state: end, probed: {} }, {})).toBe(true);
-        expect(h.log.rows.find(r => r.step === `${WILLOWS}:summary`)!.meta).toMatchObject({ ended: 'done', bonesLoads: 8 });
-        expect(readCue(g.dir)!.stop).toBe(true);
+        const summary = h.log.rows.find(r => r.step === `${WILLOWS}:summary`)!.meta as Record<string, unknown>;
+        expect(summary).toMatchObject({ ended: 'done', bonesLoads: 3, lastLoad: true });
+        expect(typeof summary.bothTargetsTick).toBe('number');
+        expect(groupLoadsDone(readBoneStatuses(g.dir), GROUP, A4)).toBe(51);
+    });
+
+    // rs/663 (2), the count path: the count's last load (21 bones and the runes) lands before Prayer 99, which comes partway through it.
+    test('the count path: Prayer 99 partway through the last load of the count, the band buries the rest before it closes (T07-08 has no room for them); no flag is written', async () => {
+        const g = session({ loads: 19, trades: { cairn_b01: 18 }, final: true });
+        const start = inSight(state({ level: 99, prayer: 98 }));
+        const bonesLeft = (sdk: FakeSdk) => sdk.getState()!.inventory.filter(i => /bones$/i.test(i.name)).length;
+        const partial: Script = async (sdk, call, n) => {
+            const s0 = sdk.getState()!;
+            let t = s0.tick;
+            // 10 bones buried and Prayer 99: before rs/663 the band stopped here, 11 bones held
+            let k = 0;
+            sdk.push(s => ({ tick: ++t, inventory: s.inventory.filter(i => !/bones$/i.test(i.name) || ++k > 10), ...skillTo('Prayer', 99, 1000)(s) }));
+            call.opts.onProgress?.(status({ runId: n, startedTick: s0.tick, tick: t, gauges: { bonesLeft: bonesLeft(sdk) } }), 'knife');
+            if (!call.signal?.aborted) {
+                sdk.push(s => ({ tick: ++t, inventory: s.inventory.filter(i => !/bones$/i.test(i.name)), ...skillTo('Prayer', 99, 1000)(s) }));
+                for (let j = 0; j < 4 && !call.signal?.aborted; j++) {
+                    sdk.push({ tick: ++t });
+                    call.opts.onProgress?.(status({ runId: n, startedTick: s0.tick, tick: t, gauges: { bonesLeft: 0 } }), 'knife');
+                }
+            }
+            const aborted = !!call.signal?.aborted;
+            const seg: GatedSegment = { technique: 'knife', reason: aborted ? 'aborted' : 'done', status: status({ runId: n, phase: aborted ? 'stopped' : 'done', startedTick: s0.tick, tick: t, endedTick: t }) };
+            call.opts.onSegment?.(seg);
+            return { segments: [seg], ended: aborted ? 'aborted' : 'done' };
+        };
+        const h = harness(start, s07(g.dir, g.receive, { lastLoad: 21 }), partial);
+        const band = h.byName(WILLOWS);
+        const stop = ticking(h.sdk);
+        try {
+            await band.run(h.ctx);
+        } finally {
+            stop();
+        }
+        expect(g.served.map(r => r.partner)).toEqual(['cairn_b04']);
+        expect(loadRows(h).map(r => (r.meta as { received: number }).received)).toEqual([21]);
+        const end = h.sdk.getState()!;
+        expect(end.inventory.map(i => `${i.name} x${i.count}`).sort()).toEqual(['Air rune x5', 'Knife x1', 'Law rune x1', 'Logs x1', 'Rune axe x1']);
+        expect(band.postconditions(end, {})).toBe(true);
+        expect(readCue(g.dir)!.lastLoad).toBeUndefined();
+        // a resume that finds bones still held at both targets with the runes in re-enters the band to bury them
+        const held = state({ level: 99, prayer: 99, items: [...KIT, 'Law rune', 'Air rune'], bones: 4 });
+        const paid = { ...held, inventory: held.inventory.map(i => (i.name === 'Air rune' ? { ...i, count: 5 } : i)) };
+        expect(band.done!({ state: paid, probed: {} }, {})).toBe(false);
+    });
+
+    // rs/663 (4)
+    test('Prayer 99 before Woodcutting 99: loads come by the count with no flag until Woodcutting reaches 99, then the runes alone from b04', async () => {
+        const g = session({ loads: 56, trades: { cairn_b01: 10 }, final: true });
+        const start = inSight(state({ level: 98, prayer: 99 }));
+        const flags: boolean[] = [];
+        const receive = (async (sdk: FakeSdk, partner: string, opt: { want?: unknown }) => {
+            flags.push(readCue(g.dir)?.lastLoad === true);
+            return (g.receive as unknown as (a: FakeSdk, b: string, c: unknown) => Promise<ReceiveResult>)(sdk, partner, opt);
+        }) as unknown as WoodcuttingOptions['receive'];
+        const script: Script = async (sdk, call, n) => {
+            const s0 = sdk.getState()!;
+            let t = s0.tick;
+            expect(call.params('knife')).toMatchObject({ untilLevel: 99 });
+            sdk.push(s => ({ tick: ++t, inventory: s.inventory.filter(i => !/bones$/i.test(i.name)), ...skillTo('Prayer', 99, 1000)(s) }));
+            setLevel(sdk, 99, { tick: ++t });
+            const seg: GatedSegment = { technique: 'knife', reason: 'done', status: status({ runId: n, phase: 'done', startedTick: s0.tick, tick: t, endedTick: t }) };
+            call.opts.onSegment?.(seg);
+            return { segments: [seg], ended: 'done' };
+        };
+        const h = harness(start, s07(g.dir, receive, { lastLoad: 21 }), script);
+        const band = h.byName(WILLOWS);
+        const stop = ticking(h.sdk);
+        try {
+            await band.run(h.ctx);
+        } finally {
+            stop();
+        }
+        expect(flags).toEqual([false, true]);
+        expect(g.served.map(r => r.partner).at(-1)).toBe('cairn_b04');
+        expect(h.calls).toHaveLength(1);
+        expect(h.log.rows.filter(r => r.step === 'woodcutting:last-load').map(r => (r.meta as { level: number }).level)).toEqual([99]);
+        expect(band.postconditions(h.sdk.getState()!, {})).toBe(true);
+    });
+
+    // rs/663 (3)
+    test('a resume after the flag: the band does not write it again and takes the runes from b04; once the runes are in, the module is finished', async () => {
+        const g = session({ loads: 56, trades: { cairn_b01: 50 }, final: true });
+        new BoneCue(g.dir, A4).markLastLoad(baseState({ tick: 950 }), 'cairn_test', SITES.willow.stand);
+        const seq = readCue(g.dir)!.seq;
+        const start = inSight(state({ level: 99, prayer: 99 }));
+        const h = harness(start, s07(g.dir, g.receive, { lastLoad: 21 }), prayerRuns(0, []));
+        const p = await resolveResume(h.all, new Observation(start), {} as never);
+        expect(`${p.mode} ${p.step}`).toBe('resume woodcutting:willow-73-99');
+        const band = h.byName(WILLOWS);
+        const stop = ticking(h.sdk);
+        try {
+            await band.run(h.ctx);
+        } finally {
+            stop();
+        }
+        expect(h.log.rows.filter(r => r.step === 'woodcutting:last-load')).toHaveLength(0);
+        expect(g.served.map(r => r.partner)).toEqual(['cairn_b04']);
+        expect((g.served[0]!.want as WantSpec[]).map(w => String(w.item))).toEqual(CAMELOT_RUNES.map(w => String(w.item)));
+        expect(h.calls).toHaveLength(0);
+        // the band's start rewrote the site (seq + 1) and its end the stop (+ 1): lastLoad held throughout
+        expect(readCue(g.dir)!).toMatchObject({ session: A4, lastLoad: true, stop: true, seq: seq + 2 });
+        expect(band.postconditions(h.sdk.getState()!, {})).toBe(true);
+
+        // the runes already in when the process stopped: finished, and the cue is not touched
+        const paid = state({ level: 99, prayer: 99, items: [...KIT, 'Law rune', 'Air rune'] });
+        const s = inSight({ ...paid, inventory: paid.inventory.map(i => (i.name === 'Air rune' ? { ...i, count: 5 } : i)) });
+        const g2 = session({ loads: 56, trades: { cairn_b01: 50 }, final: true });
+        new BoneCue(g2.dir, A4).markLastLoad(baseState({ tick: 950 }), 'cairn_test', SITES.willow.stand);
+        g2.put('cairn_b04', { phase: 'off', readyAt: null, trades: 1, lastGiven: true });
+        const seq2 = readCue(g2.dir)!.seq;
+        const h2 = harness(s, s07(g2.dir, g2.receive, { lastLoad: 21 }));
+        const p2 = await resolveResume(h2.all, new Observation(s), {} as never);
+        expect(`${p2.mode} ${p2.step}`).toBe('finished null');
+        expect(h2.byName(WILLOWS).done!({ state: s, probed: {} }, {})).toBe(true);
+        expect(readCue(g2.dir)!.seq).toBe(seq2);
+    });
+
+    // rs/663 (5)
+    test("another session's flagged cue left in cue.json is not this attempt's: the band asks for bones by the count, and flags its own session only at both targets", async () => {
+        const g = session({ loads: 56, trades: { cairn_b01: 48 }, final: true });
+        new CueWriter(g.dir, 'cairn_test', S07_BONE_CUE, 'run-20261022-a3.S07.bone').write({ beacons: [{ tick: 1, ms: Date.now() - 60_000 }], turns: [], lastLoad: true });
+        expect(readCue(g.dir)!.lastLoad).toBe(true);
+        const start = inSight(state({ level: 99, prayer: 98 }));
+        const h = harness(start, s07(g.dir, g.receive, { lastLoad: 21 }), prayerRuns(1, []));
+        const stop = ticking(h.sdk);
+        try {
+            await h.byName(WILLOWS).run(h.ctx);
+        } finally {
+            stop();
+        }
+        const wants = g.served.map(r => (r.want as WantSpec[]).map(w => String(w.item)).join(' '));
+        expect(wants).toEqual(['/bones$/i', CAMELOT_RUNES.map(w => String(w.item)).join(' ')]);
+        expect(h.log.rows.filter(r => r.step === 'woodcutting:last-load').map(r => (r.meta as { loadsGiven: number }).loadsGiven)).toEqual([49]);
+        expect(readCue(g.dir)!).toMatchObject({ session: A4, lastLoad: true });
+    });
+
+    // rs/41's review (1): b04 can't come. The wait is serverWait's, and the band fails by name rather than closing without the runes.
+    test('flagged with b04 faulted: no other giver serves, the band fails within serverWait naming the runes\' load, and keeps the cue for the resume', async () => {
+        const g = session({ loads: 56, trades: { cairn_b01: 50 }, final: true });
+        g.put('cairn_b04', { phase: 'fault', readyAt: null, held: 0 });
+        const start = inSight(state({ level: 99, prayer: 99 }));
+        const h = harness(start, s07(g.dir, g.receive, { lastLoad: 21, serverWait: 30 }));
+        const band = h.byName(WILLOWS);
+        const stop = ticking(h.sdk);
+        try {
+            await expect(band.run(h.ctx)).rejects.toThrow(/the group's final giver did not serve the runes' load \(the cue's lastLoad\) within 30 observed ticks/);
+        } finally {
+            stop();
+        }
+        expect(g.served).toEqual([]);
+        const row = loadRows(h)[0]!;
+        expect(row.ok).toBe(false);
+        expect(row.endTick - row.startTick).toBeLessThanOrEqual(32);
+        expect(readCue(g.dir)!).toMatchObject({ lastLoad: true });
+        expect(readCue(g.dir)!.stop).toBeUndefined();
+        expect(band.postconditions(h.sdk.getState()!, {})).toMatch(/Camelot runes \(1 and 5\) are not held/);
+    });
+
+    // rs/41's timing case: the flag lands while b04 is on a bank trip.
+    test('flagged while b04 restocks: SCORED waits for it within serverWait, the other three never serve, and b04 brings the runes alone', async () => {
+        const g = session({ loads: 56, trades: { cairn_b01: 50 }, final: true });
+        g.put('cairn_b04', { phase: 'restock', readyAt: null, held: 0 });
+        const start = inSight(state({ level: 99, prayer: 99 }));
+        const h = harness(start, s07(g.dir, g.receive, { lastLoad: 21 }));
+        let back = false;
+        h.sdk.onStateUpdate(s => {
+            if (!back && s.tick >= start.tick + 40) {
+                back = true;
+                g.put('cairn_b04', { phase: 'waiting', readyAt: 99 });
+            }
+        });
+        const stop = ticking(h.sdk);
+        try {
+            await h.byName(WILLOWS).run(h.ctx);
+        } finally {
+            stop();
+        }
+        expect(g.served.map(r => r.partner)).toEqual(['cairn_b04']);
+        expect((loadRows(h)[0]!.meta as { serverWait: number }).serverWait).toBeGreaterThanOrEqual(35);
+        expect(h.sdk.getState()!.inventory.filter(i => /rune$/i.test(i.name))).toHaveLength(2);
     });
 
     test('loads spent without the runes: done at once, and the runes postcondition fails as today', async () => {
