@@ -6,7 +6,7 @@ import { resolveOptions as magicOptions, ROUTE_LOADS } from '../skills/magic';
 import { STAND_IN_STEP } from '../runner/run-report';
 import { MANIFEST } from '../tools/slot-ledger';
 import { baseState } from '../lib/fake-sdk';
-import { giverGaps, hooked, KIT_PLANS, LANDING_HELPER_TILE, labChain, meetingTile, ringerTile, ringLoads, STAFF, withRingers } from './dress-rehearsal';
+import { giverGaps, hooked, KIT_PLANS, LANDING_HELPER_TILE, labChain, meetingTile, ringerTile, ringLoads, rowOf, STAFF, withRingers } from './dress-rehearsal';
 import type { LabWorld } from './stand-ins';
 
 // without attempt 4's H4m row: these harnesses stage the chain before it
@@ -81,6 +81,22 @@ describe('labChain', () => {
         expect(served.chain.map(s => s.name)).not.toContain('H4 hand-off (supply: staff)');
     });
 
+    test('with the real carriers, each carrier-held row is SCORED\'s real delivery hand-off; a mule-cue row no carrier holds is staff-supplied even with a stub (the bound owner refuses unknown mule rows)', () => {
+        const held = new Set(['H1', 'H4k', 'H6', 'H18']);
+        const chain = buildChain(cfg('lab_stub'), { cues, manifest });
+        const lab = labChain(chain, { manifest, stub: 'lab_stub', world, carrierRows: held });
+        expect(lab.carrierServed).toEqual(['H1', 'H4k', 'H6', 'H18']);
+        for (const r of held) {
+            expect(lab.staffed).not.toContain(r);
+            expect(lab.stubRows.map(x => x.row)).not.toContain(r);
+            expect(lab.chain.find(s => s.name === `${r} hand-off`)).toBeDefined();
+        }
+        const muleRows = chain.filter(s => s.kind === 'handoff' && s.cue?.family === 'mule').map(s => rowOf(s)).filter(r => !held.has(r));
+        expect(muleRows.length).toBeGreaterThan(0);
+        for (const r of muleRows) expect(lab.staffed).toContain(r);
+        expect(lab.stubRows.every(x => !muleRows.includes(x.row))).toBe(true);
+    });
+
     test('--until=S04 needs no stand-in at all', () => {
         const lab = labChain(sliceUntil(buildChain(cfg('lab_stub'), { cues, manifest }), 'S04'), { manifest, stub: 'lab_stub', world });
         expect([lab.standIns, lab.staffed, lab.stubRows.map(r => r.row)]).toEqual([[], [], ['H1']]);
@@ -104,6 +120,8 @@ describe('the real S04 and S06 givers', () => {
     /** S07's bone givers (bone-launch.test.ts tests them). */
     const BG = ['cairn_lb1', 'cairn_lb2', 'cairn_lb3', 'cairn_lb4'];
     const span = (from: string | undefined, until: string | undefined) => sliceUntil(chain, until).slice(resolveFrom(chain, from) ?? 0);
+    /** The families from S15 on: S21's roster, S18's courier, H12o's helper (s21-, courier-, h12o-launch.test.ts test them). */
+    const LATE = { s21Givers: Array.from({ length: 22 }, (_, i) => `cairn_ds${String(i + 1).padStart(2, '0')}`), courier: 'cairn_dc15', h12o: 'cairn_d45' };
 
     test('a slice that runs S04 with no ring givers refuses, naming S04 and --ringers', () => {
         const gaps = giverGaps(span(undefined, 'S04'), { ...none, droppers: FD });
@@ -121,19 +139,22 @@ describe('the real S04 and S06 givers', () => {
 
     test('the whole chain with none of them refuses for each', () => {
         const gaps = giverGaps(chain, none);
-        expect(gaps.map(g => g.split(' ')[0]).sort()).toEqual(['H23', 'S03', 'S04', 'S06', 'S07', 'S25a', 'S25c']);
+        expect(gaps.map(g => g.split(' ')[0]).sort()).toEqual(['H12o', 'H23', 'S03', 'S04', 'S06', 'S07', 'S18', 'S21', 'S25a', 'S25c']);
     });
 
-    test('a slice from S05 to S05 needs none; one from S08 to S09 needs none; one from S07 needs only the bone givers, the anvil, the wine giver and the cannon holder', () => {
+    test('a slice from S05 to S05 needs none; one from S08 to S09 needs none; one from S07 needs the bone givers, H12o\'s helper, the courier, the S21 givers, the anvil, the wine giver and the cannon holder', () => {
         expect(span('S05', 'S05').some(s => s.id === 'S05')).toBe(true);
         expect(giverGaps(span('S05', 'S05'), none)).toEqual([]);
         expect(giverGaps(span('S08', 'S09'), none)).toEqual([]);
-        expect(giverGaps(span('S07', undefined), none).map(g => g.split(' ')[0]).sort()).toEqual(['H23', 'S07', 'S25a', 'S25c']);
-        expect(giverGaps(span('S07', undefined), { ...none, boneGivers: BG, anvil: 'cairn_anv1', cannonHolder: 'cairn_h92', wineGiver: 'lab_wine' })).toEqual([]);
+        expect(giverGaps(span('S07', undefined), none).map(g => g.split(' ')[0]).sort()).toEqual(['H12o', 'H23', 'S07', 'S18', 'S21', 'S25a', 'S25c']);
+        expect(giverGaps(span('S07', undefined), { ...none, boneGivers: BG, anvil: 'cairn_anv1', cannonHolder: 'cairn_h92', wineGiver: 'lab_wine', ...LATE })).toEqual([]);
     });
 
-    test('with every set named, nothing refuses', () => {
-        expect(giverGaps(chain, { ringers: RINGERS, altarGivers: ALTAR, droppers: FD, boneGivers: BG, anvil: 'cairn_anv1', cannonHolder: 'cairn_h92', wineGiver: 'lab_wine', labHelpers: [...RINGERS, 'lab_wine'] })).toEqual([]);
+    test('with every set named, nothing refuses; the carriers are optional, and refused only when named wrong', () => {
+        const all = { ringers: RINGERS, altarGivers: ALTAR, droppers: FD, boneGivers: BG, anvil: 'cairn_anv1', cannonHolder: 'cairn_h92', wineGiver: 'lab_wine', labHelpers: [...RINGERS, 'lab_wine'], ...LATE };
+        expect(giverGaps(chain, all)).toEqual([]);
+        expect(giverGaps(chain, { ...all, carriers: ['cairn_dm1', 'cairn_dw55', 'cairn_de03'] })).toEqual([]);
+        expect(giverGaps(chain, { ...all, carriers: ['cairn_dm1', 'cairn_dw55', 'cairn_anv1'] })).toEqual(['--carriers cairn_anv1 is also named by --anvil', 'S25a: cairn_anv1 is named by --anvil and by another giver flag'].slice(0, 1));
     });
 
     test('a slice that runs S07 with no bone givers refuses, naming S07 and --bone-givers; a name another flag uses refuses too', () => {
