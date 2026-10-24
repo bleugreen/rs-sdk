@@ -669,9 +669,12 @@ describe("H4m's loads: one fallback row, N ordered packages after H4p on its car
         expect(muleFromLedger(withRow(), { rows: ['H6', 'H7'] }).map(l => l.row)).toEqual(['H6', 'H7']);
         expect(() => muleFromLedger(withRow(), { rows: ['H4p', 'H4m.1'] })).toThrow("H4m.1: H4m's loads come with H4p");
         expect(() => muleFromLedger(withRow(), { rows: ['H4p'], onRequest: ['H4m'] })).toThrow("H4m: H4m's loads come with H4p");
-        for (const bad of ['H4m', 'H4m.1-H4m.0', 'H4m.2-H4m.10', 'H4m.x']) {
+        for (const bad of ['H4m.1-H4m.0', 'H4m.2-H4m.10', 'H4m.x', 'H4m.1-H4m.10x']) {
             expect(() => muleFromLedger(withRow(ROW.replace('H4m.1-H4m.10', bad)), { rows: ['H4p'] })).toThrow('must be the one row H4m.1-H4m.N');
         }
+        // A bare H4m row is attempt 1's retired on-request package: not the switch.
+        expect(muleFromLedger(withRow(ROW.replace('H4m.1-H4m.10', 'H4m')), { rows: ['H4p'] }).map(l => l.row)).toEqual(['H4p']);
+        expect(h4mLoadRows(withRow(ROW.replace('H4m.1-H4m.10', 'H4m')))).toEqual([]);
         expect(() => muleFromLedger(withRow(`${ROW}\n${ROW}`), { rows: ['H4p'] })).toThrow('must be the one row');
         expect(() => muleFromLedger(withRow(ROW.replace('big bones @532 x20 [u]', 'big bones @532 to 20 [u]')), { rows: ['H4p'] })).toThrow('a load is a fixed count');
         expect(() => muleFromLedger(withRow(ROW.replace('| - | - | 20 |', '| bones x1 (swap) | - | 20 |')), { rows: ['H4p'] })).toThrow('a load takes nothing back');

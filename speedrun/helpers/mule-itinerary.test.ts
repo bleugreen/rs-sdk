@@ -221,7 +221,7 @@ describe("H4m's loads meet SCORED at S09's zoo iron lap, clear of doors and hunt
         const hunts = blocks('.hunt');
         const names = new Map(readFileSync(join(content, 'pack', 'npc.pack'), 'utf8').split('\n')
             .map(l => /^(\d+)=(\w+)$/.exec(l.trim())).filter(m => m !== null).map(m => [Number(m[1]), m[2]!]));
-        const hunters: { name: string; margin: number; vislevel: number }[] = [];
+        const hunters: { name: string; margin: number; vislevel: number; anyLevel: boolean }[] = [];
         let spawns = 0;
         // The stand's square, m40_50, and its eight neighbours: 64 tiles or more in every direction.
         for (let mx = 39; mx <= 41; mx++) for (let mz = 49; mz <= 51; mz++) {
@@ -233,25 +233,26 @@ describe("H4m's loads meet SCORED at S09's zoo iron lap, clear of doors and hunt
                 const name = names.get(Number(m[3]))!;
                 const cfg = npcs[name]!;
                 expect(cfg).toBeDefined();
-                if (hunts[cfg.huntmode ?? '']?.type !== 'player') continue;
+                const hunt = hunts[cfg.huntmode ?? ''];
+                if (hunt?.type !== 'player') continue;
                 // NpcType: wanderrange defaults to 5, huntrange to 0; it hunts from wherever it has wandered.
                 const reach = Number(cfg.wanderrange ?? 5) + Number(cfg.huntrange ?? 0);
                 const d = Math.max(Math.abs(mx * 64 + Number(m[1]) - H4M_STAND.x), Math.abs(mz * 64 + Number(m[2]) - H4M_STAND.z));
-                hunters.push({ name, margin: d - reach, vislevel: Number(cfg.vislevel) });
+                hunters.push({ name, margin: d - reach, vislevel: Number(cfg.vislevel), anyLevel: hunt.check_nottoostrong !== 'outside_wilderness' });
             }
         }
         expect(spawns).toBeGreaterThan(50);
         expect(hunters.length).toBeGreaterThan(0);
         expect(hunters.every(h => h.margin > 0)).toBe(true);
         const nearest = hunters.reduce((a, b) => (b.margin < a.margin ? b : a));
-        expect(nearest).toEqual({ name: 'scorpion', margin: 19, vislevel: 14 });
+        expect(nearest).toEqual({ name: 'scorpion', margin: 19, vislevel: 14, anyLevel: false });
         // h55 (HP 90, Attack 29, Defence 27, Strength 27, Magic 99, Prayer 1) is combat 77 by
-        // Player.getCombatLevel, Magic's term the largest; outside the Wilderness `cowardly` passes over
-        // a player above 2 x vislevel (Npc.ts huntPlayers), so only the jogre and cyclops would hunt it.
+        // Player.getCombatLevel, Magic's term the largest. Outside the Wilderness `cowardly` passes over
+        // a player above 2 x vislevel (Npc.ts huntPlayers); `aggressive_melee` (Fight Arena) checks no level.
         const combat = Math.floor(0.25 * (27 + 90 + Math.floor(1 / 2)) + Math.max(0.325 * (29 + 27), 0.325 * (Math.floor(99 / 2) + 99)));
         expect(combat).toBe(77);
-        expect([...new Set(hunters.filter(h => combat <= 2 * h.vislevel).map(h => h.name))].sort()).toEqual(['cyclops', 'jogre']);
-        expect(Math.min(...hunters.filter(h => combat <= 2 * h.vislevel).map(h => h.margin))).toBe(33);
+        const huntsH55 = hunters.filter(h => h.anyLevel || combat <= 2 * h.vislevel);
+        expect(huntsH55.reduce((a, b) => (b.margin < a.margin ? b : a))).toEqual({ name: 'jogre', margin: 33, vislevel: 53, anyLevel: false });
     });
 });
 

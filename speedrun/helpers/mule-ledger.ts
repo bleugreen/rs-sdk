@@ -174,15 +174,18 @@ export interface FromLedgerOptions {
 /** H4m's loads ride H4p's carrier: load 1 is staged with H4p and handed over straight after it. */
 export const H4M_ANCHOR = 'H4p';
 const H4M_NAMED = /^H4m(\.|$)/;
+const H4M_LOAD_ROW = /^H4m\./;
 const H4M_RANGE = /^H4m\.1-H4m\.([1-9]\d*)$/;
 
 /**
  * The fallback table's H4m row, `H4m.1-H4m.N`: its `in` is one load, and N, in the id, the number
  * of loads. Null when the table has none. The row's presence is the switch: without it no carrier
- * serves H4m, and the generated carrier configs are what they were before H4m existed.
+ * serves H4m, and the generated carrier configs are what they were before H4m existed. A bare `H4m`
+ * row is attempt 1's retired on-request overflow package (the archived lab projection still has
+ * one): not a load row, and not the switch.
  */
 function h4mRow(fallbacks: readonly LedgerRow[]): { index: number; rows: string[] } | null {
-    const named = fallbacks.flatMap((r, index) => (H4M_NAMED.test(r.row) ? [{ r, index }] : []));
+    const named = fallbacks.flatMap((r, index) => (H4M_LOAD_ROW.test(r.row) ? [{ r, index }] : []));
     if (!named.length) return null;
     const m = named.length === 1 ? H4M_RANGE.exec(named[0]!.r.row) : null;
     if (!m) throw new Error(`the fallback table's H4m row must be the one row H4m.1-H4m.N (N loads, its in one load); it has ${named.map(n => n.r.row).join(', ')}`);
