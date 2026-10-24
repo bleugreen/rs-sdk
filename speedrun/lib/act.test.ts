@@ -602,7 +602,7 @@ describe('loc, npc and item helpers', () => {
             if (page === 2 && cut) {
                 cut = false;
                 page = -1;
-                return { dialog: closed, player: you(sdk.state!.tick + 1) }; // the hit's if_close drops the script
+                return { dialog: closed, player: you(sdk.state!.tick) }; // the eat answering last tick's hit drops the script
             }
             if (page >= pages.length) {
                 page = -1;
