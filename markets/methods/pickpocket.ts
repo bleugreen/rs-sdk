@@ -179,6 +179,8 @@ export class FailureRun {
 
 /** The role's log line on every change of target: the npc's index and tile, and the bot's own tile. */
 export const TARGET_LOG = 'target';
+/** The role's log line on every change of errand (`{ errand }`): the phase-2 runner counts the ticks spent thieving. */
+export const ERRAND_LOG = 'errand';
 
 export type Errand = 'bank' | 'go' | 'thieve';
 
@@ -246,10 +248,12 @@ export class Pickpocketer {
         this.startTick = this.lastReport = this.s.tick;
         this.ctx.log('start', { options: this.o, thieving: this.s.skills.find(k => k.name === 'Thieving')?.baseLevel, hp: this.s.player!.maxHp });
         const failures = new FailureRun(this.o.maxErrandFailures);
+        let last: Errand | null = null;
         while (!this.ctx.signal.aborted) {
             const s = this.s;
             if (s.dialog.isOpen) await this.ctx.sdk.sendClickDialog(0);
             const e = nextErrand({ food: this.food(s).length, coins: coinsIn(s), bankAt: this.o.bankAt, atStation: dist(s, this.spot.anchor) <= this.spot.radius });
+            if (e !== last) this.ctx.log(ERRAND_LOG, { errand: (last = e) });
             try {
                 if (e === 'bank') await this.bank();
                 else if (e === 'go') await this.walk(this.spot.anchor);

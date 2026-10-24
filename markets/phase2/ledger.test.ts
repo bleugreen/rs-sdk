@@ -63,7 +63,8 @@ describe('ledger lines', () => {
             carriedStore: 1_234 + 1_500,
             msPerTick: null,
             pos: null,
-            target: null
+            target: null,
+            workTicks: null
         });
         expect(JSON.parse(JSON.stringify(l))).toEqual(l);
     });

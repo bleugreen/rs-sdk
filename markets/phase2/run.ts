@@ -47,7 +47,7 @@ import { DemoMarket, type MarketQuote } from '../lib/market.ts';
 import { role as coinsRole } from '../../speedrun/helpers/coins';
 import { chooseSite } from '../methods/hp-model.ts';
 import { TargetClaims, type SiteId } from '../methods/hp-train.ts';
-import { role as pickpocketRole, TARGET_LOG } from '../methods/pickpocket.ts';
+import { ERRAND_LOG, role as pickpocketRole, TARGET_LOG } from '../methods/pickpocket.ts';
 import { numberFlag, parseArgs } from '../methods/probe-sampler.ts';
 import { debugNameOf } from '../methods/trips.ts';
 import { costOf } from '../methods/value.ts';
@@ -81,12 +81,15 @@ const READINGS_KEEP_MS = 3 * 3_600_000;
 const RAMP_THIEVING = 99;
 /** pickpocket.ts's log line on a change of target, as the role's events arrive here. */
 const TARGET_EVENT = `${pickpocketRole.name}: ${TARGET_LOG}`;
+const ERRAND_EVENT = `${pickpocketRole.name}: ${ERRAND_LOG}`;
 
 interface Reading {
     at: number;
     session: number;
     tick: number;
     coins: number;
+    /** The worker's workTicks then. */
+    work: number;
 }
 
 class GiveUp extends Error {}
@@ -124,6 +127,11 @@ class Worker {
     methodAt: number | null = null;
     /** The npc the method works now, from the role's target line. */
     targetIndex: number | null = null;
+    /** pickpocket.ts's errand now (bank, go, thieve), from its errand line; null off the method. */
+    errand: string | null = null;
+    /** Ticks of this session spent in the thieve errand, and the last tick counted: the ramp's rate at the knights. */
+    workTicks = 0;
+    workTick: number | null = null;
     /** First tick of this session and when it was seen: the session's observed ms a tick. */
     private tick0: { tick: number; at: number } | null = null;
 
@@ -142,6 +150,8 @@ class Worker {
         this.nextLedgerTick = -1;
         this.tick0 = null;
         this.stall.pause();
+        this.workTicks = 0;
+        this.workTick = null;
     }
 
     msPerTick(s: BotWorldState): number | null {
@@ -370,6 +380,7 @@ export class Runner {
         w.stage = 'out';
         w.methodAt = null;
         w.targetIndex = null;
+        w.errand = null;
         if (failure) throw failure;
     }
 
@@ -411,6 +422,7 @@ export class Runner {
                 options: roleOptions({ ...w.plan, method: w.method }, this.plan),
                 event: (m, d) => {
                     if (m === TARGET_EVENT && typeof d?.index === 'number') w.targetIndex = d.index;
+                    if (m === ERRAND_EVENT && typeof d?.errand === 'string') w.errand = d.errand;
                     this.event(w, m, d);
                 },
                 reportBank: items => {
@@ -423,7 +435,10 @@ export class Runner {
             if (st.do !== w.stage) this.event(w, 'stage', { to: st.do, ...('to' in st ? { level: st.to } : {}) }, true);
             if (st.do !== 'method') w.methodAt = null;
             else if (w.stage !== 'method') w.methodAt = Date.now();
-            if (st.do !== 'method') w.targetIndex = null;
+            if (st.do !== 'method') {
+                w.targetIndex = null;
+                w.errand = null;
+            }
             w.stage = st.do;
             if (st.do === 'admission') w.arrivedAdmission ??= Date.now();
             w.stageCtl = stageCtl;
@@ -625,6 +640,8 @@ export class Runner {
             }
         }
         const msPerTick = w.msPerTick(s);
+        if (w.stage === 'method' && w.errand === 'thieve' && w.workTick !== null && s.tick > w.workTick) w.workTicks += s.tick - w.workTick;
+        w.workTick = s.tick;
         if (w.nextLedgerTick >= 0 && s.tick < w.nextLedgerTick) return;
         w.nextLedgerTick = s.tick + this.plan.ledger.everyTicks;
         const npc = w.stage === 'method' && w.targetIndex !== null ? s.nearbyNpcs.find(n => n.index === w.targetIndex) : undefined;
@@ -639,6 +656,7 @@ export class Runner {
             bankTick: w.bankTick,
             msPerTick,
             pos: [s.player.worldX, s.player.worldZ],
+            workTicks: w.workTicks,
             target: npc ? { index: npc.index, x: npc.tileX ?? npc.x, z: npc.tileZ ?? npc.z } : null
         };
         w.latest = snap;
@@ -649,7 +667,7 @@ export class Runner {
         // first sighting would book everything banked before the method as earnings. No reading, no 'working'.
         if (w.stage === 'method' && w.bank !== null) {
             const now = Date.now();
-            w.readings.push({ at: now, session: w.sessionNo, tick: s.tick, coins: line.coins.total });
+            w.readings.push({ at: now, session: w.sessionNo, tick: s.tick, coins: line.coins.total, work: w.workTicks });
             while (w.readings.length && w.readings[0]!.at < now - READINGS_KEEP_MS) w.readings.shift();
         }
     }

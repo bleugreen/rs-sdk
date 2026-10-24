@@ -133,6 +133,23 @@ export interface RampReading {
     session: number;
     tick: number;
     coins: number;
+    /** Cumulative ticks this session spent at the knights (pickpocket.ts's thieve errand), when counted. */
+    work?: number;
+}
+
+/** A login spending less than this share of a window at the knights is not measuring the knights. */
+export const MIN_WORK_SHARE = 0.5;
+
+/**
+ * gp a tick at the knights between two readings: coins over the ticks spent in the thieve errand, so the bank trips
+ * (for food, and to deposit at `bankAt`) and the walks back are left out. Null across sessions, without work counts,
+ * or when under MIN_WORK_SHARE of the window was spent at the knights.
+ */
+export function workRate(a: RampReading, b: RampReading): number | null {
+    if (a.session !== b.session || a.work === undefined || b.work === undefined || b.tick <= a.tick) return null;
+    const w = b.work - a.work;
+    if (w <= 0 || w < MIN_WORK_SHARE * (b.tick - a.tick)) return null;
+    return (b.coins - a.coins) / w;
 }
 
 export interface HoldLogin {
@@ -146,12 +163,15 @@ export interface HoldLogin {
 /**
  * Each login's gp a tick over a hold that began at `start`: from its first reading at or after the later of `start`
  * and the end of its warm-up (`warmupMs` after it reached the method) to its last reading. A login measured over
- * less than `minSpanMs` is left out, as is one with no two readings in one session.
+ * less than `minSpanMs` is left out, as is one with no two readings in one session. Readings with work counts give
+ * the rate at the knights (`workRate`); without them, the rate over the whole window (`rateBetween`).
  *
- * The warm-up keeps a login's arrival out of its rate: a knight reaches the method at the Ardougne docks with no food
- * carried, so its first minutes are the walk to the bank, the withdrawal and the walk to the knights. Live, a hold
- * that began 22 s after the last newcomer arrived read the newcomers at 12.5 gp a tick against the incumbents' 15.6
- * and stopped the ramp on a loss that was not crowding (docs/markets/phase2.md 'Knights crowding').
+ * Both guard the comparison against what is not crowding (docs/markets/phase2.md 'Knights crowding'). The warm-up
+ * keeps a login's arrival out: it reaches the method at the Ardougne docks with no food, so its first minutes are
+ * the walk to the bank and back. Live, a hold that began 22 s after the last newcomer arrived read the newcomers at
+ * 12.5 gp a tick against the incumbents' 15.6. The rate at the knights keeps the bank trips out: a knight deposits
+ * every ~21 minutes (50,000 coins carried), longer than a hold, so a wall-clock hold catches some logins' deposit
+ * trip and not others'; in the lab the step-1 knights read 11% lower in step 2 for that alone.
  */
 export function holdRates(logins: readonly HoldLogin[], start: number, warmupMs: number, minSpanMs: number): Record<string, number> {
     const out: Record<string, number> = {};
@@ -160,7 +180,7 @@ export function holdRates(logins: readonly HoldLogin[], start: number, warmupMs:
         const a = l.readings.find(x => x.at >= from);
         const b = l.readings.at(-1);
         if (!a || !b || b.at - a.at < minSpanMs) continue;
-        const v = rateBetween(a, b);
+        const v = a.work !== undefined && b.work !== undefined ? workRate(a, b) : rateBetween(a, b);
         if (v !== null) out[l.alias] = v;
     }
     return out;

@@ -99,6 +99,8 @@ export interface AccountSnapshot {
     pos?: [x: number, z: number] | null;
     /** The npc the method works now (pickpocket.ts's target) and its tile, when it is in view. */
     target?: NpcAt | null;
+    /** Ticks of this session spent at the npcs (pickpocket.ts's thieve errand). */
+    workTicks?: number | null;
 }
 
 export interface NpcAt {
@@ -121,6 +123,7 @@ export interface AccountLine {
     msPerTick: number | null;
     pos: [x: number, z: number] | null;
     target: NpcAt | null;
+    workTicks: number | null;
 }
 
 export function accountLine(s: AccountSnapshot, v: Valuer, now: Date): AccountLine {
@@ -141,7 +144,8 @@ export function accountLine(s: AccountSnapshot, v: Valuer, now: Date): AccountLi
         carriedStore: storeValue(s.carried, v.cost).value,
         msPerTick: s.msPerTick ?? null,
         pos: s.pos ?? null,
-        target: s.target ?? null
+        target: s.target ?? null,
+        workTicks: s.workTicks ?? null
     };
 }
 
