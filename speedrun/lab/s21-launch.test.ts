@@ -16,7 +16,7 @@ describe('s21GiverLaunch', () => {
         expect(c.gatewayPort).toBe(8313);
         const prod = giverEntries(GIVERS, { role: 'altar-giver' }) as { options: Record<string, unknown> }[];
         for (const [i, e] of c.accounts.entries()) {
-            const { restock: _, ...lab } = e.options;
+            const { restock: _, ...lab } = e.options as Record<string, unknown>;
             const { restock: __, ...day } = prod[i]!.options;
             expect(lab).toEqual(day);
             expect([e.options.altar, e.options.slot, e.options.essence, e.path, e.loginOn]).toEqual(['body', i % 3, 27, 'direct', { step: 'S21', family: 'altar' }]);

@@ -147,26 +147,17 @@ export function carrierStock(options: Pick<MuleRunOptions, 'packages'>, pack: Ob
     return out;
 }
 
-/** Inventory slots a seed give may fill before its deposit. */
-const SEED_CHUNK = 24;
-
 /**
  * The staff gives that put `stock` in a bank (each followed by a deposit): an item with a note, more
- * than one, as one noted stack; anything else as itself, an unnoted item over SEED_CHUNK in chunks
- * (an unstackable with no note never fits one inventory).
+ * than one, as one noted stack; anything else (one item, or a stackable, which has no note) as itself
+ * in one give. seedCarrier's landed-count check refuses a give that does not fit.
  */
 export function seedGives(stock: ReadonlyMap<number, number>, pack: ObjPack = objPack()): { id: number; obj: string; n: number }[] {
-    const out: { id: number; obj: string; n: number }[] = [];
-    for (const [id, total] of stock) {
+    return [...stock].map(([id, total]) => {
         const link = noteLink(id, pack);
-        const item = pack.names.get(link.item)!;
-        if (total > 1 && link.note !== null) {
-            out.push({ id: link.item, obj: pack.names.get(link.note)!, n: total });
-            continue;
-        }
-        for (let left = total; left > 0; left -= SEED_CHUNK) out.push({ id: link.item, obj: item, n: link.note === null ? left : Math.min(left, SEED_CHUNK) });
-    }
-    return out;
+        const noted = total > 1 && link.note !== null;
+        return { id: link.item, obj: pack.names.get(noted ? link.note! : link.item)!, n: total };
+    });
 }
 
 const carried = (s: Session) => s.sdk.getInventory().reduce((n, i) => n + i.count, 0);
