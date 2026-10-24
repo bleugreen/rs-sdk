@@ -30,10 +30,10 @@
 // hand-off tile before SCORED arrives, and preconditions refuse when it is not in view. A delivery
 // carrier (a `meeting` row, every placed mule row) may still be on its way: its row's mule cue waits,
 // bounded, for its readiness before the step's body runs (chain.ts muleCued, delivery-owner.ts
-// awaitReady), so preconditions ask instead that SCORED stand within the carrier's reach of its stand,
-// and the body gives a ready carrier a few ticks to come into sight before the trade. The step never
-// walks (the legs carry the travel). preconditions also refuse when SCORED already holds everything
-// the row brings (the trade has landed: see Resume), when it does not hold what it gives, or when
+// awaitReady), so preconditions ask instead that SCORED stand within the carrier's reach of its stand
+// and not already hold everything the row brings (the trade has landed: see Resume), and the body
+// gives a ready carrier a few ticks to come into sight before the trade. The step never walks (the
+// legs carry the travel). preconditions also refuse when SCORED does not hold what it gives, or when
 // what it receives will not fit the free slots, counting the slots the given items free (the
 // server counts offered items as freed, trade.rs2) and the slot each unequip takes first.
 //
@@ -49,9 +49,10 @@
 //   (Thieving 57 at the knights, Fishing 78 at the river). A demo rollback across a swap hands its
 //   given items back, which the second clause sees; across a receive-only trade it leaves the next
 //   step's own kit check to refuse.
-// Without the record, such a state (S22 after its first catch) holds some of every item the row
-// brings, which no row's pack does before its trade, so preconditions refuse it and the walk goes
-// down past the hand-off instead of trading the row a second time.
+// Without the record, a meeting row in such a state (S22 after its first catch) holds some of every
+// item the row brings, which no row's pack does before its trade, so preconditions refuse it and the
+// walk goes down past the hand-off instead of trading the row a second time; a standing partner's
+// row is refused there by the partner having left.
 // A logout after the trade landed but before the equip changes leaves `inProgress`, entered
 // through `resume`, which applies the equip only. A logout mid-trade refunds both sides, and the
 // step runs again.
@@ -346,9 +347,10 @@ export function handOffPre(s: BotWorldState, plan: HandOffPlan, partner: string,
     if (o.meeting) {
         const away = awayFromMeeting(s, plan.id, o.meeting);
         if (away) return away;
+        // A standing partner in view says the row is still to trade; a carrier still on its way says nothing, so the pack does.
+        const brought = deliveryHeld(s, plan);
+        if (brought) return `${plan.id}: already holds some of everything the row brings (${brought.join(', ')}): its trade has landed`;
     } else if (o.partnerInView !== false && !s.nearbyPlayers.some(p => sameName(p.name, partner))) return `${plan.id}: ${partner} is not in view (the partner stands on the hand-off tile before SCORED arrives)`;
-    const brought = deliveryHeld(s, plan);
-    if (brought) return `${plan.id}: already holds some of everything the row brings (${brought.join(', ')}): its trade has landed`;
     for (const g of plan.give) {
         const h = held(s, g);
         // `any` with none held gives nothing (resolvePlan): not a refusal. `all` and a count still need some.
