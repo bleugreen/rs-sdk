@@ -45,7 +45,7 @@ where load stretched the lab's ticks, which leaves a per-tick rate unchanged.
 
 | Method | Logins in the plan | Rate per login at that crowding | Inputs per login-hour (live price) | Net coins / h | Board / h | Basis | Competes with the scored run |
 |---|---|---|---|---|---|---|---|
-| **Knights of Ardougne**, Thieving 99, HP 99, banked sharks | 43 (A) / 0 (B) | 118.5k coins (L); lab 126-131k at 1-8 bots | 26 sharks (13.9k) | **104k** | 104k | L + m | **after-run-only**: S18 pickpockets these knights; sharks are a fleet input |
+| **Knights of Ardougne**, Thieving 99, HP 99, banked sharks | 43 (A) / 0 (B) | 118.5k coins (L); lab 126-131k at 1-8 bots; 154-163k gross at 8-24 bots, HP 40, with the bank-visit fix (rs/731) | 26 sharks (13.9k) | **104k** | 104k | L + m | **after-run-only**: S18 pickpockets these knights; sharks are a fleet input |
 | **Shilo gem rocks**, Mining 40-99 | 1 | 233 gems/h sharing the site with one regular (m, 2 bots); 399 alone (m) | none | **301k** while the jade bid lasts, then 171k (alone: 516k / 294k) | same | m (respawn emulated) + book | **after-run-only**: S25c's gems (H21d) |
 | **Steel bars**: mine iron and coal, smelt | 1 | 160 bars/h (i: iron 1,208/h m, coal 471/h rs/502 m, smelting 845/h m) | none (mined); pickaxe | **208k** at the flow's 1,369 | 208k | i from m parts | none (S27's cannonballs are made from staged bars) |
 | **Iron ore** into the iron bid | 0 (A) / 12 (B) | 1,208 ore/h (m) | pickaxe | **92k** at the bid's 80 mean (126k at its 110 best) | 92k | m + book | **after-run-only**: S18e's Superheat iron ore |
@@ -119,10 +119,12 @@ for their first sharks, the walk back. Measured again from 5 minutes after the l
 median was 15.02, a ratio of 0.927.
 
 **The lab.** fedora, block M19, `NODE_TICKRATE=400`. `markets/phase2/lab.ts` staged 24 lab knights at Thieving 99 and
-HP 40 (`--thieving=99 --hp-level=40`, 400 sharks banked) and ran the unchanged runner on them, so every knight took
-the live path: Varrock guards while it waited for admission, the ship, the bank, the knights. Ramp steps 8, 16, 24,
-15-minute holds. Run 1 kept the old measure (no warm-up) and a 60% stop so every step ran; the ledger now records
-each login's tile and its knight (`pos`, `target`), and `markets/phase2/crowding.ts` reads it.
+HP 40 (`--trained=1`, 400 sharks banked) and ran the runner on them, so every knight took the live path: Varrock
+guards while it waited for admission, the ship, the bank, the knights. Ramp steps 8, 16, 24, 15-minute holds, fresh
+accounts each run. Run 1 kept the runner's knights stage and ramp as they were (no warm-up; a 60% stop so every step
+ran); run 2 added the ramp's warm-up and knights measure below (real 10% rule); run 3 also had the bank-visit fix.
+The ledger records each login's tile, its knight and its ticks at the knights (`pos`, `target`, `workTicks`), and
+`markets/phase2/crowding.ts` reads it.
 
 | Run 1, step | Bots | Runner's median, from the hold start | Ratio | Incumbents, 5 min past arrival | Newcomers, 5 min past arrival |
 |---|---|---|---|---|---|
@@ -132,17 +134,16 @@ each login's tile and its knight (`pos`, `target`), and `markets/phase2/crowding
 
 **There is no crowding at the knights.** Our bots pick the nearest knight in view and keep it while it stays in
 view (`markets/methods/pickpocket.ts` `thieve`), so they pile up: at step 2 on three of the four knights (9, 7 and
-2), at step 3 21-23 of 24 on one. The rate per login is flat in the bots on its knight (run 1, every ledger
-interval past a login's first 5 minutes, pooled):
+2), at step 3 21-24 of 24 on one. The rate per login is flat in the bots on its knight (run 3, every ledger interval
+past a login's first 5 minutes, coins over its ticks at the knights, pooled):
 
-| Our bots on the knight | 1 | 2 | 5 | 7 | 9 | 12-14 | 23 |
-|---|---|---|---|---|---|---|---|
-| gp a tick | 16.92 | 15.59 | 17.69 | 17.97 | 16.92 | 19.0-19.5 | 17.47 |
-| intervals (20 s) | 79 | 122 | 245 | 271 | 415 | 93 | 607 |
+| Our bots on the knight | 1 | 3 | 5 | 7 | 9 | 13 | 17 | 20 | 22 | 23 | 24 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| gp a tick | 18.17 | 17.23 | 18.28 | 17.91 | 18.37 | 18.97 | 18.65 | 18.32 | 18.78 | 17.21 | 16.89 |
+| intervals (20 s) | 39 | 192 | 288 | 462 | 311 | 172 | 142 | 205 | 105 | 206 | 53 |
 
-Loads of 17-20 read 12.2-12.8 over 199 intervals in step 3, which run 1 cannot separate from the bank trips falling
-there (a knight on its bank trip keeps its knight in view, so its flat coins count at that load); run 2 below
-measures on the ticks at the knights. The engine agrees: the op trigger runs whenever the player is within reach
+Run 1, over wall ticks, read the same (16.9 at 1, 17.7 at 5, 18.0 at 7, 16.9 at 9, 17.5 at 23) except 12.2-12.8 at
+loads 17-20 in step 3: the dropped coins below, which fell there. The engine agrees: the op trigger runs whenever the player is within reach
 of the npc (`server/engine/src/engine/entity/Player.ts` `tryInteract`), never asking what the npc is doing;
 `pickpocket.rs2` `attempt_pick_pocket` keeps the stun and the delay on the player; a failure's
 `npc_setmode(playerface)` and `npc_setmode(null)` (`thieving.rs2` `fail_pick_pocket`) set and reset the npc's own
@@ -161,15 +162,24 @@ spend 98.4% of their ticks at the knights, bank trips and walks the rest); the d
 |---|---|---|---|
 | run 1, `'fill'` | 2.33 | 3.33 | 44 |
 | run 2, `'fill'` | 2.17 | 3.34 | 48 |
-| run 3, all but one slot | 0.33 (one 20 s ledger interval, the measure's floor) | 0.33 | see below |
+| run 3, all but one slot | 0.33 (one 20 s ledger interval, the measure's floor) | 0.33 | 46 |
 
 That is the ramp's puzzle. In run 1 every step-1 knight's deposit came 20.5-22.4 minutes after it arrived, inside
 step 2's hold (18-33 minutes after arrival), and its ~2.3 minutes of dropped coins are the incumbents' -11%; live,
 the same visit inside the 06:36-06:51Z hold is the incumbents' -4.6%. The arrival's food visit is most of the
 warm-up and the newcomers' share of the live 0.848: an arrival's gp a tick by minute (median of 16, run 1) was 0.2,
-7.3, 12.2, 13.2, 15.2 in minutes 0-4 and ~18 from minute 6; with the fix (run 3, 8 arrivals so far) 14.4 in minute 0
-and ~18 from minute 1. It cost every bank visit, live too: ~2.2 minutes in every ~21, about a tenth of the knights'
-income.
+7.3, 12.2, 13.2, 15.2 in minutes 0-4 and ~18 from minute 6; with the fix (run 3, median of 24) 15.2, 16.3, 16.7,
+17.7, 18.5. It cost every bank visit, live too: ~2.2 minutes in every ~21, about a tenth of the knights' income.
+
+| Step (bots) | Run 2: knights measure, gross | Run 2: ratio, incumbents' own | Run 3 (fix): knights measure, gross | Run 3: ratio, incumbents' own |
+|---|---|---|---|---|
+| 1 (8) | 17.40, 17.36 (156k/h) | 1, - | 17.62, 17.14 (154k/h) | 1, - |
+| 2 (16) | 18.09, 18.08 (163k/h) | 1.04, 1.02 | 18.14, 17.90 (161k/h) | 1.03, 1.01 |
+| 3 (24) | 17.35, 17.35 (156k/h) | 1.00, 0.96 | 18.43, 18.12 (163k/h) | 1.05, 1.06 |
+
+Both runs admitted all 24 on the 10% rule. Run 2's holds happened to miss the incumbents' deposits (its step-2 hold
+ran 27-42 minutes after they arrived); run 3's step-2 hold caught them (incumbents 16.80 gross, 17.29 at the
+knights, against the newcomers' 18.42), and with the fix that is the walk alone.
 
 **The fix** (`pickpocket.ts` `foodToWithdraw`): the bank visit counts the slots still taken after the deposit and
 withdraws food into all but `reserve` of the free ones: 1 at the knights (coins), 2 at the paladins (coins, chaos
@@ -548,7 +558,8 @@ bun markets/phase2/report.ts /tmp/rs632-r4/ledger.jsonl
 # knights crowding (rs/731): block M19 on fedora, from a copy of the checkout in /tmp, in a tmux server;
 # run 1 with the old measure (--warmup=0, a 60% stop), run 2 with the defaults
 . markets/methods/lab/block.sh M19 && LAB_RUNNERS=0 LAB_TIMEOUT=10200 speedrun/lab/lab.sh m19l00 \
-  'markets/phase2/lab.ts:--prefix=m19:--knights=24:--hungry=0:--guards=0:--exchange=0:--thieving=99:--hp-level=40:--steps=8,16,24:--hold=15:--warmup=0:--drop-pct=60:--sigint=130:--out=/tmp/rs731-run1'
+  'markets/phase2/lab.ts:--prefix=m19:--knights=24:--hungry=0:--guards=0:--exchange=0:--trained=1:--steps=8,16,24:--hold=15:--warmup=0:--drop-pct=60:--sigint=130:--out=/tmp/rs731-run1'
+# runs 2 and 3: the defaults (--prefix=m19b / m19c, no --warmup or --drop-pct, --sigint=85)
 bun markets/phase2/crowding.ts /tmp/rs731-run1
 ```
 
