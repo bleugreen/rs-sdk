@@ -34,6 +34,16 @@ export function getBotPassword(): string | null {
     return params?.get('password') || null;
 }
 
+/**
+ * The launch id the page was opened with (?launch=, which the speedrun controller puts on every
+ * tab it navigates), or null. It stays in the URL when the token leaves it, and the overlay echoes
+ * it in every published state, so a controller can tell this page's states from a gateway's cached
+ * state or another client's.
+ */
+export function getLaunchId(): string | null {
+    return getUrlParams()?.get('launch') || null;
+}
+
 export type LoginTokenWindow = Pick<Window, 'location' | 'history'> & { fetch: (input: string, init: RequestInit) => Promise<Response> };
 
 /**
