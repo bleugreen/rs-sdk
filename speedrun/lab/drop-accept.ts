@@ -179,19 +179,35 @@ try {
         if (id === LOGOUT_BUTTON) logoutClicks.push({ at: new Date().toISOString(), tick: s.sdk.getState()?.tick ?? null, sessionId: s.sessionId });
         return rawClick(id);
     };
-    let injected: { at: string; tick: number | null; adoptTick: number | null; sessionId: number } | null = null;
+    let injected: { at: string; adoptTick: number | null; sessionId: number; clicks: number; out: 'logout' | 'socket' | 'never'; outAtTick: number | null } | null = null;
     let finished = false;
+    // In the adopt's own tick, as the queued click was: re-sent each tick while the engine refuses it
+    // (logout.rs2 try_logout needs p_finduid, which a delayed player fails), and past
+    // INJECT_CLICK_TICKS the page's game socket is dropped instead, so the page is out either way.
+    const INJECT_CLICK_TICKS = 5;
     const injectAfterAdopt = async (sid0: number) => {
         for (;;) {
             if (finished) return;
-            if (s.sessionId > sid0 && relogs.entries().some(e => e.via === 'adopted')) break;
-            await Bun.sleep(20);
+            if (s.sessionId > sid0) break;
+            await Bun.sleep(5);
         }
         const adoptTick = s.sdk.getState()?.tick ?? null;
-        for (let k = 0; k < 250 && (s.sdk.getState()?.tick ?? null) === adoptTick; k++) await Bun.sleep(20);
-        injected = { at: new Date().toISOString(), tick: s.sdk.getState()?.tick ?? null, adoptTick, sessionId: s.sessionId };
-        console.log(`[inject] raw logout click on tick ${injected.tick}, the first after the adopt (tick ${adoptTick}, session ${s.sessionId})`);
-        void rawClick(LOGOUT_BUTTON).catch(() => {});
+        injected = { at: new Date().toISOString(), adoptTick, sessionId: s.sessionId, clicks: 0, out: 'never', outAtTick: null };
+        for (let k = 0; k < INJECT_CLICK_TICKS; k++) {
+            void rawClick(LOGOUT_BUTTON).catch(() => {});
+            injected.clicks++;
+            await Bun.sleep(tickMs());
+            if ((await pageInGame(cdp, s.name).catch(() => null)) === false) {
+                injected.out = 'logout';
+                break;
+            }
+        }
+        if (injected.out === 'never') {
+            const r = await evaluateInTab<string>(cdp, s.name, dropExpression('title')).catch(() => null);
+            if (r?.value === 'dropped') injected.out = 'socket';
+        }
+        injected.outAtTick = await pageTick();
+        console.log(`[inject] after the adopt (session ${injected.sessionId}, tick ${adoptTick}): ${injected.clicks} raw logout click(s), the page out by ${injected.out} at page tick ${injected.outAtTick}`);
     };
 
     const pageTick = async () => (await evaluateInTab<number | null>(cdp, s.name, '(() => { const o = window.gameClient && window.gameClient.botOverlay; return o && typeof o.serverTick === "number" ? o.serverTick : null; })()').catch(() => null))?.value ?? null;
