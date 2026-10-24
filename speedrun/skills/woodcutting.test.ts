@@ -1800,6 +1800,55 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         expect(groupLoadsDone(readBoneStatuses(g.dir), GROUP, A4)).toBe(10);
     });
 
+    // rs/186 (e) addition: the runes ride the group's last load, which may come after Prayer 99.
+    test('Prayer 99 at load 50 of 56: the band takes loads 51-56, burying them, and ends holding the runes', async () => {
+        const g = session({ loads: 56, trades: { cairn_b01: 48 }, final: true });
+        const start = inSight(state({ level: 99, prayer: 97 }));
+        const h = harness(start, s07(g.dir, g.receive, { lastLoad: 21 }), prayerRuns(1, []));
+        const band = h.byName(WILLOWS);
+        const stop = ticking(h.sdk);
+        try {
+            await band.run(h.ctx);
+        } finally {
+            stop();
+        }
+        const rows = loadRows(h).map(r => [(r.meta as { load: number }).load, (r.meta as { received: number }).received, (r.meta as { giver: string }).giver]);
+        expect(rows.map(r => r[0])).toEqual([49, 50, 51, 52, 53, 54, 55, 56]);
+        expect(rows.at(-1)).toEqual([56, 21, 'cairn_b04']);
+        const end = h.sdk.getState()!;
+        expect(end.skills.find(k => k.name === 'Prayer')!.baseLevel).toBe(99);
+        expect(end.inventory.filter(i => /rune$/i.test(i.name)).map(i => `${i.name} x${i.count}`)).toEqual(['Law rune x1', 'Air rune x5']);
+        // every load past Prayer 99 was buried, the last one's bones too
+        expect(end.inventory.filter(i => /bones$/i.test(i.name))).toHaveLength(0);
+        expect(band.postconditions(end, {})).toBe(true);
+        expect(band.done!({ state: end, probed: {} }, {})).toBe(true);
+        expect(h.log.rows.find(r => r.step === `${WILLOWS}:summary`)!.meta).toMatchObject({ ended: 'done', bonesLoads: 8 });
+        expect(readCue(g.dir)!.stop).toBe(true);
+    });
+
+    test('loads spent without the runes: done at once, and the runes postcondition fails as today', async () => {
+        const g = session({ loads: 56, trades: { cairn_b01: 56 }, final: true });
+        const s = inSight(state({ level: 99, prayer: 99 }));
+        const h = harness(s, s07(g.dir, g.receive, { lastLoad: 21 }), prayerRuns(1, []));
+        const band = h.byName(WILLOWS);
+        expect(band.done!({ state: s, probed: {} }, {})).toBe(true);
+        await band.run(h.ctx);
+        expect([h.calls.length, g.served.length]).toEqual([0, 0]);
+        expect(band.postconditions(s, {})).toMatch(/law 0 and air 0: the last load's Camelot runes \(1 and 5\) are not held/);
+    });
+
+    test('a resume at WC 99 and Prayer 99 without the runes, loads left, re-enters the band; with the runes held the module is finished', async () => {
+        const g = session({ loads: 56, trades: { cairn_b01: 50 }, final: true });
+        const at = async (s: BotWorldState) => {
+            const h = harness(s, s07(g.dir, g.receive, { lastLoad: 21 }));
+            const band = h.byName(WILLOWS);
+            const p = await resolveResume(h.all, new Observation(s), {} as never);
+            return [`${p.mode} ${p.step}`, band.done!({ state: s, probed: {} }, {}), band.inProgress!({ state: s, probed: {} }, {})];
+        };
+        expect(await at(state({ level: 99, prayer: 99 }))).toEqual(['resume woodcutting:willow-73-99', false, true]);
+        expect(await at(state({ level: 99, prayer: 99, items: [...KIT, 'Law rune', 'Air rune'] }))).toEqual(['finished null', true, false]);
+    });
+
     test('a resume at WC 99 still owing Prayer re-enters the willow band (the walk first when away); paid or spent, the module is finished', async () => {
         const left = session({ loads: 19, trades: { cairn_b01: 10 } });
         const spent = session({ loads: 19, trades: { cairn_b01: 19 } });
