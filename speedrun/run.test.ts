@@ -1,5 +1,8 @@
 import { fakeCdp, fakeWorld } from './lib/fake-cdp';
-import { FakeSdk } from './lib/fake-sdk';
+import { baseState, FakeSdk } from './lib/fake-sdk';
+import { deathGate, deathKey, DEATH_STEP, EXIT_DIED, ackRow } from './runner/death';
+import type { ReservationWatch } from './lib/host-reservation';
+import type { PlayerState } from '../sdk/types';
 import { TickPeriod } from './lib/wait';
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
@@ -9,7 +12,7 @@ import { TickLog } from './lib/ticks';
 import { MANIFEST } from './tools/slot-ledger';
 import { returnExtrasFromLedger } from './helpers/cannon-receiver';
 import { readFileSync } from 'fs';
-import { aliasAccount, attemptOf, openRunSession, cannonServeDrift, chainOrRefusal, type GateIO, LOG_ACCOUNT, loadRunConfig, parseArgs, signalShutdown, type SignalDeps, startGates, takeoverGate, TARGET_TOTAL, Terminated, tickBeforeLogin, totalLevel, untilTerminated, UsageError, withScoredSession } from './run';
+import { aliasAccount, attemptOf, openRunSession, runChainOnSession, cannonServeDrift, chainOrRefusal, type GateIO, LOG_ACCOUNT, loadRunConfig, parseArgs, signalShutdown, type SignalDeps, startGates, takeoverGate, TARGET_TOTAL, Terminated, tickBeforeLogin, totalLevel, untilTerminated, UsageError, withScoredSession } from './run';
 import { LOGOUT_BUTTON, type AbandonResult, type OpenOptions, type Session } from './lib/session';
 import { RelogBudget } from './runner/relog-budget';
 import { exitStopIsFinal } from './runner/cue-keeper';
@@ -530,5 +533,71 @@ describe('signals: a SIGTERM logs out, then the callers clean up once, then the 
         expect(await untilTerminated(Promise.resolve(7), sig)).toBe(7);
         await expect(untilTerminated(Promise.reject(new Error('step failed')), sig)).rejects.toThrow('step failed');
         sig.dispose();
+    });
+});
+
+describe('a death while the logout after a refused step holds (rs/709, attempt 3)', () => {
+    test('S14 refused in the Wilderness; the logout holds through the combat; SCORED dies and respawns: (death) row, DIED, exit 6; the next start refuses until --r8-recovered names it', async () => {
+        const fighting = { inCombat: true, targetIndex: 7, targetType: 'npc', lastDamageTick: 231 };
+        const p0 = { name: 'lab', worldX: 3288, worldZ: 3810, x: 3288, z: 3810, level: 0, hp: 12, maxHp: 42, isDead: false, lifeId: 1, respawnCount: 0, lastDeathTick: null, combat: fighting } as unknown as PlayerState;
+        const sdk = Object.assign(new FakeSdk(baseState({ tick: 231, player: p0 })), { checkBotStatus: async () => ({ status: 'active', inGame: true }) });
+        let exit!: (code: number) => void;
+        const child = { exited: new Promise<number>(r => (exit = r)), kill: () => exit(137) };
+        const now = Date.now();
+        const session = {
+            name: 'lab', client: 'lite', env: { BOT_USERNAME: 'lab', PASSWORD: 'x' }, sdk, bot: {}, sessionId: 1, launchId: 1, tickBase: 0, expectInWorld: true,
+            child, childExit: null, lastInWorldTick: 231, lastAdvanceAt: now, period: new TickPeriod(), launchedAt: now - 60_000, ticksSinceProgress: 0, watchdog: null, logPath: '/dev/null',
+        } as unknown as Session;
+        void child.exited.then(c => { session.childExit = c; });
+        let clicked = false;
+        sdk.onSend = a => {
+            if (a.method !== 'sendClickComponent' || a.args[0] !== LOGOUT_BUTTON) return;
+            clicked = true;
+            exit(0);
+        };
+        // Hit every tick once S14 has refused: down a hitpoint a tick, dead 4 ticks, then the Lumbridge respawn and the engine's message.
+        let refused = false;
+        let deadAt: number | null = null;
+        const script = (s: typeof sdk.state & {}) => {
+            const t = s.tick + 1;
+            const p = s.player!;
+            if (p.worldX === 3222) return {};
+            if (!refused || p.hp > 1) return { player: { ...p, hp: refused ? p.hp - 1 : p.hp, combat: { ...fighting, lastDamageTick: t } } };
+            deadAt ??= t;
+            if (t < deadAt + 4) return { player: { ...p, hp: 0, isDead: true } };
+            return {
+                player: { ...p, worldX: 3222, worldZ: 3218, x: 3222, z: 3218, hp: 42, isDead: false, lifeId: 2, respawnCount: 1, combat: { ...fighting, inCombat: false, targetIndex: -1, targetType: 'none' } },
+                gameMessages: [...s.gameMessages, { type: 0, text: 'Oh dear you are dead!', sender: '', tick: t }],
+            };
+        };
+        const timer = setInterval(() => { if (!clicked) sdk.tick(script); }, 5);
+        const log = TickLog.memory('run-3');
+        const s14: ChainStep = {
+            id: 'S14', kind: 'step', name: 'S14 ranged', postconditions: () => true, logoutSafe: true, run: async () => {},
+            preconditions: () => ((refused = true), 'Attack 1, not 40 (the scimitar)'),
+        };
+        const handlers = { on: () => {}, off: () => {}, exit: () => {}, log: () => {} };
+        let ran;
+        try {
+            ran = await runChainOnSession(session, { log, chain: [s14], reservation: { boundary: () => null, path: '' } as unknown as ReservationWatch, from: 0, signals: handlers });
+        } finally {
+            clearInterval(timer);
+        }
+        expect(ran.result.code).toBe(EXIT_DIED);
+        expect(ran.result.outcome).toMatch(/^DIED: SCORED died before the logout landed: \(3288,3810,0\) on tick \d+ to \(3222,3218,0\) on tick \d+ \(dead, respawned, message, respawn-tile; .*\(the chain had ended: FAILED: step "S14 ranged" precondition failed: Attack 1/);
+        expect(ran.lastLogout).toMatchObject({ ok: true, death: { signs: ['dead', 'respawned', 'message', 'respawn-tile'] } });
+        expect(ran.lastLogout!.held!.ticks).toBeGreaterThanOrEqual(17);
+        const deaths = log.rows.filter(r => r.step === DEATH_STEP);
+        expect(deaths).toHaveLength(1);
+        expect(deaths[0]).toMatchObject({ ok: false, meta: { from: { x: 3288, z: 3810, level: 0 }, to: { x: 3222, z: 3218, level: 0 }, logout: { ok: true } } });
+        expect((deaths[0]!.meta as { logout: { held?: unknown } }).logout.held).toBeDefined();
+        expect(session.died).toBe(ran.lastLogout!.death!);
+
+        // The next start, a walk or a --from: refused until --r8-recovered names this death.
+        const key = deathKey(deaths[0]!);
+        expect(deathGate(log.rows)).toMatchObject({ refusal: expect.stringContaining(`--r8-recovered=${key}`) });
+        expect(deathGate(log.rows, key)).toEqual({ acknowledge: [key] });
+        expect(deathGate([...log.rows, ackRow(log, LOG_ACCOUNT, [key])])).toEqual({ acknowledge: [] });
+        expect(parseArgs(['--bot=b', '--config=c', `--r8-recovered=${key}`, '--from=S14']).r8Recovered).toBe(key);
     });
 });
