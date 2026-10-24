@@ -589,15 +589,19 @@ describe('converse re-engage (a chat closed mid-talk with until unmet)', () => {
         expect(srv.interacts).toEqual([]);
     });
 
-    test('S15:C in burst mode: the cut burst leaves the shape, the hit marks the close, the replay goes a page a tick', async () => {
+    test('S15:C in burst mode: the shape, still unfinished at its state page, marks the close; the replay bursts again', async () => {
         const sdk = new FakeSdk(baseState({ tick: 1, player: you() }));
         const p = talk(sdk, { shape: '10c, state, 3c', burst: true });
         const srv = npcTalk(sdk, narnodeOrders(), { cuts: [2], done: () => ({ inventory: [ORDERS] }) });
         await srv.run(40);
         const r = await p;
-        expect(r).toMatchObject({ ok: true, reengages: 1 });
-        expect(r.shape!.stopped).toMatch(/burst of 10 did not land/);
-        expect(r.transcript.some(l => /re-engage 1: chat closed at \d+ with until unmet \(hit at \d+\)/.test(l))).toBe(true);
+        // continueBurst takes the closed chat for the quiet tick that lands a run before a state page, so the cut
+        // burst counts its 10 pages; the state page never came, and that is the evidence. The replay starts the
+        // shape over and bursts: closed at 3, re-engaged at 9, over at 15.
+        expect(srv.interacts).toEqual([9]);
+        expect(r).toMatchObject({ ok: true, reengages: 1, endTick: 15 });
+        expect(r.transcript).toContain('[9] re-engage 1: chat closed at 3 with until unmet (the shape was at part 2, state)');
+        expect(r.shape).toMatchObject({ bursts: 3, failedBursts: 0 });
         expect(holdsOrders(sdk.state!)).toBe(true);
     });
 
