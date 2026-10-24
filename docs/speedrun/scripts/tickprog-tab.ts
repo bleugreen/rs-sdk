@@ -15,7 +15,7 @@
 // sample to <out>/stats.log: frames drawn, game loops, requestAnimationFrame calls and
 // the longest main-thread stall, so a run can show the tab kept rendering while a
 // program ran. Runs until killed.
-import { appendFileSync, mkdirSync, writeFileSync } from 'fs';
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import puppeteer from 'puppeteer';
 import { browserUrl, loadBotEnv, mintLoginToken } from '../../../speedrun/lib/session';
@@ -51,10 +51,16 @@ const headless = process.env.HEADLESS === '1' || process.env.HEADLESS === 'true'
 // program reacts once per game-loop pass, so by default the tab runs with throttling
 // off. --stock-chrome keeps Chrome's defaults (what a hand-opened browser does).
 const unthrottled = process.argv.includes('--stock-chrome') ? [] : ['--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'];
+// As speedrun/lab/browser.ts launches a lab tab under an executor: headless is chrome-headless-shell (full
+// Chrome's headless mode fails to start there: its crashpad handler exits `--database is required`), with
+// the crash reporter off and a profile and config home of its own, since executors sandbox $HOME.
+const home = mkdtempSync(join(process.env.TMPDIR ?? '/tmp', 'tickprog-chrome-'));
 const browser = await puppeteer.launch({
-    headless,
+    headless: headless ? 'shell' : false,
     defaultViewport: null,
-    args: ['--no-sandbox', '--window-size=800,660', ...unthrottled, `--remote-debugging-port=${flag('debug-port') ?? 9397}`]
+    userDataDir: join(home, 'profile'),
+    env: { ...process.env, XDG_CONFIG_HOME: home, XDG_CACHE_HOME: home },
+    args: ['--no-sandbox', '--password-store=basic', '--disable-crash-reporter', '--disable-breakpad', '--window-size=800,660', ...unthrottled, `--remote-debugging-port=${flag('debug-port') ?? 9397}`]
 });
 console.log(`[tab] chrome ${unthrottled.length ? 'with background throttling off' : 'stock (background throttling on)'}`);
 const page = (await browser.pages())[0] ?? (await browser.newPage());
