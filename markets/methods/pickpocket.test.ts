@@ -1,5 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import { FailureRun, nextErrand, roamTo, routable, shouldEat, toward, unroutable, walkThroughDoors, WalkFailed, type DoorWalk } from './pickpocket';
+import { FailureRun, foodToWithdraw, nextErrand, roamTo, routable, shouldEat, toward, unroutable, walkThroughDoors, WalkFailed, type DoorWalk } from './pickpocket';
+
+describe('foodToWithdraw', () => {
+    test('leaves a slot for the coins', () => {
+        expect(foodToWithdraw(0, 0)).toBe(27);
+        expect(foodToWithdraw(2, 0)).toBe(25);
+        expect(foodToWithdraw(0, 10)).toBe(10);
+        expect(foodToWithdraw(20, 10)).toBe(7);
+        expect(foodToWithdraw(27, 0)).toBe(0);
+        expect(foodToWithdraw(28, 5)).toBe(0);
+    });
+});
 
 // the messages sdk/actions.ts walkTo returns; the first two are the demo's trapped knights' (2026-10-24)
 const SHORT = 'Path to (2653, 3300) stops 17 tiles short at (2669, 3317) - the rest is unroutable from here (locked door or separate room?)';

@@ -4,7 +4,8 @@
 //   ROLE_OPTIONS='{"target":"knight"}' bun markets/methods/pickpocket.ts <account>
 //
 // One trip: pickpocket until the food runs out (or `bankAt` coins are carried), walk to the
-// East Ardougne south bank, deposit everything, withdraw `food` (fill, or `foodPerTrip` of them),
+// East Ardougne south bank, deposit everything, withdraw `food` (all but one slot, kept for the
+// coins, or `foodPerTrip` of them),
 // report the bank, walk back. The demo's board counts the bank only, so every trip ends there.
 //
 // The click policy is speedrun/helpers/coins.ts's: click the target once every server tick and let
@@ -185,6 +186,20 @@ export const TARGET_LOG = 'target';
  */
 export const ERRAND_LOG = 'errand';
 
+/** Inventory slots a player has. */
+export const INVENTORY_SLOTS = 28;
+
+/**
+ * Food to withdraw into an inventory with `used` slots taken: all but one free slot (or `perTrip`, if fewer), so the
+ * coins have a slot. A success into a full pack drops its coins on the ground (engine InvOps.ts INV_ADD, the
+ * overflow), and a pack filled with sharks right after a deposit stays full until the next eat: at HP 40 that eat
+ * waited for ~7 failures, and the lab knights lost 1.3-2.5 minutes of coins after every bank visit.
+ */
+export function foodToWithdraw(used: number, perTrip: number): number {
+    const room = Math.max(0, INVENTORY_SLOTS - used - 1);
+    return perTrip > 0 ? Math.min(perTrip, room) : room;
+}
+
 export type Errand = 'bank' | 'go' | 'thieve';
 
 /** The next errand from a snapshot: bank when out of food or carrying `bankAt` coins, else thieve at the station. */
@@ -304,7 +319,9 @@ export class Pickpocketer {
         const d = await depositAll(this.ctx.sdk);
         if (!d.ok) this.ctx.log('deposit incomplete', { reason: d.reason, remaining: d.remaining.map(i => i.name) });
         const food = new RegExp(`^${this.o.food.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
-        const w = await withdrawMany(this.ctx.sdk, [{ item: food, n: this.o.foodPerTrip > 0 ? this.o.foodPerTrip : 'fill' }]);
+        const n = foodToWithdraw(this.ctx.sdk.getState()?.inventory.length ?? INVENTORY_SLOTS, this.o.foodPerTrip);
+        if (n === 0) throw new Error(`no free slot for food after the deposit (${d.remaining.map(i => i.name).join(', ')})`);
+        const w = await withdrawMany(this.ctx.sdk, [{ item: food, n }]);
         this.banks++;
         this.ctx.reportBank({ items: this.ctx.sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })) });
         await this.ctx.bot.closeBank();
