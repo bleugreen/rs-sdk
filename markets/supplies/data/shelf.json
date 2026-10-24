@@ -1,0 +1,968 @@
+[
+  {
+    "inv": "generalshop1",
+    "obj": "pot_empty",
+    "count": 3,
+    "price": 1,
+    "at": "2026-10-22T23:44:18.791Z"
+  },
+  {
+    "inv": "generalshop1",
+    "obj": "jug_empty",
+    "count": 0,
+    "price": 1,
+    "at": "2026-10-22T23:44:18.791Z"
+  },
+  {
+    "inv": "generalshop1",
+    "obj": "shears",
+    "count": 2,
+    "price": 1,
+    "at": "2026-10-22T23:44:18.791Z"
+  },
+  {
+    "inv": "generalshop1",
+    "obj": "bucket_empty",
+    "count": 2,
+    "price": 2,
+    "at": "2026-10-22T23:44:18.791Z"
+  },
+  {
+    "inv": "generalshop1",
+    "obj": "tinderbox",
+    "count": 2,
+    "price": 1,
+    "at": "2026-10-22T23:44:18.791Z"
+  },
+  {
+    "inv": "generalshop1",
+    "obj": "chisel",
+    "count": 2,
+    "price": 1,
+    "at": "2026-10-22T23:44:18.791Z"
+  },
+  {
+    "inv": "generalshop1",
+    "obj": "hammer",
+    "count": 5,
+    "price": 1,
+    "at": "2026-10-22T23:44:18.791Z"
+  },
+  {
+    "inv": "generalshop1",
+    "obj": "newcomer_map",
+    "count": 5,
+    "price": 1,
+    "at": "2026-10-22T23:44:18.791Z"
+  },
+  {
+    "inv": "gemshop2",
+    "obj": "uncut_sapphire",
+    "count": 1,
+    "price": 25,
+    "at": "2026-10-22T23:44:46.001Z"
+  },
+  {
+    "inv": "gemshop2",
+    "obj": "uncut_emerald",
+    "count": 0,
+    "price": 51,
+    "at": "2026-10-22T23:44:46.001Z"
+  },
+  {
+    "inv": "gemshop2",
+    "obj": "uncut_ruby",
+    "count": 0,
+    "price": 100,
+    "at": "2026-10-22T23:44:46.001Z"
+  },
+  {
+    "inv": "gemshop2",
+    "obj": "uncut_diamond",
+    "count": 0,
+    "price": 200,
+    "at": "2026-10-22T23:44:46.001Z"
+  },
+  {
+    "inv": "gemshop2",
+    "obj": "sapphire",
+    "count": 1,
+    "price": 250,
+    "at": "2026-10-22T23:44:46.001Z"
+  },
+  {
+    "inv": "gemshop2",
+    "obj": "emerald",
+    "count": 0,
+    "price": 515,
+    "at": "2026-10-22T23:44:46.001Z"
+  },
+  {
+    "inv": "gemshop2",
+    "obj": "ruby",
+    "count": 0,
+    "price": 1000,
+    "at": "2026-10-22T23:44:46.001Z"
+  },
+  {
+    "inv": "gemshop2",
+    "obj": "diamond",
+    "count": 0,
+    "price": 2000,
+    "at": "2026-10-22T23:44:46.001Z"
+  },
+  {
+    "inv": "runeshop",
+    "obj": "firerune",
+    "count": 12,
+    "price": 24,
+    "at": "2026-10-22T23:45:53.964Z"
+  },
+  {
+    "inv": "runeshop",
+    "obj": "waterrune",
+    "count": 8,
+    "price": 24,
+    "at": "2026-10-22T23:45:53.964Z"
+  },
+  {
+    "inv": "runeshop",
+    "obj": "airrune",
+    "count": 10,
+    "price": 24,
+    "at": "2026-10-22T23:45:53.964Z"
+  },
+  {
+    "inv": "runeshop",
+    "obj": "earthrune",
+    "count": 9,
+    "price": 24,
+    "at": "2026-10-22T23:45:53.964Z"
+  },
+  {
+    "inv": "runeshop",
+    "obj": "mindrune",
+    "count": 10,
+    "price": 18,
+    "at": "2026-10-22T23:45:53.964Z"
+  },
+  {
+    "inv": "runeshop",
+    "obj": "bodyrune",
+    "count": 13,
+    "price": 18,
+    "at": "2026-10-22T23:45:53.964Z"
+  },
+  {
+    "inv": "runeshop",
+    "obj": "chaosrune",
+    "count": 2,
+    "price": 90,
+    "at": "2026-10-22T23:45:53.964Z"
+  },
+  {
+    "inv": "runeshop",
+    "obj": "deathrune",
+    "count": 1,
+    "price": 180,
+    "at": "2026-10-22T23:45:53.964Z"
+  },
+  {
+    "inv": "generalshop2",
+    "obj": "pot_empty",
+    "count": 3,
+    "price": 1,
+    "at": "2026-10-22T23:46:07.278Z"
+  },
+  {
+    "inv": "generalshop2",
+    "obj": "jug_empty",
+    "count": 0,
+    "price": 1,
+    "at": "2026-10-22T23:46:07.278Z"
+  },
+  {
+    "inv": "generalshop2",
+    "obj": "shears",
+    "count": 2,
+    "price": 1,
+    "at": "2026-10-22T23:46:07.278Z"
+  },
+  {
+    "inv": "generalshop2",
+    "obj": "bucket_empty",
+    "count": 2,
+    "price": 2,
+    "at": "2026-10-22T23:46:07.278Z"
+  },
+  {
+    "inv": "generalshop2",
+    "obj": "tinderbox",
+    "count": 2,
+    "price": 1,
+    "at": "2026-10-22T23:46:07.278Z"
+  },
+  {
+    "inv": "generalshop2",
+    "obj": "chisel",
+    "count": 2,
+    "price": 1,
+    "at": "2026-10-22T23:46:07.278Z"
+  },
+  {
+    "inv": "generalshop2",
+    "obj": "hammer",
+    "count": 5,
+    "price": 1,
+    "at": "2026-10-22T23:46:07.278Z"
+  },
+  {
+    "inv": "memberstaffshop",
+    "obj": "battlestaff",
+    "count": 5,
+    "price": 7000,
+    "at": "2026-10-22T23:46:14.382Z"
+  },
+  {
+    "inv": "memberstaffshop",
+    "obj": "plainstaff",
+    "count": 5,
+    "price": 15,
+    "at": "2026-10-22T23:46:14.382Z"
+  },
+  {
+    "inv": "memberstaffshop",
+    "obj": "magic_staff",
+    "count": 5,
+    "price": 200,
+    "at": "2026-10-22T23:46:14.382Z"
+  },
+  {
+    "inv": "memberstaffshop",
+    "obj": "staff_of_air",
+    "count": 2,
+    "price": 1500,
+    "at": "2026-10-22T23:46:14.382Z"
+  },
+  {
+    "inv": "memberstaffshop",
+    "obj": "staff_of_water",
+    "count": 2,
+    "price": 1500,
+    "at": "2026-10-22T23:46:14.382Z"
+  },
+  {
+    "inv": "memberstaffshop",
+    "obj": "staff_of_earth",
+    "count": 2,
+    "price": 1500,
+    "at": "2026-10-22T23:46:14.382Z"
+  },
+  {
+    "inv": "memberstaffshop",
+    "obj": "staff_of_fire",
+    "count": 2,
+    "price": 1500,
+    "at": "2026-10-22T23:46:14.382Z"
+  },
+  {
+    "inv": "miningstore",
+    "obj": "hammer",
+    "count": 4,
+    "price": 1,
+    "at": "2026-10-22T23:47:08.371Z"
+  },
+  {
+    "inv": "miningstore",
+    "obj": "bronze_pickaxe",
+    "count": 4,
+    "price": 1,
+    "at": "2026-10-22T23:47:08.371Z"
+  },
+  {
+    "inv": "miningstore",
+    "obj": "copper_ore",
+    "count": 0,
+    "price": 3,
+    "at": "2026-10-22T23:47:08.371Z"
+  },
+  {
+    "inv": "miningstore",
+    "obj": "tin_ore",
+    "count": 0,
+    "price": 3,
+    "at": "2026-10-22T23:47:08.371Z"
+  },
+  {
+    "inv": "miningstore",
+    "obj": "iron_ore",
+    "count": 0,
+    "price": 17,
+    "at": "2026-10-22T23:47:08.371Z"
+  },
+  {
+    "inv": "miningstore",
+    "obj": "coal",
+    "count": 0,
+    "price": 45,
+    "at": "2026-10-22T23:47:08.371Z"
+  },
+  {
+    "inv": "miningstore",
+    "obj": "bronze_bar",
+    "count": 0,
+    "price": 8,
+    "at": "2026-10-22T23:47:08.371Z"
+  },
+  {
+    "inv": "miningstore",
+    "obj": "iron_bar",
+    "count": 0,
+    "price": 28,
+    "at": "2026-10-22T23:47:08.371Z"
+  },
+  {
+    "inv": "miningstore",
+    "obj": "gold_bar",
+    "count": 0,
+    "price": 300,
+    "at": "2026-10-22T23:47:08.371Z"
+  },
+  {
+    "inv": "generalshop4",
+    "obj": "pot_empty",
+    "count": 3,
+    "price": 1,
+    "at": "2026-10-22T23:47:46.689Z"
+  },
+  {
+    "inv": "generalshop4",
+    "obj": "jug_empty",
+    "count": 0,
+    "price": 1,
+    "at": "2026-10-22T23:47:46.689Z"
+  },
+  {
+    "inv": "generalshop4",
+    "obj": "shears",
+    "count": 2,
+    "price": 1,
+    "at": "2026-10-22T23:47:46.689Z"
+  },
+  {
+    "inv": "generalshop4",
+    "obj": "bucket_empty",
+    "count": 2,
+    "price": 2,
+    "at": "2026-10-22T23:47:46.689Z"
+  },
+  {
+    "inv": "generalshop4",
+    "obj": "tinderbox",
+    "count": 2,
+    "price": 1,
+    "at": "2026-10-22T23:47:46.689Z"
+  },
+  {
+    "inv": "generalshop4",
+    "obj": "chisel",
+    "count": 2,
+    "price": 1,
+    "at": "2026-10-22T23:47:46.689Z"
+  },
+  {
+    "inv": "generalshop4",
+    "obj": "hammer",
+    "count": 5,
+    "price": 1,
+    "at": "2026-10-22T23:47:46.689Z"
+  },
+  {
+    "inv": "gemshop",
+    "obj": "uncut_sapphire",
+    "count": 1,
+    "price": 25,
+    "at": "2026-10-22T23:47:59.967Z"
+  },
+  {
+    "inv": "gemshop",
+    "obj": "uncut_emerald",
+    "count": 0,
+    "price": 50,
+    "at": "2026-10-22T23:47:59.967Z"
+  },
+  {
+    "inv": "gemshop",
+    "obj": "uncut_ruby",
+    "count": 0,
+    "price": 100,
+    "at": "2026-10-22T23:47:59.967Z"
+  },
+  {
+    "inv": "gemshop",
+    "obj": "uncut_diamond",
+    "count": 0,
+    "price": 200,
+    "at": "2026-10-22T23:47:59.967Z"
+  },
+  {
+    "inv": "gemshop",
+    "obj": "sapphire",
+    "count": 1,
+    "price": 250,
+    "at": "2026-10-22T23:47:59.967Z"
+  },
+  {
+    "inv": "gemshop",
+    "obj": "emerald",
+    "count": 0,
+    "price": 500,
+    "at": "2026-10-22T23:47:59.967Z"
+  },
+  {
+    "inv": "gemshop",
+    "obj": "ruby",
+    "count": 0,
+    "price": 1000,
+    "at": "2026-10-22T23:47:59.967Z"
+  },
+  {
+    "inv": "gemshop",
+    "obj": "diamond",
+    "count": 0,
+    "price": 2000,
+    "at": "2026-10-22T23:47:59.967Z"
+  },
+  {
+    "inv": "goldshop",
+    "obj": "gold_ring",
+    "count": 0,
+    "price": 350,
+    "at": "2026-10-22T23:48:35.947Z"
+  },
+  {
+    "inv": "goldshop",
+    "obj": "sapphire_ring",
+    "count": 0,
+    "price": 900,
+    "at": "2026-10-22T23:48:35.947Z"
+  },
+  {
+    "inv": "goldshop",
+    "obj": "emerald_ring",
+    "count": 0,
+    "price": 1275,
+    "at": "2026-10-22T23:48:35.947Z"
+  },
+  {
+    "inv": "goldshop",
+    "obj": "ruby_ring",
+    "count": 0,
+    "price": 2025,
+    "at": "2026-10-22T23:48:35.947Z"
+  },
+  {
+    "inv": "goldshop",
+    "obj": "diamond_ring",
+    "count": 0,
+    "price": 3525,
+    "at": "2026-10-22T23:48:35.947Z"
+  },
+  {
+    "inv": "goldshop",
+    "obj": "gold_necklace",
+    "count": 0,
+    "price": 450,
+    "at": "2026-10-22T23:48:35.947Z"
+  },
+  {
+    "inv": "goldshop",
+    "obj": "sapphire_necklace",
+    "count": 0,
+    "price": 1050,
+    "at": "2026-10-22T23:48:35.947Z"
+  },
+  {
+    "inv": "goldshop",
+    "obj": "emerald_necklace",
+    "count": 0,
+    "price": 1425,
+    "at": "2026-10-22T23:48:35.947Z"
+  },
+  {
+    "inv": "goldshop",
+    "obj": "ruby_necklace",
+    "count": 0,
+    "price": 2175,
+    "at": "2026-10-22T23:48:35.947Z"
+  },
+  {
+    "inv": "goldshop",
+    "obj": "diamond_necklace",
+    "count": 0,
+    "price": 3675,
+    "at": "2026-10-22T23:48:35.947Z"
+  },
+  {
+    "inv": "goldshop",
+    "obj": "strung_gold_amulet",
+    "count": 0,
+    "price": 350,
+    "at": "2026-10-22T23:48:35.947Z"
+  },
+  {
+    "inv": "goldshop",
+    "obj": "strung_sapphire_amulet",
+    "count": 0,
+    "price": 900,
+    "at": "2026-10-22T23:48:35.947Z"
+  },
+  {
+    "inv": "goldshop",
+    "obj": "strung_emerald_amulet",
+    "count": 0,
+    "price": 1275,
+    "at": "2026-10-22T23:48:35.947Z"
+  },
+  {
+    "inv": "goldshop",
+    "obj": "strung_ruby_amulet",
+    "count": 0,
+    "price": 2025,
+    "at": "2026-10-22T23:48:35.947Z"
+  },
+  {
+    "inv": "goldshop",
+    "obj": "strung_diamond_amulet",
+    "count": 0,
+    "price": 3525,
+    "at": "2026-10-22T23:48:35.947Z"
+  },
+  {
+    "inv": "magicshop",
+    "obj": "firerune",
+    "count": 1,
+    "price": 24,
+    "at": "2026-10-22T23:48:44.406Z"
+  },
+  {
+    "inv": "magicshop",
+    "obj": "waterrune",
+    "count": 0,
+    "price": 24,
+    "at": "2026-10-22T23:48:44.406Z"
+  },
+  {
+    "inv": "magicshop",
+    "obj": "airrune",
+    "count": 1,
+    "price": 24,
+    "at": "2026-10-22T23:48:44.406Z"
+  },
+  {
+    "inv": "magicshop",
+    "obj": "earthrune",
+    "count": 1,
+    "price": 24,
+    "at": "2026-10-22T23:48:44.406Z"
+  },
+  {
+    "inv": "magicshop",
+    "obj": "mindrune",
+    "count": 2,
+    "price": 18,
+    "at": "2026-10-22T23:48:44.406Z"
+  },
+  {
+    "inv": "magicshop",
+    "obj": "bodyrune",
+    "count": 2,
+    "price": 18,
+    "at": "2026-10-22T23:48:44.406Z"
+  },
+  {
+    "inv": "magicshop",
+    "obj": "chaosrune",
+    "count": 1,
+    "price": 90,
+    "at": "2026-10-22T23:48:44.406Z"
+  },
+  {
+    "inv": "magicshop",
+    "obj": "deathrune",
+    "count": 0,
+    "price": 180,
+    "at": "2026-10-22T23:48:44.406Z"
+  },
+  {
+    "inv": "magicshop",
+    "obj": "eye_of_newt",
+    "count": 300,
+    "price": 3,
+    "at": "2026-10-22T23:48:44.406Z"
+  },
+  {
+    "inv": "magicshop",
+    "obj": "bluewizhat",
+    "count": 1,
+    "price": 2,
+    "at": "2026-10-22T23:48:44.406Z"
+  },
+  {
+    "inv": "magicshop",
+    "obj": "blackwizhat",
+    "count": 1,
+    "price": 2,
+    "at": "2026-10-22T23:48:44.406Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "tinderbox",
+    "count": 2,
+    "price": 1,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "unlit_candle",
+    "count": 10,
+    "price": 4,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "torch_unlit",
+    "count": 10,
+    "price": 6,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "pot_empty",
+    "count": 3,
+    "price": 1,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "rope",
+    "count": 10,
+    "price": 27,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "leather_armour",
+    "count": 12,
+    "price": 31,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "leather_gloves",
+    "count": 10,
+    "price": 9,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "leather_boots",
+    "count": 10,
+    "price": 9,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "cooked_meat",
+    "count": 2,
+    "price": 6,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "bread",
+    "count": 10,
+    "price": 18,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "vial_empty",
+    "count": 10,
+    "price": 3,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "vial_water",
+    "count": 50,
+    "price": 3,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "pestle_and_mortar",
+    "count": 3,
+    "price": 6,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "3doseantipoison",
+    "count": 10,
+    "price": 432,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "papyrus",
+    "count": 50,
+    "price": 15,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "charcoal",
+    "count": 50,
+    "price": 67,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "knife",
+    "count": 2,
+    "price": 9,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "hammer",
+    "count": 10,
+    "price": 1,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "machette",
+    "count": 50,
+    "price": 60,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "chisel",
+    "count": 10,
+    "price": 1,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "spade",
+    "count": 10,
+    "price": 4,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "bronze_axe",
+    "count": 2,
+    "price": 24,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "bronze_pickaxe",
+    "count": 2,
+    "price": 1,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "iron_axe",
+    "count": 5,
+    "price": 84,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "junglestore",
+    "obj": "bronze_bar",
+    "count": 10,
+    "price": 12,
+    "at": "2026-10-22T23:49:54.474Z"
+  },
+  {
+    "inv": "amuletshop",
+    "obj": "blessedstar",
+    "count": 0,
+    "price": 360,
+    "at": "2026-10-22T23:50:16.415Z"
+  },
+  {
+    "inv": "amuletshop",
+    "obj": "amulet_of_magic",
+    "count": 0,
+    "price": 1080,
+    "at": "2026-10-22T23:50:16.415Z"
+  },
+  {
+    "inv": "amuletshop",
+    "obj": "amulet_of_defence",
+    "count": 0,
+    "price": 1530,
+    "at": "2026-10-22T23:50:16.415Z"
+  },
+  {
+    "inv": "amuletshop",
+    "obj": "amulet_of_strength",
+    "count": 0,
+    "price": 2430,
+    "at": "2026-10-22T23:50:16.415Z"
+  },
+  {
+    "inv": "amuletshop",
+    "obj": "amulet_of_power",
+    "count": 0,
+    "price": 4230,
+    "at": "2026-10-22T23:50:16.415Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "bolt",
+    "count": 200,
+    "price": 3,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "bronze_arrow",
+    "count": 1000,
+    "price": 1,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "iron_arrow",
+    "count": 800,
+    "price": 3,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "steel_arrow",
+    "count": 0,
+    "price": 12,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "mithril_arrow",
+    "count": 0,
+    "price": 32,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "adamant_arrow",
+    "count": 0,
+    "price": 80,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "rune_arrow",
+    "count": 0,
+    "price": 400,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "bronze_arrowheads",
+    "count": 1000,
+    "price": 1,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "iron_arrowheads",
+    "count": 800,
+    "price": 2,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "steel_arrowheads",
+    "count": 600,
+    "price": 6,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "mithril_arrowheads",
+    "count": 400,
+    "price": 16,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "adamant_arrowheads",
+    "count": 196,
+    "price": 41,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "rune_arrowheads",
+    "count": 100,
+    "price": 200,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "shortbow",
+    "count": 4,
+    "price": 50,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "longbow",
+    "count": 2,
+    "price": 80,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "crossbow",
+    "count": 2,
+    "price": 70,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "oak_shortbow",
+    "count": 4,
+    "price": 100,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "oak_longbow",
+    "count": 4,
+    "price": 160,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "studded_body",
+    "count": 2,
+    "price": 850,
+    "at": "2026-10-22T23:51:30.004Z"
+  },
+  {
+    "inv": "archeryshop2",
+    "obj": "studded_chaps",
+    "count": 2,
+    "price": 750,
+    "at": "2026-10-22T23:51:30.004Z"
+  }
+]

@@ -26,6 +26,6 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "include": ["*.ts", "server/gateway/**/*.ts", "sdk/**/*.ts", "speedrun/**/*.ts", "film/**/*.ts"],
-  "exclude": ["server/engine", "server/webclient", "node_modules"]
+  "include": ["*.ts", "server/gateway/**/*.ts", "sdk/**/*.ts", "speedrun/**/*.ts", "markets/**/*.ts", "film/**/*.ts"],
+  "exclude": ["server/engine", "server/webclient", "node_modules", "markets/research"]
 }
