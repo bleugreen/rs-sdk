@@ -59,7 +59,7 @@ import { accountLine, COINS_ID, totalsLine, type AccountSnapshot, type Stack, ty
 import { aliasOf, nameScrubber, scrubRecord, unlistedAccounts } from './names.ts';
 import { NEEDS, nextFallback, parsePlan, PlanError, roleOptions, SALE_ROUTE, sequenceFor, type AccountPlan, type MethodId, type Plan } from './plan.ts';
 import { KnightsRamp, rateBetween } from './ramp.ts';
-import { afterAttempt, loadSharks, rebuyDecision, requestRebuy, retryDelayMs, SHARKS_KEY, type SharkAttempt } from './sharks.ts';
+import { afterAttempt, loadSharks, rebuyDecision, requestRebuy, retryDelayMs, SHARKS_KEY, shortfall, shortForVoyage, type SharkAttempt } from './sharks.ts';
 import { carriedCoins, runRoleUntil, runStage, stageDone, type StageCtx, type StageHooks } from './stages.ts';
 import { DEFAULT_STALL, StallWatch, type StallPolicy } from './stall.ts';
 
@@ -415,8 +415,10 @@ export class Runner {
                 attempt = { error: e instanceof Error ? e.message : String(e) };
             }
             const next = afterAttempt(loadSharks(w.roleState.get(SHARKS_KEY)), attempt, new Date());
+            const short = next.status === 'done' ? shortfall(next.last, s.minimum) : null;
+            if (short) next.short = short;
             await w.roleState.set(SHARKS_KEY, next);
-            this.ledger({ account: w.alias, ...next.last, status: next.status, tries: next.tries, ...(next.note ? { note: next.note } : {}) });
+            this.ledger({ account: w.alias, ...next.last, status: next.status, tries: next.tries, ...(next.note ? { note: next.note } : {}), ...(short ? { short } : {}) });
             if (next.status === 'retry') {
                 const ms = retryDelayMs(next.tries);
                 this.event(w, 'shark purchase refused for a transient reason: retrying', { reason: next.last?.withdraw ?? next.last?.reason, tries: next.tries, inSeconds: ms / 1000 }, true);
@@ -427,6 +429,24 @@ export class Runner {
             if (banked < s.minimum) this.foodOut(w, `${banked} sharks banked after the purchase, below the minimum of ${s.minimum}`);
             return;
         }
+    }
+
+    /**
+     * Before the voyage: a shark eater on a buying plan with fewer than `minimum` sharks goes to the food fallback
+     * instead of sailing (sharks.ts shortForVoyage), which a rebuy brings back from. A restart after a short first
+     * purchase lands here, with only the recorded purchase to go on. Returns whether it was redirected.
+     */
+    private sailShort(w: Worker, s: BotWorldState): boolean {
+        if (!NEEDS[w.method].sharks || this.plan.sharks.source !== 'buy') return false;
+        const reason = shortForVoyage({
+            bankSharks: w.bank === null ? null : countOf(w.bank, /^shark$/i),
+            carriedSharks: countOf(s.inventory, /^shark$/i),
+            sharks: loadSharks(w.roleState.get(SHARKS_KEY)),
+            minimum: this.plan.sharks.minimum
+        });
+        if (!reason) return false;
+        this.foodOut(w, reason);
+        return w.redirect !== null;
     }
 
     /**
@@ -485,7 +505,9 @@ export class Runner {
             if (st.do === 'admission') w.arrivedAdmission ??= Date.now();
             w.stageCtl = stageCtl;
             try {
-                if (st.do === 'method' && w.saleDue) await this.sale(w, x);
+                if (st.do === 'to-ardougne' && this.sailShort(w, sdk.getState()!)) {
+                    // redirected to the food fallback instead of sailing: the loop applies it
+                } else if (st.do === 'method' && w.saleDue) await this.sale(w, x);
                 else if (st.do === 'hp' && !this.hpSite(w, x, st.to)) await this.hpQueue(w, x);
                 else {
                     await runStage(st, x, w.method);

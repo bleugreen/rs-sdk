@@ -174,11 +174,7 @@ export interface RebuyInput {
 
 export type RebuyDecision = { rebuy: true; reason: string } | { rebuy: false; reason: string };
 
-function bookRefused(last: Record<string, unknown> | null): boolean {
-    return BOOK_REFUSED(last);
-}
-
-const BOOK_REFUSED = (last: Record<string, unknown> | null): boolean =>
+const bookRefused = (last: Record<string, unknown> | null): boolean =>
     !!last && (last.result === 'unknown' || last.result === 'unfilled' || (last.result === 'refused' && /no asks|above the ceiling/i.test(String(last.reason ?? ''))));
 
 /**

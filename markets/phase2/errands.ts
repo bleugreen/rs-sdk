@@ -116,6 +116,7 @@ export async function buySharks(x: ErrandCtx, cfg: SharkConfig, book: BookReader
     const held = countIn(bank, /^shark$/i);
     const want = cfg.perAccount - held;
     rec.held = held;
+    rec.want = want;
     if (want <= 0) {
         await x.bot.closeBank();
         rec.result = 'enough';
