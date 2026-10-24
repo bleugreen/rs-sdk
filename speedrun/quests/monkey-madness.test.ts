@@ -13,7 +13,11 @@ import { compactJournal } from '../lib/quests';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession } from '../runner/step';
 import {
+<<<<<<< ours
     BANANA_TREE_IDS, bananaRoomDrops, h12Plan, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, isWaydarIntroEnd, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
+=======
+    BANANA_TREE_IDS, bananaRoomDrops, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, waydarIntroWatch, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
+>>>>>>> theirs
     BELOW_30_EATING, cureWanted, eatBelowFor, sharksToDrop, GARKOR_WEST, isMonkeyChatter, CAGE, CAGE_NORTH_STRIP, CAGE_TILES, inCage, letOut, letOutPick, LET_OUT_ATTEMPTS, MINDER_REACH, nearestFire, sceneBuilt, tileIn, underTemple, scorpionsNear, SCORPION_CLOSE, SCORPION_REACH, sigilRoom, h12oLeg, legCue, pFinalStop, closeLeftTrade, DECLINE_TICKS, H12O_M_ROW, mTopUpCap, ASK_SHARK, ASK_SUPER_ANTIPOISON, H12O_SCOPE, onTradeOpen, P_TOPUP_MAX_SHARKS, pTopUpAsk, immunityWanted,
     AREAS, inArea, inCell, zooknockWay, type ZooknockLegs,
     ARCHER_REACH, AUNT_BOX, crateRoute, crateSteps, entersSleepingZone, SLEEPING_DETOURS, sleepingDetour, GUARD_REACH, legPrayerFor, M_TOPUP_TILE, mLegSize, mTopUpSharks, NO_DWELL, pathTiles, pLegSize, POSTED_ARCHERS, prayerRuns, receiveLeg, RELIGIOUS_GUARDS, SLEEPING_ZONE, tilePrayer, TOPUP_TRIES, TOPUP_WAIT, tradeIdle, type Receive, nextBananaTree, SUPER_IMMUNE_TICKS, offAtoll, patrolLeavesLane, SEGMENT_EATING, topUpWanted, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, steps, templeLeft, treeRouteRefusal, yRoom, type MmContext,
@@ -194,17 +198,35 @@ describe("G: Waydar's arrival intro", () => {
     /** Every quoted chat line of Waydar's script and of quest_mm.rs2 (the chapter 2 cutscene's pages). */
     const lines = (file: string) => [...readFileSync(join(scripts, file), 'utf8').matchAll(/~\.?chat(?:npc|player|npcnoturn)\("(?:<p,\w+>)?([^"]*)"/g)].map(m => m[1]!);
 
-    test('ends on the intro\'s last page and on no other page G can show', () => {
-        const waydar = lines('mm_waydar.rs2');
-        expect(waydar.filter(isWaydarIntroEnd)).toEqual(['Of course.']);
-        expect(lines('quest_mm.rs2').filter(isWaydarIntroEnd)).toEqual([]);
+    test('the intro opens on a chat page and holds no state page, so its first close is its end', () => {
+        const src = readFileSync(join(scripts, 'mm_waydar.rs2'), 'utf8');
+        const intro = src.slice(src.indexOf('case ^mm_not_started :'), src.indexOf('[label,waydar_lumdo]'));
+        expect(intro.split('\n')[1]).toMatch(/~chatplayer\(/);
+        expect(intro).not.toMatch(/p_delay|fade|p_teleport|inv_(add|del)/);
+        expect(lines('mm_waydar.rs2').filter(l => l === 'Of course.')).toHaveLength(1);
     });
 
-    test('matches the page as pageText joins it, and not a longer phrase', () => {
-        expect(isWaydarIntroEnd('Waydar Of course. Click here to continue')).toBe(true);
-        expect(isWaydarIntroEnd('Of course.')).toBe(true);
-        expect(isWaydarIntroEnd('Of course not.')).toBe(false);
-        expect(isWaydarIntroEnd('Did our glider survive?')).toBe(false);
+    const page = (kind: 'continue' | 'choice', isWaiting = false) => ({
+        dialog: kind === 'continue'
+            ? { isOpen: true, isWaiting, options: [{ index: 1, text: 'Click here to continue', buttonType: 6, componentId: 1 }] }
+            : { isOpen: true, isWaiting, options: ['What shall we do now?', 'I cannot convince Lumdo to take us to the island...'].map((text, i) => ({ index: i + 1, text, buttonType: 1, componentId: 2 + i })) },
+    });
+    const shut = { dialog: { isOpen: false, isWaiting: false, options: [] } };
+
+    test('the intro, page by page or burst with only its first page published, is over at its close', () => {
+        for (const seen of [[page('continue'), page('continue', true), page('continue'), page('continue'), shut], [page('continue'), shut]]) {
+            const w = waydarIntroWatch();
+            for (const s of seen.slice(0, -1)) w.see(s as never);
+            expect(w.over).toBe(false);
+            w.see(seen.at(-1) as never);
+            expect(w.over).toBe(true);
+        }
+    });
+
+    test('a talk that opens on the menu is never the intro, through the cutscene\'s closed fade', () => {
+        const w = waydarIntroWatch();
+        for (const s of [shut, page('choice'), page('continue'), shut, page('continue'), shut]) w.see(s as never);
+        expect(w.over).toBe(false);
     });
 });
 
