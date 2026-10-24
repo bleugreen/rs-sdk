@@ -2027,13 +2027,15 @@ What the operator sees:
 
 - **Every session drops.** In the live view SCORED's client draws `Connection lost` and `Please
   wait - attempting to reestablish` within about a second of its socket closing, or, on a socket
-  that stays open and silent, once 240 s pass without a packet (`NO_DATA_TIMEOUT_MS`,
-  server/webclient/src/client/NoDataTimeout.ts; it was 15 s before attempt 4, then 120 s, which TCP
-  retransmission backoff overran on a 60 s outage: 121.6 s of silence). It tries one login
-  of its own, and with the server down falls back to the title screen (r: `lostCon` in Client.ts).
-  While the page still says in game, run.ts sends nothing for that long plus a 15 s margin
-  (speedrun/runner/page-hold.ts): a network hold costs only its ticks when the socket resumes. The helpers
-  and the fleet drop at the same moment.
+  that stays open and silent, once 120 s pass without a packet (`NO_DATA_TIMEOUT_MS`,
+  server/webclient/src/client/NoDataTimeout.ts; 15 s before attempt 4, briefly 240 s). It tries one
+  login of its own, and with the server down falls back to the title screen (r: `lostCon` in
+  Client.ts). While the page still says in game, run.ts sends nothing for that long plus a 15 s
+  margin (speedrun/runner/page-hold.ts): a network hold costs only its ticks when the socket
+  resumes inside it. Past it run.ts does not rely on the page's own reconnect: it closes SCORED's
+  tab, waits 10 s for the server to drop the body, and logs in on a fresh tab (rs/744, the host's
+  runs D and E: a 60 s block mostly left the page claiming in game on a socket that never resumed).
+  The helpers and the fleet drop at the same moment.
 - **The outage from outside:** `/playercount` stops answering for ~30 s, then answers 0; logins are
   refused with code 8 for ~1.5-2.5 min; the count refills over ~10 min (r:
   `speedrun/lib/demo-status.ts`, rs/102). The bundle-token command (above) prints a new token.
@@ -2436,12 +2438,14 @@ the confirmed logout, the deep-Wilderness resume).
   operator holds the lock, then finds the page in the world, adopts that session
   (`session.ts` `adoptSession`) and resumes as after its own relog. A page it finds already back
   in the world is recorded as an `adopt` entry, charged to no budget (no login was sent).
-- **'Your account is already logged in'**: after a network drop that left the socket silent, the
-  server holds SCORED's old player for up to 1,000 ticks and refuses every login. run.ts's drop
-  recovery holds the relog lock and retries every 65 s for up to 8 min, logging
-  `[relog] the server still holds SCORED in the world ...` each time; relog-now refuses meanwhile.
-  The login that lands is one unplanned relog. Past 8 min the run stops as for any failed relog,
-  with its `(drop)` row written.
+- **A relog never fails the run after one attempt**: after a silence of the whole hold window
+  (the page out at its 120 s timeout, or still claiming in game with no tick), run.ts's drop
+  recovery closes the old tab first (`[relog] closed the old tab first ...`), waits 10 s, and logs
+  in on a fresh tab. A login refused 'Your account is already logged in', one that times out, or a
+  fresh tab that does not get in is retried on another fresh tab every 20 s for up to 8 min, the
+  relog lock held (`[relog] attempt N ... failed ...; a fresh tab in 20 s`); relog-now refuses
+  meanwhile. The login that lands is one unplanned relog. Past 8 min the run stops as for any
+  failed relog, with its `(drop)` row written. A bad password or a full world stops it at once.
 - **The budget**: S21's planned relog plus 3 unplanned, **run.ts's and the operator's together**.
   Past it run.ts stops with `relog budget spent` as its reason (`RelogBudgetSpent`).
 - **S21's planned logout** goes through `session.ts` `logoutClean`, which confirms the account out

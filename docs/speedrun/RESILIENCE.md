@@ -211,20 +211,39 @@ handles it itself:
   the engine's `TIMEOUT_NO_RESPONSE`, 1,000 ticks after its last packet, not the
   500-tick bound for a closed one, and every login meanwhile is refused with
   reply 5, "Your account is already logged in. Try again in 60 secs". A hold
-  under the page's own no-data timeout (240 s, `NO_DATA_TIMEOUT_MS`; run.ts
-  holds 15 s past it) costs nothing but the hold (the page stays in game and
-  is adopted). TCP retransmission backoff can nearly double an outage's
-  silence, so that covers outages up to ~100 s; a longer one sends the page to the title
-  screen with its reconnect refused. `session.ts` matches the reply on the
-  title screen in one place (`loginReplyCode`); the drop recovery's login asks
-  for it (`stopOnReply`, `LoginRefused`) and, holding the relog lock, retries
-  every 65 s (`ALREADY_IN_RETRY_MS`) for up to 8 min from the first refusal
-  (`ALREADY_IN_BOUND_MS`, the 1,000 ticks at 400 ms plus a margin). The login
-  that lands is one unplanned entry (`meta.alreadyLoggedIn` holds the refusals
-  and the wall they took); past the bound the recovery fails as before. The
-  watchdog stays paused and stands down for the out page throughout, as for any
-  running recovery, and relog-now refuses while the lock is held. Any other
-  refusal is not retried here. The short reply-5 refusal right after a logout
+  whose ticks resume under the page's own no-data timeout (120 s,
+  `NO_DATA_TIMEOUT_MS`; run.ts holds 15 s past it) costs nothing but the hold
+  (the page stays in game and is adopted).
+- **Close first after the whole window (rs/744).** On the host's 60 s socket
+  blocks (runs D and E) the server's stream to us stuck in TCP backoff: the page
+  claimed in game throughout, its in-page login timed out, and closing the tab
+  removed the body within ~10 s. So a page silent for its whole hold window
+  (out at its own timeout, or in game by its word with no tick, the world and
+  our gateway up: its claim is then ignored) is not reconnected in place:
+  drop-relog.ts closes the old tab (lib/tab.ts `closeBotTabs`, CDP close,
+  confirmed gone from Chrome's targets), waits `CLOSE_SETTLE_MS` (10 s), and
+  logs in on a fresh tab (session.ts `relaunchOwnTab`: the watchdog's
+  `launchClient` on a new token URL, checked by rs/668's `waitOwnLaunch`). With
+  close-first the window is the whole cost, which is why it is 120 s and no
+  longer: it must still outlast the network hold, since a close sent while the
+  path is blocked is dropped and the body lingers. A hold whose first packet
+  comes back after it (TCP backoff read a 60 s outage as 121.6 s) is relogged,
+  one unplanned entry. A socket that closed (the page out at once) is still
+  relogged in page at once.
+- **The relog never fails after one attempt.** `session.ts` matches the reply
+  on the title screen in one place (`loginReplyCode`); the drop recovery's login
+  asks for it (`stopOnReply`, `LoginRefused`), and a login with no tick in its
+  time throws `LoginTimedOut`. Holding the relog lock, the recovery retries a
+  refusal as already logged in, a timeout, or a fresh tab that did not get in
+  every 20 s (`ALREADY_IN_RETRY_MS`) for up to 8 min from the first failure
+  (`ALREADY_IN_BOUND_MS`), every retry on a fresh tab, never another in-page
+  login on a tab that just failed. The login that lands is one unplanned entry
+  (`meta.alreadyLoggedIn` holds the refusals, `meta.attempts` the tries, fresh
+  tabs and timeouts, `meta.closedFirst` the close); past the bound the recovery
+  fails as before. The watchdog stays paused and stands down for the out page
+  throughout, as for any running recovery, and relog-now refuses while the lock
+  is held. Any other refusal (a bad password, a full world) is not retried
+  here. The short reply-5 refusal right after a logout
   ("old session is mid-logout") is still ridden out by `login`'s own retries
   for every other caller.
 - **Every drop has its `(drop)` row**, written when the recovery returns and
