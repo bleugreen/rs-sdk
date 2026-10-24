@@ -26,6 +26,8 @@ import type { BotWorldState } from '../../sdk/types';
 import { writeAnvilPlan } from '../helpers/anvil';
 import { CueWriter, writeJsonAtomicSync, writeTopUpAsk, type CueScope } from '../helpers/altar-cue';
 import { GO_FILE, type GoCue } from '../helpers/fm-row';
+import { muleDelivery } from '../helpers/mule-itinerary';
+import { PRE_REQUEST_TILES } from '../helpers/mule-readiness';
 import { INVENTORY_SIZE } from '../lib/items';
 import { questDone, type QuestKey } from '../lib/quests';
 import type { GiveSpec } from '../lib/trade';
@@ -63,7 +65,7 @@ import * as start from '../skills/start';
 import * as thieving from '../skills/thieving';
 import * as woodcutting from '../skills/woodcutting';
 import { MANIFEST, parseLedger, type LedgerRow } from '../tools/slot-ledger';
-import { askFor, handOffFrom, handOffStep, type HandOffPlan, type HandOffRecord } from './handoff';
+import { askFor, handOffFrom, handOffStep, type HandOffPlan, type HandOffRecord, type Meeting } from './handoff';
 import { legById, legsFor, splitLeg, type LegStep } from './legs';
 import { type Probe, stepProbes } from './resume';
 import { scoredLoginStep, scoredLogoutStep } from './scored-relog';
@@ -315,6 +317,13 @@ export const MULE_ROWS: readonly string[] = ['H1', 'H4', 'H4k', 'H6', 'H4p', 'H7
  * H12 Monkey Madness's (quests/monkey-madness.ts gtSwap).
  */
 export const KIT_SEGMENTS: Readonly<Record<string, string>> = { H4: 'S05:A-h4-swap', H12: 'S15:A-narnode' };
+
+/**
+ * A placed mule row's meeting (handoff.ts Meeting): its carrier's stand (mule-itinerary.ts, the tile
+ * the carrier's package and readiness bind) and the carrier's own reach, PRE_REQUEST_TILES. Not the
+ * leg's arrival: H1 (S01) and H21d (after S25a) have no leg before them.
+ */
+export const muleMeeting = (row: string): Meeting => ({ tile: muleDelivery(row).at, within: PRE_REQUEST_TILES });
 
 /** A mule package's scope: for family 'mule' the step is the hand-off id (rs/158, rs/186), every other family keeps the step id. */
 export const muleScope = (row: string): CueScope => ({ step: row, family: 'mule' });
@@ -886,7 +895,9 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : ask;
         const muleRow = !scope && MULE_ROWS.includes(e.row);
         const beforeTrade = muleRow ? { beforeTrade: () => { o.cues.refresh?.(muleScope(e.row)); } } : {};
-        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs } : {}), ...(cue ? { cue } : {}), ...beforeTrade }), cue ? { cue: cue.scope } : {});
+        // A carrier may come after SCORED: its cue's ready gate waits for it, so the step asks only that SCORED be at the meeting.
+        const meeting = muleRow ? { meeting: muleMeeting(e.row) } : {};
+        const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(o.handOffs ? { record: o.handOffs } : {}), ...(cue ? { cue } : {}), ...beforeTrade, ...meeting }), cue ? { cue: cue.scope } : {});
         out.unshift(muleRow ? mule(s, e.row) : s);
     }
     const tileOf = startTiles(cfg);
