@@ -13,16 +13,14 @@
  */
 import type { GEOffer } from '../../sdk/ge-types';
 import type { BotWorldState } from '../../sdk/types';
-import { walkTo } from '../../speedrun/lib/act';
 import { depositMatching } from '../../speedrun/lib/bank';
 import { waitTicks, waitUntil } from '../../speedrun/lib/wait';
-import { BANKS } from '../../speedrun/helpers/buyer';
-import { regionOf, type Region, type Tile } from '../../speedrun/lib/ships';
+import { regionOf } from '../../speedrun/lib/ships';
 import type { MarketQuote } from '../lib/market.ts';
-import { faresOf, hereOf, routeBetween, runRoute } from '../lib/sea-route.ts';
+import { FARE_BANKS, faresOf, hereOf, routeBetween, runRoute, travel, withdrawFares } from '../lib/sea-route.ts';
 import { buyDecision, saleDecision, SHARK_ID } from './exchange.ts';
 import { heldAfter, needsReread, type SharksAfter } from './sharks.ts';
-import { carriedCoins, openBankAt, type StageCtx } from './stages.ts';
+import { carriedCoins, type StageCtx } from './stages.ts';
 
 /** Stand inside the Varrock west bank; the Exchange table and teller are on its west side (sdk/MARKET.md). */
 export const VARROCK_WEST_BANK = { x: 3185, z: 3436 };
@@ -33,7 +31,7 @@ export interface BookReader {
     item(id: number): Promise<MarketQuote>;
 }
 
-type ErrandCtx = Pick<StageCtx, 'sdk' | 'bot' | 'signal' | 'event' | 'reportBank'>;
+type ErrandCtx = Pick<StageCtx, 'sdk' | 'bot' | 'signal' | 'event' | 'reportBank' | 'bankCoins' | 'trip'>;
 
 const countIn = (items: readonly { id?: number; name: string; count: number }[], re: RegExp) => items.filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
 const exact = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
@@ -43,9 +41,9 @@ const state = (x: ErrandCtx): BotWorldState => {
     return s;
 };
 
+/** At the Varrock west bank with it open, from wherever the account stood (lib/sea-route.ts `travel`). */
 async function atBank(x: ErrandCtx): Promise<void> {
-    const w = await walkTo(x.bot, x.sdk, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z, 3);
-    if (!w.ok) throw new Error(`walk to the Varrock west bank: ${w.message}`);
+    await travel(x, VARROCK_WEST_BANK, 3);
     const opened = await x.bot.openBank();
     if (!opened.success) throw new Error(`openBank: ${opened.message}`);
 }
@@ -341,23 +339,10 @@ export async function sellAtExchange(x: ErrandCtx, cfg: SaleConfig, book: BookRe
     return rec;
 }
 
-/** Where a sale by ship tops up its fares on each far side: the Ardougne south bank, where the iron method banks. */
-export const FARE_BANKS: Readonly<Partial<Record<Region, Tile>>> = { kandarin: BANKS.ardougneSouth };
-
-/** Take coins from this side's fare bank until the pack holds `need`, as far as the bank has them. */
+/** Take coins from this side's fare bank (lib/sea-route.ts FARE_BANKS) until the pack holds `need`, as far as it has them. */
 async function fareCoins(x: ErrandCtx, need: number): Promise<void> {
     const bank = FARE_BANKS[regionOf(hereOf(state(x)))];
-    if (!bank) return;
-    const stack = (await openBankAt(x, bank)).find(i => /^coins$/i.test(i.name));
-    const before = carriedCoins(state(x));
-    const take = Math.min(stack?.count ?? 0, need - before);
-    if (stack && take > 0) {
-        const w = await x.bot.withdrawItem(stack, take);
-        if (!w.success) x.event('fare withdrawal failed', { message: w.message });
-        await waitUntil(x.sdk, s => carriedCoins(s) >= before + take, { maxTicks: 5 });
-    }
-    x.reportBank(x.sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })));
-    await x.bot.closeBank();
+    if (bank) await withdrawFares(x, bank, need);
 }
 
 /**
