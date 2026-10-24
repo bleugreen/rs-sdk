@@ -16,7 +16,8 @@
  *    minutes (the clean-stop path), then prints `markets/phase2/report.ts`.
  *
  * Shark resupply (docs/markets/phase2.md 'Shark resupply'): `--trained=1` gives each staged knight Thieving 99 and
- * Hitpoints 40 so it skips training; `--legacy-sharks=1` writes each staged knight's role-state as the runner before
+ * Hitpoints 40 so it skips training; `--coins=N` banks N coins with its sharks (the fresh path: `--sharks=0
+ * --coins=500`, a first purchase short on coins); `--legacy-sharks=1` writes each staged knight's role-state as the runner before
  * SharkState left it (a bare purchase record, `banked` = `--sharks`), so its buy-sharks stage starts done;
  * `--buy=1` makes the plan buy sharks (`--per-account`, `--minimum`, `--rebuy-min`, `--ceiling`) and passes
  * `--run-ended`; `--ramp=0` turns the ramp off. The Exchange check's maker leaves its shark ask open for the rebuy.
@@ -63,6 +64,7 @@ const exchange = arg('exchange', '1') === '1';
 const fresh = arg('fresh', '0') === '1';
 const minFreeMb = count('min-free-mb', 1200);
 const trained = arg('trained', '0') === '1';
+const coins = count('coins', 0);
 const legacySharks = arg('legacy-sharks', '0') === '1';
 const buy = arg('buy', '0') === '1';
 const rampOn = arg('ramp', '1') === '1';
@@ -115,7 +117,8 @@ async function stageKnight(name: string): Promise<void> {
         await mustTele(sdk, DRAYNOR_BANK.x, DRAYNOR_BANK.z);
         const opened = await bot.openBank();
         if (!opened.success) throw new Error(`openBank: ${opened.message}`);
-        await bankGive(sdk, 'cert_shark', sharks, /^shark$/i);
+        if (sharks > 0) await bankGive(sdk, 'cert_shark', sharks, /^shark$/i);
+        if (coins > 0) await bankGive(sdk, 'coins', coins, /^coins$/i);
         await waitTicks(sdk, 2);
         const banked = sdk.getBankItems().find(i => /^shark$/i.test(i.name))?.count ?? 0;
         await bot.closeBank();

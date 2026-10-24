@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { afterAttempt, isTransient, loadSharks, rebuyDecision, requestRebuy, retryDelayMs, SHARK_RETRY, sharksSettled, type RebuyInput, type SharkState } from './sharks.ts';
+import { afterAttempt, isTransient, loadSharks, rebuyDecision, requestRebuy, retryDelayMs, SHARK_RETRY, sharksSettled, shortfall, shortForVoyage, type RebuyInput, type SharkState } from './sharks.ts';
 
 const NOW = new Date('2026-10-24T09:00:00Z');
 
@@ -111,5 +111,43 @@ describe('re-promotion', () => {
         const unfilled = afterAttempt(null, { record: { ...filled, result: 'unfilled', filled: 0 } }, NOW);
         expect(rebuyDecision({ ...base, sharks: unfilled })).toMatchObject({ rebuy: false });
         expect(rebuyDecision({ ...base, sharks: afterAttempt(null, { record: poor }, NOW) })).toMatchObject({ rebuy: true });
+    });
+});
+
+describe('a short purchase', () => {
+    const oneShark = { kind: 'buy', item: 385, ceiling: 701, held: 0, want: 160, quantity: 1, filled: 1, result: 'filled', banked: 1 };
+    test('the cause: coins, the book, or neither', () => {
+        expect(shortfall(poor, 28)).toBe('insufficient coins');
+        expect(shortfall(oneShark, 28)).toBe('insufficient coins');
+        expect(shortfall(aboveCeiling, 28)).toBe('the book');
+        expect(shortfall({ ...oneShark, quantity: 160, filled: 20, result: 'partial', banked: 20 }, 28)).toBe('short');
+        expect(shortfall(filled, 28)).toBeNull();
+    });
+    test('no voyage below the minimum: the bank seen this run, else the recorded purchase', () => {
+        const short = { ...afterAttempt(null, { record: poor }, NOW), short: 'insufficient coins' };
+        // a restart: nothing seen yet, the record says 0 banked
+        expect(shortForVoyage({ bankSharks: null, carriedSharks: 0, sharks: short, minimum: 28 })).toBe('0 sharks recorded after the last purchase, below the minimum of 28 (insufficient coins): not sailing');
+        expect(shortForVoyage({ bankSharks: 20, carriedSharks: 8, sharks: short, minimum: 28 })).toBeNull();
+        expect(shortForVoyage({ bankSharks: 0, carriedSharks: 27, sharks: loadSharks(filled), minimum: 28 })).toMatch(/^27 sharks banked and carried/);
+        // nothing known at all: let it sail, its first bank visit finds out
+        expect(shortForVoyage({ bankSharks: null, carriedSharks: 0, sharks: null, minimum: 28 })).toBeNull();
+    });
+    test('the fresh path: 500 coins buy nothing, the guards earn the rebuy, the rebuy sails', () => {
+        const plan = { ceiling: 701, minimum: 28, rebuyMinSharks: 160 };
+        // first purchase at 500 coins: refused for coins, settled, short, no voyage
+        const first = afterAttempt(null, { record: { kind: 'buy', item: 385, held: 0, want: 160, result: 'refused', reason: '500 coins do not cover one shark at the ceiling of 701', banked: 0 } }, NOW);
+        first.short = shortfall(first.last, plan.minimum)!;
+        expect(first).toMatchObject({ status: 'done', short: 'insufficient coins' });
+        expect(shortForVoyage({ bankSharks: 0, carriedSharks: 0, sharks: first, minimum: plan.minimum })).not.toBeNull();
+        // on the guards: no rebuy until the coins cover 160 at the ceiling; the coins refusal holds nothing
+        const at = (coins: number) => rebuyDecision({ foodFrom: 'knights', method: 'guards', source: 'buy', runEnded: true, coins, ceiling: plan.ceiling, minSharks: plan.rebuyMinSharks, sharks: first, nowMs: NOW.getTime() + 60_000 });
+        expect(at(60_000).rebuy).toBe(false);
+        expect(at(112_160).rebuy).toBe(true);
+        // the rebuy fills: settled, nothing short, it sails
+        const due = requestRebuy(first, NOW, 'rebuy');
+        const second = afterAttempt(due, { record: { kind: 'buy', item: 385, held: 0, want: 160, quantity: 160, filled: 160, result: 'filled', banked: 160 } }, NOW);
+        expect(second.status).toBe('done');
+        expect(shortfall(second.last, plan.minimum)).toBeNull();
+        expect(shortForVoyage({ bankSharks: 160, carriedSharks: 0, sharks: second, minimum: plan.minimum })).toBeNull();
     });
 });
