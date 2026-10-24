@@ -367,6 +367,13 @@ state of the two stretches where a death could otherwise pass unseen:
 - **Every leg** (`runLeg`): rs/593's relocation detector (`travel.ts`
   `onRelocated`) fails the hop when a relocation onto `RESPAWN` comes with a death
   the watch corroborates. Any other jump is re-pathed, as before.
+- **Every other step in the world** (`runSteps`'s `deathWatched`, rs/762; attempt 4
+  died inside S15:A): the step's body is raced against the watch, so a death ends
+  the step on the first state that shows it, with `session.died` set, whatever the
+  body was waiting for. The quest and skill modules carry no death logic. The body
+  runs fenced (`runner/fence.ts`), so nothing it still sends after the death
+  reaches the game while run.ts logs out. Legs (`watchesDeath`) keep their own
+  watch, which also writes the travel row.
 
 A death is any of these: the engine's `Oh dear you are dead!` (death.rs2), hp 0,
 the browser client's `lifeId` going up, or a jump onto the respawn square that the
@@ -391,6 +398,30 @@ at a `--from`. It stays refused until R8's recovery is done (RUN-HOST.md, "After
 a player-kill") and `--r8-recovered=<key>` names that death; the start then
 writes `(death) acknowledged`. The key is the row's `runId@tick`, so a flag left
 on a command line never acknowledges a later death.
+
+### The legs eat and cure on every frame (rs/762)
+
+Attempt 4's T14-15b brought SCORED to the Grand Tree door at 1 HP, poisoned,
+with 3 sharks held and none eaten. Two things let it happen. First, the leg's eat
+was `travel`'s `eat` option, which ran only inside a run hop's own loop, so a
+teleport, a spirit tree's walk and talk, a lever, a door or a stop never ate.
+Second, `splitLeg` gave the food option only to a part that enters the
+Wilderness, and T14-15b (the Khazard tree, two tree rides, the run to the door)
+enters none, so it had no eat at all.
+
+Now a leg with food, and both parts of a split one (`LegDef.upkeep`), travels under
+wait-guard.ts's `WaitUpkeep`. That runs on every published frame, whatever the
+hop. It eats by the run's one eat rule, `travel.ts` `eatDue`, which eats at or
+under `eatAt(maxHp)`. That is the floor of 15 plus one poison hit (6, from the
+spiders' severity 27) plus one NPC hit (4), so 25 at SCORED's 38-42 hitpoints.
+The frame an eat is decided on can then lose both before the shark lands and
+still end on the floor. The rule never eats within 10 of the maximum. When
+SCORED reads poisoned (`quests/segments.ts` `poisoned`) it drinks one antipoison
+dose (`cureDose`, `noteAntipoison`). Nothing is clicked while a trade is open.
+A pack click closes an open chat, which would end a tree's or a lever's talk
+part way, so while a chat is open the eat waits unless hitpoints are at or under
+21 (`LEG_URGENT_HP`, the floor plus one poison hit), and the cure always waits.
+The travel row's `ate` and `cured` count what the upkeep sent.
 
 ### A launch is known by its id; a failed start is logged out (rs/668)
 
