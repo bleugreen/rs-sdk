@@ -14,6 +14,7 @@
 //                                          [--cap=80] [--no-login] [--rehearsal] [--claim=OWNER]
 //
 //   common: [--remote-checkout=rs-sdk] (relative to the machine's $HOME) [--log-dir=DIR] [--display=:10]
+//           [--bound=DURATION]
 //
 // Each command runs `on-machine <command>` on the machines over ssh (the exact ssh options of
 // RUN-HOST.md "Reaching them"), detached under its own `timeout`, so a dropped ssh line never
@@ -66,8 +67,16 @@
 // logs SCORED in. handoff.json's `loggedIn` is false; without the flag it is true once the login
 // was started.
 //
-// --rehearsal: 30-minute bounds instead of the run's 9 h, `rehearsal-` recordings, and it requires
-// --claim with an owner other than host or run. --rehearse=unconfirmed-logout skips the gate tab's
+// --bound=DURATION: the `timeout` bound of every piece raised for the run: `up`'s gateway, page
+// server, recording and live view, and `handoff`'s SCORED tab. Default 14 h (DEFAULT_RUN_BOUND): a
+// stack raised about 45 minutes before the start has to outlive a run of about 6.5 h with its
+// allowances, plus margin (attempt 3's rehearsal stack expired mid-run, rs/659). A number with an
+// optional s, m, h or d, as `timeout` takes it; empty, zero, negative or anything else is refused
+// before anything starts. The gate account's tab keeps its own 15 minutes. `up` and `handoff` print
+// the bound in effect.
+//
+// --rehearsal: 30-minute bounds instead of the run's (unless --bound is given), `rehearsal-`
+// recordings, and it requires --claim with an owner other than host or run. --rehearse=unconfirmed-logout skips the gate tab's
 // logoutClean and treats the logout as unconfirmed, to show the unconditional kill;
 // --rehearse=kept-chrome also skips the kill (the old `logout && kill` behaviour on an unconfirmed
 // logout), to show the closed-window checks stop the gate. Both only with --rehearsal.
@@ -87,8 +96,8 @@ const PAGE = 'http://127.0.0.1:8899';
 const DEMO = 'rs-sdk-demo.fly.dev';
 const RECORD_WIDTH = 1920;
 const GATE_TAB_BOUND = '15m';
-const RUN_BOUND = '9h';
-const REHEARSAL_BOUND = '30m';
+export const DEFAULT_RUN_BOUND = '14h';
+export const REHEARSAL_BOUND = '30m';
 /** The six Chrome flags step 3 checks on the browser process. */
 export const CHROME_FLAGS = [
     'disable-background-timer-throttling',
@@ -588,6 +597,53 @@ export function remoteLine(checkout: string, stamp: string, bound: string, args:
     return `cd "$HOME"/${checkout} && D="$HOME"/rs-run/gate-${stamp} && mkdir -p "$D" && { nohup ${cmd} >>"$D"/steps.log 2>&1 </dev/null & P=$!; tail --pid=$P -n +1 -f "$D"/steps.log; wait $P; }`;
 }
 
+/** A `timeout` duration: a positive number with an optional s, m, h or d suffix. */
+const DURATION = /^(\d+(?:\.\d+)?)([smhd]?)$/;
+
+/**
+ * The bound of every piece raised for the run: `--bound=DURATION` if given, else 30 min with
+ * --rehearsal and DEFAULT_RUN_BOUND without. Refuses an empty, zero, negative or malformed value.
+ */
+export function runBound(argv: readonly string[], rehearsal: boolean): string {
+    if (argv.includes('--bound')) throw new Stop('--bound takes its duration after an =, as in --bound=14h');
+    const given = argv.filter(a => a.startsWith('--bound='));
+    if (given.length > 1) throw new Stop(`--bound is given ${given.length} times: give it once`);
+    if (!given.length) return rehearsal ? REHEARSAL_BOUND : DEFAULT_RUN_BOUND;
+    const v = given[0]!.slice('--bound='.length);
+    const m = v.match(DURATION);
+    if (!m || !(Number(m[1]) > 0)) throw new Stop(`--bound must be a positive timeout duration, a number with an optional s, m, h or d such as 14h or 90m, not ${JSON.stringify(v)}`);
+    return v;
+}
+
+/** What the bound covers, for `up`'s and `handoff`'s output; null for a command that raises nothing for the run. */
+export function boundLine(cmd: string | undefined, bound: string, argv: readonly string[], rehearsal: boolean): string | null {
+    const what = cmd === 'up' ? 'the gateway, page server, recording and live view' : cmd === 'handoff' ? "SCORED's tab" : null;
+    if (!what) return null;
+    const source = argv.some(a => a.startsWith('--bound=')) ? '--bound' : rehearsal ? 'the rehearsal default' : 'the run default';
+    return `bound ${bound} (${source}) for ${what}`;
+}
+
+/** `up`'s four tmux session commands, each the whole command of its session under `bound`. */
+export function stackLines(o: { bound: string; display: string; liveBind: string; recording: string; progress: string; bun: string; home: string }): Record<'gateway' | 'page' | 'rec' | 'live', string> {
+    const T = o.bound;
+    return {
+        gateway: `exec timeout --kill-after=30s ${T} env AGENT_PORT=7780 GATEWAY_HOSTNAME=127.0.0.1 ${o.bun} run gateway.ts >>${o.home}/rs-run/gateway.log 2>&1`,
+        page: `exec timeout --kill-after=30s ${T} ${o.bun} run proxy.ts --world=https://${DEMO} --port=8899 --gateway=ws://127.0.0.1:7780 >>${o.home}/rs-run/page.log 2>&1`,
+        rec: `exec timeout -s INT --kill-after=30s ${T} ffmpeg -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 30 -video_size 1920x1080 -i ${o.display}.0+0,0 -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -progress ${o.progress} ${o.recording} 2>>${o.home}/recordings/ffmpeg.log`,
+        live: `exec timeout --kill-after=30s ${T} bash -c "while true; do ffmpeg -nostdin -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 3 -video_size 1920x1080 -i ${o.display}.0+0,0 -vf scale=960:540 -c:v mjpeg -q:v 8 -f mpjpeg -listen 1 http://${o.liveBind}:8090/live.mjpg; sleep 1; done"`,
+    };
+}
+
+/** Step 3's Chrome line on the account's bare page, under `bound`. */
+export function chromeLine(bound: string, display: string, name: string): string {
+    checkAccount(name, 'the account');
+    return (
+        `exec timeout --kill-after=30s ${bound} env DISPLAY=${display} google-chrome --user-data-dir=${PROFILE} --remote-debugging-port=9222 ` +
+        `--no-first-run --no-default-browser-check --password-store=basic --disable-background-timer-throttling --disable-renderer-backgrounding ` +
+        `--disable-backgrounding-occluded-windows --start-maximized --app="${PAGE}/bot?bot=${name}"`
+    );
+}
+
 // ------------------------------------------------------------------ process helpers
 
 const flags = (argv: readonly string[]) => {
@@ -599,7 +655,7 @@ const flags = (argv: readonly string[]) => {
 /** The Mac's flags forwarded to `on-machine <cmd>`, beside the command's own. */
 export function forwarded(cmd: string | undefined, argv: readonly string[]): string[] {
     const f = flags(argv);
-    const pass = ['display', 'claim'].flatMap(k => (f.get(k) ? [`--${k}=${f.get(k)}`] : [])).concat(f.has('rehearsal') ? ['--rehearsal'] : []);
+    const pass = ['display', 'claim', 'bound'].flatMap(k => (f.get(k) ? [`--${k}=${f.get(k)}`] : [])).concat(f.has('rehearsal') ? ['--rehearsal'] : []);
     return cmd === 'handoff' && f.has('no-login') ? [...pass, '--no-login'] : pass;
 }
 
@@ -768,11 +824,7 @@ async function chromeFlagsCheck(ctx: Ctx) {
 
 /** Start step 3's Chrome on the account's bare page, and wait for its tab and its window. */
 async function launchTab(ctx: Ctx, name: string, bound: string) {
-    checkAccount(name, 'the account');
-    const line =
-        `exec timeout --kill-after=30s ${bound} env DISPLAY=${ctx.display} google-chrome --user-data-dir=${PROFILE} --remote-debugging-port=9222 ` +
-        `--no-first-run --no-default-browser-check --password-store=basic --disable-background-timer-throttling --disable-renderer-backgrounding ` +
-        `--disable-backgrounding-occluded-windows --start-maximized --app="${PAGE}/bot?bot=${name}"`;
+    const line = chromeLine(bound, ctx.display, name);
     const r = await capture(['tmux', '-L', 'run', 'new-session', '-d', '-s', 'chrome', line]);
     if (r.code !== 0) throw new Stop(`tmux could not start Chrome: ${r.err.trim()}`);
     const { botTabs } = await import('../lib/tab');
@@ -882,12 +934,14 @@ async function onUp(ctx: Ctx, argv: readonly string[]) {
     if (ports.out.trim()) throw new Stop(`a port the stack needs is taken: ${ports.out.trim().replace(/\s+/g, ' ')}`);
     if (!existsSync(join(ROOT, 'server/webclient/out/bot/client.js'))) throw new Stop("the checkout has no built client (server/webclient/out/bot/client.js): RUN-HOST.md step 0's build");
     const T = ctx.bound;
+    const file = join(HOME, 'recordings', `${ctx.rehearsal ? 'rehearsal' : 'run'}-${stampOf()}.mkv`);
+    const lines = stackLines({ bound: T, display: ctx.display, liveBind: bind, recording: file, progress: ctx.progress, bun, home: HOME });
     const start = async (name: string, cwd: string | null, line: string) => {
         const r = await capture(['tmux', '-L', 'run', 'new-session', '-d', '-s', name, ...(cwd ? ['-c', cwd] : []), line]);
         if (r.code !== 0) throw new Stop(`tmux could not start ${name}: ${r.err.trim()}`);
     };
-    await start('gateway', join(ROOT, 'server/gateway'), `exec timeout --kill-after=30s ${T} env AGENT_PORT=7780 GATEWAY_HOSTNAME=127.0.0.1 ${bun} run gateway.ts >>${HOME}/rs-run/gateway.log 2>&1`);
-    await start('page', join(ROOT, 'server/webclient'), `exec timeout --kill-after=30s ${T} ${bun} run proxy.ts --world=https://${DEMO} --port=8899 --gateway=ws://127.0.0.1:7780 >>${HOME}/rs-run/page.log 2>&1`);
+    await start('gateway', join(ROOT, 'server/gateway'), lines.gateway);
+    await start('page', join(ROOT, 'server/webclient'), lines.page);
     await Bun.sleep(4_000);
     const listening = (await bash(`ss -Hltn | grep -cE ':(7780|8899) '`)).out.trim();
     if (listening !== '2') throw new Stop(`the gateway (7780) and page server (8899) are not both listening (${listening} of 2); see ~/rs-run/gateway.log and page.log`);
@@ -897,18 +951,9 @@ async function onUp(ctx: Ctx, argv: readonly string[]) {
     if (refuse !== '400') throw new Stop(`the page server answers ${refuse} to a password in the URL, not 400 (rs/138 must be on the checkout)`);
     step(ctx, 'stack', `gateway 7780 and page server 8899 up (bound ${T}); ${redirect}; password URL refused 400`);
     mkdirSync(join(HOME, 'recordings'), { recursive: true });
-    const file = join(HOME, 'recordings', `${ctx.rehearsal ? 'rehearsal' : 'run'}-${stampOf()}.mkv`);
     await bash(`rm -f ${shq(ctx.progress)}`);
-    await start(
-        'rec',
-        null,
-        `exec timeout -s INT --kill-after=30s ${T} ffmpeg -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 30 -video_size 1920x1080 -i ${ctx.display}.0+0,0 -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -progress ${ctx.progress} ${file} 2>>${HOME}/recordings/ffmpeg.log`
-    );
-    await start(
-        'live',
-        null,
-        `exec timeout --kill-after=30s ${T} bash -c "while true; do ffmpeg -nostdin -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 3 -video_size 1920x1080 -i ${ctx.display}.0+0,0 -vf scale=960:540 -c:v mjpeg -q:v 8 -f mpjpeg -listen 1 http://${bind}:8090/live.mjpg; sleep 1; done"`
-    );
+    await start('rec', null, lines.rec);
+    await start('live', null, lines.live);
     await Bun.sleep(5_000);
     await recordingCheck(ctx);
     step(ctx, 'live view', `3 fps MJPEG on port 8090 of the given bind address (bound ${T})`);
@@ -1182,6 +1227,7 @@ async function onMachine(argv: readonly string[]): Promise<number> {
     const [cmd, ...rest] = argv;
     const f = flags(rest);
     const rehearsal = f.has('rehearsal');
+    const bound = runBound(rest, rehearsal);
     const out = f.get('out') ?? join(HOME, 'rs-run', `gate-${stampOf()}`);
     mkdirSync(out, { recursive: true });
     const ctx: Ctx = {
@@ -1189,13 +1235,15 @@ async function onMachine(argv: readonly string[]): Promise<number> {
         out,
         rehearsal,
         claim: f.get('claim') ?? null,
-        bound: rehearsal ? REHEARSAL_BOUND : RUN_BOUND,
+        bound,
         progress: f.get('progress') ?? join(HOME, 'recordings/ffmpeg-progress.log'),
         say: s => s,
     };
     try {
         if (!/^:\d+$/.test(ctx.display)) throw new Stop(`--display must look like :10, not ${ctx.display}`);
         console.log(`[run-gate] ${utc()} on-machine ${cmd} on ${(await capture(['hostname'])).out.trim()}, checkout ${ROOT} at ${(await capture(['git', 'log', '-1', '--format=%h'])).out.trim()}, ${rehearsal ? 'REHEARSAL' : 'RUN'}, outputs ${out}`);
+        const bl = boundLine(cmd, ctx.bound, rest, rehearsal);
+        if (bl) console.log(`[run-gate] ${bl}`);
         if (cmd === 'up') {
             await onUp(ctx, rest);
             return 0;
@@ -1246,6 +1294,8 @@ async function mac(argv: readonly string[]): Promise<number> {
     const [cmd, ...rest] = argv;
     const f = flags(rest);
     const rehearsal = f.has('rehearsal');
+    // Before anything else, so a bad bound is refused with nothing raised on either machine.
+    const bound = runBound(rest, rehearsal);
     const logDir = f.get('log-dir') ?? join(HOME, 'rs-run-gate');
     mkdirSync(logDir, { recursive: true });
     const stamp = stampOf();
@@ -1257,6 +1307,8 @@ async function mac(argv: readonly string[]): Promise<number> {
         appendFileSync(log, s + '\n');
     };
     say(`[run-gate] ${utc()} ${cmd}${rehearsal ? ' (REHEARSAL)' : ''}; log ${log}`);
+    const bl = boundLine(cmd, bound, rest, rehearsal);
+    if (bl) say(`[run-gate] ${bl}`);
 
     if (cmd === 'up') {
         const ms = pickMachines(f.get('machines'));
