@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setSystemTime, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -944,6 +944,58 @@ describe('a cue-served hand-off (the cannon holder): the cue, the partner in sig
         const step = handOffStep<Record<string, never>>(h11, { partner: PARTNER, cue: { scope: { step: 'S27', family: 'cannon' }, open: async () => {}, waitTicks: 8 } });
         await expect(drive(sdk, step.run(ctxOf(sdk)), 100)).rejects.toThrow('did not come into sight within 8 ticks of the S27/cannon cue');
         expect(sdk.tradeClicks).toEqual([]);
+    });
+
+    describe('a late partner: SCORED keeps its input alive while it stands (rs/648)', () => {
+        const T0 = Date.UTC(2026, 9, 24, 6);
+        /** Wall time 400 ms a tick from the cue's tick 10, as the keep-input's default clock (Date.now) reads it. */
+        const at400 = (then: (s: BotWorldState) => Partial<BotWorldState> = () => ({})) => (s: BotWorldState) => {
+            setSystemTime(new Date(T0 + (s.tick + 1 - 10) * 400));
+            return then(s);
+        };
+        const sendWaits = (sdk: FakeSdk) => sdk.sent.map((a, i) => [a.method, i] as const).filter(([m]) => m === 'sendWait').map(([, i]) => i);
+
+        test('6.5 minutes late: one keep-input a minute, all before the trade, none after the partner is in sight', async () => {
+            setSystemTime(new Date(T0));
+            try {
+                const sdk = new TradeServer(state([], [], { tick: 10, nearbyPlayers: [] }), row);
+                const r = await drive(sdk, runHandOffOnCue(ctxOf(sdk), h11, PARTNER, { scope: { step: 'S14', family: 'cannon' }, open: async () => {} }), 1300, at400(arrive(985)));
+                expect([r.ok, r.standingAtClick, r.arriveTicks, r.keepInputs]).toEqual([true, true, 976, 6]);
+                const waits = sendWaits(sdk);
+                expect(waits).toHaveLength(6);
+                expect(waits.at(-1)!).toBeLessThan(sdk.sent.findIndex(a => a.method === 'sendTradeRequest'));
+                expect(handOffMissing(sdk.state!, h11)).toEqual([]);
+            } finally {
+                setSystemTime();
+            }
+        });
+
+        test('a partner that never comes: the refusal names the keep-inputs, and none is sent after it', async () => {
+            setSystemTime(new Date(T0));
+            try {
+                const sdk = new TradeServer(state([], [], { tick: 10, nearbyPlayers: [] }), row);
+                const p = runHandOffOnCue(ctxOf(sdk), h11, PARTNER, { scope: { step: 'S27', family: 'cannon' }, open: async () => {}, waitTicks: 900 });
+                await expect(drive(sdk, p, 1000, at400())).rejects.toThrow('did not come into sight within 900 ticks of the S27/cannon cue (6 keep-inputs sent)');
+                for (let i = 0; i < 400; i++) sdk.tick(at400());
+                await drive(sdk, Promise.resolve(), 1);
+                expect(sendWaits(sdk)).toHaveLength(6);
+                expect(sdk.tradeClicks).toEqual([]);
+            } finally {
+                setSystemTime();
+            }
+        });
+
+        test('a partner in sight within the minute: no keep-input at all', async () => {
+            setSystemTime(new Date(T0));
+            try {
+                const sdk = new TradeServer(state([], [], { tick: 10, nearbyPlayers: [] }), row);
+                const r = await drive(sdk, runHandOffOnCue(ctxOf(sdk), h11, PARTNER, { scope: { step: 'S14', family: 'cannon' }, open: async () => {} }), 400, at400(arrive(140)));
+                expect([r.ok, r.keepInputs]).toEqual([true, 0]);
+                expect(sendWaits(sdk)).toEqual([]);
+            } finally {
+                setSystemTime();
+            }
+        });
     });
 });
 
