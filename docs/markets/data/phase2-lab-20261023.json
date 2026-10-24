@@ -1,0 +1,43 @@
+{
+  "about": "Phase-2 lab results (rs/543), transcribed per bot from rate.ts / hp-train.ts RESULT lines; the raw logs were in executor scratch and are gone. NODE_TICKRATE=400; per-hour figures are per 9,000 server ticks, so a stretched tick (msPerTick) does not change them. Mining runs had player_count.rs2 pinned to 1,400 (emulate-players.sh). Bots m8*/m9*/s8* are lab placeholders.",
+  "knights_crowding": {
+    "bgsrv-ub": {
+      "ticks": 2400, "options": "Thieving 99, HP 99, full pack of sharks, 4 market knights",
+      "coinsPerHour": { "1": [130609], "2": [126668, 130796], "4": [114846, 126105, 136426, 126480], "8": [139429, 95705, 135113, 138303, 129858, 144308, 134174, 135056] },
+      "msPerTick": { "1": 401.5, "2": 411.1, "4": 552.8, "8": 530.5 },
+      "loadAvg1": { "1": 10.7, "2": 5.2, "4": 45.3, "8": 233.3 },
+      "n1": { "successes": 778, "failures": 60, "sharksEaten": 7, "roams": 0 }
+    },
+    "fedora_overloaded": {
+      "ticks": 3600, "note": "two labs plus four other jobs on the host, load 41-50 on 32 cores; superseded by the bgsrv-ub run",
+      "coinsPerHour": { "1": [97017], "2": [94579, 97832], "4": [92426, 96053, 91301, 78647], "8": [68318, 63145, 58945, 63466, 66107, 69212, 64838, 62469] }
+    }
+  },
+  "heroes_crowding": {
+    "bgsrv-ub": {
+      "ticks": 3000, "options": "Thieving 99, HP 99, full pack of sharks, 3 heroes",
+      "coinsPerHour": { "1": [91021], "2": [93554, 94620], "4": [93404, 103011, 94446, 90471], "8": [114379, 79511, 93035, 110005, 90180, 101771, 87583, 94095] },
+      "boardPerHour": { "1": [69884], "2": [75629, 65999], "4": [68710, 76332, 65408, 76857], "8": [90411, 57398, 70631, 82291, 61712, 72048, 65513, 79166] },
+      "sharksPerHour": "105-114",
+      "lootPerHourTypical": { "deathrune": 45, "bloodrune": 15, "jug_wine": 18, "fire_orb": 5, "diamond": 3, "gold_ore": 3 },
+      "msPerTick": { "1": 493.9, "2": 400.0, "4": 400.0, "8": 400.0 }
+    },
+    "fedora_overloaded": {
+      "coinsPerHour": { "1": [64338], "2": [86134, 73156], "4": [52612, 76554, 69848, 58862], "8": [64987, 47376, 53071, 63709, 56824, 64742, 69046, 54375] }
+    }
+  },
+  "shilo_crowding": {
+    "ticks": 2709, "options": "Mining 99, rune pickaxe, Shilo Village complete, 7 gem rocks, Shilo bank; respawn observed 129 (n=113-133 per bot)",
+    "gems": { "1": [120], "2": [77, 61], "4": [33, 24, 28, 55] },
+    "gemsPerHour": { "1": [398.7], "2": [255.8, 202.7], "4": [109.6, 79.7, 93.0, 182.7] },
+    "siteGemsPerHour": { "1": 398.7, "2": 458.5, "4": 465.1 },
+    "n1_mix": { "uncut_opal": 60, "uncut_jade": 28, "uncut_red_topaz": 7, "uncut_sapphire": 6, "uncut_emerald": 4, "uncut_ruby": 8, "uncut_diamond": 7 },
+    "n1_trips": 4, "n1_waitTicks": 938,
+    "smoke_n1_900_ticks": { "gems": 44, "gemsPerHour": 440 },
+    "mining40_adamant": { "gems": 108, "gemsPerHour": 358.8, "trips": 3, "msPerTick": 504.4 }
+  },
+  "iron": { "site": "6 rocks south of the Ardougne zoo, Ardougne south bank", "options": "Mining 99, rune pickaxe", "ticks": 909, "ore": 122, "orePerHour": 1208, "trips": 4, "boardPerHourByTrip": { "min": 19385, "max": 24480, "sd": 2272 }, "respawnObserved": 12, "waitTicks": 0 },
+  "steel_smelting": { "site": "Falador west bank and furnace, ore and coal from the bank", "options": "Smithing 99", "ticks": 906, "bars": 84, "barsPerHourWholeRun": 834, "barsPerHourTrips": 854, "trips": 9, "boardPerHourByTripSd": 172 },
+  "runite": { "status": "failed", "note": "each bot mined one ore at the start, then stalled (client stalls at load 90+, no respawn observed) in the Lava Maze dungeon; no rate" },
+  "hp_training": { "method": "speedrun/helpers/bones.ts train stage, Lumbridge cows, fresh account", "ticks": 4500, "msPerTick": 402.7, "tickHitpointsReached": { "20": 437, "30": 981, "40": 1822, "45": 2450, "50": 3308, "55": 4371 }, "endLevels": { "attack": 56, "strength": 55, "defence": 55, "hitpoints": 55 } }
+}

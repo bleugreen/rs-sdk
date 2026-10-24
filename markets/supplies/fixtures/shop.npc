@@ -1,0 +1,16 @@
+[guild_owner_fx]
+name=Magic Store owner
+param=owned_shop,runeshop_fx
+param=shop_sell_multiplier,1000
+param=shop_delta,10
+
+[shop_keeper_fx]
+name=Shop keeper
+param=owned_shop,atollshop_fx
+
+[shop_assistant_fx]
+name=Shop assistant
+param=owned_shop,atollshop_fx
+
+[not_a_shop_fx]
+name=Guard

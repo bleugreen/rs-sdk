@@ -55,6 +55,11 @@ export interface Options {
     dialogue?: DialogueMode;
     /** The H12 giver; absent: the kit must already be held. */
     kitFrom?: string;
+    /**
+     * Whether H12 is recorded served this attempt (the runner's attempt record). Served, the kit's consumed lines count as
+     * delivered, so a shark eaten or a dose drunk after the serve never re-opens the swap. Absent: never served.
+     */
+    kitServed?: () => boolean;
     /** Default 'ladder' (rs/59's drop); a failed drop falls back to 'wait' inside segment N. */
     templeMethod?: 'ladder' | 'wait';
     /** Default 'walk'; 'glider' is Barnaby's ship to Brimhaven, a walk, and the Gandius glider. */
@@ -75,9 +80,9 @@ export interface Options {
     bow?: number;
 }
 
-export const DEFAULT_OPTIONS: Required<Omit<Options, 'kitFrom' | 'eating' | 'topUpFrom'>> = { dialogue: 'fixed', templeMethod: 'ladder', returnMonkey: 'walk', note: () => {}, bow: 861 /* MM_OBJ.magicShortbow, declared below */ };
+export const DEFAULT_OPTIONS: Required<Omit<Options, 'kitFrom' | 'kitServed' | 'eating' | 'topUpFrom'>> = { dialogue: 'fixed', templeMethod: 'ladder', returnMonkey: 'walk', note: () => {}, bow: 861 /* MM_OBJ.magicShortbow, declared below */ };
 
-export function resolveOptions(o: Options = {}): Required<Omit<Options, 'kitFrom' | 'topUpFrom'>> & Pick<Options, 'kitFrom' | 'topUpFrom'> {
+export function resolveOptions(o: Options = {}): Required<Omit<Options, 'kitFrom' | 'kitServed' | 'topUpFrom'>> & Pick<Options, 'kitFrom' | 'kitServed' | 'topUpFrom'> {
     return { ...DEFAULT_OPTIONS, eating: SEGMENT_EATING, ...o };
 }
 
@@ -1003,8 +1008,11 @@ export function immunityWanted(now: number, lastDose: number, held: boolean): bo
  * Karamja jungle (B, C), so the 4-dose potion's doses all reach H-R. A no-op when H12 brought none.
  */
 async function preDose(sdk: Sdk): Promise<void> {
-    const dose = sdk.getState()!.inventory.find(i => i.id === MM_OBJ.superAntipoison1);
+    const s = sdk.getState()!;
+    const dose = s.inventory.find(i => i.id === MM_OBJ.superAntipoison1);
     if (!dose) return;
+    // The kit's super line takes any dose (h12Kit), so a lone one-dose super may be all the kit has: never drink that.
+    if (!s.inventory.some(i => i.slot !== dose.slot && KIT_SUPER.test(i.name))) return stepNote('S15 antipoison: no pre-dose, the one-dose super is the kit\'s only super');
     lastAntipoison = currentTick(sdk);
     void sdk.sendUseItem(dose.slot, dose.optionsWithIndex.find(o => /^drink$/i.test(o.text))?.opIndex ?? 1);
     const r = await waitUntil(sdk, s => !s.inventory.some(i => i.id === MM_OBJ.superAntipoison1), { maxTicks: 4 });
@@ -1036,6 +1044,16 @@ async function withTopUps<T>(fn: () => Promise<T>): Promise<T> {
     } finally {
         topUps = was;
     }
+}
+
+/**
+ * Until the running upkeep's eats bring HP to `below` or the sharks run out (a shark every 3 ticks; at most 12 ticks):
+ * at once when HP is already there or unknown. Upkeep eats on its own; this only waits for it to land.
+ */
+async function eatenUpTo(sdk: Sdk, below: number): Promise<void> {
+    const fed = (s: BotWorldState) => s.player?.hp === undefined || s.player.hp >= below || invCount(s, MM_OBJ.shark) === 0;
+    if (fed(sdk.getState()!)) return;
+    await waitUntil(sdk, fed, { maxTicks: 12 });
 }
 
 /**
@@ -1644,8 +1662,14 @@ const inShipyard = (src: StateLike) => {
 const GANDIUS_PILOT = { x: 2970, z: 2974 };
 const NARNODE_NPC = /^King Narnode( Shareen)?$/i;
 
-/** One line of H12's kit: at least `n` held or worn of items whose name matches (or, for the bow, whose id is `id`). */
-interface KitLine { name: RegExp; n: number; id?: number }
+/**
+ * One line of H12's kit: at least `n` held or worn of items whose name matches (or, for the bow, whose id is `id`).
+ * `consumed`: eaten, drunk or cast on the route, so once H12 is served the line counts as delivered.
+ */
+interface KitLine { name: RegExp; n: number; id?: number; consumed?: true }
+
+/** The kit's super antipoison at any dose: one drunk for a cure is still the kit's super. */
+const KIT_SUPER = /^Superantipoison\(\d\)$/;
 
 /**
  * H12's food (rs/158, 10-22 07:0x): the measured A-Z demand is 14-15 sharks and about 13 prayer doses (three chains);
@@ -1656,28 +1680,39 @@ export const H12_SHARKS = 15;
 export const H12_POTIONS = 4;
 
 /**
- * H12 (SUPPLIES.md H12, rs/158's final ruling 01:38): the quest's ingredients, the bow and 200 rune arrows (worn from
- * the swap on), 2 prayer potions, an antipoison, Ardougne and two Varrock casts, and sharks topped up to 9.
+ * H12 (STEP-MANIFEST.md H12 row): the quest's ingredients, the bow and 200 rune arrows (worn from the swap on), 4 prayer
+ * potions, a super antipoison, Ardougne and two Varrock casts, and sharks topped up to 15. The potion lines count by
+ * potion at any dose (main, attempt 4): SCORED poisoned on the way in drinks a cure from the kit's only super.
  */
 export function h12Kit(bow: number): KitLine[] {
     return [
         // No bananas: O searches them from the trees in the aunt's house (BANANA_TREES).
         { name: /^Gold bar$/, n: 1 }, { name: /^Ball of wool$/, n: 1 }, { name: /^Monkey bones$/, n: 1 },
         { name: /bow$/i, n: 1, id: bow }, { name: /^Rune arrow$/, n: 200 },
-        { name: /^Prayer potion\(4\)$/, n: H12_POTIONS }, { name: /^Superantipoison\(4\)$/, n: 1 },
+        { name: /^Prayer potion\(\d\)$/, n: H12_POTIONS, consumed: true }, { name: KIT_SUPER, n: 1, consumed: true },
         // Ardougne 2 casts (2 law, 2 water each), Varrock 2 casts (1 law, 3 air, 1 fire each).
-        { name: /^Law rune$/, n: 6 }, { name: /^Air rune$/, n: 6 }, { name: /^Fire rune$/, n: 2 }, { name: /^Water rune$/, n: 4 },
-        { name: /^Shark$/, n: H12_SHARKS },
+        { name: /^Law rune$/, n: 6, consumed: true }, { name: /^Air rune$/, n: 6, consumed: true }, { name: /^Fire rune$/, n: 2, consumed: true }, { name: /^Water rune$/, n: 4, consumed: true },
+        { name: /^Shark$/, n: H12_SHARKS, consumed: true },
     ];
 }
 
 const carried = (s: BotWorldState, k: KitLine) =>
     [...s.inventory, ...s.equipment].filter(i => (k.id !== undefined ? i.id === k.id : k.name.test(i.name))).reduce((a, i) => a + i.count, 0);
 
-/** What H12 still lacks, held or worn: `[name, missing]`. */
-export function kitMissing(s: BotWorldState, bow: number): Array<[RegExp, number]> {
-    return h12Kit(bow).map(k => [k.name, k.n - carried(s, k)] as [RegExp, number]).filter(([, n]) => n > 0);
+/**
+ * What H12 still lacks, held or worn: `[name, missing]`. With `served` (H12 recorded served this attempt) only the lines
+ * the route does not consume are checked: the consumed ones were delivered, and eating or drinking since is the route's.
+ */
+export function kitMissing(s: BotWorldState, bow: number, o: { served?: boolean } = {}): Array<[RegExp, number]> {
+    return h12Kit(bow).filter(k => !(o.served && k.consumed)).map(k => [k.name, k.n - carried(s, k)] as [RegExp, number]).filter(([, n]) => n > 0);
 }
+
+/** Whether the Grand Tree swap has anything to take: false once the kit is complete, held or worn (kitMissing). */
+export function h12Wants(s: BotWorldState, o: { bow: number; served?: boolean }): boolean {
+    return kitMissing(s, o.bow, o).length > 0;
+}
+
+const kitText = (lines: Array<[RegExp, number]>) => lines.map(([n, k]) => `${k} ${n.source}`).join(', ');
 
 /**
  * What SCORED hands back in the Grand Tree swap: the ledger's H12 row outs (STEP-MANIFEST.md, inventory ledger, H12),
@@ -1691,32 +1726,66 @@ export const GT_HANDBACK: readonly RegExp[] = [/^Staff of fire$/i, /^Antipoison\
  * The Grand Tree swap's plan from the state: give back the GT_HANDBACK items held, want what H12 still lacks (kitMissing
  * as amounts). No want means no trade: the kit was already placed (run.ts's H12 hand-off at the tree door).
  */
-export function h12Plan(s: BotWorldState, o: { bow: number }): { give: GiveSpec[]; want: WantSpec[] } {
+export function h12Plan(s: BotWorldState, o: { bow: number; served?: boolean }): { give: GiveSpec[]; want: WantSpec[] } {
     return {
         give: GT_HANDBACK.filter(p => s.inventory.some(i => p.test(i.name))).map(item => ({ item })),
-        want: kitMissing(s, o.bow).map(([item, amount]) => ({ item, amount })),
+        want: kitMissing(s, o.bow, o).map(([item, amount]) => ({ item, amount })),
     };
 }
 
 /**
  * The Grand Tree hand-off before A: one swap() with the giver (lib/trade.ts) by h12Plan, only when H12 is short; then
- * the bow is wielded and the arrows quivered, which they stay until the gree-gree at R.
+ * the bow is wielded and the arrows quivered, which they stay until the gree-gree at R. Once H12 is served this attempt
+ * (`kitServed`) it trades nothing: the lines the route keeps are checked, and the wield follows.
+ *
+ * A runs under upkeep, which eats whenever no trade is open. A shark eaten after the want (and the giver's top-up ask) is
+ * sized leaves the kit short of 15 with the swap reported done: attempt 4 held 3, asked and was served 12, and one was
+ * eaten inside A before the check (arrival at ~1 HP, poisoned). So upkeep's eat lands first, and upkeep is held from the
+ * want's read to the kit's check. The ask must be sized after that eat too: chain.ts askedOnTrade, on the open frame.
  */
-export async function gtSwap(ctx: Pick<Ctx, 'sdk'>, o: Pick<Resolved, 'bow' | 'kitFrom'>): Promise<void> {
+export async function gtSwap(ctx: Pick<Ctx, 'sdk'>, o: Pick<Resolved, 'bow' | 'kitFrom' | 'kitServed'>): Promise<void> {
     const { sdk } = ctx;
-    const plan = h12Plan(sdk.getState()!, o);
-    if (plan.want.length) {
-        if (!o.kitFrom) throw new Error(`H12 kit short (${plan.want.map(w => `${w.amount} ${(w.item as RegExp).source}`).join(', ')}) and no kitFrom`);
-        const r = await swap(sdk as never, o.kitFrom, plan.give, plan.want, { closeModals: true });
-        if (!r.ok) throw new Error(`the Grand Tree swap with ${o.kitFrom} failed: ${r.reason ?? 'unknown'}`);
-        const still = kitMissing(sdk.getState()!, o.bow);
-        if (still.length) throw new Error(`after the swap the kit still lacks ${still.map(([n, k]) => `${k} ${n.source}`).join(', ')}`);
+    if (o.kitServed?.()) {
+        const short = kitMissing(sdk.getState()!, o.bow, { served: true });
+        if (short.length) throw new Error(`H12 was served this attempt and the kit lacks ${kitText(short)}`);
+    } else {
+        await eatenUpTo(sdk, eating.below);
+        trading = true;
+        try {
+            const plan = h12Plan(sdk.getState()!, o);
+            if (plan.want.length) {
+                if (!o.kitFrom) throw new Error(`H12 kit short (${plan.want.map(w => `${w.amount} ${(w.item as RegExp).source}`).join(', ')}) and no kitFrom`);
+                const r = await swap(sdk as never, o.kitFrom, plan.give, plan.want, { closeModals: true });
+                if (!r.ok) throw new Error(`the Grand Tree swap with ${o.kitFrom} failed: ${r.reason ?? 'unknown'}`);
+                const still = kitMissing(sdk.getState()!, o.bow);
+                if (still.length) throw new Error(`after the swap the kit still lacks ${kitText(still)}`);
+            }
+        } finally {
+            trading = false;
+        }
     }
     for (const id of [o.bow, MM_OBJ.runeArrow]) {
         if (wearing(sdk.getState()!, id)) continue;
         const w = await wield(sdk, id, { maxTicks: 6 });
         if (!w.ok) throw new Error(`could not wear ${id} at the swap: ${w.reason}`);
     }
+}
+
+/** Narnode's menu option for a spare seal, offered once the quest is started and no seal is held (mm_narnode.rs2:152, :174). */
+export const LOST_SEAL = /^I've lost my copy of the Royal Seal/;
+/** The menu's way out, re-offered after the spare is given (mm_narnode.rs2:169-171, :175). */
+const BACK_LATER = /^I'll be back later/;
+
+/**
+ * A's talk with Narnode for the royal seal: the quest's start ('Yes'); with the quest started and the seal lost, the
+ * spare from his menu (`inv_add` with no room check, so a full pack is a named refusal), then out of the menu; nothing
+ * with the seal held. The menu holds only before Caranock is asked (mm_narnode.rs2:145): later, A is past re-running.
+ */
+export function narnodeTalk(s: BotWorldState): { choices: RegExp[]; start: boolean } | null | string {
+    if ((questStatus(s, 'mm') ?? 'not_started') === 'not_started') return { choices: [/^Yes$/], start: true };
+    if (holds(s, MM_OBJ.royalSeal)) return null;
+    if (freeSlots(s) < 1) return `S15:A needs 1 free slot for Narnode's spare seal (${freeSlots(s)} free)`;
+    return { choices: [LOST_SEAL, BACK_LATER], start: false };
 }
 
 /** Glide from the pilot in reach (Ta Quir Priw on the tree's top floor, or Gandius) to `to` (travel.ts glide). */
@@ -2504,29 +2573,37 @@ export async function receiveLeg(sdk: Sdk, from: string, label: TopUpLeg, size: 
     if (!seen.ok) return moveOn(`the helper was not in view within ${TOPUP_WAIT} ticks`, 0);
     let reason = '';
     for (let attempt = 1; attempt <= TOPUP_TRIES; attempt++) {
-        let prev: BotWorldState | null = null;
-        const idle = await waitUntil(sdk, s => {
-            const ok = tradeIdle(prev, s);
-            prev = s;
-            return ok;
-        }, { maxTicks: IDLE_WAIT });
-        const s = sdk.getState()!;
-        const sized = size(s);
-        if (typeof sized === 'string') return moveOn(sized, attempt - 1);
-        const h = helper(s);
-        const beside = !!h && chebyshev(pos(s), { x: h.x, z: h.z }) <= 1;
+        // As gtSwap: upkeep's eat lands first, then upkeep is held from the idle wait and the sizing through the trade, so
+        // no eat changes the pack between the leg's size and its trade.
+        await eatenUpTo(sdk, eating.below);
         trading = true;
-        const asked = sized.ask.map(a => `${a.count} ${a.item}`).join(', ');
-        const unask = onTradeOpen(sdk, from, st => {
-            writeTopUpAsk(askDir, sized.ask, Date.now(), H12O_SCOPE[label]);
-            stepNote(`S15:${label} top-up ask (${H12O_SCOPE[label].step}) at t=${st.tick}, ${freeSlots(st)} free: ${asked}`);
-        });
+        let s: BotWorldState;
+        let idle: Awaited<ReturnType<typeof waitUntil>>;
         let r: ReceiveResult;
         try {
-            r = await receive(sdk, from, { want: sized.want, maxTicks: 60, openMaxTicks: 20, ...(beside ? { noReplyTicks: DROPPED_TICKS } : {}) });
+            let prev: BotWorldState | null = null;
+            idle = await waitUntil(sdk, st => {
+                const ok = tradeIdle(prev, st);
+                prev = st;
+                return ok;
+            }, { maxTicks: IDLE_WAIT });
+            s = sdk.getState()!;
+            const sized = size(s);
+            if (typeof sized === 'string') return moveOn(sized, attempt - 1);
+            const h = helper(s);
+            const beside = !!h && chebyshev(pos(s), { x: h.x, z: h.z }) <= 1;
+            const asked = sized.ask.map(a => `${a.count} ${a.item}`).join(', ');
+            const unask = onTradeOpen(sdk, from, st => {
+                writeTopUpAsk(askDir, sized.ask, Date.now(), H12O_SCOPE[label]);
+                stepNote(`S15:${label} top-up ask (${H12O_SCOPE[label].step}) at t=${st.tick}, ${freeSlots(st)} free: ${asked}`);
+            });
+            try {
+                r = await receive(sdk, from, { want: sized.want, maxTicks: 60, openMaxTicks: 20, ...(beside ? { noReplyTicks: DROPPED_TICKS } : {}) });
+            } finally {
+                unask();
+                await closeLeftTrade(sdk, label);
+            }
         } finally {
-            unask();
-            await closeLeftTrade(sdk, label);
             trading = false;
         }
         if (r.ok) {
@@ -2779,20 +2856,35 @@ const BODIES: Partial<Record<string, Body>> = {
         pre: o => all(
             s => questStatus(s, 'tree') === 'complete' || 'Tree Gnome Village is not complete',
             s => questStatus(s, 'grandtree') === 'complete' || 'The Grand Tree is not complete',
-            s => (questStatus(s, 'mm') ?? 'not_started') === 'not_started' || holds(s, MM_OBJ.royalSeal) || 'Monkey Madness is already started',
-            s => !kitMissing(s, o.bow).length || !!o.kitFrom || `H12 kit short and no kitFrom: ${kitMissing(s, o.bow).map(([n, k]) => `${k} ${n.source}`).join(', ')}`,
+            s => {
+                const short = kitMissing(s, o.bow, { served: o.kitServed?.() });
+                return !short.length || (!!o.kitFrom && !o.kitServed?.()) || `H12 kit short and ${o.kitFrom ? 'served this attempt' : 'no kitFrom'}: ${kitText(short)}`;
+            },
+            // Started and the seal gone is A's to mend only before Caranock: from B on Narnode reports, not re-issues.
+            s => mmMilestone(s) < seg('B') || 'S15 is past B: Narnode no longer re-issues the royal seal',
+            // The seal's room is judged here only when no swap will change the pack; otherwise run judges it after the swap.
+            s => kitMissing(s, o.bow, { served: o.kitServed?.() }).length > 0 || typeof narnodeTalk(s) !== 'string' || (narnodeTalk(s) as string),
             s => (inGrandTree(s) && pos(s).level === 0) || chebyshev(pos(s), TREE_DOOR_OUTSIDE) <= 10 || `not at the Grand Tree (at ${JSON.stringify(pos(s))})`,
         ),
         async run(ctx, o) {
             const { sdk } = ctx;
             await gtSwap(ctx, o);
             await preDose(sdk);
+            const talk = narnodeTalk(sdk.getState()!);
+            if (typeof talk === 'string') throw new Error(talk);
             await intoTree(ctx, 0);
-            // "Start Monkey Madness?" Yes (mm_narnode.rs2:124-140): the story, the seal and its objbox, the chapter card.
-            const r = await talkTo(sdk, NARNODE_NPC, [/^Yes$/], { maxTicks: 200, idle: 4, near: NARNODE, closeModals: true, until: s => holds(s, MM_OBJ.royalSeal), ...shaped(MM_SHAPES.narnodeStart) });
-            noteShape('A Narnode', r);
-            if (!holds(sdk.getState()!, MM_OBJ.royalSeal)) throw new Error(`no royal seal from Narnode: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
-            await dismiss(sdk);
+            if (talk?.start) {
+                // "Start Monkey Madness?" Yes (mm_narnode.rs2:124-140): the story, the seal and its objbox, the chapter card.
+                const r = await talkTo(sdk, NARNODE_NPC, talk.choices, { maxTicks: 200, idle: 4, near: NARNODE, closeModals: true, until: s => holds(s, MM_OBJ.royalSeal), ...shaped(MM_SHAPES.narnodeStart) });
+                noteShape('A Narnode', r);
+                if (!holds(sdk.getState()!, MM_OBJ.royalSeal)) throw new Error(`no royal seal from Narnode: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
+                await dismiss(sdk);
+            } else if (talk) {
+                const r = await talkTo(sdk, NARNODE_NPC, talk.choices, { maxTicks: 120, idle: 4, near: NARNODE, closeModals: true, ...shaped(MM_SHAPES.narnodeSpareSeal) });
+                noteShape('A Narnode spare seal', r);
+                stepNote(`S15:A Narnode's spare seal: ${holds(sdk.getState()!, MM_OBJ.royalSeal) ? 'held' : 'NOT held'} after ${r.ticks} ticks, ${r.pages} pages`);
+                if (!holds(sdk.getState()!, MM_OBJ.royalSeal)) throw new Error(`no spare royal seal from Narnode: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
+            }
         },
         postconditions: holding(MM_OBJ.royalSeal),
     },

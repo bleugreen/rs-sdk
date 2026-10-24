@@ -50,6 +50,11 @@ On this page that is `handoff` (step 7, "The launch dry run", which gives the fo
 rehearsal account with `--rehearsal`) and step 8's attach-and-logout. The scored run's own start,
 run.ts, is rs/186's and not on main, so its line is pending; it is dry-run the same way.
 
+**Every login of SCORED outside run.ts goes through `speedrun/tools/oneoff.ts`**, and nothing else:
+not `bun -e` with `openSession`, not a tool run by hand, not a copy of the wrapper kept on the
+machine. This covers an item drop, a trade, a state read or a walk between attempts or during a
+pause. Section "Scored-side one-offs", below step 9, gives the reason and the commands.
+
 **The run bound is 14 h** (rs/680's run-gate `--bound` default, on main as #542, 801e6a92; step 3: it counts from `up`; the stack can be raised long before step 7, rs/659). A full run is our row, about 35,300 ticks (RUN-ORDER.md): about 2.9 h of
 wall clock at the 300 ms tick the demo ran until 19:56Z on 2026-10-22, and about **3.9 h at the
 400 ms it has run since** ("Measured: the demo's tick period"); at 600 ms, which remains possible,
@@ -2691,6 +2696,134 @@ after the run, run.ts releases the run's on the chosen machine, and the operator
 claim on the other machine (`rs-claim release run`), after which rehearsals there may resume. On the twin, if it was not chosen, `~/rs-sdk` then goes back to main for the
 attempts (step 0, "Twin:"). The session itself stays: nobody logs out of
 XFCE. The recording stays on the host until its copy on the Mac is checked.
+
+## Scored-side one-offs
+
+A one-off is any login of SCORED that run.ts does not make. Attempts 3 and 4 needed four kinds: an
+axe drop, a shark received from a courier, a read-only state check and a walk. **The only launch path is
+the wrapper `speedrun/tools/oneoff.ts`, running one of the tools in `speedrun/tools/oneoff/`**
+(rs/759; host's `~/rs-run/tools/oneoff.sh` and its tools of attempts 3-4, committed). It works on
+both machines, under the machine's claim like anything else that logs in ("The claim lock").
+
+**Why only the wrapper.** SCORED's `bot.env` names the run's gateway, 7780 (step 0). A session's two
+halves each choose their gateway on their own:
+
+- the SDK: `openSession` reads `bots/<name>/bot.env` unless it is handed an env
+  (`speedrun/lib/session.ts`);
+- the lite runner that `openSession` launches: it is given only the login name, so it reads
+  `bots/<login>/bot.env` unless `LITE_BOT_ENV` names another file
+  (`server/webclient/src/lite/runner.ts`).
+
+If either half lands on 7780, the one-off touches the run's gateway, and a split session strands
+SCORED. On 2026-10-24 two hand-run one-offs failed this way. At 02:47Z a lite runner published to
+the run's gateway. At 12:54Z the SDK was on 7780 while the lite client was on 7781. The session saw
+a stale first state, then "tick did not advance (no live client?)". The logout went unconfirmed and
+the runner was killed, which left a body with no connection in the world for about 500 ticks of
+SCORED's playtime (r, host's notes in rs/759). The wrapper and the shared helper close both paths,
+and a tool started any other way refuses before it logs in.
+
+**What the wrapper does**, in order (`speedrun/tools/oneoff.ts` has the detail):
+
+1. It refuses, starting nothing (exit 9), in any of these cases: the tool is not in
+   `speedrun/tools/oneoff/` (or, with `--adhoc`, fails the checks below), run.ts is running, 7781 is taken,
+   `bots/host-oneoff/` is left over from an earlier one-off, SCORED's `bot.env` or
+   `~/rs-run/.scored-account` is missing, or the run gateway's log (`~/rs-run/gateway.log`, which
+   `up` writes) is missing.
+2. It raises its own gateway on 127.0.0.1:7781 as `tmux -L run` session `gw1`, bounded at 35 min
+   ("Every launch is reaped by its own hard timeout"). It logs to `~/rs-run/gateway-oneoff.log`.
+3. It writes the alias env `bots/host-oneoff/bot.env`: SCORED's `bot.env` with `GATEWAY_URL` replaced
+   by `ws://127.0.0.1:7781`, with the directory at mode 700 and the file at 600.
+4. It counts `Bot connected` lines in the run gateway's log. Then it runs the tool under a 30 min
+   `timeout`, with `LITE_BOT_ENV` set to the alias env, `GATEWAY_URL=ws://127.0.0.1:7781`, and
+   `ONEOFF_LEDGER` set to the ledger. Only the tool's JSON ledger lines and usage lines reach the
+   terminal. Everything it prints is redacted and kept in `<run dir>/oneoff-<UTC>.out`.
+5. It counts again. An equal count prints `7780 untouched (Bot connected count N)`. Any change prints
+   `ISOLATION BREACH: 7780 gained K bot connection(s)` and exits 10, whatever the tool returned.
+6. It removes the alias directory and kills `gw1`. It then prints `one-off gateway stopped` and
+   `alias dir removed`, or `7781 STILL UP` / `ALIAS DIR STILL THERE` with exit 11.
+7. It appends a `wrapper` line to the ledger: the tool and its exit code, both gateways' counts,
+   login and logout UTC, and the ticks in the world (from the logout's last in-world tick back to
+   the login tick).
+
+A SIGINT, SIGTERM or SIGHUP while the tool runs reaches the tool as SIGTERM, and session.ts then
+clicks SCORED out. The teardown still runs.
+
+**What every tool does** (`speedrun/lib/oneoff.ts`, `runOneoff`; host's `read-a4.ts` skeleton). Each
+step below writes a ledger line:
+
+1. It loads the alias env with `loadOneoffEnv`. That refuses (`STOP`, exit 3) unless the env's
+   `GATEWAY_URL` is `ws://127.0.0.1:7781` (7780, or no `GATEWAY_URL` at all, is refused by name),
+   `LITE_BOT_ENV` is the alias env, and the process's `GATEWAY_URL` is 7781.
+2. Preflight: SCORED must be absent from the world's player list (`/playerpositions`; no answer
+   counts as a refusal), run.ts must not be running, and the tool's own checks must pass.
+3. **Without `--go`, it stops there** (`DRY`, exit 0) and nothing logs in.
+4. With `--go`, it opens the session with the alias env only (`openOneoff`: lite, launched). It
+   records the login tile and refuses to act if SCORED is not near the tool's expected tile
+   (`CHECK-FAIL`, exit 4).
+5. It acts by obj id and checks the pack by id afterwards.
+6. It calls `logoutClean`. An unconfirmed logout is followed by `abandonClient`, which clicks out and
+   then kills the runner, since a live runner with nothing driving it keeps the body in the world
+   indefinitely.
+7. It polls the player list for up to 40 s until SCORED is gone (`offline`). If SCORED is still
+   listed, it reports `OFFLINE-UNCONFIRMED` and exits 7.
+
+| Tool | Arguments (`--go` to log in) | Checks |
+|---|---|---|
+| `read` | none | none: records the tile, pack and worn items by id, and the vitals |
+| `drop` | `--id=ID --have=N --at=X,Z[,L] [--within=2] [--worn=ID] [--slots=N]` | the pack holds exactly N of ID first; SCORED is within `--within` of `--at`; afterwards ID is gone, every other id is unchanged (`pack-other` otherwise), `--worn` is still worn, and with `--slots` the pack uses exactly that many slots |
+| `receive` | `--id=ID [--amount=1] --have=N --courier-hash=HEX --meet=X,Z[,L] [--free=N]` | exactly one listed player's name hash starts with HEX, standing within 6 tiles of `--meet`; SCORED is within 10 tiles of `--meet` and holds N of ID; afterwards it holds N + amount, every other id is unchanged, and with `--free` exactly that many slots are free (the S15 kit needed one; a full 28/28 pack broke Narnode's seal) |
+| `walk` | `--to=X,Z[,L]` | the exact tile and level within 15 ticks of `walkTo` |
+| `rekit` | `--couriers=HEX[,HEX...] --meet=X,Z[,L] [--optional=HEX,...] [--optional-wait=600] [--optional-items=ID,...] [--want=FILE] [--drop=ID,...] [--swap-give=ID,...] [--give-after=ID,... [--give-to=HEX]] [--teleport=SPELL] [--to=X,Z[,L]] [--walk-timeout=480]` | the re-kit after a death (host's `rekit-a3.ts`). Every courier not in `--optional` is listed within 6 tiles of `--meet`, and SCORED within 10 of it. SCORED records what it kept, then trades with each courier in order: an optional one is waited for and skipped if it never comes, and `--optional-items` are then left out of the check. After the trades the pack holds at least `--want` (a JSON file `{id: count}`, less `--drop`). `--give-after` items are handed back and checked gone. Then an optional `--teleport` (skipped when `teleportRefusal` says no), and a walk to the exact `--to` tile |
+
+The courier is named by a prefix (6 or more hex digits) of the sha256 of its name as the player
+list shows it (`_` shown as a space), lowercased: `printf '%s' 'cairn h61' | sha256sum | cut -c1-12`.
+So no name goes in a command, and its name is redacted to `COURIER`. `rekit` names its couriers the
+same way, comma-separated; in the ledger they appear as `courier 1`, `courier 2`, and so on. A new
+kind of one-off becomes a file in `speedrun/tools/oneoff/` on
+`runOneoff`. The wrapper runs nothing else, and only a tool on the machine's `RUN_COMMIT` exists
+there. Attempt 4 needed two tools written inside the hold window, so the flags above are meant to
+cover those cases without new code.
+
+**The run-night escape: `--adhoc=FILE`** (main's decision, 2026-10-24). When no committed tool fits,
+write a new one and give it to the wrapper with `--adhoc=FILE` in place of the tool name. The tool's
+arguments follow as usual. It is still the wrapper, with the same gateway, alias, counts and
+teardown, because an escape inside the wrapper beats a hand-rolled bypass outside it. The wrapper
+refuses the file (exit 9, nothing raised) unless all of these hold:
+
+- it is a `.ts` file whose real path, with symlinks resolved, is inside `<run dir>/oneoff-adhoc/`. A
+  relative `FILE` is taken from that directory;
+- it calls `runOneoff`, so its session gets the same isolation refusals as every committed tool. Copy
+  the nearest tool in `speedrun/tools/oneoff/`, and import the helper by the checkout's absolute
+  path, since the file is outside it (`import { runOneoff } from '/home/ubuntu/rs-sdk/speedrun/lib/oneoff';`).
+
+Before anything is raised, the wrapper prints `ADHOC: running the uncommitted tool
+oneoff-adhoc/<file> (sha256 <12 hex>), not on RUN_COMMIT` and writes an `ADHOC` line to the ledger
+with the file's full sha256. The `wrapper` line repeats the path and hash. Dry-run it without `--go`
+like any other tool. After the run, copy the file into the run's record beside its ledger lines, and
+commit it to `speedrun/tools/oneoff/` if it will be needed again.
+
+**The ledger** is `<run dir>/oneoff-drop.jsonl` (`--run-dir`, by default run.ts's `run-machine`).
+It holds one JSON line per event, `{t, one_off, k, v}`, with SCORED's name replaced by `SCORED`. `k` is
+one of `preflight`, `DRY`, `STOP`, `login`, the tool's own lines (`pre`, `drop`, `swap`, `walk`,
+`post`, `pack-other`), `CHECK-OK`, `CHECK-FAIL`, `ERROR`, `OPEN-ERROR`, `logout`, `LOGOUT-ERROR`,
+`abandon`, `offline`, `OFFLINE-UNCONFIRMED` and the wrapper's `wrapper`. It is never `relogs.json`:
+that file is the run's relog budget (step 7), and a one-off is not a run relog. SCORED's name never
+appears on the terminal or in the ledger. The tool reads it at run time from
+`~/rs-run/.scored-account`.
+
+**The command.** Run it in the chosen machine's ssh form. `RUN_DIR` is the run's run dir. The
+outer bound covers the tool's 30 min plus the gateway's start and the teardown:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && timeout --kill-after=30s 40m bun speedrun/tools/oneoff.ts --run-dir=RUN_DIR drop --id=ID --have=1 --at=X,Z'
+```
+
+Its dry run ("Rules for every launch") is the same line, as it stands, without `--go`. It raises
+the one-off gateway and writes the alias, runs the tool's preflight with no login, and tears both
+down. Expect `preflight`, `DRY`, `TOOL_EXIT 0`, `7780 untouched`, `one-off gateway stopped` and
+`alias dir removed`. Then send the same line with ` --go` appended. Copy the ledger lines of both
+into the run's record. On `ISOLATION BREACH` or `OFFLINE-UNCONFIRMED`, run the leftover check and
+look at the live view or `/playerpositions` before anything else logs in.
 
 ## Twin rehearsal with substitute supplies (rs/496)
 

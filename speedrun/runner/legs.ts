@@ -647,7 +647,10 @@ export const LEGS: readonly LegStep[] = [
     leg('T22-23', T.flySpots, T.cook, [tele('lumbridge'), run(T.cook.x, T.cook.z, T.cook.tol)], {
         after: 'S22', before: 'S23', method: 'Lumbridge teleport + run', countedBy: 'S23',
         // S22's kit, its knife included: H23 hands a fresh knife back for T26-27's keep web (rs/158).
-        drops: [/^fly fishing rod$/i, /^logs$/i, /^feather$/i, /^knife$/i],
+        // Then the fly band's leftovers, which S25d's whole-pack need refuses (rs/764 F12): the shafts
+        // its knife loop fletches from the logs, and the catch still waiting for its drop when the
+        // band stops, trout or salmon. Each is `any` on the ledger row: nothing sent when none is held.
+        drops: [/^fly fishing rod$/i, /^logs$/i, /^feather$/i, /^knife$/i, /^arrow shaft$/i, /^raw (trout|salmon)$/i],
         expected: { ticks: 16.3, label: 'm', source: rt('L22t') + ': 20, 15, 14', net: 6.3 },
     }),
     leg('T23-24', T.cook, T.rustyAnchor, [tele('falador'), run(T.rustyAnchor.x, T.rustyAnchor.z, T.rustyAnchor.tol)], {
