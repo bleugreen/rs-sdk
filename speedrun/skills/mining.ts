@@ -40,7 +40,10 @@
 // set, each one stops the program and the band retries in place once the lap is whole again, up
 // to CONTEST_RETRIES in CONTEST_WINDOW ticks, then walks to the nearest other site in SITES that
 // the fallback allows and whose hunters leave this combat level alone (`nextSite`; `acceptHazards`
-// lifts that). Without `fallback` the band is the zoo-only band it was.
+// lifts that). At the zoo with no such site (combat below every `safeFrom`) the fallback is
+// unavailable: the band starts anyway and mines through contention like the zoo-only band (main's
+// ruling, 17:53 2026-10-22: the zoo is safe from combat 0). Without `fallback` the band is the
+// zoo-only band it was.
 
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import { demoOrigin, samplePlayerCount } from '../lib/demo-status';
@@ -77,13 +80,15 @@ export interface MiningOpts {
     /**
      * Where a contested band may go (`parseFallback`): 'none' (default) keeps the zoo-only band;
      * 'auto' allows every other site, a list of SITES names exactly those; either way only a site
-     * whose hunters leave this combat level alone (`safeFrom`), unless `acceptHazards`.
+     * whose hunters leave this combat level alone (`safeFrom`), unless `acceptHazards`. With none
+     * of them safe at this combat the fallback is unavailable, never a refusal: a band at the zoo
+     * starts and mines through contention (main's ruling, 17:53 2026-10-22).
      */
     fallback?: string | string[];
     /**
-     * Let the fallback use sites whose hunters attack this combat level (default false): an iron
-     * band starts with no safe site (`combatGate`) and switches into unsafe ones (`nextSite`). For
-     * rehearsals that mean to walk into a site's hunters.
+     * Let the fallback use sites whose hunters attack this combat level (default false): it
+     * switches into unsafe ones (`nextSite`), and a band resumed at a fallback site starts with no
+     * safe site (`combatGate`). For rehearsals that mean to walk into a site's hunters.
      */
     acceptHazards?: boolean | string;
     /** rs/111's S07 fallback (bones on the stay2 lap): a seam, not built. */
@@ -349,6 +354,16 @@ export function nextSite(from: string, at: P, combat: number, fb: Fallback, cont
     return ['zoo', ...fb.sites]
         .filter(n => n !== from && (fb.acceptHazards || combat >= SITES[n]!.safeFrom))
         .sort((a, b) => recently(a) - recently(b) || cheb(at, SITES[a]!.centre) - cheb(at, SITES[b]!.centre))[0];
+}
+
+/** The fallback sites a band may switch into at this combat level: those whose `safeFrom` it reaches, or all with `acceptHazards`. */
+export function safeSites(fb: Fallback, combat: number): string[] {
+    return fb.sites.filter(n => fb.acceptHazards || combat >= SITES[n]!.safeFrom);
+}
+
+/** The fallback sites' `safeFrom`, as a reason: 'ardougneNorth needs 43, rellekka 129, wilderness31 never'. */
+function safeFromList(fb: Fallback): string {
+    return fb.sites.map((n, i) => `${n}${i ? '' : ' needs'} ${Number.isFinite(SITES[n]!.safeFrom) ? SITES[n]!.safeFrom : 'never'}`).join(', ');
 }
 
 /** pickaxes.obj: levelrequire and mining_rate; pickaxe_checker.rs2 takes the best one usable. */
@@ -735,16 +750,16 @@ function atIronSite(s: BotWorldState, fb: Fallback): true | string {
 }
 
 /**
- * rs/158's ruling (mining.md section 11): a band with a fallback starts only if some site the
- * fallback may use is safe at the account's combat level (`safeFrom`). Otherwise 'auto' has no
- * site to go to and fails on the third contest event, and a named list walks the account to
- * hunters that attack it. `acceptHazards` overrides it; with no fallback it does not apply.
+ * rs/158's start gate, away from the zoo (a band resumed at a fallback site): it starts only if
+ * some site the fallback may use is safe at the account's combat level (`safeFrom`).
+ * `acceptHazards` overrides it; with no fallback it does not apply. At the zoo it never applies
+ * (main's ruling, 17:53 2026-10-22, mining.md section 11): the zoo is safe from combat 0, and a
+ * combat below every `safeFrom` only makes the fallback unavailable (`ironBand`).
  */
 function combatGate(s: BotWorldState, fb: Fallback): true | string {
     const combat = combatLevel(s);
-    if (!fb.sites.length || fb.acceptHazards || fb.sites.some(n => combat >= SITES[n]!.safeFrom)) return true;
-    const needs = fb.sites.map((n, i) => `${n}${i ? '' : ' needs'} ${Number.isFinite(SITES[n]!.safeFrom) ? SITES[n]!.safeFrom : 'never'}`);
-    return `combat ${combat}: no site the contested-rock fallback may use is safe (${needs.join(', ')})`;
+    if (!fb.sites.length || safeSites(fb, combat).length) return true;
+    return `combat ${combat}: no site the contested-rock fallback may use is safe (${safeFromList(fb)})`;
 }
 
 function zooStep(to: number, o: { rotation?: string | undefined; fallback: Fallback }): Step<any> {
@@ -882,6 +897,7 @@ function ironStep(name: string, start: number, end: number, failures: boolean, o
             if (miningLevel(s) < start) return `Mining ${miningLevel(s)} < ${start}`;
             if (pickaxeRate(s.inventory, miningLevel(s)) === null) return 'no usable pickaxe';
             if (freeOfOre(s) < FREE_SLOTS) return `${28 - freeOfOre(s)} other items: need ${FREE_SLOTS} free slots (ore, a gem, a stray fletch)`;
+            if (siteAt(here(s), ['zoo'])) return true;
             const gate = combatGate(s, o.fallback);
             if (gate !== true) return gate;
             return atIronSite(s, o.fallback);
@@ -909,6 +925,12 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
     const switching = o.fallback.sites.length > 0;
     // a band resumed after a switch starts where it stands
     let site = (switching && siteAt(here(sdk.getState()!), ['zoo', ...o.fallback.sites])) || 'zoo';
+    // At the zoo with no fallback site safe at this combat the fallback is unavailable, and the band
+    // mines through contention as the zoo-only band does, except that a lap not whole is waited out
+    // rather than failed. Re-read at each event, so a combat that rises mid-band makes it available.
+    const fallbackOff = () => site === 'zoo' && !safeSites(o.fallback, combatLevel(sdk.getState()!)).length;
+    const leaving = () => switching && !fallbackOff();
+    if (switching && fallbackOff()) log(`fallback unavailable at combat ${combatLevel(sdk.getState()!)}: no site it may use is safe (${safeFromList(o.fallback)}); mining the zoo through any contest`);
     let players: number | null = null;
     let D: number;
     if (o.respawn === 'auto') {
@@ -959,7 +981,7 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
         new ContestWatch(sdk, () => rocks(rotation), e => {
             contestLog.push({ ...e, site });
             log(`T${e.tick} contested ${site}: ${e.kind === 'lap' ? `the lap not whole in ${D + 10} ticks` : `another player's ore off ${e.rock}`} (${contest.recent(e.tick)} in ${CONTEST_WINDOW} ticks)`);
-            if (switching && !abort.signal.aborted) {
+            if (leaving() && !abort.signal.aborted) {
                 abortWhy = `contested: ${e.kind} ${e.rock ?? ''}`.trim();
                 contestAbort = true;
                 abort.abort();
@@ -1015,7 +1037,7 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
             const s = sdk.getState()!;
             if (miningLevel(s) >= end) break;
             rotation = lap(D);
-            if (switching && contest.tripped(currentTick(sdk))) {
+            if (leaving() && contest.tripped(currentTick(sdk))) {
                 await leave();
                 continue;
             }
@@ -1023,10 +1045,11 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
             await clearOres();
             const live = (st: BotWorldState) => rocks(rotation).every(p => liveRock(st, p));
             if (!live(s)) {
-                const r = await waitUntil(sdk, switching ? st => live(st) || contest.tripped(st.tick) : live, { maxTicks: D + 10 });
+                const canLeave = leaving();
+                const r = await waitUntil(sdk, canLeave ? st => live(st) || contest.tripped(st.tick) : live, { maxTicks: D + 10 });
                 if (switching) {
                     if (!r.ok) contest.lapTimeout(currentTick(sdk));
-                    if (!r.ok || contest.tripped(currentTick(sdk))) continue;
+                    if (!r.ok || (canLeave && contest.tripped(currentTick(sdk)))) continue;
                 } else if (!r.ok) throw new Error(`the ${rotation} rotation's rocks are not all live after ${D + 10} ticks: someone else mining here?`);
             }
             // a contest seen while waiting is counted; the lap is whole again, so start
