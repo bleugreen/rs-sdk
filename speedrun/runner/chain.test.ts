@@ -7,7 +7,9 @@ import { ASK_FILE, CUE_FILE, CueWatcher, CueWriter, type Cue, type CueScope, typ
 import * as monkeyMadness from '../quests/monkey-madness';
 import { PLAN_FILE } from '../helpers/anvil';
 import { GO_FILE } from '../helpers/fm-row';
-import { handOffFrom, HandOffRecord } from './handoff';
+import { awayFromMeeting, deliveryHeld, gameName, handOffFrom, HandOffRecord, matches } from './handoff';
+import { PRE_REQUEST_TILES } from '../helpers/mule-readiness';
+import { noteOf } from '../lib/items';
 import { runAttempt } from '../lib/attempt';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
 import { ReservationWatch } from '../lib/host-reservation';
@@ -17,18 +19,18 @@ import { RelogBudget } from './relog-budget';
 import { SCORED_RELOG, SCORED_LOGOUT, SCORED_LOGIN } from './scored-relog';
 import { SPELLS } from '../lib/travel';
 import { sleep, waitUntil } from '../lib/wait';
-import { MANIFEST } from '../tools/slot-ledger';
+import { MANIFEST, parseLedger, walk } from '../tools/slot-ledger';
 import * as cooking from '../skills/cooking';
 import * as mining from '../skills/mining';
 import * as woodcutting from '../skills/woodcutting';
 import {
-    ALTERNATIVES, anvilAnnounce, CANNON_ROWS, cueAround, cueMuleRows, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, chainSeams, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleScope, s07Woodcutting, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
+    ALTERNATIVES, anvilAnnounce, CANNON_ROWS, cueAround, cueMuleRows, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, chainSeams, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleMeeting, muleScope, s07Woodcutting, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
     whenNeeded, withCue, askedOnTrade, h12oLogin, h12oLoginRefusal, h12oTopUp, H12O_LOGIN, type ChainStep, type CueSink, type RunConfig,
 } from './chain';
 import { CUE_BEACONS, CueKeeper, exitStopIsFinal, prepareCueDir, RunCues } from './cue-keeper';
 import { ScopeSessions } from '../helpers/standalone';
 import { FencedError } from './fence';
-import { leg, legsFor, netTotal, type LegStep } from './legs';
+import { leg, legsFor, netTotal, TILES, type LegStep } from './legs';
 import { Observation, resolveResume, type Link } from './resume';
 import type { RunnerSession, Step, StepContext } from './step';
 
@@ -1086,6 +1088,34 @@ describe('a placed hand-off stays done once the band after it consumes what it b
         expect(await where(sliceWith(unmarked(), 'T21-22', 'T22-23'), arrival)).toEqual(['H18 hand-off', 'run']);
     });
 
+    // rs/603: a mule row asks for SCORED at the meeting, not its carrier in view, so a carrier still on its way is waited for at the row's cue.
+    test('S22 on arrival with H18\'s carrier still on its way (nobody in view): H18 runs, and its cue waits for the carrier (rs/603)', async () => {
+        const arrival = at(RIVER.x, RIVER.z, { held: [['Law rune', 1]], skills: FISHER });
+        expect(await where(sliceWith(unmarked(), 'T21-22', 'T22-23'), arrival)).toEqual(['H18 hand-off', 'run']);
+    });
+
+    test('S18 on arrival with H14\'s carrier still on its way: H14 runs (rs/603)', async () => {
+        const arrival = at(KNIGHTS.x, KNIGHTS.z, { held: [['Magic potion(3)', 1], ['Knife', 1, 946]], skills: THIEF });
+        expect(await where(sliceWith(unmarked(), 'T16-18', 'T18-19'), arrival)).toEqual(['H14 hand-off', 'run']);
+    });
+
+    test('S22 not yet at the meeting (still in the body altar room): the walk stays on T21-22, and H18 names where SCORED stands (rs/603)', async () => {
+        const room = at(TILES.bodyAltar.x, TILES.bodyAltar.z, { held: [['Law rune', 1]], skills: FISHER, partner: 'p_h18' });
+        const steps = sliceWith(unmarked(), 'T21-22', 'T22-23');
+        expect(await where(steps, room)).toEqual(['T21-22 Lumbridge teleport from the body altar room + run', 'run']);
+        expect(steps.find(s => s.id === 'H18')!.preconditions(room, {})).toBe(`H18: SCORED at ${TILES.bodyAltar.x},${TILES.bodyAltar.z},0 is not within ${PRE_REQUEST_TILES} of the meeting tile 3241,3248,0`);
+    });
+
+    test('S22 after the first catch without the record: H18 refuses on what SCORED holds, not on a partner gone, with its carrier in view or not (rs/603)', async () => {
+        const steps = sliceWith(unmarked(), 'T21-22', 'T22-23');
+        const h18 = steps.find(s => s.id === 'H18')!;
+        for (const partner of [undefined, 'p_h18']) {
+            const firstCatch = at(RIVER.x, RIVER.z, { held: [...h18Pack({ feather: 1 }), ['Raw trout', 1]], skills: FISHER, ...(partner ? { partner } : {}) });
+            expect(h18.preconditions(firstCatch, {})).toMatch(/^H18: already holds some of everything the row brings \(.*feather.*\): its trade has landed$/);
+            expect(await where(steps, firstCatch)).toEqual(['T21-22 Lumbridge teleport from the body altar room + run', 'run']);
+        }
+    });
+
     test('S16 mid-fight, runes spent (the in-progress segment is C, not the milestone D): C-fight resumes', async () => {
         const h13 = handOffFrom(MANIFEST_TEXT, 'H13');
         const held: Held[] = h13.receive.filter(r => !h13.wield.some(w => w.name === r.name)).map(r => [r.name, /rune$/.test(r.name) ? Math.floor(r.count / 2) : r.count, r.ids?.[0]] as Held);
@@ -1110,6 +1140,55 @@ describe('a placed hand-off stays done once the band after it consumes what it b
             record.mark(row, 1);
             expect([row, s.done!(spent, {})]).toEqual([row, true]);
         }
+    });
+});
+
+describe('mule rows meet SCORED at their carrier\'s stand (rs/603)', () => {
+    const muleHandOffs = chain.filter(s => s.kind === 'handoff' && s.cue?.family === 'mule');
+
+    test('every placed mule row asks for its meeting, and the leg before it (where there is one) arrives inside it', () => {
+        expect(muleHandOffs.map(s => s.cue!.step)).toEqual(MULE_ROWS.filter(r => muleHandOffs.some(s => s.cue!.step === r)));
+        expect(muleHandOffs.length).toBeGreaterThan(15);
+        const stays = (s: ChainStep) => s.kind === 'handoff' || s.kind === 'cue' || !!s.marker;
+        const withLeg: string[] = [];
+        for (const s of muleHandOffs) {
+            const row = s.cue!.step;
+            const m = muleMeeting(row);
+            let j = chain.indexOf(s) - 1;
+            while (j >= 0 && stays(chain[j]!)) j--;
+            if (chain[j]?.kind !== 'leg') continue;
+            withLeg.push(row);
+            const def = (chain[j] as unknown as LegStep).def;
+            for (const a of [def.dest, ...(def.nextStart ? [def.nextStart] : [])]) {
+                const tol = a.tol ?? 0;
+                for (const [dx, dz] of [[-tol, -tol], [tol, tol], [-tol, tol], [tol, -tol]] as const) {
+                    const s0 = baseState({ inGame: true, player: { name: 'Scored', x: a.x + dx, z: a.z + dz, worldX: a.x + dx, worldZ: a.z + dz, level: a.level ?? 0 } as PlayerState });
+                    expect([row, def.id, awayFromMeeting(s0, row, m)]).toEqual([row, def.id, null]);
+                }
+            }
+        }
+        // H1 (S01, after S00) and H21d (after S25a) have no leg before them: why the meeting is the carrier's stand, not a leg's arrival.
+        expect(muleHandOffs.map(s => s.cue!.step).filter(r => !withLeg.includes(r))).toEqual(['H1', 'H21d']);
+    });
+
+    test('no placed mule row\'s planned pack (the slot-ledger walk) holds some of everything it brings before its trade, so the delivery-held refusal never stops a row still to trade', () => {
+        const { rows } = parseLedger(MANIFEST_TEXT);
+        const entries = walk(rows);
+        let partly = 0;
+        for (const s of muleHandOffs) {
+            const row = s.cue!.step;
+            const k = rows.findIndex(r => r.row === row);
+            expect([row, k > 0]).toEqual([row, true]);
+            const inventory = entries[k - 1]!.stacks.inv.map((h, slot) => ({
+                slot, id: h.id === undefined ? -1 : h.kind === 'n' ? noteOf(h.id) ?? h.id : h.id, name: gameName(h.name), count: h.count ?? 1, optionsWithIndex: [],
+            }));
+            const before = baseState({ inGame: true, inventory });
+            const plan = handOffFrom(MANIFEST_TEXT, row);
+            if (plan.receive.some(r => !r.topUp && before.inventory.some(i => matches(r, i)))) partly++;
+            expect([row, deliveryHeld(before, plan)]).toEqual([row, null]);
+        }
+        // The walk does reach the items: several rows arrive already holding some of what they bring (runes, logs).
+        expect(partly).toBeGreaterThan(3);
     });
 });
 
