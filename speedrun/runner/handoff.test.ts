@@ -345,7 +345,9 @@ describe("an `any` count gives or drops whatever is held, and none held is nothi
         const ANY_GIVES: Record<string, string[]> = {
             // a dose family (`antipoison(*)`) plans under its bare name
             H12: ['antipoison', 'coins', 'death rune', 'chaos rune'],
-            H13: ['coins', 'superantipoison', 'fire rune'],
+            H13: ['coins', 'fire rune'],
+            // H12's super stays with SCORED through S16 for its entry cure and leaves here (rs/755, rs/158's cells)
+            H14: ['superantipoison'],
             H15: ['bronze arrow', 'iron arrow', 'steel arrow', 'mithril arrow', 'adamant arrow', 'coins', 'shark', 'blood rune', 'nature rune'],
         };
         const cap = (n: string) => n.charAt(0).toUpperCase() + n.slice(1);
@@ -1117,14 +1119,14 @@ describe('rollbackWitnesses: what the record clause reads as a rollback (rs/577)
     const placed = (row: string) => PLACEMENT[row] !== undefined;
     const witnesses = (id: string) => rollbackWitnesses(handOffFrom(text, id), later(id), placed).map(w => [w.give.name, w.until]);
 
-    test("H13: S18's rune arrows and coins are no evidence; H23's shortbow and superantipoison wait for H23; the rest always", () => {
+    test("H13: S18's rune arrows and coins are no evidence; H23's shortbow waits for H23; the rest always", () => {
         expect(witnesses('H13')).toEqual([
-            ['magic shortbow', ['H23']], ['amulet of magic', []], ['diamond', []], ['superantipoison', ['H23']], ['fire rune', []], ['khazard helmet', []], ['khazard armour', []],
+            ['magic shortbow', ['H23']], ['amulet of magic', []], ['diamond', []], ['fire rune', []], ['khazard helmet', []], ['khazard armour', []],
         ]);
     });
 
-    test("H14's knife waits for H18 and H23 (rs/562 A's rollback case); H11r's cannon for H23; with nothing after it, every give and drop", () => {
-        expect(witnesses('H14')).toEqual([['knife', ['H18', 'H23']]]);
+    test("H14's knife waits for H18 and H23 (rs/562 A's rollback case), its superantipoison for H23 (kept through S16, rs/755); H11r's cannon for H23; with nothing after it, every give and drop", () => {
+        expect(witnesses('H14')).toEqual([['knife', ['H18', 'H23']], ['superantipoison', ['H23']]]);
         expect(witnesses('H11r').every(([, until]) => (until as string[]).join() === 'H23')).toBe(true);
         const h13 = handOffFrom(text, 'H13');
         expect(rollbackWitnesses(h13, [], placed).map(w => w.give.name)).toEqual([...h13.give, ...h13.drop].map(g => g.name));
