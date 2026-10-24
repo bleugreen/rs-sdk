@@ -214,7 +214,8 @@ function describe(plan: RoutePlan): string {
 
 export function herbloreStep(opts: HerbloreOptions = {}): Step<any> {
     const to = opts.to ?? 99;
-    const held = (s: BotWorldState) => cycleItems(s, recipesFor(opts.recipes));
+    // every herb item, not only opts.recipes': the stow deposits all of them
+    const held = (s: BotWorldState) => cycleItems(s);
     const done = (s: BotWorldState) => reached(s, to) && held(s).length === 0;
     const entry = async (ctx: StepContext<any>) => {
         const s = ctx.sdk.getState();
