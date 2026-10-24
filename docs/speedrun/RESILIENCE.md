@@ -431,17 +431,22 @@ hop. It eats by the run's one eat rule, `travel.ts` `eatDue`, which eats at or
 under `eatAt(maxHp)`. That is the floor of 15 plus one poison hit (6, from the
 spiders' severity 27) plus one NPC hit (4), so 25 at SCORED's 38-42 hitpoints.
 The frame an eat is decided on can then lose both before the shark lands and
-still end on the floor. The rule never eats within 10 of the maximum. When
-SCORED reads poisoned (`quests/segments.ts` `poisoned`) it drinks one antipoison
-dose (`cureDose`, `noteAntipoison`). A last dose leaves an empty vial, which the
-leg drops at its end, so the pack leaves the leg as the slot ledger has it (S15:A
-runs at 27 of 28 slots). Until rs/755's sdk `hitmark` field is on the base, a
-poison carried into a leg does not read as poisoned, so the cure fires only on a
-fresh poisoning. Nothing is clicked while a trade is open.
-A pack click closes an open chat, which would end a tree's or a lever's talk
-part way, so while a chat is open the eat waits unless hitpoints are at or under
-21 (`LEG_URGENT_HP`, the floor plus one poison hit), and the cure always waits.
-The travel row's `ate` and `cured` count what the upkeep sent.
+still end on the floor. The rule never eats within 10 of the maximum. Nothing is
+clicked while a trade is open. A pack click closes an open chat, which would end
+a tree's or a lever's talk part way, so while a chat is open the eat waits unless
+hitpoints are at or under 21 (`LEG_URGENT_HP`, the floor plus one poison hit).
+
+The cure goes between hops, not on frames. A potion's delay drops a click sent
+inside it, which an eat's does not, so before each hop a hostile leg calls
+`quests/segments.ts` `curePoison`. When SCORED reads poisoned (`poisoned`: a
+poison hitmark or the poisoned message since the last dose, so a poison carried
+in from S14 counts) it drinks one dose, confirms it landed, and waits out the
+drink's delay (`drinkDelayOver`) before the hop's first click. A drink that does
+not land is recorded on the travel row (`cureFailed`) rather than failing the
+leg: the eating holds the floor. A last dose leaves an empty vial, which the leg
+drops at its end, so the pack leaves the leg as the slot ledger has it (S15:A
+runs at 27 of 28 slots). The travel row's `ate` and `cured` count the eats and
+doses.
 
 ### A launch is known by its id; a failed start is logged out (rs/668)
 
