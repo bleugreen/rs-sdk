@@ -89,6 +89,7 @@ import { annotation } from '../lib/attempt';
 import { ReservationWatch, reservationPath } from '../lib/host-reservation';
 import { closeSession, loadBotEnv, openSession, relog, ROOT, type Session } from '../lib/session';
 import { waitUntil } from '../lib/wait';
+import { onTutorialIsland } from '../lib/world';
 import { parseTiles } from '../skills/firemaking';
 import { resolveOptions as magicOptions, ROUTE_LOADS, type RingCounts } from '../skills/magic';
 import { bands as runecraftBands } from '../skills/runecraft';
@@ -621,7 +622,10 @@ async function main(argv: string[]): Promise<number> {
                 return 3;
             }
         }
-        const off = await waitUntil(s.sdk, st => st.inGame && st.autoRetaliateEnabled === false, { maxTicks: RETALIATE_OFF_TICKS });
+        // On Tutorial Island (a fresh account the chain starts at S00) no login can press the button
+        // (lib/session.ts setAutoRetaliate); S00 turns it off on landing (skills/start.ts), as on the day.
+        const island = onTutorialIsland(s.sdk.getState()?.player);
+        const off = island ? { ok: true } : await waitUntil(s.sdk, st => st.inGame && st.autoRetaliateEnabled === false, { maxTicks: RETALIATE_OFF_TICKS });
         if (!off.ok) {
             console.error(`[dress] REFUSED: auto-retaliate still on ${RETALIATE_OFF_TICKS} ticks after login (autoRetaliateEnabled ${s.sdk.getState()?.autoRetaliateEnabled})`);
             return 3;

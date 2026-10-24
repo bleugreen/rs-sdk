@@ -26,7 +26,7 @@ import { h4mLoadRows, parseFallbacks } from '../helpers/mule-ledger';
 import { H4M_ROW } from '../runner/chain';
 import { handOffFrom, planHandOff, type HandOffPlan } from '../runner/handoff';
 import { MANIFEST } from '../tools/slot-ledger';
-import { clearInventory, give, mustTele } from './setup';
+import { clearInventory, give, leaveTutorial, mustTele } from './setup';
 import { labRefusal } from './stand-ins';
 
 export interface StubRow {
@@ -137,6 +137,8 @@ async function main(argv: string[]): Promise<number> {
         console.error(`[stub-giver] REFUSED: ${why}`);
         return 3;
     }
+    // A fresh lab account lands on Tutorial Island, where a staff teleport is refused.
+    await leaveTutorial(session);
     const results = await serveRows(session.sdk as unknown as StubSdk, scored, rows, { log: r => console.log(`[stub-giver] ${JSON.stringify(r)}`) });
     console.log(`RESULT stub-giver ${JSON.stringify({ rows: results.length, ok: results.filter(r => r.ok).length, results })}`);
     return results.length === rows.length && results.every(r => r.ok) ? 0 : 1;
