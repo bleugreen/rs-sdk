@@ -15,6 +15,9 @@
 // --carrier=<bot> (from A only): SCORED arrives without H6, and the carrier, staged beside Edmond
 // with H6, trades it over in segment A (`kitFrom`), as the run's H6 hand-off does.
 //
+// --at=x,z: start the --from fixture on that tile instead (B from the house's west door tile,
+// 2570,3333, or from Alrena's room). Each run records the house doors' state at its start.
+//
 // After a run that reached Z, `check` confirms the quest complete, the magic scroll read (Z's note:
 // the memorise and can-now-cast pages, the scroll gone), the 2,425 base Mining, and then casts the
 // Ardougne teleport from Edmond's house as T08-09 will, with no water runes held and the staff of
@@ -26,7 +29,7 @@ import { teleport, type TravelSdk } from '../../lib/travel';
 import { give as tradeGive, type GiveResult } from '../../lib/trade';
 import { configId, invCount, skillXp, worn } from '../../lib/world';
 import { closeSession, openSession, type Session } from '../../lib/session';
-import { quest, stepId, steps, type Options, type ScrollRead } from '../../quests/plague-city';
+import { HOUSE_DOORS, quest, stepId, steps, type Options, type ScrollRead } from '../../quests/plague-city';
 import { labMain, STAGING, type LabQuest, type QuestFixture } from './run';
 import { arg, result } from '../common';
 import { clearInventory, give, leaveTutorial, mustTele, tele } from '../setup';
@@ -68,8 +71,10 @@ const PIC = { elena_picture: 1 };
 const MASK = { gasmask: 1 };
 
 const CARRIER = arg('carrier', '');
+const AT = arg('at', '') ? (([x, z]) => ({ x: x!, z: z! }))(arg('at', '').split(',').map(Number)) : null;
+const FROM = arg('from', '').toUpperCase();
 
-export const FIXTURES: readonly QuestFixture[] = [
+const BASE_FIXTURES: readonly QuestFixture[] = [
     CARRIER
         ? { letter: 'A', levels: LEVELS, vars: vars(0), items: { ...BASE }, worn: WORN, tile: EDMOND, note: `Edmond's arrival tile, H6 with the carrier ${CARRIER}` }
         : fx('A', 0, {}, KIT.full, EDMOND, WORN, "Edmond's arrival tile (T07-08: 2568,3334 tol 1), H6 staged"),
@@ -99,6 +104,8 @@ export const FIXTURES: readonly QuestFixture[] = [
     fx('Y', 28, { ...PIC, ...MASK, scruffy_note: 1, warrant: 1, elenakey: 1 }, KIT.afterBravek, { x: 2567, z: 3333 }, MASKED),
     fx('Z', 29, { ...MASK, ardougnescroll: 1 }, KIT.afterBravek, { x: 2567, z: 3333 }, MASKED),
 ];
+
+export const FIXTURES: readonly QuestFixture[] = BASE_FIXTURES.map(f => (AT && f.letter === FROM ? { ...f, tile: AT, note: `${f.note ?? ''} (--at ${AT.x},${AT.z})`.trim() } : f));
 
 /**
  * Reference ticks per segment on the fixed client, from plague_city.md's step rows (stock, measured
@@ -149,6 +156,12 @@ const lab: LabQuest<Options> = {
     async prepare(session: Session, f: QuestFixture) {
         xp0 = skillXp(session.sdk, 'mining');
         carrierGive = null;
+        const s = session.sdk.getState()!;
+        const doors = HOUSE_DOORS.map(d => {
+            const l = s.nearbyLocs.find(l => l.x === d.x && l.z === d.z && /door/i.test(l.name));
+            return { ...d, loc: l ? `${l.name} ${l.id} [${l.optionsWithIndex.map(o => o.text).join('/')}]` : null };
+        });
+        result(`${stepId}_start`, { letter: f.letter, at: s.player ? { x: s.player.worldX, z: s.player.worldZ } : null, doors });
         if (carrier && f.letter === 'A') await stageCarrier(carrier, session.sdk.getState()!.player!.name);
     },
     async check(session: Session, _f: QuestFixture, rows: readonly TickRow[]) {
