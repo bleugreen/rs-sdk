@@ -34,7 +34,7 @@ describe('labChain', () => {
         expect(lab.chain.map(s => s.id).indexOf('H12') + 1).toBe(lab.chain.map(s => s.id).indexOf('S15'));
         expect(lab.stubRows.map(r => r.row)).toEqual(['H1', 'H4k', 'H6', 'H4p', 'H7', 'H8', 'H9', 'H10', 'H11r', 'H13', 'H14', 'H15', 'H16', 'H18', 'H19', 'H20', 'H21d', 'H22']);
         expect(tileOf(lab, 'H7')).toEqual({ x: 2504, z: 3191 });
-        expect(tileOf(lab, 'H22')).toEqual({ x: 3191, z: 3364 });
+        expect(tileOf(lab, 'H22')).toEqual({ x: 3191, z: 3365 });
         const tile = (row: string) => lab.stubRows.find(r => r.row === row)!.tile;
         expect(tile('H9')).toEqual(LANDING_HELPER_TILE);
         expect(tile('H11r')).toEqual(LANDING_HELPER_TILE);

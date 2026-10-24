@@ -57,7 +57,8 @@ const DELIVERIES: Readonly<Record<string, { at: WorldTile; bank: WorldTile }>> =
     H19: { at: ground(TILES.cook), bank: bank(draynor) },
     H20: { at: ground(TILES.rustyAnchor), bank: bank(draynor) },
     H21d: { at: ground(TILES.westBooth), bank: bank(varrockWest) },
-    H22: { at: ground({ ...TILES.championsGuild, z: TILES.championsGuild.z - 1 }), bank: bank(varrockWest) },
+    // North of SCORED, away from the guild door: deliveryTradeReach refuses a door beside either trader.
+    H22: { at: ground({ ...TILES.championsGuild, z: TILES.championsGuild.z + 1 }), bank: bank(varrockWest) },
     H4e: { at: ground(TILES.taverleyWillows), bank: bank(faladorWest) },
     H4m: { at: ground({ ...TILES.zooIron, x: TILES.zooIron.x + 1, z: TILES.zooIron.z - 1 }), bank: bank(ardougneSouth) },
 };
