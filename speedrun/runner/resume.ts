@@ -179,8 +179,8 @@ async function markerPlace<C>(steps: ReadonlyArray<Step<C>>, j: number, obs: Obs
 export interface Link {
     /** Resolves with a reason once the session is lost; stops watching when `signal` aborts. */
     lost(signal: AbortSignal): Promise<string>;
-    /** Resolves once the session is back in the world with an advancing tick. */
-    restored(timeoutMs: number): Promise<void>;
+    /** Resolves once the session is back in the world with an advancing tick; rejects at `timeoutMs`, or when `signal` aborts. */
+    restored(timeoutMs: number, signal?: AbortSignal): Promise<void>;
     /** True while the session is lost. */
     isLost(): boolean;
 }
@@ -256,7 +256,7 @@ export function sessionLink(session: Session, opts: SessionLinkOptions = {}): Li
             }
             return 'stopped watching';
         },
-        restored: async timeoutMs => {
+        restored: async (timeoutMs, signal) => {
             const deadline = Date.now() + timeoutMs;
             const since = Math.max(lostAt, 1);
             // Back means two different in-world ticks seen after the loss, so a
@@ -264,6 +264,7 @@ export function sessionLink(session: Session, opts: SessionLinkOptions = {}): Li
             // waited for that, so this usually resolves on the first poll.
             let first: number | null = null;
             while (Date.now() < deadline) {
+                if (signal?.aborted) throw new Error(`${session.name}: stopped waiting to be back in the world`);
                 const s = session.sdk.getState();
                 if (s?.inGame && session.expectInWorld && session.lastAdvanceAt > since && why() === null) {
                     if (first === null) first = session.sessionId * 1e9 + s.tick;

@@ -69,9 +69,15 @@ export class FakeSdk {
     private listeners = new Set<(s: BotWorldState) => void>();
     /** Called on every send; may push follow-up states to simulate the server. */
     onSend: (a: SentAction, sdk: FakeSdk) => void = () => {};
+    /** The socket to the gateway, as BotSDK reports it: 'connected' unless a test takes the gateway away. */
+    connection: 'connecting' | 'connected' | 'reconnecting' | 'disconnected' = 'connected';
 
     constructor(state: BotWorldState | null = baseState()) {
         this.state = state;
+    }
+
+    getConnectionState(): 'connecting' | 'connected' | 'reconnecting' | 'disconnected' {
+        return this.connection;
     }
 
     getState(): BotWorldState | null {

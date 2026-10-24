@@ -73,6 +73,8 @@ if [ "${LAB_EXTERNAL:-0}" != "1" ]; then
 
     (cd "$ROOT/server/gateway" && exec bun run gateway.ts) > "$LOG/gateway.log" 2>&1 &
     PIDS+=($!)
+    # drop-accept.ts --gateway-down kills the gateway by this pid and starts its own replacement.
+    echo $! > "$LOG/gateway.pid"
     bound "$LOG/gateway.log" gateway || exit 1
 fi
 
