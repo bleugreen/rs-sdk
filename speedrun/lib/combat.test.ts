@@ -265,7 +265,7 @@ describe('fight: a target its sends cannot reach (rs/693)', () => {
         const sdk = arena({ nearbyNpcs: [{ ...npc(7), x: 14, z: 0 }] });
         simulateWalking(sdk);
         let killAt = -1;
-        reply(sdk, 'sendSpellOnNpc', s => {
+        reply(sdk, 'sendSpellOnNpc', (s: BotWorldState) => {
             if (s.player!.worldX < 4) return UNROUTED;
             if (killAt < 0) killAt = s.tick + 2;
             return { success: true, message: 'ok' };
