@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
-import { baseState, FakeSdk, flush, type SentAction } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk, flush, simulateBurying, type SentAction } from '../lib/fake-sdk';
 import { TickLog } from '../lib/ticks';
 import { levelForXp, XP_RATE, xpForLevel } from '../lib/xp';
 import { Observation, resolveResume } from '../runner/resume';
@@ -12,7 +12,10 @@ import {
     BONE_TYPES,
     bonesFor,
     bonesToLevel,
+    BURY_RESEND,
+    BURY_STALL,
     buryAtBooth,
+    buryHeld,
     planLoad,
     preconditions,
     prayerStep,
@@ -471,5 +474,112 @@ describe('the step', () => {
         const { srv } = setup({ level: 40 });
         expect(steps({ to: 40 })[0]!.done!(obs(srv), {})).toBe(true);
         expect(steps({ to: 41 })[0]!.done!(obs(srv, { boneBank: { bones: 5, byType: {} } }), {})).toBe(false);
+    });
+});
+
+describe('buryHeld: the bones held, at the engine rate, never a click into the bury delay (rs/700)', () => {
+    const pack = (n: number, prayer = 50, extra: string[] = ['Rune axe', 'Knife', 'Logs']) => {
+        const names = [...extra, ...Array.from({ length: n }, () => 'Dragon bones')];
+        return baseState({
+            tick: 1000,
+            skills: [{ name: 'Prayer', level: prayer, baseLevel: prayer, experience: 0 }],
+            inventory: names.map((name, slot) => ({ slot, id: name === 'Dragon bones' ? DRAGON : 2000 + slot, name, count: 1, optionsWithIndex: name === 'Dragon bones' ? [{ text: 'Bury', opIndex: 1 }] : [] }))
+        });
+    };
+    const bonesLeft = (sdk: FakeSdk) => sdk.getState()!.inventory.filter(i => /bones$/i.test(i.name)).length;
+    const gaps = (ts: number[]) => ts.slice(1).map((t, i) => t - ts[i]!);
+
+    test('bury_bone.rs2 is p_delay(0) and OpHeldHandler drops a delayed click: the engine facts the loop is built on', () => {
+        expect(read('server/content/scripts/skill_prayer/scripts/bury_bone.rs2')).toMatch(/p_delay\(0\);[\s\S]*inv_delslot\(inv, \$slot\)/);
+        expect(read('server/engine/src/engine/script/handlers/PlayerOps.ts')).toContain('delayedUntil = World.currentTick + 1 + check(state.popInt(), NumberNotNull)');
+        expect(read('server/engine/src/network/game/client/handler/OpHeldHandler.ts')).toMatch(/if \(player\.delayed\) \{\s*\/\/ normal: cannot interact while delayed\s*return false;/);
+    });
+
+    test('a round trip inside a tick: 23 bones, one every 2 ticks, 23 clicks, every click taken (none landed in the delay)', async () => {
+        const sdk = new FakeSdk(pack(23));
+        const sim = simulateBurying(sdk, { latency: 1 });
+        const r = await drive(sdk, buryHeld(sdk, /bones$/i), 200);
+        expect([r.buried, r.sends, r.resends, r.stop]).toEqual([23, 23, 0, 'none']);
+        expect(bonesLeft(sdk)).toBe(0);
+        expect(sim.clicks.every(c => c.accepted)).toBe(true);
+        expect(new Set(gaps(sim.buried))).toEqual(new Set([2]));
+        expect(gaps(r.buryTicks).every(g => g === 2)).toBe(true);
+        // the first Bury lands on 1001 and its bone goes on 1002; the last of 23 on 1046
+        expect([sim.buried[0], sim.buried.at(-1), r.endTick - r.startTick]).toEqual([1002, 1046, 46]);
+        // the kit is never clicked
+        expect(sim.clicks.every(c => c.slot >= 3)).toBe(true);
+    });
+
+    test('a slower round trip (2 ticks) costs a tick a bone, and still no click lands in the delay', async () => {
+        const sdk = new FakeSdk(pack(10));
+        const sim = simulateBurying(sdk, { latency: 2 });
+        const r = await drive(sdk, buryHeld(sdk, /bones$/i), 200);
+        expect([r.buried, r.sends, r.resends]).toEqual([10, 10, 0]);
+        expect(sim.clicks.every(c => c.accepted)).toBe(true);
+        expect(new Set(gaps(sim.buried))).toEqual(new Set([3]));
+    });
+
+    test('the blind every-frame click would land in the delay: the model drops it, which is what buryHeld never sends', async () => {
+        const sdk = new FakeSdk(pack(4));
+        const sim = simulateBurying(sdk, { latency: 1 });
+        const p = (async () => {
+            while (bonesLeft(sdk)) {
+                const b = sdk.getState()!.inventory.find(i => /bones$/i.test(i.name))!;
+                void sdk.sendUseItem(b.slot, 1);
+                await new Promise<void>(r => { const off = sdk.onStateUpdate(() => { off(); r(); }); });
+            }
+        })();
+        await drive(sdk, p, 100);
+        expect(sim.clicks.filter(c => !c.accepted).length).toBeGreaterThan(0);
+        expect(new Set(gaps(sim.buried))).toEqual(new Set([2]));
+    });
+
+    test(`a lost click is sent again after ${BURY_RESEND} unanswered frames, once`, async () => {
+        const sdk = new FakeSdk(pack(3));
+        const sim = simulateBurying(sdk, { latency: 1, accept: n => n !== 0 });
+        const r = await drive(sdk, buryHeld(sdk, /bones$/i), 100);
+        expect([r.buried, r.sends, r.resends]).toEqual([3, 4, 1]);
+        expect(sim.clicks.map(c => c.accepted)).toEqual([false, true, true, true]);
+        expect(sim.clicks[1]!.sent - sim.clicks[0]!.sent).toBe(BURY_RESEND);
+    });
+
+    test(`a server that takes nothing: stalled after ${BURY_STALL} unanswered Burys, bones still held`, async () => {
+        const sdk = new FakeSdk(pack(5));
+        simulateBurying(sdk, { accept: () => false });
+        const r = await drive(sdk, buryHeld(sdk, /bones$/i), 100);
+        expect([r.stop, r.buried, r.sends]).toEqual(['stalled', 0, BURY_STALL]);
+        expect(r.endTick - r.startTick).toBe(BURY_STALL * BURY_RESEND);
+        expect(bonesLeft(sdk)).toBe(5);
+    });
+
+    test('keepOn and untilLevel stop it on the frame they say so, with no click after; an empty pack returns at once', async () => {
+        const sdk = new FakeSdk(pack(20, 50));
+        const sim = simulateBurying(sdk, { prayer: n => (n >= 6 ? 51 : null) });
+        const r = await drive(sdk, buryHeld(sdk, /bones$/i, { untilLevel: 51 }), 100);
+        expect([r.stop, r.buried, r.sends]).toEqual(['level', 6, 6]);
+        expect(sim.clicks).toHaveLength(6);
+        expect(bonesLeft(sdk)).toBe(14);
+
+        const k = new FakeSdk(pack(20, 50));
+        simulateBurying(k);
+        const kr = await drive(k, buryHeld(k, /bones$/i, { keepOn: s => s.inventory.filter(i => /bones$/i.test(i.name)).length > 12 }), 100);
+        expect([kr.stop, kr.buried]).toEqual(['target', 8]);
+
+        const e = new FakeSdk(pack(0));
+        const er = await buryHeld(e, /bones$/i);
+        expect([er.stop, er.buried, er.sends, e.sent.length]).toEqual(['none', 0, 0, 0]);
+    });
+
+    test('an abort ends it at once', async () => {
+        const sdk = new FakeSdk(pack(20));
+        simulateBurying(sdk);
+        const stop = new AbortController();
+        const p = buryHeld(sdk, /bones$/i, { signal: stop.signal });
+        sdk.tick();
+        sdk.tick();
+        stop.abort();
+        const r = await p;
+        expect(r.stop).toBe('aborted');
+        expect(r.buried).toBeLessThanOrEqual(1);
     });
 });
