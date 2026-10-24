@@ -369,7 +369,9 @@ export function poisonUnknown(s: Pick<BotWorldState, 'tick' | 'combatEvents' | '
     observeTick(s.tick);
     if (s.tick < sessionStart || s.tick - sessionStart >= POISON_PERIOD) return false;
     if (drunkAt >= sessionStart && drunkAt <= s.tick) return false;
-    if (poisonSeenAt(s) >= sessionStart) return false;
+    // Evidence this session, or recent enough to be in view from before it (a page's own hit): poisoned decides.
+    const seen = poisonSeenAt(s);
+    if (seen >= sessionStart || s.tick - seen <= POISON_WINDOW) return false;
     return cureDose(s) !== null;
 }
 

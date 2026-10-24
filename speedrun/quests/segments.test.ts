@@ -434,7 +434,8 @@ describe('poison: the published evidence, the shared dose record and the entry c
             expect(poisonUnknown(fresh(5010))).toBe(false); // a page that counts on: no session start seen since 0
             noteSessionStart(5000);
             expect(poisonUnknown(fresh(5010))).toBe(true);
-            expect(poisonUnknown(fresh(5010, { combatEvents: [hit(4990)] }))).toBe(true); // that hit was the last session's
+            expect(poisonUnknown(fresh(5010, { combatEvents: [hit(4990)] }))).toBe(false); // a hit in view: poisoned decides
+            expect(poisonUnknown(fresh(5010, { combatEvents: [hit(4970)] }))).toBe(true); // the last session's, long past
             expect(poisonUnknown(fresh(5000 + POISON_PERIOD))).toBe(false);
             expect(poisonUnknown(fresh(3))).toBe(true); // then relaunched
         });
