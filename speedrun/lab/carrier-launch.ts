@@ -131,14 +131,18 @@ export function cueRootOf(muleDir: string): string {
     return dirname(muleDir);
 }
 
-/** Every obj id a carrier's packages offer, with the count its bank must hold: fixed lines summed, a top-up at its max. */
-export function carrierStock(options: Pick<MuleRunOptions, 'packages'>): Map<number, number> {
+/**
+ * Every item a carrier's packages offer, by the item's own id (a note's id reads as its item: the bank
+ * holds the item), with the count its bank must hold: fixed lines summed, a top-up at its max.
+ */
+export function carrierStock(options: Pick<MuleRunOptions, 'packages'>, pack: ObjPack = objPack()): Map<number, number> {
     const out = new Map<number, number>();
     for (const p of options.packages) for (const line of p.items) {
         if (line.id === undefined) throw new Error(`${p.name}: the lab seeds lines by id only`);
         const n = isTopUp(line) ? line.topUp.max : line.amount;
         if (!Number.isInteger(n) || n < 1) throw new Error(`${p.name}: obj ${line.id} has no whole count to seed (${n})`);
-        out.set(line.id, (out.get(line.id) ?? 0) + n);
+        const item = noteLink(line.id, pack).item;
+        out.set(item, (out.get(item) ?? 0) + n);
     }
     return out;
 }
@@ -197,7 +201,7 @@ export async function seedCarrier(s: Session, options: Pick<MuleRunOptions, 'pac
     const first = options.packages[0]!;
     await mustTele(s.sdk, first.bank.x, first.bank.z, first.bank.level);
     if (!(await s.bot.openBank()).success) throw new Error('carrier bank unavailable');
-    const stock = carrierStock(options);
+    const stock = carrierStock(options, pack);
     for (const g of seedGives(stock, pack)) {
         const before = carried(s);
         await cheat(s.sdk, `give ${g.obj} ${g.n}`);
@@ -205,7 +209,7 @@ export async function seedCarrier(s: Session, options: Pick<MuleRunOptions, 'pac
         if (!(await depositAll(s.sdk)).ok) throw new Error(`seed deposit failed: ${g.obj}`);
     }
     const bank = s.sdk.getBankItems().map(i => ({ id: i.id, count: i.count }));
-    const short = [...stock].filter(([id, n]) => (bank.find(b => b.id === noteLink(id, pack).item)?.count ?? 0) < n).map(([id, n]) => `${id} x${n}`);
+    const short = [...stock].filter(([id, n]) => (bank.find(b => b.id === id)?.count ?? 0) < n).map(([id, n]) => `${id} x${n}`);
     await s.bot.closeBank();
     if (short.length) throw new Error(`the seeded bank is short of ${short.join(', ')}`);
     return { bank };
@@ -228,7 +232,7 @@ export function carrierReady(dir: string, o: { serve: string; deliveryRun: strin
 }
 
 /** The carriers' launcher config (standalone.ts parseLaunchConfig input): the carriers file's entries, no `final`. */
-export function carrierLaunch(o: { entries: readonly CarrierEntry[]; botsDir: string; runDir: string; gatewayPort: number }): LauncherConfig & { accounts: CarrierEntry[] } {
+export function carrierLaunch(o: { entries: readonly CarrierEntry[]; botsDir: string; runDir: string; gatewayPort: number }): Omit<LauncherConfig, 'accounts'> & { accounts: CarrierEntry[] } {
     return { gatewayPort: o.gatewayPort, botsDir: o.botsDir, runDir: o.runDir, loginSpacingMs: 2000, accounts: o.entries.map(e => ({ ...e })) };
 }
 

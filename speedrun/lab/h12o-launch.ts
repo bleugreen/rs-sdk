@@ -54,7 +54,7 @@ export interface H12oEntry {
 }
 
 /** standalone.ts's config for h45: the generated entry under the lab name, serving SCORED, on the h12o block's folders. */
-export function h12oLaunch(o: { h12o: NonNullable<RunConfig['h12o']>; serve: string; manifest?: string; botsDir: string; runDir: string; gatewayPort: number }): LauncherConfig & { accounts: H12oEntry[] } {
+export function h12oLaunch(o: { h12o: NonNullable<RunConfig['h12o']>; serve: string; manifest?: string; botsDir: string; runDir: string; gatewayPort: number }): Omit<LauncherConfig, 'accounts'> & { accounts: H12oEntry[] } {
     const g = h45LauncherEntry(o.manifest);
     const entry: H12oEntry = {
         account: o.h12o.account!, role: 'mule', cueDir: o.h12o.cueDir,

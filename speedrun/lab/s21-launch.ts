@@ -35,7 +35,7 @@ export interface S21Entry {
 }
 
 /** standalone.ts's config for S21's roster: the production entries with lab restock (above). */
-export function s21GiverLaunch(o: { givers: readonly string[]; botsDir: string; runDir: string; gatewayPort: number }): LauncherConfig & { accounts: S21Entry[] } {
+export function s21GiverLaunch(o: { givers: readonly string[]; botsDir: string; runDir: string; gatewayPort: number }): Omit<LauncherConfig, 'accounts'> & { accounts: S21Entry[] } {
     const hb = handBackSlot(S21_ESSENCE, o.givers.length);
     const accounts = giverEntries([...o.givers], { role: 'altar-giver' }).map((raw, i): S21Entry => {
         const e = raw as unknown as S21Entry;
