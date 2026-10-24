@@ -20,7 +20,7 @@
  * --coins=500`, a first purchase short on coins); `--legacy-sharks=1` writes each staged knight's role-state as the runner before
  * SharkState left it (a bare purchase record, `banked` = `--sharks`), so its buy-sharks stage starts done;
  * `--buy=1` makes the plan buy sharks (`--per-account`, `--minimum`, `--rebuy-min`, `--ceiling`) and passes
- * `--run-ended`; `--ramp=0` turns the ramp off. The Exchange check's maker leaves its shark ask open for the rebuy.
+ * `--run-ended`; `--ramp=0` turns the ramp off; `--restart=M` stops the runner after M minutes and starts it again. The Exchange check's maker leaves its shark ask open for the rebuy.
  *
  * `--fresh=1` stages nobody: every account starts on Tutorial Island and the runner's own stages do everything (the
  * Hitpoints-site lab). `--min-free-mb=N` (default 1200) stops the run with SIGINT when the host's available memory
@@ -197,7 +197,22 @@ const plan = {
 };
 const planPath = join(out, 'plan.json');
 writeFileSync(planPath, JSON.stringify(plan, null, 2));
-const child = Bun.spawn(['bun', 'markets/phase2/run.ts', planPath, '--out', out, '--placeholder-data', ...(buy ? ['--run-ended'] : [])], { cwd: ROOT, stdout: 'inherit', stderr: 'inherit' });
+const spawnRunner = () => Bun.spawn(['bun', 'markets/phase2/run.ts', planPath, '--out', out, '--placeholder-data', ...(buy ? ['--run-ended'] : [])], { cwd: ROOT, stdout: 'inherit', stderr: 'inherit' });
+let child = spawnRunner();
+// --restart=M: stop the runner after M minutes and start it again on the same --out (its role-state), as markets does
+const restart = count('restart', 0);
+let restarted: Promise<void> | null = null;
+const restartTimer =
+    restart > 0
+        ? setTimeout(() => {
+              restarted = (async () => {
+                  log('restarting the runner', { afterMinutes: restart });
+                  child.kill('SIGINT');
+                  log('runner exited for the restart', { code: await child.exited });
+                  child = spawnRunner();
+              })();
+          }, restart * 60_000)
+        : null;
 if (sigint > 0)
     setTimeout(() => {
         log('sending SIGINT', { afterMinutes: sigint });
@@ -239,7 +254,11 @@ const memWatch = setInterval(() => {
         child.kill('SIGINT');
     }
 }, 30_000);
-const code = await child.exited;
+let code = await child.exited;
+if (restarted) {
+    await restarted;
+    code = await child.exited;
+} else if (restartTimer) clearTimeout(restartTimer);
 clearInterval(memWatch);
 log('runner exited', { code });
 Bun.spawnSync(['bun', 'markets/phase2/report.ts', join(out, 'ledger.jsonl')], { cwd: ROOT, stdout: 'inherit', stderr: 'inherit' });
