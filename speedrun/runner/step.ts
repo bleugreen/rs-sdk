@@ -131,6 +131,18 @@ export interface Step<C = Record<string, never>> {
      * through `run` while the account is in combat (runner/resume.ts MidStepError).
      */
     startsInCombat?: true;
+    /**
+     * A bounded walk out of the aggressors' reach, for a step that can fail among aggressive NPCs
+     * (S14 and S27 at the Wilderness poison spiders). The server refuses a logout while the account
+     * is in combat (lib/world.ts inCombatWindow), and logoutClean holds through that window being hit.
+     * After this step fails with SCORED in the window, or once a logout is refused for combat, the
+     * attempt runs `retreat` first and then logs out (runner/retreat.ts, from lib/attempt.ts's
+     * failure path). The runner bounds it in ticks, fences its sends past the bound, and watches it
+     * for a death. It picks nothing up and may start anywhere the step can fail, so it returns at once
+     * where there is nothing to walk out of; it throws when it ends still in reach. Absent: the logout
+     * after a failure is exactly what it was.
+     */
+    retreat?(ctx: StepContext<C>): Promise<void>;
 }
 
 export class StepError extends Error {
