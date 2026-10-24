@@ -18,6 +18,13 @@
 // 4. no refusing step (a module not on main) on the path to --until, and no seam mismatch: every
 //    step whose preconditions ask for a start tile starts within it wherever the leg before it
 //    arrives (runner/chain.ts chainSeams);
+// 4a. the rune census (runner/rune-census.ts): SCORED's runes, by obj id, against what the chain
+//    spends of each from the start step (--from, else the step the tick log's last census was taken
+//    before) up to the next row that brings that rune, a row this attempt's hand-off record has
+//    served not counted; a rune short refuses, naming it, the step that would run short and the
+//    supply it waits for. Before login the pack is the tick log's last census (a fresh run has none);
+//    once SCORED is in the world the same census runs on its live pack, and a shortfall logs it out
+//    (exit 3) before any step runs;
 // 5. the helpers are in: <run dir>/launcher.json says helpersReady, and the next helper step's helpers
 //    are ready by their roles' own phase in the cue dir, not merely online (runner/phase-gate.ts; one
 //    line per status file, every later family on the path reported);
@@ -29,8 +36,8 @@
 // The tick log defaults to <run dir>/run.jsonl, so running the same command again resumes into the
 // same log: the walk starts from game state, the run's cue files are kept, and the report covers
 // every session. A new run takes a new --log (or a cleared run dir).
-// --dry-run evaluates every gate (the floor included) and lists the chain and every refusing step,
-// and logs nothing in. No option skips or replaces a gate: --run-commit names the commit the floor
+// --dry-run evaluates every gate (the floor included) and lists the chain, every refusing step, the
+// seams and the rune census, and logs nothing in. No option skips or replaces a gate: --run-commit names the commit the floor
 // check judges (default HEAD), never the floor.
 //
 // The report at the end (runner/run-report.ts) is per RUN-ORDER id against section 2's figures.
@@ -75,11 +82,14 @@ import { newRunId, parseLog, TickLog, type TickRow } from './lib/ticks';
 import { startRunTabMemory, type TabMemorySetting } from './lib/tab-memory';
 import { formatRunReport, runReport } from './runner/run-report';
 import { patchMethod } from './runner/fence';
-import { buildChain, chainProbes, chainSeams, missingOnPath, muleCueDir, resolveFrom, sliceUntil, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
+import { buildChain, chainProbes, chainSeams, ledgerRows, missingOnPath, muleCueDir, resolveFrom, sliceUntil, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
 import { exitStopIsFinal, prepareCueDir, RunCues } from './runner/cue-keeper';
 import { deliveryOwnerFor } from './runner/delivery-owner';
 import { dropRecovery } from './runner/drop-relog';
-import { LOST_AFTER_TICKS, sessionLink } from './runner/resume';
+import { awaitPlayer, LOST_AFTER_TICKS, sessionLink } from './runner/resume';
+import { formatCensus, lastCensus, runeCensus, runePlan, runesHeld, type RuneCensus, type RunePlan } from './runner/rune-census';
+import { loadModules, runeLabel } from './tools/rune-pins';
+import { MANIFEST } from './tools/slot-ledger';
 import { RelogBudget } from './runner/relog-budget';
 import { HandOffRecord } from './runner/handoff';
 import { SCORED_LOGIN, SCORED_RELOG } from './runner/scored-relog';
@@ -230,6 +240,8 @@ export interface GateIO {
     relogs?(): { room: true | string; used: string; path: string };
     /** The role-phase gate's lines (runner/phase-gate.ts), one per helper status file on the path. */
     phases?(): PhaseLine[];
+    /** The rune census before login (loggedRuneCensus). */
+    runes?(): RuneGateInput;
 }
 
 /** cannon.ts serve options, per cannon row, as h92 runs them on the day. */
@@ -299,6 +311,7 @@ export async function startGates(chain: readonly ChainStep[], io: GateIO): Promi
     const seams = chainSeams(chain);
     const off = seams.filter(s => !s.ok);
     out.push({ gate: 'seams', ok: off.length === 0, detail: off.length ? off.map(s => s.detail).join('; ') : `${seams.length} checked (${seams.map(s => s.id).join(', ')}), 0 mismatches` });
+    if (io.runes) out.push(runeGate(io.runes()));
     const ready = io.helpersReady();
     out.push({ gate: 'helpers ready', ok: ready === true, detail: ready === null ? 'no launcher.json in the run dir: start the helpers first' : ready ? 'launcher.json: helpersReady' : 'launcher.json: helpers not ready yet' });
     // Online is not ready: the next helper step's helpers must be ready by their roles' own phase.
@@ -319,6 +332,87 @@ export async function startGates(chain: readonly ChainStep[], io: GateIO): Promi
         });
     }
     return out;
+}
+
+// ------------------------------------------------------------------ the rune census
+
+/** The rune census gate's input: a census and where its pack came from, a reason there is none to take, or why it cannot be taken. */
+export type RuneGateInput = { census: RuneCensus; source: string } | { none: string } | { error: string };
+
+export const RUNE_GATE = 'rune census';
+
+export function runeGate(r: RuneGateInput, gate: string = RUNE_GATE): Gate {
+    if ('error' in r) return { gate, ok: false, detail: r.error };
+    if ('none' in r) return { gate, ok: true, detail: r.none };
+    const c = r.census;
+    const spent = c.lines.filter(l => l.needed > 0);
+    return {
+        gate,
+        ok: c.ok,
+        detail: c.refusal ?? `from #${c.from} ${c.start}, ${r.source}: ${spent.length ? spent.map(l => `${runeLabel(l.rune)} ${l.held} held, ${l.needed} needed until ${l.supply?.row ?? 'the end'}`).join('; ') : 'no rune spent before its next supply'}`,
+        meta: { from: c.from, source: r.source, lines: c.lines.map(l => ({ rune: l.rune, held: l.held, needed: l.needed, margin: l.margin, supply: l.supply?.row ?? null, short: l.short?.name ?? null })) },
+    };
+}
+
+/**
+ * The census before login: SCORED's pack as the tick log's last `(census)` row recorded it (by obj
+ * id), against the chain from --from, else from the step that census was taken before, where a
+ * re-run's walk picks up. Whatever that step spent after its census is not in the pack figure, so
+ * the live census after login is the one of record. A fresh run has nothing recorded.
+ */
+export function loggedRuneCensus(plan: RunePlan, chain: readonly ChainStep[], o: { from?: number; earlier: readonly TickRow[]; served: (row: string) => boolean }): RuneGateInput {
+    const logged = lastCensus(o.earlier);
+    if (!logged) {
+        return { none: o.from === undefined ? 'a fresh run: the tick log records no pack yet; the census is taken on the live pack after login' : `--from=#${o.from}: the tick log records no census of SCORED's pack; the census is taken on the live pack after login` };
+    }
+    const from = o.from ?? chain.findIndex(s => s.name === logged.before);
+    if (from < 0) return { none: `the tick log's last census was taken before ${logged.before}, which is not on this path; the census is taken on the live pack after login` };
+    return {
+        census: runeCensus(plan, from, runesHeld(logged.inventory), { served: o.served }),
+        source: `held as the tick log's last census recorded it before ${logged.before} (tick ${logged.tick}, ${logged.byId ? 'by id' : 'by name: a log from before ids were recorded'})`,
+    };
+}
+
+/** Where a session's census starts: --from, else the step the tick log's last census was taken before, else the chain's start. */
+export function censusStart(chain: readonly ChainStep[], from: number | undefined, earlier: readonly TickRow[]): number {
+    if (from !== undefined) return from;
+    const logged = lastCensus(earlier);
+    const i = logged ? chain.findIndex(s => s.name === logged.before) : -1;
+    return i < 0 ? 0 : i;
+}
+
+/** The census on SCORED's live pack, read by obj id once it is in the world. */
+export function liveRuneCensus(state: Pick<BotWorldState, 'inventory'> | null, plan: RunePlan, from: number, served: (row: string) => boolean): RuneGateInput {
+    if (!state) return { error: "SCORED's live pack could not be read after login, so the rune census cannot be taken" };
+    return { census: runeCensus(plan, from, runesHeld(state.inventory), { served }), source: 'the live pack after login, by id' };
+}
+
+/**
+ * The live census as a start check on an open session: logged as a gate row and printed; a refusal
+ * logs SCORED out (confirmed) and gives EXIT_REFUSED, before any step runs. Null when it passes.
+ */
+export async function liveRuneCheck(
+    session: Pick<Session, 'name' | 'sdk'>,
+    o: { plan: RunePlan | null; planError?: string; from: number; served: (row: string) => boolean; log: TickLog },
+    deps: { logout: () => Promise<LogoutResult>; awaitState?: () => Promise<Pick<BotWorldState, 'inventory'> | null>; say?: (line: string) => void },
+): Promise<number | null> {
+    const say = deps.say ?? ((l: string) => console.log(l));
+    const state = await (deps.awaitState ?? (async () => (await awaitPlayer(session.sdk), session.sdk.getState())))();
+    let input: RuneGateInput;
+    try {
+        input = o.plan ? liveRuneCensus(state, o.plan, o.from, o.served) : { error: `the rune plan could not be built: ${o.planError ?? 'unknown'}` };
+    } catch (e) {
+        // An unreadable hand-off record: refused like any other, with SCORED logged out.
+        input = { error: e instanceof Error ? e.message : String(e) };
+    }
+    const g = runeGate(input, `${RUNE_GATE}, live`);
+    o.log.append(annotation(o.log, session.name, 'gate', '(gate) rune census, live', { ok: g.ok, ...(g.ok ? {} : { error: g.detail }), meta: { detail: g.detail, ...g.meta } }));
+    say(`[gate] ${g.ok ? 'ok     ' : 'REFUSED'} ${g.gate}: ${g.detail}`);
+    if (g.ok) return null;
+    if ('census' in input) for (const l of formatCensus(input.census, input.source)) say(`[gate]   ${l}`);
+    const out = await deps.logout();
+    say(`[run] rune census refused after login: ${out.ok ? 'SCORED logged out' : `logout NOT confirmed (${out.reason})`}; no step ran`);
+    return EXIT_REFUSED;
 }
 
 /** The helpers the run config itself names, by the scope each serves (the phase gate's fallback where no launcher config names one). */
@@ -362,7 +456,7 @@ export function hostPhaseGates(cfg: RunConfig, path: readonly string[], runDir: 
     return phaseGates({ path, members, read: readStatusFile(cfg.cueDir), launcher, now, source });
 }
 
-export function hostGateIO(a: RunArgs, owner: string | undefined, relogs?: RelogBudget, phases?: () => PhaseLine[]): GateIO {
+export function hostGateIO(a: RunArgs, owner: string | undefined, relogs?: RelogBudget, phases?: () => PhaseLine[], runes?: () => RuneGateInput): GateIO {
     const git = gitIn(ROOT);
     const path = reservationPath(a.hostReservation);
     const world = pageWorld(loadBotEnv(a.bot));
@@ -391,6 +485,7 @@ export function hostGateIO(a: RunArgs, owner: string | undefined, relogs?: Relog
         },
         ...(relogs ? { relogs: () => ({ room: relogs.check('unplanned'), used: relogs.describe(), path: relogs.file }) } : {}),
         ...(phases ? { phases } : {}),
+        ...(runes ? { runes } : {}),
     };
 }
 
@@ -786,7 +881,8 @@ async function main(argv: string[]): Promise<number> {
     const earlier = existsSync(a.log) ? parseLog(readFileSync(a.log, 'utf8')) : [];
     const runId = `run-${newRunId()}`;
     const attempt = attemptOf(earlier, runId);
-    const built = chainOrRefusal(cfg, keeper, { s21Relog: a.s21Relog, relogs, attempt, handOffs: new HandOffRecord(a.runDir, attempt) });
+    const handOffs = new HandOffRecord(a.runDir, attempt);
+    const built = chainOrRefusal(cfg, keeper, { s21Relog: a.s21Relog, relogs, attempt, handOffs });
     if ('refusal' in built) {
         console.error(`[gate] REFUSED run config: ${built.refusal}`);
         console.error('[run] nothing was logged in');
@@ -818,7 +914,24 @@ async function main(argv: string[]): Promise<number> {
     const fresh = earlier.length === 0 && from === undefined;
     // A fresh run's budget is whole: the last run's relogs and any stale lock go (prepareCueDir's rule).
     if (fresh && !a.dryRun) relogs.clear();
-    const io = hostGateIO(a, owner, relogs, () => hostPhaseGates(cfg, chain.slice(from ?? 0).map(s => s.id), a.runDir));
+    // The rune census's figures: the ledger rows, the legs' hops and the modules' RUNE_USE (tools/rune-pins.ts).
+    let plan: RunePlan | null = null;
+    let planError: string | undefined;
+    try {
+        plan = runePlan(chain, ledgerRows(readFileSync(MANIFEST, 'utf8')), await loadModules());
+    } catch (e) {
+        planError = e instanceof Error ? e.message : String(e);
+    }
+    const served = (row: string) => handOffs.has(row);
+    const runes = (): RuneGateInput => {
+        if (!plan) return { error: `the rune plan could not be built: ${planError}` };
+        try {
+            return loggedRuneCensus(plan, chain, { ...(from !== undefined ? { from } : {}), earlier, served });
+        } catch (e) {
+            return { error: e instanceof Error ? e.message : String(e) };
+        }
+    };
+    const io = hostGateIO(a, owner, relogs, () => hostPhaseGates(cfg, chain.slice(from ?? 0).map(s => s.id), a.runDir), runes);
     const gates = await startGates(chain, io);
     for (const g of gates) console.log(`[gate] ${g.ok ? 'ok     ' : 'REFUSED'} ${g.gate}: ${g.detail}`);
     if (a.dryRun) {
@@ -827,6 +940,10 @@ async function main(argv: string[]): Promise<number> {
         const seams = chainSeams(chain);
         console.log(`\n${seams.length} seams (a step's start tile against the leg before it), ${seams.filter(s => !s.ok).length} mismatches:`);
         for (const s of seams) console.log(`  ${s.ok ? 'ok      ' : 'MISMATCH'} ${s.detail}`);
+        const census = runes();
+        console.log('');
+        if ('census' in census) for (const l of formatCensus(census.census, census.source)) console.log(l);
+        else console.log(`rune census: ${'none' in census ? census.none : `REFUSED: ${census.error}`}`);
         return gates.every(g => g.ok) ? 0 : EXIT_REFUSED;
     }
     if (!gates.every(g => g.ok)) {
@@ -860,6 +977,11 @@ async function main(argv: string[]): Promise<number> {
     try {
         code = await withScoredSession(session, { relogs, log }, async () => {
             unalias = aliasAccount(log, session.name);
+            // The census on the live pack, before any step: a shortfall logs SCORED out here.
+            const refused = await liveRuneCheck(session, { plan, ...(planError ? { planError } : {}), from: censusStart(chain, from, earlier), served, log }, {
+                logout: () => logoutClean(session),
+            });
+            if (refused !== null) return refused;
             log.append(annotation(log, session.name, 'gate', '(gate) start', { meta: { gates, fresh, cueDir: cfg.cueDir, removed, until: a.until ?? null, steps: chain.length, s21Relog: a.s21Relog } }));
             console.log(`[run] ${LOG_ACCOUNT} on ${a.client}; ${chain.length} steps${a.until ? ` to ${a.until}` : ''}; log ${log.path}`);
             // A signal: SCORED is out, then closeSession still closes the browser before the exit.
