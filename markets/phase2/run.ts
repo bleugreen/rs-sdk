@@ -53,7 +53,7 @@ import { TargetClaims, type SiteId } from '../methods/hp-train.ts';
 import { numberFlag, parseArgs } from '../methods/probe-sampler.ts';
 import { debugNameOf } from '../methods/trips.ts';
 import { costOf } from '../methods/value.ts';
-import { buySharks, sellAtExchange, type BookReader } from './errands.ts';
+import { buySharks, sellAtExchange, sellByShip, type BookReader } from './errands.ts';
 import { DEFAULT_POLICY, LoginGate } from './gate.ts';
 import { HpSites } from './hp-sites.ts';
 import { accountLine, COINS_ID, totalsLine, type AccountSnapshot, type Stack, type Valuer } from './ledger.ts';
@@ -503,6 +503,7 @@ export class Runner {
                     w.bank = items;
                     w.bankTick = sdk.getState()?.tick ?? w.bankTick;
                 },
+                bank: w.bank,
                 hooks: this.hooks(w, () => x)
             };
             const st = sequenceFor({ method: w.method, hp: w.plan.hp }, this.plan).find(s => !stageDone(s, sdk.getState()!, x.hooks, w.roleState))!;
@@ -659,7 +660,7 @@ export class Runner {
         const sell = this.plan.sell;
         if (!sell.enabled) return;
         for (const w of this.workers) {
-            if (w.stage !== 'method' || w.saleDue || !SALE_ROUTE.includes(w.method) || now - w.lastSaleAt < sell.everyMinutes * 60_000) continue;
+            if (w.stage !== 'method' || w.saleDue || !SALE_ROUTE[w.method] || now - w.lastSaleAt < sell.everyMinutes * 60_000) continue;
             const item = (w.bank ?? []).find(i => sell.floors[i.name] !== undefined && i.count > 0);
             if (!item) continue;
             w.saleDue = { item: { id: item.id, name: item.name }, floor: sell.floors[item.name]! };
@@ -672,7 +673,8 @@ export class Runner {
         w.saleDue = null;
         w.lastSaleAt = Date.now();
         w.stage = 'sale';
-        const rec = await sellAtExchange(x, { item: due.item, floor: due.floor, cap: this.plan.sell.cap, fillMinutes: this.plan.sell.fillMinutes }, this.book);
+        const errand = SALE_ROUTE[w.method] === 'ship' ? sellByShip : sellAtExchange;
+        const rec = await errand(x, { item: due.item, floor: due.floor, cap: this.plan.sell.cap, fillMinutes: this.plan.sell.fillMinutes }, this.book);
         this.ledger({ account: w.alias, ...rec });
     }
 

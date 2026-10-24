@@ -8,15 +8,18 @@
  * are retried by the runner (sharks.ts). An offer still open when the account is
  * stopped stays on the Exchange; the next errand's `collect` returns its assets.
  *
- * Sales need the account at the Exchange, so plan.ts allows them only for methods worked within walking distance of
- * it (`SALE_ROUTE`): no return trip from Ardougne or Shilo exists yet.
+ * Sales need the account at the Exchange, so plan.ts allows them only for methods with a way there (`SALE_ROUTE`): on
+ * foot from the Varrock guards, or by ship from the Ardougne side and back (`sellByShip`, lib/sea-route.ts).
  */
 import type { GEOffer } from '../../sdk/ge-types';
 import type { BotWorldState } from '../../sdk/types';
 import { walkTo } from '../../speedrun/lib/act';
 import { depositMatching } from '../../speedrun/lib/bank';
 import { waitTicks, waitUntil } from '../../speedrun/lib/wait';
+import { BANKS } from '../../speedrun/helpers/buyer';
+import { regionOf, type Region, type Tile } from '../../speedrun/lib/ships';
 import type { MarketQuote } from '../lib/market.ts';
+import { faresOf, hereOf, routeBetween, runRoute, walk } from '../lib/sea-route.ts';
 import { buyDecision, saleDecision, SHARK_ID } from './exchange.ts';
 import { heldAfter, needsReread, type SharksAfter } from './sharks.ts';
 import { carriedCoins, type StageCtx } from './stages.ts';
@@ -335,5 +338,55 @@ export async function sellAtExchange(x: ErrandCtx, cfg: SaleConfig, book: BookRe
     rec.result = offer.filled === d.quantity ? 'filled' : offer.filled > 0 ? 'partial' : 'unfilled';
     await bankProceeds(x, re);
     x.event('sale', rec);
+    return rec;
+}
+
+/** Where a sale by ship tops up its fares on each far side: the Ardougne south bank, where the iron method banks. */
+export const FARE_BANKS: Readonly<Partial<Record<Region, Tile>>> = { kandarin: BANKS.ardougneSouth };
+
+/** Take coins from this side's fare bank until the pack holds `need`, as far as the bank has them. */
+async function fareCoins(x: ErrandCtx, need: number): Promise<void> {
+    const bank = FARE_BANKS[regionOf(hereOf(state(x)))];
+    if (!bank) return;
+    await walk(x, bank, 3);
+    const opened = await x.bot.openBank();
+    if (!opened.success) throw new Error(`openBank: ${opened.message}`);
+    await waitUntil(x.sdk, s => s.bank?.isOpen === true, { maxTicks: 5 });
+    const stack = x.sdk.getBankItems().find(i => /^coins$/i.test(i.name));
+    const take = Math.min(stack?.count ?? 0, need - carriedCoins(state(x)));
+    if (stack && take > 0) {
+        const w = await x.bot.withdrawItem(stack, take);
+        if (!w.success) x.event('fare withdrawal failed', { message: w.message });
+        await waitUntil(x.sdk, s => carriedCoins(s) >= need || carriedCoins(s) > 0, { maxTicks: 5 });
+    }
+    x.reportBank(x.sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })));
+    await x.bot.closeBank();
+}
+
+/**
+ * A sale for an account that works across the sea (SALE_ROUTE 'ship'): carry the round trip's fares (topped up from
+ * this side's bank), sail to the Exchange, sell with `sellAtExchange`, and sail back to where it stood. The record
+ * gets `trip`: both ways' ticks by leg, and the whole errand's ticks. Refused without moving when the fares are short.
+ */
+export async function sellByShip(x: ErrandCtx, cfg: SaleConfig, book: BookReader): Promise<Record<string, unknown>> {
+    const s0 = state(x);
+    const home = hereOf(s0);
+    const out = routeBetween(home, VARROCK_WEST_BANK);
+    const back = routeBetween(VARROCK_WEST_BANK, home, 2);
+    const fares = faresOf(out) + faresOf(back);
+    if (carriedCoins(s0) < fares) await fareCoins(x, fares);
+    const held = carriedCoins(state(x));
+    if (held < fares) {
+        const rec = { kind: 'sale', item: cfg.item.id, name: cfg.item.name, floor: cfg.floor, cap: cfg.cap, result: 'refused', reason: `the round trip's fares are ${fares} coins and only ${held} could be found` };
+        x.event('sale', rec);
+        return rec;
+    }
+    const there = await runRoute(x, out);
+    const t1 = state(x).tick;
+    const rec = await sellAtExchange(x, cfg, book);
+    const t2 = state(x).tick;
+    const returned = await runRoute(x, back);
+    rec.trip = { out: there, saleTicks: t2 - t1, back: returned, ticks: state(x).tick - s0.tick, fares };
+    x.event('sale trip', { result: rec.result, ...(rec.trip as Record<string, unknown>) });
     return rec;
 }
