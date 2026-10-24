@@ -857,6 +857,71 @@ describe('knife cycle: the bury streams', () => {
     });
 });
 
+describe('knife cycle: each Bury on time or late (S+2)', () => {
+    type Counts = { burySent: number; buryOnTime: number; buryLate: number; buried: number };
+    const counts = (h: ReturnType<typeof serverRun>['h']): Counts => {
+        const c = h.status.counters;
+        return { burySent: c.burySent ?? 0, buryOnTime: c.buryOnTime ?? 0, buryLate: c.buryLate ?? 0, buried: c.buried ?? 0 };
+    };
+    /** A draw that holds every `every`-th send the runtime asks about (hold 0.5: 0 holds, 1 does not). */
+    const everyNth = (every: number) => {
+        let d = 0;
+        return () => (++d % every === 0 ? 0 : 1);
+    };
+
+    for (const k of ['knifeBuryOak', 'plainBuryOak'] as const)
+        test(`${k}: on a server that takes every send on its tick, every Bury judged is on time`, () => {
+            const { h } = BURY_RUNS[k]!();
+            const c = counts(h);
+            expect(c.burySent).toBeGreaterThan(30);
+            expect(c.buryLate).toBe(0);
+            // the last one may still be out when the run ends
+            expect(c.burySent - c.buryOnTime).toBeLessThanOrEqual(1);
+            expect(h.status.result).toMatchObject({ buryOnTime: c.buryOnTime, buryLate: 0 });
+        });
+
+    test('knife + bury: a held roll-label bundle lands its Bury a tick late and is counted late; its cycle loses the roll', () => {
+        const clean = BURY_RUNS.knifeBuryOak!();
+        const { h } = serverRun({ method: 'oak', ticks: 300, level: 60, axe: 'Rune axe', bones: 40, fellEvery: 8, fellLag: 1, random: everyNth(7), params: { bury: true, waitRespawn: true, trees: TREES, hold: 0.5 } });
+        const c = counts(h);
+        expect(h.status.counters.held).toBeGreaterThan(0);
+        expect(c.buryLate).toBeGreaterThan(0);
+        expect(c.buryOnTime).toBeGreaterThan(c.buryLate);
+        expect(c.burySent - c.buryOnTime - c.buryLate).toBeLessThanOrEqual(1);
+        // a late Bury's p_delay rejects the cycle's click, so held cycles cost rolls
+        expect(h.status.counters.successes!).toBeLessThan(clean.h.status.counters.successes!);
+    });
+
+    test('plain + bury: hold reaches its bury and R+3 click; hold 1 makes every Bury late', () => {
+        const { h } = serverRun({ method: 'oak', technique: 'plain', ticks: 300, inventory: ['Rune axe', 'Oak logs'], bones: 60, random: () => 0, params: { bury: true, hold: 1 } });
+        const c = counts(h);
+        expect(c.burySent).toBeGreaterThan(5);
+        expect(c.buryOnTime).toBe(0);
+        expect(c.burySent - c.buryLate).toBeLessThanOrEqual(1);
+        // every bury went out a label after the one the cycle sent it on
+        const buries = h.sent.filter(s => s.action.type === 'useInventoryItem');
+        expect(buries.length).toBe(c.burySent);
+        expect(h.logs.some(l => /hold: starter bundle held/.test(l))).toBe(true);
+    });
+
+    test('a run whose S+2 label is decoded with the next counts that Bury neither way', () => {
+        const base = serverRun({ method: 'oak', ticks: 150, inventory: ['Knife', 'Logs', 'Oak logs'], bones: 60, params: { bury: true } });
+        const bury = base.h.sent.filter(s => s.action.type === 'useInventoryItem')[10]!.tick;
+        const { h } = serverRun({ method: 'oak', ticks: 150, inventory: ['Knife', 'Logs', 'Oak logs'], bones: 60, params: { bury: true }, merged: t => t === bury + 2 });
+        const c = counts(h);
+        expect(c.buryLate).toBe(0);
+        expect(c.burySent - c.buryOnTime).toBeGreaterThanOrEqual(1);
+        expect(c.burySent - c.buryOnTime).toBeLessThanOrEqual(2);
+    });
+
+    test('no bury, no counters', () => {
+        const { h } = serverRun({ method: 'oak', ticks: 100 });
+        expect(h.status.counters.buryOnTime).toBeUndefined();
+        expect(h.status.counters.buryLate).toBeUndefined();
+        expect(h.status.result).not.toHaveProperty('buryOnTime');
+    });
+});
+
 describe('knife cycle: waitRespawn', () => {
     const WAIT = { method: 'willow', ticks: 400, axe: 'Rune axe', fellEvery: 8, allDownFor: 30 } as const;
 
