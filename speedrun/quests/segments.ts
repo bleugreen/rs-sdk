@@ -439,6 +439,17 @@ export function consumable(name: string): boolean {
     return FOOD.test(name) || /\(\d\)$/.test(name) || /potion|antipoison/i.test(name) || / rune$/i.test(name);
 }
 
+// ---------------------------------------------------------------- kit consumables
+
+/**
+ * Whether a kit line names something the run uses up after the row's serve: food (lib/travel.ts FOOD), a
+ * potion at any dose, a rune. Once the row is recorded served, such a line is satisfied by its count at the
+ * serve: eating, drinking or casting afterwards never re-opens the kit's want (main's ruling, 10-24).
+ */
+export function consumable(name: string): boolean {
+    return FOOD.test(name) || /\(\d\)$/.test(name) || /potion|antipoison/i.test(name) || / rune$/i.test(name);
+}
+
 // ---------------------------------------------------------------- inventory need
 
 export const INVENTORY_SLOTS = 28;

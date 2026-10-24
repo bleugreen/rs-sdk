@@ -116,9 +116,15 @@ export function h4PlanOf(s: BotWorldState, row: HandOffPlan): HandOffPlan {
 /** H4 has landed: every item in, no ring left. */
 export const h4Landed = (s: BotWorldState, ledger?: string) => handOffMissing(s, h4Plan(s, ledger)).length === 0;
 
-/** Whether segment A trades: H4 has not landed as h4Plan reads it from `s` (h4 trades on exactly that). */
-export function h4Wants(s: BotWorldState, ledger?: string): boolean {
-    return !h4Landed(s, ledger);
+/**
+ * Whether segment A's trade still wants anything: H4 has not landed as h4Plan reads it from `s` (h4 trades on
+ * exactly that). Once H4 is recorded served, its consumable lines (segments.ts `consumable`: the runes) are
+ * satisfied by their count at the serve, so a rune cast since does not re-open it.
+ */
+export function h4Wants(s: BotWorldState, o: { served?: boolean; ledger?: string } = {}): boolean {
+    const plan = h4Plan(s, o.ledger);
+    const lines = o.served ? { ...plan, receive: plan.receive.filter(r => !consumable(r.name)) } : plan;
+    return handOffMissing(s, lines).length > 0;
 }
 
 /** Segment A's free-slot refusal: H4's items fit, counting the slots the rings free once offered. */
