@@ -340,11 +340,20 @@ in the market respawns in Lumbridge without the ship's coins, so the account ear
 | knights | tutorial, HP 40 (`hp-train.ts`), Thieving 55 (`coins.ts` auto: men, warriors, guards), admission (the ramp; Varrock guards meanwhile), [buy sharks], 100 coins, ship to Ardougne (`thieving.ts`'s leg), `pickpocket.ts` on the knights |
 | heroes | as knights to Thieving 80, no ramp |
 | guards | tutorial, HP 40, `coins.ts` auto from Thieving 1 |
-| iron | tutorial, 100 coins (Lumbridge men), Mining 15 (`mining.ts`'s copper steps), wield the pickaxe, ship to Ardougne, `mine.ts` at the zoo cluster |
+| iron | tutorial, a pickaxe (`pickaxe.ts`), 100 coins (Lumbridge men; 220 when the plan sells), Mining 15 (`mining.ts`'s copper steps, after sailing back to the mainland if the account starts on the Ardougne side), wield the pickaxe, ship to Ardougne, `mine.ts` at the zoo cluster |
 | shilo | staged by hand (no quest bot exists): the method only |
 
 A stage that fails three times in a row, or three sessions that end in an error within two minutes of login, give
 the account up; the rest carry on.
+
+**The pickaxe stage** (`pickaxe.ts`, rs/732) gives iron a pickaxe usable at its Mining level before anything needs
+one: from the bank when the runner last saw one there, else a bronze pickaxe (1 coin) from Bob in Lumbridge or Aemad
+in East Ardougne, whichever side of the sea the account is on. On the mainland an empty pack earns the coin on the
+Lumbridge men beside Bob; on the Ardougne side it comes from the bank. A bank not seen this run counts as holding no
+pickaxe, since a fresh account's holds only the tutorial's 25 coins. The stage runs before the coins and, in practice,
+again after them: `coins.ts` lets an HP-10 account die to the men (cheaper than banking, with the respawn two tiles
+away), and a death drops the pickaxe. Three of the four lab accounts in each run lost one there; the same death
+cost rs/632 its given-up account.
 
 **Stalls** (`stall.ts`). An account in its method stage whose coins (carried plus banked, from its ledger lines) have
 not moved for `--stall-minutes` (default 10; 0 turns it off) gets a `stalled` event and its method is aborted, so its
@@ -406,19 +415,10 @@ code (16: 16 s, 5: 15 s, 7: 60 s for the whole address); five refusals in a row 
 **The knights ramp** (`ramp.ts`, rs/495's condition on allocation A): knights logins are admitted in steps (default
 8, 20, 43). The ramp opens when the first knight reaches admission; a step holds `holdMinutes` (15) once every
 admitted login is pickpocketing at Thieving 99 (the rate climbs with the level, so a hold mid-climb would set a low
-reference) and has been on the method `warmupMinutes` (5), or `admitTimeoutMinutes` (30) after it opened, then
-takes the median gp a tick per login at the knights over the hold: from the end of each login's warm-up, coins over
-the ticks spent in `pickpocket.ts`'s thieve errand (`ramp.ts` `holdRates`). Both guards keep out what is not
-crowding: a login's arrival (the walk to the bank for its first food and back) and its deposit trips, which come
-about every 21 minutes, longer than a hold, so a wall-clock rate depends on whose trip falls inside it (section
-'Knights crowding at 8, 16 and 24': live, those two stopped the ramp at 16 on a 0.848 ratio with no crowding
-behind it). A step more than `dropPct` (10%) below the first stops the ramp: the knights not yet
+reference), or `admitTimeoutMinutes` (30) after it opened, then takes the median gp a tick
+per login over the hold. A step more than `dropPct` (10%) below the first stops the ramp: the knights not yet
 admitted go to `ramp.fallbackMix` (plan B's 12 iron, 8 heroes, 23 guards, split in proportion), and the ledger
-says why. The decision line also carries every login's rate by alias, the incumbents' median ratio to their own
-first-step rates, and the gross rate over wall time (bank trips in), the income figure. A hold with no login
-measured waits for the step again. Each account line carries the login's tile, its knight and that knight's tile
-(`pos`, `target`), and its ticks at the knights (`workTicks`); `bun markets/phase2/crowding.ts <run dir>` reads
-them.
+says why. A hold with no login measured waits for the step again.
 
 **Sharks and the food fallback.** `sharks.source: 'bank'` (default): markets puts the sharks in each account's
 bank. `'buy'`: each shark eater buys `perAccount` at the Exchange during admission, a limit offer at the `ceiling`
@@ -428,7 +428,8 @@ plan's quantity on the ask side (`buyCost`: N units cost between N at the best a
 fallback food is no food:** an account whose bank has no sharks left, or whose purchase leaves fewer than
 `minimum` (28) banked, goes to `foodFallbackMix`, plan B's low-food methods: iron (never damaged) and guards (2 per
 failure, kebabs bought in Al-Kharid with its own coins). The heroes are refused there (four times the knights'
-sharks).
+sharks). With bought sharks the fallback is not for good: the account goes back once its coins cover a rebuy, and a
+purchase refused for a transient reason is retried (section 'Shark resupply').
 
 **The ledger** (`DIR/ledger.jsonl`, `ledger.ts`): a line per account every 50 of its ticks (stage, coins carried
 and banked, the bank at store cost and at what it realises sold into the open bids less the 5% fee, the observed
@@ -439,16 +440,175 @@ first, `names.ts`), every string is scrubbed of the plan's names before it is wr
 start without the names file (`lib/accounts.ts`) or, on real accounts, with any account missing from it.
 `--placeholder-data` is for lab accounts. `DIR/events.jsonl` has every stage change and role log line.
 
+**The food fallback can park instead** (`foodFallback: 'park'`): the account logs out where it stands (section
+'Shark resupply').
+
 **Sales into the bids** (`sell`, off by default): `errands.ts` reads the book, refuses below the item's floor,
 withdraws at most the cap (500, never above 5,000) as notes, reads again, offers at the floor (each unit fills at
 its bid's own price, best first), waits `fillMinutes`, cancels the rest and banks the proceeds. An offer whose
-placement outcome is unknown is never retried. The Exchange is at the Varrock west bank and nothing yet brings an
-account back from Ardougne or Shilo, so a plan may enable sales only when every account it can move works within
-walking distance (`SALE_ROUTE`: guards); iron ore and gems wait for that return trip.
+placement outcome is unknown is never retried. The Exchange is at the Varrock west bank, so a plan may enable sales
+only when every account it can move has a way there (`SALE_ROUTE`): the guards walk, and iron sails
+(`errands.ts` `sellByShip`). An iron sale settles the miner's bank visit it interrupted, makes sure the pack holds the
+round trip's four fares (120 coins, topped up from the Ardougne south bank, where the miner banks its coins with its
+ore), takes the Brimhaven ship, crosses Karamja to Musa Point, sails to Port Sarim, walks to the Exchange, sells, and
+comes back the same way to where it stood; short of the fares, it refuses without moving. The sale's ledger record
+carries the trip by leg (`trip`). A selling iron account earns 220 coins before its first voyage, so its first trip is
+paid for. The knights and heroes have no sale route (they earn coins, and their banks hold the sharks they eat), and
+Shilo has none until something takes an account out through the Shilo gate.
+
+**The sea route** (`markets/lib/sea-route.ts`) plans a trip between any two tiles on the mainland, Karamja and the
+Ardougne side from the two ends alone (the voyages `speedrun/lib/ships.ts` chooses, then the walk), so its fares are
+known before it moves, and runs it with `ships.ts`'s `sail` and the toll-gate-aware `travelTo`. Its Karamja leg, the
+crossing between any Karamja tile and Port Sarim through Musa Point, is what a Shilo account would take from outside
+the gate with nothing else. The mining stage uses the same route to bring a knight sent to iron from the market back
+to the Rimmington copper.
 
 **Stopping:** SIGINT or SIGTERM stops every account at its next safe point and logs it out (`logoutDirect`
 re-clicks through the post-combat window); a second signal exits at once. `--minutes N` stops the same way. The
 exit code is 0 when every account logged out.
+
+### Shark resupply
+
+A knight at HP 40 eats ~40 sharks an hour, so a one-off purchase lasts a few hours, and a fresh account reaches
+buy-sharks at Thieving 55 with a few hundred coins. Before rs/743 both ended on the guards for good: the purchase was
+recorded once per account whatever its outcome, and the food redirect lived only in memory. Now (`sharks.ts`, wired in
+`run.ts`):
+
+- **The purchase's outcome is a state, not a flag.** RoleState's `phase2.sharks` holds `{status, tries, last, at,
+  short?}`. `done`: settled (filled, partial, unfilled, refused for the book or the coins). `retry`: refused for a
+  transient reason. `due`: a rebuy is wanted. The buy-sharks stage's goal holds only at `done`. A value the runner
+  wrote before this (the errand's bare record) loads as `done`, or as `retry` when it was a transient refusal.
+- **Transient refusals are retried**, after 15, 30, 60 s (cap 120 s), at most 4 attempts in a row, and then settle.
+  Transient means the SDK failed rather than the market: any 'Timeout waiting for ...' (a coins refusal counts only
+  when the coin withdrawal itself timed out, the demo's 'Timeout waiting for Coins to be withdrawn'), a bank or
+  Exchange that would not open, a closed or stale Exchange interface, a failed walk to the bank. Never transient: no
+  asks, the best ask above the ceiling, coins that really are short, full offer slots, and a placement whose outcome
+  is unknown (a second offer could double the trade). Sharks bought but still on the Exchange make the result
+  `uncollected`, also transient. Every attempt is a `buy` ledger line with its `status` and `tries`.
+- **A short purchase is named.** A settled purchase that leaves fewer than `minimum` banked gets `short`:
+  `insufficient coins` (none covered, or fewer than wanted), `the book`, or `short`. Then the food fallback.
+- **No voyage below the minimum.** Before `to-ardougne`, a shark eater on a buying plan with fewer than `minimum`
+  sharks between bank and pack goes to the food fallback instead of sailing. Before its first bank visit after a
+  restart, the recorded purchase's `banked` stands in for the bank, so a restarted runner does not sail a fresh
+  account with no sharks to Ardougne.
+- **Re-promotion at a bank visit.** The food fallback remembers which shark eater it took the account from. After
+  each bank errand of the method (the role logs `banked`, or the guards' `withdrew coins`, once the bank has closed),
+  `rebuyDecision` sends it back when its coins (banked plus carried) cover `sharks.rebuyMinSharks` (default
+  `perAccount`, at least `minimum`) at the ceiling. That is a `redirect` with `why: 'rebuy'`; the state goes to `due`,
+  so buy-sharks runs again (from Al-Kharid it crosses the toll gate first), then the ship, then the method. Only a
+  food redirect qualifies: a ramp redirect is not about food. A purchase the book refused (or an unknown placement)
+  holds the next rebuy for 30 minutes rather than walking into the same refusal at every bank visit; a refusal for
+  coins holds nothing, since the rebuy waits for the coins anyway.
+- **The fallback must earn coins.** Iron and shilo bank ore and gems, so a shark eater sent there never reaches the
+  threshold. The runner warns at startup when a buying plan's `foodFallbackMix` includes them (`planWarnings`: use
+  `foodFallbackMix: { guards: 1 }`), and such a food redirect carries `rebuy: 'no rebuy: the fallback earns no
+  coins'` in the ledger. The default mix (iron 12, guards 23) is unchanged.
+- **Or park.** `foodFallback: 'park'` (default `'mix'`) logs a food-redirected account out where it stands instead:
+  a `parked` ledger line with the reason, no further login this run, not given up, no rebuy (it earns nothing).
+  For the scored run's attempt windows, when a knight must not walk Ardougne -> Taverley -> Varrock past the
+  speedrun's sites. Every food fallback but the voyage check comes straight after a bank visit, so what it earned is
+  banked; it walks nowhere to bank. The startup warning stays silent for it.
+
+**Three faults found live** (markets' runs, names scrubbed), each fixed here:
+
+- **A withdraw timeout read as an empty bank** (run3 a03, 09:17:04Z). pickpocket logged 'out of food in the bank'
+  with reason `timeout` and was sent to the fallback with 125 sharks banked (its 09:44Z rebuy saw them).
+  `withdrawMany` says `missing` only when the bank as published has none of the food, and `timeout` when the gain
+  did not show within its wait. `pickpocket.ts` `withdrawFood` now retries a timeout, a closed bank or a bank list not
+  yet loaded (3 attempts). It reports an absence only when the plan found no food and the loaded bank shows none,
+  twice, two ticks apart. Only that logs 'out of food in the bank', the runner's fallback trigger; anything else is
+  an errand error (`food withdraw failed: <reason>`) that the role's loop retries.
+- **A full fill counted as 0 banked** (run-b3 a07, 09:44:18Z): quantity 46, filled 46, `collect: {success: true,
+  coins: 46, items: 0, message: 'Collected 0 items and 46 gp. Any overflow remains in the exchange.'}`, `banked: 0`,
+  then the food redirect. The 46 gp is the 1 gp-a-shark refund (limit 701, filled at 700); the items were never
+  collected. The lab reproduced the signature with a full pack: a note still takes a slot, and the Exchange reports
+  success while collecting nothing (run 3 below). The purchase now banks everything but coins and a pickaxe first. It
+  treats a collect that took fewer items than the offer held as failed: make room, reopen the Exchange, collect again.
+  It starts by collecting what earlier attempts left. It counts the bank (re-read while bank, pack and Exchange fall
+  short of held plus bought, or while the pack still holds sharks), the pack, and what is still on the Exchange
+  (`after`). Only bank and pack count toward the minimum: a knight in Ardougne cannot eat what is on the Exchange, so
+  a remainder makes the result `uncollected` and the runner's retry collects it.
+- **No supported way to stay put**: markets faked parking with `foodFallbackMix: { iron: 1 }` and no pickaxe, which
+  gives up and logs out (an account that still has the tutorial's pickaxe mines instead: run-b3 a07). Now
+  `foodFallback: 'park'`.
+
+Not done: a top-up for an account already at Varrock for another reason; the re-promotion covers the only shark
+eaters that stand there. A re-promoted knight counts as admitted to the knights ramp again, so during a ramp it can
+put one more login on the knights than the step allows.
+
+**Lab** (fedora, block M22, 400 ms a tick, `markets/phase2/lab.ts`, one account, a lab Exchange whose maker sells
+sharks at 600; plan `perAccount` 20, `minimum` 5, `ceiling` 650). Run 1 was a knight that ran dry: Thieving 99, HP
+40, 3 sharks banked, and the role-state the runner left before SharkState. One runner process, no restart:
+
+```
+08:25:53 a01 stage {"to":"coins"}                    (the old record loaded as done: buy-sharks skipped)
+08:28:37 a01 stage {"to":"method"}                   (knights, after the ship)
+08:35:53 pickpocket: out of food in the bank
+08:35:53 redirect {"from":"knights","to":"guards","why":"food","reason":"the bank has no sharks left"}
+08:38:37 coins: withdrew coins {"take":200}          (kebab money; then the Al-Kharid warriors, then the guards)
+08:43:32 coins: banked {"target":"guard","banked":2806}
+08:43:32 rebuy check {"rebuy":true,"reason":"19073 coins cover 29 sharks at the 650 ceiling (at least 5)"}
+08:43:32 redirect {"from":"guards","to":"knights","why":"rebuy"}
+08:43:45 buy {"quantity":20,"filled":20,"result":"filled","banked":20,"status":"done","tries":0}
+08:45:55 a01 stage {"to":"method"}                   (pickpocket: start, on the knights again)
+08:48:16 stopping {"reason":"SIGINT"}; a01 logout {"outcome":"out"}
+```
+
+Run 2 was the fresh path: no sharks, 500 coins banked, nothing recorded, `rebuyMinSharks` 8, the runner restarted
+after 5 minutes on the same role-state (`--restart=5`):
+
+```
+08:51:26 buy {"want":20,"result":"refused","reason":"525 coins do not cover one shark at the ceiling of 650","banked":0,"status":"done","short":"insufficient coins"}
+08:51:26 redirect {"to":"guards","why":"food","reason":"0 sharks banked after the purchase, below the minimum of 5"}
+08:55:30 restarting the runner; a01 logout {"outcome":"out"}; runner exited {"code":0}
+08:55:33 a01 stage {"to":"to-ardougne"}
+08:55:33 redirect {"to":"guards","why":"food","reason":"0 sharks recorded after the last purchase, below the minimum of 5 (insufficient coins): not sailing"}
+08:57:09 rebuy check {"rebuy":false,"reason":"3350 coins, 5200 needed for 8 sharks at the 650 ceiling"}
+09:00:24 coins: banked {"target":"warrior","banked":5635}  (the Al-Kharid bank)
+09:00:24 rebuy check {"rebuy":true,"reason":"6160 coins cover 9 sharks at the 650 ceiling (at least 8)"}
+09:00:24 redirect {"from":"guards","to":"knights","why":"rebuy"}
+09:00:54 toll gate {"toEast":false,"ok":true}
+09:01:52 buy {"quantity":9,"filled":9,"result":"filled","banked":9,"status":"done"}
+09:04:00 a01 stage {"to":"method"}                   (pickpocket: start, on the knights)
+09:05:06 a01 logout {"outcome":"out"}; end {"clean":true}
+```
+
+Run 3 was the Exchange check with a full pack: a third account filled its 28 slots, bought 5 sharks and collected
+them raw, then ran the purchase errand (`perAccount` 20):
+
+```
+09:54:37 full pack {"slots":28}
+09:54:45 CHECK raw collect with a full pack {"success":true,"items":0,"coins":505,"message":"Collected 0 items and 505 gp. Any overflow remains in the exchange.","offerItemsAfter":5}
+09:55:07 CHECK shark purchase after a full-pack collect {"result":"filled","leftovers":[{"offerId":15,"items":5,"collect":{"success":true,"items":5}}],"quantity":15,"filled":15,"after":{"bank":20,"pack":0,"uncollected":0,"reads":1},"banked":20}
+```
+
+Run 3's knight (3 sharks against a minimum of 5) and run 4's (3 against a minimum of 2), with `foodFallback: 'park'`:
+
+```
+09:56:11 a01 parked: 3 sharks recorded after the last purchase, below the minimum of 5 (short): not sailing
+09:56:12 a01 logout {"outcome":"out"}                (run 3: never logged in again; end {"logouts":{"a01":"out"},"clean":true})
+10:01:47 a01 stage {"to":"method"}                   (run 4: on the knights)
+10:10:06 pickpocket: out of food in the bank {"reason":"none in the bank"}
+10:10:06 a01 parked: the bank has no sharks left
+10:10:06 a01 logout {"outcome":"out"}                (in East Ardougne, where it stood)
+```
+
+Not provoked in the lab, since its bank does not time out on demand: the purchase's transient retry and the food
+withdraw's timeout retry. Both are unit-tested against the SDK's own messages (`sharks.test.ts`,
+`pickpocket.test.ts`). a07's full pack is inferred from its signature, which the lab reproduces exactly; its pack at
+the time was not read.
+
+```sh
+# block M22 on fedora, from a copy of the checkout in /tmp, in a tmux server
+. markets/methods/lab/block.sh M22 && LAB_RUNNERS=0 LAB_TIMEOUT=4200 speedrun/lab/lab.sh p2r00 \
+  'markets/phase2/lab.ts:--prefix=p2r:--knights=1:--hungry=0:--guards=0:--sharks=3:--trained=1:--legacy-sharks=1:--buy=1:--ramp=0:--sigint=55:--out=/tmp/rs743-r1'
+. markets/methods/lab/block.sh M22 && LAB_RUNNERS=0 LAB_TIMEOUT=4200 speedrun/lab/lab.sh p2s00 \
+  'markets/phase2/lab.ts:--prefix=p2s:--knights=1:--hungry=0:--guards=0:--sharks=0:--coins=500:--trained=1:--buy=1:--rebuy-min=8:--ramp=0:--restart=5:--sigint=40:--out=/tmp/rs743-r2'
+. markets/methods/lab/block.sh M22 && LAB_RUNNERS=0 LAB_TIMEOUT=3000 speedrun/lab/lab.sh p2t00 \
+  'markets/phase2/lab.ts:--prefix=p2t:--knights=1:--hungry=0:--guards=0:--sharks=3:--trained=1:--legacy-sharks=1:--buy=1:--park=1:--ramp=0:--sigint=16:--out=/tmp/rs743-r3'
+. markets/methods/lab/block.sh M22 && LAB_RUNNERS=0 LAB_TIMEOUT=2400 speedrun/lab/lab.sh p2u00 \
+  'markets/phase2/lab.ts:--prefix=p2u:--exchange=0:--knights=1:--hungry=0:--guards=0:--sharks=3:--trained=1:--legacy-sharks=1:--buy=1:--minimum=2:--park=1:--ramp=0:--sigint=14:--out=/tmp/rs743-r4'
+```
 
 ### The lab run
 
@@ -541,10 +701,10 @@ the runner held 0.8-1.0 GB and the engine ~0.6 GB, and the host's available memo
 other load, so `lab.ts`'s 1.2 GB floor stopped both runs early: run a 20-account lab on fedora. `lab.ts` logs both
 processes' memory every 30 s.
 
-**Found, not fixed here:** a lab knight with no sharks goes to the food fallback's iron, and the iron sequence
-assumes the tutorial's bronze pickaxe is still carried. One account in each run had none, so its `mining` stage failed
-three times and the account was given up; run 3's had died thieving the Lumbridge men at HP 10 while it queued for
-a site (run 4's was not traced). Iron needs a pickaxe stage (buy or bank) before `mining`.
+**Found here, fixed by rs/732:** a lab knight with no sharks goes to the food fallback's iron, and the iron sequence
+assumed the tutorial's bronze pickaxe was still carried. One account in each run had none, so its `mining` stage
+failed three times and the account was given up; run 3's had died thieving the Lumbridge men at HP 10 while it queued
+for a site. The pickaxe stage (above) now gets one.
 
 ```sh
 # block M17 on fedora, inside the build slot (dependencies untracked), all fresh
@@ -561,6 +721,51 @@ bun markets/phase2/report.ts /tmp/rs632-r4/ledger.jsonl
   'markets/phase2/lab.ts:--prefix=m19:--knights=24:--hungry=0:--guards=0:--exchange=0:--trained=1:--steps=8,16,24:--hold=15:--warmup=0:--drop-pct=60:--sigint=130:--out=/tmp/rs731-run1'
 # runs 2 and 3: the defaults (--prefix=m19b / m19c, no --warmup or --drop-pct, --sigint=85)
 bun markets/phase2/crowding.ts /tmp/rs731-run1
+```
+
+### The sale round trip and the pickaxe stage in the lab (rs/732)
+
+fedora, `NODE_TICKRATE=400` (observed 399.9-400.4 ms a tick, median 400.1), block M20, one runner process, four iron
+accounts with sales on (floor 80, every 5 minutes, into a lab bid of 100): two fresh, one left on the Lumbridge
+spawn with an empty pack, one on the Ardougne side with an empty pack and 200 coins. Run 2 (40 minutes, stopped by
+SIGINT) had the final errand; run 1 (45 minutes) found the two bank races below.
+
+| Leg (run 2, 16 round trips, 4 an account) | Ticks: range, median |
+|---|---|
+| Ardougne side to the Brimhaven ship and across (Captain Barnaby) | 43-47, 44 |
+| Karamja leg out: walk Brimhaven to Musa Point, the customs ship to Port Sarim | 128-152, 128 |
+| Walk Port Sarim to the Varrock west bank | 163 |
+| **Out** | **334-359, 336** |
+| The sale (`sellAtExchange`: book, notes, offer, 1-minute fill window, bank) | 36-43, 36 |
+| Walk the Exchange to Port Sarim and sail to Musa Point | 180-184, 182 |
+| Walk Musa Point to Brimhaven and sail to Ardougne | 124-129, 124 |
+| Walk back to where the account stood (the bank or the rocks) | 30-48, 30 |
+| **Back** | **334-355, 337** |
+| **Round trip** | **709-769, 723 (4.8 minutes)** |
+
+All 16 sales filled: 453 ore for 43,035 coins after the fee, every account out at the stop. The trip costs a sale
+4.8 minutes of mining: at Mining 99's 1,208 ore an hour a full 500-ore sale (the default cap) comes every 25 minutes,
+so the trip takes about 16% of the method; a higher `sell.cap` (at most 5,000) spreads it thinner.
+
+The pickaxe stage: the Lumbridge account earned its coin on the men and bought from Bob in 17 s (`earn`, `buy`); the
+Ardougne account bought from Aemad in 16 s, and the mining stage then sailed it to the mainland (226 ticks) for the
+copper. Three of the four then died on the men in the coins stage (seven deaths in run 2) and each bought again
+afterwards in about 5 s. Fresh account to the zoo: 4.9 and 5.2 minutes fresh, 7.5 from Lumbridge without a
+pickaxe, 9.6 from the Ardougne side.
+
+What the lab fixed in the errand: a sale falls due when the miner reports its bank, so the miner is stopped inside
+that bank visit. In run 1, eight sales filled (two more trips found the lab's 500-ore bid used up) and twelve were
+refused with "only 0 coins could be found": reading the bank while the miner's visit was still closing gave no items. The fares now come from a bank opened afresh,
+whose items are awaited. Run 2's one stumble was the same moment seen from the pack: the errand counted 162 coins
+that had just been banked, and the Brimhaven ship refused it (the account retried on its next sale). The errand now
+closes that visit and lets the state settle before counting. Run 3 (35 minutes, the same four-account setup, the
+final code): 14 sales, all filled, round trips 708-733 ticks, no stage failed, every account out at the stop.
+
+```sh
+# block M20 on fedora, inside the build slot (dependencies untracked)
+. markets/methods/lab/block.sh M20 && LAB_RUNNERS=0 LAB_TIMEOUT=3600 speedrun/lab/lab.sh p2t00 \
+  'markets/phase2/lab.ts:--prefix=p2t:--knights=0:--guards=0:--iron=4:--bare=1:--away=1:--sell=1:--iron-bid=3000:--sigint=40:--out=/tmp/rs732-r2'
+bun markets/phase2/report.ts /tmp/rs732-r2/ledger.jsonl
 ```
 
 ## Horizons

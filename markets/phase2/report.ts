@@ -22,6 +22,7 @@ export interface Report {
     byMethod: Record<string, { n: number; median: number; min: number; max: number; boardMedian: number | null }>;
     ramp: Record<string, unknown>[];
     redirects: Record<string, unknown>[];
+    parked: Record<string, unknown>[];
     errands: Record<string, unknown>[];
     end: Record<string, unknown> | null;
     lastTotals: Record<string, unknown> | null;
@@ -114,6 +115,7 @@ export function report(lines: readonly Record<string, unknown>[], tickMs: number
         byMethod,
         ramp: lines.filter(l => l.kind === 'ramp' || l.kind === 'ramp-hold'),
         redirects: lines.filter(l => l.kind === 'redirect'),
+        parked: lines.filter(l => l.kind === 'parked'),
         errands: lines.filter(l => l.kind === 'buy' || l.kind === 'sale'),
         end: lines.findLast(l => l.kind === 'end') ?? null,
         lastTotals: lines.findLast(l => l.kind === 'totals') ?? null,
@@ -136,6 +138,7 @@ if (import.meta.main) {
     console.log(`REPORT by method ${JSON.stringify(r.byMethod)}`);
     for (const l of r.ramp) console.log(`REPORT ${l.kind} ${JSON.stringify(l)}`);
     for (const l of r.redirects) console.log(`REPORT redirect ${JSON.stringify(l)}`);
+    for (const l of r.parked) console.log(`REPORT parked ${JSON.stringify(l)}`);
     for (const l of r.errands) console.log(`REPORT ${l.kind} ${JSON.stringify(l)}`);
     if (r.hp) {
         console.log(`REPORT hp ${JSON.stringify(r.hp)}`);
