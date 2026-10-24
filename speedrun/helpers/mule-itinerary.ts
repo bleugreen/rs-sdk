@@ -60,8 +60,15 @@ const DELIVERIES: Readonly<Record<string, { at: WorldTile; bank: WorldTile }>> =
     // North of SCORED, away from the guild door: deliveryTradeReach refuses a door beside either trader.
     H22: { at: ground({ ...TILES.championsGuild, z: TILES.championsGuild.z + 1 }), bank: bank(varrockWest) },
     H4e: { at: ground(TILES.taverleyWillows), bank: bank(faladorWest) },
-    H4m: { at: ground({ ...TILES.zooIron, x: TILES.zooIron.x + 1, z: TILES.zooIron.z - 1 }), bank: bank(ardougneSouth) },
 };
+
+/**
+ * H4m's big-bone loads (rows H4m.1..N, mule-ledger.ts h4mLoadRows) share one stand: east of S09's
+ * zoo iron lap's east stay (2605,3234), off the lap and not a rock. The stay is the only lap tile
+ * orthogonally beside it, so SCORED takes every load from there.
+ */
+export const H4M_STAND: WorldTile = ground({ x: 2606, z: 3234 });
+const H4M_LOAD = /^H4m\.[1-9]\d*$/;
 
 /** Shared by the scored runner and helper generator. Unknown rows never fall back to Varrock. */
 export function muleDelivery(row: string, options: ItineraryOptions = {}): MuleDelivery {
@@ -69,7 +76,8 @@ export function muleDelivery(row: string, options: ItineraryOptions = {}): MuleD
         if (!options.rehearsal) throw new Error('H3 is owned by ring givers in production; an explicit rehearsal itinerary is required');
         return { row, at: worldTile(options.rehearsal.firemakingEnd, 'H3 canonical firemaking end'), bank: bank(draynor) };
     }
-    const entry = Object.hasOwn(DELIVERIES, row) ? DELIVERIES[row] : undefined;
+    const entry = H4M_LOAD.test(row) ? { at: H4M_STAND, bank: bank(ardougneSouth) }
+        : Object.hasOwn(DELIVERIES, row) ? DELIVERIES[row] : undefined;
     if (!entry) throw new Error(`No canonical mule delivery for ${row}`);
     return { row, at: { ...entry.at }, bank: { ...entry.bank } };
 }
