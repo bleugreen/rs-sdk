@@ -495,6 +495,9 @@ async function keys(ctx: Ctx, opts: Options | undefined): Promise<void> {
 /** F: Jeremy with the keys, the walk into the arena (stage 6) and his plea; the ogre's cutscene follows. */
 async function jeremy(ctx: Ctx, opts: Options | undefined): Promise<void> {
     const sdk = sdkOf(ctx);
+    // The stretch's prayer drunk here, in the corridor: from Jeremy's plea on, the walk in and the
+    // ogre's entry scene drop item clicks, and a drink on one of its pages would close it.
+    await drinkPrayerTo(sdk, ARENA_PRAYER);
     await go(ctx, TILES.jeremy, 'to Jeremy', CORRIDOR_NORTH);
     const latch = pageSeen(sdk, PAGE.quick);
     try {
@@ -507,7 +510,6 @@ async function jeremy(ctx: Ctx, opts: Options | undefined): Promise<void> {
 /** G: the ogre under the prayer, then its death hook: the General's pages and the cells (stage 9). */
 async function ogre(ctx: Ctx, opts: Options | undefined): Promise<void> {
     const sdk = sdkOf(ctx);
-    await drinkPrayerTo(sdk, ARENA_DRINK_BELOW);
     await arenaFight(ctx, opts, NPC.ogre, DEATH_HOOK.ogre, 'Khazard ogre');
     await pages(ctx, opts, SHAPES.ogreDead, 'the ogre\'s death', s => inCell(s), PAGE.likingYou, 120);
 }
@@ -532,8 +534,8 @@ async function scorpion(ctx: Ctx, opts: Options | undefined): Promise<void> {
 /** I: the General summons Bouncer, Bouncer under the prayer, the General's pages (stage 12, he attacks). */
 async function bouncer(ctx: Ctx, opts: Options | undefined): Promise<void> {
     const sdk = sdkOf(ctx);
-    await drinkPrayerTo(sdk, ARENA_DRINK_BELOW);
     if (!findNpc(sdk, NPC.bouncer)) await pages(ctx, opts, SHAPES.scorpionDead, 'the scorpion\'s death', s => findNpc(s, NPC.bouncer) !== null, PAGE.bouncer, 60);
+    await drinkPrayerTo(sdk, ARENA_DRINK_BELOW);
     await arenaFight(ctx, opts, NPC.bouncer, DEATH_HOOK.bouncer, 'Bouncer');
     await pages(ctx, opts, SHAPES.bouncerDead, 'Bouncer\'s death', () => true, PAGE.killMyself, 60);
 }

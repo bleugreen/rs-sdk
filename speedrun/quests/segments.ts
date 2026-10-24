@@ -194,12 +194,19 @@ export function prayerCovers(what: string, need: number): Check<any> {
 
 export type DrinkSdk = StateSource & Pick<BotSDK, 'sendUseItem'>;
 
+/** A drink clicked during a scene's delay is dropped without a reply: re-sent after this many ticks. */
+export const DRINK_RESEND_TICKS = 3;
+
 /**
  * Drink held Prayer potion doses one at a time until the points reach `target` (at most the level)
- * or no dose is left; each drink is confirmed by the points rising or a dose going before the next.
- * Returns the doses drunk; throws when a drink does not land within `maxTicks`.
+ * or no dose is left; each drink is confirmed by the points rising or a dose going before the next,
+ * and re-sent every DRINK_RESEND_TICKS while it does not land (a cutscene's delay drops item clicks).
+ * Never clicks while a chat page is open: an inventory click closes the chat, so a page in a talk or
+ * a scene would be lost (rs/688's S15 race). It waits up to `maxTicks` for the chat to close, then
+ * returns what it drank so the caller's conversation can go on. Returns the doses drunk; throws when
+ * a drink does not land within `maxTicks`.
  */
-export async function drinkPrayerTo(sdk: DrinkSdk, target: number, maxTicks = 6): Promise<number> {
+export async function drinkPrayerTo(sdk: DrinkSdk, target: number, maxTicks = 9): Promise<number> {
     let drunk = 0;
     for (;;) {
         const s = sdk.getState();
@@ -208,10 +215,21 @@ export async function drinkPrayerTo(sdk: DrinkSdk, target: number, maxTicks = 6)
         if (pts >= Math.min(target, prayerLevelOf(s))) return drunk;
         const pot = s.inventory.find(i => /^Prayer potion\(\d\)$/i.test(i.name));
         if (!pot) return drunk;
+        if (s.dialog?.isOpen && !(await waitUntil(sdk, st => !st.dialog?.isOpen, { maxTicks })).ok) return drunk;
         const doses = prayerDoses(s);
-        void sdk.sendUseItem(pot.slot, pot.optionsWithIndex.find(o => /^drink$/i.test(o.text))?.opIndex ?? 1);
-        const r = await waitUntil(sdk, st => prayerPointsOf(st) > pts || prayerDoses(st) < doses, { maxTicks });
-        if (!r.ok) throw new Error(`a Prayer potion drink did not land in ${maxTicks} ticks (${pts} points, ${doses} doses)`);
+        const landed = (st: BotWorldState) => prayerPointsOf(st) > pts || prayerDoses(st) < doses;
+        let ok = false;
+        for (let waited = 0; waited < maxTicks && !ok; waited += DRINK_RESEND_TICKS) {
+            const cur = sdk.getState()!;
+            if (cur.dialog?.isOpen) break;
+            const p = cur.inventory.find(i => /^Prayer potion\(\d\)$/i.test(i.name)) ?? pot;
+            void sdk.sendUseItem(p.slot, p.optionsWithIndex.find(o => /^drink$/i.test(o.text))?.opIndex ?? 1);
+            ok = (await waitUntil(sdk, landed, { maxTicks: Math.min(DRINK_RESEND_TICKS, maxTicks - waited) })).ok;
+        }
+        if (!ok) {
+            if (sdk.getState()?.dialog?.isOpen) return drunk;
+            throw new Error(`a Prayer potion drink did not land in ${maxTicks} ticks (${pts} points, ${doses} doses)`);
+        }
         drunk++;
     }
 }
