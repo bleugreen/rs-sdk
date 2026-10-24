@@ -14,6 +14,10 @@
  *    then a shark seller offers sharks and the buyer runs the shark purchase.
  * 4. Writes the plan and runs `markets/phase2/run.ts --placeholder-data` on it, stopped by SIGINT after `--sigint`
  *    minutes (the clean-stop path), then prints `markets/phase2/report.ts`.
+ *
+ * `--fresh=1` stages nobody: every account starts on Tutorial Island and the runner's own stages do everything (the
+ * Hitpoints-site lab). `--min-free-mb=N` (default 1200) stops the run with SIGINT when the host's available memory
+ * falls below N MB, so a shared lab host keeps room for its other tenants; the memory is logged every 30 s.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -49,6 +53,8 @@ const hold = count('hold', 10);
 const sigint = count('sigint', 0);
 const out = arg('out', join(process.env.TMPDIR ?? '/tmp', 'phase2-lab'));
 const exchange = arg('exchange', '1') === '1';
+const fresh = arg('fresh', '0') === '1';
+const minFreeMb = count('min-free-mb', 1200);
 
 const server = loadBotEnv(labBot).SERVER ?? '';
 if (!/^(localhost|127\.)/.test(server)) {
@@ -152,7 +158,7 @@ mkdirSync(out, { recursive: true });
 if (exchange) await exchangeCheck();
 
 // four at a time, the last `hungry` knights left fresh
-const staged = knightNames.slice(0, Math.max(0, knights - hungry));
+const staged = fresh ? [] : knightNames.slice(0, Math.max(0, knights - hungry));
 for (let i = 0; i < staged.length; i += 4) await Promise.all(staged.slice(i, i + 4).map(n => stageKnight(n)));
 log('staging done', { knights: staged.length, fresh: accounts.length - staged.length });
 
@@ -170,7 +176,28 @@ if (sigint > 0)
         log('sending SIGINT', { afterMinutes: sigint });
         child.kill('SIGINT');
     }, sigint * 60_000);
+/** MemAvailable in MB (Linux), null elsewhere. */
+const availableMb = (): number | null => {
+    try {
+        const m = /^MemAvailable:\s+(\d+) kB/m.exec(readFileSync('/proc/meminfo', 'utf8'));
+        return m ? Math.round(Number(m[1]) / 1024) : null;
+    } catch {
+        return null;
+    }
+};
+let memStopped = false;
+const memWatch = setInterval(() => {
+    const mb = availableMb();
+    if (mb === null) return;
+    log('memory', { availableMb: mb });
+    if (mb < minFreeMb && !memStopped) {
+        memStopped = true;
+        log('sending SIGINT: available memory below the floor', { availableMb: mb, floorMb: minFreeMb });
+        child.kill('SIGINT');
+    }
+}, 30_000);
 const code = await child.exited;
+clearInterval(memWatch);
 log('runner exited', { code });
 Bun.spawnSync(['bun', 'markets/phase2/report.ts', join(out, 'ledger.jsonl')], { cwd: ROOT, stdout: 'inherit', stderr: 'inherit' });
 process.exit(code);
