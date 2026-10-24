@@ -550,6 +550,8 @@ interface BotWorldState {
   fastKbdPrayerOff?: { tick: number; prayerIndices: number[] };
   /** Monotonic state publication cursor; advances even for multiple publications in one game tick. */
   revision?: number;
+  /** The launch id the browser page was opened with (its `?launch=`), echoed in every state it publishes: which tab launch this state came from. Absent from the lite client, from a page opened without one, and from pages that predate it. */
+  launch?: string;
   inGame: boolean;
   /** The client has built the region around the player. False while it shows "Loading - please wait." (after a login, a teleport or a walk into a new build area): its collision maps are stale then, so a world click (loc, NPC, ground item, walk) cannot be routed. The browser client can sit here for tens of ticks; the lite client builds within the tick. A world click sent while it is false still goes out, but `sendAction` reports it as `success: false, reason: 'scene_loading'`, never as a success. Absent on older clients. */
   sceneReady?: boolean;
