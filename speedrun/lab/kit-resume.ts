@@ -117,7 +117,8 @@ async function giveAll(s: Session, items: readonly FixtureItem[]) {
 }
 
 async function stageScored() {
-    await setVars(scored.sdk, { ...PREREQ_VARS, ...Object.fromEntries(MM_VARS.map(v => [v, 0])) });
+    // %poison is perm: a poison left by an earlier lab run would keep ticking and mute ::~poison's message.
+    await setVars(scored.sdk, { ...PREREQ_VARS, poison: 0, ...Object.fromEntries(MM_VARS.map(v => [v, 0])) });
     await cheat(scored.sdk, '~clearinv reinitialisation_inv', 1);
     await setStats(scored.sdk, { ...ROUTE_LEVELS });
     for (const item of scored.sdk.getState()!.equipment) await scored.sdk.sendUseEquipmentItem(item.slot, opIndex(item, /^remove$/i) ?? 1);
@@ -152,6 +153,8 @@ async function lowAndPoisoned(): Promise<void> {
     const hp = scored.sdk.getState()!.player!.hp;
     if (hp > 11) await cheat(scored.sdk, `~hit ${hp - 11}`);
     if (!(await waitUntil(scored.sdk, s => (s.player?.hp ?? 99) <= 11, { maxTicks: 10 })).ok) throw new Error('::~hit did not take SCORED to 11 HP');
+    // The message fires only from %poison 0 (poison.rs2): clear any earlier poison first.
+    await setVars(scored.sdk, { poison: 0 });
     const t0 = tick();
     await cheat(scored.sdk, '~poison 30');
     const r = await waitUntil(scored.sdk, s => s.gameMessages.some(m => m.tick >= t0 && /you have been poisoned/i.test(m.text)), { maxTicks: 10 });
