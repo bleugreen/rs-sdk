@@ -17,7 +17,7 @@ import { depositMatching } from '../../speedrun/lib/bank';
 import { waitTicks, waitUntil } from '../../speedrun/lib/wait';
 import type { MarketQuote } from '../lib/market.ts';
 import { buyDecision, saleDecision, SHARK_ID } from './exchange.ts';
-import { SHARKS_KEY, carriedCoins, type StageCtx } from './stages.ts';
+import { carriedCoins, type StageCtx } from './stages.ts';
 
 /** Stand inside the Varrock west bank; the Exchange table and teller are on its west side (sdk/MARKET.md). */
 export const VARROCK_WEST_BANK = { x: 3185, z: 3436 };
@@ -28,7 +28,7 @@ export interface BookReader {
     item(id: number): Promise<MarketQuote>;
 }
 
-type ErrandCtx = Pick<StageCtx, 'sdk' | 'bot' | 'signal' | 'event' | 'roleState' | 'reportBank'>;
+type ErrandCtx = Pick<StageCtx, 'sdk' | 'bot' | 'signal' | 'event' | 'reportBank'>;
 
 const countIn = (items: readonly { id?: number; name: string; count: number }[], re: RegExp) => items.filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
 const exact = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
@@ -95,14 +95,14 @@ export interface SharkConfig {
 }
 
 /**
- * Buy up to `perAccount` sharks less those banked, with a limit at the ceiling, paid from the bank's coins. The outcome
- * goes into RoleState (SHARKS_KEY) so the purchase is made once per account. Returns the sharks banked after it.
+ * Buy up to `perAccount` sharks less those banked, with a limit at the ceiling, paid from the bank's coins. Returns the
+ * errand's record and the sharks banked after it; the runner records the outcome (sharks.ts) and decides on a retry.
  */
 export async function buySharks(x: ErrandCtx, cfg: SharkConfig, book: BookReader): Promise<{ record: Record<string, unknown>; banked: number }> {
     const rec: Record<string, unknown> = { kind: 'buy', item: SHARK_ID, ceiling: cfg.ceiling };
     const finish = async (banked: number) => {
         rec.banked = banked;
-        await x.roleState.set(SHARKS_KEY, { ...rec, at: new Date().toISOString() });
+        rec.at = new Date().toISOString();
         x.event('shark purchase', rec);
         return { record: rec, banked };
     };

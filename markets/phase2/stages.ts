@@ -28,14 +28,17 @@ import { role as pickpocketRole } from '../methods/pickpocket.ts';
 import { parseArgs, Sampler } from '../methods/probe-sampler.ts';
 import type { Stack } from './ledger.ts';
 import { NEEDS, type MethodId, type Stage } from './plan.ts';
+import { SHARKS_KEY, sharksSettled } from './sharks.ts';
 
 export interface StageHooks {
     /** The knights ramp has admitted this login (always true off the ramp). */
     admitted(): boolean;
     /** The account has no sharks to eat: the runner sends it to the low-food fallback. */
     foodOut(reason: string): void;
-    /** The shark purchase errand (errands.ts) with the plan's settings. */
+    /** The shark purchase errand (errands.ts) with the plan's settings, its outcome recorded (sharks.ts). */
     buySharks(): Promise<void>;
+    /** The method finished a bank errand (its bank closed): the runner may redirect it here (a rebuy). */
+    banked(): void;
 }
 
 export interface StageCtx {
@@ -89,16 +92,13 @@ export function stageDone(st: Stage, s: BotWorldState, hooks: Pick<StageHooks, '
         case 'admission':
             return hooks.admitted();
         case 'buy-sharks':
-            return roleState.get(SHARKS_KEY) !== undefined;
+            return sharksSettled(roleState.get(SHARKS_KEY));
         case 'to-ardougne':
             return onArdougneSide(s);
         case 'method':
             return false;
     }
 }
-
-/** RoleState key the shark errand records its outcome under (once per account). */
-export const SHARKS_KEY = 'phase2.sharks';
 
 export const ROLES: Readonly<Record<MethodId, Role>> = {
     knights: pickpocketRole,
@@ -175,6 +175,8 @@ async function runMethod(x: StageCtx, method: MethodId): Promise<void> {
         },
         message => {
             if (needs.sharks && message === 'out of food in the bank') x.hooks.foodOut('the bank has no sharks left');
+            // pickpocket.ts and coins.ts both log 'banked' once the bank has closed: between errands
+            if (message === 'banked') x.hooks.banked();
         }
     );
     x.event('method stopped', { method, why });
