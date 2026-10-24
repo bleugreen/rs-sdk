@@ -355,3 +355,29 @@ For H20-only stop proof, the harness composes existing standalone `CueGate` with
 **Fix and post-hold re-run (bgsrv-mac, ed2124a6, fresh mdm551r1/mdr551r1):** the helper keeps its stand until the cue stop (`helpers/mule-delivery.md`). An 11-minute hold passed 1650 of 1650 ticks (status age at most 48 ms), then came prepare, readiness at tick 1941, settle, and the exact trade at 2001. `delivery final stop: service ends on the stand` was logged in the same tick, the mule was still on (3045,3257) before logout with protected bank 1695 coins and 21 kebabs, and `logoutClean` was confirmed by the gateway in 412 ms. Lab exit 0, mechanicalPass true.
 
 Lab limits: random events never fire here, because `AFK_EVENT` returns 0 for staff-level accounts outside debug mode and the lab runs every account at staff level 4. The lab recipient also sends a wait every 4 minutes to keep its client's idle timer from logging it out. Lite success does not verify browser-specific AFK behaviour.
+
+## Seven carrier moves on bgsrv-ub (rs/658, 2026-10-24)
+
+The moves still **U** in the route audit, each measured as a two-row run of `speedrun/lab/mule-delivery.ts` (`--fixtures=ledger --rows=<previous>,<row>`), so the target row's `row-ready-timing` is the carrier's previous successful trade to fresh exact readiness, in carrier ticks. Lab engine at 400 ms on bgsrv-ub, fresh lab accounts per run, lab-seeded banks with real withdrawals. h55 rows ran `--profile=h55-observed` (HP 90, Attack 29, Defence 27, Strength 27, Magic 99, staff of air worn); mule1 rows ran the default HP 10 profile. Rows whose before-state holds SCORED's magic shortbow (H12, H13) ran `--recipient-profile=s14-exit-ranged70`; that touches the recipient only. Packages come from the ledger at the measured commit; stands and banks match `mule-delivery-production.json`. H13's package carries `shark to 2`, which that file (generated at 28d87cd2) predates.
+
+The planner needs concrete returns for `all` lines. Each override was derived from the slot-ledger walk's own before-state (the planner accepts nothing else): H12 coins 1000, death 49, chaos 16; H13 rune arrows 200, coins 10000, superantipoison(4) 1, fire runes 2; H15 bronze/iron/steel/mithril/adamant arrows 60/90/135/1485/2220, coins 22450, sharks 2, blood 53, nature 18 (identical to the H16 baseline above); H1 the starter shortbow (841).
+
+| Move | Carrier | Runs (ticks) | Legs | Runner prepare point |
+|---|---|---|---|---|
+| H15 → H16 | h55 | 172, 172, 172 | Seers bank 98 ticks/192 tiles, meeting 55/108 | stop of H15's hand-off before S19 |
+| H13 → H14 | h55 | 81, 81 | bank 26/43, meeting 26/52 | stop of H13's hand-off in T15-16 after hop 0 |
+| H21d → H22 | mule1 | 88, 88 | staged at the booth, meeting 61/84 | stop of H21d's hand-off before S25d |
+| H12 → H13 | h55 | 245, 245 | bank 199/332, meeting 24/46 | stop of H12's cue around `S15:A-narnode` |
+| H14 → H15 | h55 | 82, 82 | bank 26/50, meeting 47/92 | stop of H14's hand-off before S18 |
+| H1 → H4 | mule1 | 264, 308 (331 under load) | bank 200–267/378–477, meeting 48/89 | stop of S01, H1's own step |
+| H4k → H18 | mule1 | 318, 318 (318 and 301 under load) | bank 218/420, meeting 87/170 | stop of H4k's hand-off before S07 |
+
+The prepare point follows from the runner: `cueAround` stops a row's `{row, mule}` cue when its step finishes (`speedrun/runner/chain.ts`), and that stop calls `DeliveryOwner.served`, which prepares the carrier's next row (`speedrun/runner/cue-keeper.ts`, `speedrun/runner/delivery-owner.ts`). Each measurement therefore starts where the run's own prepare would be written.
+
+What the runs showed beyond the durations:
+
+- **H22's stand cannot trade.** Readiness at (3191,3363) is exact and fresh, but the stand is the Champions' Guild door tile, and the delivery guard (`deliveryTradeReach` in `speedrun/helpers/mule.ts`) refuses any trade whose endpoints or their cardinal neighbours hold a door (`findDoorsAlongPath` in `sdk/pathfinding.ts`). SCORED's T25-26 target (3191,3364) neighbours the door, so no carrier stand works while SCORED stops there. Both runs ended `trade open failed: stopped` on the carrier and `no_response` on the recipient. A static check of the guard put the meeting one row north: SCORED at (3191,3365), carrier at (3191,3366), (3190,3365) or (3192,3365).
+- **mule1 is attacked by the Draynor jail guards** (NPC 917, combat 26, `huntmode=aggressive_melee`, `huntrange=5`, spawns including (3121,3249) and (3127,3248)). The harness's `hp-drop` event, added for this, logs each carrier HP loss with every NPC within 2 tiles. Every hit had a Jail guard 1–2 tiles away, and the client's damage events carried no source index. The guards hit on 7 of 8 jail passes across four runs, down to HP 5 from 10.
+- **The greegree is never worn at H13.** The ledger walk had SCORED still wearing it at the Ardougne landing, which the engine never allows outside the greegree zone, so the fixture now stages it in the pack.
+
+Load: bgsrv-ub's 1-minute load rose to 83 (02:09Z) and 160–241 (02:33–03:07Z) from other work. Two runs stalled (`no new tick for 20 ticks`) and the completed runs from those windows are listed above as under load, not counted. The counted runs saw a peak 1-minute load of 3.3–3.8.
