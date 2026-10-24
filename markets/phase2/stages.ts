@@ -175,8 +175,9 @@ async function runMethod(x: StageCtx, method: MethodId): Promise<void> {
         },
         message => {
             if (needs.sharks && message === 'out of food in the bank') x.hooks.foodOut('the bank has no sharks left');
-            // pickpocket.ts and coins.ts both log 'banked' once the bank has closed: between errands
-            if (message === 'banked') x.hooks.banked();
+            // bank visits, logged once the bank has closed (between errands): pickpocket.ts and coins.ts 'banked',
+            // coins.ts 'withdrew coins' (its kebab money)
+            if (message === 'banked' || message === 'withdrew coins') x.hooks.banked();
         }
     );
     x.event('method stopped', { method, why });
