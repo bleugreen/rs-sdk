@@ -58,4 +58,16 @@ describe('npc claims between the bots of one process', () => {
         c.releaseAll('a');
         expect(c.size).toBe(1);
     });
+    test('a kill stays claimed for its hold, through the end of the fight, then frees', () => {
+        let now = 0;
+        const c = new TargetClaims(20_000, () => now);
+        c.claim(9, 'a');
+        c.release(9, 'a', 5_000);
+        c.releaseAll('a');
+        expect(c.claim(9, 'b')).toBe(false);
+        now = 4_999;
+        expect(c.heldByOther(9, 'b')).toBe(true);
+        now = 5_000;
+        expect(c.claim(9, 'b')).toBe(true);
+    });
 });

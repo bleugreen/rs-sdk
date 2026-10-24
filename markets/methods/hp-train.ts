@@ -176,9 +176,13 @@ export const LOW_SITES = (Object.keys(SITES) as SiteId[]).filter(id => !SITES[id
  * pick the same idle npc in the same tick (live, three of ours clicked one cow within a second) and all but one
  * waste their swings until the 12-tick drop. A claim not renewed for `ttlMs` lapses, so a bot that stalls or
  * crashes mid-fight frees its npc. Other players' fights are left to `inCombat`.
+ *
+ * A kill keeps its claim for `KILL_HOLD_MS` (`release` with a hold): the killer sees the death a tick before another
+ * bot's state does, and in the M17 lab a released goblin was picked by a second bot 0.1-0.75 s after the kill, a
+ * click on a corpse.
  */
 export class TargetClaims {
-    private readonly held = new Map<number, { owner: string; at: number }>();
+    private readonly held = new Map<number, { owner: string; until: number; dead: boolean }>();
     constructor(
         private readonly ttlMs = 20_000,
         private readonly now: () => number = Date.now
@@ -186,30 +190,37 @@ export class TargetClaims {
 
     heldByOther(npc: number, owner: string): boolean {
         const c = this.held.get(npc);
-        return !!c && c.owner !== owner && this.now() - c.at < this.ttlMs;
+        return !!c && c.owner !== owner && this.now() < c.until;
     }
 
     /** Claim or renew `npc` for `owner`; false while another owner's claim is live. */
     claim(npc: number, owner: string): boolean {
         if (this.heldByOther(npc, owner)) return false;
-        this.held.set(npc, { owner, at: this.now() });
+        this.held.set(npc, { owner, until: this.now() + this.ttlMs, dead: false });
         return true;
     }
 
-    release(npc: number, owner: string): void {
-        if (this.held.get(npc)?.owner === owner) this.held.delete(npc);
+    /** Give `npc` up now, or (a kill) keep it from the others for `holdMs` more. */
+    release(npc: number, owner: string, holdMs = 0): void {
+        if (this.held.get(npc)?.owner !== owner) return;
+        if (holdMs > 0) this.held.set(npc, { owner, until: this.now() + holdMs, dead: true });
+        else this.held.delete(npc);
     }
 
+    /** Every live claim of `owner` (the end of its fight); kills keep their hold. */
     releaseAll(owner: string): void {
-        for (const [npc, c] of this.held) if (c.owner === owner) this.held.delete(npc);
+        for (const [npc, c] of this.held) if (c.owner === owner && !c.dead) this.held.delete(npc);
     }
 
-    /** Live claims, every owner. */
+    /** Claims and kill holds in force, every owner. */
     get size(): number {
         const t = this.now();
-        return [...this.held.values()].filter(c => t - c.at < this.ttlMs).length;
+        return [...this.held.values()].filter(c => t < c.until).length;
     }
 }
+
+/** How long a kill stays claimed: the death animation and the despawn, with a margin for state lag. */
+export const KILL_HOLD_MS = 5_000;
 
 const COINS = /^coins$/i;
 const TOLL_RESERVE = 20;
@@ -373,7 +384,8 @@ export async function fightFor(sdk: BotSDK, bot: BotActions, site: Site, o: Figh
             }
             if (target !== null && !cur) {
                 st.kills++;
-                setTarget(null);
+                claims?.table.release(target, claims.owner, KILL_HOLD_MS);
+                target = null;
                 if (o.bones?.(s) && lastTargetTile) st.bonesBuried += await lootAndBury(sdk, bot, lastTargetTile);
                 if (o.onKill) await o.onKill(s);
             } else if (cur && !attackers.some(a => a.index === cur!.index) && t - Math.max(lastHitOn.get(cur.index) ?? -1, targetSince) > 12) {
