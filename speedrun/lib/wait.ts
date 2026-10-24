@@ -99,6 +99,94 @@ export function periodMs(period?: TickPeriod, minSpanMs: number = IDLE_PERIOD_MI
     return period?.msPerTick(minSpanMs) ?? tickMs();
 }
 
+/**
+ * The one idle logout a connected player meets: the browser webclient's own. After this much wall
+ * time with no input the client sends IDLE_TIMER (server/webclient/src/client/Client.ts, `now -
+ * this.idleTimer > 600_000`) and the engine's IdleTimerHandler requests an idle logout (ignored only
+ * when the engine runs with NODE_DEBUG, the lab's default). Only input resets the timer: the page's
+ * mouse and key handlers, and every gateway action as it arrives (BotOverlay.onAction). In-page
+ * program clicks do not, since the ProgramHost calls the action executor directly. The engine itself
+ * never logs a connected player out for want of input: World.processLogouts removes one only after
+ * TIMEOUT_NO_RESPONSE (1,000 ticks with no bytes, and a live client sends NO_TIMEOUT every second)
+ * or TIMEOUT_NO_CONNECTION (500 ticks with no socket).
+ */
+export const CLIENT_IDLE_LOGOUT_MS = 600_000;
+
+/** Wall ms a long wait lets pass with no input before it sends a keep-input: a tenth of CLIENT_IDLE_LOGOUT_MS. */
+export const KEEP_INPUT_MS = 60_000;
+
+export type KeepInputSdk = Pick<BotSDK, 'sendWait'>;
+
+export interface KeepInputEvent {
+    /** 1 for the wait's first keep-input. */
+    n: number;
+    /** The tick of the state that found it due. */
+    tick: number;
+    /** Wall ms since the wait began, or since its previous keep-input. */
+    idleMs: number;
+}
+
+export interface KeepInputOptions {
+    /** The wall clock (default Date.now). */
+    now?: () => number;
+    /** Called as each keep-input is sent. */
+    onInput?: (e: KeepInputEvent) => void;
+}
+
+export interface KeepInput {
+    /** Feed every published state; sends a keep-input when one is due. */
+    see(s: BotWorldState): void;
+    /** Send nothing more, for good. */
+    stop(): void;
+    /** Keep-inputs sent so far. */
+    readonly sent: number;
+}
+
+/**
+ * Keeps the client's idle timer (CLIENT_IDLE_LOGOUT_MS) from running out while a long wait sends
+ * nothing: once KEEP_INPUT_MS of wall time have passed since it began, or since its previous one, the
+ * next state it is fed sends `sendWait(1)`, one in flight at a time. A wait shorter than KEEP_INPUT_MS
+ * sends nothing. A `wait` action sends no game packet: the page's overlay answers it itself after one
+ * client frame (BotOverlay.tick counts game-loop cycles, about 20 ms), so it moves nothing, opens
+ * nothing and leaves a pending trade request standing. Its one effect is to hold the overlay's action
+ * queue for that frame, so an SDK action sent in the same frame (a program input or stop) runs after it.
+ */
+export function keepInput(sdk: KeepInputSdk, o: KeepInputOptions = {}): KeepInput {
+    const now = o.now ?? Date.now;
+    let last = now();
+    let sent = 0;
+    let inFlight = false;
+    let stopped = false;
+    return {
+        get sent() {
+            return sent;
+        },
+        see(s) {
+            if (stopped || inFlight) return;
+            const t = now();
+            if (t - last < KEEP_INPUT_MS) return;
+            const idleMs = t - last;
+            last = t;
+            sent++;
+            inFlight = true;
+            o.onInput?.({ n: sent, tick: s.tick, idleMs });
+            // A failed keep-input is of no use to the wait; the next one is due a full interval on.
+            let sending: Promise<unknown>;
+            try {
+                sending = sdk.sendWait(1);
+            } catch (e) {
+                sending = Promise.reject(e);
+            }
+            void sending.catch(() => {}).finally(() => {
+                inFlight = false;
+            });
+        },
+        stop() {
+            stopped = true;
+        },
+    };
+}
+
 export interface WaitOptions {
     /**
      * Give up once this many ticks pass without `pred` holding. Ticks are
@@ -110,6 +198,11 @@ export interface WaitOptions {
     after?: number;
     /** The idle bound (default: IDLE_TICKS x tickMs()). Never a time budget: only silence trips it. */
     idle?: IdleBound;
+    /**
+     * Keep the client's input alive through a wait that can outlast KEEP_INPUT_MS with nothing sent
+     * (keepInput, stopped the moment the wait ends). For SCORED's long waits on a partner.
+     */
+    keepInput?: { sdk: KeepInputSdk } & KeepInputOptions;
 }
 
 /** Why a wait failed with reason `idle`, for messages. */
@@ -282,9 +375,11 @@ export function waitUntil(sdk: StateSource, pred: Pred, opts: WaitOptions): Prom
         }
         let last: BotWorldState | null = cur;
         let done = false;
+        const keep = opts.keepInput ? keepInput(opts.keepInput.sdk, opts.keepInput) : null;
         const finish = (r: WaitResult) => {
             if (done) return;
             done = true;
+            keep?.stop();
             unsubscribe();
             clock.stop();
             resolve(r);
@@ -296,6 +391,7 @@ export function waitUntil(sdk: StateSource, pred: Pred, opts: WaitOptions): Prom
             clock.see(s);
             if (counts(s) && pred(s)) finish({ ok: true, state: s, tick: s.tick });
             else if (clock.elapsed > maxTicks) finish(fail('maxTicks'));
+            else keep?.see(s);
         });
     });
 }
