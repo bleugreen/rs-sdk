@@ -198,20 +198,6 @@ export function enteringEnds<S extends { run(ctx: never): Promise<void>; resume?
 }
 
 /**
- * `steps` with each entry (`run`, `resume`) first ending `stretch`: the step's own upkeep takes over
- * from it, and a death the stretch saw fails the step before it sends anything (run.ts's upkeep
- * from login to the first step's entry).
- */
-export function enteringEnds<S extends { run(ctx: never): Promise<void>; resume?(ctx: never): Promise<void> }>(steps: readonly S[], stretch: Pick<Stretch, 'stop'>): S[] {
-    const enter = <A extends unknown[]>(f: (...a: A) => Promise<void>) => async (...a: A): Promise<void> => {
-        const death = stretch.stop();
-        if (death) throw new Error(death.reason);
-        await f(...a);
-    };
-    return steps.map(s => ({ ...s, run: enter(s.run), ...(s.resume ? { resume: enter(s.resume) } : {}) }));
-}
-
-/**
  * `fn`, a wait SCORED stands through for a helper, under watchStretch: a death ends it at once with
  * the death's reason ('SCORED died <during>: ...', session.died set), whatever `fn` was still waiting
  * for; otherwise `fn`'s own result or throw. Inside another stretch on the same SDK it is just `fn`.

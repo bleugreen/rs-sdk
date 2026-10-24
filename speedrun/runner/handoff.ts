@@ -669,7 +669,8 @@ export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step
         async run(ctx) {
             // The waits for the partner (its cue, in sight, its request) and the trade, under the wait guard:
             // a death ends them, and SCORED eats and cures while it stands (never with the trade open).
-            await guardWait(ctx, `on the ${plan.id} hand-off`, async () => {
+            const during = `on the ${plan.id} hand-off`;
+            await guardWait(ctx, during, async () => {
                 if (trade.cue?.open) await runHandOffOnCue(ctx, plan, partner(ctx.c), trade.cue, trade);
                 else {
                     if (opts.meeting) await partnerInSight(sdkOf(ctx.sdk), plan, partner(ctx.c), opts.meeting);
