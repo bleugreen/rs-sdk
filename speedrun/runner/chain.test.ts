@@ -1809,11 +1809,15 @@ describe("a kit row's cue: no cue and no readiness wait when the row is served t
     test("KIT_WANTS reads each module's own plan: H12 wants nothing with its kit held and one shark short wants again; H4 wants on an empty pack", () => {
         const item = (slot: number, name: string, count = 1, id = 9000 + slot) => ({ slot, id, name, count, optionsWithIndex: [] });
         const bow = monkeyMadness.DEFAULT_OPTIONS.bow;
-        const kit = monkeyMadness.h12Kit(bow).map((k, i) => item(i, k.name.source.replace(/[\^$\\]/g, ''), k.n, k.id));
+        // A dose-agnostic line (`Prayer potion\(\d\)`) held as its full potion.
+        const kit = monkeyMadness.h12Kit(bow).map((k, i) => item(i, k.name.source.replace('\\(\\d\\)', '(4)').replace(/[\^$\\]/g, ''), k.n, k.id));
         const held = (inv: typeof kit) => baseState({ inventory: inv as never });
         const unserved = { served: false };
         expect(KIT_WANTS.H12!(held(kit), unserved)).toBe(false);
-        expect(KIT_WANTS.H12!(held(kit.map(i => (i.name === 'Shark' ? { ...i, count: monkeyMadness.H12_SHARKS - 1 } : i))), unserved)).toBe(true);
+        const ateOne = held(kit.map(i => (i.name === 'Shark' ? { ...i, count: monkeyMadness.H12_SHARKS - 1 } : i)));
+        expect(KIT_WANTS.H12!(ateOne, unserved)).toBe(true);
+        // Served: a shark eaten since the serve does not re-open the want (main's ruling, the module's kitMissing).
+        expect(KIT_WANTS.H12!(ateOne, { served: true })).toBe(false);
         expect(KIT_WANTS.H4!(baseState(), unserved)).toBe(true);
     });
 
