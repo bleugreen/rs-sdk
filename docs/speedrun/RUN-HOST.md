@@ -50,12 +50,12 @@ On this page that is `handoff` (step 7, "The launch dry run", which gives the fo
 rehearsal account with `--rehearsal`) and step 8's attach-and-logout. The scored run's own start,
 run.ts, is rs/186's and not on main, so its line is pending; it is dry-run the same way.
 
-**The run bound is 9 h** (14 h by default once rs/680's run-gate `--bound` is on the run commit; step 3: it counts from `up`). A full run is our row, about 35,300 ticks (RUN-ORDER.md): about 2.9 h of
+**The run bound is 14 h** (rs/680's run-gate `--bound` default, on main as #542, 801e6a92; step 3: it counts from `up`; the stack can be raised long before step 7, rs/659). A full run is our row, about 35,300 ticks (RUN-ORDER.md): about 2.9 h of
 wall clock at the 300 ms tick the demo ran until 19:56Z on 2026-10-22, and about **3.9 h at the
 400 ms it has run since** ("Measured: the demo's tick period"); at 600 ms, which remains possible,
-about 5.9 h. Steps 3 to 7 take under an hour, so 9 h leaves about four hours of margin at 400 ms
-and about two at 600 ms (i). The same 9 h bounds the run's claim
-(below). Each hand-run launch below begins `T=9h;`, the only place the figure appears in a
+about 5.9 h. Steps 3 to 7 take under an hour, so 14 h leaves about nine hours of margin at 400 ms
+and about seven at 600 ms (i), against main's rule MIN_END = the planned end + 4 h. The same 14 h bounds the run's claim
+(below). Each hand-run launch below begins `T=14h;` (9 h before; host raises it by hand, 03:24Z), the only place the figure appears in a
 command, and a rehearsal replaces it with `T=30m`. `speedrun/tools/run-gate.ts` (steps 3-7) takes
 `--bound=DURATION` (a `timeout` duration such as `14h` or `90m`) for every piece it raises for the
 run (the gateway, page server, recording, live view and SCORED's tab), **default 14 h**, and 30 min
@@ -79,7 +79,7 @@ again before step 7.
 | Gate (a)-(c), rs/96's CLI (`gate`) | - | `15m` (its probe gives up after 10 min) |
 | Gate (d), the sampler (`gate`) | - | `10m` (a 5 min sample; the script's own limit is 7 min 10 s) |
 | run-gate.ts's own run on each machine | `up` 3 min, `gate` 40 min, `handoff` 12 min | the same |
-| rs/117's helper launcher (step 4) | `T=9h` | `T=30m` |
+| rs/117's helper launcher (step 4) | `T=14h` (9 h before; raised by hand, host 03:24Z) | `T=30m` |
 | SIGKILL after the bound, every launch | 30 s | 30 s |
 | rs/83's gate history timer read (not ours; "Gate history timer") | skipped while a claim holds | `timeout 240`; systemd kills the unit at 270 s |
 
@@ -87,7 +87,7 @@ again before step 7.
 
 - The bound is part of the command that starts the process, so nothing can be started without one,
   and there is no second thing to start, remember or cancel. A reaper such as
-  `systemd-run --user --on-active=9h tmux -L run kill-server` bounds only that one tmux socket, not
+  `systemd-run --user --on-active=9h tmux -L run kill-server` (an example, not a live bound; verified absent on both machines, host 03:24Z) bounds only that one tmux socket, not
   the foreground measurements or another socket. It is as easy to forget as teardown is, and a
   rehearsal's leftover timer fires into whatever runs on the same socket next. `timeout` also needs
   nothing beyond coreutils, while the host's user systemd manager reports `degraded` (m, 17:19 UTC).
@@ -145,7 +145,7 @@ claim is live and ignores one gone stale, so a forgotten release costs nothing (
 timer", below "The host"). Who takes one:
 
 - **the run**: step 0, on run night, on **both** machines, as owner `run`, before anything else
-  starts, covering setup, the 9 h run bound above and an hour's margin; the run never disables the
+  starts, covering setup, the 14 h run bound above and an hour's margin (host extended the claims to 18:59Z); the run never disables the
   timer instead. run.ts, on the chosen machine, refuses to start unless the claim is live and the
   run's own, and releases it after SCORED's final clean logout. The machine not chosen keeps its
   claim until the run's teardown (step 9), so its timer skips and rehearsals there stay paused
@@ -450,7 +450,7 @@ machine only; step 9 tears down both.
 **On run night, step 0 starts with the run's claim**, on both machines, before anything else on
 this page starts, even when the checkout is already on `RUN_COMMIT` ("The claim lock", "Rules for
 every launch"). It covers the whole run with margin, and the run never disables the timer instead.
-`M` is the minutes from now to the planned start plus 600 (the 9 h bound and an hour's margin). `L`
+`M` is the minutes from now to the planned start plus 900 (the 14 h bound and an hour's margin; 600 on the 9 h bound before). `L`
 is the most logins the machine holds during the run: SCORED, the full roster and its gate account
 (SUPPLIES.md, "Peak concurrent logins"), since either machine may be chosen. If the take is refused
 on the login count, log the unneeded fleet out first (step 7) and take it again; nothing below
@@ -1213,7 +1213,7 @@ Two rules from this page apply to that launch:
 
 - **Bound.** Whatever command HELPERS.md gives starts as the whole command of its own tmux
   session, `exec timeout --kill-after=30s $T <launcher command> >>$HOME/rs-run/helpers.log 2>&1`,
-  with `T=9h` for the run and `T=30m` for a rehearsal ("Rules for every launch"), unless rs/117
+  with `T=14h` for the run (9 h before; raised by hand, host 03:24Z) and `T=30m` for a rehearsal ("Rules for every launch"), unless rs/117
   gives the launcher its own hard bound. Its clean logouts are HELPERS.md's teardown. If the bound
   fires instead, the helpers are dropped, not logged out; whether the launcher logs out on SIGTERM
   is rs/117's to say. Neither the launcher nor HELPERS.md is on this branch or on the host's
