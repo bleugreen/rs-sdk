@@ -68,19 +68,55 @@ async function cdpCommand(wsUrl: string, method: string, params: Record<string, 
     return (await cdpCommands(wsUrl, [{ method, params }], timeoutMs))[0];
 }
 
+/** A page that could not answer probePage, and why. */
+export interface PageGone {
+    gone: string;
+    /** Chrome lists no tab for the bot that DevTools can attach to (as against one that did not answer). */
+    absent?: true;
+}
+
+/** What probePage found: the page's own in-game flag, or why it could not say. */
+export type PageProbe = { inGame: boolean } | PageGone;
+
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 /**
- * The page's own in-game flag (window.gameClient.ingame) in this bot's tab, or null when there is
- * no such tab. Throws when Chrome's DevTools port does not answer.
+ * Read the page's own in-game flag (window.gameClient.ingame) in this bot's tab, every request bounded
+ * by `timeoutMs`; never throws. Gone when Chrome lists no tab for the bot, when the DevTools port does
+ * not answer, or when the tab's Runtime.evaluate rejects or outlasts the bound: a renderer that crashed
+ * (OOM-killed, `kill -9`) or hangs. The target of a crashed renderer stays listed, so only the
+ * evaluate tells it apart.
  */
-export async function pageInGame(cdpOrigin: string, botName: string): Promise<boolean | null> {
+export async function probePage(cdpOrigin: string, botName: string, timeoutMs = 5_000): Promise<PageProbe> {
     const base = cdpOrigin.replace(/\/+$/, '');
-    const [tab] = botTabs((await (await fetch(`${base}/json/list`)).json()) as CdpTarget[], botName);
-    if (!tab?.webSocketDebuggerUrl) return null;
-    const out = (await cdpCommand(tab.webSocketDebuggerUrl, 'Runtime.evaluate', {
-        expression: '!!(window.gameClient && window.gameClient.ingame)',
-        returnByValue: true,
-    })) as { result?: { value?: unknown } };
-    return out.result?.value === true;
+    let targets: CdpTarget[];
+    try {
+        targets = (await (await fetch(`${base}/json/list`, { signal: AbortSignal.timeout(timeoutMs) })).json()) as CdpTarget[];
+    } catch (e) {
+        return { gone: `Chrome's DevTools port did not answer /json/list (${errorText(e)})` };
+    }
+    const [tab] = botTabs(targets, botName);
+    if (!tab) return { gone: "no tab for the bot in Chrome's targets", absent: true };
+    if (!tab.webSocketDebuggerUrl) return { gone: 'its tab lists no DevTools websocket', absent: true };
+    try {
+        const out = (await cdpCommand(tab.webSocketDebuggerUrl, 'Runtime.evaluate', { expression: '!!(window.gameClient && window.gameClient.ingame)', returnByValue: true }, timeoutMs)) as {
+            result?: { value?: unknown };
+        };
+        return { inGame: out.result?.value === true };
+    } catch (e) {
+        return { gone: `its renderer did not answer (${errorText(e)})` };
+    }
+}
+
+/**
+ * The page's own in-game flag in this bot's tab (probePage), or null when there is no such tab.
+ * Throws when Chrome's DevTools port or the tab's renderer does not answer.
+ */
+export async function pageInGame(cdpOrigin: string, botName: string, timeoutMs = 5_000): Promise<boolean | null> {
+    const p = await probePage(cdpOrigin, botName, timeoutMs);
+    if ('inGame' in p) return p.inGame;
+    if (p.absent) return null;
+    throw new Error(p.gone);
 }
 
 /** Whether this bot's tab shows a client that is in game; false with no tab. */

@@ -3,11 +3,17 @@ import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { relogNow, type PageRead, type RelogNowIO } from '../tools/relog-now';
-import { ALREADY_LOGGED_IN, LoginRefused, LoginTimedOut } from '../lib/session';
-import { tickMs } from '../lib/wait';
-import { ADOPT_WAIT_TICKS, ALREADY_IN_BOUND_MS, ALREADY_IN_RETRY_MS, CLOSE_SETTLE_MS, MAX_FALLS, RECHECK_TICKS, recoverDrop, type DropRelogDeps } from './drop-relog';
+import { fakeCdp, type FakeCdp } from '../lib/fake-cdp';
+import { baseState, FakeSdk } from '../lib/fake-sdk';
+import { ALREADY_LOGGED_IN, LoginRefused, LoginTimedOut, startWatchdog, type LogoutResult, type Session, type WatchdogEvent } from '../lib/session';
+import { closeBotTabs } from '../lib/tab';
+import { TickPeriod, tickMs } from '../lib/wait';
+import {
+    ADOPT_WAIT_TICKS, ALREADY_IN_BOUND_MS, ALREADY_IN_RETRY_MS, CLOSE_SETTLE_MS, linkPage, liveDropDeps, MAX_FALLS, RECHECK_TICKS, readPage, recoverDrop, recoveryStandDown, type DropRelogDeps, type PageAnswer,
+} from './drop-relog';
+import { sessionLink, type Link } from './resume';
 import { NO_DATA_TIMEOUT_MS } from '../../server/webclient/src/client/NoDataTimeout';
-import { PAGE_HOLD_MARGIN_MS, pageHoldTicks } from './page-hold';
+import { PAGE_HOLD_MARGIN_MS, PAGE_HOLD_MS, pageHoldTicks } from './page-hold';
 import { RelogBudget, RelogBudgetSpent } from './relog-budget';
 
 const AT = { step: 'S07 woodcutting:oak-15-73', tick: 812 };
@@ -20,7 +26,7 @@ const dir = () => mkdtempSync(join(tmpdir(), 'drop-relog-'));
  */
 function world(
     o: {
-        page?: boolean | null;
+        page?: PageAnswer;
         up?: boolean;
         gateway?: (ticks: number) => boolean;
         onTick?: (n: number) => void;
@@ -30,7 +36,7 @@ function world(
     } = {}
 ) {
     const calls: string[] = [];
-    let page: boolean | null = o.page === undefined ? false : o.page;
+    let page: PageAnswer = o.page === undefined ? false : o.page;
     let ticks = 0;
     let clock = 1_000_000;
     let expectIn = true;
@@ -93,7 +99,7 @@ function world(
     return {
         deps,
         calls,
-        setPage: (v: boolean | null) => (page = v),
+        setPage: (v: PageAnswer) => (page = v),
         setExpectIn: (v: boolean) => (expectIn = v),
         setBackAt: (n: number) => (backAt = n),
         ticks: () => ticks,
@@ -593,6 +599,248 @@ describe('a network hold: the page keeps its socket and says in game, and the re
         const out = world({ page: false });
         expect((await recoverDrop(new RelogBudget(dir()), out.deps, 'page out of game', AT)).outcome).toBe('relogged');
         expect(out.calls).toEqual(['pause watchdog', 'login@0']);
+    });
+});
+
+describe('a gone page (rs/752): an absent tab or a crashed or hung renderer is closed first, then a fresh tab, never the watchdog path', () => {
+    const BOT = 'scored';
+    const reply5 = () => new LoginRefused(ALREADY_LOGGED_IN, 'Your account is already logged in. Try again in 60 secs...', 1, 'scored: fresh-tab login refused (reply 5)');
+
+    /**
+     * world() over a fake Chrome (lib/fake-cdp.ts) with the live page read (readPage, bounded at
+     * `readMs`) and the live close (closeBotTabs, a blank page first if it is Chrome's last); a fresh
+     * tab is a live renderer in game. No in-page login is ever made on a gone page.
+     */
+    function onChrome(cdp: FakeCdp, o: { readMs?: number; onTick?: (n: number) => void; relaunch?: (n: number) => Error | null } = {}) {
+        const w = world({ page: true, advanced: () => false, backAt: Infinity, onTick: o.onTick });
+        w.deps.pageInGame = () => readPage(cdp.origin, BOT, o.readMs ?? 200);
+        w.deps.login = async () => {
+            throw new Error('no in-page login on a gone page');
+        };
+        const close = w.deps.closeTab;
+        w.deps.closeTab = async () => {
+            const c = await closeBotTabs(cdp.origin, BOT, 1_000, { blankIfLast: true });
+            await close();
+            return `${c.closed} tab(s) closed and gone from Chrome's targets`;
+        };
+        const relaunch = w.deps.relaunch;
+        let n = 0;
+        w.deps.relaunch = async () => {
+            const e = o.relaunch?.(++n);
+            if (e) {
+                w.calls.push(`relaunch-failed@${w.ticks()}`);
+                throw e;
+            }
+            cdp.page.tab = true;
+            cdp.page.renderer = 'live';
+            cdp.client.ingame = true;
+            return relaunch();
+        };
+        return w;
+    }
+
+    /** In via a fresh tab on one unplanned relog, the page's reason on it, the watchdog never resumed and the lock let go. */
+    function inOnOneCharge(budget: RelogBudget, w: ReturnType<typeof world>, gone: RegExp) {
+        expect(budget.entries().map(e => [e.kind, e.by, e.via, e.step, e.tick])).toEqual([['unplanned', 'run', 'launch', AT.step, AT.tick]]);
+        expect(budget.entries()[0]!.meta?.pageGone).toMatch(gone);
+        expect(budget.used()).toEqual({ planned: 0, unplanned: 1 });
+        expect(w.calls).not.toContain('resume watchdog');
+        expect(w.calls).not.toContain('restored');
+        expect(budget.holder()).toBeNull();
+    }
+
+    test("a tab absent from Chrome's targets: confirmed RECHECK_TICKS later, nothing left to close, a fresh tab CLOSE_SETTLE_MS later", async () => {
+        const cdp = fakeCdp(BOT);
+        try {
+            cdp.page.tab = false;
+            const budget = new RelogBudget(dir());
+            const w = onChrome(cdp);
+            const r = await recoverDrop(budget, w.deps, 'no tick for ~18 ticks', AT);
+            expect(r.outcome).toBe('relogged');
+            expect(w.calls).toEqual(['pause watchdog', `close@${RECHECK_TICKS}`, `relaunch@${RECHECK_TICKS + CLOSE_TICKS}`]);
+            inOnOneCharge(budget, w, /^no tab for the bot in Chrome's targets$/);
+            expect(budget.entries()[0]!.meta).toMatchObject({ closedFirst: "0 tab(s) closed and gone from Chrome's targets", attempts: { tries: 1, freshTabs: 1 } });
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test("a crashed renderer (its target still listed, Runtime.evaluate rejected 'Target crashed'): its tab closed, a blank page opened first as it was Chrome's last, then a fresh tab", async () => {
+        const cdp = fakeCdp(BOT);
+        try {
+            cdp.page.renderer = 'crashed';
+            const budget = new RelogBudget(dir());
+            const w = onChrome(cdp);
+            expect((await recoverDrop(budget, w.deps, 'no tick for ~18 ticks', AT)).outcome).toBe('relogged');
+            expect(w.calls).toEqual(['pause watchdog', `close@${RECHECK_TICKS}`, `relaunch@${RECHECK_TICKS + CLOSE_TICKS}`]);
+            expect(cdp.page.opened).toEqual(['about:blank']);
+            expect(cdp.page.closed).toEqual(['t1']);
+            inOnOneCharge(budget, w, /^its renderer did not answer \(CDP Runtime\.evaluate: Target crashed\)$/);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('a hung renderer (Runtime.evaluate never answers): each read cut off at its bound, so the recovery does not stall on it', async () => {
+        const cdp = fakeCdp(BOT);
+        try {
+            cdp.page.renderer = 'hung';
+            const budget = new RelogBudget(dir());
+            const w = onChrome(cdp, { readMs: 150 });
+            const t0 = Date.now();
+            expect((await recoverDrop(budget, w.deps, 'no tick for ~18 ticks', AT)).outcome).toBe('relogged');
+            // Three bounded reads (the first, its confirmation, the one under the lock) and the close.
+            expect(Date.now() - t0).toBeLessThan(2_000);
+            expect(cdp.page.evaluations).toBe(3);
+            expect(w.calls).toEqual(['pause watchdog', `close@${RECHECK_TICKS}`, `relaunch@${RECHECK_TICKS + CLOSE_TICKS}`]);
+            inOnOneCharge(budget, w, /^its renderer did not answer \(CDP Runtime\.evaluate: no reply in 150 ms\)$/);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test("a renderer that crashes inside the page's hold window is closed at once, not at the window's end", async () => {
+        const cdp = fakeCdp(BOT);
+        try {
+            const budget = new RelogBudget(dir());
+            const w = onChrome(cdp, { onTick: n => n === 5 && (cdp.page.renderer = 'crashed') });
+            expect((await recoverDrop(budget, w.deps, 'no tick for ~18 ticks', AT)).outcome).toBe('relogged');
+            expect(w.calls).toEqual(['pause watchdog', `close@${5 + RECHECK_TICKS}`, `relaunch@${5 + RECHECK_TICKS + CLOSE_TICKS}`]);
+            expect(5 + RECHECK_TICKS).toBeLessThan(SETTLE_TICKS);
+            inOnOneCharge(budget, w, /Target crashed/);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test("a fresh tab refused 'already logged in' after a crash: retried every ALREADY_IN_RETRY_MS in the same loop, in on one charge, never a throw", async () => {
+        const cdp = fakeCdp(BOT);
+        try {
+            cdp.page.renderer = 'crashed';
+            const budget = new RelogBudget(dir());
+            const w = onChrome(cdp, { relaunch: n => (n === 1 ? reply5() : null) });
+            expect((await recoverDrop(budget, w.deps, 'no tick for ~18 ticks', AT)).outcome).toBe('relogged');
+            const fresh = RECHECK_TICKS + CLOSE_TICKS;
+            expect(w.calls).toEqual(['pause watchdog', `close@${RECHECK_TICKS}`, `relaunch-failed@${fresh}`, `relaunch@${fresh + ALREADY_IN_RETRY_MS / 400}`]);
+            expect(budget.entries()[0]!.meta).toMatchObject({ alreadyLoggedIn: { refusals: 1 }, attempts: { tries: 2, freshTabs: 2 } });
+            inOnOneCharge(budget, w, /Target crashed/);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('one failed read is not a gone page: the confirming read answers out, and the page is relogged in page with nothing closed', async () => {
+        const budget = new RelogBudget(dir());
+        const w = world({ page: false });
+        const read = w.deps.pageInGame;
+        let first = true;
+        w.deps.pageInGame = async () => (first ? ((first = false), { gone: 'its renderer did not answer (CDP Runtime.evaluate: no reply in 3000 ms)' }) : read());
+        expect((await recoverDrop(budget, w.deps, 'page out of game', AT)).outcome).toBe('relogged');
+        expect(w.calls).toEqual(['pause watchdog', `login@${RECHECK_TICKS}`]);
+        expect(budget.entries()[0]!.meta?.pageGone).toBeUndefined();
+    });
+
+    test("the live deps: no page to ask (so the watchdog's default path) only for a lite client or no DevTools configured; a browser tab that cannot answer is gone", async () => {
+        const link = { restored: async () => {} } as unknown as Link;
+        const deps = (s: Partial<Session>) => liveDropDeps(s as Session, link, () => {});
+        const saved = process.env.SPEEDRUN_CDP_URL;
+        delete process.env.SPEEDRUN_CDP_URL;
+        const cdp = fakeCdp(BOT);
+        try {
+            expect(await deps({ client: 'lite', name: BOT, env: { CDP_URL: cdp.origin } as unknown as Session['env'] }).pageInGame()).toBeNull();
+            expect(await deps({ client: 'browser', name: BOT, env: {} as unknown as Session['env'] }).pageInGame()).toBeNull();
+            const browser = deps({ client: 'browser', name: BOT, env: { CDP_URL: cdp.origin } as unknown as Session['env'] });
+            expect(await browser.pageInGame()).toBe(true);
+            cdp.page.renderer = 'crashed';
+            expect(await browser.pageInGame()).toEqual({ gone: 'its renderer did not answer (CDP Runtime.evaluate: Target crashed)' });
+            cdp.page.tab = false;
+            expect(await browser.pageInGame()).toEqual({ gone: "no tab for the bot in Chrome's targets", absent: true });
+        } finally {
+            cdp.stop();
+            if (saved !== undefined) process.env.SPEEDRUN_CDP_URL = saved;
+        }
+    });
+});
+
+describe("a gone page reaches the recovery: the lab's renderer kill (fedora, 2026-10-24) stopped the run 'already logged out', exit 4, before any recovery", () => {
+    const BOT = 'scored';
+    const gone = { gone: 'its renderer did not answer (CDP Runtime.evaluate: Target crashed)' };
+    const at = (verdict: 'logout' | 'relaunch' | 'stop', msSinceAdvance: number) => ({ verdict, msSinceAdvance });
+
+    test('the link reads a gone page as out of the world; an answer passes through', async () => {
+        for (const [p, want] of [[gone, false], [true, true], [false, false], [null, null]] as const) expect(await linkPage(async () => p)()).toBe(want);
+    });
+
+    test('the watchdog never logs out a gone page, inside the hold window or past it; a relaunch only past it', async () => {
+        const read = async () => gone;
+        for (const ms of [400, 60_000, PAGE_HOLD_MS + 60_000]) {
+            expect(await recoveryStandDown(at('logout', ms), read, () => false)).toMatch(/^the page is gone \(its renderer did not answer .*\): the drop recovery closes what is left of its tab/);
+            expect(await recoveryStandDown(at('stop', ms), read, () => false)).not.toBeNull();
+        }
+        expect(await recoveryStandDown(at('relaunch', 60_000), read, () => false)).not.toBeNull();
+        expect(await recoveryStandDown(at('relaunch', PAGE_HOLD_MS + 1), read, () => false)).toBeNull();
+    });
+
+    test('an answering page keeps the stand-down it had: an out page held only while a recovery runs, an in-game one by the page hold', async () => {
+        expect(await recoveryStandDown(at('logout', 20_000), async () => false, () => true)).toBe('the page is out of the world: the running drop recovery relogs it in page');
+        expect(await recoveryStandDown(at('logout', 20_000), async () => false, () => false)).toBeNull();
+        expect(await recoveryStandDown(at('logout', 20_000), async () => true, () => false)).toMatch(/^the page still says in game/);
+        expect(await recoveryStandDown(at('logout', PAGE_HOLD_MS + 1), async () => true, () => false)).toBeNull();
+    });
+
+    test("end to end on the kill's shape: our gateway reads the bot dead, the watchdog's logout is held on one bounded read, expectInWorld stays on, the link declares the drop, and the recovery relogs on a fresh tab", async () => {
+        const cdp = fakeCdp(BOT);
+        try {
+            cdp.page.renderer = 'hung';
+            // The renderer's gateway socket closed with it: our gateway reads the bot dead 0.4 s after its last tick.
+            const sdk = Object.assign(new FakeSdk(baseState({ tick: 53 })), { checkBotStatus: async () => ({ status: 'dead', inGame: false }) });
+            const now = Date.now();
+            const session = {
+                name: BOT, client: 'browser', env: { BOT_USERNAME: BOT, PASSWORD: 'x' }, sdk, bot: null, sessionId: 1, launchId: 1, expectInWorld: true, child: null, childExit: null,
+                lastInWorldTick: 53, lastAdvanceAt: now - 400, period: new TickPeriod(), launchedAt: now - 60_000, ticksSinceProgress: 0, watchdog: null, logPath: '/dev/null',
+            } as unknown as Session;
+            const read = () => readPage(cdp.origin, BOT, 150);
+            const sent: string[] = [];
+            const events: WatchdogEvent[] = [];
+            const out: LogoutResult = { ok: true, clickTick: 53, lastInWorldTick: 53, latencyTicks: 0, wallMs: 300 };
+            const wd = startWatchdog(session, {
+                timer: false, staleTicks: 27, onEvent: e => events.push(e),
+                actions: {
+                    logout: async s => (sent.push('logout'), (s.expectInWorld = false), out),
+                    login: async () => void sent.push('login'),
+                    relaunch: async () => void sent.push('relaunch'),
+                    reconnect: async () => void sent.push('reconnect'),
+                },
+                standDown: a => recoveryStandDown(a, read, () => false),
+            });
+            const t0 = Date.now();
+            await wd.check();
+            // One bounded read (150 ms here, PAGE_READ_TIMEOUT_MS live), never the old 5 s CDP wait.
+            expect(Date.now() - t0).toBeLessThan(1_000);
+            expect(sent).toEqual([]);
+            expect(session.expectInWorld).toBe(true);
+            expect(events.map(e => e.verdict)).toEqual(['wait']);
+            expect(events[0]!.reason).toMatch(/^logout held: the page is gone \(its renderer did not answer \(CDP Runtime\.evaluate: no reply in 150 ms\)\)/);
+            wd.stop();
+
+            // The tick has stood past PAGE_CHECK_TICKS: the link asks the page and declares the drop, before its stale bound.
+            session.lastAdvanceAt = Date.now() - 2_000;
+            const link = sessionLink(session, { pageInGame: linkPage(read), pollMs: 5 });
+            expect(await link.lost(new AbortController().signal)).toBe('page out of game');
+
+            // And the recovery that runResumable then runs takes the close-first route.
+            const budget = new RelogBudget(dir());
+            const w = world({ page: true, advanced: () => false, backAt: Infinity });
+            w.deps.pageInGame = read;
+            w.deps.closeTab = async () => `${(await closeBotTabs(cdp.origin, BOT, 1_000, { blankIfLast: true })).closed} tab(s) closed`;
+            const r = await recoverDrop(budget, w.deps, 'page out of game', AT);
+            expect(r.outcome).toBe('relogged');
+            expect(named(w.calls)).toEqual(['pause watchdog', 'relaunch']);
+            expect(cdp.page.closed).toEqual(['t1']);
+            expect(budget.used()).toEqual({ planned: 0, unplanned: 1 });
+        } finally {
+            cdp.stop();
+        }
     });
 });
 
