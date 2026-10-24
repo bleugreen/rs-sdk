@@ -63,10 +63,13 @@ regularly hides the damage. Before measuring anywhere with aggressive NPCs,
 - **Time actions from chat, not xp.** In the lite client's published state a
   script's game message ("You pick the...", "You fail to pick...") appears one
   tick before the matching xp update.
-- **Round trip depends on the tick rate.** At 300 ms (`NODE_TICKRATE=300`, the
-  production rate) a reply to tick T's state lands in T+1; at 100 ms the round
-  trip is about 2 ticks. Logic that re-sends "did my click take?" after one
-  tick is only correct at 300 ms, so measure at 300 ms.
+- **Round trip depends on the tick rate.** At the demo's rate (400 ms since
+  2026-10-22, `lab.sh`'s default `NODE_TICKRATE`; earlier measurements used 300)
+  a reply to tick T's state lands in T+1; at 100 ms the round trip is about 2
+  ticks. Logic that re-sends "did my click take?" after one tick is only correct
+  at the production rate, so measure at 400 ms.
+- **Filming a lab run** (video, a per-action source-line trace, the world feed):
+  `film/film.sh`, documented in `film/README.md`.
 - `state.opFeedback.opRejectedCount` counts server `UNSET_MAP_FLAG` while the
   player stands still. One op click can count twice (the routing move packet
   and the op packet).
