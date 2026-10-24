@@ -216,9 +216,11 @@ async function carryPoison(session: Session): Promise<void> {
 const stat = (xs: number[]) => (xs.length ? { mean: +(xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(1), min: Math.min(...xs), max: Math.max(...xs) } : null);
 
 await labMain(lab);
-if (poisonWatch) {
-    poisonWatch.stop();
-    result('S16_poison', poisonWatch.summary());
+// Set inside prepare(), which the narrowing at the declaration does not see.
+const watched = poisonWatch as PoisonWatch | null;
+if (watched) {
+    watched.stop();
+    result('S16_poison', watched.summary());
 }
 
 if (fights.length) {
