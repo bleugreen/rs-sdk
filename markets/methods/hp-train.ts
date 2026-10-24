@@ -21,7 +21,7 @@ import { crossingSettings, crossToKandarin, westOfTaverley, type Traveller } fro
 import { startLevelUpWatcher } from '../../speedrun/lib/levelup';
 import { isEastOfTollGate, travelTo, type Tile } from '../../speedrun/lib/toll-gate';
 import { waitTicks, waitUntil } from '../../speedrun/lib/wait';
-import { BRONZE_SWORD, chooseSite, chooseStyle, kebabsFor, shopPays, type SiteChoice, marksFor, MELEE_PRAYERS, prayersFor, reached, SCIMITARS, TARGETS, weaponPlan, type MeleePrayer, type Target, type Train, type Weapon } from './hp-model';
+import { BRONZE_SWORD, chooseSite, chooseStyle, kebabsFor, shopPays, marksFor, MELEE_PRAYERS, prayersFor, reached, SCIMITARS, TARGETS, weaponPlan, type MeleePrayer, type Target, type Train, type Weapon } from './hp-model';
 import { cheb, commonOptions, here, numberFlag, runProbe, type Args, type CommonOptions, type ProbeContext, type ProbeSpec } from './probe-sampler';
 
 interface Box {
