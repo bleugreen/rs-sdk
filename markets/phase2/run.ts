@@ -47,7 +47,6 @@ import { DemoMarket, type MarketQuote } from '../lib/market.ts';
 import { role as coinsRole } from '../../speedrun/helpers/coins';
 import { chooseSite } from '../methods/hp-model.ts';
 import { TargetClaims, type SiteId } from '../methods/hp-train.ts';
-import { role as pickpocketRole, TARGET_LOG } from '../methods/pickpocket.ts';
 import { numberFlag, parseArgs } from '../methods/probe-sampler.ts';
 import { debugNameOf } from '../methods/trips.ts';
 import { costOf } from '../methods/value.ts';
@@ -57,7 +56,7 @@ import { HpSites } from './hp-sites.ts';
 import { accountLine, COINS_ID, totalsLine, type AccountSnapshot, type Stack, type Valuer } from './ledger.ts';
 import { aliasOf, nameScrubber, scrubRecord, unlistedAccounts } from './names.ts';
 import { NEEDS, nextFallback, parsePlan, PlanError, roleOptions, SALE_ROUTE, sequenceFor, type AccountPlan, type MethodId, type Plan } from './plan.ts';
-import { holdRates, KnightsRamp } from './ramp.ts';
+import { KnightsRamp, rateBetween } from './ramp.ts';
 import { runRoleUntil, runStage, stageDone, type StageCtx, type StageHooks } from './stages.ts';
 import { DEFAULT_STALL, StallWatch, type StallPolicy } from './stall.ts';
 
@@ -79,8 +78,6 @@ const READINGS_KEEP_MS = 3 * 3_600_000;
  * later step's crowding loss. In the lab run, step 1 was measured mid-climb and its median came out 12% under step 2's.
  */
 const RAMP_THIEVING = 99;
-/** pickpocket.ts's log line on a change of target, as the role's events arrive here. */
-const TARGET_EVENT = `${pickpocketRole.name}: ${TARGET_LOG}`;
 
 interface Reading {
     at: number;
@@ -120,10 +117,6 @@ class Worker {
     hpQueuedAt: number | null = null;
     hpLogged = false;
     readonly stall = new StallWatch();
-    /** When the account last reached its method (null off it): the ramp's warm-up counts from here. */
-    methodAt: number | null = null;
-    /** The npc the method works now, from the role's target line. */
-    targetIndex: number | null = null;
     /** First tick of this session and when it was seen: the session's observed ms a tick. */
     private tick0: { tick: number; at: number } | null = null;
 
@@ -368,8 +361,6 @@ export class Runner {
         off();
         w.ctl = null;
         w.stage = 'out';
-        w.methodAt = null;
-        w.targetIndex = null;
         if (failure) throw failure;
     }
 
@@ -409,10 +400,7 @@ export class Runner {
                 signal: stageCtl.signal,
                 roleState: w.roleState,
                 options: roleOptions({ ...w.plan, method: w.method }, this.plan),
-                event: (m, d) => {
-                    if (m === TARGET_EVENT && typeof d?.index === 'number') w.targetIndex = d.index;
-                    this.event(w, m, d);
-                },
+                event: (m, d) => this.event(w, m, d),
                 reportBank: items => {
                     w.bank = items;
                     w.bankTick = sdk.getState()?.tick ?? w.bankTick;
@@ -421,9 +409,6 @@ export class Runner {
             };
             const st = sequenceFor({ method: w.method, hp: w.plan.hp }, this.plan).find(s => !stageDone(s, sdk.getState()!, x.hooks, w.roleState))!;
             if (st.do !== w.stage) this.event(w, 'stage', { to: st.do, ...('to' in st ? { level: st.to } : {}) }, true);
-            if (st.do !== 'method') w.methodAt = null;
-            else if (w.stage !== 'method') w.methodAt = Date.now();
-            if (st.do !== 'method') w.targetIndex = null;
             w.stage = st.do;
             if (st.do === 'admission') w.arrivedAdmission ??= Date.now();
             w.stageCtl = stageCtl;
@@ -527,9 +512,8 @@ export class Runner {
             this.ledger({ kind: 'admit', account: w.alias, step: r.stepNumber, admitted: admitted.length });
             this.event(w, 'admitted to the knights', { step: r.stepNumber }, true);
         }
-        const warmupMs = this.plan.ramp!.warmupMinutes * 60_000;
         if (r.phase === 'admitting') {
-            const working = admitted.filter(w => w.stage === 'method' && w.readings.length > 0 && w.thieving >= RAMP_THIEVING && w.methodAt !== null && now - w.methodAt >= warmupMs).length;
+            const working = admitted.filter(w => w.stage === 'method' && w.readings.length > 0 && w.thieving >= RAMP_THIEVING).length;
             if (r.update(now, admitted.length >= r.admitted() && working === admitted.length)) {
                 this.ledger({ kind: 'ramp-hold', step: r.stepNumber, logins: admitted.length, working, holdMinutes: this.plan.ramp!.holdMinutes });
                 this.event(null, 'ramp hold', { step: r.stepNumber, logins: admitted.length, working }, true);
@@ -538,15 +522,13 @@ export class Runner {
         if (!r.holdDue(now)) return;
         const start = r.holdStart!;
         const measured = admitted.filter(w => w.admittedAt! <= start);
-        const perLogin = holdRates(
-            measured.map(w => ({ alias: w.alias, methodAt: w.methodAt, readings: w.readings })),
-            start,
-            warmupMs,
-            (this.plan.ramp!.holdMinutes * 60_000) / 2
-        );
-        const d = r.evaluate(perLogin, now);
-        this.ledger({ ...d, holdStart: new Date(d.holdStart).toISOString(), holdEnd: new Date(d.holdEnd).toISOString(), perHour: Math.round(d.median * (3_600_000 / this.tickMs)), loginsMeasured: d.rates.length });
-        this.event(null, `ramp step ${d.step}: ${d.action}`, { reason: d.reason, median: d.median, incumbents: d.incumbents, logins: d.logins, measured: d.rates.length }, true);
+        const rates = measured.flatMap(w => {
+            const v = rateBetween(w.readings.find(x => x.at >= start), w.readings.at(-1));
+            return v === null ? [] : [v];
+        });
+        const d = r.evaluate(rates, now);
+        this.ledger({ ...d, holdStart: new Date(d.holdStart).toISOString(), holdEnd: new Date(d.holdEnd).toISOString(), perHour: Math.round(d.median * (3_600_000 / this.tickMs)), loginsMeasured: rates.length });
+        this.event(null, `ramp step ${d.step}: ${d.action}`, { reason: d.reason, median: d.median, logins: d.logins, measured: rates.length }, true);
         if (d.action !== 'stop') return;
         for (const w of knights.filter(k => k.admittedAt === null)) {
             const m = nextFallback(this.rampFallback, this.plan.ramp!.fallbackMix);
@@ -627,20 +609,7 @@ export class Runner {
         const msPerTick = w.msPerTick(s);
         if (w.nextLedgerTick >= 0 && s.tick < w.nextLedgerTick) return;
         w.nextLedgerTick = s.tick + this.plan.ledger.everyTicks;
-        const npc = w.stage === 'method' && w.targetIndex !== null ? s.nearbyNpcs.find(n => n.index === w.targetIndex) : undefined;
-        const snap: AccountSnapshot = {
-            account: w.alias,
-            method: w.method,
-            stage: w.stage,
-            session: w.sessionNo,
-            tick: s.tick,
-            carried: stacks(s.inventory),
-            bank: w.bank,
-            bankTick: w.bankTick,
-            msPerTick,
-            pos: [s.player.worldX, s.player.worldZ],
-            target: npc ? { index: npc.index, x: npc.tileX ?? npc.x, z: npc.tileZ ?? npc.z } : null
-        };
+        const snap: AccountSnapshot = { account: w.alias, method: w.method, stage: w.stage, session: w.sessionNo, tick: s.tick, carried: stacks(s.inventory), bank: w.bank, bankTick: w.bankTick, msPerTick };
         w.latest = snap;
         const line = accountLine(snap, this.valuer, new Date());
         this.ledger(line as unknown as Record<string, unknown>);
