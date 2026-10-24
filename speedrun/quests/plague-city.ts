@@ -432,17 +432,54 @@ async function locMove(ctx: Ctx, seg: Letter, what: string, loc: LocQuery, arriv
  */
 export const HOUSE_DOORS = [{ x: 2570, z: 3333 }, { x: 2574, z: 3333 }] as const;
 
-/** Open each house door between SCORED and x `toX` (a door's wall is on its tile's east edge). */
+/**
+ * The house doors crossed walking from x `from` to x `to`, in walking order. A door's wall is on its
+ * tile's east edge (loc 1530 rotation 2 at 2570,3333; the west wall is loc 1602 rotation 2 along x
+ * 2570), so the door tile itself is on the garden side.
+ */
+export function doorsBetween(from: number, to: number): Array<{ x: number; z: number }> {
+    const doors = HOUSE_DOORS.filter(d => Math.min(from, to) <= d.x && d.x < Math.max(from, to));
+    return from < to ? doors : [...doors].reverse();
+}
+
+/** Open each house door between SCORED and x `toX`. */
 async function houseDoors(ctx: Ctx, seg: Letter, toX: number): Promise<void> {
     const sdk = sdkOf(ctx);
-    const x = pos(sdk).x;
-    const doors = HOUSE_DOORS.filter(d => Math.min(x, toX) <= d.x && d.x < Math.max(x, toX));
-    for (const d of x < toX ? doors : [...doors].reverse()) {
+    for (const d of doorsBetween(pos(sdk).x, toX)) {
         const t0 = currentTick(sdk);
         const r = await openDoor(sdk, d.x, d.z);
         if (!r.ok) fail(seg, `the house door at ${d.x},${d.z} did not open`, sdk);
         if (r.ticks) note(ctx, seg, { loc: `the house door ${d.x},${d.z}`, clickToOpen: currentTick(sdk) - t0, resends: r.resends });
     }
+}
+
+/** Edmond as a talk picks him: the one nearest his spawn. */
+export const edmondOf = (s: BotWorldState) => findNpc(s, /^edmond$/i, EDMOND_AT);
+
+/** How many more times toEdmond looks for Edmond when he has moved off the tile it walked to. */
+export const EDMOND_REFINDS = 2;
+
+/**
+ * Before a talk to Edmond (B, E, Y): open the house doors between SCORED and his live tile, then run
+ * to within 1 of it. Edmond wanders 5 tiles from his spawn (edmond.npc sets no wanderrange, so
+ * NpcType's default), which takes him into Alrena's room through the west door while it stands open.
+ * The door then shuts on its own, the client finds no route to him and every Talk-to click goes
+ * unrouted: the live B of run-20261024-022859 failed so, 'no dialogue opened' against the door at
+ * (2570,3333) after 48 ticks, and the lab reproduces it with Edmond shut in (2 of 2).
+ */
+async function toEdmond(ctx: Ctx, seg: Letter): Promise<void> {
+    const sdk = sdkOf(ctx);
+    for (let i = 0; i <= EDMOND_REFINDS; i++) {
+        const e = await waitForNpc(sdk, /^edmond$/i, 10, EDMOND_AT);
+        if (!e) fail(seg, 'Edmond is not in sight', sdk);
+        await houseDoors(ctx, seg, e.x);
+        const beside: Area = { x: e.x, z: e.z, tol: 1 };
+        if (inArea(sdk, beside)) return;
+        const r = await runTo(sdk, beside, { bot: ctx.bot });
+        const now = edmondOf(sdk.getState()!);
+        if (r.ok && now && chebyshev(now, pos(sdk)) <= 1) return;
+    }
+    note(ctx, seg, { edmond: `moved off each tile walked to (${EDMOND_REFINDS + 1} finds); talking from here` });
 }
 
 /** C: the picture from its ground spawn in Edmond's house (the run opens the inner door). */
@@ -793,6 +830,7 @@ async function reward(ctx: Ctx, opts: Options | undefined): Promise<void> {
     const sdk = sdkOf(ctx);
     if (!complete(sdk.getState()!)) {
         await go(ctx, 'Y', EDMOND_STAND, 'Edmond');
+        await toEdmond(ctx, 'Y');
         await talk(ctx, 'Y', opts, { who: 'Edmond (the reward)', npc: /^edmond$/i, near: EDMOND_AT, shape: SHAPES.reward });
         await waitOrThrow(sdk, s => complete(s) && holds(s, ITEM.scroll), 10, `${stepId}:Y Plague City complete with the magic scroll`);
     }
@@ -901,7 +939,7 @@ export function steps(opts?: Options) {
             // At stage 0 B needs A's kit: the resume walk takes the latest segment that can start and must not skip A.
             preconditions: allOf(east, notStarted, kitHeld, slots('B')),
             run: async ctx => {
-                await go(ctx, 'B', { ...EDMOND_AT, tol: 3 }, 'Edmond');
+                await toEdmond(ctx, 'B');
                 await talk(ctx, 'B', opts, { who: 'Edmond (the start)', npc: /^edmond$/i, near: EDMOND_AT, choices: CHOICES.edmondStart, shape: SHAPES.edmondStart, until: started });
             },
             postconditions: isStarted,
@@ -931,7 +969,7 @@ export function steps(opts?: Options) {
             letter: 'E', label: 'edmond-mask', logoutSafe: true,
             preconditions: allOf(east, isStarted, maskHeld),
             run: async ctx => {
-                await houseDoors(ctx, 'E', EDMOND_AT.x);
+                await toEdmond(ctx, 'E');
                 await talk(ctx, 'E', opts, { who: 'Edmond (the gas mask)', npc: /^edmond$/i, near: EDMOND_AT, shape: SHAPES.edmondMask });
             },
             done: o => atLeast(o, 'started_mud_patch'),
