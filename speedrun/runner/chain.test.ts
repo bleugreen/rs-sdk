@@ -20,8 +20,9 @@ import { sleep, waitUntil } from '../lib/wait';
 import { MANIFEST } from '../tools/slot-ledger';
 import * as cooking from '../skills/cooking';
 import * as mining from '../skills/mining';
+import * as woodcutting from '../skills/woodcutting';
 import {
-    ALTERNATIVES, anvilAnnounce, CANNON_ROWS, cueAround, cueMuleRows, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleScope, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
+    ALTERNATIVES, anvilAnnounce, CANNON_ROWS, cueAround, cueMuleRows, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleScope, s07Woodcutting, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
     whenNeeded, withCue, askedOnTrade, h12oLogin, h12oLoginRefusal, h12oTopUp, H12O_LOGIN, type ChainStep, type CueSink, type RunConfig,
 } from './chain';
 import { CUE_BEACONS, CueKeeper, exitStopIsFinal, prepareCueDir, RunCues } from './cue-keeper';
@@ -161,6 +162,35 @@ describe('the chain', () => {
         await expect(h11.run(ctxFor(sdk))).rejects.toThrow('did not come into sight');
         expect(r.opened).toEqual([{ scope: { step: 'S14', family: 'cannon' }, fresh: false }]);
         expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toEqual([]);
+    });
+
+    // rs/642: attempt 3's willow band probed 15/20, ran plain, neither buried nor loaded, and stopped on a slot count that held its own bones.
+    test("S07's oak and willow bands run the knife with bury, the normal band plain; the chain's willow band admits attempt 3's census at the stand", () => {
+        const group: RunConfig = { ...CONFIG, bones: { group: ['cairn_b01', 'cairn_b02', 'cairn_b03', 'cairn_b04'] } };
+        for (const cfg of [CONFIG, group]) {
+            const opts = s07Woodcutting(cfg, 'run-x');
+            expect(['normal', 'oak', 'willow'].map(t => woodcutting.bandTechnique(opts, t as woodcutting.Tree))).toEqual(['plain', 'knife', 'knife']);
+            expect(woodcutting.bandParams(opts, 'oak', 73)('knife').bury).toBe(true);
+            expect(woodcutting.bandParams(opts, 'willow', 99)('knife').bury).toBe(true);
+            expect(opts.prayerTo).toBe(99);
+        }
+        expect(s07Woodcutting(group, 'run-x').boneSession).toBe('run-x.S07.bone');
+        expect(s07Woodcutting(CONFIG, 'run-x')).not.toHaveProperty('boneSession');
+        const item = (slot: number, name: string) => ({ slot, id: 100 + slot, name, count: 1, optionsWithIndex: [] });
+        const census = baseState({
+            player: { worldX: 2920, worldZ: 3406 } as PlayerState,
+            skills: [
+                { name: 'Woodcutting', level: 73, baseLevel: 73, experience: 0 },
+                { name: 'Fletching', level: 1, baseLevel: 1, experience: 0 },
+                { name: 'Prayer', level: 53, baseLevel: 53, experience: 0 }
+            ],
+            inventory: [...['Rune axe', 'Knife', 'Logs', 'Oak logs'], ...Array.from({ length: 23 }, () => 'Dragon bones')].map((n, i) => item(i, n))
+        });
+        expect(census.inventory).toHaveLength(27);
+        for (const cfg of [CONFIG, group]) {
+            const willow = buildChain(cfg, { cues: recorder().cues }).find(s => s.id === 'S07' && s.name === 'woodcutting:willow-73-99')!;
+            expect(willow.preconditions(census, {})).toBe(true);
+        }
     });
 
     test('the steps keep their modules: S09 drops the travel steps, S07 the module walk, S17 the walk to the pipe', () => {

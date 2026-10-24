@@ -536,6 +536,11 @@ export function groupLoadsDone(statuses: readonly BoneStatus[], group: readonly 
     return sessionStatuses(statuses, group, session).reduce((n, s) => n + (Number.isFinite(s.trades) ? s.trades : 0), 0);
 }
 
+/** The group's load count in the session (its givers' `trades` option, published as `loads`), or null when no status there carries one. */
+export function groupLoads(statuses: readonly BoneStatus[], group: readonly string[], session?: string): number | null {
+    return sessionStatuses(statuses, group, session).map(s => s.loads).find((l): l is number => typeof l === 'number' && Number.isFinite(l)) ?? null;
+}
+
 /**
  * The group's server: the one giver of `group` that keeps a request standing with the scored
  * account and that the scored side trades next (altar-cue.ts turnOrder). The giver already
@@ -552,7 +557,7 @@ export function boneServer(statuses: readonly BoneStatus[], group: readonly stri
     const current = sessionStatuses(statuses, group, session);
     const done = current.reduce((n, s) => n + s.trades, 0);
     // A status without `loads` or `final` (written before they existed, or a fixture) sets neither.
-    const loads = current.map(s => s.loads).find((l): l is number => typeof l === 'number' && Number.isFinite(l)) ?? null;
+    const loads = groupLoads(statuses, group, session);
     if (loads !== null && done >= loads) return undefined;
     const last = loads !== null && done === loads - 1;
     const withFinal = loads !== null && current.some(s => s.final === true);
