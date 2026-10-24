@@ -5,7 +5,9 @@
 //
 //   LAB_HELPERS="<r1> <r2>" speedrun/lab/lab.sh <smith> speedrun/lab/smith-give-lab.ts:--receivers=<r1>,<r2>
 //
-// Account names must be cairn_ shaped (the role's receiver check). Passes when every receiver
+// Account names must be cairn_ shaped (the role's receiver check), which bots/create-bot.ts refuses:
+// create each under an alphanumeric name and rename its directory and username. Use fresh names (the
+// lab engine keeps a bank across runs). Passes when every receiver
 // gained exactly one of each piece by obj id and nothing else, the smith's bank holds no pieces
 // and no bars beyond what it started with less the 24, and the role reports no uncertain trade.
 import { BANKS } from '../helpers/buyer';
@@ -13,7 +15,7 @@ import { memoryRoleState } from '../helpers/role';
 import { pathTiles } from '../lib/paths';
 import { role, PIECES, ADAMANT_MELEE, BAR_OBJ } from '../helpers/smith-give';
 import { openSession, type Session } from '../lib/session';
-import { receiveFrom, type ReceiveResult } from '../lib/trade';
+import { receiveFrom, sameName, type ReceiveResult } from '../lib/trade';
 import { waitTicks } from '../lib/wait';
 import { arg, botArg, result } from './common';
 import { clearInventory, give, leaveTutorial, mustTele, setStats, VARROCK_WEST_BANK } from './setup';
@@ -48,9 +50,17 @@ const before = receivers.map(r => byId(r.sdk.getInventory()));
 const ids = [...ADAMANT_MELEE.map(k => PIECES[k]!.obj), BAR_OBJ.adamantite_bar!];
 
 // Each stand-in accepts the smith's trade whenever it comes (the smith smiths first, a few minutes).
-const received: Promise<ReceiveResult | null>[] = receivers.map(r =>
-    r.sdk.waitForTradeRequest({ from: smith.name, timeout: 20 * 60_000 }).then(req => (req ? receiveFrom(r.sdk, smith.name, { openMaxTicks: 50 }) : null))
-);
+// The request's sender is the display name ("Cairn lsg" for cairn_lsg), which waitForTradeRequest's
+// `from` substring never matches, so the sender is checked with sameName instead.
+async function standIn(r: Session): Promise<ReceiveResult | null> {
+    const until = Date.now() + 20 * 60_000;
+    while (Date.now() < until) {
+        const req = await r.sdk.waitForTradeRequest({ timeout: until - Date.now() });
+        if (req && sameName(req, smith.name)) return receiveFrom(r.sdk, smith.name, { openMaxTicks: 50 });
+    }
+    return null;
+}
+const received = receivers.map(standIn);
 
 const banks: { id: number; name: string; count: number }[][] = [];
 const t0 = smith.sdk.getState()!.tick;
