@@ -97,7 +97,8 @@ export interface Site {
 /** S07's chopping tiles (woodcutting.md, bones-placement.md section 3): the giver stands on the tile beside. */
 export const S07_SITES: Site[] = [
     { receiver: { x: 2914, z: 3494 }, giver: { x: 2913, z: 3494 } }, // Taverley oaks
-    { receiver: { x: 2920, z: 3406 }, giver: { x: 2920, z: 3407 } } // Taverley willows
+    // Taverley willows: (2920,3407) is inside a willow and can't be stood on (attempt 2); players don't block players.
+    { receiver: { x: 2920, z: 3406 }, giver: { x: 2920, z: 3405 } }
 ];
 
 /** How far (Chebyshev) a cue's site may be from a site's receiver tile and still name it: woodcutting.ts NEAR, the radius a band starts within. */
@@ -658,10 +659,8 @@ export class BoneGiver {
     private readonly flagged: FlagReader = (x, z, mask) => !!this.isFlagged?.(x, z, pos(this.s).level, mask);
     /** acceptReturn: a returned load waits in the pack; bank it on the next cycle even though it is a full load. */
     private mustBank = false;
-    /** Date.now() at the role's start: a cue written before it counts for the site only on a resume (onCue). */
+    /** Date.now() at the role's start: a cue written before it counts only on a resume (onCue). */
     private readonly startedMs = Date.now();
-    /** Whether the current cue's site counts (onCue): false for a cue left on disk from before our start, in another session. */
-    private cueSiteCounts = false;
     /** Failed walks in a row onto the named site (by aim key); NAMED_TRAVEL_TRIES of them and the giver stays. */
     private refused = { key: '', n: 0, error: '' };
 
@@ -678,11 +677,15 @@ export class BoneGiver {
 
     /** The first cue: a relaunch within the same scored session carries on from the trades its last process counted. */
     onCue(cue: Cue): void {
+        // cue.json outlives a launch: one written before we started (a previous attempt's final stop, a
+        // rehearsal's willow-band cue) is no cue at all, its site, stop and receiver alike, unless it is the
+        // session our own last status counted in (a relaunch mid-session). The giver holds until a cue counts.
+        if (!(cue.ms >= this.startedMs || (!!this.prior && this.prior.session === cue.session))) {
+            this.ctx.log('cue ignored: written before this giver started, in another session', { session: cue.session, seq: cue.seq, stop: !!cue.stop });
+            return;
+        }
         const fresh = this.cue?.session !== cue.session;
         this.cue = cue;
-        // cue.json outlives a launch: one written before we started (a previous attempt's, a rehearsal's)
-        // moves no one, unless it is the session our own last status counted in (a relaunch mid-session).
-        this.cueSiteCounts = cue.ms >= this.startedMs || (!!this.prior && this.prior.session === cue.session);
         if (!this.resumeChecked) {
             this.resumeChecked = true;
             const p = this.prior;
@@ -697,15 +700,15 @@ export class BoneGiver {
 
     /**
      * Where the standing mode waits this cycle. 'named': the site the cue names (namedSite), held with
-     * no timeout. 'hold': before any cue that counts (onCue), or on a stop: the current site, held with
+     * no timeout. 'hold': before any cue (one that counts, onCue), or on a stop: the current site, held with
      * no timeout, since there is no receiver to find and the stop stands the giver down. 'rotate': a cue
      * naming none of our sites: the next site after siteWaitTicks without the receiver, as before sites
      * were named. `key` changes exactly when the aim does: a wait on one aim ends when it changes.
      */
     private aim(): { index: number; how: 'named' | 'hold' | 'rotate'; key: string } {
         const cue = this.cue;
-        const named = cue && this.cueSiteCounts ? namedSite(this.o.sites, cue) : null;
-        const how = named !== null ? 'named' : !cue || !this.cueSiteCounts || cue.stop ? 'hold' : 'rotate';
+        const named = namedSite(this.o.sites, cue);
+        const how = named !== null ? 'named' : !cue || cue.stop ? 'hold' : 'rotate';
         const index = named ?? this.site;
         return { index, how, key: `${how}:${index}` };
     }

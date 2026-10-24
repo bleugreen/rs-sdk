@@ -115,7 +115,7 @@ describe('a group of bone givers takes turns (S07 b01-b04)', () => {
         writeFileSync(join(dir, 'bones-cairn_b02.json'), JSON.stringify(st('cairn_b02', 'restock', null, { trades: 3, session: 's1' })));
         const logs: string[] = [];
         const ctx = (account: string) => ({ account, options: { group: GROUP, cueDir: dir, scope: { step: 'S07', family: 'bone' } }, sdk: { getState: () => null }, log: (m: string) => logs.push(m) }) as unknown as RoleContext;
-        const cue = (session: string) => ({ session }) as unknown as Cue;
+        const cue = (session: string) => ({ session, ms: Date.now() }) as unknown as Cue;
         const trades = (g: BoneGiver) => (g as unknown as { trades: number }).trades;
         const same = new BoneGiver(ctx('cairn_b02'));
         same.onCue(cue('s1'));
@@ -818,6 +818,9 @@ describe("the S07 cue names SCORED's site (rs/635): the givers go there and wait
         const stale = { ...scored(dir, 'attempt-3.S07.bone')(WILLOW.receiver), ms: Date.now() - 60_000 };
         const r = rig({ dir, prior: { session: 'attempt-2.S07.bone' } });
         r.g.onCue(stale);
+        // No cue at all: no site, no receiver hash to trade, no session to count in.
+        expect((r.g as unknown as { cue: unknown }).cue).toBeNull();
+        expect(r.logs.some(([m]) => m === 'cue ignored: written before this giver started, in another session')).toBe(true);
         const c = r.priv.cycle();
         expect(await ticks(r.sdk, c, 300)).toBe(false);
         expect([r.priv.site, r.priv.phase, r.walks.length]).toEqual([0, 'waiting', 0]);
@@ -836,6 +839,38 @@ describe("the S07 cue names SCORED's site (rs/635): the givers go there and wait
         expect(r2.walks).toEqual([WILLOW]);
         expect([r2.priv.site, r2.priv.phase]).toEqual([1, 'waiting']);
         expect(r2.status()).toMatchObject({ trades: 2, session: 'attempt-4.S07.bone' });
+    });
+
+    test("attempt 3's final stop left in cue.json does not end a giver of the next attempt launched before S07: it holds at the oaks, and the attempt's first cue serves it (rs/41)", async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'bone-stale-stop-'));
+        const a3 = new CueWriter(dir, 'scored', S07, 'attempt-3.S07.bone');
+        a3.write({ beacons: [{ tick: 1, ms: Date.now() - 120_000 }], turns: [], site: WILLOW.receiver });
+        a3.stop([{ tick: 2, ms: Date.now() - 60_000 }], { final: true });
+        const stop = { ...readCue(dir)!, ms: Date.now() - 60_000 };
+        expect(stop).toMatchObject({ stop: true, final: true, site: WILLOW.receiver });
+        const r = rig({ dir, prior: { session: 'attempt-3.S07.bone', phase: 'off', trades: 11 } });
+        // ...and its own last status from attempt 3 is in that session: the stop is the giver's own session, so it
+        // would count. A fresh attempt's giver keeps no such status: its prior is another session's.
+        const r4 = rig({ prior: { session: 'attempt-2.S07.bone', phase: 'off' } });
+        r4.g.onCue(stop);
+        const g4 = r4.g as unknown as { cue: Cue | null; loadsDone(): number };
+        // The run loop (`!this.cue?.stop`) goes on, and nothing of attempt 3's session counts.
+        expect(g4.cue).toBeNull();
+        expect(g4.loadsDone()).toBe(0);
+        const c = r4.priv.cycle();
+        expect(await ticks(r4.sdk, c, 300)).toBe(false);
+        expect([r4.priv.site, r4.priv.phase, r4.walks.length]).toEqual([0, 'waiting', 0]);
+        // Attempt 4's S07 opens: its first cue, written after the start, governs.
+        r4.g.onCue(scored(r4.dir, 'attempt-4.S07.bone')(OAK.receiver));
+        expect(g4.cue?.session).toBe('attempt-4.S07.bone');
+        expect(await ticks(r4.sdk, c, 3)).toBe(true);
+        expect(await ticks(r4.sdk, r4.priv.cycle(), 300)).toBe(false);
+        expect([r4.priv.site, r4.priv.phase, r4.walks.length]).toEqual([0, 'waiting', 0]);
+        expect(r4.status()).toMatchObject({ session: 'attempt-4.S07.bone', phase: 'waiting' });
+        // The same stop read by a giver whose own last status is in attempt 3's session counts: it stands down.
+        r.g.onCue(stop);
+        expect(await ticks(r.sdk, r.priv.cycle(), 3)).toBe(true);
+        expect(r.walks).toEqual([]);
     });
 
     test('a stop cue naming no site stands the giver down: no walk, no rotation', async () => {

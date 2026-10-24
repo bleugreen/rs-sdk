@@ -93,9 +93,12 @@ tiles. So a restock walks back to SCORED's current site, and a custom `sites` li
   publishing `waiting` on the old site.
 - **Before any cue** the giver holds on its current site, `sites[0]` (the oaks) at launch, with no
   timeout, because without a cue it has no receiver to find. The first cue ends the hold. A
-  `cue.json` written before the role started (a previous attempt's, a rehearsal's) counts only when
-  its session is the giver's own last status session (a relaunch mid-session). Otherwise the giver
-  treats it as no cue.
+  `cue.json` written before the role started (a previous attempt's final stop, a rehearsal's
+  willow-band cue) counts only when its session is the giver's own last status session (a relaunch
+  mid-session). Otherwise it is no cue at all: no site, no stop, no receiver. The run machine's cue
+  directory outlives an attempt, and `run.ts` clears it only once it starts, after the launcher has
+  started the givers. A mid-S07 relaunch therefore depends on the giver's status file surviving the
+  relaunch, which is the host's existing rule.
 - **A cue naming no site** (an older writer, the S18 courier's cue, or a tile far from every
   site) keeps the rotation the givers had before sites were named: `siteWaitTicks` (30) at a site
   without the receiver, then the next one.
