@@ -45,6 +45,12 @@ export interface Site {
     target: Target;
     /** True when the site is in Kandarin, past White Wolf Mountain. */
     kandarin: boolean;
+    /**
+     * Hitpoints a tick the site's spawns give back, from content: the sum over its spawns of hitpoints / respawnrate
+     * (the .npc configs; map spawns in docs/markets/hp-training.md 'Sites'). What bounds the bots one site feeds: a
+     * bot at full pace on the cows deals ~0.6 a tick (1,085 damage from HP 10 to 40 in ~1,840 ticks).
+     */
+    supply: number;
 }
 
 export const SEERS_BANK: Tile = { x: 2725, z: 3491 };
@@ -69,9 +75,11 @@ export const SITES = {
         centre: { x: 2700, z: 3722 },
         bank: SEERS_BANK,
         target: TARGETS.crab,
-        kandarin: true
+        kandarin: true,
+        // 34 x 50 / 100
+        supply: 17
     },
-    /** The Lumbridge cow pen (speedrun/lib/kandarin.ts COW_PEN). */
+    /** The Lumbridge cow pen (speedrun/lib/kandarin.ts COW_PEN): 10 cows (8 hitpoints, respawn 90). */
     cows: {
         id: 'cows',
         npc: /^cow$/i,
@@ -80,10 +88,128 @@ export const SITES = {
         centre: { x: 3253, z: 3285 },
         bank: DRAYNOR_BANK,
         target: TARGETS.cow,
-        kandarin: false
+        kandarin: false,
+        supply: 0.89
+    },
+    // The low sites below hold only targets with Attack and Strength 1 and negative bonuses (cows, goblins,
+    // chickens): they hit a Defence-1 account as seldom as the cows do, so a fresh account needs no food there.
+    /** Goblins east of the Lumbridge river, south of the cow pen: 21 (5 hitpoints, respawn 140). */
+    goblins: {
+        id: 'goblins',
+        npc: /^goblin$/i,
+        dormant: null,
+        area: { x1: 3240, z1: 3214, x2: 3266, z2: 3254 },
+        centre: { x: 3253, z: 3234 },
+        bank: DRAYNOR_BANK,
+        target: TARGETS.cow,
+        kandarin: false,
+        supply: 0.75
+    },
+    /** The Lumbridge farm's chicken pen, west of the cow pen: 9 chickens (3 hitpoints, respawn 50). */
+    chickens: {
+        id: 'chickens',
+        npc: /^chicken$/i,
+        dormant: null,
+        area: { x1: 3222, z1: 3292, x2: 3238, z2: 3304 },
+        centre: { x: 3230, z: 3298 },
+        bank: DRAYNOR_BANK,
+        target: TARGETS.cow,
+        kandarin: false,
+        supply: 0.54
+    },
+    /** The farm between Draynor and Falador: 7 cows and 6 chickens. */
+    farm: {
+        id: 'farm',
+        npc: /^(cow|chicken)$/i,
+        dormant: null,
+        area: { x1: 3012, z1: 3280, x2: 3043, z2: 3315 },
+        centre: { x: 3033, z: 3305 },
+        bank: DRAYNOR_BANK,
+        target: TARGETS.cow,
+        kandarin: false,
+        supply: 0.98
+    },
+    /** The cow field south of the Champions' Guild: 7 cows. */
+    champions: {
+        id: 'champions',
+        npc: /^cow$/i,
+        dormant: null,
+        area: { x1: 3150, z1: 3314, x2: 3200, z2: 3346 },
+        centre: { x: 3182, z: 3329 },
+        bank: DRAYNOR_BANK,
+        target: TARGETS.cow,
+        kandarin: false,
+        supply: 0.62
+    },
+    /** The cow field south of the Crafting Guild: 10 cows. */
+    crafting: {
+        id: 'crafting',
+        npc: /^cow$/i,
+        dormant: null,
+        area: { x1: 2914, z1: 3266, x2: 2939, z2: 3292 },
+        centre: { x: 2925, z: 3282 },
+        bank: DRAYNOR_BANK,
+        target: TARGETS.cow,
+        kandarin: false,
+        supply: 0.89
+    },
+    /** Goblins west of Port Sarim: 12. */
+    sarim: {
+        id: 'sarim',
+        npc: /^goblin$/i,
+        dormant: null,
+        area: { x1: 2992, z1: 3198, x2: 3007, z2: 3219 },
+        centre: { x: 2999, z: 3208 },
+        bank: DRAYNOR_BANK,
+        target: TARGETS.cow,
+        kandarin: false,
+        supply: 0.43
     }
 } satisfies Record<string, Site>;
 export type SiteId = keyof typeof SITES;
+/** The sites a fresh account trains on below the crabs, nearest to the Lumbridge spawn first. */
+export const LOW_SITES = (Object.keys(SITES) as SiteId[]).filter(id => !SITES[id].kandarin);
+
+/**
+ * One npc per bot among the accounts of one process (the phase-2 runner): a bot claims the npc it attacks and
+ * releases it on the kill, a drop, a switch to an attacker, or the end of its fight. Without it, bots sharing a site
+ * pick the same idle npc in the same tick (live, three of ours clicked one cow within a second) and all but one
+ * waste their swings until the 12-tick drop. A claim not renewed for `ttlMs` lapses, so a bot that stalls or
+ * crashes mid-fight frees its npc. Other players' fights are left to `inCombat`.
+ */
+export class TargetClaims {
+    private readonly held = new Map<number, { owner: string; at: number }>();
+    constructor(
+        private readonly ttlMs = 20_000,
+        private readonly now: () => number = Date.now
+    ) {}
+
+    heldByOther(npc: number, owner: string): boolean {
+        const c = this.held.get(npc);
+        return !!c && c.owner !== owner && this.now() - c.at < this.ttlMs;
+    }
+
+    /** Claim or renew `npc` for `owner`; false while another owner's claim is live. */
+    claim(npc: number, owner: string): boolean {
+        if (this.heldByOther(npc, owner)) return false;
+        this.held.set(npc, { owner, at: this.now() });
+        return true;
+    }
+
+    release(npc: number, owner: string): void {
+        if (this.held.get(npc)?.owner === owner) this.held.delete(npc);
+    }
+
+    releaseAll(owner: string): void {
+        for (const [npc, c] of this.held) if (c.owner === owner) this.held.delete(npc);
+    }
+
+    /** Live claims, every owner. */
+    get size(): number {
+        const t = this.now();
+        return [...this.held.values()].filter(c => t - c.at < this.ttlMs).length;
+    }
+}
 
 const COINS = /^coins$/i;
 const TOLL_RESERVE = 20;
@@ -125,6 +251,8 @@ export interface FightOptions {
     /** Prayers to keep on while points last; with `restore`, the fight ends ('prayer') when they run out. */
     prayers?: (s: BotWorldState) => readonly MeleePrayer[];
     restore?: boolean;
+    /** Shared with the process's other bots: never pick an npc another of them has claimed. */
+    claims?: { table: TargetClaims; owner: string };
     signal?: AbortSignal;
     log?: (message: string, data?: Record<string, unknown>) => void;
 }
@@ -151,6 +279,13 @@ export async function fightFor(sdk: BotSDK, bot: BotActions, site: Site, o: Figh
     const lastHitOn = new Map<number, number>();
     const t0 = sdk.getState()?.tick ?? 0;
     let target: number | null = null;
+    const claims = o.claims;
+    /** Every change of target goes through here, so the claim follows it. */
+    const setTarget = (i: number | null) => {
+        if (claims && target !== null && target !== i) claims.table.release(target, claims.owner);
+        if (claims && i !== null) claims.table.claim(i, claims.owner);
+        target = i;
+    };
     let targetSince = 0;
     let lastClick = -100;
     let lastEat = -100;
@@ -227,18 +362,24 @@ export async function fightFor(sdk: BotSDK, bot: BotActions, site: Site, o: Figh
             st.maxAttackers = Math.max(st.maxAttackers, attackers.length);
             let cur = live(target);
             if (cur && attackers.length && !attackers.some(a => a.index === cur!.index)) {
-                target = null; // switch to a crab that is hitting us
+                setTarget(null); // switch to a crab that is hitting us
+                cur = undefined;
+            }
+            // a claim that lapsed (a stall past its ttl) and went to another bot: leave the npc to it
+            if (cur && claims && !claims.table.claim(cur.index, claims.owner)) {
+                o.log?.('lost claim', { index: cur.index });
+                target = null;
                 cur = undefined;
             }
             if (target !== null && !cur) {
                 st.kills++;
-                target = null;
+                setTarget(null);
                 if (o.bones?.(s) && lastTargetTile) st.bonesBuried += await lootAndBury(sdk, bot, lastTargetTile);
                 if (o.onKill) await o.onKill(s);
             } else if (cur && !attackers.some(a => a.index === cur!.index) && t - Math.max(lastHitOn.get(cur.index) ?? -1, targetSince) > 12) {
                 banned.set(cur.index, t + 50);
                 o.log?.('dropped target', { index: cur.index, at: [cur.x, cur.z] });
-                target = null;
+                setTarget(null);
                 cur = undefined;
             }
             if (cur) {
@@ -250,11 +391,13 @@ export async function fightFor(sdk: BotSDK, bot: BotActions, site: Site, o: Figh
                 }
                 continue;
             }
-            const free = (n: NearbyNpc) => site.npc.test(n.name) && n.hp !== 0 && attackOp(n) !== undefined && n.reachable !== false && (banned.get(n.index) ?? -1) < t && inBox(site.area, { x: n.tileX ?? n.x, z: n.tileZ ?? n.z });
+            const free = (n: NearbyNpc) =>
+                site.npc.test(n.name) && n.hp !== 0 && attackOp(n) !== undefined && n.reachable !== false && (banned.get(n.index) ?? -1) < t && inBox(site.area, { x: n.tileX ?? n.x, z: n.tileZ ?? n.z }) && !claims?.table.heldByOther(n.index, claims.owner);
             const onMe = attackers.find(n => attackOp(n) !== undefined) ?? s.nearbyNpcs.filter(n => free(n) && n.inCombat && n.distance <= 2).sort((a, b) => a.distance - b.distance)[0];
             const next = onMe ?? s.nearbyNpcs.filter(n => free(n) && !n.inCombat).sort((a, b) => a.distance - b.distance)[0];
             if (next && t - lastClick >= 1) {
-                target = next.index;
+                setTarget(next.index);
+                if (claims) o.log?.('target', { index: next.index, npc: next.name });
                 targetSince = t;
                 void sdk.sendInteractNpc(next.index, attackOp(next)!);
                 lastClick = t;
@@ -295,6 +438,7 @@ export async function fightFor(sdk: BotSDK, bot: BotActions, site: Site, o: Figh
         }
     } finally {
         watcher.stop();
+        claims?.table.releaseAll(claims.owner);
     }
     return st;
 }
@@ -389,16 +533,22 @@ export interface HpOptions extends CommonOptions {
     prayer: number;
     /** Keep the best melee prayers on (Protect from Melee too at the crabs), restoring at the Lumbridge altar during the cows and at Seers' on each crab trip. */
     pray: boolean;
+    /** Walk to the site's bank and deposit at the target (the standalone trainer); the phase-2 runner goes straight on. */
+    finalBank: boolean;
+    /** Set by the phase-2 runner, never from the command line: the npc claims its bots share. */
+    claims?: { table: TargetClaims; owner: string };
 }
 
 const USAGE =
-    'usage: bun markets/methods/hp-train.ts <account> [--to 40] [--site auto|cows|crabs] [--coins 1700] [--switch-hp 30] [--kebabs -1] [--food-per-trip 20] [--prayer 0|31|34|43] [--pray] [--out FILE]';
+    `usage: bun markets/methods/hp-train.ts <account> [--to 40] [--site auto|${Object.keys(SITES).join('|')}] [--coins 1700] [--switch-hp 30] [--kebabs -1] [--food-per-trip 20] [--prayer 0|31|34|43] [--pray] [--final-bank true|false] [--out FILE]`;
 
 export function parseOptions(a: Args): HpOptions {
-    const c = commonOptions({ ...a, flags: { ...a.flags, minutes: a.flags.minutes ?? '0' } }, ['to', 'site', 'coins', 'switch-hp', 'kebabs', 'food-per-trip', 'prayer', 'pray']);
+    const c = commonOptions({ ...a, flags: { ...a.flags, minutes: a.flags.minutes ?? '0' } }, ['to', 'site', 'coins', 'switch-hp', 'kebabs', 'food-per-trip', 'prayer', 'pray', 'final-bank']);
     if (a.flags.pray !== undefined && a.flags.pray !== 'true' && a.flags.pray !== 'false') throw new Error('--pray takes no value');
+    const finalBank = a.flags['final-bank'] ?? 'true';
+    if (finalBank !== 'true' && finalBank !== 'false') throw new Error('--final-bank must be true or false');
     const site = (a.flags.site ?? 'auto') as SiteId | 'auto';
-    if (site !== 'auto' && !(site in SITES)) throw new Error(`--site must be auto, ${Object.keys(SITES).join(' or ')}`);
+    if (site !== 'auto' && !(site in SITES)) throw new Error(`--site must be auto or one of ${Object.keys(SITES).join(', ')}`);
     return {
         ...c,
         // 40 by default: phase 2's knights stop wasting heals from ~30-40 HP (docs/markets/phase2.md 'Setup').
@@ -409,7 +559,8 @@ export function parseOptions(a: Args): HpOptions {
         kebabs: numberFlag(a, 'kebabs', -1, { min: -1, max: 2000, integer: true }),
         foodPerTrip: numberFlag(a, 'food-per-trip', 20, { min: 1, max: 26, integer: true }),
         prayer: numberFlag(a, 'prayer', 0, { min: 0, max: 99, integer: true }),
-        pray: a.flags.pray === 'true'
+        pray: a.flags.pray === 'true',
+        finalBank: finalBank === 'true'
     };
 }
 
