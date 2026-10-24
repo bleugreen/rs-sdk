@@ -2476,6 +2476,11 @@ the confirmed logout, the deep-Wilderness resume).
   relog lock held (`[relog] attempt N ... failed ...; a fresh tab in 20 s`); relog-now refuses
   meanwhile. The login that lands is one unplanned relog. Past 8 min the run stops as for any
   failed relog, with its `(drop)` row written. A bad password or a full world stops it at once.
+- **A crashed, hung or closed tab** (the scored renderer OOM-killed, say) takes the same route at
+  once, without the hold window: `[relog] the page is gone after ... (its renderer did not answer
+  ...): closing what is left of its tab, then a fresh one`, then the close, 10 s and a fresh tab,
+  one unplanned relog with `meta.pageGone`. The watchdog holds its logout meanwhile (`[watchdog]
+  wait: logout held: the page is gone ...`). Leave it to run.ts; relog-now has no page to log in.
 - **The budget**: S21's planned relog plus 3 unplanned, **run.ts's and the operator's together**.
   Past it run.ts stops with `relog budget spent` as its reason (`RelogBudgetSpent`).
 - **S21's planned logout** goes through `session.ts` `logoutClean`, which confirms the account out
