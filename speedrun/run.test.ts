@@ -15,8 +15,10 @@ import { TickLog } from './lib/ticks';
 import { MANIFEST } from './tools/slot-ledger';
 import { returnExtrasFromLedger } from './helpers/cannon-receiver';
 import { readFileSync } from 'fs';
-import { aliasAccount, attemptOf, censusStart, openRunSession, runChainOnSession, cannonServeDrift, chainOrRefusal, type GateIO, liveRuneCheck, LOG_ACCOUNT, loadRunConfig, loggedRuneCensus, parseArgs, runeGate, signalShutdown, type SignalDeps, startGates, takeoverGate, TARGET_TOTAL, Terminated, tickBeforeLogin, totalLevel, untilTerminated, UsageError, withScoredSession } from './run';
-import { runePlan } from './runner/rune-census';
+import { aliasAccount, attemptOf, censusStart, closeTabAfterStop, openRunSession, resumeLine, runChainOnSession, cannonServeDrift, chainOrRefusal, type GateIO, liveRuneCheck, LOG_ACCOUNT, loadRunConfig, loggedRuneCensus, parseArgs, runeGate, signalShutdown, type SignalDeps, startGates, type TabResetDeps, takeoverGate, TARGET_TOTAL, Terminated, tickBeforeLogin, totalLevel, untilTerminated, UsageError, withScoredSession } from './run';
+import { runeCensus, runePlan } from './runner/rune-census';
+import { phaseGates, phasePath, statusFileName, type PhaseMember } from './runner/phase-gate';
+import { BOUNDARY_STEP } from './runner/step';
 import { loadModules } from './tools/rune-pins';
 import { objPack } from './lib/obj-pack';
 import type { TickRow } from './lib/ticks';
@@ -28,7 +30,7 @@ import type { ChainStep } from './runner/chain';
 import { tickPreflight, type FeedRead } from './lib/feed-hello';
 
 const feed400: FeedRead & { ok: true } = { ok: true, url: 'wss://rs-sdk-demo.fly.dev/worldfeed', hello: { tickMs: 400, players: 12, tick: 5000 }, wallMs: 80 };
-import { buildChain, CENSUS_STEP, KIT_PARTNER_ROWS, ledgerRows, PLACEMENT, resolveFrom, sliceUntil, tag } from './runner/chain';
+import { buildChain, CENSUS_STEP, KIT_PARTNER_ROWS, ledgerRows, PLACEMENT, resolveFrom, sliceUntil, STOP_CENSUS_LABEL, tag } from './runner/chain';
 
 const cues = { open: async () => {}, stop: () => {} };
 const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, `p_${id}`]));
@@ -71,7 +73,7 @@ describe('the rune census gate (rs/699)', () => {
         expect(census.ok).toBe(false);
         expect(census.detail).toStartWith(`rune census from #${s13} S13:A-lawgof-start: law rune short by 2: held 3, needed 5 before H11 brings more`);
         expect(census.detail).toContain('T13-14a would run short (needs 2, 0 left)');
-        expect('census' in r && r.source).toBe("held as the tick log's last census recorded it before S13:A-lawgof-start (tick 900, by id)");
+        expect('census' in r && r.source).toBe("held as the tick log's last census recorded it before S13:A-lawgof-start (tick 900, by id; taken as that step started)");
     });
 
     test("before login: with no --from the census starts where the log's last census was taken; 5 law passes", () => {
@@ -137,8 +139,9 @@ describe('parseArgs', () => {
     });
     test('every flag', () => {
         expect(parseArgs(['--bot=s', '--config=c', '--client=lite', '--from=S07', '--until=S14', '--dry-run', '--log=/l.jsonl', '--run-commit=abc', '--run-dir=/r', '--host-reservation=/h', '--claim-owner=rs/393', '--cannon-serve=/c.json']))
-            .toEqual({ bot: 's', config: 'c', client: 'lite', from: 'S07', until: 'S14', dryRun: true, tickOverride: false, s21Relog: true, log: '/l.jsonl', runCommit: 'abc', runDir: '/r', hostReservation: '/h', claimOwner: 'rs/393', cannonServe: '/c.json' });
+            .toEqual({ bot: 's', config: 'c', client: 'lite', from: 'S07', until: 'S14', dryRun: true, tickOverride: false, closeTabOnStop: false, s21Relog: true, log: '/l.jsonl', runCommit: 'abc', runDir: '/r', hostReservation: '/h', claimOwner: 'rs/393', cannonServe: '/c.json' });
         expect(parseArgs(['--bot=s', '--config=c', '--tick-override']).tickOverride).toBe(true);
+        expect(parseArgs(['--bot=s', '--config=c', '--close-tab-on-stop']).closeTabOnStop).toBe(true);
         expect(() => parseArgs(['--bot=s', '--config=c', '--tick-override=yes'])).toThrow('takes no value');
         expect([parseArgs(['--bot=s', '--config=c', '--s21-relog=off']).s21Relog, parseArgs(['--bot=s', '--config=c', '--s21-relog=on']).s21Relog]).toEqual([false, true]);
         expect(() => parseArgs(['--bot=s', '--config=c', '--s21-relog=no'])).toThrow('--s21-relog must be on or off');
@@ -701,6 +704,12 @@ describe('a death while the logout after a refused step holds (rs/709, attempt 3
         const deaths = log.rows.filter(r => r.step === DEATH_STEP);
         expect(deaths).toHaveLength(1);
         expect(deaths[0]).toMatchObject({ ok: false, meta: { from: { x: 3288, z: 3810, level: 0 }, to: { x: 3222, z: 3218, level: 0 }, logout: { ok: true } } });
+        // The refusal's own row carries SCORED's hp at its end: the fall starts from the log alone.
+        const refusal = log.rows.find(r => r.step === 'S14 ranged:precondition')!;
+        const hp = refusal.meta!.hp;
+        expect(typeof hp).toBe('number');
+        expect(hp as number).toBeLessThanOrEqual(12);
+        expect(refusal.meta!.maxHp).toBe(42);
         expect((deaths[0]!.meta as { logout: { held?: unknown } }).logout.held).toBeDefined();
         expect(session.died).toBe(ran.lastLogout!.death!);
 
@@ -814,5 +823,159 @@ describe('S14 fails among the spiders: the retreat before the logout (rs/725)', 
         // Out of the world from the respawn; the next start refuses until --r8-recovered names the death.
         expect(ran.lastLogout).toMatchObject({ ok: true });
         expect(deathGate(w.log.rows)).toMatchObject({ refusal: expect.stringContaining(`--r8-recovered=${deathKey(deaths[0]!)}`) });
+    });
+});
+
+describe('a planned stop after the willow band, then --from (rs/753)', () => {
+    const iWillow = full.findIndex(s => s.name === 'woodcutting:willow-73-99');
+    const iDrop = full.findIndex(s => s.name === 'woodcutting:drop-axe');
+    const iT0708 = resolveFrom(full, 'T07-08')!;
+    const now = 1_800_000_000_000;
+
+    test("drop-axe takes nothing from the givers: outside the bone cue, and the phase path from it skips S07, whose finished givers publish 'off'", () => {
+        expect([iDrop, iT0708]).toEqual([iWillow + 1, iWillow + 2]);
+        expect(full[iDrop]).toMatchObject({ id: 'S07', kind: 'step', helperFree: true });
+        expect(full[iDrop]!.cue).toBeUndefined();
+        expect(full[iWillow]!.cue).toEqual({ step: 'S07', family: 'bone' });
+        expect(phasePath(full, iDrop)).not.toContain('S07');
+        expect(phasePath(full, iDrop)[0]).toBe('T07-08');
+        expect(phasePath(full, iWillow)[0]).toBe('S07');
+        const members: PhaseMember[] = [{ account: 'b', scope: { step: 'S07', family: 'bone' } }, { account: 'c', scope: { step: 'S18', family: 'courier' } }];
+        const files: Record<string, unknown> = { [statusFileName('bones', 'b')]: { v: 1, account: 'b', phase: 'off', held: 0, tile: null, readyAt: null, ms: now - 1000 } };
+        const at = (start: number) => phaseGates({ path: phasePath(full, start), members, read: f => files[f] ?? null, launcher: [{ account: 'c', state: 'awaiting-cue', cue: { state: 'waiting' } }], now, source: 'helpers.json' });
+        expect(at(iDrop).filter(g => !g.ok)).toEqual([]);
+        expect(at(iDrop).some(g => g.gate.startsWith('role phase S07'))).toBe(false);
+        // Where the givers are still wanted, their phase still refuses.
+        expect(at(iWillow).find(g => g.gate === 'role phase S07/bone b')).toEqual({ gate: 'role phase S07/bone b', ok: false, detail: 'bones-b.json: phase off, not waiting' });
+    });
+
+    /** What the chain spends of each rune from T07-08 to its next supply, as items by obj id: the true pack after the willow band. */
+    const runeIds = new Map([...objPack().names].map(([id, n]) => [n, id] as const));
+    const needFromT0708 = runeCensus(fullRunePlan, iT0708, {}).lines.filter(l => l.needed > 0).map(l => ({ rune: l.rune, needed: l.needed }));
+    const label = (rune: string) => `${rune[0]!.toUpperCase()}${rune.slice(1, -'rune'.length)} rune`;
+    const pack = (short?: string): InventoryItem[] => [
+        { slot: 0, id: 1359, name: 'Rune axe', count: 1, optionsWithIndex: [] },
+        ...needFromT0708.map((n, i) => ({ slot: i + 1, id: runeIds.get(n.rune)!, name: label(n.rune), count: n.needed - (n.rune === short ? 1 : 0), optionsWithIndex: [] })),
+    ] as InventoryItem[];
+
+    /** A lite SCORED session at the willow stand, Woodcutting 99; a logout click lands; a drop leaves the pack. */
+    function stand(inventory: InventoryItem[], tick: number) {
+        const p0 = { name: 'lab', worldX: 2969, worldZ: 3194, x: 2969, z: 3194, level: 0, hp: 30, maxHp: 40, isDead: false, lifeId: 1, respawnCount: 0, lastDeathTick: null, combat: { inCombat: false, targetIndex: -1, targetType: 'none', lastDamageTick: null } } as unknown as PlayerState;
+        const skills = [{ name: 'Woodcutting', level: 99, baseLevel: 99, experience: 13_034_431 }] as BotWorldState['skills'];
+        const sdk = Object.assign(new FakeSdk(baseState({ tick, player: p0, skills, inventory })), { checkBotStatus: async () => ({ status: 'active', inGame: true }) });
+        let exit!: (code: number) => void;
+        const child = { exited: new Promise<number>(r => (exit = r)), kill: () => exit(137) };
+        const at = Date.now();
+        const session = {
+            name: 'lab', client: 'lite', env: { BOT_USERNAME: 'lab', PASSWORD: 'x' }, sdk, bot: {}, sessionId: 1, launchId: 1, tickBase: 0, expectInWorld: true,
+            child, childExit: null, lastInWorldTick: tick, lastAdvanceAt: at, period: new TickPeriod(), launchedAt: at - 60_000, ticksSinceProgress: 0, watchdog: null, logPath: '/dev/null',
+        } as unknown as Session;
+        void child.exited.then(c => { session.childExit = c; });
+        let out = false;
+        sdk.onSend = a => {
+            if (a.method === 'sendDropItem') sdk.push(cur => ({ inventory: cur.inventory.filter(i => i.slot !== a.args[0]) }));
+            if (a.method === 'sendClickComponent' && a.args[0] === LOGOUT_BUTTON) { out = true; exit(0); }
+        };
+        const timer = setInterval(() => { if (!out) sdk.tick(); }, 5);
+        return { sdk, session, stop: () => clearInterval(timer) };
+    }
+
+    test('Ctrl-C during the willow band: the stop census is the true pack at the logout boundary; --from the next step drops the axe and reaches T07-08', async () => {
+        expect(needFromT0708.map(n => n.rune)).toContain('lawrune');
+        const log = TickLog.memory('run-753');
+        let sigint: (() => void) | null = null;
+        const signals: SignalDeps = { on: (s, f) => { if (s === 'SIGINT') sigint = f; }, off: () => {}, exit: () => {}, log: () => {} };
+        const reservation = { boundary: () => null, path: '' } as unknown as ReservationWatch;
+        let reached: InventoryItem[] | null = null;
+        // The willow band: a poison message and a hit during it, then the operator's one Ctrl-C.
+        const willow: ChainStep = { id: 'S07', kind: 'step', name: 'woodcutting:willow-73-99', logoutSafe: true, preconditions: () => true, postconditions: () => true, run: async ({ sdk }) => {
+            const f = sdk as unknown as FakeSdk;
+            f.tick(s => ({ player: { ...s.player!, hp: 27 }, gameMessages: [...s.gameMessages, { type: 0, text: 'You have been poisoned!', sender: '', tick: s.tick + 1, fromSelf: false }] }));
+            f.tick();
+            sigint!();
+        } };
+        const t0708: ChainStep = { id: 'T07-08', kind: 'leg', name: 'T07-08', logoutSafe: true, postconditions: () => true,
+            preconditions: s => (s.inventory.some(i => /axe/i.test(i.name)) ? 'the axe is still held' : true),
+            run: async ({ sdk }) => { reached = sdk.getState()!.inventory; } };
+        const chain = [willow, full[iDrop]!, t0708];
+
+        const first = stand(pack(), 2_258);
+        let ran: Awaited<ReturnType<typeof runChainOnSession>>;
+        try {
+            ran = await runChainOnSession(first.session, { log, chain, reservation, from: 0, signals });
+        } finally {
+            first.stop();
+        }
+        expect(ran.result).toMatchObject({ code: 4, resumeAt: 1 });
+        expect(resumeLine(chain, ran.result.resumeAt)).toBe(', or with --from=1 (#1 woodcutting:drop-axe)');
+        expect(ran.lastLogout).toMatchObject({ ok: true });
+        // The stop's census, after the band's rows and before the logout: the axe and the band's runes.
+        const stopRow = log.rows.filter(r => r.step === CENSUS_STEP).at(-1)!;
+        expect(stopRow.meta).toMatchObject({ before: 'woodcutting:drop-axe', id: 'S07', label: STOP_CENSUS_LABEL, hp: 27, maxHp: 40 });
+        expect((stopRow.meta!.inventory as { name: string }[]).map(i => i.name)).toEqual(pack().map(i => i.name));
+        // The band's own row: hp at its end and the poison seen during it.
+        expect(log.rows.find(r => r.step === 'woodcutting:willow-73-99' && r.kind === undefined)!.meta).toMatchObject({ hp: 27, maxHp: 40, poison: { seen: 1, source: 'message', text: 'You have been poisoned!' } });
+        // Boundary rows are not stamped.
+        expect(log.rows.filter(r => r.step === BOUNDARY_STEP).every(r => !(r.meta && 'hp' in r.meta))).toBe(true);
+
+        // The next start's pre-login census reads the stop's row, says so, and passes on the true pack from either step.
+        for (const from of [iDrop, iT0708]) {
+            const g = runeGate(loggedRuneCensus(fullRunePlan, full, { from, earlier: log.rows, served: () => false }));
+            expect(g.ok).toBe(true);
+            expect(g.meta!.source).toBe(`held as the tick log's last census recorded it before woodcutting:drop-axe (tick ${stopRow.startTick}, by id; written at the stop's logout boundary)`);
+        }
+        // Without --from the run picks up where the stop's census was taken.
+        expect(censusStart(full, undefined, log.rows)).toBe(iDrop);
+
+        // --from the next step: the axe goes, and T07-08 starts without it.
+        const second = stand(pack(), 2_300);
+        let again: Awaited<ReturnType<typeof runChainOnSession>>;
+        try {
+            again = await runChainOnSession(second.session, { log, chain, reservation, from: 1, signals: { on: () => {}, off: () => {}, exit: () => {}, log: () => {} } });
+        } finally {
+            second.stop();
+        }
+        expect(again.result.code).toBe(0);
+        expect(reached).not.toBeNull();
+        expect(reached!.some(i => /axe/i.test(i.name))).toBe(false);
+        expect(second.sdk.sent.filter(a => a.method === 'sendDropItem').map(a => a.args[0])).toEqual([0]);
+    });
+
+    test('a genuinely short pack at the stop still refuses before login, naming the rune', () => {
+        const row = (inventory: InventoryItem[]): TickRow => ({
+            v: 1, kind: 'note', runId: 'run-753', account: LOG_ACCOUNT, sessionId: 1, step: CENSUS_STEP, startTick: 2_260, endTick: 2_260, ticks: 0, wallMs: 0, ok: true, tickMs: 400, at: '2026-10-24T13:00:00Z',
+            meta: { before: 'woodcutting:drop-axe', id: 'S07', label: STOP_CENSUS_LABEL, free: 20, worn: [], inventory: inventory.map(i => ({ name: i.name, count: i.count, id: i.id })) },
+        });
+        // Attempt 4's stale row, before the band (no runes), then the stop's own: the stop's is the one read.
+        const stale: TickRow = { ...row([pack()[0]!]), startTick: 2_258, meta: { ...row([pack()[0]!]).meta, before: 'woodcutting:willow-73-99', label: undefined } };
+        expect(runeGate(loggedRuneCensus(fullRunePlan, full, { from: iT0708, earlier: [stale], served: () => false })).ok).toBe(false);
+        expect(runeGate(loggedRuneCensus(fullRunePlan, full, { from: iT0708, earlier: [stale, row(pack())], served: () => false })).ok).toBe(true);
+        const g = runeGate(loggedRuneCensus(fullRunePlan, full, { from: iT0708, earlier: [stale, row(pack('lawrune'))], served: () => false }));
+        expect(g.ok).toBe(false);
+        expect(g.detail).toContain('law rune short by 1');
+        // An operator's labelled row is read and named as such.
+        const host = { ...row(pack()), meta: { ...row(pack()).meta, label: 'host one-off by-id read' } };
+        expect(runeGate(loggedRuneCensus(fullRunePlan, full, { from: iT0708, earlier: [stale, host], served: () => false })).meta!.source).toContain('labelled "host one-off by-id read"');
+    });
+
+    test('the tab reset closes the tab only once SCORED is out and off the world list, and says why it did not otherwise', async () => {
+        let t = 0;
+        let closes = 0;
+        const deps = (listed: (boolean | null)[]): TabResetDeps => ({
+            listed: async () => (listed.length > 1 ? listed.shift()! : listed[0]!),
+            close: async () => (closes++, { closed: 1, left: ['about:blank'] }),
+            sleep: async ms => { t += ms; },
+            now: () => t,
+        });
+        const out = { client: 'browser' as const, expectInWorld: false };
+        expect(await closeTabAfterStop(out, deps([true, true, false]))).toBe("tab reset: SCORED is off the world's player list; closed 1 tab(s), 1 page(s) left");
+        expect(closes).toBe(1);
+        t = 0;
+        expect(await closeTabAfterStop(out, deps([true]), 5_000)).toBe("tab reset: the world's player list still lists SCORED 5 s after the logout, so its tab is left open");
+        t = 0;
+        expect(await closeTabAfterStop(out, deps([null]), 3_000)).toBe("tab reset: the world's player list did not answer 3 s after the logout, so its tab is left open");
+        expect(await closeTabAfterStop({ client: 'browser', expectInWorld: true }, deps([false]))).toBe('tab reset: SCORED is not confirmed out, so its tab is left open');
+        expect(await closeTabAfterStop({ client: 'lite', expectInWorld: false }, deps([false]))).toBe('tab reset: not a browser session, nothing to close');
+        expect(closes).toBe(1);
     });
 });

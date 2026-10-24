@@ -94,6 +94,12 @@ export type ChainStep = AnyStep & {
     finalStop?: boolean;
     /** Where the step's preconditions require SCORED to start, as data (chainSeams reads it). */
     startTile?: StartTile;
+    /**
+     * The step takes nothing from its id's helpers (S07's axe drop): it is outside their cue, and the
+     * role-phase gate (runner/phase-gate.ts phasePath) does not judge them for it, so a run resumed
+     * at it is not refused by givers that have finished and publish phase 'off'.
+     */
+    helperFree?: true;
 };
 
 /**
@@ -728,6 +734,19 @@ export function census(s: BotWorldState): { inventory: { name: string; count: nu
 
 export const CENSUS_STEP = '(census)';
 
+/** The `label` of the `(census)` row a stop writes at its logout boundary (censusAtStop). */
+export const STOP_CENSUS_LABEL = 'stop at the logout boundary';
+
+/**
+ * The `(census)` row for a stop at a logout-safe boundary, written before its logout: the pack the
+ * step after the boundary will start with, so the next start's pre-login rune census reads the
+ * true pack and not the one the last step started with (runner/rune-census.ts lastCensus).
+ */
+export function censusAtStop(ctx: Pick<StepContext<unknown>, 'log' | 'session' | 'sdk'>, next: { name: string; id?: string }): void {
+    const st = ctx.sdk.getState();
+    if (st) noteRow(ctx, CENSUS_STEP, { before: next.name, ...(next.id ? { id: next.id } : {}), label: STOP_CENSUS_LABEL, ...census(st) });
+}
+
 /** `step` with a 0-tick `(census)` note before it runs or resumes. */
 export function censused(step: ChainStep): ChainStep {
     const at = (ctx: StepContext<unknown>) => {
@@ -941,7 +960,10 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         ...before('S07'),
         ...boneCued(steps('S07', [...wc('woodcutting:walk-oaks'), ...wc('woodcutting:normal-1-15'), ...wc('woodcutting:oak-15-73')])),
         L('T07a'),
-        ...boneCued(steps('S07', [...wc('woodcutting:willow-73-99'), ...wc('woodcutting:drop-axe')])),
+        ...boneCued(steps('S07', wc('woodcutting:willow-73-99'))),
+        // The willow band's end is a logout-safe boundary, and the drop needs no giver: --from here passes
+        // the bone group's phase whatever it publishes once its loads are done.
+        tag('S07', 'step', wc('woodcutting:drop-axe')[0]!, { helperFree: true }),
         L('T07-08'),
         // The quests' kit rows are placed hand-offs at the arrival tile: each kit segment then only checks.
         ...before('S08'),
