@@ -8,7 +8,10 @@ import {
     byId,
     chebyshev,
     EXIT,
+    findCourier,
+    freeSlots,
     isolationRefusal,
+    nameHash,
     loadOneoffEnv,
     ONEOFF_GATEWAY_URL,
     type OneoffIO,
@@ -110,6 +113,25 @@ describe('pieces', () => {
     test('packChanges: expected ids at their counts, every other id unchanged', () => {
         expect(packChanges({ 1351: 1, 385: 14 }, { 385: 14 }, { 1351: 0 })).toEqual([]);
         expect(packChanges({ 1351: 1, 385: 14 }, { 385: 13 }, { 1351: 0 })).toEqual([{ id: 385, before: 14, after: 13, want: 14 }]);
+    });
+
+    test('findCourier: exactly one hash match near the meet tile, redacted', () => {
+        const meet = { x: 2465, z: 3489, level: 0 };
+        const courier = { name: 'Cairn h61', x: 2466, z: 3489, level: 0 };
+        const roster = [courier, { name: 'Someone else', x: 2465, z: 3489, level: 0 }];
+        const hash = nameHash('Cairn h61').slice(0, 12);
+        const r = new Redactor();
+        const found = findCourier(roster, hash, meet, r);
+        expect(typeof found === 'string' ? found : found.name).toBe('Cairn h61');
+        expect(r.apply('traded with Cairn h61')).toBe('traded with COURIER');
+        expect(findCourier(roster, hash, { x: 2400, z: 3489, level: 0 }, new Redactor())).toContain('tiles from the meet tile');
+        expect(findCourier(roster, 'abc', meet, new Redactor())).toContain('6 to 64 hex digits');
+        expect(findCourier(roster, '000000', meet, new Redactor())).toContain('0 listed players');
+    });
+
+    test('freeSlots counts the 28-slot pack', () => {
+        expect(freeSlots([{ slot: 0, id: 385, name: 'Shark', count: 1, optionsWithIndex: [] }])).toBe(27);
+        expect(freeSlots([])).toBe(28);
     });
 
     test('tiles', () => {
