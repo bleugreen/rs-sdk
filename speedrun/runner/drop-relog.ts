@@ -36,16 +36,11 @@ import { adoptSession, cdpUrl, gatewayStatus, login, pageWorld, sdkConnected, ty
 import { pageInGame } from '../lib/tab';
 import { sleep, tickMs } from '../lib/wait';
 import { RelogBudgetSpent, type RelogBudget, type RelogEntry } from './relog-budget';
+import { pageHoldTicks } from './page-hold';
 import type { Link } from './resume';
 
 /** Ticks run.ts waits for an operator's relog to let the lock go, and for an adopted session to tick (relog-now's login is bounded at 90 s = 225 ticks at 400 ms). */
 export const ADOPT_WAIT_TICKS = 300;
-/**
- * Ticks a page that still says it is in game, with no tick advancing, is given to settle: a page whose
- * socket died notices it only some seconds later (about 7 s, 17 ticks at 400 ms, on the lab), then
- * either reconnects itself (adopted) or falls to the title screen (relogged here).
- */
-export const SETTLE_TICKS = 40;
 /** Ticks between the page reads while the recovery waits for the session to come back. */
 export const RECHECK_TICKS = 3;
 /** Ticks the recovery waits for a session to come back by other means (the watchdog's path, a world or gateway outage): 30 min at 400 ms. */
@@ -198,8 +193,11 @@ export async function recoverDrop(budget: Budget, deps: DropRelogDeps, reason: s
     };
 
     if (page === true) {
-        // In game by its own word: ticking again (it reconnected itself), or not yet aware its socket died.
-        for (let t = 0; t < SETTLE_TICKS; t++) {
+        // In game by its own word: ticking again (its socket resumed, or it reconnected itself), or still
+        // holding a silent socket. Settle for the page's hold window (page-hold.ts): nothing is sent that
+        // could fight the original socket; the page's own timeout reads it out of the world by then.
+        const settle = pageHoldTicks();
+        for (let t = 0; t < settle; t++) {
             if (deps.advanced()) return adopt('the page was back in the world, ticking', null);
             const p = await deps.pageInGame();
             if (p === false) break;
@@ -212,10 +210,10 @@ export async function recoverDrop(budget: Budget, deps: DropRelogDeps, reason: s
         }
         if ((await deps.pageInGame()) !== false) {
             if (deps.advanced()) return adopt('the page was back in the world, ticking', null);
-            const what = `the watchdog path (the page said in game but did not tick for ${SETTLE_TICKS} ticks)`;
+            const what = `the watchdog path (the page said in game but did not tick for ${settle} ticks)`;
             deps.resumeWatchdog();
             if ((await untilBack(RESTORE_WAIT_TICKS, what)) === 'out') return fellOut(what, null);
-            return { outcome: 'default', why: `the page says in game but has not ticked for ${SETTLE_TICKS} ticks: the watchdog path` };
+            return { outcome: 'default', why: `the page says in game but has not ticked for ${settle} ticks: the watchdog path` };
         }
         deps.log?.(`[relog] the page fell out of the world after ${where}`);
     }

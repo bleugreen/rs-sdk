@@ -1541,9 +1541,11 @@ export interface WatchdogOptions {
     /**
      * Asked before a logout, relaunch or stop: a reason to stand down instead (run.ts: the page is
      * out of the world, which its drop recovery relogs in page; a logout and relaunch here would
-     * race it with a client relaunch). Null: act as usual.
+     * race it with a client relaunch; or the page still says in game inside its hold window,
+     * runner/page-hold.ts). `verdict` is the one about to be acted on, `msSinceAdvance` the silence
+     * behind it. Null: act as usual.
      */
-    standDown?: () => Promise<string | null>;
+    standDown?: (at: { verdict: WatchdogVerdict; msSinceAdvance: number }) => Promise<string | null>;
 }
 
 /**
@@ -1649,7 +1651,7 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
                 return;
             }
             if ((verdict === 'logout' || verdict === 'relaunch' || verdict === 'stop') && opts.standDown) {
-                const hold = await opts.standDown().catch(() => null);
+                const hold = await opts.standDown({ verdict, msSinceAdvance }).catch(() => null);
                 if (hold) {
                     if (lastWait !== hold) emit('wait', `${verdict} held: ${hold} (${why})`);
                     lastWait = hold;

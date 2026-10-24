@@ -247,6 +247,8 @@ export interface Link {
  * The demo can go silent for ~2 s with nothing wrong (1,987 ms with no frames,
  * 07:50 PDT, rs/102), so silence alone counts only past ~5 s. A real drop is
  * seen sooner through the socket closing (the lite runner exits at once).
+ * Declaring the drop here cuts the step; it sends nothing. With the page still in game run.ts's drop
+ * recovery then waits out runner/page-hold.ts's window before anything logs in or relaunches.
  */
 export const LOST_AFTER_TICKS = 17;
 
