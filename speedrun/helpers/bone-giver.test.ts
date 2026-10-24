@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, GameMessage } from '../../sdk/types';
 import type { BotSDK } from '../../sdk/index';
-import { baseState, FakeSdk, flush, type SentAction } from '../lib/fake-sdk';
+import { baseState, FakeSdk, FakeTradePartner, flush, type SentAction } from '../lib/fake-sdk';
 import { give } from '../lib/trade';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { ASK_SLACK_MS, nameHash, newRequestFrom, readTopUpAsk, usableAsk, writeTopUpAsk } from './altar-cue';
 import type { Cue } from './altar-cue';
 import type { RoleContext } from './role';
-import { askOffer, BoneGiver, boneGiverOptions, boneServer, boneWithdrawals, returnWants, carryDue, DEFAULT_BONE_BANK, groupLoadsDone, isFinalLoad, legRan, loadOffer, namedSite, npcTiles, onOpenSide, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, wallBetween, type BoneStatus, type FlagReader, type Site } from './bone-giver';
+import { askOffer, BoneGiver, boneGiverOptions, boneServer, boneWithdrawals, returnWants, carryDue, DEFAULT_BONE_BANK, groupLoadsDone, isFinalLoad, lastLoadGiven, legRan, loadBones, loadOffer, namedSite, npcTiles, onOpenSide, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, wallBetween, type BoneStatus, type FlagReader, type Site } from './bone-giver';
 import { CueWriter, readCue, readJson } from './altar-cue';
 import { judgeStatus } from '../runner/phase-gate';
 import { assertDemoStandIn } from './bone-receiver';
@@ -909,5 +909,274 @@ describe("the S07 cue names SCORED's site (rs/635): the givers go there and wait
         expect(rigs.map(r => r.walks)).toEqual(G.map(() => [WILLOW]));
         expect(gate().map(v => v.ok)).toEqual([true, true, true, true]);
         expect(gate().every(v => /^waiting on site 1 /.test(v.detail))).toBe(true);
+    });
+});
+
+describe("the cue's lastLoad (rs/663): the final giver's next load is the last, the runes alone", () => {
+    const S07 = { step: 'S07', family: 'bone' } as const;
+    const [OAK] = S07_SITES as [Site, Site];
+    const G = ['cairn_b01', 'cairn_b02', 'cairn_b03', 'cairn_b04'];
+    const RUNES = [{ item: 'Law rune', count: 1, obj: 'lawrune' }, { item: 'Air rune', count: 5, obj: 'airrune' }];
+    const now = 50_000;
+    const st = (account: string, phase: BoneStatus['phase'], readyAt: number | null, extra: Partial<BoneStatus> = {}): BoneStatus =>
+        ({ v: 1, account, phase, held: 23, n: 23, trades: 2, bounces: 0, tile: null, readyAt, session: 's1', final: account === 'cairn_b04', loads: 64, ms: now - 500, ...extra });
+    /** b01 has waited longest, b04 least; 8 of 64 loads given unless a giver's `trades` says otherwise. */
+    const group = (extra: Partial<Record<string, Partial<BoneStatus>>> = {}) => G.map((a, i) => st(a, 'waiting', 100 * (i + 1), extra[a] ?? {}));
+
+    describe('boneServer', () => {
+        test('flagged well before the count: the final giver serves next, though three others waited longer; unflagged it is the oldest ready', () => {
+            expect(boneServer(group(), G, now, 's1')).toBe('cairn_b01');
+            expect(boneServer(group(), G, now, 's1', true)).toBe('cairn_b04');
+        });
+
+        test("the one-rotation bar does not hold under the flag: at 62 of 64 the count passes b04 over, the flag doesn't", () => {
+            const late = group({ cairn_b01: { trades: 56 } });
+            expect(groupLoadsDone(late, G, 's1')).toBe(62);
+            expect(boneServer(late, G, now, 's1')).toBe('cairn_b01');
+            expect(boneServer(late, G, now, 's1', true)).toBe('cairn_b04');
+        });
+
+        test('b04 restocking, faulted, empty-handed or stale under the flag: no server at all, never another giver (SCORED waits within serverWait, then fails named)', () => {
+            for (const b04 of [{ phase: 'restock' as const, readyAt: null }, { phase: 'fault' as const, readyAt: null }, { held: 0 }, { ms: now - 6_000 }]) {
+                expect(boneServer(group({ cairn_b04: b04 }), G, now, 's1', true)).toBeUndefined();
+                // unflagged the others serve as before
+                expect(boneServer(group({ cairn_b04: b04 }), G, now, 's1')).toBe('cairn_b01');
+            }
+        });
+
+        test("once b04 has served it (lastGiven, in the session) there is no server; another session's lastGiven is nobody's", () => {
+            const given = group({ cairn_b04: { lastGiven: true, phase: 'restock', readyAt: null, trades: 3 } });
+            expect(lastLoadGiven(given, G, 's1')).toBe(true);
+            expect(boneServer(given, G, now, 's1', true)).toBeUndefined();
+            // b04's file from another attempt, lastGiven and waiting: it counts for nothing in s1, so no final giver is there and the flag is ignored
+            const stale = group({ cairn_b04: { session: 'attempt-3.S07.bone', lastGiven: true } });
+            expect(lastLoadGiven(stale, G, 's1')).toBe(false);
+            expect(boneServer(stale, G, now, 's1', true)).toBe('cairn_b01');
+        });
+
+        test('without a final giver in the session the flag is ignored; with the count spent there is no server, flag or not', () => {
+            const plain = group().map(s => ({ ...s, final: false }));
+            expect(boneServer(plain, G, now, 's1', true)).toBe('cairn_b01');
+            const spent = group({ cairn_b01: { trades: 58 } });
+            expect(boneServer(spent, G, now, 's1', true)).toBeUndefined();
+        });
+
+        test('without the flag boneServer is exactly the count rule (the parameter defaults to false)', () => {
+            const states = [group(), group({ cairn_b01: { trades: 56 } }), group({ cairn_b04: { phase: 'restock', readyAt: null } }), group({ cairn_b01: { trades: 55 }, cairn_b02: { phase: 'restock', readyAt: null } })];
+            for (const s of states) expect(boneServer(s, G, now, 's1', false)).toBe(boneServer(s, G, now, 's1') as string);
+        });
+    });
+
+    describe('the offer', () => {
+        const b04 = bgo({ group: G, trades: 64, finalExtras: RUNES }, {});
+        const b01 = bgo({ group: G, trades: 64 }, {});
+        const names = (offer: ReturnType<typeof loadOffer>) => offer.map(s => [String(s.item), s.n]);
+
+        test("flagged, b04 offers the runes alone at any load; unflagged its count's last load is 21 bones and the runes, earlier ones 23 bones", () => {
+            expect(isFinalLoad(b04, 10, true)).toBe(true);
+            expect(names(loadOffer(b04, 10, undefined, true))).toEqual([['/^Law rune$/i', 1], ['/^Air rune$/i', 5]]);
+            expect(names(loadOffer(b04, 63, undefined, true))).toEqual([['/^Law rune$/i', 1], ['/^Air rune$/i', 5]]);
+            expect(isFinalLoad(b04, 10)).toBe(false);
+            expect(names(loadOffer(b04, 10))).toEqual([['/^Dragon bones$/i', 23]]);
+            expect(names(loadOffer(b04, 63))).toEqual([['/^Dragon bones$/i', 21], ['/^Law rune$/i', 1], ['/^Air rune$/i', 5]]);
+        });
+
+        test('a giver without the extras is never the last load: flagged or not it offers a whole load (and boneServer never picks it under the flag)', () => {
+            expect(isFinalLoad(b01, 10, true)).toBe(false);
+            expect(names(loadOffer(b01, 10, undefined, true))).toEqual([['/^Dragon bones$/i', 23]]);
+            expect(loadBones(b01, 10, true)).toBe(23);
+            expect(loadBones(b04, 10, true)).toBe(0);
+        });
+    });
+
+    describe('the cue field (altar-cue.ts, additive)', () => {
+        test('written once it stays for the session: a write without it, a resumed writer and the stop all keep it; stop and final are untouched', () => {
+            const dir = mkdtempSync(join(tmpdir(), 'bone-lastload-cue-'));
+            const b = [{ tick: 1, ms: Date.now() }];
+            const w = new CueWriter(dir, 'scored', S07, 'a4.S07.bone');
+            w.write({ beacons: b, turns: [], site: OAK.receiver });
+            expect(readCue(dir)!.lastLoad).toBeUndefined();
+            w.write({ beacons: b, turns: [], lastLoad: true });
+            w.write({ beacons: b, turns: [] });
+            expect(readCue(dir)).toMatchObject({ lastLoad: true, site: OAK.receiver });
+            expect(readCue(dir)!.stop).toBeUndefined();
+            const resumed = new CueWriter(dir, 'scored', S07, 'a4.S07.bone');
+            expect(resumed.current?.lastLoad).toBe(true);
+            resumed.write({ beacons: b, turns: [], site: OAK.receiver });
+            expect(readCue(dir)!.lastLoad).toBe(true);
+            resumed.stop(b);
+            expect(readCue(dir)).toMatchObject({ lastLoad: true, stop: true });
+            expect(readCue(dir)!.final).toBeUndefined();
+            // another session's writer starts without it
+            const next = new CueWriter(dir, 'scored', S07, 'a5.S07.bone');
+            next.write({ beacons: b, turns: [] });
+            expect(readCue(dir)!.lastLoad).toBeUndefined();
+        });
+
+        test('a persisted cue whose lastLoad is not a boolean is no session to resume', () => {
+            const dir = mkdtempSync(join(tmpdir(), 'bone-lastload-bad-'));
+            new CueWriter(dir, 'scored', S07, 'a4.S07.bone').write({ beacons: [{ tick: 1, ms: 1 }], turns: [] });
+            const cue = readJson<Record<string, unknown>>(join(dir, 'cue.json'))!;
+            writeFileSync(join(dir, 'cue.json'), JSON.stringify({ ...cue, lastLoad: 'yes' }));
+            expect(() => new CueWriter(dir, 'scored', S07, 'a4.S07.bone')).toThrow(/invalid persisted session/);
+        });
+    });
+
+    describe('the givers', () => {
+        const player = (t: { x: number; z: number }) => ({ name: 'giver', worldX: t.x, worldZ: t.z, x: t.x, z: t.z, level: 0 }) as unknown as BotWorldState['player'];
+        const scoredP = { index: 7, name: 'scored', x: OAK.receiver.x, z: OAK.receiver.z, level: 0, distance: 1, combatLevel: 3 } as unknown as BotWorldState['nearbyPlayers'][number];
+        const pack = (bones = 23, runes = false) => [
+            ...Array.from({ length: bones }, (_, slot) => ({ slot, id: 536, name: 'Dragon bones', count: 1, optionsWithIndex: [] })),
+            ...(runes ? [{ slot: 23, id: 563, name: 'Law rune', count: 1, optionsWithIndex: [] }, { slot: 24, id: 556, name: 'Air rune', count: 5, optionsWithIndex: [] }] : [])
+        ];
+        type Priv = { cycle(): Promise<void>; lastLoadDone(): boolean; restock(n: number, extras?: unknown[]): Promise<void>; phase: string; detail: string; trades: number; lastGiven: boolean; cue: Cue | null; server(): string | undefined };
+        const putStatus = (dir: string, s: BoneStatus) => writeFileSync(join(dir, `bones-${s.account}.json`), JSON.stringify(s));
+        /** The scored side's S07 cue in `dir`, naming the oaks, with or without lastLoad. */
+        const scoredCue = (dir: string, session: string, lastLoad: boolean) => {
+            new CueWriter(dir, 'scored', S07, session).write({ beacons: [{ tick: 1, ms: Date.now() }], turns: [], site: OAK.receiver, ...(lastLoad ? { lastLoad: true as const } : {}) });
+            return readCue(dir)!;
+        };
+        const others = (dir: string, session: string, extra: Partial<BoneStatus> = {}) => {
+            for (const [i, a] of G.slice(0, 3).entries()) putStatus(dir, st(a, 'waiting', Date.now() - 60_000 + i, { session, ms: Date.now(), trades: 3, ...extra }));
+        };
+        /** A group giver on the oak tile with a fake scored partner in sight that takes whatever it is offered. */
+        const rig = (dir: string, account: string, inventory = pack(23, account === 'cairn_b04')) => {
+            const sdk = new FakeTradePartner(baseState({ tick: 10, inventory, player: player(OAK.giver), nearbyPlayers: [scoredP] } as Partial<BotWorldState>), [], { partner: 'scored', stacks: t => /rune$/i.test(t.name), weapon: () => false });
+            const logs: Array<[string, Record<string, unknown> | undefined]> = [];
+            const g = new BoneGiver({
+                account,
+                options: { group: G, trades: 64, cueDir: dir, scope: S07, noReplyTicks: 3, ...(account === 'cairn_b04' ? { finalExtras: RUNES } : {}) },
+                sdk,
+                bot: { dismissBlockingUI: async () => {} },
+                signal: new AbortController().signal,
+                log: (m: string, d?: Record<string, unknown>) => logs.push([m, d])
+            } as unknown as RoleContext);
+            (sdk as unknown as { waitForReady: () => Promise<void> }).waitForReady = async () => {};
+            return { sdk, g, priv: g as unknown as Priv, logs, status: () => readJson<BoneStatus>(join(dir, `bones-${account}.json`))! };
+        };
+        const drive = async (sdk: FakeSdk, p: Promise<unknown>, n: number): Promise<boolean> => {
+            let settled = false;
+            p.then(() => (settled = true), () => (settled = true));
+            for (let i = 0; i < n && !settled; i++) {
+                await flush();
+                sdk.tick();
+            }
+            await flush();
+            return settled;
+        };
+        const offered = (sdk: FakeSdk) => sdk.sent.filter(a => a.method === 'sendOfferItem').map(a => sdk.state!.inventory.find(i => i.slot === a.args[0])?.name ?? a.args[0]);
+
+        test('b04 on the flagged cue: it is the server over three older givers, trades the runes alone, keeps its bones, and publishes lastGiven; the group is then done', async () => {
+            const dir = mkdtempSync(join(tmpdir(), 'bone-lastload-b04-'));
+            const cue = scoredCue(dir, 'a4.S07.bone', true);
+            others(dir, cue.session);
+            const r = rig(dir, 'cairn_b04');
+            r.g.onCue(cue);
+            expect(r.priv.server()).toBe('cairn_b04');
+            const offers: number[] = [];
+            const serve = r.sdk.onSend;
+            r.sdk.onSend = (a, s) => {
+                if (a.method === 'sendOfferItem') offers.push(a.args[0] as number);
+                serve(a, s);
+            };
+            expect(await drive(r.sdk, r.priv.cycle(), 80)).toBe(true);
+            // the law (slot 23) and air (slot 24) stacks, no bones
+            expect(offers).toEqual([23, 24]);
+            expect(r.sdk.getState()!.inventory.filter(i => /bones$/i.test(i.name))).toHaveLength(23);
+            expect(r.sdk.getState()!.inventory.filter(i => /rune$/i.test(i.name))).toHaveLength(0);
+            expect(r.logs.find(([m]) => m === 'trade')![1]).toMatchObject({ ok: true, final: true, lastLoad: true, gave: ['Law rune x1', 'Air rune x5'] });
+            expect([r.priv.trades, r.priv.lastGiven, r.priv.lastLoadDone()]).toEqual([1, true, true]);
+            // published with its session: the scored side and the other givers read it
+            (r.g as unknown as { publish(): void }).publish();
+            expect(r.status()).toMatchObject({ lastGiven: true, session: cue.session, trades: 1 });
+            const all = readBoneStatuses(dir);
+            expect(lastLoadGiven(all, G, cue.session)).toBe(true);
+            expect(boneServer(all, G, Date.now(), cue.session, true)).toBeUndefined();
+        });
+
+        test('the flag landing mid-trade on a normal load: that trade finishes as the whole load it was, and the next one is the runes alone', async () => {
+            const dir = mkdtempSync(join(tmpdir(), 'bone-lastload-midtrade-'));
+            const session = 'a4.S07.bone';
+            const w = new CueWriter(dir, 'scored', S07, session);
+            const beacons = [{ tick: 1, ms: Date.now() }];
+            w.write({ beacons, turns: [], site: OAK.receiver });
+            // b04 is the oldest ready, the others newer: by the count it serves this load
+            others(dir, session, { readyAt: Date.now() });
+            const r = rig(dir, 'cairn_b04');
+            r.g.onCue(readCue(dir)!);
+            expect(r.priv.server()).toBe('cairn_b04');
+            const serve = r.sdk.onSend;
+            r.sdk.onSend = (a, s) => {
+                if (a.method === 'sendOfferItem' && !readCue(dir)!.lastLoad) {
+                    w.write({ beacons, turns: [], lastLoad: true });
+                    r.g.onCue(readCue(dir)!);
+                }
+                serve(a, s);
+            };
+            expect(await drive(r.sdk, r.priv.cycle(), 80)).toBe(true);
+            const trades = () => r.logs.filter(([m]) => m === 'trade').map(([, d]) => d!);
+            expect(trades()[0]).toMatchObject({ ok: true, final: false, gave: ['Dragon bones x23'] });
+            expect([r.priv.trades, r.priv.lastGiven]).toEqual([1, false]);
+            // back from the bank with a whole load (restock unchanged), the next trade is the last
+            r.priv.restock = async () => {
+                r.sdk.push(s => ({ inventory: [...pack(23), ...s.inventory.filter(i => /rune$/i.test(i.name))] }));
+            };
+            r.sdk.push(s => ({ inventory: [...s.inventory].map((i, k) => ({ ...i, slot: 23 + k })) }));
+            expect(await drive(r.sdk, r.priv.cycle(), 80)).toBe(true);
+            expect(trades()[1]).toMatchObject({ ok: true, final: true, lastLoad: true, gave: ['Law rune x1', 'Air rune x5'] });
+            expect([r.priv.trades, r.priv.lastGiven]).toEqual([2, true]);
+        });
+
+        test('a giver without the extras under the flag never requests: it waits queued behind b04, and stands down once b04 has served it', async () => {
+            const dir = mkdtempSync(join(tmpdir(), 'bone-lastload-b01-'));
+            const cue = scoredCue(dir, 'a4.S07.bone', true);
+            putStatus(dir, st('cairn_b04', 'waiting', Date.now(), { session: cue.session, ms: Date.now() }));
+            const r = rig(dir, 'cairn_b01');
+            r.g.onCue(cue);
+            const c = r.priv.cycle();
+            expect(await drive(r.sdk, c, 40)).toBe(false);
+            expect(r.sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(0);
+            expect([r.priv.phase, r.priv.detail]).toEqual(['waiting', 'queued behind cairn_b04']);
+            putStatus(dir, st('cairn_b04', 'restock', null, { session: cue.session, ms: Date.now(), trades: 3, lastGiven: true }));
+            expect(await drive(r.sdk, c, 10)).toBe(true);
+            expect(r.priv.lastLoadDone()).toBe(true);
+            expect(offered(r.sdk)).toEqual([]);
+        });
+
+        test('relaunched in the same session after lastGiven: a giver without the extras and b04 itself both go off at once, with no trade and no second offer of the runes', async () => {
+            for (const account of ['cairn_b02', 'cairn_b04']) {
+                const dir = mkdtempSync(join(tmpdir(), 'bone-lastload-relaunch-'));
+                const cue = scoredCue(dir, 'a4.S07.bone', true);
+                putStatus(dir, st('cairn_b04', 'off', null, { session: cue.session, ms: Date.now(), trades: 5, lastGiven: true }));
+                if (account !== 'cairn_b04') putStatus(dir, st(account, 'off', null, { session: cue.session, ms: Date.now(), trades: 4 }));
+                const r = rig(dir, account);
+                await r.g.run();
+                expect(r.sdk.sent.filter(a => a.method === 'sendTradeRequest' || a.method === 'sendOfferItem')).toEqual([]);
+                expect(r.status()).toMatchObject({ phase: 'off', session: cue.session, trades: account === 'cairn_b04' ? 5 : 4 });
+                if (account === 'cairn_b04') {
+                    expect(r.priv.lastGiven).toBe(true);
+                    expect(r.status().lastGiven).toBe(true);
+                    expect(r.logs.some(([m]) => m === 'resumed: the last load was given')).toBe(true);
+                }
+            }
+        });
+
+        test("another session's flagged cue moves no one and sets nothing: no cue, no server, no lastGiven, and b04's prior lastGiven from that session is not restored", async () => {
+            const dir = mkdtempSync(join(tmpdir(), 'bone-lastload-stale-'));
+            const stale = { ...scoredCue(dir, 'attempt-3.S07.bone', true), ms: Date.now() - 60_000 };
+            expect(stale.lastLoad).toBe(true);
+            putStatus(dir, st('cairn_b04', 'off', null, { session: 'attempt-2.S07.bone', ms: Date.now() - 60_000, lastGiven: true }));
+            const r = rig(dir, 'cairn_b04');
+            r.g.onCue(stale);
+            expect(r.priv.cue).toBeNull();
+            expect([r.priv.server(), r.priv.lastGiven, r.priv.lastLoadDone()]).toEqual([undefined, false, false]);
+            // this attempt's first cue, unflagged: b04 counts in it with no lastGiven and serves by the count
+            const fresh = scoredCue(dir, 'attempt-4.S07.bone', false);
+            r.g.onCue(fresh);
+            expect([r.priv.lastGiven, r.priv.lastLoadDone()]).toEqual([false, false]);
+            expect(r.priv.server()).toBe('cairn_b04');
+            (r.g as unknown as { publish(): void }).publish();
+            expect(r.status().lastGiven).toBeUndefined();
+        });
     });
 });
