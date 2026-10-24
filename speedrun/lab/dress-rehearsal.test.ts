@@ -9,7 +9,8 @@ import { baseState } from '../lib/fake-sdk';
 import { giverGaps, hooked, KIT_PLANS, LANDING_HELPER_TILE, labChain, meetingTile, ringerTile, ringLoads, STAFF, withRingers } from './dress-rehearsal';
 import type { LabWorld } from './stand-ins';
 
-const manifest = readFileSync(MANIFEST, 'utf8');
+// without attempt 4's H4m row: these harnesses stage the chain before it
+const manifest = readFileSync(MANIFEST, 'utf8').replace(/^\| H4m\.1-H4m\.\d+ \|.*\n/m, '');
 const world = (): LabWorld => ({ staffLevel: '4', server: 'localhost', gateway: 'ws://localhost:8300' });
 const partners = (name: string) => Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS, 'H4m'].map(id => [id, name]));
 const cfg = (name: string) => ({ partners: partners(name), firemakingTiles: '3240,3296', rings: { giver: 'r' }, bones: { giver: 'b' }, courier: { giver: 'c', below: 3 }, anvil: { giver: 'a' }, cueDir: '/tmp/x' });
@@ -18,7 +19,7 @@ const tileOf = (lab: ReturnType<typeof labChain>, row: string) => lab.stubRows.f
 
 describe('labChain', () => {
     test('no group is missing (S15 is Monkey Madness\'s own steps), so there is no STAND-IN step, and nothing refuses as unbuilt', () => {
-        const lab = labChain(buildChain(cfg('lab_stub'), { cues }), { manifest, stub: 'lab_stub', world });
+        const lab = labChain(buildChain(cfg('lab_stub'), { cues, manifest }), { manifest, stub: 'lab_stub', world });
         expect(lab.standIns).toEqual([]);
         expect(lab.chain.filter(s => s.name.startsWith(STAND_IN_STEP)).map(s => s.id)).toEqual([]);
         expect(lab.chain.filter(s => /^L24/.test(s.id)).map(s => s.id)).toEqual(['L24a', 'L24b', 'L24c']);
@@ -27,7 +28,7 @@ describe('labChain', () => {
     });
 
     test('with a stub giver: every placed row but the cannon rows is the stub\'s, at its meeting tile; the cannon rows are staff-supplied', () => {
-        const chain = buildChain(cfg('lab_stub'), { cues });
+        const chain = buildChain(cfg('lab_stub'), { cues, manifest });
         const lab = labChain(chain, { manifest, stub: 'lab_stub', world });
         // H12 is Monkey Madness's own trade, staff-supplied just before its segment A (KIT_SEGMENTS), S15's first step.
         expect(lab.staffed).toEqual(['H4', 'H11', 'H12', 'H23']);
@@ -45,7 +46,7 @@ describe('labChain', () => {
     });
 
     test('a cannon row whose lab holder the config names stays SCORED\'s real cue-served step; an unnamed one is staff-supplied', () => {
-        const chain = buildChain(cfg('lab_stub'), { cues });
+        const chain = buildChain(cfg('lab_stub'), { cues, manifest });
         const lab = labChain(chain, { manifest, stub: 'lab_stub', world, cannonServed: ['H11'] });
         expect([lab.cueServed, lab.staffed]).toEqual([['H11'], ['H4', 'H12', 'H23']]);
         const h11 = lab.chain.find(s => s.id === 'H11')!;
@@ -54,7 +55,7 @@ describe('labChain', () => {
     });
 
     test('without a stub giver every placed row is staff-supplied, S01 included', () => {
-        const lab = labChain(sliceUntil(buildChain(cfg(STAFF), { cues }), 'S07'), { manifest, stub: null, world });
+        const lab = labChain(sliceUntil(buildChain(cfg(STAFF), { cues, manifest }), 'S07'), { manifest, stub: null, world });
         expect(lab.staffed).toEqual(['H1', 'H4', 'H4k']);
         expect(lab.chain.find(s => s.id === 'S01')!.name).toBe('H1 hand-off (supply: staff)');
         expect(lab.stubRows).toEqual([]);
@@ -68,7 +69,7 @@ describe('labChain', () => {
     });
 
     test("H4 is staff-supplied just before Doric's segment A, which still runs (it then finds H4 landed); a named H4 giver trades for real", () => {
-        const sliced = sliceUntil(buildChain(cfg(STAFF), { cues }), 'S05');
+        const sliced = sliceUntil(buildChain(cfg(STAFF), { cues, manifest }), 'S05');
         const lab = labChain(sliced, { manifest, stub: null, world });
         const names = lab.chain.map(s => s.name);
         const a = names.indexOf(KIT_SEGMENTS.H4!);
@@ -81,12 +82,12 @@ describe('labChain', () => {
     });
 
     test('--until=S04 needs no stand-in at all', () => {
-        const lab = labChain(sliceUntil(buildChain(cfg('lab_stub'), { cues }), 'S04'), { manifest, stub: 'lab_stub', world });
+        const lab = labChain(sliceUntil(buildChain(cfg('lab_stub'), { cues, manifest }), 'S04'), { manifest, stub: 'lab_stub', world });
         expect([lab.standIns, lab.staffed, lab.stubRows.map(r => r.row)]).toEqual([[], [], ['H1']]);
     });
 
     test('a row with no leg before it and no fixed tile is an error, not a guess', () => {
-        const chain = buildChain(cfg('lab_stub'), { cues });
+        const chain = buildChain(cfg('lab_stub'), { cues, manifest });
         const i = chain.findIndex(s => s.id === 'H21d');
         expect(meetingTile(chain, i)).toEqual({ x: 3185, z: 3436 });
         expect(() => meetingTile([{ ...chain[i]!, name: 'H99 hand-off' }], 0)).toThrow('no leg before it');
@@ -94,7 +95,7 @@ describe('labChain', () => {
 });
 
 describe('the real S04 and S06 givers', () => {
-    const chain = buildChain(cfg('lab_stub'), { cues });
+    const chain = buildChain(cfg('lab_stub'), { cues, manifest });
     const RINGERS = ['lab_r1', 'lab_r2', 'lab_r3'];
     const ALTAR = Array.from({ length: 7 }, (_, i) => `cairn_rcg${i + 1}`);
     const none = { ringers: [], altarGivers: [] };
@@ -156,7 +157,7 @@ describe('the real S04 and S06 givers', () => {
         const rings = withRingers({ giver: 'r' }, RINGERS);
         expect(ringLoads(rings)).toEqual(ROUTE_LOADS.map(l => ({ ...l })));
         expect(magicOptions({ giver: rings.giver, ...(rings.loads ? { loads: rings.loads } : {}) }).loads.map(l => l.giver)).toEqual(RINGERS);
-        const s04 = buildChain({ ...cfg('lab_stub'), rings }, { cues }).find(s => s.id === 'S04');
+        const s04 = buildChain({ ...cfg('lab_stub'), rings }, { cues, manifest }).find(s => s.id === 'S04');
         expect(s04?.name).toBe('S04 magic');
     });
 
