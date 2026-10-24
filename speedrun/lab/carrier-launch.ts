@@ -6,8 +6,9 @@
 //   while the ledger has the row), muleRunOptionsByAccount with serve = the lab SCORED login, the lab
 //   run's mule cue dir and a lab deliveryRun token; only the production account names are replaced,
 //   one lab cairn_ name each (CARRIER_ROLES order);
-// - each carrier's bank is seeded by ::give with exactly its packages' stock (h4m-carrier.ts's seed,
-//   the top-ups at their max), from a session of its own that leaves it logged out at its first
+// - each carrier's bank is emptied (~clearinv bank: a lab name outlives a rehearsal) and seeded by
+//   ::give with exactly its packages' stock (h4m-carrier.ts's seed, the top-ups at their max), from a
+//   session of its own that leaves it logged out at its first
 //   package's bank; h55's lab name gets h55's observed profile (h4m-carrier.ts);
 // - one standalone.ts launcher runs the three (AGENT_PORT+12, its own run dir, the carriers file as its
 //   launch.json, which the run config's delivery.launcherConfig names for run.ts's delivery preflight);
@@ -207,7 +208,10 @@ export async function seedCarrier(s: Session, options: Pick<MuleRunOptions, 'pac
     }
     const first = options.packages[0]!;
     await mustTele(s.sdk, first.bank.x, first.bank.z, first.bank.level);
+    // A lab account outlives a rehearsal: an earlier seed is cleared, so the bank holds exactly this run's stock.
+    await cheat(s.sdk, '~clearinv bank');
     if (!(await s.bot.openBank()).success) throw new Error('carrier bank unavailable');
+    if (!(await waitUntil(s.sdk, () => s.sdk.getBankItems().length === 0, { maxTicks: 10 })).ok) throw new Error(`the bank is not empty before the seed (${s.sdk.getBankItems().length} stacks after ~clearinv bank)`);
     const stock = carrierStock(options, pack);
     for (const g of seedGives(stock, pack)) {
         const before = carried(s);
