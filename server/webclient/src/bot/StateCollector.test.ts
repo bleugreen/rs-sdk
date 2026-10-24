@@ -66,6 +66,20 @@ describe('BotStateCollector combat state', () => {
         expect((collector as any).combatEvents[0].tick).toBe(12);
     });
 
+    test("a damage_taken event on the player carries the hitsplat's type: 2 is a poison tick", () => {
+        const client = createClient();
+        client.localPlayer.damageTypes = new Int32Array([2, 0, 0, 0]);
+        const collector = new BotStateCollector(client);
+
+        (collector as any).collectCombatEvents(12);
+        expect((collector as any).combatEvents[0]).toMatchObject({ type: 'damage_taken', targetType: 'player', damage: 2, hitmark: 2 });
+
+        // A client entity without types (the fixture's default) publishes no hitmark rather than a guess.
+        const bare = new BotStateCollector(createClient());
+        (bare as any).collectCombatEvents(12);
+        expect((bare as any).combatEvents[0].hitmark).toBeUndefined();
+    });
+
     test('publishes UI-observed and same-tick duplicate messages on newer revisions', () => {
         const client = createClient();
         client.chatText = ['Hello'];

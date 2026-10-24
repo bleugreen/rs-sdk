@@ -484,6 +484,9 @@ export class BotStateCollector implements ScanProvider {
                         tick: currentTick,
                         type: 'damage_taken',
                         damage,
+                        // The splat's type is the one thing that tells a poison tick from a hit: the server never
+                        // transmits %poison (all.varp), and the poisoned message comes only on a fresh poisoning.
+                        ...(player.damageTypes ? { hitmark: player.damageTypes[i] } : {}),
                         sourceType: facing.type === 'player' ? 'other_player' : 'npc',
                         sourceIndex: facing.index,
                         targetType: 'player',
