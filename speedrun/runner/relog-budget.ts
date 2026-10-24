@@ -7,6 +7,10 @@
 // is an entry in <run dir>/relogs.json with the step and tick it happened at. run.ts's start gate
 // reads it, so a resumed run starts with what the earlier sessions spent.
 //
+// An adopt (run.ts finds the page still in the world, ticking, with no login sent) is recorded too,
+// as kind 'adopt', and never charged: SCORED never left the world, so nothing was spent. Only real
+// logins count.
+//
 // The lock (<run dir>/relog.lock, created exclusively) is the race rule: whoever holds it is the only
 // one logging SCORED in. run.ts takes it before its own relog and never starts one while the operator
 // holds it; it waits for the operator's to finish and adopts the session it finds. A lock whose
@@ -23,8 +27,13 @@ export const PLANNED_RELOGS = 1;
 /** Relogs after a dropped session, run.ts's and the operator's together. */
 export const UNPLANNED_RELOGS = 3;
 
-/** planned: a chain step's own relog. unplanned: run.ts after a drop. manual: the operator's (relog-now, or found done and adopted). */
-export type RelogKind = 'planned' | 'unplanned' | 'manual';
+/**
+ * planned: a chain step's own relog. unplanned: run.ts's login after a drop. manual: the operator's
+ * (relog-now). adopt: run.ts found the page back in the world with no login of its own; never charged.
+ */
+export type RelogKind = 'planned' | 'unplanned' | 'manual' | 'adopt';
+/** The kinds that are a login and spend the budget. */
+export type ChargedKind = Exclude<RelogKind, 'adopt'>;
 export type RelogBy = 'run' | 'operator';
 
 export interface RelogEntry {
@@ -105,9 +114,15 @@ export class RelogBudget {
         }
     }
 
+    /** The logins spent; adopts are not among them. */
     used(): RelogLimits {
         const e = this.entries();
-        return { planned: e.filter(x => x.kind === 'planned').length, unplanned: e.filter(x => x.kind !== 'planned').length };
+        return { planned: e.filter(x => x.kind === 'planned').length, unplanned: e.filter(x => x.kind === 'unplanned' || x.kind === 'manual').length };
+    }
+
+    /** The adopts recorded (uncharged). */
+    adopts(): number {
+        return this.entries().filter(x => x.kind === 'adopt').length;
     }
 
     /** Whether the planned relog of `step` is recorded and closed (scored-relog.ts's `done`; the login half's). */
@@ -157,7 +172,7 @@ export class RelogBudget {
     }
 
     /** true when one more relog of `kind` is within the budget, else why not. */
-    check(kind: RelogKind): true | string {
+    check(kind: ChargedKind): true | string {
         const u = this.used();
         if (kind === 'planned') return u.planned < this.limits.planned || `the planned relogs are spent (${u.planned}/${this.limits.planned})`;
         return u.unplanned < this.limits.unplanned || `relog budget spent: ${u.unplanned}/${this.limits.unplanned} unplanned relogs used (${this.describe()})`;
@@ -165,7 +180,8 @@ export class RelogBudget {
 
     describe(): string {
         const u = this.used();
-        return `planned ${u.planned}/${this.limits.planned}, unplanned ${u.unplanned}/${this.limits.unplanned}`;
+        const adopts = this.adopts();
+        return `planned ${u.planned}/${this.limits.planned}, unplanned ${u.unplanned}/${this.limits.unplanned}${adopts ? `, ${adopts} adopt${adopts === 1 ? '' : 's'} uncharged` : ''}`;
     }
 
     record(entry: Omit<RelogEntry, 'at'> & { at?: string }): RelogEntry {
