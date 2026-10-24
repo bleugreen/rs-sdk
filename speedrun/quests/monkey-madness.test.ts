@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -14,15 +14,18 @@ import { compactJournal } from '../lib/quests';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession } from '../runner/step';
 import {
-    BANANA_TREE_IDS, bananaRoomDrops, gtSwap, h12Plan, h12Wants, kitMissing, LOST_SEAL, narnodeTalk, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, waydarIntroWatch, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
+    BANANA_TREE_IDS, bananaRoomDrops, cureBeforeSwap, preDose, gtSwap, h12Plan, h12Wants, kitMissing, LOST_SEAL, narnodeTalk, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, waydarIntroWatch, itemMilestone, setStepNote, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
     BELOW_30_EATING, cureWanted, eatBelowFor, sharksToDrop, GARKOR_WEST, isMonkeyChatter, CAGE, CAGE_NORTH_STRIP, CAGE_TILES, inCage, letOut, letOutPick, LET_OUT_ATTEMPTS, MINDER_REACH, nearestFire, sceneBuilt, tileIn, underTemple, scorpionsNear, SCORPION_CLOSE, SCORPION_REACH, sigilRoom, h12oLeg, legCue, pFinalStop, closeLeftTrade, DECLINE_TICKS, H12O_M_ROW, mTopUpCap, ASK_SHARK, ASK_SUPER_ANTIPOISON, H12O_SCOPE, onTradeOpen, P_TOPUP_MAX_SHARKS, pTopUpAsk, immunityWanted,
     AREAS, inArea, inCell, zooknockWay, type ZooknockLegs, CHAT_DRINK_FLOOR, DRINK_BELOW, packClickAllowed, upkeep, X_PRAYER,
     ARCHER_REACH, AUNT_BOX, crateRoute, crateSteps, entersSleepingZone, SLEEPING_DETOURS, sleepingDetour, GUARD_REACH, legPrayerFor, M_TOPUP_TILE, mLegSize, mTopUpSharks, NO_DWELL, pathTiles, pLegSize, POSTED_ARCHERS, prayerRuns, receiveLeg, RELIGIOUS_GUARDS, SLEEPING_ZONE, tilePrayer, TOPUP_TRIES, TOPUP_WAIT, tradeIdle, type Receive, nextBananaTree, SUPER_IMMUNE_TICKS, offAtoll, patrolLeavesLane, SEGMENT_EATING, topUpWanted, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, steps, templeLeft, treeRouteRefusal, yRoom, type MmContext,
 } from './monkey-madness';
-import { slotNeed } from './segments';
+import { noteAntipoison, slotNeed } from './segments';
 import { objPack } from '../lib/obj-pack';
 import { MANIFEST } from '../tools/slot-ledger';
 import { planMuleDeliveryFixtures, type FixtureItem } from '../lab/mule-delivery-fixtures';
+
+// The run's antipoison record (segments.ts noteAntipoison) is module state: no test inherits another's dose.
+beforeEach(() => noteAntipoison(-Infinity));
 
 const item = (id: number, slot = 0): InventoryItem => ({ slot, id, name: `obj ${id}`, count: 1, optionsWithIndex: [] });
 
@@ -100,14 +103,22 @@ describe('the temple rope pin: the way back and the resume walk', () => {
     });
 });
 
-describe('antipoison cures', () => {
-    const at = (o: Partial<Parameters<typeof cureWanted>[0]>) => cureWanted({ tick: 1000, lastPoisoned: 1000, lastDose: -Infinity, ...o });
+/** A poison tick on the player, as the collector publishes it (hitmark 2). */
+const poisonHit = (tick: number) => ({ tick, type: 'damage_taken', damage: 2, hitmark: 2, sourceType: 'npc', sourceIndex: -1, targetType: 'player', targetIndex: -1 }) as BotWorldState['combatEvents'][number];
 
-    test('a fresh poisoning is cured once, in any segment', () => {
-        expect(at({})).toBe(true);
-        expect(at({ lastDose: 1000 })).toBe(false); // cured this tick
-        expect(at({ lastPoisoned: 900, lastDose: 950 })).toBe(false); // a later dose covered it
-        expect(at({ lastPoisoned: 960 })).toBe(false); // 40 ticks old: not this poisoning's message
+describe('antipoison cures', () => {
+    const at = (o: { tick?: number; hitAt?: number; lastDose?: number }) =>
+        cureWanted(baseState({ tick: o.tick ?? 1000, combatEvents: o.hitAt === undefined ? [] : [poisonHit(o.hitAt)] }), o.lastDose ?? -Infinity);
+
+    test('a poison that is on is cured once, in any segment, one carried into it included', () => {
+        expect(at({ hitAt: 1000 })).toBe(true);
+        expect(at({ hitAt: 975 })).toBe(true); // carried in: its last hit before upkeep's first look, no message
+        expect(at({ hitAt: 1000, lastDose: 1000 })).toBe(false); // cured this tick
+        expect(at({ hitAt: 900, lastDose: 950 })).toBe(false); // a later dose covered it
+        expect(at({ hitAt: 960 })).toBe(false); // 40 ticks without a hit: worn off
+        expect(at({ hitAt: 999, lastDose: 998 })).toBe(false); // never within 3 ticks of a dose
+        expect(at({})).toBe(false);
+        expect(at({ tick: 36, hitAt: 32, lastDose: 37 })).toBe(true); // a dose from before a client reload (the tick restarts at 0)
     });
 });
 
@@ -118,10 +129,11 @@ describe('upkeep holds its pack clicks while a chat is open (a pack click closes
     const page = { isOpen: true, options: [], isWaiting: false, allComponents: [{ text: 'Has Aunty given you the toy yet?' }] } as unknown as BotWorldState['dialog'];
     const closed = { isOpen: false, options: [], isWaiting: false } as BotWorldState['dialog'];
     const pp = (n: number) => ({ activePrayers: melee(), prayerPoints: n, prayerLevel: 94 });
+    beforeEach(() => noteAntipoison(-Infinity));
 
     /** Upkeep running on scripted state from `tick`, `pp` points under Protect from Melee; `end` stops it. */
-    async function running(o: { tick: number; points: number; inventory: InventoryItem[] }) {
-        const sdk = new FakeSdk(baseState({ tick: o.tick, autoRetaliateEnabled: false, prayers: pp(o.points), inventory: o.inventory, player: { hp: 42 } as PlayerState }));
+    async function running(o: { tick: number; points: number; inventory: InventoryItem[]; extra?: Partial<BotWorldState> }) {
+        const sdk = new FakeSdk(baseState({ tick: o.tick, autoRetaliateEnabled: false, prayers: pp(o.points), inventory: o.inventory, player: { hp: 42 } as PlayerState, ...o.extra }));
         let end!: () => void;
         const done = upkeep(sdk as never, () => new Promise<void>(r => (end = r)));
         await flush();
@@ -174,6 +186,28 @@ describe('upkeep holds its pack clicks while a chat is open (a pack click closes
         await u.stop();
     });
 
+    test('a poison carried in (its last hit before upkeep started, no message) is cured on the first state, once', async () => {
+        const u = await running({ tick: 3000, points: 60, inventory: [drinkable(5, 'Superantipoison(4)')], extra: { combatEvents: [poisonHit(2990)] } });
+        u.sdk.tick();
+        await flush();
+        u.sdk.tick();
+        u.sdk.tick();
+        await flush();
+        expect(u.uses()).toEqual([{ method: 'sendUseItem', args: [5, 1] }]);
+        await u.stop();
+    });
+
+    test('the first poison hitsplat in a clean stretch gets the dose (no message needed)', async () => {
+        const u = await running({ tick: 4000, points: 60, inventory: [drinkable(5, 'Superantipoison(4)')] });
+        u.sdk.tick();
+        await flush();
+        expect(u.uses()).toEqual([]);
+        u.sdk.tick(s => ({ combatEvents: [poisonHit(s.tick + 1)] }));
+        await flush();
+        expect(u.uses()).toEqual([{ method: 'sendUseItem', args: [5, 1] }]);
+        await u.stop();
+    });
+
     test('an empty vial is dropped only once the chat closes', async () => {
         const u = await running({ tick: 700, points: 60, inventory: [{ slot: 8, id: 229, name: 'Vial', count: 1, optionsWithIndex: [] }] });
         u.sdk.tick({ dialog: page });
@@ -206,6 +240,7 @@ describe('poison immunity before a dungeon pass', () => {
         expect(immunityWanted(1000, 500, true)).toBe(false);
         expect(immunityWanted(1041, 500, true)).toBe(true);
         expect(immunityWanted(5000, -Infinity, false)).toBe(false);
+        expect(immunityWanted(100, 500, true)).toBe(true); // a dose from before a client reload covers nothing
     });
 });
 
@@ -1379,6 +1414,87 @@ describe('X: the prayer points (rs/687)', () => {
     });
     test('held doses count: 10 points and two doses at 30 make 70', () => {
         expect(x().preconditions(atX(10, [named('Prayer potion(2)', 3)]), {} as MmContext)).toBe(true);
+    });
+});
+
+describe('S15:A cures a poison carried in from S14 (rs/755)', () => {
+    beforeEach(() => noteAntipoison(-Infinity));
+    const potion = (slot: number, name: string, id = 0): InventoryItem => ({ slot, id, name, count: 1, optionsWithIndex: [{ text: 'Drink', opIndex: 1 }] });
+    const page = { isOpen: true, options: [], isWaiting: false, allComponents: [{ text: 'Welcome to the Grand Tree.' }] } as unknown as BotWorldState['dialog'];
+    const closed = { isOpen: false, options: [], isWaiting: false } as BotWorldState['dialog'];
+    const sip = (name: string) => {
+        const m = /^(.*)\((\d)\)$/.exec(name)!;
+        return Number(m[2]) > 1 ? `${m[1]}(${Number(m[2]) - 1})` : 'Vial';
+    };
+    /** Drinks and drops take effect as the engine's would, seen on the next tick. */
+    function potionServer(sdk: FakeSdk) {
+        sdk.onSend = (a, f) => {
+            const slot = a.args[0] as number;
+            if (a.method === 'sendUseItem') f.state = { ...f.state!, inventory: f.state!.inventory.map(i => (i.slot === slot ? { ...i, name: sip(i.name) } : i)) };
+            if (a.method === 'sendDropItem') f.state = { ...f.state!, inventory: f.state!.inventory.filter(i => i.slot !== slot) };
+        };
+    }
+
+    test("poisoned with H7's Antipoison(1): it is drunk before the swap, its vial dropped, and the pack is the kit's 27 (rs/158)", async () => {
+        const kit = Array.from({ length: 27 }, (_, i): InventoryItem => ({ slot: i, id: 1000 + i, name: `Kit item ${i}`, count: 1, optionsWithIndex: [] }));
+        const sdk = new FakeSdk(baseState({ tick: 5000, inventory: [...kit, potion(27, 'Antipoison(1)')], combatEvents: [poisonHit(4985)] }));
+        potionServer(sdk);
+        await drive(sdk, cureBeforeSwap(sdk as never), 20);
+        expect(sdk.sent).toEqual([{ method: 'sendUseItem', args: [27, 1] }, { method: 'sendDropItem', args: [27] }]);
+        expect(sdk.state!.inventory).toHaveLength(27);
+        expect(sdk.state!.inventory.some(i => /vial|antipoison/i.test(i.name))).toBe(false);
+    });
+
+    test("poisoned holding H7's Antipoison(3) and a Superantipoison(4): the plain one is drunk before the swap", async () => {
+        const sdk = new FakeSdk(baseState({ tick: 5000, inventory: [potion(3, 'Superantipoison(4)', MM_OBJ.superAntipoison4), potion(8, 'Antipoison(3)')], combatEvents: [poisonHit(4990)] }));
+        potionServer(sdk);
+        await drive(sdk, cureBeforeSwap(sdk as never), 10);
+        expect(sdk.sent).toEqual([{ method: 'sendUseItem', args: [8, 1] }]);
+        expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Superantipoison(4)', 'Antipoison(2)']);
+    });
+
+    test('a cure upkeep sent a tick before (while A eats) is waited out: its vial is dropped before the swap sizes', async () => {
+        const kit = Array.from({ length: 27 }, (_, i): InventoryItem => ({ slot: i, id: 1000 + i, name: `Kit item ${i}`, count: 1, optionsWithIndex: [] }));
+        const sdk = new FakeSdk(baseState({ tick: 5000, inventory: [...kit, potion(27, 'Antipoison(1)')], combatEvents: [poisonHit(4985)] }));
+        potionServer(sdk);
+        noteAntipoison(4999);
+        let n = 0;
+        await drive(sdk, cureBeforeSwap(sdk as never), 20, s => (++n === 1 ? { inventory: s.inventory.map(i => (i.slot === 27 ? { ...i, name: 'Vial' } : i)) } : {}));
+        expect(sdk.sent).toEqual([{ method: 'sendDropItem', args: [27] }]);
+        expect(sdk.state!.inventory).toHaveLength(27);
+    });
+
+    test('a dose record ahead of the clock (another session) is not waited on: clean, the swap starts at once', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 5000, inventory: [potion(27, 'Antipoison(1)')] }));
+        noteAntipoison(9000);
+        await drive(sdk, cureBeforeSwap(sdk as never), 5);
+        expect(sdk.sent).toEqual([]);
+        expect(sdk.state!.tick).toBe(5000);
+    });
+
+    test('not poisoned: nothing is drunk before or after the swap', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 5000, inventory: [potion(3, 'Antipoison(3)'), potion(4, 'Superantipoison(4)', MM_OBJ.superAntipoison4)] }));
+        potionServer(sdk);
+        await drive(sdk, cureBeforeSwap(sdk as never), 5);
+        await drive(sdk, preDose(sdk as never), 5);
+        expect(sdk.sent).toEqual([]);
+    });
+
+    test("poisoned with no antipoison(*) before the swap: one dose of H12's Superantipoison(4) after it, before Narnode, never during a chat", async () => {
+        const sdk = new FakeSdk(baseState({ tick: 6000, combatEvents: [poisonHit(5992)] }));
+        potionServer(sdk);
+        await drive(sdk, cureBeforeSwap(sdk as never), 5);
+        expect(sdk.sent).toEqual([]);
+        // The swap has delivered the kit's super (no Superantipoison(1) this time); a page is up as preDose starts.
+        sdk.push({ inventory: [potion(3, 'Superantipoison(4)', MM_OBJ.superAntipoison4)], dialog: page });
+        const p = preDose(sdk as never);
+        await flush();
+        sdk.tick({ dialog: page });
+        await flush();
+        expect(sdk.sent).toEqual([]);
+        await drive(sdk, p, 10, () => ({ dialog: closed }));
+        expect(sdk.sent).toEqual([{ method: 'sendUseItem', args: [3, 1] }]);
+        expect(sdk.state!.inventory.map(i => i.name)).toEqual(['Superantipoison(3)']);
     });
 });
 

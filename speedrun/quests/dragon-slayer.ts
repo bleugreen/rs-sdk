@@ -49,7 +49,7 @@ import { runTo, spellUse, sumUse, teleport, type Area, type RuneUseTable, type T
 import { waitTicks, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, configId, findLoc, invCount, invItem, opIndex, pos, waitForNpc, worn, type LocQuery } from '../lib/world';
 import type { Step, StepContext } from '../runner/step';
-import { allOf, baseLevels, drinkPrayerTo, kitSegment, kitWant, prayerCovers, prayerReserve, questSteps, slotsCover, talkShape, type KitItem, type QuestItem, type QuestOptions, type Segment } from './segments';
+import { allOf, baseLevels, drinkPrayerTo, entryCured, kitSegment, kitWant, prayerCovers, prayerReserve, questSteps, slotsCover, talkShape, type KitItem, type QuestItem, type QuestOptions, type Segment } from './segments';
 
 export const quest = 'dragon' as const;
 export const stepId = 'S26';
@@ -1064,7 +1064,8 @@ export function steps(opts: Options = {}): Step<any>[] {
             done: o => questStatus(stateOf(o), quest) === 'complete' && keyDropped(stateOf(o)) === true,
         },
     ];
-    return questSteps(stepId, segs);
+    // Nothing on Dragon Slayer's route poisons and no antipoison is held: L names a poison rather than fight Elvarg through it.
+    return questSteps(stepId, entryCured(stepId, ['L'], segs));
 }
 
 /** Reference ticks per segment from the arrival tile: dragon_slayer.md's fixed column regrouped into these segments (inferred), Elvarg the manifest's ~70. */
