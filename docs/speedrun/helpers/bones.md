@@ -387,8 +387,8 @@ back after 700 ticks: about 385 an hour at the ~330 ms tick the demo actually de
 
 | Option | Default | Meaning |
 |---|---|---|
-| `spot` | `hill_giants` | `hill_giants`; `baby_blue` (withdraws or fetches its dusty key; a 30-minute acquisition failure uses hill giants for one trip, then retries; banks at Falador West); `ugthanki` (raw ugthanki meat in the Kharidian desert; banks at Shantay's chest; see below); or `nature_hobgoblins` (nature talismans, below; banks at Falador West) |
-| `train` | 50 | Attack/Strength/Defence target on cows before the spot |
+| `spot` | `hill_giants` | `hill_giants`; `baby_blue` (withdraws or fetches its dusty key; a 30-minute acquisition failure uses hill giants for one trip, then retries; banks at Falador West); `blue_dragon` (adult blues in melee, below); `ugthanki` (raw ugthanki meat in the Kharidian desert; banks at Shantay's chest; see below); or `nature_hobgoblins` (nature talismans, below; banks at Falador West) |
+| `train` | the spot's own (70 for `blue_dragon`), else 50 | Attack/Strength/Defence target on cows before the spot |
 | `food` | the spot's own (`ge` for `baby_blue` and `ugthanki`, `none` for `nature_hobgoblins`), else `fish` | `ge`: buy `foodItem` at the Grand Exchange (below); `fish`: catch and cook trout/salmon; `none`: rest at the bank when hurt (about 30 s per hp: useless in practice) |
 | `foodItem` | `Shark` | GE food: the item bought and eaten |
 | `foodPerTrip` | 10 | GE food: taken out of the bank per trip |
@@ -405,6 +405,56 @@ back after 700 ticks: about 385 an hour at the ~330 ms tick the demo actually de
 | `maxPlayersNearTarget` | 0 | Skip a target with more than this many other players adjacent |
 | `styleCap` | 99 | Stop training a combat skill at this level |
 | `trace` | false | Log every fight at the spot (outcome, game ticks, position, live and busy targets in view, players), for measuring kill rates |
+
+## Adult blue dragons in melee (`spot: 'blue_dragon'`)
+
+The 3 adult blues of the Taverley baby blue room. Their spawns, the room box and the engine's
+leash rule live in `speedrun/helpers/taverley-dragons.ts`, which `dragons.ts` (the magic killers)
+shares. The route, the dusty key and the Falador West bank are the baby blues'.
+
+- **Respawn and ceiling (read).** `respawnrate=60` ticks, dragon bones on every kill. With
+  instant kills the room tops out at 3 x 9,000 / 60 = 450 bones an hour at 400 ms; allowing for
+  kill time it is about 300-350. Melee killers stay far below it, so a melee pair beside the
+  magic pair adds bones rather than taking the magic pair's kills.
+- **No other adult blue site is reachable.** The Ogre Enclave's 6 (m40_147) sit behind the
+  enclave guard, who needs Watchtower progress (`enclave_guard.rs2`). The Heroes' Guild
+  basement's 1 (m45_154, (2908, 9905)) is behind Heroes' Quest. The SDK collision map has no
+  path to either from the Taverley ladder.
+- **Shield (read).** Item 1540 is named "Dragonfire shield" in this revision
+  (`antidragonbreathshield`), so the spot matches it by id. Dragonfire hits up to 50 without it
+  and 5 with it (`dragon.rs2`). The spot's `worn` requirement keeps the helper out of the
+  dungeon until 1540 is equipped. It equips a carried shield and takes a banked one out, and with
+  none owned it waits at the bank, looking again every 5 minutes. Gear upgrades never take the
+  shield slot.
+- **Targets and loot.** Only `^blue dragon$` is attacked, never a baby. An adult already hitting
+  the player is fought first: in single combat the server refuses any other target while it
+  hits. Dragon bones are looted by exact name.
+- **Room gate.** At most 2 players (this one included) inside an adult's leash. The magic pair's
+  safe tile and route are outside every leash, so they never count. With the room full, the
+  helper waits inside the door.
+- **Gear.** `wieldBanked`: bank visits take out melee gear that ranks above what is worn
+  (`gearRank`), and the next cycle wields it. Only this spot does that.
+- **Levels.** The spot assumes 99 Attack/Strength/Defence/Hitpoints (h51/h52). `train`
+  defaults to 70 so a fresh account is never sent in at 50.
+
+**Lab (measured, 2026-10-24, bgsrv-mac, 400 ms, `speedrun/lab/measure-blue-dragon.ts`).** Setup:
+99 melee, adamant scimitar, full helm, platebody and platelegs, the shield, 16 sharks a trip,
+bank to bank from Falador West, no other players.
+
+- Results: 13 kills and 13 dragon bones banked over two trips (3,256 ticks). That is
+  **36 bones an hour** at **2.4 sharks a bone**.
+- Safety: 140 dragonfire breaths, every one absorbed by the shield. Lowest HP 46, no deaths.
+- Trips: both ended on food, after 5 and 8 kills, at 6-9 minutes in the room and 2-3 minutes of
+  walking.
+- Kills take about 170 ticks with the adamant scimitar.
+
+Two fight bugs surfaced on this spot and were fixed in `Run.fight` / `pickTarget`:
+- A fight that ran to its 120-second deadline counted as a kill.
+- The adult already on the player was skipped as "in combat", so the role clicked a refused
+  target while it was breathed on.
+
+With them in place, kills equal bones (`swingCheck` re-attacks when the target shows no hitsplat
+for two swings).
 
 ## Measured on the demo (2026-10-21 UTC)
 
