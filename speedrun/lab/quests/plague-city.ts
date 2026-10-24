@@ -17,6 +17,7 @@
 //
 // --at=x,z: start the --from fixture on that tile instead (B from the house's west door tile,
 // 2570,3333, or from Alrena's room). Each run records the house doors' state at its start.
+// --open-door: open the house's west door (2570,3333) before the run, from the fixture's tile.
 //
 // After a run that reached Z, `check` confirms the quest complete, the magic scroll read (Z's note:
 // the memorise and can-now-cast pages, the scroll gone), the 2,425 base Mining, and then casts the
@@ -33,6 +34,7 @@ import { HOUSE_DOORS, quest, stepId, steps, type Options, type ScrollRead } from
 import { labMain, STAGING, type LabQuest, type QuestFixture } from './run';
 import { arg, result } from '../common';
 import { clearInventory, give, leaveTutorial, mustTele, tele } from '../setup';
+import { openDoor } from '../../lib/act';
 
 export const LEVELS = { magic: 59, mining: 49, firemaking: 99, runecraft: 44, woodcutting: 99, prayer: 95 } as const;
 
@@ -156,12 +158,20 @@ const lab: LabQuest<Options> = {
     async prepare(session: Session, f: QuestFixture) {
         xp0 = skillXp(session.sdk, 'mining');
         carrierGive = null;
+        if (process.argv.includes('--open-door')) {
+            const at = session.sdk.getState()!.player!;
+            const o = await openDoor(session.sdk as never, HOUSE_DOORS[0].x, HOUSE_DOORS[0].z);
+            if (!o.ok) throw new Error('--open-door: the west house door did not open');
+            if (session.sdk.getState()!.player!.worldX !== at.worldX || session.sdk.getState()!.player!.worldZ !== at.worldZ) await mustTele(session.sdk, at.worldX, at.worldZ);
+        }
         const s = session.sdk.getState()!;
+        const near = s.nearbyLocs.filter(l => /door/i.test(l.name) && Math.abs(l.x - 2570) <= 2 && Math.abs(l.z - 3333) <= 2).map(l => `${l.name} ${l.id} @${l.x},${l.z} [${l.optionsWithIndex.map(o => o.text).join('/')}]`);
+        const edmond = s.nearbyNpcs.find(n => /^edmond$/i.test(n.name));
         const doors = HOUSE_DOORS.map(d => {
             const l = s.nearbyLocs.find(l => l.x === d.x && l.z === d.z && /door/i.test(l.name));
             return { ...d, loc: l ? `${l.name} ${l.id} [${l.optionsWithIndex.map(o => o.text).join('/')}]` : null };
         });
-        result(`${stepId}_start`, { letter: f.letter, at: s.player ? { x: s.player.worldX, z: s.player.worldZ } : null, doors });
+        result(`${stepId}_start`, { letter: f.letter, at: s.player ? { x: s.player.worldX, z: s.player.worldZ } : null, doors, near, edmond: edmond ? { x: edmond.x, z: edmond.z } : null });
         if (carrier && f.letter === 'A') await stageCarrier(carrier, session.sdk.getState()!.player!.name);
     },
     async check(session: Session, _f: QuestFixture, rows: readonly TickRow[]) {
