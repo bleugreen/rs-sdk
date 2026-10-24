@@ -407,6 +407,32 @@ state of the two stretches where a death could otherwise pass unseen:
   runs fenced (`runner/fence.ts`), so nothing it still sends after the death
   reaches the game while run.ts logs out. Legs (`watchesDeath`) keep their own
   watch, which also writes the travel row.
+- **Every helper wait** (`runner/wait-guard.ts` `guardWait`): a cue's open with its
+  wait (a delivery row's `awaitReady`, the beacon frames; chain.ts `openGuarded`,
+  used by `cueAround` and `withCue`), and a hand-off step's waits for its partner
+  (the cue, in sight, its request) with the trade itself. A death ends the wait
+  on its first frame, whatever it was still waiting for, and fails the step.
+- **From login to the first step** (run.ts `loginUpkeep`): the live census, the
+  gates and the resume walk. A death there fails the first step's entry before
+  it sends anything.
+
+The one death race is `death.ts` `watchFrames` / `raceDeath` (`watchDeath` for a
+stretch with nothing else to do). The last two stretches also run the **wait
+upkeep** (`WaitUpkeep`), because no step body looks after SCORED there. Attempt 4
+died in the `{H12, mule}` cue open's readiness wait, poisoned at about 1 HP, with
+nothing eating or curing. The upkeep eats by the legs' rule (`travel.ts` `eatDue`)
+and drinks an antipoison when SCORED reads poisoned, through `quests/segments.ts`
+(`poisoned`, `cureDose`, `noteAntipoison`, noted in the tick the drink is sent so
+no other caller drinks twice). It sends one click per frame, the eat first, and a
+drink that did not land is sent again after `CURE_RESEND` ticks. It sends nothing
+while a trade is open, because a pack click closes the trade screen. From login
+it also holds while a dialogue is open. The login stretch ends when the first
+step is entered (`enteringEnds`), where the step's own upkeep takes over. The
+entry first settles the stretch (at most `SETTLE_TICKS`) while an eat or a dose is
+still due, because the eat and the dose go on separate frames and a step's own
+upkeep may not cure a poison carried in. Each
+eat or dose it makes is a `(run) upkeep ...` note row. A guard inside another
+stretch on the same SDK adds nothing.
 
 A death is any of these: the engine's `Oh dear you are dead!` (death.rs2), hp 0,
 the browser client's `lifeId` going up, or a jump onto the respawn square that the

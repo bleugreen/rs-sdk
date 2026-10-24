@@ -420,7 +420,24 @@ For each delivery row R on the path, in chain order:
    merely late is waited for, up to the gate's bound, and then served. The
    resume walker reads the same preconditions: SCORED away from the meeting,
    or holding the row's delivery without the attempt's hand-off record, walks
-   down past the row instead of trading it again.
+   down past the row instead of trading it again. The wait runs under the wait
+   guard (RESILIENCE.md, "A death is never a clean stop"): a death ends it, and
+   SCORED eats and cures while it stands.
+
+   A **kit row** (`KIT_SEGMENTS`: H4 at S05's segment A, H12 at S15's) is
+   traded by its module, and `kitCued` (`runner/chain.ts`) decides before the
+   cue whether there is a cue at all. When the attempt record's hand-off rows
+   show the row served this attempt, or the module's own plan wants nothing
+   (`h4Wants`, `h12Wants`), there is no cue and no ready gate. One
+   `(cue) <row> skipped` note row says which, the carrier is prepared for its
+   next row as a stop would prepare it (`CueKeeper.skip`), and the segment runs.
+   When the row is served and the plan still wants more, the step stops with
+   that named before its body. A carrier serves a row once, so a reopened cue
+   would only wait out the gate. The served mark is written when the server says
+   `Accepted trade.` after a confirm screen with the row's carrier
+   (`markOnAccept`), so it holds when the step fails after its swap. This is
+   attempt 4's case: a resume at S15:A after the swap, the carrier done, and
+   SCORED dead in the 600-tick gate.
 3. **Cue.** The cue is written under `deliverySession(run, R)`. While it is
    open it is rewritten (same session, seq+1) every `CUE_REFRESH_TICKS`, and
    again just before a hand-off's first trade click (`beforeTrade`). The
