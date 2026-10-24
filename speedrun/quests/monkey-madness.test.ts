@@ -20,7 +20,7 @@ import {
     AREAS, inArea, inCell, zooknockWay, type ZooknockLegs, CHAT_DRINK_FLOOR, DRINK_BELOW, packClickAllowed, upkeep, X_PRAYER,
     ARCHER_REACH, AUNT_BOX, crateRoute, crateSteps, entersSleepingZone, SLEEPING_DETOURS, sleepingDetour, GUARD_REACH, legPrayerFor, M_TOPUP_TILE, mLegSize, mTopUpSharks, NO_DWELL, pathTiles, pLegSize, POSTED_ARCHERS, prayerRuns, receiveLeg, RELIGIOUS_GUARDS, SLEEPING_ZONE, tilePrayer, TOPUP_TRIES, TOPUP_WAIT, tradeIdle, type Receive, nextBananaTree, SUPER_IMMUNE_TICKS, offAtoll, patrolLeavesLane, SEGMENT_EATING, topUpWanted, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, steps, templeLeft, treeRouteRefusal, yRoom, type MmContext,
 } from './monkey-madness';
-import { noteAntipoison, slotNeed } from './segments';
+import { noteAntipoison, noteSessionStart, slotNeed } from './segments';
 import { objPack } from '../lib/obj-pack';
 import { MANIFEST } from '../tools/slot-ledger';
 import { planMuleDeliveryFixtures, type FixtureItem } from '../lab/mule-delivery-fixtures';
