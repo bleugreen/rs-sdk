@@ -343,6 +343,10 @@ place of one `bones.giver`:
   (the group counts its loads per session, across both bands), and a stop when S07's last band
   reaches `to`. A band that fails leaves the cue standing for the resume. With one `bones.giver`
   the step writes no cue, as before.
+- **The site.** The cue names SCORED's stand (`Cue.site`), and the givers wait at that site rather
+  than rotating between the trees (`helpers/bone-giver.md`, "Which site"). Each burying band's start
+  names its own stand, a resume included. The oak band's end names the willows', because SCORED
+  sets off for them then, and givers told only at the willow band's start would arrive a walk late.
 - **The last load.** The want is the same whichever giver serves, so `bones.lastLoad` (21) holds
   for the group as for one giver; which giver carries T07-08's runes is the helpers' choice
   (`finalExtras` on one giver, served on the group's last load by `boneServer`). Once the runes
