@@ -54,6 +54,14 @@
 // such a page read as no page at all and went to the watchdog, whose logout cannot land on a dead page
 // and whose relaunch re-navigates the dead tab.
 //
+// The drop must reach this recovery first. A dead renderer's gateway socket closes with it, so our
+// gateway reads the bot dead at once and the watchdog's verdict is a logout. That logout cannot land
+// on a dead page, but it clears expectInWorld, which hides the drop from the link. On the lab's
+// renderer kill (fedora, 2026-10-24) the run then stopped 'already logged out' with exit 4, before any
+// recovery. So on run.ts the link reads a gone page as out of the world (linkPage), declaring the
+// drop once the tick has stood PAGE_CHECK_TICKS. The watchdog stands down for a gone page
+// (recoveryStandDown), on one bounded read.
+//
 // Only a session with no page to ask at all (a lite client, or no DevTools port configured) takes
 // the default path: link.restored, the watchdog's relaunch or its outage reconnect.
 //
@@ -74,13 +82,14 @@ import {
     relaunchOwnTab,
     sdkConnected,
     type Session,
+    type WatchdogVerdict,
 } from '../lib/session';
 import { probePage, type PageGone } from '../lib/tab';
 import { sleep, tickMs } from '../lib/wait';
 import { RelogBudgetSpent, type RelogBudget, type RelogEntry } from './relog-budget';
 import { NO_DATA_TIMEOUT_MS } from '../../server/webclient/src/client/NoDataTimeout';
 import { closeBotTabs } from '../lib/tab';
-import { PAGE_HOLD_MARGIN_MS, PAGE_HOLD_MS, pageHoldTicks } from './page-hold';
+import { PAGE_HOLD_MARGIN_MS, PAGE_HOLD_MS, pageHoldStandDown, pageHoldTicks } from './page-hold';
 import type { Link } from './resume';
 
 /** Ticks run.ts waits for an operator's relog to let the lock go, and for an adopted session to tick (relog-now's login is bounded at 90 s = 225 ticks at 400 ms). */
@@ -126,6 +135,36 @@ const isGone = (p: PageAnswer): p is PageGone => typeof p === 'object' && p !== 
 export async function readPage(cdp: string, botName: string, timeoutMs = PAGE_READ_TIMEOUT_MS): Promise<PageAnswer> {
     const p = await probePage(cdp, botName, timeoutMs);
     return 'inGame' in p ? p.inGame : p;
+}
+
+/**
+ * The page as run.ts's link asks it (resume.ts sessionLink): a gone page is out of the world, so the
+ * link declares the drop once the tick has stood PAGE_CHECK_TICKS. A read that failed once only cuts
+ * the step: the recovery confirms a gone page before it closes anything.
+ */
+export function linkPage(read: () => Promise<PageAnswer>): () => Promise<boolean | null> {
+    return async () => {
+        const p = await read();
+        return isGone(p) ? false : p;
+    };
+}
+
+/**
+ * The watchdog's stand-down on a run with this recovery (run.ts), on the one bounded page read `read`:
+ * - A gone page: a logout or stop is held. It cannot land on a dead page, and the expectInWorld it
+ *   clears would hide the drop (see the file comment). A relaunch, reached only after a logout that
+ *   failed, is held while the silence is within PAGE_HOLD_MS, and is the backstop past it.
+ * - An out page while a recovery runs: held, since the recovery relogs it.
+ * - Otherwise the page hold (page-hold.ts).
+ */
+export async function recoveryStandDown(at: { verdict: WatchdogVerdict; msSinceAdvance: number }, read: () => Promise<PageAnswer>, acting: () => boolean): Promise<string | null> {
+    const p = await read();
+    if (isGone(p)) {
+        if (at.verdict === 'relaunch' && at.msSinceAdvance > PAGE_HOLD_MS) return null;
+        return `the page is gone (${p.gone}): the drop recovery closes what is left of its tab and opens a fresh one`;
+    }
+    if (acting() && p === false) return 'the page is out of the world: the running drop recovery relogs it in page';
+    return pageHoldStandDown(at, async () => p);
 }
 
 export interface DropRelogDeps {
