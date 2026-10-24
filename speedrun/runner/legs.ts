@@ -26,11 +26,11 @@ import {
     boxAround, EAT_SPACING, eatAt, FOOD, FOOD_HEAL, fmtTile, healHeld, hopNeeds, hopsDestination, HP_FLOOR, inArea, inRegion, missingRunes, POISON_HIT_MAX, SPELLS, travel, wildernessLevel,
     type Area, type Hop, type Region, type TravelOptions, type TravelResult, type TravelSdk,
 } from '../lib/travel';
-import { currentTick } from '../lib/wait';
+import { currentTick, waitUntil } from '../lib/wait';
 import { invCount, invItem, pos, skillLevel, type LocQuery, type OpPattern } from '../lib/world';
 import type { Observed, Step, StepContext } from './step';
 import { DeathWatch } from './death';
-import { watchStretch, type Stretch, type UpkeepSdk } from './wait-guard';
+import { SETTLE_TICKS, watchStretch, type Stretch, type UpkeepSdk } from './wait-guard';
 
 export const skill = 'legs';
 
