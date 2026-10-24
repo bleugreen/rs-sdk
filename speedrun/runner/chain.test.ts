@@ -1100,7 +1100,8 @@ describe('a placed hand-off stays done once the band after it consumes what it b
     });
 
     test('S22 not yet at the meeting (still in the body altar room): the walk stays on T21-22, and H18 names where SCORED stands (rs/603)', async () => {
-        const room = at(TILES.bodyAltar.x, TILES.bodyAltar.z, { held: [['Law rune', 1]], skills: FISHER, partner: 'p_h18' });
+        // The Lumbridge teleport's Magic and runes, so T21-22 can start; its carrier in view or not makes no difference to H18.
+        const room = at(TILES.bodyAltar.x, TILES.bodyAltar.z, { held: [['Law rune', 1], ['Air rune', 3], ['Earth rune', 1]], skills: [...FISHER, level('Magic', 80)], partner: 'p_h18' });
         const steps = sliceWith(unmarked(), 'T21-22', 'T22-23');
         expect(await where(steps, room)).toEqual(['T21-22 Lumbridge teleport from the body altar room + run', 'run']);
         expect(steps.find(s => s.id === 'H18')!.preconditions(room, {})).toBe(`H18: SCORED at ${TILES.bodyAltar.x},${TILES.bodyAltar.z},0 is not within ${PRE_REQUEST_TILES} of the meeting tile 3241,3248,0`);

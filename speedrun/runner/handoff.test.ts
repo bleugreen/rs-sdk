@@ -953,7 +953,7 @@ describe('a delivery carrier that comes after SCORED: the meeting, the cue\'s re
     const player = (x: number, z: number, level = 0) => ({ name: SCORED, x, z, worldX: x, worldZ: z, level }) as unknown as PlayerState;
     const at = (inv: InventoryItem[] = pack(['Tinderbox']), x = TILE.x, z = TILE.z, level = 0) => state(inv, [], { tick: 10, player: player(x, z, level), nearbyPlayers: [] });
 
-    /** A carrier stand-in (mule.ts publishDelivery): travelling under the live prepare until tick `readyAt`, then ready on its stand. */
+    /** A carrier stand-in (mule.ts publishDelivery): travelling to the prepared stand until tick `readyAt`, then ready on it. */
     function carrier(sdk: TradeServer, dir: string, readyAt: number): () => void {
         return sdk.onStateUpdate(s => {
             const c = readMulePreparation(dir, PARTNER);
@@ -961,7 +961,7 @@ describe('a delivery carrier that comes after SCORED: the meeting, the cue\'s re
             const ready = s.tick >= readyAt;
             writeMuleReady(dir, {
                 runId: c.runId, account: PARTNER, row: c.row, session: c.session, receiverHash: c.receiverHash,
-                phase: ready ? 'ready' : 'travel', tile: ready ? { ...TILE } : null, staged: true, preparationSeq: c.seq, tick: s.tick, ms: Date.now(),
+                phase: ready ? 'ready' : 'travel', tile: { ...TILE }, staged: true, preparationSeq: c.seq, tick: s.tick, ms: Date.now(),
             });
         });
     }
