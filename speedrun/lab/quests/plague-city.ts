@@ -18,6 +18,10 @@
 // --at=x,z: start the --from fixture on that tile instead (B from the house's west door tile,
 // 2570,3333, or from Alrena's room). Each run records the house doors' state at its start.
 // --open-door: open the house's west door (2570,3333) before the run, from the fixture's tile.
+// --edmond-inside: the live B failure's state (run-20261024-022859). Edmond wanders 5 tiles from his
+// spawn (NpcType's default), into Alrena's room while the west door stands open, and is shut in
+// when it closes. The lab cannot move an NPC, so it closes the door, spawns an Edmond in Alrena's
+// room (::npcadd) and waits until that one is the Edmond nearest his spawn (the one a talk picks).
 //
 // After a run that reached Z, `check` confirms the quest complete, the magic scroll read (Z's note:
 // the memorise and can-now-cast pages, the scroll gone), the 2,425 base Mining, and then casts the
@@ -34,7 +38,10 @@ import { HOUSE_DOORS, quest, stepId, steps, type Options, type ScrollRead } from
 import { labMain, STAGING, type LabQuest, type QuestFixture } from './run';
 import { arg, result } from '../common';
 import { clearInventory, give, leaveTutorial, mustTele, tele } from '../setup';
-import { openDoor } from '../../lib/act';
+import { openDoor, opLoc } from '../../lib/act';
+import { findNpc, opIndex } from '../../lib/world';
+import { waitUntil } from '../../lib/wait';
+import { cheat } from '../setup';
 
 export const LEVELS = { magic: 59, mining: 49, firemaking: 99, runecraft: 44, woodcutting: 99, prayer: 95 } as const;
 
@@ -129,6 +136,31 @@ export const REFERENCE: Readonly<Record<string, number>> = {
 const REWARD_XP = 24250 * 2.5;
 let xp0 = 0;
 
+/** Alrena's room, inside the west door. */
+const inHouse = (n: { x: number; z: number }) => n.x >= 2571 && n.x <= 2573 && n.z >= 3330 && n.z <= 3336;
+const EDMOND_RE = /^edmond$/i;
+
+async function edmondInside(session: Session): Promise<void> {
+    const sdk = session.sdk;
+    const p = sdk.getState()!.player!;
+    const start = { x: p.worldX, z: p.worldZ };
+    const openDoorLoc = () => sdk.getState()!.nearbyLocs.find(l => l.x === 2571 && l.z === 3333 && /door/i.test(l.name) && opIndex(l, /^close$/i) !== undefined);
+    const open = openDoorLoc();
+    if (open) await opLoc(sdk as never, open, /^close$/i, () => !openDoorLoc(), { maxTicks: 20 });
+    if (!sdk.getState()!.nearbyNpcs.some(n => EDMOND_RE.test(n.name) && inHouse(n))) {
+        await mustTele(sdk, 2572, 3334);
+        await cheat(sdk, 'npcadd edmond');
+        const w = await waitUntil(sdk, s => s.nearbyNpcs.some(n => EDMOND_RE.test(n.name) && inHouse(n)), { maxTicks: 10 });
+        if (!w.ok) throw new Error('--edmond-inside: no Edmond in Alrena\'s room after ::npcadd');
+    }
+    await mustTele(sdk, start.x, start.z);
+    const picked = await waitUntil(sdk, s => {
+        const e = findNpc(s, EDMOND_RE, { x: 2568, z: 3334 });
+        return !!e && inHouse(e) && !openDoorLoc();
+    }, { maxTicks: 400 });
+    if (!picked.ok) throw new Error('--edmond-inside: the Edmond nearest his spawn never was the one inside (400 ticks)');
+}
+
 const carrier = CARRIER ? await openSession(CARRIER, { pathfinding: false }) : null;
 let carrierGive: Promise<GiveResult> | null = null;
 
@@ -164,9 +196,10 @@ const lab: LabQuest<Options> = {
             if (!o.ok) throw new Error('--open-door: the west house door did not open');
             if (session.sdk.getState()!.player!.worldX !== at.worldX || session.sdk.getState()!.player!.worldZ !== at.worldZ) await mustTele(session.sdk, at.worldX, at.worldZ);
         }
+        if (process.argv.includes('--edmond-inside')) await edmondInside(session);
         const s = session.sdk.getState()!;
         const near = s.nearbyLocs.filter(l => /door/i.test(l.name) && Math.abs(l.x - 2570) <= 2 && Math.abs(l.z - 3333) <= 2).map(l => `${l.name} ${l.id} @${l.x},${l.z} [${l.optionsWithIndex.map(o => o.text).join('/')}]`);
-        const edmond = s.nearbyNpcs.find(n => /^edmond$/i.test(n.name));
+        const edmond = findNpc(s, /^edmond$/i, { x: 2568, z: 3334 });
         const doors = HOUSE_DOORS.map(d => {
             const l = s.nearbyLocs.find(l => l.x === d.x && l.z === d.z && /door/i.test(l.name));
             return { ...d, loc: l ? `${l.name} ${l.id} [${l.optionsWithIndex.map(o => o.text).join('/')}]` : null };
