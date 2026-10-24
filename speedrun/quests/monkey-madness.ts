@@ -2860,6 +2860,8 @@ const BODIES: Partial<Record<string, Body>> = {
                 const short = kitMissing(s, o.bow, { served: o.kitServed?.() });
                 return !short.length || (!!o.kitFrom && !o.kitServed?.()) || `H12 kit short and ${o.kitFrom ? 'served this attempt' : 'no kitFrom'}: ${kitText(short)}`;
             },
+            // Started and the seal gone is A's to mend only before Caranock: from B on Narnode reports, not re-issues.
+            s => mmMilestone(s) < seg('B') || 'S15 is past B: Narnode no longer re-issues the royal seal',
             // The seal's room is judged here only when no swap will change the pack; otherwise run judges it after the swap.
             s => kitMissing(s, o.bow, { served: o.kitServed?.() }).length > 0 || typeof narnodeTalk(s) !== 'string' || (narnodeTalk(s) as string),
             s => (inGrandTree(s) && pos(s).level === 0) || chebyshev(pos(s), TREE_DOOR_OUTSIDE) <= 10 || `not at the Grand Tree (at ${JSON.stringify(pos(s))})`,
