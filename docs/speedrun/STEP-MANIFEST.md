@@ -2707,8 +2707,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Postconditions and `done`:** the post-hand-off state: every `in` at its count, every given item
   gone, the equip changes in place. `done` also holds once the next milestone's `done` does
   (`supersededBy`), because later steps use up what a hand-off brought, and once the attempt's
-  completion record (`<run dir>/handoffs.json`, `HandOffRecord`, marked when the post-hand-off
-  state shows) has the row and nothing it gave is held again: between the hand-off and the next
+  record (`<run dir>/attempt-record.json`, `AttemptRecord`'s hand-off rows, marked when the
+  post-hand-off state shows) has the row and nothing it gave is held again: between the hand-off and the next
   milestone the band eats into the items (S18 after H14, S22 after H18, S16's fight after H13),
   and its own `inProgress` already holds on arrival, so the state alone cannot tell the two
   apart (rs/562). A logout after the trade
