@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fallbackMix, nextFallback, parsePlan, PlanError, planWarnings, rampSteps, roleOptions, sequenceFor, type MethodId } from './plan.ts';
+import { fallbackMix, nextFallback, parsePlan, PlanError, planWarnings, rampSteps, roleOptions, ROUND_TRIP_FARES, SALE_ROUTE, sequenceFor, type MethodId } from './plan.ts';
 
 const accounts = (n: number, method: string, prefix = 'acct') => Array.from({ length: n }, (_, i) => ({ account: `${prefix}${String(i + 1).padStart(2, '0')}`, method }));
 const problems = (raw: unknown): string[] => {
@@ -65,13 +65,18 @@ describe('parsePlan', () => {
         expect(ps).toContain('sell.enabled needs sell.floors: nothing is sold without a floor');
     });
 
-    test('sales run only from methods that can reach the Exchange', () => {
+    test('sales run only from methods with a route to the Exchange: guards on foot, iron by ship', () => {
         const sell = { enabled: true, floors: { 'Iron ore': 80 } };
-        const ps = problems({ accounts: accounts(2, 'iron'), sell });
-        expect(ps.some(p => /sell.enabled: iron accounts cannot reach the Exchange/.test(p))).toBe(true);
+        expect(SALE_ROUTE).toEqual({ guards: 'walk', iron: 'ship' });
+        expect(problems({ accounts: accounts(2, 'iron'), sell })).toEqual([]);
         expect(problems({ accounts: accounts(2, 'guards'), sell })).toEqual([]);
-        // knights bring the ramp's fallback mix in, and with it the heroes and iron
-        expect(problems({ accounts: [...accounts(1, 'guards'), ...accounts(1, 'knights', 'k')], sell }).some(p => /knights, iron, heroes accounts cannot/.test(p))).toBe(true);
+        expect(problems({ accounts: [...accounts(2, 'guards'), ...accounts(2, 'iron', 'i')], sell })).toEqual([]);
+        expect(problems({ accounts: accounts(1, 'shilo'), sell })).toEqual(['sell.enabled: shilo accounts have no sale route to the Exchange (guards walk, iron sails); enable sales in a plan without them']);
+        // knights bring the ramp's fallback mix in, and with it the heroes
+        expect(problems({ accounts: [...accounts(1, 'guards'), ...accounts(1, 'knights', 'k')], sell }).some(p => /sell.enabled: knights, heroes accounts have no sale route/.test(p))).toBe(true);
+        // a ramp whose fallback leaves the heroes out still has the knights themselves
+        const ps = problems({ accounts: accounts(1, 'knights', 'k'), ramp: { fallbackMix: { iron: 1, guards: 1 } }, sell });
+        expect(ps.filter(p => p.startsWith('sell.enabled'))).toEqual(['sell.enabled: knights accounts have no sale route to the Exchange (guards walk, iron sails); enable sales in a plan without them']);
     });
 
     test('refuses more accounts than one address holds, or than its sessions', () => {
@@ -133,8 +138,15 @@ describe('sequenceFor', () => {
         expect(dos('guards')).toEqual(['tutorial', 'hp:40', 'method']);
         expect(dos('guards', plan, 10)).toEqual(['tutorial', 'method']);
     });
-    test('iron: ship coins, Mining 15, a wielded pickaxe, the voyage', () => {
-        expect(dos('iron')).toEqual(['tutorial', 'coins:100', 'mining:15', 'wield', 'to-ardougne', 'method']);
+    test('iron: a pickaxe, ship coins, Mining 15, the pickaxe wielded, the voyage', () => {
+        expect(dos('iron')).toEqual(['tutorial', 'pickaxe', 'coins:100', 'mining:15', 'wield', 'to-ardougne', 'method']);
+    });
+    test('a selling iron account also carries its first round trip to the Exchange (four voyages)', () => {
+        expect(ROUND_TRIP_FARES).toBe(120);
+        const selling = parsePlan({ accounts: accounts(1, 'iron'), sell: { enabled: true, floors: { 'Iron ore': 80 } } });
+        expect(dos('iron', selling)).toEqual(['tutorial', 'pickaxe', 'coins:220', 'mining:15', 'wield', 'to-ardougne', 'method']);
+        // a guard walks to the Exchange: no fares
+        expect(dos('guards', selling)).toEqual(['tutorial', 'hp:40', 'method']);
     });
     test('shilo needs a staged account', () => {
         expect(dos('shilo')).toEqual(['method']);
