@@ -960,12 +960,21 @@ function ironReady(s: BotWorldState, start: number, o: IronOpts): true | string 
     return atIronSite(s, o.fallback);
 }
 
-/** With `bury`, a band is not in progress while bones are held: a resume enters the bury step that holds them. */
+/**
+ * With `bury`, a band neither starts nor is in progress while it holds bones a bury step owes
+ * (Prayer below `buryPrayerTo`): a resume enters the bury step that holds them. Past it they ride
+ * the band to the exit's drop.
+ */
 function ironStep(name: string, start: number, end: number, failures: boolean, o: IronOpts, shared: Shared, bury: BuryOpts | null = null): Step<any> {
     const inBand = (s: BotWorldState) => miningLevel(s) >= start && miningLevel(s) < end;
+    const owed = (s: BotWorldState) => (bury && prayerLevel(s) < bury.prayerTo ? bonesHeld(s, bury.re) : 0);
     return {
         name,
-        preconditions: s => (miningLevel(s) >= end ? true : ironReady(s, start, o)),
+        preconditions: s => {
+            if (miningLevel(s) >= end) return true;
+            if (owed(s)) return `${owed(s)} bones (${bury!.source}) held: a bury step buries them before the band`;
+            return ironReady(s, start, o);
+        },
         run: async ctx => {
             if (!inBand(ctx.sdk.getState()!)) return;
             await ironBand(ctx, name, end, failures, o, shared);
@@ -973,7 +982,7 @@ function ironStep(name: string, start: number, end: number, failures: boolean, o
         postconditions: s => (miningLevel(s) >= end ? true : `Mining ${miningLevel(s)} < ${end}`),
         logoutSafe: true,
         done: ob => miningLevel(ob.state) >= end,
-        inProgress: ob => inBand(ob.state) && !(bury && bonesHeld(ob.state, bury.re) > 0),
+        inProgress: ob => inBand(ob.state) && !owed(ob.state),
     };
 }
 

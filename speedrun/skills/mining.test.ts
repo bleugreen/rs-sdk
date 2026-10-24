@@ -959,7 +959,11 @@ describe('bones on the stay2 lap (`bury`, H4m)', () => {
         const all = m.steps(opts).filter(s => ['mining.bury: load 1', 'mining.bury: load 2', 'mining.bury: load 3', 'mining.iron-63', 'mining.exit'].includes(s.name));
         const band = all.find(s => s.name === 'mining.iron-63')!;
         expect(band.inProgress!(obs(at(80, 12)), {})).toBe(false);
+        expect(band.preconditions(at(80, 12), {})).toBe('12 bones (^big bones$) held: a bury step buries them before the band');
         expect(band.inProgress!(obs(at(80, 0)), {})).toBe(true);
+        // at buryPrayerTo the bones are not owed: the band takes them on to the exit's drop
+        expect(band.inProgress!(obs(at(80, 12, 99)), {})).toBe(true);
+        expect(band.preconditions(at(80, 12, 99), {})).toBe(true);
         const holding = await resolveResume(all, new Observation(at(80, 12), {}), {});
         expect([holding.mode, holding.step]).toEqual(['resume', 'mining.bury: load 3']);
         const none = await resolveResume(all, new Observation(at(80, 0), {}), {});
