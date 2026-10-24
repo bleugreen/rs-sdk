@@ -793,7 +793,7 @@ describe('the Draynor jail detour', () => {
         const pkg = f.options.packages[0]!;
         const expected = f.prepare(pkg);
         // The lane east of the first waypoint is impassable: the stretch to the second one stalls.
-        f.blockTiles((x, z) => x > 3110 && z >= 3258);
+        f.blockTiles((x, z) => x > 3106 && z >= 3258);
         f.start();
         try {
             await f.until(() => f.logs.some(l => l.message === 'delivery travel' && l.data?.purpose === 'meeting' && l.data?.ok === false));
