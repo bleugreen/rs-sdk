@@ -293,8 +293,9 @@ let drunkAt = -Infinity;
 /** The highest client tick seen since the last restart. */
 let seenTick = -Infinity;
 /**
- * The client tick this client session began at: 0 for a launched client (its count starts at the launch, and a fall in
- * the tick is a relaunch), or the tick noteSessionStart names (an in-page login, where the page counts on).
+ * The client tick this client session began at, as far as this process knows: the first tick it observes (a new run.ts
+ * process is a resume, attached to a page whose tick may have counted on for hours), 0 after a fall in the tick (a
+ * relaunched client counts from 0), or the tick noteSessionStart names (an in-page login, where the page counts on).
  */
 let sessionStart = 0;
 
@@ -305,7 +306,8 @@ let sessionStart = 0;
  */
 function observeTick(tick: number): void {
     if (!Number.isFinite(tick)) return;
-    if (tick < seenTick) {
+    if (seenTick === -Infinity) sessionStart = tick;
+    else if (tick < seenTick) {
         drunkAt = -Infinity;
         sessionStart = 0;
     }

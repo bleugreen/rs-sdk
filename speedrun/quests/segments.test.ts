@@ -414,13 +414,24 @@ describe('poison: the published evidence, the shared dose record and the entry c
             expect(poisonUnknown(fresh(8))).toBe(false);
         });
 
+        test("a new process's first observed tick starts its session (a run.ts restart on a page whose tick counts on); later ticks do not move it", () => {
+            expect(poisonUnknown(fresh(5000))).toBe(true);
+            expect(poisonUnknown(fresh(5010))).toBe(true);
+            expect(poisonUnknown(fresh(5000 + POISON_PERIOD))).toBe(false);
+            expect(poisonUnknown(fresh(5040))).toBe(false); // still the session that began at 5000
+            noteAntipoison(-Infinity);
+            expect(poisonUnknown(fresh(5000, { combatEvents: [hit(4990)] }))).toBe(false); // a hit already on the page: poisoned decides
+            expect(poisoned(fresh(5000, { combatEvents: [hit(4990)] }))).toBe(true);
+        });
+
         test('a relaunch (the tick falls) starts a new session: the old dose says nothing; an in-page login is named by noteSessionStart', () => {
             noteAntipoison(480);
             expect(poisonUnknown(fresh(500))).toBe(false);
             expect(poisonUnknown(fresh(4))).toBe(true);
             expect(antipoisonDrunkAt()).toBe(-Infinity);
             noteAntipoison(-Infinity);
-            expect(poisonUnknown(fresh(5010))).toBe(false); // a page that counts on: no session start seen
+            noteSessionStart(0);
+            expect(poisonUnknown(fresh(5010))).toBe(false); // a page that counts on: no session start seen since 0
             noteSessionStart(5000);
             expect(poisonUnknown(fresh(5010))).toBe(true);
             expect(poisonUnknown(fresh(5010, { combatEvents: [hit(4990)] }))).toBe(true); // that hit was the last session's
