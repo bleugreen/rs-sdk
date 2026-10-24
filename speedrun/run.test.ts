@@ -114,6 +114,11 @@ describe('the rune census gate (rs/699)', () => {
         expect(log.rows[0]).toMatchObject({ step: '(gate) rune census, live', ok: true });
         expect(await liveRuneCheck({ name: 's', sdk: {} as Session['sdk'] }, { plan, from: s13, served: () => false, log }, { logout, awaitState: async () => null, say: () => {} })).toBe(3);
         expect(loggedOut).toBe(1);
+        // A hand-off record that does not parse refuses too, logged out, rather than throwing with SCORED in.
+        const broken = () => { throw new Error('/run/handoffs.json does not parse'); };
+        expect(await liveRuneCheck({ name: 's', sdk: {} as Session['sdk'] }, { plan, from: resolveFrom(full, 'T11-12a')!, served: broken, log }, { logout, awaitState: pack(9), say: () => {} })).toBe(3);
+        expect(loggedOut).toBe(2);
+        expect(log.rows.at(-1)).toMatchObject({ ok: false, error: '/run/handoffs.json does not parse' });
     });
 });
 

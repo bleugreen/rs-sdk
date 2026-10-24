@@ -386,7 +386,13 @@ export async function liveRuneCheck(
 ): Promise<number | null> {
     const say = deps.say ?? ((l: string) => console.log(l));
     const state = await (deps.awaitState ?? (async () => (await awaitPlayer(session.sdk), session.sdk.getState())))();
-    const input: RuneGateInput = o.plan ? liveRuneCensus(state, o.plan, o.from, o.served) : { error: `the rune plan could not be built: ${o.planError ?? 'unknown'}` };
+    let input: RuneGateInput;
+    try {
+        input = o.plan ? liveRuneCensus(state, o.plan, o.from, o.served) : { error: `the rune plan could not be built: ${o.planError ?? 'unknown'}` };
+    } catch (e) {
+        // An unreadable hand-off record: refused like any other, with SCORED logged out.
+        input = { error: e instanceof Error ? e.message : String(e) };
+    }
     const g = runeGate(input, `${RUNE_GATE}, live`);
     o.log.append(annotation(o.log, session.name, 'gate', '(gate) rune census, live', { ok: g.ok, ...(g.ok ? {} : { error: g.detail }), meta: { detail: g.detail, ...g.meta } }));
     say(`[gate] ${g.ok ? 'ok     ' : 'REFUSED'} ${g.gate}: ${g.detail}`);
