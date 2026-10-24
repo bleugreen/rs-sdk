@@ -277,6 +277,7 @@ try {
             loginAte: loginRows.some(r => r.step.endsWith(': eat')),
             loginCured: loginRows.some(r => r.step.endsWith(': cure')),
             aBodyRan: !!aRow,
+            aOk: aRow?.ok === true,
         };
         Object.assign(summary, { checks, interimExtra: extra || null, aOk: aRow?.ok ?? null, result: a.res, died: a.died, end: vitals() });
         pass = Object.values(checks).every(Boolean);
