@@ -16,11 +16,23 @@
 // railing tries and failures, the shed's rolls, food eaten and its ticks, damage and lowest HP.
 // Each fixture fills the pack so that exactly the free slots the module needs from that segment on
 // are free (6 at A, 3 from B to H, 2 from I to K, none at L): the tightest pack its precondition admits.
+//
+// --at=x,z: start the --from fixture on that tile instead. K from inside Nulodion's workshop
+// (--at=3012,3453) is K re-run after its door crossing (runResumable walking back into K after a
+// drop): the old K clicked the door from there, which carries SCORED out and shuts Nulodion in.
+// --watch-nulodion=N: before the run, cross Nulodion's door N times from the corridor and back, then
+// stand outside 100 ticks, recording every tile Nulodion is seen on: whether he ever leaves the
+// workshop (quests/dwarf-cannon.ts inWorkshop). Each run records SCORED's and Nulodion's tiles at its start.
 
 import { arg, result } from '../common';
 import type { BotWorldState, InventoryItem } from '../../../sdk/types';
-import { LETTERS, newTally, QUEST_ITEMS, quest, stepId, steps, type Options, type Tally } from '../../quests/dwarf-cannon';
+import { opLoc } from '../../lib/act';
+import type { Session } from '../../lib/session';
+import { waitTicks } from '../../lib/wait';
+import { findNpc } from '../../lib/world';
+import { inWorkshop, LETTERS, newTally, NULODION_AT, QUEST_ITEMS, quest, stepId, steps, type Options, type Tally } from '../../quests/dwarf-cannon';
 import { INVENTORY_SLOTS, slotNeed } from '../../quests/segments';
+import { mustTele } from '../setup';
 import { labMain, type LabQuest, type QuestFixture } from './run';
 
 const LEVELS = arg('levels', 'real');
@@ -75,7 +87,11 @@ const fx = (letter: string, mcannon: number, multi: number, tile: QuestFixture['
     };
 };
 
-export const FIXTURES: readonly QuestFixture[] = [
+const AT = arg('at', '') ? (([x, z]) => ({ x: x!, z: z! }))(arg('at', '').split(',').map(Number)) : null;
+const FROM = arg('from', '').toUpperCase();
+const WATCH = Number(arg('watch-nulodion', '0'));
+
+const BASE_FIXTURES: readonly QuestFixture[] = [
     fx('A', 0, 0, LAWGOF, {}, 'the arrival tile (legs.ts T12-13: Lawgof 2571,3463 tol 1)'),
     fx('B', 1, 0, LAWGOF, { mcannonrailing1_obj: 6 }),
     fx('C', 1, RAILS, { x: 2571, z: 3461 }),
@@ -89,6 +105,38 @@ export const FIXTURES: readonly QuestFixture[] = [
     fx('K', 9, RAILS | PARTS, LAWGOF, { mcannontoolkit: 1 }),
     fx('L', 10, RAILS | PARTS, { x: 3012, z: 3453 }, { mcannontoolkit: 1, nulodions_notes: 1, ammo_mould: 1 }),
 ];
+
+export const FIXTURES: readonly QuestFixture[] = BASE_FIXTURES.map(f => (AT && f.letter === FROM ? { ...f, tile: AT, note: `${f.note ?? ''} (--at ${AT.x},${AT.z})`.trim() } : f));
+
+const NULODION_RE = /^nulodion$/i;
+const tileOf = (s: BotWorldState) => ({ x: s.player!.worldX, z: s.player!.worldZ });
+
+/** --watch-nulodion: cross the door `n` times from its tile and back, then 100 ticks outside, recording Nulodion's tiles. */
+async function watchNulodion(session: Session, n: number): Promise<void> {
+    const sdk = session.sdk;
+    const back = tileOf(sdk.getState()!);
+    const seen = new Map<string, number>();
+    const stop = sdk.onStateUpdate(s => {
+        for (const npc of s.nearbyNpcs) if (NULODION_RE.test(npc.name)) seen.set(`${npc.x},${npc.z}`, (seen.get(`${npc.x},${npc.z}`) ?? 0) + 1);
+    });
+    let crossed = 0;
+    try {
+        await mustTele(sdk, 3015, 3453);
+        for (let i = 0; i < n; i++) {
+            const inside = !inWorkshop(tileOf(sdk.getState()!));
+            const r = await opLoc(sdk as never, { x: 3015, z: 3453, name: /^door$/i, radius: 15 }, /^open$/i, s => inWorkshop(tileOf(s)) === inside, { maxTicks: 20 });
+            if (r.ok) crossed++;
+        }
+        if (inWorkshop(tileOf(sdk.getState()!))) await opLoc(sdk as never, { x: 3015, z: 3453, name: /^door$/i, radius: 15 }, /^open$/i, s => !inWorkshop(tileOf(s)), { maxTicks: 20 });
+        await waitTicks(sdk, 100);
+    } finally {
+        stop();
+    }
+    const tiles = [...seen.keys()].map(k => k.split(',').map(Number) as [number, number]);
+    const outside = tiles.filter(([x, z]) => !inWorkshop({ x, z }));
+    result(`${stepId}_nulodion_watch`, { crossings: n, crossed, tiles: tiles.length, maxX: Math.max(...tiles.map(t => t[0])), outside, seen: Object.fromEntries(seen) });
+    await mustTele(sdk, back.x, back.z);
+}
 
 /**
  * Reference ticks per segment, fixed column, at 60/60 from the arrival tile: dwarf_cannon.md's
@@ -120,8 +168,19 @@ const lab: LabQuest<Options> = {
     fixtures: FIXTURES,
     reference: REFERENCE,
     options: { tally, ...(WALK ? { teleports: false } : {}) },
-    async prepare(session) {
+    async prepare(session, f) {
         take();
+        if (WATCH > 0 && f.letter === 'K') await watchNulodion(session, WATCH);
+        if (f.letter === 'K' || f.letter === 'L') {
+            const s = session.sdk.getState()!;
+            const nu = findNpc(s, NULODION_RE, NULODION_AT);
+            const door = s.nearbyLocs.find(l => l.x === 3015 && l.z === 3453 && /door/i.test(l.name));
+            result(`${stepId}_start`, {
+                letter: f.letter, at: tileOf(s), inWorkshop: inWorkshop(tileOf(s)),
+                nulodion: nu ? { x: nu.x, z: nu.z, inWorkshop: inWorkshop(nu) } : null,
+                door: door ? `${door.name} ${door.id} [${door.optionsWithIndex.map(o => o.text).join('/')}]` : null,
+            });
+        }
         // The level the railing and shed rolls read (stat_random takes the current level, not the base).
         const lv = (k: string) => session.sdk.getState()?.skills.find(x => x.name.toLowerCase() === k);
         const c = lv('crafting');
