@@ -657,6 +657,7 @@ export class Runner {
             this.ledger({ kind: 'admit', account: w.alias, step: r.stepNumber, admitted: admitted.length });
             this.event(w, 'admitted to the knights', { step: r.stepNumber }, true);
         }
+        const warmupMs = this.plan.ramp!.warmupMinutes * 60_000;
         if (r.phase === 'admitting') {
             const working = admitted.filter(w => w.stage === 'method' && w.readings.length > 0 && w.thieving >= RAMP_THIEVING && w.methodAt !== null && now - w.methodAt >= warmupMs).length;
             if (r.update(now, admitted.length >= r.admitted() && working === admitted.length)) {
@@ -675,9 +676,8 @@ export class Runner {
         const grossMedian = median(Object.values(grossPerLogin));
         const gross = { perLogin: grossPerLogin, median: grossMedian, perHour: Math.round(grossMedian * (3_600_000 / this.tickMs)) };
         const d = r.evaluate(perLogin, now);
-        const rates = d.rates;
-        this.ledger({ ...d, holdStart: new Date(d.holdStart).toISOString(), holdEnd: new Date(d.holdEnd).toISOString(), perHour: Math.round(d.median * (3_600_000 / this.tickMs)), loginsMeasured: rates.length, gross });
-        this.event(null, `ramp step ${d.step}: ${d.action}`, { reason: d.reason, median: d.median, logins: d.logins, measured: rates.length }, true);
+        this.ledger({ ...d, holdStart: new Date(d.holdStart).toISOString(), holdEnd: new Date(d.holdEnd).toISOString(), perHour: Math.round(d.median * (3_600_000 / this.tickMs)), loginsMeasured: d.rates.length, gross });
+        this.event(null, `ramp step ${d.step}: ${d.action}`, { reason: d.reason, median: d.median, incumbents: d.incumbents, grossMedian, logins: d.logins, measured: d.rates.length }, true);
         if (d.action !== 'stop') return;
         for (const w of knights.filter(k => k.admittedAt === null)) {
             const m = nextFallback(this.rampFallback, this.plan.ramp!.fallbackMix);
