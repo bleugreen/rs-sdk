@@ -7,7 +7,7 @@ import { muleDelivery } from '../helpers/mule-itinerary';
 import { baseState, drive, FakeSdk, flush } from '../lib/fake-sdk';
 import { TickLog } from '../lib/ticks';
 import { waitUntil } from '../lib/wait';
-import { DRINK_DELAY_TICKS, drinkDelayOver, noteAntipoison } from '../quests/segments';
+import { cureDose, DRINK_DELAY_TICKS, drinkDelayOver, noteAntipoison } from '../quests/segments';
 import { loginUpkeep, LOGIN_STRETCH, poisonUnknownEntry } from '../run';
 import { muleScope, openGuarded } from './chain';
 import { CueKeeper } from './cue-keeper';
@@ -282,8 +282,8 @@ describe('run.ts: the upkeep from login to the first step', () => {
     describe('the poison-unknown dose (main\'s ruling): entering at S15:A or S16:B, one dose from login for a poison not yet seen', () => {
         /** A cure whose poisonUnknown reads as rs/786's: no dose since the session began, no poison seen, a dose held. */
         const unknownCure = (sdk: FakeSdk) => {
-            const c = flagCure(sdk, false);
-            return Object.assign(c, { poisonUnknown: (s: BotWorldState) => c.noted.length === 0 && c.cureDose(s) !== null });
+            const c = Object.assign(flagCure(sdk, false), { cureDose });
+            return Object.assign(c, { poisonUnknown: (s: BotWorldState) => c.noted.length === 0 && cureDose(s) !== null });
         };
         const login = async (entry: string, inventory: InventoryItem[]) => {
             const sdk = new FakeSdk(state({ tick: 90_000, inventory }, { hp: 38 }));
