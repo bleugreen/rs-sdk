@@ -22,16 +22,21 @@
 //    spends of each from the start step (--from, else the step the tick log's last census was taken
 //    before) up to the next row that brings that rune, a hand-off row this attempt's record
 //    (runner/attempt-record.ts) has served not counted; a rune short refuses, naming it, the step that would run short and the
-//    supply it waits for. Before login the pack is the tick log's last census (a fresh run has none);
-//    once SCORED is in the world the same census runs on its live pack, and a shortfall logs it out
-//    (exit 3) before any step runs;
+//    supply it waits for. Before login the pack is the tick log's last census (a fresh run has none):
+//    a stop at a logout-safe boundary writes one there, before its logout, so a resume reads the pack
+//    it stopped with, and the gate line says which row it read. Once SCORED is in the world the same
+//    census runs on its live pack, and a shortfall logs it out (exit 3) before any step runs;
 // 5. the helpers are in: <run dir>/launcher.json says helpersReady, and the next helper step's helpers
 //    are ready by their roles' own phase in the cue dir, not merely online (runner/phase-gate.ts; one
-//    line per status file, every later family on the path reported);
+//    line per status file, every later family on the path reported). The path starts where the rune
+//    census does, and leaves out a step that needs no helper (S07's axe drop);
 // 6. when the path reaches H11 or H23: the cannon holder's run-day serve options (--cannon-serve,
 //    default <run dir>/cannon-serve.json: `{ "H11": <serve>, "H23": <serve> }`, cannon.ts serve
 //    options as h92 runs them, written from fleet.json by rs/41) agree with the ledger rows SCORED
 //    will want (helpers/cannon-receiver.ts serveDrift; H11's returnExtras against H11r's row).
+//
+// Every step, leg, hand-off and `(census)` row carries SCORED's hp and maxHp at its end, and a
+// `poison` note when a poison was seen during it (lib/attempt.ts VitalsTracker).
 //
 // The tick log defaults to <run dir>/run.jsonl, so running the same command again resumes into the
 // same log: the walk starts from game state, the run's cue files are kept, and the report covers
@@ -68,7 +73,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
 import type { BotWorldState } from '../sdk/types';
 import { cueDir as defaultCueDir, RUN_DIR } from './helpers/altar-cue';
-import { annotation, ProgramTracker, programRow, ReachTracker, reachRow, runAttempt, SessionClock, type AttemptResult } from './lib/attempt';
+import { annotation, ProgramTracker, programRow, ReachTracker, reachRow, runAttempt, SessionClock, VitalsTracker, type AttemptResult } from './lib/attempt';
 import { claimBin, claimOwner, EXIT_HOST_RESERVED, readReservation, ReservationWatch, reservationPath, claimToucher, type ReservationWatch as Watch } from './lib/host-reservation';
 import { programStatus } from './lib/programs';
 import { describePreflight, feedUrl, readFeedHello, tickPreflight, type TickPreflight } from './lib/feed-hello';
@@ -77,18 +82,18 @@ import { abandonClient, abandonFailed, type AbandonResult, type ClientKind, cdpU
 import { pageInGame, pageLoginState, type PageLoginState } from './lib/tab';
 import { tickMs } from './lib/wait';
 import { returnExtrasFromLedger, serveDrift, serveFromLedger } from './helpers/cannon-receiver';
-import { membersFromLauncher, phaseGates, readStatusFile, type LauncherView, type PhaseLine, type PhaseMember } from './runner/phase-gate';
+import { membersFromLauncher, phaseGates, phasePath, readStatusFile, type LauncherView, type PhaseLine, type PhaseMember } from './runner/phase-gate';
 import { newRunId, parseLog, TickLog, type TickRow } from './lib/ticks';
 import { startRunTabMemory, type TabMemorySetting } from './lib/tab-memory';
 import { formatRunReport, runReport } from './runner/run-report';
 import { patchMethod } from './runner/fence';
-import { buildChain, chainPartners, chainProbes, chainSeams, ledgerRows, missingOnPath, muleCueDir, resolveFrom, sliceUntil, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
+import { buildChain, CENSUS_STEP, censusAtStop, chainPartners, chainProbes, chainSeams, ledgerRows, missingOnPath, muleCueDir, resolveFrom, sliceUntil, STOP_CENSUS_LABEL, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
 import { exitStopIsFinal, prepareCueDir, RunCues } from './runner/cue-keeper';
 import { deliveryOwnerFor } from './runner/delivery-owner';
 import { dropRecovery } from './runner/drop-relog';
 import { pageHoldStandDown } from './runner/page-hold';
 import { awaitPlayer, LOST_AFTER_TICKS, sessionLink } from './runner/resume';
-import type { StepRecord } from './runner/step';
+import { BOUNDARY_STEP, type StepRecord } from './runner/step';
 import { formatCensus, lastCensus, runeCensus, runePlan, runesHeld, type RuneCensus, type RunePlan } from './runner/rune-census';
 import { loadModules, runeLabel } from './tools/rune-pins';
 import { MANIFEST } from './tools/slot-ledger';
@@ -362,8 +367,9 @@ export function runeGate(r: RuneGateInput, gate: string = RUNE_GATE): Gate {
 /**
  * The census before login: SCORED's pack as the tick log's last `(census)` row recorded it (by obj
  * id), against the chain from --from, else from the step that census was taken before, where a
- * re-run's walk picks up. Whatever that step spent after its census is not in the pack figure, so
- * the live census after login is the one of record. A fresh run has nothing recorded.
+ * re-run's walk picks up. A stop's row (STOP_CENSUS_LABEL) is the pack at its logout; a row a step
+ * took as it started misses what that step spent after it, so the live census after login is the
+ * one of record. The source names which row was read. A fresh run has nothing recorded.
  */
 export function loggedRuneCensus(plan: RunePlan, chain: readonly ChainStep[], o: { from?: number; earlier: readonly TickRow[]; served: (row: string) => boolean }): RuneGateInput {
     const logged = lastCensus(o.earlier);
@@ -374,8 +380,24 @@ export function loggedRuneCensus(plan: RunePlan, chain: readonly ChainStep[], o:
     if (from < 0) return { none: `the tick log's last census was taken before ${logged.before}, which is not on this path; the census is taken on the live pack after login` };
     return {
         census: runeCensus(plan, from, runesHeld(logged.inventory), { served: o.served }),
-        source: `held as the tick log's last census recorded it before ${logged.before} (tick ${logged.tick}, ${logged.byId ? 'by id' : 'by name: a log from before ids were recorded'})`,
+        source: `held as the tick log's last census recorded it before ${logged.before} (tick ${logged.tick}, ${logged.byId ? 'by id' : 'by name: a log from before ids were recorded'}; ${censusOrigin(logged.label)})`,
     };
+}
+
+/** Which census row the pre-login census read: a stop's, an operator's labelled one, or a step's own. */
+export function censusOrigin(label: string | undefined): string {
+    if (label === STOP_CENSUS_LABEL) return "written at the stop's logout boundary";
+    return label ? `labelled "${label}"` : 'taken as that step started';
+}
+
+/** The rows VitalsTracker stamps: a step's (a module step, a leg, a hand-off, a failure) and a `(census)` row. */
+export function vitalsRow(r: Pick<TickRow, 'kind' | 'step'>): boolean {
+    return (r.kind === undefined && r.step !== BOUNDARY_STEP) || r.step === CENSUS_STEP;
+}
+
+/** The operator's resume line after a stop or a pause: the same command, or the --from it resumes at. */
+export function resumeLine(chain: readonly ChainStep[], resumeAt: number | undefined): string {
+    return resumeAt === undefined ? '' : `, or with --from=${resumeAt} (#${resumeAt} ${chain[resumeAt]?.name ?? '(the end)'})`;
 }
 
 /** Where a session's census starts: --from, else the step the tick log's last census was taken before, else the chain's start. */
@@ -654,9 +676,12 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
     const clock = new SessionClock();
     const reach = new ReachTracker();
     const programs = new ProgramTracker();
+    const vitals = new VitalsTracker();
+    const unVitals = patchMethod(log, 'append', append => (row: TickRow) => append(vitalsRow(row) ? vitals.stamp(row, session.sdk.getState()) : row));
     let lastState: BotWorldState | null = null;
     const unsubscribe = session.sdk.onStateUpdate(s => {
         if (s.inGame) lastState = s;
+        vitals.observe(s);
         clock.track(log, account, session, s);
         for (const r of reach.observe(s)) log.append(reachRow(log, account, session, r));
         for (const st of programs.observe(programStatus(s))) log.append(programRow(log, account, session.sessionId, st));
@@ -722,6 +747,8 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
                 await recovery.recover(reason, at);
             } } : {}),
             stopAsked: sig.stopAsked, gateStop: () => null, logout: () => leave(), label: o.label ?? 'run',
+            // The pack the next step starts with, for the next start's pre-login rune census.
+            atStop: (s, next) => censusAtStop({ log, session: s, sdk: s.sdk }, { name: next.name, ...((next as Partial<ChainStep>).id ? { id: (next as ChainStep).id } : {}) }),
             ...(o.from !== undefined ? { from: o.from } : {}),
             onEvent: e => console.log(`[resume] ${JSON.stringify(e)}`),
         }), sig);
@@ -748,6 +775,7 @@ export async function runChainOnSession(session: Session, o: ChainRunOptions): P
         noteDeath();
         const out = lastLogout as LogoutResult | null;
         clock.close(log, account, session.sessionId, 'logout', out?.ok ? out.lastInWorldTick : session.lastInWorldTick, out ?? undefined);
+        unVitals();
         }
     }
 }
@@ -946,7 +974,8 @@ async function main(argv: string[]): Promise<number> {
             return { error: e instanceof Error ? e.message : String(e) };
         }
     };
-    const io = hostGateIO(a, owner, relogs, () => hostPhaseGates(cfg, chain.slice(from ?? 0).map(s => s.id), a.runDir), runes);
+    // The phase gate's path starts where the rune census does: --from, else where the re-run's walk picks up.
+    const io = hostGateIO(a, owner, relogs, () => hostPhaseGates(cfg, phasePath(chain, censusStart(chain, from, earlier)), a.runDir), runes);
     const gates = await startGates(chain, io);
     for (const g of gates) console.log(`[gate] ${g.ok ? 'ok     ' : 'REFUSED'} ${g.gate}: ${g.detail}`);
     if (a.dryRun) {
@@ -1021,8 +1050,9 @@ async function main(argv: string[]): Promise<number> {
                 if (!ok) rc = 1;
                 if (owner && !session.expectInWorld) console.log(`[run] ${await releaseClaim(owner)}`);
             }
-            if (rc === EXIT_HOST_RESERVED) console.log(`[run] resume: once ${reservation.path} is gone or expired, run the same command again`);
-            if (rc === 4) console.log('[run] resume: run the same command again (the walk starts from game state)');
+            const again = resumeLine(chain, result.resumeAt);
+            if (rc === EXIT_HOST_RESERVED) console.log(`[run] resume: once ${reservation.path} is gone or expired, run the same command again${again}`);
+            if (rc === 4) console.log(`[run] resume: run the same command again (the walk starts from game state)${again}`);
             return rc;
         });
     } finally {
