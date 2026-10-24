@@ -18,6 +18,8 @@ import { LOGOUT_BUTTON, openSession, ROOT } from './session';
 
 const BOT = 'srtest';
 const PASSWORD = 'x';
+/** Each start: the refusal (~1.5 s), then the abandon's takeover wait (3 s) and the confirming list reads. */
+const TEST_MS = 40_000;
 
 /** The lite one-off's last published state, as the gateway cached it: in game, placed, entities around. */
 const cachedLite: BotWorldState = { ...baseState(), tick: 5000, inGame: true };
@@ -141,7 +143,7 @@ describe('the 04:2xZ start: a cached state, a page login, the page socket drops 
         } finally {
             gw.stop();
         }
-    });
+    }, TEST_MS);
 
     describe('through our gateway', () => {
         const PORT = 20000 + Math.floor(Math.random() * 10000);
@@ -183,6 +185,6 @@ describe('the 04:2xZ start: a cached state, a page login, the page socket drops 
             } finally {
                 (page as WebSocket | null)?.close();
             }
-        });
+        }, TEST_MS);
     });
 });
