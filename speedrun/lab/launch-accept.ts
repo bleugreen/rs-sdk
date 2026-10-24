@@ -26,14 +26,27 @@ import { mkdtempSync, readFileSync } from 'fs';
 import { hostname, tmpdir } from 'os';
 import { join } from 'path';
 import { demoOrigin, listedInWorld } from '../lib/demo-status';
-import { cdpUrl, closeSession, logoutClean, openSession, PAGE_ENDED_HOLD_MS, ROOT, type Session } from '../lib/session';
+import { cdpUrl, closeSession, loadBotEnv, logoutClean, openSession, PAGE_ENDED_HOLD_MS, ROOT, type Session } from '../lib/session';
 import { evaluateInTab, pageLaunchState } from '../lib/tab';
 import { newRunId, TickLog } from '../lib/ticks';
 import { tickMs } from '../lib/wait';
 import { withScoredSession } from '../run';
 import { RelogBudget } from '../runner/relog-budget';
 import { launchLabBrowser } from './browser';
-import { dropExpression } from './drop-accept';
+
+/**
+ * drop-accept.ts's 'title' drop (that file is a script, so it is not imported): the page's game socket
+ * closed with its one reconnect attempt swallowed, so it falls to the title screen while its body
+ * stays in the world.
+ */
+const DROP_TITLE = `(() => {
+    const c = window.gameClient;
+    if (!c || !c.ingame) return 'not in game';
+    if (!c.stream) return 'no stream';
+    c.login = async function () { delete c.login; };
+    c.stream.close();
+    return 'dropped';
+})()`;
 
 const bot = process.argv[2];
 const scenario = process.argv[3];
@@ -78,7 +91,7 @@ function watchPage(cdp: string, onChange: (p: { inGame: boolean; loginInProgress
     let last = '';
     const done = (async () => {
         while (!stop) {
-            const p = await pageLaunchState(cdp, bot!).catch(() => null);
+            const p = await pageLaunchState(cdp, account).catch(() => null);
             if (p?.hasClient) {
                 const line = JSON.stringify([p.launch, p.inGame, p.loginInProgress, p.message]);
                 if (line !== last) onChange(p, Date.now());
@@ -94,7 +107,8 @@ function watchPage(cdp: string, onChange: (p: { inGame: boolean; loginInProgress
 }
 
 const browser = await launchLabBrowser(bot, { cdpPort, clientUrl: `http://127.0.0.1:${pagePort}/bot?server=localhost:${webPort}&gateway=ws://localhost:${agentPort}` });
-const cdp = cdpUrl({ BOT_USERNAME: bot, PASSWORD: '' })!;
+const account = loadBotEnv(bot).BOT_USERNAME;
+const cdp = cdpUrl({ BOT_USERNAME: account, PASSWORD: '' })!;
 let session: Session | null = null;
 let pass = false;
 const out: Record<string, unknown> = { scenario, host: hostname(), tickMs: tickMs(), bundle, bundlePath, head, gateway: 'unmodified (lab.sh)', files: base };
@@ -123,7 +137,7 @@ try {
             transitions.push({ ms: at(ms), launch: p.launch, inGame: p.inGame, loginInProgress: p.loginInProgress, message: p.message });
             if (p.inGame && marks.dropAt === null) {
                 marks.dropAt = ms;
-                void evaluateInTab<string>(cdp, bot, dropExpression('title')).then(r => (marks.dropAnswer = r?.value ?? 'no tab'), e => (marks.dropAnswer = `threw ${e}`));
+                void evaluateInTab<string>(cdp, account, DROP_TITLE).then(r => (marks.dropAnswer = r?.value ?? 'no tab'), e => (marks.dropAnswer = `threw ${e}`));
             } else if (!p.inGame && !p.loginInProgress && marks.dropAt !== null && marks.outAt === null) marks.outAt = ms;
             else if (p.inGame && marks.gateAt !== null && marks.takeoverInAt === null) marks.takeoverInAt = ms;
             else if (!p.inGame && marks.takeoverInAt !== null && marks.loggedOutAt === null) marks.loggedOutAt = ms;
@@ -141,7 +155,7 @@ try {
         );
         const rejectAt = Date.now();
         await stopWatch();
-        const listed = await listedInWorld(world, bot);
+        const listed = await listedInWorld(world, account);
         const refusedAt = marks.outAt === null ? null : marks.outAt + PAGE_ENDED_HOLD_MS;
         Object.assign(out, {
             liteLogout, cachedStatus, cachedState: cachedState?.state ? { tick: cachedState.state.tick, inGame: cachedState.state.inGame, launch: cachedState.state.launch ?? null } : null,
