@@ -22,7 +22,7 @@ import * as cooking from '../skills/cooking';
 import * as mining from '../skills/mining';
 import * as woodcutting from '../skills/woodcutting';
 import {
-    ALTERNATIVES, anvilAnnounce, CANNON_ROWS, cueAround, cueMuleRows, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleScope, s07Woodcutting, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
+    ALTERNATIVES, anvilAnnounce, CANNON_ROWS, cueAround, cueMuleRows, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleScope, s07PrayerTo, S07_PRAYER_TO, s07Woodcutting, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
     whenNeeded, withCue, askedOnTrade, h12oLogin, h12oLoginRefusal, h12oTopUp, H12O_LOGIN, type ChainStep, type CueSink, type RunConfig,
 } from './chain';
 import { CUE_BEACONS, CueKeeper, exitStopIsFinal, prepareCueDir, RunCues } from './cue-keeper';
@@ -164,6 +164,30 @@ describe('the chain', () => {
         expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toEqual([]);
     });
 
+    // rs/700: S07's close target is run config (main's H4m lever); absent, the options are today's byte for byte.
+    test("S07's prayerTo is the run config's s07PrayerTo: absent it is S07_PRAYER_TO (99) and s07Woodcutting is byte-identical; 98 closes at 98; a bad one is refused", () => {
+        const group: RunConfig = { ...CONFIG, bones: { group: ['cairn_b01', 'cairn_b02', 'cairn_b03', 'cairn_b04'] } };
+        expect(S07_PRAYER_TO).toBe(99);
+        expect(CONFIG.s07PrayerTo).toBeUndefined();
+        // the literal s07Woodcutting returned before the config value, key for key and in order
+        expect(JSON.stringify(s07Woodcutting(CONFIG, 'run-x'))).toBe(JSON.stringify({ bury: true, bones: CONFIG.bones, dropAxe: true, prayerTo: 99 }));
+        expect(JSON.stringify(s07Woodcutting(group, 'run-x'))).toBe(JSON.stringify({ bury: true, bones: group.bones, dropAxe: true, prayerTo: 99, boneSession: 'run-x.S07.bone' }));
+        expect(JSON.stringify(s07Woodcutting({ ...CONFIG, s07PrayerTo: 99 }, 'run-x'))).toBe(JSON.stringify(s07Woodcutting(CONFIG, 'run-x')));
+        const at98 = s07Woodcutting({ ...group, s07PrayerTo: 98 }, 'run-x');
+        expect(at98.prayerTo).toBe(98);
+        expect(s07PrayerTo({ s07PrayerTo: 98 })).toBe(98);
+        // the willow band's postcondition closes at 98, not 99
+        const willow = woodcutting.steps(at98).find(s => s.name === 'woodcutting:willow-73-99')!;
+        const at = (prayer: number) => baseState({
+            player: { worldX: 2920, worldZ: 3406 } as PlayerState,
+            skills: [{ name: 'Woodcutting', level: 99, baseLevel: 99, experience: 0 }, { name: 'Prayer', level: prayer, baseLevel: prayer, experience: 0 }],
+            inventory: ['Rune axe', 'Knife', 'Logs'].map((name, slot) => ({ slot, id: 100 + slot, name, count: 1, optionsWithIndex: [] }))
+        });
+        expect(willow.postconditions(at(98), {})).toBe(true);
+        expect(willow.postconditions(at(97), {})).toBe('Prayer 97, below 98');
+        for (const bad of [0, 100, 98.5, '98' as unknown as number]) expect(() => s07PrayerTo({ s07PrayerTo: bad })).toThrow(/s07PrayerTo must be an integer from 1 to 99/);
+    });
+
     // rs/642: attempt 3's willow band probed 15/20, ran plain, neither buried nor loaded, and stopped on a slot count that held its own bones.
     test("S07's oak and willow bands run the knife with bury, the normal band plain; the chain's willow band admits attempt 3's census at the stand", () => {
         const group: RunConfig = { ...CONFIG, bones: { group: ['cairn_b01', 'cairn_b02', 'cairn_b03', 'cairn_b04'] } };
@@ -176,6 +200,12 @@ describe('the chain', () => {
         }
         expect(s07Woodcutting(group, 'run-x').boneSession).toBe('run-x.S07.bone');
         expect(s07Woodcutting(CONFIG, 'run-x')).not.toHaveProperty('boneSession');
+        // rs/663: S07's early last load fires at the band's own targets, which the run sets to Woodcutting 99 (the default `to`) and Prayer 99
+        for (const cfg of [CONFIG, group]) {
+            const opts = s07Woodcutting(cfg, 'run-x');
+            expect([opts.to, opts.prayerTo]).toEqual([undefined, 99]);
+            expect(woodcutting.steps(opts).map(s => s.name)).toContain('woodcutting:willow-73-99');
+        }
         const item = (slot: number, name: string) => ({ slot, id: 100 + slot, name, count: 1, optionsWithIndex: [] });
         const census = baseState({
             player: { worldX: 2920, worldZ: 3406 } as PlayerState,

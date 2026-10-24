@@ -418,8 +418,10 @@ await runScript(async ({ bot: actions, sdk }) => {
         const m = (row.meta ?? {}) as Record<string, unknown>;
         if (m.kind === 'wc-switch') {
             console.log(`[${utc()}] T${row.endTick} SWITCH ${m.from} + bury -> ${m.to} + bury: ${m.onTime}/${m.judged} on time; WC ${m.level}, Prayer ${m.prayer}`);
+        } else if (m.kind === 'wc-last-load') {
+            console.log(`[${utc()}] T${row.endTick} LAST LOAD asked (the cue's lastLoad): WC ${m.level}, Prayer ${m.prayer}, both targets since T${m.bothAt ?? '-'}, ${m.loadsGiven ?? '?'} of ${m.loads ?? '?'} loads given`);
         } else if (m.kind === 'wc-bones-load') {
-            console.log(`[${utc()}] T${row.endTick} load ${m.load} from ${m.giver ?? '-'} ${row.ok ? 'ok' : `FAILED (${m.reason})`}: click to bones ${m.ticks} t, step ${m.stepTicks} t (server wait ${m.serverWait ?? '-'}, re-picks ${m.repicks ?? '-'}), received ${m.received}; Prayer ${sdk.getState()?.skills.find(k => k.name === 'Prayer')?.baseLevel}, WC ${wcLevel(sdk.getState())}`);
+            console.log(`[${utc()}] T${row.endTick} load ${m.load} from ${m.giver ?? '-'} ${row.ok ? 'ok' : `FAILED (${m.reason})`}: click to bones ${m.ticks} t, step ${m.stepTicks} t (server wait ${m.serverWait ?? '-'}, re-picks ${m.repicks ?? '-'}), received ${m.received}${m.lastLoad ? `, the runes' load (runes held: ${m.runes})` : ''}; Prayer ${sdk.getState()?.skills.find(k => k.name === 'Prayer')?.baseLevel}, WC ${wcLevel(sdk.getState())}`);
         } else if (m.kind === 'wc-segment') {
             const c = (m.counters ?? {}) as Record<string, number>;
             const r = (m.result ?? {}) as { histogram?: Record<string, number>; ticksPerExpectedRoll?: number; ticksPerSuccess?: number };
@@ -486,6 +488,19 @@ await runScript(async ({ bot: actions, sdk }) => {
             }
         }
         for (const r of log.rows.filter(r => (r.meta as { kind?: string } | undefined)?.kind === 'wc-band')) printBand(r.step, r.meta as Record<string, unknown>);
+        // rs/663: the close, from the first frame at both targets (`to` and `prayerTo`) to the band's end.
+        for (const r of log.rows.filter(r => (r.meta as { kind?: string; bothTargetsTick?: number } | undefined)?.kind === 'wc-band' && typeof (r.meta as { bothTargetsTick?: number }).bothTargetsTick === 'number')) {
+            const both = (r.meta as { bothTargetsTick: number }).bothTargetsTick;
+            const flagged = log.rows.find(x => x.step === 'woodcutting:last-load');
+            const after = loadRows.filter(x => x.endTick > both);
+            const spare = after.filter(x => !(x.meta as { lastLoad?: boolean }).lastLoad && ((x.meta as { received?: number }).received ?? 0) > 0);
+            const runes = after.find(x => (x.meta as { lastLoad?: boolean }).lastLoad);
+            console.log(
+                `CLOSE ${r.step}: both targets at T${both}; lastLoad asked at ${flagged ? `T${flagged.endTick} (+${flagged.endTick - both})` : 'never'}; ` +
+                    `runes' load ${runes ? `T${runes.endTick} (+${runes.endTick - both}, from ${(runes.meta as { giver?: string }).giver ?? '-'}, server wait ${(runes.meta as { serverWait?: number }).serverWait ?? '-'})` : 'none'}; ` +
+                    `band closed T${r.endTick}: ${r.endTick - both} ticks from both targets to the close; bone loads after both targets ${spare.length}`
+            );
+        }
         console.log(`log: ${log.path}`);
         if (helper) await closeSession(helper);
     }

@@ -124,6 +124,13 @@ export interface Cue {
      * namedSite). Absent: no site is named, and such a helper keeps its own rotation.
      */
     site?: { x: number; z: number };
+    /**
+     * S07: SCORED needs no more bones, only the load that carries the extras (T07-08's runes). The group's
+     * `final` giver serves that load next, the extras alone, whatever its load count says, and no other
+     * giver serves (bone-giver.ts boneServer, loadOffer). Once written it holds for the rest of the session.
+     * Not a stop: the givers stay in the world to serve it.
+     */
+    lastLoad?: boolean;
     /** The batch is over: armed givers stand down. */
     stop?: boolean;
     /**
@@ -648,6 +655,7 @@ function resumableCue(value: unknown): value is Cue {
         && (c.stop === undefined || typeof c.stop === 'boolean')
         && (c.final === undefined || typeof c.final === 'boolean') && (!c.final || c.stop === true)
         && (c.site === undefined || (!!c.site && integer(c.site.x) && integer(c.site.z)))
+        && (c.lastLoad === undefined || typeof c.lastLoad === 'boolean')
         && Array.isArray(c.beacons) && c.beacons.length > 0
         && c.beacons.every(b => b && integer(b.tick) && integer(b.ms) && b.ms >= 0)
         && Array.isArray(c.turns) && c.turns.every(t => t && typeof t.giver === 'string' && t.giver.length > 0
@@ -695,8 +703,11 @@ export class CueWriter {
         }
     }
 
-    /** Write the cue with `turns` replaced (pass the full list) and fresh beacons. A write without `site` keeps the session's last one. */
-    write(fields: { beacons: Beacon[]; turns: Turn[]; schedule?: Schedule; open?: number; stop?: boolean; final?: boolean; site?: { x: number; z: number } }): Cue {
+    /**
+     * Write the cue with `turns` replaced (pass the full list) and fresh beacons. A write without `site`
+     * keeps the session's last one; `lastLoad`, once written, stays for the session (it has no undo).
+     */
+    write(fields: { beacons: Beacon[]; turns: Turn[]; schedule?: Schedule; open?: number; stop?: boolean; final?: boolean; site?: { x: number; z: number }; lastLoad?: true }): Cue {
         if (fields.beacons.length === 0) throw new Error('a cue needs at least one beacon');
         if (fields.site && !(Number.isSafeInteger(fields.site.x) && Number.isSafeInteger(fields.site.z))) throw new Error('a cue site needs integer x and z');
         if (fields.final && !fields.stop) throw new Error('a final cue is a stop: final needs stop');
@@ -704,6 +715,7 @@ export class CueWriter {
         if (!Number.isSafeInteger(this.seq + 1)) throw new Error('CueWriter: sequence exhausted');
         const final = fields.final || this.cue?.final;
         const site = fields.site ?? this.cue?.site;
+        const lastLoad = fields.lastLoad === true || this.cue?.lastLoad === true;
         this.cue = {
             v: CUE_VERSION,
             scope: this.scope,
@@ -715,6 +727,7 @@ export class CueWriter {
             open: fields.open ?? this.cue?.open ?? DEFAULT_OPEN,
             turns: fields.turns,
             ...(site ? { site: { x: site.x, z: site.z } } : {}),
+            ...(lastLoad ? { lastLoad: true } : {}),
             ...(fields.stop ? { stop: true } : {}),
             ...(final ? { final: true } : {}),
             ms: Date.now()
