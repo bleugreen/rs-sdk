@@ -446,7 +446,7 @@ place of one `bones.giver`:
   band to bury them.
 - `handBack: true` names one giver, so it is refused with a group (name the partner instead).
 
-The group's load failures and their recovery. In both cases the band fails, keeps the cue standing,
+The closing band's failures and their recovery. In each case the band fails, keeps the cue standing,
 and never closes without the runes.
 
 | Failure (the band's error) | Cause | Recovery |
