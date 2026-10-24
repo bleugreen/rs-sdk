@@ -13,7 +13,10 @@
 //   | row | in | out | equip | needAtStart | source |
 //   in      ITEM xCOUNT [K] (note); ...      K: s stackable, u unstackable, n noted
 //           ITEM to N [K] (note): a top-up to N counting what is held, pack and worn (the H10 form)
-//   out     ITEM xCOUNT (REASON ...); ITEM all (REASON ...)
+//   out     ITEM xCOUNT (REASON ...); ITEM all (REASON ...); ITEM any (drop|swap|trade ...)
+//           `all` is everything held under the item and refuses when none is; `any` (drops and
+//           hand-off gives only) is everything held, or nothing when none is: a backstop drop, or
+//           dead stock an earlier step may have used up
 //   ITEM    NAME        the game name (lower-case; a potion's dose suffix optional), matched by name
 //           NAME @ID    obj ID, always the UNNOTED one: matched by id, NAME only a label; with [n]
 //                       the noted form, whose id runner/handoff.ts reads through the obj's cert
@@ -51,6 +54,8 @@ export const INVENTORY_SLOTS = 28;
 export type Kind = 's' | 'u' | 'n';
 export const REASONS = ['drop', 'trade', 'swap', 'consume', 'hand-in', 'deposit'] as const;
 export type Reason = (typeof REASONS)[number];
+/** The reasons an `any` count may take: a drop, or a hand-off's give (none held: nothing offered). */
+export const ANY_REASONS: readonly Reason[] = ['drop', 'swap', 'trade'];
 export type Evidence = 'm' | 'r' | 'i';
 
 /** The item an entry names: one of the four ITEM forms. */
@@ -75,7 +80,7 @@ export interface InEntry extends ItemRef {
 
 export interface OutEntry extends ItemRef {
     /** A number, 'all' (everything held under the name), or null for `?`. */
-    count: number | 'all' | null;
+    count: number | 'all' | 'any' | null;
     reason: Reason;
 }
 
@@ -182,11 +187,12 @@ export function parseIn(cell: string): InEntry[] {
 export function parseOut(cell: string): OutEntry[] {
     if (empty(cell)) return [];
     return splitTop(cell, '; ').map(e => {
-        const m = e.match(/^(.+?) (?:x(\d+|\?)|(all)) \((.*)\)$/);
-        if (!m) throw new Error(`out entry "${e}": expected NAME xCOUNT (REASON ...) or NAME all (REASON ...)`);
-        const reason = m[4]!.trim().split(/[\s:;,]/)[0]!;
+        const m = e.match(/^(.+?) (?:x(\d+|\?)|(all)|(any)) \((.*)\)$/);
+        if (!m) throw new Error(`out entry "${e}": expected NAME xCOUNT (REASON ...), NAME all (REASON ...) or NAME any (drop|swap|trade ...)`);
+        const reason = m[5]!.trim().split(/[\s:;,]/)[0]!;
         if (!(REASONS as readonly string[]).includes(reason)) throw new Error(`out entry "${e}": reason "${reason}" is not one of ${REASONS.join(', ')}`);
-        return { ...parseItem(m[1]!), count: m[3] ? 'all' : count(m[2]!), reason: reason as Reason };
+        if (m[4] && !(ANY_REASONS as readonly string[]).includes(reason)) throw new Error(`out entry "${e}": "any" is for drops and hand-off gives only (${ANY_REASONS.join(', ')}), not ${reason}`);
+        return { ...parseItem(m[1]!), count: m[3] ? 'all' : m[4] ? 'any' : count(m[2]!), reason: reason as Reason };
     });
 }
 
@@ -388,6 +394,11 @@ class Pack {
         const inv = named(this.inv, e);
         const where = inv.length ? this.inv : this.worn;
         const found = inv.length ? inv : named(this.worn, e);
+        // `any`: everything held under the item, or nothing when none is.
+        if (e.count === 'any') {
+            for (const list of [this.inv, this.worn]) for (const h of named(list, e)) this.take(list, h, 'all');
+            return;
+        }
         if (!found.length) throw new Error(`${itemLabel(e)} out (${e.reason}) but neither held nor worn`);
         if (e.count === 'all') {
             // Everything held under the item: every dose form of a family, every stack of a name.

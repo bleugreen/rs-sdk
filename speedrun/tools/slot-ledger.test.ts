@@ -52,6 +52,23 @@ describe('parseLedger: the agreed grammar', () => {
     });
 });
 
+describe('an `any` count (rs/663): whatever is held, zero or more, for drops and hand-off gives', () => {
+    test('parses for drop, swap and trade, and is refused for any other reason', () => {
+        const { rows, errors } = parseLedger(table('| H1 | - | coins any (swap: dead); bones any (drop); shark any (trade) | - | 0 | (r) |'));
+        expect(errors).toEqual([]);
+        expect(rows[0]!.out.map(o => [o.name, o.count, o.reason])).toEqual([['coins', 'any', 'swap'], ['bones', 'any', 'drop'], ['shark', 'any', 'trade']]);
+        expect(parseLedger(table('| S01 | - | air rune any (consume) | - | 0 | (r) |')).errors[0]).toMatch(/"any" is for drops and hand-off gives only/);
+    });
+
+    test('the walk takes all of it when held and nothing when none is; `all` with none held is still an error', () => {
+        const held = run(table('| S00 | air rune x25 [s]; bones x3 [u] | - | - | 4 | (r) |', '| H1 | knife x1 [u] | air rune any (swap); bones any (drop) | - | 1 | (r) |'));
+        expect(byRow(held, 'H1')).toMatchObject({ verdict: 'pass', used: 1, held: 'knife x1' });
+        const none = run(table('| S00 | knife x1 [u] | - | - | 1 | (r) |', '| H1 | - | air rune any (swap); bones any (drop) | - | 0 | (r) |'));
+        expect(byRow(none, 'H1')).toMatchObject({ verdict: 'pass', used: 1, held: 'knife x1' });
+        expect(byRow(run(table('| S00 | knife x1 [u] | - | - | 1 | (r) |', '| H1 | - | air rune all (swap) | - | 0 | (r) |')), 'H1').verdict).toBe('ERROR');
+    });
+});
+
 describe('walk', () => {
     test('a scripted table that passes, row by row', () => {
         const entries = run(table(

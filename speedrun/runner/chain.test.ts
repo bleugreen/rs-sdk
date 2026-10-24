@@ -208,6 +208,12 @@ describe('the chain', () => {
         }
         expect(s07Woodcutting(group, 'run-x').boneSession).toBe('run-x.S07.bone');
         expect(s07Woodcutting(CONFIG, 'run-x')).not.toHaveProperty('boneSession');
+        // rs/663: S07's early last load fires at the band's own targets, which the run sets to Woodcutting 99 (the default `to`) and Prayer 99
+        for (const cfg of [CONFIG, group]) {
+            const opts = s07Woodcutting(cfg, 'run-x');
+            expect([opts.to, opts.prayerTo]).toEqual([undefined, 99]);
+            expect(woodcutting.steps(opts).map(s => s.name)).toContain('woodcutting:willow-73-99');
+        }
         const item = (slot: number, name: string) => ({ slot, id: 100 + slot, name, count: 1, optionsWithIndex: [] });
         const census = baseState({
             player: { worldX: 2920, worldZ: 3406 } as PlayerState,
