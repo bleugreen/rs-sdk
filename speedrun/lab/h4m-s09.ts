@@ -20,11 +20,12 @@
 // Exit 0 when every step held its postconditions (the last bury step's is the chain's Prayer 99),
 // at least 4 loads were buried on the lap and at least one by hand at Mining 99.
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { hostname, loadavg } from 'node:os';
 import { join } from 'node:path';
 import { muleFromLedger, muleRunOptions } from '../helpers/mule-ledger';
 import { readMuleReady } from '../helpers/mule-readiness';
+import { objPack } from '../lib/obj-pack';
 import { awaitProgram, startProgram } from '../lib/programs';
 import { closeSession, isLoopbackHost, loadBotEnv, type Session } from '../lib/session';
 import { TickLog, type TickRow } from '../lib/ticks';
@@ -61,8 +62,12 @@ const where = () => ({ host: hostname(), load: loadavg().map(l => +l.toFixed(2))
 const log = TickLog.open(runId, join(root, 'ticks.jsonl'));
 const say = (event: string, fields: Record<string, unknown> = {}) => console.log(JSON.stringify({ event, tick: scored?.sdk.getState()?.tick ?? null, ...where(), ...fields }));
 
-// The carrier's options as mule-ledger.ts generates them for the run: the launcher config run.ts's preflight checks.
-const options = muleRunOptions(muleFromLedger(manifest, { rows: ['H4p'] }), cueRoot, { deliveryRun: runId, serve: scoredName });
+// The carrier's options as it serves them (lab/h4m-carrier.ts writes them before it logs in), else as
+// mule-ledger.ts generates them for the run: the launcher config run.ts's preflight checks.
+const servedFile = join(process.env.LAB_LOG ?? '', 'h4m-carrier-options.json');
+const options: ReturnType<typeof muleRunOptions> = process.env.LAB_LOG && existsSync(servedFile)
+    ? JSON.parse(readFileSync(servedFile, 'utf8'))
+    : muleRunOptions(muleFromLedger(manifest, { rows: ['H4p'], onRequest: [], pack: objPack() }), cueRoot, { deliveryRun: runId, serve: scoredName });
 const launcherPath = join(root, 'launcher-config.json');
 writeFileSync(launcherPath, JSON.stringify({ accounts: [{ account: carrier, role: 'mule', cueDir: options.cueDir, options }] }, null, 2));
 
