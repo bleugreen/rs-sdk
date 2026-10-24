@@ -1,9 +1,9 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, NearbyLoc, PlayerState } from '../../sdk/types';
 import { baseState, drive, FakeSdk, flush, simulateWalking } from './fake-sdk';
 import { sleep } from './wait';
 import {
-    deletesFollowerItem, expandRoute, GNOME_STRONGHOLD_GATE, hopNeeds, hopsDestination, passGate, runesHeld, runTo, SPELLS, teleport, teleportRefusal, throughWebs, travel, wildernessLevel, type Hop,
+    deletesFollowerItem, expandRoute, GNOME_STRONGHOLD_GATE, hopNeeds, hopsDestination, LEVERS, passGate, RELOCATE_TILES, runesHeld, runTo, SPELLS, teleport, teleportRefusal, throughWebs, travel, wildernessLevel, type Hop, type Relocation,
 } from './travel';
 
 const player = (worldX: number, worldZ: number, level = 0) => ({ name: 'lab', x: worldX, z: worldZ, worldX, worldZ, level, hp: 40, maxHp: 40 }) as PlayerState;
@@ -520,6 +520,139 @@ describe('runTo: a client that stops publishing', () => {
         const r = await p; // no more ticks
         expect(r.ok).toBe(false);
         expect(r.reason).toBe('run to 3240,3200: no tick');
+    });
+});
+
+/**
+ * A run that something else moves (T06-07 on the browser, rs/589: hitpoints 10, the player stood at
+ * 2964,3413 from tick 20, and at tick 29 stood on Lumbridge's respawn square; the walker re-pathed
+ * 502 tiles and reported ok). `at` places the player by the tick it is published on.
+ */
+describe('a walked hop relocated by something it did not do', () => {
+    let warn: ReturnType<typeof spyOn>;
+    beforeEach(() => { warn = spyOn(console, 'warn').mockImplementation(() => {}); });
+    afterEach(() => warn.mockRestore());
+
+    const hp = (n: number) => (s: BotWorldState) => ({ player: { ...s.player!, hp: n, maxHp: 10 } });
+    /** The T06-07 death: hitpoints fall to 0 on ticks 104-105 where the player stands, then the respawn at 3222,3216 on 106. */
+    const death = (s: BotWorldState): Partial<BotWorldState> => {
+        const t = s.tick + 1;
+        if (t === 104 || t === 105) return hp(0)(s);
+        if (t === 106) return { player: { ...player(3222, 3216), hp: 10, maxHp: 10 } };
+        return {};
+    };
+    const taverley = () => {
+        const sdk = world(2964, 3413);
+        sdk.state = { ...sdk.state!, player: { ...sdk.state!.player!, hp: 10, maxHp: 10 } };
+        return { sdk, sim: simulateWalking(sdk) };
+    };
+
+    test('a death mid-run (T06-07, 10 hp, respawn at Lumbridge) fails on the tick it is published, with a respawn reason and the last hp', async () => {
+        const { sdk, sim } = taverley();
+        const seen: Relocation[] = [];
+        const r = await drive(sdk, runTo(sdk as never, { x: 2920, z: 3413 }, { onRelocated: ev => (seen.push(ev), 'fail') }), 600, death);
+        expect(r.ok).toBe(false);
+        expect(r.reason).toMatch(/^run to 2920,3413: relocated from 2954,3413 to 3222,3216: respawn \(268 tiles in 1 tick; hp 0 before it, lowest 0\)$/);
+        expect(r.relocated).toMatchObject({ respawn: true, from: { x: 2954, z: 3413 }, to: { x: 3222, z: 3216 }, tick: 106, hp: 0, hpMin: 0 });
+        expect(seen).toHaveLength(1);
+        // No click from Lumbridge: the run ended on the respawn's own tick, and did not re-path.
+        expect(sim.clicks.every(c => c.tick < 106)).toBe(true);
+        expect(r.endTick).toBe(106);
+        expect(warn).not.toHaveBeenCalled();
+    });
+
+    test('without a handler the run keeps re-pathing as it did, but logs the relocation loudly and reports it', async () => {
+        const { sdk } = taverley();
+        const r = await drive(sdk, runTo(sdk as never, { x: 2920, z: 3413 }), 600, death);
+        expect(r.ok).toBe(true);
+        expect(at(sdk)).toEqual({ x: 2920, z: 3413 });
+        expect(r.relocated).toMatchObject({ respawn: true, to: { x: 3222, z: 3216 } });
+        expect(r.ticks).toBeGreaterThan(150); // walked back from Lumbridge
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(String(warn.mock.calls[0]![0])).toMatch(/RELOCATED during run to 2920,3413: relocated from .* respawn .*; re-pathing from 3222,3216 \(no onRelocated handler\)/);
+    });
+
+    test('a jump off the respawn square is a death or forced teleport; a webs hop and a click hop are watched too', async () => {
+        const { sdk } = taverley();
+        const away = (s: BotWorldState) => (s.tick + 1 === 103 ? { player: { ...s.player!, worldX: 3100, worldZ: 3100, x: 3100, z: 3100 } } : {});
+        const r = await drive(sdk, runTo(sdk as never, { x: 2920, z: 3413 }, { onRelocated: () => 'fail' }), 600, away);
+        expect(r.ok).toBe(false);
+        expect(r.reason).toMatch(/relocated from 2960,3413 to 3100,3100: death or forced teleport \(313 tiles in 1 tick; hp 10 before it, lowest 10\)/);
+        expect(r.relocated?.respawn).toBe(false);
+
+        const click = world(3200, 3200);
+        simulateWalking(click);
+        const c = await drive(click, travel(click as never, [{ kind: 'click', to: { x: 3210, z: 3200 } }], { onRelocated: () => 'fail' }), 600, s => (s.tick + 1 === 102 ? { player: player(3222, 3218) } : {}));
+        expect(c.ok).toBe(false);
+        expect(c.reason).toMatch(/^click to 3210,3200: relocated from 3202,3200 to 3222,3218: respawn/);
+    });
+
+    test("a teleport hop's landing and a lever's are the hop's own: the run after each starts from the landing, unflagged", async () => {
+        const runes = [item(0, 'Air rune', 10), item(1, 'Water rune', 5), item(2, 'Law rune', 5)];
+        const sdk = world(3000, 3500, { inventory: runes, skills: magic(40) });
+        sdk.onSend = (a, f) => { if (a.method === 'sendClickComponent') queueMicrotask(() => f.tick({ player: player(2965, 3379) })); };
+        simulateWalking(sdk);
+        const r = await drive(sdk, travel(sdk as never, [{ kind: 'teleport', spell: 'falador' }, { kind: 'run', to: { x: 2985, z: 3379 } }], { onRelocated: () => 'fail' }));
+        expect(r.ok).toBe(true);
+        expect(r.relocated).toBeUndefined();
+
+        const lever = loc(LEVERS.ardougne.loc, 'Lever', 2561, 3311, ['Pull']);
+        const wild = world(2562, 3311, { nearbyLocs: [lever] });
+        wild.onSend = (a, f) => { if (a.method === 'sendInteractLoc' && a.args[2] === LEVERS.ardougne.loc) queueMicrotask(() => f.tick({ player: player(3154, 3924), nearbyLocs: [] })); };
+        simulateWalking(wild);
+        const w = await drive(wild, travel(wild as never, [{ kind: 'lever', lever: 'ardougne' }, { kind: 'run', to: { x: 3154, z: 3904 } }], { onRelocated: () => 'fail' }));
+        expect(w.ok).toBe(true);
+        expect(w.segments.map(s => s.ok)).toEqual([true, true]);
+        expect(w.relocated).toBeUndefined();
+        expect(warn).not.toHaveBeenCalled();
+    });
+
+    test('a walk, a one-tile correction, a client silence the run rides out and a jump of the bound are not relocations; one more tile is', async () => {
+        const fail = { onRelocated: () => 'fail' as const };
+        const walk = world(3200, 3200);
+        simulateWalking(walk, { speed: 1 });
+        expect(await drive(walk, runTo(walk as never, { x: 3230, z: 3200 }, fail))).toMatchObject({ ok: true, ticks: 30 });
+
+        const back = world(3200, 3200);
+        simulateWalking(back);
+        const nudge = (s: BotWorldState) => (s.tick + 1 === 104 ? { player: player(s.player!.worldX - 1, 3201) } : {});
+        const b = await drive(back, runTo(back as never, { x: 3230, z: 3200 }, fail), 600, nudge);
+        expect(b.ok).toBe(true);
+        expect(b.relocated).toBeUndefined();
+
+        // Each jump below is measured from 3204, the tile published on tick 102 (a patch sees the
+        // walk's step already taken). Six ticks unpublished, 20 tiles on: 15 + 2 for each tick past
+        // the first allows 25.
+        const quiet = world(3200, 3200);
+        simulateWalking(quiet);
+        const gap = (s: BotWorldState) => (s.tick + 1 === 103 ? { tick: s.tick + 6, player: player(3204 + 20, 3200) } : {});
+        const q = await drive(quiet, runTo(quiet as never, { x: 3260, z: 3200 }, fail), 600, gap);
+        expect(q.ok).toBe(true);
+        expect(q.relocated).toBeUndefined();
+
+        for (const [tiles, flagged] of [[RELOCATE_TILES, false], [RELOCATE_TILES + 1, true]] as const) {
+            const sdk = world(3200, 3200);
+            simulateWalking(sdk);
+            const jump = (s: BotWorldState) => (s.tick + 1 === 103 ? { player: player(3204 + tiles, 3200) } : {});
+            const r = await drive(sdk, runTo(sdk as never, { x: 3260, z: 3200 }, fail), 600, jump);
+            expect(r.ok).toBe(!flagged);
+            expect(r.relocated === undefined).toBe(!flagged);
+        }
+    });
+
+    test('a frame published mid-rebuild is never compared: the jump is measured between built frames', async () => {
+        const sdk = world(3200, 3200);
+        simulateWalking(sdk);
+        // A rebuild frame with a stray position, then the walk goes on where it was.
+        const stray = (s: BotWorldState) => {
+            const t = s.tick + 1;
+            if (t === 103) return { sceneReady: false, player: player(3100, 3100) };
+            if (t === 104) return { sceneReady: true, player: player(3208, 3200) };
+            return {};
+        };
+        const r = await drive(sdk, runTo(sdk as never, { x: 3240, z: 3200 }, { onRelocated: () => 'fail' }), 600, stray);
+        expect(r.relocated).toBeUndefined();
+        expect(r.ok).toBe(true);
     });
 });
 
