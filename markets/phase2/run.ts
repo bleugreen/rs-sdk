@@ -18,7 +18,7 @@
  *   again, the ship, its method (sharks.ts). A purchase refused for a transient reason is retried with backoff.
  *   With `foodFallback: 'park'` the account logs out where it stands instead (a `parked` ledger line).
  * - The ledger (ledger.ts) gets a line per account every `ledger.everyTicks` of its ticks and a totals line on the
- *   same cadence, plus the ramp's decisions, redirects, purchases and sales. Accounts appear as aliases
+ *   same cadence (with the process's `memory` and `load`, memory.ts), plus the ramp's decisions, redirects, purchases and sales. Accounts appear as aliases
  *   (names.ts); the names file guard (lib/accounts.ts) refuses to start without it, and a run on real accounts
  *   needs every account on it. `--placeholder-data` is for lab accounts only.
  * - `--run-ended` confirms main has announced the scored run's end: without it a plan that buys sharks refuses to

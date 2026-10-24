@@ -71,6 +71,8 @@ agent's batch against the demo). `run.ts <plan.json>` brings every account of a 
 | `stages.ts` | Each stage's goal and how it runs, on the existing trainers, roles and steps. |
 | `errands.ts` | The shark purchase and the capped sale at the Exchange. |
 | `run.ts`, `report.ts`, `lab.ts` | The runner, the ledger summary, and the lab driver (lab SERVER only). |
+| `memory.ts` | The totals line's `memory` and `load` (CPU, event-loop lag), and the start-up workarounds for the SDK's collision JSON and the lite client's per-login loc index (`docs/markets/phase2.md` 'Memory'). |
+| `heap-probe.ts`, `heap-diff.ts` | A preload that samples the runner's memory and heap every minute (`lab.ts --heap=1`, or by hand live), and a heap snapshot diff. |
 
 ### Keeping the poller running
 
