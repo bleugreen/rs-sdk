@@ -166,7 +166,8 @@ async function readRenderers(chromePid: number): Promise<RendererReading[]> {
     if (process.platform === 'linux') {
         return procDescendants(chromePid).flatMap(pid => {
             try {
-                const args = readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0');
+                // Chrome rewrites its process title on Linux: a renderer's cmdline is one space-joined string, not NUL-separated args.
+                const args = readFileSync(`/proc/${pid}/cmdline`, 'utf8').split(/[\0\s]+/);
                 if (!args.includes('--type=renderer')) return [];
                 const m = parseSmapsRollup(readFileSync(`/proc/${pid}/smaps_rollup`, 'utf8'));
                 return m ? [{ pid, ...m }] : [];
