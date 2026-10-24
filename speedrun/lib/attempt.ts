@@ -49,6 +49,8 @@ export interface AttemptOptions {
     gateStop: () => string | null;
     /** Leave the world: logoutClean, page-confirmed. Clearing `expectInWorld` keeps the watchdog from relaunching. */
     logout: () => Promise<LogoutResult>;
+    /** runSteps' atStop: at a stop's logout-safe boundary, before the logout (run.ts writes its census row). */
+    atStop?: (session: RunnerSession, next: Step<any>, index: number) => void;
     /** runResumable's recover after a drop (run.ts: runner/drop-relog.ts); default the link's own restore. */
     recover?: (reason: string, at: { step: string | null; tick: number }) => Promise<void>;
     onEvent?: (e: ResumeEvent) => void;
@@ -61,6 +63,8 @@ export interface AttemptResult {
     code: number;
     /** Set when a live host reservation stopped the attempt. */
     paused: HostReservation | null;
+    /** A stop or a pause at a logout-safe boundary: the chain index it resumes at (the --from to give). */
+    resumeAt?: number;
 }
 
 /**
@@ -84,6 +88,7 @@ export async function runAttempt(session: Session, chain: ReadonlyArray<Step<any
             logout: async () => {
                 held.logout = await o.logout();
             },
+            ...(o.atStop ? { atStop: o.atStop } : {}),
             ...(o.from !== undefined ? { from: o.from } : {}),
             ...(o.recover ? { recover: o.recover } : {}),
             ...(o.probes ? { probes: o.probes } : {}),
@@ -107,11 +112,12 @@ export async function runAttempt(session: Session, chain: ReadonlyArray<Step<any
                 outcome: `PAUSED for the gate/run: the host is reserved by ${reservationText(res)}; ${left} before "${before}"; run again once the reservation is gone`,
                 code: EXIT_HOST_RESERVED,
                 paused: res,
+                resumeAt: r.resumeAt,
             };
         }
         const gate = o.gateStop();
         if (gate) return { outcome: `REFUSED after the in-page probe (${gate}); logged out`, code: 3, paused: null };
-        return { outcome: `stopped before "${before}"; logged out`, code: 4, paused: null };
+        return { outcome: `stopped before "${before}"; logged out`, code: 4, paused: null, resumeAt: r.resumeAt };
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         // A step that logged out on purpose (a PausedForPlayer pause) left the world itself.
