@@ -419,6 +419,67 @@ export function simulateWalking(
     return sim;
 }
 
+export interface BurySim {
+    /** Every Bury click: the frame it was sent on, the tick it landed, and whether the server took it. */
+    clicks: Array<{ slot: number; sent: number; land: number; accepted: boolean }>;
+    /** The tick each bone left the pack. */
+    buried: number[];
+}
+
+/**
+ * The server's side of burying, as the engine runs it: a Bury (sendUseItem) sent on frame T lands on
+ * tick T + `latency` (processClientsIn) and is taken only if the player is not delayed; bury_bone.rs2's
+ * p_delay(0) delays the player through the next tick (PlayerOps.ts P_DELAY: delayedUntil = tick + 1),
+ * and World.ts clears it in processPlayers, where the script deletes the bone and gives the xp. So a
+ * Bury taken on X deletes its bone on X+1, and a click landing on X+1 is dropped (OpHeldHandler).
+ * `accept` may drop a click outright (a lost packet); `prayer` sets Prayer's level from the bones
+ * buried so far. Ticks move by `sdk.push`, so it works under `drive` and any ticking helper.
+ */
+export function simulateBurying(
+    sdk: FakeSdk,
+    opts: { latency?: number; bones?: RegExp; accept?: (n: number) => boolean; prayer?: (buried: number) => number | null } = {}
+): BurySim {
+    const sim: BurySim = { clicks: [], buried: [] };
+    const latency = opts.latency ?? 1;
+    const re = opts.bones ?? /bones$/i;
+    let takenAt = -Infinity;
+    let taken: number | null = null;
+    const prev = sdk.onSend;
+    sdk.onSend = (a, f) => {
+        prev(a, f);
+        if (a.method !== 'sendUseItem') return;
+        const t = f.state?.tick ?? 0;
+        sim.clicks.push({ slot: a.args[0] as number, sent: t, land: t + latency, accepted: false });
+    };
+    const push = sdk.push.bind(sdk);
+    sdk.push = patch =>
+        push(cur => {
+            let next: BotWorldState = { ...cur, ...(typeof patch === 'function' ? patch(cur) : patch) };
+            for (let x = cur.tick + 1; x <= next.tick; x++) {
+                // processClientsIn: a click lands; the player is delayed through the tick after a taken Bury
+                sim.clicks.forEach((c, n) => {
+                    if (c.land !== x || c.accepted) return;
+                    const bone = next.inventory.find(i => i.slot === c.slot && re.test(i.name));
+                    if (!bone || x < takenAt + 2 || !(opts.accept?.(n) ?? true)) return;
+                    c.accepted = true;
+                    takenAt = x;
+                    taken = c.slot;
+                });
+                // processPlayers: the delay clears on the tick after, and the bone goes with it
+                if (takenAt === x - 1 && taken !== null) {
+                    const slot = taken;
+                    taken = null;
+                    next = { ...next, inventory: next.inventory.filter(i => i.slot !== slot) };
+                    sim.buried.push(x);
+                    const level = opts.prayer?.(sim.buried.length);
+                    if (level != null) next = { ...next, skills: next.skills.map(k => (k.name === 'Prayer' ? { ...k, level, baseLevel: level } : k)) };
+                }
+            }
+            return next;
+        });
+    return sim;
+}
+
 /** Tick `sdk` (applying `each` per tick) until `p` settles; throws after `maxTicks`. */
 export async function drive<T>(sdk: FakeSdk, p: Promise<T>, maxTicks = 600, each: (s: BotWorldState) => Partial<BotWorldState> = () => ({})): Promise<T> {
     let settled = false;
