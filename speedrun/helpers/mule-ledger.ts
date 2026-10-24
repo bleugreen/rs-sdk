@@ -192,6 +192,12 @@ function h4mRow(fallbacks: readonly LedgerRow[]): { index: number; rows: string[
     return { index: named[0]!.index, rows: Array.from({ length: Number(m[1]) }, (_, k) => `H4m.${k + 1}`) };
 }
 
+/** The fallback row `H4m.1-H4m.N` that H4m's loads are built from; null when the table has none. */
+export function h4mFallbackRow(fallbacks: readonly LedgerRow[]): LedgerRow | null {
+    const h4m = h4mRow(fallbacks);
+    return h4m ? fallbacks[h4m.index]! : null;
+}
+
 /** H4m's load rows, H4m.1 to H4m.N, from the fallback table in `manifest`; none when it has no H4m row. */
 export function h4mLoadRows(manifest: string = readFileSync(MANIFEST, 'utf8')): string[] {
     return h4mRow(parseFallbacks(manifest))?.rows ?? [];
