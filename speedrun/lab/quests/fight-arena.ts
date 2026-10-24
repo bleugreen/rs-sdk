@@ -20,7 +20,31 @@ import { readFileSync } from 'fs';
 import type { TickRow } from '../../lib/ticks';
 import { ARRIVAL, quest, stepId, steps, TILES, type Options } from '../../quests/fight-arena';
 import { MANIFEST, parseLedger, walk } from '../../tools/slot-ledger';
+import { waitUntil } from '../../lib/wait';
+import { cheat, give } from '../setup';
 import { labMain, type LabQuest, type QuestFixture } from './run';
+
+/** `--name=N` from the lab's command line, or undefined. */
+function numArg(name: string): number | undefined {
+    const a = process.argv.find(x => x.startsWith(`--${name}=`));
+    return a === undefined ? undefined : Number(a.slice(name.length + 3));
+}
+
+/**
+ * The prayer state the route's budget says SCORED arrives with (rs/687): `--prayerPoints=N` drains the
+ * pool to N after the fixture's setstat (the engine's `~stat_drain` debugproc), `--prayerPotions=N`
+ * gives N Prayer potion(4) (H8's). Attempt 3's rehearsal reached S12 with 4 points and none.
+ */
+async function prayerArrival(sdk: Parameters<typeof cheat>[0]): Promise<void> {
+    const potions = numArg('prayerPotions');
+    const points = numArg('prayerPoints');
+    if (potions) await give(sdk, '4doseprayerrestore', potions);
+    if (points === undefined) return;
+    const cur = sdk.getState()?.prayers?.prayerPoints ?? 0;
+    if (cur > points) await cheat(sdk, `~stat_drain prayer ${cur - points} 0`);
+    const r = await waitUntil(sdk, s => (s.prayers?.prayerPoints ?? 0) <= points, { maxTicks: 10 });
+    if (!r.ok) throw new Error(`fixture: prayer points still ${sdk.getState()?.prayers?.prayerPoints}, wanted ${points}`);
+}
 
 /** SCORED at S12. */
 export const LEVELS = { attack: 94, strength: 1, defence: 1, hitpoints: 36, magic: 73, prayer: 94, thieving: 1, agility: 75 } as const;
@@ -118,6 +142,7 @@ const lab: LabQuest<Options> = {
         const sdk = session.sdk;
         // A prayer left on by an earlier run would drain through the walks.
         await session.bot.deactivateAllPrayers().catch(() => {});
+        await prayerArrival(sdk);
         stopHp?.();
         taken = 0;
         let last = sdk.getState()?.player?.hp ?? 0;
