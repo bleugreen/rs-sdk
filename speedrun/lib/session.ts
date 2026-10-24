@@ -1125,6 +1125,19 @@ export function alreadyLoggedIn(e: unknown): e is LoginRefused {
     return e instanceof LoginRefused && e.reply === ALREADY_LOGGED_IN;
 }
 
+/**
+ * A login that saw no advancing in-world tick within its timeout. After a long silence the page can
+ * be left claiming in game on a socket that carries nothing (the host's run D: 'Connecting to
+ * server...', the account absent from the world), so runner/drop-relog.ts retries it on a fresh tab.
+ */
+export class LoginTimedOut extends Error {
+    override name = 'LoginTimedOut';
+}
+
+export function loginTimedOut(e: unknown): e is LoginTimedOut {
+    return e instanceof LoginTimedOut;
+}
+
 export interface LoginOptions {
     timeoutMs?: number;
     attempts?: number;
@@ -1274,7 +1287,7 @@ export async function login(session: Session, opts: LoginOptions = {}): Promise<
             throw new LoginRefused(reply, endedOn, attempt, `${session.name}: login refused after ${attempt} attempt(s) (reply ${reply}: ${endedOn})`);
         }
         if (outcome === 'timeout' || attempt >= maxAttempts || session.childExit === 3) {
-            throw new Error(`${session.name}: login failed after ${attempt} attempt(s) (${outcome}, ${via === 'page' ? 'in page' : `exit ${session.childExit}`})`);
+            throw new (outcome === 'timeout' ? LoginTimedOut : Error)(`${session.name}: login failed after ${attempt} attempt(s) (${outcome}, ${via === 'page' ? 'in page' : `exit ${session.childExit}`})`);
         }
         // An in-page login that ended without getting in is not tried in the page again: a page
         // whose client cannot log in twice (a bundle before rs/183's autoLogin fix) would fail every
@@ -1282,6 +1295,39 @@ export async function login(session: Session, opts: LoginOptions = {}): Promise<
         if (via === 'page' && !opts.requireInPage && !opts.beforeDispatch) inPage = false;
         await sleep(backoffMs(attempt));
     }
+}
+
+/** How long relaunchOwnTab waits for its launch's own session (openSession's launch budget). */
+export const RELAUNCH_READY_MS = 120_000;
+
+/**
+ * Log SCORED's tab in afresh: the watchdog's relaunch (launchClient: the one tab re-navigated to a new
+ * token URL, a new launch tag) checked by its launch identity (waitOwnLaunch, rs/668), so a cached or
+ * foreign state never counts as this login. Never an in-page login: the tab it replaces may be a
+ * zombie that says in game on a dead socket. A launch whose page ends on a login reply the title
+ * screen tells apart (loginReplyCode) throws LoginRefused with that reply; any other failure throws
+ * waitOwnLaunch's refusal. Browser only.
+ */
+export async function relaunchOwnTab(session: Session, timeoutMs: number = RELAUNCH_READY_MS): Promise<LoginResult> {
+    if (session.client !== 'browser') throw new Error(`${session.name}: relaunchOwnTab relaunches a browser tab`);
+    if (session.beforeLogin) await session.beforeLogin();
+    const t0 = Date.now();
+    await launchClient(session);
+    try {
+        await waitOwnLaunch(session, timeoutMs);
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const reply = loginReplyCode(message);
+        if (reply !== null) throw new LoginRefused(reply, message, 1, `${session.name}: fresh-tab login refused (reply ${reply}): ${message}`);
+        throw err;
+    }
+    session.expectInWorld = true;
+    session.watchdog?.resume();
+    const wallMs = Date.now() - t0;
+    const run = await ensureRunOn(session.sdk);
+    const retaliate = await setAutoRetaliate(session.sdk, false);
+    await settleScene(session);
+    return { wallMs, attempts: 1, via: 'launch', tickBase: session.tickBase, run, retaliate };
 }
 
 /**
