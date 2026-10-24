@@ -19,7 +19,7 @@ import { tradeOf } from '../lib/trade';
 import { EAT_SPACING, eatDue, type EatOptions } from '../lib/travel';
 import { waitUntil, type StateSource } from '../lib/wait';
 import { opIndex } from '../lib/world';
-import { cureDose, DRINK_DELAY_TICKS, drinkDelayOver, noteAntipoison, poisoned } from '../quests/segments';
+import { cureDose, DRINK_DELAY_TICKS, drinkDelayOver, noteAntipoison, noteSessionStart, poisoned } from '../quests/segments';
 import { raceDeath, watchFrames, type Death, type DeathStretch } from './death';
 
 /** The antipoison helper the upkeep drinks through (quests/segments.ts); tests inject their own. */
@@ -37,7 +37,7 @@ export interface Cure {
     noteSessionStart?(tick: number): void;
 }
 
-export const SEGMENT_CURE: Cure = { poisoned, cureDose, noteAntipoison, drinkDelayOver };
+export const SEGMENT_CURE: Cure = { poisoned, cureDose, noteAntipoison, drinkDelayOver, noteSessionStart };
 
 /** Ticks after a dose that landed before upkeep drinks again while SCORED still reads poisoned: one poison cycle (poison.rs2's 30-tick timer). */
 export const CURE_SPACING = 30;
