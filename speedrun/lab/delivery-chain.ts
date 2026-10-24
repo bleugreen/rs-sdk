@@ -14,7 +14,12 @@
 // carrier is never moved: H4 waits on its real route from H1 (Lumbridge, Falador west bank, Doric).
 //
 //   LAB_RUNNERS=0 LAB_HELPERS=<mule> NODE_TICKRATE=400 speedrun/lab/lab.sh <scored> \
-//     'speedrun/lab/delivery-chain.ts:--mule=<mule>:--client=browser[:--hold=1]'
+//     'speedrun/lab/delivery-chain.ts:--mule=<mule>:--client=browser[:--hold=1][:--rows=H1][:--entry-wait=none][:--late=60]'
+//
+// --rows: the rows run, a subset of H1,H4,H4k in that order (default all three). --late=<s>: a carrier
+// late on purpose (rs/603): seeded, then logged out; it logs back in and starts its role <s> seconds
+// after SCORED stands at the first row, whose step starts at once (with --entry-wait=none), so the
+// row's cue ready gate (delivery-owner.ts awaitReady, 600 ticks) is what waits for it.
 //
 // Exit 0 every row served and its step's postconditions held, 1 otherwise.
 
@@ -43,7 +48,11 @@ import { arg, botArg, result } from './common';
 import { fixtureSeedBatches, loadFixtureCatalog, planMuleDeliveryFixtures, type FixtureItem, type MuleDeliveryFixture } from './mule-delivery-fixtures';
 import { cheat, clearInventory, leaveTutorial, mustTele } from './setup';
 
-const ROWS = ['H1', 'H4', 'H4k'] as const;
+const ALL_ROWS = ['H1', 'H4', 'H4k'] as const;
+const ROWS: readonly string[] = arg('rows', ALL_ROWS.join(',')).split(',');
+if (!ROWS.length || ROWS.some((r, i) => !ALL_ROWS.includes(r as never) || (i > 0 && ALL_ROWS.indexOf(r as never) <= ALL_ROWS.indexOf(ROWS[i - 1] as never)))) throw new Error(`--rows must be a subset of ${ALL_ROWS.join(',')} in that order`);
+const lateMs = Number(arg('late', '0')) * 1000;
+if (!Number.isFinite(lateMs) || lateMs < 0) throw new Error('--late must be a number of seconds');
 const scoredName = botArg();
 const muleName = arg('mule', '');
 const client = arg('client', 'browser') as 'browser' | 'lite';
@@ -158,10 +167,11 @@ const muleLines: Record<string, unknown>[] = [];
 let pass = false;
 let running: Promise<void> | undefined;
 let roleError: unknown;
+let late: Promise<void> | undefined;
 const stop = new AbortController();
 
 try {
-    emit('start', { host: hostname(), revision: revision(), tickRate: process.env.NODE_TICKRATE, client, hold, entryWait, runId, root, rows: ROWS });
+    emit('start', { host: hostname(), revision: revision(), tickRate: process.env.NODE_TICKRATE, client, hold, entryWait, lateMs, runId, root, rows: ROWS });
     if (client === 'browser') secure = await openSecureLabSession(scoredName);
     scored = secure?.session ?? await openSession(scoredName, { client, launch: true });
     mule = await openSession(muleName);
@@ -176,20 +186,27 @@ try {
         emit('hold-cli', { out: out.trim(), control: readMulePreparation(options.cueDir, muleName) });
     }
     const state = await openRoleState(join(root, 'role-state.json'));
-    running = role.run({
-        sdk: mule.sdk, bot: mule.bot, account: muleName, options: { ...options }, signal: stop.signal, state,
-        log: (message, data) => {
-            const line = { message, ...data };
-            if (/^delivery|^hand-off|ready|selected|refused|served/.test(message)) {
-                const cue = readCue(options.cueDir);
-                muleLines.push({ tick: mule.sdk.getState()?.tick ?? null, ...line, cue: cue && { step: cue.scope?.step, session: cue.session, seq: cue.seq, stop: !!cue.stop, ageMs: Date.now() - cue.ms } });
-            }
-            emit('role', line);
-        },
-        reportBank: () => {},
-    }).then(() => { if (!stop.signal.aborted) roleError = new Error('the mule role exited'); }, e => { roleError = e; emit('role-error', { error: String(e) }); });
+    const startCarrier = () => {
+        running = role.run({
+            sdk: mule.sdk, bot: mule.bot, account: muleName, options: { ...options }, signal: stop.signal, state,
+            log: (message, data) => {
+                const line = { message, ...data };
+                if (/^delivery|^hand-off|ready|selected|refused|served/.test(message)) {
+                    const cue = readCue(options.cueDir);
+                    muleLines.push({ tick: mule.sdk.getState()?.tick ?? null, ...line, cue: cue && { step: cue.scope?.step, session: cue.session, seq: cue.seq, stop: !!cue.stop, ageMs: Date.now() - cue.ms } });
+                }
+                emit('role', line);
+            },
+            reportBank: () => {},
+        }).then(() => { if (!stop.signal.aborted) roleError = new Error('the mule role exited'); }, e => { roleError = e; emit('role-error', { error: String(e) }); });
+    };
+    if (lateMs) {
+        // The late carrier is out of the world until SCORED stands at the first row.
+        await closeSession(mule);
+        emit('carrier-logout');
+    } else startCarrier();
 
-    if (hold) {
+    if (hold && !lateMs) {
         const held = await waitUntil(mule.sdk, () => readMuleReady(options.cueDir, muleName)?.phase === 'held' || !!roleError, { maxTicks: 60 });
         emit('held', { ok: held.ok, status: readMuleReady(options.cueDir, muleName) });
         if (!held.ok || roleError) throw roleError ?? new Error('the carrier never published held');
@@ -221,6 +238,16 @@ try {
             const f = plan.fixtures[i]!;
             const step = steps[i]!;
             await stageScored(f);
+            if (lateMs && i === 0) {
+                emit('scored-staged', { row, lateMs });
+                late = (async () => {
+                    await new Promise(r => setTimeout(r, lateMs));
+                    if (stop.signal.aborted) return;
+                    mule = await openSession(muleName);
+                    emit('carrier-login', { row, afterMs: lateMs });
+                    startCarrier();
+                })().catch(e => { roleError = e; emit('carrier-login-error', { error: String(e) }); });
+            }
             // A hand-off step's precondition wants its carrier in view (on run day it was prepared rows
             // earlier): the staged entry waits for its readiness and sight, and the wait is reported.
             let entryWaitTicks: number | null = null;
@@ -265,12 +292,13 @@ try {
     emit('failure', { error: e instanceof Error ? e.stack ?? e.message : String(e), control: readMulePreparation(options.cueDir, muleName), status: readMuleReady(options.cueDir, muleName), cue: readCue(options.cueDir) });
 } finally {
     stop.abort();
+    if (late) await Promise.race([late, new Promise<void>(r => setTimeout(r, 5000))]);
     try { cues.close({ final: false }); } catch { /* the run's own close; nothing open */ }
     if (running) await Promise.race([running, new Promise<void>(r => setTimeout(r, 5000))]);
     if (mule) await closeSession(mule);
     if (secure) await secure.close();
     else if (scored) await closeSession(scored);
-    const summary = { pass, host: hostname(), client, hold, runId, tickRate: process.env.NODE_TICKRATE, rows: rowsOut, muleLines, root };
+    const summary = { pass, host: hostname(), client, hold, lateMs, entryWait, runId, tickRate: process.env.NODE_TICKRATE, rows: rowsOut, muleLines, root };
     writeFileSync(join(root, 'result.json'), JSON.stringify(summary, null, 2));
     result('delivery-chain', summary);
 }
