@@ -12,7 +12,11 @@ import { TickLog } from './lib/ticks';
 import { MANIFEST } from './tools/slot-ledger';
 import { returnExtrasFromLedger } from './helpers/cannon-receiver';
 import { readFileSync } from 'fs';
-import { aliasAccount, attemptOf, openRunSession, runChainOnSession, cannonServeDrift, chainOrRefusal, type GateIO, LOG_ACCOUNT, loadRunConfig, parseArgs, signalShutdown, type SignalDeps, startGates, takeoverGate, TARGET_TOTAL, Terminated, tickBeforeLogin, totalLevel, untilTerminated, UsageError, withScoredSession } from './run';
+import { aliasAccount, attemptOf, censusStart, openRunSession, runChainOnSession, cannonServeDrift, chainOrRefusal, type GateIO, liveRuneCheck, LOG_ACCOUNT, loadRunConfig, loggedRuneCensus, parseArgs, runeGate, signalShutdown, type SignalDeps, startGates, takeoverGate, TARGET_TOTAL, Terminated, tickBeforeLogin, totalLevel, untilTerminated, UsageError, withScoredSession } from './run';
+import { runePlan } from './runner/rune-census';
+import { loadModules } from './tools/rune-pins';
+import { objPack } from './lib/obj-pack';
+import type { TickRow } from './lib/ticks';
 import { LOGOUT_BUTTON, type AbandonResult, type OpenOptions, type Session } from './lib/session';
 import { RelogBudget } from './runner/relog-budget';
 import { exitStopIsFinal } from './runner/cue-keeper';
@@ -21,7 +25,7 @@ import type { ChainStep } from './runner/chain';
 import { tickPreflight, type FeedRead } from './lib/feed-hello';
 
 const feed400: FeedRead & { ok: true } = { ok: true, url: 'wss://rs-sdk-demo.fly.dev/worldfeed', hello: { tickMs: 400, players: 12, tick: 5000 }, wallMs: 80 };
-import { buildChain, KIT_PARTNER_ROWS, PLACEMENT, sliceUntil } from './runner/chain';
+import { buildChain, CENSUS_STEP, KIT_PARTNER_ROWS, ledgerRows, PLACEMENT, resolveFrom, sliceUntil } from './runner/chain';
 
 const cues = { open: async () => {}, stop: () => {} };
 const partners = Object.fromEntries([...Object.keys(PLACEMENT), ...KIT_PARTNER_ROWS].map(id => [id, `p_${id}`]));
@@ -30,6 +34,96 @@ const cfg = { partners, firemakingTiles: '3222,3219;3221,3219', rings: { giver: 
 const full = buildChain(cfg, { cues });
 /** Attempt 1's seam: a row beside the coop, 77 tiles from where T02-03 ends. */
 const coopRow = buildChain({ ...cfg, firemakingTiles: '3240,3296' }, { cues });
+
+const fullRunePlan = runePlan(full, ledgerRows(readFileSync(MANIFEST, 'utf8')), await loadModules());
+
+describe('the rune census gate (rs/699)', () => {
+    const plan = fullRunePlan;
+    const law = [...objPack().names].find(([, n]) => n === 'lawrune')![0];
+    const water = [...objPack().names].find(([, n]) => n === 'waterrune')![0];
+    const air = [...objPack().names].find(([, n]) => n === 'airrune')![0];
+    const s13 = resolveFrom(full, 'S13')!;
+    const t1314b = resolveFrom(full, 'T13-14b')!;
+    /** The census row the chain writes before S13 (runner/chain.ts censused), with `lawCount` law. */
+    const censusRow = (lawCount: number): TickRow => ({
+        v: 1, kind: 'note', runId: 'run-a', account: LOG_ACCOUNT, sessionId: 1, step: CENSUS_STEP, startTick: 900, endTick: 900, ticks: 0, wallMs: 0, ok: true, tickMs: 400, at: '2026-10-24T04:30:00Z',
+        meta: { before: 'S13:A-lawgof-start', id: 'S13', free: 11, worn: ['Staff of fire'], inventory: [{ name: 'Law rune', count: lawCount, id: law }, { name: 'Water rune', count: 9, id: water }, { name: 'Air rune', count: 300, id: air }] },
+    });
+
+    test("before login: --from=S13 with the log's 3 law refuses as a start gate, beside the seams", async () => {
+        const r = loggedRuneCensus(plan, full, { from: s13, earlier: [censusRow(3)], served: () => false });
+        const io: GateIO = {
+            floor: async () => ({ ok: true, floor: 'f', runCommit: 'a'.repeat(40), line: 1, tickMs: { ok: true, tickMs: 400, line: 1 } }),
+            tick: async rec => tickPreflight(feed400, rec, 400),
+            reservation: () => ({ owner: 'o', state: { state: 'live', reservation: { owner: 'o', until: '2099-01-01T00:00:00Z', reason: '' } }, path: '/h' }),
+            slotLedger: async () => ({ code: 0, out: '' }),
+            helpersReady: () => true,
+            cannonServe: () => ({ path: '/c.json', serve: null, error: 'ENOENT' }),
+            runes: () => r,
+        };
+        const g = await startGates(sliceUntil(full, 'S13'), io);
+        const names = g.map(x => x.gate);
+        expect(names.indexOf('rune census')).toBe(names.indexOf('seams') + 1);
+        const census = g.find(x => x.gate === 'rune census')!;
+        expect(census.ok).toBe(false);
+        expect(census.detail).toStartWith(`rune census from #${s13} S13:A-lawgof-start: law rune short by 2: held 3, needed 5 before H11 brings more`);
+        expect(census.detail).toContain('T13-14a would run short (needs 2, 0 left)');
+        expect('census' in r && r.source).toBe("held as the tick log's last census recorded it before S13:A-lawgof-start (tick 900, by id)");
+    });
+
+    test("before login: with no --from the census starts where the log's last census was taken; 5 law passes", () => {
+        const r = loggedRuneCensus(plan, full, { earlier: [censusRow(5)], served: () => false });
+        expect('census' in r && r.census.from).toBe(s13);
+        const g = runeGate(r);
+        expect(g.ok).toBe(true);
+        expect(g.detail).toContain('law rune 5 held, 5 needed until H11');
+        expect(censusStart(full, undefined, [censusRow(5)])).toBe(s13);
+        expect(censusStart(full, t1314b, [censusRow(5)])).toBe(t1314b);
+    });
+
+    test('before login: a fresh run has no pack recorded, so the gate passes and says the census is taken live', () => {
+        const g = runeGate(loggedRuneCensus(plan, full, { earlier: [], served: () => false }));
+        expect(g).toMatchObject({ gate: 'rune census', ok: true });
+        expect(g.detail).toContain('taken on the live pack after login');
+        expect(censusStart(full, undefined, [])).toBe(0);
+        expect(runeGate({ error: 'the rune plan could not be built: x' }).ok).toBe(false);
+    });
+
+    test('after login: a live shortfall logs SCORED out, writes the gate row and refuses with exit 3 before any step', async () => {
+        const log = TickLog.memory('run-live');
+        let loggedOut = 0;
+        const lines: string[] = [];
+        const code = await liveRuneCheck(
+            { name: 'scored-login', sdk: {} as Session['sdk'] },
+            { plan, from: s13, served: () => false, log },
+            { logout: async () => (loggedOut++, { ok: true } as never), awaitState: async () => ({ inventory: [{ slot: 0, id: law, name: 'Law rune', count: 3, optionsWithIndex: [] }, { slot: 1, id: water, name: 'Water rune', count: 9, optionsWithIndex: [] }, { slot: 2, id: air, name: 'Air rune', count: 300, optionsWithIndex: [] }] }), say: l => lines.push(l) },
+        );
+        expect(code).toBe(3);
+        expect(loggedOut).toBe(1);
+        expect(log.rows).toHaveLength(1);
+        expect(log.rows[0]).toMatchObject({ step: '(gate) rune census, live', kind: 'gate', ok: false });
+        expect(lines[0]).toStartWith('[gate] REFUSED rune census, live: rune census from');
+        expect(lines.some(l => l.includes('SHORT    law rune: held 3, needed 5'))).toBe(true);
+        expect(lines.at(-1)).toBe('[run] rune census refused after login: SCORED logged out; no step ran');
+    });
+
+    test('after login: a sufficient live pack passes and nothing logs out; an unreadable pack refuses', async () => {
+        const log = TickLog.memory('run-live');
+        let loggedOut = 0;
+        const logout = async () => (loggedOut++, { ok: true } as never);
+        const pack = (n: number) => async () => ({ inventory: [{ slot: 0, id: law, name: 'Law rune', count: n, optionsWithIndex: [] }, { slot: 1, id: water, name: 'Water rune', count: 9, optionsWithIndex: [] }, { slot: 2, id: air, name: 'Air rune', count: 300, optionsWithIndex: [] }] });
+        expect(await liveRuneCheck({ name: 's', sdk: {} as Session['sdk'] }, { plan, from: s13, served: () => false, log }, { logout, awaitState: pack(5), say: () => {} })).toBeNull();
+        expect(loggedOut).toBe(0);
+        expect(log.rows[0]).toMatchObject({ step: '(gate) rune census, live', ok: true });
+        expect(await liveRuneCheck({ name: 's', sdk: {} as Session['sdk'] }, { plan, from: s13, served: () => false, log }, { logout, awaitState: async () => null, say: () => {} })).toBe(3);
+        expect(loggedOut).toBe(1);
+        // A hand-off record that does not parse refuses too, logged out, rather than throwing with SCORED in.
+        const broken = () => { throw new Error('/run/handoffs.json does not parse'); };
+        expect(await liveRuneCheck({ name: 's', sdk: {} as Session['sdk'] }, { plan, from: resolveFrom(full, 'T11-12a')!, served: broken, log }, { logout, awaitState: pack(9), say: () => {} })).toBe(3);
+        expect(loggedOut).toBe(2);
+        expect(log.rows.at(-1)).toMatchObject({ ok: false, error: '/run/handoffs.json does not parse' });
+    });
+});
 
 describe('parseArgs', () => {
     test('defaults: browser, the run dir, no slice; the log is stable in the run dir, so the same command again resumes into it', () => {
