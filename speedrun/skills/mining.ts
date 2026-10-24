@@ -15,6 +15,11 @@
 //                          rehearsals bring their kit
 //   mining.iron-15         15-63: iron, knife-mine with `success: 'iron'` (failed rolls) and
 //                          the held pickaxes' rates
+//   mining.bury: load k    with `bury`: one per load (`buryLoads`), before the last band: bury
+//                          the bones held on the `stay2` lap (BURY_LAP, knife-mine's `bury`),
+//                          by hand where the lap cannot (Mining at `to`, iron respawn over
+//                          BURY_MAX_RESPAWN, a contested lap), and drop them past `buryPrayerTo`;
+//                          the chain trades each load in before its step (H4m.k)
 //   mining.iron-63         63-to: iron, knife-mine as measured (every roll succeeds)
 //   mining.exit            with `dropAtExit`: drops the pickaxes, the logs and the band's
 //                          leftovers at their last use, without waiting (the leg after keeps
@@ -41,6 +46,14 @@
 // to CONTEST_RETRIES in CONTEST_WINDOW ticks, then walks to the nearest other site in SITES that
 // the fallback allows and whose hunters leave this combat level alone (`nextSite`; `acceptHazards`
 // lifts that). Without `fallback` the band is the zoo-only band it was.
+//
+// Bones (`bury`, STEP-MANIFEST.md entry 4, "Bones on the stay2 lap"). knife-mine buries one bone
+// a lap on BURY_LAP's east stay, ~1 per 15 ticks, at no measured cost to the lap (rs/182, #159),
+// and only while the lap holds 3 ticks an ore (respawn 13 or less). A bury step runs the band on
+// that lap until the pack holds no bone, then hands what is left to prayer.ts buryHeld; it never
+// walks to another site with bones held, since the next load is traded at the zoo. Slots: S09
+// holds the knife, 2 logs and the pickaxe (24 free), so a load is at most 24 - FREE_SLOTS = 20,
+// taken with none held.
 
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import { demoOrigin, samplePlayerCount } from '../lib/demo-status';
@@ -53,11 +66,12 @@ import type { TickRow } from '../lib/ticks';
 import { receiveFrom, type WantSpec } from '../lib/trade';
 import { currentTick, nextTick, tickMs, waitUntil } from '../lib/wait';
 import type { Step, StepContext } from '../runner/step';
+import { buryHeld } from './prayer';
 
 export const skill = 'mining';
 
-/** The in-page loop the iron bands drive and the kit trade; a test replaces them (the page is not there). */
-export const deps = { runGatedProgram, inPageGate, receiveFrom };
+/** The in-page loop the iron bands drive, the kit trade and the by-hand bury; a test replaces them (the page is not there). */
+export const deps = { runGatedProgram, inPageGate, receiveFrom, buryHeld };
 
 export type Technique = 'auto' | 'knife' | 'plain';
 
@@ -86,8 +100,15 @@ export interface MiningOpts {
      * rehearsals that mean to walk into a site's hunters.
      */
     acceptHazards?: boolean | string;
-    /** rs/111's S07 fallback (bones on the stay2 lap): a seam, not built. */
-    bury?: unknown;
+    /**
+     * Bones to bury on the `stay2` lap (BURY_LAP, knife-mine's `bury`): true for big bones
+     * (BIG_BONES), or a pattern. Adds `buryLoads` steps `mining.bury: load k` before the last iron band.
+     */
+    bury?: boolean | string;
+    /** Bury steps with `bury` (default 1): one per load the chain trades in before it. */
+    buryLoads?: number | string;
+    /** With `bury`: the Prayer level from which a bury step drops the bones it holds instead (default 99). */
+    buryPrayerTo?: number | string;
     /** The trade giver at the zoo that hands over H4p (H4P_KIT) before the iron bands; none by default. */
     kitGiver?: string;
     /** Drop EXIT_DROPS at `to` (default false: a rehearsal keeps its kit). */
@@ -134,6 +155,19 @@ export const ROTATIONS: Record<string, Rotation> = {
 
 /** The zoo cluster's centre, for "already there". */
 export const ZOO: P = [2604, 3235];
+
+/**
+ * The bone lap (rs/182, #159; STEP-MANIFEST.md entry 4): the five-rock lap's rocks with two stays,
+ * one bury a lap on the east stay at 2605,3234; 3.026-3.041 ticks an ore with the bury against the
+ * five-rock lap's 3.000-3.124 (m, lab, D=13). Not in ROTATIONS: respawn never chooses it, `bury` does.
+ */
+export const BURY_LAP = '2603,3233>2602,3233 2605,3234>2605,3235 2605,3234>2605,3233 2602,3235>2602,3234 2602,3235>2602,3236';
+/** The band's name for BURY_LAP in its rows. */
+export const BURY_ROTATION = 'stay2';
+/** knife-mine's stay takes its bone only while the lap holds 3 ticks an ore: iron respawn 13 or less (rs/182). */
+export const BURY_MAX_RESPAWN = 13;
+/** H4m's bones (bones.obj big_bones, bone_exp 150: 15 base each). */
+export const BIG_BONES = '^big bones$';
 
 /**
  * Plain (adjacent-rock) ticks per ore at respawn D, the gate's switch-off reference: measured at
@@ -434,17 +468,25 @@ const ORE = /^(iron|copper|tin) ore$/i;
  * stall (cairn_rocks on the demo: 5 such ores filled the pack at Mining 92).
  */
 export async function dropOres(sdk: StepContext<any>['sdk']): Promise<number> {
+    return dropMatching(sdk, ORE);
+}
+
+/** Drops every item matching `re`, 5 a tick (at most 40), and returns how many. */
+async function dropMatching(sdk: StepContext<any>['sdk'], re: RegExp): Promise<number> {
     let n = 0;
     for (let guard = 0; guard < 8; guard++) {
-        const ores = sdk.getState()!.inventory.filter(i => ORE.test(i.name)).slice(0, 5);
-        if (!ores.length) break;
-        await Promise.all(ores.map(i => sdk.sendDropItem(i.slot)));
-        n += ores.length;
+        const items = sdk.getState()!.inventory.filter(i => re.test(i.name)).slice(0, 5);
+        if (!items.length) break;
+        await Promise.all(items.map(i => sdk.sendDropItem(i.slot)));
+        n += items.length;
         await nextTick(sdk);
     }
     return n;
 }
 const freeSlots = (s: BotWorldState) => 28 - s.inventory.length;
+/** Bones matching `re` held (unnoted: what a bury takes). */
+export const bonesHeld = (s: BotWorldState, re: RegExp) => s.inventory.filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
+const prayerLevel = (s: BotWorldState) => s.skills.find(k => k.name.toLowerCase() === 'prayer')?.baseLevel ?? 1;
 /** Free slots once the band's ore drop has run. */
 const freeOfOre = (s: BotWorldState) => freeSlots(s) + s.inventory.filter(i => ORE.test(i.name)).length;
 
