@@ -79,7 +79,20 @@ function harness(start: BotWorldState, opts: Partial<WoodcuttingOptions> = {}, s
         if (scripted) return scripted;
         const s = sdk.getState()!;
         const technique: SegmentTechnique = o.technique === 'plain' ? 'plain' : 'knife';
-        const end = params(technique).untilLevel as number;
+        const end = params(technique).untilLevel as number | undefined;
+        if (end === undefined) {
+            // A Prayer run (no level bound): it buries the pack, then publishes none left until the band stops it.
+            let t = s.tick;
+            sdk.push(cur => ({ tick: ++t, inventory: cur.inventory.filter(i => !/bones$/i.test(i.name)), skills: cur.skills.map(k => (k.name === 'Prayer' ? { ...k, experience: k.experience + 1000 } : k)) }));
+            for (let k = 0; k < 4 && !o.signal?.aborted; k++) {
+                sdk.push({ tick: ++t });
+                o.onProgress?.(status({ runId: calls.length, startedTick: s.tick, tick: t, gauges: { bonesLeft: 0 } }), technique);
+            }
+            const aborted = !!o.signal?.aborted;
+            const seg: GatedSegment = { technique, reason: aborted ? 'aborted' : 'done', status: status({ runId: calls.length, phase: aborted ? 'stopped' : 'done', startedTick: s.tick, tick: t, endedTick: t }) };
+            o.onSegment?.(seg);
+            return { segments: [seg], ended: aborted ? 'aborted' : 'done' };
+        }
         setLevel(sdk, end, { tick: s.tick + 300 });
         const seg: GatedSegment = { technique, reason: 'done', status: status({ runId: calls.length, phase: 'done', startedTick: s.tick, tick: s.tick + 300, endedTick: s.tick + 300, counters: { successes: 60 }, result: { histogram: { 3: 50, 6: 10 } } }) };
         o.onSegment?.(seg);
@@ -1070,7 +1083,7 @@ describe("woodcutting: S07's last bone load carries T07-08's runes, (load - 2) b
     const scored = { bury: true, bones: { giver: 'cairn_b02', lastLoad: 21 } } satisfies Partial<WoodcuttingOptions>;
     const held = (s: BotWorldState) => s.inventory.map(i => `${i.name} x${i.count}`);
 
-    test('the last receive takes 21 bones, law 1 and air 5 after a full load; the runes ride to the band end, 2 slots left for the chopped log', async () => {
+    test('the last receive takes 21 bones, law 1 and air 5 after a full load; the runes ride to the band end, which buries the 21 before it closes (rs/663)', async () => {
         const g = giver([FULL, LAST]);
         const h = harness(pack(97, KIT), { ...scored, receive: g.fn }, buryThenLoad);
         const band = h.byName(WILLOWS);
@@ -1081,9 +1094,11 @@ describe("woodcutting: S07's last bone load carries T07-08's runes, (load - 2) b
         expect(loads.map(r => [r.ok, (r.meta as { received: number }).received])).toEqual([[true, 23], [true, 21]]);
         const s = h.sdk.getState()!;
         expect(held(s).filter(n => !/bones/.test(n))).toEqual(['Rune axe x1', 'Knife x1', 'Logs x1', 'Law rune x1', 'Air rune x5']);
-        expect(s.inventory.filter(i => /bones$/i.test(i.name))).toHaveLength(21);
-        // the ledger's last load: 25 free at the willows hold 21 bones and the two rune stacks, the chopped log the 24th
-        expect(28 - s.inventory.length).toBe(2);
+        // the band at 99 held the last load's 21 bones: it buried them in a Prayer run before closing, so T07-08 has its slots
+        expect(s.inventory.filter(i => /bones$/i.test(i.name))).toHaveLength(0);
+        expect(h.calls).toHaveLength(3);
+        expect(h.calls[2]!.params('knife')).toMatchObject({ maxTicks: PRAYER_RUN_TICKS, bury: true });
+        expect(28 - s.inventory.length).toBe(23);
         expect(band.postconditions(s, {})).toBe(true);
     });
 
@@ -1100,8 +1115,9 @@ describe("woodcutting: S07's last bone load carries T07-08's runes, (load - 2) b
         expect(held(s).filter(n => !/bones/.test(n))).toEqual(['Rune axe x1', 'Knife x1', 'Logs x1', 'Law rune x1', 'Air rune x5']);
         expect(band.postconditions(s, {})).toBe(true);
         expect(band.postconditions(pack(99, KIT), {})).toMatch(/Camelot runes \(1 and 5\) are not held/);
-        // but it fills the pack: 25 free at the willows hold 23 bones and the two rune stacks, none left for the chopped log
-        expect(28 - s.inventory.length).toBe(0);
+        // the 23 bones it brought are buried before the close (rs/663)
+        expect(28 - s.inventory.length).toBe(23);
+        // but it fills the pack on arrival: 25 free at the willows hold 23 bones and the two rune stacks, none left for the chopped log
         expect(band.preconditions(pack(97, KIT), {})).toBe("25 free slots and 0 bones: no room for a 23-bone load, or the last load's 23 bones and 2 rune stacks, and the log");
         // once the runes are in, that load came: a resume needs no room for another
         expect(band.preconditions(pack(98, [...KIT, 'Law rune', 'Air rune'], { bones: 10 }), {})).toBe(true);
