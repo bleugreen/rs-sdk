@@ -173,7 +173,8 @@ export const role: Role = {
                 await standOn(ctx, site);
             }
             await until(ctx, () => frames.recent().length >= 4, 10);
-            writer.write({ beacons: frames.recent(), turns: [] });
+            // S07's givers go to the site the cue names (bone-giver.ts namedSite): ours, as woodcutting.ts names SCORED's stand.
+            writer.write({ beacons: frames.recent(), turns: [], ...(asks ? {} : { site: { x: site.x, z: site.z } }) });
 
             let lastBury = -1;
             let requestSince = s().tick;

@@ -1546,7 +1546,7 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
         const SESSION = 'run-20261023-213447.S07.bone';
         // The stopped process: its cue (seq 1), and the givers' statuses in its session. b04 served load 1 and went
         // to restock; b03, the oldest ready, waits at the willows; b01 and b02 wait at the oaks.
-        new BoneCue(dir, SESSION).write(baseState({ tick: 1312 }), 'cairn_test');
+        new BoneCue(dir, SESSION).write(baseState({ tick: 1312 }), 'cairn_test', SITES.oak.stand);
         const status = (account: string, o: Partial<BoneStatus>) =>
             writeJsonAtomicSync(join(dir, `bones-${account}.json`), { v: 1, account, phase: 'waiting', held: 23, n: 23, trades: 0, bounces: 0, tile: null, readyAt: null, session: SESSION, final: account === 'cairn_b04', loads: 19, ms: Date.now(), ...o });
         status('cairn_b04', { phase: 'restock', held: 0, trades: 1 });
@@ -1596,7 +1596,7 @@ describe("woodcutting: S07's giver group takes turns (rs/383's b01-b04, bones.gr
      */
     const session = (o: { loads: number; trades?: Record<string, number>; final?: boolean; bone?: string }) => {
         const dir = newDir();
-        new BoneCue(dir, A4).write(baseState({ tick: 900 }), 'cairn_test');
+        new BoneCue(dir, A4).write(baseState({ tick: 900 }), 'cairn_test', SITES.oak.stand);
         const put = (account: string, st: Partial<BoneStatus> = {}) =>
             writeJsonAtomicSync(join(dir, `bones-${account}.json`), {
                 v: 1, account, phase: 'waiting', held: 23, n: 23, trades: o.trades?.[account] ?? 0, bounces: 0, tile: null, readyAt: GROUP.indexOf(account) + 1, session: A4,
@@ -1917,18 +1917,19 @@ describe('woodcutting: the S07 bone cue session across a resume', () => {
 
     test("a resumed process with the attempt's session carries it on; no session or another one starts its own; another receiver is refused", () => {
         const dir = mkdtempSync(join(tmpdir(), 'wc-bonecue-'));
-        new BoneCue(dir, 'run-a.S07.bone').write(s, 'Scored Name');
+        const oak = SITES.oak.stand;
+        new BoneCue(dir, 'run-a.S07.bone').write(s, 'Scored Name', oak);
         const first = readCue(dir)!;
-        expect([first.session, first.seq, first.scope]).toEqual(['run-a.S07.bone', 1, S07_BONE_CUE]);
+        expect([first.session, first.seq, first.scope, first.site]).toEqual(['run-a.S07.bone', 1, S07_BONE_CUE, { x: oak[0], z: oak[1] }]);
         // A new process of the same attempt: the same session, the next seq, so the givers' load count in it holds.
-        new BoneCue(dir, 'run-a.S07.bone').write(s, 'Scored Name');
+        new BoneCue(dir, 'run-a.S07.bone').write(s, 'Scored Name', oak);
         expect([readCue(dir)!.session, readCue(dir)!.seq]).toEqual(['run-a.S07.bone', 2]);
-        new BoneCue(dir, 'run-b.S07.bone').write(s, 'Scored Name');
+        new BoneCue(dir, 'run-b.S07.bone').write(s, 'Scored Name', oak);
         expect([readCue(dir)!.session, readCue(dir)!.seq]).toEqual(['run-b.S07.bone', 1]);
-        new BoneCue(dir).write(s, 'Scored Name');
+        new BoneCue(dir).write(s, 'Scored Name', oak);
         expect(readCue(dir)!.session).not.toMatch(/S07\.bone$/);
-        new BoneCue(dir, 'run-c.S07.bone').write(s, 'Scored Name');
-        expect(() => new BoneCue(dir, 'run-c.S07.bone').write(s, 'Someone Else')).toThrow('identity mismatch');
+        new BoneCue(dir, 'run-c.S07.bone').write(s, 'Scored Name', oak);
+        expect(() => new BoneCue(dir, 'run-c.S07.bone').write(s, 'Someone Else', oak)).toThrow('identity mismatch');
     });
 
     test('boneSession needs a giver group and a nonempty name, and reaches the cue the steps write', () => {
